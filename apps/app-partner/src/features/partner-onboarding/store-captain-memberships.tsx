@@ -83,7 +83,7 @@ export function StoreCaptainMembershipManagement({ storeID }: { storeID: string 
   return (
     <View style={styles.card}>
       <Text style={styles.value}>كباتن المتجر</Text>
-      <Text style={styles.muted}>أرسل الدعوة إلى كابتن لديه حساب مُفعّل. هذه العضوية مرتبطة بهذا المتجر ولا تضيفه إلى إسناد كباتن بثواني.</Text>
+      <Text style={styles.muted}>أرسل الدعوة إلى كابتن لديه حساب مُفعّل. العضوية مرتبطة بهذا المتجر فقط ولا تضيفه إلى إسناد بثواني العام. عند جاهزية طلب «توصيل المتجر»، اختر كابتنًا بعضوية فعالة ليصله عرض مستقل يقبله من تطبيق Captain.</Text>
       <BthwaniButton busy={busy} disabled={busy} label="إنشاء رمز دعوة" onPress={() => void createInvitation()} />
       {invitationCode ? <View style={{ borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 6, padding: 12 }}>
         <Text style={styles.metaLabel}>رمز لمرة واحدة — أرسله للكابتن المقصود</Text>

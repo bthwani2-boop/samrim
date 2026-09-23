@@ -12,7 +12,7 @@ function errorResponse(code: string, message: string, status: number) {
 async function requireOperator() {
   const identity = await readOperatorSession();
   if (!identity) return { error: errorResponse("UNAUTHENTICATED", "authentication is required", 401) } as const;
-  if (identity.role !== "operator") return { error: errorResponse("FORBIDDEN", "control operator access is required", 403) } as const;
+  if (identity.role !== "operator" || !identity.permissions?.includes("finance")) return { error: errorResponse("FORBIDDEN", "Finance permission is required", 403) } as const;
   return { identity } as const;
 }
 

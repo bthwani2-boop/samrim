@@ -123,42 +123,34 @@ func RecordPartnerStoreCashCommission(ctx context.Context, db *sql.DB, input Par
 		return PartnerStoreCashCommissionRecord{}, false, err
 	}
 
-	var paymentState, method, currency, allocationCurrency, allocationPolicy string
+	var paymentState, method, currency string
 	var paymentAmount int64
 	var collectedBy sql.NullString
-	var allocation CustomerPaymentAllocationRecord
-	err = tx.QueryRowContext(ctx, `SELECT p.state,p.method,p.amount_minor,p.currency,p.collected_by_actor_id,
-		a.id,a.order_id,a.payment_intent_id,a.currency,a.subtotal_minor,a.delivery_fee_minor,a.discount_minor,a.internal_balance_amount_minor,a.cash_amount_minor,a.customer_payable_minor,a.policy_version,a.created_at
+	err = tx.QueryRowContext(ctx, `SELECT p.state,p.method,p.amount_minor,p.currency,p.collected_by_actor_id
 		FROM wlt.payment_intents p JOIN wlt.customer_payment_allocations a ON a.payment_intent_id=p.id
-		WHERE p.id=$1 FOR UPDATE OF p,a`, input.PaymentIntentID).Scan(&paymentState, &method, &paymentAmount, &currency, &collectedBy,
-		&allocation.ID, &allocation.OrderID, &allocation.PaymentIntentID, &allocationCurrency, &allocation.SubtotalMinor, &allocation.DeliveryFeeMinor, &allocation.DiscountMinor, &allocation.InternalBalanceAmountMinor, &allocation.CashAmountMinor, &allocation.CustomerPayableMinor, &allocationPolicy, &allocation.CreatedAt)
+		WHERE p.id=$1 FOR UPDATE OF p,a`, input.PaymentIntentID).Scan(&paymentState, &method, &paymentAmount, &currency, &collectedBy)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PartnerStoreCashCommissionRecord{}, false, ErrCustomerPaymentAllocationNotFound
 	}
 	if err != nil {
 		return PartnerStoreCashCommissionRecord{}, false, err
 	}
-	if paymentState != domain.StateCollected || method != domain.MethodCashAtStore || !collectedBy.Valid || collectedBy.String != input.PartnerActorID || allocation.OrderID != input.OrderID || allocationCurrency != currency || paymentAmount != allocation.CustomerPayableMinor || allocation.DeliveryFeeMinor != 0 || allocation.InternalBalanceAmountMinor != 0 || allocation.CashAmountMinor != allocation.CustomerPayableMinor || allocation.CustomerPayableMinor != allocation.SubtotalMinor-allocation.DiscountMinor {
+	allocation, err := readCustomerPaymentAllocation(ctx, tx, input.PaymentIntentID)
+	if err != nil {
+		return PartnerStoreCashCommissionRecord{}, false, err
+	}
+	if paymentState != domain.StateCollected || method != domain.MethodCashAtStore || !collectedBy.Valid || collectedBy.String != input.PartnerActorID || allocation.OrderID != input.OrderID || allocation.Currency != currency || paymentAmount != allocation.CustomerPayableMinor || allocation.DeliveryFeeMinor != 0 || allocation.InternalBalanceAmountMinor != 0 || allocation.CashAmountMinor != allocation.CustomerPayableMinor || allocation.CustomerPayableMinor != allocation.SubtotalMinor-allocation.DiscountMinor || allocation.PartnerActorID != input.PartnerActorID || allocation.FulfillmentMode != input.FulfillmentMode {
 		return PartnerStoreCashCommissionRecord{}, false, ErrPartnerCashCommissionState
+	}
+	if allocation.CommissionSnapshot == nil {
+		return PartnerStoreCashCommissionRecord{}, false, ErrPartnerCommissionSnapshotMissing
 	}
 	chargeableProduct := allocation.SubtotalMinor - allocation.DiscountMinor
 	if chargeableProduct < 0 {
 		return PartnerStoreCashCommissionRecord{}, false, ErrPartnerCashCommissionInvalid
 	}
-	var profileID, settlementPeriod, profileState string
-	var commissionRateBps, profileVersion int
-	var roundingUnit int64
-	err = tx.QueryRowContext(ctx, `SELECT id,commission_rate_bps,settlement_period,rounding_unit_minor,state,version FROM wlt.partner_financial_profiles WHERE partner_actor_id=$1 AND state='ACTIVE' FOR SHARE`, input.PartnerActorID).Scan(&profileID, &commissionRateBps, &settlementPeriod, &roundingUnit, &profileState, &profileVersion)
-	if errors.Is(err, sql.ErrNoRows) {
-		return PartnerStoreCashCommissionRecord{}, false, ErrPartnerEarningProfile
-	}
-	if err != nil {
-		return PartnerStoreCashCommissionRecord{}, false, err
-	}
-	if profileState != domain.ProfileActive || roundingUnit != 50 {
-		return PartnerStoreCashCommissionRecord{}, false, ErrPartnerEarningProfile
-	}
-	commission, err := roundedCommission(chargeableProduct, commissionRateBps, roundingUnit)
+	snapshot := allocation.CommissionSnapshot
+	commission, err := partnerCommissionFromSnapshot(chargeableProduct, snapshot)
 	if err != nil {
 		return PartnerStoreCashCommissionRecord{}, false, err
 	}
@@ -178,7 +170,7 @@ func RecordPartnerStoreCashCommission(ctx context.Context, db *sql.DB, input Par
 		}
 		ledgerTransactionID = &transactionID
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.partner_store_cash_commissions(order_id,payment_intent_id,partner_actor_id,fulfillment_mode,currency,gross_product_minor,commission_minor,profile_id,profile_version,policy_version,ledger_transaction_id,idempotency_key,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, input.OrderID, input.PaymentIntentID, input.PartnerActorID, input.FulfillmentMode, currency, chargeableProduct, commission, profileID, profileVersion, fmt.Sprintf("partner-store-cash-commission-v1;mode=%s;profile=%s;settlement=%s", input.FulfillmentMode, profileID, settlementPeriod), ledgerTransactionID, input.IdempotencyKey, requestHash); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.partner_store_cash_commissions(order_id,payment_intent_id,partner_actor_id,fulfillment_mode,currency,gross_product_minor,commission_minor,profile_id,profile_version,policy_version,ledger_transaction_id,idempotency_key,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, input.OrderID, input.PaymentIntentID, input.PartnerActorID, input.FulfillmentMode, currency, chargeableProduct, commission, snapshot.ProfileID, snapshot.ProfileVersion, fmt.Sprintf("partner-store-mode-commission-v1;store=%s;mode=%s;policy=%d;rate-bps=%d;profile=%s:%d;settlement=%s", allocation.StoreID, input.FulfillmentMode, snapshot.PolicyVersion, snapshot.RateBps, snapshot.ProfileID, snapshot.ProfileVersion, snapshot.SettlementPeriod), ledgerTransactionID, input.IdempotencyKey, requestHash); err != nil {
 		return PartnerStoreCashCommissionRecord{}, false, err
 	}
 	if err := tx.Commit(); err != nil {

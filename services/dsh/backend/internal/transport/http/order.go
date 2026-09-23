@@ -24,12 +24,12 @@ type OrderServer struct {
 
 func (s *OrderServer) Service() *orderdomain.Service { return s.service }
 
-func NewOrder(identityClient *identityintegration.Client, accessToken string, db *sql.DB, payment *wlt.Client) (*OrderServer, error) {
+func NewOrder(identityClient *identityintegration.Client, accessToken string, db *sql.DB, payment *wlt.Client, proofKeys *postgres.DeliveryProofKeyring) (*OrderServer, error) {
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
 		return nil, err
 	}
-	service, err := orderdomain.New(identityClient, db, payment)
+	service, err := orderdomain.New(identityClient, db, payment, proofKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -53,6 +53,7 @@ func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders", s.listStore)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders/{orderId}", s.readStore)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/orders/{orderId}/transition", s.transition)
+	mux.HandleFunc("POST /dsh/stores/{storeId}/orders/{orderId}/captain-cash-handoff/confirm", s.confirmStoreCaptainCashHandoff)
 }
 
 func (s *OrderServer) listOperatorOperations(w http.ResponseWriter, r *http.Request) {
@@ -465,6 +466,30 @@ func (s *OrderServer) transition(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, contract.OrderResponse{Order: toOrder(item), IdempotentReplay: replayed})
 }
 
+func (s *OrderServer) confirmStoreCaptainCashHandoff(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "partner session is required")
+		return
+	}
+	correlation := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
+	idempotency := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	expected, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Version")))
+	if len(correlation) < 8 || len(correlation) > 128 || len(idempotency) < 8 || len(idempotency) > 128 || err != nil || expected < 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "handoff attribution, idempotency, and a positive expected version are required")
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cash handoff ownership comes from the canonical partner session")
+		return
+	}
+	item, replayed, err := s.service.ConfirmStoreCaptainCashHandoff(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("orderId"), expected, idempotency, correlation)
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.OrderResponse{Order: toOrder(item), IdempotentReplay: replayed})
+}
+
 func orderLimit(w http.ResponseWriter, r *http.Request) (int, bool) {
 	limit := 50
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
@@ -520,7 +545,7 @@ func toOrder(item postgres.OrderRecord) contract.Order {
 	if item.PickupLocation != nil {
 		pickupLocation = &contract.OrderPickupLocation{Latitude: item.PickupLocation.Latitude, Longitude: item.PickupLocation.Longitude}
 	}
-	return contract.Order{ID: item.ID, ClientActorID: item.ClientActorID, StoreID: item.StoreID, StoreName: item.StoreName, PickupLocation: pickupLocation, CartID: item.CartID, FulfillmentMode: contract.FulfillmentMode(item.FulfillmentMode), AddressID: item.AddressID, AddressVersion: item.AddressVersion, AddressText: item.AddressText, AddressLatitude: item.AddressLatitude, AddressLongitude: item.AddressLongitude, ServiceCityID: item.ServiceCityID, ServiceabilityPolicyVersion: item.ServiceabilityPolicyVersion, ServiceabilityStatus: item.ServiceabilityStatus, ServiceabilityStoreVersion: item.ServiceabilityStoreVersion, ServiceabilityAddressVersion: item.ServiceabilityAddressVersion, State: contract.OrderState(item.State), SubtotalAmountMinor: int(item.SubtotalAmountMinor), DiscountMinor: int(item.DiscountMinor), PromotionID: item.PromotionID, PromotionCode: item.PromotionCode, TotalAmountMinor: int(item.TotalAmountMinor), Currency: item.Currency, PaymentMethod: contract.PaymentMethod(item.PaymentMethod), PaymentState: contract.PaymentState(item.PaymentState), PaymentIntentID: paymentIntentID, Version: item.Version, Lines: lines, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return contract.Order{ID: item.ID, ClientActorID: item.ClientActorID, StoreID: item.StoreID, StoreName: item.StoreName, PickupLocation: pickupLocation, CartID: item.CartID, FulfillmentMode: contract.FulfillmentMode(item.FulfillmentMode), AddressID: item.AddressID, AddressVersion: item.AddressVersion, AddressText: item.AddressText, AddressLatitude: item.AddressLatitude, AddressLongitude: item.AddressLongitude, ServiceCityID: item.ServiceCityID, ServiceabilityPolicyVersion: item.ServiceabilityPolicyVersion, ServiceabilityStatus: item.ServiceabilityStatus, ServiceabilityStoreVersion: item.ServiceabilityStoreVersion, ServiceabilityAddressVersion: item.ServiceabilityAddressVersion, State: contract.OrderState(item.State), SubtotalAmountMinor: int(item.SubtotalAmountMinor), DiscountMinor: int(item.DiscountMinor), PromotionID: item.PromotionID, PromotionCode: item.PromotionCode, TotalAmountMinor: int(item.TotalAmountMinor), Currency: item.Currency, PaymentMethod: contract.PaymentMethod(item.PaymentMethod), PaymentState: contract.PaymentState(item.PaymentState), PaymentIntentID: paymentIntentID, StoreCashHandoffState: item.StoreCashHandoffState, Version: item.Version, Lines: lines, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func toOrderRating(item postgres.OrderRatingRecord) contract.OrderRating {

@@ -36,6 +36,42 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /internal/operators/{actorId}/finance-access:
+    get:
+      tags: [internal-actor-roles]
+      operationId: readOperatorFinanceAccess
+      security: [{ internalServiceToken: [] }]
+      description: Only the one-time bootstrapped first Operator may read and administer Finance permission grants for other enabled Operators.
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+      responses:
+        "200": { description: Current versioned Finance permission state., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorFinanceAccess" } } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [internal-actor-roles]
+      operationId: setOperatorFinanceAccess
+      security: [{ internalServiceToken: [] }]
+      description: Changes only another enabled Operator's explicit Finance permission. The one-time bootstrapped first Operator is the sole access administrator; each change requires a current version and reason and revokes affected sessions.
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "#/components/parameters/FinancePermissionExpectedVersion" }
+        - { $ref: "#/components/parameters/FinancePermissionReason" }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SetOperatorFinanceAccessRequest" } } }
+      responses:
+        "200": { description: Exact committed Finance permission state., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorFinanceAccess" } } }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /internal/actors/{actorId}/roles/{role}:
     get:
       tags: [internal-actor-roles]

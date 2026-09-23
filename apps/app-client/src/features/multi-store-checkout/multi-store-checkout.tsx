@@ -1,6 +1,6 @@
 import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { availableCustomerFulfillmentModes, defaultCustomerFulfillmentMode, fulfillmentModeLabel, type Cart, type CustomerFulfillmentMode, type DeliveryAddress, type MultiStoreCheckout, type MultiStoreCheckoutResponse, type PublicStoreView } from "@bthwani/dsh";
+import { availableCustomerFulfillmentModes, fulfillmentModeLabel, type Cart, type CustomerFulfillmentMode, type DeliveryAddress, type MultiStoreCheckout, type MultiStoreCheckoutResponse, type PublicStoreView } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -37,7 +37,7 @@ export default function MultiStoreCheckoutScreen() {
         setState({ kind: "empty", addresses: addressResponse.addresses });
         return;
       }
-      const fulfillmentModes = Object.fromEntries(storeCarts.map(({ store }) => [store.id, defaultCustomerFulfillmentMode(store.fulfillmentModes)]));
+      const fulfillmentModes = Object.fromEntries(storeCarts.map(({ store }) => [store.id, null]));
       setState({ kind: "ready", storeCarts, addresses: addressResponse.addresses, selectedAddressID: addressResponse.addresses[0]?.id ?? "", fulfillmentModes });
     } catch {
       setState({ kind: "error" });
@@ -53,7 +53,7 @@ export default function MultiStoreCheckoutScreen() {
       return fulfillmentMode ? [{ store, cart, fulfillmentMode }] : [];
     });
     if (selectedStoreCarts.length !== state.storeCarts.length) return;
-    const requiresDeliveryAddress = selectedStoreCarts.some(({ fulfillmentMode }) => fulfillmentMode === "BTHWANI_CAPTAIN");
+    const requiresDeliveryAddress = selectedStoreCarts.some(({ fulfillmentMode }) => fulfillmentMode !== "CUSTOMER_PICKUP");
     if (requiresDeliveryAddress && !state.selectedAddressID) return;
     setBusy(true);
     setError("");
@@ -91,7 +91,7 @@ export default function MultiStoreCheckoutScreen() {
   const checkout = state.checkout;
   const canCancel = Boolean(checkout && checkout.successfulChildCount > 0 && checkout.state !== "CANCELLED");
   const hasUnsupportedStore = state.storeCarts.some(({ store }) => availableCustomerFulfillmentModes(store.fulfillmentModes).length === 0);
-  const requiresDeliveryAddress = state.storeCarts.some(({ store }) => state.fulfillmentModes[store.id] === "BTHWANI_CAPTAIN");
+  const requiresDeliveryAddress = state.storeCarts.some(({ store }) => { const mode = state.fulfillmentModes[store.id]; return mode !== null && mode !== "CUSTOMER_PICKUP"; });
   return (
     <View style={styles.container} accessibilityLabel="إتمام الطلب من عدة متاجر">
       <BthwaniSurface tone="raised" style={styles.hero}><View style={styles.heroIcon}><BthwaniIcon name="cart" color={theme.onAction} size={sizing.iconXl} /></View><View style={styles.heroCopy}><Text style={styles.eyebrow}>طلب متعدد المتاجر</Text><Text style={styles.title}>طلبات مستقلة، متابعة واحدة</Text><Text style={styles.muted}>ينشئ بثواني طلبًا مستقلًا لكل متجر ويحفظ نتيجة كل واحد بوضوح.</Text></View></BthwaniSurface>
@@ -103,17 +103,17 @@ export default function MultiStoreCheckoutScreen() {
           <View style={styles.storeIcon}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>
           <View style={styles.storeCopy}><Text style={styles.cardTitle}>{store.name}</Text><Text style={styles.muted}>{cart.lines.length} منتجات · السلة #{cart.version}</Text></View>
           <View style={styles.storeModes} accessibilityLabel={`طريقة استلام الطلب من ${store.name}`}>
-            {availableModes.map((mode) => <BthwaniChip key={mode} disabled={busy || Boolean(checkout)} label={mode === "CUSTOMER_PICKUP" ? "الاستلام من المتجر" : "توصيل بثواني"} onPress={() => setState((current) => current.kind === "ready" && !current.checkout ? { ...current, fulfillmentModes: { ...current.fulfillmentModes, [store.id]: mode } } : current)} selected={selectedMode === mode} />)}
-            {availableModes.length === 0 ? <Text accessibilityRole="alert" style={styles.error}>لا يتوفر لهذا المتجر مسار استلام مدعوم للعميل حاليًا.</Text> : null}
+            {availableModes.map((mode) => <BthwaniChip key={mode} disabled={busy || Boolean(checkout)} label={fulfillmentModeLabel(mode)} onPress={() => setState((current) => current.kind === "ready" && !current.checkout ? { ...current, fulfillmentModes: { ...current.fulfillmentModes, [store.id]: mode } } : current)} selected={selectedMode === mode} />)}
+            {availableModes.length === 0 ? <Text accessibilityRole="alert" style={styles.error}>لا يتوفر لهذا المتجر وضع طلب حاليًا.</Text> : selectedMode === null ? <Text accessibilityRole="alert" style={styles.error}>اختر وضع الطلب لهذا المتجر.</Text> : <Text style={styles.muted}>{modeDescription(selectedMode)}</Text>}
           </View>
         </BthwaniSurface>;
       })}</View>
       {requiresDeliveryAddress ? <>
-        <BthwaniSectionHeader title="عنوان التوصيل" subtitle="يُعاد التحقق من الأهلية لكل متجر عند الإتمام." />
+        <BthwaniSectionHeader title="عنوان التوصيل" subtitle="يُعاد التحقق من الأهلية لكل متجر اخترت توصيله عند الإتمام." />
         <View style={styles.list}>{state.addresses.map((address) => { const selected = address.id === state.selectedAddressID; return <Pressable key={address.id} accessibilityRole="button" accessibilityState={{ selected }} onPress={() => setState((current) => current.kind === "ready" ? { ...current, selectedAddressID: address.id } : current)} style={[styles.address, selected && styles.addressSelected]}><Text style={styles.addressText}>{address.addressText}</Text><Text style={styles.muted}>{selected ? "العنوان المختار" : "استخدام هذا العنوان"}</Text></Pressable>; })}</View>
         {state.addresses.length === 0 ? <Text accessibilityRole="alert" style={styles.error}>أضف عنوان توصيل من الحساب قبل إتمام الطلبات التي اخترت توصيلها.</Text> : null}
-      </> : hasUnsupportedStore ? <BthwaniSurface tone="inset" style={styles.summary}><Text style={styles.error}>لا يمكن إتمام الطلب المتعدد حتى يتوفر مسار استلام مدعوم لكل متجر.</Text></BthwaniSurface> : <BthwaniSurface tone="inset" style={styles.summary}><Text style={styles.cardTitle}>كل المتاجر المختارة تدعم الاستلام</Text><Text style={styles.muted}>لن نطلب عنوانًا ولن نضيف رسوم توصيل لهذه الطلبات.</Text></BthwaniSurface>}
-      {checkout ? <CheckoutSummary checkout={checkout} storeNamesById={Object.fromEntries(state.storeCarts.map(({ store }) => [store.id, store.name]))} styles={styles} theme={theme} /> : <BthwaniButton accessibilityLabel="إتمام الطلب من عدة متاجر" busy={busy} disabled={busy || hasUnsupportedStore || (requiresDeliveryAddress && !state.selectedAddressID)} label="إتمام الطلب من عدة متاجر" onPress={() => void submit()} />}
+      </> : hasUnsupportedStore ? <BthwaniSurface tone="inset" style={styles.summary}><Text style={styles.error}>لا يمكن إتمام الطلب المتعدد حتى يتوفر وضع طلب مفعّل لكل متجر.</Text></BthwaniSurface> : state.storeCarts.some(({ store }) => !state.fulfillmentModes[store.id]) ? <BthwaniSurface tone="inset" style={styles.summary}><Text style={styles.cardTitle}>اختر وضع الطلب لكل متجر</Text><Text style={styles.muted}>سيظهر عنوان التوصيل للمتاجر التي اخترت لها أحد وضعي التوصيل.</Text></BthwaniSurface> : <BthwaniSurface tone="inset" style={styles.summary}><Text style={styles.cardTitle}>كل المتاجر المختارة تدعم أوضاع الطلب المحددة</Text><Text style={styles.muted}>يُطلب العنوان فقط للمتاجر التي اخترت لها التوصيل.</Text></BthwaniSurface>}
+      {checkout ? <CheckoutSummary checkout={checkout} storeNamesById={Object.fromEntries(state.storeCarts.map(({ store }) => [store.id, store.name]))} styles={styles} theme={theme} /> : <BthwaniButton accessibilityLabel="إتمام الطلب من عدة متاجر" busy={busy} disabled={busy || hasUnsupportedStore || state.storeCarts.some(({ store }) => !state.fulfillmentModes[store.id]) || (requiresDeliveryAddress && !state.selectedAddressID)} label="إتمام الطلب من عدة متاجر" onPress={() => void submit()} />}
       {checkout && canCancel ? <BthwaniButton accessibilityLabel="إلغاء الطلب المتعدد" busy={busy} disabled={busy} label="إلغاء الطلبات التابعة" onPress={() => void cancel()} variant="secondary" /> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     </View>
@@ -121,7 +121,14 @@ export default function MultiStoreCheckoutScreen() {
 }
 
 function selectedFulfillmentMode(store: PublicStoreView, selected: Readonly<Record<string, CustomerFulfillmentMode | null>>): CustomerFulfillmentMode | null {
-  return selected[store.id] ?? defaultCustomerFulfillmentMode(store.fulfillmentModes);
+  const mode = selected[store.id] ?? null;
+  return mode && store.fulfillmentModes.includes(mode) ? mode : null;
+}
+
+function modeDescription(mode: CustomerFulfillmentMode): string {
+  if (mode === "BTHWANI_CAPTAIN") return "المنصة تتولى التوصيل.";
+  if (mode === "PARTNER_CAPTAIN") return "المتجر يختار أحد كباتنه، ولا توجد رسوم توصيل في الإصدار الأول.";
+  return "تذهب إلى المتجر لاستلام طلبك بنفسك.";
 }
 
 function CheckoutSummary({ checkout, storeNamesById, styles, theme }: { checkout: MultiStoreCheckout; storeNamesById: Readonly<Record<string, string>>; styles: ReturnType<typeof createStyles>; theme: ReturnType<typeof resolveTheme> }) {

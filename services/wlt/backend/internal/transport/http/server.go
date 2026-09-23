@@ -51,6 +51,9 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/partner-financial-profiles", s.preparePartnerFinancialProfile)
 	mux.HandleFunc("GET /wlt/v1/partner-financial-profiles/{profileId}", s.readPartnerFinancialProfile)
 	mux.HandleFunc("POST /wlt/v1/partner-financial-profiles/{profileId}/activate", s.activatePartnerFinancialProfile)
+	mux.HandleFunc("POST /wlt/v1/partner-store-commission-policies/initialize", s.initializePartnerStoreCommissionPolicies)
+	mux.HandleFunc("GET /wlt/v1/operator/partner-store-commission-policies", s.readPartnerStoreCommissionPolicies)
+	mux.HandleFunc("POST /wlt/v1/operator/partner-store-commission-policies", s.updatePartnerStoreCommissionPolicy)
 	mux.HandleFunc("POST /wlt/v1/partner-order-earnings/finalize", s.finalizePartnerOrderEarning)
 	mux.HandleFunc("POST /wlt/v1/partner-store-cash-commissions/finalize", s.finalizePartnerStoreCashCommission)
 	mux.HandleFunc("POST /wlt/v1/operator/partners/{partnerActorId}/commission-remittances", s.recordPartnerCommissionRemittance)
@@ -91,6 +94,9 @@ type createRequest struct {
 
 type customerPaymentAllocationRequest struct {
 	OrderID                    string `json:"orderId"`
+	StoreID                    string `json:"storeId"`
+	PartnerActorID             string `json:"partnerActorId"`
+	FulfillmentMode            string `json:"fulfillmentMode"`
 	Currency                   string `json:"currency"`
 	SubtotalMinor              int64  `json:"subtotalMinor"`
 	DeliveryFeeMinor           int64  `json:"deliveryFeeMinor"`
@@ -99,6 +105,20 @@ type customerPaymentAllocationRequest struct {
 	CashAmountMinor            int64  `json:"cashAmountMinor"`
 	CustomerPayableMinor       int64  `json:"customerPayableMinor"`
 	PolicyVersion              string `json:"policyVersion"`
+}
+
+type initializePartnerStoreCommissionPoliciesRequest struct {
+	StoreID        string `json:"storeId"`
+	PartnerActorID string `json:"partnerActorId"`
+	ProfileID      string `json:"profileId"`
+}
+
+type updatePartnerStoreCommissionPolicyRequest struct {
+	StoreID           string `json:"storeId"`
+	FulfillmentMode   string `json:"fulfillmentMode"`
+	CommissionRateBps int    `json:"commissionRateBps"`
+	ExpectedVersion   int    `json:"expectedVersion"`
+	Reason            string `json:"reason"`
 }
 
 type collectRequest struct {
@@ -416,18 +436,31 @@ type paymentIntentJSON struct {
 }
 
 type customerPaymentAllocationJSON struct {
-	ID                         string `json:"id"`
-	OrderID                    string `json:"orderId"`
-	PaymentIntentID            string `json:"paymentIntentId"`
-	Currency                   string `json:"currency"`
-	SubtotalMinor              int64  `json:"subtotalMinor"`
-	DeliveryFeeMinor           int64  `json:"deliveryFeeMinor"`
-	DiscountMinor              int64  `json:"discountMinor"`
-	InternalBalanceAmountMinor int64  `json:"internalBalanceAmountMinor"`
-	CashAmountMinor            int64  `json:"cashAmountMinor"`
-	CustomerPayableMinor       int64  `json:"customerPayableMinor"`
-	PolicyVersion              string `json:"policyVersion"`
-	CreatedAt                  string `json:"createdAt"`
+	ID                         string                              `json:"id"`
+	OrderID                    string                              `json:"orderId"`
+	PaymentIntentID            string                              `json:"paymentIntentId"`
+	StoreID                    string                              `json:"storeId"`
+	PartnerActorID             string                              `json:"partnerActorId"`
+	FulfillmentMode            string                              `json:"fulfillmentMode"`
+	Currency                   string                              `json:"currency"`
+	SubtotalMinor              int64                               `json:"subtotalMinor"`
+	DeliveryFeeMinor           int64                               `json:"deliveryFeeMinor"`
+	DiscountMinor              int64                               `json:"discountMinor"`
+	InternalBalanceAmountMinor int64                               `json:"internalBalanceAmountMinor"`
+	CashAmountMinor            int64                               `json:"cashAmountMinor"`
+	CustomerPayableMinor       int64                               `json:"customerPayableMinor"`
+	PolicyVersion              string                              `json:"policyVersion"`
+	CommissionSnapshot         *partnerStoreCommissionSnapshotJSON `json:"commissionSnapshot,omitempty"`
+	CreatedAt                  string                              `json:"createdAt"`
+}
+
+type partnerStoreCommissionSnapshotJSON struct {
+	RateBps           int    `json:"rateBps"`
+	PolicyVersion     int    `json:"policyVersion"`
+	ProfileID         string `json:"profileId"`
+	ProfileVersion    int    `json:"profileVersion"`
+	RoundingUnitMinor int64  `json:"roundingUnitMinor"`
+	SettlementPeriod  string `json:"settlementPeriod"`
 }
 
 type cashLiabilityItemJSON struct {
@@ -533,7 +566,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 	}
 	var allocation *postgres.CustomerPaymentAllocationInput
 	if input.CustomerPaymentAllocation != nil {
-		value := postgres.CustomerPaymentAllocationInput{OrderID: input.CustomerPaymentAllocation.OrderID, Currency: input.CustomerPaymentAllocation.Currency, SubtotalMinor: input.CustomerPaymentAllocation.SubtotalMinor, DeliveryFeeMinor: input.CustomerPaymentAllocation.DeliveryFeeMinor, DiscountMinor: input.CustomerPaymentAllocation.DiscountMinor, InternalBalanceAmountMinor: input.CustomerPaymentAllocation.InternalBalanceAmountMinor, CashAmountMinor: input.CustomerPaymentAllocation.CashAmountMinor, CustomerPayableMinor: input.CustomerPaymentAllocation.CustomerPayableMinor, PolicyVersion: input.CustomerPaymentAllocation.PolicyVersion}
+		value := postgres.CustomerPaymentAllocationInput{OrderID: input.CustomerPaymentAllocation.OrderID, StoreID: input.CustomerPaymentAllocation.StoreID, PartnerActorID: input.CustomerPaymentAllocation.PartnerActorID, FulfillmentMode: input.CustomerPaymentAllocation.FulfillmentMode, Currency: input.CustomerPaymentAllocation.Currency, SubtotalMinor: input.CustomerPaymentAllocation.SubtotalMinor, DeliveryFeeMinor: input.CustomerPaymentAllocation.DeliveryFeeMinor, DiscountMinor: input.CustomerPaymentAllocation.DiscountMinor, InternalBalanceAmountMinor: input.CustomerPaymentAllocation.InternalBalanceAmountMinor, CashAmountMinor: input.CustomerPaymentAllocation.CashAmountMinor, CustomerPayableMinor: input.CustomerPaymentAllocation.CustomerPayableMinor, PolicyVersion: input.CustomerPaymentAllocation.PolicyVersion}
 		allocation = &value
 	}
 	result, replayed, err := postgres.CreatePaymentIntent(r.Context(), s.db, postgres.CreatePaymentIntentInput{ExternalReference: input.ExternalReference, PayerActorID: input.PayerActorID, OrderID: input.OrderID, AmountMinor: input.AmountMinor, Currency: input.Currency, Method: input.Method, CustomerPaymentAllocation: allocation, IdempotencyKey: idempotency, CorrelationID: correlation})
@@ -777,6 +810,88 @@ func (s *Server) activatePartnerFinancialProfile(w http.ResponseWriter, r *http.
 		return
 	}
 	writeJSON(w, http.StatusOK, partnerFinancialProfileResponse{Profile: toPartnerFinancialProfile(result), IdempotentReplay: replayed})
+}
+
+func (s *Server) initializePartnerStoreCommissionPolicies(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	correlation, idempotency, ok := mutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input initializePartnerStoreCommissionPoliciesRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	policies, err := postgres.InitializePartnerStoreCommissionPolicies(r.Context(), s.db, input.StoreID, input.PartnerActorID, input.ProfileID, idempotency, correlation)
+	if err != nil {
+		writeFinancialProfileError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"storeId": strings.TrimSpace(input.StoreID), "policies": policies})
+}
+
+func (s *Server) readPartnerStoreCommissionPolicies(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	storeID := strings.TrimSpace(r.URL.Query().Get("storeId"))
+	if storeID == "" || len(storeID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "storeId is required")
+		return
+	}
+	policies, err := postgres.ReadPartnerStoreCommissionPolicies(r.Context(), s.db, storeID)
+	if err != nil {
+		writePartnerStoreCommissionPolicyError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"storeId": storeID, "policies": policies})
+}
+
+func (s *Server) updatePartnerStoreCommissionPolicy(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	correlation, idempotency, ok := mutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	actingActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if actingActorID == "" || len(actingActorID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return
+	}
+	var input updatePartnerStoreCommissionPolicyRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	policy, replayed, err := postgres.UpdatePartnerStoreCommissionPolicy(r.Context(), s.db, postgres.PartnerStoreCommissionPolicyUpdate{
+		StoreID: input.StoreID, FulfillmentMode: input.FulfillmentMode, CommissionRateBps: input.CommissionRateBps,
+		ExpectedVersion: input.ExpectedVersion, ChangedByActorID: actingActorID, Reason: input.Reason,
+		IdempotencyKey: idempotency, CorrelationID: correlation,
+	})
+	if err != nil {
+		writePartnerStoreCommissionPolicyError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"policy": policy, "idempotentReplay": replayed})
+}
+
+func writePartnerStoreCommissionPolicyError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, postgres.ErrPartnerStoreCommissionPolicyUnavailable):
+		writeError(w, http.StatusNotFound, "COMMISSION_POLICY_NOT_FOUND", "commission policies are not initialized for this Store")
+	case errors.Is(err, postgres.ErrPartnerStoreCommissionPolicyVersionConflict):
+		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "commission policy changed; reload before saving")
+	case errors.Is(err, postgres.ErrIdempotencyConflict):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different commission policy facts")
+	case errors.Is(err, postgres.ErrPartnerStoreCommissionPolicyInvalidInput):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "commission policy fields are invalid")
+	default:
+		log.Printf("WLT partner store commission policy persistence error: %T %v", err, err)
+		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT commission policy persistence is unavailable")
+	}
 }
 
 func (s *Server) finalizePartnerOrderEarning(w http.ResponseWriter, r *http.Request) {
@@ -1124,7 +1239,12 @@ func toPaymentIntent(item postgres.PaymentIntentRecord) paymentIntentJSON {
 	}
 	if item.CustomerPaymentAllocation != nil {
 		allocation := item.CustomerPaymentAllocation
-		result.CustomerPaymentAllocation = &customerPaymentAllocationJSON{ID: allocation.ID, OrderID: allocation.OrderID, PaymentIntentID: allocation.PaymentIntentID, Currency: allocation.Currency, SubtotalMinor: allocation.SubtotalMinor, DeliveryFeeMinor: allocation.DeliveryFeeMinor, DiscountMinor: allocation.DiscountMinor, InternalBalanceAmountMinor: allocation.InternalBalanceAmountMinor, CashAmountMinor: allocation.CashAmountMinor, CustomerPayableMinor: allocation.CustomerPayableMinor, PolicyVersion: allocation.PolicyVersion, CreatedAt: allocation.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
+		jsonAllocation := &customerPaymentAllocationJSON{ID: allocation.ID, OrderID: allocation.OrderID, PaymentIntentID: allocation.PaymentIntentID, StoreID: allocation.StoreID, PartnerActorID: allocation.PartnerActorID, FulfillmentMode: allocation.FulfillmentMode, Currency: allocation.Currency, SubtotalMinor: allocation.SubtotalMinor, DeliveryFeeMinor: allocation.DeliveryFeeMinor, DiscountMinor: allocation.DiscountMinor, InternalBalanceAmountMinor: allocation.InternalBalanceAmountMinor, CashAmountMinor: allocation.CashAmountMinor, CustomerPayableMinor: allocation.CustomerPayableMinor, PolicyVersion: allocation.PolicyVersion, CreatedAt: allocation.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
+		if allocation.CommissionSnapshot != nil {
+			snapshot := allocation.CommissionSnapshot
+			jsonAllocation.CommissionSnapshot = &partnerStoreCommissionSnapshotJSON{RateBps: snapshot.RateBps, PolicyVersion: snapshot.PolicyVersion, ProfileID: snapshot.ProfileID, ProfileVersion: snapshot.ProfileVersion, RoundingUnitMinor: snapshot.RoundingUnitMinor, SettlementPeriod: snapshot.SettlementPeriod}
+		}
+		result.CustomerPaymentAllocation = jsonAllocation
 	}
 	return result
 }
@@ -1238,6 +1358,8 @@ func writePaymentError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "payment input is invalid")
 	case errors.Is(err, postgres.ErrCustomerPaymentAllocationInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_PAYMENT_ALLOCATION", "payment allocation is invalid")
+	case errors.Is(err, postgres.ErrPartnerStoreCommissionPolicyUnavailable):
+		writeError(w, http.StatusConflict, "COMMISSION_POLICY_UNAVAILABLE", "the Store does not have an initialized commission policy for this fulfillment mode")
 	default:
 		log.Printf("WLT partner financial profile persistence error: %T %v", err, err)
 		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT persistence is unavailable")
@@ -1293,6 +1415,10 @@ func writeFinancialProfileError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "STATE_CONFLICT", "financial profile state does not allow this operation")
 	case errors.Is(err, postgres.ErrFinancialProfileInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "financial profile input is invalid")
+	case errors.Is(err, postgres.ErrPartnerStoreCommissionPolicyUnavailable):
+		writeError(w, http.StatusConflict, "COMMISSION_POLICY_UNAVAILABLE", "the Store commission policy could not be initialized")
+	case errors.Is(err, postgres.ErrPartnerStoreCommissionPolicyConflict):
+		writeError(w, http.StatusConflict, "COMMISSION_POLICY_CONFLICT", "the Store commission policy was already initialized with different terms")
 	default:
 		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT persistence is unavailable")
 	}
@@ -1327,6 +1453,8 @@ func writePartnerCashCommissionError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "STORE_CASH_PAYMENT_INVALID", "store cash payment is not collected by the specified Partner")
 	case errors.Is(err, postgres.ErrPartnerCashCommissionExists):
 		writeError(w, http.StatusConflict, "COMMISSION_EXISTS", "the store cash commission is already recorded")
+	case errors.Is(err, postgres.ErrPartnerCommissionSnapshotMissing):
+		writeError(w, http.StatusConflict, "COMMISSION_SNAPSHOT_MISSING", "this order has no immutable commission policy snapshot")
 	case errors.Is(err, postgres.ErrPartnerRemittanceOverpayment):
 		writeError(w, http.StatusConflict, "REMITTANCE_EXCEEDS_RECEIVABLE", "remittance exceeds the outstanding Partner commission receivable")
 	case errors.Is(err, postgres.ErrPartnerEarningProfile):
@@ -1389,6 +1517,8 @@ func writePartnerEarningError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "PAYMENT_NOT_COLLECTED", "partner earning requires a collected payment")
 	case errors.Is(err, postgres.ErrPartnerEarningProfile):
 		writeError(w, http.StatusConflict, "PROFILE_NOT_ACTIVE", "an active partner financial profile is required")
+	case errors.Is(err, postgres.ErrPartnerCommissionSnapshotMissing):
+		writeError(w, http.StatusConflict, "COMMISSION_SNAPSHOT_MISSING", "this order has no immutable commission policy snapshot")
 	case errors.Is(err, postgres.ErrPartnerEarningExists):
 		writeError(w, http.StatusConflict, "EARNING_EXISTS", "the order earning is already finalized")
 	case errors.Is(err, postgres.ErrLedgerUnbalanced):

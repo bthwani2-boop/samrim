@@ -35,6 +35,33 @@ export function BthwaniButton({ label, variant = "primary", busy = false, disabl
   );
 }
 
+export function BthwaniNavigationRow({ description, icon, onPress, style, title, ...props }: Omit<PressableProps, "children" | "onPress"> & { description: string; icon: MobileIconName; onPress: NonNullable<PressableProps["onPress"]>; title: string }) {
+  const theme = useAppearanceTheme();
+  const styles = React.useMemo(() => createPrimitiveStyles(theme), [theme]);
+  const disabled = Boolean(props.disabled);
+  return (
+    <Pressable
+      {...props}
+      accessibilityLabel={props.accessibilityLabel ?? [title, description].join("، ")}
+      accessibilityHint={props.accessibilityHint ?? description}
+      accessibilityRole={props.accessibilityRole ?? "button"}
+      accessibilityState={{ ...props.accessibilityState, disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={(state) => [styles.navigationRow, disabled && styles.navigationRowDisabled, state.pressed && !disabled && styles.buttonPressed, resolvePressableStyle(style, state)]}
+    >
+      <View style={styles.navigationRowIcon}>
+        <BthwaniIcon name={icon} color={theme.interactiveText} size={sizing.iconLg} />
+      </View>
+      <View style={styles.navigationRowCopy}>
+        <Text style={styles.navigationRowTitle}>{title}</Text>
+        <Text style={styles.navigationRowDescription}>{description}</Text>
+      </View>
+      <BthwaniIcon name="back" color={theme.colorMuted} size={sizing.iconMd} />
+    </Pressable>
+  );
+}
+
 export function BthwaniIconButton({ icon, label, tone = "surface", size = sizing.controlMd, style, ...props }: Omit<PressableProps, "children"> & { icon: MobileIconName; label: string; tone?: "surface" | "soft" | "primary"; size?: number }) {
   const theme = useAppearanceTheme();
   const styles = React.useMemo(() => createPrimitiveStyles(theme), [theme]);
@@ -148,6 +175,12 @@ function createPrimitiveStyles(theme: ThemeColors) {
     chipText: { ...typography.bodySm, color: theme.color, textAlign: "center" },
     chipTextSelected: { color: theme.interactiveText, fontWeight: "600" },
     chipTextDisabled: { color: theme.disabledText },
+    navigationRow: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[3], minHeight: sizing.controlLg + spacing[4], paddingHorizontal: spacing[3], paddingVertical: spacing[3], width: "100%" },
+    navigationRowDisabled: { opacity: opacity.disabled },
+    navigationRowIcon: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.md, height: sizing.avatarMd, justifyContent: "center", width: sizing.avatarMd },
+    navigationRowCopy: { flex: 1, gap: spacing[1], minWidth: 0 },
+    navigationRowTitle: { ...typography.bodyStrong, color: theme.color },
+    navigationRowDescription: { ...typography.caption, color: theme.colorMuted },
     searchField: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColorStrong, borderRadius: radius.md, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], minHeight: sizing.controlLg, paddingHorizontal: spacing[3] },
     searchInput: { ...typography.body, color: theme.color, flex: 1, minHeight: sizing.controlLg, paddingVertical: 0 },
     sectionHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", width: "100%" },

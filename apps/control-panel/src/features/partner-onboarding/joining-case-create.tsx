@@ -19,7 +19,7 @@ export function JoiningCaseCreate() {
   const [verticalId, setVerticalId] = useState("");
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
-  const [fulfillmentModes, setFulfillmentModes] = useState<ReadonlyArray<"BTHWANI_CAPTAIN" | "CUSTOMER_PICKUP">>(["BTHWANI_CAPTAIN"]);
+  const [fulfillmentModes, setFulfillmentModes] = useState<ReadonlyArray<"BTHWANI_CAPTAIN" | "PARTNER_CAPTAIN" | "CUSTOMER_PICKUP">>([]);
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
   const [optionsBusy, setOptionsBusy] = useState(true);
@@ -107,10 +107,11 @@ export function JoiningCaseCreate() {
         <label className="field-label" htmlFor="joining-latitude">خط عرض موقع المتجر<input id="joining-latitude" disabled={busy || optionsBusy} inputMode="decimal" value={latitude} onChange={(event) => setLatitude(toAsciiDigits(event.target.value))} placeholder="مثال: 15.369445" /></label>
         <label className="field-label" htmlFor="joining-longitude">خط طول موقع المتجر<input id="joining-longitude" disabled={busy || optionsBusy} inputMode="decimal" value={longitude} onChange={(event) => setLongitude(toAsciiDigits(event.target.value))} placeholder="مثال: 44.191006" /></label>
         <fieldset className="field-label" disabled={busy || optionsBusy}>
-          <legend>طرق تلبية الطلب في المتجر</legend>
-          <label><input type="checkbox" checked={fulfillmentModes.includes("BTHWANI_CAPTAIN")} onChange={(event) => setFulfillmentModes((current) => event.target.checked ? current.includes("BTHWANI_CAPTAIN") ? current : [...current, "BTHWANI_CAPTAIN"] : current.length <= 1 ? current : current.filter((mode) => mode !== "BTHWANI_CAPTAIN"))} /> توصيل بثواني</label>
-          <label><input type="checkbox" checked={fulfillmentModes.includes("CUSTOMER_PICKUP")} onChange={(event) => setFulfillmentModes((current) => event.target.checked ? current.includes("CUSTOMER_PICKUP") ? current : [...current, "CUSTOMER_PICKUP"] : current.length <= 1 ? current : current.filter((mode) => mode !== "CUSTOMER_PICKUP"))} /> الاستلام من المتجر</label>
-          <span className="muted">اختر الطرق التي يقدمها المتجر فعلًا؛ لا يظهر الاستلام للعميل ما لم يُفعّل هنا.</span>
+          <legend>أوضاع الطلب التي اختارها الشريك عند الانضمام</legend>
+          <label><input type="checkbox" checked={fulfillmentModes.includes("BTHWANI_CAPTAIN")} onChange={(event) => setFulfillmentModes((current) => event.target.checked ? current.includes("BTHWANI_CAPTAIN") ? current : [...current, "BTHWANI_CAPTAIN"] : current.filter((mode) => mode !== "BTHWANI_CAPTAIN"))} /> توصيل بثواني · مسؤولية المنصة</label>
+          <label><input type="checkbox" checked={fulfillmentModes.includes("PARTNER_CAPTAIN")} onChange={(event) => setFulfillmentModes((current) => event.target.checked ? current.includes("PARTNER_CAPTAIN") ? current : [...current, "PARTNER_CAPTAIN"] : current.filter((mode) => mode !== "PARTNER_CAPTAIN"))} /> توصيل المتجر · يختار المتجر أحد كباتنه</label>
+          <label><input type="checkbox" checked={fulfillmentModes.includes("CUSTOMER_PICKUP")} onChange={(event) => setFulfillmentModes((current) => event.target.checked ? current.includes("CUSTOMER_PICKUP") ? current : [...current, "CUSTOMER_PICKUP"] : current.filter((mode) => mode !== "CUSTOMER_PICKUP"))} /> استلم بنفسك من المتجر</label>
+          <span className="muted">تُثبت هذه الإتاحة عند الانضمام، وتظهر للعميل الخيارات المفعّلة فقط. تغييرها بعد إنشاء المتجر متاح للمشغّل في لوحة التحكم.</span>
         </fieldset>
         <button type="button" className="button button-primary" disabled={busy || optionsBusy || Boolean(optionsError) || activeCities.length === 0 || activeVerticals.length === 0} onClick={() => void createCase()}>{busy ? "جارٍ إنشاء الحالة…" : "إنشاء حالة انضمام"}</button>
       </div>

@@ -1,4 +1,4 @@
-import { type CommerceVertical, createDshMobileClient, type JoiningCaseResponse, type ServiceCity, type StoreCaptainInvitationResponse, type StoreCaptainMembershipListResponse, type StoreCaptainMembershipResponse, type StoreCaptainMembershipTransitionRequest, type StoreFulfillmentMode, type StoreFulfillmentModesResponse } from "@bthwani/dsh";
+import { type CommerceVertical, createDshMobileClient, type JoiningCaseResponse, type ServiceCity, type StoreCaptainInvitationResponse, type StoreCaptainMembershipListResponse, type StoreCaptainMembershipResponse, type StoreCaptainMembershipTransitionRequest } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
@@ -18,13 +18,8 @@ export async function readOwnJoiningCase(): Promise<JoiningCaseResponse> {
   return accessToken().then((token) => dshClient().readOwnJoiningCase(token));
 }
 
-export async function correctAndResubmitOwnJoiningCase(caseID: string, businessName: string, firstStoreName: string, serviceCityId: string, firstStoreVerticalId: string, firstStoreLatitude: number, firstStoreLongitude: number, fulfillmentModes: ReadonlyArray<StoreFulfillmentMode>, expectedVersion: number): Promise<JoiningCaseResponse> {
-  return accessToken().then((token) => dshClient().correctAndResubmitJoiningCase(token, caseID, { businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, firstStoreFulfillmentModes: fulfillmentModes }, expectedVersion));
-}
-
-export async function updateOwnStoreFulfillmentModes(storeID: string, fulfillmentModes: ReadonlyArray<StoreFulfillmentMode>, expectedVersion: number): Promise<StoreFulfillmentModesResponse> {
-  const token = await accessToken();
-  return dshClient().setStoreFulfillmentModes(token, storeID, { fulfillmentModes }, expectedVersion);
+export async function correctAndResubmitOwnJoiningCase(caseID: string, businessName: string, firstStoreName: string, serviceCityId: string, firstStoreVerticalId: string, firstStoreLatitude: number, firstStoreLongitude: number, expectedVersion: number): Promise<JoiningCaseResponse> {
+  return accessToken().then((token) => dshClient().correctAndResubmitJoiningCase(token, caseID, { businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude }, expectedVersion));
 }
 
 export async function listOwnStoreCaptainMemberships(storeID: string): Promise<StoreCaptainMembershipListResponse> {

@@ -22,16 +22,17 @@ var (
 )
 
 type Service struct {
-	identity *identityintegration.Client
-	db       *sql.DB
-	payment  *wlt.Client
+	identity  *identityintegration.Client
+	db        *sql.DB
+	payment   *wlt.Client
+	proofKeys *postgres.DeliveryProofKeyring
 }
 
-func New(identity *identityintegration.Client, db *sql.DB, payment *wlt.Client) (*Service, error) {
-	if identity == nil || db == nil || payment == nil {
+func New(identity *identityintegration.Client, db *sql.DB, payment *wlt.Client, proofKeys *postgres.DeliveryProofKeyring) (*Service, error) {
+	if identity == nil || db == nil || payment == nil || proofKeys == nil {
 		return nil, errors.New("order configuration is invalid")
 	}
-	return &Service{identity: identity, db: db, payment: payment}, nil
+	return &Service{identity: identity, db: db, payment: payment, proofKeys: proofKeys}, nil
 }
 
 func (s *Service) Read(ctx context.Context, accessToken, orderID string) (postgres.OrderRecord, error) {
@@ -75,7 +76,7 @@ func (s *Service) ReadClientDeliveryProof(ctx context.Context, accessToken, orde
 	if err != nil {
 		return postgres.DeliveryProofRecord{}, err
 	}
-	return postgres.ReadClientDeliveryProof(ctx, s.db, orderID, identity)
+	return postgres.ReadClientDeliveryProof(ctx, s.db, orderID, identity, s.proofKeys)
 }
 
 func (s *Service) ReadClientOrderRating(ctx context.Context, accessToken, orderID string) (postgres.OrderRatingRecord, error) {
@@ -219,7 +220,18 @@ func (s *Service) CompleteStorePickupForPartner(ctx context.Context, accessToken
 	if current.StoreID != strings.TrimSpace(storeID) {
 		return postgres.OrderRecord{}, false, ErrStoreOwnershipForbidden
 	}
-	return postgres.CompleteStorePickup(ctx, s.db, orderID, code, expectedVersion, strings.TrimSpace(idempotencyKey), identity, strings.TrimSpace(correlationID))
+	return postgres.CompleteStorePickup(ctx, s.db, orderID, code, expectedVersion, strings.TrimSpace(idempotencyKey), identity, strings.TrimSpace(correlationID), s.proofKeys)
+}
+
+func (s *Service) ConfirmStoreCaptainCashHandoff(ctx context.Context, accessToken, storeID, orderID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
+	identity, err := s.requireSession(ctx, accessToken, "partner", "app-partner")
+	if err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	if err := s.requireOwnedStore(ctx, identity, storeID); err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	return postgres.ConfirmStoreCaptainCashHandoff(ctx, s.db, strings.TrimSpace(storeID), strings.TrimSpace(orderID), identity, expectedVersion, strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID))
 }
 
 func (s *Service) requireSession(ctx context.Context, accessToken, role, surface string) (string, error) {

@@ -1,10 +1,15 @@
 import { borders, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniChip, BthwaniIcon, BthwaniIconButton, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type Href, useRouter } from "expo-router";
-import { type PropsWithChildren, useMemo } from "react";
-import { type ColorValue, ScrollView, StyleSheet, Text, View } from "react-native";
+import { BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSearchField, useAppearanceTheme } from "@bthwani/design-system/native";
+import { type Href, useLocalSearchParams, useRouter } from "expo-router";
+import { type PropsWithChildren, useEffect, useMemo, useRef } from "react";
+import { type ColorValue, ScrollView, StyleSheet, Text, type TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useServiceCityScope } from "../features/service-city/service-city-scope";
+
+type ClientSearchNavigation = {
+  navigate: (screen: "home", params: { focus: "search" }) => void;
+  setParams: (params: { focus?: string; q?: string }) => void;
+};
 
 export function ClientPublicShell({ children }: PropsWithChildren) {
   const theme = useAppearanceTheme();
@@ -20,29 +25,60 @@ export function ClientPublicShell({ children }: PropsWithChildren) {
 export function ClientPublicHeader({ safeArea = true }: { safeArea?: boolean }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const header = <ClientHeader context="اكتشاف المتاجر" searchHref={"/?focus=search" as Href} styles={styles} />;
+  const { focus, q } = useLocalSearchParams<{ focus?: string | string[]; q?: string | string[] }>();
+  const header = <ClientHeader context="اكتشاف المتاجر" searchOnCurrentRoute focus={focus} searchQuery={q} styles={styles} />;
   return safeArea ? <SafeAreaView edges={["top"]} style={styles.headerSafeArea}>{header}</SafeAreaView> : header;
 }
 
-function ClientHeader({ context, searchHref, styles }: { context: string; searchHref: Href; styles: ReturnType<typeof createStyles> }) {
+function ClientHeader({ context, searchOnCurrentRoute = false, focus: rawFocus, searchQuery: rawQuery, navigation, styles }: { context: string; searchOnCurrentRoute?: boolean; focus?: string | string[] | undefined; searchQuery?: string | string[] | undefined; navigation?: ClientSearchNavigation; styles: ReturnType<typeof createStyles> }) {
   const router = useRouter();
+  const focus = Array.isArray(rawFocus) ? rawFocus[0] : rawFocus;
+  const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
+  const isSearchOpen = focus === "search";
+  const searchInputRef = useRef<TextInput>(null);
   const { cities, clearSelectedCity, selectedCityID } = useServiceCityScope();
   const cityName = cities.find((city) => city.id === selectedCityID)?.displayNameAr ?? "اختر المدينة";
 
+  useEffect(() => {
+    if (!isSearchOpen) return;
+    const focusTimer = setTimeout(() => searchInputRef.current?.focus(), 50);
+    return () => clearTimeout(focusTimer);
+  }, [isSearchOpen]);
+
   return (
     <View style={styles.header}>
-      <View style={styles.headerIdentity}>
-        <Text style={styles.brand}>بثواني</Text>
-        <View style={styles.headerMeta}>
-          <Text style={styles.context}>{context}</Text>
-          <BthwaniChip accessibilityLabel="تغيير مدينة الخدمة" icon="location" label={cityName} onPress={() => void clearSelectedCity()} style={styles.headerCity} />
+      {isSearchOpen ? (
+        <View style={styles.headerSearchActions}>
+          <BthwaniSearchField
+            accessibilityLabel="البحث في المتاجر"
+            autoCapitalize="none"
+            autoCorrect={false}
+            containerStyle={styles.headerSearchField}
+            inputRef={searchInputRef}
+            onChangeText={(value) => { if (navigation) navigation.setParams({ q: value }); else router.setParams({ q: value }); }}
+            onClear={() => { if (navigation) navigation.setParams({ q: "" }); else router.setParams({ q: "" }); }}
+            placeholder="ابحث باسم المتجر"
+            returnKeyType="search"
+            value={searchQuery}
+          />
+          <BthwaniIconButton icon="close" label="إغلاق البحث" onPress={() => { if (navigation) navigation.setParams({ focus: "", q: "" }); else router.setParams({ focus: "", q: "" }); }} size={sizing.controlMd} tone="soft" />
         </View>
-      </View>
-      <View style={styles.headerActions}>
-        <BthwaniIconButton icon="search" label="البحث عن متجر" onPress={() => router.push(searchHref)} size={sizing.controlMd} tone="soft" />
-        <BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/notifications" as Href)} size={sizing.controlMd} tone="soft" />
-        <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlMd} tone="soft" />
-      </View>
+      ) : (
+        <>
+          <View style={styles.headerIdentity}>
+            <Text style={styles.brand}>بثواني</Text>
+            <View style={styles.headerMeta}>
+              <Text style={styles.context}>{context}</Text>
+              <BthwaniChip accessibilityLabel="تغيير مدينة الخدمة" icon="location" label={cityName} onPress={() => void clearSelectedCity()} style={styles.headerCity} />
+            </View>
+          </View>
+          <View style={styles.headerActions}>
+            <BthwaniIconButton icon="search" label="البحث عن متجر" onPress={() => { if (searchOnCurrentRoute) { if (navigation) navigation.setParams({ focus: "search" }); else router.setParams({ focus: "search" }); } else if (navigation) navigation.navigate("home", { focus: "search" }); else router.push("/home?focus=search" as Href); }} size={sizing.controlMd} tone="soft" />
+            <BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/notifications" as Href)} size={sizing.controlMd} tone="soft" />
+            <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlMd} tone="soft" />
+          </View>
+        </>
+      )}
     </View>
   );
 }
@@ -62,7 +98,10 @@ export function createClientTabOptions(theme: ReturnType<typeof resolveTheme>) {
   const icons = { home: "home", orders: "orders", wallet: "wallet", account: "account" } as const;
   return ({ route }: { route: { name: string } }) => ({
     headerShown: true,
-    header: () => <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><ClientHeader context="مساحة العميل" searchHref={"/home?focus=search" as Href} styles={styles} /></SafeAreaView>,
+    header: ({ route: headerRoute, navigation }: { route: { params?: unknown }; navigation: unknown }) => {
+      const params = headerRoute.params as { focus?: string | string[]; q?: string | string[] } | undefined;
+      return <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><ClientHeader context="مساحة العميل" searchOnCurrentRoute={route.name === "home"} focus={params?.focus} searchQuery={params?.q} navigation={navigation as ClientSearchNavigation} styles={styles} /></SafeAreaView>;
+    },
     tabBarActiveBackgroundColor: theme.actionSoft,
     tabBarActiveTintColor: theme.interactiveText,
     tabBarHideOnKeyboard: true,
@@ -87,11 +126,13 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     headerMeta: { alignItems: "center", flexDirection: "row", gap: spacing[2], maxWidth: "100%" },
     headerCity: { backgroundColor: theme.actionSoft, borderColor: theme.borderColorStrong, flexShrink: 1, minHeight: sizing.controlSm, paddingHorizontal: spacing[2] },
     headerActions: { alignItems: "center", flexDirection: "row", gap: spacing[2] },
+    headerSearchActions: { alignItems: "center", flex: 1, flexDirection: "row", gap: spacing[2], minWidth: 0 },
+    headerSearchField: { flex: 1, minWidth: 0 },
     content: { flex: 1 },
     scene: { backgroundColor: theme.background },
     screenContent: { flexGrow: 1, paddingBottom: spacing[5], paddingHorizontal: spacing[5], width: "100%" },
     navigation: { backgroundColor: theme.surfaceRaised, borderTopColor: theme.borderColorStrong, borderTopWidth: borders.hairline, elevation: 8, minHeight: 84, paddingHorizontal: spacing[3], paddingTop: spacing[2], zIndex: 8 },
-    navigationItem: { borderRadius: radius.lg, flex: 1, minHeight: sizing.controlLg, paddingHorizontal: spacing[2], paddingVertical: spacing[1] },
+    navigationItem: { borderRadius: radius.lg, flex: 1, minHeight: sizing.controlLg, paddingHorizontal: spacing[2], paddingVertical: spacing[1], transform: [{ translateY: -spacing[4] }] },
     navigationLabel: { ...typography.label, marginTop: spacing[1] },
   });
 }

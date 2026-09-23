@@ -1,4 +1,4 @@
-import { type BeneficiaryPayoutStateResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CashLiabilityResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateDeliveryFeePolicyRequest, type CreateDiscoveryContentRequest, type CreateJoiningCaseRequest, type CreatePromotionRequest, type CreateServiceCityRequest, type DeliveryFeePolicyResponse, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentListResponse, type DiscoveryContentResponse, dshOperationPaths, type FieldAdmissionRequest, type FieldAdmissionResponse, type FieldReenrollmentRequest, type FieldCommissionPolicy, type FieldFinancialSummaryResponse, type JoiningCaseListResponse, type JoiningCaseResponse, type ManagedRoleMutationRequest, type MarketingPublicationRequest, type NotificationListResponse, type NotificationReadResponse, type OfficialWalletDestination, type OperatorOperationResponse, type OperatorOperationsResponse, type PartnerCommissionRemittanceRequest, type PartnerCommissionRemittanceResponse, type PartnerFinancialSummaryResponse, type PayoutRequest, type PromotionListResponse, type PromotionResponse, type PublishedStoreListResponse, type PublicationAction, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type ReviewJoiningCaseRequest, type ServiceCityListResponse, type ServiceCityResponse, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogProductRequest, type UpdateServiceCityRequest } from "@bthwani/dsh";
+import { type BeneficiaryPayoutStateResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CashLiabilityResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateDeliveryFeePolicyRequest, type CreateDiscoveryContentRequest, type CreateJoiningCaseRequest, type CreatePromotionRequest, type CreateServiceCityRequest, type DeliveryFeePolicyResponse, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentListResponse, type DiscoveryContentResponse, dshOperationPaths, type FieldAdmissionRequest, type FieldAdmissionResponse, type FieldReenrollmentRequest, type FieldCommissionPolicy, type FieldFinancialSummaryResponse, type JoiningCaseListResponse, type JoiningCaseResponse, type ManagedRoleMutationRequest, type MarketingPublicationRequest, type NotificationListResponse, type NotificationReadResponse, type OfficialWalletDestination, type OperatorOperationResponse, type OperatorOperationsResponse, type PartnerCommissionRemittanceRequest, type PartnerCommissionRemittanceResponse, type PartnerFinancialSummaryResponse, type PartnerStoreCommissionPoliciesResponse, type PartnerStoreCommissionPolicyUpdateRequest, type PartnerStoreCommissionPolicyUpdateResponse, type PayoutRequest, type PromotionListResponse, type PromotionResponse, type PublishedStoreListResponse, type PublicationAction, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type ReviewJoiningCaseRequest, type ServiceCityListResponse, type ServiceCityResponse, type SetStoreFulfillmentModesRequest, type StoreFulfillmentModesResponse, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogProductRequest, type UpdateServiceCityRequest } from "@bthwani/dsh";
 import { validateServiceUrl } from "@bthwani/identity";
 
 type DshClientError =
@@ -317,6 +317,22 @@ export async function createOperatorFieldCommissionPolicy(input: CreateFieldComm
   return requestDshJson<FieldCommissionPolicyResponse>(dshOperationPaths.createFieldCommissionPolicy.method, dshOperationPaths.createFieldCommissionPolicy.path, { ...input, scopeId: input.scopeId?.trim() || "" }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
+export async function readOperatorPartnerStoreCommissionPolicies(storeId: string, context: DshOperatorReadContext): Promise<PartnerStoreCommissionPoliciesResponse> {
+  const normalizedStoreId = storeId.trim();
+  if (!context.operatorActorId.trim() || !normalizedStoreId || normalizedStoreId.length > 128) throw new Error("DSH_PARTNER_STORE_COMMISSION_POLICY_READ_INPUT_INVALID");
+  const path = `${dshOperationPaths.readOperatorPartnerStoreCommissionPolicies.path}?storeId=${encodeURIComponent(normalizedStoreId)}`;
+  return (await requestDshJson<PartnerStoreCommissionPoliciesResponse>(dshOperationPaths.readOperatorPartnerStoreCommissionPolicies.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function updateOperatorPartnerStoreCommissionPolicy(input: PartnerStoreCommissionPolicyUpdateRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: PartnerStoreCommissionPolicyUpdateResponse }>> {
+  const validMode = ["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"].includes(input.fulfillmentMode);
+  const reasonLength = Array.from(input.reason.trim()).length;
+  if (!input.storeId.trim() || input.storeId.trim().length > 128 || !validMode || !Number.isInteger(input.commissionRateBps) || input.commissionRateBps < 0 || input.commissionRateBps > 10000 || !Number.isInteger(input.expectedVersion) || input.expectedVersion < 1 || reasonLength < 8 || reasonLength > 500) throw new Error("DSH_PARTNER_STORE_COMMISSION_POLICY_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_PARTNER_STORE_COMMISSION_POLICY_IDEMPOTENCY_INVALID");
+  return requestDshJson<PartnerStoreCommissionPolicyUpdateResponse>(dshOperationPaths.updateOperatorPartnerStoreCommissionPolicy.method, dshOperationPaths.updateOperatorPartnerStoreCommissionPolicy.path, { ...input, storeId: input.storeId.trim(), reason: input.reason.trim() }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
 export async function listJoiningCases(state: string, limit: number, cursor: string, context: DshOperatorReadContext): Promise<JoiningCaseListResponse> {
   if (!context.operatorActorId.trim() || !Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error("DSH_JOINING_CASE_QUEUE_INPUT_INVALID");
   const params = new URLSearchParams({ limit: String(limit) });
@@ -535,6 +551,23 @@ export async function setStorePublication(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export async function setStoreFulfillmentModes(
+  storeId: string,
+  input: SetStoreFulfillmentModesRequest,
+  context: StorePublicationMutationContext,
+): Promise<Readonly<{ status: number; payload: StoreFulfillmentModesResponse }>> {
+  if (!storeId.trim() || input.fulfillmentModes.length < 1) throw new Error("DSH_STORE_FULFILLMENT_MODES_INPUT_INVALID");
+  validateVersionedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_STORE_FULFILLMENT_MODES_IDEMPOTENCY_INVALID");
+  const path = dshOperationPaths.setStoreFulfillmentModes.path.replace("{storeId}", encodeURIComponent(storeId.trim()));
+  return requestDshJson<StoreFulfillmentModesResponse>(dshOperationPaths.setStoreFulfillmentModes.method, path, input, {
+    "X-Acting-Actor-ID": context.operatorActorId.trim(),
+    "X-Correlation-ID": context.correlationId.trim(),
+    "X-Expected-Version": String(context.expectedVersion),
+    "Idempotency-Key": context.idempotencyKey.trim(),
+  });
 }
 
 type DshManagedRoleMutationContext = DshVersionedMutationContext & Readonly<{ idempotencyKey: string }>;

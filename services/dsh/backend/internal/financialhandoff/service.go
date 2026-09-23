@@ -70,6 +70,18 @@ func (s *Service) apply(ctx context.Context, item postgres.FinancialHandoffOutbo
 			return fmt.Errorf("recognize Partner store pickup commission: %w", err)
 		}
 		return nil
+	case "PARTNER_CAPTAIN_STORE_CASH_COLLECTION":
+		intent, err := s.wlt.EnsureCollected(ctx, item.PaymentIntentID, item.PartnerActorID, wltintegration.DerivedExternalReference("store-captain-cash", item.IdempotencyKey), item.AmountMinor, wltintegration.DerivedIdempotencyKey("store-captain-cash-collect", item.IdempotencyKey), item.CorrelationID)
+		if err != nil {
+			return fmt.Errorf("collect Store Captain cash handoff: %w", err)
+		}
+		if intent.State != "COLLECTED" || intent.Method != wltintegration.MethodCashAtStore || intent.CollectedByActorID == nil || *intent.CollectedByActorID != item.PartnerActorID {
+			return errors.New("WLT Store Captain collection does not match the Store cash handoff")
+		}
+		if _, _, err := s.wlt.FinalizePartnerStoreCashCommission(ctx, item.OrderID, item.PaymentIntentID, item.PartnerActorID, "PARTNER_CAPTAIN", wltintegration.DerivedIdempotencyKey("store-captain-commission", item.OrderID), item.CorrelationID); err != nil {
+			return fmt.Errorf("recognize Partner Store Captain commission: %w", err)
+		}
+		return nil
 	case "CAPTAIN_COD_RELEASE":
 		if _, _, err := s.wlt.ReleaseCaptainCOD(ctx, item.OrderID, item.PaymentIntentID, item.CaptainActorID, wltintegration.DerivedIdempotencyKey("captain-cod-release-reassign", item.IdempotencyKey), item.CorrelationID); err != nil {
 			var wltErr *wltintegration.Error

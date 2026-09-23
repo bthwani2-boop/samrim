@@ -94,6 +94,18 @@ func (s *Service) Publish(ctx context.Context, storeID, requestedState string, e
 	return result, readiness, nil
 }
 
+func (s *Service) SetFulfillmentModes(ctx context.Context, storeID string, modes []string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.StoreFulfillmentModesResult, error) {
+	actingActorID = strings.TrimSpace(actingActorID)
+	operator, err := s.identity.ReadActorRole(ctx, actingActorID, "operator")
+	if err != nil {
+		return postgres.StoreFulfillmentModesResult{}, err
+	}
+	if operator.Role != "operator" || !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
+		return postgres.StoreFulfillmentModesResult{}, ErrOperatorNotActive
+	}
+	return postgres.SetStoreFulfillmentModes(ctx, s.db, storeID, actingActorID, modes, expectedVersion, idempotencyKey, correlationID)
+}
+
 func (s *Service) ReadForOperator(ctx context.Context, storeID, actingActorID string) (postgres.StoreRecord, PublicationReadiness, error) {
 	actingActorID = strings.TrimSpace(actingActorID)
 	operator, err := s.identity.ReadActorRole(ctx, actingActorID, "operator")

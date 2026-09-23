@@ -16,8 +16,8 @@ function accessDenied() {
     <section className="state-content workspace-restricted">
       <div className="state-card" role="alert">
         <p className="eyebrow">صلاحية غير متاحة</p>
-        <h1>المالية للمشغلين فقط</h1>
-        <p className="muted">لا تمنح هذه الصفحة صلاحيات إضافية خارج Identity.</p>
+        <h1>صلاحية المالية غير متاحة</h1>
+        <p className="muted">يتطلب فتح هذه المساحة صلاحية Finance الممنوحة لهذا الموظف في Identity.</p>
       </div>
     </section>
   );
@@ -29,7 +29,7 @@ export function FinanceWorkspace({ resource, children }: { resource: FinanceReso
   const activeResource = resource === "overview" ? resourceForPath(pathname) : resource;
 
   if (state.kind !== "authenticated") return null;
-  if (state.identity.role !== "operator") return accessDenied();
+  if (state.identity.role !== "operator" || !state.identity.permissions?.includes("finance")) return accessDenied();
 
   const selected = workspaceFinanceResources.find((item) => item.key === activeResource) ?? workspaceFinanceResources[0]!;
   return (

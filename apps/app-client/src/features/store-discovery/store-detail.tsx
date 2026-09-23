@@ -1,6 +1,6 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { formatMoney, type PublicCatalogResponse, type PublicStoreView } from "@bthwani/dsh";
+import { availableCustomerFulfillmentModes, fulfillmentModeLabel, formatMoney, type CustomerFulfillmentMode, type PublicCatalogResponse, type PublicStoreView } from "@bthwani/dsh";
 import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
@@ -32,6 +32,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [error, setError] = useState("");
   const [isFavorite, setIsFavorite] = useState(false);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
+  const [selectedFulfillmentMode, setSelectedFulfillmentMode] = useState<CustomerFulfillmentMode | null>(null);
   const mutationBusy = Boolean(busyOfferId);
 
   const load = useCallback(async () => {
@@ -137,6 +138,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
 
   async function add(offer: PublicCatalogResponse["offers"][number]) {
     if (busyOfferId) return;
+    if (!selectedFulfillmentMode) {
+      setError("اختر طريقة الطلب من الخيارات المتاحة لهذا المتجر أولًا.");
+      return;
+    }
     if (currentIdentityState().kind !== "authenticated") {
       router.replace(`/?returnTo=/store/${encodeURIComponent(storeId)}` as Href);
       return;
@@ -210,7 +215,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           );
         })}
         {modifierError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.validationError}>{modifierError}</Text> : null}
-        <BthwaniButton accessibilityLabel={`إضافة ${offer.productName}`} busy={busy} disabled={mutationBusy || Boolean(modifierError)} label="إضافة إلى السلة" onPress={() => void add(offer)} />
+        <BthwaniButton accessibilityLabel={`إضافة ${offer.productName}`} busy={busy} disabled={!selectedFulfillmentMode || mutationBusy || Boolean(modifierError)} label="إضافة إلى السلة" onPress={() => void add(offer)} />
         {addedOfferId === offer.offerId ? <Text accessibilityLiveRegion="polite" style={styles.success}>تمت الإضافة. يمكنك متابعة اختيار المنتجات أو فتح السلة.</Text> : null}
       </BthwaniSurface>
     );
@@ -230,6 +235,11 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           tone={isFavorite ? "primary" : "soft"}
         />
         <BthwaniIcon name="success" color={theme.success} size={sizing.iconLg} />
+      </BthwaniSurface>
+      <BthwaniSectionHeader title="اختر طريقة الطلب" subtitle="تظهر لك الأوضاع التي فعّلها هذا المتجر فقط." />
+      <BthwaniSurface tone="inset" style={styles.fulfillmentModes} accessibilityLabel="أوضاع الطلب المتاحة في المتجر">
+        {availableCustomerFulfillmentModes(state.store.fulfillmentModes).map((mode) => <BthwaniChip key={mode} accessibilityHint={fulfillmentModeDescription(mode)} label={fulfillmentModeLabel(mode)} onPress={() => { setSelectedFulfillmentMode(mode); setError(""); }} selected={selectedFulfillmentMode === mode} />)}
+        {selectedFulfillmentMode ? <Text style={styles.muted}>{fulfillmentModeDescription(selectedFulfillmentMode)}</Text> : <Text style={styles.validationError}>اختر وضعًا قبل إضافة المنتجات وفتح السلة.</Text>}
       </BthwaniSurface>
       <BthwaniSectionHeader title="استكشف المنتجات" subtitle={`${state.catalog.offers.length} منتج معروض${catalogRefreshing ? " · جارٍ التحديث…" : ""}`} />
       <BthwaniSearchField
@@ -271,12 +281,18 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       {state.catalog.nextCursor ? <BthwaniButton busy={loadingMore} disabled={catalogRefreshing} label="تحميل المزيد" onPress={() => void loadMore()} style={styles.loadMoreButton} variant="secondary" /> : null}
       <BthwaniSurface tone="inset" style={styles.cartCta}>
         <View style={styles.cartIcon}><BthwaniIcon name="cart" color={theme.interactiveText} size={sizing.iconLg} /></View>
-        <Text style={styles.muted}>أضف المنتجات واضبط الخيارات هنا، ثم افتح السلة لاختيار العنوان وإتمام الطلب.</Text>
-        <BthwaniButton accessibilityLabel="فتح السلة" disabled={mutationBusy} label="فتح السلة" onPress={() => router.push(`/cart/${encodeURIComponent(storeId)}` as Href)} />
+        <Text style={styles.muted}>طريقة الطلب المختارة: {selectedFulfillmentMode ? fulfillmentModeLabel(selectedFulfillmentMode) : "لم تختر بعد"} · ستتمكن من مراجعتها في السلة.</Text>
+        <BthwaniButton accessibilityLabel="فتح السلة" disabled={mutationBusy || !selectedFulfillmentMode} label="فتح السلة" onPress={() => router.push(`/cart/${encodeURIComponent(storeId)}?fulfillmentMode=${encodeURIComponent(selectedFulfillmentMode ?? "")}` as Href)} />
       </BthwaniSurface>
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     </View>
   );
+}
+
+function fulfillmentModeDescription(mode: CustomerFulfillmentMode): string {
+  if (mode === "BTHWANI_CAPTAIN") return "المنصة تتولى إسناد التوصيل وإدارته.";
+  if (mode === "PARTNER_CAPTAIN") return "المتجر يختار أحد كباتنه لتوصيل الطلب. لا توجد رسوم توصيل في الإصدار الأول.";
+  return "تذهب إلى المتجر وتستلم الطلب بنفسك، من دون توصيل أو عنوان توصيل.";
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
@@ -291,6 +307,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     merchantIcon: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.lg, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
     merchantImage: { borderRadius: radius.lg, height: sizing.avatarLg, width: sizing.avatarLg },
     merchantCopy: { flex: 1, gap: spacing[1] },
+    fulfillmentModes: { gap: spacing[2], padding: spacing[3] },
     rating: { ...typography.bodySm, color: theme.warning },
     sectionChips: { gap: spacing[2], paddingVertical: spacing[1] },
     searchField: { width: "100%" },

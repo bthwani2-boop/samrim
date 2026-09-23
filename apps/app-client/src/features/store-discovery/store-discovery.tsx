@@ -1,9 +1,9 @@
 import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { CommerceVertical, DiscoveryContentView, PromotionView, PublicStoreView } from "@bthwani/dsh";
-import { type Href, useRouter } from "expo-router";
+import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { I18nManager, Image, Pressable, ScrollView, StyleSheet, Text, type TextInput, useWindowDimensions, View } from "react-native";
+import { I18nManager, Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useServiceCityScope } from "../service-city/service-city-scope";
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
 import { listCatalogVerticals, listFavoriteStoreIDs, listOwnDeliveryAddresses, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, setFavoriteStore } from "./store-discovery-client";
@@ -14,8 +14,10 @@ type DiscoveryState =
   | { kind: "empty" }
   | { kind: "error" };
 
-export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthentication, autoFocusSearch = false }: { isAuthenticated?: boolean; onRequireAuthentication?: (() => void) | undefined; autoFocusSearch?: boolean }) {
+export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthentication }: { isAuthenticated?: boolean; onRequireAuthentication?: (() => void) | undefined }) {
   const router = useRouter();
+  const { q: rawQuery } = useLocalSearchParams<{ q?: string | string[] }>();
+  const query = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
   const { cities, selectedCityID } = useServiceCityScope();
   const theme = useAppearanceTheme();
   const { width: viewportWidth } = useWindowDimensions();
@@ -24,15 +26,11 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<DiscoveryState>({ kind: "loading" });
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
-  const [query, setQuery] = useState("");
   const [storeFilter, setStoreFilter] = useState<"all" | "newest" | "nearest" | "favorites">("all");
   const [selectedVerticalID, setSelectedVerticalID] = useState("");
   const [favoriteBusyStoreID, setFavoriteBusyStoreID] = useState("");
   const [favoriteError, setFavoriteError] = useState("");
   const [marketing, setMarketing] = useState<{ content: ReadonlyArray<DiscoveryContentView>; promotions: ReadonlyArray<PromotionView>; error: boolean }>({ content: [], promotions: [], error: false });
-  const searchInputRef = useRef<TextInput>(null);
-  const shouldAutoFocusSearch = autoFocusSearch && state.kind !== "loading";
-
   const cityName = cities.find((city) => city.id === selectedCityID)?.displayNameAr ?? "مدينتك";
 
   const load = useCallback(async () => {
@@ -81,12 +79,6 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
 
   useEffect(() => { void load(); }, [load]);
 
-  useEffect(() => {
-    if (!shouldAutoFocusSearch) return;
-    const focusTimer = setTimeout(() => searchInputRef.current?.focus(), 50);
-    return () => clearTimeout(focusTimer);
-  }, [shouldAutoFocusSearch]);
-
   const filteredStores = useMemo(() => {
     if (state.kind !== "ready") return [];
     const stores = state.stores.filter((store) => (storeFilter !== "favorites" || state.favoriteStoreIDs.includes(store.id)) && (storeFilter !== "nearest" || typeof store.distanceMeters === "number") && (!selectedVerticalID || store.primaryVerticalId === selectedVerticalID));
@@ -104,8 +96,6 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
 
   const mediaContent = useMemo(() => marketing.content.filter((item) => Boolean(item.mediaUri) && (item.kind === "BANNER" || item.kind === "CAROUSEL")).slice(0, 8), [marketing.content]);
   const textContent = useMemo(() => marketing.content.filter((item) => !item.mediaUri || (item.kind !== "BANNER" && item.kind !== "CAROUSEL")).slice(0, 4), [marketing.content]);
-
-  const searchField = <BthwaniSearchField accessibilityLabel="البحث في المتاجر" inputRef={searchInputRef} onChangeText={setQuery} onClear={() => setQuery("")} placeholder="ابحث باسم المتجر" value={query} />;
 
   async function toggleFavorite(storeID: string) {
     if (!isAuthenticated) {
@@ -142,11 +132,11 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   }
 
   if (state.kind === "error") {
-    return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر تجهيز الاكتشاف</Text><Text style={styles.muted}>تحقق من الاتصال ثم أعد المحاولة.</Text>{searchField}<BthwaniButton label="إعادة المحاولة" onPress={() => void load()} />{!isAuthenticated && onRequireAuthentication ? <BthwaniButton label="تسجيل الدخول للطلب" onPress={onRequireAuthentication} variant="secondary" /> : null}</View>;
+    return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر تجهيز الاكتشاف</Text><Text style={styles.muted}>تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} />{!isAuthenticated && onRequireAuthentication ? <BthwaniButton label="تسجيل الدخول للطلب" onPress={onRequireAuthentication} variant="secondary" /> : null}</View>;
   }
 
   if (state.kind === "empty") {
-    return <View style={styles.state}><View style={styles.emptyIcon}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconXl} /></View><Text style={styles.title}>{selectedCityID ? "لا توجد متاجر متاحة بعد" : "اختر مدينة للبدء"}</Text><Text style={styles.muted}>{selectedCityID ? `لا توجد متاجر منشورة للطلب في ${cityName} حاليًا.` : "تظهر المتاجر بحسب مدينة الخدمة التي تختارها."}</Text>{searchField}<BthwaniButton label="تحديث المتاجر" onPress={() => void load()} variant="secondary" />{!isAuthenticated && onRequireAuthentication ? <BthwaniButton label="تسجيل الدخول للطلب" onPress={onRequireAuthentication} /> : null}</View>;
+    return <View style={styles.state}><View style={styles.emptyIcon}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconXl} /></View><Text style={styles.title}>{selectedCityID ? "لا توجد متاجر متاحة بعد" : "اختر مدينة للبدء"}</Text><Text style={styles.muted}>{selectedCityID ? `لا توجد متاجر منشورة للطلب في ${cityName} حاليًا.` : "تظهر المتاجر بحسب مدينة الخدمة التي تختارها."}</Text><BthwaniButton label="تحديث المتاجر" onPress={() => void load()} variant="secondary" />{!isAuthenticated && onRequireAuthentication ? <BthwaniButton label="تسجيل الدخول للطلب" onPress={onRequireAuthentication} /> : null}</View>;
   }
 
   return (
@@ -196,7 +186,6 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         </> : null}
       </View> : marketing.error ? <Text accessibilityRole="alert" style={styles.error}>تعذر تحميل بعض العروض والمحتوى. يمكنك متابعة تصفح المتاجر.</Text> : null}
 
-      {searchField}
       <View style={styles.filterRow}>
         <BthwaniChip label="كل المتاجر" selected={storeFilter === "all"} onPress={() => setStoreFilter("all")} />
         <BthwaniChip label="الأحدث" selected={storeFilter === "newest"} onPress={() => setStoreFilter("newest")} />
@@ -239,7 +228,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           <BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} />
           <Text style={styles.cardTitle}>{query.trim() ? "لا توجد نتائج بهذا الاسم" : selectedVerticalID ? "لا توجد متاجر ضمن هذا المجال" : "لا توجد متاجر مطابقة"}</Text>
           <Text style={styles.muted}>{query.trim() ? "جرّب اسمًا أقصر أو امسح البحث لعرض كل المتاجر." : "غيّر المجال أو أزل الفلاتر لعرض المتاجر المتاحة."}</Text>
-          {query.trim() ? <BthwaniButton label="مسح البحث" onPress={() => setQuery("")} variant="quiet" /> : null}
+          {query.trim() ? <BthwaniButton label="مسح البحث" onPress={() => router.setParams({ q: "" })} variant="quiet" /> : null}
         </BthwaniSurface>
       ) : (
         <View style={styles.list}>

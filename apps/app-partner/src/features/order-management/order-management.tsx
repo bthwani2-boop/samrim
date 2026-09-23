@@ -1,9 +1,9 @@
 import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniChip, BthwaniSearchField, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type CaptainAssignment, captainHandoffStateLabel, createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderTransitionRequest, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
+import { BthwaniButton, BthwaniChip, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
+import { type CaptainAssignment, type CaptainOffer, captainHandoffStateLabel, createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderTransitionRequest, orderStateLabel, paymentMethodLabel, paymentStateLabel, type StoreCaptainMembership } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { OrderConversation } from "./order-conversation";
@@ -55,22 +55,28 @@ function matchesQuery(order: Order, query: string): boolean {
 export function OrderManagement({ storeId }: { storeId: string }) {
 const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const { focus } = useLocalSearchParams<{ focus?: string | string[] }>();
-  const searchInputRef = useRef<TextInput>(null);
+  const router = useRouter();
+  const { q: rawQuery } = useLocalSearchParams<{ q?: string | string[] }>();
+  const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
   const [orders, setOrders] = useState<ReadonlyArray<Order>>([]);
   const [assignments, setAssignments] = useState<Readonly<Record<string, CaptainAssignment>>>({});
+  const [storeCaptainActorIDs, setStoreCaptainActorIDs] = useState<ReadonlyArray<string>>([]);
+  const [dispatchOffers, setDispatchOffers] = useState<Readonly<Record<string, CaptainOffer>>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<QueueFilter>("ALL");
-  const [searchQuery, setSearchQuery] = useState("");
   const [pickupCodes, setPickupCodes] = useState<Readonly<Record<string, string>>>({});
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const nextOrders = (await client().listStoreOrders(token, storeId)).orders;
+      const [orderResponse, membershipResponse] = await Promise.all([
+        client().listStoreOrders(token, storeId),
+        client().listPartnerStoreCaptainMemberships(token, storeId),
+      ]);
+      const nextOrders = orderResponse.orders;
       const entries = await Promise.all(nextOrders.filter((order) => order.state === "CAPTAIN_ASSIGNED" || order.state === "IN_CUSTODY").map(async (order) => {
         try { return [order.id, (await client().readStoreCaptainAssignment(token, storeId, order.id)).assignment] as const; }
         catch (cause) {
@@ -78,15 +84,22 @@ const theme = useAppearanceTheme();
           throw cause;
         }
       }));
+      const offerEntries = await Promise.all(nextOrders.filter((order) => order.fulfillmentMode === "PARTNER_CAPTAIN" && order.state === "READY_FOR_DISPATCH").map(async (order) => {
+        try { return [order.id, (await client().readPartnerStoreCaptainDispatchOffer(token, storeId, order.id)).offer] as const; }
+        catch (cause) {
+          if (cause && typeof cause === "object" && (cause as { kind?: unknown }).kind === "http" && (cause as { status?: unknown }).status === 404) return null;
+          throw cause;
+        }
+      }));
       setOrders(nextOrders);
       setAssignments(Object.fromEntries(entries.filter((entry): entry is readonly [string, CaptainAssignment] => entry !== null)));
+      setStoreCaptainActorIDs(membershipResponse.memberships.flatMap((membership: StoreCaptainMembership) => membership.state === "active" && membership.captainActorId ? [membership.captainActorId] : []));
+      setDispatchOffers(Object.fromEntries(offerEntries.filter((entry): entry is readonly [string, CaptainOffer] => entry !== null)));
     } catch (cause) { console.error("DSH order list failed", cause); setError("تعذر قراءة الطلبات. أعد المحاولة."); }
     finally { setLoading(false); }
   }, [storeId]);
 
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => { if (focus !== "search") return; const timer = setTimeout(() => searchInputRef.current?.focus(), 80); return () => clearTimeout(timer); }, [focus]);
-
   const filteredOrders = useMemo(() => orders.filter((order) => (filter === "ALL" || queueForOrder(order) === filter) && matchesQuery(order, searchQuery)), [filter, orders, searchQuery]);
   const queueCounts = useMemo(() => Object.fromEntries(queueFilters.map(({ key }) => [key, key === "ALL" ? orders.length : orders.filter((order) => queueForOrder(order) === key).length])) as Record<QueueFilter, number>, [orders]);
 
@@ -111,6 +124,17 @@ const theme = useAppearanceTheme();
     finally { setBusy(""); }
   }
 
+  async function confirmStoreCaptainCashHandoff(order: Order) {
+    if (busy || loading || order.fulfillmentMode !== "PARTNER_CAPTAIN" || order.state !== "DELIVERED" || order.storeCashHandoffState !== "AWAITING_STORE_HANDOFF") return;
+    setBusy(order.id); setError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      await client().confirmPartnerCaptainCashHandoff(token, storeId, order.id, order.version);
+      await load();
+    } catch (cause) { console.error("DSH Store Captain cash handoff confirmation failed", cause); setError("تعذر تأكيد استلام النقد من الكابتن. تحقق من الاستلام الفعلي ثم أعد قراءة الطلب قبل المحاولة."); }
+    finally { setBusy(""); }
+  }
+
   function markPickupNoShow(order: Order) {
     if (busy || loading || order.state !== "READY_FOR_PICKUP" || order.fulfillmentMode !== "CUSTOMER_PICKUP" || order.paymentMethod !== "CASH_AT_STORE" || order.paymentState !== "REQUIRES_COLLECTION") return;
     Alert.alert("تسجيل عدم حضور العميل", "سيُلغى الطلب غير المستلم، ويُحرر المخزون المحجوز، ويُلغى التحصيل غير المدفوع. لا تسجل ذلك إذا كان العميل قد استلم الطلب.", [
@@ -127,6 +151,18 @@ const theme = useAppearanceTheme();
     finally { setBusy(""); }
   }
 
+  async function dispatchToStoreCaptain(order: Order, captainActorId: string) {
+    if (busy || loading || order.fulfillmentMode !== "PARTNER_CAPTAIN" || order.state !== "READY_FOR_DISPATCH" || dispatchOffers[order.id]?.state === "offered") return;
+    setBusy(order.id); setError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const result = await client().createPartnerStoreCaptainDispatchOffer(token, storeId, order.id, { captainActorId }, order.version);
+      setDispatchOffers((current) => ({ ...current, [order.id]: result.offer }));
+      await load();
+    } catch (cause) { console.error("DSH Store Captain dispatch failed", cause); setError("تعذر إرسال الطلب إلى كابتن المتجر. أعد قراءة الطلبات والعضويات ثم حاول مرة أخرى."); }
+    finally { setBusy(""); }
+  }
+
   return (
     <View style={styles.container} accessibilityLabel="إدارة طلبات المتجر">
       <Text style={styles.title}>طلبات المتجر</Text>
@@ -140,18 +176,18 @@ const theme = useAppearanceTheme();
         </View>
       ) : null}
 
-      <BthwaniSearchField accessibilityLabel="البحث في طلبات المتجر" editable={!loading && !busy} inputRef={searchInputRef} onChangeText={setSearchQuery} onClear={() => setSearchQuery("")} placeholder="ابحث برقم الطلب أو العنوان أو المنتج" value={searchQuery} />
       <View style={styles.filterRow} accessibilityLabel="تصفية طلبات المتجر">
         {queueFilters.map(({ key, label }) => <BthwaniChip key={key} disabled={loading || Boolean(busy)} label={`${label} (${queueCounts[key]})`} onPress={() => setFilter(key)} selected={filter === key} />)}
       </View>
 
       {loading ? <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة طلبات المتجر" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الطلبات…</Text></View> : null}
       {!loading && !orders.length ? <Text style={styles.muted}>لا توجد طلبات جديدة.</Text> : null}
-      {!loading && orders.length > 0 && !filteredOrders.length ? <View style={styles.state}><Text style={styles.muted}>لا توجد طلبات مطابقة لهذا البحث أو التصنيف.</Text><BthwaniButton disabled={Boolean(busy)} label="عرض كل الطلبات" onPress={() => { setFilter("ALL"); setSearchQuery(""); }} variant="secondary" /></View> : null}
+      {!loading && orders.length > 0 && !filteredOrders.length ? <View style={styles.state}><Text style={styles.muted}>لا توجد طلبات مطابقة لهذا البحث أو التصنيف.</Text><BthwaniButton disabled={Boolean(busy)} label="عرض كل الطلبات" onPress={() => { setFilter("ALL"); router.setParams({ q: "" }); }} variant="secondary" /></View> : null}
 
       {filteredOrders.map((order) => {
         const next = nextState(order);
         const assignment = assignments[order.id];
+        const dispatchOffer = dispatchOffers[order.id];
         const actionDisabled = loading || Boolean(busy);
         return (
           <View key={order.id} style={styles.order}>
@@ -167,7 +203,9 @@ const theme = useAppearanceTheme();
               {order.lines.map((line) => <View key={line.id} style={styles.line}><Text style={styles.lineTitle}>{line.productName} · {line.variantTitle}</Text><Text style={styles.muted}>المطلوب: {formatQuantity(line.baseUnit, line.requestedQuantityBaseUnits)} · النهائي: {formatQuantity(line.baseUnit, line.finalQuantityBaseUnits)}</Text><Text style={styles.muted}>{pricingBasisLabel(line.pricingBasis)} · {formatMoney(line.lineAmountMinor, line.currency)}{line.modifierAmountMinor > 0 ? ` · الإضافات: ${formatMoney(line.modifierAmountMinor, line.currency)}` : ""}</Text>{line.modifierSnapshots.length ? <Text style={styles.muted}>الإضافات المحددة: {line.modifierSnapshots.map((modifier) => modifier.optionNameAr).join("، ")}</Text> : null}{line.attributeSnapshots.length ? <Text style={styles.muted}>تفاصيل المنتج: {line.attributeSnapshots.map((attribute) => `${attribute.code}: ${attributeSnapshotValue(attribute)}`).join("، ")}</Text> : null}</View>)}
             </View>
             {assignment ? <View style={styles.handoff}><BthwaniStatusBadge icon={assignment.handoff.state === "completed" ? "success" : "deliveries"} label={`تسليم المتجر: ${captainHandoffStateLabel(assignment.handoff.state)}`} tone={assignment.handoff.state === "completed" ? "success" : "warning"} />{assignment.handoff.state === "pending" ? <BthwaniButton busy={busy === order.id} disabled={actionDisabled} label="تأكيد جاهزية التسليم" onPress={() => void confirmHandoff(order, assignment)} /> : null}</View> : null}
+            {order.fulfillmentMode === "PARTNER_CAPTAIN" && order.state === "READY_FOR_DISPATCH" ? <View style={styles.handoff} accessibilityLabel="إسناد طلب التوصيل إلى كابتن المتجر"><Text style={styles.lineTitle}>إسناد الطلب إلى كابتن المتجر</Text>{dispatchOffer?.state === "offered" ? <Text style={styles.muted}>أُرسل الطلب إلى {dispatchOffer.captainActorId} وبانتظار قبوله.</Text> : <>{dispatchOffer ? <Text style={styles.muted}>{dispatchOffer.state === "rejected" ? "رفض الكابتن العرض. يمكنك إرساله إلى كابتن آخر." : "انتهت مهلة العرض. يمكنك إرساله إلى كابتن آخر."}</Text> : null}{storeCaptainActorIDs.length ? storeCaptainActorIDs.map((captainActorId) => <BthwaniButton key={captainActorId} busy={busy === order.id} disabled={actionDisabled} label={`إرسال الطلب إلى ${captainActorId}`} onPress={() => void dispatchToStoreCaptain(order, captainActorId)} variant="secondary" />) : <Text style={styles.muted}>لا يوجد كابتن نشط مرتبط بهذا المتجر. أرسل دعوة للكابتن واطلب منه قبولها في تطبيق الكابتن.</Text>}</>}</View> : null}
             {order.state === "READY_FOR_PICKUP" ? <View style={styles.pickupConfirmation}><TextInput accessibilityLabel="رمز الاستلام الذي قدمه العميل" editable={!actionDisabled} keyboardType="number-pad" maxLength={6} onChangeText={(value) => setPickupCodes((current) => ({ ...current, [order.id]: toAsciiDigits(value).replace(/[^0-9]/g, "").slice(0, 6) }))} placeholder="رمز الاستلام من العميل" placeholderTextColor={theme.colorMuted} style={styles.pickupCodeInput} textAlign="center" value={pickupCodes[order.id] ?? ""} /><BthwaniButton busy={busy === order.id} disabled={actionDisabled || toAsciiDigits(pickupCodes[order.id] ?? "").length !== 6} label="تأكيد استلام العميل" onPress={() => void confirmStorePickup(order)} />{order.fulfillmentMode === "CUSTOMER_PICKUP" && order.paymentMethod === "CASH_AT_STORE" && order.paymentState === "REQUIRES_COLLECTION" ? <BthwaniButton disabled={actionDisabled} label="العميل لم يحضر" onPress={() => markPickupNoShow(order)} variant="danger" /> : null}</View> : null}
+            {order.fulfillmentMode === "PARTNER_CAPTAIN" && order.state === "DELIVERED" ? <View style={styles.pickupConfirmation}><Text style={styles.lineTitle}>تسوية نقد توصيل المتجر</Text>{order.storeCashHandoffState === "AWAITING_STORE_HANDOFF" ? <><Text style={styles.muted}>استلم من الكابتن مبلغ الطلب نقدًا: {formatMoney(order.totalAmountMinor, order.currency)}. لن تُسجل العمولة حتى تؤكد الاستلام الفعلي.</Text><BthwaniButton busy={busy === order.id} disabled={actionDisabled} label="أكد استلام النقد من الكابتن" onPress={() => void confirmStoreCaptainCashHandoff(order)} /></> : order.storeCashHandoffState === "STORE_CONFIRMED" ? <Text style={styles.muted}>أكدت استلام النقد. جارٍ تسجيل التحصيل والعمولة.</Text> : order.storeCashHandoffState === "SETTLED" ? <Text style={styles.muted}>تم تأكيد التحصيل من المتجر وتسوية عمولة المنصة.</Text> : <Text style={styles.muted}>ينتظر النظام تسجيل اكتمال تسليم الكابتن.</Text>}</View> : null}
             {next ? <View style={styles.actionRow}><BthwaniButton busy={busy === order.id} disabled={actionDisabled} label={next === "PARTNER_ACCEPTED" ? "قبول الطلب" : next === "PREPARING" ? "بدء التجهيز" : next === "READY_FOR_PICKUP" ? "جاهز للاستلام" : "جاهز للتسليم"} onPress={() => void transition(order)} style={styles.actionButton} />{next === "PARTNER_ACCEPTED" ? <BthwaniButton disabled={actionDisabled} label="رفض الطلب" onPress={() => void transition(order, "REJECTED")} style={styles.actionButton} variant="danger" /> : null}</View> : null}
             <OrderConversation orderId={order.id} />
           </View>

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
@@ -89,6 +88,7 @@ type CheckoutInput struct {
 	PaymentCancellationKey   string
 	PaymentMethod            string
 	PromotionCode            string
+	DeliveryProofKeyring     *DeliveryProofKeyring
 	DeliveryFeeResolver      DeliveryFeeResolver
 	PaymentProvisioner       PaymentIntentProvisioner
 	PaymentCanceller         PaymentIntentCanceller
@@ -169,6 +169,7 @@ type OrderRecord struct {
 	PaymentIntentID              *string
 	PaymentMethod                string
 	PaymentState                 string
+	StoreCashHandoffState        string
 	Version                      int
 	Lines                        []OrderLineRecord
 	CreatedAt                    time.Time
@@ -206,15 +207,23 @@ func stableCheckoutOrderID(clientActorID, cartID, idempotencyKey string) string 
 	return "order_" + hex.EncodeToString(digest[:16])
 }
 
-func ReadClientDeliveryProof(ctx context.Context, db *sql.DB, orderID, clientActorID string) (DeliveryProofRecord, error) {
-	if db == nil || strings.TrimSpace(orderID) == "" || strings.TrimSpace(clientActorID) == "" {
+func ReadClientDeliveryProof(ctx context.Context, db *sql.DB, orderID, clientActorID string, keys *DeliveryProofKeyring) (DeliveryProofRecord, error) {
+	if db == nil || keys == nil || strings.TrimSpace(orderID) == "" || strings.TrimSpace(clientActorID) == "" {
 		return DeliveryProofRecord{}, ErrOrderNotFound
 	}
 	var proof DeliveryProofRecord
-	if err := db.QueryRowContext(ctx, `SELECT p.order_id,p.proof_type,p.state,CASE WHEN p.state='PENDING' AND ((p.proof_type='STORE_PICKUP' AND o.state='READY_FOR_PICKUP') OR (p.proof_type='DELIVERY' AND o.state='IN_CUSTODY')) THEN p.code ELSE '' END,p.verified_at FROM dsh.commerce_order_delivery_proofs p JOIN dsh.commerce_orders o ON o.id=p.order_id AND o.client_actor_id=p.client_actor_id WHERE p.order_id=$1 AND p.client_actor_id=$2`, strings.TrimSpace(orderID), strings.TrimSpace(clientActorID)).Scan(&proof.OrderID, &proof.ProofType, &proof.State, &proof.Code, &proof.VerifiedAt); errors.Is(err, sql.ErrNoRows) {
+	var keyID, ciphertext string
+	err := db.QueryRowContext(ctx, `SELECT p.order_id,p.proof_type,p.state,CASE WHEN p.state='PENDING' AND ((p.proof_type='STORE_PICKUP' AND o.state='READY_FOR_PICKUP') OR (p.proof_type='DELIVERY' AND o.state='IN_CUSTODY')) THEN p.code_key_id ELSE '' END,CASE WHEN p.state='PENDING' AND ((p.proof_type='STORE_PICKUP' AND o.state='READY_FOR_PICKUP') OR (p.proof_type='DELIVERY' AND o.state='IN_CUSTODY')) THEN p.code_ciphertext ELSE '' END,p.verified_at FROM dsh.commerce_order_delivery_proofs p JOIN dsh.commerce_orders o ON o.id=p.order_id AND o.client_actor_id=p.client_actor_id WHERE p.order_id=$1 AND p.client_actor_id=$2`, strings.TrimSpace(orderID), strings.TrimSpace(clientActorID)).Scan(&proof.OrderID, &proof.ProofType, &proof.State, &keyID, &ciphertext, &proof.VerifiedAt)
+	if errors.Is(err, sql.ErrNoRows) {
 		return DeliveryProofRecord{}, ErrOrderNotFound
 	} else if err != nil {
 		return DeliveryProofRecord{}, err
+	}
+	if ciphertext != "" {
+		proof.Code, err = keys.Decrypt(proof.OrderID, keyID, ciphertext)
+		if err != nil {
+			return DeliveryProofRecord{}, err
+		}
 	}
 	return proof, nil
 }
@@ -354,7 +363,7 @@ func decodeOperatorOperationsCursor(raw, state string) (operatorOperationsCursor
 	return cursor, nil
 }
 
-const orderSelectColumns = `o.id,o.client_actor_id,o.store_id,o.cart_id,o.fulfillment_mode,COALESCE(o.address_id,''),COALESCE(o.address_version,0),COALESCE(o.address_text,''),COALESCE(o.address_latitude,0),COALESCE(o.address_longitude,0),o.service_city_id,COALESCE(o.serviceability_policy_version,''),COALESCE(o.serviceability_status,''),o.serviceability_store_version,COALESCE(o.serviceability_address_version,0),o.state,o.subtotal_amount_minor,o.discount_minor,o.promotion_id,o.promotion_code,o.total_amount_minor,o.currency,o.payment_intent_id,o.payment_method,o.payment_state,o.version,o.created_at,o.updated_at`
+const orderSelectColumns = `o.id,o.client_actor_id,o.store_id,o.cart_id,o.fulfillment_mode,COALESCE(o.address_id,''),COALESCE(o.address_version,0),COALESCE(o.address_text,''),COALESCE(o.address_latitude,0),COALESCE(o.address_longitude,0),o.service_city_id,COALESCE(o.serviceability_policy_version,''),COALESCE(o.serviceability_status,''),o.serviceability_store_version,COALESCE(o.serviceability_address_version,0),o.state,o.subtotal_amount_minor,o.discount_minor,o.promotion_id,o.promotion_code,o.total_amount_minor,o.currency,o.payment_intent_id,o.payment_method,o.payment_state,o.version,o.created_at,o.updated_at,COALESCE((SELECT h.state FROM dsh.commerce_order_store_cash_handoffs h WHERE h.order_id=o.id),'')`
 const orderSelectColumnsWithStore = orderSelectColumns + `,s.name,CASE WHEN o.fulfillment_mode='CUSTOMER_PICKUP' THEN s.delivery_origin_latitude END,CASE WHEN o.fulfillment_mode='CUSTOMER_PICKUP' THEN s.delivery_origin_longitude END`
 
 func scanOrder(row rowScanner) (OrderRecord, error) {
@@ -373,7 +382,7 @@ func scanOrderColumns(row rowScanner, includeStore bool) (OrderRecord, error) {
 		&order.ID, &order.ClientActorID, &order.StoreID, &order.CartID, &order.FulfillmentMode, &order.AddressID, &order.AddressVersion, &order.AddressText,
 		&order.AddressLatitude, &order.AddressLongitude, &order.ServiceCityID, &order.ServiceabilityPolicyVersion, &order.ServiceabilityStatus,
 		&order.ServiceabilityStoreVersion, &order.ServiceabilityAddressVersion, &order.State, &order.SubtotalAmountMinor, &order.DiscountMinor, &promotionID, &promotionCode, &order.TotalAmountMinor, &order.Currency,
-		&paymentIntentID, &order.PaymentMethod, &order.PaymentState, &order.Version, &order.CreatedAt, &order.UpdatedAt,
+		&paymentIntentID, &order.PaymentMethod, &order.PaymentState, &order.Version, &order.CreatedAt, &order.UpdatedAt, &order.StoreCashHandoffState,
 	}
 	if includeStore {
 		destinations = append(destinations, &order.StoreName, &pickupLatitude, &pickupLongitude)
@@ -528,15 +537,16 @@ func listOrderLineAttributeSnapshots(ctx context.Context, source queryer, orderL
 
 func CreateOrderFromCart(ctx context.Context, db *sql.DB, input CheckoutInput) (result OrderRecord, replayed bool, returnErr error) {
 	pickup := input.FulfillmentMode == FulfillmentModeCustomerPickup
-	validMode := input.FulfillmentMode == FulfillmentModeBthwaniCaptain || pickup
-	validPaymentMethod := (pickup && input.PaymentMethod == "CASH_AT_STORE") || (!pickup && input.PaymentMethod == "CASH_ON_DELIVERY")
+	partnerCaptain := input.FulfillmentMode == FulfillmentModePartnerCaptain
+	validMode := input.FulfillmentMode == FulfillmentModeBthwaniCaptain || partnerCaptain || pickup
+	validPaymentMethod := ((pickup || partnerCaptain) && input.PaymentMethod == "CASH_AT_STORE") || (input.FulfillmentMode == FulfillmentModeBthwaniCaptain && input.PaymentMethod == "CASH_ON_DELIVERY")
 	validEvidence := input.Evidence.StoreVersion > 0 && strings.TrimSpace(input.Evidence.ServiceCityID) != ""
 	if pickup {
 		validEvidence = validEvidence && strings.TrimSpace(input.AddressID) == "" && input.Evidence.AddressVersion == 0 && strings.TrimSpace(input.Evidence.Status) == "" && strings.TrimSpace(input.Evidence.PolicyVersion) == ""
 	} else {
 		validEvidence = validEvidence && strings.TrimSpace(input.AddressID) != "" && input.Evidence.AddressVersion > 0 && input.Evidence.Status == "SERVICEABLE" && strings.TrimSpace(input.Evidence.PolicyVersion) != ""
 	}
-	if strings.TrimSpace(input.ClientActorID) == "" || strings.TrimSpace(input.CartID) == "" || strings.TrimSpace(input.StoreID) == "" || !validMode || !validPaymentMethod || !validEvidence || input.ExpectedCartVersion < 1 || strings.TrimSpace(input.IdempotencyKey) == "" || strings.TrimSpace(input.RequestHash) == "" || strings.TrimSpace(input.CorrelationID) == "" || strings.TrimSpace(input.PaymentExternalReference) == "" || strings.TrimSpace(input.PaymentIdempotencyKey) == "" || strings.TrimSpace(input.PaymentCancellationKey) == "" || input.PaymentProvisioner == nil || input.PaymentCanceller == nil {
+	if strings.TrimSpace(input.ClientActorID) == "" || strings.TrimSpace(input.CartID) == "" || strings.TrimSpace(input.StoreID) == "" || !validMode || !validPaymentMethod || !validEvidence || input.ExpectedCartVersion < 1 || strings.TrimSpace(input.IdempotencyKey) == "" || strings.TrimSpace(input.RequestHash) == "" || strings.TrimSpace(input.CorrelationID) == "" || strings.TrimSpace(input.PaymentExternalReference) == "" || strings.TrimSpace(input.PaymentIdempotencyKey) == "" || strings.TrimSpace(input.PaymentCancellationKey) == "" || input.PaymentProvisioner == nil || input.PaymentCanceller == nil || input.DeliveryProofKeyring == nil {
 		return OrderRecord{}, false, ErrCheckoutEvidenceStale
 	}
 	tx, err := db.BeginTx(ctx, nil)
@@ -722,11 +732,12 @@ WHERE s.id=$1 AND s.publication_state='published' AND ($4='CUSTOMER_PICKUP' OR a
 			return OrderRecord{}, false, err
 		}
 	}
-	if orderSizeBaseUnits <= 0 || (!pickup && input.DeliveryFeeResolver == nil) {
+	requiresDeliveryFee := input.FulfillmentMode == FulfillmentModeBthwaniCaptain
+	if orderSizeBaseUnits <= 0 || (requiresDeliveryFee && input.DeliveryFeeResolver == nil) {
 		return OrderRecord{}, false, ErrDeliveryFeeUnavailable
 	}
 	feeQuote := DeliveryFeeQuote{FeeMinor: 0, PolicyVersion: "NOT_APPLICABLE"}
-	if !pickup {
+	if requiresDeliveryFee {
 		feeQuote, err = input.DeliveryFeeResolver(ctx, DeliveryFeeQuoteInput{ServiceCityID: input.Evidence.ServiceCityID, OriginLatitude: input.Evidence.StoreOriginLatitude, OriginLongitude: input.Evidence.StoreOriginLongitude, DestinationLatitude: input.Evidence.AddressLatitude, DestinationLongitude: input.Evidence.AddressLongitude, OrderSizeBaseUnits: orderSizeBaseUnits})
 		if err != nil || feeQuote.FeeMinor < 0 || strings.TrimSpace(feeQuote.PolicyVersion) == "" {
 			return OrderRecord{}, false, ErrDeliveryFeeUnavailable
@@ -740,6 +751,14 @@ WHERE s.id=$1 AND s.publication_state='published' AND ($4='CUSTOMER_PICKUP' OR a
 	totalWithDelivery := orderTotal.Int64()
 	newOrderID := stableCheckoutOrderID(input.ClientActorID, input.CartID, input.IdempotencyKey)
 	deliveryProofCode, err := newDeliveryProofCode()
+	if err != nil {
+		return OrderRecord{}, false, err
+	}
+	proofKeyID, proofCiphertext, err := input.DeliveryProofKeyring.Encrypt(newOrderID, deliveryProofCode)
+	if err != nil {
+		return OrderRecord{}, false, err
+	}
+	proofVerifier, err := input.DeliveryProofKeyring.ProofVerifier(newOrderID, proofKeyID, deliveryProofCode)
 	if err != nil {
 		return OrderRecord{}, false, err
 	}
@@ -763,7 +782,7 @@ WHERE s.id=$1 AND s.publication_state='published' AND ($4='CUSTOMER_PICKUP' OR a
 	if pickup {
 		proofType = "STORE_PICKUP"
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_delivery_proofs(order_id,client_actor_id,code,code_hash,proof_type) VALUES($1,$2,$3,$4,$5)`, newOrderID, input.ClientActorID, deliveryProofCode, HashDeliveryProofCode(newOrderID, deliveryProofCode), proofType); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_delivery_proofs(order_id,client_actor_id,code_ciphertext,code_verifier,code_key_id,proof_type) VALUES($1,$2,$3,$4,$5,$6)`, newOrderID, input.ClientActorID, proofCiphertext, proofVerifier, proofKeyID, proofType); err != nil {
 		return OrderRecord{}, false, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_payment_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,payment_intent_id,from_state,to_state,amount_minor) VALUES('payment_intent_linked',$1,$2,$3,$4,$5,'NOT_LINKED',$6,$7)`, input.IdempotencyKey, input.CorrelationID, input.ActingActorID, newOrderID, payment.IntentID, payment.State, totalWithDelivery); err != nil {
@@ -917,16 +936,19 @@ func HashStorePickupCompletion(orderID, code string, expectedVersion int) string
 	return hashFacts(strings.TrimSpace(orderID), HashDeliveryProofCode(orderID, code), strconv.Itoa(expectedVersion), "PICKED_UP")
 }
 
-func CompleteStorePickup(ctx context.Context, db *sql.DB, orderID, code string, expectedVersion int, idempotencyKey, actingPartnerActorID, correlationID string) (OrderRecord, bool, error) {
+func CompleteStorePickup(ctx context.Context, db *sql.DB, orderID, code string, expectedVersion int, idempotencyKey, actingPartnerActorID, correlationID string, keys *DeliveryProofKeyring) (OrderRecord, bool, error) {
 	orderID = strings.TrimSpace(orderID)
 	code = strings.TrimSpace(code)
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	actingPartnerActorID = strings.TrimSpace(actingPartnerActorID)
 	correlationID = strings.TrimSpace(correlationID)
-	if db == nil || orderID == "" || len(code) != 6 || expectedVersion < 1 || idempotencyKey == "" || actingPartnerActorID == "" || correlationID == "" {
+	if db == nil || keys == nil || orderID == "" || !validDeliveryProofCode(code) || expectedVersion < 1 || idempotencyKey == "" || actingPartnerActorID == "" || correlationID == "" {
 		return OrderRecord{}, false, ErrOrderTransitionInvalid
 	}
-	requestHash := HashStorePickupCompletion(orderID, code, expectedVersion)
+	requestHash, err := keys.ActiveIdempotencyHash("store-pickup-completion", orderID, code, strconv.Itoa(expectedVersion), "PICKED_UP")
+	if err != nil {
+		return OrderRecord{}, false, err
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return OrderRecord{}, false, err
@@ -938,7 +960,7 @@ func CompleteStorePickup(ctx context.Context, db *sql.DB, orderID, code string, 
 	var storedHash, storedOrderID, storedState string
 	err = tx.QueryRowContext(ctx, "SELECT request_hash,order_id,requested_state FROM dsh.commerce_order_transition_idempotency WHERE idempotency_key=$1 FOR UPDATE", idempotencyKey).Scan(&storedHash, &storedOrderID, &storedState)
 	if err == nil {
-		if storedHash != requestHash || storedOrderID != orderID || storedState != "PICKED_UP" {
+		if !keys.VerifyIdempotencyHash(storedHash, "store-pickup-completion", orderID, code, strconv.Itoa(expectedVersion), "PICKED_UP") || storedOrderID != orderID || storedState != "PICKED_UP" {
 			return OrderRecord{}, false, ErrOrderTransitionConflict
 		}
 		order, readErr := readOrder(ctx, tx, "o.id=$1", orderID)
@@ -973,21 +995,20 @@ func CompleteStorePickup(ctx context.Context, db *sql.DB, orderID, code string, 
 	if storePartnerActorID != actingPartnerActorID {
 		return OrderRecord{}, false, ErrOrderNotFound
 	}
-	var proofHash, proofState, proofType string
-	if err := tx.QueryRowContext(ctx, `SELECT code_hash,state,proof_type FROM dsh.commerce_order_delivery_proofs WHERE order_id=$1 AND client_actor_id=$2 FOR UPDATE`, orderID, current.ClientActorID).Scan(&proofHash, &proofState, &proofType); err != nil {
+	var proofHash, proofState, proofType, proofKeyID string
+	if err := tx.QueryRowContext(ctx, `SELECT code_verifier,state,proof_type,code_key_id FROM dsh.commerce_order_delivery_proofs WHERE order_id=$1 AND client_actor_id=$2 FOR UPDATE`, orderID, current.ClientActorID).Scan(&proofHash, &proofState, &proofType, &proofKeyID); err != nil {
 		return OrderRecord{}, false, err
 	}
-	expectedCodeHash := HashDeliveryProofCode(orderID, code)
 	if proofType != "STORE_PICKUP" || proofState != "PENDING" {
 		return OrderRecord{}, false, ErrOrderStateConflict
 	}
-	if subtle.ConstantTimeCompare([]byte(proofHash), []byte(expectedCodeHash)) != 1 {
+	if !keys.VerifyProof(orderID, proofKeyID, proofHash, code) {
 		return OrderRecord{}, false, ErrStorePickupProofInvalid
 	}
 	if err := consumeOrderInventoryTx(ctx, tx, orderID); err != nil {
 		return OrderRecord{}, false, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_order_delivery_proofs SET state='VERIFIED',verified_by=$2,verified_at=clock_timestamp(),updated_at=clock_timestamp() WHERE order_id=$1 AND state='PENDING'`, orderID, actingPartnerActorID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_order_delivery_proofs SET state='VERIFIED',code_ciphertext=NULL,code_verifier=NULL,code_key_id=NULL,verified_by=$2,verified_at=clock_timestamp(),updated_at=clock_timestamp() WHERE order_id=$1 AND state='PENDING'`, orderID, actingPartnerActorID); err != nil {
 		return OrderRecord{}, false, err
 	}
 	result, err := scanOrder(tx.QueryRowContext(ctx, "UPDATE dsh.commerce_orders AS o SET state='PICKED_UP',version=version+1,updated_at=clock_timestamp() WHERE o.id=$1 AND o.version=$2 RETURNING "+orderSelectColumns, orderID, expectedVersion))
@@ -1001,6 +1022,84 @@ func CompleteStorePickup(ctx context.Context, db *sql.DB, orderID, code string, 
 		return OrderRecord{}, false, err
 	}
 	if err := enqueueFinancialHandoffTx(ctx, tx, FinancialHandoffOutbox{EffectType: "STORE_PICKUP_COLLECTION", SourceRef: idempotencyKey, OrderID: orderID, PaymentIntentID: *current.PaymentIntentID, PartnerActorID: actingPartnerActorID, AmountMinor: current.TotalAmountMinor, IdempotencyKey: idempotencyKey, CorrelationID: correlationID, ActingActorID: actingPartnerActorID}); err != nil {
+		return OrderRecord{}, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return OrderRecord{}, false, err
+	}
+	order, err := ReadOrder(ctx, db, orderID)
+	return order, false, err
+}
+
+func ConfirmStoreCaptainCashHandoff(ctx context.Context, db *sql.DB, storeID, orderID, actingPartnerActorID string, expectedVersion int, idempotencyKey, correlationID string) (OrderRecord, bool, error) {
+	storeID, orderID, actingPartnerActorID = strings.TrimSpace(storeID), strings.TrimSpace(orderID), strings.TrimSpace(actingPartnerActorID)
+	idempotencyKey, correlationID = strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID)
+	if db == nil || storeID == "" || orderID == "" || actingPartnerActorID == "" || expectedVersion < 1 || len(idempotencyKey) < 8 || len(idempotencyKey) > 128 || len(correlationID) < 8 || len(correlationID) > 128 {
+		return OrderRecord{}, false, ErrOrderTransitionInvalid
+	}
+	requestHash := hashFacts("store-captain-cash-handoff-confirm", storeID, orderID, actingPartnerActorID, strconv.Itoa(expectedVersion))
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return OrderRecord{}, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:store-captain-cash-handoff:"+idempotencyKey); err != nil {
+		return OrderRecord{}, false, err
+	}
+	var storedHash, storedOrderID string
+	err = tx.QueryRowContext(ctx, `SELECT confirmation_request_hash,order_id FROM dsh.commerce_order_store_cash_handoffs WHERE confirmation_idempotency_key=$1 FOR UPDATE`, idempotencyKey).Scan(&storedHash, &storedOrderID)
+	if err == nil {
+		if storedHash != requestHash || storedOrderID != orderID {
+			return OrderRecord{}, false, ErrOrderTransitionConflict
+		}
+		order, readErr := readOrder(ctx, tx, "o.id=$1 AND o.store_id=$2", orderID, storeID)
+		if readErr != nil {
+			return OrderRecord{}, false, readErr
+		}
+		if err := tx.Commit(); err != nil {
+			return OrderRecord{}, false, err
+		}
+		return order, true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return OrderRecord{}, false, err
+	}
+	current, err := scanOrderWithStore(tx.QueryRowContext(ctx, "SELECT "+orderSelectColumnsWithStore+" FROM dsh.commerce_orders o JOIN dsh.stores s ON s.id=o.store_id WHERE o.id=$1 AND o.store_id=$2 FOR UPDATE OF o", orderID, storeID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return OrderRecord{}, false, ErrOrderNotFound
+	}
+	if err != nil {
+		return OrderRecord{}, false, err
+	}
+	if current.Version != expectedVersion {
+		return OrderRecord{}, false, ErrOrderVersionConflict
+	}
+	if current.FulfillmentMode != FulfillmentModePartnerCaptain || current.State != "DELIVERED" || current.PaymentMethod != "CASH_AT_STORE" || current.PaymentState != "REQUIRES_COLLECTION" || current.PaymentIntentID == nil || current.TotalAmountMinor < 1 {
+		return OrderRecord{}, false, ErrOrderStateConflict
+	}
+	var state, assignmentID, captainActorID, partnerActorID string
+	var amountMinor int64
+	if err := tx.QueryRowContext(ctx, `SELECT state,assignment_id,captain_actor_id,partner_actor_id,amount_minor FROM dsh.commerce_order_store_cash_handoffs WHERE order_id=$1 FOR UPDATE`, orderID).Scan(&state, &assignmentID, &captainActorID, &partnerActorID, &amountMinor); errors.Is(err, sql.ErrNoRows) {
+		return OrderRecord{}, false, ErrOrderStateConflict
+	} else if err != nil {
+		return OrderRecord{}, false, err
+	}
+	if state != "AWAITING_STORE_HANDOFF" || partnerActorID != actingPartnerActorID || amountMinor != current.TotalAmountMinor {
+		return OrderRecord{}, false, ErrOrderStateConflict
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_order_store_cash_handoffs
+		SET state='STORE_CONFIRMED',store_confirmed_by=$2,store_confirmed_at=clock_timestamp(),confirmation_idempotency_key=$3,confirmation_request_hash=$4,version=version+1,updated_at=clock_timestamp()
+		WHERE order_id=$1 AND state='AWAITING_STORE_HANDOFF' AND version=1`, orderID, actingPartnerActorID, idempotencyKey, requestHash)
+	if err != nil {
+		return OrderRecord{}, false, err
+	}
+	if affected, err := result.RowsAffected(); err != nil || affected != 1 {
+		if err != nil {
+			return OrderRecord{}, false, err
+		}
+		return OrderRecord{}, false, ErrOrderStateConflict
+	}
+	if err := enqueueFinancialHandoffTx(ctx, tx, FinancialHandoffOutbox{EffectType: "PARTNER_CAPTAIN_STORE_CASH_COLLECTION", SourceRef: assignmentID, OrderID: orderID, PaymentIntentID: *current.PaymentIntentID, CaptainActorID: captainActorID, PartnerActorID: actingPartnerActorID, AmountMinor: amountMinor, IdempotencyKey: idempotencyKey, CorrelationID: correlationID, ActingActorID: actingPartnerActorID}); err != nil {
 		return OrderRecord{}, false, err
 	}
 	if err := tx.Commit(); err != nil {

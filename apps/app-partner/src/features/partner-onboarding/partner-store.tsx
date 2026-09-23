@@ -6,13 +6,12 @@ import { ActivityIndicator, Image, Text, View } from "react-native";
 import { StoreOfferManagement } from "../store-offer/store-offer";
 import { usePartnerStoreContext } from "./partner-store-context";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
-import { StoreFulfillmentModeSettings } from "./store-fulfillment-mode-settings";
 import { StoreCaptainMembershipManagement } from "./store-captain-memberships";
 
 export function PartnerStore() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
-  const { cities, citiesError, state, update, reload } = usePartnerStoreContext();
+  const { cities, citiesError, state, reload } = usePartnerStoreContext();
 
   if (state.kind === "loading") return <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة بيانات المتجر" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة بيانات المتجر…</Text></View>;
   if (state.kind === "empty") return <View style={styles.state}><Text style={styles.muted}>لم يُنشأ المتجر الأول للشريك بعد.</Text><BthwaniButton label="إعادة القراءة" onPress={() => void reload()} variant="secondary" /></View>;
@@ -29,24 +28,7 @@ export function PartnerStore() {
         <Text selectable style={styles.muted}>المتجر الأول: {joiningCase.case.store.name}</Text>
         <Text style={styles.muted}>حالة النشر: {publicationStateLabel(joiningCase.case.store.publicationState)}</Text>
         <Text style={styles.muted}>جاهزية النشر: {joiningCase.case.store.publicationReadiness.ready ? "جاهز" : "يحتاج إلى استكمال البيانات"}</Text>
-        <StoreFulfillmentModeSettings
-          key={`${joiningCase.case.store.id}:${joiningCase.case.store.version}`}
-          storeID={joiningCase.case.store.id}
-          version={joiningCase.case.store.version}
-          savedModes={joiningCase.case.store.fulfillmentModes}
-          onReload={() => void reload()}
-          onSaved={(result) => update({
-            ...joiningCase,
-            case: {
-              ...joiningCase.case,
-              store: {
-                ...joiningCase.case.store!,
-                version: result.version,
-                fulfillmentModes: result.fulfillmentModes,
-              },
-            },
-          })}
-        />
+        <View style={styles.card}><Text style={styles.metaLabel}>أوضاع الطلب المتاحة</Text><Text style={styles.value}>{joiningCase.case.store.fulfillmentModes.map((mode) => mode === "BTHWANI_CAPTAIN" ? "توصيل بثواني" : mode === "PARTNER_CAPTAIN" ? "توصيل المتجر" : "استلم بنفسك من المتجر").join(" · ")}</Text><Text style={styles.muted}>تُدار هذه الأوضاع بعد إنشاء المتجر من قسم الشركاء في لوحة التحكم.</Text></View>
         <View style={styles.card}><Text style={styles.metaLabel}>موقع المتجر الثابت</Text><Text selectable style={styles.value}>{joiningCase.case.store.deliveryOrigin ? `${joiningCase.case.store.deliveryOrigin.latitude.toFixed(6)}, ${joiningCase.case.store.deliveryOrigin.longitude.toFixed(6)}` : "لم يُثبت ضمن ملف الانضمام"}</Text><Text style={styles.muted}>يُقرأ من ملف الانضمام ولا يُعدّل من هذه الشاشة.</Text></View>
         <StoreCaptainMembershipManagement storeID={joiningCase.case.store.id} />
         <StoreOfferManagement storeId={joiningCase.case.store.id} />

@@ -141,6 +141,24 @@ func (s *Service) provisionTrusted(ctx context.Context, caller string, input dom
 			return domain.ActorRoleView{}, err
 		}
 	}
+	if role == "operator" {
+		financeEnabled := bootstrapOnly
+		financeReason := "Finance permission not granted"
+		var changedBy any
+		if bootstrapOnly {
+			financeReason = "initial operator bootstrap"
+			changedBy = a.ID
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO identity_operator_permissions(actor_id,permission,enabled,version,changed_by_actor_id,reason)
+			VALUES($1,'finance',$2,1,$3,$4) ON CONFLICT(actor_id,permission) DO NOTHING`, a.ID, financeEnabled, changedBy, financeReason); err != nil {
+			return domain.ActorRoleView{}, err
+		}
+		if bootstrapOnly {
+			if err := auditTx(ctx, tx, "operator.finance_permission_granted", a.ID, caller, "success", "", map[string]any{"permission": "finance", "reason": financeReason, "workload": caller}); err != nil {
+				return domain.ActorRoleView{}, err
+			}
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return domain.ActorRoleView{}, err
 	}
@@ -469,6 +487,126 @@ func (s *Service) Search(ctx context.Context, caller string, input domain.ActorS
 		page.NextCursor = base64.RawURLEncoding.EncodeToString([]byte(last.PhoneE164 + "|" + last.ActorID))
 	}
 	return page, nil
+}
+
+func (s *Service) ReadOperatorFinanceAccess(ctx context.Context, caller, actorID, actingActorID string) (domain.OperatorFinanceAccess, error) {
+	caller = strings.ToLower(strings.TrimSpace(caller))
+	actorID = strings.TrimSpace(actorID)
+	actingActorID = strings.TrimSpace(actingActorID)
+	if caller != "control-panel" || actorID == "" || actingActorID == "" {
+		return domain.OperatorFinanceAccess{}, domain.ErrForbidden
+	}
+	if err := requireFinanceAccessAdministrator(ctx, s.db, actingActorID); err != nil {
+		return domain.OperatorFinanceAccess{}, err
+	}
+	return readOperatorFinanceAccess(ctx, s.db, actorID)
+}
+
+func (s *Service) SetOperatorFinanceAccess(ctx context.Context, caller, actorID, actingActorID string, enabled bool, correlationID, reason string, expectedVersion int) (domain.OperatorFinanceAccess, error) {
+	caller = strings.ToLower(strings.TrimSpace(caller))
+	actorID = strings.TrimSpace(actorID)
+	actingActorID = strings.TrimSpace(actingActorID)
+	reason = strings.TrimSpace(reason)
+	if caller != "control-panel" {
+		return domain.OperatorFinanceAccess{}, domain.ErrForbidden
+	}
+	if actorID == "" || actingActorID == "" || expectedVersion < 1 || utf8.RuneCountInString(reason) < 5 || utf8.RuneCountInString(reason) > 500 {
+		return domain.OperatorFinanceAccess{}, domain.ErrInvalidInput
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.OperatorFinanceAccess{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := requireFinanceAccessAdministrator(ctx, tx, actingActorID); err != nil {
+		return domain.OperatorFinanceAccess{}, err
+	}
+	var roleEnabled, currentEnabled bool
+	var currentVersion int
+	err = tx.QueryRowContext(ctx, `SELECT r.enabled,p.enabled,p.version
+		FROM identity_actor_roles r
+		JOIN identity_operator_permissions p ON p.actor_id=r.actor_id AND p.permission='finance'
+		WHERE r.actor_id=$1 AND r.role='operator'
+		FOR UPDATE OF r,p`, actorID).Scan(&roleEnabled, &currentEnabled, &currentVersion)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.OperatorFinanceAccess{}, domain.ErrNotFound
+	}
+	if err != nil {
+		return domain.OperatorFinanceAccess{}, err
+	}
+	if actorID == actingActorID || !roleEnabled || currentVersion != expectedVersion {
+		return domain.OperatorFinanceAccess{}, domain.ErrConflict
+	}
+	if currentEnabled == enabled {
+		view, err := readOperatorFinanceAccess(ctx, tx, actorID)
+		if err != nil {
+			return domain.OperatorFinanceAccess{}, err
+		}
+		if err := tx.Commit(); err != nil {
+			return domain.OperatorFinanceAccess{}, err
+		}
+		return view, nil
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE identity_operator_permissions
+		SET enabled=$1,version=version+1,changed_by_actor_id=$2,reason=$3,updated_at=clock_timestamp()
+		WHERE actor_id=$4 AND permission='finance' AND version=$5`, enabled, actingActorID, reason, actorID, expectedVersion)
+	if err != nil {
+		return domain.OperatorFinanceAccess{}, err
+	}
+	if count, _ := result.RowsAffected(); count != 1 {
+		return domain.OperatorFinanceAccess{}, domain.ErrConflict
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1
+		WHERE actor_id=$1 AND role='operator' AND revoked_at IS NULL`, actorID); err != nil {
+		return domain.OperatorFinanceAccess{}, err
+	}
+	meta := map[string]any{"permission": "finance", "enabled": enabled, "reason": reason, "expectedVersion": expectedVersion, "operatorActorId": actingActorID, "workload": caller}
+	if err := auditTx(ctx, tx, "operator.finance_permission_changed", actorID, caller+":"+actingActorID, "success", strings.TrimSpace(correlationID), meta); err != nil {
+		return domain.OperatorFinanceAccess{}, err
+	}
+	view, err := readOperatorFinanceAccess(ctx, tx, actorID)
+	if err != nil {
+		return domain.OperatorFinanceAccess{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.OperatorFinanceAccess{}, err
+	}
+	return view, nil
+}
+
+type financeAccessQueryer interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func requireFinanceAccessAdministrator(ctx context.Context, source financeAccessQueryer, actorID string) error {
+	var authorized bool
+	if err := source.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM identity_bootstrap_state WHERE id=1 AND initial_operator_actor_id=$1)`, actorID).Scan(&authorized); err != nil {
+		return err
+	}
+	if !authorized {
+		return domain.ErrForbidden
+	}
+	return nil
+}
+
+func readOperatorFinanceAccess(ctx context.Context, source financeAccessQueryer, actorID string) (domain.OperatorFinanceAccess, error) {
+	var view domain.OperatorFinanceAccess
+	var changedBy sql.NullString
+	err := source.QueryRowContext(ctx, `SELECT p.actor_id,p.permission,p.enabled,p.version,p.changed_by_actor_id,p.reason,p.updated_at
+		FROM identity_operator_permissions p
+		JOIN identity_actor_roles r ON r.actor_id=p.actor_id AND r.role=p.role
+		WHERE p.actor_id=$1 AND p.permission='finance'`, actorID).Scan(&view.ActorID, &view.Permission, &view.Enabled, &view.Version, &changedBy, &view.Reason, &view.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.OperatorFinanceAccess{}, domain.ErrNotFound
+	}
+	if err != nil {
+		return domain.OperatorFinanceAccess{}, err
+	}
+	if changedBy.Valid {
+		value := changedBy.String
+		view.ChangedByActorID = &value
+	}
+	return view, nil
 }
 
 func (s *Service) SetRoleEnabledWithContext(ctx context.Context, caller, actorID, role string, enabled bool, correlationID, reason string, expectedVersion int, operatorActorID string) error {

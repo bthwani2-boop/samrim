@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const SchemaVersion = 19
+const SchemaVersion = 20
 
 type MigrationRecord struct {
 	Version int
@@ -39,6 +39,7 @@ var identitySchemaRequirements = []schemaRequirement{
 	{table: "identity_webauthn_credentials", columns: []string{"rp_id", "credential_id", "actor_id", "credential_json", "sign_count", "clone_warning", "backup_state", "last_used_at", "revoked_at", "created_at"}, indexes: []string{"identity_webauthn_credentials_pkey", "identity_webauthn_credentials_actor_idx", "identity_webauthn_credentials_active_idx"}},
 	{table: "identity_webauthn_ceremonies", columns: []string{"id", "kind", "actor_id", "challenge", "session_data", "expires_at", "consumed_at", "created_at"}, indexes: []string{"identity_webauthn_ceremonies_pkey", "identity_webauthn_ceremonies_challenge_uq", "identity_webauthn_ceremonies_expiry_idx"}},
 	{table: "identity_operator_recovery_credentials", columns: []string{"id", "actor_id", "credential_hash", "created_at", "used_at", "revoked_at"}, indexes: []string{"identity_operator_recovery_credentials_pkey", "identity_operator_recovery_credentials_active_uq", "identity_operator_recovery_credentials_hash_uq", "identity_operator_recovery_credentials_actor_idx"}},
+	{table: "identity_operator_permissions", columns: []string{"actor_id", "role", "permission", "enabled", "version", "changed_by_actor_id", "reason", "created_at", "updated_at"}, indexes: []string{"identity_operator_permissions_pkey"}},
 }
 
 type queryer interface {

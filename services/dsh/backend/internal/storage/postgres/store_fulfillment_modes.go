@@ -19,12 +19,12 @@ type StoreFulfillmentModesResult struct {
 }
 
 var (
-	ErrStoreFulfillmentModesNotFound    = errors.New("owned Store was not found")
+	ErrStoreFulfillmentModesNotFound    = errors.New("Store was not found")
 	ErrStoreFulfillmentModesIdempotency = errors.New("Store fulfillment modes idempotency key was already used with different facts")
 	ErrStoreFulfillmentModesVersion     = errors.New("Store version is stale")
 )
 
-func HashStoreFulfillmentModesRequest(storeID, partnerActorID string, modes []string, expectedVersion int) string {
+func HashStoreFulfillmentModesRequest(storeID, operatorActorID string, modes []string, expectedVersion int) string {
 	if len(modes) == 0 {
 		return ""
 	}
@@ -32,15 +32,16 @@ func HashStoreFulfillmentModesRequest(storeID, partnerActorID string, modes []st
 	if err != nil {
 		return ""
 	}
-	return hashLocationFacts("store-fulfillment-modes", strings.TrimSpace(storeID), strings.TrimSpace(partnerActorID), strings.Join(normalized, ","), strconv.Itoa(expectedVersion))
+	return hashLocationFacts("store-fulfillment-modes", strings.TrimSpace(storeID), strings.TrimSpace(operatorActorID), strings.Join(normalized, ","), strconv.Itoa(expectedVersion))
 }
 
-func SetStoreFulfillmentModes(ctx context.Context, db *sql.DB, storeID, partnerActorID string, modes []string, expectedVersion int, idempotencyKey, correlationID string) (StoreFulfillmentModesResult, error) {
+func SetStoreFulfillmentModes(ctx context.Context, db *sql.DB, storeID, operatorActorID string, modes []string, expectedVersion int, idempotencyKey, correlationID string) (StoreFulfillmentModesResult, error) {
 	storeID = strings.TrimSpace(storeID)
-	partnerActorID = strings.TrimSpace(partnerActorID)
+	operatorActorID = strings.TrimSpace(operatorActorID)
+	var partnerActorID string
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	correlationID = strings.TrimSpace(correlationID)
-	if db == nil || storeID == "" || partnerActorID == "" || expectedVersion < 1 || len(idempotencyKey) < 8 || len(idempotencyKey) > 128 || len(correlationID) < 8 || len(correlationID) > 128 {
+	if db == nil || storeID == "" || operatorActorID == "" || expectedVersion < 1 || len(idempotencyKey) < 8 || len(idempotencyKey) > 128 || len(correlationID) < 8 || len(correlationID) > 128 {
 		return StoreFulfillmentModesResult{}, ErrFulfillmentModesInvalid
 	}
 	if len(modes) == 0 {
@@ -50,7 +51,7 @@ func SetStoreFulfillmentModes(ctx context.Context, db *sql.DB, storeID, partnerA
 	if err != nil {
 		return StoreFulfillmentModesResult{}, err
 	}
-	requestHash := HashStoreFulfillmentModesRequest(storeID, partnerActorID, normalizedModes, expectedVersion)
+	requestHash := HashStoreFulfillmentModesRequest(storeID, operatorActorID, normalizedModes, expectedVersion)
 	if requestHash == "" {
 		return StoreFulfillmentModesResult{}, ErrFulfillmentModesInvalid
 	}
@@ -71,11 +72,11 @@ func SetStoreFulfillmentModes(ctx context.Context, db *sql.DB, storeID, partnerA
 		FROM dsh.store_fulfillment_modes_idempotency WHERE idempotency_key=$1 FOR UPDATE`, idempotencyKey).Scan(
 		&storedHash, &storedStoreID, &storedPartner, &storedExpected, &storedVersion, &storedModes)
 	if err == nil {
-		if storedHash != requestHash || storedStoreID != storeID || storedPartner != partnerActorID || storedExpected != expectedVersion {
+		if storedHash != requestHash || storedStoreID != storeID || storedExpected != expectedVersion {
 			return StoreFulfillmentModesResult{}, ErrStoreFulfillmentModesIdempotency
 		}
 		var owned bool
-		if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM dsh.stores WHERE id=$1 AND partner_actor_id=$2)", storeID, partnerActorID).Scan(&owned); err != nil {
+		if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM dsh.stores WHERE id=$1 AND partner_actor_id=$2)", storeID, storedPartner).Scan(&owned); err != nil {
 			return StoreFulfillmentModesResult{}, fmt.Errorf("verify Store ownership for fulfillment modes replay: %w", err)
 		}
 		if !owned {
@@ -95,8 +96,8 @@ func SetStoreFulfillmentModes(ctx context.Context, db *sql.DB, storeID, partnerA
 	}
 	var currentVersion int
 	var currentModes pq.StringArray
-	err = tx.QueryRowContext(ctx, `SELECT version, fulfillment_modes FROM dsh.stores
-		WHERE id=$1 AND partner_actor_id=$2 FOR UPDATE`, storeID, partnerActorID).Scan(&currentVersion, &currentModes)
+	err = tx.QueryRowContext(ctx, `SELECT partner_actor_id,version,fulfillment_modes FROM dsh.stores
+		WHERE id=$1 FOR UPDATE`, storeID).Scan(&partnerActorID, &currentVersion, &currentModes)
 	if errors.Is(err, sql.ErrNoRows) {
 		return StoreFulfillmentModesResult{}, ErrStoreFulfillmentModesNotFound
 	}
@@ -118,8 +119,8 @@ func SetStoreFulfillmentModes(ctx context.Context, db *sql.DB, storeID, partnerA
 		var updatedModes pq.StringArray
 		err = tx.QueryRowContext(ctx, `UPDATE dsh.stores
 			SET fulfillment_modes=$3, version=version+1, updated_at=clock_timestamp()
-			WHERE id=$1 AND partner_actor_id=$2 AND version=$4
-			RETURNING version, fulfillment_modes`, storeID, partnerActorID, pq.Array(normalizedModes), expectedVersion).Scan(&resultVersion, &updatedModes)
+			WHERE id=$1 AND version=$2
+			RETURNING version, fulfillment_modes`, storeID, expectedVersion, pq.Array(normalizedModes)).Scan(&resultVersion, &updatedModes)
 		if err != nil {
 			return StoreFulfillmentModesResult{}, fmt.Errorf("update canonical Store fulfillment modes: %w", err)
 		}
@@ -135,7 +136,7 @@ func SetStoreFulfillmentModes(ctx context.Context, db *sql.DB, storeID, partnerA
 		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.store_fulfillment_modes_audit
 			(event_type, idempotency_key, correlation_id, acting_actor_id, partner_actor_id, store_id, from_modes, to_modes, expected_version, result_version, request_hash)
 			VALUES('store_fulfillment_modes_updated',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-			idempotencyKey, correlationID, partnerActorID, partnerActorID, storeID, pq.Array(canonicalCurrentModes), pq.Array(resultModes), expectedVersion, resultVersion, requestHash); err != nil {
+			idempotencyKey, correlationID, operatorActorID, partnerActorID, storeID, pq.Array(canonicalCurrentModes), pq.Array(resultModes), expectedVersion, resultVersion, requestHash); err != nil {
 			return StoreFulfillmentModesResult{}, fmt.Errorf("record Store fulfillment modes audit: %w", err)
 		}
 	}

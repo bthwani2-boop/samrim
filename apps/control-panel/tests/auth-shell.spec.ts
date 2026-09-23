@@ -205,6 +205,12 @@ test("mobile workspace navigation restores focus and account menu owns appearanc
   await expect(accountMenu).not.toHaveAttribute("open", "");
   await accountMenu.locator("summary").click();
   await expect(accountMenu).toHaveAttribute("open", "");
+  const operatorProfile = accountMenu.getByRole("region", { name: "ملف المشغّل" });
+  await expect(operatorProfile).toBeVisible();
+  await expect(operatorProfile).toContainText("مشغّل المنصة");
+  await expect(operatorProfile).toContainText("جلسة نشطة");
+  await expect(operatorProfile).toContainText("الوصول إلى المالية");
+  await expect(operatorProfile).toContainText("انتهاء الجلسة");
   await page.getByLabel("داكن").check();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 });

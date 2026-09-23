@@ -55,7 +55,7 @@ export function StoreCaptainMemberships() {
   return (
     <BthwaniSurface tone="base" style={styles.card}>
       <Text style={styles.title}>عضويات المتاجر</Text>
-      <Text style={styles.description}>تظهر هنا المتاجر التي ربطت حساب الكابتن بها. العضوية وحدها لا تعني استلام طلب أو تغيير أهلية كباتن بثواني.</Text>
+      <Text style={styles.description}>تظهر هنا المتاجر التي ربطت حساب الكابتن بها. العضوية وحدها لا تكلفك بطلب؛ يرسل المتجر عرضًا لمهمة محددة، وتبدأ بعد قبولك. لا تغيّر العضوية أهليتك في إسناد بثواني.</Text>
       <TextInput
         accessibilityLabel="رمز دعوة المتجر"
         autoCapitalize="none"

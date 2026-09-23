@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ActorType, OperatorEnrollmentToken } from "@bthwani/identity";
 import { toAsciiDigits } from "@bthwani/design-system";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
+import { useSession } from "../../session/session-provider";
 import { responseMessage } from "./identity-error-message";
 
 const actorRoleLabels: Record<ActorType, string> = { client: "العميل", partner: "الشريك", captain: "الكابتن", field: "الميداني", operator: "موظف لوحة التحكم" };
@@ -29,6 +30,7 @@ type ManagedAccountStatus = Readonly<{
   actorId?: string;
   actorVersion?: number;
   roleVersion?: number;
+  financeAccess?: Readonly<{ permission: "finance"; enabled: boolean; version: number; reason: string }>;
   state?: string;
   operationalAdmissionState?: string;
   operationalAdmissionVersion?: number;
@@ -73,9 +75,11 @@ function reenrollmentBlockedMessage(role: ActorType, status: ManagedAccountStatu
 }
 
 export function AccountAccessPanel() {
+  const { state: sessionState } = useSession();
   const [role, setRole] = useState<ActorType>("partner");
   const [phone, setPhone] = useState("");
   const [reason, setReason] = useState("");
+  const [financeReason, setFinanceReason] = useState("");
   const [status, setStatus] = useState<ManagedAccountStatus | null>(null);
   const [result, setResult] = useState<OperatorEnrollmentToken | null>(null);
   const [busy, setBusy] = useState(false);
@@ -245,10 +249,51 @@ export function AccountAccessPanel() {
     }
   }
 
+  async function changeFinanceAccess() {
+    const access = status?.financeAccess;
+    if (!status?.actorId || !status.enabled || !access) {
+      setError("تعذر تحديد صلاحية المالية أو حالة الموظف الحالية. أعد تحميل الحالة.");
+      return;
+    }
+    const financeReasonLength = Array.from(financeReason.trim()).length;
+    if (financeReasonLength < 5 || financeReasonLength > 500) {
+      setError("اكتب سببًا من 5 إلى 500 حرف قبل تغيير صلاحية المالية.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    let mutationApplied = false;
+    try {
+      const response = await identityFetch("/api/access/finance-permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ actorId: status.actorId, enabled: !access.enabled, expectedVersion: access.version, reason: financeReason.trim() }),
+      });
+      if (!response.ok) {
+        const message = await responseMessage(response);
+        const reconciled = await reconcileAfterMutationFailure();
+        setError(response.status === 409
+          ? reconciled ? "تغيّرت صلاحية المالية بالتزامن. حُدّثت الحالة؛ راجعها ثم قرر من جديد." : "تعذر التحقق من حالة الصلاحية بعد تعارض. أعد تحميلها قبل المحاولة."
+          : message);
+        return;
+      }
+      mutationApplied = true;
+      await refreshCanonicalStatus();
+      setFinanceReason("");
+    } catch (cause) {
+      if (mutationApplied) markFinalStateUnverified();
+      else if (isRequestFailure(cause)) setError(cause.message);
+      else setError("تعذر تحديث صلاحية المالية.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const canIssueActivation = role === "operator" && status !== null && !status.activated;
   const canIssueReenrollment = status?.exists === true && status.activated && status.enabled && status.securityEnabled && ((role === "partner" || role === "captain") || (role === "field" && status.operationalAdmissionState === "eligible" && status.operationalAdmissionVersion !== undefined));
   const activationBlocked = status?.exists === true && status.enabled === false;
   const statusIsHealthy = status?.exists === false || (status?.enabled === true && status.securityEnabled === true && ((status.role !== "captain" && status.role !== "field") || status.state === "active"));
+  const canManageFinanceTarget = sessionState.kind === "authenticated" && sessionState.identity.canManageFinanceAccess === true && status?.role === "operator" && Boolean(status.actorId) && status.actorId !== sessionState.identity.subject && Boolean(status.financeAccess);
 
   return (
     <section className="access-card" aria-labelledby="account-access-title">
@@ -287,6 +332,16 @@ export function AccountAccessPanel() {
               <p>الحالة: {accountStateLabel(status.state)}</p>
               {status.role === "captain" || status.role === "field" ? <p>الأهلية التشغيلية: {operationalAdmissionLabel(status.operationalAdmissionState)}{status.role === "captain" ? ` · التوافر: ${operationalAvailabilityLabel(status.operationalAvailabilityState)}` : ""}</p> : null}
               <p>{status.activated ? "يوجد تسجيل سابق لهذا الدور." : "الدور مهيأ ولم يكتمل تفعيله بعد."}</p>
+              {canManageFinanceTarget ? (
+                <section className="managed-status managed-status-info" aria-label="صلاحية مساحة المالية">
+                  <strong>الوصول إلى المالية: {status.financeAccess?.enabled ? "ممنوح" : "غير ممنوح"}</strong>
+                  <p>دور موظف لوحة التحكم وحده لا يفتح المالية. سحب الصلاحية ينهي جلسات الموظف الحالية.</p>
+                  <label className="field-label" htmlFor="finance-access-reason">سبب منح أو سحب صلاحية المالية<input id="finance-access-reason" maxLength={500} value={financeReason} onChange={(event) => setFinanceReason(event.target.value)} disabled={busy} /></label>
+                  <button type="button" className={status.financeAccess?.enabled ? "button button-secondary" : "button button-primary"} disabled={busy || !status.enabled || !financeReason.trim()} onClick={() => void changeFinanceAccess()}>
+                    {busy ? "جارٍ تحديث الصلاحية…" : status.financeAccess?.enabled ? "سحب صلاحية المالية" : "منح صلاحية المالية"}
+                  </button>
+                </section>
+              ) : null}
               {status.activated && managedRole ? (
                 <div className="managed-status managed-status-warning" role="alert">
                   <strong>تم تفعيل هذا الدور من قبل.</strong>

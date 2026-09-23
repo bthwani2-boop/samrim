@@ -20,8 +20,8 @@ type CartServer struct{ service *cart.Service }
 
 func (s *CartServer) Service() *cart.Service { return s.service }
 
-func NewCart(identityClient *identityintegration.Client, db *sql.DB, serviceabilityService *serviceability.Service, payment *wlt.Client) (*CartServer, error) {
-	service, err := cart.New(identityClient, db, serviceabilityService, payment)
+func NewCart(identityClient *identityintegration.Client, db *sql.DB, serviceabilityService *serviceability.Service, payment *wlt.Client, proofKeys *postgres.DeliveryProofKeyring) (*CartServer, error) {
+	service, err := cart.New(identityClient, db, serviceabilityService, payment, proofKeys)
 	if err != nil {
 		return nil, err
 	}

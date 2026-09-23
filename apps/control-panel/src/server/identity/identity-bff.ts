@@ -12,6 +12,7 @@ import {
   identityAuthorizesSurface,
   isIdentityClientError,
   type OperatorEnrollmentToken,
+  type OperatorFinanceAccess,
   type OperatorPasskeyRegistrationResponse,
   type PasskeyOptions,
   type ReenrollmentMutationContext,
@@ -181,6 +182,16 @@ export async function provisionOperator(phone: string, context: AttributedMutati
   return identityInternalClient().provisionActorRole({ phoneE164: phone, role: "operator" }, context);
 }
 
+export async function readOperatorFinanceAccess(actorId: string, context: AttributedMutationContext): Promise<OperatorFinanceAccess> {
+  if (!actorId.trim()) throw missingIdentityRole();
+  return identityInternalClient().readOperatorFinanceAccess(actorId, context);
+}
+
+export async function setOperatorFinanceAccess(actorId: string, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<OperatorFinanceAccess> {
+  if (!actorId.trim()) throw missingIdentityRole();
+  return identityInternalClient().setOperatorFinanceAccess(actorId, enabled, reason, context);
+}
+
 async function lookupIdentityRole(phone: string, role: ActorType): Promise<ActorRoleView | null> {
   const page = await identityInternalClient().searchActorRoles(role, phone);
   if (page.items.length === 0) return null;
@@ -254,6 +265,17 @@ export async function readOperatorSession(): Promise<ActorIdentity | null> {
   const result = refreshOperatorSession(store, refreshToken, clientInstanceId);
   refreshInFlight.set(refreshKey, result);
   try { return await result; } finally { refreshInFlight.delete(refreshKey); }
+}
+
+export async function readOperatorProfile(): Promise<Readonly<{ phoneE164: string }> | null> {
+  const identity = await readOperatorSession();
+  if (!identity) return null;
+
+  const actorRole = await identityInternalClient().readActorRole(identity.subject, "operator");
+  if (actorRole.actorId !== identity.subject || actorRole.role !== "operator" || !actorRole.phoneE164.trim()) {
+    throw localSessionError(503, "OPERATOR_PROFILE_READBACK_MISMATCH", "operator profile could not be verified");
+  }
+  return { phoneE164: actorRole.phoneE164 };
 }
 
 async function readOperatorAccessToken(accessToken: string): Promise<ActorIdentity | null> {

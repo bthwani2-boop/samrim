@@ -78,6 +78,13 @@ var identitySchemaConstraints = []schemaConstraint{
 	{table: "identity_webauthn_ceremonies", name: "identity_webauthn_ceremony_actor_fk", definition: "FOREIGN KEY (actor_id) REFERENCES identity_actors(id) ON DELETE CASCADE", critical: true},
 	{table: "identity_operator_recovery_credentials", name: "identity_operator_recovery_credential_actor_fk", definition: "FOREIGN KEY (actor_id) REFERENCES identity_actors(id) ON DELETE CASCADE", critical: true},
 	{table: "identity_operator_recovery_credentials", name: "identity_operator_recovery_credentials_pkey", definition: "PRIMARY KEY (id)", critical: true},
+	{table: "identity_operator_permissions", name: "identity_operator_permissions_pkey", definition: "PRIMARY KEY (actor_id, permission)", critical: true},
+	{table: "identity_operator_permissions", name: "identity_operator_permissions_actor_role_fkey", definition: "FOREIGN KEY (actor_id, role) REFERENCES identity_actor_roles(actor_id, role) ON DELETE CASCADE", critical: true},
+	{table: "identity_operator_permissions", name: "identity_operator_permissions_changed_by_actor_id_fkey", definition: "FOREIGN KEY (changed_by_actor_id) REFERENCES identity_actors(id) ON DELETE RESTRICT", critical: true},
+	{table: "identity_operator_permissions", name: "identity_operator_permissions_permission_chk", definition: "CHECK (((permission)::text = 'finance'::text))", critical: true},
+	{table: "identity_operator_permissions", name: "identity_operator_permissions_role_chk", definition: "CHECK (((role)::text = 'operator'::text))", critical: true},
+	{table: "identity_operator_permissions", name: "identity_operator_permissions_reason_chk", definition: "CHECK (((length(btrim(reason)) >= 1) AND (length(btrim(reason)) <= 500)))", critical: true},
+	{table: "identity_operator_permissions", name: "identity_operator_permissions_version_chk", definition: "CHECK ((version > 0))", critical: true},
 }
 
 func VerifyCriticalConstraints(ctx context.Context, db *sql.DB) error {

@@ -44,6 +44,9 @@ func (s *Service) Create(ctx context.Context, input postgres.JoiningCaseRecord, 
 	firstStoreName := strings.TrimSpace(input.FirstStoreName)
 	serviceCityID := strings.TrimSpace(input.FirstStoreServiceCityID)
 	verticalID := strings.TrimSpace(input.FirstStoreVerticalID)
+	if len(input.FirstStoreFulfillmentModes) == 0 {
+		return postgres.JoiningCaseResult{}, ErrInvalidInput
+	}
 	fulfillmentModes, modesErr := postgres.NormalizeStoreFulfillmentModes(input.FirstStoreFulfillmentModes)
 	if modesErr != nil {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
@@ -177,6 +180,9 @@ func (s *Service) syncFinancialProfileItem(ctx context.Context, item postgres.Pe
 		profile = read
 	}
 	if profile.State == "ACTIVE" {
+		if err := s.initializeStoreCommissionPolicies(ctx, item, profile); err != nil {
+			return err
+		}
 		return postgres.MarkFinancialProfileActive(ctx, s.db, item.CaseID, item.ID)
 	}
 	if profile.State != "PENDING_BINDING" {
@@ -188,6 +194,9 @@ func (s *Service) syncFinancialProfileItem(ctx context.Context, item postgres.Pe
 		if errors.As(err, &wltErr) && wltErr.Code == "VERSION_CONFLICT" {
 			read, readErr := s.wlt.ReadPartnerFinancialProfile(ctx, profile.ID)
 			if readErr == nil && read.State == "ACTIVE" {
+				if err := s.initializeStoreCommissionPolicies(ctx, item, read); err != nil {
+					return err
+				}
 				return postgres.MarkFinancialProfileActive(ctx, s.db, item.CaseID, item.ID)
 			}
 		}
@@ -196,7 +205,22 @@ func (s *Service) syncFinancialProfileItem(ctx context.Context, item postgres.Pe
 	if activated.State != "ACTIVE" {
 		return errors.New("WLT financial profile activation did not reach ACTIVE")
 	}
+	if err := s.initializeStoreCommissionPolicies(ctx, item, activated); err != nil {
+		return err
+	}
 	return postgres.MarkFinancialProfileActive(ctx, s.db, item.CaseID, item.ID)
+}
+
+func (s *Service) initializeStoreCommissionPolicies(ctx context.Context, item postgres.PendingFinancialProfileBinding, profile wlt.PartnerFinancialProfile) error {
+	joiningCase, err := postgres.ReadJoiningCase(ctx, s.db, item.CaseID)
+	if err != nil {
+		return err
+	}
+	storeID := strings.TrimSpace(joiningCase.Case.StoreID)
+	if storeID == "" {
+		return errors.New("approved joining case has no canonical Store for commission policy initialization")
+	}
+	return s.wlt.InitializePartnerStoreCommissionPolicies(ctx, storeID, item.PartnerActorID, profile.ID, wlt.DerivedIdempotencyKey("initialize-store-commission-policies", item.IdempotencyKey+"-"+storeID), item.CorrelationID)
 }
 
 func (s *Service) ReadForOperator(ctx context.Context, caseID, actingActorID string) (postgres.JoiningCaseResult, error) {
@@ -214,7 +238,7 @@ func (s *Service) ReadForPartner(ctx context.Context, accessToken string) (postg
 	return postgres.ReadJoiningCaseForPartner(ctx, s.db, identity.Subject)
 }
 
-func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken, caseID, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64, fulfillmentModes []string, expectedVersion int, idempotencyKey, correlationID string) (postgres.JoiningCaseResult, error) {
+func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken, caseID, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64, expectedVersion int, idempotencyKey, correlationID string) (postgres.JoiningCaseResult, error) {
 	identity, err := s.requirePartner(ctx, accessToken)
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
@@ -224,10 +248,6 @@ func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken,
 	firstStoreName = strings.TrimSpace(firstStoreName)
 	serviceCityID = strings.TrimSpace(serviceCityID)
 	verticalID = strings.TrimSpace(verticalID)
-	normalizedModes, modesErr := postgres.NormalizeStoreFulfillmentModes(fulfillmentModes)
-	if modesErr != nil {
-		return postgres.JoiningCaseResult{}, ErrInvalidInput
-	}
 	if caseID == "" || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || serviceCityID == "" || verticalID == "" || expectedVersion < 1 || !validCoordinates(latitude, longitude) {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
@@ -239,7 +259,7 @@ func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken,
 	if err != nil || !vertical.Active {
 		return postgres.JoiningCaseResult{}, postgres.ErrCatalogVerticalNotFound
 	}
-	return postgres.CorrectAndResubmitJoiningCase(ctx, s.db, caseID, identity.Subject, businessName, firstStoreName, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseCorrectAndResubmit(caseID, identity.Subject, businessName, firstStoreName, expectedVersion, serviceCityID, verticalID, latitude, longitude, normalizedModes), strings.TrimSpace(correlationID), serviceCityID, verticalID, latitude, longitude, normalizedModes)
+	return postgres.CorrectAndResubmitJoiningCase(ctx, s.db, caseID, identity.Subject, businessName, firstStoreName, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseCorrectAndResubmit(caseID, identity.Subject, businessName, firstStoreName, expectedVersion, serviceCityID, verticalID, latitude, longitude), strings.TrimSpace(correlationID), serviceCityID, verticalID, latitude, longitude)
 }
 
 func validCoordinates(latitude, longitude float64) bool {

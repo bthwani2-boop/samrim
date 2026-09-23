@@ -68,6 +68,8 @@ func New(actors *actor.Service, authenticationService *authentication.Service, c
 	mux.HandleFunc("POST /internal/actor-roles/provision", s.internal(s.provisionRole))
 	mux.HandleFunc("POST /internal/bootstrap/operator", s.internal(s.bootstrapFirstOperator))
 	mux.HandleFunc("GET /internal/actor-roles/search", s.internal(s.searchRoles))
+	mux.HandleFunc("GET /internal/operators/{actorId}/finance-access", s.internal(s.readOperatorFinanceAccess))
+	mux.HandleFunc("PUT /internal/operators/{actorId}/finance-access", s.internal(s.setOperatorFinanceAccess))
 	mux.HandleFunc("GET /internal/actors/{actorId}/roles/{role}", s.internal(s.getRole))
 	mux.HandleFunc("POST /internal/actors/{actorId}/roles/{role}/disable", s.internal(s.disableRole))
 	mux.HandleFunc("POST /internal/actors/{actorId}/roles/{role}/enable", s.internal(s.enableRole))
@@ -456,6 +458,50 @@ func (s *Server) searchRoles(w http.ResponseWriter, r *http.Request, caller stri
 		return
 	}
 	writeJSON(w, http.StatusOK, page)
+}
+func (s *Server) readOperatorFinanceAccess(w http.ResponseWriter, r *http.Request, caller string) {
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
+		return
+	}
+	actingActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if actingActorID == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required"))
+		return
+	}
+	access, err := s.actors.ReadOperatorFinanceAccess(r.Context(), caller, r.PathValue("actorId"), actingActorID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, access)
+}
+func (s *Server) setOperatorFinanceAccess(w http.ResponseWriter, r *http.Request, caller string) {
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
+		return
+	}
+	expectedVersion, err := parseExpectedVersion(r)
+	if err != nil || expectedVersion < 1 {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "a positive X-Expected-Version is required"))
+		return
+	}
+	actingActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	reason := strings.TrimSpace(r.Header.Get("X-Reason"))
+	if actingActorID == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required"))
+		return
+	}
+	var input domain.SetOperatorFinanceAccessRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	access, err := s.actors.SetOperatorFinanceAccess(r.Context(), caller, r.PathValue("actorId"), actingActorID, input.Enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), reason, expectedVersion)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, access)
 }
 func (s *Server) getRole(w http.ResponseWriter, r *http.Request, caller string) {
 	view, err := s.actors.GetRole(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"))

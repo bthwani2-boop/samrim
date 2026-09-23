@@ -189,13 +189,15 @@ export function CaptainDeliveries() {
             {task ? (
               <View style={styles.task}>
                 {task.storeProfileImage?.uri ? <Image accessibilityLabel={`صورة متجر ${task.storeName}`} source={{ uri: task.storeProfileImage.uri }} style={{ borderRadius: 10, height: 100, width: "100%" }} resizeMode="cover" /> : null}
+                <Text style={styles.muted}>نوع التوصيل: {task.fulfillmentMode === "PARTNER_CAPTAIN" ? "توصيل المتجر" : "توصيل بثواني"}</Text>
+                {task.fulfillmentMode === "PARTNER_CAPTAIN" ? <Text style={styles.warning}>بعد استلام النقد من العميل، سلّمه إلى المتجر. سيؤكد الشريك الاستلام في التطبيق؛ هذا المبلغ لا يدخل في عهدة محفظة الكابتن لدى المنصة.</Text> : null}
                 <Text style={styles.muted}>المتجر: {task.storeName}</Text>
                 <Text style={styles.muted}>عنوان العميل: {task.customerAddressText}</Text>
                 <Text style={styles.muted}>حالة الطلب: {orderStateLabel(task.orderState)}</Text>
                 <Text style={styles.payment}>{paymentMethodLabel(task.paymentMethod)} · {paymentStateLabel(task.paymentState)}</Text>
                 {requiresCollection ? (
                   <>
-                    <Text style={styles.warning}>المطلوب تحصيله عند التسليم: {formatMoney(task.amountDueMinor, task.currency)}</Text>
+                    <Text style={styles.warning}>{task.fulfillmentMode === "PARTNER_CAPTAIN" ? "المبلغ الذي ستستلمه من العميل ثم تسلّمه للمتجر:" : "المطلوب تحصيله عند التسليم:"} {formatMoney(task.amountDueMinor, task.currency)}</Text>
                     <TextInput accessibilityLabel={`المبلغ المحصل للمهمة ${task.orderReference}`} keyboardType="number-pad" onChangeText={(value) => setCollectionAmounts((current) => ({ ...current, [assignment.id]: toAsciiDigits(value).replace(/[^0-9]/g, "") }))} value={collectionAmountText} style={styles.input} />
                     <Text style={collectionAmountInvalid ? styles.error : styles.muted}>{collectionAmountInvalid ? "يجب أن يساوي المبلغ المحصل إجمالي الطلب قبل تأكيد التسليم." : "أكّد المبلغ الذي استلمه الكابتن نقدًا."}</Text>
                   </>

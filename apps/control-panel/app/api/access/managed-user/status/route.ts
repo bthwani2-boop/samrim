@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 
 import type { ActorType } from "@bthwani/identity";
 import { dshErrorPayload, dshHttpStatus, isDshClientError, readCaptainAdmissionByActor, readFieldAdmissionByActor } from "../../../../../src/server/dsh/dsh-bff";
-import { identityErrorPayload, identityHttpStatus, lookupIdentityRoles, readOperatorSession } from "../../../../../src/server/identity/identity-bff";
+import { identityErrorPayload, identityHttpStatus, lookupIdentityRoles, readOperatorFinanceAccess, readOperatorSession } from "../../../../../src/server/identity/identity-bff";
 
 const roles = new Set<ActorType>(["client", "partner", "captain", "field", "operator"]);
 
@@ -52,6 +53,9 @@ export async function GET(request: Request) {
       roleVersion: candidate.roleVersion,
       credentialVersion: candidate.credentialVersion,
     } : null;
+    const financeAccess = record?.role === "operator" && identity.canManageFinanceAccess
+      ? await readOperatorFinanceAccess(record.actorId, { operatorActorId: identity.subject, correlationId: randomUUID() })
+      : undefined;
     return NextResponse.json({
       actorId: record?.actorId ?? records[0]?.actorId,
       phoneE164: record?.phoneE164 ?? records[0]?.phoneE164 ?? phone,
@@ -68,6 +72,7 @@ export async function GET(request: Request) {
       actorVersion: record?.actorVersion,
       roleVersion: record?.roleVersion,
       credentialVersion: record?.credentialVersion,
+      financeAccess,
       admittedRoles: records.map(toStatus),
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

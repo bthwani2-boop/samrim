@@ -42,6 +42,7 @@ func (s *StorePublicationServer) serviceDB() *sql.DB { return s.db }
 
 func (s *StorePublicationServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/stores/{storeId}/publication", s.publish)
+	mux.HandleFunc("POST /dsh/stores/{storeId}/fulfillment-modes", s.setFulfillmentModes)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/publication", s.readForOperator)
 	mux.HandleFunc("GET /dsh/public/stores", s.listPublic)
 	mux.HandleFunc("GET /dsh/public/stores/{storeId}", s.readPublic)
@@ -81,6 +82,36 @@ func (s *StorePublicationServer) publish(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeStorePublication(w, http.StatusOK, result, readiness, offers)
+}
+
+func (s *StorePublicationServer) setFulfillmentModes(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("If-Match") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Actor-ID and If-Match are forbidden")
+		return
+	}
+	acting, correlation, idempotency, expectedVersion, ok := requiredPublicationHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input contract.SetStoreFulfillmentModesRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	modes := make([]string, 0, len(input.FulfillmentModes))
+	for _, mode := range input.FulfillmentModes {
+		modes = append(modes, string(mode))
+	}
+	result, err := s.service.SetFulfillmentModes(r.Context(), r.PathValue("storeId"), modes, expectedVersion, idempotency, acting, correlation)
+	if err != nil {
+		logStorePublicationFailure(correlation, err)
+		writeStorePublicationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.StoreFulfillmentModesResponse{StoreID: result.StoreID, Version: result.Version, FulfillmentModes: toStoreFulfillmentModes(result.FulfillmentModes), IdempotentReplay: result.Replayed})
 }
 
 func (s *StorePublicationServer) readForOperator(w http.ResponseWriter, r *http.Request) {
@@ -274,6 +305,14 @@ func writeStorePublicationError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "store publication version is stale")
 	case errors.Is(err, postgres.ErrInvalidPublicationState):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "publication state must be published or hidden")
+	case errors.Is(err, postgres.ErrFulfillmentModesInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "one or more fulfillment modes are invalid")
+	case errors.Is(err, postgres.ErrStoreFulfillmentModesNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "store was not found")
+	case errors.Is(err, postgres.ErrStoreFulfillmentModesIdempotency):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different fulfillment mode facts")
+	case errors.Is(err, postgres.ErrStoreFulfillmentModesVersion):
+		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "store version is stale")
 	default:
 		var identityErr *identityclient.Error
 		if errors.As(err, &identityErr) {
@@ -282,6 +321,14 @@ func writeStorePublicationError(w http.ResponseWriter, err error) {
 		}
 		writeError(w, http.StatusBadGateway, "DSH_STORAGE_UNAVAILABLE", "DSH persistence is unavailable")
 	}
+}
+
+func toStoreFulfillmentModes(values []string) []contract.StoreFulfillmentMode {
+	modes := make([]contract.StoreFulfillmentMode, 0, len(values))
+	for _, mode := range values {
+		modes = append(modes, contract.StoreFulfillmentMode(mode))
+	}
+	return modes
 }
 
 func writeStorePublication(w http.ResponseWriter, status int, result postgres.PublicationResult, readiness storepublication.PublicationReadiness, offers []postgres.CatalogStoreOfferRecord) {

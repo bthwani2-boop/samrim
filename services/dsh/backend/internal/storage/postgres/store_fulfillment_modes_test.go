@@ -22,29 +22,27 @@ func verifyStoreFulfillmentModes(t *testing.T, ctx context.Context, db *sql.DB) 
 
 	_, err := postgres.SetStoreFulfillmentModes(ctx, db, storeID, partnerActorID, nil, 1, "idem-mode-empty-v1", "corr-mode-empty-v1")
 	requireStoreFulfillmentModesError(t, err, postgres.ErrFulfillmentModesInvalid)
-	_, err = postgres.SetStoreFulfillmentModes(ctx, db, storeID, partnerActorID, []string{postgres.FulfillmentModePartnerCaptain}, 1, "idem-mode-unsupported-v1", "corr-mode-unsupported-v1")
-	requireStoreFulfillmentModesError(t, err, postgres.ErrFulfillmentModesInvalid)
 	_, err = postgres.SetStoreFulfillmentModes(ctx, db, storeID, otherPartnerID, []string{postgres.FulfillmentModeCustomerPickup}, 1, "idem-mode-foreign-v1", "corr-mode-foreign-v1")
 	requireStoreFulfillmentModesError(t, err, postgres.ErrStoreFulfillmentModesNotFound)
 
-	bothModes := []string{postgres.FulfillmentModeBthwaniCaptain, postgres.FulfillmentModeCustomerPickup}
-	modes, err := postgres.SetStoreFulfillmentModes(ctx, db, storeID, partnerActorID, []string{postgres.FulfillmentModeCustomerPickup, postgres.FulfillmentModeBthwaniCaptain}, 1, "idem-mode-both-v1", "corr-mode-both-v1")
-	requireStoreFulfillmentModesResult(t, modes, err, false, 2, bothModes)
-	replay, err := postgres.SetStoreFulfillmentModes(ctx, db, storeID, partnerActorID, bothModes, 1, "idem-mode-both-v1", "corr-mode-both-replay-v1")
-	requireStoreFulfillmentModesResult(t, replay, err, true, 2, bothModes)
-	_, err = postgres.SetStoreFulfillmentModes(ctx, db, storeID, partnerActorID, []string{postgres.FulfillmentModeCustomerPickup}, 1, "idem-mode-both-v1", "corr-mode-conflict-v1")
+	allModes := []string{postgres.FulfillmentModeBthwaniCaptain, postgres.FulfillmentModePartnerCaptain, postgres.FulfillmentModeCustomerPickup}
+	modes, err := postgres.SetStoreFulfillmentModes(ctx, db, storeID, partnerActorID, []string{postgres.FulfillmentModeCustomerPickup, postgres.FulfillmentModePartnerCaptain, postgres.FulfillmentModeBthwaniCaptain}, 1, "idem-mode-all-v1", "corr-mode-all-v1")
+	requireStoreFulfillmentModesResult(t, modes, err, false, 2, allModes)
+	replay, err := postgres.SetStoreFulfillmentModes(ctx, db, storeID, partnerActorID, allModes, 1, "idem-mode-all-v1", "corr-mode-all-replay-v1")
+	requireStoreFulfillmentModesResult(t, replay, err, true, 2, allModes)
+	_, err = postgres.SetStoreFulfillmentModes(ctx, db, storeID, partnerActorID, []string{postgres.FulfillmentModeCustomerPickup}, 1, "idem-mode-all-v1", "corr-mode-conflict-v1")
 	requireStoreFulfillmentModesError(t, err, postgres.ErrStoreFulfillmentModesIdempotency)
 
-	noOp, err := postgres.SetStoreFulfillmentModes(ctx, db, storeID, partnerActorID, bothModes, 2, "idem-mode-noop-v1", "corr-mode-noop-v1")
-	requireStoreFulfillmentModesResult(t, noOp, err, false, 2, bothModes)
-	pickupModes := []string{postgres.FulfillmentModeCustomerPickup}
-	pickup, err := postgres.SetStoreFulfillmentModes(ctx, db, storeID, partnerActorID, pickupModes, 2, "idem-mode-pickup-v1", "corr-mode-pickup-v1")
-	requireStoreFulfillmentModesResult(t, pickup, err, false, 3, pickupModes)
+	noOp, err := postgres.SetStoreFulfillmentModes(ctx, db, storeID, partnerActorID, allModes, 2, "idem-mode-noop-v1", "corr-mode-noop-v1")
+	requireStoreFulfillmentModesResult(t, noOp, err, false, 2, allModes)
+	partnerModes := []string{postgres.FulfillmentModePartnerCaptain}
+	partnerOnly, err := postgres.SetStoreFulfillmentModes(ctx, db, storeID, partnerActorID, partnerModes, 2, "idem-mode-partner-only-v1", "corr-mode-partner-only-v1")
+	requireStoreFulfillmentModesResult(t, partnerOnly, err, false, 3, partnerModes)
 	_, err = postgres.SetStoreFulfillmentModes(ctx, db, storeID, partnerActorID, []string{postgres.FulfillmentModeBthwaniCaptain}, 2, "idem-mode-stale-v1", "corr-mode-stale-v1")
 	requireStoreFulfillmentModesError(t, err, postgres.ErrStoreFulfillmentModesVersion)
 
 	current, err := postgres.ReadStore(ctx, db, storeID)
-	if err != nil || current.Version != 3 || !equalStoreFulfillmentModes(current.FulfillmentModes, pickupModes) {
+	if err != nil || current.Version != 3 || !equalStoreFulfillmentModes(current.FulfillmentModes, partnerModes) {
 		t.Fatalf("canonical Store fulfillment mode readback failed: %+v err=%v", current, err)
 	}
 	var audits int

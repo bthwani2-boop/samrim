@@ -9,7 +9,7 @@ const actorTypes = new Set(["partner", "captain", "field"]);
 async function operator() {
   const identity = await readOperatorSession();
   if (!identity) return { error: NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "authentication is required" } }, { status: 401 }) };
-  if (identity.role !== "operator") return { error: NextResponse.json({ error: { code: "FORBIDDEN", message: "control operator access is required" } }, { status: 403 }) };
+  if (identity.role !== "operator" || !identity.permissions?.includes("finance")) return { error: NextResponse.json({ error: { code: "FORBIDDEN", message: "Finance permission is required" } }, { status: 403 }) };
   return { identity };
 }
 

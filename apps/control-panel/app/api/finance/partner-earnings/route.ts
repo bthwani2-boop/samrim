@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   if (!verifySameOrigin(request)) return errorResponse("FORBIDDEN", "cross-site requests are forbidden", 403);
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
-  if (identity.role !== "operator") return errorResponse("FORBIDDEN", "control operator access is required", 403);
+  if (identity.role !== "operator" || !identity.permissions?.includes("finance")) return errorResponse("FORBIDDEN", "Finance permission is required", 403);
   const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() ?? "";
   const correlationId = request.headers.get("X-Correlation-ID")?.trim() ?? "";
   if (idempotencyKey.length < 8 || idempotencyKey.length > 128 || correlationId.length < 8 || correlationId.length > 128) return errorResponse("INVALID_INPUT", "mutation identifiers are required", 400);
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
-  if (identity.role !== "operator") return errorResponse("FORBIDDEN", "control operator access is required", 403);
+  if (identity.role !== "operator" || !identity.permissions?.includes("finance")) return errorResponse("FORBIDDEN", "Finance permission is required", 403);
   const partnerActorId = new URL(request.url).searchParams.get("partnerActorId")?.trim() ?? "";
   if (!partnerActorId) return errorResponse("INVALID_INPUT", "partnerActorId is required", 400);
   try {

@@ -10,6 +10,7 @@ import type {
   ManagedActivationRequest,
   ManagedChallengeRequest,
   ManagedPasswordLoginRequest,
+  OperatorFinanceAccess,
   OperatorEnrollmentRequest,
   OperatorEnrollmentToken,
   OperatorEnrollmentTokenIssueRequest,
@@ -77,6 +78,9 @@ export type IdentityInternalClient = Readonly<{
   issueOperatorEnrollmentToken(request: OperatorEnrollmentTokenIssueRequest, context: AttributedMutationContext): Promise<OperatorEnrollmentToken>;
   provisionActorRole(request: ProvisionActorRoleRequest, context: AttributedMutationContext): Promise<ActorRoleView>;
   searchActorRoles(role: ActorType, query: string, enabled?: boolean): Promise<ActorRoleSearchPage>;
+  readActorRole(actorId: string, role: ActorType): Promise<ActorRoleView>;
+  readOperatorFinanceAccess(actorId: string, context: AttributedMutationContext): Promise<OperatorFinanceAccess>;
+  setOperatorFinanceAccess(actorId: string, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<OperatorFinanceAccess>;
   authorizeActorRoleReenrollment(actorId: string, role: ActorType, context: ReenrollmentMutationContext): Promise<void>;
   setActorRoleEnabled(actorId: string, role: ActorType, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<void>;
   setActorSecurityEnabled(actorId: string, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<void>;
@@ -202,6 +206,32 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
   const token = serviceToken.trim();
   if (token.length < 24) throw new Error("IDENTITY_SERVICE_TOKEN_INVALID");
 
+  async function readActorRole(actorId: string, role: ActorType): Promise<ActorRoleView> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      let response: Response;
+      try {
+        response = await fetch(resolveUrl(baseUrl, expandPath(identityOperationPaths.readActorRole.path, { actorId, role })), {
+          method: identityOperationPaths.readActorRole.method,
+          cache: "no-store",
+          headers: { Accept: "application/json", Authorization: "Bearer " + token },
+          ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        throw { kind: "network", message: error instanceof Error ? error.message : "identity network error" } satisfies IdentityClientError;
+      }
+      if (!response.ok) {
+        const parsed = parseErrorPayload(await response.json().catch(() => null));
+        throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies IdentityClientError;
+      }
+      return (await response.json()) as ActorRoleView;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   async function requestNoContent(
     pathname: string,
     reason: string,
@@ -233,6 +263,55 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
         const parsed = parseErrorPayload(await response.json().catch(() => null));
         throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies IdentityClientError;
       }
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async function requestOperatorFinanceAccess(
+    actorId: string,
+    method: "GET" | "PUT",
+    context: AttributedMutationContext | VersionedMutationContext,
+    enabled?: boolean,
+    reason = "",
+  ): Promise<OperatorFinanceAccess> {
+    if (method === "PUT") {
+      validateVersionedMutationContext(context as VersionedMutationContext);
+      const reasonLength = Array.from(reason.trim()).length;
+      if (reasonLength < 5 || reasonLength > 500) throw new Error("IDENTITY_FINANCE_PERMISSION_REASON_INVALID");
+    } else {
+      validateAttributedMutationContext(context);
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      let response: Response;
+      try {
+        response = await fetch(resolveUrl(baseUrl, expandPath(identityOperationPaths.readOperatorFinanceAccess.path, { actorId })), {
+          method,
+          headers: {
+            Accept: "application/json",
+            Authorization: "Bearer " + token,
+            "X-Acting-Actor-ID": context.operatorActorId.trim(),
+            ...(method === "PUT" ? {
+              "Content-Type": "application/json",
+              "X-Correlation-ID": context.correlationId.trim(),
+              "X-Expected-Version": String((context as VersionedMutationContext).expectedVersion),
+              "X-Reason": reason.trim(),
+            } : {}),
+          },
+          ...(method === "PUT" ? { body: JSON.stringify({ enabled }) } : {}),
+          ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        throw { kind: "network", message: error instanceof Error ? error.message : "identity network error" } satisfies IdentityClientError;
+      }
+      if (!response.ok) {
+        const parsed = parseErrorPayload(await response.json().catch(() => null));
+        throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies IdentityClientError;
+      }
+      return (await response.json()) as OperatorFinanceAccess;
     } finally {
       clearTimeout(timeout);
     }
@@ -338,6 +417,7 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
         clearTimeout(timeout);
       }
     },
+    readActorRole,
     searchActorRoles: async (role, query, enabled) => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -364,6 +444,8 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
         clearTimeout(timeout);
       }
     },
+    readOperatorFinanceAccess: (actorId, context) => requestOperatorFinanceAccess(actorId, "GET", context),
+    setOperatorFinanceAccess: (actorId, enabled, reason, context) => requestOperatorFinanceAccess(actorId, "PUT", context, enabled, reason),
     authorizeActorRoleReenrollment: (actorId, role, context) =>
       requestReenrollmentNoContent(expandPath(identityOperationPaths.authorizeManagedRoleReenrollment.path, { actorId, role }), context),
     setActorRoleEnabled: (actorId, role, enabled, reason, context) => {

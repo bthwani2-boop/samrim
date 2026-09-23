@@ -61,6 +61,8 @@ paths:
     $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1actor-roles~1provision"
   /internal/actor-roles/search:
     $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1actor-roles~1search"
+  /internal/operators/{actorId}/finance-access:
+    $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1operators~1{actorId}~1finance-access"
   /internal/actors/{actorId}/roles/{role}:
     $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1actors~1{actorId}~1roles~1{role}"
   /internal/actors/{actorId}/roles/{role}/disable:
@@ -93,7 +95,9 @@ components:
     ExpectedActorVersion: { name: X-Expected-Actor-Version, in: header, required: true, schema: { type: integer, minimum: 1 } }
     ReenrollmentReasonRequired: { name: X-Reason, in: header, required: true, schema: { type: string, minLength: 5, maxLength: 500 } }
     ControlPanelExpectedVersion: { name: X-Expected-Version, in: header, required: true, schema: { type: integer, minimum: 1 } }
+    FinancePermissionExpectedVersion: { name: X-Expected-Version, in: header, required: true, schema: { type: integer, minimum: 1 } }
     MutationReason: { name: X-Reason, in: header, required: false, schema: { type: string, maxLength: 500 } }
+    FinancePermissionReason: { name: X-Reason, in: header, required: true, schema: { type: string, minLength: 5, maxLength: 500 } }
 
   schemas:
     StatusResponse:
@@ -435,6 +439,50 @@ components:
         expiresAt:
           type: string
           format: date-time
+        permissions:
+          type: array
+          items:
+            type: string
+            enum: [finance]
+        canManageFinanceAccess:
+          type: boolean
+
+    OperatorFinanceAccess:
+      type: object
+      additionalProperties: false
+      required: [actorId, permission, enabled, version, reason, updatedAt]
+      properties:
+        actorId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        permission:
+          type: string
+          const: finance
+        enabled:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+        changedByActorId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+        updatedAt:
+          type: string
+          format: date-time
+
+    SetOperatorFinanceAccessRequest:
+      type: object
+      additionalProperties: false
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
 
     TokenPair:
       type: object

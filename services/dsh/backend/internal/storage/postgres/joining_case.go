@@ -97,8 +97,8 @@ func HashJoiningCaseSubmit(caseID, actorID string, expectedVersion int) string {
 	return hashFacts(caseID, actorID, strconv.Itoa(expectedVersion))
 }
 
-func HashJoiningCaseCorrectAndResubmit(caseID, actorID, businessName, firstStoreName string, expectedVersion int, serviceCityID, verticalID string, latitude, longitude float64, fulfillmentModes []string) string {
-	return hashFacts("correct-and-resubmit", caseID, actorID, businessName, firstStoreName, strconv.Itoa(expectedVersion), serviceCityID, verticalID, formatCoordinate(latitude), formatCoordinate(longitude), strings.Join(fulfillmentModes, ","))
+func HashJoiningCaseCorrectAndResubmit(caseID, actorID, businessName, firstStoreName string, expectedVersion int, serviceCityID, verticalID string, latitude, longitude float64) string {
+	return hashFacts("correct-and-resubmit", caseID, actorID, businessName, firstStoreName, strconv.Itoa(expectedVersion), serviceCityID, verticalID, formatCoordinate(latitude), formatCoordinate(longitude))
 }
 
 func HashJoiningCaseReview(caseID, decision, correctionReason string, expectedVersion int) string {
@@ -126,6 +126,9 @@ func createJoiningCase(ctx context.Context, db *sql.DB, idempotencyKey, requestH
 	}
 	if origin == "field" && strings.TrimSpace(originatingFieldActorID) == "" {
 		return JoiningCaseResult{}, ErrJoiningCaseState
+	}
+	if len(fulfillmentModes) == 0 {
+		return JoiningCaseResult{}, ErrFulfillmentModesInvalid
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -260,19 +263,14 @@ func SubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, actorID string, 
 	return result, err
 }
 
-func CorrectAndResubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, actorID, businessName, firstStoreName string, expectedVersion int, idempotencyKey, requestHash, correlationID, serviceCityID, verticalID string, latitude, longitude float64, fulfillmentModes []string) (JoiningCaseResult, error) {
-	return correctAndResubmitJoiningCase(ctx, db, caseID, actorID, businessName, firstStoreName, expectedVersion, idempotencyKey, requestHash, correlationID, serviceCityID, verticalID, latitude, longitude, fulfillmentModes)
+func CorrectAndResubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, actorID, businessName, firstStoreName string, expectedVersion int, idempotencyKey, requestHash, correlationID, serviceCityID, verticalID string, latitude, longitude float64) (JoiningCaseResult, error) {
+	return correctAndResubmitJoiningCase(ctx, db, caseID, actorID, businessName, firstStoreName, expectedVersion, idempotencyKey, requestHash, correlationID, serviceCityID, verticalID, latitude, longitude)
 }
 
-func correctAndResubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, actorID, businessName, firstStoreName string, expectedVersion int, idempotencyKey, requestHash, correlationID, serviceCityID, verticalID string, latitude, longitude float64, fulfillmentModes []string) (JoiningCaseResult, error) {
+func correctAndResubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, actorID, businessName, firstStoreName string, expectedVersion int, idempotencyKey, requestHash, correlationID, serviceCityID, verticalID string, latitude, longitude float64) (JoiningCaseResult, error) {
 	if db == nil {
 		return JoiningCaseResult{}, errors.New("DSH database is nil")
 	}
-	normalizedModes, err := NormalizeStoreFulfillmentModes(fulfillmentModes)
-	if err != nil {
-		return JoiningCaseResult{}, err
-	}
-	fulfillmentModes = normalizedModes
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return JoiningCaseResult{}, fmt.Errorf("begin joining case correction and resubmission: %w", err)
@@ -313,8 +311,8 @@ func correctAndResubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, acto
 		return JoiningCaseResult{}, ErrJoiningCaseStoreOrigin
 	}
 	var updatedID string
-	query := `UPDATE dsh.joining_cases SET business_name=$2,first_store_name=$3,first_store_service_city_id=NULLIF($4,''),first_store_vertical_id=NULLIF($5,''),first_store_latitude=$6,first_store_longitude=$7,first_store_fulfillment_modes=$8,state='submitted',correction_reason=NULL,reviewed_by=NULL,store_id=NULL,commission_rate_bps=NULL,settlement_period=NULL,financial_profile_id=NULL,financial_profile_state='REQUIRED',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND partner_actor_id=$9 AND state='needs_correction' AND version=$10 RETURNING id`
-	if err := tx.QueryRowContext(ctx, query, current.Case.ID, businessName, firstStoreName, cityID, verticalID, latitude, longitude, pq.Array(fulfillmentModes), actorID, expectedVersion).Scan(&updatedID); err != nil {
+	query := `UPDATE dsh.joining_cases SET business_name=$2,first_store_name=$3,first_store_service_city_id=NULLIF($4,''),first_store_vertical_id=NULLIF($5,''),first_store_latitude=$6,first_store_longitude=$7,state='submitted',correction_reason=NULL,reviewed_by=NULL,store_id=NULL,commission_rate_bps=NULL,settlement_period=NULL,financial_profile_id=NULL,financial_profile_state='REQUIRED',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND partner_actor_id=$8 AND state='needs_correction' AND version=$9 RETURNING id`
+	if err := tx.QueryRowContext(ctx, query, current.Case.ID, businessName, firstStoreName, cityID, verticalID, latitude, longitude, actorID, expectedVersion).Scan(&updatedID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return JoiningCaseResult{}, ErrJoiningCaseVersion
 		}

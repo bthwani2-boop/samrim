@@ -31,7 +31,7 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 	}
 
 	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
-		if err := postgres.Migrate(ctx, db, records, migrationSQL); err != nil {
+		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
 			t.Fatalf("apply DSH migrations: %v", err)
 		}
 		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.service_cities(id,display_name_ar,active) VALUES($1,$2,true)", "sanaa_operator_ops", "صنعاء عمليات"); err != nil {

@@ -187,7 +187,7 @@ export default function ClientOrderDetail() {
       {refreshError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{refreshError}</Text> : null}
       {cancelError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{cancelError}</Text> : null}
       <OrderConversation orderId={order.id} />
-      <BthwaniSectionHeader title={isStorePickup ? "رمز الاستلام من المتجر" : "إثبات التسليم"} subtitle={isStorePickup ? "أظهر الرمز لموظف المتجر عند استلام الطلب" : "يؤكّد العميل الرمز للكابتن عند استلام الطلب"} />
+      <BthwaniSectionHeader title={isStorePickup ? "رمز الاستلام الذاتي من المتجر" : "إثبات التسليم"} subtitle={isStorePickup ? "أظهر الرمز لموظف المتجر عند استلامك الطلب" : "يؤكّد العميل الرمز للكابتن عند استلام الطلب"} />
       <BthwaniSurface tone="base" style={styles.proofSurface}>
         {deliveryProof.kind === "loading" ? <Text style={styles.muted}>جارٍ تجهيز {proofLabel}…</Text> : null}
         {deliveryProof.kind === "error" ? <Text style={styles.refreshError}>تعذر قراءة {proofLabel} الآن. حدّث الحالة لإعادة المحاولة.</Text> : null}

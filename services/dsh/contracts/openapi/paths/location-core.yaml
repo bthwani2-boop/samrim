@@ -153,39 +153,5 @@ paths:
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 
-  /dsh/stores/{storeId}/fulfillment-modes:
-    post:
-      operationId: setStoreFulfillmentModes
-      summary: Set the authenticated partner's available Store fulfillment modes
-      security:
-        - userBearer: []
-      parameters:
-        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
-        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
-        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
-        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "../dsh.openapi.yaml#/components/schemas/SetStoreFulfillmentModesRequest"
-      responses:
-        "200":
-          description: Canonical Store fulfillment modes after an update or idempotent replay.
-          content:
-            application/json:
-              schema:
-                $ref: "../dsh.openapi.yaml#/components/schemas/StoreFulfillmentModesResponse"
-        "400":
-          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
-        "401":
-          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
-        "403":
-          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
-        "404":
-          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
-        "409":
-          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"

@@ -10,7 +10,7 @@ function errorResponse(code: string, message: string, status: number) {
 export async function GET() {
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
-  if (identity.role !== "operator") return errorResponse("FORBIDDEN", "control operator access is required", 403);
+  if (identity.role !== "operator" || !identity.permissions?.includes("finance")) return errorResponse("FORBIDDEN", "Finance permission is required", 403);
 
   try {
     const result = await listOperatorCashCustody({ operatorActorId: identity.subject });

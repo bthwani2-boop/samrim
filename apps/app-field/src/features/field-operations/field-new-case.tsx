@@ -13,7 +13,7 @@ export function FieldNewCase() {
 const theme = useAppearanceTheme();
   const styles = useMemo(() => createFieldOperationStyles(theme), [theme]);
   const [admission, setAdmission] = useState<FieldAdmission | null>(null);
-  const [input, setInput] = useState<CreateJoiningCaseRequest>({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "", firstStoreLatitude: 0, firstStoreLongitude: 0, firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"] });
+  const [input, setInput] = useState<CreateJoiningCaseRequest>({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "", firstStoreLatitude: 0, firstStoreLongitude: 0, firstStoreFulfillmentModes: [] });
   const [storeLatitude, setStoreLatitude] = useState("");
   const [storeLongitude, setStoreLongitude] = useState("");
   const [createdCase, setCreatedCase] = useState<JoiningCaseResponse | null>(null);
@@ -65,7 +65,7 @@ const theme = useAppearanceTheme();
     const latitude = Number(storeLatitude.trim());
     const longitude = Number(storeLongitude.trim());
     if (!input.contactPhoneE164.trim() || !input.businessName.trim() || !input.firstStoreName.trim() || !input.serviceCityId || !input.firstStoreVerticalId || input.firstStoreFulfillmentModes.length === 0 || !storeImage || !Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-		setError("أكمل بيانات المتجر واختر طريقة تلبية واحدة على الأقل، ثم اختر صورة المتجر.");
+		setError("أكمل بيانات المتجر واختر وضعًا واحدًا على الأقل، ثم اختر صورة المتجر.");
       return;
     }
     setBusy(true);
@@ -86,7 +86,7 @@ const theme = useAppearanceTheme();
       }
       setStoreLatitude("");
       setStoreLongitude("");
-      setInput({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "", firstStoreLatitude: 0, firstStoreLongitude: 0, firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"] });
+      setInput({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "", firstStoreLatitude: 0, firstStoreLongitude: 0, firstStoreFulfillmentModes: [] });
       await loadAdmission();
     } catch (cause) {
       console.error("DSH Field joining-case creation failed", cause);
@@ -96,10 +96,9 @@ const theme = useAppearanceTheme();
     }
   }
 
-  function toggleFulfillmentMode(mode: "BTHWANI_CAPTAIN" | "CUSTOMER_PICKUP") {
+  function toggleFulfillmentMode(mode: "BTHWANI_CAPTAIN" | "PARTNER_CAPTAIN" | "CUSTOMER_PICKUP") {
     setInput((current) => {
       const selected = current.firstStoreFulfillmentModes.includes(mode);
-      if (selected && current.firstStoreFulfillmentModes.length === 1) return current;
       return { ...current, firstStoreFulfillmentModes: selected ? current.firstStoreFulfillmentModes.filter((value) => value !== mode) : [...current.firstStoreFulfillmentModes, mode] };
     });
   }
@@ -162,11 +161,12 @@ const theme = useAppearanceTheme();
         {optionsLoading ? <Text style={styles.muted}>جارٍ قراءة الأنشطة المتاحة…</Text> : null}
         {!optionsLoading && !optionsError && verticals.length === 0 ? <Text style={styles.error}>لا يوجد نشاط تجاري متاح حاليًا.</Text> : null}
         <View style={styles.optionList}>{verticals.map((vertical) => <BthwaniChip key={vertical.id} label={vertical.nameAr} onPress={() => setInput((current) => ({ ...current, firstStoreVerticalId: vertical.id }))} selected={input.firstStoreVerticalId === vertical.id} />)}</View>
-        <Text style={styles.label}>طرق تلبية الطلب في المتجر</Text>
-        <Text style={styles.muted}>اختر ما يقدمه المتجر فعلًا. سيظهر الاستلام للعميل فقط إذا كان المتجر يدعمه.</Text>
+        <Text style={styles.label}>أوضاع الطلب التي اختارها الشريك عند الانضمام</Text>
+        <Text style={styles.muted}>سجّل الأوضاع المتاحة في المتجر لأول مرة. بعد إنشاء المتجر لا يغيّرها الشريك من التطبيق؛ يديرها المشغّل من لوحة التحكم.</Text>
         <View style={styles.optionList}>
-          <BthwaniChip label="توصيل بثواني" onPress={() => toggleFulfillmentMode("BTHWANI_CAPTAIN")} selected={input.firstStoreFulfillmentModes.includes("BTHWANI_CAPTAIN")} />
-          <BthwaniChip label="الاستلام من المتجر" onPress={() => toggleFulfillmentMode("CUSTOMER_PICKUP")} selected={input.firstStoreFulfillmentModes.includes("CUSTOMER_PICKUP")} />
+          <BthwaniChip label="توصيل بثواني · مسؤولية المنصة" onPress={() => toggleFulfillmentMode("BTHWANI_CAPTAIN")} selected={input.firstStoreFulfillmentModes.includes("BTHWANI_CAPTAIN")} />
+          <BthwaniChip label="توصيل المتجر · كابتن المتجر" onPress={() => toggleFulfillmentMode("PARTNER_CAPTAIN")} selected={input.firstStoreFulfillmentModes.includes("PARTNER_CAPTAIN")} />
+          <BthwaniChip label="استلم بنفسك من المتجر" onPress={() => toggleFulfillmentMode("CUSTOMER_PICKUP")} selected={input.firstStoreFulfillmentModes.includes("CUSTOMER_PICKUP")} />
         </View>
         <Text style={styles.label}>موقع المتجر الثابت</Text>
         <Text style={styles.muted}>أدخل إحداثيات موقع المتجر مع ملف الانضمام؛ تنتقل إلى المتجر عند الاعتماد ولا تُعدّل من شاشة إدارة المتجر.</Text>

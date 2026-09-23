@@ -64,13 +64,13 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 			"019_captain_delivery_recovery.sql",
 			"020_field_standing_admission_and_joining_scope.sql",
 		)
-		if err := postgres.Migrate(ctx, db, records, migrationSQL); err != nil {
+		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
 			t.Fatalf("apply fresh DSH migrations: %v", err)
 		}
 		if err := postgres.VerifySchema(ctx, db, records); err != nil {
 			t.Fatalf("verify fresh DSH schema: %v", err)
 		}
-		if err := postgres.Migrate(ctx, db, records, migrationSQL); err != nil {
+		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
 			t.Fatalf("rerun DSH migrations with matching checksums: %v", err)
 		}
 		for _, table := range []string{"central_products", "central_product_mutation_idempotency", "central_product_audit", "store_assortments", "store_assortment_mutation_idempotency", "store_assortment_audit"} {

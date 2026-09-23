@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
@@ -28,6 +29,14 @@ type partnerCommissionRemittanceResponse struct {
 	IdempotentReplay bool                            `json:"idempotentReplay"`
 }
 
+type partnerStoreCommissionPolicyUpdateRequest struct {
+	StoreID           string `json:"storeId"`
+	FulfillmentMode   string `json:"fulfillmentMode"`
+	CommissionRateBps int    `json:"commissionRateBps"`
+	ExpectedVersion   int    `json:"expectedVersion"`
+	Reason            string `json:"reason"`
+}
+
 func NewPartnerFinance(identity *identityintegration.Client, accessToken string, payment *wlt.Client) (*PartnerFinanceServer, error) {
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
@@ -43,6 +52,59 @@ func (s *PartnerFinanceServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/partners/me/financial-summary", s.readOwnSummary)
 	mux.HandleFunc("GET /dsh/operator/partners/{partnerActorId}/financial-summary", s.readOperatorSummary)
 	mux.HandleFunc("POST /dsh/operator/partners/{partnerActorId}/commission-remittances", s.recordCommissionRemittance)
+	mux.HandleFunc("GET /dsh/operator/partner-store-commission-policies", s.readStoreCommissionPolicies)
+	mux.HandleFunc("POST /dsh/operator/partner-store-commission-policies", s.updateStoreCommissionPolicy)
+}
+
+func (s *PartnerFinanceServer) readStoreCommissionPolicies(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeOperator(w, r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if !s.requireOperator(w, r.Context(), acting) {
+		return
+	}
+	storeID := strings.TrimSpace(r.URL.Query().Get("storeId"))
+	if storeID == "" || len(storeID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "storeId is required")
+		return
+	}
+	result, err := s.payment.ReadPartnerStoreCommissionPolicies(r.Context(), storeID)
+	if err != nil {
+		writeWLTFinanceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *PartnerFinanceServer) updateStoreCommissionPolicy(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeOperator(w, r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting, correlationID, idempotencyKey, ok := requiredMutationHeaders(w, r)
+	if !ok || !s.requireOperator(w, r.Context(), acting) {
+		return
+	}
+	var input partnerStoreCommissionPolicyUpdateRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	input.StoreID = strings.TrimSpace(input.StoreID)
+	input.FulfillmentMode = strings.TrimSpace(input.FulfillmentMode)
+	input.Reason = strings.TrimSpace(input.Reason)
+	validMode := input.FulfillmentMode == "BTHWANI_CAPTAIN" || input.FulfillmentMode == "PARTNER_CAPTAIN" || input.FulfillmentMode == "CUSTOMER_PICKUP"
+	if input.StoreID == "" || len(input.StoreID) > 128 || !validMode || input.CommissionRateBps < 0 || input.CommissionRateBps > 10000 || input.ExpectedVersion < 1 || utf8.RuneCountInString(input.Reason) < 8 || utf8.RuneCountInString(input.Reason) > 500 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "store commission policy fields are invalid")
+		return
+	}
+	result, err := s.payment.UpdatePartnerStoreCommissionPolicy(r.Context(), input.StoreID, input.FulfillmentMode, input.CommissionRateBps, input.ExpectedVersion, input.Reason, idempotencyKey, correlationID, acting)
+	if err != nil {
+		writeWLTFinanceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *PartnerFinanceServer) readOwnSummary(w http.ResponseWriter, r *http.Request) {

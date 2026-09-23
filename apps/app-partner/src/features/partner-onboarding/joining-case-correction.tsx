@@ -15,7 +15,6 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
   const [verticalId, setVerticalId] = useState(current.firstStoreVerticalId || "");
   const [latitude, setLatitude] = useState<number | null>(current.firstStoreLatitude);
   const [longitude, setLongitude] = useState<number | null>(current.firstStoreLongitude);
-  const [fulfillmentModes, setFulfillmentModes] = useState<ReadonlyArray<StoreFulfillmentMode>>(current.firstStoreFulfillmentModes);
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
   const [optionsLoading, setOptionsLoading] = useState(false);
   const [optionsError, setOptionsError] = useState(false);
@@ -29,8 +28,7 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
     setVerticalId(current.firstStoreVerticalId || "");
     setLatitude(current.firstStoreLatitude);
     setLongitude(current.firstStoreLongitude);
-    setFulfillmentModes(current.firstStoreFulfillmentModes);
-  }, [current.businessName, current.firstStoreName, current.serviceCityId, current.firstStoreVerticalId, current.firstStoreLatitude, current.firstStoreLongitude, current.firstStoreFulfillmentModes]);
+  }, [current.businessName, current.firstStoreName, current.serviceCityId, current.firstStoreVerticalId, current.firstStoreLatitude, current.firstStoreLongitude]);
 
   const loadOptions = useCallback(async () => {
     setOptionsLoading(true);
@@ -52,25 +50,17 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
 
   if (current.state !== "needs_correction") return null;
 
-  function toggleFulfillmentMode(mode: StoreFulfillmentMode) {
-    setFulfillmentModes((currentModes) => {
-      const selected = currentModes.includes(mode);
-      if (selected && currentModes.length === 1) return currentModes;
-      return selected ? currentModes.filter((value) => value !== mode) : [...currentModes, mode];
-    });
-  }
-
   async function correctAndResubmit() {
     const nextBusinessName = businessName.trim();
     const nextStoreName = firstStoreName.trim();
-	    if (nextBusinessName.length < 2 || nextBusinessName.length > 160 || nextStoreName.length < 2 || nextStoreName.length > 160 || !serviceCityId || !verticalId || latitude === null || longitude === null || fulfillmentModes.length === 0) {
-		setError("أدخل الأسماء واختر المدينة والنشاط وطريقة تلبية واحدة على الأقل، وتأكد من وجود موقع المتجر الثابت.");
+	    if (nextBusinessName.length < 2 || nextBusinessName.length > 160 || nextStoreName.length < 2 || nextStoreName.length > 160 || !serviceCityId || !verticalId || latitude === null || longitude === null) {
+		setError("أدخل الأسماء واختر المدينة والنشاط، وتأكد من وجود موقع المتجر الثابت.");
       return;
     }
     setBusy(true);
     setError("");
     try {
-      const resubmitted = await correctAndResubmitOwnJoiningCase(current.id, nextBusinessName, nextStoreName, serviceCityId, verticalId, latitude, longitude, fulfillmentModes, current.version);
+      const resubmitted = await correctAndResubmitOwnJoiningCase(current.id, nextBusinessName, nextStoreName, serviceCityId, verticalId, latitude, longitude, current.version);
       onUpdated(resubmitted);
     } catch (nextError) {
       if (nextError && typeof nextError === "object" && "status" in nextError && (nextError as { status?: unknown }).status === 409) {
@@ -98,12 +88,7 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
       {optionsLoading ? <Text style={styles.muted}>جارٍ قراءة الأنشطة المتاحة…</Text> : null}
       {optionsError ? <View style={styles.optionError}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة الأنشطة التجارية.</Text><BthwaniButton label="إعادة قراءة الأنشطة" onPress={() => void loadOptions()} variant="secondary" /></View> : null}
       <View style={styles.cityList}>{verticals.map((vertical) => <BthwaniChip key={vertical.id} disabled={busy} label={vertical.nameAr} onPress={() => setVerticalId(vertical.id)} selected={verticalId === vertical.id} />)}</View>
-      <Text style={styles.label}>طرق تلبية الطلب في المتجر</Text>
-      <Text style={styles.muted}>المحدد الآن: {fulfillmentModes.map(fulfillmentModeLabel).join(" · ") || "لم تُحدد"}</Text>
-      <View style={styles.cityList}>
-        <BthwaniChip disabled={busy} label="توصيل بثواني" onPress={() => toggleFulfillmentMode("BTHWANI_CAPTAIN")} selected={fulfillmentModes.includes("BTHWANI_CAPTAIN")} />
-        <BthwaniChip disabled={busy} label="الاستلام من المتجر" onPress={() => toggleFulfillmentMode("CUSTOMER_PICKUP")} selected={fulfillmentModes.includes("CUSTOMER_PICKUP")} />
-      </View>
+      <View style={styles.locationBox}><Text style={styles.label}>أوضاع الطلب المثبتة عند الانضمام</Text><Text style={styles.muted}>{current.firstStoreFulfillmentModes.map(fulfillmentModeLabel).join(" · ")}</Text><Text style={styles.muted}>لا يتغير اختيار الأوضاع أثناء التصحيح أو إعادة الإرسال. بعد إنشاء المتجر يديره المشغّل من لوحة التحكم.</Text></View>
       <BthwaniButton busy={busy} disabled={optionsLoading} label="حفظ التصحيح وإعادة الإرسال" onPress={() => void correctAndResubmit()} />
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     </View>
@@ -112,7 +97,7 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
 
 function fulfillmentModeLabel(mode: StoreFulfillmentMode): string {
   if (mode === "BTHWANI_CAPTAIN") return "توصيل بثواني";
-  if (mode === "CUSTOMER_PICKUP") return "الاستلام من المتجر";
+  if (mode === "CUSTOMER_PICKUP") return "استلم بنفسك من المتجر";
   return "توصيل المتجر";
 }
 

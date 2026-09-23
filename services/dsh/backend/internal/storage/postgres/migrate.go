@@ -15,7 +15,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 49
+const SchemaVersion = 54
 
 type MigrationRecord struct {
 	Version int
@@ -24,10 +24,11 @@ type MigrationRecord struct {
 }
 
 var requiredTables = []struct {
-	name        string
-	columns     []string
-	constraints []string
-	indexes     []string
+	name             string
+	columns          []string
+	forbiddenColumns []string
+	constraints      []string
+	indexes          []string
 }{
 	{name: "dsh.schema_migrations", columns: []string{"version", "name", "sha256", "applied_at"}, constraints: []string{"schema_migrations_pkey"}},
 	{name: "dsh.stores", columns: []string{"id", "partner_actor_id", "name", "version", "created_at", "updated_at", "publication_state", "publication_changed_at", "delivery_origin_latitude", "delivery_origin_longitude", "delivery_origin_version", "delivery_origin_updated_at", "service_city_id", "primary_vertical_id", "fulfillment_modes"}, constraints: []string{"stores_pkey", "stores_id_partner_actor_uq", "stores_name_length_chk", "stores_version_positive_chk", "stores_publication_state_chk", "stores_delivery_origin_pair_chk", "stores_delivery_origin_latitude_chk", "stores_delivery_origin_longitude_chk", "stores_delivery_origin_version_chk", "stores_delivery_origin_updated_at_chk", "stores_service_city_fk", "stores_primary_vertical_fk", "stores_fulfillment_modes_chk"}, indexes: []string{"stores_partner_actor_idx", "stores_publication_state_idx", "stores_service_city_idx", "stores_primary_vertical_idx"}},
@@ -74,6 +75,7 @@ var requiredTables = []struct {
 	{name: "dsh.commerce_cart_audit", columns: []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "cart_id", "line_id", "store_offer_id", "from_version", "result_version", "request_hash", "quantity_base_units", "created_at"}, constraints: []string{"commerce_cart_audit_pkey", "commerce_cart_audit_event_type_chk", "commerce_cart_audit_event_idempotency_uq", "commerce_cart_audit_cart_fk", "commerce_cart_audit_line_fk", "commerce_cart_audit_result_version_chk"}, indexes: []string{"commerce_cart_audit_cart_idx"}},
 	{name: "dsh.commerce_orders", columns: []string{"id", "client_actor_id", "store_id", "cart_id", "fulfillment_mode", "address_id", "address_version", "address_text", "address_latitude", "address_longitude", "service_city_id", "serviceability_policy_version", "serviceability_status", "serviceability_store_version", "serviceability_address_version", "state", "subtotal_amount_minor", "discount_minor", "promotion_id", "promotion_code", "total_amount_minor", "currency", "payment_intent_id", "payment_method", "payment_state", "version", "created_at", "updated_at"}, constraints: []string{"commerce_orders_pkey", "commerce_orders_fulfillment_evidence_chk", "commerce_orders_state_chk", "commerce_orders_total_chk", "commerce_orders_currency_chk", "commerce_orders_version_chk", "commerce_orders_store_fk", "commerce_orders_cart_fk", "commerce_orders_service_city_fk", "commerce_orders_payment_method_chk", "commerce_orders_payment_state_chk", "commerce_orders_payment_binding_chk"}, indexes: []string{"commerce_orders_client_idx", "commerce_orders_store_state_idx", "commerce_orders_payment_intent_uq", "commerce_orders_payment_state_idx", "commerce_order_pickup_queue_idx"}},
 	{name: "dsh.commerce_financial_handoff_outbox", columns: []string{"id", "effect_type", "source_ref", "order_id", "payment_intent_id", "captain_actor_id", "partner_actor_id", "amount_minor", "reason", "idempotency_key", "correlation_id", "state", "attempts", "last_error", "next_attempt_at", "acting_actor_id", "created_at", "updated_at"}, constraints: []string{"commerce_financial_handoff_outbox_pkey", "commerce_financial_handoff_outbox_source_uq", "commerce_financial_handoff_outbox_idempotency_uq", "commerce_financial_handoff_outbox_order_fk", "commerce_financial_handoff_outbox_effect_chk", "commerce_financial_handoff_outbox_source_chk", "commerce_financial_handoff_outbox_payment_chk", "commerce_financial_handoff_outbox_idempotency_chk", "commerce_financial_handoff_outbox_correlation_chk", "commerce_financial_handoff_outbox_state_chk", "commerce_financial_handoff_outbox_attempts_chk", "commerce_financial_handoff_outbox_shape_chk", "commerce_financial_handoff_outbox_actor_chk"}, indexes: []string{"commerce_financial_handoff_outbox_pending_idx"}},
+	{name: "dsh.commerce_order_store_cash_handoffs", columns: []string{"order_id", "assignment_id", "store_id", "captain_actor_id", "partner_actor_id", "amount_minor", "state", "completion_idempotency_key", "confirmation_idempotency_key", "confirmation_request_hash", "store_confirmed_by", "store_confirmed_at", "settled_at", "version", "created_at", "updated_at"}, constraints: []string{"commerce_order_store_cash_handoffs_pkey", "commerce_order_store_cash_handoffs_order_fk", "commerce_order_store_cash_handoffs_assignment_fk", "commerce_order_store_cash_handoffs_store_fk", "commerce_order_store_cash_handoffs_amount_chk", "commerce_order_store_cash_handoffs_state_chk", "commerce_order_store_cash_handoffs_actor_chk", "commerce_order_store_cash_handoffs_version_chk", "commerce_order_store_cash_handoffs_completion_key_chk", "commerce_order_store_cash_handoffs_confirmation_chk"}, indexes: []string{"commerce_order_store_cash_handoffs_assignment_id_key", "commerce_order_store_cash_handoffs_completion_idempotency_key_key", "commerce_order_store_cash_handoffs_confirmation_idempotency_key_key", "commerce_order_store_cash_handoffs_partner_pending_idx"}},
 	{name: "dsh.commerce_promotions", columns: []string{"id", "code", "name_ar", "description_ar", "kind", "value_minor", "max_discount_minor", "funding_source", "store_id", "service_city_id", "state", "starts_at", "ends_at", "redemption_limit", "redeemed_count", "version", "created_by_actor_id", "created_at", "updated_at"}, constraints: []string{"commerce_promotions_pkey", "commerce_promotions_code_chk", "commerce_promotions_name_chk", "commerce_promotions_kind_chk", "commerce_promotions_value_chk", "commerce_promotions_percentage_chk", "commerce_promotions_max_discount_chk", "commerce_promotions_funding_chk", "commerce_promotions_state_chk", "commerce_promotions_window_chk", "commerce_promotions_limit_chk", "commerce_promotions_redeemed_chk", "commerce_promotions_version_chk", "commerce_promotions_store_fk", "commerce_promotions_city_fk"}, indexes: []string{"commerce_promotions_code_uq", "commerce_promotions_public_idx"}},
 	{name: "dsh.commerce_promotion_redemptions", columns: []string{"id", "promotion_id", "client_actor_id", "order_id", "code", "discount_minor", "created_at"}, constraints: []string{"commerce_promotion_redemptions_pkey", "commerce_promotion_redemptions_discount_chk", "commerce_promotion_redemptions_promotion_fk", "commerce_promotion_redemptions_order_fk"}, indexes: []string{"commerce_promotion_redemptions_client_promotion_uq", "commerce_promotion_redemptions_promotion_idx"}},
 	{name: "dsh.discovery_content", columns: []string{"id", "kind", "title_ar", "body_ar", "media_uri", "target_type", "target_id", "service_city_id", "state", "starts_at", "ends_at", "ordinal", "version", "created_by_actor_id", "created_at", "updated_at"}, constraints: []string{"discovery_content_pkey", "discovery_content_kind_chk", "discovery_content_title_chk", "discovery_content_target_type_chk", "discovery_content_target_chk", "discovery_content_state_chk", "discovery_content_window_chk", "discovery_content_ordinal_chk", "discovery_content_version_chk"}, indexes: []string{"discovery_content_public_idx"}},
@@ -83,7 +85,7 @@ var requiredTables = []struct {
 	{name: "dsh.commerce_multi_store_checkout_children", columns: []string{"id", "checkout_id", "child_index", "cart_id", "store_id", "address_id", "cart_version", "fulfillment_mode", "promotion_code", "order_id", "state", "failure_code", "failure_message", "version", "created_at", "updated_at"}, constraints: []string{"commerce_multi_store_checkout_children_pkey", "commerce_multi_store_checkout_children_state_chk", "commerce_multi_store_checkout_children_index_chk", "commerce_multi_store_checkout_children_cart_version_chk", "commerce_multi_store_checkout_children_version_chk", "commerce_multi_store_checkout_children_order_state_chk", "commerce_multi_store_checkout_children_checkout_fk", "commerce_multi_store_checkout_children_cart_fk", "commerce_multi_store_checkout_children_store_fk", "commerce_multi_store_checkout_children_order_fk"}, indexes: []string{"commerce_multi_store_checkout_children_index_uq", "commerce_multi_store_checkout_children_cart_uq", "commerce_multi_store_checkout_children_store_uq", "commerce_multi_store_checkout_children_order_uq", "commerce_multi_store_checkout_children_checkout_idx"}},
 	{name: "dsh.commerce_multi_store_checkout_idempotency", columns: []string{"idempotency_key", "request_hash", "checkout_id", "operation", "expected_version", "result_version", "created_at"}, constraints: []string{"commerce_multi_store_checkout_idempotency_pkey", "commerce_multi_store_checkout_idempotency_operation_chk", "commerce_multi_store_checkout_idempotency_expected_version_chk", "commerce_multi_store_checkout_idempotency_result_version_chk", "commerce_multi_store_checkout_idempotency_checkout_fk"}, indexes: []string{"commerce_multi_store_checkout_idempotency_checkout_idx"}},
 	{name: "dsh.commerce_order_payment_audit", columns: []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "order_id", "payment_intent_id", "from_state", "to_state", "amount_minor", "created_at"}, constraints: []string{"commerce_order_payment_audit_pkey", "commerce_order_payment_audit_event_chk", "commerce_order_payment_audit_idempotency_uq", "commerce_order_payment_audit_amount_chk", "commerce_order_payment_audit_order_fk"}, indexes: []string{"commerce_order_payment_audit_order_idx"}},
-	{name: "dsh.commerce_order_delivery_proofs", columns: []string{"order_id", "client_actor_id", "code", "code_hash", "state", "verified_by", "verified_at", "created_at", "updated_at", "proof_type"}, constraints: []string{"commerce_order_delivery_proofs_pkey", "commerce_order_delivery_proof_order_fk", "commerce_order_delivery_proof_code_hash_chk", "commerce_order_delivery_proof_code_chk", "commerce_order_delivery_proof_state_chk", "commerce_order_delivery_proof_verified_chk", "commerce_order_delivery_proof_type_chk"}, indexes: []string{"commerce_order_delivery_proofs_client_idx"}},
+	{name: "dsh.commerce_order_delivery_proofs", columns: []string{"order_id", "client_actor_id", "code_ciphertext", "code_verifier", "code_key_id", "state", "verified_by", "verified_at", "created_at", "updated_at", "proof_type"}, forbiddenColumns: []string{"code", "code_hash"}, constraints: []string{"commerce_order_delivery_proofs_pkey", "commerce_order_delivery_proof_order_fk", "commerce_order_delivery_proof_state_chk", "commerce_order_delivery_proof_verified_chk", "commerce_order_delivery_proof_type_chk", "commerce_order_delivery_proof_material_chk"}, indexes: []string{"commerce_order_delivery_proofs_client_idx"}},
 	{name: "dsh.commerce_order_ratings", columns: []string{"order_id", "client_actor_id", "store_id", "rating", "review", "idempotency_key", "request_hash", "created_at"}, constraints: []string{"commerce_order_ratings_pkey", "commerce_order_ratings_order_fk", "commerce_order_ratings_store_fk", "commerce_order_ratings_actor_chk", "commerce_order_ratings_rating_chk", "commerce_order_ratings_review_chk", "commerce_order_ratings_request_hash_chk", "commerce_order_ratings_idempotency_key_key"}, indexes: []string{"commerce_order_ratings_client_idx", "commerce_order_ratings_store_idx"}},
 	{name: "dsh.commerce_order_rating_audit", columns: []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "order_id", "client_actor_id", "store_id", "rating", "review", "request_hash", "created_at"}, constraints: []string{"commerce_order_rating_audit_pkey", "commerce_order_rating_audit_event_chk", "commerce_order_rating_audit_event_idempotency_uq", "commerce_order_rating_audit_order_fk", "commerce_order_rating_audit_store_fk", "commerce_order_rating_audit_rating_chk", "commerce_order_rating_audit_review_chk", "commerce_order_rating_audit_request_hash_chk"}, indexes: []string{"commerce_order_rating_audit_order_idx"}},
 	{name: "dsh.commerce_order_conversation_messages", columns: []string{"id", "order_id", "sender_actor_id", "sender_role", "body", "idempotency_key", "request_hash", "correlation_id", "created_at"}, constraints: []string{"commerce_order_conversation_messages_pkey", "commerce_order_conversation_messages_order_fk", "commerce_order_conversation_messages_sender_role_chk", "commerce_order_conversation_messages_actor_chk", "commerce_order_conversation_messages_body_chk", "commerce_order_conversation_messages_request_hash_chk", "commerce_order_conversation_messages_correlation_chk", "commerce_order_conversation_messages_idempotency_key_key"}, indexes: []string{"commerce_order_conversation_messages_order_idx", "commerce_order_conversation_messages_sender_idx"}},
@@ -107,7 +109,7 @@ var requiredTables = []struct {
 	{name: "dsh.captain_admissions", columns: []string{"id", "actor_id", "contact_phone_e164", "state", "availability_state", "version", "created_at", "updated_at"}, constraints: []string{"captain_admissions_pkey", "captain_admissions_actor_id_key", "captain_admissions_state_chk", "captain_admissions_availability_chk", "captain_admissions_version_chk", "captain_admissions_phone_chk", "captain_admissions_identity_state_chk", "captain_admissions_pending_availability_chk", "captain_admissions_suspended_availability_chk"}, indexes: []string{"captain_admissions_pending_phone_uq", "captain_admissions_dispatch_idx"}},
 	{name: "dsh.captain_admission_idempotency", columns: []string{"idempotency_key", "request_hash", "admission_id", "operation", "result_version", "result_state", "result_actor_id", "created_at"}, constraints: []string{"captain_admission_idempotency_pkey", "captain_admission_idempotency_facts_uq", "captain_admission_idempotency_operation_chk", "captain_admission_idempotency_state_chk", "captain_admission_idempotency_version_chk", "captain_admission_idempotency_admission_fk"}, indexes: []string{"captain_admission_idempotency_admission_idx"}},
 	{name: "dsh.captain_admission_audit", columns: []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "admission_id", "actor_id", "from_state", "to_state", "from_version", "result_version", "request_hash", "created_at"}, constraints: []string{"captain_admission_audit_pkey", "captain_admission_audit_event_type_chk", "captain_admission_audit_event_idempotency_uq", "captain_admission_audit_admission_fk", "captain_admission_audit_version_chk"}, indexes: []string{"captain_admission_audit_admission_idx"}},
-	{name: "dsh.captain_dispatch_offers", columns: []string{"id", "order_id", "captain_actor_id", "state", "expires_at", "version", "idempotency_key", "request_hash", "created_at", "updated_at"}, constraints: []string{"captain_dispatch_offers_pkey", "captain_dispatch_offers_idempotency_key_key", "captain_dispatch_offers_state_chk", "captain_dispatch_offers_version_chk", "captain_dispatch_offers_order_fk"}, indexes: []string{"captain_dispatch_offers_order_active_uq", "captain_dispatch_offers_captain_active_uq", "captain_dispatch_offers_captain_idx", "captain_dispatch_offers_order_idx"}},
+	{name: "dsh.captain_dispatch_offers", columns: []string{"id", "order_id", "captain_actor_id", "source_store_id", "state", "expires_at", "version", "idempotency_key", "request_hash", "created_at", "updated_at"}, constraints: []string{"captain_dispatch_offers_pkey", "captain_dispatch_offers_idempotency_key_key", "captain_dispatch_offers_state_chk", "captain_dispatch_offers_version_chk", "captain_dispatch_offers_order_fk", "captain_dispatch_offers_source_store_fk", "captain_dispatch_offers_source_store_id_chk"}, indexes: []string{"captain_dispatch_offers_order_active_uq", "captain_dispatch_offers_captain_active_uq", "captain_dispatch_offers_captain_idx", "captain_dispatch_offers_order_idx"}},
 	{name: "dsh.captain_assignments", columns: []string{"id", "order_id", "captain_actor_id", "accepted_offer_id", "state", "version", "custody_started_at", "terminal_result", "terminal_at", "created_at", "updated_at"}, constraints: []string{"captain_assignments_pkey", "captain_assignments_accepted_offer_id_key", "captain_assignments_state_chk", "captain_assignments_result_chk", "captain_assignments_custody_chk", "captain_assignments_version_chk", "captain_assignments_order_fk", "captain_assignments_offer_fk"}, indexes: []string{"captain_assignments_order_active_uq", "captain_assignments_captain_active_uq", "captain_assignments_captain_idx", "captain_assignments_order_idx"}},
 	{name: "dsh.captain_handoffs", columns: []string{"assignment_id", "order_id", "store_id", "state", "version", "store_confirmed_at", "captain_picked_up_at", "created_at", "updated_at"}, constraints: []string{"captain_handoffs_pkey", "captain_handoffs_state_chk", "captain_handoffs_confirmation_chk", "captain_handoffs_version_chk", "captain_handoffs_assignment_fk", "captain_handoffs_order_fk", "captain_handoffs_store_fk"}, indexes: []string{}},
 	{name: "dsh.captain_operation_idempotency", columns: []string{"idempotency_key", "request_hash", "operation", "admission_id", "order_id", "offer_id", "assignment_id", "result_version", "created_at"}, constraints: []string{"captain_operation_idempotency_pkey", "captain_operation_idempotency_facts_uq", "captain_operation_idempotency_operation_chk", "captain_operation_idempotency_version_chk", "captain_operation_idempotency_order_fk", "captain_operation_idempotency_offer_fk", "captain_operation_idempotency_assignment_fk", "captain_operation_idempotency_admission_fk"}, indexes: []string{"captain_operation_idempotency_order_idx"}},
@@ -154,7 +156,7 @@ func LoadMigrations(directory string) ([]MigrationRecord, []string, error) {
 	if strings.TrimSpace(directory) == "" {
 		return nil, nil, errors.New("DSH_MIGRATION_DIR is required")
 	}
-	names := []string{"001_partner_store_baseline.sql", "002_store_publication.sql", "003_joining_cases_and_catalog.sql", "004_central_product_store_assortment_cutover.sql", "005_joining_case_partner_correction.sql", "006_joining_case_correct_and_resubmit.sql", "007_location_core.sql", "008_location_core_corrective_boundaries.sql", "009_service_city_scope.sql", "010_central_catalog_refoundation.sql", "011_cart_checkout_order.sql", "012_catalog_semantic_correction.sql", "013_catalog_variant_mutations.sql", "014_catalog_proposal_import_closure.sql", "015_captain_dispatch_and_identity_boundary.sql", "016_captain_phone_constraint_correction.sql", "017_captain_access_and_timeout_canonicalization.sql", "018_remove_unjustified_captain_terminated_state.sql", "019_captain_delivery_recovery.sql", "020_field_standing_admission_and_joining_scope.sql", "021_joining_case_store_origin.sql", "022_order_payment_intents.sql", "023_catalog_media_management.sql", "024_catalog_media_assets.sql", "025_order_client_cancellation.sql", "026_captain_live_location.sql", "027_notification_read_state.sql", "028_client_favorite_stores.sql", "029_order_delivery_proof.sql", "030_order_ratings.sql", "031_field_joining_writer_cutover.sql", "032_catalog_quantity_inventory.sql", "033_partner_financial_terms_binding.sql", "034_field_commission_publication_outbox.sql", "035_order_fulfillment_mode.sql", "036_commerce_financial_handoff_outbox.sql", "037_financial_handoff_actor_provenance.sql", "038_order_conversation.sql", "039_promotions_discovery_content.sql", "040_multi_store_checkout.sql", "041_store_profile_media.sql", "042_field_notifications.sql", "043_discovery_content_analytics.sql", "044_store_pickup_financial_handoff.sql", "045_customer_pickup_fulfillment.sql", "046_store_fulfillment_modes_management.sql", "047_store_captain_membership.sql", "048_customer_pickup_cash_at_store_payment.sql", "049_customer_pickup_order_audit_events.sql"}
+	names := []string{"001_partner_store_baseline.sql", "002_store_publication.sql", "003_joining_cases_and_catalog.sql", "004_central_product_store_assortment_cutover.sql", "005_joining_case_partner_correction.sql", "006_joining_case_correct_and_resubmit.sql", "007_location_core.sql", "008_location_core_corrective_boundaries.sql", "009_service_city_scope.sql", "010_central_catalog_refoundation.sql", "011_cart_checkout_order.sql", "012_catalog_semantic_correction.sql", "013_catalog_variant_mutations.sql", "014_catalog_proposal_import_closure.sql", "015_captain_dispatch_and_identity_boundary.sql", "016_captain_phone_constraint_correction.sql", "017_captain_access_and_timeout_canonicalization.sql", "018_remove_unjustified_captain_terminated_state.sql", "019_captain_delivery_recovery.sql", "020_field_standing_admission_and_joining_scope.sql", "021_joining_case_store_origin.sql", "022_order_payment_intents.sql", "023_catalog_media_management.sql", "024_catalog_media_assets.sql", "025_order_client_cancellation.sql", "026_captain_live_location.sql", "027_notification_read_state.sql", "028_client_favorite_stores.sql", "029_order_delivery_proof.sql", "030_order_ratings.sql", "031_field_joining_writer_cutover.sql", "032_catalog_quantity_inventory.sql", "033_partner_financial_terms_binding.sql", "034_field_commission_publication_outbox.sql", "035_order_fulfillment_mode.sql", "036_commerce_financial_handoff_outbox.sql", "037_financial_handoff_actor_provenance.sql", "038_order_conversation.sql", "039_promotions_discovery_content.sql", "040_multi_store_checkout.sql", "041_store_profile_media.sql", "042_field_notifications.sql", "043_discovery_content_analytics.sql", "044_store_pickup_financial_handoff.sql", "045_customer_pickup_fulfillment.sql", "046_store_fulfillment_modes_management.sql", "047_store_captain_membership.sql", "048_customer_pickup_cash_at_store_payment.sql", "049_customer_pickup_order_audit_events.sql", "050_delivery_proof_encryption.sql", "051_store_captain_dispatch_offers.sql", "052_partner_captain_fulfillment_mode.sql", "053_operator_store_fulfillment_modes.sql", "054_partner_captain_store_cash_handoff.sql"}
 	records := make([]MigrationRecord, 0, len(names))
 	sqls := make([]string, 0, len(names))
 	for version, name := range names {
@@ -172,9 +174,12 @@ func LoadMigrations(directory string) ([]MigrationRecord, []string, error) {
 	return records, sqls, nil
 }
 
-func Migrate(ctx context.Context, db *sql.DB, records []MigrationRecord, migrationSQL []string) error {
+func Migrate(ctx context.Context, db *sql.DB, records []MigrationRecord, migrationSQL []string, proofKeys *DeliveryProofKeyring) error {
 	if db == nil || len(records) != SchemaVersion || len(migrationSQL) != len(records) {
 		return errors.New("invalid DSH migration input")
+	}
+	if proofKeys == nil {
+		return errors.New("DSH delivery proof keyring is required for schema migration")
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -224,6 +229,9 @@ func Migrate(ctx context.Context, db *sql.DB, records []MigrationRecord, migrati
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit DSH migrations through v%d: %w", SchemaVersion, err)
+	}
+	if err := MigrateDeliveryProofCryptography(ctx, db, proofKeys); err != nil {
+		return fmt.Errorf("migrate DSH delivery proof material: %w", err)
 	}
 	return nil
 }
@@ -289,6 +297,11 @@ func VerifySchema(ctx context.Context, db *sql.DB, records []MigrationRecord) er
 				return fmt.Errorf("DSH required column missing: %s.%s", table.name, column)
 			}
 		}
+		for _, column := range table.forbiddenColumns {
+			if found[column] {
+				return fmt.Errorf("DSH forbidden legacy column remains: %s.%s", table.name, column)
+			}
+		}
 		for _, constraint := range table.constraints {
 			var present bool
 			if err := db.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid=$1::regclass AND conname=$2)", table.name, constraint).Scan(&present); err != nil {
@@ -318,6 +331,32 @@ func VerifySchema(ctx context.Context, db *sql.DB, records []MigrationRecord) er
 	}
 	if drift > 30*time.Second {
 		return fmt.Errorf("DSH database clock drift exceeds 30s: %s", drift)
+	}
+	return nil
+}
+
+func VerifyDeliveryProofKeyring(ctx context.Context, db *sql.DB, keys *DeliveryProofKeyring) error {
+	if db == nil || keys == nil {
+		return errors.New("DSH delivery proof keyring is unavailable")
+	}
+	rows, err := db.QueryContext(ctx, `SELECT code_key_id FROM dsh.commerce_order_delivery_proofs WHERE state='PENDING'
+		UNION SELECT split_part(request_hash,'.',2) FROM dsh.commerce_order_transition_idempotency WHERE request_hash LIKE 'v1.%'
+		UNION SELECT split_part(request_hash,'.',2) FROM dsh.captain_operation_idempotency WHERE operation='complete' AND request_hash LIKE 'v1.%'`)
+	if err != nil {
+		return fmt.Errorf("read DSH delivery proof key references: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var keyID string
+		if err := rows.Scan(&keyID); err != nil {
+			return fmt.Errorf("scan DSH delivery proof key reference: %w", err)
+		}
+		if !keys.HasKey(keyID) {
+			return fmt.Errorf("DSH delivery proof keyring is missing referenced key %q", keyID)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("read DSH delivery proof key references: %w", err)
 	}
 	return nil
 }

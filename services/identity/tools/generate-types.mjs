@@ -65,6 +65,8 @@ const schemaNames = [
   "ProvisionActorRoleRequest",
   "ActorRoleView",
   "ActorRoleSearchPage",
+  "OperatorFinanceAccess",
+  "SetOperatorFinanceAccessRequest",
   "SessionInfo",
 ]
 

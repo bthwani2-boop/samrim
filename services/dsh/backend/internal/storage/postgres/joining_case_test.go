@@ -30,7 +30,7 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 	}
 
 	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
-		if err := postgres.Migrate(ctx, db, records, migrationSQL); err != nil {
+		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
 			t.Fatalf("apply DSH migrations: %v", err)
 		}
 		if err := postgres.VerifySchema(ctx, db, records); err != nil {
@@ -66,28 +66,27 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 			t.Fatalf("return joining case for Partner correction failed: %+v err=%v", returned, err)
 		}
 
-		correctedModes := []string{postgres.FulfillmentModeCustomerPickup}
-		requestHash := postgres.HashJoiningCaseCorrectAndResubmit(created.Case.ID, partnerActor, "نشاط مصحح", "متجر مصحح", returned.Case.Version, serviceCityID, verticalID, 15.4, 44.2, correctedModes)
+		requestHash := postgres.HashJoiningCaseCorrectAndResubmit(created.Case.ID, partnerActor, "نشاط مصحح", "متجر مصحح", returned.Case.Version, serviceCityID, verticalID, 15.4, 44.2)
 		for _, actorID := range []string{fieldActorID, otherPartner} {
-			_, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, created.Case.ID, actorID, "نشاط مصحح", "متجر مصحح", returned.Case.Version, "idem-join-unauthorized-"+actorID, requestHash, "corr-join-unauthorized-"+actorID, serviceCityID, verticalID, 15.4, 44.2, correctedModes)
+			_, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, created.Case.ID, actorID, "نشاط مصحح", "متجر مصحح", returned.Case.Version, "idem-join-unauthorized-"+actorID, requestHash, "corr-join-unauthorized-"+actorID, serviceCityID, verticalID, 15.4, 44.2)
 			if !errors.Is(err, postgres.ErrJoiningCasePartnerAccess) {
 				t.Fatalf("unbound actor %s correction error = %v, want Partner access denial", actorID, err)
 			}
 		}
 
-		corrected, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, created.Case.ID, partnerActor, "نشاط مصحح", "متجر مصحح", returned.Case.Version, "idem-join-partner-correct", requestHash, "corr-join-partner-correct", serviceCityID, verticalID, 15.4, 44.2, correctedModes)
-		if err != nil || corrected.Replayed || corrected.Case.State != "submitted" || corrected.Case.Version != returned.Case.Version+1 || corrected.Case.Origin != "field" || corrected.Case.PartnerActorID != partnerActor || corrected.Case.BusinessName != "نشاط مصحح" || corrected.Case.FirstStoreName != "متجر مصحح" || corrected.Case.FirstStoreLatitude == nil || *corrected.Case.FirstStoreLatitude != 15.4 || corrected.Case.FirstStoreLongitude == nil || *corrected.Case.FirstStoreLongitude != 44.2 || !equalStoreFulfillmentModes(corrected.Case.FirstStoreFulfillmentModes, correctedModes) {
+		corrected, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, created.Case.ID, partnerActor, "نشاط مصحح", "متجر مصحح", returned.Case.Version, "idem-join-partner-correct", requestHash, "corr-join-partner-correct", serviceCityID, verticalID, 15.4, 44.2)
+		if err != nil || corrected.Replayed || corrected.Case.State != "submitted" || corrected.Case.Version != returned.Case.Version+1 || corrected.Case.Origin != "field" || corrected.Case.PartnerActorID != partnerActor || corrected.Case.BusinessName != "نشاط مصحح" || corrected.Case.FirstStoreName != "متجر مصحح" || corrected.Case.FirstStoreLatitude == nil || *corrected.Case.FirstStoreLatitude != 15.4 || corrected.Case.FirstStoreLongitude == nil || *corrected.Case.FirstStoreLongitude != 44.2 || !equalStoreFulfillmentModes(corrected.Case.FirstStoreFulfillmentModes, initialModes) {
 			t.Fatalf("bound Partner did not atomically correct Field-originated case: %+v err=%v", corrected, err)
 		}
 
-		replay, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, created.Case.ID, partnerActor, "نشاط مصحح", "متجر مصحح", returned.Case.Version, "idem-join-partner-correct", requestHash, "corr-join-partner-correct-replay", serviceCityID, verticalID, 15.4, 44.2, correctedModes)
-		if err != nil || !replay.Replayed || replay.Case.Version != corrected.Case.Version || !equalStoreFulfillmentModes(replay.Case.FirstStoreFulfillmentModes, correctedModes) {
+		replay, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, created.Case.ID, partnerActor, "نشاط مصحح", "متجر مصحح", returned.Case.Version, "idem-join-partner-correct", requestHash, "corr-join-partner-correct-replay", serviceCityID, verticalID, 15.4, 44.2)
+		if err != nil || !replay.Replayed || replay.Case.Version != corrected.Case.Version || !equalStoreFulfillmentModes(replay.Case.FirstStoreFulfillmentModes, initialModes) {
 			t.Fatalf("Partner correction idempotent replay failed: %+v err=%v", replay, err)
 		}
 
-		conflictingHash := postgres.HashJoiningCaseCorrectAndResubmit(created.Case.ID, partnerActor, "نشاط مصحح", "متجر مصحح", returned.Case.Version, serviceCityID, verticalID, 15.4, 44.2, initialModes)
-		if _, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, created.Case.ID, partnerActor, "نشاط مصحح", "متجر مصحح", returned.Case.Version, "idem-join-partner-correct", conflictingHash, "corr-join-partner-conflict", serviceCityID, verticalID, 15.4, 44.2, initialModes); !errors.Is(err, postgres.ErrJoiningCaseIdempotency) {
-			t.Fatalf("fulfillment-mode change did not affect correction idempotency: %v", err)
+		conflictingHash := postgres.HashJoiningCaseCorrectAndResubmit(created.Case.ID, partnerActor, "نشاط مصحح", "اسم مختلف", returned.Case.Version, serviceCityID, verticalID, 15.4, 44.2)
+		if _, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, created.Case.ID, partnerActor, "نشاط مصحح", "اسم مختلف", returned.Case.Version, "idem-join-partner-correct", conflictingHash, "corr-join-partner-conflict", serviceCityID, verticalID, 15.4, 44.2); !errors.Is(err, postgres.ErrJoiningCaseIdempotency) {
+			t.Fatalf("changed correction facts did not affect correction idempotency: %v", err)
 		}
 	})
 }

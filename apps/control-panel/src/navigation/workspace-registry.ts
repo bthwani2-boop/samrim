@@ -28,6 +28,7 @@ export const workspaceFinanceResources = [
   { key: "cash-custody", href: "/finance/cash-custody", label: "حفظ النقد", description: "قراءة الالتزامات النقدية المحصلة عند الاستلام." },
   { key: "delivery-fee-policy", href: "/finance/delivery-fee-policy", label: "سياسة رسوم التوصيل", description: "إدارة إصدار سياسة الرسوم المحسوبة خادميًا." },
   { key: "field-commission-policy", href: "/finance/field-commission-policy", label: "سياسة مكافأة الميدان", description: "تحديد سياسة مكافأة الميدان القانونية." },
+  { key: "partner-store-commissions", href: "/finance/partner-store-commissions", label: "عمولات المتاجر", description: "إدارة نسبة كل متجر لكل وضع توصيل بإصدار وسبب موثقين." },
   { key: "field-earnings", href: "/finance/field-earnings", label: "مستحقات الميدان", description: "قراءة المستحقات المحسوبة للميدانيين." },
   { key: "partner-earnings", href: "/finance/partner-earnings", label: "مستحقات الشركاء", description: "قراءة المستحقات المحسوبة للشركاء." },
   { key: "beneficiary-settlement", href: "/finance/beneficiary-settlement", label: "تسويات المستفيدين", description: "إدارة وجهة المستفيد وحالة التسوية الرسمية." }
@@ -71,6 +72,21 @@ export const workspaceDestinations: readonly WorkspaceDestination[] = [
   { href: "/finance", label: "المالية", section: "الإدارة", children: financeChildren },
   { href: "/access", label: "إعدادات المنصة والصلاحيات", section: "المنصة", children: [] }
 ];
+
+export const workspaceSearchEntries = workspaceDestinations.flatMap((destination) => [
+  {
+    href: destination.href,
+    label: destination.label,
+    context: destination.section,
+    searchText: `${destination.label} ${destination.section} ${destination.href}`,
+  },
+  ...destination.children.map((child) => ({
+    href: child.href,
+    label: child.label,
+    context: destination.label,
+    searchText: `${child.label} ${destination.label} ${destination.section} ${child.href}`,
+  })),
+]);
 
 export function isCurrentWorkspacePath(pathname: string, href: string) {
   return href === "/workspace" ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);

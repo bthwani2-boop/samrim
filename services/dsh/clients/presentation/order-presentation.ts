@@ -26,10 +26,10 @@ export function formatMoney(amount: number, currency: Order["currency"]): string
   return `${new Intl.NumberFormat(arabicTextLatinNumbersLocale, { maximumFractionDigits: 0 }).format(amount)} ${currencyLabel}`;
 }
 
-export type CustomerFulfillmentMode = Extract<FulfillmentMode, "BTHWANI_CAPTAIN" | "CUSTOMER_PICKUP">;
+export type CustomerFulfillmentMode = Extract<FulfillmentMode, "BTHWANI_CAPTAIN" | "PARTNER_CAPTAIN" | "CUSTOMER_PICKUP">;
 
 export function availableCustomerFulfillmentModes(modes: ReadonlyArray<FulfillmentMode>): CustomerFulfillmentMode[] {
-  return modes.filter((mode): mode is CustomerFulfillmentMode => mode === "BTHWANI_CAPTAIN" || mode === "CUSTOMER_PICKUP");
+  return modes.filter((mode): mode is CustomerFulfillmentMode => mode === "BTHWANI_CAPTAIN" || mode === "PARTNER_CAPTAIN" || mode === "CUSTOMER_PICKUP");
 }
 
 export function defaultCustomerFulfillmentMode(modes: ReadonlyArray<FulfillmentMode>): CustomerFulfillmentMode | null {
@@ -38,7 +38,7 @@ export function defaultCustomerFulfillmentMode(modes: ReadonlyArray<FulfillmentM
 }
 
 export function fulfillmentModeLabel(mode: FulfillmentMode): string {
-  return mode === "CUSTOMER_PICKUP" ? "الاستلام من المتجر" : mode === "BTHWANI_CAPTAIN" ? "توصيل بثواني" : "توصيل المتجر";
+  return mode === "CUSTOMER_PICKUP" ? "استلم بنفسك من المتجر" : mode === "BTHWANI_CAPTAIN" ? "توصيل بثواني" : "توصيل المتجر";
 }
 
 export function paymentMethodLabel(method: PaymentMethod): string {

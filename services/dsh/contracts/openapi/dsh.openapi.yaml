@@ -141,6 +141,9 @@ paths:
   /dsh/stores/{storeId}/publication:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores~1{storeId}~1publication"
 
+  /dsh/stores/{storeId}/fulfillment-modes:
+    $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores~1{storeId}~1fulfillment-modes"
+
   /dsh/public/stores:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1public~1stores"
 
@@ -182,9 +185,6 @@ paths:
 
   /dsh/stores/{storeId}/delivery-origin:
     $ref: "./paths/location-core.yaml#/paths/~1dsh~1stores~1{storeId}~1delivery-origin"
-
-  /dsh/stores/{storeId}/fulfillment-modes:
-    $ref: "./paths/location-core.yaml#/paths/~1dsh~1stores~1{storeId}~1fulfillment-modes"
 
   /dsh/service-cities:
     $ref: "./paths/service-city.yaml#/paths/~1dsh~1service-cities"
@@ -282,6 +282,9 @@ paths:
   /dsh/operator/partners/{partnerActorId}/commission-remittances:
     $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1commission-remittances"
 
+  /dsh/operator/partner-store-commission-policies:
+    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partner-store-commission-policies"
+
   /dsh/me/payout-state:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1me~1payout-state"
 
@@ -333,6 +336,9 @@ paths:
 
   /dsh/stores/{storeId}/orders/{orderId}/transition:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders~1{orderId}~1transition"
+
+  /dsh/stores/{storeId}/orders/{orderId}/captain-cash-handoff/confirm:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders~1{orderId}~1captain-cash-handoff~1confirm"
 
   /dsh/captains/admissions:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1admissions"
@@ -445,6 +451,9 @@ paths:
 
   /dsh/partners/me/stores/{storeId}/captain-memberships/{membershipId}:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1partners~1me~1stores~1{storeId}~1captain-memberships~1{membershipId}"
+
+  /dsh/partners/me/stores/{storeId}/orders/{orderId}/captain-offer:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1partners~1me~1stores~1{storeId}~1orders~1{orderId}~1captain-offer"
 
   /dsh/captains/me/store-memberships:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1store-memberships"
@@ -895,7 +904,7 @@ components:
 
     CorrectJoiningCaseRequest:
       type: object
-      required: [businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, firstStoreFulfillmentModes]
+      required: [businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude]
       additionalProperties: false
       properties:
         businessName:
@@ -920,13 +929,6 @@ components:
           type: number
           minimum: -180
           maximum: 180
-        firstStoreFulfillmentModes:
-          type: array
-          minItems: 1
-          uniqueItems: true
-          items:
-            $ref: "#/components/schemas/FulfillmentMode"
-
     ReviewJoiningCaseRequest:
       type: object
       required: [decision]
@@ -3272,7 +3274,7 @@ components:
 
     CaptainOffer:
       type: object
-      required: [id, orderId, captainActorId, state, expiresAt, version, createdAt, updatedAt, storeName, customerAddressText, amountDueMinor, currency, paymentMethod, paymentState]
+      required: [id, orderId, captainActorId, sourceStoreId, fulfillmentMode, state, expiresAt, version, createdAt, updatedAt, storeName, customerAddressText, amountDueMinor, currency, paymentMethod, paymentState]
       additionalProperties: false
       properties:
         id:
@@ -3281,6 +3283,11 @@ components:
           type: string
         captainActorId:
           type: string
+        sourceStoreId:
+          type: string
+          nullable: true
+        fulfillmentMode:
+          $ref: "#/components/schemas/FulfillmentMode"
         state:
           type: string
           enum: [offered, accepted, rejected, expired, superseded]
@@ -3746,7 +3753,7 @@ components:
 
     CaptainDeliveryTask:
       type: object
-      required: [assignmentId, orderReference, storeId, storeName, pickupOrigin, customerAddressText, customerDestination, orderState, handoffState, deliveryState, paymentMethod, paymentState, amountDueMinor, currency]
+      required: [assignmentId, orderReference, storeId, storeName, pickupOrigin, customerAddressText, customerDestination, orderState, handoffState, deliveryState, fulfillmentMode, paymentMethod, paymentState, amountDueMinor, currency]
       additionalProperties: false
       properties:
         assignmentId:
@@ -3774,6 +3781,8 @@ components:
         deliveryState:
           type: string
           enum: [assigned, in_custody, delivered, delivery_failed]
+        fulfillmentMode:
+          $ref: "#/components/schemas/FulfillmentMode"
         paymentMethod:
           $ref: "#/components/schemas/PaymentMethod"
         paymentState:
@@ -4254,6 +4263,104 @@ components:
         idempotentReplay:
           type: boolean
 
+    PartnerStoreCommissionPolicy:
+      type: object
+      additionalProperties: false
+      required: [storeId, partnerActorId, fulfillmentMode, commissionRateBps, policyVersion, profileId, profileVersion, roundingUnitMinor, settlementPeriod, updatedAt]
+      properties:
+        storeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        partnerActorId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        fulfillmentMode:
+          type: string
+          enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP]
+        commissionRateBps:
+          type: integer
+          minimum: 0
+          maximum: 10000
+        policyVersion:
+          type: integer
+          minimum: 1
+        profileId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        profileVersion:
+          type: integer
+          minimum: 1
+        roundingUnitMinor:
+          type: integer
+          const: 50
+        settlementPeriod:
+          type: string
+          enum: [DAILY, WEEKLY, MONTHLY]
+        updatedAt:
+          type: string
+          format: date-time
+        changedByActorId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        changeReason:
+          type: string
+          minLength: 8
+          maxLength: 500
+
+    PartnerStoreCommissionPoliciesResponse:
+      type: object
+      additionalProperties: false
+      required: [storeId, policies]
+      properties:
+        storeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        policies:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            $ref: "#/components/schemas/PartnerStoreCommissionPolicy"
+
+    PartnerStoreCommissionPolicyUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [storeId, fulfillmentMode, commissionRateBps, expectedVersion, reason]
+      properties:
+        storeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        fulfillmentMode:
+          type: string
+          enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP]
+        commissionRateBps:
+          type: integer
+          minimum: 0
+          maximum: 10000
+        expectedVersion:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+          minLength: 8
+          maxLength: 500
+
+    PartnerStoreCommissionPolicyUpdateResponse:
+      type: object
+      additionalProperties: false
+      required: [policy, idempotentReplay]
+      properties:
+        policy:
+          $ref: "#/components/schemas/PartnerStoreCommissionPolicy"
+        idempotentReplay:
+          type: boolean
+
     FieldCommissionPolicy:
       type: object
       additionalProperties: false
@@ -4557,7 +4664,7 @@ components:
 
     StoreFulfillmentMode:
       type: string
-      enum: [BTHWANI_CAPTAIN, CUSTOMER_PICKUP]
+      enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP]
 
     FulfillmentMode:
       type: string
@@ -4636,6 +4743,10 @@ components:
           $ref: "#/components/schemas/PaymentMethod"
         paymentState:
           $ref: "#/components/schemas/PaymentState"
+        storeCashHandoffState:
+          type: string
+          enum: [AWAITING_STORE_HANDOFF, STORE_CONFIRMED, SETTLED]
+          nullable: true
         paymentIntentId:
           type: string
           nullable: true
@@ -5157,6 +5268,16 @@ components:
         state:
           type: string
           enum: [active, suspended, revoked]
+
+    StoreCaptainDispatchRequest:
+      type: object
+      required: [captainActorId]
+      additionalProperties: false
+      properties:
+        captainActorId:
+          type: string
+          minLength: 1
+          maxLength: 128
 
     AcceptStoreCaptainInvitationRequest:
       type: object

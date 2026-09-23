@@ -36,6 +36,20 @@ type ActorRoleView struct {
 	RoleCreated       bool       `json:"roleCreated,omitempty"`
 }
 
+type OperatorFinanceAccess struct {
+	ActorID          string    `json:"actorId"`
+	Permission       string    `json:"permission"`
+	Enabled          bool      `json:"enabled"`
+	Version          int       `json:"version"`
+	ChangedByActorID *string   `json:"changedByActorId,omitempty"`
+	Reason           string    `json:"reason"`
+	UpdatedAt        time.Time `json:"updatedAt"`
+}
+
+type SetOperatorFinanceAccessRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
 type ActorSearchInput struct {
 	Role    string
 	Query   string
@@ -174,11 +188,13 @@ type RefreshRequest struct {
 }
 
 type ActorIdentity struct {
-	Subject   string    `json:"subject"`
-	SessionID string    `json:"sessionId"`
-	Role      string    `json:"role"`
-	Surface   string    `json:"surface"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	Subject                string    `json:"subject"`
+	SessionID              string    `json:"sessionId"`
+	Role                   string    `json:"role"`
+	Surface                string    `json:"surface"`
+	ExpiresAt              time.Time `json:"expiresAt"`
+	Permissions            []string  `json:"permissions,omitempty"`
+	CanManageFinanceAccess bool      `json:"canManageFinanceAccess,omitempty"`
 }
 
 type TokenPair struct {

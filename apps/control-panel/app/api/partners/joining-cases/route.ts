@@ -10,7 +10,7 @@ function errorResponse(code: string, message: string, status: number) {
 }
 
 const phoneE164Pattern = /^\+[1-9][0-9]{7,14}$/;
-const fulfillmentModes = ["BTHWANI_CAPTAIN", "CUSTOMER_PICKUP"] as const;
+const fulfillmentModes = ["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"] as const;
 
 export async function POST(request: Request) {
   if (!verifySameOrigin(request)) return errorResponse("FORBIDDEN", "cross-site requests are forbidden", 403);

@@ -77,7 +77,7 @@ func HashCreateRequest(input CreatePaymentIntentInput) string {
 	parts := []string{"create", input.ExternalReference, input.PayerActorID, input.OrderID, fmt.Sprintf("%d", input.AmountMinor), input.Currency, input.Method}
 	if input.CustomerPaymentAllocation != nil {
 		allocation := input.CustomerPaymentAllocation
-		parts = append(parts, allocation.OrderID, allocation.Currency, fmt.Sprintf("%d", allocation.SubtotalMinor), fmt.Sprintf("%d", allocation.DeliveryFeeMinor), fmt.Sprintf("%d", allocation.DiscountMinor), fmt.Sprintf("%d", allocation.InternalBalanceAmountMinor), fmt.Sprintf("%d", allocation.CashAmountMinor), fmt.Sprintf("%d", allocation.CustomerPayableMinor), allocation.PolicyVersion)
+		parts = append(parts, allocation.OrderID, allocation.StoreID, allocation.PartnerActorID, allocation.FulfillmentMode, allocation.Currency, fmt.Sprintf("%d", allocation.SubtotalMinor), fmt.Sprintf("%d", allocation.DeliveryFeeMinor), fmt.Sprintf("%d", allocation.DiscountMinor), fmt.Sprintf("%d", allocation.InternalBalanceAmountMinor), fmt.Sprintf("%d", allocation.CashAmountMinor), fmt.Sprintf("%d", allocation.CustomerPayableMinor), allocation.PolicyVersion)
 	}
 	return hashFacts(parts...)
 }
@@ -100,10 +100,16 @@ func CreatePaymentIntent(ctx context.Context, db *sql.DB, input CreatePaymentInt
 	input.CorrelationID = strings.TrimSpace(input.CorrelationID)
 	if input.CustomerPaymentAllocation != nil {
 		input.CustomerPaymentAllocation.OrderID = strings.TrimSpace(input.CustomerPaymentAllocation.OrderID)
+		input.CustomerPaymentAllocation.StoreID = strings.TrimSpace(input.CustomerPaymentAllocation.StoreID)
+		input.CustomerPaymentAllocation.PartnerActorID = strings.TrimSpace(input.CustomerPaymentAllocation.PartnerActorID)
+		input.CustomerPaymentAllocation.FulfillmentMode = strings.TrimSpace(input.CustomerPaymentAllocation.FulfillmentMode)
 		input.CustomerPaymentAllocation.Currency = strings.TrimSpace(input.CustomerPaymentAllocation.Currency)
 		input.CustomerPaymentAllocation.PolicyVersion = strings.TrimSpace(input.CustomerPaymentAllocation.PolicyVersion)
 	}
 	if db == nil || domain.ValidateCreate(input.ExternalReference, input.PayerActorID, input.Currency, input.Method, input.AmountMinor) != nil || (input.OrderID != "" && (input.CustomerPaymentAllocation == nil || input.CustomerPaymentAllocation.OrderID != input.OrderID)) || (input.CustomerPaymentAllocation != nil && validateCustomerPaymentAllocation(*input.CustomerPaymentAllocation) != nil) || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
+		return PaymentIntentRecord{}, false, ErrInvalidInput
+	}
+	if input.CustomerPaymentAllocation != nil && (input.AmountMinor != input.CustomerPaymentAllocation.CustomerPayableMinor || (input.CustomerPaymentAllocation.FulfillmentMode == "BTHWANI_CAPTAIN" && input.Method != domain.MethodCashOnDelivery) || (input.CustomerPaymentAllocation.FulfillmentMode != "BTHWANI_CAPTAIN" && input.Method != domain.MethodCashAtStore)) {
 		return PaymentIntentRecord{}, false, ErrInvalidInput
 	}
 	requestHash := HashCreateRequest(input)

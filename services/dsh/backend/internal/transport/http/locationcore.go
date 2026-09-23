@@ -32,7 +32,6 @@ func (s *LocationCoreServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/addresses/{addressId}", s.readAddress)
 	mux.HandleFunc("POST /dsh/addresses/{addressId}", s.updateAddress)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/delivery-origin", s.readStoreOrigin)
-	mux.HandleFunc("POST /dsh/stores/{storeId}/fulfillment-modes", s.setStoreFulfillmentModes)
 }
 
 func (s *LocationCoreServer) listAddresses(w http.ResponseWriter, r *http.Request) {
@@ -123,37 +122,6 @@ func (s *LocationCoreServer) readStoreOrigin(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, contract.StoreDeliveryOriginResponse{StoreID: origin.StoreID, OriginVersion: origin.OriginVersion, Origin: deliveryOriginValue(origin, available)})
-}
-
-func (s *LocationCoreServer) setStoreFulfillmentModes(w http.ResponseWriter, r *http.Request) {
-	correlation, idempotency, expectedVersion, ok := requiredLocationHeaders(w, r, true, false)
-	if !ok {
-		return
-	}
-	var input contract.SetStoreFulfillmentModesRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	modes := make([]string, 0, len(input.FulfillmentModes))
-	for _, mode := range input.FulfillmentModes {
-		modes = append(modes, string(mode))
-	}
-	result, err := s.service.SetStoreFulfillmentModes(r.Context(), bearerToken(r), r.PathValue("storeId"), modes, expectedVersion, idempotency, correlation)
-	if err != nil {
-		writeLocationError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, contract.StoreFulfillmentModesResponse{
-		StoreID: result.StoreID, Version: result.Version, FulfillmentModes: toStoreFulfillmentModes(result.FulfillmentModes), IdempotentReplay: result.Replayed,
-	})
-}
-
-func toStoreFulfillmentModes(values []string) []contract.StoreFulfillmentMode {
-	modes := make([]contract.StoreFulfillmentMode, 0, len(values))
-	for _, mode := range values {
-		modes = append(modes, contract.StoreFulfillmentMode(mode))
-	}
-	return modes
 }
 
 func requiredLocationHeaders(w http.ResponseWriter, r *http.Request, versioned, allowZeroVersion bool) (string, string, int, bool) {

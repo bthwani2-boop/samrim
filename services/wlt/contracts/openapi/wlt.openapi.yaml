@@ -10,6 +10,9 @@ paths:
     post:
       operationId: createPaymentIntent
       security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
       requestBody:
         required: true
         content:
@@ -252,6 +255,9 @@ paths:
     post:
       operationId: preparePartnerFinancialProfile
       security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
       requestBody:
         required: true
         content:
@@ -286,6 +292,10 @@ paths:
       security: [{ serviceToken: [] }]
       parameters:
         - { $ref: '#/components/parameters/ProfileId' }
+        - { $ref: '#/components/parameters/ExpectedVersion' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+        - { $ref: '#/components/parameters/ActingActorId' }
       requestBody:
         required: true
         content:
@@ -300,10 +310,70 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PartnerFinancialProfileResponse' }
+  /wlt/v1/partner-store-commission-policies/initialize:
+    post:
+      operationId: initializePartnerStoreCommissionPolicies
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InitializePartnerStoreCommissionPoliciesRequest' }
+      responses:
+        '200':
+          description: Returns existing immutable per-mode policies or initializes all modes from the specified active profile; when profileId is omitted, the active profile is used only if no Store policy exists yet.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InitializePartnerStoreCommissionPoliciesResponse' }
+  /wlt/v1/operator/partner-store-commission-policies:
+    get:
+      operationId: readOperatorPartnerStoreCommissionPolicies
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ActingActorId' }
+        - name: storeId
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: Canonical current commission policy for each fulfillment mode at the Store.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InitializePartnerStoreCommissionPoliciesResponse' }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      operationId: updateOperatorPartnerStoreCommissionPolicy
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ActingActorId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdatePartnerStoreCommissionPolicyRequest' }
+      responses:
+        '200':
+          description: Changed policy or idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerStoreCommissionPolicyUpdateResponse' }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /wlt/v1/partner-order-earnings/finalize:
     post:
       operationId: finalizePartnerOrderEarning
       security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
       requestBody:
         required: true
         content:
@@ -339,6 +409,9 @@ paths:
     post:
       operationId: finalizePartnerStoreCashCommission
       security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
       requestBody:
         required: true
         content:
@@ -825,6 +898,26 @@ components:
       in: path
       required: true
       schema: { type: string, minLength: 1, maxLength: 128 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 8, maxLength: 128 }
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: true
+      schema: { type: string, minLength: 8, maxLength: 128 }
+    ExpectedVersion:
+      name: X-Expected-Version
+      in: header
+      required: true
+      schema: { type: integer, minimum: 1 }
+    ActingActorId:
+      name: X-Acting-Actor-ID
+      in: header
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
   schemas:
     FinalizePartnerOrderEarningRequest:
       type: object
@@ -1240,7 +1333,7 @@ components:
         orderId: { type: string, minLength: 1, maxLength: 128 }
         amountMinor: { type: integer, minimum: 1 }
         currency: { type: string, const: YER }
-        method: { type: string, const: CASH_ON_DELIVERY }
+        method: { type: string, enum: [CASH_ON_DELIVERY, CASH_AT_STORE] }
         customerPaymentAllocation: { $ref: '#/components/schemas/CustomerPaymentAllocationInput' }
     CollectPaymentIntentRequest:
       type: object
@@ -1266,7 +1359,7 @@ components:
         payerActorId: { type: string }
         amountMinor: { type: integer, minimum: 1 }
         currency: { type: string, const: YER }
-        method: { type: string, const: CASH_ON_DELIVERY }
+        method: { type: string, enum: [CASH_ON_DELIVERY, CASH_AT_STORE] }
         state: { type: string, enum: [REQUIRES_COLLECTION, COLLECTED, CANCELLED] }
         version: { type: integer, minimum: 1 }
         collectedAmountMinor: { type: integer, nullable: true }
@@ -1280,9 +1373,12 @@ components:
     CustomerPaymentAllocationInput:
       type: object
       additionalProperties: false
-      required: [orderId, currency, subtotalMinor, deliveryFeeMinor, discountMinor, internalBalanceAmountMinor, cashAmountMinor, customerPayableMinor, policyVersion]
+      required: [orderId, storeId, partnerActorId, fulfillmentMode, currency, subtotalMinor, deliveryFeeMinor, discountMinor, internalBalanceAmountMinor, cashAmountMinor, customerPayableMinor, policyVersion]
       properties:
         orderId: { type: string, minLength: 1, maxLength: 128 }
+        storeId: { type: string, minLength: 1, maxLength: 128 }
+        partnerActorId: { type: string, minLength: 1, maxLength: 128 }
+        fulfillmentMode: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
         currency: { type: string, const: YER }
         subtotalMinor: { type: integer, minimum: 0 }
         deliveryFeeMinor: { type: integer, minimum: 0 }
@@ -1292,14 +1388,90 @@ components:
         customerPayableMinor: { type: integer, minimum: 1 }
         policyVersion: { type: string, minLength: 1, maxLength: 128 }
     CustomerPaymentAllocation:
-      allOf:
-        - $ref: '#/components/schemas/CustomerPaymentAllocationInput'
-        - type: object
-          required: [id, paymentIntentId, createdAt]
-          properties:
-            id: { type: string }
-            paymentIntentId: { type: string }
-            createdAt: { type: string, format: date-time }
+      type: object
+      additionalProperties: false
+      required: [id, orderId, paymentIntentId, currency, subtotalMinor, deliveryFeeMinor, discountMinor, internalBalanceAmountMinor, cashAmountMinor, customerPayableMinor, policyVersion, createdAt]
+      properties:
+        id: { type: string }
+        orderId: { type: string }
+        paymentIntentId: { type: string }
+        storeId: { type: string, description: Empty only for allocations created before commission snapshots were introduced. }
+        partnerActorId: { type: string, description: Empty only for allocations created before commission snapshots were introduced. }
+        fulfillmentMode: { type: string, description: Empty only for allocations created before commission snapshots were introduced. }
+        currency: { type: string, const: YER }
+        subtotalMinor: { type: integer, minimum: 0 }
+        deliveryFeeMinor: { type: integer, minimum: 0 }
+        discountMinor: { type: integer, minimum: 0 }
+        internalBalanceAmountMinor: { type: integer, minimum: 0 }
+        cashAmountMinor: { type: integer, minimum: 0 }
+        customerPayableMinor: { type: integer, minimum: 1 }
+        policyVersion: { type: string }
+        commissionSnapshot: { $ref: '#/components/schemas/PartnerStoreCommissionSnapshot' }
+        createdAt: { type: string, format: date-time }
+    PartnerStoreCommissionSnapshot:
+      type: object
+      additionalProperties: false
+      required: [rateBps, policyVersion, profileId, profileVersion, roundingUnitMinor, settlementPeriod]
+      properties:
+        rateBps: { type: integer, minimum: 0, maximum: 10000 }
+        policyVersion: { type: integer, minimum: 1 }
+        profileId: { type: string, minLength: 1, maxLength: 128 }
+        profileVersion: { type: integer, minimum: 1 }
+        roundingUnitMinor: { type: integer, const: 50 }
+        settlementPeriod: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
+    InitializePartnerStoreCommissionPoliciesRequest:
+      type: object
+      additionalProperties: false
+      required: [storeId, partnerActorId]
+      properties:
+        storeId: { type: string, minLength: 1, maxLength: 128 }
+        partnerActorId: { type: string, minLength: 1, maxLength: 128 }
+        profileId: { type: string, minLength: 1, maxLength: 128 }
+    PartnerStoreCommissionPolicy:
+      type: object
+      additionalProperties: false
+      required: [storeId, partnerActorId, fulfillmentMode, commissionRateBps, policyVersion, profileId, profileVersion, roundingUnitMinor, settlementPeriod, updatedAt]
+      properties:
+        storeId: { type: string }
+        partnerActorId: { type: string }
+        fulfillmentMode: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
+        commissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
+        policyVersion: { type: integer, minimum: 1 }
+        profileId: { type: string }
+        profileVersion: { type: integer, minimum: 1 }
+        roundingUnitMinor: { type: integer, const: 50 }
+        settlementPeriod: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
+        updatedAt: { type: string, format: date-time }
+        changedByActorId: { type: string, minLength: 1, maxLength: 128 }
+        changeReason: { type: string, minLength: 8, maxLength: 500 }
+    InitializePartnerStoreCommissionPoliciesResponse:
+      type: object
+      additionalProperties: false
+      required: [storeId, policies]
+      properties:
+        storeId: { type: string }
+        policies:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items: { $ref: '#/components/schemas/PartnerStoreCommissionPolicy' }
+    UpdatePartnerStoreCommissionPolicyRequest:
+      type: object
+      additionalProperties: false
+      required: [storeId, fulfillmentMode, commissionRateBps, expectedVersion, reason]
+      properties:
+        storeId: { type: string, minLength: 1, maxLength: 128 }
+        fulfillmentMode: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
+        commissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
+        expectedVersion: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+    PartnerStoreCommissionPolicyUpdateResponse:
+      type: object
+      additionalProperties: false
+      required: [policy, idempotentReplay]
+      properties:
+        policy: { $ref: '#/components/schemas/PartnerStoreCommissionPolicy' }
+        idempotentReplay: { type: boolean }
     PaymentIntentResponse:
       type: object
       additionalProperties: false

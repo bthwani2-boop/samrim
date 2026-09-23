@@ -47,6 +47,9 @@ type PaymentIntent struct {
 type CustomerPaymentAllocation struct {
 	ID                         string `json:"id,omitempty"`
 	OrderID                    string `json:"orderId"`
+	StoreID                    string `json:"storeId"`
+	PartnerActorID             string `json:"partnerActorId"`
+	FulfillmentMode            string `json:"fulfillmentMode"`
 	PaymentIntentID            string `json:"paymentIntentId,omitempty"`
 	Currency                   string `json:"currency"`
 	SubtotalMinor              int64  `json:"subtotalMinor"`
@@ -306,6 +309,31 @@ type DeliveryFeePolicy struct {
 	CreatedBy              string  `json:"createdBy"`
 	CreatedAt              string  `json:"createdAt"`
 	RetiredAt              *string `json:"retiredAt"`
+}
+
+type PartnerStoreCommissionPolicy struct {
+	StoreID           string `json:"storeId"`
+	PartnerActorID    string `json:"partnerActorId"`
+	FulfillmentMode   string `json:"fulfillmentMode"`
+	CommissionRateBps int    `json:"commissionRateBps"`
+	PolicyVersion     int    `json:"policyVersion"`
+	ProfileID         string `json:"profileId"`
+	ProfileVersion    int    `json:"profileVersion"`
+	RoundingUnitMinor int64  `json:"roundingUnitMinor"`
+	SettlementPeriod  string `json:"settlementPeriod"`
+	UpdatedAt         string `json:"updatedAt"`
+	ChangedByActorID  string `json:"changedByActorId,omitempty"`
+	ChangeReason      string `json:"changeReason,omitempty"`
+}
+
+type PartnerStoreCommissionPoliciesResponse struct {
+	StoreID  string                         `json:"storeId"`
+	Policies []PartnerStoreCommissionPolicy `json:"policies"`
+}
+
+type PartnerStoreCommissionPolicyResponse struct {
+	Policy           PartnerStoreCommissionPolicy `json:"policy"`
+	IdempotentReplay bool                         `json:"idempotentReplay"`
 }
 
 type DeliveryFeeQuote struct {
@@ -692,6 +720,18 @@ func (c *Client) ActivatePartnerFinancialProfile(ctx context.Context, profileID 
 	return response.Profile, response.IdempotentReplay, err
 }
 
+func (c *Client) InitializePartnerStoreCommissionPolicies(ctx context.Context, storeID, partnerActorID, profileID, idempotencyKey, correlationID string) error {
+	body := map[string]any{"storeId": strings.TrimSpace(storeID), "partnerActorId": strings.TrimSpace(partnerActorID)}
+	if strings.TrimSpace(profileID) != "" {
+		body["profileId"] = strings.TrimSpace(profileID)
+	}
+	return c.request(ctx, http.MethodPost, "/wlt/v1/partner-store-commission-policies/initialize", body, idempotencyKey, correlationID, 0, nil)
+}
+
+func (c *Client) EnsurePartnerStoreCommissionPolicies(ctx context.Context, storeID, partnerActorID, idempotencyKey, correlationID string) error {
+	return c.InitializePartnerStoreCommissionPolicies(ctx, storeID, partnerActorID, "", idempotencyKey, correlationID)
+}
+
 func (c *Client) FinalizePartnerOrderEarning(ctx context.Context, orderID, paymentIntentID, partnerActorID, captainActorID, idempotencyKey, correlationID string) (PartnerOrderEarning, bool, error) {
 	body := map[string]any{"orderId": strings.TrimSpace(orderID), "paymentIntentId": strings.TrimSpace(paymentIntentID), "partnerActorId": strings.TrimSpace(partnerActorID), "captainActorId": strings.TrimSpace(captainActorID)}
 	var response partnerOrderEarningResponse
@@ -880,6 +920,23 @@ func (c *Client) ReadDeliveryFeePolicy(ctx context.Context, serviceCityID string
 	path := "/wlt/v1/operator/delivery-fee-policies?serviceCityId=" + url.QueryEscape(strings.TrimSpace(serviceCityID))
 	err := c.request(ctx, http.MethodGet, path, nil, "", "", 0, &response)
 	return response.Policy, err
+}
+
+func (c *Client) ReadPartnerStoreCommissionPolicies(ctx context.Context, storeID string) (PartnerStoreCommissionPoliciesResponse, error) {
+	var response PartnerStoreCommissionPoliciesResponse
+	path := "/wlt/v1/operator/partner-store-commission-policies?storeId=" + url.QueryEscape(strings.TrimSpace(storeID))
+	err := c.request(ctx, http.MethodGet, path, nil, "", "", 0, &response)
+	return response, err
+}
+
+func (c *Client) UpdatePartnerStoreCommissionPolicy(ctx context.Context, storeID, fulfillmentMode string, commissionRateBps, expectedVersion int, reason, idempotencyKey, correlationID, actingActorID string) (PartnerStoreCommissionPolicyResponse, error) {
+	body := map[string]any{
+		"storeId": strings.TrimSpace(storeID), "fulfillmentMode": strings.TrimSpace(fulfillmentMode),
+		"commissionRateBps": commissionRateBps, "expectedVersion": expectedVersion, "reason": strings.TrimSpace(reason),
+	}
+	var response PartnerStoreCommissionPolicyResponse
+	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/partner-store-commission-policies", body, idempotencyKey, correlationID, 0, actingActorID, &response)
+	return response, err
 }
 
 func (c *Client) CreateDeliveryFeePolicy(ctx context.Context, policy DeliveryFeePolicy, idempotencyKey, correlationID, actingActorID string) (DeliveryFeePolicy, bool, error) {

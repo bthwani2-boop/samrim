@@ -20,7 +20,7 @@ func NormalizeStoreFulfillmentModes(values []string) ([]string, error) {
 	seen := make(map[string]bool, len(values))
 	for _, value := range values {
 		mode := strings.ToUpper(strings.TrimSpace(value))
-		if mode != FulfillmentModeBthwaniCaptain && mode != FulfillmentModeCustomerPickup || seen[mode] {
+		if mode != FulfillmentModeBthwaniCaptain && mode != FulfillmentModePartnerCaptain && mode != FulfillmentModeCustomerPickup || seen[mode] {
 			return nil, ErrFulfillmentModesInvalid
 		}
 		seen[mode] = true
@@ -28,6 +28,9 @@ func NormalizeStoreFulfillmentModes(values []string) ([]string, error) {
 	result := make([]string, 0, len(seen))
 	if seen[FulfillmentModeBthwaniCaptain] {
 		result = append(result, FulfillmentModeBthwaniCaptain)
+	}
+	if seen[FulfillmentModePartnerCaptain] {
+		result = append(result, FulfillmentModePartnerCaptain)
 	}
 	if seen[FulfillmentModeCustomerPickup] {
 		result = append(result, FulfillmentModeCustomerPickup)

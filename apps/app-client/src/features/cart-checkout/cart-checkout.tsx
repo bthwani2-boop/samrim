@@ -199,14 +199,14 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
           {quote.kind === "idle" && !pickupMode && !serviceableAddressId ? <Text style={styles.warning}>اختر عنوانًا مؤهلًا لعرض رسوم التوصيل والإجمالي النهائي.</Text> : null}
           {quote.kind === "error" ? <BthwaniButton label="إعادة حساب الإجمالي" onPress={() => { if (readyCart) void refreshQuote(readyCart); }} variant="secondary" /> : null}
         </View>
-        <View accessibilityLabel={pickupMode ? "الاستلام من المتجر" : "طريقة التوصيل"} style={styles.fulfillmentCard}>
+        <View accessibilityLabel={pickupMode ? "الاستلام الذاتي من المتجر" : "طريقة التوصيل"} style={styles.fulfillmentCard}>
           <Text style={styles.fulfillmentTitle}>طريقة الاستلام</Text>
-          <Text style={styles.fulfillmentChoice}>{pickupMode ? "الاستلام من المتجر" : "توصيل عبر كابتن بثواني"}</Text>
+          <Text style={styles.fulfillmentChoice}>{pickupMode ? "استلم بنفسك من المتجر" : "توصيل عبر كابتن بثواني"}</Text>
           <Text style={styles.muted}>{pickupMode ? "ادفع نقدًا للمتجر عند استلام الطلب. سيظهر رمز الاستلام في تفاصيل الطلب." : "يُسند الطلب إلى كابتن مؤهل بعد جاهزية المتجر."}</Text>
         </View>
         <Text style={styles.payment}>{pickupMode ? "الدفع نقدًا للمتجر عند الاستلام." : "الدفع نقدًا عند الاستلام من الكابتن."}</Text>
         {!pickupMode && serviceableAddressId && selectedAddress ? <Text style={styles.success}>العنوان مؤهل: {selectedAddress.addressText}</Text> : null}
-        <BthwaniButton accessibilityLabel={pickupMode ? "إتمام الطلب للاستلام من المتجر" : "إتمام الطلب"} busy={busy} disabled={mutationBusy || (!pickupMode && !serviceableAddressId) || quote.kind !== "ready" || quote.quote.cartVersion !== state.cart.version || quote.quote.addressId !== (pickupMode ? "" : serviceableAddressId)} label="إتمام الطلب" onPress={() => void checkout()} />
+        <BthwaniButton accessibilityLabel={pickupMode ? "إتمام الطلب للاستلام الذاتي من المتجر" : "إتمام الطلب"} busy={busy} disabled={mutationBusy || (!pickupMode && !serviceableAddressId) || quote.kind !== "ready" || quote.quote.cartVersion !== state.cart.version || quote.quote.addressId !== (pickupMode ? "" : serviceableAddressId)} label="إتمام الطلب" onPress={() => void checkout()} />
       </> : null}
       {order ? <View style={styles.orderBox}><Text style={styles.success}>تم إنشاء الطلب</Text><Text style={styles.muted}>الحالة: {orderStateLabel(order.state)} · الإجمالي: {formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{paymentMethodLabel(order.paymentMethod)} · {paymentStateLabel(order.paymentState)}</Text><Link href={`/orders/${encodeURIComponent(order.id)}` as Href} asChild><BthwaniButton label="فتح تفاصيل الطلب" variant="secondary" /></Link></View> : null}
       {orders.length ? <View style={styles.orderBox}><Text style={styles.lineTitle}>طلباتك الأخيرة</Text>{orders.map((item) => <Text key={item.id} style={styles.muted}>{orderStateLabel(item.state)} · {formatMoney(item.totalAmountMinor, item.currency)}</Text>)}</View> : null}
