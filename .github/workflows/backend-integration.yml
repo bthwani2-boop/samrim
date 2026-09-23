@@ -186,6 +186,23 @@ jobs:
           set -euo pipefail
           node tools/dev/verify-dsh-runtime-core.mjs --env-file=infra/local/.env
 
+      - name: Report DSH publication diagnostics
+        if: failure() && steps.scope.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f infra/local/.env ]]; then
+            echo "No isolated runtime environment is available."
+            exit 0
+          fi
+          if ! docker compose \
+            --project-name samrim-local \
+            --env-file infra/local/.env \
+            -f infra/local/compose/compose.yaml \
+            logs --no-color dsh 2>&1 | grep -E 'store publication (persistence|internal) failure'; then
+            echo "No classified store publication diagnostics were emitted."
+          fi
+
       - name: Verify backend proof is non-mutating
         if: steps.scope.outputs.run == 'true'
         shell: bash
