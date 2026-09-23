@@ -437,6 +437,21 @@ paths:
   /dsh/operator/field-commission-policies/{policyId}:
     $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1field-commission-policies~1{policyId}"
 
+  /dsh/partners/me/stores/{storeId}/captain-memberships:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1partners~1me~1stores~1{storeId}~1captain-memberships"
+
+  /dsh/partners/me/stores/{storeId}/captain-memberships/invitations:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1partners~1me~1stores~1{storeId}~1captain-memberships~1invitations"
+
+  /dsh/partners/me/stores/{storeId}/captain-memberships/{membershipId}:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1partners~1me~1stores~1{storeId}~1captain-memberships~1{membershipId}"
+
+  /dsh/captains/me/store-memberships:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1store-memberships"
+
+  /dsh/captains/me/store-memberships/accept:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1store-memberships~1accept"
+
 components:
   securitySchemes:
     serviceBearer:
@@ -5026,6 +5041,90 @@ components:
         ordinal:
           type: integer
           minimum: 0
+
+    StoreCaptainMembership:
+      type: object
+      required: [id, storeId, storeName, partnerActorId, state, version, expiresAt, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        storeId:
+          type: string
+        storeName:
+          type: string
+        partnerActorId:
+          type: string
+        captainActorId:
+          type: string
+          nullable: true
+        state:
+          type: string
+          enum: [pending, active, suspended, revoked, expired]
+        version:
+          type: integer
+        expiresAt:
+          type: string
+          format: date-time
+        acceptedAt:
+          type: string
+          format: date-time
+          nullable: true
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    StoreCaptainMembershipListResponse:
+      type: object
+      required: [memberships]
+      properties:
+        memberships:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoreCaptainMembership"
+
+    StoreCaptainMembershipResponse:
+      type: object
+      required: [membership, idempotentReplay]
+      properties:
+        membership:
+          $ref: "#/components/schemas/StoreCaptainMembership"
+        idempotentReplay:
+          type: boolean
+
+    StoreCaptainInvitationResponse:
+      type: object
+      required: [membership, idempotentReplay]
+      properties:
+        membership:
+          $ref: "#/components/schemas/StoreCaptainMembership"
+        invitationCode:
+          type: string
+        idempotentReplay:
+          type: boolean
+
+    StoreCaptainMembershipTransitionRequest:
+      type: object
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [active, suspended, revoked]
+
+    AcceptStoreCaptainInvitationRequest:
+      type: object
+      required: [invitationCode]
+      properties:
+        invitationCode:
+          type: string
+          minLength: 40
+          maxLength: 48
 
     ErrorResponse:
       type: object

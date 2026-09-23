@@ -233,6 +233,7 @@ func TestLocationCoreIntegrity(t *testing.T) {
 		}
 
 		verifyStoreFulfillmentModes(t, ctx, db)
+		verifyStoreCaptainMembership(t, ctx, db)
 	})
 }
 

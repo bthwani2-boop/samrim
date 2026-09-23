@@ -39,6 +39,11 @@ func (s *CaptainServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/captains/admissions/{admissionId}", s.readAdmission)
 	mux.HandleFunc("GET /dsh/captains/actors/{actorId}/admission", s.readAdmissionForActor)
 	mux.HandleFunc("GET /dsh/captains/me", s.readOwnAdmission)
+	mux.HandleFunc("GET /dsh/partners/me/stores/{storeId}/captain-memberships", s.listStoreCaptainMemberships)
+	mux.HandleFunc("POST /dsh/partners/me/stores/{storeId}/captain-memberships/invitations", s.createStoreCaptainInvitation)
+	mux.HandleFunc("PATCH /dsh/partners/me/stores/{storeId}/captain-memberships/{membershipId}", s.transitionStoreCaptainMembership)
+	mux.HandleFunc("GET /dsh/captains/me/store-memberships", s.listCaptainStoreMemberships)
+	mux.HandleFunc("POST /dsh/captains/me/store-memberships/accept", s.acceptStoreCaptainInvitation)
 	mux.HandleFunc("POST /dsh/captains/me/availability", s.setAvailability)
 	mux.HandleFunc("GET /dsh/captains/me/offers", s.listOffers)
 	mux.HandleFunc("POST /dsh/captains/me/offers/{offerId}/respond", s.respondToOffer)
@@ -128,6 +133,111 @@ func (s *CaptainServer) readOwnAdmission(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, contract.CaptainAdmissionResponse{Admission: toCaptainAdmission(admission)})
+}
+
+func (s *CaptainServer) listStoreCaptainMemberships(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Partner session is required")
+		return
+	}
+	memberships, err := s.service.ListStoreCaptainMemberships(r.Context(), bearerToken(r), r.PathValue("storeId"))
+	if err != nil {
+		writeCaptainError(w, err)
+		return
+	}
+	items := make([]contract.StoreCaptainMembership, 0, len(memberships))
+	for _, membership := range memberships {
+		items = append(items, toStoreCaptainMembership(membership))
+	}
+	writeJSON(w, http.StatusOK, contract.StoreCaptainMembershipListResponse{Memberships: items})
+}
+
+func (s *CaptainServer) createStoreCaptainInvitation(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Partner session is required")
+		return
+	}
+	_, correlation, idempotency, _, ok := captainHeaders(w, r, false)
+	if !ok {
+		return
+	}
+	if idempotency == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Idempotency-Key is required")
+		return
+	}
+	invitation, err := s.service.CreateStoreCaptainInvitation(r.Context(), bearerToken(r), r.PathValue("storeId"), idempotency, correlation)
+	if err != nil {
+		writeCaptainError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if invitation.Replayed {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, contract.StoreCaptainInvitationResponse{Membership: toStoreCaptainMembership(invitation.Membership), InvitationCode: invitation.InvitationCode, IdempotentReplay: invitation.Replayed})
+}
+
+func (s *CaptainServer) transitionStoreCaptainMembership(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Partner session is required")
+		return
+	}
+	_, correlation, idempotency, expected, ok := captainHeaders(w, r, true)
+	if !ok {
+		return
+	}
+	var input contract.StoreCaptainMembershipTransitionRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	membership, replayed, err := s.service.TransitionStoreCaptainMembership(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("membershipId"), input.State, expected, idempotency, correlation)
+	if err != nil {
+		writeCaptainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.StoreCaptainMembershipResponse{Membership: toStoreCaptainMembership(membership), IdempotentReplay: replayed})
+}
+
+func (s *CaptainServer) listCaptainStoreMemberships(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Captain session is required")
+		return
+	}
+	memberships, err := s.service.ListCaptainStoreMemberships(r.Context(), bearerToken(r))
+	if err != nil {
+		writeCaptainError(w, err)
+		return
+	}
+	items := make([]contract.StoreCaptainMembership, 0, len(memberships))
+	for _, membership := range memberships {
+		items = append(items, toStoreCaptainMembership(membership))
+	}
+	writeJSON(w, http.StatusOK, contract.StoreCaptainMembershipListResponse{Memberships: items})
+}
+
+func (s *CaptainServer) acceptStoreCaptainInvitation(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Captain session is required")
+		return
+	}
+	_, correlation, idempotency, _, ok := captainHeaders(w, r, false)
+	if !ok {
+		return
+	}
+	if idempotency == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Idempotency-Key is required")
+		return
+	}
+	var input contract.AcceptStoreCaptainInvitationRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	membership, replayed, err := s.service.AcceptStoreCaptainInvitation(r.Context(), bearerToken(r), input.InvitationCode, idempotency, correlation)
+	if err != nil {
+		writeCaptainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.StoreCaptainMembershipResponse{Membership: toStoreCaptainMembership(membership), IdempotentReplay: replayed})
 }
 
 func (s *CaptainServer) setAvailability(w http.ResponseWriter, r *http.Request) {
@@ -507,6 +617,18 @@ func toCaptainAdmission(value postgres.CaptainAdmission) contract.CaptainAdmissi
 	return contract.CaptainAdmission{ID: value.ID, ActorID: value.ActorID, State: value.State, AvailabilityState: value.AvailabilityState, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
 }
 
+func toStoreCaptainMembership(value postgres.StoreCaptainMembership) contract.StoreCaptainMembership {
+	captainActorID := ""
+	if value.CaptainActorID != nil {
+		captainActorID = *value.CaptainActorID
+	}
+	return contract.StoreCaptainMembership{
+		ID: value.ID, StoreID: value.StoreID, StoreName: value.StoreName, PartnerActorID: value.PartnerActorID,
+		CaptainActorID: captainActorID, State: value.State, Version: value.Version, ExpiresAt: value.ExpiresAt,
+		AcceptedAt: value.AcceptedAt, RevokedAt: value.RevokedAt, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,
+	}
+}
+
 func toCaptainOffer(value postgres.CaptainOffer) contract.CaptainOffer {
 	return contract.CaptainOffer{ID: value.ID, OrderID: value.OrderID, CaptainActorID: value.CaptainActorID, State: value.State, ExpiresAt: value.ExpiresAt, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt, StoreName: value.StoreName, StoreProfileImage: toStoreProfileImageURI(value.StoreProfileImageURI), CustomerAddressText: value.CustomerAddressText, AmountDueMinor: int(value.AmountDueMinor), Currency: value.Currency, PaymentMethod: contract.PaymentMethod(value.PaymentMethod), PaymentState: contract.PaymentState(value.PaymentState)}
 }
@@ -532,13 +654,15 @@ func writeCaptainError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, captain.ErrInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Captain input is invalid")
+	case errors.Is(err, postgres.ErrStoreCaptainMembershipNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "Store Captain membership was not found")
 	case errors.Is(err, captain.ErrCaptainSessionForbidden), errors.Is(err, captain.ErrPartnerSessionForbidden), errors.Is(err, captain.ErrOperatorNotActive), errors.Is(err, captain.ErrManagedRoleClosed):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the authenticated actor is not permitted for this Captain operation")
 	case errors.Is(err, postgres.ErrCaptainAdmissionNotFound), errors.Is(err, postgres.ErrCaptainOfferNotFound), errors.Is(err, postgres.ErrCaptainAssignmentNotFound), errors.Is(err, postgres.ErrCaptainDeliveryTaskNotFound), errors.Is(err, postgres.ErrOrderNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "Captain operational resource was not found")
 	case errors.Is(err, postgres.ErrCaptainLocationNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "Captain location assignment was not found")
-	case errors.Is(err, postgres.ErrCaptainAdmissionExists), errors.Is(err, postgres.ErrCaptainAdmissionConflict), errors.Is(err, postgres.ErrCaptainOperationConflict), errors.Is(err, postgres.ErrCaptainDispatchConflict), errors.Is(err, postgres.ErrCaptainOfferConflict), errors.Is(err, postgres.ErrCaptainAssignmentConflict), errors.Is(err, postgres.ErrCaptainCustodyConflict), errors.Is(err, postgres.ErrCaptainTerminalConflict), errors.Is(err, postgres.ErrCaptainDeliveryTaskInvalid), errors.Is(err, captain.ErrManagedRoleNotEligible), errors.Is(err, captain.ErrManagedRoleVersionConflict), errors.Is(err, postgres.ErrCaptainNoAvailable), errors.Is(err, postgres.ErrCaptainOfferExpired), errors.Is(err, postgres.ErrCaptainOfferForbidden), errors.Is(err, postgres.ErrCaptainNotEligible), errors.Is(err, postgres.ErrCaptainVersionConflict):
+	case errors.Is(err, postgres.ErrStoreCaptainMembershipConflict), errors.Is(err, postgres.ErrStoreCaptainMembershipVersion), errors.Is(err, postgres.ErrStoreCaptainMembershipIdem), errors.Is(err, postgres.ErrStoreCaptainInvitationExpired), errors.Is(err, postgres.ErrStoreCaptainInvitationUsed), errors.Is(err, postgres.ErrStoreCaptainAlreadyMember), errors.Is(err, postgres.ErrCaptainAdmissionExists), errors.Is(err, postgres.ErrCaptainAdmissionConflict), errors.Is(err, postgres.ErrCaptainOperationConflict), errors.Is(err, postgres.ErrCaptainDispatchConflict), errors.Is(err, postgres.ErrCaptainOfferConflict), errors.Is(err, postgres.ErrCaptainAssignmentConflict), errors.Is(err, postgres.ErrCaptainCustodyConflict), errors.Is(err, postgres.ErrCaptainTerminalConflict), errors.Is(err, postgres.ErrCaptainDeliveryTaskInvalid), errors.Is(err, captain.ErrManagedRoleNotEligible), errors.Is(err, captain.ErrManagedRoleVersionConflict), errors.Is(err, postgres.ErrCaptainNoAvailable), errors.Is(err, postgres.ErrCaptainOfferExpired), errors.Is(err, postgres.ErrCaptainOfferForbidden), errors.Is(err, postgres.ErrCaptainNotEligible), errors.Is(err, postgres.ErrCaptainVersionConflict):
 		writeError(w, http.StatusConflict, "VERSION_OR_STATE_CONFLICT", "Captain operational state or eligibility is stale or not actionable")
 	case errors.Is(err, postgres.ErrDeliveryProofInvalid):
 		writeError(w, http.StatusConflict, "DELIVERY_PROOF_INVALID", "the customer delivery code is missing or incorrect; the delivery was not finalized")

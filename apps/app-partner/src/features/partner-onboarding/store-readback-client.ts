@@ -1,5 +1,5 @@
 import * as Crypto from "expo-crypto";
-import { createDshMobileClient, type CommerceVertical, type JoiningCaseResponse, type ServiceCity, type StoreFulfillmentMode, type StoreFulfillmentModesResponse } from "@bthwani/dsh";
+import { createDshMobileClient, type CommerceVertical, type JoiningCaseResponse, type ServiceCity, type StoreCaptainInvitationResponse, type StoreCaptainMembershipListResponse, type StoreCaptainMembershipResponse, type StoreCaptainMembershipTransitionRequest, type StoreFulfillmentMode, type StoreFulfillmentModesResponse } from "@bthwani/dsh";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 function dshBaseUrl(): string {
@@ -25,6 +25,21 @@ export async function correctAndResubmitOwnJoiningCase(caseID: string, businessN
 export async function updateOwnStoreFulfillmentModes(storeID: string, fulfillmentModes: ReadonlyArray<StoreFulfillmentMode>, expectedVersion: number): Promise<StoreFulfillmentModesResponse> {
   const token = await accessToken();
   return dshClient().setStoreFulfillmentModes(token, storeID, { fulfillmentModes }, expectedVersion);
+}
+
+export async function listOwnStoreCaptainMemberships(storeID: string): Promise<StoreCaptainMembershipListResponse> {
+  const token = await accessToken();
+  return dshClient().listPartnerStoreCaptainMemberships(token, storeID);
+}
+
+export async function createOwnStoreCaptainInvitation(storeID: string): Promise<StoreCaptainInvitationResponse> {
+  const token = await accessToken();
+  return dshClient().createPartnerStoreCaptainInvitation(token, storeID);
+}
+
+export async function transitionOwnStoreCaptainMembership(storeID: string, membershipID: string, state: StoreCaptainMembershipTransitionRequest["state"], expectedVersion: number): Promise<StoreCaptainMembershipResponse> {
+  const token = await accessToken();
+  return dshClient().transitionPartnerStoreCaptainMembership(token, storeID, membershipID, { state }, expectedVersion);
 }
 
 export function listActiveServiceCities(): Promise<ReadonlyArray<ServiceCity>> {

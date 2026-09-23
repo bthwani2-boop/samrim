@@ -7,6 +7,7 @@ import { StoreOfferManagement } from "../store-offer/store-offer";
 import { usePartnerStoreContext } from "./partner-store-context";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 import { StoreFulfillmentModeSettings } from "./store-fulfillment-mode-settings";
+import { StoreCaptainMembershipManagement } from "./store-captain-memberships";
 
 export function PartnerStore() {
   const theme = useAppearanceTheme();
@@ -47,6 +48,7 @@ export function PartnerStore() {
           })}
         />
         <View style={styles.card}><Text style={styles.metaLabel}>موقع المتجر الثابت</Text><Text selectable style={styles.value}>{joiningCase.case.store.deliveryOrigin ? `${joiningCase.case.store.deliveryOrigin.latitude.toFixed(6)}, ${joiningCase.case.store.deliveryOrigin.longitude.toFixed(6)}` : "لم يُثبت ضمن ملف الانضمام"}</Text><Text style={styles.muted}>يُقرأ من ملف الانضمام ولا يُعدّل من هذه الشاشة.</Text></View>
+        <StoreCaptainMembershipManagement storeID={joiningCase.case.store.id} />
         <StoreOfferManagement storeId={joiningCase.case.store.id} />
       </> : <Text style={styles.muted}>لم يُنشأ المتجر بعد. راجع دورة الانضمام لإكمال أي تصحيح مطلوب.</Text>}
       {joiningCase.case.state === "needs_correction" ? <Link href={"/onboarding" as Href} asChild><BthwaniButton label="مراجعة التصحيح المطلوب" variant="secondary" /></Link> : null}
