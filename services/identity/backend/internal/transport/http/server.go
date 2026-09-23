@@ -516,12 +516,23 @@ func (s *Server) authorizeReenrollment(w http.ResponseWriter, r *http.Request, c
 		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
 		return
 	}
+	expectedRoleVersion, err := parseExpectedVersion(r)
+	if err != nil || expectedRoleVersion < 1 {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "a positive X-Expected-Version is required for reenrollment"))
+		return
+	}
+	expectedActorVersion, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Actor-Version")))
+	if err != nil || expectedActorVersion < 1 {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "a positive X-Expected-Actor-Version is required for reenrollment"))
+		return
+	}
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	reason := strings.TrimSpace(r.Header.Get("X-Reason"))
 	if operatorActorID == "" {
 		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for reenrollment operations"))
 		return
 	}
-	if err := s.actors.AuthorizeReenrollmentWithContext(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"), strings.TrimSpace(r.Header.Get("X-Correlation-ID")), operatorActorID); err != nil {
+	if err := s.actors.AuthorizeReenrollmentWithContext(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"), strings.TrimSpace(r.Header.Get("X-Correlation-ID")), operatorActorID, reason, expectedActorVersion, expectedRoleVersion); err != nil {
 		writeDomainError(w, err)
 		return
 	}

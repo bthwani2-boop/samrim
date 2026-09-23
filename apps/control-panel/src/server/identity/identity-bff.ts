@@ -14,6 +14,7 @@ import {
   type OperatorEnrollmentToken,
   type OperatorPasskeyRegistrationResponse,
   type PasskeyOptions,
+  type ReenrollmentMutationContext,
   type TokenPair,
   type VersionedMutationContext,
   validateServiceUrl,
@@ -197,7 +198,7 @@ function missingIdentityRole(): IdentityClientError {
   return { kind: "http", status: 404, code: "NOT_FOUND", message: "identity role record not found" };
 }
 
-export async function authorizeIdentityRoleReenrollment(actorId: string, role: ActorType, context: AttributedMutationContext): Promise<void> {
+export async function authorizeIdentityRoleReenrollment(actorId: string, role: ActorType, context: ReenrollmentMutationContext): Promise<void> {
   if (!actorId.trim()) throw missingIdentityRole();
   await identityInternalClient().authorizeActorRoleReenrollment(actorId, role, context);
 }

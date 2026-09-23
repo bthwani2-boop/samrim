@@ -31,6 +31,7 @@ type ManagedAccountStatus = Readonly<{
   roleVersion?: number;
   state?: string;
   operationalAdmissionState?: string;
+  operationalAdmissionVersion?: number;
   operationalAvailabilityState?: string;
   phoneE164?: string;
   admittedRoles?: ReadonlyArray<Readonly<{
@@ -42,6 +43,34 @@ type ManagedAccountStatus = Readonly<{
     securityEnabled: boolean;
   }>>;
 }>;
+
+function provisionValidationMessage(reenroll: boolean, role: ActorType, reason: string, status: ManagedAccountStatus | null): string | null {
+  if (!reenroll) return null;
+  const reasonLength = Array.from(reason.trim()).length;
+  if (reasonLength < 5) return "اكتب سبب إعادة التسجيل من 5 أحرف على الأقل.";
+  if (!status?.actorId || !Number.isSafeInteger(status.actorVersion) || (status.actorVersion ?? 0) < 1 || !Number.isSafeInteger(status.roleVersion) || (status.roleVersion ?? 0) < 1 || (role === "field" && (!Number.isSafeInteger(status.operationalAdmissionVersion) || (status.operationalAdmissionVersion ?? 0) < 1))) {
+    return "تعذر تحديد إصدارات الهوية والدور وأهلية DSH. أعد تحميل الحالة قبل المحاولة.";
+  }
+  return null;
+}
+
+function provisionRequestBody(reenroll: boolean, role: ActorType, phone: string, reason: string, status: ManagedAccountStatus | null): Readonly<Record<string, unknown>> {
+  if (!reenroll) return { phone, role, reenroll: false };
+  return {
+    actorId: status?.actorId,
+    role,
+    reenroll: true,
+    actorVersion: status?.actorVersion,
+    roleVersion: status?.roleVersion,
+    operationalAdmissionVersion: role === "field" ? status?.operationalAdmissionVersion : undefined,
+    reason: reason.trim(),
+  };
+}
+
+function reenrollmentBlockedMessage(role: ActorType, status: ManagedAccountStatus): string {
+  if (role === "field" && status.operationalAdmissionState !== "eligible") return "لا يمكن إعادة تسجيل الميداني حتى تصبح أهليته في DSH مؤهلة.";
+  return "أعد تفعيل الدور والهوية أولًا.";
+}
 
 export function AccountAccessPanel() {
   const [role, setRole] = useState<ActorType>("partner");
@@ -116,7 +145,39 @@ export function AccountAccessPanel() {
 
   const managedRole = role === "partner" || role === "captain" || role === "field";
 
+  async function handleProvisionResponseFailure(response: Response, reenroll: boolean): Promise<void> {
+    const message = await responseMessage(response);
+    if (reenroll && (response.status === 409 || response.status === 412 || response.status >= 500)) {
+      const reconciled = await reconcileAfterMutationFailure();
+      setError(reconciled ? "تغيرت الحالة أو تعذر تصنيف النتيجة. أُعيد تحميل الحالة الكانونية؛ راجعها قبل أي إجراء آخر." : "تعذر تأكيد الحالة الكانونية. أعد تحميلها قبل أي إجراء آخر.");
+      return;
+    }
+    setError(message);
+  }
+
+  async function handleProvisionFailure(cause: unknown, reenroll: boolean, mutationApplied: boolean): Promise<void> {
+    if (mutationApplied) {
+      markFinalStateUnverified();
+      return;
+    }
+    if (reenroll) {
+      const reconciled = await reconcileAfterMutationFailure();
+      setError(reconciled ? "تعذر تأكيد نتيجة إعادة التسجيل. أُعيد تحميل الحالة الكانونية؛ راجعها قبل أي إجراء آخر." : "تعذر التحقق من نتيجة إعادة التسجيل. أعد تحميل الحالة قبل أي إجراء آخر.");
+      return;
+    }
+    if (isRequestFailure(cause)) {
+      setError(cause.message);
+      return;
+    }
+    setError("تعذر الوصول إلى خدمات إدارة الهوية.");
+  }
+
   async function provision(reenroll = false) {
+    const validationMessage = provisionValidationMessage(reenroll, role, reason, status);
+    if (validationMessage) {
+      setError(validationMessage);
+      return;
+    }
     setBusy(true);
     setError("");
     setResult(null);
@@ -125,20 +186,19 @@ export function AccountAccessPanel() {
       const response = await identityFetch("/api/access/managed-user", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(reenroll ? { actorId: status?.actorId, role, reenroll: true } : { phone, role, reenroll: false }),
+        body: JSON.stringify(provisionRequestBody(reenroll, role, phone, reason, status)),
       });
       if (!response.ok) {
-        setError(await responseMessage(response));
+        await handleProvisionResponseFailure(response, reenroll);
         return;
       }
       mutationApplied = true;
       const payload = await response.json();
       setResult(role === "operator" ? payload as OperatorEnrollmentToken : null);
       await refreshCanonicalStatus();
+      setReason("");
     } catch (cause) {
-      if (mutationApplied) markFinalStateUnverified();
-      else if (isRequestFailure(cause)) setError(cause.message);
-      else setError("تعذر الوصول إلى خدمات إدارة الهوية.");
+      await handleProvisionFailure(cause, reenroll, mutationApplied);
     } finally {
       setBusy(false);
     }
@@ -186,7 +246,7 @@ export function AccountAccessPanel() {
   }
 
   const canIssueActivation = role === "operator" && status !== null && !status.activated;
-  const canIssueReenrollment = (role === "partner" || role === "captain") && status?.exists === true && status.activated && status.enabled && status.securityEnabled;
+  const canIssueReenrollment = status?.exists === true && status.activated && status.enabled && status.securityEnabled && ((role === "partner" || role === "captain") || (role === "field" && status.operationalAdmissionState === "eligible" && status.operationalAdmissionVersion !== undefined));
   const activationBlocked = status?.exists === true && status.enabled === false;
   const statusIsHealthy = status?.exists === false || (status?.enabled === true && status.securityEnabled === true && ((status.role !== "captain" && status.role !== "field") || status.state === "active"));
 
@@ -230,8 +290,8 @@ export function AccountAccessPanel() {
               {status.activated && managedRole ? (
                 <div className="managed-status managed-status-warning" role="alert">
                   <strong>تم تفعيل هذا الدور من قبل.</strong>
-                  <p>{canIssueReenrollment ? "يمكنك إصدار دعوة جديدة لإعادة تسجيل هذا الدور؛ ستُلغى الجلسات ووسائل الدخول السابقة." : "أعد تفعيل الدور والهوية أولًا إذا كانا موقوفين؛ ويخضع الميداني أيضًا لأهلية التشغيل."}</p>
-                  {canIssueReenrollment ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void provision(true)}>{busy ? "جارٍ إصدار دعوة إعادة التسجيل…" : "إصدار دعوة إعادة تسجيل الدور"}</button> : null}
+                  <p>{canIssueReenrollment ? "يمكن بدء إعادة تسجيل هذا الدور؛ ستُلغى الجلسات ووسائل الدخول السابقة، ثم يتبع المستخدم مسار التفعيل المعتمد." : reenrollmentBlockedMessage(role, status)}</p>
+                  {canIssueReenrollment ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void provision(true)}>{busy ? "جارٍ اعتماد إعادة التسجيل…" : "السماح بإعادة تسجيل الدور"}</button> : null}
                 </div>
               ) : null}
               <label className="field-label" htmlFor="access-reason">

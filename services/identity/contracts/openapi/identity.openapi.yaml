@@ -89,6 +89,9 @@ components:
     ActingActorId: { name: X-Acting-Actor-ID, in: header, required: false, schema: { type: string, maxLength: 128 } }
     ControlPanelActingActorId: { name: X-Acting-Actor-ID, in: header, required: true, schema: { type: string, maxLength: 128 } }
     ExpectedVersion: { name: X-Expected-Version, in: header, required: false, schema: { type: integer, minimum: 1 } }
+    ReenrollmentExpectedVersion: { name: X-Expected-Version, in: header, required: true, schema: { type: integer, minimum: 1 } }
+    ExpectedActorVersion: { name: X-Expected-Actor-Version, in: header, required: true, schema: { type: integer, minimum: 1 } }
+    ReenrollmentReasonRequired: { name: X-Reason, in: header, required: true, schema: { type: string, minLength: 5, maxLength: 500 } }
     ControlPanelExpectedVersion: { name: X-Expected-Version, in: header, required: true, schema: { type: integer, minimum: 1 } }
     MutationReason: { name: X-Reason, in: header, required: false, schema: { type: string, maxLength: 500 } }
 

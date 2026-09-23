@@ -89,3 +89,7 @@ func (c *Client) ReadSession(ctx context.Context, accessToken string) (identityc
 func (c *Client) SetRoleEnabledWithContext(ctx context.Context, actorID, role string, enabled bool, correlationID, reason, operatorActorID string, expectedVersion int) error {
 	return c.inner.SetRoleEnabledWithContext(ctx, actorID, role, enabled, correlationID, reason, operatorActorID, expectedVersion)
 }
+
+func (c *Client) AuthorizeReenrollmentWithContext(ctx context.Context, actorID, role, correlationID, reason, operatorActorID string, expectedActorVersion, expectedRoleVersion int) error {
+	return c.inner.AuthorizeReenrollmentWithContext(ctx, actorID, role, correlationID, operatorActorID, reason, expectedActorVersion, expectedRoleVersion)
+}

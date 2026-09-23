@@ -105,7 +105,7 @@ func (c *Client) ReadSession(ctx context.Context, accessToken string) (ActorIden
 		return ActorIdentity{}, &Error{Status: http.StatusUnauthorized, Code: "UNAUTHENTICATED", Message: "access token is required"}
 	}
 	var result ActorIdentity
-	err := c.doWithToken(ctx, IdentityOperationReadCurrentSession.Method, IdentityOperationReadCurrentSession.Path, accessToken, "", "", "", 0, nil, &result)
+	err := c.doWithToken(ctx, IdentityOperationReadCurrentSession.Method, IdentityOperationReadCurrentSession.Path, accessToken, "", "", "", 0, 0, nil, &result)
 	return result, err
 }
 func (c *Client) SearchRoles(ctx context.Context, role, query string) (ActorRoleSearchPage, error) {
@@ -127,9 +127,9 @@ func (c *Client) SetRoleEnabledWithContext(ctx context.Context, actorID, role st
 	return c.doWithContext(ctx, operation.Method, pathname, correlationID, reason, operatorActorID, expectedVersion, nil, nil)
 }
 
-func (c *Client) AuthorizeReenrollmentWithContext(ctx context.Context, actorID, role, correlationID, operatorActorID string) error {
+func (c *Client) AuthorizeReenrollmentWithContext(ctx context.Context, actorID, role, correlationID, operatorActorID, reason string, expectedActorVersion, expectedRoleVersion int) error {
 	pathname := identityRoute(IdentityOperationAuthorizeManagedRoleReenrollment.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "role", url.PathEscape(strings.TrimSpace(role)))
-	return c.doWithContext(ctx, IdentityOperationAuthorizeManagedRoleReenrollment.Method, pathname, correlationID, "", operatorActorID, 0, nil, nil)
+	return c.doWithContextVersions(ctx, IdentityOperationAuthorizeManagedRoleReenrollment.Method, pathname, correlationID, reason, operatorActorID, expectedRoleVersion, expectedActorVersion, nil, nil)
 }
 
 func (c *Client) SetActorSecurityEnabledWithContext(ctx context.Context, actorID string, enabled bool, correlationID, reason, operatorActorID string, expectedVersion int) error {
@@ -156,10 +156,14 @@ func (c *Client) do(ctx context.Context, method, pathname, correlationID string,
 }
 
 func (c *Client) doWithContext(ctx context.Context, method, pathname, correlationID, reason, operatorActorID string, expectedVersion int, body any, target any) error {
-	return c.doWithToken(ctx, method, pathname, c.token, correlationID, reason, operatorActorID, expectedVersion, body, target)
+	return c.doWithToken(ctx, method, pathname, c.token, correlationID, reason, operatorActorID, expectedVersion, 0, body, target)
 }
 
-func (c *Client) doWithToken(ctx context.Context, method, pathname, token, correlationID, reason, operatorActorID string, expectedVersion int, body any, target any) error {
+func (c *Client) doWithContextVersions(ctx context.Context, method, pathname, correlationID, reason, operatorActorID string, expectedVersion, expectedActorVersion int, body any, target any) error {
+	return c.doWithToken(ctx, method, pathname, c.token, correlationID, reason, operatorActorID, expectedVersion, expectedActorVersion, body, target)
+}
+
+func (c *Client) doWithToken(ctx context.Context, method, pathname, token, correlationID, reason, operatorActorID string, expectedVersion, expectedActorVersion int, body any, target any) error {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return &Error{Status: http.StatusUnauthorized, Code: "UNAUTHENTICATED", Message: "access token is required"}
@@ -196,6 +200,9 @@ func (c *Client) doWithToken(ctx context.Context, method, pathname, token, corre
 	}
 	if expectedVersion > 0 {
 		req.Header.Set("X-Expected-Version", fmt.Sprintf("%d", expectedVersion))
+	}
+	if expectedActorVersion > 0 {
+		req.Header.Set("X-Expected-Actor-Version", fmt.Sprintf("%d", expectedActorVersion))
 	}
 	response, err := c.http.Do(req)
 	if err != nil {

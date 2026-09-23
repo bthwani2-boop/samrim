@@ -41,6 +41,7 @@ func (s *FieldServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/fields/actors/{actorId}/admission", s.readAdmissionForActor)
 	mux.HandleFunc("GET /dsh/fields/me", s.readOwnAdmission)
 	mux.HandleFunc("POST /dsh/fields/{actorId}/identity-role", s.setRole)
+	mux.HandleFunc("POST /dsh/fields/{actorId}/reenrollment", s.authorizeReenrollment)
 	mux.HandleFunc("POST /dsh/field/joining-cases", s.createJoiningCase)
 	mux.HandleFunc("GET /dsh/field/joining-cases", s.listJoiningCases)
 	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}", s.readJoiningCase)
@@ -130,6 +131,32 @@ func (s *FieldServer) setRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.service.SetManagedRoleEnabled(r.Context(), r.PathValue("actorId"), acting, correlation, idempotency, input.Reason, expected, input.Enabled); err != nil {
+		writeFieldError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *FieldServer) authorizeReenrollment(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizedService(w, r) {
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("If-Match") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "legacy actor and version headers are forbidden")
+		return
+	}
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	correlation := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
+	expectedAdmissionVersion, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Version")))
+	if acting == "" || len(acting) > 128 || len(correlation) < 8 || len(correlation) > 128 || err != nil || expectedAdmissionVersion < 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "acting actor, correlation ID, and positive admission version are required")
+		return
+	}
+	var input contract.FieldReenrollmentRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	if err := s.service.AuthorizeReenrollment(r.Context(), r.PathValue("actorId"), acting, correlation, input.Reason, expectedAdmissionVersion, input.ExpectedActorVersion, input.ExpectedRoleVersion); err != nil {
 		writeFieldError(w, err)
 		return
 	}

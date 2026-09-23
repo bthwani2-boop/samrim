@@ -410,6 +410,9 @@ paths:
   /dsh/fields/{actorId}/identity-role:
     $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1{actorId}~1identity-role"
 
+  /dsh/fields/{actorId}/reenrollment:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1{actorId}~1reenrollment"
+
   /dsh/field/joining-cases:
     $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases"
 
@@ -3242,6 +3245,22 @@ components:
           $ref: "#/components/schemas/FieldAdmission"
         idempotentReplay:
           type: boolean
+
+    FieldReenrollmentRequest:
+      type: object
+      required: [expectedActorVersion, expectedRoleVersion, reason]
+      additionalProperties: false
+      properties:
+        expectedActorVersion:
+          type: integer
+          minimum: 1
+        expectedRoleVersion:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
 
     CaptainAvailabilityRequest:
       type: object

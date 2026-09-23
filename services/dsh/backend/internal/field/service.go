@@ -10,6 +10,7 @@ import (
 	"math"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/joiningcase"
@@ -169,6 +170,11 @@ func (s *Service) SetManagedRoleEnabled(ctx context.Context, actorID, operatorAc
 	if err := s.requireOperator(ctx, operatorActorID); err != nil {
 		return err
 	}
+	lifecycle, err := postgres.LockFieldLifecycle(ctx, s.db, actorID)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lifecycle.Rollback() }()
 	identityRole, err := s.identity.ReadActorRole(ctx, actorID, "field")
 	if err != nil {
 		return err
@@ -193,16 +199,53 @@ func (s *Service) SetManagedRoleEnabled(ctx context.Context, actorID, operatorAc
 				return err
 			}
 		}
-		_, err = postgres.RestoreFieldAdmission(ctx, s.db, actorID, idempotencyKey, accessHash, operatorActorID, correlationID)
-		return err
+		if _, err := postgres.RestoreFieldAdmission(ctx, s.db, actorID, idempotencyKey, accessHash, operatorActorID, correlationID); err != nil {
+			return err
+		}
+		return lifecycle.Commit()
 	}
 	if _, err := postgres.SuspendFieldAdmission(ctx, s.db, actorID, idempotencyKey, accessHash, operatorActorID, correlationID); err != nil {
 		return err
 	}
 	if identityRole.Enabled == enabled {
-		return nil
+		return lifecycle.Commit()
 	}
-	return s.identity.SetRoleEnabledWithContext(ctx, actorID, "field", false, correlationID, strings.TrimSpace(reason), operatorActorID, expectedVersion)
+	if err := s.identity.SetRoleEnabledWithContext(ctx, actorID, "field", false, correlationID, strings.TrimSpace(reason), operatorActorID, expectedVersion); err != nil {
+		return err
+	}
+	return lifecycle.Commit()
+}
+
+func (s *Service) AuthorizeReenrollment(ctx context.Context, actorID, operatorActorID, correlationID, reason string, expectedAdmissionVersion, expectedActorVersion, expectedRoleVersion int) error {
+	actorID = strings.TrimSpace(actorID)
+	operatorActorID = strings.TrimSpace(operatorActorID)
+	correlationID = strings.TrimSpace(correlationID)
+	reason = strings.TrimSpace(reason)
+	if actorID == "" || expectedAdmissionVersion < 1 || expectedActorVersion < 1 || expectedRoleVersion < 1 || utf8.RuneCountInString(reason) < 5 || utf8.RuneCountInString(reason) > 500 || !validMutation("field-reenrollment", correlationID, operatorActorID) {
+		return ErrInvalidInput
+	}
+	if err := s.requireOperator(ctx, operatorActorID); err != nil {
+		return err
+	}
+	lifecycle, err := postgres.LockFieldLifecycle(ctx, s.db, actorID)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lifecycle.Rollback() }()
+	admission, err := postgres.ReadFieldAdmissionForActor(ctx, s.db, actorID)
+	if err != nil {
+		return err
+	}
+	if admission.State != "eligible" {
+		return ErrManagedRoleNotEligible
+	}
+	if admission.Version != expectedAdmissionVersion {
+		return postgres.ErrFieldVersionConflict
+	}
+	if err := s.identity.AuthorizeReenrollmentWithContext(ctx, actorID, "field", correlationID, reason, operatorActorID, expectedActorVersion, expectedRoleVersion); err != nil {
+		return err
+	}
+	return lifecycle.Commit()
 }
 
 func (s *Service) CreateJoiningCase(ctx context.Context, accessToken, idempotencyKey, correlationID, phone, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64, rawFulfillmentModes []string) (postgres.JoiningCaseResult, error) {

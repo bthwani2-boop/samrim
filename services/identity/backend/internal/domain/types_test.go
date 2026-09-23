@@ -120,7 +120,10 @@ func TestManagedRoleReenrollmentBoundary(t *testing.T) {
 	if !CanAuthorizeReenrollment("control-panel", "partner") || !CanAuthorizeReenrollment("control-panel", "captain") {
 		t.Fatal("operator must be able to request governed partner/captain reenrollment")
 	}
-	if CanAuthorizeReenrollment("control-panel", "field") {
-		t.Fatal("field reenrollment must remain unavailable because DSH owns the Field admission lifecycle")
+	if !CanAuthorizeReenrollment("dsh", "field") {
+		t.Fatal("DSH must be able to authorize Field reenrollment through its admission lifecycle")
+	}
+	if CanAuthorizeReenrollment("control-panel", "field") || CanAuthorizeReenrollment("dsh", "partner") || CanAuthorizeReenrollment("dsh", "captain") {
+		t.Fatal("reenrollment must remain scoped to the lifecycle owner for each role")
 	}
 }

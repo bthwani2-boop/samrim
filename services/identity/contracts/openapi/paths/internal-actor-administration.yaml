@@ -98,8 +98,12 @@ paths:
         - { $ref: "#/components/parameters/Role" }
         - { $ref: "#/components/parameters/CorrelationId" }
         - { $ref: "#/components/parameters/ActingActorId" }
+        - { $ref: "#/components/parameters/ReenrollmentExpectedVersion" }
+        - { $ref: "#/components/parameters/ExpectedActorVersion" }
+        - { $ref: "#/components/parameters/ReenrollmentReasonRequired" }
       responses:
-        "204": { description: An existing domain-managed role is eligible for a fresh one-time activation. The request is actor_id-addressed and operator-attributed. }
+        "204": { description: An active domain-managed role is moved to fresh one-time activation only when actor and role versions match; active sessions and challenges are revoked. The request is actor_id-addressed and operator-attributed. }
+        "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }

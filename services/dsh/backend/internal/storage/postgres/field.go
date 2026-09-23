@@ -134,6 +134,22 @@ func BindFieldAdmission(ctx context.Context, db *sql.DB, admissionID, actorID, i
 	return updated, nil
 }
 
+func LockFieldLifecycle(ctx context.Context, db *sql.DB, actorID string) (*sql.Tx, error) {
+	actorID = strings.TrimSpace(actorID)
+	if db == nil || actorID == "" {
+		return nil, ErrFieldAdmissionConflict
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:field-lifecycle:"+actorID); err != nil {
+		_ = tx.Rollback()
+		return nil, err
+	}
+	return tx, nil
+}
+
 func ReadFieldAdmission(ctx context.Context, db *sql.DB, admissionID string) (FieldAdmission, error) {
 	if db == nil || strings.TrimSpace(admissionID) == "" {
 		return FieldAdmission{}, ErrFieldAdmissionNotFound

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/domain"
 	identitysecurity "github.com/bthwani2-boop/samrim/services/identity/backend/internal/security"
@@ -530,15 +531,16 @@ func (s *Service) SetRoleEnabledWithContext(ctx context.Context, caller, actorID
 	return tx.Commit()
 }
 
-func (s *Service) AuthorizeReenrollmentWithContext(ctx context.Context, caller, actorID, role, correlationID, operatorActorID string) error {
+func (s *Service) AuthorizeReenrollmentWithContext(ctx context.Context, caller, actorID, role, correlationID, operatorActorID, reason string, expectedActorVersion, expectedRoleVersion int) error {
 	caller = strings.ToLower(strings.TrimSpace(caller))
 	actorID = strings.TrimSpace(actorID)
 	role = strings.ToLower(strings.TrimSpace(role))
 	operatorActorID = strings.TrimSpace(operatorActorID)
+	reason = strings.TrimSpace(reason)
 	if actorID == "" || !domain.CanAuthorizeReenrollment(caller, role) {
 		return domain.ErrForbidden
 	}
-	if operatorActorID == "" {
+	if operatorActorID == "" || expectedActorVersion < 1 || expectedRoleVersion < 1 || utf8.RuneCountInString(reason) < 5 || utf8.RuneCountInString(reason) > 500 {
 		return domain.ErrInvalidInput
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -546,19 +548,28 @@ func (s *Service) AuthorizeReenrollmentWithContext(ctx context.Context, caller, 
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var enabled bool
-	err = tx.QueryRowContext(ctx, "SELECT enabled FROM identity_actor_roles WHERE actor_id=$1 AND role=$2 FOR UPDATE", actorID, role).Scan(&enabled)
+	var actorVersion, roleVersion int
+	var enabled, securityEnabled bool
+	var activatedAt sql.NullTime
+	err = tx.QueryRowContext(ctx, `SELECT a.version,a.security_enabled,r.enabled,r.activated_at,r.version
+FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id
+WHERE a.id=$1 AND r.role=$2 FOR UPDATE OF a,r`, actorID, role).Scan(&actorVersion, &securityEnabled, &enabled, &activatedAt, &roleVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.ErrNotFound
 	}
 	if err != nil {
 		return err
 	}
-	if !enabled {
+	if actorVersion != expectedActorVersion || roleVersion != expectedRoleVersion || !enabled || !securityEnabled || !activatedAt.Valid {
 		return domain.ErrConflict
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE identity_actor_roles SET activated_at=NULL,version=version+1,updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2", actorID, role); err != nil {
+	result, err := tx.ExecContext(ctx, `UPDATE identity_actor_roles SET activated_at=NULL,version=version+1,updated_at=clock_timestamp()
+WHERE actor_id=$1 AND role=$2 AND version=$3 AND activated_at IS NOT NULL`, actorID, role, expectedRoleVersion)
+	if err != nil {
 		return err
+	}
+	if count, _ := result.RowsAffected(); count != 1 {
+		return domain.ErrConflict
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1 WHERE actor_id=$1 AND role=$2 AND revoked_at IS NULL", actorID, role); err != nil {
 		return err
@@ -569,12 +580,8 @@ func (s *Service) AuthorizeReenrollmentWithContext(ctx context.Context, caller, 
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_operator_enrollment_tokens SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND status='pending'", actorID, role); err != nil {
 		return err
 	}
-	auditPrincipal := caller
-	meta := map[string]any{"role": role, "workload": caller}
-	if strings.TrimSpace(operatorActorID) != "" {
-		auditPrincipal = caller + ":" + strings.TrimSpace(operatorActorID)
-		meta["operatorActorId"] = strings.TrimSpace(operatorActorID)
-	}
+	meta := map[string]any{"role": role, "workload": caller, "operatorActorId": operatorActorID, "reason": reason, "actorVersion": actorVersion, "roleVersion": roleVersion}
+	auditPrincipal := caller + ":" + operatorActorID
 	if err := auditTx(ctx, tx, "actor_role.reenrollment_authorized", actorID, auditPrincipal, "success", correlationID, meta); err != nil {
 		return err
 	}

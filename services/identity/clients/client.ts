@@ -67,11 +67,17 @@ export type VersionedMutationContext = AttributedMutationContext & Readonly<{
   expectedVersion: number;
 }>;
 
+export type ReenrollmentMutationContext = AttributedMutationContext & Readonly<{
+  expectedActorVersion: number;
+  expectedRoleVersion: number;
+  reason: string;
+}>;
+
 export type IdentityInternalClient = Readonly<{
   issueOperatorEnrollmentToken(request: OperatorEnrollmentTokenIssueRequest, context: AttributedMutationContext): Promise<OperatorEnrollmentToken>;
   provisionActorRole(request: ProvisionActorRoleRequest, context: AttributedMutationContext): Promise<ActorRoleView>;
   searchActorRoles(role: ActorType, query: string, enabled?: boolean): Promise<ActorRoleSearchPage>;
-  authorizeActorRoleReenrollment(actorId: string, role: ActorType, context: AttributedMutationContext): Promise<void>;
+  authorizeActorRoleReenrollment(actorId: string, role: ActorType, context: ReenrollmentMutationContext): Promise<void>;
   setActorRoleEnabled(actorId: string, role: ActorType, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<void>;
   setActorSecurityEnabled(actorId: string, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<void>;
 }>;
@@ -184,6 +190,13 @@ function validateVersionedMutationContext(context: VersionedMutationContext): vo
   if (!Number.isInteger(context.expectedVersion) || context.expectedVersion < 1) throw new Error("IDENTITY_MUTATION_VERSION_INVALID");
 }
 
+function validateReenrollmentMutationContext(context: ReenrollmentMutationContext): void {
+  validateAttributedMutationContext(context);
+  if (!Number.isSafeInteger(context.expectedActorVersion) || context.expectedActorVersion < 1 || !Number.isSafeInteger(context.expectedRoleVersion) || context.expectedRoleVersion < 1) throw new Error("IDENTITY_REENROLLMENT_VERSION_INVALID");
+  const reasonLength = Array.from(context.reason.trim()).length;
+  if (reasonLength < 5 || reasonLength > 500) throw new Error("IDENTITY_REENROLLMENT_REASON_INVALID");
+}
+
 export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: string, timeoutMs = 8_000): IdentityInternalClient {
   const baseUrl = normalizeBaseUrl(rawBaseUrl);
   const token = serviceToken.trim();
@@ -258,8 +271,8 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
     }
   }
 
-  async function requestAttributedNoContent(pathname: string, context: AttributedMutationContext): Promise<void> {
-    validateAttributedMutationContext(context);
+  async function requestReenrollmentNoContent(pathname: string, context: ReenrollmentMutationContext): Promise<void> {
+    validateReenrollmentMutationContext(context);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -272,6 +285,9 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
             Authorization: "Bearer " + token,
             "X-Correlation-ID": context.correlationId.trim(),
             "X-Acting-Actor-ID": context.operatorActorId.trim(),
+            "X-Expected-Version": String(context.expectedRoleVersion),
+            "X-Expected-Actor-Version": String(context.expectedActorVersion),
+            "X-Reason": context.reason.trim(),
           },
           ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
           signal: controller.signal,
@@ -349,7 +365,7 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
       }
     },
     authorizeActorRoleReenrollment: (actorId, role, context) =>
-      requestAttributedNoContent(expandPath(identityOperationPaths.authorizeManagedRoleReenrollment.path, { actorId, role }), context),
+      requestReenrollmentNoContent(expandPath(identityOperationPaths.authorizeManagedRoleReenrollment.path, { actorId, role }), context),
     setActorRoleEnabled: (actorId, role, enabled, reason, context) => {
       const op = enabled ? identityOperationPaths.enableActorRole : identityOperationPaths.disableActorRole;
       return requestNoContent(

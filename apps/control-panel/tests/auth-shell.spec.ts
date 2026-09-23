@@ -271,6 +271,7 @@ test("field access exposes DSH-owned eligibility and role controls", async ({ pa
         actorVersion: 4,
         roleVersion: 2,
         operationalAdmissionState: "eligible",
+        operationalAdmissionVersion: 4,
         admittedRoles: [{ actorId: "act_field_admitted", role: "field", state: "active", enabled: true, activated: true, securityEnabled: true }],
       }),
     });
@@ -283,12 +284,129 @@ test("field access exposes DSH-owned eligibility and role controls", async ({ pa
   await page.getByLabel("الدور الإداري").selectOption("field");
   await page.getByLabel("رقم الهاتف للبحث").fill("+96777000103");
   await expect(page.getByText("الأهلية التشغيلية: مؤهل للتشغيل")).toBeVisible();
-  await expect(page.getByRole("button", { name: "إصدار دعوة إعادة تسجيل الدور" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "السماح بإعادة تسجيل الدور" })).toBeVisible();
   await expect(page.getByRole("button", { name: "إيقاف الدور" })).toBeVisible();
   await expect(page.getByRole("button", { name: "إيقاف الهوية بالكامل" })).toBeVisible();
   await page.getByLabel("سبب التغيير").fill("تجميد أهلية الميدان");
   await page.getByRole("button", { name: "إيقاف الدور" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_field_admitted", role: "field", action: "disable-role", expectedVersion: 2 });
+});
+
+test("Field reenrollment uses DSH eligibility and carries fresh actor, role, and admission versions", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  let reenrollmentBody: Record<string, unknown> | undefined;
+  let reauthorized = false;
+  await page.route("**/api/access/managed-user/status**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        actorId: "act_field_reenroll",
+        phoneE164: "+96777000105",
+        role: "field",
+        exists: true,
+        enabled: true,
+        activated: !reauthorized,
+        securityEnabled: true,
+        state: reauthorized ? "pending_activation" : "active",
+        actorVersion: 4,
+        roleVersion: reauthorized ? 3 : 2,
+        operationalAdmissionState: "eligible",
+        operationalAdmissionVersion: 8,
+      }),
+    });
+  });
+  await page.route("**/api/access/managed-user", async (route) => {
+    reenrollmentBody = route.request().postDataJSON() as Record<string, unknown>;
+    reauthorized = true;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "role_reenrollment_authorized" }) });
+  });
+  await page.goto("/access");
+  await page.getByLabel("الدور الإداري").selectOption("field");
+  await page.getByLabel("رقم الهاتف للبحث").fill("+96777000105");
+  await expect(page.getByRole("button", { name: "السماح بإعادة تسجيل الدور" })).toBeVisible();
+  await page.getByLabel("سبب التغيير").fill("استرداد جهاز الميدان");
+  await page.getByRole("button", { name: "السماح بإعادة تسجيل الدور" }).click();
+  await expect(page.getByText("الحالة: بانتظار التفعيل")).toBeVisible();
+  expect(reenrollmentBody).toMatchObject({
+    actorId: "act_field_reenroll",
+    role: "field",
+    reenroll: true,
+    actorVersion: 4,
+    roleVersion: 2,
+    operationalAdmissionVersion: 8,
+    reason: "استرداد جهاز الميدان",
+  });
+  await expect(page.getByRole("button", { name: "السماح بإعادة تسجيل الدور" })).toHaveCount(0);
+});
+
+test("Field reenrollment conflicts reload canonical state before another attempt", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  let conflictStateApplied = false;
+  await page.route("**/api/access/managed-user/status**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        actorId: "act_field_conflict",
+        phoneE164: "+96777000106",
+        role: "field",
+        exists: true,
+        enabled: true,
+        activated: !conflictStateApplied,
+        securityEnabled: true,
+        state: conflictStateApplied ? "pending_activation" : "active",
+        actorVersion: 4,
+        roleVersion: conflictStateApplied ? 3 : 2,
+        operationalAdmissionState: "eligible",
+        operationalAdmissionVersion: 8,
+      }),
+    });
+  });
+  await page.route("**/api/access/managed-user", async (route) => {
+    conflictStateApplied = true;
+    await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: { code: "CONFLICT", message: "the access versions changed" } }) });
+  });
+  await page.goto("/access");
+  await page.getByLabel("الدور الإداري").selectOption("field");
+  await page.getByLabel("رقم الهاتف للبحث").fill("+96777000106");
+  await page.getByLabel("سبب التغيير").fill("استرداد جهاز الميدان");
+  await page.getByRole("button", { name: "السماح بإعادة تسجيل الدور" }).click();
+  await expect(page.getByText("الحالة: بانتظار التفعيل")).toBeVisible();
+  await expect(page.getByRole("button", { name: "السماح بإعادة تسجيل الدور" })).toHaveCount(0);
+  await expect(page.locator("p.identity-error")).toContainText("أُعيد تحميل الحالة الكانونية");
+});
+
+
+test("Field reenrollment explains that DSH eligibility must be restored before retrying", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  await page.route("**/api/access/managed-user/status**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        actorId: "act_field_suspended",
+        phoneE164: "+96777000107",
+        role: "field",
+        exists: true,
+        enabled: true,
+        activated: true,
+        securityEnabled: true,
+        state: "operational_suspended",
+        actorVersion: 4,
+        roleVersion: 2,
+        operationalAdmissionState: "suspended",
+        operationalAdmissionVersion: 9,
+      }),
+    });
+  });
+  await page.goto("/access");
+  await page.getByLabel("الدور الإداري").selectOption("field");
+  await page.getByLabel("رقم الهاتف للبحث").fill("+96777000107");
+
+  await expect(page.getByText("الأهلية التشغيلية: موقوف")).toBeVisible();
+  await expect(page.getByText("لا يمكن إعادة تسجيل الميداني حتى تصبح أهليته في DSH مؤهلة.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "السماح بإعادة تسجيل الدور" })).toHaveCount(0);
 });
 
 test("captain access exposes DSH-owned eligibility and routes role control canonically", async ({ page }) => {
