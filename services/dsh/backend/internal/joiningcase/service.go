@@ -214,7 +214,7 @@ func (s *Service) ReadForPartner(ctx context.Context, accessToken string) (postg
 	return postgres.ReadJoiningCaseForPartner(ctx, s.db, identity.Subject)
 }
 
-func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken, caseID, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64, expectedVersion int, idempotencyKey, correlationID string) (postgres.JoiningCaseResult, error) {
+func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken, caseID, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64, fulfillmentModes []string, expectedVersion int, idempotencyKey, correlationID string) (postgres.JoiningCaseResult, error) {
 	identity, err := s.requirePartner(ctx, accessToken)
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
@@ -224,6 +224,10 @@ func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken,
 	firstStoreName = strings.TrimSpace(firstStoreName)
 	serviceCityID = strings.TrimSpace(serviceCityID)
 	verticalID = strings.TrimSpace(verticalID)
+	normalizedModes, modesErr := postgres.NormalizeStoreFulfillmentModes(fulfillmentModes)
+	if modesErr != nil {
+		return postgres.JoiningCaseResult{}, ErrInvalidInput
+	}
 	if caseID == "" || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || serviceCityID == "" || verticalID == "" || expectedVersion < 1 || !validCoordinates(latitude, longitude) {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
@@ -235,7 +239,7 @@ func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken,
 	if err != nil || !vertical.Active {
 		return postgres.JoiningCaseResult{}, postgres.ErrCatalogVerticalNotFound
 	}
-	return postgres.CorrectAndResubmitJoiningCase(ctx, s.db, caseID, identity.Subject, businessName, firstStoreName, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseCorrectAndResubmit(caseID, identity.Subject, businessName, firstStoreName, expectedVersion, serviceCityID, verticalID, latitude, longitude), strings.TrimSpace(correlationID), serviceCityID, verticalID, latitude, longitude)
+	return postgres.CorrectAndResubmitJoiningCase(ctx, s.db, caseID, identity.Subject, businessName, firstStoreName, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseCorrectAndResubmit(caseID, identity.Subject, businessName, firstStoreName, expectedVersion, serviceCityID, verticalID, latitude, longitude, normalizedModes), strings.TrimSpace(correlationID), serviceCityID, verticalID, latitude, longitude, normalizedModes)
 }
 
 func validCoordinates(latitude, longitude float64) bool {

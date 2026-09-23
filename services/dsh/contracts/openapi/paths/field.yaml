@@ -450,49 +450,6 @@ paths:
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 
-  /dsh/field/joining-cases/{caseId}/correct-and-resubmit:
-    post:
-      operationId: correctAndResubmitFieldJoiningCase
-      summary: Correct and resubmit a Field-originated joining case returned by Control
-      security:
-        - userBearer: []
-      parameters:
-        - name: caseId
-          in: path
-          required: true
-          schema:
-            type: string
-            minLength: 1
-            maxLength: 128
-        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
-        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
-        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "../dsh.openapi.yaml#/components/schemas/CorrectJoiningCaseRequest"
-      responses:
-        "200":
-          description: Corrected Field-originated joining case readback.
-          content:
-            application/json:
-              schema:
-                $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse"
-        "400":
-          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
-        "401":
-          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
-        "403":
-          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
-        "404":
-          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
-        "409":
-          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
-        "502":
-          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
-
   /dsh/field/joining-cases/{caseId}/store-image:
     post:
       operationId: uploadFieldJoiningCaseStoreImage

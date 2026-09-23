@@ -284,37 +284,6 @@ func (s *Service) SubmitJoiningCase(ctx context.Context, accessToken, caseID str
 	return postgres.SubmitJoiningCase(ctx, s.db, caseID, actorRole.ActorID, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseSubmit(caseID, actorRole.ActorID, expectedVersion), identity.Subject, strings.TrimSpace(correlationID))
 }
 
-func (s *Service) CorrectAndResubmitJoiningCase(ctx context.Context, accessToken, caseID, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64, expectedVersion int, idempotencyKey, correlationID string) (postgres.JoiningCaseResult, error) {
-	identity, err := s.requireEligibleField(ctx, accessToken)
-	if err != nil {
-		return postgres.JoiningCaseResult{}, err
-	}
-	caseID = strings.TrimSpace(caseID)
-	businessName = strings.TrimSpace(businessName)
-	firstStoreName = strings.TrimSpace(firstStoreName)
-	serviceCityID = strings.TrimSpace(serviceCityID)
-	verticalID = strings.TrimSpace(verticalID)
-	if caseID == "" || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || serviceCityID == "" || verticalID == "" || expectedVersion < 1 || !validMutation(idempotencyKey, correlationID, identity.Subject) || !validCoordinates(latitude, longitude) {
-		return postgres.JoiningCaseResult{}, ErrInvalidInput
-	}
-	current, err := postgres.ReadJoiningCaseForField(ctx, s.db, identity.Subject, caseID)
-	if err != nil {
-		return postgres.JoiningCaseResult{}, err
-	}
-	if current.Case.Origin != "field" {
-		return postgres.JoiningCaseResult{}, postgres.ErrJoiningCaseState
-	}
-	city, err := postgres.ReadServiceCity(ctx, s.db, serviceCityID)
-	if err != nil || !city.Active {
-		return postgres.JoiningCaseResult{}, joiningcase.ErrServiceCityUnavailable
-	}
-	vertical, err := postgres.ReadCommerceVertical(ctx, s.db, verticalID)
-	if err != nil || !vertical.Active {
-		return postgres.JoiningCaseResult{}, postgres.ErrCatalogVerticalNotFound
-	}
-	return postgres.CorrectAndResubmitJoiningCaseForField(ctx, s.db, caseID, identity.Subject, businessName, firstStoreName, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseCorrectAndResubmit(caseID, identity.Subject, businessName, firstStoreName, expectedVersion, serviceCityID, verticalID, latitude, longitude), strings.TrimSpace(correlationID), serviceCityID, verticalID, latitude, longitude)
-}
-
 func (s *Service) requireField(ctx context.Context, accessToken string) (identityclient.ActorIdentity, error) {
 	identity, err := s.identity.ReadSession(ctx, strings.TrimSpace(accessToken))
 	if err != nil {

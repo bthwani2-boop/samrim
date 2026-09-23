@@ -45,7 +45,6 @@ func (s *FieldServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/field/joining-cases", s.listJoiningCases)
 	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}", s.readJoiningCase)
 	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/submit", s.submitJoiningCase)
-	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/correct-and-resubmit", s.correctAndResubmitJoiningCase)
 	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/store-image", s.uploadJoiningCaseStoreImage)
 }
 
@@ -214,27 +213,6 @@ func (s *FieldServer) submitJoiningCase(w http.ResponseWriter, r *http.Request) 
 	writeFieldCaseResult(w, http.StatusOK, result)
 }
 
-func (s *FieldServer) correctAndResubmitJoiningCase(w http.ResponseWriter, r *http.Request) {
-	if bearerToken(r) == "" {
-		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Field session is required")
-		return
-	}
-	correlation, idempotency, expected, ok := requiredPartnerCaseHeaders(w, r)
-	if !ok {
-		return
-	}
-	var input contract.CorrectJoiningCaseRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	result, err := s.service.CorrectAndResubmitJoiningCase(r.Context(), bearerToken(r), r.PathValue("caseId"), input.BusinessName, input.FirstStoreName, input.ServiceCityID, input.FirstStoreVerticalID, input.FirstStoreLatitude, input.FirstStoreLongitude, expected, idempotency, correlation)
-	if err != nil {
-		writeFieldError(w, err)
-		return
-	}
-	writeFieldCaseResult(w, http.StatusOK, result)
-}
-
 func (s *FieldServer) uploadJoiningCaseStoreImage(w http.ResponseWriter, r *http.Request) {
 	if bearerToken(r) == "" {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Field session is required")
@@ -281,7 +259,7 @@ func (s *FieldServer) authorizedService(w http.ResponseWriter, r *http.Request) 
 }
 
 func writeFieldCaseResult(w http.ResponseWriter, status int, result postgres.JoiningCaseResult) {
-	view := contract.JoiningCaseView{ID: result.Case.ID, ContactPhoneE164: result.Case.ContactPhoneE164, BusinessName: result.Case.BusinessName, FirstStoreName: result.Case.FirstStoreName, ServiceCityID: result.Case.FirstStoreServiceCityID, FirstStoreVerticalID: result.Case.FirstStoreVerticalID, FirstStoreLatitude: nullableFloatValue(result.Case.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(result.Case.FirstStoreLongitude), Origin: contract.JoiningCaseOrigin(result.Case.Origin), State: contract.JoiningCaseState(result.Case.State), CorrectionReason: result.Case.CorrectionReason, Version: result.Case.Version, CreatedAt: result.Case.CreatedAt, UpdatedAt: result.Case.UpdatedAt}
+	view := contract.JoiningCaseView{ID: result.Case.ID, ContactPhoneE164: result.Case.ContactPhoneE164, BusinessName: result.Case.BusinessName, FirstStoreName: result.Case.FirstStoreName, ServiceCityID: result.Case.FirstStoreServiceCityID, FirstStoreVerticalID: result.Case.FirstStoreVerticalID, FirstStoreLatitude: nullableFloatValue(result.Case.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(result.Case.FirstStoreLongitude), FirstStoreFulfillmentModes: toFulfillmentModes(result.Case.FirstStoreFulfillmentModes), Origin: contract.JoiningCaseOrigin(result.Case.Origin), State: contract.JoiningCaseState(result.Case.State), CorrectionReason: result.Case.CorrectionReason, Version: result.Case.Version, CreatedAt: result.Case.CreatedAt, UpdatedAt: result.Case.UpdatedAt}
 	view.PartnerActorID = result.Case.PartnerActorID
 	view.ReviewedBy = result.Case.ReviewedBy
 	view.StoreProfileImage = toStoreProfileImage(result.Case.StoreProfileImage)

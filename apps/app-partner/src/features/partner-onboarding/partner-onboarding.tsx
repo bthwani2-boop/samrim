@@ -1,5 +1,5 @@
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
-import { joiningCaseStateLabel, type FulfillmentMode } from "@bthwani/dsh";
+import { type FulfillmentMode, joiningCaseStateLabel } from "@bthwani/dsh";
 import { useMemo } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 
@@ -8,7 +8,9 @@ import { usePartnerStoreContext } from "./partner-store-context";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 
 function fulfillmentModeLabel(mode: FulfillmentMode): string {
-  return mode === "CUSTOMER_PICKUP" ? "الاستلام من المتجر" : "توصيل بثواني";
+  if (mode === "BTHWANI_CAPTAIN") return "توصيل بثواني";
+  if (mode === "CUSTOMER_PICKUP") return "الاستلام من المتجر";
+  return "توصيل المتجر";
 }
 
 export function PartnerOnboarding() {
