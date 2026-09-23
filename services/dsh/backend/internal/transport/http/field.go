@@ -154,7 +154,11 @@ func (s *FieldServer) createJoiningCase(w http.ResponseWriter, r *http.Request) 
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.CreateJoiningCase(r.Context(), bearerToken(r), idempotency, correlation, input.ContactPhoneE164, input.BusinessName, input.FirstStoreName, input.ServiceCityID, input.FirstStoreVerticalID, input.FirstStoreLatitude, input.FirstStoreLongitude)
+	fulfillmentModes := make([]string, len(input.FirstStoreFulfillmentModes))
+	for index, mode := range input.FirstStoreFulfillmentModes {
+		fulfillmentModes[index] = string(mode)
+	}
+	result, err := s.service.CreateJoiningCase(r.Context(), bearerToken(r), idempotency, correlation, input.ContactPhoneE164, input.BusinessName, input.FirstStoreName, input.ServiceCityID, input.FirstStoreVerticalID, input.FirstStoreLatitude, input.FirstStoreLongitude, fulfillmentModes)
 	if err != nil {
 		writeFieldError(w, err)
 		return

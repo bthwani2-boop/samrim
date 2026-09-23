@@ -1,6 +1,6 @@
 import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type Cart, createDshMobileClient, type CheckoutQuote, type DeliveryAddress, formatMoney, formatQuantity, paymentMethodLabel, paymentStateLabel, type Order, orderStateLabel } from "@bthwani/dsh";
+import { type Cart, createDshMobileClient, type CheckoutQuote, type DeliveryAddress, type FulfillmentMode, formatMoney, formatQuantity, paymentMethodLabel, paymentStateLabel, type Order, orderStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, Link } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -40,7 +40,7 @@ function isQuantityAllowed(line: Cart["lines"][number], quantity: number): boole
   return quantity >= line.quantityMinBaseUnits && quantity <= line.quantityMaxBaseUnits && (quantity - line.quantityMinBaseUnits) % line.quantityStepBaseUnits === 0;
 }
 
-export function CartCheckout({ storeId, addresses, serviceableAddressId }: { storeId: string; addresses: ReadonlyArray<DeliveryAddress>; serviceableAddressId?: string | undefined }) {
+export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfillmentMode }: { storeId: string; addresses: ReadonlyArray<DeliveryAddress>; serviceableAddressId?: string | undefined; fulfillmentMode: FulfillmentMode }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<CartState>({ kind: "loading" });
@@ -53,6 +53,8 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId }: { sto
   const [promotionCode, setPromotionCode] = useState("");
   const quoteRequestID = useRef(0);
   const mutationBusy = busy || Boolean(busyLineId);
+  const pickupMode = fulfillmentMode === "CUSTOMER_PICKUP";
+  const quoteAddressID = pickupMode ? "" : serviceableAddressId;
 
   const load = useCallback(async () => {
     setState({ kind: "loading" });
@@ -72,7 +74,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId }: { sto
   useEffect(() => { void load(); }, [load]);
 
   const refreshQuote = useCallback(async (cart: Cart) => {
-    if (!serviceableAddressId) {
+    if (!pickupMode && !serviceableAddressId) {
       quoteRequestID.current += 1;
       setQuote({ kind: "idle" });
       return;
@@ -81,13 +83,13 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId }: { sto
     setQuote({ kind: "loading" });
     try {
       const token = await getUsableIdentityAccessToken();
-      const result = await client().quoteCheckout(token, { cartId: cart.id, storeId, addressId: serviceableAddressId, fulfillmentMode: "BTHWANI_CAPTAIN", ...(promotionCode.trim() ? { promotionCode: promotionCode.trim().toUpperCase() } : {}) }, cart.version);
+      const result = await client().quoteCheckout(token, { cartId: cart.id, storeId, addressId: quoteAddressID ?? "", fulfillmentMode, ...(promotionCode.trim() ? { promotionCode: promotionCode.trim().toUpperCase() } : {}) }, cart.version);
       if (requestID === quoteRequestID.current) setQuote({ kind: "ready", quote: result.quote });
     } catch (cause) {
       console.error("DSH checkout quote failed", cause);
       if (requestID === quoteRequestID.current) setQuote({ kind: "error" });
     }
-  }, [promotionCode, serviceableAddressId, storeId]);
+  }, [fulfillmentMode, pickupMode, promotionCode, quoteAddressID, serviceableAddressId, storeId]);
 
   const readyCart = state.kind === "ready" ? state.cart : null;
   useEffect(() => {
@@ -139,11 +141,12 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId }: { sto
   }
 
   async function checkout() {
-    if (mutationBusy || state.kind !== "ready" || !state.cart.lines.length || !serviceableAddressId || quote.kind !== "ready" || quote.quote.cartVersion !== state.cart.version || quote.quote.addressId !== serviceableAddressId) return;
+    const addressID = pickupMode ? "" : serviceableAddressId ?? "";
+    if (mutationBusy || state.kind !== "ready" || !state.cart.lines.length || (!pickupMode && !serviceableAddressId) || quote.kind !== "ready" || quote.quote.cartVersion !== state.cart.version || quote.quote.addressId !== addressID) return;
     setBusy(true); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const result = await client().checkoutCart(token, { cartId: state.cart.id, storeId, addressId: serviceableAddressId, fulfillmentMode: "BTHWANI_CAPTAIN", ...(promotionCode.trim() ? { promotionCode: promotionCode.trim().toUpperCase() } : {}) }, state.cart.version);
+      const result = await client().checkoutCart(token, { cartId: state.cart.id, storeId, addressId: addressID, fulfillmentMode, ...(promotionCode.trim() ? { promotionCode: promotionCode.trim().toUpperCase() } : {}) }, state.cart.version);
       setOrder(result.order);
       void recordPendingDiscoveryConversion(result.order.id);
       setOrders((await client().listClientOrders(token, 20)).orders);
@@ -151,7 +154,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId }: { sto
     } catch (cause) {
       console.error("DSH checkout failed", cause);
       if (errorCode(cause) === "STALE_CHECKOUT") await refreshAfterConflict(cartMutationErrorMessage(cause));
-      else setError("تعذر إتمام الطلب. تأكد من أهلية العنوان ثم أعد المحاولة.");
+      else setError("تعذر إتمام الطلب. أعد قراءة السلة وحاول مجددًا.");
     } finally { setBusy(false); }
   }
 
@@ -184,22 +187,26 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId }: { sto
           <Text style={styles.muted}>مجموع المنتجات: {formatMoney(state.cart.lines.reduce((sum, line) => sum + line.lineAmountMinor, 0), state.cart.lines[0]?.currency ?? "YER")}</Text>
           <View style={styles.promotionBox}>
             <Text style={styles.fulfillmentTitle}>رمز العرض</Text>
-            <View style={styles.promotionRow}><TextInput accessibilityLabel="رمز العرض" autoCapitalize="characters" editable={!mutationBusy} onChangeText={setPromotionCode} placeholder="مثال: WELCOME10" placeholderTextColor={theme.colorMuted} style={styles.promotionInput} value={promotionCode} /><BthwaniButton disabled={mutationBusy || !serviceableAddressId} label="تطبيق" onPress={() => { if (readyCart) void refreshQuote(readyCart); }} variant="secondary" /></View>
+            <View style={styles.promotionRow}><TextInput accessibilityLabel="رمز العرض" autoCapitalize="characters" editable={!mutationBusy} onChangeText={setPromotionCode} placeholder="مثال: WELCOME10" placeholderTextColor={theme.colorMuted} style={styles.promotionInput} value={promotionCode} /><BthwaniButton disabled={mutationBusy || (!pickupMode && !serviceableAddressId)} label="تطبيق" onPress={() => { if (readyCart) void refreshQuote(readyCart); }} variant="secondary" /></View>
           </View>
           {quote.kind === "ready" ? <>
             {quote.quote.discountMinor > 0 ? <Text style={styles.success}>الخصم: -{formatMoney(quote.quote.discountMinor, quote.quote.currency)}{quote.quote.promotionCode ? ` · ${quote.quote.promotionCode}` : ""}</Text> : null}
-            <Text style={styles.muted}>رسوم التوصيل: {formatMoney(quote.quote.deliveryFeeMinor, quote.quote.currency)}</Text>
+            {!pickupMode ? <Text style={styles.muted}>رسوم التوصيل: {formatMoney(quote.quote.deliveryFeeMinor, quote.quote.currency)}</Text> : <Text style={styles.muted}>رسوم التوصيل: لا توجد — الاستلام من المتجر</Text>}
             <Text style={styles.total}>الإجمالي المتوقع عند الإتمام: {formatMoney(quote.quote.totalAmountMinor, quote.quote.currency)}</Text>
           </> : null}
-          {quote.kind === "loading" ? <Text accessibilityLiveRegion="polite" style={styles.muted}>جارٍ حساب رسوم التوصيل والإجمالي النهائي…</Text> : null}
-          {quote.kind === "error" ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.error}>تعذر حساب رسوم التوصيل. حدّث السلة أو أعد المحاولة قبل إتمام الطلب.</Text> : null}
-          {quote.kind === "idle" && !serviceableAddressId ? <Text style={styles.warning}>اختر عنوانًا مؤهلًا لعرض رسوم التوصيل والإجمالي النهائي.</Text> : null}
-          {quote.kind === "error" ? <BthwaniButton label="إعادة حساب الإجمالي" onPress={() => void refreshQuote(state.cart)} variant="secondary" /> : null}
+          {quote.kind === "loading" ? <Text accessibilityLiveRegion="polite" style={styles.muted}>جارٍ حساب الإجمالي النهائي…</Text> : null}
+          {quote.kind === "error" ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.error}>تعذر حساب الإجمالي. حدّث السلة أو أعد المحاولة قبل الإتمام.</Text> : null}
+          {quote.kind === "idle" && !pickupMode && !serviceableAddressId ? <Text style={styles.warning}>اختر عنوانًا مؤهلًا لعرض رسوم التوصيل والإجمالي النهائي.</Text> : null}
+          {quote.kind === "error" ? <BthwaniButton label="إعادة حساب الإجمالي" onPress={() => { if (readyCart) void refreshQuote(readyCart); }} variant="secondary" /> : null}
         </View>
-        <View accessibilityLabel="طريقة التوصيل" style={styles.fulfillmentCard}><Text style={styles.fulfillmentTitle}>طريقة التوصيل</Text><Text style={styles.fulfillmentChoice}>توصيل عبر كابتن بتهواني</Text><Text style={styles.muted}>يُسند الطلب إلى كابتن مؤهل بعد جاهزية المتجر.</Text></View>
-        <Text style={styles.payment}>طريقة الدفع: الدفع نقدًا عند الاستلام. لا يتم إنهاء الرحلة إلا بعد تحصيل المبلغ المطابق للإجمالي.</Text>
-        {serviceableAddressId && selectedAddress ? <Text style={styles.success}>العنوان مؤهل: {selectedAddress.addressText}</Text> : <Text style={styles.warning}>اختر عنوانًا مؤهلًا من قسم الأهلية قبل الإتمام.</Text>}
-        <BthwaniButton accessibilityLabel="إتمام الطلب" busy={busy} disabled={mutationBusy || !serviceableAddressId || quote.kind !== "ready" || quote.quote.cartVersion !== state.cart.version || quote.quote.addressId !== serviceableAddressId} label="إتمام الطلب" onPress={() => void checkout()} />
+        <View accessibilityLabel={pickupMode ? "الاستلام من المتجر" : "طريقة التوصيل"} style={styles.fulfillmentCard}>
+          <Text style={styles.fulfillmentTitle}>طريقة الاستلام</Text>
+          <Text style={styles.fulfillmentChoice}>{pickupMode ? "الاستلام من المتجر" : "توصيل عبر كابتن بثواني"}</Text>
+          <Text style={styles.muted}>{pickupMode ? "ادفع نقدًا للمتجر عند استلام الطلب. سيظهر رمز الاستلام في تفاصيل الطلب." : "يُسند الطلب إلى كابتن مؤهل بعد جاهزية المتجر."}</Text>
+        </View>
+        <Text style={styles.payment}>{pickupMode ? "الدفع نقدًا للمتجر عند الاستلام." : "الدفع نقدًا عند الاستلام من الكابتن."}</Text>
+        {!pickupMode && serviceableAddressId && selectedAddress ? <Text style={styles.success}>العنوان مؤهل: {selectedAddress.addressText}</Text> : null}
+        <BthwaniButton accessibilityLabel={pickupMode ? "إتمام الطلب للاستلام من المتجر" : "إتمام الطلب"} busy={busy} disabled={mutationBusy || (!pickupMode && !serviceableAddressId) || quote.kind !== "ready" || quote.quote.cartVersion !== state.cart.version || quote.quote.addressId !== (pickupMode ? "" : serviceableAddressId)} label="إتمام الطلب" onPress={() => void checkout()} />
       </> : null}
       {order ? <View style={styles.orderBox}><Text style={styles.success}>تم إنشاء الطلب</Text><Text style={styles.muted}>الحالة: {orderStateLabel(order.state)} · الإجمالي: {formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{paymentMethodLabel(order.paymentMethod)} · {paymentStateLabel(order.paymentState)}</Text><Link href={`/orders/${encodeURIComponent(order.id)}` as Href} asChild><BthwaniButton label="فتح تفاصيل الطلب" variant="secondary" /></Link></View> : null}
       {orders.length ? <View style={styles.orderBox}><Text style={styles.lineTitle}>طلباتك الأخيرة</Text>{orders.map((item) => <Text key={item.id} style={styles.muted}>{orderStateLabel(item.state)} · {formatMoney(item.totalAmountMinor, item.currency)}</Text>)}</View> : null}

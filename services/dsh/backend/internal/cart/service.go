@@ -22,6 +22,8 @@ var (
 )
 
 const FulfillmentModeBthwaniCaptain = "BTHWANI_CAPTAIN"
+const FulfillmentModeCustomerPickup = "CUSTOMER_PICKUP"
+const PaymentMethodCashAtStore = "CASH_AT_STORE"
 
 type Service struct {
 	identity       *identityintegration.Client
@@ -111,18 +113,11 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 	}
 	cartID, storeID, addressID = strings.TrimSpace(cartID), strings.TrimSpace(storeID), strings.TrimSpace(addressID)
 	fulfillmentMode = strings.TrimSpace(fulfillmentMode)
-	if fulfillmentMode != FulfillmentModeBthwaniCaptain {
+	if fulfillmentMode != FulfillmentModeBthwaniCaptain && fulfillmentMode != FulfillmentModeCustomerPickup {
 		return CheckoutQuote{}, ErrFulfillmentModeUnavailable
 	}
-	if cartID == "" || storeID == "" || addressID == "" || expectedCartVersion < 1 {
+	if cartID == "" || storeID == "" || expectedCartVersion < 1 || (fulfillmentMode == FulfillmentModeBthwaniCaptain && addressID == "") || (fulfillmentMode == FulfillmentModeCustomerPickup && addressID != "") {
 		return CheckoutQuote{}, postgres.ErrCheckoutEvidenceStale
-	}
-	serviceabilityResult, err := s.serviceability.Evaluate(ctx, accessToken, storeID, addressID)
-	if err != nil {
-		return CheckoutQuote{}, err
-	}
-	if serviceabilityResult.Status != "SERVICEABLE" {
-		return CheckoutQuote{}, ErrCheckoutNotServiceable
 	}
 	cart, err := postgres.ReadOpenCart(ctx, s.db, actorID, storeID)
 	if err != nil {
@@ -130,6 +125,29 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 	}
 	if cart.ID != cartID || cart.StoreID != storeID || cart.Version != expectedCartVersion {
 		return CheckoutQuote{}, postgres.ErrCheckoutEvidenceStale
+	}
+	store, err := postgres.ReadStore(ctx, s.db, storeID)
+	if err != nil || store.PublicationState != "published" || !supportsFulfillmentMode(store.FulfillmentModes, fulfillmentMode) {
+		return CheckoutQuote{}, ErrFulfillmentModeUnavailable
+	}
+	serviceCityID := store.ServiceCityID
+	var originLatitude, originLongitude, destinationLatitude, destinationLongitude float64
+	var deliveryPolicyVersion string
+	if fulfillmentMode == FulfillmentModeCustomerPickup {
+		deliveryPolicyVersion = "NOT_APPLICABLE"
+	} else {
+		serviceabilityResult, serviceabilityErr := s.serviceability.Evaluate(ctx, accessToken, storeID, addressID)
+		if serviceabilityErr != nil {
+			return CheckoutQuote{}, serviceabilityErr
+		}
+		if serviceabilityResult.Status != "SERVICEABLE" {
+			return CheckoutQuote{}, ErrCheckoutNotServiceable
+		}
+		facts := serviceabilityResult.Facts
+		serviceCityID = facts.StoreServiceCityID
+		originLatitude, originLongitude = facts.StoreOriginLatitude, facts.StoreOriginLongitude
+		destinationLatitude, destinationLongitude = facts.AddressLatitude, facts.AddressLongitude
+		deliveryPolicyVersion = serviceability.PolicyVersion
 	}
 
 	subtotal := new(big.Int)
@@ -162,10 +180,12 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 		promotionID = promotion.ID
 	}
 
-	facts := serviceabilityResult.Facts
-	feeQuote, err := s.quoteDeliveryFee(ctx, postgres.DeliveryFeeQuoteInput{ServiceCityID: facts.StoreServiceCityID, OriginLatitude: facts.StoreOriginLatitude, OriginLongitude: facts.StoreOriginLongitude, DestinationLatitude: facts.AddressLatitude, DestinationLongitude: facts.AddressLongitude, OrderSizeBaseUnits: orderSize.Int64()})
-	if err != nil || feeQuote.FeeMinor < 0 || strings.TrimSpace(feeQuote.PolicyVersion) == "" {
-		return CheckoutQuote{}, postgres.ErrDeliveryFeeUnavailable
+	feeQuote := postgres.DeliveryFeeQuote{FeeMinor: 0, PolicyVersion: "NOT_APPLICABLE"}
+	if fulfillmentMode == FulfillmentModeBthwaniCaptain {
+		feeQuote, err = s.quoteDeliveryFee(ctx, postgres.DeliveryFeeQuoteInput{ServiceCityID: serviceCityID, OriginLatitude: originLatitude, OriginLongitude: originLongitude, DestinationLatitude: destinationLatitude, DestinationLongitude: destinationLongitude, OrderSizeBaseUnits: orderSize.Int64()})
+		if err != nil || feeQuote.FeeMinor < 0 || strings.TrimSpace(feeQuote.PolicyVersion) == "" {
+			return CheckoutQuote{}, postgres.ErrDeliveryFeeUnavailable
+		}
 	}
 	total := new(big.Int).Sub(subtotal, big.NewInt(discountMinor))
 	total.Add(total, big.NewInt(feeQuote.FeeMinor))
@@ -185,8 +205,8 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 		DeliveryFeeMinor:      feeQuote.FeeMinor,
 		TotalAmountMinor:      total.Int64(),
 		Currency:              currency,
-		DeliveryPolicyVersion: feeQuote.PolicyVersion,
-		ServiceCityID:         facts.StoreServiceCityID,
+		DeliveryPolicyVersion: deliveryPolicyVersion,
+		ServiceCityID:         serviceCityID,
 		QuotedAt:              time.Now().UTC(),
 	}, nil
 }
@@ -197,32 +217,54 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		return postgres.OrderRecord{}, false, err
 	}
 	fulfillmentMode = strings.TrimSpace(fulfillmentMode)
-	if fulfillmentMode != FulfillmentModeBthwaniCaptain {
+	if fulfillmentMode != FulfillmentModeBthwaniCaptain && fulfillmentMode != FulfillmentModeCustomerPickup {
 		return postgres.OrderRecord{}, false, ErrFulfillmentModeUnavailable
 	}
-	if strings.TrimSpace(cartID) == "" || strings.TrimSpace(storeID) == "" || strings.TrimSpace(addressID) == "" || expectedCartVersion < 1 {
+	cartID, storeID, addressID = strings.TrimSpace(cartID), strings.TrimSpace(storeID), strings.TrimSpace(addressID)
+	if cartID == "" || storeID == "" || expectedCartVersion < 1 || (fulfillmentMode == FulfillmentModeBthwaniCaptain && addressID == "") || (fulfillmentMode == FulfillmentModeCustomerPickup && addressID != "") {
 		return postgres.OrderRecord{}, false, postgres.ErrCheckoutEvidenceStale
 	}
-	serviceabilityResult, err := s.serviceability.Evaluate(ctx, accessToken, storeID, addressID)
-	if err != nil {
-		return postgres.OrderRecord{}, false, err
+	store, err := postgres.ReadStore(ctx, s.db, storeID)
+	if err != nil || store.PublicationState != "published" || !supportsFulfillmentMode(store.FulfillmentModes, fulfillmentMode) {
+		return postgres.OrderRecord{}, false, ErrFulfillmentModeUnavailable
 	}
-	if serviceabilityResult.Status != "SERVICEABLE" {
-		return postgres.OrderRecord{}, false, ErrCheckoutNotServiceable
+	var evidence postgres.CheckoutEvidence
+	if fulfillmentMode == FulfillmentModeCustomerPickup {
+		evidence = postgres.CheckoutEvidence{ServiceCityID: store.ServiceCityID, StoreVersion: store.Version}
+	} else {
+		serviceabilityResult, serviceabilityErr := s.serviceability.Evaluate(ctx, accessToken, storeID, addressID)
+		if serviceabilityErr != nil {
+			return postgres.OrderRecord{}, false, serviceabilityErr
+		}
+		if serviceabilityResult.Status != "SERVICEABLE" {
+			return postgres.OrderRecord{}, false, ErrCheckoutNotServiceable
+		}
+		facts := serviceabilityResult.Facts
+		evidence = postgres.CheckoutEvidence{ServiceCityID: facts.StoreServiceCityID, PolicyVersion: serviceability.PolicyVersion, Status: serviceabilityResult.Status, StoreVersion: facts.StoreVersion, AddressVersion: facts.AddressVersion, StoreOriginLatitude: facts.StoreOriginLatitude, StoreOriginLongitude: facts.StoreOriginLongitude, AddressLatitude: facts.AddressLatitude, AddressLongitude: facts.AddressLongitude}
 	}
-	facts := serviceabilityResult.Facts
 	input := postgres.CheckoutInput{
-		ClientActorID: actorID, CartID: strings.TrimSpace(cartID), StoreID: strings.TrimSpace(storeID), AddressID: strings.TrimSpace(addressID), FulfillmentMode: fulfillmentMode, ExpectedCartVersion: expectedCartVersion, PromotionCode: strings.ToUpper(strings.TrimSpace(promotionCode)),
-		Evidence:       postgres.CheckoutEvidence{ServiceCityID: facts.StoreServiceCityID, PolicyVersion: serviceability.PolicyVersion, Status: serviceabilityResult.Status, StoreVersion: facts.StoreVersion, AddressVersion: facts.AddressVersion, StoreOriginLatitude: facts.StoreOriginLatitude, StoreOriginLongitude: facts.StoreOriginLongitude, AddressLatitude: facts.AddressLatitude, AddressLongitude: facts.AddressLongitude},
+		ClientActorID: actorID, CartID: cartID, StoreID: storeID, AddressID: addressID, FulfillmentMode: fulfillmentMode, ExpectedCartVersion: expectedCartVersion, PromotionCode: strings.ToUpper(strings.TrimSpace(promotionCode)), PaymentMethod: "CASH_ON_DELIVERY",
+		Evidence:       evidence,
 		IdempotencyKey: strings.TrimSpace(idempotencyKey), ActingActorID: actorID, CorrelationID: strings.TrimSpace(correlationID),
 		PaymentExternalReference: wlt.DerivedExternalReference("checkout", idempotencyKey),
 		PaymentIdempotencyKey:    wlt.DerivedIdempotencyKey("create", idempotencyKey),
 		PaymentCancellationKey:   wlt.DerivedIdempotencyKey("cancel-checkout", idempotencyKey),
 	}
+	if fulfillmentMode == FulfillmentModeCustomerPickup {
+		input.PaymentMethod = PaymentMethodCashAtStore
+	}
 	input.DeliveryFeeResolver = s.quoteDeliveryFee
 	input.PaymentProvisioner = func(provisionContext context.Context, orderID, externalReference, payerActorID string, subtotalMinor, discountMinor, deliveryFeeMinor int64, deliveryPolicyVersion string, amountMinor int64, paymentIdempotencyKey, paymentCorrelationID string) (postgres.ProvisionedPayment, error) {
-		allocation := wlt.CustomerPaymentAllocation{OrderID: orderID, Currency: "YER", SubtotalMinor: subtotalMinor, DeliveryFeeMinor: deliveryFeeMinor, DiscountMinor: discountMinor, CashAmountMinor: amountMinor, CustomerPayableMinor: amountMinor, PolicyVersion: fmt.Sprintf("cod-current-v2;delivery=%s", deliveryPolicyVersion)}
-		intent, _, provisionErr := s.payment.CreateForOrder(provisionContext, orderID, externalReference, payerActorID, amountMinor, allocation, paymentIdempotencyKey, paymentCorrelationID)
+		paymentMethod := "CASH_ON_DELIVERY"
+		if fulfillmentMode == FulfillmentModeCustomerPickup {
+			paymentMethod = wlt.MethodCashAtStore
+		}
+		allocationPolicy := fmt.Sprintf("cod-current-v2;delivery=%s", deliveryPolicyVersion)
+		if fulfillmentMode == FulfillmentModeCustomerPickup {
+			allocationPolicy = "cash-at-store-v1"
+		}
+		allocation := wlt.CustomerPaymentAllocation{OrderID: orderID, Currency: "YER", SubtotalMinor: subtotalMinor, DeliveryFeeMinor: deliveryFeeMinor, DiscountMinor: discountMinor, CashAmountMinor: amountMinor, CustomerPayableMinor: amountMinor, PolicyVersion: allocationPolicy}
+		intent, _, provisionErr := s.payment.CreateForOrderWithMethod(provisionContext, orderID, externalReference, payerActorID, amountMinor, paymentMethod, allocation, paymentIdempotencyKey, paymentCorrelationID)
 		if provisionErr != nil {
 			return postgres.ProvisionedPayment{}, provisionErr
 		}
@@ -234,6 +276,15 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 	}
 	input.RequestHash = postgres.HashCheckoutRequest(input)
 	return postgres.CreateOrderFromCart(ctx, s.db, input)
+}
+
+func supportsFulfillmentMode(modes []string, requested string) bool {
+	for _, mode := range modes {
+		if mode == requested {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) quoteDeliveryFee(ctx context.Context, input postgres.DeliveryFeeQuoteInput) (postgres.DeliveryFeeQuote, error) {

@@ -119,6 +119,7 @@ func toStoreView(store postgres.StoreRecord, readiness storepublication.Publicat
 	}
 	return contract.StoreView{
 		ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, ServiceCityID: nullableString(store.ServiceCityID), PrimaryVerticalID: nullableString(store.PrimaryVerticalID), Version: store.Version,
+		FulfillmentModes: toFulfillmentModes(store.FulfillmentModes),
 		PublicationState: contract.PublicationState(store.PublicationState), PublicationChangedAt: store.PublicationChangedAt,
 		DeliveryOrigin: deliveryOrigin,
 		CreatedAt:      store.CreatedAt, UpdatedAt: store.UpdatedAt,
@@ -126,6 +127,14 @@ func toStoreView(store postgres.StoreRecord, readiness storepublication.Publicat
 		StoreProfileImage:    toStoreProfileImage(store.StoreProfileImage),
 		PublicationReadiness: toPublicationReadiness(readiness),
 	}
+}
+
+func toFulfillmentModes(values []string) []contract.StoreFulfillmentMode {
+	modes := make([]contract.StoreFulfillmentMode, len(values))
+	for index, value := range values {
+		modes[index] = contract.StoreFulfillmentMode(value)
+	}
+	return modes
 }
 
 func toStoreProfileImage(value *postgres.StoreProfileMediaRecord) *contract.StoreProfileImage {

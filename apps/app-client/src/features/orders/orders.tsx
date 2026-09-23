@@ -1,6 +1,6 @@
 import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, formatOrderDate, paymentStateLabel, type Order, orderStateLabel } from "@bthwani/dsh";
+import { createDshMobileClient, formatMoney, formatOrderDate, fulfillmentModeLabel, paymentStateLabel, type Order, orderStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -81,8 +81,8 @@ export default function ClientOrders() {
       ) : (
         <View style={styles.list}>
           {state.orders.map((order) => <Pressable key={order.id} accessibilityRole="button" accessibilityLabel={`قراءة الطلب بتاريخ ${formatOrderDate(order.createdAt)}`} onPress={() => router.push(`/orders/${encodeURIComponent(order.id)}` as Href)} style={({ pressed }) => [styles.order, pressed && styles.pressed]}>
-            <View style={styles.orderTop}><View style={styles.orderTitleBlock}><Text style={styles.orderTitle}>طلب {formatOrderDate(order.createdAt)}</Text><Text style={styles.orderAddress} numberOfLines={1}>{order.addressText}</Text></View><View style={styles.statusPill}><Text style={styles.statusText}>{orderStateLabel(order.state)}</Text></View></View>
-            <View style={styles.orderBottom}><View style={styles.orderMetaBlock}><Text style={styles.orderMeta}>{order.lines.length} {order.lines.length === 1 ? "منتج" : "منتجات"}</Text><Text style={styles.orderPayment}>{paymentStateLabel(order.paymentState)}</Text></View><Text style={styles.orderTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text><BthwaniIcon name="forward" color={theme.colorMuted} size={sizing.iconMd} /></View>
+            <View style={styles.orderTop}><View style={styles.orderTitleBlock}><Text style={styles.orderTitle}>طلب {formatOrderDate(order.createdAt)}</Text><Text style={styles.orderAddress} numberOfLines={1}>{order.fulfillmentMode === "CUSTOMER_PICKUP" ? fulfillmentModeLabel(order.fulfillmentMode) : order.addressText}</Text></View><View style={styles.statusPill}><Text style={styles.statusText}>{orderStateLabel(order.state)}</Text></View></View>
+            <View style={styles.orderBottom}><View style={styles.orderMetaBlock}><Text style={styles.orderMeta}>{order.lines.length} {order.lines.length === 1 ? "منتج" : "منتجات"}</Text><Text style={styles.orderPayment}>{paymentStateLabel(order.paymentState, order.paymentMethod)}</Text></View><Text style={styles.orderTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text><BthwaniIcon name="forward" color={theme.colorMuted} size={sizing.iconMd} /></View>
           </Pressable>)}
         </View>
       )}

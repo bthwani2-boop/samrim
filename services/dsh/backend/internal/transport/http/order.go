@@ -304,7 +304,7 @@ func (s *OrderServer) readDeliveryProof(w http.ResponseWriter, r *http.Request) 
 		writeOrderError(w, err)
 		return
 	}
-	response := contract.DeliveryProofResponse{OrderID: proof.OrderID, State: proof.State, VerifiedAt: proof.VerifiedAt}
+	response := contract.DeliveryProofResponse{OrderID: proof.OrderID, ProofType: proof.ProofType, State: proof.State, VerifiedAt: proof.VerifiedAt}
 	response.Code = proof.Code
 	writeJSON(w, http.StatusOK, response)
 }
@@ -442,11 +442,22 @@ func (s *OrderServer) transition(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state := strings.TrimSpace(input.State)
-	if state != "PARTNER_ACCEPTED" && state != "PREPARING" && state != "READY_FOR_DISPATCH" && state != "REJECTED" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "order transition state is invalid")
-		return
+	var item postgres.OrderRecord
+	var replayed bool
+	if state == "PICKED_UP" {
+		code := strings.TrimSpace(input.Code)
+		if len(code) != 6 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "six-digit store pickup code is required")
+			return
+		}
+		item, replayed, err = s.service.CompleteStorePickupForPartner(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("orderId"), code, expected, idempotency, correlation)
+	} else {
+		if state != "PARTNER_ACCEPTED" && state != "PREPARING" && state != "READY_FOR_DISPATCH" && state != "READY_FOR_PICKUP" && state != "REJECTED" && state != "CANCELLED" || strings.TrimSpace(input.Code) != "" {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "order transition state or code is invalid")
+			return
+		}
+		item, replayed, err = s.service.TransitionForPartner(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("orderId"), state, expected, idempotency, correlation)
 	}
-	item, replayed, err := s.service.TransitionForPartner(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("orderId"), state, expected, idempotency, correlation)
 	if err != nil {
 		writeOrderError(w, err)
 		return
@@ -469,7 +480,7 @@ func orderLimit(w http.ResponseWriter, r *http.Request) (int, bool) {
 
 func validOperatorOrderState(state string) bool {
 	switch state {
-	case "CREATED", "PARTNER_ACCEPTED", "PREPARING", "READY_FOR_DISPATCH", "CAPTAIN_ASSIGNED", "IN_CUSTODY", "DELIVERED", "DELIVERY_FAILED", "REJECTED", "CANCELLED":
+	case "CREATED", "PARTNER_ACCEPTED", "PREPARING", "READY_FOR_DISPATCH", "READY_FOR_PICKUP", "PICKED_UP", "CAPTAIN_ASSIGNED", "IN_CUSTODY", "DELIVERED", "DELIVERY_FAILED", "REJECTED", "CANCELLED":
 		return true
 	default:
 		return false

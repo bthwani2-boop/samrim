@@ -1,5 +1,5 @@
 import * as Crypto from "expo-crypto";
-import { createDshMobileClient, type CommerceVertical, type JoiningCaseResponse, type ServiceCity } from "@bthwani/dsh";
+import { createDshMobileClient, type CommerceVertical, type JoiningCaseResponse, type ServiceCity, type StoreFulfillmentMode, type StoreFulfillmentModesResponse } from "@bthwani/dsh";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 function dshBaseUrl(): string {
@@ -20,6 +20,11 @@ export async function readOwnJoiningCase(): Promise<JoiningCaseResponse> {
 
 export async function correctAndResubmitOwnJoiningCase(caseID: string, businessName: string, firstStoreName: string, serviceCityId: string, firstStoreVerticalId: string, firstStoreLatitude: number, firstStoreLongitude: number, expectedVersion: number): Promise<JoiningCaseResponse> {
   return accessToken().then((token) => dshClient().correctAndResubmitJoiningCase(token, caseID, { businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude }, expectedVersion));
+}
+
+export async function updateOwnStoreFulfillmentModes(storeID: string, fulfillmentModes: ReadonlyArray<StoreFulfillmentMode>, expectedVersion: number): Promise<StoreFulfillmentModesResponse> {
+  const token = await accessToken();
+  return dshClient().setStoreFulfillmentModes(token, storeID, { fulfillmentModes }, expectedVersion);
 }
 
 export function listActiveServiceCities(): Promise<ReadonlyArray<ServiceCity>> {

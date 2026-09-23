@@ -32,6 +32,7 @@ func (s *LocationCoreServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/addresses/{addressId}", s.readAddress)
 	mux.HandleFunc("POST /dsh/addresses/{addressId}", s.updateAddress)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/delivery-origin", s.readStoreOrigin)
+	mux.HandleFunc("POST /dsh/stores/{storeId}/fulfillment-modes", s.setStoreFulfillmentModes)
 }
 
 func (s *LocationCoreServer) listAddresses(w http.ResponseWriter, r *http.Request) {
@@ -124,6 +125,37 @@ func (s *LocationCoreServer) readStoreOrigin(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, contract.StoreDeliveryOriginResponse{StoreID: origin.StoreID, OriginVersion: origin.OriginVersion, Origin: deliveryOriginValue(origin, available)})
 }
 
+func (s *LocationCoreServer) setStoreFulfillmentModes(w http.ResponseWriter, r *http.Request) {
+	correlation, idempotency, expectedVersion, ok := requiredLocationHeaders(w, r, true, false)
+	if !ok {
+		return
+	}
+	var input contract.SetStoreFulfillmentModesRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	modes := make([]string, 0, len(input.FulfillmentModes))
+	for _, mode := range input.FulfillmentModes {
+		modes = append(modes, string(mode))
+	}
+	result, err := s.service.SetStoreFulfillmentModes(r.Context(), bearerToken(r), r.PathValue("storeId"), modes, expectedVersion, idempotency, correlation)
+	if err != nil {
+		writeLocationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.StoreFulfillmentModesResponse{
+		StoreID: result.StoreID, Version: result.Version, FulfillmentModes: toStoreFulfillmentModes(result.FulfillmentModes), IdempotentReplay: result.Replayed,
+	})
+}
+
+func toStoreFulfillmentModes(values []string) []contract.StoreFulfillmentMode {
+	modes := make([]contract.StoreFulfillmentMode, 0, len(values))
+	for _, mode := range values {
+		modes = append(modes, contract.StoreFulfillmentMode(mode))
+	}
+	return modes
+}
+
 func requiredLocationHeaders(w http.ResponseWriter, r *http.Request, versioned, allowZeroVersion bool) (string, string, int, bool) {
 	if bearerToken(r) == "" {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "a user session is required")
@@ -175,15 +207,15 @@ func deliveryOriginValue(origin postgres.StoreDeliveryOriginRecord, available bo
 
 func writeLocationError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, locationcore.ErrLocationInputInvalid), errors.Is(err, postgres.ErrDeliveryAddressInvalidLimit), errors.Is(err, postgres.ErrDeliveryAddressInvalidCursor), errors.Is(err, postgres.ErrServiceCityNotFound):
+	case errors.Is(err, locationcore.ErrLocationInputInvalid), errors.Is(err, postgres.ErrFulfillmentModesInvalid), errors.Is(err, postgres.ErrDeliveryAddressInvalidLimit), errors.Is(err, postgres.ErrDeliveryAddressInvalidCursor), errors.Is(err, postgres.ErrServiceCityNotFound):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "location facts are invalid")
-	case errors.Is(err, postgres.ErrDeliveryAddressNotFound), errors.Is(err, postgres.ErrStoreOriginNotFound), errors.Is(err, postgres.ErrStoreNotFound):
+	case errors.Is(err, postgres.ErrDeliveryAddressNotFound), errors.Is(err, postgres.ErrStoreOriginNotFound), errors.Is(err, postgres.ErrStoreFulfillmentModesNotFound), errors.Is(err, postgres.ErrStoreNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "location record was not found")
 	case errors.Is(err, locationcore.ErrClientSessionForbidden), errors.Is(err, locationcore.ErrPartnerSessionForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the authenticated session cannot access this location record")
-	case errors.Is(err, postgres.ErrDeliveryAddressIdempotency), errors.Is(err, postgres.ErrStoreOriginIdempotency):
+	case errors.Is(err, postgres.ErrDeliveryAddressIdempotency), errors.Is(err, postgres.ErrStoreOriginIdempotency), errors.Is(err, postgres.ErrStoreFulfillmentModesIdempotency):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different location facts")
-	case errors.Is(err, postgres.ErrDeliveryAddressVersion), errors.Is(err, postgres.ErrStoreOriginVersion):
+	case errors.Is(err, postgres.ErrDeliveryAddressVersion), errors.Is(err, postgres.ErrStoreOriginVersion), errors.Is(err, postgres.ErrStoreFulfillmentModesVersion):
 		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "location record version is stale")
 	default:
 		var identityErr *identityclient.Error

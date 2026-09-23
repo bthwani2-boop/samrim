@@ -8,6 +8,7 @@ import (
 const (
 	CurrencyYER          = "YER"
 	MethodCashOnDelivery = "CASH_ON_DELIVERY"
+	MethodCashAtStore    = "CASH_AT_STORE"
 	StateRequiresCollect = "REQUIRES_COLLECTION"
 	StateCollected       = "COLLECTED"
 	StateCancelled       = "CANCELLED"
@@ -24,7 +25,7 @@ func ValidateCreate(externalReference, payerActorID, currency, method string, am
 	if bounded(externalReference, 1, 128) == "" || bounded(payerActorID, 1, 128) == "" || amountMinor <= 0 {
 		return ErrInvalidInput
 	}
-	if strings.TrimSpace(currency) != CurrencyYER || strings.TrimSpace(method) != MethodCashOnDelivery {
+	if strings.TrimSpace(currency) != CurrencyYER || (strings.TrimSpace(method) != MethodCashOnDelivery && strings.TrimSpace(method) != MethodCashAtStore) {
 		return ErrInvalidInput
 	}
 	return nil

@@ -1,4 +1,4 @@
-import type { Order, PaymentMethod, PaymentState } from "../generated/dsh-types";
+import type { FulfillmentMode, Order, PaymentMethod, PaymentState } from "../generated/dsh-types";
 
 const arabicTextLatinNumbersLocale = "ar-YE-u-nu-latn";
 
@@ -6,7 +6,9 @@ const orderStateLabels: Record<Order["state"], string> = {
   CREATED: "تم استلام الطلب",
   PARTNER_ACCEPTED: "قبله المتجر",
   PREPARING: "قيد التجهيز",
-  READY_FOR_DISPATCH: "جاهز للتسليم",
+  READY_FOR_DISPATCH: "جاهز للتسليم إلى الكابتن",
+  READY_FOR_PICKUP: "جاهز للاستلام من المتجر",
+  PICKED_UP: "تم الاستلام من المتجر",
   CAPTAIN_ASSIGNED: "تم إسناده إلى الكابتن",
   IN_CUSTODY: "مع الكابتن",
   DELIVERED: "تم التسليم",
@@ -24,12 +26,16 @@ export function formatMoney(amount: number, currency: Order["currency"]): string
   return `${new Intl.NumberFormat(arabicTextLatinNumbersLocale, { maximumFractionDigits: 0 }).format(amount)} ${currencyLabel}`;
 }
 
-export function paymentMethodLabel(method: PaymentMethod): string {
-  return method === "CASH_ON_DELIVERY" ? "الدفع نقدًا عند الاستلام" : method;
+export function fulfillmentModeLabel(mode: FulfillmentMode): string {
+  return mode === "CUSTOMER_PICKUP" ? "الاستلام من المتجر" : "توصيل بثواني";
 }
 
-export function paymentStateLabel(state: PaymentState): string {
-  if (state === "REQUIRES_COLLECTION") return "بانتظار التحصيل عند التسليم";
+export function paymentMethodLabel(method: PaymentMethod): string {
+  return method === "CASH_AT_STORE" ? "الدفع نقدًا للمتجر عند الاستلام" : "الدفع نقدًا عند الاستلام";
+}
+
+export function paymentStateLabel(state: PaymentState, method?: PaymentMethod): string {
+  if (state === "REQUIRES_COLLECTION") return method === "CASH_AT_STORE" ? "بانتظار دفع المبلغ نقدًا للمتجر" : "بانتظار التحصيل عند التسليم";
   if (state === "COLLECTED") return "تم تحصيل المبلغ";
   if (state === "CANCELLED") return "أُلغي التحصيل";
   return "الدفع غير مرتبط";

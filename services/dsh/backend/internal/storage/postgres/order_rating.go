@@ -90,9 +90,9 @@ func CreateClientOrderRating(ctx context.Context, db *sql.DB, orderID, clientAct
 	if !errors.Is(err, sql.ErrNoRows) {
 		return OrderRatingRecord{}, false, err
 	}
-	var storedClientActorID, storeID, state string
+	var storedClientActorID, storeID, state, fulfillmentMode string
 	var version int
-	err = tx.QueryRowContext(ctx, "SELECT client_actor_id,store_id,state,version FROM dsh.commerce_orders WHERE id=$1 FOR UPDATE", orderID).Scan(&storedClientActorID, &storeID, &state, &version)
+	err = tx.QueryRowContext(ctx, "SELECT client_actor_id,store_id,state,fulfillment_mode,version FROM dsh.commerce_orders WHERE id=$1 FOR UPDATE", orderID).Scan(&storedClientActorID, &storeID, &state, &fulfillmentMode, &version)
 	if errors.Is(err, sql.ErrNoRows) {
 		return OrderRatingRecord{}, false, ErrOrderNotFound
 	}
@@ -102,7 +102,7 @@ func CreateClientOrderRating(ctx context.Context, db *sql.DB, orderID, clientAct
 	if storedClientActorID != clientActorID {
 		return OrderRatingRecord{}, false, ErrOrderNotFound
 	}
-	if state != "DELIVERED" {
+	if state != "DELIVERED" && !(fulfillmentMode == "CUSTOMER_PICKUP" && state == "PICKED_UP") {
 		return OrderRatingRecord{}, false, ErrOrderRatingNotEligible
 	}
 	if version != expectedVersion {

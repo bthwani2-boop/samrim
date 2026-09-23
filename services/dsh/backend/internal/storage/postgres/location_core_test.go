@@ -231,6 +231,8 @@ func TestLocationCoreIntegrity(t *testing.T) {
 		if addressAudits != 4 || originAudits != 3 {
 			t.Fatalf("unexpected Location Core audit count: addresses=%d origins=%d", addressAudits, originAudits)
 		}
+
+		verifyStoreFulfillmentModes(t, ctx, db)
 	})
 }
 

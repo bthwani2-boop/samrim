@@ -17,6 +17,17 @@ type PartnerFinanceServer struct {
 	payment  *wlt.Client
 }
 
+type partnerCommissionRemittanceRequest struct {
+	AmountMinor         int64  `json:"amountMinor"`
+	RemittanceReference string `json:"remittanceReference"`
+	EvidenceReference   string `json:"evidenceReference"`
+}
+
+type partnerCommissionRemittanceResponse struct {
+	Remittance       wlt.PartnerCommissionRemittance `json:"remittance"`
+	IdempotentReplay bool                            `json:"idempotentReplay"`
+}
+
 func NewPartnerFinance(identity *identityintegration.Client, accessToken string, payment *wlt.Client) (*PartnerFinanceServer, error) {
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
@@ -31,6 +42,7 @@ func NewPartnerFinance(identity *identityintegration.Client, accessToken string,
 func (s *PartnerFinanceServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/partners/me/financial-summary", s.readOwnSummary)
 	mux.HandleFunc("GET /dsh/operator/partners/{partnerActorId}/financial-summary", s.readOperatorSummary)
+	mux.HandleFunc("POST /dsh/operator/partners/{partnerActorId}/commission-remittances", s.recordCommissionRemittance)
 }
 
 func (s *PartnerFinanceServer) readOwnSummary(w http.ResponseWriter, r *http.Request) {
@@ -76,6 +88,48 @@ func (s *PartnerFinanceServer) readOperatorSummary(w http.ResponseWriter, r *htt
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"summary": summary})
+}
+
+func (s *PartnerFinanceServer) recordCommissionRemittance(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeOperator(w, r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if !s.requireOperator(w, r.Context(), acting) {
+		return
+	}
+	correlationID := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
+	idempotencyKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if len(correlationID) < 8 || len(correlationID) > 128 || len(idempotencyKey) < 8 || len(idempotencyKey) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Correlation-ID and Idempotency-Key are required")
+		return
+	}
+	partnerActorID := strings.TrimSpace(r.PathValue("partnerActorId"))
+	if partnerActorID == "" || len(partnerActorID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partnerActorId is required")
+		return
+	}
+	var input partnerCommissionRemittanceRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	input.RemittanceReference = strings.TrimSpace(input.RemittanceReference)
+	input.EvidenceReference = strings.TrimSpace(input.EvidenceReference)
+	if input.AmountMinor <= 0 || len(input.RemittanceReference) < 1 || len(input.RemittanceReference) > 128 || len(input.EvidenceReference) < 1 || len(input.EvidenceReference) > 512 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "positive amount, remittance reference, and verification evidence are required")
+		return
+	}
+	result, replayed, err := s.payment.RecordPartnerCommissionRemittance(r.Context(), partnerActorID, input.AmountMinor, input.RemittanceReference, input.EvidenceReference, idempotencyKey, correlationID, acting)
+	if err != nil {
+		writeWLTFinanceError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if replayed {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, partnerCommissionRemittanceResponse{Remittance: result, IdempotentReplay: replayed})
 }
 
 func (s *PartnerFinanceServer) authorizeOperator(w http.ResponseWriter, r *http.Request) bool {

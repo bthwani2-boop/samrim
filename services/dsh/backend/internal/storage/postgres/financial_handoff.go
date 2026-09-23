@@ -89,7 +89,7 @@ func MarkFinancialHandoffPosted(ctx context.Context, db *sql.DB, item FinancialH
 	defer func() { _ = tx.Rollback() }()
 
 	switch item.EffectType {
-	case "DELIVERY_SETTLEMENT":
+	case "DELIVERY_SETTLEMENT", "STORE_PICKUP_COLLECTION":
 		var current string
 		if err := tx.QueryRowContext(ctx, `SELECT payment_state FROM dsh.commerce_orders WHERE id=$1 AND payment_intent_id=$2 FOR UPDATE`, item.OrderID, item.PaymentIntentID).Scan(&current); err != nil {
 			return err

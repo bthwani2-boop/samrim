@@ -335,6 +335,54 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PartnerFinancialSummaryResponse' }
+  /wlt/v1/partner-store-pickup-commissions/finalize:
+    post:
+      operationId: finalizePartnerStorePickupCommission
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FinalizePartnerStorePickupCommissionRequest' }
+      responses:
+        '201':
+          description: Store-collected customer payment and Partner commission receivable recorded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerStorePickupCommissionResponse' }
+        '200':
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerStorePickupCommissionResponse' }
+  /wlt/v1/operator/partners/{partnerActorId}/commission-remittances:
+    post:
+      operationId: recordVerifiedPartnerCommissionRemittance
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: partnerActorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ActingActorId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordPartnerCommissionRemittanceRequest' }
+      responses:
+        '201':
+          description: Direct Partner remittance verified and posted against the receivable.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerCommissionRemittanceResponse' }
+        '200':
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerCommissionRemittanceResponse' }
   /wlt/v1/operator/field-commission-policies:
     post:
       operationId: createFieldCommissionPolicy
@@ -790,7 +838,7 @@ components:
     PartnerOrderEarning:
       type: object
       additionalProperties: false
-      required: [orderId, paymentIntentId, partnerActorId, captainActorId, currency, grossProductMinor, deliveryFeeMinor, commissionMinor, partnerNetMinor, profileId, profileVersion, policyVersion, ledgerTransactionId, createdAt]
+      required: [orderId, paymentIntentId, partnerActorId, captainActorId, currency, grossProductMinor, deliveryFeeMinor, commissionMinor, partnerNetMinor, commissionReceivableOffsetMinor, profileId, profileVersion, policyVersion, ledgerTransactionId, createdAt]
       properties:
         orderId: { type: string }
         paymentIntentId: { type: string }
@@ -801,6 +849,7 @@ components:
         deliveryFeeMinor: { type: integer, minimum: 0 }
         commissionMinor: { type: integer, minimum: 0 }
         partnerNetMinor: { type: integer, minimum: 0 }
+        commissionReceivableOffsetMinor: { type: integer, minimum: 0 }
         profileId: { type: string }
         profileVersion: { type: integer, minimum: 1 }
         policyVersion: { type: string }
@@ -813,15 +862,77 @@ components:
       properties:
         earning: { $ref: '#/components/schemas/PartnerOrderEarning' }
         idempotentReplay: { type: boolean }
+    FinalizePartnerStorePickupCommissionRequest:
+      type: object
+      additionalProperties: false
+      required: [orderId, paymentIntentId, partnerActorId]
+      properties:
+        orderId: { type: string, minLength: 1, maxLength: 128 }
+        paymentIntentId: { type: string, minLength: 1, maxLength: 128 }
+        partnerActorId: { type: string, minLength: 1, maxLength: 128 }
+    PartnerStorePickupCommission:
+      type: object
+      additionalProperties: false
+      required: [orderId, paymentIntentId, partnerActorId, currency, grossProductMinor, commissionMinor, profileId, profileVersion, policyVersion, createdAt]
+      properties:
+        orderId: { type: string }
+        paymentIntentId: { type: string }
+        partnerActorId: { type: string }
+        currency: { type: string, const: YER }
+        grossProductMinor: { type: integer, minimum: 0 }
+        commissionMinor: { type: integer, minimum: 0 }
+        profileId: { type: string }
+        profileVersion: { type: integer, minimum: 1 }
+        policyVersion: { type: string }
+        ledgerTransactionId: { type: string }
+        createdAt: { type: string, format: date-time }
+    PartnerStorePickupCommissionResponse:
+      type: object
+      additionalProperties: false
+      required: [commission, idempotentReplay]
+      properties:
+        commission: { $ref: '#/components/schemas/PartnerStorePickupCommission' }
+        idempotentReplay: { type: boolean }
+    RecordPartnerCommissionRemittanceRequest:
+      type: object
+      additionalProperties: false
+      required: [amountMinor, remittanceReference, evidenceReference]
+      properties:
+        amountMinor: { type: integer, minimum: 1 }
+        remittanceReference: { type: string, minLength: 1, maxLength: 128 }
+        evidenceReference: { type: string, minLength: 1, maxLength: 512 }
+    PartnerCommissionRemittance:
+      type: object
+      additionalProperties: false
+      required: [id, partnerActorId, amountMinor, currency, remittanceReference, evidenceReference, verifiedBy, verifiedAt, ledgerTransactionId, createdAt]
+      properties:
+        id: { type: string }
+        partnerActorId: { type: string }
+        amountMinor: { type: integer, minimum: 1 }
+        currency: { type: string, const: YER }
+        remittanceReference: { type: string }
+        evidenceReference: { type: string }
+        verifiedBy: { type: string }
+        verifiedAt: { type: string, format: date-time }
+        ledgerTransactionId: { type: string }
+        createdAt: { type: string, format: date-time }
+    PartnerCommissionRemittanceResponse:
+      type: object
+      additionalProperties: false
+      required: [remittance, idempotentReplay]
+      properties:
+        remittance: { $ref: '#/components/schemas/PartnerCommissionRemittance' }
+        idempotentReplay: { type: boolean }
     PartnerFinancialSummary:
       type: object
       additionalProperties: false
-      required: [partnerActorId, currency, earnedMinor, commissionMinor, orderCount, settlementPeriod, profileState, profileVersion]
+      required: [partnerActorId, currency, earnedMinor, commissionMinor, outstandingCommissionReceivableMinor, orderCount, settlementPeriod, profileState, profileVersion]
       properties:
         partnerActorId: { type: string }
         currency: { type: string, const: YER }
         earnedMinor: { type: integer }
         commissionMinor: { type: integer, minimum: 0 }
+        outstandingCommissionReceivableMinor: { type: integer, minimum: 0 }
         orderCount: { type: integer, minimum: 0 }
         settlementPeriod: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
         profileState: { type: string }

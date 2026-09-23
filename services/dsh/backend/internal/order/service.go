@@ -195,10 +195,31 @@ func (s *Service) TransitionForPartner(ctx context.Context, accessToken, storeID
 		return postgres.OrderRecord{}, false, ErrStoreOwnershipForbidden
 	}
 	state = strings.TrimSpace(state)
+	if state == "CANCELLED" {
+		return postgres.TransitionOrderWithPaymentCancellation(ctx, s.db, orderID, state, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, state, expectedVersion), identity, strings.TrimSpace(correlationID), postgres.CancellationReasonPickupCustomerNoShow)
+	}
 	if state == "REJECTED" {
 		return postgres.TransitionOrderWithPaymentCancellation(ctx, s.db, orderID, "REJECTED", expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, state, expectedVersion), identity, strings.TrimSpace(correlationID), "partner_rejected")
 	}
 	return postgres.TransitionOrder(ctx, s.db, orderID, state, "", expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, state, expectedVersion), identity, strings.TrimSpace(correlationID))
+}
+
+func (s *Service) CompleteStorePickupForPartner(ctx context.Context, accessToken, storeID, orderID, code string, expectedVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
+	identity, err := s.requireSession(ctx, accessToken, "partner", "app-partner")
+	if err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	if err := s.requireOwnedStore(ctx, identity, storeID); err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	current, err := postgres.ReadOrder(ctx, s.db, orderID)
+	if err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	if current.StoreID != strings.TrimSpace(storeID) {
+		return postgres.OrderRecord{}, false, ErrStoreOwnershipForbidden
+	}
+	return postgres.CompleteStorePickup(ctx, s.db, orderID, code, expectedVersion, strings.TrimSpace(idempotencyKey), identity, strings.TrimSpace(correlationID))
 }
 
 func (s *Service) requireSession(ctx context.Context, accessToken, role, surface string) (string, error) {

@@ -19,6 +19,7 @@ export function JoiningCaseCreate() {
   const [verticalId, setVerticalId] = useState("");
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
+  const [fulfillmentModes, setFulfillmentModes] = useState<ReadonlyArray<"BTHWANI_CAPTAIN" | "CUSTOMER_PICKUP">>(["BTHWANI_CAPTAIN"]);
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
   const [optionsBusy, setOptionsBusy] = useState(true);
@@ -58,8 +59,9 @@ export function JoiningCaseCreate() {
       firstStoreVerticalId: verticalId,
       firstStoreLatitude: Number(latitude),
       firstStoreLongitude: Number(longitude),
+      firstStoreFulfillmentModes: fulfillmentModes,
     };
-    if (!phoneE164Pattern.test(input.contactPhoneE164) || input.businessName.length < 2 || input.firstStoreName.length < 2 || !input.serviceCityId || !input.firstStoreVerticalId || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180) {
+    if (!phoneE164Pattern.test(input.contactPhoneE164) || input.businessName.length < 2 || input.firstStoreName.length < 2 || !input.serviceCityId || !input.firstStoreVerticalId || input.firstStoreFulfillmentModes.length === 0 || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180) {
       setError("أدخل بيانات النشاط والمتجر والمدينة والمجال وإحداثيات موقع المتجر الثابت.");
       return;
     }
@@ -104,6 +106,12 @@ export function JoiningCaseCreate() {
         <label className="field-label" htmlFor="joining-vertical">المجال التجاري<select id="joining-vertical" disabled={busy || optionsBusy || Boolean(optionsError)} value={verticalId} onChange={(event) => setVerticalId(event.target.value)}><option value="">اختر المجال التجاري</option>{activeVerticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}</option>)}</select></label>
         <label className="field-label" htmlFor="joining-latitude">خط عرض موقع المتجر<input id="joining-latitude" disabled={busy || optionsBusy} inputMode="decimal" value={latitude} onChange={(event) => setLatitude(toAsciiDigits(event.target.value))} placeholder="مثال: 15.369445" /></label>
         <label className="field-label" htmlFor="joining-longitude">خط طول موقع المتجر<input id="joining-longitude" disabled={busy || optionsBusy} inputMode="decimal" value={longitude} onChange={(event) => setLongitude(toAsciiDigits(event.target.value))} placeholder="مثال: 44.191006" /></label>
+        <fieldset className="field-label" disabled={busy || optionsBusy}>
+          <legend>طرق تلبية الطلب في المتجر</legend>
+          <label><input type="checkbox" checked={fulfillmentModes.includes("BTHWANI_CAPTAIN")} onChange={(event) => setFulfillmentModes((current) => event.target.checked ? current.includes("BTHWANI_CAPTAIN") ? current : [...current, "BTHWANI_CAPTAIN"] : current.length <= 1 ? current : current.filter((mode) => mode !== "BTHWANI_CAPTAIN"))} /> توصيل بثواني</label>
+          <label><input type="checkbox" checked={fulfillmentModes.includes("CUSTOMER_PICKUP")} onChange={(event) => setFulfillmentModes((current) => event.target.checked ? current.includes("CUSTOMER_PICKUP") ? current : [...current, "CUSTOMER_PICKUP"] : current.length <= 1 ? current : current.filter((mode) => mode !== "CUSTOMER_PICKUP"))} /> الاستلام من المتجر</label>
+          <span className="muted">اختر الطرق التي يقدمها المتجر فعلًا؛ لا يظهر الاستلام للعميل ما لم يُفعّل هنا.</span>
+        </fieldset>
         <button type="button" className="button button-primary" disabled={busy || optionsBusy || Boolean(optionsError) || activeCities.length === 0 || activeVerticals.length === 0} onClick={() => void createCase()}>{busy ? "جارٍ إنشاء الحالة…" : "إنشاء حالة انضمام"}</button>
       </div>
       {error ? <p className="identity-error" role="alert">{error}</p> : null}

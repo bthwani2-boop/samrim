@@ -64,7 +64,7 @@ func (s *CartServer) quote(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	if strings.TrimSpace(input.CartID) == "" || strings.TrimSpace(input.StoreID) == "" || strings.TrimSpace(input.AddressID) == "" || strings.TrimSpace(string(input.FulfillmentMode)) == "" {
+	if strings.TrimSpace(input.CartID) == "" || strings.TrimSpace(input.StoreID) == "" || (input.FulfillmentMode != contract.FulfillmentMode("CUSTOMER_PICKUP") && strings.TrimSpace(input.AddressID) == "") || strings.TrimSpace(string(input.FulfillmentMode)) == "" {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cartId, storeId, addressId and fulfillmentMode are required")
 		return
 	}
@@ -141,7 +141,7 @@ func (s *CartServer) checkout(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	if strings.TrimSpace(input.CartID) == "" || strings.TrimSpace(input.StoreID) == "" || strings.TrimSpace(input.AddressID) == "" || strings.TrimSpace(string(input.FulfillmentMode)) == "" {
+	if strings.TrimSpace(input.CartID) == "" || strings.TrimSpace(input.StoreID) == "" || (input.FulfillmentMode != contract.FulfillmentMode("CUSTOMER_PICKUP") && strings.TrimSpace(input.AddressID) == "") || strings.TrimSpace(string(input.FulfillmentMode)) == "" {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cartId, storeId, addressId and fulfillmentMode are required")
 		return
 	}

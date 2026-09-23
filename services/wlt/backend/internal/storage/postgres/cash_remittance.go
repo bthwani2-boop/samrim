@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/domain"
 )
 
 var (
@@ -71,18 +73,24 @@ func ListAllCashLiability(ctx context.Context, db *sql.DB, limit int) (CashLiabi
 	return listCashLiability(ctx, db, "", limit)
 }
 
-func listCashLiability(ctx context.Context, db *sql.DB, captainActorID string, limit int) (CashLiabilityList, error) {
+func cashLiabilityQuery(captainActorID string, limit int) (string, []any) {
 	query := `
 		SELECT p.id, p.external_reference, p.collected_by_actor_id, p.amount_minor, p.currency, p.version, p.collected_at
 		FROM wlt.payment_intents p
 		LEFT JOIN wlt.cash_remittances r ON r.payment_intent_id = p.id
-		WHERE p.state='COLLECTED' AND r.id IS NULL`
-	args := []any{limit}
+		WHERE p.state='COLLECTED' AND p.method=$1 AND r.id IS NULL`
+	args := []any{domain.MethodCashOnDelivery}
 	if captainActorID != "" {
-		query += ` AND p.collected_by_actor_id=$1`
-		args = []any{captainActorID, limit}
+		query += ` AND p.collected_by_actor_id=$2`
+		args = append(args, captainActorID)
 	}
-	query += ` ORDER BY p.collected_at ASC, p.id ASC LIMIT $` + fmt.Sprintf("%d", len(args))
+	query += ` ORDER BY p.collected_at ASC, p.id ASC LIMIT $` + fmt.Sprintf("%d", len(args)+1)
+	args = append(args, limit)
+	return query, args
+}
+
+func listCashLiability(ctx context.Context, db *sql.DB, captainActorID string, limit int) (CashLiabilityList, error) {
+	query, args := cashLiabilityQuery(captainActorID, limit)
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return CashLiabilityList{}, fmt.Errorf("list cash liability: %w", err)
@@ -101,6 +109,16 @@ func listCashLiability(ctx context.Context, db *sql.DB, captainActorID string, l
 		return CashLiabilityList{}, fmt.Errorf("iterate cash liability: %w", err)
 	}
 	return result, nil
+}
+
+func matchesCaptainCashRemittance(payment PaymentIntentRecord, input RemitCashInput) bool {
+	return payment.Method == domain.MethodCashOnDelivery &&
+		payment.State == "COLLECTED" &&
+		payment.CollectedByActorID != nil &&
+		*payment.CollectedByActorID == input.CaptainActorID &&
+		payment.CollectedAmountMinor != nil &&
+		*payment.CollectedAmountMinor == input.AmountMinor &&
+		payment.Version == input.ExpectedPaymentVersion
 }
 
 func RemitCash(ctx context.Context, db *sql.DB, input RemitCashInput) (CashRemittanceRecord, bool, error) {
@@ -145,7 +163,7 @@ func RemitCash(ctx context.Context, db *sql.DB, input RemitCashInput) (CashRemit
 	} else if err != nil {
 		return CashRemittanceRecord{}, false, err
 	}
-	if payment.State != "COLLECTED" || payment.CollectedByActorID == nil || *payment.CollectedByActorID != input.CaptainActorID || payment.CollectedAmountMinor == nil || *payment.CollectedAmountMinor != input.AmountMinor || payment.Version != input.ExpectedPaymentVersion {
+	if !matchesCaptainCashRemittance(payment, input) {
 		return CashRemittanceRecord{}, false, ErrRemittanceInvalidInput
 	}
 	var duplicateID string

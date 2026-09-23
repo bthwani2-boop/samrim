@@ -183,6 +183,9 @@ paths:
   /dsh/stores/{storeId}/delivery-origin:
     $ref: "./paths/location-core.yaml#/paths/~1dsh~1stores~1{storeId}~1delivery-origin"
 
+  /dsh/stores/{storeId}/fulfillment-modes:
+    $ref: "./paths/location-core.yaml#/paths/~1dsh~1stores~1{storeId}~1fulfillment-modes"
+
   /dsh/service-cities:
     $ref: "./paths/service-city.yaml#/paths/~1dsh~1service-cities"
 
@@ -275,6 +278,9 @@ paths:
 
   /dsh/operator/partners/{partnerActorId}/financial-summary:
     $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1financial-summary"
+
+  /dsh/operator/partners/{partnerActorId}/commission-remittances:
+    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1commission-remittances"
 
   /dsh/me/payout-state:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1me~1payout-state"
@@ -657,7 +663,7 @@ components:
 
     CreateJoiningCaseRequest:
       type: object
-      required: [contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude]
+      required: [contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, firstStoreFulfillmentModes]
       additionalProperties: false
       properties:
         contactPhoneE164:
@@ -685,6 +691,12 @@ components:
           type: number
           minimum: -180
           maximum: 180
+        firstStoreFulfillmentModes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/StoreFulfillmentMode"
 
     JoiningCaseState:
       type: string
@@ -708,7 +720,7 @@ components:
 
     JoiningCaseView:
       type: object
-      required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, origin, state, financialProfileState, version, createdAt, updatedAt]
+      required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, firstStoreFulfillmentModes, origin, state, financialProfileState, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -737,6 +749,12 @@ components:
           nullable: true
           minimum: -180
           maximum: 180
+        firstStoreFulfillmentModes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/StoreFulfillmentMode"
         origin:
           $ref: "#/components/schemas/JoiningCaseOrigin"
         partnerActorId:
@@ -925,7 +943,7 @@ components:
 
     StoreView:
       type: object
-      required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, deliveryOrigin, version, publicationState, publicationReadiness, offers, createdAt, updatedAt]
+      required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, deliveryOrigin, fulfillmentModes, version, publicationState, publicationReadiness, offers, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -945,6 +963,12 @@ components:
         deliveryOrigin:
           $ref: "#/components/schemas/DeliveryOrigin"
           nullable: true
+        fulfillmentModes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/StoreFulfillmentMode"
         version:
           type: integer
           minimum: 1
@@ -1121,6 +1145,39 @@ components:
         origin:
           $ref: "#/components/schemas/DeliveryOrigin"
           nullable: true
+        idempotentReplay:
+          type: boolean
+
+    SetStoreFulfillmentModesRequest:
+      type: object
+      required: [fulfillmentModes]
+      additionalProperties: false
+      properties:
+        fulfillmentModes:
+          type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/StoreFulfillmentMode"
+
+    StoreFulfillmentModesResponse:
+      type: object
+      required: [storeId, version, fulfillmentModes, idempotentReplay]
+      additionalProperties: false
+      properties:
+        storeId:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        fulfillmentModes:
+          type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/StoreFulfillmentMode"
         idempotentReplay:
           type: boolean
 
@@ -2511,7 +2568,7 @@ components:
 
     PublicStoreView:
       type: object
-      required: [id, name, serviceCity, primaryVerticalId, version, ratingAverage, ratingCount, publishedAt, createdAt, updatedAt]
+      required: [id, name, serviceCity, primaryVerticalId, fulfillmentModes, version, ratingAverage, ratingCount, publishedAt, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -2523,6 +2580,12 @@ components:
         primaryVerticalId:
           type: string
           nullable: true
+        fulfillmentModes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/StoreFulfillmentMode"
         distanceMeters:
           type: integer
           minimum: 0
@@ -2859,7 +2922,7 @@ components:
 
     CheckoutRequest:
       type: object
-      required: [cartId, storeId, addressId, fulfillmentMode]
+      required: [cartId, storeId, fulfillmentMode]
       additionalProperties: false
       properties:
         cartId:
@@ -2872,7 +2935,6 @@ components:
           maxLength: 128
         addressId:
           type: string
-          minLength: 1
           maxLength: 128
         fulfillmentMode:
           $ref: "#/components/schemas/FulfillmentMode"
@@ -2952,8 +3014,8 @@ components:
           maxLength: 128
         addressId:
           type: string
-          minLength: 1
           maxLength: 128
+          description: Empty only when fulfillmentMode is CUSTOMER_PICKUP.
         cartVersion:
           type: integer
           minimum: 1
@@ -3737,13 +3799,16 @@ components:
 
     DeliveryProofResponse:
       type: object
-      required: [orderId, state]
+      required: [orderId, proofType, state]
       additionalProperties: false
       properties:
         orderId:
           type: string
           minLength: 1
           maxLength: 128
+        proofType:
+          type: string
+          enum: [DELIVERY, STORE_PICKUP]
         state:
           type: string
           enum: [PENDING, VERIFIED]
@@ -3818,7 +3883,7 @@ components:
 
     OrderState:
       type: string
-      enum: [CREATED, PARTNER_ACCEPTED, PREPARING, READY_FOR_DISPATCH, CAPTAIN_ASSIGNED, IN_CUSTODY, DELIVERED, DELIVERY_FAILED, REJECTED, CANCELLED]
+      enum: [CREATED, PARTNER_ACCEPTED, PREPARING, READY_FOR_DISPATCH, READY_FOR_PICKUP, PICKED_UP, CAPTAIN_ASSIGNED, IN_CUSTODY, DELIVERED, DELIVERY_FAILED, REJECTED, CANCELLED]
 
     OrderLineModifierSnapshot:
       type: object
@@ -3944,7 +4009,7 @@ components:
 
     PaymentMethod:
       type: string
-      enum: [CASH_ON_DELIVERY]
+      enum: [CASH_ON_DELIVERY, CASH_AT_STORE]
 
     PaymentState:
       type: string
@@ -4042,7 +4107,7 @@ components:
     PartnerFinancialSummary:
       type: object
       additionalProperties: false
-      required: [partnerActorId, currency, earnedMinor, commissionMinor, orderCount, settlementPeriod, profileState, profileVersion, lastEarningAt]
+      required: [partnerActorId, currency, earnedMinor, commissionMinor, outstandingCommissionReceivableMinor, orderCount, settlementPeriod, profileState, profileVersion, lastEarningAt]
       properties:
         partnerActorId:
           type: string
@@ -4053,6 +4118,9 @@ components:
           type: integer
           minimum: 0
         commissionMinor:
+          type: integer
+          minimum: 0
+        outstandingCommissionReceivableMinor:
           type: integer
           minimum: 0
         orderCount:
@@ -4079,6 +4147,75 @@ components:
       properties:
         summary:
           $ref: "#/components/schemas/PartnerFinancialSummary"
+
+    PartnerCommissionRemittance:
+      type: object
+      additionalProperties: false
+      required: [id, partnerActorId, amountMinor, currency, remittanceReference, evidenceReference, verifiedBy, verifiedAt, ledgerTransactionId, createdAt]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        partnerActorId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        amountMinor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        remittanceReference:
+          type: string
+          minLength: 1
+          maxLength: 128
+        evidenceReference:
+          type: string
+          minLength: 1
+          maxLength: 512
+        verifiedBy:
+          type: string
+          minLength: 1
+          maxLength: 128
+        verifiedAt:
+          type: string
+          format: date-time
+        ledgerTransactionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        createdAt:
+          type: string
+          format: date-time
+
+    PartnerCommissionRemittanceRequest:
+      type: object
+      additionalProperties: false
+      required: [amountMinor, remittanceReference, evidenceReference]
+      properties:
+        amountMinor:
+          type: integer
+          minimum: 1
+        remittanceReference:
+          type: string
+          minLength: 1
+          maxLength: 128
+        evidenceReference:
+          type: string
+          minLength: 1
+          maxLength: 512
+
+    PartnerCommissionRemittanceResponse:
+      type: object
+      additionalProperties: false
+      required: [remittance, idempotentReplay]
+      properties:
+        remittance:
+          $ref: "#/components/schemas/PartnerCommissionRemittance"
+        idempotentReplay:
+          type: boolean
 
     FieldCommissionPolicy:
       type: object
@@ -4381,6 +4518,10 @@ components:
         state:
           $ref: "#/components/schemas/BeneficiaryPayoutState"
 
+    StoreFulfillmentMode:
+      type: string
+      enum: [BTHWANI_CAPTAIN, CUSTOMER_PICKUP]
+
     FulfillmentMode:
       type: string
       enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP]
@@ -4552,7 +4693,10 @@ components:
       properties:
         state:
           type: string
-          enum: [PARTNER_ACCEPTED, PREPARING, READY_FOR_DISPATCH, REJECTED]
+          enum: [PARTNER_ACCEPTED, PREPARING, READY_FOR_DISPATCH, READY_FOR_PICKUP, PICKED_UP, REJECTED, CANCELLED]
+        code:
+          type: string
+          pattern: '^[0-9]{6}$'
 
     PromotionKind:
       type: string

@@ -36,8 +36,8 @@ func HashFieldAccessRequest(actorID string, enabled bool, expectedVersion int) s
 	return hashFacts("field-access", strings.TrimSpace(actorID), strconv.FormatBool(enabled), strconv.Itoa(expectedVersion))
 }
 
-func HashJoiningCaseFieldRequest(fieldActorID, phone, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64) string {
-	return hashFacts("field-joining-case", strings.TrimSpace(fieldActorID), strings.TrimSpace(phone), strings.TrimSpace(businessName), strings.TrimSpace(firstStoreName), strings.TrimSpace(serviceCityID), strings.TrimSpace(verticalID), fmt.Sprintf("%.6f", latitude), fmt.Sprintf("%.6f", longitude))
+func HashJoiningCaseFieldRequest(fieldActorID, phone, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64, fulfillmentModes []string) string {
+	return hashFacts("field-joining-case", strings.TrimSpace(fieldActorID), strings.TrimSpace(phone), strings.TrimSpace(businessName), strings.TrimSpace(firstStoreName), strings.TrimSpace(serviceCityID), strings.TrimSpace(verticalID), fmt.Sprintf("%.6f", latitude), fmt.Sprintf("%.6f", longitude), strings.Join(fulfillmentModes, ","))
 }
 
 func CreateFieldAdmissionCandidate(ctx context.Context, db *sql.DB, phone, idempotencyKey, requestHash, actingActorID, correlationID string) (FieldAdmission, bool, error) {

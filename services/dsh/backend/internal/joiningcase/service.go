@@ -44,6 +44,10 @@ func (s *Service) Create(ctx context.Context, input postgres.JoiningCaseRecord, 
 	firstStoreName := strings.TrimSpace(input.FirstStoreName)
 	serviceCityID := strings.TrimSpace(input.FirstStoreServiceCityID)
 	verticalID := strings.TrimSpace(input.FirstStoreVerticalID)
+	fulfillmentModes, modesErr := postgres.NormalizeStoreFulfillmentModes(input.FirstStoreFulfillmentModes)
+	if modesErr != nil {
+		return postgres.JoiningCaseResult{}, ErrInvalidInput
+	}
 	if !phoneE164Pattern.MatchString(phone) || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || serviceCityID == "" || verticalID == "" || input.FirstStoreLatitude == nil || input.FirstStoreLongitude == nil || !validCoordinates(*input.FirstStoreLatitude, *input.FirstStoreLongitude) {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
@@ -58,7 +62,7 @@ func (s *Service) Create(ctx context.Context, input postgres.JoiningCaseRecord, 
 	if err != nil || !vertical.Active {
 		return postgres.JoiningCaseResult{}, postgres.ErrCatalogVerticalNotFound
 	}
-	return postgres.CreateJoiningCase(ctx, s.db, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseRequest(phone, businessName, firstStoreName, serviceCityID, verticalID, *input.FirstStoreLatitude, *input.FirstStoreLongitude), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID), phone, businessName, firstStoreName, serviceCityID, verticalID, *input.FirstStoreLatitude, *input.FirstStoreLongitude)
+	return postgres.CreateJoiningCase(ctx, s.db, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseRequest(phone, businessName, firstStoreName, serviceCityID, verticalID, *input.FirstStoreLatitude, *input.FirstStoreLongitude, fulfillmentModes), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID), phone, businessName, firstStoreName, serviceCityID, verticalID, *input.FirstStoreLatitude, *input.FirstStoreLongitude, fulfillmentModes)
 }
 
 func (s *Service) Submit(ctx context.Context, caseID string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.JoiningCaseResult, error) {

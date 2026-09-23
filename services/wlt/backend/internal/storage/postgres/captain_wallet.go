@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/domain"
 )
 
 var (
@@ -195,7 +197,7 @@ func ReserveCaptainCOD(ctx context.Context, db *sql.DB, input CaptainCODReservat
 		return CaptainCODReservationRecord{}, false, err
 	}
 	var amountMinor int64
-	err = tx.QueryRowContext(ctx, `SELECT a.cash_amount_minor FROM wlt.payment_intents p JOIN wlt.customer_payment_allocations a ON a.payment_intent_id=p.id WHERE p.id=$1 AND a.order_id=$2 AND p.state IN ('REQUIRES_COLLECTION','COLLECTED') FOR UPDATE`, input.PaymentIntentID, input.OrderID).Scan(&amountMinor)
+	err = tx.QueryRowContext(ctx, `SELECT a.cash_amount_minor FROM wlt.payment_intents p JOIN wlt.customer_payment_allocations a ON a.payment_intent_id=p.id WHERE p.id=$1 AND a.order_id=$2 AND p.method=$3 AND p.state IN ('REQUIRES_COLLECTION','COLLECTED') FOR UPDATE`, input.PaymentIntentID, input.OrderID, domain.MethodCashOnDelivery).Scan(&amountMinor)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CaptainCODReservationRecord{}, false, ErrCaptainCODAllocationNotFound
 	}

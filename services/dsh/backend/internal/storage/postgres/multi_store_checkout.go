@@ -89,7 +89,9 @@ func CreateMultiStoreCheckout(ctx context.Context, db *sql.DB, input MultiStoreC
 	seenStores := make(map[string]struct{}, len(input.Children))
 	for _, child := range input.Children {
 		cartID, storeID, addressID := strings.TrimSpace(child.CartID), strings.TrimSpace(child.StoreID), strings.TrimSpace(child.AddressID)
-		if cartID == "" || storeID == "" || addressID == "" || child.CartVersion < 1 || strings.TrimSpace(child.FulfillmentMode) == "" {
+		pickup := strings.TrimSpace(child.FulfillmentMode) == "CUSTOMER_PICKUP"
+		delivery := strings.TrimSpace(child.FulfillmentMode) == "BTHWANI_CAPTAIN"
+		if cartID == "" || storeID == "" || child.CartVersion < 1 || (!pickup && !delivery) || (pickup && addressID != "") || (delivery && addressID == "") {
 			return MultiStoreCheckoutRecord{}, false, ErrMultiStoreCheckoutInvalid
 		}
 		if _, exists := seenCarts[cartID]; exists {

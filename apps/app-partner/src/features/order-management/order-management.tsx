@@ -1,10 +1,10 @@
 import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniSearchField, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type CaptainAssignment, captainHandoffStateLabel, createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, type Order, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
+import { type CaptainAssignment, captainHandoffStateLabel, createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderTransitionRequest, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { OrderConversation } from "./order-conversation";
 
@@ -16,10 +16,10 @@ function baseUrl(): string {
 
 const client = () => createDshMobileClient(baseUrl(), { cryptoRandomUUID: () => Crypto.randomUUID() });
 
-function nextState(order: Order): "PARTNER_ACCEPTED" | "PREPARING" | "READY_FOR_DISPATCH" | "REJECTED" | null {
+function nextState(order: Order): OrderTransitionRequest["state"] | null {
   if (order.state === "CREATED") return "PARTNER_ACCEPTED";
   if (order.state === "PARTNER_ACCEPTED") return "PREPARING";
-  if (order.state === "PREPARING") return "READY_FOR_DISPATCH";
+  if (order.state === "PREPARING") return order.fulfillmentMode === "CUSTOMER_PICKUP" ? "READY_FOR_PICKUP" : "READY_FOR_DISPATCH";
   return null;
 }
 
@@ -37,7 +37,7 @@ type OrderQueue = Exclude<QueueFilter, "ALL">;
 function queueForOrder(order: Order): OrderQueue {
   if (order.state === "CREATED") return "NEEDS_ACTION";
   if (order.state === "PARTNER_ACCEPTED" || order.state === "PREPARING") return "PREPARING";
-  if (order.state === "READY_FOR_DISPATCH" || order.state === "CAPTAIN_ASSIGNED" || order.state === "IN_CUSTODY") return "HANDOFF";
+  if (order.state === "READY_FOR_DISPATCH" || order.state === "READY_FOR_PICKUP" || order.state === "CAPTAIN_ASSIGNED" || order.state === "IN_CUSTODY") return "HANDOFF";
   return "CLOSED";
 }
 
@@ -64,6 +64,7 @@ const theme = useAppearanceTheme();
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<QueueFilter>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
+  const [pickupCodes, setPickupCodes] = useState<Readonly<Record<string, string>>>({});
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -95,6 +96,27 @@ const theme = useAppearanceTheme();
     try { const token = await getUsableIdentityAccessToken(); await client().transitionStoreOrder(token, storeId, order.id, { state: requestedState }, order.version); await load(); }
     catch (cause) { console.error("DSH order transition failed", cause); setError("تعذر تحديث حالة الطلب. أعد القراءة ثم حاول مرة أخرى."); }
     finally { setBusy(""); }
+  }
+
+  async function confirmStorePickup(order: Order) {
+    const code = toAsciiDigits(pickupCodes[order.id] ?? "").trim();
+    if (!/^\d{6}$/.test(code) || busy || loading || order.state !== "READY_FOR_PICKUP") return;
+    setBusy(order.id); setError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      await client().transitionStoreOrder(token, storeId, order.id, { state: "PICKED_UP", code }, order.version);
+      setPickupCodes((current) => ({ ...current, [order.id]: "" }));
+      await load();
+    } catch (cause) { console.error("DSH store pickup confirmation failed", cause); setError("تعذر تأكيد رمز الاستلام. تحقق من الرمز ثم حدّث الطلب قبل إعادة المحاولة."); }
+    finally { setBusy(""); }
+  }
+
+  function markPickupNoShow(order: Order) {
+    if (busy || loading || order.state !== "READY_FOR_PICKUP" || order.fulfillmentMode !== "CUSTOMER_PICKUP" || order.paymentMethod !== "CASH_AT_STORE" || order.paymentState !== "REQUIRES_COLLECTION") return;
+    Alert.alert("تسجيل عدم حضور العميل", "سيُلغى الطلب غير المستلم، ويُحرر المخزون المحجوز، ويُلغى التحصيل غير المدفوع. لا تسجل ذلك إذا كان العميل قد استلم الطلب.", [
+      { text: "العودة", style: "cancel" },
+      { text: "تأكيد عدم الحضور", style: "destructive", onPress: () => void transition(order, "CANCELLED") },
+    ]);
   }
 
   async function confirmHandoff(order: Order, assignment: CaptainAssignment) {
@@ -136,16 +158,17 @@ const theme = useAppearanceTheme();
             <View style={styles.orderHeader}>
               <View style={styles.orderHeaderCopy}>
                 <Text style={styles.orderTitle}>طلب بتاريخ {formatOrderDate(order.createdAt)}</Text>
-                <Text style={styles.muted}>{order.lines.length} منتج · {formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{paymentMethodLabel(order.paymentMethod)} · {paymentStateLabel(order.paymentState)}</Text>
+                <Text style={styles.muted}>{order.lines.length} منتج · {formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{paymentMethodLabel(order.paymentMethod)} · {paymentStateLabel(order.paymentState, order.paymentMethod)}</Text>
               </View>
-              <BthwaniStatusBadge icon={order.state === "REJECTED" ? "warning" : order.state === "READY_FOR_DISPATCH" ? "success" : "orders"} label={orderStateLabel(order.state)} tone={order.state === "REJECTED" ? "danger" : order.state === "READY_FOR_DISPATCH" ? "success" : "info"} />
+              <BthwaniStatusBadge icon={order.state === "REJECTED" ? "warning" : order.state === "READY_FOR_DISPATCH" || order.state === "READY_FOR_PICKUP" || order.state === "PICKED_UP" ? "success" : "orders"} label={orderStateLabel(order.state)} tone={order.state === "REJECTED" ? "danger" : order.state === "READY_FOR_DISPATCH" || order.state === "READY_FOR_PICKUP" || order.state === "PICKED_UP" ? "success" : "info"} />
             </View>
-            <Text style={styles.muted}>العنوان: {order.addressText}</Text>
+            <Text style={styles.muted}>{order.fulfillmentMode === "CUSTOMER_PICKUP" ? "طريقة الاستلام: الاستلام من المتجر" : `العنوان: ${order.addressText}`}</Text>
             <View style={styles.lines}>
               {order.lines.map((line) => <View key={line.id} style={styles.line}><Text style={styles.lineTitle}>{line.productName} · {line.variantTitle}</Text><Text style={styles.muted}>المطلوب: {formatQuantity(line.baseUnit, line.requestedQuantityBaseUnits)} · النهائي: {formatQuantity(line.baseUnit, line.finalQuantityBaseUnits)}</Text><Text style={styles.muted}>{pricingBasisLabel(line.pricingBasis)} · {formatMoney(line.lineAmountMinor, line.currency)}{line.modifierAmountMinor > 0 ? ` · الإضافات: ${formatMoney(line.modifierAmountMinor, line.currency)}` : ""}</Text>{line.modifierSnapshots.length ? <Text style={styles.muted}>الإضافات المحددة: {line.modifierSnapshots.map((modifier) => modifier.optionNameAr).join("، ")}</Text> : null}{line.attributeSnapshots.length ? <Text style={styles.muted}>تفاصيل المنتج: {line.attributeSnapshots.map((attribute) => `${attribute.code}: ${attributeSnapshotValue(attribute)}`).join("، ")}</Text> : null}</View>)}
             </View>
             {assignment ? <View style={styles.handoff}><BthwaniStatusBadge icon={assignment.handoff.state === "completed" ? "success" : "deliveries"} label={`تسليم المتجر: ${captainHandoffStateLabel(assignment.handoff.state)}`} tone={assignment.handoff.state === "completed" ? "success" : "warning"} />{assignment.handoff.state === "pending" ? <BthwaniButton busy={busy === order.id} disabled={actionDisabled} label="تأكيد جاهزية التسليم" onPress={() => void confirmHandoff(order, assignment)} /> : null}</View> : null}
-            {next ? <View style={styles.actionRow}><BthwaniButton busy={busy === order.id} disabled={actionDisabled} label={next === "PARTNER_ACCEPTED" ? "قبول الطلب" : next === "PREPARING" ? "بدء التجهيز" : "جاهز للتسليم"} onPress={() => void transition(order)} style={styles.actionButton} />{next === "PARTNER_ACCEPTED" ? <BthwaniButton disabled={actionDisabled} label="رفض الطلب" onPress={() => void transition(order, "REJECTED")} style={styles.actionButton} variant="danger" /> : null}</View> : null}
+            {order.state === "READY_FOR_PICKUP" ? <View style={styles.pickupConfirmation}><TextInput accessibilityLabel="رمز الاستلام الذي قدمه العميل" editable={!actionDisabled} keyboardType="number-pad" maxLength={6} onChangeText={(value) => setPickupCodes((current) => ({ ...current, [order.id]: toAsciiDigits(value).replace(/[^0-9]/g, "").slice(0, 6) }))} placeholder="رمز الاستلام من العميل" placeholderTextColor={theme.colorMuted} style={styles.pickupCodeInput} textAlign="center" value={pickupCodes[order.id] ?? ""} /><BthwaniButton busy={busy === order.id} disabled={actionDisabled || toAsciiDigits(pickupCodes[order.id] ?? "").length !== 6} label="تأكيد استلام العميل" onPress={() => void confirmStorePickup(order)} />{order.fulfillmentMode === "CUSTOMER_PICKUP" && order.paymentMethod === "CASH_AT_STORE" && order.paymentState === "REQUIRES_COLLECTION" ? <BthwaniButton disabled={actionDisabled} label="العميل لم يحضر" onPress={() => markPickupNoShow(order)} variant="danger" /> : null}</View> : null}
+            {next ? <View style={styles.actionRow}><BthwaniButton busy={busy === order.id} disabled={actionDisabled} label={next === "PARTNER_ACCEPTED" ? "قبول الطلب" : next === "PREPARING" ? "بدء التجهيز" : next === "READY_FOR_PICKUP" ? "جاهز للاستلام" : "جاهز للتسليم"} onPress={() => void transition(order)} style={styles.actionButton} />{next === "PARTNER_ACCEPTED" ? <BthwaniButton disabled={actionDisabled} label="رفض الطلب" onPress={() => void transition(order, "REJECTED")} style={styles.actionButton} variant="danger" /> : null}</View> : null}
             <OrderConversation orderId={order.id} />
           </View>
         );
@@ -155,6 +178,10 @@ const theme = useAppearanceTheme();
       <BthwaniButton busy={loading || Boolean(busy)} disabled={loading || Boolean(busy)} label="تحديث الطلبات" onPress={() => void load()} variant="secondary" />
     </View>
   );
+}
+
+function toAsciiDigits(value: string): string {
+  return value.replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 1632)).replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 1776));
 }
 
 function pricingBasisLabel(basis: Order["lines"][number]["pricingBasis"]): string { return basis === "PER_UNIT" ? "لكل قطعة" : "لكل وحدة قياس"; }
@@ -186,6 +213,8 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     line: { borderColor: theme.borderColor, borderTopWidth: borders.hairline, gap: spacing[1], paddingTop: spacing[2] },
     lineTitle: { ...typography.bodyStrong, color: theme.color },
     handoff: { borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], marginTop: spacing[1], padding: spacing[2] },
+    pickupConfirmation: { backgroundColor: theme.actionSoft, borderRadius: radius.sm, gap: spacing[2], padding: spacing[2] },
+    pickupCodeInput: { ...typography.titleSm, backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.color, minHeight: 48, paddingHorizontal: spacing[3] },
     actionRow: { flexDirection: "row", gap: spacing[2] },
     orderTitle: { ...typography.bodyStrong, color: theme.color },
     orderHeaderCopy: { flex: 1, gap: spacing[1] },

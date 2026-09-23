@@ -1,11 +1,15 @@
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
-import { joiningCaseStateLabel } from "@bthwani/dsh";
+import { joiningCaseStateLabel, type FulfillmentMode } from "@bthwani/dsh";
 import { useMemo } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 
 import { JoiningCaseCorrection } from "./joining-case-correction";
 import { usePartnerStoreContext } from "./partner-store-context";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
+
+function fulfillmentModeLabel(mode: FulfillmentMode): string {
+  return mode === "CUSTOMER_PICKUP" ? "الاستلام من المتجر" : "توصيل بثواني";
+}
 
 export function PartnerOnboarding() {
 const theme = useAppearanceTheme();
@@ -22,6 +26,7 @@ const theme = useAppearanceTheme();
       <Text selectable style={styles.value}>{state.value.case.businessName}</Text>
       <Text style={styles.muted}>الحالة: {joiningCaseStateLabel(state.value.case.state)}</Text>
       <Text style={styles.muted}>مدينة المتجر الأول: {cityName}</Text>
+      <Text style={styles.muted}>طرق الاستلام في المتجر الأول: {state.value.case.firstStoreFulfillmentModes.map(fulfillmentModeLabel).join(" · ") || "لم تُحدد"}</Text>
       {citiesError ? <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة مدن الخدمة، لذلك قد لا يظهر اسم المدينة.</Text><BthwaniButton label="إعادة قراءة المدن" onPress={() => void reload()} variant="secondary" /></View> : null}
       <JoiningCaseCorrection cities={cities} value={state.value} onUpdated={update} />
     </View>

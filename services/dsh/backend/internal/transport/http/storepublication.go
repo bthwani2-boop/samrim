@@ -271,6 +271,7 @@ func toPublicStoreView(store postgres.PublicStoreRecord) contract.PublicStoreVie
 		ServiceCity:       toServiceCityRecord(store.ServiceCity),
 		PrimaryVerticalID: store.PrimaryVerticalID,
 		DistanceMeters:    optionalDistanceValue(store.DistanceMeters),
+		FulfillmentModes:  toFulfillmentModes(store.FulfillmentModes),
 		CreatedAt:         store.CreatedAt, UpdatedAt: store.UpdatedAt,
 	}
 }

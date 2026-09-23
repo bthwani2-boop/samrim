@@ -16,6 +16,7 @@ import (
 
 const (
 	methodCashOnDelivery = "CASH_ON_DELIVERY"
+	MethodCashAtStore    = "CASH_AT_STORE"
 	stateRequiresCollect = "REQUIRES_COLLECTION"
 	stateCollected       = "COLLECTED"
 	stateCancelled       = "CANCELLED"
@@ -156,15 +157,16 @@ type PartnerOrderEarning struct {
 }
 
 type PartnerFinancialSummary struct {
-	PartnerActorID   string  `json:"partnerActorId"`
-	Currency         string  `json:"currency"`
-	EarnedMinor      int64   `json:"earnedMinor"`
-	CommissionMinor  int64   `json:"commissionMinor"`
-	OrderCount       int64   `json:"orderCount"`
-	SettlementPeriod string  `json:"settlementPeriod"`
-	ProfileState     string  `json:"profileState"`
-	ProfileVersion   int     `json:"profileVersion"`
-	LastEarningAt    *string `json:"lastEarningAt"`
+	PartnerActorID                       string  `json:"partnerActorId"`
+	Currency                             string  `json:"currency"`
+	EarnedMinor                          int64   `json:"earnedMinor"`
+	CommissionMinor                      int64   `json:"commissionMinor"`
+	OutstandingCommissionReceivableMinor int64   `json:"outstandingCommissionReceivableMinor"`
+	OrderCount                           int64   `json:"orderCount"`
+	SettlementPeriod                     string  `json:"settlementPeriod"`
+	ProfileState                         string  `json:"profileState"`
+	ProfileVersion                       int     `json:"profileVersion"`
+	LastEarningAt                        *string `json:"lastEarningAt"`
 }
 
 type FieldCommissionPolicy struct {
@@ -463,18 +465,59 @@ func (c *Client) Create(ctx context.Context, externalReference, payerActorID str
 }
 
 func (c *Client) CreateForOrder(ctx context.Context, orderID, externalReference, payerActorID string, amountMinor int64, allocation CustomerPaymentAllocation, idempotencyKey, correlationID string) (PaymentIntent, bool, error) {
+	return c.CreateForOrderWithMethod(ctx, orderID, externalReference, payerActorID, amountMinor, methodCashOnDelivery, allocation, idempotencyKey, correlationID)
+}
+
+func (c *Client) CreateForOrderWithMethod(ctx context.Context, orderID, externalReference, payerActorID string, amountMinor int64, method string, allocation CustomerPaymentAllocation, idempotencyKey, correlationID string) (PaymentIntent, bool, error) {
 	body := map[string]any{
 		"orderId":                   strings.TrimSpace(orderID),
 		"externalReference":         strings.TrimSpace(externalReference),
 		"payerActorId":              strings.TrimSpace(payerActorID),
 		"amountMinor":               amountMinor,
 		"currency":                  "YER",
-		"method":                    methodCashOnDelivery,
+		"method":                    strings.TrimSpace(method),
 		"customerPaymentAllocation": allocation,
 	}
 	var response paymentIntentResponse
 	err := c.request(ctx, http.MethodPost, "/wlt/v1/payment-intents", body, idempotencyKey, correlationID, 0, &response)
 	return response.PaymentIntent, response.IdempotentReplay, err
+}
+
+type PartnerStorePickupCommission struct {
+	OrderID             string `json:"orderId"`
+	PaymentIntentID     string `json:"paymentIntentId"`
+	PartnerActorID      string `json:"partnerActorId"`
+	Currency            string `json:"currency"`
+	GrossProductMinor   int64  `json:"grossProductMinor"`
+	CommissionMinor     int64  `json:"commissionMinor"`
+	ProfileID           string `json:"profileId"`
+	ProfileVersion      int    `json:"profileVersion"`
+	PolicyVersion       string `json:"policyVersion"`
+	LedgerTransactionID string `json:"ledgerTransactionId,omitempty"`
+	CreatedAt           string `json:"createdAt"`
+}
+
+type PartnerCommissionRemittance struct {
+	ID                  string `json:"id"`
+	PartnerActorID      string `json:"partnerActorId"`
+	AmountMinor         int64  `json:"amountMinor"`
+	Currency            string `json:"currency"`
+	RemittanceReference string `json:"remittanceReference"`
+	EvidenceReference   string `json:"evidenceReference"`
+	VerifiedBy          string `json:"verifiedBy"`
+	VerifiedAt          string `json:"verifiedAt"`
+	LedgerTransactionID string `json:"ledgerTransactionId"`
+	CreatedAt           string `json:"createdAt"`
+}
+
+type partnerStorePickupCommissionResponse struct {
+	Commission       PartnerStorePickupCommission `json:"commission"`
+	IdempotentReplay bool                         `json:"idempotentReplay"`
+}
+
+type partnerCommissionRemittanceResponse struct {
+	Remittance       PartnerCommissionRemittance `json:"remittance"`
+	IdempotentReplay bool                        `json:"idempotentReplay"`
 }
 
 func (c *Client) Read(ctx context.Context, intentID string) (PaymentIntent, error) {
@@ -653,6 +696,20 @@ func (c *Client) FinalizePartnerOrderEarning(ctx context.Context, orderID, payme
 	var response partnerOrderEarningResponse
 	err := c.request(ctx, http.MethodPost, "/wlt/v1/partner-order-earnings/finalize", body, idempotencyKey, correlationID, 0, &response)
 	return response.Earning, response.IdempotentReplay, err
+}
+
+func (c *Client) FinalizePartnerStorePickupCommission(ctx context.Context, orderID, paymentIntentID, partnerActorID, idempotencyKey, correlationID string) (PartnerStorePickupCommission, bool, error) {
+	body := map[string]any{"orderId": strings.TrimSpace(orderID), "paymentIntentId": strings.TrimSpace(paymentIntentID), "partnerActorId": strings.TrimSpace(partnerActorID)}
+	var response partnerStorePickupCommissionResponse
+	err := c.request(ctx, http.MethodPost, "/wlt/v1/partner-store-pickup-commissions/finalize", body, idempotencyKey, correlationID, 0, &response)
+	return response.Commission, response.IdempotentReplay, err
+}
+
+func (c *Client) RecordPartnerCommissionRemittance(ctx context.Context, partnerActorID string, amountMinor int64, remittanceReference, evidenceReference, idempotencyKey, correlationID, actingActorID string) (PartnerCommissionRemittance, bool, error) {
+	body := map[string]any{"amountMinor": amountMinor, "remittanceReference": strings.TrimSpace(remittanceReference), "evidenceReference": strings.TrimSpace(evidenceReference)}
+	var response partnerCommissionRemittanceResponse
+	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/partners/"+url.PathEscape(strings.TrimSpace(partnerActorID))+"/commission-remittances", body, idempotencyKey, correlationID, 0, actingActorID, &response)
+	return response.Remittance, response.IdempotentReplay, err
 }
 
 func (c *Client) ReadPartnerFinancialSummary(ctx context.Context, partnerActorID string) (PartnerFinancialSummary, error) {

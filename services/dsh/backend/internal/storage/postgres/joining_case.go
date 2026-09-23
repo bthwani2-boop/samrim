@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 var (
@@ -35,30 +37,31 @@ var (
 )
 
 type JoiningCaseRecord struct {
-	ID                      string
-	ContactPhoneE164        string
-	BusinessName            string
-	FirstStoreName          string
-	FirstStoreServiceCityID string
-	FirstStoreVerticalID    string
-	FirstStoreLatitude      *float64
-	FirstStoreLongitude     *float64
-	PartnerActorID          string
-	OriginatingFieldActorID string
-	Origin                  string
-	State                   string
-	CommissionRateBps       *int
-	SettlementPeriod        string
-	FinancialProfileID      string
-	FinancialProfileState   string
-	CorrectionReason        string
-	ReviewedBy              string
-	StoreID                 string
-	StoreProfileImage       *StoreProfileMediaRecord
-	Store                   *StoreRecord
-	Version                 int
-	CreatedAt               time.Time
-	UpdatedAt               time.Time
+	ID                         string
+	ContactPhoneE164           string
+	BusinessName               string
+	FirstStoreName             string
+	FirstStoreServiceCityID    string
+	FirstStoreVerticalID       string
+	FirstStoreLatitude         *float64
+	FirstStoreLongitude        *float64
+	FirstStoreFulfillmentModes []string
+	PartnerActorID             string
+	OriginatingFieldActorID    string
+	Origin                     string
+	State                      string
+	CommissionRateBps          *int
+	SettlementPeriod           string
+	FinancialProfileID         string
+	FinancialProfileState      string
+	CorrectionReason           string
+	ReviewedBy                 string
+	StoreID                    string
+	StoreProfileImage          *StoreProfileMediaRecord
+	Store                      *StoreRecord
+	Version                    int
+	CreatedAt                  time.Time
+	UpdatedAt                  time.Time
 }
 
 type PendingFinancialProfileBinding struct {
@@ -86,8 +89,8 @@ type JoiningCaseListResult struct {
 	NextCursor string
 }
 
-func HashJoiningCaseRequest(phone, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64) string {
-	return hashFacts(phone, businessName, firstStoreName, serviceCityID, verticalID, formatCoordinate(latitude), formatCoordinate(longitude))
+func HashJoiningCaseRequest(phone, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64, fulfillmentModes []string) string {
+	return hashFacts(phone, businessName, firstStoreName, serviceCityID, verticalID, formatCoordinate(latitude), formatCoordinate(longitude), strings.Join(fulfillmentModes, ","))
 }
 
 func HashJoiningCaseSubmit(caseID, actorID string, expectedVersion int) string {
@@ -106,15 +109,15 @@ func HashJoiningCaseReviewWithFinancialTerms(caseID, decision, correctionReason 
 	return hashFacts(caseID, decision, correctionReason, strconv.Itoa(expectedVersion), strconv.Itoa(commissionRateBps), strings.TrimSpace(settlementPeriod))
 }
 
-func CreateJoiningCase(ctx context.Context, db *sql.DB, idempotencyKey, requestHash, actingActorID, correlationID, phone, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64) (JoiningCaseResult, error) {
-	return createJoiningCase(ctx, db, idempotencyKey, requestHash, actingActorID, correlationID, "control_panel", "", phone, businessName, firstStoreName, serviceCityID, verticalID, latitude, longitude)
+func CreateJoiningCase(ctx context.Context, db *sql.DB, idempotencyKey, requestHash, actingActorID, correlationID, phone, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64, fulfillmentModes []string) (JoiningCaseResult, error) {
+	return createJoiningCase(ctx, db, idempotencyKey, requestHash, actingActorID, correlationID, "control_panel", "", phone, businessName, firstStoreName, serviceCityID, verticalID, latitude, longitude, fulfillmentModes)
 }
 
-func CreateJoiningCaseForField(ctx context.Context, db *sql.DB, idempotencyKey, requestHash, fieldActorID, correlationID, phone, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64) (JoiningCaseResult, error) {
-	return createJoiningCase(ctx, db, idempotencyKey, requestHash, fieldActorID, correlationID, "field", fieldActorID, phone, businessName, firstStoreName, serviceCityID, verticalID, latitude, longitude)
+func CreateJoiningCaseForField(ctx context.Context, db *sql.DB, idempotencyKey, requestHash, fieldActorID, correlationID, phone, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64, fulfillmentModes []string) (JoiningCaseResult, error) {
+	return createJoiningCase(ctx, db, idempotencyKey, requestHash, fieldActorID, correlationID, "field", fieldActorID, phone, businessName, firstStoreName, serviceCityID, verticalID, latitude, longitude, fulfillmentModes)
 }
 
-func createJoiningCase(ctx context.Context, db *sql.DB, idempotencyKey, requestHash, actingActorID, correlationID, origin, originatingFieldActorID, phone, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64) (JoiningCaseResult, error) {
+func createJoiningCase(ctx context.Context, db *sql.DB, idempotencyKey, requestHash, actingActorID, correlationID, origin, originatingFieldActorID, phone, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64, fulfillmentModes []string) (JoiningCaseResult, error) {
 	if db == nil {
 		return JoiningCaseResult{}, errors.New("DSH database is nil")
 	}
@@ -162,6 +165,10 @@ func createJoiningCase(ctx context.Context, db *sql.DB, idempotencyKey, requestH
 	}
 	cityID := strings.TrimSpace(serviceCityID)
 	verticalID = strings.TrimSpace(verticalID)
+	fulfillmentModes, err = NormalizeStoreFulfillmentModes(fulfillmentModes)
+	if err != nil {
+		return JoiningCaseResult{}, err
+	}
 	latitude, longitude, err = normalizeLocation(latitude, longitude)
 	if err != nil {
 		return JoiningCaseResult{}, ErrJoiningCaseStoreOrigin
@@ -170,7 +177,7 @@ func createJoiningCase(ctx context.Context, db *sql.DB, idempotencyKey, requestH
 	if err != nil {
 		return JoiningCaseResult{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.joining_cases(id,contact_phone_e164,business_name,first_store_name,first_store_service_city_id,first_store_vertical_id,first_store_latitude,first_store_longitude,originating_field_actor_id,origin) VALUES($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),$7,$8,NULLIF($9,''),$10)`, caseID, phone, businessName, firstStoreName, cityID, verticalID, latitude, longitude, originatingFieldActorID, origin); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.joining_cases(id,contact_phone_e164,business_name,first_store_name,first_store_service_city_id,first_store_vertical_id,first_store_latitude,first_store_longitude,first_store_fulfillment_modes,originating_field_actor_id,origin) VALUES($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),$7,$8,$9,NULLIF($10,''),$11)`, caseID, phone, businessName, firstStoreName, cityID, verticalID, latitude, longitude, pq.Array(fulfillmentModes), originatingFieldActorID, origin); err != nil {
 		return JoiningCaseResult{}, fmt.Errorf("create joining case: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.joining_case_mutation_idempotency(idempotency_key,request_hash,case_id,operation,result_version,result_state) VALUES($1,$2,$3,'create',1,'draft')`, idempotencyKey, requestHash, caseID); err != nil {
@@ -505,7 +512,7 @@ func ReviewJoiningCase(ctx context.Context, db *sql.DB, caseID, decision, correc
 		if err != nil {
 			return JoiningCaseResult{}, err
 		}
-		if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.stores(id,partner_actor_id,name,service_city_id,primary_vertical_id,delivery_origin_latitude,delivery_origin_longitude,delivery_origin_version,delivery_origin_updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,1,clock_timestamp())", storeID, current.Case.PartnerActorID, current.Case.FirstStoreName, current.Case.FirstStoreServiceCityID, current.Case.FirstStoreVerticalID, *current.Case.FirstStoreLatitude, *current.Case.FirstStoreLongitude); err != nil {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.stores(id,partner_actor_id,name,service_city_id,primary_vertical_id,delivery_origin_latitude,delivery_origin_longitude,delivery_origin_version,delivery_origin_updated_at,fulfillment_modes) VALUES($1,$2,$3,$4,$5,$6,$7,1,clock_timestamp(),$8)", storeID, current.Case.PartnerActorID, current.Case.FirstStoreName, current.Case.FirstStoreServiceCityID, current.Case.FirstStoreVerticalID, *current.Case.FirstStoreLatitude, *current.Case.FirstStoreLongitude, pq.Array(current.Case.FirstStoreFulfillmentModes)); err != nil {
 			return JoiningCaseResult{}, fmt.Errorf("create canonical store: %w", err)
 		}
 		if err := AttachStoreProfileMediaToStoreTx(ctx, tx, caseID, storeID); err != nil {
@@ -640,8 +647,8 @@ func ListJoiningCasesForField(ctx context.Context, db *sql.DB, fieldActorID stri
 	return JoiningCaseListResult{Cases: items}, nil
 }
 
-const joiningCaseSelect = `SELECT c.id,c.contact_phone_e164,c.business_name,c.first_store_name,c.partner_actor_id,c.originating_field_actor_id,c.origin,c.state,c.commission_rate_bps,c.settlement_period,c.financial_profile_id,c.financial_profile_state,c.correction_reason,c.reviewed_by,c.store_id,c.version,c.created_at,c.updated_at,c.first_store_service_city_id,c.first_store_vertical_id,c.first_store_latitude,c.first_store_longitude,
-	 s.id,s.partner_actor_id,s.name,s.service_city_id,s.primary_vertical_id,s.version,s.publication_state,s.publication_changed_at,s.created_at,s.updated_at,s.delivery_origin_latitude,s.delivery_origin_longitude,s.delivery_origin_version,s.delivery_origin_updated_at FROM dsh.joining_cases c LEFT JOIN dsh.stores s ON s.id=c.store_id`
+const joiningCaseSelect = `SELECT c.id,c.contact_phone_e164,c.business_name,c.first_store_name,c.partner_actor_id,c.originating_field_actor_id,c.origin,c.state,c.commission_rate_bps,c.settlement_period,c.financial_profile_id,c.financial_profile_state,c.correction_reason,c.reviewed_by,c.store_id,c.version,c.created_at,c.updated_at,c.first_store_service_city_id,c.first_store_vertical_id,c.first_store_latitude,c.first_store_longitude,c.first_store_fulfillment_modes,
+	 s.id,s.partner_actor_id,s.name,s.service_city_id,s.primary_vertical_id,s.version,s.publication_state,s.publication_changed_at,s.created_at,s.updated_at,s.delivery_origin_latitude,s.delivery_origin_longitude,s.delivery_origin_version,s.delivery_origin_updated_at,s.fulfillment_modes FROM dsh.joining_cases c LEFT JOIN dsh.stores s ON s.id=c.store_id`
 
 func readJoiningCaseTx(ctx context.Context, tx *sql.Tx, caseID string) (JoiningCaseResult, error) {
 	caseID = strings.TrimSpace(caseID)
@@ -674,8 +681,8 @@ func readJoiningCaseRow(ctx context.Context, row rowScanner, _ bool) (JoiningCas
 	var storeChanged, storeCreated, storeUpdated, storeOriginUpdated sql.NullTime
 	var storeOriginLatitude, storeOriginLongitude sql.NullFloat64
 	var storeOriginVersion sql.NullInt64
-	err := row.Scan(&record.ID, &record.ContactPhoneE164, &record.BusinessName, &record.FirstStoreName, &actorID, &originatingFieldActorID, &origin, &record.State, &commissionRateBps, &settlementPeriod, &financialProfileID, &financialProfileState, &correctionReason, &reviewedBy, &storeID, &record.Version, &record.CreatedAt, &record.UpdatedAt, &cityID, &verticalID, &latitude, &longitude,
-		&storeIDValue, &storePartner, &storeName, &storeCityID, &storeVerticalID, &storeVersion, &storeState, &storeChanged, &storeCreated, &storeUpdated, &storeOriginLatitude, &storeOriginLongitude, &storeOriginVersion, &storeOriginUpdated)
+	err := row.Scan(&record.ID, &record.ContactPhoneE164, &record.BusinessName, &record.FirstStoreName, &actorID, &originatingFieldActorID, &origin, &record.State, &commissionRateBps, &settlementPeriod, &financialProfileID, &financialProfileState, &correctionReason, &reviewedBy, &storeID, &record.Version, &record.CreatedAt, &record.UpdatedAt, &cityID, &verticalID, &latitude, &longitude, pq.Array(&record.FirstStoreFulfillmentModes),
+		&storeIDValue, &storePartner, &storeName, &storeCityID, &storeVerticalID, &storeVersion, &storeState, &storeChanged, &storeCreated, &storeUpdated, &storeOriginLatitude, &storeOriginLongitude, &storeOriginVersion, &storeOriginUpdated, pq.Array(&store.FulfillmentModes))
 	if err != nil {
 		return JoiningCaseRecord{}, err
 	}
