@@ -1,7 +1,7 @@
 import { radius, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { StoreFulfillmentMode, StoreFulfillmentModesResponse } from "@bthwani/dsh";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 import { updateOwnStoreFulfillmentModes } from "./store-readback-client";
@@ -24,11 +24,6 @@ export function StoreFulfillmentModeSettings({ storeID, version, savedModes, onS
   const [selectedModes, setSelectedModes] = useState<ReadonlyArray<StoreFulfillmentMode>>(savedModes);
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<SaveFailure | null>(null);
-
-  useEffect(() => {
-    setSelectedModes(savedModes);
-    setFailure(null);
-  }, [storeID, version, savedModes]);
 
   const changed = selectableModes.some((mode) => selectedModes.includes(mode) !== savedModes.includes(mode));
 

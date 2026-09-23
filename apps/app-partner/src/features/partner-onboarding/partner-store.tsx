@@ -29,6 +29,7 @@ export function PartnerStore() {
         <Text style={styles.muted}>حالة النشر: {publicationStateLabel(joiningCase.case.store.publicationState)}</Text>
         <Text style={styles.muted}>جاهزية النشر: {joiningCase.case.store.publicationReadiness.ready ? "جاهز" : "يحتاج إلى استكمال البيانات"}</Text>
         <StoreFulfillmentModeSettings
+          key={`${joiningCase.case.store.id}:${joiningCase.case.store.version}`}
           storeID={joiningCase.case.store.id}
           version={joiningCase.case.store.version}
           savedModes={joiningCase.case.store.fulfillmentModes}

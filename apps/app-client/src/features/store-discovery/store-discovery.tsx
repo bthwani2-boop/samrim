@@ -5,8 +5,8 @@ import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { I18nManager, Image, Pressable, ScrollView, StyleSheet, Text, type TextInput, useWindowDimensions, View } from "react-native";
 import { useServiceCityScope } from "../service-city/service-city-scope";
-import { listCatalogVerticals, listFavoriteStoreIDs, listOwnDeliveryAddresses, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, setFavoriteStore } from "./store-discovery-client";
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
+import { listCatalogVerticals, listFavoriteStoreIDs, listOwnDeliveryAddresses, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, setFavoriteStore } from "./store-discovery-client";
 
 type DiscoveryState =
   | { kind: "loading" }
@@ -375,7 +375,7 @@ function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen }: { c
         {items.map((item) => {
           const actionable = item.targetType !== "INFO";
           const card = (
-            <View style={[styles.mediaCard, { width: cardWidth }]}>
+            <View key={item.id} style={[styles.mediaCard, { width: cardWidth }]}>
               {failedMedia.has(item.id) ? <View style={styles.mediaFallback}><BthwaniIcon name="warning" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.cardTitle}>{item.titleAr}</Text><Text style={styles.muted}>تعذر تحميل الصورة، افتح المحتوى النصي بدلًا منها.</Text></View> : <>
                 <Image accessibilityLabel={`صورة ${item.titleAr}`} onError={() => setFailedMedia((current) => new Set(current).add(item.id))} source={{ uri: item.mediaUri }} style={styles.mediaImage} resizeMode="cover" />
                 <View pointerEvents="none" style={styles.mediaCaption}>
