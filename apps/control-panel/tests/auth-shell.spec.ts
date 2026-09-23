@@ -571,7 +571,7 @@ test("operator creates a DSH-owned joining case from prospective partner facts",
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        case: { id: "join_test", contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, state: "draft", version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
+        case: { id: "join_test", contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN", "CUSTOMER_PICKUP"], state: "draft", version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
         idempotentReplay: false,
       }),
     });
@@ -582,7 +582,7 @@ test("operator creates a DSH-owned joining case from prospective partner facts",
       status: 201,
       contentType: "application/json",
       body: JSON.stringify({
-        case: { id: "join_test", contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, state: "draft", version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
+        case: { id: "join_test", contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN", "CUSTOMER_PICKUP"], state: "draft", version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
         idempotentReplay: false,
       }),
     });
@@ -600,10 +600,13 @@ test("operator creates a DSH-owned joining case from prospective partner facts",
   await page.getByLabel("المجال التجاري").selectOption("grocery");
   await page.getByLabel("خط عرض موقع المتجر").fill("15.369445");
   await page.getByLabel("خط طول موقع المتجر").fill("44.191006");
+  const fulfillmentModes = page.getByRole("group", { name: "طرق تلبية الطلب في المتجر" });
+  await expect(fulfillmentModes.getByRole("checkbox")).toHaveCount(2);
+  await fulfillmentModes.getByRole("checkbox", { name: "الاستلام من المتجر" }).check();
   await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();
 
   await expect(page.getByRole("status")).toContainText("الحالة: مسودة");
-  expect(requestBody).toEqual({ contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006 });
+  expect(requestBody).toEqual({ contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN", "CUSTOMER_PICKUP"] });
 });
 
 test("operator gets an actionable empty state when no active commerce vertical exists", async ({ page }) => {
