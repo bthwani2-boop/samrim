@@ -4,9 +4,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/lib/pq"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
@@ -68,6 +71,7 @@ func (s *StorePublicationServer) publish(w http.ResponseWriter, r *http.Request)
 	}
 	result, readiness, err := s.service.Publish(r.Context(), r.PathValue("storeId"), string(input.State), expectedVersion, idempotency, acting, correlation)
 	if err != nil {
+		logStorePublicationDatabaseFailure(correlation, err)
 		writeStorePublicationError(w, err)
 		return
 	}
@@ -222,6 +226,14 @@ func requiredPublicationHeaders(w http.ResponseWriter, r *http.Request) (string,
 		return "", "", "", 0, false
 	}
 	return acting, correlation, idempotency, expectedVersion, true
+}
+
+func logStorePublicationDatabaseFailure(correlationID string, err error) {
+	var databaseErr *pq.Error
+	if !errors.As(err, &databaseErr) {
+		return
+	}
+	log.Printf("store publication persistence failure correlation_id=%q sqlstate=%q schema=%q table=%q column=%q constraint=%q", correlationID, string(databaseErr.Code), databaseErr.Schema, databaseErr.Table, databaseErr.Column, databaseErr.Constraint)
 }
 
 func writeStorePublicationError(w http.ResponseWriter, err error) {
