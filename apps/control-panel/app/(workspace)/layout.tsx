@@ -81,7 +81,7 @@ function OperatorProfile({ identity, active }: Readonly<{ identity: ActorIdentit
     <section className="operator-profile" aria-label="ملف المشغّل">
       <div className="operator-profile-heading">
         <span className="operator-profile-avatar" aria-hidden="true">
-          <svg viewBox="0 0 24 24" focusable="false">
+          <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
             <circle cx="12" cy="8" r="3.5" />
             <path d="M5 20c.7-3.1 3.2-5 7-5s6.3 1.9 7 5" />
           </svg>

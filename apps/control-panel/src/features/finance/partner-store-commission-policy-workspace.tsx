@@ -108,7 +108,7 @@ export function PartnerStoreCommissionPolicyWorkspace() {
     </div>
     {policies.length > 0 ? <>
       <p className="muted">النسب المحمّلة تخص المتجر: {loadedStoreId}</p>
-      <div className="form-grid" aria-label="نسب العمولة حسب وضع التنفيذ">
+      <div className="form-grid" role="group" aria-label="نسب العمولة حسب وضع التنفيذ">
         {modes.map(({ key, label }) => {
           const policy = policies.find((item) => item.fulfillmentMode === key);
           if (!policy) return null;
