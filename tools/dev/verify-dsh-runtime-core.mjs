@@ -45,7 +45,7 @@ if (dshToken.length < 24 || identityDshToken.length < 24 || bootstrapToken.lengt
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", path.join(root, "infra/local/compose/compose.yaml")];
 const suffix = `${Date.now().toString(36)}-${crypto.randomBytes(6).toString("hex")}`;
 const citySuffix = String(Date.now());
-const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), challengeIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), paymentIntentIDs = new Set(), deliveryFeePolicyIDs = new Set(), fieldCommissionPolicyIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set(), captainAdmissionIDs = new Set(), captainOfferIDs = new Set(), captainAssignmentIDs = new Set(), captainFundingIDs = new Set(), fieldAdmissionIDs = new Set(), destinationIDs = new Set(), payoutIDs = new Set(), settlementBatchIDs = new Set(), promotionIDs = new Set(), contentIDs = new Set(), multiStoreCheckoutIDs = new Set();
+const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), challengeIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), paymentIntentIDs = new Set(), deliveryFeePolicyIDs = new Set(), fieldCommissionPolicyIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set(), captainAdmissionIDs = new Set(), captainOfferIDs = new Set(), captainAssignmentIDs = new Set(), captainFundingIDs = new Set(), fieldAdmissionIDs = new Set(), destinationIDs = new Set(), payoutIDs = new Set(), settlementBatchIDs = new Set(), promotionIDs = new Set(), contentIDs = new Set(), multiStoreCheckoutIDs = new Set(), partnerCommissionRemittanceIDs = new Set();
 let cityA = "";
 let cityB = "";
 let verticalID = "";
@@ -125,6 +125,9 @@ function cleanup() {
     sql(`DELETE FROM wlt.captain_cod_reservations WHERE order_id='${value}'`);
     sql(`DELETE FROM wlt.ledger_entries WHERE transaction_id IN (SELECT ledger_transaction_id FROM wlt.partner_order_earnings WHERE order_id='${value}')`);
     sql(`DELETE FROM wlt.partner_order_earnings WHERE order_id='${value}'`);
+    sql("DELETE FROM wlt.ledger_entries WHERE transaction_id IN (SELECT ledger_transaction_id FROM wlt.partner_store_cash_commissions WHERE order_id='" + value + "')");
+    sql("DELETE FROM wlt.partner_store_cash_commissions WHERE order_id='" + value + "'");
+    sql("DELETE FROM wlt.ledger_transactions WHERE source_type='PARTNER_STORE_CASH_COMMISSION' AND source_id='" + value + "'");
     sql(`DELETE FROM wlt.ledger_transactions WHERE source_type='ORDER_DELIVERED' AND source_id='${value}'`);
     sql(`DELETE FROM dsh.captain_location_audit WHERE order_id='${value}'`);
     sql(`DELETE FROM dsh.captain_location_mutation_idempotency WHERE order_id='${value}'`);
@@ -146,6 +149,12 @@ function cleanup() {
     sql(`DELETE FROM dsh.commerce_promotion_redemptions WHERE order_id='${value}'`);
     sql(`DELETE FROM dsh.commerce_order_lines WHERE order_id='${value}'`);
     sql(`DELETE FROM dsh.commerce_orders WHERE id='${value}'`);
+  }
+  for (const remittanceID of partnerCommissionRemittanceIDs) {
+    const value = sqlLiteral(remittanceID);
+    sql("DELETE FROM wlt.ledger_entries WHERE transaction_id IN (SELECT ledger_transaction_id FROM wlt.partner_commission_remittances WHERE id='" + value + "')");
+    sql("DELETE FROM wlt.partner_commission_remittances WHERE id='" + value + "'");
+    sql("DELETE FROM wlt.ledger_transactions WHERE source_type='PARTNER_COMMISSION_REMITTANCE' AND source_id='" + value + "'");
   }
   for (const batchID of settlementBatchIDs) {
     const value = sqlLiteral(batchID);
@@ -277,6 +286,8 @@ function cleanup() {
     sql(`DELETE FROM dsh.store_origin_mutation_idempotency WHERE store_id='${value}'`);
     sql(`DELETE FROM dsh.store_publication_audit WHERE store_id='${value}'`);
     sql(`DELETE FROM dsh.store_publication_idempotency WHERE store_id='${value}'`);
+    sql("DELETE FROM dsh.store_fulfillment_modes_audit WHERE store_id='" + value + "'");
+    sql("DELETE FROM dsh.store_fulfillment_modes_idempotency WHERE store_id='" + value + "'");
     sql(`DELETE FROM dsh.stores WHERE id='${value}'`);
   }
   for (const policyID of fieldCommissionPolicyIDs) {
@@ -857,6 +868,13 @@ if (publishA.status !== 200 || publishB.status !== 200) {
   };
   fail("Store publication failed after catalog readiness", JSON.stringify({ publishA, publishB, publicationReadback }));
 }
+const secondPickupModesKey = "store-b-fulfillment-modes-" + suffix;
+const secondPickupModesPath = "/dsh/stores/" + encodeURIComponent(second.storeID) + "/fulfillment-modes";
+const secondPickupModesBody = { fulfillmentModes: ["BTHWANI_CAPTAIN", "CUSTOMER_PICKUP"] };
+const secondPickupModesHeaders = partnerHeaders(secondPickupModesKey, publishB.body.store.version);
+const secondPickupModes = await request(dshBase, "POST", secondPickupModesPath, { token: second.accessToken, headers: secondPickupModesHeaders, body: secondPickupModesBody });
+const secondPickupModesReplay = await request(dshBase, "POST", secondPickupModesPath, { token: second.accessToken, headers: secondPickupModesHeaders, body: secondPickupModesBody });
+if (secondPickupModes.status !== 200 || secondPickupModes.body?.storeId !== second.storeID || secondPickupModes.body?.fulfillmentModes?.join(",") !== "BTHWANI_CAPTAIN,CUSTOMER_PICKUP" || secondPickupModes.body?.version !== publishB.body.store.version + 1 || secondPickupModesReplay.status !== 200 || secondPickupModesReplay.body?.idempotentReplay !== true || secondPickupModesReplay.body?.version !== secondPickupModes.body.version) fail("second store fulfillment modes did not enable pickup with a stable idempotent version", JSON.stringify({ secondPickupModes, secondPickupModesReplay, publishB }));
 const fieldSummaryDeadline = Date.now() + 95_000;
 let fieldFinancialSummary = null;
 while (Date.now() < fieldSummaryDeadline) {
@@ -869,7 +887,7 @@ while (Date.now() < fieldSummaryDeadline) {
 }
 const fieldEarningCount = sql(`SELECT count(*) FROM wlt.field_commission_earnings WHERE field_actor_id='${sqlLiteral(fieldActorID)}' AND store_id='${sqlLiteral(second.storeID)}'`);
 if (!fieldFinancialSummary || fieldEarningCount !== "1") fail("Field commission was not posted exactly once after customer-visible publication", JSON.stringify({ fieldFinancialSummary, fieldEarningCount, publishB }));
-const fieldHidden = await request(dshBase, "POST", `/dsh/stores/${second.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-b-hide-${suffix}`, crypto.randomUUID(), publishB.body.store.version), body: { state: "hidden" } });
+const fieldHidden = await request(dshBase, "POST", `/dsh/stores/${second.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-b-hide-${suffix}`, crypto.randomUUID(), secondPickupModes.body.version), body: { state: "hidden" } });
 const fieldPublicAfterHide = await request(dshBase, "GET", `/dsh/public/stores/${second.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}`);
 const fieldRepublished = await request(dshBase, "POST", `/dsh/stores/${second.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-b-republish-${suffix}`, crypto.randomUUID(), fieldHidden.body.store.version), body: { state: "published" } });
 const fieldSummaryAfterRepublish = await request(dshBase, "GET", `/dsh/operator/fields/${encodeURIComponent(fieldActorID)}/financial-summary`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
@@ -1059,6 +1077,80 @@ const multiParentState = sql(`SELECT state || '|' || successful_child_count::tex
 const multiChildState = sql(`SELECT string_agg(store_id || ':' || state, ',' ORDER BY child_index) FROM dsh.commerce_multi_store_checkout_children WHERE checkout_id='${sqlLiteral(multiCheckoutID)}'`);
 if (multiCancel.status !== 201 || multiCancel.body?.checkout?.state !== "CANCELLED" || multiCancel.body.checkout.children?.find((child) => child.storeId === first.storeID)?.state !== "CANCELLED" || multiCancel.body.checkout.children?.find((child) => child.storeId === second.storeID)?.state !== "FAILED" || multiCancelReplay.status !== 200 || multiCancelReplay.body?.idempotentReplay !== true || multiCancelRead.status !== 200 || multiCancelRead.body?.checkout?.state !== "CANCELLED" || multiParentState !== "CANCELLED|1|1" || !multiChildState.includes(`${first.storeID}:CANCELLED`) || !multiChildState.includes(`${second.storeID}:FAILED`)) fail("multi-store parent cancellation or child outcome reconciliation failed", JSON.stringify({ multiCancel, multiCancelReplay, multiCancelRead, multiParentState, multiChildState }));
 console.log("DSH_MULTI_STORE_CHECKOUT=PASS");
+
+const pickupStoreOrigin = await request(dshBase, "GET", "/dsh/stores/" + encodeURIComponent(second.storeID) + "/delivery-origin", { token: second.accessToken });
+const pickupCartCreate = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders("pickup-cart-" + suffix, 0), body: { storeId: second.storeID, storeOfferId: offerBID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
+if (pickupStoreOrigin.status !== 200 || !pickupStoreOrigin.body?.origin || pickupCartCreate.status !== 201 || pickupCartCreate.body?.cart?.version !== 1 || pickupCartCreate.body?.cart?.storeId !== second.storeID) fail("customer pickup origin or cart fixture failed", JSON.stringify({ pickupStoreOrigin, pickupCartCreate }));
+const pickupCartID = String(pickupCartCreate.body.cart.id);
+cartIDs.add(pickupCartID);
+const pickupCartVersion = pickupCartCreate.body.cart.version;
+const pickupQuote = await request(dshBase, "POST", "/dsh/cart/quote", { token: client.accessToken, headers: { "X-Expected-Version": String(pickupCartVersion) }, body: { cartId: pickupCartID, storeId: second.storeID, fulfillmentMode: "CUSTOMER_PICKUP" } });
+if (pickupQuote.status !== 200 || pickupQuote.body?.quote?.fulfillmentMode !== "CUSTOMER_PICKUP" || pickupQuote.body.quote.subtotalMinor !== 1500 || pickupQuote.body.quote.deliveryFeeMinor !== 0 || pickupQuote.body.quote.totalAmountMinor !== 1500 || pickupQuote.body.quote.currency !== "YER") fail("pickup quote charged a delivery fee or diverged from the store product total", JSON.stringify(pickupQuote));
+const pickupCheckoutKey = "pickup-checkout-" + suffix;
+const pickupCheckoutHeaders = partnerHeaders(pickupCheckoutKey, pickupCartVersion);
+const pickupCheckoutBody = { cartId: pickupCartID, storeId: second.storeID, fulfillmentMode: "CUSTOMER_PICKUP" };
+const pickupCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: pickupCheckoutHeaders, body: pickupCheckoutBody });
+if (pickupCheckout.status !== 201 || !pickupCheckout.body?.order?.id) fail("cash-at-store pickup checkout failed", JSON.stringify(pickupCheckout));
+const pickupOrder = pickupCheckout.body.order;
+const pickupOrderID = String(pickupOrder.id);
+orderIDs.add(pickupOrderID);
+const pickupPaymentIntentID = String(pickupOrder.paymentIntentId || "");
+if (!pickupPaymentIntentID) fail("pickup checkout did not link a WLT payment intent", JSON.stringify(pickupCheckout));
+paymentIntentIDs.add(pickupPaymentIntentID);
+const pickupCheckoutReplay = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: pickupCheckoutHeaders, body: pickupCheckoutBody });
+const pickupPaymentBeforeCollection = await request(wltBase, "GET", "/wlt/v1/payment-intents/" + encodeURIComponent(pickupPaymentIntentID), { token: wltToken });
+const pickupInitialAllocation = pickupPaymentBeforeCollection.body?.paymentIntent?.customerPaymentAllocation;
+if (pickupOrder.fulfillmentMode !== "CUSTOMER_PICKUP" || pickupOrder.paymentMethod !== "CASH_AT_STORE" || pickupOrder.paymentState !== "REQUIRES_COLLECTION" || pickupOrder.subtotalAmountMinor !== 1500 || pickupOrder.totalAmountMinor !== 1500 || pickupOrder.addressId || pickupOrder.addressText || pickupOrder.pickupLocation?.latitude !== pickupStoreOrigin.body.origin.latitude || pickupOrder.pickupLocation?.longitude !== pickupStoreOrigin.body.origin.longitude || pickupCheckoutReplay.status !== 200 || pickupCheckoutReplay.body?.idempotentReplay !== true || pickupCheckoutReplay.body?.order?.id !== pickupOrderID || pickupPaymentBeforeCollection.status !== 200 || pickupPaymentBeforeCollection.body?.paymentIntent?.state !== "REQUIRES_COLLECTION" || pickupPaymentBeforeCollection.body.paymentIntent.method !== "CASH_AT_STORE" || pickupPaymentBeforeCollection.body.paymentIntent.amountMinor !== 1500 || pickupInitialAllocation?.orderId !== pickupOrderID || pickupInitialAllocation?.currency !== "YER" || pickupInitialAllocation?.subtotalMinor !== 1500 || pickupInitialAllocation?.deliveryFeeMinor !== 0 || pickupInitialAllocation?.discountMinor !== 0 || pickupInitialAllocation?.internalBalanceAmountMinor !== 0 || pickupInitialAllocation?.cashAmountMinor !== 1500 || pickupInitialAllocation?.customerPayableMinor !== 1500 || pickupInitialAllocation?.policyVersion !== "cash-at-store-v1") fail("pickup checkout did not preserve no-address, zero-fee, cash-at-store WLT allocation semantics", JSON.stringify({ pickupCheckout, pickupCheckoutReplay, pickupPaymentBeforeCollection, pickupStoreOrigin }));
+const pickupProof = await request(dshBase, "GET", "/dsh/orders/" + encodeURIComponent(pickupOrderID) + "/delivery-proof", { token: client.accessToken });
+const partnerPickupProof = await request(dshBase, "GET", "/dsh/orders/" + encodeURIComponent(pickupOrderID) + "/delivery-proof", { token: second.accessToken });
+if (pickupProof.status !== 200 || pickupProof.body?.orderId !== pickupOrderID || pickupProof.body?.proofType !== "STORE_PICKUP" || pickupProof.body?.state !== "PENDING" || !/^[0-9]{6}$/.test(String(pickupProof.body?.code || "")) || partnerPickupProof.status !== 403) fail("store pickup proof was not client-scoped or did not use the six-digit pickup contract", JSON.stringify({ pickupProof, partnerPickupProof }));
+const pickupWrongCode = String((Number(pickupProof.body.code) + 1) % 1_000_000).padStart(6, "0");
+const pickupAccept = await request(dshBase, "POST", "/dsh/stores/" + second.storeID + "/orders/" + encodeURIComponent(pickupOrderID) + "/transition", { token: second.accessToken, headers: partnerHeaders("pickup-accept-" + suffix, 1), body: { state: "PARTNER_ACCEPTED" } });
+const pickupPreparing = await request(dshBase, "POST", "/dsh/stores/" + second.storeID + "/orders/" + encodeURIComponent(pickupOrderID) + "/transition", { token: second.accessToken, headers: partnerHeaders("pickup-preparing-" + suffix, 2), body: { state: "PREPARING" } });
+const pickupDispatchAttempt = await request(dshBase, "POST", "/dsh/stores/" + second.storeID + "/orders/" + encodeURIComponent(pickupOrderID) + "/transition", { token: second.accessToken, headers: partnerHeaders("pickup-dispatch-rejected-" + suffix, 3), body: { state: "READY_FOR_DISPATCH" } });
+const pickupPreparingRead = await request(dshBase, "GET", "/dsh/orders/" + encodeURIComponent(pickupOrderID), { token: client.accessToken });
+if (pickupAccept.status !== 200 || pickupAccept.body?.order?.state !== "PARTNER_ACCEPTED" || pickupPreparing.status !== 200 || pickupPreparing.body?.order?.state !== "PREPARING" || pickupDispatchAttempt.status !== 409 || pickupDispatchAttempt.body?.error?.code !== "VERSION_OR_STATE_CONFLICT" || pickupPreparingRead.status !== 200 || pickupPreparingRead.body?.order?.state !== "PREPARING" || pickupPreparingRead.body.order.version !== 3) fail("pickup order lifecycle allowed courier dispatch or failed the partner preparation steps", JSON.stringify({ pickupAccept, pickupPreparing, pickupDispatchAttempt, pickupPreparingRead }));
+const pickupReady = await request(dshBase, "POST", "/dsh/stores/" + second.storeID + "/orders/" + encodeURIComponent(pickupOrderID) + "/transition", { token: second.accessToken, headers: partnerHeaders("pickup-ready-" + suffix, 3), body: { state: "READY_FOR_PICKUP" } });
+if (pickupReady.status !== 200 || pickupReady.body?.order?.state !== "READY_FOR_PICKUP" || pickupReady.body.order.version !== 4) fail("partner could not mark the pickup order ready", JSON.stringify(pickupReady));
+const pickupWrongCompletion = await request(dshBase, "POST", "/dsh/stores/" + second.storeID + "/orders/" + encodeURIComponent(pickupOrderID) + "/transition", { token: second.accessToken, headers: partnerHeaders("pickup-wrong-code-" + suffix, 4), body: { state: "PICKED_UP", code: pickupWrongCode } });
+const pickupAfterWrongCode = await request(dshBase, "GET", "/dsh/orders/" + encodeURIComponent(pickupOrderID), { token: client.accessToken });
+if (pickupWrongCompletion.status !== 409 || pickupWrongCompletion.body?.error?.code !== "DELIVERY_PROOF_INVALID" || pickupAfterWrongCode.status !== 200 || pickupAfterWrongCode.body?.order?.state !== "READY_FOR_PICKUP" || pickupAfterWrongCode.body.order.version !== 4 || pickupAfterWrongCode.body.order.paymentState !== "REQUIRES_COLLECTION") fail("wrong customer pickup code did not fail closed without collecting cash", JSON.stringify({ pickupWrongCompletion, pickupAfterWrongCode }));
+const pickupCompletionHeaders = partnerHeaders("pickup-complete-" + suffix, 4);
+const pickupCompletionBody = { state: "PICKED_UP", code: String(pickupProof.body.code) };
+const pickupCompletion = await request(dshBase, "POST", "/dsh/stores/" + second.storeID + "/orders/" + encodeURIComponent(pickupOrderID) + "/transition", { token: second.accessToken, headers: pickupCompletionHeaders, body: pickupCompletionBody });
+const pickupCompletionReplay = await request(dshBase, "POST", "/dsh/stores/" + second.storeID + "/orders/" + encodeURIComponent(pickupOrderID) + "/transition", { token: second.accessToken, headers: pickupCompletionHeaders, body: pickupCompletionBody });
+await waitForSQL("SELECT state FROM dsh.commerce_financial_handoff_outbox WHERE effect_type='STORE_PICKUP_COLLECTION' AND order_id='" + sqlLiteral(pickupOrderID) + "'", "POSTED", "store pickup collection financial handoff did not reconcile");
+const pickupVerifiedProof = await request(dshBase, "GET", "/dsh/orders/" + encodeURIComponent(pickupOrderID) + "/delivery-proof", { token: client.accessToken });
+const pickupClientOrder = await request(dshBase, "GET", "/dsh/orders/" + encodeURIComponent(pickupOrderID), { token: client.accessToken });
+const pickupPartnerOrder = await request(dshBase, "GET", "/dsh/stores/" + second.storeID + "/orders/" + encodeURIComponent(pickupOrderID), { token: second.accessToken });
+if (pickupCompletion.status !== 200 || pickupCompletion.body?.order?.state !== "PICKED_UP" || pickupCompletion.body.order.version !== 5 || pickupCompletionReplay.status !== 200 || pickupCompletionReplay.body?.idempotentReplay !== true || pickupCompletionReplay.body?.order?.version !== 5 || pickupVerifiedProof.status !== 200 || pickupVerifiedProof.body?.proofType !== "STORE_PICKUP" || pickupVerifiedProof.body?.state !== "VERIFIED" || !pickupVerifiedProof.body?.verifiedAt || pickupClientOrder.status !== 200 || pickupClientOrder.body?.order?.state !== "PICKED_UP" || pickupClientOrder.body.order.paymentState !== "COLLECTED" || pickupPartnerOrder.status !== 200 || pickupPartnerOrder.body?.order?.state !== "PICKED_UP" || pickupPartnerOrder.body.order.paymentState !== "COLLECTED") fail("pickup completion, proof verification, idempotency, or client/partner readback failed", JSON.stringify({ pickupCompletion, pickupCompletionReplay, pickupVerifiedProof, pickupClientOrder, pickupPartnerOrder }));
+const pickupOutboxReadback = sql("SELECT effect_type || '|' || state || '|' || partner_actor_id || '|' || amount_minor::text FROM dsh.commerce_financial_handoff_outbox WHERE order_id='" + sqlLiteral(pickupOrderID) + "'");
+const pickupDSHPaymentState = sql("SELECT payment_state FROM dsh.commerce_orders WHERE id='" + sqlLiteral(pickupOrderID) + "'");
+const pickupPaymentCollected = await request(wltBase, "GET", "/wlt/v1/payment-intents/" + encodeURIComponent(pickupPaymentIntentID), { token: wltToken });
+const pickupCollectedIntent = pickupPaymentCollected.body?.paymentIntent;
+if (pickupOutboxReadback !== "STORE_PICKUP_COLLECTION|POSTED|" + second.actorID + "|1500" || pickupDSHPaymentState !== "COLLECTED" || pickupPaymentCollected.status !== 200 || pickupCollectedIntent?.state !== "COLLECTED" || pickupCollectedIntent.method !== "CASH_AT_STORE" || pickupCollectedIntent.amountMinor !== 1500 || pickupCollectedIntent.collectedAmountMinor !== 1500 || pickupCollectedIntent.collectedByActorId !== second.actorID) fail("pickup cash collection was not owned by the store Partner and reconciled from WLT to DSH", JSON.stringify({ pickupOutboxReadback, pickupDSHPaymentState, pickupPaymentCollected }));
+const pickupCommissionJSON = sql("SELECT json_build_object('fulfillmentMode',fulfillment_mode,'partnerActorId',partner_actor_id,'paymentIntentId',payment_intent_id,'currency',currency,'grossProductMinor',gross_product_minor,'commissionMinor',commission_minor,'profileId',profile_id,'profileVersion',profile_version,'policyVersion',policy_version,'ledgerTransactionId',ledger_transaction_id)::text FROM wlt.partner_store_cash_commissions WHERE order_id='" + sqlLiteral(pickupOrderID) + "'");
+if (!pickupCommissionJSON) fail("WLT did not create a store cash commission receivable", pickupOrderID);
+const pickupCommission = JSON.parse(pickupCommissionJSON);
+const pickupCommissionMinor = Number(pickupCommission.commissionMinor);
+const pickupReceivableBeforeRemittance = sql("SELECT COALESCE(SUM(CASE WHEN direction='DEBIT' THEN amount_minor ELSE -amount_minor END),0)::text FROM wlt.ledger_entries WHERE account_code='PARTNER_COMMISSION_RECEIVABLE' AND actor_type='partner' AND actor_id='" + sqlLiteral(second.actorID) + "'");
+const pickupCommissionLedgerCount = sql("SELECT count(*) FROM wlt.ledger_entries e JOIN wlt.ledger_transactions t ON t.id=e.transaction_id WHERE t.source_type='PARTNER_STORE_CASH_COMMISSION' AND t.source_id='" + sqlLiteral(pickupOrderID) + "' AND ((e.account_code='PARTNER_COMMISSION_RECEIVABLE' AND e.actor_type='partner' AND e.actor_id='" + sqlLiteral(second.actorID) + "' AND e.direction='DEBIT' AND e.amount_minor=" + pickupCommissionMinor + ") OR (e.account_code='PLATFORM_COMMISSION_INCOME' AND e.direction='CREDIT' AND e.amount_minor=" + pickupCommissionMinor + "))");
+if (pickupCommission.fulfillmentMode !== "CUSTOMER_PICKUP" || pickupCommission.partnerActorId !== second.actorID || pickupCommission.paymentIntentId !== pickupPaymentIntentID || pickupCommission.currency !== "YER" || pickupCommission.grossProductMinor !== 1500 || !pickupCommission.profileId || pickupCommission.profileVersion < 1 || !String(pickupCommission.policyVersion || "").startsWith("partner-store-cash-commission-v1;mode=CUSTOMER_PICKUP;") || !pickupCommission.ledgerTransactionId || pickupCommissionMinor <= 0 || pickupReceivableBeforeRemittance !== String(pickupCommissionMinor) || pickupCommissionLedgerCount !== "2") fail("WLT pickup commission did not create one balanced partner receivable while the store retained gross cash", JSON.stringify({ pickupCommission, pickupReceivableBeforeRemittance, pickupCommissionLedgerCount }));
+const pickupOverpayment = await request(wltBase, "POST", "/wlt/v1/operator/partners/" + encodeURIComponent(second.actorID) + "/commission-remittances", { token: wltToken, headers: serviceHeaders(actingOperatorID, "pickup-overpay-" + suffix), body: { amountMinor: pickupCommissionMinor + 1, remittanceReference: "runtime-pickup-overpay-" + suffix, evidenceReference: "runtime-proof-pickup-overpay-" + suffix } });
+const pickupReceivableAfterOverpayment = sql("SELECT COALESCE(SUM(CASE WHEN direction='DEBIT' THEN amount_minor ELSE -amount_minor END),0)::text FROM wlt.ledger_entries WHERE account_code='PARTNER_COMMISSION_RECEIVABLE' AND actor_type='partner' AND actor_id='" + sqlLiteral(second.actorID) + "'");
+if (pickupOverpayment.status !== 409 || pickupOverpayment.body?.error?.code !== "REMITTANCE_EXCEEDS_RECEIVABLE" || pickupReceivableAfterOverpayment !== String(pickupCommissionMinor)) fail("WLT accepted an overpayment or changed commission receivable on rejection", JSON.stringify({ pickupOverpayment, pickupReceivableAfterOverpayment }));
+const pickupRemittanceKey = "pickup-remit-" + suffix;
+const pickupRemittanceHeaders = serviceHeaders(actingOperatorID, pickupRemittanceKey);
+const pickupRemittanceBody = { amountMinor: pickupCommissionMinor, remittanceReference: "runtime-pickup-remittance-" + suffix, evidenceReference: "runtime-proof-pickup-remittance-" + suffix };
+const pickupRemittance = await request(wltBase, "POST", "/wlt/v1/operator/partners/" + encodeURIComponent(second.actorID) + "/commission-remittances", { token: wltToken, headers: pickupRemittanceHeaders, body: pickupRemittanceBody });
+const pickupRemittanceID = String(pickupRemittance.body?.remittance?.id || "");
+if (pickupRemittanceID) partnerCommissionRemittanceIDs.add(pickupRemittanceID);
+const pickupRemittanceReplay = await request(wltBase, "POST", "/wlt/v1/operator/partners/" + encodeURIComponent(second.actorID) + "/commission-remittances", { token: wltToken, headers: pickupRemittanceHeaders, body: pickupRemittanceBody });
+const pickupReceivableAfterRemittance = sql("SELECT COALESCE(SUM(CASE WHEN direction='DEBIT' THEN amount_minor ELSE -amount_minor END),0)::text FROM wlt.ledger_entries WHERE account_code='PARTNER_COMMISSION_RECEIVABLE' AND actor_type='partner' AND actor_id='" + sqlLiteral(second.actorID) + "'");
+const pickupRemittanceLedgerCount = pickupRemittanceID ? sql("SELECT count(*) FROM wlt.ledger_entries e JOIN wlt.ledger_transactions t ON t.id=e.transaction_id WHERE t.source_type='PARTNER_COMMISSION_REMITTANCE' AND t.source_id='" + sqlLiteral(pickupRemittanceID) + "' AND ((e.account_code='EXTERNAL_SETTLEMENT_CASH' AND e.direction='DEBIT' AND e.amount_minor=" + pickupCommissionMinor + ") OR (e.account_code='PARTNER_COMMISSION_RECEIVABLE' AND e.actor_type='partner' AND e.actor_id='" + sqlLiteral(second.actorID) + "' AND e.direction='CREDIT' AND e.amount_minor=" + pickupCommissionMinor + "))") : "0";
+if (pickupRemittance.status !== 201 || pickupRemittance.body?.remittance?.partnerActorId !== second.actorID || pickupRemittance.body.remittance.amountMinor !== pickupCommissionMinor || pickupRemittance.body.remittance.currency !== "YER" || pickupRemittance.body.remittance.verifiedBy !== actingOperatorID || pickupRemittance.body.remittance.evidenceReference !== pickupRemittanceBody.evidenceReference || !pickupRemittance.body.remittance.verifiedAt || !pickupRemittanceID || pickupRemittanceReplay.status !== 200 || pickupRemittanceReplay.body?.idempotentReplay !== true || pickupRemittanceReplay.body?.remittance?.id !== pickupRemittanceID || pickupReceivableAfterRemittance !== "0" || pickupRemittanceLedgerCount !== "2") fail("verified WLT commission remittance did not clear the receivable exactly once", JSON.stringify({ pickupRemittance, pickupRemittanceReplay, pickupReceivableAfterRemittance, pickupRemittanceLedgerCount }));
+console.log("DSH_STORE_PICKUP_CASH_SETTLEMENT=PASS");
+
 
 expectSQL(`SELECT inventory_on_hand_base_units || '|' || inventory_reserved_base_units FROM dsh.catalog_store_offers WHERE id='${sqlLiteral(offerAID)}'`, "10|2", "quantity inventory was not reserved atomically at checkout");
 const deliveryProof = await request(dshBase, "GET", `/dsh/orders/${encodeURIComponent(orderID)}/delivery-proof`, { token: client.accessToken });

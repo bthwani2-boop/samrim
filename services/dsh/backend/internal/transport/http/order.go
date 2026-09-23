@@ -586,6 +586,8 @@ func writeOrderError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "VERSION_OR_STATE_CONFLICT", "Order evidence, version, or lifecycle state is stale")
 	case errors.Is(err, postgres.ErrPaymentStateConflict):
 		writeError(w, http.StatusConflict, "PAYMENT_STATE_CONFLICT", "the order payment state is not actionable")
+	case errors.Is(err, postgres.ErrStorePickupProofInvalid):
+		writeError(w, http.StatusConflict, "DELIVERY_PROOF_INVALID", "the customer pickup code is incorrect; the order was not finalized")
 	case errors.Is(err, orderdomain.ErrPaymentUnavailable):
 		writeError(w, http.StatusBadGateway, "WLT_PAYMENT_UNAVAILABLE", "the payment service is temporarily unavailable")
 	case errors.Is(err, postgres.ErrOrderTransitionConflict), errors.Is(err, postgres.ErrCheckoutIdempotencyConflict):

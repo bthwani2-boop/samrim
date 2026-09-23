@@ -27,6 +27,7 @@ var (
 	ErrOrderVersionConflict        = errors.New("order version is stale")
 	ErrOrderTransitionConflict     = errors.New("order transition idempotency key was already used with different facts")
 	ErrOrderTransitionInvalid      = errors.New("order transition is invalid")
+	ErrStorePickupProofInvalid     = errors.New("store pickup proof is invalid")
 	ErrPaymentProvisioning         = errors.New("payment intent could not be provisioned")
 	ErrDeliveryFeeUnavailable      = errors.New("delivery fee could not be resolved")
 	ErrPaymentStateConflict        = errors.New("order payment state is stale or invalid")
@@ -977,8 +978,11 @@ func CompleteStorePickup(ctx context.Context, db *sql.DB, orderID, code string, 
 		return OrderRecord{}, false, err
 	}
 	expectedCodeHash := HashDeliveryProofCode(orderID, code)
-	if proofType != "STORE_PICKUP" || proofState != "PENDING" || subtle.ConstantTimeCompare([]byte(proofHash), []byte(expectedCodeHash)) != 1 {
-		return OrderRecord{}, false, ErrOrderTransitionInvalid
+	if proofType != "STORE_PICKUP" || proofState != "PENDING" {
+		return OrderRecord{}, false, ErrOrderStateConflict
+	}
+	if subtle.ConstantTimeCompare([]byte(proofHash), []byte(expectedCodeHash)) != 1 {
+		return OrderRecord{}, false, ErrStorePickupProofInvalid
 	}
 	if err := consumeOrderInventoryTx(ctx, tx, orderID); err != nil {
 		return OrderRecord{}, false, err
