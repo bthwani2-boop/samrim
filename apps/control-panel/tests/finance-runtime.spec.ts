@@ -1,4 +1,9 @@
 import { expect, test } from "@playwright/test";
+import { enrollAndAuthenticateExistingOperator } from "./live-identity-proof-helpers";
+
+test.beforeEach(async ({ page }) => {
+  await enrollAndAuthenticateExistingOperator(page);
+});
 
 test("@live operator reads the real bounded COD cash-custody journey", async ({ page }) => {
   test.setTimeout(30_000);
