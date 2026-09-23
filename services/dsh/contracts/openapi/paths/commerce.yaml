@@ -615,7 +615,7 @@ paths:
             maxLength: 128
       responses:
         "200":
-          description: Customer-scoped delivery proof.
+          description: Customer-scoped proof; the code is disclosed only when the order reaches its handoff state.
           content:
             application/json:
               schema:

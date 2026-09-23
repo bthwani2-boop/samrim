@@ -173,6 +173,8 @@ export default function ClientOrderDetail() {
   const { order } = state;
   const isStorePickup = order.fulfillmentMode === "CUSTOMER_PICKUP";
   const proofLabel = isStorePickup ? "رمز الاستلام" : "رمز التسليم";
+  const proofAvailableMessage = isStorePickup ? "أظهر الرمز لموظف المتجر بعد تجهيز طلبك." : "لا تشارك الرمز إلا مع الكابتن عند وصول الطلب.";
+  const proofWaitingMessage = isStorePickup ? "سيظهر رمز الاستلام بعد جاهزية الطلب." : "سيظهر رمز التسليم عندما يصبح الطلب في عهدة الكابتن.";
   const completedState = order.state === "DELIVERED" || order.state === "PICKED_UP";
   return (
     <View style={styles.container} accessibilityLabel="تفاصيل الطلب">
@@ -189,7 +191,7 @@ export default function ClientOrderDetail() {
       <BthwaniSurface tone="base" style={styles.proofSurface}>
         {deliveryProof.kind === "loading" ? <Text style={styles.muted}>جارٍ تجهيز {proofLabel}…</Text> : null}
         {deliveryProof.kind === "error" ? <Text style={styles.refreshError}>تعذر قراءة {proofLabel} الآن. حدّث الحالة لإعادة المحاولة.</Text> : null}
-        {deliveryProof.kind === "ready" && deliveryProof.value.state === "PENDING" ? <><Text style={styles.proofTitle}>{proofLabel}</Text><Text accessibilityLabel={proofLabel} style={styles.proofCode}>{deliveryProof.value.code ?? "—"}</Text><Text style={styles.muted}>{isStorePickup ? "أظهر الرمز لموظف المتجر بعد تجهيز طلبك." : "لا تشارك الرمز إلا مع الكابتن عند وصول الطلب."}</Text></> : null}
+        {deliveryProof.kind === "ready" && deliveryProof.value.state === "PENDING" ? <><Text style={styles.proofTitle}>{proofLabel}</Text>{deliveryProof.value.code ? <Text accessibilityLabel={proofLabel} style={styles.proofCode}>{deliveryProof.value.code}</Text> : null}<Text style={styles.muted}>{deliveryProof.value.code ? proofAvailableMessage : proofWaitingMessage}</Text></> : null}
         {deliveryProof.kind === "ready" && deliveryProof.value.state === "VERIFIED" ? <><BthwaniStatusBadge icon="success" label={isStorePickup ? "تم تأكيد الاستلام" : "تم إثبات التسليم"} tone="success" /><Text style={styles.muted}>{isStorePickup ? "تم قبول رمز الاستلام وتسجيل استلامك للطلب." : "تم قبول رمز التسليم وتسجيل الاستلام."}</Text></> : null}
       </BthwaniSurface>
       {completedState ? <>

@@ -3853,7 +3853,7 @@ components:
           type: string
           pattern: '^[0-9]{6}$'
           nullable: true
-          description: Present only while the proof is pending; never returned after verification.
+          description: Returned only for a pending proof at the handoff state (READY_FOR_PICKUP for STORE_PICKUP; IN_CUSTODY for DELIVERY); omitted before handoff and after verification.
         verifiedAt:
           type: string
           format: date-time

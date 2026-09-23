@@ -211,7 +211,7 @@ func ReadClientDeliveryProof(ctx context.Context, db *sql.DB, orderID, clientAct
 		return DeliveryProofRecord{}, ErrOrderNotFound
 	}
 	var proof DeliveryProofRecord
-	if err := db.QueryRowContext(ctx, `SELECT p.order_id,p.proof_type,p.state,CASE WHEN p.state='PENDING' THEN p.code ELSE '' END,p.verified_at FROM dsh.commerce_order_delivery_proofs p WHERE p.order_id=$1 AND p.client_actor_id=$2`, strings.TrimSpace(orderID), strings.TrimSpace(clientActorID)).Scan(&proof.OrderID, &proof.ProofType, &proof.State, &proof.Code, &proof.VerifiedAt); errors.Is(err, sql.ErrNoRows) {
+	if err := db.QueryRowContext(ctx, `SELECT p.order_id,p.proof_type,p.state,CASE WHEN p.state='PENDING' AND ((p.proof_type='STORE_PICKUP' AND o.state='READY_FOR_PICKUP') OR (p.proof_type='DELIVERY' AND o.state='IN_CUSTODY')) THEN p.code ELSE '' END,p.verified_at FROM dsh.commerce_order_delivery_proofs p JOIN dsh.commerce_orders o ON o.id=p.order_id AND o.client_actor_id=p.client_actor_id WHERE p.order_id=$1 AND p.client_actor_id=$2`, strings.TrimSpace(orderID), strings.TrimSpace(clientActorID)).Scan(&proof.OrderID, &proof.ProofType, &proof.State, &proof.Code, &proof.VerifiedAt); errors.Is(err, sql.ErrNoRows) {
 		return DeliveryProofRecord{}, ErrOrderNotFound
 	} else if err != nil {
 		return DeliveryProofRecord{}, err
