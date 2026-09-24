@@ -95,9 +95,14 @@ func (s *CatalogServer) listCategoryAttributeRules(w http.ResponseWriter, r *htt
 
 func (s *CatalogServer) listPublicAttributeEnumOptions(w http.ResponseWriter, r *http.Request) {
 	items, err := s.service.ListPublicAttributeEnumOptions(r.Context(), r.PathValue("attributeId"))
-	if err != nil { writeCatalogError(w, err); return }
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
 	values := make([]contract.CatalogAttributeEnumOption, 0, len(items))
-	for _, item := range items { values = append(values, contract.CatalogAttributeEnumOption{AttributeID:item.AttributeID, OptionValue:item.OptionValue, Active:item.Active, Ordinal:item.Ordinal}) }
+	for _, item := range items {
+		values = append(values, contract.CatalogAttributeEnumOption{AttributeID: item.AttributeID, OptionValue: item.OptionValue, Active: item.Active, Ordinal: item.Ordinal})
+	}
 	writeJSON(w, http.StatusOK, contract.CatalogAttributeEnumOptionListResponse{Options: values})
 }
 

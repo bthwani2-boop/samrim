@@ -22,7 +22,7 @@ var (
 	ErrCatalogCategoryNotFound      = errors.New("catalog category was not found")
 	ErrCatalogIdempotencyConflict   = errors.New("catalog idempotency key was already used with different facts")
 	ErrCatalogVersionConflict       = errors.New("catalog version is stale")
-	ErrCatalogAttributeRuleInvalid = errors.New("catalog attribute rule is invalid")
+	ErrCatalogAttributeRuleInvalid  = errors.New("catalog attribute rule is invalid")
 	ErrCatalogCategoryCycle         = errors.New("catalog category parent would create a cycle")
 	ErrCatalogDuplicateIdentifier   = errors.New("catalog identifier is already assigned")
 	ErrCatalogIdentifierInvalid     = errors.New("catalog identifier is invalid")
