@@ -11,9 +11,10 @@ func TestCatalogSearchCursorRoundTripsAndBindsSearchScope(t *testing.T) {
 	serviceCityID := "city-1"
 	categoryID := "category-1"
 	query := "قهوة"
-	cursor := encodeCatalogSearchCursor("قهوة عربية", "offer-1", storeID, serviceCityID, categoryID, query)
+	productID := "product-1"
+	cursor := encodeCatalogSearchCursor("قهوة عربية", "offer-1", storeID, serviceCityID, categoryID, query, productID, "")
 
-	position, err := decodeCatalogSearchCursor(cursor, storeID, serviceCityID, categoryID, query)
+	position, err := decodeCatalogSearchCursor(cursor, storeID, serviceCityID, categoryID, query, productID, "")
 	if err != nil {
 		t.Fatalf("decode cursor: %v", err)
 	}
@@ -27,15 +28,17 @@ func TestCatalogSearchCursorRoundTripsAndBindsSearchScope(t *testing.T) {
 		serviceCityID string
 		categoryID    string
 		query         string
+		productID     string
 	}{
-		{name: "store", storeID: "store-1", serviceCityID: serviceCityID, categoryID: categoryID, query: query},
+		{name: "store", storeID: "store-1", serviceCityID: serviceCityID, categoryID: categoryID, query: query, productID: productID},
 		{name: "city", serviceCityID: "city-2", categoryID: categoryID, query: query},
 		{name: "category", serviceCityID: serviceCityID, categoryID: "category-2", query: query},
-		{name: "query", serviceCityID: serviceCityID, categoryID: categoryID, query: "شاي"},
+		{name: "query", serviceCityID: serviceCityID, categoryID: categoryID, query: "شاي", productID: productID},
+		{name: "product", serviceCityID: serviceCityID, categoryID: categoryID, query: query, productID: "product-2"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := decodeCatalogSearchCursor(cursor, test.storeID, test.serviceCityID, test.categoryID, test.query); err == nil {
+			if _, err := decodeCatalogSearchCursor(cursor, test.storeID, test.serviceCityID, test.categoryID, test.query, test.productID, ""); err == nil {
 				t.Fatal("expected a cursor from another search scope to be rejected")
 			}
 		})
@@ -44,11 +47,11 @@ func TestCatalogSearchCursorRoundTripsAndBindsSearchScope(t *testing.T) {
 
 func TestCatalogSearchCursorSupportsMaximumLengthUnicodeName(t *testing.T) {
 	name := strings.Repeat("𐐷", 160)
-	cursor := encodeCatalogSearchCursor(name, "550e8400-e29b-41d4-a716-446655440000", "", "550e8400-e29b-41d4-a716-446655440001", "", strings.Repeat("ع", 160))
+	cursor := encodeCatalogSearchCursor(name, "550e8400-e29b-41d4-a716-446655440000", "", "550e8400-e29b-41d4-a716-446655440001", "", strings.Repeat("ع", 160), "product-1", "")
 	if len(cursor) > 1024 {
 		t.Fatalf("cursor exceeds the OpenAPI limit: %d", len(cursor))
 	}
-	position, err := decodeCatalogSearchCursor(cursor, "", "550e8400-e29b-41d4-a716-446655440001", "", strings.Repeat("ع", 160))
+	position, err := decodeCatalogSearchCursor(cursor, "", "550e8400-e29b-41d4-a716-446655440001", "", strings.Repeat("ع", 160), "product-1", "")
 	if err != nil {
 		t.Fatalf("decode maximum-length Unicode cursor: %v", err)
 	}
@@ -57,10 +60,21 @@ func TestCatalogSearchCursorSupportsMaximumLengthUnicodeName(t *testing.T) {
 	}
 }
 
+func TestCatalogSearchCursorBindsFavoriteViewToClient(t *testing.T) {
+	storeID, serviceCityID, clientActorID := "store-1", "city-1", "client-1"
+	cursor := encodeCatalogSearchCursor("منتج", "offer-1", storeID, serviceCityID, "", "", "", clientActorID)
+	if _, err := decodeCatalogSearchCursor(cursor, storeID, serviceCityID, "", "", "", clientActorID); err != nil {
+		t.Fatalf("decode cursor for original client: %v", err)
+	}
+	if _, err := decodeCatalogSearchCursor(cursor, storeID, serviceCityID, "", "", "", "client-2"); err == nil {
+		t.Fatal("expected a favorite-view cursor from another client to be rejected")
+	}
+}
+
 func TestCatalogSearchCursorRejectsMalformedTokens(t *testing.T) {
 	validScope := []string{"", "city-1", "", "قهوة"}
 	for _, cursor := range []string{"!", base64.RawURLEncoding.EncodeToString([]byte("name\x00offer")), base64.RawURLEncoding.EncodeToString([]byte("\x00offer\x00" + strings.Repeat("x", 16)))} {
-		if _, err := decodeCatalogSearchCursor(cursor, validScope[0], validScope[1], validScope[2], validScope[3]); err == nil {
+		if _, err := decodeCatalogSearchCursor(cursor, validScope[0], validScope[1], validScope[2], validScope[3], "", ""); err == nil {
 			t.Fatalf("expected malformed cursor %q to be rejected", cursor)
 		}
 	}

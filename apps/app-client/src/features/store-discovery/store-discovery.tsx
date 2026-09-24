@@ -20,14 +20,15 @@ type ProductSearchState =
   | { kind: "ready"; offers: ReadonlyArray<CatalogStoreOffer>; nextCursor: string | null }
   | { kind: "error" };
 
-export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthentication }: { isAuthenticated?: boolean; onRequireAuthentication?: (() => void) | undefined }) {
+export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthentication, searchOpen, searchQuery, searchScope: controlledSearchScope, onSearchScopeChange, onSearchQueryChange }: { isAuthenticated?: boolean; onRequireAuthentication?: (() => void) | undefined; searchOpen?: boolean; searchQuery?: string; searchScope?: "stores" | "products"; onSearchScopeChange?: (scope: "stores" | "products") => void; onSearchQueryChange?: (query: string) => void }) {
   const router = useRouter();
   const { q: rawQuery, focus: rawFocus, scope: rawScope } = useLocalSearchParams<{ q?: string | string[]; focus?: string | string[]; scope?: string | string[] }>();
-  const query = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
+  const routeQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
+  const query = searchQuery ?? routeQuery;
   const focus = Array.isArray(rawFocus) ? rawFocus[0] ?? "" : rawFocus ?? "";
   const requestedScope = Array.isArray(rawScope) ? rawScope[0] ?? "" : rawScope ?? "";
-  const searchScope = requestedScope === "products" ? "products" : "stores";
-  const searchIsActive = focus === "search" || Boolean(query.trim());
+  const searchScope = controlledSearchScope ?? (requestedScope === "products" ? "products" : "stores");
+  const searchIsActive = (searchOpen ?? focus === "search") || Boolean(query.trim());
   const { cities, selectedCityID } = useServiceCityScope();
   const selectedCity = cities.find((city) => city.id === selectedCityID);
   const selectedCityName = serviceCityDisplayName(selectedCity?.displayNameAr);
@@ -41,14 +42,11 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const [selectedCategoryID, setSelectedCategoryID] = useState("");
   const [favoriteBusyStoreID, setFavoriteBusyStoreID] = useState("");
   const [favoriteError, setFavoriteError] = useState("");
-  const [productSearch, setProductSearch] = useState<ProductSearchState>({ kind: "idle" });
-  const [loadingMoreProducts, setLoadingMoreProducts] = useState(false);
-  const [loadMoreProductsError, setLoadMoreProductsError] = useState(false);
-  const [failedProductImages, setFailedProductImages] = useState<ReadonlySet<string>>(() => new Set());
-  const productSearchRequestID = useRef(0);
   const [marketing, setMarketing] = useState<{ content: ReadonlyArray<DiscoveryContentView>; promotions: ReadonlyArray<PromotionView>; error: boolean }>({ content: [], promotions: [], error: false });
+  const discoveryLoadRequestID = useRef(0);
 
   const load = useCallback(async () => {
+    const requestID = ++discoveryLoadRequestID.current;
     setState({ kind: "loading" });
     setFavoriteError("");
     try {
@@ -69,53 +67,29 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       const marketingResults = await Promise.allSettled([listPublicDiscoveryContent(selectedCityID), listPublicPromotions(selectedCityID)]);
       const content = marketingResults[0].status === "fulfilled" ? marketingResults[0].value.items : [];
       const promotions = marketingResults[1].status === "fulfilled" ? marketingResults[1].value.promotions : [];
-      setMarketing({ content, promotions, error: marketingResults.some((result) => result.status === "rejected") });
-      setSelectedCategoryID("");
       let favoriteStoreIDs: ReadonlyArray<string> = [];
+      let favoriteLoadError = "";
       if (isAuthenticated) {
         try {
           favoriteStoreIDs = await listFavoriteStoreIDs();
         } catch {
-          setFavoriteError("تعذر تحديث قائمة المفضلة. يمكنك متابعة تصفح المتاجر.");
+          favoriteLoadError = "تعذر تحديث قائمة المفضلة. يمكنك متابعة تصفح المتاجر.";
         }
       }
+      if (requestID !== discoveryLoadRequestID.current) return;
+      setMarketing({ content, promotions, error: marketingResults.some((result) => result.status === "rejected") });
+      setSelectedCategoryID("");
+      if (favoriteLoadError) setFavoriteError(favoriteLoadError);
       setState(storeDirectory.stores.length ? { kind: "ready", stores: storeDirectory.stores, categories: storeDirectory.categories, favoriteStoreIDs } : { kind: "empty" });
     } catch {
-      setState({ kind: "error" });
+      if (requestID === discoveryLoadRequestID.current) setState({ kind: "error" });
     }
   }, [isAuthenticated, selectedCityID]);
 
-  useEffect(() => { void load(); }, [load]);
-
-  const runProductSearch = useCallback(async () => {
-    const normalizedQuery = query.trim();
-    if (searchScope !== "products" || !selectedCityID || !normalizedQuery) return;
-    const requestID = ++productSearchRequestID.current;
-    setProductSearch({ kind: "loading" });
-    setLoadingMoreProducts(false);
-    setLoadMoreProductsError(false);
-    try {
-      const result = await searchPublicCatalog(selectedCityID, normalizedQuery, selectedCategoryID, 20);
-      if (productSearchRequestID.current === requestID) setProductSearch({ kind: "ready", offers: result.offers, nextCursor: result.nextCursor });
-    } catch {
-      if (productSearchRequestID.current === requestID) setProductSearch({ kind: "error" });
-    }
-  }, [query, searchScope, selectedCategoryID, selectedCityID]);
-
   useEffect(() => {
-    if (searchScope !== "products" || !selectedCityID || !query.trim()) {
-      productSearchRequestID.current += 1;
-      setProductSearch({ kind: "idle" });
-      setLoadingMoreProducts(false);
-      setLoadMoreProductsError(false);
-      return;
-    }
-    const timer = setTimeout(() => { void runProductSearch(); }, 300);
-    return () => {
-      clearTimeout(timer);
-      productSearchRequestID.current += 1;
-    };
-  }, [query, runProductSearch, searchScope, selectedCityID]);
+    void load();
+    return () => { discoveryLoadRequestID.current += 1; };
+  }, [load]);
 
   const filteredStores = useMemo(() => {
     if (state.kind !== "ready") return [];
@@ -158,25 +132,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     }
   }
 
-  async function loadMoreProductOffers() {
-    if (productSearch.kind !== "ready" || !productSearch.nextCursor || loadingMoreProducts || !selectedCityID || !query.trim()) return;
-    const cursor = productSearch.nextCursor;
-    const requestID = ++productSearchRequestID.current;
-    setLoadingMoreProducts(true);
-    setLoadMoreProductsError(false);
-    try {
-      const result = await searchPublicCatalog(selectedCityID, query.trim(), selectedCategoryID, 20, cursor);
-      if (productSearchRequestID.current === requestID) {
-        setProductSearch((current) => current.kind === "ready" ? { kind: "ready", offers: [...current.offers, ...result.offers], nextCursor: result.nextCursor } : current);
-      }
-    } catch {
-      if (productSearchRequestID.current === requestID) setLoadMoreProductsError(true);
-    } finally {
-      if (productSearchRequestID.current === requestID) setLoadingMoreProducts(false);
-    }
-  }
-
-  if (state.kind === "loading") {
+  if (state.kind === "loading" && !searchIsActive) {
     return (
       <View style={styles.state} accessibilityLabel="جارٍ تجهيز الاكتشاف">
         <View style={styles.stateHeader}><BthwaniSkeleton width={sizing.avatarLg} height={sizing.avatarLg} style={styles.skeletonRound} /><View style={styles.stateCopy}><BthwaniSkeleton width="58%" height={20} /><BthwaniSkeleton width="86%" height={16} /></View></View>
@@ -187,11 +143,11 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     );
   }
 
-  if (state.kind === "error") {
+  if (state.kind === "error" && !searchIsActive) {
     return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر تجهيز الاكتشاف</Text><Text style={styles.muted}>تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} />{!isAuthenticated && onRequireAuthentication ? <BthwaniButton label="تسجيل الدخول للطلب" onPress={onRequireAuthentication} variant="secondary" /> : null}</View>;
   }
 
-  if (state.kind === "empty") {
+  if (state.kind === "empty" && !searchIsActive) {
     return <View style={styles.state}><View style={styles.emptyIcon}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconXl} /></View><Text style={styles.title}>{selectedCityID ? "لا توجد متاجر متاحة بعد" : "اختر مدينة للبدء"}</Text><Text style={styles.muted}>{selectedCityID ? "لا توجد متاجر منشورة للطلب حاليًا." : "تظهر المتاجر بحسب مدينة الخدمة التي تختارها."}</Text><BthwaniButton label="تحديث المتاجر" onPress={() => void load()} variant="secondary" />{!isAuthenticated && onRequireAuthentication ? <BthwaniButton label="تسجيل الدخول للطلب" onPress={onRequireAuthentication} /> : null}</View>;
   }
 
@@ -210,11 +166,9 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       </View>
 
       {searchIsActive ? <View accessibilityLabel="نطاق البحث" style={styles.searchScopes}>
-        <BthwaniChip label="المتاجر" selected={searchScope === "stores"} onPress={() => router.setParams({ scope: "stores" })} />
-        <BthwaniChip label="المنتجات" selected={searchScope === "products"} onPress={() => router.setParams({ scope: "products" })} />
+        <BthwaniChip label="المتاجر" selected={searchScope === "stores"} onPress={() => { if (onSearchScopeChange) onSearchScopeChange("stores"); else router.setParams({ scope: "stores" }); }} />
+        <BthwaniChip label="المنتجات" selected={searchScope === "products"} onPress={() => { if (onSearchScopeChange) onSearchScopeChange("products"); else router.setParams({ scope: "products" }); }} />
       </View> : null}
-
-      {!searchIsActive && isAuthenticated ? <BthwaniSurface tone="inset" style={styles.multiStoreCta}><View style={styles.multiStoreCopy}><Text style={styles.eyebrow}>تجربة موحّدة</Text><Text style={styles.cardTitle}>اطلب من عدة متاجر</Text><Text style={styles.muted}>اجمع السلال، وأنشئ طلبًا مستقلًا لكل متجر مع نتيجة واضحة.</Text></View><BthwaniButton label="فتح الطلب المتعدد" onPress={() => router.push("/multi-store-checkout" as Href)} variant="secondary" /></BthwaniSurface> : null}
 
       {visibleCategories.length ? <View style={styles.categoryShortcutBlock}>
         <BthwaniSectionHeader title={searchScope === "products" && searchIsActive ? "تصفية المنتجات بالفئة" : "تسوق حسب الفئات"} />
@@ -243,28 +197,16 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         </> : null}
       </View> : !searchIsActive && marketing.error ? <Text accessibilityRole="alert" style={styles.error}>تعذر تحميل بعض العروض والمحتوى. يمكنك متابعة تصفح المتاجر.</Text> : null}
 
-      {searchScope === "products" && searchIsActive ? <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}>
-        {!query.trim() ? <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>اكتب اسم المنتج للبحث</Text><Text style={styles.muted}>استخدم مربع البحث أعلى الصفحة، ويمكنك تضييق النتائج حسب الفئة.</Text></BthwaniSurface> : productSearch.kind === "loading" || productSearch.kind === "idle" ? <View style={styles.productSkeletons} accessibilityLabel="جارٍ البحث عن المنتجات"><BthwaniSkeleton height={104} /><BthwaniSkeleton height={104} /><BthwaniSkeleton height={104} /></View> : productSearch.kind === "error" ? <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" style={styles.cardTitle}>تعذر البحث عن المنتجات</Text><Text style={styles.muted}>تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void runProductSearch()} /></BthwaniSurface> : productSearch.offers.length === 0 ? <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>لا توجد منتجات مطابقة</Text><Text style={styles.muted}>جرّب كلمة أقصر أو اختر فئة أخرى.</Text><BthwaniButton label="مسح الفئة" onPress={() => setSelectedCategoryID("")} variant="quiet" /></BthwaniSurface> : <>
-          <BthwaniSectionHeader title="نتائج المنتجات" subtitle={`${productSearch.offers.length} منتج · ${selectedCityName || "مدينة الخدمة"}`} />
-          <View style={styles.list}>{productSearch.offers.map((offer) => {
-            const store = state.kind === "ready" ? state.stores.find((candidate) => candidate.id === offer.storeId) : undefined;
-            const primaryMedia = offer.media.find((media) => media.role === "primary") ?? offer.media[0];
-            const imageFailed = failedProductImages.has(offer.offerId);
-            return <Pressable accessibilityRole="button" accessibilityLabel={`فتح ${offer.productName}${store ? ` من متجر ${store.name}` : ""}`} key={offer.offerId} onPress={() => router.push((`/store/${encodeURIComponent(offer.storeId)}?productId=${encodeURIComponent(offer.productId)}`) as Href)} style={({ pressed }) => [styles.productCard, pressed && styles.pressed]}>
-              {primaryMedia && !imageFailed ? <Image accessibilityLabel={`صورة ${offer.productName}`} onError={() => setFailedProductImages((current) => new Set(current).add(offer.offerId))} source={{ uri: primaryMedia.uri }} style={styles.productImage} resizeMode="cover" /> : <View style={styles.productImageFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
-              <View style={styles.productCopy}>
-                <Text style={styles.productTitle} numberOfLines={2}>{offer.productName}</Text>
-                {offer.variantTitle.trim() ? <Text style={styles.storeMeta} numberOfLines={1}>{offer.variantTitle}</Text> : null}
-                <Text style={styles.storeMeta} numberOfLines={1}>{store?.name ?? "متجر مشارك"}</Text>
-                <Text style={offer.availability ? styles.productAvailability : styles.storeHint}>{offer.availability ? "متاح حسب آخر تحديث" : "تحقق من التوفر داخل المتجر"}</Text>
-              </View>
-              <View style={styles.productPriceBlock}><Text style={styles.productPrice}>{formatMoney(offer.priceMinor, offer.currency)}</Text><BthwaniIcon name="forward" color={theme.colorMuted} size={sizing.iconMd} /></View>
-            </Pressable>;
-          })}</View>
-          {loadMoreProductsError ? <Text accessibilityRole="alert" style={styles.error}>تعذر تحميل المزيد من المنتجات.</Text> : null}
-          {productSearch.nextCursor ? <BthwaniButton disabled={loadingMoreProducts} label={loadingMoreProducts ? "جارٍ تحميل المزيد" : "تحميل المزيد"} onPress={() => void loadMoreProductOffers()} variant="secondary" /> : null}
-        </>}
-      </View> : null}
+      {searchScope === "products" && searchIsActive ? (
+        <ProductSearchResults
+          onClearCategory={() => setSelectedCategoryID("")}
+          query={query}
+          selectedCategoryID={selectedCategoryID}
+          selectedCityID={selectedCityID}
+          selectedCityName={selectedCityName}
+          stores={state.kind === "ready" ? state.stores : []}
+        />
+      ) : null}
 
       {searchScope === "stores" || !searchIsActive ? <>
       <BthwaniSectionHeader title={searchIsActive ? "نتائج المتاجر" : "المتاجر المتاحة"} subtitle={`${filteredStores.length} متجر`} />
@@ -304,14 +246,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       </View>
       {favoriteError ? <Text accessibilityRole="alert" style={styles.error}>{favoriteError}</Text> : null}
 
-      {filteredStores.length === 0 ? (
-        <BthwaniSurface tone="inset" style={styles.noResults}>
-          <BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} />
-          <Text style={styles.cardTitle}>{query.trim() ? "لا توجد نتائج بهذا الاسم" : selectedCategoryID ? "لا توجد متاجر ضمن هذه الفئة" : "لا توجد متاجر مطابقة"}</Text>
-          <Text style={styles.muted}>{query.trim() ? "جرّب اسمًا أقصر أو امسح البحث لعرض كل المتاجر." : "غيّر الفئة أو أزل الفلاتر لعرض المتاجر المتاحة."}</Text>
-          {query.trim() ? <BthwaniButton label="مسح البحث" onPress={() => router.setParams({ q: "" })} variant="quiet" /> : null}
-        </BthwaniSurface>
-      ) : (
+      {state.kind === "ready" && filteredStores.length > 0 ? (
         <View style={styles.list}>
           {filteredStores.map((store) => {
             const isFavorite = state.favoriteStoreIDs.includes(store.id);
@@ -342,10 +277,121 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
             );
           })}
         </View>
-      )}
+      ) : <StoreDirectoryStatus hasServiceCity={Boolean(selectedCityID)} kind={state.kind === "ready" ? "empty" : state.kind} query={query} selectedCategory={Boolean(selectedCategoryID)} onRetry={() => void load()} onClearSearch={() => { if (onSearchQueryChange) onSearchQueryChange(""); else router.setParams({ q: "" }); }} />}
       </> : null}
+
+
+      {!searchIsActive && isAuthenticated ? <BthwaniSurface tone="inset" style={styles.multiStoreCta}><View style={styles.multiStoreCopy}><Text style={styles.eyebrow}>تجربة موحّدة</Text><Text style={styles.cardTitle}>اطلب من عدة متاجر</Text><Text style={styles.muted}>اجمع السلال، وأنشئ طلبًا مستقلًا لكل متجر مع نتيجة واضحة.</Text></View><BthwaniButton label="فتح الطلب المتعدد" onPress={() => router.push("/multi-store-checkout" as Href)} variant="secondary" /></BthwaniSurface> : null}
     </View>
   );
+}
+
+function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selectedCityName, stores, onClearCategory }: {
+  query: string;
+  selectedCategoryID: string;
+  selectedCityID: string | null;
+  selectedCityName: string;
+  stores: ReadonlyArray<PublicStoreView>;
+  onClearCategory: () => void;
+}) {
+  const router = useRouter();
+  const theme = useAppearanceTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const [productSearch, setProductSearch] = useState<ProductSearchState>({ kind: "idle" });
+  const [loadingMoreProducts, setLoadingMoreProducts] = useState(false);
+  const [loadMoreProductsError, setLoadMoreProductsError] = useState(false);
+  const [failedProductImages, setFailedProductImages] = useState<ReadonlySet<string>>(() => new Set());
+  const productSearchRequestID = useRef(0);
+
+  const runProductSearch = useCallback(async () => {
+    const normalizedQuery = query.trim();
+    if (!selectedCityID || !normalizedQuery) {
+      setProductSearch({ kind: "idle" });
+      return;
+    }
+    const requestID = ++productSearchRequestID.current;
+    setProductSearch({ kind: "loading" });
+    setLoadingMoreProducts(false);
+    setLoadMoreProductsError(false);
+    try {
+      const result = await searchPublicCatalog(selectedCityID, normalizedQuery, selectedCategoryID, 20);
+      if (productSearchRequestID.current === requestID) setProductSearch({ kind: "ready", offers: result.offers, nextCursor: result.nextCursor });
+    } catch {
+      if (productSearchRequestID.current === requestID) setProductSearch({ kind: "error" });
+    }
+  }, [query, selectedCategoryID, selectedCityID]);
+
+  useEffect(() => {
+    if (!selectedCityID || !query.trim()) {
+      productSearchRequestID.current += 1;
+      setProductSearch({ kind: "idle" });
+      setLoadingMoreProducts(false);
+      setLoadMoreProductsError(false);
+      return;
+    }
+    setProductSearch({ kind: "loading" });
+    setLoadingMoreProducts(false);
+    setLoadMoreProductsError(false);
+    const timer = setTimeout(() => { void runProductSearch(); }, 300);
+    return () => {
+      clearTimeout(timer);
+      productSearchRequestID.current += 1;
+    };
+  }, [query, runProductSearch, selectedCityID]);
+
+  async function loadMoreProductOffers() {
+    if (productSearch.kind !== "ready" || !productSearch.nextCursor || loadingMoreProducts || !selectedCityID || !query.trim()) return;
+    const cursor = productSearch.nextCursor;
+    const requestID = ++productSearchRequestID.current;
+    setLoadingMoreProducts(true);
+    setLoadMoreProductsError(false);
+    try {
+      const result = await searchPublicCatalog(selectedCityID, query.trim(), selectedCategoryID, 20, cursor);
+      if (productSearchRequestID.current === requestID) {
+        setProductSearch((current) => current.kind === "ready" ? { kind: "ready", offers: [...current.offers, ...result.offers], nextCursor: result.nextCursor } : current);
+      }
+    } catch {
+      if (productSearchRequestID.current === requestID) setLoadMoreProductsError(true);
+    } finally {
+      if (productSearchRequestID.current === requestID) setLoadingMoreProducts(false);
+    }
+  }
+
+  return (
+    <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}>
+      {!query.trim() ? <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>اكتب اسم المنتج للبحث</Text><Text style={styles.muted}>استخدم مربع البحث أعلى الصفحة، ويمكنك تضييق النتائج حسب الفئة.</Text></BthwaniSurface> : !selectedCityID ? <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="location" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>اختر مدينة الخدمة للبحث</Text><Text style={styles.muted}>أغلق البحث ثم اختر المدينة من أعلى الشاشة لتظهر المنتجات المتاحة فيها.</Text></BthwaniSurface> : productSearch.kind === "loading" || productSearch.kind === "idle" ? <View style={styles.productSkeletons} accessibilityLabel="جارٍ البحث عن المنتجات"><BthwaniSkeleton height={104} /><BthwaniSkeleton height={104} /><BthwaniSkeleton height={104} /></View> : productSearch.kind === "error" ? <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" style={styles.cardTitle}>تعذر البحث عن المنتجات</Text><Text style={styles.muted}>تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void runProductSearch()} /></BthwaniSurface> : productSearch.offers.length === 0 ? <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>لا توجد منتجات مطابقة</Text><Text style={styles.muted}>جرّب كلمة أقصر أو اختر فئة أخرى.</Text><BthwaniButton label="مسح الفئة" onPress={onClearCategory} variant="quiet" /></BthwaniSurface> : <>
+        <BthwaniSectionHeader title="نتائج المنتجات" subtitle={`${productSearch.offers.length} منتج · ${selectedCityName || "مدينة الخدمة"}`} />
+        <View style={styles.list}>{productSearch.offers.map((offer) => {
+          const store = stores.find((candidate) => candidate.id === offer.storeId);
+          const primaryMedia = offer.media.find((media) => media.role === "primary") ?? offer.media[0];
+          const imageFailed = failedProductImages.has(offer.offerId);
+          return <Pressable accessibilityRole="button" accessibilityLabel={`فتح ${offer.productName}${store ? ` من متجر ${store.name}` : ""}`} key={offer.offerId} onPress={() => router.push((`/store/${encodeURIComponent(offer.storeId)}?productId=${encodeURIComponent(offer.productId)}`) as Href)} style={({ pressed }) => [styles.productCard, pressed && styles.pressed]}>
+            {primaryMedia && !imageFailed ? <Image accessibilityLabel={`صورة ${offer.productName}`} onError={() => setFailedProductImages((current) => new Set(current).add(offer.offerId))} source={{ uri: primaryMedia.uri }} style={styles.productImage} resizeMode="cover" /> : <View style={styles.productImageFallback}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
+            <View style={styles.productCopy}>
+              <Text style={styles.productTitle} numberOfLines={2}>{offer.productName}</Text>
+              {offer.variantTitle.trim() ? <Text style={styles.storeMeta} numberOfLines={1}>{offer.variantTitle}</Text> : null}
+              <Text style={styles.storeMeta} numberOfLines={1}>{store?.name ?? "متجر مشارك"}</Text>
+              <Text style={offer.availability ? styles.productAvailability : styles.storeHint}>{offer.availability ? "متاح حسب آخر تحديث" : "تحقق من التوفر داخل المتجر"}</Text>
+            </View>
+            <View style={styles.productPriceBlock}><Text style={styles.productPrice}>{formatMoney(offer.priceMinor, offer.currency)}</Text><BthwaniIcon name="forward" color={theme.colorMuted} size={sizing.iconMd} /></View>
+          </Pressable>;
+        })}</View>
+        {loadMoreProductsError ? <Text accessibilityRole="alert" style={styles.error}>تعذر تحميل المزيد من المنتجات.</Text> : null}
+        {productSearch.nextCursor ? <BthwaniButton disabled={loadingMoreProducts} label={loadingMoreProducts ? "جارٍ تحميل المزيد" : "تحميل المزيد"} onPress={() => void loadMoreProductOffers()} variant="secondary" /> : null}
+      </>}
+    </View>
+  );
+}
+
+function StoreDirectoryStatus({ hasServiceCity, kind, query, selectedCategory, onRetry, onClearSearch }: { hasServiceCity: boolean; kind: "loading" | "error" | "empty"; query: string; selectedCategory: boolean; onRetry: () => void; onClearSearch: () => void }) {
+  const theme = useAppearanceTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  if (!hasServiceCity) return <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="location" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>اختر مدينة الخدمة</Text><Text style={styles.muted}>أغلق البحث ثم اختر المدينة من أعلى الشاشة لعرض المتاجر المتاحة فيها.</Text></BthwaniSurface>;
+  if (kind === "loading") return <View style={styles.productSkeletons} accessibilityLabel="جارٍ تجهيز المتاجر"><BthwaniSkeleton height={104} /><BthwaniSkeleton height={104} /></View>;
+  if (kind === "error") return <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" style={styles.cardTitle}>تعذر تحميل المتاجر</Text><Text style={styles.muted}>تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={onRetry} /></BthwaniSurface>;
+  const emptyTitle = kind === "empty" && !query.trim() ? "لا توجد متاجر منشورة للطلب حاليًا" : query.trim() ? "لا توجد نتائج بهذا الاسم" : selectedCategory ? "لا توجد متاجر ضمن هذه الفئة" : "لا توجد متاجر مطابقة";
+  const emptyDescription = kind === "empty" && !query.trim() ? "يمكنك البحث عن المنتجات المتاحة في مدينة الخدمة." : query.trim() ? "جرّب اسمًا أقصر أو امسح البحث لعرض كل المتاجر." : "غيّر الفئة أو أزل الفلاتر لعرض المتاجر المتاحة.";
+  return <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>{emptyTitle}</Text><Text style={styles.muted}>{emptyDescription}</Text>{query.trim() ? <BthwaniButton label="مسح البحث" onPress={onClearSearch} variant="quiet" /> : null}</BthwaniSurface>;
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {

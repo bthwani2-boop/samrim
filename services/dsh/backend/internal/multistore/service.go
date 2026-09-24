@@ -63,6 +63,9 @@ func (s *Service) Checkout(ctx context.Context, accessToken string, input postgr
 		childCorrelation := postgres.HashMarketingFacts("multi-store-child-correlation", strings.TrimSpace(correlationID), checkout.ID, child.ID)
 		order, _, checkoutErr := s.cart.Checkout(ctx, accessToken, childInput.CartID, childInput.StoreID, childInput.AddressID, childInput.FulfillmentMode, childInput.PromotionCode, childInput.CartVersion, childKey, childCorrelation)
 		if checkoutErr != nil {
+			if !isDefinitiveChildCheckoutError(checkoutErr) {
+				return postgres.MultiStoreCheckoutRecord{}, false, ErrCheckoutInProgress
+			}
 			if _, markErr := postgres.MarkMultiStoreCheckoutChildFailed(ctx, s.db, checkout.ID, child.ID, childFailureCode(checkoutErr), childFailureMessage(checkoutErr)); markErr != nil {
 				return postgres.MultiStoreCheckoutRecord{}, false, markErr
 			}
@@ -74,6 +77,25 @@ func (s *Service) Checkout(ctx context.Context, accessToken string, input postgr
 	}
 	result, err := postgres.ReadMultiStoreCheckoutForClient(ctx, s.db, checkout.ID, actorID)
 	return result, replayed, err
+}
+
+func isDefinitiveChildCheckoutError(err error) bool {
+	if errors.Is(err, postgres.ErrExternalOutcomeUnknown) {
+		return false
+	}
+	switch {
+	case errors.Is(err, postgres.ErrCheckoutPaymentReconciled),
+		errors.Is(err, postgres.ErrCheckoutEvidenceStale), errors.Is(err, postgres.ErrCartVersionConflict),
+		errors.Is(err, cart.ErrCheckoutNotServiceable), errors.Is(err, cart.ErrFulfillmentModeUnavailable),
+		errors.Is(err, postgres.ErrCatalogInventoryInsufficient), errors.Is(err, postgres.ErrCatalogInventoryInvalid),
+		errors.Is(err, postgres.ErrPromotionUnavailable), errors.Is(err, postgres.ErrPromotionAlreadyRedeemed),
+		errors.Is(err, postgres.ErrPromotionLimitReached):
+		return true
+	case errors.Is(err, postgres.ErrPaymentProvisioning):
+		return !errors.Is(err, postgres.ErrExternalOutcomeUnknown)
+	default:
+		return false
+	}
 }
 
 func (s *Service) Read(ctx context.Context, accessToken, checkoutID string) (postgres.MultiStoreCheckoutRecord, error) {
@@ -102,9 +124,6 @@ func (s *Service) Cancel(ctx context.Context, accessToken, checkoutID string, ex
 	if err != nil {
 		return postgres.MultiStoreCheckoutRecord{}, false, err
 	}
-	if replayed {
-		return checkout, true, nil
-	}
 	if checkout.State == "PROCESSING" {
 		return postgres.MultiStoreCheckoutRecord{}, false, ErrCheckoutInProgress
 	}
@@ -114,10 +133,13 @@ func (s *Service) Cancel(ctx context.Context, accessToken, checkoutID string, ex
 		}
 		order, readErr := postgres.ReadOrderForClient(ctx, s.db, child.OrderID, actorID)
 		if readErr != nil {
-			if _, markErr := postgres.MarkMultiStoreCheckoutChildCancelFailed(ctx, s.db, checkout.ID, child.ID, "ORDER_NOT_FOUND", "the child Order could not be read"); markErr != nil {
-				return postgres.MultiStoreCheckoutRecord{}, false, markErr
+			if errors.Is(readErr, postgres.ErrOrderNotFound) {
+				if _, markErr := postgres.MarkMultiStoreCheckoutChildCancelFailed(ctx, s.db, checkout.ID, child.ID, "ORDER_NOT_FOUND", "the child Order could not be read"); markErr != nil {
+					return postgres.MultiStoreCheckoutRecord{}, false, ErrCheckoutInProgress
+				}
+				continue
 			}
-			continue
+			return postgres.MultiStoreCheckoutRecord{}, false, ErrCheckoutInProgress
 		}
 		if order.State == "CANCELLED" {
 			if _, markErr := postgres.MarkMultiStoreCheckoutChildCancelled(ctx, s.db, checkout.ID, child.ID); markErr != nil {
@@ -134,10 +156,7 @@ func (s *Service) Cancel(ctx context.Context, accessToken, checkoutID string, ex
 		childKey := postgres.HashMarketingFacts("multi-store-child-cancel", checkout.ID, child.ID)
 		childCorrelation := postgres.HashMarketingFacts("multi-store-child-cancel-correlation", strings.TrimSpace(correlationID), checkout.ID, child.ID)
 		if _, _, cancelErr := s.order.CancelForClient(ctx, accessToken, child.OrderID, order.Version, childKey, childCorrelation); cancelErr != nil {
-			if _, markErr := postgres.MarkMultiStoreCheckoutChildCancelFailed(ctx, s.db, checkout.ID, child.ID, "ORDER_CANCEL_FAILED", "the child Order could not be cancelled"); markErr != nil {
-				return postgres.MultiStoreCheckoutRecord{}, false, markErr
-			}
-			continue
+			return postgres.MultiStoreCheckoutRecord{}, false, ErrCheckoutInProgress
 		}
 		if _, markErr := postgres.MarkMultiStoreCheckoutChildCancelled(ctx, s.db, checkout.ID, child.ID); markErr != nil {
 			return postgres.MultiStoreCheckoutRecord{}, false, markErr
@@ -145,6 +164,11 @@ func (s *Service) Cancel(ctx context.Context, accessToken, checkoutID string, ex
 	}
 	result, err := postgres.ReadMultiStoreCheckoutForClient(ctx, s.db, checkout.ID, actorID)
 	if err == nil {
+		for _, child := range result.Children {
+			if child.State == "SUCCEEDED" {
+				return postgres.MultiStoreCheckoutRecord{}, false, ErrCheckoutInProgress
+			}
+		}
 		err = postgres.CompleteMultiStoreCheckoutMutation(ctx, s.db, strings.TrimSpace(idempotencyKey), result.Version)
 	}
 	return result, replayed, err
@@ -156,6 +180,10 @@ func inputForChild(child postgres.MultiStoreCheckoutChildRecord) postgres.MultiS
 
 func childFailureCode(err error) string {
 	switch {
+	case errors.Is(err, postgres.ErrExternalOutcomeUnknown):
+		return "PAYMENT_OUTCOME_UNKNOWN"
+	case errors.Is(err, postgres.ErrCheckoutPaymentReconciled):
+		return "PAYMENT_RECONCILED"
 	case errors.Is(err, postgres.ErrCheckoutEvidenceStale), errors.Is(err, postgres.ErrCartVersionConflict):
 		return "STALE_CHECKOUT"
 	case errors.Is(err, cart.ErrCheckoutNotServiceable):

@@ -1,8 +1,8 @@
 import { borders, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { availableCustomerFulfillmentModes, fulfillmentModeLabel, type CustomerFulfillmentMode, type DeliveryAddress, type PublicStoreView, type ServiceabilityResponse } from "@bthwani/dsh";
+import { availableCustomerFulfillmentModes, type CustomerFulfillmentMode, type DeliveryAddress, fulfillmentModeLabel, type PublicStoreView, type ServiceabilityResponse } from "@bthwani/dsh";
 import { type Href, Link, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { useServiceCityScope } from "../service-city/service-city-scope";
 import { evaluateStoreServiceability, listOwnDeliveryAddresses, readPublishedStore } from "../store-discovery/store-discovery-client";
@@ -30,10 +30,17 @@ export default function ClientCartScreen() {
   const [state, setState] = useState<CartScreenState>({ kind: "loading" });
   const [serviceability, setServiceability] = useState<ServiceabilityState>({ kind: "idle" });
   const [fulfillmentMode, setFulfillmentMode] = useState<CustomerFulfillmentMode | null>(null);
+  const loadRequestID = useRef(0);
+  const serviceabilityRequestID = useRef(0);
+  const scopeRef = useRef({ storeId, selectedCityID });
+  scopeRef.current = { storeId, selectedCityID };
 
   const load = useCallback(async () => {
+    const requestID = ++loadRequestID.current;
+    serviceabilityRequestID.current += 1;
+    const isCurrent = () => requestID === loadRequestID.current && scopeRef.current.storeId === storeId && scopeRef.current.selectedCityID === selectedCityID;
     if (!storeId.trim() || !selectedCityID) {
-      setState({ kind: "error" });
+      if (isCurrent()) setState({ kind: "error" });
       return;
     }
     setState({ kind: "loading" });
@@ -43,25 +50,40 @@ export default function ClientCartScreen() {
         readPublishedStore(storeId, selectedCityID),
         listOwnDeliveryAddresses(),
       ]);
+      if (!isCurrent()) return;
       setState({ kind: "ready", store, addresses: addressResponse.addresses });
       const enabledModes = availableCustomerFulfillmentModes(store.fulfillmentModes);
       setFulfillmentMode(enabledModes.includes(requestedFulfillmentMode as CustomerFulfillmentMode) ? requestedFulfillmentMode as CustomerFulfillmentMode : null);
     } catch {
-      setState({ kind: "error" });
+      if (isCurrent()) setState({ kind: "error" });
     }
   }, [requestedFulfillmentMode, selectedCityID, storeId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+    return () => {
+      loadRequestID.current += 1;
+      serviceabilityRequestID.current += 1;
+    };
+  }, [load]);
 
   async function evaluateAddress(addressId: string) {
     if (state.kind !== "ready") return;
+    const requestID = ++serviceabilityRequestID.current;
+    const targetStoreID = state.store.id;
+    const targetCityID = selectedCityID;
+    const isCurrent = () => requestID === serviceabilityRequestID.current && scopeRef.current.storeId === targetStoreID && scopeRef.current.selectedCityID === targetCityID;
     setServiceability({ kind: "loading", addressId });
     try {
-      const result = await evaluateStoreServiceability(state.store.id, addressId);
-      setServiceability({ kind: "ready", addressId, result });
+      const result = await evaluateStoreServiceability(targetStoreID, addressId);
+      if (isCurrent()) setServiceability({ kind: "ready", addressId, result });
     } catch {
-      setServiceability({ kind: "error", addressId });
+      if (isCurrent()) setServiceability({ kind: "error", addressId });
     }
+  }
+
+  if (state.kind === "ready" && (state.store.id !== storeId || state.store.serviceCity.id !== selectedCityID)) {
+    return <View style={styles.state} accessibilityLabel="جارٍ تحديث المتجر"><BthwaniSkeleton width="35%" height={28} /><BthwaniSkeleton height={88} /><BthwaniSkeleton height={152} /></View>;
   }
 
   if (state.kind === "loading") {
@@ -83,7 +105,7 @@ export default function ClientCartScreen() {
       </BthwaniSurface>
       <BthwaniSectionHeader title="طريقة الاستلام" subtitle="اختر من الخيارات التي يدعمها هذا المتجر." />
       <View style={styles.addressCard} accessibilityLabel="خيارات استلام الطلب">
-        {availableFulfillmentModes.map((mode) => <BthwaniChip key={mode} label={fulfillmentModeLabel(mode)} onPress={() => { setFulfillmentMode(mode); setServiceability({ kind: "idle" }); }} selected={fulfillmentMode === mode} />)}
+        {availableFulfillmentModes.map((mode) => <BthwaniChip key={mode} label={fulfillmentModeLabel(mode)} onPress={() => { serviceabilityRequestID.current += 1; setFulfillmentMode(mode); setServiceability({ kind: "idle" }); }} selected={fulfillmentMode === mode} />)}
       </View>
       {fulfillmentMode !== null && fulfillmentMode !== "CUSTOMER_PICKUP" ? <>
         <BthwaniSectionHeader title="عنوان التوصيل" subtitle="يعيد الخادم التحقق من الأهلية عند الإتمام." />
@@ -97,7 +119,7 @@ export default function ClientCartScreen() {
           {serviceability.kind === "error" ? <Text accessibilityRole="alert" style={styles.error}>تعذر تقييم العنوان. أعد المحاولة.</Text> : null}
         </View>
       </> : fulfillmentMode === "CUSTOMER_PICKUP" ? <BthwaniSurface tone="inset" style={styles.addressCard}><Text style={styles.addressText}>استلم بنفسك من المتجر</Text><Text style={styles.muted}>اذهب إلى المتجر لاستلام طلبك وادفع قيمة المنتجات نقدًا للمتجر.</Text></BthwaniSurface> : <Text accessibilityRole="alert" style={styles.error}>اختر أحد أوضاع الطلب المتاحة لإتمام الشراء.</Text>}
-      {fulfillmentMode ? <CartCheckout storeId={state.store.id} addresses={state.addresses} serviceableAddressId={serviceableAddressId} fulfillmentMode={fulfillmentMode} /> : null}
+      {fulfillmentMode ? <CartCheckout key={state.store.id} storeId={state.store.id} addresses={state.addresses} serviceableAddressId={serviceableAddressId} fulfillmentMode={fulfillmentMode} /> : null}
     </View>
   );
 }

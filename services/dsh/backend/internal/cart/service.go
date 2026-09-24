@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net/http"
 	"strings"
 	"time"
 
@@ -57,6 +58,14 @@ func New(identity *identityintegration.Client, db *sql.DB, serviceabilityService
 		return nil, errors.New("cart configuration is invalid")
 	}
 	return &Service{identity: identity, db: db, serviceability: serviceabilityService, payment: payment, proofKeys: proofKeys}, nil
+}
+
+func (s *Service) ListOpenCarts(ctx context.Context, accessToken string) ([]postgres.ClientOpenCartRecord, error) {
+	actorID, err := s.requireClient(ctx, accessToken)
+	if err != nil {
+		return nil, err
+	}
+	return postgres.ListClientOpenCarts(ctx, s.db, actorID)
 }
 
 func (s *Service) Read(ctx context.Context, accessToken, storeID string) (postgres.CartRecord, error) {
@@ -222,11 +231,38 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		return postgres.OrderRecord{}, false, err
 	}
 	fulfillmentMode = strings.TrimSpace(fulfillmentMode)
+	cartID, storeID, addressID = strings.TrimSpace(cartID), strings.TrimSpace(storeID), strings.TrimSpace(addressID)
+	idempotencyKey, correlationID = strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID)
+	if cartID == "" {
+		return postgres.OrderRecord{}, false, postgres.ErrCheckoutEvidenceStale
+	}
+	paymentExternalReference := wlt.DerivedExternalReference("checkout", idempotencyKey)
+	paymentCancellationKey := wlt.DerivedIdempotencyKey("cancel-checkout", idempotencyKey)
+	paymentRecoveryReader := s.paymentIntentRecoveryReader()
+	paymentCanceller := s.paymentIntentCanceller()
+	paymentMethod := "CASH_ON_DELIVERY"
+	if fulfillmentMode == FulfillmentModeCustomerPickup || fulfillmentMode == FulfillmentModePartnerCaptain {
+		paymentMethod = PaymentMethodCashAtStore
+	}
+	attemptInput := postgres.CheckoutInput{
+		ClientActorID: actorID, CartID: cartID, StoreID: storeID, AddressID: addressID,
+		FulfillmentMode: fulfillmentMode, ExpectedCartVersion: expectedCartVersion,
+		IdempotencyKey: idempotencyKey, CorrelationID: correlationID,
+		PaymentExternalReference: paymentExternalReference, PaymentCancellationKey: paymentCancellationKey,
+		PaymentMethod: paymentMethod, PromotionCode: strings.ToUpper(strings.TrimSpace(promotionCode)),
+		PaymentIntentRecoveryReader: paymentRecoveryReader, PaymentCanceller: paymentCanceller,
+	}
+	resolvedOrder, replayed, resolveErr := postgres.ResolveCheckoutAttempt(ctx, s.db, attemptInput)
+	if resolveErr != nil {
+		return postgres.OrderRecord{}, false, resolveErr
+	}
+	if replayed {
+		return resolvedOrder, true, nil
+	}
 	if fulfillmentMode != FulfillmentModeBthwaniCaptain && fulfillmentMode != FulfillmentModePartnerCaptain && fulfillmentMode != FulfillmentModeCustomerPickup {
 		return postgres.OrderRecord{}, false, ErrFulfillmentModeUnavailable
 	}
-	cartID, storeID, addressID = strings.TrimSpace(cartID), strings.TrimSpace(storeID), strings.TrimSpace(addressID)
-	if cartID == "" || storeID == "" || expectedCartVersion < 1 || (fulfillmentMode != FulfillmentModeCustomerPickup && addressID == "") || (fulfillmentMode == FulfillmentModeCustomerPickup && addressID != "") {
+	if storeID == "" || expectedCartVersion < 1 || (fulfillmentMode != FulfillmentModeCustomerPickup && addressID == "") || (fulfillmentMode == FulfillmentModeCustomerPickup && addressID != "") {
 		return postgres.OrderRecord{}, false, postgres.ErrCheckoutEvidenceStale
 	}
 	store, err := postgres.ReadStore(ctx, s.db, storeID)
@@ -248,22 +284,15 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		evidence = postgres.CheckoutEvidence{ServiceCityID: facts.StoreServiceCityID, PolicyVersion: serviceability.PolicyVersion, Status: serviceabilityResult.Status, StoreVersion: facts.StoreVersion, AddressVersion: facts.AddressVersion, StoreOriginLatitude: facts.StoreOriginLatitude, StoreOriginLongitude: facts.StoreOriginLongitude, AddressLatitude: facts.AddressLatitude, AddressLongitude: facts.AddressLongitude}
 	}
 	input := postgres.CheckoutInput{
-		ClientActorID: actorID, CartID: cartID, StoreID: storeID, AddressID: addressID, FulfillmentMode: fulfillmentMode, ExpectedCartVersion: expectedCartVersion, PromotionCode: strings.ToUpper(strings.TrimSpace(promotionCode)), PaymentMethod: "CASH_ON_DELIVERY", DeliveryProofKeyring: s.proofKeys,
+		ClientActorID: actorID, CartID: cartID, StoreID: storeID, AddressID: addressID, FulfillmentMode: fulfillmentMode, ExpectedCartVersion: expectedCartVersion, PromotionCode: strings.ToUpper(strings.TrimSpace(promotionCode)), PaymentMethod: paymentMethod, DeliveryProofKeyring: s.proofKeys,
 		Evidence:       evidence,
-		IdempotencyKey: strings.TrimSpace(idempotencyKey), ActingActorID: actorID, CorrelationID: strings.TrimSpace(correlationID),
-		PaymentExternalReference: wlt.DerivedExternalReference("checkout", idempotencyKey),
+		IdempotencyKey: idempotencyKey, ActingActorID: actorID, CorrelationID: correlationID,
+		PaymentExternalReference: paymentExternalReference,
 		PaymentIdempotencyKey:    wlt.DerivedIdempotencyKey("create", idempotencyKey),
-		PaymentCancellationKey:   wlt.DerivedIdempotencyKey("cancel-checkout", idempotencyKey),
-	}
-	if fulfillmentMode == FulfillmentModeCustomerPickup || fulfillmentMode == FulfillmentModePartnerCaptain {
-		input.PaymentMethod = PaymentMethodCashAtStore
+		PaymentCancellationKey:   paymentCancellationKey,
 	}
 	input.DeliveryFeeResolver = s.quoteDeliveryFee
 	input.PaymentProvisioner = func(provisionContext context.Context, orderID, externalReference, payerActorID string, subtotalMinor, discountMinor, deliveryFeeMinor int64, deliveryPolicyVersion string, amountMinor int64, paymentIdempotencyKey, paymentCorrelationID string) (postgres.ProvisionedPayment, error) {
-		paymentMethod := "CASH_ON_DELIVERY"
-		if fulfillmentMode == FulfillmentModeCustomerPickup || fulfillmentMode == FulfillmentModePartnerCaptain {
-			paymentMethod = wlt.MethodCashAtStore
-		}
 		allocationPolicy := fmt.Sprintf("cod-current-v2;delivery=%s", deliveryPolicyVersion)
 		if fulfillmentMode == FulfillmentModeCustomerPickup {
 			allocationPolicy = "cash-at-store-v1"
@@ -271,21 +300,50 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 			allocationPolicy = "store-captain-cash-v1"
 		}
 		if err := s.payment.EnsurePartnerStoreCommissionPolicies(provisionContext, store.ID, store.PartnerActorID, wlt.DerivedIdempotencyKey("ensure-store-commission-policy", store.ID), paymentCorrelationID); err != nil {
-			return postgres.ProvisionedPayment{}, err
+			return postgres.ProvisionedPayment{}, externalMutationOutcome(err)
 		}
 		allocation := wlt.CustomerPaymentAllocation{OrderID: orderID, StoreID: store.ID, PartnerActorID: store.PartnerActorID, FulfillmentMode: fulfillmentMode, Currency: "YER", SubtotalMinor: subtotalMinor, DeliveryFeeMinor: deliveryFeeMinor, DiscountMinor: discountMinor, CashAmountMinor: amountMinor, CustomerPayableMinor: amountMinor, PolicyVersion: allocationPolicy}
 		intent, _, provisionErr := s.payment.CreateForOrderWithMethod(provisionContext, orderID, externalReference, payerActorID, amountMinor, paymentMethod, allocation, paymentIdempotencyKey, paymentCorrelationID)
 		if provisionErr != nil {
-			return postgres.ProvisionedPayment{}, provisionErr
+			return postgres.ProvisionedPayment{}, externalMutationOutcome(provisionErr)
 		}
 		return postgres.ProvisionedPayment{IntentID: intent.ID, State: intent.State}, nil
 	}
-	input.PaymentCanceller = func(compensationContext context.Context, intentID, reason, cancellationKey, paymentCorrelationID string) error {
-		_, cancelErr := s.payment.EnsureCancelled(compensationContext, intentID, reason, cancellationKey, paymentCorrelationID)
-		return cancelErr
-	}
+	input.PaymentIntentRecoveryReader = paymentRecoveryReader
+	input.PaymentCanceller = paymentCanceller
 	input.RequestHash = postgres.HashCheckoutRequest(input)
 	return postgres.CreateOrderFromCart(ctx, s.db, input)
+}
+
+func (s *Service) paymentIntentRecoveryReader() postgres.PaymentIntentRecoveryReader {
+	return func(ctx context.Context, externalReference string) (postgres.PaymentIntentRecoveryRecord, bool, error) {
+		intent, err := s.payment.ReadByExternalReference(ctx, externalReference)
+		if err != nil {
+			var wltErr *wlt.Error
+			if errors.As(err, &wltErr) && wltErr.Status == http.StatusNotFound && wltErr.Code == "NOT_FOUND" {
+				return postgres.PaymentIntentRecoveryRecord{}, false, nil
+			}
+			return postgres.PaymentIntentRecoveryRecord{}, false, err
+		}
+		orderID := ""
+		if intent.CustomerPaymentAllocation != nil {
+			orderID = intent.CustomerPaymentAllocation.OrderID
+		}
+		return postgres.PaymentIntentRecoveryRecord{IntentID: intent.ID, ExternalReference: intent.ExternalReference, PayerActorID: intent.PayerActorID, OrderID: orderID, Method: intent.Method, State: intent.State}, true, nil
+	}
+}
+
+func (s *Service) paymentIntentCanceller() postgres.PaymentIntentCanceller {
+	return func(ctx context.Context, intentID, reason, idempotencyKey, correlationID string) error {
+		cancelled, err := s.payment.EnsureCancelled(ctx, intentID, reason, idempotencyKey, correlationID)
+		if err != nil {
+			return externalMutationOutcome(err)
+		}
+		if cancelled.ID != intentID || cancelled.State != "CANCELLED" {
+			return fmt.Errorf("%w: WLT did not confirm payment cancellation", postgres.ErrExternalOutcomeUnknown)
+		}
+		return nil
+	}
 }
 
 func supportsFulfillmentMode(modes []string, requested string) bool {
@@ -297,10 +355,21 @@ func supportsFulfillmentMode(modes []string, requested string) bool {
 	return false
 }
 
+func externalMutationOutcome(err error) error {
+	if err == nil {
+		return nil
+	}
+	var responseErr *wlt.Error
+	if errors.As(err, &responseErr) && responseErr.Status == http.StatusBadRequest && (responseErr.Code == "INVALID_INPUT" || responseErr.Code == "INVALID_PAYMENT_ALLOCATION") {
+		return err
+	}
+	return fmt.Errorf("%w: %w", postgres.ErrExternalOutcomeUnknown, err)
+}
+
 func (s *Service) quoteDeliveryFee(ctx context.Context, input postgres.DeliveryFeeQuoteInput) (postgres.DeliveryFeeQuote, error) {
 	quote, err := s.payment.QuoteDeliveryFee(ctx, wlt.DeliveryFeeQuoteInput{ServiceCityID: input.ServiceCityID, OriginLatitude: input.OriginLatitude, OriginLongitude: input.OriginLongitude, DestinationLatitude: input.DestinationLatitude, DestinationLongitude: input.DestinationLongitude, OrderSizeBaseUnits: input.OrderSizeBaseUnits})
 	if err != nil {
-		return postgres.DeliveryFeeQuote{}, err
+		return postgres.DeliveryFeeQuote{}, fmt.Errorf("%w: %w", postgres.ErrDeliveryFeeUnavailable, err)
 	}
 	return postgres.DeliveryFeeQuote{FeeMinor: quote.FeeMinor, PolicyVersion: quote.PolicyVersion}, nil
 }

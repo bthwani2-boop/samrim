@@ -222,6 +222,7 @@ func (s *StorePublicationServer) readPublic(w http.ResponseWriter, r *http.Reque
 func (s *StorePublicationServer) readPublicCatalog(w http.ResponseWriter, r *http.Request) {
 	serviceCityID := strings.TrimSpace(r.URL.Query().Get("serviceCityId"))
 	categoryID := strings.TrimSpace(r.URL.Query().Get("categoryId"))
+	productID := strings.TrimSpace(r.URL.Query().Get("productId"))
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
 	limit := 100
@@ -233,7 +234,7 @@ func (s *StorePublicationServer) readPublicCatalog(w http.ResponseWriter, r *htt
 		}
 		limit = parsed
 	}
-	if serviceCityID == "" || len(categoryID) > 128 || utf8.RuneCountInString(query) > 160 || len(cursor) > 1024 {
+	if serviceCityID == "" || len(categoryID) > 128 || len(productID) > 128 || utf8.RuneCountInString(query) > 160 || len(cursor) > 1024 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog scope or filter is invalid")
 		return
 	}
@@ -245,7 +246,7 @@ func (s *StorePublicationServer) readPublicCatalog(w http.ResponseWriter, r *htt
 		writeStorePublicationError(w, err)
 		return
 	}
-	result, err := postgres.ReadPublicCatalog(r.Context(), s.db, r.PathValue("storeId"), serviceCityID, categoryID, query, limit, cursor)
+	result, err := postgres.ReadPublicCatalog(r.Context(), s.db, r.PathValue("storeId"), serviceCityID, categoryID, productID, query, limit, cursor)
 	if errors.Is(err, postgres.ErrStoreNotFound) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "published store catalog was not found")
 		return
@@ -254,6 +255,10 @@ func (s *StorePublicationServer) readPublicCatalog(w http.ResponseWriter, r *htt
 		writeStorageError(w, err)
 		return
 	}
+	writeJSON(w, http.StatusOK, toPublicCatalogResponse(result))
+}
+
+func toPublicCatalogResponse(result postgres.PublicCatalogRecord) contract.PublicCatalogResponse {
 	categories := make([]contract.CatalogCategory, 0, len(result.Categories))
 	for _, category := range result.Categories {
 		categories = append(categories, toCatalogCategory(category))
@@ -274,7 +279,7 @@ func (s *StorePublicationServer) readPublicCatalog(w http.ResponseWriter, r *htt
 	if result.NextCursor != nil {
 		nextCursor = *result.NextCursor
 	}
-	writeJSON(w, http.StatusOK, contract.PublicCatalogResponse{StoreID: result.StoreID, VerticalID: result.VerticalID, Categories: categories, Sections: sections, Offers: offers, NextCursor: nextCursor})
+	return contract.PublicCatalogResponse{StoreID: result.StoreID, VerticalID: result.VerticalID, Categories: categories, Sections: sections, Offers: offers, NextCursor: nextCursor}
 }
 
 func (s *StorePublicationServer) searchPublicCatalog(w http.ResponseWriter, r *http.Request) {

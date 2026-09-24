@@ -33,3 +33,13 @@ func TestSearchPublicCatalogValidatesUnicodeQueryAndCursorLength(t *testing.T) {
 		t.Fatalf("1025 cursor characters returned status %d, want 400", got)
 	}
 }
+
+func TestReadPublicCatalogRejectsOverlongProductID(t *testing.T) {
+	values := url.Values{"serviceCityId": {"city-1"}, "productId": {strings.Repeat("p", 129)}}
+	request := httptest.NewRequest(http.MethodGet, "/dsh/public/stores/store-1/catalog?"+values.Encode(), nil)
+	response := httptest.NewRecorder()
+	(&StorePublicationServer{}).readPublicCatalog(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("129-character productId returned status %d, want 400", response.Code)
+	}
+}

@@ -34,6 +34,7 @@ func New(db *sql.DB, serviceToken, destinationEncryptionKey string) (*Server, er
 
 func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/payment-intents", s.create)
+	mux.HandleFunc("GET /wlt/v1/payment-intents/by-external-reference", s.readByExternalReference)
 	mux.HandleFunc("GET /wlt/v1/payment-intents/{intentId}", s.read)
 	mux.HandleFunc("POST /wlt/v1/payment-intents/{intentId}/collect", s.collect)
 	mux.HandleFunc("POST /wlt/v1/payment-intents/{intentId}/cancel", s.cancel)
@@ -584,6 +585,23 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusOK
 	}
 	writeJSON(w, status, paymentIntentResponse{PaymentIntent: toPaymentIntent(result), IdempotentReplay: replayed})
+}
+
+func (s *Server) readByExternalReference(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	externalReference := strings.TrimSpace(r.URL.Query().Get("externalReference"))
+	if externalReference == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "externalReference is required")
+		return
+	}
+	result, err := postgres.ReadPaymentIntentByExternalReference(r.Context(), s.db, externalReference)
+	if err != nil {
+		writePaymentError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, paymentIntentResponse{PaymentIntent: toPaymentIntent(result)})
 }
 
 func (s *Server) read(w http.ResponseWriter, r *http.Request) {
@@ -1355,6 +1373,8 @@ func writePaymentError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, postgres.ErrNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "payment intent was not found")
+	case errors.Is(err, postgres.ErrExternalReferenceAmbiguous):
+		writeError(w, http.StatusConflict, "EXTERNAL_REFERENCE_AMBIGUOUS", "more than one payment intent uses this external reference")
 	case errors.Is(err, postgres.ErrIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different payment facts")
 	case errors.Is(err, postgres.ErrIntentExists):

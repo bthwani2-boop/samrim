@@ -555,6 +555,14 @@ func (c *Client) Read(ctx context.Context, intentID string) (PaymentIntent, erro
 	return response.PaymentIntent, err
 }
 
+func (c *Client) ReadByExternalReference(ctx context.Context, externalReference string) (PaymentIntent, error) {
+	query := url.Values{}
+	query.Set("externalReference", strings.TrimSpace(externalReference))
+	var response paymentIntentResponse
+	err := c.request(ctx, http.MethodGet, "/wlt/v1/payment-intents/by-external-reference?"+query.Encode(), nil, "", "", 0, &response)
+	return response.PaymentIntent, err
+}
+
 func (c *Client) Collect(ctx context.Context, intentID, collectedByActorID, collectionReference string, amountMinor int64, expectedVersion int, idempotencyKey, correlationID string) (PaymentIntent, bool, error) {
 	body := map[string]any{
 		"collectedAmountMinor": amountMinor,

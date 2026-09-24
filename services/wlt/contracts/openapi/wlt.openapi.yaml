@@ -29,6 +29,34 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PaymentIntentResponse' }
+  /wlt/v1/payment-intents/by-external-reference:
+    get:
+      operationId: readPaymentIntentByExternalReference
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: externalReference
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        '200':
+          description: The single payment intent matching the external reference.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentIntentResponse' }
+        '400':
+          description: Missing or invalid external reference.
+        '401':
+          description: WLT service authorization is required.
+        '404':
+          description: No payment intent matches the external reference.
+        '409':
+          description: The external reference is ambiguous across payment methods.
+        '502':
+          description: WLT persistence is unavailable.
   /wlt/v1/payment-intents/{intentId}:
     get:
       operationId: readPaymentIntent

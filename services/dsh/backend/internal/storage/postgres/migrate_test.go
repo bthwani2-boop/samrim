@@ -49,8 +49,8 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 		t.Fatalf("unexpected DSH migration graph size: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.SchemaVersion)
 	}
 	last := records[len(records)-1]
-	if last.Version != postgres.SchemaVersion || last.Name != "061_operator_store_registry.sql" {
-		t.Fatalf("last DSH migration = v%d %q; want v%d 061_operator_store_registry.sql", last.Version, last.Name, postgres.SchemaVersion)
+	if last.Version != postgres.SchemaVersion || last.Name != "062_client_favorite_store_offers.sql" {
+		t.Fatalf("last DSH migration = v%d %q; want v%d 062_client_favorite_store_offers.sql", last.Version, last.Name, postgres.SchemaVersion)
 	}
 }
 

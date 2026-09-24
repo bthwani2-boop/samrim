@@ -126,10 +126,13 @@ func (s *Service) MarkOrderConversationRead(ctx context.Context, accessToken, or
 	return postgres.MarkOrderConversationRead(ctx, s.db, orderID, actorID, role, messageID)
 }
 
-func (s *Service) ListForClient(ctx context.Context, accessToken string, limit int) ([]postgres.OrderRecord, error) {
+func (s *Service) ListForClient(ctx context.Context, accessToken string, limit int, cartID string) ([]postgres.OrderRecord, error) {
 	identity, err := s.requireSession(ctx, accessToken, "client", "app-client")
 	if err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(cartID) != "" {
+		return postgres.ListOrdersForClientByCart(ctx, s.db, identity, cartID)
 	}
 	return postgres.ListOrdersForClient(ctx, s.db, identity, "", limit)
 }

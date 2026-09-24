@@ -111,12 +111,26 @@ func readCustomerVisibleOffer(ctx context.Context, rowSource rowQueryer, storeID
 	return hydrateCatalogOffer(ctx, rowSource, item)
 }
 
-func ReadPublicCatalog(ctx context.Context, db *sql.DB, storeID, serviceCityID, categoryID, query string, limit int, cursor string) (PublicCatalogRecord, error) {
+func ReadPublicCatalog(ctx context.Context, db *sql.DB, storeID, serviceCityID, categoryID, productID, query string, limit int, cursor string) (PublicCatalogRecord, error) {
+	return readPublicCatalog(ctx, db, storeID, serviceCityID, categoryID, productID, query, "", limit, cursor)
+}
+
+func ReadPublicFavoriteStoreCatalog(ctx context.Context, db *sql.DB, storeID, serviceCityID, clientActorID string, limit int, cursor string) (PublicCatalogRecord, error) {
+	clientActorID = strings.TrimSpace(clientActorID)
+	if clientActorID == "" || len(clientActorID) > 128 {
+		return PublicCatalogRecord{}, errors.New("favorite catalog client actor is invalid")
+	}
+	return readPublicCatalog(ctx, db, storeID, serviceCityID, "", "", "", clientActorID, limit, cursor)
+}
+
+func readPublicCatalog(ctx context.Context, db *sql.DB, storeID, serviceCityID, categoryID, productID, query, favoriteActorID string, limit int, cursor string) (PublicCatalogRecord, error) {
 	storeID = strings.TrimSpace(storeID)
 	serviceCityID = strings.TrimSpace(serviceCityID)
 	categoryID = strings.TrimSpace(categoryID)
+	productID = strings.TrimSpace(productID)
 	query = strings.TrimSpace(query)
-	if storeID == "" || serviceCityID == "" || limit < 1 || limit > 100 {
+	favoriteActorID = strings.TrimSpace(favoriteActorID)
+	if storeID == "" || serviceCityID == "" || len(productID) > 128 || len(favoriteActorID) > 128 || limit < 1 || limit > 100 {
 		return PublicCatalogRecord{}, ErrStoreNotFound
 	}
 	var verticalID string
@@ -132,15 +146,19 @@ func ReadPublicCatalog(ctx context.Context, db *sql.DB, storeID, serviceCityID, 
 		return PublicCatalogRecord{}, fmt.Errorf("read public catalog store scope: %w", err)
 	}
 
-	categories, err := ListCatalogCategories(ctx, db, verticalID, true)
-	if err != nil {
-		return PublicCatalogRecord{}, err
+	categories := []CatalogCategoryRecord{}
+	sections := []CatalogStorefrontSectionRecord{}
+	if favoriteActorID == "" {
+		categories, err = ListCatalogCategories(ctx, db, verticalID, true)
+		if err != nil {
+			return PublicCatalogRecord{}, err
+		}
+		sections, err = listStorefrontSections(ctx, db, storeID)
+		if err != nil {
+			return PublicCatalogRecord{}, err
+		}
 	}
-	offers, nextCursor, err := listCustomerVisibleOffers(ctx, db, storeID, serviceCityID, categoryID, query, limit, cursor)
-	if err != nil {
-		return PublicCatalogRecord{}, err
-	}
-	sections, err := listStorefrontSections(ctx, db, storeID)
+	offers, nextCursor, err := listCustomerVisibleOffers(ctx, db, storeID, serviceCityID, categoryID, productID, query, favoriteActorID, limit, cursor)
 	if err != nil {
 		return PublicCatalogRecord{}, err
 	}
@@ -154,18 +172,20 @@ func SearchPublicCatalog(ctx context.Context, db *sql.DB, serviceCityID, categor
 	if db == nil || serviceCityID == "" || query == "" || utf8.RuneCountInString(query) > 160 || len(categoryID) > 128 || len(cursor) > 1024 || limit < 1 || limit > 50 {
 		return PublicCatalogSearchRecord{}, errors.New("public catalog search input is invalid")
 	}
-	offers, nextCursor, err := listCustomerVisibleOffers(ctx, db, "", serviceCityID, categoryID, query, limit, cursor)
+	offers, nextCursor, err := listCustomerVisibleOffers(ctx, db, "", serviceCityID, categoryID, "", query, "", limit, cursor)
 	if err != nil {
 		return PublicCatalogSearchRecord{}, err
 	}
 	return PublicCatalogSearchRecord{Offers: offers, NextCursor: nextCursor}, nil
 }
 
-func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, serviceCityID, categoryID, query string, limit int, cursor string) ([]CatalogStoreOfferRecord, *string, error) {
+func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, serviceCityID, categoryID, productID, query, favoriteActorID string, limit int, cursor string) ([]CatalogStoreOfferRecord, *string, error) {
 	conditions := customerVisibleOfferConditions()
-	args := make([]any, 0, 6)
+	args := make([]any, 0, 7)
 	storeID = strings.TrimSpace(storeID)
 	serviceCityID = strings.TrimSpace(serviceCityID)
+	productID = strings.TrimSpace(productID)
+	favoriteActorID = strings.TrimSpace(favoriteActorID)
 	if storeID != "" {
 		args = append(args, storeID)
 		conditions = append([]string{fmt.Sprintf("o.store_id=$%d", len(args))}, conditions...)
@@ -178,6 +198,10 @@ func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, service
 	if storeID == "" && serviceCityID == "" {
 		return nil, nil, errors.New("public catalog scope is required")
 	}
+	if productID != "" {
+		args = append(args, productID)
+		conditions = append(conditions, fmt.Sprintf("p.id=$%d", len(args)))
+	}
 	if categoryID != "" {
 		args = append(args, categoryID)
 		conditions = append(conditions, fmt.Sprintf("EXISTS (SELECT 1 FROM dsh.catalog_product_categories pc JOIN dsh.catalog_categories c ON c.id=pc.category_id WHERE pc.product_id=p.id AND c.id=$%d AND c.active=true AND c.vertical_id=s.primary_vertical_id)", len(args)))
@@ -186,8 +210,12 @@ func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, service
 		args = append(args, escapeCatalogSearchPrefix(query))
 		conditions = append(conditions, fmt.Sprintf("lower(p.canonical_name) LIKE lower($%d) ESCAPE '!'", len(args)))
 	}
+	if favoriteActorID != "" {
+		args = append(args, favoriteActorID)
+		conditions = append(conditions, fmt.Sprintf("EXISTS (SELECT 1 FROM dsh.client_favorite_store_offers f WHERE f.client_actor_id=$%d AND f.store_offer_id=o.id)", len(args)))
+	}
 	if cursor != "" {
-		position, decodeErr := decodeCatalogSearchCursor(cursor, storeID, serviceCityID, categoryID, query)
+		position, decodeErr := decodeCatalogSearchCursor(cursor, storeID, serviceCityID, categoryID, query, productID, favoriteActorID)
 		if decodeErr != nil {
 			return nil, nil, decodeErr
 		}
@@ -224,7 +252,7 @@ func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, service
 	if len(items) > limit {
 		items = items[:limit]
 		last := items[len(items)-1]
-		value := encodeCatalogSearchCursor(last.Product.CanonicalName, last.ID, storeID, serviceCityID, categoryID, query)
+		value := encodeCatalogSearchCursor(last.Product.CanonicalName, last.ID, storeID, serviceCityID, categoryID, query, productID, favoriteActorID)
 		nextCursor = &value
 	}
 	return items, nextCursor, nil
@@ -235,18 +263,18 @@ type catalogSearchCursorPosition struct {
 	offerID       string
 }
 
-func encodeCatalogSearchCursor(canonicalName, offerID, storeID, serviceCityID, categoryID, query string) string {
+func encodeCatalogSearchCursor(canonicalName, offerID, storeID, serviceCityID, categoryID, query, productID, favoriteActorID string) string {
 	payload := make([]byte, 0, len(canonicalName)+len(offerID)+18)
 	payload = append(payload, canonicalName...)
 	payload = append(payload, 0)
 	payload = append(payload, offerID...)
 	payload = append(payload, 0)
-	fingerprint := catalogSearchCursorFingerprint(storeID, serviceCityID, categoryID, query)
+	fingerprint := catalogSearchCursorFingerprint(storeID, serviceCityID, categoryID, query, productID, favoriteActorID)
 	payload = append(payload, fingerprint[:]...)
 	return base64.RawURLEncoding.EncodeToString(payload)
 }
 
-func decodeCatalogSearchCursor(cursor, storeID, serviceCityID, categoryID, query string) (catalogSearchCursorPosition, error) {
+func decodeCatalogSearchCursor(cursor, storeID, serviceCityID, categoryID, query, productID, favoriteActorID string) (catalogSearchCursorPosition, error) {
 	decoded, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {
 		return catalogSearchCursorPosition{}, errors.New("catalog cursor is invalid")
@@ -263,7 +291,7 @@ func decodeCatalogSearchCursor(cursor, storeID, serviceCityID, categoryID, query
 	if len(decoded)-secondSeparator-1 != 16 {
 		return catalogSearchCursorPosition{}, errors.New("catalog cursor is invalid")
 	}
-	expected := catalogSearchCursorFingerprint(storeID, serviceCityID, categoryID, query)
+	expected := catalogSearchCursorFingerprint(storeID, serviceCityID, categoryID, query, productID, favoriteActorID)
 	actual := decoded[secondSeparator+1:]
 	for index := range expected {
 		if actual[index] != expected[index] {
@@ -273,9 +301,9 @@ func decodeCatalogSearchCursor(cursor, storeID, serviceCityID, categoryID, query
 	return catalogSearchCursorPosition{canonicalName: string(decoded[:firstSeparator]), offerID: string(decoded[firstSeparator+1 : secondSeparator])}, nil
 }
 
-func catalogSearchCursorFingerprint(storeID, serviceCityID, categoryID, query string) [16]byte {
-	input := make([]byte, 0, len(storeID)+len(serviceCityID)+len(categoryID)+len(query)+16)
-	for _, value := range []string{storeID, serviceCityID, categoryID, query} {
+func catalogSearchCursorFingerprint(storeID, serviceCityID, categoryID, query, productID, favoriteActorID string) [16]byte {
+	input := make([]byte, 0, len(storeID)+len(serviceCityID)+len(categoryID)+len(query)+len(productID)+len(favoriteActorID)+24)
+	for _, value := range []string{storeID, serviceCityID, categoryID, query, productID, favoriteActorID} {
 		var length [4]byte
 		binary.BigEndian.PutUint32(length[:], uint32(len(value)))
 		input = append(input, length[:]...)

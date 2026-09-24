@@ -234,6 +234,18 @@ paths:
   /dsh/client/favorite-stores/{storeId}:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1client~1favorite-stores~1{storeId}"
 
+  /dsh/client/favorite-store-offers:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1client~1favorite-store-offers"
+
+  /dsh/client/favorite-store-offers/{storeOfferId}:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1client~1favorite-store-offers~1{storeOfferId}"
+
+  /dsh/client/favorite-store-catalog:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1client~1favorite-store-catalog"
+
+  /dsh/client/open-carts:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1client~1open-carts"
+
   /dsh/cart:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1cart"
 
@@ -2929,6 +2941,28 @@ components:
           items:
             type: string
 
+    FavoriteStoreOfferResponse:
+      type: object
+      required: [storeOfferId, isFavorite, idempotentReplay]
+      additionalProperties: false
+      properties:
+        storeOfferId:
+          type: string
+        isFavorite:
+          type: boolean
+        idempotentReplay:
+          type: boolean
+
+    FavoriteStoreOfferListResponse:
+      type: object
+      required: [offerIds]
+      additionalProperties: false
+      properties:
+        offerIds:
+          type: array
+          items:
+            type: string
+
     PublicStoreView:
       type: object
       required: [id, name, serviceCity, primaryVerticalId, categoryIds, fulfillmentModes, version, ratingAverage, ratingCount, publishedAt, createdAt, updatedAt]
@@ -3247,6 +3281,45 @@ components:
           type: string
           format: date-time
 
+    ClientOpenCartSummary:
+      type: object
+      required: [cartId, storeId, storeName, serviceCityId, publicationState, fulfillmentModes, cartVersion, lineCount, updatedAt]
+      additionalProperties: false
+      properties:
+        cartId:
+          type: string
+        storeId:
+          type: string
+        storeName:
+          type: string
+        serviceCityId:
+          type: string
+        publicationState:
+          $ref: "#/components/schemas/PublicationState"
+        fulfillmentModes:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoreFulfillmentMode"
+        cartVersion:
+          type: integer
+          minimum: 1
+        lineCount:
+          type: integer
+          minimum: 1
+        updatedAt:
+          type: string
+          format: date-time
+
+    ClientOpenCartListResponse:
+      type: object
+      required: [carts]
+      additionalProperties: false
+      properties:
+        carts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClientOpenCartSummary"
+
     CartResponse:
       type: object
       required: [cart, idempotentReplay]
@@ -3424,7 +3497,7 @@ components:
 
     MultiStoreCheckoutChild:
       type: object
-      required: [id, childIndex, cartId, storeId, addressId, cartVersion, fulfillmentMode, state, version, createdAt, updatedAt]
+      required: [id, childIndex, cartId, storeId, storeName, addressId, cartVersion, fulfillmentMode, state, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -3435,6 +3508,8 @@ components:
         cartId:
           type: string
         storeId:
+          type: string
+        storeName:
           type: string
         addressId:
           type: string

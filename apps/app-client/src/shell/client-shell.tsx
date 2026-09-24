@@ -8,7 +8,6 @@ import { useServiceCityScope } from "../features/service-city/service-city-scope
 
 type ClientSearchNavigation = {
   navigate: (screen: "home", params: { focus: "search" }) => void;
-  setParams: (params: { focus?: string; q?: string }) => void;
 };
 
 export function ClientPublicShell({ children }: PropsWithChildren) {
@@ -22,15 +21,15 @@ export function ClientPublicShell({ children }: PropsWithChildren) {
   );
 }
 
-export function ClientPublicHeader({ safeArea = true }: { safeArea?: boolean }) {
+export function ClientPublicHeader({ safeArea = true, searchOpen, searchQuery, onSearchOpenChange, onSearchQueryChange }: { safeArea?: boolean; searchOpen?: boolean; searchQuery?: string; onSearchOpenChange?: (open: boolean) => void; onSearchQueryChange?: (query: string) => void }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { focus, q } = useLocalSearchParams<{ focus?: string | string[]; q?: string | string[] }>();
-  const header = <ClientHeader context="اكتشاف المتاجر" searchOnCurrentRoute focus={focus} searchQuery={q} styles={styles} />;
+  const header = <ClientHeader context="اكتشاف المتاجر" searchOnCurrentRoute focus={searchOpen === undefined ? focus : searchOpen ? "search" : ""} searchQuery={searchQuery ?? q} onSearchOpenChange={onSearchOpenChange} onSearchQueryChange={onSearchQueryChange} styles={styles} />;
   return safeArea ? <SafeAreaView edges={["top"]} style={styles.headerSafeArea}>{header}</SafeAreaView> : header;
 }
 
-function ClientHeader({ context, searchOnCurrentRoute = false, focus: rawFocus, searchQuery: rawQuery, navigation, styles }: { context?: string; searchOnCurrentRoute?: boolean; focus?: string | string[] | undefined; searchQuery?: string | string[] | undefined; navigation?: ClientSearchNavigation; styles: ReturnType<typeof createStyles> }) {
+function ClientHeader({ context, searchOnCurrentRoute = false, focus: rawFocus, searchQuery: rawQuery, navigation, onSearchOpenChange, onSearchQueryChange, styles }: { context?: string; searchOnCurrentRoute?: boolean; focus?: string | string[] | undefined; searchQuery?: string | string[] | undefined; navigation?: ClientSearchNavigation; onSearchOpenChange?: ((open: boolean) => void) | undefined; onSearchQueryChange?: ((query: string) => void) | undefined; styles: ReturnType<typeof createStyles> }) {
   const router = useRouter();
   const focus = Array.isArray(rawFocus) ? rawFocus[0] : rawFocus;
   const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
@@ -54,13 +53,13 @@ function ClientHeader({ context, searchOnCurrentRoute = false, focus: rawFocus, 
             autoCorrect={false}
             containerStyle={styles.headerSearchField}
             inputRef={searchInputRef}
-            onChangeText={(value) => { if (navigation) navigation.setParams({ q: value }); else router.setParams({ q: value }); }}
-            onClear={() => { if (navigation) navigation.setParams({ q: "" }); else router.setParams({ q: "" }); }}
+            onChangeText={(value) => { onSearchQueryChange?.(value); if (!onSearchQueryChange) router.setParams({ q: value }); }}
+            onClear={() => { onSearchQueryChange?.(""); if (!onSearchQueryChange) router.setParams({ q: "" }); }}
             placeholder="ابحث عن متجر أو منتج"
             returnKeyType="search"
             value={searchQuery}
           />
-          <BthwaniIconButton icon="close" label="إغلاق البحث" onPress={() => { if (navigation) navigation.setParams({ focus: "", q: "" }); else router.setParams({ focus: "", q: "" }); }} size={sizing.controlMd} tone="soft" />
+          <BthwaniIconButton icon="close" label="إغلاق البحث" onPress={() => { onSearchOpenChange?.(false); onSearchQueryChange?.(""); if (!onSearchOpenChange && !onSearchQueryChange) router.setParams({ focus: "", q: "" }); }} size={sizing.controlMd} tone="soft" />
         </View>
       ) : (
         <>
@@ -72,7 +71,7 @@ function ClientHeader({ context, searchOnCurrentRoute = false, focus: rawFocus, 
             </View>
           </View>
           <View style={styles.headerActions}>
-            <BthwaniIconButton icon="search" label="البحث عن متجر أو منتج" onPress={() => { if (searchOnCurrentRoute) { if (navigation) navigation.setParams({ focus: "search" }); else router.setParams({ focus: "search" }); } else if (navigation) navigation.navigate("home", { focus: "search" }); else router.push("/home?focus=search" as Href); }} size={sizing.controlMd} tone="soft" />
+            <BthwaniIconButton icon="search" label="البحث عن متجر أو منتج" onPress={() => { if (onSearchOpenChange) onSearchOpenChange(true); else if (searchOnCurrentRoute) router.setParams({ focus: "search" }); else if (navigation) navigation.navigate("home", { focus: "search" }); else router.push("/home?focus=search" as Href); }} size={sizing.controlMd} tone="soft" />
             <BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/notifications" as Href)} size={sizing.controlMd} tone="soft" />
             <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlMd} tone="soft" />
             <BthwaniIconButton icon="cart" label="سلة التسوق" onPress={() => router.push("/multi-store-checkout" as Href)} size={sizing.controlMd} tone="soft" />
@@ -97,7 +96,7 @@ export function createClientTabOptions(theme: ReturnType<typeof resolveTheme>) {
   const styles = createStyles(theme);
   const icons = { home: "home", orders: "orders", wallet: "wallet", account: "account" } as const;
   return ({ route }: { route: { name: string } }) => ({
-    headerShown: true,
+    headerShown: route.name !== "home",
     header: ({ route: headerRoute, navigation }: { route: { params?: unknown }; navigation: unknown }) => {
       const params = headerRoute.params as { focus?: string | string[]; q?: string | string[] } | undefined;
       return <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><ClientHeader searchOnCurrentRoute={route.name === "home"} focus={params?.focus} searchQuery={params?.q} navigation={navigation as ClientSearchNavigation} styles={styles} /></SafeAreaView>;

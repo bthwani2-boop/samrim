@@ -189,7 +189,12 @@ func (s *OrderServer) listClient(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	items, err := s.service.ListForClient(r.Context(), bearerToken(r), limit)
+	cartID := strings.TrimSpace(r.URL.Query().Get("cartId"))
+	if len(cartID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cartId is too long")
+		return
+	}
+	items, err := s.service.ListForClient(r.Context(), bearerToken(r), limit, cartID)
 	if err != nil {
 		writeOrderError(w, err)
 		return

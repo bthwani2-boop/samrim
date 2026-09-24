@@ -23,12 +23,14 @@ var (
 	ErrOrderNotFound               = errors.New("order was not found")
 	ErrCheckoutEvidenceStale       = errors.New("checkout evidence is stale or invalid")
 	ErrCheckoutIdempotencyConflict = errors.New("checkout idempotency key was already used with different facts")
+	ErrCheckoutPaymentReconciled   = errors.New("the previous checkout payment was safely cancelled")
 	ErrOrderStateConflict          = errors.New("order state does not allow this transition")
 	ErrOrderVersionConflict        = errors.New("order version is stale")
 	ErrOrderTransitionConflict     = errors.New("order transition idempotency key was already used with different facts")
 	ErrOrderTransitionInvalid      = errors.New("order transition is invalid")
 	ErrStorePickupProofInvalid     = errors.New("store pickup proof is invalid")
 	ErrPaymentProvisioning         = errors.New("payment intent could not be provisioned")
+	ErrExternalOutcomeUnknown      = errors.New("external business outcome is unknown")
 	ErrDeliveryFeeUnavailable      = errors.New("delivery fee could not be resolved")
 	ErrPaymentStateConflict        = errors.New("order payment state is stale or invalid")
 )
@@ -72,27 +74,39 @@ type PaymentIntentProvisioner func(ctx context.Context, orderID, externalReferen
 
 type PaymentIntentCanceller func(ctx context.Context, intentID, reason, idempotencyKey, correlationID string) error
 
+type PaymentIntentRecoveryRecord struct {
+	IntentID          string
+	ExternalReference string
+	PayerActorID      string
+	OrderID           string
+	Method            string
+	State             string
+}
+
+type PaymentIntentRecoveryReader func(ctx context.Context, externalReference string) (PaymentIntentRecoveryRecord, bool, error)
+
 type CheckoutInput struct {
-	ClientActorID            string
-	CartID                   string
-	StoreID                  string
-	AddressID                string
-	FulfillmentMode          string
-	ExpectedCartVersion      int
-	Evidence                 CheckoutEvidence
-	IdempotencyKey           string
-	RequestHash              string
-	ActingActorID            string
-	CorrelationID            string
-	PaymentExternalReference string
-	PaymentIdempotencyKey    string
-	PaymentCancellationKey   string
-	PaymentMethod            string
-	PromotionCode            string
-	DeliveryProofKeyring     *DeliveryProofKeyring
-	DeliveryFeeResolver      DeliveryFeeResolver
-	PaymentProvisioner       PaymentIntentProvisioner
-	PaymentCanceller         PaymentIntentCanceller
+	ClientActorID               string
+	CartID                      string
+	StoreID                     string
+	AddressID                   string
+	FulfillmentMode             string
+	ExpectedCartVersion         int
+	Evidence                    CheckoutEvidence
+	IdempotencyKey              string
+	RequestHash                 string
+	ActingActorID               string
+	CorrelationID               string
+	PaymentExternalReference    string
+	PaymentIdempotencyKey       string
+	PaymentCancellationKey      string
+	PaymentMethod               string
+	PromotionCode               string
+	DeliveryProofKeyring        *DeliveryProofKeyring
+	DeliveryFeeResolver         DeliveryFeeResolver
+	PaymentProvisioner          PaymentIntentProvisioner
+	PaymentIntentRecoveryReader PaymentIntentRecoveryReader
+	PaymentCanceller            PaymentIntentCanceller
 }
 
 type OrderLineRecord struct {
@@ -275,6 +289,14 @@ func ReadOrderForClient(ctx context.Context, db *sql.DB, orderID, clientActorID 
 
 func ListOrdersForClient(ctx context.Context, db *sql.DB, clientActorID, state string, limit int) ([]OrderRecord, error) {
 	return listOrders(ctx, db, "o.client_actor_id=$1", []any{strings.TrimSpace(clientActorID)}, state, limit)
+}
+
+func ListOrdersForClientByCart(ctx context.Context, db *sql.DB, clientActorID, cartID string) ([]OrderRecord, error) {
+	clientActorID, cartID = strings.TrimSpace(clientActorID), strings.TrimSpace(cartID)
+	if clientActorID == "" || cartID == "" {
+		return nil, ErrOrderNotFound
+	}
+	return listOrders(ctx, db, "o.client_actor_id=$1 AND o.cart_id=$2", []any{clientActorID, cartID}, "", 1)
 }
 
 func ListOrdersForStore(ctx context.Context, db *sql.DB, storeID, state string, limit int) ([]OrderRecord, error) {
@@ -600,6 +622,134 @@ func listOrderLineAttributeSnapshots(ctx context.Context, source queryer, orderL
 	return items, rows.Err()
 }
 
+func paymentCompensationFailure(returnErr, compensationErr error) error {
+	if returnErr == nil {
+		returnErr = fmt.Errorf("%w: payment compensation failed: %w", ErrPaymentProvisioning, compensationErr)
+	} else {
+		returnErr = fmt.Errorf("%w: payment compensation failed: %w", returnErr, compensationErr)
+	}
+	return fmt.Errorf("%w: %w", ErrExternalOutcomeUnknown, returnErr)
+}
+
+func reconcileCheckoutPayment(ctx context.Context, clientActorID, cartID, idempotencyKey, externalReference, paymentCancellationKey, correlationID string, reader PaymentIntentRecoveryReader, canceller PaymentIntentCanceller) error {
+	payment, found, err := reader(ctx, externalReference)
+	if err != nil {
+		return fmt.Errorf("%w: payment intent recovery read failed: %w", ErrExternalOutcomeUnknown, err)
+	}
+	if !found {
+		return nil
+	}
+	expectedOrderID := stableCheckoutOrderID(clientActorID, cartID, idempotencyKey)
+	if strings.TrimSpace(payment.IntentID) == "" || payment.ExternalReference != externalReference || payment.PayerActorID != clientActorID || payment.OrderID != expectedOrderID || (payment.Method != "CASH_ON_DELIVERY" && payment.Method != "CASH_AT_STORE") {
+		return fmt.Errorf("%w: recovered payment does not match the client checkout", ErrExternalOutcomeUnknown)
+	}
+	switch payment.State {
+	case "CANCELLED":
+		return ErrCheckoutPaymentReconciled
+	case "REQUIRES_COLLECTION":
+		if err := canceller(ctx, payment.IntentID, "order_creation_rolled_back", paymentCancellationKey, correlationID); err != nil {
+			return fmt.Errorf("%w: payment intent recovery cancellation failed: %w", ErrExternalOutcomeUnknown, err)
+		}
+		return ErrCheckoutPaymentReconciled
+	default:
+		return fmt.Errorf("%w: recovered payment state %q is not safely cancellable", ErrExternalOutcomeUnknown, payment.State)
+	}
+}
+
+func readCheckoutOrderReplay(ctx context.Context, tx *sql.Tx, clientActorID, cartID, idempotencyKey, requestHash string) (OrderRecord, bool, error) {
+	var storedHash, storedCartID, orderID string
+	err := tx.QueryRowContext(ctx, "SELECT request_hash,cart_id,order_id FROM dsh.commerce_order_checkout_idempotency WHERE idempotency_key=$1 FOR UPDATE", idempotencyKey).Scan(&storedHash, &storedCartID, &orderID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return OrderRecord{}, false, nil
+	}
+	if err != nil {
+		return OrderRecord{}, false, err
+	}
+	if (requestHash != "" && storedHash != requestHash) || storedCartID != cartID {
+		return OrderRecord{}, false, ErrCheckoutIdempotencyConflict
+	}
+	order, err := readOrder(ctx, tx, "o.id=$1", orderID)
+	if err != nil {
+		return OrderRecord{}, false, err
+	}
+	if order.ClientActorID != clientActorID {
+		return OrderRecord{}, false, ErrCheckoutIdempotencyConflict
+	}
+	return order, true, nil
+}
+
+func checkoutOrderMatchesRequest(order OrderRecord, input CheckoutInput) bool {
+	return order.ClientActorID == strings.TrimSpace(input.ClientActorID) &&
+		order.CartID == strings.TrimSpace(input.CartID) &&
+		order.StoreID == strings.TrimSpace(input.StoreID) &&
+		order.AddressID == strings.TrimSpace(input.AddressID) &&
+		order.FulfillmentMode == strings.TrimSpace(input.FulfillmentMode) &&
+		order.PaymentMethod == strings.TrimSpace(input.PaymentMethod) &&
+		order.PromotionCode == strings.ToUpper(strings.TrimSpace(input.PromotionCode))
+}
+
+func checkoutCartVersionMatches(state string, cartVersion, expectedCartVersion int) bool {
+	return expectedCartVersion > 0 && state == "checked_out" && cartVersion == expectedCartVersion+1
+}
+
+func validateCheckoutOrderReplay(ctx context.Context, tx *sql.Tx, order OrderRecord, input CheckoutInput) error {
+	if !checkoutOrderMatchesRequest(order, input) {
+		return ErrCheckoutIdempotencyConflict
+	}
+	var cartState string
+	var cartVersion int
+	err := tx.QueryRowContext(ctx, "SELECT state,version FROM dsh.commerce_carts WHERE id=$1 AND client_actor_id=$2", order.CartID, order.ClientActorID).Scan(&cartState, &cartVersion)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrCheckoutIdempotencyConflict
+	}
+	if err != nil {
+		return err
+	}
+	if !checkoutCartVersionMatches(cartState, cartVersion, input.ExpectedCartVersion) {
+		return ErrCheckoutIdempotencyConflict
+	}
+	return nil
+}
+
+func ResolveCheckoutAttempt(ctx context.Context, db *sql.DB, input CheckoutInput) (OrderRecord, bool, error) {
+	input.ClientActorID, input.CartID, input.StoreID = strings.TrimSpace(input.ClientActorID), strings.TrimSpace(input.CartID), strings.TrimSpace(input.StoreID)
+	input.AddressID, input.FulfillmentMode = strings.TrimSpace(input.AddressID), strings.TrimSpace(input.FulfillmentMode)
+	input.PaymentMethod, input.PromotionCode = strings.TrimSpace(input.PaymentMethod), strings.ToUpper(strings.TrimSpace(input.PromotionCode))
+	input.IdempotencyKey, input.CorrelationID = strings.TrimSpace(input.IdempotencyKey), strings.TrimSpace(input.CorrelationID)
+	input.PaymentExternalReference, input.PaymentCancellationKey = strings.TrimSpace(input.PaymentExternalReference), strings.TrimSpace(input.PaymentCancellationKey)
+	if db == nil || input.ClientActorID == "" || input.CartID == "" || input.StoreID == "" || input.FulfillmentMode == "" || input.PaymentMethod == "" || input.ExpectedCartVersion < 1 || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || input.PaymentExternalReference == "" || input.PaymentCancellationKey == "" || input.CorrelationID == "" || input.PaymentIntentRecoveryReader == nil || input.PaymentCanceller == nil {
+		return OrderRecord{}, false, ErrCheckoutEvidenceStale
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return OrderRecord{}, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:checkout:"+input.IdempotencyKey); err != nil {
+		return OrderRecord{}, false, err
+	}
+	order, replayed, err := readCheckoutOrderReplay(ctx, tx, input.ClientActorID, input.CartID, input.IdempotencyKey, "")
+	if err != nil {
+		return OrderRecord{}, false, err
+	}
+	if replayed {
+		if err := validateCheckoutOrderReplay(ctx, tx, order, input); err != nil {
+			return OrderRecord{}, false, err
+		}
+		if err := tx.Commit(); err != nil {
+			return OrderRecord{}, false, err
+		}
+		return order, true, nil
+	}
+	if err := reconcileCheckoutPayment(ctx, input.ClientActorID, input.CartID, input.IdempotencyKey, input.PaymentExternalReference, input.PaymentCancellationKey, input.CorrelationID, input.PaymentIntentRecoveryReader, input.PaymentCanceller); err != nil {
+		return OrderRecord{}, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return OrderRecord{}, false, err
+	}
+	return OrderRecord{}, false, nil
+}
+
 func CreateOrderFromCart(ctx context.Context, db *sql.DB, input CheckoutInput) (result OrderRecord, replayed bool, returnErr error) {
 	pickup := input.FulfillmentMode == FulfillmentModeCustomerPickup
 	partnerCaptain := input.FulfillmentMode == FulfillmentModePartnerCaptain
@@ -611,7 +761,7 @@ func CreateOrderFromCart(ctx context.Context, db *sql.DB, input CheckoutInput) (
 	} else {
 		validEvidence = validEvidence && strings.TrimSpace(input.AddressID) != "" && input.Evidence.AddressVersion > 0 && input.Evidence.Status == "SERVICEABLE" && strings.TrimSpace(input.Evidence.PolicyVersion) != ""
 	}
-	if strings.TrimSpace(input.ClientActorID) == "" || strings.TrimSpace(input.CartID) == "" || strings.TrimSpace(input.StoreID) == "" || !validMode || !validPaymentMethod || !validEvidence || input.ExpectedCartVersion < 1 || strings.TrimSpace(input.IdempotencyKey) == "" || strings.TrimSpace(input.RequestHash) == "" || strings.TrimSpace(input.CorrelationID) == "" || strings.TrimSpace(input.PaymentExternalReference) == "" || strings.TrimSpace(input.PaymentIdempotencyKey) == "" || strings.TrimSpace(input.PaymentCancellationKey) == "" || input.PaymentProvisioner == nil || input.PaymentCanceller == nil || input.DeliveryProofKeyring == nil {
+	if strings.TrimSpace(input.ClientActorID) == "" || strings.TrimSpace(input.CartID) == "" || strings.TrimSpace(input.StoreID) == "" || !validMode || !validPaymentMethod || !validEvidence || input.ExpectedCartVersion < 1 || strings.TrimSpace(input.IdempotencyKey) == "" || strings.TrimSpace(input.RequestHash) == "" || strings.TrimSpace(input.CorrelationID) == "" || strings.TrimSpace(input.PaymentExternalReference) == "" || strings.TrimSpace(input.PaymentIdempotencyKey) == "" || strings.TrimSpace(input.PaymentCancellationKey) == "" || input.PaymentProvisioner == nil || input.PaymentIntentRecoveryReader == nil || input.PaymentCanceller == nil || input.DeliveryProofKeyring == nil {
 		return OrderRecord{}, false, ErrCheckoutEvidenceStale
 	}
 	tx, err := db.BeginTx(ctx, nil)
@@ -628,32 +778,23 @@ func CreateOrderFromCart(ctx context.Context, db *sql.DB, input CheckoutInput) (
 		compensationContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if compensationErr := input.PaymentCanceller(compensationContext, paymentIntentID, "order_creation_rolled_back", input.PaymentCancellationKey, input.CorrelationID); compensationErr != nil {
-			if returnErr == nil {
-				returnErr = fmt.Errorf("%w: payment compensation failed: %v", ErrPaymentProvisioning, compensationErr)
-			} else {
-				returnErr = fmt.Errorf("%w; payment compensation failed: %v", returnErr, compensationErr)
-			}
+			returnErr = paymentCompensationFailure(returnErr, compensationErr)
 		}
 	}()
 	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:checkout:"+input.IdempotencyKey); err != nil {
 		return OrderRecord{}, false, err
 	}
-	var storedHash, cartID, orderID string
-	err = tx.QueryRowContext(ctx, "SELECT request_hash,cart_id,order_id FROM dsh.commerce_order_checkout_idempotency WHERE idempotency_key=$1 FOR UPDATE", input.IdempotencyKey).Scan(&storedHash, &cartID, &orderID)
-	if err == nil {
-		if storedHash != input.RequestHash || cartID != input.CartID {
-			return OrderRecord{}, false, ErrCheckoutIdempotencyConflict
-		}
-		order, readErr := readOrder(ctx, tx, "o.id=$1", orderID)
-		if readErr != nil {
-			return OrderRecord{}, false, readErr
-		}
+	order, replayed, err := readCheckoutOrderReplay(ctx, tx, input.ClientActorID, input.CartID, input.IdempotencyKey, input.RequestHash)
+	if err != nil {
+		return OrderRecord{}, false, err
+	}
+	if replayed {
 		if err := tx.Commit(); err != nil {
 			return OrderRecord{}, false, err
 		}
 		return order, true, nil
 	}
-	if !errors.Is(err, sql.ErrNoRows) {
+	if err := reconcileCheckoutPayment(ctx, input.ClientActorID, input.CartID, input.IdempotencyKey, input.PaymentExternalReference, input.PaymentCancellationKey, input.CorrelationID, input.PaymentIntentRecoveryReader, input.PaymentCanceller); err != nil {
 		return OrderRecord{}, false, err
 	}
 	var cart CartRecord
@@ -828,13 +969,16 @@ WHERE s.id=$1 AND s.publication_state='published' AND ($4='CUSTOMER_PICKUP' OR a
 		return OrderRecord{}, false, err
 	}
 	payment, err := input.PaymentProvisioner(ctx, newOrderID, input.PaymentExternalReference, input.ClientActorID, total, discountMinor, feeQuote.FeeMinor, feeQuote.PolicyVersion, totalWithDelivery, input.PaymentIdempotencyKey, input.CorrelationID)
-	if err != nil || strings.TrimSpace(payment.IntentID) == "" || payment.State != "REQUIRES_COLLECTION" {
-		if err != nil {
-			return OrderRecord{}, false, fmt.Errorf("%w: %v", ErrPaymentProvisioning, err)
-		}
-		return OrderRecord{}, false, ErrPaymentProvisioning
+	if err != nil {
+		return OrderRecord{}, false, fmt.Errorf("%w: %w", ErrPaymentProvisioning, err)
 	}
 	paymentIntentID = strings.TrimSpace(payment.IntentID)
+	if paymentIntentID == "" {
+		return OrderRecord{}, false, fmt.Errorf("%w: %w", ErrExternalOutcomeUnknown, ErrPaymentProvisioning)
+	}
+	if payment.State != "REQUIRES_COLLECTION" {
+		return OrderRecord{}, false, ErrPaymentProvisioning
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,fulfillment_mode,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,subtotal_amount_minor,discount_minor,promotion_id,promotion_code,total_amount_minor,payment_intent_id,payment_method,payment_state) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'CREATED',$16,$17,NULLIF($18,''),NULLIF($19,''),$20,$21,$22,$23)`, newOrderID, input.ClientActorID, input.StoreID, input.CartID, input.FulfillmentMode, orderAddressID, orderAddressVersion, orderAddressText, orderAddressLatitude, orderAddressLongitude, input.Evidence.ServiceCityID, serviceabilityPolicy, serviceabilityStatus, storeVersion, serviceabilityAddressVersion, total, discountMinor, promotion.ID, promotion.Code, totalWithDelivery, payment.IntentID, input.PaymentMethod, payment.State); err != nil {
 		return OrderRecord{}, false, err
 	}
@@ -894,10 +1038,13 @@ WHERE s.id=$1 AND s.publication_state='published' AND ($4='CUSTOMER_PICKUP' OR a
 	}
 	commitAttempted = true
 	if err := tx.Commit(); err != nil {
-		return OrderRecord{}, false, err
+		return OrderRecord{}, false, fmt.Errorf("%w: %w", ErrExternalOutcomeUnknown, err)
 	}
-	order, err := ReadOrder(ctx, db, newOrderID)
-	return order, false, err
+	order, err = ReadOrder(ctx, db, newOrderID)
+	if err != nil {
+		return OrderRecord{}, false, fmt.Errorf("%w: %w", ErrExternalOutcomeUnknown, err)
+	}
+	return order, false, nil
 }
 
 func TransitionOrder(ctx context.Context, db *sql.DB, orderID, requestedState, paymentState string, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string) (OrderRecord, bool, error) {
