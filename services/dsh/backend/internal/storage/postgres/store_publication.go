@@ -5,12 +5,15 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/lib/pq"
 )
@@ -52,7 +55,39 @@ var (
 	ErrPublicationIdempotencyConflict = errors.New("store publication idempotency key was already used with different facts")
 	ErrPublicationVersionConflict     = errors.New("store publication version is stale")
 	ErrStoreNotFound                  = errors.New("store was not found")
+	ErrOperatorStoreInvalidLimit      = errors.New("operator store limit is invalid")
+	ErrOperatorStoreInvalidQuery      = errors.New("operator store query is invalid")
+	ErrOperatorStoreInvalidState      = errors.New("operator store publication state is invalid")
+	ErrOperatorStoreInvalidSort       = errors.New("operator store sort is invalid")
+	ErrOperatorStoreInvalidCursor     = errors.New("operator store cursor is invalid")
+	ErrOperatorStoreInvalidActor      = errors.New("operator store actor is invalid")
 )
+
+type OperatorStoreSummary struct {
+	ID                string
+	PartnerActorID    string
+	Name              string
+	ServiceCityID     string
+	PrimaryVerticalID string
+	Version           int
+	PublicationState  string
+	FulfillmentModes  []string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+type OperatorStorePage struct {
+	Stores     []OperatorStoreSummary
+	NextCursor string
+}
+
+type operatorStoreCursor struct {
+	UpdatedAt time.Time `json:"updatedAt"`
+	ID        string    `json:"id"`
+	State     string    `json:"state"`
+	Query     string    `json:"query"`
+	Sort      string    `json:"sort"`
+}
 
 type PublicationResult struct {
 	Store    StoreRecord
@@ -161,6 +196,107 @@ func ListStoresForPartnerActor(ctx context.Context, db *sql.DB, partnerActorID s
 		return PartnerStorePage{}, err
 	}
 	return page, nil
+}
+
+func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, sort string, limit int, cursor string) (OperatorStorePage, error) {
+	if db == nil || limit < 1 || limit > 50 {
+		return OperatorStorePage{}, ErrOperatorStoreInvalidLimit
+	}
+	state = strings.TrimSpace(state)
+	if state != "" && state != "unpublished" && state != "published" && state != "hidden" {
+		return OperatorStorePage{}, ErrOperatorStoreInvalidState
+	}
+	query = strings.TrimSpace(query)
+	if utf8.RuneCountInString(query) > 128 {
+		return OperatorStorePage{}, ErrOperatorStoreInvalidQuery
+	}
+	sort = strings.TrimSpace(sort)
+	if sort == "" {
+		sort = "updated_desc"
+	}
+	if sort != "updated_desc" && sort != "updated_asc" {
+		return OperatorStorePage{}, ErrOperatorStoreInvalidSort
+	}
+	ascending := sort == "updated_asc"
+	args := []any{}
+	where := "TRUE"
+	if state != "" {
+		args = append(args, state)
+		where += " AND s.publication_state=$" + strconv.Itoa(len(args))
+	}
+	if query != "" {
+		args = append(args, "%"+escapeOperatorStoreSearch(query)+"%")
+		where += " AND (s.id ILIKE $" + strconv.Itoa(len(args)) + " ESCAPE '!' OR s.name ILIKE $" + strconv.Itoa(len(args)) + " ESCAPE '!' OR s.partner_actor_id ILIKE $" + strconv.Itoa(len(args)) + " ESCAPE '!')"
+	}
+	if strings.TrimSpace(cursor) != "" {
+		decoded, err := decodeOperatorStoreCursor(cursor, state, query, sort)
+		if err != nil {
+			return OperatorStorePage{}, err
+		}
+		args = append(args, decoded.UpdatedAt, decoded.ID)
+		operator := "<"
+		if ascending {
+			operator = ">"
+		}
+		where += " AND (s.updated_at,s.id)" + operator + "($" + strconv.Itoa(len(args)-1) + ",$" + strconv.Itoa(len(args)) + ")"
+	}
+	args = append(args, limit+1)
+	order := "DESC"
+	if ascending {
+		order = "ASC"
+	}
+	rows, err := db.QueryContext(ctx, `SELECT s.id,s.partner_actor_id,s.name,s.service_city_id,s.primary_vertical_id,s.version,s.publication_state,s.fulfillment_modes,s.created_at,s.updated_at
+		FROM dsh.stores s WHERE `+where+" ORDER BY s.updated_at "+order+",s.id "+order+" LIMIT $"+strconv.Itoa(len(args)), args...)
+	if err != nil {
+		return OperatorStorePage{}, fmt.Errorf("list canonical operator stores: %w", err)
+	}
+	defer rows.Close()
+	page := OperatorStorePage{Stores: make([]OperatorStoreSummary, 0, limit)}
+	for rows.Next() {
+		var store OperatorStoreSummary
+		var cityID, verticalID sql.NullString
+		if err := rows.Scan(&store.ID, &store.PartnerActorID, &store.Name, &cityID, &verticalID, &store.Version, &store.PublicationState, pq.Array(&store.FulfillmentModes), &store.CreatedAt, &store.UpdatedAt); err != nil {
+			return OperatorStorePage{}, err
+		}
+		if len(page.Stores) == limit {
+			page.NextCursor = encodeOperatorStoreCursor(operatorStoreCursor{UpdatedAt: page.Stores[len(page.Stores)-1].UpdatedAt, ID: page.Stores[len(page.Stores)-1].ID, State: state, Query: query, Sort: sort})
+			break
+		}
+		if cityID.Valid {
+			store.ServiceCityID = cityID.String
+		}
+		if verticalID.Valid {
+			store.PrimaryVerticalID = verticalID.String
+		}
+		page.Stores = append(page.Stores, store)
+	}
+	if err := rows.Err(); err != nil {
+		return OperatorStorePage{}, err
+	}
+	return page, nil
+}
+
+func encodeOperatorStoreCursor(cursor operatorStoreCursor) string {
+	value, _ := json.Marshal(cursor)
+	return base64.RawURLEncoding.EncodeToString(value)
+}
+
+func decodeOperatorStoreCursor(raw, state, query, sort string) (operatorStoreCursor, error) {
+	value, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
+	if err != nil {
+		return operatorStoreCursor{}, ErrOperatorStoreInvalidCursor
+	}
+	var cursor operatorStoreCursor
+	if err := json.Unmarshal(value, &cursor); err != nil || cursor.ID == "" || cursor.UpdatedAt.IsZero() || cursor.State != state || cursor.Query != query || cursor.Sort != sort {
+		return operatorStoreCursor{}, ErrOperatorStoreInvalidCursor
+	}
+	return cursor, nil
+}
+
+func escapeOperatorStoreSearch(value string) string {
+	value = strings.ReplaceAll(value, "!", "!!")
+	value = strings.ReplaceAll(value, "%", "!%")
+	return strings.ReplaceAll(value, "_", "!_")
 }
 
 func ReadStorePartnerActor(ctx context.Context, db *sql.DB, storeID string) (string, error) {

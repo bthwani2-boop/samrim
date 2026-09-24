@@ -132,6 +132,24 @@ func (s *Service) ReadForOperator(ctx context.Context, storeID, actingActorID st
 	return store, readiness, err
 }
 
+func (s *Service) ListForOperator(ctx context.Context, state, query, sort, actingActorID string, limit int, cursor string) (postgres.OperatorStorePage, error) {
+	actingActorID = strings.TrimSpace(actingActorID)
+	if actingActorID == "" || len(actingActorID) > 128 {
+		return postgres.OperatorStorePage{}, postgres.ErrOperatorStoreInvalidActor
+	}
+	operator, err := s.identity.ReadActorRole(ctx, actingActorID, "operator")
+	if err != nil {
+		return postgres.OperatorStorePage{}, err
+	}
+	if operator.Role != "operator" || !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
+		return postgres.OperatorStorePage{}, ErrOperatorNotActive
+	}
+	if err := s.identity.RequireOperatorPermission(ctx, actingActorID, "partners"); err != nil {
+		return postgres.OperatorStorePage{}, err
+	}
+	return postgres.ListStoresForOperator(ctx, s.db, state, query, sort, limit, cursor)
+}
+
 func (s *Service) ListPublished(ctx context.Context, serviceCityID string, latitude, longitude *float64) ([]postgres.PublicStoreRecord, error) {
 	var stores []postgres.PublicStoreRecord
 	var err error

@@ -41,6 +41,7 @@ func NewStorePublication(identityClient *identity.Client, accessToken string, db
 func (s *StorePublicationServer) serviceDB() *sql.DB { return s.db }
 
 func (s *StorePublicationServer) Register(mux *http.ServeMux) {
+	mux.HandleFunc("GET /dsh/stores", s.listForOperator)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/publication", s.publish)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/fulfillment-modes", s.setFulfillmentModes)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/publication", s.readForOperator)
@@ -48,6 +49,33 @@ func (s *StorePublicationServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/public/stores/{storeId}", s.readPublic)
 	mux.HandleFunc("GET /dsh/public/stores/{storeId}/catalog", s.readPublicCatalog)
 	mux.HandleFunc("GET /dsh/public/catalog/search", s.searchPublicCatalog)
+}
+
+func (s *StorePublicationServer) listForOperator(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	actingActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	limit := 25
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			writeStorePublicationError(w, postgres.ErrOperatorStoreInvalidLimit)
+			return
+		}
+		limit = parsed
+	}
+	page, err := s.service.ListForOperator(r.Context(), r.URL.Query().Get("state"), r.URL.Query().Get("q"), r.URL.Query().Get("sort"), actingActorID, limit, r.URL.Query().Get("cursor"))
+	if err != nil {
+		writeStorePublicationError(w, err)
+		return
+	}
+	stores := make([]contract.OperatorStoreSummary, 0, len(page.Stores))
+	for _, store := range page.Stores {
+		stores = append(stores, contract.OperatorStoreSummary{ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, ServiceCityID: store.ServiceCityID, PrimaryVerticalID: store.PrimaryVerticalID, Version: store.Version, PublicationState: contract.PublicationState(store.PublicationState), FulfillmentModes: toStoreFulfillmentModes(store.FulfillmentModes), CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt})
+	}
+	writeJSON(w, http.StatusOK, contract.OperatorStoreListResponse{Stores: stores, NextCursor: page.NextCursor})
 }
 
 func (s *StorePublicationServer) publish(w http.ResponseWriter, r *http.Request) {
@@ -77,12 +105,7 @@ func (s *StorePublicationServer) publish(w http.ResponseWriter, r *http.Request)
 		writeStorePublicationError(w, err)
 		return
 	}
-	offers, err := postgres.ListCatalogOffers(r.Context(), s.serviceDB(), result.Store.ID, false)
-	if err != nil {
-		writeStorageError(w, err)
-		return
-	}
-	writeStorePublication(w, http.StatusOK, result, readiness, offers)
+	writeStorePublication(w, http.StatusOK, result, readiness)
 }
 
 func (s *StorePublicationServer) setFulfillmentModes(w http.ResponseWriter, r *http.Request) {
@@ -130,12 +153,7 @@ func (s *StorePublicationServer) readForOperator(w http.ResponseWriter, r *http.
 		writeStorePublicationError(w, err)
 		return
 	}
-	offers, err := postgres.ListCatalogOffers(r.Context(), s.serviceDB(), store.ID, false)
-	if err != nil {
-		writeStorageError(w, err)
-		return
-	}
-	writeStorePublication(w, http.StatusOK, postgres.PublicationResult{Store: store}, readiness, offers)
+	writeStorePublication(w, http.StatusOK, postgres.PublicationResult{Store: store}, readiness)
 }
 
 func (s *StorePublicationServer) listPublic(w http.ResponseWriter, r *http.Request) {
@@ -344,6 +362,8 @@ func writeStorePublicationError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadGateway, "IDENTITY_UNAVAILABLE", "partner publication eligibility is unavailable")
 	case errors.Is(err, postgres.ErrStoreNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "store was not found")
+	case errors.Is(err, postgres.ErrOperatorStoreInvalidLimit), errors.Is(err, postgres.ErrOperatorStoreInvalidActor), errors.Is(err, postgres.ErrOperatorStoreInvalidQuery), errors.Is(err, postgres.ErrOperatorStoreInvalidState), errors.Is(err, postgres.ErrOperatorStoreInvalidSort), errors.Is(err, postgres.ErrOperatorStoreInvalidCursor):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "store filters, sort, limit, or cursor are invalid")
 	case errors.Is(err, postgres.ErrServiceCityNotFound):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "serviceCityId must identify an active service city")
 	case errors.Is(err, postgres.ErrPublicationIdempotencyConflict):
@@ -378,12 +398,12 @@ func toStoreFulfillmentModes(values []string) []contract.StoreFulfillmentMode {
 	return modes
 }
 
-func writeStorePublication(w http.ResponseWriter, status int, result postgres.PublicationResult, readiness storepublication.PublicationReadiness, offers []postgres.CatalogStoreOfferRecord) {
+func writeStorePublication(w http.ResponseWriter, status int, result postgres.PublicationResult, readiness storepublication.PublicationReadiness) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(contract.StorePublicationResponse{
-		Store:            toStoreView(result.Store, readiness, offers),
+		Store:            toStoreView(result.Store, readiness),
 		IdempotentReplay: result.Replayed,
 	})
 }

@@ -72,6 +72,7 @@ export const workspaceDestinations: readonly WorkspaceDestination[] = [
     label: "الشركاء",
     permission: "partners",
     children: [
+      { href: "/partners/stores", label: "المتاجر" },
       { href: "/partners/new", label: "إضافة شريك" },
       { href: "/fields", label: "الميدان" }
     ]

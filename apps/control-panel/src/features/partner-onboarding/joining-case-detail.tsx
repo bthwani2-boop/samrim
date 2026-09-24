@@ -1,6 +1,6 @@
 "use client";
 
-import { type CommerceVertical, financialProfileStateLabel, type JoiningCaseResponse, joiningCaseStateLabel, publicationReadinessBlockedReasonLabel, publicationStateLabel, type ServiceCity, settlementPeriodLabel, type StoreFulfillmentMode, type StorePublicationResponse, type StoreFulfillmentModesResponse } from "@bthwani/dsh";
+import { type CommerceVertical, financialProfileStateLabel, type JoiningCaseResponse, joiningCaseStateLabel, type ServiceCity, type StoreFulfillmentMode, settlementPeriodLabel } from "@bthwani/dsh";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { partnerErrorMessage } from "./partner-error-message";
@@ -19,11 +19,8 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
   const [correctionReason, setCorrectionReason] = useState("");
   const [commissionRatePercent, setCommissionRatePercent] = useState("");
   const [settlementPeriod, setSettlementPeriod] = useState<"DAILY" | "WEEKLY" | "MONTHLY" | "">("");
-  const [publication, setPublication] = useState<StorePublicationResponse | null>(null);
-  const [selectedFulfillmentModes, setSelectedFulfillmentModes] = useState<ReadonlyArray<StoreFulfillmentMode>>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [publicationBusy, setPublicationBusy] = useState(false);
   const [error, setError] = useState("");
 
   const readCase = useCallback(async (showLoading = true): Promise<boolean> => {
@@ -134,94 +131,6 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
     }
   }
 
-  async function readPublication() {
-    const storeId = result?.case.store?.id;
-    if (!storeId) return;
-    setPublicationBusy(true);
-    setError("");
-    try {
-      const response = await fetch(`/api/stores/${encodeURIComponent(storeId)}/publication`, { cache: "no-store" });
-      if (!response.ok) {
-        setError(await partnerErrorMessage(response));
-        return;
-      }
-      const next = await response.json() as StorePublicationResponse;
-      setPublication(next);
-      setSelectedFulfillmentModes(next.store.fulfillmentModes);
-    } catch {
-      setError("تعذر إعادة قراءة حالة نشر المتجر.");
-    } finally {
-      setPublicationBusy(false);
-    }
-  }
-
-  async function changePublication() {
-    if (!publication) return;
-    const state = publication.store.publicationState === "published" ? "hidden" : "published";
-    if (state === "published" && !publication.store.publicationReadiness.ready) {
-      setError(`لا يمكن نشر المتجر: ${publicationReadinessBlockedReasonLabel(publication.store.publicationReadiness.blockedReason)}`);
-      return;
-    }
-    setPublicationBusy(true);
-    setError("");
-    try {
-      const response = await fetch(`/api/stores/${encodeURIComponent(publication.store.id)}/publication`, {
-        method: "POST",
-        headers: partnerMutationHeaders(),
-        body: JSON.stringify({ state, expectedVersion: publication.store.version }),
-      });
-      if (!response.ok) {
-        const message = await partnerErrorMessage(response);
-        await readPublication();
-        setError(message);
-        return;
-      }
-      setPublication(await response.json() as StorePublicationResponse);
-    } catch {
-      setError("تعذر تنفيذ تغيير النشر. أعد قراءة الحالة قبل المحاولة مرة أخرى.");
-    } finally {
-      setPublicationBusy(false);
-    }
-  }
-
-  async function saveFulfillmentModes() {
-    if (!publication || selectedFulfillmentModes.length === 0) {
-      setError("فعّل وضع طلب واحدًا على الأقل للمتجر.");
-      return;
-    }
-    setPublicationBusy(true);
-    setError("");
-    try {
-      const response = await fetch(`/api/stores/${encodeURIComponent(publication.store.id)}/fulfillment-modes`, {
-        method: "POST",
-        headers: partnerMutationHeaders(),
-        body: JSON.stringify({ fulfillmentModes: selectedFulfillmentModes, expectedVersion: publication.store.version }),
-      });
-      if (!response.ok) {
-        const message = await partnerErrorMessage(response);
-        await readPublication();
-        setError(message);
-        return;
-      }
-      const updated = await response.json() as StoreFulfillmentModesResponse;
-      setSelectedFulfillmentModes(updated.fulfillmentModes);
-      setPublication((currentPublication) => currentPublication ? {
-        ...currentPublication,
-        store: { ...currentPublication.store, version: updated.version, fulfillmentModes: updated.fulfillmentModes },
-      } : currentPublication);
-    } catch {
-      setError("تعذر حفظ أوضاع الطلب. أعد قراءة المتجر قبل إعادة المحاولة.");
-    } finally {
-      setPublicationBusy(false);
-    }
-  }
-
-  function toggleFulfillmentMode(mode: StoreFulfillmentMode) {
-    setSelectedFulfillmentModes((currentModes) => currentModes.includes(mode)
-      ? currentModes.filter((currentMode) => currentMode !== mode)
-      : [...currentModes, mode]);
-  }
-
   if (loading) {
     return <section className="access-card" aria-labelledby="joining-case-detail-title"><h2 id="joining-case-detail-title">جارٍ قراءة حالة الانضمام…</h2></section>;
   }
@@ -273,29 +182,11 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
             {current.state === "needs_correction" ? <p>الحالة بانتظار تصحيح بيانات الشريك عبر المسار القانوني المتاح.</p> : null}
             {current.state === "approved" ? <p>تم اعتماد الحالة. انتقل إلى قراءة النشر إن كان المتجر متاحًا.</p> : null}
           </div>
-          {storeId ? <>
-            <div className="managed-status managed-status-info">
-              <strong>أوضاع الطلب بعد إنشاء المتجر</strong>
-              <p>اختيار الشريك الأول محفوظ في ملف الانضمام. التغيير اللاحق متاح للمشغّل النشط من هذا القسم فقط.</p>
-              {!publication ? <button type="button" className="button button-secondary" disabled={publicationBusy} onClick={() => void readPublication()}>قراءة أوضاع المتجر الحالية</button> : <>
-                <fieldset className="grid gap-3" disabled={publicationBusy}>
-                  <legend>الأوضاع التي ستظهر للعميل</legend>
-                  {fulfillmentModeOptions.map((option) => <label key={option.value} className="flex items-start gap-3 rounded-xl border border-slate-200 p-3">
-                    <input type="checkbox" checked={selectedFulfillmentModes.includes(option.value)} onChange={() => toggleFulfillmentMode(option.value)} />
-                    <span><strong>{option.label}</strong><br /><span className="muted">{option.description}</span></span>
-                  </label>)}
-                </fieldset>
-                <p>الحالي: {publication.store.fulfillmentModes.map((mode) => fulfillmentModeOptions.find((option) => option.value === mode)?.label ?? mode).join("، ")}</p>
-                <button type="button" className="button button-primary" disabled={publicationBusy || selectedFulfillmentModes.length === 0 || selectedFulfillmentModes.length === publication.store.fulfillmentModes.length && selectedFulfillmentModes.every((mode) => publication.store.fulfillmentModes.includes(mode))} onClick={() => void saveFulfillmentModes()}>{publicationBusy ? "جارٍ الحفظ…" : "حفظ أوضاع الطلب"}</button>
-                <button type="button" className="button button-secondary" disabled={publicationBusy} onClick={() => void readPublication()}>إعادة قراءة المتجر</button>
-              </>}
-            </div>
-            <div className="managed-status managed-status-info"><strong>نشر المتجر</strong><p>{publication ? `الحالة الحالية: ${publicationStateLabel(publication.store.publicationState)}` : "لم تُقرأ حالة النشر بعد."}</p>{!publication ? <button type="button" className="button button-secondary" disabled={publicationBusy} onClick={() => void readPublication()}>إعادة قراءة النشر</button> : <><p>الجاهزية: {publication.store.publicationReadiness.ready ? "جاهز" : publicationReadinessBlockedReasonLabel(publication.store.publicationReadiness.blockedReason)}</p><button type="button" className="button button-primary" disabled={publicationBusy || (!publication.store.publicationReadiness.ready && publication.store.publicationState !== "published")} onClick={() => void changePublication()}>{publicationBusy ? "جارٍ التحديث…" : publication.store.publicationState === "published" ? "إخفاء المتجر" : "نشر المتجر"}</button><button type="button" className="button button-secondary" disabled={publicationBusy} onClick={() => void readPublication()}>إعادة القراءة</button></>}</div>
-          </> : null}
+          {storeId ? <div className="managed-status managed-status-info"><strong>ملف المتجر</strong><p>تُدار حالة نشر المتجر وأوضاع التنفيذ من مساحة المتجر الموحدة.</p><Link className="button button-secondary" href={`/partners/stores/${encodeURIComponent(storeId)}`}>فتح ملف المتجر</Link></div> : null}
         </>
       )}
       {error ? <p className="identity-error" role="alert">{error}</p> : null}
-      <div className="button-row"><Link className="button button-secondary" href="/partners">العودة إلى طابور الحالات</Link><button type="button" className="button button-secondary" disabled={busy || publicationBusy} onClick={() => void readCase()}>إعادة قراءة الحالة</button></div>
+      <div className="button-row"><Link className="button button-secondary" href="/partners">العودة إلى طابور الحالات</Link><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readCase()}>إعادة قراءة الحالة</button></div>
     </section>
   );
 }

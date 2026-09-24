@@ -165,6 +165,9 @@ paths:
   /dsh/stores/{storeId}/publication:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores~1{storeId}~1publication"
 
+  /dsh/stores:
+    $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores"
+
   /dsh/stores/{storeId}/fulfillment-modes:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores~1{storeId}~1fulfillment-modes"
 
@@ -904,6 +907,51 @@ components:
         nextCursor:
           type: string
 
+    OperatorStoreSummary:
+      type: object
+      required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, version, publicationState, fulfillmentModes, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        partnerActorId:
+          type: string
+        name:
+          type: string
+        serviceCityId:
+          type: string
+          nullable: true
+        primaryVerticalId:
+          type: string
+          nullable: true
+        version:
+          type: integer
+          minimum: 1
+        publicationState:
+          $ref: "#/components/schemas/PublicationState"
+        fulfillmentModes:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoreFulfillmentMode"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    OperatorStoreListResponse:
+      type: object
+      required: [stores]
+      additionalProperties: false
+      properties:
+        stores:
+          type: array
+          items:
+            $ref: "#/components/schemas/OperatorStoreSummary"
+        nextCursor:
+          type: string
+
     JoiningCaseSummary:
       type: object
       required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, origin, state, version, createdAt, updatedAt]
@@ -1034,7 +1082,7 @@ components:
 
     StoreView:
       type: object
-      required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, deliveryOrigin, fulfillmentModes, version, publicationState, publicationReadiness, offers, createdAt, updatedAt]
+      required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, deliveryOrigin, fulfillmentModes, version, publicationState, publicationReadiness, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -1071,10 +1119,6 @@ components:
           type: string
           format: date-time
           nullable: true
-        offers:
-          type: array
-          items:
-            $ref: "#/components/schemas/CatalogStoreOffer"
         storeProfileImage:
           $ref: "#/components/schemas/StoreProfileImage"
           nullable: true

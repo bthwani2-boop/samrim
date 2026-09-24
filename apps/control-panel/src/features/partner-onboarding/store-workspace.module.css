@@ -1,0 +1,23 @@
+/* Operational store registry and canonical DSH store detail presentation. */
+:global(.store-registry), :global(.store-workspace) { display: grid; gap: 18px; }
+:global(.store-registry-controls), :global(.store-registry-filters) { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+:global(.store-registry-controls .field-label) { flex: 1 1 260px; }
+:global(.store-registry-table-wrap) { overflow-x: auto; border: 1px solid var(--border-subtle); border-radius: 14px; }
+:global(.store-registry-table-wrap a), :global(.store-detail-facts a) { color: var(--interactive-text); text-underline-offset: 3px; }
+:global(.store-detail-section) { display: grid; gap: 16px; padding: 20px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--surface-base); }
+:global(.store-detail-heading) { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+:global(.store-detail-heading h2) { margin: 0; font-size: 20px; }
+:global(.store-detail-heading .eyebrow) { margin: 0 0 4px; }
+:global(.store-detail-facts) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; }
+:global(.store-detail-facts > div) { display: grid; gap: 5px; min-width: 0; padding: 12px; border-radius: 12px; background: var(--surface-muted); }
+:global(.store-detail-facts dt) { color: var(--text-muted); font-size: 12px; font-weight: 750; }
+:global(.store-detail-facts dd) { margin: 0; overflow-wrap: anywhere; font-weight: 750; }
+:global(.store-fulfillment-options) { display: grid; gap: 10px; border: 0; padding: 0; }
+:global(.store-fulfillment-option) { display: flex; align-items: flex-start; gap: 12px; padding: 14px; border: 1px solid var(--border-subtle); border-radius: 12px; }
+:global(.store-fulfillment-option span) { display: grid; gap: 4px; }
+:global(.store-fulfillment-option small) { color: var(--text-muted); }
+@media (max-width: 620px) {
+  :global(.store-detail-section) { padding: 14px; }
+  :global(.store-detail-heading) { align-items: flex-start; flex-direction: column; }
+  :global(.store-detail-facts) { grid-template-columns: 1fr; }
+}

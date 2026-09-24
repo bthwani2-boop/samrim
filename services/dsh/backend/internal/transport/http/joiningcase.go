@@ -249,13 +249,7 @@ func (s *JoiningCaseServer) writeResult(w http.ResponseWriter, ctx *http.Request
 			writeStorePublicationError(w, err)
 			return
 		}
-		offers, err := postgres.ListCatalogOffers(ctx.Context(), s.db, result.Case.Store.ID, false)
-		if err != nil {
-			log.Printf("joining case response offers failed case=%s store=%s: %v", result.Case.ID, result.Case.Store.ID, err)
-			writeStorageError(w, err)
-			return
-		}
-		storeView := toStoreView(*result.Case.Store, readiness, offers)
+		storeView := toStoreView(*result.Case.Store, readiness)
 		view.Store = &storeView
 	}
 	w.Header().Set("Cache-Control", "no-store")

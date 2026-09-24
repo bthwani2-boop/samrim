@@ -105,14 +105,7 @@ func writeStorageError(w http.ResponseWriter, err error) {
 	}
 }
 
-func toStoreView(store postgres.StoreRecord, readiness storepublication.PublicationReadiness, offers ...[]postgres.CatalogStoreOfferRecord) contract.StoreView {
-	values := []contract.CatalogStoreOffer{}
-	if len(offers) > 0 {
-		values = make([]contract.CatalogStoreOffer, 0, len(offers[0]))
-		for _, offer := range offers[0] {
-			values = append(values, toStoreOffer(offer))
-		}
-	}
+func toStoreView(store postgres.StoreRecord, readiness storepublication.PublicationReadiness) contract.StoreView {
 	var deliveryOrigin *contract.DeliveryOrigin
 	if store.DeliveryOriginLatitude != nil && store.DeliveryOriginLongitude != nil {
 		deliveryOrigin = &contract.DeliveryOrigin{Latitude: *store.DeliveryOriginLatitude, Longitude: *store.DeliveryOriginLongitude}
@@ -123,7 +116,6 @@ func toStoreView(store postgres.StoreRecord, readiness storepublication.Publicat
 		PublicationState: contract.PublicationState(store.PublicationState), PublicationChangedAt: store.PublicationChangedAt,
 		DeliveryOrigin: deliveryOrigin,
 		CreatedAt:      store.CreatedAt, UpdatedAt: store.UpdatedAt,
-		Offers:               values,
 		StoreProfileImage:    toStoreProfileImage(store.StoreProfileImage),
 		PublicationReadiness: toPublicationReadiness(readiness),
 	}
