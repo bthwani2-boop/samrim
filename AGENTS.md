@@ -67,6 +67,10 @@ Donor/history, OSS/product exemplars, Yemen-market evidence, primary technology 
 
 For user-facing work, durable Experience/Design/Quality meaning remains in those Governance owners. The executable Design System owns reusable domain-neutral visual semantics when reuse is proven; each app owns its actor-specific IA, shell, navigation and composition. Arabic/RTL, accessibility, interaction states and rendered behavior are correctness when material, not optional polish. Static checks never substitute for rendered/interaction evidence when the claim is visual or interactive.
 
+### Control Panel operational-resource law
+
+For every Control Panel change, explicitly account for whether each affected operational resource is registry-suitable. Any operational resource that can materially grow and requires finding, filtering, sorting, selecting or acting on records must use a **Server-Driven Operational Registry**: dense records with server-side search/filter/sort/bounded pagination, selection/actions when justified, on-demand detail and relationship drill-down, and canonical server truth. Remove superseded card lists, parallel list/detail routes, permanent side-by-side forms, client-filtered server-paginated truth and shadow models that obstruct fast scalable operation. Use a work queue, feed, tree or object/detail workspace when that resource's semantics prove it more appropriate; this law does not force unrelated screen types into a grid.
+
 ## 3. Complexity and cutover
 
 EVERY EXISTING OR NEW COMPLEXITY MUST RE-EARN EXISTENCE.
