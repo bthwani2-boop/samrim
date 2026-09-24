@@ -81,6 +81,8 @@ Future possibility or "just in case" → not justification.
 
 Preference: DELETE → DIRECT USE → EXTEND EXISTING OWNER → REFACTOR EXISTING OWNER → ONLY THEN ADD A NEW MECHANISM. SMALLEST DIFF != SIMPLEST SYSTEM.
 
+For every task and during every implementation, apply this rule: if no real data-preservation or compatibility obligation exists, refound the clean canonical truth and delete every superseded legacy artifact, migration, file or corrective path instead of accumulating patches and residue.
+
 Within the affected cone, every material file/module/component/hook/route/handler/service/package/type/DTO/schema/migration/contract/config/env key/script/dependency/state/cache/registry/test/generated artifact must have a current owner, provenance, real consumer and simplest complete form. Do not create a second affected engine, proof registry, cache protocol, state machine, semantic guard or compatibility path when an existing owner can satisfy the requirement.
 
 A replacement is complete only after all material producers, consumers, contracts, persistence/config/runtime paths, tests and current implementation descriptions use the winner; then delete the loser and prove it absent. No old/new shadow truth or partial cutover.
