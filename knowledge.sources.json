@@ -2,8 +2,8 @@
   "schema": 2,
   "governance": {
     "repository": "bthwani2-boop/governance-and-docs",
-    "commit": "05b1d2cf803ef060e736d0ac3003112847eec53d",
-    "commit_url": "https://github.com/bthwani2-boop/governance-and-docs/commit/05b1d2cf803ef060e736d0ac3003112847eec53d",
+    "commit": "cda3539ee10e7d5ee9a3a62e045d2827c608805c",
+    "commit_url": "https://github.com/bthwani2-boop/governance-and-docs/commit/cda3539ee10e7d5ee9a3a62e045d2827c608805c",
     "role": "DURABLE_BTHWANI_KNOWLEDGE",
     "authority": "CHALLENGEABLE_DURABLE_BASELINE"
   }
