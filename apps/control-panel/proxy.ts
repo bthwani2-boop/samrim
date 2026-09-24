@@ -12,6 +12,7 @@ function createContentSecurityPolicy(): Readonly<{ nonce: string; value: string 
     isDevelopment ? "style-src 'self' 'unsafe-inline'" : `style-src 'self' 'nonce-${nonce}'`,
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
+    "frame-src 'self' https://www.google.com",
     "connect-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",

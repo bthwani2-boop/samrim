@@ -21,3 +21,8 @@
 :global(.status-delivered) { background: var(--success-soft); color: var(--success); }
 :global(.status-rejected) { background: var(--danger-soft); color: var(--danger); }
 :global(.table-action) { width: auto; min-width: 146px; min-height: 42px; padding-inline: 12px; font-size: 12px; }
+:global(.operation-location-map) { display: grid; gap: 12px; margin-top: 20px; }
+:global(.operation-location-map-heading) { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }
+:global(.operation-location-map-heading a) { color: var(--interactive-text); font-weight: 600; }
+:global(.operation-location-map iframe) { border: 0; border-radius: 12px; height: 320px; width: 100%; }
+:global(.operation-location-map p) { color: var(--text-secondary); }

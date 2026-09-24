@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "../access/identity-error-message";
 import { operationActionLabel, resolveOperatorAction, type OperatorAction } from "./operator-actions";
+import { OperationLocationMap } from "./operation-location-map";
 import "./operations-workspace.module.css";
 
 const filterOptions: ReadonlyArray<Readonly<{ value: string; label: string }>> = [
@@ -151,6 +152,7 @@ export function OperationsWorkspace() {
                           <span>{detail.order.lines.length} عناصر · {formatMoney(detail.order.totalAmountMinor, detail.order.currency)}</span>
                           <span>الدفع: {paymentMethodLabel(detail.order.paymentMethod)} · {paymentStateLabel(detail.order.paymentState)}</span>
                           <span>العنوان: {detail.order.addressText}</span>
+                          {detail.order.fulfillmentMode !== "CUSTOMER_PICKUP" ? <OperationLocationMap latitude={detail.order.addressLatitude} longitude={detail.order.addressLongitude} label="وجهة التوصيل" /> : <span>طلب استلام من المتجر؛ لا تتوفر إحداثيات موقع الفرع ضمن تفاصيل العملية الحالية.</span>}
                           <span>قابلية الخدمة مثبتة ضمن لقطة الطلب المعتمدة.</span>
                           <ul>
                             {detail.order.lines.map((line) => <li key={line.id}>{line.productName}{line.variantTitle ? ` · ${line.variantTitle}` : ""} · {line.finalQuantityBaseUnits} · {formatMoney(line.lineAmountMinor, line.currency)}</li>)}

@@ -1,3 +1,3 @@
 import { defineSamrimExpoApp } from "../../tools/mobile/define-samrim-expo-app.cjs";
 
-export default defineSamrimExpoApp("app-field");
+export default defineSamrimExpoApp("app-field", { maps: true });
