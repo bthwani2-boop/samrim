@@ -39,6 +39,21 @@ func assertRequiredMigrationOrder(t *testing.T, records []postgres.MigrationReco
 	}
 }
 
+func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
+	migrationDirectory := filepath.Join("..", "..", "..", "..", "database", "migrations")
+	records, migrationSQL, err := postgres.LoadMigrations(migrationDirectory)
+	if err != nil {
+		t.Fatalf("load DSH canonical migrations: %v", err)
+	}
+	if len(records) != postgres.SchemaVersion || len(migrationSQL) != postgres.SchemaVersion {
+		t.Fatalf("unexpected DSH migration graph size: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.SchemaVersion)
+	}
+	last := records[len(records)-1]
+	if last.Version != postgres.SchemaVersion || last.Name != "061_operator_store_registry.sql" {
+		t.Fatalf("last DSH migration = v%d %q; want v%d 061_operator_store_registry.sql", last.Version, last.Name, postgres.SchemaVersion)
+	}
+}
+
 func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("DSH_DATABASE_URL"))
 	if databaseURL == "" {
