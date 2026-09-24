@@ -1,10 +1,10 @@
 {
   "name": "بثواني",
-  "slug": "app-client-next",
+  "slug": "app-client",
   "scheme": "client",
   "owner": "bthwani1",
   "version": "0.3.0",
-  "androidPackage": "com.bthwani.client.next",
-  "iosBundleIdentifier": "com.bthwani.client.next",
-  "projectId": "abec897b-1f5f-409d-8286-607a5a6b69e2"
+  "androidPackage": "com.bthwani.client",
+  "iosBundleIdentifier": "com.bthwani.client",
+  "projectId": "4adf3184-fc07-4186-b49e-0dc821a5ab73"
 }
