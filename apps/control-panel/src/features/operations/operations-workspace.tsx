@@ -1,86 +1,121 @@
 "use client";
 
-import { formatOrderDate, type OperatorOperationListItem, orderStateLabel } from "@bthwani/dsh";
+import { captainAssignmentStateLabel, formatOrderDate, type OperatorOperationListItem, orderStateLabel } from "@bthwani/dsh";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { responseMessage } from "../access/identity-error-message";
-import { type OperatorAction, operationActionLabel, resolveOperatorAction } from "./operator-actions";
 import "./operations-workspace.module.css";
 
-const filterOptions: ReadonlyArray<Readonly<{ value: string; label: string }>> = [
-  { value: "", label: "كل الأعمال" },
-  { value: "READY_FOR_DISPATCH", label: "جاهز للتوزيع" },
-  { value: "CAPTAIN_ASSIGNED", label: "مُسند إلى كابتن" },
-  { value: "IN_CUSTODY", label: "في عهدة الكابتن" },
-  { value: "DELIVERY_FAILED", label: "يحتاج استعادة" },
+type LaneId = "orders" | "attention" | "dispatch" | "execution" | "exceptions" | "history";
+type Lane = Readonly<{ id: LaneId; label: string; summary: string }>;
+type SubLane = Readonly<{ id: string; label: string; state: string }>;
+
+const defaultLane: Lane = { id: "orders", label: "الطلبات", summary: "جميع الطلبات ذات الصلة التشغيلية" };
+const lanes: ReadonlyArray<Lane> = [
+  defaultLane,
+  { id: "attention", label: "تحتاج قرارًا", summary: "أعمال تسمح حالتها بإجراء من المشغل" },
+  { id: "dispatch", label: "التوزيع", summary: "طلبات جاهزة لإسناد كابتن" },
+  { id: "execution", label: "التنفيذ الجاري", summary: "تقدم الإسناد وعهدة الكابتن" },
+  { id: "exceptions", label: "الاستثناءات والاستعادة", summary: "حالات تعثر التسليم القابلة للاستعادة" },
+  { id: "history", label: "السجل والحالات النهائية", summary: "طلبات وصلت إلى حالة نهائية" },
 ];
 
+const subLanes: Partial<Record<LaneId, ReadonlyArray<SubLane>>> = {
+  execution: [
+    { id: "assigned", label: "إسناد الكابتن", state: "CAPTAIN_ASSIGNED" },
+    { id: "custody", label: "في عهدة الكابتن", state: "IN_CUSTODY" },
+  ],
+  history: [
+    { id: "delivered", label: "تم التسليم", state: "DELIVERED" },
+    { id: "picked-up", label: "استلام من المتجر", state: "PICKED_UP" },
+    { id: "rejected", label: "مرفوضة", state: "REJECTED" },
+    { id: "cancelled", label: "ملغاة", state: "CANCELLED" },
+  ],
+};
+
 export function OperationsWorkspace() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const queryString = searchParams.toString();
+  const params = new URLSearchParams(queryString);
+  const requestedLane = params.get("lane") as LaneId | null;
+  const lane = lanes.find((item) => item.id === requestedLane) ?? defaultLane;
+  const laneSubTabs = subLanes[lane.id] ?? [];
+  const subLane = laneSubTabs.find((item) => item.id === params.get("sub")) ?? laneSubTabs[0];
+  const state = lane.id === "dispatch" ? "READY_FOR_DISPATCH" : lane.id === "exceptions" ? "DELIVERY_FAILED" : lane.id === "execution" || lane.id === "history" ? subLane?.state ?? "" : "";
+  const actionableOnly = lane.id === "attention";
+  const searchFromUrl = (params.get("q") ?? "").trim().slice(0, 128);
+  const sort = params.get("sort") === "updated_asc" ? "updated_asc" : "updated_desc";
+  const cursor = params.get("cursor") ?? "";
+  const hasSearch = Boolean(searchFromUrl);
+
   const [operations, setOperations] = useState<ReadonlyArray<OperatorOperationListItem>>([]);
-  const [filter, setFilter] = useState("");
-  const [search, setSearch] = useState("");
-  const [appliedQuery, setAppliedQuery] = useState("");
-  const [sort, setSort] = useState("updated_desc");
-  const [cursor, setCursor] = useState("");
-  const [urlReady, setUrlReady] = useState(false);
-  const [busy, setBusy] = useState("");
+  const [search, setSearch] = useState(searchFromUrl);
   const [loading, setLoading] = useState(true);
   const [nextCursor, setNextCursor] = useState("");
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [errorStatus, setErrorStatus] = useState(0);
   const loadSequence = useRef(0);
 
-  const syncFromUrl = useCallback(() => {
-    const params = new URLSearchParams(window.location.search);
-    const requestedState = params.get("state") ?? "";
-    setFilter(filterOptions.some((option) => option.value === requestedState) ? requestedState : "");
-    setCursor(params.get("cursor") ?? "");
-    const requestedQuery = params.get("q")?.trim().slice(0, 128) ?? "";
-    setSearch(requestedQuery);
-    setAppliedQuery(requestedQuery);
-    setSort(params.get("sort") === "updated_asc" ? "updated_asc" : "updated_desc");
-  }, []);
+  useEffect(() => setSearch(searchFromUrl), [searchFromUrl]);
 
-  useEffect(() => {
-    syncFromUrl();
-    setUrlReady(true);
-    window.addEventListener("popstate", syncFromUrl);
-    return () => window.removeEventListener("popstate", syncFromUrl);
-  }, [syncFromUrl]);
+  const navigate = useCallback((changes: Readonly<{ lane?: LaneId; sub?: string; q?: string; sort?: string; cursor?: string }>) => {
+    const next = new URLSearchParams(queryString);
+    if (changes.lane) next.set("lane", changes.lane);
+    if (changes.sub) next.set("sub", changes.sub);
+    else if (changes.lane) next.delete("sub");
+    if (changes.q !== undefined) {
+      if (changes.q) next.set("q", changes.q);
+      else next.delete("q");
+    }
+    if (changes.sort) {
+      if (changes.sort === "updated_desc") next.delete("sort");
+      else next.set("sort", changes.sort);
+    }
+    if (changes.cursor) next.set("cursor", changes.cursor);
+    else next.delete("cursor");
+    const serialized = next.toString();
+    router.push(pathname + (serialized ? `?${serialized}` : ""), { scroll: false });
+  }, [pathname, queryString, router]);
 
-  const navigateQuery = useCallback((state: string, pageCursor: string, queryText = appliedQuery, nextSort = sort) => {
-    const params = new URLSearchParams(window.location.search);
-    if (state) params.set("state", state);
-    else params.delete("state");
-    if (pageCursor) params.set("cursor", pageCursor);
-    else params.delete("cursor");
-    if (queryText) params.set("q", queryText);
-    else params.delete("q");
-    if (nextSort !== "updated_desc") params.set("sort", nextSort);
-    else params.delete("sort");
-    const queryString = params.toString();
-    window.history.pushState({}, "", window.location.pathname + (queryString ? `?${queryString}` : ""));
-    setFilter(state);
-    setCursor(pageCursor);
-    setAppliedQuery(queryText);
-    setSearch(queryText);
-    setSort(nextSort);
-  }, [appliedQuery, sort]);
+  const viewHref = useCallback((nextLane: LaneId, nextSub?: string) => {
+    const next = new URLSearchParams(queryString);
+    next.set("lane", nextLane);
+    if (nextSub) next.set("sub", nextSub);
+    else next.delete("sub");
+    next.delete("cursor");
+    const serialized = next.toString();
+    return pathname + (serialized ? `?${serialized}` : "");
+  }, [pathname, queryString]);
+
+  const orderHref = useCallback((id: string) => {
+    const next = new URLSearchParams(queryString);
+    next.set("tab", "overview");
+    const serialized = next.toString();
+    const base = `/operations/${encodeURIComponent(id)}`;
+    return serialized ? `${base}?${serialized}` : base;
+  }, [queryString]);
 
   const load = useCallback(async () => {
     const sequence = ++loadSequence.current;
     setLoading(true);
+    setOperations([]);
+    setNextCursor("");
     setError("");
+    setErrorStatus(0);
     try {
       const query = new URLSearchParams({ limit: "50" });
-      if (filter) query.set("state", filter);
-      if (appliedQuery) query.set("q", appliedQuery);
+      if (state) query.set("state", state);
+      if (actionableOnly) query.set("actionableOnly", "true");
+      if (searchFromUrl) query.set("q", searchFromUrl);
       if (sort !== "updated_desc") query.set("sort", sort);
       if (cursor) query.set("cursor", cursor);
-      const response = await fetch("/api/operations?" + query.toString(), { cache: "no-store" });
+      const response = await fetch(`/api/operations?${query.toString()}`, { cache: "no-store" });
       if (sequence !== loadSequence.current) return;
       if (!response.ok) {
+        setErrorStatus(response.status);
         setError(await responseMessage(response));
         return;
       }
@@ -90,124 +125,87 @@ export function OperationsWorkspace() {
       setNextCursor(body.nextCursor ?? "");
     } catch (cause) {
       if (sequence !== loadSequence.current) return;
-      setError(isRequestFailure(cause) ? cause.message : "تعذر قراءة مركز العمليات.");
+      setError(cause instanceof Error ? cause.message : "تعذر قراءة مركز العمليات.");
     } finally {
       if (sequence === loadSequence.current) setLoading(false);
     }
-  }, [appliedQuery, cursor, filter, sort]);
+  }, [actionableOnly, cursor, searchFromUrl, sort, state]);
 
-  useEffect(() => { if (urlReady) void load(); }, [load, urlReady]);
-
-  async function runAction(action: OperatorAction, item: OperatorOperationListItem) {
-    if (resolveOperatorAction(item) !== action) return;
-    const assignment = item.assignment;
-    setBusy(action + ":" + item.orderId);
-    setError("");
-    setNotice("");
-    try {
-      const response = await identityFetch("/api/captains", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action,
-          orderId: item.orderId,
-          assignmentId: assignment?.id ?? "",
-          ...(action === "recover" ? { expectedVersion: assignment?.version } : {}),
-        }),
-      });
-      if (!response.ok) {
-        setError(await responseMessage(response));
-        return;
-      }
-      setNotice("تم تنفيذ «" + operationActionLabel(action) + "» ثم إعادة قراءة الحالة الكانونية.");
-      await load();
-    } catch (cause) {
-      setError(isRequestFailure(cause) ? cause.message : "تعذر تنفيذ إجراء العمليات.");
-    } finally {
-      setBusy("");
-    }
-  }
-
-  const actionableCount = useMemo(
-    () => operations.filter((item) => resolveOperatorAction(item) !== null).length,
-    [operations],
-  );
+  useEffect(() => { void load(); }, [load]);
 
   return (
     <section className="operations-workspace" aria-labelledby="operations-list-title">
-      <div className="workspace-toolbar">
-        <search className="workspace-search" aria-label="البحث في العمليات">
-          <form className="workspace-search-form" onSubmit={(event) => { event.preventDefault(); navigateQuery(filter, "", search.trim().slice(0, 128), sort); }}>
-            <label className="field-label" htmlFor="operations-search">
-              البحث في رقم الطلب أو اسم المتجر
+      <nav className="operations-lanes" aria-label="مسارات مركز العمليات">
+        {lanes.map((item) => (
+          <Link key={item.id} href={viewHref(item.id, (subLanes[item.id] ?? [])[0]?.id)} aria-current={item.id === lane.id ? "page" : undefined} className={item.id === lane.id ? "operations-lane is-active" : "operations-lane"}>
+            {item.label}
+          </Link>
+        ))}
+      </nav>
+
+      {laneSubTabs.length > 0 ? (
+        <nav className="operations-sub-lanes" aria-label={`مسارات ${lane.label}`}>
+          {laneSubTabs.map((item) => (
+            <Link key={item.id} href={viewHref(lane.id, item.id)} aria-current={item.id === subLane?.id ? "page" : undefined} className={item.id === subLane?.id ? "operations-sub-lane is-active" : "operations-sub-lane"}>
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+      ) : null}
+
+      <div className="operations-view-heading">
+        <div>
+          <h2 id="operations-list-title">{laneSubTabs.length && subLane ? subLane.label : lane.label}</h2>
+          <p>{lane.summary}</p>
+        </div>
+        <button type="button" className="button button-secondary" onClick={() => void load()} disabled={loading}>
+          {loading ? "جارٍ القراءة…" : "إعادة القراءة"}
+        </button>
+      </div>
+
+      <div className="operations-toolbar">
+        <search className="operations-search" aria-label="البحث في الطلبات">
+          <form className="operations-search-form" onSubmit={(event) => { event.preventDefault(); navigate({ q: search.trim().slice(0, 128) }); }}>
+            <label className="field-label" htmlFor="operations-search">رقم الطلب أو اسم المتجر
               <input id="operations-search" type="search" value={search} maxLength={128} onChange={(event) => setSearch(event.target.value)} placeholder="ابحث عن طلب أو متجر" />
             </label>
-            <button type="submit" className="button button-secondary" disabled={loading || Boolean(busy)}>بحث</button>
+            <button type="submit" className="button button-secondary" disabled={loading}>بحث</button>
           </form>
         </search>
-        <label className="field-label" htmlFor="operations-state-filter">
-          تصفية العمل
-          <select id="operations-state-filter" value={filter} onChange={(event) => navigateQuery(event.target.value, "")} disabled={Boolean(busy)}>
-            {filterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
-        </label>
-        <label className="field-label" htmlFor="operations-sort">
-          ترتيب حسب آخر تحديث
-          <select id="operations-sort" value={sort} onChange={(event) => navigateQuery(filter, "", appliedQuery, event.target.value)} disabled={Boolean(busy)}>
+        <label className="field-label operations-sort" htmlFor="operations-sort">ترتيب التحديث
+          <select id="operations-sort" value={sort} onChange={(event) => navigate({ sort: event.target.value })}>
             <option value="updated_desc">الأحدث أولًا</option>
             <option value="updated_asc">الأقدم أولًا</option>
           </select>
         </label>
-        <div className="toolbar-meta">
-          <span className="toolbar-count">{actionableCount} أعمال تحتاج قرارًا مباشرًا ضمن القراءة الحالية</span>
-          <button type="button" className="button button-secondary" onClick={() => void load()} disabled={loading || Boolean(busy)}>
-            {loading ? "جارٍ القراءة…" : "إعادة القراءة"}
-          </button>
-        </div>
       </div>
 
-      {filter || appliedQuery ? (
-        <section className="active-filter-chips" aria-label="عوامل التصفية النشطة">
-          {filter ? <button type="button" className="filter-chip" onClick={() => navigateQuery("", "")}>الحالة: {filterOptions.find((option) => option.value === filter)?.label} <span aria-hidden="true">×</span><span className="visually-hidden">إزالة تصفية الحالة</span></button> : null}
-          {appliedQuery ? <button type="button" className="filter-chip" onClick={() => navigateQuery(filter, "", "")}>البحث: {appliedQuery} <span aria-hidden="true">×</span><span className="visually-hidden">مسح البحث</span></button> : null}
-        </section>
-      ) : null}
-
-      {notice ? <p className="success-inline" role="status">{notice}</p> : null}
-      {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر إكمال القراءة أو الإجراء</strong><p>{error}</p><button type="button" className="button button-secondary" onClick={() => void load()} disabled={loading || Boolean(busy)}>إعادة المحاولة</button></div> : null}
-      {loading && operations.length === 0 ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة مركز العمليات</strong><p>نطلب مجموعة محدودة من DSH ولا نبني العمل من طلبات منفصلة.</p></div> : null}
-      {!loading && !error && operations.length === 0 ? <div className="collection-state"><strong>{filter || appliedQuery ? "لا توجد نتائج تطابق عوامل البحث والتصفية" : "لا توجد أعمال في هذا النطاق"}</strong><p>{filter || appliedQuery ? "امسح عاملًا أو أكثر لعرض سجلات أخرى." : "ستظهر الطلبات عندما تصل إلى مسار التشغيل الذي يملك المشغل إجراءً عليه."}</p></div> : null}
+      {hasSearch ? <fieldset className="active-filter-chips"><legend className="visually-hidden">عوامل البحث النشطة</legend><button type="button" className="filter-chip" onClick={() => { setSearch(""); navigate({ q: "" }); }}>البحث: {searchFromUrl} <span aria-hidden="true">×</span><span className="visually-hidden">مسح البحث</span></button></fieldset> : null}
+      {error ? <div className="managed-status managed-status-warning" role="alert"><strong>{errorStatus === 403 ? "لا تملك صلاحية قراءة هذا المسار" : "تعذر قراءة الطلبات"}</strong><p>{error}</p><button type="button" className="button button-secondary" onClick={() => void load()} disabled={loading}>إعادة المحاولة</button></div> : null}
+      {loading && operations.length === 0 ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة {lane.label}</strong></div> : null}
+      {!loading && !error && operations.length === 0 ? <div className="collection-state"><strong>{hasSearch ? "لا توجد نتائج تطابق البحث" : "لا توجد طلبات في هذا المسار"}</strong><p>{hasSearch ? "امسح البحث لعرض بقية السجلات." : lane.summary}</p></div> : null}
 
       {operations.length > 0 ? (
-        <div className="operations-table-wrap">
+        <section className="operations-table-wrap" aria-label="جدول الطلبات؛ يمكن تمريره أفقيًا عند ضيق الشاشة">
           <table className="operations-table">
-            <caption id="operations-list-title" className="visually-hidden">أعمال التشغيل الحالية</caption>
-            <thead><tr><th scope="col">الطلب</th><th scope="col">المتجر</th><th scope="col">الحالة</th><th scope="col">آخر تحديث</th><th scope="col">الإجراء</th></tr></thead>
+            <caption className="visually-hidden">{laneSubTabs.length && subLane ? subLane.label : lane.label}</caption>
+            <thead><tr><th scope="col">الطلب</th><th scope="col">المتجر</th><th scope="col">الحالة</th><th scope="col">الكابتن</th><th scope="col">آخر تحديث</th><th scope="col">المتابعة</th></tr></thead>
             <tbody>
-              {operations.map((item) => {
-                const action = resolveOperatorAction(item);
-                const actionBusy = action ? busy === action + ":" + item.orderId : false;
-                return (
-                  <tr key={item.orderId}>
-                    <th scope="row"><Link href={`/operations/${encodeURIComponent(item.orderId)}`}><bdi dir="ltr">{item.orderId}</bdi></Link></th>
-                    <td>{item.storeName}</td>
-                    <td><span className={"status-badge status-" + item.state.toLowerCase()}>{orderStateLabel(item.state)}</span></td>
-                    <td><time dateTime={item.updatedAt}>{formatOrderDate(item.updatedAt)}</time></td>
-                    <td>
-                      {action ? (
-                        <button type="button" className={"button " + (action === "recover" ? "button-secondary" : "button-primary") + " table-action"} onClick={() => void runAction(action, item)} disabled={Boolean(busy)}>
-                          {actionBusy ? "جارٍ التنفيذ…" : operationActionLabel(action)}
-                        </button>
-                      ) : <span className="muted">لا إجراء مشغل مطلوب</span>}
-                    </td>
-                  </tr>
-                );
-              })}
+              {operations.map((item) => (
+                <tr key={item.orderId}>
+                  <th scope="row"><Link href={orderHref(item.orderId)}><bdi dir="ltr">{item.orderId}</bdi></Link></th>
+                  <td>{item.storeName}</td>
+                  <td><span className={`status-badge status-${item.state.toLowerCase()}`}>{orderStateLabel(item.state)}</span></td>
+                  <td>{item.assignment ? captainAssignmentStateLabel(item.assignment.state) : <span className="muted">غير مسند</span>}</td>
+                  <td><time dateTime={item.updatedAt}>{formatOrderDate(item.updatedAt)}</time></td>
+                  <td>{lane.id === "attention" ? <span className="operations-attention">يتطلب قرارًا</span> : <span className="muted">فتح مساحة الطلب</span>}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
-        </div>
+        </section>
       ) : null}
-      {nextCursor ? <div className="workspace-toolbar"><button type="button" className="button button-secondary" onClick={() => navigateQuery(filter, nextCursor)} disabled={loading || Boolean(busy)}>قراءة الصفحة التالية</button></div> : null}
+      {nextCursor ? <div className="operations-pagination"><span>تُقرأ السجلات على صفحات محدودة.</span><button type="button" className="button button-secondary" onClick={() => navigate({ cursor: nextCursor })} disabled={loading}>الصفحة التالية</button></div> : null}
     </section>
   );
 }
