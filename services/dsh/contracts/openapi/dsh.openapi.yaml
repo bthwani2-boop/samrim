@@ -21,6 +21,12 @@ paths:
   /dsh/joining-cases/self:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1self"
 
+  /dsh/partners/actors/{actorId}/joining-case:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1partners~1actors~1{actorId}~1joining-case"
+
+  /dsh/partners/actors/{actorId}/stores:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1partners~1actors~1{actorId}~1stores"
+
   /dsh/joining-cases/{caseId}:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}"
 
@@ -36,8 +42,14 @@ paths:
   /dsh/catalog/verticals:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1verticals"
 
+  /dsh/catalog/verticals/{verticalId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1verticals~1{verticalId}"
+
   /dsh/catalog/categories:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1categories"
+
+  /dsh/catalog/categories/{categoryId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1categories~1{categoryId}"
 
   /dsh/catalog/attributes:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1attributes"
@@ -77,6 +89,15 @@ paths:
 
   /dsh/catalog/categories/{categoryId}/attribute-rules/{attributeId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1categories~1{categoryId}~1attribute-rules~1{attributeId}"
+
+  /dsh/catalog/categories/{categoryId}/attribute-rules:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1categories~1{categoryId}~1attribute-rules"
+
+  /dsh/public/catalog/attributes/{attributeId}/enum-options:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1public~1catalog~1attributes~1{attributeId}~1enum-options"
+
+  /dsh/public/catalog/categories/{categoryId}/attribute-rules:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1public~1catalog~1categories~1{categoryId}~1attribute-rules"
 
   /dsh/stores/{storeId}/products:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1products"
@@ -348,6 +369,9 @@ paths:
 
   /dsh/captains/actors/{actorId}/admission:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1actors~1{actorId}~1admission"
+
+  /dsh/captains/actors/{actorId}/availability:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1actors~1{actorId}~1availability"
 
   /dsh/captains/me:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me"
@@ -836,6 +860,47 @@ components:
         idempotentReplay:
           type: boolean
 
+    PartnerManagedStore:
+      type: object
+      required: [id, name, serviceCityId, primaryVerticalId, fulfillmentModes, version, publicationState, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        serviceCityId:
+          type: string
+        primaryVerticalId:
+          type: string
+        fulfillmentModes:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoreFulfillmentMode"
+        version:
+          type: integer
+          minimum: 1
+        publicationState:
+          $ref: "#/components/schemas/PublicationState"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PartnerStoreListResponse:
+      type: object
+      required: [stores]
+      additionalProperties: false
+      properties:
+        stores:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartnerManagedStore"
+        nextCursor:
+          type: string
+
     JoiningCaseSummary:
       type: object
       required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, origin, state, version, createdAt, updatedAt]
@@ -1227,24 +1292,70 @@ components:
         textValue:
           type: string
           nullable: true
+          x-go-pointer: true
         integerValue:
           type: integer
           nullable: true
+          x-go-pointer: true
         decimalValue:
           type: string
           nullable: true
+          x-go-pointer: true
         booleanValue:
           type: boolean
           nullable: true
+          x-go-pointer: true
         enumValue:
           type: string
           nullable: true
+          x-go-pointer: true
         dateValue:
           type: string
           nullable: true
+          x-go-pointer: true
         measurementUnit:
           type: string
           nullable: true
+          x-go-pointer: true
+
+    CatalogAttributeValueInput:
+      type: object
+      required: [attributeId, valueKind]
+      additionalProperties: false
+      properties:
+        attributeId:
+          type: string
+        valueKind:
+          type: string
+          enum: [TEXT, INTEGER, DECIMAL, BOOLEAN, ENUM, MEASUREMENT, DATE]
+        textValue:
+          type: string
+          nullable: true
+          x-go-pointer: true
+        integerValue:
+          type: integer
+          nullable: true
+          x-go-pointer: true
+        decimalValue:
+          type: string
+          nullable: true
+          x-go-pointer: true
+        booleanValue:
+          type: boolean
+          nullable: true
+          x-go-pointer: true
+        enumValue:
+          type: string
+          nullable: true
+          x-go-pointer: true
+        dateValue:
+          type: string
+          nullable: true
+          x-go-pointer: true
+        measurementUnit:
+          type: string
+          nullable: true
+          x-go-pointer: true
 
     CatalogAttributeDefinition:
       type: object
@@ -1426,7 +1537,7 @@ components:
 
     UpsertCatalogAttributeRuleRequest:
       type: object
-      required: [required, filterable, variantAxis]
+      required: [required, filterable, variantAxis, expectedVersion, reason]
       additionalProperties: false
       properties:
         required:
@@ -1435,6 +1546,13 @@ components:
           type: boolean
         variantAxis:
           type: boolean
+        expectedVersion:
+          type: integer
+          minimum: 0
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
 
     CatalogAttributeRuleResponse:
       type: object
@@ -1596,6 +1714,14 @@ components:
           type: array
           items:
             type: string
+        attributeValues:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogAttributeValueInput"
+        variantAttributeValues:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogAttributeValueInput"
         identifierType:
           type: string
           nullable: true
@@ -1774,6 +1900,14 @@ components:
           type: string
           nullable: true
           maxLength: 2048
+        attributeValues:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogAttributeValueInput"
+        variantAttributeValues:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogAttributeValueInput"
 
     ReviewCatalogProductProposalRequest:
       type: object
@@ -1824,6 +1958,14 @@ components:
           type: string
           nullable: true
           maxLength: 2048
+        attributeValues:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogAttributeValueInput"
+        variantAttributeValues:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogAttributeValueInput"
 
     CatalogImportRow:
       type: object
@@ -2023,6 +2165,14 @@ components:
         proposedImageUri:
           type: string
           nullable: true
+        attributeValues:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogAttributeValueInput"
+        variantAttributeValues:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogAttributeValueInput"
         state:
           type: string
           enum: [draft, submitted, needs_correction, approved, rejected]
@@ -2413,7 +2563,7 @@ components:
 
     CreateCommerceVerticalRequest:
       type: object
-      required: [nameAr, nameEn, active]
+      required: [nameAr, nameEn, active, reason]
       additionalProperties: false
       properties:
         id:
@@ -2425,6 +2575,33 @@ components:
           type: string
         active:
           type: boolean
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+
+    UpdateCommerceVerticalRequest:
+      type: object
+      required: [nameAr, nameEn, active, expectedVersion, reason]
+      additionalProperties: false
+      properties:
+        nameAr:
+          type: string
+          minLength: 2
+          maxLength: 160
+        nameEn:
+          type: string
+          minLength: 2
+          maxLength: 160
+        active:
+          type: boolean
+        expectedVersion:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
 
     CommerceVerticalResponse:
       type: object
@@ -2475,7 +2652,7 @@ components:
 
     CreateCatalogCategoryRequest:
       type: object
-      required: [verticalId, nameAr, nameEn, active]
+      required: [verticalId, nameAr, nameEn, active, reason]
       additionalProperties: false
       properties:
         id:
@@ -2492,6 +2669,36 @@ components:
           type: string
         active:
           type: boolean
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+
+    UpdateCatalogCategoryRequest:
+      type: object
+      required: [parentCategoryId, nameAr, nameEn, active, expectedVersion, reason]
+      additionalProperties: false
+      properties:
+        parentCategoryId:
+          type: string
+          maxLength: 128
+        nameAr:
+          type: string
+          minLength: 2
+          maxLength: 160
+        nameEn:
+          type: string
+          minLength: 2
+          maxLength: 160
+        active:
+          type: boolean
+        expectedVersion:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
 
     CatalogCategoryResponse:
       type: object
@@ -2591,7 +2798,7 @@ components:
 
     PublicStoreView:
       type: object
-      required: [id, name, serviceCity, primaryVerticalId, fulfillmentModes, version, ratingAverage, ratingCount, publishedAt, createdAt, updatedAt]
+      required: [id, name, serviceCity, primaryVerticalId, categoryIds, fulfillmentModes, version, ratingAverage, ratingCount, publishedAt, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -2603,6 +2810,11 @@ components:
         primaryVerticalId:
           type: string
           nullable: true
+        categoryIds:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
         fulfillmentModes:
           type: array
           minItems: 1
@@ -2639,13 +2851,18 @@ components:
 
     PublishedStoreListResponse:
       type: object
-      required: [stores]
+      required: [stores, categories]
       additionalProperties: false
       properties:
         stores:
           type: array
           items:
             $ref: "#/components/schemas/PublicStoreView"
+        categories:
+          type: array
+          description: Active categories represented by customer-visible offers in the listed published stores.
+          items:
+            $ref: "#/components/schemas/CatalogCategory"
 
     ServiceCity:
       type: object
@@ -3271,6 +3488,18 @@ components:
       properties:
         available:
           type: boolean
+
+    ManagedCaptainAvailabilityRequest:
+      type: object
+      required: [available, reason]
+      additionalProperties: false
+      properties:
+        available:
+          type: boolean
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
 
     CaptainOffer:
       type: object
@@ -4064,7 +4293,7 @@ components:
     CreateDeliveryFeePolicyRequest:
       type: object
       additionalProperties: false
-      required: [baseFeeMinor, distanceUnitMeters, distanceRateMinor, orderSizeUnitBaseUnits, orderSizeRateMinor, zoneSurchargeMinor, roundingUnitMinor]
+      required: [baseFeeMinor, distanceUnitMeters, distanceRateMinor, orderSizeUnitBaseUnits, orderSizeRateMinor, zoneSurchargeMinor, roundingUnitMinor, expectedVersion, reason]
       properties:
         serviceCityId:
           type: string
@@ -4090,6 +4319,13 @@ components:
         roundingUnitMinor:
           type: integer
           const: 50
+        expectedVersion:
+          type: integer
+          minimum: 0
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
 
     DeliveryFeePolicy:
       type: object

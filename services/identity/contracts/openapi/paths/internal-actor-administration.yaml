@@ -36,36 +36,38 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
-  /internal/operators/{actorId}/finance-access:
+  /internal/operators/{actorId}/permissions/{permission}:
     get:
       tags: [internal-actor-roles]
-      operationId: readOperatorFinanceAccess
+      operationId: readOperatorPermission
       security: [{ internalServiceToken: [] }]
-      description: Only the one-time bootstrapped first Operator may read and administer Finance permission grants for other enabled Operators.
+      description: The Control Panel permission administrator may read another Operator's explicit permission state. DSH may read an Operator's permission for server-side authorization checks.
       parameters:
         - { $ref: "#/components/parameters/ActorId" }
-        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "#/components/parameters/OperatorPermission" }
+        - { $ref: "#/components/parameters/OptionalActingActorId" }
       responses:
-        "200": { description: Current versioned Finance permission state., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorFinanceAccess" } } } }
+        "200": { description: Current versioned Operator permission state., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorPermissionAccess" } } } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
     put:
       tags: [internal-actor-roles]
-      operationId: setOperatorFinanceAccess
+      operationId: setOperatorPermission
       security: [{ internalServiceToken: [] }]
-      description: Changes only another enabled Operator's explicit Finance permission. The one-time bootstrapped first Operator is the sole access administrator; each change requires a current version and reason and revokes affected sessions.
+      description: Changes only another enabled Operator's allowlisted explicit permission. The one-time bootstrapped first Operator is the sole permission administrator; each change requires a current version and reason and revokes affected sessions.
       parameters:
         - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/OperatorPermission" }
         - { $ref: "#/components/parameters/ControlPanelActingActorId" }
         - { $ref: "#/components/parameters/CorrelationId" }
-        - { $ref: "#/components/parameters/FinancePermissionExpectedVersion" }
-        - { $ref: "#/components/parameters/FinancePermissionReason" }
+        - { $ref: "#/components/parameters/OperatorPermissionExpectedVersion" }
+        - { $ref: "#/components/parameters/OperatorPermissionReason" }
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/SetOperatorFinanceAccessRequest" } } }
+        content: { application/json: { schema: { $ref: "#/components/schemas/SetOperatorPermissionRequest" } } }
       responses:
-        "200": { description: Exact committed Finance permission state., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorFinanceAccess" } } }
+        "200": { description: Exact committed Operator permission state., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorPermissionAccess" } } }
         "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }

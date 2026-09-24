@@ -759,11 +759,20 @@ func (c *Client) ReadPartnerFinancialSummary(ctx context.Context, partnerActorID
 	return response.Summary, err
 }
 
-func (c *Client) CreateFieldCommissionPolicy(ctx context.Context, scopeType, scopeID string, rewardMinor, roundingUnitMinor int64, idempotencyKey, correlationID, actingActorID string) (FieldCommissionPolicy, bool, error) {
-	body := map[string]any{"scopeType": strings.TrimSpace(scopeType), "scopeId": strings.TrimSpace(scopeID), "rewardMinor": rewardMinor, "roundingUnitMinor": roundingUnitMinor}
+func (c *Client) CreateFieldCommissionPolicy(ctx context.Context, scopeType, scopeID string, rewardMinor, roundingUnitMinor int64, expectedVersion int, reason, idempotencyKey, correlationID, actingActorID string) (FieldCommissionPolicy, bool, error) {
+	body := map[string]any{"scopeType": strings.TrimSpace(scopeType), "scopeId": strings.TrimSpace(scopeID), "rewardMinor": rewardMinor, "roundingUnitMinor": roundingUnitMinor, "expectedVersion": expectedVersion, "reason": strings.TrimSpace(reason)}
 	var response fieldCommissionPolicyResponse
 	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/field-commission-policies", body, idempotencyKey, correlationID, 0, actingActorID, &response)
 	return response.Policy, response.IdempotentReplay, err
+}
+
+func (c *Client) ReadFieldCommissionPolicyByScope(ctx context.Context, scopeType, scopeID string) (FieldCommissionPolicy, error) {
+	query := url.Values{}
+	query.Set("scopeType", strings.TrimSpace(scopeType))
+	query.Set("scopeId", strings.TrimSpace(scopeID))
+	var response fieldCommissionPolicyResponse
+	err := c.request(ctx, http.MethodGet, "/wlt/v1/operator/field-commission-policies?"+query.Encode(), nil, "", "", 0, &response)
+	return response.Policy, err
 }
 
 func (c *Client) ReadFieldCommissionPolicy(ctx context.Context, policyID string) (FieldCommissionPolicy, error) {
@@ -939,7 +948,7 @@ func (c *Client) UpdatePartnerStoreCommissionPolicy(ctx context.Context, storeID
 	return response, err
 }
 
-func (c *Client) CreateDeliveryFeePolicy(ctx context.Context, policy DeliveryFeePolicy, idempotencyKey, correlationID, actingActorID string) (DeliveryFeePolicy, bool, error) {
+func (c *Client) CreateDeliveryFeePolicy(ctx context.Context, policy DeliveryFeePolicy, expectedVersion int, reason, idempotencyKey, correlationID, actingActorID string) (DeliveryFeePolicy, bool, error) {
 	body := map[string]any{
 		"serviceCityId":          strings.TrimSpace(policy.ServiceCityID),
 		"baseFeeMinor":           policy.BaseFeeMinor,
@@ -949,6 +958,8 @@ func (c *Client) CreateDeliveryFeePolicy(ctx context.Context, policy DeliveryFee
 		"orderSizeRateMinor":     policy.OrderSizeRateMinor,
 		"zoneSurchargeMinor":     policy.ZoneSurchargeMinor,
 		"roundingUnitMinor":      policy.RoundingUnitMinor,
+		"expectedVersion":        expectedVersion,
+		"reason":                 strings.TrimSpace(reason),
 	}
 	var response deliveryFeePolicyResponse
 	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/delivery-fee-policies", body, idempotencyKey, correlationID, 0, actingActorID, &response)

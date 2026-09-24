@@ -238,6 +238,36 @@ func (s *Service) ReadForPartner(ctx context.Context, accessToken string) (postg
 	return postgres.ReadJoiningCaseForPartner(ctx, s.db, identity.Subject)
 }
 
+func (s *Service) ReadForOperatorByPartnerActor(ctx context.Context, actorID, actingActorID string) (postgres.JoiningCaseResult, error) {
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" || len(actorID) > 128 {
+		return postgres.JoiningCaseResult{}, ErrInvalidInput
+	}
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	return postgres.ReadJoiningCaseForPartner(ctx, s.db, actorID)
+}
+
+func (s *Service) ListStoresForOperatorByPartnerActor(ctx context.Context, actorID, actingActorID string, limit int, cursor string) (postgres.PartnerStorePage, error) {
+	actorID = strings.TrimSpace(actorID)
+	cursor = strings.TrimSpace(cursor)
+	if actorID == "" || len(actorID) > 128 || len(cursor) > 128 || limit < 1 || limit > 50 {
+		return postgres.PartnerStorePage{}, ErrInvalidInput
+	}
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return postgres.PartnerStorePage{}, err
+	}
+	role, err := s.identity.ReadActorRole(ctx, actorID, "partner")
+	if err != nil {
+		return postgres.PartnerStorePage{}, err
+	}
+	if role.Role != "partner" {
+		return postgres.PartnerStorePage{}, ErrPartnerIdentityUnavailable
+	}
+	return postgres.ListStoresForPartnerActor(ctx, s.db, actorID, limit, cursor)
+}
+
 func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken, caseID, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64, expectedVersion int, idempotencyKey, correlationID string) (postgres.JoiningCaseResult, error) {
 	identity, err := s.requirePartner(ctx, accessToken)
 	if err != nil {

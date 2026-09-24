@@ -36,7 +36,7 @@ type ActorRoleView struct {
 	RoleCreated       bool       `json:"roleCreated,omitempty"`
 }
 
-type OperatorFinanceAccess struct {
+type OperatorPermissionAccess struct {
 	ActorID          string    `json:"actorId"`
 	Permission       string    `json:"permission"`
 	Enabled          bool      `json:"enabled"`
@@ -46,7 +46,21 @@ type OperatorFinanceAccess struct {
 	UpdatedAt        time.Time `json:"updatedAt"`
 }
 
-type SetOperatorFinanceAccessRequest struct {
+const (
+	OperatorPermissionFinance          = "finance"
+	OperatorPermissionPlatformPolicies = "platform_policies"
+)
+
+func IsOperatorPermission(permission string) bool {
+	switch permission {
+	case OperatorPermissionFinance, OperatorPermissionPlatformPolicies:
+		return true
+	default:
+		return false
+	}
+}
+
+type SetOperatorPermissionRequest struct {
 	Enabled bool `json:"enabled"`
 }
 
@@ -188,13 +202,13 @@ type RefreshRequest struct {
 }
 
 type ActorIdentity struct {
-	Subject                string    `json:"subject"`
-	SessionID              string    `json:"sessionId"`
-	Role                   string    `json:"role"`
-	Surface                string    `json:"surface"`
-	ExpiresAt              time.Time `json:"expiresAt"`
-	Permissions            []string  `json:"permissions,omitempty"`
-	CanManageFinanceAccess bool      `json:"canManageFinanceAccess,omitempty"`
+	Subject                      string    `json:"subject"`
+	SessionID                    string    `json:"sessionId"`
+	Role                         string    `json:"role"`
+	Surface                      string    `json:"surface"`
+	ExpiresAt                    time.Time `json:"expiresAt"`
+	Permissions                  []string  `json:"permissions,omitempty"`
+	CanManageOperatorPermissions bool      `json:"canManageOperatorPermissions,omitempty"`
 }
 
 type TokenPair struct {

@@ -1,99 +1,62 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import type { ActorType, OperatorEnrollmentToken } from "@bthwani/identity";
 import { toAsciiDigits } from "@bthwani/design-system";
+import type { OperatorEnrollmentToken } from "@bthwani/identity";
+import { useEffect, useRef, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { useSession } from "../../session/session-provider";
 import { responseMessage } from "./identity-error-message";
 
-const actorRoleLabels: Record<ActorType, string> = { client: "العميل", partner: "الشريك", captain: "الكابتن", field: "الميداني", operator: "موظف لوحة التحكم" };
-const accountStateLabels: Record<string, string> = { active: "نشط", identity_disabled: "الهوية موقوفة", role_disabled: "الدور موقوف", pending_activation: "بانتظار التفعيل", operational_not_admitted: "غير مؤهل للتشغيل", operational_suspended: "الأهلية التشغيلية موقوفة", active_unavailable: "نشط وغير متاح", not_admitted: "غير مهيأ لهذا الدور" };
-const operationalAdmissionLabels: Record<string, string> = { pending_identity: "بانتظار تثبيت الهوية", eligible: "مؤهل للتشغيل", suspended: "موقوف" };
-const operationalAvailabilityLabels: Record<string, string> = { available: "متاح لاستقبال مهمة", unavailable: "غير متاح حاليًا" };
-
-function displayLabel(labels: Record<string, string>, value: string | undefined, fallback: string): string {
-  return value ? labels[value] ?? fallback : fallback;
-}
-
-function actorRoleLabel(role: ActorType): string { return actorRoleLabels[role]; }
-function accountStateLabel(state: string | undefined): string { return displayLabel(accountStateLabels, state, "الحالة غير متاحة"); }
-function operationalAdmissionLabel(state: string | undefined): string { return displayLabel(operationalAdmissionLabels, state, "الأهلية غير متاحة"); }
-function operationalAvailabilityLabel(state: string | undefined): string { return displayLabel(operationalAvailabilityLabels, state, "التوافر غير متاح"); }
-
-type ManagedAccountStatus = Readonly<{
+type OperatorPermissionAccess = Readonly<{ permission: "finance" | "platform_policies"; enabled: boolean; version: number; reason: string }>;
+type ManagedOperatorStatus = Readonly<{
+  role: "operator";
+  actorId?: string;
   exists: boolean;
   enabled: boolean;
   activated: boolean;
   securityEnabled: boolean;
-  role: ActorType;
-  actorId?: string;
+  state?: string;
   actorVersion?: number;
   roleVersion?: number;
-  financeAccess?: Readonly<{ permission: "finance"; enabled: boolean; version: number; reason: string }>;
-  state?: string;
-  operationalAdmissionState?: string;
-  operationalAdmissionVersion?: number;
-  operationalAvailabilityState?: string;
-  phoneE164?: string;
-  admittedRoles?: ReadonlyArray<Readonly<{
-    actorId: string;
-    role: ActorType;
-    state: string;
-    enabled: boolean;
-    activated: boolean;
-    securityEnabled: boolean;
-  }>>;
+  financeAccess?: OperatorPermissionAccess;
+  platformPoliciesAccess?: OperatorPermissionAccess;
 }>;
 
-function provisionValidationMessage(reenroll: boolean, role: ActorType, reason: string, status: ManagedAccountStatus | null): string | null {
-  if (!reenroll) return null;
-  const reasonLength = Array.from(reason.trim()).length;
-  if (reasonLength < 5) return "اكتب سبب إعادة التسجيل من 5 أحرف على الأقل.";
-  if (!status?.actorId || !Number.isSafeInteger(status.actorVersion) || (status.actorVersion ?? 0) < 1 || !Number.isSafeInteger(status.roleVersion) || (status.roleVersion ?? 0) < 1 || (role === "field" && (!Number.isSafeInteger(status.operationalAdmissionVersion) || (status.operationalAdmissionVersion ?? 0) < 1))) {
-    return "تعذر تحديد إصدارات الهوية والدور وأهلية DSH. أعد تحميل الحالة قبل المحاولة.";
-  }
-  return null;
+const permissionRows = [
+  { key: "finance", label: "المالية", field: "financeAccess", reasonId: "finance-access-reason" },
+  { key: "platform_policies", label: "سياسات المنصة", field: "platformPoliciesAccess", reasonId: "platform-policies-access-reason" },
+] as const;
+
+function accountStateLabel(state: string | undefined): string {
+  if (state === "active") return "نشط";
+  if (state === "identity_disabled") return "الهوية موقوفة";
+  if (state === "role_disabled") return "الدور موقوف";
+  if (state === "pending_activation") return "بانتظار التفعيل";
+  return "غير مهيأ";
 }
 
-function provisionRequestBody(reenroll: boolean, role: ActorType, phone: string, reason: string, status: ManagedAccountStatus | null): Readonly<Record<string, unknown>> {
-  if (!reenroll) return { phone, role, reenroll: false };
-  return {
-    actorId: status?.actorId,
-    role,
-    reenroll: true,
-    actorVersion: status?.actorVersion,
-    roleVersion: status?.roleVersion,
-    operationalAdmissionVersion: role === "field" ? status?.operationalAdmissionVersion : undefined,
-    reason: reason.trim(),
-  };
-}
-
-function reenrollmentBlockedMessage(role: ActorType, status: ManagedAccountStatus): string {
-  if (role === "field" && status.operationalAdmissionState !== "eligible") return "لا يمكن إعادة تسجيل الميداني حتى تصبح أهليته في DSH مؤهلة.";
-  return "أعد تفعيل الدور والهوية أولًا.";
-}
-
-export function AccountAccessPanel() {
+export function AccountAccessPanel({ selectedPhone = "" }: Readonly<{ selectedPhone?: string }>) {
   const { state: sessionState } = useSession();
-  const [role, setRole] = useState<ActorType>("partner");
   const [phone, setPhone] = useState("");
   const [reason, setReason] = useState("");
-  const [financeReason, setFinanceReason] = useState("");
-  const [status, setStatus] = useState<ManagedAccountStatus | null>(null);
+  const [permissionReasons, setPermissionReasons] = useState<Record<string, string>>({ finance: "", platform_policies: "" });
+  const [status, setStatus] = useState<ManagedOperatorStatus | null>(null);
   const [result, setResult] = useState<OperatorEnrollmentToken | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [finalStateUnverified, setFinalStateUnverified] = useState(false);
   const requestId = useRef(0);
 
-  async function readCanonicalStatus(): Promise<ManagedAccountStatus> {
-    const response = await identityFetch(`/api/access/managed-user/status?${new URLSearchParams({ phone: phone.trim(), role })}`);
+  useEffect(() => { if (selectedPhone) setPhone(toAsciiDigits(selectedPhone)); }, [selectedPhone]);
+
+  async function readCanonicalStatus(): Promise<ManagedOperatorStatus> {
+    const query = new URLSearchParams({ phone: phone.trim(), role: "operator" });
+    const response = await identityFetch(`/api/access/managed-user/status?${query}`);
     if (!response.ok) throw { status: response.status, message: await responseMessage(response) } satisfies { status: number; message: string };
-    return await response.json() as ManagedAccountStatus;
+    return await response.json() as ManagedOperatorStatus;
   }
 
-  async function refreshCanonicalStatus(): Promise<ManagedAccountStatus> {
+  async function refreshCanonicalStatus(): Promise<ManagedOperatorStatus> {
     const next = await readCanonicalStatus();
     setStatus(next);
     setFinalStateUnverified(false);
@@ -128,60 +91,24 @@ export function AccountAccessPanel() {
     if (value.length < 5) return;
     const timeout = window.setTimeout(() => void (async () => {
       try {
-        const response = await identityFetch(`/api/access/managed-user/status?${new URLSearchParams({ phone: value, role })}`);
+        const query = new URLSearchParams({ phone: value, role: "operator" });
+        const response = await identityFetch(`/api/access/managed-user/status?${query}`);
         if (id !== requestId.current) return;
         if (!response.ok) {
-          setStatus(null);
           setError(await responseMessage(response));
           return;
         }
-        setStatus(await response.json() as ManagedAccountStatus);
+        setStatus(await response.json() as ManagedOperatorStatus);
         setFinalStateUnverified(false);
       } catch {
-        if (id === requestId.current) {
-          setStatus(null);
-          setError("تعذر التحقق من حالة الرقم حاليًا.");
-        }
+        if (id === requestId.current) setError("تعذر التحقق من حالة المشغّل حاليًا.");
       }
     })(), 450);
     return () => window.clearTimeout(timeout);
-  }, [phone, role]);
+  }, [phone]);
 
-  const managedRole = role === "partner" || role === "captain" || role === "field";
-
-  async function handleProvisionResponseFailure(response: Response, reenroll: boolean): Promise<void> {
-    const message = await responseMessage(response);
-    if (reenroll && (response.status === 409 || response.status === 412 || response.status >= 500)) {
-      const reconciled = await reconcileAfterMutationFailure();
-      setError(reconciled ? "تغيرت الحالة أو تعذر تصنيف النتيجة. أُعيد تحميل الحالة الكانونية؛ راجعها قبل أي إجراء آخر." : "تعذر تأكيد الحالة الكانونية. أعد تحميلها قبل أي إجراء آخر.");
-      return;
-    }
-    setError(message);
-  }
-
-  async function handleProvisionFailure(cause: unknown, reenroll: boolean, mutationApplied: boolean): Promise<void> {
-    if (mutationApplied) {
-      markFinalStateUnverified();
-      return;
-    }
-    if (reenroll) {
-      const reconciled = await reconcileAfterMutationFailure();
-      setError(reconciled ? "تعذر تأكيد نتيجة إعادة التسجيل. أُعيد تحميل الحالة الكانونية؛ راجعها قبل أي إجراء آخر." : "تعذر التحقق من نتيجة إعادة التسجيل. أعد تحميل الحالة قبل أي إجراء آخر.");
-      return;
-    }
-    if (isRequestFailure(cause)) {
-      setError(cause.message);
-      return;
-    }
-    setError("تعذر الوصول إلى خدمات إدارة الهوية.");
-  }
-
-  async function provision(reenroll = false) {
-    const validationMessage = provisionValidationMessage(reenroll, role, reason, status);
-    if (validationMessage) {
-      setError(validationMessage);
-      return;
-    }
+  async function provision() {
+    if (!phone.trim()) return;
     setBusy(true);
     setError("");
     setResult(null);
@@ -190,32 +117,33 @@ export function AccountAccessPanel() {
       const response = await identityFetch("/api/access/managed-user", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(provisionRequestBody(reenroll, role, phone, reason, status)),
+        body: JSON.stringify({ phone: phone.trim(), role: "operator" }),
       });
       if (!response.ok) {
-        await handleProvisionResponseFailure(response, reenroll);
+        setError(await responseMessage(response));
         return;
       }
       mutationApplied = true;
-      const payload = await response.json();
-      setResult(role === "operator" ? payload as OperatorEnrollmentToken : null);
+      setResult(await response.json() as OperatorEnrollmentToken);
       await refreshCanonicalStatus();
-      setReason("");
     } catch (cause) {
-      await handleProvisionFailure(cause, reenroll, mutationApplied);
+      if (mutationApplied) markFinalStateUnverified();
+      else if (isRequestFailure(cause)) setError(cause.message);
+      else setError("تعذر تهيئة مشغّل لوحة التحكم.");
     } finally {
       setBusy(false);
     }
   }
 
-  async function changeAccess(action: "disable-role" | "enable-role" | "disable-identity" | "enable-identity") {
-    if (reason.trim().length < 5) {
-      setError("اكتب سببًا واضحًا من 5 أحرف على الأقل قبل تغيير الحالة.");
+  async function changeAccount(action: "disable-role" | "enable-role" | "disable-identity" | "enable-identity") {
+    const reasonLength = Array.from(reason.trim()).length;
+    if (reasonLength < 5 || reasonLength > 500) {
+      setError("اكتب سببًا من 5 إلى 500 حرف قبل تغيير الحالة.");
       return;
     }
     const expectedVersion = action.includes("identity") ? status?.actorVersion : status?.roleVersion;
-    if (expectedVersion === undefined || expectedVersion === null) {
-      setError("تعذر تحديد إصدار الحساب للتحقق من التزامن. أعد تحميل الحالة وحاول مرة أخرى.");
+    if (!status?.actorId || expectedVersion === undefined) {
+      setError("تعذر تحديد إصدار حساب المشغّل. أعد تحميل الحالة قبل المحاولة.");
       return;
     }
     setBusy(true);
@@ -225,16 +153,13 @@ export function AccountAccessPanel() {
       const response = await identityFetch("/api/access/account-control", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ actorId: status?.actorId, role, action, reason, expectedVersion }),
+        body: JSON.stringify({ actorId: status.actorId, role: "operator", action, reason: reason.trim(), expectedVersion }),
       });
       if (!response.ok) {
-        const message = await responseMessage(response);
         const reconciled = await reconcileAfterMutationFailure();
-        if (response.status === 409 || response.status === 412) {
-          setError(reconciled ? "تعارض في إصدار الحساب: قام مستخدم آخر بتعديل هذه الحالة. تم تحميل الحالة الكانونية، راجعها ثم حاول مجددًا." : "حدث تعارض في إصدار الحساب وتعذر التحقق من الحالة الكانونية. أعد تحميل الحالة قبل المحاولة.");
-        } else {
-          setError(message);
-        }
+        setError(response.status === 409 || response.status === 412
+          ? reconciled ? "تغيرت حالة المشغّل بالتزامن. حُدّثت الحالة؛ راجعها ثم قرر من جديد." : "تعذر التحقق من حالة المشغّل بعد التعارض. أعد تحميلها قبل المحاولة."
+          : await responseMessage(response));
         return;
       }
       mutationApplied = true;
@@ -243,131 +168,99 @@ export function AccountAccessPanel() {
     } catch (cause) {
       if (mutationApplied) markFinalStateUnverified();
       else if (isRequestFailure(cause)) setError(cause.message);
-      else setError("تعذر تحديث حالة الحساب.");
+      else setError("تعذر تحديث حالة المشغّل.");
     } finally {
       setBusy(false);
     }
   }
 
-  async function changeFinanceAccess() {
-    const access = status?.financeAccess;
+  async function changePermission(permission: "finance" | "platform_policies") {
+    const access = permission === "finance" ? status?.financeAccess : status?.platformPoliciesAccess;
+    const permissionReason = permissionReasons[permission] ?? "";
+    const reasonLength = Array.from(permissionReason.trim()).length;
     if (!status?.actorId || !status.enabled || !access) {
-      setError("تعذر تحديد صلاحية المالية أو حالة الموظف الحالية. أعد تحميل الحالة.");
+      setError("تعذر تحديد الصلاحية أو حالة المشغّل. أعد تحميل الحالة.");
       return;
     }
-    const financeReasonLength = Array.from(financeReason.trim()).length;
-    if (financeReasonLength < 5 || financeReasonLength > 500) {
-      setError("اكتب سببًا من 5 إلى 500 حرف قبل تغيير صلاحية المالية.");
+    if (reasonLength < 5 || reasonLength > 500) {
+      setError("اكتب سببًا من 5 إلى 500 حرف قبل تغيير الصلاحية.");
       return;
     }
     setBusy(true);
     setError("");
     let mutationApplied = false;
     try {
-      const response = await identityFetch("/api/access/finance-permission", {
+      const response = await identityFetch("/api/access/operator-permission", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ actorId: status.actorId, enabled: !access.enabled, expectedVersion: access.version, reason: financeReason.trim() }),
+        body: JSON.stringify({ actorId: status.actorId, permission, enabled: !access.enabled, expectedVersion: access.version, reason: permissionReason.trim() }),
       });
       if (!response.ok) {
-        const message = await responseMessage(response);
         const reconciled = await reconcileAfterMutationFailure();
         setError(response.status === 409
-          ? reconciled ? "تغيّرت صلاحية المالية بالتزامن. حُدّثت الحالة؛ راجعها ثم قرر من جديد." : "تعذر التحقق من حالة الصلاحية بعد تعارض. أعد تحميلها قبل المحاولة."
-          : message);
+          ? reconciled ? "تغيّرت الصلاحية بالتزامن. حُدّثت الحالة؛ راجعها ثم قرر من جديد." : "تعذر التحقق من حالة الصلاحية بعد التعارض. أعد تحميلها قبل المحاولة."
+          : await responseMessage(response));
         return;
       }
       mutationApplied = true;
       await refreshCanonicalStatus();
-      setFinanceReason("");
+      setPermissionReasons((current) => ({ ...current, [permission]: "" }));
     } catch (cause) {
       if (mutationApplied) markFinalStateUnverified();
       else if (isRequestFailure(cause)) setError(cause.message);
-      else setError("تعذر تحديث صلاحية المالية.");
+      else setError("تعذر تحديث صلاحية المشغّل.");
     } finally {
       setBusy(false);
     }
   }
 
-  const canIssueActivation = role === "operator" && status !== null && !status.activated;
-  const canIssueReenrollment = status?.exists === true && status.activated && status.enabled && status.securityEnabled && ((role === "partner" || role === "captain") || (role === "field" && status.operationalAdmissionState === "eligible" && status.operationalAdmissionVersion !== undefined));
-  const activationBlocked = status?.exists === true && status.enabled === false;
-  const statusIsHealthy = status?.exists === false || (status?.enabled === true && status.securityEnabled === true && ((status.role !== "captain" && status.role !== "field") || status.state === "active"));
-  const canManageFinanceTarget = sessionState.kind === "authenticated" && sessionState.identity.canManageFinanceAccess === true && status?.role === "operator" && Boolean(status.actorId) && status.actorId !== sessionState.identity.subject && Boolean(status.financeAccess);
+  const canManagePermissionTarget = sessionState.kind === "authenticated" && sessionState.identity.canManageOperatorPermissions === true && status?.role === "operator" && Boolean(status.actorId) && status.actorId !== sessionState.identity.subject && Boolean(status.financeAccess) && Boolean(status.platformPoliciesAccess);
+  const canViewOwnPermissions = sessionState.kind === "authenticated" && status?.role === "operator" && status.actorId === sessionState.identity.subject;
+  const canIssueActivation = status !== null && !status.activated && (status.exists === false || status.enabled);
 
   return (
     <section className="access-card" aria-labelledby="account-access-title">
       <div className="access-card-heading">
-        <span className="step-chip">حماية الوصول</span>
-        <p className="eyebrow">إدارة الحسابات والأدوار</p>
-        <h2 id="account-access-title">تهيئة أو إيقاف الحساب</h2>
-        <p className="muted">هذه شاشة إدارية مستقلة: رقم الهاتف للبحث واكتشاف الممثل القانوني فقط. تُعرض الحالات بصياغة تشغيلية، وتُنفّذ التغييرات على السجل القانوني داخليًا؛ لا تُنشئ من هنا أدوار الشريك أو الكابتن أو الميداني.</p>
+        <span className="step-chip">المشغّلون فقط</span>
+        <p className="eyebrow">الوصول والصلاحيات</p>
+        <h2 id="account-access-title">إدارة حسابات مشغّلي لوحة التحكم</h2>
+        <p className="muted">هذا المركز لإدارة موظفي لوحة التحكم وصلاحياتهم فقط. قبول الشركاء والكباتن والميدانيين وحالاتهم التشغيلية تُدار في مراكزهم المختصة.</p>
       </div>
       <div className="access-form">
-        <label className="field-label" htmlFor="account-role">
-          الدور الإداري
-          <select id="account-role" value={role} disabled={busy} onChange={(event) => { setRole(event.target.value as ActorType); setStatus(null); setError(""); }}>
-            <option value="client">العميل</option>
-            <option value="partner">الشريك</option>
-            <option value="captain">الكابتن</option>
-            <option value="field">الميداني</option>
-            <option value="operator">موظف لوحة التحكم</option>
-          </select>
-        </label>
-        <label className="field-label" htmlFor="account-phone">
-          رقم الهاتف للبحث
-          <input id="account-phone" autoComplete="tel" disabled={busy} inputMode="tel" placeholder="مثال: 967 77 000 100" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} />
-        </label>
-        {canIssueActivation ? (
-          <button type="button" className="button button-primary" disabled={busy || !phone.trim() || activationBlocked} onClick={() => void provision()}>
-            {busy ? "جارٍ تجهيز الحساب…" : "تهيئة الموظف وإصدار دعوة آمنة"}
-          </button>
-        ) : <span className="form-action-placeholder" aria-hidden="true" />}
+        <label className="field-label" htmlFor="account-phone">رقم هاتف المشغّل<input id="account-phone" autoComplete="tel" disabled={busy} inputMode="tel" placeholder="مثال: 967 77 000 100" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} /></label>
+        {canIssueActivation ? <button type="button" className="button button-primary" disabled={busy || !phone.trim()} onClick={() => void provision()}>{busy ? "جارٍ تجهيز الحساب…" : "تهيئة المشغّل وإصدار دعوة آمنة"}</button> : null}
       </div>
       {status ? (
-        <div className={`managed-status ${statusIsHealthy ? "managed-status-info" : "managed-status-warning"}`} role="status">
-          {status.exists ? (
-            <>
-              <strong>{status.enabled ? "الدور مفعّل" : "الدور موقوف"} · {status.securityEnabled ? "الهوية مسموحة" : "الهوية موقوفة بالكامل"}</strong>
-              <p>الحالة: {accountStateLabel(status.state)}</p>
-              {status.role === "captain" || status.role === "field" ? <p>الأهلية التشغيلية: {operationalAdmissionLabel(status.operationalAdmissionState)}{status.role === "captain" ? ` · التوافر: ${operationalAvailabilityLabel(status.operationalAvailabilityState)}` : ""}</p> : null}
-              <p>{status.activated ? "يوجد تسجيل سابق لهذا الدور." : "الدور مهيأ ولم يكتمل تفعيله بعد."}</p>
-              {canManageFinanceTarget ? (
-                <section className="managed-status managed-status-info" aria-label="صلاحية مساحة المالية">
-                  <strong>الوصول إلى المالية: {status.financeAccess?.enabled ? "ممنوح" : "غير ممنوح"}</strong>
-                  <p>دور موظف لوحة التحكم وحده لا يفتح المالية. سحب الصلاحية ينهي جلسات الموظف الحالية.</p>
-                  <label className="field-label" htmlFor="finance-access-reason">سبب منح أو سحب صلاحية المالية<input id="finance-access-reason" maxLength={500} value={financeReason} onChange={(event) => setFinanceReason(event.target.value)} disabled={busy} /></label>
-                  <button type="button" className={status.financeAccess?.enabled ? "button button-secondary" : "button button-primary"} disabled={busy || !status.enabled || !financeReason.trim()} onClick={() => void changeFinanceAccess()}>
-                    {busy ? "جارٍ تحديث الصلاحية…" : status.financeAccess?.enabled ? "سحب صلاحية المالية" : "منح صلاحية المالية"}
-                  </button>
-                </section>
-              ) : null}
-              {status.activated && managedRole ? (
-                <div className="managed-status managed-status-warning" role="alert">
-                  <strong>تم تفعيل هذا الدور من قبل.</strong>
-                  <p>{canIssueReenrollment ? "يمكن بدء إعادة تسجيل هذا الدور؛ ستُلغى الجلسات ووسائل الدخول السابقة، ثم يتبع المستخدم مسار التفعيل المعتمد." : reenrollmentBlockedMessage(role, status)}</p>
-                  {canIssueReenrollment ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void provision(true)}>{busy ? "جارٍ اعتماد إعادة التسجيل…" : "السماح بإعادة تسجيل الدور"}</button> : null}
-                </div>
-              ) : null}
-              <label className="field-label" htmlFor="access-reason">
-                سبب التغيير
-                <input id="access-reason" maxLength={500} placeholder="مثال: انتهاء التعاقد أو استرداد الجهاز" value={reason} onChange={(event) => setReason(event.target.value)} />
-              </label>
-              <div className="managed-status-actions">
-                {status.enabled ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void changeAccess("disable-role")}>إيقاف الدور</button> : <button type="button" className="button button-primary" disabled={busy} onClick={() => void changeAccess("enable-role")}>إعادة تفعيل الدور</button>}
-                {status.securityEnabled ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void changeAccess("disable-identity")}>إيقاف الهوية بالكامل</button> : <button type="button" className="button button-primary" disabled={busy} onClick={() => void changeAccess("enable-identity")}>إعادة تفعيل الهوية</button>}
+        <div className={`managed-status ${status.exists && status.enabled && status.securityEnabled ? "managed-status-info" : "managed-status-warning"}`} role="status">
+          {status.exists ? <>
+            <strong>حساب المشغّل · {accountStateLabel(status.state)}</strong>
+            <p>{status.activated ? "اكتمل تسجيل هذا المشغّل." : "لم يكتمل تفعيل هذا المشغّل بعد."} · الهوية {status.securityEnabled ? "مسموحة" : "موقوفة"}</p>
+            {canManagePermissionTarget || canViewOwnPermissions ? <section className="managed-status managed-status-info" aria-label="صلاحيات مشغّل لوحة التحكم">
+              <strong>الصلاحيات المفوضة</strong>
+              <p>{canManagePermissionTarget ? "الصفة كمشغّل لا تمنح صلاحيات النطاق تلقائيًا. الحالة والسبب المسجل ظاهران لكل صلاحية." : "هذه صلاحيات الجلسة الحالية الصادرة من Identity. يحدّث Identity الجلسة بعد تغيير الصلاحيات."}</p>
+              <div className="access-form">
+                {permissionRows.map(({ key, label, field, reasonId }) => {
+                  const access = canManagePermissionTarget ? status[field] : undefined;
+                  const enabled = access?.enabled ?? (canViewOwnPermissions && sessionState.kind === "authenticated" && (sessionState.identity.permissions ?? []).includes(key));
+                  return <section className="managed-status managed-status-info" aria-label={`صلاحية ${label}`} key={key}>
+                    <strong><code>{key}</code> · {enabled ? "ممنوحة" : "غير ممنوحة"}</strong>
+                    {access ? <><p>السبب المسجل: {access.reason || "لا يوجد سبب مسجل"}</p><label className="field-label" htmlFor={reasonId}>سبب التغيير<input id={reasonId} maxLength={500} value={permissionReasons[key] ?? ""} onChange={(event) => setPermissionReasons((current) => ({ ...current, [key]: event.target.value }))} disabled={busy} /></label><button type="button" className={enabled ? "button button-secondary" : "button button-primary"} disabled={busy || !status.enabled || !permissionReasons[key]?.trim()} onClick={() => void changePermission(key)}>{busy ? "جارٍ التحديث…" : enabled ? `سحب صلاحية ${label}` : `منح صلاحية ${label}`}</button></> : null}
+                  </section>;
+                })}
               </div>
-            </>
-          ) : (
-            <>
-              <strong>لا يوجد حساب مهيأ لهذا الدور.</strong>
-              <p>{role === "operator" ? "يمكنك تهيئة الموظف وإصدار دعوة عالية الأمان تُستخدم مرة واحدة." : role === "client" ? "تسجيل العميل يتم من تطبيق العميل، ولا يُصدر له رمز من هذه الشاشة." : "لا يمكن إنشاء هذا الدور من شاشة الحسابات؛ يجب أن يأتي القبول أولًا من مسار المجال المعتمد."}</p>
-            </>
-          )}
-          {status.admittedRoles?.length ? <div><strong>الأدوار المقبولة لهذا الممثل</strong><ul>{status.admittedRoles.map((admitted) => <li key={admitted.role}>{actorRoleLabel(admitted.role)} · {accountStateLabel(admitted.state)}</li>)}</ul></div> : null}
+            </section> : null}
+            <label className="field-label" htmlFor="access-reason">سبب تغيير حالة الحساب<input id="access-reason" maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} disabled={busy} /></label>
+            <div className="managed-status-actions">
+              {status.enabled ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void changeAccount("disable-role")}>إيقاف المشغّل</button> : <button type="button" className="button button-primary" disabled={busy} onClick={() => void changeAccount("enable-role")}>إعادة تفعيل المشغّل</button>}
+              {status.securityEnabled ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void changeAccount("disable-identity")}>إيقاف هوية المشغّل</button> : <button type="button" className="button button-primary" disabled={busy} onClick={() => void changeAccount("enable-identity")}>إعادة تفعيل الهوية</button>}
+            </div>
+          </> : <>
+            <strong>لا يوجد مشغّل مهيأ لهذا الرقم.</strong>
+            <p>يمكن إصدار دعوة تسجيل لمشغّل لوحة التحكم من هنا.</p>
+          </>}
         </div>
       ) : null}
-      {result ? <div className="code-output" role="status"><span className="summary-label">دعوة موظف عالية الأمان</span><code>{result.code}</code><p>تُعرض هذه الدعوة مرة واحدة فقط وتُستخدم لتفعيل موظف لوحة التحكم، وتنتهي في {new Date(result.expiresAt).toLocaleString("ar-YE-u-nu-latn", { dateStyle: "medium", timeStyle: "short" })}.</p></div> : null}
+      {result ? <div className="code-output" role="status"><span className="summary-label">دعوة مشغّل عالية الأمان</span><code>{result.code}</code><p>تُعرض هذه الدعوة مرة واحدة وتُستخدم لتفعيل مشغّل لوحة التحكم، وتنتهي في {new Date(result.expiresAt).toLocaleString("ar-YE-u-nu-latn", { dateStyle: "medium", timeStyle: "short" })}.</p></div> : null}
       {finalStateUnverified ? <p className="identity-error" role="alert">الحالة النهائية غير متحققة؛ أعد تحميل الحالة قبل تنفيذ إجراء آخر.</p> : null}
       {error ? <p className="identity-error" role="alert">{error}</p> : null}
     </section>

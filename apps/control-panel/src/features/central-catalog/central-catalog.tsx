@@ -1,11 +1,34 @@
 "use client";
 
-import type { BaseUnit, CatalogProduct, CatalogVariant, CommerceVertical, MeasurementKind } from "@bthwani/dsh";
+import type { BaseUnit, CatalogAttributeRule, CatalogAttributeValueInput, CatalogProduct, CatalogVariant, CommerceVertical, MeasurementKind } from "@bthwani/dsh";
 import { useCallback, useEffect, useState } from "react";
 
 type ProductForm = { verticalId: string; scope: "SHARED" | "STORE_SCOPED"; canonicalName: string; brand: string; variantTitle: string; measurementKind: MeasurementKind; baseUnit: BaseUnit; categoryId: string; identifierType: string; identifierValue: string; imageUri: string; galleryImageUris: string; active: boolean };
 
 const emptyForm: ProductForm = { verticalId: "", scope: "SHARED", canonicalName: "", brand: "", variantTitle: "", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryId: "", identifierType: "GTIN", identifierValue: "", imageUri: "", galleryImageUris: "", active: true };
+type AttributeDrafts = Readonly<Record<string, string>>;
+type AttributeInputSet = Readonly<{ productValues: ReadonlyArray<CatalogAttributeValueInput>; variantValues: ReadonlyArray<CatalogAttributeValueInput> }>;
+
+function buildAttributeInputs(rules: ReadonlyArray<CatalogAttributeRule>, drafts: AttributeDrafts): AttributeInputSet | null {
+  const productValues: CatalogAttributeValueInput[] = [];
+  const variantValues: CatalogAttributeValueInput[] = [];
+  for (const rule of rules) {
+    const raw = drafts[rule.attributeId]?.trim() ?? "";
+    if (!raw) { if (rule.required) return null; continue; }
+    let value: CatalogAttributeValueInput;
+    switch (rule.valueKind) {
+      case "TEXT": value = { attributeId: rule.attributeId, valueKind: rule.valueKind, textValue: raw }; break;
+      case "INTEGER": { const parsed = Number(raw); if (!Number.isSafeInteger(parsed)) return null; value = { attributeId: rule.attributeId, valueKind: rule.valueKind, integerValue: parsed }; break; }
+      case "DECIMAL": { if (!Number.isFinite(Number(raw))) return null; value = { attributeId: rule.attributeId, valueKind: rule.valueKind, decimalValue: raw }; break; }
+      case "MEASUREMENT": { const unit = drafts[rule.attributeId + ":unit"]?.trim() ?? ""; if (!Number.isFinite(Number(raw)) || !unit) return null; value = { attributeId: rule.attributeId, valueKind: rule.valueKind, decimalValue: raw, measurementUnit: unit }; break; }
+      case "BOOLEAN": if (raw !== "true" && raw !== "false") return null; value = { attributeId: rule.attributeId, valueKind: rule.valueKind, booleanValue: raw === "true" }; break;
+      case "ENUM": value = { attributeId: rule.attributeId, valueKind: rule.valueKind, enumValue: raw }; break;
+      case "DATE": value = { attributeId: rule.attributeId, valueKind: rule.valueKind, dateValue: raw }; break;
+    }
+    (rule.variantAxis ? variantValues : productValues).push(value);
+  }
+  return { productValues, variantValues };
+}
 
 function readError(value: unknown): string {
   if (!value || typeof value !== "object") return "تعذر تنفيذ العملية.";
@@ -43,6 +66,10 @@ export function CentralCatalog() {
   const [products, setProducts] = useState<ReadonlyArray<CatalogProduct>>([]);
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
   const [categories, setCategories] = useState<ReadonlyArray<{ id: string; nameAr: string; nameEn: string }>>([]);
+  const [attributeRules, setAttributeRules] = useState<ReadonlyArray<CatalogAttributeRule>>([]);
+  const [enumOptions, setEnumOptions] = useState<Readonly<Record<string, ReadonlyArray<string>>>>({});
+  const [attributeDrafts, setAttributeDrafts] = useState<AttributeDrafts>({});
+  const [attributeReadState, setAttributeReadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [selected, setSelected] = useState<CatalogProduct | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm);
   const [query, setQuery] = useState("");
@@ -91,15 +118,49 @@ export function CentralCatalog() {
 
   useEffect(() => { void loadVerticals().catch((nextError) => setError(nextError instanceof Error ? nextError.message : "تعذر قراءة المجالات.")); }, [loadVerticals]);
   useEffect(() => { void loadCategories(form.verticalId).catch((nextError) => setError(nextError instanceof Error ? nextError.message : "تعذر قراءة التصنيفات.")); }, [form.verticalId, loadCategories]);
+  useEffect(() => {
+    let current = true;
+    setAttributeRules([]); setEnumOptions({}); setAttributeDrafts({});
+    if (selected || !form.categoryId) { setAttributeReadState("idle"); return () => { current = false; }; }
+    setAttributeReadState("loading");
+    void (async () => {
+      const rulesResponse = await fetch(`/api/catalog/categories/${encodeURIComponent(form.categoryId)}/attribute-rules`, { cache: "no-store" });
+      const rules = (await parseResponse<{ rules: ReadonlyArray<CatalogAttributeRule> }>(rulesResponse)).rules;
+      const optionPairs = await Promise.all(rules.filter((rule) => rule.valueKind === "ENUM").map(async (rule) => {
+        const response = await fetch(`/api/catalog/attributes/${encodeURIComponent(rule.attributeId)}/enum-options`, { cache: "no-store" });
+        const options = (await parseResponse<{ options: ReadonlyArray<{ optionValue: string }> }>(response)).options;
+        return [rule.attributeId, options.map((option) => option.optionValue)] as const;
+      }));
+      if (current) { setAttributeRules(rules); setEnumOptions(Object.fromEntries(optionPairs)); setAttributeReadState("ready"); }
+    })().catch((nextError) => { if (current) { setAttributeReadState("error"); setError(nextError instanceof Error ? nextError.message : "تعذر قراءة قواعد الخصائص."); } });
+    return () => { current = false; };
+  }, [form.categoryId, selected]);
   useEffect(() => { void load(); }, [load]);
 
   function selectProduct(product: CatalogProduct) { setSelected(product); setForm(toForm(product)); setUploadFile(null); setUploadRole("primary"); setNotice(""); setError(""); }
-  function startCreate() { setSelected(null); setForm({ ...emptyForm, verticalId: verticals[0]?.id ?? "" }); setUploadFile(null); setUploadRole("primary"); setNotice(""); setError(""); }
+  function startCreate() { setSelected(null); setForm(emptyForm); setUploadFile(null); setUploadRole("primary"); setNotice(""); setError(""); }
+
+  function renderAttributeFields() {
+    if (selected || !form.categoryId || attributeReadState !== "ready" || attributeRules.length === 0) return null;
+    return <section className="managed-status managed-status-info" aria-label="خصائص التصنيف">
+      <strong>خصائص التصنيف</strong>
+      {attributeRules.map((rule) => <label className="field-label" htmlFor={`product-attribute-${rule.attributeId}`} key={rule.attributeId}>
+        {rule.nameAr}{rule.required ? " · مطلوب" : " · اختياري"}{rule.variantAxis ? " · خاص بالنسخة" : ""}
+        {rule.valueKind === "BOOLEAN" ? <select id={`product-attribute-${rule.attributeId}`} value={attributeDrafts[rule.attributeId] ?? ""} onChange={(event) => setAttributeDrafts((current) => ({ ...current, [rule.attributeId]: event.target.value }))}><option value="">اختر قيمة</option><option value="true">نعم</option><option value="false">لا</option></select>
+          : rule.valueKind === "ENUM" ? <select id={`product-attribute-${rule.attributeId}`} value={attributeDrafts[rule.attributeId] ?? ""} onChange={(event) => setAttributeDrafts((current) => ({ ...current, [rule.attributeId]: event.target.value }))}><option value="">اختر قيمة</option>{(enumOptions[rule.attributeId] ?? []).map((option) => <option key={option} value={option}>{option}</option>)}</select>
+            : <input id={`product-attribute-${rule.attributeId}`} inputMode={rule.valueKind === "INTEGER" || rule.valueKind === "DECIMAL" || rule.valueKind === "MEASUREMENT" ? "decimal" : "text"} value={attributeDrafts[rule.attributeId] ?? ""} onChange={(event) => setAttributeDrafts((current) => ({ ...current, [rule.attributeId]: event.target.value }))} />}
+        {rule.valueKind === "MEASUREMENT" ? <input aria-label={`وحدة ${rule.nameAr}`} placeholder="وحدة القياس" value={attributeDrafts[rule.attributeId + ":unit"] ?? ""} onChange={(event) => setAttributeDrafts((current) => ({ ...current, [rule.attributeId + ":unit"]: event.target.value }))} /> : null}
+      </label>)}
+    </section>;
+  }
 
   async function saveProduct() {
     if (busy || form.scope !== "SHARED" || !form.canonicalName.trim() || !form.verticalId || !form.categoryId) return;
+    if (!selected && attributeReadState !== "ready") { setError("تعذر التحقق من خصائص التصنيف. أعد قراءة القواعد قبل إنشاء المنتج."); return; }
+    const attributes = selected ? null : buildAttributeInputs(attributeRules, attributeDrafts);
+    if (!selected && !attributes) { setError("أكمل الخصائص المطلوبة وتحقق من أنواع القيم قبل إنشاء المنتج."); return; }
     setBusy(true); setError(""); setNotice("");
-    const body = { canonicalName: form.canonicalName.trim(), verticalId: form.verticalId, scope: "SHARED" as const, measurementKind: form.measurementKind, baseUnit: form.baseUnit, categoryIds: [form.categoryId], ...(form.variantTitle.trim() ? { variantTitle: form.variantTitle.trim() } : {}), ...(form.brand.trim() ? { brand: form.brand.trim() } : {}), ...(form.identifierValue.trim() ? { identifierType: form.identifierType, identifierValue: form.identifierValue.trim() } : {}), ...(form.imageUri.trim() ? { imageUri: form.imageUri.trim() } : {}), active: form.active };
+    const body = { canonicalName: form.canonicalName.trim(), verticalId: form.verticalId, scope: "SHARED" as const, measurementKind: form.measurementKind, baseUnit: form.baseUnit, categoryIds: [form.categoryId], attributeValues: attributes?.productValues ?? [], variantAttributeValues: attributes?.variantValues ?? [], ...(form.variantTitle.trim() ? { variantTitle: form.variantTitle.trim() } : {}), ...(form.brand.trim() ? { brand: form.brand.trim() } : {}), ...(form.identifierValue.trim() ? { identifierType: form.identifierType, identifierValue: form.identifierValue.trim() } : {}), ...(form.imageUri.trim() ? { imageUri: form.imageUri.trim() } : {}), active: form.active };
     try {
       const response = selected
         ? await fetch(`/api/catalog/products/${encodeURIComponent(selected.id)}`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID(), "X-Expected-Version": String(selected.version) }, body: JSON.stringify({ canonicalName: body.canonicalName, verticalId: body.verticalId, scope: body.scope, active: body.active, ...(body.brand ? { brand: body.brand } : {}) }) })
@@ -164,8 +225,9 @@ export function CentralCatalog() {
       <section className="access-card central-catalog-editor" aria-labelledby="central-catalog-editor-title">
         <div className="access-card-heading"><p className="eyebrow">تحرير المنتج والنسخة</p><h2 id="central-catalog-editor-title">{selected ? "تعديل المنتج" : "إنشاء منتج"}</h2><p className="muted">تُحفظ الهوية والتصنيف والنسخة الافتراضية في سجل المنتجات.</p></div>
         <div className="central-product-form">
-          <label className="field-label" htmlFor="catalog-vertical">المجال التجاري<select id="catalog-vertical" disabled={busy || selected !== null} value={form.verticalId} onChange={(event) => setForm({ ...form, verticalId: event.target.value, categoryId: "" })}><option value="">اختر مجالًا</option>{verticals.map((vertical) => <option value={vertical.id} key={vertical.id}>{vertical.nameAr}</option>)}</select></label>
-          <label className="field-label" htmlFor="catalog-category">التصنيف<select id="catalog-category" disabled={busy || selected !== null || !form.verticalId} value={form.categoryId} onChange={(event) => setForm({ ...form, categoryId: event.target.value })}><option value="">اختر تصنيفًا</option>{categories.map((category) => <option value={category.id} key={category.id}>{category.nameAr}</option>)}</select></label>
+          <label className="field-label" htmlFor="catalog-vertical">المجال التجاري<select id="catalog-vertical" disabled={busy || selected !== null} value={form.verticalId} onChange={(event) => { setForm({ ...form, verticalId: event.target.value, categoryId: "" }); setAttributeDrafts({}); }}><option value="">اختر مجالًا</option>{verticals.map((vertical) => <option value={vertical.id} key={vertical.id}>{vertical.nameAr}</option>)}</select></label>
+          <label className="field-label" htmlFor="catalog-category">التصنيف<select id="catalog-category" disabled={busy || selected !== null || !form.verticalId} value={form.categoryId} onChange={(event) => { setForm({ ...form, categoryId: event.target.value }); setAttributeDrafts({}); }}><option value="">اختر تصنيفًا</option>{categories.map((category) => <option value={category.id} key={category.id}>{category.nameAr}</option>)}</select></label>
+          {!selected && form.categoryId ? attributeReadState === "loading" ? <p className="muted">جارٍ قراءة قواعد خصائص التصنيف…</p> : attributeReadState === "error" ? <p className="identity-error" role="alert">تعذرت قراءة قواعد الخصائص. أعد المحاولة قبل إنشاء المنتج.</p> : renderAttributeFields() : null}
           {form.scope === "STORE_SCOPED" ? <p className="muted">هذا المنتج خاص بمتجر ويُدار من مساحة المتجر.</p> : null}
           <label className="field-label" htmlFor="catalog-product-name">الاسم القانوني<input id="catalog-product-name" disabled={busy} value={form.canonicalName} onChange={(event) => setForm({ ...form, canonicalName: event.target.value })} /></label>
           <label className="field-label" htmlFor="catalog-product-brand">العلامة<input id="catalog-product-brand" disabled={busy} value={form.brand} onChange={(event) => setForm({ ...form, brand: event.target.value })} /></label>
@@ -176,7 +238,7 @@ export function CentralCatalog() {
           <label className="field-label" htmlFor="catalog-identifier-value">قيمة المعرّف<input id="catalog-identifier-value" disabled={busy || selected !== null} value={form.identifierValue} onChange={(event) => setForm({ ...form, identifierValue: event.target.value })} /></label>
           {selected ? <><label className="field-label" htmlFor="catalog-image">رابط الصورة الأساسية<input id="catalog-image" disabled={busy} inputMode="url" value={form.imageUri} onChange={(event) => setForm({ ...form, imageUri: event.target.value })} placeholder="https://…" /></label><label className="field-label" htmlFor="catalog-gallery">صور المعرض<textarea className="resize-none" id="catalog-gallery" disabled={busy} rows={4} value={form.galleryImageUris} onChange={(event) => setForm({ ...form, galleryImageUris: event.target.value })} placeholder="رابط صورة في كل سطر" /></label><p className="muted">الصورة الأساسية إلزامية عند وجود صور، وكل رابط معرض يظهر بعده حسب الترتيب.</p><div className="catalog-media-upload"><label className="field-label" htmlFor="catalog-upload-role">نوع الرفع<select id="catalog-upload-role" disabled={busy} value={uploadRole} onChange={(event) => setUploadRole(event.target.value as "primary" | "gallery")}><option value="primary">صورة أساسية</option><option value="gallery">صورة معرض</option></select></label><label className="field-label" htmlFor="catalog-upload-file">ملف الصورة<input key={uploadInputKey} id="catalog-upload-file" disabled={busy} type="file" accept="image/jpeg,image/png" onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)} /></label><button type="button" className="button button-secondary" disabled={busy || !uploadFile} onClick={() => void uploadMedia()}>رفع الصورة وربطها</button></div>{form.imageUri ? <img className="catalog-media-preview" src={form.imageUri} alt={`الصورة الأساسية لمنتج ${form.canonicalName}`} loading="lazy" /> : null}</> : <label className="field-label" htmlFor="catalog-image">رابط الصورة الأساسية<input id="catalog-image" disabled={busy} inputMode="url" value={form.imageUri} onChange={(event) => setForm({ ...form, imageUri: event.target.value })} placeholder="https://…" /></label>}
           {selected ? <label className="central-active-toggle"><input type="checkbox" disabled={busy} checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} /> المنتج نشط وقابل للاختيار</label> : null}
-          <button type="button" className="button button-primary" disabled={busy || form.scope !== "SHARED" || !form.canonicalName.trim() || !form.verticalId || !form.categoryId} onClick={() => void saveProduct()}>{busy ? "جارٍ الحفظ…" : selected ? "حفظ التعديل" : "إنشاء المنتج"}</button>
+          <button type="button" className="button button-primary" disabled={busy || form.scope !== "SHARED" || (!selected && attributeReadState !== "ready") || !form.canonicalName.trim() || !form.verticalId || !form.categoryId} onClick={() => void saveProduct()}>{busy ? "جارٍ الحفظ…" : selected ? "حفظ التعديل" : "إنشاء المنتج"}</button>
           {selected ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void saveMedia()}>حفظ الصور</button> : null}
           {selected ? <button type="button" className="button button-secondary" disabled={busy} onClick={startCreate}>إلغاء التعديل</button> : null}
         </div>

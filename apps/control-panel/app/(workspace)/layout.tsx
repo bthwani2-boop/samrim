@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { type FormEvent, Fragment, type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 import type { ActorIdentity } from "@bthwani/identity";
 import { IdentitySurface } from "../../src/features/access/identity-surface";
 import { currentWorkspaceChild, currentWorkspaceDestination, isCurrentWorkspaceDestination, isCurrentWorkspacePath, workspaceDestinations, workspaceSearchEntries } from "../../src/navigation/workspace-registry";
@@ -96,7 +96,8 @@ function OperatorProfile({ identity, active }: Readonly<{ identity: ActorIdentit
         <div><dt>اسم المشغّل</dt><dd>مشغّل المنصة</dd></div>
         <div><dt>رقم الهاتف</dt><dd aria-live="polite"><bdi dir="ltr">{phoneLoading ? "جارٍ تحميل الرقم…" : phoneUnavailable ? "تعذر تحميله" : phone ?? "افتح الحساب لعرض الرقم"}</bdi></dd></div>
         <div><dt>الوصول إلى المالية</dt><dd>{identity.permissions?.includes("finance") ? "مفعّل" : "غير مفعّل"}</dd></div>
-        {identity.canManageFinanceAccess ? <div><dt>إدارة صلاحيات المالية</dt><dd>متاحة</dd></div> : null}
+        {identity.permissions?.includes("platform_policies") ? <div><dt>الوصول إلى السياسات</dt><dd>مفعّل</dd></div> : null}
+        {identity.canManageOperatorPermissions ? <div><dt>إدارة صلاحيات المشغّلين</dt><dd>متاحة</dd></div> : null}
         <div>
           <dt>انتهاء الجلسة</dt>
           <dd><time dir="auto" dateTime={identity.expiresAt}>{formatAccountSessionExpiry(identity.expiresAt)}</time></dd>
@@ -282,7 +283,7 @@ function WorkspaceNavigation({
 }>) {
   const { state } = useSession();
   const hasFinancePermission = state.kind === "authenticated" && state.identity.permissions?.includes("finance") === true;
-  const visibleDestinations = hasFinancePermission ? workspaceDestinations : workspaceDestinations.filter((destination) => destination.href !== "/finance");
+  const visibleDestinations = workspaceDestinations.filter((destination) => destination.showInWorkspaceNavigation !== false && (hasFinancePermission || destination.href !== "/finance"));
   return (
     <nav ref={navRef} id="workspace-navigation" className="workspace-nav" data-open={open} aria-label="تنقل مساحة المشغل">
       <div className="workspace-nav-header">
@@ -290,13 +291,10 @@ function WorkspaceNavigation({
         <button type="button" className="workspace-nav-close" onClick={onClose} aria-label="إغلاق مسارات العمل">×</button>
       </div>
       {visibleDestinations.map((destination, index) => {
-        const previous = visibleDestinations[index - 1];
         const current = isCurrentWorkspaceDestination(pathname, destination);
         const activeChild = currentWorkspaceChild(pathname, destination);
         return (
-          <Fragment key={destination.href}>
-            {index === 0 || destination.section !== previous?.section ? <p className="workspace-nav-label workspace-nav-section-label">{destination.section}</p> : null}
-            <div className="workspace-nav-group">
+            <div className="workspace-nav-group" key={destination.href}>
               <Link
                 ref={index === 0 ? firstLinkRef : undefined}
                 className="workspace-nav-link"
@@ -321,7 +319,6 @@ function WorkspaceNavigation({
                 </ul>
               ) : null}
             </div>
-          </Fragment>
         );
       })}
     </nav>

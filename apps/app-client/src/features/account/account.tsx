@@ -4,7 +4,7 @@ import { type Href, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, logoutIdentity, subscribeIdentitySession } from "../../bootstrap/identity";
-import { useServiceCityScope } from "../service-city/service-city-scope";
+import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
 
 export default function ClientAccount() {
   const router = useRouter();
@@ -21,7 +21,7 @@ export default function ClientAccount() {
   const [busy, setBusy] = useState(false);
   const [changingCity, setChangingCity] = useState(false);
   const [notice, setNotice] = useState("");
-  const cityName = cities.find((city) => city.id === selectedCityID)?.displayNameAr ?? "مدينة الخدمة";
+  const cityName = serviceCityDisplayName(cities.find((city) => city.id === selectedCityID)?.displayNameAr);
 
   async function logout() {
     if (busy) return;

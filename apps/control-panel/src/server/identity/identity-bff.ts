@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   type ActorIdentity,
+  type ActorRoleSearchPage,
   type ActorRoleView,
   type ActorType,
   type AttributedMutationContext,
@@ -12,8 +13,9 @@ import {
   identityAuthorizesSurface,
   isIdentityClientError,
   type OperatorEnrollmentToken,
-  type OperatorFinanceAccess,
   type OperatorPasskeyRegistrationResponse,
+  type OperatorPermission,
+  type OperatorPermissionAccess,
   type PasskeyOptions,
   type ReenrollmentMutationContext,
   type TokenPair,
@@ -182,21 +184,26 @@ export async function provisionOperator(phone: string, context: AttributedMutati
   return identityInternalClient().provisionActorRole({ phoneE164: phone, role: "operator" }, context);
 }
 
-export async function readOperatorFinanceAccess(actorId: string, context: AttributedMutationContext): Promise<OperatorFinanceAccess> {
+export async function readOperatorPermission(actorId: string, permission: OperatorPermission, context: AttributedMutationContext): Promise<OperatorPermissionAccess> {
   if (!actorId.trim()) throw missingIdentityRole();
-  return identityInternalClient().readOperatorFinanceAccess(actorId, context);
+  return identityInternalClient().readOperatorPermission(actorId, permission, context);
 }
 
-export async function setOperatorFinanceAccess(actorId: string, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<OperatorFinanceAccess> {
+export async function setOperatorPermission(actorId: string, permission: OperatorPermission, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<OperatorPermissionAccess> {
   if (!actorId.trim()) throw missingIdentityRole();
-  return identityInternalClient().setOperatorFinanceAccess(actorId, enabled, reason, context);
+  return identityInternalClient().setOperatorPermission(actorId, permission, enabled, reason, context);
 }
 
 async function lookupIdentityRole(phone: string, role: ActorType): Promise<ActorRoleView | null> {
-  const page = await identityInternalClient().searchActorRoles(role, phone);
+  const page = await identityInternalClient().searchActorRoles(role, phone, undefined, { limit: 2 });
   if (page.items.length === 0) return null;
   if (page.items.length !== 1) throw new Error("IDENTITY_AMBIGUOUS_ROLE_MATCH");
   return page.items[0] ?? null;
+}
+
+export async function searchIdentityRoles(role: ActorType, query: string, limit: number, cursor = "", enabled?: boolean): Promise<ActorRoleSearchPage> {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100 || query.trim().length > 100 || cursor.length > 512) throw new Error("INVALID_ACTOR_ROLE_SEARCH");
+  return identityInternalClient().searchActorRoles(role, query.trim(), enabled, { limit, cursor });
 }
 
 export async function lookupIdentityRoles(phone: string): Promise<ActorRoleView[]> {

@@ -129,6 +129,10 @@ func HashCaptainAvailabilityRequest(actorID string, available bool, expectedVers
 	return hashFacts("captain-availability", strings.TrimSpace(actorID), strconv.FormatBool(available), strconv.Itoa(expectedVersion))
 }
 
+func HashCaptainOperatorAvailabilityRequest(actorID string, available bool, expectedVersion int, reason string) string {
+	return hashFacts("captain-operator-availability", strings.TrimSpace(actorID), strconv.FormatBool(available), strconv.Itoa(expectedVersion), strings.TrimSpace(reason))
+}
+
 func HashCaptainDispatchRequest(orderID string) string {
 	return hashFacts("captain-dispatch", strings.TrimSpace(orderID))
 }
@@ -346,7 +350,7 @@ func BindCaptainAdmission(ctx context.Context, db *sql.DB, admissionID, actorID,
 	return updated, nil
 }
 
-func SetCaptainAvailability(ctx context.Context, db *sql.DB, actorID string, available bool, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string) (CaptainAdmission, bool, error) {
+func SetCaptainAvailability(ctx context.Context, db *sql.DB, actorID string, available bool, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID, reason string) (CaptainAdmission, bool, error) {
 	if db == nil || strings.TrimSpace(actorID) == "" || expectedVersion < 1 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
 		return CaptainAdmission{}, false, ErrCaptainOperationConflict
 	}
@@ -408,7 +412,7 @@ func SetCaptainAvailability(ctx context.Context, db *sql.DB, actorID string, ava
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_operation_idempotency(idempotency_key,request_hash,operation,admission_id,result_version) VALUES($1,$2,'availability',$3,$4)`, idempotencyKey, requestHash, admission.ID, admission.Version); err != nil {
 		return CaptainAdmission{}, false, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_admission_audit(event_type,idempotency_key,correlation_id,acting_actor_id,admission_id,actor_id,from_state,to_state,from_version,result_version,request_hash) VALUES('captain_availability_changed',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, idempotencyKey, correlationID, actingActorID, admission.ID, actorID, previousAvailability, wanted, expectedVersion, admission.Version, requestHash); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_admission_audit(event_type,idempotency_key,correlation_id,acting_actor_id,admission_id,actor_id,from_state,to_state,from_version,result_version,request_hash,reason) VALUES('captain_availability_changed',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,''))`, idempotencyKey, correlationID, actingActorID, admission.ID, actorID, previousAvailability, wanted, expectedVersion, admission.Version, requestHash, strings.TrimSpace(reason)); err != nil {
 		return CaptainAdmission{}, false, err
 	}
 	if err := tx.Commit(); err != nil {

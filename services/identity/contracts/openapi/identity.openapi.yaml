@@ -61,8 +61,8 @@ paths:
     $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1actor-roles~1provision"
   /internal/actor-roles/search:
     $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1actor-roles~1search"
-  /internal/operators/{actorId}/finance-access:
-    $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1operators~1{actorId}~1finance-access"
+  /internal/operators/{actorId}/permissions/{permission}:
+    $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1operators~1{actorId}~1permissions~1{permission}"
   /internal/actors/{actorId}/roles/{role}:
     $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1actors~1{actorId}~1roles~1{role}"
   /internal/actors/{actorId}/roles/{role}/disable:
@@ -87,17 +87,19 @@ components:
   parameters:
     ActorId: { name: actorId, in: path, required: true, schema: { type: string } }
     Role: { name: role, in: path, required: true, schema: { $ref: "#/components/schemas/ActorType" } }
+    OperatorPermission: { name: permission, in: path, required: true, schema: { $ref: "#/components/schemas/OperatorPermission" } }
     CorrelationId: { name: X-Correlation-ID, in: header, required: false, schema: { type: string, maxLength: 128 } }
     ActingActorId: { name: X-Acting-Actor-ID, in: header, required: false, schema: { type: string, maxLength: 128 } }
     ControlPanelActingActorId: { name: X-Acting-Actor-ID, in: header, required: true, schema: { type: string, maxLength: 128 } }
+    OptionalActingActorId: { name: X-Acting-Actor-ID, in: header, required: false, schema: { type: string, maxLength: 128 } }
     ExpectedVersion: { name: X-Expected-Version, in: header, required: false, schema: { type: integer, minimum: 1 } }
     ReenrollmentExpectedVersion: { name: X-Expected-Version, in: header, required: true, schema: { type: integer, minimum: 1 } }
     ExpectedActorVersion: { name: X-Expected-Actor-Version, in: header, required: true, schema: { type: integer, minimum: 1 } }
     ReenrollmentReasonRequired: { name: X-Reason, in: header, required: true, schema: { type: string, minLength: 5, maxLength: 500 } }
     ControlPanelExpectedVersion: { name: X-Expected-Version, in: header, required: true, schema: { type: integer, minimum: 1 } }
-    FinancePermissionExpectedVersion: { name: X-Expected-Version, in: header, required: true, schema: { type: integer, minimum: 1 } }
+    OperatorPermissionExpectedVersion: { name: X-Expected-Version, in: header, required: true, schema: { type: integer, minimum: 1 } }
     MutationReason: { name: X-Reason, in: header, required: false, schema: { type: string, maxLength: 500 } }
-    FinancePermissionReason: { name: X-Reason, in: header, required: true, schema: { type: string, minLength: 5, maxLength: 500 } }
+    OperatorPermissionReason: { name: X-Reason, in: header, required: true, schema: { type: string, minLength: 5, maxLength: 500 } }
 
   schemas:
     StatusResponse:
@@ -126,6 +128,10 @@ components:
     ControlPanelRole:
       type: string
       enum: [operator]
+
+    OperatorPermission:
+      type: string
+      enum: [finance, platform_policies]
 
     PhoneRequest:
       type: object
@@ -442,12 +448,11 @@ components:
         permissions:
           type: array
           items:
-            type: string
-            enum: [finance]
-        canManageFinanceAccess:
+            $ref: "#/components/schemas/OperatorPermission"
+        canManageOperatorPermissions:
           type: boolean
 
-    OperatorFinanceAccess:
+    OperatorPermissionAccess:
       type: object
       additionalProperties: false
       required: [actorId, permission, enabled, version, reason, updatedAt]
@@ -457,8 +462,7 @@ components:
           minLength: 1
           maxLength: 128
         permission:
-          type: string
-          const: finance
+          $ref: "#/components/schemas/OperatorPermission"
         enabled:
           type: boolean
         version:
@@ -476,7 +480,7 @@ components:
           type: string
           format: date-time
 
-    SetOperatorFinanceAccessRequest:
+    SetOperatorPermissionRequest:
       type: object
       additionalProperties: false
       required: [enabled]

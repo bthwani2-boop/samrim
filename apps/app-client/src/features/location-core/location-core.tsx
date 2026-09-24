@@ -4,7 +4,7 @@ import type { DeliveryAddress } from "@bthwani/dsh";
 import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { useServiceCityScope } from "../service-city/service-city-scope";
+import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
 import { createOwnDeliveryAddress, isLocationHttpError, listOwnDeliveryAddresses, updateOwnDeliveryAddress } from "./delivery-address-client";
 
 type AddressState =
@@ -163,7 +163,7 @@ export default function LocationCore() {
       {formOpen ? <View style={styles.formCard}>
         <Text style={styles.sectionTitle}>{editing ? "تعديل العنوان" : "إضافة عنوان"}</Text>
         <Text style={styles.fieldLabel}>مدينة العنوان</Text>
-        <View style={styles.cityList}>{cities.map((city) => <BthwaniChip key={city.id} label={city.displayNameAr} onPress={() => setAddressCityID(city.id)} selected={addressCityID === city.id} />)}</View>
+        <View style={styles.cityList}>{cities.map((city) => <BthwaniChip key={city.id} label={serviceCityDisplayName(city.displayNameAr)} onPress={() => setAddressCityID(city.id)} selected={addressCityID === city.id} />)}</View>
         <Text style={styles.fieldLabel}>وصف العنوان</Text>
         <TextInput
           accessibilityLabel="وصف العنوان"

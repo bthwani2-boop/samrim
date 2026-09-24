@@ -82,6 +82,10 @@ func (c *Client) ReadActorRole(ctx context.Context, actorID, role string) (ident
 	return c.inner.ReadRole(ctx, actorID, role)
 }
 
+func (c *Client) ReadOperatorPermission(ctx context.Context, actorID, permission string) (identityclient.OperatorPermissionAccess, error) {
+	return c.inner.ReadOperatorPermission(ctx, actorID, permission, "")
+}
+
 func (c *Client) ReadSession(ctx context.Context, accessToken string) (identityclient.ActorIdentity, error) {
 	return c.inner.ReadSession(ctx, accessToken)
 }

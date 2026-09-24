@@ -24,7 +24,7 @@ test("@live operator reads the real bounded COD cash-custody journey", async ({ 
 
 test("@live operator reads the WLT-owned delivery-fee policy workspace", async ({ page }) => {
   test.setTimeout(30_000);
-  await page.goto("/finance/delivery-fee-policy");
+  await page.goto("/policies/delivery-fees");
   await expect(page.getByRole("heading", { name: "سياسة رسوم التوصيل" })).toBeVisible();
   await expect(page.getByText("تُحسب الرسوم خادميًا من المسافة، ومدينة الخدمة كمنطقة، ووحدات السلة.")).toBeVisible();
   await expect(page.getByLabel("المنطقة / مدينة الخدمة")).toBeVisible();
@@ -54,7 +54,7 @@ test("@live operator reads the WLT-managed unified beneficiary settlement worksp
 
 test("@live operator sees the WLT-managed Field commission policy workspace", async ({ page }) => {
   test.setTimeout(30_000);
-  await page.goto("/finance/field-commission-policy");
+  await page.goto("/policies/field-rewards");
   await expect(page.getByRole("heading", { name: "سياسة مكافأة الميدان" })).toBeVisible();
   await expect(page.getByText("تُستحق المكافأة مرة واحدة عند ظهور المتجر في تطبيق العميل.")).toBeVisible();
   await expect(page.getByLabel("نطاق السياسة")).toBeVisible();

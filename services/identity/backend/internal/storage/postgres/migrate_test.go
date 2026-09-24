@@ -18,7 +18,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-func TestMigrationV13ToV20Upgrade(t *testing.T) {
+func TestMigrationV13ToV21Upgrade(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
 	if databaseURL == "" {
 		t.Skip("IDENTITY_DATABASE_URL is required for the migration upgrade proof")
@@ -604,23 +604,57 @@ func TestMigrationV13ToV20Upgrade(t *testing.T) {
 		t.Fatalf("Finance grant backfill was not least-privilege: initial=%v later=%v", initialFinance, laterFinance)
 	}
 
+	// Apply migration 021 and prove Platform Policies access is separately granted.
+	var v21Name string
+	var v21Content []byte
+	for _, file := range files {
+		if strings.HasPrefix(file.Name(), "021_") {
+			v21Name = file.Name()
+			v21Content, err = os.ReadFile(filepath.Join(migDir, v21Name))
+			if err != nil {
+				t.Fatalf("read 021: %v", err)
+			}
+			break
+		}
+	}
+	if v21Name == "" {
+		t.Fatal("migration 021 not found")
+	}
+	hash21 := sha256.Sum256(v21Content)
+	if err := postgres.Migrate(ctx, testDB, 21, v21Name, hex.EncodeToString(hash21[:]), string(v21Content)); err != nil {
+		t.Fatalf("apply migration 021 on v20 database: %v", err)
+	}
+	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 21 {
+		t.Fatalf("expected schema version 21, got %d (err: %v)", version, err)
+	}
+	var initialPolicies, laterPolicies bool
+	if err := testDB.QueryRowContext(ctx, "SELECT enabled FROM identity_operator_permissions WHERE actor_id=$1 AND permission='platform_policies'", ownerActorID).Scan(&initialPolicies); err != nil {
+		t.Fatalf("read initial Operator Platform Policies grant: %v", err)
+	}
+	if err := testDB.QueryRowContext(ctx, "SELECT enabled FROM identity_operator_permissions WHERE actor_id=$1 AND permission='platform_policies'", operatorActorID).Scan(&laterPolicies); err != nil {
+		t.Fatalf("read later Operator Platform Policies grant: %v", err)
+	}
+	if !initialPolicies || laterPolicies {
+		t.Fatalf("Platform Policies grant backfill was not least-privilege: initial=%v later=%v", initialPolicies, laterPolicies)
+	}
+
 	// Verify full postgres.Ready passes on this upgraded database.
 	if err := postgres.Ready(ctx, testDB); err != nil {
 		t.Fatalf("postgres.Ready failed on upgraded database: %v", err)
 	}
 
-	// Re-run the canonical runtime migrator and prove it is a no-op at v20.
+	// Re-run the canonical runtime migrator and prove it is a no-op at v21.
 	beforeSecondRun := readMigrationNoOpSnapshot(t, testDB)
 	if err := identityruntime.RunMigrations(ctx, "development", testURL, migDir); err != nil {
 		t.Fatalf("second canonical migration run failed: %v", err)
 	}
 	afterSecondRun := readMigrationNoOpSnapshot(t, testDB)
 	assertMigrationNoOpSnapshotUnchanged(t, beforeSecondRun, afterSecondRun)
-	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 20 {
+	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 21 {
 		t.Fatalf("schema version changed during second canonical migration run: version=%d err=%v", version, err)
 	}
 
-	t.Log("Migration v13 -> v20 upgrade, data preservation, passkey cutover, mobile lifetime, refresh reconciliation and Finance permission cutover test PASSED successfully!")
+	t.Log("Migration v13 -> v21 upgrade, data preservation, passkey cutover, mobile lifetime, refresh reconciliation, Finance and Platform Policies permission cutover test PASSED successfully!")
 }
 
 type migrationSessionSnapshot struct {

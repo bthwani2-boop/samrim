@@ -117,7 +117,7 @@ func normalizeProductProposalInput(input postgres.CatalogProductProposalInput) (
 			return postgres.CatalogProductProposalInput{}, ErrCatalogProductImageInvalid
 		}
 	}
-	return postgres.CatalogProductProposalInput{ID: strings.TrimSpace(input.ID), VerticalID: strings.TrimSpace(input.VerticalID), CategoryID: strings.TrimSpace(input.CategoryID), ProposedName: name, ProposedBrand: brand, ProposedVariantTitle: variantTitle, ProposedMeasurementKind: kind, ProposedBaseUnit: baseUnit, ProposedIdentifierType: identifierType, ProposedIdentifierValue: identifierValue, ProposedImageURI: imageURI}, nil
+	return postgres.CatalogProductProposalInput{ID: strings.TrimSpace(input.ID), VerticalID: strings.TrimSpace(input.VerticalID), CategoryID: strings.TrimSpace(input.CategoryID), ProposedName: name, ProposedBrand: brand, ProposedVariantTitle: variantTitle, ProposedMeasurementKind: kind, ProposedBaseUnit: baseUnit, ProposedIdentifierType: identifierType, ProposedIdentifierValue: identifierValue, ProposedImageURI: imageURI, AttributeValues: normalizeCatalogAttributeValues(input.AttributeValues), VariantAttributeValues: normalizeCatalogAttributeValues(input.VariantAttributeValues)}, nil
 }
 
 func normalizeOptionalPointer(value *string, upper bool) *string {

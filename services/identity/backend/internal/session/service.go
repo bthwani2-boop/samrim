@@ -424,22 +424,31 @@ func (s *Service) RevokeRoleAll(ctx context.Context, actorID, role, principal, c
 
 func (s *Service) identityOf(ctx context.Context, source interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }, actorID, sessionID, role string, expires time.Time) (domain.ActorIdentity, error) {
 	surface, _ := domain.SurfaceForRole(role)
 	identity := domain.ActorIdentity{Subject: actorID, SessionID: sessionID, Role: role, Surface: surface, ExpiresAt: expires}
 	if role != "operator" {
 		return identity, nil
 	}
-	var hasFinanceAccess, canManageFinanceAccess bool
-	if err := source.QueryRowContext(ctx, `SELECT
-		EXISTS(SELECT 1 FROM identity_operator_permissions WHERE actor_id=$1 AND permission='finance' AND enabled=true),
-		EXISTS(SELECT 1 FROM identity_bootstrap_state WHERE id=1 AND initial_operator_actor_id=$1)`, actorID).Scan(&hasFinanceAccess, &canManageFinanceAccess); err != nil {
+	rows, err := source.QueryContext(ctx, `SELECT permission FROM identity_operator_permissions WHERE actor_id=$1 AND enabled=true ORDER BY permission`, actorID)
+	if err != nil {
 		return domain.ActorIdentity{}, err
 	}
-	if hasFinanceAccess {
-		identity.Permissions = []string{"finance"}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var permission string
+		if err := rows.Scan(&permission); err != nil {
+			return domain.ActorIdentity{}, err
+		}
+		identity.Permissions = append(identity.Permissions, permission)
 	}
-	identity.CanManageFinanceAccess = canManageFinanceAccess
+	if err := rows.Err(); err != nil {
+		return domain.ActorIdentity{}, err
+	}
+	if err := source.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM identity_bootstrap_state WHERE id=1 AND initial_operator_actor_id=$1)`, actorID).Scan(&identity.CanManageOperatorPermissions); err != nil {
+		return domain.ActorIdentity{}, err
+	}
 	return identity, nil
 }
 

@@ -68,8 +68,8 @@ func New(actors *actor.Service, authenticationService *authentication.Service, c
 	mux.HandleFunc("POST /internal/actor-roles/provision", s.internal(s.provisionRole))
 	mux.HandleFunc("POST /internal/bootstrap/operator", s.internal(s.bootstrapFirstOperator))
 	mux.HandleFunc("GET /internal/actor-roles/search", s.internal(s.searchRoles))
-	mux.HandleFunc("GET /internal/operators/{actorId}/finance-access", s.internal(s.readOperatorFinanceAccess))
-	mux.HandleFunc("PUT /internal/operators/{actorId}/finance-access", s.internal(s.setOperatorFinanceAccess))
+	mux.HandleFunc("GET /internal/operators/{actorId}/permissions/{permission}", s.internal(s.readOperatorPermission))
+	mux.HandleFunc("PUT /internal/operators/{actorId}/permissions/{permission}", s.internal(s.setOperatorPermission))
 	mux.HandleFunc("GET /internal/actors/{actorId}/roles/{role}", s.internal(s.getRole))
 	mux.HandleFunc("POST /internal/actors/{actorId}/roles/{role}/disable", s.internal(s.disableRole))
 	mux.HandleFunc("POST /internal/actors/{actorId}/roles/{role}/enable", s.internal(s.enableRole))
@@ -459,24 +459,20 @@ func (s *Server) searchRoles(w http.ResponseWriter, r *http.Request, caller stri
 	}
 	writeJSON(w, http.StatusOK, page)
 }
-func (s *Server) readOperatorFinanceAccess(w http.ResponseWriter, r *http.Request, caller string) {
+func (s *Server) readOperatorPermission(w http.ResponseWriter, r *http.Request, caller string) {
 	if r.Header.Get("X-Actor-ID") != "" {
 		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
 		return
 	}
 	actingActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if actingActorID == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required"))
-		return
-	}
-	access, err := s.actors.ReadOperatorFinanceAccess(r.Context(), caller, r.PathValue("actorId"), actingActorID)
+	access, err := s.actors.ReadOperatorPermission(r.Context(), caller, r.PathValue("actorId"), actingActorID, r.PathValue("permission"))
 	if err != nil {
 		writeDomainError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, access)
 }
-func (s *Server) setOperatorFinanceAccess(w http.ResponseWriter, r *http.Request, caller string) {
+func (s *Server) setOperatorPermission(w http.ResponseWriter, r *http.Request, caller string) {
 	if r.Header.Get("X-Actor-ID") != "" {
 		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
 		return
@@ -492,11 +488,11 @@ func (s *Server) setOperatorFinanceAccess(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required"))
 		return
 	}
-	var input domain.SetOperatorFinanceAccessRequest
+	var input domain.SetOperatorPermissionRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	access, err := s.actors.SetOperatorFinanceAccess(r.Context(), caller, r.PathValue("actorId"), actingActorID, input.Enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), reason, expectedVersion)
+	access, err := s.actors.SetOperatorPermission(r.Context(), caller, r.PathValue("actorId"), actingActorID, r.PathValue("permission"), input.Enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), reason, expectedVersion)
 	if err != nil {
 		writeDomainError(w, err)
 		return

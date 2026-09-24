@@ -10,7 +10,6 @@ import type {
   ManagedActivationRequest,
   ManagedChallengeRequest,
   ManagedPasswordLoginRequest,
-  OperatorFinanceAccess,
   OperatorEnrollmentRequest,
   OperatorEnrollmentToken,
   OperatorEnrollmentTokenIssueRequest,
@@ -20,6 +19,8 @@ import type {
   OperatorPasskeyRegistrationFinishRequest,
   OperatorPasskeyRegistrationOptionsRequest,
   OperatorPasskeyRegistrationResponse,
+  OperatorPermission,
+  OperatorPermissionAccess,
   OperatorRecoveryRequest,
   PasskeyOptions,
   PasswordLoginRequest,
@@ -77,10 +78,10 @@ export type ReenrollmentMutationContext = AttributedMutationContext & Readonly<{
 export type IdentityInternalClient = Readonly<{
   issueOperatorEnrollmentToken(request: OperatorEnrollmentTokenIssueRequest, context: AttributedMutationContext): Promise<OperatorEnrollmentToken>;
   provisionActorRole(request: ProvisionActorRoleRequest, context: AttributedMutationContext): Promise<ActorRoleView>;
-  searchActorRoles(role: ActorType, query: string, enabled?: boolean): Promise<ActorRoleSearchPage>;
+  searchActorRoles(role: ActorType, query: string, enabled?: boolean, page?: Readonly<{ limit?: number; cursor?: string }>): Promise<ActorRoleSearchPage>;
   readActorRole(actorId: string, role: ActorType): Promise<ActorRoleView>;
-  readOperatorFinanceAccess(actorId: string, context: AttributedMutationContext): Promise<OperatorFinanceAccess>;
-  setOperatorFinanceAccess(actorId: string, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<OperatorFinanceAccess>;
+  readOperatorPermission(actorId: string, permission: OperatorPermission, context: AttributedMutationContext): Promise<OperatorPermissionAccess>;
+  setOperatorPermission(actorId: string, permission: OperatorPermission, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<OperatorPermissionAccess>;
   authorizeActorRoleReenrollment(actorId: string, role: ActorType, context: ReenrollmentMutationContext): Promise<void>;
   setActorRoleEnabled(actorId: string, role: ActorType, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<void>;
   setActorSecurityEnabled(actorId: string, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<void>;
@@ -268,17 +269,18 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
     }
   }
 
-  async function requestOperatorFinanceAccess(
+  async function requestOperatorPermission(
     actorId: string,
+    permission: OperatorPermission,
     method: "GET" | "PUT",
     context: AttributedMutationContext | VersionedMutationContext,
     enabled?: boolean,
     reason = "",
-  ): Promise<OperatorFinanceAccess> {
+  ): Promise<OperatorPermissionAccess> {
     if (method === "PUT") {
       validateVersionedMutationContext(context as VersionedMutationContext);
       const reasonLength = Array.from(reason.trim()).length;
-      if (reasonLength < 5 || reasonLength > 500) throw new Error("IDENTITY_FINANCE_PERMISSION_REASON_INVALID");
+      if (reasonLength < 5 || reasonLength > 500) throw new Error("IDENTITY_OPERATOR_PERMISSION_REASON_INVALID");
     } else {
       validateAttributedMutationContext(context);
     }
@@ -287,7 +289,8 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
     try {
       let response: Response;
       try {
-        response = await fetch(resolveUrl(baseUrl, expandPath(identityOperationPaths.readOperatorFinanceAccess.path, { actorId })), {
+        const operation = method === "PUT" ? identityOperationPaths.setOperatorPermission : identityOperationPaths.readOperatorPermission;
+        response = await fetch(resolveUrl(baseUrl, expandPath(operation.path, { actorId, permission })), {
           method,
           headers: {
             Accept: "application/json",
@@ -311,7 +314,7 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
         const parsed = parseErrorPayload(await response.json().catch(() => null));
         throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies IdentityClientError;
       }
-      return (await response.json()) as OperatorFinanceAccess;
+      return (await response.json()) as OperatorPermissionAccess;
     } finally {
       clearTimeout(timeout);
     }
@@ -418,13 +421,14 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
       }
     },
     readActorRole,
-    searchActorRoles: async (role, query, enabled) => {
+    searchActorRoles: async (role, query, enabled, page) => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
       try {
         let response: Response;
         try {
-          const params = new URLSearchParams({ role, q: query, limit: "2" });
+          const params = new URLSearchParams({ role, q: query, limit: String(page?.limit ?? 25) });
+          if (page?.cursor) params.set("cursor", page.cursor);
           if (enabled !== undefined) params.set("enabled", String(enabled));
           response = await fetch(resolveUrl(baseUrl, identityOperationPaths.searchActorRoles.path + "?" + params.toString()), {
             method: identityOperationPaths.searchActorRoles.method,
@@ -444,8 +448,8 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
         clearTimeout(timeout);
       }
     },
-    readOperatorFinanceAccess: (actorId, context) => requestOperatorFinanceAccess(actorId, "GET", context),
-    setOperatorFinanceAccess: (actorId, enabled, reason, context) => requestOperatorFinanceAccess(actorId, "PUT", context, enabled, reason),
+    readOperatorPermission: (actorId, permission, context) => requestOperatorPermission(actorId, permission, "GET", context),
+    setOperatorPermission: (actorId, permission, enabled, reason, context) => requestOperatorPermission(actorId, permission, "PUT", context, enabled, reason),
     authorizeActorRoleReenrollment: (actorId, role, context) =>
       requestReenrollmentNoContent(expandPath(identityOperationPaths.authorizeManagedRoleReenrollment.path, { actorId, role }), context),
     setActorRoleEnabled: (actorId, role, enabled, reason, context) => {

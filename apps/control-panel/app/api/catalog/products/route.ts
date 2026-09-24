@@ -1,10 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { NextResponse } from "next/server";
-
 import type { CreateCatalogProductRequest } from "@bthwani/dsh";
-import { verifySameOrigin } from "../../../../src/server/security/csrf";
+import { NextResponse } from "next/server";
 import { createCatalogProduct, dshErrorPayload, dshHttpStatus, isDshClientError, listCatalogProducts } from "../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
+import { verifySameOrigin } from "../../../../src/server/security/csrf";
 
 function errorResponse(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status, headers: { "Cache-Control": "no-store" } });
@@ -34,6 +33,7 @@ export async function POST(request: Request) {
   if (idempotencyKey.length < 8 || idempotencyKey.length > 128) return errorResponse("INVALID_INPUT", "Idempotency-Key is required", 400);
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   if (!body || typeof body.canonicalName !== "string" || typeof body.verticalId !== "string" || body.scope !== "SHARED" || !["DISCRETE", "MEASURED", "VARIABLE_MEASURE"].includes(String(body.measurementKind)) || !["COUNT", "GRAM", "MILLILITER"].includes(String(body.baseUnit)) || !Array.isArray(body.categoryIds) || body.categoryIds.length < 1) return errorResponse("INVALID_INPUT", "canonicalName, verticalId, shared scope, measurementKind, baseUnit and categoryIds are required", 400);
+  if ((body.attributeValues !== undefined && !Array.isArray(body.attributeValues)) || (body.variantAttributeValues !== undefined && !Array.isArray(body.variantAttributeValues))) return errorResponse("INVALID_INPUT", "typed attribute values must be arrays", 400);
   const identifierType = ["GTIN", "EAN", "UPC", "SKU"].includes(String(body.identifierType)) ? String(body.identifierType) as NonNullable<CreateCatalogProductRequest["identifierType"]> : undefined;
   const input: CreateCatalogProductRequest = {
     canonicalName: body.canonicalName.trim(),
@@ -42,6 +42,8 @@ export async function POST(request: Request) {
     measurementKind: body.measurementKind as CreateCatalogProductRequest["measurementKind"],
     baseUnit: body.baseUnit as CreateCatalogProductRequest["baseUnit"],
     categoryIds: body.categoryIds.filter((value): value is string => typeof value === "string").map((value) => value.trim()).filter(Boolean),
+    attributeValues: (body.attributeValues ?? []) as NonNullable<CreateCatalogProductRequest["attributeValues"]>,
+    variantAttributeValues: (body.variantAttributeValues ?? []) as NonNullable<CreateCatalogProductRequest["variantAttributeValues"]>,
     ...(typeof body.variantTitle === "string" && body.variantTitle.trim() ? { variantTitle: body.variantTitle.trim() } : {}),
     ...(typeof body.brand === "string" && body.brand.trim() ? { brand: body.brand.trim() } : {}),
     ...(identifierType ? { identifierType } : {}),

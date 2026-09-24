@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/lib/pq"
 )
 
 type PublicCatalogRecord struct {
@@ -16,6 +18,47 @@ type PublicCatalogRecord struct {
 	Sections   []CatalogStorefrontSectionRecord
 	Offers     []CatalogStoreOfferRecord
 	NextCursor *string
+}
+
+func ListPublicCatalogCategories(ctx context.Context, db *sql.DB, categoryIDs []string) ([]CatalogCategoryRecord, error) {
+	if db == nil {
+		return nil, errors.New("DSH database is nil")
+	}
+	ids := make([]string, 0, len(categoryIDs))
+	seen := make(map[string]struct{}, len(categoryIDs))
+	for _, value := range categoryIDs {
+		id := strings.TrimSpace(value)
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return []CatalogCategoryRecord{}, nil
+	}
+	rows, err := db.QueryContext(ctx, `SELECT id, vertical_id, COALESCE(parent_category_id,''), name_ar, name_en,
+		active, version, created_at, updated_at FROM dsh.catalog_categories
+		WHERE active=true AND id=ANY($1) ORDER BY lower(name_ar), id`, pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("list public catalog categories: %w", err)
+	}
+	defer rows.Close()
+	categories := make([]CatalogCategoryRecord, 0, len(ids))
+	for rows.Next() {
+		var category CatalogCategoryRecord
+		if err := rows.Scan(&category.ID, &category.VerticalID, &category.ParentCategoryID, &category.NameAr, &category.NameEn, &category.Active, &category.Version, &category.CreatedAt, &category.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan public catalog category: %w", err)
+		}
+		categories = append(categories, category)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read public catalog categories: %w", err)
+	}
+	return categories, nil
 }
 
 type rowQueryer interface {

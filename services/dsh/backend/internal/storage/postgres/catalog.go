@@ -22,6 +22,8 @@ var (
 	ErrCatalogCategoryNotFound      = errors.New("catalog category was not found")
 	ErrCatalogIdempotencyConflict   = errors.New("catalog idempotency key was already used with different facts")
 	ErrCatalogVersionConflict       = errors.New("catalog version is stale")
+	ErrCatalogAttributeRuleInvalid = errors.New("catalog attribute rule is invalid")
+	ErrCatalogCategoryCycle         = errors.New("catalog category parent would create a cycle")
 	ErrCatalogDuplicateIdentifier   = errors.New("catalog identifier is already assigned")
 	ErrCatalogIdentifierInvalid     = errors.New("catalog identifier is invalid")
 	ErrCatalogOfferAlreadyExists    = errors.New("StoreOffer already exists for this Store and Variant")
@@ -49,6 +51,17 @@ type CatalogCategoryRecord struct {
 	Active                                           bool
 	Version                                          int
 	CreatedAt, UpdatedAt                             time.Time
+}
+type UpdateCommerceVerticalInput struct {
+	NameAr, NameEn  string
+	Active          bool
+	ExpectedVersion int
+}
+type UpdateCatalogCategoryInput struct {
+	ParentCategoryID string
+	NameAr, NameEn   string
+	Active           bool
+	ExpectedVersion  int
 }
 type CatalogIdentifierRecord struct{ Type, Value string }
 type CatalogMediaRecord struct {
@@ -152,6 +165,7 @@ type CatalogProductInput struct {
 	Brand                                         *string
 	VariantTitle, MeasurementKind, BaseUnit       string
 	CategoryIDs                                   []string
+	AttributeValues, VariantAttributeValues       []CatalogAttributeValueInput
 	IdentifierType, IdentifierValue, ImageURI     string
 }
 type CatalogProductUpdateInput struct {
@@ -196,19 +210,56 @@ type CommerceVerticalResult struct {
 	Vertical CommerceVerticalRecord
 	Replayed bool
 }
+
+type CatalogRegistryAuditInput struct {
+	EntityType       string
+	EntityID         string
+	Action           string
+	ActingActorID    string
+	CorrelationID    string
+	Reason           string
+	ExpectedVersion  int
+	ResultingVersion int
+	BeforeState      any
+	AfterState       any
+}
+
+func writeCatalogRegistryAudit(ctx context.Context, tx *sql.Tx, input CatalogRegistryAuditInput) error {
+	beforeState, err := json.Marshal(input.BeforeState)
+	if err != nil {
+		return err
+	}
+	afterState, err := json.Marshal(input.AfterState)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO dsh.catalog_registry_audit_events(entity_type,entity_id,action,acting_actor_id,correlation_id,reason,expected_version,resulting_version,before_state,after_state) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'null')::jsonb,$10::jsonb)`, input.EntityType, input.EntityID, input.Action, input.ActingActorID, input.CorrelationID, input.Reason, input.ExpectedVersion, input.ResultingVersion, string(beforeState), string(afterState))
+	return err
+}
+
 type CatalogVariantResult struct {
 	Variant  CatalogVariantRecord
 	Replayed bool
 }
 
 func HashCatalogProductCreateRequest(input CatalogProductInput) string {
-	return hashFacts(input.VerticalID, input.Scope, input.StoreID, input.CanonicalName, optionalProductFact(input.Brand), input.VariantTitle, input.MeasurementKind, input.BaseUnit, strings.Join(input.CategoryIDs, ","), input.IdentifierType, input.IdentifierValue, input.ImageURI)
+	attributeFacts, _ := json.Marshal(struct{ Product, Variant []CatalogAttributeValueInput }{input.AttributeValues, input.VariantAttributeValues})
+	return hashFacts(input.VerticalID, input.Scope, input.StoreID, input.CanonicalName, optionalProductFact(input.Brand), input.VariantTitle, input.MeasurementKind, input.BaseUnit, strings.Join(input.CategoryIDs, ","), string(attributeFacts), input.IdentifierType, input.IdentifierValue, input.ImageURI)
 }
-func HashCatalogVerticalCreateRequest(item CommerceVerticalRecord) string {
-	return hashFacts("vertical", strings.TrimSpace(item.ID), strings.TrimSpace(item.NameAr), strings.TrimSpace(item.NameEn), strconv.FormatBool(item.Active))
+func HashCatalogVerticalCreateRequest(item CommerceVerticalRecord, reason string) string {
+	return hashFacts("vertical", strings.TrimSpace(item.ID), strings.TrimSpace(item.NameAr), strings.TrimSpace(item.NameEn), strconv.FormatBool(item.Active), strings.TrimSpace(reason))
 }
-func HashCatalogCategoryCreateRequest(item CatalogCategoryRecord) string {
-	return hashFacts("category", strings.TrimSpace(item.ID), strings.TrimSpace(item.VerticalID), strings.TrimSpace(item.ParentCategoryID), strings.TrimSpace(item.NameAr), strings.TrimSpace(item.NameEn), strconv.FormatBool(item.Active))
+func HashCatalogCategoryCreateRequest(item CatalogCategoryRecord, reason string) string {
+	return hashFacts("category", strings.TrimSpace(item.ID), strings.TrimSpace(item.VerticalID), strings.TrimSpace(item.ParentCategoryID), strings.TrimSpace(item.NameAr), strings.TrimSpace(item.NameEn), strconv.FormatBool(item.Active), strings.TrimSpace(reason))
+}
+func HashCatalogVerticalUpdateRequest(id string, input UpdateCommerceVerticalInput, reason string) string {
+	return hashFacts("vertical-update", strings.TrimSpace(id), strings.TrimSpace(input.NameAr), strings.TrimSpace(input.NameEn), strconv.FormatBool(input.Active), strconv.Itoa(input.ExpectedVersion), strings.TrimSpace(reason))
+}
+func HashCatalogCategoryUpdateRequest(id string, input UpdateCatalogCategoryInput, reason string) string {
+	return hashFacts("category-update", strings.TrimSpace(id), strings.TrimSpace(input.ParentCategoryID), strings.TrimSpace(input.NameAr), strings.TrimSpace(input.NameEn), strconv.FormatBool(input.Active), strconv.Itoa(input.ExpectedVersion), strings.TrimSpace(reason))
+}
+func HashCatalogCategoryAttributeRuleRequest(rule CatalogAttributeRuleRecord, expectedVersion int, reason string) string {
+	return hashFacts("category-attribute-rule", strings.TrimSpace(rule.CategoryID), strings.TrimSpace(rule.AttributeID), strconv.FormatBool(rule.Required), strconv.FormatBool(rule.Filterable), strconv.FormatBool(rule.VariantAxis), strconv.Itoa(expectedVersion), strings.TrimSpace(reason))
 }
 func HashCatalogProductUpdateRequest(productID string, input CatalogProductUpdateInput, expectedVersion int) string {
 	return hashFacts(productID, input.VerticalID, input.Scope, input.StoreID, input.CanonicalName, optionalProductFact(input.Brand), strconv.FormatBool(input.Active), strconv.Itoa(expectedVersion))
@@ -236,7 +287,7 @@ func HashCatalogOfferUpdateRequest(offerID string, input CatalogOfferUpdateInput
 	return hashFacts(offerID, strconv.FormatInt(input.PriceMinor, 10), strconv.FormatBool(input.Availability), input.PublicationState, input.QuantityPolicy, strconv.FormatInt(input.QuantityMinBaseUnits, 10), strconv.FormatInt(input.QuantityMaxBaseUnits, 10), strconv.FormatInt(input.QuantityStepBaseUnits, 10), input.PricingBasis, strconv.FormatInt(input.PricingUnitBaseUnits, 10), input.InventoryPolicy, strconv.FormatInt(input.InventoryOnHandBaseUnits, 10), strconv.Itoa(expectedVersion))
 }
 
-func CreateCommerceVertical(ctx context.Context, db *sql.DB, item CommerceVerticalRecord, idempotencyKey, requestHash string) (CommerceVerticalResult, error) {
+func CreateCommerceVertical(ctx context.Context, db *sql.DB, item CommerceVerticalRecord, idempotencyKey, requestHash string, audit CatalogRegistryAuditInput) (CommerceVerticalResult, error) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return CommerceVerticalResult{}, err
@@ -279,13 +330,22 @@ func CreateCommerceVertical(ctx context.Context, db *sql.DB, item CommerceVertic
 	if err != nil {
 		return CommerceVerticalResult{}, err
 	}
+	audit.EntityType = "vertical"
+	audit.EntityID = item.ID
+	audit.Action = "CREATED"
+	audit.ExpectedVersion = 0
+	audit.ResultingVersion = item.Version
+	audit.AfterState = item
+	if err = writeCatalogRegistryAudit(ctx, tx, audit); err != nil {
+		return CommerceVerticalResult{}, err
+	}
 	if err = tx.Commit(); err != nil {
 		return CommerceVerticalResult{}, err
 	}
 	return CommerceVerticalResult{Vertical: item}, nil
 }
 
-func CreateCatalogCategory(ctx context.Context, db *sql.DB, item CatalogCategoryRecord, idempotencyKey, requestHash string) (CatalogCategoryRecord, error) {
+func CreateCatalogCategory(ctx context.Context, db *sql.DB, item CatalogCategoryRecord, idempotencyKey, requestHash string, audit CatalogRegistryAuditInput) (CatalogCategoryRecord, error) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return CatalogCategoryRecord{}, err
@@ -312,6 +372,9 @@ func CreateCatalogCategory(ctx context.Context, db *sql.DB, item CatalogCategory
 	if !errors.Is(err, sql.ErrNoRows) {
 		return CatalogCategoryRecord{}, err
 	}
+	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:catalog-category-tree:"+item.VerticalID); err != nil {
+		return CatalogCategoryRecord{}, err
+	}
 	if item.ID == "" {
 		item.ID, err = newID("category")
 		if err != nil {
@@ -328,8 +391,180 @@ func CreateCatalogCategory(ctx context.Context, db *sql.DB, item CatalogCategory
 	if err != nil {
 		return CatalogCategoryRecord{}, err
 	}
+	audit.EntityType = "category"
+	audit.EntityID = item.ID
+	audit.Action = "CREATED"
+	audit.ExpectedVersion = 0
+	audit.ResultingVersion = item.Version
+	audit.AfterState = item
+	if err = writeCatalogRegistryAudit(ctx, tx, audit); err != nil {
+		return CatalogCategoryRecord{}, err
+	}
 	if err = tx.Commit(); err != nil {
 		return CatalogCategoryRecord{}, err
+	}
+	return item, nil
+}
+
+func UpdateCommerceVertical(ctx context.Context, db *sql.DB, verticalID string, input UpdateCommerceVerticalInput, idempotencyKey, requestHash string, audit CatalogRegistryAuditInput) (CommerceVerticalResult, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return CommerceVerticalResult{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:catalog-registry:"+idempotencyKey); err != nil {
+		return CommerceVerticalResult{}, err
+	}
+	var kind, entityID, storedHash string
+	err = tx.QueryRowContext(ctx, "SELECT entity_type,entity_id,request_hash FROM dsh.catalog_registry_mutation_idempotency WHERE idempotency_key=$1 FOR UPDATE", idempotencyKey).Scan(&kind, &entityID, &storedHash)
+	if err == nil {
+		if kind != "vertical" || entityID != verticalID || storedHash != requestHash {
+			return CommerceVerticalResult{}, ErrCatalogIdempotencyConflict
+		}
+		item, readErr := readCommerceVerticalTx(ctx, tx, entityID)
+		if readErr != nil {
+			return CommerceVerticalResult{}, readErr
+		}
+		if err = tx.Commit(); err != nil {
+			return CommerceVerticalResult{}, err
+		}
+		return CommerceVerticalResult{Vertical: item, Replayed: true}, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return CommerceVerticalResult{}, err
+	}
+	before, err := readCommerceVerticalForUpdateTx(ctx, tx, verticalID)
+	if err != nil {
+		return CommerceVerticalResult{}, err
+	}
+	if before.Version != input.ExpectedVersion {
+		return CommerceVerticalResult{}, ErrCatalogVersionConflict
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE dsh.commerce_verticals SET name_ar=$2,name_en=$3,active=$4,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$5`, verticalID, input.NameAr, input.NameEn, input.Active, input.ExpectedVersion); err != nil {
+		return CommerceVerticalResult{}, err
+	}
+	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_registry_mutation_idempotency(idempotency_key,request_hash,entity_type,entity_id) VALUES($1,$2,'vertical',$3)", idempotencyKey, requestHash, verticalID); err != nil {
+		return CommerceVerticalResult{}, err
+	}
+	after, err := readCommerceVerticalTx(ctx, tx, verticalID)
+	if err != nil {
+		return CommerceVerticalResult{}, err
+	}
+	audit.EntityType, audit.EntityID, audit.Action = "vertical", verticalID, "UPDATED"
+	audit.ExpectedVersion, audit.ResultingVersion = input.ExpectedVersion, after.Version
+	audit.BeforeState, audit.AfterState = before, after
+	if err = writeCatalogRegistryAudit(ctx, tx, audit); err != nil {
+		return CommerceVerticalResult{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return CommerceVerticalResult{}, err
+	}
+	return CommerceVerticalResult{Vertical: after}, nil
+}
+
+func UpdateCatalogCategory(ctx context.Context, db *sql.DB, categoryID string, input UpdateCatalogCategoryInput, idempotencyKey, requestHash string, audit CatalogRegistryAuditInput) (CatalogCategoryRecord, bool, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return CatalogCategoryRecord{}, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:catalog-registry:"+idempotencyKey); err != nil {
+		return CatalogCategoryRecord{}, false, err
+	}
+	var kind, entityID, storedHash string
+	err = tx.QueryRowContext(ctx, "SELECT entity_type,entity_id,request_hash FROM dsh.catalog_registry_mutation_idempotency WHERE idempotency_key=$1 FOR UPDATE", idempotencyKey).Scan(&kind, &entityID, &storedHash)
+	if err == nil {
+		if kind != "category" || entityID != categoryID || storedHash != requestHash {
+			return CatalogCategoryRecord{}, false, ErrCatalogIdempotencyConflict
+		}
+		item, readErr := readCatalogCategoryTx(ctx, tx, entityID)
+		if readErr != nil {
+			return CatalogCategoryRecord{}, false, readErr
+		}
+		if err = tx.Commit(); err != nil {
+			return CatalogCategoryRecord{}, false, err
+		}
+		return item, true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return CatalogCategoryRecord{}, false, err
+	}
+	before, err := readCatalogCategoryForUpdateTx(ctx, tx, categoryID)
+	if err != nil {
+		return CatalogCategoryRecord{}, false, err
+	}
+	if before.Version != input.ExpectedVersion {
+		return CatalogCategoryRecord{}, false, ErrCatalogVersionConflict
+	}
+	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:catalog-category-tree:"+before.VerticalID); err != nil {
+		return CatalogCategoryRecord{}, false, err
+	}
+	if input.ParentCategoryID != "" {
+		var parentVertical string
+		if err = tx.QueryRowContext(ctx, "SELECT vertical_id FROM dsh.catalog_categories WHERE id=$1", input.ParentCategoryID).Scan(&parentVertical); errors.Is(err, sql.ErrNoRows) {
+			return CatalogCategoryRecord{}, false, ErrCatalogCategoryNotFound
+		} else if err != nil {
+			return CatalogCategoryRecord{}, false, err
+		}
+		if parentVertical != before.VerticalID {
+			return CatalogCategoryRecord{}, false, ErrCatalogCategoryNotFound
+		}
+		var createsCycle bool
+		err = tx.QueryRowContext(ctx, `WITH RECURSIVE ancestors(id,parent_category_id) AS (
+			SELECT id,parent_category_id FROM dsh.catalog_categories WHERE id=$1
+			UNION
+			SELECT parent.id,parent.parent_category_id FROM dsh.catalog_categories parent JOIN ancestors child ON parent.id=child.parent_category_id
+		) SELECT EXISTS(SELECT 1 FROM ancestors WHERE id=$2)`, input.ParentCategoryID, categoryID).Scan(&createsCycle)
+		if err != nil {
+			return CatalogCategoryRecord{}, false, err
+		}
+		if createsCycle {
+			return CatalogCategoryRecord{}, false, ErrCatalogCategoryCycle
+		}
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE dsh.catalog_categories SET parent_category_id=NULLIF($2,''),name_ar=$3,name_en=$4,active=$5,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$6`, categoryID, input.ParentCategoryID, input.NameAr, input.NameEn, input.Active, input.ExpectedVersion); err != nil {
+		return CatalogCategoryRecord{}, false, err
+	}
+	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_registry_mutation_idempotency(idempotency_key,request_hash,entity_type,entity_id) VALUES($1,$2,'category',$3)", idempotencyKey, requestHash, categoryID); err != nil {
+		return CatalogCategoryRecord{}, false, err
+	}
+	after, err := readCatalogCategoryTx(ctx, tx, categoryID)
+	if err != nil {
+		return CatalogCategoryRecord{}, false, err
+	}
+	audit.EntityType, audit.EntityID, audit.Action = "category", categoryID, "UPDATED"
+	audit.ExpectedVersion, audit.ResultingVersion = input.ExpectedVersion, after.Version
+	audit.BeforeState, audit.AfterState = before, after
+	if err = writeCatalogRegistryAudit(ctx, tx, audit); err != nil {
+		return CatalogCategoryRecord{}, false, err
+	}
+	if err = tx.Commit(); err != nil {
+		return CatalogCategoryRecord{}, false, err
+	}
+	return after, false, nil
+}
+
+func readCommerceVerticalForUpdateTx(ctx context.Context, tx *sql.Tx, id string) (CommerceVerticalRecord, error) {
+	var item CommerceVerticalRecord
+	err := tx.QueryRowContext(ctx, `SELECT id,name_ar,name_en,active,version,created_at,updated_at FROM dsh.commerce_verticals WHERE id=$1 FOR UPDATE`, id).Scan(&item.ID, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return CommerceVerticalRecord{}, ErrCatalogVerticalNotFound
+	}
+	return item, err
+}
+
+func readCatalogCategoryForUpdateTx(ctx context.Context, tx *sql.Tx, id string) (CatalogCategoryRecord, error) {
+	var item CatalogCategoryRecord
+	var parent sql.NullString
+	err := tx.QueryRowContext(ctx, `SELECT id,vertical_id,parent_category_id,name_ar,name_en,active,version,created_at,updated_at FROM dsh.catalog_categories WHERE id=$1 FOR UPDATE`, id).Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return CatalogCategoryRecord{}, ErrCatalogCategoryNotFound
+	}
+	if err != nil {
+		return CatalogCategoryRecord{}, err
+	}
+	if parent.Valid {
+		item.ParentCategoryID = parent.String
 	}
 	return item, nil
 }
@@ -686,6 +921,9 @@ func CreateCatalogProduct(ctx context.Context, db *sql.DB, input CatalogProductI
 		if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_product_categories(product_id,category_id) VALUES($1,$2)", productID, categoryID); err != nil {
 			return CatalogProductResult{}, err
 		}
+	}
+	if err = persistCatalogProductAttributes(ctx, tx, input.VerticalID, input.CategoryIDs, productID, variantID, input.AttributeValues, input.VariantAttributeValues); err != nil {
+		return CatalogProductResult{}, err
 	}
 	if input.IdentifierValue != "" {
 		if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_variant_identifiers(variant_id,identifier_type,identifier_value) VALUES($1,$2,$3)", variantID, input.IdentifierType, input.IdentifierValue); err != nil {

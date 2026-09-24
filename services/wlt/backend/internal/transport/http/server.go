@@ -59,6 +59,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/operator/partners/{partnerActorId}/commission-remittances", s.recordPartnerCommissionRemittance)
 	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/financial-summary", s.readPartnerFinancialSummary)
 	mux.HandleFunc("POST /wlt/v1/operator/field-commission-policies", s.createFieldCommissionPolicy)
+	mux.HandleFunc("GET /wlt/v1/operator/field-commission-policies", s.readOperatorFieldCommissionPolicy)
 	mux.HandleFunc("GET /wlt/v1/field-commission-policies/{policyId}", s.readFieldCommissionPolicy)
 	mux.HandleFunc("POST /wlt/v1/field-commission-earnings/finalize", s.finalizeFieldCommission)
 	mux.HandleFunc("GET /wlt/v1/fields/{fieldActorId}/financial-summary", s.readFieldFinancialSummary)
@@ -150,6 +151,8 @@ type createFieldCommissionPolicyRequest struct {
 	ScopeID           string `json:"scopeId"`
 	RewardMinor       int64  `json:"rewardMinor"`
 	RoundingUnitMinor int64  `json:"roundingUnitMinor"`
+	ExpectedVersion   int    `json:"expectedVersion"`
+	Reason            string `json:"reason"`
 }
 
 type finalizeFieldCommissionRequest struct {
@@ -409,6 +412,8 @@ type createDeliveryFeePolicyRequest struct {
 	OrderSizeRateMinor     int64  `json:"orderSizeRateMinor"`
 	ZoneSurchargeMinor     int64  `json:"zoneSurchargeMinor"`
 	RoundingUnitMinor      int64  `json:"roundingUnitMinor"`
+	ExpectedVersion        int    `json:"expectedVersion"`
+	Reason                 string `json:"reason"`
 }
 
 type paymentIntentResponse struct {
@@ -730,7 +735,7 @@ func (s *Server) createDeliveryFeePolicy(w http.ResponseWriter, r *http.Request)
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	policy, replayed, err := postgres.CreateDeliveryFeePolicy(r.Context(), s.db, postgres.CreateDeliveryFeePolicyInput{ServiceCityID: input.ServiceCityID, BaseFeeMinor: input.BaseFeeMinor, DistanceUnitMeters: input.DistanceUnitMeters, DistanceRateMinor: input.DistanceRateMinor, OrderSizeUnitBaseUnits: input.OrderSizeUnitBaseUnits, OrderSizeRateMinor: input.OrderSizeRateMinor, ZoneSurchargeMinor: input.ZoneSurchargeMinor, RoundingUnitMinor: input.RoundingUnitMinor, ActingActorID: acting, IdempotencyKey: idempotency, CorrelationID: correlation})
+	policy, replayed, err := postgres.CreateDeliveryFeePolicy(r.Context(), s.db, postgres.CreateDeliveryFeePolicyInput{ServiceCityID: input.ServiceCityID, BaseFeeMinor: input.BaseFeeMinor, DistanceUnitMeters: input.DistanceUnitMeters, DistanceRateMinor: input.DistanceRateMinor, OrderSizeUnitBaseUnits: input.OrderSizeUnitBaseUnits, OrderSizeRateMinor: input.OrderSizeRateMinor, ZoneSurchargeMinor: input.ZoneSurchargeMinor, RoundingUnitMinor: input.RoundingUnitMinor, ExpectedVersion: input.ExpectedVersion, Reason: input.Reason, ActingActorID: acting, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writeDeliveryFeeError(w, err)
 		return
@@ -1000,7 +1005,7 @@ func (s *Server) createFieldCommissionPolicy(w http.ResponseWriter, r *http.Requ
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, replayed, err := postgres.CreateFieldCommissionPolicy(r.Context(), s.db, postgres.CreateFieldCommissionPolicyInput{ScopeType: input.ScopeType, ScopeID: input.ScopeID, RewardMinor: input.RewardMinor, RoundingUnitMinor: input.RoundingUnitMinor, CreatedBy: acting, IdempotencyKey: idempotency, CorrelationID: correlation})
+	result, replayed, err := postgres.CreateFieldCommissionPolicy(r.Context(), s.db, postgres.CreateFieldCommissionPolicyInput{ScopeType: input.ScopeType, ScopeID: input.ScopeID, RewardMinor: input.RewardMinor, RoundingUnitMinor: input.RoundingUnitMinor, ExpectedVersion: input.ExpectedVersion, Reason: input.Reason, CreatedBy: acting, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writeFieldCommissionError(w, err)
 		return
@@ -1017,6 +1022,18 @@ func (s *Server) readFieldCommissionPolicy(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	result, err := postgres.ReadFieldCommissionPolicy(r.Context(), s.db, r.PathValue("policyId"))
+	if err != nil {
+		writeFieldCommissionError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, fieldCommissionPolicyResponse{Policy: toFieldCommissionPolicy(result)})
+}
+
+func (s *Server) readOperatorFieldCommissionPolicy(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	result, err := postgres.ReadActiveFieldCommissionPolicyByScope(r.Context(), s.db, r.URL.Query().Get("scopeType"), r.URL.Query().Get("scopeId"))
 	if err != nil {
 		writeFieldCommissionError(w, err)
 		return
@@ -1372,6 +1389,8 @@ func writeDeliveryFeeError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "DELIVERY_FEE_POLICY_NOT_FOUND", "no active delivery fee policy is available")
 	case errors.Is(err, postgres.ErrIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different delivery fee policy facts")
+	case errors.Is(err, postgres.ErrVersionConflict):
+		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "the active delivery fee policy changed after it was read")
 	case errors.Is(err, postgres.ErrDeliveryFeePolicyInvalidInput), errors.Is(err, postgres.ErrDeliveryFeeQuoteInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_DELIVERY_FEE", "delivery fee policy or quote is invalid")
 	default:
@@ -1494,11 +1513,13 @@ func toFieldFinancialSummary(item postgres.FieldFinancialSummaryRecord) fieldFin
 func writeFieldCommissionError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, postgres.ErrFieldCommissionPolicyNotFound):
-		writeError(w, http.StatusConflict, "FIELD_COMMISSION_POLICY_NOT_FOUND", "no active Field commission policy is available")
+		writeError(w, http.StatusNotFound, "FIELD_COMMISSION_POLICY_NOT_FOUND", "no active Field commission policy is available for this scope")
 	case errors.Is(err, postgres.ErrFieldCommissionPolicyInvalidInput), errors.Is(err, postgres.ErrFieldCommissionEarningInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Field commission facts are invalid")
 	case errors.Is(err, postgres.ErrFieldCommissionPolicyExists), errors.Is(err, postgres.ErrFieldCommissionEarningExists):
 		writeError(w, http.StatusConflict, "FIELD_COMMISSION_EXISTS", "the Field commission already exists")
+	case errors.Is(err, postgres.ErrVersionConflict):
+		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "the active Field reward policy changed after it was read")
 	case errors.Is(err, postgres.ErrIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different Field commission facts")
 	default:

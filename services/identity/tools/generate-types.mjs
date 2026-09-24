@@ -65,8 +65,9 @@ const schemaNames = [
   "ProvisionActorRoleRequest",
   "ActorRoleView",
   "ActorRoleSearchPage",
-  "OperatorFinanceAccess",
-  "SetOperatorFinanceAccessRequest",
+  "OperatorPermission",
+  "OperatorPermissionAccess",
+  "SetOperatorPermissionRequest",
   "SessionInfo",
 ]
 
@@ -347,7 +348,7 @@ function renderGoObject(name, lines) {
 function generateGoTypes() {
   referencedSchemas.clear();
   const rendered = [];
-  const aliases = new Set(["ActorType", "ManagedActorType", "ManagedActivationRole", "ControlPanelRole"]);
+  const aliases = new Set(["ActorType", "ManagedActorType", "ManagedActivationRole", "ControlPanelRole", "OperatorPermission"]);
   for (const name of schemaNames) {
     const lines = findSchemaLines(name);
     const type = valueAfter(lines, "type:", 6);

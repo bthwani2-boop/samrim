@@ -2,6 +2,7 @@
 
 import type { ServiceCity, ServiceCityListResponse, ServiceCityResponse } from "@bthwani/dsh";
 import { useCallback, useEffect, useState } from "react";
+import { useSession } from "../../session/session-provider";
 
 const arabicCityNamePattern = /^[\p{Script=Arabic}\p{White_Space}\p{Number}\p{Punctuation}]+$/u;
 
@@ -11,6 +12,8 @@ function isArabicCityName(value: string): boolean {
 }
 
 export function ServiceCityPanel() {
+  const { state } = useSession();
+  const canEdit = state.kind === "authenticated" && state.identity.permissions?.includes("platform_policies") === true;
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [displayNameAr, setDisplayNameAr] = useState("");
   const [active, setActive] = useState(true);
@@ -32,6 +35,7 @@ export function ServiceCityPanel() {
   useEffect(() => { void load(); }, [load]);
 
   async function create() {
+    if (!canEdit) return;
     const normalizedName = displayNameAr.trim();
     const nameLength = Array.from(normalizedName).length;
     if (nameLength < 2 || nameLength > 160 || !isArabicCityName(normalizedName)) {
@@ -56,6 +60,7 @@ export function ServiceCityPanel() {
   }
 
   async function toggle(city: ServiceCity) {
+    if (!canEdit) return;
     setBusy(true);
     setError("");
     setNotice("");
@@ -71,5 +76,5 @@ export function ServiceCityPanel() {
     }
   }
 
-  return <section className="access-card" aria-labelledby="service-city-title"><div className="access-card-heading"><span className="step-chip">إدارة المدن</span><p className="eyebrow">نطاقات الخدمة</p><h2 id="service-city-title">إدارة المدن الكانونية</h2><p className="muted">تحدد المدينة نطاق اكتشاف العميل وأهلية المتجر. لا توجد مدينة افتراضية أو تخمين من الإحداثيات.</p></div><div className="access-form"><label className="field-label" htmlFor="service-city-name">الاسم العربي<input id="service-city-name" disabled={busy} value={displayNameAr} onChange={(event) => setDisplayNameAr(event.target.value)} placeholder="صنعاء" /></label><p className="muted">يولّد DSH السجل الداخلي تلقائيًا ويثبته بعد الإنشاء.</p><label className="field-label" htmlFor="service-city-active"><input id="service-city-active" type="checkbox" disabled={busy} checked={active} onChange={(event) => setActive(event.target.checked)} /> نشطة عند الإنشاء</label><button type="button" className="button button-primary" disabled={busy} onClick={() => void create()}>إضافة مدينة</button></div>{notice ? <p className="managed-status managed-status-success" role="status">{notice}</p> : null}{error ? <p className="identity-error" role="alert">{error} <button type="button" className="button button-secondary" onClick={() => void load()}>إعادة المحاولة</button></p> : null}<div className="managed-status managed-status-info"><strong>السجل الكانوني</strong>{cities.length === 0 ? <p>لا توجد مدن بعد.</p> : <ul>{cities.map((city) => <li key={city.id}><span>{city.displayNameAr} · {city.active ? "نشطة" : "متوقفة"}</span> <button type="button" className="button button-secondary" disabled={busy} onClick={() => void toggle(city)}>{city.active ? "تعطيل" : "تفعيل"}</button></li>)}</ul>}</div></section>;
+  return <section className="access-card" aria-labelledby="service-city-title"><div className="access-card-heading"><span className="step-chip">إدارة المدن</span><p className="eyebrow">نطاقات الخدمة</p><h2 id="service-city-title">إدارة المدن الكانونية</h2><p className="muted">تحدد المدينة نطاق اكتشاف العميل وأهلية المتجر. لا توجد مدينة افتراضية أو تخمين من الإحداثيات.</p></div><div className="access-form"><label className="field-label" htmlFor="service-city-name">الاسم العربي<input id="service-city-name" disabled={busy || !canEdit} value={displayNameAr} onChange={(event) => setDisplayNameAr(event.target.value)} placeholder="صنعاء" /></label><p className="muted">يولّد DSH السجل الداخلي تلقائيًا ويثبته بعد الإنشاء.</p><label className="field-label" htmlFor="service-city-active"><input id="service-city-active" type="checkbox" disabled={busy || !canEdit} checked={active} onChange={(event) => setActive(event.target.checked)} /> نشطة عند الإنشاء</label><button type="button" className="button button-primary" disabled={busy || !canEdit} onClick={() => void create()}>إضافة مدينة</button></div>{notice ? <p className="managed-status managed-status-success" role="status">{notice}</p> : null}{error ? <p className="identity-error" role="alert">{error} <button type="button" className="button button-secondary" onClick={() => void load()}>إعادة المحاولة</button></p> : null}<div className="managed-status managed-status-info"><strong>السجل الكانوني</strong>{cities.length === 0 ? <p>لا توجد مدن بعد.</p> : <ul>{cities.map((city) => <li key={city.id}><span>{city.displayNameAr} · {city.active ? "نشطة" : "متوقفة"}</span> <button type="button" className="button button-secondary" disabled={busy || !canEdit} onClick={() => void toggle(city)}>{city.active ? "تعطيل" : "تفعيل"}</button></li>)}</ul>}</div></section>;
 }

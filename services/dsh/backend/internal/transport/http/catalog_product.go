@@ -48,10 +48,14 @@ func NewCatalogWithMediaStore(identityClient *identityintegration.Client, access
 }
 
 func (s *CatalogServer) Register(mux *http.ServeMux) {
+	mux.HandleFunc("GET /dsh/public/catalog/attributes/{attributeId}/enum-options", s.listPublicAttributeEnumOptions)
 	mux.HandleFunc("GET /dsh/catalog/verticals", s.listVerticals)
 	mux.HandleFunc("POST /dsh/catalog/verticals", s.createVertical)
+	mux.HandleFunc("PATCH /dsh/catalog/verticals/{verticalId}", s.updateVertical)
 	mux.HandleFunc("GET /dsh/catalog/categories", s.listCategories)
+	mux.HandleFunc("GET /dsh/public/catalog/categories/{categoryId}/attribute-rules", s.listPublicCategoryAttributeRules)
 	mux.HandleFunc("POST /dsh/catalog/categories", s.createCategory)
+	mux.HandleFunc("PATCH /dsh/catalog/categories/{categoryId}", s.updateCategory)
 	mux.HandleFunc("GET /dsh/catalog/attributes", s.listAttributeDefinitions)
 	mux.HandleFunc("POST /dsh/catalog/attributes", s.createAttributeDefinition)
 	mux.HandleFunc("GET /dsh/catalog/products", s.listProducts)
@@ -70,6 +74,7 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/stores/{storeId}/products/{productId}/variants", s.createStoreVariant)
 	mux.HandleFunc("PATCH /dsh/stores/{storeId}/variants/{variantId}", s.updateStoreVariant)
 	mux.HandleFunc("PUT /dsh/catalog/categories/{categoryId}/attribute-rules/{attributeId}", s.upsertCategoryAttributeRule)
+	mux.HandleFunc("GET /dsh/catalog/categories/{categoryId}/attribute-rules", s.listCategoryAttributeRules)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/products", s.createStoreScopedProduct)
 	mux.HandleFunc("GET /dsh/catalog/product-proposals", s.listOwnProductProposals)
 	mux.HandleFunc("POST /dsh/catalog/product-proposals", s.createProductProposal)
@@ -93,7 +98,23 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 }
 
 func (s *CatalogServer) listVerticals(w http.ResponseWriter, r *http.Request) {
-	items, err := s.service.ListVerticals(r.Context(), true)
+	activeOnly := r.URL.Query().Get("includeInactive") != "true"
+	var items []postgres.CommerceVerticalRecord
+	var err error
+	if activeOnly {
+		items, err = s.service.ListVerticals(r.Context(), true)
+	} else {
+		if !s.auth.Authorized(r) {
+			writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+			return
+		}
+		acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+		if acting == "" {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+			return
+		}
+		items, err = s.service.ListVerticalsForOperator(r.Context(), acting, false)
+	}
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -118,12 +139,33 @@ func (s *CatalogServer) createVertical(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.CreateVertical(r.Context(), acting, postgres.CommerceVerticalRecord{ID: input.ID, NameAr: input.NameAr, NameEn: input.NameEn, Active: input.Active}, idempotency, correlation)
+	result, err := s.service.CreateVertical(r.Context(), acting, postgres.CommerceVerticalRecord{ID: input.ID, NameAr: input.NameAr, NameEn: input.NameEn, Active: input.Active}, idempotency, correlation, input.Reason)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
 	}
 	writeJSON(w, responseStatus(result.Replayed), contract.CommerceVerticalResponse{Vertical: toCommerceVertical(result.Vertical), IdempotentReplay: result.Replayed})
+}
+
+func (s *CatalogServer) updateVertical(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting, correlation, idempotency, ok := requiredMutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input contract.UpdateCommerceVerticalRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.service.UpdateVertical(r.Context(), acting, r.PathValue("verticalId"), postgres.UpdateCommerceVerticalInput{NameAr: input.NameAr, NameEn: input.NameEn, Active: input.Active, ExpectedVersion: input.ExpectedVersion}, idempotency, correlation, input.Reason)
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CommerceVerticalResponse{Vertical: toCommerceVertical(result.Vertical), IdempotentReplay: result.Replayed})
 }
 
 func (s *CatalogServer) listCategories(w http.ResponseWriter, r *http.Request) {
@@ -132,7 +174,23 @@ func (s *CatalogServer) listCategories(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "verticalId is required")
 		return
 	}
-	items, err := s.service.ListCategories(r.Context(), verticalID, true)
+	activeOnly := r.URL.Query().Get("includeInactive") != "true"
+	var items []postgres.CatalogCategoryRecord
+	var err error
+	if activeOnly {
+		items, err = s.service.ListCategories(r.Context(), verticalID, true)
+	} else {
+		if !s.auth.Authorized(r) {
+			writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+			return
+		}
+		acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+		if acting == "" {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+			return
+		}
+		items, err = s.service.ListCategoriesForOperator(r.Context(), acting, verticalID, false)
+	}
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -149,7 +207,7 @@ func (s *CatalogServer) createCategory(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
 		return
 	}
-	acting, _, idempotency, ok := requiredMutationHeaders(w, r)
+	acting, correlation, idempotency, ok := requiredMutationHeaders(w, r)
 	if !ok {
 		return
 	}
@@ -157,12 +215,34 @@ func (s *CatalogServer) createCategory(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	item, err := s.service.CreateCategory(r.Context(), acting, postgres.CatalogCategoryRecord{ID: input.ID, VerticalID: input.VerticalID, ParentCategoryID: input.ParentCategoryID, NameAr: input.NameAr, NameEn: input.NameEn, Active: input.Active}, idempotency)
+	item, err := s.service.CreateCategory(r.Context(), acting, postgres.CatalogCategoryRecord{ID: input.ID, VerticalID: input.VerticalID, ParentCategoryID: input.ParentCategoryID, NameAr: input.NameAr, NameEn: input.NameEn, Active: input.Active}, idempotency, correlation, input.Reason)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, contract.CatalogCategoryResponse{Category: toCatalogCategory(item)})
+}
+
+func (s *CatalogServer) updateCategory(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting, correlation, idempotency, ok := requiredMutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input contract.UpdateCatalogCategoryRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	parentID := strings.TrimSpace(input.ParentCategoryID)
+	item, _, err := s.service.UpdateCategory(r.Context(), acting, r.PathValue("categoryId"), postgres.UpdateCatalogCategoryInput{ParentCategoryID: parentID, NameAr: input.NameAr, NameEn: input.NameEn, Active: input.Active, ExpectedVersion: input.ExpectedVersion}, idempotency, correlation, input.Reason)
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CatalogCategoryResponse{Category: toCatalogCategory(item)})
 }
 
 func (s *CatalogServer) listProducts(w http.ResponseWriter, r *http.Request) {
@@ -213,11 +293,12 @@ func (s *CatalogServer) createProduct(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var input contract.CreateCatalogProductRequest
+	var input catalogProductCreateRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.CreateCatalogProduct(r.Context(), acting, postgres.CatalogProductInput{VerticalID: input.VerticalID, Scope: input.Scope, StoreID: input.StoreID, CanonicalName: input.CanonicalName, Brand: optionalRequestString(input.Brand), MeasurementKind: string(input.MeasurementKind), BaseUnit: string(input.BaseUnit), VariantTitle: input.VariantTitle, CategoryIDs: input.CategoryIds, IdentifierType: input.IdentifierType, IdentifierValue: input.IdentifierValue, ImageURI: input.ImageUri}, idempotency, correlation)
+	request := input.CreateCatalogProductRequest
+	result, err := s.service.CreateCatalogProduct(r.Context(), acting, postgres.CatalogProductInput{VerticalID: request.VerticalID, Scope: request.Scope, StoreID: request.StoreID, CanonicalName: request.CanonicalName, Brand: optionalRequestString(request.Brand), MeasurementKind: string(request.MeasurementKind), BaseUnit: string(request.BaseUnit), VariantTitle: request.VariantTitle, CategoryIDs: request.CategoryIds, AttributeValues: catalogAttributeInputs(input.AttributeValues), VariantAttributeValues: catalogAttributeInputs(input.VariantAttributeValues), IdentifierType: request.IdentifierType, IdentifierValue: request.IdentifierValue, ImageURI: request.ImageUri}, idempotency, correlation)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -514,25 +595,26 @@ func toCatalogProduct(item postgres.CatalogProductRecord) contract.CatalogProduc
 func toCatalogAttributeValue(item postgres.CatalogAttributeValueRecord) contract.CatalogAttributeValue {
 	result := contract.CatalogAttributeValue{AttributeID: item.AttributeID, Code: item.Code, ValueKind: item.ValueKind}
 	if item.TextValue != nil {
-		result.TextValue = *item.TextValue
+		result.TextValue = item.TextValue
 	}
 	if item.IntegerValue != nil {
-		result.IntegerValue = int(*item.IntegerValue)
+		value := int(*item.IntegerValue)
+		result.IntegerValue = &value
 	}
 	if item.DecimalValue != nil {
-		result.DecimalValue = *item.DecimalValue
+		result.DecimalValue = item.DecimalValue
 	}
 	if item.BooleanValue != nil {
-		result.BooleanValue = *item.BooleanValue
+		result.BooleanValue = item.BooleanValue
 	}
 	if item.EnumValue != nil {
-		result.EnumValue = *item.EnumValue
+		result.EnumValue = item.EnumValue
 	}
 	if item.DateValue != nil {
-		result.DateValue = *item.DateValue
+		result.DateValue = item.DateValue
 	}
 	if item.MeasurementUnit != nil {
-		result.MeasurementUnit = *item.MeasurementUnit
+		result.MeasurementUnit = item.MeasurementUnit
 	}
 	return result
 }
@@ -545,10 +627,14 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different catalog facts")
 	case errors.Is(err, postgres.ErrCatalogVersionConflict):
 		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "catalog version is stale")
+	case errors.Is(err, postgres.ErrCatalogCategoryCycle):
+		writeError(w, http.StatusConflict, "CATEGORY_CYCLE", "a category cannot be placed under its own descendant")
 	case errors.Is(err, postgres.ErrCatalogProposalConflict):
 		writeError(w, http.StatusConflict, "STATE_OR_VERSION_CONFLICT", "catalog Product proposal state or version is stale")
 	case errors.Is(err, postgres.ErrCatalogDuplicateIdentifier):
 		writeError(w, http.StatusConflict, "DUPLICATE_IDENTIFIER", "identifier is already assigned to another Variant")
+	case errors.Is(err, postgres.ErrCatalogAttributeRuleInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog attribute rule is invalid")
 	case errors.Is(err, postgres.ErrCatalogIdentifierInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog identifier facts are invalid")
 	case errors.Is(err, postgres.ErrCatalogMediaInvalid):
@@ -585,6 +671,8 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog extension facts are invalid")
 	case errors.Is(err, catalog.ErrOperatorNotActive):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active control operator session is required")
+	case errors.Is(err, catalog.ErrOperatorPermission):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "Platform Policies permission is required")
 	case errors.Is(err, catalog.ErrPartnerSessionForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active app-partner session is required")
 	case errors.Is(err, catalog.ErrStoreOwnershipForbidden):

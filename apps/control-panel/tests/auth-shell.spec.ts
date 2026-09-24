@@ -14,6 +14,7 @@ const authenticatedOperator = {
   subject: "actor-operator",
   sessionId: "session-operator",
   role: "operator",
+  permissions: ["finance", "platform_policies"],
   surface: "control-panel",
   expiresAt: "2099-01-01T00:00:00.000Z",
 };
@@ -41,7 +42,7 @@ test("authenticated operator discovers the platform centers through workspace na
   const navigationToggle = page.getByRole("button", { name: "فتح مسارات العمل" });
   await navigationToggle.click();
   await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" })).toHaveAttribute("data-open", "true");
-  const accessLink = page.getByRole("link", { name: "إعدادات المنصة والصلاحيات" });
+  const accessLink = page.getByRole("link", { name: "الوصول والصلاحيات" });
   await expect(accessLink).toBeVisible();
   await accessLink.click();
   await expect(page).toHaveURL(/\/access$/);
@@ -68,7 +69,8 @@ test("authenticated operator can open the notification center from the workspace
   await expect(page).toHaveURL(/\/notifications$/);
   await expect(page.getByRole("heading", { name: "الإشعارات", exact: true })).toBeVisible();
   await expect(page.getByText("لا توجد إشعارات حالياً", { exact: true })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "الإشعارات", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(notificationLink).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "الإشعارات", exact: true })).toHaveCount(0);
 });
 
 test("operator notification cards write back read state and update the unread summary", async ({ page }) => {
@@ -104,6 +106,7 @@ test("workspace routes keep one main landmark and an actor-specific page hierarc
     ["/captains", "قبول الكباتن"],
     ["/fields", "قبول الميدان"],
     ["/catalog", "الكتالوج"],
+    ["/policies", "مركز السياسات"],
   ] as const;
 
   for (const [path, heading] of routes) {
@@ -111,7 +114,7 @@ test("workspace routes keep one main landmark and an actor-specific page hierarc
     await expect(page.locator("#workspace-main")).toHaveCount(1, { timeout: 30_000 });
     await expect(page.locator("#workspace-main > main")).toHaveCount(0, { timeout: 30_000 });
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible({ timeout: 30_000 });
-    const navigationLabel = heading === "الرئيسية" ? "الرئيسية" : heading === "الإشعارات" ? "الإشعارات" : path === "/access" ? "إعدادات المنصة والصلاحيات" : path === "/partners" ? "الشركاء" : path === "/operations" ? "العمليات" : path === "/finance" ? "المالية" : path === "/captains" ? "الكباتن" : path === "/fields" ? "الميدان" : "الكتالوج";
+    const navigationLabel = heading === "الرئيسية" ? "الرئيسية" : heading === "الإشعارات" ? "الإشعارات" : path === "/access" ? "الوصول والصلاحيات" : path === "/partners" ? "الشركاء" : path === "/operations" ? "العمليات" : path === "/finance" ? "المالية" : path === "/policies" ? "السياسات" : path === "/captains" ? "الكباتن" : path === "/fields" ? "الميدان" : "الكتالوج";
     await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: navigationLabel, exact: true })).toHaveAttribute("aria-current", "page", { timeout: 30_000 });
   }
 });
@@ -137,7 +140,7 @@ test("finance and marketing centers expose only real independent resource routes
   await page.goto("/finance");
   await expect(page.getByRole("heading", { name: "المالية", exact: true })).toBeVisible();
   await expect(navigation.getByRole("link", { name: "حفظ النقد", exact: true })).toHaveAttribute("href", "/finance/cash-custody");
-  await expect(navigation.getByRole("link", { name: "سياسة رسوم التوصيل", exact: true })).toHaveAttribute("href", "/finance/delivery-fee-policy");
+  await expect(navigation.getByRole("link", { name: "عمولات المتاجر", exact: true })).toHaveAttribute("href", "/finance/partner-store-commissions");
 
   await page.goto("/finance/cash-custody");
   await expect(page.getByRole("heading", { name: "حفظ النقد", exact: true })).toBeVisible();
@@ -186,7 +189,7 @@ test("workspace shell exposes nested breadcrumbs and the current resource", asyn
   await expect(breadcrumbs.getByRole("link", { name: "الكتالوج", exact: true })).toHaveAttribute("href", "/catalog");
   await expect(breadcrumbs.locator('[aria-current="page"]')).toContainText("المنتجات");
 
-  await page.goto("/partners/service-cities");
+  await page.goto("/policies/service-cities");
   await expect(page.getByRole("navigation", { name: "مسار الصفحة" }).locator('[aria-current="page"]')).toContainText("مدن الخدمة");
 });
 
@@ -628,7 +631,7 @@ test("operator gets an actionable empty state when no active commerce vertical e
   });
   await page.goto("/partners/new");
   await expect(page.getByText("لا يمكن إنشاء الحالة بعد", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "فتح مدن الخدمة" })).toHaveAttribute("href", "/partners/service-cities");
+  await expect(page.getByRole("link", { name: "فتح مدن الخدمة" })).toHaveAttribute("href", "/policies/service-cities");
   await expect(page.getByRole("button", { name: "إنشاء حالة انضمام" })).toBeDisabled();
 });
 
@@ -648,7 +651,7 @@ test("operator city creation delegates the stable id to DSH", async ({ page }) =
     });
   });
 
-  await page.goto("/partners/service-cities");
+  await page.goto("/policies/service-cities");
   await page.getByLabel("الاسم العربي").fill("صنعاء");
   await page.getByRole("button", { name: "إضافة مدينة" }).click();
 
@@ -669,7 +672,7 @@ test("operator city creation rejects non-Arabic names before mutation", async ({
     mutationAttempted = true;
     await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: { code: "UNEXPECTED_MUTATION" } }) });
   });
-  await page.goto("/partners/service-cities");
+  await page.goto("/policies/service-cities");
   await page.getByLabel("الاسم العربي").fill("Sana'a");
   await page.getByRole("button", { name: "إضافة مدينة" }).click();
   await expect(page.locator("p.identity-error")).toContainText("باللغة العربية فقط");
@@ -694,7 +697,7 @@ test("operator creates a canonical commerce vertical before onboarding partners"
   await page.route("**/api/catalog/products**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [] }) });
   });
-  await page.goto("/catalog/verticals");
+  await page.goto("/policies/verticals");
   await expect(page.getByLabel("المعرف البرمجي", { exact: true })).toHaveCount(0);
   await page.getByLabel("الاسم العربي", { exact: true }).fill("مطاعم");
   await page.getByLabel("الاسم الإنجليزي", { exact: true }).fill("Restaurants");
@@ -721,7 +724,7 @@ test("operator creates a product category under its commerce vertical", async ({
   await page.route("**/api/catalog/products**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [] }) });
   });
-  await page.goto("/catalog/categories");
+  await page.goto("/policies/categories");
   await expect(page.getByLabel("المعرف البرمجي للتصنيف", { exact: true })).toHaveCount(0);
   await page.getByLabel("المجال التجاري").first().selectOption("vertical_0123456789abcdef0123456789abcdef");
   await page.getByLabel("الاسم العربي للتصنيف").fill("قهوة");
@@ -941,14 +944,14 @@ test("authenticated workspace keeps navigation meaning across light and dark the
   await page.goto("/workspace");
 
   const lightBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-  await expect(page.getByRole("link", { name: "إعدادات المنصة والصلاحيات" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "الوصول والصلاحيات" })).toBeVisible();
   await expect(page.getByRole("main")).toHaveAttribute("id", "workspace-main");
 
   await page.emulateMedia({ colorScheme: "dark" });
   await page.reload();
   const darkBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   expect(darkBackground).not.toBe(lightBackground);
-  await expect(page.getByRole("link", { name: "إعدادات المنصة والصلاحيات" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "الوصول والصلاحيات" })).toBeVisible();
 });
 
 test("operator access exposes passkey-first sign-in and no human-role selector", async ({ page }) => {

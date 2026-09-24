@@ -96,6 +96,21 @@ func (c *Client) ReadRole(ctx context.Context, actorID, role string) (ActorRoleV
 	return result, err
 }
 
+func (c *Client) ReadOperatorPermission(ctx context.Context, actorID, permission, operatorActorID string) (OperatorPermissionAccess, error) {
+	var result OperatorPermissionAccess
+	pathname := identityRoute(IdentityOperationReadOperatorPermission.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "permission", url.PathEscape(strings.TrimSpace(permission)))
+	err := c.doWithContext(ctx, IdentityOperationReadOperatorPermission.Method, pathname, "", "", strings.TrimSpace(operatorActorID), 0, nil, &result)
+	return result, err
+}
+
+func (c *Client) SetOperatorPermissionWithContext(ctx context.Context, actorID, permission, operatorActorID string, enabled bool, correlationID, reason string, expectedVersion int) (OperatorPermissionAccess, error) {
+	var result OperatorPermissionAccess
+	pathname := identityRoute(IdentityOperationSetOperatorPermission.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "permission", url.PathEscape(strings.TrimSpace(permission)))
+	input := SetOperatorPermissionRequest{Enabled: enabled}
+	err := c.doWithContext(ctx, IdentityOperationSetOperatorPermission.Method, pathname, correlationID, reason, operatorActorID, expectedVersion, input, &result)
+	return result, err
+}
+
 // ReadSession validates an end-user access token at the canonical Identity
 // session boundary. The token is deliberately not sent to an internal route
 // with the DSH service credential.

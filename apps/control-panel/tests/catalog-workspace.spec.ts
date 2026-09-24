@@ -4,6 +4,7 @@ const operatorSession = {
   subject: "actor-operator",
   sessionId: "session-operator",
   role: "operator",
+  permissions: ["finance", "platform_policies"],
   surface: "control-panel",
   expiresAt: "2099-01-01T00:00:00.000Z",
 };
@@ -19,9 +20,11 @@ test("catalog landing exposes separate resource workspaces", async ({ page }) =>
   await page.goto("/catalog");
   await expect(page.getByRole("heading", { name: "الكتالوج", exact: true })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "الكتالوج", exact: true })).toHaveAttribute("aria-current", "page");
-  for (const label of ["المنتجات", "التصنيفات", "المجالات", "المقترحات", "الاستيراد"]) {
+  for (const label of ["المنتجات", "المقترحات", "الاستيراد"]) {
     await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: label, exact: true })).toHaveAttribute("href", /\/catalog\//);
   }
+  await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "التصنيفات", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "المجالات", exact: true })).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "موارد الكتالوج" })).toHaveCount(0);
   await expect(page.locator("#catalog-import-rows")).toHaveCount(0);
 });

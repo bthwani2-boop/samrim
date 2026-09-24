@@ -219,7 +219,7 @@ paths:
               schema: { $ref: '#/components/schemas/DeliveryFeeQuoteResponse' }
   /wlt/v1/operator/delivery-fee-policies:
     get:
-      operationId: readDeliveryFeePolicy
+       operationId: readDeliveryFeePolicy
       security: [{ serviceToken: [] }]
       parameters:
         - name: serviceCityId
@@ -228,7 +228,7 @@ paths:
           schema: { type: string, maxLength: 128 }
       responses:
         '200':
-          description: Active delivery fee policy.
+          description: Active delivery fee policy for the exact requested service-city scope.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DeliveryFeePolicyResponse' }
@@ -457,6 +457,26 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/PartnerCommissionRemittanceResponse' }
   /wlt/v1/operator/field-commission-policies:
+    get:
+      operationId: readActiveFieldCommissionPolicyByScope
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: scopeType
+          in: query
+          required: true
+          schema: { type: string, enum: [DEFAULT, VERTICAL, STORE] }
+        - name: scopeId
+          in: query
+          required: false
+          schema: { type: string, maxLength: 128 }
+      responses:
+        '200':
+          description: Active policy for the exact scope.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FieldCommissionPolicyResponse' }
+        '404':
+          description: No active policy exists for this exact scope.
     post:
       operationId: createFieldCommissionPolicy
       security: [{ serviceToken: [] }]
@@ -1042,12 +1062,14 @@ components:
     CreateFieldCommissionPolicyRequest:
       type: object
       additionalProperties: false
-      required: [scopeType, rewardMinor, roundingUnitMinor]
+      required: [scopeType, rewardMinor, roundingUnitMinor, expectedVersion, reason]
       properties:
         scopeType: { type: string, enum: [DEFAULT, VERTICAL, STORE] }
         scopeId: { type: string, maxLength: 128 }
         rewardMinor: { type: integer, minimum: 0 }
         roundingUnitMinor: { type: integer, minimum: 1 }
+        expectedVersion: { type: integer, minimum: 0 }
+        reason: { type: string, minLength: 5, maxLength: 500 }
     FieldCommissionPolicy:
       type: object
       additionalProperties: false
@@ -1679,7 +1701,7 @@ components:
     CreateDeliveryFeePolicyRequest:
       type: object
       additionalProperties: false
-      required: [baseFeeMinor, distanceUnitMeters, distanceRateMinor, orderSizeUnitBaseUnits, orderSizeRateMinor, zoneSurchargeMinor, roundingUnitMinor]
+      required: [baseFeeMinor, distanceUnitMeters, distanceRateMinor, orderSizeUnitBaseUnits, orderSizeRateMinor, zoneSurchargeMinor, roundingUnitMinor, expectedVersion, reason]
       properties:
         serviceCityId: { type: string, maxLength: 128 }
         baseFeeMinor: { type: integer, minimum: 0 }
@@ -1689,6 +1711,8 @@ components:
         orderSizeRateMinor: { type: integer, minimum: 0 }
         zoneSurchargeMinor: { type: integer, minimum: 0 }
         roundingUnitMinor: { type: integer, const: 50 }
+        expectedVersion: { type: integer, minimum: 0 }
+        reason: { type: string, minLength: 5, maxLength: 500 }
     DeliveryFeePolicy:
       type: object
       additionalProperties: false

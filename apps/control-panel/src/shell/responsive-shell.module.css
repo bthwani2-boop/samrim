@@ -9,7 +9,6 @@
   :global(.workspace-nav-backdrop) { position: fixed; z-index: calc(var(--z-overlay) - 1); inset: 0; display: block !important; width: 100%; height: 100%; border: 0; background: var(--surface-muted); opacity: var(--opacity-backdrop); }
   :global(.workspace-nav-close) { display: inline-flex !important; }
   :global(.workspace-nav-label) { margin-bottom: var(--space-2); }
-  :global(.workspace-nav-section-label) { margin-top: var(--space-5); }
   :global(.auth-layout) { grid-template-columns: 1fr; gap: 34px; min-height: auto; padding: 44px 0 24px; }
   :global(.auth-context) { max-width: none; text-align: center; }
   :global(.auth-context h1) { font-size: clamp(40px, 11vw, 58px); }

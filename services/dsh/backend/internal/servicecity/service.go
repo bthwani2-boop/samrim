@@ -11,8 +11,9 @@ import (
 )
 
 var (
-	ErrOperatorNotActive = errors.New("operator actor is not active")
-	ErrInvalidInput      = errors.New("service city input is invalid")
+	ErrOperatorNotActive  = errors.New("operator actor is not active")
+	ErrOperatorPermission = errors.New("platform policies permission is required")
+	ErrInvalidInput       = errors.New("service city input is invalid")
 )
 
 type Service struct {
@@ -38,7 +39,7 @@ func (s *Service) List(ctx context.Context, includeInactive bool, actingActorID 
 }
 
 func (s *Service) Create(ctx context.Context, displayNameAr string, active bool, idempotencyKey, actingActorID, correlationID string) (postgres.ServiceCityResult, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requirePlatformPolicyOperator(ctx, actingActorID); err != nil {
 		return postgres.ServiceCityResult{}, err
 	}
 	if strings.TrimSpace(displayNameAr) == "" {
@@ -48,7 +49,7 @@ func (s *Service) Create(ctx context.Context, displayNameAr string, active bool,
 }
 
 func (s *Service) Update(ctx context.Context, cityID, displayNameAr string, active bool, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.ServiceCityResult, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requirePlatformPolicyOperator(ctx, actingActorID); err != nil {
 		return postgres.ServiceCityResult{}, err
 	}
 	if strings.TrimSpace(cityID) == "" || strings.TrimSpace(displayNameAr) == "" || expectedVersion < 1 {
@@ -71,6 +72,20 @@ func (s *Service) requireOperator(ctx context.Context, actorID string) error {
 	}
 	if operator.Role != "operator" || !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
 		return ErrOperatorNotActive
+	}
+	return nil
+}
+
+func (s *Service) requirePlatformPolicyOperator(ctx context.Context, actorID string) error {
+	if err := s.requireOperator(ctx, actorID); err != nil {
+		return err
+	}
+	permission, err := s.identity.ReadOperatorPermission(ctx, strings.TrimSpace(actorID), "platform_policies")
+	if err != nil {
+		return err
+	}
+	if !permission.Enabled {
+		return ErrOperatorPermission
 	}
 	return nil
 }

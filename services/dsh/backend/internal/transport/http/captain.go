@@ -38,6 +38,7 @@ func (s *CaptainServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/captains/admissions", s.admit)
 	mux.HandleFunc("GET /dsh/captains/admissions/{admissionId}", s.readAdmission)
 	mux.HandleFunc("GET /dsh/captains/actors/{actorId}/admission", s.readAdmissionForActor)
+	mux.HandleFunc("POST /dsh/captains/actors/{actorId}/availability", s.setOperatorAvailability)
 	mux.HandleFunc("GET /dsh/captains/me", s.readOwnAdmission)
 	mux.HandleFunc("GET /dsh/partners/me/stores/{storeId}/captain-memberships", s.listStoreCaptainMemberships)
 	mux.HandleFunc("POST /dsh/partners/me/stores/{storeId}/captain-memberships/invitations", s.createStoreCaptainInvitation)
@@ -122,6 +123,27 @@ func (s *CaptainServer) readAdmissionForActor(w http.ResponseWriter, r *http.Req
 		return
 	}
 	writeJSON(w, http.StatusOK, contract.CaptainAdmissionResponse{Admission: toCaptainAdmission(admission)})
+}
+
+func (s *CaptainServer) setOperatorAvailability(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizedService(w, r) {
+		return
+	}
+	acting, correlation, idempotency, expected, ok := captainHeaders(w, r, true)
+	if !ok || acting == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID, X-Correlation-ID, X-Expected-Version, and Idempotency-Key are required")
+		return
+	}
+	var input contract.ManagedCaptainAvailabilityRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	admission, replayed, err := s.service.SetAvailabilityForOperator(r.Context(), r.PathValue("actorId"), acting, input.Available, expected, idempotency, correlation, input.Reason)
+	if err != nil {
+		writeCaptainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CaptainAdmissionResponse{Admission: toCaptainAdmission(admission), IdempotentReplay: replayed})
 }
 
 func (s *CaptainServer) readOwnAdmission(w http.ResponseWriter, r *http.Request) {

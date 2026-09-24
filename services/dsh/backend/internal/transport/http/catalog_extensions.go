@@ -9,6 +9,7 @@ import (
 )
 
 type catalogAttributeValueRequest struct {
+	AttributeID     string  `json:"attributeId"`
 	ValueKind       string  `json:"valueKind"`
 	TextValue       *string `json:"textValue"`
 	IntegerValue    *int64  `json:"integerValue"`
@@ -17,6 +18,20 @@ type catalogAttributeValueRequest struct {
 	EnumValue       *string `json:"enumValue"`
 	DateValue       *string `json:"dateValue"`
 	MeasurementUnit *string `json:"measurementUnit"`
+}
+
+type catalogProductCreateRequest struct {
+	contract.CreateCatalogProductRequest
+	AttributeValues        []catalogAttributeValueRequest `json:"attributeValues"`
+	VariantAttributeValues []catalogAttributeValueRequest `json:"variantAttributeValues"`
+}
+
+func catalogAttributeInputs(values []catalogAttributeValueRequest) []postgres.CatalogAttributeValueInput {
+	inputs := make([]postgres.CatalogAttributeValueInput, 0, len(values))
+	for _, value := range values {
+		inputs = append(inputs, postgres.CatalogAttributeValueInput{AttributeID: value.AttributeID, ValueKind: value.ValueKind, TextValue: value.TextValue, IntegerValue: value.IntegerValue, DecimalValue: value.DecimalValue, BooleanValue: value.BooleanValue, EnumValue: value.EnumValue, DateValue: value.DateValue, MeasurementUnit: value.MeasurementUnit})
+	}
+	return inputs
 }
 
 func (s *CatalogServer) listAttributeDefinitions(w http.ResponseWriter, r *http.Request) {
@@ -30,7 +45,8 @@ func (s *CatalogServer) listAttributeDefinitions(w http.ResponseWriter, r *http.
 		return
 	}
 	verticalID := strings.TrimSpace(r.URL.Query().Get("verticalId"))
-	items, err := s.service.ListAttributeDefinitionsForOperator(r.Context(), acting, verticalID)
+	activeOnly := r.URL.Query().Get("includeInactive") != "true"
+	items, err := s.service.ListAttributeDefinitionsForOperator(r.Context(), acting, verticalID, activeOnly)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -40,6 +56,49 @@ func (s *CatalogServer) listAttributeDefinitions(w http.ResponseWriter, r *http.
 		values = append(values, toCatalogAttributeDefinition(item))
 	}
 	writeJSON(w, http.StatusOK, contract.CatalogAttributeDefinitionListResponse{Definitions: values})
+}
+
+func (s *CatalogServer) listPublicCategoryAttributeRules(w http.ResponseWriter, r *http.Request) {
+	rules, err := s.service.ReadPublicAttributeRules(r.Context(), r.PathValue("categoryId"))
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	values := make([]contract.CatalogAttributeRule, 0, len(rules))
+	for _, item := range rules {
+		values = append(values, toCatalogAttributeRule(item))
+	}
+	writeJSON(w, http.StatusOK, contract.CatalogAttributeRuleListResponse{Rules: values})
+}
+
+func (s *CatalogServer) listCategoryAttributeRules(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if acting == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return
+	}
+	rules, err := s.service.ReadAttributeRules(r.Context(), acting, r.PathValue("categoryId"))
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	values := make([]contract.CatalogAttributeRule, 0, len(rules))
+	for _, item := range rules {
+		values = append(values, toCatalogAttributeRule(item))
+	}
+	writeJSON(w, http.StatusOK, contract.CatalogAttributeRuleListResponse{Rules: values})
+}
+
+func (s *CatalogServer) listPublicAttributeEnumOptions(w http.ResponseWriter, r *http.Request) {
+	items, err := s.service.ListPublicAttributeEnumOptions(r.Context(), r.PathValue("attributeId"))
+	if err != nil { writeCatalogError(w, err); return }
+	values := make([]contract.CatalogAttributeEnumOption, 0, len(items))
+	for _, item := range items { values = append(values, contract.CatalogAttributeEnumOption{AttributeID:item.AttributeID, OptionValue:item.OptionValue, Active:item.Active, Ordinal:item.Ordinal}) }
+	writeJSON(w, http.StatusOK, contract.CatalogAttributeEnumOptionListResponse{Options: values})
 }
 
 func (s *CatalogServer) listAttributeEnumOptions(w http.ResponseWriter, r *http.Request) {
@@ -165,16 +224,15 @@ func (s *CatalogServer) upsertCategoryAttributeRule(w http.ResponseWriter, r *ht
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
 		return
 	}
-	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if acting == "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+	acting, correlation, idempotency, ok := requiredMutationHeaders(w, r)
+	if !ok {
 		return
 	}
 	var input contract.UpsertCatalogAttributeRuleRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	if err := s.service.UpsertCategoryAttributeRule(r.Context(), acting, postgres.CatalogAttributeRuleRecord{CategoryID: r.PathValue("categoryId"), AttributeID: r.PathValue("attributeId"), Required: input.Required, Filterable: input.Filterable, VariantAxis: input.VariantAxis}); err != nil {
+	if err := s.service.UpsertCategoryAttributeRule(r.Context(), acting, correlation, input.Reason, idempotency, input.ExpectedVersion, postgres.CatalogAttributeRuleRecord{CategoryID: r.PathValue("categoryId"), AttributeID: r.PathValue("attributeId"), Required: input.Required, Filterable: input.Filterable, VariantAxis: input.VariantAxis}); err != nil {
 		writeCatalogError(w, err)
 		return
 	}

@@ -18,6 +18,7 @@ import (
 
 var (
 	ErrOperatorNotActive               = errors.New("operator actor is not active")
+	ErrOperatorPermission              = errors.New("platform policies permission is required")
 	ErrPartnerSessionForbidden         = errors.New("an active app-partner session is required")
 	ErrStoreOwnershipForbidden         = errors.New("partner does not own this store")
 	ErrCatalogProductNameInvalid       = errors.New("catalog Product name is invalid")
@@ -72,17 +73,41 @@ func (s *Service) ListVerticals(ctx context.Context, activeOnly bool) ([]postgre
 	return postgres.ListCommerceVerticals(ctx, s.db, activeOnly)
 }
 
-func (s *Service) CreateVertical(ctx context.Context, actingActorID string, item postgres.CommerceVerticalRecord, idempotencyKey, correlationID string) (postgres.CommerceVerticalResult, error) {
+func (s *Service) ListVerticalsForOperator(ctx context.Context, actingActorID string, activeOnly bool) ([]postgres.CommerceVerticalRecord, error) {
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return nil, err
+	}
+	return s.ListVerticals(ctx, activeOnly)
+}
+
+func (s *Service) CreateVertical(ctx context.Context, actingActorID string, item postgres.CommerceVerticalRecord, idempotencyKey, correlationID, reason string) (postgres.CommerceVerticalResult, error) {
+	if err := s.requirePlatformPolicyOperator(ctx, actingActorID); err != nil {
 		return postgres.CommerceVerticalResult{}, err
 	}
 	item.ID = strings.ToLower(strings.TrimSpace(item.ID))
 	item.NameAr = strings.Join(strings.Fields(strings.TrimSpace(item.NameAr)), " ")
 	item.NameEn = strings.Join(strings.Fields(strings.TrimSpace(item.NameEn)), " ")
-	if (item.ID != "" && !verticalIDPattern.MatchString(item.ID)) || !validRegistryName(item.NameAr) || !validRegistryName(item.NameEn) {
+	reason = strings.Join(strings.Fields(strings.TrimSpace(reason)), " ")
+	if (item.ID != "" && !verticalIDPattern.MatchString(item.ID)) || !validRegistryName(item.NameAr) || !validRegistryName(item.NameEn) || len(reason) < 5 || len(reason) > 500 || strings.TrimSpace(correlationID) == "" {
 		return postgres.CommerceVerticalResult{}, ErrCatalogVerticalInvalid
 	}
-	return postgres.CreateCommerceVertical(ctx, s.db, item, strings.TrimSpace(idempotencyKey), postgres.HashCatalogVerticalCreateRequest(item))
+	audit := postgres.CatalogRegistryAuditInput{ActingActorID: strings.TrimSpace(actingActorID), CorrelationID: strings.TrimSpace(correlationID), Reason: reason}
+	return postgres.CreateCommerceVertical(ctx, s.db, item, strings.TrimSpace(idempotencyKey), postgres.HashCatalogVerticalCreateRequest(item, reason), audit)
+}
+
+func (s *Service) UpdateVertical(ctx context.Context, actingActorID, verticalID string, input postgres.UpdateCommerceVerticalInput, idempotencyKey, correlationID, reason string) (postgres.CommerceVerticalResult, error) {
+	if err := s.requirePlatformPolicyOperator(ctx, actingActorID); err != nil {
+		return postgres.CommerceVerticalResult{}, err
+	}
+	verticalID = strings.ToLower(strings.TrimSpace(verticalID))
+	input.NameAr = strings.Join(strings.Fields(strings.TrimSpace(input.NameAr)), " ")
+	input.NameEn = strings.Join(strings.Fields(strings.TrimSpace(input.NameEn)), " ")
+	reason = strings.Join(strings.Fields(strings.TrimSpace(reason)), " ")
+	if !verticalIDPattern.MatchString(verticalID) || !validRegistryName(input.NameAr) || !validRegistryName(input.NameEn) || input.ExpectedVersion < 1 || len(reason) < 5 || len(reason) > 500 || strings.TrimSpace(correlationID) == "" {
+		return postgres.CommerceVerticalResult{}, ErrCatalogVerticalInvalid
+	}
+	audit := postgres.CatalogRegistryAuditInput{ActingActorID: strings.TrimSpace(actingActorID), CorrelationID: strings.TrimSpace(correlationID), Reason: reason}
+	return postgres.UpdateCommerceVertical(ctx, s.db, verticalID, input, strings.TrimSpace(idempotencyKey), postgres.HashCatalogVerticalUpdateRequest(verticalID, input, reason), audit)
 }
 
 func (s *Service) ListCategories(ctx context.Context, verticalID string, activeOnly bool) ([]postgres.CatalogCategoryRecord, error) {
@@ -92,8 +117,15 @@ func (s *Service) ListCategories(ctx context.Context, verticalID string, activeO
 	return postgres.ListCatalogCategories(ctx, s.db, strings.TrimSpace(verticalID), activeOnly)
 }
 
-func (s *Service) CreateCategory(ctx context.Context, actingActorID string, item postgres.CatalogCategoryRecord, idempotencyKey string) (postgres.CatalogCategoryRecord, error) {
+func (s *Service) ListCategoriesForOperator(ctx context.Context, actingActorID, verticalID string, activeOnly bool) ([]postgres.CatalogCategoryRecord, error) {
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return nil, err
+	}
+	return s.ListCategories(ctx, verticalID, activeOnly)
+}
+
+func (s *Service) CreateCategory(ctx context.Context, actingActorID string, item postgres.CatalogCategoryRecord, idempotencyKey, correlationID, reason string) (postgres.CatalogCategoryRecord, error) {
+	if err := s.requirePlatformPolicyOperator(ctx, actingActorID); err != nil {
 		return postgres.CatalogCategoryRecord{}, err
 	}
 	item.ID = strings.ToLower(strings.TrimSpace(item.ID))
@@ -101,10 +133,28 @@ func (s *Service) CreateCategory(ctx context.Context, actingActorID string, item
 	item.ParentCategoryID = strings.TrimSpace(item.ParentCategoryID)
 	item.NameAr = strings.Join(strings.Fields(strings.TrimSpace(item.NameAr)), " ")
 	item.NameEn = strings.Join(strings.Fields(strings.TrimSpace(item.NameEn)), " ")
-	if (item.ID != "" && !verticalIDPattern.MatchString(item.ID)) || !verticalIDPattern.MatchString(item.VerticalID) || (item.ParentCategoryID != "" && !verticalIDPattern.MatchString(item.ParentCategoryID)) || !validRegistryName(item.NameAr) || !validRegistryName(item.NameEn) {
+	reason = strings.Join(strings.Fields(strings.TrimSpace(reason)), " ")
+	if (item.ID != "" && !verticalIDPattern.MatchString(item.ID)) || !verticalIDPattern.MatchString(item.VerticalID) || (item.ParentCategoryID != "" && !verticalIDPattern.MatchString(item.ParentCategoryID)) || !validRegistryName(item.NameAr) || !validRegistryName(item.NameEn) || len(reason) < 5 || len(reason) > 500 || strings.TrimSpace(correlationID) == "" {
 		return postgres.CatalogCategoryRecord{}, ErrCatalogCategoryInvalid
 	}
-	return postgres.CreateCatalogCategory(ctx, s.db, item, strings.TrimSpace(idempotencyKey), postgres.HashCatalogCategoryCreateRequest(item))
+	audit := postgres.CatalogRegistryAuditInput{ActingActorID: strings.TrimSpace(actingActorID), CorrelationID: strings.TrimSpace(correlationID), Reason: reason}
+	return postgres.CreateCatalogCategory(ctx, s.db, item, strings.TrimSpace(idempotencyKey), postgres.HashCatalogCategoryCreateRequest(item, reason), audit)
+}
+
+func (s *Service) UpdateCategory(ctx context.Context, actingActorID, categoryID string, input postgres.UpdateCatalogCategoryInput, idempotencyKey, correlationID, reason string) (postgres.CatalogCategoryRecord, bool, error) {
+	if err := s.requirePlatformPolicyOperator(ctx, actingActorID); err != nil {
+		return postgres.CatalogCategoryRecord{}, false, err
+	}
+	categoryID = strings.ToLower(strings.TrimSpace(categoryID))
+	input.ParentCategoryID = strings.ToLower(strings.TrimSpace(input.ParentCategoryID))
+	input.NameAr = strings.Join(strings.Fields(strings.TrimSpace(input.NameAr)), " ")
+	input.NameEn = strings.Join(strings.Fields(strings.TrimSpace(input.NameEn)), " ")
+	reason = strings.Join(strings.Fields(strings.TrimSpace(reason)), " ")
+	if !verticalIDPattern.MatchString(categoryID) || (input.ParentCategoryID != "" && !verticalIDPattern.MatchString(input.ParentCategoryID)) || !validRegistryName(input.NameAr) || !validRegistryName(input.NameEn) || input.ExpectedVersion < 1 || len(reason) < 5 || len(reason) > 500 || strings.TrimSpace(correlationID) == "" {
+		return postgres.CatalogCategoryRecord{}, false, ErrCatalogCategoryInvalid
+	}
+	audit := postgres.CatalogRegistryAuditInput{ActingActorID: strings.TrimSpace(actingActorID), CorrelationID: strings.TrimSpace(correlationID), Reason: reason}
+	return postgres.UpdateCatalogCategory(ctx, s.db, categoryID, input, strings.TrimSpace(idempotencyKey), postgres.HashCatalogCategoryUpdateRequest(categoryID, input, reason), audit)
 }
 
 func (s *Service) CreateCatalogProduct(ctx context.Context, actingActorID string, input postgres.CatalogProductInput, idempotencyKey, correlationID string) (postgres.CatalogProductResult, error) {
@@ -294,6 +344,10 @@ func (s *Service) ReadAttributeRules(ctx context.Context, actingActorID, categor
 	return postgres.ReadCatalogAttributeRules(ctx, s.db, strings.TrimSpace(categoryID))
 }
 
+func (s *Service) ReadPublicAttributeRules(ctx context.Context, categoryID string) ([]postgres.CatalogAttributeRuleRecord, error) {
+	return postgres.ReadPublicCatalogAttributeRules(ctx, s.db, strings.TrimSpace(categoryID))
+}
+
 func normalizeCatalogProductInput(input postgres.CatalogProductInput) (postgres.CatalogProductInput, error) {
 	name, err := normalizeProductName(input.CanonicalName)
 	if err != nil {
@@ -348,7 +402,20 @@ func normalizeCatalogProductInput(input postgres.CatalogProductInput) (postgres.
 		seen[normalizedID] = true
 		categories = append(categories, normalizedID)
 	}
-	return postgres.CatalogProductInput{ID: strings.TrimSpace(input.ID), VerticalID: verticalID, Scope: scope, StoreID: strings.TrimSpace(input.StoreID), CanonicalName: name, Brand: brand, VariantTitle: variantTitle, MeasurementKind: measurementKind, BaseUnit: baseUnit, CategoryIDs: categories, IdentifierType: identifierType, IdentifierValue: identifierValue, ImageURI: image}, nil
+	attributeValues := normalizeCatalogAttributeValues(input.AttributeValues)
+	variantAttributeValues := normalizeCatalogAttributeValues(input.VariantAttributeValues)
+	return postgres.CatalogProductInput{ID: strings.TrimSpace(input.ID), VerticalID: verticalID, Scope: scope, StoreID: strings.TrimSpace(input.StoreID), CanonicalName: name, Brand: brand, VariantTitle: variantTitle, MeasurementKind: measurementKind, BaseUnit: baseUnit, CategoryIDs: categories, AttributeValues: attributeValues, VariantAttributeValues: variantAttributeValues, IdentifierType: identifierType, IdentifierValue: identifierValue, ImageURI: image}, nil
+}
+
+func normalizeCatalogAttributeValues(values []postgres.CatalogAttributeValueInput) []postgres.CatalogAttributeValueInput {
+	normalized := append([]postgres.CatalogAttributeValueInput(nil), values...)
+	for index := range normalized {
+		value := &normalized[index]
+		value.AttributeID = strings.TrimSpace(value.AttributeID)
+		value.ValueKind = strings.ToUpper(strings.TrimSpace(value.ValueKind))
+	}
+	sort.Slice(normalized, func(left, right int) bool { return normalized[left].AttributeID < normalized[right].AttributeID })
+	return normalized
 }
 
 func normalizeCatalogProductUpdateInput(input postgres.CatalogProductUpdateInput) (postgres.CatalogProductUpdateInput, error) {
@@ -445,6 +512,20 @@ func (s *Service) requireOperator(ctx context.Context, actorID string) error {
 	}
 	if operator.Role != "operator" || !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
 		return ErrOperatorNotActive
+	}
+	return nil
+}
+
+func (s *Service) requirePlatformPolicyOperator(ctx context.Context, actorID string) error {
+	if err := s.requireOperator(ctx, actorID); err != nil {
+		return err
+	}
+	permission, err := s.identity.ReadOperatorPermission(ctx, strings.TrimSpace(actorID), "platform_policies")
+	if err != nil {
+		return err
+	}
+	if !permission.Enabled {
+		return ErrOperatorPermission
 	}
 	return nil
 }

@@ -160,12 +160,23 @@ func (s *StorePublicationServer) listPublic(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	values := make([]contract.PublicStoreView, 0, len(stores))
+	categoryIDs := make([]string, 0)
 	for _, store := range stores {
 		values = append(values, toPublicStoreView(store))
+		categoryIDs = append(categoryIDs, store.CategoryIDs...)
+	}
+	categoryRecords, err := postgres.ListPublicCatalogCategories(r.Context(), s.db, categoryIDs)
+	if err != nil {
+		writeStorageError(w, err)
+		return
+	}
+	categories := make([]contract.CatalogCategory, 0, len(categoryRecords))
+	for _, category := range categoryRecords {
+		categories = append(categories, toCatalogCategory(category))
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(contract.PublishedStoreListResponse{Stores: values})
+	_ = json.NewEncoder(w).Encode(contract.PublishedStoreListResponse{Stores: values, Categories: categories})
 }
 
 func (s *StorePublicationServer) readPublic(w http.ResponseWriter, r *http.Request) {
@@ -351,6 +362,7 @@ func toPublicStoreView(store postgres.PublicStoreRecord) contract.PublicStoreVie
 		PrimaryVerticalID: store.PrimaryVerticalID,
 		DistanceMeters:    optionalDistanceValue(store.DistanceMeters),
 		FulfillmentModes:  toFulfillmentModes(store.FulfillmentModes),
+		CategoryIds:       store.CategoryIDs,
 		CreatedAt:         store.CreatedAt, UpdatedAt: store.UpdatedAt,
 	}
 }

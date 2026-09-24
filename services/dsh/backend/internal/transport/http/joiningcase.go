@@ -50,6 +50,8 @@ func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/joining-cases", s.create)
 	mux.HandleFunc("GET /dsh/joining-cases", s.listForOperator)
 	mux.HandleFunc("GET /dsh/joining-cases/self", s.readForPartner)
+	mux.HandleFunc("GET /dsh/partners/actors/{actorId}/joining-case", s.readForPartnerActor)
+	mux.HandleFunc("GET /dsh/partners/actors/{actorId}/stores", s.listPartnerStoresForOperator)
 	mux.HandleFunc("GET /dsh/joining-cases/{caseId}", s.readForOperator)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/submit", s.submit)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/correct-and-resubmit", s.correctAndResubmitForPartner)
@@ -135,6 +137,42 @@ func (s *JoiningCaseServer) readForPartner(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	s.writeResult(w, r, http.StatusOK, result)
+}
+
+func (s *JoiningCaseServer) readForPartnerActor(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	result, err := s.service.ReadForOperatorByPartnerActor(r.Context(), r.PathValue("actorId"), strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")))
+	if err != nil {
+		writeJoiningCaseError(w, err)
+		return
+	}
+	s.writeResult(w, r, http.StatusOK, result)
+}
+
+func (s *JoiningCaseServer) listPartnerStoresForOperator(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	actingActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
+	if actingActorID == "" || limit < 1 || limit > 50 || len(r.URL.Query().Get("cursor")) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a valid acting operator, page limit, and cursor are required")
+		return
+	}
+	page, err := s.service.ListStoresForOperatorByPartnerActor(r.Context(), r.PathValue("actorId"), actingActorID, limit, r.URL.Query().Get("cursor"))
+	if err != nil {
+		writeJoiningCaseError(w, err)
+		return
+	}
+	stores := make([]contract.PartnerManagedStore, 0, len(page.Stores))
+	for _, store := range page.Stores {
+		stores = append(stores, contract.PartnerManagedStore{ID: store.ID, Name: store.Name, ServiceCityID: nullableString(store.ServiceCityID), PrimaryVerticalID: nullableString(store.PrimaryVerticalID), FulfillmentModes: toFulfillmentModes(store.FulfillmentModes), Version: store.Version, PublicationState: contract.PublicationState(store.PublicationState), CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt})
+	}
+	writeJSON(w, http.StatusOK, contract.PartnerStoreListResponse{Stores: stores, NextCursor: page.NextCursor})
 }
 
 func (s *JoiningCaseServer) submit(w http.ResponseWriter, r *http.Request) {

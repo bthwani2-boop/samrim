@@ -67,6 +67,9 @@ func (s *DeliveryFeeServer) create(w http.ResponseWriter, r *http.Request) {
 		s.writeOperatorError(w, err)
 		return
 	}
+	if !s.requirePlatformPolicyPermission(w, r.Context(), acting) {
+		return
+	}
 	var input struct {
 		ServiceCityID          string `json:"serviceCityId"`
 		BaseFeeMinor           int64  `json:"baseFeeMinor"`
@@ -76,11 +79,13 @@ func (s *DeliveryFeeServer) create(w http.ResponseWriter, r *http.Request) {
 		OrderSizeRateMinor     int64  `json:"orderSizeRateMinor"`
 		ZoneSurchargeMinor     int64  `json:"zoneSurchargeMinor"`
 		RoundingUnitMinor      int64  `json:"roundingUnitMinor"`
+		ExpectedVersion        int    `json:"expectedVersion"`
+		Reason                 string `json:"reason"`
 	}
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	policy, replayed, err := s.payment.CreateDeliveryFeePolicy(r.Context(), wlt.DeliveryFeePolicy{ServiceCityID: input.ServiceCityID, BaseFeeMinor: input.BaseFeeMinor, DistanceUnitMeters: input.DistanceUnitMeters, DistanceRateMinor: input.DistanceRateMinor, OrderSizeUnitBaseUnits: input.OrderSizeUnitBaseUnits, OrderSizeRateMinor: input.OrderSizeRateMinor, ZoneSurchargeMinor: input.ZoneSurchargeMinor, RoundingUnitMinor: input.RoundingUnitMinor}, idempotency, correlation, acting)
+	policy, replayed, err := s.payment.CreateDeliveryFeePolicy(r.Context(), wlt.DeliveryFeePolicy{ServiceCityID: input.ServiceCityID, BaseFeeMinor: input.BaseFeeMinor, DistanceUnitMeters: input.DistanceUnitMeters, DistanceRateMinor: input.DistanceRateMinor, OrderSizeUnitBaseUnits: input.OrderSizeUnitBaseUnits, OrderSizeRateMinor: input.OrderSizeRateMinor, ZoneSurchargeMinor: input.ZoneSurchargeMinor, RoundingUnitMinor: input.RoundingUnitMinor}, input.ExpectedVersion, input.Reason, idempotency, correlation, acting)
 	if err != nil {
 		s.writeWLTError(w, err)
 		return
@@ -90,6 +95,24 @@ func (s *DeliveryFeeServer) create(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusOK
 	}
 	writeJSON(w, status, map[string]any{"policy": policy, "idempotentReplay": replayed})
+}
+
+func (s *DeliveryFeeServer) requirePlatformPolicyPermission(w http.ResponseWriter, ctx context.Context, actorID string) bool {
+	permission, err := s.identity.ReadOperatorPermission(ctx, actorID, "platform_policies")
+	if err != nil {
+		var identityErr *identityclient.Error
+		if errors.As(err, &identityErr) {
+			writeIdentityError(w, err)
+		} else {
+			writeError(w, http.StatusBadGateway, "IDENTITY_UNAVAILABLE", "operator permission could not be verified")
+		}
+		return false
+	}
+	if !permission.Enabled {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "Platform Policies permission is required")
+		return false
+	}
+	return true
 }
 
 func (s *DeliveryFeeServer) requireOperator(ctx context.Context, actorID string) error {

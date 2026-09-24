@@ -130,7 +130,28 @@ func (s *Service) SetAvailability(ctx context.Context, accessToken string, avail
 	if expectedVersion < 1 || !validMutation(idempotencyKey, correlationID, identity.Subject) {
 		return postgres.CaptainAdmission{}, false, ErrInvalidInput
 	}
-	return postgres.SetCaptainAvailability(ctx, s.db, identity.Subject, available, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCaptainAvailabilityRequest(identity.Subject, available, expectedVersion), identity.Subject, strings.TrimSpace(correlationID))
+	return postgres.SetCaptainAvailability(ctx, s.db, identity.Subject, available, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCaptainAvailabilityRequest(identity.Subject, available, expectedVersion), identity.Subject, strings.TrimSpace(correlationID), "")
+}
+
+func (s *Service) SetAvailabilityForOperator(ctx context.Context, actorID, operatorActorID string, available bool, expectedVersion int, idempotencyKey, correlationID, reason string) (postgres.CaptainAdmission, bool, error) {
+	actorID = strings.TrimSpace(actorID)
+	operatorActorID = strings.TrimSpace(operatorActorID)
+	reason = strings.TrimSpace(reason)
+	if actorID == "" || expectedVersion < 1 || !validMutation(idempotencyKey, correlationID, operatorActorID) || len([]rune(reason)) < 5 || len([]rune(reason)) > 500 {
+		return postgres.CaptainAdmission{}, false, ErrInvalidInput
+	}
+	if err := s.requireOperator(ctx, operatorActorID); err != nil {
+		return postgres.CaptainAdmission{}, false, err
+	}
+	role, err := s.identity.ReadActorRole(ctx, actorID, "captain")
+	if err != nil {
+		return postgres.CaptainAdmission{}, false, err
+	}
+	if role.Role != "captain" || !role.Enabled || !role.SecurityEnabled || role.ActivatedAt == nil {
+		return postgres.CaptainAdmission{}, false, ErrManagedRoleNotEligible
+	}
+	requestHash := postgres.HashCaptainOperatorAvailabilityRequest(actorID, available, expectedVersion, reason)
+	return postgres.SetCaptainAvailability(ctx, s.db, actorID, available, expectedVersion, strings.TrimSpace(idempotencyKey), requestHash, operatorActorID, strings.TrimSpace(correlationID), reason)
 }
 
 func (s *Service) ListOffers(ctx context.Context, accessToken string, limit int) ([]postgres.CaptainOffer, error) {
