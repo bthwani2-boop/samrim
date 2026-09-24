@@ -18,7 +18,7 @@ import (
 
 var (
 	ErrOperatorNotActive               = errors.New("operator actor is not active")
-	ErrOperatorPermission              = errors.New("platform policies permission is required")
+	ErrOperatorPermission              = errors.New("catalog permission is required")
 	ErrPartnerSessionForbidden         = errors.New("an active app-partner session is required")
 	ErrStoreOwnershipForbidden         = errors.New("partner does not own this store")
 	ErrCatalogProductNameInvalid       = errors.New("catalog Product name is invalid")
@@ -63,10 +63,36 @@ func (s *Service) ListProductsForPartner(ctx context.Context, accessToken, query
 }
 
 func (s *Service) ListProductsForOperator(ctx context.Context, actingActorID, query, verticalID string, limit int, cursor string) (postgres.CatalogProductPage, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
 		return postgres.CatalogProductPage{}, err
 	}
 	return postgres.ListCatalogProducts(ctx, s.db, normalizeSearch(query), strings.TrimSpace(verticalID), false, limit, strings.TrimSpace(cursor))
+}
+
+func (s *Service) requireSharedProduct(ctx context.Context, productID string) error {
+	product, err := postgres.ReadCatalogProduct(ctx, s.db, strings.TrimSpace(productID))
+	if err != nil {
+		return err
+	}
+	if product.Scope != "SHARED" || product.StoreID != "" {
+		return postgres.ErrCatalogProductOwnership
+	}
+	vertical, err := postgres.ReadCommerceVertical(ctx, s.db, product.VerticalID)
+	if err != nil {
+		return err
+	}
+	if vertical.CatalogModel != "SHARED_CATALOG" {
+		return postgres.ErrCatalogProductModelMismatch
+	}
+	return nil
+}
+
+func (s *Service) requireSharedVariant(ctx context.Context, variantID string) error {
+	variant, err := postgres.ReadCatalogVariant(ctx, s.db, strings.TrimSpace(variantID))
+	if err != nil {
+		return err
+	}
+	return s.requireSharedProduct(ctx, variant.ProductID)
 }
 
 func (s *Service) ListVerticals(ctx context.Context, activeOnly bool) ([]postgres.CommerceVerticalRecord, error) {
@@ -74,21 +100,21 @@ func (s *Service) ListVerticals(ctx context.Context, activeOnly bool) ([]postgre
 }
 
 func (s *Service) ListVerticalsForOperator(ctx context.Context, actingActorID string, activeOnly bool) ([]postgres.CommerceVerticalRecord, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireCatalogOperator(ctx, actingActorID); err != nil {
 		return nil, err
 	}
 	return s.ListVerticals(ctx, activeOnly)
 }
 
 func (s *Service) CreateVertical(ctx context.Context, actingActorID string, item postgres.CommerceVerticalRecord, idempotencyKey, correlationID, reason string) (postgres.CommerceVerticalResult, error) {
-	if err := s.requirePlatformPolicyOperator(ctx, actingActorID); err != nil {
+	if err := s.requireCatalogOperator(ctx, actingActorID); err != nil {
 		return postgres.CommerceVerticalResult{}, err
 	}
 	item.ID = strings.ToLower(strings.TrimSpace(item.ID))
 	item.NameAr = strings.Join(strings.Fields(strings.TrimSpace(item.NameAr)), " ")
 	item.NameEn = strings.Join(strings.Fields(strings.TrimSpace(item.NameEn)), " ")
 	reason = strings.Join(strings.Fields(strings.TrimSpace(reason)), " ")
-	if (item.ID != "" && !verticalIDPattern.MatchString(item.ID)) || !validRegistryName(item.NameAr) || !validRegistryName(item.NameEn) || len(reason) < 5 || len(reason) > 500 || strings.TrimSpace(correlationID) == "" {
+	if (item.ID != "" && !verticalIDPattern.MatchString(item.ID)) || !validRegistryName(item.NameAr) || !validRegistryName(item.NameEn) || (item.CatalogModel != "SHARED_CATALOG" && item.CatalogModel != "STORE_LOCAL_CATALOG") || len(reason) < 5 || len(reason) > 500 || strings.TrimSpace(correlationID) == "" {
 		return postgres.CommerceVerticalResult{}, ErrCatalogVerticalInvalid
 	}
 	audit := postgres.CatalogRegistryAuditInput{ActingActorID: strings.TrimSpace(actingActorID), CorrelationID: strings.TrimSpace(correlationID), Reason: reason}
@@ -96,14 +122,14 @@ func (s *Service) CreateVertical(ctx context.Context, actingActorID string, item
 }
 
 func (s *Service) UpdateVertical(ctx context.Context, actingActorID, verticalID string, input postgres.UpdateCommerceVerticalInput, idempotencyKey, correlationID, reason string) (postgres.CommerceVerticalResult, error) {
-	if err := s.requirePlatformPolicyOperator(ctx, actingActorID); err != nil {
+	if err := s.requireCatalogOperator(ctx, actingActorID); err != nil {
 		return postgres.CommerceVerticalResult{}, err
 	}
 	verticalID = strings.ToLower(strings.TrimSpace(verticalID))
 	input.NameAr = strings.Join(strings.Fields(strings.TrimSpace(input.NameAr)), " ")
 	input.NameEn = strings.Join(strings.Fields(strings.TrimSpace(input.NameEn)), " ")
 	reason = strings.Join(strings.Fields(strings.TrimSpace(reason)), " ")
-	if !verticalIDPattern.MatchString(verticalID) || !validRegistryName(input.NameAr) || !validRegistryName(input.NameEn) || input.ExpectedVersion < 1 || len(reason) < 5 || len(reason) > 500 || strings.TrimSpace(correlationID) == "" {
+	if !verticalIDPattern.MatchString(verticalID) || !validRegistryName(input.NameAr) || !validRegistryName(input.NameEn) || (input.CatalogModel != "SHARED_CATALOG" && input.CatalogModel != "STORE_LOCAL_CATALOG") || input.ExpectedVersion < 1 || len(reason) < 5 || len(reason) > 500 || strings.TrimSpace(correlationID) == "" {
 		return postgres.CommerceVerticalResult{}, ErrCatalogVerticalInvalid
 	}
 	audit := postgres.CatalogRegistryAuditInput{ActingActorID: strings.TrimSpace(actingActorID), CorrelationID: strings.TrimSpace(correlationID), Reason: reason}
@@ -118,14 +144,14 @@ func (s *Service) ListCategories(ctx context.Context, verticalID string, activeO
 }
 
 func (s *Service) ListCategoriesForOperator(ctx context.Context, actingActorID, verticalID string, activeOnly bool) ([]postgres.CatalogCategoryRecord, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireCatalogOperator(ctx, actingActorID); err != nil {
 		return nil, err
 	}
 	return s.ListCategories(ctx, verticalID, activeOnly)
 }
 
 func (s *Service) CreateCategory(ctx context.Context, actingActorID string, item postgres.CatalogCategoryRecord, idempotencyKey, correlationID, reason string) (postgres.CatalogCategoryRecord, error) {
-	if err := s.requirePlatformPolicyOperator(ctx, actingActorID); err != nil {
+	if err := s.requireCatalogOperator(ctx, actingActorID); err != nil {
 		return postgres.CatalogCategoryRecord{}, err
 	}
 	item.ID = strings.ToLower(strings.TrimSpace(item.ID))
@@ -142,7 +168,7 @@ func (s *Service) CreateCategory(ctx context.Context, actingActorID string, item
 }
 
 func (s *Service) UpdateCategory(ctx context.Context, actingActorID, categoryID string, input postgres.UpdateCatalogCategoryInput, idempotencyKey, correlationID, reason string) (postgres.CatalogCategoryRecord, bool, error) {
-	if err := s.requirePlatformPolicyOperator(ctx, actingActorID); err != nil {
+	if err := s.requireCatalogOperator(ctx, actingActorID); err != nil {
 		return postgres.CatalogCategoryRecord{}, false, err
 	}
 	categoryID = strings.ToLower(strings.TrimSpace(categoryID))
@@ -158,8 +184,11 @@ func (s *Service) UpdateCategory(ctx context.Context, actingActorID, categoryID 
 }
 
 func (s *Service) CreateCatalogProduct(ctx context.Context, actingActorID string, input postgres.CatalogProductInput, idempotencyKey, correlationID string) (postgres.CatalogProductResult, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
 		return postgres.CatalogProductResult{}, err
+	}
+	if strings.ToUpper(strings.TrimSpace(input.Scope)) != "SHARED" || strings.TrimSpace(input.StoreID) != "" {
+		return postgres.CatalogProductResult{}, postgres.ErrCatalogProductOwnership
 	}
 	normalized, err := normalizeCatalogProductInput(input)
 	if err != nil {
@@ -183,11 +212,14 @@ func (s *Service) CreateStoreScopedProduct(ctx context.Context, accessToken, sto
 }
 
 func (s *Service) CreateCatalogVariant(ctx context.Context, actingActorID string, input postgres.CatalogVariantInput, idempotencyKey, correlationID string) (postgres.CatalogVariantResult, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
 		return postgres.CatalogVariantResult{}, err
 	}
 	if strings.TrimSpace(input.ID) == "" {
 		return postgres.CatalogVariantResult{}, postgres.ErrCatalogIdentifierInvalid
+	}
+	if err := s.requireSharedProduct(ctx, input.ProductID); err != nil {
+		return postgres.CatalogVariantResult{}, err
 	}
 	return postgres.CreateCatalogVariant(ctx, s.db, input, strings.TrimSpace(idempotencyKey), postgres.HashCatalogVariantCreateRequest(input), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
 }
@@ -230,7 +262,10 @@ func (s *Service) UpdateStoreScopedProduct(ctx context.Context, accessToken, sto
 }
 
 func (s *Service) UpdateCatalogVariant(ctx context.Context, actingActorID, variantID string, input postgres.CatalogVariantInput, expectedVersion int, idempotencyKey, correlationID string) (postgres.CatalogVariantResult, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
+		return postgres.CatalogVariantResult{}, err
+	}
+	if err := s.requireSharedVariant(ctx, variantID); err != nil {
 		return postgres.CatalogVariantResult{}, err
 	}
 	return postgres.UpdateCatalogVariant(ctx, s.db, strings.TrimSpace(variantID), input, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCatalogVariantUpdateRequest(variantID, input, expectedVersion), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
@@ -257,7 +292,10 @@ func (s *Service) UpdateStoreVariant(ctx context.Context, accessToken, storeID, 
 }
 
 func (s *Service) UpdateCatalogProduct(ctx context.Context, actingActorID, productID string, input postgres.CatalogProductUpdateInput, expectedVersion int, idempotencyKey, correlationID string) (postgres.CatalogProductResult, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
+		return postgres.CatalogProductResult{}, err
+	}
+	if err := s.requireSharedProduct(ctx, productID); err != nil {
 		return postgres.CatalogProductResult{}, err
 	}
 	normalized, err := normalizeCatalogProductUpdateInput(input)
@@ -271,7 +309,10 @@ func (s *Service) UpdateCatalogProduct(ctx context.Context, actingActorID, produ
 }
 
 func (s *Service) ReplaceCatalogProductMedia(ctx context.Context, actingActorID, productID string, media []postgres.CatalogMediaInput, expectedVersion int, idempotencyKey, correlationID string) (postgres.CatalogProductResult, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
+		return postgres.CatalogProductResult{}, err
+	}
+	if err := s.requireSharedProduct(ctx, productID); err != nil {
 		return postgres.CatalogProductResult{}, err
 	}
 	normalized, err := normalizeCatalogMedia(media)
@@ -324,21 +365,21 @@ func (s *Service) ReplaceStoreScopedProductMedia(ctx context.Context, accessToke
 }
 
 func (s *Service) ReadCatalogProduct(ctx context.Context, actingActorID, productID string) (postgres.CatalogProductRecord, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
 		return postgres.CatalogProductRecord{}, err
 	}
 	return postgres.ReadCatalogProduct(ctx, s.db, strings.TrimSpace(productID))
 }
 
 func (s *Service) ReadCatalogVariant(ctx context.Context, actingActorID, variantID string) (postgres.CatalogVariantRecord, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
 		return postgres.CatalogVariantRecord{}, err
 	}
 	return postgres.ReadCatalogVariant(ctx, s.db, strings.TrimSpace(variantID))
 }
 
 func (s *Service) ReadAttributeRules(ctx context.Context, actingActorID, categoryID string) ([]postgres.CatalogAttributeRuleRecord, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireCatalogOperator(ctx, actingActorID); err != nil {
 		return nil, err
 	}
 	return postgres.ReadCatalogAttributeRules(ctx, s.db, strings.TrimSpace(categoryID))
@@ -356,6 +397,10 @@ func normalizeCatalogProductInput(input postgres.CatalogProductInput) (postgres.
 	brand, err := normalizeOptionalText(input.Brand, 160)
 	if err != nil {
 		return postgres.CatalogProductInput{}, err
+	}
+	description := strings.TrimSpace(input.Description)
+	if utf8.RuneCountInString(description) > 4000 {
+		return postgres.CatalogProductInput{}, ErrCatalogProductNameInvalid
 	}
 	verticalID := strings.TrimSpace(input.VerticalID)
 	if verticalID == "" {
@@ -404,7 +449,7 @@ func normalizeCatalogProductInput(input postgres.CatalogProductInput) (postgres.
 	}
 	attributeValues := normalizeCatalogAttributeValues(input.AttributeValues)
 	variantAttributeValues := normalizeCatalogAttributeValues(input.VariantAttributeValues)
-	return postgres.CatalogProductInput{ID: strings.TrimSpace(input.ID), VerticalID: verticalID, Scope: scope, StoreID: strings.TrimSpace(input.StoreID), CanonicalName: name, Brand: brand, VariantTitle: variantTitle, MeasurementKind: measurementKind, BaseUnit: baseUnit, CategoryIDs: categories, AttributeValues: attributeValues, VariantAttributeValues: variantAttributeValues, IdentifierType: identifierType, IdentifierValue: identifierValue, ImageURI: image}, nil
+	return postgres.CatalogProductInput{ID: strings.TrimSpace(input.ID), VerticalID: verticalID, Scope: scope, StoreID: strings.TrimSpace(input.StoreID), CanonicalName: name, Description: description, Brand: brand, VariantTitle: variantTitle, MeasurementKind: measurementKind, BaseUnit: baseUnit, CategoryIDs: categories, AttributeValues: attributeValues, VariantAttributeValues: variantAttributeValues, IdentifierType: identifierType, IdentifierValue: identifierValue, ImageURI: image}, nil
 }
 
 func normalizeCatalogAttributeValues(values []postgres.CatalogAttributeValueInput) []postgres.CatalogAttributeValueInput {
@@ -427,12 +472,16 @@ func normalizeCatalogProductUpdateInput(input postgres.CatalogProductUpdateInput
 	if err != nil {
 		return postgres.CatalogProductUpdateInput{}, err
 	}
+	description := strings.TrimSpace(input.Description)
+	if utf8.RuneCountInString(description) > 4000 {
+		return postgres.CatalogProductUpdateInput{}, ErrCatalogProductNameInvalid
+	}
 	verticalID := strings.TrimSpace(input.VerticalID)
 	scope := strings.ToUpper(strings.TrimSpace(input.Scope))
 	if verticalID == "" || (scope != "SHARED" && scope != "STORE_SCOPED") {
 		return postgres.CatalogProductUpdateInput{}, ErrCatalogProductScopeInvalid
 	}
-	return postgres.CatalogProductUpdateInput{VerticalID: verticalID, Scope: scope, StoreID: strings.TrimSpace(input.StoreID), CanonicalName: name, Brand: brand, Active: input.Active}, nil
+	return postgres.CatalogProductUpdateInput{VerticalID: verticalID, Scope: scope, StoreID: strings.TrimSpace(input.StoreID), CanonicalName: name, Description: description, Brand: brand, Active: input.Active}, nil
 }
 
 func normalizeCatalogMedia(input []postgres.CatalogMediaInput) ([]postgres.CatalogMediaInput, error) {
@@ -516,18 +565,15 @@ func (s *Service) requireOperator(ctx context.Context, actorID string) error {
 	return nil
 }
 
-func (s *Service) requirePlatformPolicyOperator(ctx context.Context, actorID string) error {
+func (s *Service) requireCatalogOperator(ctx context.Context, actorID string) error {
+	return s.requireOperatorPermission(ctx, actorID, "catalog")
+}
+
+func (s *Service) requireOperatorPermission(ctx context.Context, actorID, permission string) error {
 	if err := s.requireOperator(ctx, actorID); err != nil {
 		return err
 	}
-	permission, err := s.identity.ReadOperatorPermission(ctx, strings.TrimSpace(actorID), "platform_policies")
-	if err != nil {
-		return err
-	}
-	if !permission.Enabled {
-		return ErrOperatorPermission
-	}
-	return nil
+	return s.identity.RequireOperatorPermission(ctx, strings.TrimSpace(actorID), permission)
 }
 func (s *Service) requirePartnerIdentity(ctx context.Context, accessToken string) (identityclient.ActorIdentity, error) {
 	identity, err := s.identity.ReadSession(ctx, strings.TrimSpace(accessToken))

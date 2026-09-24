@@ -3,9 +3,9 @@
 import type { BaseUnit, CatalogAttributeRule, CatalogAttributeValueInput, CatalogProduct, CatalogVariant, CommerceVertical, MeasurementKind } from "@bthwani/dsh";
 import { useCallback, useEffect, useState } from "react";
 
-type ProductForm = { verticalId: string; scope: "SHARED" | "STORE_SCOPED"; canonicalName: string; brand: string; variantTitle: string; measurementKind: MeasurementKind; baseUnit: BaseUnit; categoryId: string; identifierType: string; identifierValue: string; imageUri: string; galleryImageUris: string; active: boolean };
+type ProductForm = { verticalId: string; scope: "SHARED" | "STORE_SCOPED"; canonicalName: string; description: string; brand: string; variantTitle: string; measurementKind: MeasurementKind; baseUnit: BaseUnit; categoryId: string; identifierType: string; identifierValue: string; imageUri: string; galleryImageUris: string; active: boolean };
 
-const emptyForm: ProductForm = { verticalId: "", scope: "SHARED", canonicalName: "", brand: "", variantTitle: "", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryId: "", identifierType: "GTIN", identifierValue: "", imageUri: "", galleryImageUris: "", active: true };
+const emptyForm: ProductForm = { verticalId: "", scope: "SHARED", canonicalName: "", description: "", brand: "", variantTitle: "", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryId: "", identifierType: "GTIN", identifierValue: "", imageUri: "", galleryImageUris: "", active: true };
 type AttributeDrafts = Readonly<Record<string, string>>;
 type AttributeInputSet = Readonly<{ productValues: ReadonlyArray<CatalogAttributeValueInput>; variantValues: ReadonlyArray<CatalogAttributeValueInput> }>;
 
@@ -50,7 +50,7 @@ function toForm(product: CatalogProduct): ProductForm {
   const variant = firstVariant(product);
   const identifier = variant?.identifiers[0];
   const orderedMedia = [...product.media].sort((left, right) => left.ordinal - right.ordinal);
-  return { verticalId: product.verticalId ?? "", scope: product.scope as ProductForm["scope"], canonicalName: product.canonicalName, brand: product.brand ?? "", variantTitle: variant?.title ?? "", measurementKind: variant?.measurementKind ?? "DISCRETE", baseUnit: variant?.baseUnit ?? "COUNT", categoryId: product.categoryIds[0] ?? "", identifierType: identifier?.type ?? "GTIN", identifierValue: identifier?.value ?? "", imageUri: orderedMedia.find((item) => item.role === "primary")?.uri ?? "", galleryImageUris: orderedMedia.filter((item) => item.role === "gallery").map((item) => item.uri).join("\n"), active: product.active };
+  return { verticalId: product.verticalId ?? "", scope: product.scope as ProductForm["scope"], canonicalName: product.canonicalName, description: product.description ?? "", brand: product.brand ?? "", variantTitle: variant?.title ?? "", measurementKind: variant?.measurementKind ?? "DISCRETE", baseUnit: variant?.baseUnit ?? "COUNT", categoryId: product.categoryIds[0] ?? "", identifierType: identifier?.type ?? "GTIN", identifierValue: identifier?.value ?? "", imageUri: orderedMedia.find((item) => item.role === "primary")?.uri ?? "", galleryImageUris: orderedMedia.filter((item) => item.role === "gallery").map((item) => item.uri).join("\n"), active: product.active };
 }
 
 function mediaInput(form: ProductForm) {
@@ -82,6 +82,7 @@ export function CentralCatalog() {
   const [uploadRole, setUploadRole] = useState<"primary" | "gallery">("primary");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadInputKey, setUploadInputKey] = useState(0);
+  const sharedVerticals = verticals.filter((vertical) => vertical.catalogModel === "SHARED_CATALOG");
 
   const loadVerticals = useCallback(async () => {
     const response = await fetch("/api/catalog/verticals", { cache: "no-store" });
@@ -116,8 +117,8 @@ export function CentralCatalog() {
     }
   }, [query, verticalFilter]);
 
-  useEffect(() => { void loadVerticals().catch((nextError) => setError(nextError instanceof Error ? nextError.message : "تعذر قراءة المجالات.")); }, [loadVerticals]);
-  useEffect(() => { void loadCategories(form.verticalId).catch((nextError) => setError(nextError instanceof Error ? nextError.message : "تعذر قراءة التصنيفات.")); }, [form.verticalId, loadCategories]);
+  useEffect(() => { void loadVerticals().catch((nextError) => setError(nextError instanceof Error ? nextError.message : "تعذر قراءة الفئات الرئيسية.")); }, [loadVerticals]);
+  useEffect(() => { void loadCategories(form.verticalId).catch((nextError) => setError(nextError instanceof Error ? nextError.message : "تعذر قراءة الفئات.")); }, [form.verticalId, loadCategories]);
   useEffect(() => {
     let current = true;
     setAttributeRules([]); setEnumOptions({}); setAttributeDrafts({});
@@ -142,8 +143,8 @@ export function CentralCatalog() {
 
   function renderAttributeFields() {
     if (selected || !form.categoryId || attributeReadState !== "ready" || attributeRules.length === 0) return null;
-    return <section className="managed-status managed-status-info" aria-label="خصائص التصنيف">
-      <strong>خصائص التصنيف</strong>
+    return <section className="managed-status managed-status-info" aria-label="خصائص الفئة">
+      <strong>خصائص الفئة</strong>
       {attributeRules.map((rule) => <label className="field-label" htmlFor={`product-attribute-${rule.attributeId}`} key={rule.attributeId}>
         {rule.nameAr}{rule.required ? " · مطلوب" : " · اختياري"}{rule.variantAxis ? " · خاص بالنسخة" : ""}
         {rule.valueKind === "BOOLEAN" ? <select id={`product-attribute-${rule.attributeId}`} value={attributeDrafts[rule.attributeId] ?? ""} onChange={(event) => setAttributeDrafts((current) => ({ ...current, [rule.attributeId]: event.target.value }))}><option value="">اختر قيمة</option><option value="true">نعم</option><option value="false">لا</option></select>
@@ -156,14 +157,14 @@ export function CentralCatalog() {
 
   async function saveProduct() {
     if (busy || form.scope !== "SHARED" || !form.canonicalName.trim() || !form.verticalId || !form.categoryId) return;
-    if (!selected && attributeReadState !== "ready") { setError("تعذر التحقق من خصائص التصنيف. أعد قراءة القواعد قبل إنشاء المنتج."); return; }
+    if (!selected && attributeReadState !== "ready") { setError("تعذر التحقق من خصائص الفئة. أعد قراءة القواعد قبل إنشاء المنتج."); return; }
     const attributes = selected ? null : buildAttributeInputs(attributeRules, attributeDrafts);
     if (!selected && !attributes) { setError("أكمل الخصائص المطلوبة وتحقق من أنواع القيم قبل إنشاء المنتج."); return; }
     setBusy(true); setError(""); setNotice("");
-    const body = { canonicalName: form.canonicalName.trim(), verticalId: form.verticalId, scope: "SHARED" as const, measurementKind: form.measurementKind, baseUnit: form.baseUnit, categoryIds: [form.categoryId], attributeValues: attributes?.productValues ?? [], variantAttributeValues: attributes?.variantValues ?? [], ...(form.variantTitle.trim() ? { variantTitle: form.variantTitle.trim() } : {}), ...(form.brand.trim() ? { brand: form.brand.trim() } : {}), ...(form.identifierValue.trim() ? { identifierType: form.identifierType, identifierValue: form.identifierValue.trim() } : {}), ...(form.imageUri.trim() ? { imageUri: form.imageUri.trim() } : {}), active: form.active };
+    const body = { canonicalName: form.canonicalName.trim(), description: form.description.trim(), verticalId: form.verticalId, scope: "SHARED" as const, measurementKind: form.measurementKind, baseUnit: form.baseUnit, categoryIds: [form.categoryId], attributeValues: attributes?.productValues ?? [], variantAttributeValues: attributes?.variantValues ?? [], ...(form.variantTitle.trim() ? { variantTitle: form.variantTitle.trim() } : {}), ...(form.brand.trim() ? { brand: form.brand.trim() } : {}), ...(form.identifierValue.trim() ? { identifierType: form.identifierType, identifierValue: form.identifierValue.trim() } : {}), ...(form.imageUri.trim() ? { imageUri: form.imageUri.trim() } : {}), active: form.active };
     try {
       const response = selected
-        ? await fetch(`/api/catalog/products/${encodeURIComponent(selected.id)}`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID(), "X-Expected-Version": String(selected.version) }, body: JSON.stringify({ canonicalName: body.canonicalName, verticalId: body.verticalId, scope: body.scope, active: body.active, ...(body.brand ? { brand: body.brand } : {}) }) })
+        ? await fetch(`/api/catalog/products/${encodeURIComponent(selected.id)}`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID(), "X-Expected-Version": String(selected.version) }, body: JSON.stringify({ canonicalName: body.canonicalName, description: body.description, verticalId: body.verticalId, scope: body.scope, active: body.active, ...(body.brand ? { brand: body.brand } : {}) }) })
         : await fetch("/api/catalog/products", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(body) });
       const payload = await parseResponse<{ product: CatalogProduct }>(response);
       setSelected(payload.product); setForm(toForm(payload.product)); setNotice(selected ? "تم تحديث المنتج." : "تم إنشاء المنتج والنسخة الافتراضية."); await load();
@@ -218,18 +219,19 @@ export function CentralCatalog() {
     <div className="central-catalog-grid">
       <section className="access-card central-catalog-list" aria-labelledby="central-catalog-list-title">
         <div className="access-card-heading"><span className="step-chip">إدارة المنتجات</span><p className="eyebrow">سجل المنتجات</p><h2 id="central-catalog-list-title">المنتجات والنسخ</h2><p className="muted">المنتج يملك الهوية؛ وكل متجر يملك عرضه التجاري المنفصل.</p></div>
-        <div className="catalog-search"><input aria-label="البحث في الكتالوج" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void load(); }} placeholder="ابحث باسم المنتج" /><select aria-label="تصفية حسب المجال" value={verticalFilter} onChange={(event) => setVerticalFilter(event.target.value)}><option value="">كل المجالات</option>{verticals.map((vertical) => <option value={vertical.id} key={vertical.id}>{vertical.nameAr}</option>)}</select><button type="button" className="button button-secondary" disabled={loading} onClick={() => void load()}>بحث</button></div>
+        <div className="catalog-search"><input aria-label="البحث في الكتالوج" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void load(); }} placeholder="ابحث باسم المنتج" /><select aria-label="تصفية حسب الفئة الرئيسية" value={verticalFilter} onChange={(event) => setVerticalFilter(event.target.value)}><option value="">كل الفئات الرئيسية</option>{sharedVerticals.map((vertical) => <option value={vertical.id} key={vertical.id}>{vertical.nameAr}</option>)}</select><button type="button" className="button button-secondary" disabled={loading} onClick={() => void load()}>بحث</button></div>
         <button type="button" className="button button-primary" disabled={busy || verticals.length === 0} onClick={startCreate}>منتج جديد</button>
         {loading ? <p className="muted">جارٍ قراءة الكتالوج…</p> : products.length === 0 ? <p className="muted">لا توجد منتجات مطابقة.</p> : <><div className="central-product-list">{products.map((product) => <button type="button" className={`central-product-row${selected?.id === product.id ? " selected" : ""}`} key={product.id} onClick={() => selectProduct(product)}><span><strong>{product.canonicalName}</strong><small>{product.scope === "SHARED" ? "مشترك" : "خاص بالمتجر"} · {product.variants.length} نسخ</small></span><em className={product.active ? "active" : "inactive"}>{product.active ? "نشط" : "معطل"}</em></button>)}</div>{nextCursor ? <button type="button" className="button button-secondary" disabled={loading} onClick={() => void load(nextCursor, true)}>تحميل المزيد</button> : null}</>}
       </section>
       <section className="access-card central-catalog-editor" aria-labelledby="central-catalog-editor-title">
-        <div className="access-card-heading"><p className="eyebrow">تحرير المنتج والنسخة</p><h2 id="central-catalog-editor-title">{selected ? "تعديل المنتج" : "إنشاء منتج"}</h2><p className="muted">تُحفظ الهوية والتصنيف والنسخة الافتراضية في سجل المنتجات.</p></div>
+        <div className="access-card-heading"><p className="eyebrow">تحرير المنتج والنسخة</p><h2 id="central-catalog-editor-title">{selected ? "تعديل المنتج" : "إنشاء منتج"}</h2><p className="muted">تُحفظ الهوية والفئة والنسخة الافتراضية في سجل المنتجات.</p></div>
         <div className="central-product-form">
-          <label className="field-label" htmlFor="catalog-vertical">المجال التجاري<select id="catalog-vertical" disabled={busy || selected !== null} value={form.verticalId} onChange={(event) => { setForm({ ...form, verticalId: event.target.value, categoryId: "" }); setAttributeDrafts({}); }}><option value="">اختر مجالًا</option>{verticals.map((vertical) => <option value={vertical.id} key={vertical.id}>{vertical.nameAr}</option>)}</select></label>
-          <label className="field-label" htmlFor="catalog-category">التصنيف<select id="catalog-category" disabled={busy || selected !== null || !form.verticalId} value={form.categoryId} onChange={(event) => { setForm({ ...form, categoryId: event.target.value }); setAttributeDrafts({}); }}><option value="">اختر تصنيفًا</option>{categories.map((category) => <option value={category.id} key={category.id}>{category.nameAr}</option>)}</select></label>
-          {!selected && form.categoryId ? attributeReadState === "loading" ? <p className="muted">جارٍ قراءة قواعد خصائص التصنيف…</p> : attributeReadState === "error" ? <p className="identity-error" role="alert">تعذرت قراءة قواعد الخصائص. أعد المحاولة قبل إنشاء المنتج.</p> : renderAttributeFields() : null}
+          <label className="field-label" htmlFor="catalog-vertical">الفئة الرئيسية<select id="catalog-vertical" disabled={busy || selected !== null} value={form.verticalId} onChange={(event) => { setForm({ ...form, verticalId: event.target.value, categoryId: "" }); setAttributeDrafts({}); }}><option value="">اختر فئة رئيسية</option>{sharedVerticals.map((vertical) => <option value={vertical.id} key={vertical.id}>{vertical.nameAr}</option>)}</select></label>
+          <label className="field-label" htmlFor="catalog-category">الفئة<select id="catalog-category" disabled={busy || selected !== null || !form.verticalId} value={form.categoryId} onChange={(event) => { setForm({ ...form, categoryId: event.target.value }); setAttributeDrafts({}); }}><option value="">اختر فئة</option>{categories.map((category) => <option value={category.id} key={category.id}>{category.nameAr}</option>)}</select></label>
+          {!selected && form.categoryId ? attributeReadState === "loading" ? <p className="muted">جارٍ قراءة قواعد خصائص الفئة…</p> : attributeReadState === "error" ? <p className="identity-error" role="alert">تعذرت قراءة قواعد الخصائص. أعد المحاولة قبل إنشاء المنتج.</p> : renderAttributeFields() : null}
           {form.scope === "STORE_SCOPED" ? <p className="muted">هذا المنتج خاص بمتجر ويُدار من مساحة المتجر.</p> : null}
-          <label className="field-label" htmlFor="catalog-product-name">الاسم القانوني<input id="catalog-product-name" disabled={busy} value={form.canonicalName} onChange={(event) => setForm({ ...form, canonicalName: event.target.value })} /></label>
+          <label className="field-label" htmlFor="catalog-product-name">الاسم القياسي<input id="catalog-product-name" disabled={busy} value={form.canonicalName} onChange={(event) => setForm({ ...form, canonicalName: event.target.value })} /></label>
+          <label className="field-label" htmlFor="catalog-product-description">الوصف القياسي<textarea id="catalog-product-description" disabled={busy} maxLength={4000} rows={4} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
           <label className="field-label" htmlFor="catalog-product-brand">العلامة<input id="catalog-product-brand" disabled={busy} value={form.brand} onChange={(event) => setForm({ ...form, brand: event.target.value })} /></label>
           <label className="field-label" htmlFor="catalog-variant-title">عنوان النسخة<input id="catalog-variant-title" disabled={busy || selected !== null} value={form.variantTitle} onChange={(event) => setForm({ ...form, variantTitle: event.target.value })} placeholder="الافتراضي" /></label>
           <label className="field-label" htmlFor="catalog-measurement-kind">سياسة القياس<select id="catalog-measurement-kind" disabled={busy || selected !== null} value={form.measurementKind} onChange={(event) => { const measurementKind = event.target.value as MeasurementKind; setForm({ ...form, measurementKind, baseUnit: measurementKind === "DISCRETE" ? "COUNT" : form.baseUnit === "COUNT" ? "GRAM" : form.baseUnit }); }}><option value="DISCRETE">عددي</option><option value="MEASURED">مقاس ثابت</option><option value="VARIABLE_MEASURE">مقاس متغير</option></select></label>

@@ -1,3 +1,5 @@
+import type { OperatorPermission } from "@bthwani/identity";
+
 type WorkspaceChild = Readonly<{
   href: string;
   label: string;
@@ -7,12 +9,15 @@ export type WorkspaceDestination = Readonly<{
   href: string;
   label: string;
   children: readonly WorkspaceChild[];
+  permission?: OperatorPermission;
+  initialOperatorAdminOnly?: boolean;
   showInWorkspaceNavigation?: boolean;
 }>;
 
 export const workspaceCatalogResources = [
   { key: "overview", href: "/catalog", label: "نظرة عامة", description: "اختر مساحة الكتالوج المطلوبة." },
   { key: "products", href: "/catalog/products", label: "المنتجات", description: "هوية المنتج ونسخه المركزية." },
+  { key: "categories", href: "/catalog/categories", label: "الفئات", description: "شجرة فئات المنتجات المشتركة وقوالبها." },
   { key: "proposals", href: "/catalog/proposals", label: "المقترحات", description: "طابور مراجعة مقترحات الشركاء." },
   { key: "import", href: "/catalog/import", label: "الاستيراد", description: "ملف مصدر آمن، معاينة، ثم التزام." }
 ] as const;
@@ -24,9 +29,6 @@ const catalogChildren: readonly WorkspaceChild[] = workspaceCatalogResources.sli
 export const workspacePolicyResources = [
   { key: "overview", href: "/policies", label: "نظرة عامة", description: "إدارة سياسات المنصة من ملاكها القانونيين." },
   { key: "service-cities", href: "/policies/service-cities", label: "مدن الخدمة", description: "إدارة المدن الكانونية المستخدمة في أهلية الخدمة والانضمام." },
-  { key: "verticals", href: "/policies/verticals", label: "المجالات التجارية", description: "إدارة قاموس المجالات التجارية في DSH." },
-  { key: "categories", href: "/policies/categories", label: "شجرة التصنيفات", description: "إدارة شجرة التصنيفات وقواعد خصائصها في DSH." },
-  { key: "attributes", href: "/policies/attributes", label: "قواعد الخصائص", description: "تعريف خصائص المنتجات ومتطلبات العرض والبحث." },
   { key: "delivery-fees", href: "/policies/delivery-fees", label: "رسوم التوصيل", description: "إدارة سياسة الرسوم المحسوبة خادميًا في WLT." },
   { key: "field-rewards", href: "/policies/field-rewards", label: "مكافآت الميدان", description: "إدارة سياسات مكافأة الميدان في WLT." }
 ] as const;
@@ -62,21 +64,23 @@ export const workspaceDestinations: readonly WorkspaceDestination[] = [
   {
     href: "/operations",
     label: "العمليات",
+    permission: "operations",
     children: [{ href: "/captains", label: "الكباتن" }]
   },
   {
     href: "/partners",
     label: "الشركاء",
+    permission: "partners",
     children: [
       { href: "/partners/new", label: "إضافة شريك" },
       { href: "/fields", label: "الميدان" }
     ]
   },
-  { href: "/catalog", label: "الكتالوج", children: catalogChildren },
-  { href: "/marketing", label: "التسويق والمحتوى", children: marketingChildren },
-  { href: "/finance", label: "المالية", children: financeChildren },
-  { href: "/policies", label: "السياسات", children: policyChildren },
-  { href: "/access", label: "الوصول والصلاحيات", children: [] }
+  { href: "/catalog", label: "الكتالوج", children: catalogChildren, permission: "catalog" },
+  { href: "/marketing", label: "التسويق والمحتوى", children: marketingChildren, permission: "marketing" },
+  { href: "/finance", label: "المالية", children: financeChildren, permission: "finance" },
+  { href: "/policies", label: "السياسات", children: policyChildren, permission: "platform_policies" },
+  { href: "/access", label: "الوصول والصلاحيات", children: [], initialOperatorAdminOnly: true }
 ];
 
 export const workspaceSearchEntries = workspaceDestinations.filter((destination) => destination.showInWorkspaceNavigation !== false).flatMap((destination) => [

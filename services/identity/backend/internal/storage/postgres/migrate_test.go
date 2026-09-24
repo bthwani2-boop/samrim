@@ -13,12 +13,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/domain"
 	identityruntime "github.com/bthwani2-boop/samrim/services/identity/backend/internal/runtime"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/storage/postgres"
 	_ "github.com/lib/pq"
 )
 
-func TestMigrationV13ToV21Upgrade(t *testing.T) {
+func TestMigrationV13ToV22Upgrade(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
 	if databaseURL == "" {
 		t.Skip("IDENTITY_DATABASE_URL is required for the migration upgrade proof")
@@ -638,23 +639,57 @@ func TestMigrationV13ToV21Upgrade(t *testing.T) {
 		t.Fatalf("Platform Policies grant backfill was not least-privilege: initial=%v later=%v", initialPolicies, laterPolicies)
 	}
 
+	// Apply migration 022 and prove every admitted workspace scope is persisted for Operators.
+	var v22Name string
+	var v22Content []byte
+	for _, file := range files {
+		if strings.HasPrefix(file.Name(), "022_") {
+			v22Name = file.Name()
+			v22Content, err = os.ReadFile(filepath.Join(migDir, v22Name))
+			if err != nil {
+				t.Fatalf("read 022: %v", err)
+			}
+			break
+		}
+	}
+	if v22Name == "" {
+		t.Fatal("migration 022 not found")
+	}
+	hash22 := sha256.Sum256(v22Content)
+	if err := postgres.Migrate(ctx, testDB, 22, v22Name, hex.EncodeToString(hash22[:]), string(v22Content)); err != nil {
+		t.Fatalf("apply migration 022 on v21 database: %v", err)
+	}
+	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 22 {
+		t.Fatalf("expected schema version 22, got %d (err: %v)", version, err)
+	}
+	var initialPermissionCount, initialEnabledPermissionCount, laterPermissionCount, laterEnabledPermissionCount int
+	if err := testDB.QueryRowContext(ctx, "SELECT count(*), count(*) FILTER (WHERE enabled) FROM identity_operator_permissions WHERE actor_id=$1", ownerActorID).Scan(&initialPermissionCount, &initialEnabledPermissionCount); err != nil {
+		t.Fatalf("read initial Operator workspace grants: %v", err)
+	}
+	if err := testDB.QueryRowContext(ctx, "SELECT count(*), count(*) FILTER (WHERE enabled) FROM identity_operator_permissions WHERE actor_id=$1", operatorActorID).Scan(&laterPermissionCount, &laterEnabledPermissionCount); err != nil {
+		t.Fatalf("read later Operator workspace grants: %v", err)
+	}
+	if initialPermissionCount != len(domain.OperatorPermissions()) || initialEnabledPermissionCount != len(domain.OperatorPermissions()) || laterPermissionCount != len(domain.OperatorPermissions()) || laterEnabledPermissionCount != 0 {
+		t.Fatalf("workspace permission backfill was not least-privilege: initial=%d/%d later=%d/%d scopes=%d", initialPermissionCount, initialEnabledPermissionCount, laterPermissionCount, laterEnabledPermissionCount, len(domain.OperatorPermissions()))
+	}
+
 	// Verify full postgres.Ready passes on this upgraded database.
 	if err := postgres.Ready(ctx, testDB); err != nil {
 		t.Fatalf("postgres.Ready failed on upgraded database: %v", err)
 	}
 
-	// Re-run the canonical runtime migrator and prove it is a no-op at v21.
+	// Re-run the canonical runtime migrator and prove it is a no-op at v22.
 	beforeSecondRun := readMigrationNoOpSnapshot(t, testDB)
 	if err := identityruntime.RunMigrations(ctx, "development", testURL, migDir); err != nil {
 		t.Fatalf("second canonical migration run failed: %v", err)
 	}
 	afterSecondRun := readMigrationNoOpSnapshot(t, testDB)
 	assertMigrationNoOpSnapshotUnchanged(t, beforeSecondRun, afterSecondRun)
-	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 21 {
+	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 22 {
 		t.Fatalf("schema version changed during second canonical migration run: version=%d err=%v", version, err)
 	}
 
-	t.Log("Migration v13 -> v21 upgrade, data preservation, passkey cutover, mobile lifetime, refresh reconciliation, Finance and Platform Policies permission cutover test PASSED successfully!")
+	t.Log("Migration v13 -> v22 upgrade, data preservation, passkey cutover, mobile lifetime, refresh reconciliation and Operator workspace permission cutover test PASSED successfully!")
 }
 
 type migrationSessionSnapshot struct {

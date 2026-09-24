@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { listCatalogCategories, listCatalogProducts, listCatalogVerticals, listMarketingPromotions, listPublishedStoresForMarketing, dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../../src/server/identity/identity-bff";
+import { operatorWorkspacePermissionDenied } from "../../../../../src/server/identity/operator-workspace-access";
 
 type TargetType = "STORE" | "PRODUCT" | "CATEGORY" | "PROMOTION" | "INFO";
 type TargetOption = Readonly<{ id: string; label: string; detail?: string }>;
@@ -19,6 +20,8 @@ export async function GET(request: Request) {
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return errorResponse("FORBIDDEN", "control operator access is required", 403);
+  const permissionDenied = operatorWorkspacePermissionDenied(identity, "marketing");
+  if (permissionDenied) return permissionDenied;
 
   const params = new URL(request.url).searchParams;
   const targetType = params.get("targetType") as TargetType | null;

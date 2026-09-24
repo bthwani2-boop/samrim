@@ -31,6 +31,7 @@ export function CatalogWorkspace({ resource, children }: { resource: CatalogReso
 
   if (state.kind !== "authenticated") return null;
   if (state.identity.role !== "operator") return accessDenied();
+  if (!state.identity.permissions?.includes("catalog")) return accessDenied();
 
   const selected = workspaceCatalogResources.find((item) => item.key === activeResource) ?? workspaceCatalogResources[0];
   return (

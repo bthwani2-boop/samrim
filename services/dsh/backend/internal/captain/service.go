@@ -415,7 +415,11 @@ func (s *Service) SetManagedRoleEnabled(ctx context.Context, role, actorID, oper
 	if (role != "partner" && role != "captain") || actorID == "" || strings.TrimSpace(correlationID) == "" || idempotencyKey == "" || expectedVersion < 1 {
 		return ErrInvalidInput
 	}
-	if err := s.requireOperator(ctx, operatorActorID); err != nil {
+	permission := "operations"
+	if role == "partner" {
+		permission = "partners"
+	}
+	if err := s.requireOperatorPermission(ctx, operatorActorID, permission); err != nil {
 		return err
 	}
 	identityRole, err := s.identity.ReadActorRole(ctx, actorID, role)
@@ -490,14 +494,19 @@ func (s *Service) requirePartner(ctx context.Context, accessToken string) (ident
 }
 
 func (s *Service) requireOperator(ctx context.Context, actorID string) error {
-	operator, err := s.identity.ReadActorRole(ctx, strings.TrimSpace(actorID), "operator")
+	return s.requireOperatorPermission(ctx, actorID, "operations")
+}
+
+func (s *Service) requireOperatorPermission(ctx context.Context, actorID, permission string) error {
+	actorID = strings.TrimSpace(actorID)
+	operator, err := s.identity.ReadActorRole(ctx, actorID, "operator")
 	if err != nil {
 		return err
 	}
 	if operator.Role != "operator" || !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
 		return ErrOperatorNotActive
 	}
-	return nil
+	return s.identity.RequireOperatorPermission(ctx, actorID, permission)
 }
 
 func validMutation(idempotencyKey, correlationID, actingActorID string) bool {

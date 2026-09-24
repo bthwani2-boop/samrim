@@ -12,7 +12,7 @@ import (
 )
 
 func (s *Service) PreviewCatalogImport(ctx context.Context, actingActorID string, input contract.CatalogImportPreviewRequest, idempotencyKey, correlationID string) (postgres.CatalogImportPreviewResult, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
 		return postgres.CatalogImportPreviewResult{}, err
 	}
 	if strings.TrimSpace(input.RunID) == "" || strings.TrimSpace(input.SourceSha256) == "" || len(input.Rows) == 0 {
@@ -59,7 +59,7 @@ func (s *Service) PreviewCatalogImport(ctx context.Context, actingActorID string
 }
 
 func (s *Service) ReadCatalogImportRun(ctx context.Context, actingActorID, runID string) (postgres.CatalogImportPreviewResult, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
 		return postgres.CatalogImportPreviewResult{}, err
 	}
 	result, err := postgres.ReadCatalogImportRun(ctx, s.db, runID)
@@ -73,7 +73,7 @@ func (s *Service) ReadCatalogImportRun(ctx context.Context, actingActorID, runID
 }
 
 func (s *Service) CommitCatalogImport(ctx context.Context, actingActorID, runID, idempotencyKey, correlationID string) (postgres.CatalogImportCommitResult, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
 		return postgres.CatalogImportCommitResult{}, err
 	}
 	preview, err := postgres.ReadCatalogImportRun(ctx, s.db, runID)

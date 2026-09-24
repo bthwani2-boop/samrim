@@ -46,6 +46,9 @@ func (s *DeliveryFeeServer) read(w http.ResponseWriter, r *http.Request) {
 		s.writeOperatorError(w, err)
 		return
 	}
+	if !s.requirePlatformPolicyPermission(w, r.Context(), acting) {
+		return
+	}
 	policy, err := s.payment.ReadDeliveryFeePolicy(r.Context(), r.URL.Query().Get("serviceCityId"))
 	if err != nil {
 		s.writeWLTError(w, err)
@@ -98,18 +101,13 @@ func (s *DeliveryFeeServer) create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *DeliveryFeeServer) requirePlatformPolicyPermission(w http.ResponseWriter, ctx context.Context, actorID string) bool {
-	permission, err := s.identity.ReadOperatorPermission(ctx, actorID, "platform_policies")
-	if err != nil {
+	if err := s.identity.RequireOperatorPermission(ctx, actorID, "platform_policies"); err != nil {
 		var identityErr *identityclient.Error
 		if errors.As(err, &identityErr) {
 			writeIdentityError(w, err)
 		} else {
 			writeError(w, http.StatusBadGateway, "IDENTITY_UNAVAILABLE", "operator permission could not be verified")
 		}
-		return false
-	}
-	if !permission.Enabled {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "Platform Policies permission is required")
 		return false
 	}
 	return true

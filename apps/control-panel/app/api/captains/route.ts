@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { admitCaptain, dispatchCaptainOffer, dshErrorPayload, dshHttpStatus, isDshClientError, readCaptainAdmissionByActor, reassignCaptainOffer, recoverCaptainDelivery, setDshCaptainAvailability, setDshCaptainRoleEnabled } from "../../../src/server/dsh/dsh-bff";
 import { identityErrorPayload, identityHttpStatus, readOperatorSession, searchIdentityRoles } from "../../../src/server/identity/identity-bff";
+import { operatorWorkspacePermissionDenied } from "../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../src/server/security/csrf";
 
 function jsonError(code: string, message: string, status: number) {
@@ -29,6 +30,8 @@ export async function POST(request: Request) {
   const identity = await readOperatorSession();
   if (!identity) return jsonError("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return jsonError("FORBIDDEN", "operator access is required", 403);
+  const permissionDenied = operatorWorkspacePermissionDenied(identity, "operations");
+  if (permissionDenied) return permissionDenied;
   const body = (await request.json().catch(() => null)) as { action?: unknown; phone?: unknown; orderId?: unknown; assignmentId?: unknown; actorId?: unknown; available?: unknown; reason?: unknown; expectedVersion?: unknown } | null;
   const action = typeof body?.action === "string" ? body.action.trim() : "";
   const phone = typeof body?.phone === "string" ? body.phone.trim() : "";
@@ -70,6 +73,8 @@ export async function GET(request: Request) {
   const identity = await readOperatorSession();
   if (!identity) return jsonError("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return jsonError("FORBIDDEN", "operator access is required", 403);
+  const permissionDenied = operatorWorkspacePermissionDenied(identity, "operations");
+  if (permissionDenied) return permissionDenied;
   const params = new URL(request.url).searchParams;
   const rawLimit = params.get("limit") ?? "25";
   const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;

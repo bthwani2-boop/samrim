@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { dshErrorPayload, dshHttpStatus, isDshClientError, previewCatalogImport } from "../../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../../src/server/identity/identity-bff";
+import { operatorWorkspacePermissionDenied } from "../../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../../src/server/security/csrf";
 
 function errorResponse(code: string, message: string, status: number) {
@@ -14,6 +15,8 @@ export async function POST(request: Request) {
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return errorResponse("FORBIDDEN", "control operator access is required", 403);
+  const permissionDenied = operatorWorkspacePermissionDenied(identity, "catalog");
+  if (permissionDenied) return permissionDenied;
   const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() ?? "";
   const body = await request.json().catch(() => null) as { runId?: unknown; sourceSha256?: unknown; rows?: unknown } | null;
   if (typeof body?.runId !== "string" || typeof body.sourceSha256 !== "string" || !Array.isArray(body.rows) || body.rows.length < 1 || body.rows.length > 1000 || idempotencyKey.length < 8) return errorResponse("INVALID_INPUT", "runId, sourceSha256, rows and Idempotency-Key are required", 400);

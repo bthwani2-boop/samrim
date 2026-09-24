@@ -286,12 +286,13 @@ var (
 )
 
 type operatorOperationsCursor struct {
-	UpdatedAt time.Time `json:"updatedAt"`
-	ID        string    `json:"id"`
-	State     string    `json:"state"`
+	UpdatedAt     time.Time `json:"updatedAt"`
+	ID            string    `json:"id"`
+	State         string    `json:"state"`
+	ActionableOnly bool      `json:"actionableOnly"`
 }
 
-func ListOrdersForOperator(ctx context.Context, db *sql.DB, state string, limit int, cursor string) (OperatorOperationsResult, error) {
+func ListOrdersForOperator(ctx context.Context, db *sql.DB, state string, actionableOnly bool, limit int, cursor string) (OperatorOperationsResult, error) {
 	if db == nil || limit < 1 || limit > 100 {
 		return OperatorOperationsResult{}, ErrOperatorOperationInvalidLimit
 	}
@@ -302,8 +303,11 @@ func ListOrdersForOperator(ctx context.Context, db *sql.DB, state string, limit 
 		args = append(args, state)
 		where += " AND o.state=$" + strconv.Itoa(len(args))
 	}
+	if actionableOnly {
+		where += " AND (o.state='READY_FOR_DISPATCH' OR (o.state='CAPTAIN_ASSIGNED' AND a.state='assigned') OR (o.state='DELIVERY_FAILED' AND a.state='delivery_failed'))"
+	}
 	if strings.TrimSpace(cursor) != "" {
-		decoded, err := decodeOperatorOperationsCursor(cursor, state)
+		decoded, err := decodeOperatorOperationsCursor(cursor, state, actionableOnly)
 		if err != nil {
 			return OperatorOperationsResult{}, err
 		}
@@ -352,7 +356,7 @@ func ListOrdersForOperator(ctx context.Context, db *sql.DB, state string, limit 
 	if len(operations) > limit {
 		last := operations[limit-1]
 		result.Operations = operations[:limit]
-		result.NextCursor = encodeOperatorOperationsCursor(operatorOperationsCursor{UpdatedAt: last.UpdatedAt, ID: last.OrderID, State: state})
+		result.NextCursor = encodeOperatorOperationsCursor(operatorOperationsCursor{UpdatedAt: last.UpdatedAt, ID: last.OrderID, State: state, ActionableOnly: actionableOnly})
 	}
 	return result, nil
 }
@@ -377,13 +381,13 @@ func encodeOperatorOperationsCursor(cursor operatorOperationsCursor) string {
 	return base64.RawURLEncoding.EncodeToString(value)
 }
 
-func decodeOperatorOperationsCursor(raw, state string) (operatorOperationsCursor, error) {
+func decodeOperatorOperationsCursor(raw, state string, actionableOnly bool) (operatorOperationsCursor, error) {
 	value, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
 	if err != nil {
 		return operatorOperationsCursor{}, ErrOperatorOperationInvalidCursor
 	}
 	var cursor operatorOperationsCursor
-	if err := json.Unmarshal(value, &cursor); err != nil || cursor.ID == "" || cursor.UpdatedAt.IsZero() || cursor.State != strings.TrimSpace(state) {
+	if err := json.Unmarshal(value, &cursor); err != nil || cursor.ID == "" || cursor.UpdatedAt.IsZero() || cursor.State != strings.TrimSpace(state) || cursor.ActionableOnly != actionableOnly {
 		return operatorOperationsCursor{}, ErrOperatorOperationInvalidCursor
 	}
 	return cursor, nil

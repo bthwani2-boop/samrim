@@ -86,6 +86,17 @@ func (c *Client) ReadOperatorPermission(ctx context.Context, actorID, permission
 	return c.inner.ReadOperatorPermission(ctx, actorID, permission, "")
 }
 
+func (c *Client) RequireOperatorPermission(ctx context.Context, actorID, permission string) error {
+	access, err := c.ReadOperatorPermission(ctx, strings.TrimSpace(actorID), strings.TrimSpace(permission))
+	if err != nil {
+		return err
+	}
+	if !access.Enabled {
+		return &identityclient.Error{Status: 403, Code: "FORBIDDEN", Message: "the required Operator workspace permission is not granted"}
+	}
+	return nil
+}
+
 func (c *Client) ReadSession(ctx context.Context, accessToken string) (identityclient.ActorIdentity, error) {
 	return c.inner.ReadSession(ctx, accessToken)
 }

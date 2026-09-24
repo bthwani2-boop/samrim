@@ -75,12 +75,20 @@ func (s *OrderServer) listOperatorOperations(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "state is invalid")
 		return
 	}
+	actionableOnly := false
+	if rawActionable := r.URL.Query().Get("actionableOnly"); rawActionable != "" {
+		if rawActionable != "true" && rawActionable != "false" {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "actionableOnly must be true or false")
+			return
+		}
+		actionableOnly = rawActionable == "true"
+	}
 	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
 	if len(cursor) > 512 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cursor is too long")
 		return
 	}
-	operations, err := s.service.ListForOperator(r.Context(), state, actingActorID, limit, cursor)
+	operations, err := s.service.ListForOperator(r.Context(), state, actingActorID, actionableOnly, limit, cursor)
 	if err != nil {
 		writeOrderError(w, err)
 		return

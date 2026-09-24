@@ -32,7 +32,7 @@ export function FieldCommissionPolicyWorkspace() {
     void Promise.all([
       fetch("/api/catalog/verticals?includeInactive=true", { cache: "no-store" }).then(async (response) => {
         const body = await response.json() as { verticals?: CommerceVertical[]; error?: { message?: string } };
-        if (!response.ok) throw new Error(body.error?.message || "تعذرت قراءة المجالات من DSH.");
+        if (!response.ok) throw new Error(body.error?.message || "تعذرت قراءة الفئات الرئيسية من DSH.");
         return body.verticals ?? [];
       }),
       fetch("/api/policies/stores", { cache: "no-store" }).then(async (response) => {
@@ -134,10 +134,10 @@ export function FieldCommissionPolicyWorkspace() {
 
   return <section className="access-card" aria-labelledby="field-commission-policy-title">
     <div className="finance-toolbar"><div><p className="eyebrow">مركز السياسات · WLT</p><h2 id="field-commission-policy-title">مكافأة الميدان</h2></div><button className="button button-secondary" type="button" onClick={() => { if (scopeType && scopeSelected) void read(scopeType, scopeType === "DEFAULT" ? "" : scopeId); }} disabled={!scopeSelected || busy || readState === "loading"}>إعادة القراءة</button></div>
-    <p className="muted">تُستحق المكافأة مرة واحدة عند نشر المتجر. تُقرأ السياسة الدقيقة للنطاق؛ ويظل اختيار سياسة المجال أو المتجر صريحًا، والتقريب ثابت عند 50 ريال.</p>
+    <p className="muted">تُستحق المكافأة مرة واحدة عند نشر المتجر. تُقرأ السياسة الدقيقة للنطاق؛ ويظل اختيار سياسة الفئة الرئيسية أو المتجر صريحًا، والتقريب ثابت عند 50 ريال.</p>
     <div className="form-grid">
-      <label className="field-label" htmlFor="field-commission-scope">نطاق السياسة<select id="field-commission-scope" value={scopeType} onChange={(event) => chooseScopeType(event.target.value as ScopeType | "")} disabled={busy}><option value="">اختر النطاق</option><option value="DEFAULT">افتراضي</option><option value="VERTICAL">مجال تجاري</option><option value="STORE">متجر منشور</option></select></label>
-      {scopeType === "VERTICAL" ? <label className="field-label" htmlFor="field-commission-vertical">المجال التجاري<select id="field-commission-vertical" value={scopeId} onChange={(event) => chooseScopeId(event.target.value)} disabled={busy}><option value="">اختر مجالًا</option>{verticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}{vertical.active ? "" : " · غير نشط"}</option>)}</select></label> : null}
+      <label className="field-label" htmlFor="field-commission-scope">نطاق السياسة<select id="field-commission-scope" value={scopeType} onChange={(event) => chooseScopeType(event.target.value as ScopeType | "")} disabled={busy}><option value="">اختر النطاق</option><option value="DEFAULT">افتراضي</option><option value="VERTICAL">فئة رئيسية</option><option value="STORE">متجر منشور</option></select></label>
+      {scopeType === "VERTICAL" ? <label className="field-label" htmlFor="field-commission-vertical">الفئة الرئيسية<select id="field-commission-vertical" value={scopeId} onChange={(event) => chooseScopeId(event.target.value)} disabled={busy}><option value="">اختر فئة رئيسية</option>{verticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}{vertical.active ? "" : " · غير نشط"}</option>)}</select></label> : null}
       {scopeType === "STORE" ? <label className="field-label" htmlFor="field-commission-store">المتجر<select id="field-commission-store" value={scopeId} onChange={(event) => chooseScopeId(event.target.value)} disabled={busy}><option value="">اختر متجرًا منشورًا</option>{stores.map((store) => <option key={store.id} value={store.id}>{store.name} · {store.serviceCityName}</option>)}</select></label> : null}
       {scopeType === "STORE" && stores.length === 0 && !scopeLoadError ? <p className="muted">لا توجد متاجر منشورة لاختيارها حاليًا.</p> : null}
       <label className="field-label" htmlFor="field-commission-reward">المكافأة (ريال)<input id="field-commission-reward" type="number" min="50" step="50" value={rewardMinor} onChange={(event) => setRewardMinor(event.target.value)} disabled={busy || !canEdit || (readState !== "ready" && readState !== "missing")} /></label>

@@ -65,6 +65,9 @@ func (s *PartnerFinanceServer) readStoreCommissionPolicies(w http.ResponseWriter
 	if !s.requireOperator(w, r.Context(), acting) {
 		return
 	}
+	if !s.requirePermission(w, r.Context(), acting, "finance") {
+		return
+	}
 	storeID := strings.TrimSpace(r.URL.Query().Get("storeId"))
 	if storeID == "" || len(storeID) > 128 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "storeId is required")
@@ -85,6 +88,9 @@ func (s *PartnerFinanceServer) updateStoreCommissionPolicy(w http.ResponseWriter
 	}
 	acting, correlationID, idempotencyKey, ok := requiredMutationHeaders(w, r)
 	if !ok || !s.requireOperator(w, r.Context(), acting) {
+		return
+	}
+	if !s.requirePermission(w, r.Context(), acting, "finance") {
 		return
 	}
 	var input partnerStoreCommissionPolicyUpdateRequest
@@ -139,6 +145,9 @@ func (s *PartnerFinanceServer) readOperatorSummary(w http.ResponseWriter, r *htt
 	if !s.requireOperator(w, r.Context(), acting) {
 		return
 	}
+	if !s.requirePermission(w, r.Context(), acting, "finance") {
+		return
+	}
 	partnerActorID := strings.TrimSpace(r.PathValue("partnerActorId"))
 	if partnerActorID == "" || len(partnerActorID) > 128 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partnerActorId is required")
@@ -159,6 +168,9 @@ func (s *PartnerFinanceServer) recordCommissionRemittance(w http.ResponseWriter,
 	}
 	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
 	if !s.requireOperator(w, r.Context(), acting) {
+		return
+	}
+	if !s.requirePermission(w, r.Context(), acting, "finance") {
 		return
 	}
 	correlationID := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
@@ -211,8 +223,16 @@ func (s *PartnerFinanceServer) requireOperator(w http.ResponseWriter, ctx contex
 		writeIdentityError(w, err)
 		return false
 	}
-	if !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
+	if operator.Role != "operator" || !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active control operator session is required")
+		return false
+	}
+	return true
+}
+
+func (s *PartnerFinanceServer) requirePermission(w http.ResponseWriter, ctx context.Context, actorID, permission string) bool {
+	if err := s.identity.RequireOperatorPermission(ctx, actorID, permission); err != nil {
+		writeIdentityError(w, err)
 		return false
 	}
 	return true

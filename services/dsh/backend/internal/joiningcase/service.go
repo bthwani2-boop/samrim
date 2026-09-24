@@ -322,5 +322,5 @@ func (s *Service) requireOperator(ctx context.Context, actorID string) error {
 	if operator.Role != "operator" || !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
 		return ErrOperatorNotActive
 	}
-	return nil
+	return s.identity.RequireOperatorPermission(ctx, strings.TrimSpace(actorID), "partners")
 }

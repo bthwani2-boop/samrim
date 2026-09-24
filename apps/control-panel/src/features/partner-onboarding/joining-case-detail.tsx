@@ -247,7 +247,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
               <div><dt>المتجر الأول</dt><dd>{current.firstStoreName}</dd></div>
               <div><dt>الهاتف</dt><dd dir="ltr">{current.contactPhoneE164}</dd></div>
               <div><dt>مدينة الخدمة</dt><dd>{cityName}</dd></div>
-              <div><dt>المجال التجاري</dt><dd>{verticalName}</dd></div>
+              <div><dt>الفئة الرئيسية</dt><dd>{verticalName}</dd></div>
               <div><dt>أوضاع الطلب المختارة عند الانضمام</dt><dd>{current.firstStoreFulfillmentModes.map((mode) => fulfillmentModeOptions.find((option) => option.value === mode)?.label ?? mode).join("، ") || "لا توجد أوضاع مثبتة"}</dd></div>
               <div><dt>خط العرض</dt><dd dir="ltr">{current.firstStoreLatitude ?? "غير مسجل"}</dd></div>
               <div><dt>خط الطول</dt><dd dir="ltr">{current.firstStoreLongitude ?? "غير مسجل"}</dd></div>

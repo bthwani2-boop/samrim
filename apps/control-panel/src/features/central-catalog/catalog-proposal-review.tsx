@@ -155,8 +155,8 @@ export function CatalogProposalReview() {
               <div><dt>العلامة</dt><dd>{selected.proposedBrand || "غير محددة"}</dd></div>
               <div><dt>النسخة</dt><dd>{selected.proposedVariantTitle}</dd></div>
               <div><dt>النسخة الحالية: {selected.version}</dt></div>
-              <div><dt>المجال</dt><dd>{vertical?.nameAr ?? "المجال غير متاح"}</dd></div>
-              <div><dt>التصنيف</dt><dd>{category?.nameAr ?? "التصنيف غير متاح"}</dd></div>
+              <div><dt>الفئة الرئيسية</dt><dd>{vertical?.nameAr ?? "الفئة الرئيسية غير متاحة"}</dd></div>
+              <div><dt>الفئة</dt><dd>{category?.nameAr ?? "الفئة غير متاحة"}</dd></div>
               <div><dt>القياس</dt><dd>{measurementLabels[selected.proposedMeasurementKind]} · {unitLabels[selected.proposedBaseUnit]}</dd></div>
               <div><dt>المعرّف</dt><dd>{selected.proposedIdentifierValue ? `${selected.proposedIdentifierType ?? "معرّف"}: ${selected.proposedIdentifierValue}` : "لا يوجد"}</dd></div>
               <div><dt>الحالة</dt><dd>{catalogProductProposalStateLabel(selected.state)}</dd></div>

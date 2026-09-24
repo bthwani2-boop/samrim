@@ -139,7 +139,7 @@ func (s *CatalogServer) createVertical(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.CreateVertical(r.Context(), acting, postgres.CommerceVerticalRecord{ID: input.ID, NameAr: input.NameAr, NameEn: input.NameEn, Active: input.Active}, idempotency, correlation, input.Reason)
+	result, err := s.service.CreateVertical(r.Context(), acting, postgres.CommerceVerticalRecord{ID: input.ID, NameAr: input.NameAr, NameEn: input.NameEn, CatalogModel: string(input.CatalogModel), Active: input.Active}, idempotency, correlation, input.Reason)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -160,7 +160,7 @@ func (s *CatalogServer) updateVertical(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.UpdateVertical(r.Context(), acting, r.PathValue("verticalId"), postgres.UpdateCommerceVerticalInput{NameAr: input.NameAr, NameEn: input.NameEn, Active: input.Active, ExpectedVersion: input.ExpectedVersion}, idempotency, correlation, input.Reason)
+	result, err := s.service.UpdateVertical(r.Context(), acting, r.PathValue("verticalId"), postgres.UpdateCommerceVerticalInput{NameAr: input.NameAr, NameEn: input.NameEn, CatalogModel: string(input.CatalogModel), Active: input.Active, ExpectedVersion: input.ExpectedVersion}, idempotency, correlation, input.Reason)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -298,7 +298,7 @@ func (s *CatalogServer) createProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	request := input.CreateCatalogProductRequest
-	result, err := s.service.CreateCatalogProduct(r.Context(), acting, postgres.CatalogProductInput{VerticalID: request.VerticalID, Scope: request.Scope, StoreID: request.StoreID, CanonicalName: request.CanonicalName, Brand: optionalRequestString(request.Brand), MeasurementKind: string(request.MeasurementKind), BaseUnit: string(request.BaseUnit), VariantTitle: request.VariantTitle, CategoryIDs: request.CategoryIds, AttributeValues: catalogAttributeInputs(input.AttributeValues), VariantAttributeValues: catalogAttributeInputs(input.VariantAttributeValues), IdentifierType: request.IdentifierType, IdentifierValue: request.IdentifierValue, ImageURI: request.ImageUri}, idempotency, correlation)
+	result, err := s.service.CreateCatalogProduct(r.Context(), acting, postgres.CatalogProductInput{VerticalID: request.VerticalID, Scope: request.Scope, StoreID: request.StoreID, CanonicalName: request.CanonicalName, Description: request.Description, Brand: optionalRequestString(request.Brand), MeasurementKind: string(request.MeasurementKind), BaseUnit: string(request.BaseUnit), VariantTitle: request.VariantTitle, CategoryIDs: request.CategoryIds, AttributeValues: catalogAttributeInputs(input.AttributeValues), VariantAttributeValues: catalogAttributeInputs(input.VariantAttributeValues), IdentifierType: request.IdentifierType, IdentifierValue: request.IdentifierValue, ImageURI: request.ImageUri}, idempotency, correlation)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -319,7 +319,7 @@ func (s *CatalogServer) updateProduct(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.UpdateCatalogProduct(r.Context(), acting, r.PathValue("productId"), postgres.CatalogProductUpdateInput{VerticalID: input.VerticalID, Scope: input.Scope, StoreID: input.StoreID, CanonicalName: input.CanonicalName, Brand: optionalRequestString(input.Brand), Active: input.Active}, expected, idempotency, correlation)
+	result, err := s.service.UpdateCatalogProduct(r.Context(), acting, r.PathValue("productId"), postgres.CatalogProductUpdateInput{VerticalID: input.VerticalID, Scope: input.Scope, StoreID: input.StoreID, CanonicalName: input.CanonicalName, Description: input.Description, Brand: optionalRequestString(input.Brand), Active: input.Active}, expected, idempotency, correlation)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -493,7 +493,7 @@ func (s *CatalogServer) updateStoreScopedProduct(w http.ResponseWriter, r *http.
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.UpdateStoreScopedProduct(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("productId"), postgres.CatalogProductUpdateInput{VerticalID: input.VerticalID, Scope: "STORE_SCOPED", StoreID: r.PathValue("storeId"), CanonicalName: input.CanonicalName, Brand: optionalRequestString(input.Brand), Active: input.Active}, expected, idempotency, correlation)
+	result, err := s.service.UpdateStoreScopedProduct(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("productId"), postgres.CatalogProductUpdateInput{VerticalID: input.VerticalID, Scope: "STORE_SCOPED", StoreID: r.PathValue("storeId"), CanonicalName: input.CanonicalName, Description: input.Description, Brand: optionalRequestString(input.Brand), Active: input.Active}, expected, idempotency, correlation)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -563,7 +563,8 @@ func catalogLimit(w http.ResponseWriter, r *http.Request) (int, bool) {
 	return limit, true
 }
 func toCommerceVertical(item postgres.CommerceVerticalRecord) contract.CommerceVertical {
-	return contract.CommerceVertical{ID: item.ID, NameAr: item.NameAr, NameEn: item.NameEn, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	model := contract.CatalogModel(item.CatalogModel)
+	return contract.CommerceVertical{ID: item.ID, NameAr: item.NameAr, NameEn: item.NameEn, CatalogModel: model, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 func toCatalogCategory(item postgres.CatalogCategoryRecord) contract.CatalogCategory {
 	return contract.CatalogCategory{ID: item.ID, VerticalID: item.VerticalID, ParentCategoryID: item.ParentCategoryID, NameAr: item.NameAr, NameEn: item.NameEn, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
@@ -589,7 +590,7 @@ func toCatalogProduct(item postgres.CatalogProductRecord) contract.CatalogProduc
 	for _, attribute := range item.Attributes {
 		attributes = append(attributes, toCatalogAttributeValue(attribute))
 	}
-	return contract.CatalogProduct{ID: item.ID, VerticalID: item.VerticalID, Scope: item.Scope, StoreID: item.StoreID, CanonicalName: item.CanonicalName, Brand: optionalProductValue(item.Brand), Active: item.Active, Version: item.Version, Variants: variants, CategoryIds: item.CategoryIDs, Attributes: attributes, Media: media, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return contract.CatalogProduct{ID: item.ID, VerticalID: item.VerticalID, Scope: item.Scope, StoreID: item.StoreID, CanonicalName: item.CanonicalName, Description: item.Description, Brand: optionalProductValue(item.Brand), Active: item.Active, Version: item.Version, Variants: variants, CategoryIds: item.CategoryIDs, Attributes: attributes, Media: media, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func toCatalogAttributeValue(item postgres.CatalogAttributeValueRecord) contract.CatalogAttributeValue {
@@ -627,6 +628,12 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different catalog facts")
 	case errors.Is(err, postgres.ErrCatalogVersionConflict):
 		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "catalog version is stale")
+	case errors.Is(err, postgres.ErrCatalogVerticalModelLocked):
+		writeError(w, http.StatusConflict, "CATALOG_MODEL_LOCKED", "catalog model cannot change after products exist")
+	case errors.Is(err, postgres.ErrCatalogVerticalModelInUse):
+		writeError(w, http.StatusConflict, "CATALOG_MODEL_IN_USE", "existing products or proposals must match the selected catalog model")
+	case errors.Is(err, postgres.ErrCatalogVerticalModelInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a catalog model must be assigned to the commerce vertical")
 	case errors.Is(err, postgres.ErrCatalogCategoryCycle):
 		writeError(w, http.StatusConflict, "CATEGORY_CYCLE", "a category cannot be placed under its own descendant")
 	case errors.Is(err, postgres.ErrCatalogProposalConflict):
@@ -647,6 +654,8 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "OFFER_EXISTS", "StoreOffer already exists for this Variant")
 	case errors.Is(err, postgres.ErrCatalogOfferProductDisabled):
 		writeError(w, http.StatusConflict, "PRODUCT_NOT_ELIGIBLE", "Product/Variant/vertical is not eligible for this StoreOffer")
+	case errors.Is(err, postgres.ErrCatalogProductModelMismatch):
+		writeError(w, http.StatusConflict, "CATALOG_MODEL_MISMATCH", "product entry does not match the configured catalog for this Commerce Vertical")
 	case errors.Is(err, postgres.ErrCatalogOfferQuantityInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog quantity or measurement policy is invalid")
 	case errors.Is(err, postgres.ErrCatalogInventoryInvalid):
@@ -672,7 +681,7 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 	case errors.Is(err, catalog.ErrOperatorNotActive):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active control operator session is required")
 	case errors.Is(err, catalog.ErrOperatorPermission):
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "Platform Policies permission is required")
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "Catalog permission is required")
 	case errors.Is(err, catalog.ErrPartnerSessionForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active app-partner session is required")
 	case errors.Is(err, catalog.ErrStoreOwnershipForbidden):

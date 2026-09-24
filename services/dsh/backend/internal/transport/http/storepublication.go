@@ -47,6 +47,7 @@ func (s *StorePublicationServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/public/stores", s.listPublic)
 	mux.HandleFunc("GET /dsh/public/stores/{storeId}", s.readPublic)
 	mux.HandleFunc("GET /dsh/public/stores/{storeId}/catalog", s.readPublicCatalog)
+	mux.HandleFunc("GET /dsh/public/catalog/search", s.searchPublicCatalog)
 }
 
 func (s *StorePublicationServer) publish(w http.ResponseWriter, r *http.Request) {
@@ -255,6 +256,41 @@ func (s *StorePublicationServer) readPublicCatalog(w http.ResponseWriter, r *htt
 		nextCursor = *result.NextCursor
 	}
 	writeJSON(w, http.StatusOK, contract.PublicCatalogResponse{StoreID: result.StoreID, VerticalID: result.VerticalID, Categories: categories, Sections: sections, Offers: offers, NextCursor: nextCursor})
+}
+
+func (s *StorePublicationServer) searchPublicCatalog(w http.ResponseWriter, r *http.Request) {
+	serviceCityID := strings.TrimSpace(r.URL.Query().Get("serviceCityId"))
+	categoryID := strings.TrimSpace(r.URL.Query().Get("categoryId"))
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	limit := 20
+	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+		parsed, parseErr := strconv.Atoi(rawLimit)
+		if parseErr != nil || parsed < 1 || parsed > 50 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "limit must be between 1 and 50")
+			return
+		}
+		limit = parsed
+	}
+	if serviceCityID == "" || len(categoryID) > 128 || query == "" || len(query) > 160 || len(cursor) > 512 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog search scope or query is invalid")
+		return
+	}
+	result, err := postgres.SearchPublicCatalog(r.Context(), s.db, serviceCityID, categoryID, query, limit, cursor)
+	if err != nil {
+		writeStorageError(w, err)
+		return
+	}
+	offers := make([]contract.CatalogStoreOffer, 0, len(result.Offers))
+	for _, offer := range result.Offers {
+		offers = append(offers, toStoreOffer(offer))
+	}
+	nextCursor := ""
+	if result.NextCursor != nil {
+		nextCursor = *result.NextCursor
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, contract.PublicCatalogSearchResponse{Offers: offers, NextCursor: nextCursor})
 }
 
 func requiredPublicationHeaders(w http.ResponseWriter, r *http.Request) (string, string, string, int, bool) {

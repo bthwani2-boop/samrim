@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import type { MarketingPublicationRequest } from "@bthwani/dsh";
 import { dshErrorPayload, dshHttpStatus, isDshClientError, setMarketingContentPublication } from "../../../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../../../src/server/identity/identity-bff";
+import { operatorWorkspacePermissionDenied } from "../../../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../../../src/server/security/csrf";
 
 function errorResponse(code: string, message: string, status: number) {
@@ -14,6 +15,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ con
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return errorResponse("FORBIDDEN", "control operator access is required", 403);
+  const permissionDenied = operatorWorkspacePermissionDenied(identity, "marketing");
+  if (permissionDenied) return permissionDenied;
   const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() ?? "";
   const expectedVersion = Number(request.headers.get("X-Expected-Version"));
   if (idempotencyKey.length < 8 || !Number.isInteger(expectedVersion) || expectedVersion < 1) return errorResponse("INVALID_INPUT", "Idempotency-Key and X-Expected-Version are required", 400);

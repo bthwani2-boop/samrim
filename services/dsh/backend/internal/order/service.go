@@ -159,22 +159,22 @@ func (s *Service) ListForPartner(ctx context.Context, accessToken, storeID strin
 	return postgres.ListOrdersForStore(ctx, s.db, strings.TrimSpace(storeID), "", limit)
 }
 
-func (s *Service) ListForOperator(ctx context.Context, state, actingActorID string, limit int, cursor string) (postgres.OperatorOperationsResult, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+func (s *Service) ListForOperator(ctx context.Context, state, actingActorID string, actionableOnly bool, limit int, cursor string) (postgres.OperatorOperationsResult, error) {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "operations"); err != nil {
 		return postgres.OperatorOperationsResult{}, err
 	}
-	return postgres.ListOrdersForOperator(ctx, s.db, state, limit, cursor)
+	return postgres.ListOrdersForOperator(ctx, s.db, state, actionableOnly, limit, cursor)
 }
 
 func (s *Service) ReadForOperator(ctx context.Context, orderID, actingActorID string) (postgres.OperatorOperationRecord, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "operations"); err != nil {
 		return postgres.OperatorOperationRecord{}, err
 	}
 	return postgres.ReadOperatorOperation(ctx, s.db, orderID)
 }
 
 func (s *Service) ListCashCustodyForOperator(ctx context.Context, actingActorID string) (wlt.CashLiabilityResponse, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "finance"); err != nil {
 		return wlt.CashLiabilityResponse{}, err
 	}
 	return s.payment.ListOperatorCashLiability(ctx)
@@ -278,4 +278,11 @@ func (s *Service) requireOperator(ctx context.Context, actorID string) error {
 		return ErrOperatorNotActive
 	}
 	return nil
+}
+
+func (s *Service) requireOperatorPermission(ctx context.Context, actorID, permission string) error {
+	if err := s.requireOperator(ctx, actorID); err != nil {
+		return err
+	}
+	return s.identity.RequireOperatorPermission(ctx, strings.TrimSpace(actorID), permission)
 }

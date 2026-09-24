@@ -2,8 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { identityErrorPayload, identityHttpStatus, readOperatorPermission, readOperatorSession, searchIdentityRoles } from "../../../../src/server/identity/identity-bff";
-
-const permissionKeys = ["finance", "platform_policies"] as const;
+import { operatorWorkspacePermissions } from "../../../../src/session/operator-permissions";
 
 function errorResponse(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status, headers: { "Cache-Control": "no-store" } });
@@ -13,6 +12,7 @@ export async function GET(request: Request) {
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return errorResponse("FORBIDDEN", "operator access is required", 403);
+  if (!identity.canManageOperatorPermissions) return errorResponse("FORBIDDEN", "operator administration is restricted to the initial Operator", 403);
 
   const params = new URL(request.url).searchParams;
   const query = params.get("q") ?? "";
@@ -29,10 +29,9 @@ export async function GET(request: Request) {
     const page = await searchIdentityRoles("operator", query, limit, cursor, enabled);
     const items = await Promise.all(page.items.map(async (operator) => {
       if (operator.actorId === identity.subject) {
-        return { ...operator, permissions: permissionKeys.map((permission) => ({ permission, enabled: identity.permissions?.includes(permission) === true })) };
+        return { ...operator, permissions: operatorWorkspacePermissions.map(({ key: permission }) => ({ permission, enabled: identity.permissions?.includes(permission) === true })) };
       }
-      if (!identity.canManageOperatorPermissions) return { ...operator, permissions: null };
-      const permissions = await Promise.all(permissionKeys.map((permission) => readOperatorPermission(operator.actorId, permission, { operatorActorId: identity.subject, correlationId: randomUUID() })));
+      const permissions = await Promise.all(operatorWorkspacePermissions.map(({ key: permission }) => readOperatorPermission(operator.actorId, permission, { operatorActorId: identity.subject, correlationId: randomUUID() })));
       return { ...operator, permissions };
     }));
     return NextResponse.json({ items, limit: page.limit, nextCursor: page.nextCursor }, { headers: { "Cache-Control": "no-store" } });

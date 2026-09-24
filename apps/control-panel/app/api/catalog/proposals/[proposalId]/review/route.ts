@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { dshErrorPayload, dshHttpStatus, isDshClientError, reviewCatalogProposal } from "../../../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../../../src/server/identity/identity-bff";
+import { operatorWorkspacePermissionDenied } from "../../../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../../../src/server/security/csrf";
 
 function errorResponse(code: string, message: string, status: number) {
@@ -14,6 +15,8 @@ export async function POST(request: Request, context: { params: Promise<{ propos
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return errorResponse("FORBIDDEN", "control operator access is required", 403);
+  const permissionDenied = operatorWorkspacePermissionDenied(identity, "catalog");
+  if (permissionDenied) return permissionDenied;
   const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() ?? "";
   const body = await request.json().catch(() => null) as { state?: unknown; reason?: unknown; expectedVersion?: unknown } | null;
   const expectedVersion = typeof body?.expectedVersion === "number" ? body.expectedVersion : NaN;

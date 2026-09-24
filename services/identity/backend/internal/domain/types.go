@@ -47,16 +47,31 @@ type OperatorPermissionAccess struct {
 }
 
 const (
+	OperatorPermissionOperations       = "operations"
+	OperatorPermissionPartners         = "partners"
+	OperatorPermissionCatalog          = "catalog"
+	OperatorPermissionMarketing        = "marketing"
 	OperatorPermissionFinance          = "finance"
 	OperatorPermissionPlatformPolicies = "platform_policies"
 )
 
 func IsOperatorPermission(permission string) bool {
 	switch permission {
-	case OperatorPermissionFinance, OperatorPermissionPlatformPolicies:
+	case OperatorPermissionOperations, OperatorPermissionPartners, OperatorPermissionCatalog, OperatorPermissionMarketing, OperatorPermissionFinance, OperatorPermissionPlatformPolicies:
 		return true
 	default:
 		return false
+	}
+}
+
+func OperatorPermissions() []string {
+	return []string{
+		OperatorPermissionOperations,
+		OperatorPermissionPartners,
+		OperatorPermissionCatalog,
+		OperatorPermissionMarketing,
+		OperatorPermissionFinance,
+		OperatorPermissionPlatformPolicies,
 	}
 }
 

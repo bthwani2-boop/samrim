@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import type { UpdateCatalogCategoryRequest } from "@bthwani/dsh";
 import { dshErrorPayload, dshHttpStatus, isDshClientError, updateCatalogCategory } from "../../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../../src/server/identity/identity-bff";
+import { operatorWorkspacePermissionDenied } from "../../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../../src/server/security/csrf";
 
 function errorResponse(code: string, message: string, status: number) {
@@ -14,7 +15,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ categ
   if (!verifySameOrigin(request)) return errorResponse("FORBIDDEN", "cross-site requests are forbidden", 403);
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
-  if (identity.role !== "operator" || !identity.permissions?.includes("platform_policies")) return errorResponse("FORBIDDEN", "Platform Policies permission is required", 403);
+  if (identity.role !== "operator") return errorResponse("FORBIDDEN", "Catalog permission is required", 403);
+  const permissionDenied = operatorWorkspacePermissionDenied(identity, "catalog");
+  if (permissionDenied) return permissionDenied;
   const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() ?? "";
   if (idempotencyKey.length < 8 || idempotencyKey.length > 128) return errorResponse("INVALID_INPUT", "Idempotency-Key is required", 400);
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;

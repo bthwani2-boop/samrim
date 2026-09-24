@@ -31,7 +31,7 @@ export function PartnerStore() {
         <View style={styles.card}><Text style={styles.metaLabel}>أوضاع الطلب المتاحة</Text><Text style={styles.value}>{joiningCase.case.store.fulfillmentModes.map((mode) => mode === "BTHWANI_CAPTAIN" ? "توصيل بثواني" : mode === "PARTNER_CAPTAIN" ? "توصيل المتجر" : "استلم بنفسك من المتجر").join(" · ")}</Text><Text style={styles.muted}>تُدار هذه الأوضاع بعد إنشاء المتجر من قسم الشركاء في لوحة التحكم.</Text></View>
         <View style={styles.card}><Text style={styles.metaLabel}>موقع المتجر الثابت</Text><Text selectable style={styles.value}>{joiningCase.case.store.deliveryOrigin ? `${joiningCase.case.store.deliveryOrigin.latitude.toFixed(6)}, ${joiningCase.case.store.deliveryOrigin.longitude.toFixed(6)}` : "لم يُثبت ضمن ملف الانضمام"}</Text><Text style={styles.muted}>يُقرأ من ملف الانضمام ولا يُعدّل من هذه الشاشة.</Text></View>
         <StoreCaptainMembershipManagement storeID={joiningCase.case.store.id} />
-        <StoreOfferManagement storeId={joiningCase.case.store.id} />
+        <StoreOfferManagement storeId={joiningCase.case.store.id} verticalId={joiningCase.case.store.primaryVerticalId ?? ""} />
       </> : <Text style={styles.muted}>لم يُنشأ المتجر بعد. راجع دورة الانضمام لإكمال أي تصحيح مطلوب.</Text>}
       {joiningCase.case.state === "needs_correction" ? <Link href={"/onboarding" as Href} asChild><BthwaniButton label="مراجعة التصحيح المطلوب" variant="secondary" /></Link> : null}
     </View>

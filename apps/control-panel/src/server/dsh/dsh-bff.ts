@@ -192,13 +192,14 @@ export async function listOperatorPartnerStores(actorId: string, limit: number, 
   return (await requestDshJson<PartnerStoreListResponse>(dshOperationPaths.listOperatorPartnerStores.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export async function listOperatorOperations(state: string, limit: number, cursor: string, context: DshOperatorReadContext): Promise<OperatorOperationsResponse> {
+export async function listOperatorOperations(state: string, limit: number, cursor: string, actionableOnly: boolean, context: DshOperatorReadContext): Promise<OperatorOperationsResponse> {
 	if (!context.operatorActorId.trim() || !Number.isInteger(limit) || limit < 1 || limit > 100 || cursor.trim().length > 512) {
 		throw new Error("DSH_OPERATOR_OPERATIONS_INPUT_INVALID");
 	}
 	const params = new URLSearchParams({ limit: String(limit) });
 	if (state.trim()) params.set("state", state.trim());
 	if (cursor.trim()) params.set("cursor", cursor.trim());
+	if (actionableOnly) params.set("actionableOnly", "true");
 	const path = `${dshOperationPaths.listOperatorOperations.path}?${params.toString()}`;
 	return (await requestDshJson<OperatorOperationsResponse>(dshOperationPaths.listOperatorOperations.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
@@ -386,7 +387,7 @@ export async function listCatalogVerticals(context: DshOperatorReadContext, incl
 }
 
 export async function createCatalogVertical(input: CreateCommerceVerticalRequest, context: CatalogVerticalMutationContext): Promise<Readonly<{ status: number; payload: CommerceVerticalResponse }>> {
-  if (!input.nameAr.trim() || !input.nameEn.trim() || input.reason.trim().length < 5 || input.reason.trim().length > 500) throw new Error("DSH_CATALOG_VERTICAL_INPUT_INVALID");
+  if (!input.nameAr.trim() || !input.nameEn.trim() || (input.catalogModel !== "SHARED_CATALOG" && input.catalogModel !== "STORE_LOCAL_CATALOG") || input.reason.trim().length < 5 || input.reason.trim().length > 500) throw new Error("DSH_CATALOG_VERTICAL_INPUT_INVALID");
   validateAttributedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_CATALOG_VERTICAL_IDEMPOTENCY_INVALID");
   return requestDshJson<CommerceVerticalResponse>(dshOperationPaths.createCatalogVertical.method, dshOperationPaths.createCatalogVertical.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
@@ -394,7 +395,7 @@ export async function createCatalogVertical(input: CreateCommerceVerticalRequest
 
 export async function updateCatalogVertical(verticalId: string, input: UpdateCommerceVerticalRequest, context: CatalogVerticalMutationContext): Promise<Readonly<{ status: number; payload: CommerceVerticalResponse }>> {
   const normalizedId = verticalId.trim();
-  if (!normalizedId || !input.nameAr.trim() || !input.nameEn.trim() || !Number.isInteger(input.expectedVersion) || input.expectedVersion < 1 || input.reason.trim().length < 5 || input.reason.trim().length > 500) throw new Error("DSH_CATALOG_VERTICAL_UPDATE_INPUT_INVALID");
+  if (!normalizedId || !input.nameAr.trim() || !input.nameEn.trim() || (input.catalogModel !== "SHARED_CATALOG" && input.catalogModel !== "STORE_LOCAL_CATALOG") || !Number.isInteger(input.expectedVersion) || input.expectedVersion < 1 || input.reason.trim().length < 5 || input.reason.trim().length > 500) throw new Error("DSH_CATALOG_VERTICAL_UPDATE_INPUT_INVALID");
   validateAttributedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_CATALOG_VERTICAL_IDEMPOTENCY_INVALID");
   const path = dshOperationPaths.updateCatalogVertical.path.replace("{verticalId}", encodeURIComponent(normalizedId));
@@ -519,7 +520,7 @@ export async function commitCatalogImport(runId: string, context: JoiningCaseMut
 }
 
 export async function createCatalogProduct(input: CreateCatalogProductRequest, context: CatalogProductMutationContext): Promise<Readonly<{ status: number; payload: CatalogProductResponse }>> {
-  if (!input.canonicalName.trim() || !input.verticalId.trim() || !input.scope.trim() || !input.measurementKind || !input.baseUnit || input.categoryIds.length < 1) throw new Error("DSH_PRODUCT_INPUT_INVALID");
+  if (!input.canonicalName.trim() || !input.verticalId.trim() || !input.scope.trim() || !input.measurementKind || !input.baseUnit || (input.categoryIds?.length ?? 0) < 1) throw new Error("DSH_PRODUCT_INPUT_INVALID");
   validateAttributedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_PRODUCT_IDEMPOTENCY_INVALID");
   return requestDshJson<CatalogProductResponse>(dshOperationPaths.createCatalogProduct.method, dshOperationPaths.createCatalogProduct.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });

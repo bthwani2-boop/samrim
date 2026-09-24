@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";
 import { createJoiningCase, dshErrorPayload, dshHttpStatus, isDshClientError, listJoiningCases } from "../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
+import { operatorWorkspacePermissionDenied } from "../../../../src/server/identity/operator-workspace-access";
 
 function errorResponse(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status, headers: { "Cache-Control": "no-store" } });
@@ -17,6 +18,8 @@ export async function POST(request: Request) {
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return errorResponse("FORBIDDEN", "control operator access is required", 403);
+  const permissionDenied = operatorWorkspacePermissionDenied(identity, "partners");
+  if (permissionDenied) return permissionDenied;
   const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() ?? "";
   if (idempotencyKey.length < 8 || idempotencyKey.length > 128) return errorResponse("INVALID_INPUT", "Idempotency-Key is required", 400);
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
@@ -41,6 +44,8 @@ export async function GET(request: Request) {
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return errorResponse("FORBIDDEN", "control operator access is required", 403);
+  const permissionDenied = operatorWorkspacePermissionDenied(identity, "partners");
+  if (permissionDenied) return permissionDenied;
   const params = new URL(request.url).searchParams;
   const rawLimit = params.get("limit") ?? "25";
   const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;

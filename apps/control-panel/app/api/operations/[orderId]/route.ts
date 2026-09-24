@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { dshErrorPayload, dshHttpStatus, isDshClientError, readOperatorOperation } from "../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
+import { operatorWorkspacePermissionDenied } from "../../../../src/server/identity/operator-workspace-access";
 
 function errorResponse(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status, headers: { "Cache-Control": "no-store" } });
@@ -11,6 +12,8 @@ export async function GET(_request: Request, context: Readonly<{ params: Promise
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return errorResponse("FORBIDDEN", "control operator access is required", 403);
+  const permissionDenied = operatorWorkspacePermissionDenied(identity, "operations");
+  if (permissionDenied) return permissionDenied;
 
   const { orderId } = await context.params;
   try {

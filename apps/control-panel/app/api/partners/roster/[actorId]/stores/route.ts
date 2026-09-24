@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { dshErrorPayload, dshHttpStatus, isDshClientError, listOperatorPartnerStores } from "../../../../../../src/server/dsh/dsh-bff";
 import { identityErrorPayload, identityHttpStatus, readOperatorSession } from "../../../../../../src/server/identity/identity-bff";
+import { operatorWorkspacePermissionDenied } from "../../../../../../src/server/identity/operator-workspace-access";
 
 function errorResponse(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status, headers: { "Cache-Control": "no-store" } });
@@ -11,6 +12,8 @@ export async function GET(request: Request, context: { params: Promise<{ actorId
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return errorResponse("FORBIDDEN", "operator access is required", 403);
+  const permissionDenied = operatorWorkspacePermissionDenied(identity, "partners");
+  if (permissionDenied) return permissionDenied;
   const params = new URL(request.url).searchParams;
   const rawLimit = params.get("limit") ?? "25";
   const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;

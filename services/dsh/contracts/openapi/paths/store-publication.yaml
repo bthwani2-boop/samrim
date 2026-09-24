@@ -112,6 +112,40 @@ paths:
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 
+  /dsh/public/catalog/search:
+    get:
+      operationId: searchPublicCatalog
+      summary: Search customer-visible product offers across published stores in one active service city
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ServiceCityIdRequired"
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 160 }
+        - name: categoryId
+          in: query
+          required: false
+          schema: { type: string, maxLength: 128 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 512 }
+      responses:
+        "200":
+          description: Stable, paginated search results limited to customer-visible offers in the requested service city.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/PublicCatalogSearchResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
   /dsh/public/stores/{storeId}:
     get:
       operationId: readPublishedStore

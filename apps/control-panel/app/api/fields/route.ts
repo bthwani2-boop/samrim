@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { admitField, authorizeDshFieldReenrollment, dshErrorPayload, dshHttpStatus, isDshClientError, readFieldAdmissionByActor, setDshFieldRoleEnabled } from "../../../src/server/dsh/dsh-bff";
 import { identityErrorPayload, identityHttpStatus, readOperatorSession, searchIdentityRoles } from "../../../src/server/identity/identity-bff";
+import { operatorWorkspacePermissionDenied } from "../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../src/server/security/csrf";
 
 export async function POST(request: Request) {
@@ -10,6 +11,8 @@ export async function POST(request: Request) {
   const identity = await readOperatorSession();
   if (!identity) return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "authentication is required" } }, { status: 401, headers: { "Cache-Control": "no-store" } });
   if (identity.role !== "operator") return NextResponse.json({ error: { code: "FORBIDDEN", message: "operator access is required" } }, { status: 403, headers: { "Cache-Control": "no-store" } });
+  const permissionDenied = operatorWorkspacePermissionDenied(identity, "partners");
+  if (permissionDenied) return permissionDenied;
   const body = (await request.json().catch(() => null)) as { action?: unknown; contactPhoneE164?: unknown; actorId?: unknown; reason?: unknown; expectedVersion?: unknown; expectedAdmissionVersion?: unknown; expectedActorVersion?: unknown; expectedRoleVersion?: unknown } | null;
   const action = typeof body?.action === "string" ? body.action.trim() : "admit";
   const actorId = typeof body?.actorId === "string" ? body.actorId.trim() : "";
@@ -56,6 +59,8 @@ export async function GET(request: Request) {
   const identity = await readOperatorSession();
   if (!identity) return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "authentication is required" } }, { status: 401, headers: { "Cache-Control": "no-store" } });
   if (identity.role !== "operator") return NextResponse.json({ error: { code: "FORBIDDEN", message: "operator access is required" } }, { status: 403, headers: { "Cache-Control": "no-store" } });
+  const permissionDenied = operatorWorkspacePermissionDenied(identity, "partners");
+  if (permissionDenied) return permissionDenied;
   const params = new URL(request.url).searchParams;
   const rawLimit = params.get("limit") ?? "25";
   const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;

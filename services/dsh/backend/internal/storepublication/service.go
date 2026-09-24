@@ -69,6 +69,9 @@ func (s *Service) Publish(ctx context.Context, storeID, requestedState string, e
 	if operator.Role != "operator" || !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
 		return postgres.PublicationResult{}, PublicationReadiness{}, ErrOperatorNotActive
 	}
+	if err := s.identity.RequireOperatorPermission(ctx, actingActorID, "partners"); err != nil {
+		return postgres.PublicationResult{}, PublicationReadiness{}, err
+	}
 	requestHash := postgres.HashStorePublicationRequest(storeID, requestedState, expectedVersion)
 	var readiness PublicationReadiness
 	result, err := postgres.SetStorePublicationWithGuard(ctx, s.db, storeID, requestedState, expectedVersion, idempotencyKey, requestHash, actingActorID, correlationID, func(guardCtx context.Context, store postgres.StoreRecord) error {
@@ -103,6 +106,9 @@ func (s *Service) SetFulfillmentModes(ctx context.Context, storeID string, modes
 	if operator.Role != "operator" || !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
 		return postgres.StoreFulfillmentModesResult{}, ErrOperatorNotActive
 	}
+	if err := s.identity.RequireOperatorPermission(ctx, actingActorID, "partners"); err != nil {
+		return postgres.StoreFulfillmentModesResult{}, err
+	}
 	return postgres.SetStoreFulfillmentModes(ctx, s.db, storeID, actingActorID, modes, expectedVersion, idempotencyKey, correlationID)
 }
 
@@ -114,6 +120,9 @@ func (s *Service) ReadForOperator(ctx context.Context, storeID, actingActorID st
 	}
 	if operator.Role != "operator" || !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
 		return postgres.StoreRecord{}, PublicationReadiness{}, ErrOperatorNotActive
+	}
+	if err := s.identity.RequireOperatorPermission(ctx, actingActorID, "partners"); err != nil {
+		return postgres.StoreRecord{}, PublicationReadiness{}, err
 	}
 	store, err := postgres.ReadStore(ctx, s.db, storeID)
 	if err != nil {

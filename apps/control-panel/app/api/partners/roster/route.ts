@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { dshErrorPayload, dshHttpStatus, isDshClientError, readJoiningCaseForPartnerActor, setDshPartnerRoleEnabled } from "../../../../src/server/dsh/dsh-bff";
 import { identityErrorPayload, identityHttpStatus, readOperatorSession, searchIdentityRoles } from "../../../../src/server/identity/identity-bff";
+import { operatorWorkspacePermissionDenied } from "../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";
 
 function errorResponse(code: string, message: string, status: number) {
@@ -13,6 +14,8 @@ export async function GET(request: Request) {
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return errorResponse("FORBIDDEN", "operator access is required", 403);
+  const permissionDenied = operatorWorkspacePermissionDenied(identity, "partners");
+  if (permissionDenied) return permissionDenied;
   const params = new URL(request.url).searchParams;
   const query = params.get("q") ?? "";
   const cursor = params.get("cursor") ?? "";
@@ -48,6 +51,8 @@ export async function POST(request: Request) {
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return errorResponse("FORBIDDEN", "operator access is required", 403);
+  const permissionDenied = operatorWorkspacePermissionDenied(identity, "partners");
+  if (permissionDenied) return permissionDenied;
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   const action = typeof body?.action === "string" ? body.action : "";
   const actorId = typeof body?.actorId === "string" ? body.actorId.trim() : "";

@@ -20,6 +20,11 @@ type PublicCatalogRecord struct {
 	NextCursor *string
 }
 
+type PublicCatalogSearchRecord struct {
+	Offers     []CatalogStoreOfferRecord
+	NextCursor *string
+}
+
 func ListPublicCatalogCategories(ctx context.Context, db *sql.DB, categoryIDs []string) ([]CatalogCategoryRecord, error) {
 	if db == nil {
 		return nil, errors.New("DSH database is nil")
@@ -127,7 +132,7 @@ func ReadPublicCatalog(ctx context.Context, db *sql.DB, storeID, serviceCityID, 
 	if err != nil {
 		return PublicCatalogRecord{}, err
 	}
-	offers, nextCursor, err := listCustomerVisibleOffers(ctx, db, storeID, categoryID, query, limit, cursor)
+	offers, nextCursor, err := listCustomerVisibleOffers(ctx, db, storeID, serviceCityID, categoryID, query, limit, cursor)
 	if err != nil {
 		return PublicCatalogRecord{}, err
 	}
@@ -138,17 +143,44 @@ func ReadPublicCatalog(ctx context.Context, db *sql.DB, storeID, serviceCityID, 
 	return PublicCatalogRecord{StoreID: storeID, VerticalID: verticalID, Categories: categories, Sections: sections, Offers: offers, NextCursor: nextCursor}, nil
 }
 
-func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, categoryID, query string, limit int, cursor string) ([]CatalogStoreOfferRecord, *string, error) {
+func SearchPublicCatalog(ctx context.Context, db *sql.DB, serviceCityID, categoryID, query string, limit int, cursor string) (PublicCatalogSearchRecord, error) {
+	serviceCityID = strings.TrimSpace(serviceCityID)
+	categoryID = strings.TrimSpace(categoryID)
+	query = strings.TrimSpace(query)
+	if db == nil || serviceCityID == "" || query == "" || len(query) > 160 || len(categoryID) > 128 || len(cursor) > 512 || limit < 1 || limit > 50 {
+		return PublicCatalogSearchRecord{}, errors.New("public catalog search input is invalid")
+	}
+	offers, nextCursor, err := listCustomerVisibleOffers(ctx, db, "", serviceCityID, categoryID, query, limit, cursor)
+	if err != nil {
+		return PublicCatalogSearchRecord{}, err
+	}
+	return PublicCatalogSearchRecord{Offers: offers, NextCursor: nextCursor}, nil
+}
+
+func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, serviceCityID, categoryID, query string, limit int, cursor string) ([]CatalogStoreOfferRecord, *string, error) {
 	conditions := customerVisibleOfferConditions()
-	args := []any{strings.TrimSpace(storeID)}
-	conditions = append([]string{"o.store_id=$1"}, conditions...)
+	args := make([]any, 0, 6)
+	storeID = strings.TrimSpace(storeID)
+	serviceCityID = strings.TrimSpace(serviceCityID)
+	if storeID != "" {
+		args = append(args, storeID)
+		conditions = append([]string{fmt.Sprintf("o.store_id=$%d", len(args))}, conditions...)
+	}
+	if serviceCityID != "" {
+		args = append(args, serviceCityID)
+		cityArgument := len(args)
+		conditions = append(conditions, fmt.Sprintf("s.service_city_id=$%d", cityArgument), "EXISTS (SELECT 1 FROM dsh.service_cities c WHERE c.id=s.service_city_id AND c.active=true)")
+	}
+	if storeID == "" && serviceCityID == "" {
+		return nil, nil, errors.New("public catalog scope is required")
+	}
 	if categoryID != "" {
 		args = append(args, categoryID)
-		conditions = append(conditions, fmt.Sprintf("EXISTS (SELECT 1 FROM dsh.catalog_product_categories pc WHERE pc.product_id=p.id AND pc.category_id=$%d)", len(args)))
+		conditions = append(conditions, fmt.Sprintf("EXISTS (SELECT 1 FROM dsh.catalog_product_categories pc JOIN dsh.catalog_categories c ON c.id=pc.category_id WHERE pc.product_id=p.id AND c.id=$%d AND c.active=true AND c.vertical_id=s.primary_vertical_id)", len(args)))
 	}
 	if query != "" {
-		args = append(args, query+"%")
-		conditions = append(conditions, fmt.Sprintf("lower(p.canonical_name) LIKE lower($%d)", len(args)))
+		args = append(args, escapeCatalogSearchPrefix(query))
+		conditions = append(conditions, fmt.Sprintf("lower(p.canonical_name) LIKE lower($%d) ESCAPE '!'", len(args)))
 	}
 	if cursor != "" {
 		decoded, decodeErr := base64.RawURLEncoding.DecodeString(cursor)
@@ -198,8 +230,12 @@ func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, categor
 	return items, nextCursor, nil
 }
 
+func escapeCatalogSearchPrefix(query string) string {
+	return strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(strings.TrimSpace(query)) + "%"
+}
+
 func listStorefrontSections(ctx context.Context, db queryer, storeID string) ([]CatalogStorefrontSectionRecord, error) {
-	rows, err := db.QueryContext(ctx, `SELECT id,store_id,name_ar,name_en,ordinal,active,version,created_at,updated_at FROM dsh.catalog_storefront_sections WHERE store_id=$1 AND active=true ORDER BY ordinal,id`, storeID)
+	rows, err := db.QueryContext(ctx, `SELECT ss.id,ss.store_id,ss.name_ar,ss.name_en,ss.ordinal,ss.active,ss.version,ss.created_at,ss.updated_at FROM dsh.catalog_storefront_sections ss JOIN dsh.stores s ON s.id=ss.store_id JOIN dsh.commerce_verticals cv ON cv.id=s.primary_vertical_id WHERE ss.store_id=$1 AND ss.active=true AND cv.catalog_model='STORE_LOCAL_CATALOG' ORDER BY ss.ordinal,ss.id`, storeID)
 	if err != nil {
 		return nil, err
 	}
@@ -269,8 +305,7 @@ func publishableCatalogOfferConditionsForAliases(offerAlias, variantAlias, produ
 		storeAlias + ".service_city_id IS NOT NULL",
 		storeAlias + ".primary_vertical_id IS NOT NULL",
 		productAlias + ".vertical_id=" + storeAlias + ".primary_vertical_id",
-		"(" + productAlias + ".scope='SHARED' OR (" + productAlias + ".scope='STORE_SCOPED' AND " + productAlias + ".store_id=" + offerAlias + ".store_id))",
-		"EXISTS (SELECT 1 FROM dsh.commerce_verticals cv WHERE cv.id=" + storeAlias + ".primary_vertical_id AND cv.active=true)",
+		"EXISTS (SELECT 1 FROM dsh.commerce_verticals cv WHERE cv.id=" + storeAlias + ".primary_vertical_id AND cv.active=true AND ((cv.catalog_model='SHARED_CATALOG' AND " + productAlias + ".scope='SHARED') OR (cv.catalog_model='STORE_LOCAL_CATALOG' AND " + productAlias + ".scope='STORE_SCOPED' AND " + productAlias + ".store_id=" + offerAlias + ".store_id)))",
 		offerAlias + ".quantity_policy=" + variantAlias + ".measurement_kind",
 		offerAlias + ".quantity_policy<>'VARIABLE_MEASURE'",
 		offerAlias + ".quantity_min_base_units IS NOT NULL",
@@ -280,7 +315,7 @@ func publishableCatalogOfferConditionsForAliases(offerAlias, variantAlias, produ
 		"(" + offerAlias + ".quantity_max_base_units-" + offerAlias + ".quantity_min_base_units)%" + offerAlias + ".quantity_step_base_units=0",
 		"((" + offerAlias + ".pricing_basis='PER_UNIT' AND " + offerAlias + ".pricing_unit_base_units=1) OR (" + offerAlias + ".pricing_basis='PER_MEASURE' AND " + offerAlias + ".pricing_unit_base_units>0))",
 		"(" + offerAlias + ".inventory_policy='AVAILABILITY_ONLY' OR (" + offerAlias + ".inventory_on_hand_base_units-" + offerAlias + ".inventory_reserved_base_units>=" + offerAlias + ".quantity_min_base_units))",
-		"EXISTS (SELECT 1 FROM dsh.catalog_product_categories pc JOIN dsh.catalog_categories c ON c.id=pc.category_id AND c.active=true AND c.vertical_id=" + productAlias + ".vertical_id WHERE pc.product_id=" + productAlias + ".id)",
+		"((" + productAlias + ".scope='SHARED' AND EXISTS (SELECT 1 FROM dsh.catalog_product_categories pc JOIN dsh.catalog_categories c ON c.id=pc.category_id AND c.active=true AND c.vertical_id=" + productAlias + ".vertical_id WHERE pc.product_id=" + productAlias + ".id)) OR (" + productAlias + ".scope='STORE_SCOPED' AND NOT EXISTS (SELECT 1 FROM dsh.catalog_product_categories pc WHERE pc.product_id=" + productAlias + ".id)))",
 		"NOT EXISTS (SELECT 1 FROM dsh.catalog_product_categories pc JOIN dsh.catalog_categories c ON c.id=pc.category_id JOIN dsh.catalog_category_attribute_rules r ON r.category_id=c.id JOIN dsh.catalog_attribute_definitions ad ON ad.id=r.attribute_id WHERE pc.product_id=" + productAlias + ".id AND c.active=true AND ad.active=true AND ad.vertical_id=" + productAlias + ".vertical_id AND r.required AND ((r.variant_axis AND NOT EXISTS (SELECT 1 FROM dsh.catalog_variant_attribute_values av WHERE av.variant_id=" + variantAlias + ".id AND av.attribute_id=r.attribute_id)) OR (NOT r.variant_axis AND NOT EXISTS (SELECT 1 FROM dsh.catalog_product_attribute_values av WHERE av.product_id=" + productAlias + ".id AND av.attribute_id=r.attribute_id))))",
 		"NOT EXISTS (SELECT 1 FROM dsh.catalog_store_offer_modifier_groups og JOIN dsh.catalog_modifier_groups mg ON mg.id=og.group_id WHERE og.offer_id=" + offerAlias + ".id AND (mg.store_id<>" + offerAlias + ".store_id OR NOT mg.active OR mg.min_selections > (SELECT COUNT(*) FROM dsh.catalog_modifier_options mo WHERE mo.group_id=mg.id AND mo.availability=true)))",
 	}

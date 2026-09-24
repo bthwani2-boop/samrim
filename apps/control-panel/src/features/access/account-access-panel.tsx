@@ -1,13 +1,13 @@
 "use client";
 
 import { toAsciiDigits } from "@bthwani/design-system";
-import type { OperatorEnrollmentToken } from "@bthwani/identity";
+import type { OperatorEnrollmentToken, OperatorPermission, OperatorPermissionAccess } from "@bthwani/identity";
 import { useEffect, useRef, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
+import { operatorWorkspacePermissions } from "../../session/operator-permissions";
 import { useSession } from "../../session/session-provider";
 import { responseMessage } from "./identity-error-message";
 
-type OperatorPermissionAccess = Readonly<{ permission: "finance" | "platform_policies"; enabled: boolean; version: number; reason: string }>;
 type ManagedOperatorStatus = Readonly<{
   role: "operator";
   actorId?: string;
@@ -18,14 +18,8 @@ type ManagedOperatorStatus = Readonly<{
   state?: string;
   actorVersion?: number;
   roleVersion?: number;
-  financeAccess?: OperatorPermissionAccess;
-  platformPoliciesAccess?: OperatorPermissionAccess;
+  operatorPermissions?: Partial<Record<OperatorPermission, OperatorPermissionAccess>>;
 }>;
-
-const permissionRows = [
-  { key: "finance", label: "المالية", field: "financeAccess", reasonId: "finance-access-reason" },
-  { key: "platform_policies", label: "سياسات المنصة", field: "platformPoliciesAccess", reasonId: "platform-policies-access-reason" },
-] as const;
 
 function accountStateLabel(state: string | undefined): string {
   if (state === "active") return "نشط";
@@ -39,7 +33,7 @@ export function AccountAccessPanel({ selectedPhone = "" }: Readonly<{ selectedPh
   const { state: sessionState } = useSession();
   const [phone, setPhone] = useState("");
   const [reason, setReason] = useState("");
-  const [permissionReasons, setPermissionReasons] = useState<Record<string, string>>({ finance: "", platform_policies: "" });
+  const [permissionReasons, setPermissionReasons] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<ManagedOperatorStatus | null>(null);
   const [result, setResult] = useState<OperatorEnrollmentToken | null>(null);
   const [busy, setBusy] = useState(false);
@@ -174,8 +168,8 @@ export function AccountAccessPanel({ selectedPhone = "" }: Readonly<{ selectedPh
     }
   }
 
-  async function changePermission(permission: "finance" | "platform_policies") {
-    const access = permission === "finance" ? status?.financeAccess : status?.platformPoliciesAccess;
+  async function changePermission(permission: OperatorPermission) {
+    const access = status?.operatorPermissions?.[permission];
     const permissionReason = permissionReasons[permission] ?? "";
     const reasonLength = Array.from(permissionReason.trim()).length;
     if (!status?.actorId || !status.enabled || !access) {
@@ -214,7 +208,7 @@ export function AccountAccessPanel({ selectedPhone = "" }: Readonly<{ selectedPh
     }
   }
 
-  const canManagePermissionTarget = sessionState.kind === "authenticated" && sessionState.identity.canManageOperatorPermissions === true && status?.role === "operator" && Boolean(status.actorId) && status.actorId !== sessionState.identity.subject && Boolean(status.financeAccess) && Boolean(status.platformPoliciesAccess);
+  const canManagePermissionTarget = sessionState.kind === "authenticated" && sessionState.identity.canManageOperatorPermissions === true && status?.role === "operator" && Boolean(status.actorId) && status.actorId !== sessionState.identity.subject && operatorWorkspacePermissions.every(({ key }) => Boolean(status.operatorPermissions?.[key]));
   const canViewOwnPermissions = sessionState.kind === "authenticated" && status?.role === "operator" && status.actorId === sessionState.identity.subject;
   const canIssueActivation = status !== null && !status.activated && (status.exists === false || status.enabled);
 
@@ -239,8 +233,9 @@ export function AccountAccessPanel({ selectedPhone = "" }: Readonly<{ selectedPh
               <strong>الصلاحيات المفوضة</strong>
               <p>{canManagePermissionTarget ? "الصفة كمشغّل لا تمنح صلاحيات النطاق تلقائيًا. الحالة والسبب المسجل ظاهران لكل صلاحية." : "هذه صلاحيات الجلسة الحالية الصادرة من Identity. يحدّث Identity الجلسة بعد تغيير الصلاحيات."}</p>
               <div className="access-form">
-                {permissionRows.map(({ key, label, field, reasonId }) => {
-                  const access = canManagePermissionTarget ? status[field] : undefined;
+                {operatorWorkspacePermissions.map(({ key, label }) => {
+                  const reasonId = `operator-permission-reason-${key}`;
+                  const access = canManagePermissionTarget ? status.operatorPermissions?.[key] : undefined;
                   const enabled = access?.enabled ?? (canViewOwnPermissions && sessionState.kind === "authenticated" && (sessionState.identity.permissions ?? []).includes(key));
                   return <section className="managed-status managed-status-info" aria-label={`صلاحية ${label}`} key={key}>
                     <strong><code>{key}</code> · {enabled ? "ممنوحة" : "غير ممنوحة"}</strong>

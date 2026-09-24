@@ -4,7 +4,7 @@ const operatorSession = {
   subject: "actor-operator",
   sessionId: "session-operator",
   role: "operator",
-  permissions: ["finance", "platform_policies"],
+  permissions: ["finance", "platform_policies", "catalog"],
   surface: "control-panel",
   expiresAt: "2099-01-01T00:00:00.000Z",
 };
@@ -23,8 +23,8 @@ test("catalog landing exposes separate resource workspaces", async ({ page }) =>
   for (const label of ["المنتجات", "المقترحات", "الاستيراد"]) {
     await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: label, exact: true })).toHaveAttribute("href", /\/catalog\//);
   }
-  await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "التصنيفات", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "المجالات", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "الفئات", exact: true })).toHaveAttribute("href", "/catalog/categories");
+  await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "شجرة الفئات", exact: true })).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "موارد الكتالوج" })).toHaveCount(0);
   await expect(page.locator("#catalog-import-rows")).toHaveCount(0);
 });
@@ -80,7 +80,7 @@ test("catalog proposal review shows detail and re-reads after approval", async (
      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ proposals: queueRead < 3 ? [proposal] : [] }) });
   });
   await page.route("**/api/catalog/verticals", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", active: true, version: 1, createdAt: "2026-09-18T00:00:00.000Z", updatedAt: "2026-09-18T00:00:00.000Z" }] }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", catalogModel: "SHARED_CATALOG", active: true, version: 1, createdAt: "2026-09-18T00:00:00.000Z", updatedAt: "2026-09-18T00:00:00.000Z" }] }) });
   });
   await page.route("**/api/catalog/categories?verticalId=grocery", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories: [{ id: "coffee", verticalId: "grocery", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", active: true, version: 1, createdAt: "2026-09-18T00:00:00.000Z", updatedAt: "2026-09-18T00:00:00.000Z" }] }) });
@@ -94,7 +94,7 @@ test("catalog proposal review shows detail and re-reads after approval", async (
   await page.getByRole("button", { name: /قهوة/ }).first().click();
   await expect(page.getByRole("heading", { name: "قهوة", exact: true })).toBeVisible();
   await expect(page.getByText("النسخة الحالية: 3")).toBeVisible();
-  await expect(page.getByText("التصنيف").locator("..") .getByText("قهوة")).toBeVisible();
+  await expect(page.getByText("الفئة").locator("..") .getByText("قهوة")).toBeVisible();
   await page.getByRole("button", { name: "اعتماد" }).click();
   await expect(page.getByRole("status")).toContainText("تم تسجيل القرار");
   expect(queueRead).toBeGreaterThan(1);

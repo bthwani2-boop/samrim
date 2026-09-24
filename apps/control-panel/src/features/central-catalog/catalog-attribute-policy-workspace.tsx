@@ -1,6 +1,6 @@
 "use client";
 
-import type { CatalogAttributeDefinition, CatalogAttributeRule, CatalogCategory, CommerceVertical } from "@bthwani/dsh";
+import type { CatalogAttributeDefinition, CatalogAttributeRule } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "../../session/session-provider";
 
@@ -18,13 +18,9 @@ async function parseResponse<T>(response: Response): Promise<T> {
   return body as T;
 }
 
-export function CatalogAttributePolicyWorkspace() {
+export function CatalogAttributePolicyWorkspace({ verticalId, categoryId }: { verticalId: string; categoryId: string }) {
   const { state } = useSession();
-  const canEdit = state.kind === "authenticated" && state.identity.permissions?.includes("platform_policies") === true;
-  const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
-  const [verticalId, setVerticalId] = useState("");
-  const [categories, setCategories] = useState<ReadonlyArray<CatalogCategory>>([]);
-  const [categoryId, setCategoryId] = useState("");
+  const canEdit = state.kind === "authenticated" && state.identity.permissions?.includes("catalog") === true;
   const [definitions, setDefinitions] = useState<ReadonlyArray<CatalogAttributeDefinition>>([]);
   const [rules, setRules] = useState<ReadonlyArray<CatalogAttributeRule>>([]);
   const [drafts, setDrafts] = useState<Record<string, RuleDraft>>({});
@@ -40,39 +36,19 @@ export function CatalogAttributePolicyWorkspace() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  const loadVerticals = useCallback(async () => {
-    try {
-      const response = await fetch("/api/catalog/verticals?includeInactive=true", { cache: "no-store" });
-      setVerticals((await parseResponse<{ verticals: ReadonlyArray<CommerceVertical> }>(response)).verticals);
-    } catch (value) {
-      setError(errorMessage(value));
-    }
-  }, []);
-
-  const loadScope = useCallback(async (nextVerticalId: string) => {
+  const loadDefinitions = useCallback(async (nextVerticalId: string) => {
     if (!nextVerticalId) {
-      setCategories([]);
       setDefinitions([]);
-      setCategoryId("");
       setRules([]);
+      setDrafts({});
       return;
     }
     setLoading(true);
     setError("");
     try {
-      const [categoryResponse, definitionResponse] = await Promise.all([
-        fetch(`/api/catalog/categories?verticalId=${encodeURIComponent(nextVerticalId)}&includeInactive=true`, { cache: "no-store" }),
-        fetch(`/api/catalog/attributes?verticalId=${encodeURIComponent(nextVerticalId)}&includeInactive=true`, { cache: "no-store" }),
-      ]);
-      const [categoryBody, definitionBody] = await Promise.all([
-        parseResponse<{ categories: ReadonlyArray<CatalogCategory> }>(categoryResponse),
-        parseResponse<{ definitions: ReadonlyArray<CatalogAttributeDefinition> }>(definitionResponse),
-      ]);
-      setCategories(categoryBody.categories);
+      const definitionResponse = await fetch(`/api/catalog/attributes?verticalId=${encodeURIComponent(nextVerticalId)}&includeInactive=true`, { cache: "no-store" });
+      const definitionBody = await parseResponse<{ definitions: ReadonlyArray<CatalogAttributeDefinition> }>(definitionResponse);
       setDefinitions(definitionBody.definitions);
-      setCategoryId("");
-      setRules([]);
-      setDrafts({});
     } catch (value) {
       setError(errorMessage(value));
     } finally {
@@ -96,8 +72,7 @@ export function CatalogAttributePolicyWorkspace() {
     }
   }, []);
 
-  useEffect(() => { void loadVerticals(); }, [loadVerticals]);
-  useEffect(() => { void loadScope(verticalId); }, [verticalId, loadScope]);
+  useEffect(() => { void loadDefinitions(verticalId); }, [verticalId, loadDefinitions]);
   useEffect(() => { void loadRules(categoryId); }, [categoryId, loadRules]);
 
   const selectedAttribute = useMemo(() => definitions.find((item) => item.id === selectedAttributeId) ?? null, [definitions, selectedAttributeId]);
@@ -108,7 +83,7 @@ export function CatalogAttributePolicyWorkspace() {
     try {
       const response = await fetch("/api/catalog/attributes", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ verticalId, code: code.trim().toLowerCase(), nameAr: nameAr.trim(), valueKind, active: true }) });
       const body = await parseResponse<{ definition: CatalogAttributeDefinition }>(response);
-      setNameAr(""); setCode(""); setSelectedAttributeId(body.definition.id); setNotice("تم حفظ تعريف الخاصية في DSH."); await loadScope(verticalId);
+      setNameAr(""); setCode(""); setSelectedAttributeId(body.definition.id); setNotice("تم حفظ تعريف الخاصية في DSH."); await loadDefinitions(verticalId);
     } catch (value) { setError(errorMessage(value)); }
     finally { setBusy(false); }
   }
@@ -142,41 +117,37 @@ export function CatalogAttributePolicyWorkspace() {
       if (normalizedReason.length < 5 || normalizedReason.length > 500) throw new Error("أدخل سببًا من 5 إلى 500 حرف لتوثيق تغيير القاعدة.");
       const response = await fetch(`/api/catalog/categories/${encodeURIComponent(categoryId)}/attribute-rules/${encodeURIComponent(attributeId)}`, { method: "PUT", headers: { "Content-Type": "application/json", "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ ...draft, filterable: false, expectedVersion: currentRule?.version ?? 0, reason: normalizedReason }) });
       const body = await parseResponse<{ rules: ReadonlyArray<CatalogAttributeRule> }>(response);
-      setRules(body.rules); setNotice("تم تحديث قواعد خصائص التصنيف.");
+      setRules(body.rules); setNotice("تم تحديث قواعد خصائص الفئة.");
     } catch (value) { setError(errorMessage(value)); }
     finally { setBusy(false); }
   }
 
-  return <section className="access-card" aria-labelledby="catalog-attribute-policy-title">
-    <div className="access-card-heading"><span className="step-chip">تعريفات DSH</span><p className="eyebrow">بيانات المنتجات</p><h2 id="catalog-attribute-policy-title">تعريف الخصائص وقواعد التصنيف</h2><p className="muted">تُعرّف الخاصية داخل مجالها، ثم تُربط بتصنيف وتُقرأ من السجل الكانوني قبل إدخال قيم المنتجات.</p></div>
-    <div className="access-form">
-      <label className="field-label" htmlFor="attribute-policy-vertical">المجال التجاري<select id="attribute-policy-vertical" value={verticalId} disabled={busy} onChange={(event) => setVerticalId(event.target.value)}><option value="">اختر مجالًا صراحةً</option>{verticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}{vertical.active ? "" : " · متوقف"}</option>)}</select></label>
-      <label className="field-label" htmlFor="attribute-policy-category">التصنيف<select id="attribute-policy-category" value={categoryId} disabled={busy || !verticalId} onChange={(event) => setCategoryId(event.target.value)}><option value="">اختر تصنيفًا</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.nameAr}{category.active ? "" : " · متوقف"}</option>)}</select></label>
-    </div>
+  return <div className="catalog-taxonomy-section">
+    <div className="access-card-heading"><span className="step-chip">خصائص DSH</span><p className="eyebrow">بيانات المنتجات</p><h3>خصائص الفئة المختارة وقواعدها</h3><p className="muted">اختر الفئة العليا والفئة من عناصر الشجرة أعلاه؛ تعريفات الخصائص وقواعدها تُقرأ وتُحفظ ضمن السياق نفسه.</p></div>
     <div className="workspace-resource-grid">
-      <section className="managed-status managed-status-info" aria-labelledby="attribute-definition-title">
-        <strong id="attribute-definition-title">تعريف خاصية للمجال</strong>
+      <div className="catalog-taxonomy-inline">
+        <strong>تعريف خاصية للفئة العليا المحددة</strong>
         <label className="field-label" htmlFor="attribute-name-ar">الاسم العربي<input id="attribute-name-ar" value={nameAr} onChange={(event) => setNameAr(event.target.value)} disabled={busy || !canEdit || !verticalId} maxLength={160} /></label>
         <label className="field-label" htmlFor="attribute-code">المعرّف البرمجي<input id="attribute-code" value={code} onChange={(event) => setCode(event.target.value)} disabled={busy || !canEdit || !verticalId} maxLength={64} dir="ltr" /></label>
         <label className="field-label" htmlFor="attribute-kind">نوع القيمة<select id="attribute-kind" value={valueKind} onChange={(event) => setValueKind(event.target.value as ValueKind)} disabled={busy || !canEdit || !verticalId}>{["TEXT", "INTEGER", "DECIMAL", "BOOLEAN", "ENUM", "MEASUREMENT", "DATE"].map((kind) => <option key={kind} value={kind}>{kind}</option>)}</select></label>
         <button type="button" className="button button-primary" disabled={busy || !canEdit || !verticalId || !nameAr.trim() || !code.trim()} onClick={() => void createDefinition()}>إضافة تعريف</button>
-      </section>
-      <section className="managed-status managed-status-info" aria-labelledby="attribute-options-title">
-        <strong id="attribute-options-title">خيارات القيم</strong>
+      </div>
+      <div className="catalog-taxonomy-inline">
+        <strong>خيارات قيم الخصائص</strong>
         <label className="field-label" htmlFor="attribute-option-select">خاصية التعداد<select id="attribute-option-select" value={selectedAttributeId} disabled={busy} onChange={(event) => { const id = event.target.value; setSelectedAttributeId(id); setOptions([]); if (id) void loadOptions(id); }}><option value="">اختر خاصية من النوع ENUM</option>{definitions.filter((item) => item.valueKind === "ENUM").map((item) => <option key={item.id} value={item.id}>{item.nameAr} · {item.code}</option>)}</select></label>
         {selectedAttribute?.valueKind === "ENUM" ? <><label className="field-label" htmlFor="attribute-option-value">قيمة الخيار<input id="attribute-option-value" value={optionValue} onChange={(event) => setOptionValue(event.target.value)} disabled={busy || !canEdit} maxLength={128} /></label><button type="button" className="button button-secondary" disabled={busy || !canEdit || !optionValue.trim()} onClick={() => void createOption()}>إضافة خيار</button><ul>{options.map((option) => <li key={option.optionValue}>{option.optionValue} · {option.active ? "نشط" : "متوقف"}</li>)}</ul></> : <p>اختر خاصية ENUM لإدارة قيمها.</p>}
-      </section>
+      </div>
     </div>
-    <section className="managed-status managed-status-info" aria-labelledby="attribute-rules-title">
-      <strong id="attribute-rules-title">قواعد التصنيف المحدد</strong>
+    <div className="catalog-taxonomy-inline">
+      <strong>قواعد الفئة المحددة</strong>
       <label className="field-label" htmlFor="attribute-rule-reason">سبب التغيير<textarea id="attribute-rule-reason" value={changeReason} onChange={(event) => setChangeReason(event.target.value)} disabled={busy || !canEdit} minLength={5} maxLength={500} /></label>
-      {loading ? <p>جارٍ قراءة القواعد…</p> : !categoryId ? <p>اختر تصنيفًا لقراءة قواعده.</p> : definitions.length === 0 ? <p>لا توجد تعريفات خصائص لهذا المجال بعد.</p> : <ul>{definitions.map((definition) => {
+      {loading ? <p>جارٍ قراءة القواعد…</p> : !categoryId ? <p>اختر فئة لقراءة قواعدها.</p> : definitions.length === 0 ? <p>لا توجد تعريفات خصائص لهذه الفئة الرئيسية بعد.</p> : <ul>{definitions.map((definition) => {
         const rule = rules.find((item) => item.attributeId === definition.id);
         const draft = drafts[definition.id] ?? { required: rule?.required ?? false, variantAxis: rule?.variantAxis ?? false };
         return <li key={definition.id}><div><strong>{definition.nameAr}</strong><span> · {definition.code} · {definition.valueKind}</span><div className="field-row"><label><input type="checkbox" checked={draft.required} disabled={busy || !canEdit} onChange={(event) => setDrafts((current) => ({ ...current, [definition.id]: { ...draft, required: event.target.checked } }))} /> مطلوب</label><label><input type="checkbox" checked={draft.variantAxis} disabled={busy || !canEdit} onChange={(event) => setDrafts((current) => ({ ...current, [definition.id]: { ...draft, variantAxis: event.target.checked } }))} /> محور نسخة</label></div></div><button type="button" className="button button-secondary" disabled={busy || !canEdit || !categoryId || changeReason.trim().length < 5} onClick={() => void saveRule(definition.id)}>حفظ القاعدة</button></li>;
       })}</ul>}
-    </section>
+    </div>
     {notice ? <p className="managed-status managed-status-success" role="status">{notice}</p> : null}
-    {error ? <p className="identity-error" role="alert">{error} <button type="button" className="button button-secondary" onClick={() => verticalId ? void loadScope(verticalId) : void loadVerticals()}>إعادة المحاولة</button></p> : null}
-  </section>;
+    {error ? <p className="identity-error" role="alert">{error} <button type="button" className="button button-secondary" onClick={() => { if (verticalId) void loadDefinitions(verticalId); if (categoryId) void loadRules(categoryId); }}>إعادة المحاولة</button></p> : null}
+  </div>;
 }

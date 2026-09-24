@@ -131,7 +131,7 @@ components:
 
     OperatorPermission:
       type: string
-      enum: [finance, platform_policies]
+      enum: [operations, partners, catalog, marketing, finance, platform_policies]
 
     PhoneRequest:
       type: object

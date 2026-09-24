@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import type { CreateCatalogAttributeDefinitionRequest } from "@bthwani/dsh";
 import { createCatalogAttributeDefinition, dshErrorPayload, dshHttpStatus, isDshClientError, listCatalogAttributeDefinitions } from "../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
+import { operatorWorkspacePermissionDenied } from "../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";
 
 function errorResponse(code: string, message: string, status: number) {
@@ -13,6 +14,8 @@ export async function GET(request: Request) {
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return errorResponse("FORBIDDEN", "control operator access is required", 403);
+  const permissionDenied = operatorWorkspacePermissionDenied(identity, "catalog");
+  if (permissionDenied) return permissionDenied;
   const params = new URL(request.url).searchParams;
   const verticalId = params.get("verticalId")?.trim() ?? "";
   if (!verticalId) return errorResponse("INVALID_INPUT", "verticalId is required", 400);
@@ -29,7 +32,9 @@ export async function POST(request: Request) {
   if (!verifySameOrigin(request)) return errorResponse("FORBIDDEN", "cross-site requests are forbidden", 403);
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
-  if (identity.role !== "operator" || !identity.permissions?.includes("platform_policies")) return errorResponse("FORBIDDEN", "Platform Policies permission is required", 403);
+  if (identity.role !== "operator") return errorResponse("FORBIDDEN", "Catalog permission is required", 403);
+  const permissionDenied = operatorWorkspacePermissionDenied(identity, "catalog");
+  if (permissionDenied) return permissionDenied;
   const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() ?? "";
   if (idempotencyKey.length < 8 || idempotencyKey.length > 128) return errorResponse("INVALID_INPUT", "Idempotency-Key is required", 400);
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;

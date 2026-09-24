@@ -3,9 +3,10 @@ import { NextResponse } from "next/server";
 
 import type { OperatorPermission } from "@bthwani/identity";
 import { identityErrorPayload, identityHttpStatus, readOperatorSession, setOperatorPermission } from "../../../../src/server/identity/identity-bff";
+import { operatorWorkspacePermissions } from "../../../../src/session/operator-permissions";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";
 
-const permissions = new Set<OperatorPermission>(["finance", "platform_policies"]);
+const permissions = new Set<OperatorPermission>(operatorWorkspacePermissions.map(({ key }) => key));
 
 function errorResponse(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status, headers: { "Cache-Control": "no-store" } });

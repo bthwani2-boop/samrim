@@ -1,7 +1,7 @@
 "use client";
 
 import type { CommerceVertical } from "@bthwani/dsh";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { useSession } from "../../session/session-provider";
 
 function readError(value: unknown): string {
@@ -18,34 +18,18 @@ async function parseResponse<T>(response: Response): Promise<T> {
   return payload as T;
 }
 
-export function CatalogVerticalRegistry() {
+export function CatalogVerticalRegistry({ verticals, onSaved }: { verticals: ReadonlyArray<CommerceVertical>; onSaved: () => Promise<void> }) {
   const { state } = useSession();
-  const canEdit = state.kind === "authenticated" && state.identity.permissions?.includes("platform_policies") === true;
-  const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
+  const canEdit = state.kind === "authenticated" && state.identity.permissions?.includes("catalog") === true;
   const [selected, setSelected] = useState<CommerceVertical | null>(null);
   const [nameAr, setNameAr] = useState("");
   const [nameEn, setNameEn] = useState("");
+  const [catalogModel, setCatalogModel] = useState<"SHARED_CATALOG" | "STORE_LOCAL_CATALOG" | "">("");
   const [reason, setReason] = useState("");
   const [active, setActive] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const response = await fetch("/api/catalog/verticals?includeInactive=true", { cache: "no-store" });
-      setVerticals((await parseResponse<{ verticals: ReadonlyArray<CommerceVertical> }>(response)).verticals);
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "تعذر قراءة المجالات التجارية.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { void load(); }, [load]);
 
   async function create() {
     if (!canEdit) return;
@@ -56,6 +40,7 @@ export function CatalogVerticalRegistry() {
       setError("يجب أن يتراوح الاسم العربي والإنجليزي بين حرفين و160 حرفًا.");
       return;
     }
+    if (!catalogModel) { setError("حدد مسار إدخال المنتجات لهذا المجال قبل الحفظ."); return; }
     if (normalizedReason.length < 5 || normalizedReason.length > 500) { setError("أدخل سببًا من 5 إلى 500 حرف لتوثيق الإضافة."); return; }
     setBusy(true);
     setError("");
@@ -64,17 +49,18 @@ export function CatalogVerticalRegistry() {
       const response = await fetch(selected ? `/api/catalog/verticals/${encodeURIComponent(selected.id)}` : "/api/catalog/verticals", {
         method: selected ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
-        body: JSON.stringify({ nameAr: normalizedNameAr, nameEn: normalizedNameEn, active, reason: normalizedReason, ...(selected ? { expectedVersion: selected.version } : {}) }),
+        body: JSON.stringify({ nameAr: normalizedNameAr, nameEn: normalizedNameEn, catalogModel, active, reason: normalizedReason, ...(selected ? { expectedVersion: selected.version } : {}) }),
       });
       const payload = await parseResponse<{ vertical: CommerceVertical }>(response);
-      setNotice(selected ? `تم تحديث المجال التجاري: ${payload.vertical.nameAr}.` : `تم حفظ المجال التجاري: ${payload.vertical.nameAr}.`);
+      setNotice(selected ? `تم تحديث الفئة الرئيسية: ${payload.vertical.nameAr}.` : `تم حفظ الفئة الرئيسية: ${payload.vertical.nameAr}.`);
       setSelected(null);
       setNameAr("");
       setNameEn("");
+      setCatalogModel("");
       setReason("");
-      await load();
+      await onSaved();
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "تعذر إنشاء المجال التجاري.");
+      setError(nextError instanceof Error ? nextError.message : "تعذر إنشاء الفئة الرئيسية.");
     } finally {
       setBusy(false);
     }
@@ -84,6 +70,7 @@ export function CatalogVerticalRegistry() {
     setSelected(vertical);
     setNameAr(vertical.nameAr);
     setNameEn(vertical.nameEn);
+    setCatalogModel(vertical.catalogModel ?? "");
     setActive(vertical.active);
     setReason("");
     setError("");
@@ -94,32 +81,34 @@ export function CatalogVerticalRegistry() {
     setSelected(null);
     setNameAr("");
     setNameEn("");
+    setCatalogModel("");
     setActive(true);
     setReason("");
   }
 
   return (
-    <section className="access-card" aria-labelledby="catalog-vertical-registry-title">
+    <div className="catalog-taxonomy-section" aria-labelledby="catalog-vertical-registry-title">
       <div className="access-card-heading">
         <span className="step-chip">قاموس التجارة</span>
-        <p className="eyebrow">المجالات التجارية</p>
-        <h2 id="catalog-vertical-registry-title">{selected ? "تعديل مجال تجاري" : "إضافة مجال تجاري"}</h2>
-        <p className="muted">المجال التجاري هو الفئة العليا التي يُربط بها المتجر والمنتج. الاسم العربي للواجهة، والاسم الإنجليزي للبيانات الوصفية والتكاملات؛ أما المعرف الداخلي فيولّده DSH تلقائيًا ويثبته ولا يظهر للعميل كاسم.</p>
+        <p className="eyebrow">الفئات الرئيسية</p>
+        <h3 id="catalog-vertical-registry-title">{selected ? "تعديل فئة عليا" : "إضافة فئة عليا"}</h3>
+        <p className="muted">الفئة الرئيسية هي المستوى الأعلى الذي يُربط به المتجر والمنتج، وتندرج تحتها الفئات. الاسم العربي للواجهة، والاسم الإنجليزي للبيانات الوصفية والتكاملات؛ أما المعرف الداخلي فيولّده DSH تلقائيًا ويثبته ولا يظهر للعميل كاسم.</p>
       </div>
       <div className="access-form">
         <label className="field-label" htmlFor="catalog-vertical-name-ar">الاسم العربي<input id="catalog-vertical-name-ar" disabled={busy || !canEdit} value={nameAr} onChange={(event) => setNameAr(event.target.value)} placeholder="مطاعم" /></label>
         <label className="field-label" htmlFor="catalog-vertical-name-en">الاسم الإنجليزي<input id="catalog-vertical-name-en" disabled={busy || !canEdit} value={nameEn} onChange={(event) => setNameEn(event.target.value)} placeholder="Restaurants" /></label>
+        <label className="field-label" htmlFor="catalog-vertical-model">مسار إدخال المنتجات<select id="catalog-vertical-model" disabled={busy || !canEdit} value={catalogModel} onChange={(event) => setCatalogModel(event.target.value as typeof catalogModel)}><option value="">حدد المسار</option><option value="SHARED_CATALOG">منتجات مشتركة موحّدة</option><option value="STORE_LOCAL_CATALOG">قائمة منتجات يملكها المتجر</option></select></label>
         <label className="field-label" htmlFor="catalog-vertical-active"><input id="catalog-vertical-active" type="checkbox" disabled={busy || !canEdit} checked={active} onChange={(event) => setActive(event.target.checked)} /> نشط عند الإنشاء</label>
         <label className="field-label" htmlFor="catalog-vertical-reason">سبب الإضافة<textarea id="catalog-vertical-reason" disabled={busy || !canEdit} minLength={5} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
-        <button type="button" className="button button-primary" disabled={busy || !canEdit || reason.trim().length < 5} onClick={() => void create()}>{busy ? "جارٍ الحفظ…" : selected ? "حفظ التعديل" : "إضافة مجال تجاري"}</button>
+        <button type="button" className="button button-primary" disabled={busy || !canEdit || reason.trim().length < 5} onClick={() => void create()}>{busy ? "جارٍ الحفظ…" : selected ? "حفظ التعديل" : "إضافة فئة رئيسية"}</button>
         {selected ? <button type="button" className="button button-secondary" disabled={busy} onClick={cancelEdit}>إلغاء التعديل</button> : null}
       </div>
       {notice ? <p className="managed-status managed-status-success" role="status">{notice}</p> : null}
-      {error ? <p className="identity-error" role="alert">{error} <button type="button" className="button button-secondary" onClick={() => void load()}>إعادة المحاولة</button></p> : null}
-      <div className="managed-status managed-status-info">
-        <strong>كل المجالات في السجل الكانوني</strong>
-        {loading ? <p>جارٍ قراءة السجل…</p> : verticals.length === 0 ? <p>لا توجد مجالات تجارية بعد. أضف المجال قبل إنشاء طلب شريك أو منتج.</p> : <ul>{verticals.map((vertical) => <li key={vertical.id}><span>{vertical.nameAr} · {vertical.nameEn} · {vertical.active ? "نشط" : "متوقف"} · v{vertical.version}</span><button type="button" className="button button-secondary" disabled={busy || !canEdit} onClick={() => edit(vertical)}>تعديل</button></li>)}</ul>}
+      {error ? <p className="identity-error" role="alert">{error} <button type="button" className="button button-secondary" onClick={() => void onSaved()}>إعادة المحاولة</button></p> : null}
+      <div className="catalog-taxonomy-inline">
+        <strong>الفئات الرئيسية في السجل الكانوني</strong>
+        {verticals.length === 0 ? <p>لا توجد فئات عليا بعد. أضف فئة قبل إنشاء طلب شريك أو منتج.</p> : <ul>{verticals.map((vertical) => <li key={vertical.id}><span>{vertical.nameAr} · {vertical.nameEn} · {vertical.active ? "نشط" : "متوقف"} · {vertical.catalogModel === "SHARED_CATALOG" ? "منتجات مشتركة" : vertical.catalogModel === "STORE_LOCAL_CATALOG" ? "قائمة المتجر" : "مسار غير محدد"} · v{vertical.version}</span><button type="button" className="button button-secondary" disabled={busy || !canEdit} onClick={() => edit(vertical)}>تعديل</button></li>)}</ul>}
       </div>
-    </section>
+    </div>
   );
 }

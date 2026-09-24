@@ -142,35 +142,25 @@ func (s *Service) provisionTrusted(ctx context.Context, caller string, input dom
 		}
 	}
 	if role == "operator" {
-		financeEnabled := bootstrapOnly
-		financeReason := "Finance permission not granted"
-		var changedBy any
-		if bootstrapOnly {
-			financeReason = "initial operator bootstrap"
-			changedBy = a.ID
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO identity_operator_permissions(actor_id,permission,enabled,version,changed_by_actor_id,reason)
-			VALUES($1,'finance',$2,1,$3,$4) ON CONFLICT(actor_id,permission) DO NOTHING`, a.ID, financeEnabled, changedBy, financeReason); err != nil {
-			return domain.ActorRoleView{}, err
-		}
-		if bootstrapOnly {
-			if err := auditTx(ctx, tx, "operator.finance_permission_granted", a.ID, caller, "success", "", map[string]any{"permission": "finance", "reason": financeReason, "workload": caller}); err != nil {
+		for _, permission := range domain.OperatorPermissions() {
+			reason := permission + " permission not granted"
+			var changedBy any
+			if bootstrapOnly {
+				reason = "initial operator bootstrap"
+				changedBy = a.ID
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO identity_operator_permissions(actor_id,permission,enabled,version,changed_by_actor_id,reason)
+				VALUES($1,$2,$3,1,$4,$5) ON CONFLICT(actor_id,permission) DO NOTHING`, a.ID, permission, bootstrapOnly, changedBy, reason); err != nil {
 				return domain.ActorRoleView{}, err
 			}
-		}
-		policiesReason := "Platform Policies permission not granted"
-		var policiesChangedBy any
-		if bootstrapOnly {
-			policiesReason = "initial operator bootstrap"
-			policiesChangedBy = a.ID
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO identity_operator_permissions(actor_id,permission,enabled,version,changed_by_actor_id,reason)
-			VALUES($1,'platform_policies',$2,1,$3,$4) ON CONFLICT(actor_id,permission) DO NOTHING`, a.ID, bootstrapOnly, policiesChangedBy, policiesReason); err != nil {
-			return domain.ActorRoleView{}, err
-		}
-		if bootstrapOnly {
-			if err := auditTx(ctx, tx, "operator.permission_granted", a.ID, caller, "success", "", map[string]any{"permission": "platform_policies", "reason": policiesReason, "workload": caller}); err != nil {
-				return domain.ActorRoleView{}, err
+			if bootstrapOnly {
+				event := "operator.permission_granted"
+				if permission == domain.OperatorPermissionFinance {
+					event = "operator.finance_permission_granted"
+				}
+				if err := auditTx(ctx, tx, event, a.ID, caller, "success", "", map[string]any{"permission": permission, "reason": reason, "workload": caller}); err != nil {
+					return domain.ActorRoleView{}, err
+				}
 			}
 		}
 	}

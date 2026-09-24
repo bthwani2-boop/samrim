@@ -21,7 +21,10 @@ type CatalogMediaUploadInput struct {
 }
 
 func (s *Service) UploadCatalogProductMedia(ctx context.Context, actingActorID string, input CatalogMediaUploadInput) (postgres.CatalogProductResult, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
+		return postgres.CatalogProductResult{}, err
+	}
+	if err := s.requireSharedProduct(ctx, input.ProductID); err != nil {
 		return postgres.CatalogProductResult{}, err
 	}
 	return s.uploadCatalogProductMedia(ctx, actingActorID, input)

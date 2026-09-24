@@ -16,6 +16,7 @@ import (
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
+	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
 type MarketingServer struct {
@@ -354,8 +355,31 @@ func (s *MarketingServer) operatorAuthorized(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
 		return false
 	}
-	if strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")) == "" {
+	actorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if actorID == "" {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return false
+	}
+	if s.identity == nil {
+		writeError(w, http.StatusBadGateway, "IDENTITY_UNAVAILABLE", "Operator permission could not be verified")
+		return false
+	}
+	operator, err := s.identity.ReadActorRole(r.Context(), actorID, "operator")
+	if err != nil {
+		writeIdentityError(w, err)
+		return false
+	}
+	if operator.Role != "operator" || !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active Control Panel Operator session is required")
+		return false
+	}
+	if err := s.identity.RequireOperatorPermission(r.Context(), actorID, "marketing"); err != nil {
+		var identityErr *identityclient.Error
+		if errors.As(err, &identityErr) && identityErr.Status == http.StatusForbidden {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "Marketing permission is required")
+		} else {
+			writeIdentityError(w, err)
+		}
 		return false
 	}
 	return true

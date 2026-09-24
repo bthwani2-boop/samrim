@@ -13,6 +13,7 @@ export async function POST(request: Request) {
   const identity = await readOperatorSession();
   if (!identity) return jsonError("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return jsonError("FORBIDDEN", "operator access is required", 403);
+  if (!identity.canManageOperatorPermissions) return jsonError("FORBIDDEN", "operator administration is restricted to the initial Operator", 403);
 
   const body = (await request.json().catch(() => null)) as { actorId?: unknown; role?: unknown; action?: unknown; reason?: unknown; expectedVersion?: unknown } | null;
   const actorId = typeof body?.actorId === "string" ? body.actorId.trim() : "";

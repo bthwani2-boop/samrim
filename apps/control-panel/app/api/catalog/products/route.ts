@@ -3,6 +3,7 @@ import type { CreateCatalogProductRequest } from "@bthwani/dsh";
 import { NextResponse } from "next/server";
 import { createCatalogProduct, dshErrorPayload, dshHttpStatus, isDshClientError, listCatalogProducts } from "../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
+import { operatorWorkspacePermissionDenied } from "../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";
 
 function errorResponse(code: string, message: string, status: number) {
@@ -13,6 +14,8 @@ export async function GET(request: Request) {
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return errorResponse("FORBIDDEN", "control operator access is required", 403);
+  const permissionDenied = operatorWorkspacePermissionDenied(identity, "catalog");
+  if (permissionDenied) return permissionDenied;
   try {
     const params = new URL(request.url).searchParams;
     const products = await listCatalogProducts(params.get("q")?.trim() ?? "", params.get("verticalId")?.trim() ?? "", params.get("cursor")?.trim() ?? "", { operatorActorId: identity.subject });
@@ -29,14 +32,17 @@ export async function POST(request: Request) {
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return errorResponse("FORBIDDEN", "control operator access is required", 403);
+  const permissionDenied = operatorWorkspacePermissionDenied(identity, "catalog");
+  if (permissionDenied) return permissionDenied;
   const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() ?? "";
   if (idempotencyKey.length < 8 || idempotencyKey.length > 128) return errorResponse("INVALID_INPUT", "Idempotency-Key is required", 400);
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-  if (!body || typeof body.canonicalName !== "string" || typeof body.verticalId !== "string" || body.scope !== "SHARED" || !["DISCRETE", "MEASURED", "VARIABLE_MEASURE"].includes(String(body.measurementKind)) || !["COUNT", "GRAM", "MILLILITER"].includes(String(body.baseUnit)) || !Array.isArray(body.categoryIds) || body.categoryIds.length < 1) return errorResponse("INVALID_INPUT", "canonicalName, verticalId, shared scope, measurementKind, baseUnit and categoryIds are required", 400);
+  if (!body || typeof body.canonicalName !== "string" || typeof body.verticalId !== "string" || body.scope !== "SHARED" || !["DISCRETE", "MEASURED", "VARIABLE_MEASURE"].includes(String(body.measurementKind)) || !["COUNT", "GRAM", "MILLILITER"].includes(String(body.baseUnit)) || !Array.isArray(body.categoryIds) || body.categoryIds.length < 1 || (body.description !== undefined && (typeof body.description !== "string" || body.description.length > 4000))) return errorResponse("INVALID_INPUT", "canonicalName, verticalId, shared scope, measurementKind, baseUnit, categoryIds and a description of at most 4000 characters are required", 400);
   if ((body.attributeValues !== undefined && !Array.isArray(body.attributeValues)) || (body.variantAttributeValues !== undefined && !Array.isArray(body.variantAttributeValues))) return errorResponse("INVALID_INPUT", "typed attribute values must be arrays", 400);
   const identifierType = ["GTIN", "EAN", "UPC", "SKU"].includes(String(body.identifierType)) ? String(body.identifierType) as NonNullable<CreateCatalogProductRequest["identifierType"]> : undefined;
   const input: CreateCatalogProductRequest = {
     canonicalName: body.canonicalName.trim(),
+    ...(typeof body.description === "string" ? { description: body.description.trim() } : {}),
     verticalId: body.verticalId.trim(),
     scope: body.scope as CreateCatalogProductRequest["scope"],
     measurementKind: body.measurementKind as CreateCatalogProductRequest["measurementKind"],

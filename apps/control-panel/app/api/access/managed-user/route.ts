@@ -9,6 +9,7 @@ export async function POST(request: Request) {
   const identity = await readOperatorSession();
   if (!identity) return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "authentication is required" } }, { status: 401, headers: { "Cache-Control": "no-store" } });
   if (identity.role !== "operator") return NextResponse.json({ error: { code: "FORBIDDEN", message: "operator access is required" } }, { status: 403, headers: { "Cache-Control": "no-store" } });
+  if (!identity.canManageOperatorPermissions) return NextResponse.json({ error: { code: "FORBIDDEN", message: "operator administration is restricted to the initial Operator" } }, { status: 403, headers: { "Cache-Control": "no-store" } });
 
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   const phone = typeof body?.phone === "string" ? body.phone.trim() : "";

@@ -9,7 +9,7 @@ import (
 )
 
 func (s *Service) CreateAttributeDefinition(ctx context.Context, actingActorID string, input postgres.CatalogAttributeDefinitionInput, idempotencyKey string) (postgres.CatalogAttributeDefinitionRecord, bool, error) {
-	if err := s.requirePlatformPolicyOperator(ctx, actingActorID); err != nil {
+	if err := s.requireCatalogOperator(ctx, actingActorID); err != nil {
 		return postgres.CatalogAttributeDefinitionRecord{}, false, err
 	}
 	return postgres.CreateCatalogAttributeDefinition(ctx, s.db, input, strings.TrimSpace(idempotencyKey), postgres.HashCatalogAttributeDefinitionRequest(input))
@@ -23,7 +23,7 @@ func (s *Service) ListAttributeDefinitions(ctx context.Context, verticalID strin
 }
 
 func (s *Service) ListAttributeDefinitionsForOperator(ctx context.Context, actingActorID, verticalID string, activeOnly bool) ([]postgres.CatalogAttributeDefinitionRecord, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireCatalogOperator(ctx, actingActorID); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(verticalID) == "" {
@@ -33,7 +33,7 @@ func (s *Service) ListAttributeDefinitionsForOperator(ctx context.Context, actin
 }
 
 func (s *Service) ListAttributeEnumOptions(ctx context.Context, actingActorID, attributeID string) ([]postgres.CatalogAttributeEnumOptionRecord, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireCatalogOperator(ctx, actingActorID); err != nil {
 		return nil, err
 	}
 	return postgres.ListCatalogAttributeEnumOptions(ctx, s.db, attributeID, true)
@@ -44,7 +44,7 @@ func (s *Service) ListPublicAttributeEnumOptions(ctx context.Context, attributeI
 }
 
 func (s *Service) CreateAttributeEnumOption(ctx context.Context, actingActorID, attributeID string, input postgres.CatalogAttributeEnumOptionInput, idempotencyKey string) (postgres.CatalogAttributeEnumOptionRecord, bool, error) {
-	if err := s.requirePlatformPolicyOperator(ctx, actingActorID); err != nil {
+	if err := s.requireCatalogOperator(ctx, actingActorID); err != nil {
 		return postgres.CatalogAttributeEnumOptionRecord{}, false, err
 	}
 	input.AttributeID = strings.TrimSpace(attributeID)
@@ -56,21 +56,21 @@ func (s *Service) CreateAttributeEnumOption(ctx context.Context, actingActorID, 
 }
 
 func (s *Service) UpsertProductAttribute(ctx context.Context, actingActorID, productID string, input postgres.CatalogAttributeValueInput) error {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
 		return err
 	}
 	return postgres.UpsertCatalogProductAttributeValue(ctx, s.db, productID, input)
 }
 
 func (s *Service) UpsertVariantAttribute(ctx context.Context, actingActorID, variantID string, input postgres.CatalogAttributeValueInput) error {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
 		return err
 	}
 	return postgres.UpsertCatalogVariantAttributeValue(ctx, s.db, variantID, input)
 }
 
 func (s *Service) UpsertCategoryAttributeRule(ctx context.Context, actingActorID, correlationID, reason, idempotencyKey string, expectedVersion int, rule postgres.CatalogAttributeRuleRecord) error {
-	if err := s.requirePlatformPolicyOperator(ctx, actingActorID); err != nil {
+	if err := s.requireCatalogOperator(ctx, actingActorID); err != nil {
 		return err
 	}
 	reason = strings.Join(strings.Fields(strings.TrimSpace(reason)), " ")

@@ -91,6 +91,9 @@ func (s *BeneficiaryFinanceServer) readOperatorPayoutState(w http.ResponseWriter
 	if !s.requireOperator(w, r.Context(), acting) {
 		return
 	}
+	if !s.requirePermission(w, r.Context(), acting, "finance") {
+		return
+	}
 	actorType, actorID, ok := payoutActorPath(w, r)
 	if !ok {
 		return
@@ -105,6 +108,9 @@ func (s *BeneficiaryFinanceServer) readOperatorPayoutState(w http.ResponseWriter
 
 func (s *BeneficiaryFinanceServer) readOperatorDestination(w http.ResponseWriter, r *http.Request) {
 	if !s.authorizeAndRequireOperator(w, r) {
+		return
+	}
+	if !s.requirePermission(w, r.Context(), strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")), "finance") {
 		return
 	}
 	actorType, actorID, ok := payoutActorPath(w, r)
@@ -125,6 +131,9 @@ func (s *BeneficiaryFinanceServer) createOperatorDestination(w http.ResponseWrit
 	}
 	acting, correlation, idempotency, ok := requiredMutationHeaders(w, r)
 	if !ok || !s.requireOperator(w, r.Context(), acting) {
+		return
+	}
+	if !s.requirePermission(w, r.Context(), acting, "finance") {
 		return
 	}
 	actorType, actorID, ok := payoutActorPath(w, r)
@@ -162,6 +171,9 @@ func (s *BeneficiaryFinanceServer) verifyOperatorDestination(w http.ResponseWrit
 	if !ok || !s.requireOperator(w, r.Context(), acting) {
 		return
 	}
+	if !s.requirePermission(w, r.Context(), acting, "finance") {
+		return
+	}
 	actorType, actorID, ok := payoutActorPath(w, r)
 	if !ok || !s.destinationBelongsToActor(w, r, actorType, actorID) {
 		return
@@ -186,6 +198,9 @@ func (s *BeneficiaryFinanceServer) activateOperatorDestination(w http.ResponseWr
 	}
 	acting, correlation, idempotency, ok := requiredMutationHeaders(w, r)
 	if !ok || !s.requireOperator(w, r.Context(), acting) {
+		return
+	}
+	if !s.requirePermission(w, r.Context(), acting, "finance") {
 		return
 	}
 	actorType, actorID, ok := payoutActorPath(w, r)
@@ -229,8 +244,16 @@ func (s *BeneficiaryFinanceServer) requireOperator(w http.ResponseWriter, ctx co
 		writeIdentityError(w, err)
 		return false
 	}
-	if !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
+	if operator.Role != "operator" || !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active control operator session is required")
+		return false
+	}
+	return true
+}
+
+func (s *BeneficiaryFinanceServer) requirePermission(w http.ResponseWriter, ctx context.Context, actorID, permission string) bool {
+	if err := s.identity.RequireOperatorPermission(ctx, actorID, permission); err != nil {
+		writeIdentityError(w, err)
 		return false
 	}
 	return true
