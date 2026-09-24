@@ -1,7 +1,7 @@
 "use client";
 
 import type { BaseUnit, CatalogAttributeRule, CatalogAttributeValueInput, CatalogProduct, CatalogProductRegistryResponse, CatalogVariant, CommerceVertical, MeasurementKind } from "@bthwani/dsh";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 
 type ProductForm = { verticalId: string; scope: "SHARED" | "STORE_SCOPED"; canonicalName: string; description: string; brand: string; variantTitle: string; measurementKind: MeasurementKind; baseUnit: BaseUnit; categoryId: string; identifierType: string; identifierValue: string; imageUri: string; galleryImageUris: string; active: boolean };
 
@@ -189,21 +189,23 @@ export function CentralCatalog() {
   }
   function startCreate(updateLocation = true) { detailRequestSequence.current += 1; if (updateLocation) writeCatalogLocation({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort, mode: "create" }); setDetailLoading(false); setSelected(null); setEditorOpen(true); setForm(emptyForm); setUploadFile(null); setUploadRole("primary"); setNotice(""); setError(""); }
 
+  const restoreCatalogLocation = useEffectEvent(() => {
+    const params = new URL(window.location.href).searchParams;
+    const nextQuery = params.get("q") ?? "";
+    const nextVertical = params.get("verticalId") ?? "";
+    const nextCategory = params.get("categoryId") ?? "";
+    const nextActive = params.get("active") ?? "all";
+    const nextSort = params.get("sort") ?? "name_asc";
+    setQuery(nextQuery); setAppliedQuery(nextQuery); setVerticalFilter(nextVertical); setCategoryFilter(nextCategory); setStatusFilter(nextActive); setSort(nextSort);
+    const mode = params.get("mode");
+    const productId = params.get("productId");
+    if (mode === "edit" && productId) void selectProduct(productId, false);
+    else if (mode === "create") startCreate(false);
+    else { detailRequestSequence.current += 1; setEditorOpen(false); setSelected(null); setDetailLoading(false); }
+  });
+
   useEffect(() => {
-    const restore = () => {
-      const params = new URL(window.location.href).searchParams;
-      const nextQuery = params.get("q") ?? "";
-      const nextVertical = params.get("verticalId") ?? "";
-      const nextCategory = params.get("categoryId") ?? "";
-      const nextActive = params.get("active") ?? "all";
-      const nextSort = params.get("sort") ?? "name_asc";
-      setQuery(nextQuery); setAppliedQuery(nextQuery); setVerticalFilter(nextVertical); setCategoryFilter(nextCategory); setStatusFilter(nextActive); setSort(nextSort);
-      const mode = params.get("mode");
-      const productId = params.get("productId");
-      if (mode === "edit" && productId) void selectProduct(productId, false);
-      else if (mode === "create") startCreate(false);
-      else { detailRequestSequence.current += 1; setEditorOpen(false); setSelected(null); setDetailLoading(false); }
-    };
+    const restore = () => restoreCatalogLocation();
     restore();
     window.addEventListener("popstate", restore);
     return () => window.removeEventListener("popstate", restore);
