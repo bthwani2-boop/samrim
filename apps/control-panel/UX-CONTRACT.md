@@ -77,7 +77,7 @@
 
 - Migration ledger location: This change is tracked by the route/registry diff and the control-panel E2E navigation assertions; no parallel tracker is introduced.
 - Canonical primitives and owners: `src/navigation/workspace-registry.ts` owns destinations, child route labels and catalog resources; `layout.tsx` owns shell composition.
-- Current risk-prioritized slices: Workspace navigation and its nested Partner/Catalog consumers are the first slice; Finance and Marketing remain single real routes until their resource pages exist.
+- Current resource navigation: Finance and Marketing destinations and child routes are owned by `src/navigation/workspace-registry.ts`.
 - Legacy import/token enforcement: The former partner subnavigation component and screen-local catalog resource registry are removed. New route consumers import the central registry.
 - Rollout/rollback and removal gates: Existing route paths remain unchanged; rollback is a single route-registry/layout revert if browser proof identifies a regression.
 
