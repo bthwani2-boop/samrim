@@ -1,11 +1,11 @@
 "use client";
 
-import { formatOrderDate, orderStateLabel, type OperatorOperationListItem } from "@bthwani/dsh";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { formatOrderDate, type OperatorOperationListItem, orderStateLabel } from "@bthwani/dsh";
 import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "../access/identity-error-message";
-import { operationActionLabel, resolveOperatorAction, type OperatorAction } from "./operator-actions";
+import { type OperatorAction, operationActionLabel, resolveOperatorAction } from "./operator-actions";
 import "./operations-workspace.module.css";
 
 const filterOptions: ReadonlyArray<Readonly<{ value: string; label: string }>> = [
@@ -136,13 +136,15 @@ export function OperationsWorkspace() {
   return (
     <section className="operations-workspace" aria-labelledby="operations-list-title">
       <div className="workspace-toolbar">
-        <form className="workspace-search" role="search" onSubmit={(event) => { event.preventDefault(); navigateQuery(filter, "", search.trim().slice(0, 128), sort); }}>
-          <label className="field-label" htmlFor="operations-search">
-            البحث في رقم الطلب أو اسم المتجر
-            <input id="operations-search" type="search" value={search} maxLength={128} onChange={(event) => setSearch(event.target.value)} placeholder="ابحث عن طلب أو متجر" />
-          </label>
-          <button type="submit" className="button button-secondary" disabled={loading || Boolean(busy)}>بحث</button>
-        </form>
+        <search className="workspace-search" aria-label="البحث في العمليات">
+          <form className="workspace-search-form" onSubmit={(event) => { event.preventDefault(); navigateQuery(filter, "", search.trim().slice(0, 128), sort); }}>
+            <label className="field-label" htmlFor="operations-search">
+              البحث في رقم الطلب أو اسم المتجر
+              <input id="operations-search" type="search" value={search} maxLength={128} onChange={(event) => setSearch(event.target.value)} placeholder="ابحث عن طلب أو متجر" />
+            </label>
+            <button type="submit" className="button button-secondary" disabled={loading || Boolean(busy)}>بحث</button>
+          </form>
+        </search>
         <label className="field-label" htmlFor="operations-state-filter">
           تصفية العمل
           <select id="operations-state-filter" value={filter} onChange={(event) => navigateQuery(event.target.value, "")} disabled={Boolean(busy)}>
@@ -165,10 +167,10 @@ export function OperationsWorkspace() {
       </div>
 
       {filter || appliedQuery ? (
-        <div className="active-filter-chips" aria-label="عوامل التصفية النشطة">
+        <section className="active-filter-chips" aria-label="عوامل التصفية النشطة">
           {filter ? <button type="button" className="filter-chip" onClick={() => navigateQuery("", "")}>الحالة: {filterOptions.find((option) => option.value === filter)?.label} <span aria-hidden="true">×</span><span className="visually-hidden">إزالة تصفية الحالة</span></button> : null}
           {appliedQuery ? <button type="button" className="filter-chip" onClick={() => navigateQuery(filter, "", "")}>البحث: {appliedQuery} <span aria-hidden="true">×</span><span className="visually-hidden">مسح البحث</span></button> : null}
-        </div>
+        </section>
       ) : null}
 
       {notice ? <p className="success-inline" role="status">{notice}</p> : null}

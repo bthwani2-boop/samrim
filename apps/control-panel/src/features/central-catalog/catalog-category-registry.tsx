@@ -120,7 +120,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   const orderedCategories = [...categories].sort((left, right) => categoryDepth(left, categoryIndex) - categoryDepth(right, categoryIndex) || left.nameAr.localeCompare(right.nameAr, "ar"));
 
   return (
-    <div className="catalog-taxonomy-section" aria-labelledby="catalog-category-registry-title">
+    <section className="catalog-taxonomy-section" aria-labelledby="catalog-category-registry-title">
       <div className="access-card-heading">
         <span className="step-chip">فئات المنتجات</span>
         <p className="eyebrow">شجرة الفئات</p>
@@ -144,6 +144,6 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
         <strong>شجرة الفئات في الفئة الرئيسية المحددة</strong>
         {loading ? <p>جارٍ قراءة السجل…</p> : !verticalId ? <p>اختر فئة رئيسية لقراءة شجرتها.</p> : categories.length === 0 ? <p>لا توجد فئات لهذه الفئة الرئيسية بعد.</p> : <ul>{orderedCategories.map((category) => <li key={category.id} style={{ marginInlineStart: `${categoryDepth(category, categoryIndex) * 1.25}rem` }}><span>{category.nameAr} · {category.nameEn} · {category.active ? "نشط" : "متوقف"} · v{category.version}</span><button type="button" className="button button-secondary" disabled={busy || !canEdit} onClick={() => edit(category)}>تعديل</button></li>)}</ul>}
       </div>
-    </div>
+    </section>
   );
 }

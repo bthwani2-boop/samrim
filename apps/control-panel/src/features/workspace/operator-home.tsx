@@ -1,8 +1,8 @@
 "use client";
 
-import { catalogProductProposalStateLabel, joiningCaseStateLabel, orderStateLabel, type CatalogProductProposal, type JoiningCaseSummary, type Notification, type OperatorOperationListItem } from "@bthwani/dsh";
+import { type CatalogProductProposal, catalogProductProposalStateLabel, type JoiningCaseSummary, joiningCaseStateLabel, type Notification, type OperatorOperationListItem, orderStateLabel } from "@bthwani/dsh";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { responseMessage } from "../access/identity-error-message";
 import { notificationKindLabel } from "../notifications/notification-presentation";
@@ -21,11 +21,11 @@ export function OperatorHome() {
   const [unreadNotifications, setUnreadNotifications] = useState<ReadonlyArray<Notification>>([]);
   const [loading, setLoading] = useState(true);
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
-  const [refreshToken, setRefreshToken] = useState(0);
+  const requestSequence = useRef(0);
 
-  useEffect(() => {
+  const loadQueues = useCallback(async () => {
     if (!sessionReady) return;
-    let active = true;
+    const sequence = ++requestSequence.current;
     setLoading(true);
     setErrors({});
     const requests = [
@@ -34,34 +34,36 @@ export function OperatorHome() {
       ...(canReadCatalog ? [{ key: "proposals", url: "/api/catalog/proposals?state=submitted&limit=8" }] : []),
       { key: "notifications", url: "/api/notifications?limit=100" },
     ] as const;
-    void Promise.allSettled(requests.map(async ({ key, url }) => {
+    const results = await Promise.allSettled(requests.map(async ({ key, url }) => {
       const response = await fetch(url, { cache: "no-store" });
       if (!response.ok) throw new Error(await responseMessage(response));
       return { key, body: await response.json() as unknown };
-    })).then((results) => {
-      if (!active) return;
-      const nextErrors: Record<string, string> = {};
-      results.forEach((result, index) => {
-        if (result.status === "rejected") {
-          nextErrors[requests[index]!.key] = result.reason instanceof Error ? result.reason.message : "تعذرت قراءة قائمة العمل.";
-          return;
-        }
-        const { key, body } = result.value;
-        if (!body || typeof body !== "object") {
-          nextErrors[key] = "استجابة قائمة العمل غير صالحة.";
-          return;
-        }
-        if (key === "operations") setOperations((body as { operations?: ReadonlyArray<OperatorOperationListItem> }).operations ?? []);
-        else if (key === "joiningCases") setJoiningCases((body as { cases?: ReadonlyArray<JoiningCaseSummary> }).cases ?? []);
-        else if (key === "proposals") setProposals((body as { proposals?: ReadonlyArray<CatalogProductProposal> }).proposals ?? []);
-        else if (key === "notifications") setUnreadNotifications(((body as { notifications?: ReadonlyArray<Notification> }).notifications ?? []).filter((item) => !item.readAt).slice(0, 4));
-      });
-      setErrors(nextErrors);
-    }).finally(() => {
-      if (active) setLoading(false);
+    }));
+    if (sequence !== requestSequence.current) return;
+    const nextErrors: Record<string, string> = {};
+    results.forEach((result, index) => {
+      if (result.status === "rejected") {
+        nextErrors[requests[index]!.key] = result.reason instanceof Error ? result.reason.message : "تعذرت قراءة قائمة العمل.";
+        return;
+      }
+      const { key, body } = result.value;
+      if (!body || typeof body !== "object") {
+        nextErrors[key] = "استجابة قائمة العمل غير صالحة.";
+        return;
+      }
+      if (key === "operations") setOperations((body as { operations?: ReadonlyArray<OperatorOperationListItem> }).operations ?? []);
+      else if (key === "joiningCases") setJoiningCases((body as { cases?: ReadonlyArray<JoiningCaseSummary> }).cases ?? []);
+      else if (key === "proposals") setProposals((body as { proposals?: ReadonlyArray<CatalogProductProposal> }).proposals ?? []);
+      else if (key === "notifications") setUnreadNotifications(((body as { notifications?: ReadonlyArray<Notification> }).notifications ?? []).filter((item) => !item.readAt).slice(0, 4));
     });
-    return () => { active = false; };
-  }, [canReadCatalog, canReadOperations, canReadPartners, refreshToken, sessionReady]);
+    setErrors(nextErrors);
+    setLoading(false);
+  }, [canReadCatalog, canReadOperations, canReadPartners, sessionReady]);
+
+  useEffect(() => {
+    void loadQueues();
+    return () => { requestSequence.current += 1; };
+  }, [loadQueues]);
 
   return (
     <section className="workspace-page" aria-labelledby="workspace-title">
@@ -69,7 +71,7 @@ export function OperatorHome() {
         <p className="eyebrow">مركز العمل الحالي</p>
         <h1 id="workspace-title">الرئيسية</h1>
         <p className="lead">تجمع هذه الصفحة الأعمال التي تحتاج انتباه المشغل الآن من قراءات DSH الكانونية، دون مؤشرات تحليلية مخترعة.</p>
-        <button type="button" className="button button-secondary" onClick={() => setRefreshToken((current) => current + 1)} disabled={loading}>إعادة قراءة قوائم العمل</button>
+        <button type="button" className="button button-secondary" onClick={() => void loadQueues()} disabled={loading}>إعادة قراءة قوائم العمل</button>
       </div>
       {loading ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ تجهيز مركز العمل</strong></div> : null}
       {!loading ? (

@@ -87,7 +87,7 @@ export function CatalogVerticalRegistry({ verticals, onSaved }: { verticals: Rea
   }
 
   return (
-    <div className="catalog-taxonomy-section" aria-labelledby="catalog-vertical-registry-title">
+    <section className="catalog-taxonomy-section" aria-labelledby="catalog-vertical-registry-title">
       <div className="access-card-heading">
         <span className="step-chip">قاموس التجارة</span>
         <p className="eyebrow">الفئات الرئيسية</p>
@@ -109,6 +109,6 @@ export function CatalogVerticalRegistry({ verticals, onSaved }: { verticals: Rea
         <strong>الفئات الرئيسية في السجل الكانوني</strong>
         {verticals.length === 0 ? <p>لا توجد فئات عليا بعد. أضف فئة قبل إنشاء طلب شريك أو منتج.</p> : <ul>{verticals.map((vertical) => <li key={vertical.id}><span>{vertical.nameAr} · {vertical.nameEn} · {vertical.active ? "نشط" : "متوقف"} · {vertical.catalogModel === "SHARED_CATALOG" ? "منتجات مشتركة" : vertical.catalogModel === "STORE_LOCAL_CATALOG" ? "قائمة المتجر" : "مسار غير محدد"} · v{vertical.version}</span><button type="button" className="button button-secondary" disabled={busy || !canEdit} onClick={() => edit(vertical)}>تعديل</button></li>)}</ul>}
       </div>
-    </div>
+    </section>
   );
 }
