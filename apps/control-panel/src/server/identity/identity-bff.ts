@@ -206,6 +206,12 @@ export async function searchIdentityRoles(role: ActorType, query: string, limit:
   return identityInternalClient().searchActorRoles(role, query.trim(), enabled, { limit, cursor });
 }
 
+export async function readManagedIdentityRole(actorId: string, role: ActorType): Promise<ActorRoleView> {
+  const normalizedActorId = actorId.trim();
+  if (!normalizedActorId || normalizedActorId.length > 128) throw new Error("INVALID_ACTOR_ROLE_ID");
+  return identityInternalClient().readActorRole(normalizedActorId, role);
+}
+
 export async function lookupIdentityRoles(phone: string): Promise<ActorRoleView[]> {
   const roles: ActorType[] = ["client", "partner", "captain", "field", "operator"];
   const records = await Promise.all(roles.map((role) => lookupIdentityRole(phone, role)));
