@@ -85,9 +85,9 @@ func (s *OrderServer) listOperatorOperations(w http.ResponseWriter, r *http.Requ
 		writeOrderError(w, err)
 		return
 	}
-	items := make([]contract.OperatorOperation, 0, len(operations.Operations))
+	items := make([]contract.OperatorOperationListItem, 0, len(operations.Operations))
 	for _, operation := range operations.Operations {
-		items = append(items, toOperatorOperation(operation))
+		items = append(items, toOperatorOperationListItem(operation))
 	}
 	writeJSON(w, http.StatusOK, contract.OperatorOperationsResponse{Operations: items, NextCursor: operations.NextCursor})
 }
@@ -151,6 +151,14 @@ func toOperatorOperation(operation postgres.OperatorOperationRecord) contract.Op
 		}
 	}
 	return contract.OperatorOperation{Order: toOrder(operation.Order), StoreName: operation.StoreName, Assignment: assignment}
+}
+
+func toOperatorOperationListItem(operation postgres.OperatorOperationListRecord) contract.OperatorOperationListItem {
+	var assignment *contract.OperatorAssignmentSummary
+	if operation.Assignment != nil {
+		assignment = &contract.OperatorAssignmentSummary{ID: operation.Assignment.ID, OrderID: operation.Assignment.OrderID, CaptainActorID: operation.Assignment.CaptainActorID, State: operation.Assignment.State, Version: operation.Assignment.Version, HandoffState: operation.Assignment.HandoffState}
+	}
+	return contract.OperatorOperationListItem{OrderID: operation.OrderID, StoreName: operation.StoreName, State: contract.OrderState(operation.State), UpdatedAt: operation.UpdatedAt, Assignment: assignment}
 }
 
 func (s *OrderServer) listClient(w http.ResponseWriter, r *http.Request) {

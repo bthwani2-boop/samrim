@@ -159,6 +159,9 @@ paths:
   /dsh/public/stores/{storeId}/catalog:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1public~1stores~1{storeId}~1catalog"
 
+  /dsh/public/catalog/search:
+    $ref: "./paths/store-publication.yaml#/paths/~1dsh~1public~1catalog~1search"
+
   /dsh/stores/{storeId}/publication:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores~1{storeId}~1publication"
 
@@ -1590,6 +1593,8 @@ components:
           nullable: true
         canonicalName:
           type: string
+        description:
+          type: string
         brand:
           type: string
           nullable: true
@@ -1683,13 +1688,16 @@ components:
 
     CreateCatalogProductRequest:
       type: object
-      required: [verticalId, scope, canonicalName, measurementKind, baseUnit, categoryIds]
+      required: [verticalId, scope, canonicalName, measurementKind, baseUnit]
       additionalProperties: false
       properties:
         canonicalName:
           type: string
           minLength: 1
           maxLength: 160
+        description:
+          type: string
+          maxLength: 4000
         verticalId:
           type: string
         scope:
@@ -1744,6 +1752,9 @@ components:
           type: string
           minLength: 1
           maxLength: 160
+        description:
+          type: string
+          maxLength: 4000
         verticalId:
           type: string
         scope:
@@ -2221,7 +2232,7 @@ components:
 
     CatalogStoreOffer:
       type: object
-      required: [offerId, storeId, variantId, productId, productName, measurementKind, baseUnit, productActive, variantActive, priceMinor, currency, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingBasis, pricingUnitBaseUnits, inventoryPolicy, inventoryOnHandBaseUnits, inventoryReservedBaseUnits, availability, publicationState, media, modifierGroups, version, createdAt, updatedAt]
+      required: [offerId, storeId, variantId, productId, productName, variantTitle, measurementKind, baseUnit, productActive, variantActive, priceMinor, currency, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingBasis, pricingUnitBaseUnits, inventoryPolicy, inventoryOnHandBaseUnits, inventoryReservedBaseUnits, availability, publicationState, media, modifierGroups, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         offerId:
@@ -2233,6 +2244,10 @@ components:
         productId:
           type: string
         productName:
+          type: string
+        productDescription:
+          type: string
+        variantTitle:
           type: string
         brand:
           type: string
@@ -2539,6 +2554,10 @@ components:
           items:
             $ref: "#/components/schemas/CatalogStoreOffer"
 
+    CatalogModel:
+      type: string
+      enum: [SHARED_CATALOG, STORE_LOCAL_CATALOG]
+
     CommerceVertical:
       type: object
       required: [id, nameAr, nameEn, active, version, createdAt, updatedAt]
@@ -2550,6 +2569,8 @@ components:
           type: string
         nameEn:
           type: string
+        catalogModel:
+          $ref: "#/components/schemas/CatalogModel"
         active:
           type: boolean
         version:
@@ -2563,7 +2584,7 @@ components:
 
     CreateCommerceVerticalRequest:
       type: object
-      required: [nameAr, nameEn, active, reason]
+      required: [nameAr, nameEn, catalogModel, active, reason]
       additionalProperties: false
       properties:
         id:
@@ -2573,6 +2594,8 @@ components:
           type: string
         nameEn:
           type: string
+        catalogModel:
+          $ref: "#/components/schemas/CatalogModel"
         active:
           type: boolean
         reason:
@@ -2582,7 +2605,7 @@ components:
 
     UpdateCommerceVerticalRequest:
       type: object
-      required: [nameAr, nameEn, active, expectedVersion, reason]
+      required: [nameAr, nameEn, catalogModel, active, expectedVersion, reason]
       additionalProperties: false
       properties:
         nameAr:
@@ -2593,6 +2616,8 @@ components:
           type: string
           minLength: 2
           maxLength: 160
+        catalogModel:
+          $ref: "#/components/schemas/CatalogModel"
         active:
           type: boolean
         expectedVersion:
@@ -2735,6 +2760,19 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CatalogStorefrontSection"
+        offers:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogStoreOffer"
+        nextCursor:
+          type: string
+          nullable: true
+
+    PublicCatalogSearchResponse:
+      type: object
+      required: [offers, nextCursor]
+      additionalProperties: false
+      properties:
         offers:
           type: array
           items:
@@ -5068,6 +5106,24 @@ components:
           $ref: "#/components/schemas/OperatorAssignmentSummary"
           nullable: true
 
+    OperatorOperationListItem:
+      type: object
+      required: [orderId, storeName, state, updatedAt, assignment]
+      additionalProperties: false
+      properties:
+        orderId:
+          type: string
+        storeName:
+          type: string
+        state:
+          $ref: "#/components/schemas/OrderState"
+        updatedAt:
+          type: string
+          format: date-time
+        assignment:
+          $ref: "#/components/schemas/OperatorAssignmentSummary"
+          nullable: true
+
     OperatorOperationsResponse:
       type: object
       required: [operations]
@@ -5076,7 +5132,7 @@ components:
         operations:
           type: array
           items:
-            $ref: "#/components/schemas/OperatorOperation"
+            $ref: "#/components/schemas/OperatorOperationListItem"
         nextCursor:
           type: string
           maxLength: 512

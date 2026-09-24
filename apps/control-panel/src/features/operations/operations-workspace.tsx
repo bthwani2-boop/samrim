@@ -1,6 +1,6 @@
 "use client";
 
-import { formatOrderDate, orderStateLabel, type OperatorOperation } from "@bthwani/dsh";
+import { formatOrderDate, orderStateLabel, type OperatorOperationListItem } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
@@ -17,7 +17,7 @@ const filterOptions: ReadonlyArray<Readonly<{ value: string; label: string }>> =
 ];
 
 export function OperationsWorkspace() {
-  const [operations, setOperations] = useState<ReadonlyArray<OperatorOperation>>([]);
+  const [operations, setOperations] = useState<ReadonlyArray<OperatorOperationListItem>>([]);
   const [filter, setFilter] = useState("");
   const [cursor, setCursor] = useState("");
   const [urlReady, setUrlReady] = useState(false);
@@ -68,7 +68,7 @@ export function OperationsWorkspace() {
         setError(await responseMessage(response));
         return;
       }
-      const body = await response.json() as { operations?: ReadonlyArray<OperatorOperation>; nextCursor?: string };
+      const body = await response.json() as { operations?: ReadonlyArray<OperatorOperationListItem>; nextCursor?: string };
       if (sequence !== loadSequence.current) return;
       setOperations(body.operations ?? []);
       setNextCursor(body.nextCursor ?? "");
@@ -82,10 +82,10 @@ export function OperationsWorkspace() {
 
   useEffect(() => { if (urlReady) void load(); }, [load, urlReady]);
 
-  async function runAction(action: OperatorAction, item: OperatorOperation) {
+  async function runAction(action: OperatorAction, item: OperatorOperationListItem) {
     if (resolveOperatorAction(item) !== action) return;
     const assignment = item.assignment;
-    setBusy(action + ":" + item.order.id);
+    setBusy(action + ":" + item.orderId);
     setError("");
     setNotice("");
     try {
@@ -94,7 +94,7 @@ export function OperationsWorkspace() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action,
-          orderId: item.order.id,
+          orderId: item.orderId,
           assignmentId: assignment?.id ?? "",
           ...(action === "recover" ? { expectedVersion: assignment?.version } : {}),
         }),
@@ -146,15 +146,14 @@ export function OperationsWorkspace() {
             <thead><tr><th scope="col">الطلب</th><th scope="col">المتجر</th><th scope="col">الحالة</th><th scope="col">آخر تحديث</th><th scope="col">الإجراء</th></tr></thead>
             <tbody>
               {operations.map((item) => {
-                const order = item.order;
                 const action = resolveOperatorAction(item);
-                const actionBusy = action ? busy === action + ":" + order.id : false;
+                const actionBusy = action ? busy === action + ":" + item.orderId : false;
                 return (
-                  <tr key={order.id}>
-                    <th scope="row"><Link href={`/operations/${encodeURIComponent(order.id)}`}><bdi dir="ltr">{order.id}</bdi></Link></th>
+                  <tr key={item.orderId}>
+                    <th scope="row"><Link href={`/operations/${encodeURIComponent(item.orderId)}`}><bdi dir="ltr">{item.orderId}</bdi></Link></th>
                     <td>{item.storeName}</td>
-                    <td><span className={"status-badge status-" + order.state.toLowerCase()}>{orderStateLabel(order.state)}</span></td>
-                    <td><time dateTime={order.updatedAt}>{formatOrderDate(order.updatedAt)}</time></td>
+                    <td><span className={"status-badge status-" + item.state.toLowerCase()}>{orderStateLabel(item.state)}</span></td>
+                    <td><time dateTime={item.updatedAt}>{formatOrderDate(item.updatedAt)}</time></td>
                     <td>
                       {action ? (
                         <button type="button" className={"button " + (action === "recover" ? "button-secondary" : "button-primary") + " table-action"} onClick={() => void runAction(action, item)} disabled={Boolean(busy)}>

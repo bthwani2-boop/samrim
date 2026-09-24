@@ -54,11 +54,11 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		}
 
 		first, err := postgres.ListOrdersForOperator(ctx, db, "READY_FOR_DISPATCH", 2, "")
-		if err != nil || len(first.Operations) != 2 || first.Operations[0].Order.ID != "operator_order_03" || first.Operations[1].Order.ID != "operator_order_02" || first.NextCursor == "" {
+		if err != nil || len(first.Operations) != 2 || first.Operations[0].OrderID != "operator_order_03" || first.Operations[1].OrderID != "operator_order_02" || first.NextCursor == "" {
 			t.Fatalf("first operator operations page is not stable: %+v err=%v", first, err)
 		}
 		second, err := postgres.ListOrdersForOperator(ctx, db, "READY_FOR_DISPATCH", 2, first.NextCursor)
-		if err != nil || len(second.Operations) != 1 || second.Operations[0].Order.ID != "operator_order_01" || second.NextCursor != "" {
+		if err != nil || len(second.Operations) != 1 || second.Operations[0].OrderID != "operator_order_01" || second.NextCursor != "" {
 			t.Fatalf("second operator operations page is not stable: %+v err=%v", second, err)
 		}
 		if _, err := postgres.ListOrdersForOperator(ctx, db, "CAPTAIN_ASSIGNED", 2, first.NextCursor); !errors.Is(err, postgres.ErrOperatorOperationInvalidCursor) {

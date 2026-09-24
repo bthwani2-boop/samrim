@@ -19,9 +19,9 @@ const authenticatedOperator = {
   expiresAt: "2099-01-01T00:00:00.000Z",
 };
 
-async function stubAuthenticatedSession(page: Page) {
+async function stubAuthenticatedSession(page: Page, permissions = authenticatedOperator.permissions) {
   await page.route("**/api/auth/session**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ identity: authenticatedOperator }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ identity: { ...authenticatedOperator, permissions } }) });
   });
 }
 
@@ -478,10 +478,17 @@ test("operator captain operations present Arabic state without backend identifie
 });
 
 test("operator operations uses the DSH read model and resource actions", async ({ page }) => {
-  await stubAuthenticatedSession(page);
+  await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "operations"]);
   let mutationBody: Record<string, unknown> | undefined;
   let requestedCursor = "";
   const operation = {
+    orderId: "order_ready",
+    state: "READY_FOR_DISPATCH",
+    updatedAt: "2026-09-18T06:00:00.000Z",
+    storeName: "متجر الاختبار",
+    assignment: null,
+  };
+  const detail = {
     order: { id: "order_ready", state: "READY_FOR_DISPATCH", totalAmountMinor: 1800, currency: "YER", paymentMethod: "CASH_ON_DELIVERY", paymentState: "REQUIRES_COLLECTION", paymentIntentId: "payment_ready", version: 3, updatedAt: "2026-09-18T06:00:00.000Z", addressText: "شارع الاختبار", serviceCityId: "sanaa", serviceabilityStatus: "SERVICEABLE", lines: [] },
     storeName: "متجر الاختبار",
     assignment: null,
@@ -506,7 +513,7 @@ test("operator operations uses the DSH read model and resource actions", async (
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ operation: { ...operation, order: { ...operation.order, lines: [{ id: "line-1", productName: "قهوة", variantTitle: "الافتراضي", finalQuantityBaseUnits: 1, lineAmountMinor: 1800, currency: "YER" }] } } }),
+      body: JSON.stringify({ operation: { ...detail, order: { ...detail.order, lines: [{ id: "line-1", productName: "قهوة", variantTitle: "الافتراضي", finalQuantityBaseUnits: 1, lineAmountMinor: 1800, currency: "YER" }] } } }),
     });
   });
   await page.route("**/api/captains", async (route) => {
@@ -517,14 +524,15 @@ test("operator operations uses the DSH read model and resource actions", async (
   await expect(page.getByRole("heading", { name: "العمليات" })).toBeVisible();
   await expect(page.getByText("order_ready")).toBeVisible();
   await expect(page.getByRole("button", { name: "إرسال للتوزيع" })).toBeVisible();
-  await page.getByText("order_ready").click();
+  await page.getByRole("link", { name: "order_ready" }).click();
   await expect(page.getByText("شارع الاختبار")).toBeVisible();
-  await expect(page.getByText("الدفع: الدفع نقدًا عند الاستلام · بانتظار التحصيل عند التسليم")).toBeVisible();
+  await expect(page.getByText("الدفع نقدًا عند الاستلام · بانتظار التحصيل عند التسليم")).toBeVisible();
   await expect(page.getByText("قهوة · الافتراضي · 1")).toBeVisible();
+  await page.goBack();
   await page.getByRole("button", { name: "إرسال للتوزيع" }).click();
   expect(mutationBody).toMatchObject({ action: "dispatch", orderId: "order_ready" });
   await page.getByRole("button", { name: "قراءة الصفحة التالية" }).click();
-  await expect(page.getByText("order_ready")).toBeVisible();
+  await expect(page.getByText("لا توجد أعمال في هذا النطاق")).toBeVisible();
   await expect(page.getByRole("button", { name: "قراءة الصفحة التالية" })).toHaveCount(0);
   expect(requestedCursor).toBe("cursor-page-2");
   await expect(page.getByRole("textbox")).toHaveCount(0);
@@ -572,8 +580,8 @@ test("operator creates a DSH-owned joining case from prospective partner facts",
   await page.route("**/api/service-cities**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cities: [{ id: "sanaa", displayNameAr: "صنعاء", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
   });
-  await page.route("**/api/catalog/verticals", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
+  await page.route("**/api/catalog/verticals**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", catalogModel: "SHARED_CATALOG", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
   });
   await page.route("**/api/partners/joining-cases/join_test", async (route) => {
     await route.fulfill({
@@ -606,7 +614,7 @@ test("operator creates a DSH-owned joining case from prospective partner facts",
   await page.getByLabel("الاسم القانوني للنشاط").fill("نشاط الاختبار");
   await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
   await page.getByLabel("مدينة المتجر الأول").selectOption("sanaa");
-  await page.getByLabel("المجال التجاري").selectOption("grocery");
+  await page.getByLabel("الفئة الرئيسية").selectOption("grocery");
   await page.getByLabel("خط عرض موقع المتجر").fill("15.369445");
   await page.getByLabel("خط طول موقع المتجر").fill("44.191006");
   const fulfillmentModes = page.getByRole("group", { name: "طرق تلبية الطلب في المتجر" });
@@ -680,9 +688,9 @@ test("operator city creation rejects non-Arabic names before mutation", async ({
 });
 
 test("operator creates a canonical commerce vertical before onboarding partners", async ({ page }) => {
-  await stubAuthenticatedSession(page);
+  await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "catalog"]);
   let requestBody: unknown;
-  await page.route("**/api/catalog/verticals", async (route) => {
+  await page.route("**/api/catalog/verticals**", async (route) => {
     if (route.request().method() === "GET") {
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [] }) });
       return;
@@ -691,27 +699,30 @@ test("operator creates a canonical commerce vertical before onboarding partners"
     await route.fulfill({
       status: 201,
       contentType: "application/json",
-      body: JSON.stringify({ vertical: { id: "vertical_0123456789abcdef0123456789abcdef", nameAr: "مطاعم", nameEn: "Restaurants", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, idempotentReplay: false }),
+      body: JSON.stringify({ vertical: { id: "vertical_0123456789abcdef0123456789abcdef", nameAr: "مطاعم", nameEn: "Restaurants", catalogModel: "STORE_LOCAL_CATALOG", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, idempotentReplay: false }),
     });
   });
   await page.route("**/api/catalog/products**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [] }) });
   });
-  await page.goto("/policies/verticals");
+  await page.goto("/catalog/categories");
   await expect(page.getByLabel("المعرف البرمجي", { exact: true })).toHaveCount(0);
-  await page.getByLabel("الاسم العربي", { exact: true }).fill("مطاعم");
-  await page.getByLabel("الاسم الإنجليزي", { exact: true }).fill("Restaurants");
-  await page.getByRole("button", { name: "إضافة مجال تجاري" }).click();
-  await expect(page.getByRole("status")).toContainText("تم حفظ المجال التجاري: مطاعم.");
+  await page.getByLabel("الاسم العربي", { exact: true }).first().fill("مطاعم");
+  await page.getByLabel("الاسم الإنجليزي", { exact: true }).first().fill("Restaurants");
+  await page.getByLabel("مسار إدخال المنتجات").selectOption("STORE_LOCAL_CATALOG");
+  await page.getByLabel("سبب الإضافة").fill("إنشاء فئة جديدة للاختبار");
+  await page.getByRole("button", { name: "إضافة فئة رئيسية" }).click();
+  await expect(page.getByRole("status")).toContainText("تم حفظ الفئة الرئيسية: مطاعم.");
   await expect(page.getByRole("status")).not.toContainText("vertical_0123456789abcdef0123456789abcdef");
-  expect(requestBody).toEqual({ nameAr: "مطاعم", nameEn: "Restaurants", active: true });
+  expect(requestBody).toEqual({ nameAr: "مطاعم", nameEn: "Restaurants", catalogModel: "STORE_LOCAL_CATALOG", active: true, reason: "إنشاء فئة جديدة للاختبار" });
 });
 
 test("operator creates a product category under its commerce vertical", async ({ page }) => {
-  await stubAuthenticatedSession(page);
+  await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "catalog"]);
+  await page.setViewportSize({ width: 1440, height: 1000 });
   let requestBody: unknown;
-  await page.route("**/api/catalog/verticals", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "vertical_0123456789abcdef0123456789abcdef", nameAr: "مطاعم", nameEn: "Restaurants", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
+  await page.route("**/api/catalog/verticals**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "vertical_0123456789abcdef0123456789abcdef", nameAr: "بقالات", nameEn: "Groceries", catalogModel: "SHARED_CATALOG", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
   });
   await page.route("**/api/catalog/categories**", async (route) => {
     if (route.request().method() === "GET") {
@@ -724,15 +735,23 @@ test("operator creates a product category under its commerce vertical", async ({
   await page.route("**/api/catalog/products**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [] }) });
   });
-  await page.goto("/policies/categories");
+  await page.goto("/catalog/categories");
+  await expect(page.getByRole("heading", { name: "إضافة فئة عليا" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "إضافة فئة" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "خصائص الفئة المختارة وقواعدها" })).toBeVisible();
+  await expect(page.locator(".catalog-taxonomy-workspace")).toHaveCount(1);
+  await expect(page.locator(".catalog-taxonomy-workspace > .access-card")).toHaveCount(0);
+  await expect(page.locator(".catalog-taxonomy-section")).toHaveCount(3);
+  await page.screenshot({ path: "test-results/catalog-taxonomy-workspace.png", fullPage: true });
   await expect(page.getByLabel("المعرف البرمجي للتصنيف", { exact: true })).toHaveCount(0);
-  await page.getByLabel("المجال التجاري").first().selectOption("vertical_0123456789abcdef0123456789abcdef");
-  await page.getByLabel("الاسم العربي للتصنيف").fill("قهوة");
-  await page.getByLabel("الاسم الإنجليزي للتصنيف").fill("Coffee");
-  await page.getByRole("button", { name: "إضافة تصنيف" }).click();
-  await expect(page.getByRole("status")).toContainText("تم حفظ التصنيف: قهوة.");
+  await page.getByLabel("الفئة العليا").selectOption("vertical_0123456789abcdef0123456789abcdef");
+  await page.getByLabel("اسم الفئة بالعربية").fill("مواد غذائية");
+  await page.getByLabel("اسم الفئة بالإنجليزية").fill("Groceries");
+  await page.locator("#catalog-category-reason").fill("إنشاء فئة جديدة للاختبار");
+  await page.getByRole("button", { name: "إضافة فئة", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("تم حفظ الفئة: قهوة.");
   await expect(page.getByRole("status")).not.toContainText("category_0123456789abcdef0123456789abcdef");
-  expect(requestBody).toEqual({ verticalId: "vertical_0123456789abcdef0123456789abcdef", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", active: true });
+  expect(requestBody).toEqual({ verticalId: "vertical_0123456789abcdef0123456789abcdef", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", active: true, reason: "إنشاء فئة جديدة للاختبار" });
 });
 
 test("operator replaces a product primary image and gallery through the canonical media mutation", async ({ page }) => {
@@ -755,7 +774,7 @@ test("operator replaces a product primary image and gallery through the canonica
   } as const;
   let mediaRequest: unknown;
   await page.route("**/api/catalog/verticals**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", active: true, version: 1, createdAt: product.createdAt, updatedAt: product.updatedAt }] }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", catalogModel: "SHARED_CATALOG", active: true, version: 1, createdAt: product.createdAt, updatedAt: product.updatedAt }] }) });
   });
   await page.route("**/api/catalog/categories**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories: [{ id: "coffee", verticalId: "grocery", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", active: true, version: 1, createdAt: product.createdAt, updatedAt: product.updatedAt }] }) });
@@ -805,7 +824,7 @@ test("operator uploads a real product image through the catalog media control", 
   let uploadContentType = "";
   let uploadBody = "";
   await page.route("**/api/catalog/verticals**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", active: true, version: 1, createdAt: product.createdAt, updatedAt: product.updatedAt }] }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", catalogModel: "SHARED_CATALOG", active: true, version: 1, createdAt: product.createdAt, updatedAt: product.updatedAt }] }) });
   });
   await page.route("**/api/catalog/categories**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories: [{ id: "coffee", verticalId: "grocery", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", active: true, version: 1, createdAt: product.createdAt, updatedAt: product.updatedAt }] }) });
@@ -863,7 +882,7 @@ test("operator approves joining terms with commission and settlement cadence", a
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cities: [{ id: "sanaa", displayNameAr: "صنعاء", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
   });
   await page.route("**/api/catalog/verticals**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", catalogModel: "SHARED_CATALOG", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
   });
   await page.route("**/api/partners/joining-cases/join_financial", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ case: { id: "join_financial", contactPhoneE164: "+96777000109", businessName: "نشاط مالي", firstStoreName: "متجر مالي", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, partnerActorId: "act_financial", origin: "field", state: "submitted", financialProfileState: "PENDING_BINDING", version: 2, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, idempotentReplay: false }) });
@@ -895,7 +914,7 @@ test("partner Store publication exposes the canonical readiness block", async ({
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cities: [{ id: "sanaa", displayNameAr: "صنعاء", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
   });
   await page.route("**/api/catalog/verticals", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", catalogModel: "SHARED_CATALOG", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
   });
   await page.route("**/api/partners/joining-cases/join_test", async (route) => {
     await route.fulfill({
@@ -925,7 +944,7 @@ test("partner Store publication exposes the canonical readiness block", async ({
   await page.getByLabel("الاسم القانوني للنشاط").fill("نشاط الاختبار");
   await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
   await page.getByLabel("مدينة المتجر الأول").selectOption("sanaa");
-  await page.getByLabel("المجال التجاري").selectOption("grocery");
+  await page.getByLabel("الفئة الرئيسية").selectOption("grocery");
   await page.getByLabel("خط عرض موقع المتجر").fill("15.369445");
   await page.getByLabel("خط طول موقع المتجر").fill("44.191006");
   await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();

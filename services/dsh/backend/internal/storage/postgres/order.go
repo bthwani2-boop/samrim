@@ -234,8 +234,25 @@ type OperatorOperationRecord struct {
 	Assignment *CaptainAssignment
 }
 
+type OperatorOperationListRecord struct {
+	OrderID    string
+	StoreName  string
+	State      string
+	UpdatedAt  time.Time
+	Assignment *OperatorAssignmentListRecord
+}
+
+type OperatorAssignmentListRecord struct {
+	ID             string
+	OrderID        string
+	CaptainActorID string
+	State          string
+	Version        int
+	HandoffState   string
+}
+
 type OperatorOperationsResult struct {
-	Operations []OperatorOperationRecord
+	Operations []OperatorOperationListRecord
 	NextCursor string
 }
 
@@ -283,7 +300,7 @@ func ListOrdersForOperator(ctx context.Context, db *sql.DB, state string, limit 
 	where := "TRUE"
 	if state != "" {
 		args = append(args, state)
-		where += " AND state=$" + strconv.Itoa(len(args))
+		where += " AND o.state=$" + strconv.Itoa(len(args))
 	}
 	if strings.TrimSpace(cursor) != "" {
 		decoded, err := decodeOperatorOperationsCursor(cursor, state)
@@ -291,21 +308,38 @@ func ListOrdersForOperator(ctx context.Context, db *sql.DB, state string, limit 
 			return OperatorOperationsResult{}, err
 		}
 		args = append(args, decoded.UpdatedAt, decoded.ID)
-		where += " AND (updated_at,id)<($" + strconv.Itoa(len(args)-1) + ",$" + strconv.Itoa(len(args)) + ")"
+		where += " AND (o.updated_at,o.id)<($" + strconv.Itoa(len(args)-1) + ",$" + strconv.Itoa(len(args)) + ")"
 	}
 	args = append(args, limit+1)
-	rows, err := db.QueryContext(ctx, "SELECT id FROM dsh.commerce_orders WHERE "+where+" ORDER BY updated_at DESC,id DESC LIMIT $"+strconv.Itoa(len(args)), args...)
+	rows, err := db.QueryContext(ctx, `SELECT o.id,s.name,o.state,o.updated_at,
+		a.id,a.order_id,a.captain_actor_id,a.state,a.version,COALESCE(h.state,'')
+		FROM dsh.commerce_orders o
+		JOIN dsh.stores s ON s.id=o.store_id
+		LEFT JOIN LATERAL (
+			SELECT id,order_id,captain_actor_id,state,version
+			FROM dsh.captain_assignments
+			WHERE order_id=o.id AND state IN ('assigned','in_custody','delivered','delivery_failed')
+			ORDER BY created_at DESC LIMIT 1
+		) a ON TRUE
+		LEFT JOIN dsh.captain_handoffs h ON h.assignment_id=a.id
+		WHERE `+where+" ORDER BY o.updated_at DESC,o.id DESC LIMIT $"+strconv.Itoa(len(args)), args...)
 	if err != nil {
 		return OperatorOperationsResult{}, err
 	}
 	defer rows.Close()
-	orderIDs := make([]string, 0, limit+1)
+	operations := make([]OperatorOperationListRecord, 0, limit+1)
 	for rows.Next() {
-		var orderID string
-		if err := rows.Scan(&orderID); err != nil {
+		var item OperatorOperationListRecord
+		var assignmentID, assignmentOrderID, captainActorID, assignmentState, handoffState sql.NullString
+		var assignmentVersion sql.NullInt64
+		if err := rows.Scan(&item.OrderID, &item.StoreName, &item.State, &item.UpdatedAt,
+			&assignmentID, &assignmentOrderID, &captainActorID, &assignmentState, &assignmentVersion, &handoffState); err != nil {
 			return OperatorOperationsResult{}, err
 		}
-		orderIDs = append(orderIDs, orderID)
+		if assignmentID.Valid {
+			item.Assignment = &OperatorAssignmentListRecord{ID: assignmentID.String, OrderID: assignmentOrderID.String, CaptainActorID: captainActorID.String, State: assignmentState.String, Version: int(assignmentVersion.Int64), HandoffState: handoffState.String}
+		}
+		operations = append(operations, item)
 	}
 	if err := rows.Err(); err != nil {
 		return OperatorOperationsResult{}, err
@@ -314,19 +348,11 @@ func ListOrdersForOperator(ctx context.Context, db *sql.DB, state string, limit 
 		return OperatorOperationsResult{}, err
 	}
 
-	operations := make([]OperatorOperationRecord, 0, len(orderIDs))
-	for _, orderID := range orderIDs {
-		operation, err := ReadOperatorOperation(ctx, db, orderID)
-		if err != nil {
-			return OperatorOperationsResult{}, err
-		}
-		operations = append(operations, operation)
-	}
 	result := OperatorOperationsResult{Operations: operations}
 	if len(operations) > limit {
 		last := operations[limit-1]
 		result.Operations = operations[:limit]
-		result.NextCursor = encodeOperatorOperationsCursor(operatorOperationsCursor{UpdatedAt: last.Order.UpdatedAt, ID: last.Order.ID, State: state})
+		result.NextCursor = encodeOperatorOperationsCursor(operatorOperationsCursor{UpdatedAt: last.UpdatedAt, ID: last.OrderID, State: state})
 	}
 	return result, nil
 }
