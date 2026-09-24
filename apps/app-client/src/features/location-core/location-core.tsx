@@ -1,5 +1,5 @@
 import { borders, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniChip, BthwaniMap, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { DeliveryAddress } from "@bthwani/dsh";
 import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -95,7 +95,7 @@ export default function LocationCore() {
       }
       const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       setCoordinates({ latitude: position.coords.latitude, longitude: position.coords.longitude });
-      setNotice("تم التقاط الموقع الحالي. راجع النص ثم احفظ العنوان.");
+      setNotice("تم تحديد موقعك الحالي. راجعه أو عدّل النقطة على الخريطة ثم احفظ العنوان.");
     } catch {
       setError("تعذر التقاط الموقع الحالي. تحقق من إعدادات الموقع ثم أعد المحاولة.");
     } finally {
@@ -124,7 +124,7 @@ export default function LocationCore() {
   async function save() {
     const value = addressText.trim();
     if (busy || value.length < 3 || value.length > 500 || !coordinates || !addressCityID) {
-      setError("اكتب وصفًا واضحًا للعنوان والتقط موقعه قبل الحفظ.");
+      setError("اكتب وصفًا واضحًا للعنوان وحدد موقعه على الخريطة أو التقطه قبل الحفظ.");
       return;
     }
     setBusy(true);
@@ -175,6 +175,9 @@ export default function LocationCore() {
           style={styles.input}
           value={addressText}
         />
+        <Text style={styles.fieldLabel}>حدد نقطة التوصيل على الخريطة</Text>
+        <Text style={styles.muted}>حرّك الخريطة ثم المس النقطة الصحيحة أو اسحب الدبوس. احفظها بعد مراجعة العنوان.</Text>
+        <BthwaniMap accessibilityLabel="اختيار نقطة عنوان التوصيل" selection={coordinates} selectionTitle="عنوان التوصيل" onSelectCoordinate={(coordinate) => { if (!busy) { setCoordinates(coordinate); setNotice("تم تحديد نقطة العنوان على الخريطة."); setError(""); } }} />
         <BthwaniButton accessibilityLabel="التقاط الموقع الحالي" busy={locationBusy} disabled={busy} label="التقاط الموقع الحالي" onPress={() => void captureLocation()} variant="secondary" />
         <View style={styles.coordinateBox}>
           <Text style={styles.coordinateLabel}>حالة الموقع</Text>

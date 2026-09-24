@@ -59,6 +59,11 @@
 :global(.order-detail-tab:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 :global(.order-detail-toolbar), :global(.order-detail-state-actions) { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 :global(.order-detail-panel) { min-width: 0; padding: 20px; border: 1px solid var(--border-subtle); border-radius: 14px; background: var(--surface-base); }
+:global(.operation-location-map) { display: grid; gap: 12px; margin-top: 20px; }
+:global(.operation-location-map-heading) { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }
+:global(.operation-location-map-heading a) { color: var(--interactive-text); font-weight: 600; }
+:global(.operation-location-map iframe) { border: 0; border-radius: 12px; height: 320px; width: 100%; }
+:global(.operation-location-map p) { color: var(--text-secondary); }
 :global(.order-detail-panel h2) { margin: 0 0 16px; color: var(--text-primary); font-size: 17px; }
 :global(.order-detail-panel p) { color: var(--text-secondary); line-height: 1.75; }
 :global(.order-detail-facts) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 28px; margin: 0; }

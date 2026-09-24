@@ -9,6 +9,39 @@ const PERMISSION_TEXT = {
   locationWhenInUse: "نحتاج الوصول إلى موقعك عند طلب التقاط موقع العنوان أو أصل المتجر.",
 };
 
+const MAP_KEY_NAMES = {
+  "app-client": { android: "GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT", ios: "GOOGLE_MAPS_IOS_API_KEY" },
+  "app-captain": { android: "GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN", ios: "GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN" },
+  "app-field": { android: "GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD", ios: "GOOGLE_MAPS_IOS_API_KEY" },
+  "app-partner": { android: "GOOGLE_MAPS_ANDROID_API_KEY_APP_PARTNER", ios: "GOOGLE_MAPS_IOS_API_KEY" },
+};
+
+function mobileMapsApiKey(appKey, platform) {
+  const envNames = MAP_KEY_NAMES[appKey];
+  if (!envNames) return undefined;
+  const specificEnvName = envNames[platform];
+  const baseEnvName = `GOOGLE_MAPS_${platform.toUpperCase()}_API_KEY`;
+  let value = process.env[specificEnvName]?.trim() || process.env[baseEnvName]?.trim() || "";
+  if (!value) {
+    const secretsRoot = process.env.BTHWANI_SECRETS_ROOT || "C:\\BTHWANI-Secrets\\samrim";
+    const envPath = path.join(secretsRoot, "env", "mobile.env");
+    if (fs.existsSync(envPath)) {
+      for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
+        const separator = line.indexOf("=");
+        if (separator > 0) {
+          const name = line.slice(0, separator).trim();
+          if (name === specificEnvName || name === baseEnvName) {
+            const candidate = line.slice(separator + 1).trim().replace(/^(['"])(.*)\1$/, "$2");
+            if (candidate) value = candidate;
+            if (name === specificEnvName && value) break;
+          }
+        }
+      }
+    }
+  }
+  return value || undefined;
+}
+
 function appRoot(appKey) {
   return path.resolve(__dirname, "../..", "apps", appKey);
 }
@@ -82,6 +115,10 @@ function buildPlugins(appKey, { locationMode }) {
   return plugins;
 }
 
+/**
+ * @param {string} appKey
+ * @param {{ locationMode?: "foreground", maps?: boolean }} options
+ */
 function defineSamrimExpoApp(appKey, options = {}) {
   const app = readMobileConfig(appKey);
   const locationMode = options.locationMode;
@@ -89,6 +126,11 @@ function defineSamrimExpoApp(appKey, options = {}) {
     throw new Error("Invalid locationMode for " + appKey + ": " + locationMode);
   }
   const adaptiveIcon = appAsset(appKey, "adaptive-icon.png");
+  const androidMapsApiKey = options.maps ? mobileMapsApiKey(appKey, "android") : undefined;
+  const iosMapsApiKey = options.maps ? mobileMapsApiKey(appKey, "ios") : undefined;
+  if (options.maps && (!androidMapsApiKey || !iosMapsApiKey)) {
+    throw new Error("Missing Google Maps API keys for " + appKey + " in the mobile secret environment.");
+  }
   const android = {
     package: app.androidPackage,
     ...(adaptiveIcon ? { adaptiveIcon: { foregroundImage: adaptiveIcon, backgroundColor: "#FFFFFF" } } : {}),
@@ -113,7 +155,10 @@ function defineSamrimExpoApp(appKey, options = {}) {
     userInterfaceStyle: "automatic",
     android,
     ios: { bundleIdentifier: app.iosBundleIdentifier, supportsTablet: false },
-    plugins: buildPlugins(appKey, { locationMode }),
+    plugins: [
+      ...buildPlugins(appKey, { locationMode }),
+      ...(options.maps ? [["react-native-maps", { androidGoogleMapsApiKey: androidMapsApiKey, iosGoogleMapsApiKey: iosMapsApiKey }]] : []),
+    ],
     experiments: { typedRoutes: true },
     extra: {
       appKey,

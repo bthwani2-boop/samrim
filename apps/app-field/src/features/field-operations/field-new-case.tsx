@@ -1,4 +1,4 @@
-import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniChip, BthwaniMap, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type CommerceVertical, type CreateJoiningCaseRequest, type DshImageUploadInput, type FieldAdmission, type JoiningCaseResponse, joiningCaseStateLabel, type ServiceCity } from "@bthwani/dsh";
 import * as ImagePicker from "expo-image-picker";
 import { type Href, Link } from "expo-router";
@@ -16,6 +16,9 @@ const theme = useAppearanceTheme();
   const [input, setInput] = useState<CreateJoiningCaseRequest>({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "", firstStoreLatitude: 0, firstStoreLongitude: 0, firstStoreFulfillmentModes: [] });
   const [storeLatitude, setStoreLatitude] = useState("");
   const [storeLongitude, setStoreLongitude] = useState("");
+  const parsedStoreLatitude = Number(storeLatitude);
+  const parsedStoreLongitude = Number(storeLongitude);
+  const selectedStoreOrigin = Number.isFinite(parsedStoreLatitude) && Number.isFinite(parsedStoreLongitude) && storeLatitude.trim() !== "" && storeLongitude.trim() !== "" && parsedStoreLatitude >= -90 && parsedStoreLatitude <= 90 && parsedStoreLongitude >= -180 && parsedStoreLongitude <= 180 ? { latitude: parsedStoreLatitude, longitude: parsedStoreLongitude } : null;
   const [createdCase, setCreatedCase] = useState<JoiningCaseResponse | null>(null);
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
@@ -169,7 +172,8 @@ const theme = useAppearanceTheme();
           <BthwaniChip label="استلم بنفسك من المتجر" onPress={() => toggleFulfillmentMode("CUSTOMER_PICKUP")} selected={input.firstStoreFulfillmentModes.includes("CUSTOMER_PICKUP")} />
         </View>
         <Text style={styles.label}>موقع المتجر الثابت</Text>
-        <Text style={styles.muted}>أدخل إحداثيات موقع المتجر مع ملف الانضمام؛ تنتقل إلى المتجر عند الاعتماد ولا تُعدّل من شاشة إدارة المتجر.</Text>
+        <Text style={styles.muted}>حدد نقطة المتجر على الخريطة أو أدخل الإحداثيات. تنتقل النقطة إلى المتجر عند الاعتماد ولا تُعدّل من شاشة إدارة المتجر.</Text>
+        <BthwaniMap accessibilityLabel="تحديد موقع المتجر الثابت" selection={selectedStoreOrigin} selectionTitle="موقع المتجر" onSelectCoordinate={(coordinate) => { if (!busy) { setStoreLatitude(coordinate.latitude.toFixed(6)); setStoreLongitude(coordinate.longitude.toFixed(6)); setError(""); } }} />
         <TextInput accessibilityLabel="خط عرض موقع المتجر" keyboardType="numbers-and-punctuation" placeholder="خط العرض، مثال: 15.369445" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput]} value={storeLatitude} onChangeText={setStoreLatitude} />
         <TextInput accessibilityLabel="خط طول موقع المتجر" keyboardType="numbers-and-punctuation" placeholder="خط الطول، مثال: 44.191006" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput]} value={storeLongitude} onChangeText={setStoreLongitude} />
         <Text style={styles.label}>صورة المتجر</Text>

@@ -1,5 +1,5 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniIcon, BthwaniMap, BthwaniSectionHeader, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { createDshMobileClient, type DeliveryProofResponse, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderRatingResponse, type OrderTrackingResponse, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
@@ -217,7 +217,7 @@ export default function ClientOrderDetail() {
         {tracking.kind === "ready" && tracking.value.trackingState === "NOT_ASSIGNED" ? <Text style={styles.muted}>سيظهر التتبع بعد إسناد الطلب إلى كابتن.</Text> : null}
         {tracking.kind === "ready" && tracking.value.trackingState === "AWAITING_LOCATION" ? <Text style={styles.muted}>تم إسناد الطلب، وبانتظار أول تحديث موقع من الكابتن.</Text> : null}
         {tracking.kind === "ready" && tracking.value.trackingState === "COMPLETED" ? <Text style={styles.muted}>{order.state === "DELIVERY_FAILED" ? "تعذرت محاولة التوصيل، فأوقفنا التتبع المباشر إلى أن يعالج المشغل الحالة." : order.state === "CANCELLED" ? "أُلغي الطلب، لذلك أوقفنا التتبع المباشر." : "اكتملت رحلة التوصيل، وتم إيقاف عرض الموقع."}</Text> : null}
-        {tracking.kind === "ready" && tracking.value.trackingState === "LIVE" && tracking.value.captainLocation ? <><Text style={styles.trackingTitle}>الكابتن في الطريق</Text><Text style={styles.muted}>آخر تحديث: {formatTrackingTime(tracking.value.captainLocation.updatedAt)}</Text><BthwaniButton label="فتح الموقع على الخريطة" onPress={() => void Linking.openURL(`geo:${tracking.value.captainLocation?.latitude},${tracking.value.captainLocation?.longitude}?q=${tracking.value.captainLocation?.latitude},${tracking.value.captainLocation?.longitude}`)} variant="secondary" /></> : null}
+        {tracking.kind === "ready" && tracking.value.trackingState === "LIVE" && tracking.value.captainLocation ? <><Text style={styles.trackingTitle}>الكابتن في الطريق</Text><Text style={styles.muted}>آخر تحديث: {formatTrackingTime(tracking.value.captainLocation.updatedAt)}</Text><BthwaniMap accessibilityLabel="خريطة تتبع طلبك" markers={[{ id: "destination", coordinate: { latitude: order.addressLatitude, longitude: order.addressLongitude }, title: "عنوان التوصيل" }, ...(order.pickupLocation ? [{ id: "pickup", coordinate: order.pickupLocation, title: `استلام من ${order.storeName}` }] : [])]} selection={{ latitude: tracking.value.captainLocation.latitude, longitude: tracking.value.captainLocation.longitude }} selectionTitle="موقع الكابتن" /><BthwaniButton label="فتح الموقع على الخريطة" onPress={() => void Linking.openURL(`geo:${tracking.value.captainLocation?.latitude},${tracking.value.captainLocation?.longitude}?q=${tracking.value.captainLocation?.latitude},${tracking.value.captainLocation?.longitude}`)} variant="secondary" /></> : null}
       </BthwaniSurface>
       </> : null}
       {isStorePickup ? <>
@@ -226,6 +226,7 @@ export default function ClientOrderDetail() {
           <Text style={styles.pickupLocationTitle}>{order.storeName}</Text>
           {order.pickupLocation ? <>
             <Text style={styles.muted}>هذا هو موقع الفرع الحالي للاستلام.</Text>
+            <BthwaniMap accessibilityLabel={`خريطة موقع استلام ${order.storeName}`} markers={[{ id: "pickup", coordinate: order.pickupLocation, title: order.storeName }]} />
             <BthwaniButton accessibilityLabel={`فتح موقع ${order.storeName} على الخريطة`} label="الاتجاهات إلى المتجر" onPress={() => {
               const { latitude, longitude } = order.pickupLocation!;
               const mapUrl = `geo:${latitude},${longitude}?q=${latitude},${longitude}(${encodeURIComponent(order.storeName)})`;

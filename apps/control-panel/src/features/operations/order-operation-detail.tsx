@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "../access/identity-error-message";
 import { operationActionLabel, resolveOperatorAction } from "./operator-actions";
+import { OperationLocationMap } from "./operation-location-map";
 import "./operations-workspace.module.css";
 
 type DetailTab = "overview" | "items" | "store" | "fulfillment" | "payment" | "assignment" | "recovery";
@@ -171,6 +172,11 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
             <div><dt>عنوان التوصيل</dt><dd>{order.addressText || "لا يتطلب هذا الطلب عنوان توصيل."}</dd></div>
             <div><dt>تسليم المتجر للكابتن</dt><dd>{assignment ? captainHandoffStateLabel(assignment.handoffState) : "لا يوجد إسناد كابتن حالي."}</dd></div>
           </dl>
+          {order.fulfillmentMode === "CUSTOMER_PICKUP" && order.pickupLocation ? (
+            <OperationLocationMap latitude={order.pickupLocation.latitude} longitude={order.pickupLocation.longitude} label={`موقع استلام ${operation.storeName}`} />
+          ) : order.fulfillmentMode !== "CUSTOMER_PICKUP" ? (
+            <OperationLocationMap latitude={order.addressLatitude} longitude={order.addressLongitude} label="وجهة التوصيل" />
+          ) : <p className="muted">إحداثيات موقع الاستلام غير متاحة لهذا الطلب.</p>}
         </section>
       ) : null}
 
