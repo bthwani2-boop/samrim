@@ -58,6 +58,7 @@ export function OperationsWorkspace() {
   const [error, setError] = useState("");
   const [errorStatus, setErrorStatus] = useState(0);
   const loadSequence = useRef(0);
+  const lanesNavigationRef = useRef<HTMLElement>(null);
 
   useEffect(() => setSearch(searchFromUrl), [searchFromUrl]);
 
@@ -132,12 +133,15 @@ export function OperationsWorkspace() {
   }, [actionableOnly, cursor, searchFromUrl, sort, state]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    lanesNavigationRef.current?.querySelector<HTMLElement>(`[data-ops-lane="${lane.id}"]`)?.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [lane.id]);
 
   return (
     <section className="operations-workspace" aria-labelledby="operations-list-title">
-      <nav className="operations-lanes" aria-label="مسارات مركز العمليات">
+      <nav ref={lanesNavigationRef} className="operations-lanes" aria-label="مسارات مركز العمليات">
         {lanes.map((item) => (
-          <Link key={item.id} href={viewHref(item.id, (subLanes[item.id] ?? [])[0]?.id)} aria-current={item.id === lane.id ? "page" : undefined} className={item.id === lane.id ? "operations-lane is-active" : "operations-lane"}>
+          <Link key={item.id} href={viewHref(item.id, (subLanes[item.id] ?? [])[0]?.id)} aria-current={item.id === lane.id ? "page" : undefined} data-ops-lane={item.id} className={item.id === lane.id ? "operations-lane is-active" : "operations-lane"}>
             {item.label}
           </Link>
         ))}

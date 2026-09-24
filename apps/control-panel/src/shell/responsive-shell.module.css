@@ -45,6 +45,10 @@
 @media (max-width: 480px) {
   :global(.control-frame) { width: min(100% - 24px, 420px); }
   :global(.workspace-app-shell .control-frame) { width: min(100% - 24px, 420px); }
+  :global(.workspace-header) { display: grid; grid-template-areas: "brand" "tools" "context"; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  :global(.workspace-header > .brand-link) { grid-area: brand; }
+  :global(.workspace-header > .workspace-header-tools) { grid-area: tools; justify-self: stretch; justify-content: space-between; gap: 4px; }
+  :global(.workspace-header > .workspace-actor-context) { grid-area: context; justify-items: center; text-align: center; }
   :global(.brand-header) { padding-bottom: 20px; }
   :global(.surface-label) { font-size: 11px; }
   :global(.auth-card) { padding: 24px 19px; border-radius: 22px; }
@@ -60,9 +64,9 @@
   :global(.workspace-header) { gap: 8px; }
   :global(.workspace-header-tools) { min-width: 0; }
   :global(.workspace-search-panel) { width: calc(100vw - 24px); }
-  :global(.workspace-notifications-link) { padding-inline: 8px; font-size: 11px; }
-  :global(.workspace-header-tools .account-menu) { min-width: 0 !important; width: min(120px, 31vw); }
-  :global(.account-menu > summary) { width: 100%; overflow: hidden; padding-inline: 8px; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+  :global(.workspace-notifications-link) { padding-inline: 6px; font-size: 10px; }
+  :global(.workspace-header-tools .account-menu) { min-width: 0 !important; width: min(104px, 27vw); }
+  :global(.account-menu > summary) { width: 100%; overflow: hidden; padding-inline: 6px; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
   :global(.workspace-nav-toggle) { width: var(--size-controlMd); min-width: var(--size-controlMd); padding: 0; }
   :global(.admission-form) { grid-template-columns: 1fr; }
   :global(.admission-form .button) { width: 100%; }
