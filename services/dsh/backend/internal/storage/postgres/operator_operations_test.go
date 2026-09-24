@@ -53,18 +53,21 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 			}
 		}
 
-		first, err := postgres.ListOrdersForOperator(ctx, db, "READY_FOR_DISPATCH", 2, "")
+		first, err := postgres.ListOrdersForOperator(ctx, db, "READY_FOR_DISPATCH", true, 2, "")
 		if err != nil || len(first.Operations) != 2 || first.Operations[0].OrderID != "operator_order_03" || first.Operations[1].OrderID != "operator_order_02" || first.NextCursor == "" {
 			t.Fatalf("first operator operations page is not stable: %+v err=%v", first, err)
 		}
-		second, err := postgres.ListOrdersForOperator(ctx, db, "READY_FOR_DISPATCH", 2, first.NextCursor)
+		second, err := postgres.ListOrdersForOperator(ctx, db, "READY_FOR_DISPATCH", true, 2, first.NextCursor)
 		if err != nil || len(second.Operations) != 1 || second.Operations[0].OrderID != "operator_order_01" || second.NextCursor != "" {
 			t.Fatalf("second operator operations page is not stable: %+v err=%v", second, err)
 		}
-		if _, err := postgres.ListOrdersForOperator(ctx, db, "CAPTAIN_ASSIGNED", 2, first.NextCursor); !errors.Is(err, postgres.ErrOperatorOperationInvalidCursor) {
+		if _, err := postgres.ListOrdersForOperator(ctx, db, "CAPTAIN_ASSIGNED", true, 2, first.NextCursor); !errors.Is(err, postgres.ErrOperatorOperationInvalidCursor) {
 			t.Fatalf("expected filter-bound cursor rejection, got %v", err)
 		}
-		if _, err := postgres.ListOrdersForOperator(ctx, db, "READY_FOR_DISPATCH", 2, "not-a-cursor"); !errors.Is(err, postgres.ErrOperatorOperationInvalidCursor) {
+		if _, err := postgres.ListOrdersForOperator(ctx, db, "READY_FOR_DISPATCH", false, 2, first.NextCursor); !errors.Is(err, postgres.ErrOperatorOperationInvalidCursor) {
+			t.Fatalf("expected actionable filter-bound cursor rejection, got %v", err)
+		}
+		if _, err := postgres.ListOrdersForOperator(ctx, db, "READY_FOR_DISPATCH", true, 2, "not-a-cursor"); !errors.Is(err, postgres.ErrOperatorOperationInvalidCursor) {
 			t.Fatalf("expected malformed cursor rejection, got %v", err)
 		}
 		if _, err := db.ExecContext(ctx, `UPDATE dsh.stores SET fulfillment_modes=ARRAY['CUSTOMER_PICKUP']::text[],delivery_origin_latitude=15.369445,delivery_origin_longitude=44.191006,delivery_origin_version=1,delivery_origin_updated_at=clock_timestamp() WHERE id=$1`, "store_operator_ops"); err != nil {
@@ -72,6 +75,15 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		}
 		if _, err := db.ExecContext(ctx, `UPDATE dsh.commerce_orders SET fulfillment_mode='CUSTOMER_PICKUP',address_id=NULL,address_version=NULL,address_text=NULL,address_latitude=NULL,address_longitude=NULL,serviceability_policy_version=NULL,serviceability_status=NULL,serviceability_address_version=NULL,state='READY_FOR_PICKUP',payment_method='CASH_AT_STORE',payment_intent_id='intent_operator_ops',payment_state='REQUIRES_COLLECTION',version=version+1 WHERE id=$1`, "operator_order_02"); err != nil {
 			t.Fatalf("convert fixture to a cash-at-store pickup order: %v", err)
+		}
+		actionable, err := postgres.ListOrdersForOperator(ctx, db, "", true, 10, "")
+		if err != nil || len(actionable.Operations) != 2 {
+			t.Fatalf("actionable operator queue included a non-actionable order: %+v err=%v", actionable, err)
+		}
+		for _, item := range actionable.Operations {
+			if item.OrderID == "operator_order_02" {
+				t.Fatal("ready-for-pickup order was included in the operator-action queue")
+			}
 		}
 		clientOrders, err := postgres.ListOrdersForClient(ctx, db, "client_operator_ops", "", 50)
 		if err != nil {

@@ -19,9 +19,9 @@ const authenticatedOperator = {
   expiresAt: "2099-01-01T00:00:00.000Z",
 };
 
-async function stubAuthenticatedSession(page: Page, permissions = authenticatedOperator.permissions) {
+async function stubAuthenticatedSession(page: Page, permissions = authenticatedOperator.permissions, canManageOperatorPermissions = false) {
   await page.route("**/api/auth/session**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ identity: { ...authenticatedOperator, permissions } }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ identity: { ...authenticatedOperator, permissions, ...(canManageOperatorPermissions ? { canManageOperatorPermissions: true } : {}) } }) });
   });
 }
 
@@ -33,12 +33,21 @@ test("signed-out access to a protected workspace route returns to the identity s
 });
 
 test("authenticated operator discovers the platform centers through workspace navigation", async ({ page }) => {
-  await stubAuthenticatedSession(page);
+  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
+  let homeRequestsActionableOrders = false;
+  await page.route("**/api/operations**", async (route) => {
+    homeRequestsActionableOrders = new URL(route.request().url()).searchParams.get("actionableOnly") === "true";
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ operations: [] }) });
+  });
+  await page.route("**/api/partners/joining-cases**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cases: [] }) });
+  });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
 
   await expect(page).toHaveURL(/\/workspace$/);
   await expect(page.getByRole("heading", { name: "الرئيسية" })).toBeVisible();
+  await expect.poll(() => homeRequestsActionableOrders).toBe(true);
   const navigationToggle = page.getByRole("button", { name: "فتح مسارات العمل" });
   await navigationToggle.click();
   await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" })).toHaveAttribute("data-open", "true");
@@ -47,13 +56,13 @@ test("authenticated operator discovers the platform centers through workspace na
   await accessLink.click();
   await expect(page).toHaveURL(/\/access$/);
   await expect(page.locator('#workspace-navigation a[href="/access"][aria-current="page"]')).toHaveAttribute("href", "/access");
-  await expect(page.getByRole("heading", { name: "الحسابات والأدوار" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "تهيئة أو إيقاف الحساب" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "مشغّلو لوحة التحكم والصلاحيات" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "إدارة حسابات مشغّلي لوحة التحكم" })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(page.locator("#workspace-main")).toBeFocused();
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "الحسابات والأدوار" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "مشغّلو لوحة التحكم والصلاحيات" })).toBeVisible();
 });
 
 test("authenticated operator can open the notification center from the workspace header", async ({ page }) => {

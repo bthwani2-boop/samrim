@@ -286,9 +286,9 @@ var (
 )
 
 type operatorOperationsCursor struct {
-	UpdatedAt     time.Time `json:"updatedAt"`
-	ID            string    `json:"id"`
-	State         string    `json:"state"`
+	UpdatedAt      time.Time `json:"updatedAt"`
+	ID             string    `json:"id"`
+	State          string    `json:"state"`
 	ActionableOnly bool      `json:"actionableOnly"`
 }
 

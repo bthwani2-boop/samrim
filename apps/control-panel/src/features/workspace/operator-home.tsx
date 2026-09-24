@@ -15,7 +15,7 @@ export function OperatorHome() {
   useEffect(() => {
     let active = true;
     void Promise.all([
-      fetch("/api/operations?limit=8", { cache: "no-store" }),
+      fetch("/api/operations?limit=8&actionableOnly=true", { cache: "no-store" }),
       fetch("/api/partners/joining-cases?state=submitted&limit=8", { cache: "no-store" }),
     ]).then(async ([operationsResponse, joiningCasesResponse]) => {
       if (!operationsResponse.ok) throw new Error(await responseMessage(operationsResponse));

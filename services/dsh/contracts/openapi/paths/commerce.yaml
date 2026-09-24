@@ -791,6 +791,13 @@ paths:
           required: false
           schema:
             $ref: "../dsh.openapi.yaml#/components/schemas/OrderState"
+        - name: actionableOnly
+          in: query
+          required: false
+          description: When true, restricts the list to orders whose canonical state and current assignment allow an operator action.
+          schema:
+            type: boolean
+            default: false
         - name: limit
           in: query
           required: false
