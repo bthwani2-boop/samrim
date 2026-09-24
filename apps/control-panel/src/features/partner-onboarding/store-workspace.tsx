@@ -161,8 +161,8 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
         </section>
 
         <section className="store-detail-section" aria-labelledby="store-catalog-title">
-          <div className="store-detail-heading"><div><p className="eyebrow">كتالوج المتجر</p><h2 id="store-catalog-title">منتجات وعروض المتجر</h2></div><Link href="/catalog/products">فتح مساحة الكتالوج</Link></div>
-          <p className="muted">تُدار المنتجات والعروض من مسارات الكتالوج المعتمدة. ملف التشغيل يقرأ إعدادات المتجر ونشره فقط.</p>
+          <div className="store-detail-heading"><div><p className="eyebrow">حدود بيانات المنتجات</p><h2 id="store-catalog-title">المركزي والمحلي</h2></div><Link href="/catalog/products">فتح المنتجات المركزية</Link></div>
+          <p className="muted">الهوية والبيانات المشتركة تُدار في الكتالوج المركزي. أما عروض المتجر المحلية وأسعارها وتوفرها فيديرها الشريك من تطبيقه. لا يحمل ملف التشغيل قوائم المنتجات أو العروض.</p>
         </section>
       </> : null}
     </section>
