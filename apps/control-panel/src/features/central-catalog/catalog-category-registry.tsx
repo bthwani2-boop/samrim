@@ -1,7 +1,7 @@
 "use client";
 
 import type { CatalogCategory, CommerceVertical } from "@bthwani/dsh";
-import { useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useSession } from "../../session/session-provider";
 
 function readError(value: unknown): string {
@@ -65,6 +65,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   const [editorOpen, setEditorOpen] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [expandedCategoryIds, setExpandedCategoryIds] = useState<ReadonlySet<string>>(new Set());
 
   async function create() {
     if (!canEdit) return;
@@ -122,6 +123,40 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
 
   const categoryIndex = new Map(categories.map((category) => [category.id, category]));
   const orderedCategories = [...categories].sort((left, right) => categoryDepth(left, categoryIndex) - categoryDepth(right, categoryIndex) || left.nameAr.localeCompare(right.nameAr, "ar"));
+  const childrenByParent = new Map<string, CatalogCategory[]>();
+  for (const category of orderedCategories) {
+    const parentId = category.parentCategoryId ?? "";
+    childrenByParent.set(parentId, [...(childrenByParent.get(parentId) ?? []), category]);
+  }
+  useEffect(() => {
+    const parentIds = new Set(categories.map((category) => category.parentCategoryId).filter((parentId): parentId is string => Boolean(parentId)));
+    setExpandedCategoryIds(new Set(categories.filter((category) => parentIds.has(category.id)).map((category) => category.id)));
+  }, [categories]);
+
+  function toggleBranch(branchId: string) {
+    setExpandedCategoryIds((current) => {
+      const next = new Set(current);
+      if (next.has(branchId)) next.delete(branchId);
+      else next.add(branchId);
+      return next;
+    });
+  }
+
+  function renderCategory(category: CatalogCategory): ReactNode {
+    const children = childrenByParent.get(category.id) ?? [];
+    const expanded = expandedCategoryIds.has(category.id);
+    return <li key={category.id} className="catalog-taxonomy-tree-node">
+      <div className={"catalog-taxonomy-tree-row" + (category.id === categoryId ? " is-selected" : "")}>
+        {children.length ? <button type="button" className="catalog-taxonomy-tree-toggle" aria-expanded={expanded} aria-label={(expanded ? "طي" : "فتح") + " فروع " + category.nameAr} onClick={() => toggleBranch(category.id)}>{expanded ? "−" : "+"}</button> : <span className="catalog-taxonomy-tree-spacer" aria-hidden="true" />}
+        <button type="button" className="catalog-taxonomy-tree-select" aria-pressed={category.id === categoryId} onClick={() => onCategoryChange(category.id)}>
+          <strong>{category.nameAr}</strong><bdi dir="ltr">{category.nameEn}</bdi>
+        </button>
+        <span className={"catalog-taxonomy-tree-status" + (category.active ? " is-active" : "")}>{category.active ? "نشط" : "متوقف"}</span>
+        <button type="button" className="catalog-row-action" disabled={busy || !canEdit} onClick={() => edit(category)}>تعديل</button>
+      </div>
+      {children.length && expanded ? <ul className="catalog-taxonomy-tree-children">{children.map(renderCategory)}</ul> : null}
+    </li>;
+  }
 
   return (
     <section className="catalog-taxonomy-section" aria-labelledby="catalog-category-registry-title">

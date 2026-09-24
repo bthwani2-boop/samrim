@@ -4,7 +4,7 @@ import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { type PropsWithChildren, useEffect, useMemo, useRef } from "react";
 import { type ColorValue, ScrollView, StyleSheet, Text, type TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useServiceCityScope } from "../features/service-city/service-city-scope";
+import { serviceCityDisplayName, useServiceCityScope } from "../features/service-city/service-city-scope";
 
 type ClientSearchNavigation = {
   navigate: (screen: "home", params: { focus: "search" }) => void;
@@ -25,17 +25,18 @@ export function ClientPublicHeader({ safeArea = true, searchOpen, searchQuery, o
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { focus, q } = useLocalSearchParams<{ focus?: string | string[]; q?: string | string[] }>();
-  const header = <ClientHeader context="اكتشاف المتاجر" searchOnCurrentRoute focus={searchOpen === undefined ? focus : searchOpen ? "search" : ""} searchQuery={searchQuery ?? q} onSearchOpenChange={onSearchOpenChange} onSearchQueryChange={onSearchQueryChange} styles={styles} />;
+  const header = <ClientHeader searchOnCurrentRoute focus={searchOpen === undefined ? focus : searchOpen ? "search" : ""} searchQuery={searchQuery ?? q} onSearchOpenChange={onSearchOpenChange} onSearchQueryChange={onSearchQueryChange} styles={styles} />;
   return safeArea ? <SafeAreaView edges={["top"]} style={styles.headerSafeArea}>{header}</SafeAreaView> : header;
 }
 
-function ClientHeader({ context, searchOnCurrentRoute = false, focus: rawFocus, searchQuery: rawQuery, navigation, onSearchOpenChange, onSearchQueryChange, styles }: { context?: string; searchOnCurrentRoute?: boolean; focus?: string | string[] | undefined; searchQuery?: string | string[] | undefined; navigation?: ClientSearchNavigation; onSearchOpenChange?: ((open: boolean) => void) | undefined; onSearchQueryChange?: ((query: string) => void) | undefined; styles: ReturnType<typeof createStyles> }) {
+function ClientHeader({ searchOnCurrentRoute = false, focus: rawFocus, searchQuery: rawQuery, navigation, onSearchOpenChange, onSearchQueryChange, styles }: { searchOnCurrentRoute?: boolean; focus?: string | string[] | undefined; searchQuery?: string | string[] | undefined; navigation?: ClientSearchNavigation; onSearchOpenChange?: ((open: boolean) => void) | undefined; onSearchQueryChange?: ((query: string) => void) | undefined; styles: ReturnType<typeof createStyles> }) {
   const router = useRouter();
   const focus = Array.isArray(rawFocus) ? rawFocus[0] : rawFocus;
   const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
   const isSearchOpen = focus === "search";
   const searchInputRef = useRef<TextInput>(null);
-  const { clearSelectedCity } = useServiceCityScope();
+  const { cities, clearSelectedCity, selectedCityID } = useServiceCityScope();
+  const cityName = serviceCityDisplayName(cities.find((city) => city.id === selectedCityID)?.displayNameAr);
 
   useEffect(() => {
     if (!isSearchOpen) return;
@@ -65,10 +66,7 @@ function ClientHeader({ context, searchOnCurrentRoute = false, focus: rawFocus, 
         <>
           <View style={styles.headerIdentity}>
             <Text style={styles.brand}>بثواني</Text>
-            <View style={styles.headerMeta}>
-              {context ? <Text style={styles.context}>{context}</Text> : null}
-              <BthwaniChip accessibilityLabel="تغيير المدينة" icon="location" label="تغيير المدينة" onPress={() => void clearSelectedCity()} style={styles.headerCity} />
-            </View>
+            <BthwaniChip accessibilityLabel={cityName} icon="location" label={cityName} onPress={() => void clearSelectedCity()} style={styles.headerCity} />
           </View>
           <View style={styles.headerActions}>
             <BthwaniIconButton icon="search" label="البحث عن متجر أو منتج" onPress={() => { if (onSearchOpenChange) onSearchOpenChange(true); else if (searchOnCurrentRoute) router.setParams({ focus: "search" }); else if (navigation) navigation.navigate("home", { focus: "search" }); else router.push("/home?focus=search" as Href); }} size={sizing.controlMd} tone="soft" />
@@ -121,8 +119,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     header: { alignItems: "center", backgroundColor: theme.surface, borderBottomColor: theme.borderColor, borderBottomWidth: borders.hairline, flexDirection: "row", gap: spacing[3], justifyContent: "space-between", minHeight: 76, paddingHorizontal: spacing[4], paddingVertical: spacing[3] },
     headerIdentity: { alignItems: "flex-end", flex: 1, gap: spacing[1], minWidth: 0 },
     brand: { ...typography.titleMd, color: theme.color },
-    context: { ...typography.caption, color: theme.colorMuted, marginTop: spacing[1] },
-    headerMeta: { alignItems: "center", flexDirection: "row", gap: spacing[2], maxWidth: "100%" },
     headerCity: { backgroundColor: theme.actionSoft, borderColor: theme.borderColorStrong, flexShrink: 1, minHeight: sizing.controlSm, paddingHorizontal: spacing[2] },
     headerActions: { alignItems: "center", flexDirection: "row", gap: spacing[2] },
     headerSearchActions: { alignItems: "center", flex: 1, flexDirection: "row", gap: spacing[2], minWidth: 0 },
