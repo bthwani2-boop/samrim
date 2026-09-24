@@ -1,10 +1,10 @@
 {
   "name": "بثواني الكابتن",
-  "slug": "app-captain-next",
+  "slug": "app-captain",
   "scheme": "captain",
   "owner": "bthwani1",
   "version": "0.3.0",
-  "androidPackage": "com.bthwani.captain.next",
-  "iosBundleIdentifier": "com.bthwani.captain.next",
-  "projectId": "07382a76-4dc5-460f-b4a7-7105d724bae6"
+  "androidPackage": "com.bthwani.captain",
+  "iosBundleIdentifier": "com.bthwani.captain",
+  "projectId": "7efa39e1-895f-44d7-a597-d613c79297b6"
 }

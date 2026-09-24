@@ -1,10 +1,10 @@
 {
-  "name": "بثواني الميدان",
-  "slug": "app-field-next",
+  "name": "بثواني الميداني",
+  "slug": "app-field",
   "scheme": "field",
   "owner": "bthwani1",
   "version": "0.3.0",
-  "androidPackage": "com.bthwani.field.next",
-  "iosBundleIdentifier": "com.bthwani.field.next",
-  "projectId": "08b6c8dc-80a2-4271-9904-d941a3d98914"
+  "androidPackage": "com.bthwani.field",
+  "iosBundleIdentifier": "com.bthwani.field",
+  "projectId": "8fcddca1-71ad-4f85-84ff-756d669c3e27"
 }
