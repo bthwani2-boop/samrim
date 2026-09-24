@@ -1,12 +1,16 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/lib/pq"
 )
@@ -147,7 +151,7 @@ func SearchPublicCatalog(ctx context.Context, db *sql.DB, serviceCityID, categor
 	serviceCityID = strings.TrimSpace(serviceCityID)
 	categoryID = strings.TrimSpace(categoryID)
 	query = strings.TrimSpace(query)
-	if db == nil || serviceCityID == "" || query == "" || len(query) > 160 || len(categoryID) > 128 || len(cursor) > 512 || limit < 1 || limit > 50 {
+	if db == nil || serviceCityID == "" || query == "" || utf8.RuneCountInString(query) > 160 || len(categoryID) > 128 || len(cursor) > 1024 || limit < 1 || limit > 50 {
 		return PublicCatalogSearchRecord{}, errors.New("public catalog search input is invalid")
 	}
 	offers, nextCursor, err := listCustomerVisibleOffers(ctx, db, "", serviceCityID, categoryID, query, limit, cursor)
@@ -183,16 +187,12 @@ func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, service
 		conditions = append(conditions, fmt.Sprintf("lower(p.canonical_name) LIKE lower($%d) ESCAPE '!'", len(args)))
 	}
 	if cursor != "" {
-		decoded, decodeErr := base64.RawURLEncoding.DecodeString(cursor)
+		position, decodeErr := decodeCatalogSearchCursor(cursor, storeID, serviceCityID, categoryID, query)
 		if decodeErr != nil {
-			return nil, nil, errors.New("catalog cursor is invalid")
+			return nil, nil, decodeErr
 		}
-		parts := strings.Split(string(decoded), "\x00")
-		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-			return nil, nil, errors.New("catalog cursor is invalid")
-		}
-		args = append(args, strings.ToLower(parts[0]), parts[1])
-		conditions = append(conditions, fmt.Sprintf("(lower(p.canonical_name),o.id) > ($%d,$%d)", len(args)-1, len(args)))
+		args = append(args, position.canonicalName, position.offerID)
+		conditions = append(conditions, fmt.Sprintf("(lower(p.canonical_name),o.id) > (lower($%d),$%d)", len(args)-1, len(args)))
 	}
 	args = append(args, limit+1)
 	rows, err := db.QueryContext(ctx, catalogOfferSelect+" WHERE "+strings.Join(conditions, " AND ")+fmt.Sprintf(" ORDER BY lower(p.canonical_name),o.id LIMIT $%d", len(args)), args...)
@@ -224,10 +224,67 @@ func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, service
 	if len(items) > limit {
 		items = items[:limit]
 		last := items[len(items)-1]
-		value := base64.RawURLEncoding.EncodeToString([]byte(strings.ToLower(last.Product.CanonicalName) + "\x00" + last.ID))
+		value := encodeCatalogSearchCursor(last.Product.CanonicalName, last.ID, storeID, serviceCityID, categoryID, query)
 		nextCursor = &value
 	}
 	return items, nextCursor, nil
+}
+
+type catalogSearchCursorPosition struct {
+	canonicalName string
+	offerID       string
+}
+
+func encodeCatalogSearchCursor(canonicalName, offerID, storeID, serviceCityID, categoryID, query string) string {
+	payload := make([]byte, 0, len(canonicalName)+len(offerID)+18)
+	payload = append(payload, canonicalName...)
+	payload = append(payload, 0)
+	payload = append(payload, offerID...)
+	payload = append(payload, 0)
+	fingerprint := catalogSearchCursorFingerprint(storeID, serviceCityID, categoryID, query)
+	payload = append(payload, fingerprint[:]...)
+	return base64.RawURLEncoding.EncodeToString(payload)
+}
+
+func decodeCatalogSearchCursor(cursor, storeID, serviceCityID, categoryID, query string) (catalogSearchCursorPosition, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		return catalogSearchCursorPosition{}, errors.New("catalog cursor is invalid")
+	}
+	firstSeparator := bytes.IndexByte(decoded, 0)
+	if firstSeparator < 1 || firstSeparator == len(decoded)-1 {
+		return catalogSearchCursorPosition{}, errors.New("catalog cursor is invalid")
+	}
+	secondSeparatorRelative := bytes.IndexByte(decoded[firstSeparator+1:], 0)
+	if secondSeparatorRelative < 1 {
+		return catalogSearchCursorPosition{}, errors.New("catalog cursor is invalid")
+	}
+	secondSeparator := firstSeparator + 1 + secondSeparatorRelative
+	if len(decoded)-secondSeparator-1 != 16 {
+		return catalogSearchCursorPosition{}, errors.New("catalog cursor is invalid")
+	}
+	expected := catalogSearchCursorFingerprint(storeID, serviceCityID, categoryID, query)
+	actual := decoded[secondSeparator+1:]
+	for index := range expected {
+		if actual[index] != expected[index] {
+			return catalogSearchCursorPosition{}, errors.New("catalog cursor does not match the current search")
+		}
+	}
+	return catalogSearchCursorPosition{canonicalName: string(decoded[:firstSeparator]), offerID: string(decoded[firstSeparator+1 : secondSeparator])}, nil
+}
+
+func catalogSearchCursorFingerprint(storeID, serviceCityID, categoryID, query string) [16]byte {
+	input := make([]byte, 0, len(storeID)+len(serviceCityID)+len(categoryID)+len(query)+16)
+	for _, value := range []string{storeID, serviceCityID, categoryID, query} {
+		var length [4]byte
+		binary.BigEndian.PutUint32(length[:], uint32(len(value)))
+		input = append(input, length[:]...)
+		input = append(input, value...)
+	}
+	digest := sha256.Sum256(input)
+	var fingerprint [16]byte
+	copy(fingerprint[:], digest[:len(fingerprint)])
+	return fingerprint
 }
 
 func escapeCatalogSearchPrefix(query string) string {

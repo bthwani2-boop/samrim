@@ -151,7 +151,7 @@ paths:
         - name: cursor
           in: query
           required: false
-          schema: { type: string, maxLength: 512 }
+          schema: { type: string, maxLength: 1024 }
       responses:
         "200":
           description: Stable, paginated search results limited to customer-visible offers in the requested service city.

@@ -747,7 +747,7 @@ paths:
         - { name: categoryId, in: query, required: false, schema: { type: string, maxLength: 128 } }
         - { name: q, in: query, required: false, schema: { type: string, maxLength: 160 } }
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
-        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 512 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 1024 } }
       responses:
         "200": { description: Customer-visible catalog readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PublicCatalogResponse" } } } }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }

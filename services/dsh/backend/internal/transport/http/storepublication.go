@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/lib/pq"
 
@@ -232,7 +233,7 @@ func (s *StorePublicationServer) readPublicCatalog(w http.ResponseWriter, r *htt
 		}
 		limit = parsed
 	}
-	if serviceCityID == "" || len(categoryID) > 128 || len(query) > 160 || len(cursor) > 512 {
+	if serviceCityID == "" || len(categoryID) > 128 || utf8.RuneCountInString(query) > 160 || len(cursor) > 1024 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog scope or filter is invalid")
 		return
 	}
@@ -290,7 +291,7 @@ func (s *StorePublicationServer) searchPublicCatalog(w http.ResponseWriter, r *h
 		}
 		limit = parsed
 	}
-	if serviceCityID == "" || len(categoryID) > 128 || query == "" || len(query) > 160 || len(cursor) > 512 {
+	if serviceCityID == "" || len(categoryID) > 128 || query == "" || utf8.RuneCountInString(query) > 160 || len(cursor) > 1024 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog search scope or query is invalid")
 		return
 	}
