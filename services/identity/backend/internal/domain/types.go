@@ -83,6 +83,7 @@ type ActorSearchInput struct {
 	Role    string
 	Query   string
 	Enabled *bool
+	Sort    string
 	Limit   int
 	Cursor  string
 }

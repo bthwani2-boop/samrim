@@ -1,11 +1,12 @@
 "use client";
 
+import type { ActorIdentity } from "@bthwani/identity";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type FormEvent, type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
-import type { ActorIdentity } from "@bthwani/identity";
 import { IdentitySurface } from "../../src/features/access/identity-surface";
 import { currentWorkspaceChild, currentWorkspaceDestination, isCurrentWorkspaceDestination, isCurrentWorkspacePath, workspaceDestinations, workspaceSearchEntries } from "../../src/navigation/workspace-registry";
+import "../../src/navigation/workspace-navigation.module.css";
 import { identityFetch } from "../../src/session/identity-fetch";
 import { operatorWorkspacePermissions } from "../../src/session/operator-permissions";
 import { useSession } from "../../src/session/session-provider";
@@ -315,9 +316,9 @@ function WorkspaceNavigation({
               >
                 {destination.label}
               </Link>
-              {destination.children.length > 0 ? (
+              {destination.children.length > 0 && destination.childrenNavigation !== "top" ? (
                 <ul className="workspace-nav-children" aria-label={`مسارات ${destination.label}`}>
-                  {destination.children.map((child) => {
+                  {destination.children.filter((child) => child.showInWorkspaceNavigation !== false).map((child) => {
                     const childCurrent = isCurrentWorkspacePath(pathname, child.href);
                     return (
                       <li key={child.href}>
@@ -425,12 +426,20 @@ export default function WorkspaceLayout({ children }: Readonly<{ children: React
   const destinationAccessGranted = canOpenWorkspaceDestination(state.identity, currentDestination);
 
   return (
-    <ControlShell className="workspace-app-shell" surface="workspace" footer={null} header={<WorkspaceHeader busy={busy} navOpen={navigationOpen} navTriggerRef={navTriggerRef} onLogout={() => { setLocalSignOut(true); void logout(); }} onOpenNavigation={() => setNavigationOpen(true)} pathname={pathname} />}>
+    <ControlShell className={currentDestination.href === "/partners" ? "workspace-app-shell workspace-app-shell-partners" : "workspace-app-shell"} surface="workspace" footer={null} header={<WorkspaceHeader busy={busy} navOpen={navigationOpen} navTriggerRef={navTriggerRef} onLogout={() => { setLocalSignOut(true); void logout(); }} onOpenNavigation={() => setNavigationOpen(true)} pathname={pathname} />}>
       <a className="skip-link" href="#workspace-main">تخطي إلى المحتوى الرئيسي</a>
       <div className="workspace-layout">
         {navigationOpen ? <button type="button" className="workspace-nav-backdrop" aria-label="إغلاق مسارات العمل" onClick={closeNavigation} /> : null}
         <WorkspaceNavigation firstLinkRef={navFirstLinkRef} navRef={navRef} onClose={closeNavigation} open={navigationOpen} pathname={pathname} />
         <main ref={mainRef} id="workspace-main" className="workspace-main" tabIndex={-1}>
+          {destinationAccessGranted && currentDestination.childrenNavigation === "top" ? (
+            <nav className="workspace-route-tabs" aria-label={`مسارات ${currentDestination.label}`}>
+              {currentDestination.children.map((tab) => {
+                const current = isCurrentWorkspacePath(pathname, tab.href);
+                return <Link key={tab.href} href={tab.href} aria-current={current ? "page" : undefined} className={current ? "workspace-route-tab is-active" : "workspace-route-tab"}>{tab.label}</Link>;
+              })}
+            </nav>
+          ) : null}
           {destinationAccessGranted ? children : <section className="collection-state" role="status"><strong>الوصول إلى هذه المساحة غير مفعّل</strong><p>تحتاج إلى صلاحية النطاق المناسبة من إدارة صلاحيات المشغّلين.</p><Link className="button button-secondary" href="/workspace">العودة إلى الرئيسية</Link></section>}
         </main>
       </div>

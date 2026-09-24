@@ -139,9 +139,9 @@ export function OperationsWorkspace() {
 
   return (
     <section className="operations-workspace" aria-labelledby="operations-list-title">
-      <nav ref={lanesNavigationRef} className="operations-lanes" aria-label="مسارات مركز العمليات">
+      <nav ref={lanesNavigationRef} className="workspace-route-tabs" aria-label="مسارات مركز العمليات">
         {lanes.map((item) => (
-          <Link key={item.id} href={viewHref(item.id, (subLanes[item.id] ?? [])[0]?.id)} aria-current={item.id === lane.id ? "page" : undefined} data-ops-lane={item.id} className={item.id === lane.id ? "operations-lane is-active" : "operations-lane"}>
+          <Link key={item.id} href={viewHref(item.id, (subLanes[item.id] ?? [])[0]?.id)} aria-current={item.id === lane.id ? "page" : undefined} data-ops-lane={item.id} className={item.id === lane.id ? "workspace-route-tab is-active" : "workspace-route-tab"}>
             {item.label}
           </Link>
         ))}

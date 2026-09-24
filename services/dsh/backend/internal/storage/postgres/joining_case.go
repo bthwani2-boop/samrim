@@ -31,6 +31,8 @@ var (
 	ErrJoiningCaseInvalidState         = errors.New("joining case queue state is invalid")
 	ErrJoiningCaseInvalidCursor        = errors.New("joining case queue cursor is invalid")
 	ErrJoiningCaseInvalidLimit         = errors.New("joining case queue limit is invalid")
+	ErrJoiningCaseInvalidSort          = errors.New("joining case queue sort is invalid")
+	ErrJoiningCaseInvalidSearch        = errors.New("joining case queue search is invalid")
 	ErrJoiningCaseServiceCity          = errors.New("joining case requires an active service city")
 	ErrJoiningCaseStoreOrigin          = errors.New("joining case requires a fixed store origin")
 	ErrFinancialProfileBindingNotFound = errors.New("joining case financial profile binding was not found")
@@ -339,9 +341,10 @@ func correctAndResubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, acto
 type joiningCaseCursor struct {
 	CreatedAt time.Time `json:"createdAt"`
 	ID        string    `json:"id"`
+	Sort      string    `json:"sort,omitempty"`
 }
 
-func ListJoiningCases(ctx context.Context, db *sql.DB, state string, limit int, cursor string) (JoiningCaseListResult, error) {
+func ListJoiningCases(ctx context.Context, db *sql.DB, state, queryText, sort string, limit int, cursor string) (JoiningCaseListResult, error) {
 	if db == nil {
 		return JoiningCaseListResult{}, errors.New("DSH database is nil")
 	}
@@ -351,6 +354,17 @@ func ListJoiningCases(ctx context.Context, db *sql.DB, state string, limit int, 
 	state = strings.TrimSpace(strings.ToLower(state))
 	if state != "" && state != "draft" && state != "submitted" && state != "needs_correction" && state != "approved" {
 		return JoiningCaseListResult{}, ErrJoiningCaseInvalidState
+	}
+	sort = strings.TrimSpace(strings.ToLower(sort))
+	if sort == "" {
+		sort = "created_asc"
+	}
+	if sort != "created_asc" && sort != "created_desc" {
+		return JoiningCaseListResult{}, ErrJoiningCaseInvalidSort
+	}
+	queryText = strings.ToLower(strings.TrimSpace(queryText))
+	if len(queryText) > 128 {
+		return JoiningCaseListResult{}, ErrJoiningCaseInvalidSearch
 	}
 	var decoded *joiningCaseCursor
 	if strings.TrimSpace(cursor) != "" {
@@ -362,21 +376,40 @@ func ListJoiningCases(ctx context.Context, db *sql.DB, state string, limit int, 
 		if json.Unmarshal(value, &parsed) != nil || parsed.ID == "" || parsed.CreatedAt.IsZero() {
 			return JoiningCaseListResult{}, ErrJoiningCaseInvalidCursor
 		}
+		if parsed.Sort == "" {
+			parsed.Sort = "created_asc"
+		}
+		if parsed.Sort != sort {
+			return JoiningCaseListResult{}, ErrJoiningCaseInvalidCursor
+		}
 		decoded = &parsed
 	}
 
 	query := `SELECT c.id,c.contact_phone_e164,c.business_name,c.first_store_name,c.partner_actor_id,c.originating_field_actor_id,c.origin,c.state,c.correction_reason,c.reviewed_by,c.version,c.created_at,c.updated_at,c.first_store_service_city_id,c.first_store_vertical_id,c.first_store_latitude,c.first_store_longitude FROM dsh.joining_cases c WHERE 1=1`
-	args := make([]any, 0, 4)
+	args := make([]any, 0, 5)
 	if state != "" {
 		args = append(args, state)
 		query += fmt.Sprintf(" AND c.state=$%d", len(args))
 	}
+	if queryText != "" {
+		args = append(args, queryText)
+		searchArg := len(args)
+		query += fmt.Sprintf(" AND (position($%d in lower(c.id::text))>0 OR position($%d in lower(c.contact_phone_e164))>0 OR position($%d in lower(c.business_name))>0 OR position($%d in lower(c.first_store_name))>0)", searchArg, searchArg, searchArg, searchArg)
+	}
 	if decoded != nil {
 		args = append(args, decoded.CreatedAt, decoded.ID)
-		query += fmt.Sprintf(" AND (c.created_at,c.id)>($%d,$%d)", len(args)-1, len(args))
+		comparison := ">"
+		if sort == "created_desc" {
+			comparison = "<"
+		}
+		query += fmt.Sprintf(" AND (c.created_at,c.id)%s($%d,$%d)", comparison, len(args)-1, len(args))
 	}
 	args = append(args, limit+1)
-	query += fmt.Sprintf(" ORDER BY c.created_at ASC,c.id ASC LIMIT $%d", len(args))
+	order := "ASC"
+	if sort == "created_desc" {
+		order = "DESC"
+	}
+	query += fmt.Sprintf(" ORDER BY c.created_at %s,c.id %s LIMIT $%d", order, order, len(args))
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return JoiningCaseListResult{}, fmt.Errorf("list joining cases: %w", err)
@@ -422,7 +455,7 @@ func ListJoiningCases(ctx context.Context, db *sql.DB, state string, limit int, 
 	if len(items) > limit {
 		last := items[limit-1]
 		result.Cases = items[:limit]
-		encoded, err := json.Marshal(joiningCaseCursor{CreatedAt: last.CreatedAt, ID: last.ID})
+		encoded, err := json.Marshal(joiningCaseCursor{CreatedAt: last.CreatedAt, ID: last.ID, Sort: sort})
 		if err != nil {
 			return JoiningCaseListResult{}, err
 		}

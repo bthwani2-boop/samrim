@@ -296,11 +296,11 @@ func validCoordinates(latitude, longitude float64) bool {
 	return !math.IsNaN(latitude) && !math.IsInf(latitude, 0) && !math.IsNaN(longitude) && !math.IsInf(longitude, 0) && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180
 }
 
-func (s *Service) ListForOperator(ctx context.Context, state string, limit int, cursor, actingActorID string) (postgres.JoiningCaseListResult, error) {
+func (s *Service) ListForOperator(ctx context.Context, state, query, sort string, limit int, cursor, actingActorID string) (postgres.JoiningCaseListResult, error) {
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.JoiningCaseListResult{}, err
 	}
-	return postgres.ListJoiningCases(ctx, s.db, state, limit, cursor)
+	return postgres.ListJoiningCases(ctx, s.db, state, query, sort, limit, cursor)
 }
 
 func (s *Service) requirePartner(ctx context.Context, accessToken string) (identityclient.ActorIdentity, error) {

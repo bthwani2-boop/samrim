@@ -62,6 +62,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   const [reason, setReason] = useState("");
   const [active, setActive] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -81,6 +82,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
       const payload = await parseResponse<{ category: CatalogCategory }>(response);
       setNotice(selected ? `تم تحديث الفئة: ${payload.category.nameAr}.` : `تم حفظ الفئة: ${payload.category.nameAr}.`);
       setSelected(null);
+      setEditorOpen(false);
       setNameAr("");
       setNameEn("");
       setParentCategoryId("");
@@ -96,6 +98,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
 
   function edit(category: CatalogCategory) {
     setSelected(category);
+    setEditorOpen(true);
     onVerticalChange(category.verticalId);
     onCategoryChange(category.id);
     setParentCategoryId(category.parentCategoryId ?? "");
@@ -109,6 +112,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
 
   function cancelEdit() {
     setSelected(null);
+    setEditorOpen(false);
     setParentCategoryId("");
     setNameAr("");
     setNameEn("");
@@ -124,10 +128,11 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
       <div className="access-card-heading">
         <span className="step-chip">فئات المنتجات</span>
         <p className="eyebrow">شجرة الفئات</p>
-        <h3 id="catalog-category-registry-title">{selected ? "تعديل فئة" : "إضافة فئة"}</h3>
-        <p className="muted">اختر فئة عليا لتنظيم شجرتها. يتيح حقل الفئة الأب إنشاء مستويات متداخلة، ويولّد DSH المعرف الداخلي تلقائيًا.</p>
+        <h3 id="catalog-category-registry-title">شجرة الفئات</h3>
+        <p className="muted">اختر الفئة الرئيسية لاستعراض الشجرة. افتح سجلًا للتعديل أو أضف فئة جديدة.</p>
+        {!editorOpen ? <button type="button" className="button button-primary" disabled={!canEdit || !verticalId} onClick={() => { setSelected(null); setParentCategoryId(""); setNameAr(""); setNameEn(""); setActive(true); setReason(""); setEditorOpen(true); }}>إضافة فئة</button> : null}
       </div>
-      <div className="access-form">
+      {editorOpen ? <div className="access-form">
         <label className="field-label" htmlFor="catalog-category-vertical">الفئة العليا<select id="catalog-category-vertical" disabled={busy || Boolean(selected)} value={verticalId} onChange={(event) => { onVerticalChange(event.target.value); onCategoryChange(""); setParentCategoryId(""); }}><option value="">{verticals.length ? "اختر فئة عليا" : "لا توجد فئات عليا"}</option>{verticals.map((vertical) => <option value={vertical.id} key={vertical.id}>{vertical.nameAr}{vertical.active ? "" : " · متوقف"}</option>)}</select></label>
         <label className="field-label" htmlFor="catalog-category-parent">الفئة الأب<select id="catalog-category-parent" disabled={busy || !canEdit || !verticalId} value={parentCategoryId} onChange={(event) => setParentCategoryId(event.target.value)}><option value="">فئة رئيسية</option>{orderedCategories.filter((category) => !selected || (category.id !== selected.id && !isDescendant(category.id, selected.id, categoryIndex))).map((category) => <option value={category.id} key={category.id}>{"　".repeat(categoryDepth(category, categoryIndex))}{category.nameAr}{category.active ? "" : " · متوقف"}</option>)}</select></label>
         <label className="field-label" htmlFor="catalog-category-selected">الفئة المحددة لخصائصها<select id="catalog-category-selected" disabled={busy || loading || !verticalId} value={categoryId} onChange={(event) => onCategoryChange(event.target.value)}><option value="">اختر فئة</option>{orderedCategories.map((category) => <option value={category.id} key={category.id}>{"　".repeat(categoryDepth(category, categoryIndex))}{category.nameAr}{category.active ? "" : " · متوقف"}</option>)}</select></label>
@@ -136,13 +141,13 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
         <label className="field-label" htmlFor="catalog-category-active"><input id="catalog-category-active" type="checkbox" disabled={busy || !canEdit} checked={active} onChange={(event) => setActive(event.target.checked)} /> نشط</label>
         <label className="field-label" htmlFor="catalog-category-reason">سبب التغيير<textarea id="catalog-category-reason" disabled={busy || !canEdit} minLength={5} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
         <button type="button" className="button button-primary" disabled={busy || !canEdit || !verticalId || reason.trim().length < 5} onClick={() => void create()}>{busy ? "جارٍ الحفظ…" : selected ? "حفظ التعديل" : "إضافة فئة"}</button>
-        {selected ? <button type="button" className="button button-secondary" disabled={busy} onClick={cancelEdit}>إلغاء التعديل</button> : null}
-      </div>
+        <button type="button" className="button button-secondary" disabled={busy} onClick={cancelEdit}>{selected ? "إلغاء التعديل" : "إغلاق"}</button>
+      </div> : null}
       {notice ? <p className="managed-status managed-status-success" role="status">{notice}</p> : null}
       {error ? <p className="identity-error" role="alert">{error} <button type="button" className="button button-secondary" onClick={() => void onSaved()}>إعادة المحاولة</button></p> : null}
       <div className="catalog-taxonomy-inline">
         <strong>شجرة الفئات في الفئة الرئيسية المحددة</strong>
-        {loading ? <p>جارٍ قراءة السجل…</p> : !verticalId ? <p>اختر فئة رئيسية لقراءة شجرتها.</p> : categories.length === 0 ? <p>لا توجد فئات لهذه الفئة الرئيسية بعد.</p> : <ul>{orderedCategories.map((category) => <li key={category.id} style={{ marginInlineStart: `${categoryDepth(category, categoryIndex) * 1.25}rem` }}><span>{category.nameAr} · {category.nameEn} · {category.active ? "نشط" : "متوقف"} · v{category.version}</span><button type="button" className="button button-secondary" disabled={busy || !canEdit} onClick={() => edit(category)}>تعديل</button></li>)}</ul>}
+        {loading ? <p>جارٍ قراءة السجل…</p> : !verticalId ? <p>اختر فئة رئيسية لقراءة شجرتها.</p> : categories.length === 0 ? <p>لا توجد فئات لهذه الفئة الرئيسية بعد.</p> : <div className="catalog-registry-table-wrap"><table className="catalog-registry-table"><thead><tr><th>الفئة</th><th>الفئة الأب</th><th>الحالة</th><th>الإصدار</th><th>الإجراء</th></tr></thead><tbody>{orderedCategories.map((category) => <tr key={category.id}><td><button type="button" className="catalog-row-action" onClick={() => onCategoryChange(category.id)}>{"　".repeat(categoryDepth(category, categoryIndex))}{category.nameAr}</button><small>{category.nameEn}</small></td><td>{category.parentCategoryId ? categoryIndex.get(category.parentCategoryId)?.nameAr ?? category.parentCategoryId : "فئة رئيسية"}</td><td>{category.active ? "نشط" : "متوقف"}</td><td>v{category.version}</td><td><button type="button" className="catalog-row-action" disabled={busy || !canEdit} onClick={() => edit(category)}>تعديل</button></td></tr>)}</tbody></table></div>}
       </div>
     </section>
   );

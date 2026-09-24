@@ -1,4 +1,22 @@
 paths:
+  /dsh/catalog/product-registry:
+    get:
+      operationId: listCatalogProductRegistry
+      summary: Read a bounded operator-facing canonical Product registry projection
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - { name: q, in: query, required: false, schema: { type: string, maxLength: 160 } }
+        - $ref: "../dsh.openapi.yaml#/components/parameters/VerticalId"
+        - { name: categoryId, in: query, required: false, schema: { type: string, maxLength: 128 } }
+        - { name: active, in: query, required: false, schema: { type: string, enum: [all, active, inactive], default: all } }
+        - { name: sort, in: query, required: false, schema: { type: string, enum: [name_asc, name_desc, updated_desc, updated_asc], default: name_asc } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 2048 } }
+      responses:
+        "200": { description: Bounded operator registry projection with keyset pagination., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductRegistryResponse" } } } }
+
   /dsh/catalog/verticals:
     get:
       operationId: listCatalogVerticals
@@ -260,6 +278,16 @@ paths:
         "200": { description: Idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductResponse" } } } }
 
   /dsh/catalog/products/{productId}:
+    get:
+      operationId: readCatalogProduct
+      summary: Read one canonical Product with its Variants, categories, attributes, and media
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ProductId"
+      responses:
+        "200": { description: Canonical Product detail readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProduct" } } } }
     patch:
       operationId: updateCatalogProduct
       summary: Versioned canonical Product update

@@ -59,7 +59,9 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/catalog/attributes", s.listAttributeDefinitions)
 	mux.HandleFunc("POST /dsh/catalog/attributes", s.createAttributeDefinition)
 	mux.HandleFunc("GET /dsh/catalog/products", s.listProducts)
+	mux.HandleFunc("GET /dsh/catalog/product-registry", s.listProductRegistry)
 	mux.HandleFunc("POST /dsh/catalog/products", s.createProduct)
+	mux.HandleFunc("GET /dsh/catalog/products/{productId}", s.readProduct)
 	mux.HandleFunc("PATCH /dsh/catalog/products/{productId}", s.updateProduct)
 	mux.HandleFunc("PUT /dsh/catalog/products/{productId}/media", s.replaceProductMedia)
 	mux.HandleFunc("POST /dsh/catalog/products/{productId}/media/upload", s.uploadProductMedia)
@@ -282,6 +284,71 @@ func (s *CatalogServer) listProducts(w http.ResponseWriter, r *http.Request) {
 		values = append(values, toCatalogProduct(product))
 	}
 	writeJSON(w, http.StatusOK, contract.CatalogProductListResponse{Products: values, NextCursor: page.NextCursor})
+}
+
+func (s *CatalogServer) listProductRegistry(w http.ResponseWriter, r *http.Request) {
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	verticalID := strings.TrimSpace(r.URL.Query().Get("verticalId"))
+	categoryID := strings.TrimSpace(r.URL.Query().Get("categoryId"))
+	active := strings.TrimSpace(r.URL.Query().Get("active"))
+	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	if len(cursor) > 2048 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cursor is too long")
+		return
+	}
+	if len(query) > 160 || len(verticalID) > 128 || len(categoryID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog Product registry filters are too long")
+		return
+	}
+	limit, ok := catalogLimit(w, r)
+	if !ok {
+		return
+	}
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	actorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if actorID == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return
+	}
+	page, err := s.service.ListProductRegistryForOperator(r.Context(), actorID, query, verticalID, categoryID, active, sort, limit, cursor)
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	items := make([]contract.CatalogProductRegistryItem, 0, len(page.Products))
+	for _, product := range page.Products {
+		brand, image := "", ""
+		if product.Brand != nil {
+			brand = *product.Brand
+		}
+		if product.PrimaryImageURI != nil {
+			image = *product.PrimaryImageURI
+		}
+		items = append(items, contract.CatalogProductRegistryItem{ID: product.ID, VerticalID: product.VerticalID, CanonicalName: product.CanonicalName, Brand: brand, Active: product.Active, Version: product.Version, VariantCount: product.VariantCount, CategoryIds: product.CategoryIDs, PrimaryImageUri: image, CreatedAt: product.CreatedAt, UpdatedAt: product.UpdatedAt})
+	}
+	writeJSON(w, http.StatusOK, contract.CatalogProductRegistryResponse{Products: items, NextCursor: page.NextCursor})
+}
+
+func (s *CatalogServer) readProduct(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	actorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if actorID == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return
+	}
+	product, err := s.service.ReadSharedCatalogProduct(r.Context(), actorID, r.PathValue("productId"))
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toCatalogProduct(product))
 }
 
 func (s *CatalogServer) createProduct(w http.ResponseWriter, r *http.Request) {
@@ -622,6 +689,8 @@ func toCatalogAttributeValue(item postgres.CatalogAttributeValueRecord) contract
 
 func writeCatalogError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, postgres.ErrCatalogProductRegistryInvalidCursor):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog Product registry cursor, filters, status, or sort order are invalid")
 	case errors.Is(err, postgres.ErrCatalogProductNotFound), errors.Is(err, postgres.ErrCatalogVariantNotFound), errors.Is(err, postgres.ErrCatalogOfferNotFound), errors.Is(err, postgres.ErrCatalogCategoryNotFound), errors.Is(err, postgres.ErrCatalogVerticalNotFound), errors.Is(err, postgres.ErrCatalogProposalNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "catalog record was not found")
 	case errors.Is(err, postgres.ErrCatalogIdempotencyConflict):

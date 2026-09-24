@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
-import { verifySameOrigin } from "../../../../src/server/security/csrf";
 import { createJoiningCase, dshErrorPayload, dshHttpStatus, isDshClientError, listJoiningCases } from "../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../src/server/identity/operator-workspace-access";
+import { verifySameOrigin } from "../../../../src/server/security/csrf";
 
 function errorResponse(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status, headers: { "Cache-Control": "no-store" } });
@@ -49,9 +49,13 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const rawLimit = params.get("limit") ?? "25";
   const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;
-  if (!Number.isInteger(limit) || limit < 1 || limit > 50) return errorResponse("INVALID_INPUT", "limit must be between 1 and 50", 400);
+  const rawSort = params.get("sort") ?? "created_asc";
+  const sort = rawSort === "created_asc" || rawSort === "created_desc" ? rawSort : null;
+  const state = params.get("state") ?? "";
+  const query = params.get("q")?.trim() ?? "";
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50 || sort === null || query.length > 128 || (state && !["draft", "submitted", "needs_correction", "approved"].includes(state))) return errorResponse("INVALID_INPUT", "joining case search, state, sort, or page limit is invalid", 400);
   try {
-    return NextResponse.json(await listJoiningCases(params.get("state") ?? "", limit, params.get("cursor") ?? "", { operatorActorId: identity.subject }), { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(await listJoiningCases(state, query, sort, limit, params.get("cursor") ?? "", { operatorActorId: identity.subject }), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (!isDshClientError(error)) return errorResponse("INTERNAL_ERROR", "joining case queue read failed", 500);
     const payload = dshErrorPayload(error);

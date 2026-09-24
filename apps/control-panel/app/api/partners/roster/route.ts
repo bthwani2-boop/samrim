@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
-import { dshErrorPayload, dshHttpStatus, isDshClientError, readJoiningCaseForPartnerActor, setDshPartnerRoleEnabled } from "../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError, setDshPartnerRoleEnabled } from "../../../../src/server/dsh/dsh-bff";
 import { identityErrorPayload, identityHttpStatus, readOperatorSession, searchIdentityRoles } from "../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";
@@ -23,24 +23,13 @@ export async function GET(request: Request) {
   const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;
   const rawEnabled = params.get("enabled");
   const enabled = rawEnabled === null ? undefined : rawEnabled === "true" ? true : rawEnabled === "false" ? false : null;
-  if (!Number.isInteger(limit) || limit < 1 || limit > 50 || enabled === null || query.trim().length > 100 || cursor.length > 512) return errorResponse("INVALID_INPUT", "valid search, cursor, limit, and enabled filters are required", 400);
+  const rawSort = params.get("sort") ?? "phone_asc";
+  const sort = rawSort === "phone_asc" || rawSort === "phone_desc" ? rawSort : null;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50 || enabled === null || sort === null || query.trim().length > 100 || cursor.length > 512) return errorResponse("INVALID_INPUT", "valid search, cursor, sort, limit, and enabled filters are required", 400);
   try {
-    const page = await searchIdentityRoles("partner", query, limit, cursor, enabled);
-    const items = await Promise.all(page.items.map(async (role) => {
-      try {
-        const joiningCase = await readJoiningCaseForPartnerActor(role.actorId, { operatorActorId: identity.subject });
-        return { ...role, joiningCase: joiningCase.case };
-      } catch (error) {
-        if (isDshClientError(error) && dshHttpStatus(error) === 404) return { ...role, joiningCase: null };
-        throw error;
-      }
-    }));
-    return NextResponse.json({ items, limit: page.limit, nextCursor: page.nextCursor }, { headers: { "Cache-Control": "no-store" } });
+    const page = await searchIdentityRoles("partner", query, limit, cursor, enabled, sort);
+    return NextResponse.json(page, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    if (isDshClientError(error)) {
-      const payload = dshErrorPayload(error);
-      return errorResponse(payload.code, payload.message, dshHttpStatus(error));
-    }
     const payload = identityErrorPayload(error);
     return errorResponse(payload.code, payload.message, identityHttpStatus(error));
   }

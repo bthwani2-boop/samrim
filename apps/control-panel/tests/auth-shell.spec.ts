@@ -138,12 +138,12 @@ test("operator notification cards write back read state and update the unread su
 
 test("workspace routes keep one main landmark and an actor-specific page hierarchy", async ({ page }) => {
   test.setTimeout(120_000);
-  await stubAuthenticatedSession(page);
+  await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "operations", "partners", "catalog"], true);
   const routes = [
     ["/workspace", "الرئيسية"],
     ["/notifications", "الإشعارات"],
-    ["/access", "الحسابات والأدوار"],
-    ["/partners", "انضمام الشركاء"],
+    ["/access", "مشغّلو لوحة التحكم والصلاحيات"],
+    ["/partners", "الشركاء"],
     ["/operations", "العمليات"],
     ["/finance", "المالية"],
     ["/captains", "قبول الكباتن"],
@@ -157,23 +157,64 @@ test("workspace routes keep one main landmark and an actor-specific page hierarc
     await expect(page.locator("#workspace-main")).toHaveCount(1, { timeout: 30_000 });
     await expect(page.locator("#workspace-main > main")).toHaveCount(0, { timeout: 30_000 });
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible({ timeout: 30_000 });
-    const navigationLabel = heading === "الرئيسية" ? "الرئيسية" : heading === "الإشعارات" ? "الإشعارات" : path === "/access" ? "الوصول والصلاحيات" : path === "/partners" ? "الشركاء" : path === "/operations" ? "العمليات" : path === "/finance" ? "المالية" : path === "/policies" ? "السياسات" : path === "/captains" ? "الكباتن" : path === "/fields" ? "الميدان" : "الكتالوج";
-    await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: navigationLabel, exact: true })).toHaveAttribute("aria-current", "page", { timeout: 30_000 });
+    if (path !== "/notifications") {
+      const navigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
+      if (path === "/captains" || path === "/fields") {
+        const owner = path === "/captains" ? "العمليات" : "الشركاء";
+        const tab = path === "/captains" ? "الكباتن" : "الميدان";
+        await expect(navigation.getByRole("link", { name: owner, exact: true })).toHaveAttribute("aria-current", "location", { timeout: 30_000 });
+        await expect(page.getByRole("navigation", { name: `مسارات ${owner}` }).getByRole("link", { name: tab, exact: true })).toHaveAttribute("aria-current", "page", { timeout: 30_000 });
+      } else {
+        const navigationLabel = heading === "الرئيسية" ? "الرئيسية" : path === "/access" ? "الوصول والصلاحيات" : path === "/partners" ? "الشركاء" : path === "/operations" ? "العمليات" : path === "/finance" ? "المالية" : path === "/policies" ? "السياسات" : "الكتالوج";
+        await expect(navigation.getByRole("link", { name: navigationLabel, exact: true })).toHaveAttribute("aria-current", "page", { timeout: 30_000 });
+      }
+    }
   }
 });
 
 test("workspace navigation keeps captain operations and field partners in their owning centers", async ({ page }) => {
-  await stubAuthenticatedSession(page);
+  await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "operations", "partners"]);
   const navigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
+
+  await page.goto("/operations");
+  const operationsTabs = page.getByRole("navigation", { name: "مسارات العمليات" });
+  await expect(navigation.getByRole("link", { name: "العمليات", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(operationsTabs.getByRole("link", { name: "العمليات", exact: true })).toHaveCount(0);
+  await expect(navigation.getByRole("link", { name: "الكباتن", exact: true })).toHaveCount(0);
+  await expect(operationsTabs.getByRole("link", { name: "الكباتن", exact: true })).toHaveAttribute("href", "/captains");
 
   await page.goto("/captains");
   await expect(navigation.getByRole("link", { name: "العمليات", exact: true })).toHaveAttribute("aria-current", "location");
-  await expect(navigation.getByRole("link", { name: "الكباتن", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(navigation.getByRole("link", { name: "الكباتن", exact: true })).toHaveCount(0);
+  await expect(operationsTabs.getByRole("link", { name: "الكباتن", exact: true })).toHaveAttribute("aria-current", "page");
 
   await page.goto("/fields");
   await expect(navigation.getByRole("link", { name: "الشركاء", exact: true })).toHaveAttribute("aria-current", "location");
-  await expect(navigation.getByRole("link", { name: "الميدان", exact: true })).toHaveAttribute("aria-current", "page");
+  const partnerTabs = page.getByRole("navigation", { name: "مسارات الشركاء" });
+  await expect(partnerTabs.getByRole("link", { name: "الميدان", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(navigation.getByRole("link", { name: "الميدان", exact: true })).toHaveCount(0);
   await expect(navigation.getByRole("link", { name: "الشركاء", exact: true })).toHaveCount(1);
+});
+
+test("partner registry, joining queue, and stores are separate workspace destinations", async ({ page }) => {
+  await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "partners"]);
+  const navigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
+
+  await page.goto("/partners");
+  await expect(page.getByRole("heading", { name: "الشركاء", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "قائمة الشركاء وحالة تشغيلهم" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "طابور حالات انضمام الشركاء" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "إضافة شريك", exact: true })).toHaveAttribute("href", "/partners/new");
+  const partnerTabs = page.getByRole("navigation", { name: "مسارات الشركاء" });
+  await expect(partnerTabs.getByRole("link", { name: "طلبات الانضمام", exact: true })).toHaveAttribute("href", "/partners/joining");
+  await expect(partnerTabs.getByRole("link", { name: "المتاجر", exact: true })).toHaveAttribute("href", "/partners/stores");
+  await expect(navigation.getByRole("link", { name: "طلبات الانضمام", exact: true })).toHaveCount(0);
+  await expect(navigation.getByRole("link", { name: "المتاجر", exact: true })).toHaveCount(0);
+  await expect(navigation.getByRole("link", { name: "إضافة شريك", exact: true })).toHaveCount(0);
+
+  await page.goto("/partners/joining");
+  await expect(page.getByRole("heading", { name: "طلبات انضمام الشركاء", exact: true })).toBeVisible();
+  await expect(partnerTabs.getByRole("link", { name: "طلبات الانضمام", exact: true })).toHaveAttribute("aria-current", "page");
 });
 
 test("finance and marketing centers expose only real independent resource routes", async ({ page }) => {
@@ -908,7 +949,7 @@ test("operator uploads a real product image through the catalog media control", 
 });
 
 test("operator resumes a canonical joining case from the DSH queue", async ({ page }) => {
-  await stubAuthenticatedSession(page);
+  await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "partners"]);
   await page.route("**/api/partners/joining-cases?limit=50", async (route) => {
     await route.fulfill({
       status: 200,
@@ -921,12 +962,12 @@ test("operator resumes a canonical joining case from the DSH queue", async ({ pa
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-         case: { id: "join_resume", contactPhoneE164: "+96777000101", businessName: "نشاط مستعاد", firstStoreName: "متجر مستعاد", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, state: "submitted", version: 2, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
+         case: { id: "join_resume", contactPhoneE164: "+96777000101", businessName: "نشاط مستعاد", firstStoreName: "متجر مستعاد", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"], firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, state: "submitted", version: 2, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
         idempotentReplay: false,
       }),
     });
   });
-  await page.goto("/partners");
+  await page.goto("/partners/joining");
   await page.getByRole("link", { name: /قيد المراجعة · نشاط مستعاد/ }).click();
   await expect(page.getByRole("status")).toContainText("الحالة: قيد المراجعة");
   await expect(page.getByRole("status")).toContainText("نشاط مستعاد");

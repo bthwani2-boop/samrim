@@ -1,98 +1,179 @@
 "use client";
 
-import { type JoiningCaseView, joiningCaseStateLabel } from "@bthwani/dsh";
 import type { ActorRoleView } from "@bthwani/identity";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { partnerErrorMessage } from "./partner-error-message";
+import { downloadRegistryCsv } from "./registry-csv";
+import "./partner-directory.module.css";
 
-type PartnerRecord = ActorRoleView & Readonly<{ joiningCase: JoiningCaseView | null }>;
+type PartnerRecord = ActorRoleView;
 type PartnerPage = Readonly<{ items: ReadonlyArray<PartnerRecord>; nextCursor?: string }>;
+type NavigationState = Readonly<{ partnerRosterCursors?: ReadonlyArray<string> }>;
+const pageSize = 10;
+
+function rosterNavigationState(value: unknown): NavigationState {
+  return value && typeof value === "object" ? value as NavigationState : {};
+}
 
 export function PartnerDirectory() {
   const [query, setQuery] = useState("");
+  const [appliedQuery, setAppliedQuery] = useState("");
   const [enabledFilter, setEnabledFilter] = useState("");
+  const [sort, setSort] = useState<"phone_asc" | "phone_desc">("phone_asc");
+  const [cursor, setCursor] = useState("");
+  const [cursorStack, setCursorStack] = useState<ReadonlyArray<string>>([]);
   const [items, setItems] = useState<ReadonlyArray<PartnerRecord>>([]);
   const [nextCursor, setNextCursor] = useState("");
-  const [busy, setBusy] = useState("");
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [reasons, setReasons] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [urlReady, setUrlReady] = useState(false);
+  const requestSequence = useRef(0);
 
-  const load = useCallback(async (cursor = "", append = false) => {
-    if (append) setLoadingMore(true);
-    else setLoading(true);
+  const syncFromUrl = useCallback(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedQuery = params.get("q")?.trim().slice(0, 100) ?? "";
+    const requestedEnabled = params.get("enabled") ?? "";
+    const requestedSort = params.get("sort");
+    const requestedCursor = params.get("cursor") ?? "";
+    const historyState = rosterNavigationState(window.history.state);
+    setQuery(requestedQuery);
+    setAppliedQuery(requestedQuery);
+    setEnabledFilter(requestedEnabled === "true" || requestedEnabled === "false" ? requestedEnabled : "");
+    setSort(requestedSort === "phone_desc" ? "phone_desc" : "phone_asc");
+    setCursor(requestedCursor);
+    setCursorStack(historyState.partnerRosterCursors ?? []);
+    setSelectedIds(new Set());
+  }, []);
+
+  useEffect(() => {
+    syncFromUrl();
+    setUrlReady(true);
+    window.addEventListener("popstate", syncFromUrl);
+    return () => window.removeEventListener("popstate", syncFromUrl);
+  }, [syncFromUrl]);
+
+  const navigate = useCallback((state: string, queryText: string, nextSort: "phone_asc" | "phone_desc", pageCursor = "", pageCursors: ReadonlyArray<string> = []) => {
+    const params = new URLSearchParams(window.location.search);
+    if (state) params.set("enabled", state); else params.delete("enabled");
+    if (queryText) params.set("q", queryText); else params.delete("q");
+    if (nextSort !== "phone_asc") params.set("sort", nextSort); else params.delete("sort");
+    if (pageCursor) params.set("cursor", pageCursor); else params.delete("cursor");
+    const search = params.toString();
+    window.history.pushState({ partnerRosterCursors: pageCursors }, "", window.location.pathname + (search ? `?${search}` : ""));
+    setEnabledFilter(state);
+    setQuery(queryText);
+    setAppliedQuery(queryText);
+    setSort(nextSort);
+    setCursor(pageCursor);
+    setCursorStack(pageCursors);
+    setSelectedIds(new Set());
+  }, []);
+
+  const load = useCallback(async () => {
+    const sequence = ++requestSequence.current;
+    setLoading(true);
     setError("");
     try {
-      const params = new URLSearchParams({ limit: "25", q: query.trim() });
+      const params = new URLSearchParams({ limit: String(pageSize), q: appliedQuery, sort });
       if (cursor) params.set("cursor", cursor);
       if (enabledFilter) params.set("enabled", enabledFilter);
-      const response = await identityFetch(`/api/partners/roster?${params}`);
-      if (!response.ok) { setError(await partnerErrorMessage(response)); return; }
+      const response = await identityFetch(`/api/partners/roster?${params.toString()}`);
+      if (sequence !== requestSequence.current) return;
+      if (!response.ok) throw new Error(await partnerErrorMessage(response));
       const page = await response.json() as PartnerPage;
-      setItems((current) => append ? [...current, ...page.items] : page.items);
+      if (sequence !== requestSequence.current) return;
+      setItems(page.items);
       setNextCursor(page.nextCursor ?? "");
+      setSelectedIds(new Set());
     } catch (cause) {
-      setError(isRequestFailure(cause) ? cause.message : "تعذر قراءة قائمة الشركاء.");
+      if (sequence !== requestSequence.current) return;
+      setError(isRequestFailure(cause) ? cause.message : cause instanceof Error ? cause.message : "تعذر قراءة سجل الشركاء.");
+      setItems([]);
+      setNextCursor("");
+      setSelectedIds(new Set());
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      if (sequence === requestSequence.current) setLoading(false);
     }
-  }, [enabledFilter, query]);
+  }, [appliedQuery, cursor, enabledFilter, sort]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (urlReady) void load(); }, [load, urlReady]);
 
-  async function changeStatus(partner: PartnerRecord) {
-    const reason = reasons[partner.actorId]?.trim() ?? "";
-    if (Array.from(reason).length < 5 || Array.from(reason).length > 500) { setError("اكتب سببًا من 5 إلى 500 حرف قبل تغيير حالة الشريك."); return; }
-    if (partner.joiningCase?.state !== "approved" || !partner.activatedAt) { setError("يتطلب تفعيل حساب الشريك حالة انضمام معتمدة وتسجيل هوية مكتملًا."); return; }
-    const action = partner.enabled ? "disable" : "activate";
-    setBusy(partner.actorId);
-    setError("");
-    setNotice("");
-    try {
-      const response = await identityFetch("/api/partners/roster", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, actorId: partner.actorId, expectedVersion: partner.roleVersion, reason }) });
-      if (!response.ok) {
-        const message = await partnerErrorMessage(response);
-        if (response.status === 409 || response.status === 412) {
-          await load();
-          setError(`تغيرت نسخة حالة الشريك قبل الحفظ. أُعيد تحميل الحالة الكانونية: ${message}`);
-        } else setError(message);
-        return;
-      }
-      const readbackParams = new URLSearchParams({ limit: "10", q: partner.phoneE164 });
-      const readbackResponse = await identityFetch(`/api/partners/roster?${readbackParams}`);
-      if (!readbackResponse.ok) { setError("تم التغيير لكن تعذرت إعادة قراءة الشريك من Identity وDSH. أعد القراءة قبل إجراء آخر."); return; }
-      const readback = await readbackResponse.json() as PartnerPage;
-      const canonical = readback.items.find((item) => item.actorId === partner.actorId);
-      if (!canonical) { setError("تم التغيير لكن لم يظهر الشريك في إعادة القراءة الكانونية. أعد القراءة قبل إجراء آخر."); return; }
-      setReasons((current) => ({ ...current, [partner.actorId]: "" }));
-      setNotice(`أعيدت قراءة الحالة: الهوية ${canonical.enabled ? "نشطة" : "موقوفة"} · الانضمام ${canonical.joiningCase ? joiningCaseStateLabel(canonical.joiningCase.state) : "غير مرتبط بحالة انضمام"}.`);
-      await load();
-    } catch (cause) {
-      setError(isRequestFailure(cause) ? cause.message : "تعذر تحديث حالة الشريك.");
-    } finally { setBusy(""); }
+  function toggleSelected(actorId: string) {
+    setSelectedIds((current) => {
+      const updated = new Set(current);
+      if (updated.has(actorId)) updated.delete(actorId); else updated.add(actorId);
+      return updated;
+    });
   }
 
-  return <section className="access-card" aria-labelledby="partner-directory-title">
-    <div className="access-card-heading"><span className="step-chip">الشركاء المقبولون</span><h2 id="partner-directory-title">قائمة الشركاء وحالة تشغيلهم</h2><p className="muted">تأتي هوية الحساب والانضمام والمتاجر من Identity وDSH كلٌّ حسب مالكه. صلاحية التشغيل منفصلة عن إثبات الهوية.</p></div>
-    <div className="workspace-toolbar"><label className="field-label" htmlFor="partner-roster-search">بحث برقم الهاتف<input id="partner-roster-search" inputMode="tel" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث في أرقام الشركاء" /></label><label className="field-label" htmlFor="partner-roster-status">حالة الدور<select id="partner-roster-status" value={enabledFilter} onChange={(event) => setEnabledFilter(event.target.value)}><option value="">كل الحالات</option><option value="true">مفعّل</option><option value="false">موقوف</option></select></label><button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={() => void load()}>{loading ? "جارٍ القراءة…" : "إعادة القراءة"}</button></div>
-    {notice ? <p className="success-inline" role="status">{notice}</p> : null}{error ? <p className="identity-error" role="alert">{error}</p> : null}
-    {loading && items.length === 0 ? <p role="status">جارٍ قراءة قائمة الشركاء…</p> : null}{!loading && !error && items.length === 0 ? <div className="collection-state"><strong>لا توجد نتائج</strong><p>جرّب إزالة المرشح أو البحث برقم آخر.</p></div> : null}
-    {items.length > 0 ? <div className="operations-table-wrap"><table className="operations-table"><thead><tr><th scope="col">هاتف الشريك</th><th scope="col">الحساب</th><th scope="col">الانضمام</th><th scope="col">المتاجر</th><th scope="col">إدارة التشغيل</th></tr></thead><tbody>
-      {items.map((partner, index) => {
-        return <tr key={partner.actorId}>
-          <th scope="row"><Link href={`/partners/actors/${encodeURIComponent(partner.actorId)}`}><bdi dir="ltr">{partner.phoneE164}</bdi></Link></th>
-          <td>{!partner.securityEnabled ? "الهوية موقوفة" : !partner.enabled ? "الدور موقوف" : !partner.activatedAt ? "بانتظار التفعيل" : "نشط"}</td>
-          <td>{partner.joiningCase ? joiningCaseStateLabel(partner.joiningCase.state) : "لا توجد حالة DSH"}</td>
-          <td><Link className="button button-secondary" href={`/partners/actors/${encodeURIComponent(partner.actorId)}`}>عرض الملف والمتاجر</Link></td>
-          <td>{partner.joiningCase?.state === "approved" && partner.activatedAt ? <div className="access-form"><label className="field-label" htmlFor={`partner-roster-reason-${index}`}>سبب التغيير<input id={`partner-roster-reason-${index}`} maxLength={500} value={reasons[partner.actorId] ?? ""} onChange={(event) => setReasons((current) => ({ ...current, [partner.actorId]: event.target.value }))} disabled={Boolean(busy)} /></label><div className="button-row"><button type="button" className={partner.enabled ? "button button-secondary" : "button button-primary"} disabled={Boolean(busy) || (reasons[partner.actorId] ?? "").trim().length < 5} onClick={() => void changeStatus(partner)}>{busy === partner.actorId ? "جارٍ التحديث…" : partner.enabled ? "إيقاف التشغيل" : "إعادة التفعيل"}</button><Link className="button button-secondary" href={`/partners/${encodeURIComponent(partner.joiningCase.id)}`}>تفاصيل الانضمام</Link></div></div> : <span className="muted">يتطلب التحكم اعتماد الانضمام وتسجيل الهوية.</span>}</td>
-        </tr>;
-      })}
-    </tbody></table></div> : null}
-    {nextCursor ? <div className="workspace-toolbar"><button type="button" className="button button-secondary" disabled={loadingMore || Boolean(busy)} onClick={() => void load(nextCursor, true)}>{loadingMore ? "جارٍ تحميل المزيد…" : "تحميل المزيد"}</button></div> : null}
+  function exportSelected() {
+    const selected = items.filter((partner) => selectedIds.has(partner.actorId));
+    if (!selected.length) return;
+    downloadRegistryCsv("partner-registry-selection.csv", ["رقم الهاتف", "حالة الهوية الأمنية", "حالة دور الشريك", "نسخة الدور", "معرّف الحساب"], selected.map((partner) => [
+        partner.phoneE164,
+        partner.securityEnabled ? "نشطة" : "موقوفة",
+        !partner.enabled ? "موقوف" : !partner.activatedAt ? "بانتظار التفعيل" : "نشط",
+        partner.roleVersion,
+        partner.actorId,
+      ]));
+    setNotice(`تم تصدير ${selected.length} سجلًا محددًا من الصفحة الحالية.`);
+  }
+
+  const selectedOnPage = items.filter((partner) => selectedIds.has(partner.actorId)).length;
+  const allSelected = items.length > 0 && selectedOnPage === items.length;
+
+  return <section className="partner-directory" aria-label="سجل الشركاء التشغيلي">
+    <div className="partner-registry-toolbar">
+      <search className="partner-registry-search" aria-label="البحث والتصفية في سجل الشركاء">
+        <form onSubmit={(event) => { event.preventDefault(); navigate(enabledFilter, query.trim().slice(0, 100), sort); }}>
+          <label className="field-label" htmlFor="partner-roster-search">رقم الهاتف<input id="partner-roster-search" inputMode="tel" maxLength={100} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="بحث برقم الهاتف" /></label>
+          <button type="submit" className="button button-secondary" disabled={loading}>بحث</button>
+        </form>
+      </search>
+      <label className="field-label" htmlFor="partner-roster-status">حالة الدور<select id="partner-roster-status" value={enabledFilter} onChange={(event) => navigate(event.target.value, appliedQuery, sort)} disabled={loading}><option value="">كل الحالات</option><option value="true">مفعّل</option><option value="false">موقوف</option></select></label>
+      <label className="field-label" htmlFor="partner-roster-sort">ترتيب الهاتف<select id="partner-roster-sort" value={sort} onChange={(event) => navigate(enabledFilter, appliedQuery, event.target.value as "phone_asc" | "phone_desc")} disabled={loading}><option value="phone_asc">الأقل رقمًا أولًا</option><option value="phone_desc">الأعلى رقمًا أولًا</option></select></label>
+      <button type="button" className="button button-secondary" onClick={() => void load()} disabled={loading}>{loading ? "جارٍ القراءة…" : "إعادة القراءة"}</button>
+    </div>
+
+    {enabledFilter || appliedQuery ? <section className="partner-active-filters" aria-label="التصفية النشطة">
+      {enabledFilter ? <button type="button" className="filter-chip" onClick={() => navigate("", appliedQuery, sort)}>{enabledFilter === "true" ? "الحالة: مفعّل" : "الحالة: موقوف"}<span aria-hidden="true"> ×</span><span className="visually-hidden">مسح تصفية الحالة</span></button> : null}
+      {appliedQuery ? <button type="button" className="filter-chip" onClick={() => navigate(enabledFilter, "", sort)}>الهاتف: <bdi dir="ltr">{appliedQuery}</bdi><span aria-hidden="true"> ×</span><span className="visually-hidden">مسح البحث</span></button> : null}
+      <button type="button" className="button button-secondary" onClick={() => navigate("", "", "phone_asc")}>مسح الكل</button>
+    </section> : null}
+
+    {notice ? <p className="success-inline" role="status">{notice}</p> : null}
+    {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذرت قراءة سجل الشركاء</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={loading} onClick={() => void load()}>إعادة المحاولة</button></div> : null}
+    {loading && items.length === 0 ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة Identity وDSH</strong></div> : null}
+    {!loading && !error && items.length === 0 ? <div className="collection-state"><strong>لا توجد نتائج</strong><p>غيّر عوامل البحث أو امسحها لعرض بقية الشركاء.</p></div> : null}
+
+    {items.length > 0 ? <>
+      <div className="partner-registry-summary">
+        <span>الصفحة الحالية · {items.length} سجلًا</span>
+        <fieldset className="partner-registry-bulk-actions"><legend className="visually-hidden">إجراءات السجلات المحددة</legend><span aria-live="polite">المحدد: {selectedOnPage}</span><button type="button" className="button button-secondary" onClick={exportSelected} disabled={selectedOnPage === 0}>تصدير المحدد CSV</button><button type="button" className="button button-secondary" onClick={() => setSelectedIds(new Set())} disabled={selectedOnPage === 0}>إلغاء التحديد</button></fieldset>
+      </div>
+      <div className="partner-registry-table-wrap" aria-busy={loading}>
+        <table className="operations-table partner-registry-table">
+          <caption className="visually-hidden">سجل حسابات الشركاء الحالي من Identity</caption>
+          <thead><tr><th scope="col"><span className="visually-hidden">تحديد</span><input aria-label={allSelected ? "إلغاء تحديد كل سجلات الصفحة" : "تحديد كل سجلات الصفحة"} type="checkbox" checked={allSelected} onChange={(event) => setSelectedIds(event.target.checked ? new Set(items.map((partner) => partner.actorId)) : new Set())} /></th><th scope="col">الشريك</th><th scope="col">الهوية الأمنية</th><th scope="col">الدور</th><th scope="col">التفعيل</th><th scope="col">التفاصيل</th></tr></thead>
+          <tbody>{items.map((partner) => <tr key={partner.actorId}>
+            <td><input type="checkbox" aria-label={`تحديد الشريك ${partner.phoneE164}`} checked={selectedIds.has(partner.actorId)} onChange={() => toggleSelected(partner.actorId)} /></td>
+            <th scope="row"><bdi dir="ltr">{partner.phoneE164}</bdi></th>
+            <td>{partner.securityEnabled ? "نشطة" : "موقوفة"}</td>
+            <td>{partner.enabled ? "مفعّل" : "موقوف"}</td>
+            <td>{partner.activatedAt ? "مكتمل" : "بانتظار التفعيل"}</td>
+            <td><Link className="partner-row-action" href={`/partners/actors/${encodeURIComponent(partner.actorId)}`}>فتح الملف <span aria-hidden="true">←</span></Link></td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+      <nav className="partner-registry-pagination" aria-label="صفحات سجل الشركاء">
+        <button type="button" className="button button-secondary" disabled={loading || cursorStack.length === 0} onClick={() => navigate(enabledFilter, appliedQuery, sort, cursorStack.at(-1) ?? "", cursorStack.slice(0, -1))}>السابق</button>
+        <span aria-live="polite">{cursorStack.length + 1}</span>
+        <button type="button" className="button button-secondary" disabled={loading || !nextCursor} onClick={() => navigate(enabledFilter, appliedQuery, sort, nextCursor, [...cursorStack, cursor])}>التالي</button>
+      </nav>
+    </> : null}
   </section>;
 }

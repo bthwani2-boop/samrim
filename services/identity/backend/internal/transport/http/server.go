@@ -452,7 +452,7 @@ func (s *Server) searchRoles(w http.ResponseWriter, r *http.Request, caller stri
 		}
 		enabled = &value
 	}
-	page, err := s.actors.Search(r.Context(), caller, domain.ActorSearchInput{Role: strings.TrimSpace(r.URL.Query().Get("role")), Query: strings.TrimSpace(r.URL.Query().Get("q")), Enabled: enabled, Limit: limit, Cursor: strings.TrimSpace(r.URL.Query().Get("cursor"))})
+	page, err := s.actors.Search(r.Context(), caller, domain.ActorSearchInput{Role: strings.TrimSpace(r.URL.Query().Get("role")), Query: strings.TrimSpace(r.URL.Query().Get("q")), Enabled: enabled, Sort: strings.TrimSpace(r.URL.Query().Get("sort")), Limit: limit, Cursor: strings.TrimSpace(r.URL.Query().Get("cursor"))})
 	if err != nil {
 		writeDomainError(w, err)
 		return

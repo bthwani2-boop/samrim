@@ -4,9 +4,13 @@ import { type OperatorStoreSummary, publicationStateLabel } from "@bthwani/dsh";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { partnerErrorMessage } from "./partner-error-message";
+import { downloadRegistryCsv } from "./registry-csv";
+import "./partner-directory.module.css";
 import "./store-workspace.module.css";
 
 type StorePage = Readonly<{ stores: ReadonlyArray<OperatorStoreSummary>; nextCursor?: string }>;
+type StoreHistory = Readonly<{ partnerStoreCursors?: ReadonlyArray<string> }>;
+const pageSize = 10;
 const publicationFilters = [
   { value: "", label: "كل حالات النشر" },
   { value: "unpublished", label: "غير منشور" },
@@ -21,7 +25,9 @@ export function StoreRegistry() {
   const [appliedSearch, setAppliedSearch] = useState("");
   const [sort, setSort] = useState("updated_desc");
   const [cursor, setCursor] = useState("");
+  const [cursorStack, setCursorStack] = useState<ReadonlyArray<string>>([]);
   const [nextCursor, setNextCursor] = useState("");
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [urlReady, setUrlReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -36,6 +42,9 @@ export function StoreRegistry() {
     setAppliedSearch(requestedSearch);
     setSort(params.get("sort") === "updated_asc" ? "updated_asc" : "updated_desc");
     setCursor(params.get("cursor") ?? "");
+    const state = window.history.state as StoreHistory | null;
+    setCursorStack(state?.partnerStoreCursors ?? []);
+    setSelectedIds(new Set());
   }, []);
 
   useEffect(() => {
@@ -45,19 +54,21 @@ export function StoreRegistry() {
     return () => window.removeEventListener("popstate", syncFromUrl);
   }, [syncFromUrl]);
 
-  const navigate = useCallback((state: string, queryText: string, nextSort: string, pageCursor = "") => {
+  const navigate = useCallback((state: string, queryText: string, nextSort: string, pageCursor = "", pageCursors: ReadonlyArray<string> = []) => {
     const params = new URLSearchParams(window.location.search);
     if (state) params.set("state", state); else params.delete("state");
     if (queryText) params.set("q", queryText); else params.delete("q");
     if (nextSort !== "updated_desc") params.set("sort", nextSort); else params.delete("sort");
     if (pageCursor) params.set("cursor", pageCursor); else params.delete("cursor");
     const query = params.toString();
-    window.history.pushState({}, "", window.location.pathname + (query ? `?${query}` : ""));
+    window.history.pushState({ partnerStoreCursors: pageCursors }, "", window.location.pathname + (query ? `?${query}` : ""));
     setFilter(state);
     setSearch(queryText);
     setAppliedSearch(queryText);
     setSort(nextSort);
     setCursor(pageCursor);
+    setCursorStack(pageCursors);
+    setSelectedIds(new Set());
   }, []);
 
   const load = useCallback(async () => {
@@ -65,7 +76,7 @@ export function StoreRegistry() {
     setLoading(true);
     setError("");
     try {
-      const params = new URLSearchParams({ limit: "50" });
+      const params = new URLSearchParams({ limit: String(pageSize) });
       if (filter) params.set("state", filter);
       if (appliedSearch) params.set("q", appliedSearch);
       if (sort !== "updated_desc") params.set("sort", sort);
@@ -77,6 +88,7 @@ export function StoreRegistry() {
       if (sequence !== requestSequence.current) return;
       setStores(page.stores);
       setNextCursor(page.nextCursor ?? "");
+      setSelectedIds(new Set());
     } catch (cause) {
       if (sequence !== requestSequence.current) return;
       setError(cause instanceof Error ? cause.message : "تعذرت قراءة سجل المتاجر من DSH.");
@@ -86,6 +98,23 @@ export function StoreRegistry() {
       if (sequence === requestSequence.current) setLoading(false);
     }
   }, [appliedSearch, cursor, filter, sort]);
+
+  const selectedOnPage = stores.filter((store) => selectedIds.has(store.id)).length;
+  const allSelected = stores.length > 0 && selectedOnPage === stores.length;
+
+  function toggleSelected(storeId: string) {
+    setSelectedIds((current) => {
+      const updated = new Set(current);
+      if (updated.has(storeId)) updated.delete(storeId); else updated.add(storeId);
+      return updated;
+    });
+  }
+
+  function exportSelected() {
+    const selected = stores.filter((store) => selectedIds.has(store.id));
+    if (!selected.length) return;
+    downloadRegistryCsv("store-registry-selection.csv", ["المتجر", "المعرّف", "الشريك", "مدينة الخدمة", "الفئة", "النشر", "أوضاع الطلب"], selected.map((store) => [store.name, store.id, store.partnerActorId, store.serviceCityId || "غير محددة", store.primaryVerticalId || "غير محددة", publicationStateLabel(store.publicationState), store.fulfillmentModes.join("، ") || "غير محددة"]));
+  }
 
   useEffect(() => {
     if (urlReady) void load();
@@ -122,11 +151,12 @@ export function StoreRegistry() {
       {!loading && !error && stores.length === 0 ? <div className="collection-state"><strong>{filter || appliedSearch ? "لا توجد متاجر تطابق عوامل البحث والتصفية" : "لا توجد متاجر في DSH حاليًا"}</strong><p>{filter || appliedSearch ? "امسح عاملًا أو غيّره لعرض نتائج أخرى." : "تظهر المتاجر هنا بعد إنشائها عبر مسار انضمام الشريك."}</p></div> : null}
 
       {stores.length > 0 ? <>
-        <p className="store-registry-page-count">المتاجر في هذه الصفحة: {stores.length}</p>
-        <div className="store-registry-table-wrap"><table className="operations-table">
+        <div className="partner-registry-summary"><span>الصفحة الحالية · {stores.length} متجرًا</span><fieldset className="partner-registry-bulk-actions"><legend className="visually-hidden">إجراءات المتاجر المحددة</legend><span aria-live="polite">المحدد: {selectedOnPage}</span><button type="button" className="button button-secondary" onClick={exportSelected} disabled={selectedOnPage === 0}>تصدير المحدد CSV</button><button type="button" className="button button-secondary" onClick={() => setSelectedIds(new Set())} disabled={selectedOnPage === 0}>إلغاء التحديد</button></fieldset></div>
+        <div className="store-registry-table-wrap"><table className="operations-table partner-registry-table">
           <caption className="visually-hidden">سجل المتاجر الحالي من DSH</caption>
-          <thead><tr><th scope="col">المتجر</th><th scope="col">الشريك</th><th scope="col">مدينة الخدمة</th><th scope="col">الفئة الرئيسية</th><th scope="col">النشر</th><th scope="col">أوضاع الطلب</th><th scope="col">آخر تحديث</th></tr></thead>
+          <thead><tr><th scope="col"><span className="visually-hidden">تحديد</span><input aria-label={allSelected ? "إلغاء تحديد كل المتاجر" : "تحديد كل المتاجر في الصفحة"} type="checkbox" checked={allSelected} onChange={(event) => setSelectedIds(event.target.checked ? new Set(stores.map((store) => store.id)) : new Set())} /></th><th scope="col">المتجر</th><th scope="col">الشريك</th><th scope="col">مدينة الخدمة</th><th scope="col">الفئة الرئيسية</th><th scope="col">النشر</th><th scope="col">أوضاع الطلب</th><th scope="col">آخر تحديث</th></tr></thead>
           <tbody>{stores.map((store) => <tr key={store.id}>
+            <td><input type="checkbox" aria-label={`تحديد متجر ${store.name}`} checked={selectedIds.has(store.id)} onChange={() => toggleSelected(store.id)} /></td>
             <th scope="row"><Link href={`/partners/stores/${encodeURIComponent(store.id)}`}>{store.name}</Link><small className="store-registry-id"><bdi dir="ltr">{store.id}</bdi></small></th>
             <td><Link href={`/partners/actors/${encodeURIComponent(store.partnerActorId)}`}><bdi dir="ltr">{store.partnerActorId}</bdi></Link></td>
             <td>{store.serviceCityId ? <bdi dir="ltr">{store.serviceCityId}</bdi> : "غير محددة"}</td>
@@ -136,7 +166,7 @@ export function StoreRegistry() {
             <td><time dateTime={store.updatedAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium", timeStyle: "short" }).format(new Date(store.updatedAt))}</time></td>
           </tr>)}</tbody>
         </table></div>
-        {nextCursor ? <button type="button" className="button button-secondary" disabled={loading} onClick={() => navigate(filter, appliedSearch, sort, nextCursor)}>تحميل المزيد من المتاجر</button> : null}
+        <nav className="partner-registry-pagination" aria-label="صفحات سجل المتاجر"><button type="button" className="button button-secondary" disabled={loading || cursorStack.length === 0} onClick={() => navigate(filter, appliedSearch, sort, cursorStack.at(-1) ?? "", cursorStack.slice(0, -1))}>السابق</button><span>{cursorStack.length + 1}</span><button type="button" className="button button-secondary" disabled={loading || !nextCursor} onClick={() => navigate(filter, appliedSearch, sort, nextCursor, [...cursorStack, cursor])}>التالي</button></nav>
       </> : null}
     </section>
   );

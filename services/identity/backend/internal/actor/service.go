@@ -440,6 +440,13 @@ func (s *Service) Search(ctx context.Context, caller string, input domain.ActorS
 	if len(q) > 100 {
 		return domain.ActorSearchPage{}, domain.ErrInvalidInput
 	}
+	sort := strings.TrimSpace(input.Sort)
+	if sort == "" {
+		sort = "phone_asc"
+	}
+	if sort != "phone_asc" && sort != "phone_desc" {
+		return domain.ActorSearchPage{}, domain.ErrInvalidInput
+	}
 	args := []any{role}
 	clauses := []string{"r.role=$1"}
 	if input.Enabled != nil {
@@ -459,16 +466,32 @@ func (s *Service) Search(ctx context.Context, caller string, input domain.ActorS
 		if err != nil {
 			return domain.ActorSearchPage{}, domain.ErrInvalidInput
 		}
-		parts := strings.SplitN(string(raw), "|", 2)
-		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		parts := strings.SplitN(string(raw), "|", 3)
+		afterPhone, afterID := "", ""
+		if len(parts) == 2 && sort == "phone_asc" {
+			afterPhone, afterID = parts[0], parts[1]
+		} else if len(parts) == 3 && parts[0] == sort {
+			afterPhone, afterID = parts[1], parts[2]
+		} else {
 			return domain.ActorSearchPage{}, domain.ErrInvalidInput
 		}
-		args = append(args, parts[0], parts[1])
+		if afterPhone == "" || afterID == "" {
+			return domain.ActorSearchPage{}, domain.ErrInvalidInput
+		}
+		args = append(args, afterPhone, afterID)
 		phoneArg, idArg := len(args)-1, len(args)
-		cursorClause = fmt.Sprintf(" AND (a.phone_e164>$%d OR (a.phone_e164=$%d AND a.id>$%d))", phoneArg, phoneArg, idArg)
+		comparison := ">"
+		if sort == "phone_desc" {
+			comparison = "<"
+		}
+		cursorClause = fmt.Sprintf(" AND (a.phone_e164%s$%d OR (a.phone_e164=$%d AND a.id%s$%d))", comparison, phoneArg, phoneArg, comparison, idArg)
 	}
 	args = append(args, limit+1)
-	query := "SELECT a.id,a.phone_e164,r.role,r.enabled,r.activated_at,a.security_enabled,a.version,r.version,c.version FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id LEFT JOIN identity_password_credentials c ON c.actor_id=r.actor_id AND c.role=r.role WHERE " + strings.Join(clauses, " AND ") + cursorClause + " ORDER BY a.phone_e164,a.id LIMIT $" + strconv.Itoa(len(args))
+	order := "ASC"
+	if sort == "phone_desc" {
+		order = "DESC"
+	}
+	query := "SELECT a.id,a.phone_e164,r.role,r.enabled,r.activated_at,a.security_enabled,a.version,r.version,c.version FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id LEFT JOIN identity_password_credentials c ON c.actor_id=r.actor_id AND c.role=r.role WHERE " + strings.Join(clauses, " AND ") + cursorClause + " ORDER BY a.phone_e164 " + order + ",a.id " + order + " LIMIT $" + strconv.Itoa(len(args))
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return domain.ActorSearchPage{}, err
@@ -489,7 +512,7 @@ func (s *Service) Search(ctx context.Context, caller string, input domain.ActorS
 	if len(items) > limit {
 		last := items[limit-1]
 		page.Items = items[:limit]
-		page.NextCursor = base64.RawURLEncoding.EncodeToString([]byte(last.PhoneE164 + "|" + last.ActorID))
+		page.NextCursor = base64.RawURLEncoding.EncodeToString([]byte(sort + "|" + last.PhoneE164 + "|" + last.ActorID))
 	}
 	return page, nil
 }

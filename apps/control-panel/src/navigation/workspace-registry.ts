@@ -3,19 +3,20 @@ import type { OperatorPermission } from "@bthwani/identity";
 type WorkspaceChild = Readonly<{
   href: string;
   label: string;
+  showInWorkspaceNavigation?: boolean;
 }>;
 
 export type WorkspaceDestination = Readonly<{
   href: string;
   label: string;
   children: readonly WorkspaceChild[];
+  childrenNavigation?: "sidebar" | "top";
   permission?: OperatorPermission;
   initialOperatorAdminOnly?: boolean;
   showInWorkspaceNavigation?: boolean;
 }>;
 
 export const workspaceCatalogResources = [
-  { key: "overview", href: "/catalog", label: "نظرة عامة", description: "اختر مساحة الكتالوج المطلوبة." },
   { key: "products", href: "/catalog/products", label: "المنتجات", description: "هوية المنتج ونسخه المركزية." },
   { key: "categories", href: "/catalog/categories", label: "الفئات", description: "شجرة فئات المنتجات المشتركة وقوالبها." },
   { key: "proposals", href: "/catalog/proposals", label: "المقترحات", description: "طابور مراجعة مقترحات الشركاء." },
@@ -24,7 +25,7 @@ export const workspaceCatalogResources = [
 
 export type CatalogResourceKey = (typeof workspaceCatalogResources)[number]["key"];
 
-const catalogChildren: readonly WorkspaceChild[] = workspaceCatalogResources.slice(1).map(({ href, label }) => ({ href, label }));
+const catalogChildren: readonly WorkspaceChild[] = workspaceCatalogResources.map(({ href, label }) => ({ href, label }));
 
 export const workspacePolicyResources = [
   { key: "overview", href: "/policies", label: "نظرة عامة", description: "إدارة سياسات المنصة من ملاكها القانونيين." },
@@ -65,19 +66,21 @@ export const workspaceDestinations: readonly WorkspaceDestination[] = [
     href: "/operations",
     label: "العمليات",
     permission: "operations",
+    childrenNavigation: "top",
     children: [{ href: "/captains", label: "الكباتن" }]
   },
   {
     href: "/partners",
     label: "الشركاء",
     permission: "partners",
+    childrenNavigation: "top",
     children: [
+      { href: "/partners/joining", label: "طلبات الانضمام" },
       { href: "/partners/stores", label: "المتاجر" },
-      { href: "/partners/new", label: "إضافة شريك" },
       { href: "/fields", label: "الميدان" }
     ]
   },
-  { href: "/catalog", label: "الكتالوج", children: catalogChildren, permission: "catalog" },
+  { href: "/catalog", label: "الكتالوج", children: catalogChildren, childrenNavigation: "top", permission: "catalog" },
   { href: "/marketing", label: "التسويق والمحتوى", children: marketingChildren, permission: "marketing" },
   { href: "/finance", label: "المالية", children: financeChildren, permission: "finance" },
   { href: "/policies", label: "السياسات", children: policyChildren, permission: "platform_policies" },

@@ -69,6 +69,13 @@ func (s *Service) ListProductsForOperator(ctx context.Context, actingActorID, qu
 	return postgres.ListCatalogProducts(ctx, s.db, normalizeSearch(query), strings.TrimSpace(verticalID), false, limit, strings.TrimSpace(cursor))
 }
 
+func (s *Service) ListProductRegistryForOperator(ctx context.Context, actingActorID, query, verticalID, categoryID, active, sort string, limit int, cursor string) (postgres.CatalogProductRegistryPage, error) {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
+		return postgres.CatalogProductRegistryPage{}, err
+	}
+	return postgres.ListCatalogProductRegistry(ctx, s.db, normalizeSearch(query), strings.TrimSpace(verticalID), strings.TrimSpace(categoryID), strings.TrimSpace(active), strings.TrimSpace(sort), limit, strings.TrimSpace(cursor))
+}
+
 func (s *Service) requireSharedProduct(ctx context.Context, productID string) error {
 	product, err := postgres.ReadCatalogProduct(ctx, s.db, strings.TrimSpace(productID))
 	if err != nil {
@@ -369,6 +376,24 @@ func (s *Service) ReadCatalogProduct(ctx context.Context, actingActorID, product
 		return postgres.CatalogProductRecord{}, err
 	}
 	return postgres.ReadCatalogProduct(ctx, s.db, strings.TrimSpace(productID))
+}
+
+func (s *Service) ReadSharedCatalogProduct(ctx context.Context, actingActorID, productID string) (postgres.CatalogProductRecord, error) {
+	product, err := s.ReadCatalogProduct(ctx, actingActorID, productID)
+	if err != nil {
+		return postgres.CatalogProductRecord{}, err
+	}
+	if product.Scope != "SHARED" || product.StoreID != "" {
+		return postgres.CatalogProductRecord{}, postgres.ErrCatalogProductOwnership
+	}
+	vertical, err := postgres.ReadCommerceVertical(ctx, s.db, product.VerticalID)
+	if err != nil {
+		return postgres.CatalogProductRecord{}, err
+	}
+	if vertical.CatalogModel != "SHARED_CATALOG" {
+		return postgres.CatalogProductRecord{}, postgres.ErrCatalogProductModelMismatch
+	}
+	return product, nil
 }
 
 func (s *Service) ReadCatalogVariant(ctx context.Context, actingActorID, variantID string) (postgres.CatalogVariantRecord, error) {

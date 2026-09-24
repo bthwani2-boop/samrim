@@ -1,6 +1,7 @@
 /* Owner-scoped presentation for this control-panel area. */
 :global(.brand-link) { color: inherit; text-decoration: none; }
 :global(.workspace-app-shell .control-frame) { width: min(var(--size-contentWide), calc(100% - 48px)); padding-top: var(--space-3); }
+:global(.workspace-app-shell-partners .control-frame) { width: min(1800px, calc(100% - 48px)); }
 :global(.workspace-header) { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-6); padding: var(--space-3) 0 var(--space-4); border-bottom: 1px solid var(--border-subtle); }
 :global(.workspace-actor-context) { display: grid; min-width: 0; gap: var(--space-1); justify-items: center; text-align: center; }
 :global(.workspace-header-tools) { display: flex; align-items: center; gap: var(--space-2); }

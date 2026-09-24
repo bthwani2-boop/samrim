@@ -1,0 +1,13 @@
+/* Compact queue view using the DSH-owned filters and cursor order. */
+:global(.joining-case-queue) { display: grid; gap: 12px; min-width: 0; }
+:global(.joining-case-queue-toolbar) { display: grid; grid-template-columns: minmax(300px, 1.4fr) minmax(180px, .8fr) minmax(180px, .8fr) auto; align-items: end; gap: 10px; padding: 12px; border: 1px solid var(--border-subtle); border-radius: 14px; background: var(--surface-base); }
+:global(.joining-case-queue-toolbar .field-label) { margin: 0; }
+:global(.joining-case-queue-search form) { display: flex; align-items: end; gap: 8px; }
+:global(.joining-case-queue-search .field-label) { flex: 1; min-width: 0; }
+:global(.joining-case-queue-search .button), :global(.joining-case-queue-toolbar > .button) { width: auto; min-height: 36px; padding: 7px 12px; }
+:global(.joining-case-table-wrap) { overflow: auto; border: 1px solid var(--border-subtle); border-radius: 14px; background: var(--surface-base); }
+:global(.joining-case-table-wrap .partner-registry-table) { min-width: 820px; }
+@media (max-width: 620px) {
+  :global(.joining-case-queue-toolbar) { grid-template-columns: 1fr; }
+  :global(.joining-case-queue-search form) { align-items: stretch; flex-direction: column; }
+}

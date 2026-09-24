@@ -60,6 +60,9 @@ paths:
   /dsh/catalog/products:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products"
 
+  /dsh/catalog/product-registry:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1product-registry"
+
   /dsh/catalog/products/{productId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}"
 
@@ -1856,6 +1859,54 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CatalogProduct"
+        nextCursor:
+          type: string
+          maxLength: 2048
+
+    CatalogProductRegistryItem:
+      type: object
+      required: [id, verticalId, canonicalName, active, version, variantCount, categoryIds, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        verticalId:
+          type: string
+        canonicalName:
+          type: string
+        brand:
+          type: string
+          nullable: true
+        active:
+          type: boolean
+        version:
+          type: integer
+        variantCount:
+          type: integer
+          minimum: 0
+        categoryIds:
+          type: array
+          items:
+            type: string
+        primaryImageUri:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CatalogProductRegistryResponse:
+      type: object
+      required: [products]
+      additionalProperties: false
+      properties:
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogProductRegistryItem"
         nextCursor:
           type: string
           maxLength: 2048

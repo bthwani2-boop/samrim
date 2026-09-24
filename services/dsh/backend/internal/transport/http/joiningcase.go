@@ -77,7 +77,7 @@ func (s *JoiningCaseServer) listForOperator(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
 		return
 	}
-	result, err := s.service.ListForOperator(r.Context(), r.URL.Query().Get("state"), limit, r.URL.Query().Get("cursor"), actingActorID)
+	result, err := s.service.ListForOperator(r.Context(), r.URL.Query().Get("state"), r.URL.Query().Get("q"), r.URL.Query().Get("sort"), limit, r.URL.Query().Get("cursor"), actingActorID)
 	if err != nil {
 		writeJoiningCaseError(w, err)
 		return
@@ -328,7 +328,7 @@ func writeJoiningCaseError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "review decision is invalid")
 	case errors.Is(err, postgres.ErrJoiningCasePartnerAccess):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the partner session does not own this joining case")
-	case errors.Is(err, postgres.ErrJoiningCaseInvalidLimit), errors.Is(err, postgres.ErrJoiningCaseInvalidCursor), errors.Is(err, postgres.ErrJoiningCaseInvalidState):
+	case errors.Is(err, postgres.ErrJoiningCaseInvalidLimit), errors.Is(err, postgres.ErrJoiningCaseInvalidCursor), errors.Is(err, postgres.ErrJoiningCaseInvalidState), errors.Is(err, postgres.ErrJoiningCaseInvalidSort), errors.Is(err, postgres.ErrJoiningCaseInvalidSearch):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "joining case queue parameters are invalid")
 	case errors.Is(err, joiningcase.ErrInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "joining case input is invalid")

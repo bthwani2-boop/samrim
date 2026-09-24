@@ -15,17 +15,20 @@ async function stubAuthenticatedSession(page: Page) {
   });
 }
 
-test("catalog landing exposes separate resource workspaces", async ({ page }) => {
+test("catalog center opens its product registry and exposes resource tabs", async ({ page }) => {
   await stubAuthenticatedSession(page);
   await page.goto("/catalog");
-  await expect(page.getByRole("heading", { name: "الكتالوج", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/catalog\/products$/);
+  await expect(page.getByRole("heading", { name: "المنتجات", exact: true })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "الكتالوج", exact: true })).toHaveAttribute("aria-current", "page");
-  for (const label of ["المنتجات", "المقترحات", "الاستيراد"]) {
-    await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: label, exact: true })).toHaveAttribute("href", /\/catalog\//);
+  const sideNavigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
+  const catalogTabs = page.getByRole("navigation", { name: "مسارات الكتالوج" });
+  for (const [label, href] of [["المنتجات", "/catalog/products"], ["الفئات", "/catalog/categories"], ["المقترحات", "/catalog/proposals"], ["الاستيراد", "/catalog/import"]] as const) {
+    await expect(catalogTabs.getByRole("link", { name: label, exact: true })).toHaveAttribute("href", href);
+    await expect(sideNavigation.getByRole("link", { name: label, exact: true })).toHaveCount(0);
   }
-  await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "الفئات", exact: true })).toHaveAttribute("href", "/catalog/categories");
-  await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "شجرة الفئات", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("navigation", { name: "موارد الكتالوج" })).toHaveCount(0);
+  await expect(catalogTabs.getByRole("link", { name: "المنتجات", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "اختر مورد الكتالوج" })).toHaveCount(0);
   await expect(page.locator("#catalog-import-rows")).toHaveCount(0);
 });
 
