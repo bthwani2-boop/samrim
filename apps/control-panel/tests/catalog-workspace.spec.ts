@@ -92,6 +92,7 @@ test("catalog proposal review shows detail and re-reads after approval", async (
   await page.goto("/catalog/proposals");
   await expect(page.getByRole("button", { name: /قهوة/ }).first()).toBeVisible();
   await page.getByRole("button", { name: /قهوة/ }).first().click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("proposalId")).toBe("proposal-1");
   await expect(page.getByRole("heading", { name: "قهوة", exact: true })).toBeVisible();
   await expect(page.getByText("النسخة الحالية: 3")).toBeVisible();
   await expect(page.getByText("الفئة").locator("..") .getByText("قهوة")).toBeVisible();

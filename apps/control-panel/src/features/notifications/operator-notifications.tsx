@@ -2,6 +2,7 @@
 
 import type { Notification, NotificationKind } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { notificationKindLabel } from "./notification-presentation";
 import "./operator-notifications.module.css";
 
 type NotificationListPayload = Readonly<{ notifications?: ReadonlyArray<Notification>; unreadCount?: number }>;
@@ -115,12 +116,6 @@ function notificationKindTone(kind: NotificationKind) {
   if (kind.startsWith("FIELD_")) return "partner";
   if (kind.startsWith("CAPTAIN_") || ["HANDOFF_CONFIRMED", "PICKED_UP", "DELIVERED", "DELIVERY_FAILED", "DELIVERY_RECOVERED", "REASSIGNED"].includes(kind)) return "delivery";
   return "order";
-}
-
-function notificationKindLabel(kind: NotificationKind) {
-  if (kind.startsWith("FIELD_")) return "شريك";
-  if (kind.startsWith("CAPTAIN_") || ["HANDOFF_CONFIRMED", "PICKED_UP", "DELIVERED", "DELIVERY_FAILED", "DELIVERY_RECOVERED", "REASSIGNED"].includes(kind)) return "توصيل";
-  return "طلب";
 }
 
 function formatNotificationDate(value: string) {

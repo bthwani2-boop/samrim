@@ -55,7 +55,11 @@ export function CatalogProposalReview() {
       const nextProposals = payload.proposals ?? [];
       setProposals((current) => append ? [...current, ...nextProposals] : nextProposals);
       setNextCursor(payload.nextCursor ?? "");
-      if (!append) setSelectedId((current) => current && nextProposals.some((proposal) => proposal.id === current) ? current : nextProposals[0]?.id ?? "");
+      const requestedId = new URLSearchParams(window.location.search).get("proposalId") ?? "";
+      if (!append) setSelectedId((current) => {
+        if (requestedId && nextProposals.some((proposal) => proposal.id === requestedId)) return requestedId;
+        return current && nextProposals.some((proposal) => proposal.id === current) ? current : "";
+      });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "تعذر قراءة طابور مقترحات المنتجات.");
     } finally {
@@ -64,6 +68,26 @@ export function CatalogProposalReview() {
   }, []);
 
   useEffect(() => { void loadQueue(); }, [loadQueue]);
+
+  useEffect(() => {
+    function syncSelectionFromUrl() {
+      setSelectedId(new URLSearchParams(window.location.search).get("proposalId") ?? "");
+    }
+    window.addEventListener("popstate", syncSelectionFromUrl);
+    return () => window.removeEventListener("popstate", syncSelectionFromUrl);
+  }, []);
+
+  function selectProposal(proposalId: string) {
+    const params = new URLSearchParams(window.location.search);
+    if (proposalId) params.set("proposalId", proposalId);
+    else params.delete("proposalId");
+    const query = params.toString();
+    window.history.pushState({}, "", window.location.pathname + (query ? `?${query}` : ""));
+    setSelectedId(proposalId);
+    setError("");
+    setNotice("");
+    setConflict(false);
+  }
 
   useEffect(() => {
     if (!selected) {
@@ -101,7 +125,7 @@ export function CatalogProposalReview() {
       });
       await readJson<{ proposal: CatalogProductProposal }>(response);
       setReason("");
-      setSelectedId("");
+      selectProposal("");
       setNotice("تم تسجيل القرار، ثم أُعيدت قراءة طابور المقترحات القانوني.");
       await loadQueue();
     } catch (cause) {
@@ -130,7 +154,7 @@ export function CatalogProposalReview() {
           <ul className="proposal-list">
             {proposals.map((proposal) => (
               <li key={proposal.id}>
-                <button type="button" className={`proposal-row${selectedId === proposal.id ? " selected" : ""}`} aria-pressed={selectedId === proposal.id} onClick={() => { setSelectedId(proposal.id); setError(""); setNotice(""); setConflict(false); }}>
+                <button type="button" className={`proposal-row${selectedId === proposal.id ? " selected" : ""}`} aria-pressed={selectedId === proposal.id} onClick={() => selectProposal(proposal.id)}>
                   <span><strong>{proposal.proposedName}</strong><small>{proposal.proposedVariantTitle}</small></span>
                   <em>{catalogProductProposalStateLabel(proposal.state)}</em>
                 </button>

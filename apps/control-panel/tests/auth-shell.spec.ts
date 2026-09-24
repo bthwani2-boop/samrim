@@ -33,8 +33,9 @@ test("signed-out access to a protected workspace route returns to the identity s
 });
 
 test("authenticated operator discovers the platform centers through workspace navigation", async ({ page }) => {
-  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
+  await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "operations", "partners", "catalog"], true);
   let homeRequestsActionableOrders = false;
+  let homeRequestsCatalogQueue = false;
   await page.route("**/api/operations**", async (route) => {
     homeRequestsActionableOrders = new URL(route.request().url()).searchParams.get("actionableOnly") === "true";
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ operations: [] }) });
@@ -42,12 +43,23 @@ test("authenticated operator discovers the platform centers through workspace na
   await page.route("**/api/partners/joining-cases**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cases: [] }) });
   });
+  await page.route("**/api/catalog/proposals**", async (route) => {
+    homeRequestsCatalogQueue = new URL(route.request().url()).searchParams.get("state") === "submitted";
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ proposals: [{ id: "proposal-home", partnerActorId: "partner-home", verticalId: "grocery", categoryId: "coffee", proposedName: "قهوة للمراجعة", proposedVariantTitle: "الافتراضي", proposedMeasurementKind: "DISCRETE", proposedBaseUnit: "COUNT", state: "submitted", version: 1, createdAt: "2026-09-18T00:00:00.000Z", updatedAt: "2026-09-18T00:00:00.000Z" }] }) });
+  });
+  await page.route("**/api/notifications**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ notifications: [], unreadCount: 0 }) });
+  });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
 
   await expect(page).toHaveURL(/\/workspace$/);
   await expect(page.getByRole("heading", { name: "الرئيسية" })).toBeVisible();
   await expect.poll(() => homeRequestsActionableOrders).toBe(true);
+  await expect.poll(() => homeRequestsCatalogQueue).toBe(true);
+  await expect(page.getByRole("heading", { name: "مقترحات منتجات للمراجعة" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /قهوة للمراجعة/ })).toHaveAttribute("href", "/catalog/proposals?proposalId=proposal-home");
+  await expect(page.getByRole("heading", { name: "إشعارات غير مقروءة" })).toBeVisible();
   const navigationToggle = page.getByRole("button", { name: "فتح مسارات العمل" });
   await navigationToggle.click();
   await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" })).toHaveAttribute("data-open", "true");
@@ -63,6 +75,28 @@ test("authenticated operator discovers the platform centers through workspace na
 
   await page.reload();
   await expect(page.getByRole("heading", { name: "مشغّلو لوحة التحكم والصلاحيات" })).toBeVisible();
+});
+
+test("operator home reads only work queues covered by the current session permissions", async ({ page }) => {
+  await stubAuthenticatedSession(page, ["finance"]);
+  const deniedQueueRequests = new Set<string>();
+  for (const endpoint of ["operations", "partners/joining-cases", "catalog/proposals"]) {
+    await page.route(`**/api/${endpoint}**`, async (route) => {
+      deniedQueueRequests.add(endpoint);
+      await route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: { code: "FORBIDDEN", message: "forbidden" } }) });
+    });
+  }
+  await page.route("**/api/notifications**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ notifications: [], unreadCount: 0 }) });
+  });
+
+  await page.goto("/workspace");
+  await expect(page.getByRole("heading", { name: "الرئيسية" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "إشعارات غير مقروءة" })).toBeVisible();
+  expect([...deniedQueueRequests]).toEqual([]);
+  await expect(page.getByRole("heading", { name: "طلبات تحتاج إجراءً" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "طلبات الانضمام المقدمة" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "مقترحات منتجات للمراجعة" })).toHaveCount(0);
 });
 
 test("authenticated operator can open the notification center from the workspace header", async ({ page }) => {
