@@ -15,7 +15,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 17
+const SchemaVersion = 18
 
 type MigrationRecord struct {
 	Version int
@@ -42,7 +42,7 @@ func LoadMigrations(directory string) ([]MigrationRecord, []string, error) {
 	if directory == "" {
 		return nil, nil, errors.New("WLT_MIGRATION_DIR is required")
 	}
-	names := []string{"001_payment_intents.sql", "002_cash_remittances.sql", "003_partner_financial_profiles.sql", "004_payment_allocations.sql", "005_delivery_fee_policies.sql", "006_partner_order_earnings_ledger.sql", "007_official_wallet_destinations_and_payout_intents.sql", "008_field_commission_policies_and_earnings.sql", "009_manual_settlement_governance.sql", "010_captain_wallet_cod_reservations.sql", "011_captain_cod_collateral_settlement.sql", "012_customer_payment_allocation_refoundation.sql", "013_captain_cod_reassignment_reservations.sql", "014_partner_store_pickup_commission_receivables.sql", "015_partner_store_cash_commission_generalization.sql", "016_partner_store_mode_commission_snapshots.sql", "017_policy_change_control.sql"}
+	names := []string{"001_payment_intents.sql", "002_cash_remittances.sql", "003_partner_financial_profiles.sql", "004_payment_allocations.sql", "005_delivery_fee_policies.sql", "006_partner_order_earnings_ledger.sql", "007_official_wallet_destinations_and_payout_intents.sql", "008_field_commission_policies_and_earnings.sql", "009_manual_settlement_governance.sql", "010_captain_wallet_cod_reservations.sql", "011_captain_cod_collateral_settlement.sql", "012_customer_payment_allocation_refoundation.sql", "013_captain_cod_reassignment_reservations.sql", "014_partner_store_pickup_commission_receivables.sql", "015_partner_store_cash_commission_generalization.sql", "016_partner_store_mode_commission_snapshots.sql", "017_policy_change_control.sql", "018_partner_financial_terms_policies.sql"}
 	records := make([]MigrationRecord, 0, len(names))
 	sqls := make([]string, 0, len(names))
 	for version, name := range names {
@@ -139,7 +139,7 @@ func VerifySchema(ctx context.Context, db *sql.DB, records []MigrationRecord) er
 			return fmt.Errorf("WLT migration history does not match canonical v%d", record.Version)
 		}
 	}
-	for _, relation := range []string{"wlt.payment_intents", "wlt.payment_intent_events", "wlt.cash_remittances", "wlt.cash_remittance_events", "wlt.partner_financial_profiles", "wlt.partner_financial_profile_events", "wlt.customer_payment_allocations", "wlt.customer_payment_allocation_events", "wlt.partner_store_commission_policies", "wlt.partner_store_commission_policy_initializations", "wlt.partner_store_commission_policy_events", "wlt.delivery_fee_policies", "wlt.delivery_fee_policy_events", "wlt.ledger_transactions", "wlt.ledger_entries", "wlt.partner_order_earnings", "wlt.partner_store_cash_commissions", "wlt.partner_commission_remittances", "wlt.official_wallet_destinations", "wlt.official_wallet_destination_transitions", "wlt.payout_requests", "wlt.payout_holds", "wlt.field_commission_policies", "wlt.field_commission_earnings", "wlt.approved_payout_snapshots", "wlt.settlement_batches", "wlt.settlement_batch_items", "wlt.manual_transfer_executions", "wlt.payout_audit_events", "wlt.captain_wallet_funding", "wlt.captain_cod_reservations", "wlt.captain_cod_reservation_events"} {
+	for _, relation := range []string{"wlt.payment_intents", "wlt.payment_intent_events", "wlt.cash_remittances", "wlt.cash_remittance_events", "wlt.partner_financial_profiles", "wlt.partner_financial_profile_events", "wlt.partner_financial_terms_policies", "wlt.partner_financial_terms_policy_events", "wlt.customer_payment_allocations", "wlt.customer_payment_allocation_events", "wlt.partner_store_commission_policies", "wlt.partner_store_commission_policy_initializations", "wlt.partner_store_commission_policy_events", "wlt.delivery_fee_policies", "wlt.delivery_fee_policy_events", "wlt.ledger_transactions", "wlt.ledger_entries", "wlt.partner_order_earnings", "wlt.partner_store_cash_commissions", "wlt.partner_commission_remittances", "wlt.official_wallet_destinations", "wlt.official_wallet_destination_transitions", "wlt.payout_requests", "wlt.payout_holds", "wlt.field_commission_policies", "wlt.field_commission_earnings", "wlt.approved_payout_snapshots", "wlt.settlement_batches", "wlt.settlement_batch_items", "wlt.manual_transfer_executions", "wlt.payout_audit_events", "wlt.captain_wallet_funding", "wlt.captain_cod_reservations", "wlt.captain_cod_reservation_events"} {
 		var exists bool
 		if err := db.QueryRowContext(ctx, "SELECT to_regclass($1) IS NOT NULL", relation).Scan(&exists); err != nil {
 			return fmt.Errorf("WLT relation check %s: %w", relation, err)

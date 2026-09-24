@@ -16,11 +16,12 @@ import (
 )
 
 var (
-	ErrOperatorNotActive          = errors.New("operator actor is not active")
-	ErrPartnerSessionForbidden    = errors.New("an active app-partner session is required")
-	ErrPartnerIdentityUnavailable = errors.New("partner identity admission is unavailable")
-	ErrInvalidInput               = errors.New("joining case input is invalid")
-	ErrServiceCityUnavailable     = errors.New("an active service city is required")
+	ErrOperatorNotActive                = errors.New("operator actor is not active")
+	ErrPartnerSessionForbidden          = errors.New("an active app-partner session is required")
+	ErrPartnerIdentityUnavailable       = errors.New("partner identity admission is unavailable")
+	ErrPartnerFinancialTermsPolicyStale = errors.New("partner financial terms policy changed after it was read")
+	ErrInvalidInput                     = errors.New("joining case input is invalid")
+	ErrServiceCityUnavailable           = errors.New("an active service city is required")
 )
 
 var phoneE164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
@@ -98,7 +99,7 @@ func (s *Service) Submit(ctx context.Context, caseID string, expectedVersion int
 	return postgres.SubmitJoiningCase(ctx, s.db, caseID, actorRole.ActorID, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseSubmit(caseID, actorRole.ActorID, expectedVersion), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
 }
 
-func (s *Service) Review(ctx context.Context, caseID, decision, correctionReason string, commissionRateBps *int, settlementPeriod *string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.JoiningCaseResult, error) {
+func (s *Service) Review(ctx context.Context, caseID, decision, correctionReason, expectedTermsPolicyVersion string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.JoiningCaseResult, error) {
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
@@ -112,17 +113,30 @@ func (s *Service) Review(ctx context.Context, caseID, decision, correctionReason
 	}
 	commission := 0
 	period := ""
+	policyVersion := ""
 	if decision == "approved" {
-		if commissionRateBps == nil || settlementPeriod == nil {
+		expectedTermsPolicyVersion = strings.TrimSpace(expectedTermsPolicyVersion)
+		if expectedTermsPolicyVersion == "" || len(expectedTermsPolicyVersion) > 128 {
 			return postgres.JoiningCaseResult{}, ErrInvalidInput
 		}
-		commission = *commissionRateBps
-		period = strings.ToUpper(strings.TrimSpace(*settlementPeriod))
-		if commission < 0 || commission > 10000 || (period != "DAILY" && period != "WEEKLY" && period != "MONTHLY") {
+		if err := s.identity.RequireOperatorPermission(ctx, strings.TrimSpace(actingActorID), "finance"); err != nil {
+			return postgres.JoiningCaseResult{}, err
+		}
+		policy, err := s.wlt.ReadPartnerFinancialTermsPolicy(ctx)
+		if err != nil {
+			return postgres.JoiningCaseResult{}, err
+		}
+		commission = policy.CommissionRateBps
+		period = strings.ToUpper(strings.TrimSpace(policy.SettlementPeriod))
+		policyVersion = strings.TrimSpace(policy.PolicyVersion)
+		if policyVersion != expectedTermsPolicyVersion {
+			return postgres.JoiningCaseResult{}, ErrPartnerFinancialTermsPolicyStale
+		}
+		if commission < 0 || commission > 10000 || (period != "DAILY" && period != "WEEKLY" && period != "MONTHLY") || len(policyVersion) > 128 || !strings.HasPrefix(policyVersion, "partner-financial-terms:v") {
 			return postgres.JoiningCaseResult{}, ErrInvalidInput
 		}
 	}
-	result, err := postgres.ReviewJoiningCase(ctx, s.db, caseID, decision, correctionReason, commission, period, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseReviewWithFinancialTerms(caseID, decision, correctionReason, expectedVersion, commission, period), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
+	result, err := postgres.ReviewJoiningCase(ctx, s.db, caseID, decision, correctionReason, commission, period, policyVersion, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseReviewWithFinancialTerms(caseID, decision, correctionReason, expectedVersion, commission, period, policyVersion), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
@@ -130,6 +144,43 @@ func (s *Service) Review(ctx context.Context, caseID, decision, correctionReason
 		if syncErr := s.syncFinancialProfile(ctx, result.Case.ID); syncErr != nil {
 			log.Printf("joining case financial profile binding failed case=%s: %v", result.Case.ID, syncErr)
 			return result, syncErr
+		}
+		return postgres.ReadJoiningCase(ctx, s.db, result.Case.ID)
+	}
+	return result, nil
+}
+
+func (s *Service) BindFinancialTerms(ctx context.Context, caseID, expectedTermsPolicyVersion string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.JoiningCaseResult, error) {
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	if err := s.identity.RequireOperatorPermission(ctx, strings.TrimSpace(actingActorID), "finance"); err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	policy, err := s.wlt.ReadPartnerFinancialTermsPolicy(ctx)
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	expectedTermsPolicyVersion = strings.TrimSpace(expectedTermsPolicyVersion)
+	if expectedTermsPolicyVersion == "" || len(expectedTermsPolicyVersion) > 128 {
+		return postgres.JoiningCaseResult{}, ErrInvalidInput
+	}
+	if strings.TrimSpace(policy.PolicyVersion) != expectedTermsPolicyVersion {
+		return postgres.JoiningCaseResult{}, ErrPartnerFinancialTermsPolicyStale
+	}
+	if policy.CommissionRateBps < 0 || policy.CommissionRateBps > 10000 || (policy.SettlementPeriod != "DAILY" && policy.SettlementPeriod != "WEEKLY" && policy.SettlementPeriod != "MONTHLY") || len(strings.TrimSpace(policy.PolicyVersion)) > 128 || !strings.HasPrefix(strings.TrimSpace(policy.PolicyVersion), "partner-financial-terms:v") {
+		return postgres.JoiningCaseResult{}, ErrInvalidInput
+	}
+	caseID = strings.TrimSpace(caseID)
+	policyVersion := strings.TrimSpace(policy.PolicyVersion)
+	requestHash := postgres.HashJoiningCaseReviewWithFinancialTerms(caseID, "bind-financial-terms", "", expectedVersion, policy.CommissionRateBps, policy.SettlementPeriod, policyVersion)
+	result, err := postgres.BindApprovedJoiningCaseFinancialTerms(ctx, s.db, caseID, policy.CommissionRateBps, strings.ToUpper(policy.SettlementPeriod), policyVersion, expectedVersion, strings.TrimSpace(idempotencyKey), requestHash, strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	if result.Case.FinancialProfileState != "ACTIVE" {
+		if err := s.syncFinancialProfile(ctx, result.Case.ID); err != nil {
+			return result, err
 		}
 		return postgres.ReadJoiningCase(ctx, s.db, result.Case.ID)
 	}
@@ -163,7 +214,7 @@ func (s *Service) syncFinancialProfileItem(ctx context.Context, item postgres.Pe
 	profileID := strings.TrimSpace(item.FinancialProfileID)
 	var profile wlt.PartnerFinancialProfile
 	if profileID == "" {
-		prepared, _, err := s.wlt.PreparePartnerFinancialProfile(ctx, item.CaseID, item.PartnerActorID, item.Origin, item.CommissionRateBps, item.SettlementPeriod, item.IdempotencyKey, item.CorrelationID)
+		prepared, _, err := s.wlt.PreparePartnerFinancialProfile(ctx, item.CaseID, item.PartnerActorID, item.Origin, item.CommissionRateBps, item.SettlementPeriod, item.TermsPolicyVersion, item.IdempotencyKey, item.CorrelationID)
 		if err != nil {
 			return err
 		}

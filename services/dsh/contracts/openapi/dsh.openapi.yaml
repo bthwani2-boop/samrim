@@ -315,6 +315,12 @@ paths:
   /dsh/operator/delivery-fee-policy:
     $ref: "./paths/delivery-fee.yaml#/paths/~1dsh~1operator~1delivery-fee-policy"
 
+  /dsh/operator/partner-financial-terms-policy:
+    $ref: "./paths/delivery-fee.yaml#/paths/~1dsh~1operator~1partner-financial-terms-policy"
+
+  /dsh/joining-cases/{caseId}/financial-terms:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1financial-terms"
+
   /dsh/partners/me/financial-summary:
     $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1partners~1me~1financial-summary"
 
@@ -789,7 +795,7 @@ components:
 
     JoiningCaseView:
       type: object
-      required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, firstStoreFulfillmentModes, origin, state, financialProfileState, version, createdAt, updatedAt]
+      required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, firstStoreFulfillmentModes, origin, state, financialProfileState, termsPolicyVersion, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -849,6 +855,11 @@ components:
         financialProfileState:
           type: string
           enum: [REQUIRED, PENDING_BINDING, ACTIVE, FAILED]
+        termsPolicyVersion:
+          type: string
+          nullable: true
+          x-go-pointer: true
+          maxLength: 128
         correctionReason:
           type: string
           nullable: true
@@ -1072,17 +1083,79 @@ components:
           type: string
           nullable: true
           maxLength: 500
+        expectedTermsPolicyVersion:
+          type: string
+          minLength: 1
+          maxLength: 128
+    BindJoiningCaseFinancialTermsRequest:
+      type: object
+      required: [expectedTermsPolicyVersion]
+      additionalProperties: false
+      properties:
+        expectedTermsPolicyVersion:
+          type: string
+          minLength: 1
+          maxLength: 128
+    PartnerFinancialTermsPolicy:
+      type: object
+      required: [id, policyVersion, state, commissionRateBps, settlementPeriod, version, createdBy, createdAt, retiredAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        policyVersion:
+          type: string
+          maxLength: 128
+        state:
+          type: string
+          enum: [ACTIVE, RETIRED]
         commissionRateBps:
           type: integer
-          nullable: true
-          x-go-pointer: true
           minimum: 0
           maximum: 10000
         settlementPeriod:
           type: string
-          nullable: true
-          x-go-pointer: true
           enum: [DAILY, WEEKLY, MONTHLY]
+        version:
+          type: integer
+          minimum: 1
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        retiredAt:
+          type: string
+          format: date-time
+          nullable: true
+    PartnerFinancialTermsPolicyResponse:
+      type: object
+      required: [policy]
+      additionalProperties: false
+      properties:
+        policy:
+          $ref: "#/components/schemas/PartnerFinancialTermsPolicy"
+        idempotentReplay:
+          type: boolean
+    CreatePartnerFinancialTermsPolicyRequest:
+      type: object
+      required: [commissionRateBps, settlementPeriod, expectedVersion, reason]
+      additionalProperties: false
+      properties:
+        commissionRateBps:
+          type: integer
+          minimum: 0
+          maximum: 10000
+        settlementPeriod:
+          type: string
+          enum: [DAILY, WEEKLY, MONTHLY]
+        expectedVersion:
+          type: integer
+          minimum: 0
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
 
     StorePublicationReadiness:
       type: object

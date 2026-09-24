@@ -49,6 +49,8 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/delivery-quotes", s.deliveryQuote)
 	mux.HandleFunc("GET /wlt/v1/operator/delivery-fee-policies", s.readDeliveryFeePolicy)
 	mux.HandleFunc("POST /wlt/v1/operator/delivery-fee-policies", s.createDeliveryFeePolicy)
+	mux.HandleFunc("GET /wlt/v1/operator/partner-financial-terms-policy", s.readPartnerFinancialTermsPolicy)
+	mux.HandleFunc("POST /wlt/v1/operator/partner-financial-terms-policy", s.createPartnerFinancialTermsPolicy)
 	mux.HandleFunc("POST /wlt/v1/partner-financial-profiles", s.preparePartnerFinancialProfile)
 	mux.HandleFunc("GET /wlt/v1/partner-financial-profiles/{profileId}", s.readPartnerFinancialProfile)
 	mux.HandleFunc("POST /wlt/v1/partner-financial-profiles/{profileId}/activate", s.activatePartnerFinancialProfile)
@@ -140,11 +142,12 @@ type remitCashRequest struct {
 }
 
 type preparePartnerFinancialProfileRequest struct {
-	JoiningCaseID     string `json:"joiningCaseId"`
-	PartnerActorID    string `json:"partnerActorId"`
-	Origin            string `json:"origin"`
-	CommissionRateBps int    `json:"commissionRateBps"`
-	SettlementPeriod  string `json:"settlementPeriod"`
+	JoiningCaseID      string `json:"joiningCaseId"`
+	PartnerActorID     string `json:"partnerActorId"`
+	Origin             string `json:"origin"`
+	CommissionRateBps  int    `json:"commissionRateBps"`
+	SettlementPeriod   string `json:"settlementPeriod"`
+	TermsPolicyVersion string `json:"termsPolicyVersion"`
 }
 
 type createFieldCommissionPolicyRequest struct {
@@ -506,23 +509,48 @@ type partnerFinancialProfileResponse struct {
 }
 
 type partnerFinancialProfileJSON struct {
-	ID                string  `json:"id"`
-	JoiningCaseID     string  `json:"joiningCaseId"`
-	PartnerActorID    string  `json:"partnerActorId"`
-	Origin            string  `json:"origin"`
-	CommissionRateBps int     `json:"commissionRateBps"`
-	SettlementPeriod  string  `json:"settlementPeriod"`
-	RoundingUnitMinor int64   `json:"roundingUnitMinor"`
-	State             string  `json:"state"`
-	Version           int     `json:"version"`
-	ActivatedAt       *string `json:"activatedAt"`
-	CreatedAt         string  `json:"createdAt"`
-	UpdatedAt         string  `json:"updatedAt"`
+	ID                 string  `json:"id"`
+	JoiningCaseID      string  `json:"joiningCaseId"`
+	PartnerActorID     string  `json:"partnerActorId"`
+	Origin             string  `json:"origin"`
+	CommissionRateBps  int     `json:"commissionRateBps"`
+	SettlementPeriod   string  `json:"settlementPeriod"`
+	TermsPolicyVersion string  `json:"termsPolicyVersion,omitempty"`
+	RoundingUnitMinor  int64   `json:"roundingUnitMinor"`
+	State              string  `json:"state"`
+	Version            int     `json:"version"`
+	ActivatedAt        *string `json:"activatedAt"`
+	CreatedAt          string  `json:"createdAt"`
+	UpdatedAt          string  `json:"updatedAt"`
 }
 
 type deliveryFeePolicyResponse struct {
 	Policy           deliveryFeePolicyJSON `json:"policy"`
 	IdempotentReplay bool                  `json:"idempotentReplay"`
+}
+
+type partnerFinancialTermsPolicyResponse struct {
+	Policy           partnerFinancialTermsPolicyJSON `json:"policy"`
+	IdempotentReplay bool                            `json:"idempotentReplay,omitempty"`
+}
+
+type partnerFinancialTermsPolicyJSON struct {
+	ID                string  `json:"id"`
+	PolicyVersion     string  `json:"policyVersion"`
+	State             string  `json:"state"`
+	CommissionRateBps int     `json:"commissionRateBps"`
+	SettlementPeriod  string  `json:"settlementPeriod"`
+	Version           int     `json:"version"`
+	CreatedBy         string  `json:"createdBy"`
+	CreatedAt         string  `json:"createdAt"`
+	RetiredAt         *string `json:"retiredAt"`
+}
+
+type createPartnerFinancialTermsPolicyRequest struct {
+	CommissionRateBps int    `json:"commissionRateBps"`
+	SettlementPeriod  string `json:"settlementPeriod"`
+	ExpectedVersion   int    `json:"expectedVersion"`
+	Reason            string `json:"reason"`
 }
 
 type deliveryFeePolicyJSON struct {
@@ -765,6 +793,72 @@ func (s *Server) createDeliveryFeePolicy(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, status, deliveryFeePolicyResponse{Policy: toDeliveryFeePolicy(policy), IdempotentReplay: replayed})
 }
 
+func (s *Server) readPartnerFinancialTermsPolicy(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	policy, err := postgres.ReadPartnerFinancialTermsPolicy(r.Context(), s.db)
+	if err != nil {
+		writePartnerFinancialTermsPolicyError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, partnerFinancialTermsPolicyResponse{Policy: toPartnerFinancialTermsPolicy(policy)})
+}
+
+func (s *Server) createPartnerFinancialTermsPolicy(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	correlation, idempotency, ok := mutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if acting == "" || len(acting) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return
+	}
+	var input createPartnerFinancialTermsPolicyRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	policy, replayed, err := postgres.CreatePartnerFinancialTermsPolicy(r.Context(), s.db, postgres.CreatePartnerFinancialTermsPolicyInput{CommissionRateBps: input.CommissionRateBps, SettlementPeriod: input.SettlementPeriod, ExpectedVersion: input.ExpectedVersion, Reason: input.Reason, ActingActorID: acting, IdempotencyKey: idempotency, CorrelationID: correlation})
+	if err != nil {
+		writePartnerFinancialTermsPolicyError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if replayed {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, partnerFinancialTermsPolicyResponse{Policy: toPartnerFinancialTermsPolicy(policy), IdempotentReplay: replayed})
+}
+
+func toPartnerFinancialTermsPolicy(item postgres.PartnerFinancialTermsPolicyRecord) partnerFinancialTermsPolicyJSON {
+	result := partnerFinancialTermsPolicyJSON{ID: item.ID, PolicyVersion: item.PolicyVersion, State: item.State, CommissionRateBps: item.CommissionRateBps, SettlementPeriod: item.SettlementPeriod, Version: item.Version, CreatedBy: item.CreatedBy, CreatedAt: item.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
+	if item.RetiredAt != nil {
+		value := item.RetiredAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")
+		result.RetiredAt = &value
+	}
+	return result
+}
+
+func writePartnerFinancialTermsPolicyError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, postgres.ErrPartnerFinancialTermsPolicyNotFound):
+		writeError(w, http.StatusNotFound, "PARTNER_FINANCIAL_TERMS_POLICY_NOT_FOUND", "no active partner financial terms policy is configured")
+	case errors.Is(err, postgres.ErrIdempotencyConflict):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different partner financial terms")
+	case errors.Is(err, postgres.ErrVersionConflict):
+		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "the active partner financial terms policy changed after it was read")
+	case errors.Is(err, postgres.ErrPartnerFinancialTermsPolicyInvalidInput):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partner financial terms policy is invalid")
+	default:
+		log.Printf("WLT partner financial terms policy persistence error: %T %v", err, err)
+		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT persistence is unavailable")
+	}
+}
+
 func (s *Server) preparePartnerFinancialProfile(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
@@ -778,13 +872,14 @@ func (s *Server) preparePartnerFinancialProfile(w http.ResponseWriter, r *http.R
 		return
 	}
 	result, replayed, err := postgres.PreparePartnerFinancialProfile(r.Context(), s.db, postgres.PreparePartnerFinancialProfileInput{
-		JoiningCaseID:     input.JoiningCaseID,
-		PartnerActorID:    input.PartnerActorID,
-		Origin:            input.Origin,
-		CommissionRateBps: input.CommissionRateBps,
-		SettlementPeriod:  input.SettlementPeriod,
-		IdempotencyKey:    idempotency,
-		CorrelationID:     correlation,
+		JoiningCaseID:      input.JoiningCaseID,
+		PartnerActorID:     input.PartnerActorID,
+		Origin:             input.Origin,
+		CommissionRateBps:  input.CommissionRateBps,
+		SettlementPeriod:   input.SettlementPeriod,
+		TermsPolicyVersion: input.TermsPolicyVersion,
+		IdempotencyKey:     idempotency,
+		CorrelationID:      correlation,
 	})
 	if err != nil {
 		writeFinancialProfileError(w, err)
@@ -1421,17 +1516,18 @@ func writeDeliveryFeeError(w http.ResponseWriter, err error) {
 
 func toPartnerFinancialProfile(item postgres.PartnerFinancialProfileRecord) partnerFinancialProfileJSON {
 	result := partnerFinancialProfileJSON{
-		ID:                item.ID,
-		JoiningCaseID:     item.JoiningCaseID,
-		PartnerActorID:    item.PartnerActorID,
-		Origin:            item.Origin,
-		CommissionRateBps: item.CommissionRateBps,
-		SettlementPeriod:  item.SettlementPeriod,
-		RoundingUnitMinor: item.RoundingUnitMinor,
-		State:             item.State,
-		Version:           item.Version,
-		CreatedAt:         item.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00"),
-		UpdatedAt:         item.UpdatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00"),
+		ID:                 item.ID,
+		JoiningCaseID:      item.JoiningCaseID,
+		PartnerActorID:     item.PartnerActorID,
+		Origin:             item.Origin,
+		CommissionRateBps:  item.CommissionRateBps,
+		SettlementPeriod:   item.SettlementPeriod,
+		TermsPolicyVersion: item.TermsPolicyVersion,
+		RoundingUnitMinor:  item.RoundingUnitMinor,
+		State:              item.State,
+		Version:            item.Version,
+		CreatedAt:          item.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00"),
+		UpdatedAt:          item.UpdatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00"),
 	}
 	if item.ActivatedAt != nil {
 		value := item.ActivatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")

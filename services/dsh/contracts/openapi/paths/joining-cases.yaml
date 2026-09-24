@@ -158,3 +158,27 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+  /dsh/joining-cases/{caseId}/financial-terms:
+    post:
+      operationId: bindJoiningCaseFinancialTerms
+      summary: Bind the current WLT terms policy to an approved legacy case without financial terms
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+        - { name: caseId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/BindJoiningCaseFinancialTermsRequest" }
+      responses:
+        "200": { description: Financial terms were bound and profile provisioning was attempted., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }

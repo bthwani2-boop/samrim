@@ -1,10 +1,11 @@
 "use client";
 
-import { type CommerceVertical, financialProfileStateLabel, type JoiningCaseResponse, joiningCaseStateLabel, type ServiceCity, type StoreFulfillmentMode, settlementPeriodLabel } from "@bthwani/dsh";
+import { type CommerceVertical, financialProfileStateLabel, type JoiningCaseResponse, joiningCaseStateLabel, type PartnerFinancialTermsPolicy, type ServiceCity, type StoreFulfillmentMode, settlementPeriodLabel } from "@bthwani/dsh";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { partnerErrorMessage } from "./partner-error-message";
 import { partnerMutationHeaders } from "./partner-request";
+import { useSession } from "../../session/session-provider";
 
 const fulfillmentModeOptions: ReadonlyArray<Readonly<{ value: StoreFulfillmentMode; label: string; description: string }>> = [
   { value: "BTHWANI_CAPTAIN", label: "توصيل بثواني", description: "المنصة تتولى إسناد التوصيل وإدارته." },
@@ -13,12 +14,14 @@ const fulfillmentModeOptions: ReadonlyArray<Readonly<{ value: StoreFulfillmentMo
 ];
 
 export function JoiningCaseDetail({ caseId }: { caseId: string }) {
+  const { state: sessionState } = useSession();
+  const canManageFinancialTerms = sessionState.kind === "authenticated" && sessionState.identity.permissions?.includes("finance") === true && sessionState.identity.permissions?.includes("platform_policies") === true;
   const [result, setResult] = useState<JoiningCaseResponse | null>(null);
+  const [activeTermsPolicy, setActiveTermsPolicy] = useState<PartnerFinancialTermsPolicy | null>(null);
+  const [policyReadMessage, setPolicyReadMessage] = useState("");
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
   const [correctionReason, setCorrectionReason] = useState("");
-  const [commissionRatePercent, setCommissionRatePercent] = useState("");
-  const [settlementPeriod, setSettlementPeriod] = useState<"DAILY" | "WEEKLY" | "MONTHLY" | "">("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -51,14 +54,37 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
     if (verticalsResponse?.ok) setVerticals((await verticalsResponse.json() as { verticals: ReadonlyArray<CommerceVertical> }).verticals);
   }, []);
 
+  const readFinancialTermsPolicy = useCallback(async () => {
+    if (!canManageFinancialTerms) {
+      setActiveTermsPolicy(null);
+      setPolicyReadMessage("يتطلب اعتماد الشروط صلاحية Finance وسياسات المنصة؛ اطلب منح الصلاحيتين للمشغّل.");
+      return;
+    }
+    try {
+      const response = await fetch("/api/finance/partner-financial-terms-policy", { cache: "no-store" });
+      const body = await response.json() as { policy?: PartnerFinancialTermsPolicy };
+      if (!response.ok || !body.policy) {
+        setActiveTermsPolicy(null);
+        setPolicyReadMessage(response.status === 404 ? "لا توجد شروط مالية نشطة. أنشئها من قسم السياسات قبل الاعتماد." : "تعذرت قراءة الشروط المالية النشطة.");
+        return;
+      }
+      setActiveTermsPolicy(body.policy);
+      setPolicyReadMessage("");
+    } catch {
+      setActiveTermsPolicy(null);
+      setPolicyReadMessage("تعذرت قراءة الشروط المالية النشطة.");
+    }
+  }, [canManageFinancialTerms]);
+
   useEffect(() => {
     void readCase();
     void readOptions();
-  }, [readCase, readOptions]);
+    void readFinancialTermsPolicy();
+  }, [readCase, readOptions, readFinancialTermsPolicy]);
 
-  async function reconcileMutationError(response: Response, fallback: string) {
+  async function reconcileMutationError(response: Response, fallback: string, refreshPolicy = false) {
     const message = await partnerErrorMessage(response);
-    await readCase(false);
+    await Promise.all([readCase(false), ...(refreshPolicy ? [readFinancialTermsPolicy()] : [])]);
     setError(message || fallback);
   }
 
@@ -92,16 +118,9 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
       setError("أدخل سبب التصحيح قبل إعادة الحالة.");
       return;
     }
-    if (decision === "approved") {
-      const commission = Number(commissionRatePercent);
-      if (commissionRatePercent.trim() === "" || !Number.isFinite(commission) || commission < 0 || commission > 100) {
-        setError("أدخل نسبة عمولة المنصة بين 0 و100 بالمائة.");
-        return;
-      }
-      if (!settlementPeriod) {
-        setError("اختر فترة تسوية الشريك قبل الاعتماد.");
-        return;
-      }
+    if (decision === "approved" && (!canManageFinancialTerms || !activeTermsPolicy)) {
+      setError(policyReadMessage || "لا توجد سياسة مالية نشطة أو لا تملك صلاحية Finance.");
+      return;
     }
     setBusy(true);
     setError("");
@@ -112,20 +131,42 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
         body: JSON.stringify({
           expectedVersion: current.version,
           decision,
+          ...(decision === "approved" && activeTermsPolicy ? { expectedTermsPolicyVersion: activeTermsPolicy.policyVersion } : {}),
           ...(correctionReason.trim() ? { correctionReason: correctionReason.trim() } : {}),
-          ...(decision === "approved" ? { commissionRateBps: Math.round(Number(commissionRatePercent) * 100), settlementPeriod } : {}),
         }),
       });
       if (!response.ok) {
-        await reconcileMutationError(response, "تعذر تسجيل قرار المراجعة.");
+        await reconcileMutationError(response, "تعذر تسجيل قرار المراجعة.", decision === "approved");
         return;
       }
       setResult(await response.json() as JoiningCaseResponse);
       setCorrectionReason("");
-      setCommissionRatePercent("");
-      setSettlementPeriod("");
+      if (decision === "approved") await readFinancialTermsPolicy();
     } catch {
       setError("تعذر تسجيل قرار المراجعة. أعد قراءة الحالة قبل التكرار.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function bindFinancialTerms() {
+    const current = result?.case;
+    if (current?.state !== "approved" || current.financialProfileState !== "REQUIRED" || !canManageFinancialTerms || !activeTermsPolicy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/partners/joining-cases/" + encodeURIComponent(caseId) + "/financial-terms", {
+        method: "POST",
+        headers: partnerMutationHeaders(),
+        body: JSON.stringify({ expectedVersion: current.version, expectedTermsPolicyVersion: activeTermsPolicy.policyVersion }),
+      });
+      if (!response.ok) {
+        await reconcileMutationError(response, "تعذر استكمال الربط المالي.", true);
+        return;
+      }
+      setResult(await response.json() as JoiningCaseResponse);
+    } catch {
+      setError("تعذر استكمال الربط المالي. أعد قراءة الحالة قبل التكرار.");
     } finally {
       setBusy(false);
     }
@@ -163,6 +204,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
               <div><dt>مصدر الحالة</dt><dd>{current.origin === "field" ? "تطبيق الميداني" : "لوحة التحكم"}</dd></div>
               <div><dt>عمولة المنصة</dt><dd>{current.commissionRateBps === null || current.commissionRateBps === undefined ? "لم تُثبت بعد" : `${(current.commissionRateBps / 100).toFixed(2)}%`}</dd></div>
               <div><dt>فترة التسوية</dt><dd>{current.settlementPeriod ? settlementPeriodLabel(current.settlementPeriod) : "لم تُثبت بعد"}</dd></div>
+              <div><dt>إصدار شروط السياسة</dt><dd>{current.termsPolicyVersion ?? "لم يُربط بعد"}</dd></div>
               <div><dt>الحالة المالية</dt><dd>{financialProfileStateLabel(current.financialProfileState)}</dd></div>
             </dl>
             {current.storeProfileImage?.uri ? <figure className="mt-4 overflow-hidden rounded-xl border border-slate-200"><img src={current.storeProfileImage.uri} alt={`صورة متجر ${current.firstStoreName}`} className="h-48 w-full object-cover" /><figcaption className="p-2 text-sm text-slate-600">صورة المتجر المرفوعة من الميداني</figcaption></figure> : <p className="muted">لم تُرفع صورة متجر لهذا الملف بعد.</p>}
@@ -173,14 +215,20 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
             {current.state === "draft" && current.origin === "field" ? <p>المسودة قيد استكمال تطبيق الميداني، وهو المسار الوحيد المسموح بإرسالها للمراجعة.</p> : null}
             {current.state === "draft" && current.origin === "control_panel" ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>إرسال للمراجعة</button> : null}
             {current.state === "submitted" ? <>
-              <label className="field-label" htmlFor="joining-commission">عمولة المنصة (%)<input id="joining-commission" inputMode="decimal" type="number" min="0" max="100" step="0.01" disabled={busy} value={commissionRatePercent} onChange={(event) => setCommissionRatePercent(event.target.value)} /></label>
-              <label className="field-label" htmlFor="joining-settlement-period">فترة تسوية الشريك<select id="joining-settlement-period" disabled={busy} value={settlementPeriod} onChange={(event) => setSettlementPeriod(event.target.value as typeof settlementPeriod)}><option value="">اختر الفترة</option><option value="DAILY">يومية</option><option value="WEEKLY">أسبوعية</option><option value="MONTHLY">شهرية</option></select></label>
+              {activeTermsPolicy ? <p className="managed-status managed-status-info">سيُعتمد إصدار السياسة {activeTermsPolicy.policyVersion}: عمولة {(activeTermsPolicy.commissionRateBps / 100).toFixed(2)}%، وتسوية {settlementPeriodLabel(activeTermsPolicy.settlementPeriod)}.</p> : <><p className="managed-status managed-status-warning" role="status">{policyReadMessage || "تُقرأ العمولة وفترة التسوية من قسم السياسات ولا تُدخلان في ملف الانضمام."}</p><Link className="button button-secondary" href="/policies/partner-financial-terms">فتح سياسة الشريك المالية</Link><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readFinancialTermsPolicy()}>إعادة قراءة السياسة النشطة</button></>}
               <label className="field-label" htmlFor="joining-correction">سبب التصحيح عند الحاجة<textarea className="resize-none" id="joining-correction" disabled={busy} value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} /></label>
-              <button type="button" className="button button-primary" disabled={busy} onClick={() => void reviewCase("approved")}>اعتماد الحالة وإنشاء المتجر</button>
+              <button type="button" className="button button-primary" disabled={busy || !canManageFinancialTerms || !activeTermsPolicy} onClick={() => void reviewCase("approved")}>اعتماد الحالة وإنشاء المتجر بالشروط النشطة</button>
               <button type="button" className="button button-secondary" disabled={busy} onClick={() => void reviewCase("needs_correction")}>إعادة للتصحيح</button>
             </> : null}
             {current.state === "needs_correction" ? <p>الحالة بانتظار تصحيح بيانات الشريك عبر المسار القانوني المتاح.</p> : null}
-            {current.state === "approved" ? <p>تم اعتماد الحالة. انتقل إلى قراءة النشر إن كان المتجر متاحًا.</p> : null}
+            {current.state === "approved" ? <>
+              <p>تم اعتماد الحالة. تُستخدم نسخة الشروط المثبتة في الملف، ولا يؤدي تغيير السياسة النشطة إلى تعديل ملف معتمد سابقًا.</p>
+              {current.financialProfileState === "REQUIRED" ? <>
+                <p className="managed-status managed-status-warning" role="status">{activeTermsPolicy ? "سيُربط الإصدار " + activeTermsPolicy.policyVersion + " بهذه الحالة العالقة." : policyReadMessage || "يلزم وجود سياسة مالية نشطة وصلاحية Finance."}</p>
+                {!activeTermsPolicy ? <><Link className="button button-secondary" href="/policies/partner-financial-terms">فتح سياسة الشريك المالية</Link><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readFinancialTermsPolicy()}>إعادة قراءة السياسة النشطة</button></> : null}
+                <button type="button" className="button button-primary" disabled={busy || !canManageFinancialTerms || !activeTermsPolicy} onClick={() => void bindFinancialTerms()}>استكمال الربط المالي وفق السياسة النشطة</button>
+              </> : null}
+            </> : null}
           </div>
           {storeId ? <div className="managed-status managed-status-info"><strong>ملف المتجر</strong><p>تُدار حالة نشر المتجر وأوضاع التنفيذ من مساحة المتجر الموحدة.</p><Link className="button button-secondary" href={`/partners/stores/${encodeURIComponent(storeId)}`}>فتح ملف المتجر</Link></div> : null}
         </>

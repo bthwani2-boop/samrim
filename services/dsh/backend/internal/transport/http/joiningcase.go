@@ -56,6 +56,7 @@ func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/submit", s.submit)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/correct-and-resubmit", s.correctAndResubmitForPartner)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/review", s.review)
+	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/financial-terms", s.bindFinancialTerms)
 }
 
 func (s *JoiningCaseServer) listForOperator(w http.ResponseWriter, r *http.Request) {
@@ -206,9 +207,31 @@ func (s *JoiningCaseServer) review(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	decision := string(input.Decision)
-	result, err := s.service.Review(r.Context(), r.PathValue("caseId"), decision, input.CorrectionReason, input.CommissionRateBps, input.SettlementPeriod, expected, idempotency, acting, correlation)
+	result, err := s.service.Review(r.Context(), r.PathValue("caseId"), decision, input.CorrectionReason, input.ExpectedTermsPolicyVersion, expected, idempotency, acting, correlation)
 	if err != nil {
 		log.Printf("joining case review failed case=%s: %v", r.PathValue("caseId"), err)
+		writeJoiningCaseError(w, err)
+		return
+	}
+	s.writeResult(w, r, http.StatusOK, result)
+}
+
+func (s *JoiningCaseServer) bindFinancialTerms(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting, correlation, idempotency, expected, ok := requiredVersionedCaseHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input contract.BindJoiningCaseFinancialTermsRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.service.BindFinancialTerms(r.Context(), r.PathValue("caseId"), input.ExpectedTermsPolicyVersion, expected, idempotency, acting, correlation)
+	if err != nil {
+		log.Printf("joining case financial terms binding failed case=%s: %v", r.PathValue("caseId"), err)
 		writeJoiningCaseError(w, err)
 		return
 	}
@@ -239,6 +262,7 @@ func (s *JoiningCaseServer) writeResult(w http.ResponseWriter, ctx *http.Request
 	view.SettlementPeriod = nullableStringPointer(result.Case.SettlementPeriod)
 	view.FinancialProfileID = nullableStringPointer(result.Case.FinancialProfileID)
 	view.FinancialProfileState = result.Case.FinancialProfileState
+	view.TermsPolicyVersion = nullableStringPointer(result.Case.TermsPolicyVersion)
 	view.StoreProfileImage = toStoreProfileImage(result.Case.StoreProfileImage)
 	view.CorrectionReason = result.Case.CorrectionReason
 	view.ReviewedBy = result.Case.ReviewedBy
@@ -332,6 +356,8 @@ func writeJoiningCaseError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "joining case queue parameters are invalid")
 	case errors.Is(err, joiningcase.ErrInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "joining case input is invalid")
+	case errors.Is(err, joiningcase.ErrPartnerFinancialTermsPolicyStale):
+		writeError(w, http.StatusConflict, "POLICY_VERSION_CONFLICT", "partner financial terms changed after they were read; reload the active policy")
 	case errors.Is(err, joiningcase.ErrOperatorNotActive):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active control operator session is required")
 	case errors.Is(err, joiningcase.ErrPartnerSessionForbidden):

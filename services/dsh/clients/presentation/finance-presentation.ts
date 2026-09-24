@@ -5,10 +5,9 @@ import type {
   OfficialWalletDestination,
   PartnerFinancialSummary,
   PayoutRequest,
-  ReviewJoiningCaseRequest,
 } from "../generated/dsh-types";
 
-type SettlementPeriod = NonNullable<ReviewJoiningCaseRequest["settlementPeriod"]>;
+type SettlementPeriod = PartnerFinancialSummary["settlementPeriod"];
 
 const settlementPeriodLabels: Record<SettlementPeriod, string> = {
   DAILY: "يومية",

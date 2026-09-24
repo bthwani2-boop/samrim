@@ -18,7 +18,7 @@ export function PoliciesWorkspace({ resource, children }: { resource: PolicyReso
     return <section className="state-content workspace-restricted"><div className="state-card" role="alert"><p className="eyebrow">صلاحية غير متاحة</p><h1>مركز السياسات للمشغّلين</h1><p className="muted">القراءة والتعديل يمران عبر المالك القانوني لكل سياسة.</p></div></section>;
   }
 
-  const canEdit = state.identity.permissions?.includes("platform_policies") === true;
+  const canEdit = state.identity.permissions?.includes("platform_policies") === true && (activeResource !== "partner-financial-terms" || state.identity.permissions?.includes("finance") === true);
   const selected = workspacePolicyResources.find((item) => item.key === activeResource) ?? workspacePolicyResources[0]!;
   return (
     <section className="workspace-page" aria-labelledby="policies-page-title">
@@ -27,8 +27,8 @@ export function PoliciesWorkspace({ resource, children }: { resource: PolicyReso
         <h1 id="policies-page-title">{selected.key === "overview" ? "مركز السياسات" : selected.label}</h1>
         <p className="lead">{selected.description}</p>
       </div>
-      {!canEdit ? <p className="managed-status managed-status-warning" role="status">وضع قراءة فقط. يتطلب التعديل صلاحية سياسات المنصة من Identity.</p> : null}
-      {children ?? <section className="access-card" aria-labelledby="policies-overview-title"><div className="access-card-heading"><span className="step-chip">ملاك قانونيون</span><p className="eyebrow">نقطة البدء</p><h2 id="policies-overview-title">اختر سياسة لإدارتها</h2><p className="muted">تُقرأ الحقيقة من DSH أو WLT مباشرة، وتُحفظ في النظام المالك لها.</p></div><div className="workspace-resource-cards">{workspacePolicyResources.slice(1).map((item) => <Link className="access-card" href={item.href} key={item.key}><span className="step-chip">{item.href.includes("delivery-fees") || item.href.includes("field-rewards") ? "WLT" : "DSH"}</span><h3>{item.label}</h3><p className="muted">{item.description}</p><span className="button button-secondary">فتح المساحة</span></Link>)}</div></section>}
+      {!canEdit ? <p className="managed-status managed-status-warning" role="status">{activeResource === "partner-financial-terms" ? "تتطلب هذه السياسة صلاحية سياسات المنصة وصلاحية Finance من Identity." : "وضع قراءة فقط. يتطلب التعديل صلاحية سياسات المنصة من Identity."}</p> : null}
+      {children ?? <section className="access-card" aria-labelledby="policies-overview-title"><div className="access-card-heading"><span className="step-chip">ملاك قانونيون</span><p className="eyebrow">نقطة البدء</p><h2 id="policies-overview-title">اختر سياسة لإدارتها</h2><p className="muted">تُقرأ الحقيقة من DSH أو WLT مباشرة، وتُحفظ في النظام المالك لها.</p></div><div className="workspace-resource-cards">{workspacePolicyResources.slice(1).map((item) => <Link className="access-card" href={item.href} key={item.key}><span className="step-chip">{item.key === "delivery-fees" || item.key === "field-rewards" || item.key === "partner-financial-terms" ? "WLT" : "DSH"}</span><h3>{item.label}</h3><p className="muted">{item.description}</p><span className="button button-secondary">فتح المساحة</span></Link>)}</div></section>}
     </section>
   );
 }

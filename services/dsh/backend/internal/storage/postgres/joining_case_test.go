@@ -61,7 +61,7 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 		if err != nil || submitted.Case.PartnerActorID != partnerActor || submitted.Case.State != "submitted" {
 			t.Fatalf("bind and submit joining case failed: %+v err=%v", submitted, err)
 		}
-		returned, err := postgres.ReviewJoiningCase(ctx, db, created.Case.ID, "needs_correction", "تصحيح بيانات المتجر", 0, "", submitted.Case.Version, "idem-join-field-review", postgres.HashJoiningCaseReview(created.Case.ID, "needs_correction", "تصحيح بيانات المتجر", submitted.Case.Version), operatorActor, "corr-join-field-review")
+		returned, err := postgres.ReviewJoiningCase(ctx, db, created.Case.ID, "needs_correction", "تصحيح بيانات المتجر", 0, "", "", submitted.Case.Version, "idem-join-field-review", postgres.HashJoiningCaseReviewWithFinancialTerms(created.Case.ID, "needs_correction", "تصحيح بيانات المتجر", submitted.Case.Version, 0, "", ""), operatorActor, "corr-join-field-review")
 		if err != nil || returned.Case.State != "needs_correction" || returned.Case.PartnerActorID != partnerActor {
 			t.Fatalf("return joining case for Partner correction failed: %+v err=%v", returned, err)
 		}

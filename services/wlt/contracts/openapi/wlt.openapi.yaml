@@ -279,6 +279,41 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DeliveryFeePolicyResponse' }
+  /wlt/v1/operator/partner-financial-terms-policy:
+    get:
+      operationId: readPartnerFinancialTermsPolicy
+      security: [{ serviceToken: [] }]
+      responses:
+        '200':
+          description: Active partner financial terms policy.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerFinancialTermsPolicyResponse' }
+        '404': { description: No active policy is configured. }
+    post:
+      operationId: createPartnerFinancialTermsPolicy
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+        - { $ref: '#/components/parameters/ActingActorId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreatePartnerFinancialTermsPolicyRequest' }
+      responses:
+        '201':
+          description: New immutable policy activated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerFinancialTermsPolicyResponse' }
+        '200':
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerFinancialTermsPolicyResponse' }
+        '409': { description: Expected policy version or idempotency key conflicts. }
   /wlt/v1/partner-financial-profiles:
     post:
       operationId: preparePartnerFinancialProfile
@@ -1672,6 +1707,7 @@ components:
         origin: { type: string, enum: [field, control_panel] }
         commissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
         settlementPeriod: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
+        termsPolicyVersion: { type: string, maxLength: 128, nullable: true, pattern: '^partner-financial-terms:v[1-9][0-9]*$' }
     PartnerFinancialProfile:
       type: object
       additionalProperties: false
@@ -1683,6 +1719,7 @@ components:
         origin: { type: string, enum: [field, control_panel] }
         commissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
         settlementPeriod: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
+        termsPolicyVersion: { type: string, nullable: true }
         roundingUnitMinor: { type: integer, const: 50 }
         state: { type: string, enum: [PENDING_BINDING, ACTIVE] }
         version: { type: integer, minimum: 1 }
@@ -1741,6 +1778,36 @@ components:
         roundingUnitMinor: { type: integer, const: 50 }
         expectedVersion: { type: integer, minimum: 0 }
         reason: { type: string, minLength: 5, maxLength: 500 }
+    CreatePartnerFinancialTermsPolicyRequest:
+      type: object
+      additionalProperties: false
+      required: [commissionRateBps, settlementPeriod, expectedVersion, reason]
+      properties:
+        commissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
+        settlementPeriod: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
+        expectedVersion: { type: integer, minimum: 0 }
+        reason: { type: string, minLength: 5, maxLength: 500 }
+    PartnerFinancialTermsPolicy:
+      type: object
+      additionalProperties: false
+      required: [id, policyVersion, state, commissionRateBps, settlementPeriod, version, createdBy, createdAt, retiredAt]
+      properties:
+        id: { type: string }
+        policyVersion: { type: string }
+        state: { type: string, enum: [ACTIVE, RETIRED] }
+        commissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
+        settlementPeriod: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
+        version: { type: integer, minimum: 1 }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        retiredAt: { type: string, format: date-time, nullable: true }
+    PartnerFinancialTermsPolicyResponse:
+      type: object
+      additionalProperties: false
+      required: [policy]
+      properties:
+        policy: { $ref: '#/components/schemas/PartnerFinancialTermsPolicy' }
+        idempotentReplay: { type: boolean }
     DeliveryFeePolicy:
       type: object
       additionalProperties: false
