@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
@@ -75,6 +76,16 @@ func (s *OrderServer) listOperatorOperations(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "state is invalid")
 		return
 	}
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if utf8.RuneCountInString(query) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "q is too long")
+		return
+	}
+	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
+	if sort != "" && sort != "updated_desc" && sort != "updated_asc" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "sort is invalid")
+		return
+	}
 	actionableOnly := false
 	if rawActionable := r.URL.Query().Get("actionableOnly"); rawActionable != "" {
 		if rawActionable != "true" && rawActionable != "false" {
@@ -88,7 +99,7 @@ func (s *OrderServer) listOperatorOperations(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cursor is too long")
 		return
 	}
-	operations, err := s.service.ListForOperator(r.Context(), state, actingActorID, actionableOnly, limit, cursor)
+	operations, err := s.service.ListForOperator(r.Context(), state, query, sort, actingActorID, actionableOnly, limit, cursor)
 	if err != nil {
 		writeOrderError(w, err)
 		return

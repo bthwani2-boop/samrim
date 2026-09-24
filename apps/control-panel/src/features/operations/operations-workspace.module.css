@@ -1,8 +1,12 @@
 /* Owner-scoped presentation for this control-panel area. */
-:global(.workspace-toolbar) { display: flex; align-items: end; justify-content: space-between; gap: 18px; padding: 16px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--surface-muted); }
+:global(.workspace-toolbar) { display: flex; flex-wrap: wrap; align-items: end; justify-content: flex-start; gap: 18px; padding: 16px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--surface-muted); }
 :global(.workspace-toolbar .field-label) { min-width: min(280px, 100%); margin: 0; }
+:global(.workspace-search) { display: flex; flex: 1 1 420px; align-items: end; gap: 10px; }
+:global(.workspace-search .field-label) { flex: 1 1 320px; }
 :global(.toolbar-meta) { display: flex; align-items: center; gap: 12px; }
 :global(.toolbar-count) { color: var(--text-muted); font-size: 13px; font-weight: 750; }
+:global(.active-filter-chips) { display: flex; flex-wrap: wrap; gap: 8px; }
+:global(.filter-chip) { display: inline-flex; min-height: 34px; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid var(--border-subtle); border-radius: 999px; background: var(--surface-muted); color: var(--text-primary); cursor: pointer; }
 :global(.collection-state) { display: grid; min-height: 220px; place-items: center; align-content: center; gap: 8px; padding: 24px; border: 1px dashed var(--border-strong); border-radius: 16px; background: var(--surface-base); text-align: center; }
 :global(.collection-state p), :global(.empty-inline) { margin: 0; color: var(--text-muted); font-size: 13px; line-height: 1.7; }
 :global(.operations-table-wrap) { overflow-x: auto; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--surface-base); }
@@ -12,8 +16,6 @@
 :global(.operations-table tbody tr:last-child th), :global(.operations-table tbody tr:last-child td) { border-bottom: 0; }
 :global(.operations-table tbody th) { color: var(--color-primary); font-size: 13px; font-weight: 800; }
 :global(.operations-table time), :global(.operations-table td) { color: var(--text-muted); font-size: 13px; }
-:global(.operation-details summary) { cursor: pointer; direction: ltr; text-align: right; text-decoration: underline; text-underline-offset: 3px; }
-:global(.operation-detail-body) { display: grid; gap: 4px; margin-top: 9px; color: var(--text-muted); font-size: 12px; font-weight: 500; }
 :global(.status-badge) { display: inline-flex; min-height: 28px; align-items: center; padding: 0 9px; border-radius: 999px; font-size: 12px; font-weight: 800; white-space: nowrap; }
 :global(.status-ready_for_dispatch), :global(.status-delivery_failed) { background: var(--warning-soft); color: var(--warning); }
 :global(.status-created), :global(.status-partner_accepted), :global(.status-preparing) { background: var(--info-soft); color: var(--info); }
@@ -21,3 +23,10 @@
 :global(.status-delivered) { background: var(--success-soft); color: var(--success); }
 :global(.status-rejected) { background: var(--danger-soft); color: var(--danger); }
 :global(.table-action) { width: auto; min-width: 146px; min-height: 42px; padding-inline: 12px; font-size: 12px; }
+
+@media (max-width: 720px) {
+  :global(.workspace-toolbar) { align-items: stretch; gap: 12px; }
+  :global(.workspace-search) { flex-basis: 100%; }
+  :global(.workspace-toolbar .field-label) { min-width: 100%; }
+  :global(.toolbar-meta) { width: 100%; flex-wrap: wrap; justify-content: space-between; }
+}

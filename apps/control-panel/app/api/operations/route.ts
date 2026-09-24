@@ -18,13 +18,17 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const rawLimit = params.get("limit") ?? "50";
   const cursor = params.get("cursor") ?? "";
+  const search = params.get("q") ?? "";
+  const sort = params.get("sort") ?? "updated_desc";
   const rawActionableOnly = params.get("actionableOnly") ?? "false";
   const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) return errorResponse("INVALID_INPUT", "limit must be between 1 and 100", 400);
   if (rawActionableOnly !== "true" && rawActionableOnly !== "false") return errorResponse("INVALID_INPUT", "actionableOnly must be true or false", 400);
   if (cursor.trim().length > 512) return errorResponse("INVALID_INPUT", "cursor is too long", 400);
+  if (search.trim().length > 128) return errorResponse("INVALID_INPUT", "q is too long", 400);
+  if (sort !== "updated_desc" && sort !== "updated_asc") return errorResponse("INVALID_INPUT", "sort is invalid", 400);
   try {
-    const result = await listOperatorOperations(params.get("state") ?? "", limit, cursor, rawActionableOnly === "true", { operatorActorId: identity.subject });
+    const result = await listOperatorOperations(params.get("state") ?? "", search, sort, limit, cursor, rawActionableOnly === "true", { operatorActorId: identity.subject });
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (!isDshClientError(error)) return errorResponse("INTERNAL_ERROR", "operator operations read failed", 500);

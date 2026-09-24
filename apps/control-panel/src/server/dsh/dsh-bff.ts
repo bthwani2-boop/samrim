@@ -192,12 +192,14 @@ export async function listOperatorPartnerStores(actorId: string, limit: number, 
   return (await requestDshJson<PartnerStoreListResponse>(dshOperationPaths.listOperatorPartnerStores.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export async function listOperatorOperations(state: string, limit: number, cursor: string, actionableOnly: boolean, context: DshOperatorReadContext): Promise<OperatorOperationsResponse> {
-	if (!context.operatorActorId.trim() || !Number.isInteger(limit) || limit < 1 || limit > 100 || cursor.trim().length > 512) {
+export async function listOperatorOperations(state: string, search: string, sort: string, limit: number, cursor: string, actionableOnly: boolean, context: DshOperatorReadContext): Promise<OperatorOperationsResponse> {
+	if (!context.operatorActorId.trim() || !Number.isInteger(limit) || limit < 1 || limit > 100 || cursor.trim().length > 512 || search.trim().length > 128 || (sort !== "updated_desc" && sort !== "updated_asc")) {
 		throw new Error("DSH_OPERATOR_OPERATIONS_INPUT_INVALID");
 	}
 	const params = new URLSearchParams({ limit: String(limit) });
 	if (state.trim()) params.set("state", state.trim());
+	if (search.trim()) params.set("q", search.trim());
+	if (sort !== "updated_desc") params.set("sort", sort);
 	if (cursor.trim()) params.set("cursor", cursor.trim());
 	if (actionableOnly) params.set("actionableOnly", "true");
 	const path = `${dshOperationPaths.listOperatorOperations.path}?${params.toString()}`;

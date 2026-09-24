@@ -159,11 +159,11 @@ func (s *Service) ListForPartner(ctx context.Context, accessToken, storeID strin
 	return postgres.ListOrdersForStore(ctx, s.db, strings.TrimSpace(storeID), "", limit)
 }
 
-func (s *Service) ListForOperator(ctx context.Context, state, actingActorID string, actionableOnly bool, limit int, cursor string) (postgres.OperatorOperationsResult, error) {
+func (s *Service) ListForOperator(ctx context.Context, state, query, sort, actingActorID string, actionableOnly bool, limit int, cursor string) (postgres.OperatorOperationsResult, error) {
 	if err := s.requireOperatorPermission(ctx, actingActorID, "operations"); err != nil {
 		return postgres.OperatorOperationsResult{}, err
 	}
-	return postgres.ListOrdersForOperator(ctx, s.db, state, actionableOnly, limit, cursor)
+	return postgres.ListOrdersForOperator(ctx, s.db, state, query, sort, actionableOnly, limit, cursor)
 }
 
 func (s *Service) ReadForOperator(ctx context.Context, orderID, actingActorID string) (postgres.OperatorOperationRecord, error) {

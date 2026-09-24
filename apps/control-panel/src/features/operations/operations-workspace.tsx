@@ -19,6 +19,9 @@ const filterOptions: ReadonlyArray<Readonly<{ value: string; label: string }>> =
 export function OperationsWorkspace() {
   const [operations, setOperations] = useState<ReadonlyArray<OperatorOperationListItem>>([]);
   const [filter, setFilter] = useState("");
+  const [search, setSearch] = useState("");
+  const [appliedQuery, setAppliedQuery] = useState("");
+  const [sort, setSort] = useState("updated_desc");
   const [cursor, setCursor] = useState("");
   const [urlReady, setUrlReady] = useState(false);
   const [busy, setBusy] = useState("");
@@ -33,6 +36,10 @@ export function OperationsWorkspace() {
     const requestedState = params.get("state") ?? "";
     setFilter(filterOptions.some((option) => option.value === requestedState) ? requestedState : "");
     setCursor(params.get("cursor") ?? "");
+    const requestedQuery = params.get("q")?.trim().slice(0, 128) ?? "";
+    setSearch(requestedQuery);
+    setAppliedQuery(requestedQuery);
+    setSort(params.get("sort") === "updated_asc" ? "updated_asc" : "updated_desc");
   }, []);
 
   useEffect(() => {
@@ -42,17 +49,24 @@ export function OperationsWorkspace() {
     return () => window.removeEventListener("popstate", syncFromUrl);
   }, [syncFromUrl]);
 
-  const navigateQuery = useCallback((state: string, pageCursor: string) => {
+  const navigateQuery = useCallback((state: string, pageCursor: string, queryText = appliedQuery, nextSort = sort) => {
     const params = new URLSearchParams(window.location.search);
     if (state) params.set("state", state);
     else params.delete("state");
     if (pageCursor) params.set("cursor", pageCursor);
     else params.delete("cursor");
-    const query = params.toString();
-    window.history.pushState({}, "", window.location.pathname + (query ? `?${query}` : ""));
+    if (queryText) params.set("q", queryText);
+    else params.delete("q");
+    if (nextSort !== "updated_desc") params.set("sort", nextSort);
+    else params.delete("sort");
+    const queryString = params.toString();
+    window.history.pushState({}, "", window.location.pathname + (queryString ? `?${queryString}` : ""));
     setFilter(state);
     setCursor(pageCursor);
-  }, []);
+    setAppliedQuery(queryText);
+    setSearch(queryText);
+    setSort(nextSort);
+  }, [appliedQuery, sort]);
 
   const load = useCallback(async () => {
     const sequence = ++loadSequence.current;
@@ -61,6 +75,8 @@ export function OperationsWorkspace() {
     try {
       const query = new URLSearchParams({ limit: "50" });
       if (filter) query.set("state", filter);
+      if (appliedQuery) query.set("q", appliedQuery);
+      if (sort !== "updated_desc") query.set("sort", sort);
       if (cursor) query.set("cursor", cursor);
       const response = await fetch("/api/operations?" + query.toString(), { cache: "no-store" });
       if (sequence !== loadSequence.current) return;
@@ -78,7 +94,7 @@ export function OperationsWorkspace() {
     } finally {
       if (sequence === loadSequence.current) setLoading(false);
     }
-  }, [cursor, filter]);
+  }, [appliedQuery, cursor, filter, sort]);
 
   useEffect(() => { if (urlReady) void load(); }, [load, urlReady]);
 
@@ -120,10 +136,24 @@ export function OperationsWorkspace() {
   return (
     <section className="operations-workspace" aria-labelledby="operations-list-title">
       <div className="workspace-toolbar">
+        <form className="workspace-search" role="search" onSubmit={(event) => { event.preventDefault(); navigateQuery(filter, "", search.trim().slice(0, 128), sort); }}>
+          <label className="field-label" htmlFor="operations-search">
+            البحث في رقم الطلب أو اسم المتجر
+            <input id="operations-search" type="search" value={search} maxLength={128} onChange={(event) => setSearch(event.target.value)} placeholder="ابحث عن طلب أو متجر" />
+          </label>
+          <button type="submit" className="button button-secondary" disabled={loading || Boolean(busy)}>بحث</button>
+        </form>
         <label className="field-label" htmlFor="operations-state-filter">
           تصفية العمل
           <select id="operations-state-filter" value={filter} onChange={(event) => navigateQuery(event.target.value, "")} disabled={Boolean(busy)}>
             {filterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </label>
+        <label className="field-label" htmlFor="operations-sort">
+          ترتيب حسب آخر تحديث
+          <select id="operations-sort" value={sort} onChange={(event) => navigateQuery(filter, "", appliedQuery, event.target.value)} disabled={Boolean(busy)}>
+            <option value="updated_desc">الأحدث أولًا</option>
+            <option value="updated_asc">الأقدم أولًا</option>
           </select>
         </label>
         <div className="toolbar-meta">
@@ -134,10 +164,17 @@ export function OperationsWorkspace() {
         </div>
       </div>
 
+      {filter || appliedQuery ? (
+        <div className="active-filter-chips" aria-label="عوامل التصفية النشطة">
+          {filter ? <button type="button" className="filter-chip" onClick={() => navigateQuery("", "")}>الحالة: {filterOptions.find((option) => option.value === filter)?.label} <span aria-hidden="true">×</span><span className="visually-hidden">إزالة تصفية الحالة</span></button> : null}
+          {appliedQuery ? <button type="button" className="filter-chip" onClick={() => navigateQuery(filter, "", "")}>البحث: {appliedQuery} <span aria-hidden="true">×</span><span className="visually-hidden">مسح البحث</span></button> : null}
+        </div>
+      ) : null}
+
       {notice ? <p className="success-inline" role="status">{notice}</p> : null}
       {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر إكمال القراءة أو الإجراء</strong><p>{error}</p><button type="button" className="button button-secondary" onClick={() => void load()} disabled={loading || Boolean(busy)}>إعادة المحاولة</button></div> : null}
       {loading && operations.length === 0 ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة مركز العمليات</strong><p>نطلب مجموعة محدودة من DSH ولا نبني العمل من طلبات منفصلة.</p></div> : null}
-      {!loading && !error && operations.length === 0 ? <div className="collection-state"><strong>لا توجد أعمال في هذا النطاق</strong><p>ستظهر الطلبات عندما تصل إلى مسار التشغيل الذي يملك المشغل إجراءً عليه.</p></div> : null}
+      {!loading && !error && operations.length === 0 ? <div className="collection-state"><strong>{filter || appliedQuery ? "لا توجد نتائج تطابق عوامل البحث والتصفية" : "لا توجد أعمال في هذا النطاق"}</strong><p>{filter || appliedQuery ? "امسح عاملًا أو أكثر لعرض سجلات أخرى." : "ستظهر الطلبات عندما تصل إلى مسار التشغيل الذي يملك المشغل إجراءً عليه."}</p></div> : null}
 
       {operations.length > 0 ? (
         <div className="operations-table-wrap">

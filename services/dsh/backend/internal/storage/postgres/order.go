@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/lib/pq"
 )
@@ -283,6 +284,8 @@ func ListOrdersForStore(ctx context.Context, db *sql.DB, storeID, state string, 
 var (
 	ErrOperatorOperationInvalidCursor = errors.New("operator operation cursor is invalid")
 	ErrOperatorOperationInvalidLimit  = errors.New("operator operation limit is invalid")
+	ErrOperatorOperationInvalidQuery  = errors.New("operator operation search query is invalid")
+	ErrOperatorOperationInvalidSort   = errors.New("operator operation sort is invalid")
 )
 
 type operatorOperationsCursor struct {
@@ -290,13 +293,27 @@ type operatorOperationsCursor struct {
 	ID             string    `json:"id"`
 	State          string    `json:"state"`
 	ActionableOnly bool      `json:"actionableOnly"`
+	Query          string    `json:"query"`
+	Sort           string    `json:"sort"`
 }
 
-func ListOrdersForOperator(ctx context.Context, db *sql.DB, state string, actionableOnly bool, limit int, cursor string) (OperatorOperationsResult, error) {
+func ListOrdersForOperator(ctx context.Context, db *sql.DB, state, query, sort string, actionableOnly bool, limit int, cursor string) (OperatorOperationsResult, error) {
 	if db == nil || limit < 1 || limit > 100 {
 		return OperatorOperationsResult{}, ErrOperatorOperationInvalidLimit
 	}
 	state = strings.TrimSpace(state)
+	query = strings.TrimSpace(query)
+	if utf8.RuneCountInString(query) > 128 {
+		return OperatorOperationsResult{}, ErrOperatorOperationInvalidQuery
+	}
+	sort = strings.TrimSpace(sort)
+	if sort == "" {
+		sort = "updated_desc"
+	}
+	if sort != "updated_desc" && sort != "updated_asc" {
+		return OperatorOperationsResult{}, ErrOperatorOperationInvalidSort
+	}
+	ascending := sort == "updated_asc"
 	args := []any{}
 	where := "TRUE"
 	if state != "" {
@@ -306,15 +323,27 @@ func ListOrdersForOperator(ctx context.Context, db *sql.DB, state string, action
 	if actionableOnly {
 		where += " AND (o.state='READY_FOR_DISPATCH' OR (o.state='CAPTAIN_ASSIGNED' AND a.state='assigned') OR (o.state='DELIVERY_FAILED' AND a.state='delivery_failed'))"
 	}
+	if query != "" {
+		args = append(args, "%"+escapeOperatorOperationSearch(query)+"%")
+		where += " AND (o.id ILIKE $" + strconv.Itoa(len(args)) + " ESCAPE '!' OR s.name ILIKE $" + strconv.Itoa(len(args)) + " ESCAPE '!')"
+	}
 	if strings.TrimSpace(cursor) != "" {
-		decoded, err := decodeOperatorOperationsCursor(cursor, state, actionableOnly)
+		decoded, err := decodeOperatorOperationsCursor(cursor, state, actionableOnly, query, sort)
 		if err != nil {
 			return OperatorOperationsResult{}, err
 		}
 		args = append(args, decoded.UpdatedAt, decoded.ID)
-		where += " AND (o.updated_at,o.id)<($" + strconv.Itoa(len(args)-1) + ",$" + strconv.Itoa(len(args)) + ")"
+		operator := "<"
+		if ascending {
+			operator = ">"
+		}
+		where += " AND (o.updated_at,o.id)" + operator + "($" + strconv.Itoa(len(args)-1) + ",$" + strconv.Itoa(len(args)) + ")"
 	}
 	args = append(args, limit+1)
+	order := "DESC"
+	if ascending {
+		order = "ASC"
+	}
 	rows, err := db.QueryContext(ctx, `SELECT o.id,s.name,o.state,o.updated_at,
 		a.id,a.order_id,a.captain_actor_id,a.state,a.version,COALESCE(h.state,'')
 		FROM dsh.commerce_orders o
@@ -326,7 +355,7 @@ func ListOrdersForOperator(ctx context.Context, db *sql.DB, state string, action
 			ORDER BY created_at DESC LIMIT 1
 		) a ON TRUE
 		LEFT JOIN dsh.captain_handoffs h ON h.assignment_id=a.id
-		WHERE `+where+" ORDER BY o.updated_at DESC,o.id DESC LIMIT $"+strconv.Itoa(len(args)), args...)
+		WHERE `+where+" ORDER BY o.updated_at "+order+",o.id "+order+" LIMIT $"+strconv.Itoa(len(args)), args...)
 	if err != nil {
 		return OperatorOperationsResult{}, err
 	}
@@ -356,7 +385,7 @@ func ListOrdersForOperator(ctx context.Context, db *sql.DB, state string, action
 	if len(operations) > limit {
 		last := operations[limit-1]
 		result.Operations = operations[:limit]
-		result.NextCursor = encodeOperatorOperationsCursor(operatorOperationsCursor{UpdatedAt: last.UpdatedAt, ID: last.OrderID, State: state, ActionableOnly: actionableOnly})
+		result.NextCursor = encodeOperatorOperationsCursor(operatorOperationsCursor{UpdatedAt: last.UpdatedAt, ID: last.OrderID, State: state, ActionableOnly: actionableOnly, Query: query, Sort: sort})
 	}
 	return result, nil
 }
@@ -381,16 +410,22 @@ func encodeOperatorOperationsCursor(cursor operatorOperationsCursor) string {
 	return base64.RawURLEncoding.EncodeToString(value)
 }
 
-func decodeOperatorOperationsCursor(raw, state string, actionableOnly bool) (operatorOperationsCursor, error) {
+func decodeOperatorOperationsCursor(raw, state string, actionableOnly bool, query, sort string) (operatorOperationsCursor, error) {
 	value, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
 	if err != nil {
 		return operatorOperationsCursor{}, ErrOperatorOperationInvalidCursor
 	}
 	var cursor operatorOperationsCursor
-	if err := json.Unmarshal(value, &cursor); err != nil || cursor.ID == "" || cursor.UpdatedAt.IsZero() || cursor.State != strings.TrimSpace(state) || cursor.ActionableOnly != actionableOnly {
+	if err := json.Unmarshal(value, &cursor); err != nil || cursor.ID == "" || cursor.UpdatedAt.IsZero() || cursor.State != strings.TrimSpace(state) || cursor.ActionableOnly != actionableOnly || cursor.Query != strings.TrimSpace(query) || cursor.Sort != strings.TrimSpace(sort) {
 		return operatorOperationsCursor{}, ErrOperatorOperationInvalidCursor
 	}
 	return cursor, nil
+}
+
+func escapeOperatorOperationSearch(value string) string {
+	value = strings.ReplaceAll(value, "!", "!!")
+	value = strings.ReplaceAll(value, "%", "!%")
+	return strings.ReplaceAll(value, "_", "!_")
 }
 
 const orderSelectColumns = `o.id,o.client_actor_id,o.store_id,o.cart_id,o.fulfillment_mode,COALESCE(o.address_id,''),COALESCE(o.address_version,0),COALESCE(o.address_text,''),COALESCE(o.address_latitude,0),COALESCE(o.address_longitude,0),o.service_city_id,COALESCE(o.serviceability_policy_version,''),COALESCE(o.serviceability_status,''),o.serviceability_store_version,COALESCE(o.serviceability_address_version,0),o.state,o.subtotal_amount_minor,o.discount_minor,o.promotion_id,o.promotion_code,o.total_amount_minor,o.currency,o.payment_intent_id,o.payment_method,o.payment_state,o.version,o.created_at,o.updated_at,COALESCE((SELECT h.state FROM dsh.commerce_order_store_cash_handoffs h WHERE h.order_id=o.id),'')`

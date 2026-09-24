@@ -490,6 +490,8 @@ test("operator operations uses the DSH read model and resource actions", async (
   await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "operations"]);
   let mutationBody: Record<string, unknown> | undefined;
   let requestedCursor = "";
+  let requestedSearch = "";
+  let requestedSort = "";
   const operation = {
     orderId: "order_ready",
     state: "READY_FOR_DISPATCH",
@@ -509,6 +511,8 @@ test("operator operations uses the DSH read model and resource actions", async (
       return;
     }
     requestedCursor = requestUrl.searchParams.get("cursor") ?? "";
+    requestedSearch = requestUrl.searchParams.get("q") ?? "";
+    requestedSort = requestUrl.searchParams.get("sort") ?? "updated_desc";
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -533,6 +537,14 @@ test("operator operations uses the DSH read model and resource actions", async (
   await expect(page.getByRole("heading", { name: "العمليات" })).toBeVisible();
   await expect(page.getByText("order_ready")).toBeVisible();
   await expect(page.getByRole("button", { name: "إرسال للتوزيع" })).toBeVisible();
+  const searchBox = page.getByRole("searchbox", { name: "البحث في رقم الطلب أو اسم المتجر" });
+  await searchBox.fill("متجر الاختبار");
+  await searchBox.press("Enter");
+  await expect.poll(() => requestedSearch).toBe("متجر الاختبار");
+  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe("متجر الاختبار");
+  await page.getByLabel("ترتيب حسب آخر تحديث").selectOption("updated_asc");
+  await expect.poll(() => requestedSort).toBe("updated_asc");
+  await expect.poll(() => new URL(page.url()).searchParams.get("sort")).toBe("updated_asc");
   await page.getByRole("link", { name: "order_ready" }).click();
   await expect(page.getByText("شارع الاختبار")).toBeVisible();
   await expect(page.getByText("الدفع نقدًا عند الاستلام · بانتظار التحصيل عند التسليم")).toBeVisible();
@@ -540,11 +552,13 @@ test("operator operations uses the DSH read model and resource actions", async (
   await page.goBack();
   await page.getByRole("button", { name: "إرسال للتوزيع" }).click();
   expect(mutationBody).toMatchObject({ action: "dispatch", orderId: "order_ready" });
+  await searchBox.fill("");
+  await searchBox.press("Enter");
   await page.getByRole("button", { name: "قراءة الصفحة التالية" }).click();
   await expect(page.getByText("لا توجد أعمال في هذا النطاق")).toBeVisible();
   await expect(page.getByRole("button", { name: "قراءة الصفحة التالية" })).toHaveCount(0);
   expect(requestedCursor).toBe("cursor-page-2");
-  await expect(page.getByRole("textbox")).toHaveCount(0);
+  await expect(page.getByRole("searchbox")).toHaveCount(1);
 });
 
 test("operator finance reads only the bounded COD cash-custody projection", async ({ page }) => {
