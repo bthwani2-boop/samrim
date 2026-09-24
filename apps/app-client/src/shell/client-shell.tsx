@@ -49,14 +49,14 @@ function ClientHeader({ context, searchOnCurrentRoute = false, focus: rawFocus, 
       {isSearchOpen ? (
         <View style={styles.headerSearchActions}>
           <BthwaniSearchField
-            accessibilityLabel="البحث في المتاجر"
+            accessibilityLabel="البحث عن متجر أو منتج"
             autoCapitalize="none"
             autoCorrect={false}
             containerStyle={styles.headerSearchField}
             inputRef={searchInputRef}
             onChangeText={(value) => { if (navigation) navigation.setParams({ q: value }); else router.setParams({ q: value }); }}
             onClear={() => { if (navigation) navigation.setParams({ q: "" }); else router.setParams({ q: "" }); }}
-            placeholder="ابحث باسم المتجر"
+            placeholder="ابحث عن متجر أو منتج"
             returnKeyType="search"
             value={searchQuery}
           />
@@ -72,7 +72,7 @@ function ClientHeader({ context, searchOnCurrentRoute = false, focus: rawFocus, 
             </View>
           </View>
           <View style={styles.headerActions}>
-            <BthwaniIconButton icon="search" label="البحث عن متجر" onPress={() => { if (searchOnCurrentRoute) { if (navigation) navigation.setParams({ focus: "search" }); else router.setParams({ focus: "search" }); } else if (navigation) navigation.navigate("home", { focus: "search" }); else router.push("/home?focus=search" as Href); }} size={sizing.controlMd} tone="soft" />
+            <BthwaniIconButton icon="search" label="البحث عن متجر أو منتج" onPress={() => { if (searchOnCurrentRoute) { if (navigation) navigation.setParams({ focus: "search" }); else router.setParams({ focus: "search" }); } else if (navigation) navigation.navigate("home", { focus: "search" }); else router.push("/home?focus=search" as Href); }} size={sizing.controlMd} tone="soft" />
             <BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/notifications" as Href)} size={sizing.controlMd} tone="soft" />
             <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlMd} tone="soft" />
             <BthwaniIconButton icon="cart" label="سلة التسوق" onPress={() => router.push("/multi-store-checkout" as Href)} size={sizing.controlMd} tone="soft" />

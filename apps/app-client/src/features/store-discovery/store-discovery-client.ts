@@ -1,4 +1,4 @@
-import { type CartResponse, type CatalogStoreOffer, createDshMobileClient, type DiscoveryContentEventRequest, type DiscoveryContentListResponse, type DiscoveryContentTargetResolution, type MultiStoreCheckoutRequest, type MultiStoreCheckoutResponse, type PromotionListResponse, type PublicCatalogResponse, type PublicStoreView, type PublishedStoreListResponse, type ServiceabilityResponse } from "@bthwani/dsh";
+import { type CartResponse, type CatalogStoreOffer, createDshMobileClient, type DiscoveryContentEventRequest, type DiscoveryContentListResponse, type DiscoveryContentTargetResolution, type MultiStoreCheckoutRequest, type MultiStoreCheckoutResponse, type PromotionListResponse, type PublicCatalogResponse, type PublicCatalogSearchResponse, type PublicStoreView, type PublishedStoreListResponse, type ServiceabilityResponse } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { listOwnDeliveryAddresses } from "../location-core/delivery-address-client";
@@ -49,6 +49,10 @@ export async function readPublishedStore(storeID: string, serviceCityID: string)
 
 export async function readPublicStoreCatalog(storeID: string, serviceCityID: string, categoryID = "", query = "", limit = 20, cursor = ""): Promise<PublicCatalogResponse> {
   return client().readPublicStoreCatalog(storeID, serviceCityID, categoryID, query, limit, cursor);
+}
+
+export async function searchPublicCatalog(serviceCityID: string, query: string, categoryID = "", limit = 20, cursor = ""): Promise<PublicCatalogSearchResponse> {
+  return client().searchPublicCatalog(serviceCityID, query, categoryID, limit, cursor);
 }
 
 export async function evaluateStoreServiceability(storeID: string, addressID: string): Promise<ServiceabilityResponse> {
