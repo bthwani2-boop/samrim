@@ -1,7 +1,8 @@
 "use client";
 
-import { captainAssignmentStateLabel, captainHandoffStateLabel, formatMoney, formatOrderDate, orderStateLabel, paymentMethodLabel, paymentStateLabel, type OperatorOperation } from "@bthwani/dsh";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { formatOrderDate, orderStateLabel, type OperatorOperation } from "@bthwani/dsh";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "../access/identity-error-message";
 import { operationActionLabel, resolveOperatorAction, type OperatorAction } from "./operator-actions";
@@ -18,60 +19,68 @@ const filterOptions: ReadonlyArray<Readonly<{ value: string; label: string }>> =
 export function OperationsWorkspace() {
   const [operations, setOperations] = useState<ReadonlyArray<OperatorOperation>>([]);
   const [filter, setFilter] = useState("");
+  const [cursor, setCursor] = useState("");
+  const [urlReady, setUrlReady] = useState(false);
   const [busy, setBusy] = useState("");
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [nextCursor, setNextCursor] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [details, setDetails] = useState<Readonly<Record<string, OperatorOperation>>>({});
-  const [detailBusy, setDetailBusy] = useState("");
+  const loadSequence = useRef(0);
 
-  const load = useCallback(async (cursor = "", append = false) => {
-    if (append) setLoadingMore(true);
-    else setLoading(true);
+  const syncFromUrl = useCallback(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedState = params.get("state") ?? "";
+    setFilter(filterOptions.some((option) => option.value === requestedState) ? requestedState : "");
+    setCursor(params.get("cursor") ?? "");
+  }, []);
+
+  useEffect(() => {
+    syncFromUrl();
+    setUrlReady(true);
+    window.addEventListener("popstate", syncFromUrl);
+    return () => window.removeEventListener("popstate", syncFromUrl);
+  }, [syncFromUrl]);
+
+  const navigateQuery = useCallback((state: string, pageCursor: string) => {
+    const params = new URLSearchParams(window.location.search);
+    if (state) params.set("state", state);
+    else params.delete("state");
+    if (pageCursor) params.set("cursor", pageCursor);
+    else params.delete("cursor");
+    const query = params.toString();
+    window.history.pushState({}, "", window.location.pathname + (query ? `?${query}` : ""));
+    setFilter(state);
+    setCursor(pageCursor);
+  }, []);
+
+  const load = useCallback(async () => {
+    const sequence = ++loadSequence.current;
+    setLoading(true);
     setError("");
     try {
       const query = new URLSearchParams({ limit: "50" });
       if (filter) query.set("state", filter);
       if (cursor) query.set("cursor", cursor);
       const response = await fetch("/api/operations?" + query.toString(), { cache: "no-store" });
+      if (sequence !== loadSequence.current) return;
       if (!response.ok) {
         setError(await responseMessage(response));
         return;
       }
       const body = await response.json() as { operations?: ReadonlyArray<OperatorOperation>; nextCursor?: string };
-      setOperations((current) => append ? [...current, ...(body.operations ?? [])] : (body.operations ?? []));
+      if (sequence !== loadSequence.current) return;
+      setOperations(body.operations ?? []);
       setNextCursor(body.nextCursor ?? "");
-      if (!append) setDetails({});
     } catch (cause) {
+      if (sequence !== loadSequence.current) return;
       setError(isRequestFailure(cause) ? cause.message : "تعذر قراءة مركز العمليات.");
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      if (sequence === loadSequence.current) setLoading(false);
     }
-  }, [filter]);
+  }, [cursor, filter]);
 
-  useEffect(() => { void load(); }, [load]);
-
-  async function readDetail(orderId: string) {
-    if (details[orderId] || detailBusy === orderId) return;
-    setDetailBusy(orderId);
-    setError("");
-    try {
-      const response = await fetch("/api/operations/" + encodeURIComponent(orderId), { cache: "no-store" });
-      if (!response.ok) {
-        setError(await responseMessage(response));
-        return;
-      }
-      const body = await response.json() as { operation?: OperatorOperation };
-      if (body.operation) setDetails((current) => ({ ...current, [orderId]: body.operation as OperatorOperation }));
-    } catch (cause) {
-      setError(isRequestFailure(cause) ? cause.message : "تعذر إعادة قراءة تفاصيل العملية.");
-    } finally {
-      setDetailBusy("");
-    }
-  }
+  useEffect(() => { if (urlReady) void load(); }, [load, urlReady]);
 
   async function runAction(action: OperatorAction, item: OperatorOperation) {
     if (resolveOperatorAction(item) !== action) return;
@@ -113,7 +122,7 @@ export function OperationsWorkspace() {
       <div className="workspace-toolbar">
         <label className="field-label" htmlFor="operations-state-filter">
           تصفية العمل
-          <select id="operations-state-filter" value={filter} onChange={(event) => setFilter(event.target.value)} disabled={Boolean(busy)}>
+          <select id="operations-state-filter" value={filter} onChange={(event) => navigateQuery(event.target.value, "")} disabled={Boolean(busy)}>
             {filterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
@@ -139,27 +148,10 @@ export function OperationsWorkspace() {
               {operations.map((item) => {
                 const order = item.order;
                 const action = resolveOperatorAction(item);
-                const detail = details[order.id] ?? item;
                 const actionBusy = action ? busy === action + ":" + order.id : false;
                 return (
                   <tr key={order.id}>
-                    <th scope="row">
-                      <details className="operation-details" onToggle={(event) => { if (event.currentTarget.open) void readDetail(order.id); }}>
-                        <summary><bdi dir="ltr">{order.id}</bdi></summary>
-                        <div className="operation-detail-body">
-                          {detailBusy === order.id ? <span role="status">جارٍ إعادة قراءة التفاصيل…</span> : null}
-                          <span>{detail.order.lines.length} عناصر · {formatMoney(detail.order.totalAmountMinor, detail.order.currency)}</span>
-                          <span>الدفع: {paymentMethodLabel(detail.order.paymentMethod)} · {paymentStateLabel(detail.order.paymentState)}</span>
-                          <span>العنوان: {detail.order.addressText}</span>
-                          <span>قابلية الخدمة مثبتة ضمن لقطة الطلب المعتمدة.</span>
-                          <ul>
-                            {detail.order.lines.map((line) => <li key={line.id}>{line.productName}{line.variantTitle ? ` · ${line.variantTitle}` : ""} · {line.finalQuantityBaseUnits} · {formatMoney(line.lineAmountMinor, line.currency)}</li>)}
-                          </ul>
-                          {detail.assignment ? <span>التكليف: {captainAssignmentStateLabel(detail.assignment.state)} · تسليم المتجر: {captainHandoffStateLabel(detail.assignment.handoffState)}</span> : <span>لا يوجد تكليف كابتن حالي.</span>}
-                          <span>آخر تحديث <time dateTime={detail.order.updatedAt}>{formatOrderDate(detail.order.updatedAt)}</time></span>
-                        </div>
-                      </details>
-                    </th>
+                    <th scope="row"><Link href={`/operations/${encodeURIComponent(order.id)}`}><bdi dir="ltr">{order.id}</bdi></Link></th>
                     <td>{item.storeName}</td>
                     <td><span className={"status-badge status-" + order.state.toLowerCase()}>{orderStateLabel(order.state)}</span></td>
                     <td><time dateTime={order.updatedAt}>{formatOrderDate(order.updatedAt)}</time></td>
@@ -177,7 +169,7 @@ export function OperationsWorkspace() {
           </table>
         </div>
       ) : null}
-      {nextCursor ? <div className="workspace-toolbar"><button type="button" className="button button-secondary" onClick={() => void load(nextCursor, true)} disabled={loading || loadingMore || Boolean(busy)}>{loadingMore ? "جارٍ قراءة المزيد…" : "قراءة الصفحة التالية"}</button></div> : null}
+      {nextCursor ? <div className="workspace-toolbar"><button type="button" className="button button-secondary" onClick={() => navigateQuery(filter, nextCursor)} disabled={loading || Boolean(busy)}>قراءة الصفحة التالية</button></div> : null}
     </section>
   );
 }
