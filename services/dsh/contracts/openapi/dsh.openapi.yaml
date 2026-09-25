@@ -336,6 +336,27 @@ paths:
   /dsh/me/payout-state:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1me~1payout-state"
 
+  /dsh/operator/actors/{actorId}/legal-name:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1actors~1{actorId}~1legal-name"
+
+  /dsh/operator/actors/{actorId}/legal-name/pending:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1actors~1{actorId}~1legal-name~1pending"
+
+  /dsh/operator/actors/{actorId}/legal-name/{version}/verify:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1actors~1{actorId}~1legal-name~1{version}~1verify"
+
+  /dsh/me/wallet:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1me~1wallet"
+
+  /dsh/me/funding-intents:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1me~1funding-intents"
+
+  /dsh/me/funding-intents/{fundingIntentId}:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1me~1funding-intents~1{fundingIntentId}"
+
+  /dsh/me/funding-intents/{fundingIntentId}/simulate:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1me~1funding-intents~1{fundingIntentId}~1simulate"
+
   /dsh/me/payout-intents:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1me~1payout-intents"
 
@@ -353,6 +374,12 @@ paths:
 
   /dsh/operator/payout-requests:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1payout-requests"
+  /dsh/operator/beneficiaries:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1beneficiaries"
+  /dsh/operator/beneficiaries/{actorType}/{actorId}/financial-statement:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1beneficiaries~1{actorType}~1{actorId}~1financial-statement"
+  /dsh/operator/financial-statements:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1financial-statements"
   /dsh/operator/payout-requests/{payoutId}:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1payout-requests~1{payoutId}"
   /dsh/operator/payout-requests/{payoutId}/prepare:
@@ -365,6 +392,8 @@ paths:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1settlement-batches"
   /dsh/operator/settlement-batches/{batchId}:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1settlement-batches~1{batchId}"
+  /dsh/operator/settlement-batches/{batchId}/export:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1settlement-batches~1{batchId}~1export"
   /dsh/operator/settlement-batches/{batchId}/approve:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1settlement-batches~1{batchId}~1approve"
   /dsh/operator/settlement-batches/{batchId}/freeze:
@@ -375,6 +404,30 @@ paths:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1transfers~1{transferId}~1verify"
   /dsh/operator/transfers/{transferId}/reconcile:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1transfers~1{transferId}~1reconcile"
+  /dsh/operator/finance-evidence-documents:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1finance-evidence-documents"
+  /dsh/operator/finance-evidence-documents/{documentId}:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1finance-evidence-documents~1{documentId}"
+  /dsh/operator/settlement-statements:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1settlement-statements"
+  /dsh/operator/settlement-statements/{statementId}/rows:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1settlement-statements~1{statementId}~1rows"
+  /dsh/operator/customer-withdrawal-request-evidence:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1customer-withdrawal-request-evidence"
+  /dsh/operator/customer-withdrawal-intakes:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1customer-withdrawal-intakes"
+  /dsh/operator/customer-withdrawal-intakes/{intakeId}:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1customer-withdrawal-intakes~1{intakeId}"
+  /dsh/operator/customer-withdrawal-intakes/{intakeId}/prepare-destination:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1customer-withdrawal-intakes~1{intakeId}~1prepare-destination"
+  /dsh/operator/customer-withdrawal-intakes/{intakeId}/verify-destination:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1customer-withdrawal-intakes~1{intakeId}~1verify-destination"
+  /dsh/operator/customer-withdrawal-intakes/{intakeId}/activate-destination:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1customer-withdrawal-intakes~1{intakeId}~1activate-destination"
+  /dsh/operator/customer-withdrawal-intakes/{intakeId}/accept:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1customer-withdrawal-intakes~1{intakeId}~1accept"
+  /dsh/operator/customer-withdrawal-intakes/{intakeId}/reject:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1customer-withdrawal-intakes~1{intakeId}~1reject"
 
   /dsh/stores/{storeId}/orders:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders"
@@ -4947,13 +5000,13 @@ components:
     OfficialWalletDestination:
       type: object
       additionalProperties: false
-      required: [id, actorType, actorId, providerKey, walletIdentifierMasked, beneficiaryName, verificationStatus, status, version, changeReason, submittedBy, submittedAt, verifiedBy, verifiedAt, approvedBy, approvedAt, verificationEvidenceReference, changeEvidenceReference, createdAt, updatedAt]
+      required: [id, actorType, actorId, providerKey, walletIdentifierMasked, beneficiaryName, beneficiaryIdentityVersion, verificationStatus, status, version, changeReason, submittedBy, submittedAt, verifiedBy, verifiedAt, approvedBy, approvedAt, verificationEvidenceReference, changeEvidenceReference, createdAt, updatedAt]
       properties:
         id:
           type: string
         actorType:
           type: string
-          enum: [partner, captain, field]
+          enum: [customer, partner, captain, field]
         actorId:
           type: string
         providerKey:
@@ -4962,6 +5015,125 @@ components:
           type: string
         beneficiaryName:
           type: string
+          maxLength: 320
+        beneficiaryIdentityVersion:
+          type: integer
+          minimum: 1
+        verificationStatus:
+          type: string
+          enum: [PENDING_VERIFICATION, VERIFIED, REJECTED]
+        status:
+          type: string
+          enum: [CANDIDATE, PENDING_APPROVAL, ACTIVE_FOR_PAYOUT, SUSPENDED, RETIRED]
+        version:
+          type: integer
+          minimum: 1
+        changeReason:
+          type: string
+        submittedBy:
+          type: string
+        submittedAt:
+          type: string
+          format: date-time
+        verifiedBy:
+          type: string
+          nullable: true
+        verifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+        approvedBy:
+          type: string
+          nullable: true
+        approvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        verificationEvidenceReference:
+          type: string
+        changeEvidenceReference:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ActorLegalName:
+      type: object
+      additionalProperties: false
+      required: [actorId, version, givenName, secondName, thirdName, familyName, status, source, evidenceReference, submittedByActorId, submittedAt]
+      properties:
+        actorId:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        givenName:
+          type: string
+        secondName:
+          type: string
+        thirdName:
+          type: string
+        familyName:
+          type: string
+        status:
+          type: string
+          enum: [PENDING_VERIFICATION, VERIFIED, REJECTED]
+        source:
+          type: string
+          const: GOVERNED_IDENTITY_DOCUMENT_REVIEW
+        evidenceReference:
+          type: string
+        submittedByActorId:
+          type: string
+        submittedAt:
+          type: string
+          format: date-time
+        verifiedByActorId:
+          type: string
+          nullable: true
+        verifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+        verificationEvidenceReference:
+          type: string
+          nullable: true
+    SubmitActorLegalNameRequest:
+      type: object
+      additionalProperties: false
+      required: [givenName, secondName, thirdName, familyName, evidenceReference]
+      properties:
+        givenName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        secondName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        thirdName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        familyName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        evidenceReference:
+          type: string
+          minLength: 1
+          maxLength: 512
+    VerifyActorLegalNameRequest:
+      type: object
+      additionalProperties: false
+      required: [evidenceReference]
+      properties:
+        evidenceReference:
+          type: string
+          minLength: 1
+          maxLength: 512
         verificationStatus:
           type: string
           enum: [PENDING_VERIFICATION, VERIFIED, REJECTED]
@@ -5012,7 +5184,7 @@ components:
           type: string
         actorType:
           type: string
-          enum: [partner, captain, field]
+          enum: [customer, partner, captain, field]
         actorId:
           type: string
         amountMode:
@@ -5048,7 +5220,7 @@ components:
     SettlementBatch:
       type: object
       additionalProperties: false
-      required: [id, providerKey, currency, status, rowCount, totalAmountMinor, createdBy, createdAt, approvedBy, approvedAt, frozenBy, frozenAt, batchHash]
+      required: [id, providerKey, currency, status, rowCount, totalAmountMinor, createdBy, createdAt, approvedBy, approvedAt, frozenBy, frozenAt, batchHash, items]
       properties:
         id:
           type: string
@@ -5088,11 +5260,76 @@ components:
         batchHash:
           type: string
           nullable: true
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SettlementBatchItem"
+
+    SettlementBatchExport:
+      type: object
+      additionalProperties: false
+      required: [id, batchId, evidenceDocumentId, filename, contentType, sha256, sizeBytes, rowCount, totalAmountMinor, currency, generatedBy, createdAt]
+      properties:
+        id:
+          type: string
+        batchId:
+          type: string
+        evidenceDocumentId:
+          type: string
+        filename:
+          type: string
+        contentType:
+          type: string
+          const: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+        sha256:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        sizeBytes:
+          type: integer
+          minimum: 1
+        rowCount:
+          type: integer
+          minimum: 1
+        totalAmountMinor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        generatedBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    SettlementBatchItem:
+      type: object
+      additionalProperties: false
+      required: [payoutId, actorType, actorId, amountMinor, currency, payoutStatus]
+      properties:
+        payoutId:
+          type: string
+        actorType:
+          type: string
+          enum: [partner, captain, field]
+        actorId:
+          type: string
+        amountMinor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        payoutStatus:
+          type: string
+          enum: [HELD, CANCELLED, PREPARED, APPROVED, FROZEN, EXECUTED, COMPLETED, EXCEPTION]
+        transfer:
+          $ref: "#/components/schemas/ManualTransferExecution"
 
     ManualTransferExecution:
       type: object
       additionalProperties: false
-      required: [id, batchId, payoutId, approvedSnapshotHash, executedBy, executedAt, providerKey, externalTransferReference, amountMinor, currency, destinationId, destinationVersion, evidenceReference, executionStatus, verifiedBy, verifiedAt, statementReference, reconciledBy, reconciledAt]
+      required: [id, batchId, payoutId, approvedSnapshotHash, executedBy, executedAt, providerKey, externalTransferReference, amountMinor, currency, destinationId, destinationVersion, receiptDocumentId, executionStatus, verifiedBy, verifiedAt, statementRowId, reconciledBy, reconciledAt]
       properties:
         id:
           type: string
@@ -5122,7 +5359,7 @@ components:
         destinationVersion:
           type: integer
           minimum: 1
-        evidenceReference:
+        receiptDocumentId:
           type: string
         executionStatus:
           type: string
@@ -5134,7 +5371,7 @@ components:
           type: string
           format: date-time
           nullable: true
-        statementReference:
+        statementRowId:
           type: string
           nullable: true
         reconciledBy:
@@ -5145,6 +5382,256 @@ components:
           format: date-time
           nullable: true
 
+    FinanceEvidenceDocument:
+      type: object
+      additionalProperties: false
+      required: [id, purpose, filename, contentType, sha256, sizeBytes, uploadedBy, createdAt]
+      properties:
+        id:
+          type: string
+        purpose:
+          type: string
+          enum: [TRANSFER_RECEIPT, SETTLEMENT_STATEMENT, CUSTOMER_WITHDRAWAL_REQUEST]
+        filename:
+          type: string
+        contentType:
+          type: string
+        sha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        sizeBytes:
+          type: integer
+          minimum: 1
+          maximum: 10485760
+        uploadedBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateCustomerWithdrawalIntakeRequest:
+      type: object
+      additionalProperties: false
+      required: [customerActorId, providerKey, walletIdentifier, requestReason, requestEvidenceDocumentId]
+      properties:
+        customerActorId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        providerKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+        walletIdentifier:
+          type: string
+          pattern: '^\+[1-9][0-9]{7,14}$'
+        requestReason:
+          type: string
+          minLength: 1
+          maxLength: 512
+        requestEvidenceDocumentId:
+          type: string
+          minLength: 1
+          maxLength: 128
+
+    CustomerWithdrawalDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 512
+
+    CustomerWithdrawalDestinationVerificationRequest:
+      type: object
+      additionalProperties: false
+      required: [evidenceReference]
+      properties:
+        evidenceReference:
+          type: string
+          minLength: 1
+          maxLength: 512
+
+    CustomerWithdrawalIntake:
+      type: object
+      additionalProperties: false
+      required: [id, customerActorId, providerKey, walletIdentifierMasked, beneficiaryName, beneficiaryIdentityVersion, requestReason, requestEvidenceDocumentId, status, requestedBy, requestedAt, currency, eligibleAvailableMinor, heldMinor]
+      properties:
+        id:
+          type: string
+        customerActorId:
+          type: string
+        providerKey:
+          type: string
+        walletIdentifierMasked:
+          type: string
+        beneficiaryName:
+          type: string
+        beneficiaryIdentityVersion:
+          type: integer
+          minimum: 1
+        requestReason:
+          type: string
+        requestEvidenceDocumentId:
+          type: string
+        status:
+          type: string
+          enum: [REQUESTED, DESTINATION_PENDING, PAYOUT_HELD, REJECTED, COMPLETED]
+        destinationId:
+          type: string
+          nullable: true
+        payoutId:
+          type: string
+          nullable: true
+        requestedBy:
+          type: string
+        requestedAt:
+          type: string
+          format: date-time
+        financeActorId:
+          type: string
+          nullable: true
+        resolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        resolutionReason:
+          type: string
+          nullable: true
+        currency:
+          type: string
+          const: YER
+        eligibleAvailableMinor:
+          type: integer
+          minimum: 0
+        heldMinor:
+          type: integer
+          minimum: 0
+
+    CustomerWithdrawalIntakeResponse:
+      type: object
+      additionalProperties: false
+      required: [intake]
+      properties:
+        intake:
+          $ref: "#/components/schemas/CustomerWithdrawalIntake"
+        idempotentReplay:
+          type: boolean
+
+    CustomerWithdrawalIntakeListResponse:
+      type: object
+      additionalProperties: false
+      required: [intakes, limit]
+      properties:
+        intakes:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomerWithdrawalIntake"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+
+    CashInFundingIntent:
+      type: object
+      additionalProperties: false
+      required: [id, actorType, actorId, fundingPurpose, providerKey, externalReference, amountMinor, currency, state, version, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        actorType:
+          type: string
+          enum: [customer, captain]
+        actorId:
+          type: string
+        fundingPurpose:
+          type: string
+          enum: [CUSTOMER_TOPUP, CAPTAIN_TOPUP]
+        providerKey:
+          type: string
+        externalReference:
+          type: string
+        providerReference:
+          type: string
+          nullable: true
+        providerTransactionReference:
+          type: string
+          nullable: true
+        amountMinor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        state:
+          type: string
+          enum: [PENDING_PROVIDER, UNKNOWN, FAILED, SETTLED]
+        version:
+          type: integer
+          minimum: 1
+        ledgerTransactionId:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    BeneficiaryWalletState:
+      type: object
+      additionalProperties: false
+      required: [actorType, actorId, currency, ledgerBalanceMinor, heldMinor, availableMinor, cashInEnabled, simulator]
+      properties:
+        actorType:
+          type: string
+          enum: [customer, captain]
+        actorId:
+          type: string
+        currency:
+          type: string
+          const: YER
+        ledgerBalanceMinor:
+          type: integer
+          minimum: 0
+        heldMinor:
+          type: integer
+          minimum: 0
+        availableMinor:
+          type: integer
+          minimum: 0
+        cashInEnabled:
+          type: boolean
+        simulator:
+          type: boolean
+
+    BeneficiaryWalletResponse:
+      type: object
+      additionalProperties: false
+      required: [state, fundingIntents]
+      properties:
+        state:
+          $ref: "#/components/schemas/BeneficiaryWalletState"
+        fundingIntents:
+          type: array
+          items:
+            $ref: "#/components/schemas/CashInFundingIntent"
+
+    BeneficiaryFundingIntentResponse:
+      type: object
+      additionalProperties: false
+      required: [intent, simulator, idempotentReplay]
+      properties:
+        intent:
+          $ref: "#/components/schemas/CashInFundingIntent"
+        simulator:
+          type: boolean
+        idempotentReplay:
+          type: boolean
+
     BeneficiaryPayoutState:
       type: object
       additionalProperties: false
@@ -5152,7 +5639,7 @@ components:
       properties:
         actorType:
           type: string
-          enum: [partner, captain, field]
+          enum: [customer, partner, captain, field]
         actorId:
           type: string
         currency:

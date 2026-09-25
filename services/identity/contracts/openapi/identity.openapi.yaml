@@ -65,6 +65,15 @@ paths:
     $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1operators~1{actorId}~1permissions~1{permission}"
   /internal/actors/{actorId}/roles/{role}:
     $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1actors~1{actorId}~1roles~1{role}"
+  /internal/actors/{actorId}/legal-name:
+    $ref: "./paths/actor-legal-name.yaml#/paths/~1internal~1actors~1{actorId}~1legal-name"
+  /internal/actors/{actorId}/verified-legal-name:
+    $ref: "./paths/actor-legal-name.yaml#/paths/~1internal~1actors~1{actorId}~1verified-legal-name"
+
+  /internal/actors/{actorId}/pending-legal-name:
+    $ref: "./paths/actor-legal-name.yaml#/paths/~1internal~1actors~1{actorId}~1pending-legal-name"
+  /internal/actors/{actorId}/legal-name/{version}/verify:
+    $ref: "./paths/actor-legal-name.yaml#/paths/~1internal~1actors~1{actorId}~1legal-name~1{version}~1verify"
   /internal/actors/{actorId}/roles/{role}/disable:
     $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1actors~1{actorId}~1roles~1{role}~1disable"
   /internal/actors/{actorId}/roles/{role}/enable:
@@ -589,6 +598,96 @@ components:
           type: integer
         nextCursor:
           type: string
+    ActorLegalName:
+      type: object
+      additionalProperties: false
+      required: [actorId, version, givenName, secondName, thirdName, familyName, status, source, evidenceReference, submittedByActorId, submittedAt]
+      properties:
+        actorId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        version:
+          type: integer
+          minimum: 1
+        givenName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        secondName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        thirdName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        familyName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        status:
+          type: string
+          enum: [PENDING_VERIFICATION, VERIFIED, REJECTED]
+        source:
+          type: string
+          const: GOVERNED_IDENTITY_DOCUMENT_REVIEW
+        evidenceReference:
+          type: string
+          minLength: 1
+          maxLength: 512
+        submittedByActorId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        submittedAt:
+          type: string
+          format: date-time
+        verifiedByActorId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        verifiedAt:
+          type: string
+          format: date-time
+        verificationEvidenceReference:
+          type: string
+          minLength: 1
+          maxLength: 512
+    SubmitActorLegalNameRequest:
+      type: object
+      additionalProperties: false
+      required: [givenName, secondName, thirdName, familyName, evidenceReference]
+      properties:
+        givenName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        secondName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        thirdName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        familyName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        evidenceReference:
+          type: string
+          minLength: 1
+          maxLength: 512
+    VerifyActorLegalNameRequest:
+      type: object
+      additionalProperties: false
+      required: [evidenceReference]
+      properties:
+        evidenceReference:
+          type: string
+          minLength: 1
+          maxLength: 512
 
     SessionInfo:
       type: object

@@ -1,0 +1,71 @@
+.statement {
+  break-inside: avoid;
+}
+
+.periodRegister {
+  display: none;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+@media print {
+  :global(body *) {
+    visibility: hidden !important;
+  }
+
+  :global(#beneficiary-financial-statement-print),
+  :global(#beneficiary-financial-statement-print *),
+  :global(#partner-period-register-print),
+  :global(#partner-period-register-print *) {
+    visibility: visible !important;
+  }
+
+  :global(#partner-period-register-print) {
+    display: block !important;
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    color: #111 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    border: 0 !important;
+  }
+
+  :global(#beneficiary-financial-statement-print) {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    color: #111 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    border: 0 !important;
+  }
+
+  .actions,
+  :global(#beneficiary-financial-statement-print button) {
+    display: none !important;
+  }
+
+  :global(#beneficiary-financial-statement-print table),
+  :global(#partner-period-register-print table) {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    break-inside: auto;
+  }
+
+  :global(#beneficiary-financial-statement-print tr) {
+    break-inside: avoid;
+  }
+}

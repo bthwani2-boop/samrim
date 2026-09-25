@@ -12,6 +12,7 @@ const pathModulePaths = [
   path.join(root, "services/identity/contracts/openapi/paths/operator-passkey-access.yaml"),
   path.join(root, "services/identity/contracts/openapi/paths/session.yaml"),
   path.join(root, "services/identity/contracts/openapi/paths/internal-actor-administration.yaml"),
+  path.join(root, "services/identity/contracts/openapi/paths/actor-legal-name.yaml"),
 ];
 const outputPath = path.join(root, "services/identity/clients/generated/identity-types.ts");
 const operationsOutputPath = path.join(root, "services/identity/clients/generated/identity-operations.ts");
@@ -65,6 +66,9 @@ const schemaNames = [
   "ProvisionActorRoleRequest",
   "ActorRoleView",
   "ActorRoleSearchPage",
+  "ActorLegalName",
+  "SubmitActorLegalNameRequest",
+  "VerifyActorLegalNameRequest",
   "OperatorPermission",
   "OperatorPermissionAccess",
   "SetOperatorPermissionRequest",

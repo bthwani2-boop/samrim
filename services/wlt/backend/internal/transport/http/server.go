@@ -3,6 +3,7 @@ package http
 import (
 	"crypto/subtle"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/cashin"
 	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/storage/postgres"
 )
 
@@ -19,9 +21,12 @@ type Server struct {
 	db                       *sql.DB
 	serviceToken             string
 	destinationEncryptionKey *postgres.DestinationCipher
+	financeEvidenceCipher    *postgres.DestinationCipher
+	cashInRail               cashin.CashInRail
+	cashInSimulatorEnabled   bool
 }
 
-func New(db *sql.DB, serviceToken, destinationEncryptionKey string) (*Server, error) {
+func New(db *sql.DB, serviceToken, destinationEncryptionKey string, financeEvidenceEncryptionKey ...string) (*Server, error) {
 	if db == nil || strings.TrimSpace(serviceToken) == "" {
 		return nil, errors.New("WLT HTTP server configuration is invalid")
 	}
@@ -29,7 +34,32 @@ func New(db *sql.DB, serviceToken, destinationEncryptionKey string) (*Server, er
 	if err != nil {
 		return nil, err
 	}
-	return &Server{db: db, serviceToken: strings.TrimSpace(serviceToken), destinationEncryptionKey: cipher}, nil
+	if len(financeEvidenceEncryptionKey) != 1 || strings.TrimSpace(financeEvidenceEncryptionKey[0]) == "" {
+		return nil, errors.New("WLT_FINANCE_EVIDENCE_ENCRYPTION_KEY is required")
+	}
+	evidenceCipher, err := postgres.NewDestinationCipher(financeEvidenceEncryptionKey[0])
+	if err != nil {
+		return nil, err
+	}
+	return &Server{db: db, serviceToken: strings.TrimSpace(serviceToken), destinationEncryptionKey: cipher, financeEvidenceCipher: evidenceCipher}, nil
+}
+
+func NewWithCashInConfig(db *sql.DB, serviceToken, destinationEncryptionKey, financeEvidenceEncryptionKey, cashInMode, environment string) (*Server, error) {
+	server, err := New(db, serviceToken, destinationEncryptionKey, financeEvidenceEncryptionKey)
+	if err != nil {
+		return nil, err
+	}
+	mode := strings.ToLower(strings.TrimSpace(cashInMode))
+	environment = strings.ToLower(strings.TrimSpace(environment))
+	if mode == "" || mode == "disabled" {
+		return server, nil
+	}
+	if mode != "simulator" || environment != "development" {
+		return nil, errors.New("WLT Cash-In simulator is permitted only in development; production requires an approved real rail")
+	}
+	server.cashInRail = cashin.DevelopmentSimulator{}
+	server.cashInSimulatorEnabled = true
+	return server, nil
 }
 
 func (s *Server) Register(mux *http.ServeMux) {
@@ -73,17 +103,39 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/payout-intents", s.createPayoutIntent)
 	mux.HandleFunc("GET /wlt/v1/payout-state/{actorType}/{actorId}", s.readPayoutState)
 	mux.HandleFunc("GET /wlt/v1/operator/payout-requests", s.listPayoutRequests)
+	mux.HandleFunc("GET /wlt/v1/operator/beneficiaries", s.listBeneficiaryPayoutStates)
+	mux.HandleFunc("GET /wlt/v1/operator/beneficiaries/{actorType}/{actorId}/financial-statement", s.readFinancialStatement)
+	mux.HandleFunc("GET /wlt/v1/operator/financial-statements", s.listFinancialStatementSummaries)
 	mux.HandleFunc("GET /wlt/v1/operator/payout-requests/{payoutId}", s.readOperatorPayoutRequest)
 	mux.HandleFunc("POST /wlt/v1/operator/payout-requests/{payoutId}/prepare", s.preparePayout)
 	mux.HandleFunc("POST /wlt/v1/operator/payout-requests/{payoutId}/approve", s.approvePayout)
 	mux.HandleFunc("POST /wlt/v1/operator/payout-requests/{payoutId}/cancel", s.cancelPayout)
 	mux.HandleFunc("POST /wlt/v1/operator/settlement-batches", s.createSettlementBatch)
+	mux.HandleFunc("GET /wlt/v1/operator/settlement-batches", s.listSettlementBatches)
 	mux.HandleFunc("GET /wlt/v1/operator/settlement-batches/{batchId}", s.readSettlementBatch)
+	mux.HandleFunc("POST /wlt/v1/operator/settlement-batches/{batchId}/export", s.exportSettlementBatch)
 	mux.HandleFunc("POST /wlt/v1/operator/settlement-batches/{batchId}/approve", s.approveSettlementBatch)
 	mux.HandleFunc("POST /wlt/v1/operator/settlement-batches/{batchId}/freeze", s.freezeSettlementBatch)
 	mux.HandleFunc("POST /wlt/v1/operator/settlement-batches/{batchId}/transfers", s.recordManualTransfer)
 	mux.HandleFunc("POST /wlt/v1/operator/transfers/{transferId}/verify", s.verifyManualTransfer)
 	mux.HandleFunc("POST /wlt/v1/operator/transfers/{transferId}/reconcile", s.reconcileManualTransfer)
+	mux.HandleFunc("POST /wlt/v1/operator/settlement-statements", s.registerSettlementStatement)
+	mux.HandleFunc("POST /wlt/v1/operator/settlement-statements/{statementId}/rows", s.recordSettlementStatementRow)
+	mux.HandleFunc("POST /wlt/v1/operator/finance-evidence-documents", s.uploadFinanceEvidenceDocument)
+	mux.HandleFunc("GET /wlt/v1/operator/finance-evidence-documents/{documentId}", s.readFinanceEvidenceDocument)
+	mux.HandleFunc("POST /wlt/v1/operator/customer-withdrawal-intakes", s.createCustomerWithdrawalIntake)
+	mux.HandleFunc("GET /wlt/v1/operator/customer-withdrawal-intakes", s.listCustomerWithdrawalIntakes)
+	mux.HandleFunc("GET /wlt/v1/operator/customer-withdrawal-intakes/{intakeId}", s.readCustomerWithdrawalIntake)
+	mux.HandleFunc("POST /wlt/v1/operator/customer-withdrawal-intakes/{intakeId}/prepare-destination", s.prepareCustomerWithdrawalDestination)
+	mux.HandleFunc("POST /wlt/v1/operator/customer-withdrawal-intakes/{intakeId}/accept", s.acceptCustomerWithdrawal)
+	mux.HandleFunc("POST /wlt/v1/operator/customer-withdrawal-intakes/{intakeId}/reject", s.rejectCustomerWithdrawal)
+	mux.HandleFunc("POST /wlt/v1/wallets/{actorType}/{actorId}/funding-intents", s.createCashInFundingIntent)
+	mux.HandleFunc("GET /wlt/v1/wallets/{actorType}/{actorId}/state", s.readWalletState)
+	mux.HandleFunc("GET /wlt/v1/wallets/{actorType}/{actorId}/funding-intents", s.listCashInFundingIntents)
+	mux.HandleFunc("GET /wlt/v1/funding-intents/{fundingIntentId}", s.readCashInFundingIntent)
+	if s.cashInSimulatorEnabled {
+		mux.HandleFunc("POST /wlt/v1/development/funding-intents/{fundingIntentId}/simulate", s.simulateCashInFundingIntent)
+	}
 }
 
 type createRequest struct {
@@ -193,6 +245,7 @@ type createOfficialWalletDestinationRequest struct {
 	ProviderKey                   string `json:"providerKey"`
 	WalletIdentifier              string `json:"walletIdentifier"`
 	BeneficiaryName               string `json:"beneficiaryName"`
+	BeneficiaryIdentityVersion    int    `json:"beneficiaryIdentityVersion"`
 	ChangeReason                  string `json:"changeReason"`
 	VerificationEvidenceReference string `json:"verificationEvidenceReference"`
 	ChangeEvidenceReference       string `json:"changeEvidenceReference"`
@@ -221,6 +274,7 @@ type officialWalletDestinationJSON struct {
 	ProviderKey                   string  `json:"providerKey"`
 	WalletIdentifierMasked        string  `json:"walletIdentifierMasked"`
 	BeneficiaryName               string  `json:"beneficiaryName"`
+	BeneficiaryIdentityVersion    int     `json:"beneficiaryIdentityVersion"`
 	VerificationStatus            string  `json:"verificationStatus"`
 	Status                        string  `json:"status"`
 	Version                       int     `json:"version"`
@@ -270,6 +324,19 @@ type payoutStateJSON struct {
 	HeldMinor              int64                          `json:"heldMinor"`
 	Destination            *officialWalletDestinationJSON `json:"destination"`
 	LatestPayout           *payoutRequestJSON             `json:"latestPayout"`
+}
+
+type beneficiaryPayoutRegistryResponse struct {
+	Beneficiaries []payoutStateJSON `json:"beneficiaries"`
+	NextCursor    string            `json:"nextCursor,omitempty"`
+	Limit         int               `json:"limit"`
+}
+
+type beneficiaryPayoutRegistryCursor struct {
+	Sort      string `json:"sort"`
+	SortValue int64  `json:"sortValue"`
+	ActorType string `json:"actorType"`
+	ActorID   string `json:"actorId"`
 }
 
 type partnerOrderEarningResponse struct {
@@ -1207,7 +1274,7 @@ func (s *Server) createOfficialWalletDestination(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
 		return
 	}
-	result, replayed, err := postgres.CreateOfficialWalletDestination(r.Context(), s.db, s.destinationEncryptionKey, postgres.CreateOfficialWalletDestinationInput{ActorType: input.ActorType, ActorID: input.ActorID, ProviderKey: input.ProviderKey, WalletIdentifier: input.WalletIdentifier, BeneficiaryName: input.BeneficiaryName, ChangeReason: input.ChangeReason, VerificationEvidenceReference: input.VerificationEvidenceReference, ChangeEvidenceReference: input.ChangeEvidenceReference, SubmittedBy: actor, IdempotencyKey: idempotency, CorrelationID: correlation})
+	result, replayed, err := postgres.CreateOfficialWalletDestination(r.Context(), s.db, s.destinationEncryptionKey, postgres.CreateOfficialWalletDestinationInput{ActorType: input.ActorType, ActorID: input.ActorID, ProviderKey: input.ProviderKey, WalletIdentifier: input.WalletIdentifier, BeneficiaryName: input.BeneficiaryName, BeneficiaryIdentityVersion: input.BeneficiaryIdentityVersion, ChangeReason: input.ChangeReason, VerificationEvidenceReference: input.VerificationEvidenceReference, ChangeEvidenceReference: input.ChangeEvidenceReference, SubmittedBy: actor, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writeDestinationError(w, err)
 		return
@@ -1289,6 +1356,10 @@ func (s *Server) createPayoutIntent(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
+	if strings.EqualFold(strings.TrimSpace(input.ActorType), "customer") {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "customer withdrawals require a linked Operations intake and cannot use the general payout-intent route")
+		return
+	}
 	result, replayed, err := postgres.CreatePayoutIntent(r.Context(), s.db, postgres.PayoutIntentInput{ActorType: input.ActorType, ActorID: input.ActorID, AmountMode: input.AmountMode, AmountMinor: input.AmountMinor, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writePayoutError(w, err)
@@ -1311,6 +1382,57 @@ func (s *Server) readPayoutState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, payoutStateResponse{State: toPayoutState(result)})
+}
+
+func (s *Server) listBeneficiaryPayoutStates(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) || !s.requireActingOperator(w, r) {
+		return
+	}
+	limit := 50
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 100 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "beneficiary page limit is invalid")
+			return
+		}
+		limit = parsed
+	}
+	sortKey := strings.TrimSpace(r.URL.Query().Get("sort"))
+	if sortKey == "" {
+		sortKey = "actor_asc"
+	}
+	if !postgres.ValidBeneficiaryRegistrySort(sortKey) {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "beneficiary sort is invalid")
+		return
+	}
+	var cursorState beneficiaryPayoutRegistryCursor
+	if cursor := strings.TrimSpace(r.URL.Query().Get("cursor")); cursor != "" {
+		decoded, err := base64.RawURLEncoding.DecodeString(cursor)
+		if err != nil || len(decoded) > 384 || json.Unmarshal(decoded, &cursorState) != nil || cursorState.Sort != sortKey || cursorState.ActorID == "" || !postgres.ValidPayoutRegistryActor(cursorState.ActorType) {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "beneficiary cursor is invalid")
+			return
+		}
+	}
+	items, more, err := postgres.ListBeneficiaryPayoutStates(r.Context(), s.db, r.URL.Query().Get("actorType"), r.URL.Query().Get("search"), r.URL.Query().Get("status"), sortKey, cursorState.SortValue, cursorState.ActorType, cursorState.ActorID, limit)
+	if err != nil {
+		writePayoutError(w, err)
+		return
+	}
+	result := beneficiaryPayoutRegistryResponse{Beneficiaries: make([]payoutStateJSON, 0, len(items)), Limit: limit}
+	for _, item := range items {
+		result.Beneficiaries = append(result.Beneficiaries, toPayoutState(item.State))
+	}
+	if more && len(items) > 0 {
+		last := items[len(items)-1]
+		cursorBytes, err := json.Marshal(beneficiaryPayoutRegistryCursor{Sort: sortKey, SortValue: last.SortValue, ActorType: last.State.ActorType, ActorID: last.State.ActorID})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "beneficiary cursor could not be created")
+			return
+		}
+		result.NextCursor = base64.RawURLEncoding.EncodeToString(cursorBytes)
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) authorize(w http.ResponseWriter, r *http.Request) bool {
@@ -1408,7 +1530,7 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 }
 
 func toOfficialWalletDestination(item postgres.OfficialWalletDestinationRecord) officialWalletDestinationJSON {
-	return officialWalletDestinationJSON{ID: item.ID, ActorType: item.ActorType, ActorID: item.ActorID, ProviderKey: item.ProviderKey, WalletIdentifierMasked: item.WalletIdentifierMasked, BeneficiaryName: item.BeneficiaryName, VerificationStatus: item.VerificationStatus, Status: item.Status, Version: item.Version, ChangeReason: item.ChangeReason, SubmittedBy: item.SubmittedBy, SubmittedAt: item.SubmittedAt.UTC().Format(time.RFC3339Nano), VerifiedBy: item.VerifiedBy, VerifiedAt: formatNullableTime(item.VerifiedAt), ApprovedBy: item.ApprovedBy, ApprovedAt: formatNullableTime(item.ApprovedAt), VerificationEvidenceReference: item.VerificationEvidenceReference, ChangeEvidenceReference: item.ChangeEvidenceReference, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: item.UpdatedAt.UTC().Format(time.RFC3339Nano)}
+	return officialWalletDestinationJSON{ID: item.ID, ActorType: item.ActorType, ActorID: item.ActorID, ProviderKey: item.ProviderKey, WalletIdentifierMasked: item.WalletIdentifierMasked, BeneficiaryName: item.BeneficiaryName, BeneficiaryIdentityVersion: item.BeneficiaryIdentityVersion, VerificationStatus: item.VerificationStatus, Status: item.Status, Version: item.Version, ChangeReason: item.ChangeReason, SubmittedBy: item.SubmittedBy, SubmittedAt: item.SubmittedAt.UTC().Format(time.RFC3339Nano), VerifiedBy: item.VerifiedBy, VerifiedAt: formatNullableTime(item.VerifiedAt), ApprovedBy: item.ApprovedBy, ApprovedAt: formatNullableTime(item.ApprovedAt), VerificationEvidenceReference: item.VerificationEvidenceReference, ChangeEvidenceReference: item.ChangeEvidenceReference, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: item.UpdatedAt.UTC().Format(time.RFC3339Nano)}
 }
 
 func toPayoutRequest(item postgres.PayoutRequestRecord) payoutRequestJSON {
@@ -1442,6 +1564,8 @@ func writeDestinationError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "official wallet destination was not found")
 	case errors.Is(err, postgres.ErrDestinationState):
 		writeError(w, http.StatusConflict, "STATE_CONFLICT", "official wallet destination state does not allow this operation")
+	case errors.Is(err, postgres.ErrDestinationSeparation):
+		writeError(w, http.StatusConflict, "SEPARATION_OF_DUTIES", "a different operator must verify or approve the destination")
 	case errors.Is(err, postgres.ErrIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different destination facts")
 	default:
@@ -1451,6 +1575,12 @@ func writeDestinationError(w http.ResponseWriter, err error) {
 
 func writePayoutError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, postgres.ErrCustomerWithdrawalNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "customer withdrawal intake was not found")
+	case errors.Is(err, postgres.ErrCustomerWithdrawalState):
+		writeError(w, http.StatusConflict, "STATE_CONFLICT", "customer withdrawal intake state does not allow this operation")
+	case errors.Is(err, postgres.ErrCustomerWithdrawalFunds):
+		writeError(w, http.StatusConflict, "NO_ELIGIBLE_FUNDS", "customer has no eligible internal balance to withdraw")
 	case errors.Is(err, postgres.ErrPayoutDestination):
 		writeError(w, http.StatusConflict, "DESTINATION_UNAVAILABLE", "a verified active official wallet destination is required")
 	case errors.Is(err, postgres.ErrPayoutNoFunds):

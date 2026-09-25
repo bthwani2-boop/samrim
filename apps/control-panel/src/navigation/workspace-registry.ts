@@ -41,9 +41,7 @@ export const workspaceFinanceResources = [
   { key: "overview", href: "/finance", label: "نظرة عامة", description: "اختر مورد المالية المطلوب." },
   { key: "cash-custody", href: "/finance/cash-custody", label: "حفظ النقد", description: "قراءة الالتزامات النقدية المحصلة عند الاستلام." },
   { key: "partner-store-commissions", href: "/finance/partner-store-commissions", label: "عمولات المتاجر", description: "إدارة نسبة كل متجر لكل وضع توصيل بإصدار وسبب موثقين." },
-  { key: "field-earnings", href: "/finance/field-earnings", label: "مستحقات الميدان", description: "قراءة المستحقات المحسوبة للميدانيين." },
-  { key: "partner-earnings", href: "/finance/partner-earnings", label: "مستحقات الشركاء", description: "قراءة المستحقات المحسوبة للشركاء." },
-  { key: "beneficiary-settlement", href: "/finance/beneficiary-settlement", label: "تسويات المستفيدين", description: "إدارة وجهة المستفيد وحالة التسوية الرسمية." }
+  { key: "beneficiary-settlement", href: "/finance/beneficiary-settlement", label: "مستحقات وتسويات الشركاء والكباتن والميدان", description: "سجل موحد لمستحقات الشركاء وكباتن بثواني والميدان وتنفيذ التسويات اليدوية ومطابقتها." }
 ] as const;
 
 export type FinanceResourceKey = (typeof workspaceFinanceResources)[number]["key"];
@@ -68,7 +66,7 @@ export const workspaceDestinations: readonly WorkspaceDestination[] = [
     label: "العمليات",
     permission: "operations",
     childrenNavigation: "top",
-    children: [{ href: "/captains", label: "الكباتن" }]
+    children: [{ href: "/captains", label: "الكباتن" }, { href: "/operations/customer-withdrawals", label: "طلبات سحب العملاء الاستثنائية" }]
   },
   {
     href: "/partners",

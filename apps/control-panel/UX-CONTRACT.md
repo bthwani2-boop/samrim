@@ -38,7 +38,9 @@
 | Date | Native browser date/time input | `premium-ui.json` + browser platform contract | Native picker | Locale + keyboard + E2E |
 | Scrollbar | Global application stylesheet | `DESIGN.md` + generated theme | Default app surface | Computed style + rendered browser check |
 | Form | Feature-owned semantic form and API adapter | Feature contract/API | Create / edit | Targeted E2E |
+| Table selection | `src/features/finance/use-page-selection.ts` | This contract | Visible page only; bulk operations submit only selected canonical record IDs | Keyboard + E2E |
 | CRUD | Owning route and feature service | API contract | Return to owning list after create; stay on detail for review | Full-flow E2E |
+| Finance evidence upload | Finance feature upload control and authenticated Next BFF → DSH → WLT | WLT evidence document | One receipt per transfer; one statement per period/batch | Authorization + type/size + download + reconciliation |
 
 ## Navigation and responsive behavior
 
@@ -78,8 +80,10 @@
 - Migration ledger location: This change is tracked by the route/registry diff and the control-panel E2E navigation assertions; no parallel tracker is introduced.
 - Canonical primitives and owners: `src/navigation/workspace-registry.ts` owns destinations, child route labels and catalog resources; `layout.tsx` owns shell composition.
 - Current resource navigation: Finance and Marketing destinations and child routes are owned by `src/navigation/workspace-registry.ts`.
-- Legacy import/token enforcement: The former partner subnavigation component and screen-local catalog resource registry are removed. New route consumers import the central registry.
-- Rollout/rollback and removal gates: Existing route paths remain unchanged; rollback is a single route-registry/layout revert if browser proof identifies a regression.
+- Finance settlements: `/finance/beneficiary-settlement` is the single operator workspace for partner, BThwani captain, and field payout requests, batch execution, evidence, verification, and reconciliation. Finance page filters and selection are page scoped; WLT remains authoritative for amounts and transitions.
+- Finance upload: receipt evidence is mandatory per transfer; an official wallet statement is uploaded once per period/batch and normalized rows are linked to reconciled transfers. Evidence is private, encrypted at rest by WLT, and accessed through finance-authorized routes only.
+- Legacy finance routes: partner/field earnings routes redirect to the consolidated settlement workspace; commission receivable/remittance remains separately named because it is money owed to BThwani, not beneficiary payout.
+- Rollout/rollback and removal gates: rollback is a single route-registry/feature revert only before any new transfer evidence is written; schema migrations preserve legacy references for historical records and enforce document-backed new execution records.
 
 ## Verification
 

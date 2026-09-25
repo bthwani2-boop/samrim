@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { partnerErrorMessage } from "./partner-error-message";
+import { ActorLegalNameWorkspace } from "./actor-legal-name-workspace";
 import "./partner-detail-workspace.module.css";
 import "./partner-directory.module.css";
 
@@ -173,6 +174,7 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
         <button type="button" className={detail.partner.enabled ? "button button-secondary" : "button button-primary"} disabled={!canChangeStatus || busy || reason.trim().length < 5} onClick={() => void changeStatus()}>{busy ? "جارٍ التحديث والتحقق…" : detail.partner.enabled ? "إيقاف الدور" : "تفعيل الدور"}</button>
         {!canChangeStatus ? <p className="muted">يتاح التحكم بعد اعتماد الانضمام وتسجيل الهوية وبقاء الهوية الأمنية نشطة.</p> : null}
       </section>
+      <ActorLegalNameWorkspace actorId={actorId} />
     </div> : null}
 
     {detail && activeTab === "stores" ? <section className="partner-detail-section" aria-labelledby="partner-stores-title">

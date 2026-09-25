@@ -749,6 +749,159 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PayoutListResponse' }
+  /wlt/v1/operator/beneficiaries:
+    get:
+      operationId: listBeneficiaryPayoutStates
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: actorType
+          in: query
+          required: false
+          schema: { type: string, enum: [partner, captain, field] }
+        - name: search
+          in: query
+          required: false
+          schema: { type: string, maxLength: 128 }
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [NO_REQUEST, HELD, PREPARED, APPROVED, FROZEN, EXECUTED, COMPLETED, EXCEPTION, CANCELLED] }
+        - name: sort
+          in: query
+          required: false
+          schema: { type: string, enum: [actor_asc, actor_desc, available_asc, available_desc, held_asc, held_desc, payout_amount_asc, payout_amount_desc], default: actor_asc }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 512 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: Finance-authorized server-derived beneficiary balances and payout state.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [beneficiaries, limit]
+                properties:
+                  beneficiaries:
+                    type: array
+                    items: { $ref: '#/components/schemas/PayoutState' }
+                  nextCursor: { type: string }
+                  limit: { type: integer }
+  /wlt/v1/operator/beneficiaries/{actorType}/{actorId}/financial-statement:
+    get:
+      operationId: readOperatorBeneficiaryFinancialStatement
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: actorType, in: path, required: true, schema: { type: string, enum: [customer, partner, captain, field] } }
+        - { name: actorId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 512 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 100 } }
+        - { $ref: '#/components/parameters/ActingActorId' }
+      responses:
+        '200':
+          description: Canonical WLT ledger statement for a beneficiary and period.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [actorType, actorId, currency, periodStart, periodEnd, openingBalanceMinor, creditsMinor, debitsMinor, closingBalanceMinor, currentBalanceMinor, entries, limit]
+                properties:
+                  actorType: { type: string }
+                  actorId: { type: string }
+                  currency: { type: string, const: YER }
+                  periodStart: { type: string, format: date }
+                  periodEnd: { type: string, format: date }
+                  openingBalanceMinor: { type: integer }
+                  creditsMinor: { type: integer }
+                  debitsMinor: { type: integer }
+                  closingBalanceMinor: { type: integer }
+                  currentBalanceMinor: { type: integer }
+                  nextCursor: { type: string }
+                  limit: { type: integer }
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      required: [transactionId, transactionType, sourceType, sourceId, direction, amountMinor, currency, createdAt, balanceAfterMinor]
+                      properties:
+                        transactionId: { type: string }
+                        transactionType: { type: string }
+                        sourceType: { type: string }
+                        sourceId: { type: string }
+                        direction: { type: string, enum: [CREDIT, DEBIT] }
+                        amountMinor: { type: integer, minimum: 1 }
+                        currency: { type: string, const: YER }
+                        createdAt: { type: string, format: date-time }
+                        balanceAfterMinor: { type: integer }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '502': { $ref: '#/components/responses/DependencyUnavailable' }
+  /wlt/v1/operator/financial-statements:
+    get:
+      operationId: listOperatorFinancialStatementSummaries
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: actorType, in: query, required: true, schema: { type: string, enum: [customer, partner, captain, field] } }
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 512 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 100 } }
+        - { $ref: '#/components/parameters/ActingActorId' }
+      responses:
+        '200':
+          description: Period summaries grouped by canonical WLT beneficiary wallet.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [actorType, periodStart, periodEnd, summaries, totals, limit]
+                properties:
+                  actorType: { type: string }
+                  periodStart: { type: string, format: date }
+                  periodEnd: { type: string, format: date }
+                  nextCursor: { type: string }
+                  limit: { type: integer }
+                  summaries:
+                    type: array
+                    items:
+                      type: object
+                      required: [actorType, actorId, beneficiaryName, walletIdentifierMasked, currency, openingBalanceMinor, creditsMinor, debitsMinor, closingBalanceMinor, currentBalanceMinor, heldMinor, availableMinor]
+                      properties:
+                        actorType: { type: string }
+                        actorId: { type: string }
+                        beneficiaryName: { type: string }
+                        walletIdentifierMasked: { type: string }
+                        currency: { type: string, const: YER }
+                        openingBalanceMinor: { type: integer }
+                        creditsMinor: { type: integer }
+                        debitsMinor: { type: integer }
+                        closingBalanceMinor: { type: integer }
+                        currentBalanceMinor: { type: integer }
+                        heldMinor: { type: integer, minimum: 0 }
+                        availableMinor: { type: integer }
+                  totals:
+                    type: object
+                    required: [openingBalanceMinor, creditsMinor, debitsMinor, closingBalanceMinor, currentBalanceMinor, heldMinor, availableMinor]
+                    properties:
+                      openingBalanceMinor: { type: integer }
+                      creditsMinor: { type: integer }
+                      debitsMinor: { type: integer }
+                      closingBalanceMinor: { type: integer }
+                      currentBalanceMinor: { type: integer }
+                      heldMinor: { type: integer, minimum: 0 }
+                      availableMinor: { type: integer }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '502': { $ref: '#/components/responses/DependencyUnavailable' }
   /wlt/v1/operator/payout-requests/{payoutId}:
     get:
       operationId: readOperatorPayoutRequest
@@ -825,6 +978,36 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/PayoutRequestResponse' }
   /wlt/v1/operator/settlement-batches:
+    get:
+      operationId: listSettlementBatches
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [DRAFT, PREPARED, APPROVED, FROZEN, EXECUTION_IN_PROGRESS, AWAITING_VERIFICATION, AWAITING_RECONCILIATION, COMPLETED, CANCELLED, EXCEPTION] }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 512 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+      responses:
+        '200':
+          description: Server-derived settlement batch registry.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [batches, limit]
+                properties:
+                  batches:
+                    type: array
+                    items: { $ref: '#/components/schemas/SettlementBatch' }
+                  nextCursor: { type: string }
+                  limit: { type: integer }
     post:
       operationId: createSettlementBatch
       security: [{ serviceToken: [] }]
@@ -854,6 +1037,33 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SettlementBatchResponse' }
+  /wlt/v1/operator/settlement-batches/{batchId}/export:
+    post:
+      operationId: exportSettlementBatch
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: batchId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        '201':
+          description: Immutable XLSX generated from a frozen batch and stored encrypted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [export]
+                properties:
+                  export: { $ref: '#/components/schemas/SettlementBatchExport' }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /wlt/v1/operator/settlement-batches/{batchId}/approve:
     post:
       operationId: approveSettlementBatch
@@ -954,6 +1164,262 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TransferResponse' }
+  /wlt/v1/operator/settlement-statements:
+    post:
+      operationId: registerSettlementStatement
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SettlementStatementRequest' }
+      responses:
+        '201':
+          description: Period or batch statement registered for reconciliation.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettlementStatementResponse' }
+  /wlt/v1/operator/settlement-statements/{statementId}/rows:
+    post:
+      operationId: recordSettlementStatementRow
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: statementId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SettlementStatementRowRequest' }
+      responses:
+        '201':
+          description: Normalized statement row recorded for matching.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettlementStatementRowResponse' }
+  /wlt/v1/operator/finance-evidence-documents:
+    post:
+      operationId: uploadFinanceEvidenceDocument
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [purpose, file]
+              properties:
+                purpose: { type: string, enum: [TRANSFER_RECEIPT, SETTLEMENT_STATEMENT, CUSTOMER_WITHDRAWAL_REQUEST] }
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: Encrypted finance evidence stored and fingerprinted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FinanceEvidenceDocumentResponse' }
+  /wlt/v1/operator/finance-evidence-documents/{documentId}:
+    get:
+      operationId: readFinanceEvidenceDocument
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: Private finance evidence document; never publicly cached.
+          headers:
+            Cache-Control: { schema: { type: string, const: 'private, no-store' } }
+          content:
+            application/pdf: { schema: { type: string, format: binary } }
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+            text/csv: { schema: { type: string, format: binary } }
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: { schema: { type: string, format: binary } }
+  /wlt/v1/operator/customer-withdrawal-intakes:
+    get:
+      operationId: listCustomerWithdrawalIntakes
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string, enum: [REQUESTED, DESTINATION_PENDING, PAYOUT_HELD, REJECTED, COMPLETED] }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        '200':
+          description: Operations-originated exceptional customer withdrawal requests.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerWithdrawalIntakeListResponse' }
+    post:
+      operationId: createCustomerWithdrawalIntake
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CustomerWithdrawalIntakeRequest' }
+      responses:
+        '201':
+          description: Customer withdrawal intake recorded; no funds have been held.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerWithdrawalIntakeResponse' }
+        '200':
+          description: Idempotent replay of the same intake.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerWithdrawalIntakeResponse' }
+  /wlt/v1/operator/customer-withdrawal-intakes/{intakeId}:
+    get:
+      operationId: readCustomerWithdrawalIntake
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: intakeId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      responses:
+        '200':
+          description: Customer withdrawal intake details, with masked destination only.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerWithdrawalIntakeResponse' }
+  /wlt/v1/operator/customer-withdrawal-intakes/{intakeId}/prepare-destination:
+    post:
+      operationId: prepareCustomerWithdrawalDestination
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: intakeId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PayoutActionRequest' }
+      responses:
+        '201':
+          description: Finance-created destination candidate for the exceptional withdrawal.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OfficialWalletDestinationResponse' }
+  /wlt/v1/operator/customer-withdrawal-intakes/{intakeId}/accept:
+    post:
+      operationId: acceptCustomerWithdrawal
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: intakeId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PayoutActionRequest' }
+      responses:
+        '201':
+          description: Finance acceptance resolved current customer wallet availability and created a linked hold-backed payout.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PayoutRequestResponse' }
+  /wlt/v1/operator/customer-withdrawal-intakes/{intakeId}/reject:
+    post:
+      operationId: rejectCustomerWithdrawal
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: intakeId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PayoutActionRequest' }
+      responses:
+        '200':
+          description: Customer withdrawal intake rejected without changing wallet funds.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerWithdrawalIntakeResponse' }
+  /wlt/v1/wallets/{actorType}/{actorId}/state:
+    get:
+      operationId: readWalletState
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: actorType, in: path, required: true, schema: { type: string, enum: [customer, captain] } }
+        - { name: actorId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      responses:
+        '200':
+          description: WLT-derived wallet balance, holds, and Cash-In runtime availability.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WalletStateResponse' }
+  /wlt/v1/wallets/{actorType}/{actorId}/funding-intents:
+    get:
+      operationId: listCashInFundingIntents
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: actorType, in: path, required: true, schema: { type: string, enum: [customer, captain] } }
+        - { name: actorId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        '200':
+          description: Recent server-owned Cash-In funding intents.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CashInFundingIntentListResponse' }
+    post:
+      operationId: createCashInFundingIntent
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: actorType, in: path, required: true, schema: { type: string, enum: [customer, captain] } }
+        - { name: actorId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCashInFundingIntentRequest' }
+      responses:
+        '201':
+          description: Funding intent created through the configured rail.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CashInFundingIntentResponse' }
+        '200':
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CashInFundingIntentResponse' }
+        '503':
+          description: No approved production Cash-In rail is configured.
+  /wlt/v1/funding-intents/{fundingIntentId}:
+    get:
+      operationId: readCashInFundingIntent
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: fundingIntentId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      responses:
+        '200':
+          description: Canonical funding intent readback.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CashInFundingIntentReadResponse' }
+  /wlt/v1/development/funding-intents/{fundingIntentId}/simulate:
+    post:
+      operationId: simulateCashInFundingOutcome
+      description: Development-only simulator route; not registered unless BTHWANI_ENV=development and WLT_CASH_IN_MODE=simulator.
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: fundingIntentId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+        - { $ref: '#/components/parameters/ActingActorId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SimulateCashInFundingOutcomeRequest' }
+      responses:
+        '200':
+          description: Simulated result applied to WLT, if valid for the current funding-intent state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CashInFundingIntentResponse' }
 
 components:
   securitySchemes:
@@ -1002,6 +1468,80 @@ components:
       required: true
       schema: { type: string, minLength: 1, maxLength: 128 }
   schemas:
+    WalletState:
+      type: object
+      additionalProperties: false
+      required: [actorType, actorId, currency, ledgerBalanceMinor, heldMinor, availableMinor, cashInEnabled, simulator]
+      properties:
+        actorType: { type: string, enum: [customer, captain] }
+        actorId: { type: string }
+        currency: { type: string, const: YER }
+        ledgerBalanceMinor: { type: integer }
+        heldMinor: { type: integer, minimum: 0 }
+        availableMinor: { type: integer }
+        cashInEnabled: { type: boolean }
+        simulator: { type: boolean }
+    WalletStateResponse:
+      type: object
+      additionalProperties: false
+      required: [state]
+      properties:
+        state: { $ref: '#/components/schemas/WalletState' }
+    CreateCashInFundingIntentRequest:
+      type: object
+      additionalProperties: false
+      required: [amountMinor]
+      properties:
+        amountMinor: { type: integer, minimum: 1 }
+    CashInFundingIntent:
+      type: object
+      additionalProperties: false
+      required: [id, actorType, actorId, fundingPurpose, providerKey, externalReference, amountMinor, currency, state, version, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        actorType: { type: string, enum: [customer, captain] }
+        actorId: { type: string }
+        fundingPurpose: { type: string, enum: [CUSTOMER_TOPUP, CAPTAIN_TOPUP] }
+        providerKey: { type: string }
+        externalReference: { type: string }
+        providerReference: { type: string }
+        providerTransactionReference: { type: string }
+        amountMinor: { type: integer, minimum: 1 }
+        currency: { type: string, const: YER }
+        state: { type: string, enum: [PENDING_PROVIDER, UNKNOWN, FAILED, SETTLED] }
+        version: { type: integer, minimum: 1 }
+        ledgerTransactionId: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CashInFundingIntentResponse:
+      type: object
+      additionalProperties: false
+      required: [intent, simulator, idempotentReplay]
+      properties:
+        intent: { $ref: '#/components/schemas/CashInFundingIntent' }
+        simulator: { type: boolean }
+        idempotentReplay: { type: boolean }
+    CashInFundingIntentReadResponse:
+      type: object
+      additionalProperties: false
+      required: [intent]
+      properties:
+        intent: { $ref: '#/components/schemas/CashInFundingIntent' }
+    CashInFundingIntentListResponse:
+      type: object
+      additionalProperties: false
+      required: [items, simulator]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/CashInFundingIntent' }
+        simulator: { type: boolean }
+    SimulateCashInFundingOutcomeRequest:
+      type: object
+      additionalProperties: false
+      required: [outcome]
+      properties:
+        outcome: { type: string, enum: [SUCCESS, FAILURE, UNKNOWN, DELAYED] }
     FinalizePartnerOrderEarningRequest:
       type: object
       additionalProperties: false
@@ -1204,13 +1744,14 @@ components:
     CreateOfficialWalletDestinationRequest:
       type: object
       additionalProperties: false
-      required: [actorType, actorId, providerKey, walletIdentifier, beneficiaryName, changeReason, verificationEvidenceReference, changeEvidenceReference]
+      required: [actorType, actorId, providerKey, walletIdentifier, beneficiaryName, beneficiaryIdentityVersion, changeReason, verificationEvidenceReference, changeEvidenceReference]
       properties:
         actorType: { type: string, enum: [partner, captain, field] }
         actorId: { type: string, minLength: 1, maxLength: 128 }
         providerKey: { type: string, minLength: 1, maxLength: 128 }
-        walletIdentifier: { type: string, minLength: 1, maxLength: 256 }
-        beneficiaryName: { type: string, minLength: 1, maxLength: 256 }
+        walletIdentifier: { type: string, minLength: 9, maxLength: 16, pattern: '^\+[1-9][0-9]{7,14}$', description: 'Official-wallet phone number in canonical E.164 format; distinct from the actor ID and login phone.' }
+        beneficiaryName: { type: string, minLength: 1, maxLength: 320 }
+        beneficiaryIdentityVersion: { type: integer, minimum: 1 }
         changeReason: { type: string, minLength: 1, maxLength: 512 }
         verificationEvidenceReference: { type: string, maxLength: 512 }
         changeEvidenceReference: { type: string, maxLength: 512 }
@@ -1223,14 +1764,15 @@ components:
     OfficialWalletDestination:
       type: object
       additionalProperties: false
-      required: [id, actorType, actorId, providerKey, walletIdentifierMasked, beneficiaryName, verificationStatus, status, version, changeReason, submittedBy, submittedAt, verificationEvidenceReference, changeEvidenceReference, createdAt, updatedAt]
+      required: [id, actorType, actorId, providerKey, walletIdentifierMasked, beneficiaryName, beneficiaryIdentityVersion, verificationStatus, status, version, changeReason, submittedBy, submittedAt, verificationEvidenceReference, changeEvidenceReference, createdAt, updatedAt]
       properties:
         id: { type: string }
-        actorType: { type: string, enum: [partner, captain, field] }
+        actorType: { type: string, enum: [customer, partner, captain, field] }
         actorId: { type: string }
         providerKey: { type: string }
         walletIdentifierMasked: { type: string }
         beneficiaryName: { type: string }
+        beneficiaryIdentityVersion: { type: integer, minimum: 1 }
         verificationStatus: { type: string }
         status: { type: string }
         version: { type: integer, minimum: 1 }
@@ -1267,7 +1809,7 @@ components:
       required: [id, actorType, actorId, amountMode, resolvedAmountMinor, currency, destinationId, destinationVersion, status, policyVersion, createdAt]
       properties:
         id: { type: string }
-        actorType: { type: string, enum: [partner, captain, field] }
+        actorType: { type: string, enum: [customer, partner, captain, field] }
         actorId: { type: string }
         amountMode: { type: string, enum: [FULL_AVAILABLE, SPECIFIED] }
         requestedAmountMinor: { type: integer, minimum: 1, nullable: true }
@@ -1291,7 +1833,7 @@ components:
       additionalProperties: false
       required: [actorType, actorId, currency, eligibleAvailableMinor, heldMinor]
       properties:
-        actorType: { type: string, enum: [partner, captain, field] }
+        actorType: { type: string, enum: [customer, partner, captain, field] }
         actorId: { type: string }
         currency: { type: string, const: YER }
         eligibleAvailableMinor: { type: integer }
@@ -1337,7 +1879,7 @@ components:
     SettlementBatch:
       type: object
       additionalProperties: false
-      required: [id, providerKey, currency, status, rowCount, totalAmountMinor, createdBy, createdAt]
+      required: [id, providerKey, currency, status, rowCount, totalAmountMinor, createdBy, createdAt, items]
       properties:
         id: { type: string }
         providerKey: { type: string }
@@ -1352,36 +1894,129 @@ components:
         frozenBy: { type: string, nullable: true }
         frozenAt: { type: string, format: date-time, nullable: true }
         batchHash: { type: string }
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [payoutId, actorType, actorId, amountMinor, currency, payoutStatus]
+            properties:
+              payoutId: { type: string }
+              actorType: { type: string, enum: [partner, captain, field] }
+              actorId: { type: string }
+              amountMinor: { type: integer, minimum: 1 }
+              currency: { type: string, const: YER }
+              payoutStatus: { type: string }
+              transfer: { $ref: '#/components/schemas/ManualTransferExecution' }
     SettlementBatchResponse:
       type: object
       additionalProperties: false
       required: [batch]
       properties:
         batch: { $ref: '#/components/schemas/SettlementBatch' }
+    SettlementBatchExport:
+      type: object
+      additionalProperties: false
+      required: [id, batchId, evidenceDocumentId, filename, contentType, sha256, sizeBytes, rowCount, totalAmountMinor, currency, generatedBy, createdAt]
+      properties:
+        id: { type: string }
+        batchId: { type: string }
+        evidenceDocumentId: { type: string }
+        filename: { type: string }
+        contentType: { type: string, const: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        sizeBytes: { type: integer, minimum: 1 }
+        rowCount: { type: integer, minimum: 1 }
+        totalAmountMinor: { type: integer, minimum: 1 }
+        currency: { type: string, const: YER }
+        generatedBy: { type: string }
+        createdAt: { type: string, format: date-time }
     TransferRecordRequest:
       type: object
       additionalProperties: false
-      required: [payoutId, externalTransferReference, evidenceReference]
+      required: [payoutId, externalTransferReference, receiptDocumentId]
       properties:
         payoutId: { type: string, minLength: 1, maxLength: 128 }
         externalTransferReference: { type: string, minLength: 1, maxLength: 256 }
-        evidenceReference: { type: string, minLength: 1, maxLength: 512 }
+        receiptDocumentId: { type: string, minLength: 1, maxLength: 128 }
     TransferVerifyRequest:
       type: object
       additionalProperties: false
-      required: [evidenceReference]
-      properties:
-        evidenceReference: { type: string, minLength: 1, maxLength: 512 }
+      properties: {}
     TransferReconcileRequest:
       type: object
       additionalProperties: false
-      required: [statementReference]
+      required: [statementRowId]
       properties:
-        statementReference: { type: string, minLength: 1, maxLength: 512 }
+        statementRowId: { type: string, minLength: 1, maxLength: 128 }
+    SettlementStatementRequest:
+      type: object
+      additionalProperties: false
+      required: [providerKey, currency, periodStart, periodEnd, evidenceDocumentId]
+      properties:
+        batchId: { type: string, maxLength: 128 }
+        providerKey: { type: string, minLength: 1, maxLength: 64 }
+        currency: { type: string, const: YER }
+        periodStart: { type: string, format: date }
+        periodEnd: { type: string, format: date }
+        evidenceDocumentId: { type: string, minLength: 1, maxLength: 128 }
+    SettlementStatementRowRequest:
+      type: object
+      additionalProperties: false
+      required: [rowSequence, externalTransferReference, walletIdentifier, amountMinor, currency, transactionAt]
+      properties:
+        rowSequence: { type: integer, minimum: 1 }
+        externalTransferReference: { type: string, minLength: 1, maxLength: 160 }
+        walletIdentifier: { type: string, minLength: 9, maxLength: 16, pattern: '^\+[1-9][0-9]{7,14}$', writeOnly: true, description: 'Official-wallet phone number in canonical E.164 format.' }
+        amountMinor: { type: integer, minimum: 1 }
+        currency: { type: string, const: YER }
+        transactionAt: { type: string, format: date-time }
+    SettlementStatement:
+      type: object
+      additionalProperties: false
+      required: [id, providerKey, currency, periodStart, periodEnd, evidenceDocumentId, filename, artifactSha256, uploadedBy, createdAt]
+      properties:
+        id: { type: string }
+        batchId: { type: string, nullable: true }
+        providerKey: { type: string }
+        currency: { type: string, const: YER }
+        periodStart: { type: string, format: date }
+        periodEnd: { type: string, format: date }
+        evidenceDocumentId: { type: string }
+        filename: { type: string }
+        artifactSha256: { type: string }
+        uploadedBy: { type: string }
+        createdAt: { type: string, format: date-time }
+    SettlementStatementResponse:
+      type: object
+      additionalProperties: false
+      required: [statement]
+      properties:
+        statement: { $ref: '#/components/schemas/SettlementStatement' }
+    SettlementStatementRow:
+      type: object
+      additionalProperties: false
+      required: [id, statementId, rowSequence, externalTransferReference, amountMinor, currency, transactionAt, recordedBy]
+      properties:
+        id: { type: string }
+        statementId: { type: string }
+        rowSequence: { type: integer }
+        externalTransferReference: { type: string }
+        amountMinor: { type: integer }
+        currency: { type: string, const: YER }
+        transactionAt: { type: string, format: date-time }
+        recordedBy: { type: string }
+        matchedTransferId: { type: string, nullable: true }
+    SettlementStatementRowResponse:
+      type: object
+      additionalProperties: false
+      required: [row]
+      properties:
+        row: { $ref: '#/components/schemas/SettlementStatementRow' }
     ManualTransferExecution:
       type: object
       additionalProperties: false
-      required: [id, batchId, payoutId, approvedSnapshotHash, executedBy, executedAt, providerKey, externalTransferReference, amountMinor, currency, destinationId, destinationVersion, evidenceReference, executionStatus]
+      required: [id, batchId, payoutId, approvedSnapshotHash, executedBy, executedAt, providerKey, externalTransferReference, amountMinor, currency, destinationId, destinationVersion, receiptDocumentId, executionStatus]
       properties:
         id: { type: string }
         batchId: { type: string }
@@ -1395,13 +2030,79 @@ components:
         currency: { type: string, const: YER }
         destinationId: { type: string }
         destinationVersion: { type: integer, minimum: 1 }
-        evidenceReference: { type: string }
+        receiptDocumentId: { type: string }
         executionStatus: { type: string }
         verifiedBy: { type: string, nullable: true }
         verifiedAt: { type: string, format: date-time, nullable: true }
-        statementReference: { type: string, nullable: true }
+        statementRowId: { type: string, nullable: true }
         reconciledBy: { type: string, nullable: true }
         reconciledAt: { type: string, format: date-time, nullable: true }
+    FinanceEvidenceDocument:
+      type: object
+      additionalProperties: false
+      required: [id, purpose, filename, contentType, sha256, sizeBytes, uploadedBy, createdAt]
+      properties:
+        id: { type: string }
+        purpose: { type: string, enum: [TRANSFER_RECEIPT, SETTLEMENT_STATEMENT, CUSTOMER_WITHDRAWAL_REQUEST] }
+        filename: { type: string }
+        contentType: { type: string, enum: [application/pdf, image/jpeg, image/png, text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet] }
+        sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        sizeBytes: { type: integer, minimum: 1, maximum: 10485760 }
+        uploadedBy: { type: string }
+        createdAt: { type: string, format: date-time }
+    FinanceEvidenceDocumentResponse:
+      type: object
+      additionalProperties: false
+      required: [document]
+      properties:
+        document: { $ref: '#/components/schemas/FinanceEvidenceDocument' }
+    CustomerWithdrawalIntakeRequest:
+      type: object
+      additionalProperties: false
+      required: [customerActorId, providerKey, walletIdentifier, beneficiaryName, beneficiaryIdentityVersion, requestReason, requestEvidenceDocumentId]
+      properties:
+        customerActorId: { type: string, minLength: 1, maxLength: 128 }
+        providerKey: { type: string, minLength: 1, maxLength: 64 }
+        walletIdentifier: { type: string, pattern: '^\+[1-9][0-9]{7,14}$' }
+        beneficiaryName: { type: string, minLength: 1, maxLength: 320, readOnly: true }
+        beneficiaryIdentityVersion: { type: integer, minimum: 1, readOnly: true }
+        requestReason: { type: string, minLength: 1, maxLength: 512 }
+        requestEvidenceDocumentId: { type: string, minLength: 1, maxLength: 128 }
+    CustomerWithdrawalIntake:
+      type: object
+      additionalProperties: false
+      required: [id, customerActorId, providerKey, walletIdentifierMasked, beneficiaryName, beneficiaryIdentityVersion, requestReason, requestEvidenceDocumentId, status, requestedBy, requestedAt]
+      properties:
+        id: { type: string }
+        customerActorId: { type: string }
+        providerKey: { type: string }
+        walletIdentifierMasked: { type: string }
+        beneficiaryName: { type: string }
+        beneficiaryIdentityVersion: { type: integer, minimum: 1 }
+        requestReason: { type: string }
+        requestEvidenceDocumentId: { type: string }
+        status: { type: string, enum: [REQUESTED, DESTINATION_PENDING, PAYOUT_HELD, REJECTED, COMPLETED] }
+        destinationId: { type: string, nullable: true }
+        payoutId: { type: string, nullable: true }
+        requestedBy: { type: string }
+        requestedAt: { type: string, format: date-time }
+        financeActorId: { type: string, nullable: true }
+        resolvedAt: { type: string, format: date-time, nullable: true }
+        resolutionReason: { type: string, nullable: true }
+    CustomerWithdrawalIntakeResponse:
+      type: object
+      additionalProperties: false
+      required: [intake]
+      properties:
+        intake: { $ref: '#/components/schemas/CustomerWithdrawalIntake' }
+        idempotentReplay: { type: boolean }
+    CustomerWithdrawalIntakeListResponse:
+      type: object
+      additionalProperties: false
+      required: [intakes, limit]
+      properties:
+        intakes: { type: array, items: { $ref: '#/components/schemas/CustomerWithdrawalIntake' } }
+        limit: { type: integer, minimum: 1, maximum: 100 }
     TransferResponse:
       type: object
       additionalProperties: false

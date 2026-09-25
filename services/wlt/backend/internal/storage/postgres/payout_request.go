@@ -191,7 +191,7 @@ func ReadPayoutState(ctx context.Context, db *sql.DB, actorType, actorID string)
 		return PayoutStateRecord{}, err
 	}
 	var payoutID string
-	if err := db.QueryRowContext(ctx, "SELECT id FROM wlt.payout_requests WHERE actor_type=$1 AND actor_id=$2 ORDER BY created_at DESC LIMIT 1", actorType, actorID).Scan(&payoutID); err == nil {
+	if err := db.QueryRowContext(ctx, "SELECT id FROM wlt.payout_requests WHERE actor_type=$1 AND actor_id=$2 ORDER BY created_at DESC,id DESC LIMIT 1", actorType, actorID).Scan(&payoutID); err == nil {
 		payout, readErr := ReadPayoutRequest(ctx, db, payoutID)
 		if readErr != nil {
 			return PayoutStateRecord{}, readErr
@@ -234,6 +234,8 @@ func readPayoutRequest(ctx context.Context, source interface {
 
 func walletAccountCode(actorType string) string {
 	switch actorType {
+	case "customer":
+		return "CUSTOMER_WALLET"
 	case "partner":
 		return "PARTNER_WALLET"
 	case "captain":

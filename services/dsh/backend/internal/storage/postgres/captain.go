@@ -304,6 +304,19 @@ func ReadCaptainAdmissionForActor(ctx context.Context, db *sql.DB, actorID strin
 	return admission, nil
 }
 
+func ReadCaptainFinancialAdmissionState(ctx context.Context, db *sql.DB, actorID string) (string, error) {
+	actorID = strings.TrimSpace(actorID)
+	if db == nil || actorID == "" || len(actorID) > 128 {
+		return "", ErrCaptainAdmissionNotFound
+	}
+	var state string
+	err := db.QueryRowContext(ctx, `SELECT state FROM dsh.captain_admissions WHERE actor_id=$1`, actorID).Scan(&state)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrCaptainAdmissionNotFound
+	}
+	return state, err
+}
+
 func BindCaptainAdmission(ctx context.Context, db *sql.DB, admissionID, actorID, idempotencyKey, requestHash, actingActorID, correlationID string) (CaptainAdmission, error) {
 	if db == nil || strings.TrimSpace(admissionID) == "" || strings.TrimSpace(actorID) == "" || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
 		return CaptainAdmission{}, ErrCaptainAdmissionConflict

@@ -86,6 +86,22 @@ func (c *Client) ReadOperatorPermission(ctx context.Context, actorID, permission
 	return c.inner.ReadOperatorPermission(ctx, actorID, permission, "")
 }
 
+func (c *Client) ReadVerifiedActorLegalName(ctx context.Context, actorID, operatorActorID string) (identityclient.ActorLegalName, error) {
+	return c.inner.ReadVerifiedActorLegalName(ctx, strings.TrimSpace(actorID), strings.TrimSpace(operatorActorID))
+}
+
+func (c *Client) ReadPendingActorLegalName(ctx context.Context, actorID, operatorActorID string) (identityclient.ActorLegalName, error) {
+	return c.inner.ReadPendingActorLegalName(ctx, strings.TrimSpace(actorID), strings.TrimSpace(operatorActorID))
+}
+
+func (c *Client) SubmitActorLegalName(ctx context.Context, actorID string, input identityclient.SubmitActorLegalNameRequest, correlationID, idempotencyKey, operatorActorID string) (identityclient.ActorLegalName, error) {
+	return c.inner.SubmitActorLegalName(ctx, strings.TrimSpace(actorID), input, correlationID, idempotencyKey, operatorActorID)
+}
+
+func (c *Client) VerifyActorLegalName(ctx context.Context, actorID string, version int, input identityclient.VerifyActorLegalNameRequest, correlationID, idempotencyKey, operatorActorID string) (identityclient.ActorLegalName, error) {
+	return c.inner.VerifyActorLegalName(ctx, strings.TrimSpace(actorID), version, input, correlationID, idempotencyKey, operatorActorID)
+}
+
 func (c *Client) RequireOperatorPermission(ctx context.Context, actorID, permission string) error {
 	access, err := c.ReadOperatorPermission(ctx, strings.TrimSpace(actorID), strings.TrimSpace(permission))
 	if err != nil {

@@ -4,7 +4,8 @@ import { NextResponse } from "next/server";
 import { createOperatorDestination, dshErrorPayload, dshHttpStatus, isDshClientError, readOperatorDestination } from "../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 
-const actorTypes = new Set(["partner", "captain", "field"]);
+const destinationReadActorTypes = new Set(["customer", "partner", "captain", "field"]);
+const destinationCreateActorTypes = new Set(["partner", "captain", "field"]);
 
 async function operator() {
   const identity = await readOperatorSession();
@@ -19,8 +20,8 @@ export async function GET(request: Request) {
   const query = new URL(request.url).searchParams;
   const actorType = query.get("actorType")?.trim() ?? "";
   const actorId = query.get("actorId")?.trim() ?? "";
-  if (!actorTypes.has(actorType) || !actorId) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "actorType and actorId are required" } }, { status: 400 });
-  try { return NextResponse.json(await readOperatorDestination(actorType as "partner" | "captain" | "field", actorId, { operatorActorId: access.identity.subject }), { headers: { "Cache-Control": "no-store" } }); } catch (error) { return mapError(error, "destination read failed"); }
+  if (!destinationReadActorTypes.has(actorType) || !actorId) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "actorType and actorId are required" } }, { status: 400 });
+  try { return NextResponse.json(await readOperatorDestination(actorType as "customer" | "partner" | "captain" | "field", actorId, { operatorActorId: access.identity.subject }), { headers: { "Cache-Control": "no-store" } }); } catch (error) { return mapError(error, "destination read failed"); }
 }
 
 export async function POST(request: Request) {
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
   const actorType = query.get("actorType")?.trim() ?? "";
   const actorId = query.get("actorId")?.trim() ?? "";
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-  if (!actorTypes.has(actorType) || !actorId || !body || Object.keys(body).some((key) => !["providerKey", "walletIdentifier", "beneficiaryName", "changeReason", "verificationEvidenceReference", "changeEvidenceReference"].includes(key)) || Object.values(body).some((value) => typeof value !== "string" || !value.trim())) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "destination facts are required" } }, { status: 400 });
+  if (!destinationCreateActorTypes.has(actorType) || !actorId || !body || Object.keys(body).some((key) => !["providerKey", "walletIdentifier", "changeReason", "verificationEvidenceReference", "changeEvidenceReference"].includes(key)) || Object.values(body).some((value) => typeof value !== "string" || !value.trim())) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "destination facts are required" } }, { status: 400 });
   try { return NextResponse.json((await createOperatorDestination(actorType as "partner" | "captain" | "field", actorId, body as never, { operatorActorId: access.identity.subject, correlationId: request.headers.get("X-Correlation-ID")?.trim() || randomUUID(), idempotencyKey: request.headers.get("Idempotency-Key")?.trim() || randomUUID() })).payload, { status: 201 }); } catch (error) { return mapError(error, "destination creation failed"); }
 }
 

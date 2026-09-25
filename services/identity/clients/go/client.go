@@ -103,6 +103,38 @@ func (c *Client) ReadOperatorPermission(ctx context.Context, actorID, permission
 	return result, err
 }
 
+func (c *Client) SubmitActorLegalName(ctx context.Context, actorID string, input SubmitActorLegalNameRequest, correlationID, idempotencyKey, operatorActorID string) (ActorLegalName, error) {
+	var result ActorLegalName
+	pathname := identityRoute(IdentityOperationSubmitActorLegalName.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)))
+	err := c.doWithLegalNameHeaders(ctx, IdentityOperationSubmitActorLegalName.Method, pathname, correlationID, idempotencyKey, operatorActorID, input, &result)
+	return result, err
+}
+
+func (c *Client) VerifyActorLegalName(ctx context.Context, actorID string, version int, input VerifyActorLegalNameRequest, correlationID, idempotencyKey, operatorActorID string) (ActorLegalName, error) {
+	var result ActorLegalName
+	pathname := identityRoute(IdentityOperationVerifyActorLegalName.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "version", fmt.Sprintf("%d", version))
+	err := c.doWithLegalNameHeaders(ctx, IdentityOperationVerifyActorLegalName.Method, pathname, correlationID, idempotencyKey, operatorActorID, input, &result)
+	return result, err
+}
+
+func (c *Client) ReadVerifiedActorLegalName(ctx context.Context, actorID, operatorActorID string) (ActorLegalName, error) {
+	var result ActorLegalName
+	pathname := identityRoute(IdentityOperationReadVerifiedActorLegalName.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)))
+	err := c.doWithContext(ctx, IdentityOperationReadVerifiedActorLegalName.Method, pathname, "", "", strings.TrimSpace(operatorActorID), 0, nil, &result)
+	return result, err
+}
+
+func (c *Client) ReadPendingActorLegalName(ctx context.Context, actorID, operatorActorID string) (ActorLegalName, error) {
+	var result ActorLegalName
+	pathname := identityRoute(IdentityOperationReadPendingActorLegalName.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)))
+	err := c.doWithContext(ctx, IdentityOperationReadPendingActorLegalName.Method, pathname, "", "", strings.TrimSpace(operatorActorID), 0, nil, &result)
+	return result, err
+}
+
+func (c *Client) doWithLegalNameHeaders(ctx context.Context, method, pathname, correlationID, idempotencyKey, operatorActorID string, body, target any) error {
+	return c.doWithIdempotency(ctx, method, pathname, c.token, correlationID, "", operatorActorID, 0, 0, idempotencyKey, body, target)
+}
+
 func (c *Client) SetOperatorPermissionWithContext(ctx context.Context, actorID, permission, operatorActorID string, enabled bool, correlationID, reason string, expectedVersion int) (OperatorPermissionAccess, error) {
 	var result OperatorPermissionAccess
 	pathname := identityRoute(IdentityOperationSetOperatorPermission.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "permission", url.PathEscape(strings.TrimSpace(permission)))
@@ -179,6 +211,10 @@ func (c *Client) doWithContextVersions(ctx context.Context, method, pathname, co
 }
 
 func (c *Client) doWithToken(ctx context.Context, method, pathname, token, correlationID, reason, operatorActorID string, expectedVersion, expectedActorVersion int, body any, target any) error {
+	return c.doWithIdempotency(ctx, method, pathname, token, correlationID, reason, operatorActorID, expectedVersion, expectedActorVersion, "", body, target)
+}
+
+func (c *Client) doWithIdempotency(ctx context.Context, method, pathname, token, correlationID, reason, operatorActorID string, expectedVersion, expectedActorVersion int, idempotencyKey string, body any, target any) error {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return &Error{Status: http.StatusUnauthorized, Code: "UNAUTHENTICATED", Message: "access token is required"}
@@ -203,6 +239,9 @@ func (c *Client) doWithToken(ctx context.Context, method, pathname, token, corre
 	req.Header.Set("Authorization", "Bearer "+token)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	if strings.TrimSpace(idempotencyKey) != "" {
+		req.Header.Set("Idempotency-Key", strings.TrimSpace(idempotencyKey))
 	}
 	if strings.TrimSpace(correlationID) != "" {
 		req.Header.Set("X-Correlation-ID", strings.TrimSpace(correlationID))

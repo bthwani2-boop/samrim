@@ -1,5 +1,7 @@
 import type { CatalogAttributeDefinitionListResponse, CatalogAttributeDefinitionResponse, CatalogAttributeEnumOptionListResponse, CatalogAttributeEnumOptionResponse, CatalogAttributeRuleListResponse, CatalogProduct, CatalogProductRegistryResponse, CreateCatalogAttributeDefinitionRequest, CreateCatalogAttributeEnumOptionRequest, ManagedCaptainAvailabilityRequest, PartnerStoreListResponse, UpsertCatalogAttributeRuleRequest } from "@bthwani/dsh";
-import { type BeneficiaryPayoutStateResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CashLiabilityResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateDeliveryFeePolicyRequest, type CreateDiscoveryContentRequest, type CreateJoiningCaseRequest, type CreatePartnerFinancialTermsPolicyRequest, type CreatePromotionRequest, type CreateServiceCityRequest, type DeliveryFeePolicyResponse, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentListResponse, type DiscoveryContentResponse, dshOperationPaths, type FieldAdmissionRequest, type FieldAdmissionResponse, type FieldCommissionPolicy, type FieldFinancialSummaryResponse, type FieldReenrollmentRequest, type JoiningCaseListResponse, type JoiningCaseResponse, type ManagedRoleMutationRequest, type MarketingPublicationRequest, type NotificationListResponse, type NotificationReadResponse, type OfficialWalletDestination, type OperatorOperationResponse, type OperatorOperationsResponse, type OperatorStoreListResponse, type PartnerCommissionRemittanceRequest, type PartnerCommissionRemittanceResponse, type PartnerFinancialSummaryResponse, type PartnerFinancialTermsPolicyResponse, type PartnerStoreCommissionPoliciesResponse, type PartnerStoreCommissionPolicyUpdateRequest, type PartnerStoreCommissionPolicyUpdateResponse, type PayoutRequest, type PromotionListResponse, type PromotionResponse, type PublicationAction, type PublishedStoreListResponse, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type ReviewJoiningCaseRequest, type ServiceCityListResponse, type ServiceCityResponse, type SetStoreFulfillmentModesRequest, type StoreFulfillmentModesResponse, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogCategoryRequest, type UpdateCatalogProductRequest, type UpdateCommerceVerticalRequest, type UpdateServiceCityRequest } from "@bthwani/dsh";
+import type { ActorLegalName, SubmitActorLegalNameRequest, VerifyActorLegalNameRequest } from "@bthwani/dsh";
+import type { CustomerWithdrawalIntake, CreateCustomerWithdrawalIntakeRequest, CustomerWithdrawalDecisionRequest } from "@bthwani/dsh";
+import { type BeneficiaryPayoutState, type BeneficiaryPayoutStateResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CashLiabilityResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateDeliveryFeePolicyRequest, type CreateDiscoveryContentRequest, type CreateJoiningCaseRequest, type CreatePartnerFinancialTermsPolicyRequest, type CreatePromotionRequest, type CreateServiceCityRequest, type DeliveryFeePolicyResponse, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentListResponse, type DiscoveryContentResponse, dshOperationPaths, type FieldAdmissionRequest, type FieldAdmissionResponse, type FieldCommissionPolicy, type FieldFinancialSummaryResponse, type FieldReenrollmentRequest, type FinanceEvidenceDocument, type JoiningCaseListResponse, type JoiningCaseResponse, type ManagedRoleMutationRequest, type MarketingPublicationRequest, type NotificationListResponse, type NotificationReadResponse, type OfficialWalletDestination, type OperatorOperationResponse, type OperatorOperationsResponse, type OperatorStoreListResponse, type PartnerCommissionRemittanceRequest, type PartnerCommissionRemittanceResponse, type PartnerFinancialSummaryResponse, type PartnerFinancialTermsPolicyResponse, type PartnerStoreCommissionPoliciesResponse, type PartnerStoreCommissionPolicyUpdateRequest, type PartnerStoreCommissionPolicyUpdateResponse, type PayoutRequest, type PromotionListResponse, type PromotionResponse, type PublicationAction, type PublishedStoreListResponse, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type ReviewJoiningCaseRequest, type ServiceCityListResponse, type ServiceCityResponse, type SetStoreFulfillmentModesRequest, type SettlementBatch, type SettlementBatchExport, type StoreFulfillmentModesResponse, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogCategoryRequest, type UpdateCatalogProductRequest, type UpdateCommerceVerticalRequest, type UpdateServiceCityRequest } from "@bthwani/dsh";
 import { validateServiceUrl } from "@bthwani/identity";
 
 type DshClientError =
@@ -143,6 +145,30 @@ async function requestDshMultipart<T>(method: string, path: string, body: FormDa
   }
 }
 
+async function requestDshFile(path: string, headers: Record<string, string>): Promise<Readonly<{ content: Uint8Array; contentType: string; contentDisposition: string }>> {
+  const baseUrl = dshBaseUrl();
+  const token = dshToken();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  try {
+    let response: Response;
+    try {
+      response = await fetch(`${baseUrl}${path}`, { method: "GET", headers: { Accept: "application/octet-stream", Authorization: `Bearer ${token}`, ...headers }, cache: "no-store", signal: controller.signal });
+    } catch (error) {
+      throw { kind: "network", message: error instanceof Error ? error.message : "dsh network error" } satisfies DshClientError;
+    }
+    if (!response.ok) {
+      const parsed = parseErrorPayload(await response.json().catch(() => null));
+      throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies DshClientError;
+    }
+    const content = new Uint8Array(await response.arrayBuffer());
+    if (content.byteLength > 10 * 1024 * 1024) throw { kind: "http", status: 502, code: "INVALID_EVIDENCE_RESPONSE", message: "evidence response exceeds the supported size" } satisfies DshClientError;
+    return { content, contentType: response.headers.get("content-type") ?? "application/octet-stream", contentDisposition: response.headers.get("content-disposition") ?? "" };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function listServiceCities(includeInactive: boolean, context: DshOperatorReadContext): Promise<ServiceCityListResponse> {
   if (!context.operatorActorId.trim()) throw new Error("DSH_SERVICE_CITY_READ_INPUT_INVALID");
   const query = includeInactive ? "?includeInactive=true" : "";
@@ -271,22 +297,56 @@ export async function readOperatorFieldFinancialSummary(fieldActorId: string, co
   return (await requestDshJson<FieldFinancialSummaryResponse>(dshOperationPaths.readOperatorFieldFinancialSummary.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-type BeneficiaryActorType = "partner" | "captain" | "field";
+type BeneficiaryActorType = "customer" | "partner" | "captain" | "field";
 type OperatorDestinationResponse = Readonly<{ destination: OfficialWalletDestination; idempotentReplay?: boolean }>;
 export async function readOperatorPayoutState(actorType: BeneficiaryActorType, actorId: string, context: DshOperatorReadContext): Promise<BeneficiaryPayoutStateResponse> {
-  if (!("partner" === actorType || "captain" === actorType || "field" === actorType) || !actorId.trim() || !context.operatorActorId.trim()) throw new Error("DSH_PAYOUT_STATE_INPUT_INVALID");
+  if (!("customer" === actorType || "partner" === actorType || "captain" === actorType || "field" === actorType) || !actorId.trim() || !context.operatorActorId.trim()) throw new Error("DSH_PAYOUT_STATE_INPUT_INVALID");
   const path = dshOperationPaths.readOperatorPayoutState.path.replace("{actorType}", encodeURIComponent(actorType)).replace("{actorId}", encodeURIComponent(actorId.trim()));
   return (await requestDshJson<BeneficiaryPayoutStateResponse>(dshOperationPaths.readOperatorPayoutState.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
+export type OperatorBeneficiaryRegistryResponse = Readonly<{ beneficiaries: ReadonlyArray<BeneficiaryPayoutState>; nextCursor?: string; limit: number }>;
+type BeneficiaryRegistryActorType = "partner" | "captain" | "field";
+export type BeneficiaryRegistrySort = "actor_asc" | "actor_desc" | "available_asc" | "available_desc" | "held_asc" | "held_desc" | "payout_amount_asc" | "payout_amount_desc";
+export async function listOperatorBeneficiaryPayoutStates(actorType: BeneficiaryRegistryActorType | "", search: string, status: string, sort: BeneficiaryRegistrySort, cursor: string, limit: number, context: DshOperatorReadContext): Promise<OperatorBeneficiaryRegistryResponse> {
+  if (!context.operatorActorId.trim() || (actorType && !(actorType === "partner" || actorType === "captain" || actorType === "field")) || search.trim().length > 128 || cursor.length > 512 || !Number.isInteger(limit) || limit < 1 || limit > 100 || status.length > 32 || !["actor_asc", "actor_desc", "available_asc", "available_desc", "held_asc", "held_desc", "payout_amount_asc", "payout_amount_desc"].includes(sort)) throw new Error("DSH_BENEFICIARY_REGISTRY_INPUT_INVALID");
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (actorType) query.set("actorType", actorType);
+  if (search.trim()) query.set("search", search.trim());
+  if (status.trim()) query.set("status", status.trim());
+  query.set("sort", sort);
+  if (cursor.trim()) query.set("cursor", cursor.trim());
+  return (await requestDshJson<OperatorBeneficiaryRegistryResponse>(dshOperationPaths.listOperatorBeneficiaryPayoutStates.method, `${dshOperationPaths.listOperatorBeneficiaryPayoutStates.path}?${query.toString()}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
 export async function readOperatorDestination(actorType: BeneficiaryActorType, actorId: string, context: DshOperatorReadContext): Promise<OperatorDestinationResponse> {
-  if (!("partner" === actorType || "captain" === actorType || "field" === actorType) || !actorId.trim() || !context.operatorActorId.trim()) throw new Error("DSH_DESTINATION_INPUT_INVALID");
+	if (!("customer" === actorType || "partner" === actorType || "captain" === actorType || "field" === actorType) || !actorId.trim() || !context.operatorActorId.trim()) throw new Error("DSH_DESTINATION_INPUT_INVALID");
   const path = dshOperationPaths.readOperatorOfficialWalletDestination.path.replace("{actorType}", encodeURIComponent(actorType)).replace("{actorId}", encodeURIComponent(actorId.trim()));
   return (await requestDshJson<OperatorDestinationResponse>(dshOperationPaths.readOperatorOfficialWalletDestination.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export async function createOperatorDestination(actorType: BeneficiaryActorType, actorId: string, input: Readonly<{ providerKey: string; walletIdentifier: string; beneficiaryName: string; changeReason: string; verificationEvidenceReference: string; changeEvidenceReference: string }>, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: OperatorDestinationResponse }>> {
-  if (!("partner" === actorType || "captain" === actorType || "field" === actorType) || !actorId.trim() || !input.providerKey.trim() || !input.walletIdentifier.trim() || !input.beneficiaryName.trim() || !input.changeReason.trim() || !input.verificationEvidenceReference.trim() || !input.changeEvidenceReference.trim()) throw new Error("DSH_DESTINATION_INPUT_INVALID");
+export async function readOperatorPendingActorLegalName(actorId: string, context: DshOperatorReadContext): Promise<Readonly<{ legalName: ActorLegalName }>> {
+  if (!actorId.trim() || !context.operatorActorId.trim()) throw new Error("DSH_LEGAL_NAME_INPUT_INVALID");
+  const path = dshOperationPaths.readOperatorPendingActorLegalName.path.replace("{actorId}", encodeURIComponent(actorId.trim()));
+  return (await requestDshJson<Readonly<{ legalName: ActorLegalName }>>(dshOperationPaths.readOperatorPendingActorLegalName.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function submitOperatorActorLegalName(actorId: string, input: SubmitActorLegalNameRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ legalName: ActorLegalName }>> {
+  if (!actorId.trim() || !context.operatorActorId.trim()) throw new Error("DSH_LEGAL_NAME_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  const path = dshOperationPaths.submitOperatorActorLegalName.path.replace("{actorId}", encodeURIComponent(actorId.trim()));
+  return (await requestDshJson<Readonly<{ legalName: ActorLegalName }>>(dshOperationPaths.submitOperatorActorLegalName.method, path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+}
+
+export async function verifyOperatorActorLegalName(actorId: string, version: number, input: VerifyActorLegalNameRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ legalName: ActorLegalName }>> {
+  if (!actorId.trim() || !Number.isInteger(version) || version < 1 || !context.operatorActorId.trim()) throw new Error("DSH_LEGAL_NAME_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  const path = dshOperationPaths.verifyOperatorActorLegalName.path.replace("{actorId}", encodeURIComponent(actorId.trim())).replace("{version}", String(version));
+  return (await requestDshJson<Readonly<{ legalName: ActorLegalName }>>(dshOperationPaths.verifyOperatorActorLegalName.method, path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+}
+
+export async function createOperatorDestination(actorType: BeneficiaryActorType, actorId: string, input: Readonly<{ providerKey: string; walletIdentifier: string; changeReason: string; verificationEvidenceReference: string; changeEvidenceReference: string }>, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: OperatorDestinationResponse }>> {
+	if (!("partner" === actorType || "captain" === actorType || "field" === actorType) || !actorId.trim() || !input.providerKey.trim() || !input.walletIdentifier.trim() || !input.changeReason.trim() || !input.verificationEvidenceReference.trim() || !input.changeEvidenceReference.trim()) throw new Error("DSH_DESTINATION_INPUT_INVALID");
   validateAttributedMutationContext(context);
   const path = dshOperationPaths.createOperatorOfficialWalletDestination.path.replace("{actorType}", encodeURIComponent(actorType)).replace("{actorId}", encodeURIComponent(actorId.trim()));
   return requestDshJson<OperatorDestinationResponse>(dshOperationPaths.createOperatorOfficialWalletDestination.method, path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
@@ -313,6 +373,191 @@ export async function listOperatorPayoutRequests(status: string, context: DshOpe
   if (!context.operatorActorId.trim()) throw new Error("DSH_PAYOUT_QUEUE_INPUT_INVALID");
   const query = status.trim() ? `?status=${encodeURIComponent(status.trim())}` : "";
   return (await requestDshJson<OperatorPayoutListResponse>(dshOperationPaths.listOperatorPayoutRequests.method, `${dshOperationPaths.listOperatorPayoutRequests.path}${query}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export type FinanceEvidencePurpose = "TRANSFER_RECEIPT" | "SETTLEMENT_STATEMENT" | "CUSTOMER_WITHDRAWAL_REQUEST";
+export type OperatorFinanceEvidenceResponse = Readonly<{ document: FinanceEvidenceDocument }>;
+export type OperatorSettlementStatement = Readonly<{ id: string; batchId?: string | null; providerKey: string; currency: "YER"; periodStart: string; periodEnd: string; evidenceDocumentId: string; filename: string; artifactSHA256: string; uploadedBy: string; createdAt: string }>;
+export type OperatorSettlementStatementRow = Readonly<{ id: string; statementId: string; rowSequence: number; externalTransferReference: string; amountMinor: number; currency: "YER"; transactionAt: string; recordedBy: string; matchedTransferId?: string | null }>;
+
+export async function uploadOperatorFinanceEvidence(purpose: FinanceEvidencePurpose, file: File, context: JoiningCaseMutationContext): Promise<OperatorFinanceEvidenceResponse> {
+  if (!(purpose === "TRANSFER_RECEIPT" || purpose === "SETTLEMENT_STATEMENT" || purpose === "CUSTOMER_WITHDRAWAL_REQUEST") || !file.size || file.size > 10 * 1024 * 1024 || !file.name.trim()) throw new Error("DSH_FINANCE_EVIDENCE_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_FINANCE_EVIDENCE_IDEMPOTENCY_INVALID");
+  const form = new FormData();
+  form.set("purpose", purpose);
+  form.set("file", file, file.name);
+  return (await requestDshMultipart<OperatorFinanceEvidenceResponse>(dshOperationPaths.uploadOperatorFinanceEvidence.method, dshOperationPaths.uploadOperatorFinanceEvidence.path, form, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+}
+
+export async function uploadCustomerWithdrawalRequestEvidence(file: File, context: JoiningCaseMutationContext): Promise<OperatorFinanceEvidenceResponse> {
+  if (!file.size || file.size > 10 * 1024 * 1024 || !file.name.trim()) throw new Error("DSH_FINANCE_EVIDENCE_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  const form = new FormData();
+  form.set("file", file, file.name);
+  return (await requestDshMultipart<OperatorFinanceEvidenceResponse>(dshOperationPaths.uploadCustomerWithdrawalRequestEvidence.method, dshOperationPaths.uploadCustomerWithdrawalRequestEvidence.path, form, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+}
+
+type CustomerWithdrawalList = Readonly<{ intakes: ReadonlyArray<CustomerWithdrawalIntake>; limit: number }>;
+type CustomerWithdrawalResponse = Readonly<{ intake: CustomerWithdrawalIntake; idempotentReplay?: boolean }>;
+
+export async function listOperatorCustomerWithdrawalIntakes(status: string, limit: number, context: DshOperatorReadContext): Promise<CustomerWithdrawalList> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (status.trim()) query.set("status", status.trim());
+  return (await requestDshJson<CustomerWithdrawalList>(dshOperationPaths.listOperatorCustomerWithdrawalIntakes.method, `${dshOperationPaths.listOperatorCustomerWithdrawalIntakes.path}?${query.toString()}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function createOperatorCustomerWithdrawalIntake(input: CreateCustomerWithdrawalIntakeRequest, context: JoiningCaseMutationContext): Promise<CustomerWithdrawalResponse> {
+  return (await requestDshJson<CustomerWithdrawalResponse>(dshOperationPaths.createOperatorCustomerWithdrawalIntake.method, dshOperationPaths.createOperatorCustomerWithdrawalIntake.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+}
+
+async function customerWithdrawalDecision(operation: "prepareOperatorCustomerWithdrawalDestination" | "verifyOperatorCustomerWithdrawalDestination" | "activateOperatorCustomerWithdrawalDestination" | "acceptOperatorCustomerWithdrawal" | "rejectOperatorCustomerWithdrawal", intakeId: string, input: Readonly<Record<string, string>>, context: JoiningCaseMutationContext): Promise<Readonly<Record<string, unknown>>> {
+  if (!intakeId.trim()) throw new Error("DSH_CUSTOMER_WITHDRAWAL_INPUT_INVALID");
+  const path = dshOperationPaths[operation].path.replace("{intakeId}", encodeURIComponent(intakeId.trim()));
+  return (await requestDshJson<Readonly<Record<string, unknown>>>(dshOperationPaths[operation].method, path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+}
+
+export const prepareOperatorCustomerWithdrawalDestination = (intakeId: string, input: CustomerWithdrawalDecisionRequest, context: JoiningCaseMutationContext) => customerWithdrawalDecision("prepareOperatorCustomerWithdrawalDestination", intakeId, input, context);
+export const verifyOperatorCustomerWithdrawalDestination = (intakeId: string, evidenceReference: string, context: JoiningCaseMutationContext) => customerWithdrawalDecision("verifyOperatorCustomerWithdrawalDestination", intakeId, { evidenceReference }, context);
+export const activateOperatorCustomerWithdrawalDestination = (intakeId: string, context: JoiningCaseMutationContext) => customerWithdrawalDecision("activateOperatorCustomerWithdrawalDestination", intakeId, {}, context);
+export const acceptOperatorCustomerWithdrawal = (intakeId: string, input: CustomerWithdrawalDecisionRequest, context: JoiningCaseMutationContext) => customerWithdrawalDecision("acceptOperatorCustomerWithdrawal", intakeId, input, context);
+export const rejectOperatorCustomerWithdrawal = (intakeId: string, input: CustomerWithdrawalDecisionRequest, context: JoiningCaseMutationContext) => customerWithdrawalDecision("rejectOperatorCustomerWithdrawal", intakeId, input, context);
+
+export async function readOperatorFinanceEvidence(documentId: string, context: DshOperatorReadContext) {
+  if (!documentId.trim() || documentId.trim().length > 128 || !context.operatorActorId.trim()) throw new Error("DSH_FINANCE_EVIDENCE_INPUT_INVALID");
+  const path = dshOperationPaths.readOperatorFinanceEvidence.path.replace("{documentId}", encodeURIComponent(documentId.trim()));
+  return requestDshFile(path, { "X-Acting-Actor-ID": context.operatorActorId.trim() });
+}
+
+export async function registerOperatorSettlementStatement(input: Readonly<{ batchId?: string; providerKey: string; currency: "YER"; periodStart: string; periodEnd: string; evidenceDocumentId: string }>, context: JoiningCaseMutationContext): Promise<Readonly<{ statement: OperatorSettlementStatement }>> {
+  if (!input.providerKey.trim() || !input.evidenceDocumentId.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(input.periodStart) || !/^\d{4}-\d{2}-\d{2}$/.test(input.periodEnd) || input.periodEnd < input.periodStart) throw new Error("DSH_SETTLEMENT_STATEMENT_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  const path = dshOperationPaths.registerOperatorSettlementStatement.path;
+  return (await requestDshJson<Readonly<{ statement: OperatorSettlementStatement }>>(dshOperationPaths.registerOperatorSettlementStatement.method, path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+}
+
+export async function recordOperatorSettlementStatementRow(statementId: string, input: Readonly<{ rowSequence: number; externalTransferReference: string; walletIdentifier: string; amountMinor: number; currency: "YER"; transactionAt: string }>, context: JoiningCaseMutationContext): Promise<Readonly<{ row: OperatorSettlementStatementRow }>> {
+  if (!statementId.trim() || !Number.isSafeInteger(input.rowSequence) || input.rowSequence < 1 || !input.externalTransferReference.trim() || !input.walletIdentifier.trim() || !Number.isSafeInteger(input.amountMinor) || input.amountMinor < 1 || !Number.isFinite(Date.parse(input.transactionAt))) throw new Error("DSH_SETTLEMENT_STATEMENT_ROW_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  const path = dshOperationPaths.recordOperatorStatementRow.path.replace("{statementId}", encodeURIComponent(statementId.trim()));
+  return (await requestDshJson<Readonly<{ row: OperatorSettlementStatementRow }>>(dshOperationPaths.recordOperatorStatementRow.method, path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+}
+
+export type OperatorSettlementBatchExport = SettlementBatchExport;
+
+export async function exportOperatorSettlementBatch(batchId: string, context: JoiningCaseMutationContext): Promise<Readonly<{ export: OperatorSettlementBatchExport }>> {
+  if (!batchId.trim()) throw new Error("DSH_SETTLEMENT_BATCH_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  const path = dshOperationPaths.exportOperatorSettlementBatch.path.replace("{batchId}", encodeURIComponent(batchId.trim()));
+  return (await requestDshJson<Readonly<{ export: OperatorSettlementBatchExport }>>(dshOperationPaths.exportOperatorSettlementBatch.method, path, {}, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+}
+
+export async function readOperatorSettlementBatch(batchId: string, context: DshOperatorReadContext): Promise<Readonly<{ batch: SettlementBatch }>> {
+  if (!batchId.trim() || !context.operatorActorId.trim()) throw new Error("DSH_SETTLEMENT_BATCH_INPUT_INVALID");
+  const path = dshOperationPaths.readOperatorSettlementBatch.path.replace("{batchId}", encodeURIComponent(batchId.trim()));
+  return (await requestDshJson<Readonly<{ batch: SettlementBatch }>>(dshOperationPaths.readOperatorSettlementBatch.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export type OperatorFinancialStatement = Readonly<{
+  actorType: "customer" | "partner" | "captain" | "field";
+  actorId: string;
+  currency: "YER";
+  periodStart: string;
+  periodEnd: string;
+  openingBalanceMinor: number;
+  creditsMinor: number;
+  debitsMinor: number;
+  closingBalanceMinor: number;
+  currentBalanceMinor: number;
+  nextCursor?: string;
+  limit: number;
+  entries: ReadonlyArray<Readonly<{
+    transactionId: string;
+    transactionType: string;
+    sourceType: string;
+    sourceId: string;
+    direction: "CREDIT" | "DEBIT";
+    amountMinor: number;
+    currency: "YER";
+    createdAt: string;
+    balanceAfterMinor: number;
+    order?: Readonly<{
+      orderId: string;
+      storeName: string;
+      state: string;
+      fulfillmentMode: string;
+      subtotalAmountMinor: number;
+      discountMinor: number;
+      totalAmountMinor: number;
+      currency: "YER";
+      createdAt: string;
+      lines: ReadonlyArray<Readonly<{ productName: string; variantTitle: string; quantityBaseUnits: number; unitPriceMinor: number; lineAmountMinor: number; currency: "YER" }>>;
+    }>;
+  }>>;
+}>;
+
+export async function readOperatorBeneficiaryFinancialStatement(actorType: "customer" | "partner" | "captain" | "field", actorId: string, from: string, to: string, cursor: string, context: DshOperatorReadContext): Promise<Readonly<{ statement: OperatorFinancialStatement }>> {
+  if (!actorId.trim() || actorId.length > 128 || !/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || to < from || !context.operatorActorId.trim()) throw new Error("DSH_FINANCIAL_STATEMENT_INPUT_INVALID");
+  const path = dshOperationPaths.readOperatorBeneficiaryFinancialStatement.path
+    .replace("{actorType}", encodeURIComponent(actorType))
+    .replace("{actorId}", encodeURIComponent(actorId.trim()));
+  const query = new URLSearchParams({ from, to });
+  if (cursor.trim()) query.set("cursor", cursor.trim());
+  return (await requestDshJson<Readonly<{ statement: OperatorFinancialStatement }>>(dshOperationPaths.readOperatorBeneficiaryFinancialStatement.method, `${path}?${query.toString()}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export type OperatorFinancialStatementSummaryRegistry = Readonly<{
+  actorType: "customer" | "partner" | "captain" | "field";
+  periodStart: string;
+  periodEnd: string;
+  summaries: ReadonlyArray<Readonly<{ actorType: string; actorId: string; currency: "YER"; openingBalanceMinor: number; creditsMinor: number; debitsMinor: number; closingBalanceMinor: number; currentBalanceMinor: number; heldMinor: number; availableMinor: number }>>;
+  nextCursor?: string;
+  limit: number;
+}>;
+
+export async function listOperatorFinancialStatementSummaries(actorType: OperatorFinancialStatementSummaryRegistry["actorType"], from: string, to: string, cursor: string, context: DshOperatorReadContext): Promise<OperatorFinancialStatementSummaryRegistry> {
+  if (!context.operatorActorId.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || to < from) throw new Error("DSH_FINANCIAL_STATEMENT_INPUT_INVALID");
+  const query = new URLSearchParams({ actorType, from, to, limit: "200" });
+  if (cursor.trim()) query.set("cursor", cursor.trim());
+  return (await requestDshJson<OperatorFinancialStatementSummaryRegistry>(dshOperationPaths.listOperatorFinancialStatementSummaries.method, `${dshOperationPaths.listOperatorFinancialStatementSummaries.path}?${query.toString()}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function createOperatorSettlementBatch(payoutIds: readonly string[], context: JoiningCaseMutationContext): Promise<Readonly<{ batch: SettlementBatch }>> {
+  if (!payoutIds.length || payoutIds.length > 100 || payoutIds.some((id) => !id.trim())) throw new Error("DSH_SETTLEMENT_BATCH_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  return (await requestDshJson<Readonly<{ batch: SettlementBatch }>>(dshOperationPaths.createOperatorSettlementBatch.method, dshOperationPaths.createOperatorSettlementBatch.path, { payoutIds }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+}
+
+export type OperatorSettlementBatchRegistryResponse = Readonly<{ batches: ReadonlyArray<SettlementBatch>; nextCursor?: string; limit: number }>;
+export async function listOperatorSettlementBatches(status: string, cursor: string, limit: number, context: DshOperatorReadContext): Promise<OperatorSettlementBatchRegistryResponse> {
+  if (!context.operatorActorId.trim() || status.length > 32 || cursor.length > 512 || !Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("DSH_SETTLEMENT_BATCH_REGISTRY_INPUT_INVALID");
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (status.trim()) query.set("status", status.trim());
+  if (cursor.trim()) query.set("cursor", cursor.trim());
+  return (await requestDshJson<OperatorSettlementBatchRegistryResponse>(dshOperationPaths.listOperatorSettlementBatches.method, `${dshOperationPaths.listOperatorSettlementBatches.path}?${query.toString()}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function transitionOperatorSettlementBatch(batchId: string, action: "approve" | "freeze", reason: string, context: JoiningCaseMutationContext): Promise<Readonly<{ batch: SettlementBatch }>> {
+  if (!batchId.trim() || !reason.trim()) throw new Error("DSH_SETTLEMENT_BATCH_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  const operation = action === "approve" ? dshOperationPaths.approveOperatorSettlementBatch : dshOperationPaths.freezeOperatorSettlementBatch;
+  const path = operation.path.replace("{batchId}", encodeURIComponent(batchId.trim()));
+  return (await requestDshJson<Readonly<{ batch: SettlementBatch }>>(operation.method, path, { reason }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+}
+
+export async function recordOperatorManualTransfer(batchId: string, payoutId: string, externalTransferReference: string, receiptDocumentId: string, context: JoiningCaseMutationContext): Promise<Readonly<{ transfer: unknown }>> {
+  if (!batchId.trim() || !payoutId.trim() || !externalTransferReference.trim() || !receiptDocumentId.trim()) throw new Error("DSH_MANUAL_TRANSFER_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  const path = dshOperationPaths.recordOperatorManualTransfer.path.replace("{batchId}", encodeURIComponent(batchId.trim()));
+  return (await requestDshJson<Readonly<{ transfer: unknown }>>(dshOperationPaths.recordOperatorManualTransfer.method, path, { payoutId, externalTransferReference, receiptDocumentId }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+}
+
+export async function transitionOperatorManualTransfer(transferId: string, action: "verify" | "reconcile", statementRowId: string, context: JoiningCaseMutationContext): Promise<Readonly<{ transfer: unknown }>> {
+  if (!transferId.trim() || (action === "reconcile" && !statementRowId.trim())) throw new Error("DSH_MANUAL_TRANSFER_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  const operation = action === "verify" ? dshOperationPaths.verifyOperatorManualTransfer : dshOperationPaths.reconcileOperatorManualTransfer;
+  const path = operation.path.replace("{transferId}", encodeURIComponent(transferId.trim()));
+  return (await requestDshJson<Readonly<{ transfer: unknown }>>(operation.method, path, action === "verify" ? {} : { statementRowId }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
 }
 
 export async function prepareOperatorPayout(payoutId: string, input: Readonly<{ reason: string; evidenceReference: string }>, context: JoiningCaseMutationContext): Promise<OperatorPayoutResponse> {

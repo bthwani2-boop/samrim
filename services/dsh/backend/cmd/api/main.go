@@ -115,7 +115,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	beneficiaryFinanceServer, err := transporthttp.NewBeneficiaryFinance(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), paymentClient)
+	beneficiaryFinanceServer, err := transporthttp.NewBeneficiaryFinance(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), paymentClient, database)
 	if err != nil {
 		log.Fatal(err)
 	}
