@@ -540,7 +540,7 @@ const enumOption = await request(dshBase, "POST", `/dsh/catalog/attributes/${enu
 const enumOptionReplay = await request(dshBase, "POST", `/dsh/catalog/attributes/${enumAttributeID}/enum-options`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `enum-option-${suffix}`), body: { optionValue: "Dark", active: true, ordinal: 1 } });
 const enumOptions = await request(dshBase, "GET", `/dsh/catalog/attributes/${enumAttributeID}/enum-options`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 if (enumOption.status !== 201 || enumOption.body?.option?.optionValue !== "Dark" || enumOptionReplay.status !== 200 || enumOptionReplay.body?.idempotentReplay !== true || enumOptions.status !== 200 || enumOptions.body?.options?.length !== 1) fail("ENUM option canonical write/readback failed", JSON.stringify({ enumOption, enumOptionReplay, enumOptions }));
-const attributeRule = await request(dshBase, "PUT", `/dsh/catalog/categories/${childCategoryID}/attribute-rules/${enumAttributeID}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID }, body: { required: true, filterable: true, variantAxis: true } });
+const attributeRule = await request(dshBase, "PUT", `/dsh/catalog/categories/${childCategoryID}/attribute-rules/${enumAttributeID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `attribute-rule-${suffix}`), body: { required: true, filterable: true, variantAxis: true } });
 if (attributeRule.status !== 200 || !attributeRule.body?.rules?.some((item) => item.attributeId === enumAttributeID && item.required && item.variantAxis)) fail("required category Attribute rule failed", JSON.stringify(attributeRule));
 console.log("DSH_TYPED_ATTRIBUTES=PASS");
 
