@@ -234,7 +234,8 @@ test("@live operator passkey registration, authentication and governed recovery 
     response.url().endsWith("/api/auth/logout") && response.request().method() === "POST",
   );
   await page.getByRole("button", { name: "تسجيل الخروج" }).click();
-  expect((await explicitLogoutResponse).ok()).toBe(true);
+  const logoutResponse = await explicitLogoutResponse;
+  expect(logoutResponse.ok(), `${logoutResponse.status()} ${await logoutResponse.text()}`).toBe(true);
   await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
   const cookiesAfterExplicitLogout = await page.context().cookies();
   expect(cookiesAfterExplicitLogout.some((cookie) => cookie.name.endsWith("bt_identity_access") || cookie.name.endsWith("bt_identity_refresh"))).toBe(false);

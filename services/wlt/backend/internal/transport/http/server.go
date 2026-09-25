@@ -1593,6 +1593,8 @@ func writeDestinationError(w http.ResponseWriter, err error) {
 
 func writePayoutError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, postgres.ErrPayoutInvalidInput):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "payout intent input is invalid")
 	case errors.Is(err, postgres.ErrCustomerWithdrawalNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "customer withdrawal intake was not found")
 	case errors.Is(err, postgres.ErrCustomerWithdrawalState):
@@ -1608,7 +1610,7 @@ func writePayoutError(w http.ResponseWriter, err error) {
 	case errors.Is(err, postgres.ErrIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different payout facts")
 	default:
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "payout intent input is invalid")
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "payout operation could not be completed")
 	}
 }
 
