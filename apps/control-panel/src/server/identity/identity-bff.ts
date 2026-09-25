@@ -294,7 +294,8 @@ async function readOperatorAccessToken(accessToken: string, clientInstanceId?: s
   try {
     const identity = await identityClient().session(accessToken);
     if (!isControlPanelIdentity(identity)) {
-      await clearOperatorCookiesBestEffort(clientInstanceId);
+      const preservedClientInstanceId = clientInstanceId && operatorSessionLogoutSuppressions.has(clientInstanceId) ? clientInstanceId : undefined;
+      await clearOperatorCookiesBestEffort(preservedClientInstanceId);
       return null;
     }
     return identity;
@@ -315,7 +316,8 @@ async function refreshOperatorSession(store: Awaited<ReturnType<typeof cookies>>
       throw localSessionError(409, "REFRESH_CONFLICT", "operator session refresh is being reconciled");
     }
     if (isTerminalIdentityFailure(error)) {
-      await clearOperatorCookiesBestEffort(clientInstanceId);
+      const preservedClientInstanceId = operatorSessionLogoutSuppressions.has(clientInstanceId) ? clientInstanceId : undefined;
+      await clearOperatorCookiesBestEffort(preservedClientInstanceId);
       return null;
     }
     if (isIdentityClientError(error)) throw error;
