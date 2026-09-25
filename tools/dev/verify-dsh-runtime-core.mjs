@@ -510,15 +510,15 @@ const mainOrderTotal = mainOrderSubtotal + deliveryFeeMinor;
 const singleOrderSubtotal = 2100;
 const singleOrderTotal = singleOrderSubtotal + deliveryFeeMinor;
 
-const verticalCreate = await request(dshBase, "POST", "/dsh/catalog/verticals", { token: dshToken, headers: serviceHeaders(actingOperatorID, `vertical-${suffix}`), body: { nameAr: `بقالة ${suffix}`, nameEn: `Grocery ${suffix}`, active: true } });
+const verticalCreate = await request(dshBase, "POST", "/dsh/catalog/verticals", { token: dshToken, headers: serviceHeaders(actingOperatorID, `vertical-${suffix}`), body: { nameAr: `بقالة ${suffix}`, nameEn: `Grocery ${suffix}`, catalogModel: "SHARED_CATALOG", active: true, reason: "DSH runtime catalog vertical proof" } });
 if (verticalCreate.status !== 201 || !String(verticalCreate.body?.vertical?.id || "").startsWith("vertical_")) fail("commerce vertical creation failed", JSON.stringify(verticalCreate));
 verticalID = String(verticalCreate.body.vertical.id);
 const verticalList = await request(dshBase, "GET", "/dsh/catalog/verticals", { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 if (verticalList.status !== 200 || !verticalList.body?.verticals?.some((item) => item.id === verticalID)) fail("commerce vertical registry readback failed", JSON.stringify(verticalList));
-const categoryCreate = await request(dshBase, "POST", "/dsh/catalog/categories", { token: dshToken, headers: serviceHeaders(actingOperatorID, `category-${suffix}`), body: { verticalId: verticalID, nameAr: `قهوة ${suffix}`, nameEn: `Coffee ${suffix}`, active: true } });
+const categoryCreate = await request(dshBase, "POST", "/dsh/catalog/categories", { token: dshToken, headers: serviceHeaders(actingOperatorID, `category-${suffix}`), body: { verticalId: verticalID, nameAr: `قهوة ${suffix}`, nameEn: `Coffee ${suffix}`, active: true, reason: "DSH runtime catalog category proof" } });
 if (categoryCreate.status !== 201 || !String(categoryCreate.body?.category?.id || "").startsWith("category_")) fail("catalog category creation failed", JSON.stringify(categoryCreate));
 categoryID = String(categoryCreate.body.category.id);
-const childCategoryCreate = await request(dshBase, "POST", "/dsh/catalog/categories", { token: dshToken, headers: serviceHeaders(actingOperatorID, `category-child-${suffix}`), body: { verticalId: verticalID, parentCategoryId: categoryID, nameAr: `حبوب ${suffix}`, nameEn: `Beans ${suffix}`, active: true } });
+const childCategoryCreate = await request(dshBase, "POST", "/dsh/catalog/categories", { token: dshToken, headers: serviceHeaders(actingOperatorID, `category-child-${suffix}`), body: { verticalId: verticalID, parentCategoryId: categoryID, nameAr: `حبوب ${suffix}`, nameEn: `Beans ${suffix}`, active: true, reason: "DSH runtime child catalog category proof" } });
 if (childCategoryCreate.status !== 201 || !String(childCategoryCreate.body?.category?.id || "").startsWith("category_") || childCategoryCreate.body?.category?.parentCategoryId !== categoryID) fail("catalog parent category tree failed", JSON.stringify({ categoryCreate, childCategoryCreate }));
 childCategoryID = String(childCategoryCreate.body.category.id);
 categoryIDs.add(categoryID); categoryIDs.add(childCategoryID);
