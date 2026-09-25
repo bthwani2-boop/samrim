@@ -16,30 +16,54 @@ const MAP_KEY_NAMES = {
   "app-partner": { android: "GOOGLE_MAPS_ANDROID_API_KEY_APP_PARTNER", ios: "GOOGLE_MAPS_IOS_API_KEY" },
 };
 
+function mobileSecretEnvValue(name) {
+  const explicit = process.env[name]?.trim();
+  if (explicit) return explicit;
+
+  const secretsRoot = process.env.BTHWANI_SECRETS_ROOT || "C:\\BTHWANI-Secrets\\samrim";
+  const envPath = path.join(secretsRoot, "env", "mobile.env");
+  if (!fs.existsSync(envPath)) return "";
+
+  for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
+    const separator = line.indexOf("=");
+    if (separator <= 0 || line.slice(0, separator).trim() !== name) continue;
+    return line.slice(separator + 1).trim().replace(/^(['"])(.*)\1$/, "$2");
+  }
+  return "";
+}
+
 function mobileMapsApiKey(appKey, platform) {
   const envNames = MAP_KEY_NAMES[appKey];
   if (!envNames) return undefined;
   const specificEnvName = envNames[platform];
   const baseEnvName = `GOOGLE_MAPS_${platform.toUpperCase()}_API_KEY`;
-  let value = process.env[specificEnvName]?.trim() || process.env[baseEnvName]?.trim() || "";
-  if (!value) {
-    const secretsRoot = process.env.BTHWANI_SECRETS_ROOT || "C:\\BTHWANI-Secrets\\samrim";
-    const envPath = path.join(secretsRoot, "env", "mobile.env");
-    if (fs.existsSync(envPath)) {
-      for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
-        const separator = line.indexOf("=");
-        if (separator > 0) {
-          const name = line.slice(0, separator).trim();
-          if (name === specificEnvName || name === baseEnvName) {
-            const candidate = line.slice(separator + 1).trim().replace(/^(['"])(.*)\1$/, "$2");
-            if (candidate) value = candidate;
-            if (name === specificEnvName && value) break;
-          }
-        }
-      }
-    }
+  return mobileSecretEnvValue(specificEnvName) || mobileSecretEnvValue(baseEnvName) || undefined;
+}
+
+function mobileGoogleServicesFile(appKey, androidPackage) {
+  const suffix = appKey.replace(/^app-/, "").replace(/-/g, "_").toUpperCase();
+  const envName = `GOOGLE_SERVICES_JSON_APP_${suffix}`;
+  const configuredPath = mobileSecretEnvValue(envName);
+  const secretsRoot = process.env.BTHWANI_SECRETS_ROOT || "C:\\BTHWANI-Secrets\\samrim";
+  const filePath = configuredPath || path.join(secretsRoot, "firebase", appKey, "google-services.json");
+  if (!fs.existsSync(filePath)) {
+    if (configuredPath) throw new Error("Configured Firebase Android file is missing for " + appKey + ".");
+    return undefined;
   }
-  return value || undefined;
+
+  let config;
+  try {
+    config = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    throw new Error("Configured Firebase Android file is invalid for " + appKey + ".");
+  }
+  const hasMatchingAndroidClient = Array.isArray(config.client) && config.client.some(
+    (client) => client.client_info?.android_client_info?.package_name === androidPackage,
+  );
+  if (!hasMatchingAndroidClient) {
+    throw new Error("Firebase Android file package does not match " + appKey + ".");
+  }
+  return filePath;
 }
 
 function appRoot(appKey) {
@@ -131,6 +155,7 @@ function defineSamrimExpoApp(appKey, options = {}) {
     throw new Error("Invalid locationMode for " + appKey + ": " + locationMode);
   }
   const adaptiveIcon = appAsset(appKey, "adaptive-icon.png");
+  const googleServicesFile = mobileGoogleServicesFile(appKey, app.androidPackage);
   const androidMapsApiKey = options.maps ? mobileMapsApiKey(appKey, "android") : undefined;
   const iosMapsApiKey = options.maps ? mobileMapsApiKey(appKey, "ios") : undefined;
   if (options.maps && (!androidMapsApiKey || !iosMapsApiKey)) {
@@ -138,6 +163,7 @@ function defineSamrimExpoApp(appKey, options = {}) {
   }
   const android = {
     package: app.androidPackage,
+    ...(googleServicesFile ? { googleServicesFile } : {}),
     ...(adaptiveIcon ? { adaptiveIcon: { foregroundImage: adaptiveIcon, backgroundColor: "#FFFFFF" } } : {}),
   };
 
