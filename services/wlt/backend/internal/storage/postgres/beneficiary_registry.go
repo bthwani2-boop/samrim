@@ -83,7 +83,7 @@ func ListBeneficiaryPayoutStates(ctx context.Context, db *sql.DB, actorType, sea
 		LEFT JOIN holds h ON h.actor_type=b.actor_type AND h.actor_id=b.actor_id
 		LEFT JOIN latest_destination d ON d.actor_type=b.actor_type AND d.actor_id=b.actor_id
 	)
-	SELECT actor_type,actor_id,CASE $8 WHEN 'available_asc' THEN available_minor WHEN 'available_desc' THEN available_minor WHEN 'held_asc' THEN held_minor WHEN 'held_desc' THEN held_minor WHEN 'payout_amount_asc' THEN payout_amount_minor WHEN 'payout_amount_desc' THEN payout_amount_minor ELSE 0 END::bigint sort_value
+	SELECT actor_type,actor_id,CASE $8::text WHEN 'available_asc' THEN available_minor WHEN 'available_desc' THEN available_minor WHEN 'held_asc' THEN held_minor WHEN 'held_desc' THEN held_minor WHEN 'payout_amount_asc' THEN payout_amount_minor WHEN 'payout_amount_desc' THEN payout_amount_minor ELSE 0 END::bigint sort_value
 	FROM enriched WHERE ($1='' OR actor_type=$1) AND ($2='' OR actor_id ILIKE '%' || $2 || '%' OR beneficiary_name ILIKE '%' || $2 || '%' OR wallet_identifier_masked ILIKE '%' || $2 || '%')
 	AND ($3='' OR ($3='NO_REQUEST' AND payout_status='') OR payout_status=$3)
 	AND (NOT $4::boolean OR ` + keyset + `)
