@@ -56,9 +56,8 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
   const [payoutEvidenceReference, setPayoutEvidenceReference] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [registryRefresh, setRegistryRefresh] = useState(0);
 
-  const loadRegistry = useCallback(async (query: CustomerWithdrawalQueueQuery, signal: AbortSignal) => {
+  const loadRegistry = useCallback(async (query: Pick<CustomerWithdrawalQueueQuery, "status" | "search" | "sort" | "cursor">, signal: AbortSignal) => {
     setLoading(true);
     setError("");
     try {
@@ -108,9 +107,9 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
     setStatus(initialQuery.status);
     setSearch(initialQuery.search);
     setSort(initialQuery.sort);
-    void loadRegistry(initialQuery, controller.signal);
+    void loadRegistry({ status: initialQuery.status, search: initialQuery.search, sort: initialQuery.sort, cursor: initialQuery.cursor }, controller.signal);
     return () => controller.abort();
-  }, [initialQuery.status, initialQuery.search, initialQuery.sort, initialQuery.cursor, registryRefresh, loadRegistry]);
+  }, [initialQuery.status, initialQuery.search, initialQuery.sort, initialQuery.cursor, loadRegistry]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -138,7 +137,8 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
     if (!intakeId) return;
     const controller = new AbortController();
     await loadDetail(intakeId, controller.signal);
-    setRegistryRefresh((value) => value + 1);
+    const registryController = new AbortController();
+    await loadRegistry(initialQuery, registryController.signal);
   };
 
   const act = async (action: "prepare-destination" | "verify-destination" | "activate-destination" | "accept" | "reject") => {
