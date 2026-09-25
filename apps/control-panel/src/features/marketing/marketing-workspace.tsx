@@ -321,7 +321,6 @@ export function MarketingContentWorkspace() {
       setTargetSearch("");
       setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor("");
       setMediaFile(null);
-      setMediaPreviewUrl("");
       setSearch(""); setAppliedSearch(""); setState("DRAFT"); setKind(""); setSort("priority"); setCursor(""); setCursorStack([]);
       await load({ search: "", state: "DRAFT", kind: "", sort: "priority", cursor: "" });
       setMessage("تم إنشاء المحتوى كمسودة. انشره من السجل عندما يصبح جاهزًا.");
