@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/domain"
 )
@@ -31,6 +32,8 @@ type CashLiability struct {
 type CashLiabilityList struct {
 	Items            []CashLiability
 	TotalAmountMinor int64
+	TotalItems       int
+	HasMore          bool
 }
 
 type CashRemittanceRecord struct {
@@ -66,11 +69,87 @@ func ListCashLiability(ctx context.Context, db *sql.DB, captainActorID string, l
 	return listCashLiability(ctx, db, captainActorID, limit)
 }
 
-func ListAllCashLiability(ctx context.Context, db *sql.DB, limit int) (CashLiabilityList, error) {
-	if db == nil || limit < 1 || limit > 100 {
+func ListCashLiabilityRegistry(ctx context.Context, db *sql.DB, search, sort string, afterCollectedAt *time.Time, afterPaymentIntentID string, limit int) (CashLiabilityList, error) {
+	search = strings.TrimSpace(search)
+	sort = strings.TrimSpace(sort)
+	afterPaymentIntentID = strings.TrimSpace(afterPaymentIntentID)
+	if db == nil || utf8.RuneCountInString(search) > 128 || !validCashLiabilityRegistrySort(sort) || limit < 1 || limit > 100 || (afterCollectedAt == nil) != (afterPaymentIntentID == "") || len(afterPaymentIntentID) > 128 {
 		return CashLiabilityList{}, ErrRemittanceInvalidInput
 	}
-	return listCashLiability(ctx, db, "", limit)
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return CashLiabilityList{}, fmt.Errorf("begin cash custody registry read: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	filter, filterArgs := cashLiabilityRegistryFilter(search)
+	var totalItems int
+	var totalAmountMinor int64
+	summaryQuery := `SELECT COUNT(*), COALESCE(SUM(p.amount_minor), 0) FROM wlt.payment_intents p LEFT JOIN wlt.cash_remittances r ON r.payment_intent_id = p.id ` + filter
+	if err := tx.QueryRowContext(ctx, summaryQuery, filterArgs...).Scan(&totalItems, &totalAmountMinor); err != nil {
+		return CashLiabilityList{}, fmt.Errorf("summarize cash custody registry: %w", err)
+	}
+
+	query, args := cashLiabilityRegistryQuery(filter, filterArgs, sort, afterCollectedAt, afterPaymentIntentID, limit+1)
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return CashLiabilityList{}, fmt.Errorf("list cash custody registry: %w", err)
+	}
+	defer rows.Close()
+	result := CashLiabilityList{Items: make([]CashLiability, 0, limit), TotalAmountMinor: totalAmountMinor, TotalItems: totalItems}
+	for rows.Next() {
+		var item CashLiability
+		if err := rows.Scan(&item.PaymentIntentID, &item.ExternalReference, &item.CaptainActorID, &item.AmountMinor, &item.Currency, &item.PaymentVersion, &item.CollectedAt); err != nil {
+			return CashLiabilityList{}, fmt.Errorf("scan cash custody registry: %w", err)
+		}
+		if len(result.Items) == limit {
+			result.HasMore = true
+			break
+		}
+		result.Items = append(result.Items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return CashLiabilityList{}, fmt.Errorf("iterate cash custody registry: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return CashLiabilityList{}, fmt.Errorf("commit cash custody registry read: %w", err)
+	}
+	return result, nil
+}
+
+func validCashLiabilityRegistrySort(sort string) bool {
+	return sort == "collected_asc" || sort == "collected_desc"
+}
+
+func cashLiabilityRegistryFilter(search string) (string, []any) {
+	filter := `WHERE p.state='COLLECTED' AND p.method=$1 AND r.id IS NULL`
+	args := []any{domain.MethodCashOnDelivery}
+	if search != "" {
+		search = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(strings.ToLower(search)) + "%"
+		args = append(args, search)
+		filter += ` AND (lower(p.external_reference) LIKE $2 ESCAPE E'\\' OR lower(p.collected_by_actor_id) LIKE $2 ESCAPE E'\\')`
+	}
+	return filter, args
+}
+
+func cashLiabilityRegistryQuery(filter string, filterArgs []any, sort string, afterCollectedAt *time.Time, afterPaymentIntentID string, limit int) (string, []any) {
+	args := append([]any(nil), filterArgs...)
+	query := `SELECT p.id, p.external_reference, p.collected_by_actor_id, p.amount_minor, p.currency, p.version, p.collected_at FROM wlt.payment_intents p LEFT JOIN wlt.cash_remittances r ON r.payment_intent_id = p.id ` + filter
+	if afterCollectedAt != nil {
+		operator := ">"
+		if sort == "collected_desc" {
+			operator = "<"
+		}
+		args = append(args, *afterCollectedAt, afterPaymentIntentID)
+		query += fmt.Sprintf(` AND (p.collected_at, p.id) %s ($%d, $%d)`, operator, len(args)-1, len(args))
+	}
+	order := "ASC"
+	if sort == "collected_desc" {
+		order = "DESC"
+	}
+	args = append(args, limit)
+	query += fmt.Sprintf(` ORDER BY p.collected_at %s, p.id %s LIMIT $%d`, order, order, len(args))
+	return query, args
 }
 
 func cashLiabilityQuery(captainActorID string, limit int) (string, []any) {

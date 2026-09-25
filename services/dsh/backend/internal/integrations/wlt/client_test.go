@@ -55,6 +55,30 @@ func TestCreateUsesServiceContract(t *testing.T) {
 	}
 }
 
+func TestListOperatorCashLiabilityUsesRegistryQuery(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet || request.URL.Path != "/wlt/v1/operator/cash-liability" {
+			t.Fatalf("unexpected request: %s %s", request.Method, request.URL.Path)
+		}
+		query := request.URL.Query()
+		if query.Get("search") != "cash-ref" || query.Get("sort") != "collected_desc" || query.Get("limit") != "25" || query.Get("cursor") != "opaque-cursor" {
+			t.Fatalf("cash custody query = %#v", query)
+		}
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{"items":[],"totalAmountMinor":0,"totalItems":0,"limit":25}`))
+	}))
+	defer server.Close()
+
+	client, err := New(server.URL, "development", "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.ListOperatorCashLiability(t.Context(), "cash-ref", "collected_desc", "opaque-cursor", 25)
+	if err != nil || result.Limit != 25 || result.TotalItems != 0 {
+		t.Fatalf("cash custody registry result = %#v, err=%v", result, err)
+	}
+}
+
 func TestEnsureCollectedCollectsExactAmount(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		response.Header().Set("Content-Type", "application/json")

@@ -119,12 +119,17 @@ paths:
     get:
       operationId: listOperatorCashLiability
       security: [{ serviceToken: [] }]
+      parameters:
+        - { name: search, in: query, required: false, schema: { type: string, maxLength: 128 } }
+        - { name: sort, in: query, required: false, schema: { type: string, enum: [collected_asc, collected_desc], default: collected_asc } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 1024 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
       responses:
         '200':
-          description: Bounded read of unremitted COD cash collected by Captains
+          description: Server-searched, sorted, and cursor-paginated unremitted COD cash collected by Captains
           content:
             application/json:
-               schema: { $ref: '#/components/schemas/CashLiabilityResponse' }
+              schema: { $ref: '#/components/schemas/CashLiabilityRegistryResponse' }
   /wlt/v1/captains/{captainActorId}/wallet-state:
     get:
       operationId: readCaptainWalletState
@@ -2386,6 +2391,18 @@ components:
           type: array
           items: { $ref: '#/components/schemas/CashLiabilityItem' }
         totalAmountMinor: { type: integer, minimum: 0 }
+    CashLiabilityRegistryResponse:
+      type: object
+      additionalProperties: false
+      required: [items, totalAmountMinor, totalItems, limit]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/CashLiabilityItem' }
+        totalAmountMinor: { type: integer, minimum: 0 }
+        totalItems: { type: integer, minimum: 0 }
+        limit: { type: integer, minimum: 1, maximum: 100 }
+        nextCursor: { type: string, maxLength: 1024 }
     CashRemittance:
       type: object
       additionalProperties: false

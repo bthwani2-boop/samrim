@@ -23,7 +23,7 @@ Endpoints:
 - `POST /wlt/v1/payment-intents/{intentId}/collect`
 - `POST /wlt/v1/payment-intents/{intentId}/cancel`
 - `GET /wlt/v1/captains/{captainActorId}/cash-liability`
-- `GET /wlt/v1/operator/cash-liability`
+- `GET /wlt/v1/operator/cash-liability` (server-side search, sort, and cursor pagination)
 - `POST /wlt/v1/payment-intents/{intentId}/remit`
 - `POST /wlt/v1/partner-store-cash-commissions/finalize`
 - `POST /wlt/v1/operator/partners/{partnerActorId}/commission-remittances`

@@ -87,6 +87,14 @@ type CashLiabilityResponse struct {
 	TotalAmountMinor int64           `json:"totalAmountMinor"`
 }
 
+type CashLiabilityRegistryResponse struct {
+	Items            []CashLiability `json:"items"`
+	TotalAmountMinor int64           `json:"totalAmountMinor"`
+	TotalItems       int             `json:"totalItems"`
+	Limit            int             `json:"limit"`
+	NextCursor       string          `json:"nextCursor,omitempty"`
+}
+
 type CashRemittance struct {
 	ID                  string `json:"id"`
 	PaymentIntentID     string `json:"paymentIntentId"`
@@ -953,9 +961,16 @@ func (c *Client) ListCashLiability(ctx context.Context, captainActorID string) (
 	return response, err
 }
 
-func (c *Client) ListOperatorCashLiability(ctx context.Context) (CashLiabilityResponse, error) {
-	var response CashLiabilityResponse
-	err := c.request(ctx, http.MethodGet, "/wlt/v1/operator/cash-liability", nil, "", "", 0, &response)
+func (c *Client) ListOperatorCashLiability(ctx context.Context, search, sort, cursor string, limit int) (CashLiabilityRegistryResponse, error) {
+	var response CashLiabilityRegistryResponse
+	query := url.Values{}
+	query.Set("search", strings.TrimSpace(search))
+	query.Set("sort", strings.TrimSpace(sort))
+	query.Set("limit", strconv.Itoa(limit))
+	if strings.TrimSpace(cursor) != "" {
+		query.Set("cursor", strings.TrimSpace(cursor))
+	}
+	err := c.request(ctx, http.MethodGet, "/wlt/v1/operator/cash-liability?"+query.Encode(), nil, "", "", 0, &response)
 	return response, err
 }
 

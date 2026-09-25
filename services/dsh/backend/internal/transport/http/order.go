@@ -140,7 +140,29 @@ func (s *OrderServer) listOperatorCashCustody(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
 		return
 	}
-	result, err := s.service.ListCashCustodyForOperator(r.Context(), actingActorID)
+	search := strings.TrimSpace(r.URL.Query().Get("search"))
+	if utf8.RuneCountInString(search) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "search is too long")
+		return
+	}
+	sort := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("sort")))
+	if sort == "" {
+		sort = "collected_asc"
+	}
+	if sort != "collected_asc" && sort != "collected_desc" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "sort is invalid")
+		return
+	}
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	if len(cursor) > 1024 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cursor is too long")
+		return
+	}
+	limit, ok := orderLimit(w, r)
+	if !ok {
+		return
+	}
+	result, err := s.service.ListCashCustodyForOperator(r.Context(), actingActorID, search, sort, cursor, limit)
 	if err != nil {
 		writeOrderError(w, err)
 		return
@@ -154,7 +176,7 @@ func (s *OrderServer) listOperatorCashCustody(w http.ResponseWriter, r *http.Req
 		}
 		items = append(items, contract.CashLiabilityItem{PaymentIntentID: item.PaymentIntentID, ExternalReference: item.ExternalReference, CaptainActorID: item.CaptainActorID, AmountMinor: int(item.AmountMinor), Currency: item.Currency, PaymentVersion: item.PaymentVersion, CollectedAt: collectedAt})
 	}
-	writeJSON(w, http.StatusOK, contract.CashLiabilityResponse{Items: items, TotalAmountMinor: int(result.TotalAmountMinor)})
+	writeJSON(w, http.StatusOK, contract.CashCustodyRegistryResponse{Items: items, TotalAmountMinor: int(result.TotalAmountMinor), TotalItems: result.TotalItems, Limit: result.Limit, NextCursor: result.NextCursor})
 }
 
 func toOperatorOperation(operation postgres.OperatorOperationRecord) contract.OperatorOperation {

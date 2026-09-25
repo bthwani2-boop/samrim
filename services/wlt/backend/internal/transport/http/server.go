@@ -564,6 +564,14 @@ type cashLiabilityResponse struct {
 	TotalAmountMinor int64                   `json:"totalAmountMinor"`
 }
 
+type cashLiabilityRegistryResponse struct {
+	Items            []cashLiabilityItemJSON `json:"items"`
+	TotalAmountMinor int64                   `json:"totalAmountMinor"`
+	TotalItems       int                     `json:"totalItems"`
+	Limit            int                     `json:"limit"`
+	NextCursor       string                  `json:"nextCursor,omitempty"`
+}
+
 type cashRemittanceJSON struct {
 	ID                  string `json:"id"`
 	PaymentIntentID     string `json:"paymentIntentId"`
@@ -766,18 +774,6 @@ func (s *Server) cashLiability(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := postgres.ListCashLiability(r.Context(), s.db, r.PathValue("captainActorId"), 100)
-	if err != nil {
-		writePaymentError(w, err)
-		return
-	}
-	writeCashLiability(w, result)
-}
-
-func (s *Server) operatorCashLiability(w http.ResponseWriter, r *http.Request) {
-	if !s.authorize(w, r) {
-		return
-	}
-	result, err := postgres.ListAllCashLiability(r.Context(), s.db, 100)
 	if err != nil {
 		writePaymentError(w, err)
 		return

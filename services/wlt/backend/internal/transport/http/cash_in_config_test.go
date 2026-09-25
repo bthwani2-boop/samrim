@@ -1,6 +1,7 @@
 package http
 
 import (
+	"net/http/httptest"
 	"testing"
 
 	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/cashin"
@@ -40,5 +41,16 @@ func TestCashInRailForConfig(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestOperatorCashLiabilityRejectsInvalidRegistrySortBeforeStorage(t *testing.T) {
+	server := &Server{serviceToken: "test-token"}
+	request := httptest.NewRequest("GET", "/wlt/v1/operator/cash-liability?sort=not-a-sort", nil)
+	request.Header.Set("Authorization", "Bearer test-token")
+	response := httptest.NewRecorder()
+	server.operatorCashLiability(response, request)
+	if response.Code != 400 {
+		t.Fatalf("invalid registry sort status = %d, want 400; body=%s", response.Code, response.Body.String())
 	}
 }

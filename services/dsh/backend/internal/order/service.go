@@ -176,11 +176,11 @@ func (s *Service) ReadForOperator(ctx context.Context, orderID, actingActorID st
 	return postgres.ReadOperatorOperation(ctx, s.db, orderID)
 }
 
-func (s *Service) ListCashCustodyForOperator(ctx context.Context, actingActorID string) (wlt.CashLiabilityResponse, error) {
+func (s *Service) ListCashCustodyForOperator(ctx context.Context, actingActorID, search, sort, cursor string, limit int) (wlt.CashLiabilityRegistryResponse, error) {
 	if err := s.requireOperatorPermission(ctx, actingActorID, "finance"); err != nil {
-		return wlt.CashLiabilityResponse{}, err
+		return wlt.CashLiabilityRegistryResponse{}, err
 	}
-	return s.payment.ListOperatorCashLiability(ctx)
+	return s.payment.ListOperatorCashLiability(ctx, search, sort, cursor, limit)
 }
 
 func (s *Service) TransitionForPartner(ctx context.Context, accessToken, storeID, orderID, state string, expectedVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {

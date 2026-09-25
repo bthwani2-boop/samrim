@@ -4032,6 +4032,30 @@ components:
           format: int64
           minimum: 0
 
+    CashCustodyRegistryResponse:
+      type: object
+      required: [items, totalAmountMinor, totalItems, limit]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CashLiabilityItem"
+        totalAmountMinor:
+          type: integer
+          format: int64
+          minimum: 0
+        totalItems:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        nextCursor:
+          type: string
+          maxLength: 1024
+
     CaptainCashRemittanceRequest:
       type: object
       required: [amountMinor, remittanceReference]
