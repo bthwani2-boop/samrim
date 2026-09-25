@@ -4,10 +4,10 @@ import { FinanceWorkspace } from "../../../../../src/features/finance/finance-wo
 import type { FinanceResourceKey } from "../../../../../src/navigation/workspace-registry";
 
 const resources = {
-  partner: "beneficiary-settlement-partners",
-  captain: "beneficiary-settlement-captains",
-  field: "beneficiary-settlement-field",
-} as const satisfies Record<string, FinanceResourceKey>;
+  partners: { resource: "beneficiary-settlement-partners", actorType: "partner" },
+  captains: { resource: "beneficiary-settlement-captains", actorType: "captain" },
+  field: { resource: "beneficiary-settlement-field", actorType: "field" },
+} as const satisfies Record<string, Readonly<{ resource: FinanceResourceKey; actorType: "partner" | "captain" | "field" }>>;
 
 export default async function FinanceBeneficiarySettlementRegistryPage({
   params,
@@ -17,8 +17,8 @@ export default async function FinanceBeneficiarySettlementRegistryPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }>) {
   const [{ actorType }, query] = await Promise.all([params, searchParams]);
-  if (actorType !== "partner" && actorType !== "captain" && actorType !== "field") notFound();
-  const typedActorType = actorType as keyof typeof resources;
+  if (!Object.hasOwn(resources, actorType)) notFound();
+  const selected = resources[actorType as keyof typeof resources];
   const first = (key: string) => {
     const value = query[key];
     return Array.isArray(value) ? value[0] ?? "" : value ?? "";
@@ -38,8 +38,8 @@ export default async function FinanceBeneficiarySettlementRegistryPage({
     batchCursor: first("batchCursor").slice(0, 1024),
   };
   return (
-    <FinanceWorkspace resource={resources[typedActorType]}>
-      <BeneficiarySettlementWorkspace actorType={typedActorType} initialQuery={initialQuery} />
+    <FinanceWorkspace resource={selected.resource}>
+      <BeneficiarySettlementWorkspace actorType={selected.actorType} initialQuery={initialQuery} />
     </FinanceWorkspace>
   );
 }
