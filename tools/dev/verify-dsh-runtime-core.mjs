@@ -561,13 +561,10 @@ const enumOption = await request(dshBase, "POST", `/dsh/catalog/attributes/${enu
 const enumOptionReplay = await request(dshBase, "POST", `/dsh/catalog/attributes/${enumAttributeID}/enum-options`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `enum-option-${suffix}`), body: { optionValue: "Dark", active: true, ordinal: 1 } });
 const enumOptions = await request(dshBase, "GET", `/dsh/catalog/attributes/${enumAttributeID}/enum-options`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 if (enumOption.status !== 201 || enumOption.body?.option?.optionValue !== "Dark" || enumOptionReplay.status !== 200 || enumOptionReplay.body?.idempotentReplay !== true || enumOptions.status !== 200 || enumOptions.body?.options?.length !== 1) fail("ENUM option canonical write/readback failed", JSON.stringify({ enumOption, enumOptionReplay, enumOptions }));
-const attributeRule = await request(dshBase, "PUT", `/dsh/catalog/categories/${childCategoryID}/attribute-rules/${enumAttributeID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `attribute-rule-${suffix}`), body: { required: true, filterable: false, variantAxis: true, expectedVersion: 0, reason: "DSH runtime category attribute rule proof" } });
-if (attributeRule.status !== 200 || !attributeRule.body?.rules?.some((item) => item.attributeId === enumAttributeID && item.required && item.variantAxis)) fail("required category Attribute rule failed", JSON.stringify(attributeRule));
 for (const attributeID of [measurementAttributeID, dateAttributeID]) {
   const productAttributeRule = await request(dshBase, "PUT", `/dsh/catalog/categories/${childCategoryID}/attribute-rules/${attributeID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `product-attribute-rule-${attributeID}-${suffix}`), body: { required: false, filterable: false, variantAxis: false, expectedVersion: 0, reason: "DSH runtime optional product attribute proof" } });
   if (productAttributeRule.status !== 200 || !productAttributeRule.body?.rules?.some((item) => item.attributeId === attributeID && !item.required && !item.variantAxis)) fail("optional product Attribute rule failed", JSON.stringify({ attributeID, productAttributeRule }));
 }
-console.log("DSH_TYPED_ATTRIBUTES=PASS");
 
 const firstStoreOrigin = { firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006 };
 const correctedStoreOrigin = { firstStoreLatitude: 15.370001, firstStoreLongitude: 44.192002 };
@@ -692,7 +689,7 @@ console.log("DSH_JOINING_CASE_VERTICAL=PASS");
 console.log("DSH_JOINING_CASE_CORRECTION=PASS");
 
 const runtimeCoffeeName = `Runtime Coffee ${suffix}`;
-const productInput = { canonicalName: runtimeCoffeeName, verticalId: verticalID, scope: "SHARED", variantTitle: "عبوة 250 غ", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], variantAttributeValues: [{ attributeId: enumAttributeID, valueKind: "ENUM", enumValue: "Dark" }], identifierType: "GTIN", identifierValue: `628100${suffix.replaceAll("-", "").slice(-7)}`, imageUri: "https://example.com/runtime-coffee.jpg" };
+const productInput = { canonicalName: runtimeCoffeeName, verticalId: verticalID, scope: "SHARED", variantTitle: "عبوة 250 غ", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], identifierType: "GTIN", identifierValue: `628100${suffix.replaceAll("-", "").slice(-7)}`, imageUri: "https://example.com/runtime-coffee.jpg" };
 const productCategoryRead = await request(dshBase, "GET", `/dsh/catalog/categories?verticalId=${encodeURIComponent(verticalID)}`, { token: dshToken });
 if (productCategoryRead.status !== 200 || !productCategoryRead.body?.categories?.some((category) => category.id === childCategoryID && category.verticalId === verticalID && category.active)) fail("catalog Product category was not active in its vertical at canonical readback", JSON.stringify({ verticalID, childCategoryID, productCategoryRead }));
 const productCategorySQL = sql(`SELECT COALESCE((SELECT vertical_id || ':' || active::text FROM dsh.catalog_categories WHERE id='${sqlLiteral(childCategoryID)}'), 'missing')`);
@@ -704,6 +701,9 @@ const productID = String(productCreate.body.product.id); productIDs.add(productI
 const productRead = await request(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&limit=50`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 if (productRead.status !== 200 || productRead.body?.products?.length !== 1 || productRead.body.products[0].variants?.length !== 1 || productRead.body.products[0].variants[0].identifiers?.[0]?.value !== productInput.identifierValue || !productRead.body.products[0].media?.some((media) => media.role === "primary" && media.uri === productInput.imageUri)) fail("catalog Product/Variant/media canonical readback failed", JSON.stringify(productRead));
 const variantID = String(productRead.body.products[0].variants[0].id);
+const attributeRule = await request(dshBase, "PUT", `/dsh/catalog/categories/${childCategoryID}/attribute-rules/${enumAttributeID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `attribute-rule-${suffix}`), body: { required: true, filterable: false, variantAxis: true, expectedVersion: 0, reason: "DSH runtime category attribute rule proof" } });
+if (attributeRule.status !== 200 || !attributeRule.body?.rules?.some((item) => item.attributeId === enumAttributeID && item.required && item.variantAxis)) fail("required category Attribute rule failed", JSON.stringify(attributeRule));
+console.log("DSH_TYPED_ATTRIBUTES=PASS");
 const replacementMedia = { media: [{ uri: "https://example.com/runtime-coffee-updated.jpg", role: "primary", ordinal: 0 }, { uri: "https://example.com/runtime-coffee-gallery.jpg", role: "gallery", ordinal: 1 }] };
 const mediaKey = `product-media-${suffix}`;
 const productMediaReplaceHeaders = serviceHeaders(actingOperatorID, mediaKey, crypto.randomUUID(), 1);
