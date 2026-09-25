@@ -209,7 +209,6 @@ export function MarketingContentWorkspace() {
   const [targetLoading, setTargetLoading] = useState(false);
   const [targetMessage, setTargetMessage] = useState("");
   const [mediaFile, setMediaFile] = useState<File | null>(null);
-  const [mediaPreviewUrl, setMediaPreviewUrl] = useState("");
   const load = useCallback(async (query: { search?: string; state?: string; kind?: string; sort?: "priority" | "created_desc"; cursor?: string } = {}) => {
     setLoading(true);
     const params = new URLSearchParams({ limit: "25", sort: query.sort ?? sort });
@@ -244,10 +243,6 @@ export function MarketingContentWorkspace() {
   }
 
   useEffect(() => { void load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل محتوى الاكتشاف.")); }, [load]);
-  useEffect(() => {
-    if (!mediaPreviewUrl) return;
-    return () => URL.revokeObjectURL(mediaPreviewUrl);
-  }, [mediaPreviewUrl]);
   useEffect(() => { void readActiveServiceCities().then(setCities).catch(() => setMessage("تعذر قراءة مدن الخدمة؛ يمكنك نشر المحتوى على كل المدن.")); }, []);
   useEffect(() => {
     if (contentForm.targetType === "INFO") {
@@ -361,9 +356,8 @@ export function MarketingContentWorkspace() {
           <input aria-label="عنوان المحتوى" placeholder="مختارات الأسبوع" value={contentForm.titleAr} onChange={(event) => setContentForm((current) => ({ ...current, titleAr: event.target.value }))} />
           <input aria-label="نص المحتوى" placeholder="اكتشف الجديد في مدينتك" value={contentForm.bodyAr} onChange={(event) => setContentForm((current) => ({ ...current, bodyAr: event.target.value }))} />
           <label className="field-label" htmlFor="marketing-content-kind">نوع المحتوى<select id="marketing-content-kind" aria-label="نوع المحتوى" value={contentForm.kind} onChange={(event) => setContentForm((current) => ({ ...current, kind: event.target.value as typeof current.kind }))}><option value="BANNER">بنر رئيسي</option><option value="CAROUSEL">شريحة كاروسيل</option><option value="SHORT_FORM">قصة قصيرة</option></select></label>
-          <label className="field-label" htmlFor="marketing-content-media">صورة المحتوى<input id="marketing-content-media" aria-label="ملف صورة المحتوى" type="file" accept="image/jpeg,image/png" required onChange={(event) => { const file = event.target.files?.[0] ?? null; setMediaFile(file); setMediaPreviewUrl(file ? URL.createObjectURL(file) : ""); }} /></label>
+          <label className="field-label" htmlFor="marketing-content-media">صورة المحتوى<input id="marketing-content-media" aria-label="ملف صورة المحتوى" type="file" accept="image/jpeg,image/png" required onChange={(event) => setMediaFile(event.target.files?.[0] ?? null)} /></label>
           {mediaFile ? <p className="muted" data-testid="marketing-content-file">{mediaFile.name} · {(mediaFile.size / 1024).toFixed(0)} كيلوبايت</p> : <p className="muted">JPEG أو PNG، حتى 10 ميجابايت.</p>}
-          {mediaPreviewUrl ? <div><p className="muted">معاينة تقريبية لاقتصاص الصورة في بطاقة الهاتف:</p><img className="workspace-discovery-preview" src={mediaPreviewUrl} alt="معاينة صورة محتوى الاكتشاف" /></div> : null}
           <label className="field-label" htmlFor="marketing-content-target">نوع الوجهة<select id="marketing-content-target" aria-label="نوع وجهة المحتوى" value={contentForm.targetType} onChange={(event) => { setTargetSearch(""); setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, targetType: event.target.value as typeof current.targetType, targetId: "" })); }}><option value="INFO">معلومات فقط</option><option value="STORE">متجر</option><option value="PRODUCT">منتج</option><option value="CATEGORY">فئة</option><option value="PROMOTION">عرض</option></select></label>
           {contentForm.targetType !== "INFO" ? <>
             <input aria-label="بحث في الوجهات" placeholder={`ابحث ${contentForm.targetType === "STORE" ? "عن متجر" : contentForm.targetType === "PRODUCT" ? "عن منتج" : contentForm.targetType === "PROMOTION" ? "عن عرض" : "لتصفية الوجهات"}`} value={targetSearch} onChange={(event) => { setTargetSearch(event.target.value); setTargetCursor(""); setTargetCursorStack([]); setTargetOptions([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, targetId: "" })); }} />

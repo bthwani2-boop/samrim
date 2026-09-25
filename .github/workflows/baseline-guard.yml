@@ -119,8 +119,14 @@ jobs:
         shell: bash
         run: pnpm exec biome ci apps packages services tools --changed --since=${{ steps.base.outputs.sha }} --no-errors-on-unmatched --enforce-assist=false
 
-      - name: Verify affected workspace tasks
+      - name: Verify affected workspace tasks with config-only map placeholders
         shell: bash
+        env:
+          GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT: maps-config-placeholder-0
+          GOOGLE_MAPS_IOS_API_KEY: maps-config-placeholder-1
+          GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
+          GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
+          GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
         run: pnpm exec nx affected -t typecheck,test,build,export-smoke,vet --base=${{ steps.base.outputs.sha }} --head=HEAD --outputStyle=stream
 
       - name: Verify repository liveness for source changes
@@ -217,7 +223,13 @@ jobs:
         shell: pwsh
         run: pnpm install --frozen-lockfile
 
-      - name: Verify affected Windows Android exports
+      - name: Verify affected Windows Android exports with config-only map placeholders
         if: steps.mobile.outputs.run == 'true'
         shell: pwsh
+        env:
+          GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT: maps-config-placeholder-0
+          GOOGLE_MAPS_IOS_API_KEY: maps-config-placeholder-1
+          GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
+          GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
+          GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
         run: pnpm exec nx affected -t export-smoke --base=${{ steps.mobile.outputs.base }} --head=HEAD --outputStyle=stream

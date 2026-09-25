@@ -46,6 +46,9 @@ services:
 
   identity-migrate:
     image: samrim-local-identity:dev
+    build:
+      context: ../../..
+      dockerfile: services/identity/backend/Dockerfile
     restart: "no"
     depends_on:
       postgres:
@@ -119,6 +122,9 @@ services:
 
   dsh-migrate:
     image: samrim-local-dsh:dev
+    build:
+      context: ../../..
+      dockerfile: services/dsh/backend/Dockerfile
     restart: "no"
     depends_on:
       postgres:
@@ -188,6 +194,9 @@ services:
 
   wlt-migrate:
     image: samrim-local-wlt:dev
+    build:
+      context: ../../..
+      dockerfile: services/wlt/backend/Dockerfile
     restart: "no"
     depends_on:
       postgres:
