@@ -933,10 +933,15 @@ func validateCatalogProductFactsTx(ctx context.Context, tx *sql.Tx, input Catalo
 	}
 	for _, categoryID := range input.CategoryIDs {
 		var categoryVertical string
-		if err := tx.QueryRowContext(ctx, "SELECT vertical_id FROM dsh.catalog_categories WHERE id=$1 AND active=true", categoryID).Scan(&categoryVertical); errors.Is(err, sql.ErrNoRows) || categoryVertical != input.VerticalID {
+		err := tx.QueryRowContext(ctx, "SELECT vertical_id FROM dsh.catalog_categories WHERE id=$1 AND active=true", categoryID).Scan(&categoryVertical)
+		if errors.Is(err, sql.ErrNoRows) {
 			return ErrCatalogCategoryNotFound
-		} else if err != nil {
+		}
+		if err != nil {
 			return err
+		}
+		if categoryVertical != input.VerticalID {
+			return ErrCatalogCategoryNotFound
 		}
 	}
 	if input.IdentifierValue != "" && (input.IdentifierType != "GTIN" && input.IdentifierType != "EAN" && input.IdentifierType != "UPC" && input.IdentifierType != "SKU") {
