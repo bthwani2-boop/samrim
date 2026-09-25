@@ -1,8 +1,8 @@
 "use client";
 
-import { formatMoney, type CashCustodyRegistryResponse } from "@bthwani/dsh";
+import { type CashCustodyRegistryResponse, formatMoney } from "@bthwani/dsh";
 import { usePathname, useRouter } from "next/navigation";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { responseMessage } from "../access/identity-error-message";
 import "./cash-custody-workspace.module.css";
@@ -29,13 +29,34 @@ export function CashCustodyWorkspace({ initialQuery }: Props) {
   const [registry, setRegistry] = useState<CashCustodyRegistryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [reloadVersion, setReloadVersion] = useState(0);
+  const registryController = useRef<AbortController | null>(null);
 
   const navigate = (query: CashCustodyInitialQuery, replace = false) => {
     const href = buildHref(pathname, query);
     if (replace) router.replace(href, { scroll: false });
     else router.push(href, { scroll: false });
   };
+
+  const loadRegistry = useCallback(async () => {
+    registryController.current?.abort();
+    const controller = new AbortController();
+    registryController.current = controller;
+    setLoading(true);
+    setError("");
+    const params = new URLSearchParams({ limit: "50", sort: initialQuery.sort });
+    if (initialQuery.search) params.set("search", initialQuery.search);
+    if (initialQuery.cursor) params.set("cursor", initialQuery.cursor);
+    try {
+      const response = await fetch(`/api/finance/cash-custody?${params}`, { cache: "no-store", signal: controller.signal });
+      if (!response.ok) throw new Error(await responseMessage(response));
+      const body = await response.json() as CashCustodyRegistryResponse;
+      setRegistry(body);
+    } catch (cause) {
+      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "تعذر قراءة سجل النقد المحصل.");
+    } finally {
+      if (!controller.signal.aborted) setLoading(false);
+    }
+  }, [initialQuery.cursor, initialQuery.search, initialQuery.sort]);
 
   useEffect(() => {
     setSearch(initialQuery.search);
@@ -50,26 +71,9 @@ export function CashCustodyWorkspace({ initialQuery }: Props) {
     }
     currentCursor.current = initialQuery.cursor;
 
-    const controller = new AbortController();
-    setLoading(true);
-    setError("");
-    const params = new URLSearchParams({ limit: "50", sort: initialQuery.sort });
-    if (initialQuery.search) params.set("search", initialQuery.search);
-    if (initialQuery.cursor) params.set("cursor", initialQuery.cursor);
-    void (async () => {
-      try {
-        const response = await fetch(`/api/finance/cash-custody?${params}`, { cache: "no-store", signal: controller.signal });
-        if (!response.ok) throw new Error(await responseMessage(response));
-        const body = await response.json() as CashCustodyRegistryResponse;
-        setRegistry(body);
-      } catch (cause) {
-        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "تعذر قراءة سجل النقد المحصل.");
-      } finally {
-        if (!controller.signal.aborted) setLoading(false);
-      }
-    })();
-    return () => controller.abort();
-  }, [initialQuery.cursor, initialQuery.search, initialQuery.sort, reloadVersion]);
+    void loadRegistry();
+    return () => registryController.current?.abort();
+  }, [initialQuery.cursor, initialQuery.search, initialQuery.sort, loadRegistry]);
 
   const applyFilters = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -119,7 +123,7 @@ export function CashCustodyWorkspace({ initialQuery }: Props) {
 
       <div className="finance-toolbar">
         <h2 id="cash-custody-title">النقد المحصل عند التسليم</h2>
-        <button type="button" className="button button-secondary" onClick={() => setReloadVersion((version) => version + 1)} disabled={loading}>{loading ? "جارٍ القراءة…" : "إعادة القراءة"}</button>
+        <button type="button" className="button button-secondary" onClick={() => void loadRegistry()} disabled={loading}>{loading ? "جارٍ القراءة…" : "إعادة القراءة"}</button>
       </div>
 
       <form className="cash-custody-filters" onSubmit={applyFilters}>
@@ -128,7 +132,7 @@ export function CashCustodyWorkspace({ initialQuery }: Props) {
         <button className="button button-secondary" type="submit" disabled={loading}>تطبيق البحث</button>
       </form>
 
-      {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر قراءة سجل حفظ النقد</strong><p>{error}</p><button type="button" className="button button-secondary" onClick={() => setReloadVersion((version) => version + 1)} disabled={loading}>إعادة المحاولة</button></div> : null}
+      {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر قراءة سجل حفظ النقد</strong><p>{error}</p><button type="button" className="button button-secondary" onClick={() => void loadRegistry()} disabled={loading}>إعادة المحاولة</button></div> : null}
       {loading && !registry ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة سجل النقد</strong><p>نطلب صفحة محدودة من السجل المالي الكانوني.</p></div> : null}
 
       {registry ? <>

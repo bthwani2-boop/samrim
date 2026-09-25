@@ -1,7 +1,7 @@
 "use client";
 
-import { fieldCommissionScopeLabel, financialPolicyStateLabel, formatMoney } from "@bthwani/dsh";
 import type { CommerceVertical, ServiceCity } from "@bthwani/dsh";
+import { fieldCommissionScopeLabel, financialPolicyStateLabel, formatMoney } from "@bthwani/dsh";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
 
@@ -25,8 +25,6 @@ export function FieldCommissionPolicyWorkspace() {
   const [storesLoading, setStoresLoading] = useState(false);
   const [scopeOptionsError, setScopeOptionsError] = useState("");
   const [storeSearchError, setStoreSearchError] = useState("");
-  const [scopeLoadAttempt, setScopeLoadAttempt] = useState(0);
-  const [storeSearchAttempt, setStoreSearchAttempt] = useState(0);
   const [rewardMinor, setRewardMinor] = useState("");
   const [reason, setReason] = useState("");
   const [policy, setPolicy] = useState<Policy | null>(null);
@@ -35,61 +33,75 @@ export function FieldCommissionPolicyWorkspace() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const readSequence = useRef(0);
+  const scopeOptionsController = useRef<AbortController | null>(null);
+  const storeSearchController = useRef<AbortController | null>(null);
 
-  useEffect(() => {
-    let mounted = true;
+  const loadScopeOptions = useCallback(async () => {
+    scopeOptionsController.current?.abort();
+    const controller = new AbortController();
+    scopeOptionsController.current = controller;
     setScopeOptionsError("");
-    void Promise.all([
-      fetch("/api/catalog/verticals?includeInactive=true", { cache: "no-store" }).then(async (response) => {
+    try {
+      const [nextVerticals, nextCities] = await Promise.all([
+        fetch("/api/catalog/verticals?includeInactive=true", { cache: "no-store", signal: controller.signal }).then(async (response) => {
         const body = await response.json() as { verticals?: CommerceVertical[]; error?: { message?: string } };
         if (!response.ok) throw new Error(body.error?.message || "تعذرت قراءة الفئات الرئيسية من DSH.");
         return body.verticals ?? [];
       }),
-      fetch("/api/service-cities", { cache: "no-store" }).then(async (response) => {
+        fetch("/api/service-cities", { cache: "no-store", signal: controller.signal }).then(async (response) => {
         const body = await response.json() as { cities?: ServiceCity[]; error?: { message?: string } };
         if (!response.ok) throw new Error(body.error?.message || "تعذرت قراءة مدن الخدمة.");
         return (body.cities ?? []).filter((city) => city.active);
       }),
-    ]).then(([nextVerticals, nextCities]) => {
-      if (!mounted) return;
+      ]);
+      if (controller.signal.aborted) return;
       setVerticals(nextVerticals);
       setCities(nextCities);
-    }).catch((value: unknown) => {
-      if (mounted) setScopeOptionsError(value instanceof Error ? value.message : "تعذر تحميل نطاقات السياسة.");
-    });
-    return () => { mounted = false; readSequence.current += 1; };
-  }, [scopeLoadAttempt]);
+    } catch (value) {
+      if (!controller.signal.aborted) setScopeOptionsError(value instanceof Error ? value.message : "تعذر تحميل نطاقات السياسة.");
+    }
+  }, []);
 
   useEffect(() => {
-    if (scopeType !== "STORE") return;
+    void loadScopeOptions();
+    return () => scopeOptionsController.current?.abort();
+  }, [loadScopeOptions]);
+
+  const loadStores = useCallback(async () => {
+    storeSearchController.current?.abort();
+    const controller = new AbortController();
+    storeSearchController.current = controller;
     const query = storeSearch.trim();
-    if (Array.from(query).length < 2 || !storeCityId) {
+    if (scopeType !== "STORE" || Array.from(query).length < 2 || !storeCityId) {
       setStores([]);
       setStoreNextCursor("");
       setStoresLoading(false);
       setStoreSearchError("");
       return;
     }
-    const controller = new AbortController();
     const params = new URLSearchParams({ q: query, limit: "25" });
     params.set("serviceCityId", storeCityId);
     if (storeCursor) params.set("cursor", storeCursor);
     setStoresLoading(true);
     setStoreSearchError("");
-    void fetch(`/api/policies/stores?${params}`, { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
+    try {
+      const response = await fetch(`/api/policies/stores?${params}`, { cache: "no-store", signal: controller.signal });
         const body = await response.json() as { stores?: StoreOption[]; nextCursor?: string; error?: { message?: string } };
         if (!response.ok) throw new Error(body.error?.message || "تعذرت قراءة المتاجر المنشورة من DSH.");
-        if (controller.signal.aborted) return;
-        setStores((current) => storeCursor ? [...current, ...(body.stores ?? []).filter((item) => !current.some((existing) => existing.id === item.id))] : body.stores ?? []);
-        setStoreNextCursor(body.nextCursor ?? "");
-      })
-      .catch((value: unknown) => {
-        if (!controller.signal.aborted) setStoreSearchError(value instanceof Error ? value.message : "تعذرت قراءة المتاجر المنشورة من DSH.");
-      })
-      .finally(() => { if (!controller.signal.aborted) setStoresLoading(false); });
-    return () => controller.abort();
-  }, [scopeType, storeCityId, storeCursor, storeSearch, storeSearchAttempt]);
+      if (controller.signal.aborted) return;
+      setStores((current) => storeCursor ? [...current, ...(body.stores ?? []).filter((item) => !current.some((existing) => existing.id === item.id))] : body.stores ?? []);
+      setStoreNextCursor(body.nextCursor ?? "");
+    } catch (value) {
+      if (!controller.signal.aborted) setStoreSearchError(value instanceof Error ? value.message : "تعذرت قراءة المتاجر المنشورة من DSH.");
+    } finally {
+      if (!controller.signal.aborted) setStoresLoading(false);
+    }
+  }, [scopeType, storeCityId, storeCursor, storeSearch]);
+
+  useEffect(() => {
+    void loadStores();
+    return () => storeSearchController.current?.abort();
+  }, [loadStores]);
 
   const read = useCallback(async (type: ScopeType, id: string): Promise<boolean> => {
     const sequence = ++readSequence.current;
@@ -189,8 +201,8 @@ export function FieldCommissionPolicyWorkspace() {
       <label className="field-label" htmlFor="field-commission-reward">المكافأة (ريال)<input id="field-commission-reward" type="number" min="50" step="50" value={rewardMinor} onChange={(event) => setRewardMinor(event.target.value)} disabled={busy || !canEdit || (readState !== "ready" && readState !== "missing")} /></label>
       <p className="muted">وحدة التقريب: 50 ريال — لا يمكن تغييرها من الواجهة.</p>
     </div>
-    {scopeOptionsError ? <p className="validation-error" role="alert">{scopeOptionsError} <button className="button button-quiet" type="button" onClick={() => setScopeLoadAttempt((attempt) => attempt + 1)} disabled={busy}>إعادة تحميل خيارات النطاق</button></p> : null}
-    {scopeType === "STORE" && storeSearchError ? <p className="validation-error" role="alert">{storeSearchError} <button className="button button-quiet" type="button" onClick={() => setStoreSearchAttempt((attempt) => attempt + 1)} disabled={busy || storesLoading || !storeCityId || Array.from(storeSearch.trim()).length < 2}>إعادة البحث</button></p> : null}
+    {scopeOptionsError ? <p className="validation-error" role="alert">{scopeOptionsError} <button className="button button-quiet" type="button" onClick={() => void loadScopeOptions()} disabled={busy}>إعادة تحميل خيارات النطاق</button></p> : null}
+    {scopeType === "STORE" && storeSearchError ? <p className="validation-error" role="alert">{storeSearchError} <button className="button button-quiet" type="button" onClick={() => void loadStores()} disabled={busy || storesLoading || !storeCityId || Array.from(storeSearch.trim()).length < 2}>إعادة البحث</button></p> : null}
     {readState === "loading" ? <p role="status">جارٍ قراءة السياسة من WLT…</p> : null}
     {readState === "unselected" && scopeType ? <p className="muted">اختر نطاقًا من قوائم DSH المعتمدة لقراءة سياسته.</p> : null}
     {readState === "missing" ? <p className="managed-status managed-status-warning" role="status">لا توجد سياسة نشطة لهذا النطاق. أدخل المكافأة صراحةً لإنشاء أول إصدار.</p> : null}

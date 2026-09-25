@@ -1,11 +1,11 @@
 "use client";
 
 import type { DiscoveryContentAnalytics, DiscoveryContentView, OperatorDiscoveryContentRegistryResponse, OperatorPromotionRegistryResponse, PromotionView, ServiceCity } from "@bthwani/dsh";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useSession } from "../../session/session-provider";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { type MarketingResourceKey, workspaceMarketingResources } from "../../navigation/workspace-registry";
+import { useSession } from "../../session/session-provider";
 import { WorkspaceResourceIndex } from "../workspace/workspace-resource-index";
 import styles from "./marketing-workspace.module.css";
 
@@ -87,19 +87,18 @@ export function MarketingPromotionsWorkspace() {
   const [cursor, setCursor] = useState("");
   const [cursorStack, setCursorStack] = useState<ReadonlyArray<string>>([]);
   const [loading, setLoading] = useState(false);
-  const [reloadVersion, setReloadVersion] = useState(0);
   const [startsAt, setStartsAt] = useState(futureDateInput);
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [promotionForm, setPromotionForm] = useState({ code: "", nameAr: "", descriptionAr: "", kind: "PERCENTAGE" as "PERCENTAGE" | "FIXED", valueMinor: "10", maxDiscountMinor: "", redemptionLimit: "", storeId: "", serviceCityId: "" });
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (query: { search?: string; state?: string; sort?: "starts_desc" | "starts_asc"; cursor?: string } = {}) => {
     setLoading(true);
-    const params = new URLSearchParams({ limit: "25", sort });
-    if (appliedSearch) params.set("search", appliedSearch);
-    if (state) params.set("state", state);
-    if (cursor) params.set("cursor", cursor);
+    const params = new URLSearchParams({ limit: "25", sort: query.sort ?? sort });
+    if (query.search ?? appliedSearch) params.set("search", query.search ?? appliedSearch);
+    if (query.state ?? state) params.set("state", query.state ?? state);
+    if (query.cursor ?? cursor) params.set("cursor", query.cursor ?? cursor);
     try {
       const response = await fetch(`/api/marketing/promotions?${params}`, { cache: "no-store" });
       const body = await response.json().catch(() => null) as OperatorPromotionRegistryResponse | { error?: { message?: string } } | null;
@@ -110,7 +109,7 @@ export function MarketingPromotionsWorkspace() {
     }
   }, [appliedSearch, cursor, sort, state]);
 
-  useEffect(() => { void load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل العروض.")); }, [load, reloadVersion]);
+  useEffect(() => { void load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل العروض.")); }, [load]);
   useEffect(() => { void readActiveServiceCities().then(setCities).catch(() => setMessage("تعذر قراءة مدن الخدمة؛ يمكنك إنشاء العرض دون تقييد مدينة.")); }, []);
 
   async function createPromotion() {
@@ -123,7 +122,8 @@ export function MarketingPromotionsWorkspace() {
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(apiMessage(body));
       setPromotionForm({ code: "", nameAr: "", descriptionAr: "", kind: "PERCENTAGE", valueMinor: "10", maxDiscountMinor: "", redemptionLimit: "", storeId: "", serviceCityId: "" });
-      setSearch(""); setAppliedSearch(""); setState("DRAFT"); setSort("starts_desc"); setCursor(""); setCursorStack([]); setReloadVersion((value) => value + 1);
+      setSearch(""); setAppliedSearch(""); setState("DRAFT"); setSort("starts_desc"); setCursor(""); setCursorStack([]);
+      await load({ search: "", state: "DRAFT", sort: "starts_desc", cursor: "" });
       setMessage("تم إنشاء العرض كمسودة. انشره من السجل عندما يصبح جاهزًا.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "تعذر إنشاء العرض.");
@@ -139,7 +139,7 @@ export function MarketingPromotionsWorkspace() {
       const response = await fetch(`/api/marketing/promotions/${encodeURIComponent(item.id)}/publication`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID(), "X-Expected-Version": String(item.version) }, body: JSON.stringify({ state }) });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(apiMessage(body));
-      setReloadVersion((value) => value + 1);
+      await load();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "تعذر تحديث نشر العرض.");
     } finally {
@@ -173,7 +173,7 @@ export function MarketingPromotionsWorkspace() {
           <label className="field-label" htmlFor="promotion-state">الحالة<select id="promotion-state" value={state} onChange={(event) => { setState(event.target.value); setCursor(""); setCursorStack([]); }}><option value="">كل الحالات</option><option value="DRAFT">مسودة</option><option value="PUBLISHED">منشور</option><option value="PAUSED">موقوف</option></select></label>
           <label className="field-label" htmlFor="promotion-sort">ترتيب البداية<select id="promotion-sort" value={sort} onChange={(event) => { setSort(event.target.value as typeof sort); setCursor(""); setCursorStack([]); }}><option value="starts_desc">الأحدث بداية</option><option value="starts_asc">الأقدم بداية</option></select></label>
           <button className="button button-secondary" type="submit" disabled={loading}>بحث</button>
-          <button className="button button-quiet" type="button" onClick={() => setReloadVersion((value) => value + 1)} disabled={loading}>{loading ? "جارٍ القراءة…" : "تحديث"}</button>
+          <button className="button button-quiet" type="button" onClick={() => void load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل العروض."))} disabled={loading}>{loading ? "جارٍ القراءة…" : "تحديث"}</button>
         </form>
         {registry?.promotions.length ? <div className="finance-table-wrap"><table className="finance-table"><caption className="visually-hidden">سجل العروض</caption><thead><tr><th scope="col">العرض</th><th scope="col">الرمز</th><th scope="col">النوع والقيمة</th><th scope="col">الحالة</th><th scope="col">بداية العرض</th><th scope="col">الإجراء</th></tr></thead><tbody>{registry.promotions.map((item) => <tr key={item.id}><th scope="row">{item.nameAr}<br /><bdi dir="ltr">{item.id}</bdi></th><td><bdi dir="ltr">{item.code}</bdi></td><td>{item.kind === "PERCENTAGE" ? `${item.valueMinor}%` : item.valueMinor}</td><td>{item.state}</td><td><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td><button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishPromotion(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف العرض" : "نشر العرض"}</button></td></tr>)}</tbody></table></div> : loading ? <p role="status" className="collection-state">جارٍ قراءة صفحة العروض…</p> : <p className="collection-state">لا توجد عروض مطابقة.</p>}
         <nav className={styles.pagination} aria-label="صفحات سجل العروض"><button className="button button-quiet" type="button" disabled={loading || cursorStack.length === 0} onClick={() => { const next = [...cursorStack]; const previous = next.pop() ?? ""; setCursorStack(next); setCursor(previous); }}>السابق</button><span>صفحة {cursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={loading || !registry?.nextCursor} onClick={() => { setCursorStack((items) => [...items, cursor]); setCursor(registry?.nextCursor ?? ""); }}>التالي</button></nav>
@@ -192,7 +192,6 @@ export function MarketingContentWorkspace() {
   const [cursor, setCursor] = useState("");
   const [cursorStack, setCursorStack] = useState<ReadonlyArray<string>>([]);
   const [loading, setLoading] = useState(false);
-  const [reloadVersion, setReloadVersion] = useState(0);
   const [analyticsContentId, setAnalyticsContentId] = useState("");
   const [analytics, setAnalytics] = useState<ReadonlyArray<DiscoveryContentAnalytics> | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
@@ -211,15 +210,13 @@ export function MarketingContentWorkspace() {
   const [targetMessage, setTargetMessage] = useState("");
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaPreviewUrl, setMediaPreviewUrl] = useState("");
-  const productSearch = contentForm.targetType === "PRODUCT" ? targetSearch.trim() : "";
-
-  const load = useCallback(async () => {
+  const load = useCallback(async (query: { search?: string; state?: string; kind?: string; sort?: "priority" | "created_desc"; cursor?: string } = {}) => {
     setLoading(true);
-    const params = new URLSearchParams({ limit: "25", sort });
-    if (appliedSearch) params.set("search", appliedSearch);
-    if (state) params.set("state", state);
-    if (kind) params.set("kind", kind);
-    if (cursor) params.set("cursor", cursor);
+    const params = new URLSearchParams({ limit: "25", sort: query.sort ?? sort });
+    if (query.search ?? appliedSearch) params.set("search", query.search ?? appliedSearch);
+    if (query.state ?? state) params.set("state", query.state ?? state);
+    if (query.kind ?? kind) params.set("kind", query.kind ?? kind);
+    if (query.cursor ?? cursor) params.set("cursor", query.cursor ?? cursor);
     try {
       const response = await fetch(`/api/marketing/content?${params}`, { cache: "no-store" });
       const body = await response.json().catch(() => null) as OperatorDiscoveryContentRegistryResponse | { error?: { message?: string } } | null;
@@ -246,7 +243,7 @@ export function MarketingContentWorkspace() {
     }
   }
 
-  useEffect(() => { void load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل محتوى الاكتشاف.")); }, [load, reloadVersion]);
+  useEffect(() => { void load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل محتوى الاكتشاف.")); }, [load]);
   useEffect(() => {
     if (!mediaPreviewUrl) return;
     return () => URL.revokeObjectURL(mediaPreviewUrl);
@@ -296,7 +293,7 @@ export function MarketingContentWorkspace() {
         if (!controller.signal.aborted) setTargetLoading(false);
       });
     return () => controller.abort();
-  }, [contentForm.serviceCityId, contentForm.targetType, productSearch, targetCursor, targetSearch]);
+  }, [contentForm.serviceCityId, contentForm.targetType, targetCursor, targetSearch]);
 
   async function createContent() {
     setBusy(true);
@@ -330,7 +327,8 @@ export function MarketingContentWorkspace() {
       setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor("");
       setMediaFile(null);
       setMediaPreviewUrl("");
-      setSearch(""); setAppliedSearch(""); setState("DRAFT"); setKind(""); setSort("priority"); setCursor(""); setCursorStack([]); setReloadVersion((value) => value + 1);
+      setSearch(""); setAppliedSearch(""); setState("DRAFT"); setKind(""); setSort("priority"); setCursor(""); setCursorStack([]);
+      await load({ search: "", state: "DRAFT", kind: "", sort: "priority", cursor: "" });
       setMessage("تم إنشاء المحتوى كمسودة. انشره من السجل عندما يصبح جاهزًا.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "تعذر إنشاء المحتوى.");
@@ -346,7 +344,7 @@ export function MarketingContentWorkspace() {
       const response = await fetch(`/api/marketing/content/${encodeURIComponent(item.id)}/publication`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID(), "X-Expected-Version": String(item.version) }, body: JSON.stringify({ state }) });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(apiMessage(body));
-      setReloadVersion((value) => value + 1);
+      await load();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "تعذر تحديث نشر المحتوى.");
     } finally {
@@ -392,7 +390,7 @@ export function MarketingContentWorkspace() {
           <label className="field-label" htmlFor="content-kind-filter">النوع<select id="content-kind-filter" value={kind} onChange={(event) => { setKind(event.target.value); setCursor(""); setCursorStack([]); }}><option value="">كل الأنواع</option><option value="BANNER">بنر</option><option value="CAROUSEL">كاروسيل</option><option value="SHORT_FORM">قصة قصيرة</option></select></label>
           <label className="field-label" htmlFor="content-sort">الترتيب<select id="content-sort" value={sort} onChange={(event) => { setSort(event.target.value as typeof sort); setCursor(""); setCursorStack([]); }}><option value="priority">أولوية العرض</option><option value="created_desc">الأحدث إنشاءً</option></select></label>
           <button className="button button-secondary" type="submit" disabled={loading}>بحث</button>
-          <button className="button button-quiet" type="button" onClick={() => setReloadVersion((value) => value + 1)} disabled={loading}>{loading ? "جارٍ القراءة…" : "تحديث"}</button>
+          <button className="button button-quiet" type="button" onClick={() => void load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل محتوى الاكتشاف."))} disabled={loading}>{loading ? "جارٍ القراءة…" : "تحديث"}</button>
         </form>
         {registry?.items.length ? <div className="finance-table-wrap"><table className="finance-table"><caption className="visually-hidden">سجل محتوى الاكتشاف</caption><thead><tr><th scope="col">المحتوى</th><th scope="col">النوع والوجهة</th><th scope="col">الحالة</th><th scope="col">الأولوية والبداية</th><th scope="col">الإجراءات</th></tr></thead><tbody>{registry.items.map((item) => <tr key={item.id}><th scope="row">{item.mediaUri ? <img className={styles.mediaPreview} src={item.mediaUri} alt="" loading="lazy" /> : null}{item.titleAr}<br /><bdi dir="ltr">{item.id}</bdi></th><td>{item.kind} · {item.targetType}<br />{item.targetId ? <bdi dir="ltr">{item.targetId}</bdi> : "معلومات عامة"}</td><td>{item.state === "DRAFT" ? "مسودة" : item.state === "PUBLISHED" ? "منشور" : "موقوف"}</td><td>{item.ordinal}<br /><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td><div className={styles.actions}><button className="button button-quiet" type="button" disabled={analyticsLoading} onClick={() => void readAnalytics(item.id)}>{analyticsLoading && analyticsContentId === item.id ? "جارٍ قراءة التحليلات…" : "قراءة التحليلات"}</button><button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishContent(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف المحتوى" : "نشر المحتوى"}</button></div></td></tr>)}</tbody></table></div> : loading ? <p role="status" className="collection-state">جارٍ قراءة صفحة المحتوى…</p> : <p className="collection-state">لا يوجد محتوى مطابق.</p>}
         <nav className={styles.pagination} aria-label="صفحات سجل محتوى الاكتشاف"><button className="button button-quiet" type="button" disabled={loading || cursorStack.length === 0} onClick={() => { const next = [...cursorStack]; const previous = next.pop() ?? ""; setCursorStack(next); setCursor(previous); }}>السابق</button><span>صفحة {cursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={loading || !registry?.nextCursor} onClick={() => { setCursorStack((items) => [...items, cursor]); setCursor(registry?.nextCursor ?? ""); }}>التالي</button></nav>
