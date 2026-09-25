@@ -1,12 +1,7 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { useState } from "react";
-
-import { BeneficiarySettlementWorkspace } from "../../../../src/features/finance/beneficiary-settlement-workspace";
-import { CustomerWithdrawalQueue } from "../../../../src/features/finance/customer-withdrawal-queue";
-import { FinanceWorkspace } from "../../../../src/features/finance/finance-workspace";
-
-export default function FinanceBeneficiarySettlementPage() {
-  const [requestedBatchId, setRequestedBatchId] = useState("");
-  return <FinanceWorkspace resource="beneficiary-settlement"><BeneficiarySettlementWorkspace requestedBatchId={requestedBatchId} /><CustomerWithdrawalQueue onBatchCreated={setRequestedBatchId} /></FinanceWorkspace>;
+export default async function FinanceBeneficiarySettlementPage({ searchParams }: Readonly<{ searchParams: Promise<{ batchId?: string | string[] }> }>) {
+  const { batchId } = await searchParams;
+  const query = typeof batchId === "string" && batchId.trim() ? `?batchId=${encodeURIComponent(batchId.trim())}` : "";
+  redirect(`/finance/beneficiary-settlement/partners${query}`);
 }

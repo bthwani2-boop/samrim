@@ -41,7 +41,11 @@ export const workspaceFinanceResources = [
   { key: "overview", href: "/finance", label: "نظرة عامة", description: "اختر مورد المالية المطلوب." },
   { key: "cash-custody", href: "/finance/cash-custody", label: "حفظ النقد", description: "قراءة الالتزامات النقدية المحصلة عند الاستلام." },
   { key: "partner-store-commissions", href: "/finance/partner-store-commissions", label: "عمولات المتاجر", description: "إدارة نسبة كل متجر لكل وضع توصيل بإصدار وسبب موثقين." },
-  { key: "beneficiary-settlement", href: "/finance/beneficiary-settlement", label: "مستحقات وتسويات الشركاء والكباتن والميدان", description: "سجل موحد لمستحقات الشركاء وكباتن بثواني والميدان وتنفيذ التسويات اليدوية ومطابقتها." }
+  { key: "beneficiary-settlement-partners", href: "/finance/beneficiary-settlement/partners", label: "مستحقات الشركاء", description: "سجل الشركاء وطلبات الصرف وتنفيذ الدفعات ومطابقتها." },
+  { key: "beneficiary-settlement-captains", href: "/finance/beneficiary-settlement/captains", label: "مستحقات الكباتن", description: "سجل كباتن بثواني وطلبات الصرف وتنفيذ الدفعات ومطابقتها." },
+  { key: "beneficiary-settlement-field", href: "/finance/beneficiary-settlement/field", label: "مستحقات الميدان", description: "سجل الميدان وطلبات الصرف وتنفيذ الدفعات ومطابقتها." },
+  { key: "customer-withdrawals", href: "/finance/customer-withdrawals", label: "سحوبات العملاء الاستثنائية", description: "طابور مالي نادر للتحقق من الوجهة وقبول طلب العميل أو رفضه." },
+  { key: "partner-commission-receivables", href: "/finance/partner-commission-receivables", label: "تحصيل عمولة المنصة", description: "قراءة ذمم العمولة المستحقة على الشريك وتسجيل الحوالة المتحقق منها." }
 ] as const;
 
 export type FinanceResourceKey = (typeof workspaceFinanceResources)[number]["key"];
@@ -115,4 +119,17 @@ export function currentWorkspaceDestination(pathname: string) {
 
 export function currentWorkspaceChild(pathname: string, destination: WorkspaceDestination) {
   return destination.children.find((child) => isCurrentWorkspacePath(pathname, child.href)) ?? null;
+}
+
+export function dynamicWorkspaceRouteLabel(pathname: string) {
+  const segments = pathname.split("/").filter(Boolean);
+  if (segments[0] === "partners" && segments.length === 2) {
+    if (segments[1] === "new") return "إضافة شريك";
+    if (["joining", "joining-cases", "stores", "actors", "service-cities"].includes(segments[1]!)) return null;
+    return "تفاصيل طلب الانضمام";
+  }
+  if (segments[0] === "partners" && segments[1] === "stores" && segments.length === 3) return "ملف المتجر";
+  if (segments[0] === "partners" && segments[1] === "actors" && segments.length === 3) return "الملف المالي للشريك";
+  if (segments[0] === "operations" && segments.length === 2) return "تفاصيل الطلب";
+  return null;
 }

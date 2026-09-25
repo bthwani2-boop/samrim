@@ -1,15 +1,27 @@
 "use client";
 
-import { type BeneficiaryPayoutState, formatMoney, type PayoutRequest, payoutStatusLabel } from "@bthwani/dsh";
+import { type BeneficiaryPayoutState, formatMoney, fulfillmentModeLabel, officialWalletDestinationStatusLabel, orderStateLabel, publicationStateLabel, type PayoutRequest, payoutStatusLabel } from "@bthwani/dsh";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { downloadRegistryCsv } from "../partner-onboarding/registry-csv";
 import styles from "./beneficiary-settlement-workspace.module.css";
-import { PartnerEarningsWorkspace } from "./partner-earnings-workspace";
 import { usePageSelection } from "./use-page-selection";
 
 type ActorType = "customer" | "partner" | "captain" | "field";
 type RegistryActorType = "partner" | "captain" | "field";
 type BeneficiarySort = "actor_asc" | "actor_desc" | "available_asc" | "available_desc" | "held_asc" | "held_desc" | "payout_amount_asc" | "payout_amount_desc";
+export type BeneficiarySettlementView = "beneficiaries" | "batches" | "reconciliation";
+export type BeneficiarySettlementInitialQuery = Readonly<{
+  status: (typeof statusFilters)[number];
+  search: string;
+  sort: BeneficiarySort;
+  cursor: string;
+  view: BeneficiarySettlementView;
+  batchId: string;
+  batchStatus: string;
+  batchCursor: string;
+}>;
 type RegistryResponse = Readonly<{ beneficiaries: ReadonlyArray<BeneficiaryPayoutState>; nextCursor?: string; limit: number }>;
 type RegistryItem = BeneficiaryPayoutState & Readonly<{ id: string }>;
 type Transfer = Readonly<{ id: string; batchId: string; payoutId: string; externalTransferReference: string; amountMinor: number; currency: "YER"; receiptDocumentId: string; executionStatus: string; statementRowId?: string | null }>;
@@ -23,6 +35,70 @@ type FinancialStatement = Readonly<{ actorType: string; actorId: string; currenc
 
 const actorLabel: Record<ActorType, string> = { customer: "العميل", partner: "الشريك", captain: "الكابتن", field: "الميداني" };
 const statusFilters = ["", "NO_REQUEST", "HELD", "PREPARED", "APPROVED", "FROZEN", "EXECUTED", "COMPLETED", "EXCEPTION", "CANCELLED"] as const;
+const settlementBatchStatusLabels: Readonly<Record<string, string>> = {
+  DRAFT: "مسودة",
+  PREPARED: "مهيأة للاعتماد",
+  APPROVED: "معتمدة",
+  FROZEN: "مجمّدة للتنفيذ",
+  EXECUTION_IN_PROGRESS: "قيد التنفيذ",
+  AWAITING_VERIFICATION: "بانتظار التحقق",
+  AWAITING_RECONCILIATION: "بانتظار المطابقة",
+  COMPLETED: "مكتملة",
+  CANCELLED: "ملغاة",
+  EXCEPTION: "تحتاج إلى معالجة",
+};
+const transferStatusLabels: Readonly<Record<string, string>> = {
+  EXECUTED: "تم تسجيل التنفيذ",
+  VERIFIED: "تم التحقق المستقل",
+  RECONCILED: "تمت المطابقة",
+};
+const financialTransactionLabels: Readonly<Record<string, string>> = {
+  PARTNER_STORE_CASH_COMMISSION_ASSESSED: "تسجيل عمولة الاستلام النقدي",
+  PARTNER_COMMISSION_RECEIVABLE_REMITTED: "سداد عمولة مستحقة",
+  CAPTAIN_OPENING_FUNDING: "تمويل افتتاحي للمحفظة",
+  CUSTOMER_WALLET_TOPUP: "شحن محفظة العميل",
+  CAPTAIN_TOPUP: "شحن محفظة الكابتن",
+  CAPTAIN_CASH_REMITTED: "توريد النقد المحصل",
+  FIELD_COMMISSION_EARNING_POSTED: "استحقاق عمولة ميدانية",
+  PARTNER_ORDER_EARNING_POSTED: "استحقاق طلب شريك",
+  PAYOUT_COMPLETED: "إتمام الصرف",
+};
+const financialSourceLabels: Readonly<Record<string, string>> = {
+  PARTNER_STORE_CASH_COMMISSION: "عمولة نقد متجر",
+  PARTNER_COMMISSION_REMITTANCE: "حوالة عمولة",
+  CAPTAIN_OPENING_FUNDING: "تمويل افتتاحي",
+  FUNDING_INTENT: "عملية شحن",
+  CASH_REMITTANCE: "توريد نقدي",
+  STORE_CLIENT_VISIBLE: "استحقاق متجر",
+  ORDER_DELIVERED: "طلب مستلم",
+  MANUAL_EXTERNAL_TRANSFER: "تحويل خارجي يدوي",
+};
+function financialTransactionLabel(value: string) {
+  return financialTransactionLabels[value] ?? "حركة مالية";
+}
+function financialSourceLabel(value: string) {
+  return financialSourceLabels[value] ?? "مصدر مالي";
+}
+const settlementViews: ReadonlyArray<Readonly<{ id: BeneficiarySettlementView; label: string }>> = [
+  { id: "beneficiaries", label: "المستحقات" },
+  { id: "batches", label: "دفعات التحويل" },
+  { id: "reconciliation", label: "الكشوف والمطابقة" },
+];
+
+function settlementRouteHref(pathname: string, query: BeneficiarySettlementInitialQuery, changes: Partial<BeneficiarySettlementInitialQuery> = {}) {
+  const next = { ...query, ...changes };
+  const params = new URLSearchParams();
+  if (next.status) params.set("status", next.status);
+  if (next.search) params.set("search", next.search);
+  if (next.sort !== "actor_asc") params.set("sort", next.sort);
+  if (next.cursor) params.set("cursor", next.cursor);
+  if (next.view !== "beneficiaries") params.set("view", next.view);
+  if (next.batchId) params.set("batchId", next.batchId);
+  if (next.batchStatus) params.set("batchStatus", next.batchStatus);
+  if (next.batchCursor) params.set("batchCursor", next.batchCursor);
+  const serialized = params.toString();
+  return pathname + (serialized ? `?${serialized}` : "");
+}
 
 function errorMessage(body: unknown, fallback: string) {
   if (!body || typeof body !== "object") return fallback;
@@ -36,31 +112,50 @@ async function responseBody<T>(response: Response, fallback: string): Promise<T>
   return body as T;
 }
 
-type BeneficiarySettlementWorkspaceProps = Readonly<{ requestedBatchId?: string }>;
+type BeneficiarySettlementWorkspaceProps = Readonly<{ actorType: RegistryActorType; initialQuery: BeneficiarySettlementInitialQuery }>;
 
-export function BeneficiarySettlementWorkspace({ requestedBatchId = "" }: BeneficiarySettlementWorkspaceProps) {
+export function BeneficiarySettlementWorkspace({ actorType, initialQuery }: BeneficiarySettlementWorkspaceProps) {
+  const router = useRouter();
+  const pathname = usePathname() ?? `/finance/beneficiary-settlement/${actorType}`;
   const idempotencyKeys = useRef(new Map<string, string>());
+  const registrySequence = useRef(0);
+  const batchListSequence = useRef(0);
+  const batchDetailSequence = useRef(0);
+  const registryCursorHistory = useRef<string[]>([]);
+  const lastRegistryCursor = useRef(initialQuery.cursor);
+  const requestedRegistryCursor = useRef<string | null>(null);
+  const batchCursorHistory = useRef<string[]>([]);
+  const lastBatchCursor = useRef(initialQuery.batchCursor);
+  const requestedBatchCursor = useRef<string | null>(null);
+  const loadedBatchId = useRef("");
   const mutationHeaders = (scope: string) => {
     let key = idempotencyKeys.current.get(scope);
     if (!key) { key = crypto.randomUUID(); idempotencyKeys.current.set(scope, key); }
     return { "Content-Type": "application/json", "Idempotency-Key": key, "X-Correlation-ID": crypto.randomUUID() };
   };
   const completeMutation = (scope: string) => idempotencyKeys.current.delete(scope);
-  const [actorType, setActorType] = useState<RegistryActorType>("partner");
-  const [status, setStatus] = useState<(typeof statusFilters)[number]>("");
-  const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<BeneficiarySort>("actor_asc");
+  const [status, setStatus] = useState<(typeof statusFilters)[number]>(initialQuery.status);
+  const [search, setSearch] = useState(initialQuery.search);
+  const [sort, setSort] = useState<BeneficiarySort>(initialQuery.sort);
+  const [cursor, setCursor] = useState(initialQuery.cursor);
+  const [cursorStack, setCursorStack] = useState<ReadonlyArray<string>>([]);
+  const [view, setView] = useState<BeneficiarySettlementView>(initialQuery.view);
   const [beneficiaries, setBeneficiaries] = useState<ReadonlyArray<RegistryItem>>([]);
   const [nextCursor, setNextCursor] = useState("");
+  const [registryLoading, setRegistryLoading] = useState(true);
+  const [batchListLoading, setBatchListLoading] = useState(false);
+  const [batchDetailLoading, setBatchDetailLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [batch, setBatch] = useState<SettlementBatch | null>(null);
   const [batchItems, setBatchItems] = useState<ReadonlyArray<SettlementBatchItem>>([]);
-  const [batchLookup, setBatchLookup] = useState("");
+  const [batchLookup, setBatchLookup] = useState(initialQuery.batchId);
   const [batches, setBatches] = useState<ReadonlyArray<SettlementBatch>>([]);
   const [batchCursor, setBatchCursor] = useState("");
-  const [batchStatus, setBatchStatus] = useState("");
+  const [batchPageCursor, setBatchPageCursor] = useState(initialQuery.batchCursor);
+  const [batchCursorStack, setBatchCursorStack] = useState<ReadonlyArray<string>>([]);
+  const [batchStatus, setBatchStatus] = useState(initialQuery.batchStatus);
   const [transfer, setTransfer] = useState<Transfer | null>(null);
   const [reason, setReason] = useState("");
   const [payoutEvidenceReference, setPayoutEvidenceReference] = useState("");
@@ -88,37 +183,119 @@ export function BeneficiarySettlementWorkspace({ requestedBatchId = "" }: Benefi
   const [partnerPeriodTotals, setPartnerPeriodTotals] = useState<PartnerPeriodTotals | null>(null);
   const filtered = beneficiaries;
   const selection = usePageSelection(beneficiaries.filter((item) => item.latestPayout?.status === "APPROVED"));
+  const navigateRoute = (changes: Partial<BeneficiarySettlementInitialQuery>, replace = false) => {
+    const href = settlementRouteHref(pathname, initialQuery, changes);
+    if (replace) router.replace(href, { scroll: false });
+    else router.push(href, { scroll: false });
+  };
   const clearRegistryPage = () => { setBeneficiaries([]); setNextCursor(""); selection.clear(); };
 
-  const read = async (searchOverride = search) => {
-    setBusy(true); setError(""); setNotice("");
+  const read = async (route: Pick<BeneficiarySettlementInitialQuery, "status" | "search" | "sort" | "cursor"> = { status, search, sort, cursor }) => {
+    const sequence = ++registrySequence.current;
+    setRegistryLoading(true); setError(""); setNotice("");
     try {
       const query = new URLSearchParams({ actorType, limit: "50" });
-      if (searchOverride.trim()) query.set("search", searchOverride.trim());
-      if (status) query.set("status", status);
-      query.set("sort", sort);
+      if (route.search.trim()) query.set("search", route.search.trim());
+      if (route.status) query.set("status", route.status);
+      if (route.cursor) query.set("cursor", route.cursor);
+      query.set("sort", route.sort);
       const result = await responseBody<RegistryResponse>(await fetch(`/api/finance/beneficiaries?${query.toString()}`, { cache: "no-store" }), "تعذر قراءة سجل المستفيدين");
+      if (sequence !== registrySequence.current) return;
       setBeneficiaries(result.beneficiaries.map((item) => ({ ...item, id: `${item.actorType}:${item.actorId}` })));
       setNextCursor(result.nextCursor ?? "");
       selection.clear();
-    } catch (value) { setError(value instanceof Error ? value.message : "تعذر قراءة سجل المستفيدين"); }
-    finally { setBusy(false); }
+    } catch (value) { if (sequence === registrySequence.current) setError(value instanceof Error ? value.message : "تعذر قراءة سجل المستفيدين"); }
+    finally { if (sequence === registrySequence.current) setRegistryLoading(false); }
   };
 
   const readNext = async () => {
     if (!nextCursor) return;
-    setBusy(true); setError("");
-    try {
-      const query = new URLSearchParams({ actorType, limit: "50", cursor: nextCursor });
-      if (search.trim()) query.set("search", search.trim());
-      if (status) query.set("status", status);
-      query.set("sort", sort);
-      const result = await responseBody<RegistryResponse>(await fetch(`/api/finance/beneficiaries?${query.toString()}`, { cache: "no-store" }), "تعذر تحميل بقية المستفيدين");
-      setBeneficiaries((current) => [...current, ...result.beneficiaries.map((item) => ({ ...item, id: `${item.actorType}:${item.actorId}` }))]);
-      setNextCursor(result.nextCursor ?? "");
-    } catch (value) { setError(value instanceof Error ? value.message : "تعذر تحميل بقية المستفيدين"); }
-    finally { setBusy(false); }
+    const nextStack = [...registryCursorHistory.current, cursor];
+    registryCursorHistory.current = nextStack;
+    setCursorStack(nextStack);
+    setCursor(nextCursor);
+    lastRegistryCursor.current = nextCursor;
+    requestedRegistryCursor.current = nextCursor;
+    navigateRoute({ cursor: nextCursor });
   };
+
+  const readPrevious = () => {
+    if (!registryCursorHistory.current.length) return;
+    const previous = registryCursorHistory.current.at(-1) ?? "";
+    const nextStack = registryCursorHistory.current.slice(0, -1);
+    registryCursorHistory.current = nextStack;
+    setCursorStack(nextStack);
+    setCursor(previous);
+    lastRegistryCursor.current = previous;
+    requestedRegistryCursor.current = previous;
+    navigateRoute({ cursor: previous });
+  };
+
+  useEffect(() => {
+    if (requestedRegistryCursor.current === initialQuery.cursor) {
+      requestedRegistryCursor.current = null;
+    } else if (lastRegistryCursor.current !== initialQuery.cursor) {
+      const priorIndex = registryCursorHistory.current.lastIndexOf(initialQuery.cursor);
+      const nextStack = priorIndex >= 0
+        ? registryCursorHistory.current.slice(0, priorIndex)
+        : [...registryCursorHistory.current, lastRegistryCursor.current];
+      registryCursorHistory.current = nextStack;
+      setCursorStack(nextStack);
+    }
+    lastRegistryCursor.current = initialQuery.cursor;
+    setStatus(initialQuery.status);
+    setSearch(initialQuery.search);
+    setSort(initialQuery.sort);
+    setCursor(initialQuery.cursor);
+    void read(initialQuery);
+  }, [actorType, initialQuery.status, initialQuery.search, initialQuery.sort, initialQuery.cursor]);
+
+  useEffect(() => {
+    setView(initialQuery.view);
+  }, [initialQuery.view]);
+
+  useEffect(() => {
+    setBatchLookup(initialQuery.batchId);
+    const sequence = ++batchDetailSequence.current;
+    if (!initialQuery.batchId) {
+      loadedBatchId.current = "";
+      setBatch(null);
+      setBatchItems([]);
+      setTransfer(null);
+      setBatchDetailLoading(false);
+      return;
+    }
+    if (loadedBatchId.current === initialQuery.batchId) return;
+    setBatchDetailLoading(true); setError("");
+    void (async () => {
+      try {
+        const result = await responseBody<{ batch: SettlementBatch }>(await fetch(`/api/finance/settlement-batches/${encodeURIComponent(initialQuery.batchId)}`, { cache: "no-store" }), "تعذر قراءة الدفعة");
+        if (sequence !== batchDetailSequence.current) return;
+        loadedBatchId.current = result.batch.id;
+        setBatch(result.batch); setBatchItems(result.batch.items); setTransfer(null);
+      } catch (value) {
+        if (sequence === batchDetailSequence.current) setError(value instanceof Error ? value.message : "تعذر قراءة الدفعة");
+      } finally {
+        if (sequence === batchDetailSequence.current) setBatchDetailLoading(false);
+      }
+    })();
+  }, [initialQuery.batchId]);
+
+  useEffect(() => {
+    setBatchStatus(initialQuery.batchStatus);
+    setBatchPageCursor(initialQuery.batchCursor);
+    if (requestedBatchCursor.current === initialQuery.batchCursor) {
+      requestedBatchCursor.current = null;
+    } else if (lastBatchCursor.current !== initialQuery.batchCursor) {
+      const priorIndex = batchCursorHistory.current.lastIndexOf(initialQuery.batchCursor);
+      const nextStack = priorIndex >= 0
+        ? batchCursorHistory.current.slice(0, priorIndex)
+        : [...batchCursorHistory.current, lastBatchCursor.current];
+      batchCursorHistory.current = nextStack;
+      setBatchCursorStack(nextStack);
+    }
+    lastBatchCursor.current = initialQuery.batchCursor;
+  }, [initialQuery.batchStatus, initialQuery.batchCursor]);
 
   const readFinancialStatement = async (item: RegistryItem, cursor = "", append = false) => {
     const to = ledgerTo || new Date().toISOString().slice(0, 10);
@@ -229,7 +406,10 @@ export function BeneficiarySettlementWorkspace({ requestedBatchId = "" }: Benefi
       const scope = `batch-create:${chosen.map((item) => item.id).sort().join(",")}`;
       const result = await responseBody<{ batch: SettlementBatch }>(await fetch("/api/finance/settlement-batches", { method: "POST", headers: mutationHeaders(scope), body: JSON.stringify({ payoutIds: chosen.map((item) => item.id) }) }), "تعذر إنشاء الدفعة");
       completeMutation(scope);
+      loadedBatchId.current = result.batch.id;
       setBatch(result.batch); setBatchItems(result.batch.items); setBatchLookup(result.batch.id); setTransfer(null); selection.clear();
+      setBatchId(result.batch.id);
+      navigateRoute({ batchId: result.batch.id, view: "batches" }, true);
       setNotice(`أنشأ WLT الدفعة ${result.batch.id} بعدد ${result.batch.rowCount} وبإجمالي محسوب ${formatMoney(result.batch.totalAmountMinor, result.batch.currency)}.`);
     } catch (value) { setError(value instanceof Error ? value.message : "تعذر إنشاء الدفعة"); }
     finally { setBusy(false); }
@@ -343,44 +523,67 @@ export function BeneficiarySettlementWorkspace({ requestedBatchId = "" }: Benefi
 
   const loadBatch = async (requestedId = batchLookup) => {
     if (!requestedId.trim()) return;
-    setBusy(true); setError(""); setNotice("");
+    const sequence = ++batchDetailSequence.current;
+    setBatchDetailLoading(true); setError(""); setNotice("");
     try {
       const result = await responseBody<{ batch: SettlementBatch }>(await fetch(`/api/finance/settlement-batches/${encodeURIComponent(requestedId.trim())}`, { cache: "no-store" }), "تعذر قراءة الدفعة");
+      if (sequence !== batchDetailSequence.current) return;
+      loadedBatchId.current = result.batch.id;
       setBatch(result.batch); setBatchItems(result.batch.items); setBatchLookup(result.batch.id); setTransfer(null);
+      setBatchId(result.batch.id);
+      navigateRoute({ batchId: result.batch.id, view: "batches" }, true);
       setNotice(`استعيدت الدفعة ${result.batch.id} من WLT، مع ${result.batch.items.length} صفوف وحالات التنفيذ الحالية.`);
-    } catch (value) { setError(value instanceof Error ? value.message : "تعذر قراءة الدفعة"); }
-    finally { setBusy(false); }
+    } catch (value) { if (sequence === batchDetailSequence.current) setError(value instanceof Error ? value.message : "تعذر قراءة الدفعة"); }
+    finally { if (sequence === batchDetailSequence.current) setBatchDetailLoading(false); }
+  };
+
+  const readBatches = async (route: Readonly<{ status: string; cursor: string }> = { status: batchStatus, cursor: batchPageCursor }) => {
+    const sequence = ++batchListSequence.current;
+    setBatchListLoading(true); setError("");
+    try {
+      const query = new URLSearchParams({ limit: "25" });
+      if (route.status) query.set("status", route.status);
+      if (route.cursor) query.set("cursor", route.cursor);
+      const result = await responseBody<{ batches: ReadonlyArray<SettlementBatch>; nextCursor?: string }>(await fetch(`/api/finance/settlement-batches?${query.toString()}`, { cache: "no-store" }), "تعذر قراءة دفعات التسوية");
+      if (sequence !== batchListSequence.current) return;
+      setBatches(result.batches);
+      setBatchCursor(result.nextCursor ?? "");
+      setBatchPageCursor(route.cursor);
+    } catch (value) { if (sequence === batchListSequence.current) setError(value instanceof Error ? value.message : "تعذر قراءة دفعات التسوية"); }
+    finally { if (sequence === batchListSequence.current) setBatchListLoading(false); }
+  };
+
+  const readNextBatchPage = () => {
+    if (!batchCursor) return;
+    const nextStack = [...batchCursorHistory.current, batchPageCursor];
+    batchCursorHistory.current = nextStack;
+    setBatchCursorStack(nextStack);
+    setBatchPageCursor(batchCursor);
+    lastBatchCursor.current = batchCursor;
+    requestedBatchCursor.current = batchCursor;
+    navigateRoute({ batchCursor });
+  };
+
+  const readPreviousBatchPage = () => {
+    if (!batchCursorHistory.current.length) return;
+    const previous = batchCursorHistory.current.at(-1) ?? "";
+    const nextStack = batchCursorHistory.current.slice(0, -1);
+    batchCursorHistory.current = nextStack;
+    setBatchCursorStack(nextStack);
+    setBatchPageCursor(previous);
+    lastBatchCursor.current = previous;
+    requestedBatchCursor.current = previous;
+    navigateRoute({ batchCursor: previous });
   };
 
   useEffect(() => {
-    const batchId = requestedBatchId.trim();
-    if (!batchId) return;
-    setBatchLookup(batchId); setBusy(true); setError(""); setNotice("");
-    void (async () => {
-      try {
-        const result = await responseBody<{ batch: SettlementBatch }>(await fetch(`/api/finance/settlement-batches/${encodeURIComponent(batchId)}`, { cache: "no-store" }), "تعذر قراءة الدفعة");
-        setBatch(result.batch); setBatchItems(result.batch.items); setTransfer(null);
-        setNotice(`استعيدت الدفعة ${result.batch.id} من WLT، مع ${result.batch.items.length} صفوف وحالات التنفيذ الحالية.`);
-      } catch (value) { setError(value instanceof Error ? value.message : "تعذر قراءة الدفعة"); }
-      finally { setBusy(false); }
-    })();
-  }, [requestedBatchId]);
-
-  const readBatches = async (append = false) => {
-    setBusy(true); setError("");
-    try {
-      const query = new URLSearchParams({ limit: "25" });
-      if (batchStatus) query.set("status", batchStatus);
-      if (append && batchCursor) query.set("cursor", batchCursor);
-      const result = await responseBody<{ batches: ReadonlyArray<SettlementBatch>; nextCursor?: string }>(await fetch(`/api/finance/settlement-batches?${query.toString()}`, { cache: "no-store" }), "تعذر قراءة دفعات التسوية");
-      setBatches((current) => append ? [...current, ...result.batches] : result.batches);
-      setBatchCursor(result.nextCursor ?? "");
-    } catch (value) { setError(value instanceof Error ? value.message : "تعذر قراءة دفعات التسوية"); }
-    finally { setBusy(false); }
-  };
+    if (initialQuery.view === "batches") void readBatches({ status: initialQuery.batchStatus, cursor: initialQuery.batchCursor });
+  }, [initialQuery.view, initialQuery.batchStatus, initialQuery.batchCursor]);
 
   const selectBatch = (value: SettlementBatch) => {
+    loadedBatchId.current = value.id;
     setBatch(value); setBatchItems(value.items); setBatchLookup(value.id); setTransfer(null);
+    navigateRoute({ batchId: value.id, view: "batches" });
     setStatementRowId(""); setNotice(`تم فتح دفعة ${value.id} ببياناتها المستعادة من WLT.`);
   };
 
@@ -391,27 +594,39 @@ export function BeneficiarySettlementWorkspace({ requestedBatchId = "" }: Benefi
   };
 
   const requestCount = filtered.filter((item) => item.latestPayout).length;
-  return <section className="access-card" aria-labelledby="beneficiary-settlement-title">
-    <div className="finance-toolbar"><div><p className="eyebrow">المالية · سجل التسويات</p><h2 id="beneficiary-settlement-title">مستحقات وتسويات الشركاء والكباتن والميدان</h2></div><button className="button button-secondary" type="button" onClick={() => void read()} disabled={busy}>{busy ? "جارٍ التحديث…" : "تحديث السجل"}</button></div>
+  return <section className="beneficiary-settlement-workspace" aria-labelledby="beneficiary-settlement-title">
+    <div className="finance-toolbar"><div><p className="eyebrow">المالية · سجل التسويات</p><h2 id="beneficiary-settlement-title">مستحقات وتسويات الشركاء والكباتن والميدان</h2></div><button className="button button-secondary" type="button" onClick={() => void read()} disabled={registryLoading}>{registryLoading ? "جارٍ التحديث…" : "تحديث السجل"}</button></div>
     <p className="muted">المبالغ والوجهات تأتي من WLT. التحويل الخارجي يدوي، وكل تحويل يحتاج إيصالاً مستقلاً. يُرفع كشف المحفظة مرة للدفعة أو الفترة وتُربط به صفوف المطابقة.</p>
-    <p className="muted" aria-live="polite">النتائج الحالية: {filtered.length.toLocaleString("ar-YE")} مستفيد؛ {requestCount.toLocaleString("ar-YE")} لديهم طلب تسوية؛ {selection.selected.length.toLocaleString("ar-YE")} طلبات معتمدة محددة.</p>
-    <div className="finance-toolbar"><label className="field-label" htmlFor="settlement-beneficiary-type">قسم المستحقات والتسويات<select id="settlement-beneficiary-type" value={actorType} onChange={(event) => { setActorType(event.target.value as RegistryActorType); clearRegistryPage(); setFinancialStatement(null); setStatementBeneficiary(null); }}><option value="partner">الشركاء</option><option value="captain">كباتن بثواني</option><option value="field">الميدان</option></select></label><label className="field-label" htmlFor="settlement-status">حالة الطلب<select id="settlement-status" value={status} onChange={(event) => { setStatus(event.target.value as (typeof statusFilters)[number]); clearRegistryPage(); }}>{statusFilters.map((item) => <option key={item} value={item}>{item === "" ? "كل الحالات" : item === "NO_REQUEST" ? "لا يوجد طلب" : payoutStatusLabel(item as PayoutRequest["status"])}</option>)}</select></label><label className="field-label" htmlFor="settlement-sort">ترتيب السجل<select id="settlement-sort" value={sort} onChange={(event) => { setSort(event.target.value as BeneficiarySort); clearRegistryPage(); }}><option value="actor_asc">معرّف المستفيد تصاعدياً</option><option value="actor_desc">معرّف المستفيد تنازلياً</option><option value="available_desc">المتاح: الأعلى أولاً</option><option value="available_asc">المتاح: الأقل أولاً</option><option value="held_desc">المحجوز: الأعلى أولاً</option><option value="held_asc">المحجوز: الأقل أولاً</option><option value="payout_amount_desc">مبلغ آخر طلب: الأعلى أولاً</option><option value="payout_amount_asc">مبلغ آخر طلب: الأقل أولاً</option></select></label><label className="field-label" htmlFor="settlement-search">بحث بالاسم أو معرّف المستفيد أو آخر أرقام المحفظة<input id="settlement-search" type="search" value={search} onChange={(event) => { setSearch(event.target.value); clearRegistryPage(); }} placeholder="اسم المستفيد أو المعرّف أو الأرقام الظاهرة" /></label><button className="button button-secondary" type="button" onClick={() => void read()} disabled={busy}>تطبيق الفلاتر</button>{search ? <button className="button button-quiet" type="button" onClick={() => { setSearch(""); void read(""); }} disabled={busy}>مسح البحث</button> : null}</div>
-    <div className="finance-toolbar"><label className="field-label" htmlFor="beneficiary-statement-from">كشف الحساب من<input id="beneficiary-statement-from" type="date" value={ledgerFrom} onChange={(event) => { setLedgerFrom(event.target.value); setFinancialStatement(null); setPartnerPeriodRows([]); setPartnerPeriodRange(null); setPartnerPeriodTotals(null); }} /></label><label className="field-label" htmlFor="beneficiary-statement-to">إلى<input id="beneficiary-statement-to" type="date" value={ledgerTo} onChange={(event) => { setLedgerTo(event.target.value); setFinancialStatement(null); setPartnerPeriodRows([]); setPartnerPeriodRange(null); setPartnerPeriodTotals(null); }} /></label>{statementBeneficiary ? <button className="button button-quiet" type="button" onClick={() => void readFinancialStatement(statementBeneficiary)} disabled={statementBusy}>تحديث كشف المستفيد للفترة</button> : null}<span className="muted">يظهر الرصيد الافتتاحي وحركات WLT، وتفاصيل أسعار الطلب والمنتجات حين يكون مصدر القيد طلباً موثقاً في DSH.</span>{actorType === "partner" ? <button className="button button-secondary" type="button" onClick={() => void downloadPartnerPeriodRegister()} disabled={busy || statementBusy || !ledgerFrom}>تنزيل تقرير الشركاء بصيغة CSV (يفتح في Excel)</button> : null}{actorType === "partner" && partnerPeriodRows.length ? <button className="button button-quiet" type="button" onClick={() => window.print()}>طباعة التقرير الدوري</button> : null}</div>
-    {actorType === "partner" && partnerPeriodRange ? <section id="partner-period-register-print" className={`access-card ${styles.periodRegister}`} aria-labelledby="partner-period-register-title"><h3 id="partner-period-register-title">سجل مستحقات الشركاء للفترة {partnerPeriodRange.from} — {partnerPeriodRange.to}</h3><p>المصدر: مجاميع WLT للشركاء ذوي الملف المالي النشط؛ المبالغ بالريال اليمني. تاريخ الفترة مبني على وقت القيد المحاسبي. الأسماء وأرقام المحافظ من أحدث وجهة مسجلة في WLT، والرقم معروض بصيغة مقنعة.</p><div className="finance-table-wrap"><table className="finance-table"><thead><tr><th scope="col">الاسم المسجل</th><th scope="col">معرّف الشريك</th><th scope="col">المحفظة (مقنعة)</th><th scope="col">افتتاحي</th><th scope="col">إضافات</th><th scope="col">خصومات</th><th scope="col">إقفال الفترة</th><th scope="col">الرصيد الحالي</th><th scope="col">محجوز</th><th scope="col">متاح</th></tr></thead><tbody>{partnerPeriodRows.map((item) => <tr key={item.actorId}><td>{item.beneficiaryName || "غير مسجل بوجهة مالية"}</td><td><bdi>{item.actorId}</bdi></td><td><bdi>{item.walletIdentifierMasked || "—"}</bdi></td><td>{formatMoney(item.openingBalanceMinor, item.currency)}</td><td>{formatMoney(item.creditsMinor, item.currency)}</td><td>{formatMoney(item.debitsMinor, item.currency)}</td><td>{formatMoney(item.closingBalanceMinor, item.currency)}</td><td>{formatMoney(item.currentBalanceMinor, item.currency)}</td><td>{formatMoney(item.heldMinor, item.currency)}</td><td>{formatMoney(item.availableMinor, item.currency)}</td></tr>)}</tbody>{partnerPeriodTotals ? <tfoot><tr><th scope="row" colSpan={3}>إجمالي WLT</th><td>{formatMoney(partnerPeriodTotals.openingBalanceMinor, "YER")}</td><td>{formatMoney(partnerPeriodTotals.creditsMinor, "YER")}</td><td>{formatMoney(partnerPeriodTotals.debitsMinor, "YER")}</td><td>{formatMoney(partnerPeriodTotals.closingBalanceMinor, "YER")}</td><td>{formatMoney(partnerPeriodTotals.currentBalanceMinor, "YER")}</td><td>{formatMoney(partnerPeriodTotals.heldMinor, "YER")}</td><td>{formatMoney(partnerPeriodTotals.availableMinor, "YER")}</td></tr></tfoot> : null}</table></div></section> : null}
-    {filtered.some((item) => item.latestPayout?.status === "HELD" || item.latestPayout?.status === "PREPARED") ? <div className="finance-toolbar"><label className="field-label" htmlFor="payout-governance-reason">سبب إجراء الطلب<input id="payout-governance-reason" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={512} /></label><label className="field-label" htmlFor="payout-preparation-evidence">مرجع دليل التهيئة<input id="payout-preparation-evidence" value={payoutEvidenceReference} onChange={(event) => setPayoutEvidenceReference(event.target.value)} maxLength={512} /></label></div> : null}
+    <p className="muted" aria-live="polite">سجلات الصفحة الحالية: {filtered.length.toLocaleString("ar-YE")} مستفيد؛ {requestCount.toLocaleString("ar-YE")} لديهم طلب تسوية؛ {selection.selected.length.toLocaleString("ar-YE")} طلبات معتمدة محددة.</p>
+     <nav className={styles.actorNav} aria-label="سجلات مستحقات المستفيدين">
+        {([
+         ["partner", "الشركاء"],
+         ["captain", "كباتن بثواني"],
+         ["field", "الميدان"],
+       ] as const).map(([value, label]) => (
+          <Link key={value} className={styles.actorLink} href={settlementRouteHref(`/finance/beneficiary-settlement/${value}`, initialQuery, { cursor: "" })} aria-current={actorType === value ? "page" : undefined}>
+            {label}
+          </Link>
+        ))}
+      </nav>
+      <nav className={styles.actorNav} aria-label="مسارات مكتب التسويات">
+        {settlementViews.map((item) => <Link key={item.id} className={styles.actorLink} href={settlementRouteHref(pathname, initialQuery, { view: item.id })} aria-current={initialQuery.view === item.id ? "page" : undefined}>{item.label}</Link>)}
+      </nav>
+     <div hidden={view !== "beneficiaries"} className="finance-toolbar"><label className="field-label" htmlFor="settlement-status">حالة الطلب<select id="settlement-status" value={status} onChange={(event) => { setStatus(event.target.value as (typeof statusFilters)[number]); clearRegistryPage(); }}>{statusFilters.map((item) => <option key={item} value={item}>{item === "" ? "كل الحالات" : item === "NO_REQUEST" ? "لا يوجد طلب" : payoutStatusLabel(item as PayoutRequest["status"])}</option>)}</select></label><label className="field-label" htmlFor="settlement-sort">ترتيب السجل<select id="settlement-sort" value={sort} onChange={(event) => { setSort(event.target.value as BeneficiarySort); clearRegistryPage(); }}><option value="actor_asc">معرّف المستفيد تصاعدياً</option><option value="actor_desc">معرّف المستفيد تنازلياً</option><option value="available_desc">المتاح: الأعلى أولاً</option><option value="available_asc">المتاح: الأقل أولاً</option><option value="held_desc">المحجوز: الأعلى أولاً</option><option value="held_asc">المحجوز: الأقل أولاً</option><option value="payout_amount_desc">مبلغ آخر طلب: الأعلى أولاً</option><option value="payout_amount_asc">مبلغ آخر طلب: الأقل أولاً</option></select></label><label className="field-label" htmlFor="settlement-search">بحث بالاسم أو معرّف المستفيد أو آخر أرقام المحفظة<input id="settlement-search" type="search" value={search} onChange={(event) => { setSearch(event.target.value); clearRegistryPage(); }} placeholder="اسم المستفيد أو المعرّف أو الأرقام الظاهرة" /></label><button className="button button-secondary" type="button" onClick={() => { setCursor(""); setCursorStack([]); registryCursorHistory.current = []; lastRegistryCursor.current = ""; requestedRegistryCursor.current = ""; clearRegistryPage(); navigateRoute({ status, search: search.trim(), sort, cursor: "" }); }} disabled={registryLoading}>تطبيق الفلاتر</button>{initialQuery.search ? <button className="button button-quiet" type="button" onClick={() => { setSearch(""); setCursor(""); setCursorStack([]); registryCursorHistory.current = []; lastRegistryCursor.current = ""; requestedRegistryCursor.current = ""; clearRegistryPage(); navigateRoute({ search: "", cursor: "" }); }} disabled={registryLoading}>مسح البحث</button> : null}</div>
+    <div hidden={view !== "reconciliation"} className="finance-toolbar"><label className="field-label" htmlFor="beneficiary-statement-from">كشف الحساب من<input id="beneficiary-statement-from" type="date" value={ledgerFrom} onChange={(event) => { setLedgerFrom(event.target.value); setFinancialStatement(null); setPartnerPeriodRows([]); setPartnerPeriodRange(null); setPartnerPeriodTotals(null); }} /></label><label className="field-label" htmlFor="beneficiary-statement-to">إلى<input id="beneficiary-statement-to" type="date" value={ledgerTo} onChange={(event) => { setLedgerTo(event.target.value); setFinancialStatement(null); setPartnerPeriodRows([]); setPartnerPeriodRange(null); setPartnerPeriodTotals(null); }} /></label>{statementBeneficiary ? <button className="button button-quiet" type="button" onClick={() => void readFinancialStatement(statementBeneficiary)} disabled={statementBusy}>تحديث كشف المستفيد للفترة</button> : null}<span className="muted">يظهر الرصيد الافتتاحي وحركات WLT، وتفاصيل أسعار الطلب والمنتجات حين يكون مصدر القيد طلباً موثقاً في DSH.</span>{actorType === "partner" ? <button className="button button-secondary" type="button" onClick={() => void downloadPartnerPeriodRegister()} disabled={busy || statementBusy || !ledgerFrom}>تنزيل تقرير الشركاء بصيغة CSV (يفتح في Excel)</button> : null}{actorType === "partner" && partnerPeriodRows.length ? <button className="button button-quiet" type="button" onClick={() => window.print()}>طباعة التقرير الدوري</button> : null}</div>
+    {view === "reconciliation" && actorType === "partner" && partnerPeriodRange ? <section id="partner-period-register-print" className={`access-card ${styles.periodRegister}`} aria-labelledby="partner-period-register-title"><h3 id="partner-period-register-title">سجل مستحقات الشركاء للفترة {partnerPeriodRange.from} — {partnerPeriodRange.to}</h3><p>المصدر: مجاميع WLT للشركاء ذوي الملف المالي النشط؛ المبالغ بالريال اليمني. تاريخ الفترة مبني على وقت القيد المحاسبي. الأسماء وأرقام المحافظ من أحدث وجهة مسجلة في WLT، والرقم معروض بصيغة مقنعة.</p><div className="finance-table-wrap"><table className="finance-table"><thead><tr><th scope="col">الاسم المسجل</th><th scope="col">معرّف الشريك</th><th scope="col">المحفظة (مقنعة)</th><th scope="col">افتتاحي</th><th scope="col">إضافات</th><th scope="col">خصومات</th><th scope="col">إقفال الفترة</th><th scope="col">الرصيد الحالي</th><th scope="col">محجوز</th><th scope="col">متاح</th></tr></thead><tbody>{partnerPeriodRows.map((item) => <tr key={item.actorId}><td>{item.beneficiaryName || "غير مسجل بوجهة مالية"}</td><td><bdi>{item.actorId}</bdi></td><td><bdi>{item.walletIdentifierMasked || "—"}</bdi></td><td>{formatMoney(item.openingBalanceMinor, item.currency)}</td><td>{formatMoney(item.creditsMinor, item.currency)}</td><td>{formatMoney(item.debitsMinor, item.currency)}</td><td>{formatMoney(item.closingBalanceMinor, item.currency)}</td><td>{formatMoney(item.currentBalanceMinor, item.currency)}</td><td>{formatMoney(item.heldMinor, item.currency)}</td><td>{formatMoney(item.availableMinor, item.currency)}</td></tr>)}</tbody>{partnerPeriodTotals ? <tfoot><tr><th scope="row" colSpan={3}>إجمالي WLT</th><td>{formatMoney(partnerPeriodTotals.openingBalanceMinor, "YER")}</td><td>{formatMoney(partnerPeriodTotals.creditsMinor, "YER")}</td><td>{formatMoney(partnerPeriodTotals.debitsMinor, "YER")}</td><td>{formatMoney(partnerPeriodTotals.closingBalanceMinor, "YER")}</td><td>{formatMoney(partnerPeriodTotals.currentBalanceMinor, "YER")}</td><td>{formatMoney(partnerPeriodTotals.heldMinor, "YER")}</td><td>{formatMoney(partnerPeriodTotals.availableMinor, "YER")}</td></tr></tfoot> : null}</table></div></section> : null}
+    {view === "beneficiaries" && filtered.some((item) => item.latestPayout?.status === "HELD" || item.latestPayout?.status === "PREPARED") ? <div className="finance-toolbar"><label className="field-label" htmlFor="payout-governance-reason">سبب إجراء الطلب<input id="payout-governance-reason" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={512} /></label><label className="field-label" htmlFor="payout-preparation-evidence">مرجع دليل التهيئة<input id="payout-preparation-evidence" value={payoutEvidenceReference} onChange={(event) => setPayoutEvidenceReference(event.target.value)} maxLength={512} /></label></div> : null}
     {error ? <p className="validation-error" role="alert">{error}</p> : null}{notice ? <p role="status" className="muted">{notice}</p> : null}
-    <div className="catalog-selection-bar" aria-live="polite"><span>{selection.selected.length ? `تم تحديد ${selection.selected.length} طلب معتمد في النتائج المعروضة` : "حدد طلبات معتمدة لإنشاء دفعة تنفيذ"}</span>{selection.selected.length ? <><button className="button button-quiet" type="button" onClick={downloadReceipts}>تصدير CSV للتوثيق</button><button className="button button-quiet" type="button" onClick={selection.clear}>إلغاء التحديد</button><button className="button button-primary" type="button" onClick={() => void createBatch()} disabled={busy}>إنشاء دفعة</button></> : null}</div>
-    <div className="finance-table-wrap"><table className="finance-table"><caption className="sr-only">سجل مستحقات وتسويات المستفيدين</caption><thead><tr><th scope="col"><input type="checkbox" aria-label="تحديد الطلبات المعتمدة الظاهرة" checked={selection.allVisibleSelected} onChange={selection.toggleAllVisible} /></th><th scope="col">المستفيد</th><th scope="col">المتاح للتسوية</th><th scope="col">المحجوز</th><th scope="col">آخر طلب ومبلغه</th><th scope="col">حالة الطلب</th><th scope="col">وجهة التسوية</th><th scope="col">الإجراء</th></tr></thead><tbody>{filtered.map((item) => { const payout = item.latestPayout; const selectable = payout?.status === "APPROVED"; return <tr key={item.id}><td><input type="checkbox" aria-label={`تحديد طلب ${payout?.id ?? "غير موجود"} للمستفيد ${item.actorId}`} checked={selection.selectedIds.has(item.id)} disabled={!selectable} onChange={() => selection.toggle(item.id)} /></td><td>{actorLabel[item.actorType]} · <bdi>{item.actorId}</bdi>{item.destination?.beneficiaryName ? <><br /><span>{item.destination.beneficiaryName}</span></> : null}<br /><button className="button button-quiet" type="button" onClick={() => void readFinancialStatement(item)} disabled={statementBusy}>فتح التاريخ وكشف الحساب</button></td><td>{formatMoney(item.eligibleAvailableMinor, item.currency)}</td><td>{formatMoney(item.heldMinor, item.currency)}</td><td>{payout ? <><bdi>{payout.id}</bdi><br />{formatMoney(payout.resolvedAmountMinor, payout.currency)}</> : "لا يوجد طلب"}</td><td>{payout ? payoutStatusLabel(payout.status) : "لا يوجد طلب"}</td><td>{item.destination ? `${item.destination.providerKey} · ${item.destination.walletIdentifierMasked} · ${item.destination.status}` : "لا توجد وجهة معتمدة"}</td><td>{payout?.status === "HELD" ? <button className="button button-quiet" type="button" onClick={() => void payoutAction(payout.id, "prepare")} disabled={busy || !reason.trim() || !payoutEvidenceReference.trim()}>تهيئة</button> : payout?.status === "PREPARED" ? <button className="button button-quiet" type="button" onClick={() => void payoutAction(payout.id, "approve")} disabled={busy || !reason.trim()}>اعتماد مستقل</button> : payout?.status === "APPROVED" ? <button className="button button-quiet" type="button" onClick={() => void payoutAction(payout.id, "cancel")} disabled={busy || !reason.trim()}>إلغاء وإطلاق الحجز</button> : "—"}</td></tr>; })}</tbody></table>{!busy && filtered.length === 0 ? <p className="muted">لا توجد سجلات مطابقة. حدّث النتائج بعد تغيير البحث أو الفئة.</p> : null}</div>
-    {statementBeneficiary ? <section id="beneficiary-financial-statement-print" className={`access-card ${styles.statement}`} aria-labelledby="beneficiary-financial-statement-title"><div className="finance-toolbar"><div><p className="eyebrow">كشف WLT · تفاصيل DSH الموثقة</p><h3 id="beneficiary-financial-statement-title">{actorLabel[statementBeneficiary.actorType]} · <bdi>{statementBeneficiary.actorId}</bdi></h3></div><div className={styles.actions}><button className="button button-quiet" type="button" onClick={() => void printFinancialStatement()} disabled={statementBusy}>طباعة الكشف كاملاً</button><button className="button button-secondary" type="button" onClick={() => void downloadFinancialStatement()} disabled={statementBusy || !financialStatement}>تنزيل كشف Excel (CSV)</button><button className="button button-quiet" type="button" onClick={() => { setStatementBeneficiary(null); setFinancialStatement(null); }}>إغلاق</button></div></div>{statementBusy && !financialStatement ? <p className="muted">جارٍ قراءة القيود من WLT…</p> : financialStatement ? <><div className="finance-toolbar"><span>الفترة {financialStatement.periodStart} — {financialStatement.periodEnd}</span><span>افتتاحي: {formatMoney(financialStatement.openingBalanceMinor, financialStatement.currency)}</span><span>إجمالي الإيداعات: {formatMoney(financialStatement.creditsMinor, financialStatement.currency)}</span><span>إجمالي الخصومات: {formatMoney(financialStatement.debitsMinor, financialStatement.currency)}</span><strong>إقفال الفترة: {formatMoney(financialStatement.closingBalanceMinor, financialStatement.currency)}</strong><span>الرصيد الحالي: {formatMoney(financialStatement.currentBalanceMinor, financialStatement.currency)}</span></div><div className="finance-table-wrap"><table className="finance-table"><caption className="sr-only">تفاصيل كشف الحساب المالي</caption><thead><tr><th scope="col">التاريخ</th><th scope="col">نوع القيد والمصدر</th><th scope="col">الاتجاه والمبلغ</th><th scope="col">الرصيد بعد الحركة</th><th scope="col">تفاصيل الطلب والمنتجات</th></tr></thead><tbody>{financialStatement.entries.map((entry) => <tr key={entry.transactionId}><td>{new Date(entry.createdAt).toLocaleString("ar-YE")}</td><td><bdi>{entry.transactionType}</bdi><br /><small><bdi>{entry.sourceType} · {entry.sourceId}</bdi></small></td><td>{entry.direction === "CREDIT" ? "إضافة" : "خصم"} · {formatMoney(entry.amountMinor, entry.currency)}</td><td>{formatMoney(entry.balanceAfterMinor, entry.currency)}</td><td>{entry.order ? <details open><summary>طلب {entry.order.orderId} · {formatMoney(entry.order.totalAmountMinor, entry.order.currency)}</summary><p>{entry.order.storeName} · {entry.order.state} · {entry.order.fulfillmentMode}</p><div className="finance-table-wrap"><table className="finance-table"><thead><tr><th scope="col">المنتج</th><th scope="col">الصنف</th><th scope="col">الكمية بوحدة الأساس</th><th scope="col">سعر الوحدة</th><th scope="col">إجمالي السطر</th></tr></thead><tbody>{entry.order.lines.map((line) => <tr key={`${entry.order?.orderId}-${line.productName}-${line.variantTitle}-${line.quantityBaseUnits}-${line.unitPriceMinor}-${line.lineAmountMinor}`}><td>{line.productName}</td><td>{line.variantTitle}</td><td>{line.quantityBaseUnits.toLocaleString("ar-YE")}</td><td>{formatMoney(line.unitPriceMinor, line.currency)}</td><td>{formatMoney(line.lineAmountMinor, line.currency)}</td></tr>)}</tbody></table></div></details> : entry.store ? <details><summary>استحقاق مرتبط بمتجر {entry.store.name}</summary><p>{entry.store.publicationState} · <bdi>{entry.store.storeId}</bdi></p></details> : "لا توجد لقطة طلب أو متجر مرتبطة بهذا القيد"}</td></tr>)}</tbody></table>{financialStatement.nextCursor ? <button className={`button button-quiet ${styles.actions}`} type="button" onClick={() => void readFinancialStatement(statementBeneficiary, financialStatement.nextCursor, true)} disabled={statementBusy}>تحميل الحركات الأقدم</button> : null}</div></> : <p className="muted">لم يصل كشف من WLT بعد.</p>}</section> : null}
-    {actorType === "partner" ? <details className="access-card"><summary>مبالغ عمولة بثواني المستحقة على الشريك</summary><p className="muted">هذا تدفق تحصيل منفصل عن صرف مستحقات الشريك: يعرض ذمم عمولة المنصة ويسجل حوالة واردة من الشريك بعد التحقق منها.</p><PartnerEarningsWorkspace /></details> : null}
-    {nextCursor ? <button className="button button-secondary" type="button" onClick={() => void readNext()} disabled={busy}>{busy ? "جارٍ التحميل…" : "تحميل بقية السجلات"}</button> : null}
-    <section className="access-card" aria-labelledby="settlement-batches-title"><div className="finance-toolbar"><h3 id="settlement-batches-title">دفعات التنفيذ المسجلة</h3><label className="field-label" htmlFor="settlement-batch-status">تصفية الدفعات<select id="settlement-batch-status" value={batchStatus} onChange={(event) => setBatchStatus(event.target.value)}><option value="">كل الحالات</option>{["PREPARED", "APPROVED", "FROZEN", "EXECUTION_IN_PROGRESS", "AWAITING_VERIFICATION", "AWAITING_RECONCILIATION", "COMPLETED", "EXCEPTION", "CANCELLED"].map((value) => <option key={value} value={value}>{value}</option>)}</select></label><button className="button button-secondary" type="button" onClick={() => void readBatches()} disabled={busy}>تحديث الدفعات</button></div>{batches.length ? <div className="finance-table-wrap"><table className="finance-table"><caption className="sr-only">دفعات التسوية المحفوظة لدى WLT</caption><thead><tr><th scope="col">الدفعة</th><th scope="col">الحالة</th><th scope="col">عدد التحويلات</th><th scope="col">المجموع المحسوب</th><th scope="col">الإجراء</th></tr></thead><tbody>{batches.map((item) => <tr key={item.id}><td><bdi>{item.id}</bdi></td><td>{item.status}</td><td>{item.rowCount.toLocaleString("ar-YE")}</td><td>{formatMoney(item.totalAmountMinor, item.currency)}</td><td><button className="button button-quiet" type="button" onClick={() => selectBatch(item)}>فتح الدفعة</button></td></tr>)}</tbody></table></div> : <p className="muted">لا توجد دفعات محملة. حدّث القائمة لقراءتها من WLT.</p>}{batchCursor ? <button className="button button-quiet" type="button" onClick={() => void readBatches(true)} disabled={busy}>تحميل الدفعات الأقدم</button> : null}</section>
-    <div className="finance-toolbar"><label className="field-label" htmlFor="settlement-batch-lookup">فتح دفعة بمعرّفها<input id="settlement-batch-lookup" value={batchLookup} onChange={(event) => setBatchLookup(event.target.value)} maxLength={128} placeholder="أدخل معرّف الدفعة" /></label><button className="button button-secondary" type="button" onClick={() => void loadBatch()} disabled={busy || !batchLookup.trim()}>فتح الدفعة</button></div>
-    {batch ? <section className="access-card" aria-labelledby="settlement-batch-title"><div className="finance-toolbar"><div><p className="eyebrow">دفعة WLT</p><h3 id="settlement-batch-title">دفعة تنفيذ: <bdi>{batch.id}</bdi></h3></div><strong>{formatMoney(batch.totalAmountMinor, batch.currency)} · {batch.rowCount.toLocaleString("ar-YE")} تحويل</strong></div><p className="muted">الحالة: {batch.status}{batch.batchHash ? ` · بصمة الدفعة ${batch.batchHash}` : ""}</p><label className="field-label" htmlFor="settlement-batch-reason">سبب اعتماد أو تجميد الدفعة<input id="settlement-batch-reason" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={512} /></label>{batch.status === "PREPARED" ? <button className="button button-secondary" type="button" onClick={() => void batchAction("approve")} disabled={busy || !reason.trim()}>اعتماد الدفعة مستقلاً</button> : null}{batch.status === "APPROVED" ? <button className="button button-secondary" type="button" onClick={() => void batchAction("freeze")} disabled={busy || !reason.trim()}>تجميد الدفعة وحساب بصمتها</button> : null}{["FROZEN", "EXECUTION_IN_PROGRESS", "AWAITING_VERIFICATION", "AWAITING_RECONCILIATION", "COMPLETED"].includes(batch.status) ? <button className="button button-secondary" type="button" onClick={() => void exportBatch()} disabled={busy}>تنزيل ملف XLSX التنفيذي من WLT</button> : null}
+    <div hidden={view !== "beneficiaries"} className="catalog-selection-bar" aria-live="polite"><span>{selection.selected.length ? `تم تحديد ${selection.selected.length} طلب معتمد في النتائج المعروضة` : "حدد طلبات معتمدة لإنشاء دفعة تنفيذ"}</span>{selection.selected.length ? <><button className="button button-quiet" type="button" onClick={downloadReceipts}>تصدير CSV للتوثيق</button><button className="button button-quiet" type="button" onClick={selection.clear}>إلغاء التحديد</button><button className="button button-primary" type="button" onClick={() => void createBatch()} disabled={busy}>إنشاء دفعة</button></> : null}</div>
+    <div hidden={view !== "beneficiaries"} className="finance-table-wrap"><table className="finance-table"><caption className="sr-only">سجل مستحقات وتسويات المستفيدين</caption><thead><tr><th scope="col"><input type="checkbox" aria-label="تحديد الطلبات المعتمدة الظاهرة" checked={selection.allVisibleSelected} onChange={selection.toggleAllVisible} /></th><th scope="col">المستفيد</th><th scope="col">المتاح للتسوية</th><th scope="col">المحجوز</th><th scope="col">آخر طلب ومبلغه</th><th scope="col">حالة الطلب</th><th scope="col">وجهة التسوية</th><th scope="col">الإجراء</th></tr></thead><tbody>{filtered.map((item) => { const payout = item.latestPayout; const selectable = payout?.status === "APPROVED"; return <tr key={item.id}><td><input type="checkbox" aria-label={`تحديد طلب ${payout?.id ?? "غير موجود"} للمستفيد ${item.actorId}`} checked={selection.selectedIds.has(item.id)} disabled={!selectable} onChange={() => selection.toggle(item.id)} /></td><td>{actorLabel[item.actorType]} · <bdi>{item.actorId}</bdi>{item.destination?.beneficiaryName ? <><br /><span>{item.destination.beneficiaryName}</span></> : null}<br /><button className="button button-quiet" type="button" onClick={() => void readFinancialStatement(item)} disabled={statementBusy}>فتح التاريخ وكشف الحساب</button></td><td>{formatMoney(item.eligibleAvailableMinor, item.currency)}</td><td>{formatMoney(item.heldMinor, item.currency)}</td><td>{payout ? <><bdi>{payout.id}</bdi><br />{formatMoney(payout.resolvedAmountMinor, payout.currency)}</> : "لا يوجد طلب"}</td><td>{payout ? payoutStatusLabel(payout.status) : "لا يوجد طلب"}</td><td>{item.destination ? <><bdi>{item.destination.providerKey}</bdi> · <bdi>{item.destination.walletIdentifierMasked}</bdi> · {officialWalletDestinationStatusLabel(item.destination.status)}</> : "لا توجد وجهة معتمدة"}</td><td>{payout?.status === "HELD" ? <button className="button button-quiet" type="button" onClick={() => void payoutAction(payout.id, "prepare")} disabled={busy || !reason.trim() || !payoutEvidenceReference.trim()}>تهيئة</button> : payout?.status === "PREPARED" ? <button className="button button-quiet" type="button" onClick={() => void payoutAction(payout.id, "approve")} disabled={busy || !reason.trim()}>اعتماد مستقل</button> : payout?.status === "APPROVED" ? <button className="button button-quiet" type="button" onClick={() => void payoutAction(payout.id, "cancel")} disabled={busy || !reason.trim()}>إلغاء وإطلاق الحجز</button> : "—"}</td></tr>; })}</tbody></table>{!busy && filtered.length === 0 ? <p className="muted">لا توجد سجلات مطابقة. حدّث النتائج بعد تغيير البحث أو الفئة.</p> : null}</div>
+    {view === "beneficiaries" && statementBeneficiary ? <section id="beneficiary-financial-statement-print" className={`access-card ${styles.statement}`} aria-labelledby="beneficiary-financial-statement-title"><div className="finance-toolbar"><div><p className="eyebrow">كشف WLT · تفاصيل DSH الموثقة</p><h3 id="beneficiary-financial-statement-title">{actorLabel[statementBeneficiary.actorType]} · <bdi>{statementBeneficiary.actorId}</bdi></h3></div><div className={styles.actions}><button className="button button-quiet" type="button" onClick={() => void printFinancialStatement()} disabled={statementBusy}>طباعة الكشف كاملاً</button><button className="button button-secondary" type="button" onClick={() => void downloadFinancialStatement()} disabled={statementBusy || !financialStatement}>تنزيل كشف Excel (CSV)</button><button className="button button-quiet" type="button" onClick={() => { setStatementBeneficiary(null); setFinancialStatement(null); }}>إغلاق</button></div></div>{statementBusy && !financialStatement ? <p className="muted">جارٍ قراءة القيود من WLT…</p> : financialStatement ? <><div className="finance-toolbar"><span>الفترة {financialStatement.periodStart} — {financialStatement.periodEnd}</span><span>افتتاحي: {formatMoney(financialStatement.openingBalanceMinor, financialStatement.currency)}</span><span>إجمالي الإيداعات: {formatMoney(financialStatement.creditsMinor, financialStatement.currency)}</span><span>إجمالي الخصومات: {formatMoney(financialStatement.debitsMinor, financialStatement.currency)}</span><strong>إقفال الفترة: {formatMoney(financialStatement.closingBalanceMinor, financialStatement.currency)}</strong><span>الرصيد الحالي: {formatMoney(financialStatement.currentBalanceMinor, financialStatement.currency)}</span></div><div className="finance-table-wrap"><table className="finance-table"><caption className="sr-only">تفاصيل كشف الحساب المالي</caption><thead><tr><th scope="col">التاريخ</th><th scope="col">نوع القيد والمصدر</th><th scope="col">الاتجاه والمبلغ</th><th scope="col">الرصيد بعد الحركة</th><th scope="col">تفاصيل الطلب والمنتجات</th></tr></thead><tbody>{financialStatement.entries.map((entry) => <tr key={entry.transactionId}><td>{new Date(entry.createdAt).toLocaleString("ar-YE")}</td><td>{financialTransactionLabel(entry.transactionType)}<br /><small>{financialSourceLabel(entry.sourceType)} · <bdi>{entry.sourceId}</bdi></small></td><td>{entry.direction === "CREDIT" ? "إضافة" : "خصم"} · {formatMoney(entry.amountMinor, entry.currency)}</td><td>{formatMoney(entry.balanceAfterMinor, entry.currency)}</td><td>{entry.order ? <details open><summary>طلب {entry.order.orderId} · {formatMoney(entry.order.totalAmountMinor, entry.order.currency)}</summary><p>{entry.order.storeName} · {orderStateLabel(entry.order.state)} · {fulfillmentModeLabel(entry.order.fulfillmentMode as Parameters<typeof fulfillmentModeLabel>[0])}</p><div className="finance-table-wrap"><table className="finance-table"><thead><tr><th scope="col">المنتج</th><th scope="col">الصنف</th><th scope="col">الكمية بوحدة الأساس</th><th scope="col">سعر الوحدة</th><th scope="col">إجمالي السطر</th></tr></thead><tbody>{entry.order.lines.map((line) => <tr key={`${entry.order?.orderId}-${line.productName}-${line.variantTitle}-${line.quantityBaseUnits}-${line.unitPriceMinor}-${line.lineAmountMinor}`}><td>{line.productName}</td><td>{line.variantTitle}</td><td>{line.quantityBaseUnits.toLocaleString("ar-YE")}</td><td>{formatMoney(line.unitPriceMinor, line.currency)}</td><td>{formatMoney(line.lineAmountMinor, line.currency)}</td></tr>)}</tbody></table></div></details> : entry.store ? <details><summary>استحقاق مرتبط بمتجر {entry.store.name}</summary><p>{publicationStateLabel(entry.store.publicationState)} · <bdi>{entry.store.storeId}</bdi></p></details> : "لا توجد لقطة طلب أو متجر مرتبطة بهذا القيد"}</td></tr>)}</tbody></table>{financialStatement.nextCursor ? <button className={`button button-quiet ${styles.actions}`} type="button" onClick={() => void readFinancialStatement(statementBeneficiary, financialStatement.nextCursor, true)} disabled={statementBusy}>تحميل الحركات الأقدم</button> : null}</div></> : <p className="muted">لم يصل كشف من WLT بعد.</p>}</section> : null}
+    <nav hidden={view !== "beneficiaries"} className={styles.pagination} aria-label="صفحات سجل المستحقات"><button type="button" className="button button-quiet" onClick={readPrevious} disabled={registryLoading || cursorStack.length === 0}>السابق</button><span>الصفحة {cursorStack.length + 1}</span><button type="button" className="button button-quiet" onClick={() => void readNext()} disabled={registryLoading || !nextCursor}>التالي</button></nav>
+     <section hidden={view !== "batches"} className="settlement-resource" aria-labelledby="settlement-batches-title"><div className="finance-toolbar"><h3 id="settlement-batches-title">دفعات التنفيذ المسجلة</h3><label className="field-label" htmlFor="settlement-batch-status">تصفية الدفعات<select id="settlement-batch-status" value={batchStatus} onChange={(event) => { setBatchStatus(event.target.value); setBatchPageCursor(""); setBatchCursorStack([]); batchCursorHistory.current = []; lastBatchCursor.current = ""; requestedBatchCursor.current = ""; navigateRoute({ batchStatus: event.target.value, batchCursor: "" }); }}><option value="">كل الحالات</option>{["DRAFT", "PREPARED", "APPROVED", "FROZEN", "EXECUTION_IN_PROGRESS", "AWAITING_VERIFICATION", "AWAITING_RECONCILIATION", "COMPLETED", "EXCEPTION", "CANCELLED"].map((value) => <option key={value} value={value}>{settlementBatchStatusLabels[value] ?? "حالة غير معروفة"}</option>)}</select></label><button className="button button-secondary" type="button" onClick={() => void readBatches()} disabled={batchListLoading}>{batchListLoading ? "جارٍ التحديث…" : "تحديث الدفعات"}</button></div>{batches.length ? <div className="finance-table-wrap"><table className="finance-table"><caption className="sr-only">دفعات التسوية المحفوظة لدى WLT</caption><thead><tr><th scope="col">الدفعة</th><th scope="col">الحالة</th><th scope="col">عدد التحويلات</th><th scope="col">المجموع المحسوب</th><th scope="col">الإجراء</th></tr></thead><tbody>{batches.map((item) => <tr key={item.id}><td><bdi>{item.id}</bdi></td><td>{settlementBatchStatusLabels[item.status] ?? "حالة دفعة غير معروفة"}</td><td>{item.rowCount.toLocaleString("ar-YE")}</td><td>{formatMoney(item.totalAmountMinor, item.currency)}</td><td><button className="button button-quiet" type="button" onClick={() => selectBatch(item)}>فتح الدفعة</button></td></tr>)}</tbody></table></div> : <p className="muted">{batchListLoading ? "جارٍ قراءة دفعات WLT…" : "لا توجد دفعات مطابقة لهذه الحالة."}</p>}<nav className={styles.pagination} aria-label="صفحات دفعات التسوية"><button type="button" className="button button-quiet" onClick={readPreviousBatchPage} disabled={batchListLoading || batchCursorStack.length === 0}>السابق</button><span>دفعات · صفحة {batchCursorStack.length + 1}</span><button type="button" className="button button-quiet" onClick={readNextBatchPage} disabled={batchListLoading || !batchCursor}>التالي</button></nav></section>
+    <div hidden={view !== "batches"} className="finance-toolbar"><label className="field-label" htmlFor="settlement-batch-lookup">فتح دفعة بمعرّفها<input id="settlement-batch-lookup" value={batchLookup} onChange={(event) => setBatchLookup(event.target.value)} maxLength={128} placeholder="أدخل معرّف الدفعة" /></label><button className="button button-secondary" type="button" onClick={() => void loadBatch()} disabled={busy || !batchLookup.trim()}>فتح الدفعة</button></div>
+    {view === "batches" && batch ? <section className="settlement-resource" aria-labelledby="settlement-batch-title"><div className="finance-toolbar"><div><p className="eyebrow">دفعة WLT</p><h3 id="settlement-batch-title">دفعة تنفيذ: <bdi>{batch.id}</bdi></h3></div><strong>{formatMoney(batch.totalAmountMinor, batch.currency)} · {batch.rowCount.toLocaleString("ar-YE")} تحويل</strong></div><p className="muted">الحالة: {settlementBatchStatusLabels[batch.status] ?? "حالة دفعة غير معروفة"}{batch.batchHash ? ` · بصمة الدفعة ${batch.batchHash}` : ""}</p><label className="field-label" htmlFor="settlement-batch-reason">سبب اعتماد أو تجميد الدفعة<input id="settlement-batch-reason" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={512} /></label>{batch.status === "PREPARED" ? <button className="button button-secondary" type="button" onClick={() => void batchAction("approve")} disabled={busy || !reason.trim()}>اعتماد الدفعة مستقلاً</button> : null}{batch.status === "APPROVED" ? <button className="button button-secondary" type="button" onClick={() => void batchAction("freeze")} disabled={busy || !reason.trim()}>تجميد الدفعة وحساب بصمتها</button> : null}{["FROZEN", "EXECUTION_IN_PROGRESS", "AWAITING_VERIFICATION", "AWAITING_RECONCILIATION", "COMPLETED"].includes(batch.status) ? <button className="button button-secondary" type="button" onClick={() => void exportBatch()} disabled={busy}>تنزيل ملف XLSX التنفيذي من WLT</button> : null}
       {batch.status === "FROZEN" || batch.status === "EXECUTION_IN_PROGRESS" || batch.status === "AWAITING_VERIFICATION" || batch.status === "AWAITING_RECONCILIATION" || batch.status === "COMPLETED" ? <div className="finance-table-wrap"><table className="finance-table"><caption className="sr-only">عمليات الدفعة المجمدة</caption><thead><tr><th scope="col">المستفيد</th><th scope="col">المبلغ المثبت</th><th scope="col">الحالة</th><th scope="col">توثيق التنفيذ</th><th scope="col">التدقيق</th></tr></thead><tbody>{batchItems.map((item) => <tr key={item.payoutId}><td>{actorLabel[item.actorType]} · <bdi>{item.actorId}</bdi></td><td>{formatMoney(item.amountMinor, item.currency)}</td><td>{payoutStatusLabel(item.payoutStatus as PayoutRequest["status"])}</td><td>{item.payoutStatus === "FROZEN" ? <div><label className="field-label" htmlFor={`transfer-reference-${item.payoutId}`}>مرجع التحويل الخارجي<input id={`transfer-reference-${item.payoutId}`} value={externalReference} onChange={(event) => setExternalReference(event.target.value)} /></label><label className="field-label" htmlFor={`transfer-receipt-${item.payoutId}`}>إيصال هذا التحويل (إلزامي)<input id={`transfer-receipt-${item.payoutId}`} type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => setReceiptFile(event.target.files?.[0] ?? null)} /></label><span className="muted">PDF أو صورة · حتى 10 ميغابايت</span><button className="button button-secondary" type="button" onClick={() => void recordTransfer(item.payoutId)} disabled={busy || !externalReference.trim() || !receiptFile}>تسجيل التحويل والإيصال</button></div> : "سُجل التنفيذ أو اكتملت حالته"}</td><td>{item.transfer ? <button className="button button-quiet" type="button" onClick={() => { setTransfer(item.transfer ?? null); setStatementRowId(item.transfer?.statementRowId ?? ""); }}>فتح سجل التحويل</button> : "لا يوجد تحويل مسجل"}</td></tr>)}</tbody></table></div> : null}
     </section> : null}
-    <section className="access-card" aria-labelledby="statement-upload-title"><div className="finance-toolbar"><div><p className="eyebrow">دليل كشف المحفظة</p><h3 id="statement-upload-title">رفع الكشف وربط صف المطابقة</h3></div></div><p className="muted">يُرفع الملف الأصلي مرة واحدة. تُسجل بيانات الصف المراد مطابقته بعد مراجعة الكشف، ويقارن WLT المرجع والمبلغ والعملة والوجهة قبل إتمام القيد.</p><label className="field-label" htmlFor="statement-provider">المحفظة أو المزوّد<input id="statement-provider" value={statementProvider} onChange={(event) => setStatementProvider(event.target.value)} maxLength={64} /></label><label className="field-label" htmlFor="statement-period-start">بداية الفترة<input id="statement-period-start" type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)} /></label><label className="field-label" htmlFor="statement-period-end">نهاية الفترة<input id="statement-period-end" type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} /></label><label className="field-label" htmlFor="statement-file">كشف رسمي PDF أو CSV أو XLSX<input id="statement-file" type="file" accept="application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/jpeg,image/png" onChange={(event) => setStatementFile(event.target.files?.[0] ?? null)} /></label><span className="muted">حد الملف 10 ميغابايت. يبقى مشفراً وخاصاً داخل WLT.</span><button className="button button-secondary" type="button" onClick={() => void registerStatement()} disabled={busy || !statementFile || !statementProvider.trim() || !periodStart || !periodEnd}>رفع الكشف وتسجيله</button>{statementId ? <><p role="status">رقم الكشف المرتبط: <bdi>{statementId}</bdi></p><div className="finance-summary-grid"><label className="field-label" htmlFor="statement-row-sequence">رقم الصف في الملف<input id="statement-row-sequence" inputMode="numeric" value={rowSequence} onChange={(event) => setRowSequence(event.target.value.replace(/[^0-9]/g, ""))} /></label><label className="field-label" htmlFor="statement-row-reference">مرجع التحويل كما في الكشف<input id="statement-row-reference" value={statementReference} onChange={(event) => setStatementReference(event.target.value)} /></label><label className="field-label" htmlFor="statement-row-wallet">رقم محفظة المستفيد بالصيغة الدولية كما في الكشف<input id="statement-row-wallet" type="tel" inputMode="tel" autoComplete="off" placeholder="+967…" value={walletIdentifier} onChange={(event) => setWalletIdentifier(event.target.value)} /><small>صيغة E.164؛ لا تدخل رقم Actor أو رقم الدخول إلا إذا كان هو نفسه رقم المحفظة المثبت في الكشف.</small></label><label className="field-label" htmlFor="statement-row-amount">المبلغ كما في الكشف<input id="statement-row-amount" inputMode="numeric" value={statementAmount} onChange={(event) => setStatementAmount(event.target.value.replace(/[^0-9]/g, ""))} /></label><label className="field-label" htmlFor="statement-row-time">تاريخ ووقت الحركة<input id="statement-row-time" type="datetime-local" value={transactionAt} onChange={(event) => setTransactionAt(event.target.value)} /></label></div><button className="button button-secondary" type="button" onClick={() => void addStatementRow()} disabled={busy || !rowSequence || !statementReference.trim() || !walletIdentifier.trim() || !statementAmount || !transactionAt}>تسجيل صف الكشف</button></> : null}</section>
-    {transfer ? <section className="access-card" aria-labelledby="transfer-check-title"><h3 id="transfer-check-title">التحقق والمطابقة للتحويل المحدد</h3><p>الحالة: {transfer.executionStatus} · مرجع <bdi>{transfer.externalTransferReference}</bdi></p><a href={`/api/finance/evidence/${encodeURIComponent(transfer.receiptDocumentId)}`}>تنزيل إيصال التحويل</a>{transfer.executionStatus === "EXECUTED" ? <button className="button button-secondary" type="button" onClick={() => void transferAction("verify")} disabled={busy}>تحقق مستقل</button> : null}{transfer.executionStatus === "VERIFIED" ? <><label className="field-label" htmlFor="transfer-statement-row-id">معرّف صف الكشف المسجل<input id="transfer-statement-row-id" value={statementRowId} onChange={(event) => setStatementRowId(event.target.value)} /></label><button className="button button-secondary" type="button" onClick={() => void transferAction("reconcile", statementRowId.trim())} disabled={busy || !statementRowId.trim() || !statementId}>مطابقة الصف وإنهاء القيد</button></> : null}</section> : null}
-    <section className="access-card" aria-label="تنزيل بيانات الطلبات المحددة"><p className="muted">تصدير CSV أعلاه هو نسخة توثيقية للطلبات المعروضة فقط؛ لا يغير طلبات WLT ولا يعد ملفاً تنفيذياً مجمداً.</p></section>
+    <section hidden={view !== "reconciliation"} className="settlement-resource" aria-labelledby="statement-upload-title"><div className="finance-toolbar"><div><p className="eyebrow">دليل كشف المحفظة</p><h3 id="statement-upload-title">رفع الكشف وربط صف المطابقة</h3></div></div><p className="muted">يُرفع الملف الأصلي مرة واحدة. تُسجل بيانات الصف المراد مطابقته بعد مراجعة الكشف، ويقارن WLT المرجع والمبلغ والعملة والوجهة قبل إتمام القيد.</p><label className="field-label" htmlFor="statement-provider">المحفظة أو المزوّد<input id="statement-provider" value={statementProvider} onChange={(event) => setStatementProvider(event.target.value)} maxLength={64} /></label><label className="field-label" htmlFor="statement-period-start">بداية الفترة<input id="statement-period-start" type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)} /></label><label className="field-label" htmlFor="statement-period-end">نهاية الفترة<input id="statement-period-end" type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} /></label><label className="field-label" htmlFor="statement-file">كشف رسمي PDF أو CSV أو XLSX<input id="statement-file" type="file" accept="application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/jpeg,image/png" onChange={(event) => setStatementFile(event.target.files?.[0] ?? null)} /></label><span className="muted">حد الملف 10 ميغابايت. يبقى مشفراً وخاصاً داخل WLT.</span><button className="button button-secondary" type="button" onClick={() => void registerStatement()} disabled={busy || !statementFile || !statementProvider.trim() || !periodStart || !periodEnd}>رفع الكشف وتسجيله</button>{statementId ? <><p role="status">رقم الكشف المرتبط: <bdi>{statementId}</bdi></p><div className="finance-summary-grid"><label className="field-label" htmlFor="statement-row-sequence">رقم الصف في الملف<input id="statement-row-sequence" inputMode="numeric" value={rowSequence} onChange={(event) => setRowSequence(event.target.value.replace(/[^0-9]/g, ""))} /></label><label className="field-label" htmlFor="statement-row-reference">مرجع التحويل كما في الكشف<input id="statement-row-reference" value={statementReference} onChange={(event) => setStatementReference(event.target.value)} /></label><label className="field-label" htmlFor="statement-row-wallet">رقم محفظة المستفيد بالصيغة الدولية كما في الكشف<input id="statement-row-wallet" type="tel" inputMode="tel" autoComplete="off" placeholder="+967…" value={walletIdentifier} onChange={(event) => setWalletIdentifier(event.target.value)} /><small>صيغة E.164؛ لا تدخل رقم Actor أو رقم الدخول إلا إذا كان هو نفسه رقم المحفظة المثبت في الكشف.</small></label><label className="field-label" htmlFor="statement-row-amount">المبلغ كما في الكشف<input id="statement-row-amount" inputMode="numeric" value={statementAmount} onChange={(event) => setStatementAmount(event.target.value.replace(/[^0-9]/g, ""))} /></label><label className="field-label" htmlFor="statement-row-time">تاريخ ووقت الحركة<input id="statement-row-time" type="datetime-local" value={transactionAt} onChange={(event) => setTransactionAt(event.target.value)} /></label></div><button className="button button-secondary" type="button" onClick={() => void addStatementRow()} disabled={busy || !rowSequence || !statementReference.trim() || !walletIdentifier.trim() || !statementAmount || !transactionAt}>تسجيل صف الكشف</button></> : null}</section>
+    {view === "batches" && transfer ? <section className="settlement-resource" aria-labelledby="transfer-check-title"><h3 id="transfer-check-title">التحقق والمطابقة للتحويل المحدد</h3><p>الحالة: {transferStatusLabels[transfer.executionStatus] ?? "حالة تحويل غير معروفة"} · مرجع <bdi>{transfer.externalTransferReference}</bdi></p><a href={`/api/finance/evidence/${encodeURIComponent(transfer.receiptDocumentId)}`}>تنزيل إيصال التحويل</a>{transfer.executionStatus === "EXECUTED" ? <button className="button button-secondary" type="button" onClick={() => void transferAction("verify")} disabled={busy}>تحقق مستقل</button> : null}{transfer.executionStatus === "VERIFIED" ? <><label className="field-label" htmlFor="transfer-statement-row-id">معرّف صف الكشف المسجل<input id="transfer-statement-row-id" value={statementRowId} onChange={(event) => setStatementRowId(event.target.value)} /></label><button className="button button-secondary" type="button" onClick={() => void transferAction("reconcile", statementRowId.trim())} disabled={busy || !statementRowId.trim() || !statementId}>مطابقة الصف وإنهاء القيد</button></> : null}</section> : null}
   </section>;
 }

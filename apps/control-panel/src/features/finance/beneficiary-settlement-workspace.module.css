@@ -12,6 +12,36 @@
   gap: 0.5rem;
 }
 
+.actorNav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+.actorLink {
+  display: inline-flex;
+  min-height: var(--size-controlMd);
+  align-items: center;
+  padding-inline: var(--space-3);
+  border-block-end: 2px solid transparent;
+  color: var(--text-muted);
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-bold);
+  text-decoration: none;
+}
+
+.actorLink:hover,
+.actorLink[aria-current="page"] {
+  border-color: var(--action-bg);
+  color: var(--interactive-text);
+}
+
+.actorLink:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 @media print {
   :global(body *) {
     visibility: hidden !important;

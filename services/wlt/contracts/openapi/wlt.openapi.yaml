@@ -453,6 +453,36 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PartnerOrderEarningResponse' }
+  /wlt/v1/operator/partner-commission-receivables:
+    get:
+      operationId: listPartnerCommissionReceivables
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ActingActorId' }
+        - name: search
+          in: query
+          required: false
+          schema: { type: string, maxLength: 128 }
+        - name: sort
+          in: query
+          required: false
+          schema: { type: string, enum: [actor_asc, actor_desc], default: actor_asc }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 1024 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: WLT-current partner commission receivables in one bounded page.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerCommissionReceivableRegistryResponse' }
+        '400': { description: Invalid search, sort, cursor, or limit. }
+        '502': { description: WLT persistence is unavailable. }
   /wlt/v1/partners/{partnerActorId}/financial-summary:
     get:
       operationId: readPartnerFinancialSummary
@@ -672,6 +702,23 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OfficialWalletDestinationResponse' }
+  /wlt/v1/official-wallet-destinations/by-id/{destinationId}:
+    get:
+      operationId: readOfficialWalletDestinationByID
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: destinationId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: Exact official wallet destination recorded for the referenced operation.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OfficialWalletDestinationResponse' }
+        '404': { description: Destination was not found. }
+        '502': { description: WLT persistence is unavailable. }
   /wlt/v1/official-wallet-destinations/{actorType}/{actorId}:
     get:
       operationId: readOfficialWalletDestination
@@ -1244,7 +1291,10 @@ paths:
       operationId: listCustomerWithdrawalIntakes
       security: [{ serviceToken: [] }]
       parameters:
-        - { name: status, in: query, required: false, schema: { type: string, enum: [REQUESTED, DESTINATION_PENDING, PAYOUT_HELD, REJECTED, COMPLETED] }
+        - { name: status, in: query, required: false, schema: { type: string, enum: [REQUESTED, DESTINATION_PENDING, PAYOUT_HELD, REJECTED, COMPLETED] } }
+        - { name: search, in: query, required: false, description: Prefix match on intake ID, customer actor ID, beneficiary name, or provider; exactly four digits match the masked wallet suffix., schema: { type: string, maxLength: 128 } }
+        - { name: sort, in: query, required: false, schema: { type: string, enum: [requested_asc, requested_desc], default: requested_desc } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 1024 } }
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
       responses:
         '200':
@@ -1656,6 +1706,25 @@ components:
         profileState: { type: string }
         profileVersion: { type: integer, minimum: 1 }
         lastEarningAt: { type: string, format: date-time, nullable: true }
+    PartnerCommissionReceivableRegistryItem:
+      type: object
+      additionalProperties: false
+      required: [partnerActorId, currency, outstandingCommissionReceivableMinor, profileState]
+      properties:
+        partnerActorId: { type: string, minLength: 1, maxLength: 128 }
+        currency: { type: string, const: YER }
+        outstandingCommissionReceivableMinor: { type: integer, minimum: 1 }
+        profileState: { type: string }
+    PartnerCommissionReceivableRegistryResponse:
+      type: object
+      additionalProperties: false
+      required: [items, limit]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PartnerCommissionReceivableRegistryItem' }
+        nextCursor: { type: string, maxLength: 1024 }
+        limit: { type: integer, minimum: 1, maximum: 100 }
     PartnerFinancialSummaryResponse:
       type: object
       additionalProperties: false
@@ -2104,8 +2173,28 @@ components:
       additionalProperties: false
       required: [intakes, limit]
       properties:
-        intakes: { type: array, items: { $ref: '#/components/schemas/CustomerWithdrawalIntake' } }
+        intakes: { type: array, items: { $ref: '#/components/schemas/CustomerWithdrawalIntakeSummary' } }
+        nextCursor: { type: string, maxLength: 1024 }
         limit: { type: integer, minimum: 1, maximum: 100 }
+    CustomerWithdrawalIntakeSummary:
+      type: object
+      additionalProperties: false
+      required: [id, customerActorId, providerKey, walletIdentifierMasked, beneficiaryName, status, requestedAt]
+      properties:
+        id: { type: string }
+        customerActorId: { type: string }
+        providerKey: { type: string }
+        walletIdentifierMasked: { type: string }
+        beneficiaryName: { type: string }
+        status: { type: string, enum: [REQUESTED, DESTINATION_PENDING, PAYOUT_HELD, REJECTED, COMPLETED] }
+        destinationId: { type: string, nullable: true }
+        destinationStatus: { type: string, nullable: true, enum: [CANDIDATE, PENDING_APPROVAL, ACTIVE_FOR_PAYOUT, SUSPENDED, RETIRED] }
+        destinationVerificationStatus: { type: string, nullable: true, enum: [PENDING_VERIFICATION, VERIFIED, REJECTED] }
+        payoutId: { type: string, nullable: true }
+        payoutStatus: { type: string, nullable: true, enum: [HELD, PREPARED, APPROVED, FROZEN, EXECUTED, COMPLETED, EXCEPTION, CANCELLED] }
+        payoutAmountMinor: { type: integer, minimum: 0, nullable: true }
+        payoutCurrency: { type: string, const: YER, nullable: true }
+        requestedAt: { type: string, format: date-time }
     TransferResponse:
       type: object
       additionalProperties: false

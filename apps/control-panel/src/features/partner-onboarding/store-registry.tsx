@@ -1,6 +1,6 @@
 "use client";
 
-import { type OperatorStoreSummary, publicationStateLabel } from "@bthwani/dsh";
+import { type OperatorStoreSummary, fulfillmentModeLabel, publicationStateLabel } from "@bthwani/dsh";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { partnerErrorMessage } from "./partner-error-message";
@@ -113,7 +113,7 @@ export function StoreRegistry() {
   function exportSelected() {
     const selected = stores.filter((store) => selectedIds.has(store.id));
     if (!selected.length) return;
-    downloadRegistryCsv("store-registry-selection.csv", ["المتجر", "المعرّف", "الشريك", "مدينة الخدمة", "الفئة", "النشر", "أوضاع الطلب"], selected.map((store) => [store.name, store.id, store.partnerActorId, store.serviceCityId || "غير محددة", store.primaryVerticalId || "غير محددة", publicationStateLabel(store.publicationState), store.fulfillmentModes.join("، ") || "غير محددة"]));
+    downloadRegistryCsv("store-registry-selection.csv", ["المتجر", "المعرّف", "الشريك", "مدينة الخدمة", "الفئة", "النشر", "أوضاع الطلب"], selected.map((store) => [store.name, store.id, store.partnerActorId, store.serviceCityId || "غير محددة", store.primaryVerticalId || "غير محددة", publicationStateLabel(store.publicationState), store.fulfillmentModes.map(fulfillmentModeLabel).join("، ") || "غير محددة"]));
   }
 
   useEffect(() => {
@@ -162,7 +162,7 @@ export function StoreRegistry() {
             <td>{store.serviceCityId ? <bdi dir="ltr">{store.serviceCityId}</bdi> : "غير محددة"}</td>
             <td>{store.primaryVerticalId ? <bdi dir="ltr">{store.primaryVerticalId}</bdi> : "غير محددة"}</td>
             <td>{publicationStateLabel(store.publicationState)}</td>
-            <td>{store.fulfillmentModes.join("، ") || "غير محددة"}</td>
+            <td>{store.fulfillmentModes.map(fulfillmentModeLabel).join("، ") || "غير محددة"}</td>
             <td><time dateTime={store.updatedAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium", timeStyle: "short" }).format(new Date(store.updatedAt))}</time></td>
           </tr>)}</tbody>
         </table></div>

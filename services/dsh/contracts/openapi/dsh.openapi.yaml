@@ -324,6 +324,9 @@ paths:
   /dsh/partners/me/financial-summary:
     $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1partners~1me~1financial-summary"
 
+  /dsh/operator/partner-commission-receivables:
+    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partner-commission-receivables"
+
   /dsh/operator/partners/{partnerActorId}/financial-summary:
     $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1financial-summary"
 
@@ -4756,6 +4759,42 @@ components:
           format: date-time
           nullable: true
 
+    PartnerCommissionReceivableRegistryItem:
+      type: object
+      additionalProperties: false
+      required: [partnerActorId, currency, outstandingCommissionReceivableMinor, profileState]
+      properties:
+        partnerActorId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        currency:
+          type: string
+          const: YER
+        outstandingCommissionReceivableMinor:
+          type: integer
+          minimum: 1
+        profileState:
+          type: string
+          maxLength: 32
+
+    PartnerCommissionReceivableRegistryResponse:
+      type: object
+      additionalProperties: false
+      required: [items, limit]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartnerCommissionReceivableRegistryItem"
+        nextCursor:
+          type: string
+          maxLength: 1024
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+
     PartnerFinancialSummaryResponse:
       type: object
       additionalProperties: false
@@ -5531,6 +5570,8 @@ components:
           $ref: "#/components/schemas/CustomerWithdrawalIntake"
         idempotentReplay:
           type: boolean
+        destination:
+          $ref: "#/components/schemas/CustomerWithdrawalDestinationSummary"
 
     CustomerWithdrawalIntakeListResponse:
       type: object
@@ -5540,11 +5581,83 @@ components:
         intakes:
           type: array
           items:
-            $ref: "#/components/schemas/CustomerWithdrawalIntake"
+            $ref: "#/components/schemas/CustomerWithdrawalIntakeSummary"
+        nextCursor:
+          type: string
+          maxLength: 1024
         limit:
           type: integer
           minimum: 1
           maximum: 100
+
+    CustomerWithdrawalDestinationSummary:
+      type: object
+      additionalProperties: false
+      required: [id, status, verificationStatus, walletIdentifierMasked, beneficiaryName, version]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [CANDIDATE, PENDING_APPROVAL, ACTIVE_FOR_PAYOUT, SUSPENDED, RETIRED]
+        verificationStatus:
+          type: string
+          enum: [PENDING_VERIFICATION, VERIFIED, REJECTED]
+        walletIdentifierMasked:
+          type: string
+        beneficiaryName:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+
+    CustomerWithdrawalIntakeSummary:
+      type: object
+      additionalProperties: false
+      required: [id, customerActorId, providerKey, walletIdentifierMasked, beneficiaryName, status, requestedAt]
+      properties:
+        id:
+          type: string
+        customerActorId:
+          type: string
+        providerKey:
+          type: string
+        walletIdentifierMasked:
+          type: string
+        beneficiaryName:
+          type: string
+        status:
+          type: string
+          enum: [REQUESTED, DESTINATION_PENDING, PAYOUT_HELD, REJECTED, COMPLETED]
+        destinationId:
+          type: string
+          nullable: true
+        destinationStatus:
+          type: string
+          nullable: true
+          enum: [CANDIDATE, PENDING_APPROVAL, ACTIVE_FOR_PAYOUT, SUSPENDED, RETIRED]
+        destinationVerificationStatus:
+          type: string
+          nullable: true
+          enum: [PENDING_VERIFICATION, VERIFIED, REJECTED]
+        payoutId:
+          type: string
+          nullable: true
+        payoutStatus:
+          type: string
+          nullable: true
+          enum: [HELD, PREPARED, APPROVED, FROZEN, EXECUTED, COMPLETED, EXCEPTION, CANCELLED]
+        payoutAmountMinor:
+          type: integer
+          minimum: 0
+          nullable: true
+        payoutCurrency:
+          type: string
+          const: YER
+          nullable: true
+        requestedAt:
+          type: string
+          format: date-time
 
     CashInFundingIntent:
       type: object

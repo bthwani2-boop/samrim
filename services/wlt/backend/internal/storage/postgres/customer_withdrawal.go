@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 var (
@@ -47,6 +48,23 @@ type CustomerWithdrawalIntakeRecord struct {
 	FinanceActorID             *string    `json:"financeActorId,omitempty"`
 	ResolvedAt                 *time.Time `json:"resolvedAt,omitempty"`
 	ResolutionReason           *string    `json:"resolutionReason,omitempty"`
+}
+
+type CustomerWithdrawalIntakeSummaryRecord struct {
+	ID                            string     `json:"id"`
+	CustomerActorID               string     `json:"customerActorId"`
+	ProviderKey                   string     `json:"providerKey"`
+	WalletIdentifierMasked        string     `json:"walletIdentifierMasked"`
+	BeneficiaryName               string     `json:"beneficiaryName"`
+	Status                        string     `json:"status"`
+	DestinationID                 *string    `json:"destinationId,omitempty"`
+	DestinationStatus             *string    `json:"destinationStatus,omitempty"`
+	DestinationVerificationStatus *string    `json:"destinationVerificationStatus,omitempty"`
+	PayoutID                      *string    `json:"payoutId,omitempty"`
+	PayoutStatus                  *string    `json:"payoutStatus,omitempty"`
+	PayoutAmountMinor             *int64     `json:"payoutAmountMinor,omitempty"`
+	PayoutCurrency                *string    `json:"payoutCurrency,omitempty"`
+	RequestedAt                   time.Time  `json:"requestedAt"`
 }
 
 type CustomerWithdrawalAcceptInput struct {
@@ -130,43 +148,92 @@ func CreateCustomerWithdrawalIntake(ctx context.Context, db *sql.DB, cipher *Des
 	return item, false, nil
 }
 
-func ListCustomerWithdrawalIntakes(ctx context.Context, db *sql.DB, status string, limit int) ([]CustomerWithdrawalIntakeRecord, error) {
-	if db == nil {
-		return nil, ErrPayoutInvalidInput
+func ListCustomerWithdrawalIntakes(ctx context.Context, db *sql.DB, status, search, sort string, afterRequestedAt *time.Time, afterID string, limit int) ([]CustomerWithdrawalIntakeSummaryRecord, bool, error) {
+	status, search, sort, afterID = strings.ToUpper(strings.TrimSpace(status)), strings.TrimSpace(search), strings.ToLower(strings.TrimSpace(sort)), strings.TrimSpace(afterID)
+	if sort == "" {
+		sort = "requested_desc"
 	}
-	status = strings.ToUpper(strings.TrimSpace(status))
-	if status != "" && status != "REQUESTED" && status != "DESTINATION_PENDING" && status != "PAYOUT_HELD" && status != "REJECTED" && status != "COMPLETED" {
-		return nil, ErrPayoutInvalidInput
+	if db == nil || (status != "" && status != "REQUESTED" && status != "DESTINATION_PENDING" && status != "PAYOUT_HELD" && status != "REJECTED" && status != "COMPLETED") || utf8.RuneCountInString(search) > 128 || (sort != "requested_asc" && sort != "requested_desc") || (afterRequestedAt == nil) != (afterID == "") || (afterRequestedAt != nil && boundedText(afterID, 1, 128) == "") || limit < 1 || limit > 100 {
+		return nil, false, ErrPayoutInvalidInput
 	}
-	if limit < 1 || limit > 100 {
-		limit = 50
-	}
-	query := "SELECT id FROM wlt.customer_manual_withdrawal_intakes"
-	args := []any{}
+	args := make([]any, 0, 6)
+	conditions := []string{"TRUE"}
 	if status != "" {
-		query += " WHERE status=$1"
 		args = append(args, status)
+		conditions = append(conditions, "i.status=$"+formatInt(len(args)))
 	}
-	query += " ORDER BY requested_at DESC,id DESC LIMIT $" + formatInt(len(args)+1)
-	args = append(args, limit)
+	if search != "" {
+		args = append(args, customerWithdrawalSearchPattern(search))
+		pattern := "$" + formatInt(len(args))
+		searchCondition := "(lower(i.id) LIKE " + pattern + " ESCAPE E'\\\\' OR lower(i.customer_actor_id) LIKE " + pattern + " ESCAPE E'\\\\' OR lower(i.beneficiary_name) LIKE " + pattern + " ESCAPE E'\\\\' OR lower(i.provider_key) LIKE " + pattern + " ESCAPE E'\\\\'"
+		if len(search) == 4 && onlyASCIIDigits(search) {
+			args = append(args, search)
+			searchCondition += " OR right(i.wallet_identifier_masked,4)=$" + formatInt(len(args))
+		}
+		conditions = append(conditions, searchCondition+")")
+	}
+	if afterRequestedAt != nil {
+		args = append(args, afterRequestedAt.UTC(), afterID)
+		operator := "<"
+		if sort == "requested_asc" {
+			operator = ">"
+		}
+		conditions = append(conditions, "(i.requested_at,i.id) "+operator+" ($"+formatInt(len(args)-1)+",$"+formatInt(len(args))+")")
+	}
+	args = append(args, limit+1)
+	order := "DESC"
+	if sort == "requested_asc" {
+		order = "ASC"
+	}
+	query := `SELECT i.id,i.customer_actor_id,i.provider_key,i.wallet_identifier_masked,i.beneficiary_name,i.status,i.destination_id,d.status,d.verification_status,i.payout_id,p.status,p.resolved_amount_minor,p.currency,i.requested_at
+		FROM wlt.customer_manual_withdrawal_intakes i
+		LEFT JOIN wlt.official_wallet_destinations d ON d.id=i.destination_id
+		LEFT JOIN wlt.payout_requests p ON p.id=i.payout_id
+		WHERE ` + strings.Join(conditions, " AND ") + " ORDER BY i.requested_at " + order + ",i.id " + order + " LIMIT $" + formatInt(len(args))
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer rows.Close()
-	result := make([]CustomerWithdrawalIntakeRecord, 0)
+	result := make([]CustomerWithdrawalIntakeSummaryRecord, 0, limit+1)
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
+		var item CustomerWithdrawalIntakeSummaryRecord
+		var destinationID, destinationStatus, verificationStatus, payoutID, payoutStatus, payoutCurrency sql.NullString
+		var payoutAmount sql.NullInt64
+		if err := rows.Scan(&item.ID, &item.CustomerActorID, &item.ProviderKey, &item.WalletIdentifierMasked, &item.BeneficiaryName, &item.Status, &destinationID, &destinationStatus, &verificationStatus, &payoutID, &payoutStatus, &payoutAmount, &payoutCurrency, &item.RequestedAt); err != nil {
+			return nil, false, err
 		}
-		item, err := readCustomerWithdrawalIntake(ctx, db, id)
-		if err != nil {
-			return nil, err
-		}
+		if destinationID.Valid { item.DestinationID = &destinationID.String }
+		if destinationStatus.Valid { item.DestinationStatus = &destinationStatus.String }
+		if verificationStatus.Valid { item.DestinationVerificationStatus = &verificationStatus.String }
+		if payoutID.Valid { item.PayoutID = &payoutID.String }
+		if payoutStatus.Valid { item.PayoutStatus = &payoutStatus.String }
+		if payoutAmount.Valid { item.PayoutAmountMinor = &payoutAmount.Int64 }
+		if payoutCurrency.Valid { item.PayoutCurrency = &payoutCurrency.String }
 		result = append(result, item)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	hasMore := len(result) > limit
+	if hasMore {
+		result = result[:limit]
+	}
+	return result, hasMore, nil
+}
+
+func customerWithdrawalSearchPattern(value string) string {
+	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(strings.ToLower(value))
+	return escaped + "%"
+}
+
+func onlyASCIIDigits(value string) bool {
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func ReadCustomerWithdrawalIntake(ctx context.Context, db *sql.DB, intakeID string) (CustomerWithdrawalIntakeRecord, error) {

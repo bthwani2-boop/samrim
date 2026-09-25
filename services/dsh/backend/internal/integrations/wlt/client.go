@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -205,6 +206,19 @@ type PartnerFinancialSummary struct {
 	ProfileState                         string  `json:"profileState"`
 	ProfileVersion                       int     `json:"profileVersion"`
 	LastEarningAt                        *string `json:"lastEarningAt"`
+}
+
+type PartnerCommissionReceivable struct {
+	PartnerActorID                       string `json:"partnerActorId"`
+	Currency                             string `json:"currency"`
+	OutstandingCommissionReceivableMinor int64  `json:"outstandingCommissionReceivableMinor"`
+	ProfileState                         string `json:"profileState"`
+}
+
+type PartnerCommissionReceivableRegistry struct {
+	Items      []PartnerCommissionReceivable `json:"items"`
+	NextCursor string                        `json:"nextCursor,omitempty"`
+	Limit      int                           `json:"limit"`
 }
 
 type FieldCommissionPolicy struct {
@@ -488,8 +502,32 @@ type customerWithdrawalIntakeResponse struct {
 	Intake CustomerWithdrawalIntake `json:"intake"`
 }
 type customerWithdrawalIntakeListResponse struct {
-	Intakes []CustomerWithdrawalIntake `json:"intakes"`
-	Limit   int                        `json:"limit"`
+	Intakes    []CustomerWithdrawalIntakeSummary `json:"intakes"`
+	NextCursor string                          `json:"nextCursor,omitempty"`
+	Limit      int                             `json:"limit"`
+}
+
+type CustomerWithdrawalIntakeSummary struct {
+	ID                            string  `json:"id"`
+	CustomerActorID               string  `json:"customerActorId"`
+	ProviderKey                   string  `json:"providerKey"`
+	WalletIdentifierMasked        string  `json:"walletIdentifierMasked"`
+	BeneficiaryName               string  `json:"beneficiaryName"`
+	Status                        string  `json:"status"`
+	DestinationID                 *string `json:"destinationId,omitempty"`
+	DestinationStatus             *string `json:"destinationStatus,omitempty"`
+	DestinationVerificationStatus *string `json:"destinationVerificationStatus,omitempty"`
+	PayoutID                      *string `json:"payoutId,omitempty"`
+	PayoutStatus                  *string `json:"payoutStatus,omitempty"`
+	PayoutAmountMinor             *int64  `json:"payoutAmountMinor,omitempty"`
+	PayoutCurrency                *string `json:"payoutCurrency,omitempty"`
+	RequestedAt                   string  `json:"requestedAt"`
+}
+
+type CustomerWithdrawalIntakeList struct {
+	Intakes    []CustomerWithdrawalIntakeSummary `json:"intakes"`
+	NextCursor string                          `json:"nextCursor,omitempty"`
+	Limit      int                             `json:"limit"`
 }
 
 type FinanceEvidenceFile struct {
@@ -1094,6 +1132,25 @@ func (c *Client) ReadPartnerFinancialSummary(ctx context.Context, partnerActorID
 	return response.Summary, err
 }
 
+func (c *Client) ListPartnerCommissionReceivables(ctx context.Context, actingActorID, search, sortKey, cursor string, limit int) (PartnerCommissionReceivableRegistry, error) {
+	actingActorID = strings.TrimSpace(actingActorID)
+	search = strings.TrimSpace(search)
+	sortKey = strings.ToLower(strings.TrimSpace(sortKey))
+	if actingActorID == "" || utf8.RuneCountInString(search) > 128 || (sortKey != "actor_asc" && sortKey != "actor_desc") || len(cursor) > 1024 || limit < 1 || limit > 100 {
+		return PartnerCommissionReceivableRegistry{}, errors.New("partner commission receivable registry input is invalid")
+	}
+	query := url.Values{"limit": {strconv.Itoa(limit)}, "sort": {sortKey}}
+	if search != "" {
+		query.Set("search", search)
+	}
+	if cursor != "" {
+		query.Set("cursor", cursor)
+	}
+	var response PartnerCommissionReceivableRegistry
+	err := c.requestWithActor(ctx, http.MethodGet, "/wlt/v1/operator/partner-commission-receivables?"+query.Encode(), nil, "", "", 0, actingActorID, &response)
+	return response, err
+}
+
 func (c *Client) CreateFieldCommissionPolicy(ctx context.Context, scopeType, scopeID string, rewardMinor, roundingUnitMinor int64, expectedVersion int, reason, idempotencyKey, correlationID, actingActorID string) (FieldCommissionPolicy, bool, error) {
 	body := map[string]any{"scopeType": strings.TrimSpace(scopeType), "scopeId": strings.TrimSpace(scopeID), "rewardMinor": rewardMinor, "roundingUnitMinor": roundingUnitMinor, "expectedVersion": expectedVersion, "reason": strings.TrimSpace(reason)}
 	var response fieldCommissionPolicyResponse
@@ -1146,14 +1203,17 @@ func (c *Client) CreateCustomerWithdrawalIntake(ctx context.Context, customerAct
 	return response.Intake, response.IdempotentReplay, err
 }
 
-func (c *Client) ListCustomerWithdrawalIntakes(ctx context.Context, status string, limit int, actingActorID string) ([]CustomerWithdrawalIntake, error) {
-	path := "/wlt/v1/operator/customer-withdrawal-intakes?limit=" + strconv.Itoa(limit)
-	if strings.TrimSpace(status) != "" {
-		path += "&status=" + url.QueryEscape(strings.TrimSpace(status))
+func (c *Client) ListCustomerWithdrawalIntakes(ctx context.Context, status, search, sort, cursor string, limit int, actingActorID string) (CustomerWithdrawalIntakeList, error) {
+	if limit < 1 || limit > 100 || utf8.RuneCountInString(strings.TrimSpace(search)) > 128 || len(strings.TrimSpace(cursor)) > 1024 {
+		return CustomerWithdrawalIntakeList{}, errors.New("invalid customer withdrawal registry query")
 	}
+	query := url.Values{"limit": {strconv.Itoa(limit)}, "sort": {strings.TrimSpace(sort)}}
+	if value := strings.TrimSpace(status); value != "" { query.Set("status", value) }
+	if value := strings.TrimSpace(search); value != "" { query.Set("search", value) }
+	if value := strings.TrimSpace(cursor); value != "" { query.Set("cursor", value) }
 	var response customerWithdrawalIntakeListResponse
-	err := c.requestWithActor(ctx, http.MethodGet, path, nil, "", "", 0, actingActorID, &response)
-	return response.Intakes, err
+	err := c.requestWithActor(ctx, http.MethodGet, "/wlt/v1/operator/customer-withdrawal-intakes?"+query.Encode(), nil, "", "", 0, actingActorID, &response)
+	return CustomerWithdrawalIntakeList{Intakes: response.Intakes, NextCursor: response.NextCursor, Limit: response.Limit}, err
 }
 
 func (c *Client) ReadCustomerWithdrawalIntake(ctx context.Context, intakeID, actingActorID string) (CustomerWithdrawalIntake, error) {
@@ -1196,6 +1256,12 @@ func (c *Client) ActivateOfficialWalletDestination(ctx context.Context, destinat
 func (c *Client) ReadOfficialWalletDestination(ctx context.Context, actorType, actorID string) (OfficialWalletDestination, error) {
 	var response officialWalletDestinationResponse
 	err := c.request(ctx, http.MethodGet, "/wlt/v1/official-wallet-destinations/"+url.PathEscape(strings.TrimSpace(actorType))+"/"+url.PathEscape(strings.TrimSpace(actorID)), nil, "", "", 0, &response)
+	return response.Destination, err
+}
+
+func (c *Client) ReadOfficialWalletDestinationByID(ctx context.Context, destinationID string) (OfficialWalletDestination, error) {
+	var response officialWalletDestinationResponse
+	err := c.request(ctx, http.MethodGet, "/wlt/v1/official-wallet-destinations/by-id/"+url.PathEscape(strings.TrimSpace(destinationID)), nil, "", "", 0, &response)
 	return response.Destination, err
 }
 

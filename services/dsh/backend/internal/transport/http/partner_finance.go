@@ -3,6 +3,7 @@ package transporthttp
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -50,6 +51,7 @@ func NewPartnerFinance(identity *identityintegration.Client, accessToken string,
 
 func (s *PartnerFinanceServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/partners/me/financial-summary", s.readOwnSummary)
+	mux.HandleFunc("GET /dsh/operator/partner-commission-receivables", s.listOperatorCommissionReceivables)
 	mux.HandleFunc("GET /dsh/operator/partners/{partnerActorId}/financial-summary", s.readOperatorSummary)
 	mux.HandleFunc("POST /dsh/operator/partners/{partnerActorId}/commission-remittances", s.recordCommissionRemittance)
 	mux.HandleFunc("GET /dsh/operator/partner-store-commission-policies", s.readStoreCommissionPolicies)
@@ -134,6 +136,43 @@ func (s *PartnerFinanceServer) readOwnSummary(w http.ResponseWriter, r *http.Req
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"summary": summary})
+}
+
+func (s *PartnerFinanceServer) listOperatorCommissionReceivables(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeOperator(w, r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if !s.requireOperator(w, r.Context(), acting) || !s.requirePermission(w, r.Context(), acting, "finance") {
+		return
+	}
+	query := r.URL.Query()
+	search := strings.TrimSpace(query.Get("search"))
+	sortKey := strings.ToLower(strings.TrimSpace(query.Get("sort")))
+	if sortKey == "" {
+		sortKey = "actor_asc"
+	}
+	cursor := strings.TrimSpace(query.Get("cursor"))
+	limit := 50
+	if raw := strings.TrimSpace(query.Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 100 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partner commission receivable registry limit is invalid")
+			return
+		}
+		limit = parsed
+	}
+	if utf8.RuneCountInString(search) > 128 || len(cursor) > 1024 || (sortKey != "actor_asc" && sortKey != "actor_desc") {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partner commission receivable registry query is invalid")
+		return
+	}
+	result, err := s.payment.ListPartnerCommissionReceivables(r.Context(), acting, search, sortKey, cursor, limit)
+	if err != nil {
+		writeWLTFinanceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *PartnerFinanceServer) readOperatorSummary(w http.ResponseWriter, r *http.Request) {

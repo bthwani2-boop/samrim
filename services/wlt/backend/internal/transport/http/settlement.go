@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -69,6 +70,20 @@ type settlementBatchListResponse struct {
 	Batches    []settlementBatchJSON `json:"batches"`
 	NextCursor string                `json:"nextCursor,omitempty"`
 	Limit      int                   `json:"limit"`
+}
+
+type customerWithdrawalIntakeCursor struct {
+	Status      string `json:"status"`
+	Search      string `json:"search"`
+	Sort        string `json:"sort"`
+	RequestedAt string `json:"requestedAt"`
+	ID          string `json:"id"`
+}
+
+type customerWithdrawalIntakeListResponse struct {
+	Intakes    []postgres.CustomerWithdrawalIntakeSummaryRecord `json:"intakes"`
+	NextCursor string                                          `json:"nextCursor,omitempty"`
+	Limit      int                                             `json:"limit"`
 }
 
 type settlementBatchExportJSON struct {
@@ -646,13 +661,49 @@ func (s *Server) listCustomerWithdrawalIntakes(w http.ResponseWriter, r *http.Re
 			return
 		}
 	}
-	items, err := postgres.ListCustomerWithdrawalIntakes(r.Context(), s.db, r.URL.Query().Get("status"), limit)
+	status := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("status")))
+	search := strings.TrimSpace(r.URL.Query().Get("search"))
+	sort := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("sort")))
+	if sort == "" {
+		sort = "requested_desc"
+	}
+	if len(search) > 128 || (sort != "requested_asc" && sort != "requested_desc") {
+		writeSettlementError(w, postgres.ErrPayoutInvalidInput)
+		return
+	}
+	var afterRequestedAt *time.Time
+	var afterID string
+	if raw := strings.TrimSpace(r.URL.Query().Get("cursor")); raw != "" {
+		decoded, err := base64.RawURLEncoding.DecodeString(raw)
+		var cursor customerWithdrawalIntakeCursor
+		if err != nil || len(decoded) > 640 || json.Unmarshal(decoded, &cursor) != nil || cursor.Status != status || cursor.Search != search || cursor.Sort != sort || strings.TrimSpace(cursor.ID) == "" {
+			writeSettlementError(w, postgres.ErrPayoutInvalidInput)
+			return
+		}
+		parsed, err := time.Parse(time.RFC3339Nano, cursor.RequestedAt)
+		if err != nil || len(cursor.ID) > 128 {
+			writeSettlementError(w, postgres.ErrPayoutInvalidInput)
+			return
+		}
+		afterRequestedAt, afterID = &parsed, cursor.ID
+	}
+	items, more, err := postgres.ListCustomerWithdrawalIntakes(r.Context(), s.db, status, search, sort, afterRequestedAt, afterID, limit)
 	if err != nil {
 		writePayoutError(w, err)
 		return
 	}
+	result := customerWithdrawalIntakeListResponse{Intakes: items, Limit: limit}
+	if more && len(items) > 0 {
+		last := items[len(items)-1]
+		cursor, err := json.Marshal(customerWithdrawalIntakeCursor{Status: status, Search: search, Sort: sort, RequestedAt: last.RequestedAt.UTC().Format(time.RFC3339Nano), ID: last.ID})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "customer withdrawal cursor could not be created")
+			return
+		}
+		result.NextCursor = base64.RawURLEncoding.EncodeToString(cursor)
+	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, map[string]any{"intakes": items, "limit": limit})
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) readCustomerWithdrawalIntake(w http.ResponseWriter, r *http.Request) {
@@ -929,7 +980,7 @@ func writeSettlementError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "STATE_CONFLICT", "the settlement state does not allow this operation")
 	case errors.Is(err, postgres.ErrIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different settlement facts")
-	case errors.Is(err, postgres.ErrSettlementBatchInput), errors.Is(err, postgres.ErrPayoutInvalidInput), errors.Is(err, postgres.ErrFinancialStatementInput):
+	case errors.Is(err, postgres.ErrSettlementBatchInput), errors.Is(err, postgres.ErrPayoutInvalidInput), errors.Is(err, postgres.ErrFinancialStatementInput), errors.Is(err, postgres.ErrPartnerCommissionRegistryInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "settlement input is invalid")
 	default:
 		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT persistence is unavailable")

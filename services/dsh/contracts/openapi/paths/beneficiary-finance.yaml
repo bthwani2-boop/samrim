@@ -1396,6 +1396,19 @@ paths:
           in: query
           required: false
           schema: { type: string, enum: [REQUESTED, DESTINATION_PENDING, PAYOUT_HELD, REJECTED, COMPLETED] }
+        - name: search
+          in: query
+          required: false
+          description: Prefix match on intake ID, customer actor ID, beneficiary name, or provider; exactly four digits match the masked wallet suffix.
+          schema: { type: string, maxLength: 128 }
+        - name: sort
+          in: query
+          required: false
+          schema: { type: string, enum: [requested_asc, requested_desc], default: requested_desc }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 1024 }
         - name: limit
           in: query
           required: false

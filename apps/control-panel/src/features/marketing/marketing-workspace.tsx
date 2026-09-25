@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "../../session/session-provider";
 import { type MarketingResourceKey, workspaceMarketingResources } from "../../navigation/workspace-registry";
+import { WorkspaceResourceIndex } from "../workspace/workspace-resource-index";
 
 type ApiError = { error?: { message?: string } };
 
@@ -68,24 +69,11 @@ export function MarketingWorkspace({ resource, children }: { resource: Marketing
 
 export function MarketingOverview() {
   return (
-    <section className="access-card" aria-labelledby="marketing-overview-title">
-      <div className="access-card-heading">
-        <span className="step-chip">موارد مستقلة</span>
-        <p className="eyebrow">نقطة البدء</p>
-        <h2 id="marketing-overview-title">اختر مورد التسويق</h2>
-        <p className="muted">العروض ومحتوى الاكتشاف يملكان مسارين مستقلين، ولكل مسار قراءة ونشر قانوني.</p>
-      </div>
-      <div className="workspace-resource-cards">
-        {workspaceMarketingResources.slice(1).map((item) => (
-          <Link className="access-card" href={item.href} key={item.key}>
-            <span className="step-chip">مساحة عمل</span>
-            <h3>{item.label}</h3>
-            <p className="muted">{item.description}</p>
-            <span className="button button-secondary">فتح المساحة</span>
-          </Link>
-        ))}
-      </div>
-    </section>
+    <WorkspaceResourceIndex
+      title="موارد التسويق والمحتوى"
+      description="العروض ومحتوى الاكتشاف مساران مستقلان، ولكل منهما قراءة ونشر من مالكه القانوني."
+      resources={workspaceMarketingResources.slice(1)}
+    />
   );
 }
 

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 func (s *BeneficiaryFinanceServer) RegisterCustomerWithdrawalGovernance(mux *http.ServeMux) {
@@ -106,6 +107,12 @@ func (s *BeneficiaryFinanceServer) listCustomerWithdrawalIntakes(w http.Response
 		return
 	}
 	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	search := strings.TrimSpace(r.URL.Query().Get("search"))
+	sort := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("sort")))
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	if sort == "" {
+		sort = "requested_desc"
+	}
 	limit := 50
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		parsed, err := strconv.Atoi(raw)
@@ -115,23 +122,17 @@ func (s *BeneficiaryFinanceServer) listCustomerWithdrawalIntakes(w http.Response
 		}
 		limit = parsed
 	}
-	items, err := s.payment.ListCustomerWithdrawalIntakes(r.Context(), status, limit, strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")))
+	if utf8.RuneCountInString(search) > 128 || len(cursor) > 1024 || (sort != "requested_asc" && sort != "requested_desc") {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "customer withdrawal registry query is invalid")
+		return
+	}
+	result, err := s.payment.ListCustomerWithdrawalIntakes(r.Context(), status, search, sort, cursor, limit, strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")))
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return
 	}
-	for index := range items {
-		state, stateErr := s.payment.ReadPayoutState(r.Context(), "customer", items[index].CustomerActorID)
-		if stateErr != nil {
-			writeWLTFinanceError(w, stateErr)
-			return
-		}
-		items[index].Currency = state.Currency
-		items[index].EligibleAvailableMinor = state.EligibleAvailableMinor
-		items[index].HeldMinor = state.HeldMinor
-	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, map[string]any{"intakes": items, "limit": limit})
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *BeneficiaryFinanceServer) readCustomerWithdrawalIntake(w http.ResponseWriter, r *http.Request) {
@@ -151,8 +152,32 @@ func (s *BeneficiaryFinanceServer) readCustomerWithdrawalIntake(w http.ResponseW
 	item.Currency = state.Currency
 	item.EligibleAvailableMinor = state.EligibleAvailableMinor
 	item.HeldMinor = state.HeldMinor
+	var destination map[string]any
+	if item.DestinationID != nil {
+		readDestination, destinationErr := s.payment.ReadOfficialWalletDestinationByID(r.Context(), *item.DestinationID)
+		if destinationErr != nil {
+			writeWLTFinanceError(w, destinationErr)
+			return
+		}
+		if readDestination.ID != *item.DestinationID || readDestination.ActorType != "customer" || readDestination.ActorID != item.CustomerActorID {
+			writeError(w, http.StatusConflict, "DESTINATION_MISMATCH", "the intake wallet destination no longer matches its recorded destination")
+			return
+		}
+		destination = map[string]any{
+			"id": readDestination.ID,
+			"status": readDestination.Status,
+			"verificationStatus": readDestination.VerificationStatus,
+			"walletIdentifierMasked": readDestination.WalletIdentifierMasked,
+			"beneficiaryName": readDestination.BeneficiaryName,
+			"version": readDestination.Version,
+		}
+	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, map[string]any{"intake": item})
+	response := map[string]any{"intake": item}
+	if destination != nil {
+		response["destination"] = destination
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *BeneficiaryFinanceServer) prepareCustomerWithdrawalDestination(w http.ResponseWriter, r *http.Request) {

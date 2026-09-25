@@ -1,6 +1,6 @@
 "use client";
 
-import { type JoiningCaseView, joiningCaseStateLabel, type PartnerManagedStore } from "@bthwani/dsh";
+import { type JoiningCaseView, fulfillmentModeLabel, joiningCaseStateLabel, type PartnerManagedStore, publicationStateLabel } from "@bthwani/dsh";
 import type { ActorRoleView } from "@bthwani/identity";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -183,7 +183,7 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
       {loadingStores && stores.length === 0 ? <div className="collection-state" role="status"><strong>جارٍ قراءة المتاجر من DSH</strong></div> : null}
       {!loadingStores && !storesError && stores.length === 0 ? <div className="collection-state"><strong>لا توجد متاجر مرتبطة بهذا الشريك</strong><p>هذه نتيجة القراءة الحالية من DSH.</p></div> : null}
       {stores.length > 0 ? <>
-        <div className="partner-stores-table-wrap"><table className="operations-table partner-detail-stores-table"><caption className="visually-hidden">صفحة متاجر الشريك</caption><thead><tr><th scope="col">المتجر</th><th scope="col">المدينة</th><th scope="col">الفئة</th><th scope="col">النشر</th><th scope="col">التنفيذ</th></tr></thead><tbody>{stores.map((store) => <tr key={store.id}><th scope="row"><Link href={`/partners/stores/${encodeURIComponent(store.id)}`}>{store.name}</Link></th><td><bdi dir="ltr">{store.serviceCityId || "غير محددة"}</bdi></td><td><bdi dir="ltr">{store.primaryVerticalId || "غير محددة"}</bdi></td><td>{store.publicationState === "published" ? "منشور" : "غير منشور"}</td><td>{store.fulfillmentModes.join("، ") || "غير محددة"}</td></tr>)}</tbody></table></div>
+        <div className="partner-stores-table-wrap"><table className="operations-table partner-detail-stores-table"><caption className="visually-hidden">صفحة متاجر الشريك</caption><thead><tr><th scope="col">المتجر</th><th scope="col">المدينة</th><th scope="col">الفئة</th><th scope="col">النشر</th><th scope="col">التنفيذ</th></tr></thead><tbody>{stores.map((store) => <tr key={store.id}><th scope="row"><Link href={`/partners/stores/${encodeURIComponent(store.id)}`}>{store.name}</Link></th><td><bdi dir="ltr">{store.serviceCityId || "غير محددة"}</bdi></td><td><bdi dir="ltr">{store.primaryVerticalId || "غير محددة"}</bdi></td><td>{publicationStateLabel(store.publicationState)}</td><td>{store.fulfillmentModes.map(fulfillmentModeLabel).join("، ") || "غير محددة"}</td></tr>)}</tbody></table></div>
         <nav className="partner-registry-pagination" aria-label="صفحات متاجر الشريك"><button type="button" className="button button-secondary" disabled={loadingStores || storesPageStack.length === 0} onClick={() => navigateStorePage(storesPageStack.at(-1) ?? "", storesPageStack.slice(0, -1))}>السابق</button><span>{storesPageStack.length + 1}</span><button type="button" className="button button-secondary" disabled={loadingStores || !storesCursor} onClick={() => navigateStorePage(storesCursor, [...storesPageStack, new URLSearchParams(window.location.search).get("cursor") ?? ""])}>التالي</button></nav>
       </> : null}
     </section> : null}

@@ -1,7 +1,7 @@
 import type { CatalogAttributeDefinitionListResponse, CatalogAttributeDefinitionResponse, CatalogAttributeEnumOptionListResponse, CatalogAttributeEnumOptionResponse, CatalogAttributeRuleListResponse, CatalogProduct, CatalogProductRegistryResponse, CreateCatalogAttributeDefinitionRequest, CreateCatalogAttributeEnumOptionRequest, ManagedCaptainAvailabilityRequest, PartnerStoreListResponse, UpsertCatalogAttributeRuleRequest } from "@bthwani/dsh";
 import type { ActorLegalName, SubmitActorLegalNameRequest, VerifyActorLegalNameRequest } from "@bthwani/dsh";
-import type { CustomerWithdrawalIntake, CreateCustomerWithdrawalIntakeRequest, CustomerWithdrawalDecisionRequest } from "@bthwani/dsh";
-import { type BeneficiaryPayoutState, type BeneficiaryPayoutStateResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CashLiabilityResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateDeliveryFeePolicyRequest, type CreateDiscoveryContentRequest, type CreateJoiningCaseRequest, type CreatePartnerFinancialTermsPolicyRequest, type CreatePromotionRequest, type CreateServiceCityRequest, type DeliveryFeePolicyResponse, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentListResponse, type DiscoveryContentResponse, dshOperationPaths, type FieldAdmissionRequest, type FieldAdmissionResponse, type FieldCommissionPolicy, type FieldFinancialSummaryResponse, type FieldReenrollmentRequest, type FinanceEvidenceDocument, type JoiningCaseListResponse, type JoiningCaseResponse, type ManagedRoleMutationRequest, type MarketingPublicationRequest, type NotificationListResponse, type NotificationReadResponse, type OfficialWalletDestination, type OperatorOperationResponse, type OperatorOperationsResponse, type OperatorStoreListResponse, type PartnerCommissionRemittanceRequest, type PartnerCommissionRemittanceResponse, type PartnerFinancialSummaryResponse, type PartnerFinancialTermsPolicyResponse, type PartnerStoreCommissionPoliciesResponse, type PartnerStoreCommissionPolicyUpdateRequest, type PartnerStoreCommissionPolicyUpdateResponse, type PayoutRequest, type PromotionListResponse, type PromotionResponse, type PublicationAction, type PublishedStoreListResponse, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type ReviewJoiningCaseRequest, type ServiceCityListResponse, type ServiceCityResponse, type SetStoreFulfillmentModesRequest, type SettlementBatch, type SettlementBatchExport, type StoreFulfillmentModesResponse, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogCategoryRequest, type UpdateCatalogProductRequest, type UpdateCommerceVerticalRequest, type UpdateServiceCityRequest } from "@bthwani/dsh";
+import type { CustomerWithdrawalIntakeListResponse, CustomerWithdrawalIntakeResponse, CreateCustomerWithdrawalIntakeRequest, CustomerWithdrawalDecisionRequest } from "@bthwani/dsh";
+import { type BeneficiaryPayoutState, type BeneficiaryPayoutStateResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CashLiabilityResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateDeliveryFeePolicyRequest, type CreateDiscoveryContentRequest, type CreateJoiningCaseRequest, type CreatePartnerFinancialTermsPolicyRequest, type CreatePromotionRequest, type CreateServiceCityRequest, type DeliveryFeePolicyResponse, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentListResponse, type DiscoveryContentResponse, dshOperationPaths, type FieldAdmissionRequest, type FieldAdmissionResponse, type FieldCommissionPolicy, type FieldFinancialSummaryResponse, type FieldReenrollmentRequest, type FinanceEvidenceDocument, type JoiningCaseListResponse, type JoiningCaseResponse, type ManagedRoleMutationRequest, type MarketingPublicationRequest, type NotificationListResponse, type NotificationReadResponse, type OfficialWalletDestination, type OperatorOperationResponse, type OperatorOperationsResponse, type OperatorStoreListResponse, type PartnerCommissionRemittanceRequest, type PartnerCommissionReceivableRegistryResponse, type PartnerCommissionRemittanceResponse, type PartnerFinancialSummaryResponse, type PartnerFinancialTermsPolicyResponse, type PartnerStoreCommissionPoliciesResponse, type PartnerStoreCommissionPolicyUpdateRequest, type PartnerStoreCommissionPolicyUpdateResponse, type PayoutRequest, type PromotionListResponse, type PromotionResponse, type PublicationAction, type PublishedStoreListResponse, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type ReviewJoiningCaseRequest, type ServiceCityListResponse, type ServiceCityResponse, type SetStoreFulfillmentModesRequest, type SettlementBatch, type SettlementBatchExport, type StoreFulfillmentModesResponse, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogCategoryRequest, type UpdateCatalogProductRequest, type UpdateCommerceVerticalRequest, type UpdateServiceCityRequest } from "@bthwani/dsh";
 import { validateServiceUrl } from "@bthwani/identity";
 
 type DshClientError =
@@ -280,6 +280,17 @@ export async function readOperatorPartnerFinancialSummary(partnerActorId: string
   return (await requestDshJson<PartnerFinancialSummaryResponse>(dshOperationPaths.readOperatorPartnerFinancialSummary.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
+export async function listOperatorPartnerCommissionReceivables(search: string, sort: "actor_asc" | "actor_desc", cursor: string, limit: number, context: DshOperatorReadContext): Promise<PartnerCommissionReceivableRegistryResponse> {
+  if (!context.operatorActorId.trim() || search.trim().length > 128 || cursor.length > 1024 || !["actor_asc", "actor_desc"].includes(sort) || !Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw new Error("DSH_PARTNER_COMMISSION_REGISTRY_INPUT_INVALID");
+  }
+  const query = new URLSearchParams({ sort, limit: String(limit) });
+  if (search.trim()) query.set("search", search.trim());
+  if (cursor.trim()) query.set("cursor", cursor.trim());
+  const path = `${dshOperationPaths.listOperatorPartnerCommissionReceivables.path}?${query.toString()}`;
+  return (await requestDshJson<PartnerCommissionReceivableRegistryResponse>(dshOperationPaths.listOperatorPartnerCommissionReceivables.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
 export async function recordOperatorPartnerCommissionRemittance(partnerActorId: string, input: PartnerCommissionRemittanceRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: PartnerCommissionRemittanceResponse }>> {
   const normalizedPartnerActorID = partnerActorId.trim();
   if (!normalizedPartnerActorID || normalizedPartnerActorID.length > 128 || !Number.isSafeInteger(input.amountMinor) || input.amountMinor < 1 || input.remittanceReference.trim().length < 1 || input.remittanceReference.trim().length > 128 || input.evidenceReference.trim().length < 1 || input.evidenceReference.trim().length > 512) {
@@ -398,17 +409,29 @@ export async function uploadCustomerWithdrawalRequestEvidence(file: File, contex
   return (await requestDshMultipart<OperatorFinanceEvidenceResponse>(dshOperationPaths.uploadCustomerWithdrawalRequestEvidence.method, dshOperationPaths.uploadCustomerWithdrawalRequestEvidence.path, form, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
 }
 
-type CustomerWithdrawalList = Readonly<{ intakes: ReadonlyArray<CustomerWithdrawalIntake>; limit: number }>;
-type CustomerWithdrawalResponse = Readonly<{ intake: CustomerWithdrawalIntake; idempotentReplay?: boolean }>;
-
-export async function listOperatorCustomerWithdrawalIntakes(status: string, limit: number, context: DshOperatorReadContext): Promise<CustomerWithdrawalList> {
+export async function listOperatorCustomerWithdrawalIntakes(status: string, search: string, sort: string, cursor: string, limit: number, context: DshOperatorReadContext): Promise<CustomerWithdrawalIntakeListResponse> {
+  const normalizedStatus = status.trim();
+  const normalizedSearch = search.trim();
+  const normalizedSort = sort.trim() || "requested_desc";
+  const normalizedCursor = cursor.trim();
+  if (!context.operatorActorId.trim() || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 || normalizedStatus.length > 32 || normalizedSearch.length > 128 || normalizedCursor.length > 1024 || (normalizedSort !== "requested_desc" && normalizedSort !== "requested_asc")) throw new Error("DSH_CUSTOMER_WITHDRAWAL_REGISTRY_INPUT_INVALID");
   const query = new URLSearchParams({ limit: String(limit) });
-  if (status.trim()) query.set("status", status.trim());
-  return (await requestDshJson<CustomerWithdrawalList>(dshOperationPaths.listOperatorCustomerWithdrawalIntakes.method, `${dshOperationPaths.listOperatorCustomerWithdrawalIntakes.path}?${query.toString()}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+  if (normalizedStatus) query.set("status", normalizedStatus);
+  if (normalizedSearch) query.set("search", normalizedSearch);
+  query.set("sort", normalizedSort);
+  if (normalizedCursor) query.set("cursor", normalizedCursor);
+  return (await requestDshJson<CustomerWithdrawalIntakeListResponse>(dshOperationPaths.listOperatorCustomerWithdrawalIntakes.method, `${dshOperationPaths.listOperatorCustomerWithdrawalIntakes.path}?${query.toString()}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export async function createOperatorCustomerWithdrawalIntake(input: CreateCustomerWithdrawalIntakeRequest, context: JoiningCaseMutationContext): Promise<CustomerWithdrawalResponse> {
-  return (await requestDshJson<CustomerWithdrawalResponse>(dshOperationPaths.createOperatorCustomerWithdrawalIntake.method, dshOperationPaths.createOperatorCustomerWithdrawalIntake.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+export async function readOperatorCustomerWithdrawalIntake(intakeId: string, context: DshOperatorReadContext): Promise<CustomerWithdrawalIntakeResponse> {
+  const normalized = intakeId.trim();
+  if (!normalized || normalized.length > 128 || !context.operatorActorId.trim()) throw new Error("DSH_CUSTOMER_WITHDRAWAL_READ_INPUT_INVALID");
+  const path = dshOperationPaths.readOperatorCustomerWithdrawalIntake.path.replace("{intakeId}", encodeURIComponent(normalized));
+  return (await requestDshJson<CustomerWithdrawalIntakeResponse>(dshOperationPaths.readOperatorCustomerWithdrawalIntake.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function createOperatorCustomerWithdrawalIntake(input: CreateCustomerWithdrawalIntakeRequest, context: JoiningCaseMutationContext): Promise<CustomerWithdrawalIntakeResponse> {
+  return (await requestDshJson<CustomerWithdrawalIntakeResponse>(dshOperationPaths.createOperatorCustomerWithdrawalIntake.method, dshOperationPaths.createOperatorCustomerWithdrawalIntake.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
 }
 
 async function customerWithdrawalDecision(operation: "prepareOperatorCustomerWithdrawalDestination" | "verifyOperatorCustomerWithdrawalDestination" | "activateOperatorCustomerWithdrawalDestination" | "acceptOperatorCustomerWithdrawal" | "rejectOperatorCustomerWithdrawal", intakeId: string, input: Readonly<Record<string, string>>, context: JoiningCaseMutationContext): Promise<Readonly<Record<string, unknown>>> {

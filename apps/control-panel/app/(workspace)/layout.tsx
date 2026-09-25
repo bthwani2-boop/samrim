@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type FormEvent, type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 import { IdentitySurface } from "../../src/features/access/identity-surface";
-import { currentWorkspaceChild, currentWorkspaceDestination, isCurrentWorkspaceDestination, isCurrentWorkspacePath, workspaceDestinations, workspaceSearchEntries } from "../../src/navigation/workspace-registry";
+import { currentWorkspaceChild, currentWorkspaceDestination, dynamicWorkspaceRouteLabel, isCurrentWorkspaceDestination, isCurrentWorkspacePath, workspaceDestinations, workspaceSearchEntries } from "../../src/navigation/workspace-registry";
 import "../../src/navigation/workspace-navigation.module.css";
 import { identityFetch } from "../../src/session/identity-fetch";
 import { operatorWorkspacePermissions } from "../../src/session/operator-permissions";
@@ -19,9 +19,8 @@ import "../../src/shell/responsive-shell.module.css";
 function currentChild(pathname: string, destination: (typeof workspaceDestinations)[number]) {
   const child = currentWorkspaceChild(pathname, destination);
   if (child) return child;
-  return destination.href === "/partners" && pathname.startsWith("/partners/")
-    ? { href: pathname, label: "تفاصيل طلب الانضمام" }
-    : null;
+  const label = dynamicWorkspaceRouteLabel(pathname);
+  return label ? { href: pathname, label } : null;
 }
 
 function canOpenWorkspaceDestination(identity: ActorIdentity, destination: (typeof workspaceDestinations)[number]) {

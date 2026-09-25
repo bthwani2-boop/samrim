@@ -82,7 +82,7 @@ export function OperatorHome() {
           </section> : null}
           {canReadPartners ? <section className="home-work-area" aria-labelledby="home-joining-title">
             <div className="home-work-area-heading"><div><p className="eyebrow">الشركاء</p><h2 id="home-joining-title">طلبات الانضمام المقدمة</h2></div><Link href="/partners">فتح الشركاء</Link></div>
-            {errors.joiningCases ? <QueueError message={errors.joiningCases} /> : joiningCases.length === 0 ? <p className="empty-inline">لا توجد طلبات انضمام مقدمة تحتاج المراجعة.</p> : <ul className="home-list">{joiningCases.slice(0, 4).map((item) => <li key={item.id}><Link href={`/partners/joining-cases/${encodeURIComponent(item.id)}`}><span><strong>{item.businessName}</strong><small><bdi dir="ltr">{item.id}</bdi></small></span><strong>{joiningCaseStateLabel(item.state)}</strong></Link></li>)}</ul>}
+            {errors.joiningCases ? <QueueError message={errors.joiningCases} /> : joiningCases.length === 0 ? <p className="empty-inline">لا توجد طلبات انضمام مقدمة تحتاج المراجعة.</p> : <ul className="home-list">{joiningCases.slice(0, 4).map((item) => <li key={item.id}><Link href={`/partners/${encodeURIComponent(item.id)}`}><span><strong>{item.businessName}</strong><small><bdi dir="ltr">{item.id}</bdi></small></span><strong>{joiningCaseStateLabel(item.state)}</strong></Link></li>)}</ul>}
           </section> : null}
           {canReadCatalog ? <section className="home-work-area" aria-labelledby="home-proposals-title">
             <div className="home-work-area-heading"><div><p className="eyebrow">الكتالوج</p><h2 id="home-proposals-title">مقترحات منتجات للمراجعة</h2></div><Link href="/catalog/proposals">فتح المقترحات</Link></div>

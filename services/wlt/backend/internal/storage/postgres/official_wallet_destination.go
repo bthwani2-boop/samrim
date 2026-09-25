@@ -327,6 +327,14 @@ func ReadOfficialWalletDestination(ctx context.Context, db *sql.DB, actorType, a
 	return readOfficialWalletDestinationQuery(ctx, db, "SELECT id,actor_type,actor_id,provider_key,wallet_identifier_masked,beneficiary_name,beneficiary_identity_version,verification_status,status,version,change_reason,submitted_by,submitted_at,verified_by,verified_at,approved_by,approved_at,verification_evidence_reference,change_evidence_reference,created_at,updated_at FROM wlt.official_wallet_destinations WHERE actor_type=$1 AND actor_id=$2 ORDER BY version DESC LIMIT 1", actorType, actorID)
 }
 
+func ReadOfficialWalletDestinationByID(ctx context.Context, db *sql.DB, destinationID string) (OfficialWalletDestinationRecord, error) {
+	destinationID = strings.TrimSpace(destinationID)
+	if db == nil || boundedText(destinationID, 1, 128) == "" {
+		return OfficialWalletDestinationRecord{}, ErrDestinationInvalidInput
+	}
+	return readOfficialWalletDestination(ctx, db, destinationID)
+}
+
 func readOfficialWalletDestination(ctx context.Context, source interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, destinationID string) (OfficialWalletDestinationRecord, error) {

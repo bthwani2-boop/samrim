@@ -99,6 +99,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/partner-store-cash-commissions/finalize", s.finalizePartnerStoreCashCommission)
 	mux.HandleFunc("POST /wlt/v1/operator/partners/{partnerActorId}/commission-remittances", s.recordPartnerCommissionRemittance)
 	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/financial-summary", s.readPartnerFinancialSummary)
+	mux.HandleFunc("GET /wlt/v1/operator/partner-commission-receivables", s.listPartnerCommissionReceivables)
 	mux.HandleFunc("POST /wlt/v1/operator/field-commission-policies", s.createFieldCommissionPolicy)
 	mux.HandleFunc("GET /wlt/v1/operator/field-commission-policies", s.readOperatorFieldCommissionPolicy)
 	mux.HandleFunc("GET /wlt/v1/field-commission-policies/{policyId}", s.readFieldCommissionPolicy)
@@ -108,6 +109,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/operator/official-wallet-destinations/{destinationId}/verify", s.verifyOfficialWalletDestination)
 	mux.HandleFunc("POST /wlt/v1/operator/official-wallet-destinations/{destinationId}/activate", s.activateOfficialWalletDestination)
 	mux.HandleFunc("GET /wlt/v1/official-wallet-destinations/{actorType}/{actorId}", s.readOfficialWalletDestination)
+	mux.HandleFunc("GET /wlt/v1/official-wallet-destinations/by-id/{destinationId}", s.readOfficialWalletDestinationByID)
 	mux.HandleFunc("POST /wlt/v1/payout-intents", s.createPayoutIntent)
 	mux.HandleFunc("GET /wlt/v1/payout-state/{actorType}/{actorId}", s.readPayoutState)
 	mux.HandleFunc("GET /wlt/v1/operator/payout-requests", s.listPayoutRequests)
@@ -1345,6 +1347,18 @@ func (s *Server) readOfficialWalletDestination(w http.ResponseWriter, r *http.Re
 		return
 	}
 	result, err := postgres.ReadOfficialWalletDestination(r.Context(), s.db, r.PathValue("actorType"), r.PathValue("actorId"))
+	if err != nil {
+		writeDestinationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, officialWalletDestinationResponse{Destination: toOfficialWalletDestination(result)})
+}
+
+func (s *Server) readOfficialWalletDestinationByID(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	result, err := postgres.ReadOfficialWalletDestinationByID(r.Context(), s.db, r.PathValue("destinationId"))
 	if err != nil {
 		writeDestinationError(w, err)
 		return

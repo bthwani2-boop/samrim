@@ -1,10 +1,10 @@
 "use client";
 
 import type { ReactNode } from "react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "../../session/session-provider";
 import { type PolicyResourceKey, workspacePolicyResources } from "../../navigation/workspace-registry";
+import { WorkspaceResourceIndex } from "../workspace/workspace-resource-index";
 
 function resourceForPath(pathname: string): PolicyResourceKey {
   return workspacePolicyResources.find((resource) => resource.href !== "/policies" && (pathname === resource.href || pathname.startsWith(`${resource.href}/`)))?.key ?? "overview";
@@ -28,7 +28,14 @@ export function PoliciesWorkspace({ resource, children }: { resource: PolicyReso
         <p className="lead">{selected.description}</p>
       </div>
       {!canEdit ? <p className="managed-status managed-status-warning" role="status">{activeResource === "partner-financial-terms" ? "تتطلب هذه السياسة صلاحية سياسات المنصة وصلاحية Finance من Identity." : "وضع قراءة فقط. يتطلب التعديل صلاحية سياسات المنصة من Identity."}</p> : null}
-      {children ?? <section className="access-card" aria-labelledby="policies-overview-title"><div className="access-card-heading"><span className="step-chip">ملاك قانونيون</span><p className="eyebrow">نقطة البدء</p><h2 id="policies-overview-title">اختر سياسة لإدارتها</h2><p className="muted">تُقرأ الحقيقة من DSH أو WLT مباشرة، وتُحفظ في النظام المالك لها.</p></div><div className="workspace-resource-cards">{workspacePolicyResources.slice(1).map((item) => <Link className="access-card" href={item.href} key={item.key}><span className="step-chip">{item.key === "delivery-fees" || item.key === "field-rewards" || item.key === "partner-financial-terms" ? "WLT" : "DSH"}</span><h3>{item.label}</h3><p className="muted">{item.description}</p><span className="button button-secondary">فتح المساحة</span></Link>)}</div></section>}
+      {children ?? <WorkspaceResourceIndex
+        title="سياسات المنصة"
+        description="تُقرأ السياسة من المالك القانوني وتُحفظ لديه؛ الشارة توضح المالك قبل الدخول."
+        resources={workspacePolicyResources.slice(1).map((item) => ({
+          ...item,
+          source: item.key === "delivery-fees" || item.key === "field-rewards" || item.key === "partner-financial-terms" ? "WLT" : "DSH",
+        }))}
+      />}
     </section>
   );
 }
