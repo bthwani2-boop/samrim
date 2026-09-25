@@ -328,6 +328,12 @@ function cleanup() {
   }
   if (storeLocalVerticalID) sql(`DELETE FROM dsh.commerce_verticals WHERE id='${sqlLiteral(storeLocalVerticalID)}'`);
   sql(`DELETE FROM dsh.commerce_verticals WHERE id='${sqlLiteral(verticalID)}'`);
+  if (actorIDs.size > 0) {
+    const generatedActorValues = [...actorIDs].map((actorID) => `'${sqlLiteral(actorID)}'`).join(",");
+    sql(`DELETE FROM identity_actor_legal_name_events WHERE actor_id IN (${generatedActorValues}) OR acting_actor_id IN (${generatedActorValues})`);
+    sql(`DELETE FROM identity_actor_legal_names WHERE actor_id IN (${generatedActorValues})`);
+    sql(`DELETE FROM identity_actor_legal_name_versions WHERE actor_id IN (${generatedActorValues})`);
+  }
   for (const actorID of actorIDs) {
     const value = sqlLiteral(actorID);
     sql(`DELETE FROM dsh.notification_read_state WHERE actor_id='${value}'`);
@@ -429,14 +435,34 @@ if (!actingOperatorID) {
 if (!actingOperatorID.startsWith("act_")) fail("acting operator identity is invalid", actingOperatorID);
 const platformPoliciesAccess = await request(identityBase, "GET", `/internal/operators/${encodeURIComponent(actingOperatorID)}/permissions/platform_policies`, { token: identityDshToken });
 if (platformPoliciesAccess.status !== 200 || platformPoliciesAccess.body?.actorId !== actingOperatorID || platformPoliciesAccess.body?.permission !== "platform_policies" || platformPoliciesAccess.body?.enabled !== true) fail("DSH proof operator lacks Platform Policies permission", JSON.stringify(platformPoliciesAccess));
-let checkerOperatorID = sql(`SELECT r.actor_id FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id WHERE r.role='operator' AND r.enabled AND a.security_enabled AND r.activated_at IS NOT NULL AND r.actor_id<>'' AND r.actor_id<> '${sqlLiteral(actingOperatorID)}' ORDER BY r.activated_at DESC, r.actor_id LIMIT 1`);
-if (!checkerOperatorID) {
-  const checkerBootstrapped = await request(identityBase, "POST", "/internal/actor-roles/provision", { token: dshToken, headers: serviceHeaders(actingOperatorID, `checker-operator-provision-${suffix}`), body: { phoneE164: `+9677${crypto.randomInt(10_000_000, 99_999_999)}`, role: "operator" } });
-  if (checkerBootstrapped.status !== 201 || !checkerBootstrapped.body?.actorId) fail("checker operator bootstrap failed", JSON.stringify(checkerBootstrapped));
-  checkerOperatorID = String(checkerBootstrapped.body.actorId);
-  actorIDs.add(checkerOperatorID);
-}
+const checkerOperatorID = sql(`SELECT r.actor_id FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id WHERE r.role='operator' AND r.enabled AND a.security_enabled AND r.activated_at IS NOT NULL AND r.actor_id<>'' AND r.actor_id<> '${sqlLiteral(actingOperatorID)}' ORDER BY r.activated_at DESC, r.actor_id LIMIT 1`);
+if (!checkerOperatorID) fail("independent active checker Operator fixture is missing; establish it through the canonical Passkey flow before DSH runtime proof");
 if (!checkerOperatorID.startsWith("act_") || checkerOperatorID === actingOperatorID) fail("checker operator identity is invalid", checkerOperatorID);
+for (const permission of ["operations", "finance"]) {
+  const currentPermission = await request(identityBase, "GET", `/internal/operators/${encodeURIComponent(checkerOperatorID)}/permissions/${permission}`, {
+    token: dshToken,
+    headers: { "X-Acting-Actor-ID": actingOperatorID },
+  });
+  if (currentPermission.status !== 200 || currentPermission.body?.actorId !== checkerOperatorID || currentPermission.body?.permission !== permission || !Number.isSafeInteger(currentPermission.body?.version)) {
+    fail("checker Operator permission readback failed", JSON.stringify({ permission, currentPermission }));
+  }
+  if (currentPermission.body.enabled !== true) {
+    const grantedPermission = await request(identityBase, "PUT", `/internal/operators/${encodeURIComponent(checkerOperatorID)}/permissions/${permission}`, {
+      token: dshToken,
+      headers: {
+        "X-Acting-Actor-ID": actingOperatorID,
+        "X-Correlation-ID": crypto.randomUUID(),
+        "X-Expected-Version": String(currentPermission.body.version),
+        "X-Reason": `disposable CI independent checker ${permission} proof`,
+      },
+      body: { enabled: true },
+    });
+    if (grantedPermission.status !== 200 || grantedPermission.body?.actorId !== checkerOperatorID || grantedPermission.body?.permission !== permission || grantedPermission.body?.enabled !== true || grantedPermission.body?.version !== currentPermission.body.version + 1) {
+      fail("checker Operator canonical permission grant failed", JSON.stringify({ permission, currentPermission, grantedPermission }));
+    }
+  }
+}
+console.log("DSH_CHECKER_OPERATOR_PERMISSIONS=PASS");
 
 for (const endpoint of ["/dsh/health", "/dsh/readiness"]) { const response = await request(dshBase, "GET", endpoint); if (response.status !== 200 || response.body?.status !== "ok") fail(`${endpoint} is not ready`, JSON.stringify(response.body)); }
 for (const endpoint of ["/dsh/managed-roles/provision", "/dsh/managed-roles/status", "/dsh/managed-roles/disable", "/dsh/managed-roles/enable", "/dsh/managed-roles/reenrollment"]) { const response = await request(dshBase, endpoint.endsWith("status") ? "GET" : "POST", endpoint, { token: dshToken }); if (response.status !== 404) fail("retired DSH managed-access endpoint remains reachable", JSON.stringify({ endpoint, response })); }
