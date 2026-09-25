@@ -557,6 +557,10 @@ const enumOptions = await request(dshBase, "GET", `/dsh/catalog/attributes/${enu
 if (enumOption.status !== 201 || enumOption.body?.option?.optionValue !== "Dark" || enumOptionReplay.status !== 200 || enumOptionReplay.body?.idempotentReplay !== true || enumOptions.status !== 200 || enumOptions.body?.options?.length !== 1) fail("ENUM option canonical write/readback failed", JSON.stringify({ enumOption, enumOptionReplay, enumOptions }));
 const attributeRule = await request(dshBase, "PUT", `/dsh/catalog/categories/${childCategoryID}/attribute-rules/${enumAttributeID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `attribute-rule-${suffix}`), body: { required: true, filterable: false, variantAxis: true, expectedVersion: 0, reason: "DSH runtime category attribute rule proof" } });
 if (attributeRule.status !== 200 || !attributeRule.body?.rules?.some((item) => item.attributeId === enumAttributeID && item.required && item.variantAxis)) fail("required category Attribute rule failed", JSON.stringify(attributeRule));
+for (const attributeID of [measurementAttributeID, dateAttributeID]) {
+  const productAttributeRule = await request(dshBase, "PUT", `/dsh/catalog/categories/${childCategoryID}/attribute-rules/${attributeID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `product-attribute-rule-${attributeID}-${suffix}`), body: { required: false, filterable: false, variantAxis: false, expectedVersion: 0, reason: "DSH runtime optional product attribute proof" } });
+  if (productAttributeRule.status !== 200 || !productAttributeRule.body?.rules?.some((item) => item.attributeId === attributeID && !item.required && !item.variantAxis)) fail("optional product Attribute rule failed", JSON.stringify({ attributeID, productAttributeRule }));
+}
 console.log("DSH_TYPED_ATTRIBUTES=PASS");
 
 const firstStoreOrigin = { firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006 };
