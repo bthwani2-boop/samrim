@@ -45,21 +45,29 @@ func New(db *sql.DB, serviceToken, destinationEncryptionKey string, financeEvide
 }
 
 func NewWithCashInConfig(db *sql.DB, serviceToken, destinationEncryptionKey, financeEvidenceEncryptionKey, cashInMode, environment string) (*Server, error) {
+	rail, simulatorEnabled, err := cashInRailForConfig(cashInMode, environment)
+	if err != nil {
+		return nil, err
+	}
 	server, err := New(db, serviceToken, destinationEncryptionKey, financeEvidenceEncryptionKey)
 	if err != nil {
 		return nil, err
 	}
+	server.cashInRail = rail
+	server.cashInSimulatorEnabled = simulatorEnabled
+	return server, nil
+}
+
+func cashInRailForConfig(cashInMode, environment string) (cashin.CashInRail, bool, error) {
 	mode := strings.ToLower(strings.TrimSpace(cashInMode))
 	environment = strings.ToLower(strings.TrimSpace(environment))
 	if mode == "" || mode == "disabled" {
-		return server, nil
+		return nil, false, nil
 	}
 	if mode != "simulator" || environment != "development" {
-		return nil, errors.New("WLT Cash-In simulator is permitted only in development; production requires an approved real rail")
+		return nil, false, errors.New("WLT Cash-In simulator is permitted only in development; production requires an approved real rail")
 	}
-	server.cashInRail = cashin.DevelopmentSimulator{}
-	server.cashInSimulatorEnabled = true
-	return server, nil
+	return cashin.DevelopmentSimulator{}, true, nil
 }
 
 func (s *Server) Register(mux *http.ServeMux) {
