@@ -184,8 +184,8 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
         <section className="order-detail-panel" aria-labelledby="order-payment-title">
           <h2 id="order-payment-title">الدفع والمبالغ</h2>
           <dl className="order-detail-facts">
-            <div><dt>طريقة الدفع</dt><dd>{paymentMethodLabel(order.paymentMethod)}</dd></div>
-            <div><dt>حالة الدفع</dt><dd>{paymentStateLabel(order.paymentState)}</dd></div>
+            <div><dt>طريقة الدفع</dt><dd>{paymentMethodLabel(order.paymentMethod, order.fulfillmentMode)}</dd></div>
+            <div><dt>حالة الدفع</dt><dd>{paymentStateLabel(order.paymentState, order.paymentMethod, order.fulfillmentMode)}</dd></div>
             <div><dt>المجموع قبل الخصم</dt><dd>{formatMoney(order.subtotalAmountMinor, order.currency)}</dd></div>
             <div><dt>الخصم</dt><dd>{formatMoney(order.discountMinor, order.currency)}</dd></div>
             <div><dt>الإجمالي</dt><dd>{formatMoney(order.totalAmountMinor, order.currency)}</dd></div>

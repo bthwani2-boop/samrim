@@ -41,12 +41,22 @@ export function fulfillmentModeLabel(mode: FulfillmentMode): string {
   return mode === "CUSTOMER_PICKUP" ? "استلم بنفسك من المتجر" : mode === "BTHWANI_CAPTAIN" ? "توصيل بثواني" : "توصيل المتجر";
 }
 
-export function paymentMethodLabel(method: PaymentMethod): string {
-  return method === "CASH_AT_STORE" ? "الدفع نقدًا للمتجر عند الاستلام" : "الدفع نقدًا عند الاستلام";
+export function paymentMethodLabel(method: PaymentMethod, fulfillmentMode?: FulfillmentMode): string {
+  if (method === "CASH_AT_STORE") {
+    if (fulfillmentMode === "PARTNER_CAPTAIN") return "الدفع نقدًا لكابتن المتجر عند التسليم";
+    if (fulfillmentMode === "CUSTOMER_PICKUP") return "الدفع نقدًا للمتجر عند استلام الطلب";
+    return "الدفع نقدًا للمتجر أو كابتنه عند الاستلام";
+  }
+  return fulfillmentMode === "BTHWANI_CAPTAIN" ? "الدفع نقدًا لكابتن بثواني عند التسليم" : "الدفع نقدًا عند الاستلام";
 }
 
-export function paymentStateLabel(state: PaymentState, method?: PaymentMethod): string {
-  if (state === "REQUIRES_COLLECTION") return method === "CASH_AT_STORE" ? "بانتظار دفع المبلغ نقدًا للمتجر" : "بانتظار التحصيل عند التسليم";
+export function paymentStateLabel(state: PaymentState, method?: PaymentMethod, fulfillmentMode?: FulfillmentMode): string {
+  if (state === "REQUIRES_COLLECTION") {
+    if (fulfillmentMode === "PARTNER_CAPTAIN") return "بانتظار التحصيل عند التسليم من كابتن المتجر";
+    if (fulfillmentMode === "CUSTOMER_PICKUP") return "بانتظار دفع المبلغ نقدًا للمتجر عند الاستلام";
+    if (fulfillmentMode === "BTHWANI_CAPTAIN") return "بانتظار التحصيل عند التسليم من كابتن بثواني";
+    return method === "CASH_AT_STORE" ? "بانتظار دفع المبلغ نقدًا للمتجر أو كابتنه" : "بانتظار التحصيل عند التسليم";
+  }
   if (state === "COLLECTED") return "تم تحصيل المبلغ";
   if (state === "CANCELLED") return "أُلغي التحصيل";
   return "الدفع غير مرتبط";

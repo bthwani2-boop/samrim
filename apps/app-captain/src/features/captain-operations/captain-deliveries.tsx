@@ -207,7 +207,7 @@ export function CaptainDeliveries() {
                   selectionTitle="موقعك الحالي"
                 />
                 <Text style={styles.muted}>حالة الطلب: {orderStateLabel(task.orderState)}</Text>
-                <Text style={styles.payment}>{paymentMethodLabel(task.paymentMethod)} · {paymentStateLabel(task.paymentState)}</Text>
+                <Text style={styles.payment}>{paymentMethodLabel(task.paymentMethod, task.fulfillmentMode)} · {paymentStateLabel(task.paymentState, task.paymentMethod, task.fulfillmentMode)}</Text>
                 {requiresCollection ? (
                   <>
                     <Text style={styles.warning}>{task.fulfillmentMode === "PARTNER_CAPTAIN" ? "المبلغ الذي ستستلمه من العميل ثم تسلّمه للمتجر:" : "المطلوب تحصيله عند التسليم:"} {formatMoney(task.amountDueMinor, task.currency)}</Text>

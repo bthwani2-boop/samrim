@@ -1,6 +1,6 @@
 import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type Cart, type CheckoutQuote, type CheckoutRequest, createDshMobileClient, type DeliveryAddress, type FulfillmentMode, formatMoney, formatQuantity, type Order, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
+import { type Cart, type CheckoutQuote, type CheckoutRequest, createDshMobileClient, type DeliveryAddress, type FulfillmentMode, formatMoney, fulfillmentModeLabel, formatQuantity, type Order, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, Link } from "expo-router";
 import * as SecureStore from "expo-secure-store";
@@ -32,6 +32,18 @@ function definitiveCheckoutRejection(error: unknown): boolean {
   const code = errorCode(error);
   return ["CHECKOUT_PAYMENT_RECONCILED", "STALE_CHECKOUT", "INVALID_INPUT", "OFFER_UNAVAILABLE", "CART_CLOSED", "CART_EMPTY", "INVENTORY_INSUFFICIENT", "INVENTORY_CONFLICT", "PROMOTION_UNAVAILABLE", "UNSERVICEABLE", "FULFILLMENT_MODE_UNAVAILABLE", "WLT_DELIVERY_FEE_UNAVAILABLE", "NOT_FOUND"].includes(code);
 }
+
+const checkoutPaymentMethods: Readonly<Record<FulfillmentMode, Order["paymentMethod"]>> = {
+  BTHWANI_CAPTAIN: "CASH_ON_DELIVERY",
+  PARTNER_CAPTAIN: "CASH_AT_STORE",
+  CUSTOMER_PICKUP: "CASH_AT_STORE",
+};
+
+const checkoutFulfillmentInstructions: Readonly<Record<FulfillmentMode, string>> = {
+  BTHWANI_CAPTAIN: "يُسند الطلب إلى كابتن بثواني بعد جاهزية المتجر.",
+  PARTNER_CAPTAIN: "يختار المتجر أحد كباتنه لتوصيل الطلب إلى عنوانك.",
+  CUSTOMER_PICKUP: "استلم الطلب بنفسك من المتجر بعد جاهزيته.",
+};
 
 function baseUrl(): string {
   const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -80,6 +92,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
   const mounted = useRef(false);
   const mutationBusy = busy || Boolean(busyLineId);
   const pickupMode = fulfillmentMode === "CUSTOMER_PICKUP";
+  const paymentMethod = checkoutPaymentMethods[fulfillmentMode];
   const quoteAddressID = pickupMode ? "" : serviceableAddressId;
 
   const finishCheckout = useCallback(async (orderResult: Order, accessToken: string, storageKey: string, isCurrent: () => boolean = () => mounted.current) => {
@@ -336,14 +349,14 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
         </View>
         <View accessibilityLabel={pickupMode ? "الاستلام الذاتي من المتجر" : "طريقة التوصيل"} style={styles.fulfillmentCard}>
           <Text style={styles.fulfillmentTitle}>طريقة الاستلام</Text>
-          <Text style={styles.fulfillmentChoice}>{pickupMode ? "استلم بنفسك من المتجر" : "توصيل عبر كابتن بثواني"}</Text>
-          <Text style={styles.muted}>{pickupMode ? "ادفع نقدًا للمتجر عند استلام الطلب. سيظهر رمز الاستلام في تفاصيل الطلب." : "يُسند الطلب إلى كابتن مؤهل بعد جاهزية المتجر."}</Text>
+          <Text style={styles.fulfillmentChoice}>{fulfillmentModeLabel(fulfillmentMode)}</Text>
+          <Text style={styles.muted}>{checkoutFulfillmentInstructions[fulfillmentMode]}</Text>
         </View>
-        <Text style={styles.payment}>{pickupMode ? "الدفع نقدًا للمتجر عند الاستلام." : "الدفع نقدًا عند الاستلام من الكابتن."}</Text>
+        <Text style={styles.payment}>{paymentMethodLabel(paymentMethod, fulfillmentMode)}</Text>
         {!pickupMode && serviceableAddressId && selectedAddress ? <Text style={styles.success}>العنوان مؤهل: {selectedAddress.addressText}</Text> : null}
         <BthwaniButton accessibilityLabel={pickupMode ? "إتمام الطلب للاستلام الذاتي من المتجر" : "إتمام الطلب"} busy={busy} disabled={mutationBusy || (!pickupMode && !serviceableAddressId) || quote.kind !== "ready" || quote.quote.cartVersion !== state.cart.version || quote.quote.addressId !== (pickupMode ? "" : serviceableAddressId)} label="إتمام الطلب" onPress={() => void checkout()} />
       </> : null}
-      {order ? <View style={styles.orderBox}><Text style={styles.success}>تم إنشاء الطلب</Text><Text style={styles.muted}>الحالة: {orderStateLabel(order.state)} · الإجمالي: {formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{paymentMethodLabel(order.paymentMethod)} · {paymentStateLabel(order.paymentState)}</Text><Link href={`/orders/${encodeURIComponent(order.id)}` as Href} asChild><BthwaniButton label="فتح تفاصيل الطلب" variant="secondary" /></Link></View> : null}
+      {order ? <View style={styles.orderBox}><Text style={styles.success}>تم إنشاء الطلب</Text><Text style={styles.muted}>الحالة: {orderStateLabel(order.state)} · الإجمالي: {formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{paymentMethodLabel(order.paymentMethod, order.fulfillmentMode)} · {paymentStateLabel(order.paymentState, order.paymentMethod, order.fulfillmentMode)}</Text><Link href={`/orders/${encodeURIComponent(order.id)}` as Href} asChild><BthwaniButton label="فتح تفاصيل الطلب" variant="secondary" /></Link></View> : null}
       {orders.length ? <View style={styles.orderBox}><Text style={styles.lineTitle}>طلباتك الأخيرة</Text>{orders.map((item) => <Text key={item.id} style={styles.muted}>{orderStateLabel(item.state)} · {formatMoney(item.totalAmountMinor, item.currency)}</Text>)}</View> : null}
       {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.error}>{error}</Text> : null}
     </View>

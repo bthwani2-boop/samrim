@@ -194,7 +194,7 @@ const theme = useAppearanceTheme();
             <View style={styles.orderHeader}>
               <View style={styles.orderHeaderCopy}>
                 <Text style={styles.orderTitle}>طلب بتاريخ {formatOrderDate(order.createdAt)}</Text>
-                <Text style={styles.muted}>{order.lines.length} منتج · {formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{paymentMethodLabel(order.paymentMethod)} · {paymentStateLabel(order.paymentState, order.paymentMethod)}</Text>
+                <Text style={styles.muted}>{order.lines.length} منتج · {formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{paymentMethodLabel(order.paymentMethod, order.fulfillmentMode)} · {paymentStateLabel(order.paymentState, order.paymentMethod, order.fulfillmentMode)}</Text>
               </View>
               <BthwaniStatusBadge icon={order.state === "REJECTED" ? "warning" : order.state === "READY_FOR_DISPATCH" || order.state === "READY_FOR_PICKUP" || order.state === "PICKED_UP" ? "success" : "orders"} label={orderStateLabel(order.state)} tone={order.state === "REJECTED" ? "danger" : order.state === "READY_FOR_DISPATCH" || order.state === "READY_FOR_PICKUP" || order.state === "PICKED_UP" ? "success" : "info"} />
             </View>

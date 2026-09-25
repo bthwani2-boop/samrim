@@ -49,8 +49,11 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 		t.Fatalf("unexpected DSH migration graph size: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.SchemaVersion)
 	}
 	last := records[len(records)-1]
-	if last.Version != postgres.SchemaVersion || last.Name != "063_partner_financial_terms_policy_provenance.sql" {
-		t.Fatalf("last DSH migration = v%d %q; want v%d 063_partner_financial_terms_policy_provenance.sql", last.Version, last.Name, postgres.SchemaVersion)
+	if last.Version != postgres.SchemaVersion || last.Name != "064_partner_captain_cash_at_store_payment.sql" {
+		t.Fatalf("last DSH migration = v%d %q; want v%d 064_partner_captain_cash_at_store_payment.sql", last.Version, last.Name, postgres.SchemaVersion)
+	}
+	if !strings.Contains(migrationSQL[len(migrationSQL)-1], "fulfillment_mode IN ('PARTNER_CAPTAIN', 'CUSTOMER_PICKUP') AND payment_method = 'CASH_AT_STORE'") {
+		t.Fatal("latest DSH migration does not bind partner-captain fulfillment to cash at store")
 	}
 }
 
