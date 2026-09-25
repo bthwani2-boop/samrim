@@ -779,7 +779,7 @@ if (crossStoreMediaUpload.status !== 403 || partnerMediaUpload.status !== 201 ||
 console.log("DSH_PARTNER_PRODUCT_MEDIA_UPLOAD=PASS");
 const productReplay = await request(dshBase, "POST", "/dsh/catalog/products", { token: dshToken, headers: serviceHeaders(actingOperatorID, productKey), body: productInput });
 if (productReplay.status !== 200 || productReplay.body?.idempotentReplay !== true || productReplay.body.product.id !== productID) fail("catalog Product replay failed", JSON.stringify(productReplay));
-const duplicate = await request(dshBase, "POST", "/dsh/catalog/products", { token: dshToken, headers: serviceHeaders(actingOperatorID, `product-duplicate-${suffix}`), body: { ...productInput, canonicalName: "Runtime Duplicate" } });
+const duplicate = await request(dshBase, "POST", "/dsh/catalog/products", { token: dshToken, headers: serviceHeaders(actingOperatorID, `product-duplicate-${suffix}`), body: { ...productInput, canonicalName: "Runtime Duplicate", variantAttributeValues: [{ attributeId: enumAttributeID, valueKind: "ENUM", enumValue: "Dark" }] } });
 if (duplicate.status !== 409 || duplicate.body?.error?.code !== "DUPLICATE_IDENTIFIER") fail("duplicate Variant identifier was accepted", JSON.stringify(duplicate));
 const partnerWrite = await request(dshBase, "POST", "/dsh/catalog/products", { token: first.accessToken, headers: partnerHeaders(`partner-product-${suffix}`), body: productInput });
 if (partnerWrite.status !== 401) fail("partner reached the canonical Product writer", JSON.stringify(partnerWrite));
