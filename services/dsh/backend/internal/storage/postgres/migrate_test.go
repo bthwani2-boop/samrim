@@ -119,6 +119,7 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 			t.Fatalf("create catalog category: %v", err)
 		}
 		category.ID = createdCategory.ID
+		category.Version = createdCategory.Version
 		childCategory := postgres.CatalogCategoryRecord{VerticalID: vertical.ID, ParentCategoryID: category.ID, NameAr: "قهوة مختصة", NameEn: "Specialty Coffee", Active: true}
 		childAudit := postgres.CatalogRegistryAuditInput{ActingActorID: testOperatorActorID, CorrelationID: "corr-category-child-v1", Reason: "Add specialty coffee child category"}
 		createdChild, err := postgres.CreateCatalogCategory(ctx, db, childCategory, "idem-category-child-v1", postgres.HashCatalogCategoryCreateRequest(childCategory, childAudit.Reason), childAudit)
