@@ -2084,6 +2084,9 @@ components:
         status: { type: string, enum: [REQUESTED, DESTINATION_PENDING, PAYOUT_HELD, REJECTED, COMPLETED] }
         destinationId: { type: string, nullable: true }
         payoutId: { type: string, nullable: true }
+        payoutStatus: { type: string, nullable: true, enum: [HELD, PREPARED, APPROVED, FROZEN, EXECUTED, COMPLETED, EXCEPTION, CANCELLED] }
+        payoutAmountMinor: { type: integer, minimum: 1, nullable: true }
+        payoutCurrency: { type: string, const: YER, nullable: true }
         requestedBy: { type: string }
         requestedAt: { type: string, format: date-time }
         financeActorId: { type: string, nullable: true }

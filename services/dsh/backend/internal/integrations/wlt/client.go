@@ -471,6 +471,9 @@ type CustomerWithdrawalIntake struct {
 	Status                     string  `json:"status"`
 	DestinationID              *string `json:"destinationId,omitempty"`
 	PayoutID                   *string `json:"payoutId,omitempty"`
+	PayoutStatus               *string `json:"payoutStatus,omitempty"`
+	PayoutAmountMinor          *int64  `json:"payoutAmountMinor,omitempty"`
+	PayoutCurrency             *string `json:"payoutCurrency,omitempty"`
 	RequestedBy                string  `json:"requestedBy"`
 	RequestedAt                string  `json:"requestedAt"`
 	FinanceActorID             *string `json:"financeActorId,omitempty"`

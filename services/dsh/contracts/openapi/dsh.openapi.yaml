@@ -5485,6 +5485,18 @@ components:
         payoutId:
           type: string
           nullable: true
+        payoutStatus:
+          type: string
+          nullable: true
+          enum: [HELD, PREPARED, APPROVED, FROZEN, EXECUTED, COMPLETED, EXCEPTION, CANCELLED]
+        payoutAmountMinor:
+          type: integer
+          minimum: 1
+          nullable: true
+        payoutCurrency:
+          type: string
+          const: YER
+          nullable: true
         requestedBy:
           type: string
         requestedAt:

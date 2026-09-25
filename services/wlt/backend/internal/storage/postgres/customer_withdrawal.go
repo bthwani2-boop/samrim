@@ -39,6 +39,9 @@ type CustomerWithdrawalIntakeRecord struct {
 	Status                     string     `json:"status"`
 	DestinationID              *string    `json:"destinationId,omitempty"`
 	PayoutID                   *string    `json:"payoutId,omitempty"`
+	PayoutStatus               *string    `json:"payoutStatus,omitempty"`
+	PayoutAmountMinor          *int64     `json:"payoutAmountMinor,omitempty"`
+	PayoutCurrency             *string    `json:"payoutCurrency,omitempty"`
 	RequestedBy                string     `json:"requestedBy"`
 	RequestedAt                time.Time  `json:"requestedAt"`
 	FinanceActorID             *string    `json:"financeActorId,omitempty"`
@@ -426,6 +429,14 @@ func readCustomerWithdrawalIntake(ctx context.Context, source interface {
 	}
 	if payoutID.Valid {
 		item.PayoutID = &payoutID.String
+		var payoutStatus, payoutCurrency string
+		var payoutAmount int64
+		if err := source.QueryRowContext(ctx, "SELECT status,resolved_amount_minor,currency FROM wlt.payout_requests WHERE id=$1", payoutID.String).Scan(&payoutStatus, &payoutAmount, &payoutCurrency); err != nil {
+			return CustomerWithdrawalIntakeRecord{}, err
+		}
+		item.PayoutStatus = &payoutStatus
+		item.PayoutAmountMinor = &payoutAmount
+		item.PayoutCurrency = &payoutCurrency
 	}
 	if financeActorID.Valid {
 		item.FinanceActorID = &financeActorID.String

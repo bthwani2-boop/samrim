@@ -38,7 +38,9 @@ async function responseBody<T>(response: Response, fallback: string): Promise<T>
   return body as T;
 }
 
-export function BeneficiarySettlementWorkspace() {
+type BeneficiarySettlementWorkspaceProps = Readonly<{ requestedBatchId?: string }>;
+
+export function BeneficiarySettlementWorkspace({ requestedBatchId = "" }: BeneficiarySettlementWorkspaceProps) {
   const idempotencyKeys = useRef(new Map<string, string>());
   const mutationHeaders = (scope: string) => {
     let key = idempotencyKeys.current.get(scope);
@@ -341,16 +343,30 @@ export function BeneficiarySettlementWorkspace() {
     finally { setBusy(false); }
   };
 
-  const loadBatch = async () => {
-    if (!batchLookup.trim()) return;
+  const loadBatch = async (requestedId = batchLookup) => {
+    if (!requestedId.trim()) return;
     setBusy(true); setError(""); setNotice("");
     try {
-      const result = await responseBody<{ batch: SettlementBatch }>(await fetch(`/api/finance/settlement-batches/${encodeURIComponent(batchLookup.trim())}`, { cache: "no-store" }), "تعذر قراءة الدفعة");
-      setBatch(result.batch); setBatchItems(result.batch.items); setTransfer(null);
+      const result = await responseBody<{ batch: SettlementBatch }>(await fetch(`/api/finance/settlement-batches/${encodeURIComponent(requestedId.trim())}`, { cache: "no-store" }), "تعذر قراءة الدفعة");
+      setBatch(result.batch); setBatchItems(result.batch.items); setBatchLookup(result.batch.id); setTransfer(null);
       setNotice(`استعيدت الدفعة ${result.batch.id} من WLT، مع ${result.batch.items.length} صفوف وحالات التنفيذ الحالية.`);
     } catch (value) { setError(value instanceof Error ? value.message : "تعذر قراءة الدفعة"); }
     finally { setBusy(false); }
   };
+
+  useEffect(() => {
+    const batchId = requestedBatchId.trim();
+    if (!batchId) return;
+    setBatchLookup(batchId); setBusy(true); setError(""); setNotice("");
+    void (async () => {
+      try {
+        const result = await responseBody<{ batch: SettlementBatch }>(await fetch(`/api/finance/settlement-batches/${encodeURIComponent(batchId)}`, { cache: "no-store" }), "تعذر قراءة الدفعة");
+        setBatch(result.batch); setBatchItems(result.batch.items); setTransfer(null);
+        setNotice(`استعيدت الدفعة ${result.batch.id} من WLT، مع ${result.batch.items.length} صفوف وحالات التنفيذ الحالية.`);
+      } catch (value) { setError(value instanceof Error ? value.message : "تعذر قراءة الدفعة"); }
+      finally { setBusy(false); }
+    })();
+  }, [requestedBatchId]);
 
   const readBatches = async (append = false) => {
     setBusy(true); setError("");
