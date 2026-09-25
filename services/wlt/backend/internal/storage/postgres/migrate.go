@@ -15,7 +15,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 26
+const SchemaVersion = 27
 
 type MigrationRecord struct {
 	Version int
@@ -42,7 +42,7 @@ func LoadMigrations(directory string) ([]MigrationRecord, []string, error) {
 	if directory == "" {
 		return nil, nil, errors.New("WLT_MIGRATION_DIR is required")
 	}
-	names := []string{"001_payment_intents.sql", "002_cash_remittances.sql", "003_partner_financial_profiles.sql", "004_payment_allocations.sql", "005_delivery_fee_policies.sql", "006_partner_order_earnings_ledger.sql", "007_official_wallet_destinations_and_payout_intents.sql", "008_field_commission_policies_and_earnings.sql", "009_manual_settlement_governance.sql", "010_captain_wallet_cod_reservations.sql", "011_captain_cod_collateral_settlement.sql", "012_customer_payment_allocation_refoundation.sql", "013_captain_cod_reassignment_reservations.sql", "014_partner_store_pickup_commission_receivables.sql", "015_partner_store_cash_commission_generalization.sql", "016_partner_store_mode_commission_snapshots.sql", "017_policy_change_control.sql", "018_partner_financial_terms_policies.sql", "019_settlement_statement_reconciliation.sql", "020_settlement_batch_execution_artifacts.sql", "021_finance_evidence_download_audit.sql", "022_cash_in_funding_intents.sql", "023_destination_identity_name_provenance.sql", "024_customer_manual_withdrawal_intakes.sql", "025_customer_withdrawal_registry_search.sql", "026_cash_custody_operational_registry.sql"}
+	names := []string{"001_payment_intents.sql", "002_cash_remittances.sql", "003_partner_financial_profiles.sql", "004_payment_allocations.sql", "005_delivery_fee_policies.sql", "006_partner_order_earnings_ledger.sql", "007_official_wallet_destinations_and_payout_intents.sql", "008_field_commission_policies_and_earnings.sql", "009_manual_settlement_governance.sql", "010_captain_wallet_cod_reservations.sql", "011_captain_cod_collateral_settlement.sql", "012_customer_payment_allocation_refoundation.sql", "013_captain_cod_reassignment_reservations.sql", "014_partner_store_pickup_commission_receivables.sql", "015_partner_store_cash_commission_generalization.sql", "016_partner_store_mode_commission_snapshots.sql", "017_policy_change_control.sql", "018_partner_financial_terms_policies.sql", "019_settlement_statement_reconciliation.sql", "020_settlement_batch_execution_artifacts.sql", "021_finance_evidence_download_audit.sql", "022_cash_in_funding_intents.sql", "023_destination_identity_name_provenance.sql", "024_customer_manual_withdrawal_intakes.sql", "025_customer_withdrawal_registry_search.sql", "026_cash_custody_operational_registry.sql", "027_partner_commission_policy_snapshot_length.sql"}
 	records := make([]MigrationRecord, 0, len(names))
 	sqls := make([]string, 0, len(names))
 	for version, name := range names {
