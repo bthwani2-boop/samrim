@@ -376,6 +376,9 @@ func (s *CatalogServer) createProduct(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, postgres.ErrCatalogProductNotFound):
 			log.Print("DSH_CATALOG_PRODUCT_CREATE_NOT_FOUND product")
 		}
+		if errors.Is(err, postgres.ErrCatalogCategoryNotFound) {
+			log.Printf("DSH_CATALOG_PRODUCT_CREATE_CATEGORY_ERROR detail=%q", err.Error())
+		}
 		writeCatalogError(w, err)
 		return
 	}

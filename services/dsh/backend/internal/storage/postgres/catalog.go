@@ -981,7 +981,7 @@ func CreateCatalogProduct(ctx context.Context, db *sql.DB, input CatalogProductI
 		return CatalogProductResult{}, err
 	}
 	if err = validateCatalogProductFactsTx(ctx, tx, input); err != nil {
-		return CatalogProductResult{}, err
+		return CatalogProductResult{}, fmt.Errorf("validate catalog product facts: %w", err)
 	}
 	productID := input.ID
 	if productID == "" {
@@ -1007,7 +1007,7 @@ func CreateCatalogProduct(ctx context.Context, db *sql.DB, input CatalogProductI
 		}
 	}
 	if err = persistCatalogProductAttributes(ctx, tx, input.VerticalID, input.CategoryIDs, productID, variantID, input.AttributeValues, input.VariantAttributeValues); err != nil {
-		return CatalogProductResult{}, err
+		return CatalogProductResult{}, fmt.Errorf("persist catalog product attributes: %w", err)
 	}
 	if input.IdentifierValue != "" {
 		if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_variant_identifiers(variant_id,identifier_type,identifier_value) VALUES($1,$2,$3)", variantID, input.IdentifierType, input.IdentifierValue); err != nil {
@@ -1024,7 +1024,7 @@ func CreateCatalogProduct(ctx context.Context, db *sql.DB, input CatalogProductI
 	}
 	product, err := readCatalogProductTx(ctx, tx, productID)
 	if err != nil {
-		return CatalogProductResult{}, err
+		return CatalogProductResult{}, fmt.Errorf("read created catalog product: %w", err)
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_product_mutation_idempotency(idempotency_key,request_hash,product_id,operation,result_version) VALUES($1,$2,$3,'create',$4)", idempotencyKey, requestHash, productID, product.Version); err != nil {
 		return CatalogProductResult{}, err
