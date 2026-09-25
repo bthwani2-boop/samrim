@@ -9,7 +9,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
 
@@ -32,68 +31,6 @@ type operatorDiscoveryContentRegistryCursor struct {
 	StartsAt  string `json:"startsAt,omitempty"`
 	CreatedAt string `json:"createdAt,omitempty"`
 	ID        string `json:"id"`
-}
-
-type operatorMarketingStoreTargetCursor struct {
-	ServiceCityID string `json:"serviceCityId"`
-	Search        string `json:"search"`
-	Name          string `json:"name"`
-	ID            string `json:"id"`
-}
-
-func (s *MarketingServer) listOperatorMarketingStoreTargets(w http.ResponseWriter, r *http.Request) {
-	if !s.operatorAuthorized(w, r) {
-		return
-	}
-	params := r.URL.Query()
-	serviceCityID := strings.TrimSpace(params.Get("serviceCityId"))
-	search := strings.TrimSpace(params.Get("search"))
-	if serviceCityID == "" || len(serviceCityID) > 128 || utf8.RuneCountInString(search) < 2 || utf8.RuneCountInString(search) > 128 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "serviceCityId and a search of 2 to 128 characters are required")
-		return
-	}
-	limit, err := parseOperatorMarketingRegistryLimit(params.Get("limit"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "limit is invalid")
-		return
-	}
-	query := postgres.MarketingStoreTargetQuery{ServiceCityID: serviceCityID, Search: search, Limit: limit}
-	rawCursor := strings.TrimSpace(params.Get("cursor"))
-	if rawCursor != "" {
-		if len(rawCursor) > 2048 {
-			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cursor is too long")
-			return
-		}
-		decoded, decodeErr := base64.RawURLEncoding.DecodeString(rawCursor)
-		var cursor operatorMarketingStoreTargetCursor
-		if decodeErr != nil || len(decoded) > 1536 || json.Unmarshal(decoded, &cursor) != nil || cursor.ServiceCityID != serviceCityID || cursor.Search != search || cursor.Name == "" || cursor.ID == "" {
-			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cursor is invalid for this search")
-			return
-		}
-		query.AfterName = cursor.Name
-		query.AfterID = cursor.ID
-	}
-	page, err := postgres.ListMarketingStoreTargets(r.Context(), s.db, query)
-	if err != nil {
-		writeMarketingError(w, err)
-		return
-	}
-	stores := make([]contract.MarketingStoreTarget, 0, len(page.Stores))
-	for _, item := range page.Stores {
-		stores = append(stores, contract.MarketingStoreTarget{ID: item.ID, Name: item.Name, ServiceCityID: item.ServiceCityID})
-	}
-	response := contract.MarketingStoreTargetRegistryResponse{Stores: stores, Limit: limit}
-	if page.HasMore && len(page.Stores) > 0 {
-		last := page.Stores[len(page.Stores)-1]
-		encoded, encodeErr := json.Marshal(operatorMarketingStoreTargetCursor{ServiceCityID: serviceCityID, Search: search, Name: last.Name, ID: last.ID})
-		if encodeErr != nil {
-			writeMarketingError(w, encodeErr)
-			return
-		}
-		response.NextCursor = base64.RawURLEncoding.EncodeToString(encoded)
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, response)
 }
 
 func parseOperatorPromotionRegistryQuery(r *http.Request) (postgres.OperatorPromotionRegistryQuery, error) {

@@ -81,31 +81,16 @@ type OperatorStorePage struct {
 	NextCursor string
 }
 
-type MarketingStoreTarget struct {
-	ID            string
-	Name          string
-	ServiceCityID string
-}
-
-type MarketingStoreTargetPage struct {
-	Stores  []MarketingStoreTarget
-	HasMore bool
-}
-
-type MarketingStoreTargetQuery struct {
-	ServiceCityID string
-	Search        string
-	AfterName     string
-	AfterID       string
-	Limit         int
-}
-
 type operatorStoreCursor struct {
-	UpdatedAt time.Time `json:"updatedAt"`
-	ID        string    `json:"id"`
-	State     string    `json:"state"`
-	Query     string    `json:"query"`
-	Sort      string    `json:"sort"`
+	UpdatedAt     time.Time `json:"updatedAt"`
+	Name          string    `json:"name,omitempty"`
+	ID            string    `json:"id"`
+	State         string    `json:"state,omitempty"`
+	Query         string    `json:"query,omitempty"`
+	ServiceCityID string    `json:"serviceCityId,omitempty"`
+	SearchMode    string    `json:"searchMode,omitempty"`
+	Sort          string    `json:"sort,omitempty"`
+	Scope         string    `json:"scope,omitempty"`
 }
 
 type PublicationResult struct {
@@ -217,7 +202,7 @@ func ListStoresForPartnerActor(ctx context.Context, db *sql.DB, partnerActorID s
 	return page, nil
 }
 
-func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, sort string, limit int, cursor string) (OperatorStorePage, error) {
+func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, serviceCityID, searchMode, sort string, limit int, cursor string) (OperatorStorePage, error) {
 	if db == nil || limit < 1 || limit > 50 {
 		return OperatorStorePage{}, ErrOperatorStoreInvalidLimit
 	}
@@ -226,16 +211,37 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, sort s
 		return OperatorStorePage{}, ErrOperatorStoreInvalidState
 	}
 	query = strings.TrimSpace(query)
+	serviceCityID = strings.TrimSpace(serviceCityID)
 	if utf8.RuneCountInString(query) > 128 {
+		return OperatorStorePage{}, ErrOperatorStoreInvalidQuery
+	}
+	if strings.ContainsRune(query, 0) || len(serviceCityID) > 128 || strings.ContainsRune(serviceCityID, 0) {
+		return OperatorStorePage{}, ErrOperatorStoreInvalidQuery
+	}
+	searchMode = strings.TrimSpace(searchMode)
+	if searchMode == "" {
+		searchMode = "contains"
+	}
+	if searchMode != "contains" && searchMode != "name_prefix" {
 		return OperatorStorePage{}, ErrOperatorStoreInvalidQuery
 	}
 	sort = strings.TrimSpace(sort)
 	if sort == "" {
 		sort = "updated_desc"
 	}
-	if sort != "updated_desc" && sort != "updated_asc" {
+	if sort != "updated_desc" && sort != "updated_asc" && sort != "name_asc" {
 		return OperatorStorePage{}, ErrOperatorStoreInvalidSort
 	}
+	if searchMode == "name_prefix" && (state != "published" || utf8.RuneCountInString(query) < 2 || serviceCityID == "" || sort != "name_asc") {
+		return OperatorStorePage{}, ErrOperatorStoreInvalidQuery
+	}
+	if searchMode == "contains" && sort == "name_asc" {
+		return OperatorStorePage{}, ErrOperatorStoreInvalidSort
+	}
+	if len(cursor) > 1024 {
+		return OperatorStorePage{}, ErrOperatorStoreInvalidCursor
+	}
+	cursor = strings.TrimSpace(cursor)
 	ascending := sort == "updated_asc"
 	args := []any{}
 	where := "TRUE"
@@ -244,28 +250,57 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, sort s
 		where += " AND s.publication_state=$" + strconv.Itoa(len(args))
 	}
 	if query != "" {
-		args = append(args, "%"+escapeOperatorStoreSearch(query)+"%")
-		where += " AND (s.id ILIKE $" + strconv.Itoa(len(args)) + " ESCAPE '!' OR s.name ILIKE $" + strconv.Itoa(len(args)) + " ESCAPE '!' OR s.partner_actor_id ILIKE $" + strconv.Itoa(len(args)) + " ESCAPE '!')"
+		if searchMode == "name_prefix" {
+			args = append(args, strings.ToLower(escapeOperatorStoreSearch(query))+"%")
+			where += " AND lower(s.name) LIKE $" + strconv.Itoa(len(args)) + " ESCAPE '!'"
+		} else {
+			args = append(args, "%"+escapeOperatorStoreSearch(query)+"%")
+			where += " AND (s.id ILIKE $" + strconv.Itoa(len(args)) + " ESCAPE '!' OR s.name ILIKE $" + strconv.Itoa(len(args)) + " ESCAPE '!' OR s.partner_actor_id ILIKE $" + strconv.Itoa(len(args)) + " ESCAPE '!')"
+		}
+	}
+	if serviceCityID != "" {
+		args = append(args, serviceCityID)
+		where += " AND s.service_city_id=$" + strconv.Itoa(len(args))
 	}
 	if strings.TrimSpace(cursor) != "" {
-		decoded, err := decodeOperatorStoreCursor(cursor, state, query, sort)
+		decoded, err := decodeOperatorStoreCursor(cursor, state, query, serviceCityID, searchMode, sort)
 		if err != nil {
 			return OperatorStorePage{}, err
 		}
-		args = append(args, decoded.UpdatedAt, decoded.ID)
-		operator := "<"
-		if ascending {
-			operator = ">"
+		if sort == "name_asc" {
+			anchorName := decoded.Name
+			if decoded.Scope != "" {
+				prefix := strings.ToLower(escapeOperatorStoreSearch(query)) + "%"
+				err := db.QueryRowContext(ctx, "SELECT name FROM dsh.stores WHERE id=$1 AND publication_state='published' AND service_city_id=$2 AND lower(name) LIKE $3 ESCAPE '!'", decoded.ID, serviceCityID, prefix).Scan(&anchorName)
+				if errors.Is(err, sql.ErrNoRows) {
+					return OperatorStorePage{}, ErrOperatorStoreInvalidCursor
+				}
+				if err != nil {
+					return OperatorStorePage{}, fmt.Errorf("read operator store cursor anchor: %w", err)
+				}
+			}
+			args = append(args, anchorName, decoded.ID)
+			where += " AND (lower(s.name),s.id)>(lower($" + strconv.Itoa(len(args)-1) + "),$" + strconv.Itoa(len(args)) + ")"
+		} else {
+			args = append(args, decoded.UpdatedAt, decoded.ID)
+			operator := "<"
+			if ascending {
+				operator = ">"
+			}
+			where += " AND (s.updated_at,s.id)" + operator + "($" + strconv.Itoa(len(args)-1) + ",$" + strconv.Itoa(len(args)) + ")"
 		}
-		where += " AND (s.updated_at,s.id)" + operator + "($" + strconv.Itoa(len(args)-1) + ",$" + strconv.Itoa(len(args)) + ")"
 	}
 	args = append(args, limit+1)
 	order := "DESC"
 	if ascending {
 		order = "ASC"
 	}
+	orderBy := "s.updated_at " + order + ",s.id " + order
+	if sort == "name_asc" {
+		orderBy = "lower(s.name) ASC,s.id ASC"
+	}
 	rows, err := db.QueryContext(ctx, `SELECT s.id,s.partner_actor_id,s.name,s.service_city_id,s.primary_vertical_id,s.version,s.publication_state,s.fulfillment_modes,s.created_at,s.updated_at
-		FROM dsh.stores s WHERE `+where+" ORDER BY s.updated_at "+order+",s.id "+order+" LIMIT $"+strconv.Itoa(len(args)), args...)
+		FROM dsh.stores s WHERE `+where+" ORDER BY "+orderBy+" LIMIT $"+strconv.Itoa(len(args)), args...)
 	if err != nil {
 		return OperatorStorePage{}, fmt.Errorf("list canonical operator stores: %w", err)
 	}
@@ -278,7 +313,8 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, sort s
 			return OperatorStorePage{}, err
 		}
 		if len(page.Stores) == limit {
-			page.NextCursor = encodeOperatorStoreCursor(operatorStoreCursor{UpdatedAt: page.Stores[len(page.Stores)-1].UpdatedAt, ID: page.Stores[len(page.Stores)-1].ID, State: state, Query: query, Sort: sort})
+			last := page.Stores[len(page.Stores)-1]
+			page.NextCursor = encodeOperatorStoreCursor(operatorStoreCursor{UpdatedAt: last.UpdatedAt, ID: last.ID}, state, query, serviceCityID, searchMode, sort)
 			break
 		}
 		if cityID.Valid {
@@ -295,60 +331,40 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, sort s
 	return page, nil
 }
 
-func ListMarketingStoreTargets(ctx context.Context, db *sql.DB, query MarketingStoreTargetQuery) (MarketingStoreTargetPage, error) {
-	query.ServiceCityID = strings.TrimSpace(query.ServiceCityID)
-	query.Search = strings.TrimSpace(query.Search)
-	query.AfterName = strings.TrimSpace(query.AfterName)
-	query.AfterID = strings.TrimSpace(query.AfterID)
-	if db == nil || query.ServiceCityID == "" || len(query.ServiceCityID) > 128 || utf8.RuneCountInString(query.Search) > 128 || query.Limit < 1 || query.Limit > 100 || (query.AfterName == "") != (query.AfterID == "") || len(query.AfterID) > 128 || len(query.AfterName) > 256 {
-		return MarketingStoreTargetPage{}, ErrDiscoveryContentInvalid
-	}
-	args := []any{query.ServiceCityID}
-	filters := []string{"publication_state='published'", "service_city_id=$1"}
-	if query.Search != "" {
-		args = append(args, strings.ToLower(strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(query.Search))+"%")
-		filters = append(filters, "lower(name) LIKE $"+strconv.Itoa(len(args))+" ESCAPE E'\\\\'")
-	}
-	if query.AfterName != "" {
-		args = append(args, strings.ToLower(query.AfterName), query.AfterID)
-		filters = append(filters, "(lower(name),id)>($"+strconv.Itoa(len(args)-1)+",$"+strconv.Itoa(len(args))+")")
-	}
-	args = append(args, query.Limit+1)
-	rows, err := db.QueryContext(ctx, `SELECT id,name,service_city_id FROM dsh.stores WHERE `+strings.Join(filters, " AND ")+` ORDER BY lower(name),id LIMIT $`+strconv.Itoa(len(args)), args...)
-	if err != nil {
-		return MarketingStoreTargetPage{}, err
-	}
-	defer rows.Close()
-	page := MarketingStoreTargetPage{Stores: make([]MarketingStoreTarget, 0, query.Limit)}
-	for rows.Next() {
-		var item MarketingStoreTarget
-		if err := rows.Scan(&item.ID, &item.Name, &item.ServiceCityID); err != nil {
-			return MarketingStoreTargetPage{}, err
-		}
-		if len(page.Stores) == query.Limit {
-			page.HasMore = true
-			break
-		}
-		page.Stores = append(page.Stores, item)
-	}
-	if err := rows.Err(); err != nil {
-		return MarketingStoreTargetPage{}, err
-	}
-	return page, nil
-}
-
-func encodeOperatorStoreCursor(cursor operatorStoreCursor) string {
+func encodeOperatorStoreCursor(cursor operatorStoreCursor, state, query, serviceCityID, searchMode, sort string) string {
+	cursor.Scope = operatorStoreCursorScope(state, query, serviceCityID, searchMode, sort)
 	value, _ := json.Marshal(cursor)
 	return base64.RawURLEncoding.EncodeToString(value)
 }
 
-func decodeOperatorStoreCursor(raw, state, query, sort string) (operatorStoreCursor, error) {
+func operatorStoreCursorScope(state, query, serviceCityID, searchMode, sort string) string {
+	value, _ := json.Marshal([5]string{state, query, serviceCityID, searchMode, sort})
+	digest := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(digest[:])
+}
+
+func decodeOperatorStoreCursor(raw, state, query, serviceCityID, searchMode, sort string) (operatorStoreCursor, error) {
 	value, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
 	if err != nil {
 		return operatorStoreCursor{}, ErrOperatorStoreInvalidCursor
 	}
 	var cursor operatorStoreCursor
-	if err := json.Unmarshal(value, &cursor); err != nil || cursor.ID == "" || cursor.UpdatedAt.IsZero() || cursor.State != state || cursor.Query != query || cursor.Sort != sort {
+	if err := json.Unmarshal(value, &cursor); err != nil {
+		return operatorStoreCursor{}, ErrOperatorStoreInvalidCursor
+	}
+	if cursor.ID == "" || (sort != "name_asc" && cursor.UpdatedAt.IsZero()) {
+		return operatorStoreCursor{}, ErrOperatorStoreInvalidCursor
+	}
+	if cursor.Scope != "" {
+		if cursor.Scope != operatorStoreCursorScope(state, query, serviceCityID, searchMode, sort) {
+			return operatorStoreCursor{}, ErrOperatorStoreInvalidCursor
+		}
+		return cursor, nil
+	}
+	if cursor.SearchMode == "" {
+		cursor.SearchMode = "contains"
+	}
+	if sort == "name_asc" || cursor.State != state || cursor.Query != query || cursor.ServiceCityID != serviceCityID || cursor.SearchMode != searchMode || cursor.Sort != sort {
 		return operatorStoreCursor{}, ErrOperatorStoreInvalidCursor
 	}
 	return cursor, nil

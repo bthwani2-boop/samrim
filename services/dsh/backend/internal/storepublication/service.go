@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
@@ -132,8 +133,9 @@ func (s *Service) ReadForOperator(ctx context.Context, storeID, actingActorID st
 	return store, readiness, err
 }
 
-func (s *Service) ListForOperator(ctx context.Context, state, query, sort, actingActorID string, limit int, cursor string) (postgres.OperatorStorePage, error) {
+func (s *Service) ListForOperator(ctx context.Context, state, query, serviceCityID, searchMode, sort, actingActorID string, limit int, cursor string) (postgres.OperatorStorePage, error) {
 	actingActorID = strings.TrimSpace(actingActorID)
+	state = strings.TrimSpace(state)
 	if actingActorID == "" || len(actingActorID) > 128 {
 		return postgres.OperatorStorePage{}, postgres.ErrOperatorStoreInvalidActor
 	}
@@ -144,10 +146,33 @@ func (s *Service) ListForOperator(ctx context.Context, state, query, sort, actin
 	if operator.Role != "operator" || !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
 		return postgres.OperatorStorePage{}, ErrOperatorNotActive
 	}
-	if err := s.identity.RequireOperatorPermission(ctx, actingActorID, "partners"); err != nil {
+	if err := s.requireStoreRegistryPermission(ctx, actingActorID, state); err != nil {
 		return postgres.OperatorStorePage{}, err
 	}
-	return postgres.ListStoresForOperator(ctx, s.db, state, query, sort, limit, cursor)
+	return postgres.ListStoresForOperator(ctx, s.db, state, query, serviceCityID, searchMode, sort, limit, cursor)
+}
+
+func (s *Service) requireStoreRegistryPermission(ctx context.Context, actingActorID, state string) error {
+	var denied error
+	for _, permission := range storeRegistryPermissions(state) {
+		err := s.identity.RequireOperatorPermission(ctx, actingActorID, permission)
+		if err == nil {
+			return nil
+		}
+		var identityErr *identityclient.Error
+		if !errors.As(err, &identityErr) || identityErr.Status != http.StatusForbidden {
+			return err
+		}
+		denied = err
+	}
+	return denied
+}
+
+func storeRegistryPermissions(state string) []string {
+	if strings.TrimSpace(state) == "published" {
+		return []string{"partners", "marketing", "platform_policies"}
+	}
+	return []string{"partners"}
 }
 
 func (s *Service) ListPublished(ctx context.Context, serviceCityID string, latitude, longitude *float64) ([]postgres.PublicStoreRecord, error) {

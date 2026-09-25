@@ -20,14 +20,15 @@ export async function GET(request: Request) {
   const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;
   const state = params.get("state") ?? "";
   const search = params.get("q")?.trim() ?? "";
+  const serviceCityId = params.get("serviceCityId")?.trim() ?? "";
   const sort = params.get("sort") ?? "updated_desc";
   const cursor = params.get("cursor") ?? "";
-  if (!Number.isInteger(limit) || limit < 1 || limit > 50 || cursor.length > 1024 || search.length > 128 || (state !== "" && state !== "unpublished" && state !== "published" && state !== "hidden") || (sort !== "updated_desc" && sort !== "updated_asc")) {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50 || cursor.length > 1024 || Array.from(search).length > 128 || serviceCityId.length > 128 || (state !== "" && state !== "unpublished" && state !== "published" && state !== "hidden") || (sort !== "updated_desc" && sort !== "updated_asc")) {
     return errorResponse("INVALID_INPUT", "store filters, sort, limit, or cursor are invalid", 400);
   }
 
   try {
-    const page = await listOperatorStores(state, search, sort, limit, cursor, { operatorActorId: identity.subject });
+		const page = await listOperatorStores(state, search, serviceCityId, "contains", sort, limit, cursor, { operatorActorId: identity.subject });
     return NextResponse.json(page, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (isDshClientError(error)) {

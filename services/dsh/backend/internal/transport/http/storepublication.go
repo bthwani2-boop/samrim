@@ -67,7 +67,7 @@ func (s *StorePublicationServer) listForOperator(w http.ResponseWriter, r *http.
 		}
 		limit = parsed
 	}
-	page, err := s.service.ListForOperator(r.Context(), r.URL.Query().Get("state"), r.URL.Query().Get("q"), r.URL.Query().Get("sort"), actingActorID, limit, r.URL.Query().Get("cursor"))
+	page, err := s.service.ListForOperator(r.Context(), r.URL.Query().Get("state"), r.URL.Query().Get("q"), r.URL.Query().Get("serviceCityId"), r.URL.Query().Get("searchMode"), r.URL.Query().Get("sort"), actingActorID, limit, r.URL.Query().Get("cursor"))
 	if err != nil {
 		writeStorePublicationError(w, err)
 		return

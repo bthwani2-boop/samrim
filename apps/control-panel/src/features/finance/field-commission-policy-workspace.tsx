@@ -1,13 +1,13 @@
 "use client";
 
 import { fieldCommissionScopeLabel, financialPolicyStateLabel, formatMoney } from "@bthwani/dsh";
-import type { CommerceVertical } from "@bthwani/dsh";
+import type { CommerceVertical, ServiceCity } from "@bthwani/dsh";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
 
 type ScopeType = "DEFAULT" | "VERTICAL" | "STORE";
 type Policy = Readonly<{ id: string; scopeType: ScopeType; scopeId: string; rewardMinor: number; roundingUnitMinor: 50; state: "ACTIVE" | "RETIRED"; version: number }>;
-type StoreOption = Readonly<{ id: string; name: string; serviceCityName: string }>;
+type StoreOption = Readonly<{ id: string; name: string; serviceCityId: string }>;
 type ReadState = "unselected" | "loading" | "ready" | "missing" | "error";
 
 export function FieldCommissionPolicyWorkspace() {
@@ -17,7 +17,16 @@ export function FieldCommissionPolicyWorkspace() {
   const [scopeId, setScopeId] = useState("");
   const [verticals, setVerticals] = useState<CommerceVertical[]>([]);
   const [stores, setStores] = useState<StoreOption[]>([]);
-  const [scopeLoadError, setScopeLoadError] = useState("");
+  const [cities, setCities] = useState<ServiceCity[]>([]);
+  const [storeSearch, setStoreSearch] = useState("");
+  const [storeCityId, setStoreCityId] = useState("");
+  const [storeCursor, setStoreCursor] = useState("");
+  const [storeNextCursor, setStoreNextCursor] = useState("");
+  const [storesLoading, setStoresLoading] = useState(false);
+  const [scopeOptionsError, setScopeOptionsError] = useState("");
+  const [storeSearchError, setStoreSearchError] = useState("");
+  const [scopeLoadAttempt, setScopeLoadAttempt] = useState(0);
+  const [storeSearchAttempt, setStoreSearchAttempt] = useState(0);
   const [rewardMinor, setRewardMinor] = useState("");
   const [reason, setReason] = useState("");
   const [policy, setPolicy] = useState<Policy | null>(null);
@@ -29,26 +38,58 @@ export function FieldCommissionPolicyWorkspace() {
 
   useEffect(() => {
     let mounted = true;
+    setScopeOptionsError("");
     void Promise.all([
       fetch("/api/catalog/verticals?includeInactive=true", { cache: "no-store" }).then(async (response) => {
         const body = await response.json() as { verticals?: CommerceVertical[]; error?: { message?: string } };
         if (!response.ok) throw new Error(body.error?.message || "تعذرت قراءة الفئات الرئيسية من DSH.");
         return body.verticals ?? [];
       }),
-      fetch("/api/policies/stores", { cache: "no-store" }).then(async (response) => {
-        const body = await response.json() as { stores?: StoreOption[]; error?: { message?: string } };
-        if (!response.ok) throw new Error(body.error?.message || "تعذرت قراءة المتاجر المنشورة من DSH.");
-        return body.stores ?? [];
+      fetch("/api/service-cities", { cache: "no-store" }).then(async (response) => {
+        const body = await response.json() as { cities?: ServiceCity[]; error?: { message?: string } };
+        if (!response.ok) throw new Error(body.error?.message || "تعذرت قراءة مدن الخدمة.");
+        return (body.cities ?? []).filter((city) => city.active);
       }),
-    ]).then(([nextVerticals, nextStores]) => {
+    ]).then(([nextVerticals, nextCities]) => {
       if (!mounted) return;
       setVerticals(nextVerticals);
-      setStores(nextStores);
+      setCities(nextCities);
     }).catch((value: unknown) => {
-      if (mounted) setScopeLoadError(value instanceof Error ? value.message : "تعذر تحميل نطاقات السياسة.");
+      if (mounted) setScopeOptionsError(value instanceof Error ? value.message : "تعذر تحميل نطاقات السياسة.");
     });
     return () => { mounted = false; readSequence.current += 1; };
-  }, []);
+  }, [scopeLoadAttempt]);
+
+  useEffect(() => {
+    if (scopeType !== "STORE") return;
+    const query = storeSearch.trim();
+    if (Array.from(query).length < 2 || !storeCityId) {
+      setStores([]);
+      setStoreNextCursor("");
+      setStoresLoading(false);
+      setStoreSearchError("");
+      return;
+    }
+    const controller = new AbortController();
+    const params = new URLSearchParams({ q: query, limit: "25" });
+    params.set("serviceCityId", storeCityId);
+    if (storeCursor) params.set("cursor", storeCursor);
+    setStoresLoading(true);
+    setStoreSearchError("");
+    void fetch(`/api/policies/stores?${params}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const body = await response.json() as { stores?: StoreOption[]; nextCursor?: string; error?: { message?: string } };
+        if (!response.ok) throw new Error(body.error?.message || "تعذرت قراءة المتاجر المنشورة من DSH.");
+        if (controller.signal.aborted) return;
+        setStores((current) => storeCursor ? [...current, ...(body.stores ?? []).filter((item) => !current.some((existing) => existing.id === item.id))] : body.stores ?? []);
+        setStoreNextCursor(body.nextCursor ?? "");
+      })
+      .catch((value: unknown) => {
+        if (!controller.signal.aborted) setStoreSearchError(value instanceof Error ? value.message : "تعذرت قراءة المتاجر المنشورة من DSH.");
+      })
+      .finally(() => { if (!controller.signal.aborted) setStoresLoading(false); });
+    return () => controller.abort();
+  }, [scopeType, storeCityId, storeCursor, storeSearch, storeSearchAttempt]);
 
   const read = useCallback(async (type: ScopeType, id: string): Promise<boolean> => {
     const sequence = ++readSequence.current;
@@ -138,12 +179,18 @@ export function FieldCommissionPolicyWorkspace() {
     <div className="form-grid">
       <label className="field-label" htmlFor="field-commission-scope">نطاق السياسة<select id="field-commission-scope" value={scopeType} onChange={(event) => chooseScopeType(event.target.value as ScopeType | "")} disabled={busy}><option value="">اختر النطاق</option><option value="DEFAULT">افتراضي</option><option value="VERTICAL">فئة رئيسية</option><option value="STORE">متجر منشور</option></select></label>
       {scopeType === "VERTICAL" ? <label className="field-label" htmlFor="field-commission-vertical">الفئة الرئيسية<select id="field-commission-vertical" value={scopeId} onChange={(event) => chooseScopeId(event.target.value)} disabled={busy}><option value="">اختر فئة رئيسية</option>{verticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}{vertical.active ? "" : " · غير نشط"}</option>)}</select></label> : null}
-      {scopeType === "STORE" ? <label className="field-label" htmlFor="field-commission-store">المتجر<select id="field-commission-store" value={scopeId} onChange={(event) => chooseScopeId(event.target.value)} disabled={busy}><option value="">اختر متجرًا منشورًا</option>{stores.map((store) => <option key={store.id} value={store.id}>{store.name} · {store.serviceCityName}</option>)}</select></label> : null}
-      {scopeType === "STORE" && stores.length === 0 && !scopeLoadError ? <p className="muted">لا توجد متاجر منشورة لاختيارها حاليًا.</p> : null}
+      {scopeType === "STORE" ? <>
+        <label className="field-label" htmlFor="field-commission-store-city">مدينة الخدمة<select id="field-commission-store-city" value={storeCityId} onChange={(event) => { setStoreCityId(event.target.value); setStoreCursor(""); setStores([]); setStoreNextCursor(""); chooseScopeId(""); }} disabled={busy}><option value="">اختر مدينة الخدمة</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
+        <label className="field-label" htmlFor="field-commission-store-search">بحث المتاجر<input id="field-commission-store-search" type="search" minLength={2} maxLength={256} value={storeSearch} onChange={(event) => { setStoreSearch(Array.from(event.target.value).slice(0, 128).join("")); setStoreCursor(""); setStores([]); setStoreNextCursor(""); chooseScopeId(""); }} disabled={busy} /></label>
+        <label className="field-label" htmlFor="field-commission-store">المتجر<select id="field-commission-store" value={scopeId} onChange={(event) => chooseScopeId(event.target.value)} disabled={busy || !storeCityId || storesLoading || stores.length === 0}><option value="">{storesLoading ? "جارٍ البحث…" : "اختر متجرًا منشورًا"}</option>{stores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</select></label>
+        {cities.length === 0 ? <p className="muted">لا توجد مدينة خدمة نشطة لاختيار متاجرها.</p> : !storeCityId ? <p className="muted">اختر مدينة الخدمة أولًا لتضييق البحث إلى متاجرها.</p> : Array.from(storeSearch.trim()).length < 2 ? <p className="muted">اكتب حرفين على الأقل للبحث في المتاجر المنشورة.</p> : stores.length === 0 && !storesLoading && !storeSearchError ? <p className="muted">لا توجد متاجر منشورة مطابقة.</p> : null}
+        {storeNextCursor ? <button className="button button-quiet" type="button" onClick={() => setStoreCursor(storeNextCursor)} disabled={storesLoading || busy}>تحميل متاجر أخرى</button> : null}
+      </> : null}
       <label className="field-label" htmlFor="field-commission-reward">المكافأة (ريال)<input id="field-commission-reward" type="number" min="50" step="50" value={rewardMinor} onChange={(event) => setRewardMinor(event.target.value)} disabled={busy || !canEdit || (readState !== "ready" && readState !== "missing")} /></label>
       <p className="muted">وحدة التقريب: 50 ريال — لا يمكن تغييرها من الواجهة.</p>
     </div>
-    {scopeLoadError ? <p className="validation-error" role="alert">{scopeLoadError}</p> : null}
+    {scopeOptionsError ? <p className="validation-error" role="alert">{scopeOptionsError} <button className="button button-quiet" type="button" onClick={() => setScopeLoadAttempt((attempt) => attempt + 1)} disabled={busy}>إعادة تحميل خيارات النطاق</button></p> : null}
+    {scopeType === "STORE" && storeSearchError ? <p className="validation-error" role="alert">{storeSearchError} <button className="button button-quiet" type="button" onClick={() => setStoreSearchAttempt((attempt) => attempt + 1)} disabled={busy || storesLoading || !storeCityId || Array.from(storeSearch.trim()).length < 2}>إعادة البحث</button></p> : null}
     {readState === "loading" ? <p role="status">جارٍ قراءة السياسة من WLT…</p> : null}
     {readState === "unselected" && scopeType ? <p className="muted">اختر نطاقًا من قوائم DSH المعتمدة لقراءة سياسته.</p> : null}
     {readState === "missing" ? <p className="managed-status managed-status-warning" role="status">لا توجد سياسة نشطة لهذا النطاق. أدخل المكافأة صراحةً لإنشاء أول إصدار.</p> : null}

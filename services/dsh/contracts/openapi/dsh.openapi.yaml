@@ -195,9 +195,6 @@ paths:
   /dsh/operator/promotions:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1promotions"
 
-  /dsh/operator/marketing/store-targets:
-    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1marketing~1store-targets"
-
   /dsh/operator/promotions/{promotionId}/publication:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1promotions~1{promotionId}~1publication"
 
@@ -6125,35 +6122,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PromotionView"
-        limit:
-          type: integer
-          minimum: 1
-          maximum: 100
-        nextCursor:
-          type: string
-          maxLength: 2048
-
-    MarketingStoreTarget:
-      type: object
-      required: [id, name, serviceCityId]
-      additionalProperties: false
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        serviceCityId:
-          type: string
-
-    MarketingStoreTargetRegistryResponse:
-      type: object
-      required: [stores, limit]
-      additionalProperties: false
-      properties:
-        stores:
-          type: array
-          items:
-            $ref: "#/components/schemas/MarketingStoreTarget"
         limit:
           type: integer
           minimum: 1

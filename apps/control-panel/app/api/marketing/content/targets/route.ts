@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { listCatalogCategories, listCatalogProducts, listCatalogVerticals, listMarketingPromotions, listMarketingStoreTargets, dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../src/server/dsh/dsh-bff";
+import { listCatalogCategories, listCatalogProducts, listCatalogVerticals, listMarketingPromotions, listOperatorStores, dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../../src/server/identity/operator-workspace-access";
 
@@ -27,10 +27,11 @@ export async function GET(request: Request) {
   const targetType = params.get("targetType") as TargetType | null;
   const serviceCityId = params.get("serviceCityId")?.trim() ?? "";
   const query = params.get("query")?.trim() ?? "";
-  const cursor = params.get("cursor")?.trim() ?? "";
-  if (cursor.length > 2048) return errorResponse("INVALID_INPUT", "target cursor is invalid", 400);
+  const rawCursor = params.get("cursor") ?? "";
+  const cursor = rawCursor.trim();
+  if (rawCursor.length > 1024) return errorResponse("INVALID_INPUT", "target cursor is invalid", 400);
   if (!targetType || !["STORE", "PRODUCT", "CATEGORY", "PROMOTION", "INFO"].includes(targetType)) return errorResponse("INVALID_INPUT", "a valid targetType is required", 400);
-  if (query.length > 128) return errorResponse("INVALID_INPUT", "target search is too long", 400);
+  if (Array.from(query).length > 128 || serviceCityId.length > 128) return errorResponse("INVALID_INPUT", "target search or service city is too long", 400);
 
   const context = { operatorActorId: identity.subject };
   try {
@@ -38,9 +39,9 @@ export async function GET(request: Request) {
     let nextCursor = "";
     if (targetType === "STORE") {
       if (!serviceCityId) return errorResponse("INVALID_INPUT", "choose a service city to select a Store", 400);
-      if (query.length < 2) return NextResponse.json({ options, nextCursor }, { headers: { "Cache-Control": "no-store" } });
-      const result = await listMarketingStoreTargets(serviceCityId, query, cursor, 25, context);
-      options = result.stores.map((store) => targetOption(store.id, store.name, store.serviceCityId));
+      if (Array.from(query).length < 2) return NextResponse.json({ options, nextCursor }, { headers: { "Cache-Control": "no-store" } });
+      const result = await listOperatorStores("published", query, serviceCityId, "name_prefix", "name_asc", 25, cursor, context);
+      options = result.stores.map((store) => targetOption(store.id, store.name));
       nextCursor = result.nextCursor ?? "";
     } else if (targetType === "PRODUCT") {
       if (query.length < 2) return NextResponse.json({ options, nextCursor }, { headers: { "Cache-Control": "no-store" } });
