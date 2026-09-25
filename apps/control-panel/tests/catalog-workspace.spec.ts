@@ -19,8 +19,8 @@ test("catalog center opens its product registry and exposes resource tabs", asyn
   await stubAuthenticatedSession(page);
   await page.goto("/catalog");
   await expect(page).toHaveURL(/\/catalog\/products$/);
-  await expect(page.getByRole("heading", { name: "المنتجات", exact: true })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "الكتالوج", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "المنتجات", exact: true, level: 1 })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "الكتالوج", exact: true })).toHaveAttribute("aria-current", "location");
   const sideNavigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
   const catalogTabs = page.getByRole("navigation", { name: "مسارات الكتالوج" });
   for (const [label, href] of [["المنتجات", "/catalog/products"], ["الفئات", "/catalog/categories"], ["المقترحات", "/catalog/proposals"], ["الاستيراد", "/catalog/import"]] as const) {

@@ -98,15 +98,19 @@ function isControlPanelIdentity(identity: ActorIdentity): boolean {
   return isControlPanelRole(identity.role) && identity.surface === "control-panel" && identityAuthorizesSurface(identity, identity.role, "control-panel");
 }
 
-async function clearOperatorCookies(preserveDevice = false): Promise<void> {
+async function clearOperatorCookies(preservedClientInstanceId?: string): Promise<void> {
   const store = await cookies();
-  const keys = preserveDevice ? [accessCookie, refreshCookie] : [accessCookie, refreshCookie, deviceCookie];
-  for (const key of keys) store.set(key, "", { ...cookieOptions(), maxAge: 0 });
+  for (const key of [accessCookie, refreshCookie]) store.set(key, "", { ...cookieOptions(), maxAge: 0 });
+  if (preservedClientInstanceId && preservedClientInstanceId.trim().length >= 8) {
+    store.set(deviceCookie, preservedClientInstanceId, { ...cookieOptions(), maxAge: 365 * 24 * 60 * 60 });
+  } else {
+    store.set(deviceCookie, "", { ...cookieOptions(), maxAge: 0 });
+  }
 }
 
-async function clearOperatorCookiesBestEffort(preserveDevice = false): Promise<void> {
+async function clearOperatorCookiesBestEffort(preservedClientInstanceId?: string): Promise<void> {
   try {
-    await clearOperatorCookies(preserveDevice);
+    await clearOperatorCookies(preservedClientInstanceId);
   } catch {
     // A confirmed terminal session remains fail-closed even if cookie cleanup is unavailable.
   }
@@ -251,7 +255,7 @@ export async function readOperatorSession(): Promise<ActorIdentity | null> {
   const refreshToken = store.get(refreshCookie)?.value;
   const clientInstanceId = store.get(deviceCookie)?.value;
   if (developmentSessionEnabled() && clientInstanceId && developmentOperatorLogoutSuppressions.has(clientInstanceId)) {
-    await clearOperatorCookiesBestEffort(true);
+    await clearOperatorCookiesBestEffort(clientInstanceId);
     return null;
   }
   if (!accessToken && !refreshToken) return createDevelopmentOperatorSession();
@@ -352,9 +356,9 @@ export async function logoutOperator(): Promise<void> {
       }
     }
   } finally {
-    const preserveDevice = Boolean(clientInstanceId) &&
+    const preserveDevice = Boolean(clientInstanceId?.trim()) &&
       (!developmentSessionEnabled() || suppressDevelopmentOperatorSession(clientInstanceId));
-    await clearOperatorCookiesBestEffort(preserveDevice);
+    await clearOperatorCookiesBestEffort(preserveDevice ? clientInstanceId : undefined);
   }
   if (remoteError) throw remoteError;
 }

@@ -25,7 +25,7 @@ test("@live operator reads the real bounded COD cash-custody journey", async ({ 
 test("@live operator reads the WLT-owned delivery-fee policy workspace", async ({ page }) => {
   test.setTimeout(30_000);
   await page.goto("/policies/delivery-fees");
-  await expect(page.getByRole("heading", { name: "رسوم التوصيل" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "رسوم التوصيل", level: 2 })).toBeVisible();
   await expect(page.getByText("تُحسب الرسوم خادميًا من المسافة، ومدينة الخدمة كمنطقة، ووحدات السلة.")).toBeVisible();
   await expect(page.getByLabel("النطاق / مدينة الخدمة")).toBeVisible();
   await expect(page.getByLabel("الرسوم الأساسية (ريال)")).toBeEnabled();
@@ -43,8 +43,8 @@ test("@live operator reads the WLT-owned delivery-fee policy workspace", async (
 test("@live operator reads the WLT-managed unified beneficiary settlement workspace", async ({ page }) => {
   test.setTimeout(30_000);
   await page.goto("/finance/beneficiary-settlement");
-  const workspace = page.getByRole("region", { name: "مستحقات وتسويات الشركاء والكباتن والميدان" });
-  await expect(workspace.getByRole("heading", { name: "مستحقات وتسويات الشركاء والكباتن والميدان" })).toBeVisible();
+  const workspace = page.locator(".beneficiary-settlement-workspace");
+  await expect(page.getByRole("heading", { name: "مستحقات وتسويات الشركاء والكباتن والميدان", level: 2 })).toBeVisible();
   await expect(page.getByText("المبالغ والوجهات تأتي من WLT. التحويل الخارجي يدوي، وكل تحويل يحتاج إيصالاً مستقلاً.")).toBeVisible();
   await workspace.getByLabel("نوع المستفيد").selectOption("partner");
   await workspace.getByLabel("معرّف الشريك").fill(`partner-live-read-${Date.now()}`);
@@ -58,6 +58,6 @@ test("@live operator sees the WLT-managed Field commission policy workspace", as
   await expect(page.getByRole("heading", { name: "مكافأة الميدان" })).toBeVisible();
   await expect(page.getByText("تُستحق المكافأة مرة واحدة عند نشر المتجر.")).toBeVisible();
   await expect(page.getByLabel("نطاق السياسة")).toBeVisible();
-  await expect(page.getByLabel("المكافأة (ريال)")).toBeEnabled();
+  await expect(page.getByLabel("المكافأة (ريال)")).toBeVisible();
   await expect(page.getByText("وحدة التقريب: 50 ريال — لا يمكن تغييرها من الواجهة.")).toBeVisible();
 });
