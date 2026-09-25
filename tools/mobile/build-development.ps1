@@ -72,16 +72,8 @@ function Get-BuildSourceSha($Build) {
 
 $StatusBefore = @(& git -C $RepoRoot status --porcelain --untracked-files=all)
 if ($StatusBefore.Count -gt 0) { Fail "Candidate must be clean before remote build." }
-$Branch = (& git -C $RepoRoot symbolic-ref --quiet --short HEAD 2> $null).Trim()
-if ([string]::IsNullOrWhiteSpace($Branch)) { Fail "Remote build requires a non-detached branch." }
-$UpstreamRef = (& git -C $RepoRoot rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2> $null).Trim()
-if ([string]::IsNullOrWhiteSpace($UpstreamRef) -or $UpstreamRef -notmatch '^[^/]+/.+$') { Fail "Remote build requires an upstream branch for $Branch." }
-$RemoteName = ($UpstreamRef -split "/", 2)[0]
-& git -C $RepoRoot fetch $RemoteName --prune *> $null
-if ($LASTEXITCODE -ne 0) { Fail "Unable to fetch live upstream $UpstreamRef." }
 $LocalSha = (& git -C $RepoRoot rev-parse HEAD).Trim()
-$RemoteSha = (& git -C $RepoRoot rev-parse $UpstreamRef).Trim()
-if ($LocalSha -ne $RemoteSha) { Fail "Local candidate is not the live upstream SHA for $UpstreamRef." }
+if ($LASTEXITCODE -ne 0 -or $LocalSha -notmatch '^[0-9a-f]{40}$') { Fail "Remote build requires a committed local source revision." }
 
 foreach ($Required in @($CredentialVaultPath, $KeystoreVaultPath)) {
     if (-not (Test-Path -LiteralPath $Required -PathType Leaf)) { Fail "Missing target build input: $Required" }
@@ -135,7 +127,7 @@ try {
         $BuildId = [string]$Submitted.id
         if ([string]::IsNullOrWhiteSpace($BuildId)) { $BuildId = [string]$Submitted.build.id }
         if ([string]::IsNullOrWhiteSpace($BuildId)) { Fail "EAS submission returned no build ID." }
-        Write-Host "BUILD_DECISION=SUBMITTED app=$App currentCandidateSha=$LocalSha nativeFingerprint=$Hash submittedBuildId=$BuildId compatibilityReason=new-build"
+        Write-Host "BUILD_DECISION=SUBMITTED app=$App localSourceSha=$LocalSha nativeFingerprint=$Hash submittedBuildId=$BuildId sourceMode=clean-local-commit compatibilityReason=new-build"
     }
 }
 finally {
