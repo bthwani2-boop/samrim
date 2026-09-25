@@ -1,6 +1,7 @@
 package transporthttp
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -61,6 +62,7 @@ func (s *CatalogServer) createProductProposal(w http.ResponseWriter, r *http.Req
 		AttributeValues: catalogAttributeInputs(input.AttributeValues), VariantAttributeValues: catalogAttributeInputs(input.VariantAttributeValues),
 	}, idempotency, correlation)
 	if err != nil {
+		log.Printf("DSH_CATALOG_PROPOSAL_CREATE_FAILURE proposal_id=%q error=%q", request.ID, err.Error())
 		writeCatalogError(w, err)
 		return
 	}
