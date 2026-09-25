@@ -1,7 +1,7 @@
 import type { CatalogAttributeDefinitionListResponse, CatalogAttributeDefinitionResponse, CatalogAttributeEnumOptionListResponse, CatalogAttributeEnumOptionResponse, CatalogAttributeRuleListResponse, CatalogProduct, CatalogProductRegistryResponse, CreateCatalogAttributeDefinitionRequest, CreateCatalogAttributeEnumOptionRequest, ManagedCaptainAvailabilityRequest, PartnerStoreListResponse, UpsertCatalogAttributeRuleRequest } from "@bthwani/dsh";
 import type { ActorLegalName, SubmitActorLegalNameRequest, VerifyActorLegalNameRequest } from "@bthwani/dsh";
 import type { CustomerWithdrawalIntakeListResponse, CustomerWithdrawalIntakeResponse, CreateCustomerWithdrawalIntakeRequest, CustomerWithdrawalDecisionRequest } from "@bthwani/dsh";
-import { type BeneficiaryPayoutState, type BeneficiaryPayoutStateResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CashCustodyRegistryResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateDeliveryFeePolicyRequest, type CreateDiscoveryContentRequest, type CreateJoiningCaseRequest, type CreatePartnerFinancialTermsPolicyRequest, type CreatePromotionRequest, type CreateServiceCityRequest, type DeliveryFeePolicyResponse, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentListResponse, type DiscoveryContentResponse, dshOperationPaths, type FieldAdmissionRequest, type FieldAdmissionResponse, type FieldCommissionPolicy, type FieldFinancialSummaryResponse, type FieldReenrollmentRequest, type FinanceEvidenceDocument, type JoiningCaseListResponse, type JoiningCaseResponse, type ManagedRoleMutationRequest, type MarketingPublicationRequest, type NotificationListResponse, type NotificationReadResponse, type OfficialWalletDestination, type OperatorOperationResponse, type OperatorOperationsResponse, type OperatorStoreListResponse, type PartnerCommissionRemittanceRequest, type PartnerCommissionReceivableRegistryResponse, type PartnerCommissionRemittanceResponse, type PartnerFinancialSummaryResponse, type PartnerFinancialTermsPolicyResponse, type PartnerStoreCommissionPoliciesResponse, type PartnerStoreCommissionPolicyUpdateRequest, type PartnerStoreCommissionPolicyUpdateResponse, type PayoutRequest, type PromotionListResponse, type PromotionResponse, type PublicationAction, type PublishedStoreListResponse, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type ReviewJoiningCaseRequest, type ServiceCityListResponse, type ServiceCityResponse, type SetStoreFulfillmentModesRequest, type SettlementBatch, type SettlementBatchExport, type StoreFulfillmentModesResponse, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogCategoryRequest, type UpdateCatalogProductRequest, type UpdateCommerceVerticalRequest, type UpdateServiceCityRequest } from "@bthwani/dsh";
+import { type BeneficiaryPayoutState, type BeneficiaryPayoutStateResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CashCustodyRegistryResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateDeliveryFeePolicyRequest, type CreateDiscoveryContentRequest, type CreateJoiningCaseRequest, type CreatePartnerFinancialTermsPolicyRequest, type CreatePromotionRequest, type CreateServiceCityRequest, type DeliveryFeePolicyResponse, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentResponse, dshOperationPaths, type FieldAdmissionRequest, type FieldAdmissionResponse, type FieldCommissionPolicy, type FieldFinancialSummaryResponse, type FieldReenrollmentRequest, type FinanceEvidenceDocument, type JoiningCaseListResponse, type JoiningCaseResponse, type ManagedRoleMutationRequest, type MarketingPublicationRequest, type MarketingStoreTargetRegistryResponse, type NotificationListResponse, type NotificationReadResponse, type OfficialWalletDestination, type OperatorDiscoveryContentRegistryResponse, type OperatorOperationResponse, type OperatorOperationsResponse, type OperatorPromotionRegistryResponse, type OperatorStoreListResponse, type PartnerCommissionRemittanceRequest, type PartnerCommissionReceivableRegistryResponse, type PartnerCommissionRemittanceResponse, type PartnerFinancialSummaryResponse, type PartnerFinancialTermsPolicyResponse, type PartnerStoreCommissionPoliciesResponse, type PartnerStoreCommissionPolicyUpdateRequest, type PartnerStoreCommissionPolicyUpdateResponse, type PayoutRequest, type PromotionResponse, type PublicationAction, type PublishedStoreListResponse, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type ReviewJoiningCaseRequest, type ServiceCityListResponse, type ServiceCityResponse, type SetStoreFulfillmentModesRequest, type SettlementBatch, type SettlementBatchExport, type StoreFulfillmentModesResponse, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogCategoryRequest, type UpdateCatalogProductRequest, type UpdateCommerceVerticalRequest, type UpdateServiceCityRequest } from "@bthwani/dsh";
 import { validateServiceUrl } from "@bthwani/identity";
 
 type DshClientError =
@@ -1100,9 +1100,17 @@ export async function recoverCaptainDelivery(assignmentId: string, context: DshV
   return requestDshJson<CaptainAssignmentResponse>(dshOperationPaths.recoverCaptainDelivery.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim(), "X-Expected-Version": String(context.expectedVersion) });
 }
 
-export async function listMarketingPromotions(context: DshOperatorReadContext): Promise<PromotionListResponse> {
+export type OperatorPromotionRegistryQuery = Readonly<{ search: string; state: string; sort: "starts_desc" | "starts_asc"; cursor: string; limit: number }>;
+export type OperatorDiscoveryContentRegistryQuery = Readonly<{ search: string; state: string; kind: string; sort: "priority" | "created_desc"; cursor: string; limit: number }>;
+
+export async function listMarketingPromotions(query: OperatorPromotionRegistryQuery, context: DshOperatorReadContext): Promise<OperatorPromotionRegistryResponse> {
   if (!context.operatorActorId.trim()) throw new Error("DSH_MARKETING_READ_INPUT_INVALID");
-  return (await requestDshJson<PromotionListResponse>(dshOperationPaths.listOperatorPromotions.method, dshOperationPaths.listOperatorPromotions.path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+  if (query.search.trim().length > 128 || query.cursor.length > 2048 || !["starts_desc", "starts_asc"].includes(query.sort) || !Number.isInteger(query.limit) || query.limit < 1 || query.limit > 100) throw new Error("DSH_MARKETING_PROMOTION_REGISTRY_INPUT_INVALID");
+  const params = new URLSearchParams({ search: query.search.trim(), sort: query.sort, limit: String(query.limit) });
+  if (query.state) params.set("state", query.state);
+  if (query.cursor) params.set("cursor", query.cursor);
+  const path = `${dshOperationPaths.listOperatorPromotions.path}?${params.toString()}`;
+  return (await requestDshJson<OperatorPromotionRegistryResponse>(dshOperationPaths.listOperatorPromotions.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
 export async function listPublishedStoresForMarketing(serviceCityId: string): Promise<PublishedStoreListResponse> {
@@ -1110,6 +1118,16 @@ export async function listPublishedStoresForMarketing(serviceCityId: string): Pr
   if (!normalizedCityId) throw new Error("DSH_MARKETING_STORE_TARGET_CITY_REQUIRED");
   const path = `${dshOperationPaths.listPublishedStores.path}?${new URLSearchParams({ serviceCityId: normalizedCityId }).toString()}`;
   return (await requestDshJson<PublishedStoreListResponse>(dshOperationPaths.listPublishedStores.method, path, undefined, {})).payload;
+}
+
+export async function listMarketingStoreTargets(serviceCityId: string, search: string, cursor: string, limit: number, context: DshOperatorReadContext): Promise<MarketingStoreTargetRegistryResponse> {
+  const city = serviceCityId.trim();
+  const normalizedSearch = search.trim();
+  if (!context.operatorActorId.trim() || !city || city.length > 128 || normalizedSearch.length < 2 || normalizedSearch.length > 128 || cursor.length > 2048 || !Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("DSH_MARKETING_STORE_TARGET_INPUT_INVALID");
+  const query = new URLSearchParams({ serviceCityId: city, search: normalizedSearch, limit: String(limit) });
+  if (cursor) query.set("cursor", cursor);
+  const path = `${dshOperationPaths.listOperatorMarketingStoreTargets.path}?${query.toString()}`;
+  return (await requestDshJson<MarketingStoreTargetRegistryResponse>(dshOperationPaths.listOperatorMarketingStoreTargets.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
 export async function createMarketingPromotion(input: CreatePromotionRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: PromotionResponse }>> {
@@ -1127,9 +1145,15 @@ export async function setMarketingPromotionPublication(promotionId: string, inpu
   return requestDshJson<PromotionResponse>(dshOperationPaths.setOperatorPromotionPublication.method, path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
-export async function listMarketingContent(context: DshOperatorReadContext): Promise<DiscoveryContentListResponse> {
+export async function listMarketingContent(query: OperatorDiscoveryContentRegistryQuery, context: DshOperatorReadContext): Promise<OperatorDiscoveryContentRegistryResponse> {
   if (!context.operatorActorId.trim()) throw new Error("DSH_MARKETING_READ_INPUT_INVALID");
-  return (await requestDshJson<DiscoveryContentListResponse>(dshOperationPaths.listOperatorDiscoveryContent.method, dshOperationPaths.listOperatorDiscoveryContent.path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+  if (query.search.trim().length > 128 || query.cursor.length > 2048 || !["priority", "created_desc"].includes(query.sort) || !Number.isInteger(query.limit) || query.limit < 1 || query.limit > 100) throw new Error("DSH_MARKETING_CONTENT_REGISTRY_INPUT_INVALID");
+  const params = new URLSearchParams({ search: query.search.trim(), sort: query.sort, limit: String(query.limit) });
+  if (query.state) params.set("state", query.state);
+  if (query.kind) params.set("kind", query.kind);
+  if (query.cursor) params.set("cursor", query.cursor);
+  const path = `${dshOperationPaths.listOperatorDiscoveryContent.path}?${params.toString()}`;
+  return (await requestDshJson<OperatorDiscoveryContentRegistryResponse>(dshOperationPaths.listOperatorDiscoveryContent.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
 export async function createMarketingContent(input: CreateDiscoveryContentRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: DiscoveryContentResponse }>> {
@@ -1146,8 +1170,8 @@ export async function createMarketingContentWithMedia(formData: FormData, contex
 }
 
 export async function listMarketingAnalytics(contentId: string, context: DshOperatorReadContext): Promise<DiscoveryContentAnalyticsListResponse> {
-  if (!context.operatorActorId.trim()) throw new Error("DSH_MARKETING_ANALYTICS_READ_INPUT_INVALID");
-  const query = contentId.trim() ? `?contentId=${encodeURIComponent(contentId.trim())}` : "";
+  if (!context.operatorActorId.trim() || !contentId.trim() || contentId.trim().length > 128) throw new Error("DSH_MARKETING_ANALYTICS_READ_INPUT_INVALID");
+  const query = `?contentId=${encodeURIComponent(contentId.trim())}`;
   return (await requestDshJson<DiscoveryContentAnalyticsListResponse>(dshOperationPaths.listOperatorDiscoveryContentAnalytics.method, `${dshOperationPaths.listOperatorDiscoveryContentAnalytics.path}${query}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 

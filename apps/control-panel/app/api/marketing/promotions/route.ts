@@ -10,14 +10,26 @@ function errorResponse(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status, headers: { "Cache-Control": "no-store" } });
 }
 
-export async function GET() {
+const states = ["DRAFT", "PUBLISHED", "PAUSED"] as const;
+const sorts = ["starts_desc", "starts_asc"] as const;
+
+export async function GET(request: Request) {
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return errorResponse("FORBIDDEN", "control operator access is required", 403);
   const permissionDenied = operatorWorkspacePermissionDenied(identity, "marketing");
   if (permissionDenied) return permissionDenied;
+  const query = new URL(request.url).searchParams;
+  const search = query.get("search")?.trim() ?? "";
+  const state = query.get("state") ?? "";
+  const sort = query.get("sort") ?? "starts_desc";
+  const cursor = query.get("cursor") ?? "";
+  const rawLimit = query.get("limit") ?? "25";
+  const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;
+  if (search.length > 128 || (state && !states.includes(state as typeof states[number])) || !sorts.includes(sort as typeof sorts[number]) || cursor.length > 2048 || !Number.isInteger(limit) || limit < 1 || limit > 100) return errorResponse("INVALID_INPUT", "invalid promotion registry filters", 400);
   try {
-    return NextResponse.json(await listMarketingPromotions({ operatorActorId: identity.subject }), { headers: { "Cache-Control": "no-store" } });
+    const result = await listMarketingPromotions({ search, state, sort: sort as typeof sorts[number], cursor, limit }, { operatorActorId: identity.subject });
+    return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (!isDshClientError(error)) return errorResponse("INTERNAL_ERROR", "promotion lookup failed", 500);
     const payload = dshErrorPayload(error);

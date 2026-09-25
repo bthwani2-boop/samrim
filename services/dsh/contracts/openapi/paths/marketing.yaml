@@ -67,11 +67,32 @@ paths:
       operationId: listOperatorPromotions
       summary: Read the operator-owned promotion registry
       security: [{ serviceBearer: [] }]
-      parameters: [{ $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - name: search
+          in: query
+          required: false
+          schema: { type: string, maxLength: 128 }
+        - name: state
+          in: query
+          required: false
+          schema: { type: string, enum: [DRAFT, PUBLISHED, PAUSED] }
+        - name: sort
+          in: query
+          required: false
+          schema: { type: string, enum: [starts_desc, starts_asc], default: starts_desc }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 2048 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
       responses:
         "200":
           description: Operator promotion registry.
-          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PromotionListResponse" } } }
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/OperatorPromotionRegistryResponse" } } }
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
@@ -93,6 +114,38 @@ paths:
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
+  /dsh/operator/marketing/store-targets:
+    get:
+      operationId: listOperatorMarketingStoreTargets
+      summary: Search published stores in one service city for marketing content targets
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - name: serviceCityId
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: search
+          in: query
+          required: true
+          schema: { type: string, minLength: 2, maxLength: 128 }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 2048 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Bounded published-store search for marketing content target selection.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/MarketingStoreTargetRegistryResponse" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
   /dsh/operator/promotions/{promotionId}/publication:
     post:
@@ -121,11 +174,36 @@ paths:
       operationId: listOperatorDiscoveryContent
       summary: Read the operator-owned discovery content registry
       security: [{ serviceBearer: [] }]
-      parameters: [{ $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - name: search
+          in: query
+          required: false
+          schema: { type: string, maxLength: 128 }
+        - name: state
+          in: query
+          required: false
+          schema: { type: string, enum: [DRAFT, PUBLISHED, PAUSED] }
+        - name: kind
+          in: query
+          required: false
+          schema: { type: string, enum: [BANNER, CAROUSEL, SHORT_FORM] }
+        - name: sort
+          in: query
+          required: false
+          schema: { type: string, enum: [priority, created_desc], default: priority }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 2048 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
       responses:
         "200":
           description: Operator discovery content registry.
-          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/DiscoveryContentListResponse" } } }
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/OperatorDiscoveryContentRegistryResponse" } } }
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
@@ -178,8 +256,8 @@ paths:
         - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
         - name: contentId
           in: query
-          required: false
-          schema: { type: string, maxLength: 128 }
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
       responses:
         "200":
           description: Operator-owned analytics readback.

@@ -74,13 +74,10 @@ func RecordDiscoveryContentEvent(ctx context.Context, db *sql.DB, input Discover
 
 func ListDiscoveryContentAnalytics(ctx context.Context, db *sql.DB, contentID string) ([]DiscoveryContentAnalyticsRecord, error) {
 	contentID = strings.TrimSpace(contentID)
-	args := []any{}
-	where := "TRUE"
-	if contentID != "" {
-		args = append(args, contentID)
-		where = "content_id=$1"
+	if db == nil || contentID == "" || len(contentID) > 128 {
+		return nil, ErrDiscoveryContentInvalid
 	}
-	rows, err := db.QueryContext(ctx, "SELECT content_id,event_type,COUNT(*) FROM dsh.discovery_content_events WHERE "+where+" GROUP BY content_id,event_type ORDER BY content_id,event_type", args...)
+	rows, err := db.QueryContext(ctx, "SELECT content_id,event_type,COUNT(*) FROM dsh.discovery_content_events WHERE content_id=$1 GROUP BY content_id,event_type ORDER BY event_type", contentID)
 	if err != nil {
 		return nil, err
 	}

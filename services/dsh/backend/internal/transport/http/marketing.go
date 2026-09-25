@@ -47,6 +47,7 @@ func (s *MarketingServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/public/discovery-content/events", s.recordPublicDiscoveryContentEvent)
 	mux.HandleFunc("GET /dsh/public/discovery-content/{contentId}/target", s.resolvePublicDiscoveryContentTarget)
 	mux.HandleFunc("GET /dsh/operator/promotions", s.listOperatorPromotions)
+	mux.HandleFunc("GET /dsh/operator/marketing/store-targets", s.listOperatorMarketingStoreTargets)
 	mux.HandleFunc("POST /dsh/operator/promotions", s.createOperatorPromotion)
 	mux.HandleFunc("POST /dsh/operator/promotions/{promotionId}/publication", s.setOperatorPromotionPublication)
 	mux.HandleFunc("GET /dsh/operator/discovery-content", s.listOperatorDiscoveryContent)
@@ -124,16 +125,31 @@ func (s *MarketingServer) listOperatorPromotions(w http.ResponseWriter, r *http.
 	if !s.operatorAuthorized(w, r) {
 		return
 	}
-	items, err := postgres.ListPromotions(r.Context(), s.db, false, "", "")
+	query, err := parseOperatorPromotionRegistryQuery(r)
 	if err != nil {
 		writeMarketingError(w, err)
 		return
 	}
-	values := make([]contract.PromotionView, 0, len(items))
-	for _, item := range items {
+	page, err := postgres.ListOperatorPromotionRegistry(r.Context(), s.db, query)
+	if err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	values := make([]contract.PromotionView, 0, len(page.Promotions))
+	for _, item := range page.Promotions {
 		values = append(values, toPromotionView(item))
 	}
-	writeJSON(w, http.StatusOK, contract.PromotionListResponse{Promotions: values})
+	response := contract.OperatorPromotionRegistryResponse{Promotions: values, Limit: query.Limit}
+	if page.HasMore && len(page.Promotions) > 0 {
+		cursor, cursorErr := encodeOperatorPromotionRegistryCursor(page.Promotions[len(page.Promotions)-1], query)
+		if cursorErr != nil {
+			writeMarketingError(w, cursorErr)
+			return
+		}
+		response.NextCursor = cursor
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *MarketingServer) createOperatorPromotion(w http.ResponseWriter, r *http.Request) {
@@ -193,23 +209,43 @@ func (s *MarketingServer) listOperatorDiscoveryContent(w http.ResponseWriter, r 
 	if !s.operatorAuthorized(w, r) {
 		return
 	}
-	items, err := postgres.ListDiscoveryContent(r.Context(), s.db, false, "")
+	query, err := parseOperatorDiscoveryContentRegistryQuery(r)
 	if err != nil {
 		writeMarketingError(w, err)
 		return
 	}
-	values := make([]contract.DiscoveryContentView, 0, len(items))
-	for _, item := range items {
+	page, err := postgres.ListOperatorDiscoveryContentRegistry(r.Context(), s.db, query)
+	if err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	values := make([]contract.DiscoveryContentView, 0, len(page.Items))
+	for _, item := range page.Items {
 		values = append(values, toDiscoveryContentView(item))
 	}
-	writeJSON(w, http.StatusOK, contract.DiscoveryContentListResponse{Items: values})
+	response := contract.OperatorDiscoveryContentRegistryResponse{Items: values, Limit: query.Limit}
+	if page.HasMore && len(page.Items) > 0 {
+		cursor, cursorErr := encodeOperatorDiscoveryContentRegistryCursor(page.Items[len(page.Items)-1], query)
+		if cursorErr != nil {
+			writeMarketingError(w, cursorErr)
+			return
+		}
+		response.NextCursor = cursor
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *MarketingServer) listOperatorDiscoveryContentAnalytics(w http.ResponseWriter, r *http.Request) {
 	if !s.operatorAuthorized(w, r) {
 		return
 	}
-	items, err := postgres.ListDiscoveryContentAnalytics(r.Context(), s.db, strings.TrimSpace(r.URL.Query().Get("contentId")))
+	contentID := strings.TrimSpace(r.URL.Query().Get("contentId"))
+	if contentID == "" || len(contentID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "contentId is required")
+		return
+	}
+	items, err := postgres.ListDiscoveryContentAnalytics(r.Context(), s.db, contentID)
 	if err != nil {
 		writeMarketingError(w, err)
 		return

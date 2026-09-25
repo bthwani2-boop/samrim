@@ -3,7 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"errors"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -51,24 +51,39 @@ func ListOperatorPromotionRegistry(ctx context.Context, db *sql.DB, query Operat
 	}
 
 	orderBy := "starts_at DESC, id DESC"
-	keyset := "($3::timestamptz IS NULL OR starts_at < $3 OR (starts_at = $3 AND id < $4))"
+	operator := "<"
 	if query.Sort == "starts_asc" {
 		orderBy = "starts_at ASC, id ASC"
-		keyset = "($3::timestamptz IS NULL OR starts_at > $3 OR (starts_at = $3 AND id > $4))"
+		operator = ">"
 	}
-	var afterStartsAt any
+	args := make([]any, 0, 5)
+	filters := make([]string, 0, 3)
+	if query.State != "" {
+		args = append(args, query.State)
+		filters = append(filters, "state=$"+strconv.Itoa(len(args)))
+	}
+	if query.Search != "" {
+		args = append(args, strings.ToLower(escapeRegistryPrefix(query.Search))+"%")
+		placeholder := "$" + strconv.Itoa(len(args))
+		filters = append(filters, "(lower(id) LIKE "+placeholder+" ESCAPE E'\\' OR lower(code) LIKE "+placeholder+" ESCAPE E'\\' OR lower(name_ar) LIKE "+placeholder+" ESCAPE E'\\')")
+	}
 	if query.AfterStartsAt != nil {
-		afterStartsAt = *query.AfterStartsAt
+		args = append(args, *query.AfterStartsAt, query.AfterID)
+		timeParameter := "$" + strconv.Itoa(len(args)-1)
+		idParameter := "$" + strconv.Itoa(len(args))
+		filters = append(filters, "(starts_at "+operator+" "+timeParameter+" OR (starts_at="+timeParameter+" AND id "+operator+" "+idParameter+"))")
 	}
+	if len(filters) == 0 {
+		filters = append(filters, "TRUE")
+	}
+	args = append(args, query.Limit+1)
 	rows, err := db.QueryContext(ctx, `
 		SELECT `+promotionSelect+`
 		FROM dsh.commerce_promotions
-		WHERE ($1='' OR state=$1)
-		  AND ($2='' OR code ILIKE '%' || $2 || '%' OR name_ar ILIKE '%' || $2 || '%')
-		  AND `+keyset+`
+		WHERE `+strings.Join(filters, " AND ")+`
 		ORDER BY `+orderBy+`
-		LIMIT $5
-	`, query.State, query.Search, afterStartsAt, query.AfterID, query.Limit+1)
+		LIMIT $`+strconv.Itoa(len(args))+`
+	`, args...)
 	if err != nil {
 		return OperatorPromotionRegistryPage{}, err
 	}
@@ -109,33 +124,47 @@ func ListOperatorDiscoveryContentRegistry(ctx context.Context, db *sql.DB, query
 	}
 
 	orderBy := "ordinal ASC, starts_at DESC, id DESC"
-	keyset := "($4::integer IS NULL OR ordinal > $4 OR (ordinal = $4 AND (starts_at < $5 OR (starts_at = $5 AND id < $7))))"
 	if query.Sort == "created_desc" {
 		orderBy = "created_at DESC, id DESC"
-		keyset = "($6::timestamptz IS NULL OR created_at < $6 OR (created_at = $6 AND id < $7))"
 	}
-	var afterOrdinal any
-	var afterStartsAt any
-	var afterCreatedAt any
-	if query.AfterOrdinal != nil {
-		afterOrdinal = *query.AfterOrdinal
+	args := make([]any, 0, 8)
+	filters := make([]string, 0, 5)
+	if query.State != "" {
+		args = append(args, query.State)
+		filters = append(filters, "state=$"+strconv.Itoa(len(args)))
 	}
-	if query.AfterStartsAt != nil {
-		afterStartsAt = *query.AfterStartsAt
+	if query.Kind != "" {
+		args = append(args, query.Kind)
+		filters = append(filters, "kind=$"+strconv.Itoa(len(args)))
 	}
-	if query.AfterCreatedAt != nil {
-		afterCreatedAt = *query.AfterCreatedAt
+	if query.Search != "" {
+		args = append(args, strings.ToLower(escapeRegistryPrefix(query.Search))+"%")
+		placeholder := "$" + strconv.Itoa(len(args))
+		filters = append(filters, "(lower(id) LIKE "+placeholder+" ESCAPE E'\\' OR lower(title_ar) LIKE "+placeholder+" ESCAPE E'\\')")
 	}
+	if query.Sort == "priority" && query.AfterOrdinal != nil {
+		args = append(args, *query.AfterOrdinal, *query.AfterStartsAt, query.AfterID)
+		ordinalParameter := "$" + strconv.Itoa(len(args)-2)
+		startsParameter := "$" + strconv.Itoa(len(args)-1)
+		idParameter := "$" + strconv.Itoa(len(args))
+		filters = append(filters, "(ordinal > "+ordinalParameter+" OR (ordinal="+ordinalParameter+" AND (starts_at < "+startsParameter+" OR (starts_at="+startsParameter+" AND id < "+idParameter+"))))")
+	} else if query.Sort == "created_desc" && query.AfterCreatedAt != nil {
+		args = append(args, *query.AfterCreatedAt, query.AfterID)
+		createdParameter := "$" + strconv.Itoa(len(args)-1)
+		idParameter := "$" + strconv.Itoa(len(args))
+		filters = append(filters, "(created_at < "+createdParameter+" OR (created_at="+createdParameter+" AND id < "+idParameter+"))")
+	}
+	if len(filters) == 0 {
+		filters = append(filters, "TRUE")
+	}
+	args = append(args, query.Limit+1)
 	rows, err := db.QueryContext(ctx, `
 		SELECT `+discoveryContentSelect+`
 		FROM dsh.discovery_content
-		WHERE ($1='' OR state=$1)
-		  AND ($2='' OR kind=$2)
-		  AND ($3='' OR title_ar ILIKE '%' || $3 || '%' OR body_ar ILIKE '%' || $3 || '%')
-		  AND `+keyset+`
+		WHERE `+strings.Join(filters, " AND ")+`
 		ORDER BY `+orderBy+`
-		LIMIT $8
-	`, query.State, query.Kind, query.Search, afterOrdinal, afterStartsAt, afterCreatedAt, query.AfterID, query.Limit+1)
+		LIMIT $`+strconv.Itoa(len(args))+`
+	`, args...)
 	if err != nil {
 		return OperatorDiscoveryContentRegistryPage{}, err
 	}
@@ -159,4 +188,6 @@ func ListOperatorDiscoveryContentRegistry(ctx context.Context, db *sql.DB, query
 	return OperatorDiscoveryContentRegistryPage{Items: items, HasMore: hasMore}, nil
 }
 
-var _ = errors.Is
+func escapeRegistryPrefix(value string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(value)
+}

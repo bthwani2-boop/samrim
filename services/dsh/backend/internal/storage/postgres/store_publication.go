@@ -81,6 +81,25 @@ type OperatorStorePage struct {
 	NextCursor string
 }
 
+type MarketingStoreTarget struct {
+	ID            string
+	Name          string
+	ServiceCityID string
+}
+
+type MarketingStoreTargetPage struct {
+	Stores  []MarketingStoreTarget
+	HasMore bool
+}
+
+type MarketingStoreTargetQuery struct {
+	ServiceCityID string
+	Search        string
+	AfterName     string
+	AfterID       string
+	Limit         int
+}
+
 type operatorStoreCursor struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 	ID        string    `json:"id"`
@@ -272,6 +291,48 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, sort s
 	}
 	if err := rows.Err(); err != nil {
 		return OperatorStorePage{}, err
+	}
+	return page, nil
+}
+
+func ListMarketingStoreTargets(ctx context.Context, db *sql.DB, query MarketingStoreTargetQuery) (MarketingStoreTargetPage, error) {
+	query.ServiceCityID = strings.TrimSpace(query.ServiceCityID)
+	query.Search = strings.TrimSpace(query.Search)
+	query.AfterName = strings.TrimSpace(query.AfterName)
+	query.AfterID = strings.TrimSpace(query.AfterID)
+	if db == nil || query.ServiceCityID == "" || len(query.ServiceCityID) > 128 || utf8.RuneCountInString(query.Search) > 128 || query.Limit < 1 || query.Limit > 100 || (query.AfterName == "") != (query.AfterID == "") || len(query.AfterID) > 128 || len(query.AfterName) > 256 {
+		return MarketingStoreTargetPage{}, ErrDiscoveryContentInvalid
+	}
+	args := []any{query.ServiceCityID}
+	filters := []string{"publication_state='published'", "service_city_id=$1"}
+	if query.Search != "" {
+		args = append(args, strings.ToLower(strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(query.Search))+"%")
+		filters = append(filters, "lower(name) LIKE $"+strconv.Itoa(len(args))+" ESCAPE E'\\\\'")
+	}
+	if query.AfterName != "" {
+		args = append(args, strings.ToLower(query.AfterName), query.AfterID)
+		filters = append(filters, "(lower(name),id)>($"+strconv.Itoa(len(args)-1)+",$"+strconv.Itoa(len(args))+")")
+	}
+	args = append(args, query.Limit+1)
+	rows, err := db.QueryContext(ctx, `SELECT id,name,service_city_id FROM dsh.stores WHERE `+strings.Join(filters, " AND ")+` ORDER BY lower(name),id LIMIT $`+strconv.Itoa(len(args)), args...)
+	if err != nil {
+		return MarketingStoreTargetPage{}, err
+	}
+	defer rows.Close()
+	page := MarketingStoreTargetPage{Stores: make([]MarketingStoreTarget, 0, query.Limit)}
+	for rows.Next() {
+		var item MarketingStoreTarget
+		if err := rows.Scan(&item.ID, &item.Name, &item.ServiceCityID); err != nil {
+			return MarketingStoreTargetPage{}, err
+		}
+		if len(page.Stores) == query.Limit {
+			page.HasMore = true
+			break
+		}
+		page.Stores = append(page.Stores, item)
+	}
+	if err := rows.Err(); err != nil {
+		return MarketingStoreTargetPage{}, err
 	}
 	return page, nil
 }

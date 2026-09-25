@@ -14,6 +14,7 @@ export async function GET(request: Request) {
   const permissionDenied = operatorWorkspacePermissionDenied(identity, "marketing");
   if (permissionDenied) return permissionDenied;
   const contentId = new URL(request.url).searchParams.get("contentId")?.trim() ?? "";
+  if (!contentId || contentId.length > 128) return errorResponse("INVALID_INPUT", "contentId is required", 400);
   try {
     return NextResponse.json(await listMarketingAnalytics(contentId, { operatorActorId: identity.subject }), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

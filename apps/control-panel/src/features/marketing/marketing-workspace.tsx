@@ -1,12 +1,13 @@
 "use client";
 
-import type { DiscoveryContentAnalytics, DiscoveryContentView, PromotionView, ServiceCity } from "@bthwani/dsh";
+import type { DiscoveryContentAnalytics, DiscoveryContentView, OperatorDiscoveryContentRegistryResponse, OperatorPromotionRegistryResponse, PromotionView, ServiceCity } from "@bthwani/dsh";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "../../session/session-provider";
 import { type MarketingResourceKey, workspaceMarketingResources } from "../../navigation/workspace-registry";
 import { WorkspaceResourceIndex } from "../workspace/workspace-resource-index";
+import styles from "./marketing-workspace.module.css";
 
 type ApiError = { error?: { message?: string } };
 
@@ -78,7 +79,15 @@ export function MarketingOverview() {
 }
 
 export function MarketingPromotionsWorkspace() {
-  const [promotions, setPromotions] = useState<ReadonlyArray<PromotionView>>([]);
+  const [registry, setRegistry] = useState<OperatorPromotionRegistryResponse | null>(null);
+  const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+  const [state, setState] = useState("");
+  const [sort, setSort] = useState<"starts_desc" | "starts_asc">("starts_desc");
+  const [cursor, setCursor] = useState("");
+  const [cursorStack, setCursorStack] = useState<ReadonlyArray<string>>([]);
+  const [loading, setLoading] = useState(false);
+  const [reloadVersion, setReloadVersion] = useState(0);
   const [startsAt, setStartsAt] = useState(futureDateInput);
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [busy, setBusy] = useState(false);
@@ -86,13 +95,22 @@ export function MarketingPromotionsWorkspace() {
   const [promotionForm, setPromotionForm] = useState({ code: "", nameAr: "", descriptionAr: "", kind: "PERCENTAGE" as "PERCENTAGE" | "FIXED", valueMinor: "10", maxDiscountMinor: "", redemptionLimit: "", storeId: "", serviceCityId: "" });
 
   const load = useCallback(async () => {
-    const response = await fetch("/api/marketing/promotions", { cache: "no-store" });
-    if (!response.ok) throw new Error("MARKETING_PROMOTIONS_READ_FAILED");
-    const body = await response.json() as { promotions?: ReadonlyArray<PromotionView> };
-    setPromotions(body.promotions ?? []);
-  }, []);
+    setLoading(true);
+    const params = new URLSearchParams({ limit: "25", sort });
+    if (appliedSearch) params.set("search", appliedSearch);
+    if (state) params.set("state", state);
+    if (cursor) params.set("cursor", cursor);
+    try {
+      const response = await fetch(`/api/marketing/promotions?${params}`, { cache: "no-store" });
+      const body = await response.json().catch(() => null) as OperatorPromotionRegistryResponse | { error?: { message?: string } } | null;
+      if (!response.ok) throw new Error(body && "error" in body ? body.error?.message ?? "تعذر قراءة سجل العروض." : "تعذر قراءة سجل العروض.");
+      setRegistry(body as OperatorPromotionRegistryResponse);
+    } finally {
+      setLoading(false);
+    }
+  }, [appliedSearch, cursor, sort, state]);
 
-  useEffect(() => { void load().catch(() => setMessage("تعذر قراءة سجل العروض.")); }, [load]);
+  useEffect(() => { void load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل العروض.")); }, [load, reloadVersion]);
   useEffect(() => { void readActiveServiceCities().then(setCities).catch(() => setMessage("تعذر قراءة مدن الخدمة؛ يمكنك إنشاء العرض دون تقييد مدينة.")); }, []);
 
   async function createPromotion() {
@@ -105,7 +123,7 @@ export function MarketingPromotionsWorkspace() {
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(apiMessage(body));
       setPromotionForm({ code: "", nameAr: "", descriptionAr: "", kind: "PERCENTAGE", valueMinor: "10", maxDiscountMinor: "", redemptionLimit: "", storeId: "", serviceCityId: "" });
-      await load();
+      setSearch(""); setAppliedSearch(""); setState("DRAFT"); setSort("starts_desc"); setCursor(""); setCursorStack([]); setReloadVersion((value) => value + 1);
       setMessage("تم إنشاء العرض كمسودة. انشره من السجل عندما يصبح جاهزًا.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "تعذر إنشاء العرض.");
@@ -121,7 +139,7 @@ export function MarketingPromotionsWorkspace() {
       const response = await fetch(`/api/marketing/promotions/${encodeURIComponent(item.id)}/publication`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID(), "X-Expected-Version": String(item.version) }, body: JSON.stringify({ state }) });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(apiMessage(body));
-      await load();
+      setReloadVersion((value) => value + 1);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "تعذر تحديث نشر العرض.");
     } finally {
@@ -130,8 +148,9 @@ export function MarketingPromotionsWorkspace() {
   }
 
   return (
-    <div className="workspace-resource-grid" data-testid="marketing-promotions-workspace">
-      <section className="access-card">
+    <div className={styles.workspace} data-testid="marketing-promotions-workspace">
+      <details className="access-card">
+        <summary className={styles.createSummary}>إنشاء عرض جديد</summary>
         <div className="access-card-heading"><span className="step-chip">العروض</span><p className="eyebrow">تسويق مضبوط</p><h2>إنشاء عرض</h2><p className="muted">العرض يُنشأ كمسودة، ثم يُنشر بعد مراجعة النطاق والفترة.</p></div>
         <div className="workspace-form-grid">
           <input aria-label="رمز العرض" placeholder="WELCOME10" value={promotionForm.code} onChange={(event) => setPromotionForm((current) => ({ ...current, code: event.target.value }))} />
@@ -146,18 +165,37 @@ export function MarketingPromotionsWorkspace() {
           <input aria-label="بداية العرض" type="datetime-local" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} />
           <button className="button" type="button" disabled={busy} onClick={() => void createPromotion()}>إنشاء مسودة العرض</button>
         </div>
-      </section>
+      </details>
       <section className="access-card" aria-labelledby="marketing-promotions-title">
         <div className="access-card-heading"><h2 id="marketing-promotions-title">سجل العروض</h2>{message ? <p role="status" className="muted">{message}</p> : null}</div>
-        {promotions.length ? promotions.map((item) => <article className="access-card" key={item.id}><strong>{item.nameAr}</strong><p className="muted">{item.code} · {item.kind === "PERCENTAGE" ? `${item.valueMinor}%` : item.valueMinor} · {item.state}</p><button className="button button-secondary" type="button" disabled={busy} onClick={() => void publishPromotion(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف العرض" : "نشر العرض"}</button></article>) : <p className="muted">لا توجد عروض بعد.</p>}
+        <form className={styles.filters} onSubmit={(event) => { event.preventDefault(); setAppliedSearch(search.trim().slice(0, 128)); setCursor(""); setCursorStack([]); }}>
+          <label className="field-label" htmlFor="promotion-search">رمز العرض أو الاسم<input id="promotion-search" type="search" maxLength={128} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+          <label className="field-label" htmlFor="promotion-state">الحالة<select id="promotion-state" value={state} onChange={(event) => { setState(event.target.value); setCursor(""); setCursorStack([]); }}><option value="">كل الحالات</option><option value="DRAFT">مسودة</option><option value="PUBLISHED">منشور</option><option value="PAUSED">موقوف</option></select></label>
+          <label className="field-label" htmlFor="promotion-sort">ترتيب البداية<select id="promotion-sort" value={sort} onChange={(event) => { setSort(event.target.value as typeof sort); setCursor(""); setCursorStack([]); }}><option value="starts_desc">الأحدث بداية</option><option value="starts_asc">الأقدم بداية</option></select></label>
+          <button className="button button-secondary" type="submit" disabled={loading}>بحث</button>
+          <button className="button button-quiet" type="button" onClick={() => setReloadVersion((value) => value + 1)} disabled={loading}>{loading ? "جارٍ القراءة…" : "تحديث"}</button>
+        </form>
+        {registry?.promotions.length ? <div className="finance-table-wrap"><table className="finance-table"><caption className="visually-hidden">سجل العروض</caption><thead><tr><th scope="col">العرض</th><th scope="col">الرمز</th><th scope="col">النوع والقيمة</th><th scope="col">الحالة</th><th scope="col">بداية العرض</th><th scope="col">الإجراء</th></tr></thead><tbody>{registry.promotions.map((item) => <tr key={item.id}><th scope="row">{item.nameAr}<br /><bdi dir="ltr">{item.id}</bdi></th><td><bdi dir="ltr">{item.code}</bdi></td><td>{item.kind === "PERCENTAGE" ? `${item.valueMinor}%` : item.valueMinor}</td><td>{item.state}</td><td><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td><button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishPromotion(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف العرض" : "نشر العرض"}</button></td></tr>)}</tbody></table></div> : loading ? <p role="status" className="collection-state">جارٍ قراءة صفحة العروض…</p> : <p className="collection-state">لا توجد عروض مطابقة.</p>}
+        <nav className={styles.pagination} aria-label="صفحات سجل العروض"><button className="button button-quiet" type="button" disabled={loading || cursorStack.length === 0} onClick={() => { const next = [...cursorStack]; const previous = next.pop() ?? ""; setCursorStack(next); setCursor(previous); }}>السابق</button><span>صفحة {cursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={loading || !registry?.nextCursor} onClick={() => { setCursorStack((items) => [...items, cursor]); setCursor(registry?.nextCursor ?? ""); }}>التالي</button></nav>
       </section>
     </div>
   );
 }
 
 export function MarketingContentWorkspace() {
-  const [content, setContent] = useState<ReadonlyArray<DiscoveryContentView>>([]);
-  const [analytics, setAnalytics] = useState<ReadonlyArray<DiscoveryContentAnalytics>>([]);
+  const [registry, setRegistry] = useState<OperatorDiscoveryContentRegistryResponse | null>(null);
+  const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+  const [state, setState] = useState("");
+  const [kind, setKind] = useState("");
+  const [sort, setSort] = useState<"priority" | "created_desc">("priority");
+  const [cursor, setCursor] = useState("");
+  const [cursorStack, setCursorStack] = useState<ReadonlyArray<string>>([]);
+  const [loading, setLoading] = useState(false);
+  const [reloadVersion, setReloadVersion] = useState(0);
+  const [analyticsContentId, setAnalyticsContentId] = useState("");
+  const [analytics, setAnalytics] = useState<ReadonlyArray<DiscoveryContentAnalytics> | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [contentStartsAt, setContentStartsAt] = useState(futureDateInput);
   const [contentEndsAt, setContentEndsAt] = useState(futureEndDateInput);
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
@@ -166,6 +204,9 @@ export function MarketingContentWorkspace() {
   const [contentForm, setContentForm] = useState({ titleAr: "", bodyAr: "", kind: "BANNER" as "BANNER" | "CAROUSEL" | "SHORT_FORM", targetType: "INFO" as "STORE" | "PRODUCT" | "CATEGORY" | "PROMOTION" | "INFO", targetId: "", serviceCityId: "", ordinal: "0" });
   const [targetOptions, setTargetOptions] = useState<ReadonlyArray<{ id: string; label: string; detail?: string }>>([]);
   const [targetSearch, setTargetSearch] = useState("");
+  const [targetCursor, setTargetCursor] = useState("");
+  const [targetCursorStack, setTargetCursorStack] = useState<ReadonlyArray<string>>([]);
+  const [targetNextCursor, setTargetNextCursor] = useState("");
   const [targetLoading, setTargetLoading] = useState(false);
   const [targetMessage, setTargetMessage] = useState("");
   const [mediaFile, setMediaFile] = useState<File | null>(null);
@@ -173,21 +214,39 @@ export function MarketingContentWorkspace() {
   const productSearch = contentForm.targetType === "PRODUCT" ? targetSearch.trim() : "";
 
   const load = useCallback(async () => {
-    const response = await fetch("/api/marketing/content", { cache: "no-store" });
-    if (!response.ok) throw new Error("MARKETING_CONTENT_READ_FAILED");
-    const body = await response.json() as { items?: ReadonlyArray<DiscoveryContentView> };
-    setContent(body.items ?? []);
-  }, []);
+    setLoading(true);
+    const params = new URLSearchParams({ limit: "25", sort });
+    if (appliedSearch) params.set("search", appliedSearch);
+    if (state) params.set("state", state);
+    if (kind) params.set("kind", kind);
+    if (cursor) params.set("cursor", cursor);
+    try {
+      const response = await fetch(`/api/marketing/content?${params}`, { cache: "no-store" });
+      const body = await response.json().catch(() => null) as OperatorDiscoveryContentRegistryResponse | { error?: { message?: string } } | null;
+      if (!response.ok) throw new Error(body && "error" in body ? body.error?.message ?? "تعذر قراءة سجل محتوى الاكتشاف." : "تعذر قراءة سجل محتوى الاكتشاف.");
+      setRegistry(body as OperatorDiscoveryContentRegistryResponse);
+    } finally {
+      setLoading(false);
+    }
+  }, [appliedSearch, cursor, kind, sort, state]);
 
-  const loadAnalytics = useCallback(async () => {
-    const response = await fetch("/api/marketing/analytics", { cache: "no-store" });
-    if (!response.ok) throw new Error("MARKETING_ANALYTICS_READ_FAILED");
-    const body = await response.json() as { items?: ReadonlyArray<DiscoveryContentAnalytics> };
-    setAnalytics(body.items ?? []);
-  }, []);
+  async function readAnalytics(contentId: string) {
+    setAnalyticsContentId(contentId);
+    setAnalytics(null);
+    setAnalyticsLoading(true);
+    try {
+      const response = await fetch(`/api/marketing/analytics?contentId=${encodeURIComponent(contentId)}`, { cache: "no-store" });
+      const body = await response.json().catch(() => null) as { items?: ReadonlyArray<DiscoveryContentAnalytics>; error?: { message?: string } } | null;
+      if (!response.ok) throw new Error(body?.error?.message ?? "تعذر قراءة تحليلات المحتوى المحدد.");
+      setAnalytics(body?.items ?? []);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "تعذر قراءة تحليلات المحتوى المحدد.");
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  }
 
-  useEffect(() => { void load().catch(() => setMessage("تعذر قراءة سجل محتوى الاكتشاف.")); }, [load]);
-  useEffect(() => { void loadAnalytics().catch(() => setMessage("تعذر قراءة تحليلات المحتوى.")); }, [loadAnalytics]);
+  useEffect(() => { void load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل محتوى الاكتشاف.")); }, [load, reloadVersion]);
   useEffect(() => {
     if (!mediaPreviewUrl) return;
     return () => URL.revokeObjectURL(mediaPreviewUrl);
@@ -206,9 +265,10 @@ export function MarketingContentWorkspace() {
       setTargetLoading(false);
       return;
     }
-    if (contentForm.targetType === "PRODUCT" && productSearch.length < 2) {
+    if (["STORE", "PRODUCT", "PROMOTION"].includes(contentForm.targetType) && targetSearch.trim().length < 2) {
       setTargetOptions([]);
-      setTargetMessage("اكتب حرفين على الأقل للبحث في المنتجات النشطة.");
+      setTargetNextCursor("");
+      setTargetMessage("اكتب حرفين على الأقل للبحث في الوجهات المتاحة.");
       setTargetLoading(false);
       return;
     }
@@ -216,14 +276,16 @@ export function MarketingContentWorkspace() {
     const controller = new AbortController();
     const params = new URLSearchParams({ targetType: contentForm.targetType });
     if (contentForm.serviceCityId) params.set("serviceCityId", contentForm.serviceCityId);
-    if (contentForm.targetType === "PRODUCT") params.set("query", productSearch);
+    if (["STORE", "PRODUCT", "PROMOTION"].includes(contentForm.targetType)) params.set("query", targetSearch.trim());
+    if (targetCursor) params.set("cursor", targetCursor);
     setTargetLoading(true);
     setTargetMessage("");
     void fetch(`/api/marketing/content/targets?${params.toString()}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
-        const body = await response.json().catch(() => null) as { options?: ReadonlyArray<{ id: string; label: string; detail?: string }>; error?: { message?: string } } | null;
+        const body = await response.json().catch(() => null) as { options?: ReadonlyArray<{ id: string; label: string; detail?: string }>; nextCursor?: string; error?: { message?: string } } | null;
         if (!response.ok) throw new Error(body?.error?.message ?? "تعذر تحميل الوجهات.");
-        setTargetOptions(body?.options ?? []);
+        setTargetOptions((current) => targetCursor ? [...current.filter((item) => !(body?.options ?? []).some((next) => next.id === item.id)), ...(body?.options ?? [])] : body?.options ?? []);
+        setTargetNextCursor(body?.nextCursor ?? "");
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
@@ -234,7 +296,7 @@ export function MarketingContentWorkspace() {
         if (!controller.signal.aborted) setTargetLoading(false);
       });
     return () => controller.abort();
-  }, [contentForm.serviceCityId, contentForm.targetType, productSearch]);
+  }, [contentForm.serviceCityId, contentForm.targetType, productSearch, targetCursor, targetSearch]);
 
   async function createContent() {
     setBusy(true);
@@ -263,12 +325,12 @@ export function MarketingContentWorkspace() {
       const response = await fetch("/api/marketing/content", { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: form });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(apiMessage(body));
-      setContentForm({ titleAr: "", bodyAr: "", kind: "BANNER", targetType: "INFO", targetId: "", serviceCityId: "", ordinal: String(content.length + 1) });
+      setContentForm({ titleAr: "", bodyAr: "", kind: "BANNER", targetType: "INFO", targetId: "", serviceCityId: "", ordinal: "0" });
       setTargetSearch("");
+      setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor("");
       setMediaFile(null);
       setMediaPreviewUrl("");
-      await load();
-      await loadAnalytics();
+      setSearch(""); setAppliedSearch(""); setState("DRAFT"); setKind(""); setSort("priority"); setCursor(""); setCursorStack([]); setReloadVersion((value) => value + 1);
       setMessage("تم إنشاء المحتوى كمسودة. انشره من السجل عندما يصبح جاهزًا.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "تعذر إنشاء المحتوى.");
@@ -284,7 +346,7 @@ export function MarketingContentWorkspace() {
       const response = await fetch(`/api/marketing/content/${encodeURIComponent(item.id)}/publication`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID(), "X-Expected-Version": String(item.version) }, body: JSON.stringify({ state }) });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(apiMessage(body));
-      await load();
+      setReloadVersion((value) => value + 1);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "تعذر تحديث نشر المحتوى.");
     } finally {
@@ -293,8 +355,9 @@ export function MarketingContentWorkspace() {
   }
 
   return (
-    <div className="workspace-resource-grid" data-testid="marketing-content-workspace">
-      <section className="access-card">
+    <div className={styles.workspace} data-testid="marketing-content-workspace">
+      <details className="access-card">
+        <summary className={styles.createSummary}>إنشاء محتوى اكتشاف</summary>
         <div className="access-card-heading"><span className="step-chip">الاكتشاف</span><p className="eyebrow">محتوى منشور</p><h2>إنشاء بطاقة اكتشاف</h2><p className="muted">المحتوى العام لا يظهر إلا بعد نشره ومن خلال مسار DSH القانوني.</p></div>
         <div className="workspace-form-grid">
           <input aria-label="عنوان المحتوى" placeholder="مختارات الأسبوع" value={contentForm.titleAr} onChange={(event) => setContentForm((current) => ({ ...current, titleAr: event.target.value }))} />
@@ -303,29 +366,37 @@ export function MarketingContentWorkspace() {
           <label className="field-label" htmlFor="marketing-content-media">صورة المحتوى<input id="marketing-content-media" aria-label="ملف صورة المحتوى" type="file" accept="image/jpeg,image/png" required onChange={(event) => { const file = event.target.files?.[0] ?? null; setMediaFile(file); setMediaPreviewUrl(file ? URL.createObjectURL(file) : ""); }} /></label>
           {mediaFile ? <p className="muted" data-testid="marketing-content-file">{mediaFile.name} · {(mediaFile.size / 1024).toFixed(0)} كيلوبايت</p> : <p className="muted">JPEG أو PNG، حتى 10 ميجابايت.</p>}
           {mediaPreviewUrl ? <div><p className="muted">معاينة تقريبية لاقتصاص الصورة في بطاقة الهاتف:</p><img className="workspace-discovery-preview" src={mediaPreviewUrl} alt="معاينة صورة محتوى الاكتشاف" /></div> : null}
-          <label className="field-label" htmlFor="marketing-content-target">نوع الوجهة<select id="marketing-content-target" aria-label="نوع وجهة المحتوى" value={contentForm.targetType} onChange={(event) => { setTargetSearch(""); setTargetOptions([]); setContentForm((current) => ({ ...current, targetType: event.target.value as typeof current.targetType, targetId: "" })); }}><option value="INFO">معلومات فقط</option><option value="STORE">متجر</option><option value="PRODUCT">منتج</option><option value="CATEGORY">فئة</option><option value="PROMOTION">عرض</option></select></label>
+          <label className="field-label" htmlFor="marketing-content-target">نوع الوجهة<select id="marketing-content-target" aria-label="نوع وجهة المحتوى" value={contentForm.targetType} onChange={(event) => { setTargetSearch(""); setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, targetType: event.target.value as typeof current.targetType, targetId: "" })); }}><option value="INFO">معلومات فقط</option><option value="STORE">متجر</option><option value="PRODUCT">منتج</option><option value="CATEGORY">فئة</option><option value="PROMOTION">عرض</option></select></label>
           {contentForm.targetType !== "INFO" ? <>
-            <input aria-label="بحث في الوجهات" placeholder={contentForm.targetType === "PRODUCT" ? "ابحث باسم المنتج" : "اكتب لتصفية الوجهات"} value={targetSearch} onChange={(event) => { setTargetSearch(event.target.value); if (contentForm.targetType === "PRODUCT") setContentForm((current) => ({ ...current, targetId: "" })); }} />
+            <input aria-label="بحث في الوجهات" placeholder={`ابحث ${contentForm.targetType === "STORE" ? "عن متجر" : contentForm.targetType === "PRODUCT" ? "عن منتج" : contentForm.targetType === "PROMOTION" ? "عن عرض" : "لتصفية الوجهات"}`} value={targetSearch} onChange={(event) => { setTargetSearch(event.target.value); setTargetCursor(""); setTargetCursorStack([]); setTargetOptions([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, targetId: "" })); }} />
             <label className="field-label" htmlFor="marketing-content-target-option">الوجهة المعتمدة<select id="marketing-content-target-option" aria-label="الوجهة المعتمدة" value={contentForm.targetId} disabled={targetLoading || targetOptions.length === 0} onChange={(event) => setContentForm((current) => ({ ...current, targetId: event.target.value }))}>
               <option value="">{targetLoading ? "جارٍ تحميل الوجهات…" : "اختر وجهة من بيانات DSH"}</option>
-              {targetOptions.filter((option) => contentForm.targetType === "PRODUCT" || !targetSearch.trim() || `${option.label} ${option.detail ?? ""}`.toLocaleLowerCase().includes(targetSearch.trim().toLocaleLowerCase())).map((option) => <option key={option.id} value={option.id}>{option.detail ? `${option.label} · ${option.detail}` : option.label}</option>)}
+              {targetOptions.map((option) => <option key={option.id} value={option.id}>{option.detail ? `${option.label} · ${option.detail}` : option.label}</option>)}
             </select></label>
+            {!["CATEGORY", "INFO"].includes(contentForm.targetType) ? <nav className={styles.pagination} aria-label="صفحات وجهات المحتوى"><button className="button button-quiet" type="button" disabled={targetLoading || targetCursorStack.length === 0} onClick={() => { const next = [...targetCursorStack]; setTargetCursor(next.pop() ?? ""); setTargetCursorStack(next); }}>السابق</button><span>{targetCursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={targetLoading || !targetNextCursor} onClick={() => { setTargetCursorStack((items) => [...items, targetCursor]); setTargetCursor(targetNextCursor); }}>تحميل المزيد</button></nav> : null}
             {targetMessage ? <p className="muted" role="status">{targetMessage}</p> : null}
             <p className="muted">تُختار الوجهة من السجلات المعتمدة، ويعيد DSH التحقق من صلاحيتها حسب المدينة ووقت العرض.</p>
           </> : null}
-          <label className="field-label" htmlFor="marketing-content-city">مدينة الخدمة<select id="marketing-content-city" aria-label="مدينة خدمة المحتوى" value={contentForm.serviceCityId} onChange={(event) => { setTargetOptions([]); setContentForm((current) => ({ ...current, serviceCityId: event.target.value, targetId: "" })); }}><option value="">كل المدن</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
+          <label className="field-label" htmlFor="marketing-content-city">مدينة الخدمة<select id="marketing-content-city" aria-label="مدينة خدمة المحتوى" value={contentForm.serviceCityId} onChange={(event) => { setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, serviceCityId: event.target.value, targetId: "" })); }}><option value="">كل المدن</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
           <input aria-label="بداية المحتوى" type="datetime-local" value={contentStartsAt} onChange={(event) => setContentStartsAt(event.target.value)} />
           <input aria-label="نهاية المحتوى" type="datetime-local" value={contentEndsAt} onChange={(event) => setContentEndsAt(event.target.value)} />
           <input aria-label="ترتيب المحتوى" inputMode="numeric" type="number" min="0" value={contentForm.ordinal} onChange={(event) => setContentForm((current) => ({ ...current, ordinal: event.target.value }))} />
           <button className="button" type="button" disabled={busy} onClick={() => void createContent()}>إنشاء مسودة المحتوى</button>
         </div>
-      </section>
+      </details>
       <section className="access-card" aria-labelledby="marketing-content-title">
         <div className="access-card-heading"><h2 id="marketing-content-title">سجل محتوى الاكتشاف</h2>{message ? <p role="status" className="muted">{message}</p> : null}</div>
-        {content.length ? content.map((item) => {
-          const counts = Object.fromEntries(analytics.filter((entry) => entry.contentId === item.id).map((entry) => [entry.eventType, entry.count]));
-          return <article className="access-card" key={item.id}>{item.mediaUri ? <img className="workspace-media-preview" src={item.mediaUri} alt="" loading="lazy" /> : null}<strong>{item.titleAr}</strong><p className="muted">{item.kind} · {item.targetType} · {item.serviceCityId ? "مدينة محددة" : "كل المدن"} · ترتيب {item.ordinal} · {item.state}</p><p className="muted">الظهور {counts.IMPRESSION ?? 0} · النقر {counts.CLICK ?? 0} · التحويل {counts.CONVERSION ?? 0}</p><button className="button button-secondary" type="button" disabled={busy} onClick={() => void publishContent(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف المحتوى" : "نشر المحتوى"}</button></article>;
-        }) : <p className="muted">لا يوجد محتوى بعد.</p>}
+        <form className={styles.filters} onSubmit={(event) => { event.preventDefault(); setAppliedSearch(search.trim().slice(0, 128)); setCursor(""); setCursorStack([]); }}>
+          <label className="field-label" htmlFor="content-search">عنوان المحتوى<input id="content-search" type="search" maxLength={128} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+          <label className="field-label" htmlFor="content-state">الحالة<select id="content-state" value={state} onChange={(event) => { setState(event.target.value); setCursor(""); setCursorStack([]); }}><option value="">كل الحالات</option><option value="DRAFT">مسودة</option><option value="PUBLISHED">منشور</option><option value="PAUSED">موقوف</option></select></label>
+          <label className="field-label" htmlFor="content-kind-filter">النوع<select id="content-kind-filter" value={kind} onChange={(event) => { setKind(event.target.value); setCursor(""); setCursorStack([]); }}><option value="">كل الأنواع</option><option value="BANNER">بنر</option><option value="CAROUSEL">كاروسيل</option><option value="SHORT_FORM">قصة قصيرة</option></select></label>
+          <label className="field-label" htmlFor="content-sort">الترتيب<select id="content-sort" value={sort} onChange={(event) => { setSort(event.target.value as typeof sort); setCursor(""); setCursorStack([]); }}><option value="priority">أولوية العرض</option><option value="created_desc">الأحدث إنشاءً</option></select></label>
+          <button className="button button-secondary" type="submit" disabled={loading}>بحث</button>
+          <button className="button button-quiet" type="button" onClick={() => setReloadVersion((value) => value + 1)} disabled={loading}>{loading ? "جارٍ القراءة…" : "تحديث"}</button>
+        </form>
+        {registry?.items.length ? <div className="finance-table-wrap"><table className="finance-table"><caption className="visually-hidden">سجل محتوى الاكتشاف</caption><thead><tr><th scope="col">المحتوى</th><th scope="col">النوع والوجهة</th><th scope="col">الحالة</th><th scope="col">الأولوية والبداية</th><th scope="col">الإجراءات</th></tr></thead><tbody>{registry.items.map((item) => <tr key={item.id}><th scope="row">{item.mediaUri ? <img className={styles.mediaPreview} src={item.mediaUri} alt="" loading="lazy" /> : null}{item.titleAr}<br /><bdi dir="ltr">{item.id}</bdi></th><td>{item.kind} · {item.targetType}<br />{item.targetId ? <bdi dir="ltr">{item.targetId}</bdi> : "معلومات عامة"}</td><td>{item.state === "DRAFT" ? "مسودة" : item.state === "PUBLISHED" ? "منشور" : "موقوف"}</td><td>{item.ordinal}<br /><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td><div className={styles.actions}><button className="button button-quiet" type="button" disabled={analyticsLoading} onClick={() => void readAnalytics(item.id)}>{analyticsLoading && analyticsContentId === item.id ? "جارٍ قراءة التحليلات…" : "قراءة التحليلات"}</button><button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishContent(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف المحتوى" : "نشر المحتوى"}</button></div></td></tr>)}</tbody></table></div> : loading ? <p role="status" className="collection-state">جارٍ قراءة صفحة المحتوى…</p> : <p className="collection-state">لا يوجد محتوى مطابق.</p>}
+        <nav className={styles.pagination} aria-label="صفحات سجل محتوى الاكتشاف"><button className="button button-quiet" type="button" disabled={loading || cursorStack.length === 0} onClick={() => { const next = [...cursorStack]; const previous = next.pop() ?? ""; setCursorStack(next); setCursor(previous); }}>السابق</button><span>صفحة {cursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={loading || !registry?.nextCursor} onClick={() => { setCursorStack((items) => [...items, cursor]); setCursor(registry?.nextCursor ?? ""); }}>التالي</button></nav>
+        {analyticsContentId ? <aside className={styles.analyticsPanel} aria-live="polite"><strong>تحليلات المحتوى <bdi dir="ltr">{analyticsContentId}</bdi></strong>{analyticsLoading ? <p role="status">جارٍ قراءة النتائج…</p> : analytics ? <dl><div><dt>الظهور</dt><dd>{analytics.find((item) => item.eventType === "IMPRESSION")?.count ?? 0}</dd></div><div><dt>النقر</dt><dd>{analytics.find((item) => item.eventType === "CLICK")?.count ?? 0}</dd></div><div><dt>التحويل</dt><dd>{analytics.find((item) => item.eventType === "CONVERSION")?.count ?? 0}</dd></div></dl> : null}<button className="button button-quiet" type="button" onClick={() => { setAnalyticsContentId(""); setAnalytics(null); }}>إغلاق التحليلات</button></aside> : null}
       </section>
     </div>
   );
