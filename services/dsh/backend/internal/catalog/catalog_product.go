@@ -478,7 +478,8 @@ func normalizeCatalogProductInput(input postgres.CatalogProductInput) (postgres.
 }
 
 func normalizeCatalogAttributeValues(values []postgres.CatalogAttributeValueInput) []postgres.CatalogAttributeValueInput {
-	normalized := append([]postgres.CatalogAttributeValueInput(nil), values...)
+	normalized := make([]postgres.CatalogAttributeValueInput, len(values))
+	copy(normalized, values)
 	for index := range normalized {
 		value := &normalized[index]
 		value.AttributeID = strings.TrimSpace(value.AttributeID)
