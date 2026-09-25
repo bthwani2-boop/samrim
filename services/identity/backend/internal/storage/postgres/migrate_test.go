@@ -673,6 +673,30 @@ func TestMigrationV13ToV22Upgrade(t *testing.T) {
 		t.Fatalf("workspace permission backfill was not least-privilege: initial=%d/%d later=%d/%d scopes=%d", initialPermissionCount, initialEnabledPermissionCount, laterPermissionCount, laterEnabledPermissionCount, len(domain.OperatorPermissions()))
 	}
 
+	// Apply migration 023 and verify the current legal-name schema before runtime readiness.
+	var v23Name string
+	var v23Content []byte
+	for _, file := range files {
+		if strings.HasPrefix(file.Name(), "023_") {
+			v23Name = file.Name()
+			v23Content, err = os.ReadFile(filepath.Join(migDir, v23Name))
+			if err != nil {
+				t.Fatalf("read 023: %v", err)
+			}
+			break
+		}
+	}
+	if v23Name == "" {
+		t.Fatal("migration 023 not found")
+	}
+	hash23 := sha256.Sum256(v23Content)
+	if err := postgres.Migrate(ctx, testDB, 23, v23Name, hex.EncodeToString(hash23[:]), string(v23Content)); err != nil {
+		t.Fatalf("apply migration 023 on v22 database: %v", err)
+	}
+	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 23 {
+		t.Fatalf("expected schema version 23, got %d (err: %v)", version, err)
+	}
+
 	// Verify full postgres.Ready passes on this upgraded database.
 	if err := postgres.Ready(ctx, testDB); err != nil {
 		t.Fatalf("postgres.Ready failed on upgraded database: %v", err)
@@ -685,11 +709,11 @@ func TestMigrationV13ToV22Upgrade(t *testing.T) {
 	}
 	afterSecondRun := readMigrationNoOpSnapshot(t, testDB)
 	assertMigrationNoOpSnapshotUnchanged(t, beforeSecondRun, afterSecondRun)
-	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 22 {
+	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 23 {
 		t.Fatalf("schema version changed during second canonical migration run: version=%d err=%v", version, err)
 	}
 
-	t.Log("Migration v13 -> v22 upgrade, data preservation, passkey cutover, mobile lifetime, refresh reconciliation and Operator workspace permission cutover test PASSED successfully!")
+	t.Log("Migration v13 -> v23 upgrade, data preservation, passkey cutover, mobile lifetime, refresh reconciliation, Operator workspace permissions and verified legal-name schema cutover test PASSED successfully!")
 }
 
 type migrationSessionSnapshot struct {
