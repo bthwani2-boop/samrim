@@ -1,6 +1,6 @@
-import MapView, { Marker, PROVIDER_GOOGLE, type MapPressEvent, type Region } from "react-native-maps";
-import { StyleSheet, Text, View } from "react-native";
 import { useEffect, useRef } from "react";
+import { StyleSheet, Text, View } from "react-native";
+import MapView, { type MapPressEvent, Marker, PROVIDER_GOOGLE, type Region } from "react-native-maps";
 
 export type BthwaniMapCoordinate = Readonly<{ latitude: number; longitude: number }>;
 export type BthwaniMapMarker = Readonly<{
@@ -33,10 +33,12 @@ function initialRegion(markers: ReadonlyArray<BthwaniMapMarker>, selection?: Bth
 
 export function BthwaniMap({ accessibilityLabel, markers = [], selection, selectionTitle = "الموقع المحدد", onSelectCoordinate, height = 220 }: BthwaniMapProps) {
   const map = useRef<MapView>(null);
+  const selectionLatitude = selection?.latitude;
+  const selectionLongitude = selection?.longitude;
   useEffect(() => {
-    if (!selection) return;
-    map.current?.animateToRegion({ ...selection, latitudeDelta: 0.012, longitudeDelta: 0.012 }, 300);
-  }, [selection?.latitude, selection?.longitude]);
+    if (selectionLatitude === undefined || selectionLongitude === undefined) return;
+    map.current?.animateToRegion({ latitude: selectionLatitude, longitude: selectionLongitude, latitudeDelta: 0.012, longitudeDelta: 0.012 }, 300);
+  }, [selectionLatitude, selectionLongitude]);
 
   function selectMapPoint(event: MapPressEvent) {
     onSelectCoordinate?.(event.nativeEvent.coordinate);
