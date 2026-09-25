@@ -8,6 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -26,25 +27,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Resolve canonical affected SHAs
+        uses: nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1
+
       - name: Detect backend-affecting change
         id: scope
         shell: bash
-        env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            base="${PR_BASE_SHA}"
-          elif [[ -n "${PUSH_BEFORE_SHA}" && "${PUSH_BEFORE_SHA}" != "0000000000000000000000000000000000000000" ]]; then
-            base="${PUSH_BEFORE_SHA}"
-          elif [[ "${GITHUB_REF_NAME}" == "main" ]]; then
-            base="$(git rev-parse HEAD^)"
-          else
-            git show-ref --verify --quiet refs/remotes/origin/main || { echo "origin/main is required to scope a manual branch run"; exit 1; }
-            base="$(git merge-base origin/main HEAD)"
-          fi
-          changed="$(git diff --name-only "${base}" HEAD)"
+          changed="$(git diff --name-only "${NX_BASE}" "${NX_HEAD}")"
           if grep -Eq '^(services/(identity|dsh)/(backend|database|clients/go|contracts)/|services/wlt/|infra/local/(compose/|\.env\.example$)|tools/dev/(mailpit-challenge|run-playwright-live|verify-(identity-migrations|identity-runtime|dsh-baseline|dsh-runtime-core))\.mjs$|apps/control-panel/(package\.json|playwright\.config\.ts|playwright\.global-setup\.ts|tests/(00-live-identity|finance-runtime|zz-dsh-operator)\.spec\.ts|tests/live-identity-proof-helpers\.ts)$|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|go\.work$|go\.work\.sum$|\.github/workflows/backend-integration\.yml$)' <<<"${changed}"; then
             echo "run=true" >> "${GITHUB_OUTPUT}"
             echo "BACKEND_INTEGRATION_SCOPE=AFFECTED"
@@ -60,16 +51,20 @@ jobs:
             echo "WLT_CI_COMPOSITION_SCOPE=UNAFFECTED"
           fi
 
+      - name: Set up pinned pnpm
+        if: steps.scope.outputs.run == 'true'
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 10.34.0
+          run_install: false
+
       - name: Set up Node
         if: steps.scope.outputs.run == 'true'
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 24.17.0
-
-      - name: Install pinned pnpm
-        if: steps.scope.outputs.run == 'true'
-        shell: bash
-        run: npm install --global pnpm@10.34.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install workspace once
         if: steps.scope.outputs.run == 'true'

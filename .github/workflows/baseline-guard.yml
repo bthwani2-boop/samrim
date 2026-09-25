@@ -8,6 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -30,38 +31,31 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Resolve affected base
-        id: base
+      - name: Resolve canonical affected SHAs
+        uses: nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1
+
+      - name: Report exact affected SHAs
         shell: bash
-        env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: |
-          set -euo pipefail
-          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            base="${PR_BASE_SHA}"
-          elif [[ -n "${PUSH_BEFORE_SHA}" && "${PUSH_BEFORE_SHA}" != "0000000000000000000000000000000000000000" ]]; then
-            base="${PUSH_BEFORE_SHA}"
-          else
-            base="$(git rev-parse HEAD^)"
-          fi
-          git merge-base --is-ancestor "${base}" HEAD
-          echo "sha=${base}" >> "${GITHUB_OUTPUT}"
-          echo "PROOF_BASE=${base}"
-          echo "PROOF_HEAD=$(git rev-parse HEAD)"
+          echo "PROOF_BASE=${NX_BASE}"
+          echo "PROOF_HEAD=${NX_HEAD}"
+
+      - name: Set up pinned pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 10.34.0
+          run_install: false
 
       - name: Set up Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 24.17.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Verify Nx Cloud CI access configuration
         shell: bash
         run: node tools/dev/verify-nx-cloud-ci.mjs
-
-      - name: Install pinned pnpm
-        shell: bash
-        run: npm install --global pnpm@10.34.0
 
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
@@ -72,6 +66,7 @@ jobs:
             services/identity/backend/go.sum
             services/identity/clients/go/go.mod
             services/dsh/backend/go.sum
+            services/wlt/backend/go.sum
 
       - name: Install workspace once
         shell: bash
@@ -112,7 +107,7 @@ jobs:
 
       - name: Verify changed source style
         shell: bash
-        run: pnpm exec biome ci apps packages services tools --changed --since=${{ steps.base.outputs.sha }} --no-errors-on-unmatched --enforce-assist=false
+        run: pnpm exec biome ci apps packages services tools --changed --since=$NX_BASE --no-errors-on-unmatched --enforce-assist=false
 
       - name: Verify affected workspace tasks with config-only map placeholders
         shell: bash
@@ -122,7 +117,7 @@ jobs:
           GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
           GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
           GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
-        run: pnpm exec nx affected -t typecheck,unit,contract,build,export-smoke,vet --base=${{ steps.base.outputs.sha }} --head=HEAD --outputStyle=stream
+        run: pnpm exec nx affected -t typecheck,unit,contract,build,export-smoke,vet --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream
 
       - name: Verify tooling is non-mutating
         shell: bash
@@ -156,56 +151,31 @@ jobs:
           $bad = @(git ls-files --eol | Where-Object { $_ -match '\bw/(crlf|mixed)\b' })
           if ($bad.Count -gt 0) { $bad | Write-Host; throw "Tracked CRLF/mixed text detected." }
 
-      - name: Detect mobile-affecting integration change
-        id: mobile
-        shell: pwsh
-        env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PUSH_BEFORE_SHA: ${{ github.event.before }}
-        run: |
-          if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
-            $base = $env:PR_BASE_SHA
-          }
-          elseif ($env:PUSH_BEFORE_SHA -and $env:PUSH_BEFORE_SHA -ne '0000000000000000000000000000000000000000') {
-            $base = $env:PUSH_BEFORE_SHA
-          }
-          else {
-            $base = (git rev-parse HEAD^).Trim()
-          }
-          git merge-base --is-ancestor $base HEAD
-          if ($LASTEXITCODE -ne 0) { throw "Windows affected base is not an ancestor of HEAD: $base" }
+      - name: Resolve canonical affected SHAs
+        uses: nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1
 
-          $changed = @(git diff --name-only $base HEAD)
-          $run = $false
-          foreach ($file in $changed) {
-            if ($file -match '^(apps/app-|packages/design-system/|services/(identity|dsh)/|tools/mobile/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$)') { $run = $true }
-          }
-          "base=$base" >> $env:GITHUB_OUTPUT
-          "run=$($run.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+      - name: Set up pinned pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 10.34.0
+          run_install: false
 
       - name: Set up Node
-        if: steps.mobile.outputs.run == 'true'
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 24.17.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Verify Nx Cloud CI access configuration
-        if: steps.mobile.outputs.run == 'true'
         shell: pwsh
         run: node tools/dev/verify-nx-cloud-ci.mjs
 
-      - name: Install pinned pnpm
-        if: steps.mobile.outputs.run == 'true'
-        shell: pwsh
-        run: npm install --global pnpm@10.34.0
-
       - name: Install workspace
-        if: steps.mobile.outputs.run == 'true'
         shell: pwsh
         run: pnpm install --frozen-lockfile
 
       - name: Verify affected Windows Android exports with config-only map placeholders
-        if: steps.mobile.outputs.run == 'true'
         shell: pwsh
         env:
           GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT: maps-config-placeholder-0
@@ -213,4 +183,4 @@ jobs:
           GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
           GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
           GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
-        run: pnpm exec nx affected -t export-smoke --base=${{ steps.mobile.outputs.base }} --head=HEAD --outputStyle=stream
+        run: pnpm exec nx affected -t export-smoke --base=$env:NX_BASE --head=$env:NX_HEAD --outputStyle=stream
