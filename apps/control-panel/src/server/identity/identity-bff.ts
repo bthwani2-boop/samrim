@@ -31,12 +31,12 @@ const deviceCookie = `${cookiePrefix}bt_identity_device`;
 const refreshInFlight = new Map<string, Promise<ActorIdentity | null>>();
 
 type DevelopmentGlobal = typeof globalThis & {
-  __bthwaniDevelopmentOperatorLogoutSuppressions?: Set<string>;
+  __bthwaniOperatorSessionLogoutSuppressions?: Set<string>;
 };
 const developmentGlobal = globalThis as DevelopmentGlobal;
-const developmentOperatorLogoutSuppressions =
-  developmentGlobal.__bthwaniDevelopmentOperatorLogoutSuppressions ?? new Set<string>();
-developmentGlobal.__bthwaniDevelopmentOperatorLogoutSuppressions = developmentOperatorLogoutSuppressions;
+const operatorSessionLogoutSuppressions =
+  developmentGlobal.__bthwaniOperatorSessionLogoutSuppressions ?? new Set<string>();
+developmentGlobal.__bthwaniOperatorSessionLogoutSuppressions = operatorSessionLogoutSuppressions;
 
 function identityBaseUrl(): string {
   const explicit = process.env.IDENTITY_API_BASE_URL?.trim();
@@ -81,13 +81,15 @@ function refreshRequestId(refreshToken: string, clientInstanceId: string): strin
   return createHash("sha256").update("identity-refresh-request-v1\0").update(refreshToken).update("\0").update(clientInstanceId).digest("base64url");
 }
 
-async function writeTokens(pair: TokenPair, clientInstanceId: string): Promise<void> {
+async function writeTokens(pair: TokenPair, clientInstanceId: string, rejectLoggedOutSession = false): Promise<boolean> {
   if (!isControlPanelIdentity(pair.identity)) throw new Error("CONTROL_PANEL_SESSION_SURFACE_MISMATCH");
   const store = await cookies();
+  if (rejectLoggedOutSession && operatorSessionLogoutSuppressions.has(clientInstanceId)) return false;
   store.set(accessCookie, pair.accessToken, { ...cookieOptions(), expires: new Date(pair.accessExpiresAt) });
   store.set(refreshCookie, pair.refreshToken, { ...cookieOptions(), maxAge: refreshCookieMaxAge() });
   store.set(deviceCookie, clientInstanceId, { ...cookieOptions(), maxAge: 365 * 24 * 60 * 60 });
-  developmentOperatorLogoutSuppressions.delete(clientInstanceId);
+  operatorSessionLogoutSuppressions.delete(clientInstanceId);
+  return true;
 }
 
 function isControlPanelRole(role: ActorType): role is ControlPanelRole {
@@ -116,11 +118,10 @@ async function clearOperatorCookiesBestEffort(preservedClientInstanceId?: string
   }
 }
 
-function suppressDevelopmentOperatorSession(clientInstanceId: string | undefined): boolean {
-  if (!developmentSessionEnabled()) return false;
+function suppressOperatorSession(clientInstanceId: string | undefined): boolean {
   const normalized = clientInstanceId?.trim();
   if (!normalized || normalized.length < 8) return false;
-  developmentOperatorLogoutSuppressions.add(normalized);
+  operatorSessionLogoutSuppressions.add(normalized);
   return true;
 }
 
@@ -238,10 +239,10 @@ export async function setIdentitySecurityEnabled(actorId: string, enabled: boole
 async function createDevelopmentOperatorSession(): Promise<ActorIdentity | null> {
   if (!developmentSessionEnabled()) return null;
   const clientInstanceId = await operatorClientInstanceId();
-  if (developmentOperatorLogoutSuppressions.has(clientInstanceId)) return null;
+  if (operatorSessionLogoutSuppressions.has(clientInstanceId)) return null;
   try {
     const pair = await identityClient().developmentSession("operator", clientInstanceId);
-    await writeTokens(pair, clientInstanceId);
+    if (!await writeTokens(pair, clientInstanceId, true)) return null;
     return pair.identity;
   } catch (error) {
     if (isIdentityClientError(error) && error.kind === "http" && (error.status === 403 || error.status === 404)) return null;
@@ -254,7 +255,7 @@ export async function readOperatorSession(): Promise<ActorIdentity | null> {
   const accessToken = store.get(accessCookie)?.value;
   const refreshToken = store.get(refreshCookie)?.value;
   const clientInstanceId = store.get(deviceCookie)?.value;
-  if (developmentSessionEnabled() && clientInstanceId && developmentOperatorLogoutSuppressions.has(clientInstanceId)) {
+  if (clientInstanceId && operatorSessionLogoutSuppressions.has(clientInstanceId)) {
     await clearOperatorCookiesBestEffort(clientInstanceId);
     return null;
   }
@@ -322,7 +323,10 @@ async function refreshOperatorSession(store: Awaited<ReturnType<typeof cookies>>
   }
 
   try {
-    await writeTokens(pair, clientInstanceId);
+    if (!(await writeTokens(pair, clientInstanceId, true))) {
+      try { await identityClient().logout(pair.accessToken); } catch { /* the logout request already made this session terminal locally */ }
+      return null;
+    }
     return pair.identity;
   } catch (error) {
     throw localSessionError(503, "IDENTITY_SESSION_PERSISTENCE_UNAVAILABLE", "identity session persistence is unavailable");
@@ -335,29 +339,30 @@ export async function logoutOperator(): Promise<void> {
   const refreshToken = store.get(refreshCookie)?.value;
   let clientInstanceId = store.get(deviceCookie)?.value;
   if (!clientInstanceId && developmentSessionEnabled()) clientInstanceId = await operatorClientInstanceId();
+  const preserveDevice = suppressOperatorSession(clientInstanceId);
   let remoteError: unknown = null;
   let tokenToRevoke = accessToken;
 
   try {
-    if (!tokenToRevoke && refreshToken && clientInstanceId) {
+    if (tokenToRevoke) {
+      try {
+        await identityClient().logout(tokenToRevoke);
+      } catch (error) {
+        if (isIdentityClientError(error) && error.kind === "http" && error.status === 401) tokenToRevoke = undefined;
+        else remoteError = error;
+      }
+    }
+
+    if (!tokenToRevoke && !remoteError && refreshToken && clientInstanceId) {
       try {
         const pair = await identityClient().refresh({ refreshToken, clientInstanceId, refreshRequestId: refreshRequestId(refreshToken, clientInstanceId) });
         if (!isControlPanelIdentity(pair.identity)) throw new Error("CONTROL_PANEL_SESSION_SURFACE_MISMATCH");
-        tokenToRevoke = pair.accessToken;
-      } catch (error) {
-        if (!(isIdentityClientError(error) && error.kind === "http" && error.status === 401)) remoteError = error;
-      }
-    }
-    if (tokenToRevoke && !remoteError) {
-      try {
-        await identityClient().logout(tokenToRevoke);
+        await identityClient().logout(pair.accessToken);
       } catch (error) {
         if (!(isIdentityClientError(error) && error.kind === "http" && error.status === 401)) remoteError = error;
       }
     }
   } finally {
-    const preserveDevice = Boolean(clientInstanceId?.trim()) &&
-      (!developmentSessionEnabled() || suppressDevelopmentOperatorSession(clientInstanceId));
     await clearOperatorCookiesBestEffort(preserveDevice ? clientInstanceId : undefined);
   }
   if (remoteError) throw remoteError;
