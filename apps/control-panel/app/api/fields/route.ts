@@ -66,11 +66,13 @@ export async function GET(request: Request) {
   const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;
   const query = params.get("q") ?? "";
   const cursor = params.get("cursor") ?? "";
+  const rawSort = params.get("sort") ?? "phone_asc";
+  const sort = rawSort === "phone_asc" || rawSort === "phone_desc" ? rawSort : null;
   const rawEnabled = params.get("enabled");
   const enabled = rawEnabled === null ? undefined : rawEnabled === "true" ? true : rawEnabled === "false" ? false : null;
-  if (!Number.isInteger(limit) || limit < 1 || limit > 50 || enabled === null || query.trim().length > 100 || cursor.length > 512) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "valid search, cursor, limit, and enabled filters are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50 || enabled === null || sort === null || query.trim().length > 100 || cursor.length > 512) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "valid search, cursor, sort, limit, and enabled filters are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
   try {
-    const page = await searchIdentityRoles("field", query, limit, cursor, enabled);
+    const page = await searchIdentityRoles("field", query, limit, cursor, enabled, sort);
     const items = await Promise.all(page.items.map(async (role) => {
       try {
         const result = await readFieldAdmissionByActor(role.actorId, { operatorActorId: identity.subject });

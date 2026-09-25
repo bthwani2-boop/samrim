@@ -15,6 +15,7 @@ export function CaptainAdmissionPanel() {
   const [phone, setPhone] = useState("");
   const [query, setQuery] = useState("");
   const [enabledFilter, setEnabledFilter] = useState("");
+  const [sort, setSort] = useState<"phone_asc" | "phone_desc">("phone_asc");
   const [items, setItems] = useState<ReadonlyArray<CaptainRecord>>([]);
   const [nextCursor, setNextCursor] = useState("");
   const [busy, setBusy] = useState("");
@@ -30,7 +31,7 @@ export function CaptainAdmissionPanel() {
     else setLoading(true);
     setError("");
     try {
-      const params = new URLSearchParams({ limit: "25", q: query.trim() });
+      const params = new URLSearchParams({ limit: "25", q: query.trim(), sort });
       if (cursor) params.set("cursor", cursor);
       if (enabledFilter) params.set("enabled", enabledFilter);
       const response = await identityFetch(`/api/captains?${params}`);
@@ -44,7 +45,7 @@ export function CaptainAdmissionPanel() {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [enabledFilter, query]);
+  }, [enabledFilter, query, sort]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -183,6 +184,7 @@ export function CaptainAdmissionPanel() {
         <div className="workspace-toolbar">
           <label className="field-label" htmlFor="captain-search">بحث برقم الهاتف<input id="captain-search" inputMode="tel" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث في أرقام الكباتن" /></label>
           <label className="field-label" htmlFor="captain-status-filter">حالة الدور<select id="captain-status-filter" value={enabledFilter} onChange={(event) => setEnabledFilter(event.target.value)}><option value="">كل الحالات</option><option value="true">مفعّل</option><option value="false">موقوف</option></select></label>
+          <label className="field-label" htmlFor="captain-sort">ترتيب رقم الهاتف<select id="captain-sort" value={sort} onChange={(event) => setSort(event.target.value as "phone_asc" | "phone_desc")}><option value="phone_asc">تصاعدي</option><option value="phone_desc">تنازلي</option></select></label>
           <button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={() => void load()}>{loading ? "جارٍ القراءة…" : "إعادة القراءة"}</button>
         </div>
         {notice ? <p className="success-inline" role="status">{notice}</p> : null}

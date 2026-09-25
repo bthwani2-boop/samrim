@@ -13,6 +13,7 @@ export function FieldAdmissionPanel() {
   const [phone, setPhone] = useState("");
   const [query, setQuery] = useState("");
   const [enabledFilter, setEnabledFilter] = useState("");
+  const [sort, setSort] = useState<"phone_asc" | "phone_desc">("phone_asc");
   const [items, setItems] = useState<ReadonlyArray<FieldRecord>>([]);
   const [nextCursor, setNextCursor] = useState("");
   const [busy, setBusy] = useState("");
@@ -28,7 +29,7 @@ export function FieldAdmissionPanel() {
     else setLoading(true);
     setError("");
     try {
-      const params = new URLSearchParams({ limit: "25", q: query.trim() });
+      const params = new URLSearchParams({ limit: "25", q: query.trim(), sort });
       if (cursor) params.set("cursor", cursor);
       if (enabledFilter) params.set("enabled", enabledFilter);
       const response = await identityFetch(`/api/fields?${params}`);
@@ -42,7 +43,7 @@ export function FieldAdmissionPanel() {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [enabledFilter, query]);
+  }, [enabledFilter, query, sort]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -163,7 +164,7 @@ export function FieldAdmissionPanel() {
       </section>
       <section className="access-card" aria-labelledby="field-roster-title">
         <div className="access-card-heading"><span className="step-chip">سجل الشركاء</span><h2 id="field-roster-title">قائمة الميدانيين وأهليتهم</h2><p className="muted">تُقرأ الأدوار من Identity والأهلية التشغيلية من DSH. التفعيل والإيقاف وإجازة إعادة التسجيل تتطلب سببًا ونسخًا حديثة.</p></div>
-        <div className="workspace-toolbar"><label className="field-label" htmlFor="field-search">بحث برقم الهاتف<input id="field-search" inputMode="tel" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث في أرقام الميدانيين" /></label><label className="field-label" htmlFor="field-status-filter">حالة الدور<select id="field-status-filter" value={enabledFilter} onChange={(event) => setEnabledFilter(event.target.value)}><option value="">كل الحالات</option><option value="true">مفعّل</option><option value="false">موقوف</option></select></label><button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={() => void load()}>{loading ? "جارٍ القراءة…" : "إعادة القراءة"}</button></div>
+        <div className="workspace-toolbar"><label className="field-label" htmlFor="field-search">بحث برقم الهاتف<input id="field-search" inputMode="tel" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث في أرقام الميدانيين" /></label><label className="field-label" htmlFor="field-status-filter">حالة الدور<select id="field-status-filter" value={enabledFilter} onChange={(event) => setEnabledFilter(event.target.value)}><option value="">كل الحالات</option><option value="true">مفعّل</option><option value="false">موقوف</option></select></label><label className="field-label" htmlFor="field-sort">ترتيب رقم الهاتف<select id="field-sort" value={sort} onChange={(event) => setSort(event.target.value as "phone_asc" | "phone_desc")}><option value="phone_asc">تصاعدي</option><option value="phone_desc">تنازلي</option></select></label><button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={() => void load()}>{loading ? "جارٍ القراءة…" : "إعادة القراءة"}</button></div>
         {notice ? <p className="success-inline" role="status">{notice}</p> : null}{error ? <p className="identity-error" role="alert">{error}</p> : null}
         {loading && items.length === 0 ? <p role="status">جارٍ قراءة قائمة الميدانيين…</p> : null}{!loading && !error && items.length === 0 ? <div className="collection-state"><strong>لا توجد نتائج</strong><p>جرّب إزالة المرشح أو البحث برقم آخر.</p></div> : null}
         {items.length > 0 ? <div className="operations-table-wrap"><table className="operations-table"><thead><tr><th scope="col">الهاتف</th><th scope="col">تسجيل الهوية</th><th scope="col">أهلية DSH</th><th scope="col">الإدارة</th></tr></thead><tbody>

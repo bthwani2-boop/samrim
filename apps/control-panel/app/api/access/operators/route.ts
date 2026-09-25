@@ -19,14 +19,16 @@ export async function GET(request: Request) {
   const cursor = params.get("cursor") ?? "";
   const rawLimit = params.get("limit") ?? "10";
   const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;
+  const rawSort = params.get("sort") ?? "phone_asc";
+  const sort = rawSort === "phone_asc" || rawSort === "phone_desc" ? rawSort : null;
   const rawEnabled = params.get("enabled");
   const enabled = rawEnabled === null ? undefined : rawEnabled === "true" ? true : rawEnabled === "false" ? false : null;
-  if (!Number.isInteger(limit) || limit < 1 || limit > 25 || enabled === null || query.trim().length > 100 || cursor.length > 512) {
-    return errorResponse("INVALID_INPUT", "valid search, cursor, limit, and enabled filters are required", 400);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 25 || enabled === null || sort === null || query.trim().length > 100 || cursor.length > 512) {
+    return errorResponse("INVALID_INPUT", "valid search, cursor, sort, limit, and enabled filters are required", 400);
   }
 
   try {
-    const page = await searchIdentityRoles("operator", query, limit, cursor, enabled);
+    const page = await searchIdentityRoles("operator", query, limit, cursor, enabled, sort);
     const items = await Promise.all(page.items.map(async (operator) => {
       if (operator.actorId === identity.subject) {
         return { ...operator, permissions: operatorWorkspacePermissions.map(({ key: permission }) => ({ permission, enabled: identity.permissions?.includes(permission) === true })) };
