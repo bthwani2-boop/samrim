@@ -504,6 +504,18 @@ const deliveryFeePolicyRead = await request(dshBase, "GET", `/dsh/operator/deliv
 if (deliveryFeePolicyRead.status !== 200 || deliveryFeePolicyRead.body?.policy?.id !== deliveryFeePolicyCreate.body.policy.id || deliveryFeePolicyRead.body.policy?.serviceCityId !== cityA) fail("delivery-fee policy readback did not return the active city policy", JSON.stringify({ deliveryFeePolicyCreate, deliveryFeePolicyRead }));
 console.log("DSH_DELIVERY_FEE_POLICY=PASS");
 console.log("DSH_CITY_SCOPE_RUNTIME=PASS");
+let partnerFinancialTermsPolicyRead = await request(wltBase, "GET", "/wlt/v1/operator/partner-financial-terms-policy", { token: wltToken });
+if (partnerFinancialTermsPolicyRead.status === 404 && process.env.BTHWANI_IDENTITY_PROOF_SCOPE === "disposable-ci") {
+  partnerFinancialTermsPolicyRead = await request(wltBase, "POST", "/wlt/v1/operator/partner-financial-terms-policy", {
+    token: wltToken,
+    headers: serviceHeaders(actingOperatorID, `dsh-runtime-terms-policy-${suffix}`),
+    body: { commissionRateBps: 1500, settlementPeriod: "MONTHLY", expectedVersion: 0, reason: "DSH runtime disposable financial terms policy proof" },
+  });
+  if (partnerFinancialTermsPolicyRead.status !== 201) fail("disposable WLT partner financial terms policy could not be created", JSON.stringify(partnerFinancialTermsPolicyRead));
+}
+const partnerFinancialTermsPolicy = partnerFinancialTermsPolicyRead.body?.policy;
+if (partnerFinancialTermsPolicyRead.status !== 200 && partnerFinancialTermsPolicyRead.status !== 201 || partnerFinancialTermsPolicy?.state !== "ACTIVE" || partnerFinancialTermsPolicy?.commissionRateBps !== 1500 || partnerFinancialTermsPolicy?.settlementPeriod !== "MONTHLY" || typeof partnerFinancialTermsPolicy?.policyVersion !== "string") fail("canonical WLT partner financial terms policy is unavailable for DSH proof", JSON.stringify(partnerFinancialTermsPolicyRead));
+console.log("DSH_PARTNER_FINANCIAL_TERMS_POLICY=PASS");
 const deliveryFeeMinor = 100;
 const mainOrderSubtotal = 4200;
 const mainOrderTotal = mainOrderSubtotal + deliveryFeeMinor;
@@ -557,7 +569,7 @@ async function createApprovedPartner(phone, name, serviceCityId, origin = "contr
   if (submitted.status !== 200 || submitted.body?.case?.state !== "submitted" || !submitted.body?.case?.partnerActorId) fail("joining case submission failed", JSON.stringify(submitted));
   const actorID = String(submitted.body.case.partnerActorId); actorIDs.add(actorID);
   const accessToken = await activatePartner(phone, name.slice(0, 4).padEnd(4, "x") + suffix.slice(0, 4));
-  const approved = await request(dshBase, "POST", `/dsh/joining-cases/${caseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `approve-${crypto.randomUUID()}`, crypto.randomUUID(), 2), body: { decision: "approved", commissionRateBps: 1500, settlementPeriod: "MONTHLY" } });
+  const approved = await request(dshBase, "POST", `/dsh/joining-cases/${caseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `approve-${crypto.randomUUID()}`, crypto.randomUUID(), 2), body: { decision: "approved", expectedTermsPolicyVersion: partnerFinancialTermsPolicy.policyVersion } });
   if (approved.status !== 200 || approved.body?.case?.state !== "approved" || approved.body?.case?.financialProfileState !== "ACTIVE" || approved.body?.case?.commissionRateBps !== 1500 || approved.body?.case?.settlementPeriod !== "MONTHLY" || typeof approved.body?.case?.financialProfileId !== "string" || approved.body?.case?.store?.primaryVerticalId !== verticalID || approved.body?.case?.store?.deliveryOrigin?.latitude !== firstStoreOrigin.firstStoreLatitude || approved.body?.case?.store?.deliveryOrigin?.longitude !== firstStoreOrigin.firstStoreLongitude) fail("joining case approval did not bind financial terms and transfer the fixed store origin", JSON.stringify(approved));
   const storeID = String(approved.body.case.store.id); storeIDs.add(storeID);
   return { accessToken, actorID, caseID, storeID };
@@ -618,7 +630,7 @@ if (fieldSubmitted.status !== 200 || fieldSubmitted.body?.case?.state !== "submi
 const fieldPartnerActorID = String(fieldSubmittedCanonical.body.case.partnerActorId); actorIDs.add(fieldPartnerActorID);
 const fieldPublicationAttempt = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(first.storeID)}/publication`, { token: fieldAccessToken, headers: partnerHeaders(`field-publication-${suffix}`, 1), body: { state: "published" } });
 if (fieldPublicationAttempt.status !== 401 && fieldPublicationAttempt.status !== 403) fail("Field reached the Store publication writer", JSON.stringify(fieldPublicationAttempt));
-const fieldApproved = await request(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(fieldCaseID)}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-approve-${suffix}`, crypto.randomUUID(), 2), body: { decision: "approved", commissionRateBps: 1500, settlementPeriod: "MONTHLY" } });
+const fieldApproved = await request(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(fieldCaseID)}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-approve-${suffix}`, crypto.randomUUID(), 2), body: { decision: "approved", expectedTermsPolicyVersion: partnerFinancialTermsPolicy.policyVersion } });
 if (fieldApproved.status !== 200 || fieldApproved.body?.case?.state !== "approved" || fieldApproved.body?.case?.financialProfileState !== "ACTIVE" || fieldApproved.body?.case?.commissionRateBps !== 1500 || fieldApproved.body?.case?.settlementPeriod !== "MONTHLY" || typeof fieldApproved.body?.case?.financialProfileId !== "string" || !fieldApproved.body?.case?.store?.id || fieldApproved.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || fieldApproved.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || fieldApproved.body?.case?.store?.deliveryOrigin?.latitude !== firstStoreOrigin.firstStoreLatitude || fieldApproved.body?.case?.store?.deliveryOrigin?.longitude !== firstStoreOrigin.firstStoreLongitude) fail("operator approval of Field-originated joining case did not bind financial terms and preserve the fixed store origin", JSON.stringify(fieldApproved));
 storeIDs.add(String(fieldApproved.body.case.store.id));
 const fieldRoleBeforeDisable = await request(identityBase, "GET", `/internal/actors/${encodeURIComponent(fieldActorID)}/roles/field`, { token: identityDshToken });
@@ -646,7 +658,7 @@ const correctionRoleBeforeDisable = await request(identityBase, "GET", `/interna
 const correctionRoleDisable = await request(dshBase, "POST", `/dsh/partners/${encodeURIComponent(correctionActorID)}/identity-role`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-disable-${suffix}`, crypto.randomUUID(), correctionRoleBeforeDisable.body?.roleVersion), body: { enabled: false, reason: "اختبار تعليق شريك قبل إعادة التفعيل" } });
 const correctionRoleAfterDisable = await request(identityBase, "GET", `/internal/actors/${encodeURIComponent(correctionActorID)}/roles/partner`, { token: identityDshToken });
 const correctionRoleEnable = await request(dshBase, "POST", `/dsh/partners/${encodeURIComponent(correctionActorID)}/identity-role`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-enable-needs-correction-${suffix}`, crypto.randomUUID(), correctionRoleAfterDisable.body?.roleVersion), body: { enabled: true, reason: "إعادة تفعيل بعد تصحيح مطلوب" } });
-const approvedAfterReenable = await request(dshBase, "POST", `/dsh/joining-cases/${correctionCaseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `approve-reenable-${suffix}`, crypto.randomUUID(), 4), body: { decision: "approved", commissionRateBps: 1500, settlementPeriod: "MONTHLY" } });
+const approvedAfterReenable = await request(dshBase, "POST", `/dsh/joining-cases/${correctionCaseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `approve-reenable-${suffix}`, crypto.randomUUID(), 4), body: { decision: "approved", expectedTermsPolicyVersion: partnerFinancialTermsPolicy.policyVersion } });
 if (correctionRoleBeforeDisable.status !== 200 || correctionRoleDisable.status !== 204 || correctionRoleAfterDisable.status !== 200 || correctionRoleEnable.status !== 204 || approvedAfterReenable.status !== 200 || approvedAfterReenable.body?.case?.state !== "approved" || approvedAfterReenable.body?.case?.financialProfileState !== "ACTIVE" || approvedAfterReenable.body?.case?.commissionRateBps !== 1500 || approvedAfterReenable.body?.case?.settlementPeriod !== "MONTHLY" || typeof approvedAfterReenable.body?.case?.financialProfileId !== "string" || approvedAfterReenable.body?.case?.firstStoreLatitude !== correctedStoreOrigin.firstStoreLatitude || approvedAfterReenable.body?.case?.firstStoreLongitude !== correctedStoreOrigin.firstStoreLongitude || approvedAfterReenable.body?.case?.store?.deliveryOrigin?.latitude !== correctedStoreOrigin.firstStoreLatitude || approvedAfterReenable.body?.case?.store?.deliveryOrigin?.longitude !== correctedStoreOrigin.firstStoreLongitude) fail("Partner re-enable did not honor the submitted joining lifecycle, financial terms, or corrected store origin", JSON.stringify({ correctionRoleBeforeDisable, correctionRoleDisable, correctionRoleAfterDisable, correctionRoleEnable, approvedAfterReenable }));
 storeIDs.add(String(approvedAfterReenable.body.case.store.id));
 const fieldCorrectionPhone = `+96777${crypto.randomInt(1_000_000, 9_999_999)}`;
@@ -1452,7 +1464,7 @@ const fieldPayoutCase = await request(dshBase, "POST", "/dsh/field/joining-cases
 const fieldPayoutCaseID = String(fieldPayoutCase.body?.case?.id || "");
 if (fieldPayoutCaseID) caseIDs.add(fieldPayoutCaseID);
 const fieldPayoutSubmitted = await request(dshBase, "POST", `/dsh/field/joining-cases/${encodeURIComponent(fieldPayoutCaseID)}/submit`, { token: secondFieldAccessToken, headers: partnerHeaders(`field-payout-submit-${suffix}`, 1) });
-const fieldPayoutApproved = await request(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(fieldPayoutCaseID)}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-payout-approve-${suffix}`, crypto.randomUUID(), 2), body: { decision: "approved", commissionRateBps: 1500, settlementPeriod: "MONTHLY" } });
+const fieldPayoutApproved = await request(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(fieldPayoutCaseID)}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-payout-approve-${suffix}`, crypto.randomUUID(), 2), body: { decision: "approved", expectedTermsPolicyVersion: partnerFinancialTermsPolicy.policyVersion } });
 const fieldPayoutStoreID = String(fieldPayoutApproved.body?.case?.store?.id || "");
 if (fieldPayoutStoreID) storeIDs.add(fieldPayoutStoreID);
 const fieldPayoutPartnerActorID = String(fieldPayoutApproved.body?.case?.partnerActorId || "");

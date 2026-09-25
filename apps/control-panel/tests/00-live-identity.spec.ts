@@ -228,6 +228,9 @@ test("@live operator passkey registration, authentication and governed recovery 
   } finally {
     restartIdentity();
   }
+  const sessionAfterIdentityRecovery = await readBrowserSession(page);
+  expect(sessionAfterIdentityRecovery.status, JSON.stringify(sessionAfterIdentityRecovery.body)).toBe(200);
+  expect(sessionAfterIdentityRecovery.body.identity.subject).toBe(operator.actorId);
 
   await page.getByText("حساب المشغل", { exact: true }).click();
   const explicitLogoutResponse = page.waitForResponse((response) =>

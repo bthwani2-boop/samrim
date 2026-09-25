@@ -192,6 +192,8 @@ jobs:
 
       - name: Verify DSH runtime semantics
         if: steps.scope.outputs.run == 'true'
+        env:
+          BTHWANI_IDENTITY_PROOF_SCOPE: disposable-ci
         shell: bash
         run: |
           set -euo pipefail
