@@ -40,60 +40,78 @@ func HashJoiningCaseFieldRequest(fieldActorID, phone, businessName, firstStoreNa
 	return hashFacts("field-joining-case", strings.TrimSpace(fieldActorID), strings.TrimSpace(phone), strings.TrimSpace(businessName), strings.TrimSpace(firstStoreName), strings.TrimSpace(serviceCityID), strings.TrimSpace(verticalID), fmt.Sprintf("%.6f", latitude), fmt.Sprintf("%.6f", longitude), strings.Join(fulfillmentModes, ","))
 }
 
-func CreateFieldAdmissionCandidate(ctx context.Context, db *sql.DB, phone, idempotencyKey, requestHash, actingActorID, correlationID string) (FieldAdmission, bool, error) {
-	if db == nil || strings.TrimSpace(phone) == "" || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
-		return FieldAdmission{}, false, ErrFieldAdmissionConflict
+func CreateFieldAdmissionCandidate(ctx context.Context, db *sql.DB, phone, idempotencyKey, requestHash, actingActorID, correlationID string) (FieldAdmission, string, bool, error) {
+	phone = strings.TrimSpace(phone)
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
+	if db == nil || phone == "" || idempotencyKey == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
+		return FieldAdmission{}, "", false, ErrFieldAdmissionConflict
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return FieldAdmission{}, false, err
+		return FieldAdmission{}, "", false, err
 	}
 	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:field-admission:"+idempotencyKey); err != nil {
-		return FieldAdmission{}, false, err
+		return FieldAdmission{}, "", false, err
 	}
 	var storedHash, admissionID string
 	err = tx.QueryRowContext(ctx, "SELECT request_hash,admission_id FROM dsh.field_admission_idempotency WHERE idempotency_key=$1 FOR UPDATE", idempotencyKey).Scan(&storedHash, &admissionID)
 	if err == nil {
 		if storedHash != requestHash {
-			return FieldAdmission{}, false, ErrFieldOperationConflict
+			return FieldAdmission{}, "", false, ErrFieldOperationConflict
 		}
 		admission, readErr := readFieldAdmissionTx(ctx, tx, "id=$1", admissionID)
 		if readErr != nil {
-			return FieldAdmission{}, false, readErr
+			return FieldAdmission{}, "", false, readErr
 		}
 		if err := tx.Commit(); err != nil {
-			return FieldAdmission{}, false, err
+			return FieldAdmission{}, "", false, err
 		}
-		return admission, true, nil
+		return admission, idempotencyKey, true, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		return FieldAdmission{}, false, err
+		return FieldAdmission{}, "", false, err
+	}
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:field-admission-phone:"+phone); err != nil {
+		return FieldAdmission{}, "", false, err
 	}
 	var existing string
-	if err := tx.QueryRowContext(ctx, "SELECT id FROM dsh.field_admissions WHERE contact_phone_e164=$1 AND state='pending_identity' FOR UPDATE", strings.TrimSpace(phone)).Scan(&existing); err == nil {
-		return FieldAdmission{}, false, ErrFieldAdmissionExists
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		return FieldAdmission{}, false, err
+	err = tx.QueryRowContext(ctx, "SELECT id FROM dsh.field_admissions WHERE contact_phone_e164=$1 AND state='pending_identity' FOR UPDATE", phone).Scan(&existing)
+	if err == nil {
+		var resumeKey string
+		if err := tx.QueryRowContext(ctx, "SELECT idempotency_key FROM dsh.field_admission_idempotency WHERE admission_id=$1 AND operation='create' ORDER BY created_at,idempotency_key LIMIT 1", existing).Scan(&resumeKey); err != nil {
+			return FieldAdmission{}, "", false, ErrFieldAdmissionConflict
+		}
+		admission, readErr := readFieldAdmissionTx(ctx, tx, "id=$1", existing)
+		if readErr != nil {
+			return FieldAdmission{}, "", false, readErr
+		}
+		if err := tx.Commit(); err != nil {
+			return FieldAdmission{}, "", false, err
+		}
+		return admission, resumeKey, true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return FieldAdmission{}, "", false, err
 	}
 	admissionID, err = newID("field-admission")
 	if err != nil {
-		return FieldAdmission{}, false, err
+		return FieldAdmission{}, "", false, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.field_admissions(id,contact_phone_e164,state,version) VALUES($1,$2,'pending_identity',1)`, admissionID, strings.TrimSpace(phone)); err != nil {
-		return FieldAdmission{}, false, err
+	if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.field_admissions(id,contact_phone_e164,state,version) VALUES($1,$2,'pending_identity',1)", admissionID, phone); err != nil {
+		return FieldAdmission{}, "", false, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.field_admission_idempotency(idempotency_key,request_hash,admission_id,operation,result_version,result_state) VALUES($1,$2,$3,'create',1,'pending_identity')`, idempotencyKey, requestHash, admissionID); err != nil {
-		return FieldAdmission{}, false, err
+	if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.field_admission_idempotency(idempotency_key,request_hash,admission_id,operation,result_version,result_state) VALUES($1,$2,$3,'create',1,'pending_identity')", idempotencyKey, requestHash, admissionID); err != nil {
+		return FieldAdmission{}, "", false, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.field_admission_audit(event_type,idempotency_key,correlation_id,acting_actor_id,admission_id,to_state,result_version,request_hash) VALUES('field_admission_created',$1,$2,$3,$4,'pending_identity',1,$5)`, idempotencyKey, correlationID, actingActorID, admissionID, requestHash); err != nil {
-		return FieldAdmission{}, false, err
+	if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.field_admission_audit(event_type,idempotency_key,correlation_id,acting_actor_id,admission_id,to_state,result_version,request_hash) VALUES('field_admission_created',$1,$2,$3,$4,'pending_identity',1,$5)", idempotencyKey, correlationID, actingActorID, admissionID, requestHash); err != nil {
+		return FieldAdmission{}, "", false, err
 	}
 	if err := tx.Commit(); err != nil {
-		return FieldAdmission{}, false, err
+		return FieldAdmission{}, "", false, err
 	}
 	admission, err := ReadFieldAdmission(ctx, db, admissionID)
-	return admission, true, err
+	return admission, idempotencyKey, false, err
 }
 
 func BindFieldAdmission(ctx context.Context, db *sql.DB, admissionID, actorID, idempotencyKey, requestHash, actingActorID, correlationID string) (FieldAdmission, error) {

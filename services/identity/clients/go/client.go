@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -156,10 +157,21 @@ func (c *Client) ReadSession(ctx context.Context, accessToken string) (ActorIden
 	return result, err
 }
 func (c *Client) SearchRoles(ctx context.Context, role, query string) (ActorRoleSearchPage, error) {
+	enabled := true
+	return c.searchRoles(ctx, role, query, &enabled)
+}
+
+func (c *Client) SearchRolesAnyStatus(ctx context.Context, role, query string) (ActorRoleSearchPage, error) {
+	return c.searchRoles(ctx, role, query, nil)
+}
+
+func (c *Client) searchRoles(ctx context.Context, role, query string, enabled *bool) (ActorRoleSearchPage, error) {
 	params := url.Values{}
 	params.Set("role", strings.TrimSpace(role))
 	params.Set("q", strings.TrimSpace(query))
-	params.Set("enabled", "true")
+	if enabled != nil {
+		params.Set("enabled", strconv.FormatBool(*enabled))
+	}
 	params.Set("limit", "2")
 	var result ActorRoleSearchPage
 	err := c.do(ctx, IdentityOperationSearchActorRoles.Method, IdentityOperationSearchActorRoles.Path+"?"+params.Encode(), "", nil, &result)

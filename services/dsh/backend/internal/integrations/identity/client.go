@@ -78,6 +78,10 @@ func (c *Client) ProvisionFieldWithContext(ctx context.Context, input ActorInput
 	return c.inner.ProvisionRoleWithContext(ctx, identityclient.ProvisionActorRoleRequest{PhoneE164: input.PhoneE164, Role: "field"}, correlationID, operatorActorID)
 }
 
+func (c *Client) SearchFieldRolesByPhoneE164(ctx context.Context, phone string) (identityclient.ActorRoleSearchPage, error) {
+	return c.inner.SearchRolesAnyStatus(ctx, "field", strings.TrimSpace(phone))
+}
+
 func (c *Client) ReadActorRole(ctx context.Context, actorID, role string) (identityclient.ActorRoleView, error) {
 	return c.inner.ReadRole(ctx, actorID, role)
 }
