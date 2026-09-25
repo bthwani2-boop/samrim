@@ -503,8 +503,8 @@ type customerWithdrawalIntakeResponse struct {
 }
 type customerWithdrawalIntakeListResponse struct {
 	Intakes    []CustomerWithdrawalIntakeSummary `json:"intakes"`
-	NextCursor string                          `json:"nextCursor,omitempty"`
-	Limit      int                             `json:"limit"`
+	NextCursor string                            `json:"nextCursor,omitempty"`
+	Limit      int                               `json:"limit"`
 }
 
 type CustomerWithdrawalIntakeSummary struct {
@@ -526,8 +526,8 @@ type CustomerWithdrawalIntakeSummary struct {
 
 type CustomerWithdrawalIntakeList struct {
 	Intakes    []CustomerWithdrawalIntakeSummary `json:"intakes"`
-	NextCursor string                          `json:"nextCursor,omitempty"`
-	Limit      int                             `json:"limit"`
+	NextCursor string                            `json:"nextCursor,omitempty"`
+	Limit      int                               `json:"limit"`
 }
 
 type FinanceEvidenceFile struct {
@@ -1208,9 +1208,15 @@ func (c *Client) ListCustomerWithdrawalIntakes(ctx context.Context, status, sear
 		return CustomerWithdrawalIntakeList{}, errors.New("invalid customer withdrawal registry query")
 	}
 	query := url.Values{"limit": {strconv.Itoa(limit)}, "sort": {strings.TrimSpace(sort)}}
-	if value := strings.TrimSpace(status); value != "" { query.Set("status", value) }
-	if value := strings.TrimSpace(search); value != "" { query.Set("search", value) }
-	if value := strings.TrimSpace(cursor); value != "" { query.Set("cursor", value) }
+	if value := strings.TrimSpace(status); value != "" {
+		query.Set("status", value)
+	}
+	if value := strings.TrimSpace(search); value != "" {
+		query.Set("search", value)
+	}
+	if value := strings.TrimSpace(cursor); value != "" {
+		query.Set("cursor", value)
+	}
 	var response customerWithdrawalIntakeListResponse
 	err := c.requestWithActor(ctx, http.MethodGet, "/wlt/v1/operator/customer-withdrawal-intakes?"+query.Encode(), nil, "", "", 0, actingActorID, &response)
 	return CustomerWithdrawalIntakeList{Intakes: response.Intakes, NextCursor: response.NextCursor, Limit: response.Limit}, err

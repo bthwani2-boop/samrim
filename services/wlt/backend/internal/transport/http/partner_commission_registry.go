@@ -12,8 +12,8 @@ import (
 )
 
 type partnerCommissionRegistryCursor struct {
-	Search      string `json:"search"`
-	Sort        string `json:"sort"`
+	Search       string `json:"search"`
+	Sort         string `json:"sort"`
 	AfterActorID string `json:"afterActorId"`
 }
 
@@ -57,10 +57,10 @@ func (s *Server) listPartnerCommissionReceivables(w http.ResponseWriter, r *http
 	responseItems := make([]map[string]any, 0, len(items))
 	for _, item := range items {
 		responseItems = append(responseItems, map[string]any{
-			"partnerActorId": item.PartnerActorID,
-			"currency": item.Currency,
+			"partnerActorId":                       item.PartnerActorID,
+			"currency":                             item.Currency,
 			"outstandingCommissionReceivableMinor": item.OutstandingCommissionReceivableMinor,
-			"profileState": item.ProfileState,
+			"profileState":                         item.ProfileState,
 		})
 	}
 	response := map[string]any{"items": responseItems, "limit": limit}

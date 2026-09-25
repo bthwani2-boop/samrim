@@ -51,20 +51,20 @@ type CustomerWithdrawalIntakeRecord struct {
 }
 
 type CustomerWithdrawalIntakeSummaryRecord struct {
-	ID                            string     `json:"id"`
-	CustomerActorID               string     `json:"customerActorId"`
-	ProviderKey                   string     `json:"providerKey"`
-	WalletIdentifierMasked        string     `json:"walletIdentifierMasked"`
-	BeneficiaryName               string     `json:"beneficiaryName"`
-	Status                        string     `json:"status"`
-	DestinationID                 *string    `json:"destinationId,omitempty"`
-	DestinationStatus             *string    `json:"destinationStatus,omitempty"`
-	DestinationVerificationStatus *string    `json:"destinationVerificationStatus,omitempty"`
-	PayoutID                      *string    `json:"payoutId,omitempty"`
-	PayoutStatus                  *string    `json:"payoutStatus,omitempty"`
-	PayoutAmountMinor             *int64     `json:"payoutAmountMinor,omitempty"`
-	PayoutCurrency                *string    `json:"payoutCurrency,omitempty"`
-	RequestedAt                   time.Time  `json:"requestedAt"`
+	ID                            string    `json:"id"`
+	CustomerActorID               string    `json:"customerActorId"`
+	ProviderKey                   string    `json:"providerKey"`
+	WalletIdentifierMasked        string    `json:"walletIdentifierMasked"`
+	BeneficiaryName               string    `json:"beneficiaryName"`
+	Status                        string    `json:"status"`
+	DestinationID                 *string   `json:"destinationId,omitempty"`
+	DestinationStatus             *string   `json:"destinationStatus,omitempty"`
+	DestinationVerificationStatus *string   `json:"destinationVerificationStatus,omitempty"`
+	PayoutID                      *string   `json:"payoutId,omitempty"`
+	PayoutStatus                  *string   `json:"payoutStatus,omitempty"`
+	PayoutAmountMinor             *int64    `json:"payoutAmountMinor,omitempty"`
+	PayoutCurrency                *string   `json:"payoutCurrency,omitempty"`
+	RequestedAt                   time.Time `json:"requestedAt"`
 }
 
 type CustomerWithdrawalAcceptInput struct {
@@ -203,13 +203,27 @@ func ListCustomerWithdrawalIntakes(ctx context.Context, db *sql.DB, status, sear
 		if err := rows.Scan(&item.ID, &item.CustomerActorID, &item.ProviderKey, &item.WalletIdentifierMasked, &item.BeneficiaryName, &item.Status, &destinationID, &destinationStatus, &verificationStatus, &payoutID, &payoutStatus, &payoutAmount, &payoutCurrency, &item.RequestedAt); err != nil {
 			return nil, false, err
 		}
-		if destinationID.Valid { item.DestinationID = &destinationID.String }
-		if destinationStatus.Valid { item.DestinationStatus = &destinationStatus.String }
-		if verificationStatus.Valid { item.DestinationVerificationStatus = &verificationStatus.String }
-		if payoutID.Valid { item.PayoutID = &payoutID.String }
-		if payoutStatus.Valid { item.PayoutStatus = &payoutStatus.String }
-		if payoutAmount.Valid { item.PayoutAmountMinor = &payoutAmount.Int64 }
-		if payoutCurrency.Valid { item.PayoutCurrency = &payoutCurrency.String }
+		if destinationID.Valid {
+			item.DestinationID = &destinationID.String
+		}
+		if destinationStatus.Valid {
+			item.DestinationStatus = &destinationStatus.String
+		}
+		if verificationStatus.Valid {
+			item.DestinationVerificationStatus = &verificationStatus.String
+		}
+		if payoutID.Valid {
+			item.PayoutID = &payoutID.String
+		}
+		if payoutStatus.Valid {
+			item.PayoutStatus = &payoutStatus.String
+		}
+		if payoutAmount.Valid {
+			item.PayoutAmountMinor = &payoutAmount.Int64
+		}
+		if payoutCurrency.Valid {
+			item.PayoutCurrency = &payoutCurrency.String
+		}
 		result = append(result, item)
 	}
 	if err := rows.Err(); err != nil {

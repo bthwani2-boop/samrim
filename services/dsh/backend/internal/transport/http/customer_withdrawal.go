@@ -164,12 +164,12 @@ func (s *BeneficiaryFinanceServer) readCustomerWithdrawalIntake(w http.ResponseW
 			return
 		}
 		destination = map[string]any{
-			"id": readDestination.ID,
-			"status": readDestination.Status,
-			"verificationStatus": readDestination.VerificationStatus,
+			"id":                     readDestination.ID,
+			"status":                 readDestination.Status,
+			"verificationStatus":     readDestination.VerificationStatus,
 			"walletIdentifierMasked": readDestination.WalletIdentifierMasked,
-			"beneficiaryName": readDestination.BeneficiaryName,
-			"version": readDestination.Version,
+			"beneficiaryName":        readDestination.BeneficiaryName,
+			"version":                readDestination.Version,
 		}
 	}
 	w.Header().Set("Cache-Control", "no-store")

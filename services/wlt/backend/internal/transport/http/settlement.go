@@ -82,8 +82,8 @@ type customerWithdrawalIntakeCursor struct {
 
 type customerWithdrawalIntakeListResponse struct {
 	Intakes    []postgres.CustomerWithdrawalIntakeSummaryRecord `json:"intakes"`
-	NextCursor string                                          `json:"nextCursor,omitempty"`
-	Limit      int                                             `json:"limit"`
+	NextCursor string                                           `json:"nextCursor,omitempty"`
+	Limit      int                                              `json:"limit"`
 }
 
 type settlementBatchExportJSON struct {
