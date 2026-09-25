@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -935,12 +936,14 @@ func validateCatalogProductFactsTx(ctx context.Context, tx *sql.Tx, input Catalo
 		var categoryVertical string
 		err := tx.QueryRowContext(ctx, "SELECT vertical_id FROM dsh.catalog_categories WHERE id=$1 AND active=true", categoryID).Scan(&categoryVertical)
 		if errors.Is(err, sql.ErrNoRows) {
+			log.Printf("DSH_CATALOG_PRODUCT_CATEGORY_LOOKUP no_rows category_id=%q expected_vertical_id=%q", categoryID, input.VerticalID)
 			return ErrCatalogCategoryNotFound
 		}
 		if err != nil {
 			return err
 		}
 		if categoryVertical != input.VerticalID {
+			log.Printf("DSH_CATALOG_PRODUCT_CATEGORY_LOOKUP vertical_mismatch category_id=%q expected_vertical_id=%q actual_vertical_id=%q", categoryID, input.VerticalID, categoryVertical)
 			return ErrCatalogCategoryNotFound
 		}
 	}
