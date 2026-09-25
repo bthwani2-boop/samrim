@@ -212,8 +212,8 @@ jobs:
             --project-name samrim-local \
             --env-file infra/local/.env \
             -f infra/local/compose/compose.yaml \
-            logs --no-color dsh 2>&1 | grep -E 'store publication (persistence|internal) failure'; then
-            echo "No classified store publication diagnostics were emitted."
+            logs --no-color dsh 2>&1 | grep -E 'DSH_CATALOG_PRODUCT_CREATE_NOT_FOUND|store publication (persistence|internal) failure'; then
+            echo "No classified DSH runtime diagnostics were emitted."
           fi
 
       - name: Verify backend proof is non-mutating

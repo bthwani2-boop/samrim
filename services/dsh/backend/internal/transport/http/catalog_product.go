@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -367,6 +368,14 @@ func (s *CatalogServer) createProduct(w http.ResponseWriter, r *http.Request) {
 	request := input.CreateCatalogProductRequest
 	result, err := s.service.CreateCatalogProduct(r.Context(), acting, postgres.CatalogProductInput{VerticalID: request.VerticalID, Scope: request.Scope, StoreID: request.StoreID, CanonicalName: request.CanonicalName, Description: request.Description, Brand: optionalRequestString(request.Brand), MeasurementKind: string(request.MeasurementKind), BaseUnit: string(request.BaseUnit), VariantTitle: request.VariantTitle, CategoryIDs: request.CategoryIds, AttributeValues: catalogAttributeInputs(input.AttributeValues), VariantAttributeValues: catalogAttributeInputs(input.VariantAttributeValues), IdentifierType: request.IdentifierType, IdentifierValue: request.IdentifierValue, ImageURI: request.ImageUri}, idempotency, correlation)
 	if err != nil {
+		switch {
+		case errors.Is(err, postgres.ErrCatalogCategoryNotFound):
+			log.Print("DSH_CATALOG_PRODUCT_CREATE_NOT_FOUND category")
+		case errors.Is(err, postgres.ErrCatalogVerticalNotFound):
+			log.Print("DSH_CATALOG_PRODUCT_CREATE_NOT_FOUND vertical")
+		case errors.Is(err, postgres.ErrCatalogProductNotFound):
+			log.Print("DSH_CATALOG_PRODUCT_CREATE_NOT_FOUND product")
+		}
 		writeCatalogError(w, err)
 		return
 	}
