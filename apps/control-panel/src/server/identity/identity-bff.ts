@@ -262,7 +262,7 @@ export async function readOperatorSession(): Promise<ActorIdentity | null> {
   if (!accessToken && !refreshToken) return createDevelopmentOperatorSession();
 
   if (accessToken) {
-    const identity = await readOperatorAccessToken(accessToken);
+    const identity = await readOperatorAccessToken(accessToken, clientInstanceId);
     if (identity) return identity;
   }
 
@@ -290,11 +290,11 @@ export async function readOperatorProfile(): Promise<Readonly<{ phoneE164: strin
   return { phoneE164: actorRole.phoneE164 };
 }
 
-async function readOperatorAccessToken(accessToken: string): Promise<ActorIdentity | null> {
+async function readOperatorAccessToken(accessToken: string, clientInstanceId?: string): Promise<ActorIdentity | null> {
   try {
     const identity = await identityClient().session(accessToken);
     if (!isControlPanelIdentity(identity)) {
-      await clearOperatorCookiesBestEffort();
+      await clearOperatorCookiesBestEffort(clientInstanceId);
       return null;
     }
     return identity;
@@ -315,7 +315,7 @@ async function refreshOperatorSession(store: Awaited<ReturnType<typeof cookies>>
       throw localSessionError(409, "REFRESH_CONFLICT", "operator session refresh is being reconciled");
     }
     if (isTerminalIdentityFailure(error)) {
-      await clearOperatorCookiesBestEffort();
+      await clearOperatorCookiesBestEffort(clientInstanceId);
       return null;
     }
     if (isIdentityClientError(error)) throw error;
