@@ -151,6 +151,22 @@ jobs:
           export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
           pnpm --dir apps/control-panel test:e2e:live
 
+      - name: Report Control Panel and Identity runtime errors
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f "$RUNNER_TEMP/control-panel.log" ]]; then
+            grep -Ei 'error|exception|panic|internal server error' "$RUNNER_TEMP/control-panel.log" | tail -n 80 || true
+          fi
+          docker compose \
+            --project-name samrim-local \
+            --env-file infra/local/.env \
+            -f infra/local/compose/compose.yaml \
+            logs --no-color --since=5m identity 2>&1 \
+            | grep -Ei 'error|exception|panic|internal server error' \
+            | tail -n 80 || true
+
       - name: Stop Control Panel host
         if: always()
         shell: bash

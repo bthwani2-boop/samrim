@@ -110,7 +110,11 @@ func (s *JoiningCaseServer) create(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.Create(r.Context(), postgres.JoiningCaseRecord{ContactPhoneE164: input.ContactPhoneE164, BusinessName: input.BusinessName, FirstStoreName: input.FirstStoreName, FirstStoreServiceCityID: input.ServiceCityID, FirstStoreVerticalID: input.FirstStoreVerticalID, FirstStoreLatitude: &input.FirstStoreLatitude, FirstStoreLongitude: &input.FirstStoreLongitude}, idempotency, acting, correlation)
+	fulfillmentModes := make([]string, len(input.FirstStoreFulfillmentModes))
+	for index, mode := range input.FirstStoreFulfillmentModes {
+		fulfillmentModes[index] = string(mode)
+	}
+	result, err := s.service.Create(r.Context(), postgres.JoiningCaseRecord{ContactPhoneE164: input.ContactPhoneE164, BusinessName: input.BusinessName, FirstStoreName: input.FirstStoreName, FirstStoreServiceCityID: input.ServiceCityID, FirstStoreVerticalID: input.FirstStoreVerticalID, FirstStoreLatitude: &input.FirstStoreLatitude, FirstStoreLongitude: &input.FirstStoreLongitude, FirstStoreFulfillmentModes: fulfillmentModes}, idempotency, acting, correlation)
 	if err != nil {
 		writeJoiningCaseError(w, err)
 		return
