@@ -169,6 +169,16 @@ jobs:
           export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
           pnpm --dir apps/control-panel test:e2e:live
 
+      - name: Report WLT payout registry diagnostics
+        if: failure() && steps.scope.outputs.run == 'true'
+        shell: bash
+        run: |
+          docker compose \
+            --project-name samrim-local \
+            --env-file infra/local/.env \
+            -f infra/local/compose/compose.yaml \
+            logs --no-color --since=5m wlt 2>&1 | grep -F "WLT_PAYOUT_ERROR" || true
+
       - name: Verify backend runtime semantics
         if: steps.scope.outputs.run == 'true'
         env:

@@ -15,6 +15,7 @@ import (
 
 	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/cashin"
 	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/storage/postgres"
+	"github.com/lib/pq"
 )
 
 type Server struct {
@@ -1610,6 +1611,12 @@ func writePayoutError(w http.ResponseWriter, err error) {
 	case errors.Is(err, postgres.ErrIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different payout facts")
 	default:
+		var postgresError *pq.Error
+		if errors.As(err, &postgresError) {
+			log.Printf("WLT_PAYOUT_ERROR sqlstate=%s", postgresError.Code)
+		} else {
+			log.Printf("WLT_PAYOUT_ERROR error_type=%T", err)
+		}
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "payout operation could not be completed")
 	}
 }
