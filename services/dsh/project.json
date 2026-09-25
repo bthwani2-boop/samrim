@@ -3,11 +3,21 @@
   "root": "services/dsh",
   "projectType": "application",
   "targets": {
-    "test": {
+    "contract": {
       "executor": "nx:run-commands",
       "options": {
         "command": "node services/dsh/tools/generate-types.mjs --check"
-      }
+      },
+      "inputs": [
+        "default",
+        "^default",
+        {
+          "runtime": "node --version"
+        },
+        {
+          "runtime": "pnpm --version"
+        }
+      ]
     }
   },
   "tags": [

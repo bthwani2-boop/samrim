@@ -81,27 +81,22 @@ jobs:
         shell: bash
         run: node tools/dev/knowledge-source.mjs
 
-      - name: Verify repository and knowledge invariants
+      - name: Verify repository invariants through Nx
         shell: bash
+        env:
+          GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT: maps-config-placeholder-0
+          GOOGLE_MAPS_IOS_API_KEY: maps-config-placeholder-1
+          GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
+          GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
+          GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
         run: |
           set -euo pipefail
-          node tools/dev/verify-donor-residue.mjs
-          node tools/dev/verify-repository-structure.mjs
-          node tools/dev/verify-structural-hygiene.mjs
-          node tools/dev/verify-local-runtime-ownership.mjs
-          node tools/dev/verify-removed-human-domain-residue.mjs
-          node tools/dev/verify-doc-command-parity.mjs
-          node tools/dev/verify-doc-config-parity.mjs
-          node tools/dev/verify-knowledge-system.mjs
-          node tools/dev/verify-knowledge-references.mjs
-          node tools/dev/verify-agent-knowledge-contract.mjs
-          node tools/dev/verify-workspace-dependencies.mjs
-          node tools/dev/verify-nx-project-tags.mjs
-          pnpm run mobile:verify-config
-          pnpm run brand:check
-          pnpm run theme:check
-          pnpm run theme:verify
-          pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-powershell-syntax.ps1
+          pnpm exec nx run-many \
+            -t donor-residue,repository-structure,structural-hygiene,runtime-ownership,removed-domain-residue,docs-command-parity,docs-config-parity,knowledge-system,knowledge-references,agent-contract,workspace-dependencies,nx-project-tags,mobile-config,brand,theme-check,theme-verify,powershell-syntax,knip \
+            --projects=workspace-tooling \
+            --outputStyle=stream \
+            --parallel=3
+          pnpm exec nx run infra:compose-config --outputStyle=stream
 
       - name: Verify Go workspace synchronization
         shell: bash
@@ -127,27 +122,7 @@ jobs:
           GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
           GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
           GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
-        run: pnpm exec nx affected -t typecheck,test,build,export-smoke,vet --base=${{ steps.base.outputs.sha }} --head=HEAD --outputStyle=stream
-
-      - name: Verify repository liveness for source changes
-        shell: bash
-        env:
-          GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT: maps-config-placeholder-0
-          GOOGLE_MAPS_IOS_API_KEY: maps-config-placeholder-1
-          GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
-          GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
-          GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
-        run: |
-          set -euo pipefail
-          if git diff --quiet "${{ steps.base.outputs.sha }}" HEAD -- apps packages services tools package.json pnpm-lock.yaml pnpm-workspace.yaml; then
-            echo "KNIP=SKIPPED reason=no_source_or_dependency_change"
-          else
-            pnpm exec knip --no-progress --reporter compact --no-config-hints
-          fi
-
-      - name: Verify canonical Compose configuration
-        shell: bash
-        run: docker compose --project-name samrim-local --env-file infra/local/.env.example -f infra/local/compose/compose.yaml config --quiet
+        run: pnpm exec nx affected -t typecheck,unit,contract,build,export-smoke,vet --base=${{ steps.base.outputs.sha }} --head=HEAD --outputStyle=stream
 
       - name: Verify tooling is non-mutating
         shell: bash

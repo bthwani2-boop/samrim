@@ -9,25 +9,43 @@
   "targets": {
     "build": {
       "executor": "nx:run-commands",
-      "inputs": ["default", "^default"],
+      "inputs": [
+        "default",
+        "^default",
+        {
+          "runtime": "go version"
+        }
+      ],
       "options": {
         "command": "go build ./...",
         "cwd": "services/identity/backend"
       }
     },
-    "test": {
+    "vet": {
       "executor": "nx:run-commands",
-      "inputs": ["default", "^default"],
+      "inputs": [
+        "default",
+        "^default",
+        {
+          "runtime": "go version"
+        }
+      ],
       "options": {
-        "command": "go test ./...",
+        "command": "go vet ./...",
         "cwd": "services/identity/backend"
       }
     },
-    "vet": {
+    "unit": {
       "executor": "nx:run-commands",
-      "inputs": ["default", "^default"],
+      "inputs": [
+        "default",
+        "^default",
+        {
+          "runtime": "go version"
+        }
+      ],
       "options": {
-        "command": "go vet ./...",
+        "command": "go test ./...",
         "cwd": "services/identity/backend"
       }
     }

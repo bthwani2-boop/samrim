@@ -9,10 +9,33 @@
   "analytics": false,
   "targetDefaults": {
     "typecheck": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^default",
+        {
+          "runtime": "node --version"
+        },
+        {
+          "runtime": "pnpm --version"
+        }
+      ]
+    },
+    "unit": {
       "cache": true
     },
-    "test": {
-      "cache": true
+    "contract": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^default",
+        {
+          "runtime": "node --version"
+        },
+        {
+          "runtime": "pnpm --version"
+        }
+      ]
     },
     "build": {
       "cache": true
@@ -23,7 +46,13 @@
         "default",
         "^default",
         "{workspaceRoot}/tools/mobile/export-mobile-smoke.mjs",
-        "{workspaceRoot}/tools/mobile/define-samrim-expo-app.cjs"
+        "{workspaceRoot}/tools/mobile/define-samrim-expo-app.cjs",
+        {
+          "runtime": "node --version"
+        },
+        {
+          "runtime": "pnpm --version"
+        }
       ]
     },
     "vet": {

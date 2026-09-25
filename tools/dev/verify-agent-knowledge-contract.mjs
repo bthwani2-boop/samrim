@@ -67,15 +67,17 @@ requireTokens("REPOSITORY-STRUCTURE.md", [
 const verifier = requireTokens("tools/dev/verify-local-candidate.ps1", [
   "BaseSha",
   "EXACT_LOCAL_CANDIDATE_SHA",
-  "nx affected",
-  "Affected workspace targets",
-  "AFFECTED_MOBILE_EXPORT_SMOKE=SKIPPED reason=no_changes",
-  "nx affected -t export-smoke",
+  "nx run-many",
+  "Workspace invariant targets",
+  "nx run infra:compose-config",
+  "nx affected -t typecheck unit contract build vet export-smoke",
   "VERIFY_STEP_MS",
   "VERIFY_TOTAL_MS",
   "VERIFY=PASS",
 ]);
 for (const forbidden of [
+  "Changed-Matches",
+  "$topologyRelevant",
   "runtime:up",
   "runtime:doctor",
   "runtime:status",

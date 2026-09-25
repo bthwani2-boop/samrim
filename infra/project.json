@@ -5,5 +5,21 @@
   "tags": [
     "scope:infra",
     "type:infra"
-  ]
+  ],
+  "targets": {
+    "compose-config": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": [
+        "{projectRoot}/local/compose/**/*",
+        "{projectRoot}/local/.env.example",
+        {
+          "runtime": "docker compose version --short"
+        }
+      ],
+      "options": {
+        "command": "docker compose --project-name samrim-local --env-file infra/local/.env.example -f infra/local/compose/compose.yaml config --quiet"
+      }
+    }
+  }
 }

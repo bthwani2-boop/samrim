@@ -9,11 +9,21 @@
         "command": "pnpm exec tsc --noEmit -p services/identity/tsconfig.json"
       }
     },
-    "test": {
+    "contract": {
       "executor": "nx:run-commands",
       "options": {
         "command": "node services/identity/tools/generate-types.mjs --check && node services/identity/tests/contract-guard.test.mjs"
-      }
+      },
+      "inputs": [
+        "default",
+        "^default",
+        {
+          "runtime": "node --version"
+        },
+        {
+          "runtime": "pnpm --version"
+        }
+      ]
     }
   },
   "tags": [

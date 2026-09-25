@@ -24,7 +24,7 @@ function walk(dir) {
 
 walk(repoRoot);
 
-const allowedTypes = new Set(["app", "service", "package", "infra"]);
+const allowedTypes = new Set(["app", "service", "package", "infra", "tool"]);
 const failures = [];
 const seenScopes = new Map();
 
