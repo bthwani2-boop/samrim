@@ -907,9 +907,9 @@ if (publishA.status !== 200 || publishB.status !== 200) {
 const secondPickupModesKey = "store-b-fulfillment-modes-" + suffix;
 const secondPickupModesPath = "/dsh/stores/" + encodeURIComponent(second.storeID) + "/fulfillment-modes";
 const secondPickupModesBody = { fulfillmentModes: ["BTHWANI_CAPTAIN", "CUSTOMER_PICKUP"] };
-const secondPickupModesHeaders = partnerHeaders(secondPickupModesKey, publishB.body.store.version);
-const secondPickupModes = await request(dshBase, "POST", secondPickupModesPath, { token: second.accessToken, headers: secondPickupModesHeaders, body: secondPickupModesBody });
-const secondPickupModesReplay = await request(dshBase, "POST", secondPickupModesPath, { token: second.accessToken, headers: secondPickupModesHeaders, body: secondPickupModesBody });
+const secondPickupModesHeaders = serviceHeaders(actingOperatorID, secondPickupModesKey, crypto.randomUUID(), publishB.body.store.version);
+const secondPickupModes = await request(dshBase, "POST", secondPickupModesPath, { token: dshToken, headers: secondPickupModesHeaders, body: secondPickupModesBody });
+const secondPickupModesReplay = await request(dshBase, "POST", secondPickupModesPath, { token: dshToken, headers: secondPickupModesHeaders, body: secondPickupModesBody });
 if (secondPickupModes.status !== 200 || secondPickupModes.body?.storeId !== second.storeID || secondPickupModes.body?.fulfillmentModes?.join(",") !== "BTHWANI_CAPTAIN,CUSTOMER_PICKUP" || secondPickupModes.body?.version !== publishB.body.store.version + 1 || secondPickupModesReplay.status !== 200 || secondPickupModesReplay.body?.idempotentReplay !== true || secondPickupModesReplay.body?.version !== secondPickupModes.body.version) fail("second store fulfillment modes did not enable pickup with a stable idempotent version", JSON.stringify({ secondPickupModes, secondPickupModesReplay, publishB }));
 const fieldSummaryDeadline = Date.now() + 95_000;
 let fieldFinancialSummary = null;
