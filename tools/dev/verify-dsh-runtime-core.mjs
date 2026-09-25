@@ -681,7 +681,7 @@ console.log("DSH_JOINING_CASE_VERTICAL=PASS");
 console.log("DSH_JOINING_CASE_CORRECTION=PASS");
 
 const runtimeCoffeeName = `Runtime Coffee ${suffix}`;
-const productInput = { canonicalName: runtimeCoffeeName, verticalId: verticalID, scope: "SHARED", variantTitle: "عبوة 250 غ", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], identifierType: "GTIN", identifierValue: `628100${suffix.replaceAll("-", "").slice(-7)}`, imageUri: "https://example.com/runtime-coffee.jpg" };
+const productInput = { canonicalName: runtimeCoffeeName, verticalId: verticalID, scope: "SHARED", variantTitle: "عبوة 250 غ", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], variantAttributeValues: [{ attributeId: enumAttributeID, valueKind: "ENUM", enumValue: "Dark" }], identifierType: "GTIN", identifierValue: `628100${suffix.replaceAll("-", "").slice(-7)}`, imageUri: "https://example.com/runtime-coffee.jpg" };
 const productCategoryRead = await request(dshBase, "GET", `/dsh/catalog/categories?verticalId=${encodeURIComponent(verticalID)}`, { token: dshToken });
 if (productCategoryRead.status !== 200 || !productCategoryRead.body?.categories?.some((category) => category.id === childCategoryID && category.verticalId === verticalID && category.active)) fail("catalog Product category was not active in its vertical at canonical readback", JSON.stringify({ verticalID, childCategoryID, productCategoryRead }));
 const productCategorySQL = sql(`SELECT COALESCE((SELECT vertical_id || ':' || active::text FROM dsh.catalog_categories WHERE id='${sqlLiteral(childCategoryID)}'), 'missing')`);
