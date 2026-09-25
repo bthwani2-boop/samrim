@@ -25,7 +25,8 @@
       "environment": "preview",
       "channel": "preview",
       "distribution": "internal",
-      "android": { "buildType": "apk" }
+      "ios": { "image": "latest" },
+      "android": { "image": "latest", "buildType": "apk" }
     }
   }
 }
