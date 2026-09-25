@@ -121,6 +121,11 @@ function buildPlugins(appKey, { locationMode }) {
  */
 function defineSamrimExpoApp(appKey, options = {}) {
   const app = readMobileConfig(appKey);
+  for (const name of ["EXPO_PUBLIC_IDENTITY_API_URL", "EXPO_PUBLIC_DSH_API_URL"]) {
+    if (!process.env[name]?.trim()) {
+      throw new Error("Missing required mobile service endpoint " + name + " for " + appKey + ".");
+    }
+  }
   const locationMode = options.locationMode;
   if (locationMode !== undefined && locationMode !== "foreground") {
     throw new Error("Invalid locationMode for " + appKey + ": " + locationMode);

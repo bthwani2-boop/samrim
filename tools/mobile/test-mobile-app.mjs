@@ -116,11 +116,23 @@ if (expectsMaps) {
     process.env[name] ||= `maps-config-placeholder-${index}`;
   }
 }
+const priorServiceEnv = new Map();
+for (const [name, value] of Object.entries({
+  EXPO_PUBLIC_IDENTITY_API_URL: "https://identity.example.invalid",
+  EXPO_PUBLIC_DSH_API_URL: "https://dsh.example.invalid",
+})) {
+  priorServiceEnv.set(name, process.env[name]);
+  process.env[name] ||= value;
+}
 const expoConfig = defineSamrimExpoApp(app, {
   ...(expectsForegroundLocation ? { locationMode: "foreground" } : {}),
   ...(expectsMaps ? { maps: true } : {}),
 });
 for (const [name, value] of priorMapsEnv) {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}
+for (const [name, value] of priorServiceEnv) {
   if (value === undefined) delete process.env[name];
   else process.env[name] = value;
 }
