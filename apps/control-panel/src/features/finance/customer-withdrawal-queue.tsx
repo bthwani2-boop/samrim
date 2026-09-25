@@ -252,7 +252,7 @@ export function CustomerWithdrawalQueue({ initialQuery }: Props) {
           <p className="eyebrow">طابور مالي · حالات فردية</p>
           <h2 id="customer-withdrawals-title">طلبات سحب العملاء الاستثنائية</h2>
         </div>
-        <button className="button button-secondary" type="button" onClick={() => setRegistryRefresh((value) => value + 1)} disabled={loading}>
+        <button className="button button-secondary" type="button" onClick={() => void loadRegistry(initialQuery, new AbortController().signal)} disabled={loading}>
           تحديث السجل
         </button>
       </div>

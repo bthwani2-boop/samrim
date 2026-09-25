@@ -87,7 +87,7 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
     setDetailLoading(true);
     setError("");
     try {
-      const response = await fetch(`/api/finance/partner-earnings?partnerActorId=${encodeURIComponent(actorId)}`, { cache: "no-store", signal });
+      const response = await fetch(`/api/finance/partner-earnings?partnerActorId=${encodeURIComponent(actorId)}`, { cache: "no-store", ...(signal ? { signal } : {}) });
       const body = await response.json().catch(() => null) as { summary?: PartnerFinancialSummary } | null;
       if (!response.ok || !body?.summary) throw new Error(readError(body, "تعذر قراءة تفاصيل المستحقات"));
       if (signal?.aborted) return;
