@@ -248,6 +248,9 @@ function cleanup() {
   for (const caseID of caseIDs) {
     const value = sqlLiteral(caseID);
     sql(`DELETE FROM dsh.joining_case_financial_profile_outbox WHERE case_id='${value}'`);
+    sql(`DELETE FROM wlt.partner_store_commission_policy_events WHERE store_id IN (SELECT store_id FROM wlt.partner_store_commission_policies WHERE profile_id IN (SELECT id FROM wlt.partner_financial_profiles WHERE joining_case_id='${value}'))`);
+    sql(`DELETE FROM wlt.partner_store_commission_policies WHERE profile_id IN (SELECT id FROM wlt.partner_financial_profiles WHERE joining_case_id='${value}')`);
+    sql(`DELETE FROM wlt.partner_store_commission_policy_initializations WHERE profile_id IN (SELECT id FROM wlt.partner_financial_profiles WHERE joining_case_id='${value}')`);
     sql(`DELETE FROM wlt.partner_financial_profile_events WHERE profile_id IN (SELECT id FROM wlt.partner_financial_profiles WHERE joining_case_id='${value}')`);
     sql(`DELETE FROM wlt.partner_financial_profiles WHERE joining_case_id='${value}'`);
     sql(`DELETE FROM dsh.joining_case_audit WHERE case_id='${value}'`);
@@ -643,7 +646,7 @@ const fieldAdmissionRestored = await request(dshBase, "GET", `/dsh/fields/actors
 if (fieldRoleBeforeDisable.status !== 200 || fieldDisabled.status !== 204 || fieldAdmissionSuspended.status !== 200 || fieldAdmissionSuspended.body?.admission?.state !== "suspended" || fieldDisabled.status !== 204 || fieldRoleAfterDisable.body?.enabled !== false || revokedFieldSession.status !== 401 || fieldEnabled.status !== 204 || fieldAdmissionRestored.status !== 200 || fieldAdmissionRestored.body?.admission?.state !== "eligible") fail("Field DSH/Identity suspend/restore lifecycle was not fail-closed and versioned", JSON.stringify({ fieldRoleBeforeDisable, fieldDisabled, fieldAdmissionSuspended, revokedFieldSession, fieldRoleAfterDisable, fieldEnabled, fieldAdmissionRestored }));
 console.log("DSH_FIELD_ADMISSION_AND_SCOPED_JOINING=PASS");
 const correctionPhone = `+96776${crypto.randomInt(1_000_000, 9_999_999)}`;
-const correctionCreated = await request(dshBase, "POST", "/dsh/joining-cases", { token: dshToken, headers: serviceHeaders(actingOperatorID, `joining-correction-${suffix}`), body: { contactPhoneE164: correctionPhone, businessName: "Correction business", firstStoreName: "Correction store", serviceCityId: cityA, firstStoreVerticalId: verticalID, ...firstStoreOrigin } });
+const correctionCreated = await request(dshBase, "POST", "/dsh/joining-cases", { token: dshToken, headers: serviceHeaders(actingOperatorID, `joining-correction-${suffix}`), body: { contactPhoneE164: correctionPhone, businessName: "Correction business", firstStoreName: "Correction store", serviceCityId: cityA, firstStoreVerticalId: verticalID, firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"], ...firstStoreOrigin } });
 if (correctionCreated.status !== 201 || correctionCreated.body?.case?.state !== "draft" || correctionCreated.body?.case?.origin !== "control_panel" || correctionCreated.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || correctionCreated.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude) fail("control-panel correction case creation did not preserve provenance or fixed store origin", JSON.stringify(correctionCreated));
 const correctionCaseID = String(correctionCreated.body.case.id); caseIDs.add(correctionCaseID);
 const correctionSubmitted = await request(dshBase, "POST", `/dsh/joining-cases/${correctionCaseID}/submit`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `submit-correction-${suffix}`, crypto.randomUUID(), 1) });
