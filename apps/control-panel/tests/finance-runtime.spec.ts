@@ -9,8 +9,8 @@ test("@live operator reads the real bounded COD cash-custody journey", async ({ 
   test.setTimeout(30_000);
   await page.goto("/finance/cash-custody");
   await expect(page.getByRole("heading", { name: "حفظ النقد" })).toBeVisible();
-  await expect(page.getByText("التزامات نقدية محصلة ضمن الإسقاط الحالي")).toBeVisible();
-  await expect(page.getByText("طلبات التسوية والوجهات الرسمية تظهر في مساحة التسوية الموحدة أدناه.")).toBeVisible();
+  await expect(page.getByText("التزامات نقدية مفتوحة ضمن المرشحات الحالية")).toBeVisible();
+  await expect(page.getByText("البيانات من WLT، وتعرض فقط نقد COD الذي حصّله الكابتن ولم تسجل له حوالة.")).toBeVisible();
 
   const cashCustodyRead = await page.evaluate(async () => {
     const response = await fetch("/api/finance/cash-custody", { cache: "no-store" });
@@ -25,9 +25,9 @@ test("@live operator reads the real bounded COD cash-custody journey", async ({ 
 test("@live operator reads the WLT-owned delivery-fee policy workspace", async ({ page }) => {
   test.setTimeout(30_000);
   await page.goto("/policies/delivery-fees");
-  await expect(page.getByRole("heading", { name: "سياسة رسوم التوصيل" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "رسوم التوصيل" })).toBeVisible();
   await expect(page.getByText("تُحسب الرسوم خادميًا من المسافة، ومدينة الخدمة كمنطقة، ووحدات السلة.")).toBeVisible();
-  await expect(page.getByLabel("المنطقة / مدينة الخدمة")).toBeVisible();
+  await expect(page.getByLabel("النطاق / مدينة الخدمة")).toBeVisible();
   await expect(page.getByLabel("الرسوم الأساسية (ريال)")).toBeEnabled();
   await expect(page.getByText(/التقريب ثابت عند 50 ريال/)).toBeVisible();
 
@@ -43,9 +43,9 @@ test("@live operator reads the WLT-owned delivery-fee policy workspace", async (
 test("@live operator reads the WLT-managed unified beneficiary settlement workspace", async ({ page }) => {
   test.setTimeout(30_000);
   await page.goto("/finance/beneficiary-settlement");
-  const workspace = page.getByRole("region", { name: "وجهة وتسوية المستفيد" });
-  await expect(workspace.getByRole("heading", { name: "وجهة وتسوية المستفيد" })).toBeVisible();
-  await expect(page.getByText("إدارة الوجهة الرسمية تتم من المالية فقط")).toBeVisible();
+  const workspace = page.getByRole("region", { name: "مستحقات وتسويات الشركاء والكباتن والميدان" });
+  await expect(workspace.getByRole("heading", { name: "مستحقات وتسويات الشركاء والكباتن والميدان" })).toBeVisible();
+  await expect(page.getByText("المبالغ والوجهات تأتي من WLT. التحويل الخارجي يدوي، وكل تحويل يحتاج إيصالاً مستقلاً.")).toBeVisible();
   await workspace.getByLabel("نوع المستفيد").selectOption("partner");
   await workspace.getByLabel("معرّف الشريك").fill(`partner-live-read-${Date.now()}`);
   await workspace.getByRole("button", { name: "قراءة الحالة" }).click();
@@ -55,8 +55,8 @@ test("@live operator reads the WLT-managed unified beneficiary settlement worksp
 test("@live operator sees the WLT-managed Field commission policy workspace", async ({ page }) => {
   test.setTimeout(30_000);
   await page.goto("/policies/field-rewards");
-  await expect(page.getByRole("heading", { name: "سياسة مكافأة الميدان" })).toBeVisible();
-  await expect(page.getByText("تُستحق المكافأة مرة واحدة عند ظهور المتجر في تطبيق العميل.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "مكافأة الميدان" })).toBeVisible();
+  await expect(page.getByText("تُستحق المكافأة مرة واحدة عند نشر المتجر.")).toBeVisible();
   await expect(page.getByLabel("نطاق السياسة")).toBeVisible();
   await expect(page.getByLabel("المكافأة (ريال)")).toBeEnabled();
   await expect(page.getByText("وحدة التقريب: 50 ريال — لا يمكن تغييرها من الواجهة.")).toBeVisible();
