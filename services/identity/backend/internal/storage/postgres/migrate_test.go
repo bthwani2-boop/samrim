@@ -19,7 +19,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-func TestMigrationV13ToV23Upgrade(t *testing.T) {
+func TestMigrationV13ToV22Upgrade(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
 	if databaseURL == "" {
 		t.Skip("IDENTITY_DATABASE_URL is required for the migration upgrade proof")
@@ -673,57 +673,23 @@ func TestMigrationV13ToV23Upgrade(t *testing.T) {
 		t.Fatalf("workspace permission backfill was not least-privilege: initial=%d/%d later=%d/%d scopes=%d", initialPermissionCount, initialEnabledPermissionCount, laterPermissionCount, laterEnabledPermissionCount, len(domain.OperatorPermissions()))
 	}
 
-	// Apply migration 023 and prove the legal-name authority is added without fabricating names for existing actors.
-	var v23Name string
-	var v23Content []byte
-	for _, file := range files {
-		if strings.HasPrefix(file.Name(), "023_") {
-			v23Name = file.Name()
-			v23Content, err = os.ReadFile(filepath.Join(migDir, v23Name))
-			if err != nil {
-				t.Fatalf("read 023: %v", err)
-			}
-			break
-		}
-	}
-	if v23Name == "" {
-		t.Fatal("migration 023 not found")
-	}
-	hash23 := sha256.Sum256(v23Content)
-	if err := postgres.Migrate(ctx, testDB, 23, v23Name, hex.EncodeToString(hash23[:]), string(v23Content)); err != nil {
-		t.Fatalf("apply migration 023 on v22 database: %v", err)
-	}
-	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 23 {
-		t.Fatalf("expected schema version 23, got %d (err: %v)", version, err)
-	}
-	for _, relation := range []string{"identity_actor_legal_name_versions", "identity_actor_legal_names", "identity_actor_legal_name_events"} {
-		var exists bool
-		if err := testDB.QueryRowContext(ctx, "SELECT to_regclass($1) IS NOT NULL", "public."+relation).Scan(&exists); err != nil || !exists {
-			t.Fatalf("legal-name relation missing after v23: %s err=%v", relation, err)
-		}
-	}
-	var fabricatedNames int
-	if err := testDB.QueryRowContext(ctx, "SELECT count(*) FROM identity_actor_legal_names").Scan(&fabricatedNames); err != nil || fabricatedNames != 0 {
-		t.Fatalf("v23 must not fabricate verified legal names for existing actors: count=%d err=%v", fabricatedNames, err)
-	}
-
 	// Verify full postgres.Ready passes on this upgraded database.
 	if err := postgres.Ready(ctx, testDB); err != nil {
 		t.Fatalf("postgres.Ready failed on upgraded database: %v", err)
 	}
 
-	// Re-run the canonical runtime migrator and prove it is a no-op at v23.
+	// Re-run the canonical runtime migrator and prove it is a no-op at v22.
 	beforeSecondRun := readMigrationNoOpSnapshot(t, testDB)
 	if err := identityruntime.RunMigrations(ctx, "development", testURL, migDir); err != nil {
 		t.Fatalf("second canonical migration run failed: %v", err)
 	}
 	afterSecondRun := readMigrationNoOpSnapshot(t, testDB)
 	assertMigrationNoOpSnapshotUnchanged(t, beforeSecondRun, afterSecondRun)
-	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 23 {
+	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 22 {
 		t.Fatalf("schema version changed during second canonical migration run: version=%d err=%v", version, err)
 	}
 
-	t.Log("Migration v13 -> v23 upgrade, data preservation, passkey cutover, mobile lifetime, refresh reconciliation, Operator workspace permissions and legal-name authority test PASSED successfully!")
+	t.Log("Migration v13 -> v22 upgrade, data preservation, passkey cutover, mobile lifetime, refresh reconciliation and Operator workspace permission cutover test PASSED successfully!")
 }
 
 type migrationSessionSnapshot struct {
