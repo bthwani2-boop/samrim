@@ -30,36 +30,13 @@ jobs:
       - name: Resolve canonical affected SHAs
         uses: nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1
 
-      - name: Detect backend-affecting change
-        id: scope
-        shell: bash
-        run: |
-          set -euo pipefail
-          changed="$(git diff --name-only "${NX_BASE}" "${NX_HEAD}")"
-          if grep -Eq '^(services/(identity|dsh)/(backend|database|clients/go|contracts)/|services/wlt/|infra/local/(compose/|\.env\.example$)|tools/dev/(mailpit-challenge|run-playwright-live|verify-(identity-migrations|identity-runtime|dsh-baseline|dsh-runtime-core))\.mjs$|apps/control-panel/(package\.json|playwright\.config\.ts|playwright\.global-setup\.ts|tests/(00-live-identity|finance-runtime|zz-dsh-operator)\.spec\.ts|tests/live-identity-proof-helpers\.ts)$|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|go\.work$|go\.work\.sum$|\.github/workflows/backend-integration\.yml$)' <<<"${changed}"; then
-            echo "run=true" >> "${GITHUB_OUTPUT}"
-            echo "BACKEND_INTEGRATION_SCOPE=AFFECTED"
-          else
-            echo "run=false" >> "${GITHUB_OUTPUT}"
-            echo "BACKEND_INTEGRATION_SCOPE=UNAFFECTED"
-          fi
-          if grep -Eq '^(services/wlt/|services/dsh/backend/internal/integrations/wlt/|services/dsh/backend/internal/storage/postgres/order\.go$|services/dsh/database/migrations/022_order_payment_intents\.sql$|infra/local/compose/|infra/local/\.env\.example$|\.github/workflows/backend-integration\.yml$)' <<<"${changed}"; then
-            echo "wlt=true" >> "${GITHUB_OUTPUT}"
-            echo "WLT_CI_COMPOSITION_SCOPE=AFFECTED"
-          else
-            echo "wlt=false" >> "${GITHUB_OUTPUT}"
-            echo "WLT_CI_COMPOSITION_SCOPE=UNAFFECTED"
-          fi
-
       - name: Set up pinned pnpm
-        if: steps.scope.outputs.run == 'true'
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
         with:
           version: 10.34.0
           run_install: false
 
       - name: Set up Node
-        if: steps.scope.outputs.run == 'true'
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 24.17.0
@@ -67,9 +44,22 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install workspace once
-        if: steps.scope.outputs.run == 'true'
         shell: bash
         run: pnpm install --frozen-lockfile
+
+      - name: Resolve backend runtime scope through Nx
+        id: scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          affected="$(pnpm exec nx show projects --affected --base="$NX_BASE" --head="$NX_HEAD" --projects=tag:ci-backend-runtime --sep=,)"
+          if [[ -n "$affected" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "BACKEND_INTEGRATION_SCOPE=AFFECTED projects=$affected"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "BACKEND_INTEGRATION_SCOPE=UNAFFECTED"
+          fi
 
       - name: Install Chromium runtime
         if: steps.scope.outputs.run == 'true'
@@ -115,18 +105,7 @@ jobs:
             --env-file infra/local/.env \
             -f infra/local/compose/compose.yaml \
             up -d --build --wait --wait-timeout 300 \
-            postgres mailpit identity dsh
-
-      - name: Start WLT service for CI composition and health
-        if: steps.scope.outputs.run == 'true' && steps.scope.outputs.wlt == 'true'
-        shell: bash
-        run: |
-          docker compose \
-            --project-name samrim-local \
-            --env-file infra/local/.env \
-            -f infra/local/compose/compose.yaml \
-            up -d --build --wait --wait-timeout 300 \
-            wlt
+            postgres mailpit identity dsh wlt
 
       - name: Start Control Panel host
         if: steps.scope.outputs.run == 'true'

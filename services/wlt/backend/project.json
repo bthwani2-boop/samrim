@@ -52,7 +52,9 @@
   },
   "tags": [
     "scope:wlt-backend",
-    "type:service"
+    "type:service",
+    "ci-backend-runtime",
+    "ci-control-runtime"
   ],
   "namedInputs": {
     "default": [

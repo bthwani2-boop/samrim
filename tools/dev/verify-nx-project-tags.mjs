@@ -25,6 +25,7 @@ function walk(dir) {
 walk(repoRoot);
 
 const allowedTypes = new Set(["app", "service", "package", "infra", "tool"]);
+const allowedCiTags = new Set(["ci-backend-runtime", "ci-control-runtime"]);
 const failures = [];
 const seenScopes = new Map();
 
@@ -35,6 +36,10 @@ for (const file of projectFiles) {
 
   const scopes = tags.filter((tag) => typeof tag === "string" && tag.startsWith("scope:"));
   const types = tags.filter((tag) => typeof tag === "string" && tag.startsWith("type:"));
+  const ciTags = tags.filter((tag) => typeof tag === "string" && tag.startsWith("ci-"));
+  for (const tag of ciTags) {
+    if (!allowedCiTags.has(tag)) failures.push(`${relative}: unsupported CI scope tag ${tag}`);
+  }
 
   if (scopes.length !== 1) {
     failures.push(`${relative}: expected exactly one scope:* tag, found ${scopes.length}`);

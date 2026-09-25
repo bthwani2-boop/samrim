@@ -5,14 +5,20 @@
   "namedInputs": {
     "repository": [
       "{workspaceRoot}/**/*",
-      { "runtime": "node --version" },
-      { "runtime": "pnpm --version" }
+      {
+        "runtime": "node --version"
+      },
+      {
+        "runtime": "pnpm --version"
+      }
     ],
     "projectGraph": [
       "{workspaceRoot}/nx.json",
       "{workspaceRoot}/**/project.json",
       "{projectRoot}/verify-nx-project-tags.mjs",
-      { "runtime": "node --version" }
+      {
+        "runtime": "node --version"
+      }
     ],
     "knowledge": [
       "{workspaceRoot}/AGENTS.md",
@@ -37,8 +43,14 @@
       "{projectRoot}/verify-knowledge-references.mjs",
       "{projectRoot}/verify-local-candidate.ps1",
       "{projectRoot}/safe-push.ps1",
-      { "runtime": "node --version" },
-      { "runtime": "pnpm --version" }
+      {
+        "runtime": "node --version"
+      },
+      {
+        "runtime": "pnpm --version"
+      },
+      "{workspaceRoot}/.github/workflows/backend-integration.yml",
+      "{workspaceRoot}/.github/workflows/control-panel-e2e.yml"
     ],
     "runtimeOwnership": [
       "{workspaceRoot}/infra/local/**/*",
@@ -51,7 +63,9 @@
       "{projectRoot}/run-playwright-live.mjs",
       "{projectRoot}/verify-identity-runtime.mjs",
       "{projectRoot}/verify-local-runtime-ownership.mjs",
-      { "runtime": "node --version" }
+      {
+        "runtime": "node --version"
+      }
     ],
     "mobileConfig": [
       "{workspaceRoot}/apps/app-*/mobile.config.json",
@@ -61,8 +75,12 @@
       "{workspaceRoot}/apps/app-*/package.json",
       "{workspaceRoot}/tools/mobile/verify-mobile-config.mjs",
       "{workspaceRoot}/tools/mobile/define-samrim-expo-app.cjs",
-      { "runtime": "node --version" },
-      { "runtime": "pnpm --version" }
+      {
+        "runtime": "node --version"
+      },
+      {
+        "runtime": "pnpm --version"
+      }
     ],
     "theme": [
       "{workspaceRoot}/packages/design-system/**/*",
@@ -73,127 +91,205 @@
       "{projectRoot}/ts-resolver.mjs",
       "{projectRoot}/generate-theme-css.mjs",
       "{projectRoot}/verify-theme-authority.mjs",
-      { "runtime": "node --version" },
-      { "runtime": "pnpm --version" }
+      {
+        "runtime": "node --version"
+      },
+      {
+        "runtime": "pnpm --version"
+      }
     ],
     "powershell": [
       "{workspaceRoot}/**/*.ps1",
       "{workspaceRoot}/**/*.psm1",
       "{projectRoot}/verify-powershell-syntax.ps1",
-      { "runtime": "pwsh --version" }
+      {
+        "runtime": "pwsh --version"
+      }
     ]
   },
   "targets": {
     "donor-residue": {
       "executor": "nx:run-commands",
       "cache": true,
-      "inputs": ["repository"],
-      "options": { "command": "node tools/dev/verify-donor-residue.mjs" }
+      "inputs": [
+        "repository"
+      ],
+      "options": {
+        "command": "node tools/dev/verify-donor-residue.mjs"
+      }
     },
     "repository-structure": {
       "executor": "nx:run-commands",
       "cache": true,
-      "inputs": ["repository"],
-      "options": { "command": "node tools/dev/verify-repository-structure.mjs" }
+      "inputs": [
+        "repository"
+      ],
+      "options": {
+        "command": "node tools/dev/verify-repository-structure.mjs"
+      }
     },
     "structural-hygiene": {
       "executor": "nx:run-commands",
       "cache": false,
-      "options": { "command": "node tools/dev/verify-structural-hygiene.mjs" }
+      "options": {
+        "command": "node tools/dev/verify-structural-hygiene.mjs"
+      }
     },
     "runtime-ownership": {
       "executor": "nx:run-commands",
       "cache": true,
-      "inputs": ["runtimeOwnership"],
-      "options": { "command": "node tools/dev/verify-local-runtime-ownership.mjs" }
+      "inputs": [
+        "runtimeOwnership"
+      ],
+      "options": {
+        "command": "node tools/dev/verify-local-runtime-ownership.mjs"
+      }
     },
     "removed-domain-residue": {
       "executor": "nx:run-commands",
       "cache": true,
-      "inputs": ["repository"],
-      "options": { "command": "node tools/dev/verify-removed-human-domain-residue.mjs" }
+      "inputs": [
+        "repository"
+      ],
+      "options": {
+        "command": "node tools/dev/verify-removed-human-domain-residue.mjs"
+      }
     },
     "docs-command-parity": {
       "executor": "nx:run-commands",
       "cache": true,
-      "inputs": ["knowledge"],
-      "options": { "command": "node tools/dev/verify-doc-command-parity.mjs" }
+      "inputs": [
+        "knowledge"
+      ],
+      "options": {
+        "command": "node tools/dev/verify-doc-command-parity.mjs"
+      }
     },
     "docs-config-parity": {
       "executor": "nx:run-commands",
       "cache": true,
-      "inputs": ["knowledge"],
-      "options": { "command": "node tools/dev/verify-doc-config-parity.mjs" }
+      "inputs": [
+        "knowledge"
+      ],
+      "options": {
+        "command": "node tools/dev/verify-doc-config-parity.mjs"
+      }
     },
     "knowledge-system": {
       "executor": "nx:run-commands",
       "cache": true,
-      "inputs": ["knowledge"],
-      "options": { "command": "node tools/dev/verify-knowledge-system.mjs" }
+      "inputs": [
+        "knowledge"
+      ],
+      "options": {
+        "command": "node tools/dev/verify-knowledge-system.mjs"
+      }
     },
     "knowledge-references": {
       "executor": "nx:run-commands",
       "cache": true,
-      "inputs": ["knowledge"],
-      "options": { "command": "node tools/dev/verify-knowledge-references.mjs" }
+      "inputs": [
+        "knowledge"
+      ],
+      "options": {
+        "command": "node tools/dev/verify-knowledge-references.mjs"
+      }
     },
     "agent-contract": {
       "executor": "nx:run-commands",
       "cache": true,
-      "inputs": ["knowledge"],
-      "options": { "command": "node tools/dev/verify-agent-knowledge-contract.mjs" }
+      "inputs": [
+        "knowledge"
+      ],
+      "options": {
+        "command": "node tools/dev/verify-agent-knowledge-contract.mjs"
+      }
     },
     "workspace-dependencies": {
       "executor": "nx:run-commands",
       "cache": true,
-      "inputs": ["repository"],
-      "options": { "command": "node tools/dev/verify-workspace-dependencies.mjs" }
+      "inputs": [
+        "repository"
+      ],
+      "options": {
+        "command": "node tools/dev/verify-workspace-dependencies.mjs"
+      }
     },
     "nx-project-tags": {
       "executor": "nx:run-commands",
       "cache": true,
-      "inputs": ["projectGraph"],
-      "options": { "command": "node tools/dev/verify-nx-project-tags.mjs" }
+      "inputs": [
+        "projectGraph"
+      ],
+      "options": {
+        "command": "node tools/dev/verify-nx-project-tags.mjs"
+      }
     },
     "mobile-config": {
       "executor": "nx:run-commands",
       "cache": true,
-      "inputs": ["mobileConfig"],
-      "options": { "command": "pnpm run mobile:verify-config" }
+      "inputs": [
+        "mobileConfig"
+      ],
+      "options": {
+        "command": "pnpm run mobile:verify-config"
+      }
     },
     "brand": {
       "executor": "nx:run-commands",
       "cache": true,
-      "inputs": ["repository"],
-      "options": { "command": "pnpm run brand:check" }
+      "inputs": [
+        "repository"
+      ],
+      "options": {
+        "command": "pnpm run brand:check"
+      }
     },
     "theme-check": {
       "executor": "nx:run-commands",
       "cache": true,
-      "inputs": ["theme"],
-      "options": { "command": "pnpm run theme:check" }
+      "inputs": [
+        "theme"
+      ],
+      "options": {
+        "command": "pnpm run theme:check"
+      }
     },
     "theme-verify": {
       "executor": "nx:run-commands",
       "cache": true,
-      "inputs": ["theme"],
-      "options": { "command": "pnpm run theme:verify" }
+      "inputs": [
+        "theme"
+      ],
+      "options": {
+        "command": "pnpm run theme:verify"
+      }
     },
     "powershell-syntax": {
       "executor": "nx:run-commands",
       "cache": true,
-      "inputs": ["powershell"],
-      "options": { "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-powershell-syntax.ps1" }
+      "inputs": [
+        "powershell"
+      ],
+      "options": {
+        "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-powershell-syntax.ps1"
+      }
     },
     "knip": {
       "executor": "nx:run-commands",
       "cache": true,
-      "inputs": ["repository"],
-      "options": { "command": "pnpm exec knip --no-progress --reporter compact --no-config-hints" }
+      "inputs": [
+        "repository"
+      ],
+      "options": {
+        "command": "pnpm exec knip --no-progress --reporter compact --no-config-hints"
+      }
     }
   },
   "tags": [
     "scope:workspace-tooling",
-    "type:tool"
+    "type:tool",
+    "ci-backend-runtime",
+    "ci-control-runtime"
   ]
 }

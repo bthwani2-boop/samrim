@@ -4,7 +4,9 @@
   "projectType": "application",
   "tags": [
     "scope:infra",
-    "type:infra"
+    "type:infra",
+    "ci-backend-runtime",
+    "ci-control-runtime"
   ],
   "targets": {
     "compose-config": {

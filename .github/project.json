@@ -1,0 +1,11 @@
+{
+  "name": "repository-ci",
+  "root": ".github",
+  "projectType": "library",
+  "tags": [
+    "scope:repository-ci",
+    "type:tool",
+    "ci-backend-runtime",
+    "ci-control-runtime"
+  ]
+}

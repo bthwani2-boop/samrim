@@ -52,7 +52,9 @@
   },
   "tags": [
     "scope:identity-backend",
-    "type:service"
+    "type:service",
+    "ci-backend-runtime",
+    "ci-control-runtime"
   ],
   "namedInputs": {
     "default": [

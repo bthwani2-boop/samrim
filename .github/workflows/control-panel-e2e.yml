@@ -3,39 +3,13 @@ name: Control Panel Browser Integration
 on:
   push:
     branches: [main]
-    paths:
-      - "apps/control-panel/**"
-      - "packages/design-system/**"
-      - "services/identity/**"
-      - "services/dsh/**"
-      - "services/wlt/**"
-      - "infra/local/compose/**"
-      - "infra/local/.env.example"
-      - "tools/dev/run-playwright-live.mjs"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - "nx.json"
-      - ".github/workflows/control-panel-e2e.yml"
   pull_request:
     branches: [main]
-    paths:
-      - "apps/control-panel/**"
-      - "packages/design-system/**"
-      - "services/identity/**"
-      - "services/dsh/**"
-      - "services/wlt/**"
-      - "infra/local/compose/**"
-      - "infra/local/.env.example"
-      - "tools/dev/run-playwright-live.mjs"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - "nx.json"
-      - ".github/workflows/control-panel-e2e.yml"
   workflow_dispatch:
 
+
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -54,6 +28,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Resolve canonical affected SHAs
+        uses: nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1
+
       - name: Set up pinned pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
         with:
@@ -71,11 +48,27 @@ jobs:
         shell: bash
         run: pnpm install --frozen-lockfile
 
+      - name: Resolve Control Panel runtime scope through Nx
+        id: scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          affected="$(pnpm exec nx show projects --affected --base="$NX_BASE" --head="$NX_HEAD" --projects=tag:ci-control-runtime --sep=,)"
+          if [[ -n "$affected" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "CONTROL_PANEL_RUNTIME_SCOPE=AFFECTED projects=$affected"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "CONTROL_PANEL_RUNTIME_SCOPE=UNAFFECTED"
+          fi
+
       - name: Install Chromium runtime
+        if: steps.scope.outputs.run == 'true'
         shell: bash
         run: pnpm --dir apps/control-panel exec playwright install --with-deps chromium
 
       - name: Materialize isolated CI runtime environment
+        if: steps.scope.outputs.run == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -104,6 +97,7 @@ jobs:
           NODE
 
       - name: Start Control Panel backend cone
+        if: steps.scope.outputs.run == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -115,6 +109,7 @@ jobs:
             postgres mailpit identity dsh
 
       - name: Start Control Panel host
+        if: steps.scope.outputs.run == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -132,6 +127,7 @@ jobs:
           exit 1
 
       - name: Run Control Panel browser shell through Nx
+        if: steps.scope.outputs.run == 'true'
         shell: bash
         env:
           PLAYWRIGHT_BASE_URL: http://localhost:13000
@@ -139,6 +135,7 @@ jobs:
         run: pnpm exec nx run control-panel:e2e --outputStyle=stream
 
       - name: Run live Identity browser proof
+        if: steps.scope.outputs.run == 'true'
         env:
           BTHWANI_IDENTITY_PROOF_SCOPE: disposable-ci
         shell: bash
@@ -156,7 +153,7 @@ jobs:
           pnpm --dir apps/control-panel test:e2e:live
 
       - name: Report Control Panel and Identity runtime errors
-        if: failure()
+        if: failure() && steps.scope.outputs.run == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -172,7 +169,7 @@ jobs:
             | tail -n 80 || true
 
       - name: Stop Control Panel host
-        if: always()
+        if: always() && steps.scope.outputs.run == 'true'
         shell: bash
         run: |
           if [[ -f "$RUNNER_TEMP/control-panel.pid" ]]; then
@@ -180,7 +177,7 @@ jobs:
           fi
 
       - name: Purge Control Panel runtime
-        if: always()
+        if: always() && steps.scope.outputs.run == 'true'
         shell: bash
         run: |
           set -euo pipefail

@@ -138,6 +138,45 @@ for (const required of [
   if (!exportInputs.includes(required)) failures.push(`nx export-smoke missing cache input: ${required}`);
 }
 
+const baselineWorkflow = requireTokens(".github/workflows/baseline-guard.yml", [
+  "nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1",
+  "pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1",
+  "nx affected -t typecheck,unit,contract,build,export-smoke,vet",
+]);
+for (const forbidden of [
+  "Resolve affected base",
+  "Detect mobile-affecting integration change",
+  "steps.base.outputs",
+  "steps.mobile.outputs",
+]) {
+  if (baselineWorkflow.includes(forbidden)) failures.push(`baseline workflow retains parallel affected logic: ${forbidden}`);
+}
+
+const backendWorkflow = requireTokens(".github/workflows/backend-integration.yml", [
+  "nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1",
+  "nx show projects --affected",
+  "ci-backend-runtime",
+  "BACKEND_INTEGRATION_SCOPE=UNAFFECTED",
+]);
+for (const forbidden of [
+  "Detect backend-affecting change",
+  "WLT_CI_COMPOSITION_SCOPE",
+  "PUSH_BEFORE_SHA",
+  "PR_BASE_SHA",
+]) {
+  if (backendWorkflow.includes(forbidden)) failures.push(`backend workflow retains parallel affected logic: ${forbidden}`);
+}
+
+const controlWorkflow = requireTokens(".github/workflows/control-panel-e2e.yml", [
+  "nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1",
+  "nx show projects --affected",
+  "ci-control-runtime",
+  "CONTROL_PANEL_RUNTIME_SCOPE=UNAFFECTED",
+]);
+if (/^\s+paths:\s*$/m.test(controlWorkflow)) {
+  failures.push("control-panel workflow retains GitHub paths as a parallel affected engine");
+}
+
 const prTemplate = requireTokens(".github/pull_request_template.md", [
   "## Governance impact",
   "GOVERNANCE_IMPACT=<NONE | REVALIDATE_ONLY | UPDATE_REQUIRED | DEFECT_FOUND>",
