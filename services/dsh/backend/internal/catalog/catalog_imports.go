@@ -23,7 +23,7 @@ func (s *Service) PreviewCatalogImport(ctx context.Context, actingActorID string
 	seen := make(map[string]struct{}, len(input.Rows))
 	for _, row := range input.Rows {
 		item := postgres.CatalogImportItemRecord{RowNumber: row.RowNumber, StableKey: strings.TrimSpace(row.StableKey), Classification: "READY"}
-		item.Input = postgres.CatalogProductInput{VerticalID: row.VerticalID, Scope: row.Scope, StoreID: row.StoreID, CanonicalName: row.CanonicalName, Brand: optionalImportPointer(row.Brand), VariantTitle: row.VariantTitle, MeasurementKind: string(row.MeasurementKind), BaseUnit: string(row.BaseUnit), CategoryIDs: row.CategoryIds, IdentifierType: row.IdentifierType, IdentifierValue: row.IdentifierValue, ImageURI: row.ImageUri}
+		item.Input = postgres.CatalogProductInput{VerticalID: row.VerticalID, Scope: row.Scope, StoreID: row.StoreID, CanonicalName: row.CanonicalName, Brand: optionalImportPointer(row.Brand), VariantTitle: row.VariantTitle, MeasurementKind: string(row.MeasurementKind), BaseUnit: string(row.BaseUnit), CategoryIDs: row.CategoryIds, AttributeValues: catalogImportAttributeInputs(row.AttributeValues), VariantAttributeValues: catalogImportAttributeInputs(row.VariantAttributeValues), IdentifierType: row.IdentifierType, IdentifierValue: row.IdentifierValue, ImageURI: row.ImageUri}
 		normalized, err := normalizeCatalogProductInput(item.Input)
 		if err != nil || item.RowNumber < 1 || item.StableKey == "" {
 			item.Classification = "INVALID_INPUT"
@@ -115,6 +115,26 @@ func optionalImportPointer(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+func catalogImportAttributeInputs(values []contract.CatalogAttributeValueInput) []postgres.CatalogAttributeValueInput {
+	if values == nil {
+		return nil
+	}
+	inputs := make([]postgres.CatalogAttributeValueInput, len(values))
+	for index, value := range values {
+		var integerValue *int64
+		if value.IntegerValue != nil {
+			converted := int64(*value.IntegerValue)
+			integerValue = &converted
+		}
+		inputs[index] = postgres.CatalogAttributeValueInput{
+			AttributeID: value.AttributeID, ValueKind: value.ValueKind, TextValue: value.TextValue,
+			IntegerValue: integerValue, DecimalValue: value.DecimalValue, BooleanValue: value.BooleanValue,
+			EnumValue: value.EnumValue, DateValue: value.DateValue, MeasurementUnit: value.MeasurementUnit,
+		}
+	}
+	return inputs
 }
 
 func stringPtr(value string) *string { return &value }

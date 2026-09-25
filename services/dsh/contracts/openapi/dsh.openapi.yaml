@@ -2267,6 +2267,14 @@ components:
           type: string
           nullable: true
           maxLength: 2048
+        attributeValues:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogAttributeValueInput"
+        variantAttributeValues:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogAttributeValueInput"
 
     CatalogImportItem:
       type: object

@@ -850,10 +850,11 @@ if (proposalOwnList.status !== 200 || !proposalOwnList.body?.proposals?.some((it
 const importRunID = `import-${suffix}`;
 const importedName = `Runtime Imported ${suffix}`;
 const importSourceSha256 = crypto.createHash("sha256").update(importRunID).digest("hex");
+const importVariantAttributeValues = [{ attributeId: enumAttributeID, valueKind: "ENUM", enumValue: "Dark" }];
 const importRows = [
-  { rowNumber: 1, stableKey: `import-ready-${suffix}`, verticalId: verticalID, scope: "SHARED", canonicalName: importedName, variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], variantAttributeValues: productInput.variantAttributeValues, identifierType: "SKU", identifierValue: `IMPORTED-${suffix}` },
-  { rowNumber: 2, stableKey: `import-conflict-${suffix}`, verticalId: verticalID, scope: "SHARED", canonicalName: `Conflicting ${suffix}`, variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], variantAttributeValues: productInput.variantAttributeValues, identifierType: "GTIN", identifierValue: productInput.identifierValue },
-  { rowNumber: 3, stableKey: `import-ready-${suffix}`, verticalId: verticalID, scope: "SHARED", canonicalName: `Duplicate ${suffix}`, variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], variantAttributeValues: productInput.variantAttributeValues, identifierType: "SKU", identifierValue: `IMPORTED-DUP-${suffix}` },
+  { rowNumber: 1, stableKey: `import-ready-${suffix}`, verticalId: verticalID, scope: "SHARED", canonicalName: importedName, variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], variantAttributeValues: importVariantAttributeValues, identifierType: "SKU", identifierValue: `IMPORTED-${suffix}` },
+  { rowNumber: 2, stableKey: `import-conflict-${suffix}`, verticalId: verticalID, scope: "SHARED", canonicalName: `Conflicting ${suffix}`, variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], variantAttributeValues: importVariantAttributeValues, identifierType: "GTIN", identifierValue: productInput.identifierValue },
+  { rowNumber: 3, stableKey: `import-ready-${suffix}`, verticalId: verticalID, scope: "SHARED", canonicalName: `Duplicate ${suffix}`, variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], variantAttributeValues: importVariantAttributeValues, identifierType: "SKU", identifierValue: `IMPORTED-DUP-${suffix}` },
 ];
 const importPreview = await request(dshBase, "POST", "/dsh/catalog/imports/preview", { token: dshToken, headers: serviceHeaders(actingOperatorID, `import-preview-${suffix}`), body: { runId: importRunID, sourceSha256: importSourceSha256, rows: importRows } });
 importRunIDs.add(importRunID);
