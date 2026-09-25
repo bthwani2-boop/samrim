@@ -36,31 +36,31 @@ func ListBeneficiaryPayoutStates(ctx context.Context, db *sql.DB, actorType, sea
 		return nil, false, ErrPayoutInvalidInput
 	}
 	orderBy := "actor_type ASC, actor_id ASC"
-	keyset := `(actor_type, actor_id) > ($6, $7)`
+	keyset := `(actor_type, actor_id) > (cursor_values.after_actor_type, cursor_values.after_actor_id)`
 	switch sortKey {
 	case "actor_desc":
 		orderBy = "actor_type DESC, actor_id DESC"
-		keyset = `(actor_type, actor_id) < ($6, $7)`
+		keyset = `(actor_type, actor_id) < (cursor_values.after_actor_type, cursor_values.after_actor_id)`
 	case "available_asc":
 		orderBy = "available_minor ASC, actor_type ASC, actor_id ASC"
-		keyset = `(available_minor, actor_type, actor_id) > ($5, $6, $7)`
+		keyset = `(available_minor, actor_type, actor_id) > (cursor_values.sort_value, cursor_values.after_actor_type, cursor_values.after_actor_id)`
 	case "available_desc":
 		orderBy = "available_minor DESC, actor_type ASC, actor_id ASC"
-		keyset = `(available_minor < $5 OR (available_minor = $5 AND (actor_type, actor_id) > ($6, $7)))`
+		keyset = `(available_minor < cursor_values.sort_value OR (available_minor = cursor_values.sort_value AND (actor_type, actor_id) > (cursor_values.after_actor_type, cursor_values.after_actor_id)))`
 	case "held_asc":
 		orderBy = "held_minor ASC, actor_type ASC, actor_id ASC"
-		keyset = `(held_minor, actor_type, actor_id) > ($5, $6, $7)`
+		keyset = `(held_minor, actor_type, actor_id) > (cursor_values.sort_value, cursor_values.after_actor_type, cursor_values.after_actor_id)`
 	case "held_desc":
 		orderBy = "held_minor DESC, actor_type ASC, actor_id ASC"
-		keyset = `(held_minor < $5 OR (held_minor = $5 AND (actor_type, actor_id) > ($6, $7)))`
+		keyset = `(held_minor < cursor_values.sort_value OR (held_minor = cursor_values.sort_value AND (actor_type, actor_id) > (cursor_values.after_actor_type, cursor_values.after_actor_id)))`
 	case "payout_amount_asc":
 		orderBy = "payout_amount_minor ASC, actor_type ASC, actor_id ASC"
-		keyset = `(payout_amount_minor, actor_type, actor_id) > ($5, $6, $7)`
+		keyset = `(payout_amount_minor, actor_type, actor_id) > (cursor_values.sort_value, cursor_values.after_actor_type, cursor_values.after_actor_id)`
 	case "payout_amount_desc":
 		orderBy = "payout_amount_minor DESC, actor_type ASC, actor_id ASC"
-		keyset = `(payout_amount_minor < $5 OR (payout_amount_minor = $5 AND (actor_type, actor_id) > ($6, $7)))`
+		keyset = `(payout_amount_minor < cursor_values.sort_value OR (payout_amount_minor = cursor_values.sort_value AND (actor_type, actor_id) > (cursor_values.after_actor_type, cursor_values.after_actor_id)))`
 	}
-	query := `WITH beneficiaries AS (SELECT actor_type,actor_id FROM (
+	query := `WITH cursor_values AS (SELECT $4::boolean has_cursor,$5::bigint sort_value,$6::text after_actor_type,$7::text after_actor_id,$8::text sort_key), beneficiaries AS (SELECT actor_type,actor_id FROM (
 		SELECT actor_type,actor_id FROM wlt.ledger_entries WHERE account_code IN ('PARTNER_WALLET','CAPTAIN_WALLET','FIELD_WALLET') AND actor_type IN ('partner','captain','field') AND actor_id IS NOT NULL
 		UNION SELECT actor_type,actor_id FROM wlt.payout_requests
 		UNION SELECT actor_type,actor_id FROM wlt.official_wallet_destinations
@@ -83,10 +83,10 @@ func ListBeneficiaryPayoutStates(ctx context.Context, db *sql.DB, actorType, sea
 		LEFT JOIN holds h ON h.actor_type=b.actor_type AND h.actor_id=b.actor_id
 		LEFT JOIN latest_destination d ON d.actor_type=b.actor_type AND d.actor_id=b.actor_id
 	)
-	SELECT actor_type,actor_id,CASE $8::text WHEN 'available_asc' THEN available_minor WHEN 'available_desc' THEN available_minor WHEN 'held_asc' THEN held_minor WHEN 'held_desc' THEN held_minor WHEN 'payout_amount_asc' THEN payout_amount_minor WHEN 'payout_amount_desc' THEN payout_amount_minor ELSE 0 END::bigint sort_value
-	FROM enriched WHERE ($1='' OR actor_type=$1) AND ($2='' OR actor_id ILIKE '%' || $2 || '%' OR beneficiary_name ILIKE '%' || $2 || '%' OR wallet_identifier_masked ILIKE '%' || $2 || '%')
+	SELECT actor_type,actor_id,CASE cursor_values.sort_key WHEN 'available_asc' THEN available_minor WHEN 'available_desc' THEN available_minor WHEN 'held_asc' THEN held_minor WHEN 'held_desc' THEN held_minor WHEN 'payout_amount_asc' THEN payout_amount_minor WHEN 'payout_amount_desc' THEN payout_amount_minor ELSE 0 END::bigint sort_value
+	FROM enriched CROSS JOIN cursor_values WHERE ($1='' OR actor_type=$1) AND ($2='' OR actor_id ILIKE '%' || $2 || '%' OR beneficiary_name ILIKE '%' || $2 || '%' OR wallet_identifier_masked ILIKE '%' || $2 || '%')
 	AND ($3='' OR ($3='NO_REQUEST' AND payout_status='') OR payout_status=$3)
-	AND (NOT $4::boolean OR ` + keyset + `)
+	AND (NOT cursor_values.has_cursor OR ` + keyset + `)
 	ORDER BY ` + orderBy + ` LIMIT $9`
 	rows, err := db.QueryContext(ctx, query, actorType, search, status, afterType != "", afterSortValue, afterType, afterID, sortKey, limit+1)
 	if err != nil {
