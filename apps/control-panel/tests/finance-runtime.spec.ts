@@ -53,7 +53,7 @@ test("@live operator reads the WLT-managed unified beneficiary settlement worksp
     const response = await fetch("/api/finance/beneficiaries?actorType=partner&limit=50&sort=actor_asc", { cache: "no-store" });
     return { status: response.status, body: await response.json() as { beneficiaries?: unknown[]; nextCursor?: string } };
   });
-  expect(registryRead.status).toBe(200);
+  expect(registryRead.status, JSON.stringify(registryRead.body)).toBe(200);
   expect(Array.isArray(registryRead.body.beneficiaries)).toBe(true);
 });
 
