@@ -89,6 +89,7 @@ jobs:
             "OPERATOR_BOOTSTRAP_SECRET",
           ];
           const values = new Map(names.map((name) => [name, crypto.randomBytes(32).toString("hex")]));
+          values.set("DSH_DELIVERY_PROOF_KEYRING", JSON.stringify({ "local-v1": crypto.randomBytes(32).toString("base64") }));
           const output = example.split(/\r?\n/).map((line) => {
             const separator = line.indexOf("=");
             if (separator < 1) return line;

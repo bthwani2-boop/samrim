@@ -8,5 +8,3 @@ export const operatorWorkspacePermissions = [
   { key: "finance", label: "المالية" },
   { key: "platform_policies", label: "سياسات المنصة" },
 ] as const satisfies ReadonlyArray<Readonly<{ key: OperatorPermission; label: string }>>;
-
-export type OperatorWorkspacePermission = (typeof operatorWorkspacePermissions)[number]["key"];

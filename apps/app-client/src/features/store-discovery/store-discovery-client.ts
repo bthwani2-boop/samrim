@@ -83,11 +83,6 @@ export async function listOwnOpenCarts(): Promise<ClientOpenCartListResponse> {
   return client().listClientOpenCarts(accessToken);
 }
 
-export async function readOwnOpenCart(storeID: string): Promise<CartResponse> {
-  const accessToken = await getUsableIdentityAccessToken();
-  return client().readOpenCart(accessToken, storeID);
-}
-
 export async function createMultiStoreCheckout(input: MultiStoreCheckoutRequest, idempotencyKey: string, correlationID: string): Promise<MultiStoreCheckoutResponse> {
   const accessToken = await getUsableIdentityAccessToken();
   return client().createMultiStoreCheckout(accessToken, input, idempotencyKey, correlationID);

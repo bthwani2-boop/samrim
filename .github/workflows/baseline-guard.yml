@@ -131,6 +131,12 @@ jobs:
 
       - name: Verify repository liveness for source changes
         shell: bash
+        env:
+          GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT: maps-config-placeholder-0
+          GOOGLE_MAPS_IOS_API_KEY: maps-config-placeholder-1
+          GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
+          GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
+          GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
         run: |
           set -euo pipefail
           if git diff --quiet "${{ steps.base.outputs.sha }}" HEAD -- apps packages services tools package.json pnpm-lock.yaml pnpm-workspace.yaml; then

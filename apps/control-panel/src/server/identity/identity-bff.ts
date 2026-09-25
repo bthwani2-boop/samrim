@@ -17,7 +17,6 @@ import {
   type OperatorPermission,
   type OperatorPermissionAccess,
   type PasskeyOptions,
-  type ReenrollmentMutationContext,
   type TokenPair,
   type VersionedMutationContext,
   validateServiceUrl,
@@ -220,11 +219,6 @@ export async function lookupIdentityRoles(phone: string): Promise<ActorRoleView[
 
 function missingIdentityRole(): IdentityClientError {
   return { kind: "http", status: 404, code: "NOT_FOUND", message: "identity role record not found" };
-}
-
-export async function authorizeIdentityRoleReenrollment(actorId: string, role: ActorType, context: ReenrollmentMutationContext): Promise<void> {
-  if (!actorId.trim()) throw missingIdentityRole();
-  await identityInternalClient().authorizeActorRoleReenrollment(actorId, role, context);
 }
 
 export async function setIdentityRoleEnabled(actorId: string, role: ActorType, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<void> {
