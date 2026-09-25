@@ -1453,7 +1453,7 @@ const conversationAfterGraceSend = await request(dshBase, "POST", `/dsh/orders/$
 if (conversationAfterGraceRead.status !== 200 || conversationAfterGraceRead.body?.canSend !== false || typeof conversationAfterGraceRead.body?.readOnlyAt !== "string" || Date.parse(conversationAfterGraceRead.body.readOnlyAt) > Date.now() || conversationAfterGraceSend.status !== 409 || conversationAfterGraceSend.body?.error?.code !== "ORDER_CONVERSATION_READ_ONLY") fail("order conversation grace-period closure was not enforced", JSON.stringify({ conversationAfterGraceRead, conversationAfterGraceSend }));
 console.log("DSH_ORDER_CONVERSATION_GRACE=PASS");
 console.log("WLT_PARTNER_ORDER_EARNING=PASS");
-const destinationWalletIdentifier = `96777000${crypto.randomInt(1000, 9999)}`;
+const destinationWalletIdentifier = `+96777000${crypto.randomInt(1000, 9999)}`;
 const destinationCreate = await request(dshBase, "POST", `/dsh/operator/partner/${encodeURIComponent(first.actorID)}/official-wallet-destination`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-destination-${suffix}`), body: { providerKey: "official_wallet", walletIdentifier: destinationWalletIdentifier, beneficiaryName: "Catalog Runtime A business", changeReason: "runtime proof destination", verificationEvidenceReference: `destination-proof-${suffix}`, changeEvidenceReference: `destination-proof-${suffix}` } });
 const destinationID = String(destinationCreate.body?.destination?.id || "");
 if (destinationID) destinationIDs.add(destinationID);
