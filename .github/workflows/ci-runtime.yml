@@ -216,9 +216,17 @@ jobs:
         if: always() && steps.scope.outputs.run == 'true'
         shell: bash
         run: |
-          docker compose \
-            --project-name samrim-local \
-            --env-file infra/local/.env \
-            -f infra/local/compose/compose.yaml \
-            down --volumes --remove-orphans
-          rm -f infra/local/.env
+          set +e
+          if [[ -f infra/local/.env ]]; then
+            docker compose \
+              --project-name samrim-local \
+              --env-file infra/local/.env \
+              -f infra/local/compose/compose.yaml \
+              down --volumes --remove-orphans
+            cleanup_status=$?
+            rm -f infra/local/.env
+            echo "CI_RUNTIME_CLEANUP status=$cleanup_status"
+          else
+            echo "CI_RUNTIME_CLEANUP status=skipped-no-env"
+          fi
+          exit 0
