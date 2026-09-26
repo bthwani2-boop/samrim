@@ -20,15 +20,18 @@ if (!definition) {
 }
 
 const scope = "samrim-" + service;
-console.log("CI_IMAGE_BUILD_START service=" + service + " scope=" + scope);
-execFileSync("docker", [
+const trustedCacheWriter = process.env.GITHUB_EVENT_NAME !== "pull_request";
+const args = [
   "buildx", "build",
   "--load",
   "--provenance=false",
   "--cache-from", "type=gha,scope=" + scope,
-  "--cache-to", "type=gha,mode=max,scope=" + scope,
   "--file", definition.dockerfile,
   "--tag", definition.tag,
-  ".",
-], { cwd: root, env: process.env, stdio: "inherit" });
+];
+if (trustedCacheWriter) args.push("--cache-to", "type=gha,mode=max,scope=" + scope);
+args.push(".");
+
+console.log("CI_IMAGE_BUILD_START service=" + service + " scope=" + scope + " cache_write=" + trustedCacheWriter);
+execFileSync("docker", args, { cwd: root, env: process.env, stdio: "inherit" });
 console.log("CI_IMAGE_BUILD=PASS service=" + service + " tag=" + definition.tag);
