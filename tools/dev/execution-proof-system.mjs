@@ -79,6 +79,35 @@ for (const [file,target] of [
 }
 if (data("apps/control-panel/project.json").targets?.["e2e-live"]) failures.push("duplicate control-panel:e2e-live remains");
 
+const controlTargets = data("apps/control-panel/project.json").targets ?? {};
+if (JSON.stringify(controlTargets["browser-live-proof"]?.dependsOn ?? []) !== JSON.stringify(["e2e"])) {
+  failures.push("control-panel browser proof ordering drifted");
+}
+const runtimeChain = [
+  ["services/identity/backend/project.json","migration-proof","control-panel","browser-live-proof"],
+  ["services/dsh/backend/project.json","baseline-proof","identity-backend","migration-proof"],
+  ["services/identity/backend/project.json","runtime-proof","dsh-backend","baseline-proof"],
+  ["services/wlt/backend/project.json","schema-proof","identity-backend","runtime-proof"],
+  ["services/dsh/backend/project.json","runtime-proof","wlt-backend","schema-proof"],
+];
+for (const [file,target,project,dependencyTarget] of runtimeChain) {
+  const dependsOn = data(file).targets?.[target]?.dependsOn ?? [];
+  const expectedDependency = JSON.stringify([{ projects: [project], target: dependencyTarget }]);
+  if (JSON.stringify(dependsOn) !== expectedDependency) failures.push(file + ":" + target + " runtime ordering drifted");
+}
+
+const runtimeOwner = read("tools/dev/run-ci-runtime-proof.mjs");
+if (!runtimeOwner.includes('const terminalTarget = "dsh-backend:runtime-proof"')) failures.push("runtime task graph root drifted");
+for (const duplicate of [
+  "control-panel:browser-live-proof",
+  "identity-backend:migration-proof",
+  "dsh-backend:baseline-proof",
+  "identity-backend:runtime-proof",
+  "wlt-backend:schema-proof",
+]) {
+  if (runtimeOwner.includes(duplicate)) failures.push("runtime owner contains duplicate direct target " + duplicate);
+}
+
 for (const app of ["app-client","app-partner","app-captain","app-field"]) {
   const deps = data("apps/" + app + "/project.json").implicitDependencies ?? [];
   if (!deps.includes("mobile-tooling")) failures.push(app + ": mobile-tooling dependency edge missing");
