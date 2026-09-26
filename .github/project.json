@@ -47,6 +47,13 @@
       "options": {
         "command": "node tools/dev/verify-go-workspace-sync.mjs"
       }
+    },
+    "runtime-integration": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/dev/run-ci-runtime-proof.mjs"
+      }
     }
   },
   "implicitDependencies": [
