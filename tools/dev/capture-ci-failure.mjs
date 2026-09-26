@@ -11,6 +11,7 @@ const runnerTemp = process.env.RUNNER_TEMP || os.tmpdir();
 const outDir = path.resolve(outArg ? outArg.slice("--out=".length) : path.join(runnerTemp, "samrim-failure-package-" + kind));
 const metricsPath = process.env.SAMRIM_CI_METRICS_PATH || path.join(runnerTemp, "samrim-ci-metrics.jsonl");
 const logsDir = process.env.SAMRIM_CI_LOG_DIR || path.join(runnerTemp, "samrim-ci-logs");
+const profileDir = process.env.SAMRIM_CI_PROFILE_DIR || path.join(runnerTemp, "samrim-ci-profiles");
 
 fs.rmSync(outDir, { recursive: true, force: true });
 fs.mkdirSync(outDir, { recursive: true });
@@ -75,6 +76,7 @@ if (fs.existsSync(metricsPath)) {
   write("failed-commands.json", JSON.stringify(failed, null, 2) + "\n");
 }
 if (fs.existsSync(logsDir)) fs.cpSync(logsDir, path.join(outDir, "command-logs"), { recursive: true });
+if (fs.existsSync(profileDir)) fs.cpSync(profileDir, path.join(outDir, "nx-profiles"), { recursive: true });
 
 const controlLog = path.join(runnerTemp, "control-panel.log");
 if (fs.existsSync(controlLog)) fs.copyFileSync(controlLog, path.join(outDir, "control-panel.log"));
