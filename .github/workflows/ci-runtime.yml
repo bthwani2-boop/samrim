@@ -47,7 +47,7 @@ jobs:
 
       - name: Install workspace once
         shell: bash
-        run: pnpm install --frozen-lockfile
+        run: node tools/dev/run-ci-command.mjs runtime-install -- pnpm install --frozen-lockfile
 
       - name: Resolve runtime integration scope through Nx
         id: scope
@@ -71,7 +71,7 @@ jobs:
       - name: Install Chromium runtime
         if: steps.scope.outputs.run == 'true'
         shell: bash
-        run: pnpm --dir apps/control-panel exec playwright install --with-deps chromium
+        run: node tools/dev/run-ci-command.mjs runtime-playwright-install -- pnpm --dir apps/control-panel exec playwright install --with-deps chromium
 
       - name: Materialize isolated CI runtime environment
         if: steps.scope.outputs.run == 'true'
@@ -117,13 +117,7 @@ jobs:
       - name: Start exact backend services
         if: steps.scope.outputs.run == 'true'
         shell: bash
-        run: |
-          docker compose \
-            --project-name samrim-local \
-            --env-file infra/local/.env \
-            -f infra/local/compose/compose.yaml \
-            up -d --no-build --wait --wait-timeout 300 \
-            postgres mailpit identity dsh wlt
+        run: node tools/dev/run-ci-command.mjs runtime-start -- docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml up -d --no-build --wait --wait-timeout 300 postgres mailpit identity dsh wlt
 
       - name: Start Control Panel host
         if: steps.scope.outputs.run == 'true'
