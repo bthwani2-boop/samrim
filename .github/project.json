@@ -4,9 +4,7 @@
   "projectType": "library",
   "tags": [
     "scope:repository-ci",
-    "type:tool",
-    "ci-backend-runtime",
-    "ci-control-runtime"
+    "type:tool"
   ],
   "targets": {
     "tooling-lint": {
