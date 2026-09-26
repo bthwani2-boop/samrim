@@ -48,6 +48,20 @@
         "command": "go test ./...",
         "cwd": "services/identity/backend"
       }
+    },
+    "migration-proof": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/dev/verify-identity-migrations.mjs --env-file=infra/local/.env"
+      }
+    },
+    "runtime-proof": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/dev/verify-identity-runtime.mjs --env-file=infra/local/.env"
+      }
     }
   },
   "tags": [

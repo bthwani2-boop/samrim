@@ -32,8 +32,6 @@
       "{workspaceRoot}/package.json",
       "{workspaceRoot}/nx.json",
       "{workspaceRoot}/.github/pull_request_template.md",
-      "{workspaceRoot}/.github/workflows/baseline-guard.yml",
-      "{workspaceRoot}/.github/workflows/pr-policy.yml",
       "{projectRoot}/knowledge-source.mjs",
       "{projectRoot}/query-knowledge.mjs",
       "{projectRoot}/verify-agent-knowledge-contract.mjs",
@@ -49,8 +47,10 @@
       {
         "runtime": "pnpm --version"
       },
-      "{workspaceRoot}/.github/workflows/backend-integration.yml",
-      "{workspaceRoot}/.github/workflows/control-panel-e2e.yml"
+      "{workspaceRoot}/.github/workflows/ci-static.yml",
+      "{workspaceRoot}/.github/workflows/ci-runtime.yml",
+      "{workspaceRoot}/.github/workflows/ci-policy.yml",
+      "{workspaceRoot}/.github/workflows/ci-security.yml"
     ],
     "runtimeOwnership": [
       "{workspaceRoot}/infra/local/**/*",
@@ -105,6 +105,40 @@
       {
         "runtime": "pwsh --version"
       }
+    ],
+    "brand": [
+      "{workspaceRoot}/apps/app-*/assets/**/*",
+      "{workspaceRoot}/tools/mobile/verify-brand-assets.mjs",
+      {
+        "runtime": "node --version"
+      }
+    ],
+    "workspaceDependencies": [
+      "{workspaceRoot}/apps/**/*",
+      "{workspaceRoot}/services/dsh/**/*",
+      "{workspaceRoot}/apps/*/package.json",
+      "{workspaceRoot}/services/*/package.json",
+      "{workspaceRoot}/packages/*/package.json",
+      "{workspaceRoot}/contracts/package.json",
+      "{workspaceRoot}/pnpm-workspace.yaml",
+      "{projectRoot}/verify-workspace-dependencies.mjs",
+      {
+        "runtime": "node --version"
+      }
+    ],
+    "goWorkspace": [
+      "{workspaceRoot}/go.work",
+      "{workspaceRoot}/go.work.sum",
+      "{workspaceRoot}/services/**/go.mod",
+      "{workspaceRoot}/services/**/go.sum",
+      "{workspaceRoot}/.go-version",
+      "{projectRoot}/verify-go-workspace-sync.mjs",
+      {
+        "runtime": "node --version"
+      },
+      {
+        "runtime": "go version"
+      }
     ]
   },
   "targets": {
@@ -130,10 +164,13 @@
     },
     "structural-hygiene": {
       "executor": "nx:run-commands",
-      "cache": false,
+      "cache": true,
       "options": {
         "command": "node tools/dev/verify-structural-hygiene.mjs"
-      }
+      },
+      "inputs": [
+        "repository"
+      ]
     },
     "runtime-ownership": {
       "executor": "nx:run-commands",
@@ -209,7 +246,7 @@
       "executor": "nx:run-commands",
       "cache": true,
       "inputs": [
-        "repository"
+        "workspaceDependencies"
       ],
       "options": {
         "command": "node tools/dev/verify-workspace-dependencies.mjs"
@@ -239,7 +276,7 @@
       "executor": "nx:run-commands",
       "cache": true,
       "inputs": [
-        "repository"
+        "brand"
       ],
       "options": {
         "command": "pnpm run brand:check"
@@ -283,6 +320,16 @@
       ],
       "options": {
         "command": "pnpm exec knip --no-progress --reporter compact --no-config-hints"
+      }
+    },
+    "go-workspace-sync": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": [
+        "goWorkspace"
+      ],
+      "options": {
+        "command": "node tools/dev/verify-go-workspace-sync.mjs"
       }
     }
   },

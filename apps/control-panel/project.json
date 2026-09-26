@@ -7,19 +7,32 @@
       "executor": "nx:run-commands",
       "options": {
         "command": "pnpm --dir apps/control-panel typecheck"
-      }
+      },
+      "outputs": [
+        "{projectRoot}/.next/types"
+      ]
     },
     "build": {
       "executor": "nx:run-commands",
       "options": {
         "command": "pnpm --dir apps/control-panel build"
-      }
+      },
+      "outputs": [
+        "{projectRoot}/.next"
+      ]
     },
     "e2e": {
       "cache": false,
       "executor": "nx:run-commands",
       "options": {
         "command": "pnpm --dir apps/control-panel exec playwright test --config playwright.config.ts --workers=1"
+      }
+    },
+    "browser-live-proof": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm --dir apps/control-panel test:e2e:live"
       }
     }
   },

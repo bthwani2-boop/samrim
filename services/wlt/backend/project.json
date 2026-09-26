@@ -48,6 +48,13 @@
         "command": "go test ./...",
         "cwd": "services/wlt/backend"
       }
+    },
+    "schema-proof": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml exec -T wlt /schema-verify"
+      }
     }
   },
   "tags": [

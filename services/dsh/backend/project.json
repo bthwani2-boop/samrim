@@ -49,6 +49,20 @@
         "command": "go test ./...",
         "cwd": "services/dsh/backend"
       }
+    },
+    "baseline-proof": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/dev/verify-dsh-baseline.mjs --env-file=infra/local/.env"
+      }
+    },
+    "runtime-proof": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/dev/verify-dsh-runtime-core.mjs --env-file=infra/local/.env"
+      }
     }
   },
   "tags": [
