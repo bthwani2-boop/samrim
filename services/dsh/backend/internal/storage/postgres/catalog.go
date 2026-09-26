@@ -24,6 +24,7 @@ var (
 	ErrCatalogVerticalModelLocked   = errors.New("commerce vertical catalog model is immutable after products exist")
 	ErrCatalogVerticalModelInUse    = errors.New("existing catalog records do not match the selected commerce vertical model")
 	ErrCatalogCategoryNotFound      = errors.New("catalog category was not found")
+	ErrCatalogCategoryInvalidCursor = errors.New("catalog category cursor is invalid")
 	ErrCatalogIdempotencyConflict   = errors.New("catalog idempotency key was already used with different facts")
 	ErrCatalogVersionConflict       = errors.New("catalog version is stale")
 	ErrCatalogAttributeRuleInvalid  = errors.New("catalog attribute rule is invalid")
@@ -58,6 +59,16 @@ type CatalogCategoryRecord struct {
 	Active                                           bool
 	Version                                          int
 	CreatedAt, UpdatedAt                             time.Time
+}
+type CatalogCategoryListItem struct {
+	CatalogCategoryRecord
+	PathAr      string
+	PathEn      string
+	sortNameKey string
+}
+type CatalogCategoryPage struct {
+	Categories []CatalogCategoryListItem
+	NextCursor string
 }
 type UpdateCommerceVerticalInput struct {
 	NameAr, NameEn  string
@@ -681,90 +692,175 @@ func ReadCommerceVertical(ctx context.Context, db *sql.DB, id string) (CommerceV
 	}
 	return item, err
 }
-func ListCatalogCategories(ctx context.Context, db *sql.DB, verticalID string, activeOnly bool) ([]CatalogCategoryRecord, error) {
-	var catalogModel string
-	if err := db.QueryRowContext(ctx, "SELECT COALESCE(catalog_model,'') FROM dsh.commerce_verticals WHERE id=$1", strings.TrimSpace(verticalID)).Scan(&catalogModel); errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrCatalogVerticalNotFound
-	} else if err != nil {
-		return nil, err
-	}
-	if catalogModel != "SHARED_CATALOG" {
-		return []CatalogCategoryRecord{}, nil
-	}
-	where := " WHERE vertical_id=$1"
-	if activeOnly {
-		where += " AND active=true"
-	}
-	rows, err := db.QueryContext(ctx, "SELECT id,vertical_id,parent_category_id,name_ar,name_en,COALESCE(image_uri,''),active,version,created_at,updated_at FROM dsh.catalog_categories"+where+" ORDER BY parent_category_id NULLS FIRST,lower(name_en),id", strings.TrimSpace(verticalID))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []CatalogCategoryRecord{}
-	for rows.Next() {
-		var item CatalogCategoryRecord
-		var parent sql.NullString
-		if err = rows.Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			return nil, err
-		}
-		if parent.Valid {
-			item.ParentCategoryID = parent.String
-		}
-		items = append(items, item)
-	}
-	return items, rows.Err()
+
+type catalogCategoryCursor struct {
+	Version    int       `json:"v"`
+	VerticalID string    `json:"verticalId"`
+	Query      string    `json:"query"`
+	Status     string    `json:"status"`
+	Sort       string    `json:"sort"`
+	NameKey    string    `json:"nameKey,omitempty"`
+	UpdatedAt  time.Time `json:"updatedAt,omitempty"`
+	CategoryID string    `json:"categoryId"`
 }
 
-func ListCatalogCategoryTree(ctx context.Context, db *sql.DB, verticalID, query, status string) ([]CatalogCategoryRecord, error) {
+func encodeCatalogCategoryCursor(cursor catalogCategoryCursor) (string, error) {
+	payload, err := json.Marshal(cursor)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(payload), nil
+}
+
+func decodeCatalogCategoryCursor(raw, verticalID, query, status, sort string) (*catalogCategoryCursor, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
+	if err != nil {
+		return nil, ErrCatalogCategoryInvalidCursor
+	}
+	var cursor catalogCategoryCursor
+	if err := json.Unmarshal(decoded, &cursor); err != nil || cursor.Version != 1 || cursor.CategoryID == "" || cursor.VerticalID != verticalID || cursor.Query != query || cursor.Status != status || cursor.Sort != sort || (sort == "updated_desc" && cursor.UpdatedAt.IsZero()) || (sort != "updated_desc" && cursor.NameKey == "") {
+		return nil, ErrCatalogCategoryInvalidCursor
+	}
+	return &cursor, nil
+}
+
+func ListCatalogCategoryPage(ctx context.Context, db *sql.DB, verticalID, query, status, sort string, limit int, rawCursor string) (CatalogCategoryPage, error) {
 	verticalID = strings.TrimSpace(verticalID)
 	query = strings.TrimSpace(query)
 	status = strings.TrimSpace(status)
-	if verticalID == "" || len(query) > 160 || (status != "all" && status != "active" && status != "inactive") {
-		return nil, ErrCatalogVerticalNotFound
+	sort = strings.TrimSpace(sort)
+	if verticalID == "" || len(verticalID) > 128 || len(query) > 160 || (status != "all" && status != "active" && status != "inactive") || (sort != "name_asc" && sort != "name_desc" && sort != "updated_desc") || limit < 1 || limit > 100 || len(rawCursor) > 2048 {
+		return CatalogCategoryPage{}, ErrCatalogCategoryInvalidCursor
+	}
+	cursor, err := decodeCatalogCategoryCursor(rawCursor, verticalID, query, status, sort)
+	if err != nil {
+		return CatalogCategoryPage{}, err
 	}
 	var catalogModel string
 	if err := db.QueryRowContext(ctx, "SELECT COALESCE(catalog_model,'') FROM dsh.commerce_verticals WHERE id=$1", verticalID).Scan(&catalogModel); errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrCatalogVerticalNotFound
+		return CatalogCategoryPage{}, ErrCatalogVerticalNotFound
 	} else if err != nil {
-		return nil, err
+		return CatalogCategoryPage{}, err
 	}
 	if catalogModel != "SHARED_CATALOG" {
-		return []CatalogCategoryRecord{}, nil
+		return CatalogCategoryPage{Categories: []CatalogCategoryListItem{}}, nil
 	}
 	queryPattern := ""
 	if query != "" {
 		queryPattern = "%" + strings.TrimSuffix(escapeCatalogSearchPrefix(query), "%") + "%"
 	}
-	rows, err := db.QueryContext(ctx, `WITH RECURSIVE matched_categories AS (
+	args := []any{verticalID, status, queryPattern}
+	cursorFilter := ""
+	if cursor != nil {
+		if sort == "updated_desc" {
+			args = append(args, cursor.UpdatedAt, cursor.CategoryID)
+			cursorFilter = " AND (updated_at,id)<($4,$5)"
+		} else {
+			args = append(args, cursor.NameKey, cursor.CategoryID)
+			operator := ">"
+			if sort == "name_desc" {
+				operator = "<"
+			}
+			cursorFilter = " AND (lower(name_en),id)" + operator + "($4,$5)"
+		}
+	}
+	limitParameter := len(args) + 1
+	args = append(args, limit+1)
+	orderBy := "lower(name_en),id"
+	if sort == "name_desc" {
+		orderBy = "lower(name_en) DESC,id DESC"
+	} else if sort == "updated_desc" {
+		orderBy = "updated_at DESC,id DESC"
+	}
+	statement := `WITH RECURSIVE page AS MATERIALIZED (
 		SELECT id,parent_category_id,vertical_id,name_ar,name_en,image_uri,active,version,created_at,updated_at
 		FROM dsh.catalog_categories
 		WHERE vertical_id=$1 AND ($2='all' OR active=($2='active'))
-		AND ($3='' OR name_ar ILIKE $3 ESCAPE '!' OR name_en ILIKE $3 ESCAPE '!')
-	), category_tree AS (
-		SELECT id,parent_category_id,vertical_id,name_ar,name_en,image_uri,active,version,created_at,updated_at FROM matched_categories
-		UNION
-		SELECT parent.id,parent.parent_category_id,parent.vertical_id,parent.name_ar,parent.name_en,parent.image_uri,parent.active,parent.version,parent.created_at,parent.updated_at
-		FROM dsh.catalog_categories parent JOIN category_tree child ON parent.id=child.parent_category_id AND parent.vertical_id=child.vertical_id
+		AND ($3='' OR name_ar ILIKE $3 ESCAPE '!' OR name_en ILIKE $3 ESCAPE '!')` + cursorFilter + `
+		ORDER BY ` + orderBy + ` LIMIT $` + strconv.Itoa(limitParameter) + `
+	), ancestors AS (
+		SELECT page.id AS leaf_id, category.id, category.parent_category_id, category.vertical_id, category.name_ar, category.name_en, 0 AS depth, ARRAY[category.id] AS visited
+		FROM page JOIN dsh.catalog_categories category ON category.id=page.id
+		UNION ALL
+		SELECT ancestors.leaf_id, parent.id, parent.parent_category_id, parent.vertical_id, parent.name_ar, parent.name_en, ancestors.depth+1, ancestors.visited || parent.id
+		FROM ancestors JOIN dsh.catalog_categories parent ON parent.id=ancestors.parent_category_id AND parent.vertical_id=ancestors.vertical_id
+		WHERE NOT parent.id=ANY(ancestors.visited)
 	)
-	SELECT id,vertical_id,parent_category_id,name_ar,name_en,COALESCE(image_uri,''),active,version,created_at,updated_at
-	FROM category_tree ORDER BY parent_category_id NULLS FIRST,lower(name_en),id`, verticalID, status, queryPattern)
+	SELECT page.id,page.vertical_id,page.parent_category_id,page.name_ar,page.name_en,COALESCE(page.image_uri,''),page.active,page.version,page.created_at,page.updated_at,
+		COALESCE((SELECT string_agg(ancestor.name_ar,' / ' ORDER BY ancestor.depth DESC) FROM ancestors ancestor WHERE ancestor.leaf_id=page.id),page.name_ar),
+		COALESCE((SELECT string_agg(ancestor.name_en,' / ' ORDER BY ancestor.depth DESC) FROM ancestors ancestor WHERE ancestor.leaf_id=page.id),page.name_en),
+		lower(page.name_en)
+	FROM page ORDER BY ` + orderBy
+	rows, err := db.QueryContext(ctx, statement, args...)
 	if err != nil {
-		return nil, err
+		return CatalogCategoryPage{}, err
 	}
 	defer rows.Close()
-	items := make([]CatalogCategoryRecord, 0)
+	items := make([]CatalogCategoryListItem, 0, limit+1)
 	for rows.Next() {
-		var item CatalogCategoryRecord
+		var item CatalogCategoryListItem
 		var parent sql.NullString
-		if err := rows.Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			return nil, err
+		if err := rows.Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt, &item.PathAr, &item.PathEn, &item.sortNameKey); err != nil {
+			return CatalogCategoryPage{}, err
 		}
 		if parent.Valid {
 			item.ParentCategoryID = parent.String
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return CatalogCategoryPage{}, err
+	}
+	page := CatalogCategoryPage{Categories: items}
+	if len(items) > limit {
+		page.Categories = items[:limit]
+		last := page.Categories[len(page.Categories)-1]
+		next := catalogCategoryCursor{Version: 1, VerticalID: verticalID, Query: query, Status: status, Sort: sort, CategoryID: last.ID}
+		if sort == "updated_desc" {
+			next.UpdatedAt = last.UpdatedAt
+		} else {
+			next.NameKey = last.sortNameKey
+		}
+		page.NextCursor, err = encodeCatalogCategoryCursor(next)
+		if err != nil {
+			return CatalogCategoryPage{}, err
+		}
+	}
+	return page, nil
+}
+
+func ReadCatalogCategoryForRegistry(ctx context.Context, db *sql.DB, categoryID string) (CatalogCategoryListItem, error) {
+	categoryID = strings.TrimSpace(categoryID)
+	if categoryID == "" {
+		return CatalogCategoryListItem{}, ErrCatalogCategoryNotFound
+	}
+	var item CatalogCategoryListItem
+	var parent sql.NullString
+	err := db.QueryRowContext(ctx, `WITH RECURSIVE ancestors AS (
+		SELECT category.id AS leaf_id,category.id,category.parent_category_id,category.vertical_id,category.name_ar,category.name_en,0 AS depth,ARRAY[category.id] AS visited
+		FROM dsh.catalog_categories category WHERE category.id=$1
+		UNION ALL
+		SELECT ancestors.leaf_id,parent.id,parent.parent_category_id,parent.vertical_id,parent.name_ar,parent.name_en,ancestors.depth+1,ancestors.visited || parent.id
+		FROM ancestors JOIN dsh.catalog_categories parent ON parent.id=ancestors.parent_category_id AND parent.vertical_id=ancestors.vertical_id
+		WHERE NOT parent.id=ANY(ancestors.visited)
+	)
+	SELECT category.id,category.vertical_id,category.parent_category_id,category.name_ar,category.name_en,COALESCE(category.image_uri,''),category.active,category.version,category.created_at,category.updated_at,
+		COALESCE((SELECT string_agg(ancestor.name_ar,' / ' ORDER BY ancestor.depth DESC) FROM ancestors ancestor WHERE ancestor.leaf_id=category.id),category.name_ar),
+		COALESCE((SELECT string_agg(ancestor.name_en,' / ' ORDER BY ancestor.depth DESC) FROM ancestors ancestor WHERE ancestor.leaf_id=category.id),category.name_en)
+	FROM dsh.catalog_categories category WHERE category.id=$1`, categoryID).Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt, &item.PathAr, &item.PathEn)
+	if errors.Is(err, sql.ErrNoRows) {
+		return CatalogCategoryListItem{}, ErrCatalogCategoryNotFound
+	}
+	if err != nil {
+		return CatalogCategoryListItem{}, err
+	}
+	if parent.Valid {
+		item.ParentCategoryID = parent.String
+	}
+	return item, nil
 }
 
 const catalogProductSelect = `SELECT p.id,p.vertical_id,p.scope,p.store_id,p.canonical_name,p.description,p.brand,p.active,p.version,p.created_at,p.updated_at FROM dsh.catalog_products p`

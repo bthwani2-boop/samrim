@@ -732,7 +732,10 @@ test("operator creates a product category under its commerce vertical", async ({
   });
   await page.route("**/api/catalog/categories**", async (route) => {
     if (route.request().method() === "GET") {
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories: [] }) });
+      const url = new URL(route.request().url());
+      const detail = url.pathname.endsWith("/category_0123456789abcdef0123456789abcdef");
+      const category = { id: "category_0123456789abcdef0123456789abcdef", verticalId: "vertical_0123456789abcdef0123456789abcdef", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", pathAr: "قهوة", pathEn: "Coffee", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" };
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(detail ? { category } : { categories: [], nextCursor: "" }) });
       return;
     }
     requestBody = route.request().postDataJSON();
@@ -743,8 +746,7 @@ test("operator creates a product category under its commerce vertical", async ({
   });
   await page.goto("/catalog/categories?verticalId=vertical_0123456789abcdef0123456789abcdef");
   await expect(page.getByRole("heading", { name: "إدارة الفئات" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "شجرة الفئات" })).toBeVisible();
-  await expect(page.getByText("خصائص المنتجات للفئة المحددة", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "الفئات", exact: true })).toBeVisible();
   await expect(page.locator(".catalog-taxonomy-workspace")).toHaveCount(1);
   await expect(page.locator(".catalog-taxonomy-workspace > .access-card")).toHaveCount(0);
   await expect(page.locator(".catalog-taxonomy-section")).toHaveCount(3);
@@ -755,7 +757,9 @@ test("operator creates a product category under its commerce vertical", async ({
   await page.getByLabel("اسم الفئة بالإنجليزية").fill("Coffee");
   await page.locator("#catalog-category-reason").fill("إنشاء فئة جديدة للاختبار");
   await page.getByRole("button", { name: "إضافة فئة", exact: true }).last().click();
-  await expect(page.getByRole("status")).toContainText("تم حفظ الفئة: قهوة.");
+  await expect(page.getByRole("status")).toContainText("تمت إضافة «قهوة».");
+  await expect(page.getByRole("heading", { name: "قهوة", exact: true })).toBeVisible();
+  await expect(page.getByText("خصائص المنتجات وقواعد هذه الفئة", { exact: true })).toBeVisible();
   await expect(page.getByRole("status")).not.toContainText("category_0123456789abcdef0123456789abcdef");
   expect(requestBody).toEqual({ verticalId: "vertical_0123456789abcdef0123456789abcdef", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", active: true, reason: "إنشاء فئة جديدة للاختبار" });
 });

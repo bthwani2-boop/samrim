@@ -143,25 +143,33 @@ func (s *Service) UpdateVertical(ctx context.Context, actingActorID, verticalID 
 	return postgres.UpdateCommerceVertical(ctx, s.db, verticalID, input, strings.TrimSpace(idempotencyKey), postgres.HashCatalogVerticalUpdateRequest(verticalID, input, reason), audit)
 }
 
-func (s *Service) ListCategories(ctx context.Context, verticalID string, activeOnly bool) ([]postgres.CatalogCategoryRecord, error) {
-	if strings.TrimSpace(verticalID) == "" {
-		return nil, postgres.ErrCatalogVerticalNotFound
-	}
-	return postgres.ListCatalogCategories(ctx, s.db, strings.TrimSpace(verticalID), activeOnly)
+func (s *Service) ListCategoryPage(ctx context.Context, verticalID, query, sort string, limit int, cursor string) (postgres.CatalogCategoryPage, error) {
+	return postgres.ListCatalogCategoryPage(ctx, s.db, verticalID, query, "active", sort, limit, cursor)
 }
 
-func (s *Service) ListCategoriesForOperator(ctx context.Context, actingActorID, verticalID string, activeOnly bool) ([]postgres.CatalogCategoryRecord, error) {
+func (s *Service) ListCategoryPageForOperator(ctx context.Context, actingActorID, verticalID, query, status, sort string, limit int, cursor string) (postgres.CatalogCategoryPage, error) {
 	if err := s.requireCatalogOperator(ctx, actingActorID); err != nil {
-		return nil, err
+		return postgres.CatalogCategoryPage{}, err
 	}
-	return s.ListCategories(ctx, verticalID, activeOnly)
+	return postgres.ListCatalogCategoryPage(ctx, s.db, verticalID, query, status, sort, limit, cursor)
 }
 
-func (s *Service) ListCategoryTreeForOperator(ctx context.Context, actingActorID, verticalID, query, status string) ([]postgres.CatalogCategoryRecord, error) {
-	if err := s.requireCatalogOperator(ctx, actingActorID); err != nil {
-		return nil, err
+func (s *Service) ReadCategory(ctx context.Context, categoryID string) (postgres.CatalogCategoryListItem, error) {
+	item, err := postgres.ReadCatalogCategoryForRegistry(ctx, s.db, categoryID)
+	if err != nil {
+		return postgres.CatalogCategoryListItem{}, err
 	}
-	return postgres.ListCatalogCategoryTree(ctx, s.db, verticalID, query, status)
+	if !item.Active {
+		return postgres.CatalogCategoryListItem{}, postgres.ErrCatalogCategoryNotFound
+	}
+	return item, nil
+}
+
+func (s *Service) ReadCategoryForOperator(ctx context.Context, actingActorID, categoryID string) (postgres.CatalogCategoryListItem, error) {
+	if err := s.requireCatalogOperator(ctx, actingActorID); err != nil {
+		return postgres.CatalogCategoryListItem{}, err
+	}
+	return postgres.ReadCatalogCategoryForRegistry(ctx, s.db, categoryID)
 }
 
 func (s *Service) CreateCategory(ctx context.Context, actingActorID string, item postgres.CatalogCategoryRecord, idempotencyKey, correlationID, reason string) (postgres.CatalogCategoryRecord, error) {

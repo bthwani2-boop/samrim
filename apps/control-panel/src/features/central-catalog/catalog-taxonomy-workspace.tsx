@@ -1,6 +1,6 @@
 "use client";
 
-import type { CatalogCategory, CommerceVertical } from "@bthwani/dsh";
+import type { CatalogCategoryListResponse, CommerceVertical } from "@bthwani/dsh";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CatalogCategoryRegistry } from "./catalog-category-registry";
 import { CatalogVerticalRegistry } from "./catalog-vertical-registry";
@@ -14,7 +14,8 @@ async function readResponse<T>(response: Response): Promise<T> {
 export function CatalogTaxonomyWorkspace() {
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
   const [verticalId, setVerticalId] = useState("");
-  const [categories, setCategories] = useState<ReadonlyArray<CatalogCategory>>([]);
+  const [categories, setCategories] = useState<CatalogCategoryListResponse["categories"]>([]);
+  const [nextCursor, setNextCursor] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [loadingVerticals, setLoadingVerticals] = useState(true);
   const [loadingCategories, setLoadingCategories] = useState(false);
@@ -43,10 +44,11 @@ export function CatalogTaxonomyWorkspace() {
     }
   }, []);
 
-  const loadCategories = useCallback(async (nextVerticalId: string) => {
+  const loadCategories = useCallback(async (nextVerticalId: string, query = "", status = "all", sort = "name_asc", cursor = "", append = false) => {
     const requestId = ++categoryLoadSequence.current;
     if (!nextVerticalId) {
       setCategories([]);
+      setNextCursor("");
       setCategoryId("");
       setLoadingCategories(false);
       return;
@@ -54,11 +56,14 @@ export function CatalogTaxonomyWorkspace() {
     setLoadingCategories(true);
     setError("");
     try {
-      const response = await fetch(`/api/catalog/categories?verticalId=${encodeURIComponent(nextVerticalId)}&includeInactive=true`, { cache: "no-store" });
-      const body = await readResponse<{ categories: ReadonlyArray<CatalogCategory> }>(response);
+      const params = new URLSearchParams({ verticalId: nextVerticalId, status, sort, limit: "50" });
+      if (query.trim()) params.set("query", query.trim());
+      if (cursor) params.set("cursor", cursor);
+      const response = await fetch(`/api/catalog/categories?${params.toString()}`, { cache: "no-store" });
+      const body = await readResponse<CatalogCategoryListResponse>(response);
       if (requestId !== categoryLoadSequence.current) return;
-      setCategories(body.categories);
-      setCategoryId((current) => current && body.categories.some((item) => item.id === current) ? current : "");
+      setCategories((current) => append ? [...current, ...body.categories] : body.categories);
+      setNextCursor(body.nextCursor ?? "");
     } catch (value) {
       if (requestId === categoryLoadSequence.current) setError(value instanceof Error ? value.message : "تعذر قراءة الفئات.");
     } finally {
@@ -74,13 +79,14 @@ export function CatalogTaxonomyWorkspace() {
     categoryLoadSequence.current += 1;
     setVerticalId(nextVerticalId);
     setCategories([]);
+    setNextCursor("");
     setCategoryId("");
     setError("");
   }, []);
 
   return <section className="catalog-taxonomy-workspace" aria-label="إدارة الفئات">
     {error ? <p className="identity-error" role="alert">{error} <button type="button" className="button button-secondary" disabled={loadingVerticals || loadingCategories} onClick={() => { void loadVerticals(); if (verticalId) void loadCategories(verticalId); }}>إعادة قراءة السجل</button></p> : null}
-    <CatalogCategoryRegistry key={verticalId} verticals={sharedVerticals} verticalId={verticalId} onVerticalChange={chooseVertical} categories={categories} categoryId={categoryId} onCategoryChange={setCategoryId} loading={loadingVerticals || loadingCategories} onSaved={() => loadCategories(verticalId)} management={<details className="catalog-vertical-settings">
+    <CatalogCategoryRegistry key={verticalId} verticals={sharedVerticals} verticalId={verticalId} onVerticalChange={chooseVertical} categories={categories} nextCursor={nextCursor} onFilter={(query, status, sort, cursor, append) => loadCategories(verticalId, query, status, sort, cursor, append)} categoryId={categoryId} onCategoryChange={setCategoryId} loading={loadingVerticals || loadingCategories} onSaved={() => loadCategories(verticalId)} management={<details className="catalog-vertical-settings">
       <summary><span>إدارة المجالات التجارية</span><small>{verticals.length} مجال</small></summary>
       <p className="muted">إعدادات مصادر شجرة الفئات ومسار المنتجات.</p>
       <CatalogVerticalRegistry verticals={verticals} selectedVerticalId={verticalId} onSelectVertical={chooseVertical} onSaved={loadVerticals} />

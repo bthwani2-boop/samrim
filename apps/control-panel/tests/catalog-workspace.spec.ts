@@ -85,8 +85,8 @@ test("catalog proposal review shows detail and re-reads after approval", async (
   await page.route("**/api/catalog/verticals", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", catalogModel: "SHARED_CATALOG", active: true, version: 1, createdAt: "2026-09-18T00:00:00.000Z", updatedAt: "2026-09-18T00:00:00.000Z" }] }) });
   });
-  await page.route("**/api/catalog/categories?verticalId=grocery", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories: [{ id: "coffee", verticalId: "grocery", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", active: true, version: 1, createdAt: "2026-09-18T00:00:00.000Z", updatedAt: "2026-09-18T00:00:00.000Z" }] }) });
+  await page.route("**/api/catalog/categories/coffee", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ category: { id: "coffee", verticalId: "grocery", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", pathAr: "قهوة", pathEn: "Coffee", active: true, version: 1, createdAt: "2026-09-18T00:00:00.000Z", updatedAt: "2026-09-18T00:00:00.000Z" } }) });
   });
   await page.route("**/api/catalog/proposals/proposal-1/review", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ proposal: { ...proposal, state: "approved", version: 4 }, idempotentReplay: false }) });

@@ -1,7 +1,7 @@
 "use client";
 
-import type { BaseUnit, CatalogAttributeRule, CatalogAttributeValue, CatalogAttributeValueInput, CatalogCategory, CatalogProduct, CatalogProductRegistryResponse, CatalogVariant, CommerceVertical, MeasurementKind } from "@bthwani/dsh";
-import { useCallback, useEffect, useEffectEvent, useRef, useState, type CSSProperties } from "react";
+import type { BaseUnit, CatalogAttributeRule, CatalogAttributeValue, CatalogAttributeValueInput, CatalogCategoryListItem, CatalogCategoryListResponse, CatalogProduct, CatalogProductRegistryResponse, CatalogVariant, CommerceVertical, MeasurementKind } from "@bthwani/dsh";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type CSSProperties } from "react";
 
 type ProductForm = { verticalId: string; scope: "SHARED" | "STORE_SCOPED"; canonicalName: string; description: string; brand: string; variantTitle: string; measurementKind: MeasurementKind; baseUnit: BaseUnit; categoryIds: ReadonlyArray<string>; identifierType: string; identifierValue: string; active: boolean };
 
@@ -60,17 +60,8 @@ async function parseResponse<T>(response: Response): Promise<T> {
 
 function firstVariant(product: CatalogProduct): CatalogVariant | undefined { return product.variants[0]; }
 
-function categoryPath(categoryId: string, categories: ReadonlyArray<CatalogCategory>): string {
-  const byId = new Map(categories.map((category) => [category.id, category]));
-  const parts: string[] = [];
-  const visited = new Set<string>();
-  let current = byId.get(categoryId);
-  while (current && !visited.has(current.id)) {
-    visited.add(current.id);
-    parts.unshift(current.nameAr);
-    current = current.parentCategoryId ? byId.get(current.parentCategoryId) : undefined;
-  }
-  return parts.join(" / ") || categoryId;
+function categoryPath(categoryId: string, categories: ReadonlyArray<CatalogCategoryListItem>): string {
+  return categories.find((category) => category.id === categoryId)?.pathAr ?? categoryId;
 }
 
 function attributeDraftsFromValues(product: CatalogProduct | null): AttributeDrafts {
@@ -99,8 +90,15 @@ function toForm(product: CatalogProduct): ProductForm {
 export function CentralCatalog() {
   const [products, setProducts] = useState<CatalogProductRegistryResponse["products"]>([]);
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
-  const [categories, setCategories] = useState<ReadonlyArray<CatalogCategory>>([]);
-  const [filterCategories, setFilterCategories] = useState<ReadonlyArray<CatalogCategory>>([]);
+  const [categories, setCategories] = useState<CatalogCategoryListResponse["categories"]>([]);
+  const [categoryNextCursor, setCategoryNextCursor] = useState("");
+  const [categorySearch, setCategorySearch] = useState("");
+  const [categoryLoading, setCategoryLoading] = useState(false);
+  const [selectedCategoryDetails, setSelectedCategoryDetails] = useState<ReadonlyArray<CatalogCategoryListItem>>([]);
+  const [filterCategories, setFilterCategories] = useState<CatalogCategoryListResponse["categories"]>([]);
+  const [filterCategoryQuery, setFilterCategoryQuery] = useState("");
+  const [filterCategoryNextCursor, setFilterCategoryNextCursor] = useState("");
+  const [filterCategoryLoading, setFilterCategoryLoading] = useState(false);
   const [attributeRules, setAttributeRules] = useState<ReadonlyArray<CatalogAttributeRule>>([]);
   const [enumOptions, setEnumOptions] = useState<Readonly<Record<string, ReadonlyArray<string>>>>({});
   const [attributeDrafts, setAttributeDrafts] = useState<AttributeDrafts>({});
@@ -126,6 +124,8 @@ export function CentralCatalog() {
   const [uploadInputKey, setUploadInputKey] = useState(0);
   const listRequestSequence = useRef(0);
   const detailRequestSequence = useRef(0);
+  const categoryRequestSequence = useRef(0);
+  const filterCategoryRequestSequence = useRef(0);
   const sharedVerticals = verticals.filter((vertical) => vertical.catalogModel === "SHARED_CATALOG");
   const selectedCategoryIdsKey = form.categoryIds.join("\u001f");
 
@@ -136,13 +136,73 @@ export function CentralCatalog() {
     return payload.verticals;
   }, []);
 
-  const loadCategories = useCallback(async (verticalId: string) => {
-    if (!verticalId) { setCategories([]); return; }
-    const response = await fetch(`/api/catalog/categories?verticalId=${encodeURIComponent(verticalId)}&includeInactive=true`, { cache: "no-store" });
-    const payload = await parseResponse<{ categories: ReadonlyArray<CatalogCategory> }>(response);
-    setCategories(payload.categories);
+  const loadCategories = useCallback(async (verticalId: string, query = "", cursor = "", append = false) => {
+    const requestSequence = ++categoryRequestSequence.current;
+    if (!verticalId) { setCategories([]); setCategoryNextCursor(""); setCategoryLoading(false); return; }
+    setCategoryLoading(true);
+    try {
+      const params = new URLSearchParams({ verticalId, status: "all", sort: "name_asc", limit: "50" });
+      if (query.trim()) params.set("query", query.trim());
+      if (cursor) params.set("cursor", cursor);
+      const response = await fetch(`/api/catalog/categories?${params.toString()}`, { cache: "no-store" });
+      const payload = await parseResponse<CatalogCategoryListResponse>(response);
+      if (requestSequence !== categoryRequestSequence.current) return;
+      setCategories((current) => append ? [...current, ...payload.categories] : payload.categories);
+      setCategoryNextCursor(payload.nextCursor ?? "");
+    } catch (nextError) {
+      if (requestSequence === categoryRequestSequence.current) throw nextError;
+    } finally {
+      if (requestSequence === categoryRequestSequence.current) setCategoryLoading(false);
+    }
   }, []);
 
+  const loadFilterCategories = useCallback(async (query: string, cursor = "", append = false) => {
+    const requestSequence = ++filterCategoryRequestSequence.current;
+    if (!verticalFilter) { setFilterCategories([]); setFilterCategoryNextCursor(""); setFilterCategoryLoading(false); return; }
+    setFilterCategoryLoading(true);
+    try {
+      const params = new URLSearchParams({ verticalId: verticalFilter, status: "all", sort: "name_asc", limit: "25" });
+      if (query.trim()) params.set("query", query.trim());
+      if (cursor) params.set("cursor", cursor);
+      const response = await fetch(`/api/catalog/categories?${params.toString()}`, { cache: "no-store" });
+      const payload = await parseResponse<CatalogCategoryListResponse>(response);
+      if (requestSequence !== filterCategoryRequestSequence.current) return;
+      setFilterCategories((current) => append ? [...current, ...payload.categories] : payload.categories);
+      setFilterCategoryNextCursor(payload.nextCursor ?? "");
+    } catch (nextError) {
+      if (requestSequence === filterCategoryRequestSequence.current) throw nextError;
+    } finally {
+      if (requestSequence === filterCategoryRequestSequence.current) setFilterCategoryLoading(false);
+    }
+  }, [verticalFilter]);
+
+  const categoryChoices = useMemo(() => {
+    const byId = new Map<string, CatalogCategoryListItem>();
+    for (const category of [...categories, ...selectedCategoryDetails]) byId.set(category.id, category);
+    return [...byId.values()].filter((category) => category.verticalId === form.verticalId);
+  }, [categories, selectedCategoryDetails, form.verticalId]);
+
+  async function searchProductCategories() {
+    try { await loadCategories(form.verticalId, categorySearch); }
+    catch (nextError) { setError(nextError instanceof Error ? nextError.message : "تعذر البحث في الفئات."); }
+  }
+
+  async function loadMoreProductCategories() {
+    if (!categoryNextCursor || categoryLoading) return;
+    try { await loadCategories(form.verticalId, categorySearch, categoryNextCursor, true); }
+    catch (nextError) { setError(nextError instanceof Error ? nextError.message : "تعذر تحميل فئات إضافية."); }
+  }
+
+  async function searchFilterCategories() {
+    try { await loadFilterCategories(filterCategoryQuery); }
+    catch (nextError) { setError(nextError instanceof Error ? nextError.message : "تعذر البحث في الفئات."); }
+  }
+
+  async function loadMoreFilterCategories() {
+    if (!filterCategoryNextCursor || filterCategoryLoading) return;
+    try { await loadFilterCategories(filterCategoryQuery, filterCategoryNextCursor, true); }
+    catch (nextError) { setError(nextError instanceof Error ? nextError.message : "تعذر تحميل فئات إضافية."); }
+  }
   const load = useCallback(async (cursor = "", append = false) => {
     const requestSequence = ++listRequestSequence.current;
     setLoading(true);
@@ -167,7 +227,7 @@ export function CentralCatalog() {
   }, [appliedQuery, verticalFilter, categoryFilter, statusFilter, sort]);
 
   useEffect(() => { void loadVerticals().catch((nextError) => setError(nextError instanceof Error ? nextError.message : "تعذر قراءة الفئات الرئيسية.")); }, [loadVerticals]);
-  useEffect(() => { void loadCategories(form.verticalId).catch((nextError) => setError(nextError instanceof Error ? nextError.message : "تعذر قراءة الفئات.")); }, [form.verticalId, loadCategories]);
+  useEffect(() => { void loadCategories(form.verticalId, "").catch((nextError) => setError(nextError instanceof Error ? nextError.message : "تعذر قراءة الفئات.")); }, [form.verticalId, loadCategories]);
   useEffect(() => {
     let current = true;
     setAttributeRules([]); setEnumOptions({});
@@ -200,14 +260,37 @@ export function CentralCatalog() {
   }, [selectedCategoryIdsKey]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
+    if (!verticalFilter) { filterCategoryRequestSequence.current += 1; setFilterCategories([]); setFilterCategoryNextCursor(""); setCategoryFilter(""); setFilterCategoryLoading(false); return; }
+    setFilterCategoryQuery("");
+    void loadFilterCategories("").catch((nextError) => setError(nextError instanceof Error ? nextError.message : "تعذر قراءة الفئات."));
+  }, [verticalFilter, loadFilterCategories]);
+  useEffect(() => {
+    const selectedIDs = new Set(selectedCategoryIdsKey ? selectedCategoryIdsKey.split("\u001f") : []);
+    setSelectedCategoryDetails((current) => {
+      const next = current.filter((category) => selectedIDs.has(category.id));
+      return next.length === current.length ? current : next;
+    });
+  }, [selectedCategoryIdsKey]);
+  useEffect(() => {
+    const missing = form.categoryIds.filter((id) => !categoryChoices.some((category) => category.id === id));
+    if (!missing.length) return;
     let current = true;
-    if (!verticalFilter) { setFilterCategories([]); setCategoryFilter(""); return () => { current = false; }; }
-    void fetch(`/api/catalog/categories?verticalId=${encodeURIComponent(verticalFilter)}`, { cache: "no-store" })
-      .then(parseResponse<{ categories: ReadonlyArray<CatalogCategory> }>)
-      .then((payload) => { if (current) setFilterCategories(payload.categories); })
-      .catch((nextError) => { if (current) setError(nextError instanceof Error ? nextError.message : "تعذر قراءة الفئات."); });
+    void Promise.all(missing.map(async (id) => {
+      const response = await fetch(`/api/catalog/categories/${encodeURIComponent(id)}`, { cache: "no-store" });
+      return (await parseResponse<{ category: CatalogCategoryListItem }>(response)).category;
+    })).then((items) => { if (current) setSelectedCategoryDetails((existing) => [...new Map([...existing, ...items].map((category) => [category.id, category])).values()]); })
+      .catch((nextError) => { if (current) setError(nextError instanceof Error ? nextError.message : "تعذر قراءة الفئات المحددة."); });
     return () => { current = false; };
-  }, [verticalFilter]);
+  }, [form.categoryIds, categoryChoices]);
+  useEffect(() => {
+    if (!verticalFilter || !categoryFilter || filterCategories.some((category) => category.id === categoryFilter)) return;
+    let current = true;
+    void fetch(`/api/catalog/categories/${encodeURIComponent(categoryFilter)}`, { cache: "no-store" })
+      .then((response) => parseResponse<{ category: CatalogCategoryListItem }>(response))
+      .then((payload) => { if (current && payload.category.verticalId === verticalFilter) setFilterCategories((items) => [...items.filter((item) => item.id !== payload.category.id), payload.category]); })
+      .catch((nextError) => { if (current) setError(nextError instanceof Error ? nextError.message : "تعذر قراءة الفئة المحددة."); });
+    return () => { current = false; };
+  }, [verticalFilter, categoryFilter, filterCategories]);
 
   async function selectProduct(productId: string, updateLocation = true) {
     const requestSequence = ++detailRequestSequence.current;
@@ -336,7 +419,10 @@ export function CentralCatalog() {
         <form className="catalog-registry-toolbar" onSubmit={(event) => { event.preventDefault(); const nextQuery = query.trim(); writeCatalogLocation({ query: nextQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort }); setAppliedQuery(nextQuery); }}>
           <label className="catalog-search-input">بحث<input aria-label="البحث في المنتجات" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="اسم المنتج أو العلامة" /></label>
           <label>الفئة الرئيسية<select value={verticalFilter} onChange={(event) => { const verticalId = event.target.value; writeCatalogLocation({ query: appliedQuery, verticalId, categoryId: "", active: statusFilter, sort }); setVerticalFilter(verticalId); setCategoryFilter(""); }}><option value="">الكل</option>{sharedVerticals.map((vertical) => <option value={vertical.id} key={vertical.id}>{vertical.nameAr}</option>)}</select></label>
-          <label>الفئة<select disabled={!verticalFilter} value={categoryFilter} onChange={(event) => { const categoryId = event.target.value; writeCatalogLocation({ query: appliedQuery, verticalId: verticalFilter, categoryId, active: statusFilter, sort }); setCategoryFilter(categoryId); }}><option value="">كل الفئات</option>{filterCategories.map((category) => <option value={category.id} key={category.id}>{categoryPath(category.id, filterCategories)}</option>)}</select></label>
+          <label>بحث الفئات<input disabled={!verticalFilter || filterCategoryLoading} value={filterCategoryQuery} onChange={(event) => setFilterCategoryQuery(event.target.value)} placeholder="اسم الفئة" /></label>
+          <button type="button" className="button button-quiet" disabled={!verticalFilter || filterCategoryLoading} onClick={() => void searchFilterCategories()}>{filterCategoryLoading ? "جارٍ البحث…" : "بحث الفئات"}</button>
+          <label>الفئة<select disabled={!verticalFilter} value={categoryFilter} onChange={(event) => { const categoryId = event.target.value; writeCatalogLocation({ query: appliedQuery, verticalId: verticalFilter, categoryId, active: statusFilter, sort }); setCategoryFilter(categoryId); }}><option value="">كل الفئات</option>{filterCategories.map((category) => <option value={category.id} key={category.id}>{category.pathAr}</option>)}</select></label>
+          {filterCategoryNextCursor ? <button type="button" className="button button-quiet" disabled={filterCategoryLoading} onClick={() => void loadMoreFilterCategories()}>{filterCategoryLoading ? "جارٍ التحميل…" : "فئات إضافية"}</button> : null}
           <label>الحالة<select value={statusFilter} onChange={(event) => { const active = event.target.value; writeCatalogLocation({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active, sort }); setStatusFilter(active); }}><option value="all">كل الحالات</option><option value="active">نشط</option><option value="inactive">معطل</option></select></label>
           <label>الترتيب<select value={sort} onChange={(event) => { const sort = event.target.value; writeCatalogLocation({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort }); setSort(sort); }}><option value="name_asc">الاسم أ–ي</option><option value="name_desc">الاسم ي–أ</option><option value="updated_desc">الأحدث تعديلًا</option><option value="updated_asc">الأقدم تعديلًا</option></select></label>
           <button type="submit" className="button button-secondary" disabled={loading}>بحث</button>
@@ -368,14 +454,16 @@ export function CentralCatalog() {
         {detailLoading ? <p className="muted" role="status">جارٍ قراءة التفاصيل والعلاقات من الخادم…</p> : null}
         <div className="access-card-heading"><p className="eyebrow">تحرير المنتج والنسخة</p><h2 id="central-catalog-editor-title">{selected ? "تعديل المنتج" : "إنشاء منتج"}</h2><p className="muted">تُحفظ الهوية والفئة والنسخة الافتراضية في سجل المنتجات.</p></div>
         <div className="central-product-form">
-          <label className="field-label" htmlFor="catalog-vertical">المجال التجاري<select id="catalog-vertical" disabled={busy || selected !== null} value={form.verticalId} onChange={(event) => { setForm({ ...form, verticalId: event.target.value, categoryIds: [] }); setAttributeDrafts({}); }}><option value="">اختر المجال التجاري</option>{sharedVerticals.map((vertical) => <option value={vertical.id} key={vertical.id}>{vertical.nameAr}</option>)}</select></label>
+          <label className="field-label" htmlFor="catalog-vertical">المجال التجاري<select id="catalog-vertical" disabled={busy || selected !== null} value={form.verticalId} onChange={(event) => { setForm({ ...form, verticalId: event.target.value, categoryIds: [] }); setCategorySearch(""); setCategoryNextCursor(""); setCategories([]); setSelectedCategoryDetails([]); setAttributeDrafts({}); }}><option value="">اختر المجال التجاري</option>{sharedVerticals.map((vertical) => <option value={vertical.id} key={vertical.id}>{vertical.nameAr}</option>)}</select></label>
           <fieldset className="catalog-product-category-picker" disabled={busy || !form.verticalId} aria-describedby="catalog-category-help">
             <legend>الفئات المرتبطة بالمنتج</legend>
             <p id="catalog-category-help" className="muted">اختر فئة واحدة أو أكثر. الخصائص المطلوبة تتغير حسب الفئات المختارة.</p>
-            {!form.verticalId ? <p className="muted">اختر المجال التجاري أولًا لقراءة شجرته.</p> : categories.length === 0 ? <p className="muted">لا توجد فئات في المجال المحدد.</p> : <ul className="catalog-product-category-list">
-              {[...categories].sort((left, right) => categoryPath(left.id, categories).localeCompare(categoryPath(right.id, categories), "ar")).map((category) => {
+            <div className="catalog-category-filters"><label className="field-label" htmlFor="catalog-product-category-search">بحث الفئات<input id="catalog-product-category-search" type="search" maxLength={160} value={categorySearch} disabled={categoryLoading} onChange={(event) => setCategorySearch(event.target.value)} placeholder="اسم الفئة بالعربية أو الإنجليزية" /></label><button type="button" className="button button-secondary" disabled={categoryLoading} onClick={() => void searchProductCategories()}>{categoryLoading ? "جارٍ البحث…" : "بحث"}</button>{categoryNextCursor ? <button type="button" className="button button-quiet" disabled={categoryLoading} onClick={() => void loadMoreProductCategories()}>{categoryLoading ? "جارٍ التحميل…" : "تحميل فئات إضافية"}</button> : null}</div>
+            {categoryLoading ? <p className="muted" role="status">جارٍ قراءة صفحة الفئات…</p> : null}
+            {!form.verticalId ? <p className="muted">اختر المجال التجاري أولًا لقراءة فئاته.</p> : categoryChoices.length === 0 ? <p className="muted">{categorySearch ? "لا توجد فئات مطابقة." : "لا توجد فئات في المجال المحدد."}</p> : <ul className="catalog-product-category-list">
+              {[...categoryChoices].sort((left, right) => left.pathAr.localeCompare(right.pathAr, "ar")).map((category) => {
                 const checked = form.categoryIds.includes(category.id);
-                const path = categoryPath(category.id, categories);
+                const path = category.pathAr;
                 const depth = Math.max(0, path.split(" / ").length - 1);
                 return <li key={category.id} style={{ marginInlineStart: Math.min(depth, 8) * 16 } as CSSProperties}>
                   <label className={"catalog-product-category-option" + (category.active ? "" : " is-inactive")}>
@@ -385,7 +473,7 @@ export function CentralCatalog() {
                 </li>;
               })}
             </ul>}
-            {form.categoryIds.length ? <p className="muted">المحدد: {form.categoryIds.map((id) => categoryPath(id, categories)).join("، ")}</p> : null}
+            {form.categoryIds.length ? <p className="muted">المحدد: {form.categoryIds.map((id) => categoryPath(id, categoryChoices)).join("، ")}</p> : null}
           </fieldset>
           {attributeReadState === "loading" ? <p className="muted">جارٍ قراءة خصائص الفئات المحددة…</p> : attributeReadState === "error" ? <p className="identity-error" role="alert">تعذرت قراءة قواعد الخصائص. أعد المحاولة قبل الحفظ.</p> : renderAttributeFields()}
           {form.scope === "STORE_SCOPED" ? <p className="muted">هذا المنتج خاص بمتجر ويُدار من مساحة المتجر.</p> : null}

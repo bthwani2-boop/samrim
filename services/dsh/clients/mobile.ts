@@ -174,10 +174,13 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
     async listCatalogVerticals(): Promise<CommerceVerticalListResponse["verticals"]> {
       return (await publicRequest<CommerceVerticalListResponse>(dshOperationPaths.listCatalogVerticals.path)).verticals;
     },
-    async listCatalogCategories(verticalID: string): Promise<CatalogCategoryListResponse["categories"]> {
+    async listCatalogCategories(verticalID: string, query = "", limit = 25, cursor = ""): Promise<CatalogCategoryListResponse> {
       const normalized = verticalID.trim();
-      if (!normalized) throw new Error("DSH_VERTICAL_ID_REQUIRED");
-      return (await publicRequest<CatalogCategoryListResponse>(`${dshOperationPaths.listCatalogCategories.path}?${new URLSearchParams({ verticalId: normalized }).toString()}`)).categories;
+      if (!normalized || normalized.length > 128 || query.trim().length > 160 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 || cursor.length > 2048) throw new Error("DSH_CATEGORY_LIST_INPUT_INVALID");
+      const params = new URLSearchParams({ verticalId: normalized, limit: String(limit) });
+      if (query.trim()) params.set("query", query.trim());
+      if (cursor.trim()) params.set("cursor", cursor.trim());
+      return publicRequest<CatalogCategoryListResponse>(`${dshOperationPaths.listCatalogCategories.path}?${params.toString()}`);
     },
     async listPublicCatalogCategoryAttributeRules(categoryID: string): Promise<CatalogAttributeRuleListResponse["rules"]> {
       const normalized = categoryID.trim();

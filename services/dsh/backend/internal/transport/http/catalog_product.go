@@ -54,6 +54,7 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/catalog/verticals", s.createVertical)
 	mux.HandleFunc("PATCH /dsh/catalog/verticals/{verticalId}", s.updateVertical)
 	mux.HandleFunc("GET /dsh/catalog/categories", s.listCategories)
+	mux.HandleFunc("GET /dsh/catalog/categories/{categoryId}", s.readCategory)
 	mux.HandleFunc("GET /dsh/public/catalog/categories/{categoryId}/attribute-rules", s.listPublicCategoryAttributeRules)
 	mux.HandleFunc("POST /dsh/catalog/categories", s.createCategory)
 	mux.HandleFunc("PATCH /dsh/catalog/categories/{categoryId}", s.updateCategory)
@@ -176,19 +177,38 @@ func (s *CatalogServer) listCategories(w http.ResponseWriter, r *http.Request) {
 	verticalID := strings.TrimSpace(r.URL.Query().Get("verticalId"))
 	query := strings.TrimSpace(r.URL.Query().Get("query"))
 	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	if r.URL.Query().Has("includeInactive") {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "use the status filter for catalog Category state")
+		return
+	}
+	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	limit, ok := catalogLimit(w, r)
+	if !ok {
+		return
+	}
 	if len(query) > 160 || (status != "" && status != "all" && status != "active" && status != "inactive") {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog Category search or status filter is invalid")
 		return
 	}
-	if verticalID == "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "verticalId is required")
+	if len(cursor) > 2048 || (sort != "" && sort != "name_asc" && sort != "name_desc" && sort != "updated_desc") {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog Category cursor or sort order is invalid")
 		return
 	}
-	activeOnly := r.URL.Query().Get("includeInactive") != "true"
-	var items []postgres.CatalogCategoryRecord
+	if verticalID == "" || len(verticalID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "verticalId is invalid")
+		return
+	}
+	if sort == "" {
+		sort = "name_asc"
+	}
+	if status == "" {
+		status = "active"
+	}
+	var page postgres.CatalogCategoryPage
 	var err error
-	if status == "" && query == "" && activeOnly {
-		items, err = s.service.ListCategories(r.Context(), verticalID, true)
+	if status == "active" {
+		page, err = s.service.ListCategoryPage(r.Context(), verticalID, query, sort, limit, cursor)
 	} else {
 		if !s.auth.Authorized(r) {
 			writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
@@ -199,24 +219,37 @@ func (s *CatalogServer) listCategories(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
 			return
 		}
-		if status == "" {
-			if activeOnly {
-				status = "active"
-			} else {
-				status = "all"
-			}
-		}
-		items, err = s.service.ListCategoryTreeForOperator(r.Context(), acting, verticalID, query, status)
+		page, err = s.service.ListCategoryPageForOperator(r.Context(), acting, verticalID, query, status, sort, limit, cursor)
 	}
 	if err != nil {
 		writeCatalogError(w, err)
 		return
 	}
-	values := make([]contract.CatalogCategory, 0, len(items))
-	for _, item := range items {
-		values = append(values, toCatalogCategory(item))
+	values := make([]contract.CatalogCategoryListItem, 0, len(page.Categories))
+	for _, item := range page.Categories {
+		values = append(values, toCatalogCategoryListItem(item))
 	}
-	writeJSON(w, http.StatusOK, contract.CatalogCategoryListResponse{Categories: values})
+	writeJSON(w, http.StatusOK, contract.CatalogCategoryListResponse{Categories: values, NextCursor: page.NextCursor})
+}
+
+func (s *CatalogServer) readCategory(w http.ResponseWriter, r *http.Request) {
+	var item postgres.CatalogCategoryListItem
+	var err error
+	if s.auth.Authorized(r) {
+		acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+		if acting == "" {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+			return
+		}
+		item, err = s.service.ReadCategoryForOperator(r.Context(), acting, r.PathValue("categoryId"))
+	} else {
+		item, err = s.service.ReadCategory(r.Context(), r.PathValue("categoryId"))
+	}
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CatalogCategoryDetailResponse{Category: toCatalogCategoryListItem(item)})
 }
 
 func (s *CatalogServer) createCategory(w http.ResponseWriter, r *http.Request) {
@@ -692,6 +725,9 @@ func toCommerceVertical(item postgres.CommerceVerticalRecord) contract.CommerceV
 func toCatalogCategory(item postgres.CatalogCategoryRecord) contract.CatalogCategory {
 	return contract.CatalogCategory{ID: item.ID, VerticalID: item.VerticalID, ParentCategoryID: item.ParentCategoryID, NameAr: item.NameAr, NameEn: item.NameEn, ImageUri: item.ImageURI, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
+func toCatalogCategoryListItem(item postgres.CatalogCategoryListItem) contract.CatalogCategoryListItem {
+	return contract.CatalogCategoryListItem{ID: item.ID, VerticalID: item.VerticalID, ParentCategoryID: item.ParentCategoryID, NameAr: item.NameAr, NameEn: item.NameEn, ImageUri: item.ImageURI, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt, PathAr: item.PathAr, PathEn: item.PathEn}
+}
 func toCatalogProduct(item postgres.CatalogProductRecord) contract.CatalogProduct {
 	variants := make([]contract.CatalogVariant, 0, len(item.Variants))
 	for _, v := range item.Variants {
@@ -747,6 +783,8 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, postgres.ErrCatalogProductRegistryInvalidCursor):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog Product registry cursor, filters, status, or sort order are invalid")
+	case errors.Is(err, postgres.ErrCatalogCategoryInvalidCursor):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog Category cursor, filters, or sort order are invalid")
 	case errors.Is(err, postgres.ErrCatalogProductNotFound), errors.Is(err, postgres.ErrCatalogVariantNotFound), errors.Is(err, postgres.ErrCatalogOfferNotFound), errors.Is(err, postgres.ErrCatalogCategoryNotFound), errors.Is(err, postgres.ErrCatalogVerticalNotFound), errors.Is(err, postgres.ErrCatalogProposalNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "catalog record was not found")
 	case errors.Is(err, postgres.ErrCatalogIdempotencyConflict):

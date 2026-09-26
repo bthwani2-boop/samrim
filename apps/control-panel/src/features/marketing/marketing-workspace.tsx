@@ -1,6 +1,6 @@
 "use client";
 
-import type { DiscoveryContentAnalytics, DiscoveryContentView, OperatorDiscoveryContentRegistryResponse, OperatorPromotionRegistryResponse, PromotionView, ServiceCity } from "@bthwani/dsh";
+import type { CommerceVertical, DiscoveryContentAnalytics, DiscoveryContentView, OperatorDiscoveryContentRegistryResponse, OperatorPromotionRegistryResponse, PromotionView, ServiceCity } from "@bthwani/dsh";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
@@ -203,6 +203,8 @@ export function MarketingContentWorkspace() {
   const [contentForm, setContentForm] = useState({ titleAr: "", bodyAr: "", kind: "BANNER" as "BANNER" | "CAROUSEL" | "SHORT_FORM", targetType: "INFO" as "STORE" | "PRODUCT" | "CATEGORY" | "PROMOTION" | "INFO", targetId: "", serviceCityId: "", ordinal: "0" });
   const [targetOptions, setTargetOptions] = useState<ReadonlyArray<{ id: string; label: string; detail?: string }>>([]);
   const [targetSearch, setTargetSearch] = useState("");
+  const [categoryVerticals, setCategoryVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
+  const [categoryVerticalId, setCategoryVerticalId] = useState("");
   const [targetCursor, setTargetCursor] = useState("");
   const [targetCursorStack, setTargetCursorStack] = useState<ReadonlyArray<string>>([]);
   const [targetNextCursor, setTargetNextCursor] = useState("");
@@ -245,6 +247,18 @@ export function MarketingContentWorkspace() {
   useEffect(() => { void load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل محتوى الاكتشاف.")); }, [load]);
   useEffect(() => { void readActiveServiceCities().then(setCities).catch(() => setMessage("تعذر قراءة مدن الخدمة؛ يمكنك نشر المحتوى على كل المدن.")); }, []);
   useEffect(() => {
+    if (contentForm.targetType !== "CATEGORY") return;
+    const controller = new AbortController();
+    void fetch("/api/catalog/verticals", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const body = await response.json().catch(() => null) as { verticals?: ReadonlyArray<CommerceVertical> } | null;
+        if (!response.ok) throw new Error("تعذر قراءة المجالات التجارية.");
+        if (!controller.signal.aborted) setCategoryVerticals((body?.verticals ?? []).filter((item) => item.active && item.catalogModel === "SHARED_CATALOG"));
+      })
+      .catch((error) => { if (!controller.signal.aborted) setTargetMessage(error instanceof Error ? error.message : "تعذر قراءة المجالات التجارية."); });
+    return () => controller.abort();
+  }, [contentForm.targetType]);
+  useEffect(() => {
     if (contentForm.targetType === "INFO") {
       setTargetOptions([]);
       setTargetMessage("");
@@ -257,7 +271,10 @@ export function MarketingContentWorkspace() {
       setTargetLoading(false);
       return;
     }
-    if (["STORE", "PRODUCT", "PROMOTION"].includes(contentForm.targetType) && targetSearch.trim().length < 2) {
+    if (contentForm.targetType === "CATEGORY" && !categoryVerticalId) {
+      setTargetOptions([]); setTargetNextCursor(""); setTargetMessage("اختر المجال التجاري أولًا لعرض فئاته."); setTargetLoading(false); return;
+    }
+    if (["STORE", "PRODUCT", "PROMOTION", "CATEGORY"].includes(contentForm.targetType) && targetSearch.trim().length < 2) {
       setTargetOptions([]);
       setTargetNextCursor("");
       setTargetMessage("اكتب حرفين على الأقل للبحث في الوجهات المتاحة.");
@@ -268,7 +285,8 @@ export function MarketingContentWorkspace() {
     const controller = new AbortController();
     const params = new URLSearchParams({ targetType: contentForm.targetType });
     if (contentForm.serviceCityId) params.set("serviceCityId", contentForm.serviceCityId);
-    if (["STORE", "PRODUCT", "PROMOTION"].includes(contentForm.targetType)) params.set("query", targetSearch.trim());
+    if (["STORE", "PRODUCT", "PROMOTION", "CATEGORY"].includes(contentForm.targetType)) params.set("query", targetSearch.trim());
+    if (contentForm.targetType === "CATEGORY") params.set("verticalId", categoryVerticalId);
     if (targetCursor) params.set("cursor", targetCursor);
     setTargetLoading(true);
     setTargetMessage("");
@@ -288,7 +306,7 @@ export function MarketingContentWorkspace() {
         if (!controller.signal.aborted) setTargetLoading(false);
       });
     return () => controller.abort();
-  }, [contentForm.serviceCityId, contentForm.targetType, targetCursor, targetSearch]);
+  }, [categoryVerticalId, contentForm.serviceCityId, contentForm.targetType, targetCursor, targetSearch]);
 
   async function createContent() {
     setBusy(true);
@@ -357,14 +375,16 @@ export function MarketingContentWorkspace() {
           <label className="field-label" htmlFor="marketing-content-kind">نوع المحتوى<select id="marketing-content-kind" aria-label="نوع المحتوى" value={contentForm.kind} onChange={(event) => setContentForm((current) => ({ ...current, kind: event.target.value as typeof current.kind }))}><option value="BANNER">بنر رئيسي</option><option value="CAROUSEL">شريحة كاروسيل</option><option value="SHORT_FORM">قصة قصيرة</option></select></label>
           <label className="field-label" htmlFor="marketing-content-media">صورة المحتوى<input id="marketing-content-media" aria-label="ملف صورة المحتوى" type="file" accept="image/jpeg,image/png" required onChange={(event) => setMediaFile(event.target.files?.[0] ?? null)} /></label>
           {mediaFile ? <p className="muted" data-testid="marketing-content-file">{mediaFile.name} · {(mediaFile.size / 1024).toFixed(0)} كيلوبايت</p> : <p className="muted">JPEG أو PNG، حتى 10 ميجابايت.</p>}
-          <label className="field-label" htmlFor="marketing-content-target">نوع الوجهة<select id="marketing-content-target" aria-label="نوع وجهة المحتوى" value={contentForm.targetType} onChange={(event) => { setTargetSearch(""); setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, targetType: event.target.value as typeof current.targetType, targetId: "" })); }}><option value="INFO">معلومات فقط</option><option value="STORE">متجر</option><option value="PRODUCT">منتج</option><option value="CATEGORY">فئة</option><option value="PROMOTION">عرض</option></select></label>
+          <label className="field-label" htmlFor="marketing-content-target">نوع الوجهة<select id="marketing-content-target" aria-label="نوع وجهة المحتوى" value={contentForm.targetType} onChange={(event) => { setTargetSearch(""); setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setCategoryVerticalId(""); setContentForm((current) => ({ ...current, targetType: event.target.value as typeof current.targetType, targetId: "" })); }}><option value="INFO">معلومات فقط</option><option value="STORE">متجر</option><option value="PRODUCT">منتج</option><option value="CATEGORY">فئة</option><option value="PROMOTION">عرض</option></select></label>
           {contentForm.targetType !== "INFO" ? <>
-            <input aria-label="بحث في الوجهات" placeholder={`ابحث ${contentForm.targetType === "STORE" ? "عن متجر" : contentForm.targetType === "PRODUCT" ? "عن منتج" : contentForm.targetType === "PROMOTION" ? "عن عرض" : "لتصفية الوجهات"}`} value={targetSearch} onChange={(event) => { setTargetSearch(event.target.value); setTargetCursor(""); setTargetCursorStack([]); setTargetOptions([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, targetId: "" })); }} />
+            {contentForm.targetType === "CATEGORY" ? <label className="field-label" htmlFor="marketing-content-category-vertical">المجال التجاري<select id="marketing-content-category-vertical" aria-label="المجال التجاري للفئة" value={categoryVerticalId} onChange={(event) => { setCategoryVerticalId(event.target.value); setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, targetId: "" })); }}><option value="">اختر المجال التجاري</option>{categoryVerticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}</option>)}</select></label> : null}
+            <input aria-label="بحث في الوجهات" maxLength={128} placeholder={`ابحث ${contentForm.targetType === "STORE" ? "عن متجر" : contentForm.targetType === "PRODUCT" ? "عن منتج" : contentForm.targetType === "PROMOTION" ? "عن عرض" : "عن فئة"}`} value={targetSearch} onChange={(event) => { setTargetSearch(event.target.value); setTargetCursor(""); setTargetCursorStack([]); setTargetOptions([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, targetId: "" })); }} />
             <label className="field-label" htmlFor="marketing-content-target-option">الوجهة المعتمدة<select id="marketing-content-target-option" aria-label="الوجهة المعتمدة" value={contentForm.targetId} disabled={targetLoading || targetOptions.length === 0} onChange={(event) => setContentForm((current) => ({ ...current, targetId: event.target.value }))}>
               <option value="">{targetLoading ? "جارٍ تحميل الوجهات…" : "اختر وجهة من بيانات DSH"}</option>
               {targetOptions.map((option) => <option key={option.id} value={option.id}>{option.detail ? `${option.label} · ${option.detail}` : option.label}</option>)}
             </select></label>
             {!["CATEGORY", "INFO"].includes(contentForm.targetType) ? <nav className={styles.pagination} aria-label="صفحات وجهات المحتوى"><button className="button button-quiet" type="button" disabled={targetLoading || targetCursorStack.length === 0} onClick={() => { const next = [...targetCursorStack]; setTargetCursor(next.pop() ?? ""); setTargetCursorStack(next); }}>السابق</button><span>{targetCursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={targetLoading || !targetNextCursor} onClick={() => { setTargetCursorStack((items) => [...items, targetCursor]); setTargetCursor(targetNextCursor); }}>تحميل المزيد</button></nav> : null}
+            {contentForm.targetType === "CATEGORY" ? <nav className={styles.pagination} aria-label="صفحات فئات المحتوى"><button className="button button-quiet" type="button" disabled={targetLoading || targetCursorStack.length === 0} onClick={() => { const next = [...targetCursorStack]; setTargetCursor(next.pop() ?? ""); setTargetCursorStack(next); }}>السابق</button><span>{targetCursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={targetLoading || !targetNextCursor} onClick={() => { setTargetCursorStack((items) => [...items, targetCursor]); setTargetCursor(targetNextCursor); }}>تحميل المزيد</button></nav> : null}
             {targetMessage ? <p className="muted" role="status">{targetMessage}</p> : null}
             <p className="muted">تُختار الوجهة من السجلات المعتمدة، ويعيد DSH التحقق من صلاحيتها حسب المدينة ووقت العرض.</p>
           </> : null}

@@ -3007,15 +3007,59 @@ components:
         category:
           $ref: "#/components/schemas/CatalogCategory"
 
+    CatalogCategoryListItem:
+      type: object
+      required: [id, verticalId, nameAr, nameEn, pathAr, pathEn, active, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        verticalId:
+          type: string
+        parentCategoryId:
+          type: string
+          nullable: true
+        nameAr:
+          type: string
+        nameEn:
+          type: string
+        imageUri:
+          type: string
+          nullable: true
+        pathAr:
+          type: string
+        pathEn:
+          type: string
+        active:
+          type: boolean
+        version:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CatalogCategoryDetailResponse:
+      type: object
+      required: [category]
+      additionalProperties: false
+      properties:
+        category:
+          $ref: "#/components/schemas/CatalogCategoryListItem"
+
     CatalogCategoryListResponse:
       type: object
-      required: [categories]
+      required: [categories, nextCursor]
       additionalProperties: false
       properties:
         categories:
           type: array
           items:
-            $ref: "#/components/schemas/CatalogCategory"
+            $ref: "#/components/schemas/CatalogCategoryListItem"
+        nextCursor:
+          type: string
 
     PublicCatalogResponse:
       type: object

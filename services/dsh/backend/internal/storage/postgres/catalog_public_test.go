@@ -4,7 +4,44 @@ import (
 	"encoding/base64"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestCatalogCategoryCursorBindsRegistryScope(t *testing.T) {
+	query := "قهوة عربية"
+	cursor := catalogCategoryCursor{Version: 1, VerticalID: "food", Query: query, Status: "active", Sort: "name_asc", NameKey: "قهوة عربية", CategoryID: "category-1"}
+	raw, err := encodeCatalogCategoryCursor(cursor)
+	if err != nil {
+		t.Fatalf("encode category cursor: %v", err)
+	}
+	if len(raw) > 2048 {
+		t.Fatalf("category cursor exceeds the OpenAPI limit: %d", len(raw))
+	}
+	if _, err := decodeCatalogCategoryCursor(raw, "food", query, "active", "name_asc"); err != nil {
+		t.Fatalf("decode category cursor for its original query: %v", err)
+	}
+	for _, scope := range []struct{ verticalID, query, status, sort string }{
+		{"retail", query, "active", "name_asc"},
+		{"food", "شاي", "active", "name_asc"},
+		{"food", query, "inactive", "name_asc"},
+		{"food", query, "active", "name_desc"},
+	} {
+		if _, err := decodeCatalogCategoryCursor(raw, scope.verticalID, scope.query, scope.status, scope.sort); err == nil {
+			t.Fatalf("category cursor should reject changed scope: %#v", scope)
+		}
+	}
+	updated := catalogCategoryCursor{Version: 1, VerticalID: "food", Query: query, Status: "all", Sort: "updated_desc", UpdatedAt: time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC), CategoryID: "category-2"}
+	updatedRaw, err := encodeCatalogCategoryCursor(updated)
+	if err != nil {
+		t.Fatalf("encode updated category cursor: %v", err)
+	}
+	if _, err := decodeCatalogCategoryCursor(updatedRaw, "food", query, "all", "updated_desc"); err != nil {
+		t.Fatalf("decode updated category cursor: %v", err)
+	}
+	if _, err := decodeCatalogCategoryCursor("!", "food", query, "all", "updated_desc"); err == nil {
+		t.Fatal("malformed category cursor must be rejected")
+	}
+}
 
 func TestCatalogSearchCursorRoundTripsAndBindsSearchScope(t *testing.T) {
 	storeID := ""

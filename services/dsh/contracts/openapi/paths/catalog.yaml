@@ -64,13 +64,21 @@ paths:
   /dsh/catalog/categories:
     get:
       operationId: listCatalogCategories
-      summary: Read the canonical Category tree for a Commerce Vertical
+      summary: Read a bounded page of canonical Categories for a Commerce Vertical
+      description: Active categories are public. The all and inactive status filters require service authentication and an acting operator.
+      security:
+        - {}
+        - serviceBearer: []
       parameters:
         - $ref: "../dsh.openapi.yaml#/components/parameters/VerticalIdRequired"
+        - { name: X-Acting-Actor-ID, in: header, required: false, schema: { type: string, maxLength: 128 } }
         - { name: query, in: query, required: false, schema: { type: string, maxLength: 160 } }
         - { name: status, in: query, required: false, schema: { type: string, enum: [all, active, inactive] } }
+        - { name: sort, in: query, required: false, schema: { type: string, enum: [name_asc, name_desc, updated_desc], default: name_asc } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 100 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 2048 } }
       responses:
-        "200": { description: Bounded Category tree., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogCategoryListResponse" } } } }
+        "200": { description: Bounded Category registry page with ancestry paths., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogCategoryListResponse" } } } }
     post:
       operationId: createCatalogCategory
       summary: Create a Category in the canonical parent tree
@@ -88,6 +96,18 @@ paths:
         "201": { description: Category created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogCategoryResponse" } } } }
 
   /dsh/catalog/categories/{categoryId}:
+    get:
+      operationId: readCatalogCategory
+      summary: Read one Category and its ancestry path
+      description: Active categories are public. Reading an inactive category requires service authentication and an acting operator.
+      security:
+        - {}
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CategoryId"
+        - { name: X-Acting-Actor-ID, in: header, required: false, schema: { type: string, maxLength: 128 } }
+      responses:
+        "200": { description: Category detail used by relationship drill-down., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogCategoryDetailResponse" } } } }
     patch:
       operationId: updateCatalogCategory
       summary: Update one Category parent, names, or state with cycle prevention and audit
