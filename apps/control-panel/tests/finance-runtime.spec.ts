@@ -3,9 +3,10 @@ import { cleanupPreparedOperator, enrollAndAuthenticateIsolatedOperator, type Pr
 
 let preparedOperatorForCleanup: PreparedOperator | undefined;
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page }, testInfo) => {
   preparedOperatorForCleanup = undefined;
-  await enrollAndAuthenticateIsolatedOperator(page, ["finance", "platform_policies"], (operator) => {
+  const permissions = /delivery-fee policy|Field commission policy/.test(testInfo.title) ? ["platform_policies"] : ["finance"];
+  await enrollAndAuthenticateIsolatedOperator(page, permissions, (operator) => {
     preparedOperatorForCleanup = operator;
   });
 });
