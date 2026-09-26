@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "mode": "observe",
+  "budgetsMs": {
+    "static-affected": 60000,
+    "static-full": 180000,
+    "windows-export-affected": 90000,
+    "windows-export-full": 180000,
+    "runtime-images": 120000,
+    "runtime-integration": 180000
+  }
+}
