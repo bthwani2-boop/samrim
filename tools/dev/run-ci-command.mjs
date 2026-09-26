@@ -19,10 +19,8 @@ const logDir = process.env.SAMRIM_CI_LOG_DIR || path.join(runnerTemp, "samrim-ci
 fs.mkdirSync(path.dirname(metricsPath), { recursive: true });
 fs.mkdirSync(logDir, { recursive: true });
 
-const executable =
-  process.platform === "win32" && commandArgs[0] === "pnpm"
-    ? "pnpm.cmd"
-    : commandArgs[0];
+const isWindows = process.platform === "win32";
+const executable = isWindows && commandArgs[0] === "pnpm" ? "pnpm.cmd" : commandArgs[0];
 const args = commandArgs.slice(1);
 const safeName = name.replace(/[^A-Za-z0-9._-]+/g, "-");
 const logPath = path.join(logDir, safeName + ".log");
@@ -32,36 +30,49 @@ const started = performance.now();
 
 console.log("CI_TIMED_COMMAND_START name=" + name + " command=" + commandArgs.join(" "));
 
-const child = spawn(executable, args, {
-  cwd: root,
-  env: process.env,
-  stdio: ["inherit", "pipe", "pipe"],
-});
-
-for (const [stream, destination] of [
-  [child.stdout, process.stdout],
-  [child.stderr, process.stderr],
-]) {
-  stream.on("data", (chunk) => {
-    destination.write(chunk);
-    log.write(chunk);
+let exitCode = 1;
+try {
+  const child = spawn(executable, args, {
+    cwd: root,
+    env: process.env,
+    stdio: ["inherit", "pipe", "pipe"],
+    shell: isWindows,
   });
-}
 
-const exitCode = await new Promise((resolve, reject) => {
-  child.once("error", reject);
-  child.once("close", (code, signal) => {
-    if (signal) {
-      console.error("CI_TIMED_COMMAND_SIGNAL name=" + name + " signal=" + signal);
+  for (const [stream, destination] of [
+    [child.stdout, process.stdout],
+    [child.stderr, process.stderr],
+  ]) {
+    stream?.on("data", (chunk) => {
+      destination.write(chunk);
+      log.write(chunk);
+    });
+  }
+
+  exitCode = await new Promise((resolve) => {
+    child.once("error", (error) => {
+      const message = "CI_TIMED_COMMAND=FAIL name=" + name + " error=" + String(error?.message || error);
+      console.error(message);
+      log.write(message + "\n");
       resolve(1);
-      return;
-    }
-    resolve(code ?? 1);
+    });
+    child.once("close", (code, signal) => {
+      if (signal) {
+        const message = "CI_TIMED_COMMAND_SIGNAL name=" + name + " signal=" + signal;
+        console.error(message);
+        log.write(message + "\n");
+        resolve(1);
+        return;
+      }
+      resolve(code ?? 1);
+    });
   });
-}).catch((error) => {
-  console.error("CI_TIMED_COMMAND=FAIL name=" + name + " error=" + String(error?.message || error));
-  return 1;
-});
+} catch (error) {
+  const message = "CI_TIMED_COMMAND=FAIL name=" + name + " error=" + String(error?.message || error);
+  console.error(message);
+  log.write(message + "\n");
+  exitCode = 1;
+}
 
 await new Promise((resolve) => log.end(resolve));
 const durationMs = Math.round(performance.now() - started);
