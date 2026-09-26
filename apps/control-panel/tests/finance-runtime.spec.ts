@@ -5,7 +5,7 @@ let preparedOperatorForCleanup: PreparedOperator | undefined;
 
 test.beforeEach(async ({ page }) => {
   preparedOperatorForCleanup = undefined;
-  await enrollAndAuthenticateIsolatedOperator(page, ["finance"], (operator) => {
+  await enrollAndAuthenticateIsolatedOperator(page, ["finance", "platform_policies"], (operator) => {
     preparedOperatorForCleanup = operator;
   });
 });
