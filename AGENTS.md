@@ -65,7 +65,13 @@ Pinned Governance may intentionally be broader than the current implementation s
 
 Donor/history, OSS/product exemplars, Yemen-market evidence, primary technology sources and assurance/experience sources are evidence only. Inspect them only when they can change the current decision, and revalidate mutable external facts at use.
 
+### Reference / benchmark gate
+
+For material Product/UX/IA/workflow/state/architecture/data/failure-recovery refoundation, run one bounded decision benchmark before the first material write using every evidence class that can change the decision: pinned Governance and current BThwani truth → affected donor/history → relevant live Yemen-market competitor evidence → relevant OSS/product exemplars → current primary sources. Triangulate only decision-changing value, map it to current BThwani owners, then write; no external source becomes Product or architecture authority by existence. Do not repeat the benchmark after small edits; rerun only when a material decision reopens. Live competitor/device inspection is observational decision evidence, not BThwani operational proof, and may precede static implementation only when required to make the next correct design decision.
+
 For user-facing work, durable Experience/Design/Quality meaning remains in those Governance owners. The executable Design System owns reusable domain-neutral visual semantics when reuse is proven; each app owns its actor-specific IA, shell, navigation and composition. Arabic/RTL, accessibility, interaction states and rendered behavior are correctness when material, not optional polish. Static checks never substitute for rendered/interaction evidence when the final claim is visual or interactive; this defines the required final evidence, not when runtime proof is executed.
+
+For material user-facing entities whose meaning depends on imagery/media, closure includes distinct media ownership/type, known provenance/licensing, canonical upload/storage/reference/readback, cleanup of superseded or orphaned references, and real rendering on every affected surface. Development-generated assets may be produced in bounded batches for speed, but must enter through the canonical media path and must not create raw-URL or shadow-media truth.
 
 ### Control Panel operational-resource law
 
@@ -108,6 +114,8 @@ Executable package/config/runtime code owns ports, process inventory and mutable
 LOCAL_INTEGRATION has one canonical owner per admitted process/state. Do not run parallel host/container owners for the same responsibility. Reuse valid warm backend, Metro/Next, session, actor and business state. Verification must not bootstrap dependencies, rebuild/restart the whole runtime or re-login merely to manufacture a generic green result. Rebuild/restart only what the affected claim requires.
 
 Normal local Product state is reusable. Proof-only state exists only when a claim requires it; create the minimum through canonical writers and clean only disposable state created by that proof. Do not use direct SQL/seed bypass to manufacture business success. Proof tooling must not reset developer credentials, authorize re-enrollment, revoke unrelated sessions, mutate an established actor merely to regain access, or destroy reusable business state for convenience. Destructive local data loss requires explicit same-invocation authorization.
+
+When reusable realistic local operations state is required, create and preserve it idempotently through authenticated canonical writers/APIs. A dev-only provisioner may orchestrate those same flows for speed, but it is only a client: never a business writer, seed authority, direct-database bypass or auto-reset mechanism. It must fail loudly on contract drift and must not mutate or delete unrelated user/business state.
 
 ## 5. Final operational proof
 
