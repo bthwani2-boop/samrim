@@ -756,11 +756,11 @@ test("operator creates a product category under its commerce vertical", async ({
   await expect(page.locator(".catalog-taxonomy-section")).toHaveCount(1);
   await page.screenshot({ path: "test-results/catalog-taxonomy-workspace.png", fullPage: true });
   await expect(page.getByLabel("المعرف البرمجي للتصنيف", { exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "إضافة فئة", exact: true }).click();
+  await page.getByRole("button", { name: "فئة رئيسية جديدة", exact: true }).click();
   await page.getByLabel("اسم الفئة بالعربية").fill("قهوة");
   await page.getByLabel("اسم الفئة بالإنجليزية").fill("Coffee");
   await page.locator("#catalog-category-reason").fill("إنشاء فئة جديدة للاختبار");
-  await page.getByRole("button", { name: "إضافة فئة", exact: true }).last().click();
+  await page.locator(".catalog-category-editor").getByRole("button", { name: "إضافة الفئة", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("تمت إضافة «قهوة».");
   await expect(page.getByRole("heading", { name: "قهوة", exact: true })).toBeVisible();
   await expect(page.getByText("خصائص المنتجات وقواعد هذه الفئة", { exact: true })).toBeVisible();
