@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: "47 2 * * 0"
   workflow_dispatch:
 
 permissions:
@@ -52,6 +54,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "schedule" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "CI_RUNTIME_SCOPE=FULL_REGRESSION head=$GITHUB_SHA"
+            exit 0
+          fi
           affected="$(pnpm exec nx show projects --affected --base="$NX_BASE" --head="$NX_HEAD" --projects=repository-ci --sep=,)"
           if [[ -n "$affected" ]]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
