@@ -1,4 +1,4 @@
-name: Repository Pull Request Policy
+name: CI Policy
 
 on:
   push:
