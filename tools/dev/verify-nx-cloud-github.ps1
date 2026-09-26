@@ -69,37 +69,46 @@ try {
 
     $workflowJson = ((Invoke-Gh @('workflow', 'list', '--repo', $Repository, '--all', '--json', 'path,name,state')) -join '') | ConvertFrom-Json
     $workflowPaths = @($workflowJson | ForEach-Object { [string]$_.path })
-    foreach ($requiredWorkflow in @('.github/workflows/baseline-guard.yml', '.github/workflows/control-panel-e2e.yml', '.github/workflows/backend-integration.yml')) {
-        if ($workflowPaths -notcontains $requiredWorkflow) { Fail "workflow is not registered on GitHub: $requiredWorkflow" }
+    $requiredWorkflows = @(
+        '.github/workflows/ci-static.yml',
+        '.github/workflows/ci-runtime.yml',
+        '.github/workflows/ci-security.yml',
+        '.github/workflows/ci-policy.yml'
+    )
+    foreach ($requiredWorkflow in $requiredWorkflows) {
+        if ($workflowPaths -notcontains $requiredWorkflow) { Fail "canonical workflow is not registered on GitHub: $requiredWorkflow" }
     }
 
-    $baseline = Read-Workflow '.github/workflows/baseline-guard.yml'
-    if ($baseline -notmatch 'workflow_dispatch\s*:') { Fail 'baseline-guard.yml has no workflow_dispatch trigger' }
-    if ($baseline -notmatch 'NX_CLOUD_RO_TOKEN' -or $baseline -notmatch 'NX_CLOUD_RW_TOKEN' -or $baseline -notmatch 'nx-cloud-protected') {
-        Fail 'baseline-guard.yml does not contain the expected Nx Cloud secret/environment mapping'
+    $static = Read-Workflow '.github/workflows/ci-static.yml'
+    if ($static -notmatch 'workflow_dispatch\s*:') { Fail 'ci-static.yml has no workflow_dispatch trigger' }
+    if ($static -notmatch 'NX_CLOUD_RO_TOKEN' -or $static -notmatch 'NX_CLOUD_RW_TOKEN' -or $static -notmatch 'nx-cloud-protected' -or $static -notmatch 'nx-cloud-unprotected') {
+        Fail 'ci-static.yml does not contain the expected Nx Cloud trust-boundary mapping'
+    }
+    if ($static -notmatch 'nrwl/nx-set-shas@') { Fail 'ci-static.yml does not use canonical Nx SHA resolution' }
+
+    $runtime = Read-Workflow '.github/workflows/ci-runtime.yml'
+    if ($runtime -notmatch 'workflow_dispatch\s*:') { Fail 'ci-runtime.yml has no workflow_dispatch trigger' }
+    if ($runtime -notmatch 'NX_NO_CLOUD:\s*["'']?true' -or $runtime -notmatch '--projects=repository-ci' -or $runtime -notmatch 'repository-ci:runtime-integration') {
+        Fail 'ci-runtime.yml must remain affected-selected and explicitly uncached'
     }
 
-    $e2e = Read-Workflow '.github/workflows/control-panel-e2e.yml'
-    if ($e2e -notmatch 'workflow_dispatch\s*:') { Fail 'control-panel-e2e.yml has no workflow_dispatch trigger' }
-    $e2eProject = (Get-Content -LiteralPath (Join-Path $RepoRoot 'apps/control-panel/project.json') -Raw) | ConvertFrom-Json
-    if ($e2e -notmatch 'control-panel:e2e' -or $null -eq $e2eProject.targets.e2e -or $e2eProject.targets.e2e.cache -ne $false) {
-        Fail 'control-panel:e2e must be an intrinsically uncached Nx target'
+    $controlProject = (Get-Content -LiteralPath (Join-Path $RepoRoot 'apps/control-panel/project.json') -Raw) | ConvertFrom-Json
+    if ($null -eq $controlProject.targets.e2e -or $controlProject.targets.e2e.cache -ne $false) {
+        Fail 'control-panel:e2e must be intrinsically uncached'
     }
-
-    $backend = Read-Workflow '.github/workflows/backend-integration.yml'
-    if ($backend -notmatch 'workflow_dispatch\s*:') { Fail 'backend-integration.yml has no workflow_dispatch trigger' }
-    if ($backend -notmatch 'services/wlt/' -or $backend -notmatch 'wlt=true' -or $backend -notmatch 'Start WLT service for CI composition and health') {
-        Fail 'backend-integration.yml does not include the WLT CI composition path'
+    if ($null -eq $controlProject.targets.'browser-live-proof' -or $controlProject.targets.'browser-live-proof'.cache -ne $false) {
+        Fail 'control-panel:browser-live-proof must be intrinsically uncached'
     }
 
     Write-Host 'NX_CLOUD_GITHUB_VERIFY=PASS'
-    Write-Host "NX_CLOUD_WORKSPACE_ID=present"
+    Write-Host 'NX_CLOUD_WORKSPACE_ID=present'
     Write-Host 'NX_CLOUD_REPOSITORY_RO=present'
     Write-Host "NX_CLOUD_PROTECTED_RW=present environment=$ProtectedEnvironment"
-    Write-Host 'NX_CLOUD_WORKFLOW_DISPATCH=present'
-    Write-Host 'NX_BACKEND_WLT_WORKFLOW_DISPATCH=present'
-    Write-Host 'NX_BACKEND_WLT_CI_COMPOSITION=present'
-    Write-Host 'NX_E2E_TARGET_FRESHNESS=intrinsic'
+    Write-Host 'CANONICAL_CI_WORKFLOWS=4'
+    Write-Host 'CI_STATIC_NX_CLOUD=trusted-cache-boundary'
+    Write-Host 'CI_RUNTIME_NX_CLOUD=disabled'
+    Write-Host 'CI_RUNTIME_AFFECTED_OWNER=repository-ci'
+    Write-Host 'CONTROL_PANEL_RUNTIME_TARGETS=uncached'
     Write-Host "NX_CLOUD_REF_VERIFIED=$Ref"
 }
 finally {
