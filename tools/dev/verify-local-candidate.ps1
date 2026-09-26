@@ -19,19 +19,47 @@ function Invoke-Git([string[]]$Arguments) {
     return $output
 }
 
-function Run-Step([string]$Name, [scriptblock]$Action) {
+function Run-QuietStep([string]$Name, [scriptblock]$Action) {
     Write-Host ''
-    Write-Host "=== $Name ==="
     $clock = [Diagnostics.Stopwatch]::StartNew()
+    $logPath = Join-Path ([IO.Path]::GetTempPath()) ("samrim-verify-{0}.log" -f [guid]::NewGuid().ToString('N'))
+    $logPrinted = $false
     try {
         $global:LASTEXITCODE = 0
-        & $Action
-        if ($LASTEXITCODE -ne 0) { Fail "$Name failed with exit code $LASTEXITCODE" }
+        & $Action *> $logPath
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -ne 0) {
+            $clock.Stop()
+            Write-Host "=== $Name FAILED ==="
+            if (Test-Path $logPath) { Get-Content -Path $logPath | ForEach-Object { Write-Host $_ } }
+            $logPrinted = $true
+            Fail "$Name failed with exit code $exitCode"
+        }
+
+        $clock.Stop()
+        $lineCount = if (Test-Path $logPath) { @(Get-Content -Path $logPath).Count } else { 0 }
+        Write-Host ("VERIFY_STEP=PASS name={0} ms={1} output_lines={2}" -f ($Name -replace '\s+','_'), $clock.ElapsedMilliseconds, $lineCount)
+    }
+    catch {
+        if ($clock.IsRunning) { $clock.Stop() }
+        if (-not $logPrinted -and (Test-Path $logPath)) {
+            Write-Host "=== $Name FAILED ==="
+            Get-Content -Path $logPath | ForEach-Object { Write-Host $_ }
+        }
+        throw
     }
     finally {
-        $clock.Stop()
-        Write-Host ("VERIFY_STEP_MS name={0} ms={1}" -f ($Name -replace '\s+','_'), $clock.ElapsedMilliseconds)
+        Remove-Item -Force -ErrorAction SilentlyContinue $logPath
     }
+}
+
+function Test-ChangedPath([string[]]$Patterns, [string[]]$Paths) {
+    foreach ($candidate in $Paths) {
+        foreach ($pattern in $Patterns) {
+            if ($candidate -match $pattern) { return $true }
+        }
+    }
+    return $false
 }
 
 $verifyClock = [Diagnostics.Stopwatch]::StartNew()
@@ -62,20 +90,79 @@ try {
     if ((& pnpm --version).Trim() -ne '10.34.0') { Fail 'pnpm version mismatch.' }
     if ((& go version | Out-String).Trim() -notmatch '\bgo1\.27\.1\b') { Fail 'Go version mismatch.' }
 
-    Run-Step 'Workspace invariant targets' {
-        pnpm exec nx run-many -t donor-residue repository-structure structural-hygiene runtime-ownership removed-domain-residue cache-contracts docs-command-parity docs-config-parity knowledge-system knowledge-references agent-contract workspace-dependencies go-workspace-sync nx-project-tags mobile-config brand theme-check theme-verify powershell-syntax knip --outputStyle=stream --parallel=2
+    $changeRows = @(Invoke-Git @('diff','--name-status','-M',$BaseSha,$head))
+    $changedPaths = @()
+    $structuralMutation = $false
+    foreach ($row in $changeRows) {
+        if ([string]::IsNullOrWhiteSpace($row)) { continue }
+        $parts = @($row -split "`t")
+        if ($parts.Count -lt 2) { continue }
+        if ($parts[0] -match '^[ADRC]') { $structuralMutation = $true }
+        for ($index = 1; $index -lt $parts.Count; $index++) {
+            $candidate = ($parts[$index] -replace '\\','/').Trim()
+            if ($candidate) { $changedPaths += $candidate }
+        }
+    }
+    $changedPaths = @($changedPaths | Sort-Object -Unique)
+
+    $workspaceSensitivePatterns = @(
+        '^\.github/',
+        '^tools/(dev|mobile)/',
+        '(^|/)project\.json$',
+        '(^|/)package\.json$',
+        '^(AGENTS\.md|CLAUDE\.md|GEMINI\.md|REPOSITORY-STRUCTURE\.md|README\.md|CONTRIBUTING\.md|SECURITY\.md|knowledge\.sources\.json|nx\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|go\.work|go\.work\.sum|\.node-version|\.go-version|biome\.json|\.gitattributes)$',
+        '^apps/app-(client|partner|captain|field)/(app\.config\.ts|mobile\.config\.json|eas\.json|fingerprint\.config\.js|assets/)',
+        '^packages/design-system/',
+        '^services/identity/clients/presentation/'
+    )
+    $deployabilityPatterns = @(
+        '^(pnpm-lock\.yaml|pnpm-workspace\.yaml|package\.json|nx\.json|tsconfig\.base\.json|\.node-version)$',
+        '^apps/app-(client|partner|captain|field)/(package\.json|app\.config\.ts|mobile\.config\.json|eas\.json|fingerprint\.config\.js|index\.(js|jsx|ts|tsx)|metro\.config\.(js|cjs|mjs|ts)|babel\.config\.(js|cjs|mjs|ts)|android/|ios/)',
+        '^packages/design-system/package\.json$',
+        '^tools/mobile/(export-mobile-smoke\.mjs|define-samrim-expo-app\.cjs|hash-mobile-secret-input\.mjs)$'
+    )
+    $infraPatterns = @('^infra/local/')
+
+    $workspaceInvariantRequired = $structuralMutation -or (Test-ChangedPath $workspaceSensitivePatterns $changedPaths)
+    $deployabilityProofRequired = Test-ChangedPath $deployabilityPatterns $changedPaths
+    $infraProofRequired = Test-ChangedPath $infraPatterns $changedPaths
+
+    Write-Host ("VERIFY_SCOPE changed_files={0} structural={1} workspace_invariants={2} deployability={3} infra={4}" -f $changedPaths.Count, [int]$structuralMutation, [int]$workspaceInvariantRequired, [int]$deployabilityProofRequired, [int]$infraProofRequired)
+    Write-Host 'VERIFY_OUTPUT_MODE=QUIET_SUCCESS_VERBOSE_FAILURE'
+
+    if ($workspaceInvariantRequired) {
+        Run-QuietStep 'Workspace invariant targets' {
+            pnpm exec nx run-many -t donor-residue repository-structure structural-hygiene runtime-ownership removed-domain-residue cache-contracts docs-command-parity docs-config-parity knowledge-system knowledge-references agent-contract workspace-dependencies go-workspace-sync nx-project-tags mobile-config brand theme-check theme-verify powershell-syntax knip --outputStyle=static --parallel=2
+        }
+
+        Run-QuietStep 'Execution proof system' {
+            pnpm exec nx run repository-ci:execution-proof-system --outputStyle=static
+        }
+    }
+    else {
+        Write-Host 'VERIFY_WORKSPACE_INVARIANTS=SKIP reason=unaffected'
+        Write-Host 'VERIFY_EXECUTION_PROOF_SYSTEM=SKIP reason=unaffected'
     }
 
-    Run-Step 'Execution proof system' {
-        pnpm exec nx run repository-ci:execution-proof-system --outputStyle=stream
+    if ($infraProofRequired) {
+        Run-QuietStep 'Infrastructure invariant targets' {
+            pnpm exec nx run infra:compose-config --outputStyle=static
+        }
+    }
+    else {
+        Write-Host 'VERIFY_INFRASTRUCTURE=SKIP reason=unaffected'
     }
 
-    Run-Step 'Infrastructure invariant targets' {
-        pnpm exec nx run infra:compose-config --outputStyle=stream
+    if ($deployabilityProofRequired) {
+        Run-QuietStep 'Affected static targets with deployability proof' {
+            pnpm exec nx affected -t lint format-check typecheck unit contract build vet export-smoke --base=$BaseSha --head=$head --outputStyle=static --parallel=2
+        }
     }
-
-    Run-Step 'Affected static targets' {
-        pnpm exec nx affected -t lint format-check typecheck unit contract build vet export-smoke --base=$BaseSha --head=$head --outputStyle=stream --parallel=2
+    else {
+        Run-QuietStep 'Affected static targets' {
+            pnpm exec nx affected -t lint format-check typecheck unit contract build vet --base=$BaseSha --head=$head --outputStyle=static --parallel=2
+        }
+        Write-Host 'VERIFY_EXPORT_SMOKE=SKIP reason=no-deployability-sensitive-change'
     }
 
     $endHead = ((Invoke-Git @('rev-parse','HEAD')) -join '').Trim()

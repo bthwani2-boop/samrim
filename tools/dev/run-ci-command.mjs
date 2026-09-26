@@ -33,8 +33,10 @@ const childEnv = nxProfilePath ? { ...process.env, NX_PROFILE: nxProfilePath } :
 const log = fs.createWriteStream(logPath, { flags: "w" });
 const startedAt = new Date();
 const started = performance.now();
+let outputBytes = 0;
 
 console.log("CI_TIMED_COMMAND_START name=" + name + " command=" + commandArgs.join(" "));
+console.log("CI_OUTPUT_MODE=QUIET_SUCCESS_VERBOSE_FAILURE name=" + name);
 
 let exitCode = 1;
 try {
@@ -45,12 +47,9 @@ try {
     shell: isWindows,
   });
 
-  for (const [stream, destination] of [
-    [child.stdout, process.stdout],
-    [child.stderr, process.stderr],
-  ]) {
+  for (const stream of [child.stdout, child.stderr]) {
     stream?.on("data", (chunk) => {
-      destination.write(chunk);
+      outputBytes += chunk.length;
       log.write(chunk);
     });
   }
@@ -58,14 +57,12 @@ try {
   exitCode = await new Promise((resolve) => {
     child.once("error", (error) => {
       const message = "CI_TIMED_COMMAND=FAIL name=" + name + " error=" + String(error?.message || error);
-      console.error(message);
       log.write(message + "\n");
       resolve(1);
     });
     child.once("close", (code, signal) => {
       if (signal) {
         const message = "CI_TIMED_COMMAND_SIGNAL name=" + name + " signal=" + signal;
-        console.error(message);
         log.write(message + "\n");
         resolve(1);
         return;
@@ -75,18 +72,30 @@ try {
   });
 } catch (error) {
   const message = "CI_TIMED_COMMAND=FAIL name=" + name + " error=" + String(error?.message || error);
-  console.error(message);
   log.write(message + "\n");
   exitCode = 1;
 }
 
 await new Promise((resolve) => log.end(resolve));
 const durationMs = Math.round(performance.now() - started);
+
+if (exitCode !== 0) {
+  console.error("CI_TIMED_COMMAND_OUTPUT_BEGIN name=" + name);
+  try {
+    const failureOutput = fs.readFileSync(logPath, "utf8");
+    if (failureOutput) process.stderr.write(failureOutput.endsWith("\n") ? failureOutput : failureOutput + "\n");
+  } catch (error) {
+    console.error("CI_TIMED_COMMAND_LOG_READ=FAIL name=" + name + " error=" + String(error?.message || error));
+  }
+  console.error("CI_TIMED_COMMAND_OUTPUT_END name=" + name);
+}
+
 const record = {
   name,
   startedAt: startedAt.toISOString(),
   durationMs,
   exitCode,
+  outputBytes,
   logPath,
   profilePath,
   sha: process.env.CANDIDATE_SHA || process.env.GITHUB_SHA || null,
@@ -95,6 +104,6 @@ const record = {
   runner: process.env.RUNNER_OS || process.platform,
 };
 fs.appendFileSync(metricsPath, JSON.stringify(record) + "\n");
-console.log("CI_TIMED_COMMAND_END name=" + name + " ms=" + durationMs + " exit=" + exitCode);
+console.log("CI_TIMED_COMMAND_END name=" + name + " ms=" + durationMs + " exit=" + exitCode + " output_bytes=" + outputBytes);
 
 process.exit(exitCode);
