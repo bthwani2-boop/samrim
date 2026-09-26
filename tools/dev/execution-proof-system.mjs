@@ -46,6 +46,8 @@ const ci = data(".github/project.json");
 const wantedDeps = ["control-panel","dsh-backend","identity-backend","infra","wlt-backend","workspace-tooling"].sort();
 if (JSON.stringify([...(ci.implicitDependencies ?? [])].sort()) !== JSON.stringify(wantedDeps)) failures.push("repository-ci dependency cone drifted");
 if (ci.targets?.["runtime-integration"]?.cache !== false) failures.push("runtime-integration must be cache=false");
+if (ci.targets?.["runtime-images"]?.cache !== false) failures.push("runtime-images must be cache=false");
+if (!(ci.targets?.["runtime-images"]?.dependsOn ?? []).includes("^ci-image")) failures.push("runtime-images must schedule dependency ci-image targets");
 if (ci.targets?.["execution-proof-system"]?.cache !== true) failures.push("execution-proof-system must be cache=true");
 for (const old of ["tooling-lint","go-workspace-sync"]) if (ci.targets?.[old]) failures.push("repository-ci duplicate target " + old);
 
@@ -66,9 +68,12 @@ for (const [file,target] of [
   ["apps/control-panel/project.json","browser-live-proof"],
   ["services/identity/backend/project.json","migration-proof"],
   ["services/identity/backend/project.json","runtime-proof"],
+  ["services/identity/backend/project.json","ci-image"],
   ["services/dsh/backend/project.json","baseline-proof"],
   ["services/dsh/backend/project.json","runtime-proof"],
+  ["services/dsh/backend/project.json","ci-image"],
   ["services/wlt/backend/project.json","schema-proof"],
+  ["services/wlt/backend/project.json","ci-image"],
 ]) {
   if (data(file).targets?.[target]?.cache !== false) failures.push(file + ":" + target + " must be cache=false");
 }
@@ -99,7 +104,19 @@ if (!local.includes("workspace-tooling:lint")) failures.push("local tooling lint
 const staticCi = read(".github/workflows/ci-static.yml");
 if (staticCi.includes("--changed --since") || staticCi.includes("go work sync")) failures.push("static CI parallel/mutating proof remains");
 if (staticCi.includes("run: node tools/dev/knowledge-source.mjs")) failures.push("static CI bypasses Nx for knowledge materialization");
-for (const required of ["workspace-tooling:knowledge-materialize","workspace-tooling:lint","workspace-tooling:go-workspace-sync","repository-ci:execution-proof-system","nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet","actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"]) {
+for (const required of [
+  "workspace-tooling:knowledge-materialize",
+  "workspace-tooling:lint",
+  "workspace-tooling:go-workspace-sync",
+  "repository-ci:execution-proof-system",
+  "nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet",
+  "run-ci-command.mjs static-affected",
+  "run-ci-command.mjs windows-export-affected",
+  "capture-ci-failure.mjs --kind=static-linux",
+  "capture-ci-failure.mjs --kind=static-windows",
+  "report-ci-performance.mjs",
+  "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+]) {
   if (!staticCi.includes(required)) failures.push("static CI missing " + required);
 }
 
@@ -107,16 +124,25 @@ const runtimeCi = read(".github/workflows/ci-runtime.yml");
 for (const forbidden of ["node tools/dev/verify-identity-","node tools/dev/verify-dsh-","pnpm --dir apps/control-panel test:e2e:live","tag:ci-"]) {
   if (runtimeCi.includes(forbidden)) failures.push("runtime CI direct/shadow proof remains: " + forbidden);
 }
+if (runtimeCi.includes("docker/build-push-action@")) failures.push("runtime CI contains parallel Docker image owner");
+if (runtimeCi.includes("up -d --build")) failures.push("runtime CI rebuilds images through Compose");
 for (const required of [
   "--projects=repository-ci",
+  "repository-ci:runtime-images",
   "repository-ci:runtime-integration",
   "docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f",
-  "docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8",
-  "cache-from: type=gha",
-  "github.event_name != 'pull_request'",
+  "run-ci-command.mjs runtime-images",
+  "run-ci-command.mjs runtime-integration",
   "up -d --no-build",
+  "capture-ci-failure.mjs --kind=runtime",
+  "report-ci-performance.mjs",
   "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
 ]) if (!runtimeCi.includes(required)) failures.push("runtime CI missing " + required);
+const budgets = data(".github/ci-performance-budgets.json");
+if (budgets.schema !== 1 || budgets.mode !== "observe") failures.push("CI performance budget contract drifted");
+for (const name of ["static-affected","static-full","windows-export-affected","windows-export-full","runtime-images","runtime-integration"]) {
+  if (!Number.isFinite(budgets.budgetsMs?.[name])) failures.push("CI performance budget missing " + name);
+}
 if (!read(".github/workflows/ci-security.yml").includes("node tools/dev/verify-secret-safety.mjs")) failures.push("security verifier owner drifted");
 
 if (failures.length) {
