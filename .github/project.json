@@ -48,5 +48,13 @@
         "command": "node tools/dev/verify-go-workspace-sync.mjs"
       }
     }
-  }
+  },
+  "implicitDependencies": [
+    "identity-backend",
+    "dsh-backend",
+    "wlt-backend",
+    "control-panel",
+    "infra",
+    "workspace-tooling"
+  ]
 }
