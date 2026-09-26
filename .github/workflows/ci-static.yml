@@ -73,7 +73,7 @@ jobs:
 
       - name: Install workspace once
         shell: bash
-        run: pnpm install --frozen-lockfile
+        run: node tools/dev/run-ci-command.mjs static-install -- pnpm install --frozen-lockfile
 
       - name: Materialize exact pinned Governance and Docs through Nx
         shell: bash
@@ -196,7 +196,7 @@ jobs:
 
       - name: Install workspace
         shell: pwsh
-        run: pnpm install --frozen-lockfile
+        run: node tools/dev/run-ci-command.mjs windows-install -- pnpm install --frozen-lockfile
 
       - name: Verify affected Windows Android exports
         if: github.event_name != 'schedule'
