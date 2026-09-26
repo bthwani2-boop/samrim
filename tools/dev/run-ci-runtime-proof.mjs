@@ -55,7 +55,7 @@ function nx(projectTarget) {
   console.log("CI_RUNTIME_TARGET_PASS=" + projectTarget);
 }
 
-nx("control-panel:e2e-live");
+nx("control-panel:browser-live-proof");
 nx("identity-backend:migration-proof");
 nx("dsh-backend:baseline-proof");
 nx("identity-backend:runtime-proof");
