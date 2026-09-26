@@ -49,14 +49,21 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 		t.Fatalf("unexpected DSH migration graph size: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.SchemaVersion)
 	}
 	last := records[len(records)-1]
-	if last.Version != postgres.SchemaVersion || last.Name != "065_marketing_operational_registries.sql" {
-		t.Fatalf("last DSH migration = v%d %q; want v%d 065_marketing_operational_registries.sql", last.Version, last.Name, postgres.SchemaVersion)
+	if last.Version != postgres.SchemaVersion || last.Name != "066_catalog_category_media.sql" {
+		t.Fatalf("last DSH migration = v%d %q; want v%d 066_catalog_category_media.sql", last.Version, last.Name, postgres.SchemaVersion)
 	}
-	if !strings.Contains(migrationSQL[len(migrationSQL)-2], "fulfillment_mode IN ('PARTNER_CAPTAIN', 'CUSTOMER_PICKUP') AND payment_method = 'CASH_AT_STORE'") {
+	migrationByName := make(map[string]string, len(records))
+	for index, record := range records {
+		migrationByName[record.Name] = migrationSQL[index]
+	}
+	if !strings.Contains(migrationByName["064_partner_captain_cash_at_store_payment.sql"], "fulfillment_mode IN ('PARTNER_CAPTAIN', 'CUSTOMER_PICKUP') AND payment_method = 'CASH_AT_STORE'") {
 		t.Fatal("DSH migration 064 does not bind partner-captain fulfillment to cash at store")
 	}
-	if !strings.Contains(migrationSQL[len(migrationSQL)-1], "commerce_promotions_starts_registry_idx") || !strings.Contains(migrationSQL[len(migrationSQL)-1], "discovery_content_created_registry_idx") {
-		t.Fatal("latest DSH migration is missing marketing registry indexes")
+	if !strings.Contains(migrationByName["065_marketing_operational_registries.sql"], "commerce_promotions_starts_registry_idx") || !strings.Contains(migrationByName["065_marketing_operational_registries.sql"], "discovery_content_created_registry_idx") {
+		t.Fatal("DSH migration 065 is missing marketing registry indexes")
+	}
+	if !strings.Contains(migrationByName["066_catalog_category_media.sql"], "catalog_category_media_assets_active_uq") || !strings.Contains(migrationByName["066_catalog_category_media.sql"], "ADD COLUMN image_uri text") {
+		t.Fatal("DSH migration 066 is missing category media ownership schema")
 	}
 }
 
