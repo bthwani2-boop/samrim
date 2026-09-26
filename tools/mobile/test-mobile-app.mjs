@@ -50,7 +50,7 @@ assert.ok(fs.existsSync(entryPath), `${app}: missing app/index.tsx`);
 // surface remains the unauthenticated entry point; it must not own the
 // authenticated workflow body or act as a navigation substitute.
 const routePaths =
-  app === "app-client" ? ["home.tsx", "orders.tsx", "orders/[orderId].tsx", "cart/[storeId].tsx", "account.tsx"] :
+  app === "app-client" ? ["home.tsx", "orders.tsx", "orders/[orderId].tsx", "cart/[storeId].tsx", "wallet-cash-in.tsx", "account.tsx"] :
   app === "app-partner" ? ["store.tsx", "orders.tsx", "onboarding.tsx", "account.tsx"] :
   app === "app-captain" ? ["home.tsx", "offers.tsx", "deliveries.tsx", "account.tsx"] :
   ["home.tsx", "cases.tsx", "new-case.tsx", "account.tsx"];
@@ -73,6 +73,10 @@ assert.ok(!shellContent.includes("<Slot />"), `${app}: application shell must no
 const layoutContent = fs.readFileSync(path.join(appRouteDir, "_layout.tsx"), "utf8");
 assert.ok(layoutContent.includes("Tabs"), `${app}: authenticated layout must declare stable Expo Router JS Tabs`);
 assert.ok(layoutContent.includes("<Tabs"), `${app}: authenticated layout must compose route content through Expo Router Tabs`);
+if (app === "app-client") {
+  assert.ok(layoutContent.includes('<Tabs.Screen name="wallet-cash-in"'), `${app}: Cash-In route must be registered in the authenticated route tree`);
+  assert.ok(layoutContent.includes('pathname === "/wallet-cash-in"'), `${app}: Cash-In route must require an authenticated session`);
+}
 const tabRoutes =
   app === "app-client" ? ["home", "orders", "account", "cart/[storeId]", "orders/[orderId]"] :
   app === "app-partner" ? ["store", "orders", "account", "onboarding"] :
