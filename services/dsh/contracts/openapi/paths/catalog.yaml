@@ -67,6 +67,8 @@ paths:
       summary: Read the canonical Category tree for a Commerce Vertical
       parameters:
         - $ref: "../dsh.openapi.yaml#/components/parameters/VerticalIdRequired"
+        - { name: query, in: query, required: false, schema: { type: string, maxLength: 160 } }
+        - { name: status, in: query, required: false, schema: { type: string, enum: [all, active, inactive] } }
       responses:
         "200": { description: Bounded Category tree., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogCategoryListResponse" } } } }
     post:
@@ -105,6 +107,28 @@ paths:
           application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UpdateCatalogCategoryRequest" } }
       responses:
         "200": { description: Category updated or idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogCategoryResponse" } } } }
+
+  /dsh/catalog/categories/{categoryId}/media/upload:
+    post:
+      operationId: uploadCatalogCategoryMedia
+      summary: Upload and atomically attach a Category image
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+        - name: categoryId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UploadCatalogCategoryMediaRequest" } }
+      responses:
+        "200": { description: Category image upload readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogCategoryResponse" } } } }
 
   /dsh/public/catalog/categories/{categoryId}/attribute-rules:
     get:

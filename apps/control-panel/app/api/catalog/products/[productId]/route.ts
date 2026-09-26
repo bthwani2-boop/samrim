@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
-import type { ReplaceCatalogProductMediaRequest, UpdateCatalogProductRequest } from "@bthwani/dsh";
+import type { CatalogAttributeValueInput, CatalogVariantAttributeValueSet, ReplaceCatalogProductMediaRequest, UpdateCatalogProductRequest } from "@bthwani/dsh";
 import { verifySameOrigin } from "../../../../../src/server/security/csrf";
 import { dshErrorPayload, dshHttpStatus, isDshClientError, readCatalogProduct, replaceCatalogProductMedia, updateCatalogProduct } from "../../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../../src/server/identity/identity-bff";
@@ -40,12 +40,19 @@ export async function POST(request: Request, context: { params: Promise<{ produc
   if (idempotencyKey.length < 8 || idempotencyKey.length > 128 || !Number.isInteger(expectedVersion) || expectedVersion < 1) return errorResponse("INVALID_INPUT", "Idempotency-Key and X-Expected-Version are required", 400);
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   if (!body || typeof body.canonicalName !== "string" || typeof body.verticalId !== "string" || body.scope !== "SHARED" || typeof body.active !== "boolean" || (body.description !== undefined && (typeof body.description !== "string" || body.description.length > 4000))) return errorResponse("INVALID_INPUT", "canonicalName, verticalId, shared scope, active and a description of at most 4000 characters are required", 400);
+  const hasCategoryAssignments = body.categoryIds !== undefined || body.attributeValues !== undefined || body.variantAttributeValues !== undefined;
+  if (hasCategoryAssignments && (!Array.isArray(body.categoryIds) || body.categoryIds.some((value) => typeof value !== "string") || !Array.isArray(body.attributeValues) || !Array.isArray(body.variantAttributeValues) || body.variantAttributeValues.some((value) => !value || typeof value !== "object" || typeof (value as Record<string, unknown>).variantId !== "string" || !Array.isArray((value as Record<string, unknown>).values)))) return errorResponse("INVALID_INPUT", "categoryIds, typed product attributes and per-variant attribute values must be supplied together", 400);
   const input: UpdateCatalogProductRequest = {
     canonicalName: body.canonicalName.trim(),
     description: typeof body.description === "string" ? body.description.trim() : "",
     active: body.active,
     verticalId: body.verticalId.trim(),
     scope: "SHARED",
+    ...(hasCategoryAssignments ? {
+      categoryIds: (body.categoryIds as string[]).map((value) => value.trim()).filter(Boolean),
+      attributeValues: body.attributeValues as CatalogAttributeValueInput[],
+      variantAttributeValues: body.variantAttributeValues as CatalogVariantAttributeValueSet[],
+    } : {}),
     ...(typeof body.brand === "string" && body.brand.trim() ? { brand: body.brand.trim() } : {}),
   };
   try {

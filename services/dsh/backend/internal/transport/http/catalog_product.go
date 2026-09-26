@@ -57,6 +57,7 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/public/catalog/categories/{categoryId}/attribute-rules", s.listPublicCategoryAttributeRules)
 	mux.HandleFunc("POST /dsh/catalog/categories", s.createCategory)
 	mux.HandleFunc("PATCH /dsh/catalog/categories/{categoryId}", s.updateCategory)
+	mux.HandleFunc("POST /dsh/catalog/categories/{categoryId}/media/upload", s.uploadCategoryMedia)
 	mux.HandleFunc("GET /dsh/catalog/attributes", s.listAttributeDefinitions)
 	mux.HandleFunc("POST /dsh/catalog/attributes", s.createAttributeDefinition)
 	mux.HandleFunc("GET /dsh/catalog/products", s.listProducts)
@@ -173,6 +174,12 @@ func (s *CatalogServer) updateVertical(w http.ResponseWriter, r *http.Request) {
 
 func (s *CatalogServer) listCategories(w http.ResponseWriter, r *http.Request) {
 	verticalID := strings.TrimSpace(r.URL.Query().Get("verticalId"))
+	query := strings.TrimSpace(r.URL.Query().Get("query"))
+	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	if len(query) > 160 || (status != "" && status != "all" && status != "active" && status != "inactive") {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog Category search or status filter is invalid")
+		return
+	}
 	if verticalID == "" {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "verticalId is required")
 		return
@@ -180,7 +187,7 @@ func (s *CatalogServer) listCategories(w http.ResponseWriter, r *http.Request) {
 	activeOnly := r.URL.Query().Get("includeInactive") != "true"
 	var items []postgres.CatalogCategoryRecord
 	var err error
-	if activeOnly {
+	if status == "" && query == "" && activeOnly {
 		items, err = s.service.ListCategories(r.Context(), verticalID, true)
 	} else {
 		if !s.auth.Authorized(r) {
@@ -192,7 +199,14 @@ func (s *CatalogServer) listCategories(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
 			return
 		}
-		items, err = s.service.ListCategoriesForOperator(r.Context(), acting, verticalID, false)
+		if status == "" {
+			if activeOnly {
+				status = "active"
+			} else {
+				status = "all"
+			}
+		}
+		items, err = s.service.ListCategoryTreeForOperator(r.Context(), acting, verticalID, query, status)
 	}
 	if err != nil {
 		writeCatalogError(w, err)
@@ -241,6 +255,32 @@ func (s *CatalogServer) updateCategory(w http.ResponseWriter, r *http.Request) {
 	}
 	parentID := strings.TrimSpace(input.ParentCategoryID)
 	item, _, err := s.service.UpdateCategory(r.Context(), acting, r.PathValue("categoryId"), postgres.UpdateCatalogCategoryInput{ParentCategoryID: parentID, NameAr: input.NameAr, NameEn: input.NameEn, Active: input.Active, ExpectedVersion: input.ExpectedVersion}, idempotency, correlation, input.Reason)
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CatalogCategoryResponse{Category: toCatalogCategory(item)})
+}
+
+func (s *CatalogServer) uploadCategoryMedia(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting, correlation, idempotency, expected, ok := requiredVersionedCaseHeaders(w, r)
+	if !ok {
+		return
+	}
+	if s.media == nil {
+		writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "media storage is unavailable")
+		return
+	}
+	upload, ok := parseCatalogMediaUpload(w, r)
+	if !ok {
+		return
+	}
+	reason := strings.TrimSpace(r.FormValue("reason"))
+	item, err := s.service.UploadCatalogCategoryMedia(r.Context(), acting, catalog.CatalogCategoryMediaUploadInput{CategoryID: r.PathValue("categoryId"), IdempotencyKey: idempotency, CorrelationID: correlation, ExpectedVersion: expected, ContentType: upload.contentType, Bytes: upload.bytes, Reason: reason})
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -329,7 +369,7 @@ func (s *CatalogServer) listProductRegistry(w http.ResponseWriter, r *http.Reque
 		if product.PrimaryImageURI != nil {
 			image = *product.PrimaryImageURI
 		}
-		items = append(items, contract.CatalogProductRegistryItem{ID: product.ID, VerticalID: product.VerticalID, CanonicalName: product.CanonicalName, Brand: brand, Active: product.Active, Version: product.Version, VariantCount: product.VariantCount, CategoryIds: product.CategoryIDs, PrimaryImageUri: image, CreatedAt: product.CreatedAt, UpdatedAt: product.UpdatedAt})
+		items = append(items, contract.CatalogProductRegistryItem{ID: product.ID, VerticalID: product.VerticalID, CanonicalName: product.CanonicalName, Brand: brand, Active: product.Active, Version: product.Version, VariantCount: product.VariantCount, StoreCount: product.StoreCount, CategoryIds: product.CategoryIDs, PrimaryImageUri: image, CreatedAt: product.CreatedAt, UpdatedAt: product.UpdatedAt})
 	}
 	writeJSON(w, http.StatusOK, contract.CatalogProductRegistryResponse{Products: items, NextCursor: page.NextCursor})
 }
@@ -366,7 +406,7 @@ func (s *CatalogServer) createProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	request := input.CreateCatalogProductRequest
-	result, err := s.service.CreateCatalogProduct(r.Context(), acting, postgres.CatalogProductInput{VerticalID: request.VerticalID, Scope: request.Scope, StoreID: request.StoreID, CanonicalName: request.CanonicalName, Description: request.Description, Brand: optionalRequestString(request.Brand), MeasurementKind: string(request.MeasurementKind), BaseUnit: string(request.BaseUnit), VariantTitle: request.VariantTitle, CategoryIDs: request.CategoryIds, AttributeValues: catalogAttributeInputs(input.AttributeValues), VariantAttributeValues: catalogAttributeInputs(input.VariantAttributeValues), IdentifierType: request.IdentifierType, IdentifierValue: request.IdentifierValue, ImageURI: request.ImageUri}, idempotency, correlation)
+	result, err := s.service.CreateCatalogProduct(r.Context(), acting, postgres.CatalogProductInput{VerticalID: request.VerticalID, Scope: request.Scope, StoreID: request.StoreID, CanonicalName: request.CanonicalName, Description: request.Description, Brand: optionalRequestString(request.Brand), MeasurementKind: string(request.MeasurementKind), BaseUnit: string(request.BaseUnit), VariantTitle: request.VariantTitle, CategoryIDs: request.CategoryIds, AttributeValues: catalogAttributeInputs(input.AttributeValues), VariantAttributeValues: catalogAttributeInputs(input.VariantAttributeValues), IdentifierType: request.IdentifierType, IdentifierValue: request.IdentifierValue}, idempotency, correlation)
 	if err != nil {
 		switch {
 		case errors.Is(err, postgres.ErrCatalogCategoryNotFound):
@@ -398,7 +438,11 @@ func (s *CatalogServer) updateProduct(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.UpdateCatalogProduct(r.Context(), acting, r.PathValue("productId"), postgres.CatalogProductUpdateInput{VerticalID: input.VerticalID, Scope: input.Scope, StoreID: input.StoreID, CanonicalName: input.CanonicalName, Description: input.Description, Brand: optionalRequestString(input.Brand), Active: input.Active}, expected, idempotency, correlation)
+	if (input.CategoryIds != nil) != (input.AttributeValues != nil) || (input.CategoryIds != nil) != (input.VariantAttributeValues != nil) {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "categoryIds and both typed attribute arrays must be supplied together")
+		return
+	}
+	result, err := s.service.UpdateCatalogProduct(r.Context(), acting, r.PathValue("productId"), postgres.CatalogProductUpdateInput{VerticalID: input.VerticalID, Scope: input.Scope, StoreID: input.StoreID, CanonicalName: input.CanonicalName, Description: input.Description, Brand: optionalRequestString(input.Brand), Active: input.Active, CategoryIDs: input.CategoryIds, AttributeValues: catalogAttributeInputsFromContract(input.AttributeValues), VariantAttributeValues: catalogVariantAttributeValueSets(input.VariantAttributeValues)}, expected, idempotency, correlation)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -646,7 +690,7 @@ func toCommerceVertical(item postgres.CommerceVerticalRecord) contract.CommerceV
 	return contract.CommerceVertical{ID: item.ID, NameAr: item.NameAr, NameEn: item.NameEn, CatalogModel: model, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 func toCatalogCategory(item postgres.CatalogCategoryRecord) contract.CatalogCategory {
-	return contract.CatalogCategory{ID: item.ID, VerticalID: item.VerticalID, ParentCategoryID: item.ParentCategoryID, NameAr: item.NameAr, NameEn: item.NameEn, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return contract.CatalogCategory{ID: item.ID, VerticalID: item.VerticalID, ParentCategoryID: item.ParentCategoryID, NameAr: item.NameAr, NameEn: item.NameEn, ImageUri: item.ImageURI, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 func toCatalogProduct(item postgres.CatalogProductRecord) contract.CatalogProduct {
 	variants := make([]contract.CatalogVariant, 0, len(item.Variants))

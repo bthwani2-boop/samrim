@@ -2,7 +2,6 @@ package catalog
 
 import (
 	"context"
-	"net/url"
 	"strings"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
@@ -110,14 +109,7 @@ func normalizeProductProposalInput(input postgres.CatalogProductProposalInput) (
 	if identifierValue != nil && (identifierType == nil || !identifierPattern.MatchString(*identifierValue)) {
 		return postgres.CatalogProductProposalInput{}, postgres.ErrCatalogIdentifierInvalid
 	}
-	imageURI := normalizeOptionalPointer(input.ProposedImageURI, false)
-	if imageURI != nil {
-		parsed, parseErr := url.ParseRequestURI(*imageURI)
-		if parseErr != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || parsed.User != nil {
-			return postgres.CatalogProductProposalInput{}, ErrCatalogProductImageInvalid
-		}
-	}
-	return postgres.CatalogProductProposalInput{ID: strings.TrimSpace(input.ID), VerticalID: strings.TrimSpace(input.VerticalID), CategoryID: strings.TrimSpace(input.CategoryID), ProposedName: name, ProposedBrand: brand, ProposedVariantTitle: variantTitle, ProposedMeasurementKind: kind, ProposedBaseUnit: baseUnit, ProposedIdentifierType: identifierType, ProposedIdentifierValue: identifierValue, ProposedImageURI: imageURI, AttributeValues: normalizeCatalogAttributeValues(input.AttributeValues), VariantAttributeValues: normalizeCatalogAttributeValues(input.VariantAttributeValues)}, nil
+	return postgres.CatalogProductProposalInput{ID: strings.TrimSpace(input.ID), VerticalID: strings.TrimSpace(input.VerticalID), CategoryID: strings.TrimSpace(input.CategoryID), ProposedName: name, ProposedBrand: brand, ProposedVariantTitle: variantTitle, ProposedMeasurementKind: kind, ProposedBaseUnit: baseUnit, ProposedIdentifierType: identifierType, ProposedIdentifierValue: identifierValue, AttributeValues: normalizeCatalogAttributeValues(input.AttributeValues), VariantAttributeValues: normalizeCatalogAttributeValues(input.VariantAttributeValues)}, nil
 }
 
 func normalizeOptionalPointer(value *string, upper bool) *string {

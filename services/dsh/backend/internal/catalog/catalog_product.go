@@ -157,6 +157,13 @@ func (s *Service) ListCategoriesForOperator(ctx context.Context, actingActorID, 
 	return s.ListCategories(ctx, verticalID, activeOnly)
 }
 
+func (s *Service) ListCategoryTreeForOperator(ctx context.Context, actingActorID, verticalID, query, status string) ([]postgres.CatalogCategoryRecord, error) {
+	if err := s.requireCatalogOperator(ctx, actingActorID); err != nil {
+		return nil, err
+	}
+	return postgres.ListCatalogCategoryTree(ctx, s.db, verticalID, query, status)
+}
+
 func (s *Service) CreateCategory(ctx context.Context, actingActorID string, item postgres.CatalogCategoryRecord, idempotencyKey, correlationID, reason string) (postgres.CatalogCategoryRecord, error) {
 	if err := s.requireCatalogOperator(ctx, actingActorID); err != nil {
 		return postgres.CatalogCategoryRecord{}, err
@@ -455,13 +462,6 @@ func normalizeCatalogProductInput(input postgres.CatalogProductInput) (postgres.
 	if identifierValue != "" && (identifierType != "GTIN" && identifierType != "EAN" && identifierType != "UPC" && identifierType != "SKU" || !identifierPattern.MatchString(identifierValue)) {
 		return postgres.CatalogProductInput{}, ErrCatalogProductIdentifierInvalid
 	}
-	image := strings.TrimSpace(input.ImageURI)
-	if image != "" {
-		parsed, parseErr := url.ParseRequestURI(image)
-		if parseErr != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || parsed.User != nil {
-			return postgres.CatalogProductInput{}, ErrCatalogProductImageInvalid
-		}
-	}
 	categories := make([]string, 0, len(input.CategoryIDs))
 	seen := map[string]bool{}
 	for _, categoryID := range input.CategoryIDs {
@@ -474,7 +474,7 @@ func normalizeCatalogProductInput(input postgres.CatalogProductInput) (postgres.
 	}
 	attributeValues := normalizeCatalogAttributeValues(input.AttributeValues)
 	variantAttributeValues := normalizeCatalogAttributeValues(input.VariantAttributeValues)
-	return postgres.CatalogProductInput{ID: strings.TrimSpace(input.ID), VerticalID: verticalID, Scope: scope, StoreID: strings.TrimSpace(input.StoreID), CanonicalName: name, Description: description, Brand: brand, VariantTitle: variantTitle, MeasurementKind: measurementKind, BaseUnit: baseUnit, CategoryIDs: categories, AttributeValues: attributeValues, VariantAttributeValues: variantAttributeValues, IdentifierType: identifierType, IdentifierValue: identifierValue, ImageURI: image}, nil
+	return postgres.CatalogProductInput{ID: strings.TrimSpace(input.ID), VerticalID: verticalID, Scope: scope, StoreID: strings.TrimSpace(input.StoreID), CanonicalName: name, Description: description, Brand: brand, VariantTitle: variantTitle, MeasurementKind: measurementKind, BaseUnit: baseUnit, CategoryIDs: categories, AttributeValues: attributeValues, VariantAttributeValues: variantAttributeValues, IdentifierType: identifierType, IdentifierValue: identifierValue}, nil
 }
 
 func normalizeCatalogAttributeValues(values []postgres.CatalogAttributeValueInput) []postgres.CatalogAttributeValueInput {
@@ -507,7 +507,49 @@ func normalizeCatalogProductUpdateInput(input postgres.CatalogProductUpdateInput
 	if verticalID == "" || (scope != "SHARED" && scope != "STORE_SCOPED") {
 		return postgres.CatalogProductUpdateInput{}, ErrCatalogProductScopeInvalid
 	}
-	return postgres.CatalogProductUpdateInput{VerticalID: verticalID, Scope: scope, StoreID: strings.TrimSpace(input.StoreID), CanonicalName: name, Description: description, Brand: brand, Active: input.Active}, nil
+	if input.CategoryIDs == nil && (input.AttributeValues != nil || input.VariantAttributeValues != nil) {
+		return postgres.CatalogProductUpdateInput{}, postgres.ErrCatalogCategoryNotFound
+	}
+	var categories []string
+	if input.CategoryIDs != nil {
+		categories = make([]string, 0, len(input.CategoryIDs))
+		seen := make(map[string]bool, len(input.CategoryIDs))
+		for _, categoryID := range input.CategoryIDs {
+			id := strings.TrimSpace(categoryID)
+			if id == "" || seen[id] {
+				continue
+			}
+			seen[id] = true
+			categories = append(categories, id)
+		}
+		sort.Strings(categories)
+	}
+	var productValues []postgres.CatalogAttributeValueInput
+	if input.AttributeValues != nil {
+		productValues = normalizeCatalogAttributeValues(input.AttributeValues)
+	}
+	var variantValues []postgres.CatalogVariantAttributeValueSet
+	if input.VariantAttributeValues != nil {
+		variantValues = make([]postgres.CatalogVariantAttributeValueSet, 0, len(input.VariantAttributeValues))
+		seenVariants := make(map[string]bool, len(input.VariantAttributeValues))
+		for _, set := range input.VariantAttributeValues {
+			variantID := strings.TrimSpace(set.VariantID)
+			if variantID == "" || seenVariants[variantID] {
+				return postgres.CatalogProductUpdateInput{}, postgres.ErrCatalogCategoryNotFound
+			}
+			seenVariants[variantID] = true
+			var values []postgres.CatalogAttributeValueInput
+			if set.Values != nil {
+				values = normalizeCatalogAttributeValues(set.Values)
+			}
+			variantValues = append(variantValues, postgres.CatalogVariantAttributeValueSet{VariantID: variantID, Values: values})
+		}
+		sort.Slice(variantValues, func(left, right int) bool { return variantValues[left].VariantID < variantValues[right].VariantID })
+	}
+	if input.CategoryIDs == nil && variantValues != nil {
+		return postgres.CatalogProductUpdateInput{}, postgres.ErrCatalogCategoryNotFound
+	}
+	return postgres.CatalogProductUpdateInput{VerticalID: verticalID, Scope: scope, StoreID: strings.TrimSpace(input.StoreID), CanonicalName: name, Description: description, Brand: brand, Active: input.Active, CategoryIDs: categories, AttributeValues: productValues, VariantAttributeValues: variantValues}, nil
 }
 
 func normalizeCatalogMedia(input []postgres.CatalogMediaInput) ([]postgres.CatalogMediaInput, error) {

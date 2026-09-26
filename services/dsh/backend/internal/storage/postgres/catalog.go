@@ -54,6 +54,7 @@ type CommerceVerticalRecord struct {
 }
 type CatalogCategoryRecord struct {
 	ID, VerticalID, ParentCategoryID, NameAr, NameEn string
+	ImageURI                                         string
 	Active                                           bool
 	Version                                          int
 	CreatedAt, UpdatedAt                             time.Time
@@ -173,12 +174,19 @@ type CatalogProductInput struct {
 	VariantTitle, MeasurementKind, BaseUnit                    string
 	CategoryIDs                                                []string
 	AttributeValues, VariantAttributeValues                    []CatalogAttributeValueInput
-	IdentifierType, IdentifierValue, ImageURI                  string
+	IdentifierType, IdentifierValue                            string
 }
 type CatalogProductUpdateInput struct {
 	VerticalID, Scope, StoreID, CanonicalName, Description string
 	Brand                                                  *string
 	Active                                                 bool
+	CategoryIDs                                            []string
+	AttributeValues                                        []CatalogAttributeValueInput
+	VariantAttributeValues                                 []CatalogVariantAttributeValueSet
+}
+type CatalogVariantAttributeValueSet struct {
+	VariantID string
+	Values    []CatalogAttributeValueInput
 }
 type CatalogVariantInput struct {
 	ID, ProductID, Title, MeasurementKind, BaseUnit string
@@ -251,7 +259,7 @@ type CatalogVariantResult struct {
 
 func HashCatalogProductCreateRequest(input CatalogProductInput) string {
 	attributeFacts, _ := json.Marshal(struct{ Product, Variant []CatalogAttributeValueInput }{input.AttributeValues, input.VariantAttributeValues})
-	return hashFacts(input.VerticalID, input.Scope, input.StoreID, input.CanonicalName, input.Description, optionalProductFact(input.Brand), input.VariantTitle, input.MeasurementKind, input.BaseUnit, strings.Join(input.CategoryIDs, ","), string(attributeFacts), input.IdentifierType, input.IdentifierValue, input.ImageURI)
+	return hashFacts(input.VerticalID, input.Scope, input.StoreID, input.CanonicalName, input.Description, optionalProductFact(input.Brand), input.VariantTitle, input.MeasurementKind, input.BaseUnit, strings.Join(input.CategoryIDs, ","), string(attributeFacts), input.IdentifierType, input.IdentifierValue)
 }
 func HashCatalogVerticalCreateRequest(item CommerceVerticalRecord, reason string) string {
 	return hashFacts("vertical", strings.TrimSpace(item.ID), strings.TrimSpace(item.NameAr), strings.TrimSpace(item.NameEn), item.CatalogModel, strconv.FormatBool(item.Active), strings.TrimSpace(reason))
@@ -269,7 +277,12 @@ func HashCatalogCategoryAttributeRuleRequest(rule CatalogAttributeRuleRecord, ex
 	return hashFacts("category-attribute-rule", strings.TrimSpace(rule.CategoryID), strings.TrimSpace(rule.AttributeID), strconv.FormatBool(rule.Required), strconv.FormatBool(rule.Filterable), strconv.FormatBool(rule.VariantAxis), strconv.Itoa(expectedVersion), strings.TrimSpace(reason))
 }
 func HashCatalogProductUpdateRequest(productID string, input CatalogProductUpdateInput, expectedVersion int) string {
-	return hashFacts(productID, input.VerticalID, input.Scope, input.StoreID, input.CanonicalName, input.Description, optionalProductFact(input.Brand), strconv.FormatBool(input.Active), strconv.Itoa(expectedVersion))
+	categoryFacts, _ := json.Marshal(input.CategoryIDs)
+	attributeFacts, _ := json.Marshal(struct {
+		Product  []CatalogAttributeValueInput
+		Variants []CatalogVariantAttributeValueSet
+	}{input.AttributeValues, input.VariantAttributeValues})
+	return hashFacts(productID, input.VerticalID, input.Scope, input.StoreID, input.CanonicalName, input.Description, optionalProductFact(input.Brand), strconv.FormatBool(input.Active), string(categoryFacts), string(attributeFacts), strconv.Itoa(expectedVersion))
 }
 func HashCatalogMediaReplaceRequest(productID string, media []CatalogMediaInput, expectedVersion int) string {
 	facts := []string{"media-replace", productID, strconv.Itoa(expectedVersion)}
@@ -614,7 +627,7 @@ func readCommerceVerticalForUpdateTx(ctx context.Context, tx *sql.Tx, id string)
 func readCatalogCategoryForUpdateTx(ctx context.Context, tx *sql.Tx, id string) (CatalogCategoryRecord, error) {
 	var item CatalogCategoryRecord
 	var parent sql.NullString
-	err := tx.QueryRowContext(ctx, `SELECT id,vertical_id,parent_category_id,name_ar,name_en,active,version,created_at,updated_at FROM dsh.catalog_categories WHERE id=$1 FOR UPDATE`, id).Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+	err := tx.QueryRowContext(ctx, `SELECT id,vertical_id,parent_category_id,name_ar,name_en,COALESCE(image_uri,''),active,version,created_at,updated_at FROM dsh.catalog_categories WHERE id=$1 FOR UPDATE`, id).Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CatalogCategoryRecord{}, ErrCatalogCategoryNotFound
 	}
@@ -634,7 +647,7 @@ func readCommerceVerticalTx(ctx context.Context, tx *sql.Tx, id string) (Commerc
 func readCatalogCategoryTx(ctx context.Context, tx *sql.Tx, id string) (CatalogCategoryRecord, error) {
 	var item CatalogCategoryRecord
 	var parent sql.NullString
-	err := tx.QueryRowContext(ctx, "SELECT id,vertical_id,parent_category_id,name_ar,name_en,active,version,created_at,updated_at FROM dsh.catalog_categories WHERE id=$1", id).Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+	err := tx.QueryRowContext(ctx, "SELECT id,vertical_id,parent_category_id,name_ar,name_en,COALESCE(image_uri,''),active,version,created_at,updated_at FROM dsh.catalog_categories WHERE id=$1", id).Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
 	if parent.Valid {
 		item.ParentCategoryID = parent.String
 	}
@@ -682,7 +695,7 @@ func ListCatalogCategories(ctx context.Context, db *sql.DB, verticalID string, a
 	if activeOnly {
 		where += " AND active=true"
 	}
-	rows, err := db.QueryContext(ctx, "SELECT id,vertical_id,parent_category_id,name_ar,name_en,active,version,created_at,updated_at FROM dsh.catalog_categories"+where+" ORDER BY parent_category_id NULLS FIRST,lower(name_en),id", strings.TrimSpace(verticalID))
+	rows, err := db.QueryContext(ctx, "SELECT id,vertical_id,parent_category_id,name_ar,name_en,COALESCE(image_uri,''),active,version,created_at,updated_at FROM dsh.catalog_categories"+where+" ORDER BY parent_category_id NULLS FIRST,lower(name_en),id", strings.TrimSpace(verticalID))
 	if err != nil {
 		return nil, err
 	}
@@ -691,7 +704,59 @@ func ListCatalogCategories(ctx context.Context, db *sql.DB, verticalID string, a
 	for rows.Next() {
 		var item CatalogCategoryRecord
 		var parent sql.NullString
-		if err = rows.Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err = rows.Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if parent.Valid {
+			item.ParentCategoryID = parent.String
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func ListCatalogCategoryTree(ctx context.Context, db *sql.DB, verticalID, query, status string) ([]CatalogCategoryRecord, error) {
+	verticalID = strings.TrimSpace(verticalID)
+	query = strings.TrimSpace(query)
+	status = strings.TrimSpace(status)
+	if verticalID == "" || len(query) > 160 || (status != "all" && status != "active" && status != "inactive") {
+		return nil, ErrCatalogVerticalNotFound
+	}
+	var catalogModel string
+	if err := db.QueryRowContext(ctx, "SELECT COALESCE(catalog_model,'') FROM dsh.commerce_verticals WHERE id=$1", verticalID).Scan(&catalogModel); errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrCatalogVerticalNotFound
+	} else if err != nil {
+		return nil, err
+	}
+	if catalogModel != "SHARED_CATALOG" {
+		return []CatalogCategoryRecord{}, nil
+	}
+	queryPattern := ""
+	if query != "" {
+		queryPattern = "%" + strings.TrimSuffix(escapeCatalogSearchPrefix(query), "%") + "%"
+	}
+	rows, err := db.QueryContext(ctx, `WITH RECURSIVE matched_categories AS (
+		SELECT id,parent_category_id,vertical_id,name_ar,name_en,image_uri,active,version,created_at,updated_at
+		FROM dsh.catalog_categories
+		WHERE vertical_id=$1 AND ($2='all' OR active=($2='active'))
+		AND ($3='' OR name_ar ILIKE $3 ESCAPE '!' OR name_en ILIKE $3 ESCAPE '!')
+	), category_tree AS (
+		SELECT id,parent_category_id,vertical_id,name_ar,name_en,image_uri,active,version,created_at,updated_at FROM matched_categories
+		UNION
+		SELECT parent.id,parent.parent_category_id,parent.vertical_id,parent.name_ar,parent.name_en,parent.image_uri,parent.active,parent.version,parent.created_at,parent.updated_at
+		FROM dsh.catalog_categories parent JOIN category_tree child ON parent.id=child.parent_category_id AND parent.vertical_id=child.vertical_id
+	)
+	SELECT id,vertical_id,parent_category_id,name_ar,name_en,COALESCE(image_uri,''),active,version,created_at,updated_at
+	FROM category_tree ORDER BY parent_category_id NULLS FIRST,lower(name_en),id`, verticalID, status, queryPattern)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]CatalogCategoryRecord, 0)
+	for rows.Next() {
+		var item CatalogCategoryRecord
+		var parent sql.NullString
+		if err := rows.Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, err
 		}
 		if parent.Valid {
@@ -1017,11 +1082,6 @@ func CreateCatalogProduct(ctx context.Context, db *sql.DB, input CatalogProductI
 			return CatalogProductResult{}, err
 		}
 	}
-	if input.ImageURI != "" {
-		if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_media(product_id,uri,media_role,ordinal) VALUES($1,$2,'primary',0)", productID, input.ImageURI); err != nil {
-			return CatalogProductResult{}, err
-		}
-	}
 	product, err := readCatalogProductTx(ctx, tx, productID)
 	if err != nil {
 		return CatalogProductResult{}, fmt.Errorf("read created catalog product: %w", err)
@@ -1065,7 +1125,7 @@ func UpdateCatalogProduct(ctx context.Context, db *sql.DB, productID string, inp
 	if !errors.Is(err, sql.ErrNoRows) {
 		return CatalogProductResult{}, err
 	}
-	current, err := readCatalogProductTx(ctx, tx, productID)
+	current, err := readCatalogProductTxForUpdate(ctx, tx, productID)
 	if err != nil {
 		return CatalogProductResult{}, err
 	}
@@ -1094,12 +1154,54 @@ func UpdateCatalogProduct(ctx context.Context, db *sql.DB, productID string, inp
 	if !validCommerceVerticalCatalogModel(catalogModel) || (input.Scope == "SHARED" && catalogModel != "SHARED_CATALOG") || (input.Scope == "STORE_SCOPED" && catalogModel != "STORE_LOCAL_CATALOG") {
 		return CatalogProductResult{}, ErrCatalogProductModelMismatch
 	}
-	var categoryMismatch bool
-	if err := tx.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM dsh.catalog_product_categories pc JOIN dsh.catalog_categories c ON c.id=pc.category_id WHERE pc.product_id=$1 AND (c.vertical_id<>$2 OR NOT c.active))", productID, input.VerticalID).Scan(&categoryMismatch); err != nil {
-		return CatalogProductResult{}, err
-	}
-	if categoryMismatch {
-		return CatalogProductResult{}, ErrCatalogCategoryNotFound
+	if input.CategoryIDs == nil {
+		var categoryMismatch bool
+		if err := tx.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM dsh.catalog_product_categories pc JOIN dsh.catalog_categories c ON c.id=pc.category_id WHERE pc.product_id=$1 AND (c.vertical_id<>$2 OR NOT c.active))", productID, input.VerticalID).Scan(&categoryMismatch); err != nil {
+			return CatalogProductResult{}, err
+		}
+		if categoryMismatch {
+			return CatalogProductResult{}, ErrCatalogCategoryNotFound
+		}
+	} else {
+		if input.Scope != "SHARED" || len(input.CategoryIDs) == 0 || input.AttributeValues == nil || input.VariantAttributeValues == nil || len(input.VariantAttributeValues) != len(current.Variants) {
+			return CatalogProductResult{}, ErrCatalogCategoryNotFound
+		}
+		rows, queryErr := tx.QueryContext(ctx, "SELECT id FROM dsh.catalog_categories WHERE id=ANY($1) AND vertical_id=$2 AND active=true FOR SHARE", pq.Array(input.CategoryIDs), input.VerticalID)
+		if queryErr != nil {
+			return CatalogProductResult{}, queryErr
+		}
+		validCategoryCount := 0
+		for rows.Next() {
+			var categoryID string
+			if scanErr := rows.Scan(&categoryID); scanErr != nil {
+				_ = rows.Close()
+				return CatalogProductResult{}, scanErr
+			}
+			validCategoryCount++
+		}
+		rowsErr := rows.Err()
+		closeErr := rows.Close()
+		if rowsErr != nil {
+			return CatalogProductResult{}, rowsErr
+		}
+		if closeErr != nil {
+			return CatalogProductResult{}, closeErr
+		}
+		if validCategoryCount != len(input.CategoryIDs) {
+			return CatalogProductResult{}, ErrCatalogCategoryNotFound
+		}
+		variantValuesByID := make(map[string][]CatalogAttributeValueInput, len(input.VariantAttributeValues))
+		for _, set := range input.VariantAttributeValues {
+			if _, exists := variantValuesByID[set.VariantID]; exists || set.Values == nil {
+				return CatalogProductResult{}, ErrCatalogCategoryNotFound
+			}
+			variantValuesByID[set.VariantID] = set.Values
+		}
+		for _, variant := range current.Variants {
+			if _, exists := variantValuesByID[variant.ID]; !exists {
+				return CatalogProductResult{}, ErrCatalogCategoryNotFound
+			}
+		}
 	}
 	var result sql.Result
 	if result, err = tx.ExecContext(ctx, "UPDATE dsh.catalog_products SET vertical_id=$2,scope=$3,store_id=NULLIF($4,''),canonical_name=$5,description=$6,brand=$7,active=$8,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$9", productID, input.VerticalID, input.Scope, input.StoreID, input.CanonicalName, input.Description, input.Brand, input.Active, expectedVersion); err != nil {
@@ -1107,6 +1209,34 @@ func UpdateCatalogProduct(ctx context.Context, db *sql.DB, productID string, inp
 	}
 	if affected, affectedErr := result.RowsAffected(); affectedErr != nil || affected != 1 {
 		return CatalogProductResult{}, ErrCatalogVersionConflict
+	}
+	if input.CategoryIDs != nil {
+		if _, err = tx.ExecContext(ctx, "DELETE FROM dsh.catalog_product_attribute_values WHERE product_id=$1", productID); err != nil {
+			return CatalogProductResult{}, err
+		}
+		if _, err = tx.ExecContext(ctx, "DELETE FROM dsh.catalog_variant_attribute_values av USING dsh.catalog_product_variants v WHERE av.variant_id=v.id AND v.product_id=$1", productID); err != nil {
+			return CatalogProductResult{}, err
+		}
+		if _, err = tx.ExecContext(ctx, "DELETE FROM dsh.catalog_product_categories WHERE product_id=$1", productID); err != nil {
+			return CatalogProductResult{}, err
+		}
+		for _, categoryID := range input.CategoryIDs {
+			if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_product_categories(product_id,category_id) VALUES($1,$2)", productID, categoryID); err != nil {
+				return CatalogProductResult{}, err
+			}
+		}
+		if len(current.Variants) == 0 {
+			return CatalogProductResult{}, ErrCatalogProductNotFound
+		}
+		variantValuesByID := make(map[string][]CatalogAttributeValueInput, len(input.VariantAttributeValues))
+		for _, set := range input.VariantAttributeValues {
+			variantValuesByID[set.VariantID] = set.Values
+		}
+		for _, variant := range current.Variants {
+			if err = persistCatalogProductAttributes(ctx, tx, input.VerticalID, input.CategoryIDs, productID, variant.ID, input.AttributeValues, variantValuesByID[variant.ID]); err != nil {
+				return CatalogProductResult{}, err
+			}
+		}
 	}
 	product, err := readCatalogProductTx(ctx, tx, productID)
 	if err != nil {
@@ -1130,6 +1260,13 @@ func ReplaceCatalogProductMedia(ctx context.Context, db *sql.DB, productID strin
 
 func ReplaceCatalogProductMediaWithAsset(ctx context.Context, db *sql.DB, productID string, media []CatalogMediaInput, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string, asset CatalogMediaAssetInput) (CatalogProductResult, error) {
 	return replaceCatalogProductMedia(ctx, db, productID, media, expectedVersion, idempotencyKey, requestHash, actingActorID, correlationID, &asset)
+}
+
+func optionalMediaAssetKey(asset *CatalogMediaAssetInput) string {
+	if asset == nil {
+		return ""
+	}
+	return strings.TrimSpace(asset.IdempotencyKey)
 }
 
 func replaceCatalogProductMedia(ctx context.Context, db *sql.DB, productID string, media []CatalogMediaInput, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string, asset *CatalogMediaAssetInput) (CatalogProductResult, error) {
@@ -1172,6 +1309,18 @@ func replaceCatalogProductMedia(ctx context.Context, db *sql.DB, productID strin
 	}
 	if current.Version != expectedVersion {
 		return CatalogProductResult{}, ErrCatalogVersionConflict
+	}
+	for _, item := range media {
+		var stored bool
+		if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM dsh.catalog_media_assets
+			WHERE product_id=$1 AND uri=$2 AND state='active') OR
+			($3<>'' AND EXISTS(SELECT 1 FROM dsh.catalog_media_assets
+			WHERE product_id=$1 AND uri=$2 AND idempotency_key=$3 AND state='pending'))`, productID, item.URI, optionalMediaAssetKey(asset)).Scan(&stored); err != nil {
+			return CatalogProductResult{}, err
+		}
+		if !stored {
+			return CatalogProductResult{}, ErrCatalogMediaInvalid
+		}
 	}
 	oldMedia, err := listCatalogMedia(ctx, tx, productID)
 	if err != nil {
@@ -1824,7 +1973,10 @@ func hydrateCatalogProduct(ctx context.Context, db queryer, item CatalogProductR
 }
 
 func listCatalogMedia(ctx context.Context, db queryer, productID string) ([]CatalogMediaRecord, error) {
-	rows, err := db.QueryContext(ctx, "SELECT uri,media_role,ordinal FROM dsh.catalog_media WHERE product_id=$1 ORDER BY ordinal", productID)
+	rows, err := db.QueryContext(ctx, `SELECT media.uri,media.media_role,media.ordinal
+		FROM dsh.catalog_media media
+		JOIN dsh.catalog_media_assets asset ON asset.product_id=media.product_id AND asset.uri=media.uri AND asset.state='active'
+		WHERE media.product_id=$1 ORDER BY media.ordinal`, productID)
 	if err != nil {
 		return nil, err
 	}

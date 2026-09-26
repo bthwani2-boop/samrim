@@ -103,7 +103,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
 
   const visibleCategories = useMemo(() => {
     if (state.kind !== "ready") return [];
-    return state.categories;
+    return state.categories.filter((category) => category.active);
   }, [state]);
 
   const mediaContent = useMemo(() => marketing.content.filter((item) => Boolean(item.mediaUri) && (item.kind === "BANNER" || item.kind === "CAROUSEL")).slice(0, 8), [marketing.content]);
@@ -174,7 +174,14 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         <BthwaniSectionHeader title={searchScope === "products" && searchIsActive ? "تصفية المنتجات بالفئة" : "تسوق حسب الفئات"} />
         <ScrollView accessibilityLabel="اختصارات فئات المنتجات المتاحة" contentContainerStyle={styles.categoryShortcutContent} horizontal showsHorizontalScrollIndicator={false}>
           <BthwaniChip label="كل الفئات" selected={!selectedCategoryID} onPress={() => setSelectedCategoryID("")} />
-          {visibleCategories.map((category) => <BthwaniChip key={category.id} label={category.nameAr} selected={selectedCategoryID === category.id} onPress={() => setSelectedCategoryID(category.id)} />)}
+          {visibleCategories.map((category) => {
+            const parent = state.kind === "ready" ? state.categories.find((candidate) => candidate.id === category.parentCategoryId) : undefined;
+            return <Pressable key={category.id} accessibilityRole="button" accessibilityLabel={`${category.nameAr}${parent ? `، ضمن ${parent.nameAr}` : ""}`} accessibilityState={{ selected: selectedCategoryID === category.id }} onPress={() => setSelectedCategoryID(category.id)} style={[styles.categoryTile, selectedCategoryID === category.id && styles.categoryTileSelected]}>
+              {category.imageUri ? <Image source={{ uri: category.imageUri }} accessibilityLabel={`صورة ${category.nameAr}`} style={styles.categoryTileImage} resizeMode="cover" /> : <View style={styles.categoryTileFallback}><Text style={styles.categoryTileInitial}>{category.nameAr.slice(0, 1)}</Text></View>}
+              <Text numberOfLines={2} style={styles.categoryTileName}>{category.nameAr}</Text>
+              {parent ? <Text numberOfLines={1} style={styles.categoryTileParent}>{parent.nameAr}</Text> : null}
+            </Pressable>;
+          })}
         </ScrollView>
       </View> : null}
 
@@ -435,7 +442,14 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: "center" },
     error: { ...typography.bodySm, color: theme.danger },
     categoryShortcutBlock: { gap: spacing[1] },
-    categoryShortcutContent: { alignItems: "center", gap: spacing[2], paddingHorizontal: spacing[1] },
+    categoryShortcutContent: { alignItems: "flex-start", gap: spacing[2], paddingHorizontal: spacing[1], paddingVertical: spacing[1] },
+    categoryTile: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[2], width: 112 },
+    categoryTileSelected: { borderColor: theme.interactiveText, borderWidth: 2 },
+    categoryTileImage: { backgroundColor: theme.surfaceInset, borderRadius: radius.md, height: 82, width: 82 },
+    categoryTileFallback: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.md, height: 82, justifyContent: "center", width: 82 },
+    categoryTileInitial: { ...typography.titleLg, color: theme.interactiveText },
+    categoryTileName: { ...typography.label, color: theme.color, minHeight: 34, textAlign: "center" },
+    categoryTileParent: { ...typography.caption, color: theme.colorMuted, textAlign: "center" },
     marketingBlock: { gap: spacing[3] },
     marketingList: { gap: spacing[2] },
     marketingCard: { borderRadius: radius.lg, gap: spacing[1], padding: spacing[3] },

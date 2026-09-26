@@ -533,12 +533,16 @@ func listPublishedStores(ctx context.Context, db *sql.DB, serviceCityID string, 
 	rows, err := db.QueryContext(ctx, `SELECT s.id, s.partner_actor_id, s.name, s.primary_vertical_id, s.version,
 		COALESCE(ratings.rating_average, 0), COALESCE(ratings.rating_count, 0),
 		s.publication_changed_at, s.created_at, s.updated_at, s.fulfillment_modes,
-		ARRAY(SELECT DISTINCT pc.category_id FROM dsh.catalog_store_offers o
+		ARRAY(WITH RECURSIVE store_categories(id, parent_category_id, vertical_id) AS (
+			SELECT c.id,c.parent_category_id,c.vertical_id FROM dsh.catalog_store_offers o
 			JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
 			JOIN dsh.catalog_products p ON p.id=v.product_id
 			JOIN dsh.catalog_product_categories pc ON pc.product_id=p.id
 			JOIN dsh.catalog_categories c ON c.id=pc.category_id AND c.active=true AND c.vertical_id=p.vertical_id
-			WHERE o.store_id=s.id AND `+visibleOfferConditions+` ORDER BY pc.category_id),
+			WHERE o.store_id=s.id AND `+visibleOfferConditions+`
+			UNION
+			SELECT parent.id,parent.parent_category_id,parent.vertical_id FROM store_categories child JOIN dsh.catalog_categories parent ON parent.id=child.parent_category_id AND parent.vertical_id=child.vertical_id AND parent.active=true
+		) SELECT DISTINCT id FROM store_categories ORDER BY id),
 		`+distanceExpression+`,
 		sc.id, sc.display_name_ar, sc.active, sc.version, sc.created_at, sc.updated_at
 		FROM dsh.stores s JOIN dsh.service_cities sc ON sc.id=s.service_city_id
@@ -595,12 +599,16 @@ func ReadPublishedStore(ctx context.Context, db *sql.DB, storeID string, service
 	err := db.QueryRowContext(ctx, `SELECT s.id, s.partner_actor_id, s.name, s.primary_vertical_id, s.version,
 		COALESCE(ratings.rating_average, 0), COALESCE(ratings.rating_count, 0),
 		s.publication_changed_at, s.created_at, s.updated_at, s.fulfillment_modes,
-		ARRAY(SELECT DISTINCT pc.category_id FROM dsh.catalog_store_offers o
+		ARRAY(WITH RECURSIVE store_categories(id, parent_category_id, vertical_id) AS (
+			SELECT c.id,c.parent_category_id,c.vertical_id FROM dsh.catalog_store_offers o
 			JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
 			JOIN dsh.catalog_products p ON p.id=v.product_id
 			JOIN dsh.catalog_product_categories pc ON pc.product_id=p.id
 			JOIN dsh.catalog_categories c ON c.id=pc.category_id AND c.active=true AND c.vertical_id=p.vertical_id
-			WHERE o.store_id=s.id AND `+visibleOfferConditions+` ORDER BY pc.category_id),
+			WHERE o.store_id=s.id AND `+visibleOfferConditions+`
+			UNION
+			SELECT parent.id,parent.parent_category_id,parent.vertical_id FROM store_categories child JOIN dsh.catalog_categories parent ON parent.id=child.parent_category_id AND parent.vertical_id=child.vertical_id AND parent.active=true
+		) SELECT DISTINCT id FROM store_categories ORDER BY id),
 		sc.id, sc.display_name_ar, sc.active, sc.version, sc.created_at, sc.updated_at
 		FROM dsh.stores s JOIN dsh.service_cities sc ON sc.id=s.service_city_id
 		LEFT JOIN (SELECT store_id, AVG(rating)::double precision AS rating_average, COUNT(*)::int AS rating_count

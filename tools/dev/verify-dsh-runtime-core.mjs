@@ -56,6 +56,9 @@ const enumAttributeID = `roast-${suffix}`;
 const measurementAttributeID = `net-weight-${suffix}`;
 const dateAttributeID = `expiry-${suffix}`;
 const clientPhone = `+96778${crypto.randomInt(1_000_000, 9_999_999)}`;
+let cleanupBatch = null;
+let cleanupAttempted = false;
+let cleanupCompleted = false;
 
 function compose(...args) { return execFileSync("docker", [...composeArgs, ...args], { cwd: root, encoding: "utf8" }); }
 function sqlLiteral(value) { return String(value).replaceAll("'", "''"); }
@@ -64,15 +67,27 @@ function sqlLiteral(value) { return String(value).replaceAll("'", "''"); }
 // are created through canonical HTTP owners; this is not a SQL setup path.
 const postgresContainerID = compose("ps", "-aq", "postgres").trim();
 function sql(query) {
+  if (cleanupBatch && /^(DELETE|UPDATE)\b/i.test(query.trim())) {
+    cleanupBatch.push(query);
+    return "";
+  }
   try {
     if (!postgresContainerID) fail("postgres container is not present");
     return execFileSync("docker", ["exec", postgresContainerID, "psql", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-Atc", query], { cwd: root, encoding: "utf8" }).trim();
   }
-  catch (error) { fail("database proof failed", String(error?.stderr || error?.message || error)); }
+  catch (error) {
+    const detail = String(error?.stderr || error?.message || error);
+    if (cleanupBatch) throw new Error(`database cleanup read failed: ${detail}`);
+    fail("database proof failed", detail);
+  }
 }
 function expectSQL(query, expected, message) { const observed = sql(query); if (observed !== expected) fail(message, `expected=${expected} observed=${observed}`); }
 
 function cleanup() {
+  if (cleanupCompleted || cleanupAttempted) return;
+  cleanupAttempted = true;
+  cleanupBatch = [];
+  try {
   // Disposable cleanup is intentionally ID-scoped to this verifier's fresh state;
   // it must never delete the reusable local baseline or synthetic world locators.
   for (const challengeID of challengeIDs) {
@@ -345,8 +360,21 @@ function cleanup() {
     sql(`DELETE FROM dsh.notification_read_state WHERE actor_id='${value}'`);
     sql(`DELETE FROM identity_actors WHERE id='${value}'`);
   }
+    if (cleanupBatch.length > 0) {
+      execFileSync("docker", ["exec", postgresContainerID, "psql", "--set=ON_ERROR_STOP=1", "--single-transaction", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-Atc", cleanupBatch.join(";\n")], { cwd: root, encoding: "utf8" });
+    }
+    cleanupCompleted = true;
+  } catch (error) {
+    throw new Error(`bounded runtime cleanup failed: ${String(error?.stderr || error?.message || error)}`);
+  } finally {
+    cleanupBatch = null;
+  }
 }
-process.on("exit", () => { try { cleanup(); } catch (error) { console.error(`DSH_RUNTIME_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`); } });
+process.on("exit", () => {
+  if (cleanupCompleted || cleanupAttempted) return;
+  try { cleanup(); }
+  catch (error) { console.error(`DSH_RUNTIME_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`); process.exitCode = 1; }
+});
 
 async function request(base, method, pathname, options = {}) {
   let response;
@@ -575,7 +603,12 @@ categoryID = String(categoryCreate.body.category.id);
 const childCategoryCreate = await request(dshBase, "POST", "/dsh/catalog/categories", { token: dshToken, headers: serviceHeaders(actingOperatorID, `category-child-${suffix}`), body: { verticalId: verticalID, parentCategoryId: categoryID, nameAr: `حبوب ${suffix}`, nameEn: `Beans ${suffix}`, active: true, reason: "DSH runtime child catalog category proof" } });
 if (childCategoryCreate.status !== 201 || !String(childCategoryCreate.body?.category?.id || "").startsWith("category_") || childCategoryCreate.body?.category?.parentCategoryId !== categoryID) fail("catalog parent category tree failed", JSON.stringify({ categoryCreate, childCategoryCreate }));
 childCategoryID = String(childCategoryCreate.body.category.id);
-categoryIDs.add(categoryID); categoryIDs.add(childCategoryID);
+const unrelatedCategoryCreate = await request(dshBase, "POST", "/dsh/catalog/categories", { token: dshToken, headers: serviceHeaders(actingOperatorID, `category-unrelated-${suffix}`), body: { verticalId: verticalID, nameAr: `شاي ${suffix}`, nameEn: `Tea ${suffix}`, active: true, reason: "DSH runtime unrelated catalog category proof" } });
+if (unrelatedCategoryCreate.status !== 201 || !String(unrelatedCategoryCreate.body?.category?.id || "").startsWith("category_")) fail("unrelated catalog category creation failed", JSON.stringify(unrelatedCategoryCreate));
+const unrelatedCategoryID = String(unrelatedCategoryCreate.body.category.id);
+categoryIDs.add(categoryID); categoryIDs.add(childCategoryID); categoryIDs.add(unrelatedCategoryID);
+const categorySearch = await request(dshBase, "GET", `/dsh/catalog/categories?verticalId=${encodeURIComponent(verticalID)}&includeInactive=true&status=all&query=${encodeURIComponent(`Beans ${suffix}`)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+if (categorySearch.status !== 200 || !categorySearch.body?.categories?.some((item) => item.id === categoryID) || !categorySearch.body?.categories?.some((item) => item.id === childCategoryID) || categorySearch.body?.categories?.some((item) => item.id === unrelatedCategoryID)) fail("operator category search did not return the matching branch and its ancestry", JSON.stringify(categorySearch));
 console.log("DSH_CATALOG_REGISTRY=PASS");
 
 const attributeDefinitions = [
@@ -722,7 +755,7 @@ console.log("DSH_JOINING_CASE_VERTICAL=PASS");
 console.log("DSH_JOINING_CASE_CORRECTION=PASS");
 
 const runtimeCoffeeName = `Runtime Coffee ${suffix}`;
-const productInput = { canonicalName: runtimeCoffeeName, verticalId: verticalID, scope: "SHARED", variantTitle: "عبوة 250 غ", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], identifierType: "GTIN", identifierValue: `628100${suffix.replaceAll("-", "").slice(-7)}`, imageUri: "https://example.com/runtime-coffee.jpg" };
+const productInput = { canonicalName: runtimeCoffeeName, verticalId: verticalID, scope: "SHARED", variantTitle: "عبوة 250 غ", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], identifierType: "GTIN", identifierValue: `628100${suffix.replaceAll("-", "").slice(-7)}` };
 const productCategoryRead = await request(dshBase, "GET", `/dsh/catalog/categories?verticalId=${encodeURIComponent(verticalID)}`, { token: dshToken });
 if (productCategoryRead.status !== 200 || !productCategoryRead.body?.categories?.some((category) => category.id === childCategoryID && category.verticalId === verticalID && category.active)) fail("catalog Product category was not active in its vertical at canonical readback", JSON.stringify({ verticalID, childCategoryID, productCategoryRead }));
 const productCategorySQL = sql(`SELECT COALESCE((SELECT vertical_id || ':' || active::text FROM dsh.catalog_categories WHERE id='${sqlLiteral(childCategoryID)}'), 'missing')`);
@@ -732,21 +765,15 @@ const productCreate = await request(dshBase, "POST", "/dsh/catalog/products", { 
 if (productCreate.status !== 201 || productCreate.body?.product?.version !== 1 || !productCreate.body?.product?.id) fail("catalog Product creation failed", JSON.stringify({ productInput, productCategoryRead, productCategorySQL, productCreate }));
 const productID = String(productCreate.body.product.id); productIDs.add(productID);
 const productRead = await request(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&limit=50`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
-if (productRead.status !== 200 || productRead.body?.products?.length !== 1 || productRead.body.products[0].variants?.length !== 1 || productRead.body.products[0].variants[0].identifiers?.[0]?.value !== productInput.identifierValue || !productRead.body.products[0].media?.some((media) => media.role === "primary" && media.uri === productInput.imageUri)) fail("catalog Product/Variant/media canonical readback failed", JSON.stringify(productRead));
+if (productRead.status !== 200 || productRead.body?.products?.length !== 1 || productRead.body.products[0].variants?.length !== 1 || productRead.body.products[0].variants[0].identifiers?.[0]?.value !== productInput.identifierValue || productRead.body.products[0].media?.length !== 0) fail("catalog Product/Variant canonical readback failed", JSON.stringify(productRead));
 const variantID = String(productRead.body.products[0].variants[0].id);
 const attributeRule = await request(dshBase, "PUT", `/dsh/catalog/categories/${childCategoryID}/attribute-rules/${enumAttributeID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `attribute-rule-${suffix}`), body: { required: true, filterable: false, variantAxis: true, expectedVersion: 0, reason: "DSH runtime category attribute rule proof" } });
 if (attributeRule.status !== 200 || !attributeRule.body?.rules?.some((item) => item.attributeId === enumAttributeID && item.required && item.variantAxis)) fail("required category Attribute rule failed", JSON.stringify(attributeRule));
 console.log("DSH_TYPED_ATTRIBUTES=PASS");
 const replacementMedia = { media: [{ uri: "https://example.com/runtime-coffee-updated.jpg", role: "primary", ordinal: 0 }, { uri: "https://example.com/runtime-coffee-gallery.jpg", role: "gallery", ordinal: 1 }] };
 const mediaKey = `product-media-${suffix}`;
-const productMediaReplaceHeaders = serviceHeaders(actingOperatorID, mediaKey, crypto.randomUUID(), 1);
-const productMediaReplace = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/media`, { token: dshToken, headers: productMediaReplaceHeaders, body: replacementMedia });
-const productMediaReplay = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/media`, { token: dshToken, headers: productMediaReplaceHeaders, body: replacementMedia });
-const productMediaStale = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/media`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `product-media-stale-${suffix}`, crypto.randomUUID(), 1), body: replacementMedia });
-const productMediaRead = await request(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&limit=50`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
-const mediaReadback = productMediaRead.body?.products?.[0]?.media;
-if (productMediaReplace.status !== 200 || productMediaReplace.body?.product?.version !== 2 || productMediaReplace.body?.product?.media?.length !== 2 || productMediaReplay.status !== 200 || productMediaReplay.body?.idempotentReplay !== true || productMediaReplay.body?.product?.version !== 2 || productMediaStale.status !== 409 || productMediaRead.status !== 200 || productMediaRead.body?.products?.[0]?.id !== productID || productMediaRead.body?.products?.[0]?.version !== 2 || JSON.stringify(mediaReadback) !== JSON.stringify(replacementMedia.media)) fail("catalog product media replacement, idempotency, or version guard failed", JSON.stringify({ productMediaReplace, productMediaReplay, productMediaStale, productMediaRead }));
-console.log("DSH_CATALOG_MEDIA_MANAGEMENT=PASS");
+const rawMediaReplacement = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/media`, { token: dshToken, headers: serviceHeaders(actingOperatorID, mediaKey, crypto.randomUUID(), 1), body: replacementMedia });
+if (rawMediaReplacement.status !== 400 || rawMediaReplacement.body?.error?.code !== "INVALID_INPUT") fail("catalog media accepted a URL without a canonical uploaded asset", JSON.stringify(rawMediaReplacement));
 const runtimePNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 function mediaUploadForm() {
   const form = new FormData();
@@ -755,11 +782,23 @@ function mediaUploadForm() {
   return form;
 }
 const mediaUploadKey = `product-media-upload-${suffix}`;
-const productMediaUpload = await request(dshBase, "POST", `/dsh/catalog/products/${productID}/media/upload`, { token: dshToken, headers: serviceHeaders(actingOperatorID, mediaUploadKey, crypto.randomUUID(), 2), rawBody: mediaUploadForm() });
+const productMediaUpload = await request(dshBase, "POST", `/dsh/catalog/products/${productID}/media/upload`, { token: dshToken, headers: serviceHeaders(actingOperatorID, mediaUploadKey, crypto.randomUUID(), 1), rawBody: mediaUploadForm() });
 const uploadedURI = productMediaUpload.body?.product?.media?.find((item) => item.role === "primary")?.uri;
 const uploadedImageResponse = uploadedURI ? await fetch(uploadedURI, { headers: { Accept: "image/png" }, signal: AbortSignal.timeout(8_000) }) : null;
-const productMediaUploadReplay = await request(dshBase, "POST", `/dsh/catalog/products/${productID}/media/upload`, { token: dshToken, headers: serviceHeaders(actingOperatorID, mediaUploadKey, crypto.randomUUID(), 2), rawBody: mediaUploadForm() });
-if (productMediaUpload.status !== 201 || productMediaUpload.body?.product?.version !== 3 || typeof uploadedURI !== "string" || !uploadedURI.includes("/dsh/catalog/media/catalog/products/") || uploadedImageResponse?.status !== 200 || uploadedImageResponse.headers.get("content-type") !== "image/png" || Number((await uploadedImageResponse.arrayBuffer()).byteLength) !== runtimePNG.byteLength || productMediaUploadReplay.status !== 200 || productMediaUploadReplay.body?.idempotentReplay !== true || productMediaUploadReplay.body?.product?.version !== 3) fail("catalog product binary media upload, read proxy, or replay failed", JSON.stringify({ productMediaUpload, productMediaUploadReplay, uploadedURI, uploadedImageResponse: uploadedImageResponse?.status }));
+const productMediaUploadReplay = await request(dshBase, "POST", `/dsh/catalog/products/${productID}/media/upload`, { token: dshToken, headers: serviceHeaders(actingOperatorID, mediaUploadKey, crypto.randomUUID(), 1), rawBody: mediaUploadForm() });
+const galleryMediaKey = `product-media-gallery-${suffix}`;
+const galleryMediaUpload = await request(dshBase, "POST", `/dsh/catalog/products/${productID}/media/upload`, { token: dshToken, headers: serviceHeaders(actingOperatorID, galleryMediaKey, crypto.randomUUID(), 2), rawBody: (() => { const form = mediaUploadForm(); form.set("role", "gallery"); form.set("file", new Blob([runtimePNG], { type: "image/png" }), "runtime-product-gallery.png"); return form; })() });
+const uploadedGalleryURI = galleryMediaUpload.body?.product?.media?.find((item) => item.role === "gallery")?.uri;
+if (productMediaUpload.status !== 201 || productMediaUpload.body?.product?.version !== 2 || typeof uploadedURI !== "string" || !uploadedURI.includes("/dsh/catalog/media/catalog/products/") || uploadedImageResponse?.status !== 200 || uploadedImageResponse.headers.get("content-type") !== "image/png" || Number((await uploadedImageResponse.arrayBuffer()).byteLength) !== runtimePNG.byteLength || productMediaUploadReplay.status !== 200 || productMediaUploadReplay.body?.idempotentReplay !== true || productMediaUploadReplay.body?.product?.version !== 2 || galleryMediaUpload.status !== 201 || galleryMediaUpload.body?.product?.version !== 3 || typeof uploadedGalleryURI !== "string" || !uploadedGalleryURI.includes("/dsh/catalog/media/catalog/products/")) fail("catalog product binary media upload, read proxy, or replay failed", JSON.stringify({ productMediaUpload, productMediaUploadReplay, galleryMediaUpload, uploadedURI, uploadedGalleryURI, uploadedImageResponse: uploadedImageResponse?.status }));
+const canonicalReplacement = { media: [{ uri: uploadedURI, role: "primary", ordinal: 0 }, { uri: uploadedGalleryURI, role: "gallery", ordinal: 1 }] };
+const productMediaReplaceHeaders = serviceHeaders(actingOperatorID, `product-media-replace-${suffix}`, crypto.randomUUID(), 3);
+const productMediaReplace = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/media`, { token: dshToken, headers: productMediaReplaceHeaders, body: canonicalReplacement });
+const productMediaReplay = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/media`, { token: dshToken, headers: productMediaReplaceHeaders, body: canonicalReplacement });
+const productMediaStale = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/media`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `product-media-stale-${suffix}`, crypto.randomUUID(), 3), body: canonicalReplacement });
+const productMediaRead = await request(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&limit=50`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+const mediaReadback = productMediaRead.body?.products?.[0]?.media;
+if (productMediaReplace.status !== 200 || productMediaReplace.body?.product?.version !== 4 || productMediaReplace.body?.product?.media?.length !== 2 || productMediaReplay.status !== 200 || productMediaReplay.body?.idempotentReplay !== true || productMediaReplay.body?.product?.version !== 4 || productMediaStale.status !== 409 || productMediaRead.status !== 200 || productMediaRead.body?.products?.[0]?.id !== productID || productMediaRead.body?.products?.[0]?.version !== 4 || JSON.stringify(mediaReadback) !== JSON.stringify(canonicalReplacement.media)) fail("catalog product media replacement, idempotency, or version guard failed", JSON.stringify({ productMediaReplace, productMediaReplay, productMediaStale, productMediaRead }));
+console.log("DSH_CATALOG_MEDIA_MANAGEMENT=PASS");
 console.log("DSH_CATALOG_MEDIA_UPLOAD=PASS");
 const productMeasurement = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/attributes/${measurementAttributeID}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID }, body: { valueKind: "MEASUREMENT", decimalValue: "0.25", measurementUnit: "kg" } });
 const productExpiry = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/attributes/${dateAttributeID}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID }, body: { valueKind: "DATE", dateValue: "2026-12-31" } });
@@ -773,9 +812,9 @@ const secondVariantUpdate = await request(dshBase, "PATCH", `/dsh/catalog/varian
 const secondVariantStale = await request(dshBase, "PATCH", `/dsh/catalog/variants/${secondVariantID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `variant-secondary-stale-${suffix}`, crypto.randomUUID(), 1), body: { title: "نسخة متقادمة", measurementKind: "DISCRETE", baseUnit: "COUNT", active: true } });
 const duplicateVariant = await request(dshBase, "POST", `/dsh/catalog/products/${productID}/variants`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `variant-duplicate-${suffix}`), body: { id: `variant-duplicate-${suffix}`, title: "معرّف مكرر", measurementKind: "DISCRETE", baseUnit: "COUNT", active: true, identifierType: "GTIN", identifierValue: productInput.identifierValue } });
 if (secondVariant.status !== 201 || secondVariant.body?.variant?.id !== secondVariantID || secondVariantReplay.status !== 200 || secondVariantReplay.body?.idempotentReplay !== true || secondVariantUpdate.status !== 200 || secondVariantUpdate.body?.variant?.version !== 2 || secondVariantStale.status !== 409 || duplicateVariant.status !== 409 || duplicateVariant.body?.error?.code !== "DUPLICATE_IDENTIFIER") fail("Variant lifecycle, version, or identifier guard failed", JSON.stringify({ secondVariant, secondVariantReplay, secondVariantUpdate, secondVariantStale, duplicateVariant }));
-const storeProductInput = { verticalId: storeLocalVerticalID, scope: "STORE_SCOPED", storeId: storeLocal.storeID, canonicalName: `Store Only ${suffix}`, variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", identifierType: "SKU", identifierValue: `STORE-${suffix}`, imageUri: "https://example.com/store-only.jpg" };
+const storeProductInput = { verticalId: storeLocalVerticalID, scope: "STORE_SCOPED", storeId: storeLocal.storeID, canonicalName: `Store Only ${suffix}`, variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", identifierType: "SKU", identifierValue: `STORE-${suffix}` };
 const storeProduct = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/products`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-product-${suffix}`), body: storeProductInput });
-if (storeProduct.status !== 201 || storeProduct.body?.product?.scope !== "STORE_SCOPED" || storeProduct.body.product.storeId !== storeLocal.storeID || !storeProduct.body.product.media?.some((media) => media.role === "primary" && media.uri === storeProductInput.imageUri)) fail("Store-scoped Product creation did not preserve owner scope or primary media", JSON.stringify(storeProduct));
+if (storeProduct.status !== 201 || storeProduct.body?.product?.scope !== "STORE_SCOPED" || storeProduct.body.product.storeId !== storeLocal.storeID || storeProduct.body.product.media?.length !== 0) fail("Store-scoped Product creation did not preserve owner scope or start without unbacked media", JSON.stringify(storeProduct));
 const storeProductID = String(storeProduct.body.product.id); productIDs.add(storeProductID);
 const crossStoreProduct = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/products`, { token: first.accessToken, headers: partnerHeaders(`cross-store-product-${suffix}`), body: storeProductInput });
 const storeVariantID = `store-variant-${suffix}`;
@@ -787,7 +826,7 @@ const storeProductUpdate = await request(dshBase, "PATCH", `/dsh/stores/${storeL
 const storeProductStale = await request(dshBase, "PATCH", `/dsh/stores/${storeLocal.storeID}/products/${storeProductID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-product-stale-${suffix}`, 1), body: { verticalId: storeLocalVerticalID, scope: "STORE_SCOPED", canonicalName: `Store Only Stale ${suffix}`, active: true } });
 const storeVariantUpdate = await request(dshBase, "PATCH", `/dsh/stores/${storeLocal.storeID}/variants/${storeVariantID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-variant-update-${suffix}`, 1), body: { title: "عبوة المتجر محدثة", measurementKind: "DISCRETE", baseUnit: "COUNT", active: true } });
 if (crossStoreProduct.status !== 403 || storeVariant.status !== 201 || storeVariant.body?.variant?.productId !== storeProductID || storeProductUpdate.status !== 200 || storeProductUpdate.body?.product?.version !== 2 || storeProductStale.status !== 409 || storeVariantUpdate.status !== 200 || storeVariantUpdate.body?.variant?.version !== 2) fail("Store-scoped Product/Variant ownership or version boundary failed", JSON.stringify({ crossStoreProduct, storeVariant, storeProductUpdate, storeProductStale, storeVariantUpdate }));
-const partnerImageBytes = fs.readFileSync(path.join(root, "tools/dev/fixtures/catalog/local-world-rice.png"));
+const partnerImageBytes = fs.readFileSync(path.join(root, "tools/dev/fixtures/catalog/products/local-world-rice.png"));
 const partnerMediaUploadForm = () => {
   const form = new FormData();
   form.set("role", "primary");
@@ -820,7 +859,7 @@ const partnerLookup = await request(dshBase, "GET", `/dsh/catalog/products?verti
 if (partnerLookup.status !== 200 || !partnerLookup.body?.products?.some((item) => item.id === productID && item.variants?.some((variant) => variant.id === variantID))) fail("partner Product/Variant lookup failed", JSON.stringify(partnerLookup));
 console.log("DSH_PRODUCT_VARIANT=PASS");
 
-const variableProductInput = { canonicalName: `Variable Coffee ${suffix}`, verticalId: verticalID, scope: "SHARED", variantTitle: "وزن متغير", measurementKind: "VARIABLE_MEASURE", baseUnit: "GRAM", categoryIds: [childCategoryID], variantAttributeValues: [{ attributeId: enumAttributeID, valueKind: "ENUM", enumValue: "Dark" }], identifierType: "SKU", identifierValue: `VARIABLE-${suffix}`, imageUri: "https://example.com/variable-coffee.jpg" };
+const variableProductInput = { canonicalName: `Variable Coffee ${suffix}`, verticalId: verticalID, scope: "SHARED", variantTitle: "وزن متغير", measurementKind: "VARIABLE_MEASURE", baseUnit: "GRAM", categoryIds: [childCategoryID], variantAttributeValues: [{ attributeId: enumAttributeID, valueKind: "ENUM", enumValue: "Dark" }], identifierType: "SKU", identifierValue: `VARIABLE-${suffix}` };
 const variableProduct = await request(dshBase, "POST", "/dsh/catalog/products", { token: dshToken, headers: serviceHeaders(actingOperatorID, `variable-product-${suffix}`), body: variableProductInput });
 if (variableProduct.status !== 201 || variableProduct.body?.product?.variants?.[0]?.measurementKind !== "VARIABLE_MEASURE") fail("VARIABLE_MEASURE Product creation failed", JSON.stringify(variableProduct));
 const variableProductID = String(variableProduct.body.product.id); productIDs.add(variableProductID);
@@ -842,6 +881,33 @@ const invalidEnumValue = await request(dshBase, "PUT", `/dsh/catalog/variants/${
 const validEnumValue = await request(dshBase, "PUT", `/dsh/catalog/variants/${variantID}/attributes/${enumAttributeID}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID }, body: { valueKind: "ENUM", enumValue: "Dark" } });
 const variantAttributeRead = await collectCursorPages(dshBase, `/dsh/catalog/products?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&limit=1`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } }, "products");
 if (missingRequiredAttributePublish.status !== 409 || missingRequiredAttributePublish.body?.error?.code !== "PRODUCT_NOT_ELIGIBLE" || invalidEnumValue.status !== 404 || validEnumValue.status !== 200 || !variantAttributeRead.body?.products?.[0]?.variants?.some((variant) => variant.id === variantID && variant.attributes?.some((item) => item.attributeId === enumAttributeID && item.enumValue === "Dark"))) fail("required/typed Variant Attribute enforcement failed", JSON.stringify({ missingRequiredAttributePublish, invalidEnumValue, validEnumValue, variantAttributeRead }));
+const categoryUpdateSource = await request(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&limit=50`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+const categoryUpdateBefore = categoryUpdateSource.body?.products?.find((item) => item.id === productID);
+const categoryUpdateBody = {
+  verticalId: verticalID,
+  scope: "SHARED",
+  canonicalName: runtimeCoffeeName,
+  description: "",
+  active: true,
+  categoryIds: [categoryID, childCategoryID],
+  attributeValues: [
+    { attributeId: measurementAttributeID, valueKind: "MEASUREMENT", decimalValue: "0.25", measurementUnit: "kg" },
+    { attributeId: dateAttributeID, valueKind: "DATE", dateValue: "2026-12-31" },
+  ],
+  variantAttributeValues: [
+    { variantId, values: [{ attributeId: enumAttributeID, valueKind: "ENUM", enumValue: "Dark" }] },
+    { variantId: secondVariantID, values: [{ attributeId: enumAttributeID, valueKind: "ENUM", enumValue: "Dark" }] },
+  ],
+};
+const categoryUpdateHeaders = serviceHeaders(actingOperatorID, `product-category-update-${suffix}`, crypto.randomUUID(), categoryUpdateBefore?.version);
+const categoryUpdate = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: categoryUpdateHeaders, body: categoryUpdateBody });
+const categoryUpdateReplay = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: categoryUpdateHeaders, body: categoryUpdateBody });
+const categoryUpdateStale = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `product-category-update-stale-${suffix}`, crypto.randomUUID(), categoryUpdateBefore?.version), body: categoryUpdateBody });
+const categoryUpdateRead = await request(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&limit=50`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+const categoryUpdatedProduct = categoryUpdateRead.body?.products?.find((item) => item.id === productID);
+const categoryUpdateOK = categoryUpdate.status === 200 && categoryUpdate.body?.product?.version === categoryUpdateBefore?.version + 1 && categoryUpdateReplay.status === 200 && categoryUpdateReplay.body?.idempotentReplay === true && categoryUpdateStale.status === 409 && categoryUpdateStale.body?.error?.code === "VERSION_CONFLICT" && categoryUpdateRead.status === 200 && categoryUpdatedProduct?.categoryIds?.includes(categoryID) && categoryUpdatedProduct?.categoryIds?.includes(childCategoryID) && categoryUpdatedProduct?.attributes?.some((item) => item.attributeId === measurementAttributeID && item.measurementUnit === "kg") && categoryUpdatedProduct?.attributes?.some((item) => item.attributeId === dateAttributeID && item.dateValue === "2026-12-31") && [variantID, secondVariantID].every((id) => categoryUpdatedProduct?.variants?.some((item) => item.id === id && item.attributes?.some((attribute) => attribute.attributeId === enumAttributeID && attribute.enumValue === "Dark")));
+if (!categoryUpdateOK) fail("atomic product category, common attributes, per-variant attributes, idempotency, or version guard failed", JSON.stringify({ categoryUpdate, categoryUpdateReplay, categoryUpdateStale, categoryUpdateRead }));
+console.log("DSH_PRODUCT_MULTI_CATEGORY_UPDATE=PASS");
 const offerReplay = await request(dshBase, "POST", `/dsh/stores/${first.storeID}/offers`, { token: first.accessToken, headers: partnerHeaders(offerKey), body: discreteCreateOffer(variantID, 1250) });
 if (offerReplay.status !== 200 || offerReplay.body?.idempotentReplay !== true) fail("StoreOffer replay failed", JSON.stringify(offerReplay));
 const offerConflict = await request(dshBase, "POST", `/dsh/stores/${first.storeID}/offers`, { token: first.accessToken, headers: partnerHeaders(offerKey), body: discreteCreateOffer(variantID, 1300) });
@@ -858,20 +924,25 @@ if (offerB.status !== 201) fail("second StoreOffer creation failed", JSON.string
 const offerBID = String(offerB.body.offer.offerId); offerIDs.add(offerBID);
 const publishedOfferB = await request(dshBase, "PATCH", `/dsh/stores/${second.storeID}/offers/${offerBID}`, { token: second.accessToken, headers: partnerHeaders(`offer-b-publish-${suffix}`, 1), body: discreteOffer(1500, "published") });
 if (publishedOfferB.status !== 200) fail("second StoreOffer publication failed", JSON.stringify(publishedOfferB));
+const productRegistryRead = await request(dshBase, "GET", `/dsh/catalog/product-registry?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&categoryId=${encodeURIComponent(categoryID)}&active=active&sort=name_asc&limit=10`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+const productRegistryItem = productRegistryRead.body?.products?.find((item) => item.id === productID);
+const productRegistryWrongCategory = await request(dshBase, "GET", `/dsh/catalog/product-registry?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&categoryId=${encodeURIComponent(unrelatedCategoryID)}&limit=10`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+if (productRegistryRead.status !== 200 || productRegistryRead.body?.products?.length !== 1 || productRegistryItem?.storeCount !== 2 || productRegistryItem?.primaryImageUri !== uploadedURI || productRegistryWrongCategory.status !== 200 || productRegistryWrongCategory.body?.products?.length !== 0) fail("operator Product registry image, visible Store count, or descendant category filter failed", JSON.stringify({ productRegistryRead, productRegistryWrongCategory }));
+console.log("DSH_PRODUCT_REGISTRY_PROJECTION=PASS");
 const sectionCreate = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/sections`, { token: storeLocal.accessToken, headers: partnerHeaders(`section-${suffix}`), body: { nameAr: `العروض ${suffix}`, nameEn: `Offers ${suffix}`, ordinal: 0, active: true } });
 if (sectionCreate.status !== 201 || !sectionCreate.body?.section?.id) fail("Storefront section creation failed", JSON.stringify(sectionCreate));
 const sectionID = String(sectionCreate.body.section.id); sectionIDs.add(sectionID);
 const sectionAttach = await request(dshBase, "PUT", `/dsh/stores/${storeLocal.storeID}/sections/${sectionID}/offers/${storeLocalOfferID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`section-attach-${suffix}`), body: { ordinal: 0 } });
 if (sectionAttach.status !== 200 || !sectionAttach.body?.section?.offerIds?.includes(storeLocalOfferID)) fail("Storefront section offer attachment failed", JSON.stringify(sectionAttach));
 const proposalID = `proposal-${suffix}`;
-const proposalBody = { id: proposalID, verticalId: verticalID, categoryId: childCategoryID, proposedName: `Runtime Proposal ${suffix}`, proposedBrand: "Samrim", proposedVariantTitle: "الافتراضي", proposedMeasurementKind: "DISCRETE", proposedBaseUnit: "COUNT", proposedIdentifierType: "SKU", proposedIdentifierValue: `PROPOSAL-${suffix}`, proposedImageUri: "https://example.com/proposal.jpg" };
+const proposalBody = { id: proposalID, verticalId: verticalID, categoryId: childCategoryID, proposedName: `Runtime Proposal ${suffix}`, proposedBrand: "Samrim", proposedVariantTitle: "الافتراضي", proposedMeasurementKind: "DISCRETE", proposedBaseUnit: "COUNT", proposedIdentifierType: "SKU", proposedIdentifierValue: `PROPOSAL-${suffix}` };
 const proposalCreate = await request(dshBase, "POST", "/dsh/catalog/product-proposals", { token: first.accessToken, headers: partnerHeaders(`proposal-create-${suffix}`), body: proposalBody });
-if (proposalCreate.status !== 201 || proposalCreate.body?.proposal?.state !== "draft" || proposalCreate.body.proposal.version !== 1 || proposalCreate.body.proposal.proposedImageUri !== proposalBody.proposedImageUri) fail("Product proposal creation failed", JSON.stringify(proposalCreate));
+if (proposalCreate.status !== 201 || proposalCreate.body?.proposal?.state !== "draft" || proposalCreate.body.proposal.version !== 1 || Object.hasOwn(proposalCreate.body.proposal, "proposedImageUri")) fail("Product proposal creation failed or exposed a raw image URL", JSON.stringify(proposalCreate));
 proposalIDs.add(proposalID);
 const proposalOwnList = await collectCursorPages(dshBase, "/dsh/catalog/product-proposals?limit=1", { token: first.accessToken }, "proposals");
 const proposalSubmit = await request(dshBase, "POST", `/dsh/catalog/product-proposals/${proposalID}/submit`, { token: first.accessToken, headers: partnerHeaders(`proposal-submit-${suffix}`, 1) });
 const proposalCorrection = await request(dshBase, "POST", `/dsh/catalog/product-proposals/${proposalID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `proposal-correction-${suffix}`, crypto.randomUUID(), 2), body: { state: "needs_correction", reason: "صحح البيانات" } });
-const proposalUpdateBody = { verticalId: proposalBody.verticalId, categoryId: proposalBody.categoryId, proposedName: `Runtime Proposal Corrected ${suffix}`, proposedBrand: proposalBody.proposedBrand, proposedVariantTitle: proposalBody.proposedVariantTitle, proposedMeasurementKind: proposalBody.proposedMeasurementKind, proposedBaseUnit: proposalBody.proposedBaseUnit, variantAttributeValues: [{ attributeId: enumAttributeID, valueKind: "ENUM", enumValue: "Dark" }], proposedIdentifierType: proposalBody.proposedIdentifierType, proposedIdentifierValue: proposalBody.proposedIdentifierValue, proposedImageUri: proposalBody.proposedImageUri };
+const proposalUpdateBody = { verticalId: proposalBody.verticalId, categoryId: proposalBody.categoryId, proposedName: `Runtime Proposal Corrected ${suffix}`, proposedBrand: proposalBody.proposedBrand, proposedVariantTitle: proposalBody.proposedVariantTitle, proposedMeasurementKind: proposalBody.proposedMeasurementKind, proposedBaseUnit: proposalBody.proposedBaseUnit, variantAttributeValues: [{ attributeId: enumAttributeID, valueKind: "ENUM", enumValue: "Dark" }], proposedIdentifierType: proposalBody.proposedIdentifierType, proposedIdentifierValue: proposalBody.proposedIdentifierValue };
 const proposalUpdate = await request(dshBase, "PATCH", `/dsh/catalog/product-proposals/${proposalID}`, { token: first.accessToken, headers: partnerHeaders(`proposal-update-${suffix}`, 3), body: proposalUpdateBody });
 const proposalResubmit = await request(dshBase, "POST", `/dsh/catalog/product-proposals/${proposalID}/submit`, { token: first.accessToken, headers: partnerHeaders(`proposal-resubmit-${suffix}`, 4) });
 const proposalApprove = await request(dshBase, "POST", `/dsh/catalog/product-proposals/${proposalID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `proposal-approve-${suffix}`, crypto.randomUUID(), 5), body: { state: "approved", reason: "" } });
@@ -879,7 +950,7 @@ const proposalProductID = `proposal_product_${proposalID}`;
 productIDs.add(proposalProductID);
 const proposalProductRead = await collectCursorPages(dshBase, `/dsh/catalog/products?q=${encodeURIComponent(proposalUpdateBody.proposedName)}&verticalId=${encodeURIComponent(verticalID)}&limit=1`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } }, "products");
 const proposalReviewQueue = await collectCursorPages(dshBase, "/dsh/catalog/product-proposals/review-queue?state=approved&limit=1", { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } }, "proposals");
-if (proposalOwnList.status !== 200 || !proposalOwnList.body?.proposals?.some((item) => item.id === proposalID) || proposalSubmit.status !== 200 || proposalSubmit.body?.proposal?.state !== "submitted" || proposalCorrection.status !== 200 || proposalCorrection.body?.proposal?.state !== "needs_correction" || proposalUpdate.status !== 200 || proposalUpdate.body?.proposal?.state !== "draft" || proposalUpdate.body.proposal.version !== 4 || proposalUpdate.body.proposal.proposedImageUri !== proposalUpdateBody.proposedImageUri || proposalResubmit.status !== 200 || proposalResubmit.body?.proposal?.state !== "submitted" || proposalApprove.status !== 200 || proposalApprove.body?.proposal?.state !== "approved" || proposalApprove.body.proposal.version !== 6 || proposalProductRead.status !== 200 || !proposalProductRead.body?.products?.some((item) => item.id === proposalProductID && item.canonicalName === proposalUpdateBody.proposedName && item.media?.some((media) => media.role === "primary" && media.uri === proposalUpdateBody.proposedImageUri)) || proposalReviewQueue.status !== 200 || !proposalReviewQueue.body?.proposals?.some((item) => item.id === proposalID && item.state === "approved")) fail("Product proposal lifecycle and canonical adoption failed", JSON.stringify({ proposalOwnList, proposalSubmit, proposalCorrection, proposalUpdate, proposalResubmit, proposalApprove, proposalProductRead, proposalReviewQueue }));
+if (proposalOwnList.status !== 200 || !proposalOwnList.body?.proposals?.some((item) => item.id === proposalID) || proposalSubmit.status !== 200 || proposalSubmit.body?.proposal?.state !== "submitted" || proposalCorrection.status !== 200 || proposalCorrection.body?.proposal?.state !== "needs_correction" || proposalUpdate.status !== 200 || proposalUpdate.body?.proposal?.state !== "draft" || proposalUpdate.body.proposal.version !== 4 || Object.hasOwn(proposalUpdate.body.proposal, "proposedImageUri") || proposalResubmit.status !== 200 || proposalResubmit.body?.proposal?.state !== "submitted" || proposalApprove.status !== 200 || proposalApprove.body?.proposal?.state !== "approved" || proposalApprove.body.proposal.version !== 6 || proposalProductRead.status !== 200 || !proposalProductRead.body?.products?.some((item) => item.id === proposalProductID && item.canonicalName === proposalUpdateBody.proposedName && item.media?.length === 0) || proposalReviewQueue.status !== 200 || !proposalReviewQueue.body?.proposals?.some((item) => item.id === proposalID && item.state === "approved")) fail("Product proposal lifecycle and canonical adoption failed", JSON.stringify({ proposalOwnList, proposalSubmit, proposalCorrection, proposalUpdate, proposalResubmit, proposalApprove, proposalProductRead, proposalReviewQueue }));
 const importRunID = `import-${suffix}`;
 const importedName = `Runtime Imported ${suffix}`;
 const importSourceSha256 = crypto.createHash("sha256").update(importRunID).digest("hex");
@@ -964,12 +1035,16 @@ const fieldEarningCountAfterRepublish = sql(`SELECT count(*) FROM wlt.field_comm
 if (fieldHidden.status !== 200 || fieldPublicAfterHide.status !== 404 || fieldRepublished.status !== 200 || fieldSummaryAfterRepublish.status !== 200 || fieldSummaryAfterRepublish.body?.summary?.earnedMinor !== 7500 || fieldSummaryAfterRepublish.body?.summary?.storeCount !== 1 || fieldEarningCountAfterRepublish !== "1") fail("Field commission was reversed or duplicated across hide and republish", JSON.stringify({ fieldHidden, fieldPublicAfterHide, fieldRepublished, fieldSummaryAfterRepublish, fieldEarningCountAfterRepublish }));
 console.log("DSH_FIELD_COMMISSION_PUBLICATION=PASS");
 const publicCatalog = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}&categoryId=${encodeURIComponent(childCategoryID)}&q=${encodeURIComponent(productInput.canonicalName)}`);
-const publicWrongCategory = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}&categoryId=${encodeURIComponent(categoryID)}`);
+const publicParentCategory = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}&categoryId=${encodeURIComponent(categoryID)}`);
+const publicWrongCategory = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}&categoryId=${encodeURIComponent(unrelatedCategoryID)}`);
 const publicWrongCity = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityB)}`);
-const productMediaCleanup = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/media`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `product-media-upload-cleanup-${suffix}`, crypto.randomUUID(), 3), body: { media: [] } });
+const productMediaCleanup = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/media`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `product-media-upload-cleanup-${suffix}`, crypto.randomUUID(), 5), body: { media: [] } });
+const deletedAssetCountQuery = `SELECT count(*) FROM dsh.catalog_media_assets WHERE product_id='${sqlLiteral(productID)}' AND state='deleted'`;
+await waitForSQL(deletedAssetCountQuery, "2", "retired Product media assets were not removed from local storage", 60_000);
+const uploadedAssetsDeleted = sql(deletedAssetCountQuery);
 const uploadedImageAfterCleanup = uploadedURI ? await fetch(uploadedURI, { headers: { Accept: "image/png" }, signal: AbortSignal.timeout(8_000) }) : null;
-const uploadedAssetState = sql(`SELECT state FROM dsh.catalog_media_assets WHERE product_id='${sqlLiteral(productID)}' ORDER BY created_at DESC LIMIT 1`);
-if (publicCatalog.status !== 200 || publicCatalog.body?.offers?.length !== 1 || publicCatalog.body.offers[0].offerId !== offerAID || publicCatalog.body.offers[0].productName !== productInput.canonicalName || !publicCatalog.body.offers[0].media?.some((media) => media.role === "primary" && media.uri === uploadedURI) || !publicCatalog.body.offers[0].media?.some((media) => media.role === "gallery" && media.uri === "https://example.com/runtime-coffee-gallery.jpg") || publicWrongCategory.status !== 200 || publicWrongCategory.body?.offers?.length !== 0 || publicWrongCity.status !== 404 || productMediaCleanup.status !== 200 || productMediaCleanup.body?.product?.version !== 4 || productMediaCleanup.body?.product?.media?.length !== 0 || uploadedImageAfterCleanup?.status !== 404 || uploadedAssetState !== "deleted") fail("customer-visible catalog evaluator, media, city/category scope, or media cleanup failed", JSON.stringify({ publicCatalog, publicWrongCategory, publicWrongCity, productMediaCleanup, uploadedURI, uploadedAssetState, uploadedImageAfterCleanup: uploadedImageAfterCleanup?.status }));
+const uploadedGalleryAfterCleanup = uploadedGalleryURI ? await fetch(uploadedGalleryURI, { headers: { Accept: "image/png" }, signal: AbortSignal.timeout(8_000) }) : null;
+if (publicCatalog.status !== 200 || publicCatalog.body?.offers?.length !== 1 || publicCatalog.body.offers[0].offerId !== offerAID || publicCatalog.body.offers[0].productName !== productInput.canonicalName || !publicCatalog.body.offers[0].media?.some((media) => media.role === "primary" && media.uri === uploadedURI) || !publicCatalog.body.offers[0].media?.some((media) => media.role === "gallery" && media.uri === uploadedGalleryURI) || !publicCatalog.body?.categories?.some((category) => category.id === categoryID) || !publicCatalog.body?.categories?.some((category) => category.id === childCategoryID) || publicParentCategory.status !== 200 || publicParentCategory.body?.offers?.length !== 1 || publicParentCategory.body.offers[0].offerId !== offerAID || publicWrongCategory.status !== 200 || publicWrongCategory.body?.offers?.length !== 0 || publicWrongCity.status !== 404 || productMediaCleanup.status !== 200 || productMediaCleanup.body?.product?.version !== 6 || productMediaCleanup.body?.product?.media?.length !== 0 || uploadedAssetsDeleted !== "2" || uploadedImageAfterCleanup?.status !== 404 || uploadedGalleryAfterCleanup?.status !== 404) fail("customer-visible catalog evaluator, hierarchy, media, city/category scope, or media cleanup failed", JSON.stringify({ publicCatalog, publicParentCategory, publicWrongCategory, publicWrongCity, productMediaCleanup, uploadedURI, uploadedGalleryURI, uploadedAssetsDeleted, uploadedImageAfterCleanup: uploadedImageAfterCleanup?.status, uploadedGalleryAfterCleanup: uploadedGalleryAfterCleanup?.status }));
 const publicStores = await request(dshBase, "GET", `/dsh/public/stores?serviceCityId=${encodeURIComponent(cityA)}`);
 if (publicStores.status !== 200 || !publicStores.body?.stores?.some((store) => store.id === first.storeID) || publicStores.body.stores.find((store) => store.id === first.storeID)?.partnerActorId) fail("public Store projection leaked or omitted the eligible store", JSON.stringify(publicStores));
 console.log("DSH_CUSTOMER_VISIBLE_CATALOG=PASS");
@@ -1092,12 +1167,9 @@ const promotionID = String(promotionCreate.body.promotion.id); promotionIDs.add(
 const promotionPublish = await request(dshBase, "POST", `/dsh/operator/promotions/${encodeURIComponent(promotionID)}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `marketing-promotion-publish-${suffix}`, crypto.randomUUID(), promotionCreate.body.promotion.version), body: { state: "PUBLISHED" } });
 const promotionPublic = await request(dshBase, "GET", `/dsh/public/promotions?serviceCityId=${encodeURIComponent(cityA)}&storeId=${encodeURIComponent(first.storeID)}`);
 if (promotionPublish.status !== 201 || promotionPublish.body?.promotion?.state !== "PUBLISHED" || promotionPublic.status !== 200 || !promotionPublic.body?.promotions?.some((item) => item.id === promotionID && item.code === promotionCode && item.state === "PUBLISHED")) fail("promotion publication/public readback failed", JSON.stringify({ promotionCreate, promotionPublish, promotionPublic }));
-const contentCreate = await request(dshBase, "POST", "/dsh/operator/discovery-content", { token: dshToken, headers: serviceHeaders(actingOperatorID, `marketing-content-create-${suffix}`), body: { id: `content-${suffix}`, kind: "BANNER", titleAr: `اكتشاف ${suffix}`, bodyAr: "محتوى تجريبي منشور", targetType: "INFO", serviceCityId: cityA, startsAt: new Date(Date.now() - 60_000).toISOString(), ordinal: 0 } });
-if (contentCreate.status !== 201 || contentCreate.body?.content?.state !== "DRAFT") fail("discovery content draft creation failed", JSON.stringify(contentCreate));
-const contentID = String(contentCreate.body.content.id); contentIDs.add(contentID);
-const contentPublish = await request(dshBase, "POST", `/dsh/operator/discovery-content/${encodeURIComponent(contentID)}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `marketing-content-publish-${suffix}`, crypto.randomUUID(), contentCreate.body.content.version), body: { state: "PUBLISHED" } });
-const contentPublic = await request(dshBase, "GET", `/dsh/public/discovery-content?serviceCityId=${encodeURIComponent(cityA)}`);
-if (contentPublish.status !== 201 || contentPublish.body?.content?.state !== "PUBLISHED" || contentPublic.status !== 200 || !contentPublic.body?.items?.some((item) => item.id === contentID && item.titleAr === `اكتشاف ${suffix}` && item.state === "PUBLISHED")) fail("discovery content publication/public readback failed", JSON.stringify({ contentCreate, contentPublish, contentPublic }));
+const contentRawURI = await request(dshBase, "POST", "/dsh/operator/discovery-content", { token: dshToken, headers: serviceHeaders(actingOperatorID, `marketing-content-raw-uri-${suffix}`), body: { id: `content-raw-uri-${suffix}`, kind: "BANNER", titleAr: `اكتشاف ${suffix}`, bodyAr: "محتوى تجريبي", mediaUri: "https://example.com/banner.png", targetType: "INFO", serviceCityId: cityA, startsAt: new Date(Date.now() - 60_000).toISOString(), ordinal: 0 } });
+const contentRawURIRead = await request(dshBase, "GET", `/dsh/operator/discovery-content?search=${encodeURIComponent(`content-raw-uri-${suffix}`)}&limit=10`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+if (contentRawURI.status !== 400 || contentRawURI.body?.error?.code !== "INVALID_INPUT" || contentRawURIRead.status !== 200 || contentRawURIRead.body?.items?.some((item) => item.id === `content-raw-uri-${suffix}`)) fail("discovery content accepted or persisted a raw media URL", JSON.stringify({ contentRawURI, contentRawURIRead }));
 
 const promotionCartCreate = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`marketing-cart-${suffix}`, 0), body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
 if (promotionCartCreate.status !== 201 || !promotionCartCreate.body?.cart?.id) fail("promotion checkout cart fixture failed", JSON.stringify(promotionCartCreate));
@@ -1789,5 +1861,13 @@ try {
 if (outageFailure) fail(outageFailure);
 await waitForIdentityReady();
 console.log("DSH_IDENTITY_FAILURE_RECOVERY=PASS");
+try {
+  cleanup();
+  console.log("DSH_RUNTIME_CLEANUP=PASS");
+} catch (error) {
+  console.error(`DSH_RUNTIME_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`);
+  process.exitCode = 1;
+  throw error;
+}
 console.log("DSH_RUNTIME=PASS");
 process.exit(0);

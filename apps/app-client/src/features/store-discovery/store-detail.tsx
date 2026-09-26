@@ -13,6 +13,19 @@ type DetailState =
   | { kind: "ready"; store: PublicStoreView; catalog: PublicCatalogResponse }
   | { kind: "error" };
 
+function categoryTrail(categoryId: string, categories: PublicCatalogResponse["categories"]): ReadonlyArray<PublicCatalogResponse["categories"][number]> {
+  const byId = new Map(categories.map((category) => [category.id, category]));
+  const trail: Array<PublicCatalogResponse["categories"][number]> = [];
+  const visited = new Set<string>();
+  let current = byId.get(categoryId);
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id);
+    trail.unshift(current);
+    current = current.parentCategoryId ? byId.get(current.parentCategoryId) : undefined;
+  }
+  return trail;
+}
+
 export default function ClientStoreDetail({ storeId, categoryId = "", productId = "" }: { storeId: string; categoryId?: string; productId?: string }) {
   const router = useRouter();
   const { selectedCityID } = useServiceCityScope();
@@ -116,6 +129,12 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر قراءة المتجر</Text><Text style={styles.muted}>قد لا يكون المتجر متاحًا في مدينة الخدمة الحالية.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /><BthwaniButton label="العودة" onPress={() => router.back()} variant="secondary" /></View>;
   }
 
+  const activeCatalogCategories = state.catalog.categories.filter((category) => category.active);
+  const selectedCategory = activeCatalogCategories.find((category) => category.id === selectedCategoryID);
+  const selectedCategoryTrail = selectedCategory ? categoryTrail(selectedCategory.id, activeCatalogCategories) : [];
+  const categoryChildren = selectedCategory
+    ? activeCatalogCategories.filter((category) => category.parentCategoryId === selectedCategory.id)
+    : activeCatalogCategories.filter((category) => !category.parentCategoryId);
   const activeSections = state.catalog.sections.filter((section) => section.active);
   const sectionOfferIds = new Set(activeSections.flatMap((section) => section.offerIds));
   const visibleSections = selectedSectionID ? activeSections.filter((section) => section.id === selectedSectionID) : activeSections;
@@ -333,11 +352,12 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       {!favoritesView ? <View style={styles.searchActions}>
         <BthwaniButton disabled={catalogRefreshing || loadingMore} label="بحث" onPress={() => void reloadCatalog(selectedCategoryID, catalogQuery)} style={styles.searchButton} variant="secondary" />
       </View> : null}
-      {!favoritesView && state.catalog.categories.filter((category) => category.active).length > 0 ? <>
+      {!favoritesView && activeCatalogCategories.length > 0 ? <>
         <Text style={styles.filterLabel}>التصنيفات</Text>
         <ScrollView horizontal contentContainerStyle={styles.sectionChips} showsHorizontalScrollIndicator={false}>
           <BthwaniChip label="كل التصنيفات" selected={!selectedCategoryID} onPress={() => void reloadCatalog(null, catalogQuery)} />
-          {state.catalog.categories.filter((category) => category.active).map((category) => <BthwaniChip key={category.id} label={category.nameAr} selected={selectedCategoryID === category.id} onPress={() => void reloadCatalog(category.id, catalogQuery)} />)}
+          {selectedCategoryTrail.map((category, index) => <BthwaniChip key={category.id} label={category.nameAr} selected={index === selectedCategoryTrail.length - 1} onPress={() => void reloadCatalog(category.id, catalogQuery)} />)}
+          {categoryChildren.map((category) => <BthwaniChip key={category.id} label={category.nameAr} selected={selectedCategoryID === category.id} onPress={() => void reloadCatalog(category.id, catalogQuery)} />)}
         </ScrollView>
       </> : null}
       {!favoritesView && state.catalog.sections.filter((section) => section.active).length > 0 ? <>

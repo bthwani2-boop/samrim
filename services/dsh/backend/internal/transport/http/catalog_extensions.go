@@ -34,6 +34,27 @@ func catalogAttributeInputs(values []catalogAttributeValueRequest) []postgres.Ca
 	return inputs
 }
 
+func catalogAttributeInputsFromContract(values []contract.CatalogAttributeValueInput) []postgres.CatalogAttributeValueInput {
+	inputs := make([]postgres.CatalogAttributeValueInput, 0, len(values))
+	for _, value := range values {
+		var integerValue *int64
+		if value.IntegerValue != nil {
+			converted := int64(*value.IntegerValue)
+			integerValue = &converted
+		}
+		inputs = append(inputs, postgres.CatalogAttributeValueInput{AttributeID: value.AttributeID, ValueKind: value.ValueKind, TextValue: value.TextValue, IntegerValue: integerValue, DecimalValue: value.DecimalValue, BooleanValue: value.BooleanValue, EnumValue: value.EnumValue, DateValue: value.DateValue, MeasurementUnit: value.MeasurementUnit})
+	}
+	return inputs
+}
+
+func catalogVariantAttributeValueSets(values []contract.CatalogVariantAttributeValueSet) []postgres.CatalogVariantAttributeValueSet {
+	sets := make([]postgres.CatalogVariantAttributeValueSet, 0, len(values))
+	for _, value := range values {
+		sets = append(sets, postgres.CatalogVariantAttributeValueSet{VariantID: value.VariantID, Values: catalogAttributeInputsFromContract(value.Values)})
+	}
+	return sets
+}
+
 func (s *CatalogServer) listAttributeDefinitions(w http.ResponseWriter, r *http.Request) {
 	if !s.auth.Authorized(r) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")

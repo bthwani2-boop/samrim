@@ -185,7 +185,7 @@ paths:
         - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateDiscoveryContentRequest" } } }
+        content: { multipart/form-data: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateDiscoveryContentUploadRequest" } } }
       responses:
         "201": { description: Discovery content created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/DiscoveryContentResponse" } } } }
         "200": { description: Idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/DiscoveryContentResponse" } } } }

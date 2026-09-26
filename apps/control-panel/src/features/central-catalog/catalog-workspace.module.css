@@ -1,5 +1,17 @@
 /* Owner-scoped presentation for this control-panel area. */
 :global(.central-product-form) { display: grid; gap: 4px; }
+:global(.catalog-product-category-picker) { display: grid; gap: 10px; min-width: 0; margin: 4px 0 12px; padding: 14px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }
+:global(.catalog-product-category-picker legend) { padding-inline: 6px; color: var(--color-primary); font-weight: 700; }
+:global(.catalog-product-category-picker > p) { margin: 0; }
+:global(.catalog-product-category-list) { display: grid; gap: 6px; max-height: 280px; overflow: auto; margin: 0; padding: 0; list-style: none; }
+:global(.catalog-product-category-option) { display: flex; min-height: 46px; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--surface-base); cursor: pointer; }
+:global(.catalog-product-category-option input) { width: 18px; height: 18px; flex: 0 0 auto; accent-color: var(--action-bg); }
+:global(.catalog-product-category-option span) { display: grid; min-width: 0; gap: 2px; }
+:global(.catalog-product-category-option small) { color: var(--text-muted); }
+:global(.catalog-product-category-option.is-inactive) { opacity: .72; }
+:global(.catalog-product-category-picker :focus-visible) { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
+:global(.catalog-variant-attributes) { display: grid; gap: 8px; min-width: 0; margin: 6px 0; padding: 10px 12px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); }
+:global(.catalog-variant-attributes legend) { padding-inline: 6px; color: var(--text-muted); font-weight: 700; }
 :global(.central-active-toggle) { display: flex; align-items: center; gap: 9px; margin: 2px 0 12px; color: var(--color-primary); font-size: 13px; font-weight: 700; }
 :global(.central-active-toggle input) { width: 18px; height: 18px; accent-color: var(--action-bg); }
 
@@ -36,6 +48,9 @@
 :global(.catalog-registry-table input[type="checkbox"]) { width: 16px; height: 16px; accent-color: var(--action-bg); }
 :global(.catalog-registry-table td strong), :global(.catalog-registry-table td small) { display: block; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
 :global(.catalog-registry-table td small) { margin-top: 3px; color: var(--text-muted); font-size: 11px; }
+:global(.catalog-registry-product) { display: flex; align-items: center; gap: 10px; min-width: 210px; }
+:global(.catalog-registry-product > span:last-child) { display: grid; min-width: 0; }
+:global(.catalog-registry-product-image), :global(.catalog-registry-product-placeholder) { display: grid; width: 42px; height: 42px; flex: 0 0 42px; place-items: center; overflow: hidden; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--surface-muted); object-fit: cover; color: var(--interactive-text); font-weight: 800; }
 :global(.catalog-state-pill) { display: inline-flex; min-width: 54px; justify-content: center; border-radius: 999px; padding: 4px 9px; font-size: 11px; font-weight: 800; }
 :global(.catalog-state-pill.is-active) { background: color-mix(in srgb, var(--success) 12%, transparent); color: var(--success); }
 :global(.catalog-state-pill.is-inactive) { background: color-mix(in srgb, var(--warning) 13%, transparent); color: var(--warning); }
@@ -43,6 +58,9 @@
 :global(.catalog-table-state) { height: 100px !important; color: var(--text-muted) !important; text-align: center; }
 :global(.catalog-load-more) { width: auto; justify-self: center; }
 :global(.central-catalog-editor) { grid-template-columns: 1fr; }
+:global(.catalog-product-media-gallery) { display: flex; flex-wrap: wrap; gap: 12px; margin-block: 8px 14px; }
+:global(.catalog-product-media-gallery figure) { width: min(180px, 100%); margin: 0; }
+:global(.catalog-product-media-gallery figcaption) { margin-top: 6px; color: var(--text-muted); font-size: 12px; }
 
 @media (max-width: 1100px) {
   :global(.catalog-registry-toolbar) { grid-template-columns: repeat(3, minmax(130px, 1fr)); }

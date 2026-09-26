@@ -20,6 +20,7 @@ type CatalogProductRegistryItem struct {
 	Brand, PrimaryImageURI        *string
 	Active                        bool
 	Version, VariantCount         int
+	StoreCount                    int
 	CategoryIDs                   []string
 	CreatedAt, UpdatedAt          time.Time
 }
@@ -60,7 +61,7 @@ func ListCatalogProductRegistry(ctx context.Context, db *sql.DB, query, vertical
 		return CatalogProductRegistryPage{}, err
 	}
 	args := []any{query, verticalID, categoryID, active}
-	where := `p.scope='SHARED' AND cv.catalog_model='SHARED_CATALOG' AND ($1='' OR p.canonical_name ILIKE '%'||$1||'%' OR COALESCE(p.brand,'') ILIKE '%'||$1||'%') AND ($2='' OR p.vertical_id=$2) AND ($3='' OR EXISTS (SELECT 1 FROM dsh.catalog_product_categories pc WHERE pc.product_id=p.id AND pc.category_id=$3)) AND ($4='all' OR p.active=($4='active'))`
+	where := `p.scope='SHARED' AND cv.catalog_model='SHARED_CATALOG' AND ($1='' OR p.canonical_name ILIKE '%'||$1||'%' OR COALESCE(p.brand,'') ILIKE '%'||$1||'%') AND ($2='' OR p.vertical_id=$2) AND ($3='' OR EXISTS (WITH RECURSIVE category_subtree(id) AS (SELECT c.id FROM dsh.catalog_categories c WHERE c.id=$3 AND c.vertical_id=p.vertical_id AND c.active=true UNION SELECT child.id FROM dsh.catalog_categories child JOIN category_subtree parent ON child.parent_category_id=parent.id WHERE child.vertical_id=p.vertical_id AND child.active=true) SELECT 1 FROM dsh.catalog_product_categories pc JOIN category_subtree subtree ON subtree.id=pc.category_id WHERE pc.product_id=p.id)) AND ($4='all' OR p.active=($4='active'))`
 	if cursor != nil {
 		args = append(args, cursor.Value, cursor.ProductID)
 		valueArg, idArg := len(args)-1, len(args)
@@ -93,7 +94,8 @@ func ListCatalogProductRegistry(ctx context.Context, db *sql.DB, query, vertical
 		order = `p.updated_at ASC,p.id ASC`
 	}
 	args = append(args, limit+1)
-	rows, err := db.QueryContext(ctx, `SELECT p.id,p.vertical_id,p.canonical_name,p.brand,p.active,p.version,COUNT(DISTINCT v.id),ARRAY(SELECT pc.category_id FROM dsh.catalog_product_categories pc WHERE pc.product_id=p.id ORDER BY pc.category_id), (SELECT ma.uri FROM dsh.catalog_media_assets ma WHERE ma.product_id=p.id AND ma.state='active' AND ma.media_role='primary' ORDER BY ma.created_at DESC LIMIT 1),p.created_at,p.updated_at FROM dsh.catalog_products p JOIN dsh.commerce_verticals cv ON cv.id=p.vertical_id LEFT JOIN dsh.catalog_product_variants v ON v.product_id=p.id WHERE `+where+` GROUP BY p.id ORDER BY `+order+` LIMIT $`+strconv.Itoa(len(args)), args...)
+	visibleOfferConditions := strings.Join(customerVisibleOfferConditionsForAliases("o", "sv", "sp", "s"), " AND ")
+	rows, err := db.QueryContext(ctx, `SELECT p.id,p.vertical_id,p.canonical_name,p.brand,p.active,p.version,COUNT(DISTINCT v.id),ARRAY(SELECT pc.category_id FROM dsh.catalog_product_categories pc WHERE pc.product_id=p.id ORDER BY pc.category_id), (SELECT cm.uri FROM dsh.catalog_media cm JOIN dsh.catalog_media_assets ma ON ma.product_id=cm.product_id AND ma.uri=cm.uri AND ma.state='active' WHERE cm.product_id=p.id AND cm.media_role='primary' ORDER BY cm.ordinal LIMIT 1), (SELECT COUNT(DISTINCT o.store_id) FROM dsh.catalog_store_offers o JOIN dsh.catalog_product_variants sv ON sv.id=o.variant_id JOIN dsh.catalog_products sp ON sp.id=sv.product_id JOIN dsh.stores s ON s.id=o.store_id WHERE sp.id=p.id AND `+visibleOfferConditions+`),p.created_at,p.updated_at FROM dsh.catalog_products p JOIN dsh.commerce_verticals cv ON cv.id=p.vertical_id LEFT JOIN dsh.catalog_product_variants v ON v.product_id=p.id WHERE `+where+` GROUP BY p.id ORDER BY `+order+` LIMIT $`+strconv.Itoa(len(args)), args...)
 	if err != nil {
 		return CatalogProductRegistryPage{}, err
 	}
@@ -102,7 +104,7 @@ func ListCatalogProductRegistry(ctx context.Context, db *sql.DB, query, vertical
 	for rows.Next() {
 		var item CatalogProductRegistryItem
 		var categories pq.StringArray
-		if err := rows.Scan(&item.ID, &item.VerticalID, &item.CanonicalName, &item.Brand, &item.Active, &item.Version, &item.VariantCount, &categories, &item.PrimaryImageURI, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.VerticalID, &item.CanonicalName, &item.Brand, &item.Active, &item.Version, &item.VariantCount, &categories, &item.PrimaryImageURI, &item.StoreCount, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return CatalogProductRegistryPage{}, err
 		}
 		item.CategoryIDs = []string(categories)

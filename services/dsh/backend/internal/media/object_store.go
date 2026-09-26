@@ -158,7 +158,7 @@ func (s *S3Store) PublicURL(objectKey string) string {
 
 func ValidateObjectKey(objectKey string) error {
 	clean := path.Clean(strings.TrimSpace(objectKey))
-	if clean != objectKey || (!strings.HasPrefix(objectKey, "catalog/products/") && !strings.HasPrefix(objectKey, "store-profile/assets/") && !strings.HasPrefix(objectKey, "marketing/discovery-content/")) || strings.Contains(objectKey, "\\") || strings.Contains(objectKey, "..") || len(objectKey) > 512 {
+	if clean != objectKey || (!strings.HasPrefix(objectKey, "catalog/products/") && !strings.HasPrefix(objectKey, "catalog/categories/") && !strings.HasPrefix(objectKey, "store-profile/assets/") && !strings.HasPrefix(objectKey, "marketing/discovery-content/")) || strings.Contains(objectKey, "\\") || strings.Contains(objectKey, "..") || len(objectKey) > 512 {
 		return ErrInvalidObjectKey
 	}
 	for _, segment := range strings.Split(objectKey, "/") {
@@ -191,6 +191,18 @@ func KeyForUpload(productID, idempotencyKey, contentSHA256, contentType string) 
 		extension = "png"
 	}
 	return fmt.Sprintf("catalog/products/%s/uploads/%s-%s.%s", productID, hex.EncodeToString(keyHash[:]), contentSHA256, extension), nil
+}
+
+func KeyForCategoryUpload(categoryID, idempotencyKey, contentSHA256, contentType string) (string, error) {
+	if !validPathSegment(categoryID) || !validPathSegment(contentSHA256) || len(contentSHA256) != 64 || !validContentType(contentType) {
+		return "", ErrInvalidObjectKey
+	}
+	keyHash := sha256.Sum256([]byte(idempotencyKey))
+	extension := "jpg"
+	if contentType == "image/png" {
+		extension = "png"
+	}
+	return fmt.Sprintf("catalog/categories/%s/uploads/%s-%s.%s", categoryID, hex.EncodeToString(keyHash[:]), contentSHA256, extension), nil
 }
 
 func KeyForMarketingUpload(contentID, idempotencyKey, contentSHA256, contentType string) (string, error) {

@@ -186,5 +186,21 @@ func (s *Service) ReconcileMediaStorage(ctx context.Context) error {
 			firstErr = err
 		}
 	}
+	categoryAssets, err := postgres.ListCatalogCategoryMediaAssetsForCleanup(ctx, s.db, 100)
+	if err != nil {
+		return err
+	}
+	for _, asset := range categoryAssets {
+		if err := s.media.Delete(ctx, asset.ObjectKey); err != nil {
+			_ = postgres.MarkCatalogCategoryMediaAssetCleanupFailure(ctx, s.db, asset.ID, err.Error())
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if err := postgres.MarkCatalogCategoryMediaAssetDeleted(ctx, s.db, asset.ID); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
 	return firstErr
 }

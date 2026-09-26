@@ -266,34 +266,34 @@ func (s *MarketingServer) createOperatorDiscoveryContent(w http.ResponseWriter, 
 	}
 	var input contract.CreateDiscoveryContentRequest
 	var uploadedObjectKey string
-	if strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "multipart/form-data") {
-		if s.media == nil {
-			writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "media storage is unavailable")
-			return
-		}
-		parsed, ok := parseMarketingContentUpload(w, r)
-		if !ok {
-			return
-		}
-		input = parsed.input
-		digest := sha256Bytes(parsed.bytes)
-		objectKey, keyErr := media.KeyForMarketingUpload(input.ID, idempotency, digest, parsed.contentType)
-		if keyErr != nil {
-			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "marketing image upload is invalid")
-			return
-		}
-		if err := s.media.Put(r.Context(), objectKey, bytes.NewReader(parsed.bytes), int64(len(parsed.bytes)), parsed.contentType); err != nil {
-			writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "marketing media upload failed")
-			return
-		}
-		uploadedObjectKey = objectKey
-		input.MediaUri = s.media.PublicURL(objectKey)
-	} else if !decodeJSON(w, r, &input) {
+	if !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "multipart/form-data") {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "discovery content requires a canonical image file upload")
 		return
 	}
+	if s.media == nil {
+		writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "media storage is unavailable")
+		return
+	}
+	parsed, ok := parseMarketingContentUpload(w, r)
+	if !ok {
+		return
+	}
+	input = parsed.input
+	digest := sha256Bytes(parsed.bytes)
+	objectKey, keyErr := media.KeyForMarketingUpload(input.ID, idempotency, digest, parsed.contentType)
+	if keyErr != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "marketing image upload is invalid")
+		return
+	}
+	if err := s.media.Put(r.Context(), objectKey, bytes.NewReader(parsed.bytes), int64(len(parsed.bytes)), parsed.contentType); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "marketing media upload failed")
+		return
+	}
+	uploadedObjectKey = objectKey
+	uploadedMediaURI := s.media.PublicURL(objectKey)
 	item, replayed, err := postgres.CreateDiscoveryContent(r.Context(), s.db, postgres.DiscoveryContentInput{
-		ID: input.ID, Kind: string(input.Kind), TitleAr: input.TitleAr, BodyAr: input.BodyAr, MediaURI: input.MediaUri, TargetType: string(input.TargetType), TargetID: input.TargetID, ServiceCityID: input.ServiceCityID, StartsAt: input.StartsAt, EndsAt: input.EndsAt, Ordinal: input.Ordinal, CreatedByActorID: acting,
-	}, idempotency, postgres.HashMarketingFacts("discovery-content-create", input.ID, string(input.Kind), input.TitleAr, input.BodyAr, input.MediaUri, string(input.TargetType), input.TargetID, input.ServiceCityID, input.StartsAt.UTC().Format(time.RFC3339Nano), optionalTimeString(input.EndsAt), fmt.Sprint(input.Ordinal), correlation))
+		ID: input.ID, Kind: string(input.Kind), TitleAr: input.TitleAr, BodyAr: input.BodyAr, MediaURI: uploadedMediaURI, TargetType: string(input.TargetType), TargetID: input.TargetID, ServiceCityID: input.ServiceCityID, StartsAt: input.StartsAt, EndsAt: input.EndsAt, Ordinal: input.Ordinal, CreatedByActorID: acting,
+	}, idempotency, postgres.HashMarketingFacts("discovery-content-create", input.ID, string(input.Kind), input.TitleAr, input.BodyAr, uploadedMediaURI, string(input.TargetType), input.TargetID, input.ServiceCityID, input.StartsAt.UTC().Format(time.RFC3339Nano), optionalTimeString(input.EndsAt), fmt.Sprint(input.Ordinal), correlation))
 	if err != nil {
 		if uploadedObjectKey != "" {
 			_ = s.media.Delete(r.Context(), uploadedObjectKey)

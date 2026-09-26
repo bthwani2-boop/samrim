@@ -51,6 +51,9 @@ paths:
   /dsh/catalog/categories/{categoryId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1categories~1{categoryId}"
 
+  /dsh/catalog/categories/{categoryId}/media/upload:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1categories~1{categoryId}~1media~1upload"
+
   /dsh/catalog/attributes:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1attributes"
 
@@ -1548,6 +1551,18 @@ components:
           nullable: true
           x-go-pointer: true
 
+    CatalogVariantAttributeValueSet:
+      type: object
+      required: [variantId, values]
+      additionalProperties: false
+      properties:
+        variantId:
+          type: string
+        values:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogAttributeValueInput"
+
     CatalogAttributeDefinition:
       type: object
       required: [id, verticalId, code, nameAr, valueKind, active, filterable, version]
@@ -1926,10 +1941,6 @@ components:
           type: string
           nullable: true
           maxLength: 128
-        imageUri:
-          type: string
-          nullable: true
-          maxLength: 2048
 
     UpdateCatalogProductRequest:
       type: object
@@ -1957,6 +1968,18 @@ components:
           maxLength: 160
         active:
           type: boolean
+        categoryIds:
+          type: array
+          items:
+            type: string
+        attributeValues:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogAttributeValueInput"
+        variantAttributeValues:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogVariantAttributeValueSet"
 
     ReplaceCatalogProductMediaRequest:
       type: object
@@ -1980,6 +2003,19 @@ components:
         file:
           type: string
           format: binary
+
+    UploadCatalogCategoryMediaRequest:
+      type: object
+      required: [file, reason]
+      additionalProperties: false
+      properties:
+        file:
+          type: string
+          format: binary
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
 
     CatalogProductResponse:
       type: object
@@ -2006,7 +2042,7 @@ components:
 
     CatalogProductRegistryItem:
       type: object
-      required: [id, verticalId, canonicalName, active, version, variantCount, categoryIds, createdAt, updatedAt]
+      required: [id, verticalId, canonicalName, active, version, variantCount, storeCount, categoryIds, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -2023,6 +2059,9 @@ components:
         version:
           type: integer
         variantCount:
+          type: integer
+          minimum: 0
+        storeCount:
           type: integer
           minimum: 0
         categoryIds:
@@ -2143,10 +2182,6 @@ components:
           type: string
           nullable: true
           maxLength: 128
-        proposedImageUri:
-          type: string
-          nullable: true
-          maxLength: 2048
         attributeValues:
           type: array
           items:
@@ -2201,10 +2236,6 @@ components:
           type: string
           nullable: true
           maxLength: 128
-        proposedImageUri:
-          type: string
-          nullable: true
-          maxLength: 2048
         attributeValues:
           type: array
           items:
@@ -2263,10 +2294,6 @@ components:
           type: string
           nullable: true
           maxLength: 128
-        imageUri:
-          type: string
-          nullable: true
-          maxLength: 2048
         attributeValues:
           type: array
           items:
@@ -2415,9 +2442,6 @@ components:
           type: string
           nullable: true
         proposedIdentifierValue:
-          type: string
-          nullable: true
-        proposedImageUri:
           type: string
           nullable: true
         attributeValues:
@@ -2908,6 +2932,9 @@ components:
           type: string
         nameEn:
           type: string
+        imageUri:
+          type: string
+          nullable: true
         active:
           type: boolean
         version:
@@ -6385,9 +6412,6 @@ components:
         bodyAr:
           type: string
           maxLength: 1000
-        mediaUri:
-          type: string
-          maxLength: 2048
         targetType:
           $ref: "#/components/schemas/DiscoveryContentTargetType"
         targetId:
@@ -6403,6 +6427,45 @@ components:
           type: string
           format: date-time
           nullable: true
+        ordinal:
+          type: integer
+          minimum: 0
+
+    CreateDiscoveryContentUploadRequest:
+      type: object
+      required: [id, kind, titleAr, file, targetType, startsAt, ordinal]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        kind:
+          $ref: "#/components/schemas/DiscoveryContentKind"
+        titleAr:
+          type: string
+          minLength: 2
+          maxLength: 160
+        bodyAr:
+          type: string
+          maxLength: 1000
+        file:
+          type: string
+          format: binary
+        targetType:
+          $ref: "#/components/schemas/DiscoveryContentTargetType"
+        targetId:
+          type: string
+          maxLength: 128
+        serviceCityId:
+          type: string
+          maxLength: 128
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
         ordinal:
           type: integer
           minimum: 0

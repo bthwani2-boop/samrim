@@ -15,15 +15,18 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const verticalId = params.get("verticalId")?.trim() ?? "";
   const includeInactive = params.get("includeInactive") === "true";
+  const query = params.get("query")?.trim() ?? "";
+  const status = params.get("status")?.trim() ?? "";
   if (!verticalId) return errorResponse("INVALID_INPUT", "verticalId is required", 400);
+  if (query.length > 160 || (status && !["all", "active", "inactive"].includes(status))) return errorResponse("INVALID_INPUT", "category search or status filter is invalid", 400);
   try {
-    if (!includeInactive) return NextResponse.json(await listCatalogCategories(verticalId), { headers: { "Cache-Control": "no-store" } });
+    if (!includeInactive && !query && !status) return NextResponse.json(await listCatalogCategories(verticalId), { headers: { "Cache-Control": "no-store" } });
     const identity = await readOperatorSession();
     if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
     if (identity.role !== "operator") return errorResponse("FORBIDDEN", "control operator access is required", 403);
     const permissionDenied = operatorWorkspacePermissionDenied(identity, "catalog");
     if (permissionDenied) return permissionDenied;
-    return NextResponse.json(await listCatalogCategories(verticalId, true, { operatorActorId: identity.subject }), { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(await listCatalogCategories(verticalId, includeInactive, { operatorActorId: identity.subject }, query, status), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (!isDshClientError(error)) return errorResponse("INTERNAL_ERROR", "catalog category lookup failed", 500);
     const payload = dshErrorPayload(error);

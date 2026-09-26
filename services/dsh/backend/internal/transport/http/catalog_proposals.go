@@ -58,7 +58,7 @@ func (s *CatalogServer) createProductProposal(w http.ResponseWriter, r *http.Req
 		ID: request.ID, VerticalID: request.VerticalID, CategoryID: request.CategoryID, ProposedName: request.ProposedName,
 		ProposedBrand: optionalRequestString(request.ProposedBrand), ProposedVariantTitle: request.ProposedVariantTitle,
 		ProposedMeasurementKind: string(request.ProposedMeasurementKind), ProposedBaseUnit: string(request.ProposedBaseUnit),
-		ProposedIdentifierType: optionalRequestString(request.ProposedIdentifierType), ProposedIdentifierValue: optionalRequestString(request.ProposedIdentifierValue), ProposedImageURI: optionalRequestString(request.ProposedImageUri),
+		ProposedIdentifierType: optionalRequestString(request.ProposedIdentifierType), ProposedIdentifierValue: optionalRequestString(request.ProposedIdentifierValue),
 		AttributeValues: catalogAttributeInputs(input.AttributeValues), VariantAttributeValues: catalogAttributeInputs(input.VariantAttributeValues),
 	}, idempotency, correlation)
 	if err != nil {
@@ -96,7 +96,7 @@ func (s *CatalogServer) updateProductProposal(w http.ResponseWriter, r *http.Req
 		VerticalID: request.VerticalID, CategoryID: request.CategoryID, ProposedName: request.ProposedName,
 		ProposedBrand: optionalRequestString(request.ProposedBrand), ProposedVariantTitle: request.ProposedVariantTitle,
 		ProposedMeasurementKind: string(request.ProposedMeasurementKind), ProposedBaseUnit: string(request.ProposedBaseUnit),
-		ProposedIdentifierType: optionalRequestString(request.ProposedIdentifierType), ProposedIdentifierValue: optionalRequestString(request.ProposedIdentifierValue), ProposedImageURI: optionalRequestString(request.ProposedImageUri),
+		ProposedIdentifierType: optionalRequestString(request.ProposedIdentifierType), ProposedIdentifierValue: optionalRequestString(request.ProposedIdentifierValue),
 		AttributeValues: catalogAttributeInputs(input.AttributeValues), VariantAttributeValues: catalogAttributeInputs(input.VariantAttributeValues),
 	}, expected, idempotency, correlation)
 	if err != nil {
@@ -238,7 +238,7 @@ func toProductProposals(items []postgres.CatalogProductProposalRecord) []contrac
 func toProductProposal(item postgres.CatalogProductProposalRecord) contract.CatalogProductProposal {
 	attributes := toCatalogAttributeValueInputs(item.AttributeValues)
 	variantAttributes := toCatalogAttributeValueInputs(item.VariantAttributeValues)
-	return contract.CatalogProductProposal{ID: item.ID, PartnerActorID: item.PartnerActorID, VerticalID: item.VerticalID, CategoryID: item.CategoryID, ProposedName: item.ProposedName, ProposedBrand: optionalProductValue(item.ProposedBrand), ProposedVariantTitle: item.ProposedVariantTitle, ProposedMeasurementKind: contract.MeasurementKind(item.ProposedMeasurementKind), ProposedBaseUnit: contract.BaseUnit(item.ProposedBaseUnit), ProposedIdentifierType: optionalProductValue(item.ProposedIdentifierType), ProposedIdentifierValue: optionalProductValue(item.ProposedIdentifierValue), ProposedImageUri: optionalProductValue(item.ProposedImageURI), AttributeValues: attributes, VariantAttributeValues: variantAttributes, State: item.State, CorrectionReason: optionalProductValue(item.CorrectionReason), ReviewedBy: optionalProductValue(item.ReviewedBy), Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return contract.CatalogProductProposal{ID: item.ID, PartnerActorID: item.PartnerActorID, VerticalID: item.VerticalID, CategoryID: item.CategoryID, ProposedName: item.ProposedName, ProposedBrand: optionalProductValue(item.ProposedBrand), ProposedVariantTitle: item.ProposedVariantTitle, ProposedMeasurementKind: contract.MeasurementKind(item.ProposedMeasurementKind), ProposedBaseUnit: contract.BaseUnit(item.ProposedBaseUnit), ProposedIdentifierType: optionalProductValue(item.ProposedIdentifierType), ProposedIdentifierValue: optionalProductValue(item.ProposedIdentifierValue), AttributeValues: attributes, VariantAttributeValues: variantAttributes, State: item.State, CorrectionReason: optionalProductValue(item.CorrectionReason), ReviewedBy: optionalProductValue(item.ReviewedBy), Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func toCatalogAttributeValueInputs(values []postgres.CatalogAttributeValueInput) []contract.CatalogAttributeValueInput {

@@ -85,7 +85,7 @@ func decodeCatalogProductProposalCursor(raw, scope, state, partnerActorID string
 
 func HashCatalogProductProposalCreateRequest(input CatalogProductProposalInput) string {
 	attributeFacts, _ := json.Marshal(struct{ Product, Variant []CatalogAttributeValueInput }{input.AttributeValues, input.VariantAttributeValues})
-	return hashFacts("proposal-create", input.ID, input.PartnerActorID, input.VerticalID, input.CategoryID, input.ProposedName, input.ProposedVariantTitle, optionalProductFact(input.ProposedBrand), input.ProposedMeasurementKind, input.ProposedBaseUnit, optionalProductFact(input.ProposedIdentifierType), optionalProductFact(input.ProposedIdentifierValue), optionalProductFact(input.ProposedImageURI), string(attributeFacts))
+	return hashFacts("proposal-create", input.ID, input.PartnerActorID, input.VerticalID, input.CategoryID, input.ProposedName, input.ProposedVariantTitle, optionalProductFact(input.ProposedBrand), input.ProposedMeasurementKind, input.ProposedBaseUnit, optionalProductFact(input.ProposedIdentifierType), optionalProductFact(input.ProposedIdentifierValue), string(attributeFacts))
 }
 
 func HashCatalogProductProposalTransitionRequest(proposalID string, expectedVersion int) string {
@@ -94,7 +94,7 @@ func HashCatalogProductProposalTransitionRequest(proposalID string, expectedVers
 
 func HashCatalogProductProposalUpdateRequest(proposalID string, input CatalogProductProposalInput, expectedVersion int) string {
 	attributeFacts, _ := json.Marshal(struct{ Product, Variant []CatalogAttributeValueInput }{input.AttributeValues, input.VariantAttributeValues})
-	return hashFacts("proposal-update", proposalID, input.PartnerActorID, input.VerticalID, input.CategoryID, input.ProposedName, input.ProposedVariantTitle, optionalProductFact(input.ProposedBrand), input.ProposedMeasurementKind, input.ProposedBaseUnit, optionalProductFact(input.ProposedIdentifierType), optionalProductFact(input.ProposedIdentifierValue), optionalProductFact(input.ProposedImageURI), string(attributeFacts), strconv.Itoa(expectedVersion))
+	return hashFacts("proposal-update", proposalID, input.PartnerActorID, input.VerticalID, input.CategoryID, input.ProposedName, input.ProposedVariantTitle, optionalProductFact(input.ProposedBrand), input.ProposedMeasurementKind, input.ProposedBaseUnit, optionalProductFact(input.ProposedIdentifierType), optionalProductFact(input.ProposedIdentifierValue), string(attributeFacts), strconv.Itoa(expectedVersion))
 }
 
 func HashCatalogProductProposalReviewRequest(proposalID, state, reason string, expectedVersion int) string {
@@ -264,7 +264,7 @@ func UpdateCatalogProductProposal(ctx context.Context, db *sql.DB, proposalID st
 	if err != nil {
 		return CatalogProductProposalResult{}, err
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE dsh.catalog_product_proposals SET vertical_id=$2,category_id=$3,proposed_name=$4,proposed_brand=$5,proposed_variant_title=$6,proposed_measurement_kind=$7,proposed_base_unit=$8,proposed_identifier_type=$9,proposed_identifier_value=$10,proposed_image_uri=$11,proposed_attribute_values=$12,proposed_variant_attribute_values=$13,state='draft',correction_reason=NULL,reviewed_by=NULL,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$14`, proposalID, input.VerticalID, input.CategoryID, input.ProposedName, input.ProposedBrand, input.ProposedVariantTitle, input.ProposedMeasurementKind, input.ProposedBaseUnit, input.ProposedIdentifierType, input.ProposedIdentifierValue, input.ProposedImageURI, productAttributeValues, variantAttributeValues, expectedVersion); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE dsh.catalog_product_proposals SET vertical_id=$2,category_id=$3,proposed_name=$4,proposed_brand=$5,proposed_variant_title=$6,proposed_measurement_kind=$7,proposed_base_unit=$8,proposed_identifier_type=$9,proposed_identifier_value=$10,proposed_image_uri=proposed_image_uri,proposed_attribute_values=$11,proposed_variant_attribute_values=$12,state='draft',correction_reason=NULL,reviewed_by=NULL,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$13`, proposalID, input.VerticalID, input.CategoryID, input.ProposedName, input.ProposedBrand, input.ProposedVariantTitle, input.ProposedMeasurementKind, input.ProposedBaseUnit, input.ProposedIdentifierType, input.ProposedIdentifierValue, productAttributeValues, variantAttributeValues, expectedVersion); err != nil {
 		return CatalogProductProposalResult{}, err
 	}
 	item, err := readCatalogProductProposalTx(ctx, tx, proposalID)
@@ -486,11 +486,6 @@ func ReviewCatalogProductProposal(ctx context.Context, db *sql.DB, proposalID, t
 				if isUniqueViolation(err) {
 					return CatalogProductProposalResult{}, ErrCatalogDuplicateIdentifier
 				}
-				return CatalogProductProposalResult{}, err
-			}
-		}
-		if imageURI.Valid {
-			if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_media(product_id,uri,media_role,ordinal) VALUES($1,$2,'primary',0)", productID, imageURI.String); err != nil {
 				return CatalogProductProposalResult{}, err
 			}
 		}
