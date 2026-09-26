@@ -7,5 +7,24 @@
     "type:tool",
     "ci-backend-runtime",
     "ci-control-runtime"
-  ]
+  ],
+  "targets": {
+    "tooling-lint": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": [
+        "{workspaceRoot}/tools/dev/**/*",
+        "{workspaceRoot}/biome.json",
+        {
+          "runtime": "node --version"
+        },
+        {
+          "runtime": "pnpm --version"
+        }
+      ],
+      "options": {
+        "command": "pnpm exec biome lint tools/dev --diagnostic-level=error"
+      }
+    }
+  }
 }
