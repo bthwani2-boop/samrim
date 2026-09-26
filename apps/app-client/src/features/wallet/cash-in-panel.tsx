@@ -1,21 +1,60 @@
 import { borders, radius, resolveTheme, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, type BeneficiaryWalletResponse, type CashInFundingIntent } from "@bthwani/dsh";
+import { BthwaniButton, BthwaniIcon, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { type Href, useRouter } from "expo-router";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { createDshMobileClient, formatMoney, type BeneficiaryWalletResponse, type CashInFundingIntent } from "@bthwani/dsh";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
-type FundingAttempt = Readonly<{ version: 1; actorID: string; amountMinor: number; idempotencyKey: string; correlationID: string }>;
-const attemptKey = (actorID: string) => `bthwani.client.cash-in.pending.v1.${encodeURIComponent(actorID)}`;
+type FundingAttempt = Readonly<{ version: 1; actorID: string; amountMinor: number; idempotencyKey: string; correlationID: string; fundingIntentID?: string }>;
+type PanelMode = "wallet" | "cash-in";
+
+function parseFundingAttempt(raw: string | null, actorID: string): FundingAttempt | null {
+  if (!raw) return null;
+  const parsed = JSON.parse(raw) as Partial<FundingAttempt>;
+  const validFundingIntentID = parsed.fundingIntentID === undefined || (typeof parsed.fundingIntentID === "string" && parsed.fundingIntentID.length > 0 && parsed.fundingIntentID.length <= 128);
+  if (
+    parsed.version !== 1 ||
+    parsed.actorID !== actorID ||
+    !Number.isSafeInteger(parsed.amountMinor) ||
+    Number(parsed.amountMinor) <= 0 ||
+    typeof parsed.idempotencyKey !== "string" ||
+    parsed.idempotencyKey.length < 8 ||
+    parsed.idempotencyKey.length > 128 ||
+    typeof parsed.correlationID !== "string" ||
+    parsed.correlationID.length < 8 ||
+    parsed.correlationID.length > 128 ||
+    !validFundingIntentID
+  ) throw new Error("CASH_IN_RETRY_STATE_INVALID");
+  return parsed as FundingAttempt;
+}
+
+function isTerminalFundingIntent(intent: Pick<CashInFundingIntent, "state">): boolean {
+  return intent.state === "SETTLED" || intent.state === "FAILED";
+}
+
+function fundingIntentMatchesAttempt(intent: CashInFundingIntent, attempt: FundingAttempt): boolean {
+  return intent.id === attempt.fundingIntentID && intent.actorId === attempt.actorID && intent.fundingPurpose === "CUSTOMER_TOPUP" && intent.amountMinor === attempt.amountMinor && intent.currency === "YER";
+}
+
+function walletWithFundingIntent(wallet: BeneficiaryWalletResponse, intent: CashInFundingIntent): BeneficiaryWalletResponse {
+  return { ...wallet, fundingIntents: [intent, ...wallet.fundingIntents.filter((item) => item.id !== intent.id)] };
+}
+
+const attemptKey = (actorID: string) => "bthwani.client.cash-in.pending.v1." + encodeURIComponent(actorID);
+
 const api = () => {
   const url = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
   if (!url) throw new Error("DSH_BASE_URL_REQUIRED");
   return createDshMobileClient(url, { cryptoRandomUUID: () => Crypto.randomUUID() });
 };
 
-export function ClientCashInPanel() {
+export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: PanelMode; onAddFunds?: () => void }) {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [wallet, setWallet] = useState<BeneficiaryWalletResponse | null>(null);
@@ -24,92 +63,204 @@ export function ClientCashInPanel() {
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [activeTab, setActiveTab] = useState<"overview" | "cash-in">("cash-in");
+
   const load = useCallback(async () => {
-    setBusy(true); setError(""); setWallet(null);
+    setBusy(true);
+    setError("");
+    setWallet(null);
+    setPending(null);
     try {
+      const beforeRestore = currentIdentityState();
+      if (beforeRestore.kind !== "authenticated" && beforeRestore.kind !== "restoring") throw new Error("CLIENT_SESSION_REQUIRED");
+      const token = await getUsableIdentityAccessToken();
       const identity = currentIdentityState();
       if (identity.kind !== "authenticated" || !identity.identity.subject.trim()) throw new Error("CLIENT_SESSION_REQUIRED");
       const actorID = identity.identity.subject.trim();
-      const token = await getUsableIdentityAccessToken();
-      const raw = await SecureStore.getItemAsync(attemptKey(actorID));
-      if (raw) {
-        const parsed = JSON.parse(raw) as Partial<FundingAttempt>;
-        if (parsed.version !== 1 || parsed.actorID !== actorID || !Number.isSafeInteger(parsed.amountMinor) || typeof parsed.idempotencyKey !== "string" || typeof parsed.correlationID !== "string") throw new Error("CASH_IN_RETRY_STATE_INVALID");
-        setPending(parsed as FundingAttempt);
-      } else setPending(null);
-      setWallet(await api().readOwnWallet(token));
+      const storageKey = attemptKey(actorID);
+      const restoredAttempt = parseFundingAttempt(await SecureStore.getItemAsync(storageKey), actorID);
+      setPending(restoredAttempt);
+      const walletResponse = await api().readOwnWallet(token);
+      setWallet(walletResponse);
+      if (!restoredAttempt?.fundingIntentID) return;
+
+      const intent = (await api().readOwnFundingIntent(token, restoredAttempt.fundingIntentID)).intent;
+      if (!fundingIntentMatchesAttempt(intent, restoredAttempt)) throw new Error("CASH_IN_RETRY_STATE_CONFLICT");
+      setWallet(walletWithFundingIntent(walletResponse, intent));
+      if (!isTerminalFundingIntent(intent)) return;
+      await SecureStore.deleteItemAsync(storageKey);
+      setPending(null);
     } catch {
-      console.info("DSH customer wallet readback failed");
-      setError("تعذر قراءة رصيد المحفظة وحالة الشحن من الخادم.");
-    } finally { setBusy(false); }
+      setError(currentIdentityState().kind === "authenticated" ? "تعذر تحديث بيانات المحفظة. أعد المحاولة." : "انتهت جلسة الدخول. سجّل الدخول لعرض المحفظة.");
+    } finally {
+      setBusy(false);
+    }
   }, []);
+
   useEffect(() => { void load(); }, [load]);
 
   const createIntent = async () => {
     const identity = currentIdentityState();
-    if (identity.kind !== "authenticated" || !identity.identity.subject.trim()) { setError("يلزم تسجيل الدخول لقراءة محفظة العميل."); return; }
+    if (identity.kind !== "authenticated" || !identity.identity.subject.trim()) {
+      setError("سجّل الدخول للمتابعة.");
+      return;
+    }
     const actorID = identity.identity.subject.trim();
     const parsedAmount = pending?.actorID === actorID ? pending.amountMinor : Number(toAsciiDigits(amount.trim()).replace(/[^0-9]/g, ""));
-    if (!Number.isSafeInteger(parsedAmount) || parsedAmount <= 0) { setError("أدخل مبلغ شحن صحيحًا أكبر من صفر."); return; }
-    const attempt: FundingAttempt = pending?.actorID === actorID ? pending : { version: 1, actorID, amountMinor: parsedAmount, idempotencyKey: `cashin_${Crypto.randomUUID()}`, correlationID: `cashin_corr_${Crypto.randomUUID()}` };
-    setBusy(true); setError(""); setNotice("");
+    if (!Number.isSafeInteger(parsedAmount) || parsedAmount <= 0) {
+      setError("أدخل مبلغًا صحيحًا أكبر من صفر.");
+      return;
+    }
+    const attempt: FundingAttempt = pending?.actorID === actorID
+      ? pending
+      : { version: 1, actorID, amountMinor: parsedAmount, idempotencyKey: "cashin_" + Crypto.randomUUID(), correlationID: "cashin_corr_" + Crypto.randomUUID() };
+    setBusy(true);
+    setError("");
+    setNotice("");
     try {
       await SecureStore.setItemAsync(attemptKey(actorID), JSON.stringify(attempt));
       setPending(attempt);
       const token = await getUsableIdentityAccessToken();
       const response = await api().createOwnFundingIntent(token, parsedAmount, attempt.idempotencyKey, attempt.correlationID);
-      setAmount("");
-      setNotice(response.simulator ? "أنشأ WLT نية شحن تجريبية. لن يُضاف الرصيد قبل تطبيق نتيجة المحاكي." : "سُجلت نية الشحن؛ سيُضاف الرصيد بعد التأكيد الرسمي من مزود المحفظة.");
-      await load();
-    } catch {
-      console.info("DSH customer Cash-In request failed");
-      setError("لم نتأكد من نتيجة طلب الشحن. بقي المفتاح محفوظًا؛ أعد المحاولة للمبلغ نفسه كي لا تنشأ عملية أخرى.");
-    } finally { setBusy(false); }
-  };
+      if (
+        response.intent.id.trim().length === 0 ||
+        response.intent.id.length > 128 ||
+        response.intent.actorId !== actorID ||
+        response.intent.fundingPurpose !== "CUSTOMER_TOPUP" ||
+        response.intent.amountMinor !== parsedAmount ||
+        response.intent.currency !== "YER"
+      ) throw new Error("CASH_IN_RESPONSE_MISMATCH");
 
-  const simulate = async (intent: CashInFundingIntent, outcome: "SUCCESS" | "FAILURE" | "UNKNOWN" | "DELAYED") => {
-    if (!pending || pending.actorID !== intent.actorId || pending.amountMinor !== intent.amountMinor) return;
-    setBusy(true); setError(""); setNotice("");
-    try {
-      const token = await getUsableIdentityAccessToken();
-      const result = await api().simulateOwnFundingIntent(token, intent.id, outcome, `simulate_${pending.idempotencyKey}`, pending.correlationID);
-      setNotice(result.intent.state === "SETTLED" ? "نجح الاختبار: WLT رحّل المبلغ إلى دفتر الأستاذ التجريبي." : `حالة الاختبار: ${result.intent.state}.`);
-      if (["SETTLED", "FAILED"].includes(result.intent.state)) await SecureStore.deleteItemAsync(attemptKey(pending.actorID));
+      const confirmedAttempt: FundingAttempt = { ...attempt, fundingIntentID: response.intent.id };
+      await SecureStore.setItemAsync(attemptKey(actorID), JSON.stringify(confirmedAttempt));
+      setPending(confirmedAttempt);
+      setAmount("");
+      if (isTerminalFundingIntent(response.intent)) {
+        await SecureStore.deleteItemAsync(attemptKey(actorID));
+        setPending(null);
+        setNotice(response.intent.state === "SETTLED" ? "تمت إضافة الرصيد." : "لم تتم إضافة الرصيد. يمكنك المحاولة مجددًا.");
+      } else {
+        setNotice(response.simulator ? "طلب تجريبي؛ لا تُستخدم أموال حقيقية." : "أُرسل الطلب، وسيظهر الرصيد بعد تأكيد الدفع.");
+      }
       await load();
     } catch {
-      console.info("DSH development Cash-In simulation failed");
-      setError("تعذر تطبيق نتيجة المحاكي؛ بقيت نية الشحن محفوظة كما هي.");
-    } finally { setBusy(false); }
+      setError(currentIdentityState().kind === "authenticated" ? "لم نتأكد من نتيجة الطلب. أعد المحاولة بالمبلغ نفسه؛ حُفظ مفتاح الطلب لمنع التكرار." : "انتهت جلسة الدخول. سجّل الدخول للمتابعة.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const state = wallet?.state;
-  const latest = wallet?.fundingIntents ?? [];
-  return <BthwaniSurface tone="base" style={styles.panel} accessibilityLabel="محفظة العميل">
-    <View accessibilityLabel="أقسام المحفظة" style={styles.tabs}>
-      <Pressable accessibilityRole="tab" accessibilityState={{ selected: activeTab === "overview" }} onPress={() => setActiveTab("overview")} style={[styles.tab, activeTab === "overview" && styles.selectedTab]}>
-        <Text style={[styles.tabLabel, activeTab === "overview" && styles.selectedTabLabel]}>الرصيد والحركة</Text>
-      </Pressable>
-      <Pressable accessibilityRole="tab" accessibilityState={{ selected: activeTab === "cash-in" }} onPress={() => setActiveTab("cash-in")} style={[styles.tab, activeTab === "cash-in" && styles.selectedTab]}>
-        <Text style={[styles.tabLabel, activeTab === "cash-in" && styles.selectedTabLabel]}>شحن المحفظة</Text>
-      </Pressable>
-    </View>
-    {busy && !wallet ? <View style={styles.loading}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الرصيد…</Text></View> : null}
-    {activeTab === "overview" ? <>
-      {state ? <View style={styles.balance}><Text style={styles.label}>الرصيد الداخلي المتاح</Text><Text style={styles.amount}>{formatMoney(state.availableMinor, state.currency)}</Text><Text style={styles.muted}>المحجوز: {formatMoney(state.heldMinor, state.currency)}</Text></View> : null}
-      {state?.simulator ? <Text style={styles.simulator}>وضع تطوير: مزود المحاكاة DEVELOPMENT_SIMULATOR. هذه النتائج لا تحرك أموالًا حقيقية.</Text> : null}
-      {latest.length ? <View style={styles.history}><Text style={styles.label}>آخر طلبات الشحن</Text>{latest.slice(0, 5).map((intent) => <View key={intent.id} style={styles.row}><Text style={styles.muted}>{intent.state}</Text><Text style={styles.rowAmount}>{formatMoney(intent.amountMinor, intent.currency)}</Text></View>)}</View> : null}
-      {wallet && latest.length === 0 ? <Text style={styles.muted}>لا توجد طلبات شحن حتى الآن.</Text> : null}
-      <BthwaniButton disabled={busy} label="الانتقال إلى تبويب شحن المحفظة" onPress={() => setActiveTab("cash-in")} variant="secondary" />
-    </> : <>
-      <View style={styles.heading}><View><Text style={styles.title}>شحن المحفظة</Text><Text style={styles.muted}>يُضاف الرصيد بعد تأكيد WLT للعملية.</Text></View></View>
-      {state?.cashInEnabled ? <><TextInput accessibilityLabel="مبلغ شحن رصيد العميل" editable={!pending && !busy} keyboardType="number-pad" value={amount} onChangeText={(value) => setAmount(toAsciiDigits(value).replace(/[^0-9]/g, ""))} placeholder="المبلغ بالريال اليمني" placeholderTextColor={theme.colorMuted} style={styles.input} /><BthwaniButton busy={busy} disabled={busy} label={pending ? "إعادة محاولة الشحن بالمفتاح نفسه" : "إنشاء طلب شحن"} onPress={() => void createIntent()} /></> : state ? <Text style={styles.muted}>الشحن غير متاح حاليًا؛ لم يُفعّل مزود محفظة رسمي معتمد لهذا المسار.</Text> : null}
-      {pending ? <Text style={styles.notice}>توجد محاولة محفوظة لهذا الحساب بمبلغ {formatMoney(pending.amountMinor, "YER")}. إعادة الطلب تستخدم مفتاح WLT نفسه.</Text> : null}
-      {state?.simulator ? latest.filter((item) => ["PENDING_PROVIDER", "UNKNOWN"].includes(item.state)).slice(0, 1).map((intent) => <View key={intent.id} style={styles.simActions}><Text style={styles.label}>نتيجة محاكاة التطوير لطلب {formatMoney(intent.amountMinor, intent.currency)}</Text>{(["SUCCESS", "FAILURE", "UNKNOWN", "DELAYED"] as const).map((outcome) => <BthwaniButton key={outcome} disabled={busy} busy={busy} variant="secondary" label={{ SUCCESS: "محاكاة نجاح", FAILURE: "محاكاة رفض", UNKNOWN: "محاكاة نتيجة مجهولة", DELAYED: "محاكاة انتظار التأكيد" }[outcome]} onPress={() => void simulate(intent, outcome)} />)}</View>) : null}
-    </>}
-    {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    <BthwaniButton busy={busy} disabled={busy} label="تحديث بيانات المحفظة" onPress={() => void load()} variant="secondary" />
-  </BthwaniSurface>;
+
+  if (mode === "wallet") {
+    return (
+      <BthwaniSurface accessibilityLabel="رصيد المحفظة" style={styles.walletPanel}>
+        <View style={styles.balanceCard}>
+          <View style={styles.balanceCopy}>
+            <Text style={styles.balanceLabel}>رصيدك</Text>
+            {state ? <Text accessibilityLabel={"الرصيد " + formatMoney(state.availableMinor, state.currency)} style={styles.balanceValue}>{formatMoney(state.availableMinor, state.currency)}</Text> : <Text style={styles.balanceValue}>{busy ? "…" : "—"}</Text>}
+          </View>
+          <BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[6]} />
+        </View>
+        {pending ? <Text style={styles.pendingCopy}>طلب شحن قيد التأكيد: {formatMoney(pending.amountMinor, "YER")}.</Text> : null}
+        {busy && !wallet ? <ActivityIndicator accessibilityLabel="جارٍ قراءة الرصيد" color={theme.actionBackground} /> : null}
+        {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+        {state?.cashInEnabled
+          ? <BthwaniButton disabled={busy} label="＋ إضافة رصيد" onPress={onAddFunds ?? (() => router.push("/wallet-cash-in" as Href))} />
+          : state
+            ? <Text style={styles.muted}>الشحن غير متاح حاليًا.</Text>
+            : error ? <BthwaniButton disabled={busy} label="تحديث" onPress={() => void load()} variant="secondary" /> : null}
+      </BthwaniSurface>
+    );
+  }
+
+  return (
+    <SafeAreaView edges={["top"]} style={styles.cashInScreen}>
+      <View style={styles.topBar}>
+        <View style={styles.headerSide} />
+        <Text style={styles.pageTitle}>إضافة رصيد</Text>
+        <BthwaniButton accessibilityLabel="العودة إلى المحفظة" label="→" onPress={() => router.back()} style={styles.backButton} variant="quiet" />
+      </View>
+      <ScrollView contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <View style={styles.amountField}>
+          <Text style={styles.amountPrompt}>أضف المبلغ هنا:</Text>
+          <View style={styles.amountRow}>
+            <Text style={styles.currencyLabel}>ريال يمني</Text>
+            <TextInput
+              accessibilityLabel="مبلغ الشحن بالريال اليمني"
+              editable={!pending && !busy && Boolean(state?.cashInEnabled)}
+              keyboardType="number-pad"
+              onChangeText={(value) => setAmount(toAsciiDigits(value).replace(/[^0-9]/g, ""))}
+              placeholder="0"
+              placeholderTextColor={theme.colorMuted}
+              style={styles.amountInput}
+              value={amount}
+            />
+          </View>
+        </View>
+
+        <Text style={styles.methodPrompt}>اختر وسيلة الدفع ثم اضغط على موافق</Text>
+        {state?.cashInEnabled ? (
+          <View accessible accessibilityLabel={state.simulator ? "محاكاة الشحن محددة" : "الدفع الإلكتروني محدد"} accessibilityRole="radio" accessibilityState={{ selected: true }} style={styles.methodRow}>
+            <View style={styles.methodCopy}>
+              <View style={styles.methodIcon}><BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[6]} /></View>
+              <View style={styles.methodText}>
+                <Text style={styles.methodTitle}>{state.simulator ? "محاكاة الشحن" : "الدفع الإلكتروني"}</Text>
+                {state.simulator ? <Text style={styles.muted}>بيئة تطوير فقط، لا تُستخدم أموال حقيقية.</Text> : null}
+              </View>
+            </View>
+            <View style={styles.radioOuter}><View style={styles.radioInner} /></View>
+          </View>
+        ) : state ? <Text style={styles.unavailable}>لا توجد وسيلة شحن مفعّلة حاليًا.</Text> : null}
+
+        {busy && !wallet ? <ActivityIndicator accessibilityLabel="جارٍ تحميل وسائل الشحن" color={theme.actionBackground} /> : null}
+        {pending ? <Text style={styles.pendingCopy}>لديك طلب محفوظ بقيمة {formatMoney(pending.amountMinor, "YER")}. إعادة المحاولة تستخدم الطلب نفسه.</Text> : null}
+        {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
+        {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+        {!wallet && error ? <BthwaniButton disabled={busy} label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /> : null}
+      </ScrollView>
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, spacing[3]) }]}>
+        <BthwaniButton
+          busy={busy}
+          disabled={busy || !state?.cashInEnabled}
+          label={pending ? "متابعة الطلب" : "موافق"}
+          onPress={() => void createIntent()}
+        />
+      </View>
+    </SafeAreaView>
+  );
 }
 
-function createStyles(theme: ReturnType<typeof resolveTheme>) { return StyleSheet.create({ panel: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] }, tabs: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[1], padding: spacing[1] }, tab: { alignItems: "center", flex: 1, justifyContent: "center", minHeight: spacing[12], paddingHorizontal: spacing[2], paddingVertical: spacing[2] }, selectedTab: { backgroundColor: theme.actionSoft, borderRadius: radius.md }, tabLabel: { ...typography.label, color: theme.colorMuted, textAlign: "center" }, selectedTabLabel: { color: theme.interactiveText }, heading: { flexDirection: "row", justifyContent: "space-between" }, title: { ...typography.titleSm, color: theme.color }, label: { ...typography.label, color: theme.color }, muted: { ...typography.bodySm, color: theme.colorMuted }, balance: { borderColor: theme.borderColor, borderBottomWidth: borders.hairline, gap: spacing[1], paddingBottom: spacing[3] }, amount: { ...typography.titleLg, color: theme.color }, input: { ...typography.bodySm, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, padding: spacing[3], textAlign: "left", writingDirection: "ltr" }, loading: { alignItems: "center", gap: spacing[2], padding: spacing[3] }, simulator: { ...typography.bodySm, color: theme.warning }, simActions: { gap: spacing[2] }, history: { gap: spacing[2] }, row: { borderColor: theme.borderColor, borderTopWidth: borders.hairline, flexDirection: "row", justifyContent: "space-between", paddingTop: spacing[2] }, rowAmount: { ...typography.bodySm, color: theme.color }, notice: { ...typography.bodySm, color: theme.interactiveText }, error: { ...typography.bodySm, color: theme.warning } }); }
+function createStyles(theme: ReturnType<typeof resolveTheme>) {
+  return StyleSheet.create({
+    walletPanel: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[4], marginTop: spacing[4], padding: spacing[4] },
+    balanceCard: { alignItems: "center", backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, flexDirection: "row", justifyContent: "space-between", minHeight: 96, paddingHorizontal: spacing[4], paddingVertical: spacing[3] },
+    balanceCopy: { alignItems: "flex-end", gap: spacing[1] },
+    balanceLabel: { ...typography.bodySm, color: theme.colorMuted },
+    balanceValue: { ...typography.titleLg, color: theme.color, textAlign: "right" },
+    cashInScreen: { backgroundColor: theme.background, flex: 1 },
+    topBar: { alignItems: "center", backgroundColor: theme.surface, borderBottomColor: theme.borderColor, borderBottomWidth: borders.hairline, flexDirection: "row", minHeight: 64, paddingHorizontal: spacing[3] },
+    headerSide: { width: spacing[12] },
+    pageTitle: { ...typography.titleMd, color: theme.color, flex: 1, textAlign: "center" },
+    backButton: { minHeight: spacing[12], width: spacing[12] },
+    formContent: { flexGrow: 1, gap: spacing[4], padding: spacing[4] },
+    amountField: { backgroundColor: theme.surface, borderColor: theme.borderColorStrong, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[2], paddingHorizontal: spacing[3], paddingVertical: spacing[3] },
+    amountPrompt: { ...typography.bodySm, color: theme.colorMuted, textAlign: "right" },
+    amountRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", minHeight: spacing[10] },
+    currencyLabel: { ...typography.body, color: theme.colorMuted },
+    amountInput: { ...typography.titleMd, color: theme.color, flex: 1, minHeight: spacing[10], padding: 0, textAlign: "right", writingDirection: "ltr" },
+    methodPrompt: { ...typography.body, color: theme.color, marginTop: spacing[2], textAlign: "right" },
+    methodRow: { alignItems: "center", backgroundColor: theme.actionSoft, borderColor: theme.interactiveText, borderRadius: radius.md, borderWidth: borders.hairline, flexDirection: "row", justifyContent: "space-between", minHeight: 76, paddingHorizontal: spacing[3], paddingVertical: spacing[2] },
+    methodCopy: { alignItems: "center", flex: 1, flexDirection: "row", gap: spacing[3], minWidth: 0 },
+    methodIcon: { alignItems: "center", backgroundColor: theme.surface, borderRadius: radius.md, height: spacing[10], justifyContent: "center", width: spacing[10] },
+    methodText: { flex: 1, gap: spacing[1], minWidth: 0 },
+    methodTitle: { ...typography.bodyStrong, color: theme.color, textAlign: "right" },
+    radioOuter: { alignItems: "center", borderColor: theme.interactiveText, borderRadius: radius.round, borderWidth: 2, height: spacing[6], justifyContent: "center", marginStart: spacing[3], width: spacing[6] },
+    radioInner: { backgroundColor: theme.interactiveText, borderRadius: radius.round, height: spacing[3], width: spacing[3] },
+    unavailable: { ...typography.bodySm, color: theme.colorMuted, textAlign: "right" },
+    pendingCopy: { ...typography.bodySm, color: theme.interactiveText, textAlign: "right" },
+    notice: { ...typography.bodySm, color: theme.interactiveText, textAlign: "right" },
+    error: { ...typography.bodySm, color: theme.danger, textAlign: "right" },
+    muted: { ...typography.caption, color: theme.colorMuted, textAlign: "right" },
+    footer: { backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, paddingHorizontal: spacing[4], paddingTop: spacing[3] },
+  });
+}
