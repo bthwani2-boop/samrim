@@ -10,7 +10,7 @@ const summaryPath = process.env.GITHUB_STEP_SUMMARY?.trim();
 
 const budgets = JSON.parse(fs.readFileSync(budgetsPath, "utf8"));
 const records = fs.existsSync(metricsPath)
-  ? fs.readFileSync(metricsPath, "utf8").split(/\\r?\\n/).filter(Boolean).map((line) => JSON.parse(line))
+  ? fs.readFileSync(metricsPath, "utf8").split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line))
   : [];
 
 const lines = [
