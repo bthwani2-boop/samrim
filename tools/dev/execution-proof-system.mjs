@@ -165,7 +165,7 @@ for (const required of [
   "--projects=repository-ci",
   "repository-ci:runtime-images",
   "repository-ci:runtime-integration",
-  "docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f",
+  "docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e",
   "crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487",
   "run-ci-command.mjs runtime-install",
   "run-ci-command.mjs runtime-playwright-install",
