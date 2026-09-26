@@ -91,23 +91,9 @@ jobs:
             --projects=workspace-tooling \
             --outputStyle=stream \
             --parallel=3
+          pnpm exec nx run repository-ci:tooling-lint --outputStyle=stream
+          pnpm exec nx run repository-ci:go-workspace-sync --outputStyle=stream
           pnpm exec nx run infra:compose-config --outputStyle=stream
-
-      - name: Verify Go workspace synchronization
-        shell: bash
-        run: |
-          set -euo pipefail
-          go work sync
-          drift="$(git status --porcelain -- go.work go.work.sum services/*/backend services/identity/clients/go)"
-          if [[ -n "${drift}" ]]; then
-            printf '%s\n' "${drift}"
-            git diff -- go.work go.work.sum services/*/backend services/identity/clients/go || true
-            exit 1
-          fi
-
-      - name: Verify changed source style
-        shell: bash
-        run: pnpm exec biome ci apps packages services tools --changed --since=$NX_BASE --no-errors-on-unmatched --enforce-assist=false
 
       - name: Verify affected workspace tasks with config-only map placeholders
         shell: bash
@@ -117,7 +103,7 @@ jobs:
           GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
           GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
           GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
-        run: pnpm exec nx affected -t typecheck,unit,contract,build,export-smoke,vet --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream
+        run: pnpm exec nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream
 
       - name: Verify tooling is non-mutating
         shell: bash
