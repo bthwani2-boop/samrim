@@ -51,7 +51,6 @@
   },
   "tags": [
     "scope:control-panel",
-    "type:app",
-    "ci-control-runtime"
+    "type:app"
   ]
 }
