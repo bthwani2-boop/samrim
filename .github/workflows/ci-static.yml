@@ -88,10 +88,6 @@ jobs:
         shell: bash
         run: node tools/dev/run-ci-command.mjs static-install -- pnpm install --frozen-lockfile
 
-      - name: Materialize exact pinned Governance and Docs through Nx
-        shell: bash
-        run: pnpm exec nx run workspace-tooling:knowledge-materialize --outputStyle=stream
-
       - name: Verify repository invariants through Nx
         shell: bash
         env:

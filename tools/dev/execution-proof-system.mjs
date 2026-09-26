@@ -71,6 +71,9 @@ for (const target of ["lint","go-workspace-sync","structural-hygiene","knowledge
 }
 const knowledgeOutput = tooling.targets?.["knowledge-materialize"]?.outputs ?? [];
 if (!knowledgeOutput.includes("{workspaceRoot}/.cache/bthwani-knowledge")) failures.push("knowledge-materialize stable output missing");
+for (const target of ["docs-command-parity", "docs-config-parity", "knowledge-system", "knowledge-references"]) {
+  if (!(tooling.targets?.[target]?.dependsOn ?? []).includes("knowledge-materialize")) failures.push("workspace-tooling:" + target + " must depend on the single knowledge writer");
+}
 const structural = JSON.stringify(tooling.targets?.["structural-hygiene"]?.inputs ?? []);
 if (!structural.includes("git ls-files -s") || !structural.includes("git ls-files --eol")) failures.push("structural-hygiene Git index inputs missing");
 for (const workflow of expected) {
@@ -147,9 +150,8 @@ if (local.includes("--projects=workspace-tooling")) failures.push("local CI proj
 
 const staticCi = read(".github/workflows/ci-static.yml");
 if (staticCi.includes("--changed --since") || staticCi.includes("go work sync")) failures.push("static CI parallel/mutating proof remains");
-if (staticCi.includes("run: node tools/dev/knowledge-source.mjs")) failures.push("static CI bypasses Nx for knowledge materialization");
+if (staticCi.includes("run: node tools/dev/knowledge-source.mjs") || staticCi.includes("nx run workspace-tooling:knowledge-materialize")) failures.push("static CI duplicates knowledge materialization outside the Nx task graph");
 for (const required of [
-  "workspace-tooling:knowledge-materialize",
   "cache-contracts",
   "workspace-tooling:go-workspace-sync",
   "repository-ci:execution-proof-system",

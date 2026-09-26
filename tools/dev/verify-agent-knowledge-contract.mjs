@@ -146,7 +146,6 @@ const staticWorkflow = requireTokens(".github/workflows/ci-static.yml", [
   "name: CI Static",
   "nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1",
   "pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1",
-  "workspace-tooling:knowledge-materialize",
   "repository-ci:execution-proof-system",
   "nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet",
   "capture-ci-failure.mjs --kind=static-linux",

@@ -3,7 +3,7 @@ import path from "node:path";
 import { ensureKnowledgeRoot } from "./knowledge-source.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const knowledgeRoot = ensureKnowledgeRoot({ materialize: true });
+const knowledgeRoot = ensureKnowledgeRoot({ materialize: false });
 const failures = [];
 const read = (p) => fs.readFileSync(path.join(root, p), "utf8");
 const readKnowledge = (p) => fs.readFileSync(path.join(knowledgeRoot, p), "utf8");

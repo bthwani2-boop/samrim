@@ -8,7 +8,7 @@ import {
 } from "./knowledge-source.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const knowledgeRoot = ensureKnowledgeRoot({ materialize: true });
+const knowledgeRoot = ensureKnowledgeRoot({ materialize: false });
 const pin = readKnowledgePin();
 const sources = readKnowledgeSources();
 const failures = [];
