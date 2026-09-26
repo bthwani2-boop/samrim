@@ -67,7 +67,7 @@ try {
     }
 
     Run-Step 'Developer tooling lint target' {
-        pnpm exec nx run repository-ci:tooling-lint --outputStyle=stream
+        pnpm exec nx run workspace-tooling:lint --outputStyle=stream
     }
 
     Run-Step 'Execution proof system' {
