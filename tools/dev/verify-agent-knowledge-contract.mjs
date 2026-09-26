@@ -69,8 +69,10 @@ const verifier = requireTokens("tools/dev/verify-local-candidate.ps1", [
   "EXACT_LOCAL_CANDIDATE_SHA",
   "nx run-many",
   "Workspace invariant targets",
+  "workspace-tooling:lint",
+  "repository-ci:execution-proof-system",
   "nx run infra:compose-config",
-  "nx affected -t typecheck unit contract build vet export-smoke",
+  "nx affected -t lint format-check typecheck unit contract build vet export-smoke",
   "VERIFY_STEP_MS",
   "VERIFY_TOTAL_MS",
   "VERIFY=PASS",
@@ -132,50 +134,61 @@ const exportInputs = nx?.targetDefaults?.["export-smoke"]?.inputs ?? [];
 for (const required of [
   "default",
   "^default",
+  "nodeToolchain",
+  "mobileExportEnvironment",
   "{workspaceRoot}/tools/mobile/export-mobile-smoke.mjs",
   "{workspaceRoot}/tools/mobile/define-samrim-expo-app.cjs",
 ]) {
   if (!exportInputs.includes(required)) failures.push(`nx export-smoke missing cache input: ${required}`);
 }
 
-const baselineWorkflow = requireTokens(".github/workflows/baseline-guard.yml", [
+const staticWorkflow = requireTokens(".github/workflows/ci-static.yml", [
+  "name: CI Static",
   "nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1",
   "pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1",
-  "nx affected -t typecheck,unit,contract,build,export-smoke,vet",
+  "workspace-tooling:knowledge-materialize",
+  "repository-ci:execution-proof-system",
+  "nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet",
+  "capture-ci-failure.mjs --kind=static-linux",
 ]);
 for (const forbidden of [
   "Resolve affected base",
   "Detect mobile-affecting integration change",
   "steps.base.outputs",
   "steps.mobile.outputs",
+  "--changed --since",
 ]) {
-  if (baselineWorkflow.includes(forbidden)) failures.push(`baseline workflow retains parallel affected logic: ${forbidden}`);
+  if (staticWorkflow.includes(forbidden)) failures.push(`static workflow retains parallel affected logic: ${forbidden}`);
 }
 
-const backendWorkflow = requireTokens(".github/workflows/backend-integration.yml", [
+const runtimeWorkflow = requireTokens(".github/workflows/ci-runtime.yml", [
+  "name: CI Runtime",
   "nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1",
   "nx show projects --affected",
-  "ci-backend-runtime",
-  "BACKEND_INTEGRATION_SCOPE=UNAFFECTED",
+  "--projects=repository-ci",
+  "CI_RUNTIME_SCOPE=UNAFFECTED",
+  "repository-ci:runtime-images",
+  "repository-ci:runtime-integration",
+  "NX_NO_CLOUD: \"true\"",
 ]);
 for (const forbidden of [
   "Detect backend-affecting change",
   "WLT_CI_COMPOSITION_SCOPE",
-  "PUSH_BEFORE_SHA",
-  "PR_BASE_SHA",
+  "tag:ci-",
+  "docker/build-push-action@",
+  "up -d --build",
 ]) {
-  if (backendWorkflow.includes(forbidden)) failures.push(`backend workflow retains parallel affected logic: ${forbidden}`);
+  if (runtimeWorkflow.includes(forbidden)) failures.push(`runtime workflow retains parallel or superseded logic: ${forbidden}`);
 }
 
-const controlWorkflow = requireTokens(".github/workflows/control-panel-e2e.yml", [
-  "nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1",
-  "nx show projects --affected",
-  "ci-control-runtime",
-  "CONTROL_PANEL_RUNTIME_SCOPE=UNAFFECTED",
+const securityWorkflow = requireTokens(".github/workflows/ci-security.yml", [
+  "name: CI Security",
+  "node tools/dev/verify-secret-safety.mjs",
+  "security-events: write",
+  "github/codeql-action/init@1190a975f95ce23525efb6a3fc21ea29567c1b52",
+  "github/codeql-action/analyze@1190a975f95ce23525efb6a3fc21ea29567c1b52",
 ]);
-if (/^\s+paths:\s*$/m.test(controlWorkflow)) {
-  failures.push("control-panel workflow retains GitHub paths as a parallel affected engine");
-}
+if (securityWorkflow.includes("secret-safety.yml")) failures.push("security workflow retains retired self-reference");
 
 const prTemplate = requireTokens(".github/pull_request_template.md", [
   "## Governance impact",
@@ -186,7 +199,8 @@ if (prTemplate.includes("GOVERNANCE_IMPACT=NONE\n")) {
   failures.push("PR template must not preselect a Governance impact value");
 }
 
-requireTokens(".github/workflows/pr-policy.yml", [
+requireTokens(".github/workflows/ci-policy.yml", [
+  "name: CI Policy",
   "GOVERNANCE_IMPACT=(NONE|REVALIDATE_ONLY|UPDATE_REQUIRED|DEFECT_FOUND)",
   "knowledge.sources.json",
   "GOVERNANCE_CANONICAL_SHA=",
@@ -229,5 +243,6 @@ console.log("EXECUTION_MODEL=AFFECTED_STATIC_PLUS_CLAIM_SPECIFIC_RUNTIME_PLUS_SI
 console.log("CUSTOM_AFFECTED_ENGINE=0");
 console.log("STATEFUL_PROOF_LEDGER=0");
 console.log("RUNTIME_VERIFY_COUPLING=0");
+console.log("CANONICAL_CI_GATES=4");
 console.log("GOVERNANCE_IMPACT_INTERLOCK=PASS");
 console.log("AGENT_KNOWLEDGE_CONTRACT=PASS");
