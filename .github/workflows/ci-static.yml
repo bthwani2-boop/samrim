@@ -120,39 +120,32 @@ jobs:
           GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
         run: node tools/dev/run-ci-command.mjs static-full -- pnpm exec nx run-many -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet --outputStyle=stream --parallel=3
 
-      - name: Capture static failure package
-        if: failure()
-        shell: bash
-        run: |
-          set +e
-          package="$RUNNER_TEMP/static-failure-package"
-          mkdir -p "$package"
-          {
-            echo "NX_BASE=$NX_BASE"
-            echo "NX_HEAD=$NX_HEAD"
-            echo "GITHUB_SHA=$GITHUB_SHA"
-            echo "GITHUB_RUN_ID=$GITHUB_RUN_ID"
-            echo "GITHUB_RUN_ATTEMPT=$GITHUB_RUN_ATTEMPT"
-          } > "$package/metadata.txt"
-          pnpm exec nx show projects --affected --base="$NX_BASE" --head="$NX_HEAD" > "$package/affected-projects.txt" 2>&1 || true
-          pnpm exec nx report > "$package/nx-report.txt" 2>&1 || true
-          git status --porcelain=v1 --untracked-files=all > "$package/git-status.txt" 2>&1 || true
-
-      - name: Upload static failure package
-        if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: static-failure-${{ github.sha }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/static-failure-package
-          if-no-files-found: error
-          retention-days: 14
-
       - name: Verify tooling is non-mutating
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
           drift="$(git status --porcelain --untracked-files=all)"
           [[ -z "${drift}" ]] || { printf '%s\n' "${drift}"; git diff -- . || true; exit 1; }
+
+      - name: Capture static failure package
+        if: failure()
+        shell: bash
+        run: node tools/dev/capture-ci-failure.mjs --kind=static-linux --out="$RUNNER_TEMP/static-failure-package"
+
+      - name: Upload static failure package
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: static-linux-failure-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/static-failure-package
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Report static CI performance
+        if: always()
+        shell: bash
+        run: node tools/dev/report-ci-performance.mjs
 
   windows:
     name: repository-windows
