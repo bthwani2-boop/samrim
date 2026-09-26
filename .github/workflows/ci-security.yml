@@ -22,6 +22,12 @@ jobs:
     name: repository-secrets
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT: maps-config-placeholder-0
+      GOOGLE_MAPS_IOS_API_KEY: maps-config-placeholder-1
+      GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
+      GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
+      GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
