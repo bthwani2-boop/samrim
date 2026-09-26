@@ -32,7 +32,10 @@
         "{workspaceRoot}/tools/dev/report-ci-performance.mjs",
         {
           "runtime": "node --version"
-        }
+        },
+        "{workspaceRoot}/tools/dev/verify-cache-contracts.mjs",
+        "{workspaceRoot}/tools/dev/hash-control-panel-secret-input.mjs",
+        "{workspaceRoot}/tools/mobile/hash-mobile-secret-input.mjs"
       ],
       "options": {
         "command": "node tools/dev/verify-execution-proof-system.mjs"
