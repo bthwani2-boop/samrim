@@ -183,6 +183,15 @@ for (const required of [
 ]) if (!runtimeCi.includes(required)) failures.push("runtime CI missing " + required);
 const budgets = data(".github/ci-performance-budgets.json");
 if (budgets.schema !== 1 || budgets.mode !== "observe") failures.push("CI performance budget contract drifted");
+if (budgets.mode === "observe") {
+  for (const workflow of expected) {
+    if (read(".github/workflows/" + workflow).includes("start-nx-agents")) {
+      failures.push("Nx Agents were enabled before measured distribution admission: " + workflow);
+    }
+  }
+  const ciConfig = path.join(root, ".nx", "ci-config.yaml");
+  if (fs.existsSync(ciConfig)) failures.push(".nx/ci-config.yaml exists before measured distribution admission");
+}
 for (const name of [
   "static-install",
   "static-affected",
