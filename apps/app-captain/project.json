@@ -44,5 +44,8 @@
   "tags": [
     "scope:app-captain",
     "type:app"
+  ],
+  "implicitDependencies": [
+    "mobile-tooling"
   ]
 }
