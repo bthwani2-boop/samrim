@@ -107,7 +107,7 @@ jobs:
           GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
           GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
           GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
-        run: pnpm exec nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream
+        run: node tools/dev/run-ci-command.mjs static-affected -- pnpm exec nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream
 
       - name: Verify full static graph
         if: github.event_name == 'schedule'
@@ -118,7 +118,7 @@ jobs:
           GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
           GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
           GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
-        run: pnpm exec nx run-many -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet --outputStyle=stream --parallel=3
+        run: node tools/dev/run-ci-command.mjs static-full -- pnpm exec nx run-many -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet --outputStyle=stream --parallel=3
 
       - name: Capture static failure package
         if: failure()
@@ -212,7 +212,7 @@ jobs:
           GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
           GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
           GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
-        run: pnpm exec nx affected -t export-smoke --base=$env:NX_BASE --head=$env:NX_HEAD --outputStyle=stream
+        run: node tools/dev/run-ci-command.mjs windows-export-affected -- pnpm exec nx affected -t export-smoke --base=$env:NX_BASE --head=$env:NX_HEAD --outputStyle=stream
 
       - name: Verify full Windows Android exports
         if: github.event_name == 'schedule'
@@ -223,4 +223,4 @@ jobs:
           GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
           GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
           GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
-        run: pnpm exec nx run-many -t export-smoke --projects=app-client,app-partner,app-captain,app-field --outputStyle=stream --parallel=2
+        run: node tools/dev/run-ci-command.mjs windows-export-full -- pnpm exec nx run-many -t export-smoke --projects=app-client,app-partner,app-captain,app-field --outputStyle=stream --parallel=2
