@@ -63,7 +63,7 @@ try {
     if ((& go version | Out-String).Trim() -notmatch '\bgo1\.27\.1\b') { Fail 'Go version mismatch.' }
 
     Run-Step 'Workspace invariant targets' {
-        pnpm exec nx run-many -t donor-residue repository-structure structural-hygiene runtime-ownership removed-domain-residue docs-command-parity docs-config-parity knowledge-system knowledge-references agent-contract workspace-dependencies nx-project-tags mobile-config brand theme-check theme-verify powershell-syntax knip --projects=workspace-tooling --outputStyle=stream --parallel=2
+        pnpm exec nx run-many -t donor-residue repository-structure structural-hygiene runtime-ownership removed-domain-residue cache-contracts docs-command-parity docs-config-parity knowledge-system knowledge-references agent-contract workspace-dependencies nx-project-tags mobile-config brand theme-check theme-verify powershell-syntax knip --projects=workspace-tooling --outputStyle=stream --parallel=2
     }
 
     Run-Step 'Developer tooling lint target' {
