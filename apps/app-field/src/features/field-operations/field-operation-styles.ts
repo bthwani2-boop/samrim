@@ -4,6 +4,9 @@ import { StyleSheet } from "react-native";
 export function createFieldOperationStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
     container: { backgroundColor: theme.background, gap: spacing[4], paddingBottom: spacing[5], width: "100%" },
+    caseList: { flex: 1, width: "100%" },
+    caseListContent: { flexGrow: 1, gap: spacing[4], paddingBottom: spacing[5], paddingHorizontal: spacing[5], paddingTop: spacing[4] },
+    caseListFooter: { alignItems: "stretch", gap: spacing[3], paddingTop: spacing[2] },
     title: { ...typography.hero, color: theme.color },
     sectionTitle: { ...typography.bodyStrong, color: theme.color, marginTop: spacing[1] },
     muted: { ...typography.bodySm, color: theme.colorMuted },

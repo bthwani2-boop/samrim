@@ -455,13 +455,27 @@ paths:
             type: integer
             minimum: 1
             maximum: 50
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 2048
       responses:
         "200":
-          description: Bounded Field joining-case list.
+          description: Bounded Field joining-case page scoped to the authenticated representative and search query.
           content:
             application/json:
               schema:
                 $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseListResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
         "401":
           $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
         "403":

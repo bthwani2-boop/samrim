@@ -3,14 +3,17 @@ import { type DshImageUploadInput, type JoiningCaseResponse, type JoiningCaseSum
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Image, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, FlatList, Image, Text, View } from "react-native";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient, isMissingFieldAdmission } from "./field-client";
 import { createFieldOperationStyles } from "./field-operation-styles";
 
+const FIELD_CASE_PAGE_SIZE = 25;
+
 type PendingStoreImageAttempt = Readonly<{ caseID: string; expectedVersion: number; image: DshImageUploadInput; idempotencyKey: string; correlationID: string }>;
+type FieldCasePagination = { sequence: number; query: string; cursor: string; loadingMore: boolean };
 
 function isOutcomeUncertain(cause: unknown): boolean {
   if (!cause || typeof cause !== "object") return false;
@@ -30,41 +33,100 @@ async function fieldCaseSubmitIdentity(caseID: string, expectedVersion: number) 
 }
 
 export function FieldCases() {
-const theme = useAppearanceTheme();
+  const theme = useAppearanceTheme();
   const styles = useMemo(() => createFieldOperationStyles(theme), [theme]);
   const { q: rawQuery } = useLocalSearchParams<{ q?: string | string[] }>();
-  const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
+  const routeQuery = (Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "").slice(0, 128);
+  const [appliedQuery, setAppliedQuery] = useState(routeQuery.trim());
   const [cases, setCases] = useState<ReadonlyArray<JoiningCaseSummary>>([]);
+  const [nextCursor, setNextCursor] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [missingAdmission, setMissingAdmission] = useState(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [paginationError, setPaginationError] = useState("");
   const [notice, setNotice] = useState("");
   const [mediaCase, setMediaCase] = useState<JoiningCaseResponse | null>(null);
   const [storeImage, setStoreImage] = useState<DshImageUploadInput | null>(null);
   const [pendingImageAttempt, setPendingImageAttempt] = useState<PendingStoreImageAttempt | null>(null);
+  const pagination = useRef<FieldCasePagination>({ sequence: 0, query: routeQuery.trim(), cursor: "", loadingMore: false });
+
+  useEffect(() => {
+    const timer = setTimeout(() => setAppliedQuery(routeQuery.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [routeQuery]);
 
   const load = useCallback(async () => {
+    const sequence = pagination.current.sequence + 1;
+    const retainedCursor = pagination.current.query === appliedQuery ? pagination.current.cursor : "";
+    pagination.current = { sequence, query: appliedQuery, cursor: retainedCursor, loadingMore: false };
     setLoading(true);
+    setLoadingMore(false);
     setError("");
+    setPaginationError("");
     setNotice("");
+    setMissingAdmission(false);
     try {
       const token = await getUsableIdentityAccessToken();
-      const response = await fieldClient().listOwnFieldJoiningCases(token);
+      const response = await fieldClient().listOwnFieldJoiningCases(token, FIELD_CASE_PAGE_SIZE, appliedQuery);
+      if (pagination.current.sequence !== sequence) return;
       setCases(response.cases);
+      pagination.current.cursor = response.nextCursor ?? "";
+      setNextCursor(pagination.current.cursor);
+      setMissingAdmission(false);
     } catch (cause) {
+      if (pagination.current.sequence !== sequence) return;
       if (isMissingFieldAdmission(cause)) {
         setCases([]);
+        pagination.current.cursor = "";
+        setNextCursor("");
+        setMissingAdmission(true);
         return;
       }
       console.error("DSH Field cases readback failed", cause);
       setError("تعذر قراءة ملفات الانضمام. أعد المحاولة.");
     } finally {
-      setLoading(false);
+      if (pagination.current.sequence === sequence) setLoading(false);
     }
-  }, []);
+  }, [appliedQuery]);
 
-  useEffect(() => { void load(); }, [load]);
-  const filteredCases = useMemo(() => { const query = searchQuery.trim().toLocaleLowerCase(); if (!query) return cases; return cases.filter((item) => [item.id, item.businessName, item.firstStoreName, item.contactPhoneE164].join(" ").toLocaleLowerCase().includes(query)); }, [cases, searchQuery]);
+  useEffect(() => {
+    setCases([]);
+    pagination.current.cursor = "";
+    setNextCursor("");
+    void load();
+  }, [load]);
+
+  const loadMore = useCallback(async () => {
+    const current = pagination.current;
+    if (loading || !current.cursor || current.loadingMore || current.query !== appliedQuery) return;
+    const sequence = current.sequence;
+    const requestedCursor = current.cursor;
+    current.loadingMore = true;
+    setLoadingMore(true);
+    setPaginationError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const response = await fieldClient().listOwnFieldJoiningCases(token, FIELD_CASE_PAGE_SIZE, appliedQuery, requestedCursor);
+      if (pagination.current.sequence !== sequence || pagination.current.cursor !== requestedCursor) return;
+      setCases((previous) => {
+        const knownIDs = new Set(previous.map((item) => item.id));
+        return [...previous, ...response.cases.filter((item) => !knownIDs.has(item.id))];
+      });
+      pagination.current.cursor = response.nextCursor ?? "";
+      setNextCursor(pagination.current.cursor);
+    } catch (cause) {
+      if (pagination.current.sequence !== sequence) return;
+      console.error("DSH Field cases continuation readback failed", cause);
+      setPaginationError("تعذر تحميل بقية الملفات. أعد المحاولة.");
+    } finally {
+      if (pagination.current.sequence === sequence) {
+        pagination.current.loadingMore = false;
+        setLoadingMore(false);
+      }
+    }
+  }, [appliedQuery, loading]);
 
   async function submitCase(item: JoiningCaseSummary) {
     if (busy || item.state !== "draft") return;
@@ -84,16 +146,16 @@ const theme = useAppearanceTheme();
       setNotice("وصل طلب الانضمام إلى طابور قبول المشغّل.");
     } catch (cause) {
       console.error("DSH Field joining-case submission failed", cause);
-		try {
-		  const token = await getUsableIdentityAccessToken();
-		  const latest = await fieldClient().readOwnFieldJoiningCase(token, item.id);
-		  await load();
-		  if (latest.case.state === "draft") setError("لم يتأكد الإرسال. أعد المحاولة؛ سيستخدم DSH هوية العملية نفسها لهذه النسخة.");
-		  else setNotice("وصل الطلب إلى DSH. الحالة الحالية: " + joiningCaseStateLabel(latest.case.state) + ".");
-		} catch (readError) {
-		  console.error("DSH Field joining-case submit recovery readback failed", readError);
-		  setError("تعذر تأكيد الإرسال وإعادة القراءة. أعد قراءة الملفات؛ إعادة المحاولة للنسخة نفسها تستخدم هوية العملية نفسها.");
-		}
+      try {
+        const token = await getUsableIdentityAccessToken();
+        const latest = await fieldClient().readOwnFieldJoiningCase(token, item.id);
+        await load();
+        if (latest.case.state === "draft") setError("لم يتأكد الإرسال. أعد المحاولة؛ سيستخدم DSH هوية العملية نفسها لهذه النسخة.");
+        else setNotice("وصل الطلب إلى DSH. الحالة الحالية: " + joiningCaseStateLabel(latest.case.state) + ".");
+      } catch (readError) {
+        console.error("DSH Field joining-case submit recovery readback failed", readError);
+        setError("تعذر تأكيد الإرسال وإعادة القراءة. أعد قراءة الملفات؛ إعادة المحاولة للنسخة نفسها تستخدم هوية العملية نفسها.");
+      }
     } finally {
       setBusy("");
     }
@@ -169,31 +231,62 @@ const theme = useAppearanceTheme();
     }
   }
 
-  return (
-    <View style={styles.container} accessibilityLabel="ملفات الانضمام">
-      <Text style={styles.title}>ملفات الانضمام</Text>
-      <Text style={styles.muted}>تابع حالة ملفات الانضمام وأرسل الملف للمراجعة عندما تكتمل بياناته.</Text>
-      {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View> : null}
-      {!loading ? <Text style={styles.sectionTitle}>الملفات ({filteredCases.length})</Text> : null}
-      {!loading && !filteredCases.length ? <Text style={styles.muted}>{cases.length ? "لا توجد ملفات مطابقة للبحث." : "لا توجد ملفات من هذا الميدان."}</Text> : null}
-      {!loading ? filteredCases.map((item) => <View key={item.id} style={styles.card}>
-        <View style={styles.orderHeader}><Text style={styles.cardTitle}>{item.businessName} · {item.firstStoreName}</Text><BthwaniStatusBadge icon={item.state === "draft" ? "edit" : item.state === "needs_correction" ? "warning" : "cases"} label={joiningCaseStateLabel(item.state)} tone={item.state === "draft" ? "info" : item.state === "needs_correction" ? "warning" : "neutral"} /></View>
-        {item.correctionReason ? <Text style={styles.error}>التصحيح المطلوب: {item.correctionReason}</Text> : null}
-        <Text style={styles.muted}>{item.state === "draft" ? "الخطوة التالية: راجع البيانات ثم أرسل طلب قبول المشغّل." : item.state === "admission_requested" ? "وصل الملف إلى طابور المشغّل لإنشاء دور الشريك بعد القبول." : item.state === "submitted" ? "قُبلت الإحالة؛ أصبحت الحالة لدى الشريك والمشغّل للمراجعة." : item.state === "needs_correction" ? "الخطوة التالية: يصحح الشريك المرتبط البيانات ويعيد الإرسال." : "اعتمد المشغّل الحالة؛ يظهر المتجر للعميل بعد اكتمال النشر والكتالوج."}</Text>
-        {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt)} label="قراءة صورة المتجر أو استكمالها" onPress={() => void openStoreImage(item)} variant="secondary" /> : null}
-        {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(pendingImageAttempt) || (Boolean(storeImage) && mediaCase?.case.id !== item.id)} label="إرسال للمراجعة" onPress={() => void submitCase(item)} /> : null}
-        {mediaCase?.case.id === item.id ? <View style={styles.card}>
-          <Text style={styles.cardTitle}>الصورة الكانونية للمتجر</Text>
-          {mediaCase.case.storeProfileImage ? <Image accessibilityLabel="صورة المتجر المحفوظة في DSH" source={{ uri: mediaCase.case.storeProfileImage.uri }} style={{ borderRadius: 12, height: 150, width: "100%" }} resizeMode="cover" /> : <Text style={styles.muted}>لا توجد صورة محفوظة للملف بعد.</Text>}
-          {storeImage ? <Image accessibilityLabel="معاينة صورة المتجر الجديدة" source={{ uri: storeImage.uri }} style={{ borderRadius: 12, height: 120, width: "100%" }} resizeMode="cover" /> : null}
-          <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label={storeImage ? "اختيار صورة أخرى" : mediaCase.case.storeProfileImage ? "تغيير صورة المتجر" : "اختيار صورة المتجر"} onPress={() => void pickStoreImage()} variant="secondary" />
-          {storeImage ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy)} label={pendingImageAttempt ? "إعادة التحقق من رفع الصورة" : "حفظ صورة المتجر"} onPress={() => void uploadStoreImage()} /> : null}
-          <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label="إغلاق تفاصيل الصورة" onPress={() => { setMediaCase(null); setStoreImage(null); }} variant="secondary" />
-        </View> : null}
-      </View>) : null}
-      {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      {notice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}
-      <BthwaniButton busy={Boolean(busy)} disabled={Boolean(busy)} label="تحديث الملفات" onPress={() => void load()} variant="secondary" />
+  const renderCase = ({ item }: { item: JoiningCaseSummary }) => (
+    <View style={styles.card}>
+      <View style={styles.orderHeader}><Text style={styles.cardTitle}>{item.businessName} · {item.firstStoreName}</Text><BthwaniStatusBadge icon={item.state === "draft" ? "edit" : item.state === "needs_correction" ? "warning" : "cases"} label={joiningCaseStateLabel(item.state)} tone={item.state === "draft" ? "info" : item.state === "needs_correction" ? "warning" : "neutral"} /></View>
+      {item.correctionReason ? <Text style={styles.error}>التصحيح المطلوب: {item.correctionReason}</Text> : null}
+      <Text style={styles.muted}>{item.state === "draft" ? "الخطوة التالية: راجع البيانات ثم أرسل الملف للمراجعة." : item.state === "admission_requested" ? "وصل الملف إلى طابور المشغّل لإنشاء دور الشريك بعد القبول." : item.state === "submitted" ? "قُبلت الإحالة؛ أصبحت الحالة لدى الشريك والمشغّل للمراجعة." : item.state === "needs_correction" ? "الخطوة التالية: يصحح الشريك المرتبط البيانات ويعيد الإرسال." : "اعتمد المشغّل الحالة؛ يظهر المتجر للعميل بعد اكتمال النشر والكتالوج."}</Text>
+      {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt)} label="قراءة صورة المتجر أو استكمالها" onPress={() => void openStoreImage(item)} variant="secondary" /> : null}
+      {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(pendingImageAttempt) || (Boolean(storeImage) && mediaCase?.case.id !== item.id)} label="إرسال للمراجعة" onPress={() => void submitCase(item)} /> : null}
+      {mediaCase?.case.id === item.id ? <View style={styles.card}>
+        <Text style={styles.cardTitle}>الصورة الكانونية للمتجر</Text>
+        {mediaCase.case.storeProfileImage ? <Image accessibilityLabel="صورة المتجر المحفوظة في DSH" source={{ uri: mediaCase.case.storeProfileImage.uri }} style={{ borderRadius: 12, height: 150, width: "100%" }} resizeMode="cover" /> : <Text style={styles.muted}>لا توجد صورة محفوظة للملف بعد.</Text>}
+        {storeImage ? <Image accessibilityLabel="معاينة صورة المتجر الجديدة" source={{ uri: storeImage.uri }} style={{ borderRadius: 12, height: 120, width: "100%" }} resizeMode="cover" /> : null}
+        <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label={storeImage ? "اختيار صورة أخرى" : mediaCase.case.storeProfileImage ? "تغيير صورة المتجر" : "اختيار صورة المتجر"} onPress={() => void pickStoreImage()} variant="secondary" />
+        {storeImage ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy)} label={pendingImageAttempt ? "إعادة التحقق من رفع الصورة" : "حفظ صورة المتجر"} onPress={() => void uploadStoreImage()} /> : null}
+        <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label="إغلاق تفاصيل الصورة" onPress={() => { setMediaCase(null); setStoreImage(null); }} variant="secondary" />
+      </View> : null}
     </View>
   );
+
+  const emptyMessage = missingAdmission
+    ? "لا يوجد حساب ميداني مؤهل لقراءة الملفات."
+    : appliedQuery
+      ? "لا توجد ملفات مطابقة للبحث."
+      : "لا توجد ملفات انضمام من هذا الميدان بعد.";
+
+  return <FlatList
+    accessibilityLabel="ملفات الانضمام"
+    data={cases}
+    keyExtractor={(item) => item.id}
+    keyboardDismissMode="on-drag"
+    keyboardShouldPersistTaps="handled"
+    ListEmptyComponent={loading
+      ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View>
+      : <View style={styles.state}><Text style={styles.muted}>{error || emptyMessage}</Text>{error ? <BthwaniButton disabled={Boolean(busy)} label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /> : null}</View>}
+    ListFooterComponent={loadingMore
+      ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ تحميل بقية الملفات…</Text></View>
+      : paginationError
+        ? <View style={styles.caseListFooter}><Text accessibilityRole="alert" style={styles.error}>{paginationError}</Text><BthwaniButton disabled={Boolean(busy)} label="إعادة تحميل بقية الملفات" onPress={() => void loadMore()} variant="secondary" /></View>
+        : nextCursor
+          ? <View style={styles.caseListFooter}><BthwaniButton disabled={Boolean(busy) || loading} label="تحميل المزيد من الملفات" onPress={() => void loadMore()} variant="secondary" /></View>
+          : cases.length > 0
+            ? <View style={styles.caseListFooter}><Text style={styles.muted}>تم تحميل كل الملفات المطابقة.</Text></View>
+            : null}
+    ListFooterComponentStyle={styles.caseListFooter}
+    ListHeaderComponent={<View style={styles.container}>
+      <Text style={styles.title}>ملفات الانضمام</Text>
+      <Text style={styles.muted}>تابع حالة ملفات الانضمام وأرسل الملف للمراجعة عندما تكتمل بياناته.</Text>
+      {cases.length > 0 ? <Text style={styles.sectionTitle}>ملفات محمّلة: {cases.length}{nextCursor ? " · توجد ملفات أخرى" : ""}</Text> : null}
+      {error && cases.length > 0 ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+      {notice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}
+      {cases.length > 0 ? <BthwaniButton disabled={Boolean(busy) || loading} label="تحديث الملفات" onPress={() => void load()} variant="secondary" /> : null}
+    </View>}
+    onRefresh={() => void load()}
+    refreshing={loading && cases.length > 0}
+    renderItem={renderCase}
+    showsVerticalScrollIndicator={false}
+    style={styles.caseList}
+    contentContainerStyle={styles.caseListContent}
+  />;
 }

@@ -245,12 +245,12 @@ func (s *Service) CreateJoiningCase(ctx context.Context, accessToken, idempotenc
 	return postgres.CreateJoiningCaseForField(ctx, s.db, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseFieldRequest(identity.Subject, phone, businessName, firstStoreName, serviceCityID, verticalID, latitude, longitude, fulfillmentModes), identity.Subject, strings.TrimSpace(correlationID), phone, businessName, firstStoreName, serviceCityID, verticalID, latitude, longitude, fulfillmentModes)
 }
 
-func (s *Service) ListJoiningCases(ctx context.Context, accessToken string, limit int) (postgres.JoiningCaseListResult, error) {
+func (s *Service) ListJoiningCases(ctx context.Context, accessToken, queryText string, limit int, cursor string) (postgres.JoiningCaseListResult, error) {
 	identity, err := s.requireEligibleField(ctx, accessToken)
 	if err != nil {
 		return postgres.JoiningCaseListResult{}, err
 	}
-	return postgres.ListJoiningCasesForField(ctx, s.db, identity.Subject, limit)
+	return postgres.ListJoiningCasesForField(ctx, s.db, identity.Subject, queryText, limit, cursor)
 }
 
 func (s *Service) ReadJoiningCase(ctx context.Context, accessToken, caseID string) (postgres.JoiningCaseResult, error) {

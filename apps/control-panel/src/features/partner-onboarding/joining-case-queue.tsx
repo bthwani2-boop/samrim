@@ -33,6 +33,7 @@ export function JoiningCaseQueue() {
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [urlReady, setUrlReady] = useState(false);
   const requestSequence = useRef(0);
 
@@ -49,6 +50,7 @@ export function JoiningCaseQueue() {
     setCursor(params.get("cursor") ?? "");
     setCursorStack(historyState?.joiningCaseCursors ?? []);
     setSelectedIds(new Set());
+    setNotice("");
   }, []);
 
   useEffect(() => {
@@ -66,6 +68,7 @@ export function JoiningCaseQueue() {
     if (pageCursor) params.set("cursor", pageCursor); else params.delete("cursor");
     const query = params.toString();
     window.history.pushState({ joiningCaseCursors: pageCursors }, "", window.location.pathname + (query ? `?${query}` : ""));
+    setNotice("");
     setState(nextState);
     setQuery(nextQuery);
     setAppliedQuery(nextQuery);
@@ -86,6 +89,11 @@ export function JoiningCaseQueue() {
       if (cursor) params.set("cursor", cursor);
       const response = await fetch(`/api/partners/joining-cases?${params.toString()}`, { cache: "no-store" });
       if (sequence !== requestSequence.current) return;
+      if (response.status === 400 && cursor) {
+        navigate(state, appliedQuery, sort);
+        setNotice("انتهت صلاحية مؤشر الصفحة؛ أعدنا طابور الانضمام إلى الصفحة الأولى بنفس التصفية.");
+        return;
+      }
       if (!response.ok) throw new Error(await partnerErrorMessage(response));
       const page = await response.json() as JoiningCaseListResponse;
       if (sequence !== requestSequence.current) return;
@@ -101,7 +109,7 @@ export function JoiningCaseQueue() {
     } finally {
       if (sequence === requestSequence.current) setBusy(false);
     }
-  }, [appliedQuery, cursor, sort, state]);
+  }, [appliedQuery, cursor, navigate, sort, state]);
 
   useEffect(() => { if (urlReady) void loadQueue(); }, [loadQueue, urlReady]);
 
@@ -132,6 +140,7 @@ export function JoiningCaseQueue() {
     {state || appliedQuery ? <section className="partner-active-filters" aria-label="التصفية النشطة">{state ? <button type="button" className="filter-chip" onClick={() => navigate("", appliedQuery, sort)}>الحالة: {stateOptions.find((option) => option.value === state)?.label}<span aria-hidden="true"> ×</span><span className="visually-hidden">مسح تصفية الحالة</span></button> : null}{appliedQuery ? <button type="button" className="filter-chip" onClick={() => navigate(state, "", sort)}>البحث: {appliedQuery}<span aria-hidden="true"> ×</span><span className="visually-hidden">مسح البحث</span></button> : null}<button type="button" className="button button-secondary" onClick={() => navigate("", "", "created_asc")}>مسح الكل</button></section> : null}
     {busy && cases.length === 0 ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ تحميل حالات DSH</strong></div> : null}
     {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر قراءة طابور الانضمام</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={busy} onClick={() => void loadQueue()}>إعادة المحاولة</button></div> : null}
+    {notice ? <p role="status">{notice}</p> : null}
     {!busy && !error && cases.length === 0 ? <div className="collection-state"><strong>لا توجد حالات مطابقة</strong><p>غيّر حالة الطلب أو امسح التصفية.</p></div> : null}
 
     {cases.length > 0 ? <>

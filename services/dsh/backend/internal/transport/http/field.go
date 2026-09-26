@@ -199,7 +199,7 @@ func (s *FieldServer) listJoiningCases(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = parsed
 	}
-	result, err := s.service.ListJoiningCases(r.Context(), bearerToken(r), limit)
+	result, err := s.service.ListJoiningCases(r.Context(), bearerToken(r), r.URL.Query().Get("q"), limit, r.URL.Query().Get("cursor"))
 	if err != nil {
 		writeFieldError(w, err)
 		return
@@ -208,7 +208,7 @@ func (s *FieldServer) listJoiningCases(w http.ResponseWriter, r *http.Request) {
 	for _, item := range result.Cases {
 		items = append(items, contract.JoiningCaseSummary{ID: item.ID, ContactPhoneE164: item.ContactPhoneE164, BusinessName: item.BusinessName, FirstStoreName: item.FirstStoreName, ServiceCityID: item.FirstStoreServiceCityID, FirstStoreVerticalID: item.FirstStoreVerticalID, FirstStoreLatitude: nullableFloatValue(item.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(item.FirstStoreLongitude), Origin: contract.JoiningCaseOrigin(item.Origin), State: contract.JoiningCaseState(item.State), CorrectionReason: item.CorrectionReason, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
 	}
-	writeJSON(w, http.StatusOK, contract.JoiningCaseListResponse{Cases: items})
+	writeJSON(w, http.StatusOK, contract.JoiningCaseListResponse{Cases: items, NextCursor: result.NextCursor})
 }
 
 func (s *FieldServer) readJoiningCase(w http.ResponseWriter, r *http.Request) {

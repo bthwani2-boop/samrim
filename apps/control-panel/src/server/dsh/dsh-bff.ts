@@ -663,7 +663,7 @@ export async function updateOperatorPartnerStoreCommissionPolicy(input: PartnerS
 }
 
 export async function listJoiningCases(state: string, query: string, sort: "created_asc" | "created_desc", limit: number, cursor: string, context: DshOperatorReadContext): Promise<JoiningCaseListResponse> {
-  if (!context.operatorActorId.trim() || !Number.isInteger(limit) || limit < 1 || limit > 50 || query.trim().length > 128) throw new Error("DSH_JOINING_CASE_QUEUE_INPUT_INVALID");
+  if (!context.operatorActorId.trim() || !Number.isInteger(limit) || limit < 1 || limit > 50 || Array.from(query.trim()).length > 128 || cursor.trim().length > 2048) throw new Error("DSH_JOINING_CASE_QUEUE_INPUT_INVALID");
   const params = new URLSearchParams({ limit: String(limit) });
   params.set("sort", sort);
   if (state.trim()) params.set("state", state.trim());

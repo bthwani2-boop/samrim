@@ -647,9 +647,14 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
     async readOwnFieldAdmission(accessToken: string): Promise<FieldAdmissionResponse> {
       return userRequest<FieldAdmissionResponse>(accessToken, dshOperationPaths.readOwnFieldAdmission.path, dshOperationPaths.readOwnFieldAdmission.method);
     },
-    async listOwnFieldJoiningCases(accessToken: string, limit = 25): Promise<JoiningCaseListResponse> {
-      if (limit < 1 || limit > 50) throw new Error("DSH_FIELD_JOINING_CASE_LIMIT_INVALID");
-      const path = `${dshOperationPaths.listOwnFieldJoiningCases.path}?${new URLSearchParams({ limit: String(limit) }).toString()}`;
+    async listOwnFieldJoiningCases(accessToken: string, limit = 25, queryText = "", cursor = ""): Promise<JoiningCaseListResponse> {
+      const normalizedQuery = queryText.trim();
+      const normalizedCursor = cursor.trim();
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50 || Array.from(normalizedQuery).length > 128 || normalizedCursor.length > 2048) throw new Error("DSH_FIELD_JOINING_CASE_PAGE_INVALID");
+      const params = new URLSearchParams({ limit: String(limit) });
+      if (normalizedQuery) params.set("q", normalizedQuery);
+      if (normalizedCursor) params.set("cursor", normalizedCursor);
+      const path = `${dshOperationPaths.listOwnFieldJoiningCases.path}?${params.toString()}`;
       return userRequest<JoiningCaseListResponse>(accessToken, path, dshOperationPaths.listOwnFieldJoiningCases.method);
     },
     async createFieldJoiningCase(accessToken: string, input: CreateJoiningCaseRequest, idempotencyKey?: string, correlationID?: string): Promise<JoiningCaseResponse> {

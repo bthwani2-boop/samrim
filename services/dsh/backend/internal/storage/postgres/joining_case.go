@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/lib/pq"
 )
@@ -406,9 +407,52 @@ func correctAndResubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, acto
 }
 
 type joiningCaseCursor struct {
-	CreatedAt time.Time `json:"createdAt"`
-	ID        string    `json:"id"`
-	Sort      string    `json:"sort,omitempty"`
+	Version      int       `json:"v"`
+	Scope        string    `json:"scope"`
+	CreatedAt    time.Time `json:"createdAt"`
+	ID           string    `json:"id"`
+	Sort         string    `json:"sort"`
+	State        string    `json:"state"`
+	Query        string    `json:"query"`
+	FieldActorID string    `json:"fieldActorId"`
+}
+
+func encodeJoiningCaseCursor(cursor joiningCaseCursor) (string, error) {
+	value, err := json.Marshal(cursor)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(value), nil
+}
+
+func normalizeJoiningCaseSearch(queryText string) (string, error) {
+	if !utf8.ValidString(queryText) {
+		return "", ErrJoiningCaseInvalidSearch
+	}
+	queryText = strings.ToLower(strings.TrimSpace(queryText))
+	if utf8.RuneCountInString(queryText) > 128 || strings.ContainsRune(queryText, '\x00') {
+		return "", ErrJoiningCaseInvalidSearch
+	}
+	return queryText, nil
+}
+
+func decodeJoiningCaseCursor(raw, scope, state, query, sort, fieldActorID string) (*joiningCaseCursor, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	if len(raw) > 2048 {
+		return nil, ErrJoiningCaseInvalidCursor
+	}
+	value, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return nil, ErrJoiningCaseInvalidCursor
+	}
+	var cursor joiningCaseCursor
+	if json.Unmarshal(value, &cursor) != nil || cursor.Version != 1 || cursor.Scope != scope || cursor.State != state || cursor.Query != query || cursor.Sort != sort || cursor.FieldActorID != fieldActorID || cursor.ID == "" || cursor.CreatedAt.IsZero() {
+		return nil, ErrJoiningCaseInvalidCursor
+	}
+	return &cursor, nil
 }
 
 func ListJoiningCases(ctx context.Context, db *sql.DB, state, queryText, sort string, limit int, cursor string) (JoiningCaseListResult, error) {
@@ -429,27 +473,13 @@ func ListJoiningCases(ctx context.Context, db *sql.DB, state, queryText, sort st
 	if sort != "created_asc" && sort != "created_desc" {
 		return JoiningCaseListResult{}, ErrJoiningCaseInvalidSort
 	}
-	queryText = strings.ToLower(strings.TrimSpace(queryText))
-	if len(queryText) > 128 {
-		return JoiningCaseListResult{}, ErrJoiningCaseInvalidSearch
+	queryText, err := normalizeJoiningCaseSearch(queryText)
+	if err != nil {
+		return JoiningCaseListResult{}, err
 	}
-	var decoded *joiningCaseCursor
-	if strings.TrimSpace(cursor) != "" {
-		value, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(cursor))
-		if err != nil {
-			return JoiningCaseListResult{}, ErrJoiningCaseInvalidCursor
-		}
-		var parsed joiningCaseCursor
-		if json.Unmarshal(value, &parsed) != nil || parsed.ID == "" || parsed.CreatedAt.IsZero() {
-			return JoiningCaseListResult{}, ErrJoiningCaseInvalidCursor
-		}
-		if parsed.Sort == "" {
-			parsed.Sort = "created_asc"
-		}
-		if parsed.Sort != sort {
-			return JoiningCaseListResult{}, ErrJoiningCaseInvalidCursor
-		}
-		decoded = &parsed
+	decoded, err := decodeJoiningCaseCursor(cursor, "operator", state, queryText, sort, "")
+	if err != nil {
+		return JoiningCaseListResult{}, err
 	}
 
 	query := `SELECT c.id,c.contact_phone_e164,c.business_name,c.first_store_name,c.partner_actor_id,c.originating_field_actor_id,c.origin,c.state,c.correction_reason,c.reviewed_by,c.version,c.created_at,c.updated_at,c.first_store_service_city_id,c.first_store_vertical_id,c.first_store_latitude,c.first_store_longitude FROM dsh.joining_cases c WHERE 1=1`
@@ -522,11 +552,11 @@ func ListJoiningCases(ctx context.Context, db *sql.DB, state, queryText, sort st
 	if len(items) > limit {
 		last := items[limit-1]
 		result.Cases = items[:limit]
-		encoded, err := json.Marshal(joiningCaseCursor{CreatedAt: last.CreatedAt, ID: last.ID, Sort: sort})
+		encoded, err := encodeJoiningCaseCursor(joiningCaseCursor{Version: 1, Scope: "operator", CreatedAt: last.CreatedAt, ID: last.ID, Sort: sort, State: state, Query: queryText})
 		if err != nil {
 			return JoiningCaseListResult{}, err
 		}
-		result.NextCursor = base64.RawURLEncoding.EncodeToString(encoded)
+		result.NextCursor = encoded
 	}
 	return result, nil
 }
@@ -752,16 +782,38 @@ func ReadJoiningCaseForField(ctx context.Context, db *sql.DB, fieldActorID, case
 	return JoiningCaseResult{Case: caseRecord}, nil
 }
 
-func ListJoiningCasesForField(ctx context.Context, db *sql.DB, fieldActorID string, limit int) (JoiningCaseListResult, error) {
-	if db == nil || strings.TrimSpace(fieldActorID) == "" || limit < 1 || limit > 50 {
+func ListJoiningCasesForField(ctx context.Context, db *sql.DB, fieldActorID, queryText string, limit int, cursor string) (JoiningCaseListResult, error) {
+	fieldActorID = strings.TrimSpace(fieldActorID)
+	if db == nil || fieldActorID == "" || len(fieldActorID) > 128 || limit < 1 || limit > 50 {
 		return JoiningCaseListResult{}, ErrJoiningCaseInvalidLimit
 	}
-	rows, err := db.QueryContext(ctx, `SELECT c.id,c.contact_phone_e164,c.business_name,c.first_store_name,c.partner_actor_id,c.originating_field_actor_id,c.origin,c.state,c.correction_reason,c.reviewed_by,c.version,c.created_at,c.updated_at,c.first_store_service_city_id,c.first_store_vertical_id,c.first_store_latitude,c.first_store_longitude FROM dsh.joining_cases c WHERE c.originating_field_actor_id=$1 ORDER BY c.created_at DESC,c.id DESC LIMIT $2`, strings.TrimSpace(fieldActorID), limit)
+	queryText, err := normalizeJoiningCaseSearch(queryText)
+	if err != nil {
+		return JoiningCaseListResult{}, err
+	}
+	decoded, err := decodeJoiningCaseCursor(cursor, "field", "", queryText, "created_desc", fieldActorID)
+	if err != nil {
+		return JoiningCaseListResult{}, err
+	}
+	query := `SELECT c.id,c.contact_phone_e164,c.business_name,c.first_store_name,c.partner_actor_id,c.originating_field_actor_id,c.origin,c.state,c.correction_reason,c.reviewed_by,c.version,c.created_at,c.updated_at,c.first_store_service_city_id,c.first_store_vertical_id,c.first_store_latitude,c.first_store_longitude FROM dsh.joining_cases c WHERE c.originating_field_actor_id=$1`
+	args := []any{fieldActorID}
+	if queryText != "" {
+		args = append(args, queryText)
+		searchArg := len(args)
+		query += fmt.Sprintf(" AND (position($%d in lower(c.id::text))>0 OR position($%d in lower(c.contact_phone_e164))>0 OR position($%d in lower(c.business_name))>0 OR position($%d in lower(c.first_store_name))>0)", searchArg, searchArg, searchArg, searchArg)
+	}
+	if decoded != nil {
+		args = append(args, decoded.CreatedAt, decoded.ID)
+		query += fmt.Sprintf(" AND (c.created_at,c.id)<($%d,$%d)", len(args)-1, len(args))
+	}
+	args = append(args, limit+1)
+	query += fmt.Sprintf(" ORDER BY c.created_at DESC,c.id DESC LIMIT $%d", len(args))
+	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return JoiningCaseListResult{}, fmt.Errorf("list Field joining cases: %w", err)
 	}
 	defer rows.Close()
-	items := make([]JoiningCaseRecord, 0, limit)
+	items := make([]JoiningCaseRecord, 0, limit+1)
 	for rows.Next() {
 		var record JoiningCaseRecord
 		var actorID, originActorID, origin, correctionReason, reviewedBy, cityID, verticalID sql.NullString
@@ -797,7 +849,16 @@ func ListJoiningCasesForField(ctx context.Context, db *sql.DB, fieldActorID stri
 	if err := rows.Err(); err != nil {
 		return JoiningCaseListResult{}, fmt.Errorf("read Field joining case queue: %w", err)
 	}
-	return JoiningCaseListResult{Cases: items}, nil
+	result := JoiningCaseListResult{Cases: items}
+	if len(items) > limit {
+		last := items[limit-1]
+		result.Cases = items[:limit]
+		result.NextCursor, err = encodeJoiningCaseCursor(joiningCaseCursor{Version: 1, Scope: "field", CreatedAt: last.CreatedAt, ID: last.ID, Sort: "created_desc", Query: queryText, FieldActorID: fieldActorID})
+		if err != nil {
+			return JoiningCaseListResult{}, err
+		}
+	}
+	return result, nil
 }
 
 const joiningCaseSelect = `SELECT c.id,c.contact_phone_e164,c.business_name,c.first_store_name,c.partner_actor_id,c.originating_field_actor_id,c.origin,c.state,c.commission_rate_bps,c.settlement_period,c.financial_profile_id,c.financial_profile_state,c.correction_reason,c.reviewed_by,c.store_id,c.version,c.created_at,c.updated_at,c.first_store_service_city_id,c.first_store_vertical_id,c.first_store_latitude,c.first_store_longitude,c.first_store_fulfillment_modes,c.terms_policy_version,
