@@ -217,3 +217,33 @@ jobs:
           GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
           GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
         run: node tools/dev/run-ci-command.mjs windows-export-full -- pnpm exec nx run-many -t export-smoke --projects=app-client,app-partner,app-captain,app-field --outputStyle=stream --parallel=2
+
+      - name: Verify Windows proof is non-mutating
+        if: always()
+        shell: pwsh
+        run: |
+          $drift = @(git status --porcelain=v1 --untracked-files=all)
+          if ($drift.Count -gt 0) {
+            $drift | Write-Host
+            git diff -- .
+            throw "Windows static proof mutated repository state."
+          }
+
+      - name: Capture Windows static failure package
+        if: failure()
+        shell: pwsh
+        run: node tools/dev/capture-ci-failure.mjs --kind=static-windows --out="$env:RUNNER_TEMP/static-windows-failure-package"
+
+      - name: Upload Windows static failure package
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: static-windows-failure-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/static-windows-failure-package
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Report Windows static CI performance
+        if: always()
+        shell: pwsh
+        run: node tools/dev/report-ci-performance.mjs
