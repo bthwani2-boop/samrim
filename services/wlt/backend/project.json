@@ -55,6 +55,12 @@
       "options": {
         "command": "docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml exec -T wlt /schema-verify"
       }
+    },
+    "format-check": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/dev/check-go-format.mjs services/wlt/backend"
+      }
     }
   },
   "tags": [
