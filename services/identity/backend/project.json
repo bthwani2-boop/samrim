@@ -48,7 +48,15 @@
       "executor": "nx:run-commands",
       "options": {
         "command": "node tools/dev/verify-identity-migrations.mjs --env-file=infra/local/.env"
-      }
+      },
+      "dependsOn": [
+        {
+          "projects": [
+            "control-panel"
+          ],
+          "target": "browser-live-proof"
+        }
+      ]
     },
     "runtime-proof": {
       "cache": false,
