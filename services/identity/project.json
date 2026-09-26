@@ -24,6 +24,12 @@
           "runtime": "pnpm --version"
         }
       ]
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec biome lint services/identity --diagnostic-level=error"
+      }
     }
   },
   "tags": [
