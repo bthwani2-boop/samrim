@@ -48,7 +48,15 @@
       "executor": "nx:run-commands",
       "options": {
         "command": "docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml exec -T wlt /schema-verify"
-      }
+      },
+      "dependsOn": [
+        {
+          "projects": [
+            "identity-backend"
+          ],
+          "target": "runtime-proof"
+        }
+      ]
     },
     "format-check": {
       "executor": "nx:run-commands",
