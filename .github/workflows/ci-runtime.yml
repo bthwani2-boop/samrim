@@ -176,30 +176,21 @@ jobs:
             echo "No classified DSH runtime diagnostics were emitted."
           fi
 
-      - name: Capture runtime failure package
-        if: failure() && steps.scope.outputs.run == 'true'
+      - name: Verify backend proof is non-mutating
+        if: always() && steps.scope.outputs.run == 'true'
         shell: bash
         run: |
-          set +e
-          package="$RUNNER_TEMP/runtime-failure-package"
-          mkdir -p "$package"
-          {
-            echo "NX_BASE=$NX_BASE"
-            echo "NX_HEAD=$NX_HEAD"
-            echo "GITHUB_SHA=$GITHUB_SHA"
-            echo "GITHUB_RUN_ID=$GITHUB_RUN_ID"
-            echo "GITHUB_RUN_ATTEMPT=$GITHUB_RUN_ATTEMPT"
-          } > "$package/metadata.txt"
-          pnpm exec nx show projects --affected --base="$NX_BASE" --head="$NX_HEAD" > "$package/affected-projects.txt" 2>&1 || true
-          git status --porcelain=v1 --untracked-files=all > "$package/git-status.txt" 2>&1 || true
-          docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml ps -a > "$package/compose-ps.txt" 2>&1 || true
-          docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml logs --no-color > "$package/compose.log" 2>&1 || true
-          if [[ -f "$RUNNER_TEMP/control-panel.log" ]]; then cp "$RUNNER_TEMP/control-panel.log" "$package/control-panel.log"; fi
-          if [[ -d apps/control-panel/test-results ]]; then cp -R apps/control-panel/test-results "$package/playwright-test-results"; fi
-          if [[ -d apps/control-panel/playwright-report ]]; then cp -R apps/control-panel/playwright-report "$package/playwright-report"; fi
+          set -euo pipefail
+          drift="$(git status --porcelain --untracked-files=all)"
+          [[ -z "${drift}" ]] || { printf '%s\n' "${drift}"; git diff -- . || true; exit 1; }
+
+      - name: Capture runtime failure package
+        if: failure()
+        shell: bash
+        run: node tools/dev/capture-ci-failure.mjs --kind=runtime --out="$RUNNER_TEMP/runtime-failure-package"
 
       - name: Upload runtime failure package
-        if: failure() && steps.scope.outputs.run == 'true'
+        if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: runtime-failure-${{ github.sha }}-${{ github.run_attempt }}
@@ -207,13 +198,10 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Verify backend proof is non-mutating
-        if: steps.scope.outputs.run == 'true'
+      - name: Report runtime CI performance
+        if: always()
         shell: bash
-        run: |
-          set -euo pipefail
-          drift="$(git status --porcelain --untracked-files=all)"
-          [[ -z "${drift}" ]] || { printf '%s\n' "${drift}"; git diff -- . || true; exit 1; }
+        run: node tools/dev/report-ci-performance.mjs
 
       - name: Stop Control Panel host
         if: always()
