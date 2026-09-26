@@ -26,6 +26,7 @@ jobs:
       name: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && 'nx-cloud-protected' || 'nx-cloud-unprotected' }}
     env:
       NX_CLOUD_ACCESS_TOKEN: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && secrets.NX_CLOUD_RW_TOKEN || secrets.NX_CLOUD_RO_TOKEN }}
+      NX_NO_CLOUD: ${{ github.event_name == 'pull_request' && secrets.NX_CLOUD_RO_TOKEN == '' && 'true' || 'false' }}
     steps:
       - name: Checkout integration candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -155,6 +156,7 @@ jobs:
       name: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && 'nx-cloud-protected' || 'nx-cloud-unprotected' }}
     env:
       NX_CLOUD_ACCESS_TOKEN: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && secrets.NX_CLOUD_RW_TOKEN || secrets.NX_CLOUD_RO_TOKEN }}
+      NX_NO_CLOUD: ${{ github.event_name == 'pull_request' && secrets.NX_CLOUD_RO_TOKEN == '' && 'true' || 'false' }}
     steps:
       - name: Configure hostile Windows Git default
         shell: pwsh
