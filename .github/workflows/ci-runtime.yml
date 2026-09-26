@@ -24,12 +24,22 @@ jobs:
     timeout-minutes: 35
     env:
       NX_NO_CLOUD: "true"
+      CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
     steps:
-      - name: Checkout integration candidate
+      - name: Checkout exact candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
+          ref: ${{ env.CANDIDATE_SHA }}
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify exact candidate checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          observed="$(git rev-parse HEAD)"
+          [[ "$observed" == "$CANDIDATE_SHA" ]] || { echo "::error::candidate SHA mismatch expected=$CANDIDATE_SHA observed=$observed"; exit 1; }
+          echo "EXACT_CANDIDATE_SHA=$observed"
 
       - name: Resolve canonical affected SHAs
         uses: nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1
@@ -58,7 +68,7 @@ jobs:
           set -euo pipefail
           if [[ "$GITHUB_EVENT_NAME" == "schedule" ]]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "CI_RUNTIME_SCOPE=FULL_REGRESSION head=$GITHUB_SHA"
+            echo "CI_RUNTIME_SCOPE=FULL_REGRESSION head=$CANDIDATE_SHA"
             exit 0
           fi
           affected="$(pnpm exec nx show projects --affected --base="$NX_BASE" --head="$NX_HEAD" --projects=repository-ci --sep=,)"
@@ -194,7 +204,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: runtime-failure-${{ github.sha }}-${{ github.run_attempt }}
+          name: runtime-failure-${{ env.CANDIDATE_SHA }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/runtime-failure-package
           if-no-files-found: error
           retention-days: 14
