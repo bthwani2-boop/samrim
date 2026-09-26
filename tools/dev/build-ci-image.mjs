@@ -25,11 +25,11 @@ const args = [
   "buildx", "build",
   "--load",
   "--provenance=false",
-  "--cache-from", "type=gha,scope=" + scope,
+  "--cache-from", "type=gha,version=2,scope=" + scope,
   "--file", definition.dockerfile,
   "--tag", definition.tag,
 ];
-if (trustedCacheWriter) args.push("--cache-to", "type=gha,mode=max,scope=" + scope);
+if (trustedCacheWriter) args.push("--cache-to", "type=gha,version=2,mode=max,scope=" + scope);
 args.push(".");
 
 console.log("CI_IMAGE_BUILD_START service=" + service + " scope=" + scope + " cache_write=" + trustedCacheWriter);
