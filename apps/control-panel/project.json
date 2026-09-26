@@ -10,6 +10,12 @@
       },
       "outputs": [
         "{projectRoot}/.next/types"
+      ],
+      "inputs": [
+        "default",
+        "^default",
+        "nodeToolchain",
+        "controlPanelBuildEnvironment"
       ]
     },
     "build": {
@@ -19,6 +25,12 @@
       },
       "outputs": [
         "{projectRoot}/.next"
+      ],
+      "inputs": [
+        "default",
+        "^default",
+        "nodeToolchain",
+        "controlPanelBuildEnvironment"
       ]
     },
     "e2e": {
