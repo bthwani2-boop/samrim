@@ -299,8 +299,10 @@ for (const file of tracked) {
   if (top === "docs") { classify(file, "human-documentation"); continue; }
   if (top === "tools") {
     if (file === "tools/README.md") { classify(file, "tools-orientation"); continue; }
+    if (file === "tools/BTHWANI_FULL_PLATFORM_A_TO_Z_FIXED_POINT_CLOSURE_TRIGGER.md") { classify(file, "active-task-input"); continue; }
     if (segments[1] === "dev") { classify(file, "developer-tooling"); continue; }
     if (segments[1] === "mobile") { classify(file, "mobile-tooling"); continue; }
+    if (segments[1] === "competitors") { classify(file, "decision-evidence"); continue; }
   }
 }
 

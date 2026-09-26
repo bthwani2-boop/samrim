@@ -306,6 +306,8 @@ Use cohesive lanes only when enough real tooling proves them. Do not create a ne
 
 A tool may inspect, generate, automate or prove; it never becomes Product/System/closure authority.
 
+Saved, decision-relevant competitor observations may remain in `tools/competitors/` as non-authoritative evidence. An explicitly supplied active task trigger may temporarily remain at `tools/` root as task input; `AGENTS.md` remains the only repository-local execution law, and the trigger is removed when its objective closes.
+
 ## 11. Tests and generated artifacts
 
 Tests follow the owner of behavior:

@@ -73,7 +73,7 @@ const verifier = requireTokens("tools/dev/verify-local-candidate.ps1", [
   "repository-ci:execution-proof-system",
   "nx run infra:compose-config",
   "nx affected -t lint format-check typecheck unit contract build vet export-smoke",
-  "VERIFY_STEP_MS",
+  "VERIFY_STEP=PASS name=",
   "VERIFY_TOTAL_MS",
   "VERIFY=PASS",
 ]);
