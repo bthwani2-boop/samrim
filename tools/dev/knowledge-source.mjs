@@ -3,8 +3,8 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-export const repoRoot = path.resolve(import.meta.dirname, "../..");
-export const knowledgeSourcesPath = path.join(repoRoot, "knowledge.sources.json");
+const repoRoot = path.resolve(import.meta.dirname, "../..");
+const knowledgeSourcesPath = path.join(repoRoot, "knowledge.sources.json");
 
 const GOVERNANCE_REPOSITORY = "bthwani2-boop/governance-and-docs";
 const ALLOWED_TOP_LEVEL_KEYS = ["governance", "schema"];
