@@ -70,6 +70,10 @@ try {
         pnpm exec nx run repository-ci:tooling-lint --outputStyle=stream
     }
 
+    Run-Step 'Execution proof system' {
+        pnpm exec nx run repository-ci:execution-proof-system --outputStyle=stream
+    }
+
     Run-Step 'Infrastructure invariant targets' {
         pnpm exec nx run infra:compose-config --outputStyle=stream
     }
