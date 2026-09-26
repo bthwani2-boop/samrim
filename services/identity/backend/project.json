@@ -12,9 +12,7 @@
       "inputs": [
         "default",
         "^default",
-        {
-          "runtime": "go version"
-        }
+        "goToolchain"
       ],
       "options": {
         "command": "go build ./...",
@@ -26,9 +24,7 @@
       "inputs": [
         "default",
         "^default",
-        {
-          "runtime": "go version"
-        }
+        "goToolchain"
       ],
       "options": {
         "command": "go vet ./...",
@@ -40,9 +36,7 @@
       "inputs": [
         "default",
         "^default",
-        {
-          "runtime": "go version"
-        }
+        "goToolchain"
       ],
       "options": {
         "command": "go test ./...",
