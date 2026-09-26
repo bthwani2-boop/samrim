@@ -16,14 +16,19 @@ if (!name || commandArgs.length === 0) {
 const runnerTemp = process.env.RUNNER_TEMP || os.tmpdir();
 const metricsPath = process.env.SAMRIM_CI_METRICS_PATH || path.join(runnerTemp, "samrim-ci-metrics.jsonl");
 const logDir = process.env.SAMRIM_CI_LOG_DIR || path.join(runnerTemp, "samrim-ci-logs");
+const profileDir = process.env.SAMRIM_CI_PROFILE_DIR || path.join(runnerTemp, "samrim-ci-profiles");
 fs.mkdirSync(path.dirname(metricsPath), { recursive: true });
 fs.mkdirSync(logDir, { recursive: true });
+fs.mkdirSync(profileDir, { recursive: true });
 
 const isWindows = process.platform === "win32";
 const executable = isWindows && commandArgs[0] === "pnpm" ? "pnpm.cmd" : commandArgs[0];
 const args = commandArgs.slice(1);
 const safeName = name.replace(/[^A-Za-z0-9._-]+/g, "-");
 const logPath = path.join(logDir, safeName + ".log");
+const isNxCommand = commandArgs[0] === "pnpm" && commandArgs[1] === "exec" && commandArgs[2] === "nx";
+const profilePath = isNxCommand ? path.join(profileDir, safeName + ".json") : null;
+const childEnv = profilePath ? { ...process.env, NX_PROFILE: profilePath } : process.env;
 const log = fs.createWriteStream(logPath, { flags: "w" });
 const startedAt = new Date();
 const started = performance.now();
@@ -34,7 +39,7 @@ let exitCode = 1;
 try {
   const child = spawn(executable, args, {
     cwd: root,
-    env: process.env,
+    env: childEnv,
     stdio: ["inherit", "pipe", "pipe"],
     shell: isWindows,
   });
@@ -82,6 +87,7 @@ const record = {
   durationMs,
   exitCode,
   logPath,
+  profilePath,
   sha: process.env.GITHUB_SHA || null,
   base: process.env.NX_BASE || null,
   head: process.env.NX_HEAD || null,
