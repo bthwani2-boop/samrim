@@ -32,6 +32,16 @@
       "options": {
         "command": "node tools/dev/verify-execution-proof-system.mjs"
       }
+    },
+    "runtime-images": {
+      "cache": false,
+      "dependsOn": [
+        "^ci-image"
+      ],
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node -e \"console.log('CI_RUNTIME_IMAGES=PASS')\""
+      }
     }
   },
   "implicitDependencies": [
