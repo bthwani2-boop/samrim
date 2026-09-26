@@ -188,7 +188,21 @@ export async function enableVirtualAuthenticator(page: Page): Promise<void> {
 
 export async function registerOperator(page: Page, operator: PreparedOperator, baseUrl: string, mailpitBase: string): Promise<string> {
   await page.goto(baseUrl + "/");
-  await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
+  const signInHeading = page.getByRole("heading", { name: "الدخول بمفتاح المرور" });
+  const workspaceHeading = page.getByRole("heading", { name: "الرئيسية", exact: true });
+  await expect.poll(async () => await signInHeading.isVisible() || await workspaceHeading.isVisible()).toBe(true);
+  if (await workspaceHeading.isVisible()) {
+    const currentSession = await page.evaluate(async () => {
+      const response = await fetch("/api/auth/session", { cache: "no-store" });
+      return { status: response.status, body: await response.json() as { identity?: { subject?: string; role?: string } } };
+    });
+    expect(currentSession.status).toBe(200);
+    expect(currentSession.body.identity?.subject).toBe(requiredEnv("PLAYWRIGHT_DEVELOPMENT_OPERATOR_ACTOR_ID"));
+    expect(currentSession.body.identity?.role).toBe("operator");
+    await page.getByText("حساب المشغل", { exact: true }).click();
+    await page.getByRole("button", { name: "تسجيل الخروج", exact: true }).click();
+  }
+  await expect(signInHeading).toBeVisible();
   await page.getByRole("button", { name: "تفعيل حساب موظف" }).click();
   await page.getByLabel("رقم الهاتف").fill(operator.phone);
   await page.getByLabel("دعوة التفعيل عالية الأمان").fill(operator.token);
