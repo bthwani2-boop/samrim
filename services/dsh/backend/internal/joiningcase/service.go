@@ -11,6 +11,7 @@ import (
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
@@ -30,13 +31,14 @@ type Service struct {
 	identity *identityintegration.Client
 	db       *sql.DB
 	wlt      *wlt.Client
+	media    media.Store
 }
 
-func New(identity *identityintegration.Client, db *sql.DB, wltClient *wlt.Client) (*Service, error) {
-	if identity == nil || db == nil || wltClient == nil {
+func New(identity *identityintegration.Client, db *sql.DB, wltClient *wlt.Client, mediaStore media.Store) (*Service, error) {
+	if identity == nil || db == nil || wltClient == nil || mediaStore == nil {
 		return nil, errors.New("joining case configuration is invalid")
 	}
-	return &Service{identity: identity, db: db, wlt: wltClient}, nil
+	return &Service{identity: identity, db: db, wlt: wltClient, media: mediaStore}, nil
 }
 
 func (s *Service) Create(ctx context.Context, input postgres.JoiningCaseRecord, idempotencyKey, actingActorID, correlationID string) (postgres.JoiningCaseResult, error) {
@@ -77,10 +79,11 @@ func (s *Service) Submit(ctx context.Context, caseID string, expectedVersion int
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
-	if current.Case.Origin != "control_panel" {
-		return postgres.JoiningCaseResult{}, postgres.ErrJoiningCaseState
-	}
-	if current.Case.State != "draft" {
+	canAdmit := (current.Case.Origin == "control_panel" && current.Case.State == "draft") || (current.Case.Origin == "field" && current.Case.State == "admission_requested")
+	if !canAdmit {
+		if current.Case.State != "submitted" {
+			return postgres.JoiningCaseResult{}, postgres.ErrJoiningCaseState
+		}
 		if current.Case.PartnerActorID == "" {
 			return postgres.JoiningCaseResult{}, postgres.ErrJoiningCaseState
 		}

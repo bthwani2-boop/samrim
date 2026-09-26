@@ -133,7 +133,7 @@ func toStoreProfileImage(value *postgres.StoreProfileMediaRecord) *contract.Stor
 	if value == nil || strings.TrimSpace(value.URI) == "" {
 		return nil
 	}
-	return toStoreProfileImageURI(value.URI)
+	return &contract.StoreProfileImage{Uri: strings.TrimSpace(value.URI), Role: "primary", ContentSha256: strings.TrimSpace(value.ContentSHA256)}
 }
 
 func toStoreProfileImageURI(uri string) *contract.StoreProfileImage {

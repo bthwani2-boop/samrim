@@ -57,9 +57,23 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 		if err != nil || created.Case.Origin != "field" || created.Case.PartnerActorID != "" {
 			t.Fatalf("create Field-originated joining case failed: %+v err=%v", created, err)
 		}
-		submitted, err := postgres.SubmitJoiningCase(ctx, db, created.Case.ID, partnerActor, created.Case.Version, "idem-join-field-submit", postgres.HashJoiningCaseSubmit(created.Case.ID, partnerActor, created.Case.Version), fieldActorID, "corr-join-field-submit")
+		admissionHash := postgres.HashFieldJoiningCaseAdmission(created.Case.ID, fieldActorID, created.Case.Version)
+		admission, err := postgres.RequestFieldJoiningCaseAdmission(ctx, db, created.Case.ID, fieldActorID, created.Case.Version, "idem-join-field-request", admissionHash, "corr-join-field-request")
+		if err != nil || admission.Replayed || admission.Case.State != "admission_requested" || admission.Case.PartnerActorID != "" || admission.Case.Version != created.Case.Version+1 {
+			t.Fatalf("Field admission request failed or provisioned identity: %+v err=%v", admission, err)
+		}
+		admissionReplay, err := postgres.RequestFieldJoiningCaseAdmission(ctx, db, created.Case.ID, fieldActorID, admission.Case.Version, "idem-join-field-request", admissionHash, "corr-join-field-request-replay")
+		if err != nil || !admissionReplay.Replayed || admissionReplay.Case.State != "admission_requested" || admissionReplay.Case.Version != admission.Case.Version {
+			t.Fatalf("Field admission request did not recover its canonical result: %+v err=%v", admissionReplay, err)
+		}
+		submittedHash := postgres.HashJoiningCaseSubmit(created.Case.ID, partnerActor, admission.Case.Version)
+		submitted, err := postgres.SubmitJoiningCase(ctx, db, created.Case.ID, partnerActor, admission.Case.Version, "idem-join-field-submit", submittedHash, operatorActor, "corr-join-field-submit")
 		if err != nil || submitted.Case.PartnerActorID != partnerActor || submitted.Case.State != "submitted" {
-			t.Fatalf("bind and submit joining case failed: %+v err=%v", submitted, err)
+			t.Fatalf("Operator admission, Identity binding and submission failed: %+v err=%v", submitted, err)
+		}
+		submittedReplay, err := postgres.SubmitJoiningCase(ctx, db, created.Case.ID, partnerActor, admission.Case.Version, "idem-join-field-submit", submittedHash, operatorActor, "corr-join-field-submit-replay")
+		if err != nil || !submittedReplay.Replayed || submittedReplay.Case.PartnerActorID != partnerActor || submittedReplay.Case.State != "submitted" {
+			t.Fatalf("Operator submission did not recover its canonical result: %+v err=%v", submittedReplay, err)
 		}
 		returned, err := postgres.ReviewJoiningCase(ctx, db, created.Case.ID, "needs_correction", "تصحيح بيانات المتجر", 0, "", "", submitted.Case.Version, "idem-join-field-review", postgres.HashJoiningCaseReviewWithFinancialTerms(created.Case.ID, "needs_correction", "تصحيح بيانات المتجر", submitted.Case.Version, 0, "", ""), operatorActor, "corr-join-field-review")
 		if err != nil || returned.Case.State != "needs_correction" || returned.Case.PartnerActorID != partnerActor {

@@ -101,6 +101,10 @@ func HashJoiningCaseSubmit(caseID, actorID string, expectedVersion int) string {
 	return hashFacts(caseID, actorID, strconv.Itoa(expectedVersion))
 }
 
+func HashFieldJoiningCaseAdmission(caseID, fieldActorID string, expectedVersion int) string {
+	return hashFacts("field-admission-request", caseID, fieldActorID, strconv.Itoa(expectedVersion))
+}
+
 func HashJoiningCaseCorrectAndResubmit(caseID, actorID, businessName, firstStoreName string, expectedVersion int, serviceCityID, verticalID string, latitude, longitude float64) string {
 	return hashFacts("correct-and-resubmit", caseID, actorID, businessName, firstStoreName, strconv.Itoa(expectedVersion), serviceCityID, verticalID, formatCoordinate(latitude), formatCoordinate(longitude))
 }
@@ -234,7 +238,8 @@ func SubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, actorID string, 
 	if current.Case.Version != expectedVersion {
 		return JoiningCaseResult{}, ErrJoiningCaseVersion
 	}
-	if current.Case.State != "draft" {
+	canSubmit := (current.Case.Origin == "control_panel" && current.Case.State == "draft") || (current.Case.Origin == "field" && current.Case.State == "admission_requested")
+	if !canSubmit {
 		return JoiningCaseResult{}, ErrJoiningCaseState
 	}
 	if current.Case.PartnerActorID != "" && current.Case.PartnerActorID != actorID {
@@ -257,6 +262,66 @@ func SubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, actorID string, 
 		return JoiningCaseResult{}, err
 	}
 	if err := auditJoiningCaseTx(ctx, tx, "joining_case_submitted", idempotencyKey, correlationID, actingActorID, caseID, current.Case.State, updated.State, updated.Version, requestHash, actorID, "", ""); err != nil {
+		return JoiningCaseResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return JoiningCaseResult{}, err
+	}
+	result, err = ReadJoiningCase(ctx, db, caseID)
+	result.Replayed = false
+	return result, err
+}
+
+func RequestFieldJoiningCaseAdmission(ctx context.Context, db *sql.DB, caseID, fieldActorID string, expectedVersion int, idempotencyKey, requestHash, correlationID string) (JoiningCaseResult, error) {
+	if db == nil || strings.TrimSpace(fieldActorID) == "" || expectedVersion < 1 {
+		return JoiningCaseResult{}, ErrJoiningCaseState
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return JoiningCaseResult{}, fmt.Errorf("begin Field joining-case admission request: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := lockJoiningCaseKey(ctx, tx, idempotencyKey); err != nil {
+		return JoiningCaseResult{}, err
+	}
+	result, found, err := readJoiningCaseIdempotency(ctx, tx, idempotencyKey, requestHash, caseID, "field-admission-request")
+	if err != nil {
+		return JoiningCaseResult{}, err
+	}
+	if found {
+		if result.Case.Origin != "field" || result.Case.OriginatingFieldActorID != strings.TrimSpace(fieldActorID) {
+			return JoiningCaseResult{}, ErrJoiningCasePartnerAccess
+		}
+		if err := tx.Commit(); err != nil {
+			return JoiningCaseResult{}, err
+		}
+		result.Replayed = true
+		return result, nil
+	}
+	current, err := readJoiningCaseTx(ctx, tx, caseID)
+	if errors.Is(err, ErrJoiningCaseNotFound) {
+		return JoiningCaseResult{}, err
+	}
+	if err != nil {
+		return JoiningCaseResult{}, err
+	}
+	if current.Case.Origin != "field" || current.Case.OriginatingFieldActorID != strings.TrimSpace(fieldActorID) {
+		return JoiningCaseResult{}, ErrJoiningCasePartnerAccess
+	}
+	if current.Case.Version != expectedVersion {
+		return JoiningCaseResult{}, ErrJoiningCaseVersion
+	}
+	if current.Case.State != "draft" {
+		return JoiningCaseResult{}, ErrJoiningCaseState
+	}
+	updated, err := updateJoiningCaseStateTx(ctx, tx, current.Case, "admission_requested", "", "", "", "", expectedVersion)
+	if err != nil {
+		return JoiningCaseResult{}, err
+	}
+	if err := recordJoiningCaseMutationTx(ctx, tx, idempotencyKey, requestHash, updated, "field-admission-request"); err != nil {
+		return JoiningCaseResult{}, err
+	}
+	if err := auditJoiningCaseTx(ctx, tx, "joining_case_admission_requested", idempotencyKey, correlationID, fieldActorID, caseID, current.Case.State, updated.State, updated.Version, requestHash, "", "", ""); err != nil {
 		return JoiningCaseResult{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -354,7 +419,7 @@ func ListJoiningCases(ctx context.Context, db *sql.DB, state, queryText, sort st
 		return JoiningCaseListResult{}, ErrJoiningCaseInvalidLimit
 	}
 	state = strings.TrimSpace(strings.ToLower(state))
-	if state != "" && state != "draft" && state != "submitted" && state != "needs_correction" && state != "approved" {
+	if state != "" && state != "draft" && state != "admission_requested" && state != "submitted" && state != "needs_correction" && state != "approved" {
 		return JoiningCaseListResult{}, ErrJoiningCaseInvalidState
 	}
 	sort = strings.TrimSpace(strings.ToLower(sort))

@@ -15,6 +15,7 @@ import (
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/joiningcase"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storepublication"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
@@ -27,12 +28,12 @@ type JoiningCaseServer struct {
 	db          *sql.DB
 }
 
-func NewJoiningCase(identityClient *identityintegration.Client, accessToken string, db *sql.DB, publication *storepublication.Service, wltClient *wlt.Client) (*JoiningCaseServer, error) {
+func NewJoiningCase(identityClient *identityintegration.Client, accessToken string, db *sql.DB, publication *storepublication.Service, wltClient *wlt.Client, mediaStore media.Store) (*JoiningCaseServer, error) {
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
 		return nil, err
 	}
-	service, err := joiningcase.New(identityClient, db, wltClient)
+	service, err := joiningcase.New(identityClient, db, wltClient, mediaStore)
 	if err != nil {
 		return nil, err
 	}
@@ -46,6 +47,10 @@ func (s *JoiningCaseServer) ReconcileFinancialProfiles(ctx context.Context) erro
 	return s.service.ReconcileFinancialProfiles(ctx, 25)
 }
 
+func (s *JoiningCaseServer) ReconcileStoreProfileMedia(ctx context.Context) error {
+	return s.service.ReconcileStoreProfileMedia(ctx)
+}
+
 func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/joining-cases", s.create)
 	mux.HandleFunc("GET /dsh/joining-cases", s.listForOperator)
@@ -54,6 +59,7 @@ func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/partners/actors/{actorId}/stores", s.listPartnerStoresForOperator)
 	mux.HandleFunc("GET /dsh/joining-cases/{caseId}", s.readForOperator)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/submit", s.submit)
+	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/store-image", s.uploadStoreProfileImage)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/correct-and-resubmit", s.correctAndResubmitForPartner)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/review", s.review)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/financial-terms", s.bindFinancialTerms)
@@ -356,6 +362,14 @@ func writeJoiningCaseError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "review decision is invalid")
 	case errors.Is(err, postgres.ErrJoiningCasePartnerAccess):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the partner session does not own this joining case")
+	case errors.Is(err, postgres.ErrStoreProfileMediaNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "joining case was not found")
+	case errors.Is(err, postgres.ErrStoreProfileMediaInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "store profile image is invalid")
+	case errors.Is(err, postgres.ErrStoreProfileMediaVersion), errors.Is(err, postgres.ErrStoreProfileMediaState), errors.Is(err, postgres.ErrStoreProfileMediaIdempotency), errors.Is(err, postgres.ErrStoreProfileMediaCleanupBusy):
+		writeError(w, http.StatusConflict, "VERSION_OR_STATE_CONFLICT", "joining case or store image state changed; read the canonical case and retry")
+	case errors.Is(err, postgres.ErrStoreProfileMediaFailed):
+		writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "the image upload failed and can be retried with the same file")
 	case errors.Is(err, postgres.ErrJoiningCaseInvalidLimit), errors.Is(err, postgres.ErrJoiningCaseInvalidCursor), errors.Is(err, postgres.ErrJoiningCaseInvalidState), errors.Is(err, postgres.ErrJoiningCaseInvalidSort), errors.Is(err, postgres.ErrJoiningCaseInvalidSearch):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "joining case queue parameters are invalid")
 	case errors.Is(err, joiningcase.ErrInvalidInput):
@@ -366,6 +380,10 @@ func writeJoiningCaseError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active control operator session is required")
 	case errors.Is(err, joiningcase.ErrPartnerSessionForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active app-partner session is required")
+	case errors.Is(err, joiningcase.ErrFieldSessionForbidden):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "an eligible app-field session is required")
+	case errors.Is(err, joiningcase.ErrStoreProfileMediaSessionForbidden):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "an eligible Field or Partner session is required")
 	case errors.Is(err, joiningcase.ErrServiceCityUnavailable), errors.Is(err, postgres.ErrJoiningCaseServiceCity):
 		writeError(w, http.StatusConflict, "SERVICE_CITY_UNAVAILABLE", "an active service city is required")
 	case errors.Is(err, postgres.ErrJoiningCaseStoreOrigin):

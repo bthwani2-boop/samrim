@@ -70,7 +70,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	joiningCaseServer, err := transporthttp.NewJoiningCase(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, storePublication, paymentClient)
+	joiningCaseServer, err := transporthttp.NewJoiningCase(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, storePublication, paymentClient, mediaStore)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -78,11 +78,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	cleanupContext, cleanupCancel := context.WithTimeout(context.Background(), 15*time.Second)
-	if err := catalogServer.ReconcileMediaStorage(cleanupContext); err != nil {
-		log.Printf("catalog media reconciliation deferred: %v", err)
-	}
-	cleanupCancel()
 	storePublicationServer, err := transporthttp.NewStorePublication(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, paymentClient)
 	if err != nil {
 		log.Fatal(err)
@@ -139,10 +134,24 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fieldServer, err := transporthttp.NewField(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, mediaStore)
+	fieldServer, err := transporthttp.NewField(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
 	if err != nil {
 		log.Fatal(err)
 	}
+	reconcileMediaStorage := func(ctx context.Context) error {
+		var firstErr error
+		for _, reconcile := range []func(context.Context) error{catalogServer.ReconcileMediaStorage, joiningCaseServer.ReconcileStoreProfileMedia} {
+			if err := reconcile(ctx); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+		return firstErr
+	}
+	cleanupContext, cleanupCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	if err := reconcileMediaStorage(cleanupContext); err != nil {
+		log.Printf("DSH media reconciliation deferred: %v", err)
+	}
+	cleanupCancel()
 	clientFavoritesServer, err := transporthttp.NewClientFavorites(identityClient, database)
 	if err != nil {
 		log.Fatal(err)
@@ -181,7 +190,7 @@ func main() {
 		go runFinancialProfileReconciliationLoop(ctx, time.Minute, joiningCaseServer.ReconcileFinancialProfiles)
 		go runFieldCommissionReconciliationLoop(ctx, time.Minute, storePublication.ReconcileFieldCommissions)
 		go runFinancialHandoffReconciliationLoop(ctx, 5*time.Second, financialHandoff.Reconcile)
-		runMediaReconciliationLoop(ctx, time.Minute, catalogServer.ReconcileMediaStorage)
+		runMediaReconciliationLoop(ctx, time.Minute, reconcileMediaStorage)
 	}); err != nil {
 		log.Fatal(err)
 	}

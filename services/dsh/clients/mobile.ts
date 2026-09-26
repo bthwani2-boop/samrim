@@ -227,7 +227,7 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (amountMode === "FULL_AVAILABLE" && amountMinor !== undefined) throw new Error("DSH_PAYOUT_AMOUNT_INVALID");
       return userRequest<PayoutIntentResponse>(accessToken, dshOperationPaths.createOwnPayoutIntent.path, dshOperationPaths.createOwnPayoutIntent.method, { amountMode, ...(amountMinor === undefined ? {} : { amountMinor }) }, mutationHeaders(idempotencyKey, correlationID));
     },
-    async correctAndResubmitJoiningCase(accessToken: string, caseID: string, input: CorrectJoiningCaseRequest, expectedVersion: number): Promise<JoiningCaseResponse> {
+    async correctAndResubmitJoiningCase(accessToken: string, caseID: string, input: CorrectJoiningCaseRequest, expectedVersion: number, idempotencyKey?: string, correlationID?: string): Promise<JoiningCaseResponse> {
       const normalized = caseID.trim();
       const businessName = input.businessName.trim();
       const firstStoreName = input.firstStoreName.trim();
@@ -235,7 +235,7 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const firstStoreVerticalId = input.firstStoreVerticalId.trim();
       if (!normalized || businessName.length < 2 || businessName.length > 160 || firstStoreName.length < 2 || firstStoreName.length > 160 || !serviceCityId || !firstStoreVerticalId || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180 || expectedVersion < 1) throw new Error("DSH_JOINING_CASE_INPUT_INVALID");
       const path = dshOperationPaths.correctAndResubmitJoiningCase.path.replace("{caseId}", encodeURIComponent(normalized));
-      return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.correctAndResubmitJoiningCase.method, { businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude: input.firstStoreLatitude, firstStoreLongitude: input.firstStoreLongitude }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+      return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.correctAndResubmitJoiningCase.method, { businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude: input.firstStoreLatitude, firstStoreLongitude: input.firstStoreLongitude }, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) });
     },
     async listCatalogProducts(accessToken: string, query = "", verticalID = "", limit = 100, cursor = ""): Promise<CatalogProductListResponse> {
       if (limit < 1 || limit > 100) throw new Error("DSH_PRODUCT_LIMIT_INVALID");
@@ -646,14 +646,14 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = `${dshOperationPaths.listOwnFieldJoiningCases.path}?${new URLSearchParams({ limit: String(limit) }).toString()}`;
       return userRequest<JoiningCaseListResponse>(accessToken, path, dshOperationPaths.listOwnFieldJoiningCases.method);
     },
-    async createFieldJoiningCase(accessToken: string, input: CreateJoiningCaseRequest): Promise<JoiningCaseResponse> {
+    async createFieldJoiningCase(accessToken: string, input: CreateJoiningCaseRequest, idempotencyKey?: string, correlationID?: string): Promise<JoiningCaseResponse> {
       const contactPhoneE164 = input.contactPhoneE164.trim();
       const businessName = input.businessName.trim();
       const firstStoreName = input.firstStoreName.trim();
       const serviceCityId = input.serviceCityId.trim();
       const firstStoreVerticalId = input.firstStoreVerticalId.trim();
       if (!/^\+[1-9][0-9]{7,14}$/.test(contactPhoneE164) || businessName.length < 2 || businessName.length > 160 || firstStoreName.length < 2 || firstStoreName.length > 160 || !serviceCityId || !firstStoreVerticalId || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180) throw new Error("DSH_FIELD_JOINING_CASE_INPUT_INVALID");
-      return userRequest<JoiningCaseResponse>(accessToken, dshOperationPaths.createFieldJoiningCase.path, dshOperationPaths.createFieldJoiningCase.method, { ...input, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId }, mutationHeaders());
+      return userRequest<JoiningCaseResponse>(accessToken, dshOperationPaths.createFieldJoiningCase.path, dshOperationPaths.createFieldJoiningCase.method, { ...input, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId }, mutationHeaders(idempotencyKey, correlationID));
     },
     async readOwnFieldJoiningCase(accessToken: string, caseID: string): Promise<JoiningCaseResponse> {
       const normalized = caseID.trim();
@@ -661,22 +661,22 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.readOwnFieldJoiningCase.path.replace("{caseId}", encodeURIComponent(normalized));
       return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.readOwnFieldJoiningCase.method);
     },
-    async submitFieldJoiningCase(accessToken: string, caseID: string, expectedVersion: number): Promise<JoiningCaseResponse> {
+    async submitFieldJoiningCase(accessToken: string, caseID: string, expectedVersion: number, idempotencyKey?: string, correlationID?: string): Promise<JoiningCaseResponse> {
       const normalized = caseID.trim();
       if (!normalized || expectedVersion < 1) throw new Error("DSH_FIELD_JOINING_CASE_INPUT_INVALID");
       const path = dshOperationPaths.submitFieldJoiningCase.path.replace("{caseId}", encodeURIComponent(normalized));
-      return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.submitFieldJoiningCase.method, undefined, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+      return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.submitFieldJoiningCase.method, undefined, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) });
     },
-    async uploadFieldJoiningCaseStoreImage(accessToken: string, caseID: string, input: DshImageUploadInput, expectedVersion: number): Promise<JoiningCaseResponse> {
+    async uploadJoiningCaseStoreImage(accessToken: string, caseID: string, input: DshImageUploadInput, expectedVersion: number, idempotencyKey?: string, correlationID?: string): Promise<JoiningCaseResponse> {
       const normalized = caseID.trim();
       const uri = input.uri.trim();
-      if (!normalized || !uri || expectedVersion < 1) throw new Error("DSH_FIELD_STORE_IMAGE_INPUT_INVALID");
+      if (!normalized || !uri || expectedVersion < 1) throw new Error("DSH_JOINING_CASE_STORE_IMAGE_INPUT_INVALID");
       const fileName = input.name?.trim() || "store-image.jpg";
       const mimeType = input.type?.trim() || "image/jpeg";
       const form = input.nativeMultipartUpload ? undefined : new FormData();
       if (form) form.append("file", input.blob ?? ({ uri, name: fileName, type: mimeType } as unknown as Blob));
-      const path = dshOperationPaths.uploadFieldJoiningCaseStoreImage.path.replace("{caseId}", encodeURIComponent(normalized));
-      return userMultipartRequest(accessToken, path, dshOperationPaths.uploadFieldJoiningCaseStoreImage.method, form, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) }, input.nativeMultipartUpload, { fieldName: "file", fileName, mimeType, parameters: {} });
+      const path = dshOperationPaths.uploadJoiningCaseStoreImage.path.replace("{caseId}", encodeURIComponent(normalized));
+      return userMultipartRequest(accessToken, path, dshOperationPaths.uploadJoiningCaseStoreImage.method, form, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) }, input.nativeMultipartUpload, { fieldName: "file", fileName, mimeType, parameters: {} });
     },
     async listOwnDeliveryAddresses(accessToken: string, limit = 50, cursor = ""): Promise<DeliveryAddressListResponse> {
       if (limit < 1 || limit > 50) throw new Error("DSH_ADDRESS_LIMIT_INVALID");

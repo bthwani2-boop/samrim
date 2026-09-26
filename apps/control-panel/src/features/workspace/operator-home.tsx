@@ -17,6 +17,7 @@ export function OperatorHome() {
   const canReadCatalog = permissions.includes("catalog");
   const [operations, setOperations] = useState<ReadonlyArray<OperatorOperationListItem>>([]);
   const [joiningCases, setJoiningCases] = useState<ReadonlyArray<JoiningCaseSummary>>([]);
+  const [joiningAdmissions, setJoiningAdmissions] = useState<ReadonlyArray<JoiningCaseSummary>>([]);
   const [proposals, setProposals] = useState<ReadonlyArray<CatalogProductProposal>>([]);
   const [unreadNotifications, setUnreadNotifications] = useState<ReadonlyArray<Notification>>([]);
   const [loading, setLoading] = useState(true);
@@ -30,7 +31,10 @@ export function OperatorHome() {
     setErrors({});
     const requests = [
       ...(canReadOperations ? [{ key: "operations", url: "/api/operations?limit=8&actionableOnly=true" }] : []),
-      ...(canReadPartners ? [{ key: "joiningCases", url: "/api/partners/joining-cases?state=submitted&limit=8" }] : []),
+      ...(canReadPartners ? [
+        { key: "joiningAdmissions", url: "/api/partners/joining-cases?state=admission_requested&limit=4" },
+        { key: "joiningCases", url: "/api/partners/joining-cases?state=submitted&limit=4" },
+      ] : []),
       ...(canReadCatalog ? [{ key: "proposals", url: "/api/catalog/proposals?state=submitted&limit=8" }] : []),
       { key: "notifications", url: "/api/notifications?limit=100" },
     ] as const;
@@ -53,6 +57,7 @@ export function OperatorHome() {
       }
       if (key === "operations") setOperations((body as { operations?: ReadonlyArray<OperatorOperationListItem> }).operations ?? []);
       else if (key === "joiningCases") setJoiningCases((body as { cases?: ReadonlyArray<JoiningCaseSummary> }).cases ?? []);
+      else if (key === "joiningAdmissions") setJoiningAdmissions((body as { cases?: ReadonlyArray<JoiningCaseSummary> }).cases ?? []);
       else if (key === "proposals") setProposals((body as { proposals?: ReadonlyArray<CatalogProductProposal> }).proposals ?? []);
       else if (key === "notifications") setUnreadNotifications(((body as { notifications?: ReadonlyArray<Notification> }).notifications ?? []).filter((item) => !item.readAt).slice(0, 4));
     });
@@ -80,10 +85,16 @@ export function OperatorHome() {
             <div className="home-work-area-heading"><div><p className="eyebrow">التشغيل</p><h2 id="home-operations-title">طلبات تحتاج إجراءً</h2></div><Link href="/operations">فتح العمليات</Link></div>
             {errors.operations ? <QueueError message={errors.operations} /> : operations.length === 0 ? <p className="empty-inline">لا توجد طلبات تحتاج إجراءً في القراءة الحالية.</p> : <ul className="home-list">{operations.slice(0, 4).map((item) => <li key={item.orderId}><Link href={`/operations/${encodeURIComponent(item.orderId)}`}><span><strong>{item.storeName}</strong><small><bdi dir="ltr">{item.orderId}</bdi></small></span><strong>{orderStateLabel(item.state)}</strong></Link></li>)}</ul>}
           </section> : null}
-          {canReadPartners ? <section className="home-work-area" aria-labelledby="home-joining-title">
-            <div className="home-work-area-heading"><div><p className="eyebrow">الشركاء</p><h2 id="home-joining-title">طلبات الانضمام المقدمة</h2></div><Link href="/partners">فتح الشركاء</Link></div>
-            {errors.joiningCases ? <QueueError message={errors.joiningCases} /> : joiningCases.length === 0 ? <p className="empty-inline">لا توجد طلبات انضمام مقدمة تحتاج المراجعة.</p> : <ul className="home-list">{joiningCases.slice(0, 4).map((item) => <li key={item.id}><Link href={`/partners/${encodeURIComponent(item.id)}`}><span><strong>{item.businessName}</strong><small><bdi dir="ltr">{item.id}</bdi></small></span><strong>{joiningCaseStateLabel(item.state)}</strong></Link></li>)}</ul>}
-          </section> : null}
+          {canReadPartners ? <>
+            <section className="home-work-area" aria-labelledby="home-joining-admission-title">
+              <div className="home-work-area-heading"><div><p className="eyebrow">الشركاء</p><h2 id="home-joining-admission-title">قبول إحالات الميدانيين</h2></div><Link href="/partners?state=admission_requested">فتح الشركاء</Link></div>
+              {errors.joiningAdmissions ? <QueueError message={errors.joiningAdmissions} /> : joiningAdmissions.length === 0 ? <p className="empty-inline">لا توجد إحالات تنتظر قبول المشغّل.</p> : <ul className="home-list">{joiningAdmissions.map((item) => <li key={item.id}><Link href={`/partners/${encodeURIComponent(item.id)}`}><span><strong>{item.businessName}</strong><small><bdi dir="ltr">{item.id}</bdi></small></span><strong>{joiningCaseStateLabel(item.state)}</strong></Link></li>)}</ul>}
+            </section>
+            <section className="home-work-area" aria-labelledby="home-joining-title">
+              <div className="home-work-area-heading"><div><p className="eyebrow">الشركاء</p><h2 id="home-joining-title">طلبات الانضمام المقدمة للمراجعة</h2></div><Link href="/partners?state=submitted">فتح الشركاء</Link></div>
+              {errors.joiningCases ? <QueueError message={errors.joiningCases} /> : joiningCases.length === 0 ? <p className="empty-inline">لا توجد طلبات انضمام مقدمة تحتاج المراجعة.</p> : <ul className="home-list">{joiningCases.map((item) => <li key={item.id}><Link href={`/partners/${encodeURIComponent(item.id)}`}><span><strong>{item.businessName}</strong><small><bdi dir="ltr">{item.id}</bdi></small></span><strong>{joiningCaseStateLabel(item.state)}</strong></Link></li>)}</ul>}
+            </section>
+          </> : null}
           {canReadCatalog ? <section className="home-work-area" aria-labelledby="home-proposals-title">
             <div className="home-work-area-heading"><div><p className="eyebrow">الكتالوج</p><h2 id="home-proposals-title">مقترحات منتجات للمراجعة</h2></div><Link href="/catalog/proposals">فتح المقترحات</Link></div>
             {errors.proposals ? <QueueError message={errors.proposals} /> : proposals.length === 0 ? <p className="empty-inline">لا توجد مقترحات مقدمة تنتظر المراجعة.</p> : <ul className="home-list">{proposals.slice(0, 4).map((item) => <li key={item.id}><Link href={`/catalog/proposals?proposalId=${encodeURIComponent(item.id)}`}><span><strong>{item.proposedName}</strong><small><bdi dir="ltr">{item.id}</bdi></small></span><strong>{catalogProductProposalStateLabel(item.state)}</strong></Link></li>)}</ul>}

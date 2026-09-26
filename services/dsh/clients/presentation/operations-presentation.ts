@@ -17,6 +17,7 @@ import type {
 
 const joiningCaseLabels: Record<JoiningCaseState, string> = {
   draft: "مسودة",
+  admission_requested: "بانتظار قبول المشغّل",
   submitted: "قيد المراجعة",
   needs_correction: "يحتاج إلى تصحيح",
   approved: "تمت الموافقة",

@@ -49,8 +49,8 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 		t.Fatalf("unexpected DSH migration graph size: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.SchemaVersion)
 	}
 	last := records[len(records)-1]
-	if last.Version != postgres.SchemaVersion || last.Name != "066_catalog_category_media.sql" {
-		t.Fatalf("last DSH migration = v%d %q; want v%d 066_catalog_category_media.sql", last.Version, last.Name, postgres.SchemaVersion)
+	if last.Version != postgres.SchemaVersion || last.Name != "068_field_operator_partner_admission.sql" {
+		t.Fatalf("last DSH migration = v%d %q; want v%d 068_field_operator_partner_admission.sql", last.Version, last.Name, postgres.SchemaVersion)
 	}
 	migrationByName := make(map[string]string, len(records))
 	for index, record := range records {
@@ -64,6 +64,17 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 	}
 	if !strings.Contains(migrationByName["066_catalog_category_media.sql"], "catalog_category_media_assets_active_uq") || !strings.Contains(migrationByName["066_catalog_category_media.sql"], "ADD COLUMN image_uri text") {
 		t.Fatal("DSH migration 066 is missing category media ownership schema")
+	}
+	if !strings.Contains(migrationByName["067_store_profile_media_cleanup.sql"], "ADD COLUMN cleaned_at timestamptz") || !strings.Contains(migrationByName["067_store_profile_media_cleanup.sql"], "store_profile_media_cleaned_at_chk") || !strings.Contains(migrationByName["067_store_profile_media_cleanup.sql"], "cleanup_claimed_at") || !strings.Contains(migrationByName["067_store_profile_media_cleanup.sql"], "last_attempt_at") || !strings.Contains(migrationByName["067_store_profile_media_cleanup.sql"], "last_upload_error") {
+		t.Fatal("DSH migration 067 is missing store profile media cleanup state")
+	}
+	if !strings.Contains(migrationByName["068_field_operator_partner_admission.sql"], "admission_requested") || !strings.Contains(migrationByName["068_field_operator_partner_admission.sql"], "joining_case_admission_requested") || !strings.Contains(migrationByName["068_field_operator_partner_admission.sql"], "field-admission-request") {
+		t.Fatal("DSH migration 068 is missing the Field submission and Operator admission state")
+	}
+	for _, preserved := range []string{"'correct'", "'correct_and_resubmit'", "'bind-financial-terms'", "'joining_case_corrected'", "'joining_case_corrected_and_resubmitted'", "'joining_case_financial_terms_bound'", "'joining_case_admission_reopened'"} {
+		if !strings.Contains(migrationByName["068_field_operator_partner_admission.sql"], preserved) {
+			t.Fatalf("DSH migration 068 dropped existing joining-case constraint value %s", preserved)
+		}
 	}
 }
 

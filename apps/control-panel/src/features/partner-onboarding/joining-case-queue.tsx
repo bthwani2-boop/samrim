@@ -8,13 +8,14 @@ import { downloadRegistryCsv } from "./registry-csv";
 import "./partner-directory.module.css";
 import "./joining-case-queue.module.css";
 
-type QueueState = "" | "draft" | "submitted" | "needs_correction" | "approved";
+type QueueState = "" | "draft" | "admission_requested" | "submitted" | "needs_correction" | "approved";
 type QueueSort = "created_asc" | "created_desc";
 type QueueHistory = Readonly<{ joiningCaseCursors?: ReadonlyArray<string> }>;
 const pageSize = 10;
 const stateOptions: ReadonlyArray<{ value: QueueState; label: string }> = [
   { value: "", label: "كل الحالات" },
   { value: "draft", label: "مسودة" },
+  { value: "admission_requested", label: "بانتظار قبول المشغّل" },
   { value: "submitted", label: "مقدمة للمراجعة" },
   { value: "needs_correction", label: "تحتاج تصحيحًا" },
   { value: "approved", label: "معتمدة" },
