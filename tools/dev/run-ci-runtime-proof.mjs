@@ -45,35 +45,12 @@ const childEnv = {
   PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN: runtimeEnv.CONTROL_PANEL_SERVICE_TOKEN,
 };
 
-function nx(projectTarget) {
-  console.log("CI_RUNTIME_TARGET_START=" + projectTarget);
-  execFileSync(
-    process.platform === "win32" ? "pnpm.cmd" : "pnpm",
-    ["exec", "nx", "run", projectTarget, "--outputStyle=stream"],
-    { cwd: root, env: childEnv, stdio: "inherit" },
-  );
-  console.log("CI_RUNTIME_TARGET_PASS=" + projectTarget);
-}
+const terminalTarget = "dsh-backend:runtime-proof";
+console.log("CI_RUNTIME_TASK_GRAPH_ROOT=" + terminalTarget);
+execFileSync(
+  process.platform === "win32" ? "pnpm.cmd" : "pnpm",
+  ["exec", "nx", "run", terminalTarget, "--outputStyle=stream"],
+  { cwd: root, env: childEnv, stdio: "inherit" },
+);
 
-nx("control-panel:browser-live-proof");
-nx("identity-backend:migration-proof");
-nx("dsh-backend:baseline-proof");
-nx("identity-backend:runtime-proof");
-nx("wlt-backend:schema-proof");
-nx("dsh-backend:runtime-proof");
-
-const base = process.env.NX_BASE?.trim();
-const head = process.env.NX_HEAD?.trim();
-if (base && head) {
-  const affectedControl = execFileSync(
-    process.platform === "win32" ? "pnpm.cmd" : "pnpm",
-    ["exec", "nx", "show", "projects", "--affected", "--base=" + base, "--head=" + head, "--projects=control-panel", "--sep=,"],
-    { cwd: root, env: childEnv, encoding: "utf8" },
-  ).trim();
-  if (affectedControl) nx("control-panel:e2e");
-  else console.log("CI_RUNTIME_CONTROL_SHELL=SKIPPED reason=unaffected");
-} else {
-  nx("control-panel:e2e");
-}
-
-console.log("CI_RUNTIME_INTEGRATION=PASS");
+console.log("CI_RUNTIME_INTEGRATION=PASS root=" + terminalTarget);
