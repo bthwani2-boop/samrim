@@ -5,39 +5,20 @@ PRODUCT_AUTHORITY: NONE
 CANONICAL_FILE_FOR_THIS_APP: YES
 PARALLEL_REPORTS_ALLOWED: NO
 
-## Identity / technical state
+## Identity
 - Display name: `توصيل ون`
 - Package: `com.smartapps.tawseel`
 - Launch Activity: `com.smartapps.tawseel/.MainActivity`
 - Device: `SM-S9280`
 - Priority: `HIGHEST_YEMEN_FIT`
-- Role: Primary local Yemen-market reference.
 - App version: `UNKNOWN`
 - Review confidence: `IDENTITY_ONLY`
-- Freshness: `FRESH UNTIL MATERIAL CHANGE IS SUSPECTED OR THE CURRENT DECISION REQUIRES REVALIDATION`
+- Freshness: `FRESH UNTIL MATERIAL CHANGE IS SUSPECTED OR REVALIDATION IS REQUIRED`
 
-## Evidence cache rules
-Read this file before live inspection. Reuse still-current evidence; inspect relevant, stale or missing areas only; replace stale current facts; append one concise Review history entry. Never create a parallel report.
+## Canonical review method
+Read this file before live inspection. Reuse current evidence; inspect only relevant/stale/missing areas; replace stale current facts; append one concise review-history entry. Never create a parallel report.
 
-`COMPETITOR OBSERVATION != BTHWANI REQUIREMENT`.
-
-## Mandatory black-box review method
-A review is not complete from screenshots or visual browsing alone. For each material journey/screen/workspace, use normal authorized interaction on the real app/device and cover the applicable dimensions:
-
-```text
-PRODUCT / UX
-BEHAVIORAL REVERSE ANALYSIS
-LOGIC / VISIBLE RULES
-INTERACTION / CONTROL COVERAGE
-EXPERIMENTAL PATH COVERAGE
-VISUAL
-TECHNICAL / PLATFORM OBSERVATION
-PERFORMANCE / RESPONSIVENESS
-FAILURE / RECOVERY
-OPERATIONAL FLOW
-```
-
-For every relevant route/screen:
+A review is not complete from visual browsing/screenshots alone. For every material route/screen:
 
 ```text
 ENTER RELEVANT TAB / ROUTE
@@ -46,78 +27,66 @@ ENTER RELEVANT TAB / ROUTE
 → TEST BACK / CLOSE / CANCEL / CONFIRM / RETRY / REFRESH / SCROLL / PAGINATION / CAROUSEL WHEN PRESENT
 → TRY SAFE ALTERNATIVE INPUTS / PATHS
 → OBSERVE STATE BEFORE / AFTER
-→ RECORD RESULT / FAILURE / RECOVERY / PERFORMANCE
+→ RECORD BEHAVIOR / LOGIC / VISUAL / TECHNICAL / PERFORMANCE / FAILURE / RECOVERY
 ```
 
-Every relevant control is either exercised or recorded as `NOT_TESTED_WITH_REASON`. Do not cross an irreversible, paid, destructive or externally consequential boundary without explicit authority.
+Every relevant control is either exercised or `NOT_TESTED_WITH_REASON`. Never cross an irreversible, paid, destructive or externally consequential boundary without explicit authority. Do not decompile binaries, bypass protections or claim hidden implementation as fact.
 
-Do not decompile binaries, bypass protections, intercept secrets, or present hidden implementation as fact. Classify conclusions as `OBSERVED`, `STRONGLY_INFERRED`, `HYPOTHESIS`, or `NOT_TESTED`.
+Evidence levels: `OBSERVED`, `STRONGLY_INFERRED`, `HYPOTHESIS`, `NOT_TESTED`.
 
 ## Coverage matrix
-| Dimension | Status |
-|---|---|
-| Shell / IA / Navigation / Home / Discovery | NOT_REVIEWED |
-| Stores / Categories / Products / Media | NOT_REVIEWED |
-| Search / Filters / Sort | NOT_REVIEWED |
-| Cart / Checkout | NOT_REVIEWED |
-| Orders / Tracking | NOT_REVIEWED |
-| Account | NOT_REVIEWED |
-| Promotions / Banners | NOT_REVIEWED |
-| Product / UX | NOT_REVIEWED |
-| Behavior / Logic / Visible State Machine | NOT_REVIEWED |
-| Interaction / Buttons / Tabs / Controls | NOT_REVIEWED |
-| Experimental Paths / Input Variations | NOT_REVIEWED |
-| Loading / Empty / No Results / Error / Retry | NOT_REVIEWED |
-| Offline / Conflict / Recovery | NOT_REVIEWED |
-| RTL / Arabic / Accessibility | NOT_REVIEWED |
-| Visual Hierarchy / Density / Media | NOT_REVIEWED |
-| Technical / Platform Behavior | NOT_REVIEWED |
-| Performance / Responsiveness / Jank / Latency | NOT_REVIEWED |
-| State Persistence / Refresh / Relaunch | NOT_REVIEWED |
+- Product / UX / IA / Navigation: `NOT_REVIEWED`
+- Stores / Categories / Products / Media: `NOT_REVIEWED`
+- Search / Filters / Sort: `NOT_REVIEWED`
+- Cart / Checkout: `NOT_REVIEWED`
+- Orders / Tracking: `NOT_REVIEWED`
+- Account / Promotions / Banners: `NOT_REVIEWED`
+- Behavior / Logic / Visible State Machine: `NOT_REVIEWED`
+- Interaction / Buttons / Tabs / Controls: `NOT_REVIEWED`
+- Experimental Paths / Input Variations: `NOT_REVIEWED`
+- Loading / Empty / Error / Retry / Recovery: `NOT_REVIEWED`
+- RTL / Arabic / Accessibility / Visual: `NOT_REVIEWED`
+- Technical / Platform / Persistence / Relaunch: `NOT_REVIEWED`
+- Performance / Responsiveness / Jank / Latency: `NOT_REVIEWED`
 
-Allowed: `NOT_REVIEWED`, `CURRENT`, `STALE`, `PARTIAL`, `N/A`.
-
-Do not mark an area `CURRENT` if only its visual layer was observed while material interaction, logic or state behavior remains untested.
+Allowed: `NOT_REVIEWED`, `CURRENT`, `STALE`, `PARTIAL`, `N/A`. Never mark `CURRENT` from visual inspection alone.
 
 ## Current verified state
-- Technical identity above is the only initialized verified state.
-- No product/UX, behavioral, logical, experimental, visual, performance or technical-behavior finding is claimed until actually exercised live.
+- Technical identity only. No product/UX/behavioral/logical/experimental/visual/performance finding is claimed yet.
 
-## Current observations
-- None recorded yet.
+## Findings
+- Current observations: none yet.
+- Logic / behavioral inferences: none yet.
+- Visual findings: none yet.
+- Technical / performance observations: none yet.
+- Useful patterns: none yet.
+- Weaknesses / rejected patterns: none yet.
 
-## Interaction / experiment evidence
-For each reviewed material area record:
-- Tabs/routes entered:
-- Buttons/controls exercised:
-- Paths/input variations tried:
-- States reached:
-- Results observed:
-- Unreached/not-tested items and reason:
+## Local visual evidence
+- Local-only directory: `./local-photos/tawseel-one/`
+- Remote upload: `FORBIDDEN`
+- Git tracking: `FORBIDDEN`
+- Current linked captures: `NONE_YET`
 
-## Logic / behavioral inferences
-- None recorded yet.
+Before taking a screenshot, open existing linked local evidence first. Reuse it if still current; otherwise capture only material missing/stale evidence, save with a semantic filename, then add/update a relative link here.
 
-## Visual findings
-- None recorded yet.
+Example links only after the local file exists:
 
-## Technical / performance observations
-- None recorded yet.
+```markdown
+[Home / Discovery](./local-photos/tawseel-one/home-discovery.png)
+[Store details](./local-photos/tawseel-one/store-details.png)
+[Product details](./local-photos/tawseel-one/product-details.png)
+[Cart](./local-photos/tawseel-one/cart.png)
+[Checkout](./local-photos/tawseel-one/checkout-01-summary.png)
+[Order tracking](./local-photos/tawseel-one/order-tracking.png)
+```
 
-## Useful patterns
-- None recorded yet.
-
-## Weaknesses / rejected patterns
-- None recorded yet.
+Do not keep dangling links, capture every tap, or store personal/payment/OTP/token/secret data. Replace superseded current screenshots unless an older capture has explicit forensic value.
 
 ## BThwani relevance
-- Challenge only the current material BThwani decision; never use this file as Product or architecture authority.
-
-## Unreviewed / stale areas
-- All non-identity areas remain `NOT_REVIEWED` until a material live inspection exercises them.
+`COMPETITOR OBSERVATION != BTHWANI REQUIREMENT`. Use only to challenge the current material BThwani decision.
 
 ## Review history
-### 2026-09-26 — Evidence file initialized / protocol hardened
-- Recorded only known technical identity.
-- Added mandatory interactive, experimental, logical, behavioral, visual, technical, performance and recovery review coverage.
-- No unobserved finding was fabricated.
+### 2026-09-26 — Initialized / protocol hardened / local evidence enabled
+- Identity recorded; no unobserved product finding fabricated.
+- Interactive black-box review and local-only screenshot evidence rules enabled.
