@@ -50,9 +50,11 @@ if (ci.targets?.["execution-proof-system"]?.cache !== true) failures.push("execu
 for (const old of ["tooling-lint","go-workspace-sync"]) if (ci.targets?.[old]) failures.push("repository-ci duplicate target " + old);
 
 const tooling = data("tools/dev/project.json");
-for (const target of ["lint","go-workspace-sync","structural-hygiene"]) {
+for (const target of ["lint","go-workspace-sync","structural-hygiene","knowledge-materialize"]) {
   if (tooling.targets?.[target]?.cache !== true) failures.push("workspace-tooling:" + target + " must be cache=true");
 }
+const knowledgeOutput = tooling.targets?.["knowledge-materialize"]?.outputs ?? [];
+if (!knowledgeOutput.includes("{workspaceRoot}/.cache/bthwani-knowledge")) failures.push("knowledge-materialize stable output missing");
 const structural = JSON.stringify(tooling.targets?.["structural-hygiene"]?.inputs ?? []);
 if (!structural.includes("git ls-files -s") || !structural.includes("git ls-files --eol")) failures.push("structural-hygiene Git index inputs missing");
 for (const workflow of expected) {
@@ -72,6 +74,23 @@ for (const [file,target] of [
 }
 if (data("apps/control-panel/project.json").targets?.["e2e-live"]) failures.push("duplicate control-panel:e2e-live remains");
 
+for (const app of ["app-client","app-partner","app-captain","app-field"]) {
+  const deps = data("apps/" + app + "/project.json").implicitDependencies ?? [];
+  if (!deps.includes("mobile-tooling")) failures.push(app + ": mobile-tooling dependency edge missing");
+}
+
+for (const [file,targets] of [
+  ["services/identity/backend/project.json",["build","vet","unit"]],
+  ["services/identity/clients/go/project.json",["vet","unit"]],
+  ["services/dsh/backend/project.json",["build","vet","unit"]],
+  ["services/wlt/backend/project.json",["build","vet","unit"]],
+]) {
+  const project = data(file);
+  for (const target of targets) {
+    if (!(project.targets?.[target]?.inputs ?? []).includes("goToolchain")) failures.push(file + ":" + target + " missing goToolchain input");
+  }
+}
+
 const local = read("tools/dev/verify-local-candidate.ps1");
 if (local.includes("git -C $Repo diff --name-only") || local.includes("--changed --since")) failures.push("local parallel affected engine remains");
 if (!local.includes("nx affected -t lint format-check typecheck unit contract build vet export-smoke")) failures.push("local Nx affected target set drifted");
@@ -79,7 +98,8 @@ if (!local.includes("workspace-tooling:lint")) failures.push("local tooling lint
 
 const staticCi = read(".github/workflows/ci-static.yml");
 if (staticCi.includes("--changed --since") || staticCi.includes("go work sync")) failures.push("static CI parallel/mutating proof remains");
-for (const required of ["workspace-tooling:lint","workspace-tooling:go-workspace-sync","repository-ci:execution-proof-system","nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet"]) {
+if (staticCi.includes("run: node tools/dev/knowledge-source.mjs")) failures.push("static CI bypasses Nx for knowledge materialization");
+for (const required of ["workspace-tooling:knowledge-materialize","workspace-tooling:lint","workspace-tooling:go-workspace-sync","repository-ci:execution-proof-system","nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet","actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"]) {
   if (!staticCi.includes(required)) failures.push("static CI missing " + required);
 }
 
@@ -87,7 +107,16 @@ const runtimeCi = read(".github/workflows/ci-runtime.yml");
 for (const forbidden of ["node tools/dev/verify-identity-","node tools/dev/verify-dsh-","pnpm --dir apps/control-panel test:e2e:live","tag:ci-"]) {
   if (runtimeCi.includes(forbidden)) failures.push("runtime CI direct/shadow proof remains: " + forbidden);
 }
-for (const required of ["--projects=repository-ci","repository-ci:runtime-integration"]) if (!runtimeCi.includes(required)) failures.push("runtime CI missing " + required);
+for (const required of [
+  "--projects=repository-ci",
+  "repository-ci:runtime-integration",
+  "docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f",
+  "docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8",
+  "cache-from: type=gha",
+  "github.event_name != 'pull_request'",
+  "up -d --no-build",
+  "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+]) if (!runtimeCi.includes(required)) failures.push("runtime CI missing " + required);
 if (!read(".github/workflows/ci-security.yml").includes("node tools/dev/verify-secret-safety.mjs")) failures.push("security verifier owner drifted");
 
 if (failures.length) {
