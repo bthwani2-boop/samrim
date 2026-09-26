@@ -33,6 +33,7 @@ export default function ClientAccount() {
       setNotice("تم تسجيل الخروج من هذا الجهاز، لكن تعذر تأكيد إبطال الجلسة على الخادم.");
     } finally {
       setBusy(false);
+      router.replace("/?returnTo=/account" as Href);
     }
   }
 
