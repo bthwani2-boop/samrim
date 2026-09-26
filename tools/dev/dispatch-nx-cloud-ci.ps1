@@ -2,8 +2,8 @@
 [CmdletBinding()]
 param(
     [string]$Repository = 'bthwani2-boop/samrim',
-    [ValidateSet('control-panel-e2e.yml', 'baseline-guard.yml', 'backend-integration.yml')]
-    [string]$Workflow = 'control-panel-e2e.yml',
+    [ValidateSet('ci-static.yml', 'ci-runtime.yml')]
+    [string]$Workflow = 'ci-static.yml',
     [string]$Ref = 'main',
     [switch]$Wait
 )
