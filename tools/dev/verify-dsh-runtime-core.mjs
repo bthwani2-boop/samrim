@@ -1721,19 +1721,16 @@ for (const [next, expectedVersion] of [["PARTNER_ACCEPTED", 1], ["PREPARING", 2]
   if (transition.status !== 200 || transition.body?.order?.state !== next) fail("Captain expiry order did not reach READY_FOR_DISPATCH", JSON.stringify({ next, transition }));
 }
 const firstCaptainBeforeExpiry = await request(dshBase, "GET", "/dsh/captains/me", { token: captainAccessToken });
-const firstCaptainUnavailable = await request(dshBase, "POST", "/dsh/captains/me/availability", { token: captainAccessToken, headers: partnerHeaders(`captain-expiry-hide-first-${suffix}`, firstCaptainBeforeExpiry.body?.admission?.version), body: { available: false } });
+const firstCaptainAvailable = firstCaptainBeforeExpiry.body?.admission?.availabilityState === "available"
+  ? firstCaptainBeforeExpiry
+  : await request(dshBase, "POST", "/dsh/captains/me/availability", { token: captainAccessToken, headers: partnerHeaders(`captain-expiry-available-${suffix}`, firstCaptainBeforeExpiry.body?.admission?.version), body: { available: true } });
 const activeCaptainBeforeExpiry = await request(dshBase, "GET", "/dsh/captains/me", { token: activeCaptainAccessToken });
 const activeCaptainUnavailable = await request(dshBase, "POST", "/dsh/captains/me/availability", { token: activeCaptainAccessToken, headers: partnerHeaders(`captain-expiry-hide-active-${suffix}`, activeCaptainBeforeExpiry.body?.admission?.version), body: { available: false } });
-const expiryCaptainPhone = `+96779${crypto.randomInt(1_000_000, 9_999_999)}`;
-const expiryCaptainAdmission = await request(dshBase, "POST", "/dsh/captains/admissions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `captain-expiry-admit-${suffix}`), body: { contactPhoneE164: expiryCaptainPhone } });
-if (expiryCaptainAdmission.status !== 201 || expiryCaptainAdmission.body?.admission?.state !== "eligible" || !expiryCaptainAdmission.body.admission.actorId) fail("Captain expiry actor admission failed", JSON.stringify({ firstCaptainBeforeExpiry, firstCaptainUnavailable, activeCaptainBeforeExpiry, activeCaptainUnavailable, expiryCaptainAdmission }));
-const expiryCaptainAdmissionID = String(expiryCaptainAdmission.body.admission.id);
-const expiryCaptainActorID = String(expiryCaptainAdmission.body.admission.actorId);
-captainAdmissionIDs.add(expiryCaptainAdmissionID); actorIDs.add(expiryCaptainActorID);
-const expiryCaptainAccessToken = await activateCaptain(expiryCaptainPhone, `ExpC${suffix.slice(0, 4)}`);
+if (firstCaptainBeforeExpiry.status !== 200 || firstCaptainBeforeExpiry.body?.admission?.actorId !== captainActorID || firstCaptainAvailable.status !== 200 || firstCaptainAvailable.body?.admission?.availabilityState !== "available" || activeCaptainBeforeExpiry.status !== 200 || activeCaptainUnavailable.status !== 200 || activeCaptainUnavailable.body?.admission?.availabilityState !== "unavailable") fail("Existing Captain expiry fixture was not isolated", JSON.stringify({ firstCaptainBeforeExpiry, firstCaptainAvailable, activeCaptainBeforeExpiry, activeCaptainUnavailable }));
+const expiryCaptainActorID = captainActorID;
+const expiryCaptainAccessToken = captainAccessToken;
 const expiryCaptainSelf = await request(dshBase, "GET", "/dsh/captains/me", { token: expiryCaptainAccessToken });
-const expiryCaptainAvailable = await request(dshBase, "POST", "/dsh/captains/me/availability", { token: expiryCaptainAccessToken, headers: partnerHeaders(`captain-expiry-availability-${suffix}`, expiryCaptainSelf.body?.admission?.version), body: { available: true } });
-if (firstCaptainBeforeExpiry.status !== 200 || firstCaptainUnavailable.status !== 200 || activeCaptainBeforeExpiry.status !== 200 || activeCaptainUnavailable.status !== 200 || expiryCaptainSelf.status !== 200 || expiryCaptainAvailable.status !== 200 || expiryCaptainAvailable.body?.admission?.availabilityState !== "available") fail("Captain expiry actor availability fixture was not isolated", JSON.stringify({ firstCaptainBeforeExpiry, firstCaptainUnavailable, activeCaptainBeforeExpiry, activeCaptainUnavailable, expiryCaptainSelf, expiryCaptainAvailable }));
+if (expiryCaptainSelf.status !== 200 || expiryCaptainSelf.body?.admission?.actorId !== expiryCaptainActorID || expiryCaptainSelf.body.admission.availabilityState !== "available") fail("Existing Captain expiry session is not available", JSON.stringify(expiryCaptainSelf));
 const expiryDispatch = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(expiryOrderID)}/dispatch`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `captain-expiry-dispatch-${suffix}`) });
 if (expiryDispatch.status !== 201 || expiryDispatch.body?.offer?.state !== "offered" || expiryDispatch.body.offer.captainActorId !== expiryCaptainActorID) fail("Captain expiry offer fixture failed", JSON.stringify({ expiryDispatch, expiryCaptainActorID }));
 const expiryOfferID = String(expiryDispatch.body.offer.id); captainOfferIDs.add(expiryOfferID);
