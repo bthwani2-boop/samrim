@@ -3,14 +3,12 @@ import { randomInt, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page, request, test } from "@playwright/test";
-import { enableVirtualAuthenticator, jsonRequest, type PreparedOperator, registerOperator, requiredEnv, waitForMailpitCode } from "./live-identity-proof-helpers";
+import { assertIdentityProofScope, cleanupPreparedOperator, enableVirtualAuthenticator, jsonRequest, type PreparedOperator, provisionIndependentOperator, registerOperator, requiredEnv, waitForMailpitCode } from "./live-identity-proof-helpers";
 
 let preparedOperatorForCleanup: PreparedOperator | undefined;
 
 test.beforeAll(() => {
-  if (process.env.CI !== "true" || process.env.BTHWANI_IDENTITY_PROOF_SCOPE !== "disposable-ci") {
-    throw new Error("live Identity proof requires explicitly disposable CI state");
-  }
+  assertIdentityProofScope();
 });
 
 function readCanonicalRuntime(): { envFile: string; repoRoot: string; postgresUser: string; postgresDatabase: string } {
@@ -38,40 +36,6 @@ function readCanonicalRuntime(): { envFile: string; repoRoot: string; postgresUs
   const postgresDatabase = String(values.SAMRIM_POSTGRES_DB || "");
   if (!postgresUser || !postgresDatabase) throw new Error("canonical Postgres credentials are required for live Identity fixture cleanup");
   return { envFile, repoRoot, postgresUser, postgresDatabase };
-}
-
-function cleanupPreparedOperator(operator: PreparedOperator): void {
-  const runtime = readCanonicalRuntime();
-  const actorLiteral = operator.actorId.replaceAll("'", "''");
-  const query = operator.createdByTest
-    ? `DELETE FROM identity_actors WHERE id='${actorLiteral}'; SELECT count(*) FROM identity_actors WHERE id='${actorLiteral}';`
-    : `DELETE FROM identity_sessions WHERE actor_id='${actorLiteral}'; SELECT count(*) FROM identity_sessions WHERE actor_id='${actorLiteral}';`;
-  const output = execFileSync(
-    "docker",
-    [
-      "compose",
-      "--project-name",
-      "samrim-local",
-      "--env-file",
-      runtime.envFile,
-      "-f",
-      path.join(runtime.repoRoot, "infra/local/compose/compose.yaml"),
-      "exec",
-      "-T",
-      "postgres",
-      "psql",
-      "-v",
-      "ON_ERROR_STOP=1",
-      "-U",
-      runtime.postgresUser,
-      "-d",
-      runtime.postgresDatabase,
-      "-Atc",
-      query,
-    ],
-    { cwd: runtime.repoRoot, encoding: "utf8" },
-  ).trim();
-  if (output.split(/\r?\n/).at(-1) !== "0") throw new Error("live Identity fixture cleanup left actor data");
 }
 
 function mutateOperatorSessions(actorId: string, mutation: string): void {
@@ -138,36 +102,33 @@ async function readBrowserSession(page: Page): Promise<{ status: number; body: R
 test.afterEach(() => {
   const operator = preparedOperatorForCleanup;
   preparedOperatorForCleanup = undefined;
-  if (process.env.CI === "true") return;
-  if (operator) cleanupPreparedOperator(operator);
+  if (operator?.createdByTest) cleanupPreparedOperator(operator);
 });
 
 async function prepareOperator(identityBase: string, controlToken: string, bootstrapToken: string): Promise<PreparedOperator> {
   const search = await fetch(identityBase + "/internal/actor-roles/search?role=operator&limit=10", { headers: { Accept: "application/json", Authorization: "Bearer " + controlToken }, signal: AbortSignal.timeout(5_000) });
+  expect(search.status, "operator search must read the current Identity owner").toBe(200);
   const searchBody = await search.json() as { items?: Array<{ actorId: string; phoneE164: string }> };
   const existing = searchBody.items?.[0];
-  if (!existing) {
-    const phone = "+9677" + String(randomInt(10_000_000, 99_999_999));
-    const bootstrap = await jsonRequest(identityBase, "/internal/bootstrap/operator", bootstrapToken, { phoneE164: phone, role: "operator" });
-    expect(bootstrap.response.status, "fresh operator bootstrap must succeed").toBe(201);
-    expect(bootstrap.body?.role?.role).toBe("operator");
-    const operator = { actorId: String(bootstrap.body?.role?.actorId), phone, token: String(bootstrap.body?.enrollmentToken?.code), createdByTest: false };
-    preparedOperatorForCleanup = operator;
-    expect(operator.actorId).toMatch(/^act_/);
-    return operator;
+  if (existing) {
+    expect(existing.actorId).toMatch(/^act_/);
+    expect(existing.phoneE164).toMatch(/^\+9677/);
+    return provisionIndependentOperator(identityBase, controlToken, existing.actorId, (operator) => {
+      preparedOperatorForCleanup = operator;
+    });
   }
 
-  const operator = { actorId: existing.actorId, phone: existing.phoneE164, token: "", createdByTest: false };
+  if (process.env.BTHWANI_IDENTITY_PROOF_SCOPE === "isolated-local-actors") {
+    throw new Error("isolated local Identity proof requires an existing operator; it will not create a permanent first operator with a temporary browser credential");
+  }
+
+  const phone = "+9677" + String(randomInt(10_000_000, 99_999_999));
+  const bootstrap = await jsonRequest(identityBase, "/internal/bootstrap/operator", bootstrapToken, { phoneE164: phone, role: "operator" });
+  expect(bootstrap.response.status, "fresh operator bootstrap must succeed").toBe(201);
+  expect(bootstrap.body?.role?.role).toBe("operator");
+  const operator = { actorId: String(bootstrap.body?.role?.actorId), phone, token: String(bootstrap.body?.enrollmentToken?.code), createdByTest: false };
   expect(operator.actorId).toMatch(/^act_/);
-  const enrollment = await fetch(identityBase + "/internal/operator-enrollment-tokens", {
-    method: "POST",
-    headers: { Accept: "application/json", Authorization: "Bearer " + controlToken, "X-Acting-Actor-ID": existing.actorId, "Content-Type": "application/json" },
-    body: JSON.stringify({ phoneE164: operator.phone, role: "operator" }),
-    signal: AbortSignal.timeout(5_000),
-  });
-  expect(enrollment.status, "governed operator enrollment token must be issued").toBe(201);
-  const enrollmentBody = await enrollment.json() as { code?: string };
-  operator.token = String(enrollmentBody.code);
+  expect(operator.token).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
   return operator;
 }
 

@@ -4,9 +4,11 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { captureMailpitMessageIds, readMailpitCode } from "./mailpit-challenge.mjs";
 
-const destructiveProofAuthorized = process.env.CI === "true" && process.env.BTHWANI_IDENTITY_PROOF_SCOPE === "disposable-ci";
-if (!destructiveProofAuthorized) {
-  console.error("IDENTITY_PROOF_REFUSED scope=developer-state reason=disposable-ci-required");
+const proofScope = process.env.BTHWANI_IDENTITY_PROOF_SCOPE;
+const disposableCiProofAuthorized = process.env.CI === "true" && proofScope === "disposable-ci";
+const isolatedLocalActorsProofAuthorized = proofScope === "isolated-local-actors";
+if (!disposableCiProofAuthorized && !isolatedLocalActorsProofAuthorized) {
+  console.error(`IDENTITY_PROOF_REFUSED scope=${proofScope || "unspecified"} reason=isolated-actor-scope-required`);
   process.exit(1);
 }
 
@@ -81,6 +83,10 @@ const randomRefreshRequestId = () => crypto.randomBytes(24).toString("base64url"
 
 for (const pathName of ["/identity/health", "/identity/readiness"]) await expect("GET", pathName, 200);
 for (const pathName of ["/auth/operator/login/start", "/auth/operator/login/complete", "/auth/managed/recovery/request", "/auth/managed/recover"]) await expect("POST", pathName, 404, { body: {} });
+
+if (isolatedLocalActorsProofAuthorized && sql("SELECT count(*) FROM identity_bootstrap_state WHERE id=1") !== "1") {
+  fail("isolated local Identity proof requires the canonical first Operator to exist; it will not create a permanent bootstrap actor as test residue");
+}
 
 const bootstrapPhone = phone();
 generatedPhones.add(bootstrapPhone);

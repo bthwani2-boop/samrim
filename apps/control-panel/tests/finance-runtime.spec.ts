@@ -1,8 +1,19 @@
 import { expect, test } from "@playwright/test";
-import { enrollAndAuthenticateExistingOperator } from "./live-identity-proof-helpers";
+import { cleanupPreparedOperator, enrollAndAuthenticateIsolatedOperator, type PreparedOperator } from "./live-identity-proof-helpers";
+
+let preparedOperatorForCleanup: PreparedOperator | undefined;
 
 test.beforeEach(async ({ page }) => {
-  await enrollAndAuthenticateExistingOperator(page);
+  preparedOperatorForCleanup = undefined;
+  await enrollAndAuthenticateIsolatedOperator(page, ["finance"], (operator) => {
+    preparedOperatorForCleanup = operator;
+  });
+});
+
+test.afterEach(() => {
+  const operator = preparedOperatorForCleanup;
+  preparedOperatorForCleanup = undefined;
+  if (operator?.createdByTest) cleanupPreparedOperator(operator);
 });
 
 test("@live operator reads the real bounded COD cash-custody journey", async ({ page }) => {

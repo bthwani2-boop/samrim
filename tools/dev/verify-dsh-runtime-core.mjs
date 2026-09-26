@@ -459,6 +459,7 @@ async function waitForSQL(query, expected, message, timeoutMs = 20_000) { const 
 async function waitForFinancialHandoff(effectType, orderID, message, timeoutMs = 20_000) { const deadline = Date.now() + timeoutMs; let actual = ""; while (Date.now() < deadline) { actual = sql(`SELECT state || '|' || COALESCE(last_error,'') FROM dsh.commerce_financial_handoff_outbox WHERE effect_type='${sqlLiteral(effectType)}' AND order_id='${sqlLiteral(orderID)}'`); if (actual.startsWith("POSTED|")) return; await new Promise((resolve) => setTimeout(resolve, 250)); } fail(message, `actual=${actual}`); }
 
 let actingOperatorID = sql("SELECT r.actor_id FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id JOIN identity_operator_permissions p ON p.actor_id=r.actor_id AND p.permission='platform_policies' AND p.enabled JOIN identity_bootstrap_state b ON b.id=1 WHERE r.role='operator' AND r.enabled AND a.security_enabled AND r.activated_at IS NOT NULL ORDER BY (r.actor_id=b.initial_operator_actor_id) DESC, r.activated_at DESC, r.actor_id LIMIT 1");
+if (!actingOperatorID && process.env.BTHWANI_IDENTITY_PROOF_SCOPE === "isolated-local-actors") fail("isolated local DSH proof requires an existing active Operator with Platform Policies permission; it will not create a permanent bootstrap actor as test residue");
 if (!actingOperatorID) console.log(`DSH_OPERATOR_CANDIDATES=${sql("SELECT COALESCE(string_agg(r.actor_id || ':' || r.enabled::text || ':' || (r.activated_at IS NOT NULL)::text || ':' || a.security_enabled::text, ',' ORDER BY r.activated_at DESC NULLS LAST, r.actor_id), 'none') FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id WHERE r.role='operator'")}`);
 if (!actingOperatorID) actingOperatorID = sql("SELECT b.initial_operator_actor_id FROM identity_bootstrap_state b JOIN identity_actor_roles r ON r.actor_id=b.initial_operator_actor_id AND r.role='operator' JOIN identity_actors a ON a.id=r.actor_id WHERE b.id=1 AND r.enabled AND a.security_enabled AND r.activated_at IS NOT NULL");
 if (!actingOperatorID) {
@@ -481,19 +482,7 @@ for (const permission of ["operations", "finance"]) {
     fail("checker Operator permission readback failed", JSON.stringify({ permission, currentPermission }));
   }
   if (currentPermission.body.enabled !== true) {
-    const grantedPermission = await request(identityBase, "PUT", `/internal/operators/${encodeURIComponent(checkerOperatorID)}/permissions/${permission}`, {
-      token: dshToken,
-      headers: {
-        "X-Acting-Actor-ID": actingOperatorID,
-        "X-Correlation-ID": crypto.randomUUID(),
-        "X-Expected-Version": String(currentPermission.body.version),
-        "X-Reason": `disposable CI independent checker ${permission} proof`,
-      },
-      body: { enabled: true },
-    });
-    if (grantedPermission.status !== 200 || grantedPermission.body?.actorId !== checkerOperatorID || grantedPermission.body?.permission !== permission || grantedPermission.body?.enabled !== true || grantedPermission.body?.version !== currentPermission.body.version + 1) {
-      fail("checker Operator canonical permission grant failed", JSON.stringify({ permission, currentPermission, grantedPermission }));
-    }
+    fail(`independent checker Operator must already hold canonical ${permission} permission before DSH proof`, JSON.stringify({ permission, currentPermission }));
   }
 }
 console.log("DSH_CHECKER_OPERATOR_PERMISSIONS=PASS");
