@@ -92,6 +92,7 @@ jobs:
             --outputStyle=stream \
             --parallel=3
           pnpm exec nx run repository-ci:tooling-lint --outputStyle=stream
+          pnpm exec nx run repository-ci:execution-proof-system --outputStyle=stream
           pnpm exec nx run repository-ci:go-workspace-sync --outputStyle=stream
           pnpm exec nx run infra:compose-config --outputStyle=stream
 
