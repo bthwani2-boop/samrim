@@ -54,9 +54,28 @@ write("git-head.txt", gitHead.stdout + gitHead.stderr);
 const nxReport = run("pnpm", ["exec", "nx", "report"]);
 write("nx-report.txt", nxReport.stdout + nxReport.stderr);
 
+const projectGraphPath = path.join(outDir, "project-graph.json");
+const projectGraph = run("pnpm", ["exec", "nx", "graph", "--file=" + projectGraphPath]);
+if (projectGraph.status !== 0) write("project-graph-error.txt", projectGraph.stdout + projectGraph.stderr);
+
 if (metadata.nxBase && metadata.nxHead) {
   const affected = run("pnpm", ["exec", "nx", "show", "projects", "--affected", "--base=" + metadata.nxBase, "--head=" + metadata.nxHead]);
   write("affected-projects.txt", affected.stdout + affected.stderr);
+  const taskGraphPath = path.join(outDir, "affected-static-task-graph.json");
+  const taskGraph = run("pnpm", [
+    "exec", "nx", "affected",
+    "-t", "lint,format-check,typecheck,unit,contract,build,export-smoke,vet",
+    "--base=" + metadata.nxBase,
+    "--head=" + metadata.nxHead,
+    "--graph=" + taskGraphPath,
+  ]);
+  if (taskGraph.status !== 0) write("affected-task-graph-error.txt", taskGraph.stdout + taskGraph.stderr);
+}
+
+if (kind === "runtime") {
+  const runtimeTaskGraphPath = path.join(outDir, "runtime-task-graph.json");
+  const runtimeTaskGraph = run("pnpm", ["exec", "nx", "run", "dsh-backend:runtime-proof", "--graph=" + runtimeTaskGraphPath]);
+  if (runtimeTaskGraph.status !== 0) write("runtime-task-graph-error.txt", runtimeTaskGraph.stdout + runtimeTaskGraph.stderr);
 }
 
 for (const relative of ["nx.json", ".github/project.json"]) {
