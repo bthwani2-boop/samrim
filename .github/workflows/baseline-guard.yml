@@ -1,4 +1,4 @@
-name: Repository Baseline Guard
+name: CI Static
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: repository-baseline-${{ github.ref }}
+  group: ci-static-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
