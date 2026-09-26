@@ -62,6 +62,13 @@
       "options": {
         "command": "node tools/dev/check-go-format.mjs services/identity/backend"
       }
+    },
+    "ci-image": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/dev/build-ci-image.mjs identity"
+      }
     }
   },
   "tags": [
