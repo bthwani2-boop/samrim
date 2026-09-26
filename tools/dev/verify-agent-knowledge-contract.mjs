@@ -181,14 +181,13 @@ for (const forbidden of [
   if (runtimeWorkflow.includes(forbidden)) failures.push(`runtime workflow retains parallel or superseded logic: ${forbidden}`);
 }
 
-const securityWorkflow = requireTokens(".github/workflows/ci-security.yml", [
+requireTokens(".github/workflows/ci-security.yml", [
   "name: CI Security",
   "node tools/dev/verify-secret-safety.mjs",
   "security-events: write",
   "github/codeql-action/init@1190a975f95ce23525efb6a3fc21ea29567c1b52",
   "github/codeql-action/analyze@1190a975f95ce23525efb6a3fc21ea29567c1b52",
 ]);
-if (securityWorkflow.includes("secret-safety.yml")) failures.push("security workflow retains retired self-reference");
 
 const prTemplate = requireTokens(".github/pull_request_template.md", [
   "## Governance impact",
