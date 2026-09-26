@@ -1,4 +1,4 @@
-name: Repository Backend Integration
+name: CI Runtime
 
 on:
   push:
@@ -12,14 +12,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: repository-backend-integration-${{ github.ref }}
+  group: ci-runtime-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   backend-integration:
     name: repository-backend-integration
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - name: Checkout integration candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -47,18 +47,18 @@ jobs:
         shell: bash
         run: pnpm install --frozen-lockfile
 
-      - name: Resolve backend runtime scope through Nx
+      - name: Resolve runtime integration scope through Nx
         id: scope
         shell: bash
         run: |
           set -euo pipefail
-          affected="$(pnpm exec nx show projects --affected --base="$NX_BASE" --head="$NX_HEAD" --projects=tag:ci-backend-runtime --sep=,)"
+          affected="$(pnpm exec nx show projects --affected --base="$NX_BASE" --head="$NX_HEAD" --projects=repository-ci --sep=,)"
           if [[ -n "$affected" ]]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "BACKEND_INTEGRATION_SCOPE=AFFECTED projects=$affected"
+            echo "CI_RUNTIME_SCOPE=AFFECTED owner=$affected base=$NX_BASE head=$NX_HEAD"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "BACKEND_INTEGRATION_SCOPE=UNAFFECTED"
+            echo "CI_RUNTIME_SCOPE=UNAFFECTED base=$NX_BASE head=$NX_HEAD"
           fi
 
       - name: Install Chromium runtime
