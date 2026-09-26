@@ -33,6 +33,12 @@
         "command": "go test ./...",
         "cwd": "services/identity/clients/go"
       }
+    },
+    "format-check": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/dev/check-go-format.mjs services/identity/clients/go"
+      }
     }
   },
   "tags": [
