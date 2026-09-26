@@ -69,7 +69,7 @@ const verifier = requireTokens("tools/dev/verify-local-candidate.ps1", [
   "EXACT_LOCAL_CANDIDATE_SHA",
   "nx run-many",
   "Workspace invariant targets",
-  "workspace-tooling:lint",
+  "go-workspace-sync",
   "repository-ci:execution-proof-system",
   "nx run infra:compose-config",
   "nx affected -t lint format-check typecheck unit contract build vet export-smoke",
@@ -184,9 +184,6 @@ for (const forbidden of [
 requireTokens(".github/workflows/ci-security.yml", [
   "name: CI Security",
   "node tools/dev/verify-secret-safety.mjs",
-  "security-events: write",
-  "github/codeql-action/init@1190a975f95ce23525efb6a3fc21ea29567c1b52",
-  "github/codeql-action/analyze@1190a975f95ce23525efb6a3fc21ea29567c1b52",
 ]);
 
 const prTemplate = requireTokens(".github/pull_request_template.md", [

@@ -38,7 +38,7 @@ if (records.length === 0) lines.push("| no timed commands | — | — | — |");
 lines.push("");
 lines.push("Budget mode: " + budgets.mode + ". Single-run values are diagnostics; p50/p95 remain Nx Cloud/GitHub historical metrics.");
 
-const output = lines.join("\\n") + "\\n";
+const output = lines.join("\n") + "\n";
 if (summaryPath) fs.appendFileSync(summaryPath, output);
 console.log(output);
 console.log("CI_PERFORMANCE_REPORT=PASS records=" + records.length + " mode=" + budgets.mode);

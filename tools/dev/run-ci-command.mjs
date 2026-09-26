@@ -89,7 +89,7 @@ const record = {
   exitCode,
   logPath,
   profilePath,
-  sha: process.env.GITHUB_SHA || null,
+  sha: process.env.CANDIDATE_SHA || process.env.GITHUB_SHA || null,
   base: process.env.NX_BASE || null,
   head: process.env.NX_HEAD || null,
   runner: process.env.RUNNER_OS || process.platform,

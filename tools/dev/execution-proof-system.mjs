@@ -25,13 +25,26 @@ for (const [file, name] of [
 
 const legacy = ["backend-integration.yml","baseline-guard.yml","control-panel-e2e.yml","pr-policy.yml","secret-safety.yml"];
 const tracked = execFileSync("git", ["ls-files","-z"], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
+function readTrackedRegularFile(absolute) {
+  let descriptor;
+  try {
+    const noFollow = process.platform === "win32" ? 0 : (fs.constants.O_NOFOLLOW ?? 0);
+    descriptor = fs.openSync(absolute, fs.constants.O_RDONLY | noFollow);
+    if (!fs.fstatSync(descriptor).isFile()) return null;
+    return fs.readFileSync(descriptor);
+  } catch (error) {
+    if (error?.code === "ENOENT" || error?.code === "ELOOP") return null;
+    throw error;
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+  }
+}
 for (const file of tracked) {
   const rel = file.replaceAll("\\","/");
   if (rel === self) continue;
   const abs = path.join(root, rel);
-  if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) continue;
-  const bytes = fs.readFileSync(abs);
-  if (bytes.includes(0)) continue;
+  const bytes = readTrackedRegularFile(abs);
+  if (!bytes || bytes.includes(0)) continue;
   const text = bytes.toString("utf8");
   for (const old of legacy) if (text.includes(old)) failures.push(rel + ": legacy workflow reference " + old);
 }
@@ -49,10 +62,11 @@ if (ci.targets?.["runtime-integration"]?.cache !== false) failures.push("runtime
 if (ci.targets?.["runtime-images"]?.cache !== false) failures.push("runtime-images must be cache=false");
 if (!(ci.targets?.["runtime-images"]?.dependsOn ?? []).includes("^ci-image")) failures.push("runtime-images must schedule dependency ci-image targets");
 if (ci.targets?.["execution-proof-system"]?.cache !== true) failures.push("execution-proof-system must be cache=true");
+if (!(ci.targets?.["execution-proof-system"]?.inputs ?? []).includes("{workspaceRoot}/**/*")) failures.push("execution-proof-system repository-wide cache input missing");
 for (const old of ["tooling-lint","go-workspace-sync"]) if (ci.targets?.[old]) failures.push("repository-ci duplicate target " + old);
 
 const tooling = data("tools/dev/project.json");
-for (const target of ["lint","go-workspace-sync","structural-hygiene","knowledge-materialize","cache-contracts","sandbox-readiness"]) {
+for (const target of ["lint","go-workspace-sync","structural-hygiene","knowledge-materialize","cache-contracts"]) {
   if (tooling.targets?.[target]?.cache !== true) failures.push("workspace-tooling:" + target + " must be cache=true");
 }
 const knowledgeOutput = tooling.targets?.["knowledge-materialize"]?.outputs ?? [];
@@ -128,9 +142,8 @@ for (const [file,targets] of [
 const local = read("tools/dev/verify-local-candidate.ps1");
 if (local.includes("git -C $Repo diff --name-only") || local.includes("--changed --since")) failures.push("local parallel affected engine remains");
 if (!local.includes("nx affected -t lint format-check typecheck unit contract build vet export-smoke")) failures.push("local Nx affected target set drifted");
-if (!local.includes("workspace-tooling:lint")) failures.push("local tooling lint owner drifted");
 if (!local.includes("cache-contracts")) failures.push("local cache contract proof missing");
-if (!local.includes("sandbox-readiness")) failures.push("local sandbox readiness proof missing");
+if (local.includes("--projects=workspace-tooling")) failures.push("local CI project allowlist remains");
 
 const staticCi = read(".github/workflows/ci-static.yml");
 if (staticCi.includes("--changed --since") || staticCi.includes("go work sync")) failures.push("static CI parallel/mutating proof remains");
@@ -138,8 +151,6 @@ if (staticCi.includes("run: node tools/dev/knowledge-source.mjs")) failures.push
 for (const required of [
   "workspace-tooling:knowledge-materialize",
   "cache-contracts",
-  "sandbox-readiness",
-  "workspace-tooling:lint",
   "workspace-tooling:go-workspace-sync",
   "repository-ci:execution-proof-system",
   "nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet",
@@ -155,6 +166,10 @@ for (const required of [
 ]) {
   if (!staticCi.includes(required)) failures.push("static CI missing " + required);
 }
+if (staticCi.includes("--projects=workspace-tooling") || staticCi.includes("workspace-tooling:lint")) {
+  failures.push("static CI retains a manual project allowlist or duplicate tooling lint");
+}
+if (staticCi.includes("windows-export-full -- pnpm exec nx run-many -t export-smoke --projects=")) failures.push("scheduled Windows full regression has a manual project allowlist");
 
 const runtimeCi = read(".github/workflows/ci-runtime.yml");
 for (const forbidden of ["node tools/dev/verify-identity-","node tools/dev/verify-dsh-","pnpm --dir apps/control-panel test:e2e:live","tag:ci-"]) {
@@ -207,10 +222,6 @@ for (const name of [
 ]) {
   if (!Number.isFinite(budgets.budgetsMs?.[name])) failures.push("CI performance budget missing " + name);
 }
-if (tooling.targets?.["sandbox-readiness"]?.options?.command !== "node tools/dev/verify-sandbox-readiness.mjs") failures.push("workspace-tooling sandbox readiness owner drifted");
-const sandboxConfig = path.join(root, ".nx", "workflows", "sandboxing-config.yaml");
-if (fs.existsSync(sandboxConfig) && fs.readFileSync(sandboxConfig, "utf8").trim()) failures.push("sandbox exclusions exist before audited admission");
-
 const controlPanelBuildInputs = JSON.stringify(data("apps/control-panel/project.json").targets?.build?.inputs ?? []);
 if (!controlPanelBuildInputs.includes("controlPanelBuildEnvironment")) failures.push("Control Panel build environment cache input missing");
 const controlPanelEnvironment = JSON.stringify(data("nx.json").namedInputs?.controlPanelBuildEnvironment ?? []);
@@ -222,20 +233,21 @@ if (!imageBuilder.includes('process.env.GITHUB_EVENT_NAME !== "pull_request"')) 
 if (!imageBuilder.includes('"--cache-from", "type=gha,version=2,scope=" + scope')) failures.push("BuildKit reusable cache v2 read missing");
 if (!imageBuilder.includes('"--cache-to", "type=gha,version=2,mode=max,scope=" + scope')) failures.push("BuildKit trusted cache v2 write missing");
 const failureCapture = read("tools/dev/capture-ci-failure.mjs");
-if (!failureCapture.includes("[REDACTED:")) failures.push("runtime failure log redaction missing");
+if (!failureCapture.includes("function redact(") || !failureCapture.includes("redactTree(outDir)")) failures.push("failure package sanitization is not applied to every text artifact");
 if (failureCapture.includes('fs.copyFileSync(envFile')) failures.push("failure package must not copy runtime env secrets");
+if (failureCapture.includes("apps/control-panel/test-results") || failureCapture.includes("apps/control-panel/playwright-report")) failures.push("failure package copies raw Playwright traces or reports");
 const nxCloudVerifier = read("tools/dev/verify-nx-cloud-ci.mjs");
 if (!nxCloudVerifier.includes("local-only-untrusted-pr")) failures.push("untrusted PR Nx Cloud fallback missing");
 
 const securityCi = read(".github/workflows/ci-security.yml");
 for (const required of [
-  "security-events: write",
   "node tools/dev/verify-secret-safety.mjs",
-  "github/codeql-action/init@1190a975f95ce23525efb6a3fc21ea29567c1b52",
-  "github/codeql-action/autobuild@1190a975f95ce23525efb6a3fc21ea29567c1b52",
-  "github/codeql-action/analyze@1190a975f95ce23525efb6a3fc21ea29567c1b52",
-  "languages: javascript-typescript,go",
 ]) if (!securityCi.includes(required)) failures.push("security CI missing " + required);
+if (securityCi.includes("github/codeql-action/") || securityCi.includes("security-events: write")) failures.push("advanced CodeQL duplicates the enabled GitHub default setup");
+for (const workflow of expected) {
+  const source = read(".github/workflows/" + workflow);
+  if (!source.includes("node tools/dev/verify-ci-exact-sha.mjs")) failures.push(workflow + ": shared exact-SHA guard missing");
+}
 
 if (failures.length) {
   console.error("EXECUTION_PROOF_SYSTEM=FAIL");

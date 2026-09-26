@@ -7,6 +7,8 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 const data = (relative) => JSON.parse(read(relative));
 
 const nx = data("nx.json");
+const executionProofInputs = JSON.stringify(data(".github/project.json").targets?.["execution-proof-system"]?.inputs ?? []);
+if (!executionProofInputs.includes("{workspaceRoot}/**/*")) failures.push("repository-ci:execution-proof-system missing repository-wide cache input");
 const projects = [];
 function discoverProjects(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

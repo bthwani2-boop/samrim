@@ -5,6 +5,7 @@ import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "samrim-go-workspace-"));
+const isWorkspaceModuleFile = (file) => file === "go.work" || file === "go.work.sum" || /(^|\/)go\.(mod|sum)$/.test(file);
 
 function trackedFiles() {
   return execFileSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" })
@@ -31,7 +32,8 @@ function moduleFiles(dir) {
 }
 
 try {
-  for (const file of trackedFiles()) {
+  const repositoryFiles = trackedFiles();
+  for (const file of repositoryFiles) {
     const source = path.join(root, file);
     if (!fs.existsSync(source) || !fs.statSync(source).isFile()) continue;
     const destination = path.join(tempRoot, file);
@@ -41,7 +43,7 @@ try {
 
   execFileSync("go", ["work", "sync"], { cwd: tempRoot, stdio: "inherit" });
 
-  const before = moduleFiles(root);
+  const before = repositoryFiles.filter(isWorkspaceModuleFile);
   const after = moduleFiles(tempRoot);
   const all = [...new Set([...before, ...after])].sort();
   const drift = [];

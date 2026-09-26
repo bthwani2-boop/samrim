@@ -5,16 +5,35 @@ import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const kindArg = process.argv.find((arg) => arg.startsWith("--kind="));
-const outArg = process.argv.find((arg) => arg.startsWith("--out="));
 const kind = kindArg ? kindArg.slice("--kind=".length) : "unknown";
-const runnerTemp = process.env.RUNNER_TEMP || os.tmpdir();
-const outDir = path.resolve(outArg ? outArg.slice("--out=".length) : path.join(runnerTemp, "samrim-failure-package-" + kind));
+const safeKind = kind.replace(/[^A-Za-z0-9._-]+/g, "-") || "unknown";
+const runnerTemp = fs.realpathSync(process.env.RUNNER_TEMP || os.tmpdir());
+const outDir = fs.mkdtempSync(path.join(runnerTemp, "samrim-failure-package-" + safeKind + "-"));
 const metricsPath = process.env.SAMRIM_CI_METRICS_PATH || path.join(runnerTemp, "samrim-ci-metrics.jsonl");
 const logsDir = process.env.SAMRIM_CI_LOG_DIR || path.join(runnerTemp, "samrim-ci-logs");
 const profileDir = process.env.SAMRIM_CI_PROFILE_DIR || path.join(runnerTemp, "samrim-ci-profiles");
+const sensitiveName = /(?:secret|token|password|api[_-]?key|private[_-]?key|credential|dsn|database_url|authorization)/i;
+const sensitiveValues = new Map();
 
-fs.rmSync(outDir, { recursive: true, force: true });
-fs.mkdirSync(outDir, { recursive: true });
+function collectSensitive(name, value) {
+  const text = String(value ?? "");
+  if (sensitiveName.test(name) && text.length >= 4) sensitiveValues.set(text, name);
+}
+
+for (const [name, value] of Object.entries(process.env)) collectSensitive(name, value);
+
+const envFile = path.join(root, "infra/local/.env");
+if (kind === "runtime" && fs.existsSync(envFile)) {
+  for (const raw of fs.readFileSync(envFile, "utf8").split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const separator = line.indexOf("=");
+    if (separator < 1) continue;
+    const name = line.slice(0, separator).trim();
+    const value = line.slice(separator + 1).trim();
+    if ((sensitiveName.test(name) || value.length >= 12) && value.length >= 4) sensitiveValues.set(value, name);
+  }
+}
 
 function write(name, value) {
   fs.writeFileSync(path.join(outDir, name), String(value ?? ""));
@@ -39,7 +58,7 @@ const metadata = {
   job: process.env.GITHUB_JOB || null,
   runId: process.env.GITHUB_RUN_ID || null,
   runAttempt: process.env.GITHUB_RUN_ATTEMPT || null,
-  sha: process.env.GITHUB_SHA || null,
+  sha: process.env.CANDIDATE_SHA || process.env.GITHUB_SHA || null,
   nxBase: process.env.NX_BASE || null,
   nxHead: process.env.NX_HEAD || null,
   runnerOs: process.env.RUNNER_OS || process.platform,
@@ -99,31 +118,49 @@ if (fs.existsSync(profileDir)) fs.cpSync(profileDir, path.join(outDir, "nx-profi
 
 const controlLog = path.join(runnerTemp, "control-panel.log");
 if (fs.existsSync(controlLog)) fs.copyFileSync(controlLog, path.join(outDir, "control-panel.log"));
-for (const relative of ["apps/control-panel/test-results", "apps/control-panel/playwright-report"]) {
-  const source = path.join(root, relative);
-  if (fs.existsSync(source)) fs.cpSync(source, path.join(outDir, path.basename(relative)), { recursive: true });
-}
-
-const envFile = path.join(root, "infra/local/.env");
 if (kind === "runtime" && fs.existsSync(envFile)) {
   const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envFile, "-f", path.join(root, "infra/local/compose/compose.yaml")];
   const ps = run("docker", [...composeArgs, "ps", "-a"]);
   write("compose-ps.txt", ps.stdout + ps.stderr);
   const logs = run("docker", [...composeArgs, "logs", "--no-color"]);
-  let logText = logs.stdout + logs.stderr;
-  const values = [];
-  for (const raw of fs.readFileSync(envFile, "utf8").split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    const separator = line.indexOf("=");
-    if (separator < 1) continue;
-    const name = line.slice(0, separator).trim();
-    const value = line.slice(separator + 1).trim();
-    if (value.length >= 12) values.push([name, value]);
-  }
-  values.sort((a, b) => b[1].length - a[1].length);
-  for (const [name, value] of values) logText = logText.split(value).join("[REDACTED:" + name + "]");
-  write("compose.log", logText);
+  write("compose.log", logs.stdout + logs.stderr);
 }
 
+function redact(value) {
+  let text = String(value ?? "");
+  for (const [secret, name] of [...sensitiveValues].sort((a, b) => b[0].length - a[0].length)) {
+    text = text.split(secret).join("[REDACTED:" + name + "]");
+  }
+  return text
+    .replace(/(\bBearer\s+)[A-Za-z0-9._~+\/-]{8,}={0,2}/gi, "$1[REDACTED:bearer]")
+    .replace(/\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,})\b/g, "[REDACTED:token]")
+    .replace(/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, "[REDACTED:jwt]")
+    .replace(/(https?:\/\/[^\s/:]+:)[^\s/@]+(@)/gi, "$1[REDACTED:credential]$2")
+    .replace(/("(?:password|secret|access[_-]?token|api[_-]?key|client[_-]?secret)"\s*:\s*)"[^"\r\n]*"/gi, "$1\"[REDACTED]\"")
+    .replace(/((?:password|secret|access[_-]?token|api[_-]?key|client[_-]?secret)\s*[=:]\s*)(["']?)[^\s,"'&;}\]]+\2/gi, "$1$2[REDACTED]$2");
+}
+
+function redactTree(directory) {
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const absolute = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      redactTree(absolute);
+      continue;
+    }
+    if (!entry.isFile()) {
+      fs.unlinkSync(absolute);
+      continue;
+    }
+    const bytes = fs.readFileSync(absolute);
+    if (bytes.includes(0)) {
+      fs.unlinkSync(absolute);
+      continue;
+    }
+    fs.writeFileSync(absolute, redact(bytes.toString("utf8")));
+  }
+}
+
+redactTree(outDir);
+
+if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, "path=" + outDir + "\n");
 console.log("CI_FAILURE_PACKAGE=PASS kind=" + kind + " path=" + outDir);

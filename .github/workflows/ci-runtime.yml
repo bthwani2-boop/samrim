@@ -35,14 +35,16 @@ jobs:
 
       - name: Verify exact candidate checkout
         shell: bash
-        run: |
-          set -euo pipefail
-          observed="$(git rev-parse HEAD)"
-          [[ "$observed" == "$CANDIDATE_SHA" ]] || { echo "::error::candidate SHA mismatch expected=$CANDIDATE_SHA observed=$observed"; exit 1; }
-          echo "EXACT_CANDIDATE_SHA=$observed"
+        run: node tools/dev/verify-ci-exact-sha.mjs
 
       - name: Resolve canonical affected SHAs
         uses: nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1
+
+      - name: Verify exact affected candidate
+        shell: bash
+        env:
+          REQUIRE_NX_HEAD: "true"
+        run: node tools/dev/verify-ci-exact-sha.mjs
 
       - name: Set up pinned pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
@@ -196,16 +198,17 @@ jobs:
           [[ -z "${drift}" ]] || { printf '%s\n' "${drift}"; git diff -- . || true; exit 1; }
 
       - name: Capture runtime failure package
+        id: failure_package
         if: failure()
         shell: bash
-        run: node tools/dev/capture-ci-failure.mjs --kind=runtime --out="$RUNNER_TEMP/runtime-failure-package"
+        run: node tools/dev/capture-ci-failure.mjs --kind=runtime
 
       - name: Upload runtime failure package
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: runtime-failure-${{ env.CANDIDATE_SHA }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/runtime-failure-package
+          path: ${{ steps.failure_package.outputs.path }}
           if-no-files-found: error
           retention-days: 14
 

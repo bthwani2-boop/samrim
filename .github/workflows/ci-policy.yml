@@ -15,13 +15,19 @@ jobs:
     name: repository-pr-policy
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    env:
+      CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ env.CANDIDATE_SHA }}
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify exact candidate checkout
+        shell: bash
+        run: node tools/dev/verify-ci-exact-sha.mjs
 
       - name: Validate concise promotion evidence and Governance interlock
         shell: bash

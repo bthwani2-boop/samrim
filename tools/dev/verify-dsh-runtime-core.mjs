@@ -168,6 +168,7 @@ function cleanup() {
     sql(`DELETE FROM wlt.settlement_batch_items WHERE batch_id='${value}'`);
     sql(`DELETE FROM wlt.settlement_batches WHERE id='${value}'`);
   }
+  sql(`DELETE FROM wlt.payout_audit_events WHERE evidence_reference IN (SELECT id FROM wlt.finance_evidence_documents WHERE idempotency_key IN ('partner-transfer-receipt-${sqlLiteral(suffix)}','partner-settlement-statement-evidence-${sqlLiteral(suffix)}'))`);
   sql(`DELETE FROM wlt.finance_evidence_documents WHERE idempotency_key IN ('partner-transfer-receipt-${sqlLiteral(suffix)}','partner-settlement-statement-evidence-${sqlLiteral(suffix)}')`);
   for (const payoutID of payoutIDs) {
     const value = sqlLiteral(payoutID);
@@ -1529,27 +1530,41 @@ const settlementBatchID = String(settlementBatchCreated.body?.batch?.id || "");
 if (settlementBatchID) settlementBatchIDs.add(settlementBatchID);
 const settlementBatchApproved = await request(dshBase, "POST", `/dsh/operator/settlement-batches/${encodeURIComponent(settlementBatchID)}/approve`, { token: dshToken, headers: serviceHeaders(checkerOperatorID, `partner-settlement-batch-approve-${suffix}`), body: { reason: "independent batch approval" } });
 const settlementBatchFrozen = await request(dshBase, "POST", `/dsh/operator/settlement-batches/${encodeURIComponent(settlementBatchID)}/freeze`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-settlement-batch-freeze-${suffix}`), body: { reason: "freeze approved execution snapshot" } });
-const transferReceiptForm = new FormData();
-transferReceiptForm.set("purpose", "TRANSFER_RECEIPT");
-transferReceiptForm.set("file", new Blob([runtimePNG], { type: "image/png" }), `wallet-receipt-${suffix}.png`);
-const transferReceiptUploaded = await request(dshBase, "POST", "/dsh/operator/finance-evidence-documents", { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-transfer-receipt-${suffix}`), rawBody: transferReceiptForm });
+const transferReference = `wallet-transfer-${suffix}`;
+const externalTransferReference = transferReference;
+const transferTransactionAt = new Date().toISOString();
+const transferReceiptPDF = Buffer.from(`%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Count 0/Kids[]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n`);
+function financeEvidenceForm(purpose, content, contentType, filename) {
+  const form = new FormData();
+  form.set("purpose", purpose);
+  form.set("file", new Blob([content], { type: contentType }), filename);
+  return form;
+}
+const transferReceiptUploaded = await request(dshBase, "POST", "/dsh/operator/finance-evidence-documents", { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-transfer-receipt-${suffix}`), rawBody: financeEvidenceForm("TRANSFER_RECEIPT", transferReceiptPDF, "application/pdf", `transfer-receipt-${suffix}.pdf`) });
+if (transferReceiptUploaded.status !== 201 || transferReceiptUploaded.body?.document?.purpose !== "TRANSFER_RECEIPT") fail("canonical transfer receipt evidence upload failed", JSON.stringify(transferReceiptUploaded));
 const transferReceiptDocumentID = String(transferReceiptUploaded.body?.document?.id || "");
-const externalTransferReference = `wallet-transfer-${suffix}`;
 const transferRecorded = await request(dshBase, "POST", `/dsh/operator/settlement-batches/${encodeURIComponent(settlementBatchID)}/transfers`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-transfer-record-${suffix}`), body: { payoutId: payoutFullID, externalTransferReference, receiptDocumentId: transferReceiptDocumentID } });
+if (transferRecorded.status !== 201 || !transferRecorded.body?.transfer?.id) fail("canonical manual transfer recording failed", JSON.stringify(transferRecorded));
 const transferID = String(transferRecorded.body?.transfer?.id || "");
 const transferVerified = await request(dshBase, "POST", `/dsh/operator/transfers/${encodeURIComponent(transferID)}/verify`, { token: dshToken, headers: serviceHeaders(checkerOperatorID, `partner-transfer-verify-${suffix}`), body: {} });
-const settlementStatementEvidenceForm = new FormData();
-settlementStatementEvidenceForm.set("purpose", "SETTLEMENT_STATEMENT");
-settlementStatementEvidenceForm.set("file", new Blob([runtimePNG], { type: "image/png" }), `official-wallet-statement-${suffix}.png`);
-const settlementStatementEvidenceUploaded = await request(dshBase, "POST", "/dsh/operator/finance-evidence-documents", { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-settlement-statement-evidence-${suffix}`), rawBody: settlementStatementEvidenceForm });
+if (transferVerified.status !== 200 || transferVerified.body?.transfer?.executionStatus !== "VERIFIED") fail("independent manual transfer verification failed", JSON.stringify(transferVerified));
+const statementCSV = Buffer.from([
+  "external_transfer_reference,wallet_identifier,amount_minor,currency,transaction_at",
+  `${externalTransferReference},${destinationWalletIdentifier},2550,YER,${transferTransactionAt}`,
+].join("\n") + "\n");
+const settlementStatementEvidenceUploaded = await request(dshBase, "POST", "/dsh/operator/finance-evidence-documents", { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-settlement-statement-evidence-${suffix}`), rawBody: financeEvidenceForm("SETTLEMENT_STATEMENT", statementCSV, "text/csv", `settlement-statement-${suffix}.csv`) });
+if (settlementStatementEvidenceUploaded.status !== 201 || settlementStatementEvidenceUploaded.body?.document?.purpose !== "SETTLEMENT_STATEMENT") fail("canonical settlement statement evidence upload failed", JSON.stringify(settlementStatementEvidenceUploaded));
 const settlementStatementEvidenceDocumentID = String(settlementStatementEvidenceUploaded.body?.document?.id || "");
-const settlementTransactionAt = new Date().toISOString();
-const settlementPeriodDate = settlementTransactionAt.slice(0, 10);
+const settlementPeriodDate = transferTransactionAt.slice(0, 10);
 const settlementStatementRegistered = await request(dshBase, "POST", "/dsh/operator/settlement-statements", { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-settlement-statement-${suffix}`), body: { batchId: settlementBatchID, providerKey: "official_wallet", currency: "YER", periodStart: settlementPeriodDate, periodEnd: settlementPeriodDate, evidenceDocumentId: settlementStatementEvidenceDocumentID } });
+if (settlementStatementRegistered.status !== 201 || settlementStatementRegistered.body?.statement?.batchId !== settlementBatchID || !settlementStatementRegistered.body?.statement?.id) fail("canonical settlement statement registration failed", JSON.stringify(settlementStatementRegistered));
 const settlementStatementID = String(settlementStatementRegistered.body?.statement?.id || "");
-const settlementStatementRowRecorded = await request(dshBase, "POST", `/dsh/operator/settlement-statements/${encodeURIComponent(settlementStatementID)}/rows`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-settlement-statement-row-${suffix}`), body: { rowSequence: 1, externalTransferReference, walletIdentifier: destinationWalletIdentifier, amountMinor: 2550, currency: "YER", transactionAt: settlementTransactionAt } });
+const settlementStatementRowRecorded = await request(dshBase, "POST", `/dsh/operator/settlement-statements/${encodeURIComponent(settlementStatementID)}/rows`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-settlement-statement-row-${suffix}`), body: { rowSequence: 1, externalTransferReference, walletIdentifier: destinationWalletIdentifier, amountMinor: 2550, currency: "YER", transactionAt: transferTransactionAt } });
+if (settlementStatementRowRecorded.status !== 201 || settlementStatementRowRecorded.body?.row?.externalTransferReference !== externalTransferReference || !settlementStatementRowRecorded.body?.row?.id) fail("canonical settlement statement row recording failed", JSON.stringify(settlementStatementRowRecorded));
 const settlementStatementRowID = String(settlementStatementRowRecorded.body?.row?.id || "");
-const transferReconciled = await request(dshBase, "POST", `/dsh/operator/transfers/${encodeURIComponent(transferID)}/reconcile`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-transfer-reconcile-${suffix}`), body: { statementRowId: settlementStatementRowID } });
+const transferSelfReconcile = await request(dshBase, "POST", `/dsh/operator/transfers/${encodeURIComponent(transferID)}/reconcile`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-transfer-self-reconcile-${suffix}`), body: { statementRowId: settlementStatementRowID } });
+if (transferSelfReconcile.status !== 403 || transferSelfReconcile.body?.error?.code !== "SEPARATION_OF_DUTIES") fail("transfer executor was allowed to reconcile own transfer", JSON.stringify(transferSelfReconcile));
+const transferReconciled = await request(dshBase, "POST", `/dsh/operator/transfers/${encodeURIComponent(transferID)}/reconcile`, { token: dshToken, headers: serviceHeaders(checkerOperatorID, `partner-transfer-reconcile-${suffix}`), body: { statementRowId: settlementStatementRowID } });
 const settlementBatchRead = await request(dshBase, "GET", `/dsh/operator/settlement-batches/${encodeURIComponent(settlementBatchID)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 const payoutCompletedRead = await request(dshBase, "GET", `/dsh/operator/payout-requests/${encodeURIComponent(payoutFullID)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 const partnerPayoutStateCompleted = await request(dshBase, "GET", `/dsh/operator/partner/${encodeURIComponent(first.actorID)}/payout-state`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
