@@ -110,7 +110,7 @@ export default function ClientCartScreen() {
       {fulfillmentMode !== null && fulfillmentMode !== "CUSTOMER_PICKUP" ? <>
         <BthwaniSectionHeader title="عنوان التوصيل" subtitle="يعيد الخادم التحقق من الأهلية عند الإتمام." />
         <View style={styles.addressCard}>
-          {state.addresses.length === 0 ? <><Text style={styles.muted}>لا يوجد عنوان محفوظ. أضف عنوانًا ثم ارجع إلى السلة لمتابعة الطلب.</Text><Link href="/addresses" asChild><BthwaniButton accessibilityLabel="إضافة عنوان توصيل" label="إضافة عنوان توصيل" variant="secondary" /></Link></> : null}
+          {state.addresses.length === 0 ? <><Text style={styles.muted}>لا يوجد عنوان محفوظ. أضف عنوانًا ثم ارجع إلى السلة لمتابعة الطلب.</Text><Link href={"/addresses" as Href} asChild><BthwaniButton accessibilityLabel="إضافة عنوان توصيل" label="إضافة عنوان توصيل" variant="secondary" /></Link></> : null}
           {state.addresses.map((address) => {
             const selected = serviceability.kind !== "idle" && serviceability.addressId === address.id;
             const busy = serviceability.kind === "loading" && selected;

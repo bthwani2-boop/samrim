@@ -23,7 +23,7 @@ export default function FieldAccount() {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
-  const [profile, setProfile] = useState<Readonly<{ fullNameAr?: string; contactPhoneE164?: string; state: string }> | null>(null);
+  const [profile, setProfile] = useState<Readonly<{ fullNameAr?: string | null; contactPhoneE164?: string | null; state: string }> | null>(null);
   const [profileState, setProfileState] = useState<"loading" | "ready" | "error">("loading");
 
   useEffect(() => {
