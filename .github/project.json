@@ -35,7 +35,9 @@
         },
         "{workspaceRoot}/tools/dev/verify-cache-contracts.mjs",
         "{workspaceRoot}/tools/dev/hash-control-panel-secret-input.mjs",
-        "{workspaceRoot}/tools/mobile/hash-mobile-secret-input.mjs"
+        "{workspaceRoot}/tools/mobile/hash-mobile-secret-input.mjs",
+        "{workspaceRoot}/tools/dev/verify-sandbox-readiness.mjs",
+        "{workspaceRoot}/.nx/workflows/**/*"
       ],
       "options": {
         "command": "node tools/dev/verify-execution-proof-system.mjs"
