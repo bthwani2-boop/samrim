@@ -1,0 +1,17 @@
+{
+  "name": "mobile-tooling",
+  "root": "tools/mobile",
+  "projectType": "library",
+  "tags": [
+    "scope:mobile-tooling",
+    "type:tool"
+  ],
+  "targets": {
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec biome lint tools/mobile --diagnostic-level=error"
+      }
+    }
+  }
+}
