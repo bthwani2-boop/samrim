@@ -150,45 +150,6 @@ paths:
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
-    post:
-      operationId: admitField
-      summary: Admit a Field representative through DSH eligibility and Identity role provisioning
-      security:
-        - serviceBearer: []
-      parameters:
-        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
-        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
-        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "../dsh.openapi.yaml#/components/schemas/FieldAdmissionRequest"
-      responses:
-        "201":
-          description: DSH Field admission created and bound to one permanent actor.
-          content:
-            application/json:
-              schema:
-                $ref: "../dsh.openapi.yaml#/components/schemas/FieldAdmissionResponse"
-        "200":
-          description: Idempotent Field admission readback.
-          content:
-            application/json:
-              schema:
-                $ref: "../dsh.openapi.yaml#/components/schemas/FieldAdmissionResponse"
-        "400":
-          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
-        "401":
-          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
-        "403":
-          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
-        "409":
-          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
-        "502":
-          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
-
   /dsh/fields/me/financial-summary:
     get:
       operationId: readOwnFieldFinancialSummary

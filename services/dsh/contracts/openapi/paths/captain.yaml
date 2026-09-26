@@ -418,45 +418,6 @@ paths:
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
-    post:
-      operationId: admitCaptain
-      summary: Admit a Captain through DSH eligibility and Identity role provisioning
-      security:
-        - serviceBearer: []
-      parameters:
-        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
-        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
-        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAdmissionRequest"
-      responses:
-        "201":
-          description: Captain admission created and bound to one permanent actor.
-          content:
-            application/json:
-              schema:
-                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAdmissionResponse"
-        "200":
-          description: Idempotent replay or existing admission readback.
-          content:
-            application/json:
-              schema:
-                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAdmissionResponse"
-        "400":
-          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
-        "401":
-          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
-        "403":
-          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
-        "409":
-          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
-        "502":
-          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
-
   /dsh/captains/admissions/{admissionId}:
     get:
       operationId: readCaptainAdmission
