@@ -88,6 +88,7 @@ func isDefinitiveChildCheckoutError(err error) bool {
 		errors.Is(err, postgres.ErrCheckoutEvidenceStale), errors.Is(err, postgres.ErrCartVersionConflict),
 		errors.Is(err, cart.ErrCheckoutNotServiceable), errors.Is(err, cart.ErrFulfillmentModeUnavailable),
 		errors.Is(err, postgres.ErrCatalogInventoryInsufficient), errors.Is(err, postgres.ErrCatalogInventoryInvalid),
+		errors.Is(err, postgres.ErrDeliveryFeeUnavailable),
 		errors.Is(err, postgres.ErrPromotionUnavailable), errors.Is(err, postgres.ErrPromotionAlreadyRedeemed),
 		errors.Is(err, postgres.ErrPromotionLimitReached):
 		return true
@@ -194,7 +195,9 @@ func childFailureCode(err error) string {
 		return "INVENTORY_INSUFFICIENT"
 	case errors.Is(err, postgres.ErrPromotionUnavailable), errors.Is(err, postgres.ErrPromotionAlreadyRedeemed), errors.Is(err, postgres.ErrPromotionLimitReached):
 		return "PROMOTION_UNAVAILABLE"
-	case errors.Is(err, postgres.ErrPaymentProvisioning), errors.Is(err, postgres.ErrDeliveryFeeUnavailable):
+	case errors.Is(err, postgres.ErrDeliveryFeeUnavailable):
+		return "DELIVERY_FEE_UNAVAILABLE"
+	case errors.Is(err, postgres.ErrPaymentProvisioning):
 		return "PAYMENT_UNAVAILABLE"
 	default:
 		return "CHILD_CHECKOUT_FAILED"

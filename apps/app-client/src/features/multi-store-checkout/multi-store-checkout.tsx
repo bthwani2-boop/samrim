@@ -271,6 +271,7 @@ export default function MultiStoreCheckoutScreen() {
     if (requiresDeliveryAddress && !state.selectedAddressID) return;
     setBusy(true);
     setError("");
+    let attemptPersisted = false;
     try {
       const actorID = await authenticatedClientActorID();
       const request: MultiStoreCheckoutRequest = {
@@ -282,6 +283,7 @@ export default function MultiStoreCheckoutScreen() {
         request,
       };
       await SecureStore.setItemAsync(pendingMultiStoreAttemptKey(actorID), serializePendingMultiStoreAttempt(attempt));
+      attemptPersisted = true;
       setPendingAttempt(attempt);
       let checkout: MultiStoreCheckout;
       try {
@@ -297,7 +299,7 @@ export default function MultiStoreCheckoutScreen() {
       }
       setState((current) => current.kind === "ready" ? { ...current, checkout } : current);
     } catch {
-      setError(pendingAttempt ? "تعذر تأكيد نتيجة المحاولة المحفوظة. لا تبدأ طلبًا جديدًا؛ تحقق من حالتها." : "تعذر إتمام الطلبات. إذا انقطع الاتصال فستُستعاد نتيجة المحاولة نفسها بأمان.");
+      setError(attemptPersisted ? "تعذر تأكيد نتيجة المحاولة المحفوظة. لا تبدأ طلبًا جديدًا؛ تحقق من حالتها." : "تعذر حفظ محاولة الطلب محليًا؛ لم يُرسل الطلب. حاول مرة أخرى لاحقًا.");
     } finally {
       setBusy(false);
     }
@@ -403,6 +405,7 @@ function CheckoutSummary({ checkout, styles, theme }: { checkout: MultiStoreChec
 
 function checkoutChildFailureLabel(code: string): string {
   if (code === "PAYMENT_RECONCILED") return "أُلغيت محاولة الدفع السابقة بأمان؛ حدّث السلة ثم أعد الإرسال.";
+  if (code === "DELIVERY_FEE_UNAVAILABLE") return "تعذر تأكيد رسوم التوصيل؛ لم يُنشأ هذا الطلب. حدّث السلة وأعد المحاولة لاحقًا.";
   return "راجع السلة والمنتجات الحالية قبل بدء محاولة جديدة.";
 }
 

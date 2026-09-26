@@ -20,3 +20,13 @@ func TestUnknownPaymentOutcomeCannotBecomeDefinitiveChildFailure(t *testing.T) {
 		t.Fatal("test error no longer retains its underlying stale cause")
 	}
 }
+
+func TestUnavailableDeliveryFeeIsDefinitiveBeforeChildOrderCreation(t *testing.T) {
+	err := fmt.Errorf("quote dependency: %w", postgres.ErrDeliveryFeeUnavailable)
+	if !isDefinitiveChildCheckoutError(err) {
+		t.Fatal("a delivery fee outage before order creation left the child pending")
+	}
+	if got := childFailureCode(err); got != "DELIVERY_FEE_UNAVAILABLE" {
+		t.Fatalf("delivery fee failure code = %q", got)
+	}
+}
