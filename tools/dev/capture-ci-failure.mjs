@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -50,6 +50,8 @@ const gitStatus = run("git", ["status", "--porcelain=v1", "--untracked-files=all
 write("git-status.txt", gitStatus.stdout + gitStatus.stderr);
 const gitHead = run("git", ["rev-parse", "HEAD"]);
 write("git-head.txt", gitHead.stdout + gitHead.stderr);
+const nxReport = run("pnpm", ["exec", "nx", "report"]);
+write("nx-report.txt", nxReport.stdout + nxReport.stderr);
 
 if (metadata.nxBase && metadata.nxHead) {
   const affected = run("pnpm", ["exec", "nx", "show", "projects", "--affected", "--base=" + metadata.nxBase, "--head=" + metadata.nxHead]);
@@ -63,7 +65,15 @@ for (const relative of ["nx.json", ".github/project.json"]) {
   fs.copyFileSync(source, target);
 }
 
-if (fs.existsSync(metricsPath)) fs.copyFileSync(metricsPath, path.join(outDir, "ci-metrics.jsonl"));
+if (fs.existsSync(metricsPath)) {
+  fs.copyFileSync(metricsPath, path.join(outDir, "ci-metrics.jsonl"));
+  const records = fs.readFileSync(metricsPath, "utf8")
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+  const failed = records.filter((record) => record.exitCode !== 0);
+  write("failed-commands.json", JSON.stringify(failed, null, 2) + "\n");
+}
 if (fs.existsSync(logsDir)) fs.cpSync(logsDir, path.join(outDir, "command-logs"), { recursive: true });
 
 const controlLog = path.join(runnerTemp, "control-panel.log");
