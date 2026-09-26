@@ -49,6 +49,30 @@
     },
     "vet": {
       "cache": true
+    },
+    "lint": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^default",
+        "{workspaceRoot}/biome.json",
+        {
+          "runtime": "node --version"
+        },
+        {
+          "runtime": "pnpm --version"
+        }
+      ]
+    },
+    "format-check": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "{workspaceRoot}/tools/dev/check-go-format.mjs",
+        {
+          "runtime": "go version"
+        }
+      ]
     }
   },
   "nxCloudId": "6aa9eedc45c07f39423ffa9f",
