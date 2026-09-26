@@ -711,14 +711,14 @@ test("operator creates a canonical commerce vertical before onboarding partners"
   });
   await page.goto("/catalog/categories");
   await expect(page.getByLabel("المعرف البرمجي", { exact: true })).toHaveCount(0);
-  await page.getByText("إدارة الفئات الرئيسية", { exact: true }).click();
-  await page.getByRole("button", { name: "إضافة فئة رئيسية" }).click();
+  await page.getByRole("button", { name: "إعداد المجال التجاري" }).click();
+  await page.getByRole("button", { name: "إضافة مجال تجاري" }).click();
   await page.locator("#catalog-vertical-name-ar").fill("مطاعم");
   await page.locator("#catalog-vertical-name-en").fill("Restaurants");
   await page.locator("#catalog-vertical-model").selectOption("STORE_LOCAL_CATALOG");
   await page.locator("#catalog-vertical-reason").fill("إنشاء فئة جديدة للاختبار");
-  await page.getByRole("button", { name: "إضافة فئة رئيسية" }).last().click();
-  await expect(page.getByRole("status")).toContainText("تم حفظ الفئة الرئيسية: مطاعم.");
+  await page.getByRole("button", { name: "إضافة مجال تجاري" }).click();
+  await expect(page.getByRole("status")).toContainText("تم حفظ المجال التجاري: مطاعم.");
   await expect(page.getByRole("status")).not.toContainText("vertical_0123456789abcdef0123456789abcdef");
   expect(requestBody).toEqual({ nameAr: "مطاعم", nameEn: "Restaurants", catalogModel: "STORE_LOCAL_CATALOG", active: true, reason: "إنشاء فئة جديدة للاختبار" });
 });
@@ -731,8 +731,12 @@ test("operator creates a product category under its commerce vertical", async ({
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "vertical_0123456789abcdef0123456789abcdef", nameAr: "بقالات", nameEn: "Groceries", catalogModel: "SHARED_CATALOG", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
   });
   await page.route("**/api/catalog/categories**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/attribute-rules")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ rules: [] }) });
+      return;
+    }
     if (route.request().method() === "GET") {
-      const url = new URL(route.request().url());
       const detail = url.pathname.endsWith("/category_0123456789abcdef0123456789abcdef");
       const category = { id: "category_0123456789abcdef0123456789abcdef", verticalId: "vertical_0123456789abcdef0123456789abcdef", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", pathAr: "قهوة", pathEn: "Coffee", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" };
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(detail ? { category } : { categories: [], nextCursor: "" }) });
@@ -745,7 +749,7 @@ test("operator creates a product category under its commerce vertical", async ({
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [] }) });
   });
   await page.goto("/catalog/categories?verticalId=vertical_0123456789abcdef0123456789abcdef");
-  await expect(page.getByRole("heading", { name: "إدارة الفئات" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "إدارة الفئات" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "الفئات", exact: true })).toBeVisible();
   await expect(page.locator(".catalog-taxonomy-workspace")).toHaveCount(1);
   await expect(page.locator(".catalog-taxonomy-workspace > .access-card")).toHaveCount(0);
@@ -764,63 +768,7 @@ test("operator creates a product category under its commerce vertical", async ({
   expect(requestBody).toEqual({ verticalId: "vertical_0123456789abcdef0123456789abcdef", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", active: true, reason: "إنشاء فئة جديدة للاختبار" });
 });
 
-test("operator replaces a product primary image and gallery through the canonical media mutation", async ({ page }) => {
-  await stubAuthenticatedSession(page);
-  const product = {
-    id: "product_media_test",
-    verticalId: "grocery",
-    scope: "SHARED",
-    canonicalName: "قهوة الصور",
-    brand: null,
-    storeId: null,
-    active: true,
-    version: 1,
-    createdAt: "2026-09-12T00:00:00.000Z",
-    updatedAt: "2026-09-12T00:00:00.000Z",
-    variants: [{ id: "variant_media_test", productId: "product_media_test", title: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", active: true, version: 1, identifiers: [{ type: "SKU", value: "MEDIA-TEST" }], attributes: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }],
-    categoryIds: ["coffee"],
-    attributes: [],
-    media: [{ uri: "https://example.com/coffee.jpg", role: "primary", ordinal: 0 }],
-  } as const;
-  let mediaRequest: unknown;
-  await page.route("**/api/catalog/verticals**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", catalogModel: "SHARED_CATALOG", active: true, version: 1, createdAt: product.createdAt, updatedAt: product.updatedAt }] }) });
-  });
-  await page.route("**/api/catalog/categories**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories: [{ id: "coffee", verticalId: "grocery", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", active: true, version: 1, createdAt: product.createdAt, updatedAt: product.updatedAt }] }) });
-  });
-  await page.route("**/api/catalog/product-registry**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [{ id: product.id, verticalId: product.verticalId, canonicalName: product.canonicalName, brand: product.brand, active: product.active, version: product.version, variantCount: product.variants.length, categoryIds: product.categoryIds, primaryImageUri: product.media[0]?.uri, createdAt: product.createdAt, updatedAt: product.updatedAt }], nextCursor: "" }) });
-  });
-  await page.route("**/api/catalog/products/product_media_test", async (route) => {
-    if (route.request().method() === "GET") {
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(product) });
-      return;
-    }
-    if (route.request().method() === "PUT") {
-      mediaRequest = route.request().postDataJSON();
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ product: { ...product, version: 2, media: mediaRequest && typeof mediaRequest === "object" && "media" in mediaRequest ? (mediaRequest as { media: unknown }).media : product.media }, idempotentReplay: false }) });
-      return;
-    }
-    await route.fallback();
-  });
-
-  await page.goto("/catalog/products");
-  await page.getByRole("row", { name: /قهوة الصور/ }).getByRole("button", { name: "تفاصيل وتعديل" }).click();
-  await expect(page.getByLabel("رابط الصورة الأساسية")).toHaveValue("https://example.com/coffee.jpg");
-  await page.getByLabel("رابط الصورة الأساسية").fill("https://example.com/coffee-updated.jpg");
-  await page.getByLabel("صور المعرض").fill("https://example.com/coffee-gallery-1.jpg\nhttps://example.com/coffee-gallery-2.jpg");
-  await page.getByRole("button", { name: "حفظ الصور" }).click();
-
-  await expect(page.getByRole("status")).toContainText("تم حفظ صور المنتج.");
-  expect(mediaRequest).toEqual({ media: [
-    { uri: "https://example.com/coffee-updated.jpg", role: "primary", ordinal: 0 },
-    { uri: "https://example.com/coffee-gallery-1.jpg", role: "gallery", ordinal: 1 },
-    { uri: "https://example.com/coffee-gallery-2.jpg", role: "gallery", ordinal: 2 },
-  ] });
-});
-
-test("operator uploads a real product image through the catalog media control", async ({ page }) => {
+test("operator replaces the primary product image and adds a gallery image through canonical media upload", async ({ page }) => {
   await stubAuthenticatedSession(page);
   const product = {
     id: "product_media_upload_test",
@@ -836,38 +784,75 @@ test("operator uploads a real product image through the catalog media control", 
     variants: [{ id: "variant_media_upload_test", productId: "product_media_upload_test", title: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", active: true, version: 1, identifiers: [{ type: "SKU", value: "MEDIA-UPLOAD-TEST" }], attributes: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }],
     categoryIds: ["coffee"],
     attributes: [],
-    media: [{ uri: "https://example.com/coffee.jpg", role: "primary", ordinal: 0 }],
-  } as const;
-  let uploadContentType = "";
-  let uploadBody = "";
+    media: [] as Array<{ uri: string; role: "primary" | "gallery"; ordinal: number }>,
+  };
+  let currentProduct = product;
+  const uploadCalls: Array<{ role: string; filename: string; expectedVersion: string; idempotencyKey: string }> = [];
   await page.route("**/api/catalog/verticals**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", catalogModel: "SHARED_CATALOG", active: true, version: 1, createdAt: product.createdAt, updatedAt: product.updatedAt }] }) });
   });
   await page.route("**/api/catalog/categories**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories: [{ id: "coffee", verticalId: "grocery", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", active: true, version: 1, createdAt: product.createdAt, updatedAt: product.updatedAt }] }) });
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/attribute-rules")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ rules: [] }) });
+      return;
+    }
+    const category = { id: "coffee", verticalId: "grocery", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", pathAr: "قهوة", pathEn: "Coffee", active: true, version: 1, createdAt: product.createdAt, updatedAt: product.updatedAt };
+    if (url.pathname.endsWith("/coffee")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ category }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories: [category], nextCursor: "" }) });
   });
   await page.route("**/api/catalog/product-registry**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [{ id: product.id, verticalId: product.verticalId, canonicalName: product.canonicalName, brand: product.brand, active: product.active, version: product.version, variantCount: product.variants.length, categoryIds: product.categoryIds, primaryImageUri: product.media[0]?.uri, createdAt: product.createdAt, updatedAt: product.updatedAt }], nextCursor: "" }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [{ id: currentProduct.id, verticalId: currentProduct.verticalId, canonicalName: currentProduct.canonicalName, brand: currentProduct.brand, active: currentProduct.active, version: currentProduct.version, variantCount: currentProduct.variants.length, categoryIds: currentProduct.categoryIds, primaryImageUri: currentProduct.media.find((media) => media.role === "primary")?.uri ?? null, createdAt: currentProduct.createdAt, updatedAt: currentProduct.updatedAt }], nextCursor: "" }) });
   });
   await page.route("**/api/catalog/products/product_media_upload_test", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(product) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(currentProduct) });
   });
   await page.route("**/api/catalog/products/product_media_upload_test/media", async (route) => {
-    uploadContentType = route.request().headers()["content-type"] ?? "";
-    uploadBody = route.request().postDataBuffer()?.toString("latin1") ?? "";
-    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ product: { ...product, version: 2, media: [{ uri: "http://127.0.0.1:18080/dsh/catalog/media/catalog/products/product_media_upload_test/uploads/test.png", role: "primary", ordinal: 0 }] }, idempotentReplay: false }) });
+    const headers = route.request().headers();
+    const body = route.request().postDataBuffer()?.toString("latin1") ?? "";
+    const role = body.match(/name="role"\r\n\r\n([^\r\n]+)/)?.[1] ?? "";
+    const filename = body.match(/name="file"; filename="([^"]+)"/)?.[1] ?? "";
+    uploadCalls.push({ role, filename, expectedVersion: headers["x-expected-version"] ?? "", idempotencyKey: headers["idempotency-key"] ?? "" });
+    const uri = `http://localhost:18080/dsh/catalog/media/catalog/products/${currentProduct.id}/uploads/${role}.png`;
+    const nextMedia = role === "primary"
+      ? [...currentProduct.media.filter((item) => item.role !== "primary"), { uri, role: "primary" as const, ordinal: 0 }]
+      : [...currentProduct.media, { uri, role: "gallery" as const, ordinal: currentProduct.media.filter((item) => item.role === "gallery").length + 1 }];
+    currentProduct = { ...currentProduct, version: currentProduct.version + 1, media: nextMedia };
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ product: currentProduct, idempotentReplay: false }) });
   });
 
   await page.goto("/catalog/products");
   await page.getByRole("row", { name: /قهوة رفع الصور/ }).getByRole("button", { name: "تفاصيل وتعديل" }).click();
-  await page.getByLabel("ملف الصورة").setInputFiles({ name: "coffee.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") });
+  await expect(page.getByLabel("رابط الصورة الأساسية")).toHaveCount(0);
+  const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+  await page.getByLabel("ملف الصورة").setInputFiles({ name: "coffee-primary.png", mimeType: "image/png", buffer: onePixelPng });
   await page.getByRole("button", { name: "رفع الصورة وربطها" }).click();
-
   await expect(page.getByRole("status")).toContainText("تم رفع الصورة الأساسية وربطها بالمنتج.");
-  expect(uploadContentType).toContain("multipart/form-data");
-  expect(uploadBody).toContain('name="role"');
-  expect(uploadBody).toContain('name="file"');
-  expect(uploadBody).toContain("coffee.png");
+  await expect(page.locator(".catalog-media-preview")).toHaveCount(1);
+  await expect(page.locator(".catalog-media-preview")).toHaveAttribute("src", currentProduct.media[0]!.uri);
+  await page.getByLabel("موضع الصورة").selectOption("gallery");
+  await page.getByLabel("ملف الصورة").setInputFiles({ name: "coffee-gallery.png", mimeType: "image/png", buffer: onePixelPng });
+  await page.getByRole("button", { name: "رفع الصورة وربطها" }).click();
+  await expect(page.getByRole("status")).toContainText("تم رفع الصورة وإضافتها إلى المعرض.");
+  await expect(page.locator(".catalog-media-preview")).toHaveCount(2);
+  expect(uploadCalls).toEqual([
+    { role: "primary", filename: "coffee-primary.png", expectedVersion: "1", idempotencyKey: expect.any(String) },
+    { role: "gallery", filename: "coffee-gallery.png", expectedVersion: "2", idempotencyKey: expect.any(String) },
+  ]);
+  expect(uploadCalls.every((call) => call.idempotencyKey.length >= 20)).toBe(true);
+  expect(currentProduct.media).toEqual([
+    { uri: "http://localhost:18080/dsh/catalog/media/catalog/products/product_media_upload_test/uploads/primary.png", role: "primary", ordinal: 0 },
+    { uri: "http://localhost:18080/dsh/catalog/media/catalog/products/product_media_upload_test/uploads/gallery.png", role: "gallery", ordinal: 1 },
+  ]);
+
+  await page.reload();
+  await page.getByRole("row", { name: /قهوة رفع الصور/ }).getByRole("button", { name: "تفاصيل وتعديل" }).click();
+  await expect(page.locator(".catalog-media-preview")).toHaveCount(2);
+  await expect(page.locator(".catalog-media-preview").nth(0)).toHaveAttribute("src", currentProduct.media[0]!.uri);
+  await expect(page.locator(".catalog-media-preview").nth(1)).toHaveAttribute("src", currentProduct.media[1]!.uri);
 });
 
 test("operator resumes a canonical joining case from the DSH queue", async ({ page }) => {
