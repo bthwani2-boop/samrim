@@ -59,3 +59,7 @@ tools/dev-app-credentials.csv
 
 # Local-only BThwani materialization
 .bthwani-local/
+
+# Local-only competitor visual evidence
+tools/competitors/local-photos/**/*
+!tools/competitors/local-photos/**/.gitignore
