@@ -166,6 +166,7 @@ for (const required of [
   "repository-ci:runtime-images",
   "repository-ci:runtime-integration",
   "docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f",
+  "crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487",
   "run-ci-command.mjs runtime-install",
   "run-ci-command.mjs runtime-playwright-install",
   "run-ci-command.mjs runtime-images",
@@ -195,7 +196,8 @@ for (const name of [
 }
 const imageBuilder = read("tools/dev/build-ci-image.mjs");
 if (!imageBuilder.includes('process.env.GITHUB_EVENT_NAME !== "pull_request"')) failures.push("BuildKit PR cache write fence missing");
-if (!imageBuilder.includes('"--cache-from", "type=gha,scope=" + scope')) failures.push("BuildKit reusable cache read missing");
+if (!imageBuilder.includes('"--cache-from", "type=gha,version=2,scope=" + scope')) failures.push("BuildKit reusable cache v2 read missing");
+if (!imageBuilder.includes('"--cache-to", "type=gha,version=2,mode=max,scope=" + scope')) failures.push("BuildKit trusted cache v2 write missing");
 const failureCapture = read("tools/dev/capture-ci-failure.mjs");
 if (!failureCapture.includes("[REDACTED:")) failures.push("runtime failure log redaction missing");
 if (failureCapture.includes('fs.copyFileSync(envFile')) failures.push("failure package must not copy runtime env secrets");
