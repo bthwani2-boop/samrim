@@ -161,6 +161,7 @@ if (runtimeCi.includes("up -d --build")) failures.push("runtime CI rebuilds imag
 if ((runtimeCi.match(/docker\/setup-buildx-action@/g) ?? []).length !== 1) failures.push("runtime CI must configure Buildx exactly once");
 if (runtimeCi.indexOf("Resolve runtime integration scope through Nx") > runtimeCi.indexOf("Set up Buildx")) failures.push("Buildx setup occurs before Nx affected scope");
 for (const required of [
+  "NX_NO_CLOUD: \"true\"",
   "--projects=repository-ci",
   "repository-ci:runtime-images",
   "repository-ci:runtime-integration",
@@ -200,7 +201,16 @@ if (!failureCapture.includes("[REDACTED:")) failures.push("runtime failure log r
 if (failureCapture.includes('fs.copyFileSync(envFile')) failures.push("failure package must not copy runtime env secrets");
 const nxCloudVerifier = read("tools/dev/verify-nx-cloud-ci.mjs");
 if (!nxCloudVerifier.includes("local-only-untrusted-pr")) failures.push("untrusted PR Nx Cloud fallback missing");
-if (!read(".github/workflows/ci-security.yml").includes("node tools/dev/verify-secret-safety.mjs")) failures.push("security verifier owner drifted");
+
+const securityCi = read(".github/workflows/ci-security.yml");
+for (const required of [
+  "security-events: write",
+  "node tools/dev/verify-secret-safety.mjs",
+  "github/codeql-action/init@1190a975f95ce23525efb6a3fc21ea29567c1b52",
+  "github/codeql-action/autobuild@1190a975f95ce23525efb6a3fc21ea29567c1b52",
+  "github/codeql-action/analyze@1190a975f95ce23525efb6a3fc21ea29567c1b52",
+  "languages: javascript-typescript,go",
+]) if (!securityCi.includes(required)) failures.push("security CI missing " + required);
 
 if (failures.length) {
   console.error("EXECUTION_PROOF_SYSTEM=FAIL");
