@@ -139,8 +139,11 @@ for (const required of [
   "workspace-tooling:go-workspace-sync",
   "repository-ci:execution-proof-system",
   "nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet",
+  "run-ci-command.mjs static-install",
   "run-ci-command.mjs static-affected",
+  "run-ci-command.mjs windows-install",
   "run-ci-command.mjs windows-export-affected",
+  "NX_NO_CLOUD:",
   "capture-ci-failure.mjs --kind=static-linux",
   "capture-ci-failure.mjs --kind=static-windows",
   "report-ci-performance.mjs",
@@ -155,12 +158,17 @@ for (const forbidden of ["node tools/dev/verify-identity-","node tools/dev/verif
 }
 if (runtimeCi.includes("docker/build-push-action@")) failures.push("runtime CI contains parallel Docker image owner");
 if (runtimeCi.includes("up -d --build")) failures.push("runtime CI rebuilds images through Compose");
+if ((runtimeCi.match(/docker\/setup-buildx-action@/g) ?? []).length !== 1) failures.push("runtime CI must configure Buildx exactly once");
+if (runtimeCi.indexOf("Resolve runtime integration scope through Nx") > runtimeCi.indexOf("Set up Buildx")) failures.push("Buildx setup occurs before Nx affected scope");
 for (const required of [
   "--projects=repository-ci",
   "repository-ci:runtime-images",
   "repository-ci:runtime-integration",
   "docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f",
+  "run-ci-command.mjs runtime-install",
+  "run-ci-command.mjs runtime-playwright-install",
   "run-ci-command.mjs runtime-images",
+  "run-ci-command.mjs runtime-start",
   "run-ci-command.mjs runtime-integration",
   "up -d --no-build",
   "capture-ci-failure.mjs --kind=runtime",
@@ -169,9 +177,29 @@ for (const required of [
 ]) if (!runtimeCi.includes(required)) failures.push("runtime CI missing " + required);
 const budgets = data(".github/ci-performance-budgets.json");
 if (budgets.schema !== 1 || budgets.mode !== "observe") failures.push("CI performance budget contract drifted");
-for (const name of ["static-affected","static-full","windows-export-affected","windows-export-full","runtime-images","runtime-integration"]) {
+for (const name of [
+  "static-install",
+  "static-affected",
+  "static-full",
+  "windows-install",
+  "windows-export-affected",
+  "windows-export-full",
+  "runtime-install",
+  "runtime-playwright-install",
+  "runtime-images",
+  "runtime-start",
+  "runtime-integration",
+]) {
   if (!Number.isFinite(budgets.budgetsMs?.[name])) failures.push("CI performance budget missing " + name);
 }
+const imageBuilder = read("tools/dev/build-ci-image.mjs");
+if (!imageBuilder.includes('process.env.GITHUB_EVENT_NAME !== "pull_request"')) failures.push("BuildKit PR cache write fence missing");
+if (!imageBuilder.includes('"--cache-from", "type=gha,scope=" + scope')) failures.push("BuildKit reusable cache read missing");
+const failureCapture = read("tools/dev/capture-ci-failure.mjs");
+if (!failureCapture.includes("[REDACTED:")) failures.push("runtime failure log redaction missing");
+if (failureCapture.includes('fs.copyFileSync(envFile')) failures.push("failure package must not copy runtime env secrets");
+const nxCloudVerifier = read("tools/dev/verify-nx-cloud-ci.mjs");
+if (!nxCloudVerifier.includes("local-only-untrusted-pr")) failures.push("untrusted PR Nx Cloud fallback missing");
 if (!read(".github/workflows/ci-security.yml").includes("node tools/dev/verify-secret-safety.mjs")) failures.push("security verifier owner drifted");
 
 if (failures.length) {
