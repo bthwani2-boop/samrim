@@ -1,6 +1,6 @@
 import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type CatalogCategory, type CatalogStoreOffer, type DiscoveryContentView, formatMoney, type PromotionView, type PublicStoreView } from "@bthwani/dsh";
+import { type CatalogCategory, type CatalogStoreOffer, type DeliveryAddress, type DiscoveryContentView, formatMoney, type PromotionView, type PublicStoreView } from "@bthwani/dsh";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, I18nManager, Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
@@ -19,6 +19,12 @@ type ProductSearchState =
   | { kind: "loading" }
   | { kind: "ready"; offers: ReadonlyArray<CatalogStoreOffer>; nextCursor: string | null }
   | { kind: "error" };
+
+type NearbyAddressState =
+  | { kind: "closed" }
+  | { kind: "loading" }
+  | { kind: "error" }
+  | { kind: "ready"; addresses: ReadonlyArray<DeliveryAddress>; nextCursor: string; loadingMore: boolean; moreError: boolean };
 
 export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthentication, searchOpen, searchQuery, searchScope: controlledSearchScope, onSearchScopeChange, onSearchQueryChange }: { isAuthenticated?: boolean; onRequireAuthentication?: (() => void) | undefined; searchOpen?: boolean; searchQuery?: string; searchScope?: "stores" | "products"; onSearchScopeChange?: (scope: "stores" | "products") => void; onSearchQueryChange?: (query: string) => void }) {
   const router = useRouter();
@@ -43,6 +49,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const [favoriteBusyStoreID, setFavoriteBusyStoreID] = useState("");
   const [favoriteError, setFavoriteError] = useState("");
   const [directoryLocation, setDirectoryLocation] = useState<{ latitude: number; longitude: number } | undefined>();
+  const [nearestAddress, setNearestAddress] = useState<DeliveryAddress | null>(null);
+  const [nearbyAddressState, setNearbyAddressState] = useState<NearbyAddressState>({ kind: "closed" });
   const [directoryLoading, setDirectoryLoading] = useState(false);
   const [directoryError, setDirectoryError] = useState(false);
   const [loadingMoreStores, setLoadingMoreStores] = useState(false);
@@ -51,6 +59,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const discoveryLoadRequestID = useRef(0);
   const directoryRequestID = useRef(0);
   const directoryRequestKey = useRef("");
+  const nearbyAddressRequestID = useRef(0);
 
   const directoryMode = searchScope === "stores" || !searchIsActive;
   const directoryQuery = directoryMode && searchIsActive ? query.trim() : "";
@@ -67,23 +76,18 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     setDirectoryError(false);
     setLoadingMoreStores(false);
     setLoadMoreStoresError(false);
+    setDirectoryLocation(undefined);
+    setNearestAddress(null);
+    setStoreFilter((current) => current === "nearest" ? "all" : current);
+    setNearbyAddressState({ kind: "closed" });
+    nearbyAddressRequestID.current += 1;
     try {
       if (!selectedCityID) {
-        setDirectoryLocation(undefined);
         directoryRequestKey.current = "";
         setState({ kind: "empty" });
         return;
       }
-      let location: { latitude: number; longitude: number } | undefined;
-      if (isAuthenticated) {
-        try {
-          const address = (await listOwnDeliveryAddresses()).addresses[0];
-          if (address && Number.isFinite(address.latitude) && Number.isFinite(address.longitude)) location = { latitude: address.latitude, longitude: address.longitude };
-        } catch {
-          // The nearest filter explains the missing address without blocking discovery.
-        }
-      }
-      const storeDirectory = await listPublishedStores(selectedCityID, { location, limit: 20 });
+      const storeDirectory = await listPublishedStores(selectedCityID, { limit: 20 });
       const marketingResults = await Promise.allSettled([listPublicDiscoveryContent(selectedCityID), listPublicPromotions(selectedCityID)]);
       const content = marketingResults[0].status === "fulfilled" ? marketingResults[0].value.items : [];
       const promotions = marketingResults[1].status === "fulfilled" ? marketingResults[1].value.promotions : [];
@@ -97,8 +101,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         }
       }
       if (requestID !== discoveryLoadRequestID.current) return;
-      setDirectoryLocation(location);
-      directoryRequestKey.current = JSON.stringify([selectedCityID, "", "", "all", false, location?.latitude ?? null, location?.longitude ?? null]);
+      directoryRequestKey.current = JSON.stringify([selectedCityID, "", "", "all", false, null, null]);
       setMarketing({ content, promotions, error: marketingResults.some((result) => result.status === "rejected") });
       if (favoriteLoadError) setFavoriteError(favoriteLoadError);
       setState({ kind: "ready", stores: storeDirectory.stores, categories: storeDirectory.categories, favoriteStoreIDs, nextCursor: storeDirectory.nextCursor ?? "" });
@@ -111,6 +114,15 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     void load();
     return () => { discoveryLoadRequestID.current += 1; };
   }, [load]);
+
+  useEffect(() => {
+    nearbyAddressRequestID.current += 1;
+    directoryRequestKey.current = selectedCityID ? JSON.stringify([selectedCityID, "", "", "all", false, null, null]) : "";
+    setDirectoryLocation(undefined);
+    setNearestAddress(null);
+    setNearbyAddressState({ kind: "closed" });
+    setStoreFilter((current) => current === "nearest" ? "all" : current);
+  }, [selectedCityID]);
 
   useEffect(() => {
     if (!selectedCityID || state.kind !== "ready" || currentDirectoryKey === directoryRequestKey.current) return;
@@ -184,6 +196,53 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
 
   const mediaContent = useMemo(() => marketing.content.filter((item) => Boolean(item.mediaUri) && (item.kind === "BANNER" || item.kind === "CAROUSEL")).slice(0, 8), [marketing.content]);
   const textContent = useMemo(() => marketing.content.filter((item) => !item.mediaUri || (item.kind !== "BANNER" && item.kind !== "CAROUSEL")).slice(0, 4), [marketing.content]);
+
+  async function openNearbyAddressChooser() {
+    if (!selectedCityID || nearbyAddressState.kind === "loading") return;
+    const requestID = ++nearbyAddressRequestID.current;
+    setNearbyAddressState({ kind: "loading" });
+    try {
+      const page = await listOwnDeliveryAddresses();
+      if (requestID !== nearbyAddressRequestID.current) return;
+      setNearbyAddressState({ kind: "ready", addresses: page.addresses, nextCursor: page.nextCursor ?? "", loadingMore: false, moreError: false });
+    } catch {
+      if (requestID === nearbyAddressRequestID.current) setNearbyAddressState({ kind: "error" });
+    }
+  }
+
+  async function loadMoreNearbyAddresses() {
+    if (nearbyAddressState.kind !== "ready" || !nearbyAddressState.nextCursor || nearbyAddressState.loadingMore) return;
+    const cursor = nearbyAddressState.nextCursor;
+    const requestID = ++nearbyAddressRequestID.current;
+    setNearbyAddressState((current) => current.kind === "ready" ? { ...current, loadingMore: true, moreError: false } : current);
+    try {
+      const page = await listOwnDeliveryAddresses(cursor);
+      if (requestID !== nearbyAddressRequestID.current) return;
+      setNearbyAddressState((current) => {
+        if (current.kind !== "ready") return current;
+        const addresses = new Map(current.addresses.map((address) => [address.id, address]));
+        for (const address of page.addresses) addresses.set(address.id, address);
+        return { ...current, addresses: [...addresses.values()], nextCursor: page.nextCursor ?? "", loadingMore: false, moreError: false };
+      });
+    } catch {
+      if (requestID === nearbyAddressRequestID.current) setNearbyAddressState((current) => current.kind === "ready" ? { ...current, loadingMore: false, moreError: true } : current);
+    }
+  }
+
+  function selectNearbyAddress(address: DeliveryAddress) {
+    if (address.serviceCityId !== selectedCityID || !Number.isFinite(address.latitude) || !Number.isFinite(address.longitude)) return;
+    setNearestAddress(address);
+    setDirectoryLocation({ latitude: address.latitude, longitude: address.longitude });
+    setFavoriteError("");
+    setStoreFilter("nearest");
+    setNearbyAddressState({ kind: "closed" });
+    nearbyAddressRequestID.current += 1;
+  }
+
+  function closeNearbyAddressChooser() {
+    nearbyAddressRequestID.current += 1;
+    setNearbyAddressState({ kind: "closed" });
+  }
 
   async function toggleFavorite(storeID: string) {
     if (!isAuthenticated) {
@@ -313,12 +372,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
               onRequireAuthentication?.();
               return;
             }
-            if (!directoryLocation) {
-              setFavoriteError("احفظ عنوان توصيل بموقع جغرافي لاستخدام ترتيب الأقرب.");
-              return;
-            }
             setFavoriteError("");
-            setStoreFilter("nearest");
+            void openNearbyAddressChooser();
           }}
         />
         <BthwaniChip
@@ -335,6 +390,24 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         />
       </View>
       {favoriteError ? <Text accessibilityRole="alert" style={styles.error}>{favoriteError}</Text> : null}
+      {storeFilter === "nearest" && nearestAddress ? <Text style={styles.nearestAddressSummary}>الأقرب إلى: {nearestAddress.addressText}</Text> : null}
+      {nearbyAddressState.kind !== "closed" ? <BthwaniSurface accessibilityLabel="اختيار عنوان لترتيب المتاجر الأقرب" style={styles.nearestAddressChooser} tone="inset">
+        <View style={styles.nearestAddressHeading}>
+          <View style={styles.nearestAddressCopy}>
+            <Text style={styles.nearestAddressTitle}>اختر عنوانًا في {selectedCityName}</Text>
+            <Text style={styles.nearestAddressHint}>سنستخدمه لترتيب المتاجر الأقرب في هذه المدينة فقط.</Text>
+          </View>
+          <BthwaniIconButton icon="close" label="إغلاق اختيار العنوان" onPress={closeNearbyAddressChooser} />
+        </View>
+        {nearbyAddressState.kind === "loading" ? <View accessibilityRole="progressbar" style={styles.nearestAddressStatus}><BthwaniSkeleton height={52} /><Text style={styles.muted}>جارٍ قراءة عناوينك…</Text></View> : null}
+        {nearbyAddressState.kind === "error" ? <View style={styles.nearestAddressStatus}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة عناوينك. تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة قراءة العناوين" onPress={() => void openNearbyAddressChooser()} variant="secondary" /></View> : null}
+        {nearbyAddressState.kind === "ready" ? <>
+          {nearbyAddressState.addresses.filter((address) => address.serviceCityId === selectedCityID && Number.isFinite(address.latitude) && Number.isFinite(address.longitude)).map((address) => <Pressable key={address.id} accessibilityRole="button" accessibilityLabel={`ترتيب المتاجر بالقرب من ${address.addressText}`} onPress={() => selectNearbyAddress(address)} style={styles.nearestAddressOption}><Text style={styles.nearestAddressOptionTitle}>{address.addressText}</Text><Text style={styles.nearestAddressHint}>{selectedCityName}</Text></Pressable>)}
+          {nearbyAddressState.addresses.every((address) => address.serviceCityId !== selectedCityID || !Number.isFinite(address.latitude) || !Number.isFinite(address.longitude)) ? <View style={styles.nearestAddressStatus}><Text style={styles.muted}>{nearbyAddressState.nextCursor ? `لم يظهر عنوان في ${selectedCityName} ضمن هذه الصفحة.` : `لا يوجد عنوان محفوظ بإحداثيات في ${selectedCityName}.`}</Text><BthwaniButton label={`إضافة عنوان في ${selectedCityName}`} onPress={() => { closeNearbyAddressChooser(); router.push("/addresses" as Href); }} variant="secondary" /></View> : null}
+          {nearbyAddressState.moreError ? <Text accessibilityRole="alert" style={styles.error}>تعذر تحميل بقية العناوين.</Text> : null}
+          {nearbyAddressState.nextCursor ? <BthwaniButton busy={nearbyAddressState.loadingMore} disabled={nearbyAddressState.loadingMore} label={nearbyAddressState.loadingMore ? "جارٍ تحميل العناوين" : nearbyAddressState.moreError ? "إعادة المحاولة" : "عرض المزيد من العناوين"} onPress={() => void loadMoreNearbyAddresses()} variant="secondary" /> : null}
+        </> : null}
+      </BthwaniSurface> : null}
 
       </> : null}
 
@@ -490,6 +563,15 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     eyebrow: { ...typography.label, color: theme.interactiveText },
     list: { gap: spacing[3] },
     filterRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
+    nearestAddressChooser: { gap: spacing[2], padding: spacing[3] },
+    nearestAddressHeading: { alignItems: "flex-start", flexDirection: "row", gap: spacing[2], justifyContent: "space-between" },
+    nearestAddressCopy: { flex: 1, gap: spacing[1] },
+    nearestAddressTitle: { ...typography.bodyStrong, color: theme.color },
+    nearestAddressHint: { ...typography.caption, color: theme.colorMuted },
+    nearestAddressStatus: { gap: spacing[2], paddingVertical: spacing[2] },
+    nearestAddressOption: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[3] },
+    nearestAddressOptionTitle: { ...typography.bodyStrong, color: theme.color },
+    nearestAddressSummary: { ...typography.bodySm, color: theme.interactiveText },
     storeCard: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[3], minHeight: 100, padding: spacing[3], ...elevation.raised },
     storeActions: { alignItems: "center", flexDirection: "row", gap: spacing[1] },
     storeIcon: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.md, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
