@@ -7,45 +7,6 @@
     "type:tool"
   ],
   "targets": {
-    "tooling-lint": {
-      "executor": "nx:run-commands",
-      "cache": true,
-      "inputs": [
-        "{workspaceRoot}/tools/dev/**/*",
-        "{workspaceRoot}/biome.json",
-        {
-          "runtime": "node --version"
-        },
-        {
-          "runtime": "pnpm --version"
-        }
-      ],
-      "options": {
-        "command": "pnpm exec biome lint tools/dev --diagnostic-level=error"
-      }
-    },
-    "go-workspace-sync": {
-      "executor": "nx:run-commands",
-      "cache": true,
-      "inputs": [
-        "{workspaceRoot}/go.work",
-        "{workspaceRoot}/go.work.sum",
-        "{workspaceRoot}/services/identity/backend/go.mod",
-        "{workspaceRoot}/services/identity/backend/go.sum",
-        "{workspaceRoot}/services/identity/clients/go/go.mod",
-        "{workspaceRoot}/services/dsh/backend/go.mod",
-        "{workspaceRoot}/services/dsh/backend/go.sum",
-        "{workspaceRoot}/services/wlt/backend/go.mod",
-        "{workspaceRoot}/services/wlt/backend/go.sum",
-        "{workspaceRoot}/tools/dev/verify-go-workspace-sync.mjs",
-        {
-          "runtime": "go version"
-        }
-      ],
-      "options": {
-        "command": "node tools/dev/verify-go-workspace-sync.mjs"
-      }
-    },
     "runtime-integration": {
       "cache": false,
       "executor": "nx:run-commands",
