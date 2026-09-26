@@ -62,48 +62,20 @@ try {
     if ((& pnpm --version).Trim() -ne '10.34.0') { Fail 'pnpm version mismatch.' }
     if ((& go version | Out-String).Trim() -notmatch '\bgo1\.27\.1\b') { Fail 'Go version mismatch.' }
 
-    $changed = @(& git -C $Repo diff --name-only $BaseSha $head | ForEach-Object { $_.Trim().Replace('\','/') } | Where-Object { $_ })
-    if ($LASTEXITCODE -ne 0) { Fail 'Unable to determine candidate delta.' }
-    Write-Host "AFFECTED_CHANGED_FILES=$($changed.Count)"
-
-    if ($changed.Count -gt 0) {
-        Run-Step 'Workspace invariant targets' {
-            pnpm exec nx run-many -t donor-residue repository-structure structural-hygiene runtime-ownership removed-domain-residue docs-command-parity docs-config-parity knowledge-system knowledge-references agent-contract workspace-dependencies nx-project-tags mobile-config brand theme-check theme-verify powershell-syntax knip --projects=workspace-tooling --outputStyle=stream --parallel=2
-        }
-        Run-Step 'Infrastructure invariant targets' {
-            pnpm exec nx run infra:compose-config --outputStyle=stream
-        }
-    } else {
-        Write-Host 'WORKSPACE_INVARIANT_TARGETS=SKIPPED reason=no_changes'
+    Run-Step 'Workspace invariant targets' {
+        pnpm exec nx run-many -t donor-residue repository-structure structural-hygiene runtime-ownership removed-domain-residue docs-command-parity docs-config-parity knowledge-system knowledge-references agent-contract workspace-dependencies nx-project-tags mobile-config brand theme-check theme-verify powershell-syntax knip --projects=workspace-tooling --outputStyle=stream --parallel=2
     }
 
-    $changedGo = @($changed | Where-Object {
-        $_ -match '\.go$' -and (Test-Path -LiteralPath (Join-Path $Repo $_) -PathType Leaf)
-    })
-    if ($changedGo.Count -gt 0) {
-        Run-Step 'Changed Go formatting' {
-            $unformatted = @(& gofmt -l @changedGo)
-            if ($LASTEXITCODE -ne 0) { Fail 'gofmt inspection failed.' }
-            if ($unformatted.Count -gt 0) { Fail ("Unformatted Go files:" + [Environment]::NewLine + ($unformatted -join [Environment]::NewLine)) }
-        }
+    Run-Step 'Developer tooling lint target' {
+        pnpm exec nx run repository-ci:tooling-lint --outputStyle=stream
     }
 
-    $changedBiome = @($changed | Where-Object {
-        $_ -match '^(apps/|packages/|services/|tools/).+\.(ts|tsx|js|jsx|mjs)$' -and
-        (Test-Path -LiteralPath (Join-Path $Repo $_) -PathType Leaf)
-    })
-    if ($changedBiome.Count -gt 0) {
-        Run-Step 'Changed-source lint' {
-            pnpm exec biome lint apps packages services tools --changed --since=$BaseSha --diagnostic-level=error
-        }
+    Run-Step 'Infrastructure invariant targets' {
+        pnpm exec nx run infra:compose-config --outputStyle=stream
     }
 
-    if ($changed.Count -gt 0) {
-        Run-Step 'Affected workspace targets' {
-            pnpm exec nx affected -t typecheck unit contract build vet export-smoke --base=$BaseSha --head=$head --outputStyle=stream --parallel=2
-        }
-    } else {
-        Write-Host 'AFFECTED_WORKSPACE_TARGETS=SKIPPED reason=no_changes'
+    Run-Step 'Affected static targets' {
+        pnpm exec nx affected -t lint format-check typecheck unit contract build vet export-smoke --base=$BaseSha --head=$head --outputStyle=stream --parallel=2
     }
 
     $endHead = ((Invoke-Git @('rev-parse','HEAD')) -join '').Trim()
