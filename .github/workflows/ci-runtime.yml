@@ -147,7 +147,7 @@ jobs:
         shell: bash
         env:
           CI: "true"
-        run: pnpm exec nx run repository-ci:runtime-integration --outputStyle=stream
+        run: node tools/dev/run-ci-command.mjs runtime-integration -- pnpm exec nx run repository-ci:runtime-integration --outputStyle=stream
 
       - name: Report WLT payout registry diagnostics
         if: failure() && steps.scope.outputs.run == 'true'
