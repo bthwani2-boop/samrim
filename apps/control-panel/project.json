@@ -40,6 +40,13 @@
       "options": {
         "command": "pnpm exec biome lint apps/control-panel --diagnostic-level=error"
       }
+    },
+    "e2e-live": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm --dir apps/control-panel test:e2e:live"
+      }
     }
   },
   "tags": [
