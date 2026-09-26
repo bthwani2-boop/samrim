@@ -87,11 +87,11 @@ export function OperatorHome() {
           </section> : null}
           {canReadPartners ? <>
             <section className="home-work-area" aria-labelledby="home-joining-admission-title">
-              <div className="home-work-area-heading"><div><p className="eyebrow">الشركاء</p><h2 id="home-joining-admission-title">قبول إحالات الميدانيين</h2></div><Link href="/partners?state=admission_requested">فتح الشركاء</Link></div>
+              <div className="home-work-area-heading"><div><p className="eyebrow">الشركاء</p><h2 id="home-joining-admission-title">قبول إحالات الميدانيين</h2></div><Link href="/partners/joining?state=admission_requested">فتح الشركاء</Link></div>
               {errors.joiningAdmissions ? <QueueError message={errors.joiningAdmissions} /> : joiningAdmissions.length === 0 ? <p className="empty-inline">لا توجد إحالات تنتظر قبول المشغّل.</p> : <ul className="home-list">{joiningAdmissions.map((item) => <li key={item.id}><Link href={`/partners/${encodeURIComponent(item.id)}`}><span><strong>{item.businessName}</strong><small><bdi dir="ltr">{item.id}</bdi></small></span><strong>{joiningCaseStateLabel(item.state)}</strong></Link></li>)}</ul>}
             </section>
             <section className="home-work-area" aria-labelledby="home-joining-title">
-              <div className="home-work-area-heading"><div><p className="eyebrow">الشركاء</p><h2 id="home-joining-title">طلبات الانضمام المقدمة للمراجعة</h2></div><Link href="/partners?state=submitted">فتح الشركاء</Link></div>
+              <div className="home-work-area-heading"><div><p className="eyebrow">الشركاء</p><h2 id="home-joining-title">طلبات الانضمام المقدمة للمراجعة</h2></div><Link href="/partners/joining?state=submitted">فتح الشركاء</Link></div>
               {errors.joiningCases ? <QueueError message={errors.joiningCases} /> : joiningCases.length === 0 ? <p className="empty-inline">لا توجد طلبات انضمام مقدمة تحتاج المراجعة.</p> : <ul className="home-list">{joiningCases.map((item) => <li key={item.id}><Link href={`/partners/${encodeURIComponent(item.id)}`}><span><strong>{item.businessName}</strong><small><bdi dir="ltr">{item.id}</bdi></small></span><strong>{joiningCaseStateLabel(item.state)}</strong></Link></li>)}</ul>}
             </section>
           </> : null}

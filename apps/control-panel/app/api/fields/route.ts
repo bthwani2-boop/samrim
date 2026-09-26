@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
-import { admitField, authorizeDshFieldReenrollment, dshErrorPayload, dshHttpStatus, isDshClientError, readFieldAdmissionByActor, setDshFieldRoleEnabled } from "../../../src/server/dsh/dsh-bff";
+import { admitField, approveFieldAdmission, authorizeDshFieldReenrollment, dshErrorPayload, dshHttpStatus, isDshClientError, listFieldAdmissions, provisionFieldAdmission, readFieldAdmissionByActor, setDshFieldRoleEnabled, updateFieldAdmissionProfile } from "../../../src/server/dsh/dsh-bff";
 import { identityErrorPayload, identityHttpStatus, readOperatorSession, searchIdentityRoles } from "../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../src/server/security/csrf";
@@ -13,13 +13,36 @@ export async function POST(request: Request) {
   if (identity.role !== "operator") return NextResponse.json({ error: { code: "FORBIDDEN", message: "operator access is required" } }, { status: 403, headers: { "Cache-Control": "no-store" } });
   const permissionDenied = operatorWorkspacePermissionDenied(identity, "partners");
   if (permissionDenied) return permissionDenied;
-  const body = (await request.json().catch(() => null)) as { action?: unknown; contactPhoneE164?: unknown; actorId?: unknown; reason?: unknown; expectedVersion?: unknown; expectedAdmissionVersion?: unknown; expectedActorVersion?: unknown; expectedRoleVersion?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as { action?: unknown; fullNameAr?: unknown; contactPhoneE164?: unknown; admissionId?: unknown; actorId?: unknown; reason?: unknown; expectedVersion?: unknown; expectedAdmissionVersion?: unknown; expectedActorVersion?: unknown; expectedRoleVersion?: unknown } | null;
   const action = typeof body?.action === "string" ? body.action.trim() : "admit";
+  const admissionId = typeof body?.admissionId === "string" ? body.admissionId.trim() : "";
+  const fullNameAr = typeof body?.fullNameAr === "string" ? body.fullNameAr.trim() : "";
   const actorId = typeof body?.actorId === "string" ? body.actorId.trim() : "";
   const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
   const rawExpectedVersion = body?.expectedVersion;
   const expectedVersion = typeof rawExpectedVersion === "number" ? rawExpectedVersion : typeof rawExpectedVersion === "string" && /^[1-9]\d*$/.test(rawExpectedVersion.trim()) ? Number(rawExpectedVersion.trim()) : NaN;
   const context = { operatorActorId: identity.subject, correlationId: randomUUID(), idempotencyKey: randomUUID() };
+  if (["approve", "provision"].includes(action)) {
+    if (!admissionId) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "admissionId is required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
+    try {
+      const result = action === "approve" ? await approveFieldAdmission(admissionId, context) : await provisionFieldAdmission(admissionId, context);
+      return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
+    } catch (error) {
+      const payload = isDshClientError(error) ? dshErrorPayload(error) : { code: "DSH_INTERNAL_ERROR", message: "dsh request failed" };
+      return NextResponse.json({ error: payload }, { status: isDshClientError(error) ? dshHttpStatus(error) : 502, headers: { "Cache-Control": "no-store" } });
+    }
+  }
+  if (action === "update-profile") {
+    const expectedVersion = Number(body?.expectedVersion);
+    if (!admissionId || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1 || Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "admissionId, fullNameAr, and expectedVersion are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
+    try {
+      const result = await updateFieldAdmissionProfile(admissionId, fullNameAr, { ...context, expectedVersion });
+      return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
+    } catch (error) {
+      const payload = isDshClientError(error) ? dshErrorPayload(error) : { code: "DSH_INTERNAL_ERROR", message: "dsh request failed" };
+      return NextResponse.json({ error: payload }, { status: isDshClientError(error) ? dshHttpStatus(error) : 502, headers: { "Cache-Control": "no-store" } });
+    }
+  }
   if (action === "activate" || action === "disable") {
     if (!actorId || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1 || Array.from(reason).length < 5 || Array.from(reason).length > 500) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "actorId, current role version, and a reason of 5 to 500 characters are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
     try {
@@ -45,9 +68,9 @@ export async function POST(request: Request) {
   }
   if (action !== "admit") return NextResponse.json({ error: { code: "INVALID_INPUT", message: "a supported Field operation is required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
   const contactPhoneE164 = typeof body?.contactPhoneE164 === "string" ? body.contactPhoneE164.trim() : "";
-  if (!/^\+[1-9][0-9]{7,14}$/.test(contactPhoneE164)) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "a valid E.164 phone is required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
+  if (Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(contactPhoneE164)) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "full Arabic name and a valid E.164 phone are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
   try {
-    const result = await admitField({ contactPhoneE164 }, context);
+    const result = await admitField({ fullNameAr, contactPhoneE164 }, context);
     return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const payload = isDshClientError(error) ? dshErrorPayload(error) : { code: "DSH_INTERNAL_ERROR", message: "dsh request failed" };
@@ -72,6 +95,12 @@ export async function GET(request: Request) {
   const enabled = rawEnabled === null ? undefined : rawEnabled === "true" ? true : rawEnabled === "false" ? false : null;
   if (!Number.isInteger(limit) || limit < 1 || limit > 50 || enabled === null || sort === null || query.trim().length > 100 || cursor.length > 512) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "valid search, cursor, sort, limit, and enabled filters are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
   try {
+    if (params.get("scope") === "candidates") {
+      const state = params.get("state") ?? "pending";
+      const candidateSort = params.get("candidateSort") ?? "created_desc";
+      const candidates = await listFieldAdmissions(query, state, candidateSort, Math.min(limit, 50), cursor, { operatorActorId: identity.subject });
+      return NextResponse.json({ items: candidates.admissions, limit: Math.min(limit, 50), nextCursor: candidates.nextCursor }, { headers: { "Cache-Control": "no-store" } });
+    }
     const page = await searchIdentityRoles("field", query, limit, cursor, enabled, sort);
     const items = await Promise.all(page.items.map(async (role) => {
       try {

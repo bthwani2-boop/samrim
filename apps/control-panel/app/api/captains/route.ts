@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
-import { admitCaptain, dispatchCaptainOffer, dshErrorPayload, dshHttpStatus, isDshClientError, readCaptainAdmissionByActor, reassignCaptainOffer, recoverCaptainDelivery, setDshCaptainAvailability, setDshCaptainRoleEnabled } from "../../../src/server/dsh/dsh-bff";
+import { admitCaptain, approveCaptainAdmission, dispatchCaptainOffer, dshErrorPayload, dshHttpStatus, isDshClientError, listCaptainAdmissions, provisionCaptainAdmission, readCaptainAdmissionByActor, reassignCaptainOffer, recoverCaptainDelivery, setDshCaptainAvailability, setDshCaptainRoleEnabled, updateCaptainAdmissionProfile } from "../../../src/server/dsh/dsh-bff";
 import { identityErrorPayload, identityHttpStatus, readOperatorSession, searchIdentityRoles } from "../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../src/server/security/csrf";
@@ -32,8 +32,10 @@ export async function POST(request: Request) {
   if (identity.role !== "operator") return jsonError("FORBIDDEN", "operator access is required", 403);
   const permissionDenied = operatorWorkspacePermissionDenied(identity, "operations");
   if (permissionDenied) return permissionDenied;
-  const body = (await request.json().catch(() => null)) as { action?: unknown; phone?: unknown; orderId?: unknown; assignmentId?: unknown; actorId?: unknown; available?: unknown; reason?: unknown; expectedVersion?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as { action?: unknown; fullNameAr?: unknown; admissionId?: unknown; phone?: unknown; orderId?: unknown; assignmentId?: unknown; actorId?: unknown; available?: unknown; reason?: unknown; expectedVersion?: unknown } | null;
   const action = typeof body?.action === "string" ? body.action.trim() : "";
+  const admissionId = typeof body?.admissionId === "string" ? body.admissionId.trim() : "";
+  const fullNameAr = typeof body?.fullNameAr === "string" ? body.fullNameAr.trim() : "";
   const phone = typeof body?.phone === "string" ? body.phone.trim() : "";
   const orderId = typeof body?.orderId === "string" ? body.orderId.trim() : "";
   const assignmentId = typeof body?.assignmentId === "string" ? body.assignmentId.trim() : "";
@@ -44,6 +46,17 @@ export async function POST(request: Request) {
   if (action === "recover" && (!assignmentId || !Number.isInteger(expectedVersion) || expectedVersion < 1)) return jsonError("INVALID_INPUT", "assignmentId and a positive expectedVersion are required for recovery", 400);
   const context = { operatorActorId: identity.subject, correlationId: randomUUID(), idempotencyKey: randomUUID() };
   try {
+		if (action === "approve" || action === "provision") {
+			if (!admissionId) return jsonError("INVALID_INPUT", "admissionId is required", 400);
+			const result = action === "approve" ? await approveCaptainAdmission(admissionId, context) : await provisionCaptainAdmission(admissionId, context);
+			return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
+		}
+		if (action === "update-profile") {
+			const expectedVersion = Number(body?.expectedVersion);
+			if (!admissionId || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1 || Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120) return jsonError("INVALID_INPUT", "admissionId, fullNameAr, and expectedVersion are required", 400);
+			const result = await updateCaptainAdmissionProfile(admissionId, fullNameAr, { ...context, expectedVersion });
+			return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
+		}
 		if (action === "activate" || action === "disable") {
 			if (!actorId || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1 || Array.from(reason).length < 5 || Array.from(reason).length > 500) return jsonError("INVALID_INPUT", "actorId, current role version, and a reason of 5 to 500 characters are required", 400);
 			await setDshCaptainRoleEnabled(actorId, { enabled: action === "activate", reason }, { ...context, expectedVersion });
@@ -54,7 +67,7 @@ export async function POST(request: Request) {
 			const result = await setDshCaptainAvailability(actorId, { available, reason }, { ...context, expectedVersion });
 			return NextResponse.json(boundedResult(action, result.payload), { status: result.status, headers: { "Cache-Control": "no-store" } });
 		}
-		if (action === "admit") { const result = await admitCaptain({ contactPhoneE164: phone }, context); return NextResponse.json(boundedResult(action, result.payload), { status: result.status, headers: { "Cache-Control": "no-store" } }); }
+		if (action === "admit") { if (Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120) return jsonError("INVALID_INPUT", "a full Arabic name is required", 400); const result = await admitCaptain({ fullNameAr, contactPhoneE164: phone }, context); return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } }); }
 		if (action === "dispatch") { const result = await dispatchCaptainOffer(orderId, context); return NextResponse.json(boundedResult(action, result.payload), { status: result.status, headers: { "Cache-Control": "no-store" } }); }
 		if (action === "reassign") { const result = await reassignCaptainOffer(orderId, context); return NextResponse.json(boundedResult(action, result.payload), { status: result.status, headers: { "Cache-Control": "no-store" } }); }
 		if (action === "recover") { const result = await recoverCaptainDelivery(assignmentId, { ...context, expectedVersion }); return NextResponse.json(boundedResult(action, result.payload), { status: result.status, headers: { "Cache-Control": "no-store" } }); }
@@ -86,6 +99,10 @@ export async function GET(request: Request) {
   const enabled = rawEnabled === null ? undefined : rawEnabled === "true" ? true : rawEnabled === "false" ? false : null;
   if (!Number.isInteger(limit) || limit < 1 || limit > 50 || enabled === null || sort === null || query.trim().length > 100 || cursor.length > 512) return jsonError("INVALID_INPUT", "valid search, cursor, sort, limit, and enabled filters are required", 400);
   try {
+    if (params.get("scope") === "candidates") {
+      const candidates = await listCaptainAdmissions(query, params.get("state") ?? "pending", params.get("candidateSort") ?? "created_desc", Math.min(limit, 50), cursor, { operatorActorId: identity.subject });
+      return NextResponse.json({ items: candidates.admissions, limit: Math.min(limit, 50), nextCursor: candidates.nextCursor }, { headers: { "Cache-Control": "no-store" } });
+    }
     const page = await searchIdentityRoles("captain", query, limit, cursor, enabled, sort);
     const items = await Promise.all(page.items.map(async (role) => {
       try {

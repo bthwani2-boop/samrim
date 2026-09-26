@@ -1,9 +1,10 @@
 import { elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { AppearancePicker, BthwaniButton, BthwaniIcon, BthwaniNavigationRow, BthwaniSectionHeader, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type Href, useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { logoutIdentity } from "../../bootstrap/identity";
+import { getUsableIdentityAccessToken, logoutIdentity } from "../../bootstrap/identity";
+import { captainClient } from "../captain-operations/captain-client";
 import { StoreCaptainMemberships } from "../captain-operations/store-memberships";
 
 const actions: ReadonlyArray<Readonly<{
@@ -23,6 +24,23 @@ export default function CaptainAccount() {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [profile, setProfile] = useState<Readonly<{ fullNameAr?: string; contactPhoneE164?: string; state: string }> | null>(null);
+  const [profileState, setProfileState] = useState<"loading" | "ready" | "error">("loading");
+
+  useEffect(() => {
+    let current = true;
+    void (async () => {
+      try {
+        const token = await getUsableIdentityAccessToken();
+        const response = await captainClient().readOwnCaptainAdmission(token);
+        if (current) { setProfile(response.admission); setProfileState("ready"); }
+      } catch (cause) {
+        console.error("DSH Captain profile readback failed", cause);
+        if (current) setProfileState("error");
+      }
+    })();
+    return () => { current = false; };
+  }, []);
 
   async function logout() {
     if (busy) return;
@@ -50,8 +68,9 @@ export default function CaptainAccount() {
           <BthwaniIcon name="account" color={theme.interactiveText} size={sizing.iconXl} />
         </View>
         <View style={styles.profileCopy}>
-          <Text style={styles.profileTitle}>حساب الكابتن</Text>
-          <Text style={styles.profileDescription}>تابع ارتباطات المتاجر والعروض والتوصيلات من هنا.</Text>
+          <Text style={styles.profileTitle}>{profile?.fullNameAr || "ملف الكابتن"}</Text>
+          <Text style={styles.profileDescription}>{profileState === "loading" ? "جارٍ قراءة الملف…" : profileState === "error" ? "تعذر قراءة الملف الآن؛ أعد المحاولة لاحقًا." : profile?.contactPhoneE164 || "رقم الهاتف غير متاح"}</Text>
+          {profileState === "ready" && profile ? <Text style={styles.profileDescription}>حالة الأهلية: {profile.state === "eligible" ? "مؤهل لاستقبال المهام" : "قيد المراجعة"}</Text> : null}
         </View>
       </BthwaniSurface>
 

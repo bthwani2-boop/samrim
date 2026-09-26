@@ -268,6 +268,156 @@ paths:
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 
   /dsh/captains/admissions:
+    get:
+      operationId: listCaptainAdmissions
+      summary: Search and page Captain candidates and admissions
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 100 }
+        - name: state
+          in: query
+          schema: { type: string, enum: [all, pending, pending_review, pending_identity, eligible, suspended] }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [created_desc, created_asc] }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 1024 }
+      responses:
+        "200":
+          description: Bounded Captain admission registry page.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAdmissionListResponse"
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+    post:
+      operationId: admitCaptain
+      summary: Create a Captain candidate profile before role access
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAdmissionRequest"
+      responses:
+        "201":
+          description: Captain candidate profile created in review state.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAdmissionResponse"
+        "200":
+          description: Idempotent candidate profile readback.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAdmissionResponse"
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
+  /dsh/captains/admissions/{admissionId}/profile:
+    patch:
+      operationId: updateCaptainAdmissionProfile
+      summary: Complete the Arabic name on an unapproved Captain candidate
+      security:
+        - serviceBearer: []
+      parameters:
+        - name: admissionId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAdmissionProfileRequest"
+      responses:
+        "200":
+          description: Updated Captain candidate profile.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAdmissionResponse"
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
+  /dsh/captains/admissions/{admissionId}/approve:
+    post:
+      operationId: approveCaptainAdmission
+      summary: Approve DSH Captain eligibility before provisioning an Identity role
+      security:
+        - serviceBearer: []
+      parameters:
+        - name: admissionId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      responses:
+        "200":
+          description: DSH eligibility approved; Identity role remains unprovisioned.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAdmissionResponse"
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
+  /dsh/captains/admissions/{admissionId}/provision:
+    post:
+      operationId: provisionCaptainAdmission
+      summary: Provision and bind a Captain Identity role for an approved candidate
+      security:
+        - serviceBearer: []
+      parameters:
+        - name: admissionId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      responses:
+        "200":
+          description: Identity role provisioned and bound to the approved Captain admission.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAdmissionResponse"
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
     post:
       operationId: admitCaptain
       summary: Admit a Captain through DSH eligibility and Identity role provisioning

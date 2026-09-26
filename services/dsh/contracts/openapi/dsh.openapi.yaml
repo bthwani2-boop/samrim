@@ -453,6 +453,15 @@ paths:
   /dsh/captains/admissions:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1admissions"
 
+  /dsh/captains/admissions/{admissionId}/profile:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1admissions~1{admissionId}~1profile"
+
+  /dsh/captains/admissions/{admissionId}/approve:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1admissions~1{admissionId}~1approve"
+
+  /dsh/captains/admissions/{admissionId}/provision:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1admissions~1{admissionId}~1provision"
+
   /dsh/captains/admissions/{admissionId}:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1admissions~1{admissionId}"
 
@@ -516,6 +525,15 @@ paths:
 
   /dsh/fields/admissions:
     $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions"
+
+  /dsh/fields/admissions/{admissionId}/profile:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}~1profile"
+
+  /dsh/fields/admissions/{admissionId}/approve:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}~1approve"
+
+  /dsh/fields/admissions/{admissionId}/provision:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}~1provision"
 
   /dsh/fields/admissions/{admissionId}:
     $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}"
@@ -3811,12 +3829,38 @@ components:
 
     CaptainAdmissionRequest:
       type: object
-      required: [contactPhoneE164]
+      required: [fullNameAr, contactPhoneE164]
       additionalProperties: false
       properties:
+        fullNameAr:
+          type: string
+          minLength: 2
+          maxLength: 120
         contactPhoneE164:
           type: string
           pattern: '^\+[1-9][0-9]{7,14}$'
+
+    CaptainAdmissionProfileRequest:
+      type: object
+      required: [fullNameAr]
+      additionalProperties: false
+      properties:
+        fullNameAr:
+          type: string
+          minLength: 2
+          maxLength: 120
+
+    CaptainAdmissionListResponse:
+      type: object
+      required: [admissions, nextCursor]
+      additionalProperties: false
+      properties:
+        admissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CaptainAdmission"
+        nextCursor:
+          type: string
 
     CaptainAdmission:
       type: object
@@ -3828,9 +3872,15 @@ components:
         actorId:
           type: string
           nullable: true
+        fullNameAr:
+          type: string
+          nullable: true
+        contactPhoneE164:
+          type: string
+          nullable: true
         state:
           type: string
-          enum: [pending_identity, eligible, suspended]
+          enum: [pending_review, pending_identity, eligible, suspended]
         availabilityState:
           type: string
           enum: [available, unavailable]
@@ -3856,12 +3906,38 @@ components:
 
     FieldAdmissionRequest:
       type: object
-      required: [contactPhoneE164]
+      required: [fullNameAr, contactPhoneE164]
       additionalProperties: false
       properties:
+        fullNameAr:
+          type: string
+          minLength: 2
+          maxLength: 120
         contactPhoneE164:
           type: string
           pattern: '^\+[1-9][0-9]{7,14}$'
+
+    FieldAdmissionProfileRequest:
+      type: object
+      required: [fullNameAr]
+      additionalProperties: false
+      properties:
+        fullNameAr:
+          type: string
+          minLength: 2
+          maxLength: 120
+
+    FieldAdmissionListResponse:
+      type: object
+      required: [admissions, nextCursor]
+      additionalProperties: false
+      properties:
+        admissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldAdmission"
+        nextCursor:
+          type: string
 
     FieldAdmission:
       type: object
@@ -3873,9 +3949,15 @@ components:
         actorId:
           type: string
           nullable: true
+        fullNameAr:
+          type: string
+          nullable: true
+        contactPhoneE164:
+          type: string
+          nullable: true
         state:
           type: string
-          enum: [pending_identity, eligible, suspended]
+          enum: [pending_review, pending_identity, eligible, suspended]
         version:
           type: integer
           minimum: 1

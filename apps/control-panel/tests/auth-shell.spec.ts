@@ -216,6 +216,11 @@ test("partner registry, joining queue, and stores are separate workspace destina
   await page.goto("/partners/joining");
   await expect(page.getByRole("heading", { name: "طلبات انضمام الشركاء", exact: true })).toBeVisible();
   await expect(partnerTabs.getByRole("link", { name: "طلبات الانضمام", exact: true })).toHaveAttribute("aria-current", "page");
+
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "قبول إحالات الميدانيين", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "فتح الشركاء" }).first()).toHaveAttribute("href", "/partners/joining?state=admission_requested");
+  await expect(page.getByRole("link", { name: "فتح الشركاء" }).nth(1)).toHaveAttribute("href", "/partners/joining?state=submitted");
 });
 
 test("finance and marketing centers expose only real independent resource routes", async ({ page }) => {

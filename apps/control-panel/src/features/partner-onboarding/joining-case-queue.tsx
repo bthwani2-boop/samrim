@@ -1,6 +1,6 @@
 "use client";
 
-import { type JoiningCaseListResponse, joiningCaseStateLabel } from "@bthwani/dsh";
+import { type JoiningCaseListResponse, type JoiningCaseState, joiningCaseStateLabel } from "@bthwani/dsh";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { partnerErrorMessage } from "./partner-error-message";
@@ -8,7 +8,7 @@ import { downloadRegistryCsv } from "./registry-csv";
 import "./partner-directory.module.css";
 import "./joining-case-queue.module.css";
 
-type QueueState = "" | "draft" | "admission_requested" | "submitted" | "needs_correction" | "approved";
+type QueueState = "" | JoiningCaseState;
 type QueueSort = "created_asc" | "created_desc";
 type QueueHistory = Readonly<{ joiningCaseCursors?: ReadonlyArray<string> }>;
 const pageSize = 10;

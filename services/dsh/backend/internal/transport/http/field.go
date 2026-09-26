@@ -34,7 +34,11 @@ func NewField(identityClient *identityintegration.Client, accessToken string, db
 }
 
 func (s *FieldServer) Register(mux *http.ServeMux) {
+	mux.HandleFunc("GET /dsh/fields/admissions", s.listAdmissions)
 	mux.HandleFunc("POST /dsh/fields/admissions", s.admit)
+	mux.HandleFunc("PATCH /dsh/fields/admissions/{admissionId}/profile", s.updateAdmissionProfile)
+	mux.HandleFunc("POST /dsh/fields/admissions/{admissionId}/approve", s.approveAdmission)
+	mux.HandleFunc("POST /dsh/fields/admissions/{admissionId}/provision", s.provisionAdmission)
 	mux.HandleFunc("GET /dsh/fields/admissions/{admissionId}", s.readAdmission)
 	mux.HandleFunc("GET /dsh/fields/actors/{actorId}/admission", s.readAdmissionForActor)
 	mux.HandleFunc("GET /dsh/fields/me", s.readOwnAdmission)
@@ -59,7 +63,7 @@ func (s *FieldServer) admit(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	admission, replayed, err := s.service.Admit(r.Context(), input.ContactPhoneE164, idempotency, acting, correlation)
+	admission, replayed, err := s.service.Admit(r.Context(), input.FullNameAr, input.ContactPhoneE164, idempotency, acting, correlation)
 	if err != nil {
 		writeFieldError(w, err)
 		return
@@ -69,6 +73,99 @@ func (s *FieldServer) admit(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusOK
 	}
 	writeJSON(w, status, contract.FieldAdmissionResponse{Admission: toFieldAdmission(admission), IdempotentReplay: replayed})
+}
+
+func (s *FieldServer) listAdmissions(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizedService(w, r) {
+		return
+	}
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if acting == "" || len(acting) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return
+	}
+	limit := 25
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 50 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "limit must be between 1 and 50")
+			return
+		}
+		limit = parsed
+	}
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
+	state := strings.TrimSpace(r.URL.Query().Get("state"))
+	if len([]rune(query)) > 100 || len(cursor) > 1024 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Field admission search or cursor is invalid")
+		return
+	}
+	page, err := s.service.ListAdmissionsForOperator(r.Context(), query, state, sort, limit, cursor, acting)
+	if err != nil {
+		writeFieldError(w, err)
+		return
+	}
+	items := make([]contract.FieldAdmission, 0, len(page.Admissions))
+	for _, v := range page.Admissions {
+		items = append(items, toFieldAdmission(v))
+	}
+	writeJSON(w, http.StatusOK, contract.FieldAdmissionListResponse{Admissions: items, NextCursor: page.NextCursor})
+}
+
+func (s *FieldServer) updateAdmissionProfile(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizedService(w, r) {
+		return
+	}
+	acting, correlation, idempotency, expected, ok := captainHeaders(w, r, true)
+	if !ok || acting == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Field profile mutation attribution and current version are required")
+		return
+	}
+	var input contract.FieldAdmissionProfileRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	admission, replayed, err := s.service.UpdateAdmissionProfile(r.Context(), r.PathValue("admissionId"), input.FullNameAr, expected, idempotency, acting, correlation)
+	if err != nil {
+		writeFieldError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.FieldAdmissionResponse{Admission: toFieldAdmission(admission), IdempotentReplay: replayed})
+}
+
+func (s *FieldServer) approveAdmission(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizedService(w, r) {
+		return
+	}
+	acting, correlation, idempotency, _, ok := captainHeaders(w, r, false)
+	if !ok || acting == "" || idempotency == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Field approval attribution and Idempotency-Key are required")
+		return
+	}
+	admission, replayed, err := s.service.Approve(r.Context(), r.PathValue("admissionId"), idempotency, acting, correlation)
+	if err != nil {
+		writeFieldError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.FieldAdmissionResponse{Admission: toFieldAdmission(admission), IdempotentReplay: replayed})
+}
+
+func (s *FieldServer) provisionAdmission(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizedService(w, r) {
+		return
+	}
+	acting, correlation, idempotency, _, ok := captainHeaders(w, r, false)
+	if !ok || acting == "" || idempotency == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Field role provisioning attribution and Idempotency-Key are required")
+		return
+	}
+	admission, err := s.service.Provision(r.Context(), r.PathValue("admissionId"), idempotency, acting, correlation)
+	if err != nil {
+		writeFieldError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.FieldAdmissionResponse{Admission: toFieldAdmission(admission), IdempotentReplay: false})
 }
 
 func (s *FieldServer) readAdmission(w http.ResponseWriter, r *http.Request) {
@@ -264,7 +361,7 @@ func requiredFieldMutationHeaders(w http.ResponseWriter, r *http.Request) (strin
 }
 
 func toFieldAdmission(value postgres.FieldAdmission) contract.FieldAdmission {
-	return contract.FieldAdmission{ID: value.ID, ActorID: value.ActorID, State: value.State, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
+	return contract.FieldAdmission{ID: value.ID, ActorID: value.ActorID, FullNameAr: value.FullNameAr, ContactPhoneE164: value.PhoneE164, State: value.State, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
 }
 
 func writeFieldError(w http.ResponseWriter, err error) {
@@ -275,7 +372,7 @@ func writeFieldError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the authenticated actor is not permitted for this Field operation")
 	case errors.Is(err, postgres.ErrFieldAdmissionNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "Field admission was not found")
-	case errors.Is(err, postgres.ErrFieldAdmissionExists), errors.Is(err, postgres.ErrFieldAdmissionConflict), errors.Is(err, field.ErrManagedRoleNotEligible), errors.Is(err, postgres.ErrFieldOperationConflict), errors.Is(err, postgres.ErrFieldVersionConflict), errors.Is(err, postgres.ErrJoiningCaseVersion), errors.Is(err, postgres.ErrJoiningCaseState), errors.Is(err, postgres.ErrJoiningCaseActor), errors.Is(err, postgres.ErrJoiningCaseRebind):
+	case errors.Is(err, postgres.ErrFieldAdmissionExists), errors.Is(err, postgres.ErrFieldAdmissionConflict), errors.Is(err, postgres.ErrFieldAdmissionNotEligible), errors.Is(err, postgres.ErrFieldAdmissionRegistry), errors.Is(err, field.ErrManagedRoleNotEligible), errors.Is(err, postgres.ErrFieldOperationConflict), errors.Is(err, postgres.ErrFieldVersionConflict), errors.Is(err, postgres.ErrJoiningCaseVersion), errors.Is(err, postgres.ErrJoiningCaseState), errors.Is(err, postgres.ErrJoiningCaseActor), errors.Is(err, postgres.ErrJoiningCaseRebind):
 		writeError(w, http.StatusConflict, "VERSION_OR_STATE_CONFLICT", "Field or joining-case state is stale or not actionable")
 	case errors.Is(err, postgres.ErrJoiningCaseNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "joining case was not found")

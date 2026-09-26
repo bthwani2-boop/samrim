@@ -1,5 +1,5 @@
 import type { ActorLegalName, CatalogAttributeDefinitionListResponse, CatalogAttributeDefinitionResponse, CatalogAttributeEnumOptionListResponse, CatalogAttributeEnumOptionResponse, CatalogAttributeRuleListResponse, CatalogProduct, CatalogProductRegistryResponse, CreateCatalogAttributeDefinitionRequest, CreateCatalogAttributeEnumOptionRequest, CreateCustomerWithdrawalIntakeRequest, CustomerWithdrawalDecisionRequest, CustomerWithdrawalIntakeListResponse, CustomerWithdrawalIntakeResponse, ManagedCaptainAvailabilityRequest, PartnerStoreListResponse, SubmitActorLegalNameRequest, UpsertCatalogAttributeRuleRequest, VerifyActorLegalNameRequest } from "@bthwani/dsh";
-import { type BeneficiaryPayoutState, type BeneficiaryPayoutStateResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CashCustodyRegistryResponse, type CatalogCategoryDetailResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateDeliveryFeePolicyRequest, type CreateJoiningCaseRequest, type CreatePartnerFinancialTermsPolicyRequest, type CreatePromotionRequest, type CreateServiceCityRequest, type DeliveryFeePolicyResponse, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentResponse, dshOperationPaths, type FieldAdmissionRequest, type FieldAdmissionResponse, type FieldCommissionPolicy, type FieldReenrollmentRequest, type FinanceEvidenceDocument, type JoiningCaseListResponse, type JoiningCaseResponse, type ManagedRoleMutationRequest, type MarketingPublicationRequest, type NotificationListResponse, type NotificationReadResponse, type OfficialWalletDestination, type OperatorDiscoveryContentRegistryResponse, type OperatorOperationResponse, type OperatorOperationsResponse, type OperatorPromotionRegistryResponse, type OperatorStoreListResponse, type PartnerCommissionReceivableRegistryResponse, type PartnerCommissionRemittanceRequest, type PartnerCommissionRemittanceResponse, type PartnerFinancialSummaryResponse, type PartnerFinancialTermsPolicyResponse, type PartnerStoreCommissionPoliciesResponse, type PartnerStoreCommissionPolicyUpdateRequest, type PartnerStoreCommissionPolicyUpdateResponse, type PayoutRequest, type PromotionResponse, type PublicationAction, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type ReviewJoiningCaseRequest, type ServiceCityListResponse, type ServiceCityResponse, type SetStoreFulfillmentModesRequest, type SettlementBatch, type SettlementBatchExport, type StoreFulfillmentModesResponse, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogCategoryRequest, type UpdateCatalogProductRequest, type UpdateCommerceVerticalRequest, type UpdateServiceCityRequest } from "@bthwani/dsh";
+import { type BeneficiaryPayoutState, type BeneficiaryPayoutStateResponse, type CaptainAdmissionListResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CashCustodyRegistryResponse, type CatalogCategoryDetailResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateDeliveryFeePolicyRequest, type CreateJoiningCaseRequest, type CreatePartnerFinancialTermsPolicyRequest, type CreatePromotionRequest, type CreateServiceCityRequest, type DeliveryFeePolicyResponse, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentResponse, dshOperationPaths, type FieldAdmissionListResponse, type FieldAdmissionRequest, type FieldAdmissionResponse, type FieldCommissionPolicy, type FieldReenrollmentRequest, type FinanceEvidenceDocument, type JoiningCaseListResponse, type JoiningCaseResponse, type ManagedRoleMutationRequest, type MarketingPublicationRequest, type NotificationListResponse, type NotificationReadResponse, type OfficialWalletDestination, type OperatorDiscoveryContentRegistryResponse, type OperatorOperationResponse, type OperatorOperationsResponse, type OperatorPromotionRegistryResponse, type OperatorStoreListResponse, type PartnerCommissionReceivableRegistryResponse, type PartnerCommissionRemittanceRequest, type PartnerCommissionRemittanceResponse, type PartnerFinancialSummaryResponse, type PartnerFinancialTermsPolicyResponse, type PartnerStoreCommissionPoliciesResponse, type PartnerStoreCommissionPolicyUpdateRequest, type PartnerStoreCommissionPolicyUpdateResponse, type PayoutRequest, type PromotionResponse, type PublicationAction, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type ReviewJoiningCaseRequest, type ServiceCityListResponse, type ServiceCityResponse, type SetStoreFulfillmentModesRequest, type SettlementBatch, type SettlementBatchExport, type StoreFulfillmentModesResponse, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogCategoryRequest, type UpdateCatalogProductRequest, type UpdateCommerceVerticalRequest, type UpdateServiceCityRequest } from "@bthwani/dsh";
 import { validateServiceUrl } from "@bthwani/identity";
 
 type DshClientError =
@@ -1059,10 +1059,31 @@ export async function setDshFieldRoleEnabled(actorId: string, input: ManagedRole
 }
 
 export async function admitCaptain(input: CaptainAdmissionRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: CaptainAdmissionResponse }>> {
+  if (Array.from(input.fullNameAr.trim()).length < 2 || Array.from(input.fullNameAr.trim()).length > 120) throw new Error("DSH_CAPTAIN_NAME_INVALID");
   if (!/^\+[1-9][0-9]{7,14}$/.test(input.contactPhoneE164.trim())) throw new Error("DSH_CAPTAIN_PHONE_INVALID");
   validateAttributedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_CAPTAIN_IDEMPOTENCY_INVALID");
-  return requestDshJson<CaptainAdmissionResponse>(dshOperationPaths.admitCaptain.method, dshOperationPaths.admitCaptain.path, { contactPhoneE164: input.contactPhoneE164.trim() }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+  return requestDshJson<CaptainAdmissionResponse>(dshOperationPaths.admitCaptain.method, dshOperationPaths.admitCaptain.path, { fullNameAr: input.fullNameAr.trim(), contactPhoneE164: input.contactPhoneE164.trim() }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function listCaptainAdmissions(query: string, state: string, sort: string, limit: number, cursor: string, context: DshOperatorReadContext): Promise<CaptainAdmissionListResponse> {
+  const params = new URLSearchParams({ q: query.trim(), state, sort, limit: String(limit) }); if (cursor) params.set("cursor", cursor);
+  return (await requestDshJson<CaptainAdmissionListResponse>("GET", `${dshOperationPaths.listCaptainAdmissions.path}?${params}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function approveCaptainAdmission(admissionId: string, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: CaptainAdmissionResponse }>> {
+  const path = dshOperationPaths.approveCaptainAdmission.path.replace("{admissionId}", encodeURIComponent(admissionId.trim()));
+  return requestDshJson<CaptainAdmissionResponse>("POST", path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function provisionCaptainAdmission(admissionId: string, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: CaptainAdmissionResponse }>> {
+  const path = dshOperationPaths.provisionCaptainAdmission.path.replace("{admissionId}", encodeURIComponent(admissionId.trim()));
+  return requestDshJson<CaptainAdmissionResponse>("POST", path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function updateCaptainAdmissionProfile(admissionId: string, fullNameAr: string, context: DshOperatorReadContext & Readonly<{ correlationId: string; idempotencyKey: string; expectedVersion: number }>): Promise<Readonly<{ status: number; payload: CaptainAdmissionResponse }>> {
+  const path = dshOperationPaths.updateCaptainAdmissionProfile.path.replace("{admissionId}", encodeURIComponent(admissionId.trim()));
+  return requestDshJson<CaptainAdmissionResponse>("PATCH", path, { fullNameAr: fullNameAr.trim() }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
 export async function readCaptainAdmissionByActor(actorId: string, context: DshOperatorReadContext): Promise<CaptainAdmissionResponse> {
@@ -1073,10 +1094,31 @@ export async function readCaptainAdmissionByActor(actorId: string, context: DshO
 }
 
 export async function admitField(input: FieldAdmissionRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: FieldAdmissionResponse }>> {
+  if (Array.from(input.fullNameAr.trim()).length < 2 || Array.from(input.fullNameAr.trim()).length > 120) throw new Error("DSH_FIELD_NAME_INVALID");
   if (!/^\+[1-9][0-9]{7,14}$/.test(input.contactPhoneE164.trim())) throw new Error("DSH_FIELD_PHONE_INVALID");
   validateAttributedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_FIELD_IDEMPOTENCY_INVALID");
-  return requestDshJson<FieldAdmissionResponse>(dshOperationPaths.admitField.method, dshOperationPaths.admitField.path, { contactPhoneE164: input.contactPhoneE164.trim() }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+  return requestDshJson<FieldAdmissionResponse>(dshOperationPaths.admitField.method, dshOperationPaths.admitField.path, { fullNameAr: input.fullNameAr.trim(), contactPhoneE164: input.contactPhoneE164.trim() }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function listFieldAdmissions(query: string, state: string, sort: string, limit: number, cursor: string, context: DshOperatorReadContext): Promise<FieldAdmissionListResponse> {
+  const params = new URLSearchParams({ q: query.trim(), state, sort, limit: String(limit) }); if (cursor) params.set("cursor", cursor);
+  return (await requestDshJson<FieldAdmissionListResponse>("GET", `${dshOperationPaths.listFieldAdmissions.path}?${params}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function approveFieldAdmission(admissionId: string, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: FieldAdmissionResponse }>> {
+  const path = dshOperationPaths.approveFieldAdmission.path.replace("{admissionId}", encodeURIComponent(admissionId.trim()));
+  return requestDshJson<FieldAdmissionResponse>("POST", path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function provisionFieldAdmission(admissionId: string, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: FieldAdmissionResponse }>> {
+  const path = dshOperationPaths.provisionFieldAdmission.path.replace("{admissionId}", encodeURIComponent(admissionId.trim()));
+  return requestDshJson<FieldAdmissionResponse>("POST", path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function updateFieldAdmissionProfile(admissionId: string, fullNameAr: string, context: DshOperatorReadContext & Readonly<{ correlationId: string; idempotencyKey: string; expectedVersion: number }>): Promise<Readonly<{ status: number; payload: FieldAdmissionResponse }>> {
+  const path = dshOperationPaths.updateFieldAdmissionProfile.path.replace("{admissionId}", encodeURIComponent(admissionId.trim()));
+  return requestDshJson<FieldAdmissionResponse>("PATCH", path, { fullNameAr: fullNameAr.trim() }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
 export async function readFieldAdmissionByActor(actorId: string, context: DshOperatorReadContext): Promise<FieldAdmissionResponse> {

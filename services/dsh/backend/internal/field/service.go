@@ -38,69 +38,84 @@ func New(identity *identityintegration.Client, db *sql.DB) (*Service, error) {
 	return &Service{identity: identity, db: db}, nil
 }
 
-func (s *Service) Admit(ctx context.Context, phone, idempotencyKey, actingActorID, correlationID string) (postgres.FieldAdmission, bool, error) {
+func (s *Service) Admit(ctx context.Context, fullNameAr, phone, idempotencyKey, actingActorID, correlationID string) (postgres.FieldAdmission, bool, error) {
+	fullNameAr = strings.TrimSpace(fullNameAr)
 	phone = strings.TrimSpace(phone)
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	actingActorID = strings.TrimSpace(actingActorID)
 	correlationID = strings.TrimSpace(correlationID)
-	if !phoneE164Pattern.MatchString(phone) || !validMutation(idempotencyKey, correlationID, actingActorID) {
+	if len([]rune(fullNameAr)) < 2 || len([]rune(fullNameAr)) > 120 || !phoneE164Pattern.MatchString(phone) || !validMutation(idempotencyKey, correlationID, actingActorID) {
 		return postgres.FieldAdmission{}, false, ErrInvalidInput
 	}
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.FieldAdmission{}, false, err
 	}
-	roles, err := s.identity.SearchFieldRolesByPhoneE164(ctx, phone)
+	hash := postgres.HashFieldAdmissionRequest(fullNameAr, phone)
+	admission, _, replayed, err := postgres.CreateFieldAdmissionCandidate(ctx, s.db, fullNameAr, phone, idempotencyKey, hash, actingActorID, correlationID)
 	if err != nil {
 		return postgres.FieldAdmission{}, false, err
 	}
-	var existingRole identityclient.ActorRoleView
-	for _, role := range roles.Items {
-		if role.PhoneE164 != phone {
-			continue
-		}
-		if existingRole.ActorID != "" {
-			return postgres.FieldAdmission{}, false, ErrFieldIdentityUnavailable
-		}
-		existingRole = role
+	return admission, replayed, nil
+}
+
+func (s *Service) Approve(ctx context.Context, admissionID, idempotencyKey, actingActorID, correlationID string) (postgres.FieldAdmission, bool, error) {
+	if !validMutation(idempotencyKey, correlationID, actingActorID) {
+		return postgres.FieldAdmission{}, false, ErrInvalidInput
 	}
-	if existingRole.ActorID != "" {
-		if existingRole.Role != "field" || !existingRole.Enabled || !existingRole.SecurityEnabled {
-			return postgres.FieldAdmission{}, false, ErrManagedRoleNotEligible
-		}
-		current, readErr := postgres.ReadFieldAdmissionForActor(ctx, s.db, existingRole.ActorID)
-		if readErr == nil {
-			if current.State == "eligible" {
-				return current, true, nil
-			}
-			return postgres.FieldAdmission{}, false, ErrManagedRoleNotEligible
-		}
-		if !errors.Is(readErr, postgres.ErrFieldAdmissionNotFound) {
-			return postgres.FieldAdmission{}, false, readErr
-		}
-	}
-	hash := postgres.HashFieldAdmissionRequest(phone)
-	admission, operationKey, replayed, err := postgres.CreateFieldAdmissionCandidate(ctx, s.db, phone, idempotencyKey, hash, actingActorID, correlationID)
-	if err != nil {
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.FieldAdmission{}, false, err
+	}
+	return postgres.ApproveFieldAdmission(ctx, s.db, admissionID, idempotencyKey, postgres.HashFieldAdmissionTransition("approve", admissionID), actingActorID, correlationID)
+}
+
+func (s *Service) Provision(ctx context.Context, admissionID, idempotencyKey, actingActorID, correlationID string) (postgres.FieldAdmission, error) {
+	if !validMutation(idempotencyKey, correlationID, actingActorID) {
+		return postgres.FieldAdmission{}, ErrInvalidInput
+	}
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return postgres.FieldAdmission{}, err
+	}
+	admission, err := postgres.ReadFieldAdmission(ctx, s.db, admissionID)
+	if err != nil {
+		return postgres.FieldAdmission{}, err
 	}
 	if admission.State == "eligible" {
-		return admission, replayed, nil
+		return admission, nil
 	}
-	role := existingRole
+	if admission.State != "pending_identity" || admission.PhoneE164 == "" {
+		return postgres.FieldAdmission{}, postgres.ErrFieldAdmissionNotEligible
+	}
+	roles, err := s.identity.SearchFieldRolesByPhoneE164(ctx, admission.PhoneE164)
+	if err != nil {
+		return postgres.FieldAdmission{}, err
+	}
+	var role identityclient.ActorRoleView
+	for _, candidate := range roles.Items {
+		if candidate.PhoneE164 != admission.PhoneE164 {
+			continue
+		}
+		if role.ActorID != "" {
+			return postgres.FieldAdmission{}, ErrFieldIdentityUnavailable
+		}
+		role = candidate
+	}
 	if role.ActorID == "" {
-		role, err = s.identity.ProvisionFieldWithContext(ctx, identityintegration.ActorInput{PhoneE164: phone}, correlationID, actingActorID)
+		role, err = s.identity.ProvisionFieldWithContext(ctx, identityintegration.ActorInput{PhoneE164: admission.PhoneE164}, correlationID, actingActorID)
 		if err != nil {
-			return postgres.FieldAdmission{}, false, err
+			return postgres.FieldAdmission{}, err
 		}
 	}
 	if role.Role != "field" || strings.TrimSpace(role.ActorID) == "" {
-		return postgres.FieldAdmission{}, false, ErrFieldIdentityUnavailable
+		return postgres.FieldAdmission{}, ErrFieldIdentityUnavailable
 	}
-	bound, err := postgres.BindFieldAdmission(ctx, s.db, admission.ID, role.ActorID, operationKey, hash, actingActorID, correlationID)
+	if !role.Enabled || !role.SecurityEnabled {
+		return postgres.FieldAdmission{}, ErrManagedRoleNotEligible
+	}
+	bound, err := postgres.BindFieldAdmission(ctx, s.db, admission.ID, role.ActorID, idempotencyKey, postgres.HashFieldAdmissionTransition("bind", admissionID), actingActorID, correlationID)
 	if err != nil {
-		return postgres.FieldAdmission{}, false, err
+		return postgres.FieldAdmission{}, err
 	}
-	return bound, replayed, nil
+	return bound, nil
 }
 
 func (s *Service) ReadForOperator(ctx context.Context, admissionID, actingActorID string) (postgres.FieldAdmission, error) {
@@ -108,6 +123,23 @@ func (s *Service) ReadForOperator(ctx context.Context, admissionID, actingActorI
 		return postgres.FieldAdmission{}, err
 	}
 	return postgres.ReadFieldAdmission(ctx, s.db, admissionID)
+}
+
+func (s *Service) ListAdmissionsForOperator(ctx context.Context, query, state, sort string, limit int, cursor, actingActorID string) (postgres.FieldAdmissionPage, error) {
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return postgres.FieldAdmissionPage{}, err
+	}
+	return postgres.ListFieldAdmissions(ctx, s.db, query, state, sort, limit, cursor)
+}
+
+func (s *Service) UpdateAdmissionProfile(ctx context.Context, admissionID, fullNameAr string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.FieldAdmission, bool, error) {
+	if expectedVersion < 1 || !validMutation(idempotencyKey, correlationID, actingActorID) {
+		return postgres.FieldAdmission{}, false, ErrInvalidInput
+	}
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return postgres.FieldAdmission{}, false, err
+	}
+	return postgres.UpdateFieldAdmissionProfile(ctx, s.db, admissionID, fullNameAr, expectedVersion, idempotencyKey, postgres.HashFieldAdmissionProfileRequest(admissionID, fullNameAr, expectedVersion), actingActorID, correlationID)
 }
 
 func (s *Service) ReadForOperatorByActor(ctx context.Context, actorID, actingActorID string) (postgres.FieldAdmission, error) {
@@ -125,7 +157,19 @@ func (s *Service) ReadForField(ctx context.Context, accessToken string) (postgre
 	if err != nil {
 		return postgres.FieldAdmission{}, err
 	}
-	return postgres.ReadFieldAdmissionForActor(ctx, s.db, identity.Subject)
+	admission, err := postgres.ReadFieldAdmissionForActor(ctx, s.db, identity.Subject)
+	if err != nil {
+		return postgres.FieldAdmission{}, err
+	}
+	role, err := s.identity.ReadActorRole(ctx, identity.Subject, "field")
+	if err != nil {
+		return postgres.FieldAdmission{}, err
+	}
+	if role.Role != "field" {
+		return postgres.FieldAdmission{}, ErrFieldIdentityUnavailable
+	}
+	admission.PhoneE164 = role.PhoneE164
+	return admission, nil
 }
 
 func (s *Service) SetManagedRoleEnabled(ctx context.Context, actorID, operatorActorID, correlationID, idempotencyKey, reason string, expectedVersion int, enabled bool) error {
