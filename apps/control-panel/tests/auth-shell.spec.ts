@@ -752,7 +752,7 @@ test("operator creates a product category under its commerce vertical", async ({
   await expect(page.getByRole("region", { name: "إدارة الفئات" })).toBeVisible();
   await expect(page.getByRole("region", { name: "إدارة الفئات" }).getByRole("heading", { name: "الفئات", exact: true })).toBeVisible();
   await expect(page.locator(".catalog-taxonomy-workspace")).toHaveCount(1);
-  await expect(page.locator(".catalog-taxonomy-workspace > .access-card")).toHaveCount(0);
+  await expect(page.locator(".catalog-taxonomy-workspace > .catalog-taxonomy-workbench")).toHaveCount(1);
   await expect(page.locator(".catalog-taxonomy-section")).toHaveCount(3);
   await page.screenshot({ path: "test-results/catalog-taxonomy-workspace.png", fullPage: true });
   await expect(page.getByLabel("المعرف البرمجي للتصنيف", { exact: true })).toHaveCount(0);
