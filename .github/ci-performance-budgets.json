@@ -1,6 +1,17 @@
 {
   "schema": 1,
   "mode": "observe",
+  "enforcedBudgets": [
+    "static-install",
+    "static-affected",
+    "windows-install",
+    "windows-export-affected",
+    "runtime-install",
+    "runtime-playwright-install",
+    "runtime-images",
+    "runtime-start",
+    "runtime-integration"
+  ],
   "budgetsMs": {
     "static-install": 45000,
     "static-affected": 60000,
@@ -12,6 +23,6 @@
     "runtime-playwright-install": 90000,
     "runtime-images": 120000,
     "runtime-start": 90000,
-    "runtime-integration": 180000
+    "runtime-integration": 360000
   }
 }

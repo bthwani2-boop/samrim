@@ -224,6 +224,8 @@ for (const name of [
 ]) {
   if (!Number.isFinite(budgets.budgetsMs?.[name])) failures.push("CI performance budget missing " + name);
 }
+const knownBudgets = new Set(Object.keys(budgets.budgetsMs ?? {}));
+if (!Array.isArray(budgets.enforcedBudgets) || new Set(budgets.enforcedBudgets).size !== budgets.enforcedBudgets.length || budgets.enforcedBudgets.some((name) => !knownBudgets.has(name))) failures.push("CI performance enforcement must select unique defined budgets");
 const controlPanelBuildInputs = JSON.stringify(data("apps/control-panel/project.json").targets?.build?.inputs ?? []);
 if (!controlPanelBuildInputs.includes("controlPanelBuildEnvironment")) failures.push("Control Panel build environment cache input missing");
 const controlPanelEnvironment = JSON.stringify(data("nx.json").namedInputs?.controlPanelBuildEnvironment ?? []);
