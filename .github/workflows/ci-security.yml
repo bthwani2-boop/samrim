@@ -1,0 +1,80 @@
+name: CI Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets:
+    name: repository-secrets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Scan current candidate and newly introduced commits
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          bad_names="$(git ls-files | grep -E -i -- '(^|/)(credentials\.json|google-services\.json|GoogleService-Info\.plist)$|\.(jks|keystore|p12|p8|pem|key)$|(^|/)\.env($|\.)' | grep -E -v -- '(^|/)\.env\.example$' || true)"
+          if [[ -n "${bad_names}" ]]; then
+            printf '%s\n' "${bad_names}"
+            exit 1
+          fi
+
+          markers='-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|"private_key"[[:space:]]*:|gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}'
+          if git grep -n -I -E -- "${markers}" -- . ':(exclude).github/workflows/secret-safety.yml'; then
+            exit 1
+          fi
+
+          if [[ "${GITHUB_EVENT_NAME}" == "schedule" || "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            range="$(git rev-list --all)"
+            echo "SECRET_HISTORY_SCOPE=FULL"
+          elif [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            range="$(git rev-list "${PR_BASE_SHA}..${PR_HEAD_SHA}")"
+            echo "SECRET_HISTORY_SCOPE=PR_DELTA"
+          elif [[ -n "${PUSH_BEFORE_SHA}" && "${PUSH_BEFORE_SHA}" != "0000000000000000000000000000000000000000" ]]; then
+            range="$(git rev-list "${PUSH_BEFORE_SHA}..${GITHUB_SHA}")"
+            echo "SECRET_HISTORY_SCOPE=PUSH_DELTA"
+          else
+            git fetch --no-tags origin main:refs/remotes/origin/main
+            base="$(git merge-base "${GITHUB_SHA}" refs/remotes/origin/main)"
+            range="$(git rev-list "${base}..${GITHUB_SHA}")"
+            echo "SECRET_HISTORY_SCOPE=NEW_BRANCH_DELTA"
+          fi
+
+          matches="$(mktemp)"
+          trap 'rm -f "${matches}"' EXIT
+          while IFS= read -r commit; do
+            [[ -n "${commit}" ]] || continue
+            git grep -n -I -E -- "${markers}" "${commit}" -- . ':(exclude).github/workflows/secret-safety.yml' >>"${matches}" || true
+          done <<<"${range}"
+
+          if [[ -s "${matches}" ]]; then
+            cat "${matches}"
+            exit 1
+          fi
+
+          echo "SECRET_SAFETY=PASS"
