@@ -26,6 +26,7 @@
         "{workspaceRoot}/tools/dev/run-ci-runtime-proof.mjs",
         "{workspaceRoot}/tools/dev/verify-execution-proof-system.mjs",
         "{workspaceRoot}/tools/dev/execution-proof-system.mjs",
+        "{workspaceRoot}/tools/dev/verify-ci-exact-sha.mjs",
         "{workspaceRoot}/tools/dev/build-ci-image.mjs",
         "{workspaceRoot}/tools/dev/run-ci-command.mjs",
         "{workspaceRoot}/tools/dev/capture-ci-failure.mjs",
