@@ -63,6 +63,13 @@
       "options": {
         "command": "node tools/dev/check-go-format.mjs services/dsh/backend"
       }
+    },
+    "ci-image": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/dev/build-ci-image.mjs dsh"
+      }
     }
   },
   "tags": [
