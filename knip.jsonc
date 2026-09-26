@@ -11,10 +11,12 @@
         "tools/dev/capture-ci-failure.mjs",
         "tools/dev/check-go-format.mjs",
         "tools/dev/execution-proof-system.mjs",
+        "tools/dev/hash-control-panel-secret-input.mjs",
         "tools/dev/report-ci-performance.mjs",
         "tools/dev/run-ci-command.mjs",
         "tools/dev/run-ci-runtime-proof.mjs",
         "tools/dev/verify-agent-knowledge-contract.mjs",
+        "tools/dev/verify-cache-contracts.mjs",
         "tools/dev/verify-doc-command-parity.mjs",
         "tools/dev/verify-doc-config-parity.mjs",
         "tools/dev/verify-donor-residue.mjs",
@@ -30,6 +32,7 @@
         "tools/dev/verify-nx-project-tags.mjs",
         "tools/dev/verify-removed-human-domain-residue.mjs",
         "tools/dev/verify-repository-structure.mjs",
+        "tools/dev/verify-sandbox-readiness.mjs",
         "tools/dev/verify-secret-safety.mjs",
         "tools/dev/verify-structural-hygiene.mjs",
         "tools/dev/verify-workspace-dependencies.mjs",
@@ -62,6 +65,7 @@
   "ignoreBinaries": [
     // CI, Nx project targets and developer-host binaries are resolved outside the JS graph.
     "build",
+    "go",
     "playwright",
     // Expo is the host binary used by the mobile export projection.
     "expo",
