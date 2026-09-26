@@ -20,7 +20,7 @@ jobs:
         with:
           ref: y
           fetch-depth: 0
-      - name: Apply exact canonical settlement cutover
+      - name: Apply canonical settlement proof cutover
         shell: bash
         run: |
           python - <<'PY'
@@ -29,89 +29,107 @@ jobs:
           path = Path('tools/dev/verify-dsh-runtime-core.mjs')
           text = path.read_text(encoding='utf-8')
 
-          old_cleanup = '''  for (const batchID of settlementBatchIDs) {
-            const value = sqlLiteral(batchID);
-            sql(`DELETE FROM wlt.payout_audit_events WHERE batch_id='${value}'`);
-            sql(`DELETE FROM wlt.manual_transfer_executions WHERE batch_id='${value}'`);
-            sql(`DELETE FROM wlt.settlement_batch_items WHERE batch_id='${value}'`);
-            sql(`DELETE FROM wlt.settlement_batches WHERE id='${value}'`);
-          }
-          '''
-          new_cleanup = '''  for (const batchID of settlementBatchIDs) {
-            const value = sqlLiteral(batchID);
-            sql(`DELETE FROM wlt.payout_audit_events WHERE batch_id='${value}'`);
-            sql(`UPDATE wlt.settlement_statement_rows SET matched_transfer_id=NULL, matched_by=NULL, matched_at=NULL WHERE statement_id IN (SELECT id FROM wlt.settlement_statements WHERE batch_id='${value}')`);
-            sql(`UPDATE wlt.manual_transfer_executions SET execution_status='VERIFIED', statement_row_id=NULL, reconciled_by=NULL, reconciled_at=NULL WHERE batch_id='${value}' AND statement_row_id IS NOT NULL`);
-            sql(`DELETE FROM wlt.settlement_statement_rows WHERE statement_id IN (SELECT id FROM wlt.settlement_statements WHERE batch_id='${value}')`);
-            sql(`DELETE FROM wlt.settlement_statements WHERE batch_id='${value}'`);
-            sql(`DELETE FROM wlt.manual_transfer_executions WHERE batch_id='${value}'`);
-            sql(`DELETE FROM wlt.settlement_batch_items WHERE batch_id='${value}'`);
-            sql(`DELETE FROM wlt.settlement_batches WHERE id='${value}'`);
-          }
-          sql(`DELETE FROM wlt.finance_evidence_documents WHERE idempotency_key IN ('partner-transfer-receipt-${sqlLiteral(suffix)}','partner-settlement-statement-evidence-${sqlLiteral(suffix)}')`);
-          '''
+          def replace_between(value, start, end, replacement, label):
+              i = value.find(start)
+              if i < 0:
+                  raise SystemExit(f'{label} start marker missing')
+              j = value.find(end, i)
+              if j < 0:
+                  raise SystemExit(f'{label} end marker missing')
+              return value[:i] + replacement + value[j:]
 
-          old_settlement = '''const settlementBatchCreated = await request(dshBase, "POST", "/dsh/operator/settlement-batches", { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-settlement-batch-${suffix}`), body: { payoutIds: [payoutFullID] } });
-          const settlementBatchID = String(settlementBatchCreated.body?.batch?.id || "");
-          if (settlementBatchID) settlementBatchIDs.add(settlementBatchID);
-          const settlementBatchApproved = await request(dshBase, "POST", `/dsh/operator/settlement-batches/${encodeURIComponent(settlementBatchID)}/approve`, { token: dshToken, headers: serviceHeaders(checkerOperatorID, `partner-settlement-batch-approve-${suffix}`), body: { reason: "independent batch approval" } });
-          const settlementBatchFrozen = await request(dshBase, "POST", `/dsh/operator/settlement-batches/${encodeURIComponent(settlementBatchID)}/freeze`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-settlement-batch-freeze-${suffix}`), body: { reason: "freeze approved execution snapshot" } });
-          const transferRecorded = await request(dshBase, "POST", `/dsh/operator/settlement-batches/${encodeURIComponent(settlementBatchID)}/transfers`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-transfer-record-${suffix}`), body: { payoutId: payoutFullID, externalTransferReference: `wallet-transfer-${suffix}`, evidenceReference: `wallet-receipt-${suffix}` } });
-          const transferID = String(transferRecorded.body?.transfer?.id || "");
-          const transferVerified = await request(dshBase, "POST", `/dsh/operator/transfers/${encodeURIComponent(transferID)}/verify`, { token: dshToken, headers: serviceHeaders(checkerOperatorID, `partner-transfer-verify-${suffix}`), body: { evidenceReference: `wallet-verified-${suffix}` } });
-          const transferReconciled = await request(dshBase, "POST", `/dsh/operator/transfers/${encodeURIComponent(transferID)}/reconcile`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-transfer-reconcile-${suffix}`), body: { statementReference: `official-wallet-statement-${suffix}` } });
-          '''
-          new_settlement = '''const settlementBatchCreated = await request(dshBase, "POST", "/dsh/operator/settlement-batches", { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-settlement-batch-${suffix}`), body: { payoutIds: [payoutFullID] } });
-          const settlementBatchID = String(settlementBatchCreated.body?.batch?.id || "");
-          if (settlementBatchID) settlementBatchIDs.add(settlementBatchID);
-          const settlementBatchApproved = await request(dshBase, "POST", `/dsh/operator/settlement-batches/${encodeURIComponent(settlementBatchID)}/approve`, { token: dshToken, headers: serviceHeaders(checkerOperatorID, `partner-settlement-batch-approve-${suffix}`), body: { reason: "independent batch approval" } });
-          const settlementBatchFrozen = await request(dshBase, "POST", `/dsh/operator/settlement-batches/${encodeURIComponent(settlementBatchID)}/freeze`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-settlement-batch-freeze-${suffix}`), body: { reason: "freeze approved execution snapshot" } });
-          const transferReceiptForm = new FormData();
-          transferReceiptForm.set("purpose", "TRANSFER_RECEIPT");
-          transferReceiptForm.set("file", new Blob([runtimePNG], { type: "image/png" }), `wallet-receipt-${suffix}.png`);
-          const transferReceiptUploaded = await request(dshBase, "POST", "/dsh/operator/finance-evidence-documents", { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-transfer-receipt-${suffix}`), rawBody: transferReceiptForm });
-          const transferReceiptDocumentID = String(transferReceiptUploaded.body?.document?.id || "");
-          const externalTransferReference = `wallet-transfer-${suffix}`;
-          const transferRecorded = await request(dshBase, "POST", `/dsh/operator/settlement-batches/${encodeURIComponent(settlementBatchID)}/transfers`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-transfer-record-${suffix}`), body: { payoutId: payoutFullID, externalTransferReference, receiptDocumentId: transferReceiptDocumentID } });
-          const transferID = String(transferRecorded.body?.transfer?.id || "");
-          const transferVerified = await request(dshBase, "POST", `/dsh/operator/transfers/${encodeURIComponent(transferID)}/verify`, { token: dshToken, headers: serviceHeaders(checkerOperatorID, `partner-transfer-verify-${suffix}`), body: {} });
-          const settlementStatementEvidenceForm = new FormData();
-          settlementStatementEvidenceForm.set("purpose", "SETTLEMENT_STATEMENT");
-          settlementStatementEvidenceForm.set("file", new Blob([runtimePNG], { type: "image/png" }), `official-wallet-statement-${suffix}.png`);
-          const settlementStatementEvidenceUploaded = await request(dshBase, "POST", "/dsh/operator/finance-evidence-documents", { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-settlement-statement-evidence-${suffix}`), rawBody: settlementStatementEvidenceForm });
-          const settlementStatementEvidenceDocumentID = String(settlementStatementEvidenceUploaded.body?.document?.id || "");
-          const settlementTransactionAt = new Date().toISOString();
-          const settlementPeriodDate = settlementTransactionAt.slice(0, 10);
-          const settlementStatementRegistered = await request(dshBase, "POST", "/dsh/operator/settlement-statements", { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-settlement-statement-${suffix}`), body: { batchId: settlementBatchID, providerKey: "official_wallet", currency: "YER", periodStart: settlementPeriodDate, periodEnd: settlementPeriodDate, evidenceDocumentId: settlementStatementEvidenceDocumentID } });
-          const settlementStatementID = String(settlementStatementRegistered.body?.statement?.id || "");
-          const settlementStatementRowRecorded = await request(dshBase, "POST", `/dsh/operator/settlement-statements/${encodeURIComponent(settlementStatementID)}/rows`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-settlement-statement-row-${suffix}`), body: { rowSequence: 1, externalTransferReference, walletIdentifier: destinationWalletIdentifier, amountMinor: 2550, currency: "YER", transactionAt: settlementTransactionAt } });
-          const settlementStatementRowID = String(settlementStatementRowRecorded.body?.row?.id || "");
-          const transferReconciled = await request(dshBase, "POST", `/dsh/operator/transfers/${encodeURIComponent(transferID)}/reconcile`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-transfer-reconcile-${suffix}`), body: { statementRowId: settlementStatementRowID } });
-          '''
+          cleanup = "\n".join([
+              "  for (const batchID of settlementBatchIDs) {",
+              "    const value = sqlLiteral(batchID);",
+              "    sql(`DELETE FROM wlt.payout_audit_events WHERE batch_id='${value}'`);",
+              "    sql(`UPDATE wlt.settlement_statement_rows SET matched_transfer_id=NULL, matched_by=NULL, matched_at=NULL WHERE statement_id IN (SELECT id FROM wlt.settlement_statements WHERE batch_id='${value}')`);",
+              "    sql(`UPDATE wlt.manual_transfer_executions SET execution_status='VERIFIED', statement_row_id=NULL, reconciled_by=NULL, reconciled_at=NULL WHERE batch_id='${value}' AND statement_row_id IS NOT NULL`);",
+              "    sql(`DELETE FROM wlt.settlement_statement_rows WHERE statement_id IN (SELECT id FROM wlt.settlement_statements WHERE batch_id='${value}')`);",
+              "    sql(`DELETE FROM wlt.settlement_statements WHERE batch_id='${value}'`);",
+              "    sql(`DELETE FROM wlt.manual_transfer_executions WHERE batch_id='${value}'`);",
+              "    sql(`DELETE FROM wlt.settlement_batch_items WHERE batch_id='${value}'`);",
+              "    sql(`DELETE FROM wlt.settlement_batches WHERE id='${value}'`);",
+              "  }",
+              "  sql(`DELETE FROM wlt.finance_evidence_documents WHERE idempotency_key IN ('partner-transfer-receipt-${sqlLiteral(suffix)}','partner-settlement-statement-evidence-${sqlLiteral(suffix)}')`);",
+              "",
+          ])
+          text = replace_between(
+              text,
+              "  for (const batchID of settlementBatchIDs) {",
+              "  for (const payoutID of payoutIDs) {",
+              cleanup,
+              "cleanup",
+          )
 
-          if text.count(old_cleanup) != 1:
-              raise SystemExit(f'cleanup replacement count={text.count(old_cleanup)}')
-          if text.count(old_settlement) != 1:
-              raise SystemExit(f'settlement replacement count={text.count(old_settlement)}')
-          text = text.replace(old_cleanup, new_cleanup, 1).replace(old_settlement, new_settlement, 1)
+          settlement = "\n".join([
+              'const settlementBatchCreated = await request(dshBase, "POST", "/dsh/operator/settlement-batches", { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-settlement-batch-${suffix}`), body: { payoutIds: [payoutFullID] } });',
+              'const settlementBatchID = String(settlementBatchCreated.body?.batch?.id || "");',
+              'if (settlementBatchID) settlementBatchIDs.add(settlementBatchID);',
+              'const settlementBatchApproved = await request(dshBase, "POST", `/dsh/operator/settlement-batches/${encodeURIComponent(settlementBatchID)}/approve`, { token: dshToken, headers: serviceHeaders(checkerOperatorID, `partner-settlement-batch-approve-${suffix}`), body: { reason: "independent batch approval" } });',
+              'const settlementBatchFrozen = await request(dshBase, "POST", `/dsh/operator/settlement-batches/${encodeURIComponent(settlementBatchID)}/freeze`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-settlement-batch-freeze-${suffix}`), body: { reason: "freeze approved execution snapshot" } });',
+              'const transferReceiptForm = new FormData();',
+              'transferReceiptForm.set("purpose", "TRANSFER_RECEIPT");',
+              'transferReceiptForm.set("file", new Blob([runtimePNG], { type: "image/png" }), `wallet-receipt-${suffix}.png`);',
+              'const transferReceiptUploaded = await request(dshBase, "POST", "/dsh/operator/finance-evidence-documents", { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-transfer-receipt-${suffix}`), rawBody: transferReceiptForm });',
+              'const transferReceiptDocumentID = String(transferReceiptUploaded.body?.document?.id || "");',
+              'const externalTransferReference = `wallet-transfer-${suffix}`;',
+              'const transferRecorded = await request(dshBase, "POST", `/dsh/operator/settlement-batches/${encodeURIComponent(settlementBatchID)}/transfers`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-transfer-record-${suffix}`), body: { payoutId: payoutFullID, externalTransferReference, receiptDocumentId: transferReceiptDocumentID } });',
+              'const transferID = String(transferRecorded.body?.transfer?.id || "");',
+              'const transferVerified = await request(dshBase, "POST", `/dsh/operator/transfers/${encodeURIComponent(transferID)}/verify`, { token: dshToken, headers: serviceHeaders(checkerOperatorID, `partner-transfer-verify-${suffix}`), body: {} });',
+              'const settlementStatementEvidenceForm = new FormData();',
+              'settlementStatementEvidenceForm.set("purpose", "SETTLEMENT_STATEMENT");',
+              'settlementStatementEvidenceForm.set("file", new Blob([runtimePNG], { type: "image/png" }), `official-wallet-statement-${suffix}.png`);',
+              'const settlementStatementEvidenceUploaded = await request(dshBase, "POST", "/dsh/operator/finance-evidence-documents", { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-settlement-statement-evidence-${suffix}`), rawBody: settlementStatementEvidenceForm });',
+              'const settlementStatementEvidenceDocumentID = String(settlementStatementEvidenceUploaded.body?.document?.id || "");',
+              'const settlementTransactionAt = new Date().toISOString();',
+              'const settlementPeriodDate = settlementTransactionAt.slice(0, 10);',
+              'const settlementStatementRegistered = await request(dshBase, "POST", "/dsh/operator/settlement-statements", { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-settlement-statement-${suffix}`), body: { batchId: settlementBatchID, providerKey: "official_wallet", currency: "YER", periodStart: settlementPeriodDate, periodEnd: settlementPeriodDate, evidenceDocumentId: settlementStatementEvidenceDocumentID } });',
+              'const settlementStatementID = String(settlementStatementRegistered.body?.statement?.id || "");',
+              'const settlementStatementRowRecorded = await request(dshBase, "POST", `/dsh/operator/settlement-statements/${encodeURIComponent(settlementStatementID)}/rows`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-settlement-statement-row-${suffix}`), body: { rowSequence: 1, externalTransferReference, walletIdentifier: destinationWalletIdentifier, amountMinor: 2550, currency: "YER", transactionAt: settlementTransactionAt } });',
+              'const settlementStatementRowID = String(settlementStatementRowRecorded.body?.row?.id || "");',
+              'const transferReconciled = await request(dshBase, "POST", `/dsh/operator/transfers/${encodeURIComponent(transferID)}/reconcile`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-transfer-reconcile-${suffix}`), body: { statementRowId: settlementStatementRowID } });',
+              "",
+          ])
+          text = replace_between(
+              text,
+              'const settlementBatchCreated = await request(dshBase, "POST", "/dsh/operator/settlement-batches"',
+              'const settlementBatchRead = await request(dshBase, "GET", `/dsh/operator/settlement-batches/',
+              settlement,
+              "settlement",
+          )
 
-          old_assertion = '''settlementBatchFrozen.status !== 200 || settlementBatchFrozen.body?.batch?.status !== "FROZEN" || transferRecorded.status !== 201 ||'''
-          new_assertion = '''settlementBatchFrozen.status !== 200 || settlementBatchFrozen.body?.batch?.status !== "FROZEN" || transferReceiptUploaded.status !== 201 || transferReceiptUploaded.body?.document?.purpose !== "TRANSFER_RECEIPT" || transferRecorded.status !== 201 ||'''
-          if text.count(old_assertion) != 1:
-              raise SystemExit(f'assertion replacement count={text.count(old_assertion)}')
-          text = text.replace(old_assertion, new_assertion, 1)
+          replacements = [
+              (
+                  'settlementBatchFrozen.status !== 200 || settlementBatchFrozen.body?.batch?.status !== "FROZEN" || transferRecorded.status !== 201 ||',
+                  'settlementBatchFrozen.status !== 200 || settlementBatchFrozen.body?.batch?.status !== "FROZEN" || transferReceiptUploaded.status !== 201 || transferReceiptUploaded.body?.document?.purpose !== "TRANSFER_RECEIPT" || transferRecorded.status !== 201 ||',
+                  'receipt assertion',
+              ),
+              (
+                  'transferVerified.status !== 200 || transferVerified.body?.transfer?.executionStatus !== "VERIFIED" || transferReconciled.status !== 200 ||',
+                  'transferVerified.status !== 200 || transferVerified.body?.transfer?.executionStatus !== "VERIFIED" || settlementStatementEvidenceUploaded.status !== 201 || settlementStatementEvidenceUploaded.body?.document?.purpose !== "SETTLEMENT_STATEMENT" || settlementStatementRegistered.status !== 201 || settlementStatementRegistered.body?.statement?.batchId !== settlementBatchID || settlementStatementRowRecorded.status !== 201 || settlementStatementRowRecorded.body?.row?.externalTransferReference !== externalTransferReference || transferReconciled.status !== 200 ||',
+                  'statement assertion',
+              ),
+              (
+                  'transferRecorded, transferVerified, transferReconciled, settlementBatchRead',
+                  'transferReceiptUploaded, transferRecorded, transferVerified, settlementStatementEvidenceUploaded, settlementStatementRegistered, settlementStatementRowRecorded, transferReconciled, settlementBatchRead',
+                  'failure context',
+              ),
+          ]
+          for old, new, label in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label} replacement count={count}')
+              text = text.replace(old, new, 1)
 
-          old_assertion2 = '''transferVerified.status !== 200 || transferVerified.body?.transfer?.executionStatus !== "VERIFIED" || transferReconciled.status !== 200 ||'''
-          new_assertion2 = '''transferVerified.status !== 200 || transferVerified.body?.transfer?.executionStatus !== "VERIFIED" || settlementStatementEvidenceUploaded.status !== 201 || settlementStatementEvidenceUploaded.body?.document?.purpose !== "SETTLEMENT_STATEMENT" || settlementStatementRegistered.status !== 201 || settlementStatementRegistered.body?.statement?.batchId !== settlementBatchID || settlementStatementRowRecorded.status !== 201 || settlementStatementRowRecorded.body?.row?.externalTransferReference !== externalTransferReference || transferReconciled.status !== 200 ||'''
-          if text.count(old_assertion2) != 1:
-              raise SystemExit(f'assertion2 replacement count={text.count(old_assertion2)}')
-          text = text.replace(old_assertion2, new_assertion2, 1)
-
-          old_failure_context = '''transferRecorded, transferVerified, transferReconciled, settlementBatchRead'''
-          new_failure_context = '''transferReceiptUploaded, transferRecorded, transferVerified, settlementStatementEvidenceUploaded, settlementStatementRegistered, settlementStatementRowRecorded, transferReconciled, settlementBatchRead'''
-          if text.count(old_failure_context) != 1:
-              raise SystemExit(f'failure-context replacement count={text.count(old_failure_context)}')
-          text = text.replace(old_failure_context, new_failure_context, 1)
+          stale = [
+              'evidenceReference: `wallet-receipt-${suffix}`',
+              'statementReference: `official-wallet-statement-${suffix}`',
+          ]
+          if any(value in text for value in stale):
+              raise SystemExit('stale settlement contract remains')
+          for required in ['receiptDocumentId: transferReceiptDocumentID', 'statementRowId: settlementStatementRowID', '/dsh/operator/finance-evidence-documents', 'SETTLEMENT_STATEMENT']:
+              if required not in text:
+                  raise SystemExit(f'canonical settlement proof missing: {required}')
 
           path.write_text(text, encoding='utf-8')
           PY
