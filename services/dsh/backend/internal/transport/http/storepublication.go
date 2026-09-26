@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -22,9 +23,10 @@ import (
 )
 
 type StorePublicationServer struct {
-	auth    *auth.ServiceToken
-	service *storepublication.Service
-	db      *sql.DB
+	auth     *auth.ServiceToken
+	identity *identity.Client
+	service  *storepublication.Service
+	db       *sql.DB
 }
 
 func NewStorePublication(identityClient *identity.Client, accessToken string, db *sql.DB, wltClient *wlt.Client) (*StorePublicationServer, error) {
@@ -36,7 +38,7 @@ func NewStorePublication(identityClient *identity.Client, accessToken string, db
 	if err != nil {
 		return nil, err
 	}
-	return &StorePublicationServer{auth: authorizer, service: service, db: db}, nil
+	return &StorePublicationServer{auth: authorizer, identity: identityClient, service: service, db: db}, nil
 }
 
 func (s *StorePublicationServer) serviceDB() *sql.DB { return s.db }
@@ -163,25 +165,75 @@ func (s *StorePublicationServer) listPublic(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "serviceCityId is required for scoped discovery")
 		return
 	}
+	favoritesOnly := false
+	if raw := strings.TrimSpace(r.URL.Query().Get("favoritesOnly")); raw != "" {
+		if raw != "true" && raw != "false" {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "favoritesOnly must be true or false")
+			return
+		}
+		favoritesOnly = raw == "true"
+	}
+	favoriteClientActorID := ""
+	if favoritesOnly {
+		token := bearerToken(r)
+		if token == "" {
+			writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "client session is required for favorite Store discovery")
+			return
+		}
+		actor, identityErr := s.identity.ReadSession(r.Context(), token)
+		if identityErr != nil {
+			var apiErr *identityclient.Error
+			if errors.As(identityErr, &apiErr) {
+				writeIdentityError(w, identityErr)
+			} else {
+				writeError(w, http.StatusBadGateway, "IDENTITY_UNAVAILABLE", "identity service is unavailable")
+			}
+			return
+		}
+		if actor.Role != "client" || actor.Surface != "app-client" || strings.TrimSpace(actor.Subject) == "" {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "an active app-client session is required for favorite Store discovery")
+			return
+		}
+		favoriteClientActorID = strings.TrimSpace(actor.Subject)
+	}
+	limit := 20
+	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+		parsedLimit, err := strconv.Atoi(rawLimit)
+		if err != nil || parsedLimit < 1 || parsedLimit > 50 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "limit must be between 1 and 50")
+			return
+		}
+		limit = parsedLimit
+	}
 	var latitude, longitude *float64
 	rawLatitude, rawLongitude := strings.TrimSpace(r.URL.Query().Get("latitude")), strings.TrimSpace(r.URL.Query().Get("longitude"))
 	if rawLatitude != "" || rawLongitude != "" {
 		parsedLatitude, latitudeErr := strconv.ParseFloat(rawLatitude, 64)
 		parsedLongitude, longitudeErr := strconv.ParseFloat(rawLongitude, 64)
-		if latitudeErr != nil || longitudeErr != nil || parsedLatitude < -90 || parsedLatitude > 90 || parsedLongitude < -180 || parsedLongitude > 180 {
+		if latitudeErr != nil || longitudeErr != nil || math.IsNaN(parsedLatitude) || math.IsInf(parsedLatitude, 0) || math.IsNaN(parsedLongitude) || math.IsInf(parsedLongitude, 0) || parsedLatitude < -90 || parsedLatitude > 90 || parsedLongitude < -180 || parsedLongitude > 180 {
 			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "latitude and longitude must be valid coordinates")
 			return
 		}
 		latitude, longitude = &parsedLatitude, &parsedLongitude
 	}
-	stores, err := s.service.ListPublished(r.Context(), serviceCityID, latitude, longitude)
+	page, err := s.service.ListPublished(r.Context(), postgres.PublicStoreListQuery{
+		ServiceCityID:         serviceCityID,
+		Query:                 r.URL.Query().Get("q"),
+		CategoryID:            r.URL.Query().Get("categoryId"),
+		FavoriteClientActorID: favoriteClientActorID,
+		Sort:                  r.URL.Query().Get("sort"),
+		Limit:                 limit,
+		Cursor:                r.URL.Query().Get("cursor"),
+		Latitude:              latitude,
+		Longitude:             longitude,
+	})
 	if err != nil {
 		writeStorePublicationError(w, err)
 		return
 	}
-	values := make([]contract.PublicStoreView, 0, len(stores))
+	values := make([]contract.PublicStoreView, 0, len(page.Stores))
 	categoryIDs := make([]string, 0)
-	for _, store := range stores {
+	for _, store := range page.Stores {
 		values = append(values, toPublicStoreView(store))
 		categoryIDs = append(categoryIDs, store.CategoryIDs...)
 	}
@@ -196,7 +248,7 @@ func (s *StorePublicationServer) listPublic(w http.ResponseWriter, r *http.Reque
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(contract.PublishedStoreListResponse{Stores: values, Categories: categories})
+	_ = json.NewEncoder(w).Encode(contract.PublishedStoreListResponse{Stores: values, Categories: categories, Limit: page.Limit, NextCursor: page.NextCursor})
 }
 
 func (s *StorePublicationServer) readPublic(w http.ResponseWriter, r *http.Request) {
@@ -370,6 +422,8 @@ func writeStorePublicationError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "store was not found")
 	case errors.Is(err, postgres.ErrOperatorStoreInvalidLimit), errors.Is(err, postgres.ErrOperatorStoreInvalidActor), errors.Is(err, postgres.ErrOperatorStoreInvalidQuery), errors.Is(err, postgres.ErrOperatorStoreInvalidState), errors.Is(err, postgres.ErrOperatorStoreInvalidSort), errors.Is(err, postgres.ErrOperatorStoreInvalidCursor):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "store filters, sort, limit, or cursor are invalid")
+	case errors.Is(err, postgres.ErrPublicStoreListInvalidInput):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "published store filters, limit, sort, or cursor are invalid")
 	case errors.Is(err, postgres.ErrServiceCityNotFound):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "serviceCityId must identify an active service city")
 	case errors.Is(err, postgres.ErrPublicationIdempotencyConflict):

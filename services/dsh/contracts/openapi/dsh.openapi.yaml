@@ -2510,6 +2510,9 @@ components:
           type: string
         storeId:
           type: string
+        storeName:
+          type: string
+          description: Canonical DSH Store name for this customer-visible offer.
         variantId:
           type: string
         productId:
@@ -3231,7 +3234,7 @@ components:
 
     PublishedStoreListResponse:
       type: object
-      required: [stores, categories]
+      required: [stores, categories, limit]
       additionalProperties: false
       properties:
         stores:
@@ -3240,9 +3243,16 @@ components:
             $ref: "#/components/schemas/PublicStoreView"
         categories:
           type: array
-          description: Active categories represented by customer-visible offers in the listed published stores.
+          description: Active categories represented by customer-visible offers in this page of eligible published stores.
           items:
             $ref: "#/components/schemas/CatalogCategory"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+        nextCursor:
+          type: string
+          maxLength: 2048
 
     ServiceCity:
       type: object

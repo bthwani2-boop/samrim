@@ -11,8 +11,20 @@ function dshBaseUrl(): string {
 
 const client = () => createDshMobileClient(dshBaseUrl(), { cryptoRandomUUID: () => Crypto.randomUUID() });
 
-export async function listPublishedStores(serviceCityID: string, location?: Readonly<{ latitude: number; longitude: number }>): Promise<PublishedStoreListResponse> {
-  return client().listPublishedStores(serviceCityID, location);
+export async function listPublishedStores(serviceCityID: string, options: Readonly<{
+  q?: string;
+  categoryId?: string;
+  favoritesOnly?: boolean;
+  sort?: "all" | "newest" | "nearest";
+  limit?: number;
+  cursor?: string;
+  location?: Readonly<{ latitude: number; longitude: number }> | undefined;
+}> = {}): Promise<PublishedStoreListResponse> {
+  if (options.favoritesOnly) {
+    const accessToken = await getUsableIdentityAccessToken();
+    return client().listPublishedStores(serviceCityID, { ...options, accessToken });
+  }
+  return client().listPublishedStores(serviceCityID, options);
 }
 
 export async function listPublicPromotions(serviceCityID: string, storeID = ""): Promise<PromotionListResponse> {

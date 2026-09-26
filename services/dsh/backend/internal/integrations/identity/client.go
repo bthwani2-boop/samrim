@@ -86,6 +86,10 @@ func (c *Client) ReadActorRole(ctx context.Context, actorID, role string) (ident
 	return c.inner.ReadRole(ctx, actorID, role)
 }
 
+func (c *Client) ReadActorRoles(ctx context.Context, role string, actorIDs []string) (identityclient.ActorRoleReadBatchResponse, error) {
+	return c.inner.ReadRoles(ctx, identityclient.ActorRoleReadBatchRequest{Role: identityclient.ActorType(role), ActorIds: actorIDs})
+}
+
 func (c *Client) ReadOperatorPermission(ctx context.Context, actorID, permission string) (identityclient.OperatorPermissionAccess, error) {
 	return c.inner.ReadOperatorPermission(ctx, actorID, permission, "")
 }

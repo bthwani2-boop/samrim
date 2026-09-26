@@ -68,6 +68,7 @@ func New(actors *actor.Service, authenticationService *authentication.Service, c
 	mux.HandleFunc("POST /internal/actor-roles/provision", s.internal(s.provisionRole))
 	mux.HandleFunc("POST /internal/bootstrap/operator", s.internal(s.bootstrapFirstOperator))
 	mux.HandleFunc("GET /internal/actor-roles/search", s.internal(s.searchRoles))
+	mux.HandleFunc("POST /internal/actor-roles/read", s.internal(s.readActorRoles))
 	mux.HandleFunc("GET /internal/operators/{actorId}/permissions/{permission}", s.internal(s.readOperatorPermission))
 	mux.HandleFunc("PUT /internal/operators/{actorId}/permissions/{permission}", s.internal(s.setOperatorPermission))
 	mux.HandleFunc("GET /internal/actors/{actorId}/roles/{role}", s.internal(s.getRole))
@@ -510,6 +511,18 @@ func (s *Server) getRole(w http.ResponseWriter, r *http.Request, caller string) 
 		return
 	}
 	writeJSON(w, http.StatusOK, view)
+}
+func (s *Server) readActorRoles(w http.ResponseWriter, r *http.Request, caller string) {
+	var input domain.ActorRoleReadBatchRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	items, err := s.actors.ReadRoles(r.Context(), caller, input.Role, input.ActorIDs)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, domain.ActorRoleReadBatchResponse{Items: items})
 }
 func (s *Server) disableRole(w http.ResponseWriter, r *http.Request, caller string) {
 	s.setRoleEnabled(w, r, caller, false)

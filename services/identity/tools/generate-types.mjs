@@ -66,6 +66,8 @@ const schemaNames = [
   "ProvisionActorRoleRequest",
   "ActorRoleView",
   "ActorRoleSearchPage",
+  "ActorRoleReadBatchRequest",
+  "ActorRoleReadBatchResponse",
   "ActorLegalName",
   "SubmitActorLegalNameRequest",
   "VerifyActorLegalNameRequest",

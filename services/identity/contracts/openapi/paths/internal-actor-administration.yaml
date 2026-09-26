@@ -37,6 +37,21 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /internal/actor-roles/read:
+    post:
+      tags: [internal-actor-roles]
+      operationId: readActorRoles
+      security: [{ internalServiceToken: [] }]
+      description: Bounded role readback for a known set of actor identifiers. Identity remains the sole owner of role admission and current role eligibility.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleReadBatchRequest" } } }
+      responses:
+        "200": { description: Existing actor roles for the requested role and identifiers; unknown identifiers are omitted., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleReadBatchResponse" } } } }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /internal/operators/{actorId}/permissions/{permission}:
     get:
       tags: [internal-actor-roles]

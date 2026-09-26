@@ -61,6 +61,7 @@ var (
 	ErrOperatorStoreInvalidSort       = errors.New("operator store sort is invalid")
 	ErrOperatorStoreInvalidCursor     = errors.New("operator store cursor is invalid")
 	ErrOperatorStoreInvalidActor      = errors.New("operator store actor is invalid")
+	ErrPublicStoreListInvalidInput    = errors.New("public store list input is invalid")
 )
 
 type OperatorStoreSummary struct {
@@ -120,6 +121,8 @@ type PublicStoreRecord struct {
 	DistanceMeters    *int
 	FulfillmentModes  []string
 	CategoryIDs       []string
+	distanceSortValue *float64
+	nameSortKey       string
 }
 
 func HashStorePublicationRequest(storeID, requestedState string, expectedVersion int) string {
@@ -502,84 +505,6 @@ func setStorePublication(ctx context.Context, db *sql.DB, storeID, requestedStat
 		return PublicationResult{}, fmt.Errorf("commit store publication: %w", err)
 	}
 	return PublicationResult{Store: updated}, nil
-}
-
-func ListPublishedStores(ctx context.Context, db *sql.DB, serviceCityIDs ...string) ([]PublicStoreRecord, error) {
-	serviceCityID := ""
-	if len(serviceCityIDs) == 1 {
-		serviceCityID = strings.TrimSpace(serviceCityIDs[0])
-	}
-	return listPublishedStores(ctx, db, serviceCityID, nil, nil)
-}
-
-func ListPublishedStoresNear(ctx context.Context, db *sql.DB, serviceCityID string, latitude, longitude float64) ([]PublicStoreRecord, error) {
-	return listPublishedStores(ctx, db, strings.TrimSpace(serviceCityID), &latitude, &longitude)
-}
-
-func listPublishedStores(ctx context.Context, db *sql.DB, serviceCityID string, latitude, longitude *float64) ([]PublicStoreRecord, error) {
-	if db == nil {
-		return nil, errors.New("DSH database is nil")
-	}
-	if serviceCityID == "" {
-		return nil, ErrServiceCityNotFound
-	}
-	visibleOfferConditions := strings.Join(customerVisibleOfferConditions(), " AND ")
-	distanceExpression := "NULL::double precision"
-	args := []any{serviceCityID}
-	if latitude != nil && longitude != nil {
-		distanceExpression = `CASE WHEN s.delivery_origin_latitude IS NULL OR s.delivery_origin_longitude IS NULL THEN NULL ELSE (6371000.0 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians($2)) * cos(radians(s.delivery_origin_latitude)) * cos(radians(s.delivery_origin_longitude) - radians($3)) + sin(radians($2)) * sin(radians(s.delivery_origin_latitude))))))::double precision END`
-		args = append(args, *latitude, *longitude)
-	}
-	rows, err := db.QueryContext(ctx, `SELECT s.id, s.partner_actor_id, s.name, s.primary_vertical_id, s.version,
-		COALESCE(ratings.rating_average, 0), COALESCE(ratings.rating_count, 0),
-		s.publication_changed_at, s.created_at, s.updated_at, s.fulfillment_modes,
-		ARRAY(WITH RECURSIVE store_categories(id, parent_category_id, vertical_id) AS (
-			SELECT c.id,c.parent_category_id,c.vertical_id FROM dsh.catalog_store_offers o
-			JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
-			JOIN dsh.catalog_products p ON p.id=v.product_id
-			JOIN dsh.catalog_product_categories pc ON pc.product_id=p.id
-			JOIN dsh.catalog_categories c ON c.id=pc.category_id AND c.active=true AND c.vertical_id=p.vertical_id
-			WHERE o.store_id=s.id AND `+visibleOfferConditions+`
-			UNION
-			SELECT parent.id,parent.parent_category_id,parent.vertical_id FROM store_categories child JOIN dsh.catalog_categories parent ON parent.id=child.parent_category_id AND parent.vertical_id=child.vertical_id AND parent.active=true
-		) SELECT DISTINCT id FROM store_categories ORDER BY id),
-		`+distanceExpression+`,
-		sc.id, sc.display_name_ar, sc.active, sc.version, sc.created_at, sc.updated_at
-		FROM dsh.stores s JOIN dsh.service_cities sc ON sc.id=s.service_city_id
-		LEFT JOIN (SELECT store_id, AVG(rating)::double precision AS rating_average, COUNT(*)::int AS rating_count
-			FROM dsh.commerce_order_ratings GROUP BY store_id) ratings ON ratings.store_id=s.id
-		WHERE s.service_city_id=$1 AND sc.active=true AND s.publication_state='published' AND s.publication_changed_at IS NOT NULL
-		AND EXISTS (SELECT 1 FROM dsh.catalog_store_offers o JOIN dsh.catalog_product_variants v ON v.id=o.variant_id JOIN dsh.catalog_products p ON p.id=v.product_id WHERE o.store_id=s.id AND `+visibleOfferConditions+`)
-		ORDER BY `+distanceExpression+` NULLS LAST, s.name ASC, s.id ASC`, args...)
-	if err != nil {
-		return nil, fmt.Errorf("list published stores: %w", err)
-	}
-	stores := make([]PublicStoreRecord, 0)
-	for rows.Next() {
-		var store PublicStoreRecord
-		var city ServiceCityRecord
-		var distance sql.NullFloat64
-		if err := rows.Scan(&store.ID, &store.PartnerActorID, &store.Name, &store.PrimaryVerticalID, &store.Version, &store.RatingAverage, &store.RatingCount, &store.PublishedAt, &store.CreatedAt, &store.UpdatedAt, pq.Array(&store.FulfillmentModes), pq.Array(&store.CategoryIDs), &distance, &city.ID, &city.DisplayNameAr, &city.Active, &city.Version, &city.CreatedAt, &city.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("scan published store: %w", err)
-		}
-		store.ServiceCity = &city
-		if distance.Valid {
-			value := int(distance.Float64)
-			store.DistanceMeters = &value
-		}
-		store.StoreProfileImage, err = ReadStoreProfileMedia(ctx, db, "", store.ID)
-		if err != nil {
-			return nil, err
-		}
-		stores = append(stores, store)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("read published stores: %w", err)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, fmt.Errorf("close published stores: %w", err)
-	}
-	return stores, nil
 }
 
 func ReadPublishedStore(ctx context.Context, db *sql.DB, storeID string, serviceCityIDs ...string) (PublicStoreRecord, error) {

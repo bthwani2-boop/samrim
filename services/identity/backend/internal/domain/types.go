@@ -94,6 +94,15 @@ type ActorSearchPage struct {
 	NextCursor string          `json:"nextCursor,omitempty"`
 }
 
+type ActorRoleReadBatchRequest struct {
+	Role     string   `json:"role"`
+	ActorIDs []string `json:"actorIds"`
+}
+
+type ActorRoleReadBatchResponse struct {
+	Items []ActorRoleView `json:"items"`
+}
+
 type ProvisionActorRoleInput struct {
 	PhoneE164 string `json:"phoneE164"`
 	Role      string `json:"role"`

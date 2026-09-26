@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { currentIdentityState } from "../../src/bootstrap/identity";
 import StoreDiscovery from "../../src/features/store-discovery/store-discovery";
-import { ClientPublicHeader, ClientScrollScreen } from "../../src/shell/client-shell";
+import { ClientPublicHeader } from "../../src/shell/client-shell";
 
 type SearchScope = "stores" | "products";
 
@@ -48,17 +48,15 @@ export default function ClientHomeRoute() {
         searchOpen={searchOpen}
         searchQuery={searchQuery}
       />
-      <ClientScrollScreen>
-        <StoreDiscovery
-          isAuthenticated={isAuthenticated}
-          onRequireAuthentication={!isAuthenticated ? () => router.replace("/?returnTo=/home" as Href) : undefined}
-          onSearchQueryChange={setSearchQuery}
-          onSearchScopeChange={setSearchScope}
-          searchOpen={searchOpen}
-          searchQuery={searchQuery}
-          searchScope={searchScope}
-        />
-      </ClientScrollScreen>
+      <StoreDiscovery
+        isAuthenticated={isAuthenticated}
+        onRequireAuthentication={!isAuthenticated ? () => router.replace("/?returnTo=/home" as Href) : undefined}
+        onSearchQueryChange={setSearchQuery}
+        onSearchScopeChange={setSearchScope}
+        searchOpen={searchOpen}
+        searchQuery={searchQuery}
+        searchScope={searchScope}
+      />
     </View>
   );
 }

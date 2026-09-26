@@ -166,6 +166,7 @@ type CatalogStorefrontSectionRecord struct {
 }
 type CatalogStoreOfferRecord struct {
 	ID, StoreID, VariantID                                                    string
+	StoreName                                                                 string
 	Product                                                                   CatalogProductRecord
 	Variant                                                                   CatalogVariantRecord
 	PriceMinor                                                                int64
@@ -864,7 +865,7 @@ func ReadCatalogCategoryForRegistry(ctx context.Context, db *sql.DB, categoryID 
 }
 
 const catalogProductSelect = `SELECT p.id,p.vertical_id,p.scope,p.store_id,p.canonical_name,p.description,p.brand,p.active,p.version,p.created_at,p.updated_at FROM dsh.catalog_products p`
-const catalogOfferSelect = `SELECT o.id,o.store_id,o.variant_id,o.price_minor,o.currency,o.quantity_policy,o.quantity_min_base_units,o.quantity_max_base_units,o.quantity_step_base_units,o.pricing_basis,o.pricing_unit_base_units,o.inventory_policy,o.inventory_on_hand_base_units,o.inventory_reserved_base_units,o.availability,o.publication_state,o.version,o.created_at,o.updated_at,v.id,v.product_id,v.title,v.measurement_kind,v.base_unit,v.active,v.version,v.created_at,v.updated_at,p.id,p.vertical_id,p.scope,p.store_id,p.canonical_name,p.brand,p.active,p.version,p.created_at,p.updated_at FROM dsh.catalog_store_offers o JOIN dsh.catalog_product_variants v ON v.id=o.variant_id JOIN dsh.catalog_products p ON p.id=v.product_id JOIN dsh.stores s ON s.id=o.store_id`
+const catalogOfferSelect = `SELECT o.id,o.store_id,o.variant_id,o.price_minor,o.currency,o.quantity_policy,o.quantity_min_base_units,o.quantity_max_base_units,o.quantity_step_base_units,o.pricing_basis,o.pricing_unit_base_units,o.inventory_policy,o.inventory_on_hand_base_units,o.inventory_reserved_base_units,o.availability,o.publication_state,o.version,o.created_at,o.updated_at,v.id,v.product_id,v.title,v.measurement_kind,v.base_unit,v.active,v.version,v.created_at,v.updated_at,p.id,p.vertical_id,p.scope,p.store_id,p.canonical_name,p.brand,p.active,p.version,p.created_at,p.updated_at,s.name FROM dsh.catalog_store_offers o JOIN dsh.catalog_product_variants v ON v.id=o.variant_id JOIN dsh.catalog_products p ON p.id=v.product_id JOIN dsh.stores s ON s.id=o.store_id`
 
 type CatalogProductPage struct {
 	Products   []CatalogProductRecord
@@ -2132,7 +2133,7 @@ func scanCatalogOffer(row rowScanner) (CatalogStoreOfferRecord, error) {
 	var p CatalogProductRecord
 	var vertical, store, brand sql.NullString
 	var min, max, step sql.NullInt64
-	err := row.Scan(&item.ID, &item.StoreID, &item.VariantID, &item.PriceMinor, &item.Currency, &item.QuantityPolicy, &min, &max, &step, &item.PricingBasis, &item.PricingUnitBaseUnits, &item.InventoryPolicy, &item.InventoryOnHandBaseUnits, &item.InventoryReservedBaseUnits, &item.Availability, &item.PublicationState, &item.Version, &item.CreatedAt, &item.UpdatedAt, &v.ID, &v.ProductID, &v.Title, &v.MeasurementKind, &v.BaseUnit, &v.Active, &v.Version, &v.CreatedAt, &v.UpdatedAt, &p.ID, &vertical, &p.Scope, &store, &p.CanonicalName, &brand, &p.Active, &p.Version, &p.CreatedAt, &p.UpdatedAt)
+	err := row.Scan(&item.ID, &item.StoreID, &item.VariantID, &item.PriceMinor, &item.Currency, &item.QuantityPolicy, &min, &max, &step, &item.PricingBasis, &item.PricingUnitBaseUnits, &item.InventoryPolicy, &item.InventoryOnHandBaseUnits, &item.InventoryReservedBaseUnits, &item.Availability, &item.PublicationState, &item.Version, &item.CreatedAt, &item.UpdatedAt, &v.ID, &v.ProductID, &v.Title, &v.MeasurementKind, &v.BaseUnit, &v.Active, &v.Version, &v.CreatedAt, &v.UpdatedAt, &p.ID, &vertical, &p.Scope, &store, &p.CanonicalName, &brand, &p.Active, &p.Version, &p.CreatedAt, &p.UpdatedAt, &item.StoreName)
 	if err != nil {
 		return item, err
 	}

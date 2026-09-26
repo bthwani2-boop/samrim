@@ -49,8 +49,8 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 		t.Fatalf("unexpected DSH migration graph size: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.SchemaVersion)
 	}
 	last := records[len(records)-1]
-	if last.Version != postgres.SchemaVersion || last.Name != "069_catalog_store_offer_paging.sql" {
-		t.Fatalf("last DSH migration = v%d %q; want v%d 069_catalog_store_offer_paging.sql", last.Version, last.Name, postgres.SchemaVersion)
+	if last.Version != postgres.SchemaVersion || last.Name != "070_public_store_discovery_pagination.sql" {
+		t.Fatalf("last DSH migration = v%d %q; want v%d 070_public_store_discovery_pagination.sql", last.Version, last.Name, postgres.SchemaVersion)
 	}
 	migrationByName := make(map[string]string, len(records))
 	for index, record := range records {
@@ -73,6 +73,9 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 	}
 	if !strings.Contains(migrationByName["069_catalog_store_offer_paging.sql"], "catalog_store_offers_store_created_registry_idx") || !strings.Contains(migrationByName["069_catalog_store_offer_paging.sql"], "ON dsh.catalog_store_offers (store_id, created_at, id)") {
 		t.Fatal("DSH migration 069 is missing the StoreOffer keyset paging index")
+	}
+	if !strings.Contains(migrationByName["070_public_store_discovery_pagination.sql"], "stores_published_city_created_registry_idx") || !strings.Contains(migrationByName["070_public_store_discovery_pagination.sql"], "stores_published_city_name_search_idx") || !strings.Contains(migrationByName["070_public_store_discovery_pagination.sql"], "gin_trgm_ops") {
+		t.Fatal("DSH migration 070 is missing Store discovery search and ordering indexes")
 	}
 	for _, preserved := range []string{"'correct'", "'correct_and_resubmit'", "'bind-financial-terms'", "'joining_case_corrected'", "'joining_case_corrected_and_resubmitted'", "'joining_case_financial_terms_bound'", "'joining_case_admission_reopened'"} {
 		if !strings.Contains(migrationByName["068_field_operator_partner_admission.sql"], preserved) {

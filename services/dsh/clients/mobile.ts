@@ -777,16 +777,36 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.removeClientFavoriteStore.path.replace("{storeId}", encodeURIComponent(normalized));
       return userRequest<FavoriteStoreResponse>(accessToken, path, dshOperationPaths.removeClientFavoriteStore.method, undefined, mutationHeaders());
     },
-    async listPublishedStores(serviceCityID: string, location?: Readonly<{ latitude: number; longitude: number }>): Promise<PublishedStoreListResponse> {
+    async listPublishedStores(serviceCityID: string, options: Readonly<{
+      q?: string;
+      categoryId?: string;
+      favoritesOnly?: boolean;
+      accessToken?: string;
+      sort?: "all" | "newest" | "nearest";
+      limit?: number;
+      cursor?: string;
+      location?: Readonly<{ latitude: number; longitude: number }> | undefined;
+    }> = {}): Promise<PublishedStoreListResponse> {
       const normalizedCity = serviceCityID.trim();
       if (!normalizedCity) throw new Error("DSH_SERVICE_CITY_REQUIRED");
-      const params = new URLSearchParams({ serviceCityId: normalizedCity });
-      if (location) {
-        assertCoordinates(location.latitude, location.longitude);
-        params.set("latitude", String(location.latitude));
-        params.set("longitude", String(location.longitude));
+      const limit = options.limit ?? 20;
+      if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error("DSH_PUBLIC_STORE_LIMIT_INVALID");
+      const params = new URLSearchParams({ serviceCityId: normalizedCity, sort: options.sort ?? "all", limit: String(limit) });
+      const query = options.q?.trim() ?? "";
+      const categoryID = options.categoryId?.trim() ?? "";
+      const cursor = options.cursor?.trim() ?? "";
+      const favoritesOnly = options.favoritesOnly === true;
+      if (query) params.set("q", query);
+      if (categoryID) params.set("categoryId", categoryID);
+      if (favoritesOnly) params.set("favoritesOnly", "true");
+      if (cursor) params.set("cursor", cursor);
+      if (options.location) {
+        assertCoordinates(options.location.latitude, options.location.longitude);
+        params.set("latitude", String(options.location.latitude));
+        params.set("longitude", String(options.location.longitude));
       }
       const path = `${dshOperationPaths.listPublishedStores.path}?${params.toString()}`;
+      if (favoritesOnly) return userRequest<PublishedStoreListResponse>(options.accessToken ?? "", path, "GET");
       return publicRequest<PublishedStoreListResponse>(path);
     },
     async listPublicPromotions(serviceCityID: string, storeID = ""): Promise<PromotionListResponse> {

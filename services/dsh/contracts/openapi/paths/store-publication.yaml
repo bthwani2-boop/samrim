@@ -120,8 +120,43 @@ paths:
     get:
       operationId: listPublishedStores
       summary: List only client-visible published Stores
+      description: Public discovery is anonymous. When favoritesOnly is true, an active authenticated app-client session is required and the page is restricted to that client's favorite Stores.
+      security:
+        - userBearer: []
+        - {}
       parameters:
         - $ref: "../dsh.openapi.yaml#/components/parameters/ServiceCityIdRequired"
+        - name: q
+          in: query
+          description: Case-insensitive Store-name substring, scoped to the selected Service City.
+          schema: { type: string, maxLength: 160 }
+        - name: categoryId
+          in: query
+          description: Return Stores with at least one currently customer-visible offer in this active category or one of its active descendants.
+          schema: { type: string, maxLength: 128 }
+        - name: favoritesOnly
+          in: query
+          description: Restrict results to the authenticated app-client's favorite Stores.
+          schema: { type: boolean, default: false }
+        - name: sort
+          in: query
+          description: Stable Store ordering. `nearest` requires latitude and longitude; `all` uses distance when coordinates are supplied and name otherwise.
+          schema: { type: string, enum: [all, newest, nearest], default: all }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: cursor
+          in: query
+          description: Opaque keyset cursor bound to city, search, category, sort and coordinates.
+          schema: { type: string, maxLength: 2048 }
+        - name: latitude
+          in: query
+          description: Latitude paired with longitude for distance display or nearest ordering.
+          schema: { type: number, minimum: -90, maximum: 90 }
+        - name: longitude
+          in: query
+          description: Longitude paired with latitude for distance display or nearest ordering.
+          schema: { type: number, minimum: -180, maximum: 180 }
       responses:
         "200":
           description: Published Store discovery result.
@@ -129,6 +164,8 @@ paths:
             application/json:
               schema:
                 $ref: "../dsh.openapi.yaml#/components/schemas/PublishedStoreListResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 

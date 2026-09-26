@@ -97,6 +97,12 @@ func (c *Client) ReadRole(ctx context.Context, actorID, role string) (ActorRoleV
 	return result, err
 }
 
+func (c *Client) ReadRoles(ctx context.Context, input ActorRoleReadBatchRequest) (ActorRoleReadBatchResponse, error) {
+	var result ActorRoleReadBatchResponse
+	err := c.do(ctx, IdentityOperationReadActorRoles.Method, IdentityOperationReadActorRoles.Path, "", input, &result)
+	return result, err
+}
+
 func (c *Client) ReadOperatorPermission(ctx context.Context, actorID, permission, operatorActorID string) (OperatorPermissionAccess, error) {
 	var result OperatorPermissionAccess
 	pathname := identityRoute(IdentityOperationReadOperatorPermission.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "permission", url.PathEscape(strings.TrimSpace(permission)))
