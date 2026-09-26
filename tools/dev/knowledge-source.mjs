@@ -101,17 +101,21 @@ export function ensureKnowledgeRoot({ materialize = true } = {}) {
     return root;
   }
 
-  const cacheParent = path.join(repoRoot, ".cache", "bthwani-knowledge");
-  const root = path.join(cacheParent, pin.commit);
+  const root = path.join(repoRoot, ".cache", "bthwani-knowledge");
 
   if (fs.existsSync(root)) {
-    assertMaterialized(root, pin);
-    return root;
+    try {
+      assertMaterialized(root, pin);
+      return root;
+    } catch (error) {
+      if (!materialize) throw error;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   }
 
   if (!materialize) fail("pinned knowledge is not materialized");
 
-  fs.mkdirSync(cacheParent, { recursive: true });
+  fs.mkdirSync(path.dirname(root), { recursive: true });
   const temp = root + ".tmp-" + process.pid;
   fs.rmSync(temp, { recursive: true, force: true });
   fs.mkdirSync(temp, { recursive: true });
