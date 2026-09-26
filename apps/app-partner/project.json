@@ -33,6 +33,12 @@
           "runtime": "pnpm --version"
         }
       ]
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec biome lint apps/app-partner --diagnostic-level=error"
+      }
     }
   },
   "tags": [
