@@ -27,12 +27,22 @@ jobs:
     env:
       NX_CLOUD_ACCESS_TOKEN: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && secrets.NX_CLOUD_RW_TOKEN || secrets.NX_CLOUD_RO_TOKEN }}
       NX_NO_CLOUD: ${{ github.event_name == 'pull_request' && secrets.NX_CLOUD_RO_TOKEN == '' && 'true' || 'false' }}
+      CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
     steps:
-      - name: Checkout integration candidate
+      - name: Checkout exact candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
+          ref: ${{ env.CANDIDATE_SHA }}
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify exact candidate checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          observed="$(git rev-parse HEAD)"
+          [[ "$observed" == "$CANDIDATE_SHA" ]] || { echo "::error::candidate SHA mismatch expected=$CANDIDATE_SHA observed=$observed"; exit 1; }
+          echo "EXACT_CANDIDATE_SHA=$observed"
 
       - name: Resolve canonical affected SHAs
         uses: nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1
@@ -42,6 +52,7 @@ jobs:
         run: |
           echo "PROOF_BASE=${NX_BASE}"
           echo "PROOF_HEAD=${NX_HEAD}"
+          echo "CANDIDATE_SHA=${CANDIDATE_SHA}"
 
       - name: Set up pinned pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
@@ -138,7 +149,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: static-linux-failure-${{ github.sha }}-${{ github.run_attempt }}
+          name: static-linux-failure-${{ env.CANDIDATE_SHA }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/static-failure-package
           if-no-files-found: error
           retention-days: 14
@@ -157,16 +168,25 @@ jobs:
     env:
       NX_CLOUD_ACCESS_TOKEN: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && secrets.NX_CLOUD_RW_TOKEN || secrets.NX_CLOUD_RO_TOKEN }}
       NX_NO_CLOUD: ${{ github.event_name == 'pull_request' && secrets.NX_CLOUD_RO_TOKEN == '' && 'true' || 'false' }}
+      CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Configure hostile Windows Git default
         shell: pwsh
         run: git config --global core.autocrlf true
 
-      - name: Checkout integration candidate
+      - name: Checkout exact candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
+          ref: ${{ env.CANDIDATE_SHA }}
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify exact candidate checkout
+        shell: pwsh
+        run: |
+          $observed = (git rev-parse HEAD).Trim()
+          if ($observed -ne $env:CANDIDATE_SHA) { throw "candidate SHA mismatch expected=$env:CANDIDATE_SHA observed=$observed" }
+          Write-Host "EXACT_CANDIDATE_SHA=$observed"
 
       - name: Verify LF checkout
         shell: pwsh
@@ -240,7 +260,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: static-windows-failure-${{ github.sha }}-${{ github.run_attempt }}
+          name: static-windows-failure-${{ env.CANDIDATE_SHA }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/static-windows-failure-package
           if-no-files-found: error
           retention-days: 14
