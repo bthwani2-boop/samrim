@@ -68,7 +68,13 @@ func New(actors *actor.Service, authenticationService *authentication.Service, c
 	mux.HandleFunc("POST /internal/actor-roles/provision", s.internal(s.provisionRole))
 	mux.HandleFunc("POST /internal/bootstrap/operator", s.internal(s.bootstrapFirstOperator))
 	mux.HandleFunc("GET /internal/actor-roles/search", s.internal(s.searchRoles))
+	mux.HandleFunc("GET /internal/operators/{actorId}/permissions/{permission}", s.internal(s.readOperatorPermission))
+	mux.HandleFunc("PUT /internal/operators/{actorId}/permissions/{permission}", s.internal(s.setOperatorPermission))
 	mux.HandleFunc("GET /internal/actors/{actorId}/roles/{role}", s.internal(s.getRole))
+	mux.HandleFunc("POST /internal/actors/{actorId}/legal-name", s.internal(s.submitActorLegalName))
+	mux.HandleFunc("GET /internal/actors/{actorId}/verified-legal-name", s.internal(s.readVerifiedActorLegalName))
+	mux.HandleFunc("GET /internal/actors/{actorId}/pending-legal-name", s.internal(s.readPendingActorLegalName))
+	mux.HandleFunc("POST /internal/actors/{actorId}/legal-name/{version}/verify", s.internal(s.verifyActorLegalName))
 	mux.HandleFunc("POST /internal/actors/{actorId}/roles/{role}/disable", s.internal(s.disableRole))
 	mux.HandleFunc("POST /internal/actors/{actorId}/roles/{role}/enable", s.internal(s.enableRole))
 	mux.HandleFunc("POST /internal/actors/{actorId}/roles/{role}/reenrollment", s.internal(s.authorizeReenrollment))
@@ -450,12 +456,52 @@ func (s *Server) searchRoles(w http.ResponseWriter, r *http.Request, caller stri
 		}
 		enabled = &value
 	}
-	page, err := s.actors.Search(r.Context(), caller, domain.ActorSearchInput{Role: strings.TrimSpace(r.URL.Query().Get("role")), Query: strings.TrimSpace(r.URL.Query().Get("q")), Enabled: enabled, Limit: limit, Cursor: strings.TrimSpace(r.URL.Query().Get("cursor"))})
+	page, err := s.actors.Search(r.Context(), caller, domain.ActorSearchInput{Role: strings.TrimSpace(r.URL.Query().Get("role")), Query: strings.TrimSpace(r.URL.Query().Get("q")), Enabled: enabled, Sort: strings.TrimSpace(r.URL.Query().Get("sort")), Limit: limit, Cursor: strings.TrimSpace(r.URL.Query().Get("cursor"))})
 	if err != nil {
 		writeDomainError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, page)
+}
+func (s *Server) readOperatorPermission(w http.ResponseWriter, r *http.Request, caller string) {
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
+		return
+	}
+	actingActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	access, err := s.actors.ReadOperatorPermission(r.Context(), caller, r.PathValue("actorId"), actingActorID, r.PathValue("permission"))
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, access)
+}
+func (s *Server) setOperatorPermission(w http.ResponseWriter, r *http.Request, caller string) {
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
+		return
+	}
+	expectedVersion, err := parseExpectedVersion(r)
+	if err != nil || expectedVersion < 1 {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "a positive X-Expected-Version is required"))
+		return
+	}
+	actingActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	reason := strings.TrimSpace(r.Header.Get("X-Reason"))
+	if actingActorID == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required"))
+		return
+	}
+	var input domain.SetOperatorPermissionRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	access, err := s.actors.SetOperatorPermission(r.Context(), caller, r.PathValue("actorId"), actingActorID, r.PathValue("permission"), input.Enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), reason, expectedVersion)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, access)
 }
 func (s *Server) getRole(w http.ResponseWriter, r *http.Request, caller string) {
 	view, err := s.actors.GetRole(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"))
@@ -516,12 +562,23 @@ func (s *Server) authorizeReenrollment(w http.ResponseWriter, r *http.Request, c
 		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
 		return
 	}
+	expectedRoleVersion, err := parseExpectedVersion(r)
+	if err != nil || expectedRoleVersion < 1 {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "a positive X-Expected-Version is required for reenrollment"))
+		return
+	}
+	expectedActorVersion, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Actor-Version")))
+	if err != nil || expectedActorVersion < 1 {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "a positive X-Expected-Actor-Version is required for reenrollment"))
+		return
+	}
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	reason := strings.TrimSpace(r.Header.Get("X-Reason"))
 	if operatorActorID == "" {
 		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for reenrollment operations"))
 		return
 	}
-	if err := s.actors.AuthorizeReenrollmentWithContext(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"), strings.TrimSpace(r.Header.Get("X-Correlation-ID")), operatorActorID); err != nil {
+	if err := s.actors.AuthorizeReenrollmentWithContext(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"), strings.TrimSpace(r.Header.Get("X-Correlation-ID")), operatorActorID, reason, expectedActorVersion, expectedRoleVersion); err != nil {
 		writeDomainError(w, err)
 		return
 	}

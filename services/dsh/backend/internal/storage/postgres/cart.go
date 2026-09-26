@@ -58,6 +58,18 @@ type CartLineModifierRecord struct {
 	PriceDeltaMinor int64
 }
 
+type ClientOpenCartRecord struct {
+	CartID           string
+	StoreID          string
+	StoreName        string
+	ServiceCityID    string
+	PublicationState string
+	FulfillmentModes []string
+	CartVersion      int
+	LineCount        int
+	UpdatedAt        time.Time
+}
+
 type CartRecord struct {
 	ID        string
 	StoreID   string
@@ -95,6 +107,36 @@ func CalculateCatalogLineAmount(priceMinor, quantity int64, pricingBasis string,
 		return 0, ErrCartQuantityInvalid
 	}
 	return value.Int64(), nil
+}
+
+func ListClientOpenCarts(ctx context.Context, db *sql.DB, clientActorID string) ([]ClientOpenCartRecord, error) {
+	clientActorID = strings.TrimSpace(clientActorID)
+	if db == nil || clientActorID == "" {
+		return nil, errors.New("client open cart scope is invalid")
+	}
+	rows, err := db.QueryContext(ctx, `SELECT c.id,c.store_id,s.name,COALESCE(s.service_city_id,''),s.publication_state,s.fulfillment_modes,c.version,COUNT(l.id)::int,c.updated_at
+		FROM dsh.commerce_carts c
+		JOIN dsh.stores s ON s.id=c.store_id
+		JOIN dsh.commerce_cart_lines l ON l.cart_id=c.id AND l.removed_at IS NULL
+		WHERE c.client_actor_id=$1 AND c.state='open'
+		GROUP BY c.id,s.id
+		ORDER BY c.updated_at DESC,c.id`, clientActorID)
+	if err != nil {
+		return nil, fmt.Errorf("list client open carts: %w", err)
+	}
+	defer rows.Close()
+	carts := make([]ClientOpenCartRecord, 0)
+	for rows.Next() {
+		var item ClientOpenCartRecord
+		if err := rows.Scan(&item.CartID, &item.StoreID, &item.StoreName, &item.ServiceCityID, &item.PublicationState, pq.Array(&item.FulfillmentModes), &item.CartVersion, &item.LineCount, &item.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan client open cart: %w", err)
+		}
+		carts = append(carts, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read client open carts: %w", err)
+	}
+	return carts, nil
 }
 
 func ReadOpenCart(ctx context.Context, db *sql.DB, clientActorID, storeID string) (CartRecord, error) {

@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "mode": "observe",
+  "budgetsMs": {
+    "static-install": 45000,
+    "static-affected": 60000,
+    "static-full": 180000,
+    "windows-install": 60000,
+    "windows-export-affected": 90000,
+    "windows-export-full": 180000,
+    "runtime-install": 45000,
+    "runtime-playwright-install": 90000,
+    "runtime-images": 120000,
+    "runtime-start": 90000,
+    "runtime-integration": 180000
+  }
+}

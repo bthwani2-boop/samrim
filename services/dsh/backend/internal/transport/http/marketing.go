@@ -16,6 +16,7 @@ import (
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
+	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
 type MarketingServer struct {
@@ -123,16 +124,31 @@ func (s *MarketingServer) listOperatorPromotions(w http.ResponseWriter, r *http.
 	if !s.operatorAuthorized(w, r) {
 		return
 	}
-	items, err := postgres.ListPromotions(r.Context(), s.db, false, "", "")
+	query, err := parseOperatorPromotionRegistryQuery(r)
 	if err != nil {
 		writeMarketingError(w, err)
 		return
 	}
-	values := make([]contract.PromotionView, 0, len(items))
-	for _, item := range items {
+	page, err := postgres.ListOperatorPromotionRegistry(r.Context(), s.db, query)
+	if err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	values := make([]contract.PromotionView, 0, len(page.Promotions))
+	for _, item := range page.Promotions {
 		values = append(values, toPromotionView(item))
 	}
-	writeJSON(w, http.StatusOK, contract.PromotionListResponse{Promotions: values})
+	response := contract.OperatorPromotionRegistryResponse{Promotions: values, Limit: query.Limit}
+	if page.HasMore && len(page.Promotions) > 0 {
+		cursor, cursorErr := encodeOperatorPromotionRegistryCursor(page.Promotions[len(page.Promotions)-1], query)
+		if cursorErr != nil {
+			writeMarketingError(w, cursorErr)
+			return
+		}
+		response.NextCursor = cursor
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *MarketingServer) createOperatorPromotion(w http.ResponseWriter, r *http.Request) {
@@ -192,23 +208,43 @@ func (s *MarketingServer) listOperatorDiscoveryContent(w http.ResponseWriter, r 
 	if !s.operatorAuthorized(w, r) {
 		return
 	}
-	items, err := postgres.ListDiscoveryContent(r.Context(), s.db, false, "")
+	query, err := parseOperatorDiscoveryContentRegistryQuery(r)
 	if err != nil {
 		writeMarketingError(w, err)
 		return
 	}
-	values := make([]contract.DiscoveryContentView, 0, len(items))
-	for _, item := range items {
+	page, err := postgres.ListOperatorDiscoveryContentRegistry(r.Context(), s.db, query)
+	if err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	values := make([]contract.DiscoveryContentView, 0, len(page.Items))
+	for _, item := range page.Items {
 		values = append(values, toDiscoveryContentView(item))
 	}
-	writeJSON(w, http.StatusOK, contract.DiscoveryContentListResponse{Items: values})
+	response := contract.OperatorDiscoveryContentRegistryResponse{Items: values, Limit: query.Limit}
+	if page.HasMore && len(page.Items) > 0 {
+		cursor, cursorErr := encodeOperatorDiscoveryContentRegistryCursor(page.Items[len(page.Items)-1], query)
+		if cursorErr != nil {
+			writeMarketingError(w, cursorErr)
+			return
+		}
+		response.NextCursor = cursor
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *MarketingServer) listOperatorDiscoveryContentAnalytics(w http.ResponseWriter, r *http.Request) {
 	if !s.operatorAuthorized(w, r) {
 		return
 	}
-	items, err := postgres.ListDiscoveryContentAnalytics(r.Context(), s.db, strings.TrimSpace(r.URL.Query().Get("contentId")))
+	contentID := strings.TrimSpace(r.URL.Query().Get("contentId"))
+	if contentID == "" || len(contentID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "contentId is required")
+		return
+	}
+	items, err := postgres.ListDiscoveryContentAnalytics(r.Context(), s.db, contentID)
 	if err != nil {
 		writeMarketingError(w, err)
 		return
@@ -354,8 +390,31 @@ func (s *MarketingServer) operatorAuthorized(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
 		return false
 	}
-	if strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")) == "" {
+	actorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if actorID == "" {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return false
+	}
+	if s.identity == nil {
+		writeError(w, http.StatusBadGateway, "IDENTITY_UNAVAILABLE", "Operator permission could not be verified")
+		return false
+	}
+	operator, err := s.identity.ReadActorRole(r.Context(), actorID, "operator")
+	if err != nil {
+		writeIdentityError(w, err)
+		return false
+	}
+	if operator.Role != "operator" || !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active Control Panel Operator session is required")
+		return false
+	}
+	if err := s.identity.RequireOperatorPermission(r.Context(), actorID, "marketing"); err != nil {
+		var identityErr *identityclient.Error
+		if errors.As(err, &identityErr) && identityErr.Status == http.StatusForbidden {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "Marketing permission is required")
+		} else {
+			writeIdentityError(w, err)
+		}
 		return false
 	}
 	return true

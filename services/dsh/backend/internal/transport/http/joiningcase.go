@@ -50,10 +50,13 @@ func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/joining-cases", s.create)
 	mux.HandleFunc("GET /dsh/joining-cases", s.listForOperator)
 	mux.HandleFunc("GET /dsh/joining-cases/self", s.readForPartner)
+	mux.HandleFunc("GET /dsh/partners/actors/{actorId}/joining-case", s.readForPartnerActor)
+	mux.HandleFunc("GET /dsh/partners/actors/{actorId}/stores", s.listPartnerStoresForOperator)
 	mux.HandleFunc("GET /dsh/joining-cases/{caseId}", s.readForOperator)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/submit", s.submit)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/correct-and-resubmit", s.correctAndResubmitForPartner)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/review", s.review)
+	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/financial-terms", s.bindFinancialTerms)
 }
 
 func (s *JoiningCaseServer) listForOperator(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +78,7 @@ func (s *JoiningCaseServer) listForOperator(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
 		return
 	}
-	result, err := s.service.ListForOperator(r.Context(), r.URL.Query().Get("state"), limit, r.URL.Query().Get("cursor"), actingActorID)
+	result, err := s.service.ListForOperator(r.Context(), r.URL.Query().Get("state"), r.URL.Query().Get("q"), r.URL.Query().Get("sort"), limit, r.URL.Query().Get("cursor"), actingActorID)
 	if err != nil {
 		writeJoiningCaseError(w, err)
 		return
@@ -107,7 +110,11 @@ func (s *JoiningCaseServer) create(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.Create(r.Context(), postgres.JoiningCaseRecord{ContactPhoneE164: input.ContactPhoneE164, BusinessName: input.BusinessName, FirstStoreName: input.FirstStoreName, FirstStoreServiceCityID: input.ServiceCityID, FirstStoreVerticalID: input.FirstStoreVerticalID, FirstStoreLatitude: &input.FirstStoreLatitude, FirstStoreLongitude: &input.FirstStoreLongitude}, idempotency, acting, correlation)
+	fulfillmentModes := make([]string, len(input.FirstStoreFulfillmentModes))
+	for index, mode := range input.FirstStoreFulfillmentModes {
+		fulfillmentModes[index] = string(mode)
+	}
+	result, err := s.service.Create(r.Context(), postgres.JoiningCaseRecord{ContactPhoneE164: input.ContactPhoneE164, BusinessName: input.BusinessName, FirstStoreName: input.FirstStoreName, FirstStoreServiceCityID: input.ServiceCityID, FirstStoreVerticalID: input.FirstStoreVerticalID, FirstStoreLatitude: &input.FirstStoreLatitude, FirstStoreLongitude: &input.FirstStoreLongitude, FirstStoreFulfillmentModes: fulfillmentModes}, idempotency, acting, correlation)
 	if err != nil {
 		writeJoiningCaseError(w, err)
 		return
@@ -135,6 +142,42 @@ func (s *JoiningCaseServer) readForPartner(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	s.writeResult(w, r, http.StatusOK, result)
+}
+
+func (s *JoiningCaseServer) readForPartnerActor(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	result, err := s.service.ReadForOperatorByPartnerActor(r.Context(), r.PathValue("actorId"), strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")))
+	if err != nil {
+		writeJoiningCaseError(w, err)
+		return
+	}
+	s.writeResult(w, r, http.StatusOK, result)
+}
+
+func (s *JoiningCaseServer) listPartnerStoresForOperator(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	actingActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
+	if actingActorID == "" || limit < 1 || limit > 50 || len(r.URL.Query().Get("cursor")) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a valid acting operator, page limit, and cursor are required")
+		return
+	}
+	page, err := s.service.ListStoresForOperatorByPartnerActor(r.Context(), r.PathValue("actorId"), actingActorID, limit, r.URL.Query().Get("cursor"))
+	if err != nil {
+		writeJoiningCaseError(w, err)
+		return
+	}
+	stores := make([]contract.PartnerManagedStore, 0, len(page.Stores))
+	for _, store := range page.Stores {
+		stores = append(stores, contract.PartnerManagedStore{ID: store.ID, Name: store.Name, ServiceCityID: nullableString(store.ServiceCityID), PrimaryVerticalID: nullableString(store.PrimaryVerticalID), FulfillmentModes: toFulfillmentModes(store.FulfillmentModes), Version: store.Version, PublicationState: contract.PublicationState(store.PublicationState), CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt})
+	}
+	writeJSON(w, http.StatusOK, contract.PartnerStoreListResponse{Stores: stores, NextCursor: page.NextCursor})
 }
 
 func (s *JoiningCaseServer) submit(w http.ResponseWriter, r *http.Request) {
@@ -168,9 +211,31 @@ func (s *JoiningCaseServer) review(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	decision := string(input.Decision)
-	result, err := s.service.Review(r.Context(), r.PathValue("caseId"), decision, input.CorrectionReason, input.CommissionRateBps, input.SettlementPeriod, expected, idempotency, acting, correlation)
+	result, err := s.service.Review(r.Context(), r.PathValue("caseId"), decision, input.CorrectionReason, input.ExpectedTermsPolicyVersion, expected, idempotency, acting, correlation)
 	if err != nil {
 		log.Printf("joining case review failed case=%s: %v", r.PathValue("caseId"), err)
+		writeJoiningCaseError(w, err)
+		return
+	}
+	s.writeResult(w, r, http.StatusOK, result)
+}
+
+func (s *JoiningCaseServer) bindFinancialTerms(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting, correlation, idempotency, expected, ok := requiredVersionedCaseHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input contract.BindJoiningCaseFinancialTermsRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.service.BindFinancialTerms(r.Context(), r.PathValue("caseId"), input.ExpectedTermsPolicyVersion, expected, idempotency, acting, correlation)
+	if err != nil {
+		log.Printf("joining case financial terms binding failed case=%s: %v", r.PathValue("caseId"), err)
 		writeJoiningCaseError(w, err)
 		return
 	}
@@ -195,12 +260,13 @@ func (s *JoiningCaseServer) correctAndResubmitForPartner(w http.ResponseWriter, 
 }
 
 func (s *JoiningCaseServer) writeResult(w http.ResponseWriter, ctx *http.Request, status int, result postgres.JoiningCaseResult) {
-	view := contract.JoiningCaseView{ID: result.Case.ID, ContactPhoneE164: result.Case.ContactPhoneE164, BusinessName: result.Case.BusinessName, FirstStoreName: result.Case.FirstStoreName, ServiceCityID: result.Case.FirstStoreServiceCityID, FirstStoreVerticalID: result.Case.FirstStoreVerticalID, FirstStoreLatitude: nullableFloatValue(result.Case.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(result.Case.FirstStoreLongitude), Origin: contract.JoiningCaseOrigin(result.Case.Origin), State: contract.JoiningCaseState(result.Case.State), Version: result.Case.Version, CreatedAt: result.Case.CreatedAt, UpdatedAt: result.Case.UpdatedAt}
+	view := contract.JoiningCaseView{ID: result.Case.ID, ContactPhoneE164: result.Case.ContactPhoneE164, BusinessName: result.Case.BusinessName, FirstStoreName: result.Case.FirstStoreName, ServiceCityID: result.Case.FirstStoreServiceCityID, FirstStoreVerticalID: result.Case.FirstStoreVerticalID, FirstStoreLatitude: nullableFloatValue(result.Case.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(result.Case.FirstStoreLongitude), FirstStoreFulfillmentModes: toFulfillmentModes(result.Case.FirstStoreFulfillmentModes), Origin: contract.JoiningCaseOrigin(result.Case.Origin), State: contract.JoiningCaseState(result.Case.State), Version: result.Case.Version, CreatedAt: result.Case.CreatedAt, UpdatedAt: result.Case.UpdatedAt}
 	view.PartnerActorID = result.Case.PartnerActorID
 	view.CommissionRateBps = result.Case.CommissionRateBps
 	view.SettlementPeriod = nullableStringPointer(result.Case.SettlementPeriod)
 	view.FinancialProfileID = nullableStringPointer(result.Case.FinancialProfileID)
 	view.FinancialProfileState = result.Case.FinancialProfileState
+	view.TermsPolicyVersion = nullableStringPointer(result.Case.TermsPolicyVersion)
 	view.StoreProfileImage = toStoreProfileImage(result.Case.StoreProfileImage)
 	view.CorrectionReason = result.Case.CorrectionReason
 	view.ReviewedBy = result.Case.ReviewedBy
@@ -211,13 +277,7 @@ func (s *JoiningCaseServer) writeResult(w http.ResponseWriter, ctx *http.Request
 			writeStorePublicationError(w, err)
 			return
 		}
-		offers, err := postgres.ListCatalogOffers(ctx.Context(), s.db, result.Case.Store.ID, false)
-		if err != nil {
-			log.Printf("joining case response offers failed case=%s store=%s: %v", result.Case.ID, result.Case.Store.ID, err)
-			writeStorageError(w, err)
-			return
-		}
-		storeView := toStoreView(*result.Case.Store, readiness, offers)
+		storeView := toStoreView(*result.Case.Store, readiness)
 		view.Store = &storeView
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -296,10 +356,12 @@ func writeJoiningCaseError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "review decision is invalid")
 	case errors.Is(err, postgres.ErrJoiningCasePartnerAccess):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the partner session does not own this joining case")
-	case errors.Is(err, postgres.ErrJoiningCaseInvalidLimit), errors.Is(err, postgres.ErrJoiningCaseInvalidCursor), errors.Is(err, postgres.ErrJoiningCaseInvalidState):
+	case errors.Is(err, postgres.ErrJoiningCaseInvalidLimit), errors.Is(err, postgres.ErrJoiningCaseInvalidCursor), errors.Is(err, postgres.ErrJoiningCaseInvalidState), errors.Is(err, postgres.ErrJoiningCaseInvalidSort), errors.Is(err, postgres.ErrJoiningCaseInvalidSearch):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "joining case queue parameters are invalid")
 	case errors.Is(err, joiningcase.ErrInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "joining case input is invalid")
+	case errors.Is(err, joiningcase.ErrPartnerFinancialTermsPolicyStale):
+		writeError(w, http.StatusConflict, "POLICY_VERSION_CONFLICT", "partner financial terms changed after they were read; reload the active policy")
 	case errors.Is(err, joiningcase.ErrOperatorNotActive):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active control operator session is required")
 	case errors.Is(err, joiningcase.ErrPartnerSessionForbidden):

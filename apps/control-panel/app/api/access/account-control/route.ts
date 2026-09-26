@@ -1,12 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
-import type { ActorType } from "@bthwani/identity";
-import { dshErrorPayload, dshHttpStatus, isDshClientError, setDshCaptainRoleEnabled, setDshFieldRoleEnabled, setDshPartnerRoleEnabled } from "../../../../src/server/dsh/dsh-bff";
 import { identityErrorPayload, identityHttpStatus, readOperatorSession, setIdentityRoleEnabled, setIdentitySecurityEnabled } from "../../../../src/server/identity/identity-bff";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";
-
-const roles = new Set<ActorType>(["client", "partner", "captain", "field", "operator"]);
 
 function jsonError(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status, headers: { "Cache-Control": "no-store" } });
@@ -17,17 +13,17 @@ export async function POST(request: Request) {
   const identity = await readOperatorSession();
   if (!identity) return jsonError("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return jsonError("FORBIDDEN", "operator access is required", 403);
+  if (!identity.canManageOperatorPermissions) return jsonError("FORBIDDEN", "operator administration is restricted to the initial Operator", 403);
 
   const body = (await request.json().catch(() => null)) as { actorId?: unknown; role?: unknown; action?: unknown; reason?: unknown; expectedVersion?: unknown } | null;
   const actorId = typeof body?.actorId === "string" ? body.actorId.trim() : "";
   const roleValue = typeof body?.role === "string" ? body.role.trim().toLowerCase() : "";
-  const role = roleValue as ActorType;
   const action = typeof body?.action === "string" ? body.action.trim().toLowerCase() : "";
   const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
   const rawExpectedVersion = body?.expectedVersion;
 
-  if (!actorId || !roles.has(role) || !["disable-role", "enable-role", "disable-identity", "enable-identity"].includes(action) || reason.length < 5 || reason.length > 500) {
-    return jsonError("INVALID_INPUT", "actorId, role, action, and a reason of 5 to 500 characters are required", 400);
+  if (!actorId || roleValue !== "operator" || !["disable-role", "enable-role", "disable-identity", "enable-identity"].includes(action) || reason.length < 5 || reason.length > 500) {
+    return jsonError("INVALID_INPUT", "operator actorId, action, and a reason of 5 to 500 characters are required", 400);
   }
   if (rawExpectedVersion === undefined || rawExpectedVersion === null) return jsonError("PRECONDITION_REQUIRED", "expectedVersion is required for concurrency safety", 428);
   const expectedVersion = typeof rawExpectedVersion === "number" ? rawExpectedVersion : typeof rawExpectedVersion === "string" && /^[1-9]\d*$/.test(rawExpectedVersion.trim()) ? Number(rawExpectedVersion.trim()) : NaN;
@@ -36,22 +32,13 @@ export async function POST(request: Request) {
   try {
     const mutationOptions = { operatorActorId: identity.subject, correlationId: randomUUID(), idempotencyKey: randomUUID(), expectedVersion };
     if (action === "disable-role" || action === "enable-role") {
-      const enabled = action === "enable-role";
-      if (role === "partner") {
-        await setDshPartnerRoleEnabled(actorId, { enabled, reason }, mutationOptions);
-      } else if (role === "captain") {
-        await setDshCaptainRoleEnabled(actorId, { enabled, reason }, mutationOptions);
-      } else if (role === "field") {
-        await setDshFieldRoleEnabled(actorId, { enabled, reason }, mutationOptions);
-      } else {
-        await setIdentityRoleEnabled(actorId, role, enabled, reason, mutationOptions);
-      }
+      await setIdentityRoleEnabled(actorId, "operator", action === "enable-role", reason, mutationOptions);
     } else {
       await setIdentitySecurityEnabled(actorId, action === "enable-identity", reason, mutationOptions);
     }
     return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    const payload = isDshClientError(error) ? dshErrorPayload(error) : identityErrorPayload(error);
-    return jsonError(payload.code, payload.message, isDshClientError(error) ? dshHttpStatus(error) : identityHttpStatus(error));
+    const payload = identityErrorPayload(error);
+    return jsonError(payload.code, payload.message, identityHttpStatus(error));
   }
 }

@@ -1,0 +1,37 @@
+/* Dense operator registry shared by the Partners route. */
+:global(.partner-directory) { display: grid; gap: 12px; min-width: 0; }
+:global(.partner-page-heading) { display: flex; justify-content: space-between; align-items: end; gap: 18px; }
+:global(.partner-page-heading .workspace-page-heading-copy) { flex: 1 1 auto; min-width: 0; }
+:global(.partner-page-heading .lead) { margin-bottom: 0; }
+:global(.partner-page-heading .button) { flex: 0 0 auto; width: auto; min-width: 140px; }
+:global(.partner-registry-toolbar) { display: grid; grid-template-columns: minmax(220px, 1.5fr) minmax(150px, .8fr) minmax(160px, .8fr) auto; align-items: end; gap: 10px; padding: 12px; border: 1px solid var(--border-subtle); border-radius: 14px; background: var(--surface-base); }
+:global(.partner-registry-toolbar .field-label) { margin: 0; min-width: 0; }
+:global(.partner-registry-search form) { display: flex; align-items: end; gap: 8px; }
+:global(.partner-registry-search .field-label) { flex: 1; min-width: 0; }
+:global(.partner-registry-search input), :global(.partner-registry-toolbar select) { min-height: 40px; }
+:global(.partner-active-filters), :global(.partner-registry-summary), :global(.partner-registry-summary > div), :global(.partner-registry-pagination) { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+:global(.partner-active-filters) { min-height: 32px; }
+:global(.partner-registry-summary) { justify-content: space-between; color: var(--text-muted); font-size: 13px; }
+:global(.partner-registry-summary > div), :global(.partner-registry-summary > fieldset) { color: var(--text-primary); }
+:global(.partner-registry-bulk-actions) { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; }
+:global(.partner-registry-summary .button), :global(.partner-active-filters .button), :global(.partner-registry-pagination .button), :global(.partner-registry-search .button) { width: auto; min-height: 36px; padding: 7px 12px; }
+:global(.partner-registry-table-wrap) { overflow: auto; border: 1px solid var(--border-subtle); border-radius: 14px; background: var(--surface-base); }
+:global(.partner-registry-table) { min-width: 720px; }
+:global(.partner-registry-table th), :global(.partner-registry-table td) { padding: 10px 12px; }
+:global(.partner-registry-table a), :global(.partner-row-action) { color: var(--interactive-text); text-underline-offset: 3px; }
+:global(.partner-registry-table input[type="checkbox"]) { width: 17px; height: 17px; accent-color: var(--interactive); }
+:global(.partner-row-action) { display: inline-flex; align-items: center; gap: 6px; font-weight: 750; white-space: nowrap; }
+:global(.partner-registry-pagination) { justify-content: center; }
+:global(.partner-registry-pagination > span) { min-width: 36px; text-align: center; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+@media (max-width: 900px) {
+  :global(.partner-registry-toolbar) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  :global(.partner-registry-search) { grid-column: 1 / -1; }
+}
+@media (max-width: 620px) {
+  :global(.partner-page-heading) { align-items: flex-start; flex-direction: column; }
+  :global(.partner-page-heading .button) { align-self: stretch; }
+  :global(.partner-registry-toolbar) { grid-template-columns: 1fr; }
+  :global(.partner-registry-search) { grid-column: auto; }
+  :global(.partner-registry-search form) { align-items: stretch; flex-direction: column; }
+  :global(.partner-registry-summary) { align-items: flex-start; flex-direction: column; }
+}

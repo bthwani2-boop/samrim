@@ -89,7 +89,7 @@ func MarkFinancialHandoffPosted(ctx context.Context, db *sql.DB, item FinancialH
 	defer func() { _ = tx.Rollback() }()
 
 	switch item.EffectType {
-	case "DELIVERY_SETTLEMENT":
+	case "DELIVERY_SETTLEMENT", "STORE_PICKUP_COLLECTION", "PARTNER_CAPTAIN_STORE_CASH_COLLECTION":
 		var current string
 		if err := tx.QueryRowContext(ctx, `SELECT payment_state FROM dsh.commerce_orders WHERE id=$1 AND payment_intent_id=$2 FOR UPDATE`, item.OrderID, item.PaymentIntentID).Scan(&current); err != nil {
 			return err
@@ -110,6 +110,18 @@ func MarkFinancialHandoffPosted(ctx context.Context, db *sql.DB, item FinancialH
 			VALUES('payment_collected',$1,$2,$3,$4,$5,'REQUIRES_COLLECTION','COLLECTED',$6)
 			ON CONFLICT (event_type,idempotency_key) DO NOTHING`, item.IdempotencyKey, item.CorrelationID, item.ActingActorID, item.OrderID, item.PaymentIntentID, item.AmountMinor); err != nil {
 			return err
+		}
+		if item.EffectType == "PARTNER_CAPTAIN_STORE_CASH_COLLECTION" {
+			result, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_order_store_cash_handoffs SET state='SETTLED',settled_at=clock_timestamp(),version=version+1,updated_at=clock_timestamp() WHERE order_id=$1 AND state='STORE_CONFIRMED' AND assignment_id=$2`, item.OrderID, item.SourceRef)
+			if err != nil {
+				return err
+			}
+			if affected, err := result.RowsAffected(); err != nil || affected != 1 {
+				if err != nil {
+					return err
+				}
+				return ErrPaymentStateConflict
+			}
 		}
 	case "PAYMENT_CANCEL":
 		var current string

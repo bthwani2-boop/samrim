@@ -44,11 +44,11 @@ function isCredentialFailure(value: unknown): boolean {
 }
 
 function safeReturnTo(value: string | string[] | undefined): Href {
-  return resolveInternalReturnPath(value, "/home", /^\/(?:home|account|wallet|multi-store-checkout|orders(?:\/[A-Za-z0-9._~%-]+)?|store\/[A-Za-z0-9._~%-]+|cart\/[A-Za-z0-9._~%-]+)$/u) as Href;
+  return resolveInternalReturnPath(value, "/home", /^\/(?:home|account|wallet|addresses|multi-store-checkout|orders(?:\/[A-Za-z0-9._~%-]+)?|store\/[A-Za-z0-9._~%-]+|cart\/[A-Za-z0-9._~%-]+)$/u) as Href;
 }
 
 export default function IdentityGate() {
-  const { focus, returnTo } = useLocalSearchParams<{ focus?: string | string[]; returnTo?: string | string[] }>();
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string | string[] }>();
   const theme = useAppearanceTheme();
   const { copy } = identityPresentation;
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -68,6 +68,9 @@ export default function IdentityGate() {
   const [focusedField, setFocusedField] = useState<FieldName | null>(null);
   const [loginFailed, setLoginFailed] = useState(false);
   const [authPromptVisible, setAuthPromptVisible] = useState(false);
+  const [discoverySearchOpen, setDiscoverySearchOpen] = useState(false);
+  const [discoverySearchQuery, setDiscoverySearchQuery] = useState("");
+  const [discoverySearchScope, setDiscoverySearchScope] = useState<"stores" | "products">("stores");
 
   const restore = useCallback(async () => {
     setBusy(true);
@@ -115,7 +118,7 @@ export default function IdentityGate() {
     setAuthPromptVisible(true);
   }, [selectMode]);
 
-  const publicDiscovery = <ServiceCityScope><View style={styles.publicDiscovery}><ClientPublicHeader /><View style={styles.publicDiscoveryContent}><StoreDiscovery autoFocusSearch={focus === "search"} isAuthenticated={state.kind === "authenticated"} onRequireAuthentication={state.kind === "signed_out" ? requestAuthentication : undefined} /></View></View></ServiceCityScope>;
+  const publicDiscovery = <ServiceCityScope><View style={styles.publicDiscovery}><ClientPublicHeader onSearchOpenChange={(open) => { setDiscoverySearchOpen(open); if (!open) { setDiscoverySearchQuery(""); setDiscoverySearchScope("stores"); } }} onSearchQueryChange={setDiscoverySearchQuery} searchOpen={discoverySearchOpen} searchQuery={discoverySearchQuery} /><View style={styles.publicDiscoveryContent}><StoreDiscovery isAuthenticated={state.kind === "authenticated"} onRequireAuthentication={state.kind === "signed_out" ? requestAuthentication : undefined} searchOpen={discoverySearchOpen} searchQuery={discoverySearchQuery} searchScope={discoverySearchScope} onSearchScopeChange={setDiscoverySearchScope} onSearchQueryChange={setDiscoverySearchQuery} /></View></View></ServiceCityScope>;
 
   function resetSignedOutAuthState() {
     setMode("login");

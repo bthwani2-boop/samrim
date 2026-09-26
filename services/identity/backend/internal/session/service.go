@@ -14,18 +14,28 @@ import (
 )
 
 type Service struct {
-	db            *sql.DB
-	now           func() time.Time
-	refreshSecret []byte
-	development   bool
+	db                  *sql.DB
+	now                 func() time.Time
+	refreshSecret       []byte
+	development         bool
+	developmentActorIDs map[string]string
 }
 
 const refreshRaceGrace = 5 * time.Second
 
 const minimumAccessLifetime = time.Second
 
-func New(db *sql.DB, refreshSecret []byte, development bool) *Service {
-	return &Service{db: db, now: time.Now, refreshSecret: append([]byte(nil), refreshSecret...), development: development}
+func New(db *sql.DB, refreshSecret []byte, development bool, developmentActorIDs map[string]string) *Service {
+	normalizedActorIDs := make(map[string]string, len(developmentActorIDs))
+	for role, actorID := range developmentActorIDs {
+		role = strings.ToLower(strings.TrimSpace(role))
+		actorID = strings.TrimSpace(actorID)
+		if role == "" || actorID == "" {
+			continue
+		}
+		normalizedActorIDs[role] = actorID
+	}
+	return &Service{db: db, now: time.Now, refreshSecret: append([]byte(nil), refreshSecret...), development: development, developmentActorIDs: normalizedActorIDs}
 }
 
 func (s *Service) CreateDevelopment(ctx context.Context, role, clientInstanceId string) (domain.TokenPair, error) {
@@ -40,55 +50,31 @@ func (s *Service) CreateDevelopment(ctx context.Context, role, clientInstanceId 
 	if err != nil {
 		return domain.TokenPair{}, domain.ErrInvalidInput
 	}
+	actorID := strings.TrimSpace(s.developmentActorIDs[role])
+	if actorID == "" {
+		return domain.TokenPair{}, domain.ErrNotFound
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.TokenPair{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	rows, err := tx.QueryContext(ctx, `SELECT r.actor_id,
-r.enabled,
-a.security_enabled,
-(r.activated_at IS NOT NULL),
-EXISTS(SELECT 1 FROM identity_password_credentials c WHERE c.actor_id=r.actor_id AND c.role=r.role),
-EXISTS(SELECT 1 FROM identity_webauthn_credentials w WHERE w.actor_id=r.actor_id AND w.revoked_at IS NULL)
-FROM identity_actor_roles r
-JOIN identity_actors a ON a.id=r.actor_id
-WHERE r.role=$1
-ORDER BY r.created_at,r.actor_id
-FOR UPDATE OF r,a`, role)
+	readiness, err := readRoleSessionReadinessTx(ctx, tx, actorID, role)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.TokenPair{}, domain.ErrNotFound
+	}
 	if err != nil {
 		return domain.TokenPair{}, err
 	}
-	var actorID string
-	for rows.Next() {
-		var candidateActorID string
-		var readiness roleSessionReadiness
-		if err := rows.Scan(&candidateActorID, &readiness.enabled, &readiness.securityEnabled, &readiness.activated, &readiness.passwordCredential, &readiness.passkeyCredential); err != nil {
-			_ = rows.Close()
-			return domain.TokenPair{}, err
-		}
-		actorID, err = selectDevelopmentSessionActor(role, actorID, candidateActorID, readiness)
-		if err != nil {
-			_ = rows.Close()
-			return domain.TokenPair{}, err
-		}
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return domain.TokenPair{}, err
-	}
-	if err := rows.Close(); err != nil {
-		return domain.TokenPair{}, err
-	}
-	if actorID == "" {
-		return domain.TokenPair{}, domain.ErrNotFound
+	if !roleSessionReady(role, readiness) {
+		return domain.TokenPair{}, domain.ErrConflict
 	}
 	pair, err := s.createTx(ctx, tx, actorID, role, device)
 	if err != nil {
 		return domain.TokenPair{}, err
 	}
-	if err := auditTx(ctx, tx, "session.development_created", actorID, "development-local", "success", "", map[string]any{"sessionId": pair.Identity.SessionID, "role": role}); err != nil {
+	if err := auditTx(ctx, tx, "session.development_created", actorID, "development-local", "success", "", map[string]any{"sessionId": pair.Identity.SessionID, "role": role, "configuredActorId": actorID}); err != nil {
 		return domain.TokenPair{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -119,16 +105,6 @@ func roleSessionReady(role string, readiness roleSessionReadiness) bool {
 	default:
 		return false
 	}
-}
-
-func selectDevelopmentSessionActor(role, selectedActorID, candidateActorID string, readiness roleSessionReadiness) (string, error) {
-	if !roleSessionReady(role, readiness) {
-		return selectedActorID, nil
-	}
-	if selectedActorID != "" {
-		return "", domain.ErrConflict
-	}
-	return candidateActorID, nil
 }
 
 func readRoleSessionReadinessTx(ctx context.Context, tx *sql.Tx, actorID, role string) (roleSessionReadiness, error) {
@@ -188,7 +164,11 @@ func (s *Service) createTx(ctx context.Context, tx *sql.Tx, actorID, role, devic
 	if _, err := tx.ExecContext(ctx, "INSERT INTO identity_sessions(id,actor_id,role,access_token_hash,refresh_token_hash,client_instance_id_hash,access_expires_at,refresh_expires_at,absolute_expires_at,last_used_at,version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,1)", sessionID, actorID, role, identitysecurity.SHA256Hex(access), identitysecurity.SHA256Hex(refreshRandom), identitysecurity.SHA256Hex(device), accessExpiry, refreshExpiry, absoluteExpiry, now); err != nil {
 		return domain.TokenPair{}, err
 	}
-	return domain.TokenPair{AccessToken: access, RefreshToken: sessionID + "." + refreshRandom, AccessExpiry: accessExpiry, Identity: identityOf(actorID, sessionID, role, accessExpiry)}, nil
+	identity, err := s.identityOf(ctx, tx, actorID, sessionID, role, accessExpiry)
+	if err != nil {
+		return domain.TokenPair{}, err
+	}
+	return domain.TokenPair{AccessToken: access, RefreshToken: sessionID + "." + refreshRandom, AccessExpiry: accessExpiry, Identity: identity}, nil
 }
 
 func (s *Service) ResolveAccessToken(ctx context.Context, accessToken string) (domain.ActorIdentity, error) {
@@ -210,7 +190,7 @@ JOIN identity_actor_roles r ON r.actor_id=s.actor_id AND r.role=s.role JOIN iden
 	if _, err := s.db.ExecContext(ctx, "UPDATE identity_sessions SET last_used_at=clock_timestamp() WHERE id=$1 AND revoked_at IS NULL", sessionID); err != nil {
 		return domain.ActorIdentity{}, err
 	}
-	return identityOf(actorID, sessionID, role, expires), nil
+	return s.identityOf(ctx, s.db, actorID, sessionID, role, expires)
 }
 
 func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (domain.TokenPair, error) {
@@ -287,7 +267,10 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 			return domain.TokenPair{}, err
 		}
 		if historicalRequestID.Valid && historicalRequestID.String == requestID {
-			pair := s.derivedRefreshPair(sessionID, actorID, role, deviceHash, version, accessExpiry)
+			pair, err := s.derivedRefreshPair(ctx, tx, sessionID, actorID, role, deviceHash, version, accessExpiry)
+			if err != nil {
+				return domain.TokenPair{}, err
+			}
 			if !identitysecurity.ConstantTimeHexEqual(currentAccessHash, identitysecurity.SHA256Hex(pair.AccessToken)) {
 				return domain.TokenPair{}, domain.ErrInvalidRefresh
 			}
@@ -325,7 +308,10 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
 	nextVersion := version + 1
-	pair := s.derivedRefreshPair(sessionID, actorID, role, deviceHash, nextVersion, nextAccessExpiry)
+	pair, err := s.derivedRefreshPair(ctx, tx, sessionID, actorID, role, deviceHash, nextVersion, nextAccessExpiry)
+	if err != nil {
+		return domain.TokenPair{}, err
+	}
 	if _, err := tx.ExecContext(ctx, "INSERT INTO identity_refresh_token_history(session_id,token_hash,refresh_request_id) VALUES($1,$2,$3)", sessionID, currentHash, requestID); err != nil {
 		return domain.TokenPair{}, err
 	}
@@ -436,16 +422,45 @@ func (s *Service) RevokeRoleAll(ctx context.Context, actorID, role, principal, c
 	return tx.Commit()
 }
 
-func identityOf(actorID, sessionID, role string, expires time.Time) domain.ActorIdentity {
+func (s *Service) identityOf(ctx context.Context, source interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}, actorID, sessionID, role string, expires time.Time) (domain.ActorIdentity, error) {
 	surface, _ := domain.SurfaceForRole(role)
-	return domain.ActorIdentity{Subject: actorID, SessionID: sessionID, Role: role, Surface: surface, ExpiresAt: expires}
+	identity := domain.ActorIdentity{Subject: actorID, SessionID: sessionID, Role: role, Surface: surface, ExpiresAt: expires}
+	if role != "operator" {
+		return identity, nil
+	}
+	rows, err := source.QueryContext(ctx, `SELECT permission FROM identity_operator_permissions WHERE actor_id=$1 AND enabled=true ORDER BY permission`, actorID)
+	if err != nil {
+		return domain.ActorIdentity{}, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var permission string
+		if err := rows.Scan(&permission); err != nil {
+			return domain.ActorIdentity{}, err
+		}
+		identity.Permissions = append(identity.Permissions, permission)
+	}
+	if err := rows.Err(); err != nil {
+		return domain.ActorIdentity{}, err
+	}
+	if err := source.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM identity_bootstrap_state WHERE id=1 AND initial_operator_actor_id=$1)`, actorID).Scan(&identity.CanManageOperatorPermissions); err != nil {
+		return domain.ActorIdentity{}, err
+	}
+	return identity, nil
 }
 
-func (s *Service) derivedRefreshPair(sessionID, actorID, role, deviceHash string, version int, accessExpiry time.Time) domain.TokenPair {
+func (s *Service) derivedRefreshPair(ctx context.Context, tx *sql.Tx, sessionID, actorID, role, deviceHash string, version int, accessExpiry time.Time) (domain.TokenPair, error) {
 	versionValue := strconv.Itoa(version)
 	access := identitysecurity.HMAC256Hex(s.refreshSecret, "identity-session-access-v1", sessionID, versionValue, deviceHash)
 	refresh := identitysecurity.HMAC256Hex(s.refreshSecret, "identity-session-refresh-v1", sessionID, versionValue, deviceHash)
-	return domain.TokenPair{AccessToken: access, RefreshToken: sessionID + "." + refresh, AccessExpiry: accessExpiry, Identity: identityOf(actorID, sessionID, role, accessExpiry)}
+	identity, err := s.identityOf(ctx, tx, actorID, sessionID, role, accessExpiry)
+	if err != nil {
+		return domain.TokenPair{}, err
+	}
+	return domain.TokenPair{AccessToken: access, RefreshToken: sessionID + "." + refresh, AccessExpiry: accessExpiry, Identity: identity}, nil
 }
 func shouldCutOverLegacyDevelopmentOperatorSession(role string, createdAt, refreshExpiry, absoluteExpiry time.Time, development bool) bool {
 	if !development || role != "operator" {

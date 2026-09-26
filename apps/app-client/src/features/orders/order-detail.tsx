@@ -1,5 +1,5 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniIcon, BthwaniMap, BthwaniSectionHeader, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { createDshMobileClient, type DeliveryProofResponse, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderRatingResponse, type OrderTrackingResponse, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
@@ -59,7 +59,7 @@ export default function ClientOrderDetail() {
   }, [orderId]);
 
   const refreshRating = useCallback(async (orderState: Order["state"]) => {
-    if (!orderId.trim() || orderState !== "DELIVERED") {
+    if (!orderId.trim() || (orderState !== "DELIVERED" && orderState !== "PICKED_UP")) {
       setOrderRating({ kind: "hidden" });
       return;
     }
@@ -97,7 +97,7 @@ export default function ClientOrderDetail() {
       const order = (await client().readOrder(token, orderId)).order;
       setState({ kind: "ready", order });
       await refreshDeliveryProof();
-      await refreshTracking();
+      if (order.fulfillmentMode === "BTHWANI_CAPTAIN") await refreshTracking();
       await refreshRating(order.state);
     } catch (error) {
       console.error("DSH client order detail read failed", error);
@@ -109,7 +109,7 @@ export default function ClientOrderDetail() {
   }, [orderId, refreshDeliveryProof, refreshRating, refreshTracking]);
 
   const submitRating = useCallback(async () => {
-    if (state.kind !== "ready" || state.order.state !== "DELIVERED" || selectedRating < 1 || ratingSubmitting) return;
+    if (state.kind !== "ready" || (state.order.state !== "DELIVERED" && state.order.state !== "PICKED_UP") || selectedRating < 1 || ratingSubmitting) return;
     setRatingSubmitting(true);
     setRatingError("");
     try {
@@ -161,7 +161,7 @@ export default function ClientOrderDetail() {
   }, [identityState.kind, load]);
 
   useEffect(() => {
-    if (state.kind !== "ready" || ["DELIVERED", "DELIVERY_FAILED", "CANCELLED"].includes(state.order.state)) return;
+    if (state.kind !== "ready" || state.order.fulfillmentMode === "CUSTOMER_PICKUP" || ["DELIVERED", "DELIVERY_FAILED", "CANCELLED", "PICKED_UP"].includes(state.order.state)) return;
     const timer = setInterval(() => { void refreshTracking(); }, 30_000);
     return () => clearInterval(timer);
   }, [refreshTracking, state]);
@@ -171,26 +171,31 @@ export default function ClientOrderDetail() {
   if (state.kind === "error") return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر قراءة تفاصيل الطلب</Text><Text style={styles.muted}>قد تكون الجلسة أو الطلب غير متاحين الآن.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /><BthwaniButton label="العودة إلى الطلبات" onPress={() => router.back()} variant="secondary" /></View>;
 
   const { order } = state;
+  const isStorePickup = order.fulfillmentMode === "CUSTOMER_PICKUP";
+  const proofLabel = isStorePickup ? "رمز الاستلام" : "رمز التسليم";
+  const proofAvailableMessage = isStorePickup ? "أظهر الرمز لموظف المتجر بعد تجهيز طلبك." : "لا تشارك الرمز إلا مع الكابتن عند وصول الطلب.";
+  const proofWaitingMessage = isStorePickup ? "سيظهر رمز الاستلام بعد جاهزية الطلب." : "سيظهر رمز التسليم عندما يصبح الطلب في عهدة الكابتن.";
+  const completedState = order.state === "DELIVERED" || order.state === "PICKED_UP";
   return (
     <View style={styles.container} accessibilityLabel="تفاصيل الطلب">
       <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى الطلبات" onPress={() => router.back()} style={styles.backButton}><BthwaniIcon name="back" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.back}>طلباتي</Text></Pressable>
       <BthwaniSurface tone="raised" style={styles.summary}>
         <View style={styles.summaryIcon}><BthwaniIcon name="orders" color={theme.onAction} size={sizing.iconXl} /></View>
-        <View style={styles.summaryCopy}><Text style={styles.eyebrow}>طلبك</Text><Text style={styles.title}>طلب {formatOrderDate(order.createdAt)}</Text><Text style={styles.muted}>{order.addressText}</Text></View>
+        <View style={styles.summaryCopy}><Text style={styles.eyebrow}>طلبك</Text><Text style={styles.title}>طلب {formatOrderDate(order.createdAt)}</Text><Text style={styles.muted}>{isStorePickup ? `الاستلام من ${order.storeName}` : order.addressText}</Text></View>
       </BthwaniSurface>
-      <View style={styles.status}><View style={styles.statusCopy}><Text style={styles.statusTitle}>الحالة الحالية</Text><BthwaniStatusBadge icon={order.state === "DELIVERED" ? "success" : order.state === "DELIVERY_FAILED" ? "warning" : order.state === "CANCELLED" ? "warning" : "orders"} label={orderStateLabel(order.state)} tone={order.state === "DELIVERED" ? "success" : order.state === "DELIVERY_FAILED" || order.state === "CANCELLED" ? "danger" : "info"} /><Text style={styles.statusTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{paymentMethodLabel(order.paymentMethod)} · {paymentStateLabel(order.paymentState)}</Text></View><View style={styles.actionStack}><BthwaniButton accessibilityLabel="تحديث حالة الطلب" busy={refreshing} label="تحديث الحالة" onPress={() => void load(true)} variant="secondary" />{order.state === "CREATED" ? <BthwaniButton accessibilityLabel="إلغاء الطلب" busy={cancelling} disabled={cancelling || refreshing} label="إلغاء الطلب" onPress={requestCancel} variant="danger" /> : null}</View></View>
+      <View style={styles.status}><View style={styles.statusCopy}><Text style={styles.statusTitle}>الحالة الحالية</Text><BthwaniStatusBadge icon={order.state === "DELIVERED" ? "success" : order.state === "DELIVERY_FAILED" ? "warning" : order.state === "CANCELLED" ? "warning" : "orders"} label={orderStateLabel(order.state)} tone={order.state === "DELIVERED" ? "success" : order.state === "DELIVERY_FAILED" || order.state === "CANCELLED" ? "danger" : "info"} /><Text style={styles.statusTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{paymentMethodLabel(order.paymentMethod, order.fulfillmentMode)} · {paymentStateLabel(order.paymentState, order.paymentMethod, order.fulfillmentMode)}</Text></View><View style={styles.actionStack}><BthwaniButton accessibilityLabel="تحديث حالة الطلب" busy={refreshing} label="تحديث الحالة" onPress={() => void load(true)} variant="secondary" />{order.state === "CREATED" ? <BthwaniButton accessibilityLabel="إلغاء الطلب" busy={cancelling} disabled={cancelling || refreshing} label="إلغاء الطلب" onPress={requestCancel} variant="danger" /> : null}</View></View>
       {refreshError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{refreshError}</Text> : null}
       {cancelError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{cancelError}</Text> : null}
       <OrderConversation orderId={order.id} />
-      <BthwaniSectionHeader title="إثبات التسليم" subtitle="يؤكّد العميل الرمز للكابتن عند استلام الطلب" />
+      <BthwaniSectionHeader title={isStorePickup ? "رمز الاستلام الذاتي من المتجر" : "إثبات التسليم"} subtitle={isStorePickup ? "أظهر الرمز لموظف المتجر عند استلامك الطلب" : "يؤكّد العميل الرمز للكابتن عند استلام الطلب"} />
       <BthwaniSurface tone="base" style={styles.proofSurface}>
-        {deliveryProof.kind === "loading" ? <Text style={styles.muted}>جارٍ تجهيز رمز التسليم…</Text> : null}
-        {deliveryProof.kind === "error" ? <Text style={styles.refreshError}>تعذر قراءة رمز التسليم الآن. حدّث الحالة لإعادة المحاولة.</Text> : null}
-        {deliveryProof.kind === "ready" && deliveryProof.value.state === "PENDING" ? <><Text style={styles.proofTitle}>رمز التسليم</Text><Text accessibilityLabel="رمز التسليم" style={styles.proofCode}>{deliveryProof.value.code ?? "—"}</Text><Text style={styles.muted}>لا تشارك الرمز إلا مع الكابتن عند وصول الطلب.</Text></> : null}
-        {deliveryProof.kind === "ready" && deliveryProof.value.state === "VERIFIED" ? <><BthwaniStatusBadge icon="success" label="تم إثبات التسليم" tone="success" /><Text style={styles.muted}>تم قبول رمز التسليم وتسجيل الاستلام.</Text></> : null}
+        {deliveryProof.kind === "loading" ? <Text style={styles.muted}>جارٍ تجهيز {proofLabel}…</Text> : null}
+        {deliveryProof.kind === "error" ? <Text style={styles.refreshError}>تعذر قراءة {proofLabel} الآن. حدّث الحالة لإعادة المحاولة.</Text> : null}
+        {deliveryProof.kind === "ready" && deliveryProof.value.state === "PENDING" ? <><Text style={styles.proofTitle}>{proofLabel}</Text>{deliveryProof.value.code ? <Text accessibilityLabel={proofLabel} style={styles.proofCode}>{deliveryProof.value.code}</Text> : null}<Text style={styles.muted}>{deliveryProof.value.code ? proofAvailableMessage : proofWaitingMessage}</Text></> : null}
+        {deliveryProof.kind === "ready" && deliveryProof.value.state === "VERIFIED" ? <><BthwaniStatusBadge icon="success" label={isStorePickup ? "تم تأكيد الاستلام" : "تم إثبات التسليم"} tone="success" /><Text style={styles.muted}>{isStorePickup ? "تم قبول رمز الاستلام وتسجيل استلامك للطلب." : "تم قبول رمز التسليم وتسجيل الاستلام."}</Text></> : null}
       </BthwaniSurface>
-      {order.state === "DELIVERED" ? <>
-        <BthwaniSectionHeader title="قيّم تجربتك" subtitle="رأيك يساعدنا على تحسين جودة التوصيل" />
+      {completedState ? <>
+        <BthwaniSectionHeader title="قيّم تجربتك" subtitle={isStorePickup ? "رأيك يساعدنا على تحسين تجربة الاستلام من المتجر" : "رأيك يساعدنا على تحسين جودة التوصيل"} />
         <BthwaniSurface tone="base" style={styles.ratingSurface}>
           {orderRating.kind === "loading" ? <Text style={styles.muted}>جارٍ قراءة التقييم…</Text> : null}
           {orderRating.kind === "error" ? <Text style={styles.refreshError}>تعذر قراءة التقييم الآن. حدّث الحالة لإعادة المحاولة.</Text> : null}
@@ -204,6 +209,7 @@ export default function ClientOrderDetail() {
           </> : null}
         </BthwaniSurface>
       </> : null}
+      {!isStorePickup ? <>
       <BthwaniSectionHeader title="التتبع المباشر" subtitle="يظهر الموقع أثناء عهدة الكابتن فقط" />
       <BthwaniSurface tone="base" style={styles.trackingSurface}>
         {tracking.kind === "loading" ? <Text style={styles.muted}>جارٍ قراءة حالة التتبع…</Text> : null}
@@ -211,10 +217,27 @@ export default function ClientOrderDetail() {
         {tracking.kind === "ready" && tracking.value.trackingState === "NOT_ASSIGNED" ? <Text style={styles.muted}>سيظهر التتبع بعد إسناد الطلب إلى كابتن.</Text> : null}
         {tracking.kind === "ready" && tracking.value.trackingState === "AWAITING_LOCATION" ? <Text style={styles.muted}>تم إسناد الطلب، وبانتظار أول تحديث موقع من الكابتن.</Text> : null}
         {tracking.kind === "ready" && tracking.value.trackingState === "COMPLETED" ? <Text style={styles.muted}>{order.state === "DELIVERY_FAILED" ? "تعذرت محاولة التوصيل، فأوقفنا التتبع المباشر إلى أن يعالج المشغل الحالة." : order.state === "CANCELLED" ? "أُلغي الطلب، لذلك أوقفنا التتبع المباشر." : "اكتملت رحلة التوصيل، وتم إيقاف عرض الموقع."}</Text> : null}
-        {tracking.kind === "ready" && tracking.value.trackingState === "LIVE" && tracking.value.captainLocation ? <><Text style={styles.trackingTitle}>الكابتن في الطريق</Text><Text style={styles.muted}>آخر تحديث: {formatTrackingTime(tracking.value.captainLocation.updatedAt)}</Text><BthwaniButton label="فتح الموقع على الخريطة" onPress={() => void Linking.openURL(`geo:${tracking.value.captainLocation?.latitude},${tracking.value.captainLocation?.longitude}?q=${tracking.value.captainLocation?.latitude},${tracking.value.captainLocation?.longitude}`)} variant="secondary" /></> : null}
+        {tracking.kind === "ready" && tracking.value.trackingState === "LIVE" && tracking.value.captainLocation ? <><Text style={styles.trackingTitle}>الكابتن في الطريق</Text><Text style={styles.muted}>آخر تحديث: {formatTrackingTime(tracking.value.captainLocation.updatedAt)}</Text><BthwaniMap accessibilityLabel="خريطة تتبع طلبك" markers={[{ id: "destination", coordinate: { latitude: order.addressLatitude, longitude: order.addressLongitude }, title: "عنوان التوصيل" }, ...(order.pickupLocation ? [{ id: "pickup", coordinate: order.pickupLocation, title: `استلام من ${order.storeName}` }] : [])]} selection={{ latitude: tracking.value.captainLocation.latitude, longitude: tracking.value.captainLocation.longitude }} selectionTitle="موقع الكابتن" /><BthwaniButton label="فتح الموقع على الخريطة" onPress={() => void Linking.openURL(`geo:${tracking.value.captainLocation?.latitude},${tracking.value.captainLocation?.longitude}?q=${tracking.value.captainLocation?.latitude},${tracking.value.captainLocation?.longitude}`)} variant="secondary" /></> : null}
       </BthwaniSurface>
-      <BthwaniSectionHeader title="عنوان التوصيل" />
-      <BthwaniSurface tone="base" style={styles.address}><BthwaniIcon name="location" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.muted}>{order.addressText}</Text></BthwaniSurface>
+      </> : null}
+      {isStorePickup ? <>
+        <BthwaniSectionHeader title="موقع الاستلام" />
+        <BthwaniSurface tone="base" style={styles.pickupLocationSurface}>
+          <Text style={styles.pickupLocationTitle}>{order.storeName}</Text>
+          {order.pickupLocation ? <>
+            <Text style={styles.muted}>هذا هو موقع الفرع الحالي للاستلام.</Text>
+            <BthwaniMap accessibilityLabel={`خريطة موقع استلام ${order.storeName}`} markers={[{ id: "pickup", coordinate: order.pickupLocation, title: order.storeName }]} />
+            <BthwaniButton accessibilityLabel={`فتح موقع ${order.storeName} على الخريطة`} label="الاتجاهات إلى المتجر" onPress={() => {
+              const { latitude, longitude } = order.pickupLocation!;
+              const mapUrl = `geo:${latitude},${longitude}?q=${latitude},${longitude}(${encodeURIComponent(order.storeName)})`;
+              void Linking.openURL(mapUrl).catch(() => Alert.alert("تعذر فتح الخريطة", "يمكنك مراسلة المتجر من المحادثة للتأكد من نقطة الاستلام."));
+            }} variant="secondary" />
+          </> : <Text style={styles.muted}>موقع الفرع غير متاح على الخريطة حاليًا. راسل المتجر من المحادثة للتأكد من نقطة الاستلام.</Text>}
+        </BthwaniSurface>
+      </> : <>
+        <BthwaniSectionHeader title="عنوان التوصيل" />
+        <BthwaniSurface tone="base" style={styles.address}><BthwaniIcon name="location" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.muted}>{order.addressText}</Text></BthwaniSurface>
+      </>}
       <BthwaniSectionHeader title="المنتجات" subtitle={`${order.lines.length} ${order.lines.length === 1 ? "منتج" : "منتجات"}`} />
       <View style={styles.lines}>{order.lines.map((line) => <BthwaniSurface key={line.id} tone="base" style={styles.line}><View style={styles.lineTop}><Text style={styles.lineTitle} numberOfLines={2}>{line.productName}</Text><Text style={styles.linePrice}>{formatMoney(line.lineAmountMinor, line.currency)}</Text></View><Text style={styles.muted}>{formatQuantity(line.baseUnit, line.finalQuantityBaseUnits)}{line.modifierSnapshots.length ? ` · ${line.modifierSnapshots.map((modifier) => modifier.optionNameAr).join("، ")}` : ""}</Text></BthwaniSurface>)}</View>
       <Text style={styles.muted}>تُقرأ حالة الطلب الحالية من الخدمة عند كل فتح.</Text>
@@ -242,6 +265,8 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     payment: { ...typography.bodySm, color: theme.interactiveText },
     actionStack: { gap: spacing[2] },
     address: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], padding: spacing[4] },
+    pickupLocationSurface: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[4] },
+    pickupLocationTitle: { ...typography.bodyStrong, color: theme.color },
     lines: { gap: spacing[3] },
     line: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[4] },
     lineTop: { alignItems: "flex-start", flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },

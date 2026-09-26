@@ -166,6 +166,8 @@ func writeServiceCityError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "service city facts are invalid")
 	case errors.Is(err, servicecity.ErrOperatorNotActive):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active control operator session is required")
+	case errors.Is(err, servicecity.ErrOperatorPermission):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "Platform Policies permission is required")
 	case errors.Is(err, postgres.ErrServiceCityNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "service city was not found")
 	case errors.Is(err, postgres.ErrServiceCityExists):

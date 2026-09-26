@@ -105,27 +105,28 @@ func writeStorageError(w http.ResponseWriter, err error) {
 	}
 }
 
-func toStoreView(store postgres.StoreRecord, readiness storepublication.PublicationReadiness, offers ...[]postgres.CatalogStoreOfferRecord) contract.StoreView {
-	values := []contract.CatalogStoreOffer{}
-	if len(offers) > 0 {
-		values = make([]contract.CatalogStoreOffer, 0, len(offers[0]))
-		for _, offer := range offers[0] {
-			values = append(values, toStoreOffer(offer))
-		}
-	}
+func toStoreView(store postgres.StoreRecord, readiness storepublication.PublicationReadiness) contract.StoreView {
 	var deliveryOrigin *contract.DeliveryOrigin
 	if store.DeliveryOriginLatitude != nil && store.DeliveryOriginLongitude != nil {
 		deliveryOrigin = &contract.DeliveryOrigin{Latitude: *store.DeliveryOriginLatitude, Longitude: *store.DeliveryOriginLongitude}
 	}
 	return contract.StoreView{
 		ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, ServiceCityID: nullableString(store.ServiceCityID), PrimaryVerticalID: nullableString(store.PrimaryVerticalID), Version: store.Version,
+		FulfillmentModes: toFulfillmentModes(store.FulfillmentModes),
 		PublicationState: contract.PublicationState(store.PublicationState), PublicationChangedAt: store.PublicationChangedAt,
 		DeliveryOrigin: deliveryOrigin,
 		CreatedAt:      store.CreatedAt, UpdatedAt: store.UpdatedAt,
-		Offers:               values,
 		StoreProfileImage:    toStoreProfileImage(store.StoreProfileImage),
 		PublicationReadiness: toPublicationReadiness(readiness),
 	}
+}
+
+func toFulfillmentModes(values []string) []contract.StoreFulfillmentMode {
+	modes := make([]contract.StoreFulfillmentMode, len(values))
+	for index, value := range values {
+		modes[index] = contract.StoreFulfillmentMode(value)
+	}
+	return modes
 }
 
 func toStoreProfileImage(value *postgres.StoreProfileMediaRecord) *contract.StoreProfileImage {

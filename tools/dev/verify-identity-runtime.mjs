@@ -97,6 +97,69 @@ const registration = await issue("/auth/client/registration/request", { phone: c
 const clientPair = await expect("POST", "/auth/client/register", 201, { body: { phone: clientPhone, code: registration.code, password: clientPassword, clientInstanceId: "runtime-client-instance-" + crypto.randomUUID() } });
 session(clientPair, "client", "app-client", clientPair.identity.subject);
 await expect("GET", "/auth/session", 200, { token: clientPair.accessToken });
+
+// DSH-owned eligibility is assumed here; this fixture proves Identity role separation.
+const sharedPartnerPassword = password("SharedPartner");
+const sharedPartnerRole = await expect("POST", "/internal/actor-roles/provision", 201, {
+  token: dshToken,
+  headers: { "X-Acting-Actor-ID": operatorActorID },
+  body: { phoneE164: clientPhone, role: "partner" },
+});
+assert(sharedPartnerRole.actorId === clientPair.identity.subject, "same-phone role provisioning created a second actor");
+const sharedPartnerChallenge = await issue("/auth/managed/activation/request", { phone: clientPhone, role: "partner" }, "managed_activate", "partner");
+const sharedPartnerPair = await expect("POST", "/auth/managed/activate", 200, {
+  body: {
+    phone: clientPhone,
+    role: "partner",
+    verificationCode: sharedPartnerChallenge.code,
+    password: sharedPartnerPassword,
+    clientInstanceId: "runtime-shared-partner-instance-" + crypto.randomUUID(),
+  },
+});
+session(sharedPartnerPair, "partner", "app-partner", clientPair.identity.subject);
+assert(sql("SELECT count(*) FROM identity_actor_roles WHERE actor_id='" + sqlLiteral(clientPair.identity.subject) + "' AND role IN ('client','partner')") === "2", "same actor does not own both client and partner roles");
+
+await expect("POST", "/auth/managed/login", 401, {
+  body: { phone: clientPhone, role: "partner", password: clientPassword, clientInstanceId: "runtime-client-password-as-partner-" + crypto.randomUUID() },
+});
+await expect("POST", "/auth/client/login", 401, {
+  body: { phone: clientPhone, password: sharedPartnerPassword, clientInstanceId: "runtime-partner-password-as-client-" + crypto.randomUUID() },
+});
+const sharedPartnerLogin = await expect("POST", "/auth/managed/login", 200, {
+  body: { phone: clientPhone, role: "partner", password: sharedPartnerPassword, clientInstanceId: "runtime-shared-partner-login-" + crypto.randomUUID() },
+});
+session(sharedPartnerLogin, "partner", "app-partner", clientPair.identity.subject);
+
+const sharedPartnerRoleReadback = await expect("GET", "/internal/actors/" + encodeURIComponent(clientPair.identity.subject) + "/roles/partner", 200, { token: controlToken });
+await expect("POST", "/internal/actors/" + encodeURIComponent(clientPair.identity.subject) + "/roles/partner/disable", 204, {
+  token: dshToken,
+  headers: { "X-Acting-Actor-ID": operatorActorID, "X-Correlation-ID": crypto.randomUUID(), "X-Expected-Version": String(sharedPartnerRoleReadback.roleVersion), "X-Reason": "runtime role-scoped revocation assurance" },
+});
+await expect("GET", "/auth/session", 401, { token: sharedPartnerPair.accessToken });
+await expect("GET", "/auth/session", 200, { token: clientPair.accessToken });
+await expect("POST", "/internal/actors/" + encodeURIComponent(clientPair.identity.subject) + "/roles/partner/enable", 204, {
+  token: dshToken,
+  headers: { "X-Acting-Actor-ID": operatorActorID, "X-Correlation-ID": crypto.randomUUID(), "X-Expected-Version": String(sharedPartnerRoleReadback.roleVersion + 1), "X-Reason": "runtime role-scoped restoration assurance" },
+});
+const restoredPartnerLogin = await expect("POST", "/auth/managed/login", 200, {
+  body: { phone: clientPhone, role: "partner", password: sharedPartnerPassword, clientInstanceId: "runtime-shared-partner-restored-" + crypto.randomUUID() },
+});
+session(restoredPartnerLogin, "partner", "app-partner", clientPair.identity.subject);
+await expect("GET", "/auth/session", 200, { token: clientPair.accessToken });
+
+const sharedOperatorRole = await expect("POST", "/internal/actor-roles/provision", 201, {
+  token: controlToken,
+  headers: { "X-Acting-Actor-ID": operatorActorID },
+  body: { phoneE164: clientPhone, role: "operator" },
+});
+assert(sharedOperatorRole.actorId === clientPair.identity.subject, "operator role provisioning changed the permanent shared actor");
+assert(sql("SELECT count(*) FROM identity_actor_roles WHERE actor_id='" + sqlLiteral(clientPair.identity.subject) + "' AND role IN ('client','partner','operator')") === "3", "same actor does not own all three admitted roles");
+assert(sql("SELECT count(*) FROM identity_password_credentials WHERE actor_id='" + sqlLiteral(clientPair.identity.subject) + "' AND role='client'") === "1", "shared client password credential is missing");
+assert(sql("SELECT count(*) FROM identity_password_credentials WHERE actor_id='" + sqlLiteral(clientPair.identity.subject) + "' AND role='operator'") === "0", "operator role received a password credential");
+await expect("POST", "/auth/managed/login", 400, {
+  body: { phone: clientPhone, role: "operator", password: clientPassword, clientInstanceId: "runtime-client-password-as-operator-" + crypto.randomUUID() },
+});
+await expect("GET", "/auth/session", 200, { token: clientPair.accessToken });
 const loginClientInstance = "runtime-client-login-" + crypto.randomUUID();
 const loginPair = await expect("POST", "/auth/client/login", 200, { body: { phone: clientPhone, password: clientPassword, clientInstanceId: loginClientInstance } });
 session(loginPair, "client", "app-client", clientPair.identity.subject);
@@ -206,6 +269,10 @@ assert(sql("SELECT count(*) FROM information_schema.columns WHERE table_schema='
 assert(sql("SELECT count(*) FROM identity_schema_migrations WHERE version=18") === "1", "identity schema is not at v18");
 
 console.log("IDENTITY_RUNTIME_SEMANTICS=PASS");
+console.log("IDENTITY_SAME_PHONE_MULTI_ROLE_ONE_ACTOR=PASS");
+console.log("IDENTITY_CROSS_ROLE_PASSWORD_SEPARATION=PASS");
+console.log("IDENTITY_ROLE_SCOPED_REVOCATION=PASS");
+console.log("IDENTITY_OPERATOR_CLIENT_CREDENTIAL_SEPARATION=PASS");
 console.log("IDENTITY_CUSTOMER_REGISTRATION_AFTER_PHONE_PROOF=PASS");
 console.log("IDENTITY_CUSTOMER_PASSWORD_LOGIN=PASS");
 console.log("IDENTITY_CUSTOMER_RECOVERY_NO_SESSION=PASS");

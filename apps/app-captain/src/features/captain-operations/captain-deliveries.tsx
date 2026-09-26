@@ -1,5 +1,5 @@
 import { toAsciiDigits } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniMap, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type CaptainAssignment, type CaptainDeliveryTask, type CashLiabilityItem, captainAssignmentStateLabel, captainHandoffStateLabel, captainTaskProgressLabel, formatMoney, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -22,6 +22,7 @@ export function CaptainDeliveries() {
   const [deliveryProofCodes, setDeliveryProofCodes] = useState<Record<string, string>>({});
   const [locationError, setLocationError] = useState("");
   const [lastLocationUpdatedAt, setLastLocationUpdatedAt] = useState("");
+  const [captainPosition, setCaptainPosition] = useState<{ latitude: number; longitude: number } | null>(null);
   const [cashLiability, setCashLiability] = useState<{ items: ReadonlyArray<CashLiabilityItem>; totalAmountMinor: number } | null>(null);
   const [cashRemittanceReferences, setCashRemittanceReferences] = useState<Record<string, string>>({});
   const [cashBusy, setCashBusy] = useState("");
@@ -60,6 +61,7 @@ export function CaptainDeliveries() {
     if (!activeAssignmentID) {
       setLocationError("");
       setLastLocationUpdatedAt("");
+      setCaptainPosition(null);
       return;
     }
     let disposed = false;
@@ -68,6 +70,7 @@ export function CaptainDeliveries() {
     const publish = async (latitude: number, longitude: number) => {
       if (publishing || disposed) return;
       publishing = true;
+      if (!disposed) setCaptainPosition({ latitude, longitude });
       try {
         const token = await getUsableIdentityAccessToken();
         const result = await captainClient().updateCaptainLocation(token, activeAssignmentID, latitude, longitude);
@@ -189,13 +192,25 @@ export function CaptainDeliveries() {
             {task ? (
               <View style={styles.task}>
                 {task.storeProfileImage?.uri ? <Image accessibilityLabel={`صورة متجر ${task.storeName}`} source={{ uri: task.storeProfileImage.uri }} style={{ borderRadius: 10, height: 100, width: "100%" }} resizeMode="cover" /> : null}
+                <Text style={styles.muted}>نوع التوصيل: {task.fulfillmentMode === "PARTNER_CAPTAIN" ? "توصيل المتجر" : "توصيل بثواني"}</Text>
+                {task.fulfillmentMode === "PARTNER_CAPTAIN" ? <Text style={styles.warning}>بعد استلام النقد من العميل، سلّمه إلى المتجر. سيؤكد الشريك الاستلام في التطبيق؛ هذا المبلغ لا يدخل في عهدة محفظة الكابتن لدى المنصة.</Text> : null}
                 <Text style={styles.muted}>المتجر: {task.storeName}</Text>
                 <Text style={styles.muted}>عنوان العميل: {task.customerAddressText}</Text>
+                <Text style={styles.sectionTitle}>خريطة مهمة التوصيل</Text>
+                <BthwaniMap
+                  accessibilityLabel={`خريطة مهمة التوصيل ${task.orderReference}`}
+                  markers={[
+                    { id: "pickup", coordinate: task.pickupOrigin, title: `استلام من ${task.storeName}` },
+                    { id: "destination", coordinate: task.customerDestination, title: "عنوان العميل" },
+                  ]}
+                  selection={assignment.id === activeAssignmentID ? captainPosition : null}
+                  selectionTitle="موقعك الحالي"
+                />
                 <Text style={styles.muted}>حالة الطلب: {orderStateLabel(task.orderState)}</Text>
-                <Text style={styles.payment}>{paymentMethodLabel(task.paymentMethod)} · {paymentStateLabel(task.paymentState)}</Text>
+                <Text style={styles.payment}>{paymentMethodLabel(task.paymentMethod, task.fulfillmentMode)} · {paymentStateLabel(task.paymentState, task.paymentMethod, task.fulfillmentMode)}</Text>
                 {requiresCollection ? (
                   <>
-                    <Text style={styles.warning}>المطلوب تحصيله عند التسليم: {formatMoney(task.amountDueMinor, task.currency)}</Text>
+                    <Text style={styles.warning}>{task.fulfillmentMode === "PARTNER_CAPTAIN" ? "المبلغ الذي ستستلمه من العميل ثم تسلّمه للمتجر:" : "المطلوب تحصيله عند التسليم:"} {formatMoney(task.amountDueMinor, task.currency)}</Text>
                     <TextInput accessibilityLabel={`المبلغ المحصل للمهمة ${task.orderReference}`} keyboardType="number-pad" onChangeText={(value) => setCollectionAmounts((current) => ({ ...current, [assignment.id]: toAsciiDigits(value).replace(/[^0-9]/g, "") }))} value={collectionAmountText} style={styles.input} />
                     <Text style={collectionAmountInvalid ? styles.error : styles.muted}>{collectionAmountInvalid ? "يجب أن يساوي المبلغ المحصل إجمالي الطلب قبل تأكيد التسليم." : "أكّد المبلغ الذي استلمه الكابتن نقدًا."}</Text>
                   </>

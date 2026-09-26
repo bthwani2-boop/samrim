@@ -39,7 +39,7 @@ pnpm control
 
 Each command enters the owning app package and keeps Expo Metro or Next attached to that terminal with Fast Refresh/HMR. Mobile applications are opened manually. Use pnpm scr only when device transport/reverse mappings or scrcpy are needed.
 
-In local development, Identity first restores the persisted real session. If that reusable session is absent or terminally invalid, the development-only Identity route may issue a fresh role-scoped session only when exactly one existing enabled, security-enabled, authentication-ready actor/role has completed its required activation or enrollment; ambiguity fails closed with `409 CONFLICT` rather than selecting an actor. It never creates actors, roles or credentials and is not registered outside `BTHWANI_ENV=development`. Explicit logout or recovery remains signed out within that runtime instance, while a fresh runtime can resume development continuity. OTP, activation, Passkey and recovery remain product/security journeys and the development shortcut never substitutes for proving them.
+In local development, Identity first restores the persisted real session. If that reusable session is absent or terminally invalid, the development-only Identity route uses the server-configured `actor_id` for that role and verifies the existing actor/role is enabled, security-enabled and authentication-ready before issuing a fresh real role-scoped session. The client never selects the actor. Missing pins fail with `404`; configured but not-ready actors fail with `409`. The route never creates actors, roles or credentials and is not registered outside `BTHWANI_ENV=development`. Explicit logout or recovery remains signed out within that runtime instance, while a fresh runtime can resume development continuity. OTP, activation, Passkey and recovery remain product/security journeys and the development shortcut never substitutes for proving them.
 
 For an explicit real activation/authentication journey proof, start the affected surface with `EXPO_PUBLIC_BTHWANI_AUTH_JOURNEY_PROOF=1` for Mobile or `BTHWANI_AUTH_JOURNEY_PROOF=1` for Control. That flag disables only the development-session fallback; normal local development remains unchanged, and the canonical activation/login/recovery implementation remains the path under proof.
 
@@ -81,12 +81,12 @@ Never commit credentials, Firebase service files, signing files, real .env files
 
 ## Nx Cloud CI
 
-Create one read-only CI token and one read-write CI token in the Nx Cloud workspace Access Control settings. Keep the read-write token restricted to protected branches:
+Create one read-only CI token and one read-write CI token in the Nx Cloud workspace Access Control settings. Keep the read-write token restricted to protected branches. `CI Static` is the canonical cache-using verification gate; `CI Runtime` is deliberately uncached and runs with Nx Cloud disabled.
 
 ```text
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/setup-nx-cloud-github.ps1
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/setup-nx-cloud-github.ps1 -Apply
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-nx-cloud-github.ps1
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dispatch-nx-cloud-ci.ps1 -Workflow control-panel-e2e.yml -Ref main -Wait
-pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dispatch-nx-cloud-ci.ps1 -Workflow backend-integration.yml -Ref <branch> -Wait
+pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dispatch-nx-cloud-ci.ps1 -Workflow ci-static.yml -Ref main -Wait
+pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dispatch-nx-cloud-ci.ps1 -Workflow ci-runtime.yml -Ref <branch> -Wait
 ```

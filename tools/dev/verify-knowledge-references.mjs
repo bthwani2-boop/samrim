@@ -3,7 +3,7 @@ import path from "node:path";
 import { ensureKnowledgeRoot } from "./knowledge-source.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
-const knowledgeRoot = ensureKnowledgeRoot({ materialize: true });
+const knowledgeRoot = ensureKnowledgeRoot({ materialize: false });
 
 function collectMarkdown(dir) {
   if (!fs.existsSync(dir)) return [];

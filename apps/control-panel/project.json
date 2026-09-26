@@ -7,19 +7,53 @@
       "executor": "nx:run-commands",
       "options": {
         "command": "pnpm --dir apps/control-panel typecheck"
-      }
+      },
+      "outputs": [
+        "{projectRoot}/.next/types"
+      ],
+      "inputs": [
+        "default",
+        "^default",
+        "nodeToolchain",
+        "controlPanelBuildEnvironment"
+      ]
     },
     "build": {
       "executor": "nx:run-commands",
       "options": {
         "command": "pnpm --dir apps/control-panel build"
-      }
+      },
+      "outputs": [
+        "{projectRoot}/.next"
+      ],
+      "inputs": [
+        "default",
+        "^default",
+        "nodeToolchain",
+        "controlPanelBuildEnvironment"
+      ]
     },
     "e2e": {
       "cache": false,
       "executor": "nx:run-commands",
       "options": {
         "command": "pnpm --dir apps/control-panel exec playwright test --config playwright.config.ts --workers=1"
+      }
+    },
+    "browser-live-proof": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm --dir apps/control-panel test:e2e:live"
+      },
+      "dependsOn": [
+        "e2e"
+      ]
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec biome lint apps/control-panel --diagnostic-level=error"
       }
     }
   },

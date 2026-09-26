@@ -48,6 +48,7 @@ type config struct {
 	providerBudget         challenge.ProviderBudgetConfig
 	webauthnRPID           string
 	webauthnOrigins        []string
+	developmentActorIDs    map[string]string
 }
 
 func Run(_, _, defaultPort string) error {
@@ -96,7 +97,7 @@ func Run(_, _, defaultPort string) error {
 		}
 	}
 	actors := actor.New(db)
-	sessions := session.New(db, cfg.challengeSecret, cfg.runtimeEnvironment == "development" || cfg.runtimeEnvironment == "test")
+	sessions := session.New(db, cfg.challengeSecret, cfg.runtimeEnvironment == "development" || cfg.runtimeEnvironment == "test", cfg.developmentActorIDs)
 	challenges := challenge.New(db, actors, sessions, cfg.challengeSecret, cfg.delivery, cfg.providerBudget)
 	authenticationService := authentication.New(db, actors, sessions)
 	passkeys, err := passkey.New(db, sessions, challenges, passkey.Config{RPID: cfg.webauthnRPID, Origins: cfg.webauthnOrigins, RPName: "بثواني"})
@@ -161,6 +162,10 @@ func loadConfig(defaultPort string) (config, error) {
 	case "development", "test", "staging", "production":
 	default:
 		return config{}, errors.New("BTHWANI_ENV must be development, test, staging, or production")
+	}
+	developmentActorIDs, err := loadDevelopmentActorIDs(runtimeEnvironment)
+	if err != nil {
+		return config{}, err
 	}
 	databaseURL := strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
 	if databaseURL == "" {
@@ -334,7 +339,33 @@ func loadConfig(defaultPort string) (config, error) {
 	if len(webauthnOrigins) == 0 {
 		return config{}, errors.New("IDENTITY_WEBAUTHN_ALLOWED_ORIGINS is empty")
 	}
-	return config{port: port, listenHost: listenHost, runtimeEnvironment: runtimeEnvironment, databaseURL: databaseURL, maintenanceDatabaseURL: maintenanceDatabaseURL, autoMigrate: autoMigrate, migrationDir: migrationDir, retention: retention, challengeSecret: secret, abuseIPSecret: abuseSecret, trustedProxies: trustedProxies, internalTokens: tokens, allowedOrigins: origins, delivery: delivery, providerBudget: budget, webauthnRPID: webauthnRPID, webauthnOrigins: webauthnOrigins}, nil
+	return config{port: port, listenHost: listenHost, runtimeEnvironment: runtimeEnvironment, databaseURL: databaseURL, maintenanceDatabaseURL: maintenanceDatabaseURL, autoMigrate: autoMigrate, migrationDir: migrationDir, retention: retention, challengeSecret: secret, abuseIPSecret: abuseSecret, trustedProxies: trustedProxies, internalTokens: tokens, allowedOrigins: origins, delivery: delivery, providerBudget: budget, webauthnRPID: webauthnRPID, webauthnOrigins: webauthnOrigins, developmentActorIDs: developmentActorIDs}, nil
+}
+
+var developmentActorEnvironment = []struct {
+	role string
+	name string
+}{
+	{role: "client", name: "IDENTITY_DEVELOPMENT_CLIENT_ACTOR_ID"},
+	{role: "partner", name: "IDENTITY_DEVELOPMENT_PARTNER_ACTOR_ID"},
+	{role: "captain", name: "IDENTITY_DEVELOPMENT_CAPTAIN_ACTOR_ID"},
+	{role: "field", name: "IDENTITY_DEVELOPMENT_FIELD_ACTOR_ID"},
+	{role: "operator", name: "IDENTITY_DEVELOPMENT_OPERATOR_ACTOR_ID"},
+}
+
+func loadDevelopmentActorIDs(runtimeEnvironment string) (map[string]string, error) {
+	actorIDs := make(map[string]string, len(developmentActorEnvironment))
+	for _, setting := range developmentActorEnvironment {
+		actorID := strings.TrimSpace(os.Getenv(setting.name))
+		if actorID == "" {
+			continue
+		}
+		if runtimeEnvironment != "development" {
+			return nil, fmt.Errorf("%s is forbidden outside BTHWANI_ENV=development", setting.name)
+		}
+		actorIDs[setting.role] = actorID
+	}
+	return actorIDs, nil
 }
 
 func databaseURLUser(raw string) (string, error) {

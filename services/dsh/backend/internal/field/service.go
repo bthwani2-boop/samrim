@@ -10,6 +10,7 @@ import (
 	"math"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/joiningcase"
@@ -104,33 +105,67 @@ func (s *Service) UploadJoiningCaseStoreImage(ctx context.Context, accessToken, 
 
 func (s *Service) Admit(ctx context.Context, phone, idempotencyKey, actingActorID, correlationID string) (postgres.FieldAdmission, bool, error) {
 	phone = strings.TrimSpace(phone)
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	actingActorID = strings.TrimSpace(actingActorID)
+	correlationID = strings.TrimSpace(correlationID)
 	if !phoneE164Pattern.MatchString(phone) || !validMutation(idempotencyKey, correlationID, actingActorID) {
 		return postgres.FieldAdmission{}, false, ErrInvalidInput
 	}
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.FieldAdmission{}, false, err
 	}
+	roles, err := s.identity.SearchFieldRolesByPhoneE164(ctx, phone)
+	if err != nil {
+		return postgres.FieldAdmission{}, false, err
+	}
+	var existingRole identityclient.ActorRoleView
+	for _, role := range roles.Items {
+		if role.PhoneE164 != phone {
+			continue
+		}
+		if existingRole.ActorID != "" {
+			return postgres.FieldAdmission{}, false, ErrFieldIdentityUnavailable
+		}
+		existingRole = role
+	}
+	if existingRole.ActorID != "" {
+		if existingRole.Role != "field" || !existingRole.Enabled || !existingRole.SecurityEnabled {
+			return postgres.FieldAdmission{}, false, ErrManagedRoleNotEligible
+		}
+		current, readErr := postgres.ReadFieldAdmissionForActor(ctx, s.db, existingRole.ActorID)
+		if readErr == nil {
+			if current.State == "eligible" {
+				return current, true, nil
+			}
+			return postgres.FieldAdmission{}, false, ErrManagedRoleNotEligible
+		}
+		if !errors.Is(readErr, postgres.ErrFieldAdmissionNotFound) {
+			return postgres.FieldAdmission{}, false, readErr
+		}
+	}
 	hash := postgres.HashFieldAdmissionRequest(phone)
-	admission, replayed, err := postgres.CreateFieldAdmissionCandidate(ctx, s.db, phone, strings.TrimSpace(idempotencyKey), hash, actingActorID, strings.TrimSpace(correlationID))
+	admission, operationKey, replayed, err := postgres.CreateFieldAdmissionCandidate(ctx, s.db, phone, idempotencyKey, hash, actingActorID, correlationID)
 	if err != nil {
 		return postgres.FieldAdmission{}, false, err
 	}
 	if admission.State == "eligible" {
 		return admission, replayed, nil
 	}
-	role, err := s.identity.ProvisionFieldWithContext(ctx, identityintegration.ActorInput{PhoneE164: phone}, correlationID, actingActorID)
-	if err != nil {
-		return postgres.FieldAdmission{}, false, err
+	role := existingRole
+	if role.ActorID == "" {
+		role, err = s.identity.ProvisionFieldWithContext(ctx, identityintegration.ActorInput{PhoneE164: phone}, correlationID, actingActorID)
+		if err != nil {
+			return postgres.FieldAdmission{}, false, err
+		}
 	}
 	if role.Role != "field" || strings.TrimSpace(role.ActorID) == "" {
 		return postgres.FieldAdmission{}, false, ErrFieldIdentityUnavailable
 	}
-	bound, err := postgres.BindFieldAdmission(ctx, s.db, admission.ID, role.ActorID, strings.TrimSpace(idempotencyKey), hash, actingActorID, strings.TrimSpace(correlationID))
+	bound, err := postgres.BindFieldAdmission(ctx, s.db, admission.ID, role.ActorID, operationKey, hash, actingActorID, correlationID)
 	if err != nil {
 		return postgres.FieldAdmission{}, false, err
 	}
-	return bound, false, nil
+	return bound, replayed, nil
 }
 
 func (s *Service) ReadForOperator(ctx context.Context, admissionID, actingActorID string) (postgres.FieldAdmission, error) {
@@ -169,6 +204,11 @@ func (s *Service) SetManagedRoleEnabled(ctx context.Context, actorID, operatorAc
 	if err := s.requireOperator(ctx, operatorActorID); err != nil {
 		return err
 	}
+	lifecycle, err := postgres.LockFieldLifecycle(ctx, s.db, actorID)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lifecycle.Rollback() }()
 	identityRole, err := s.identity.ReadActorRole(ctx, actorID, "field")
 	if err != nil {
 		return err
@@ -193,19 +233,56 @@ func (s *Service) SetManagedRoleEnabled(ctx context.Context, actorID, operatorAc
 				return err
 			}
 		}
-		_, err = postgres.RestoreFieldAdmission(ctx, s.db, actorID, idempotencyKey, accessHash, operatorActorID, correlationID)
-		return err
+		if _, err := postgres.RestoreFieldAdmission(ctx, s.db, actorID, idempotencyKey, accessHash, operatorActorID, correlationID); err != nil {
+			return err
+		}
+		return lifecycle.Commit()
 	}
 	if _, err := postgres.SuspendFieldAdmission(ctx, s.db, actorID, idempotencyKey, accessHash, operatorActorID, correlationID); err != nil {
 		return err
 	}
 	if identityRole.Enabled == enabled {
-		return nil
+		return lifecycle.Commit()
 	}
-	return s.identity.SetRoleEnabledWithContext(ctx, actorID, "field", false, correlationID, strings.TrimSpace(reason), operatorActorID, expectedVersion)
+	if err := s.identity.SetRoleEnabledWithContext(ctx, actorID, "field", false, correlationID, strings.TrimSpace(reason), operatorActorID, expectedVersion); err != nil {
+		return err
+	}
+	return lifecycle.Commit()
 }
 
-func (s *Service) CreateJoiningCase(ctx context.Context, accessToken, idempotencyKey, correlationID, phone, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64) (postgres.JoiningCaseResult, error) {
+func (s *Service) AuthorizeReenrollment(ctx context.Context, actorID, operatorActorID, correlationID, reason string, expectedAdmissionVersion, expectedActorVersion, expectedRoleVersion int) error {
+	actorID = strings.TrimSpace(actorID)
+	operatorActorID = strings.TrimSpace(operatorActorID)
+	correlationID = strings.TrimSpace(correlationID)
+	reason = strings.TrimSpace(reason)
+	if actorID == "" || expectedAdmissionVersion < 1 || expectedActorVersion < 1 || expectedRoleVersion < 1 || utf8.RuneCountInString(reason) < 5 || utf8.RuneCountInString(reason) > 500 || !validMutation("field-reenrollment", correlationID, operatorActorID) {
+		return ErrInvalidInput
+	}
+	if err := s.requireOperator(ctx, operatorActorID); err != nil {
+		return err
+	}
+	lifecycle, err := postgres.LockFieldLifecycle(ctx, s.db, actorID)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lifecycle.Rollback() }()
+	admission, err := postgres.ReadFieldAdmissionForActor(ctx, s.db, actorID)
+	if err != nil {
+		return err
+	}
+	if admission.State != "eligible" {
+		return ErrManagedRoleNotEligible
+	}
+	if admission.Version != expectedAdmissionVersion {
+		return postgres.ErrFieldVersionConflict
+	}
+	if err := s.identity.AuthorizeReenrollmentWithContext(ctx, actorID, "field", correlationID, reason, operatorActorID, expectedActorVersion, expectedRoleVersion); err != nil {
+		return err
+	}
+	return lifecycle.Commit()
+}
+
+func (s *Service) CreateJoiningCase(ctx context.Context, accessToken, idempotencyKey, correlationID, phone, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64, rawFulfillmentModes []string) (postgres.JoiningCaseResult, error) {
 	identity, err := s.requireEligibleField(ctx, accessToken)
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
@@ -215,6 +292,10 @@ func (s *Service) CreateJoiningCase(ctx context.Context, accessToken, idempotenc
 	firstStoreName = strings.TrimSpace(firstStoreName)
 	serviceCityID = strings.TrimSpace(serviceCityID)
 	verticalID = strings.TrimSpace(verticalID)
+	fulfillmentModes, modesErr := postgres.NormalizeStoreFulfillmentModes(rawFulfillmentModes)
+	if modesErr != nil {
+		return postgres.JoiningCaseResult{}, ErrInvalidInput
+	}
 	if !phoneE164Pattern.MatchString(phone) || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || serviceCityID == "" || verticalID == "" || math.IsNaN(latitude) || math.IsInf(latitude, 0) || math.IsNaN(longitude) || math.IsInf(longitude, 0) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180 || strings.TrimSpace(idempotencyKey) == "" || len(strings.TrimSpace(correlationID)) < 8 {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
@@ -226,7 +307,7 @@ func (s *Service) CreateJoiningCase(ctx context.Context, accessToken, idempotenc
 	if err != nil || !vertical.Active {
 		return postgres.JoiningCaseResult{}, postgres.ErrCatalogVerticalNotFound
 	}
-	return postgres.CreateJoiningCaseForField(ctx, s.db, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseFieldRequest(identity.Subject, phone, businessName, firstStoreName, serviceCityID, verticalID, latitude, longitude), identity.Subject, strings.TrimSpace(correlationID), phone, businessName, firstStoreName, serviceCityID, verticalID, latitude, longitude)
+	return postgres.CreateJoiningCaseForField(ctx, s.db, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseFieldRequest(identity.Subject, phone, businessName, firstStoreName, serviceCityID, verticalID, latitude, longitude, fulfillmentModes), identity.Subject, strings.TrimSpace(correlationID), phone, businessName, firstStoreName, serviceCityID, verticalID, latitude, longitude, fulfillmentModes)
 }
 
 func (s *Service) ListJoiningCases(ctx context.Context, accessToken string, limit int) (postgres.JoiningCaseListResult, error) {
@@ -280,37 +361,6 @@ func (s *Service) SubmitJoiningCase(ctx context.Context, accessToken, caseID str
 	return postgres.SubmitJoiningCase(ctx, s.db, caseID, actorRole.ActorID, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseSubmit(caseID, actorRole.ActorID, expectedVersion), identity.Subject, strings.TrimSpace(correlationID))
 }
 
-func (s *Service) CorrectAndResubmitJoiningCase(ctx context.Context, accessToken, caseID, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64, expectedVersion int, idempotencyKey, correlationID string) (postgres.JoiningCaseResult, error) {
-	identity, err := s.requireEligibleField(ctx, accessToken)
-	if err != nil {
-		return postgres.JoiningCaseResult{}, err
-	}
-	caseID = strings.TrimSpace(caseID)
-	businessName = strings.TrimSpace(businessName)
-	firstStoreName = strings.TrimSpace(firstStoreName)
-	serviceCityID = strings.TrimSpace(serviceCityID)
-	verticalID = strings.TrimSpace(verticalID)
-	if caseID == "" || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || serviceCityID == "" || verticalID == "" || expectedVersion < 1 || !validMutation(idempotencyKey, correlationID, identity.Subject) || !validCoordinates(latitude, longitude) {
-		return postgres.JoiningCaseResult{}, ErrInvalidInput
-	}
-	current, err := postgres.ReadJoiningCaseForField(ctx, s.db, identity.Subject, caseID)
-	if err != nil {
-		return postgres.JoiningCaseResult{}, err
-	}
-	if current.Case.Origin != "field" {
-		return postgres.JoiningCaseResult{}, postgres.ErrJoiningCaseState
-	}
-	city, err := postgres.ReadServiceCity(ctx, s.db, serviceCityID)
-	if err != nil || !city.Active {
-		return postgres.JoiningCaseResult{}, joiningcase.ErrServiceCityUnavailable
-	}
-	vertical, err := postgres.ReadCommerceVertical(ctx, s.db, verticalID)
-	if err != nil || !vertical.Active {
-		return postgres.JoiningCaseResult{}, postgres.ErrCatalogVerticalNotFound
-	}
-	return postgres.CorrectAndResubmitJoiningCaseForField(ctx, s.db, caseID, identity.Subject, businessName, firstStoreName, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseCorrectAndResubmit(caseID, identity.Subject, businessName, firstStoreName, expectedVersion, serviceCityID, verticalID, latitude, longitude), strings.TrimSpace(correlationID), serviceCityID, verticalID, latitude, longitude)
-}
-
 func (s *Service) requireField(ctx context.Context, accessToken string) (identityclient.ActorIdentity, error) {
 	identity, err := s.identity.ReadSession(ctx, strings.TrimSpace(accessToken))
 	if err != nil {
@@ -345,7 +395,7 @@ func (s *Service) requireOperator(ctx context.Context, actorID string) error {
 	if operator.Role != "operator" || !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
 		return ErrOperatorNotActive
 	}
-	return nil
+	return s.identity.RequireOperatorPermission(ctx, strings.TrimSpace(actorID), "partners")
 }
 
 func validMutation(idempotencyKey, correlationID, actingActorID string) bool {

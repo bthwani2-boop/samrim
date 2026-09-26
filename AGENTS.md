@@ -22,7 +22,7 @@ Before material reasoning, pin repository, requested/active ref, exact HEAD, obj
 
 Deep means maximum rigor inside the proven material cone, not repository-wide inspection. Load only evidence that can change need, root cause, owner, boundary, safety, solution, cutover or proof. Expand while evidence can change the decision; stop at the proven causal boundary. Rigor scales with consequence, uncertainty, affected cone and irreversibility.
 
-A CHANGE UNIT is one coherent authorized outcome. Intermediate edits are implementation steps, not closure points. During implementation use proportional source/static/targeted feedback. Run expensive runtime, browser, device or journey proof only when the claim requires it, when diagnosing the current failure, or when prior required evidence became stale. At closure run the smallest adequate claim-specific proof once.
+A CHANGE UNIT is one coherent authorized outcome. Intermediate edits are implementation steps, not closure points. During normal implementation use proportional non-runtime source/static/direct feedback; runtime/browser/device/journey proof timing is owned exclusively by the proof-phase law in Section 6.
 
 One material meaning has one semantic owner; one mutable fact has one canonical writer; one cross-boundary contract has one executable provenance. Current code proves what exists, not that the design is correct. Treat the highest proven causal root; do not wrap, suppress, document around or preserve a surviving root defect.
 
@@ -37,12 +37,12 @@ Progress through the smallest dependency-valid journey/increment that closes the
 CURRENT AUTHORIZED DELIVERY GATE
 → EARLIEST UNRESOLVED MATERIAL JOURNEY / SHARED BOUNDARY
 → PROVEN AFFECTED CONE
-→ FIXED-POINT CLOSURE
+→ STATIC CLOSURE
 → NEXT DEPENDENCY-VALID JOURNEY / INCREMENT
 
-A materially dependent increment must not advance through an unclosed prerequisite. Proven-independent lanes may continue only when they neither consume unproven prerequisite state nor invalidate evidence for the blocked lane.
+A materially dependent increment must not advance through an unclosed static prerequisite. Proven-independent lanes may continue only when they neither consume unproven prerequisite state nor invalidate evidence for the blocked lane. Runtime is not a routine prerequisite between increments; the only early-runtime exception is defined in Section 6.
 
-After the material journeys/increments in the current delivery gate close individually, perform one proportional integration recensus across their shared boundaries before advancing to a dependent gate. Reuse still-valid claim-specific evidence and rerun only what shared-boundary integration can materially invalidate. Discovery of unrelated possible work does not enlarge the current delivery gate.
+After the material journeys/increments in the current delivery gate reach static closure, perform one proportional static integration recensus across their shared boundaries, then run one final operational proof phase for only the claims that require runtime truth before advancing to a dependent gate. Reuse still-valid evidence and rerun only what integration or runtime findings materially invalidate. Discovery of unrelated possible work does not enlarge the current delivery gate.
 
 Journey closure and program progression never imply that broader Governance-approved Product breadth is already implemented, that all admitted capabilities belong to the current gate, or that the domain is permanently final.
 
@@ -65,7 +65,11 @@ Pinned Governance may intentionally be broader than the current implementation s
 
 Donor/history, OSS/product exemplars, Yemen-market evidence, primary technology sources and assurance/experience sources are evidence only. Inspect them only when they can change the current decision, and revalidate mutable external facts at use.
 
-For user-facing work, durable Experience/Design/Quality meaning remains in those Governance owners. The executable Design System owns reusable domain-neutral visual semantics when reuse is proven; each app owns its actor-specific IA, shell, navigation and composition. Arabic/RTL, accessibility, interaction states and rendered behavior are correctness when material, not optional polish. Static checks never substitute for rendered/interaction evidence when the claim is visual or interactive.
+For user-facing work, durable Experience/Design/Quality meaning remains in those Governance owners. The executable Design System owns reusable domain-neutral visual semantics when reuse is proven; each app owns its actor-specific IA, shell, navigation and composition. Arabic/RTL, accessibility, interaction states and rendered behavior are correctness when material, not optional polish. Static checks never substitute for rendered/interaction evidence when the final claim is visual or interactive; this defines the required final evidence, not when runtime proof is executed.
+
+### Control Panel operational-resource law
+
+For every Control Panel change, explicitly account for whether each affected operational resource is registry-suitable. Any operational resource that can materially grow and requires finding, filtering, sorting, selecting or acting on records must use a **Server-Driven Operational Registry**: dense records with server-side search/filter/sort/bounded pagination, selection/actions when justified, on-demand detail and relationship drill-down, and canonical server truth. Remove superseded card lists, parallel list/detail routes, permanent side-by-side forms, client-filtered server-paginated truth and shadow models that obstruct fast scalable operation. Use a work queue, feed, tree or object/detail workspace when that resource's semantics prove it more appropriate; this law does not force unrelated screen types into a grid.
 
 ## 3. Complexity and cutover
 
@@ -76,6 +80,8 @@ Same outcome with fewer states/commands/layers → choose the simpler model.
 Future possibility or "just in case" → not justification.
 
 Preference: DELETE → DIRECT USE → EXTEND EXISTING OWNER → REFACTOR EXISTING OWNER → ONLY THEN ADD A NEW MECHANISM. SMALLEST DIFF != SIMPLEST SYSTEM.
+
+For every task and during every implementation, apply this rule: if no real data-preservation or compatibility obligation exists, refound the clean canonical truth and delete every superseded legacy artifact, migration, file or corrective path instead of accumulating patches and residue.
 
 Within the affected cone, every material file/module/component/hook/route/handler/service/package/type/DTO/schema/migration/contract/config/env key/script/dependency/state/cache/registry/test/generated artifact must have a current owner, provenance, real consumer and simplest complete form. Do not create a second affected engine, proof registry, cache protocol, state machine, semantic guard or compatibility path when an existing owner can satisfy the requirement.
 
@@ -103,9 +109,9 @@ LOCAL_INTEGRATION has one canonical owner per admitted process/state. Do not run
 
 Normal local Product state is reusable. Proof-only state exists only when a claim requires it; create the minimum through canonical writers and clean only disposable state created by that proof. Do not use direct SQL/seed bypass to manufacture business success. Proof tooling must not reset developer credentials, authorize re-enrollment, revoke unrelated sessions, mutate an established actor merely to regain access, or destroy reusable business state for convenience. Destructive local data loss requires explicit same-invocation authorization.
 
-## 5. Runtime and user-facing proof
+## 5. Final operational proof
 
-A user-facing claim requires the real affected surface and role-scoped session. API/database readback corroborates canonical truth but does not replace real interaction.
+A final user-facing closure claim requires the real affected surface and role-scoped session. API/database readback corroborates canonical truth but does not replace real interaction. These are final proof requirements, not permission to enter runtime during normal implementation; timing is governed by Section 6.
 
 For a material multi-role or shared-state claim:
 
@@ -116,15 +122,33 @@ REAL ACTOR ACTION
 
 On failure, capture exact failure/state, repair the highest proven root, complete the required cutover, invalidate only stale evidence, remove affected residue, recreate only required transactional state through canonical writers, and replay from the earliest trustworthy point.
 
-## 6. Fast proportional verification and evidence
+## 6. Static-closure-first execution and proof
 
 Use Git plus the canonical Nx project graph. A local change must not trigger unrelated projects; a shared/root/toolchain change may legitimately affect many.
 
-During implementation run the nearest direct/affected checks needed for feedback. A coherent change unit may be reviewed, proportionally proved and committed locally without immediately pushing it. Do not run a separate final full proof immediately before pnpm safe:push, and do not invoke safe:push merely because another local commit exists.
+STATIC CLOSURE means the authorized task is complete as far as source/config/type/lint/unit/contract/schema/generation and other non-runtime direct evidence can prove: implementation, root-cause repair, refactor/restructure/refoundation, cutover, cleanup and residue removal are finished for the material cone.
+
+FINAL OPERATIONAL CLOSURE means only the remaining runtime-dependent claims are proven after objective static closure through the required runtime/browser/device/journey evidence and canonical readback.
+
+The execution order is mandatory:
+
+STATIC DISCOVERY
+→ STATIC IMPLEMENTATION
+→ STATIC CLOSURE OF THE WHOLE AUTHORIZED TASK
+→ ONE FINAL COHERENT OPERATIONAL PROOF PHASE
+→ REPAIR ONLY REAL RUNTIME FINDINGS
+→ RERUN ONLY EVIDENCE THOSE FINDINGS INVALIDATE
+→ FINAL CLOSURE
+
+No runtime/browser/device/agent-device proof between normal change units, per screen, after small edits or merely for reassurance. During implementation use the nearest adequate non-runtime direct/static check by default. Runtime-dependent evidence is queued for the final operational proof phase rather than executed when the claim first appears.
+
+EARLY RUNTIME IS ALLOWED ONLY WHEN RUNTIME TRUTH IS REQUIRED TO MAKE THE NEXT CORRECT IMPLEMENTATION DECISION: the material fact is inherently runtime-only, a current blocker/root cause cannot be diagnosed statically, or continuing statically would create material rework risk.
+
+A coherent change unit may be reviewed, statically/directly proved and committed locally without immediately pushing it. Do not run a separate final full proof immediately before pnpm safe:push, and do not invoke safe:push merely because another local commit exists.
 
 pnpm safe:push is an objective-closure or explicit remote-checkpoint operation. It owns one final local exact-candidate verification for the complete unpushed branch delta, then fast-forward/first-push safety and exact remote SHA confirmation. Multiple coherent local commits may therefore share one final safe:push when they belong to the same authorized objective. If the exact SHA is already remote it is a no-op and must not repeat heavy proof.
 
-The local verifier remains affected-aware and non-runtime-owning. Heavy mobile export/deployability proof is required locally only when the affected change can alter bundling/deployable configuration or when the current claim explicitly requires it; normal source iteration uses targeted checks plus real Metro/device proof when user-facing behavior is claimed. CI remains independent integration/promotion assurance and may be broader.
+The local verifier remains affected-aware and non-runtime-owning. Heavy mobile export/deployability proof is required locally only when the affected change can alter bundling/deployable configuration or when the final claim explicitly requires it. Normal source iteration uses non-runtime direct/static checks only by default. CI remains independent integration/promotion assurance and may be broader.
 
 Prefer an existing reusable boundary-owned proof lane over a journey-specific verifier. Extend an existing canonical proof owner when it can prove the claim cleanly; add a new proof mechanism only when no existing owner can do so without conflating materially different responsibilities and the new mechanism has a unique current responsibility. Proof lanes are selected by the claims and boundaries they prove, not by a requirement to exercise the whole system.
 
@@ -157,7 +181,7 @@ GOVERNANCE_IMPACT = RESOLVED
 
 For each coherent change unit:
 
-REVIEW DIFF → PROPORTIONAL CLAIM-SPECIFIC PROOF → LOCAL COMMIT
+REVIEW DIFF → PROPORTIONAL STATIC / DIRECT CLAIM-SPECIFIC PROOF → LOCAL COMMIT
 
 At authorized objective closure or an explicit remote checkpoint:
 

@@ -152,3 +152,6 @@ paths:
           $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"

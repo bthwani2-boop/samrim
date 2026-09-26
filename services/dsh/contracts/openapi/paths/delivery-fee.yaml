@@ -29,6 +29,67 @@ paths:
           $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+  /dsh/operator/partner-financial-terms-policy:
+    get:
+      operationId: readOperatorPartnerFinancialTermsPolicy
+      summary: Read the active WLT-owned partner financial terms policy
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+      responses:
+        "200":
+          description: Active partner financial terms policy.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/PartnerFinancialTermsPolicyResponse"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+    post:
+      operationId: createOperatorPartnerFinancialTermsPolicy
+      summary: Activate a new immutable WLT-owned partner financial terms policy
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/CreatePartnerFinancialTermsPolicyRequest"
+      responses:
+        "201":
+          description: New policy activated.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/PartnerFinancialTermsPolicyResponse"
+        "200":
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/PartnerFinancialTermsPolicyResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
     post:
       operationId: createOperatorDeliveryFeePolicy
       summary: Activate a new immutable WLT-owned delivery fee policy

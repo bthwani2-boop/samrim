@@ -67,15 +67,19 @@ requireTokens("REPOSITORY-STRUCTURE.md", [
 const verifier = requireTokens("tools/dev/verify-local-candidate.ps1", [
   "BaseSha",
   "EXACT_LOCAL_CANDIDATE_SHA",
-  "nx affected",
-  "Affected workspace targets",
-  "AFFECTED_MOBILE_EXPORT_SMOKE=SKIPPED reason=no_changes",
-  "nx affected -t export-smoke",
+  "nx run-many",
+  "Workspace invariant targets",
+  "go-workspace-sync",
+  "repository-ci:execution-proof-system",
+  "nx run infra:compose-config",
+  "nx affected -t lint format-check typecheck unit contract build vet export-smoke",
   "VERIFY_STEP_MS",
   "VERIFY_TOTAL_MS",
   "VERIFY=PASS",
 ]);
 for (const forbidden of [
+  "Changed-Matches",
+  "$topologyRelevant",
   "runtime:up",
   "runtime:doctor",
   "runtime:status",
@@ -130,11 +134,56 @@ const exportInputs = nx?.targetDefaults?.["export-smoke"]?.inputs ?? [];
 for (const required of [
   "default",
   "^default",
+  "nodeToolchain",
+  "mobileExportEnvironment",
   "{workspaceRoot}/tools/mobile/export-mobile-smoke.mjs",
   "{workspaceRoot}/tools/mobile/define-samrim-expo-app.cjs",
 ]) {
   if (!exportInputs.includes(required)) failures.push(`nx export-smoke missing cache input: ${required}`);
 }
+
+const staticWorkflow = requireTokens(".github/workflows/ci-static.yml", [
+  "name: CI Static",
+  "nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1",
+  "pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1",
+  "repository-ci:execution-proof-system",
+  "nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet",
+  "capture-ci-failure.mjs --kind=static-linux",
+]);
+for (const forbidden of [
+  "Resolve affected base",
+  "Detect mobile-affecting integration change",
+  "steps.base.outputs",
+  "steps.mobile.outputs",
+  "--changed --since",
+]) {
+  if (staticWorkflow.includes(forbidden)) failures.push(`static workflow retains parallel affected logic: ${forbidden}`);
+}
+
+const runtimeWorkflow = requireTokens(".github/workflows/ci-runtime.yml", [
+  "name: CI Runtime",
+  "nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1",
+  "nx show projects --affected",
+  "--projects=repository-ci",
+  "CI_RUNTIME_SCOPE=UNAFFECTED",
+  "repository-ci:runtime-images",
+  "repository-ci:runtime-integration",
+  "NX_NO_CLOUD: \"true\"",
+]);
+for (const forbidden of [
+  "Detect backend-affecting change",
+  "WLT_CI_COMPOSITION_SCOPE",
+  "tag:ci-",
+  "docker/build-push-action@",
+  "up -d --build",
+]) {
+  if (runtimeWorkflow.includes(forbidden)) failures.push(`runtime workflow retains parallel or superseded logic: ${forbidden}`);
+}
+
+requireTokens(".github/workflows/ci-security.yml", [
+  "name: CI Security",
+  "node tools/dev/verify-secret-safety.mjs",
+]);
 
 const prTemplate = requireTokens(".github/pull_request_template.md", [
   "## Governance impact",
@@ -145,7 +194,8 @@ if (prTemplate.includes("GOVERNANCE_IMPACT=NONE\n")) {
   failures.push("PR template must not preselect a Governance impact value");
 }
 
-requireTokens(".github/workflows/pr-policy.yml", [
+requireTokens(".github/workflows/ci-policy.yml", [
+  "name: CI Policy",
   "GOVERNANCE_IMPACT=(NONE|REVALIDATE_ONLY|UPDATE_REQUIRED|DEFECT_FOUND)",
   "knowledge.sources.json",
   "GOVERNANCE_CANONICAL_SHA=",
@@ -188,5 +238,6 @@ console.log("EXECUTION_MODEL=AFFECTED_STATIC_PLUS_CLAIM_SPECIFIC_RUNTIME_PLUS_SI
 console.log("CUSTOM_AFFECTED_ENGINE=0");
 console.log("STATEFUL_PROOF_LEDGER=0");
 console.log("RUNTIME_VERIFY_COUPLING=0");
+console.log("CANONICAL_CI_GATES=4");
 console.log("GOVERNANCE_IMPACT_INTERLOCK=PASS");
 console.log("AGENT_KNOWLEDGE_CONTRACT=PASS");

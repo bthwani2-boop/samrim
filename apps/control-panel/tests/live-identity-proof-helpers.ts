@@ -37,6 +37,26 @@ export async function findExistingOperator(identityBase: string, controlToken: s
   return { actorId: String(existing?.actorId), phone: String(existing?.phoneE164), token: "", createdByTest: false };
 }
 
+export async function enrollAndAuthenticateExistingOperator(page: Page): Promise<void> {
+  if (process.env.CI !== "true" || process.env.BTHWANI_IDENTITY_PROOF_SCOPE !== "disposable-ci") {
+    throw new Error("authenticated Control Panel proof requires explicitly disposable CI state");
+  }
+  const identityBase = requiredEnv("PLAYWRIGHT_IDENTITY_API_BASE_URL").replace(/\/+$/, "");
+  const controlToken = requiredEnv("PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN");
+  const mailpitBase = requiredEnv("PLAYWRIGHT_MAILPIT_BASE_URL").replace(/\/+$/, "");
+  const baseUrl = requiredEnv("PLAYWRIGHT_BASE_URL").replace(/\/+$/, "");
+  const operator = await findExistingOperator(identityBase, controlToken);
+  const enrollment = await jsonRequest(identityBase, "/internal/operator-enrollment-tokens", controlToken, {
+    phoneE164: operator.phone,
+    role: "operator",
+  }, { "X-Acting-Actor-ID": operator.actorId });
+  expect(enrollment.response.status, "a fresh disposable operator enrollment must be issued").toBe(201);
+  operator.token = String(enrollment.body?.code || "");
+  expect(operator.token).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
+  await enableVirtualAuthenticator(page);
+  await registerOperator(page, operator, baseUrl, mailpitBase);
+}
+
 export async function provisionIndependentOperator(identityBase: string, controlToken: string, actingOperatorID: string): Promise<PreparedOperator> {
   const phone = "+9677" + String(randomInt(10_000_000, 99_999_999));
   const provision = await jsonRequest(identityBase, "/internal/actor-roles/provision", controlToken, { phoneE164: phone, role: "operator" }, { "X-Acting-Actor-ID": actingOperatorID });

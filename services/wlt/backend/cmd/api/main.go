@@ -25,11 +25,16 @@ func main() {
 		log.Fatal(err)
 	}
 	destinationKey := strings.TrimSpace(os.Getenv("WLT_DESTINATION_ENCRYPTION_KEY"))
+	evidenceKey := strings.TrimSpace(os.Getenv("WLT_FINANCE_EVIDENCE_ENCRYPTION_KEY"))
 	if destinationKey == "" && strings.EqualFold(strings.TrimSpace(os.Getenv("BTHWANI_ENV")), "development") {
 		digest := sha256.Sum256([]byte("wlt-official-wallet-destination:" + os.Getenv("WLT_DSH_SERVICE_TOKEN")))
 		destinationKey = hex.EncodeToString(digest[:])
 	}
-	server, err := transporthttp.New(database, os.Getenv("WLT_DSH_SERVICE_TOKEN"), destinationKey)
+	if evidenceKey == "" && strings.EqualFold(strings.TrimSpace(os.Getenv("BTHWANI_ENV")), "development") {
+		digest := sha256.Sum256([]byte("wlt-finance-evidence:" + os.Getenv("WLT_DSH_SERVICE_TOKEN")))
+		evidenceKey = hex.EncodeToString(digest[:])
+	}
+	server, err := transporthttp.NewWithCashInConfig(database, os.Getenv("WLT_DSH_SERVICE_TOKEN"), destinationKey, evidenceKey, os.Getenv("WLT_CASH_IN_MODE"), os.Getenv("BTHWANI_ENV"))
 	if err != nil {
 		log.Fatal(err)
 	}

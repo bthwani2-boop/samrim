@@ -1,0 +1,66 @@
+{
+  "name": "repository-ci",
+  "root": ".github",
+  "projectType": "library",
+  "tags": [
+    "scope:repository-ci",
+    "type:tool"
+  ],
+  "targets": {
+    "runtime-integration": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/dev/run-ci-runtime-proof.mjs"
+      }
+    },
+    "execution-proof-system": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": [
+        "{workspaceRoot}/**/*",
+        "{workspaceRoot}/nx.json",
+        "{workspaceRoot}/**/project.json",
+        "{workspaceRoot}/.github/workflows/**/*",
+        "{workspaceRoot}/.github/ci-performance-budgets.json",
+        "{workspaceRoot}/tools/dev/verify-local-candidate.ps1",
+        "{workspaceRoot}/tools/dev/run-ci-runtime-proof.mjs",
+        "{workspaceRoot}/tools/dev/verify-execution-proof-system.mjs",
+        "{workspaceRoot}/tools/dev/execution-proof-system.mjs",
+        "{workspaceRoot}/tools/dev/verify-ci-exact-sha.mjs",
+        "{workspaceRoot}/tools/dev/build-ci-image.mjs",
+        "{workspaceRoot}/tools/dev/run-ci-command.mjs",
+        "{workspaceRoot}/tools/dev/capture-ci-failure.mjs",
+        "{workspaceRoot}/tools/dev/report-ci-performance.mjs",
+        {
+          "runtime": "node --version"
+        },
+        "{workspaceRoot}/tools/dev/verify-cache-contracts.mjs",
+        "{workspaceRoot}/tools/dev/hash-control-panel-secret-input.mjs",
+        "{workspaceRoot}/tools/mobile/hash-mobile-secret-input.mjs",
+        "{workspaceRoot}/.nx/**/*"
+      ],
+      "options": {
+        "command": "node tools/dev/verify-execution-proof-system.mjs"
+      }
+    },
+    "runtime-images": {
+      "cache": false,
+      "dependsOn": [
+        "^ci-image"
+      ],
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node -e \"console.log('CI_RUNTIME_IMAGES=PASS')\""
+      }
+    }
+  },
+  "implicitDependencies": [
+    "identity-backend",
+    "dsh-backend",
+    "wlt-backend",
+    "control-panel",
+    "infra",
+    "workspace-tooling"
+  ]
+}

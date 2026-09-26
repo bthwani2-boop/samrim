@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/domain"
 	identitysecurity "github.com/bthwani2-boop/samrim/services/identity/backend/internal/security"
@@ -138,6 +139,29 @@ func (s *Service) provisionTrusted(ctx context.Context, caller string, input dom
 	if bootstrapOnly {
 		if err := tx.QueryRowContext(ctx, "SELECT enabled,activated_at,version FROM identity_actor_roles WHERE actor_id=$1 AND role=$2", a.ID, role).Scan(&enabled, &activatedAt, &roleVersion); err != nil {
 			return domain.ActorRoleView{}, err
+		}
+	}
+	if role == "operator" {
+		for _, permission := range domain.OperatorPermissions() {
+			reason := permission + " permission not granted"
+			var changedBy any
+			if bootstrapOnly {
+				reason = "initial operator bootstrap"
+				changedBy = a.ID
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO identity_operator_permissions(actor_id,permission,enabled,version,changed_by_actor_id,reason)
+				VALUES($1,$2,$3,1,$4,$5) ON CONFLICT(actor_id,permission) DO NOTHING`, a.ID, permission, bootstrapOnly, changedBy, reason); err != nil {
+				return domain.ActorRoleView{}, err
+			}
+			if bootstrapOnly {
+				event := "operator.permission_granted"
+				if permission == domain.OperatorPermissionFinance {
+					event = "operator.finance_permission_granted"
+				}
+				if err := auditTx(ctx, tx, event, a.ID, caller, "success", "", map[string]any{"permission": permission, "reason": reason, "workload": caller}); err != nil {
+					return domain.ActorRoleView{}, err
+				}
+			}
 		}
 	}
 	if err := tx.Commit(); err != nil {
@@ -416,6 +440,13 @@ func (s *Service) Search(ctx context.Context, caller string, input domain.ActorS
 	if len(q) > 100 {
 		return domain.ActorSearchPage{}, domain.ErrInvalidInput
 	}
+	sort := strings.TrimSpace(input.Sort)
+	if sort == "" {
+		sort = "phone_asc"
+	}
+	if sort != "phone_asc" && sort != "phone_desc" {
+		return domain.ActorSearchPage{}, domain.ErrInvalidInput
+	}
 	args := []any{role}
 	clauses := []string{"r.role=$1"}
 	if input.Enabled != nil {
@@ -435,16 +466,32 @@ func (s *Service) Search(ctx context.Context, caller string, input domain.ActorS
 		if err != nil {
 			return domain.ActorSearchPage{}, domain.ErrInvalidInput
 		}
-		parts := strings.SplitN(string(raw), "|", 2)
-		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		parts := strings.SplitN(string(raw), "|", 3)
+		afterPhone, afterID := "", ""
+		if len(parts) == 2 && sort == "phone_asc" {
+			afterPhone, afterID = parts[0], parts[1]
+		} else if len(parts) == 3 && parts[0] == sort {
+			afterPhone, afterID = parts[1], parts[2]
+		} else {
 			return domain.ActorSearchPage{}, domain.ErrInvalidInput
 		}
-		args = append(args, parts[0], parts[1])
+		if afterPhone == "" || afterID == "" {
+			return domain.ActorSearchPage{}, domain.ErrInvalidInput
+		}
+		args = append(args, afterPhone, afterID)
 		phoneArg, idArg := len(args)-1, len(args)
-		cursorClause = fmt.Sprintf(" AND (a.phone_e164>$%d OR (a.phone_e164=$%d AND a.id>$%d))", phoneArg, phoneArg, idArg)
+		comparison := ">"
+		if sort == "phone_desc" {
+			comparison = "<"
+		}
+		cursorClause = fmt.Sprintf(" AND (a.phone_e164%s$%d OR (a.phone_e164=$%d AND a.id%s$%d))", comparison, phoneArg, phoneArg, comparison, idArg)
 	}
 	args = append(args, limit+1)
-	query := "SELECT a.id,a.phone_e164,r.role,r.enabled,r.activated_at,a.security_enabled,a.version,r.version,c.version FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id LEFT JOIN identity_password_credentials c ON c.actor_id=r.actor_id AND c.role=r.role WHERE " + strings.Join(clauses, " AND ") + cursorClause + " ORDER BY a.phone_e164,a.id LIMIT $" + strconv.Itoa(len(args))
+	order := "ASC"
+	if sort == "phone_desc" {
+		order = "DESC"
+	}
+	query := "SELECT a.id,a.phone_e164,r.role,r.enabled,r.activated_at,a.security_enabled,a.version,r.version,c.version FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id LEFT JOIN identity_password_credentials c ON c.actor_id=r.actor_id AND c.role=r.role WHERE " + strings.Join(clauses, " AND ") + cursorClause + " ORDER BY a.phone_e164 " + order + ",a.id " + order + " LIMIT $" + strconv.Itoa(len(args))
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return domain.ActorSearchPage{}, err
@@ -465,9 +512,143 @@ func (s *Service) Search(ctx context.Context, caller string, input domain.ActorS
 	if len(items) > limit {
 		last := items[limit-1]
 		page.Items = items[:limit]
-		page.NextCursor = base64.RawURLEncoding.EncodeToString([]byte(last.PhoneE164 + "|" + last.ActorID))
+		page.NextCursor = base64.RawURLEncoding.EncodeToString([]byte(sort + "|" + last.PhoneE164 + "|" + last.ActorID))
 	}
 	return page, nil
+}
+
+func (s *Service) ReadOperatorPermission(ctx context.Context, caller, actorID, actingActorID, permission string) (domain.OperatorPermissionAccess, error) {
+	caller = strings.ToLower(strings.TrimSpace(caller))
+	actorID = strings.TrimSpace(actorID)
+	actingActorID = strings.TrimSpace(actingActorID)
+	permission = strings.ToLower(strings.TrimSpace(permission))
+	if actorID == "" || !domain.IsOperatorPermission(permission) {
+		return domain.OperatorPermissionAccess{}, domain.ErrInvalidInput
+	}
+	switch caller {
+	case "control-panel":
+		if actingActorID == "" {
+			return domain.OperatorPermissionAccess{}, domain.ErrInvalidInput
+		}
+		if err := requireOperatorPermissionAdministrator(ctx, s.db, actingActorID); err != nil {
+			return domain.OperatorPermissionAccess{}, err
+		}
+	case "dsh":
+		if actingActorID != "" {
+			return domain.OperatorPermissionAccess{}, domain.ErrInvalidInput
+		}
+	default:
+		return domain.OperatorPermissionAccess{}, domain.ErrForbidden
+	}
+	return readOperatorPermission(ctx, s.db, actorID, permission)
+}
+
+func (s *Service) SetOperatorPermission(ctx context.Context, caller, actorID, actingActorID, permission string, enabled bool, correlationID, reason string, expectedVersion int) (domain.OperatorPermissionAccess, error) {
+	caller = strings.ToLower(strings.TrimSpace(caller))
+	actorID = strings.TrimSpace(actorID)
+	actingActorID = strings.TrimSpace(actingActorID)
+	permission = strings.ToLower(strings.TrimSpace(permission))
+	reason = strings.TrimSpace(reason)
+	if caller != "control-panel" {
+		return domain.OperatorPermissionAccess{}, domain.ErrForbidden
+	}
+	if actorID == "" || actingActorID == "" || !domain.IsOperatorPermission(permission) || expectedVersion < 1 || utf8.RuneCountInString(reason) < 5 || utf8.RuneCountInString(reason) > 500 {
+		return domain.OperatorPermissionAccess{}, domain.ErrInvalidInput
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.OperatorPermissionAccess{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := requireOperatorPermissionAdministrator(ctx, tx, actingActorID); err != nil {
+		return domain.OperatorPermissionAccess{}, err
+	}
+	var roleEnabled, currentEnabled bool
+	var currentVersion int
+	err = tx.QueryRowContext(ctx, `SELECT r.enabled,p.enabled,p.version
+		FROM identity_actor_roles r
+		JOIN identity_operator_permissions p ON p.actor_id=r.actor_id AND p.permission=$2
+		WHERE r.actor_id=$1 AND r.role='operator'
+		FOR UPDATE OF r,p`, actorID, permission).Scan(&roleEnabled, &currentEnabled, &currentVersion)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.OperatorPermissionAccess{}, domain.ErrNotFound
+	}
+	if err != nil {
+		return domain.OperatorPermissionAccess{}, err
+	}
+	if actorID == actingActorID || !roleEnabled || currentVersion != expectedVersion {
+		return domain.OperatorPermissionAccess{}, domain.ErrConflict
+	}
+	if currentEnabled == enabled {
+		view, err := readOperatorPermission(ctx, tx, actorID, permission)
+		if err != nil {
+			return domain.OperatorPermissionAccess{}, err
+		}
+		if err := tx.Commit(); err != nil {
+			return domain.OperatorPermissionAccess{}, err
+		}
+		return view, nil
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE identity_operator_permissions
+		SET enabled=$1,version=version+1,changed_by_actor_id=$2,reason=$3,updated_at=clock_timestamp()
+		WHERE actor_id=$4 AND permission=$5 AND version=$6`, enabled, actingActorID, reason, actorID, permission, expectedVersion)
+	if err != nil {
+		return domain.OperatorPermissionAccess{}, err
+	}
+	if count, _ := result.RowsAffected(); count != 1 {
+		return domain.OperatorPermissionAccess{}, domain.ErrConflict
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1
+		WHERE actor_id=$1 AND role='operator' AND revoked_at IS NULL`, actorID); err != nil {
+		return domain.OperatorPermissionAccess{}, err
+	}
+	meta := map[string]any{"permission": permission, "enabled": enabled, "reason": reason, "expectedVersion": expectedVersion, "operatorActorId": actingActorID, "workload": caller}
+	if err := auditTx(ctx, tx, "operator.permission_changed", actorID, caller+":"+actingActorID, "success", strings.TrimSpace(correlationID), meta); err != nil {
+		return domain.OperatorPermissionAccess{}, err
+	}
+	view, err := readOperatorPermission(ctx, tx, actorID, permission)
+	if err != nil {
+		return domain.OperatorPermissionAccess{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.OperatorPermissionAccess{}, err
+	}
+	return view, nil
+}
+
+type financeAccessQueryer interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func requireOperatorPermissionAdministrator(ctx context.Context, source financeAccessQueryer, actorID string) error {
+	var authorized bool
+	if err := source.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM identity_bootstrap_state WHERE id=1 AND initial_operator_actor_id=$1)`, actorID).Scan(&authorized); err != nil {
+		return err
+	}
+	if !authorized {
+		return domain.ErrForbidden
+	}
+	return nil
+}
+
+func readOperatorPermission(ctx context.Context, source financeAccessQueryer, actorID, permission string) (domain.OperatorPermissionAccess, error) {
+	var view domain.OperatorPermissionAccess
+	var changedBy sql.NullString
+	err := source.QueryRowContext(ctx, `SELECT p.actor_id,p.permission,p.enabled,p.version,p.changed_by_actor_id,p.reason,p.updated_at
+		FROM identity_operator_permissions p
+		JOIN identity_actor_roles r ON r.actor_id=p.actor_id AND r.role=p.role
+		WHERE p.actor_id=$1 AND p.permission=$2`, actorID, permission).Scan(&view.ActorID, &view.Permission, &view.Enabled, &view.Version, &changedBy, &view.Reason, &view.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.OperatorPermissionAccess{}, domain.ErrNotFound
+	}
+	if err != nil {
+		return domain.OperatorPermissionAccess{}, err
+	}
+	if changedBy.Valid {
+		value := changedBy.String
+		view.ChangedByActorID = &value
+	}
+	return view, nil
 }
 
 func (s *Service) SetRoleEnabledWithContext(ctx context.Context, caller, actorID, role string, enabled bool, correlationID, reason string, expectedVersion int, operatorActorID string) error {
@@ -530,15 +711,16 @@ func (s *Service) SetRoleEnabledWithContext(ctx context.Context, caller, actorID
 	return tx.Commit()
 }
 
-func (s *Service) AuthorizeReenrollmentWithContext(ctx context.Context, caller, actorID, role, correlationID, operatorActorID string) error {
+func (s *Service) AuthorizeReenrollmentWithContext(ctx context.Context, caller, actorID, role, correlationID, operatorActorID, reason string, expectedActorVersion, expectedRoleVersion int) error {
 	caller = strings.ToLower(strings.TrimSpace(caller))
 	actorID = strings.TrimSpace(actorID)
 	role = strings.ToLower(strings.TrimSpace(role))
 	operatorActorID = strings.TrimSpace(operatorActorID)
+	reason = strings.TrimSpace(reason)
 	if actorID == "" || !domain.CanAuthorizeReenrollment(caller, role) {
 		return domain.ErrForbidden
 	}
-	if operatorActorID == "" {
+	if operatorActorID == "" || expectedActorVersion < 1 || expectedRoleVersion < 1 || utf8.RuneCountInString(reason) < 5 || utf8.RuneCountInString(reason) > 500 {
 		return domain.ErrInvalidInput
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -546,19 +728,28 @@ func (s *Service) AuthorizeReenrollmentWithContext(ctx context.Context, caller, 
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var enabled bool
-	err = tx.QueryRowContext(ctx, "SELECT enabled FROM identity_actor_roles WHERE actor_id=$1 AND role=$2 FOR UPDATE", actorID, role).Scan(&enabled)
+	var actorVersion, roleVersion int
+	var enabled, securityEnabled bool
+	var activatedAt sql.NullTime
+	err = tx.QueryRowContext(ctx, `SELECT a.version,a.security_enabled,r.enabled,r.activated_at,r.version
+FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id
+WHERE a.id=$1 AND r.role=$2 FOR UPDATE OF a,r`, actorID, role).Scan(&actorVersion, &securityEnabled, &enabled, &activatedAt, &roleVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.ErrNotFound
 	}
 	if err != nil {
 		return err
 	}
-	if !enabled {
+	if actorVersion != expectedActorVersion || roleVersion != expectedRoleVersion || !enabled || !securityEnabled || !activatedAt.Valid {
 		return domain.ErrConflict
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE identity_actor_roles SET activated_at=NULL,version=version+1,updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2", actorID, role); err != nil {
+	result, err := tx.ExecContext(ctx, `UPDATE identity_actor_roles SET activated_at=NULL,version=version+1,updated_at=clock_timestamp()
+WHERE actor_id=$1 AND role=$2 AND version=$3 AND activated_at IS NOT NULL`, actorID, role, expectedRoleVersion)
+	if err != nil {
 		return err
+	}
+	if count, _ := result.RowsAffected(); count != 1 {
+		return domain.ErrConflict
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1 WHERE actor_id=$1 AND role=$2 AND revoked_at IS NULL", actorID, role); err != nil {
 		return err
@@ -569,12 +760,8 @@ func (s *Service) AuthorizeReenrollmentWithContext(ctx context.Context, caller, 
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_operator_enrollment_tokens SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND status='pending'", actorID, role); err != nil {
 		return err
 	}
-	auditPrincipal := caller
-	meta := map[string]any{"role": role, "workload": caller}
-	if strings.TrimSpace(operatorActorID) != "" {
-		auditPrincipal = caller + ":" + strings.TrimSpace(operatorActorID)
-		meta["operatorActorId"] = strings.TrimSpace(operatorActorID)
-	}
+	meta := map[string]any{"role": role, "workload": caller, "operatorActorId": operatorActorID, "reason": reason, "actorVersion": actorVersion, "roleVersion": roleVersion}
+	auditPrincipal := caller + ":" + operatorActorID
 	if err := auditTx(ctx, tx, "actor_role.reenrollment_authorized", actorID, auditPrincipal, "success", correlationID, meta); err != nil {
 		return err
 	}

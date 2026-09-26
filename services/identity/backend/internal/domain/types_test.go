@@ -107,6 +107,24 @@ func TestControlPanelRoleBoundary(t *testing.T) {
 	}
 }
 
+func TestOperatorWorkspacePermissionRegistry(t *testing.T) {
+	want := []string{"operations", "partners", "catalog", "marketing", "finance", "platform_policies"}
+	got := OperatorPermissions()
+	if len(got) != len(want) {
+		t.Fatalf("operator workspace permission count = %d; want %d", len(got), len(want))
+	}
+	for index, permission := range want {
+		if got[index] != permission || !IsOperatorPermission(permission) {
+			t.Fatalf("operator workspace permission[%d] = %q; want recognized %q", index, got[index], permission)
+		}
+	}
+	for _, invalid := range []string{"access", "leadership", "partner", "captain", "field", ""} {
+		if IsOperatorPermission(invalid) {
+			t.Fatalf("unexpected Operator workspace permission %q", invalid)
+		}
+	}
+}
+
 func TestManagedRoleSecurityMutationBoundary(t *testing.T) {
 	if !CanSetRoleEnabled("dsh", "partner") || !CanSetRoleEnabled("dsh", "captain") {
 		t.Fatal("DSH must own managed-role security transitions")
@@ -120,7 +138,10 @@ func TestManagedRoleReenrollmentBoundary(t *testing.T) {
 	if !CanAuthorizeReenrollment("control-panel", "partner") || !CanAuthorizeReenrollment("control-panel", "captain") {
 		t.Fatal("operator must be able to request governed partner/captain reenrollment")
 	}
-	if CanAuthorizeReenrollment("control-panel", "field") {
-		t.Fatal("field reenrollment must remain unavailable because DSH owns the Field admission lifecycle")
+	if !CanAuthorizeReenrollment("dsh", "field") {
+		t.Fatal("DSH must be able to authorize Field reenrollment through its admission lifecycle")
+	}
+	if CanAuthorizeReenrollment("control-panel", "field") || CanAuthorizeReenrollment("dsh", "partner") || CanAuthorizeReenrollment("dsh", "captain") {
+		t.Fatal("reenrollment must remain scoped to the lifecycle owner for each role")
 	}
 }

@@ -1,6 +1,6 @@
 import { borders, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
-import type { CommerceVertical, JoiningCaseResponse, ServiceCity } from "@bthwani/dsh";
+import type { CommerceVertical, JoiningCaseResponse, ServiceCity, StoreFulfillmentMode } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import { correctAndResubmitOwnJoiningCase, listCatalogVerticals } from "./store-readback-client";
@@ -54,7 +54,7 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
     const nextBusinessName = businessName.trim();
     const nextStoreName = firstStoreName.trim();
 	    if (nextBusinessName.length < 2 || nextBusinessName.length > 160 || nextStoreName.length < 2 || nextStoreName.length > 160 || !serviceCityId || !verticalId || latitude === null || longitude === null) {
-		setError("أدخل الأسماء واختر مدينة الخدمة والنشاط التجاري، وتأكد من وجود موقع المتجر الثابت.");
+		setError("أدخل الأسماء واختر المدينة والنشاط، وتأكد من وجود موقع المتجر الثابت.");
       return;
     }
     setBusy(true);
@@ -88,10 +88,17 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
       {optionsLoading ? <Text style={styles.muted}>جارٍ قراءة الأنشطة المتاحة…</Text> : null}
       {optionsError ? <View style={styles.optionError}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة الأنشطة التجارية.</Text><BthwaniButton label="إعادة قراءة الأنشطة" onPress={() => void loadOptions()} variant="secondary" /></View> : null}
       <View style={styles.cityList}>{verticals.map((vertical) => <BthwaniChip key={vertical.id} disabled={busy} label={vertical.nameAr} onPress={() => setVerticalId(vertical.id)} selected={verticalId === vertical.id} />)}</View>
+      <View style={styles.locationBox}><Text style={styles.label}>أوضاع الطلب المثبتة عند الانضمام</Text><Text style={styles.muted}>{current.firstStoreFulfillmentModes.map(fulfillmentModeLabel).join(" · ")}</Text><Text style={styles.muted}>لا يتغير اختيار الأوضاع أثناء التصحيح أو إعادة الإرسال. بعد إنشاء المتجر يديره المشغّل من لوحة التحكم.</Text></View>
       <BthwaniButton busy={busy} disabled={optionsLoading} label="حفظ التصحيح وإعادة الإرسال" onPress={() => void correctAndResubmit()} />
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     </View>
   );
+}
+
+function fulfillmentModeLabel(mode: StoreFulfillmentMode): string {
+  if (mode === "BTHWANI_CAPTAIN") return "توصيل بثواني";
+  if (mode === "CUSTOMER_PICKUP") return "استلم بنفسك من المتجر";
+  return "توصيل المتجر";
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {

@@ -30,7 +30,7 @@ func (s *Service) ListProductProposalsForPartner(ctx context.Context, accessToke
 }
 
 func (s *Service) ListProductProposalsForReview(ctx context.Context, actingActorID, state string, limit int, cursor string) (postgres.CatalogProductProposalPage, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
 		return postgres.CatalogProductProposalPage{}, err
 	}
 	return postgres.ListCatalogProductProposalsForReview(ctx, s.db, strings.TrimSpace(state), limit, strings.TrimSpace(cursor))
@@ -75,7 +75,7 @@ func (s *Service) UpdateProductProposal(ctx context.Context, accessToken, propos
 }
 
 func (s *Service) ReviewProductProposal(ctx context.Context, actingActorID, proposalID, state, reason string, expectedVersion int, idempotencyKey, correlationID string) (postgres.CatalogProductProposalResult, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
 		return postgres.CatalogProductProposalResult{}, err
 	}
 	state = strings.ToLower(strings.TrimSpace(state))
@@ -117,7 +117,7 @@ func normalizeProductProposalInput(input postgres.CatalogProductProposalInput) (
 			return postgres.CatalogProductProposalInput{}, ErrCatalogProductImageInvalid
 		}
 	}
-	return postgres.CatalogProductProposalInput{ID: strings.TrimSpace(input.ID), VerticalID: strings.TrimSpace(input.VerticalID), CategoryID: strings.TrimSpace(input.CategoryID), ProposedName: name, ProposedBrand: brand, ProposedVariantTitle: variantTitle, ProposedMeasurementKind: kind, ProposedBaseUnit: baseUnit, ProposedIdentifierType: identifierType, ProposedIdentifierValue: identifierValue, ProposedImageURI: imageURI}, nil
+	return postgres.CatalogProductProposalInput{ID: strings.TrimSpace(input.ID), VerticalID: strings.TrimSpace(input.VerticalID), CategoryID: strings.TrimSpace(input.CategoryID), ProposedName: name, ProposedBrand: brand, ProposedVariantTitle: variantTitle, ProposedMeasurementKind: kind, ProposedBaseUnit: baseUnit, ProposedIdentifierType: identifierType, ProposedIdentifierValue: identifierValue, ProposedImageURI: imageURI, AttributeValues: normalizeCatalogAttributeValues(input.AttributeValues), VariantAttributeValues: normalizeCatalogAttributeValues(input.VariantAttributeValues)}, nil
 }
 
 func normalizeOptionalPointer(value *string, upper bool) *string {

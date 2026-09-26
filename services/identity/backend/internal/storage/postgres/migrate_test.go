@@ -13,12 +13,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/domain"
 	identityruntime "github.com/bthwani2-boop/samrim/services/identity/backend/internal/runtime"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/storage/postgres"
 	_ "github.com/lib/pq"
 )
 
-func TestMigrationV13ToV19Upgrade(t *testing.T) {
+func TestMigrationV13ToV22Upgrade(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
 	if databaseURL == "" {
 		t.Skip("IDENTITY_DATABASE_URL is required for the migration upgrade proof")
@@ -570,23 +571,149 @@ func TestMigrationV13ToV19Upgrade(t *testing.T) {
 		t.Fatalf("refresh request id unique index missing after v19: %v", err)
 	}
 
+	// Apply migration 020 and prove only the initial Operator receives Finance access by default.
+	var v20Name string
+	var v20Content []byte
+	for _, file := range files {
+		if strings.HasPrefix(file.Name(), "020_") {
+			v20Name = file.Name()
+			v20Content, err = os.ReadFile(filepath.Join(migDir, v20Name))
+			if err != nil {
+				t.Fatalf("read 020: %v", err)
+			}
+			break
+		}
+	}
+	if v20Name == "" {
+		t.Fatal("migration 020 not found")
+	}
+	hash20 := sha256.Sum256(v20Content)
+	if err := postgres.Migrate(ctx, testDB, 20, v20Name, hex.EncodeToString(hash20[:]), string(v20Content)); err != nil {
+		t.Fatalf("apply migration 020 on v19 database: %v", err)
+	}
+	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 20 {
+		t.Fatalf("expected schema version 20, got %d (err: %v)", version, err)
+	}
+	var initialFinance, laterFinance bool
+	if err := testDB.QueryRowContext(ctx, "SELECT enabled FROM identity_operator_permissions WHERE actor_id=$1 AND permission='finance'", ownerActorID).Scan(&initialFinance); err != nil {
+		t.Fatalf("read initial Operator Finance grant: %v", err)
+	}
+	if err := testDB.QueryRowContext(ctx, "SELECT enabled FROM identity_operator_permissions WHERE actor_id=$1 AND permission='finance'", operatorActorID).Scan(&laterFinance); err != nil {
+		t.Fatalf("read later Operator Finance grant: %v", err)
+	}
+	if !initialFinance || laterFinance {
+		t.Fatalf("Finance grant backfill was not least-privilege: initial=%v later=%v", initialFinance, laterFinance)
+	}
+
+	// Apply migration 021 and prove Platform Policies access is separately granted.
+	var v21Name string
+	var v21Content []byte
+	for _, file := range files {
+		if strings.HasPrefix(file.Name(), "021_") {
+			v21Name = file.Name()
+			v21Content, err = os.ReadFile(filepath.Join(migDir, v21Name))
+			if err != nil {
+				t.Fatalf("read 021: %v", err)
+			}
+			break
+		}
+	}
+	if v21Name == "" {
+		t.Fatal("migration 021 not found")
+	}
+	hash21 := sha256.Sum256(v21Content)
+	if err := postgres.Migrate(ctx, testDB, 21, v21Name, hex.EncodeToString(hash21[:]), string(v21Content)); err != nil {
+		t.Fatalf("apply migration 021 on v20 database: %v", err)
+	}
+	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 21 {
+		t.Fatalf("expected schema version 21, got %d (err: %v)", version, err)
+	}
+	var initialPolicies, laterPolicies bool
+	if err := testDB.QueryRowContext(ctx, "SELECT enabled FROM identity_operator_permissions WHERE actor_id=$1 AND permission='platform_policies'", ownerActorID).Scan(&initialPolicies); err != nil {
+		t.Fatalf("read initial Operator Platform Policies grant: %v", err)
+	}
+	if err := testDB.QueryRowContext(ctx, "SELECT enabled FROM identity_operator_permissions WHERE actor_id=$1 AND permission='platform_policies'", operatorActorID).Scan(&laterPolicies); err != nil {
+		t.Fatalf("read later Operator Platform Policies grant: %v", err)
+	}
+	if !initialPolicies || laterPolicies {
+		t.Fatalf("Platform Policies grant backfill was not least-privilege: initial=%v later=%v", initialPolicies, laterPolicies)
+	}
+
+	// Apply migration 022 and prove every admitted workspace scope is persisted for Operators.
+	var v22Name string
+	var v22Content []byte
+	for _, file := range files {
+		if strings.HasPrefix(file.Name(), "022_") {
+			v22Name = file.Name()
+			v22Content, err = os.ReadFile(filepath.Join(migDir, v22Name))
+			if err != nil {
+				t.Fatalf("read 022: %v", err)
+			}
+			break
+		}
+	}
+	if v22Name == "" {
+		t.Fatal("migration 022 not found")
+	}
+	hash22 := sha256.Sum256(v22Content)
+	if err := postgres.Migrate(ctx, testDB, 22, v22Name, hex.EncodeToString(hash22[:]), string(v22Content)); err != nil {
+		t.Fatalf("apply migration 022 on v21 database: %v", err)
+	}
+	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 22 {
+		t.Fatalf("expected schema version 22, got %d (err: %v)", version, err)
+	}
+	var initialPermissionCount, initialEnabledPermissionCount, laterPermissionCount, laterEnabledPermissionCount int
+	if err := testDB.QueryRowContext(ctx, "SELECT count(*), count(*) FILTER (WHERE enabled) FROM identity_operator_permissions WHERE actor_id=$1", ownerActorID).Scan(&initialPermissionCount, &initialEnabledPermissionCount); err != nil {
+		t.Fatalf("read initial Operator workspace grants: %v", err)
+	}
+	if err := testDB.QueryRowContext(ctx, "SELECT count(*), count(*) FILTER (WHERE enabled) FROM identity_operator_permissions WHERE actor_id=$1", operatorActorID).Scan(&laterPermissionCount, &laterEnabledPermissionCount); err != nil {
+		t.Fatalf("read later Operator workspace grants: %v", err)
+	}
+	if initialPermissionCount != len(domain.OperatorPermissions()) || initialEnabledPermissionCount != len(domain.OperatorPermissions()) || laterPermissionCount != len(domain.OperatorPermissions()) || laterEnabledPermissionCount != 0 {
+		t.Fatalf("workspace permission backfill was not least-privilege: initial=%d/%d later=%d/%d scopes=%d", initialPermissionCount, initialEnabledPermissionCount, laterPermissionCount, laterEnabledPermissionCount, len(domain.OperatorPermissions()))
+	}
+
+	// Apply migration 023 and verify the current legal-name schema before runtime readiness.
+	var v23Name string
+	var v23Content []byte
+	for _, file := range files {
+		if strings.HasPrefix(file.Name(), "023_") {
+			v23Name = file.Name()
+			v23Content, err = os.ReadFile(filepath.Join(migDir, v23Name))
+			if err != nil {
+				t.Fatalf("read 023: %v", err)
+			}
+			break
+		}
+	}
+	if v23Name == "" {
+		t.Fatal("migration 023 not found")
+	}
+	hash23 := sha256.Sum256(v23Content)
+	if err := postgres.Migrate(ctx, testDB, 23, v23Name, hex.EncodeToString(hash23[:]), string(v23Content)); err != nil {
+		t.Fatalf("apply migration 023 on v22 database: %v", err)
+	}
+	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 23 {
+		t.Fatalf("expected schema version 23, got %d (err: %v)", version, err)
+	}
+
 	// Verify full postgres.Ready passes on this upgraded database.
 	if err := postgres.Ready(ctx, testDB); err != nil {
 		t.Fatalf("postgres.Ready failed on upgraded database: %v", err)
 	}
 
-	// Re-run the canonical runtime migrator and prove it is a no-op at v19.
+	// Re-run the canonical runtime migrator and prove it is a no-op at v22.
 	beforeSecondRun := readMigrationNoOpSnapshot(t, testDB)
 	if err := identityruntime.RunMigrations(ctx, "development", testURL, migDir); err != nil {
 		t.Fatalf("second canonical migration run failed: %v", err)
 	}
 	afterSecondRun := readMigrationNoOpSnapshot(t, testDB)
 	assertMigrationNoOpSnapshotUnchanged(t, beforeSecondRun, afterSecondRun)
-	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 19 {
+	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 23 {
 		t.Fatalf("schema version changed during second canonical migration run: version=%d err=%v", version, err)
 	}
 
-	t.Log("Migration v13 -> v19 upgrade, data preservation, passkey cutover, mobile lifetime and refresh reconciliation cutover test PASSED successfully!")
+	t.Log("Migration v13 -> v23 upgrade, data preservation, passkey cutover, mobile lifetime, refresh reconciliation, Operator workspace permissions and verified legal-name schema cutover test PASSED successfully!")
 }
 
 type migrationSessionSnapshot struct {

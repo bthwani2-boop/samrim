@@ -19,6 +19,8 @@ import type {
   OperatorPasskeyRegistrationFinishRequest,
   OperatorPasskeyRegistrationOptionsRequest,
   OperatorPasskeyRegistrationResponse,
+  OperatorPermission,
+  OperatorPermissionAccess,
   OperatorRecoveryRequest,
   PasskeyOptions,
   PasswordLoginRequest,
@@ -67,11 +69,20 @@ export type VersionedMutationContext = AttributedMutationContext & Readonly<{
   expectedVersion: number;
 }>;
 
+export type ReenrollmentMutationContext = AttributedMutationContext & Readonly<{
+  expectedActorVersion: number;
+  expectedRoleVersion: number;
+  reason: string;
+}>;
+
 export type IdentityInternalClient = Readonly<{
   issueOperatorEnrollmentToken(request: OperatorEnrollmentTokenIssueRequest, context: AttributedMutationContext): Promise<OperatorEnrollmentToken>;
   provisionActorRole(request: ProvisionActorRoleRequest, context: AttributedMutationContext): Promise<ActorRoleView>;
-  searchActorRoles(role: ActorType, query: string, enabled?: boolean): Promise<ActorRoleSearchPage>;
-  authorizeActorRoleReenrollment(actorId: string, role: ActorType, context: AttributedMutationContext): Promise<void>;
+  searchActorRoles(role: ActorType, query: string, enabled?: boolean, page?: Readonly<{ limit?: number; cursor?: string; sort?: "phone_asc" | "phone_desc" }>): Promise<ActorRoleSearchPage>;
+  readActorRole(actorId: string, role: ActorType): Promise<ActorRoleView>;
+  readOperatorPermission(actorId: string, permission: OperatorPermission, context: AttributedMutationContext): Promise<OperatorPermissionAccess>;
+  setOperatorPermission(actorId: string, permission: OperatorPermission, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<OperatorPermissionAccess>;
+  authorizeActorRoleReenrollment(actorId: string, role: ActorType, context: ReenrollmentMutationContext): Promise<void>;
   setActorRoleEnabled(actorId: string, role: ActorType, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<void>;
   setActorSecurityEnabled(actorId: string, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<void>;
 }>;
@@ -184,10 +195,43 @@ function validateVersionedMutationContext(context: VersionedMutationContext): vo
   if (!Number.isInteger(context.expectedVersion) || context.expectedVersion < 1) throw new Error("IDENTITY_MUTATION_VERSION_INVALID");
 }
 
+function validateReenrollmentMutationContext(context: ReenrollmentMutationContext): void {
+  validateAttributedMutationContext(context);
+  if (!Number.isSafeInteger(context.expectedActorVersion) || context.expectedActorVersion < 1 || !Number.isSafeInteger(context.expectedRoleVersion) || context.expectedRoleVersion < 1) throw new Error("IDENTITY_REENROLLMENT_VERSION_INVALID");
+  const reasonLength = Array.from(context.reason.trim()).length;
+  if (reasonLength < 5 || reasonLength > 500) throw new Error("IDENTITY_REENROLLMENT_REASON_INVALID");
+}
+
 export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: string, timeoutMs = 8_000): IdentityInternalClient {
   const baseUrl = normalizeBaseUrl(rawBaseUrl);
   const token = serviceToken.trim();
   if (token.length < 24) throw new Error("IDENTITY_SERVICE_TOKEN_INVALID");
+
+  async function readActorRole(actorId: string, role: ActorType): Promise<ActorRoleView> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      let response: Response;
+      try {
+        response = await fetch(resolveUrl(baseUrl, expandPath(identityOperationPaths.readActorRole.path, { actorId, role })), {
+          method: identityOperationPaths.readActorRole.method,
+          cache: "no-store",
+          headers: { Accept: "application/json", Authorization: "Bearer " + token },
+          ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        throw { kind: "network", message: error instanceof Error ? error.message : "identity network error" } satisfies IdentityClientError;
+      }
+      if (!response.ok) {
+        const parsed = parseErrorPayload(await response.json().catch(() => null));
+        throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies IdentityClientError;
+      }
+      return (await response.json()) as ActorRoleView;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
 
   async function requestNoContent(
     pathname: string,
@@ -220,6 +264,57 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
         const parsed = parseErrorPayload(await response.json().catch(() => null));
         throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies IdentityClientError;
       }
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async function requestOperatorPermission(
+    actorId: string,
+    permission: OperatorPermission,
+    method: "GET" | "PUT",
+    context: AttributedMutationContext | VersionedMutationContext,
+    enabled?: boolean,
+    reason = "",
+  ): Promise<OperatorPermissionAccess> {
+    if (method === "PUT") {
+      validateVersionedMutationContext(context as VersionedMutationContext);
+      const reasonLength = Array.from(reason.trim()).length;
+      if (reasonLength < 5 || reasonLength > 500) throw new Error("IDENTITY_OPERATOR_PERMISSION_REASON_INVALID");
+    } else {
+      validateAttributedMutationContext(context);
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      let response: Response;
+      try {
+        const operation = method === "PUT" ? identityOperationPaths.setOperatorPermission : identityOperationPaths.readOperatorPermission;
+        response = await fetch(resolveUrl(baseUrl, expandPath(operation.path, { actorId, permission })), {
+          method,
+          headers: {
+            Accept: "application/json",
+            Authorization: "Bearer " + token,
+            "X-Acting-Actor-ID": context.operatorActorId.trim(),
+            ...(method === "PUT" ? {
+              "Content-Type": "application/json",
+              "X-Correlation-ID": context.correlationId.trim(),
+              "X-Expected-Version": String((context as VersionedMutationContext).expectedVersion),
+              "X-Reason": reason.trim(),
+            } : {}),
+          },
+          ...(method === "PUT" ? { body: JSON.stringify({ enabled }) } : {}),
+          ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        throw { kind: "network", message: error instanceof Error ? error.message : "identity network error" } satisfies IdentityClientError;
+      }
+      if (!response.ok) {
+        const parsed = parseErrorPayload(await response.json().catch(() => null));
+        throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies IdentityClientError;
+      }
+      return (await response.json()) as OperatorPermissionAccess;
     } finally {
       clearTimeout(timeout);
     }
@@ -258,8 +353,8 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
     }
   }
 
-  async function requestAttributedNoContent(pathname: string, context: AttributedMutationContext): Promise<void> {
-    validateAttributedMutationContext(context);
+  async function requestReenrollmentNoContent(pathname: string, context: ReenrollmentMutationContext): Promise<void> {
+    validateReenrollmentMutationContext(context);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -272,6 +367,9 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
             Authorization: "Bearer " + token,
             "X-Correlation-ID": context.correlationId.trim(),
             "X-Acting-Actor-ID": context.operatorActorId.trim(),
+            "X-Expected-Version": String(context.expectedRoleVersion),
+            "X-Expected-Actor-Version": String(context.expectedActorVersion),
+            "X-Reason": context.reason.trim(),
           },
           ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
           signal: controller.signal,
@@ -322,13 +420,16 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
         clearTimeout(timeout);
       }
     },
-    searchActorRoles: async (role, query, enabled) => {
+    readActorRole,
+    searchActorRoles: async (role, query, enabled, page) => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
       try {
         let response: Response;
         try {
-          const params = new URLSearchParams({ role, q: query, limit: "2" });
+          const params = new URLSearchParams({ role, q: query, limit: String(page?.limit ?? 25) });
+          if (page?.cursor) params.set("cursor", page.cursor);
+          if (page?.sort) params.set("sort", page.sort);
           if (enabled !== undefined) params.set("enabled", String(enabled));
           response = await fetch(resolveUrl(baseUrl, identityOperationPaths.searchActorRoles.path + "?" + params.toString()), {
             method: identityOperationPaths.searchActorRoles.method,
@@ -348,8 +449,10 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
         clearTimeout(timeout);
       }
     },
+    readOperatorPermission: (actorId, permission, context) => requestOperatorPermission(actorId, permission, "GET", context),
+    setOperatorPermission: (actorId, permission, enabled, reason, context) => requestOperatorPermission(actorId, permission, "PUT", context, enabled, reason),
     authorizeActorRoleReenrollment: (actorId, role, context) =>
-      requestAttributedNoContent(expandPath(identityOperationPaths.authorizeManagedRoleReenrollment.path, { actorId, role }), context),
+      requestReenrollmentNoContent(expandPath(identityOperationPaths.authorizeManagedRoleReenrollment.path, { actorId, role }), context),
     setActorRoleEnabled: (actorId, role, enabled, reason, context) => {
       const op = enabled ? identityOperationPaths.enableActorRole : identityOperationPaths.disableActorRole;
       return requestNoContent(

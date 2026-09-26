@@ -28,6 +28,7 @@ paths:
         - { name: role, in: query, required: true, schema: { $ref: "#/components/schemas/ActorType" } }
         - { name: q, in: query, schema: { type: string, maxLength: 100 } }
         - { name: enabled, in: query, schema: { type: boolean } }
+        - { name: sort, in: query, description: Stable phone and actor ID ordering; cursor is valid only for the same sort., schema: { type: string, enum: [phone_asc, phone_desc], default: phone_asc } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
         - { name: cursor, in: query, schema: { type: string } }
       responses:
@@ -35,6 +36,44 @@ paths:
         "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
+
+  /internal/operators/{actorId}/permissions/{permission}:
+    get:
+      tags: [internal-actor-roles]
+      operationId: readOperatorPermission
+      security: [{ internalServiceToken: [] }]
+      description: The Control Panel permission administrator may read another Operator's explicit permission state. DSH may read an Operator's permission for server-side authorization checks.
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/OperatorPermission" }
+        - { $ref: "#/components/parameters/OptionalActingActorId" }
+      responses:
+        "200": { description: Current versioned Operator permission state., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorPermissionAccess" } } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [internal-actor-roles]
+      operationId: setOperatorPermission
+      security: [{ internalServiceToken: [] }]
+      description: Changes only another enabled Operator's allowlisted explicit permission. The one-time bootstrapped first Operator is the sole permission administrator; each change requires a current version and reason and revokes affected sessions.
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/OperatorPermission" }
+        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "#/components/parameters/OperatorPermissionExpectedVersion" }
+        - { $ref: "#/components/parameters/OperatorPermissionReason" }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SetOperatorPermissionRequest" } } }
+      responses:
+        "200": { description: Exact committed Operator permission state., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorPermissionAccess" } } }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /internal/actors/{actorId}/roles/{role}:
     get:
@@ -98,8 +137,12 @@ paths:
         - { $ref: "#/components/parameters/Role" }
         - { $ref: "#/components/parameters/CorrelationId" }
         - { $ref: "#/components/parameters/ActingActorId" }
+        - { $ref: "#/components/parameters/ReenrollmentExpectedVersion" }
+        - { $ref: "#/components/parameters/ExpectedActorVersion" }
+        - { $ref: "#/components/parameters/ReenrollmentReasonRequired" }
       responses:
-        "204": { description: An existing domain-managed role is eligible for a fresh one-time activation. The request is actor_id-addressed and operator-attributed. }
+        "204": { description: An active domain-managed role is moved to fresh one-time activation only when actor and role versions match; active sessions and challenges are revoked. The request is actor_id-addressed and operator-attributed. }
+        "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }

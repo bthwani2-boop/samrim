@@ -6,6 +6,9 @@
 :global(.finance-boundary-note p) { margin: 6px 0 0; color: var(--text-muted); font-size: 13px; line-height: 1.8; }
 :global(.finance-toolbar) { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 24px; }
 :global(.finance-toolbar h2) { margin: 0; font-size: 20px; }
+:global(.cash-custody-filters) { display: grid; grid-template-columns: minmax(220px, 2fr) minmax(180px, 1fr) auto; align-items: end; gap: 12px; margin-top: 20px; }
+:global(.cash-custody-filters .field-label) { display: grid; gap: 7px; }
+:global(.cash-custody-pagination) { display: flex; justify-content: space-between; gap: 12px; margin-top: 14px; }
 :global(.finance-table-wrap) { overflow-x: auto; margin-top: 12px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--surface-base); }
 :global(.finance-table) { width: 100%; min-width: 680px; border-collapse: collapse; text-align: right; }
 :global(.finance-table th), :global(.finance-table td) { padding: 15px 16px; border-bottom: 1px solid var(--border-subtle); vertical-align: middle; }
@@ -13,6 +16,7 @@
 :global(.finance-table tbody tr:last-child th), :global(.finance-table tbody tr:last-child td) { border-bottom: 0; }
 :global(.finance-table tbody th), :global(.finance-table tbody td) { color: var(--text-muted); font-size: 13px; }
 :global(.finance-table tbody th) { color: var(--color-primary); font-weight: 800; }
-@media (max-width: 700px) { :global(.finance-summary-grid) { grid-template-columns: 1fr; } :global(.finance-toolbar) { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 700px) { :global(.finance-summary-grid) { grid-template-columns: 1fr; } :global(.finance-toolbar) { align-items: flex-start; flex-direction: column; } :global(.cash-custody-filters) { grid-template-columns: 1fr; } }
 :global(.form-grid) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 20px 0; }
+:global(fieldset.form-grid) { min-width: 0; border: 0; padding: 0; }
 @media (max-width: 700px) { :global(.form-grid) { grid-template-columns: 1fr; } }

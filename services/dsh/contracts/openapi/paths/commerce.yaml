@@ -77,6 +77,178 @@ paths:
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 
+  /dsh/client/favorite-store-offers:
+    get:
+      operationId: listClientFavoriteStoreOffers
+      summary: List the authenticated client's favorite StoreOffer identifiers for one Store
+      security:
+        - userBearer: []
+      parameters:
+        - name: storeId
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: Favorite StoreOffer identifiers scoped to the requested Store.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/FavoriteStoreOfferListResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/client/favorite-store-offers/{storeOfferId}:
+    put:
+      operationId: addClientFavoriteStoreOffer
+      summary: Add one currently customer-visible StoreOffer to the authenticated client's favorites
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: storeOfferId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: Favorite StoreOffer mutation result.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/FavoriteStoreOfferResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+    delete:
+      operationId: removeClientFavoriteStoreOffer
+      summary: Remove one StoreOffer from the authenticated client's favorites
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: storeOfferId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: Favorite StoreOffer mutation result.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/FavoriteStoreOfferResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/client/favorite-store-catalog:
+    get:
+      operationId: readClientFavoriteStoreCatalog
+      summary: Read the authenticated client's paginated favorite and currently visible StoreOffers from one Store
+      security:
+        - userBearer: []
+      parameters:
+        - name: storeId
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - name: serviceCityId
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 1024
+      responses:
+        "200":
+          description: Customer-visible favorite offers from the scoped Store, with a cursor for the next page.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/PublicCatalogResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/client/open-carts:
+    get:
+      operationId: listClientOpenCarts
+      summary: List the authenticated client's open carts with their current Store checkout eligibility
+      security:
+        - userBearer: []
+      responses:
+        "200":
+          description: Canonical open carts owned by the authenticated client.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/ClientOpenCartListResponse"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
   /dsh/cart:
     get:
       operationId: readOpenCart
@@ -431,9 +603,15 @@ paths:
             type: integer
             minimum: 1
             maximum: 100
+        - name: cartId
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 128
       responses:
         "200":
-          description: Bounded client Order list.
+          description: Bounded client Order list, optionally scoped to one checked-out cart for outcome recovery.
           content:
             application/json:
               schema:
@@ -615,7 +793,7 @@ paths:
             maxLength: 128
       responses:
         "200":
-          description: Customer-scoped delivery proof.
+          description: Customer-scoped proof; the code is disclosed only when the order reaches its handoff state.
           content:
             application/json:
               schema:
@@ -791,6 +969,28 @@ paths:
           required: false
           schema:
             $ref: "../dsh.openapi.yaml#/components/schemas/OrderState"
+        - name: actionableOnly
+          in: query
+          required: false
+          description: When true, restricts the list to orders whose canonical state and current assignment allow an operator action.
+          schema:
+            type: boolean
+            default: false
+        - name: q
+          in: query
+          required: false
+          description: Case-insensitive literal search over order identifier and store name.
+          schema:
+            type: string
+            maxLength: 128
+        - name: sort
+          in: query
+          required: false
+          description: Stable sort order for the updated timestamp and order identifier.
+          schema:
+            type: string
+            enum: [updated_desc, updated_asc]
+            default: updated_desc
         - name: limit
           in: query
           required: false
@@ -856,18 +1056,34 @@ paths:
   /dsh/operator/cash-custody:
     get:
       operationId: listOperatorCashCustody
-      summary: Read the bounded COD cash-custody projection
+      summary: Search, sort, and paginate the canonical COD cash-custody registry
       security:
         - serviceBearer: []
       parameters:
         - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: search
+          in: query
+          required: false
+          schema: { type: string, maxLength: 128 }
+        - name: sort
+          in: query
+          required: false
+          schema: { type: string, enum: [collected_asc, collected_desc], default: collected_asc }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 1024 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
       responses:
         "200":
-          description: Bounded read of unremitted COD cash collected by Captains, owned by WLT.
+          description: Server-searched, sorted, and cursor-paginated COD cash custody owned by WLT.
           content:
             application/json:
               schema:
-                $ref: "../dsh.openapi.yaml#/components/schemas/CashLiabilityResponse"
+                $ref: "../dsh.openapi.yaml#/components/schemas/CashCustodyRegistryResponse"
         "400":
           $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
         "401":
@@ -980,3 +1196,37 @@ paths:
           $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/stores/{storeId}/orders/{orderId}/captain-cash-handoff/confirm:
+    post:
+      operationId: confirmPartnerCaptainCashHandoff
+      summary: Confirm physical cash received by the Store from its Captain
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+      responses:
+        "200":
+          description: Store cash handoff confirmation and canonical order readback.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/OrderResponse"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"

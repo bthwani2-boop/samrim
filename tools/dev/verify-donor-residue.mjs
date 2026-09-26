@@ -11,7 +11,6 @@ const tracked = execFileSync("git", ["ls-files", "-z"], {
   .filter(Boolean)
   .map((item) => item.replaceAll("\\", "/"));
 
-const excluded = (file) => file === ".github/workflows/baseline-guard.yml";
 const donorProvenanceFiles = new Set([
   "knowledge.sources.json",
   "tools/dev/knowledge-source.mjs",
@@ -36,8 +35,6 @@ const patterns = [
 const failures = [];
 
 for (const file of tracked) {
-  if (excluded(file)) continue;
-
   const absolute = path.join(repoRoot, file);
   const buffer = fs.readFileSync(absolute);
   if (buffer.includes(0)) continue;

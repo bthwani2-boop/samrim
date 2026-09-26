@@ -28,6 +28,10 @@ var identityRuntimePrivileges = []tablePrivilegeRequirement{
 	{table: "identity_webauthn_credentials", privileges: []string{"SELECT", "INSERT", "UPDATE"}},
 	{table: "identity_webauthn_ceremonies", privileges: []string{"SELECT", "INSERT", "UPDATE"}},
 	{table: "identity_operator_recovery_credentials", privileges: []string{"SELECT", "INSERT", "UPDATE"}},
+	{table: "identity_operator_permissions", privileges: []string{"SELECT", "INSERT", "UPDATE"}},
+	{table: "identity_actor_legal_name_versions", privileges: []string{"SELECT", "INSERT", "UPDATE"}},
+	{table: "identity_actor_legal_names", privileges: []string{"SELECT", "INSERT", "UPDATE"}},
+	{table: "identity_actor_legal_name_events", privileges: []string{"SELECT", "INSERT"}},
 }
 
 var identityMaintenancePrivileges = []tablePrivilegeRequirement{

@@ -3,8 +3,8 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-export const repoRoot = path.resolve(import.meta.dirname, "../..");
-export const knowledgeSourcesPath = path.join(repoRoot, "knowledge.sources.json");
+const repoRoot = path.resolve(import.meta.dirname, "../..");
+const knowledgeSourcesPath = path.join(repoRoot, "knowledge.sources.json");
 
 const GOVERNANCE_REPOSITORY = "bthwani2-boop/governance-and-docs";
 const ALLOWED_TOP_LEVEL_KEYS = ["governance", "schema"];
@@ -101,17 +101,21 @@ export function ensureKnowledgeRoot({ materialize = true } = {}) {
     return root;
   }
 
-  const cacheParent = path.join(repoRoot, ".cache", "bthwani-knowledge");
-  const root = path.join(cacheParent, pin.commit);
+  const root = path.join(repoRoot, ".cache", "bthwani-knowledge");
 
   if (fs.existsSync(root)) {
-    assertMaterialized(root, pin);
-    return root;
+    try {
+      assertMaterialized(root, pin);
+      return root;
+    } catch (error) {
+      if (!materialize) throw error;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   }
 
   if (!materialize) fail("pinned knowledge is not materialized");
 
-  fs.mkdirSync(cacheParent, { recursive: true });
+  fs.mkdirSync(path.dirname(root), { recursive: true });
   const temp = root + ".tmp-" + process.pid;
   fs.rmSync(temp, { recursive: true, force: true });
   fs.mkdirSync(temp, { recursive: true });

@@ -1,4 +1,4 @@
-import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniChip, BthwaniMap, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type CommerceVertical, type CreateJoiningCaseRequest, type DshImageUploadInput, type FieldAdmission, type JoiningCaseResponse, joiningCaseStateLabel, type ServiceCity } from "@bthwani/dsh";
 import * as ImagePicker from "expo-image-picker";
 import { type Href, Link } from "expo-router";
@@ -13,9 +13,12 @@ export function FieldNewCase() {
 const theme = useAppearanceTheme();
   const styles = useMemo(() => createFieldOperationStyles(theme), [theme]);
   const [admission, setAdmission] = useState<FieldAdmission | null>(null);
-  const [input, setInput] = useState<CreateJoiningCaseRequest>({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "", firstStoreLatitude: 0, firstStoreLongitude: 0 });
+  const [input, setInput] = useState<CreateJoiningCaseRequest>({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "", firstStoreLatitude: 0, firstStoreLongitude: 0, firstStoreFulfillmentModes: [] });
   const [storeLatitude, setStoreLatitude] = useState("");
   const [storeLongitude, setStoreLongitude] = useState("");
+  const parsedStoreLatitude = Number(storeLatitude);
+  const parsedStoreLongitude = Number(storeLongitude);
+  const selectedStoreOrigin = Number.isFinite(parsedStoreLatitude) && Number.isFinite(parsedStoreLongitude) && storeLatitude.trim() !== "" && storeLongitude.trim() !== "" && parsedStoreLatitude >= -90 && parsedStoreLatitude <= 90 && parsedStoreLongitude >= -180 && parsedStoreLongitude <= 180 ? { latitude: parsedStoreLatitude, longitude: parsedStoreLongitude } : null;
   const [createdCase, setCreatedCase] = useState<JoiningCaseResponse | null>(null);
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
@@ -64,8 +67,8 @@ const theme = useAppearanceTheme();
     if (busy) return;
     const latitude = Number(storeLatitude.trim());
     const longitude = Number(storeLongitude.trim());
-    if (!input.contactPhoneE164.trim() || !input.businessName.trim() || !input.firstStoreName.trim() || !input.serviceCityId || !input.firstStoreVerticalId || !storeImage || !Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-		setError("أكمل الهاتف والأسماء والاختيارات والإحداثيات، ثم اختر صورة المتجر.");
+    if (!input.contactPhoneE164.trim() || !input.businessName.trim() || !input.firstStoreName.trim() || !input.serviceCityId || !input.firstStoreVerticalId || input.firstStoreFulfillmentModes.length === 0 || !storeImage || !Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+		setError("أكمل بيانات المتجر واختر وضعًا واحدًا على الأقل، ثم اختر صورة المتجر.");
       return;
     }
     setBusy(true);
@@ -86,7 +89,7 @@ const theme = useAppearanceTheme();
       }
       setStoreLatitude("");
       setStoreLongitude("");
-      setInput({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "", firstStoreLatitude: 0, firstStoreLongitude: 0 });
+      setInput({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "", firstStoreLatitude: 0, firstStoreLongitude: 0, firstStoreFulfillmentModes: [] });
       await loadAdmission();
     } catch (cause) {
       console.error("DSH Field joining-case creation failed", cause);
@@ -94,6 +97,13 @@ const theme = useAppearanceTheme();
     } finally {
       setBusy(false);
     }
+  }
+
+  function toggleFulfillmentMode(mode: "BTHWANI_CAPTAIN" | "PARTNER_CAPTAIN" | "CUSTOMER_PICKUP") {
+    setInput((current) => {
+      const selected = current.firstStoreFulfillmentModes.includes(mode);
+      return { ...current, firstStoreFulfillmentModes: selected ? current.firstStoreFulfillmentModes.filter((value) => value !== mode) : [...current.firstStoreFulfillmentModes, mode] };
+    });
   }
 
   async function pickStoreImage() {
@@ -154,8 +164,16 @@ const theme = useAppearanceTheme();
         {optionsLoading ? <Text style={styles.muted}>جارٍ قراءة الأنشطة المتاحة…</Text> : null}
         {!optionsLoading && !optionsError && verticals.length === 0 ? <Text style={styles.error}>لا يوجد نشاط تجاري متاح حاليًا.</Text> : null}
         <View style={styles.optionList}>{verticals.map((vertical) => <BthwaniChip key={vertical.id} label={vertical.nameAr} onPress={() => setInput((current) => ({ ...current, firstStoreVerticalId: vertical.id }))} selected={input.firstStoreVerticalId === vertical.id} />)}</View>
+        <Text style={styles.label}>أوضاع الطلب التي اختارها الشريك عند الانضمام</Text>
+        <Text style={styles.muted}>سجّل الأوضاع المتاحة في المتجر لأول مرة. بعد إنشاء المتجر لا يغيّرها الشريك من التطبيق؛ يديرها المشغّل من لوحة التحكم.</Text>
+        <View style={styles.optionList}>
+          <BthwaniChip label="توصيل بثواني · مسؤولية المنصة" onPress={() => toggleFulfillmentMode("BTHWANI_CAPTAIN")} selected={input.firstStoreFulfillmentModes.includes("BTHWANI_CAPTAIN")} />
+          <BthwaniChip label="توصيل المتجر · كابتن المتجر" onPress={() => toggleFulfillmentMode("PARTNER_CAPTAIN")} selected={input.firstStoreFulfillmentModes.includes("PARTNER_CAPTAIN")} />
+          <BthwaniChip label="استلم بنفسك من المتجر" onPress={() => toggleFulfillmentMode("CUSTOMER_PICKUP")} selected={input.firstStoreFulfillmentModes.includes("CUSTOMER_PICKUP")} />
+        </View>
         <Text style={styles.label}>موقع المتجر الثابت</Text>
-        <Text style={styles.muted}>أدخل إحداثيات موقع المتجر مع ملف الانضمام؛ تنتقل إلى المتجر عند الاعتماد ولا تُعدّل من شاشة إدارة المتجر.</Text>
+        <Text style={styles.muted}>حدد نقطة المتجر على الخريطة أو أدخل الإحداثيات. تنتقل النقطة إلى المتجر عند الاعتماد ولا تُعدّل من شاشة إدارة المتجر.</Text>
+        <BthwaniMap accessibilityLabel="تحديد موقع المتجر الثابت" selection={selectedStoreOrigin} selectionTitle="موقع المتجر" onSelectCoordinate={(coordinate) => { if (!busy) { setStoreLatitude(coordinate.latitude.toFixed(6)); setStoreLongitude(coordinate.longitude.toFixed(6)); setError(""); } }} />
         <TextInput accessibilityLabel="خط عرض موقع المتجر" keyboardType="numbers-and-punctuation" placeholder="خط العرض، مثال: 15.369445" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput]} value={storeLatitude} onChangeText={setStoreLatitude} />
         <TextInput accessibilityLabel="خط طول موقع المتجر" keyboardType="numbers-and-punctuation" placeholder="خط الطول، مثال: 44.191006" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput]} value={storeLongitude} onChangeText={setStoreLongitude} />
         <Text style={styles.label}>صورة المتجر</Text>

@@ -175,15 +175,15 @@ func deliveryOriginValue(origin postgres.StoreDeliveryOriginRecord, available bo
 
 func writeLocationError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, locationcore.ErrLocationInputInvalid), errors.Is(err, postgres.ErrDeliveryAddressInvalidLimit), errors.Is(err, postgres.ErrDeliveryAddressInvalidCursor), errors.Is(err, postgres.ErrServiceCityNotFound):
+	case errors.Is(err, locationcore.ErrLocationInputInvalid), errors.Is(err, postgres.ErrFulfillmentModesInvalid), errors.Is(err, postgres.ErrDeliveryAddressInvalidLimit), errors.Is(err, postgres.ErrDeliveryAddressInvalidCursor), errors.Is(err, postgres.ErrServiceCityNotFound):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "location facts are invalid")
-	case errors.Is(err, postgres.ErrDeliveryAddressNotFound), errors.Is(err, postgres.ErrStoreOriginNotFound), errors.Is(err, postgres.ErrStoreNotFound):
+	case errors.Is(err, postgres.ErrDeliveryAddressNotFound), errors.Is(err, postgres.ErrStoreOriginNotFound), errors.Is(err, postgres.ErrStoreFulfillmentModesNotFound), errors.Is(err, postgres.ErrStoreNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "location record was not found")
 	case errors.Is(err, locationcore.ErrClientSessionForbidden), errors.Is(err, locationcore.ErrPartnerSessionForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the authenticated session cannot access this location record")
-	case errors.Is(err, postgres.ErrDeliveryAddressIdempotency), errors.Is(err, postgres.ErrStoreOriginIdempotency):
+	case errors.Is(err, postgres.ErrDeliveryAddressIdempotency), errors.Is(err, postgres.ErrStoreOriginIdempotency), errors.Is(err, postgres.ErrStoreFulfillmentModesIdempotency):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different location facts")
-	case errors.Is(err, postgres.ErrDeliveryAddressVersion), errors.Is(err, postgres.ErrStoreOriginVersion):
+	case errors.Is(err, postgres.ErrDeliveryAddressVersion), errors.Is(err, postgres.ErrStoreOriginVersion), errors.Is(err, postgres.ErrStoreFulfillmentModesVersion):
 		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "location record version is stale")
 	default:
 		var identityErr *identityclient.Error

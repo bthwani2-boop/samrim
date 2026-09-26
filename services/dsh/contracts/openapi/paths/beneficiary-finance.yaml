@@ -1,4 +1,222 @@
 paths:
+  /dsh/operator/actors/{actorId}/legal-name/pending:
+    get:
+      operationId: readOperatorPendingActorLegalName
+      summary: Read the latest pending legal-name candidate for Operations verification
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: actorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200":
+          description: Pending candidate and evidence reference from Identity.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [legalName]
+                properties:
+                  legalName: { $ref: "../dsh.openapi.yaml#/components/schemas/ActorLegalName" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/actors/{actorId}/legal-name:
+    post:
+      operationId: submitOperatorActorLegalName
+      summary: Submit four-part legal-name evidence for independent Operations verification
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: actorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/SubmitActorLegalNameRequest"
+      responses:
+        "201":
+          description: Pending versioned legal-name evidence from Identity.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [legalName]
+                properties:
+                  legalName: { $ref: "../dsh.openapi.yaml#/components/schemas/ActorLegalName" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/actors/{actorId}/legal-name/{version}/verify:
+    post:
+      operationId: verifyOperatorActorLegalName
+      summary: Independently verify a pending legal-name version in Identity
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: actorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: version
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/VerifyActorLegalNameRequest"
+      responses:
+        "200":
+          description: Verified legal-name version from Identity.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [legalName]
+                properties:
+                  legalName: { $ref: "../dsh.openapi.yaml#/components/schemas/ActorLegalName" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/me/wallet:
+    get:
+      operationId: readOwnWallet
+      summary: Read the authenticated customer's or admitted BThwani captain's WLT balance and Cash-In history
+      security:
+        - userBearer: []
+      responses:
+        "200":
+          description: Canonical wallet state and recent funding intents from WLT.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/BeneficiaryWalletResponse"
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/me/funding-intents:
+    post:
+      operationId: createOwnFundingIntent
+      summary: Request Cash-In for the authenticated customer or admitted BThwani captain
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [amountMinor]
+              properties:
+                amountMinor: { type: integer, minimum: 1 }
+      responses:
+        "201":
+          description: Funding intent accepted by the configured Cash-In rail.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/BeneficiaryFundingIntentResponse"
+        "200":
+          description: Idempotent replay of a prior funding intent.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/BeneficiaryFundingIntentResponse"
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "503": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/me/funding-intents/{fundingIntentId}:
+    get:
+      operationId: readOwnFundingIntent
+      summary: Read a funding intent owned by the authenticated customer or captain
+      security:
+        - userBearer: []
+      parameters:
+        - name: fundingIntentId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200":
+          description: Funding intent state from WLT.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [intent]
+                properties:
+                  intent: { $ref: "../dsh.openapi.yaml#/components/schemas/CashInFundingIntent" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/me/funding-intents/{fundingIntentId}/simulate:
+    post:
+      operationId: simulateOwnFundingIntent
+      summary: Apply a deterministic development-only simulated Cash-In outcome
+      description: Available only when WLT is explicitly configured for the development simulator. Never enabled in production.
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: fundingIntentId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [outcome]
+              properties:
+                outcome:
+                  type: string
+                  enum: [SUCCESS, FAILURE, UNKNOWN, DELAYED]
+      responses:
+        "200":
+          description: Simulated outcome applied in the non-production WLT simulator.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/BeneficiaryFundingIntentResponse"
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/me/payout-state:
     get:
       operationId: readOwnPayoutState
@@ -63,6 +281,130 @@ paths:
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
+  /dsh/operator/finance-evidence-documents:
+    post:
+      operationId: uploadOperatorFinanceEvidence
+      summary: Upload a private transfer receipt or official wallet statement
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [purpose, file]
+              properties:
+                purpose: { type: string, enum: [TRANSFER_RECEIPT, SETTLEMENT_STATEMENT] }
+                file: { type: string, format: binary }
+      responses:
+        "201":
+          description: Evidence metadata and content fingerprint.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [document]
+                properties:
+                  document: { $ref: "../dsh.openapi.yaml#/components/schemas/FinanceEvidenceDocument" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/finance-evidence-documents/{documentId}:
+    get:
+      operationId: readOperatorFinanceEvidence
+      summary: Read a private Finance evidence file
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: documentId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200":
+          description: Private document; never publicly cached.
+          headers:
+            Cache-Control: { schema: { type: string, const: "private, no-store" } }
+          content:
+            application/pdf: { schema: { type: string, format: binary } }
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+            text/csv: { schema: { type: string, format: binary } }
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: { schema: { type: string, format: binary } }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/settlement-statements:
+    post:
+      operationId: registerOperatorSettlementStatement
+      summary: Register an uploaded period or batch wallet statement
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [providerKey, currency, periodStart, periodEnd, evidenceDocumentId]
+              properties:
+                batchId: { type: string, maxLength: 128 }
+                providerKey: { type: string, minLength: 1, maxLength: 64 }
+                currency: { type: string, const: YER }
+                periodStart: { type: string, format: date }
+                periodEnd: { type: string, format: date }
+                evidenceDocumentId: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "201": { description: Statement registered and linked to the batch or period. }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/settlement-statements/{statementId}/rows:
+    post:
+      operationId: recordOperatorStatementRow
+      summary: Normalize an uploaded statement row for reconciliation
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: statementId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rowSequence, externalTransferReference, walletIdentifier, amountMinor, currency, transactionAt]
+              properties:
+                rowSequence: { type: integer, minimum: 1 }
+                externalTransferReference: { type: string, minLength: 1, maxLength: 160 }
+                walletIdentifier: { type: string, minLength: 9, maxLength: 16, pattern: '^\+[1-9][0-9]{7,14}$', writeOnly: true, description: 'Official-wallet phone number in canonical E.164 format.' }
+                amountMinor: { type: integer, minimum: 1 }
+                currency: { type: string, const: YER }
+                transactionAt: { type: string, format: date-time }
+      responses:
+        "201": { description: Statement row recorded for exact settlement matching. }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/operator/{actorType}/{actorId}/payout-state:
     get:
       operationId: readOperatorPayoutState
@@ -91,6 +433,187 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
+  /dsh/operator/beneficiaries/{actorType}/{actorId}/financial-statement:
+    get:
+      operationId: readOperatorBeneficiaryFinancialStatement
+      summary: Read a canonical WLT financial statement with authorized DSH order snapshots
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: actorType
+          in: path
+          required: true
+          schema: { type: string, enum: [customer, partner, captain, field] }
+        - name: actorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 512 }
+      responses:
+        "200":
+          description: WLT-derived period statement and authorized order-price snapshots.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [statement]
+                properties:
+                  statement:
+                    type: object
+                    required: [actorType, actorId, currency, periodStart, periodEnd, openingBalanceMinor, creditsMinor, debitsMinor, closingBalanceMinor, currentBalanceMinor, entries, limit]
+                    properties:
+                      actorType: { type: string, enum: [customer, partner, captain, field] }
+                      actorId: { type: string }
+                      currency: { type: string, const: YER }
+                      periodStart: { type: string, format: date }
+                      periodEnd: { type: string, format: date }
+                      openingBalanceMinor: { type: integer }
+                      creditsMinor: { type: integer }
+                      debitsMinor: { type: integer }
+                      closingBalanceMinor: { type: integer }
+                      currentBalanceMinor: { type: integer }
+                      nextCursor: { type: string }
+                      limit: { type: integer }
+                      entries:
+                        type: array
+                        items:
+                          type: object
+                          required: [transactionId, transactionType, sourceType, sourceId, direction, amountMinor, currency, createdAt, balanceAfterMinor]
+                          properties:
+                            transactionId: { type: string }
+                            transactionType: { type: string }
+                            sourceType: { type: string }
+                            sourceId: { type: string }
+                            direction: { type: string, enum: [CREDIT, DEBIT] }
+                            amountMinor: { type: integer }
+                            currency: { type: string, const: YER }
+                            createdAt: { type: string, format: date-time }
+                            balanceAfterMinor: { type: integer }
+                            store:
+                              type: object
+                              required: [storeId, name, publicationState]
+                              properties:
+                                storeId: { type: string }
+                                name: { type: string }
+                                publicationState: { type: string }
+                            order:
+                              type: object
+                              required: [orderId, storeName, state, fulfillmentMode, subtotalAmountMinor, discountMinor, totalAmountMinor, currency, createdAt, lines]
+                              properties:
+                                orderId: { type: string }
+                                storeName: { type: string }
+                                state: { type: string }
+                                fulfillmentMode: { type: string }
+                                subtotalAmountMinor: { type: integer }
+                                discountMinor: { type: integer }
+                                totalAmountMinor: { type: integer }
+                                currency: { type: string, const: YER }
+                                createdAt: { type: string, format: date-time }
+                                lines:
+                                  type: array
+                                  items:
+                                    type: object
+                                    required: [productName, variantTitle, quantityBaseUnits, unitPriceMinor, lineAmountMinor, currency]
+                                    properties:
+                                      productName: { type: string }
+                                      variantTitle: { type: string }
+                                      quantityBaseUnits: { type: integer }
+                                      unitPriceMinor: { type: integer }
+                                      lineAmountMinor: { type: integer }
+                                      currency: { type: string, const: YER }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/financial-statements:
+    get:
+      operationId: listOperatorFinancialStatementSummaries
+      summary: Read WLT period totals grouped by beneficiary for finance exports
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: actorType
+          in: query
+          required: true
+          schema: { type: string, enum: [customer, partner, captain, field] }
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 512 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 100 }
+      responses:
+        "200":
+          description: Period totals derived by WLT and grouped by internal beneficiary wallet.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [actorType, periodStart, periodEnd, summaries, totals, limit]
+                properties:
+                  actorType: { type: string }
+                  periodStart: { type: string, format: date }
+                  periodEnd: { type: string, format: date }
+                  nextCursor: { type: string }
+                  limit: { type: integer }
+                  summaries:
+                    type: array
+                    items:
+                      type: object
+                      required: [actorType, actorId, beneficiaryName, walletIdentifierMasked, currency, openingBalanceMinor, creditsMinor, debitsMinor, closingBalanceMinor, currentBalanceMinor, heldMinor, availableMinor]
+                      properties:
+                        actorType: { type: string }
+                        actorId: { type: string }
+                        beneficiaryName: { type: string }
+                        walletIdentifierMasked: { type: string }
+                        currency: { type: string, const: YER }
+                        openingBalanceMinor: { type: integer }
+                        creditsMinor: { type: integer }
+                        debitsMinor: { type: integer }
+                        closingBalanceMinor: { type: integer }
+                        currentBalanceMinor: { type: integer }
+                        heldMinor: { type: integer, minimum: 0 }
+                        availableMinor: { type: integer }
+                  totals:
+                    type: object
+                    required: [openingBalanceMinor, creditsMinor, debitsMinor, closingBalanceMinor, currentBalanceMinor, heldMinor, availableMinor]
+                    properties:
+                      openingBalanceMinor: { type: integer }
+                      creditsMinor: { type: integer }
+                      debitsMinor: { type: integer }
+                      closingBalanceMinor: { type: integer }
+                      currentBalanceMinor: { type: integer }
+                      heldMinor: { type: integer, minimum: 0 }
+                      availableMinor: { type: integer }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/operator/{actorType}/{actorId}/official-wallet-destination:
     get:
       operationId: readOperatorOfficialWalletDestination
@@ -102,7 +625,7 @@ paths:
         - name: actorType
           in: path
           required: true
-          schema: { type: string, enum: [partner, captain, field] }
+          schema: { type: string, enum: [customer, partner, captain, field] }
         - name: actorId
           in: path
           required: true
@@ -146,11 +669,10 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [providerKey, walletIdentifier, beneficiaryName, changeReason, verificationEvidenceReference, changeEvidenceReference]
+              required: [providerKey, walletIdentifier, changeReason, verificationEvidenceReference, changeEvidenceReference]
               properties:
                 providerKey: { type: string, minLength: 1, maxLength: 64 }
-                walletIdentifier: { type: string, minLength: 6, maxLength: 128 }
-                beneficiaryName: { type: string, minLength: 1, maxLength: 160 }
+                walletIdentifier: { type: string, minLength: 9, maxLength: 16, pattern: '^\+[1-9][0-9]{7,14}$', writeOnly: true, description: 'Official-wallet phone number in canonical E.164 format.' }
                 changeReason: { type: string, minLength: 1, maxLength: 512 }
                 verificationEvidenceReference: { type: string, minLength: 1, maxLength: 512 }
                 changeEvidenceReference: { type: string, minLength: 1, maxLength: 512 }
@@ -304,6 +826,57 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
+  /dsh/operator/beneficiaries:
+    get:
+      operationId: listOperatorBeneficiaryPayoutStates
+      summary: List server-derived beneficiary settlement balances for the Finance registry
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: actorType
+          in: query
+          required: false
+          schema: { type: string, enum: [partner, captain, field] }
+        - name: search
+          in: query
+          required: false
+          schema: { type: string, maxLength: 128 }
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [NO_REQUEST, HELD, PREPARED, APPROVED, FROZEN, EXECUTED, COMPLETED, EXCEPTION, CANCELLED] }
+        - name: sort
+          in: query
+          required: false
+          schema: { type: string, enum: [actor_asc, actor_desc, available_asc, available_desc, held_asc, held_desc, payout_amount_asc, payout_amount_desc], default: actor_asc }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 512 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Canonical WLT beneficiary balances, masked destinations and latest payout state.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [beneficiaries, limit]
+                properties:
+                  beneficiaries:
+                    type: array
+                    items: { $ref: "../dsh.openapi.yaml#/components/schemas/BeneficiaryPayoutState" }
+                  nextCursor: { type: string }
+                  limit: { type: integer }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/operator/payout-requests/{payoutId}:
     get:
       operationId: readOperatorPayoutRequest
@@ -450,6 +1023,42 @@ paths:
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
   /dsh/operator/settlement-batches:
+    get:
+      operationId: listOperatorSettlementBatches
+      summary: List server-calculated settlement batches for the Finance workbench
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [DRAFT, PREPARED, APPROVED, FROZEN, EXECUTION_IN_PROGRESS, AWAITING_VERIFICATION, AWAITING_RECONCILIATION, COMPLETED, CANCELLED, EXCEPTION] }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 512 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+      responses:
+        "200":
+          description: Server-derived settlement batches with their immutable item snapshot and execution readback.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [batches, limit]
+                properties:
+                  batches:
+                    type: array
+                    items: { $ref: "../dsh.openapi.yaml#/components/schemas/SettlementBatch" }
+                  nextCursor: { type: string }
+                  limit: { type: integer }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
     post:
       operationId: createOperatorSettlementBatch
       summary: Group approved payouts into a server-totaled settlement batch
@@ -512,6 +1121,41 @@ paths:
                   batch: { $ref: "../dsh.openapi.yaml#/components/schemas/SettlementBatch" }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/settlement-batches/{batchId}/export:
+    post:
+      operationId: exportOperatorSettlementBatch
+      summary: Generate an immutable XLSX execution artifact from a frozen settlement batch
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: batchId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        "201":
+          description: WLT-generated execution workbook metadata.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [export]
+                properties:
+                  export: { $ref: "../dsh.openapi.yaml#/components/schemas/SettlementBatchExport" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
   /dsh/operator/settlement-batches/{batchId}/approve:
@@ -613,11 +1257,11 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [payoutId, externalTransferReference, evidenceReference]
+              required: [payoutId, externalTransferReference, receiptDocumentId]
               properties:
                 payoutId: { type: string, minLength: 1, maxLength: 128 }
                 externalTransferReference: { type: string, minLength: 1, maxLength: 160 }
-                evidenceReference: { type: string, minLength: 1, maxLength: 512 }
+                receiptDocumentId: { type: string, minLength: 1, maxLength: 128 }
       responses:
         "201":
           description: External transfer evidence recorded.
@@ -654,8 +1298,7 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              properties:
-                evidenceReference: { type: string, maxLength: 512 }
+              properties: {}
       responses:
         "200":
           description: Transfer independently verified.
@@ -692,9 +1335,9 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [statementReference]
+              required: [statementRowId]
               properties:
-                statementReference: { type: string, minLength: 1, maxLength: 512 }
+                statementRowId: { type: string, minLength: 1, maxLength: 128 }
       responses:
         "200":
           description: Transfer reconciled and payout ledger-finalized.
@@ -706,6 +1349,274 @@ paths:
                 properties:
                   transfer: { $ref: "../dsh.openapi.yaml#/components/schemas/ManualTransferExecution" }
         "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/customer-withdrawal-request-evidence:
+    post:
+      operationId: uploadCustomerWithdrawalRequestEvidence
+      summary: Upload authorization evidence for an Operations-originated customer withdrawal request
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "201":
+          description: Private authorization evidence uploaded to WLT.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [document]
+                properties:
+                  document: { $ref: "../dsh.openapi.yaml#/components/schemas/FinanceEvidenceDocument" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/customer-withdrawal-intakes:
+    get:
+      operationId: listOperatorCustomerWithdrawalIntakes
+      summary: Read the Finance queue of exceptional customer withdrawal requests
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [REQUESTED, DESTINATION_PENDING, PAYOUT_HELD, REJECTED, COMPLETED] }
+        - name: search
+          in: query
+          required: false
+          description: Prefix match on intake ID, customer actor ID, beneficiary name, or provider; exactly four digits match the masked wallet suffix.
+          schema: { type: string, maxLength: 128 }
+        - name: sort
+          in: query
+          required: false
+          schema: { type: string, enum: [requested_asc, requested_desc], default: requested_desc }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 1024 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Canonical WLT intake queue.
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CustomerWithdrawalIntakeListResponse" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+    post:
+      operationId: createOperatorCustomerWithdrawalIntake
+      summary: Record an Operations-approved customer withdrawal request; no funds are moved at intake
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateCustomerWithdrawalIntakeRequest" }
+      responses:
+        "201":
+          description: Intake created after identity and legal-name readback; no payout or hold exists yet.
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CustomerWithdrawalIntakeResponse" }
+        "200":
+          description: Idempotent replay of the same Operations request.
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CustomerWithdrawalIntakeResponse" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/customer-withdrawal-intakes/{intakeId}:
+    get:
+      operationId: readOperatorCustomerWithdrawalIntake
+      summary: Read one customer withdrawal intake
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: intakeId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200":
+          description: Canonical WLT intake details.
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CustomerWithdrawalIntakeResponse" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/customer-withdrawal-intakes/{intakeId}/prepare-destination:
+    post:
+      operationId: prepareOperatorCustomerWithdrawalDestination
+      summary: Finance prepares a versioned candidate payout destination from the Ops request
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: intakeId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CustomerWithdrawalDecisionRequest" }
+      responses:
+        "201":
+          description: New payout destination candidate; independent verification is still required.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [destination]
+                properties:
+                  destination: { $ref: "../dsh.openapi.yaml#/components/schemas/OfficialWalletDestination" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/customer-withdrawal-intakes/{intakeId}/verify-destination:
+    post:
+      operationId: verifyOperatorCustomerWithdrawalDestination
+      summary: Independently verify the withdrawal destination
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: intakeId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CustomerWithdrawalDestinationVerificationRequest" }
+      responses:
+        "200":
+          description: Destination evidence verified.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [destination]
+                properties:
+                  destination: { $ref: "../dsh.openapi.yaml#/components/schemas/OfficialWalletDestination" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/customer-withdrawal-intakes/{intakeId}/activate-destination:
+    post:
+      operationId: activateOperatorCustomerWithdrawalDestination
+      summary: Activate the independently verified payout destination
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: intakeId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200":
+          description: Verified destination activated under Finance control.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [destination]
+                properties:
+                  destination: { $ref: "../dsh.openapi.yaml#/components/schemas/OfficialWalletDestination" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/customer-withdrawal-intakes/{intakeId}/accept:
+    post:
+      operationId: acceptOperatorCustomerWithdrawal
+      summary: Finance accepts and transactionally holds the current eligible customer balance
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: intakeId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CustomerWithdrawalDecisionRequest" }
+      responses:
+        "201":
+          description: Held customer payout request created for the shared manual settlement workbench.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [payout]
+                properties:
+                  payout: { $ref: "../dsh.openapi.yaml#/components/schemas/PayoutRequest" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/customer-withdrawal-intakes/{intakeId}/reject:
+    post:
+      operationId: rejectOperatorCustomerWithdrawal
+      summary: Finance rejects the request without moving customer funds
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: intakeId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CustomerWithdrawalDecisionRequest" }
+      responses:
+        "200":
+          description: Intake rejected without a wallet mutation.
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CustomerWithdrawalIntakeResponse" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }

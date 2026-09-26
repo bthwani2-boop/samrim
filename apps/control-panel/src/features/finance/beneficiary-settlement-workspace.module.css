@@ -1,0 +1,101 @@
+.statement {
+  break-inside: avoid;
+}
+
+.periodRegister {
+  display: none;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.actorNav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+.actorLink {
+  display: inline-flex;
+  min-height: var(--size-controlMd);
+  align-items: center;
+  padding-inline: var(--space-3);
+  border-block-end: 2px solid transparent;
+  color: var(--text-muted);
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-bold);
+  text-decoration: none;
+}
+
+.actorLink:hover,
+.actorLink[aria-current="page"] {
+  border-color: var(--action-bg);
+  color: var(--interactive-text);
+}
+
+.actorLink:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media print {
+  :global(body *) {
+    visibility: hidden !important;
+  }
+
+  :global(#beneficiary-financial-statement-print),
+  :global(#beneficiary-financial-statement-print *),
+  :global(#partner-period-register-print),
+  :global(#partner-period-register-print *) {
+    visibility: visible !important;
+  }
+
+  :global(#partner-period-register-print) {
+    display: block !important;
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    color: #111 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    border: 0 !important;
+  }
+
+  :global(#beneficiary-financial-statement-print) {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    color: #111 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    border: 0 !important;
+  }
+
+  .actions,
+  :global(#beneficiary-financial-statement-print button) {
+    display: none !important;
+  }
+
+  :global(#beneficiary-financial-statement-print table),
+  :global(#partner-period-register-print table) {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    break-inside: auto;
+  }
+
+  :global(#beneficiary-financial-statement-print tr) {
+    break-inside: avoid;
+  }
+}

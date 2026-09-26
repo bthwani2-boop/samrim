@@ -12,7 +12,7 @@ import (
 )
 
 func (s *Service) PreviewCatalogImport(ctx context.Context, actingActorID string, input contract.CatalogImportPreviewRequest, idempotencyKey, correlationID string) (postgres.CatalogImportPreviewResult, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
 		return postgres.CatalogImportPreviewResult{}, err
 	}
 	if strings.TrimSpace(input.RunID) == "" || strings.TrimSpace(input.SourceSha256) == "" || len(input.Rows) == 0 {
@@ -23,7 +23,7 @@ func (s *Service) PreviewCatalogImport(ctx context.Context, actingActorID string
 	seen := make(map[string]struct{}, len(input.Rows))
 	for _, row := range input.Rows {
 		item := postgres.CatalogImportItemRecord{RowNumber: row.RowNumber, StableKey: strings.TrimSpace(row.StableKey), Classification: "READY"}
-		item.Input = postgres.CatalogProductInput{VerticalID: row.VerticalID, Scope: row.Scope, StoreID: row.StoreID, CanonicalName: row.CanonicalName, Brand: optionalImportPointer(row.Brand), VariantTitle: row.VariantTitle, MeasurementKind: string(row.MeasurementKind), BaseUnit: string(row.BaseUnit), CategoryIDs: row.CategoryIds, IdentifierType: row.IdentifierType, IdentifierValue: row.IdentifierValue, ImageURI: row.ImageUri}
+		item.Input = postgres.CatalogProductInput{VerticalID: row.VerticalID, Scope: row.Scope, StoreID: row.StoreID, CanonicalName: row.CanonicalName, Brand: optionalImportPointer(row.Brand), VariantTitle: row.VariantTitle, MeasurementKind: string(row.MeasurementKind), BaseUnit: string(row.BaseUnit), CategoryIDs: row.CategoryIds, AttributeValues: catalogImportAttributeInputs(row.AttributeValues), VariantAttributeValues: catalogImportAttributeInputs(row.VariantAttributeValues), IdentifierType: row.IdentifierType, IdentifierValue: row.IdentifierValue, ImageURI: row.ImageUri}
 		normalized, err := normalizeCatalogProductInput(item.Input)
 		if err != nil || item.RowNumber < 1 || item.StableKey == "" {
 			item.Classification = "INVALID_INPUT"
@@ -59,7 +59,7 @@ func (s *Service) PreviewCatalogImport(ctx context.Context, actingActorID string
 }
 
 func (s *Service) ReadCatalogImportRun(ctx context.Context, actingActorID, runID string) (postgres.CatalogImportPreviewResult, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
 		return postgres.CatalogImportPreviewResult{}, err
 	}
 	result, err := postgres.ReadCatalogImportRun(ctx, s.db, runID)
@@ -73,7 +73,7 @@ func (s *Service) ReadCatalogImportRun(ctx context.Context, actingActorID, runID
 }
 
 func (s *Service) CommitCatalogImport(ctx context.Context, actingActorID, runID, idempotencyKey, correlationID string) (postgres.CatalogImportCommitResult, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
 		return postgres.CatalogImportCommitResult{}, err
 	}
 	preview, err := postgres.ReadCatalogImportRun(ctx, s.db, runID)
@@ -115,6 +115,26 @@ func optionalImportPointer(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+func catalogImportAttributeInputs(values []contract.CatalogAttributeValueInput) []postgres.CatalogAttributeValueInput {
+	if values == nil {
+		return nil
+	}
+	inputs := make([]postgres.CatalogAttributeValueInput, len(values))
+	for index, value := range values {
+		var integerValue *int64
+		if value.IntegerValue != nil {
+			converted := int64(*value.IntegerValue)
+			integerValue = &converted
+		}
+		inputs[index] = postgres.CatalogAttributeValueInput{
+			AttributeID: value.AttributeID, ValueKind: value.ValueKind, TextValue: value.TextValue,
+			IntegerValue: integerValue, DecimalValue: value.DecimalValue, BooleanValue: value.BooleanValue,
+			EnumValue: value.EnumValue, DateValue: value.DateValue, MeasurementUnit: value.MeasurementUnit,
+		}
+	}
+	return inputs
 }
 
 func stringPtr(value string) *string { return &value }

@@ -35,13 +35,13 @@ func TestLocationCoreIntegrity(t *testing.T) {
 		if len(records) != postgres.SchemaVersion || records[8].Name != "009_service_city_scope.sql" {
 			t.Fatalf("Location Core migration is not the canonical schema tail: len=%d last=%q", len(records), records[len(records)-1].Name)
 		}
-		if err := postgres.Migrate(ctx, db, records, migrationSQL); err != nil {
+		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
 			t.Fatalf("apply Location Core migrations: %v", err)
 		}
 		if err := postgres.VerifySchema(ctx, db, records); err != nil {
 			t.Fatalf("verify Location Core schema: %v", err)
 		}
-		if err := postgres.Migrate(ctx, db, records, migrationSQL); err != nil {
+		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
 			t.Fatalf("rerun Location Core migrations: %v", err)
 		}
 		if err := postgres.VerifySchema(ctx, db, records); err != nil {
@@ -231,6 +231,9 @@ func TestLocationCoreIntegrity(t *testing.T) {
 		if addressAudits != 4 || originAudits != 3 {
 			t.Fatalf("unexpected Location Core audit count: addresses=%d origins=%d", addressAudits, originAudits)
 		}
+
+		verifyStoreFulfillmentModes(t, ctx, db)
+		verifyStoreCaptainMembership(t, ctx, db)
 	})
 }
 

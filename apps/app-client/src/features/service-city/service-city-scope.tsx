@@ -18,6 +18,11 @@ type ScopeContextValue = Readonly<{
 
 const ScopeContext = createContext<ScopeContextValue | null>(null);
 
+export function serviceCityDisplayName(displayNameAr?: string | null, fallback = "مدينة الخدمة") {
+  const normalized = displayNameAr?.trim() ?? "";
+  return normalized && !/^[+\d٠-٩۰-۹\s().-]+$/u.test(normalized) ? normalized : fallback;
+}
+
 export function useServiceCityScope(): ScopeContextValue {
   const value = useContext(ScopeContext);
   if (!value) throw new Error("SERVICE_CITY_SCOPE_REQUIRED");
@@ -65,7 +70,7 @@ export default function ServiceCityScope({ children }: PropsWithChildren) {
   if (state === "loading") return <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة نطاقات الخدمة…</Text></View>;
   if (state === "error") return <View style={styles.state}><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر قراءة المدن المتاحة</Text><Text style={styles.muted}>تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void refreshCities()} /></View>;
   if (!cities.length) return <View style={styles.state}><Text style={styles.title}>لا توجد مدينة نشطة</Text><Text style={styles.muted}>سيظهر الاكتشاف بعد تفعيل مدينة من لوحة التحكم.</Text></View>;
-  if (!selectedCityID) return <View style={styles.container}><Text style={styles.eyebrow}>نطاق الخدمة</Text><Text style={styles.title}>اختر مدينتك للمتابعة</Text><Text style={styles.muted}>يُستخدم الاختيار لتحديد المتاجر الظاهرة فقط، ويمكن حفظ عناوين في مدن متعددة.</Text><View style={styles.cityList}>{cities.map((city) => <Pressable key={city.id} accessibilityRole="button" accessibilityLabel={`اختيار مدينة ${city.displayNameAr}`} onPress={() => void selectCity(city.id)} style={({ pressed }) => [styles.cityButton, pressed && styles.pressed]}><Text style={styles.cityButtonName}>{city.displayNameAr}</Text><Text style={styles.cityMeta}>مدينة نشطة</Text></Pressable>)}</View></View>;
+  if (!selectedCityID) return <View style={styles.container}><Text style={styles.eyebrow}>نطاق الخدمة</Text><Text style={styles.title}>اختر مدينتك للمتابعة</Text><Text style={styles.muted}>يُستخدم الاختيار لتحديد المتاجر الظاهرة فقط، ويمكن حفظ عناوين في مدن متعددة.</Text><View style={styles.cityList}>{cities.map((city) => { const cityName = serviceCityDisplayName(city.displayNameAr); return <Pressable key={city.id} accessibilityRole="button" accessibilityLabel={`اختيار مدينة ${cityName}`} onPress={() => void selectCity(city.id)} style={({ pressed }) => [styles.cityButton, pressed && styles.pressed]}><Text style={styles.cityButtonName}>{cityName}</Text><Text style={styles.cityMeta}>مدينة نشطة</Text></Pressable>; })}</View></View>;
 
   return <ScopeContext.Provider value={value}><View style={styles.provider}>{children}</View></ScopeContext.Provider>;
 }

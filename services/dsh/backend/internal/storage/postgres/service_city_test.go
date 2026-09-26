@@ -30,7 +30,7 @@ func TestServiceCityLifecycleIntegrity(t *testing.T) {
 	}
 
 	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
-		if err := postgres.Migrate(ctx, db, records, migrationSQL); err != nil {
+		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
 			t.Fatalf("apply service city migrations: %v", err)
 		}
 		for _, invalidName := range []string{"Sana'a", "صنعاء Sana'a"} {

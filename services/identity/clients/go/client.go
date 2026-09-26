@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -96,6 +97,53 @@ func (c *Client) ReadRole(ctx context.Context, actorID, role string) (ActorRoleV
 	return result, err
 }
 
+func (c *Client) ReadOperatorPermission(ctx context.Context, actorID, permission, operatorActorID string) (OperatorPermissionAccess, error) {
+	var result OperatorPermissionAccess
+	pathname := identityRoute(IdentityOperationReadOperatorPermission.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "permission", url.PathEscape(strings.TrimSpace(permission)))
+	err := c.doWithContext(ctx, IdentityOperationReadOperatorPermission.Method, pathname, "", "", strings.TrimSpace(operatorActorID), 0, nil, &result)
+	return result, err
+}
+
+func (c *Client) SubmitActorLegalName(ctx context.Context, actorID string, input SubmitActorLegalNameRequest, correlationID, idempotencyKey, operatorActorID string) (ActorLegalName, error) {
+	var result ActorLegalName
+	pathname := identityRoute(IdentityOperationSubmitActorLegalName.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)))
+	err := c.doWithLegalNameHeaders(ctx, IdentityOperationSubmitActorLegalName.Method, pathname, correlationID, idempotencyKey, operatorActorID, input, &result)
+	return result, err
+}
+
+func (c *Client) VerifyActorLegalName(ctx context.Context, actorID string, version int, input VerifyActorLegalNameRequest, correlationID, idempotencyKey, operatorActorID string) (ActorLegalName, error) {
+	var result ActorLegalName
+	pathname := identityRoute(IdentityOperationVerifyActorLegalName.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "version", fmt.Sprintf("%d", version))
+	err := c.doWithLegalNameHeaders(ctx, IdentityOperationVerifyActorLegalName.Method, pathname, correlationID, idempotencyKey, operatorActorID, input, &result)
+	return result, err
+}
+
+func (c *Client) ReadVerifiedActorLegalName(ctx context.Context, actorID, operatorActorID string) (ActorLegalName, error) {
+	var result ActorLegalName
+	pathname := identityRoute(IdentityOperationReadVerifiedActorLegalName.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)))
+	err := c.doWithContext(ctx, IdentityOperationReadVerifiedActorLegalName.Method, pathname, "", "", strings.TrimSpace(operatorActorID), 0, nil, &result)
+	return result, err
+}
+
+func (c *Client) ReadPendingActorLegalName(ctx context.Context, actorID, operatorActorID string) (ActorLegalName, error) {
+	var result ActorLegalName
+	pathname := identityRoute(IdentityOperationReadPendingActorLegalName.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)))
+	err := c.doWithContext(ctx, IdentityOperationReadPendingActorLegalName.Method, pathname, "", "", strings.TrimSpace(operatorActorID), 0, nil, &result)
+	return result, err
+}
+
+func (c *Client) doWithLegalNameHeaders(ctx context.Context, method, pathname, correlationID, idempotencyKey, operatorActorID string, body, target any) error {
+	return c.doWithIdempotency(ctx, method, pathname, c.token, correlationID, "", operatorActorID, 0, 0, idempotencyKey, body, target)
+}
+
+func (c *Client) SetOperatorPermissionWithContext(ctx context.Context, actorID, permission, operatorActorID string, enabled bool, correlationID, reason string, expectedVersion int) (OperatorPermissionAccess, error) {
+	var result OperatorPermissionAccess
+	pathname := identityRoute(IdentityOperationSetOperatorPermission.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "permission", url.PathEscape(strings.TrimSpace(permission)))
+	input := SetOperatorPermissionRequest{Enabled: enabled}
+	err := c.doWithContext(ctx, IdentityOperationSetOperatorPermission.Method, pathname, correlationID, reason, operatorActorID, expectedVersion, input, &result)
+	return result, err
+}
+
 // ReadSession validates an end-user access token at the canonical Identity
 // session boundary. The token is deliberately not sent to an internal route
 // with the DSH service credential.
@@ -105,14 +153,25 @@ func (c *Client) ReadSession(ctx context.Context, accessToken string) (ActorIden
 		return ActorIdentity{}, &Error{Status: http.StatusUnauthorized, Code: "UNAUTHENTICATED", Message: "access token is required"}
 	}
 	var result ActorIdentity
-	err := c.doWithToken(ctx, IdentityOperationReadCurrentSession.Method, IdentityOperationReadCurrentSession.Path, accessToken, "", "", "", 0, nil, &result)
+	err := c.doWithToken(ctx, IdentityOperationReadCurrentSession.Method, IdentityOperationReadCurrentSession.Path, accessToken, "", "", "", 0, 0, nil, &result)
 	return result, err
 }
 func (c *Client) SearchRoles(ctx context.Context, role, query string) (ActorRoleSearchPage, error) {
+	enabled := true
+	return c.searchRoles(ctx, role, query, &enabled)
+}
+
+func (c *Client) SearchRolesAnyStatus(ctx context.Context, role, query string) (ActorRoleSearchPage, error) {
+	return c.searchRoles(ctx, role, query, nil)
+}
+
+func (c *Client) searchRoles(ctx context.Context, role, query string, enabled *bool) (ActorRoleSearchPage, error) {
 	params := url.Values{}
 	params.Set("role", strings.TrimSpace(role))
 	params.Set("q", strings.TrimSpace(query))
-	params.Set("enabled", "true")
+	if enabled != nil {
+		params.Set("enabled", strconv.FormatBool(*enabled))
+	}
 	params.Set("limit", "2")
 	var result ActorRoleSearchPage
 	err := c.do(ctx, IdentityOperationSearchActorRoles.Method, IdentityOperationSearchActorRoles.Path+"?"+params.Encode(), "", nil, &result)
@@ -127,9 +186,9 @@ func (c *Client) SetRoleEnabledWithContext(ctx context.Context, actorID, role st
 	return c.doWithContext(ctx, operation.Method, pathname, correlationID, reason, operatorActorID, expectedVersion, nil, nil)
 }
 
-func (c *Client) AuthorizeReenrollmentWithContext(ctx context.Context, actorID, role, correlationID, operatorActorID string) error {
+func (c *Client) AuthorizeReenrollmentWithContext(ctx context.Context, actorID, role, correlationID, operatorActorID, reason string, expectedActorVersion, expectedRoleVersion int) error {
 	pathname := identityRoute(IdentityOperationAuthorizeManagedRoleReenrollment.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "role", url.PathEscape(strings.TrimSpace(role)))
-	return c.doWithContext(ctx, IdentityOperationAuthorizeManagedRoleReenrollment.Method, pathname, correlationID, "", operatorActorID, 0, nil, nil)
+	return c.doWithContextVersions(ctx, IdentityOperationAuthorizeManagedRoleReenrollment.Method, pathname, correlationID, reason, operatorActorID, expectedRoleVersion, expectedActorVersion, nil, nil)
 }
 
 func (c *Client) SetActorSecurityEnabledWithContext(ctx context.Context, actorID string, enabled bool, correlationID, reason, operatorActorID string, expectedVersion int) error {
@@ -156,10 +215,18 @@ func (c *Client) do(ctx context.Context, method, pathname, correlationID string,
 }
 
 func (c *Client) doWithContext(ctx context.Context, method, pathname, correlationID, reason, operatorActorID string, expectedVersion int, body any, target any) error {
-	return c.doWithToken(ctx, method, pathname, c.token, correlationID, reason, operatorActorID, expectedVersion, body, target)
+	return c.doWithToken(ctx, method, pathname, c.token, correlationID, reason, operatorActorID, expectedVersion, 0, body, target)
 }
 
-func (c *Client) doWithToken(ctx context.Context, method, pathname, token, correlationID, reason, operatorActorID string, expectedVersion int, body any, target any) error {
+func (c *Client) doWithContextVersions(ctx context.Context, method, pathname, correlationID, reason, operatorActorID string, expectedVersion, expectedActorVersion int, body any, target any) error {
+	return c.doWithToken(ctx, method, pathname, c.token, correlationID, reason, operatorActorID, expectedVersion, expectedActorVersion, body, target)
+}
+
+func (c *Client) doWithToken(ctx context.Context, method, pathname, token, correlationID, reason, operatorActorID string, expectedVersion, expectedActorVersion int, body any, target any) error {
+	return c.doWithIdempotency(ctx, method, pathname, token, correlationID, reason, operatorActorID, expectedVersion, expectedActorVersion, "", body, target)
+}
+
+func (c *Client) doWithIdempotency(ctx context.Context, method, pathname, token, correlationID, reason, operatorActorID string, expectedVersion, expectedActorVersion int, idempotencyKey string, body any, target any) error {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return &Error{Status: http.StatusUnauthorized, Code: "UNAUTHENTICATED", Message: "access token is required"}
@@ -185,6 +252,9 @@ func (c *Client) doWithToken(ctx context.Context, method, pathname, token, corre
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	if strings.TrimSpace(idempotencyKey) != "" {
+		req.Header.Set("Idempotency-Key", strings.TrimSpace(idempotencyKey))
+	}
 	if strings.TrimSpace(correlationID) != "" {
 		req.Header.Set("X-Correlation-ID", strings.TrimSpace(correlationID))
 	}
@@ -196,6 +266,9 @@ func (c *Client) doWithToken(ctx context.Context, method, pathname, token, corre
 	}
 	if expectedVersion > 0 {
 		req.Header.Set("X-Expected-Version", fmt.Sprintf("%d", expectedVersion))
+	}
+	if expectedActorVersion > 0 {
+		req.Header.Set("X-Expected-Actor-Version", fmt.Sprintf("%d", expectedActorVersion))
 	}
 	response, err := c.http.Do(req)
 	if err != nil {

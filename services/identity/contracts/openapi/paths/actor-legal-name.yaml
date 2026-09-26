@@ -1,0 +1,76 @@
+paths:
+  /internal/actors/{actorId}/legal-name:
+    post:
+      tags: [internal-actor-identity]
+      operationId: submitActorLegalName
+      security: [{ internalServiceToken: [] }]
+      description: Operations may record a four-part natural-person legal name only with a governed identity-document evidence reference. The value remains pending until an independent Operations Operator verifies it in Identity.
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+        - { name: X-Correlation-ID, in: header, required: true, schema: { type: string, minLength: 8, maxLength: 128 } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 8, maxLength: 128 } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SubmitActorLegalNameRequest" } } }
+      responses:
+        "200": { description: Idempotent replay of the exact submitted legal-name version., content: { application/json: { schema: { $ref: "#/components/schemas/ActorLegalName" } } } }
+        "201": { description: New pending legal-name version recorded in Identity., content: { application/json: { schema: { $ref: "#/components/schemas/ActorLegalName" } } } }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /internal/actors/{actorId}/verified-legal-name:
+    get:
+      tags: [internal-actor-identity]
+      operationId: readVerifiedActorLegalName
+      security: [{ internalServiceToken: [] }]
+      description: DSH may read Identity's canonical verified legal name for an authorized domain workflow. Control Panel reads require Operations permission.
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/OptionalActingActorId" }
+      responses:
+        "200": { description: Identity-owned verified four-part legal name and provenance., content: { application/json: { schema: { $ref: "#/components/schemas/ActorLegalName" } } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /internal/actors/{actorId}/pending-legal-name:
+    get:
+      tags: [internal-actor-identity]
+      operationId: readPendingActorLegalName
+      security: [{ internalServiceToken: [] }]
+      description: Authorized Operations staff may read the latest pending name candidate to complete independent review.
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/OptionalActingActorId" }
+      responses:
+        "200": { description: Identity-owned pending four-part legal name and evidence reference., content: { application/json: { schema: { $ref: "#/components/schemas/ActorLegalName" } } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /internal/actors/{actorId}/legal-name/{version}/verify:
+    post:
+      tags: [internal-actor-identity]
+      operationId: verifyActorLegalName
+      security: [{ internalServiceToken: [] }]
+      description: A different Operations Operator independently compares the pending four-part legal name with its cited identity evidence and makes that version current in Identity.
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+        - { name: version, in: path, required: true, schema: { type: integer, minimum: 1 } }
+        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+        - { name: X-Correlation-ID, in: header, required: true, schema: { type: string, minLength: 8, maxLength: 128 } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 8, maxLength: 128 } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/VerifyActorLegalNameRequest" } } }
+      responses:
+        "200": { description: Independently verified legal-name version is current in Identity., content: { application/json: { schema: { $ref: "#/components/schemas/ActorLegalName" } } } }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }

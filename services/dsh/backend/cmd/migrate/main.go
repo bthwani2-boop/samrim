@@ -30,6 +30,10 @@ func main() {
 	if _, err := opsafety.RequireExpectedDatabaseTarget(databaseURL, os.Getenv); err != nil {
 		log.Fatal(err)
 	}
+	proofKeys, err := postgres.NewDeliveryProofKeyringFromEnv(os.Getenv("DSH_DELIVERY_PROOF_ACTIVE_KEY_ID"), os.Getenv("DSH_DELIVERY_PROOF_KEYRING"))
+	if err != nil {
+		log.Fatal(err)
+	}
 	directory := strings.TrimSpace(os.Getenv("DSH_MIGRATION_DIR"))
 	if directory == "" {
 		directory = filepath.Clean("../database/migrations")
@@ -48,7 +52,7 @@ func main() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if err := postgres.Migrate(ctx, db, records, migrationSQL); err != nil {
+	if err := postgres.Migrate(ctx, db, records, migrationSQL, proofKeys); err != nil {
 		log.Fatal(err)
 	}
 	if err := postgres.VerifySchema(ctx, db, records); err != nil {

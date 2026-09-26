@@ -1,7 +1,5 @@
-"use client";
-
-import { CatalogOverview, CatalogWorkspace } from "../../../src/features/central-catalog/catalog-workspace";
+import { redirect } from "next/navigation";
 
 export default function CentralCatalogPage() {
-  return <CatalogWorkspace resource="overview"><CatalogOverview /></CatalogWorkspace>;
+  redirect("/catalog/products");
 }

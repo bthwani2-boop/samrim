@@ -1,8 +1,5 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { FieldEarningsWorkspace } from "../../../../src/features/finance/field-earnings-workspace";
-import { FinanceWorkspace } from "../../../../src/features/finance/finance-workspace";
-
-export default function FinanceFieldEarningsPage() {
-  return <FinanceWorkspace resource="field-earnings"><FieldEarningsWorkspace /></FinanceWorkspace>;
+export default function LegacyFieldEarningsRoute() {
+  redirect("/finance/beneficiary-settlement/field");
 }

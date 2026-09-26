@@ -1,0 +1,47 @@
+:global(.workspace-route-tabs) {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border-subtle);
+  scrollbar-width: thin;
+}
+
+:global(.workspace-route-tab) {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  border-bottom: 3px solid transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 750;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+:global(.workspace-route-tab:hover) {
+  color: var(--text-primary);
+  background: var(--surface-muted);
+}
+
+:global(.workspace-route-tab.is-active) {
+  border-bottom-color: var(--brand-action);
+  color: var(--text-primary);
+}
+
+:global(.workspace-route-tab:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+@media (max-width: 720px) {
+  :global(.workspace-route-tab) {
+    min-height: 42px;
+    padding-inline: 11px;
+    font-size: 12px;
+  }
+}

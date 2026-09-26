@@ -490,18 +490,12 @@ func ListDiscoveryContent(ctx context.Context, db *sql.DB, public bool, serviceC
 	where := "1=1"
 	args := []any{}
 	if public {
-		if strings.TrimSpace(serviceCityID) == "" {
+		serviceCityID = strings.TrimSpace(serviceCityID)
+		if serviceCityID == "" {
 			return nil, ErrDiscoveryContentInvalid
 		}
-		args = append(args, strings.TrimSpace(serviceCityID))
+		args = append(args, serviceCityID)
 		where += " AND state='PUBLISHED' AND starts_at <= clock_timestamp() AND (ends_at IS NULL OR ends_at > clock_timestamp()) AND (service_city_id IS NULL OR service_city_id=$1)"
-		where += ` AND (
-            target_type='INFO'
-            OR (target_type='STORE' AND EXISTS (SELECT 1 FROM dsh.stores s WHERE s.id=discovery_content.target_id AND s.publication_state='published' AND s.service_city_id=$1))
-            OR (target_type='PRODUCT' AND EXISTS (SELECT 1 FROM dsh.catalog_products p WHERE p.id=discovery_content.target_id AND p.active=true))
-            OR (target_type='CATEGORY' AND EXISTS (SELECT 1 FROM dsh.catalog_categories c WHERE c.id=discovery_content.target_id AND c.active=true))
-            OR (target_type='PROMOTION' AND EXISTS (SELECT 1 FROM dsh.commerce_promotions p WHERE p.id=discovery_content.target_id AND p.state='PUBLISHED' AND p.starts_at <= clock_timestamp() AND (p.ends_at IS NULL OR p.ends_at > clock_timestamp())))
-        )`
 	}
 	rows, err := db.QueryContext(ctx, "SELECT "+discoveryContentSelect+" FROM dsh.discovery_content WHERE "+where+" ORDER BY ordinal ASC,starts_at DESC,id DESC", args...)
 	if err != nil {
@@ -516,7 +510,32 @@ func ListDiscoveryContent(ctx context.Context, db *sql.DB, public bool, serviceC
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if !public {
+		return items, nil
+	}
+
+	return filterEligibleDiscoveryContent(ctx, db, items, serviceCityID)
+}
+
+func filterEligibleDiscoveryContent(ctx context.Context, db *sql.DB, items []DiscoveryContentRecord, serviceCityID string) ([]DiscoveryContentRecord, error) {
+	eligible := make([]DiscoveryContentRecord, 0, len(items))
+	now := time.Now().UTC()
+	for _, item := range items {
+		if _, err := resolveDiscoveryContentTarget(ctx, db, item.TargetType, item.TargetID, serviceCityID, now); err != nil {
+			if errors.Is(err, ErrDiscoveryContentNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		eligible = append(eligible, item)
+	}
+	return eligible, nil
 }
 
 func SetDiscoveryContentState(ctx context.Context, db *sql.DB, id, state, idempotencyKey, requestHash string, expectedVersion int) (DiscoveryContentRecord, bool, error) {
@@ -548,13 +567,8 @@ func SetDiscoveryContentState(ctx context.Context, db *sql.DB, id, state, idempo
 		return DiscoveryContentRecord{}, false, err
 	}
 	if state == "PUBLISHED" {
-		var targetType, targetID string
-		if err := tx.QueryRowContext(ctx, "SELECT target_type,COALESCE(target_id,'') FROM dsh.discovery_content WHERE id=$1", id).Scan(&targetType, &targetID); errors.Is(err, sql.ErrNoRows) {
-			return DiscoveryContentRecord{}, false, ErrDiscoveryContentNotFound
-		} else if err != nil {
+		if err := validateDiscoveryContentPublication(ctx, tx, id); err != nil {
 			return DiscoveryContentRecord{}, false, err
-		} else if !validDiscoveryTarget(ctx, tx, targetType, targetID) {
-			return DiscoveryContentRecord{}, false, ErrDiscoveryContentTargetInvalid
 		}
 	}
 	result, err := tx.ExecContext(ctx, "UPDATE dsh.discovery_content SET state=$2,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$3", id, state, expectedVersion)
@@ -578,22 +592,25 @@ func SetDiscoveryContentState(ctx context.Context, db *sql.DB, id, state, idempo
 	return item, false, nil
 }
 
-func validDiscoveryTarget(ctx context.Context, tx *sql.Tx, targetType, targetID string) bool {
-	var exists bool
-	switch targetType {
-	case "INFO":
-		return targetID == ""
-	case "STORE":
-		return tx.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM dsh.stores WHERE id=$1)", targetID).Scan(&exists) == nil && exists
-	case "PRODUCT":
-		return tx.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM dsh.catalog_products WHERE id=$1)", targetID).Scan(&exists) == nil && exists
-	case "CATEGORY":
-		return tx.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM dsh.catalog_categories WHERE id=$1)", targetID).Scan(&exists) == nil && exists
-	case "PROMOTION":
-		return tx.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM dsh.commerce_promotions WHERE id=$1)", targetID).Scan(&exists) == nil && exists
-	default:
-		return false
+func validateDiscoveryContentPublication(ctx context.Context, tx *sql.Tx, id string) error {
+	var targetType, targetID, contentCityID string
+	var startsAt time.Time
+	if err := tx.QueryRowContext(ctx, "SELECT target_type,COALESCE(target_id,''),COALESCE(service_city_id,''),starts_at FROM dsh.discovery_content WHERE id=$1", id).Scan(&targetType, &targetID, &contentCityID, &startsAt); errors.Is(err, sql.ErrNoRows) {
+		return ErrDiscoveryContentNotFound
+	} else if err != nil {
+		return err
 	}
+	eligibleAt := time.Now().UTC()
+	if startsAt.After(eligibleAt) {
+		eligibleAt = startsAt
+	}
+	if _, err := resolveDiscoveryContentTarget(ctx, tx, targetType, targetID, contentCityID, eligibleAt); err != nil {
+		if errors.Is(err, ErrDiscoveryContentNotFound) || errors.Is(err, ErrDiscoveryContentTargetInvalid) {
+			return ErrDiscoveryContentTargetInvalid
+		}
+		return err
+	}
+	return nil
 }
 
 func itoa(value int) string {

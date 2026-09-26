@@ -24,6 +24,8 @@ type CreateFieldCommissionPolicyInput struct {
 	CreatedBy         string
 	IdempotencyKey    string
 	CorrelationID     string
+	ExpectedVersion   int
+	Reason            string
 }
 
 type FieldCommissionPolicyRecord struct {
@@ -69,7 +71,7 @@ type FieldFinancialSummaryRecord struct {
 }
 
 func HashCreateFieldCommissionPolicy(input CreateFieldCommissionPolicyInput) string {
-	return hashFacts("field-commission-policy", strings.ToUpper(strings.TrimSpace(input.ScopeType)), strings.TrimSpace(input.ScopeID), formatInt64(input.RewardMinor), formatInt64(input.RoundingUnitMinor))
+	return hashFacts("field-commission-policy", strings.ToUpper(strings.TrimSpace(input.ScopeType)), strings.TrimSpace(input.ScopeID), formatInt64(input.RewardMinor), formatInt64(input.RoundingUnitMinor), formatInt64(int64(input.ExpectedVersion)), strings.TrimSpace(input.Reason))
 }
 
 func HashFinalizeFieldCommission(input FinalizeFieldCommissionInput) string {
@@ -82,7 +84,8 @@ func CreateFieldCommissionPolicy(ctx context.Context, db *sql.DB, input CreateFi
 	input.CreatedBy = strings.TrimSpace(input.CreatedBy)
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
 	input.CorrelationID = strings.TrimSpace(input.CorrelationID)
-	if db == nil || (input.ScopeType != "DEFAULT" && input.ScopeType != "VERTICAL" && input.ScopeType != "STORE") || (input.ScopeType == "DEFAULT" && input.ScopeID != "") || (input.ScopeType != "DEFAULT" && boundedText(input.ScopeID, 1, 128) == "") || input.RewardMinor <= 0 || input.RoundingUnitMinor != 50 || boundedText(input.CreatedBy, 1, 128) == "" || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
+	input.Reason = strings.Join(strings.Fields(strings.TrimSpace(input.Reason)), " ")
+	if db == nil || (input.ScopeType != "DEFAULT" && input.ScopeType != "VERTICAL" && input.ScopeType != "STORE") || (input.ScopeType == "DEFAULT" && input.ScopeID != "") || (input.ScopeType != "DEFAULT" && boundedText(input.ScopeID, 1, 128) == "") || input.RewardMinor <= 0 || input.RoundingUnitMinor != 50 || input.ExpectedVersion < 0 || len(input.Reason) < 5 || len(input.Reason) > 500 || boundedText(input.CreatedBy, 1, 128) == "" || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
 		return FieldCommissionPolicyRecord{}, false, ErrFieldCommissionPolicyInvalidInput
 	}
 	requestHash := HashCreateFieldCommissionPolicy(input)
@@ -115,10 +118,15 @@ func CreateFieldCommissionPolicy(ctx context.Context, db *sql.DB, input CreateFi
 	if !errors.Is(err, sql.ErrNoRows) {
 		return FieldCommissionPolicyRecord{}, false, err
 	}
-	var nextVersion int
-	if err := tx.QueryRowContext(ctx, "SELECT COALESCE(MAX(version),0)+1 FROM wlt.field_commission_policies WHERE scope_type=$1 AND COALESCE(scope_id,'')=COALESCE(NULLIF($2,''),'')", input.ScopeType, input.ScopeID).Scan(&nextVersion); err != nil {
+	var currentVersion int
+	err = tx.QueryRowContext(ctx, "SELECT version FROM wlt.field_commission_policies WHERE scope_type=$1 AND COALESCE(scope_id,'')=COALESCE(NULLIF($2,''),'') AND state='ACTIVE' FOR UPDATE", input.ScopeType, input.ScopeID).Scan(&currentVersion)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return FieldCommissionPolicyRecord{}, false, err
 	}
+	if input.ExpectedVersion != currentVersion {
+		return FieldCommissionPolicyRecord{}, false, ErrVersionConflict
+	}
+	nextVersion := currentVersion + 1
 	if _, err := tx.ExecContext(ctx, "UPDATE wlt.field_commission_policies SET state='RETIRED',retired_at=clock_timestamp() WHERE scope_type=$1 AND COALESCE(scope_id,'')=COALESCE(NULLIF($2,''),'') AND state='ACTIVE'", input.ScopeType, input.ScopeID); err != nil {
 		return FieldCommissionPolicyRecord{}, false, err
 	}
@@ -126,7 +134,7 @@ func CreateFieldCommissionPolicy(ctx context.Context, db *sql.DB, input CreateFi
 	if err != nil {
 		return FieldCommissionPolicyRecord{}, false, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.field_commission_policies(id,scope_type,scope_id,reward_minor,rounding_unit_minor,state,version,created_by,idempotency_key,request_hash) VALUES($1,$2,NULLIF($3,''),$4,$5,'ACTIVE',$6,$7,$8,$9)`, policyID, input.ScopeType, input.ScopeID, input.RewardMinor, input.RoundingUnitMinor, nextVersion, input.CreatedBy, input.IdempotencyKey, requestHash); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.field_commission_policies(id,scope_type,scope_id,reward_minor,rounding_unit_minor,state,version,created_by,idempotency_key,request_hash,correlation_id,expected_version,change_reason) VALUES($1,$2,NULLIF($3,''),$4,$5,'ACTIVE',$6,$7,$8,$9,$10,$11,$12)`, policyID, input.ScopeType, input.ScopeID, input.RewardMinor, input.RoundingUnitMinor, nextVersion, input.CreatedBy, input.IdempotencyKey, requestHash, input.CorrelationID, input.ExpectedVersion, input.Reason); err != nil {
 		return FieldCommissionPolicyRecord{}, false, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -141,6 +149,37 @@ func ReadFieldCommissionPolicy(ctx context.Context, db *sql.DB, policyID string)
 		return FieldCommissionPolicyRecord{}, ErrFieldCommissionPolicyInvalidInput
 	}
 	return readFieldCommissionPolicy(ctx, db, strings.TrimSpace(policyID))
+}
+
+func ReadActiveFieldCommissionPolicyByScope(ctx context.Context, db *sql.DB, scopeType, scopeID string) (FieldCommissionPolicyRecord, error) {
+	scopeType = strings.ToUpper(strings.TrimSpace(scopeType))
+	scopeID = strings.TrimSpace(scopeID)
+	if db == nil || (scopeType != "DEFAULT" && scopeType != "VERTICAL" && scopeType != "STORE") || (scopeType == "DEFAULT" && scopeID != "") || (scopeType != "DEFAULT" && boundedText(scopeID, 1, 128) == "") {
+		return FieldCommissionPolicyRecord{}, ErrFieldCommissionPolicyInvalidInput
+	}
+	return readActiveFieldCommissionPolicyByScope(ctx, db, scopeType, scopeID)
+}
+
+func readActiveFieldCommissionPolicyByScope(ctx context.Context, source interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, scopeType, scopeID string) (FieldCommissionPolicyRecord, error) {
+	var item FieldCommissionPolicyRecord
+	var storedScopeID sql.NullString
+	var retiredAt sql.NullTime
+	err := source.QueryRowContext(ctx, `SELECT id,scope_type,scope_id,reward_minor,rounding_unit_minor,state,version,created_by,created_at,retired_at FROM wlt.field_commission_policies WHERE scope_type=$1 AND COALESCE(scope_id,'')=$2 AND state='ACTIVE'`, scopeType, scopeID).Scan(&item.ID, &item.ScopeType, &storedScopeID, &item.RewardMinor, &item.RoundingUnitMinor, &item.State, &item.Version, &item.CreatedBy, &item.CreatedAt, &retiredAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return FieldCommissionPolicyRecord{}, ErrFieldCommissionPolicyNotFound
+	}
+	if err != nil {
+		return FieldCommissionPolicyRecord{}, err
+	}
+	if storedScopeID.Valid {
+		item.ScopeID = storedScopeID.String
+	}
+	if retiredAt.Valid {
+		item.RetiredAt = &retiredAt.Time
+	}
+	return item, nil
 }
 
 func readFieldCommissionPolicy(ctx context.Context, source interface {

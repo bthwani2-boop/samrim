@@ -39,6 +39,27 @@ func assertRequiredMigrationOrder(t *testing.T, records []postgres.MigrationReco
 	}
 }
 
+func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
+	migrationDirectory := filepath.Join("..", "..", "..", "..", "database", "migrations")
+	records, migrationSQL, err := postgres.LoadMigrations(migrationDirectory)
+	if err != nil {
+		t.Fatalf("load DSH canonical migrations: %v", err)
+	}
+	if len(records) != postgres.SchemaVersion || len(migrationSQL) != postgres.SchemaVersion {
+		t.Fatalf("unexpected DSH migration graph size: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.SchemaVersion)
+	}
+	last := records[len(records)-1]
+	if last.Version != postgres.SchemaVersion || last.Name != "065_marketing_operational_registries.sql" {
+		t.Fatalf("last DSH migration = v%d %q; want v%d 065_marketing_operational_registries.sql", last.Version, last.Name, postgres.SchemaVersion)
+	}
+	if !strings.Contains(migrationSQL[len(migrationSQL)-2], "fulfillment_mode IN ('PARTNER_CAPTAIN', 'CUSTOMER_PICKUP') AND payment_method = 'CASH_AT_STORE'") {
+		t.Fatal("DSH migration 064 does not bind partner-captain fulfillment to cash at store")
+	}
+	if !strings.Contains(migrationSQL[len(migrationSQL)-1], "commerce_promotions_starts_registry_idx") || !strings.Contains(migrationSQL[len(migrationSQL)-1], "discovery_content_created_registry_idx") {
+		t.Fatal("latest DSH migration is missing marketing registry indexes")
+	}
+}
+
 func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("DSH_DATABASE_URL"))
 	if databaseURL == "" {
@@ -64,13 +85,13 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 			"019_captain_delivery_recovery.sql",
 			"020_field_standing_admission_and_joining_scope.sql",
 		)
-		if err := postgres.Migrate(ctx, db, records, migrationSQL); err != nil {
+		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
 			t.Fatalf("apply fresh DSH migrations: %v", err)
 		}
 		if err := postgres.VerifySchema(ctx, db, records); err != nil {
 			t.Fatalf("verify fresh DSH schema: %v", err)
 		}
-		if err := postgres.Migrate(ctx, db, records, migrationSQL); err != nil {
+		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
 			t.Fatalf("rerun DSH migrations with matching checksums: %v", err)
 		}
 		for _, table := range []string{"central_products", "central_product_mutation_idempotency", "central_product_audit", "store_assortments", "store_assortment_mutation_idempotency", "store_assortment_audit"} {
@@ -84,18 +105,50 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create service city: %v", err)
 		}
-		vertical := postgres.CommerceVerticalRecord{NameAr: "بقالة", NameEn: "Grocery", Active: true}
-		createdVertical, err := postgres.CreateCommerceVertical(ctx, db, vertical, "idem-vertical-v1", postgres.HashCatalogVerticalCreateRequest(vertical))
+		vertical := postgres.CommerceVerticalRecord{NameAr: "بقالة", NameEn: "Grocery", CatalogModel: "SHARED_CATALOG", Active: true}
+		verticalAudit := postgres.CatalogRegistryAuditInput{ActingActorID: testOperatorActorID, CorrelationID: "corr-vertical-v1", Reason: "Initial catalog vertical"}
+		createdVertical, err := postgres.CreateCommerceVertical(ctx, db, vertical, "idem-vertical-v1", postgres.HashCatalogVerticalCreateRequest(vertical, verticalAudit.Reason), verticalAudit)
 		if err != nil || !strings.HasPrefix(createdVertical.Vertical.ID, "vertical_") || createdVertical.Vertical.Version != 1 {
 			t.Fatalf("create commerce vertical: %+v err=%v", createdVertical, err)
 		}
 		vertical.ID = createdVertical.Vertical.ID
 		category := postgres.CatalogCategoryRecord{VerticalID: vertical.ID, NameAr: "قهوة", NameEn: "Coffee", Active: true}
-		createdCategory, err := postgres.CreateCatalogCategory(ctx, db, category, "idem-category-v1", postgres.HashCatalogCategoryCreateRequest(category))
+		categoryAudit := postgres.CatalogRegistryAuditInput{ActingActorID: testOperatorActorID, CorrelationID: "corr-category-v1", Reason: "Initial catalog category"}
+		createdCategory, err := postgres.CreateCatalogCategory(ctx, db, category, "idem-category-v1", postgres.HashCatalogCategoryCreateRequest(category, categoryAudit.Reason), categoryAudit)
 		if err != nil || !strings.HasPrefix(createdCategory.ID, "category_") {
 			t.Fatalf("create catalog category: %v", err)
 		}
 		category.ID = createdCategory.ID
+		category.Version = createdCategory.Version
+		childCategory := postgres.CatalogCategoryRecord{VerticalID: vertical.ID, ParentCategoryID: category.ID, NameAr: "قهوة مختصة", NameEn: "Specialty Coffee", Active: true}
+		childAudit := postgres.CatalogRegistryAuditInput{ActingActorID: testOperatorActorID, CorrelationID: "corr-category-child-v1", Reason: "Add specialty coffee child category"}
+		createdChild, err := postgres.CreateCatalogCategory(ctx, db, childCategory, "idem-category-child-v1", postgres.HashCatalogCategoryCreateRequest(childCategory, childAudit.Reason), childAudit)
+		if err != nil {
+			t.Fatalf("create child catalog category: %v", err)
+		}
+		cycleUpdate := postgres.UpdateCatalogCategoryInput{ParentCategoryID: createdChild.ID, NameAr: category.NameAr, NameEn: category.NameEn, Active: category.Active, ExpectedVersion: category.Version}
+		cycleReason := "Reject category cycle"
+		cycleAudit := postgres.CatalogRegistryAuditInput{ActingActorID: testOperatorActorID, CorrelationID: "corr-category-cycle-v1", Reason: cycleReason}
+		if _, _, err := postgres.UpdateCatalogCategory(ctx, db, category.ID, cycleUpdate, "idem-category-cycle-v1", postgres.HashCatalogCategoryUpdateRequest(category.ID, cycleUpdate, cycleReason), cycleAudit); !errors.Is(err, postgres.ErrCatalogCategoryCycle) {
+			t.Fatalf("expected category cycle rejection, got %v", err)
+		}
+		attributeInput := postgres.CatalogAttributeDefinitionInput{ID: "coffee_origin", VerticalID: vertical.ID, Code: "origin", NameAr: "بلد المنشأ", ValueKind: "TEXT", Active: true}
+		if _, _, err := postgres.CreateCatalogAttributeDefinition(ctx, db, attributeInput, "idem-attribute-origin-v1", postgres.HashCatalogAttributeDefinitionRequest(attributeInput)); err != nil {
+			t.Fatalf("create catalog attribute definition: %v", err)
+		}
+		rule := postgres.CatalogAttributeRuleRecord{CategoryID: category.ID, AttributeID: attributeInput.ID}
+		ruleAudit := postgres.CatalogRegistryAuditInput{ActingActorID: testOperatorActorID, CorrelationID: "corr-rule-origin-v1", Reason: "Establish origin attribute rule"}
+		ruleHash := postgres.HashCatalogCategoryAttributeRuleRequest(rule, 0, ruleAudit.Reason)
+		if err := postgres.UpsertCatalogCategoryAttributeRule(ctx, db, rule, 0, "idem-rule-origin-v1", ruleHash, ruleAudit); err != nil {
+			t.Fatalf("create category attribute rule: %v", err)
+		}
+		if err := postgres.UpsertCatalogCategoryAttributeRule(ctx, db, postgres.CatalogAttributeRuleRecord{CategoryID: category.ID, AttributeID: attributeInput.ID, Required: true}, 0, "idem-rule-origin-stale-v1", postgres.HashCatalogCategoryAttributeRuleRequest(postgres.CatalogAttributeRuleRecord{CategoryID: category.ID, AttributeID: attributeInput.ID, Required: true}, 0, "Stale rule update"), postgres.CatalogRegistryAuditInput{ActingActorID: testOperatorActorID, CorrelationID: "corr-rule-origin-stale-v1", Reason: "Stale rule update"}); !errors.Is(err, postgres.ErrCatalogVersionConflict) {
+			t.Fatalf("expected stale category attribute rule rejection, got %v", err)
+		}
+		var auditCount int
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.catalog_registry_audit_events WHERE entity_type IN ('vertical','category','attribute_rule') AND acting_actor_id=$1", testOperatorActorID).Scan(&auditCount); err != nil || auditCount != 4 {
+			t.Fatalf("catalog registry audit readback count=%d err=%v", auditCount, err)
+		}
 		productInput := postgres.CatalogProductInput{VerticalID: vertical.ID, Scope: "SHARED", CanonicalName: "قهوة عربية", MeasurementKind: "DISCRETE", BaseUnit: "COUNT", VariantTitle: "عبوة 250 غ", CategoryIDs: []string{category.ID}, IdentifierType: "GTIN", IdentifierValue: "6281000000001", ImageURI: "https://example.com/coffee.jpg"}
 		createdProduct, err := postgres.CreateCatalogProduct(ctx, db, productInput, "idem-product-v1", postgres.HashCatalogProductCreateRequest(productInput), testOperatorActorID, "corr-product-v1")
 		if err != nil || createdProduct.Product.ID == "" || createdProduct.Product.Version != 1 {

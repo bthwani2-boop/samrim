@@ -22,16 +22,17 @@ var (
 )
 
 type Service struct {
-	identity *identityintegration.Client
-	db       *sql.DB
-	payment  *wlt.Client
+	identity  *identityintegration.Client
+	db        *sql.DB
+	payment   *wlt.Client
+	proofKeys *postgres.DeliveryProofKeyring
 }
 
-func New(identity *identityintegration.Client, db *sql.DB, payment *wlt.Client) (*Service, error) {
-	if identity == nil || db == nil || payment == nil {
+func New(identity *identityintegration.Client, db *sql.DB, payment *wlt.Client, proofKeys *postgres.DeliveryProofKeyring) (*Service, error) {
+	if identity == nil || db == nil || payment == nil || proofKeys == nil {
 		return nil, errors.New("order configuration is invalid")
 	}
-	return &Service{identity: identity, db: db, payment: payment}, nil
+	return &Service{identity: identity, db: db, payment: payment, proofKeys: proofKeys}, nil
 }
 
 func (s *Service) Read(ctx context.Context, accessToken, orderID string) (postgres.OrderRecord, error) {
@@ -75,7 +76,7 @@ func (s *Service) ReadClientDeliveryProof(ctx context.Context, accessToken, orde
 	if err != nil {
 		return postgres.DeliveryProofRecord{}, err
 	}
-	return postgres.ReadClientDeliveryProof(ctx, s.db, orderID, identity)
+	return postgres.ReadClientDeliveryProof(ctx, s.db, orderID, identity, s.proofKeys)
 }
 
 func (s *Service) ReadClientOrderRating(ctx context.Context, accessToken, orderID string) (postgres.OrderRatingRecord, error) {
@@ -125,10 +126,13 @@ func (s *Service) MarkOrderConversationRead(ctx context.Context, accessToken, or
 	return postgres.MarkOrderConversationRead(ctx, s.db, orderID, actorID, role, messageID)
 }
 
-func (s *Service) ListForClient(ctx context.Context, accessToken string, limit int) ([]postgres.OrderRecord, error) {
+func (s *Service) ListForClient(ctx context.Context, accessToken string, limit int, cartID string) ([]postgres.OrderRecord, error) {
 	identity, err := s.requireSession(ctx, accessToken, "client", "app-client")
 	if err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(cartID) != "" {
+		return postgres.ListOrdersForClientByCart(ctx, s.db, identity, cartID)
 	}
 	return postgres.ListOrdersForClient(ctx, s.db, identity, "", limit)
 }
@@ -158,25 +162,25 @@ func (s *Service) ListForPartner(ctx context.Context, accessToken, storeID strin
 	return postgres.ListOrdersForStore(ctx, s.db, strings.TrimSpace(storeID), "", limit)
 }
 
-func (s *Service) ListForOperator(ctx context.Context, state, actingActorID string, limit int, cursor string) (postgres.OperatorOperationsResult, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+func (s *Service) ListForOperator(ctx context.Context, state, query, sort, actingActorID string, actionableOnly bool, limit int, cursor string) (postgres.OperatorOperationsResult, error) {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "operations"); err != nil {
 		return postgres.OperatorOperationsResult{}, err
 	}
-	return postgres.ListOrdersForOperator(ctx, s.db, state, limit, cursor)
+	return postgres.ListOrdersForOperator(ctx, s.db, state, query, sort, actionableOnly, limit, cursor)
 }
 
 func (s *Service) ReadForOperator(ctx context.Context, orderID, actingActorID string) (postgres.OperatorOperationRecord, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "operations"); err != nil {
 		return postgres.OperatorOperationRecord{}, err
 	}
 	return postgres.ReadOperatorOperation(ctx, s.db, orderID)
 }
 
-func (s *Service) ListCashCustodyForOperator(ctx context.Context, actingActorID string) (wlt.CashLiabilityResponse, error) {
-	if err := s.requireOperator(ctx, actingActorID); err != nil {
-		return wlt.CashLiabilityResponse{}, err
+func (s *Service) ListCashCustodyForOperator(ctx context.Context, actingActorID, search, sort, cursor string, limit int) (wlt.CashLiabilityRegistryResponse, error) {
+	if err := s.requireOperatorPermission(ctx, actingActorID, "finance"); err != nil {
+		return wlt.CashLiabilityRegistryResponse{}, err
 	}
-	return s.payment.ListOperatorCashLiability(ctx)
+	return s.payment.ListOperatorCashLiability(ctx, search, sort, cursor, limit)
 }
 
 func (s *Service) TransitionForPartner(ctx context.Context, accessToken, storeID, orderID, state string, expectedVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
@@ -195,10 +199,42 @@ func (s *Service) TransitionForPartner(ctx context.Context, accessToken, storeID
 		return postgres.OrderRecord{}, false, ErrStoreOwnershipForbidden
 	}
 	state = strings.TrimSpace(state)
+	if state == "CANCELLED" {
+		return postgres.TransitionOrderWithPaymentCancellation(ctx, s.db, orderID, state, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, state, expectedVersion), identity, strings.TrimSpace(correlationID), postgres.CancellationReasonPickupCustomerNoShow)
+	}
 	if state == "REJECTED" {
 		return postgres.TransitionOrderWithPaymentCancellation(ctx, s.db, orderID, "REJECTED", expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, state, expectedVersion), identity, strings.TrimSpace(correlationID), "partner_rejected")
 	}
 	return postgres.TransitionOrder(ctx, s.db, orderID, state, "", expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, state, expectedVersion), identity, strings.TrimSpace(correlationID))
+}
+
+func (s *Service) CompleteStorePickupForPartner(ctx context.Context, accessToken, storeID, orderID, code string, expectedVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
+	identity, err := s.requireSession(ctx, accessToken, "partner", "app-partner")
+	if err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	if err := s.requireOwnedStore(ctx, identity, storeID); err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	current, err := postgres.ReadOrder(ctx, s.db, orderID)
+	if err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	if current.StoreID != strings.TrimSpace(storeID) {
+		return postgres.OrderRecord{}, false, ErrStoreOwnershipForbidden
+	}
+	return postgres.CompleteStorePickup(ctx, s.db, orderID, code, expectedVersion, strings.TrimSpace(idempotencyKey), identity, strings.TrimSpace(correlationID), s.proofKeys)
+}
+
+func (s *Service) ConfirmStoreCaptainCashHandoff(ctx context.Context, accessToken, storeID, orderID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
+	identity, err := s.requireSession(ctx, accessToken, "partner", "app-partner")
+	if err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	if err := s.requireOwnedStore(ctx, identity, storeID); err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	return postgres.ConfirmStoreCaptainCashHandoff(ctx, s.db, strings.TrimSpace(storeID), strings.TrimSpace(orderID), identity, expectedVersion, strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID))
 }
 
 func (s *Service) requireSession(ctx context.Context, accessToken, role, surface string) (string, error) {
@@ -245,4 +281,11 @@ func (s *Service) requireOperator(ctx context.Context, actorID string) error {
 		return ErrOperatorNotActive
 	}
 	return nil
+}
+
+func (s *Service) requireOperatorPermission(ctx context.Context, actorID, permission string) error {
+	if err := s.requireOperator(ctx, actorID); err != nil {
+		return err
+	}
+	return s.identity.RequireOperatorPermission(ctx, strings.TrimSpace(actorID), permission)
 }

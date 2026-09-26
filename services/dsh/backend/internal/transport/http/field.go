@@ -41,11 +41,11 @@ func (s *FieldServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/fields/actors/{actorId}/admission", s.readAdmissionForActor)
 	mux.HandleFunc("GET /dsh/fields/me", s.readOwnAdmission)
 	mux.HandleFunc("POST /dsh/fields/{actorId}/identity-role", s.setRole)
+	mux.HandleFunc("POST /dsh/fields/{actorId}/reenrollment", s.authorizeReenrollment)
 	mux.HandleFunc("POST /dsh/field/joining-cases", s.createJoiningCase)
 	mux.HandleFunc("GET /dsh/field/joining-cases", s.listJoiningCases)
 	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}", s.readJoiningCase)
 	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/submit", s.submitJoiningCase)
-	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/correct-and-resubmit", s.correctAndResubmitJoiningCase)
 	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/store-image", s.uploadJoiningCaseStoreImage)
 }
 
@@ -137,6 +137,32 @@ func (s *FieldServer) setRole(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *FieldServer) authorizeReenrollment(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizedService(w, r) {
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("If-Match") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "legacy actor and version headers are forbidden")
+		return
+	}
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	correlation := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
+	expectedAdmissionVersion, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Version")))
+	if acting == "" || len(acting) > 128 || len(correlation) < 8 || len(correlation) > 128 || err != nil || expectedAdmissionVersion < 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "acting actor, correlation ID, and positive admission version are required")
+		return
+	}
+	var input contract.FieldReenrollmentRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	if err := s.service.AuthorizeReenrollment(r.Context(), r.PathValue("actorId"), acting, correlation, input.Reason, expectedAdmissionVersion, input.ExpectedActorVersion, input.ExpectedRoleVersion); err != nil {
+		writeFieldError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *FieldServer) createJoiningCase(w http.ResponseWriter, r *http.Request) {
 	if bearerToken(r) == "" {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Field session is required")
@@ -154,7 +180,11 @@ func (s *FieldServer) createJoiningCase(w http.ResponseWriter, r *http.Request) 
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.CreateJoiningCase(r.Context(), bearerToken(r), idempotency, correlation, input.ContactPhoneE164, input.BusinessName, input.FirstStoreName, input.ServiceCityID, input.FirstStoreVerticalID, input.FirstStoreLatitude, input.FirstStoreLongitude)
+	fulfillmentModes := make([]string, len(input.FirstStoreFulfillmentModes))
+	for index, mode := range input.FirstStoreFulfillmentModes {
+		fulfillmentModes[index] = string(mode)
+	}
+	result, err := s.service.CreateJoiningCase(r.Context(), bearerToken(r), idempotency, correlation, input.ContactPhoneE164, input.BusinessName, input.FirstStoreName, input.ServiceCityID, input.FirstStoreVerticalID, input.FirstStoreLatitude, input.FirstStoreLongitude, fulfillmentModes)
 	if err != nil {
 		writeFieldError(w, err)
 		return
@@ -210,27 +240,6 @@ func (s *FieldServer) submitJoiningCase(w http.ResponseWriter, r *http.Request) 
 	writeFieldCaseResult(w, http.StatusOK, result)
 }
 
-func (s *FieldServer) correctAndResubmitJoiningCase(w http.ResponseWriter, r *http.Request) {
-	if bearerToken(r) == "" {
-		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Field session is required")
-		return
-	}
-	correlation, idempotency, expected, ok := requiredPartnerCaseHeaders(w, r)
-	if !ok {
-		return
-	}
-	var input contract.CorrectJoiningCaseRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	result, err := s.service.CorrectAndResubmitJoiningCase(r.Context(), bearerToken(r), r.PathValue("caseId"), input.BusinessName, input.FirstStoreName, input.ServiceCityID, input.FirstStoreVerticalID, input.FirstStoreLatitude, input.FirstStoreLongitude, expected, idempotency, correlation)
-	if err != nil {
-		writeFieldError(w, err)
-		return
-	}
-	writeFieldCaseResult(w, http.StatusOK, result)
-}
-
 func (s *FieldServer) uploadJoiningCaseStoreImage(w http.ResponseWriter, r *http.Request) {
 	if bearerToken(r) == "" {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Field session is required")
@@ -277,7 +286,7 @@ func (s *FieldServer) authorizedService(w http.ResponseWriter, r *http.Request) 
 }
 
 func writeFieldCaseResult(w http.ResponseWriter, status int, result postgres.JoiningCaseResult) {
-	view := contract.JoiningCaseView{ID: result.Case.ID, ContactPhoneE164: result.Case.ContactPhoneE164, BusinessName: result.Case.BusinessName, FirstStoreName: result.Case.FirstStoreName, ServiceCityID: result.Case.FirstStoreServiceCityID, FirstStoreVerticalID: result.Case.FirstStoreVerticalID, FirstStoreLatitude: nullableFloatValue(result.Case.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(result.Case.FirstStoreLongitude), Origin: contract.JoiningCaseOrigin(result.Case.Origin), State: contract.JoiningCaseState(result.Case.State), CorrectionReason: result.Case.CorrectionReason, Version: result.Case.Version, CreatedAt: result.Case.CreatedAt, UpdatedAt: result.Case.UpdatedAt}
+	view := contract.JoiningCaseView{ID: result.Case.ID, ContactPhoneE164: result.Case.ContactPhoneE164, BusinessName: result.Case.BusinessName, FirstStoreName: result.Case.FirstStoreName, ServiceCityID: result.Case.FirstStoreServiceCityID, FirstStoreVerticalID: result.Case.FirstStoreVerticalID, FirstStoreLatitude: nullableFloatValue(result.Case.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(result.Case.FirstStoreLongitude), FirstStoreFulfillmentModes: toFulfillmentModes(result.Case.FirstStoreFulfillmentModes), Origin: contract.JoiningCaseOrigin(result.Case.Origin), State: contract.JoiningCaseState(result.Case.State), CorrectionReason: result.Case.CorrectionReason, Version: result.Case.Version, CreatedAt: result.Case.CreatedAt, UpdatedAt: result.Case.UpdatedAt}
 	view.PartnerActorID = result.Case.PartnerActorID
 	view.ReviewedBy = result.Case.ReviewedBy
 	view.StoreProfileImage = toStoreProfileImage(result.Case.StoreProfileImage)
@@ -306,7 +315,7 @@ func writeFieldError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the authenticated actor is not permitted for this Field operation")
 	case errors.Is(err, postgres.ErrFieldAdmissionNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "Field admission was not found")
-	case errors.Is(err, postgres.ErrFieldAdmissionExists), errors.Is(err, postgres.ErrFieldAdmissionConflict), errors.Is(err, postgres.ErrFieldOperationConflict), errors.Is(err, postgres.ErrFieldVersionConflict), errors.Is(err, postgres.ErrJoiningCaseVersion), errors.Is(err, postgres.ErrJoiningCaseState), errors.Is(err, postgres.ErrJoiningCaseExists), errors.Is(err, postgres.ErrJoiningCaseActor), errors.Is(err, postgres.ErrJoiningCaseRebind):
+	case errors.Is(err, postgres.ErrFieldAdmissionExists), errors.Is(err, postgres.ErrFieldAdmissionConflict), errors.Is(err, field.ErrManagedRoleNotEligible), errors.Is(err, postgres.ErrFieldOperationConflict), errors.Is(err, postgres.ErrFieldVersionConflict), errors.Is(err, postgres.ErrJoiningCaseVersion), errors.Is(err, postgres.ErrJoiningCaseState), errors.Is(err, postgres.ErrJoiningCaseExists), errors.Is(err, postgres.ErrJoiningCaseActor), errors.Is(err, postgres.ErrJoiningCaseRebind):
 		writeError(w, http.StatusConflict, "VERSION_OR_STATE_CONFLICT", "Field or joining-case state is stale or not actionable")
 	case errors.Is(err, postgres.ErrJoiningCaseNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "joining case was not found")

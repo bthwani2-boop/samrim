@@ -1,12 +1,12 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { formatMoney, type PublicCatalogResponse, type PublicStoreView } from "@bthwani/dsh";
+import { availableCustomerFulfillmentModes, type CustomerFulfillmentMode, formatMoney, fulfillmentModeLabel, type PublicCatalogResponse, type PublicStoreView } from "@bthwani/dsh";
 import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState } from "../../bootstrap/identity";
-import { useServiceCityScope } from "../service-city/service-city-scope";
-import { addCatalogOfferToCart, listFavoriteStoreIDs, readPublicStoreCatalog, readPublishedStore, setFavoriteStore } from "./store-discovery-client";
+import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
+import { addCatalogOfferToCart, listFavoriteStoreIDs, listFavoriteStoreOfferIDs, readFavoriteStoreCatalog, readPublicStoreCatalog, readPublishedStore, setFavoriteStore, setFavoriteStoreOffer } from "./store-discovery-client";
 
 type DetailState =
   | { kind: "loading" }
@@ -25,6 +25,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [addedOfferId, setAddedOfferId] = useState("");
   const [selectedSectionID, setSelectedSectionID] = useState<string | null>(null);
   const [selectedCategoryID, setSelectedCategoryID] = useState<string | null>(null);
+  const [activeProductID, setActiveProductID] = useState("");
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogRefreshing, setCatalogRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -32,6 +33,13 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [error, setError] = useState("");
   const [isFavorite, setIsFavorite] = useState(false);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
+  const [favoriteOfferIDs, setFavoriteOfferIDs] = useState<ReadonlySet<string>>(new Set());
+  const [favoriteOfferBusyID, setFavoriteOfferBusyID] = useState("");
+  const [favoriteLoading, setFavoriteLoading] = useState(false);
+  const [favoriteLoadError, setFavoriteLoadError] = useState(false);
+  const [favoritesView, setFavoritesView] = useState(false);
+  const [expandedOfferIDs, setExpandedOfferIDs] = useState<ReadonlySet<string>>(new Set());
+  const [selectedFulfillmentMode, setSelectedFulfillmentMode] = useState<CustomerFulfillmentMode | null>(null);
   const mutationBusy = Boolean(busyOfferId);
 
   const load = useCallback(async () => {
@@ -39,27 +47,35 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     catalogRequestID.current = requestID;
     setSelectedSectionID(null);
     setSelectedCategoryID(categoryId.trim() || null);
+    setActiveProductID(productId.trim());
     setCatalogQuery("");
     setCatalogRefreshing(false);
     setLoadingMore(false);
+    setSelectedFulfillmentMode(null);
+    setFavoritesView(false);
+    setFavoriteLoadError(false);
     if (!storeId.trim() || !selectedCityID) {
       setState({ kind: "error" });
       return;
     }
     setState({ kind: "loading" });
     try {
-      const [store, rawCatalog] = await Promise.all([readPublishedStore(storeId, selectedCityID), readPublicStoreCatalog(storeId, selectedCityID, categoryId.trim(), "", 20)]);
+      const [store, rawCatalog] = await Promise.all([readPublishedStore(storeId, selectedCityID), readPublicStoreCatalog(storeId, selectedCityID, categoryId.trim(), "", 20, "", productId.trim())]);
       const catalog = productId.trim() ? filterCatalogToProduct(rawCatalog, productId.trim()) : rawCatalog;
       let favorite = false;
+      let favoriteOffers: ReadonlyArray<string> = [];
+      let favoriteFailed = false;
       if (currentIdentityState().kind === "authenticated") {
-        try {
-          favorite = (await listFavoriteStoreIDs()).includes(storeId);
-        } catch {
-          favorite = false;
-        }
+        const [storesResult, offersResult] = await Promise.allSettled([listFavoriteStoreIDs(), listFavoriteStoreOfferIDs(storeId)]);
+        if (storesResult.status === "fulfilled") favorite = storesResult.value.includes(storeId);
+        else favoriteFailed = true;
+        if (offersResult.status === "fulfilled") favoriteOffers = offersResult.value;
+        else favoriteFailed = true;
       }
       if (requestID !== catalogRequestID.current) return;
       setIsFavorite(favorite);
+      setFavoriteOfferIDs(new Set(favoriteOffers));
+      setFavoriteLoadError(favoriteFailed);
       setState({ kind: "ready", store, catalog });
     } catch {
       if (requestID !== catalogRequestID.current) return;
@@ -67,24 +83,29 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     }
   }, [categoryId, productId, selectedCityID, storeId]);
 
-  const reloadCatalog = useCallback(async (categoryID: string | null, query: string) => {
+  const reloadCatalog = useCallback(async (categoryID: string | null, query: string, favoriteOnly = favoritesView) => {
     if (!storeId.trim() || !selectedCityID) return;
     const requestID = catalogRequestID.current + 1;
     catalogRequestID.current = requestID;
     setCatalogRefreshing(true);
     setError("");
     try {
-      const catalog = await readPublicStoreCatalog(storeId, selectedCityID, categoryID ?? "", query.trim(), 20);
+      const catalog = favoriteOnly
+        ? await readFavoriteStoreCatalog(storeId, selectedCityID, 20)
+        : await readPublicStoreCatalog(storeId, selectedCityID, categoryID ?? "", query.trim(), 20);
       if (requestID !== catalogRequestID.current) return;
       setSelectedSectionID(null);
-      setSelectedCategoryID(categoryID);
+      setSelectedCategoryID(favoriteOnly ? null : categoryID);
+      setActiveProductID("");
+      setFavoritesView(favoriteOnly);
+      setCatalogQuery(favoriteOnly ? "" : query);
       setState((current) => current.kind === "ready" ? { kind: "ready", store: current.store, catalog } : current);
     } catch {
       if (requestID === catalogRequestID.current) setError("تعذر تحديث الكتالوج. يمكنك متابعة العناصر الحالية أو إعادة المحاولة.");
     } finally {
       if (requestID === catalogRequestID.current) setCatalogRefreshing(false);
     }
-  }, [selectedCityID, storeId]);
+  }, [favoritesView, selectedCityID, storeId]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -109,7 +130,9 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     setLoadingMore(true);
     setError("");
     try {
-      const catalog = await readPublicStoreCatalog(storeId, selectedCityID, selectedCategoryID ?? "", catalogQuery.trim(), 20, state.catalog.nextCursor);
+      const catalog = favoritesView
+        ? await readFavoriteStoreCatalog(storeId, selectedCityID, 20, state.catalog.nextCursor)
+        : await readPublicStoreCatalog(storeId, selectedCityID, selectedCategoryID ?? "", catalogQuery.trim(), 20, state.catalog.nextCursor, activeProductID);
       if (requestID !== catalogRequestID.current) return;
       setState((current) => current.kind === "ready" ? { kind: "ready", store: current.store, catalog: mergeCatalog(current.catalog, catalog) } : current);
     } catch {
@@ -137,6 +160,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
 
   async function add(offer: PublicCatalogResponse["offers"][number]) {
     if (busyOfferId) return;
+    if (!selectedFulfillmentMode) {
+      setError("اختر طريقة الطلب من الخيارات المتاحة لهذا المتجر أولًا.");
+      return;
+    }
     if (currentIdentityState().kind !== "authenticated") {
       router.replace(`/?returnTo=/store/${encodeURIComponent(storeId)}` as Href);
       return;
@@ -182,19 +209,70 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     }
   }
 
+  async function toggleOfferFavorite(offerID: string) {
+    if (favoriteOfferBusyID) return;
+    if (currentIdentityState().kind !== "authenticated") {
+      router.replace(`/?returnTo=/store/${encodeURIComponent(storeId)}` as Href);
+      return;
+    }
+    setFavoriteOfferBusyID(offerID);
+    setError("");
+    try {
+      const isFavoriteNow = await setFavoriteStoreOffer(offerID, !favoriteOfferIDs.has(offerID));
+      setFavoriteOfferIDs((current) => {
+        const next = new Set(current);
+        if (isFavoriteNow) next.add(offerID);
+        else next.delete(offerID);
+        return next;
+      });
+      if (favoritesView && !isFavoriteNow) {
+        setState((current) => current.kind === "ready" ? { kind: "ready", store: current.store, catalog: { ...current.catalog, offers: current.catalog.offers.filter((offer) => offer.offerId !== offerID) } } : current);
+      }
+      setFavoriteLoadError(false);
+    } catch {
+      setError("تعذر تحديث مفضلة المنتجات. أعد المحاولة.");
+    } finally {
+      setFavoriteOfferBusyID("");
+    }
+  }
+
+  async function reloadFavorites() {
+    if (currentIdentityState().kind !== "authenticated") {
+      router.replace(`/?returnTo=/store/${encodeURIComponent(storeId)}` as Href);
+      return;
+    }
+    setFavoriteLoading(true);
+    try {
+      const [storesResult, offersResult] = await Promise.allSettled([listFavoriteStoreIDs(), listFavoriteStoreOfferIDs(storeId)]);
+      if (storesResult.status === "fulfilled") setIsFavorite(storesResult.value.includes(storeId));
+      if (offersResult.status === "fulfilled") setFavoriteOfferIDs(new Set(offersResult.value));
+      setFavoriteLoadError(storesResult.status === "rejected" || offersResult.status === "rejected");
+    } finally {
+      setFavoriteLoading(false);
+    }
+  }
+
   const renderOffer = (offer: PublicCatalogResponse["offers"][number]) => {
     const selectedOptions = selectedModifierOptionIds[offer.offerId] ?? [];
     const quantity = quantities[offer.offerId] ?? String(offer.quantityMinBaseUnits);
     const busy = busyOfferId === offer.offerId;
     const modifierError = validateModifierSelection(offer, selectedOptions);
     const primaryMedia = offer.media.find((media) => media.role === "primary") ?? offer.media[0];
+    const expanded = expandedOfferIDs.has(offer.offerId);
     return (
       <BthwaniSurface key={offer.offerId} tone="base" style={styles.item}>
-        {primaryMedia ? <Image accessibilityLabel={`صورة ${offer.productName}`} source={{ uri: primaryMedia.uri }} resizeMode="cover" style={styles.productImage} /> : <View accessibilityLabel={`لا توجد صورة لـ ${offer.productName}`} style={styles.productImagePlaceholder}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /></View>}
-        <View style={styles.itemHeader}><View style={styles.itemCopy}><Text style={styles.itemTitle}>{offer.productName}</Text><Text style={styles.muted}>{offer.measurementKind === "DISCRETE" ? "بالقطعة" : offer.baseUnit === "GRAM" ? "بالغرام" : "بالمليلتر"}</Text></View><Text style={styles.itemPrice}>{formatMoney(offer.priceMinor, offer.currency)}</Text></View>
-        <Text style={styles.quantityHint}>الكمية: {formatQuantity(offer.baseUnit, offer.quantityMinBaseUnits)}–{formatQuantity(offer.baseUnit, offer.quantityMaxBaseUnits)} · الخطوة {formatQuantity(offer.baseUnit, offer.quantityStepBaseUnits)}</Text>
-        <TextInput accessibilityLabel={`كمية ${offer.productName}`} editable={!mutationBusy} keyboardType="number-pad" onChangeText={(value) => setQuantities((current) => ({ ...current, [offer.offerId]: toAsciiDigits(value).replace(/[^0-9]/g, "") }))} value={quantity} style={[styles.quantityInput, mutationBusy && styles.disabledInput]} />
-        {offer.modifierGroups.map((group) => {
+        <View style={styles.productSummary}>
+          {primaryMedia ? <Image accessibilityLabel={`صورة ${offer.productName}`} source={{ uri: primaryMedia.uri }} resizeMode="cover" style={styles.productImage} /> : <View accessibilityLabel={`لا توجد صورة لـ ${offer.productName}`} style={styles.productImagePlaceholder}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /></View>}
+          <Pressable accessibilityRole="button" accessibilityLabel={`${expanded ? "إخفاء تفاصيل" : "عرض تفاصيل"} ${offer.productName}`} accessibilityState={{ expanded }} onPress={() => setExpandedOfferIDs((current) => { const next = new Set(current); if (expanded) next.delete(offer.offerId); else next.add(offer.offerId); return next; })} style={styles.itemCopy}>
+            <Text numberOfLines={2} style={styles.itemTitle}>{offer.productName}</Text>{offer.variantTitle.trim() ? <Text numberOfLines={1} style={styles.muted}>{offer.variantTitle}</Text> : null}<Text style={styles.itemPrice}>{formatMoney(offer.priceMinor, offer.currency)}</Text><Text style={styles.muted}>{offer.measurementKind === "DISCRETE" ? "بالقطعة" : offer.baseUnit === "GRAM" ? "بالغرام" : "بالمليلتر"}</Text>
+          </Pressable>
+          <BthwaniIconButton disabled={Boolean(favoriteOfferBusyID)} icon="favorite" label={favoriteOfferIDs.has(offer.offerId) ? `إزالة ${offer.productName} من المفضلة` : `إضافة ${offer.productName} إلى المفضلة`} onPress={() => void toggleOfferFavorite(offer.offerId)} tone={favoriteOfferIDs.has(offer.offerId) ? "primary" : "soft"} />
+        </View>
+        {expanded ? <>
+          {offer.productDescription ? <Text style={styles.muted}>{offer.productDescription}</Text> : null}
+          <Text style={styles.quantityHint}>الكمية: {formatQuantity(offer.baseUnit, offer.quantityMinBaseUnits)}–{formatQuantity(offer.baseUnit, offer.quantityMaxBaseUnits)} · الخطوة {formatQuantity(offer.baseUnit, offer.quantityStepBaseUnits)}</Text>
+          <TextInput accessibilityLabel={`كمية ${offer.productName}`} editable={!mutationBusy} keyboardType="number-pad" onChangeText={(value) => setQuantities((current) => ({ ...current, [offer.offerId]: toAsciiDigits(value).replace(/[^0-9]/g, "") }))} value={quantity} style={[styles.quantityInput, mutationBusy && styles.disabledInput]} />
+          {offer.modifierGroups.map((group) => {
           const groupError = modifierGroupError(group, selectedOptions);
           return (
             <View key={group.id} style={styles.modifierGroup}>
@@ -208,9 +286,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
               {groupError ? <Text accessibilityLiveRegion="polite" style={styles.validationError}>{groupError}</Text> : null}
             </View>
           );
-        })}
-        {modifierError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.validationError}>{modifierError}</Text> : null}
-        <BthwaniButton accessibilityLabel={`إضافة ${offer.productName}`} busy={busy} disabled={mutationBusy || Boolean(modifierError)} label="إضافة إلى السلة" onPress={() => void add(offer)} />
+          })}
+          {modifierError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.validationError}>{modifierError}</Text> : null}
+        </> : null}
+        <BthwaniButton accessibilityLabel={modifierError && !expanded ? `اختيار خيارات ${offer.productName}` : `إضافة ${offer.productName}`} busy={busy} disabled={mutationBusy || (modifierError ? expanded : !selectedFulfillmentMode)} label={modifierError && !expanded ? "اختر الخيارات المطلوبة" : "إضافة إلى السلة"} onPress={() => { if (modifierError && !expanded) setExpandedOfferIDs((current) => new Set(current).add(offer.offerId)); else void add(offer); }} />
         {addedOfferId === offer.offerId ? <Text accessibilityLiveRegion="polite" style={styles.success}>تمت الإضافة. يمكنك متابعة اختيار المنتجات أو فتح السلة.</Text> : null}
       </BthwaniSurface>
     );
@@ -221,7 +300,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى المتاجر" onPress={() => router.back()} style={styles.backButton}><BthwaniIcon name="back" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.back}>المتاجر المتاحة</Text></Pressable>
       <BthwaniSurface tone="raised" style={styles.merchantHero}>
         {state.store.storeProfileImage?.uri ? <Image accessibilityLabel={`صورة متجر ${state.store.name}`} source={{ uri: state.store.storeProfileImage.uri }} style={styles.merchantImage} resizeMode="cover" /> : <View style={styles.merchantIcon}><BthwaniIcon name="store" color={theme.onAction} size={sizing.iconXl} /></View>}
-        <View style={styles.merchantCopy}><Text style={styles.eyebrow}>متاح للطلب</Text><Text style={styles.title}>{state.store.name}</Text><Text style={styles.muted}>{state.store.serviceCity.displayNameAr} · كتالوج منشور</Text><Text accessibilityLabel="تقييم المتجر" style={styles.rating}>{state.store.ratingCount > 0 ? `★ ${state.store.ratingAverage.toFixed(1)} من 5 · ${state.store.ratingCount} تقييم` : "لا توجد تقييمات بعد"}</Text></View>
+        <View style={styles.merchantCopy}><Text style={styles.eyebrow}>متجر منشور</Text><Text style={styles.title}>{state.store.name}</Text><Text style={styles.muted}>{serviceCityDisplayName(state.store.serviceCity.displayNameAr)}</Text><Text accessibilityLabel="تقييم المتجر" style={styles.rating}>{state.store.ratingCount > 0 ? `★ ${state.store.ratingAverage.toFixed(1)} من 5 · ${state.store.ratingCount} تقييم` : "لا توجد تقييمات بعد"}</Text></View>
         <BthwaniIconButton
           disabled={favoriteBusy}
           icon="favorite"
@@ -229,10 +308,18 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
           onPress={() => void toggleFavorite()}
           tone={isFavorite ? "primary" : "soft"}
         />
-        <BthwaniIcon name="success" color={theme.success} size={sizing.iconLg} />
+      </BthwaniSurface>
+      <BthwaniSectionHeader title="اختر طريقة الطلب" subtitle="تظهر لك الأوضاع التي فعّلها هذا المتجر فقط." />
+      <BthwaniSurface tone="inset" style={styles.fulfillmentModes} accessibilityLabel="أوضاع الطلب المتاحة في المتجر">
+        {availableCustomerFulfillmentModes(state.store.fulfillmentModes).map((mode) => <BthwaniChip key={mode} accessibilityHint={fulfillmentModeDescription(mode)} label={fulfillmentModeLabel(mode)} onPress={() => { setSelectedFulfillmentMode(mode); setError(""); }} selected={selectedFulfillmentMode === mode} />)}
+        {selectedFulfillmentMode ? <Text style={styles.muted}>{fulfillmentModeDescription(selectedFulfillmentMode)}</Text> : <Text style={styles.validationError}>اختر وضعًا قبل إضافة المنتجات وفتح السلة.</Text>}
       </BthwaniSurface>
       <BthwaniSectionHeader title="استكشف المنتجات" subtitle={`${state.catalog.offers.length} منتج معروض${catalogRefreshing ? " · جارٍ التحديث…" : ""}`} />
-      <BthwaniSearchField
+      <View style={styles.sectionChips}>
+        <BthwaniChip disabled={catalogRefreshing || loadingMore} label="كل المنتجات" selected={!favoritesView} onPress={() => void reloadCatalog(null, "", false)} />
+        <BthwaniChip disabled={catalogRefreshing || loadingMore} label="مفضلتي" selected={favoritesView} onPress={() => { if (currentIdentityState().kind !== "authenticated") { router.replace(`/?returnTo=/store/${encodeURIComponent(storeId)}` as Href); return; } void reloadCatalog(null, "", true); }} />
+      </View>
+      {!favoritesView ? <BthwaniSearchField
         accessibilityLabel="البحث في منتجات المتجر"
         containerStyle={styles.searchField}
         editable={!catalogRefreshing && !loadingMore}
@@ -242,41 +329,48 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
         placeholder="ابحث باسم المنتج"
         returnKeyType="search"
         value={catalogQuery}
-      />
-      <View style={styles.searchActions}>
+      /> : null}
+      {!favoritesView ? <View style={styles.searchActions}>
         <BthwaniButton disabled={catalogRefreshing || loadingMore} label="بحث" onPress={() => void reloadCatalog(selectedCategoryID, catalogQuery)} style={styles.searchButton} variant="secondary" />
-      </View>
-      {state.catalog.categories.filter((category) => category.active).length > 0 ? <>
+      </View> : null}
+      {!favoritesView && state.catalog.categories.filter((category) => category.active).length > 0 ? <>
         <Text style={styles.filterLabel}>التصنيفات</Text>
         <ScrollView horizontal contentContainerStyle={styles.sectionChips} showsHorizontalScrollIndicator={false}>
           <BthwaniChip label="كل التصنيفات" selected={!selectedCategoryID} onPress={() => void reloadCatalog(null, catalogQuery)} />
           {state.catalog.categories.filter((category) => category.active).map((category) => <BthwaniChip key={category.id} label={category.nameAr} selected={selectedCategoryID === category.id} onPress={() => void reloadCatalog(category.id, catalogQuery)} />)}
         </ScrollView>
       </> : null}
-      {state.catalog.sections.filter((section) => section.active).length > 0 ? <>
+      {!favoritesView && state.catalog.sections.filter((section) => section.active).length > 0 ? <>
         <Text style={styles.filterLabel}>أقسام العرض</Text>
         <ScrollView horizontal contentContainerStyle={styles.sectionChips} showsHorizontalScrollIndicator={false}>
           <BthwaniChip label="كل المنتجات" selected={!selectedSectionID} onPress={() => setSelectedSectionID(null)} />
           {state.catalog.sections.filter((section) => section.active).map((section) => <BthwaniChip key={section.id} label={section.nameAr} selected={selectedSectionID === section.id} onPress={() => setSelectedSectionID(section.id)} />)}
         </ScrollView>
       </> : null}
-      {visibleSections.map((section) => (
+      {!favoritesView ? visibleSections.map((section) => (
         <View key={section.id} style={styles.section}>
           <Text style={styles.sectionTitle}>{section.nameAr}</Text>
           {section.offerIds.map((offerId) => state.catalog.offers.find((offer) => offer.offerId === offerId)).filter((offer): offer is PublicCatalogResponse["offers"][number] => Boolean(offer)).map(renderOffer)}
         </View>
-      ))}
-      {(!selectedSectionID ? state.catalog.offers.filter((offer) => !sectionOfferIds.has(offer.offerId)) : []).map(renderOffer)}
-      {visibleOfferCount === 0 ? <BthwaniSurface tone="inset" style={styles.emptySection}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /><Text style={styles.sectionTitle}>{selectedSectionID ? "لا توجد منتجات في هذا القسم" : "لا توجد منتجات متاحة حاليًا"}</Text>{selectedSectionID ? <BthwaniButton label="عرض كل المنتجات" onPress={() => setSelectedSectionID(null)} variant="quiet" /> : null}</BthwaniSurface> : null}
+      )) : null}
+      {favoritesView ? state.catalog.offers.map(renderOffer) : (!selectedSectionID ? state.catalog.offers.filter((offer) => !sectionOfferIds.has(offer.offerId)) : []).map(renderOffer)}
+      {visibleOfferCount === 0 ? <BthwaniSurface tone="inset" style={styles.emptySection}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /><Text style={styles.sectionTitle}>{favoritesView ? "لم تحفظ منتجات من هذا المتجر بعد" : selectedSectionID ? "لا توجد منتجات في هذا القسم" : "لا توجد منتجات متاحة حاليًا"}</Text>{selectedSectionID ? <BthwaniButton label="عرض كل المنتجات" onPress={() => setSelectedSectionID(null)} variant="quiet" /> : null}</BthwaniSurface> : null}
       {state.catalog.nextCursor ? <BthwaniButton busy={loadingMore} disabled={catalogRefreshing} label="تحميل المزيد" onPress={() => void loadMore()} style={styles.loadMoreButton} variant="secondary" /> : null}
       <BthwaniSurface tone="inset" style={styles.cartCta}>
         <View style={styles.cartIcon}><BthwaniIcon name="cart" color={theme.interactiveText} size={sizing.iconLg} /></View>
-        <Text style={styles.muted}>أضف المنتجات واضبط الخيارات هنا، ثم افتح السلة لاختيار العنوان وإتمام الطلب.</Text>
-        <BthwaniButton accessibilityLabel="فتح السلة" disabled={mutationBusy} label="فتح السلة" onPress={() => router.push(`/cart/${encodeURIComponent(storeId)}` as Href)} />
+        <Text style={styles.muted}>طريقة الطلب المختارة: {selectedFulfillmentMode ? fulfillmentModeLabel(selectedFulfillmentMode) : "لم تختر بعد"} · ستتمكن من مراجعتها في السلة.</Text>
+        <BthwaniButton accessibilityLabel="فتح السلة" disabled={mutationBusy || !selectedFulfillmentMode} label="فتح السلة" onPress={() => router.push(`/cart/${encodeURIComponent(storeId)}?fulfillmentMode=${encodeURIComponent(selectedFulfillmentMode ?? "")}` as Href)} />
       </BthwaniSurface>
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+      {favoriteLoadError ? <BthwaniSurface tone="inset" style={styles.favoriteNotice}><Text style={styles.muted}>تعذر تحديث حالة المفضلة من الخادم.</Text><BthwaniButton busy={favoriteLoading} label="إعادة المحاولة" onPress={() => void reloadFavorites()} variant="secondary" /></BthwaniSurface> : null}
     </View>
   );
+}
+
+function fulfillmentModeDescription(mode: CustomerFulfillmentMode): string {
+  if (mode === "BTHWANI_CAPTAIN") return "المنصة تتولى إسناد التوصيل وإدارته.";
+  if (mode === "PARTNER_CAPTAIN") return "المتجر يختار أحد كباتنه للتوصيل إلى عنوان مؤهل؛ تُراجع الرسوم والتغطية في السلة.";
+  return "تذهب إلى المتجر وتستلم الطلب بنفسك، من دون توصيل أو عنوان توصيل.";
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
@@ -291,6 +385,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     merchantIcon: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.lg, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
     merchantImage: { borderRadius: radius.lg, height: sizing.avatarLg, width: sizing.avatarLg },
     merchantCopy: { flex: 1, gap: spacing[1] },
+    fulfillmentModes: { gap: spacing[2], padding: spacing[3] },
     rating: { ...typography.bodySm, color: theme.warning },
     sectionChips: { gap: spacing[2], paddingVertical: spacing[1] },
     searchField: { width: "100%" },
@@ -300,9 +395,9 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     sectionTitle: { ...typography.bodyStrong, color: theme.color },
     section: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
     item: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
-    productImage: { backgroundColor: theme.surface, borderRadius: radius.md, height: 172, width: "100%" },
-    productImagePlaceholder: { alignItems: "center", backgroundColor: theme.surface, borderRadius: radius.md, height: 172, justifyContent: "center", width: "100%" },
-    itemHeader: { alignItems: "flex-start", flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
+    productSummary: { alignItems: "center", flexDirection: "row", gap: spacing[3] },
+    productImage: { backgroundColor: theme.surface, borderRadius: radius.md, height: 92, width: 92 },
+    productImagePlaceholder: { alignItems: "center", backgroundColor: theme.surface, borderRadius: radius.md, height: 92, justifyContent: "center", width: 92 },
     itemCopy: { flex: 1, gap: spacing[1] },
     itemTitle: { ...typography.bodyStrong, color: theme.color },
     itemPrice: { ...typography.titleSm, color: theme.interactiveText },
@@ -320,6 +415,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     validationError: { ...typography.bodySm, color: theme.danger, lineHeight: 19 },
     error: { ...typography.bodySm, color: theme.danger, lineHeight: 19 },
     loadMoreButton: { width: "100%" },
+    favoriteNotice: { alignItems: "center", borderRadius: radius.lg, gap: spacing[2], padding: spacing[3] },
   });
 }
 

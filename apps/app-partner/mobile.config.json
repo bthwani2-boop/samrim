@@ -1,10 +1,10 @@
 {
   "name": "بثواني الشريك",
-  "slug": "app-partner-next",
+  "slug": "app-partner",
   "scheme": "partner",
   "owner": "bthwani1",
   "version": "0.3.0",
-  "androidPackage": "com.bthwani.partner.next",
-  "iosBundleIdentifier": "com.bthwani.partner.next",
-  "projectId": "4cde7be0-7582-4a6b-9ae0-d74f2d149580"
+  "androidPackage": "com.bthwani.partner",
+  "iosBundleIdentifier": "com.bthwani.partner",
+  "projectId": "bcd22a76-d4b2-4de0-93b3-f6d13074a802"
 }

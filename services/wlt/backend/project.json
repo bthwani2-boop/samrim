@@ -2,30 +2,73 @@
   "name": "wlt-backend",
   "root": "services/wlt/backend",
   "projectType": "application",
-  "implicitDependencies": ["wlt", "wlt-database"],
+  "implicitDependencies": [
+    "wlt",
+    "wlt-database"
+  ],
   "targets": {
     "build": {
       "executor": "nx:run-commands",
-      "inputs": ["default", "^default"],
+      "inputs": [
+        "default",
+        "^default",
+        "goToolchain"
+      ],
       "options": {
         "command": "go build ./...",
         "cwd": "services/wlt/backend"
       }
     },
-    "test": {
+    "vet": {
       "executor": "nx:run-commands",
-      "inputs": ["default", "^default"],
+      "inputs": [
+        "default",
+        "^default",
+        "goToolchain"
+      ],
+      "options": {
+        "command": "go vet ./...",
+        "cwd": "services/wlt/backend"
+      }
+    },
+    "unit": {
+      "executor": "nx:run-commands",
+      "inputs": [
+        "default",
+        "^default",
+        "goToolchain"
+      ],
       "options": {
         "command": "go test ./...",
         "cwd": "services/wlt/backend"
       }
     },
-    "vet": {
+    "schema-proof": {
+      "cache": false,
       "executor": "nx:run-commands",
-      "inputs": ["default", "^default"],
       "options": {
-        "command": "go vet ./...",
-        "cwd": "services/wlt/backend"
+        "command": "docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml exec -T wlt /schema-verify"
+      },
+      "dependsOn": [
+        {
+          "projects": [
+            "identity-backend"
+          ],
+          "target": "runtime-proof"
+        }
+      ]
+    },
+    "format-check": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/dev/check-go-format.mjs services/wlt/backend"
+      }
+    },
+    "ci-image": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/dev/build-ci-image.mjs wlt"
       }
     }
   },

@@ -21,6 +21,10 @@ import (
 )
 
 func main() {
+	proofKeys, err := postgres.NewDeliveryProofKeyringFromEnv(os.Getenv("DSH_DELIVERY_PROOF_ACTIVE_KEY_ID"), os.Getenv("DSH_DELIVERY_PROOF_KEYRING"))
+	if err != nil {
+		log.Fatal(err)
+	}
 	identityEndpoint, err := identityintegration.ResolveBaseURL(os.Getenv("DSH_IDENTITY_API_BASE_URL"), os.Getenv("BTHWANI_ENV"), os.Getenv("DSH_IDENTITY_API_ALLOWED_HOSTS"))
 	if err != nil {
 		log.Fatal(err)
@@ -48,6 +52,12 @@ func main() {
 		log.Fatal(err)
 	}
 	defer func() { _ = database.Close() }()
+	proofKeyContext, proofKeyCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	if err := postgres.VerifyDeliveryProofKeyring(proofKeyContext, database, proofKeys); err != nil {
+		proofKeyCancel()
+		log.Fatal(err)
+	}
+	proofKeyCancel()
 	financialHandoff, err := financialhandoff.New(database, paymentClient)
 	if err != nil {
 		log.Fatal(err)
@@ -105,15 +115,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	beneficiaryFinanceServer, err := transporthttp.NewBeneficiaryFinance(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), paymentClient)
+	beneficiaryFinanceServer, err := transporthttp.NewBeneficiaryFinance(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), paymentClient, database)
 	if err != nil {
 		log.Fatal(err)
 	}
-	cartServer, err := transporthttp.NewCart(identityClient, database, serviceabilityService, paymentClient)
+	cartServer, err := transporthttp.NewCart(identityClient, database, serviceabilityService, paymentClient, proofKeys)
 	if err != nil {
 		log.Fatal(err)
 	}
-	orderServer, err := transporthttp.NewOrder(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, paymentClient)
+	orderServer, err := transporthttp.NewOrder(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, paymentClient, proofKeys)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -121,11 +131,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	captainServer, err := transporthttp.NewCaptain(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, paymentClient)
+	captainServer, err := transporthttp.NewCaptain(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, paymentClient, proofKeys)
 	if err != nil {
 		log.Fatal(err)
 	}
-	notificationServer, err := transporthttp.NewNotification(identityClient, database)
+	notificationServer, err := transporthttp.NewNotification(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
 	if err != nil {
 		log.Fatal(err)
 	}

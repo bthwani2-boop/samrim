@@ -1,10 +1,9 @@
-import { useCallback, useMemo } from "react";
-import { Tabs, type Href, usePathname, useRouter } from "expo-router";
-
 import { useAppearanceTheme } from "@bthwani/design-system/native";
 import { AuthenticatedMobileBoundary } from "@bthwani/identity/presentation";
-import { createPartnerTabOptions } from "../../src/shell/partner-shell";
+import { type Href, Tabs, usePathname, useRouter } from "expo-router";
+import { useCallback, useMemo } from "react";
 import { currentIdentityState, restoreIdentitySession, subscribeIdentitySession } from "../../src/bootstrap/identity";
+import { createPartnerTabOptions } from "../../src/shell/partner-shell";
 
 const identity = { restoreIdentitySession, currentIdentityState, subscribe: subscribeIdentitySession };
 
@@ -16,6 +15,6 @@ export default function PartnerAppLayout() {
   const onUnauthenticated = useCallback(() => {
     router.replace(pathname === "/" ? "/" : `/?returnTo=${encodeURIComponent(pathname)}` as Href);
   }, [pathname, router]);
-  const tabs = <Tabs screenOptions={tabOptions} screenListeners={({ route }) => ({ tabPress: (event) => { const path = route.name === "store" ? "/(app)/store" : route.name === "orders" ? "/(app)/orders" : route.name === "wallet" ? "/(app)/wallet" : route.name === "account" ? "/(app)/account" : null; if (!path) return; event.preventDefault(); router.replace(path as Href); } })}><Tabs.Screen name="store" options={{ title: "المتجر", tabBarAccessibilityLabel: "إدارة المتجر" }} /><Tabs.Screen name="orders" options={{ title: "الطلبات", tabBarAccessibilityLabel: "طلبات المتجر" }} /><Tabs.Screen name="wallet" options={{ title: "المحفظة", tabBarAccessibilityLabel: "محفظة الشريك" }} /><Tabs.Screen name="account" options={{ title: "الحساب", tabBarAccessibilityLabel: "حساب الشريك" }} /><Tabs.Screen name="onboarding" options={{ href: null }} /></Tabs>;
+  const tabs = <Tabs screenOptions={tabOptions}><Tabs.Screen name="store" options={{ title: "المتجر", tabBarAccessibilityLabel: "إدارة المتجر" }} /><Tabs.Screen name="orders" options={{ title: "الطلبات", tabBarAccessibilityLabel: "طلبات المتجر" }} /><Tabs.Screen name="wallet" options={{ title: "المحفظة", tabBarAccessibilityLabel: "محفظة الشريك" }} /><Tabs.Screen name="account" options={{ title: "الحساب", tabBarAccessibilityLabel: "حساب الشريك" }} /><Tabs.Screen name="onboarding" options={{ href: null }} /></Tabs>;
   return <AuthenticatedMobileBoundary binding={identity} onUnauthenticated={onUnauthenticated}>{tabs}</AuthenticatedMobileBoundary>;
 }

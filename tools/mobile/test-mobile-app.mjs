@@ -103,10 +103,35 @@ const { identitySessionSignOutMessage } = await import(pathToFileURL(path.join(r
 
 const { defineSamrimExpoApp } = await import(pathToFileURL(path.join(root, "tools/mobile/define-samrim-expo-app.cjs")).href);
 const expectsForegroundLocation = app === "app-client" || app === "app-captain";
-const expoConfig = defineSamrimExpoApp(app, expectsForegroundLocation ? { locationMode: "foreground" } : {});
+const expectsMaps = ["app-client", "app-captain", "app-field"].includes(app);
+const mapsKeyVars = {
+  "app-client": ["GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT", "GOOGLE_MAPS_IOS_API_KEY"],
+  "app-captain": ["GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN", "GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN"],
+  "app-field": ["GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD", "GOOGLE_MAPS_IOS_API_KEY"],
+};
+const priorMapsEnv = new Map();
+if (expectsMaps) {
+  for (const [index, name] of mapsKeyVars[app].entries()) {
+    priorMapsEnv.set(name, process.env[name]);
+    process.env[name] ||= `maps-config-placeholder-${index}`;
+  }
+}
+const expoConfig = defineSamrimExpoApp(app, {
+  ...(expectsForegroundLocation ? { locationMode: "foreground" } : {}),
+  ...(expectsMaps ? { maps: true } : {}),
+});
+for (const [name, value] of priorMapsEnv) {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}
 assert.equal(expoConfig.extra.nativeCapabilities, undefined, `${app}: Expo config must not expose native capability shadow truth`);
 assert.equal(expoConfig.android.blockedPermissions, undefined, `${app}: manual RECORD_AUDIO workaround must be absent`);
-assert.equal(expoConfig.android.config, undefined, `${app}: manual Android provider config must be absent`);
+assert.equal(expoConfig.android.config, undefined, `${app}: Android map configuration must be owned by the react-native-maps plugin`);
+if (expectsMaps) {
+  const mapsPlugin = expoConfig.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "react-native-maps");
+  assert.ok(mapsPlugin, `${app}: native maps plugin must configure both platforms`);
+  assert.ok(mapsPlugin[1].androidGoogleMapsApiKey && mapsPlugin[1].iosGoogleMapsApiKey, `${app}: native maps plugin needs both platform keys`);
+}
 assert.equal(expoConfig.ios.config, undefined, `${app}: manual iOS provider config must be absent`);
 const localizationPlugin = expoConfig.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-localization");
 assert.deepEqual(localizationPlugin, [
@@ -132,7 +157,8 @@ if (expectsForegroundLocation) {
   assert.equal(locationPlugin, undefined, `${app}: location permissions must not be inferred without an explicit app-owned request`);
 }
 assert.equal(expoConfig.plugins.some((plugin) => (Array.isArray(plugin) ? plugin[0] : plugin) === "expo-image-picker"), false, `${app}: image-picker plugin must not be inferred from package presence`);
-assert.equal(expoConfig.plugins.some((plugin) => (Array.isArray(plugin) ? plugin[0] : plugin) === "react-native-maps"), false, `${app}: maps plugin must not be inferred from package presence`);
+assert.equal(allDeps["react-native-maps"], expectsMaps ? "1.27.2" : undefined, `${app}: map native dependency must be explicit per admitted surface`);
+assert.equal(expoConfig.plugins.some((plugin) => (Array.isArray(plugin) ? plugin[0] : plugin) === "react-native-maps"), expectsMaps, `${app}: maps plugin must be explicitly admitted for this app`);
 assert.equal(expoConfig.plugins.some((plugin) => (Array.isArray(plugin) ? plugin[0] : plugin) === "expo-notifications"), false, `${app}: notifications plugin must not be inferred from package presence`);
 console.log(`MOBILE_AR_RTL_NATIVE_CONFIG=PASS app=${app} locale=ar forcesRTL=true`);
 

@@ -1,6 +1,5 @@
 import { dshOperationPaths } from "./generated/dsh-operations";
-import type { DiscoveryContentEventRequest, DiscoveryContentTargetResolution } from "./generated/dsh-types";
-import type { BeneficiaryPayoutStateResponse, CaptainAdmissionResponse, CaptainAssignmentListResponse, CaptainAssignmentResponse, CaptainAvailabilityRequest, CaptainCashRemittanceRequest, CaptainCashRemittanceResponse, CaptainCompletionRequest, CaptainDeliveryTaskResponse, CaptainLocationResponse, CaptainOfferDecisionRequest, CaptainOfferListResponse, CaptainOfferResponse, CartResponse, CashLiabilityResponse, CatalogCategoryListResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogStorefrontSectionResponse, CatalogStoreOffer, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogVariantResponse, CheckoutQuoteResponse, CheckoutRequest, CommerceVerticalListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, CreateJoiningCaseRequest, CreateOrderConversationMessageRequest, CreateOrderRatingRequest, DeliveryAddressListResponse, DeliveryAddressResponse, DeliveryProofResponse, DiscoveryContentListResponse, FavoriteStoreListResponse, FavoriteStoreResponse, FieldAdmissionResponse, FieldFinancialSummaryResponse, JoiningCaseListResponse, JoiningCaseResponse, MarkOrderConversationReadRequest, MultiStoreCheckoutRequest, MultiStoreCheckoutResponse, NotificationListResponse, NotificationReadResponse, OrderConversationMessageResponse, OrderConversationReadResponse, OrderConversationResponse, OrderListResponse, OrderRatingResponse, OrderResponse, OrderTrackingResponse, OrderTransitionRequest, PartnerFinancialSummaryResponse, PayoutRequest, PromotionListResponse, PublicCatalogResponse, PublicStoreView, PublishedStoreListResponse, ReplaceCatalogProductMediaRequest, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, StoreDeliveryOriginResponse, UpdateCartLineRequest, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateDeliveryAddressRequest, UpsertCartLineRequest } from "./generated/dsh-types";
+import type { AcceptStoreCaptainInvitationRequest, BeneficiaryPayoutStateResponse, BeneficiaryWalletResponse, BeneficiaryFundingIntentResponse, CashInFundingIntent, CaptainAdmissionResponse, CaptainAssignmentListResponse, CaptainAssignmentResponse, CaptainAvailabilityRequest, CaptainCashRemittanceRequest, CaptainCashRemittanceResponse, CaptainCompletionRequest, CaptainDeliveryTaskResponse, CaptainLocationResponse, CaptainOfferDecisionRequest, CaptainOfferListResponse, CaptainOfferResponse, CartResponse, CashLiabilityResponse, CatalogAttributeEnumOptionListResponse, CatalogAttributeRuleListResponse, CatalogCategoryListResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogStorefrontSectionResponse, CatalogStoreOffer, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogVariantResponse, CheckoutQuoteResponse, CheckoutRequest, ClientOpenCartListResponse, CommerceVerticalListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, CreateJoiningCaseRequest, CreateOrderConversationMessageRequest, CreateOrderRatingRequest, DeliveryAddressListResponse, DeliveryAddressResponse, DeliveryProofResponse, DiscoveryContentEventRequest, DiscoveryContentListResponse, DiscoveryContentTargetResolution, FavoriteStoreOfferListResponse, FavoriteStoreOfferResponse, FavoriteStoreListResponse, FavoriteStoreResponse, FieldAdmissionResponse, FieldFinancialSummaryResponse, JoiningCaseListResponse, JoiningCaseResponse, MarkOrderConversationReadRequest, MultiStoreCheckoutRequest, MultiStoreCheckoutResponse, NotificationListResponse, NotificationReadResponse, OrderConversationMessageResponse, OrderConversationReadResponse, OrderConversationResponse, OrderListResponse, OrderRatingResponse, OrderResponse, OrderTrackingResponse, OrderTransitionRequest, PartnerFinancialSummaryResponse, PayoutRequest, PromotionListResponse, PublicCatalogResponse, PublicCatalogSearchResponse, PublicStoreView, PublishedStoreListResponse, ReplaceCatalogProductMediaRequest, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, SetStoreFulfillmentModesRequest, StoreCaptainDispatchRequest, StoreCaptainInvitationResponse, StoreCaptainMembershipListResponse, StoreCaptainMembershipResponse, StoreCaptainMembershipTransitionRequest, StoreDeliveryOriginResponse, StoreFulfillmentModesResponse, UpdateCartLineRequest, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateDeliveryAddressRequest, UpsertCartLineRequest } from "./generated/dsh-types";
 
 export type DshMobileClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -149,10 +148,14 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
     }
   }
 
-  function mutationHeaders(): Record<string, string> {
+  function mutationHeaders(idempotencyKey?: string, correlationID?: string): Record<string, string> {
     const randomUUID = options.cryptoRandomUUID;
     if (!randomUUID) throw new Error("DSH_IDEMPOTENCY_KEY_GENERATOR_REQUIRED");
-    return { "X-Correlation-ID": randomUUID(), "Idempotency-Key": randomUUID() };
+    const normalizedKey = idempotencyKey?.trim() ?? "";
+    const normalizedCorrelation = correlationID?.trim() ?? "";
+    if (normalizedKey && (normalizedKey.length < 8 || normalizedKey.length > 128)) throw new Error("DSH_IDEMPOTENCY_KEY_INVALID");
+    if (normalizedCorrelation && (normalizedCorrelation.length < 8 || normalizedCorrelation.length > 128)) throw new Error("DSH_CORRELATION_ID_INVALID");
+    return { "X-Correlation-ID": normalizedCorrelation || randomUUID(), "Idempotency-Key": normalizedKey || randomUUID() };
   }
 
   function correlationHeaders(): Record<string, string> {
@@ -176,6 +179,18 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalized) throw new Error("DSH_VERTICAL_ID_REQUIRED");
       return (await publicRequest<CatalogCategoryListResponse>(`${dshOperationPaths.listCatalogCategories.path}?${new URLSearchParams({ verticalId: normalized }).toString()}`)).categories;
     },
+    async listPublicCatalogCategoryAttributeRules(categoryID: string): Promise<CatalogAttributeRuleListResponse["rules"]> {
+      const normalized = categoryID.trim();
+      if (!normalized) throw new Error("DSH_CATEGORY_ID_REQUIRED");
+      const path = dshOperationPaths.listPublicCatalogCategoryAttributeRules.path.replace("{categoryId}", encodeURIComponent(normalized));
+      return (await publicRequest<CatalogAttributeRuleListResponse>(path)).rules;
+    },
+    async listPublicCatalogAttributeEnumOptions(attributeID: string): Promise<CatalogAttributeEnumOptionListResponse["options"]> {
+      const normalized = attributeID.trim();
+      if (!normalized) throw new Error("DSH_ATTRIBUTE_ID_REQUIRED");
+      const path = dshOperationPaths.listPublicCatalogAttributeEnumOptions.path.replace("{attributeId}", encodeURIComponent(normalized));
+      return (await publicRequest<CatalogAttributeEnumOptionListResponse>(path)).options;
+    },
     async readOwnJoiningCase(accessToken: string): Promise<JoiningCaseResponse> {
       return userRequest<JoiningCaseResponse>(accessToken, dshOperationPaths.readOwnJoiningCase.path, dshOperationPaths.readOwnJoiningCase.method);
     },
@@ -188,10 +203,29 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
     async readOwnPayoutState(accessToken: string): Promise<BeneficiaryPayoutStateResponse> {
       return userRequest<BeneficiaryPayoutStateResponse>(accessToken, dshOperationPaths.readOwnPayoutState.path, dshOperationPaths.readOwnPayoutState.method);
     },
-    async createOwnPayoutIntent(accessToken: string, amountMode: "FULL_AVAILABLE" | "SPECIFIED", amountMinor?: number): Promise<PayoutIntentResponse> {
+    async readOwnWallet(accessToken: string): Promise<BeneficiaryWalletResponse> {
+      return userRequest<BeneficiaryWalletResponse>(accessToken, dshOperationPaths.readOwnWallet.path, dshOperationPaths.readOwnWallet.method);
+    },
+    async createOwnFundingIntent(accessToken: string, amountMinor: number, idempotencyKey?: string, correlationID?: string): Promise<BeneficiaryFundingIntentResponse> {
+      if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) throw new Error("DSH_CASH_IN_AMOUNT_INVALID");
+      return userRequest<BeneficiaryFundingIntentResponse>(accessToken, dshOperationPaths.createOwnFundingIntent.path, dshOperationPaths.createOwnFundingIntent.method, { amountMinor }, mutationHeaders(idempotencyKey, correlationID));
+    },
+    async readOwnFundingIntent(accessToken: string, fundingIntentID: string): Promise<Readonly<{ intent: CashInFundingIntent }>> {
+      const normalized = fundingIntentID.trim();
+      if (!normalized) throw new Error("DSH_FUNDING_INTENT_ID_REQUIRED");
+      const path = dshOperationPaths.readOwnFundingIntent.path.replace("{fundingIntentId}", encodeURIComponent(normalized));
+      return userRequest<Readonly<{ intent: CashInFundingIntent }>>(accessToken, path, dshOperationPaths.readOwnFundingIntent.method);
+    },
+    async simulateOwnFundingIntent(accessToken: string, fundingIntentID: string, outcome: "SUCCESS" | "FAILURE" | "UNKNOWN" | "DELAYED", idempotencyKey?: string, correlationID?: string): Promise<BeneficiaryFundingIntentResponse> {
+      const normalized = fundingIntentID.trim();
+      if (!normalized) throw new Error("DSH_FUNDING_INTENT_ID_REQUIRED");
+      const path = dshOperationPaths.simulateOwnFundingIntent.path.replace("{fundingIntentId}", encodeURIComponent(normalized));
+      return userRequest<BeneficiaryFundingIntentResponse>(accessToken, path, dshOperationPaths.simulateOwnFundingIntent.method, { outcome }, mutationHeaders(idempotencyKey, correlationID));
+    },
+    async createOwnPayoutIntent(accessToken: string, amountMode: "FULL_AVAILABLE" | "SPECIFIED", amountMinor?: number, idempotencyKey?: string, correlationID?: string): Promise<PayoutIntentResponse> {
       if (amountMode === "SPECIFIED" && (!Number.isSafeInteger(amountMinor) || (amountMinor ?? 0) <= 0)) throw new Error("DSH_PAYOUT_AMOUNT_INVALID");
       if (amountMode === "FULL_AVAILABLE" && amountMinor !== undefined) throw new Error("DSH_PAYOUT_AMOUNT_INVALID");
-      return userRequest<PayoutIntentResponse>(accessToken, dshOperationPaths.createOwnPayoutIntent.path, dshOperationPaths.createOwnPayoutIntent.method, { amountMode, ...(amountMinor === undefined ? {} : { amountMinor }) }, mutationHeaders());
+      return userRequest<PayoutIntentResponse>(accessToken, dshOperationPaths.createOwnPayoutIntent.path, dshOperationPaths.createOwnPayoutIntent.method, { amountMode, ...(amountMinor === undefined ? {} : { amountMinor }) }, mutationHeaders(idempotencyKey, correlationID));
     },
     async correctAndResubmitJoiningCase(accessToken: string, caseID: string, input: CorrectJoiningCaseRequest, expectedVersion: number): Promise<JoiningCaseResponse> {
       const normalized = caseID.trim();
@@ -216,7 +250,7 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
     },
     async createStoreScopedProduct(accessToken: string, storeID: string, input: CreateCatalogProductRequest): Promise<{ product: CatalogProduct; idempotentReplay: boolean }> {
       const normalizedStore = storeID.trim();
-      if (!normalizedStore || input.scope !== "STORE_SCOPED" || input.verticalId.trim() === "" || input.canonicalName.trim() === "" || input.categoryIds.length === 0) throw new Error("DSH_STORE_PRODUCT_INPUT_INVALID");
+        if (!normalizedStore || input.scope !== "STORE_SCOPED" || input.verticalId.trim() === "" || input.canonicalName.trim() === "") throw new Error("DSH_STORE_PRODUCT_INPUT_INVALID");
       const path = dshOperationPaths.createStoreScopedProduct.path.replace("{storeId}", encodeURIComponent(normalizedStore));
       return userRequest(accessToken, path, dshOperationPaths.createStoreScopedProduct.method, { ...input, scope: "STORE_SCOPED", storeId: normalizedStore }, mutationHeaders());
     },
@@ -343,6 +377,9 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (![quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingUnitBaseUnits, inventoryOnHandBaseUnits].every(Number.isSafeInteger) || quantityMinBaseUnits < 1 || quantityMaxBaseUnits < quantityMinBaseUnits || quantityStepBaseUnits < 1 || pricingUnitBaseUnits < 1 || inventoryOnHandBaseUnits < 0) throw new Error("DSH_OFFER_QUANTITY_INVALID");
       return userRequest<CatalogStoreOfferResponse>(accessToken, path, dshOperationPaths.updateStoreOffer.method, { priceMinor, publicationState, availability, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingBasis, pricingUnitBaseUnits, inventoryPolicy, inventoryOnHandBaseUnits }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
     },
+    async listClientOpenCarts(accessToken: string): Promise<ClientOpenCartListResponse> {
+      return userRequest<ClientOpenCartListResponse>(accessToken, dshOperationPaths.listClientOpenCarts.path, dshOperationPaths.listClientOpenCarts.method);
+    },
     async readOpenCart(accessToken: string, storeID: string): Promise<CartResponse> {
       const normalizedStore = storeID.trim();
       if (!normalizedStore) throw new Error("DSH_STORE_ID_REQUIRED");
@@ -350,8 +387,9 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       return userRequest<CartResponse>(accessToken, path, dshOperationPaths.readOpenCart.method);
     },
     async quoteCheckout(accessToken: string, input: CheckoutRequest, expectedCartVersion: number): Promise<CheckoutQuoteResponse> {
-      if (!input.cartId.trim() || !input.storeId.trim() || !input.addressId.trim() || !input.fulfillmentMode || expectedCartVersion < 1) throw new Error("DSH_CHECKOUT_INPUT_INVALID");
-      return userRequest<CheckoutQuoteResponse>(accessToken, dshOperationPaths.quoteCheckout.path, dshOperationPaths.quoteCheckout.method, { ...input, cartId: input.cartId.trim(), storeId: input.storeId.trim(), addressId: input.addressId.trim() }, { "X-Expected-Version": String(expectedCartVersion) });
+      const addressId = input.addressId?.trim() ?? "";
+      if (!input.cartId.trim() || !input.storeId.trim() || (input.fulfillmentMode !== "CUSTOMER_PICKUP" && !addressId) || !input.fulfillmentMode || expectedCartVersion < 1) throw new Error("DSH_CHECKOUT_INPUT_INVALID");
+      return userRequest<CheckoutQuoteResponse>(accessToken, dshOperationPaths.quoteCheckout.path, dshOperationPaths.quoteCheckout.method, { ...input, cartId: input.cartId.trim(), storeId: input.storeId.trim(), addressId }, { "X-Expected-Version": String(expectedCartVersion) });
     },
     async upsertCartLine(accessToken: string, input: UpsertCartLineRequest, expectedVersion: number): Promise<CartResponse> {
       if (!input.storeId.trim() || !input.storeOfferId.trim() || !Number.isSafeInteger(input.quantityBaseUnits) || input.quantityBaseUnits < 1 || expectedVersion < 0) throw new Error("DSH_CART_INPUT_INVALID");
@@ -369,13 +407,14 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.removeCartLine.path.replace("{lineId}", encodeURIComponent(normalized));
       return userRequest<CartResponse>(accessToken, path, dshOperationPaths.removeCartLine.method, undefined, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
     },
-    async checkoutCart(accessToken: string, input: CheckoutRequest, expectedCartVersion: number): Promise<OrderResponse> {
-      if (!input.cartId.trim() || !input.storeId.trim() || !input.addressId.trim() || !input.fulfillmentMode || expectedCartVersion < 1) throw new Error("DSH_CHECKOUT_INPUT_INVALID");
-      return userRequest<OrderResponse>(accessToken, dshOperationPaths.checkoutCart.path, dshOperationPaths.checkoutCart.method, { ...input, cartId: input.cartId.trim(), storeId: input.storeId.trim(), addressId: input.addressId.trim() }, { ...mutationHeaders(), "X-Expected-Version": String(expectedCartVersion) });
+    async checkoutCart(accessToken: string, input: CheckoutRequest, expectedCartVersion: number, idempotencyKey?: string, correlationID?: string): Promise<OrderResponse> {
+      const addressId = input.addressId?.trim() ?? "";
+      if (!input.cartId.trim() || !input.storeId.trim() || (input.fulfillmentMode !== "CUSTOMER_PICKUP" && !addressId) || !input.fulfillmentMode || expectedCartVersion < 1) throw new Error("DSH_CHECKOUT_INPUT_INVALID");
+      return userRequest<OrderResponse>(accessToken, dshOperationPaths.checkoutCart.path, dshOperationPaths.checkoutCart.method, { ...input, cartId: input.cartId.trim(), storeId: input.storeId.trim(), addressId }, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedCartVersion) });
     },
-    async createMultiStoreCheckout(accessToken: string, input: MultiStoreCheckoutRequest): Promise<MultiStoreCheckoutResponse> {
-      if (!input.id.trim() || input.children.length < 2 || input.children.length > 10 || input.children.some((child) => !child.cartId.trim() || !child.storeId.trim() || !child.addressId.trim() || child.cartVersion < 1 || !child.fulfillmentMode)) throw new Error("DSH_MULTI_STORE_CHECKOUT_INPUT_INVALID");
-      return userRequest<MultiStoreCheckoutResponse>(accessToken, dshOperationPaths.createMultiStoreCheckout.path, dshOperationPaths.createMultiStoreCheckout.method, { ...input, id: input.id.trim(), children: input.children.map((child) => ({ ...child, cartId: child.cartId.trim(), storeId: child.storeId.trim(), addressId: child.addressId.trim(), promotionCode: child.promotionCode?.trim().toUpperCase() })) }, mutationHeaders());
+    async createMultiStoreCheckout(accessToken: string, input: MultiStoreCheckoutRequest, idempotencyKey?: string, correlationID?: string): Promise<MultiStoreCheckoutResponse> {
+      if (!input.id.trim() || input.children.length < 2 || input.children.length > 10 || input.children.some((child) => !child.cartId.trim() || !child.storeId.trim() || (child.fulfillmentMode !== "CUSTOMER_PICKUP" && !child.addressId.trim()) || child.cartVersion < 1 || !child.fulfillmentMode)) throw new Error("DSH_MULTI_STORE_CHECKOUT_INPUT_INVALID");
+      return userRequest<MultiStoreCheckoutResponse>(accessToken, dshOperationPaths.createMultiStoreCheckout.path, dshOperationPaths.createMultiStoreCheckout.method, { ...input, id: input.id.trim(), children: input.children.map((child) => ({ ...child, cartId: child.cartId.trim(), storeId: child.storeId.trim(), addressId: child.addressId.trim(), promotionCode: child.promotionCode?.trim().toUpperCase() })) }, mutationHeaders(idempotencyKey, correlationID));
     },
     async readMultiStoreCheckout(accessToken: string, checkoutID: string): Promise<MultiStoreCheckoutResponse> {
       const normalized = checkoutID.trim();
@@ -383,15 +422,18 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.readMultiStoreCheckout.path.replace("{checkoutId}", encodeURIComponent(normalized));
       return userRequest<MultiStoreCheckoutResponse>(accessToken, path, dshOperationPaths.readMultiStoreCheckout.method);
     },
-    async cancelMultiStoreCheckout(accessToken: string, checkoutID: string, expectedVersion: number): Promise<MultiStoreCheckoutResponse> {
+    async cancelMultiStoreCheckout(accessToken: string, checkoutID: string, expectedVersion: number, idempotencyKey?: string, correlationID?: string): Promise<MultiStoreCheckoutResponse> {
       const normalized = checkoutID.trim();
       if (!normalized || expectedVersion < 1) throw new Error("DSH_MULTI_STORE_CHECKOUT_CANCEL_INPUT_INVALID");
       const path = dshOperationPaths.cancelMultiStoreCheckout.path.replace("{checkoutId}", encodeURIComponent(normalized));
-      return userRequest<MultiStoreCheckoutResponse>(accessToken, path, dshOperationPaths.cancelMultiStoreCheckout.method, undefined, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+      return userRequest<MultiStoreCheckoutResponse>(accessToken, path, dshOperationPaths.cancelMultiStoreCheckout.method, undefined, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) });
     },
-    async listClientOrders(accessToken: string, limit = 50): Promise<OrderListResponse> {
-      if (limit < 1 || limit > 100) throw new Error("DSH_ORDER_LIMIT_INVALID");
-      return userRequest<OrderListResponse>(accessToken, `${dshOperationPaths.listClientOrders.path}?${new URLSearchParams({ limit: String(limit) }).toString()}`, dshOperationPaths.listClientOrders.method);
+    async listClientOrders(accessToken: string, limit = 50, cartID = ""): Promise<OrderListResponse> {
+      const normalizedCartID = cartID.trim();
+      if (limit < 1 || limit > 100 || normalizedCartID.length > 128) throw new Error("DSH_ORDER_LIST_INPUT_INVALID");
+      const query = new URLSearchParams({ limit: String(limit) });
+      if (normalizedCartID) query.set("cartId", normalizedCartID);
+      return userRequest<OrderListResponse>(accessToken, `${dshOperationPaths.listClientOrders.path}?${query.toString()}`, dshOperationPaths.listClientOrders.method);
     },
     async listNotifications(accessToken: string, limit = 50): Promise<NotificationListResponse> {
       if (limit < 1 || limit > 100) throw new Error("DSH_NOTIFICATION_LIMIT_INVALID");
@@ -473,6 +515,13 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.transitionStoreOrder.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{orderId}", encodeURIComponent(normalizedOrder));
       return userRequest<OrderResponse>(accessToken, path, dshOperationPaths.transitionStoreOrder.method, input, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
     },
+    async confirmPartnerCaptainCashHandoff(accessToken: string, storeID: string, orderID: string, expectedVersion: number): Promise<OrderResponse> {
+      const normalizedStore = storeID.trim();
+      const normalizedOrder = orderID.trim();
+      if (!normalizedStore || !normalizedOrder || !Number.isInteger(expectedVersion) || expectedVersion < 1) throw new Error("DSH_STORE_CAPTAIN_CASH_HANDOFF_INPUT_INVALID");
+      const path = dshOperationPaths.confirmPartnerCaptainCashHandoff.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{orderId}", encodeURIComponent(normalizedOrder));
+      return userRequest<OrderResponse>(accessToken, path, dshOperationPaths.confirmPartnerCaptainCashHandoff.method, undefined, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+    },
     async readStoreCaptainAssignment(accessToken: string, storeID: string, orderID: string): Promise<CaptainAssignmentResponse> {
       const normalizedStore = storeID.trim();
       const normalizedOrder = orderID.trim();
@@ -487,6 +536,48 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalizedStore || !normalizedOrder || !normalizedAssignment || expectedVersion < 1) throw new Error("DSH_CAPTAIN_HANDOFF_INPUT_INVALID");
       const path = dshOperationPaths.confirmCaptainStoreHandoff.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{orderId}", encodeURIComponent(normalizedOrder));
       return userRequest<CaptainAssignmentResponse>(accessToken, path, dshOperationPaths.confirmCaptainStoreHandoff.method, { assignmentId: normalizedAssignment }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+    },
+    async listPartnerStoreCaptainMemberships(accessToken: string, storeID: string): Promise<StoreCaptainMembershipListResponse> {
+      const normalized = storeID.trim();
+      if (!normalized) throw new Error("DSH_STORE_CAPTAIN_MEMBERSHIP_STORE_REQUIRED");
+      const path = dshOperationPaths.listPartnerStoreCaptainMemberships.path.replace("{storeId}", encodeURIComponent(normalized));
+      return userRequest<StoreCaptainMembershipListResponse>(accessToken, path, dshOperationPaths.listPartnerStoreCaptainMemberships.method);
+    },
+    async createPartnerStoreCaptainInvitation(accessToken: string, storeID: string): Promise<StoreCaptainInvitationResponse> {
+      const normalized = storeID.trim();
+      if (!normalized) throw new Error("DSH_STORE_CAPTAIN_MEMBERSHIP_STORE_REQUIRED");
+      const path = dshOperationPaths.createPartnerStoreCaptainInvitation.path.replace("{storeId}", encodeURIComponent(normalized));
+      return userRequest<StoreCaptainInvitationResponse>(accessToken, path, dshOperationPaths.createPartnerStoreCaptainInvitation.method, undefined, mutationHeaders());
+    },
+    async transitionPartnerStoreCaptainMembership(accessToken: string, storeID: string, membershipID: string, input: StoreCaptainMembershipTransitionRequest, expectedVersion: number): Promise<StoreCaptainMembershipResponse> {
+      const normalizedStore = storeID.trim();
+      const normalizedMembership = membershipID.trim();
+      if (!normalizedStore || !normalizedMembership || expectedVersion < 1 || !input.state) throw new Error("DSH_STORE_CAPTAIN_MEMBERSHIP_INPUT_INVALID");
+      const path = dshOperationPaths.transitionPartnerStoreCaptainMembership.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{membershipId}", encodeURIComponent(normalizedMembership));
+      return userRequest<StoreCaptainMembershipResponse>(accessToken, path, dshOperationPaths.transitionPartnerStoreCaptainMembership.method, input, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+    },
+    async readPartnerStoreCaptainDispatchOffer(accessToken: string, storeID: string, orderID: string): Promise<CaptainOfferResponse> {
+      const normalizedStore = storeID.trim();
+      const normalizedOrder = orderID.trim();
+      if (!normalizedStore || !normalizedOrder) throw new Error("DSH_STORE_CAPTAIN_DISPATCH_INPUT_INVALID");
+      const path = dshOperationPaths.readPartnerStoreCaptainDispatchOffer.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{orderId}", encodeURIComponent(normalizedOrder));
+      return userRequest<CaptainOfferResponse>(accessToken, path, dshOperationPaths.readPartnerStoreCaptainDispatchOffer.method);
+    },
+    async createPartnerStoreCaptainDispatchOffer(accessToken: string, storeID: string, orderID: string, input: StoreCaptainDispatchRequest, expectedOrderVersion: number): Promise<CaptainOfferResponse> {
+      const normalizedStore = storeID.trim();
+      const normalizedOrder = orderID.trim();
+      if (!normalizedStore || !normalizedOrder || !input.captainActorId.trim() || expectedOrderVersion < 1) throw new Error("DSH_STORE_CAPTAIN_DISPATCH_INPUT_INVALID");
+      const path = dshOperationPaths.createPartnerStoreCaptainDispatchOffer.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{orderId}", encodeURIComponent(normalizedOrder));
+      return userRequest<CaptainOfferResponse>(accessToken, path, dshOperationPaths.createPartnerStoreCaptainDispatchOffer.method, input, { ...mutationHeaders(), "X-Expected-Version": String(expectedOrderVersion) });
+    },
+    async listOwnStoreCaptainMemberships(accessToken: string): Promise<StoreCaptainMembershipListResponse> {
+      return userRequest<StoreCaptainMembershipListResponse>(accessToken, dshOperationPaths.listOwnStoreCaptainMemberships.path, dshOperationPaths.listOwnStoreCaptainMemberships.method);
+    },
+    async acceptOwnStoreCaptainInvitation(accessToken: string, invitationCode: string): Promise<StoreCaptainMembershipResponse> {
+      const normalized = invitationCode.trim();
+      if (!normalized) throw new Error("DSH_STORE_CAPTAIN_INVITATION_CODE_REQUIRED");
+      const input: AcceptStoreCaptainInvitationRequest = { invitationCode: normalized };
+      return userRequest<StoreCaptainMembershipResponse>(accessToken, dshOperationPaths.acceptOwnStoreCaptainInvitation.path, dshOperationPaths.acceptOwnStoreCaptainInvitation.method, input, mutationHeaders());
     },
     async readOwnCaptainAdmission(accessToken: string): Promise<CaptainAdmissionResponse> {
       return userRequest<CaptainAdmissionResponse>(accessToken, dshOperationPaths.readOwnCaptainAdmission.path, dshOperationPaths.readOwnCaptainAdmission.method);
@@ -587,16 +678,6 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.uploadFieldJoiningCaseStoreImage.path.replace("{caseId}", encodeURIComponent(normalized));
       return userMultipartRequest(accessToken, path, dshOperationPaths.uploadFieldJoiningCaseStoreImage.method, form, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) }, input.nativeMultipartUpload, { fieldName: "file", fileName, mimeType, parameters: {} });
     },
-    async correctAndResubmitFieldJoiningCase(accessToken: string, caseID: string, input: CorrectJoiningCaseRequest, expectedVersion: number): Promise<JoiningCaseResponse> {
-      const normalized = caseID.trim();
-      const businessName = input.businessName.trim();
-      const firstStoreName = input.firstStoreName.trim();
-      const serviceCityId = input.serviceCityId.trim();
-      const firstStoreVerticalId = input.firstStoreVerticalId.trim();
-      if (!normalized || businessName.length < 2 || businessName.length > 160 || firstStoreName.length < 2 || firstStoreName.length > 160 || !serviceCityId || !firstStoreVerticalId || expectedVersion < 1 || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180) throw new Error("DSH_FIELD_JOINING_CASE_INPUT_INVALID");
-      const path = dshOperationPaths.correctAndResubmitFieldJoiningCase.path.replace("{caseId}", encodeURIComponent(normalized));
-      return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.correctAndResubmitFieldJoiningCase.method, { businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude: input.firstStoreLatitude, firstStoreLongitude: input.firstStoreLongitude }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
-    },
     async listOwnDeliveryAddresses(accessToken: string, limit = 50, cursor = ""): Promise<DeliveryAddressListResponse> {
       if (limit < 1 || limit > 50) throw new Error("DSH_ADDRESS_LIMIT_INVALID");
       const params = new URLSearchParams({ limit: String(limit) });
@@ -632,11 +713,46 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.readStoreDeliveryOrigin.path.replace("{storeId}", encodeURIComponent(normalized));
       return userRequest<StoreDeliveryOriginResponse>(accessToken, path, dshOperationPaths.readStoreDeliveryOrigin.method);
     },
+    async setStoreFulfillmentModes(accessToken: string, storeID: string, input: SetStoreFulfillmentModesRequest, expectedVersion: number): Promise<StoreFulfillmentModesResponse> {
+      const normalizedStore = storeID.trim();
+      const fulfillmentModes = Array.from(input.fulfillmentModes);
+      if (!normalizedStore || expectedVersion < 1 || fulfillmentModes.length < 1 || fulfillmentModes.length > 2 || new Set(fulfillmentModes).size !== fulfillmentModes.length || fulfillmentModes.some((mode) => mode !== "BTHWANI_CAPTAIN" && mode !== "CUSTOMER_PICKUP")) throw new Error("DSH_STORE_FULFILLMENT_MODES_INVALID");
+      const path = dshOperationPaths.setStoreFulfillmentModes.path.replace("{storeId}", encodeURIComponent(normalizedStore));
+      return userRequest<StoreFulfillmentModesResponse>(accessToken, path, dshOperationPaths.setStoreFulfillmentModes.method, { fulfillmentModes }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+    },
     async listActiveServiceCities(): Promise<ReadonlyArray<ServiceCity>> {
       return (await publicRequest<ServiceCityListResponse>(dshOperationPaths.listActiveServiceCities.path)).cities;
     },
     async listClientFavoriteStores(accessToken: string): Promise<FavoriteStoreListResponse> {
       return userRequest<FavoriteStoreListResponse>(accessToken, dshOperationPaths.listClientFavoriteStores.path, dshOperationPaths.listClientFavoriteStores.method);
+    },
+    async listClientFavoriteStoreOffers(accessToken: string, storeID: string): Promise<FavoriteStoreOfferListResponse> {
+      const normalizedStore = storeID.trim();
+      if (!normalizedStore) throw new Error("DSH_STORE_ID_REQUIRED");
+      const path = `${dshOperationPaths.listClientFavoriteStoreOffers.path}?${new URLSearchParams({ storeId: normalizedStore }).toString()}`;
+      return userRequest<FavoriteStoreOfferListResponse>(accessToken, path, dshOperationPaths.listClientFavoriteStoreOffers.method);
+    },
+    async addClientFavoriteStoreOffer(accessToken: string, storeOfferID: string): Promise<FavoriteStoreOfferResponse> {
+      const normalizedOffer = storeOfferID.trim();
+      if (!normalizedOffer) throw new Error("DSH_STORE_OFFER_ID_REQUIRED");
+      const path = dshOperationPaths.addClientFavoriteStoreOffer.path.replace("{storeOfferId}", encodeURIComponent(normalizedOffer));
+      return userRequest<FavoriteStoreOfferResponse>(accessToken, path, dshOperationPaths.addClientFavoriteStoreOffer.method, undefined, mutationHeaders());
+    },
+    async removeClientFavoriteStoreOffer(accessToken: string, storeOfferID: string): Promise<FavoriteStoreOfferResponse> {
+      const normalizedOffer = storeOfferID.trim();
+      if (!normalizedOffer) throw new Error("DSH_STORE_OFFER_ID_REQUIRED");
+      const path = dshOperationPaths.removeClientFavoriteStoreOffer.path.replace("{storeOfferId}", encodeURIComponent(normalizedOffer));
+      return userRequest<FavoriteStoreOfferResponse>(accessToken, path, dshOperationPaths.removeClientFavoriteStoreOffer.method, undefined, mutationHeaders());
+    },
+    async readClientFavoriteStoreCatalog(accessToken: string, storeID: string, serviceCityID: string, limit = 20, cursor = ""): Promise<PublicCatalogResponse> {
+      const normalizedStore = storeID.trim();
+      const normalizedCity = serviceCityID.trim();
+      const normalizedCursor = cursor.trim();
+      if (!normalizedStore || !normalizedCity || !Number.isInteger(limit) || limit < 1 || limit > 100 || normalizedCursor.length > 1024) throw new Error("DSH_FAVORITE_STORE_CATALOG_INPUT_INVALID");
+      const params = new URLSearchParams({ storeId: normalizedStore, serviceCityId: normalizedCity, limit: String(limit) });
+      if (normalizedCursor) params.set("cursor", normalizedCursor);
+      const path = `${dshOperationPaths.readClientFavoriteStoreCatalog.path}?${params.toString()}`;
+      return userRequest<PublicCatalogResponse>(accessToken, path, dshOperationPaths.readClientFavoriteStoreCatalog.method);
     },
     async addClientFavoriteStore(accessToken: string, storeID: string): Promise<FavoriteStoreResponse> {
       const normalized = storeID.trim();
@@ -650,7 +766,7 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.removeClientFavoriteStore.path.replace("{storeId}", encodeURIComponent(normalized));
       return userRequest<FavoriteStoreResponse>(accessToken, path, dshOperationPaths.removeClientFavoriteStore.method, undefined, mutationHeaders());
     },
-    async listPublishedStores(serviceCityID: string, location?: Readonly<{ latitude: number; longitude: number }>): Promise<ReadonlyArray<PublicStoreView>> {
+    async listPublishedStores(serviceCityID: string, location?: Readonly<{ latitude: number; longitude: number }>): Promise<PublishedStoreListResponse> {
       const normalizedCity = serviceCityID.trim();
       if (!normalizedCity) throw new Error("DSH_SERVICE_CITY_REQUIRED");
       const params = new URLSearchParams({ serviceCityId: normalizedCity });
@@ -660,8 +776,7 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
         params.set("longitude", String(location.longitude));
       }
       const path = `${dshOperationPaths.listPublishedStores.path}?${params.toString()}`;
-      const result = await publicRequest<PublishedStoreListResponse>(path);
-      return result.stores;
+      return publicRequest<PublishedStoreListResponse>(path);
     },
     async listPublicPromotions(serviceCityID: string, storeID = ""): Promise<PromotionListResponse> {
       const normalizedCity = serviceCityID.trim();
@@ -699,18 +814,33 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = `${dshOperationPaths.readPublishedStore.path.replace("{storeId}", encodeURIComponent(normalized))}?${new URLSearchParams({ serviceCityId: normalizedCity }).toString()}`;
       return publicRequest<PublicStoreView>(path);
     },
-    async readPublicStoreCatalog(storeID: string, serviceCityID: string, categoryID = "", query = "", limit = 100, cursor = ""): Promise<PublicCatalogResponse> {
+    async readPublicStoreCatalog(storeID: string, serviceCityID: string, categoryID = "", query = "", limit = 100, cursor = "", productID = ""): Promise<PublicCatalogResponse> {
       const normalizedStore = storeID.trim();
       const normalizedCity = serviceCityID.trim();
+      const normalizedProduct = productID.trim();
       if (!normalizedStore || !normalizedCity) throw new Error("DSH_STORE_SCOPE_REQUIRED");
+      if (normalizedProduct.length > 128) throw new Error("DSH_CATALOG_PRODUCT_ID_INVALID");
       const params = new URLSearchParams({ serviceCityId: normalizedCity });
       if (categoryID.trim()) params.set("categoryId", categoryID.trim());
+      if (normalizedProduct) params.set("productId", normalizedProduct);
       if (query.trim()) params.set("q", query.trim());
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error("DSH_CATALOG_LIMIT_INVALID");
       params.set("limit", String(limit));
       if (cursor.trim()) params.set("cursor", cursor.trim());
       const path = `${dshOperationPaths.readPublicStoreCatalog.path.replace("{storeId}", encodeURIComponent(normalizedStore))}?${params.toString()}`;
       return publicRequest<PublicCatalogResponse>(path);
+    },
+    async searchPublicCatalog(serviceCityID: string, query: string, categoryID = "", limit = 20, cursor = ""): Promise<PublicCatalogSearchResponse> {
+      const normalizedCity = serviceCityID.trim();
+      const normalizedQuery = query.trim();
+      if (!normalizedCity || !normalizedQuery) throw new Error("DSH_CATALOG_SEARCH_SCOPE_REQUIRED");
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) throw new Error("DSH_CATALOG_SEARCH_LIMIT_INVALID");
+      const params = new URLSearchParams({ serviceCityId: normalizedCity, q: normalizedQuery });
+      if (categoryID.trim()) params.set("categoryId", categoryID.trim());
+      params.set("limit", String(limit));
+      if (cursor.trim()) params.set("cursor", cursor.trim());
+      const path = `${dshOperationPaths.searchPublicCatalog.path}?${params.toString()}`;
+      return publicRequest<PublicCatalogSearchResponse>(path);
     },
     async evaluateServiceability(accessToken: string, storeID: string, addressID: string): Promise<ServiceabilityResponse> {
       const normalizedStore = storeID.trim();

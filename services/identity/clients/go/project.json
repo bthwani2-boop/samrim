@@ -6,20 +6,34 @@
     "identity"
   ],
   "targets": {
-    "test": {
+    "vet": {
       "executor": "nx:run-commands",
-      "inputs": ["default", "^default"],
+      "inputs": [
+        "default",
+        "^default",
+        "goToolchain"
+      ],
+      "options": {
+        "command": "go vet ./...",
+        "cwd": "services/identity/clients/go"
+      }
+    },
+    "unit": {
+      "executor": "nx:run-commands",
+      "inputs": [
+        "default",
+        "^default",
+        "goToolchain"
+      ],
       "options": {
         "command": "go test ./...",
         "cwd": "services/identity/clients/go"
       }
     },
-    "vet": {
+    "format-check": {
       "executor": "nx:run-commands",
-      "inputs": ["default", "^default"],
       "options": {
-        "command": "go vet ./...",
-        "cwd": "services/identity/clients/go"
+        "command": "node tools/dev/check-go-format.mjs services/identity/clients/go"
       }
     }
   },

@@ -2,9 +2,10 @@ paths:
   /dsh/notifications:
     get:
       operationId: listNotifications
-      summary: List the authenticated actor's in-app notifications
+      summary: List the authenticated actor's in-app notifications, including operational notifications for control operators
       security:
         - userBearer: []
+        - serviceBearer: []
       parameters:
         - name: limit
           in: query
@@ -13,6 +14,14 @@ paths:
             type: integer
             minimum: 1
             maximum: 100
+        - name: X-Acting-Actor-ID
+          in: header
+          required: false
+          description: Required with serviceBearer; identifies the authenticated control operator whose operational notifications are being read.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
       responses:
         "200":
           description: Bounded notification inbox with the complete unread count.
@@ -24,6 +33,8 @@ paths:
           $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
         "403":
           $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 
@@ -33,10 +44,19 @@ paths:
       summary: Mark one visible notification as read
       security:
         - userBearer: []
+        - serviceBearer: []
       parameters:
         - name: notificationId
           in: path
           required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - name: X-Acting-Actor-ID
+          in: header
+          required: false
+          description: Required with serviceBearer; identifies the authenticated control operator whose read state is being updated.
           schema:
             type: string
             minLength: 1
@@ -52,6 +72,8 @@ paths:
           $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
         "403":
           $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
         "404":
           $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
         "502":

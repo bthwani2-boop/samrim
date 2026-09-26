@@ -62,105 +62,20 @@ try {
     if ((& pnpm --version).Trim() -ne '10.34.0') { Fail 'pnpm version mismatch.' }
     if ((& go version | Out-String).Trim() -notmatch '\bgo1\.27\.1\b') { Fail 'Go version mismatch.' }
 
-    $changed = @(& git -C $Repo diff --name-only $BaseSha $head | ForEach-Object { $_.Trim().Replace('\','/') } | Where-Object { $_ })
-    if ($LASTEXITCODE -ne 0) { Fail 'Unable to determine candidate delta.' }
-    $shapeChanged = @(& git -C $Repo diff --diff-filter=ADRCT --name-only $BaseSha $head | ForEach-Object { $_.Trim().Replace('\','/') } | Where-Object { $_ })
-    if ($LASTEXITCODE -ne 0) { Fail 'Unable to determine structural candidate delta.' }
-
-    function Changed-Matches([string]$Pattern) {
-        return @($changed | Where-Object { $_ -match $Pattern }).Count -gt 0
+    Run-Step 'Workspace invariant targets' {
+        pnpm exec nx run-many -t donor-residue repository-structure structural-hygiene runtime-ownership removed-domain-residue cache-contracts docs-command-parity docs-config-parity knowledge-system knowledge-references agent-contract workspace-dependencies go-workspace-sync nx-project-tags mobile-config brand theme-check theme-verify powershell-syntax knip --outputStyle=stream --parallel=2
     }
 
-    Write-Host "AFFECTED_CHANGED_FILES=$($changed.Count)"
-    Write-Host "STRUCTURAL_PATH_MUTATIONS=$($shapeChanged.Count)"
-
-    $topologyRelevant = (
-        $shapeChanged.Count -gt 0 -or
-        (Changed-Matches '^(REPOSITORY-STRUCTURE\.md|pnpm-workspace\.yaml|pnpm-lock\.yaml|go\.work|go\.work\.sum)$') -or
-        (Changed-Matches '(^|/)project\.json$')
-    )
-
-    if ($topologyRelevant) {
-        Run-Step 'Repository structure' { node tools/dev/verify-repository-structure.mjs }
+    Run-Step 'Execution proof system' {
+        pnpm exec nx run repository-ci:execution-proof-system --outputStyle=stream
     }
 
-    if ($topologyRelevant -or (Changed-Matches '(^|/)package\.json$|^\.gitattributes$')) {
-        Run-Step 'Structural hygiene' { node tools/dev/verify-structural-hygiene.mjs }
+    Run-Step 'Infrastructure invariant targets' {
+        pnpm exec nx run infra:compose-config --outputStyle=stream
     }
 
-    if (Changed-Matches '(^|/)package\.json$|^apps/.*\.(ts|tsx|js|mjs|cjs)$|^services/dsh/.*\.(go|ts|tsx|js|mjs|cjs)$') {
-        Run-Step 'Workspace dependency references' { node tools/dev/verify-workspace-dependencies.mjs }
-    }
-
-    if (Changed-Matches '(^|/)project\.json$') {
-        Run-Step 'Nx project tags' { node tools/dev/verify-nx-project-tags.mjs }
-    }
-
-    if (Changed-Matches '^(AGENTS\.md|REPOSITORY-STRUCTURE\.md|CLAUDE\.md|GEMINI\.md|\.github/copilot-instructions\.md|\.github/pull_request_template\.md|\.github/workflows/pr-policy\.yml|knowledge\.sources\.json|package\.json|tools/dev/(verify-local-candidate\.ps1|safe-push\.ps1|verify-agent-knowledge-contract\.mjs|verify-repository-structure\.mjs))$') {
-        Run-Step 'Agent execution contract' { node tools/dev/verify-agent-knowledge-contract.mjs }
-    }
-
-    if (Changed-Matches '^(AGENTS\.md|knowledge\.sources\.json|package\.json|README\.md|CONTRIBUTING\.md|SECURITY\.md|tools/README\.md|infra/local/compose/README\.md|\.github/pull_request_template\.md|\.github/workflows/pr-policy\.yml|tools/dev/(knowledge-|query-knowledge|verify-(knowledge|doc|agent)))') {
-        Run-Step 'Knowledge invariants' { node tools/dev/verify-knowledge-system.mjs }
-        Run-Step 'Knowledge references' { node tools/dev/verify-knowledge-references.mjs }
-        Run-Step 'Docs command parity' { node tools/dev/verify-doc-command-parity.mjs }
-        Run-Step 'Docs configuration parity' { node tools/dev/verify-doc-config-parity.mjs }
-    }
-
-    if (Changed-Matches '^(infra/local/(?:compose/|\.env\.example$)|tools/dev/(dev\.ps1|start-surface\.mjs|verify-local-runtime-ownership\.mjs|run-playwright-live\.mjs|verify-identity-runtime\.mjs)|tools/mobile/(?:prepare-local-development\.ps1|build-development\.ps1)|package\.json|apps/(?:app-(?:client|partner|captain|field)|control-panel)/package\.json)$') {
-        Run-Step 'Runtime ownership' { node tools/dev/verify-local-runtime-ownership.mjs }
-        Run-Step 'Canonical compose config' {
-            docker compose --project-name samrim-local --env-file infra/local/.env.example -f infra/local/compose/compose.yaml config --quiet
-        }
-    }
-
-    if (Changed-Matches '^apps/app-(client|partner|captain|field)/(mobile\.config\.json|app\.config\.ts|eas\.json|fingerprint\.config\.js|package\.json)$|^tools/mobile/verify-mobile-config\.mjs$') {
-        Run-Step 'Mobile deployable identities' { pnpm run mobile:verify-config }
-    }
-
-    if (Changed-Matches '^(packages/design-system/|apps/.*\.(css|tsx|ts)$|services/identity/clients/presentation/ManagedIdentityFlow\.tsx$|tools/dev/(ts-resolver|generate-theme-css|verify-theme-authority))') {
-        Run-Step 'Theme authority' { pnpm run theme:verify }
-    }
-
-    if (Changed-Matches '\.ps1$|\.psm1$') {
-        Run-Step 'PowerShell syntax' { pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-powershell-syntax.ps1 }
-    }
-
-    $changedGo = @($changed | Where-Object {
-        $_ -match '\.go$' -and (Test-Path -LiteralPath (Join-Path $Repo $_) -PathType Leaf)
-    })
-    if ($changedGo.Count -gt 0) {
-        Run-Step 'Changed Go formatting' {
-            $unformatted = @(& gofmt -l @changedGo)
-            if ($LASTEXITCODE -ne 0) { Fail 'gofmt inspection failed.' }
-            if ($unformatted.Count -gt 0) { Fail ("Unformatted Go files:" + [Environment]::NewLine + ($unformatted -join [Environment]::NewLine)) }
-        }
-    }
-
-    $changedBiome = @($changed | Where-Object {
-        $_ -match '^(apps/|packages/|services/|tools/).+\.(ts|tsx|js|jsx|mjs)$' -and
-        (Test-Path -LiteralPath (Join-Path $Repo $_) -PathType Leaf)
-    })
-    if ($changedBiome.Count -gt 0) {
-        Run-Step 'Changed-source lint' {
-            pnpm exec biome lint apps packages services tools --changed --since=$BaseSha --diagnostic-level=error
-        }
-    }
-
-    if ($changed.Count -gt 0) {
-        Run-Step 'Affected workspace targets' {
-            pnpm exec nx affected -t typecheck test build vet --base=$BaseSha --head=$head --outputStyle=stream --parallel=1
-        }
-    } else {
-        Write-Host 'AFFECTED_WORKSPACE_TARGETS=SKIPPED reason=no_changes'
-    }
-
-    if ($changed.Count -gt 0) {
-        Run-Step 'Affected mobile export smoke' {
-            pnpm exec nx affected -t export-smoke --base=$BaseSha --head=$head --outputStyle=stream --parallel=1
-        }
-    } else {
-        Write-Host 'AFFECTED_MOBILE_EXPORT_SMOKE=SKIPPED reason=no_changes'
+    Run-Step 'Affected static targets' {
+        pnpm exec nx affected -t lint format-check typecheck unit contract build vet export-smoke --base=$BaseSha --head=$head --outputStyle=stream --parallel=2
     }
 
     $endHead = ((Invoke-Git @('rev-parse','HEAD')) -join '').Trim()

@@ -16,15 +16,36 @@
         "command": "node tools/mobile/export-mobile-smoke.mjs app-field"
       }
     },
-    "test": {
+    "unit": {
       "executor": "nx:run-commands",
       "options": {
         "command": "node tools/mobile/test-mobile-app.mjs app-field"
+      },
+      "inputs": [
+        "default",
+        "^default",
+        "{workspaceRoot}/tools/mobile/test-mobile-app.mjs",
+        "{workspaceRoot}/tools/mobile/define-samrim-expo-app.cjs",
+        {
+          "runtime": "node --version"
+        },
+        {
+          "runtime": "pnpm --version"
+        }
+      ]
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec biome lint apps/app-field --diagnostic-level=error"
       }
     }
   },
   "tags": [
     "scope:app-field",
     "type:app"
+  ],
+  "implicitDependencies": [
+    "mobile-tooling"
   ]
 }

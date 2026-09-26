@@ -46,6 +46,9 @@ services:
 
   identity-migrate:
     image: samrim-local-identity:dev
+    build:
+      context: ../../..
+      dockerfile: services/identity/backend/Dockerfile
     restart: "no"
     depends_on:
       postgres:
@@ -77,6 +80,11 @@ services:
       PORT: "8082"
       BTHWANI_LISTEN_HOST: "0.0.0.0"
       BTHWANI_ENV: "development"
+      IDENTITY_DEVELOPMENT_CLIENT_ACTOR_ID: "${IDENTITY_DEVELOPMENT_CLIENT_ACTOR_ID:-}"
+      IDENTITY_DEVELOPMENT_PARTNER_ACTOR_ID: "${IDENTITY_DEVELOPMENT_PARTNER_ACTOR_ID:-}"
+      IDENTITY_DEVELOPMENT_CAPTAIN_ACTOR_ID: "${IDENTITY_DEVELOPMENT_CAPTAIN_ACTOR_ID:-}"
+      IDENTITY_DEVELOPMENT_FIELD_ACTOR_ID: "${IDENTITY_DEVELOPMENT_FIELD_ACTOR_ID:-}"
+      IDENTITY_DEVELOPMENT_OPERATOR_ACTOR_ID: "${IDENTITY_DEVELOPMENT_OPERATOR_ACTOR_ID:-}"
       IDENTITY_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
       IDENTITY_MAINTENANCE_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
       BTHWANI_EXPECTED_DATABASE_HOST: "postgres"
@@ -114,6 +122,9 @@ services:
 
   dsh-migrate:
     image: samrim-local-dsh:dev
+    build:
+      context: ../../..
+      dockerfile: services/dsh/backend/Dockerfile
     restart: "no"
     depends_on:
       postgres:
@@ -126,6 +137,8 @@ services:
       BTHWANI_EXPECTED_DATABASE_NAME: "${SAMRIM_POSTGRES_DB}"
       BTHWANI_EXPECTED_DATABASE_USER: "${SAMRIM_POSTGRES_USER}"
       DSH_MIGRATION_DIR: "/app/migrations"
+      DSH_DELIVERY_PROOF_ACTIVE_KEY_ID: "${DSH_DELIVERY_PROOF_ACTIVE_KEY_ID:-}"
+      DSH_DELIVERY_PROOF_KEYRING: "${DSH_DELIVERY_PROOF_KEYRING:-}"
     entrypoint: ["/migrate"]
 
   dsh:
@@ -161,6 +174,8 @@ services:
       CONTROL_PANEL_SERVICE_TOKEN: "${CONTROL_PANEL_SERVICE_TOKEN}"
       WLT_DSH_SERVICE_TOKEN: "${WLT_DSH_SERVICE_TOKEN}"
       WLT_DESTINATION_ENCRYPTION_KEY: "${WLT_DESTINATION_ENCRYPTION_KEY:-}"
+      DSH_DELIVERY_PROOF_ACTIVE_KEY_ID: "${DSH_DELIVERY_PROOF_ACTIVE_KEY_ID:-}"
+      DSH_DELIVERY_PROOF_KEYRING: "${DSH_DELIVERY_PROOF_KEYRING:-}"
       DSH_MEDIA_S3_ENDPOINT: "http://media:8333"
       DSH_MEDIA_ACCESS_KEY: "${DSH_MEDIA_ACCESS_KEY:-samrim-media}"
       DSH_MEDIA_SECRET_KEY: "${DSH_MEDIA_SECRET_KEY:-samrim-media-secret}"
@@ -179,6 +194,9 @@ services:
 
   wlt-migrate:
     image: samrim-local-wlt:dev
+    build:
+      context: ../../..
+      dockerfile: services/wlt/backend/Dockerfile
     restart: "no"
     depends_on:
       postgres:
@@ -216,6 +234,9 @@ services:
       BTHWANI_EXPECTED_DATABASE_USER: "${SAMRIM_POSTGRES_USER}"
       WLT_MIGRATION_DIR: "/app/migrations"
       WLT_DSH_SERVICE_TOKEN: "${WLT_DSH_SERVICE_TOKEN}"
+      WLT_DESTINATION_ENCRYPTION_KEY: "${WLT_DESTINATION_ENCRYPTION_KEY:-}"
+      WLT_FINANCE_EVIDENCE_ENCRYPTION_KEY: "${WLT_FINANCE_EVIDENCE_ENCRYPTION_KEY:-}"
+      WLT_CASH_IN_MODE: "${WLT_CASH_IN_MODE:-simulator}"
     ports:
       - "127.0.0.1:${SAMRIM_WLT_PORT:-18083}:8083"
     healthcheck:

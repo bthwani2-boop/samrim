@@ -9,26 +9,148 @@
   "analytics": false,
   "targetDefaults": {
     "typecheck": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^default",
+        "nodeToolchain"
+      ]
+    },
+    "unit": {
       "cache": true
     },
-    "test": {
-      "cache": true
+    "contract": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^default",
+        "nodeToolchain"
+      ]
     },
     "build": {
-      "cache": true
+      "cache": true,
+      "inputs": [
+        "default",
+        "^default",
+        "nodeToolchain"
+      ]
     },
     "export-smoke": {
       "cache": true,
       "inputs": [
         "default",
         "^default",
+        "nodeToolchain",
+        "mobileExportEnvironment",
         "{workspaceRoot}/tools/mobile/export-mobile-smoke.mjs",
-        "{workspaceRoot}/tools/mobile/define-samrim-expo-app.cjs"
+        "{workspaceRoot}/tools/mobile/define-samrim-expo-app.cjs",
+        "{workspaceRoot}/packages/design-system/theme.css"
       ]
     },
     "vet": {
       "cache": true
+    },
+    "lint": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^default",
+        "{workspaceRoot}/biome.json",
+        {
+          "runtime": "node --version"
+        },
+        {
+          "runtime": "pnpm --version"
+        }
+      ]
+    },
+    "format-check": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "{workspaceRoot}/tools/dev/check-go-format.mjs",
+        {
+          "runtime": "go version"
+        }
+      ]
     }
   },
-  "nxCloudId": "6aa9eedc45c07f39423ffa9f"
+  "nxCloudId": "6aa9eedc45c07f39423ffa9f",
+  "namedInputs": {
+    "default": [
+      "{projectRoot}/**/*"
+    ],
+    "nodeToolchain": [
+      "{workspaceRoot}/pnpm-lock.yaml",
+      "{workspaceRoot}/pnpm-workspace.yaml",
+      "{workspaceRoot}/tsconfig.base.json",
+      "{workspaceRoot}/.node-version",
+      {
+        "runtime": "node --version"
+      },
+      {
+        "runtime": "pnpm --version"
+      }
+    ],
+    "goToolchain": [
+      "{workspaceRoot}/go.work",
+      "{workspaceRoot}/go.work.sum",
+      "{workspaceRoot}/.go-version",
+      {
+        "runtime": "go version"
+      }
+    ],
+    "mobileExportEnvironment": [
+      {
+        "env": "GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT"
+      },
+      {
+        "env": "GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN"
+      },
+      {
+        "env": "GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD"
+      },
+      {
+        "env": "GOOGLE_MAPS_ANDROID_API_KEY_APP_PARTNER"
+      },
+      {
+        "env": "GOOGLE_MAPS_ANDROID_API_KEY"
+      },
+      {
+        "env": "GOOGLE_MAPS_IOS_API_KEY"
+      },
+      {
+        "env": "GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN"
+      },
+      {
+        "env": "BTHWANI_SECRETS_ROOT"
+      },
+      {
+        "runtime": "node tools/mobile/hash-mobile-secret-input.mjs"
+      }
+    ],
+    "controlPanelBuildEnvironment": [
+      {
+        "env": "BTHWANI_SECRETS_ROOT"
+      },
+      {
+        "env": "NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_API_KEY"
+      },
+      {
+        "env": "DSH_API_BASE_URL"
+      },
+      {
+        "env": "IDENTITY_API_BASE_URL"
+      },
+      {
+        "env": "CONTROL_PANEL_SERVICE_TOKEN"
+      },
+      {
+        "env": "CONTROL_PANEL_PUBLIC_ORIGIN"
+      },
+      {
+        "runtime": "node tools/dev/hash-control-panel-secret-input.mjs"
+      }
+    ]
+  }
 }

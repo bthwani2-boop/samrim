@@ -2,9 +2,9 @@ package postgres
 
 import (
 	"context"
-	"crypto/subtle"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -49,6 +49,7 @@ type CaptainOffer struct {
 	ID                   string
 	OrderID              string
 	CaptainActorID       string
+	SourceStoreID        string
 	State                string
 	ExpiresAt            time.Time
 	Version              int
@@ -112,6 +113,7 @@ type CaptainDeliveryTask struct {
 	PaymentState         string
 	AmountDueMinor       int64
 	Currency             string
+	FulfillmentMode      string
 }
 
 type CaptainOperationResult struct {
@@ -127,8 +129,16 @@ func HashCaptainAvailabilityRequest(actorID string, available bool, expectedVers
 	return hashFacts("captain-availability", strings.TrimSpace(actorID), strconv.FormatBool(available), strconv.Itoa(expectedVersion))
 }
 
+func HashCaptainOperatorAvailabilityRequest(actorID string, available bool, expectedVersion int, reason string) string {
+	return hashFacts("captain-operator-availability", strings.TrimSpace(actorID), strconv.FormatBool(available), strconv.Itoa(expectedVersion), strings.TrimSpace(reason))
+}
+
 func HashCaptainDispatchRequest(orderID string) string {
 	return hashFacts("captain-dispatch", strings.TrimSpace(orderID))
+}
+
+func HashStoreCaptainDispatchRequest(storeID, orderID, captainActorID string, expectedOrderVersion int) string {
+	return hashFacts("store-captain-dispatch", strings.TrimSpace(storeID), strings.TrimSpace(orderID), strings.TrimSpace(captainActorID), strconv.Itoa(expectedOrderVersion))
 }
 
 func HashCaptainOfferResponse(offerID, decision string, expectedVersion int) string {
@@ -151,34 +161,31 @@ func HashCaptainCompletionRequest(assignmentID, result string, collectedAmountMi
 	return hashFacts("captain-complete", strings.TrimSpace(assignmentID), strings.TrimSpace(result), strconv.FormatInt(collectedAmountMinor, 10), strings.TrimSpace(deliveryProofCode), strconv.Itoa(expectedVersion))
 }
 
-func ValidateCaptainDeliveryProof(ctx context.Context, db *sql.DB, assignmentID, captainActorID, deliveryProofCode string) error {
+func legacyCaptainCompletionRequestHashes(assignmentID, result string, collectedAmountMinor int64, deliveryProofCode string, expectedVersion int) []string {
 	assignmentID = strings.TrimSpace(assignmentID)
-	captainActorID = strings.TrimSpace(captainActorID)
-	deliveryProofCode = strings.TrimSpace(deliveryProofCode)
-	if db == nil || assignmentID == "" || captainActorID == "" || len(deliveryProofCode) != 6 {
-		return ErrDeliveryProofInvalid
+	result = strings.TrimSpace(result)
+	amount := strconv.FormatInt(collectedAmountMinor, 10)
+	version := strconv.Itoa(expectedVersion)
+	return []string{
+		HashCaptainCompletionRequest(assignmentID, result, collectedAmountMinor, deliveryProofCode, expectedVersion),
+		hashFacts("captain-complete", assignmentID, result, amount, version),
+		hashFacts("captain-complete", assignmentID, result, version),
 	}
-	assignment, err := ReadCaptainAssignment(ctx, db, assignmentID)
-	if err != nil {
-		return err
+}
+
+func captainCompletionReplayHashMatches(keys *DeliveryProofKeyring, storedHash string, requestFacts []string, assignmentID, submittedResult string, collectedAmountMinor int64, deliveryProofCode string, expectedVersion int) bool {
+	if keys == nil {
+		return false
 	}
-	if assignment.CaptainActorID != captainActorID {
-		return ErrDeliveryProofInvalid
+	if keys.VerifyIdempotencyHash(storedHash, "captain-completion", requestFacts...) {
+		return true
 	}
-	var proofHash, proofState string
-	if err := db.QueryRowContext(ctx, `SELECT code_hash,state FROM dsh.commerce_order_delivery_proofs WHERE order_id=$1`, assignment.OrderID).Scan(&proofHash, &proofState); errors.Is(err, sql.ErrNoRows) {
-		return ErrDeliveryProofInvalid
-	} else if err != nil {
-		return err
+	for _, legacyHash := range legacyCaptainCompletionRequestHashes(assignmentID, submittedResult, collectedAmountMinor, deliveryProofCode, expectedVersion) {
+		if keys.VerifyIdempotencyHash(storedHash, "captain-completion-legacy", legacyHash) {
+			return true
+		}
 	}
-	proofMatches := subtle.ConstantTimeCompare([]byte(proofHash), []byte(HashDeliveryProofCode(assignment.OrderID, deliveryProofCode))) == 1
-	if assignment.State == "delivered" && proofState == "VERIFIED" && proofMatches {
-		return nil
-	}
-	if assignment.State != "in_custody" || assignment.Handoff.State != "completed" || proofState != "PENDING" || !proofMatches {
-		return ErrDeliveryProofInvalid
-	}
-	return nil
+	return false
 }
 
 func HashCaptainRecoveryRequest(assignmentID string, expectedVersion int) string {
@@ -297,6 +304,19 @@ func ReadCaptainAdmissionForActor(ctx context.Context, db *sql.DB, actorID strin
 	return admission, nil
 }
 
+func ReadCaptainFinancialAdmissionState(ctx context.Context, db *sql.DB, actorID string) (string, error) {
+	actorID = strings.TrimSpace(actorID)
+	if db == nil || actorID == "" || len(actorID) > 128 {
+		return "", ErrCaptainAdmissionNotFound
+	}
+	var state string
+	err := db.QueryRowContext(ctx, `SELECT state FROM dsh.captain_admissions WHERE actor_id=$1`, actorID).Scan(&state)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrCaptainAdmissionNotFound
+	}
+	return state, err
+}
+
 func BindCaptainAdmission(ctx context.Context, db *sql.DB, admissionID, actorID, idempotencyKey, requestHash, actingActorID, correlationID string) (CaptainAdmission, error) {
 	if db == nil || strings.TrimSpace(admissionID) == "" || strings.TrimSpace(actorID) == "" || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
 		return CaptainAdmission{}, ErrCaptainAdmissionConflict
@@ -343,7 +363,7 @@ func BindCaptainAdmission(ctx context.Context, db *sql.DB, admissionID, actorID,
 	return updated, nil
 }
 
-func SetCaptainAvailability(ctx context.Context, db *sql.DB, actorID string, available bool, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string) (CaptainAdmission, bool, error) {
+func SetCaptainAvailability(ctx context.Context, db *sql.DB, actorID string, available bool, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID, reason string) (CaptainAdmission, bool, error) {
 	if db == nil || strings.TrimSpace(actorID) == "" || expectedVersion < 1 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
 		return CaptainAdmission{}, false, ErrCaptainOperationConflict
 	}
@@ -405,7 +425,7 @@ func SetCaptainAvailability(ctx context.Context, db *sql.DB, actorID string, ava
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_operation_idempotency(idempotency_key,request_hash,operation,admission_id,result_version) VALUES($1,$2,'availability',$3,$4)`, idempotencyKey, requestHash, admission.ID, admission.Version); err != nil {
 		return CaptainAdmission{}, false, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_admission_audit(event_type,idempotency_key,correlation_id,acting_actor_id,admission_id,actor_id,from_state,to_state,from_version,result_version,request_hash) VALUES('captain_availability_changed',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, idempotencyKey, correlationID, actingActorID, admission.ID, actorID, previousAvailability, wanted, expectedVersion, admission.Version, requestHash); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_admission_audit(event_type,idempotency_key,correlation_id,acting_actor_id,admission_id,actor_id,from_state,to_state,from_version,result_version,request_hash,reason) VALUES('captain_availability_changed',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,''))`, idempotencyKey, correlationID, actingActorID, admission.ID, actorID, previousAvailability, wanted, expectedVersion, admission.Version, requestHash, strings.TrimSpace(reason)); err != nil {
 		return CaptainAdmission{}, false, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -619,6 +639,127 @@ func CreateCaptainDispatchOffer(ctx context.Context, db *sql.DB, orderID, idempo
 	return createCaptainDispatchOffer(ctx, db, orderID, "", idempotencyKey, requestHash, actingActorID, correlationID, "dispatch")
 }
 
+func CreateStoreCaptainDispatchOffer(ctx context.Context, db *sql.DB, storeID, orderID, captainActorID, partnerActorID string, expectedOrderVersion int, idempotencyKey, requestHash, correlationID string) (CaptainOffer, bool, error) {
+	storeID, orderID, captainActorID = strings.TrimSpace(storeID), strings.TrimSpace(orderID), strings.TrimSpace(captainActorID)
+	partnerActorID, idempotencyKey, requestHash, correlationID = strings.TrimSpace(partnerActorID), strings.TrimSpace(idempotencyKey), strings.TrimSpace(requestHash), strings.TrimSpace(correlationID)
+	if db == nil || storeID == "" || orderID == "" || captainActorID == "" || partnerActorID == "" || expectedOrderVersion < 1 || idempotencyKey == "" || requestHash == "" || correlationID == "" {
+		return CaptainOffer{}, false, ErrCaptainOperationConflict
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return CaptainOffer{}, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := canonicalizeCaptainOffersTx(ctx, tx, captainActorID); err != nil {
+		return CaptainOffer{}, false, err
+	}
+	replay, err := captainOperationReplayTx(ctx, tx, idempotencyKey, requestHash, "store_dispatch")
+	if err != nil {
+		return CaptainOffer{}, false, err
+	}
+	if replay != nil {
+		offer, readErr := readCaptainOfferTx(ctx, tx, "offer.id=$1 AND offer.source_store_id=$2", replay.OfferID, storeID)
+		if readErr != nil {
+			return CaptainOffer{}, false, readErr
+		}
+		if err := tx.Commit(); err != nil {
+			return CaptainOffer{}, false, err
+		}
+		return offer, true, nil
+	}
+	var orderState, fulfillmentMode, orderStoreID, ownerActorID string
+	var orderVersion int
+	err = tx.QueryRowContext(ctx, `SELECT o.state,o.version,o.fulfillment_mode,o.store_id,s.partner_actor_id
+		FROM dsh.commerce_orders o JOIN dsh.stores s ON s.id=o.store_id
+		WHERE o.id=$1 FOR UPDATE OF o`, orderID).Scan(&orderState, &orderVersion, &fulfillmentMode, &orderStoreID, &ownerActorID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return CaptainOffer{}, false, ErrOrderNotFound
+	}
+	if err != nil {
+		return CaptainOffer{}, false, err
+	}
+	if ownerActorID != partnerActorID || orderStoreID != storeID {
+		return CaptainOffer{}, false, ErrOrderNotFound
+	}
+	if fulfillmentMode != FulfillmentModePartnerCaptain || orderState != "READY_FOR_DISPATCH" {
+		return CaptainOffer{}, false, ErrCaptainDispatchConflict
+	}
+	if orderVersion != expectedOrderVersion {
+		return CaptainOffer{}, false, ErrOrderVersionConflict
+	}
+	var activeOffer bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM dsh.captain_dispatch_offers WHERE order_id=$1 AND state='offered')`, orderID).Scan(&activeOffer); err != nil {
+		return CaptainOffer{}, false, err
+	}
+	if activeOffer {
+		return CaptainOffer{}, false, ErrCaptainDispatchConflict
+	}
+	var membershipID string
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM dsh.store_captain_memberships WHERE store_id=$1 AND partner_actor_id=$2 AND captain_actor_id=$3 AND state='active' FOR SHARE`, storeID, partnerActorID, captainActorID).Scan(&membershipID); errors.Is(err, sql.ErrNoRows) {
+		return CaptainOffer{}, false, ErrStoreCaptainMembershipNotFound
+	} else if err != nil {
+		return CaptainOffer{}, false, err
+	}
+	var admissionState string
+	if err := tx.QueryRowContext(ctx, `SELECT state FROM dsh.captain_admissions WHERE actor_id=$1 FOR UPDATE`, captainActorID).Scan(&admissionState); errors.Is(err, sql.ErrNoRows) {
+		return CaptainOffer{}, false, ErrCaptainNotEligible
+	} else if err != nil {
+		return CaptainOffer{}, false, err
+	} else if admissionState != "eligible" {
+		return CaptainOffer{}, false, ErrCaptainNotEligible
+	}
+	var captainHasActiveWork bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM dsh.captain_dispatch_offers WHERE captain_actor_id=$1 AND state='offered') OR EXISTS(SELECT 1 FROM dsh.captain_assignments WHERE captain_actor_id=$1 AND state IN ('assigned','in_custody','delivery_failed'))`, captainActorID).Scan(&captainHasActiveWork); err != nil {
+		return CaptainOffer{}, false, err
+	}
+	if captainHasActiveWork {
+		return CaptainOffer{}, false, ErrCaptainNoAvailable
+	}
+	offerID, err := newID("captain-offer")
+	if err != nil {
+		return CaptainOffer{}, false, err
+	}
+	expiresAt := time.Now().UTC().Add(captainOfferTimeout)
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_dispatch_offers(id,order_id,captain_actor_id,source_store_id,state,expires_at,version,idempotency_key,request_hash)
+		VALUES($1,$2,$3,$4,'offered',$5,1,$6,$7)`, offerID, orderID, captainActorID, storeID, expiresAt, idempotencyKey, requestHash); err != nil {
+		if isUniqueViolation(err) {
+			return CaptainOffer{}, false, ErrCaptainDispatchConflict
+		}
+		return CaptainOffer{}, false, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_operation_idempotency(idempotency_key,request_hash,operation,order_id,offer_id,result_version) VALUES($1,$2,'store_dispatch',$3,$4,1)`, idempotencyKey, requestHash, orderID, offerID); err != nil {
+		return CaptainOffer{}, false, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,offer_id,captain_actor_id,to_state,result_version,request_hash) VALUES('dispatch_offer_created',$1,$2,$3,$4,$5,$6,'offered',1,$7)`, idempotencyKey, correlationID, partnerActorID, orderID, offerID, captainActorID, requestHash); err != nil {
+		return CaptainOffer{}, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return CaptainOffer{}, false, err
+	}
+	offer, err := ReadCaptainOffer(ctx, db, offerID)
+	return offer, false, err
+}
+
+func ReadStoreCaptainDispatchOffer(ctx context.Context, db *sql.DB, storeID, orderID, partnerActorID string) (CaptainOffer, error) {
+	storeID, orderID, partnerActorID = strings.TrimSpace(storeID), strings.TrimSpace(orderID), strings.TrimSpace(partnerActorID)
+	if db == nil || storeID == "" || orderID == "" || partnerActorID == "" {
+		return CaptainOffer{}, ErrCaptainOfferNotFound
+	}
+	var offerID string
+	err := db.QueryRowContext(ctx, `SELECT offer.id FROM dsh.captain_dispatch_offers offer
+		JOIN dsh.commerce_orders o ON o.id=offer.order_id
+		JOIN dsh.stores s ON s.id=o.store_id
+		WHERE offer.source_store_id=$1 AND offer.order_id=$2 AND s.partner_actor_id=$3 AND o.fulfillment_mode=$4
+		ORDER BY offer.created_at DESC,offer.id DESC LIMIT 1`, storeID, orderID, partnerActorID, FulfillmentModePartnerCaptain).Scan(&offerID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return CaptainOffer{}, ErrCaptainOfferNotFound
+	}
+	if err != nil {
+		return CaptainOffer{}, err
+	}
+	return ReadCaptainOffer(ctx, db, offerID)
+}
+
 func createCaptainDispatchOffer(ctx context.Context, db *sql.DB, orderID, excludeCaptainID, idempotencyKey, requestHash, actingActorID, correlationID, operation string) (CaptainOffer, bool, error) {
 	if db == nil || strings.TrimSpace(orderID) == "" || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
 		return CaptainOffer{}, false, ErrCaptainOperationConflict
@@ -645,14 +786,14 @@ func createCaptainDispatchOffer(ctx context.Context, db *sql.DB, orderID, exclud
 		}
 		return offer, true, nil
 	}
-	var state string
+	var state, fulfillmentMode string
 	var orderVersion int
-	if err := tx.QueryRowContext(ctx, "SELECT state,version FROM dsh.commerce_orders WHERE id=$1 FOR UPDATE", orderID).Scan(&state, &orderVersion); errors.Is(err, sql.ErrNoRows) {
+	if err := tx.QueryRowContext(ctx, "SELECT state,version,fulfillment_mode FROM dsh.commerce_orders WHERE id=$1 FOR UPDATE", orderID).Scan(&state, &orderVersion, &fulfillmentMode); errors.Is(err, sql.ErrNoRows) {
 		return CaptainOffer{}, false, ErrOrderNotFound
 	} else if err != nil {
 		return CaptainOffer{}, false, err
 	}
-	if state != "READY_FOR_DISPATCH" {
+	if state != "READY_FOR_DISPATCH" || fulfillmentMode != FulfillmentModeBthwaniCaptain {
 		return CaptainOffer{}, false, ErrCaptainDispatchConflict
 	}
 	var active string
@@ -741,7 +882,7 @@ func ListCaptainOffers(ctx context.Context, db *sql.DB, actorID string, limit in
 	if err := canonicalizeCaptainOffersTx(ctx, tx, strings.TrimSpace(actorID)); err != nil {
 		return nil, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' LIMIT 1),''),o.address_text,o.total_amount_minor,o.currency,o.payment_method,o.payment_state
+	rows, err := tx.QueryContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,COALESCE(offer.source_store_id,''),offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' LIMIT 1),''),o.address_text,o.total_amount_minor,o.currency,o.payment_method,o.payment_state
 		FROM dsh.captain_dispatch_offers offer
 		JOIN dsh.commerce_orders o ON o.id=offer.order_id
 		JOIN dsh.stores s ON s.id=o.store_id
@@ -754,7 +895,7 @@ func ListCaptainOffers(ctx context.Context, db *sql.DB, actorID string, limit in
 	items := make([]CaptainOffer, 0)
 	for rows.Next() {
 		var item CaptainOffer
-		if err := rows.Scan(&item.ID, &item.OrderID, &item.CaptainActorID, &item.State, &item.ExpiresAt, &item.Version, &item.CreatedAt, &item.UpdatedAt, &item.StoreName, &item.StoreProfileImageURI, &item.CustomerAddressText, &item.AmountDueMinor, &item.Currency, &item.PaymentMethod, &item.PaymentState); err != nil {
+		if err := rows.Scan(&item.ID, &item.OrderID, &item.CaptainActorID, &item.SourceStoreID, &item.State, &item.ExpiresAt, &item.Version, &item.CreatedAt, &item.UpdatedAt, &item.StoreName, &item.StoreProfileImageURI, &item.CustomerAddressText, &item.AmountDueMinor, &item.Currency, &item.PaymentMethod, &item.PaymentState); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -807,11 +948,11 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 		return CaptainOfferResult{Offer: offer, Assignment: assignment, Replayed: true}, nil
 	}
 	var offer CaptainOffer
-	err = tx.QueryRowContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' LIMIT 1),''),o.address_text,o.total_amount_minor,o.currency,o.payment_method,o.payment_state
+	err = tx.QueryRowContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,COALESCE(offer.source_store_id,''),offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' LIMIT 1),''),o.address_text,o.total_amount_minor,o.currency,o.payment_method,o.payment_state
 		FROM dsh.captain_dispatch_offers offer
 		JOIN dsh.commerce_orders o ON o.id=offer.order_id
 		JOIN dsh.stores s ON s.id=o.store_id
-		WHERE offer.id=$1 FOR UPDATE OF offer`, offerID).Scan(&offer.ID, &offer.OrderID, &offer.CaptainActorID, &offer.State, &offer.ExpiresAt, &offer.Version, &offer.CreatedAt, &offer.UpdatedAt, &offer.StoreName, &offer.StoreProfileImageURI, &offer.CustomerAddressText, &offer.AmountDueMinor, &offer.Currency, &offer.PaymentMethod, &offer.PaymentState)
+		WHERE offer.id=$1 FOR UPDATE OF offer`, offerID).Scan(&offer.ID, &offer.OrderID, &offer.CaptainActorID, &offer.SourceStoreID, &offer.State, &offer.ExpiresAt, &offer.Version, &offer.CreatedAt, &offer.UpdatedAt, &offer.StoreName, &offer.StoreProfileImageURI, &offer.CustomerAddressText, &offer.AmountDueMinor, &offer.Currency, &offer.PaymentMethod, &offer.PaymentState)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CaptainOfferResult{}, ErrCaptainOfferNotFound
 	}
@@ -829,8 +970,10 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 			}
 			key := "captain-timeout:" + offer.ID
 			hash := hashFacts("captain-offer-expired", offer.ID)
-			if err := restoreCaptainAvailabilityTx(ctx, tx, offer.CaptainActorID, key, hash, "system:captain-timeout", key); err != nil {
-				return CaptainOfferResult{}, err
+			if offer.SourceStoreID == "" {
+				if err := restoreCaptainAvailabilityTx(ctx, tx, offer.CaptainActorID, key, hash, "system:captain-timeout", key); err != nil {
+					return CaptainOfferResult{}, err
+				}
 			}
 			if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,offer_id,captain_actor_id,from_state,to_state,result_version,request_hash) VALUES('dispatch_offer_expired',$1,$2,$3,$4,$5,$6,'offered','expired',$7,$8) ON CONFLICT (event_type,idempotency_key) DO NOTHING`, key, key, "system:captain-timeout", offer.OrderID, offer.ID, offer.CaptainActorID, expiredVersion, hash); err != nil {
 				return CaptainOfferResult{}, err
@@ -840,7 +983,7 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 			if err := tx.QueryRowContext(ctx, `SELECT payment_intent_id,payment_state FROM dsh.commerce_orders WHERE id=$1`, offer.OrderID).Scan(&paymentIntentID, &paymentState); err != nil {
 				return CaptainOfferResult{}, err
 			}
-			if paymentIntentID.Valid && paymentState == "REQUIRES_COLLECTION" {
+			if offer.SourceStoreID == "" && paymentIntentID.Valid && paymentState == "REQUIRES_COLLECTION" {
 				if err := enqueueFinancialHandoffTx(ctx, tx, FinancialHandoffOutbox{EffectType: "CAPTAIN_COD_RELEASE", SourceRef: offer.ID, OrderID: offer.OrderID, PaymentIntentID: paymentIntentID.String, CaptainActorID: offer.CaptainActorID, IdempotencyKey: key, CorrelationID: key, ActingActorID: "system:captain-timeout"}); err != nil {
 					return CaptainOfferResult{}, err
 				}
@@ -868,8 +1011,10 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 		}
 		offer.State = "rejected"
 		offer.Version++
-		if err := restoreCaptainAvailabilityTx(ctx, tx, captainActorID, idempotencyKey, requestHash, captainActorID, correlationID); err != nil {
-			return CaptainOfferResult{}, err
+		if offer.SourceStoreID == "" {
+			if err := restoreCaptainAvailabilityTx(ctx, tx, captainActorID, idempotencyKey, requestHash, captainActorID, correlationID); err != nil {
+				return CaptainOfferResult{}, err
+			}
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_operation_idempotency(idempotency_key,request_hash,operation,order_id,offer_id,result_version) VALUES($1,$2,'respond_offer',$3,$4,$5)`, idempotencyKey, requestHash, offer.OrderID, offer.ID, offer.Version); err != nil {
 			return CaptainOfferResult{}, err
@@ -882,7 +1027,7 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 		if err := tx.QueryRowContext(ctx, `SELECT payment_intent_id,payment_state FROM dsh.commerce_orders WHERE id=$1`, offer.OrderID).Scan(&paymentIntentID, &paymentState); err != nil {
 			return CaptainOfferResult{}, err
 		}
-		if paymentIntentID.Valid && paymentState == "REQUIRES_COLLECTION" {
+		if offer.SourceStoreID == "" && paymentIntentID.Valid && paymentState == "REQUIRES_COLLECTION" {
 			if err := enqueueFinancialHandoffTx(ctx, tx, FinancialHandoffOutbox{EffectType: "CAPTAIN_COD_RELEASE", SourceRef: offer.ID, OrderID: offer.OrderID, PaymentIntentID: paymentIntentID.String, CaptainActorID: captainActorID, IdempotencyKey: idempotencyKey, CorrelationID: correlationID, ActingActorID: captainActorID}); err != nil {
 				return CaptainOfferResult{}, err
 			}
@@ -900,13 +1045,21 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 	} else if admissionState != "eligible" {
 		return CaptainOfferResult{}, ErrCaptainNotEligible
 	}
-	var orderState string
-	if err := tx.QueryRowContext(ctx, "SELECT state FROM dsh.commerce_orders WHERE id=$1 FOR UPDATE", offer.OrderID).Scan(&orderState); errors.Is(err, sql.ErrNoRows) {
+	var orderState, orderMode, orderStoreID string
+	if err := tx.QueryRowContext(ctx, "SELECT state,fulfillment_mode,store_id FROM dsh.commerce_orders WHERE id=$1 FOR UPDATE", offer.OrderID).Scan(&orderState, &orderMode, &orderStoreID); errors.Is(err, sql.ErrNoRows) {
 		return CaptainOfferResult{}, ErrOrderNotFound
 	} else if err != nil {
 		return CaptainOfferResult{}, err
-	} else if orderState != "READY_FOR_DISPATCH" {
+	} else if orderState != "READY_FOR_DISPATCH" || (offer.SourceStoreID == "" && orderMode != FulfillmentModeBthwaniCaptain) || (offer.SourceStoreID != "" && (orderMode != FulfillmentModePartnerCaptain || orderStoreID != offer.SourceStoreID)) {
 		return CaptainOfferResult{}, ErrCaptainAssignmentConflict
+	}
+	if offer.SourceStoreID != "" {
+		var membershipID string
+		if err := tx.QueryRowContext(ctx, `SELECT id FROM dsh.store_captain_memberships WHERE store_id=$1 AND captain_actor_id=$2 AND state='active' FOR SHARE`, offer.SourceStoreID, captainActorID).Scan(&membershipID); errors.Is(err, sql.ErrNoRows) {
+			return CaptainOfferResult{}, ErrCaptainNotEligible
+		} else if err != nil {
+			return CaptainOfferResult{}, err
+		}
 	}
 	assignmentID, err := newID("captain-assignment")
 	if err != nil {
@@ -931,7 +1084,7 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 	if err := tx.QueryRowContext(ctx, `UPDATE dsh.commerce_orders SET state='CAPTAIN_ASSIGNED',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='READY_FOR_DISPATCH' RETURNING version`, offer.OrderID).Scan(&orderVersion); err != nil {
 		return CaptainOfferResult{}, err
 	}
-	if admissionAvailability == "available" {
+	if offer.SourceStoreID == "" && admissionAvailability == "available" {
 		if err := reserveCaptainAvailabilityTx(ctx, tx, admissionID, captainActorID, idempotencyKey, requestHash, captainActorID, correlationID); err != nil {
 			return CaptainOfferResult{}, err
 		}
@@ -978,12 +1131,15 @@ func ReassignCaptain(ctx context.Context, db *sql.DB, orderID, idempotencyKey, r
 		}
 		return offer, true, nil
 	}
-	var state, paymentState string
+	var state, paymentState, fulfillmentMode string
 	var paymentIntentID sql.NullString
-	if err := tx.QueryRowContext(ctx, "SELECT state,payment_intent_id,payment_state FROM dsh.commerce_orders WHERE id=$1 FOR UPDATE", orderID).Scan(&state, &paymentIntentID, &paymentState); errors.Is(err, sql.ErrNoRows) {
+	if err := tx.QueryRowContext(ctx, "SELECT state,payment_intent_id,payment_state,fulfillment_mode FROM dsh.commerce_orders WHERE id=$1 FOR UPDATE", orderID).Scan(&state, &paymentIntentID, &paymentState, &fulfillmentMode); errors.Is(err, sql.ErrNoRows) {
 		return CaptainOffer{}, false, ErrOrderNotFound
 	} else if err != nil {
 		return CaptainOffer{}, false, err
+	}
+	if fulfillmentMode != FulfillmentModeBthwaniCaptain {
+		return CaptainOffer{}, false, ErrCaptainDispatchConflict
 	}
 	if state != "READY_FOR_DISPATCH" && state != "CAPTAIN_ASSIGNED" {
 		return CaptainOffer{}, false, ErrCaptainCustodyConflict
@@ -1186,8 +1342,9 @@ func CompleteCaptainPickup(ctx context.Context, db *sql.DB, assignmentID, captai
 	return assignment, false, err
 }
 
-func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, captainActorID, result string, collectedAmountMinor int64, deliveryProofCode string, expectedVersion int, idempotencyKey, requestHash, correlationID string) (CaptainAssignment, bool, error) {
-	result = strings.ToLower(strings.TrimSpace(result))
+func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, captainActorID, result string, collectedAmountMinor int64, deliveryProofCode string, expectedVersion int, idempotencyKey, correlationID string, keys *DeliveryProofKeyring) (CaptainAssignment, bool, error) {
+	submittedResult := strings.TrimSpace(result)
+	result = strings.ToLower(submittedResult)
 	deliveryProofCode = strings.TrimSpace(deliveryProofCode)
 	if result != "delivered" && result != "delivery_failed" {
 		return CaptainAssignment{}, false, ErrCaptainTerminalConflict
@@ -1195,15 +1352,22 @@ func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, ca
 	if collectedAmountMinor < 0 || (result != "delivered" && collectedAmountMinor != 0) {
 		return CaptainAssignment{}, false, ErrPaymentStateConflict
 	}
-	if db == nil || strings.TrimSpace(assignmentID) == "" || strings.TrimSpace(captainActorID) == "" || expectedVersion < 1 {
+	if db == nil || keys == nil || strings.TrimSpace(assignmentID) == "" || strings.TrimSpace(captainActorID) == "" || expectedVersion < 1 {
 		return CaptainAssignment{}, false, ErrCaptainTerminalConflict
+	}
+	requestFacts := []string{assignmentID, result, strconv.FormatInt(collectedAmountMinor, 10), deliveryProofCode, strconv.Itoa(expectedVersion)}
+	requestHash, err := keys.ActiveIdempotencyHash("captain-completion", requestFacts...)
+	if err != nil {
+		return CaptainAssignment{}, false, err
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return CaptainAssignment{}, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	replay, err := captainOperationReplayTx(ctx, tx, idempotencyKey, requestHash, "complete")
+	replay, err := captainOperationReplayTx(ctx, tx, idempotencyKey, requestHash, "complete", func(stored string) bool {
+		return captainCompletionReplayHashMatches(keys, stored, requestFacts, assignmentID, submittedResult, collectedAmountMinor, deliveryProofCode, expectedVersion)
+	})
 	if err != nil {
 		return CaptainAssignment{}, false, err
 	}
@@ -1211,6 +1375,9 @@ func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, ca
 		assignment, readErr := readCaptainAssignmentTx(ctx, tx, "id=$1", replay.AssignmentID)
 		if readErr != nil {
 			return CaptainAssignment{}, false, readErr
+		}
+		if replay.AssignmentID != assignmentID || assignment.CaptainActorID != captainActorID {
+			return CaptainAssignment{}, false, ErrCaptainOfferForbidden
 		}
 		if err := tx.Commit(); err != nil {
 			return CaptainAssignment{}, false, err
@@ -1227,21 +1394,24 @@ func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, ca
 	if assignment.State != "in_custody" || assignment.Version != expectedVersion || assignment.Handoff.State != "completed" {
 		return CaptainAssignment{}, false, ErrCaptainTerminalConflict
 	}
+	if (result == "delivered" && !validDeliveryProofCode(deliveryProofCode)) || (result == "delivery_failed" && deliveryProofCode != "") {
+		return CaptainAssignment{}, false, ErrDeliveryProofInvalid
+	}
 	var orderID string
 	if err := tx.QueryRowContext(ctx, `UPDATE dsh.captain_assignments SET state=$2,terminal_result=$3,terminal_at=clock_timestamp(),version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='in_custody' AND version=$4 RETURNING order_id`, assignmentID, result, result, expectedVersion).Scan(&orderID); err != nil {
 		return CaptainAssignment{}, false, err
 	}
 	if result == "delivered" {
-		var proofHash, proofState string
-		if err := tx.QueryRowContext(ctx, `SELECT code_hash,state FROM dsh.commerce_order_delivery_proofs WHERE order_id=$1 FOR UPDATE`, orderID).Scan(&proofHash, &proofState); errors.Is(err, sql.ErrNoRows) {
+		var proofHash, proofState, proofKeyID string
+		if err := tx.QueryRowContext(ctx, `SELECT code_verifier,state,code_key_id FROM dsh.commerce_order_delivery_proofs WHERE order_id=$1 FOR UPDATE`, orderID).Scan(&proofHash, &proofState, &proofKeyID); errors.Is(err, sql.ErrNoRows) {
 			return CaptainAssignment{}, false, ErrDeliveryProofInvalid
 		} else if err != nil {
 			return CaptainAssignment{}, false, err
 		}
-		if proofState != "PENDING" || len(deliveryProofCode) != 6 || subtle.ConstantTimeCompare([]byte(proofHash), []byte(HashDeliveryProofCode(orderID, deliveryProofCode))) != 1 {
+		if proofState != "PENDING" || !validDeliveryProofCode(deliveryProofCode) || !keys.VerifyProof(orderID, proofKeyID, proofHash, deliveryProofCode) {
 			return CaptainAssignment{}, false, ErrDeliveryProofInvalid
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_order_delivery_proofs SET state='VERIFIED',verified_by=$2,verified_at=clock_timestamp(),updated_at=clock_timestamp() WHERE order_id=$1 AND state='PENDING'`, orderID, captainActorID); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_order_delivery_proofs SET state='VERIFIED',code_ciphertext=NULL,code_verifier=NULL,code_key_id=NULL,verified_by=$2,verified_at=clock_timestamp(),updated_at=clock_timestamp() WHERE order_id=$1 AND state='PENDING'`, orderID, captainActorID); err != nil {
 			return CaptainAssignment{}, false, err
 		}
 	}
@@ -1256,30 +1426,47 @@ func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, ca
 		orderState = "DELIVERY_FAILED"
 	}
 	if result == "delivered" {
-		if fulfillmentMode != "BTHWANI_CAPTAIN" {
-			return CaptainAssignment{}, false, ErrOrderStateConflict
-		}
-		switch currentPaymentState {
-		case "REQUIRES_COLLECTION":
-			if !paymentIntentID.Valid || collectedAmountMinor <= 0 || collectedAmountMinor != paymentAmount {
+		switch fulfillmentMode {
+		case FulfillmentModeBthwaniCaptain:
+			switch currentPaymentState {
+			case "REQUIRES_COLLECTION":
+				if !paymentIntentID.Valid || collectedAmountMinor <= 0 || collectedAmountMinor != paymentAmount {
+					return CaptainAssignment{}, false, ErrPaymentStateConflict
+				}
+				var partnerActorID string
+				if err := tx.QueryRowContext(ctx, "SELECT partner_actor_id FROM dsh.stores WHERE id=$1", storeID).Scan(&partnerActorID); err != nil {
+					return CaptainAssignment{}, false, err
+				}
+				if strings.TrimSpace(partnerActorID) == "" {
+					return CaptainAssignment{}, false, ErrPaymentStateConflict
+				}
+				if err := enqueueFinancialHandoffTx(ctx, tx, FinancialHandoffOutbox{EffectType: "DELIVERY_SETTLEMENT", SourceRef: assignmentID, OrderID: orderID, PaymentIntentID: paymentIntentID.String, CaptainActorID: captainActorID, PartnerActorID: partnerActorID, AmountMinor: paymentAmount, IdempotencyKey: idempotencyKey, CorrelationID: correlationID, ActingActorID: captainActorID}); err != nil {
+					return CaptainAssignment{}, false, err
+				}
+			case "COLLECTED":
+				if collectedAmountMinor != 0 && collectedAmountMinor != paymentAmount {
+					return CaptainAssignment{}, false, ErrPaymentStateConflict
+				}
+			default:
+				return CaptainAssignment{}, false, ErrPaymentStateConflict
+			}
+		case FulfillmentModePartnerCaptain:
+			if currentPaymentState != "REQUIRES_COLLECTION" || !paymentIntentID.Valid || collectedAmountMinor <= 0 || collectedAmountMinor != paymentAmount {
 				return CaptainAssignment{}, false, ErrPaymentStateConflict
 			}
 			var partnerActorID string
-			if err := tx.QueryRowContext(ctx, "SELECT partner_actor_id FROM dsh.stores WHERE id=$1", storeID).Scan(&partnerActorID); err != nil {
+			if err := tx.QueryRowContext(ctx, "SELECT partner_actor_id FROM dsh.stores WHERE id=$1 FOR SHARE", storeID).Scan(&partnerActorID); err != nil {
 				return CaptainAssignment{}, false, err
 			}
 			if strings.TrimSpace(partnerActorID) == "" {
 				return CaptainAssignment{}, false, ErrPaymentStateConflict
 			}
-			if err := enqueueFinancialHandoffTx(ctx, tx, FinancialHandoffOutbox{EffectType: "DELIVERY_SETTLEMENT", SourceRef: assignmentID, OrderID: orderID, PaymentIntentID: paymentIntentID.String, CaptainActorID: captainActorID, PartnerActorID: partnerActorID, AmountMinor: paymentAmount, IdempotencyKey: idempotencyKey, CorrelationID: correlationID, ActingActorID: captainActorID}); err != nil {
-				return CaptainAssignment{}, false, err
-			}
-		case "COLLECTED":
-			if collectedAmountMinor != 0 && collectedAmountMinor != paymentAmount {
-				return CaptainAssignment{}, false, ErrPaymentStateConflict
+			if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_store_cash_handoffs(order_id,assignment_id,store_id,captain_actor_id,partner_actor_id,amount_minor,completion_idempotency_key)
+				VALUES($1,$2,$3,$4,$5,$6,$7)`, orderID, assignmentID, storeID, captainActorID, partnerActorID, paymentAmount, idempotencyKey); err != nil {
+				return CaptainAssignment{}, false, fmt.Errorf("record Store Captain cash custody: %w", err)
 			}
 		default:
-			return CaptainAssignment{}, false, ErrPaymentStateConflict
+			return CaptainAssignment{}, false, ErrOrderStateConflict
 		}
 	}
 	if result, err := tx.ExecContext(ctx, "UPDATE dsh.commerce_orders SET state=$2,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='IN_CUSTODY'", orderID, orderState); err != nil {
@@ -1293,8 +1480,10 @@ func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, ca
 		if err := consumeOrderInventoryTx(ctx, tx, orderID); err != nil {
 			return CaptainAssignment{}, false, err
 		}
-		if _, err := tx.ExecContext(ctx, "UPDATE dsh.captain_admissions SET availability_state='available',version=version+1,updated_at=clock_timestamp() WHERE actor_id=$1 AND state='eligible' AND availability_state='unavailable'", captainActorID); err != nil {
-			return CaptainAssignment{}, false, err
+		if fulfillmentMode == FulfillmentModeBthwaniCaptain {
+			if _, err := tx.ExecContext(ctx, "UPDATE dsh.captain_admissions SET availability_state='available',version=version+1,updated_at=clock_timestamp() WHERE actor_id=$1 AND state='eligible' AND availability_state='unavailable'", captainActorID); err != nil {
+				return CaptainAssignment{}, false, err
+			}
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_operation_idempotency(idempotency_key,request_hash,operation,order_id,assignment_id,result_version) VALUES($1,$2,'complete',$3,$4,$5)`, idempotencyKey, requestHash, orderID, assignmentID, assignment.Version+1); err != nil {
@@ -1337,13 +1526,14 @@ func RecoverCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID stri
 		}
 		return assignment, true, nil
 	}
-	var orderID, captainActorID, assignmentState, handoffState string
+	var orderID, captainActorID, assignmentState, handoffState, fulfillmentMode string
 	var version int
-	err = tx.QueryRowContext(ctx, `SELECT a.order_id,a.captain_actor_id,a.state,a.version,h.state
+	err = tx.QueryRowContext(ctx, `SELECT a.order_id,a.captain_actor_id,a.state,a.version,h.state,o.fulfillment_mode
 		FROM dsh.captain_assignments a
 		JOIN dsh.captain_handoffs h ON h.assignment_id=a.id
+		JOIN dsh.commerce_orders o ON o.id=a.order_id
 		WHERE a.id=$1
-		FOR UPDATE OF a,h`, strings.TrimSpace(assignmentID)).Scan(&orderID, &captainActorID, &assignmentState, &version, &handoffState)
+		FOR UPDATE OF a,h`, strings.TrimSpace(assignmentID)).Scan(&orderID, &captainActorID, &assignmentState, &version, &handoffState, &fulfillmentMode)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CaptainAssignment{}, false, ErrCaptainAssignmentNotFound
 	}
@@ -1369,24 +1559,28 @@ func RecoverCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID stri
 	if hasOtherActiveAssignment {
 		return CaptainAssignment{}, false, ErrCaptainCustodyConflict
 	}
-	var admissionID, admissionState, availabilityState string
-	var admissionVersion int
-	if err := tx.QueryRowContext(ctx, `SELECT id,state,availability_state,version FROM dsh.captain_admissions WHERE actor_id=$1 FOR UPDATE`, captainActorID).Scan(&admissionID, &admissionState, &availabilityState, &admissionVersion); errors.Is(err, sql.ErrNoRows) {
-		return CaptainAssignment{}, false, ErrCaptainNotEligible
-	} else if err != nil {
-		return CaptainAssignment{}, false, err
-	}
-	if admissionState != "eligible" {
-		return CaptainAssignment{}, false, ErrCaptainCustodyConflict
-	}
-	if availabilityState == "available" {
-		if err := tx.QueryRowContext(ctx, `UPDATE dsh.captain_admissions SET availability_state='unavailable',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND availability_state='available' RETURNING version`, admissionID).Scan(&admissionVersion); err != nil {
+	if fulfillmentMode == FulfillmentModeBthwaniCaptain {
+		var admissionID, admissionState, availabilityState string
+		var admissionVersion int
+		if err := tx.QueryRowContext(ctx, `SELECT id,state,availability_state,version FROM dsh.captain_admissions WHERE actor_id=$1 FOR UPDATE`, captainActorID).Scan(&admissionID, &admissionState, &availabilityState, &admissionVersion); errors.Is(err, sql.ErrNoRows) {
+			return CaptainAssignment{}, false, ErrCaptainNotEligible
+		} else if err != nil {
 			return CaptainAssignment{}, false, err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_admission_audit(event_type,idempotency_key,correlation_id,acting_actor_id,admission_id,actor_id,from_state,to_state,from_version,result_version,request_hash) VALUES('captain_availability_changed',$1,$2,$3,$4,$5,'available','unavailable',$6,$7,$8)`, idempotencyKey, correlationID, actingActorID, admissionID, captainActorID, admissionVersion-1, admissionVersion, requestHash); err != nil {
-			return CaptainAssignment{}, false, err
+		if admissionState != "eligible" {
+			return CaptainAssignment{}, false, ErrCaptainCustodyConflict
 		}
-	} else if availabilityState != "unavailable" {
+		if availabilityState == "available" {
+			if err := tx.QueryRowContext(ctx, `UPDATE dsh.captain_admissions SET availability_state='unavailable',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND availability_state='available' RETURNING version`, admissionID).Scan(&admissionVersion); err != nil {
+				return CaptainAssignment{}, false, err
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_admission_audit(event_type,idempotency_key,correlation_id,acting_actor_id,admission_id,actor_id,from_state,to_state,from_version,result_version,request_hash) VALUES('captain_availability_changed',$1,$2,$3,$4,$5,'available','unavailable',$6,$7,$8)`, idempotencyKey, correlationID, actingActorID, admissionID, captainActorID, admissionVersion-1, admissionVersion, requestHash); err != nil {
+				return CaptainAssignment{}, false, err
+			}
+		} else if availabilityState != "unavailable" {
+			return CaptainAssignment{}, false, ErrCaptainCustodyConflict
+		}
+	} else if fulfillmentMode != FulfillmentModePartnerCaptain {
 		return CaptainAssignment{}, false, ErrCaptainCustodyConflict
 	}
 	var updatedVersion int
@@ -1514,7 +1708,7 @@ func ReadCaptainDeliveryTask(ctx context.Context, db *sql.DB, assignmentID, capt
 	}
 	var task CaptainDeliveryTask
 	var pickupLatitude, pickupLongitude, destinationLatitude, destinationLongitude sql.NullFloat64
-	err = tx.QueryRowContext(ctx, `SELECT a.id,a.order_id,s.id,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' LIMIT 1),''),s.delivery_origin_latitude,s.delivery_origin_longitude,o.address_text,o.address_latitude,o.address_longitude,o.state,h.state,a.state,o.payment_method,o.payment_state,o.total_amount_minor,o.currency
+	err = tx.QueryRowContext(ctx, `SELECT a.id,a.order_id,s.id,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' LIMIT 1),''),s.delivery_origin_latitude,s.delivery_origin_longitude,o.address_text,o.address_latitude,o.address_longitude,o.state,h.state,a.state,o.payment_method,o.payment_state,o.total_amount_minor,o.currency,o.fulfillment_mode
 		FROM dsh.captain_assignments a
 		JOIN dsh.captain_handoffs h ON h.assignment_id=a.id
 		JOIN dsh.commerce_orders o ON o.id=a.order_id
@@ -1522,7 +1716,7 @@ func ReadCaptainDeliveryTask(ctx context.Context, db *sql.DB, assignmentID, capt
 		WHERE a.id=$1 AND a.captain_actor_id=$2 AND a.state <> 'reassigned'`, strings.TrimSpace(assignmentID), strings.TrimSpace(captainActorID)).Scan(
 		&task.AssignmentID, &task.OrderReference, &task.StoreID, &task.StoreName, &task.StoreProfileImageURI, &pickupLatitude, &pickupLongitude,
 		&task.CustomerAddressText, &destinationLatitude, &destinationLongitude, &task.OrderState, &task.HandoffState, &task.DeliveryState,
-		&task.PaymentMethod, &task.PaymentState, &task.AmountDueMinor, &task.Currency)
+		&task.PaymentMethod, &task.PaymentState, &task.AmountDueMinor, &task.Currency, &task.FulfillmentMode)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CaptainDeliveryTask{}, ErrCaptainDeliveryTaskNotFound
 	}
@@ -1647,7 +1841,7 @@ func CanonicalizeCaptainOffers(ctx context.Context, db *sql.DB, actorID string) 
 }
 
 func canonicalizeCaptainOffersTx(ctx context.Context, tx *sql.Tx, actorID string) error {
-	query := `SELECT id,order_id,captain_actor_id,version FROM dsh.captain_dispatch_offers WHERE state='offered' AND expires_at <= clock_timestamp()`
+	query := `SELECT id,order_id,captain_actor_id,COALESCE(source_store_id,''),version FROM dsh.captain_dispatch_offers WHERE state='offered' AND expires_at <= clock_timestamp()`
 	args := []any{}
 	if strings.TrimSpace(actorID) != "" {
 		query += " AND captain_actor_id=$1"
@@ -1662,12 +1856,13 @@ func canonicalizeCaptainOffersTx(ctx context.Context, tx *sql.Tx, actorID string
 		ID             string
 		OrderID        string
 		CaptainActorID string
+		SourceStoreID  string
 		Version        int
 	}
 	offers := make([]expiredOffer, 0)
 	for rows.Next() {
 		var offer expiredOffer
-		if err := rows.Scan(&offer.ID, &offer.OrderID, &offer.CaptainActorID, &offer.Version); err != nil {
+		if err := rows.Scan(&offer.ID, &offer.OrderID, &offer.CaptainActorID, &offer.SourceStoreID, &offer.Version); err != nil {
 			_ = rows.Close()
 			return err
 		}
@@ -1689,8 +1884,10 @@ func canonicalizeCaptainOffersTx(ctx context.Context, tx *sql.Tx, actorID string
 		}
 		key := "captain-timeout:" + offer.ID
 		hash := hashFacts("captain-offer-expired", offer.ID)
-		if err := restoreCaptainAvailabilityTx(ctx, tx, offer.CaptainActorID, key, hash, "system:captain-timeout", key); err != nil {
-			return err
+		if offer.SourceStoreID == "" {
+			if err := restoreCaptainAvailabilityTx(ctx, tx, offer.CaptainActorID, key, hash, "system:captain-timeout", key); err != nil {
+				return err
+			}
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,offer_id,captain_actor_id,from_state,to_state,result_version,request_hash) VALUES('dispatch_offer_expired',$1,$2,$3,$4,$5,$6,'offered','expired',$7,$8) ON CONFLICT (event_type,idempotency_key) DO NOTHING`, key, key, "system:captain-timeout", offer.OrderID, offer.ID, offer.CaptainActorID, resultVersion, hash); err != nil {
 			return err
@@ -1700,7 +1897,7 @@ func canonicalizeCaptainOffersTx(ctx context.Context, tx *sql.Tx, actorID string
 		if err := tx.QueryRowContext(ctx, `SELECT payment_intent_id,payment_state FROM dsh.commerce_orders WHERE id=$1`, offer.OrderID).Scan(&paymentIntentID, &paymentState); err != nil {
 			return err
 		}
-		if paymentIntentID.Valid && paymentState == "REQUIRES_COLLECTION" {
+		if offer.SourceStoreID == "" && paymentIntentID.Valid && paymentState == "REQUIRES_COLLECTION" {
 			if err := enqueueFinancialHandoffTx(ctx, tx, FinancialHandoffOutbox{EffectType: "CAPTAIN_COD_RELEASE", SourceRef: offer.ID, OrderID: offer.OrderID, PaymentIntentID: paymentIntentID.String, CaptainActorID: offer.CaptainActorID, IdempotencyKey: key, CorrelationID: key, ActingActorID: "system:captain-timeout"}); err != nil {
 				return err
 			}
@@ -1709,7 +1906,7 @@ func canonicalizeCaptainOffersTx(ctx context.Context, tx *sql.Tx, actorID string
 	return nil
 }
 
-func captainOperationReplayTx(ctx context.Context, tx *sql.Tx, idempotencyKey, requestHash, operation string) (*captainOperation, error) {
+func captainOperationReplayTx(ctx context.Context, tx *sql.Tx, idempotencyKey, requestHash, operation string, hashMatchers ...func(string) bool) (*captainOperation, error) {
 	var storedHash, storedOperation string
 	var value captainOperation
 	err := tx.QueryRowContext(ctx, `SELECT request_hash,operation,COALESCE(admission_id,''),COALESCE(order_id,''),COALESCE(offer_id,''),COALESCE(assignment_id,''),result_version FROM dsh.captain_operation_idempotency WHERE idempotency_key=$1 FOR UPDATE`, idempotencyKey).Scan(&storedHash, &storedOperation, &value.AdmissionID, &value.OrderID, &value.OfferID, &value.AssignmentID, &value.ResultVersion)
@@ -1719,7 +1916,16 @@ func captainOperationReplayTx(ctx context.Context, tx *sql.Tx, idempotencyKey, r
 	if err != nil {
 		return nil, err
 	}
-	if storedHash != requestHash || storedOperation != operation {
+	hashMatches := storedHash == requestHash
+	if !hashMatches {
+		for _, matcher := range hashMatchers {
+			if matcher != nil && matcher(storedHash) {
+				hashMatches = true
+				break
+			}
+		}
+	}
+	if !hashMatches || storedOperation != operation {
 		return nil, ErrCaptainOperationConflict
 	}
 	return &value, nil
@@ -1780,11 +1986,11 @@ func readCaptainOfferTx(ctx context.Context, source interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, where string, args ...any) (CaptainOffer, error) {
 	var item CaptainOffer
-	err := source.QueryRowContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' LIMIT 1),''),o.address_text,o.total_amount_minor,o.currency,o.payment_method,o.payment_state
+	err := source.QueryRowContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,COALESCE(offer.source_store_id,''),offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' LIMIT 1),''),o.address_text,o.total_amount_minor,o.currency,o.payment_method,o.payment_state
 		FROM dsh.captain_dispatch_offers offer
 		JOIN dsh.commerce_orders o ON o.id=offer.order_id
 		JOIN dsh.stores s ON s.id=o.store_id
-		WHERE `+where, args...).Scan(&item.ID, &item.OrderID, &item.CaptainActorID, &item.State, &item.ExpiresAt, &item.Version, &item.CreatedAt, &item.UpdatedAt, &item.StoreName, &item.StoreProfileImageURI, &item.CustomerAddressText, &item.AmountDueMinor, &item.Currency, &item.PaymentMethod, &item.PaymentState)
+		WHERE `+where, args...).Scan(&item.ID, &item.OrderID, &item.CaptainActorID, &item.SourceStoreID, &item.State, &item.ExpiresAt, &item.Version, &item.CreatedAt, &item.UpdatedAt, &item.StoreName, &item.StoreProfileImageURI, &item.CustomerAddressText, &item.AmountDueMinor, &item.Currency, &item.PaymentMethod, &item.PaymentState)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CaptainOffer{}, ErrCaptainOfferNotFound
 	}

@@ -91,10 +91,17 @@ func TestWithinRefreshRaceGraceAcceptsRecentHistoryOnly(t *testing.T) {
 func TestDerivedRefreshPairIsStablePerSessionGenerationAndInstance(t *testing.T) {
 	service := &Service{refreshSecret: []byte("01234567890123456789012345678901")}
 	expires := time.Date(2026, time.January, 1, 12, 15, 0, 0, time.UTC)
-	first := service.derivedRefreshPair("session-1", "actor-1", "client", "device-hash-1", 2, expires)
-	retry := service.derivedRefreshPair("session-1", "actor-1", "client", "device-hash-1", 2, expires)
-	next := service.derivedRefreshPair("session-1", "actor-1", "client", "device-hash-1", 3, expires)
-	otherDevice := service.derivedRefreshPair("session-1", "actor-1", "client", "device-hash-2", 2, expires)
+	derivePair := func(deviceHash string, version int) domain.TokenPair {
+		pair, err := service.derivedRefreshPair(context.Background(), nil, "session-1", "actor-1", "client", deviceHash, version, expires)
+		if err != nil {
+			t.Fatalf("derive refresh pair: %v", err)
+		}
+		return pair
+	}
+	first := derivePair("device-hash-1", 2)
+	retry := derivePair("device-hash-1", 2)
+	next := derivePair("device-hash-1", 3)
+	otherDevice := derivePair("device-hash-2", 2)
 
 	if first.AccessToken != retry.AccessToken || first.RefreshToken != retry.RefreshToken {
 		t.Fatal("reconciliation did not reproduce the same token pair")
@@ -164,20 +171,23 @@ func TestRoleSessionReadyRequiresCanonicalEnrollmentFacts(t *testing.T) {
 	}
 }
 
-func TestSelectDevelopmentSessionActorFailsClosedOnAmbiguity(t *testing.T) {
-	unready := roleSessionReadiness{enabled: true, securityEnabled: true, activated: true}
-	ready := roleSessionReadiness{enabled: true, securityEnabled: true, activated: true, passkeyCredential: true}
+func TestNewNormalizesDevelopmentActorConfiguration(t *testing.T) {
+	service := New(nil, []byte("01234567890123456789012345678901"), true, map[string]string{
+		" Partner ": " act_partner_dev ",
+		"client":    "   ",
+	})
+	if got := service.developmentActorIDs["partner"]; got != "act_partner_dev" {
+		t.Fatalf("partner development actor = %q, want act_partner_dev", got)
+	}
+	if _, exists := service.developmentActorIDs["client"]; exists {
+		t.Fatal("blank development actor configuration was retained")
+	}
+}
 
-	selected, err := selectDevelopmentSessionActor("operator", "", "act_unready", unready)
-	if err != nil || selected != "" {
-		t.Fatalf("unready candidate selected=%q err=%v, want empty selection without error", selected, err)
-	}
-	selected, err = selectDevelopmentSessionActor("operator", selected, "act_first", ready)
-	if err != nil || selected != "act_first" {
-		t.Fatalf("single ready candidate selected=%q err=%v, want act_first", selected, err)
-	}
-	_, err = selectDevelopmentSessionActor("operator", selected, "act_second", ready)
-	if !errors.Is(err, domain.ErrConflict) {
-		t.Fatalf("second ready candidate error=%v, want conflict", err)
+func TestCreateDevelopmentSessionRequiresConfiguredActorBeforeDatabaseAccess(t *testing.T) {
+	service := &Service{development: true, developmentActorIDs: map[string]string{}}
+	_, err := service.CreateDevelopment(context.Background(), "partner", "development-partner-instance")
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("CreateDevelopment() error = %v, want not found when no development actor is configured", err)
 	}
 }

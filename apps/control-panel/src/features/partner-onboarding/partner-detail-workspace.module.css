@@ -1,0 +1,42 @@
+/* Compact lazy detail and relationship views for partner operations. */
+:global(.partner-detail-workspace) { display: grid; gap: 12px; }
+:global(.partner-detail-page-heading) { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+:global(.partner-detail-page-heading > div) { flex: 1 1 auto; min-width: 0; }
+:global(.partner-detail-page-heading .button) { flex: 0 0 auto; width: auto; min-width: 130px; }
+:global(.partner-detail-page-heading h1) { margin-bottom: 0; }
+:global(.partner-detail-page-heading .eyebrow) { margin-bottom: 4px; }
+:global(.partner-detail-tabs) { display: flex; gap: 4px; border-bottom: 1px solid var(--border-subtle); }
+:global(.partner-detail-tabs button) { min-height: 42px; padding: 8px 16px; border: 0; border-bottom: 3px solid transparent; background: transparent; color: var(--text-muted); font: inherit; font-weight: 750; cursor: pointer; }
+:global(.partner-detail-tabs button[aria-current="page"]) { border-bottom-color: var(--interactive); color: var(--text-primary); }
+:global(.partner-profile-grid) { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(270px, .8fr); align-items: start; gap: 12px; }
+:global(.partner-detail-section) { display: grid; align-content: start; gap: 12px; min-width: 0; padding: 16px; border: 1px solid var(--border-subtle); border-radius: 14px; background: var(--surface-base); }
+:global(.partner-detail-section h2) { margin: 0; font-size: 18px; }
+:global(.partner-detail-section-heading) { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+:global(.partner-detail-section-heading > div) { flex: 1 1 auto; min-width: 0; }
+:global(.partner-detail-section-heading .button) { flex: 0 0 auto; width: auto; }
+:global(.partner-detail-section-heading h2) { margin: 0; }
+:global(.partner-detail-section-heading .eyebrow) { margin: 0 0 4px; }
+:global(.partner-detail-facts) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
+:global(.partner-detail-facts > div) { display: grid; gap: 4px; min-width: 0; padding: 10px; border-radius: 10px; background: var(--surface-muted); }
+:global(.partner-detail-facts dt) { color: var(--text-muted); font-size: 12px; font-weight: 750; }
+:global(.partner-detail-facts dd) { margin: 0; overflow-wrap: anywhere; font-weight: 750; }
+:global(.partner-detail-facts a), :global(.partner-detail-stores-table a) { color: var(--interactive-text); text-underline-offset: 3px; }
+:global(.partner-status-action) { gap: 10px; }
+:global(.partner-status-action h2) { margin-bottom: 4px; }
+:global(.partner-status-action p) { margin: 0; }
+:global(.partner-status-action .field-label) { margin: 0; }
+:global(.partner-status-action .button) { justify-self: start; }
+:global(.partner-stores-table-wrap) { overflow: auto; border: 1px solid var(--border-subtle); border-radius: 12px; }
+:global(.partner-detail-stores-table) { min-width: 650px; }
+:global(.partner-detail-stores-table th), :global(.partner-detail-stores-table td) { padding: 10px 12px; }
+
+@media (max-width: 800px) {
+  :global(.partner-profile-grid) { grid-template-columns: 1fr; }
+}
+@media (max-width: 620px) {
+  :global(.partner-detail-page-heading) { align-items: flex-start; flex-direction: column; }
+  :global(.partner-detail-page-heading .button) { align-self: flex-start; }
+  :global(.partner-detail-section) { padding: 12px; }
+  :global(.partner-detail-section-heading) { align-items: flex-start; flex-direction: column; }
+  :global(.partner-detail-facts) { grid-template-columns: 1fr; }
+}

@@ -15,13 +15,14 @@ import (
 )
 
 var (
-	ErrNotFound            = errors.New("payment intent was not found")
-	ErrIdempotencyConflict = errors.New("payment idempotency key was already used with different facts")
-	ErrIntentExists        = errors.New("payment intent already exists for this external reference")
-	ErrVersionConflict     = domain.ErrVersionConflict
-	ErrStateConflict       = domain.ErrStateConflict
-	ErrInvalidInput        = domain.ErrInvalidInput
-	ErrAmountMismatch      = domain.ErrAmountMismatch
+	ErrNotFound                   = errors.New("payment intent was not found")
+	ErrIdempotencyConflict        = errors.New("payment idempotency key was already used with different facts")
+	ErrIntentExists               = errors.New("payment intent already exists for this external reference")
+	ErrVersionConflict            = domain.ErrVersionConflict
+	ErrStateConflict              = domain.ErrStateConflict
+	ErrInvalidInput               = domain.ErrInvalidInput
+	ErrAmountMismatch             = domain.ErrAmountMismatch
+	ErrExternalReferenceAmbiguous = errors.New("payment external reference is ambiguous")
 )
 
 type PaymentIntentRecord struct {
@@ -77,7 +78,7 @@ func HashCreateRequest(input CreatePaymentIntentInput) string {
 	parts := []string{"create", input.ExternalReference, input.PayerActorID, input.OrderID, fmt.Sprintf("%d", input.AmountMinor), input.Currency, input.Method}
 	if input.CustomerPaymentAllocation != nil {
 		allocation := input.CustomerPaymentAllocation
-		parts = append(parts, allocation.OrderID, allocation.Currency, fmt.Sprintf("%d", allocation.SubtotalMinor), fmt.Sprintf("%d", allocation.DeliveryFeeMinor), fmt.Sprintf("%d", allocation.DiscountMinor), fmt.Sprintf("%d", allocation.InternalBalanceAmountMinor), fmt.Sprintf("%d", allocation.CashAmountMinor), fmt.Sprintf("%d", allocation.CustomerPayableMinor), allocation.PolicyVersion)
+		parts = append(parts, allocation.OrderID, allocation.StoreID, allocation.PartnerActorID, allocation.FulfillmentMode, allocation.Currency, fmt.Sprintf("%d", allocation.SubtotalMinor), fmt.Sprintf("%d", allocation.DeliveryFeeMinor), fmt.Sprintf("%d", allocation.DiscountMinor), fmt.Sprintf("%d", allocation.InternalBalanceAmountMinor), fmt.Sprintf("%d", allocation.CashAmountMinor), fmt.Sprintf("%d", allocation.CustomerPayableMinor), allocation.PolicyVersion)
 	}
 	return hashFacts(parts...)
 }
@@ -100,10 +101,16 @@ func CreatePaymentIntent(ctx context.Context, db *sql.DB, input CreatePaymentInt
 	input.CorrelationID = strings.TrimSpace(input.CorrelationID)
 	if input.CustomerPaymentAllocation != nil {
 		input.CustomerPaymentAllocation.OrderID = strings.TrimSpace(input.CustomerPaymentAllocation.OrderID)
+		input.CustomerPaymentAllocation.StoreID = strings.TrimSpace(input.CustomerPaymentAllocation.StoreID)
+		input.CustomerPaymentAllocation.PartnerActorID = strings.TrimSpace(input.CustomerPaymentAllocation.PartnerActorID)
+		input.CustomerPaymentAllocation.FulfillmentMode = strings.TrimSpace(input.CustomerPaymentAllocation.FulfillmentMode)
 		input.CustomerPaymentAllocation.Currency = strings.TrimSpace(input.CustomerPaymentAllocation.Currency)
 		input.CustomerPaymentAllocation.PolicyVersion = strings.TrimSpace(input.CustomerPaymentAllocation.PolicyVersion)
 	}
 	if db == nil || domain.ValidateCreate(input.ExternalReference, input.PayerActorID, input.Currency, input.Method, input.AmountMinor) != nil || (input.OrderID != "" && (input.CustomerPaymentAllocation == nil || input.CustomerPaymentAllocation.OrderID != input.OrderID)) || (input.CustomerPaymentAllocation != nil && validateCustomerPaymentAllocation(*input.CustomerPaymentAllocation) != nil) || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
+		return PaymentIntentRecord{}, false, ErrInvalidInput
+	}
+	if input.CustomerPaymentAllocation != nil && (input.AmountMinor != input.CustomerPaymentAllocation.CustomerPayableMinor || (input.CustomerPaymentAllocation.FulfillmentMode == "BTHWANI_CAPTAIN" && input.Method != domain.MethodCashOnDelivery) || (input.CustomerPaymentAllocation.FulfillmentMode != "BTHWANI_CAPTAIN" && input.Method != domain.MethodCashAtStore)) {
 		return PaymentIntentRecord{}, false, ErrInvalidInput
 	}
 	requestHash := HashCreateRequest(input)
@@ -113,6 +120,9 @@ func CreatePaymentIntent(ctx context.Context, db *sql.DB, input CreatePaymentInt
 	}
 	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:create:"+input.IdempotencyKey); err != nil {
+		return PaymentIntentRecord{}, false, err
+	}
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:payment-reference:"+input.ExternalReference); err != nil {
 		return PaymentIntentRecord{}, false, err
 	}
 	var storedHash, existingID string
@@ -170,6 +180,55 @@ func ReadPaymentIntent(ctx context.Context, db *sql.DB, intentID string) (Paymen
 		return PaymentIntentRecord{}, ErrInvalidInput
 	}
 	return readPaymentIntent(ctx, db, strings.TrimSpace(intentID))
+}
+
+func ReadPaymentIntentByExternalReference(ctx context.Context, db *sql.DB, externalReference string) (PaymentIntentRecord, error) {
+	externalReference = strings.TrimSpace(externalReference)
+	if db == nil || externalReference == "" || len(externalReference) > 128 {
+		return PaymentIntentRecord{}, ErrInvalidInput
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return PaymentIntentRecord{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:payment-reference:"+externalReference); err != nil {
+		return PaymentIntentRecord{}, err
+	}
+	rows, err := tx.QueryContext(ctx, "SELECT id FROM wlt.payment_intents WHERE external_reference=$1 ORDER BY method LIMIT 2", externalReference)
+	if err != nil {
+		return PaymentIntentRecord{}, err
+	}
+	intentIDs := make([]string, 0, 2)
+	for rows.Next() {
+		var intentID string
+		if err := rows.Scan(&intentID); err != nil {
+			_ = rows.Close()
+			return PaymentIntentRecord{}, err
+		}
+		intentIDs = append(intentIDs, intentID)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return PaymentIntentRecord{}, err
+	}
+	if err := rows.Close(); err != nil {
+		return PaymentIntentRecord{}, err
+	}
+	if len(intentIDs) == 0 {
+		return PaymentIntentRecord{}, ErrNotFound
+	}
+	if len(intentIDs) != 1 {
+		return PaymentIntentRecord{}, ErrExternalReferenceAmbiguous
+	}
+	intent, err := readPaymentIntent(ctx, tx, intentIDs[0])
+	if err != nil {
+		return PaymentIntentRecord{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return PaymentIntentRecord{}, err
+	}
+	return intent, nil
 }
 
 func CollectPaymentIntent(ctx context.Context, db *sql.DB, input CollectPaymentIntentInput) (PaymentIntentRecord, bool, error) {

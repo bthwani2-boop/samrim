@@ -19,28 +19,30 @@ var (
 )
 
 type PartnerFinancialProfileRecord struct {
-	ID                string
-	JoiningCaseID     string
-	PartnerActorID    string
-	Origin            string
-	CommissionRateBps int
-	SettlementPeriod  string
-	RoundingUnitMinor int64
-	State             string
-	Version           int
-	ActivatedAt       *time.Time
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	ID                 string
+	JoiningCaseID      string
+	PartnerActorID     string
+	Origin             string
+	CommissionRateBps  int
+	SettlementPeriod   string
+	TermsPolicyVersion string
+	RoundingUnitMinor  int64
+	State              string
+	Version            int
+	ActivatedAt        *time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 type PreparePartnerFinancialProfileInput struct {
-	JoiningCaseID     string
-	PartnerActorID    string
-	Origin            string
-	CommissionRateBps int
-	SettlementPeriod  string
-	IdempotencyKey    string
-	CorrelationID     string
+	JoiningCaseID      string
+	PartnerActorID     string
+	Origin             string
+	CommissionRateBps  int
+	SettlementPeriod   string
+	TermsPolicyVersion string
+	IdempotencyKey     string
+	CorrelationID      string
 }
 
 type ActivatePartnerFinancialProfileInput struct {
@@ -52,7 +54,10 @@ type ActivatePartnerFinancialProfileInput struct {
 }
 
 func HashPreparePartnerFinancialProfile(input PreparePartnerFinancialProfileInput) string {
-	return hashFacts("partner-financial-profile-prepare", strings.TrimSpace(input.JoiningCaseID), strings.TrimSpace(input.PartnerActorID), strings.TrimSpace(input.Origin), fmt.Sprintf("%d", input.CommissionRateBps), strings.TrimSpace(input.SettlementPeriod))
+	if strings.TrimSpace(input.TermsPolicyVersion) == "" {
+		return hashFacts("partner-financial-profile-prepare", strings.TrimSpace(input.JoiningCaseID), strings.TrimSpace(input.PartnerActorID), strings.TrimSpace(input.Origin), fmt.Sprintf("%d", input.CommissionRateBps), strings.TrimSpace(input.SettlementPeriod))
+	}
+	return hashFacts("partner-financial-profile-prepare", strings.TrimSpace(input.JoiningCaseID), strings.TrimSpace(input.PartnerActorID), strings.TrimSpace(input.Origin), fmt.Sprintf("%d", input.CommissionRateBps), strings.TrimSpace(input.SettlementPeriod), strings.TrimSpace(input.TermsPolicyVersion))
 }
 
 func HashActivatePartnerFinancialProfile(input ActivatePartnerFinancialProfileInput) string {
@@ -64,9 +69,10 @@ func PreparePartnerFinancialProfile(ctx context.Context, db *sql.DB, input Prepa
 	input.PartnerActorID = strings.TrimSpace(input.PartnerActorID)
 	input.Origin = strings.TrimSpace(input.Origin)
 	input.SettlementPeriod = strings.TrimSpace(input.SettlementPeriod)
+	input.TermsPolicyVersion = strings.TrimSpace(input.TermsPolicyVersion)
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
 	input.CorrelationID = strings.TrimSpace(input.CorrelationID)
-	if db == nil || domain.ValidateFinancialProfile(input.JoiningCaseID, input.PartnerActorID, input.Origin, input.SettlementPeriod, input.CommissionRateBps) != nil || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
+	if db == nil || domain.ValidateFinancialProfile(input.JoiningCaseID, input.PartnerActorID, input.Origin, input.SettlementPeriod, input.CommissionRateBps) != nil || (input.TermsPolicyVersion != "" && !strings.HasPrefix(input.TermsPolicyVersion, "partner-financial-terms:v")) || len(input.TermsPolicyVersion) > 128 || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
 		return PartnerFinancialProfileRecord{}, false, domain.ErrFinancialProfileInvalidInput
 	}
 	requestHash := HashPreparePartnerFinancialProfile(input)
@@ -109,10 +115,10 @@ func PreparePartnerFinancialProfile(ctx context.Context, db *sql.DB, input Prepa
 	if err != nil {
 		return PartnerFinancialProfileRecord{}, false, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.partner_financial_profiles(id,joining_case_id,partner_actor_id,origin,commission_rate_bps,settlement_period,idempotency_key,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, profileID, input.JoiningCaseID, input.PartnerActorID, input.Origin, input.CommissionRateBps, input.SettlementPeriod, input.IdempotencyKey, requestHash); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.partner_financial_profiles(id,joining_case_id,partner_actor_id,origin,commission_rate_bps,settlement_period,idempotency_key,request_hash,terms_policy_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, profileID, input.JoiningCaseID, input.PartnerActorID, input.Origin, input.CommissionRateBps, input.SettlementPeriod, input.IdempotencyKey, requestHash, input.TermsPolicyVersion); err != nil {
 		return PartnerFinancialProfileRecord{}, false, err
 	}
-	if err := insertFinancialProfileEvent(ctx, tx, profileID, "PROFILE_PREPARED", input.IdempotencyKey, requestHash, input.CorrelationID, nil, "", domain.ProfilePendingBinding, 1, input.CommissionRateBps, input.SettlementPeriod); err != nil {
+	if err := insertFinancialProfileEvent(ctx, tx, profileID, "PROFILE_PREPARED", input.IdempotencyKey, requestHash, input.CorrelationID, nil, "", domain.ProfilePendingBinding, 1, input.CommissionRateBps, input.SettlementPeriod, input.TermsPolicyVersion); err != nil {
 		return PartnerFinancialProfileRecord{}, false, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -158,7 +164,7 @@ func ActivatePartnerFinancialProfile(ctx context.Context, db *sql.DB, input Acti
 		return PartnerFinancialProfileRecord{}, false, err
 	}
 	var current PartnerFinancialProfileRecord
-	if err := scanPartnerFinancialProfile(tx.QueryRowContext(ctx, `SELECT id,joining_case_id,partner_actor_id,origin,commission_rate_bps,settlement_period,rounding_unit_minor,state,version,activated_at,created_at,updated_at FROM wlt.partner_financial_profiles WHERE id=$1 FOR UPDATE`, input.ProfileID), &current); errors.Is(err, sql.ErrNoRows) {
+	if err := scanPartnerFinancialProfile(tx.QueryRowContext(ctx, `SELECT id,joining_case_id,partner_actor_id,origin,commission_rate_bps,settlement_period,rounding_unit_minor,state,version,activated_at,created_at,updated_at,COALESCE(terms_policy_version,'') FROM wlt.partner_financial_profiles WHERE id=$1 FOR UPDATE`, input.ProfileID), &current); errors.Is(err, sql.ErrNoRows) {
 		return PartnerFinancialProfileRecord{}, false, ErrFinancialProfileNotFound
 	} else if err != nil {
 		return PartnerFinancialProfileRecord{}, false, err
@@ -175,7 +181,7 @@ func ActivatePartnerFinancialProfile(ctx context.Context, db *sql.DB, input Acti
 	if _, err := tx.ExecContext(ctx, `UPDATE wlt.partner_financial_profiles SET state=$2,version=version+1,activated_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1 AND version=$3`, input.ProfileID, domain.ProfileActive, input.ExpectedVersion); err != nil {
 		return PartnerFinancialProfileRecord{}, false, err
 	}
-	if err := insertFinancialProfileEvent(ctx, tx, input.ProfileID, "PROFILE_ACTIVATED", input.IdempotencyKey, requestHash, input.CorrelationID, &input.ActorID, current.State, domain.ProfileActive, current.Version+1, current.CommissionRateBps, current.SettlementPeriod); err != nil {
+	if err := insertFinancialProfileEvent(ctx, tx, input.ProfileID, "PROFILE_ACTIVATED", input.IdempotencyKey, requestHash, input.CorrelationID, &input.ActorID, current.State, domain.ProfileActive, current.Version+1, current.CommissionRateBps, current.SettlementPeriod, current.TermsPolicyVersion); err != nil {
 		return PartnerFinancialProfileRecord{}, false, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -196,7 +202,7 @@ func readPartnerFinancialProfile(ctx context.Context, source interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, profileID string) (PartnerFinancialProfileRecord, error) {
 	var profile PartnerFinancialProfileRecord
-	err := scanPartnerFinancialProfile(source.QueryRowContext(ctx, `SELECT id,joining_case_id,partner_actor_id,origin,commission_rate_bps,settlement_period,rounding_unit_minor,state,version,activated_at,created_at,updated_at FROM wlt.partner_financial_profiles WHERE id=$1`, profileID), &profile)
+	err := scanPartnerFinancialProfile(source.QueryRowContext(ctx, `SELECT id,joining_case_id,partner_actor_id,origin,commission_rate_bps,settlement_period,rounding_unit_minor,state,version,activated_at,created_at,updated_at,COALESCE(terms_policy_version,'') FROM wlt.partner_financial_profiles WHERE id=$1`, profileID), &profile)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PartnerFinancialProfileRecord{}, ErrFinancialProfileNotFound
 	}
@@ -205,7 +211,7 @@ func readPartnerFinancialProfile(ctx context.Context, source interface {
 
 func scanPartnerFinancialProfile(row rowScanner, profile *PartnerFinancialProfileRecord) error {
 	var activatedAt sql.NullTime
-	err := row.Scan(&profile.ID, &profile.JoiningCaseID, &profile.PartnerActorID, &profile.Origin, &profile.CommissionRateBps, &profile.SettlementPeriod, &profile.RoundingUnitMinor, &profile.State, &profile.Version, &activatedAt, &profile.CreatedAt, &profile.UpdatedAt)
+	err := row.Scan(&profile.ID, &profile.JoiningCaseID, &profile.PartnerActorID, &profile.Origin, &profile.CommissionRateBps, &profile.SettlementPeriod, &profile.RoundingUnitMinor, &profile.State, &profile.Version, &activatedAt, &profile.CreatedAt, &profile.UpdatedAt, &profile.TermsPolicyVersion)
 	if err != nil {
 		return err
 	}
@@ -216,7 +222,7 @@ func scanPartnerFinancialProfile(row rowScanner, profile *PartnerFinancialProfil
 	return nil
 }
 
-func insertFinancialProfileEvent(ctx context.Context, tx *sql.Tx, profileID, eventType, idempotencyKey, requestHash, correlationID string, actorID *string, fromState, toState string, version, commissionRateBps int, settlementPeriod string) error {
-	_, err := tx.ExecContext(ctx, `INSERT INTO wlt.partner_financial_profile_events(profile_id,event_type,idempotency_key,request_hash,correlation_id,actor_id,from_state,to_state,version,commission_rate_bps,settlement_period) VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,''),$8,$9,$10,$11)`, profileID, eventType, idempotencyKey, requestHash, correlationID, actorID, fromState, toState, version, commissionRateBps, settlementPeriod)
+func insertFinancialProfileEvent(ctx context.Context, tx *sql.Tx, profileID, eventType, idempotencyKey, requestHash, correlationID string, actorID *string, fromState, toState string, version, commissionRateBps int, settlementPeriod, termsPolicyVersion string) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO wlt.partner_financial_profile_events(profile_id,event_type,idempotency_key,request_hash,correlation_id,actor_id,from_state,to_state,version,commission_rate_bps,settlement_period,terms_policy_version) VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,''),$8,$9,$10,$11,$12)`, profileID, eventType, idempotencyKey, requestHash, correlationID, actorID, fromState, toState, version, commissionRateBps, settlementPeriod, termsPolicyVersion)
 	return err
 }

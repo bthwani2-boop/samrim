@@ -38,6 +38,7 @@ type MultiStoreCheckoutChildRecord struct {
 	ChildIndex      int
 	CartID          string
 	StoreID         string
+	StoreName       string
 	AddressID       string
 	CartVersion     int
 	FulfillmentMode string
@@ -79,26 +80,39 @@ func HashMultiStoreCheckoutCancelRequest(checkoutID string, expectedVersion int)
 }
 
 const multiStoreCheckoutSelect = `id,client_actor_id,state,version,child_count,successful_child_count,failed_child_count,created_at,updated_at`
-const multiStoreCheckoutChildSelect = `id,child_index,cart_id,store_id,address_id,cart_version,fulfillment_mode,COALESCE(promotion_code,''),COALESCE(order_id,''),state,COALESCE(failure_code,''),COALESCE(failure_message,''),version,created_at,updated_at`
+const multiStoreCheckoutChildSelect = `c.id,c.child_index,c.cart_id,c.store_id,s.name,c.address_id,c.cart_version,c.fulfillment_mode,COALESCE(c.promotion_code,''),COALESCE(c.order_id,''),c.state,COALESCE(c.failure_code,''),COALESCE(c.failure_message,''),c.version,c.created_at,c.updated_at`
 
-func CreateMultiStoreCheckout(ctx context.Context, db *sql.DB, input MultiStoreCheckoutInput, idempotencyKey, requestHash string) (MultiStoreCheckoutRecord, bool, error) {
-	if db == nil || strings.TrimSpace(input.ID) == "" || strings.TrimSpace(input.ClientActorID) == "" || len(input.Children) < 2 || len(input.Children) > 10 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" {
-		return MultiStoreCheckoutRecord{}, false, ErrMultiStoreCheckoutInvalid
+func validateMultiStoreCheckoutChildren(children []MultiStoreCheckoutChildInput) error {
+	if len(children) < 2 || len(children) > 10 {
+		return ErrMultiStoreCheckoutInvalid
 	}
-	seenCarts := make(map[string]struct{}, len(input.Children))
-	seenStores := make(map[string]struct{}, len(input.Children))
-	for _, child := range input.Children {
+	seenCarts := make(map[string]struct{}, len(children))
+	seenStores := make(map[string]struct{}, len(children))
+	for _, child := range children {
 		cartID, storeID, addressID := strings.TrimSpace(child.CartID), strings.TrimSpace(child.StoreID), strings.TrimSpace(child.AddressID)
-		if cartID == "" || storeID == "" || addressID == "" || child.CartVersion < 1 || strings.TrimSpace(child.FulfillmentMode) == "" {
-			return MultiStoreCheckoutRecord{}, false, ErrMultiStoreCheckoutInvalid
+		mode := strings.TrimSpace(child.FulfillmentMode)
+		pickup := mode == "CUSTOMER_PICKUP"
+		delivery := mode == "BTHWANI_CAPTAIN" || mode == "PARTNER_CAPTAIN"
+		if cartID == "" || storeID == "" || child.CartVersion < 1 || (!pickup && !delivery) || (pickup && addressID != "") || (delivery && addressID == "") {
+			return ErrMultiStoreCheckoutInvalid
 		}
 		if _, exists := seenCarts[cartID]; exists {
-			return MultiStoreCheckoutRecord{}, false, ErrMultiStoreCheckoutInvalid
+			return ErrMultiStoreCheckoutInvalid
 		}
 		if _, exists := seenStores[storeID]; exists {
-			return MultiStoreCheckoutRecord{}, false, ErrMultiStoreCheckoutInvalid
+			return ErrMultiStoreCheckoutInvalid
 		}
 		seenCarts[cartID], seenStores[storeID] = struct{}{}, struct{}{}
+	}
+	return nil
+}
+
+func CreateMultiStoreCheckout(ctx context.Context, db *sql.DB, input MultiStoreCheckoutInput, idempotencyKey, requestHash string) (MultiStoreCheckoutRecord, bool, error) {
+	if db == nil || strings.TrimSpace(input.ID) == "" || strings.TrimSpace(input.ClientActorID) == "" || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" {
+		return MultiStoreCheckoutRecord{}, false, ErrMultiStoreCheckoutInvalid
+	}
+	if err := validateMultiStoreCheckoutChildren(input.Children); err != nil {
+		return MultiStoreCheckoutRecord{}, false, err
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -171,7 +185,7 @@ func readMultiStoreCheckoutTx(ctx context.Context, db rowQueryer, checkoutID, cl
 	if err != nil {
 		return MultiStoreCheckoutRecord{}, err
 	}
-	rows, err := db.QueryContext(ctx, "SELECT "+multiStoreCheckoutChildSelect+" FROM dsh.commerce_multi_store_checkout_children WHERE checkout_id=$1 ORDER BY child_index", strings.TrimSpace(checkoutID))
+	rows, err := db.QueryContext(ctx, "SELECT "+multiStoreCheckoutChildSelect+" FROM dsh.commerce_multi_store_checkout_children c JOIN dsh.stores s ON s.id=c.store_id WHERE c.checkout_id=$1 ORDER BY c.child_index", strings.TrimSpace(checkoutID))
 	if err != nil {
 		return MultiStoreCheckoutRecord{}, err
 	}
@@ -179,7 +193,7 @@ func readMultiStoreCheckoutTx(ctx context.Context, db rowQueryer, checkoutID, cl
 	item.Children = make([]MultiStoreCheckoutChildRecord, 0, item.ChildCount)
 	for rows.Next() {
 		var child MultiStoreCheckoutChildRecord
-		if err := rows.Scan(&child.ID, &child.ChildIndex, &child.CartID, &child.StoreID, &child.AddressID, &child.CartVersion, &child.FulfillmentMode, &child.PromotionCode, &child.OrderID, &child.State, &child.FailureCode, &child.FailureMessage, &child.Version, &child.CreatedAt, &child.UpdatedAt); err != nil {
+		if err := rows.Scan(&child.ID, &child.ChildIndex, &child.CartID, &child.StoreID, &child.StoreName, &child.AddressID, &child.CartVersion, &child.FulfillmentMode, &child.PromotionCode, &child.OrderID, &child.State, &child.FailureCode, &child.FailureMessage, &child.Version, &child.CreatedAt, &child.UpdatedAt); err != nil {
 			return MultiStoreCheckoutRecord{}, err
 		}
 		item.Children = append(item.Children, child)

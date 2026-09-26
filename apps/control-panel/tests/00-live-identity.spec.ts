@@ -228,9 +228,23 @@ test("@live operator passkey registration, authentication and governed recovery 
   } finally {
     restartIdentity();
   }
+  const sessionAfterIdentityRecovery = await readBrowserSession(page);
+  expect(sessionAfterIdentityRecovery.status, JSON.stringify(sessionAfterIdentityRecovery.body)).toBe(200);
+  expect(sessionAfterIdentityRecovery.body.identity.subject).toBe(operator.actorId);
 
   await page.getByText("حساب المشغل", { exact: true }).click();
+  const explicitLogoutResponse = page.waitForResponse((response) =>
+    response.url().endsWith("/api/auth/logout") && response.request().method() === "POST",
+  );
   await page.getByRole("button", { name: "تسجيل الخروج" }).click();
+  const logoutResponse = await explicitLogoutResponse;
+  const logoutFailureBody = logoutResponse.status() === 204
+    ? ""
+    : await Promise.race([
+      logoutResponse.text(),
+      new Promise<string>((resolve) => setTimeout(() => resolve("logout response body did not finish within 2s"), 2_000)),
+    ]);
+  expect(logoutResponse.status(), logoutFailureBody).toBe(204);
   await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
   const cookiesAfterExplicitLogout = await page.context().cookies();
   expect(cookiesAfterExplicitLogout.some((cookie) => cookie.name.endsWith("bt_identity_access") || cookie.name.endsWith("bt_identity_refresh"))).toBe(false);

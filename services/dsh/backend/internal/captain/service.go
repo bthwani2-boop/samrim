@@ -33,16 +33,17 @@ var (
 var phoneE164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
 
 type Service struct {
-	identity *identityintegration.Client
-	db       *sql.DB
-	payment  *wlt.Client
+	identity  *identityintegration.Client
+	db        *sql.DB
+	payment   *wlt.Client
+	proofKeys *postgres.DeliveryProofKeyring
 }
 
-func New(identity *identityintegration.Client, db *sql.DB, payment *wlt.Client) (*Service, error) {
-	if identity == nil || db == nil || payment == nil {
+func New(identity *identityintegration.Client, db *sql.DB, payment *wlt.Client, proofKeys *postgres.DeliveryProofKeyring) (*Service, error) {
+	if identity == nil || db == nil || payment == nil || proofKeys == nil {
 		return nil, errors.New("captain configuration is invalid")
 	}
-	return &Service{identity: identity, db: db, payment: payment}, nil
+	return &Service{identity: identity, db: db, payment: payment, proofKeys: proofKeys}, nil
 }
 
 func (s *Service) Admit(ctx context.Context, phone, idempotencyKey, actingActorID, correlationID string) (postgres.CaptainAdmission, bool, error) {
@@ -129,7 +130,28 @@ func (s *Service) SetAvailability(ctx context.Context, accessToken string, avail
 	if expectedVersion < 1 || !validMutation(idempotencyKey, correlationID, identity.Subject) {
 		return postgres.CaptainAdmission{}, false, ErrInvalidInput
 	}
-	return postgres.SetCaptainAvailability(ctx, s.db, identity.Subject, available, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCaptainAvailabilityRequest(identity.Subject, available, expectedVersion), identity.Subject, strings.TrimSpace(correlationID))
+	return postgres.SetCaptainAvailability(ctx, s.db, identity.Subject, available, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCaptainAvailabilityRequest(identity.Subject, available, expectedVersion), identity.Subject, strings.TrimSpace(correlationID), "")
+}
+
+func (s *Service) SetAvailabilityForOperator(ctx context.Context, actorID, operatorActorID string, available bool, expectedVersion int, idempotencyKey, correlationID, reason string) (postgres.CaptainAdmission, bool, error) {
+	actorID = strings.TrimSpace(actorID)
+	operatorActorID = strings.TrimSpace(operatorActorID)
+	reason = strings.TrimSpace(reason)
+	if actorID == "" || expectedVersion < 1 || !validMutation(idempotencyKey, correlationID, operatorActorID) || len([]rune(reason)) < 5 || len([]rune(reason)) > 500 {
+		return postgres.CaptainAdmission{}, false, ErrInvalidInput
+	}
+	if err := s.requireOperator(ctx, operatorActorID); err != nil {
+		return postgres.CaptainAdmission{}, false, err
+	}
+	role, err := s.identity.ReadActorRole(ctx, actorID, "captain")
+	if err != nil {
+		return postgres.CaptainAdmission{}, false, err
+	}
+	if role.Role != "captain" || !role.Enabled || !role.SecurityEnabled || role.ActivatedAt == nil {
+		return postgres.CaptainAdmission{}, false, ErrManagedRoleNotEligible
+	}
+	requestHash := postgres.HashCaptainOperatorAvailabilityRequest(actorID, available, expectedVersion, reason)
+	return postgres.SetCaptainAvailability(ctx, s.db, actorID, available, expectedVersion, strings.TrimSpace(idempotencyKey), requestHash, operatorActorID, strings.TrimSpace(correlationID), reason)
 }
 
 func (s *Service) ListOffers(ctx context.Context, accessToken string, limit int) ([]postgres.CaptainOffer, error) {
@@ -169,7 +191,7 @@ func (s *Service) RespondToOffer(ctx context.Context, accessToken, offerID, deci
 		return postgres.CaptainOfferResult{}, err
 	}
 	reserved := false
-	if order.PaymentIntentID != nil && strings.TrimSpace(*order.PaymentIntentID) != "" {
+	if order.FulfillmentMode == "BTHWANI_CAPTAIN" && order.PaymentIntentID != nil && strings.TrimSpace(*order.PaymentIntentID) != "" {
 		_, _, reserveErr := s.payment.ReserveCaptainCOD(ctx, order.ID, *order.PaymentIntentID, identity.Subject, wlt.DerivedIdempotencyKey("captain-cod-reserve", offer.ID), correlationID)
 		if reserveErr != nil {
 			return postgres.CaptainOfferResult{}, fmt.Errorf("%w: captain COD authorization unavailable: %v", ErrPaymentUnavailable, reserveErr)
@@ -268,28 +290,26 @@ func (s *Service) Complete(ctx context.Context, accessToken, assignmentID, resul
 	if expectedVersion < 1 || !validMutation(idempotencyKey, correlationID, identity.Subject) || collectedAmountMinor < 0 {
 		return postgres.CaptainAssignment{}, false, ErrInvalidInput
 	}
-	result = strings.ToLower(strings.TrimSpace(result))
+	submittedResult := strings.TrimSpace(result)
+	result = strings.ToLower(submittedResult)
 	deliveryProofCode = strings.TrimSpace(deliveryProofCode)
-	if result == "delivered" && (len(deliveryProofCode) != 6 || strings.Trim(deliveryProofCode, "0123456789") != "") {
-		return postgres.CaptainAssignment{}, false, ErrInvalidInput
-	}
-	if result != "delivered" && deliveryProofCode != "" {
-		return postgres.CaptainAssignment{}, false, ErrInvalidInput
-	}
 	assignment, err := postgres.ReadCaptainAssignment(ctx, s.db, strings.TrimSpace(assignmentID))
 	if err != nil {
 		return postgres.CaptainAssignment{}, false, err
 	}
+	if assignment.CaptainActorID != identity.Subject {
+		return postgres.CaptainAssignment{}, false, postgres.ErrCaptainOfferForbidden
+	}
 	if result == "delivered" {
-		if err := postgres.ValidateCaptainDeliveryProof(ctx, s.db, assignment.ID, identity.Subject, deliveryProofCode); err != nil {
-			return postgres.CaptainAssignment{}, false, err
-		}
 		order, orderErr := postgres.ReadOrder(ctx, s.db, assignment.OrderID)
 		if orderErr != nil {
 			return postgres.CaptainAssignment{}, false, orderErr
 		}
-		if order.FulfillmentMode != "BTHWANI_CAPTAIN" {
+		if order.FulfillmentMode != postgres.FulfillmentModeBthwaniCaptain && order.FulfillmentMode != postgres.FulfillmentModePartnerCaptain {
 			return postgres.CaptainAssignment{}, false, postgres.ErrOrderStateConflict
+		}
+		if order.FulfillmentMode == postgres.FulfillmentModePartnerCaptain && order.PaymentMethod != "CASH_AT_STORE" {
+			return postgres.CaptainAssignment{}, false, postgres.ErrPaymentStateConflict
 		}
 		switch order.PaymentState {
 		case "REQUIRES_COLLECTION":
@@ -297,7 +317,7 @@ func (s *Service) Complete(ctx context.Context, accessToken, assignmentID, resul
 				return postgres.CaptainAssignment{}, false, ErrCollectionAmountMismatch
 			}
 		case "COLLECTED":
-			if collectedAmountMinor != 0 && collectedAmountMinor != order.TotalAmountMinor {
+			if order.FulfillmentMode == postgres.FulfillmentModePartnerCaptain || collectedAmountMinor != 0 && collectedAmountMinor != order.TotalAmountMinor {
 				return postgres.CaptainAssignment{}, false, ErrCollectionAmountMismatch
 			}
 		default:
@@ -310,7 +330,7 @@ func (s *Service) Complete(ctx context.Context, accessToken, assignmentID, resul
 	} else {
 		return postgres.CaptainAssignment{}, false, ErrInvalidInput
 	}
-	return postgres.CompleteCaptainAssignment(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject, result, collectedAmountMinor, deliveryProofCode, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCaptainCompletionRequest(assignmentID, result, collectedAmountMinor, deliveryProofCode, expectedVersion), strings.TrimSpace(correlationID))
+	return postgres.CompleteCaptainAssignment(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject, submittedResult, collectedAmountMinor, deliveryProofCode, expectedVersion, strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID), s.proofKeys)
 }
 
 func (s *Service) Recover(ctx context.Context, assignmentID, actingActorID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.CaptainAssignment, bool, error) {
@@ -333,6 +353,32 @@ func (s *Service) Dispatch(ctx context.Context, orderID, actingActorID, idempote
 		return postgres.CaptainOffer{}, false, err
 	}
 	return postgres.CreateCaptainDispatchOffer(ctx, s.db, strings.TrimSpace(orderID), strings.TrimSpace(idempotencyKey), postgres.HashCaptainDispatchRequest(orderID), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
+}
+
+func (s *Service) DispatchForPartner(ctx context.Context, accessToken, storeID, orderID, captainActorID string, expectedOrderVersion int, idempotencyKey, correlationID string) (postgres.CaptainOffer, bool, error) {
+	identity, err := s.requirePartner(ctx, accessToken)
+	if err != nil {
+		return postgres.CaptainOffer{}, false, err
+	}
+	if expectedOrderVersion < 1 || strings.TrimSpace(storeID) == "" || strings.TrimSpace(orderID) == "" || strings.TrimSpace(captainActorID) == "" || !validMutation(idempotencyKey, correlationID, identity.Subject) {
+		return postgres.CaptainOffer{}, false, ErrInvalidInput
+	}
+	requestHash := postgres.HashStoreCaptainDispatchRequest(storeID, orderID, captainActorID, expectedOrderVersion)
+	return postgres.CreateStoreCaptainDispatchOffer(ctx, s.db, strings.TrimSpace(storeID), strings.TrimSpace(orderID), strings.TrimSpace(captainActorID), identity.Subject, expectedOrderVersion, strings.TrimSpace(idempotencyKey), requestHash, strings.TrimSpace(correlationID))
+}
+
+func (s *Service) ReadStoreDispatchForPartner(ctx context.Context, accessToken, storeID, orderID string) (postgres.CaptainOffer, error) {
+	identity, err := s.requirePartner(ctx, accessToken)
+	if err != nil {
+		return postgres.CaptainOffer{}, err
+	}
+	if _, err := postgres.ReadStoreOwnedByPartner(ctx, s.db, strings.TrimSpace(storeID), identity.Subject); err != nil {
+		if errors.Is(err, postgres.ErrStoreNotFound) {
+			return postgres.CaptainOffer{}, ErrPartnerSessionForbidden
+		}
+		return postgres.CaptainOffer{}, err
+	}
+	return postgres.ReadStoreCaptainDispatchOffer(ctx, s.db, strings.TrimSpace(storeID), strings.TrimSpace(orderID), identity.Subject)
 }
 
 func (s *Service) Reassign(ctx context.Context, orderID, actingActorID, idempotencyKey, correlationID string) (postgres.CaptainOffer, bool, error) {
@@ -369,7 +415,11 @@ func (s *Service) SetManagedRoleEnabled(ctx context.Context, role, actorID, oper
 	if (role != "partner" && role != "captain") || actorID == "" || strings.TrimSpace(correlationID) == "" || idempotencyKey == "" || expectedVersion < 1 {
 		return ErrInvalidInput
 	}
-	if err := s.requireOperator(ctx, operatorActorID); err != nil {
+	permission := "operations"
+	if role == "partner" {
+		permission = "partners"
+	}
+	if err := s.requireOperatorPermission(ctx, operatorActorID, permission); err != nil {
 		return err
 	}
 	identityRole, err := s.identity.ReadActorRole(ctx, actorID, role)
@@ -444,14 +494,19 @@ func (s *Service) requirePartner(ctx context.Context, accessToken string) (ident
 }
 
 func (s *Service) requireOperator(ctx context.Context, actorID string) error {
-	operator, err := s.identity.ReadActorRole(ctx, strings.TrimSpace(actorID), "operator")
+	return s.requireOperatorPermission(ctx, actorID, "operations")
+}
+
+func (s *Service) requireOperatorPermission(ctx context.Context, actorID, permission string) error {
+	actorID = strings.TrimSpace(actorID)
+	operator, err := s.identity.ReadActorRole(ctx, actorID, "operator")
 	if err != nil {
 		return err
 	}
 	if operator.Role != "operator" || !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
 		return ErrOperatorNotActive
 	}
-	return nil
+	return s.identity.RequireOperatorPermission(ctx, actorID, permission)
 }
 
 func validMutation(idempotencyKey, correlationID, actingActorID string) bool {

@@ -1,13 +1,17 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import type { ActorIdentity } from "@bthwani/identity";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ControlShell, LoadingState, UnavailableState } from "../../src/shell/public-shell";
+import { type FormEvent, type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
+import { IdentitySurface } from "../../src/features/access/identity-surface";
+import { currentWorkspaceChild, currentWorkspaceDestination, dynamicWorkspaceRouteLabel, isCurrentWorkspaceDestination, isCurrentWorkspacePath, workspaceDestinations, workspaceSearchEntries } from "../../src/navigation/workspace-registry";
+import "../../src/navigation/workspace-navigation.module.css";
+import { identityFetch } from "../../src/session/identity-fetch";
+import { operatorWorkspacePermissions } from "../../src/session/operator-permissions";
 import { useSession } from "../../src/session/session-provider";
 import { AppearanceControl } from "../../src/shell/appearance-control";
-import { IdentitySurface } from "../../src/features/access/identity-surface";
-import { currentWorkspaceChild, currentWorkspaceDestination, isCurrentWorkspaceDestination, isCurrentWorkspacePath, workspaceDestinations } from "../../src/navigation/workspace-registry";
+import { ControlShell, LoadingState, UnavailableState } from "../../src/shell/public-shell";
 import "../../src/features/access/access-surface.module.css";
 import "../../src/shell/workspace-shell.module.css";
 import "../../src/shell/responsive-shell.module.css";
@@ -15,9 +19,13 @@ import "../../src/shell/responsive-shell.module.css";
 function currentChild(pathname: string, destination: (typeof workspaceDestinations)[number]) {
   const child = currentWorkspaceChild(pathname, destination);
   if (child) return child;
-  return destination.href === "/partners" && pathname.startsWith("/partners/")
-    ? { href: pathname, label: "تفاصيل طلب الانضمام" }
-    : null;
+  const label = dynamicWorkspaceRouteLabel(pathname);
+  return label ? { href: pathname, label } : null;
+}
+
+function canOpenWorkspaceDestination(identity: ActorIdentity, destination: (typeof workspaceDestinations)[number]) {
+  if (destination.initialOperatorAdminOnly && !identity.canManageOperatorPermissions) return false;
+  return !destination.permission || identity.permissions?.includes(destination.permission) === true;
 }
 
 function WorkspaceBreadcrumbs({ pathname }: Readonly<{ pathname: string }>) {
@@ -44,6 +52,67 @@ function WorkspaceBreadcrumbs({ pathname }: Readonly<{ pathname: string }>) {
   );
 }
 
+function formatAccountSessionExpiry(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "غير محدد" : new Intl.DateTimeFormat("ar-YE", { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+function OperatorProfile({ identity, active }: Readonly<{ identity: ActorIdentity; active: boolean }>) {
+  const [phone, setPhone] = useState<string | null>(null);
+  const [phoneLoading, setPhoneLoading] = useState(false);
+  const [phoneUnavailable, setPhoneUnavailable] = useState(false);
+  const permissionLabels = operatorWorkspacePermissions.filter(({ key }) => identity.permissions?.includes(key) === true).map(({ label }) => label);
+
+  useEffect(() => {
+    if (!active || phone) return;
+    let cancelled = false;
+    setPhoneLoading(true);
+    setPhoneUnavailable(false);
+    void identityFetch("/api/auth/profile", { cache: "no-store", headers: { Accept: "application/json" } })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("operator profile request failed");
+        const profile = (await response.json()) as { phoneE164?: unknown };
+        if (typeof profile.phoneE164 !== "string" || !profile.phoneE164.trim()) throw new Error("operator phone is unavailable");
+        if (!cancelled) setPhone(profile.phoneE164.trim());
+      })
+      .catch(() => {
+        if (!cancelled) setPhoneUnavailable(true);
+      })
+      .finally(() => {
+        if (!cancelled) setPhoneLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [active, phone]);
+
+  return (
+    <section className="operator-profile" aria-label="ملف المشغّل">
+      <div className="operator-profile-heading">
+        <span className="operator-profile-avatar" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+            <circle cx="12" cy="8" r="3.5" />
+            <path d="M5 20c.7-3.1 3.2-5 7-5s6.3 1.9 7 5" />
+          </svg>
+        </span>
+        <div className="operator-profile-copy">
+          <p className="operator-profile-title">{identity.role === "operator" ? "حساب المشغّل" : "حساب معتمد"}</p>
+          <p>لوحة التحكم</p>
+        </div>
+      </div>
+      <p className="operator-profile-status">جلسة نشطة</p>
+      <dl className="operator-profile-details">
+        <div><dt>اسم المشغّل</dt><dd>مشغّل المنصة</dd></div>
+        <div><dt>رقم الهاتف</dt><dd aria-live="polite"><bdi dir="ltr">{phoneLoading ? "جارٍ تحميل الرقم…" : phoneUnavailable ? "تعذر تحميله" : phone ?? "افتح الحساب لعرض الرقم"}</bdi></dd></div>
+        <div><dt>الصلاحيات الممنوحة</dt><dd>{permissionLabels.length > 0 ? permissionLabels.join("، ") : "لا توجد صلاحيات نطاق ممنوحة"}</dd></div>
+        {identity.canManageOperatorPermissions ? <div><dt>إدارة صلاحيات المشغّلين</dt><dd>متاحة</dd></div> : null}
+        <div>
+          <dt>انتهاء الجلسة</dt>
+          <dd><time dir="auto" dateTime={identity.expiresAt}>{formatAccountSessionExpiry(identity.expiresAt)}</time></dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
 function WorkspaceHeader({
   busy,
   navOpen,
@@ -59,8 +128,64 @@ function WorkspaceHeader({
   onOpenNavigation: () => void;
   pathname: string;
 }>) {
+  const router = useRouter();
+  const { state } = useSession();
+  const identity = state.kind === "authenticated" ? state.identity : null;
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const searchTriggerRef = useRef<HTMLButtonElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchEntries = identity
+    ? workspaceSearchEntries.filter((entry) => {
+        const destination = workspaceDestinations.find((candidate) => isCurrentWorkspacePath(entry.href, candidate.href));
+        return !destination || canOpenWorkspaceDestination(identity, destination);
+      })
+    : [];
+  const normalizedSearch = searchQuery.trim().toLocaleLowerCase("ar");
+  const searchResults = normalizedSearch
+    ? searchEntries.filter((entry) => entry.searchText.toLocaleLowerCase("ar").includes(normalizedSearch)).slice(0, 12)
+    : [];
+
+  useEffect(() => {
+    if (!searchOpen) return;
+    const frame = window.requestAnimationFrame(() => searchInputRef.current?.focus());
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setSearchOpen(false);
+      setSearchQuery("");
+      window.requestAnimationFrame(() => searchTriggerRef.current?.focus());
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [searchOpen]);
+
+  useEffect(() => {
+    if (navOpen || pathname !== "") {
+      setSearchOpen(false);
+      setSearchQuery("");
+    }
+  }, [navOpen, pathname]);
+
+  function closeSearch(restoreFocus = false) {
+    setSearchOpen(false);
+    setSearchQuery("");
+    if (restoreFocus) window.requestAnimationFrame(() => searchTriggerRef.current?.focus());
+  }
+
+  function submitSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const firstResult = searchResults[0];
+    if (!firstResult) return;
+    closeSearch();
+    router.push(firstResult.href);
+  }
+
   return (
-    <header className="workspace-header">
+    <header className="workspace-header" data-search-open={searchOpen ? "true" : "false"}>
       <Link className="brand-lockup brand-link" href="/workspace" aria-label="العودة إلى مساحة العمل">
         <span className="brand-rail" aria-hidden="true" />
         <span className="brand-name">بثواني</span>
@@ -69,26 +194,86 @@ function WorkspaceHeader({
         <WorkspaceBreadcrumbs pathname={pathname} />
         <span className="actor-context">لوحة التحكم · جلسة موثقة</span>
       </div>
-      <button
-        ref={navTriggerRef}
-        className="workspace-nav-toggle"
-        type="button"
-        aria-controls="workspace-navigation"
-        aria-expanded={navOpen}
-        onClick={onOpenNavigation}
-      >
-        <span aria-hidden="true">☰</span>
-        <span className="visually-hidden">فتح مسارات العمل</span>
-      </button>
-      <details className="account-menu">
-        <summary>حساب المشغل</summary>
-        <div className="account-menu-panel">
-          <AppearanceControl />
-          <button type="button" className="button button-secondary workspace-logout" disabled={busy} onClick={onLogout}>
-            {busy ? "جارٍ إنهاء الجلسة…" : "تسجيل الخروج"}
+      <div className="workspace-header-tools">
+        <Link className="workspace-notifications-link" href="/notifications" aria-current={pathname === "/notifications" ? "page" : undefined}>الإشعارات</Link>
+        <search className="workspace-search-control" aria-label="البحث في صفحات لوحة التحكم">
+          <button
+            ref={searchTriggerRef}
+            className="workspace-search-trigger"
+            type="button"
+            aria-label="البحث في صفحات لوحة التحكم"
+            aria-expanded={searchOpen}
+            aria-controls="workspace-search-panel"
+            onClick={() => {
+              if (searchOpen) closeSearch(true);
+              else setSearchOpen(true);
+            }}
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+              <circle cx="10.8" cy="10.8" r="6.4" />
+              <path d="m15.5 15.5 5 5" />
+            </svg>
           </button>
+          {searchOpen ? (
+            <form className="workspace-search-form" onSubmit={submitSearch}>
+              <label className="visually-hidden" htmlFor="workspace-search-input">البحث في صفحات لوحة التحكم</label>
+              <input
+                ref={searchInputRef}
+                id="workspace-search-input"
+                type="search"
+                autoComplete="off"
+                placeholder="ابحث عن صفحة أو مساحة"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+              />
+              <button type="button" className="workspace-search-close" aria-label="إغلاق البحث" onClick={() => closeSearch(true)}>×</button>
+            </form>
+          ) : null}
+        </search>
+        <details className="account-menu" onToggle={(event) => setAccountMenuOpen(event.currentTarget.open)}>
+          <summary>حساب المشغل</summary>
+          <div className="account-menu-panel">
+            {identity ? <OperatorProfile key={identity.subject} identity={identity} active={accountMenuOpen} /> : null}
+            <AppearanceControl />
+            <button type="button" className="button button-secondary workspace-logout" disabled={busy} onClick={onLogout}>
+              {busy ? "جارٍ إنهاء الجلسة…" : "تسجيل الخروج"}
+            </button>
+          </div>
+        </details>
+        <button
+          ref={navTriggerRef}
+          className="workspace-nav-toggle"
+          type="button"
+          aria-controls="workspace-navigation"
+          aria-expanded={navOpen}
+          onClick={() => {
+            closeSearch();
+            onOpenNavigation();
+          }}
+        >
+          <span aria-hidden="true">☰</span>
+          <span className="visually-hidden">فتح مسارات العمل</span>
+        </button>
+      </div>
+      <div id="workspace-search-panel" className="workspace-search-panel" hidden={!searchOpen}>
+        <div className="workspace-search-results" aria-live="polite">
+          {normalizedSearch ? searchResults.length ? (
+            <>
+              <p className="workspace-search-label">صفحات مطابقة</p>
+              <ul>
+                {searchResults.map((entry) => (
+                  <li key={entry.href}>
+                    <Link href={entry.href} aria-current={isCurrentWorkspacePath(pathname, entry.href) ? "page" : undefined} onClick={() => closeSearch()}>
+                      <span>{entry.label}</span>
+                      <small>{entry.context}</small>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : <p className="workspace-search-empty">لا توجد صفحات مطابقة.</p> : <p className="workspace-search-empty">اكتب اسم الصفحة أو المساحة للبحث.</p>}
         </div>
-      </details>
+      </div>
     </header>
   );
 }
@@ -106,20 +291,21 @@ function WorkspaceNavigation({
   open: boolean;
   pathname: string;
 }>) {
+  const { state } = useSession();
+  const visibleDestinations = state.kind === "authenticated"
+    ? workspaceDestinations.filter((destination) => destination.showInWorkspaceNavigation !== false && canOpenWorkspaceDestination(state.identity, destination))
+    : [];
   return (
     <nav ref={navRef} id="workspace-navigation" className="workspace-nav" data-open={open} aria-label="تنقل مساحة المشغل">
       <div className="workspace-nav-header">
         <p className="workspace-nav-label">مساحة المشغل</p>
         <button type="button" className="workspace-nav-close" onClick={onClose} aria-label="إغلاق مسارات العمل">×</button>
       </div>
-      {workspaceDestinations.map((destination, index) => {
-        const previous = workspaceDestinations[index - 1];
+      {visibleDestinations.map((destination, index) => {
         const current = isCurrentWorkspaceDestination(pathname, destination);
         const activeChild = currentWorkspaceChild(pathname, destination);
         return (
-          <Fragment key={destination.href}>
-            {index === 0 || destination.section !== previous?.section ? <p className="workspace-nav-label workspace-nav-section-label">{destination.section}</p> : null}
-            <div className="workspace-nav-group">
+            <div className="workspace-nav-group" key={destination.href}>
               <Link
                 ref={index === 0 ? firstLinkRef : undefined}
                 className="workspace-nav-link"
@@ -129,9 +315,9 @@ function WorkspaceNavigation({
               >
                 {destination.label}
               </Link>
-              {destination.children.length > 0 ? (
+              {destination.children.length > 0 && destination.childrenNavigation !== "top" ? (
                 <ul className="workspace-nav-children" aria-label={`مسارات ${destination.label}`}>
-                  {destination.children.map((child) => {
+                  {destination.children.filter((child) => child.showInWorkspaceNavigation !== false).map((child) => {
                     const childCurrent = isCurrentWorkspacePath(pathname, child.href);
                     return (
                       <li key={child.href}>
@@ -144,7 +330,6 @@ function WorkspaceNavigation({
                 </ul>
               ) : null}
             </div>
-          </Fragment>
         );
       })}
     </nav>
@@ -236,13 +421,26 @@ export default function WorkspaceLayout({ children }: Readonly<{ children: React
   if (state.kind === "signed_out" && (state.notice || localSignOut)) return <IdentitySurface />;
   if (state.kind === "signed_out") return <LoadingState title="جارٍ الرجوع إلى بوابة الهوية" message="انتهت الجلسة المحلية أو لم تعد متاحة." />;
 
+  const currentDestination = currentWorkspaceDestination(pathname);
+  const destinationAccessGranted = canOpenWorkspaceDestination(state.identity, currentDestination);
+
   return (
-    <ControlShell className="workspace-app-shell" surface="workspace" footer={null} header={<WorkspaceHeader busy={busy} navOpen={navigationOpen} navTriggerRef={navTriggerRef} onLogout={() => { setLocalSignOut(true); void logout(); }} onOpenNavigation={() => setNavigationOpen(true)} pathname={pathname} />}>
+    <ControlShell className={currentDestination.href === "/partners" ? "workspace-app-shell workspace-app-shell-partners" : "workspace-app-shell"} surface="workspace" footer={null} header={<WorkspaceHeader busy={busy} navOpen={navigationOpen} navTriggerRef={navTriggerRef} onLogout={() => { setLocalSignOut(true); void logout(); }} onOpenNavigation={() => setNavigationOpen(true)} pathname={pathname} />}>
       <a className="skip-link" href="#workspace-main">تخطي إلى المحتوى الرئيسي</a>
       <div className="workspace-layout">
         {navigationOpen ? <button type="button" className="workspace-nav-backdrop" aria-label="إغلاق مسارات العمل" onClick={closeNavigation} /> : null}
         <WorkspaceNavigation firstLinkRef={navFirstLinkRef} navRef={navRef} onClose={closeNavigation} open={navigationOpen} pathname={pathname} />
-        <main ref={mainRef} id="workspace-main" className="workspace-main" tabIndex={-1}>{children}</main>
+        <main ref={mainRef} id="workspace-main" className="workspace-main" tabIndex={-1}>
+          {destinationAccessGranted && currentDestination.childrenNavigation === "top" ? (
+            <nav className="workspace-route-tabs" aria-label={`مسارات ${currentDestination.label}`}>
+              {currentDestination.children.map((tab) => {
+                const current = isCurrentWorkspacePath(pathname, tab.href);
+                return <Link key={tab.href} href={tab.href} aria-current={current ? "page" : undefined} className={current ? "workspace-route-tab is-active" : "workspace-route-tab"}>{tab.label}</Link>;
+              })}
+            </nav>
+          ) : null}
+          {destinationAccessGranted ? children : <section className="collection-state" role="status"><strong>الوصول إلى هذه المساحة غير مفعّل</strong><p>تحتاج إلى صلاحية النطاق المناسبة من إدارة صلاحيات المشغّلين.</p><Link className="button button-secondary" href="/workspace">العودة إلى الرئيسية</Link></section>}
+        </main>
       </div>
     </ControlShell>
   );

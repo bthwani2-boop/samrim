@@ -1,6 +1,7 @@
 package transporthttp
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -31,22 +32,37 @@ func (s *CatalogServer) listOwnProductProposals(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, contract.CatalogProductProposalListResponse{Proposals: toProductProposals(page.Proposals), NextCursor: page.NextCursor})
 }
 
+type catalogProductProposalCreateRequest struct {
+	contract.CreateCatalogProductProposalRequest
+	AttributeValues        []catalogAttributeValueRequest `json:"attributeValues"`
+	VariantAttributeValues []catalogAttributeValueRequest `json:"variantAttributeValues"`
+}
+
+type catalogProductProposalUpdateRequest struct {
+	contract.UpdateCatalogProductProposalRequest
+	AttributeValues        []catalogAttributeValueRequest `json:"attributeValues"`
+	VariantAttributeValues []catalogAttributeValueRequest `json:"variantAttributeValues"`
+}
+
 func (s *CatalogServer) createProductProposal(w http.ResponseWriter, r *http.Request) {
 	correlation, idempotency, _, ok := requiredPartnerOfferHeaders(w, r, false)
 	if !ok {
 		return
 	}
-	var input contract.CreateCatalogProductProposalRequest
+	var input catalogProductProposalCreateRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
+	request := input.CreateCatalogProductProposalRequest
 	proposal, err := s.service.CreateProductProposal(r.Context(), bearerToken(r), postgres.CatalogProductProposalInput{
-		ID: input.ID, VerticalID: input.VerticalID, CategoryID: input.CategoryID, ProposedName: input.ProposedName,
-		ProposedBrand: optionalRequestString(input.ProposedBrand), ProposedVariantTitle: input.ProposedVariantTitle,
-		ProposedMeasurementKind: string(input.ProposedMeasurementKind), ProposedBaseUnit: string(input.ProposedBaseUnit),
-		ProposedIdentifierType: optionalRequestString(input.ProposedIdentifierType), ProposedIdentifierValue: optionalRequestString(input.ProposedIdentifierValue), ProposedImageURI: optionalRequestString(input.ProposedImageUri),
+		ID: request.ID, VerticalID: request.VerticalID, CategoryID: request.CategoryID, ProposedName: request.ProposedName,
+		ProposedBrand: optionalRequestString(request.ProposedBrand), ProposedVariantTitle: request.ProposedVariantTitle,
+		ProposedMeasurementKind: string(request.ProposedMeasurementKind), ProposedBaseUnit: string(request.ProposedBaseUnit),
+		ProposedIdentifierType: optionalRequestString(request.ProposedIdentifierType), ProposedIdentifierValue: optionalRequestString(request.ProposedIdentifierValue), ProposedImageURI: optionalRequestString(request.ProposedImageUri),
+		AttributeValues: catalogAttributeInputs(input.AttributeValues), VariantAttributeValues: catalogAttributeInputs(input.VariantAttributeValues),
 	}, idempotency, correlation)
 	if err != nil {
+		log.Printf("DSH_CATALOG_PROPOSAL_CREATE_FAILURE proposal_id=%q error=%q", request.ID, err.Error())
 		writeCatalogError(w, err)
 		return
 	}
@@ -71,15 +87,17 @@ func (s *CatalogServer) updateProductProposal(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	var input contract.UpdateCatalogProductProposalRequest
+	var input catalogProductProposalUpdateRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
+	request := input.UpdateCatalogProductProposalRequest
 	proposal, err := s.service.UpdateProductProposal(r.Context(), bearerToken(r), r.PathValue("proposalId"), postgres.CatalogProductProposalInput{
-		VerticalID: input.VerticalID, CategoryID: input.CategoryID, ProposedName: input.ProposedName,
-		ProposedBrand: optionalRequestString(input.ProposedBrand), ProposedVariantTitle: input.ProposedVariantTitle,
-		ProposedMeasurementKind: string(input.ProposedMeasurementKind), ProposedBaseUnit: string(input.ProposedBaseUnit),
-		ProposedIdentifierType: optionalRequestString(input.ProposedIdentifierType), ProposedIdentifierValue: optionalRequestString(input.ProposedIdentifierValue), ProposedImageURI: optionalRequestString(input.ProposedImageUri),
+		VerticalID: request.VerticalID, CategoryID: request.CategoryID, ProposedName: request.ProposedName,
+		ProposedBrand: optionalRequestString(request.ProposedBrand), ProposedVariantTitle: request.ProposedVariantTitle,
+		ProposedMeasurementKind: string(request.ProposedMeasurementKind), ProposedBaseUnit: string(request.ProposedBaseUnit),
+		ProposedIdentifierType: optionalRequestString(request.ProposedIdentifierType), ProposedIdentifierValue: optionalRequestString(request.ProposedIdentifierValue), ProposedImageURI: optionalRequestString(request.ProposedImageUri),
+		AttributeValues: catalogAttributeInputs(input.AttributeValues), VariantAttributeValues: catalogAttributeInputs(input.VariantAttributeValues),
 	}, expected, idempotency, correlation)
 	if err != nil {
 		writeCatalogError(w, err)
@@ -218,5 +236,38 @@ func toProductProposals(items []postgres.CatalogProductProposalRecord) []contrac
 }
 
 func toProductProposal(item postgres.CatalogProductProposalRecord) contract.CatalogProductProposal {
-	return contract.CatalogProductProposal{ID: item.ID, PartnerActorID: item.PartnerActorID, VerticalID: item.VerticalID, CategoryID: item.CategoryID, ProposedName: item.ProposedName, ProposedBrand: optionalProductValue(item.ProposedBrand), ProposedVariantTitle: item.ProposedVariantTitle, ProposedMeasurementKind: contract.MeasurementKind(item.ProposedMeasurementKind), ProposedBaseUnit: contract.BaseUnit(item.ProposedBaseUnit), ProposedIdentifierType: optionalProductValue(item.ProposedIdentifierType), ProposedIdentifierValue: optionalProductValue(item.ProposedIdentifierValue), ProposedImageUri: optionalProductValue(item.ProposedImageURI), State: item.State, CorrectionReason: optionalProductValue(item.CorrectionReason), ReviewedBy: optionalProductValue(item.ReviewedBy), Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	attributes := toCatalogAttributeValueInputs(item.AttributeValues)
+	variantAttributes := toCatalogAttributeValueInputs(item.VariantAttributeValues)
+	return contract.CatalogProductProposal{ID: item.ID, PartnerActorID: item.PartnerActorID, VerticalID: item.VerticalID, CategoryID: item.CategoryID, ProposedName: item.ProposedName, ProposedBrand: optionalProductValue(item.ProposedBrand), ProposedVariantTitle: item.ProposedVariantTitle, ProposedMeasurementKind: contract.MeasurementKind(item.ProposedMeasurementKind), ProposedBaseUnit: contract.BaseUnit(item.ProposedBaseUnit), ProposedIdentifierType: optionalProductValue(item.ProposedIdentifierType), ProposedIdentifierValue: optionalProductValue(item.ProposedIdentifierValue), ProposedImageUri: optionalProductValue(item.ProposedImageURI), AttributeValues: attributes, VariantAttributeValues: variantAttributes, State: item.State, CorrectionReason: optionalProductValue(item.CorrectionReason), ReviewedBy: optionalProductValue(item.ReviewedBy), Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+}
+
+func toCatalogAttributeValueInputs(values []postgres.CatalogAttributeValueInput) []contract.CatalogAttributeValueInput {
+	result := make([]contract.CatalogAttributeValueInput, 0, len(values))
+	for _, value := range values {
+		item := contract.CatalogAttributeValueInput{AttributeID: value.AttributeID, ValueKind: value.ValueKind}
+		if value.TextValue != nil {
+			item.TextValue = value.TextValue
+		}
+		if value.IntegerValue != nil {
+			integerValue := int(*value.IntegerValue)
+			item.IntegerValue = &integerValue
+		}
+		if value.DecimalValue != nil {
+			item.DecimalValue = value.DecimalValue
+		}
+		if value.BooleanValue != nil {
+			item.BooleanValue = value.BooleanValue
+		}
+		if value.EnumValue != nil {
+			item.EnumValue = value.EnumValue
+		}
+		if value.DateValue != nil {
+			item.DateValue = value.DateValue
+		}
+		if value.MeasurementUnit != nil {
+			item.MeasurementUnit = value.MeasurementUnit
+		}
+		result = append(result, item)
+	}
+	return result
 }

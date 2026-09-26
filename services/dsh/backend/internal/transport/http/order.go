@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
@@ -24,12 +25,12 @@ type OrderServer struct {
 
 func (s *OrderServer) Service() *orderdomain.Service { return s.service }
 
-func NewOrder(identityClient *identityintegration.Client, accessToken string, db *sql.DB, payment *wlt.Client) (*OrderServer, error) {
+func NewOrder(identityClient *identityintegration.Client, accessToken string, db *sql.DB, payment *wlt.Client, proofKeys *postgres.DeliveryProofKeyring) (*OrderServer, error) {
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
 		return nil, err
 	}
-	service, err := orderdomain.New(identityClient, db, payment)
+	service, err := orderdomain.New(identityClient, db, payment, proofKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -53,6 +54,7 @@ func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders", s.listStore)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders/{orderId}", s.readStore)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/orders/{orderId}/transition", s.transition)
+	mux.HandleFunc("POST /dsh/stores/{storeId}/orders/{orderId}/captain-cash-handoff/confirm", s.confirmStoreCaptainCashHandoff)
 }
 
 func (s *OrderServer) listOperatorOperations(w http.ResponseWriter, r *http.Request) {
@@ -74,19 +76,37 @@ func (s *OrderServer) listOperatorOperations(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "state is invalid")
 		return
 	}
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if utf8.RuneCountInString(query) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "q is too long")
+		return
+	}
+	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
+	if sort != "" && sort != "updated_desc" && sort != "updated_asc" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "sort is invalid")
+		return
+	}
+	actionableOnly := false
+	if rawActionable := r.URL.Query().Get("actionableOnly"); rawActionable != "" {
+		if rawActionable != "true" && rawActionable != "false" {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "actionableOnly must be true or false")
+			return
+		}
+		actionableOnly = rawActionable == "true"
+	}
 	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
 	if len(cursor) > 512 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cursor is too long")
 		return
 	}
-	operations, err := s.service.ListForOperator(r.Context(), state, actingActorID, limit, cursor)
+	operations, err := s.service.ListForOperator(r.Context(), state, query, sort, actingActorID, actionableOnly, limit, cursor)
 	if err != nil {
 		writeOrderError(w, err)
 		return
 	}
-	items := make([]contract.OperatorOperation, 0, len(operations.Operations))
+	items := make([]contract.OperatorOperationListItem, 0, len(operations.Operations))
 	for _, operation := range operations.Operations {
-		items = append(items, toOperatorOperation(operation))
+		items = append(items, toOperatorOperationListItem(operation))
 	}
 	writeJSON(w, http.StatusOK, contract.OperatorOperationsResponse{Operations: items, NextCursor: operations.NextCursor})
 }
@@ -120,7 +140,29 @@ func (s *OrderServer) listOperatorCashCustody(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
 		return
 	}
-	result, err := s.service.ListCashCustodyForOperator(r.Context(), actingActorID)
+	search := strings.TrimSpace(r.URL.Query().Get("search"))
+	if utf8.RuneCountInString(search) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "search is too long")
+		return
+	}
+	sort := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("sort")))
+	if sort == "" {
+		sort = "collected_asc"
+	}
+	if sort != "collected_asc" && sort != "collected_desc" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "sort is invalid")
+		return
+	}
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	if len(cursor) > 1024 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cursor is too long")
+		return
+	}
+	limit, ok := orderLimit(w, r)
+	if !ok {
+		return
+	}
+	result, err := s.service.ListCashCustodyForOperator(r.Context(), actingActorID, search, sort, cursor, limit)
 	if err != nil {
 		writeOrderError(w, err)
 		return
@@ -134,7 +176,7 @@ func (s *OrderServer) listOperatorCashCustody(w http.ResponseWriter, r *http.Req
 		}
 		items = append(items, contract.CashLiabilityItem{PaymentIntentID: item.PaymentIntentID, ExternalReference: item.ExternalReference, CaptainActorID: item.CaptainActorID, AmountMinor: int(item.AmountMinor), Currency: item.Currency, PaymentVersion: item.PaymentVersion, CollectedAt: collectedAt})
 	}
-	writeJSON(w, http.StatusOK, contract.CashLiabilityResponse{Items: items, TotalAmountMinor: int(result.TotalAmountMinor)})
+	writeJSON(w, http.StatusOK, contract.CashCustodyRegistryResponse{Items: items, TotalAmountMinor: int(result.TotalAmountMinor), TotalItems: result.TotalItems, Limit: result.Limit, NextCursor: result.NextCursor})
 }
 
 func toOperatorOperation(operation postgres.OperatorOperationRecord) contract.OperatorOperation {
@@ -152,6 +194,14 @@ func toOperatorOperation(operation postgres.OperatorOperationRecord) contract.Op
 	return contract.OperatorOperation{Order: toOrder(operation.Order), StoreName: operation.StoreName, Assignment: assignment}
 }
 
+func toOperatorOperationListItem(operation postgres.OperatorOperationListRecord) contract.OperatorOperationListItem {
+	var assignment *contract.OperatorAssignmentSummary
+	if operation.Assignment != nil {
+		assignment = &contract.OperatorAssignmentSummary{ID: operation.Assignment.ID, OrderID: operation.Assignment.OrderID, CaptainActorID: operation.Assignment.CaptainActorID, State: operation.Assignment.State, Version: operation.Assignment.Version, HandoffState: operation.Assignment.HandoffState}
+	}
+	return contract.OperatorOperationListItem{OrderID: operation.OrderID, StoreName: operation.StoreName, State: contract.OrderState(operation.State), UpdatedAt: operation.UpdatedAt, Assignment: assignment}
+}
+
 func (s *OrderServer) listClient(w http.ResponseWriter, r *http.Request) {
 	if bearerToken(r) == "" {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "client session is required")
@@ -161,7 +211,12 @@ func (s *OrderServer) listClient(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	items, err := s.service.ListForClient(r.Context(), bearerToken(r), limit)
+	cartID := strings.TrimSpace(r.URL.Query().Get("cartId"))
+	if len(cartID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cartId is too long")
+		return
+	}
+	items, err := s.service.ListForClient(r.Context(), bearerToken(r), limit, cartID)
 	if err != nil {
 		writeOrderError(w, err)
 		return
@@ -304,7 +359,7 @@ func (s *OrderServer) readDeliveryProof(w http.ResponseWriter, r *http.Request) 
 		writeOrderError(w, err)
 		return
 	}
-	response := contract.DeliveryProofResponse{OrderID: proof.OrderID, State: proof.State, VerifiedAt: proof.VerifiedAt}
+	response := contract.DeliveryProofResponse{OrderID: proof.OrderID, ProofType: proof.ProofType, State: proof.State, VerifiedAt: proof.VerifiedAt}
 	response.Code = proof.Code
 	writeJSON(w, http.StatusOK, response)
 }
@@ -442,11 +497,46 @@ func (s *OrderServer) transition(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state := strings.TrimSpace(input.State)
-	if state != "PARTNER_ACCEPTED" && state != "PREPARING" && state != "READY_FOR_DISPATCH" && state != "REJECTED" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "order transition state is invalid")
+	var item postgres.OrderRecord
+	var replayed bool
+	if state == "PICKED_UP" {
+		code := strings.TrimSpace(input.Code)
+		if len(code) != 6 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "six-digit store pickup code is required")
+			return
+		}
+		item, replayed, err = s.service.CompleteStorePickupForPartner(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("orderId"), code, expected, idempotency, correlation)
+	} else {
+		if state != "PARTNER_ACCEPTED" && state != "PREPARING" && state != "READY_FOR_DISPATCH" && state != "READY_FOR_PICKUP" && state != "REJECTED" && state != "CANCELLED" || strings.TrimSpace(input.Code) != "" {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "order transition state or code is invalid")
+			return
+		}
+		item, replayed, err = s.service.TransitionForPartner(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("orderId"), state, expected, idempotency, correlation)
+	}
+	if err != nil {
+		writeOrderError(w, err)
 		return
 	}
-	item, replayed, err := s.service.TransitionForPartner(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("orderId"), state, expected, idempotency, correlation)
+	writeJSON(w, http.StatusOK, contract.OrderResponse{Order: toOrder(item), IdempotentReplay: replayed})
+}
+
+func (s *OrderServer) confirmStoreCaptainCashHandoff(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "partner session is required")
+		return
+	}
+	correlation := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
+	idempotency := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	expected, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Version")))
+	if len(correlation) < 8 || len(correlation) > 128 || len(idempotency) < 8 || len(idempotency) > 128 || err != nil || expected < 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "handoff attribution, idempotency, and a positive expected version are required")
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cash handoff ownership comes from the canonical partner session")
+		return
+	}
+	item, replayed, err := s.service.ConfirmStoreCaptainCashHandoff(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("orderId"), expected, idempotency, correlation)
 	if err != nil {
 		writeOrderError(w, err)
 		return
@@ -469,7 +559,7 @@ func orderLimit(w http.ResponseWriter, r *http.Request) (int, bool) {
 
 func validOperatorOrderState(state string) bool {
 	switch state {
-	case "CREATED", "PARTNER_ACCEPTED", "PREPARING", "READY_FOR_DISPATCH", "CAPTAIN_ASSIGNED", "IN_CUSTODY", "DELIVERED", "DELIVERY_FAILED", "REJECTED", "CANCELLED":
+	case "CREATED", "PARTNER_ACCEPTED", "PREPARING", "READY_FOR_DISPATCH", "READY_FOR_PICKUP", "PICKED_UP", "CAPTAIN_ASSIGNED", "IN_CUSTODY", "DELIVERED", "DELIVERY_FAILED", "REJECTED", "CANCELLED":
 		return true
 	default:
 		return false
@@ -505,7 +595,11 @@ func toOrder(item postgres.OrderRecord) contract.Order {
 	if item.PaymentIntentID != nil {
 		paymentIntentID = *item.PaymentIntentID
 	}
-	return contract.Order{ID: item.ID, ClientActorID: item.ClientActorID, StoreID: item.StoreID, CartID: item.CartID, FulfillmentMode: contract.FulfillmentMode(item.FulfillmentMode), AddressID: item.AddressID, AddressVersion: item.AddressVersion, AddressText: item.AddressText, AddressLatitude: item.AddressLatitude, AddressLongitude: item.AddressLongitude, ServiceCityID: item.ServiceCityID, ServiceabilityPolicyVersion: item.ServiceabilityPolicyVersion, ServiceabilityStatus: item.ServiceabilityStatus, ServiceabilityStoreVersion: item.ServiceabilityStoreVersion, ServiceabilityAddressVersion: item.ServiceabilityAddressVersion, State: contract.OrderState(item.State), SubtotalAmountMinor: int(item.SubtotalAmountMinor), DiscountMinor: int(item.DiscountMinor), PromotionID: item.PromotionID, PromotionCode: item.PromotionCode, TotalAmountMinor: int(item.TotalAmountMinor), Currency: item.Currency, PaymentMethod: contract.PaymentMethod(item.PaymentMethod), PaymentState: contract.PaymentState(item.PaymentState), PaymentIntentID: paymentIntentID, Version: item.Version, Lines: lines, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	var pickupLocation *contract.OrderPickupLocation
+	if item.PickupLocation != nil {
+		pickupLocation = &contract.OrderPickupLocation{Latitude: item.PickupLocation.Latitude, Longitude: item.PickupLocation.Longitude}
+	}
+	return contract.Order{ID: item.ID, ClientActorID: item.ClientActorID, StoreID: item.StoreID, StoreName: item.StoreName, PickupLocation: pickupLocation, CartID: item.CartID, FulfillmentMode: contract.FulfillmentMode(item.FulfillmentMode), AddressID: item.AddressID, AddressVersion: item.AddressVersion, AddressText: item.AddressText, AddressLatitude: item.AddressLatitude, AddressLongitude: item.AddressLongitude, ServiceCityID: item.ServiceCityID, ServiceabilityPolicyVersion: item.ServiceabilityPolicyVersion, ServiceabilityStatus: item.ServiceabilityStatus, ServiceabilityStoreVersion: item.ServiceabilityStoreVersion, ServiceabilityAddressVersion: item.ServiceabilityAddressVersion, State: contract.OrderState(item.State), SubtotalAmountMinor: int(item.SubtotalAmountMinor), DiscountMinor: int(item.DiscountMinor), PromotionID: item.PromotionID, PromotionCode: item.PromotionCode, TotalAmountMinor: int(item.TotalAmountMinor), Currency: item.Currency, PaymentMethod: contract.PaymentMethod(item.PaymentMethod), PaymentState: contract.PaymentState(item.PaymentState), PaymentIntentID: paymentIntentID, StoreCashHandoffState: item.StoreCashHandoffState, Version: item.Version, Lines: lines, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func toOrderRating(item postgres.OrderRatingRecord) contract.OrderRating {
@@ -571,6 +665,8 @@ func writeOrderError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "VERSION_OR_STATE_CONFLICT", "Order evidence, version, or lifecycle state is stale")
 	case errors.Is(err, postgres.ErrPaymentStateConflict):
 		writeError(w, http.StatusConflict, "PAYMENT_STATE_CONFLICT", "the order payment state is not actionable")
+	case errors.Is(err, postgres.ErrStorePickupProofInvalid):
+		writeError(w, http.StatusConflict, "DELIVERY_PROOF_INVALID", "the customer pickup code is incorrect; the order was not finalized")
 	case errors.Is(err, orderdomain.ErrPaymentUnavailable):
 		writeError(w, http.StatusBadGateway, "WLT_PAYMENT_UNAVAILABLE", "the payment service is temporarily unavailable")
 	case errors.Is(err, postgres.ErrOrderTransitionConflict), errors.Is(err, postgres.ErrCheckoutIdempotencyConflict):

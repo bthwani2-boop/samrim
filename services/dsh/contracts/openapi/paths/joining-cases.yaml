@@ -7,6 +7,8 @@ paths:
       parameters:
         - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
         - { name: state, in: query, required: false, schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseState" } }
+        - { name: q, in: query, required: false, description: Case ID, contact phone, business name, or first store name search., schema: { type: string, maxLength: 128 } }
+        - { name: sort, in: query, required: false, description: Stable creation-time ordering; cursor is valid only for the same sort., schema: { type: string, enum: [created_asc, created_desc], default: created_asc } }
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 50, default: 25 } }
         - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 256 } }
       responses:
@@ -46,6 +48,39 @@ paths:
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+
+  /dsh/partners/actors/{actorId}/joining-case:
+    get:
+      operationId: readJoiningCaseForPartnerActor
+      summary: Read a partner's canonical onboarding case for a control operator
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { name: actorId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      responses:
+        "200": { description: Partner onboarding case and first store readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/partners/actors/{actorId}/stores:
+    get:
+      operationId: listOperatorPartnerStores
+      summary: List one Partner actor's canonical DSH stores for an active operator
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { name: actorId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { name: limit, in: query, required: true, schema: { type: integer, minimum: 1, maximum: 50 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 128 } }
+      responses:
+        "200": { description: Canonical paginated stores belonging to the requested Partner actor., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerStoreListResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
   /dsh/joining-cases/{caseId}:
     get:
@@ -123,3 +158,27 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+  /dsh/joining-cases/{caseId}/financial-terms:
+    post:
+      operationId: bindJoiningCaseFinancialTerms
+      summary: Bind the current WLT terms policy to an approved legacy case without financial terms
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+        - { name: caseId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/BindJoiningCaseFinancialTermsRequest" }
+      responses:
+        "200": { description: Financial terms were bound and profile provisioning was attempted., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }

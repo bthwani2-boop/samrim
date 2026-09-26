@@ -36,10 +36,54 @@ type ActorRoleView struct {
 	RoleCreated       bool       `json:"roleCreated,omitempty"`
 }
 
+type OperatorPermissionAccess struct {
+	ActorID          string    `json:"actorId"`
+	Permission       string    `json:"permission"`
+	Enabled          bool      `json:"enabled"`
+	Version          int       `json:"version"`
+	ChangedByActorID *string   `json:"changedByActorId,omitempty"`
+	Reason           string    `json:"reason"`
+	UpdatedAt        time.Time `json:"updatedAt"`
+}
+
+const (
+	OperatorPermissionOperations       = "operations"
+	OperatorPermissionPartners         = "partners"
+	OperatorPermissionCatalog          = "catalog"
+	OperatorPermissionMarketing        = "marketing"
+	OperatorPermissionFinance          = "finance"
+	OperatorPermissionPlatformPolicies = "platform_policies"
+)
+
+func IsOperatorPermission(permission string) bool {
+	switch permission {
+	case OperatorPermissionOperations, OperatorPermissionPartners, OperatorPermissionCatalog, OperatorPermissionMarketing, OperatorPermissionFinance, OperatorPermissionPlatformPolicies:
+		return true
+	default:
+		return false
+	}
+}
+
+func OperatorPermissions() []string {
+	return []string{
+		OperatorPermissionOperations,
+		OperatorPermissionPartners,
+		OperatorPermissionCatalog,
+		OperatorPermissionMarketing,
+		OperatorPermissionFinance,
+		OperatorPermissionPlatformPolicies,
+	}
+}
+
+type SetOperatorPermissionRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
 type ActorSearchInput struct {
 	Role    string
 	Query   string
 	Enabled *bool
+	Sort    string
 	Limit   int
 	Cursor  string
 }
@@ -174,11 +218,13 @@ type RefreshRequest struct {
 }
 
 type ActorIdentity struct {
-	Subject   string    `json:"subject"`
-	SessionID string    `json:"sessionId"`
-	Role      string    `json:"role"`
-	Surface   string    `json:"surface"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	Subject                      string    `json:"subject"`
+	SessionID                    string    `json:"sessionId"`
+	Role                         string    `json:"role"`
+	Surface                      string    `json:"surface"`
+	ExpiresAt                    time.Time `json:"expiresAt"`
+	Permissions                  []string  `json:"permissions,omitempty"`
+	CanManageOperatorPermissions bool      `json:"canManageOperatorPermissions,omitempty"`
 }
 
 type TokenPair struct {
@@ -292,7 +338,9 @@ func CanSetRoleEnabled(caller, role string) bool {
 }
 
 func CanAuthorizeReenrollment(caller, role string) bool {
-	return strings.EqualFold(strings.TrimSpace(caller), "control-panel") && (strings.EqualFold(strings.TrimSpace(role), "partner") || strings.EqualFold(strings.TrimSpace(role), "captain"))
+	caller = strings.ToLower(strings.TrimSpace(caller))
+	role = strings.ToLower(strings.TrimSpace(role))
+	return (caller == "control-panel" && (role == "partner" || role == "captain")) || (caller == "dsh" && role == "field")
 }
 
 func CanIssueOperatorEnrollmentTokenForRole(caller, role string) bool {

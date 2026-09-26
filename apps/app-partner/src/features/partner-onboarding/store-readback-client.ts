@@ -1,5 +1,5 @@
+import { type CommerceVertical, createDshMobileClient, type JoiningCaseResponse, type ServiceCity, type StoreCaptainInvitationResponse, type StoreCaptainMembershipListResponse, type StoreCaptainMembershipResponse, type StoreCaptainMembershipTransitionRequest } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { createDshMobileClient, type CommerceVertical, type JoiningCaseResponse, type ServiceCity } from "@bthwani/dsh";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 function dshBaseUrl(): string {
@@ -20,6 +20,21 @@ export async function readOwnJoiningCase(): Promise<JoiningCaseResponse> {
 
 export async function correctAndResubmitOwnJoiningCase(caseID: string, businessName: string, firstStoreName: string, serviceCityId: string, firstStoreVerticalId: string, firstStoreLatitude: number, firstStoreLongitude: number, expectedVersion: number): Promise<JoiningCaseResponse> {
   return accessToken().then((token) => dshClient().correctAndResubmitJoiningCase(token, caseID, { businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude }, expectedVersion));
+}
+
+export async function listOwnStoreCaptainMemberships(storeID: string): Promise<StoreCaptainMembershipListResponse> {
+  const token = await accessToken();
+  return dshClient().listPartnerStoreCaptainMemberships(token, storeID);
+}
+
+export async function createOwnStoreCaptainInvitation(storeID: string): Promise<StoreCaptainInvitationResponse> {
+  const token = await accessToken();
+  return dshClient().createPartnerStoreCaptainInvitation(token, storeID);
+}
+
+export async function transitionOwnStoreCaptainMembership(storeID: string, membershipID: string, state: StoreCaptainMembershipTransitionRequest["state"], expectedVersion: number): Promise<StoreCaptainMembershipResponse> {
+  const token = await accessToken();
+  return dshClient().transitionPartnerStoreCaptainMembership(token, storeID, membershipID, { state }, expectedVersion);
 }
 
 export function listActiveServiceCities(): Promise<ReadonlyArray<ServiceCity>> {

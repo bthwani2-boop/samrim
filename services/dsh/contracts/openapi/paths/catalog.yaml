@@ -1,4 +1,22 @@
 paths:
+  /dsh/catalog/product-registry:
+    get:
+      operationId: listCatalogProductRegistry
+      summary: Read a bounded operator-facing canonical Product registry projection
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - { name: q, in: query, required: false, schema: { type: string, maxLength: 160 } }
+        - $ref: "../dsh.openapi.yaml#/components/parameters/VerticalId"
+        - { name: categoryId, in: query, required: false, schema: { type: string, maxLength: 128 } }
+        - { name: active, in: query, required: false, schema: { type: string, enum: [all, active, inactive], default: all } }
+        - { name: sort, in: query, required: false, schema: { type: string, enum: [name_asc, name_desc, updated_desc, updated_asc], default: name_asc } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 2048 } }
+      responses:
+        "200": { description: Bounded operator registry projection with keyset pagination., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductRegistryResponse" } } } }
+
   /dsh/catalog/verticals:
     get:
       operationId: listCatalogVerticals
@@ -21,6 +39,27 @@ paths:
       responses:
         "201": { description: Commerce Vertical created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CommerceVerticalResponse" } } } }
         "200": { description: Idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CommerceVerticalResponse" } } } }
+
+  /dsh/catalog/verticals/{verticalId}:
+    patch:
+      operationId: updateCatalogVertical
+      summary: Update one Commerce Vertical with expected-version concurrency and audit
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: verticalId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UpdateCommerceVerticalRequest" } }
+      responses:
+        "200": { description: Vertical updated or idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CommerceVerticalResponse" } } } }
 
   /dsh/catalog/categories:
     get:
@@ -45,6 +84,51 @@ paths:
           application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateCatalogCategoryRequest" } }
       responses:
         "201": { description: Category created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogCategoryResponse" } } } }
+
+  /dsh/catalog/categories/{categoryId}:
+    patch:
+      operationId: updateCatalogCategory
+      summary: Update one Category parent, names, or state with cycle prevention and audit
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: categoryId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UpdateCatalogCategoryRequest" } }
+      responses:
+        "200": { description: Category updated or idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogCategoryResponse" } } } }
+
+  /dsh/public/catalog/categories/{categoryId}/attribute-rules:
+    get:
+      operationId: listPublicCatalogCategoryAttributeRules
+      summary: Read active public attribute requirements for one active category
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CategoryId"
+      responses:
+        "200": { description: Active category attribute rules used by product entry forms., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogAttributeRuleListResponse" } } } }
+
+  /dsh/catalog/categories/{categoryId}/attribute-rules:
+    get:
+      operationId: listCatalogCategoryAttributeRules
+      summary: Read category attribute rules for operator catalog maintenance
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: categoryId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200": { description: Canonical typed attribute rules., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogAttributeRuleListResponse" } } } }
 
   /dsh/catalog/attributes:
     get:
@@ -73,6 +157,15 @@ paths:
       responses:
         "201": { description: Attribute definition created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogAttributeDefinitionResponse" } } } }
         "200": { description: Idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogAttributeDefinitionResponse" } } } }
+
+  /dsh/public/catalog/attributes/{attributeId}/enum-options:
+    get:
+      operationId: listPublicCatalogAttributeEnumOptions
+      summary: Read active public values for a typed ENUM Attribute
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/AttributeId"
+      responses:
+        "200": { description: Active public ENUM options., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogAttributeEnumOptionListResponse" } } } }
 
   /dsh/catalog/attributes/{attributeId}/enum-options:
     get:
@@ -144,7 +237,9 @@ paths:
       security:
         - serviceBearer: []
       parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
         - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
         - $ref: "../dsh.openapi.yaml#/components/parameters/CategoryId"
         - $ref: "../dsh.openapi.yaml#/components/parameters/AttributeId"
       requestBody:
@@ -183,6 +278,16 @@ paths:
         "200": { description: Idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductResponse" } } } }
 
   /dsh/catalog/products/{productId}:
+    get:
+      operationId: readCatalogProduct
+      summary: Read one canonical Product with its Variants, categories, attributes, and media
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ProductId"
+      responses:
+        "200": { description: Canonical Product detail readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProduct" } } } }
     patch:
       operationId: updateCatalogProduct
       summary: Versioned canonical Product update
@@ -668,9 +773,10 @@ paths:
         - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
         - $ref: "../dsh.openapi.yaml#/components/parameters/ServiceCityIdRequired"
         - { name: categoryId, in: query, required: false, schema: { type: string, maxLength: 128 } }
+        - { name: productId, in: query, required: false, description: Restrict the result page to one product within this Store., schema: { type: string, maxLength: 128 } }
         - { name: q, in: query, required: false, schema: { type: string, maxLength: 160 } }
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
-        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 512 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 1024 } }
       responses:
         "200": { description: Customer-visible catalog readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PublicCatalogResponse" } } } }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }

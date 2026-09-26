@@ -17,6 +17,41 @@ paths:
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
+  /dsh/operator/partner-commission-receivables:
+    get:
+      operationId: listOperatorPartnerCommissionReceivables
+      summary: List WLT-current partner cash-commission receivables in bounded searchable pages
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: search
+          in: query
+          required: false
+          schema: { type: string, maxLength: 128 }
+        - name: sort
+          in: query
+          required: false
+          schema: { type: string, enum: [actor_asc, actor_desc], default: actor_asc }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 1024 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Current receivables in one bounded page.
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerCommissionReceivableRegistryResponse" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/operator/partners/{partnerActorId}/financial-summary:
     get:
       operationId: readOperatorPartnerFinancialSummary
@@ -40,4 +75,91 @@ paths:
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+
+  /dsh/operator/partners/{partnerActorId}/commission-remittances:
+    post:
+      operationId: recordPartnerCommissionRemittance
+      summary: Record an operator-verified Partner remittance against its WLT commission receivable
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: partnerActorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerCommissionRemittanceRequest" }
+      responses:
+        "201":
+          description: Remittance was verified and posted to the WLT ledger.
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerCommissionRemittanceResponse" }
+        "200":
+          description: Idempotent replay of the verified remittance.
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerCommissionRemittanceResponse" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/partner-store-commission-policies:
+    get:
+      operationId: readOperatorPartnerStoreCommissionPolicies
+      summary: Read the current Finance-controlled commission rate for each fulfillment mode at one Store
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: storeId
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200":
+          description: Current per-mode commission policies for the Store.
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerStoreCommissionPoliciesResponse" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+    post:
+      operationId: updateOperatorPartnerStoreCommissionPolicy
+      summary: Change one Store and fulfillment-mode commission rate with optimistic versioning and an audit reason
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerStoreCommissionPolicyUpdateRequest" }
+      responses:
+        "200":
+          description: Current policy after the change or idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerStoreCommissionPolicyUpdateResponse" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }

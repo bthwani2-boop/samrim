@@ -46,6 +46,8 @@ type CreateDeliveryFeePolicyInput struct {
 	OrderSizeRateMinor     int64
 	ZoneSurchargeMinor     int64
 	RoundingUnitMinor      int64
+	ExpectedVersion        int
+	Reason                 string
 	ActingActorID          string
 	IdempotencyKey         string
 	CorrelationID          string
@@ -72,7 +74,7 @@ type DeliveryFeeQuoteRecord struct {
 }
 
 func HashDeliveryFeePolicyRequest(input CreateDeliveryFeePolicyInput) string {
-	parts := []string{"delivery-fee-policy", strings.TrimSpace(input.ServiceCityID), fmt.Sprintf("%d", input.BaseFeeMinor), fmt.Sprintf("%d", input.DistanceUnitMeters), fmt.Sprintf("%d", input.DistanceRateMinor), fmt.Sprintf("%d", input.OrderSizeUnitBaseUnits), fmt.Sprintf("%d", input.OrderSizeRateMinor), fmt.Sprintf("%d", input.ZoneSurchargeMinor), fmt.Sprintf("%d", input.RoundingUnitMinor)}
+	parts := []string{"delivery-fee-policy", strings.TrimSpace(input.ServiceCityID), fmt.Sprintf("%d", input.BaseFeeMinor), fmt.Sprintf("%d", input.DistanceUnitMeters), fmt.Sprintf("%d", input.DistanceRateMinor), fmt.Sprintf("%d", input.OrderSizeUnitBaseUnits), fmt.Sprintf("%d", input.OrderSizeRateMinor), fmt.Sprintf("%d", input.ZoneSurchargeMinor), fmt.Sprintf("%d", input.RoundingUnitMinor), fmt.Sprintf("%d", input.ExpectedVersion), strings.TrimSpace(input.Reason)}
 	digest := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 	return hex.EncodeToString(digest[:])
 }
@@ -82,7 +84,8 @@ func CreateDeliveryFeePolicy(ctx context.Context, db *sql.DB, input CreateDelive
 	input.ActingActorID = strings.TrimSpace(input.ActingActorID)
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
 	input.CorrelationID = strings.TrimSpace(input.CorrelationID)
-	if db == nil || len(input.ServiceCityID) > 128 || input.BaseFeeMinor < 0 || input.DistanceUnitMeters <= 0 || input.DistanceRateMinor < 0 || input.OrderSizeUnitBaseUnits <= 0 || input.OrderSizeRateMinor < 0 || input.ZoneSurchargeMinor < 0 || input.RoundingUnitMinor != 50 || input.ActingActorID == "" || len(input.ActingActorID) > 128 || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
+	input.Reason = strings.Join(strings.Fields(strings.TrimSpace(input.Reason)), " ")
+	if db == nil || len(input.ServiceCityID) > 128 || input.BaseFeeMinor < 0 || input.DistanceUnitMeters <= 0 || input.DistanceRateMinor < 0 || input.OrderSizeUnitBaseUnits <= 0 || input.OrderSizeRateMinor < 0 || input.ZoneSurchargeMinor < 0 || input.RoundingUnitMinor != 50 || input.ExpectedVersion < 0 || len(input.Reason) < 5 || len(input.Reason) > 500 || input.ActingActorID == "" || len(input.ActingActorID) > 128 || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
 		return DeliveryFeePolicyRecord{}, false, ErrDeliveryFeePolicyInvalidInput
 	}
 	requestHash := HashDeliveryFeePolicyRequest(input)
@@ -112,10 +115,15 @@ func CreateDeliveryFeePolicy(ctx context.Context, db *sql.DB, input CreateDelive
 	if !errors.Is(err, sql.ErrNoRows) {
 		return DeliveryFeePolicyRecord{}, false, err
 	}
-	var version int
-	if err := tx.QueryRowContext(ctx, "SELECT COALESCE(MAX(version),0)+1 FROM wlt.delivery_fee_policies WHERE service_city_id=$1", input.ServiceCityID).Scan(&version); err != nil {
+	var currentVersion int
+	err = tx.QueryRowContext(ctx, "SELECT version FROM wlt.delivery_fee_policies WHERE service_city_id=$1 AND state='ACTIVE' FOR UPDATE", input.ServiceCityID).Scan(&currentVersion)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return DeliveryFeePolicyRecord{}, false, err
 	}
+	if input.ExpectedVersion != currentVersion {
+		return DeliveryFeePolicyRecord{}, false, ErrVersionConflict
+	}
+	version := currentVersion + 1
 	policyID, err := newID("delivery-policy")
 	if err != nil {
 		return DeliveryFeePolicyRecord{}, false, err
@@ -131,7 +139,7 @@ func CreateDeliveryFeePolicy(ctx context.Context, db *sql.DB, input CreateDelive
 	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.delivery_fee_policies(id,service_city_id,policy_version,state,base_fee_minor,distance_unit_meters,distance_rate_minor,order_size_unit_base_units,order_size_rate_minor,zone_surcharge_minor,rounding_unit_minor,version,created_by) VALUES($1,$2,$3,'ACTIVE',$4,$5,$6,$7,$8,$9,$10,$11,$12)`, policyID, input.ServiceCityID, policyVersion, input.BaseFeeMinor, input.DistanceUnitMeters, input.DistanceRateMinor, input.OrderSizeUnitBaseUnits, input.OrderSizeRateMinor, input.ZoneSurchargeMinor, input.RoundingUnitMinor, version, input.ActingActorID); err != nil {
 		return DeliveryFeePolicyRecord{}, false, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.delivery_fee_policy_events(policy_id,event_type,service_city_id,policy_version,request_hash,idempotency_key,correlation_id,acting_actor_id) VALUES($1,'DELIVERY_FEE_POLICY_ACTIVATED',$2,$3,$4,$5,$6,$7)`, policyID, input.ServiceCityID, policyVersion, requestHash, input.IdempotencyKey, input.CorrelationID, input.ActingActorID); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.delivery_fee_policy_events(policy_id,event_type,service_city_id,policy_version,request_hash,idempotency_key,correlation_id,acting_actor_id,expected_version,change_reason) VALUES($1,'DELIVERY_FEE_POLICY_ACTIVATED',$2,$3,$4,$5,$6,$7,$8,$9)`, policyID, input.ServiceCityID, policyVersion, requestHash, input.IdempotencyKey, input.CorrelationID, input.ActingActorID, input.ExpectedVersion, input.Reason); err != nil {
 		return DeliveryFeePolicyRecord{}, false, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -145,7 +153,11 @@ func ReadDeliveryFeePolicy(ctx context.Context, db *sql.DB, serviceCityID string
 	if db == nil || len(strings.TrimSpace(serviceCityID)) > 128 {
 		return DeliveryFeePolicyRecord{}, ErrDeliveryFeePolicyInvalidInput
 	}
-	return readActiveDeliveryFeePolicy(ctx, db, strings.TrimSpace(serviceCityID))
+	return readExactActiveDeliveryFeePolicy(ctx, db, strings.TrimSpace(serviceCityID))
+}
+
+func readExactActiveDeliveryFeePolicy(ctx context.Context, db *sql.DB, serviceCityID string) (DeliveryFeePolicyRecord, error) {
+	return readDeliveryFeePolicyRow(db.QueryRowContext(ctx, `SELECT id,service_city_id,policy_version,state,base_fee_minor,distance_unit_meters,distance_rate_minor,order_size_unit_base_units,order_size_rate_minor,zone_surcharge_minor,rounding_unit_minor,version,created_by,created_at,retired_at FROM wlt.delivery_fee_policies WHERE state='ACTIVE' AND service_city_id=$1`, serviceCityID))
 }
 
 func ResolveDeliveryFeeQuote(ctx context.Context, db *sql.DB, input DeliveryFeeQuoteInput) (DeliveryFeeQuoteRecord, error) {

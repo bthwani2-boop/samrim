@@ -3,6 +3,7 @@ package http
 import (
 	"crypto/subtle"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -12,16 +13,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/cashin"
 	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/storage/postgres"
+	"github.com/lib/pq"
 )
 
 type Server struct {
 	db                       *sql.DB
 	serviceToken             string
 	destinationEncryptionKey *postgres.DestinationCipher
+	financeEvidenceCipher    *postgres.DestinationCipher
+	cashInRail               cashin.CashInRail
+	cashInSimulatorEnabled   bool
 }
 
-func New(db *sql.DB, serviceToken, destinationEncryptionKey string) (*Server, error) {
+func New(db *sql.DB, serviceToken, destinationEncryptionKey string, financeEvidenceEncryptionKey ...string) (*Server, error) {
 	if db == nil || strings.TrimSpace(serviceToken) == "" {
 		return nil, errors.New("WLT HTTP server configuration is invalid")
 	}
@@ -29,11 +35,45 @@ func New(db *sql.DB, serviceToken, destinationEncryptionKey string) (*Server, er
 	if err != nil {
 		return nil, err
 	}
-	return &Server{db: db, serviceToken: strings.TrimSpace(serviceToken), destinationEncryptionKey: cipher}, nil
+	if len(financeEvidenceEncryptionKey) != 1 || strings.TrimSpace(financeEvidenceEncryptionKey[0]) == "" {
+		return nil, errors.New("WLT_FINANCE_EVIDENCE_ENCRYPTION_KEY is required")
+	}
+	evidenceCipher, err := postgres.NewDestinationCipher(financeEvidenceEncryptionKey[0])
+	if err != nil {
+		return nil, err
+	}
+	return &Server{db: db, serviceToken: strings.TrimSpace(serviceToken), destinationEncryptionKey: cipher, financeEvidenceCipher: evidenceCipher}, nil
+}
+
+func NewWithCashInConfig(db *sql.DB, serviceToken, destinationEncryptionKey, financeEvidenceEncryptionKey, cashInMode, environment string) (*Server, error) {
+	rail, simulatorEnabled, err := cashInRailForConfig(cashInMode, environment)
+	if err != nil {
+		return nil, err
+	}
+	server, err := New(db, serviceToken, destinationEncryptionKey, financeEvidenceEncryptionKey)
+	if err != nil {
+		return nil, err
+	}
+	server.cashInRail = rail
+	server.cashInSimulatorEnabled = simulatorEnabled
+	return server, nil
+}
+
+func cashInRailForConfig(cashInMode, environment string) (cashin.CashInRail, bool, error) {
+	mode := strings.ToLower(strings.TrimSpace(cashInMode))
+	environment = strings.ToLower(strings.TrimSpace(environment))
+	if mode == "" || mode == "disabled" {
+		return nil, false, nil
+	}
+	if mode != "simulator" || environment != "development" {
+		return nil, false, errors.New("WLT Cash-In simulator is permitted only in development; production requires an approved real rail")
+	}
+	return cashin.DevelopmentSimulator{}, true, nil
 }
 
 func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/payment-intents", s.create)
+	mux.HandleFunc("GET /wlt/v1/payment-intents/by-external-reference", s.readByExternalReference)
 	mux.HandleFunc("GET /wlt/v1/payment-intents/{intentId}", s.read)
 	mux.HandleFunc("POST /wlt/v1/payment-intents/{intentId}/collect", s.collect)
 	mux.HandleFunc("POST /wlt/v1/payment-intents/{intentId}/cancel", s.cancel)
@@ -48,12 +88,21 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/delivery-quotes", s.deliveryQuote)
 	mux.HandleFunc("GET /wlt/v1/operator/delivery-fee-policies", s.readDeliveryFeePolicy)
 	mux.HandleFunc("POST /wlt/v1/operator/delivery-fee-policies", s.createDeliveryFeePolicy)
+	mux.HandleFunc("GET /wlt/v1/operator/partner-financial-terms-policy", s.readPartnerFinancialTermsPolicy)
+	mux.HandleFunc("POST /wlt/v1/operator/partner-financial-terms-policy", s.createPartnerFinancialTermsPolicy)
 	mux.HandleFunc("POST /wlt/v1/partner-financial-profiles", s.preparePartnerFinancialProfile)
 	mux.HandleFunc("GET /wlt/v1/partner-financial-profiles/{profileId}", s.readPartnerFinancialProfile)
 	mux.HandleFunc("POST /wlt/v1/partner-financial-profiles/{profileId}/activate", s.activatePartnerFinancialProfile)
+	mux.HandleFunc("POST /wlt/v1/partner-store-commission-policies/initialize", s.initializePartnerStoreCommissionPolicies)
+	mux.HandleFunc("GET /wlt/v1/operator/partner-store-commission-policies", s.readPartnerStoreCommissionPolicies)
+	mux.HandleFunc("POST /wlt/v1/operator/partner-store-commission-policies", s.updatePartnerStoreCommissionPolicy)
 	mux.HandleFunc("POST /wlt/v1/partner-order-earnings/finalize", s.finalizePartnerOrderEarning)
+	mux.HandleFunc("POST /wlt/v1/partner-store-cash-commissions/finalize", s.finalizePartnerStoreCashCommission)
+	mux.HandleFunc("POST /wlt/v1/operator/partners/{partnerActorId}/commission-remittances", s.recordPartnerCommissionRemittance)
 	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/financial-summary", s.readPartnerFinancialSummary)
+	mux.HandleFunc("GET /wlt/v1/operator/partner-commission-receivables", s.listPartnerCommissionReceivables)
 	mux.HandleFunc("POST /wlt/v1/operator/field-commission-policies", s.createFieldCommissionPolicy)
+	mux.HandleFunc("GET /wlt/v1/operator/field-commission-policies", s.readOperatorFieldCommissionPolicy)
 	mux.HandleFunc("GET /wlt/v1/field-commission-policies/{policyId}", s.readFieldCommissionPolicy)
 	mux.HandleFunc("POST /wlt/v1/field-commission-earnings/finalize", s.finalizeFieldCommission)
 	mux.HandleFunc("GET /wlt/v1/fields/{fieldActorId}/financial-summary", s.readFieldFinancialSummary)
@@ -61,20 +110,43 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/operator/official-wallet-destinations/{destinationId}/verify", s.verifyOfficialWalletDestination)
 	mux.HandleFunc("POST /wlt/v1/operator/official-wallet-destinations/{destinationId}/activate", s.activateOfficialWalletDestination)
 	mux.HandleFunc("GET /wlt/v1/official-wallet-destinations/{actorType}/{actorId}", s.readOfficialWalletDestination)
+	mux.HandleFunc("GET /wlt/v1/official-wallet-destinations/by-id/{destinationId}", s.readOfficialWalletDestinationByID)
 	mux.HandleFunc("POST /wlt/v1/payout-intents", s.createPayoutIntent)
 	mux.HandleFunc("GET /wlt/v1/payout-state/{actorType}/{actorId}", s.readPayoutState)
 	mux.HandleFunc("GET /wlt/v1/operator/payout-requests", s.listPayoutRequests)
+	mux.HandleFunc("GET /wlt/v1/operator/beneficiaries", s.listBeneficiaryPayoutStates)
+	mux.HandleFunc("GET /wlt/v1/operator/beneficiaries/{actorType}/{actorId}/financial-statement", s.readFinancialStatement)
+	mux.HandleFunc("GET /wlt/v1/operator/financial-statements", s.listFinancialStatementSummaries)
 	mux.HandleFunc("GET /wlt/v1/operator/payout-requests/{payoutId}", s.readOperatorPayoutRequest)
 	mux.HandleFunc("POST /wlt/v1/operator/payout-requests/{payoutId}/prepare", s.preparePayout)
 	mux.HandleFunc("POST /wlt/v1/operator/payout-requests/{payoutId}/approve", s.approvePayout)
 	mux.HandleFunc("POST /wlt/v1/operator/payout-requests/{payoutId}/cancel", s.cancelPayout)
 	mux.HandleFunc("POST /wlt/v1/operator/settlement-batches", s.createSettlementBatch)
+	mux.HandleFunc("GET /wlt/v1/operator/settlement-batches", s.listSettlementBatches)
 	mux.HandleFunc("GET /wlt/v1/operator/settlement-batches/{batchId}", s.readSettlementBatch)
+	mux.HandleFunc("POST /wlt/v1/operator/settlement-batches/{batchId}/export", s.exportSettlementBatch)
 	mux.HandleFunc("POST /wlt/v1/operator/settlement-batches/{batchId}/approve", s.approveSettlementBatch)
 	mux.HandleFunc("POST /wlt/v1/operator/settlement-batches/{batchId}/freeze", s.freezeSettlementBatch)
 	mux.HandleFunc("POST /wlt/v1/operator/settlement-batches/{batchId}/transfers", s.recordManualTransfer)
 	mux.HandleFunc("POST /wlt/v1/operator/transfers/{transferId}/verify", s.verifyManualTransfer)
 	mux.HandleFunc("POST /wlt/v1/operator/transfers/{transferId}/reconcile", s.reconcileManualTransfer)
+	mux.HandleFunc("POST /wlt/v1/operator/settlement-statements", s.registerSettlementStatement)
+	mux.HandleFunc("POST /wlt/v1/operator/settlement-statements/{statementId}/rows", s.recordSettlementStatementRow)
+	mux.HandleFunc("POST /wlt/v1/operator/finance-evidence-documents", s.uploadFinanceEvidenceDocument)
+	mux.HandleFunc("GET /wlt/v1/operator/finance-evidence-documents/{documentId}", s.readFinanceEvidenceDocument)
+	mux.HandleFunc("POST /wlt/v1/operator/customer-withdrawal-intakes", s.createCustomerWithdrawalIntake)
+	mux.HandleFunc("GET /wlt/v1/operator/customer-withdrawal-intakes", s.listCustomerWithdrawalIntakes)
+	mux.HandleFunc("GET /wlt/v1/operator/customer-withdrawal-intakes/{intakeId}", s.readCustomerWithdrawalIntake)
+	mux.HandleFunc("POST /wlt/v1/operator/customer-withdrawal-intakes/{intakeId}/prepare-destination", s.prepareCustomerWithdrawalDestination)
+	mux.HandleFunc("POST /wlt/v1/operator/customer-withdrawal-intakes/{intakeId}/accept", s.acceptCustomerWithdrawal)
+	mux.HandleFunc("POST /wlt/v1/operator/customer-withdrawal-intakes/{intakeId}/reject", s.rejectCustomerWithdrawal)
+	mux.HandleFunc("POST /wlt/v1/wallets/{actorType}/{actorId}/funding-intents", s.createCashInFundingIntent)
+	mux.HandleFunc("GET /wlt/v1/wallets/{actorType}/{actorId}/state", s.readWalletState)
+	mux.HandleFunc("GET /wlt/v1/wallets/{actorType}/{actorId}/funding-intents", s.listCashInFundingIntents)
+	mux.HandleFunc("GET /wlt/v1/funding-intents/{fundingIntentId}", s.readCashInFundingIntent)
+	if s.cashInSimulatorEnabled {
+		mux.HandleFunc("POST /wlt/v1/development/funding-intents/{fundingIntentId}/simulate", s.simulateCashInFundingIntent)
+	}
 }
 
 type createRequest struct {
@@ -89,6 +161,9 @@ type createRequest struct {
 
 type customerPaymentAllocationRequest struct {
 	OrderID                    string `json:"orderId"`
+	StoreID                    string `json:"storeId"`
+	PartnerActorID             string `json:"partnerActorId"`
+	FulfillmentMode            string `json:"fulfillmentMode"`
 	Currency                   string `json:"currency"`
 	SubtotalMinor              int64  `json:"subtotalMinor"`
 	DeliveryFeeMinor           int64  `json:"deliveryFeeMinor"`
@@ -97,6 +172,20 @@ type customerPaymentAllocationRequest struct {
 	CashAmountMinor            int64  `json:"cashAmountMinor"`
 	CustomerPayableMinor       int64  `json:"customerPayableMinor"`
 	PolicyVersion              string `json:"policyVersion"`
+}
+
+type initializePartnerStoreCommissionPoliciesRequest struct {
+	StoreID        string `json:"storeId"`
+	PartnerActorID string `json:"partnerActorId"`
+	ProfileID      string `json:"profileId"`
+}
+
+type updatePartnerStoreCommissionPolicyRequest struct {
+	StoreID           string `json:"storeId"`
+	FulfillmentMode   string `json:"fulfillmentMode"`
+	CommissionRateBps int    `json:"commissionRateBps"`
+	ExpectedVersion   int    `json:"expectedVersion"`
+	Reason            string `json:"reason"`
 }
 
 type collectRequest struct {
@@ -116,11 +205,12 @@ type remitCashRequest struct {
 }
 
 type preparePartnerFinancialProfileRequest struct {
-	JoiningCaseID     string `json:"joiningCaseId"`
-	PartnerActorID    string `json:"partnerActorId"`
-	Origin            string `json:"origin"`
-	CommissionRateBps int    `json:"commissionRateBps"`
-	SettlementPeriod  string `json:"settlementPeriod"`
+	JoiningCaseID      string `json:"joiningCaseId"`
+	PartnerActorID     string `json:"partnerActorId"`
+	Origin             string `json:"origin"`
+	CommissionRateBps  int    `json:"commissionRateBps"`
+	SettlementPeriod   string `json:"settlementPeriod"`
+	TermsPolicyVersion string `json:"termsPolicyVersion"`
 }
 
 type createFieldCommissionPolicyRequest struct {
@@ -128,6 +218,8 @@ type createFieldCommissionPolicyRequest struct {
 	ScopeID           string `json:"scopeId"`
 	RewardMinor       int64  `json:"rewardMinor"`
 	RoundingUnitMinor int64  `json:"roundingUnitMinor"`
+	ExpectedVersion   int    `json:"expectedVersion"`
+	Reason            string `json:"reason"`
 }
 
 type finalizeFieldCommissionRequest struct {
@@ -145,12 +237,26 @@ type finalizePartnerOrderEarningRequest struct {
 	CaptainActorID  string `json:"captainActorId"`
 }
 
+type finalizePartnerStoreCashCommissionRequest struct {
+	OrderID         string `json:"orderId"`
+	PaymentIntentID string `json:"paymentIntentId"`
+	PartnerActorID  string `json:"partnerActorId"`
+	FulfillmentMode string `json:"fulfillmentMode"`
+}
+
+type partnerCommissionRemittanceRequest struct {
+	AmountMinor         int64  `json:"amountMinor"`
+	RemittanceReference string `json:"remittanceReference"`
+	EvidenceReference   string `json:"evidenceReference"`
+}
+
 type createOfficialWalletDestinationRequest struct {
 	ActorType                     string `json:"actorType"`
 	ActorID                       string `json:"actorId"`
 	ProviderKey                   string `json:"providerKey"`
 	WalletIdentifier              string `json:"walletIdentifier"`
 	BeneficiaryName               string `json:"beneficiaryName"`
+	BeneficiaryIdentityVersion    int    `json:"beneficiaryIdentityVersion"`
 	ChangeReason                  string `json:"changeReason"`
 	VerificationEvidenceReference string `json:"verificationEvidenceReference"`
 	ChangeEvidenceReference       string `json:"changeEvidenceReference"`
@@ -179,6 +285,7 @@ type officialWalletDestinationJSON struct {
 	ProviderKey                   string  `json:"providerKey"`
 	WalletIdentifierMasked        string  `json:"walletIdentifierMasked"`
 	BeneficiaryName               string  `json:"beneficiaryName"`
+	BeneficiaryIdentityVersion    int     `json:"beneficiaryIdentityVersion"`
 	VerificationStatus            string  `json:"verificationStatus"`
 	Status                        string  `json:"status"`
 	Version                       int     `json:"version"`
@@ -230,26 +337,78 @@ type payoutStateJSON struct {
 	LatestPayout           *payoutRequestJSON             `json:"latestPayout"`
 }
 
+type beneficiaryPayoutRegistryResponse struct {
+	Beneficiaries []payoutStateJSON `json:"beneficiaries"`
+	NextCursor    string            `json:"nextCursor,omitempty"`
+	Limit         int               `json:"limit"`
+}
+
+type beneficiaryPayoutRegistryCursor struct {
+	Sort      string `json:"sort"`
+	SortValue int64  `json:"sortValue"`
+	ActorType string `json:"actorType"`
+	ActorID   string `json:"actorId"`
+}
+
 type partnerOrderEarningResponse struct {
 	Earning          partnerOrderEarningJSON `json:"earning"`
 	IdempotentReplay bool                    `json:"idempotentReplay"`
 }
 
-type partnerOrderEarningJSON struct {
+type partnerStoreCashCommissionResponse struct {
+	Commission       partnerStoreCashCommissionJSON `json:"commission"`
+	IdempotentReplay bool                           `json:"idempotentReplay"`
+}
+
+type partnerStoreCashCommissionJSON struct {
 	OrderID             string `json:"orderId"`
 	PaymentIntentID     string `json:"paymentIntentId"`
 	PartnerActorID      string `json:"partnerActorId"`
-	CaptainActorID      string `json:"captainActorId"`
+	FulfillmentMode     string `json:"fulfillmentMode"`
 	Currency            string `json:"currency"`
 	GrossProductMinor   int64  `json:"grossProductMinor"`
-	DeliveryFeeMinor    int64  `json:"deliveryFeeMinor"`
 	CommissionMinor     int64  `json:"commissionMinor"`
-	PartnerNetMinor     int64  `json:"partnerNetMinor"`
 	ProfileID           string `json:"profileId"`
 	ProfileVersion      int    `json:"profileVersion"`
 	PolicyVersion       string `json:"policyVersion"`
+	LedgerTransactionID string `json:"ledgerTransactionId,omitempty"`
+	CreatedAt           string `json:"createdAt"`
+}
+
+type partnerCommissionRemittanceResponse struct {
+	Remittance       partnerCommissionRemittanceJSON `json:"remittance"`
+	IdempotentReplay bool                            `json:"idempotentReplay"`
+}
+
+type partnerCommissionRemittanceJSON struct {
+	ID                  string `json:"id"`
+	PartnerActorID      string `json:"partnerActorId"`
+	AmountMinor         int64  `json:"amountMinor"`
+	Currency            string `json:"currency"`
+	RemittanceReference string `json:"remittanceReference"`
+	EvidenceReference   string `json:"evidenceReference"`
+	VerifiedBy          string `json:"verifiedBy"`
+	VerifiedAt          string `json:"verifiedAt"`
 	LedgerTransactionID string `json:"ledgerTransactionId"`
 	CreatedAt           string `json:"createdAt"`
+}
+
+type partnerOrderEarningJSON struct {
+	OrderID                         string `json:"orderId"`
+	PaymentIntentID                 string `json:"paymentIntentId"`
+	PartnerActorID                  string `json:"partnerActorId"`
+	CaptainActorID                  string `json:"captainActorId"`
+	Currency                        string `json:"currency"`
+	GrossProductMinor               int64  `json:"grossProductMinor"`
+	DeliveryFeeMinor                int64  `json:"deliveryFeeMinor"`
+	CommissionMinor                 int64  `json:"commissionMinor"`
+	PartnerNetMinor                 int64  `json:"partnerNetMinor"`
+	CommissionReceivableOffsetMinor int64  `json:"commissionReceivableOffsetMinor"`
+	ProfileID                       string `json:"profileId"`
+	ProfileVersion                  int    `json:"profileVersion"`
+	PolicyVersion                   string `json:"policyVersion"`
+	LedgerTransactionID             string `json:"ledgerTransactionId"`
+	CreatedAt                       string `json:"createdAt"`
 }
 
 type partnerFinancialSummaryResponse struct {
@@ -305,15 +464,16 @@ type fieldFinancialSummaryJSON struct {
 }
 
 type partnerFinancialSummaryJSON struct {
-	PartnerActorID   string  `json:"partnerActorId"`
-	Currency         string  `json:"currency"`
-	EarnedMinor      int64   `json:"earnedMinor"`
-	CommissionMinor  int64   `json:"commissionMinor"`
-	OrderCount       int64   `json:"orderCount"`
-	SettlementPeriod string  `json:"settlementPeriod"`
-	ProfileState     string  `json:"profileState"`
-	ProfileVersion   int     `json:"profileVersion"`
-	LastEarningAt    *string `json:"lastEarningAt"`
+	PartnerActorID                       string  `json:"partnerActorId"`
+	Currency                             string  `json:"currency"`
+	EarnedMinor                          int64   `json:"earnedMinor"`
+	CommissionMinor                      int64   `json:"commissionMinor"`
+	OutstandingCommissionReceivableMinor int64   `json:"outstandingCommissionReceivableMinor"`
+	OrderCount                           int64   `json:"orderCount"`
+	SettlementPeriod                     string  `json:"settlementPeriod"`
+	ProfileState                         string  `json:"profileState"`
+	ProfileVersion                       int     `json:"profileVersion"`
+	LastEarningAt                        *string `json:"lastEarningAt"`
 }
 
 type deliveryFeeQuoteRequest struct {
@@ -334,6 +494,8 @@ type createDeliveryFeePolicyRequest struct {
 	OrderSizeRateMinor     int64  `json:"orderSizeRateMinor"`
 	ZoneSurchargeMinor     int64  `json:"zoneSurchargeMinor"`
 	RoundingUnitMinor      int64  `json:"roundingUnitMinor"`
+	ExpectedVersion        int    `json:"expectedVersion"`
+	Reason                 string `json:"reason"`
 }
 
 type paymentIntentResponse struct {
@@ -361,18 +523,31 @@ type paymentIntentJSON struct {
 }
 
 type customerPaymentAllocationJSON struct {
-	ID                         string `json:"id"`
-	OrderID                    string `json:"orderId"`
-	PaymentIntentID            string `json:"paymentIntentId"`
-	Currency                   string `json:"currency"`
-	SubtotalMinor              int64  `json:"subtotalMinor"`
-	DeliveryFeeMinor           int64  `json:"deliveryFeeMinor"`
-	DiscountMinor              int64  `json:"discountMinor"`
-	InternalBalanceAmountMinor int64  `json:"internalBalanceAmountMinor"`
-	CashAmountMinor            int64  `json:"cashAmountMinor"`
-	CustomerPayableMinor       int64  `json:"customerPayableMinor"`
-	PolicyVersion              string `json:"policyVersion"`
-	CreatedAt                  string `json:"createdAt"`
+	ID                         string                              `json:"id"`
+	OrderID                    string                              `json:"orderId"`
+	PaymentIntentID            string                              `json:"paymentIntentId"`
+	StoreID                    string                              `json:"storeId"`
+	PartnerActorID             string                              `json:"partnerActorId"`
+	FulfillmentMode            string                              `json:"fulfillmentMode"`
+	Currency                   string                              `json:"currency"`
+	SubtotalMinor              int64                               `json:"subtotalMinor"`
+	DeliveryFeeMinor           int64                               `json:"deliveryFeeMinor"`
+	DiscountMinor              int64                               `json:"discountMinor"`
+	InternalBalanceAmountMinor int64                               `json:"internalBalanceAmountMinor"`
+	CashAmountMinor            int64                               `json:"cashAmountMinor"`
+	CustomerPayableMinor       int64                               `json:"customerPayableMinor"`
+	PolicyVersion              string                              `json:"policyVersion"`
+	CommissionSnapshot         *partnerStoreCommissionSnapshotJSON `json:"commissionSnapshot,omitempty"`
+	CreatedAt                  string                              `json:"createdAt"`
+}
+
+type partnerStoreCommissionSnapshotJSON struct {
+	RateBps           int    `json:"rateBps"`
+	PolicyVersion     int    `json:"policyVersion"`
+	ProfileID         string `json:"profileId"`
+	ProfileVersion    int    `json:"profileVersion"`
+	RoundingUnitMinor int64  `json:"roundingUnitMinor"`
+	SettlementPeriod  string `json:"settlementPeriod"`
 }
 
 type cashLiabilityItemJSON struct {
@@ -388,6 +563,14 @@ type cashLiabilityItemJSON struct {
 type cashLiabilityResponse struct {
 	Items            []cashLiabilityItemJSON `json:"items"`
 	TotalAmountMinor int64                   `json:"totalAmountMinor"`
+}
+
+type cashLiabilityRegistryResponse struct {
+	Items            []cashLiabilityItemJSON `json:"items"`
+	TotalAmountMinor int64                   `json:"totalAmountMinor"`
+	TotalItems       int                     `json:"totalItems"`
+	Limit            int                     `json:"limit"`
+	NextCursor       string                  `json:"nextCursor,omitempty"`
 }
 
 type cashRemittanceJSON struct {
@@ -412,23 +595,48 @@ type partnerFinancialProfileResponse struct {
 }
 
 type partnerFinancialProfileJSON struct {
-	ID                string  `json:"id"`
-	JoiningCaseID     string  `json:"joiningCaseId"`
-	PartnerActorID    string  `json:"partnerActorId"`
-	Origin            string  `json:"origin"`
-	CommissionRateBps int     `json:"commissionRateBps"`
-	SettlementPeriod  string  `json:"settlementPeriod"`
-	RoundingUnitMinor int64   `json:"roundingUnitMinor"`
-	State             string  `json:"state"`
-	Version           int     `json:"version"`
-	ActivatedAt       *string `json:"activatedAt"`
-	CreatedAt         string  `json:"createdAt"`
-	UpdatedAt         string  `json:"updatedAt"`
+	ID                 string  `json:"id"`
+	JoiningCaseID      string  `json:"joiningCaseId"`
+	PartnerActorID     string  `json:"partnerActorId"`
+	Origin             string  `json:"origin"`
+	CommissionRateBps  int     `json:"commissionRateBps"`
+	SettlementPeriod   string  `json:"settlementPeriod"`
+	TermsPolicyVersion string  `json:"termsPolicyVersion,omitempty"`
+	RoundingUnitMinor  int64   `json:"roundingUnitMinor"`
+	State              string  `json:"state"`
+	Version            int     `json:"version"`
+	ActivatedAt        *string `json:"activatedAt"`
+	CreatedAt          string  `json:"createdAt"`
+	UpdatedAt          string  `json:"updatedAt"`
 }
 
 type deliveryFeePolicyResponse struct {
 	Policy           deliveryFeePolicyJSON `json:"policy"`
 	IdempotentReplay bool                  `json:"idempotentReplay"`
+}
+
+type partnerFinancialTermsPolicyResponse struct {
+	Policy           partnerFinancialTermsPolicyJSON `json:"policy"`
+	IdempotentReplay bool                            `json:"idempotentReplay,omitempty"`
+}
+
+type partnerFinancialTermsPolicyJSON struct {
+	ID                string  `json:"id"`
+	PolicyVersion     string  `json:"policyVersion"`
+	State             string  `json:"state"`
+	CommissionRateBps int     `json:"commissionRateBps"`
+	SettlementPeriod  string  `json:"settlementPeriod"`
+	Version           int     `json:"version"`
+	CreatedBy         string  `json:"createdBy"`
+	CreatedAt         string  `json:"createdAt"`
+	RetiredAt         *string `json:"retiredAt"`
+}
+
+type createPartnerFinancialTermsPolicyRequest struct {
+	CommissionRateBps int    `json:"commissionRateBps"`
+	SettlementPeriod  string `json:"settlementPeriod"`
+	ExpectedVersion   int    `json:"expectedVersion"`
+	Reason            string `json:"reason"`
 }
 
 type deliveryFeePolicyJSON struct {
@@ -478,7 +686,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 	}
 	var allocation *postgres.CustomerPaymentAllocationInput
 	if input.CustomerPaymentAllocation != nil {
-		value := postgres.CustomerPaymentAllocationInput{OrderID: input.CustomerPaymentAllocation.OrderID, Currency: input.CustomerPaymentAllocation.Currency, SubtotalMinor: input.CustomerPaymentAllocation.SubtotalMinor, DeliveryFeeMinor: input.CustomerPaymentAllocation.DeliveryFeeMinor, DiscountMinor: input.CustomerPaymentAllocation.DiscountMinor, InternalBalanceAmountMinor: input.CustomerPaymentAllocation.InternalBalanceAmountMinor, CashAmountMinor: input.CustomerPaymentAllocation.CashAmountMinor, CustomerPayableMinor: input.CustomerPaymentAllocation.CustomerPayableMinor, PolicyVersion: input.CustomerPaymentAllocation.PolicyVersion}
+		value := postgres.CustomerPaymentAllocationInput{OrderID: input.CustomerPaymentAllocation.OrderID, StoreID: input.CustomerPaymentAllocation.StoreID, PartnerActorID: input.CustomerPaymentAllocation.PartnerActorID, FulfillmentMode: input.CustomerPaymentAllocation.FulfillmentMode, Currency: input.CustomerPaymentAllocation.Currency, SubtotalMinor: input.CustomerPaymentAllocation.SubtotalMinor, DeliveryFeeMinor: input.CustomerPaymentAllocation.DeliveryFeeMinor, DiscountMinor: input.CustomerPaymentAllocation.DiscountMinor, InternalBalanceAmountMinor: input.CustomerPaymentAllocation.InternalBalanceAmountMinor, CashAmountMinor: input.CustomerPaymentAllocation.CashAmountMinor, CustomerPayableMinor: input.CustomerPaymentAllocation.CustomerPayableMinor, PolicyVersion: input.CustomerPaymentAllocation.PolicyVersion}
 		allocation = &value
 	}
 	result, replayed, err := postgres.CreatePaymentIntent(r.Context(), s.db, postgres.CreatePaymentIntentInput{ExternalReference: input.ExternalReference, PayerActorID: input.PayerActorID, OrderID: input.OrderID, AmountMinor: input.AmountMinor, Currency: input.Currency, Method: input.Method, CustomerPaymentAllocation: allocation, IdempotencyKey: idempotency, CorrelationID: correlation})
@@ -491,6 +699,23 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusOK
 	}
 	writeJSON(w, status, paymentIntentResponse{PaymentIntent: toPaymentIntent(result), IdempotentReplay: replayed})
+}
+
+func (s *Server) readByExternalReference(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	externalReference := strings.TrimSpace(r.URL.Query().Get("externalReference"))
+	if externalReference == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "externalReference is required")
+		return
+	}
+	result, err := postgres.ReadPaymentIntentByExternalReference(r.Context(), s.db, externalReference)
+	if err != nil {
+		writePaymentError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, paymentIntentResponse{PaymentIntent: toPaymentIntent(result)})
 }
 
 func (s *Server) read(w http.ResponseWriter, r *http.Request) {
@@ -550,18 +775,6 @@ func (s *Server) cashLiability(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := postgres.ListCashLiability(r.Context(), s.db, r.PathValue("captainActorId"), 100)
-	if err != nil {
-		writePaymentError(w, err)
-		return
-	}
-	writeCashLiability(w, result)
-}
-
-func (s *Server) operatorCashLiability(w http.ResponseWriter, r *http.Request) {
-	if !s.authorize(w, r) {
-		return
-	}
-	result, err := postgres.ListAllCashLiability(r.Context(), s.db, 100)
 	if err != nil {
 		writePaymentError(w, err)
 		return
@@ -642,7 +855,7 @@ func (s *Server) createDeliveryFeePolicy(w http.ResponseWriter, r *http.Request)
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	policy, replayed, err := postgres.CreateDeliveryFeePolicy(r.Context(), s.db, postgres.CreateDeliveryFeePolicyInput{ServiceCityID: input.ServiceCityID, BaseFeeMinor: input.BaseFeeMinor, DistanceUnitMeters: input.DistanceUnitMeters, DistanceRateMinor: input.DistanceRateMinor, OrderSizeUnitBaseUnits: input.OrderSizeUnitBaseUnits, OrderSizeRateMinor: input.OrderSizeRateMinor, ZoneSurchargeMinor: input.ZoneSurchargeMinor, RoundingUnitMinor: input.RoundingUnitMinor, ActingActorID: acting, IdempotencyKey: idempotency, CorrelationID: correlation})
+	policy, replayed, err := postgres.CreateDeliveryFeePolicy(r.Context(), s.db, postgres.CreateDeliveryFeePolicyInput{ServiceCityID: input.ServiceCityID, BaseFeeMinor: input.BaseFeeMinor, DistanceUnitMeters: input.DistanceUnitMeters, DistanceRateMinor: input.DistanceRateMinor, OrderSizeUnitBaseUnits: input.OrderSizeUnitBaseUnits, OrderSizeRateMinor: input.OrderSizeRateMinor, ZoneSurchargeMinor: input.ZoneSurchargeMinor, RoundingUnitMinor: input.RoundingUnitMinor, ExpectedVersion: input.ExpectedVersion, Reason: input.Reason, ActingActorID: acting, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writeDeliveryFeeError(w, err)
 		return
@@ -652,6 +865,72 @@ func (s *Server) createDeliveryFeePolicy(w http.ResponseWriter, r *http.Request)
 		status = http.StatusOK
 	}
 	writeJSON(w, status, deliveryFeePolicyResponse{Policy: toDeliveryFeePolicy(policy), IdempotentReplay: replayed})
+}
+
+func (s *Server) readPartnerFinancialTermsPolicy(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	policy, err := postgres.ReadPartnerFinancialTermsPolicy(r.Context(), s.db)
+	if err != nil {
+		writePartnerFinancialTermsPolicyError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, partnerFinancialTermsPolicyResponse{Policy: toPartnerFinancialTermsPolicy(policy)})
+}
+
+func (s *Server) createPartnerFinancialTermsPolicy(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	correlation, idempotency, ok := mutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if acting == "" || len(acting) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return
+	}
+	var input createPartnerFinancialTermsPolicyRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	policy, replayed, err := postgres.CreatePartnerFinancialTermsPolicy(r.Context(), s.db, postgres.CreatePartnerFinancialTermsPolicyInput{CommissionRateBps: input.CommissionRateBps, SettlementPeriod: input.SettlementPeriod, ExpectedVersion: input.ExpectedVersion, Reason: input.Reason, ActingActorID: acting, IdempotencyKey: idempotency, CorrelationID: correlation})
+	if err != nil {
+		writePartnerFinancialTermsPolicyError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if replayed {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, partnerFinancialTermsPolicyResponse{Policy: toPartnerFinancialTermsPolicy(policy), IdempotentReplay: replayed})
+}
+
+func toPartnerFinancialTermsPolicy(item postgres.PartnerFinancialTermsPolicyRecord) partnerFinancialTermsPolicyJSON {
+	result := partnerFinancialTermsPolicyJSON{ID: item.ID, PolicyVersion: item.PolicyVersion, State: item.State, CommissionRateBps: item.CommissionRateBps, SettlementPeriod: item.SettlementPeriod, Version: item.Version, CreatedBy: item.CreatedBy, CreatedAt: item.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
+	if item.RetiredAt != nil {
+		value := item.RetiredAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")
+		result.RetiredAt = &value
+	}
+	return result
+}
+
+func writePartnerFinancialTermsPolicyError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, postgres.ErrPartnerFinancialTermsPolicyNotFound):
+		writeError(w, http.StatusNotFound, "PARTNER_FINANCIAL_TERMS_POLICY_NOT_FOUND", "no active partner financial terms policy is configured")
+	case errors.Is(err, postgres.ErrIdempotencyConflict):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different partner financial terms")
+	case errors.Is(err, postgres.ErrVersionConflict):
+		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "the active partner financial terms policy changed after it was read")
+	case errors.Is(err, postgres.ErrPartnerFinancialTermsPolicyInvalidInput):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partner financial terms policy is invalid")
+	default:
+		log.Printf("WLT partner financial terms policy persistence error: %T %v", err, err)
+		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT persistence is unavailable")
+	}
 }
 
 func (s *Server) preparePartnerFinancialProfile(w http.ResponseWriter, r *http.Request) {
@@ -667,13 +946,14 @@ func (s *Server) preparePartnerFinancialProfile(w http.ResponseWriter, r *http.R
 		return
 	}
 	result, replayed, err := postgres.PreparePartnerFinancialProfile(r.Context(), s.db, postgres.PreparePartnerFinancialProfileInput{
-		JoiningCaseID:     input.JoiningCaseID,
-		PartnerActorID:    input.PartnerActorID,
-		Origin:            input.Origin,
-		CommissionRateBps: input.CommissionRateBps,
-		SettlementPeriod:  input.SettlementPeriod,
-		IdempotencyKey:    idempotency,
-		CorrelationID:     correlation,
+		JoiningCaseID:      input.JoiningCaseID,
+		PartnerActorID:     input.PartnerActorID,
+		Origin:             input.Origin,
+		CommissionRateBps:  input.CommissionRateBps,
+		SettlementPeriod:   input.SettlementPeriod,
+		TermsPolicyVersion: input.TermsPolicyVersion,
+		IdempotencyKey:     idempotency,
+		CorrelationID:      correlation,
 	})
 	if err != nil {
 		writeFinancialProfileError(w, err)
@@ -724,6 +1004,88 @@ func (s *Server) activatePartnerFinancialProfile(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, partnerFinancialProfileResponse{Profile: toPartnerFinancialProfile(result), IdempotentReplay: replayed})
 }
 
+func (s *Server) initializePartnerStoreCommissionPolicies(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	correlation, idempotency, ok := mutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input initializePartnerStoreCommissionPoliciesRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	policies, err := postgres.InitializePartnerStoreCommissionPolicies(r.Context(), s.db, input.StoreID, input.PartnerActorID, input.ProfileID, idempotency, correlation)
+	if err != nil {
+		writeFinancialProfileError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"storeId": strings.TrimSpace(input.StoreID), "policies": policies})
+}
+
+func (s *Server) readPartnerStoreCommissionPolicies(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	storeID := strings.TrimSpace(r.URL.Query().Get("storeId"))
+	if storeID == "" || len(storeID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "storeId is required")
+		return
+	}
+	policies, err := postgres.ReadPartnerStoreCommissionPolicies(r.Context(), s.db, storeID)
+	if err != nil {
+		writePartnerStoreCommissionPolicyError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"storeId": storeID, "policies": policies})
+}
+
+func (s *Server) updatePartnerStoreCommissionPolicy(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	correlation, idempotency, ok := mutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	actingActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if actingActorID == "" || len(actingActorID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return
+	}
+	var input updatePartnerStoreCommissionPolicyRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	policy, replayed, err := postgres.UpdatePartnerStoreCommissionPolicy(r.Context(), s.db, postgres.PartnerStoreCommissionPolicyUpdate{
+		StoreID: input.StoreID, FulfillmentMode: input.FulfillmentMode, CommissionRateBps: input.CommissionRateBps,
+		ExpectedVersion: input.ExpectedVersion, ChangedByActorID: actingActorID, Reason: input.Reason,
+		IdempotencyKey: idempotency, CorrelationID: correlation,
+	})
+	if err != nil {
+		writePartnerStoreCommissionPolicyError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"policy": policy, "idempotentReplay": replayed})
+}
+
+func writePartnerStoreCommissionPolicyError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, postgres.ErrPartnerStoreCommissionPolicyUnavailable):
+		writeError(w, http.StatusNotFound, "COMMISSION_POLICY_NOT_FOUND", "commission policies are not initialized for this Store")
+	case errors.Is(err, postgres.ErrPartnerStoreCommissionPolicyVersionConflict):
+		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "commission policy changed; reload before saving")
+	case errors.Is(err, postgres.ErrIdempotencyConflict):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different commission policy facts")
+	case errors.Is(err, postgres.ErrPartnerStoreCommissionPolicyInvalidInput):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "commission policy fields are invalid")
+	default:
+		log.Printf("WLT partner store commission policy persistence error: %T %v", err, err)
+		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT commission policy persistence is unavailable")
+	}
+}
+
 func (s *Server) finalizePartnerOrderEarning(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
@@ -746,6 +1108,59 @@ func (s *Server) finalizePartnerOrderEarning(w http.ResponseWriter, r *http.Requ
 		status = http.StatusOK
 	}
 	writeJSON(w, status, partnerOrderEarningResponse{Earning: toPartnerOrderEarning(result), IdempotentReplay: replayed})
+}
+
+func (s *Server) finalizePartnerStoreCashCommission(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	correlation, idempotency, ok := mutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input finalizePartnerStoreCashCommissionRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, replayed, err := postgres.RecordPartnerStoreCashCommission(r.Context(), s.db, postgres.PartnerStoreCashCommissionInput{OrderID: input.OrderID, PaymentIntentID: input.PaymentIntentID, PartnerActorID: input.PartnerActorID, FulfillmentMode: input.FulfillmentMode, IdempotencyKey: idempotency, CorrelationID: correlation})
+	if err != nil {
+		writePartnerCashCommissionError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if replayed {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, partnerStoreCashCommissionResponse{Commission: toPartnerStoreCashCommission(result), IdempotentReplay: replayed})
+}
+
+func (s *Server) recordPartnerCommissionRemittance(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	correlation, idempotency, ok := mutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if acting == "" || len(acting) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return
+	}
+	var input partnerCommissionRemittanceRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, replayed, err := postgres.RecordPartnerCommissionRemittance(r.Context(), s.db, postgres.PartnerCommissionRemittanceInput{PartnerActorID: r.PathValue("partnerActorId"), AmountMinor: input.AmountMinor, RemittanceReference: input.RemittanceReference, EvidenceReference: input.EvidenceReference, VerifiedBy: acting, IdempotencyKey: idempotency, CorrelationID: correlation})
+	if err != nil {
+		writePartnerCashCommissionError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if replayed {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, partnerCommissionRemittanceResponse{Remittance: toPartnerCommissionRemittance(result), IdempotentReplay: replayed})
 }
 
 func (s *Server) readPartnerFinancialSummary(w http.ResponseWriter, r *http.Request) {
@@ -777,7 +1192,7 @@ func (s *Server) createFieldCommissionPolicy(w http.ResponseWriter, r *http.Requ
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, replayed, err := postgres.CreateFieldCommissionPolicy(r.Context(), s.db, postgres.CreateFieldCommissionPolicyInput{ScopeType: input.ScopeType, ScopeID: input.ScopeID, RewardMinor: input.RewardMinor, RoundingUnitMinor: input.RoundingUnitMinor, CreatedBy: acting, IdempotencyKey: idempotency, CorrelationID: correlation})
+	result, replayed, err := postgres.CreateFieldCommissionPolicy(r.Context(), s.db, postgres.CreateFieldCommissionPolicyInput{ScopeType: input.ScopeType, ScopeID: input.ScopeID, RewardMinor: input.RewardMinor, RoundingUnitMinor: input.RoundingUnitMinor, ExpectedVersion: input.ExpectedVersion, Reason: input.Reason, CreatedBy: acting, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writeFieldCommissionError(w, err)
 		return
@@ -794,6 +1209,18 @@ func (s *Server) readFieldCommissionPolicy(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	result, err := postgres.ReadFieldCommissionPolicy(r.Context(), s.db, r.PathValue("policyId"))
+	if err != nil {
+		writeFieldCommissionError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, fieldCommissionPolicyResponse{Policy: toFieldCommissionPolicy(result)})
+}
+
+func (s *Server) readOperatorFieldCommissionPolicy(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	result, err := postgres.ReadActiveFieldCommissionPolicyByScope(r.Context(), s.db, r.URL.Query().Get("scopeType"), r.URL.Query().Get("scopeId"))
 	if err != nil {
 		writeFieldCommissionError(w, err)
 		return
@@ -854,7 +1281,7 @@ func (s *Server) createOfficialWalletDestination(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
 		return
 	}
-	result, replayed, err := postgres.CreateOfficialWalletDestination(r.Context(), s.db, s.destinationEncryptionKey, postgres.CreateOfficialWalletDestinationInput{ActorType: input.ActorType, ActorID: input.ActorID, ProviderKey: input.ProviderKey, WalletIdentifier: input.WalletIdentifier, BeneficiaryName: input.BeneficiaryName, ChangeReason: input.ChangeReason, VerificationEvidenceReference: input.VerificationEvidenceReference, ChangeEvidenceReference: input.ChangeEvidenceReference, SubmittedBy: actor, IdempotencyKey: idempotency, CorrelationID: correlation})
+	result, replayed, err := postgres.CreateOfficialWalletDestination(r.Context(), s.db, s.destinationEncryptionKey, postgres.CreateOfficialWalletDestinationInput{ActorType: input.ActorType, ActorID: input.ActorID, ProviderKey: input.ProviderKey, WalletIdentifier: input.WalletIdentifier, BeneficiaryName: input.BeneficiaryName, BeneficiaryIdentityVersion: input.BeneficiaryIdentityVersion, ChangeReason: input.ChangeReason, VerificationEvidenceReference: input.VerificationEvidenceReference, ChangeEvidenceReference: input.ChangeEvidenceReference, SubmittedBy: actor, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writeDestinationError(w, err)
 		return
@@ -924,6 +1351,18 @@ func (s *Server) readOfficialWalletDestination(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, officialWalletDestinationResponse{Destination: toOfficialWalletDestination(result)})
 }
 
+func (s *Server) readOfficialWalletDestinationByID(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	result, err := postgres.ReadOfficialWalletDestinationByID(r.Context(), s.db, r.PathValue("destinationId"))
+	if err != nil {
+		writeDestinationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, officialWalletDestinationResponse{Destination: toOfficialWalletDestination(result)})
+}
+
 func (s *Server) createPayoutIntent(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
@@ -934,6 +1373,10 @@ func (s *Server) createPayoutIntent(w http.ResponseWriter, r *http.Request) {
 	}
 	var input payoutIntentRequest
 	if !decodeJSON(w, r, &input) {
+		return
+	}
+	if strings.EqualFold(strings.TrimSpace(input.ActorType), "customer") {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "customer withdrawals require a linked Operations intake and cannot use the general payout-intent route")
 		return
 	}
 	result, replayed, err := postgres.CreatePayoutIntent(r.Context(), s.db, postgres.PayoutIntentInput{ActorType: input.ActorType, ActorID: input.ActorID, AmountMode: input.AmountMode, AmountMinor: input.AmountMinor, IdempotencyKey: idempotency, CorrelationID: correlation})
@@ -958,6 +1401,57 @@ func (s *Server) readPayoutState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, payoutStateResponse{State: toPayoutState(result)})
+}
+
+func (s *Server) listBeneficiaryPayoutStates(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) || !s.requireActingOperator(w, r) {
+		return
+	}
+	limit := 50
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 100 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "beneficiary page limit is invalid")
+			return
+		}
+		limit = parsed
+	}
+	sortKey := strings.TrimSpace(r.URL.Query().Get("sort"))
+	if sortKey == "" {
+		sortKey = "actor_asc"
+	}
+	if !postgres.ValidBeneficiaryRegistrySort(sortKey) {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "beneficiary sort is invalid")
+		return
+	}
+	var cursorState beneficiaryPayoutRegistryCursor
+	if cursor := strings.TrimSpace(r.URL.Query().Get("cursor")); cursor != "" {
+		decoded, err := base64.RawURLEncoding.DecodeString(cursor)
+		if err != nil || len(decoded) > 384 || json.Unmarshal(decoded, &cursorState) != nil || cursorState.Sort != sortKey || cursorState.ActorID == "" || !postgres.ValidPayoutRegistryActor(cursorState.ActorType) {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "beneficiary cursor is invalid")
+			return
+		}
+	}
+	items, more, err := postgres.ListBeneficiaryPayoutStates(r.Context(), s.db, r.URL.Query().Get("actorType"), r.URL.Query().Get("search"), r.URL.Query().Get("status"), sortKey, cursorState.SortValue, cursorState.ActorType, cursorState.ActorID, limit)
+	if err != nil {
+		writePayoutError(w, err)
+		return
+	}
+	result := beneficiaryPayoutRegistryResponse{Beneficiaries: make([]payoutStateJSON, 0, len(items)), Limit: limit}
+	for _, item := range items {
+		result.Beneficiaries = append(result.Beneficiaries, toPayoutState(item.State))
+	}
+	if more && len(items) > 0 {
+		last := items[len(items)-1]
+		cursorBytes, err := json.Marshal(beneficiaryPayoutRegistryCursor{Sort: sortKey, SortValue: last.SortValue, ActorType: last.State.ActorType, ActorID: last.State.ActorID})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", "beneficiary cursor could not be created")
+			return
+		}
+		result.NextCursor = base64.RawURLEncoding.EncodeToString(cursorBytes)
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) authorize(w http.ResponseWriter, r *http.Request) bool {
@@ -1016,7 +1510,12 @@ func toPaymentIntent(item postgres.PaymentIntentRecord) paymentIntentJSON {
 	}
 	if item.CustomerPaymentAllocation != nil {
 		allocation := item.CustomerPaymentAllocation
-		result.CustomerPaymentAllocation = &customerPaymentAllocationJSON{ID: allocation.ID, OrderID: allocation.OrderID, PaymentIntentID: allocation.PaymentIntentID, Currency: allocation.Currency, SubtotalMinor: allocation.SubtotalMinor, DeliveryFeeMinor: allocation.DeliveryFeeMinor, DiscountMinor: allocation.DiscountMinor, InternalBalanceAmountMinor: allocation.InternalBalanceAmountMinor, CashAmountMinor: allocation.CashAmountMinor, CustomerPayableMinor: allocation.CustomerPayableMinor, PolicyVersion: allocation.PolicyVersion, CreatedAt: allocation.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
+		jsonAllocation := &customerPaymentAllocationJSON{ID: allocation.ID, OrderID: allocation.OrderID, PaymentIntentID: allocation.PaymentIntentID, StoreID: allocation.StoreID, PartnerActorID: allocation.PartnerActorID, FulfillmentMode: allocation.FulfillmentMode, Currency: allocation.Currency, SubtotalMinor: allocation.SubtotalMinor, DeliveryFeeMinor: allocation.DeliveryFeeMinor, DiscountMinor: allocation.DiscountMinor, InternalBalanceAmountMinor: allocation.InternalBalanceAmountMinor, CashAmountMinor: allocation.CashAmountMinor, CustomerPayableMinor: allocation.CustomerPayableMinor, PolicyVersion: allocation.PolicyVersion, CreatedAt: allocation.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
+		if allocation.CommissionSnapshot != nil {
+			snapshot := allocation.CommissionSnapshot
+			jsonAllocation.CommissionSnapshot = &partnerStoreCommissionSnapshotJSON{RateBps: snapshot.RateBps, PolicyVersion: snapshot.PolicyVersion, ProfileID: snapshot.ProfileID, ProfileVersion: snapshot.ProfileVersion, RoundingUnitMinor: snapshot.RoundingUnitMinor, SettlementPeriod: snapshot.SettlementPeriod}
+		}
+		result.CustomerPaymentAllocation = jsonAllocation
 	}
 	return result
 }
@@ -1050,7 +1549,7 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 }
 
 func toOfficialWalletDestination(item postgres.OfficialWalletDestinationRecord) officialWalletDestinationJSON {
-	return officialWalletDestinationJSON{ID: item.ID, ActorType: item.ActorType, ActorID: item.ActorID, ProviderKey: item.ProviderKey, WalletIdentifierMasked: item.WalletIdentifierMasked, BeneficiaryName: item.BeneficiaryName, VerificationStatus: item.VerificationStatus, Status: item.Status, Version: item.Version, ChangeReason: item.ChangeReason, SubmittedBy: item.SubmittedBy, SubmittedAt: item.SubmittedAt.UTC().Format(time.RFC3339Nano), VerifiedBy: item.VerifiedBy, VerifiedAt: formatNullableTime(item.VerifiedAt), ApprovedBy: item.ApprovedBy, ApprovedAt: formatNullableTime(item.ApprovedAt), VerificationEvidenceReference: item.VerificationEvidenceReference, ChangeEvidenceReference: item.ChangeEvidenceReference, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: item.UpdatedAt.UTC().Format(time.RFC3339Nano)}
+	return officialWalletDestinationJSON{ID: item.ID, ActorType: item.ActorType, ActorID: item.ActorID, ProviderKey: item.ProviderKey, WalletIdentifierMasked: item.WalletIdentifierMasked, BeneficiaryName: item.BeneficiaryName, BeneficiaryIdentityVersion: item.BeneficiaryIdentityVersion, VerificationStatus: item.VerificationStatus, Status: item.Status, Version: item.Version, ChangeReason: item.ChangeReason, SubmittedBy: item.SubmittedBy, SubmittedAt: item.SubmittedAt.UTC().Format(time.RFC3339Nano), VerifiedBy: item.VerifiedBy, VerifiedAt: formatNullableTime(item.VerifiedAt), ApprovedBy: item.ApprovedBy, ApprovedAt: formatNullableTime(item.ApprovedAt), VerificationEvidenceReference: item.VerificationEvidenceReference, ChangeEvidenceReference: item.ChangeEvidenceReference, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: item.UpdatedAt.UTC().Format(time.RFC3339Nano)}
 }
 
 func toPayoutRequest(item postgres.PayoutRequestRecord) payoutRequestJSON {
@@ -1084,6 +1583,8 @@ func writeDestinationError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "official wallet destination was not found")
 	case errors.Is(err, postgres.ErrDestinationState):
 		writeError(w, http.StatusConflict, "STATE_CONFLICT", "official wallet destination state does not allow this operation")
+	case errors.Is(err, postgres.ErrDestinationSeparation):
+		writeError(w, http.StatusConflict, "SEPARATION_OF_DUTIES", "a different operator must verify or approve the destination")
 	case errors.Is(err, postgres.ErrIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different destination facts")
 	default:
@@ -1093,6 +1594,14 @@ func writeDestinationError(w http.ResponseWriter, err error) {
 
 func writePayoutError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, postgres.ErrPayoutInvalidInput):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "payout intent input is invalid")
+	case errors.Is(err, postgres.ErrCustomerWithdrawalNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "customer withdrawal intake was not found")
+	case errors.Is(err, postgres.ErrCustomerWithdrawalState):
+		writeError(w, http.StatusConflict, "STATE_CONFLICT", "customer withdrawal intake state does not allow this operation")
+	case errors.Is(err, postgres.ErrCustomerWithdrawalFunds):
+		writeError(w, http.StatusConflict, "NO_ELIGIBLE_FUNDS", "customer has no eligible internal balance to withdraw")
 	case errors.Is(err, postgres.ErrPayoutDestination):
 		writeError(w, http.StatusConflict, "DESTINATION_UNAVAILABLE", "a verified active official wallet destination is required")
 	case errors.Is(err, postgres.ErrPayoutNoFunds):
@@ -1102,7 +1611,13 @@ func writePayoutError(w http.ResponseWriter, err error) {
 	case errors.Is(err, postgres.ErrIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different payout facts")
 	default:
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "payout intent input is invalid")
+		var postgresError *pq.Error
+		if errors.As(err, &postgresError) {
+			log.Printf("WLT_PAYOUT_ERROR sqlstate=%s", postgresError.Code)
+		} else {
+			log.Printf("WLT_PAYOUT_ERROR error_type=%T", err)
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "payout operation could not be completed")
 	}
 }
 
@@ -1110,6 +1625,8 @@ func writePaymentError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, postgres.ErrNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "payment intent was not found")
+	case errors.Is(err, postgres.ErrExternalReferenceAmbiguous):
+		writeError(w, http.StatusConflict, "EXTERNAL_REFERENCE_AMBIGUOUS", "more than one payment intent uses this external reference")
 	case errors.Is(err, postgres.ErrIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different payment facts")
 	case errors.Is(err, postgres.ErrIntentExists):
@@ -1130,6 +1647,8 @@ func writePaymentError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "payment input is invalid")
 	case errors.Is(err, postgres.ErrCustomerPaymentAllocationInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_PAYMENT_ALLOCATION", "payment allocation is invalid")
+	case errors.Is(err, postgres.ErrPartnerStoreCommissionPolicyUnavailable):
+		writeError(w, http.StatusConflict, "COMMISSION_POLICY_UNAVAILABLE", "the Store does not have an initialized commission policy for this fulfillment mode")
 	default:
 		log.Printf("WLT partner financial profile persistence error: %T %v", err, err)
 		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT persistence is unavailable")
@@ -1142,6 +1661,8 @@ func writeDeliveryFeeError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "DELIVERY_FEE_POLICY_NOT_FOUND", "no active delivery fee policy is available")
 	case errors.Is(err, postgres.ErrIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different delivery fee policy facts")
+	case errors.Is(err, postgres.ErrVersionConflict):
+		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "the active delivery fee policy changed after it was read")
 	case errors.Is(err, postgres.ErrDeliveryFeePolicyInvalidInput), errors.Is(err, postgres.ErrDeliveryFeeQuoteInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_DELIVERY_FEE", "delivery fee policy or quote is invalid")
 	default:
@@ -1152,17 +1673,18 @@ func writeDeliveryFeeError(w http.ResponseWriter, err error) {
 
 func toPartnerFinancialProfile(item postgres.PartnerFinancialProfileRecord) partnerFinancialProfileJSON {
 	result := partnerFinancialProfileJSON{
-		ID:                item.ID,
-		JoiningCaseID:     item.JoiningCaseID,
-		PartnerActorID:    item.PartnerActorID,
-		Origin:            item.Origin,
-		CommissionRateBps: item.CommissionRateBps,
-		SettlementPeriod:  item.SettlementPeriod,
-		RoundingUnitMinor: item.RoundingUnitMinor,
-		State:             item.State,
-		Version:           item.Version,
-		CreatedAt:         item.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00"),
-		UpdatedAt:         item.UpdatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00"),
+		ID:                 item.ID,
+		JoiningCaseID:      item.JoiningCaseID,
+		PartnerActorID:     item.PartnerActorID,
+		Origin:             item.Origin,
+		CommissionRateBps:  item.CommissionRateBps,
+		SettlementPeriod:   item.SettlementPeriod,
+		TermsPolicyVersion: item.TermsPolicyVersion,
+		RoundingUnitMinor:  item.RoundingUnitMinor,
+		State:              item.State,
+		Version:            item.Version,
+		CreatedAt:          item.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00"),
+		UpdatedAt:          item.UpdatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00"),
 	}
 	if item.ActivatedAt != nil {
 		value := item.ActivatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")
@@ -1185,22 +1707,58 @@ func writeFinancialProfileError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "STATE_CONFLICT", "financial profile state does not allow this operation")
 	case errors.Is(err, postgres.ErrFinancialProfileInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "financial profile input is invalid")
+	case errors.Is(err, postgres.ErrPartnerStoreCommissionPolicyUnavailable):
+		writeError(w, http.StatusConflict, "COMMISSION_POLICY_UNAVAILABLE", "the Store commission policy could not be initialized")
+	case errors.Is(err, postgres.ErrPartnerStoreCommissionPolicyConflict):
+		writeError(w, http.StatusConflict, "COMMISSION_POLICY_CONFLICT", "the Store commission policy was already initialized with different terms")
 	default:
 		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT persistence is unavailable")
 	}
 }
 
 func toPartnerOrderEarning(item postgres.PartnerOrderEarningRecord) partnerOrderEarningJSON {
-	return partnerOrderEarningJSON{OrderID: item.OrderID, PaymentIntentID: item.PaymentIntentID, PartnerActorID: item.PartnerActorID, CaptainActorID: item.CaptainActorID, Currency: item.Currency, GrossProductMinor: item.GrossProductMinor, DeliveryFeeMinor: item.DeliveryFeeMinor, CommissionMinor: item.CommissionMinor, PartnerNetMinor: item.PartnerNetMinor, ProfileID: item.ProfileID, ProfileVersion: item.ProfileVersion, PolicyVersion: item.PolicyVersion, LedgerTransactionID: item.LedgerTransactionID, CreatedAt: item.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
+	return partnerOrderEarningJSON{OrderID: item.OrderID, PaymentIntentID: item.PaymentIntentID, PartnerActorID: item.PartnerActorID, CaptainActorID: item.CaptainActorID, Currency: item.Currency, GrossProductMinor: item.GrossProductMinor, DeliveryFeeMinor: item.DeliveryFeeMinor, CommissionMinor: item.CommissionMinor, PartnerNetMinor: item.PartnerNetMinor, CommissionReceivableOffsetMinor: item.CommissionReceivableOffsetMinor, ProfileID: item.ProfileID, ProfileVersion: item.ProfileVersion, PolicyVersion: item.PolicyVersion, LedgerTransactionID: item.LedgerTransactionID, CreatedAt: item.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
 }
 
 func toPartnerFinancialSummary(item postgres.PartnerFinancialSummaryRecord) partnerFinancialSummaryJSON {
-	result := partnerFinancialSummaryJSON{PartnerActorID: item.PartnerActorID, Currency: item.Currency, EarnedMinor: item.EarnedMinor, CommissionMinor: item.CommissionMinor, OrderCount: item.OrderCount, SettlementPeriod: item.SettlementPeriod, ProfileState: item.ProfileState, ProfileVersion: item.ProfileVersion}
+	result := partnerFinancialSummaryJSON{PartnerActorID: item.PartnerActorID, Currency: item.Currency, EarnedMinor: item.EarnedMinor, CommissionMinor: item.CommissionMinor, OutstandingCommissionReceivableMinor: item.OutstandingCommissionReceivableMinor, OrderCount: item.OrderCount, SettlementPeriod: item.SettlementPeriod, ProfileState: item.ProfileState, ProfileVersion: item.ProfileVersion}
 	if item.LastEarningAt != nil {
 		value := item.LastEarningAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")
 		result.LastEarningAt = &value
 	}
 	return result
+}
+
+func toPartnerStoreCashCommission(item postgres.PartnerStoreCashCommissionRecord) partnerStoreCashCommissionJSON {
+	return partnerStoreCashCommissionJSON{OrderID: item.OrderID, PaymentIntentID: item.PaymentIntentID, PartnerActorID: item.PartnerActorID, FulfillmentMode: item.FulfillmentMode, Currency: item.Currency, GrossProductMinor: item.GrossProductMinor, CommissionMinor: item.CommissionMinor, ProfileID: item.ProfileID, ProfileVersion: item.ProfileVersion, PolicyVersion: item.PolicyVersion, LedgerTransactionID: item.LedgerTransactionID, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano)}
+}
+
+func toPartnerCommissionRemittance(item postgres.PartnerCommissionRemittanceRecord) partnerCommissionRemittanceJSON {
+	return partnerCommissionRemittanceJSON{ID: item.ID, PartnerActorID: item.PartnerActorID, AmountMinor: item.AmountMinor, Currency: item.Currency, RemittanceReference: item.RemittanceReference, EvidenceReference: item.EvidenceReference, VerifiedBy: item.VerifiedBy, VerifiedAt: item.VerifiedAt.UTC().Format(time.RFC3339Nano), LedgerTransactionID: item.LedgerTransactionID, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano)}
+}
+
+func writePartnerCashCommissionError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, postgres.ErrPartnerCashCommissionInvalid), errors.Is(err, postgres.ErrPartnerRemittanceInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partner commission receivable facts are invalid")
+	case errors.Is(err, postgres.ErrPartnerCashCommissionState):
+		writeError(w, http.StatusConflict, "STORE_CASH_PAYMENT_INVALID", "store cash payment is not collected by the specified Partner")
+	case errors.Is(err, postgres.ErrPartnerCashCommissionExists):
+		writeError(w, http.StatusConflict, "COMMISSION_EXISTS", "the store cash commission is already recorded")
+	case errors.Is(err, postgres.ErrPartnerCommissionSnapshotMissing):
+		writeError(w, http.StatusConflict, "COMMISSION_SNAPSHOT_MISSING", "this order has no immutable commission policy snapshot")
+	case errors.Is(err, postgres.ErrPartnerRemittanceOverpayment):
+		writeError(w, http.StatusConflict, "REMITTANCE_EXCEEDS_RECEIVABLE", "remittance exceeds the outstanding Partner commission receivable")
+	case errors.Is(err, postgres.ErrPartnerEarningProfile):
+		writeError(w, http.StatusConflict, "PROFILE_NOT_ACTIVE", "an active Partner financial profile is required")
+	case errors.Is(err, postgres.ErrIdempotencyConflict):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different Partner commission facts")
+	case errors.Is(err, postgres.ErrLedgerUnbalanced):
+		writeError(w, http.StatusConflict, "LEDGER_UNBALANCED", "the derived ledger transaction is not balanced")
+	default:
+		log.Printf("WLT Partner store cash commission persistence error: %T %v", err, err)
+		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT Partner commission persistence is unavailable")
+	}
 }
 
 func toFieldCommissionPolicy(item postgres.FieldCommissionPolicyRecord) fieldCommissionPolicyJSON {
@@ -1228,11 +1786,13 @@ func toFieldFinancialSummary(item postgres.FieldFinancialSummaryRecord) fieldFin
 func writeFieldCommissionError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, postgres.ErrFieldCommissionPolicyNotFound):
-		writeError(w, http.StatusConflict, "FIELD_COMMISSION_POLICY_NOT_FOUND", "no active Field commission policy is available")
+		writeError(w, http.StatusNotFound, "FIELD_COMMISSION_POLICY_NOT_FOUND", "no active Field commission policy is available for this scope")
 	case errors.Is(err, postgres.ErrFieldCommissionPolicyInvalidInput), errors.Is(err, postgres.ErrFieldCommissionEarningInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Field commission facts are invalid")
 	case errors.Is(err, postgres.ErrFieldCommissionPolicyExists), errors.Is(err, postgres.ErrFieldCommissionEarningExists):
 		writeError(w, http.StatusConflict, "FIELD_COMMISSION_EXISTS", "the Field commission already exists")
+	case errors.Is(err, postgres.ErrVersionConflict):
+		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "the active Field reward policy changed after it was read")
 	case errors.Is(err, postgres.ErrIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different Field commission facts")
 	default:
@@ -1251,6 +1811,8 @@ func writePartnerEarningError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "PAYMENT_NOT_COLLECTED", "partner earning requires a collected payment")
 	case errors.Is(err, postgres.ErrPartnerEarningProfile):
 		writeError(w, http.StatusConflict, "PROFILE_NOT_ACTIVE", "an active partner financial profile is required")
+	case errors.Is(err, postgres.ErrPartnerCommissionSnapshotMissing):
+		writeError(w, http.StatusConflict, "COMMISSION_SNAPSHOT_MISSING", "this order has no immutable commission policy snapshot")
 	case errors.Is(err, postgres.ErrPartnerEarningExists):
 		writeError(w, http.StatusConflict, "EARNING_EXISTS", "the order earning is already finalized")
 	case errors.Is(err, postgres.ErrLedgerUnbalanced):

@@ -1,0 +1,49 @@
+name: CI Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security:
+    name: repository-secrets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact candidate checkout
+        shell: bash
+        run: node tools/dev/verify-ci-exact-sha.mjs
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24.17.0
+
+      - name: Verify current candidate and introduced history
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node tools/dev/verify-secret-safety.mjs

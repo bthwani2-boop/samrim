@@ -32,6 +32,7 @@ func (s *FieldFinanceServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/fields/me/financial-summary", s.readOwnSummary)
 	mux.HandleFunc("GET /dsh/operator/fields/{fieldActorId}/financial-summary", s.readOperatorSummary)
 	mux.HandleFunc("POST /dsh/operator/field-commission-policies", s.createPolicy)
+	mux.HandleFunc("GET /dsh/operator/field-commission-policies", s.readPolicyByScope)
 	mux.HandleFunc("GET /dsh/operator/field-commission-policies/{policyId}", s.readPolicy)
 }
 
@@ -56,6 +57,9 @@ func (s *FieldFinanceServer) readOperatorSummary(w http.ResponseWriter, r *http.
 	if !s.requireOperator(w, r.Context(), acting) {
 		return
 	}
+	if !s.requirePermission(w, r.Context(), acting, "finance") {
+		return
+	}
 	fieldActorID := strings.TrimSpace(r.PathValue("fieldActorId"))
 	if fieldActorID == "" || len(fieldActorID) > 128 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "fieldActorId is required")
@@ -77,16 +81,21 @@ func (s *FieldFinanceServer) createPolicy(w http.ResponseWriter, r *http.Request
 	if !ok || !s.requireOperator(w, r.Context(), acting) {
 		return
 	}
+	if !s.requirePlatformPolicyPermission(w, r.Context(), acting) {
+		return
+	}
 	var input struct {
 		ScopeType         string `json:"scopeType"`
 		ScopeID           string `json:"scopeId"`
 		RewardMinor       int64  `json:"rewardMinor"`
 		RoundingUnitMinor int64  `json:"roundingUnitMinor"`
+		ExpectedVersion   int    `json:"expectedVersion"`
+		Reason            string `json:"reason"`
 	}
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	policy, replayed, err := s.payment.CreateFieldCommissionPolicy(r.Context(), input.ScopeType, input.ScopeID, input.RewardMinor, input.RoundingUnitMinor, idempotency, correlation, acting)
+	policy, replayed, err := s.payment.CreateFieldCommissionPolicy(r.Context(), input.ScopeType, input.ScopeID, input.RewardMinor, input.RoundingUnitMinor, input.ExpectedVersion, input.Reason, idempotency, correlation, acting)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return
@@ -98,12 +107,34 @@ func (s *FieldFinanceServer) createPolicy(w http.ResponseWriter, r *http.Request
 	writeJSON(w, status, map[string]any{"policy": policy, "idempotentReplay": replayed})
 }
 
+func (s *FieldFinanceServer) readPolicyByScope(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeOperator(w, r) {
+		return
+	}
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if !s.requireOperator(w, r.Context(), acting) {
+		return
+	}
+	if !s.requirePermission(w, r.Context(), acting, "platform_policies") {
+		return
+	}
+	policy, err := s.payment.ReadFieldCommissionPolicyByScope(r.Context(), r.URL.Query().Get("scopeType"), r.URL.Query().Get("scopeId"))
+	if err != nil {
+		writeWLTFinanceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"policy": policy})
+}
+
 func (s *FieldFinanceServer) readPolicy(w http.ResponseWriter, r *http.Request) {
 	if !s.authorizeOperator(w, r) {
 		return
 	}
 	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
 	if !s.requireOperator(w, r.Context(), acting) {
+		return
+	}
+	if !s.requirePermission(w, r.Context(), acting, "platform_policies") {
 		return
 	}
 	policy, err := s.payment.ReadFieldCommissionPolicy(r.Context(), r.PathValue("policyId"))
@@ -132,11 +163,23 @@ func (s *FieldFinanceServer) requireOperator(w http.ResponseWriter, ctx context.
 		writeIdentityError(w, err)
 		return false
 	}
-	if !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
+	if operator.Role != "operator" || !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active control operator session is required")
 		return false
 	}
 	return true
+}
+
+func (s *FieldFinanceServer) requirePermission(w http.ResponseWriter, ctx context.Context, actorID, permission string) bool {
+	if err := s.identity.RequireOperatorPermission(ctx, actorID, permission); err != nil {
+		writeIdentityError(w, err)
+		return false
+	}
+	return true
+}
+
+func (s *FieldFinanceServer) requirePlatformPolicyPermission(w http.ResponseWriter, ctx context.Context, actorID string) bool {
+	return s.requirePermission(w, ctx, actorID, "platform_policies")
 }
 
 func (s *FieldFinanceServer) requireFieldSession(w http.ResponseWriter, r *http.Request) (identityclient.ActorIdentity, bool) {

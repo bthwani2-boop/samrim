@@ -8,6 +8,12 @@
       "options": {
         "command": "pnpm --dir packages/design-system typecheck"
       }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec biome lint packages/design-system --diagnostic-level=error"
+      }
     }
   },
   "tags": [

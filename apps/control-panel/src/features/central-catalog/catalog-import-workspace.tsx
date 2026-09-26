@@ -283,8 +283,8 @@ export function CatalogImportWorkspace() {
           <strong>حالة التشغيل: {result.run.state === "previewed" ? "معاينة جاهزة" : result.run.state === "committed" ? "تم الالتزام" : "مرفوض"}</strong>
           <p>المقبول: {result.run.acceptedCount} · التعارضات: {result.run.conflictCount} · العناصر المصنفة: {result.items.length}</p>
           <table>
-            <caption>تصنيف صفوف الاستيراد</caption>
-            <thead><tr><th scope="col">السطر</th><th scope="col">التصنيف</th><th scope="col">الحالة</th></tr></thead>
+            <caption>فئات صفوف الاستيراد</caption>
+            <thead><tr><th scope="col">السطر</th><th scope="col">الفئة</th><th scope="col">الحالة</th></tr></thead>
             <tbody>{result.items.map((item) => <tr key={`${item.rowNumber}-${item.stableKey}`}><td>{item.rowNumber}</td><td>{classificationLabel(item)}</td><td>{item.errorMessage || (item.committed ? "تمت الكتابة" : "بانتظار الالتزام")}</td></tr>)}</tbody>
           </table>
           {result.run.state === "previewed" ? <button type="button" className="button button-secondary" disabled={Boolean(busy) || result.run.conflictCount > 0} onClick={() => void commit()}>{busy === "commit" ? "جارٍ الالتزام…" : "الالتزام بعد المراجعة"}</button> : null}
