@@ -358,11 +358,14 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.attachCatalogOfferToSection.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{sectionId}", encodeURIComponent(normalizedSection)).replace("{offerId}", encodeURIComponent(normalizedOffer));
       return userRequest<CatalogStorefrontSectionResponse>(accessToken, path, dshOperationPaths.attachCatalogOfferToSection.method, { ordinal }, mutationHeaders());
     },
-    async readOwnStoreOffers(accessToken: string, storeID: string): Promise<ReadonlyArray<CatalogStoreOffer>> {
+    async readOwnStoreOffers(accessToken: string, storeID: string, limit = 50, cursor = ""): Promise<CatalogStoreOfferListResponse> {
       const normalized = storeID.trim();
       if (!normalized) throw new Error("DSH_STORE_ID_REQUIRED");
-      const path = dshOperationPaths.readOwnStoreOffers.path.replace("{storeId}", encodeURIComponent(normalized));
-      return (await userRequest<CatalogStoreOfferListResponse>(accessToken, path, dshOperationPaths.readOwnStoreOffers.method)).offers;
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || cursor.length > 2048) throw new Error("DSH_STORE_OFFER_PAGE_INVALID");
+      const params = new URLSearchParams({ limit: String(limit) });
+      if (cursor.trim()) params.set("cursor", cursor.trim());
+      const path = `${dshOperationPaths.readOwnStoreOffers.path.replace("{storeId}", encodeURIComponent(normalized))}?${params.toString()}`;
+      return userRequest<CatalogStoreOfferListResponse>(accessToken, path, dshOperationPaths.readOwnStoreOffers.method);
     },
     async createStoreOffer(accessToken: string, storeID: string, variantID: string, priceMinor: number, quantityPolicy: "DISCRETE" | "MEASURED" | "VARIABLE_MEASURE", pricingBasis: "PER_UNIT" | "PER_MEASURE", quantityMinBaseUnits: number, quantityMaxBaseUnits: number, quantityStepBaseUnits: number, pricingUnitBaseUnits: number, inventoryPolicy: "AVAILABILITY_ONLY" | "QUANTITY_ON_HAND", inventoryOnHandBaseUnits: number): Promise<CatalogStoreOfferResponse> {
       const normalized = storeID.trim();

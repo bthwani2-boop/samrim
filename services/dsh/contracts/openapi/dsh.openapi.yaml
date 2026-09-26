@@ -2824,6 +2824,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CatalogStoreOffer"
+        nextCursor:
+          type: string
 
     CatalogModel:
       type: string

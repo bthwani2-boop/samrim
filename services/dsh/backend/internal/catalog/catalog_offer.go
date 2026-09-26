@@ -8,11 +8,11 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
 
-func (s *Service) ListOffersForPartner(ctx context.Context, accessToken, storeID string) ([]postgres.CatalogStoreOfferRecord, error) {
+func (s *Service) ListOffersForPartner(ctx context.Context, accessToken, storeID string, limit int, cursor string) (postgres.CatalogStoreOfferPage, error) {
 	if _, err := s.requireStoreOwner(ctx, accessToken, storeID); err != nil {
-		return nil, err
+		return postgres.CatalogStoreOfferPage{}, err
 	}
-	return postgres.ListCatalogOffers(ctx, s.db, strings.TrimSpace(storeID), false)
+	return postgres.ListCatalogOfferPage(ctx, s.db, strings.TrimSpace(storeID), limit, cursor)
 }
 
 func (s *Service) ReadOfferForPartner(ctx context.Context, accessToken, storeID, offerID string) (postgres.CatalogStoreOfferRecord, error) {

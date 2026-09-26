@@ -15,6 +15,19 @@ type PendingProductMedia = Readonly<{ productID: string; expectedVersion: number
 type AttributeDrafts = Readonly<Record<string, string>>;
 type AttributeInputSet = Readonly<{ productValues: ReadonlyArray<CatalogAttributeValueInput>; variantValues: ReadonlyArray<CatalogAttributeValueInput> }>;
 
+function sortStoreOffersByCreation(offers: ReadonlyArray<CatalogStoreOffer>): CatalogStoreOffer[] {
+  return [...offers].sort((left, right) => {
+    const leftMillis = Date.parse(left.createdAt);
+    const rightMillis = Date.parse(right.createdAt);
+    if (Number.isFinite(leftMillis) && Number.isFinite(rightMillis) && leftMillis !== rightMillis) return leftMillis - rightMillis;
+    const fraction = (value: string) => value.match(/\.(\d+)(?:Z|[+-]\d{2}:\d{2})$/)?.[1]?.padEnd(9, "0").slice(0, 9) ?? "000000000";
+    const leftFraction = fraction(left.createdAt);
+    const rightFraction = fraction(right.createdAt);
+    if (leftFraction !== rightFraction) return leftFraction < rightFraction ? -1 : 1;
+    return left.offerId < right.offerId ? -1 : left.offerId > right.offerId ? 1 : 0;
+  });
+}
+
 function buildAttributeInputs(rules: ReadonlyArray<CatalogAttributeRule>, drafts: AttributeDrafts): AttributeInputSet | null {
   const productValues: CatalogAttributeValueInput[] = [];
   const variantValues: CatalogAttributeValueInput[] = [];
@@ -57,6 +70,11 @@ export function StoreOfferManagement({ storeId, verticalId }: { storeId: string;
 const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<OfferState>({ kind: "loading" });
+  const [offerNextCursor, setOfferNextCursor] = useState("");
+  const [loadingMoreOffers, setLoadingMoreOffers] = useState(false);
+  const offerLoadedPageCount = useRef(1);
+  const offerLoadSequence = useRef(0);
+  const offerLoadedStoreID = useRef(storeId);
   const [products, setProducts] = useState<ReadonlyArray<CatalogProduct>>([]);
   const [productNextCursor, setProductNextCursor] = useState("");
   const [proposalNextCursor, setProposalNextCursor] = useState("");
@@ -112,18 +130,42 @@ const theme = useAppearanceTheme();
   const [extensionOfferID, setExtensionOfferID] = useState("");
 
   const load = useCallback(async () => {
-    setState({ kind: "loading" }); setError("");
+    const requestSequence = ++offerLoadSequence.current;
+    const requestedPageCount = Math.max(1, offerLoadedPageCount.current);
+    setState({ kind: "loading" }); setOfferNextCursor(""); setLoadingMoreOffers(false); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const [offers, registry] = await Promise.all([dshClient().readOwnStoreOffers(token, storeId), dshClient().listCatalogVerticals()]);
+      const [firstPage, registry] = await Promise.all([dshClient().readOwnStoreOffers(token, storeId), dshClient().listCatalogVerticals()]);
+      const offers = [...firstPage.offers];
+      let nextCursor = firstPage.nextCursor ?? "";
+      let loadedPageCount = 1;
+      for (let pageIndex = 1; pageIndex < requestedPageCount && nextCursor; pageIndex += 1) {
+        const page = await dshClient().readOwnStoreOffers(token, storeId, 50, nextCursor);
+        if (requestSequence !== offerLoadSequence.current) return;
+        const seen = new Set(offers.map((offer) => offer.offerId));
+        offers.push(...page.offers.filter((offer) => !seen.has(offer.offerId)));
+        nextCursor = page.nextCursor ?? "";
+        loadedPageCount += 1;
+      }
+      if (requestSequence !== offerLoadSequence.current) return;
       setVerticals(registry);
       const model = registry.find((vertical) => vertical.id === verticalId)?.catalogModel;
       const proposals = model === "SHARED_CATALOG" ? await dshClient().listOwnCatalogProductProposals(token) : { proposals: [], nextCursor: undefined };
-      setState({ kind: "ready", offers, proposals: proposals.proposals });
+      if (requestSequence !== offerLoadSequence.current) return;
+      offerLoadedPageCount.current = loadedPageCount;
+      setOfferNextCursor(nextCursor);
+      setState({ kind: "ready", offers: sortStoreOffersByCreation(offers), proposals: proposals.proposals });
       setProposalNextCursor(proposals.nextCursor ?? "");
-    } catch (nextError) { reportError(nextError); setState({ kind: "error" }); setError(errorText(nextError)); }
+    } catch (nextError) { if (requestSequence === offerLoadSequence.current) { reportError(nextError); setState({ kind: "error" }); setError(errorText(nextError)); } }
   }, [storeId, verticalId]);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (offerLoadedStoreID.current !== storeId) {
+      offerLoadedStoreID.current = storeId;
+      offerLoadedPageCount.current = 1;
+    }
+    void load();
+    return () => { offerLoadSequence.current += 1; };
+  }, [load, storeId]);
   useEffect(() => { setProposalVerticalID(verticalId); }, [verticalId]);
 
   useEffect(() => {
@@ -182,6 +224,29 @@ const theme = useAppearanceTheme();
     } catch (nextError) { reportError(nextError); setError(errorText(nextError)); }
   }
 
+  async function loadMoreOffers() {
+    if (!offerNextCursor || loadingMoreOffers || state.kind !== "ready") return;
+    const requestSequence = offerLoadSequence.current;
+    setLoadingMoreOffers(true);
+    setError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const page = await dshClient().readOwnStoreOffers(token, storeId, 50, offerNextCursor);
+      if (requestSequence !== offerLoadSequence.current) return;
+      setState((current) => {
+        if (current.kind !== "ready") return current;
+        const seen = new Set(current.offers.map((offer) => offer.offerId));
+        return { ...current, offers: sortStoreOffersByCreation([...current.offers, ...page.offers.filter((offer) => !seen.has(offer.offerId))]) };
+      });
+      setOfferNextCursor(page.nextCursor ?? "");
+      offerLoadedPageCount.current += 1;
+    } catch (nextError) {
+      if (requestSequence === offerLoadSequence.current) { reportError(nextError); setError(errorText(nextError)); }
+    } finally {
+      if (requestSequence === offerLoadSequence.current) setLoadingMoreOffers(false);
+    }
+  }
+
   async function addOffer() {
     const parsedPrice = Number(priceMinor.trim());
     const parsedMin = Number(quantityMinBaseUnits.trim());
@@ -195,16 +260,22 @@ const theme = useAppearanceTheme();
     setBusy(true); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      await dshClient().createStoreOffer(token, storeId, selectedVariant.id, parsedPrice, quantityPolicy, submittedPricingBasis, parsedMin, parsedMax, parsedStep, parsedPricingUnit, inventoryPolicy, parsedInventoryOnHand);
-      setSelectedProduct(null); setSelectedVariant(null); setPriceMinor(""); setQuantityPolicy(""); setPricingBasis(""); setQuantityMinBaseUnits(""); setQuantityMaxBaseUnits(""); setQuantityStepBaseUnits(""); setPricingUnitBaseUnits(""); setInventoryPolicy("AVAILABILITY_ONLY"); setInventoryOnHandBaseUnits("0"); await load();
+      const created = await dshClient().createStoreOffer(token, storeId, selectedVariant.id, parsedPrice, quantityPolicy, submittedPricingBasis, parsedMin, parsedMax, parsedStep, parsedPricingUnit, inventoryPolicy, parsedInventoryOnHand);
+      setSelectedProduct(null); setSelectedVariant(null); setPriceMinor(""); setQuantityPolicy(""); setPricingBasis(""); setQuantityMinBaseUnits(""); setQuantityMaxBaseUnits(""); setQuantityStepBaseUnits(""); setPricingUnitBaseUnits(""); setInventoryPolicy("AVAILABILITY_ONLY"); setInventoryOnHandBaseUnits("0");
+      const createdOffer = { ...created.offer, media: selectedProduct?.media ?? created.offer.media };
+      setState((current) => current.kind === "ready" ? { ...current, offers: sortStoreOffersByCreation([...current.offers.filter((offer) => offer.offerId !== createdOffer.offerId), createdOffer]) } : current);
     } catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
   }
 
   async function updateOffer(offer: CatalogStoreOffer, publicationState: "draft" | "published" | "hidden", availability: boolean, nextInventoryPolicy: InventoryPolicy = offer.inventoryPolicy as InventoryPolicy, nextInventoryOnHandBaseUnits = offer.inventoryOnHandBaseUnits) {
     if (busy) return;
     setBusy(true); setError("");
-      try { const token = await getUsableIdentityAccessToken(); await dshClient().updateStoreOffer(token, storeId, offer.offerId, offer.priceMinor, publicationState, availability, offer.version, offer.quantityPolicy, offer.pricingBasis, offer.quantityMinBaseUnits, offer.quantityMaxBaseUnits, offer.quantityStepBaseUnits, offer.pricingUnitBaseUnits, nextInventoryPolicy, nextInventoryOnHandBaseUnits); await load(); }
-    catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
+      try {
+        const token = await getUsableIdentityAccessToken();
+        const result = await dshClient().updateStoreOffer(token, storeId, offer.offerId, offer.priceMinor, publicationState, availability, offer.version, offer.quantityPolicy, offer.pricingBasis, offer.quantityMinBaseUnits, offer.quantityMaxBaseUnits, offer.quantityStepBaseUnits, offer.pricingUnitBaseUnits, nextInventoryPolicy, nextInventoryOnHandBaseUnits);
+        setState((current) => current.kind === "ready" ? { ...current, offers: current.offers.map((item) => item.offerId === result.offer.offerId ? { ...result.offer, media: item.media, modifierGroups: item.modifierGroups } : item) } : current);
+      }
+      catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
   }
 
   async function saveSelectedStoreProduct() {
@@ -244,7 +315,6 @@ const theme = useAppearanceTheme();
       setStoreProductName(""); setStoreProductDescription(""); setStoreProductImage(null); setBusy(false);
       const defaultVariant = created.product.variants[0];
       if (defaultVariant) selectProduct(created.product, defaultVariant);
-      void load();
     }
     catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
   }
@@ -258,7 +328,8 @@ const theme = useAppearanceTheme();
       setSelectedProduct(result.product);
       setSelectedProductName(result.product.canonicalName);
       setSelectedProductDescription(result.product.description ?? "");
-      setPendingProductMedia(null); setStoreProductImage(null); await load();
+      setState((current) => current.kind === "ready" ? { ...current, offers: current.offers.map((offer) => offer.productId === result.product.id ? { ...offer, productName: result.product.canonicalName, productDescription: result.product.description ?? "", brand: result.product.brand ?? null, productActive: result.product.active, productVersion: result.product.version, media: result.product.media } : offer) } : current);
+      setPendingProductMedia(null); setStoreProductImage(null);
     } catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
   }
 
@@ -403,7 +474,7 @@ const theme = useAppearanceTheme();
   async function createSectionAndAttach() {
     if (busy || !sectionName.trim()) return;
     setBusy(true); setError("");
-    try { const token = await getUsableIdentityAccessToken(); const section = await dshClient().createCatalogStorefrontSection(token, storeId, { nameAr: sectionName, ordinal: 0, active: true }); if (extensionOfferID) await dshClient().attachCatalogOfferToSection(token, storeId, section.section.id, extensionOfferID); setSectionName(""); await load(); }
+    try { const token = await getUsableIdentityAccessToken(); const section = await dshClient().createCatalogStorefrontSection(token, storeId, { nameAr: sectionName, ordinal: 0, active: true }); if (extensionOfferID) await dshClient().attachCatalogOfferToSection(token, storeId, section.section.id, extensionOfferID); setSectionName(""); }
     catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
   }
 
@@ -436,6 +507,7 @@ const theme = useAppearanceTheme();
       {state.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة عروض المتجر…</Text></View> : null}
       {state.kind === "error" ? <View style={styles.state}><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{error || "تعذر قراءة عروض المتجر."}</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View> : null}
         {state.kind === "ready" ? state.offers.length === 0 ? <Text style={styles.muted}>لا توجد عروض مرتبطة بهذا المتجر بعد.</Text> : <View style={styles.offerList}>{state.offers.map((offer) => { const primaryMedia = getPrimaryMedia(offer.media); const inventoryDraft = inventoryDrafts[offer.offerId] ?? String(offer.inventoryOnHandBaseUnits); return <View key={offer.offerId} style={styles.item}>{primaryMedia ? <Image accessibilityLabel={`صورة ${offer.productName}`} source={{ uri: primaryMedia.uri }} resizeMode="cover" style={styles.offerImage} /> : <View accessibilityLabel={`لا توجد صورة لـ ${offer.productName}`} style={styles.offerImagePlaceholder}><Text style={styles.imagePlaceholderText}>لا توجد صورة</Text></View>}<View style={styles.itemText}><Text style={styles.itemTitle}>{offer.productName}</Text><Text style={styles.muted}>{formatMoney(offer.priceMinor, offer.currency)} · {measurementKindLabel(offer.measurementKind, offer.baseUnit)} · {storeOfferPublicationStateLabel(offer.publicationState)}</Text>{offer.inventoryPolicy === "QUANTITY_ON_HAND" ? <View style={styles.inventoryBlock}><Text style={styles.fieldLabel}>مخزون فعلي</Text><TextInput accessibilityLabel={`مخزون ${offer.productName}`} editable={!busy} keyboardType="number-pad" onChangeText={(value) => setInventoryDrafts((current) => ({ ...current, [offer.offerId]: toAsciiDigits(value) }))} value={inventoryDraft} style={[styles.input, styles.numericInput, busy && styles.disabledInput]} /><Text style={styles.muted}>محجوز: {offer.inventoryReservedBaseUnits} · متاح: {Math.max(0, offer.inventoryOnHandBaseUnits - offer.inventoryReservedBaseUnits)}</Text><BthwaniButton busy={busy} disabled={busy} label="تحديث المخزون" onPress={() => { const next = Number(inventoryDraft); if (!Number.isSafeInteger(next) || next < 0) { setError("أدخل كمية مخزون صحيحة غير سالبة."); return; } void updateOffer(offer, offer.publicationState, offer.availability, "QUANTITY_ON_HAND", next); }} variant="secondary" /></View> : <Text style={styles.muted}>التوافر اليدوي فقط</Text>}</View><Switch accessibilityLabel={`توافر ${offer.productName}`} disabled={busy} onValueChange={(available) => void updateOffer(offer, offer.publicationState, available)} value={offer.availability} /><BthwaniButton busy={busy} disabled={busy} label={offer.publicationState === "published" ? "إخفاء" : "نشر"} onPress={() => void updateOffer(offer, offer.publicationState === "published" ? "hidden" : "published", offer.availability)} variant="secondary" /></View>; })}</View> : null}
+      {offerNextCursor ? <BthwaniButton busy={loadingMoreOffers} disabled={loadingMoreOffers || busy} label={loadingMoreOffers ? "جارٍ تحميل العروض…" : "تحميل المزيد من العروض"} onPress={() => void loadMoreOffers()} variant="secondary" /> : null}
       {error && state.kind !== "error" ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     </View>
   );

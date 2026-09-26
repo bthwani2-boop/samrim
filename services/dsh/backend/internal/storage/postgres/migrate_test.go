@@ -49,8 +49,8 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 		t.Fatalf("unexpected DSH migration graph size: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.SchemaVersion)
 	}
 	last := records[len(records)-1]
-	if last.Version != postgres.SchemaVersion || last.Name != "068_field_operator_partner_admission.sql" {
-		t.Fatalf("last DSH migration = v%d %q; want v%d 068_field_operator_partner_admission.sql", last.Version, last.Name, postgres.SchemaVersion)
+	if last.Version != postgres.SchemaVersion || last.Name != "069_catalog_store_offer_paging.sql" {
+		t.Fatalf("last DSH migration = v%d %q; want v%d 069_catalog_store_offer_paging.sql", last.Version, last.Name, postgres.SchemaVersion)
 	}
 	migrationByName := make(map[string]string, len(records))
 	for index, record := range records {
@@ -70,6 +70,9 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 	}
 	if !strings.Contains(migrationByName["068_field_operator_partner_admission.sql"], "admission_requested") || !strings.Contains(migrationByName["068_field_operator_partner_admission.sql"], "joining_case_admission_requested") || !strings.Contains(migrationByName["068_field_operator_partner_admission.sql"], "field-admission-request") {
 		t.Fatal("DSH migration 068 is missing the Field submission and Operator admission state")
+	}
+	if !strings.Contains(migrationByName["069_catalog_store_offer_paging.sql"], "catalog_store_offers_store_created_registry_idx") || !strings.Contains(migrationByName["069_catalog_store_offer_paging.sql"], "ON dsh.catalog_store_offers (store_id, created_at, id)") {
+		t.Fatal("DSH migration 069 is missing the StoreOffer keyset paging index")
 	}
 	for _, preserved := range []string{"'correct'", "'correct_and_resubmit'", "'bind-financial-terms'", "'joining_case_corrected'", "'joining_case_corrected_and_resubmitted'", "'joining_case_financial_terms_bound'", "'joining_case_admission_reopened'"} {
 		if !strings.Contains(migrationByName["068_field_operator_partner_admission.sql"], preserved) {
@@ -210,9 +213,9 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 		if err != nil || !ready {
 			t.Fatalf("publishable catalog readback failed: ready=%v err=%v", ready, err)
 		}
-		publicOffers, err := postgres.ListCatalogOffers(ctx, db, "store_catalog_v1", true)
-		if err != nil || len(publicOffers) != 1 || publicOffers[0].VariantID != variantID || publicOffers[0].Product.ID != product.ID {
-			t.Fatalf("customer-visible offer readback failed: %+v err=%v", publicOffers, err)
+		publicCatalog, err := postgres.ReadPublicCatalog(ctx, db, "store_catalog_v1", createdCity.City.ID, "", "", "", 50, "")
+		if err != nil || len(publicCatalog.Offers) != 1 || publicCatalog.Offers[0].VariantID != variantID || publicCatalog.Offers[0].Product.ID != product.ID {
+			t.Fatalf("customer-visible offer readback failed: %+v err=%v", publicCatalog.Offers, err)
 		}
 	})
 }

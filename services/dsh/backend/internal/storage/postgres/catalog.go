@@ -1705,38 +1705,6 @@ func validateCatalogProductModelTx(ctx context.Context, tx *sql.Tx, productID st
 	return ErrCatalogProductModelMismatch
 }
 
-func ListCatalogOffers(ctx context.Context, db *sql.DB, storeID string, publicOnly bool) ([]CatalogStoreOfferRecord, error) {
-	where := []string{"o.store_id=$1"}
-	if publicOnly {
-		where = append(where, customerVisibleOfferConditions()...)
-	}
-	rows, err := db.QueryContext(ctx, catalogOfferSelect+" WHERE "+strings.Join(where, " AND ")+" ORDER BY o.created_at ASC,o.id", strings.TrimSpace(storeID))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []CatalogStoreOfferRecord{}
-	for rows.Next() {
-		item, err := scanCatalogOffer(rows)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	for i := range items {
-		items[i], err = hydrateCatalogOffer(ctx, db, items[i])
-		if err != nil {
-			return nil, err
-		}
-	}
-	return items, nil
-}
 func ReadCatalogOffer(ctx context.Context, db *sql.DB, offerID string) (CatalogStoreOfferRecord, error) {
 	item, err := scanCatalogOffer(db.QueryRowContext(ctx, catalogOfferSelect+" WHERE o.id=$1", strings.TrimSpace(offerID)))
 	if errors.Is(err, sql.ErrNoRows) {

@@ -66,12 +66,12 @@ func quantityValue(value *int64) int64 {
 	return *value
 }
 
-func writeOffers(w http.ResponseWriter, status int, items []postgres.CatalogStoreOfferRecord) {
-	values := make([]contract.CatalogStoreOffer, 0, len(items))
-	for _, item := range items {
+func writeOffers(w http.ResponseWriter, status int, page postgres.CatalogStoreOfferPage) {
+	values := make([]contract.CatalogStoreOffer, 0, len(page.Offers))
+	for _, item := range page.Offers {
 		values = append(values, toStoreOffer(item))
 	}
-	writeJSON(w, status, contract.CatalogStoreOfferListResponse{Offers: values})
+	writeJSON(w, status, contract.CatalogStoreOfferListResponse{Offers: values, NextCursor: page.NextCursor})
 }
 func writeOffer(w http.ResponseWriter, status int, result postgres.CatalogStoreOfferResult) {
 	writeJSON(w, status, contract.CatalogStoreOfferResponse{Offer: toStoreOffer(result.Offer), IdempotentReplay: result.Replayed})

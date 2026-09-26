@@ -43,6 +43,30 @@ func TestCatalogCategoryCursorBindsRegistryScope(t *testing.T) {
 	}
 }
 
+func TestCatalogStoreOfferCursorBindsStoreAndRejectsMalformedTokens(t *testing.T) {
+	createdAt := time.Date(2026, 9, 26, 12, 0, 0, 123000000, time.UTC)
+	cursor := catalogStoreOfferCursor{Version: 1, StoreID: "store-1", CreatedAt: createdAt, OfferID: "offer-1"}
+	raw, err := encodeCatalogStoreOfferCursor(cursor)
+	if err != nil {
+		t.Fatalf("encode StoreOffer cursor: %v", err)
+	}
+	if len(raw) > 2048 {
+		t.Fatalf("StoreOffer cursor exceeds the OpenAPI limit: %d", len(raw))
+	}
+	position, err := decodeCatalogStoreOfferCursor(raw, "store-1")
+	if err != nil || !position.CreatedAt.Equal(createdAt) || position.OfferID != "offer-1" {
+		t.Fatalf("decode StoreOffer cursor: %#v err=%v", position, err)
+	}
+	if _, err := decodeCatalogStoreOfferCursor(raw, "store-2"); err == nil {
+		t.Fatal("StoreOffer cursor from another Store must be rejected")
+	}
+	for _, malformed := range []string{"!", "e30"} {
+		if _, err := decodeCatalogStoreOfferCursor(malformed, "store-1"); err == nil {
+			t.Fatalf("malformed StoreOffer cursor %q must be rejected", malformed)
+		}
+	}
+}
+
 func TestCatalogSearchCursorRoundTripsAndBindsSearchScope(t *testing.T) {
 	storeID := ""
 	serviceCityID := "city-1"

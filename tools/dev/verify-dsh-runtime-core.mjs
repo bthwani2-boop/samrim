@@ -511,6 +511,11 @@ expectSQL(
   String(dshMigrationNames.length),
   `DSH migration history is incomplete through v${dshMigrationNames.length}`,
 );
+expectSQL(
+  "SELECT to_regclass('dsh.catalog_store_offers_store_created_registry_idx') IS NOT NULL",
+  "t",
+  "DSH StoreOffer keyset paging index is missing",
+);
   expectSQL("SELECT to_regclass('dsh.joining_case_financial_profile_outbox') IS NOT NULL", "t", "DSH financial profile outbox is missing");
   expectSQL("SELECT to_regclass('dsh.field_commission_publication_outbox') IS NOT NULL", "t", "DSH field commission publication outbox is missing");
   expectSQL("SELECT to_regclass('dsh.commerce_financial_handoff_outbox') IS NOT NULL", "t", "DSH financial handoff outbox is missing");
@@ -938,6 +943,17 @@ if (offerB.status !== 201) fail("second StoreOffer creation failed", JSON.string
 const offerBID = String(offerB.body.offer.offerId); offerIDs.add(offerBID);
 const publishedOfferB = await request(dshBase, "PATCH", `/dsh/stores/${second.storeID}/offers/${offerBID}`, { token: second.accessToken, headers: partnerHeaders(`offer-b-publish-${suffix}`, 1), body: discreteOffer(1500, "published") });
 if (publishedOfferB.status !== 200) fail("second StoreOffer publication failed", JSON.stringify(publishedOfferB));
+const offerPageFirst = await request(dshBase, "GET", `/dsh/stores/${first.storeID}/offers?limit=1`, { token: first.accessToken });
+const offerPageSecond = offerPageFirst.body?.nextCursor ? await request(dshBase, "GET", `/dsh/stores/${first.storeID}/offers?limit=1&cursor=${encodeURIComponent(offerPageFirst.body.nextCursor)}`, { token: first.accessToken }) : null;
+const offerPageDefault = await request(dshBase, "GET", `/dsh/stores/${first.storeID}/offers`, { token: first.accessToken });
+const offerPageInvalidLimit = await request(dshBase, "GET", `/dsh/stores/${first.storeID}/offers?limit=101`, { token: first.accessToken });
+const offerPageMalformedCursor = await request(dshBase, "GET", `/dsh/stores/${first.storeID}/offers?cursor=not-a-cursor`, { token: first.accessToken });
+const offerPageSecondStore = await request(dshBase, "GET", `/dsh/stores/${second.storeID}/offers?limit=1`, { token: second.accessToken });
+const offerPageCrossStoreCursor = offerPageFirst.body?.nextCursor ? await request(dshBase, "GET", `/dsh/stores/${second.storeID}/offers?limit=1&cursor=${encodeURIComponent(offerPageFirst.body.nextCursor)}`, { token: second.accessToken }) : null;
+const expectedOfferPageOrder = sql(`SELECT string_agg(id, ',' ORDER BY created_at ASC,id ASC) FROM dsh.catalog_store_offers WHERE store_id='${sqlLiteral(first.storeID)}' AND id IN ('${sqlLiteral(variableOfferID)}','${sqlLiteral(offerAID)}')`);
+const pagedOfferOrder = [offerPageFirst.body?.offers?.[0]?.offerId, offerPageSecond?.body?.offers?.[0]?.offerId].join(",");
+if (offerPageFirst.status !== 200 || offerPageFirst.body?.offers?.length !== 1 || !offerPageFirst.body?.nextCursor || offerPageSecond?.status !== 200 || offerPageSecond.body?.offers?.length !== 1 || Boolean(offerPageSecond.body?.nextCursor) || offerPageDefault.status !== 200 || offerPageDefault.body?.offers?.length !== 2 || ![variableOfferID, offerAID].every((id) => offerPageDefault.body?.offers?.some((offer) => offer.offerId === id)) || expectedOfferPageOrder !== pagedOfferOrder || offerPageInvalidLimit.status !== 400 || offerPageMalformedCursor.status !== 400 || offerPageSecondStore.status !== 200 || offerPageSecondStore.body?.offers?.length !== 1 || offerPageSecondStore.body?.offers?.[0]?.offerId !== offerBID || offerPageCrossStoreCursor?.status !== 400) fail("Partner StoreOffer paging boundary, default/max limit, or store-scoped cursor failed", JSON.stringify({ offerPageFirst, offerPageSecond, offerPageDefault, expectedOfferPageOrder, offerPageInvalidLimit, offerPageMalformedCursor, offerPageSecondStore, offerPageCrossStoreCursor }));
+console.log("DSH_PARTNER_STORE_OFFER_PAGING=PASS");
 const productRegistryRead = await request(dshBase, "GET", `/dsh/catalog/product-registry?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&categoryId=${encodeURIComponent(categoryID)}&active=active&sort=name_asc&limit=10`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 const productRegistryItem = productRegistryRead.body?.products?.find((item) => item.id === productID);
 const productRegistryWrongCategory = await request(dshBase, "GET", `/dsh/catalog/product-registry?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&categoryId=${encodeURIComponent(unrelatedCategoryID)}&limit=10`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });

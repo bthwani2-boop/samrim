@@ -662,12 +662,26 @@ func (s *CatalogServer) listOffers(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "partner session is required")
 		return
 	}
-	items, err := s.service.ListOffersForPartner(r.Context(), bearerToken(r), r.PathValue("storeId"))
+	limit := 100
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 100 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "limit must be between 1 and 100")
+			return
+		}
+		limit = parsed
+	}
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	if len(cursor) > 2048 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "offer cursor is invalid")
+		return
+	}
+	page, err := s.service.ListOffersForPartner(r.Context(), bearerToken(r), r.PathValue("storeId"), limit, cursor)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
 	}
-	writeOffers(w, http.StatusOK, items)
+	writeOffers(w, http.StatusOK, page)
 }
 func (s *CatalogServer) createOffer(w http.ResponseWriter, r *http.Request) {
 	correlation, idempotency, _, ok := requiredPartnerOfferHeaders(w, r, false)
@@ -785,6 +799,8 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog Product registry cursor, filters, status, or sort order are invalid")
 	case errors.Is(err, postgres.ErrCatalogCategoryInvalidCursor):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog Category cursor, filters, or sort order are invalid")
+	case errors.Is(err, postgres.ErrCatalogOfferInvalidCursor):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "StoreOffer cursor or page size is invalid")
 	case errors.Is(err, postgres.ErrCatalogProductNotFound), errors.Is(err, postgres.ErrCatalogVariantNotFound), errors.Is(err, postgres.ErrCatalogOfferNotFound), errors.Is(err, postgres.ErrCatalogCategoryNotFound), errors.Is(err, postgres.ErrCatalogVerticalNotFound), errors.Is(err, postgres.ErrCatalogProposalNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "catalog record was not found")
 	case errors.Is(err, postgres.ErrCatalogIdempotencyConflict):

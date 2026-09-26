@@ -681,8 +681,17 @@ paths:
         - userBearer: []
       parameters:
         - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 100 }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 2048 }
       responses:
-        "200": { description: StoreOffer readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogStoreOfferListResponse" } } } }
+        "200": { description: Bounded StoreOffer page in stable creation order., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogStoreOfferListResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
     post:
       operationId: createStoreOffer
       summary: Create a Store-scoped commercial Offer for a Variant
