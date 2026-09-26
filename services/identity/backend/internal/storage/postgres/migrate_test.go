@@ -697,23 +697,47 @@ func TestMigrationV13ToV22Upgrade(t *testing.T) {
 		t.Fatalf("expected schema version 23, got %d (err: %v)", version, err)
 	}
 
+	// Apply migration 024 and verify the staged Operator profile registry is in the runtime schema.
+	var v24Name string
+	var v24Content []byte
+	for _, file := range files {
+		if strings.HasPrefix(file.Name(), "024_") {
+			v24Name = file.Name()
+			v24Content, err = os.ReadFile(filepath.Join(migDir, v24Name))
+			if err != nil {
+				t.Fatalf("read 024: %v", err)
+			}
+			break
+		}
+	}
+	if v24Name == "" {
+		t.Fatal("migration 024 not found")
+	}
+	hash24 := sha256.Sum256(v24Content)
+	if err := postgres.Migrate(ctx, testDB, 24, v24Name, hex.EncodeToString(hash24[:]), string(v24Content)); err != nil {
+		t.Fatalf("apply migration 024 on v23 database: %v", err)
+	}
+	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 24 {
+		t.Fatalf("expected schema version 24, got %d (err: %v)", version, err)
+	}
+
 	// Verify full postgres.Ready passes on this upgraded database.
 	if err := postgres.Ready(ctx, testDB); err != nil {
 		t.Fatalf("postgres.Ready failed on upgraded database: %v", err)
 	}
 
-	// Re-run the canonical runtime migrator and prove it is a no-op at v22.
+	// Re-run the canonical runtime migrator and prove it is a no-op at v24.
 	beforeSecondRun := readMigrationNoOpSnapshot(t, testDB)
 	if err := identityruntime.RunMigrations(ctx, "development", testURL, migDir); err != nil {
 		t.Fatalf("second canonical migration run failed: %v", err)
 	}
 	afterSecondRun := readMigrationNoOpSnapshot(t, testDB)
 	assertMigrationNoOpSnapshotUnchanged(t, beforeSecondRun, afterSecondRun)
-	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 23 {
+	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 24 {
 		t.Fatalf("schema version changed during second canonical migration run: version=%d err=%v", version, err)
 	}
 
-	t.Log("Migration v13 -> v23 upgrade, data preservation, passkey cutover, mobile lifetime, refresh reconciliation, Operator workspace permissions and verified legal-name schema cutover test PASSED successfully!")
+	t.Log("Migration v13 -> v24 upgrade, data preservation, passkey cutover, mobile lifetime, refresh reconciliation, Operator workspace permissions, verified legal-name schema cutover and Operator profile registry test PASSED successfully!")
 }
 
 type migrationSessionSnapshot struct {

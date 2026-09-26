@@ -126,7 +126,7 @@ async function prepareOperator(identityBase: string, controlToken: string, boots
   const bootstrap = await jsonRequest(identityBase, "/internal/bootstrap/operator", bootstrapToken, { phoneE164: phone, role: "operator" });
   expect(bootstrap.response.status, "fresh operator bootstrap must succeed").toBe(201);
   expect(bootstrap.body?.role?.role).toBe("operator");
-  const operator = { actorId: String(bootstrap.body?.role?.actorId), phone, token: String(bootstrap.body?.enrollmentToken?.code), createdByTest: false };
+  const operator = { actorId: String(bootstrap.body?.role?.actorId), phone, token: String(bootstrap.body?.enrollmentToken?.code), profileId: "", actorCreatedByTest: false, createdByTest: false };
   expect(operator.actorId).toMatch(/^act_/);
   expect(operator.token).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
   return operator;

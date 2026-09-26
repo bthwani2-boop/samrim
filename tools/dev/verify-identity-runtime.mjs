@@ -37,6 +37,11 @@ const cleanup = () => {
   cleanupAttempted = true;
   try {
     const phones = [...generatedPhones].map((value) => "'" + sqlLiteral(value) + "'").join(",");
+    const profilePredicate = "phone_e164 IN (" + phones + ") OR actor_id IN (SELECT id FROM identity_actors WHERE phone_e164 IN (" + phones + "))";
+    const profileIDs = "SELECT id FROM identity_operator_profiles WHERE " + profilePredicate;
+    sql("DELETE FROM identity_operator_profile_events WHERE profile_id IN (" + profileIDs + ")");
+    sql("DELETE FROM identity_operator_profiles WHERE " + profilePredicate);
+    assert(sql("SELECT count(*) FROM identity_operator_profiles WHERE " + profilePredicate) === "0", "generated Identity operator profiles remain after cleanup");
     const removable = "phone_e164 IN (" + phones + ") AND id <> COALESCE((SELECT initial_operator_actor_id FROM identity_bootstrap_state WHERE id=1), '')";
     sql("DELETE FROM identity_actors WHERE " + removable);
     assert(sql("SELECT count(*) FROM identity_actors WHERE " + removable) === "0", "generated Identity actors remain after cleanup");
@@ -96,6 +101,43 @@ let operator = sql("SELECT a.id || '|' || a.phone_e164 FROM identity_actors a JO
 assert(operator.length === 2 && operator[0] && operator[1], "operator readback missing");
 const operatorActorID = operator[0];
 
+const admitReviewedOperatorCandidate = async (candidatePhone, fullNameAr, expectedActorID = "") => {
+  const mutationHeaders = () => ({ "X-Acting-Actor-ID": operatorActorID, "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": crypto.randomUUID() });
+  const created = await expect("POST", "/internal/operator-profiles", 201, {
+    token: controlToken,
+    headers: mutationHeaders(),
+    body: { fullNameAr, phoneE164: candidatePhone },
+  });
+  const profileID = created?.profile?.id;
+  assert(typeof profileID === "string" && profileID.startsWith("oprof_"), "operator candidate profile was not created");
+  assert(created.profile.state === "pending_review" && !created.profile.actorId, "operator candidate received an actor or role before review");
+  if (expectedActorID) {
+    assert(sql("SELECT count(*) FROM identity_actors WHERE id='" + sqlLiteral(expectedActorID) + "' AND phone_e164='" + sqlLiteral(candidatePhone) + "'") === "1", "shared actor readback changed before operator profile review");
+  } else {
+    assert(sql("SELECT count(*) FROM identity_actors WHERE phone_e164='" + sqlLiteral(candidatePhone) + "'") === "0", "operator candidate received an actor before role grant");
+  }
+  assert(sql("SELECT count(*) FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id WHERE a.phone_e164='" + sqlLiteral(candidatePhone) + "' AND r.role='operator'") === "0", "operator candidate received the role before review");
+
+  const profilePath = "/internal/operator-profiles/" + encodeURIComponent(profileID);
+  const approved = await expect("POST", profilePath + "/approve", 200, {
+    token: controlToken,
+    headers: mutationHeaders(),
+    body: { expectedVersion: 1 },
+  });
+  assert(approved?.profile?.state === "approved" && !approved.profile.actorId, "review did not remain separate from Identity role admission");
+  assert(sql("SELECT count(*) FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id WHERE a.phone_e164='" + sqlLiteral(candidatePhone) + "' AND r.role='operator'") === "0", "review approval granted operator access before the final role step");
+
+  const grant = await expect("POST", profilePath + "/grant", 201, {
+    token: controlToken,
+    headers: mutationHeaders(),
+    body: { expectedVersion: 2 },
+  });
+  assert(grant?.profile?.state === "admitted" && grant.profile.actorId === grant.role?.actorId, "approved profile and Identity role did not bind atomically");
+  assert(!expectedActorID || grant.role.actorId === expectedActorID, "operator role grant changed the existing canonical actor");
+  assert(sql("SELECT count(*) FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id WHERE a.phone_e164='" + sqlLiteral(candidatePhone) + "' AND r.role='operator'") === "1", "reviewed operator role was not persisted");
+  return { profileID, profile: grant.profile, role: grant.role };
+};
+
 const clientPhone = phone();
 generatedPhones.add(clientPhone);
 const clientPassword = password("Client");
@@ -153,12 +195,8 @@ const restoredPartnerLogin = await expect("POST", "/auth/managed/login", 200, {
 session(restoredPartnerLogin, "partner", "app-partner", clientPair.identity.subject);
 await expect("GET", "/auth/session", 200, { token: clientPair.accessToken });
 
-const sharedOperatorRole = await expect("POST", "/internal/actor-roles/provision", 201, {
-  token: controlToken,
-  headers: { "X-Acting-Actor-ID": operatorActorID },
-  body: { phoneE164: clientPhone, role: "operator" },
-});
-assert(sharedOperatorRole.actorId === clientPair.identity.subject, "operator role provisioning changed the permanent shared actor");
+const sharedOperatorAdmission = await admitReviewedOperatorCandidate(clientPhone, "سالم محمد أحمد", clientPair.identity.subject);
+assert(sharedOperatorAdmission.role.actorId === clientPair.identity.subject, "operator role provisioning changed the permanent shared actor");
 assert(sql("SELECT count(*) FROM identity_actor_roles WHERE actor_id='" + sqlLiteral(clientPair.identity.subject) + "' AND role IN ('client','partner','operator')") === "3", "same actor does not own all three admitted roles");
 assert(sql("SELECT count(*) FROM identity_password_credentials WHERE actor_id='" + sqlLiteral(clientPair.identity.subject) + "' AND role='client'") === "1", "shared client password credential is missing");
 assert(sql("SELECT count(*) FROM identity_password_credentials WHERE actor_id='" + sqlLiteral(clientPair.identity.subject) + "' AND role='operator'") === "0", "operator role received a password credential");
@@ -251,12 +289,16 @@ assert(typeof authOptions.ceremonyId === "string" && authOptions.publicKey?.chal
 assert(!authOptions.accessToken && !authOptions.refreshToken, "passkey options created a session");
 const operatorProofPhone = phone();
 generatedPhones.add(operatorProofPhone);
-const operatorProof = await expect("POST", "/internal/actor-roles/provision", 201, { token: controlToken, headers: { "X-Acting-Actor-ID": operatorActorID }, body: { phoneE164: operatorProofPhone, role: "operator" } });
-assert(operatorProof?.actorId && operatorProof?.role === "operator", "disposable operator proof fixture was not provisioned");
-const operatorEnrollment = await expect("POST", "/internal/operator-enrollment-tokens", 201, { token: controlToken, headers: { "X-Acting-Actor-ID": operatorActorID }, body: { phoneE164: operatorProofPhone, role: "operator" } });
-assert(/^[A-Za-z0-9_-]{24,256}$/.test(operatorEnrollment.code), "operator enrollment token is not high entropy");
-const operatorChallenge = await issue("/auth/operator/enrollment/request", { phone: operatorProofPhone, operatorEnrollmentToken: operatorEnrollment.code }, "operator_enroll", "operator");
-const enrollmentOptions = await expect("POST", "/auth/operator/enrollment/registration/options", 201, { body: { phone: operatorProofPhone, operatorEnrollmentToken: operatorEnrollment.code, verificationCode: operatorChallenge.code } });
+const operatorProof = await admitReviewedOperatorCandidate(operatorProofPhone, "محمود أحمد علي الدوبحي");
+assert(operatorProof.role?.actorId && operatorProof.role?.role === "operator", "disposable operator proof fixture was not admitted through profile review");
+const operatorInvitation = await expect("POST", "/internal/operator-profiles/" + encodeURIComponent(operatorProof.profileID) + "/invitation", 201, {
+  token: controlToken,
+  headers: { "X-Acting-Actor-ID": operatorActorID, "X-Correlation-ID": crypto.randomUUID() },
+});
+const operatorEnrollmentToken = operatorInvitation?.enrollmentToken?.code;
+assert(/^[A-Za-z0-9_-]{24,256}$/.test(operatorEnrollmentToken), "reviewed operator enrollment token is not high entropy");
+const operatorChallenge = await issue("/auth/operator/enrollment/request", { phone: operatorProofPhone, operatorEnrollmentToken }, "operator_enroll", "operator");
+const enrollmentOptions = await expect("POST", "/auth/operator/enrollment/registration/options", 201, { body: { phone: operatorProofPhone, operatorEnrollmentToken, verificationCode: operatorChallenge.code } });
 assert(typeof enrollmentOptions.ceremonyId === "string" && enrollmentOptions.publicKey?.challenge, "operator enrollment ceremony was not created");
 const invalidFinish = await request("POST", "/auth/operator/enrollment/registration/finish", { body: { ceremonyId: enrollmentOptions.ceremonyId, credential: {}, clientInstanceId: "runtime-invalid-passkey-instance-" + crypto.randomUUID() } });
 assert([400, 401].includes(invalidFinish.status), "invalid operator passkey credential was accepted");
@@ -272,7 +314,7 @@ assert(sql("SELECT count(*) FROM identity_password_attempts WHERE role='operator
 assert(sql("SELECT count(*) FROM identity_challenges WHERE purpose IN ('operator_mfa','managed_recover')") === "0", "retired proof purposes remain in current data");
 const retiredInstanceColumn = ["device", "_fingerprint", "_hash"].join("");
 assert(sql("SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='identity_sessions' AND column_name='" + retiredInstanceColumn + "'") === "0", "retired session binding column remains");
-assert(sql("SELECT count(*) FROM identity_schema_migrations WHERE version=18") === "1", "identity schema is not at v18");
+assert(sql("SELECT count(*) FROM identity_schema_migrations WHERE version=24") === "1", "identity schema is not at v24");
 
 console.log("IDENTITY_RUNTIME_SEMANTICS=PASS");
 console.log("IDENTITY_SAME_PHONE_MULTI_ROLE_ONE_ACTOR=PASS");

@@ -127,6 +127,16 @@ func (s *Service) UpdateAdmissionProfile(ctx context.Context, admissionID, fullN
 	return postgres.UpdateCaptainAdmissionProfile(ctx, s.db, admissionID, fullNameAr, expectedVersion, idempotencyKey, postgres.HashCaptainAdmissionProfileRequest(admissionID, fullNameAr, expectedVersion), actingActorID, correlationID)
 }
 
+func (s *Service) ReviewAdmissionProfile(ctx context.Context, admissionID string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.CaptainAdmission, bool, error) {
+	if expectedVersion < 1 || !validMutation(idempotencyKey, correlationID, actingActorID) {
+		return postgres.CaptainAdmission{}, false, ErrInvalidInput
+	}
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return postgres.CaptainAdmission{}, false, err
+	}
+	return postgres.ReviewCaptainAdmissionProfile(ctx, s.db, admissionID, expectedVersion, idempotencyKey, postgres.HashCaptainAdmissionProfileReviewRequest(admissionID, expectedVersion), actingActorID, correlationID)
+}
+
 func (s *Service) ReadForOperatorByActor(ctx context.Context, actorID, actingActorID string) (postgres.CaptainAdmission, error) {
 	if strings.TrimSpace(actorID) == "" {
 		return postgres.CaptainAdmission{}, ErrInvalidInput
@@ -509,13 +519,13 @@ func (s *Service) SetManagedRoleEnabled(ctx context.Context, role, actorID, oper
 
 	accessHash := postgres.HashCaptainAccessRequest(actorID, role, enabled, expectedVersion)
 	if enabled {
-		if identityRole.Enabled != enabled {
-			if err := s.identity.SetRoleEnabledWithContext(ctx, actorID, role, true, strings.TrimSpace(correlationID), strings.TrimSpace(reason), strings.TrimSpace(operatorActorID), expectedVersion); err != nil {
-				return err
-			}
+		if _, err := postgres.RestoreCaptainAdmission(ctx, s.db, actorID, idempotencyKey, accessHash, strings.TrimSpace(operatorActorID), strings.TrimSpace(correlationID)); err != nil {
+			return err
 		}
-		_, err := postgres.RestoreCaptainAdmission(ctx, s.db, actorID, idempotencyKey, accessHash, strings.TrimSpace(operatorActorID), strings.TrimSpace(correlationID))
-		return err
+		if identityRole.Enabled != enabled {
+			return s.identity.SetRoleEnabledWithContext(ctx, actorID, role, true, strings.TrimSpace(correlationID), strings.TrimSpace(reason), strings.TrimSpace(operatorActorID), expectedVersion)
+		}
+		return nil
 	}
 
 	if _, err := postgres.SuspendCaptainAdmission(ctx, s.db, actorID, idempotencyKey, accessHash, strings.TrimSpace(operatorActorID), strings.TrimSpace(correlationID)); err != nil {

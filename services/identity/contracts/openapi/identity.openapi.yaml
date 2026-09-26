@@ -29,8 +29,16 @@ paths:
     $ref: "./paths/managed-enrollment-auth.yaml#/paths/~1auth~1managed~1activate"
   /auth/managed/login:
     $ref: "./paths/managed-enrollment-auth.yaml#/paths/~1auth~1managed~1login"
-  /internal/operator-enrollment-tokens:
-    $ref: "./paths/managed-enrollment-auth.yaml#/paths/~1internal~1operator-enrollment-tokens"
+  /internal/operator-profiles:
+    $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1operator-profiles"
+  /internal/operator-profiles/{profileId}:
+    $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1operator-profiles~1{profileId}"
+  /internal/operator-profiles/{profileId}/approve:
+    $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1operator-profiles~1{profileId}~1approve"
+  /internal/operator-profiles/{profileId}/grant:
+    $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1operator-profiles~1{profileId}~1grant"
+  /internal/operator-profiles/{profileId}/invitation:
+    $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1operator-profiles~1{profileId}~1invitation"
   /auth/operator/enrollment/request:
     $ref: "./paths/operator-passkey-access.yaml#/paths/~1auth~1operator~1enrollment~1request"
   /auth/operator/enrollment/registration/options:
@@ -96,6 +104,7 @@ components:
     internalServiceToken: { type: http, scheme: bearer, bearerFormat: opaque-service-token }
 
   parameters:
+    IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, minLength: 8, maxLength: 128 } }
     ActorId: { name: actorId, in: path, required: true, schema: { type: string } }
     Role: { name: role, in: path, required: true, schema: { $ref: "#/components/schemas/ActorType" } }
     OperatorPermission: { name: permission, in: path, required: true, schema: { $ref: "#/components/schemas/OperatorPermission" } }
@@ -175,17 +184,6 @@ components:
           maxLength: 256
           pattern: "^[A-Za-z0-9_-]{24,256}$"
 
-    OperatorEnrollmentTokenIssueRequest:
-      type: object
-      additionalProperties: false
-      required: [phoneE164, role]
-      properties:
-        phoneE164:
-          type: string
-        role:
-          type: string
-          enum: [operator]
-
     OperatorEnrollmentToken:
       type: object
       additionalProperties: false
@@ -201,6 +199,127 @@ components:
         expiresAt:
           type: string
           format: date-time
+    OperatorProfile:
+      type: object
+      additionalProperties: false
+      required: [id, fullNameAr, state, version, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        fullNameAr:
+          type: string
+          description: Arabic display name for this Operator profile; this field is not a verified legal name.
+          minLength: 2
+          maxLength: 120
+        phoneE164:
+          type: string
+          pattern: '^\\+[1-9][0-9]{7,14}$'
+        actorId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        roleEnabled:
+          type: boolean
+        securityEnabled:
+          type: boolean
+        activatedAt:
+          type: string
+          format: date-time
+        state:
+          type: string
+          enum: [pending_review, approved, admitted]
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    OperatorProfilePage:
+      type: object
+      additionalProperties: false
+      required: [items, limit]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OperatorProfile"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+        nextCursor:
+          type: string
+    OperatorProfileCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [fullNameAr, phoneE164]
+      properties:
+        fullNameAr:
+          type: string
+          description: Arabic display name for this Operator profile; this field is not a verified legal name.
+          minLength: 2
+          maxLength: 120
+        phoneE164:
+          type: string
+          pattern: '^\\+[1-9][0-9]{7,14}$'
+    OperatorProfileUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [fullNameAr, phoneE164, expectedVersion]
+      properties:
+        fullNameAr:
+          type: string
+          description: Arabic display name for this Operator profile; this field is not a verified legal name.
+          minLength: 2
+          maxLength: 120
+        phoneE164:
+          type: string
+          pattern: '^\\+[1-9][0-9]{7,14}$'
+        expectedVersion:
+          type: integer
+          minimum: 1
+    OperatorProfileMutationRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion:
+          type: integer
+          minimum: 1
+    OperatorProfileResponse:
+      type: object
+      additionalProperties: false
+      required: [profile, idempotentReplay]
+      properties:
+        profile:
+          $ref: "#/components/schemas/OperatorProfile"
+        idempotentReplay:
+          type: boolean
+    OperatorProfileGrantResponse:
+      type: object
+      additionalProperties: false
+      required: [profile, role, idempotentReplay]
+      properties:
+        profile:
+          $ref: "#/components/schemas/OperatorProfile"
+        role:
+          $ref: "#/components/schemas/ActorRoleView"
+        idempotentReplay:
+          type: boolean
+    OperatorProfileInvitationResponse:
+      type: object
+      additionalProperties: false
+      required: [profile, enrollmentToken]
+      properties:
+        profile:
+          $ref: "#/components/schemas/OperatorProfile"
+        enrollmentToken:
+          $ref: "#/components/schemas/OperatorEnrollmentToken"
 
     ClientCredentialProofRequest:
       type: object
@@ -553,7 +672,7 @@ components:
           type: string
         role:
           type: string
-          enum: [partner, captain, field, operator]
+          enum: [partner, captain, field]
 
     ActorRoleView:
       type: object
@@ -758,9 +877,6 @@ components:
     ChallengeIssued:
       description: Challenge-shaped acknowledgement; raw codes and provider delivery outcomes are not exposed.
       content: { application/json: { schema: { $ref: "#/components/schemas/Challenge" } } }
-    OperatorEnrollmentTokenIssued:
-      description: One-time operator enrollment token returned only in this authorized response.
-      content: { application/json: { schema: { $ref: "#/components/schemas/OperatorEnrollmentToken" } } }
     TokenPair:
       description: Role-scoped authenticated session.
       content: { application/json: { schema: { $ref: "#/components/schemas/TokenPair" } } }

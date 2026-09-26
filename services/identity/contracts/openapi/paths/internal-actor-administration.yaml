@@ -1,10 +1,130 @@
 paths:
+  /internal/operator-profiles:
+    get:
+      tags: [internal-actor-roles]
+      operationId: listOperatorProfiles
+      security: [{ internalServiceToken: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+        - { name: q, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: state, in: query, schema: { type: string, enum: [all, pending_review, approved, admitted], default: all } }
+        - { name: sort, in: query, schema: { type: string, enum: [created_asc, created_desc], default: created_desc } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 25 } }
+        - { name: cursor, in: query, schema: { type: string, maxLength: 1024 } }
+      responses:
+        "200": { description: Server-paged Identity-owned operator profiles., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfilePage" } } }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [internal-actor-roles]
+      operationId: createOperatorProfile
+      security: [{ internalServiceToken: [] }]
+      description: Creates an Identity-owned operator candidate profile only. No actor or role is created until an authorized reviewer approves and grants the role.
+      parameters:
+        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileCreateRequest" } } }
+      responses:
+        "201": { description: Profile created without an actor role., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileResponse" } } }
+        "200": { description: Exact idempotent replay., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileResponse" } } }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /internal/operator-profiles/{profileId}:
+    patch:
+      tags: [internal-actor-roles]
+      operationId: updateOperatorProfile
+      security: [{ internalServiceToken: [] }]
+      parameters:
+        - { name: profileId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileUpdateRequest" } } }
+      responses:
+        "200": { description: Updated pre-review profile., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileResponse" } } }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /internal/operator-profiles/{profileId}/approve:
+    post:
+      tags: [internal-actor-roles]
+      operationId: approveOperatorProfile
+      security: [{ internalServiceToken: [] }]
+      parameters:
+        - { name: profileId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileMutationRequest" } } }
+      responses:
+        "200": { description: Reviewed operator profile; role is still absent., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileResponse" } } }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /internal/operator-profiles/{profileId}/grant:
+    post:
+      tags: [internal-actor-roles]
+      operationId: grantOperatorProfile
+      security: [{ internalServiceToken: [] }]
+      description: Creates or binds the Identity actor and grants the operator role only after approval. Profile binding and role admission commit atomically.
+      parameters:
+        - { name: profileId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileMutationRequest" } } }
+      responses:
+        "200": { description: Existing approved Identity role readback., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileGrantResponse" } } }
+        "201": { description: Identity actor and operator role granted after review., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileGrantResponse" } } }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /internal/operator-profiles/{profileId}/invitation:
+    post:
+      tags: [internal-actor-roles]
+      operationId: issueOperatorProfileInvitation
+      security: [{ internalServiceToken: [] }]
+      description: Issues enrollment only for an admitted, enabled, not-yet-activated operator profile. It cannot provision a role or reactivate an existing operator.
+      parameters:
+        - { name: profileId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "#/components/parameters/CorrelationId" }
+      responses:
+        "201": { description: Single-use operator enrollment token returned once., content: { application/json: { schema: { $ref: "#/components/schemas/OperatorProfileInvitationResponse" } } }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /internal/actor-roles/provision:
     post:
       tags: [internal-actor-roles]
       operationId: provisionActorRole
       security: [{ internalServiceToken: [] }]
-      description: Identity alone creates actor_id and persists role admission. DSH may request partner, captain, or field only after the owning DSH eligibility transition; Field admission and lifecycle remain owned by the DSH Field workflow. The control-panel service may provision an operator through the separate operator invite path. First-operator bootstrap is a separate one-time lifecycle.
+      description: Identity alone creates actor_id and persists role admission. DSH may request partner, captain, or field only after the owning DSH eligibility transition; Field admission and lifecycle remain owned by the DSH Field workflow. Operator role admission uses the reviewed operator-profile path. First-operator bootstrap is a separate one-time lifecycle.
       parameters:
         - { $ref: "#/components/parameters/CorrelationId" }
         - { $ref: "#/components/parameters/ActingActorId" }

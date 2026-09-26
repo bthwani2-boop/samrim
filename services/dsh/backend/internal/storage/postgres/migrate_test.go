@@ -77,6 +77,27 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 	if !strings.Contains(migrationByName["070_public_store_discovery_pagination.sql"], "stores_published_city_created_registry_idx") || !strings.Contains(migrationByName["070_public_store_discovery_pagination.sql"], "stores_published_city_name_search_idx") || !strings.Contains(migrationByName["070_public_store_discovery_pagination.sql"], "gin_trgm_ops") {
 		t.Fatal("DSH migration 070 is missing Store discovery search and ordering indexes")
 	}
+	for _, required := range []string{
+		"ADD COLUMN requires_profile_review boolean NOT NULL DEFAULT false",
+		"WHERE state IN ('eligible','suspended') AND actor_id IS NOT NULL AND full_name_ar IS NULL",
+		"field_admissions_profile_review_chk",
+		"captain_admissions_profile_review_chk",
+		"field_admission_profile_reviewed",
+		"captain_admission_profile_reviewed",
+	} {
+		if !strings.Contains(migrationByName["071_field_captain_profiles_and_review.sql"], required) {
+			t.Fatalf("DSH migration 071 is missing the profile review closure: %s", required)
+		}
+	}
+	dsh071 := migrationByName["071_field_captain_profiles_and_review.sql"]
+	for _, pair := range [][2]string{
+		{"DROP CONSTRAINT field_admission_idempotency_state_chk", "UPDATE dsh.field_admission_idempotency SET result_state='pending_review'"},
+		{"DROP CONSTRAINT captain_admission_idempotency_state_chk", "UPDATE dsh.captain_admission_idempotency SET result_state='pending_review'"},
+	} {
+		if strings.Index(dsh071, pair[0]) < 0 || strings.Index(dsh071, pair[0]) > strings.Index(dsh071, pair[1]) {
+			t.Fatalf("DSH migration 071 must widen the idempotency state constraint before backfill: %s", pair[0])
+		}
+	}
 	for _, preserved := range []string{"'correct'", "'correct_and_resubmit'", "'bind-financial-terms'", "'joining_case_corrected'", "'joining_case_corrected_and_resubmitted'", "'joining_case_financial_terms_bound'", "'joining_case_admission_reopened'"} {
 		if !strings.Contains(migrationByName["068_field_operator_partner_admission.sql"], preserved) {
 			t.Fatalf("DSH migration 068 dropped existing joining-case constraint value %s", preserved)

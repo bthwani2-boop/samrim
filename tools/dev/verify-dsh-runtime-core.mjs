@@ -393,6 +393,34 @@ async function request(base, method, pathname, options = {}) {
 }
 function serviceHeaders(operatorID, key, correlation = crypto.randomUUID(), expectedVersion) { return { "X-Acting-Actor-ID": operatorID, "X-Correlation-ID": correlation, "Idempotency-Key": key, ...(expectedVersion === undefined ? {} : { "X-Expected-Version": String(expectedVersion) }) }; }
 function partnerHeaders(key, expectedVersion) { return { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": key, ...(expectedVersion === undefined ? {} : { "X-Expected-Version": String(expectedVersion) }) }; }
+async function admitReviewedRoleCandidate(role, phone, candidateName, reviewedName, label) {
+  if (role !== "field" && role !== "captain") fail("unsupported role candidate proof", role);
+  const plural = role === "field" ? "fields" : "captains";
+  const root = `/dsh/${plural}/admissions`;
+  const createHeaders = serviceHeaders(actingOperatorID, `${label}-profile-${suffix}`);
+  const created = await request(dshBase, "POST", root, { token: dshToken, headers: createHeaders, body: { fullNameAr: candidateName, contactPhoneE164: phone } });
+  const replay = await request(dshBase, "POST", root, { token: dshToken, headers: createHeaders, body: { fullNameAr: candidateName, contactPhoneE164: phone } });
+  if (created.status !== 201 || created.body?.admission?.state !== "pending_review" || created.body?.admission?.actorId || created.body?.admission?.fullNameAr !== candidateName || replay.status !== 200 || replay.body?.idempotentReplay !== true || replay.body?.admission?.id !== created.body?.admission?.id) {
+    fail(`${role} profile creation did not persist a reviewable candidate before Identity role access`, JSON.stringify({ created, replay }));
+  }
+  const admissionID = String(created.body.admission.id);
+  const updated = await request(dshBase, "PATCH", `${root}/${encodeURIComponent(admissionID)}/profile`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `${label}-profile-edit-${suffix}`, crypto.randomUUID(), Number(created.body.admission.version)), body: { fullNameAr: reviewedName } });
+  if (updated.status !== 200 || updated.body?.admission?.state !== "pending_review" || updated.body?.admission?.fullNameAr !== reviewedName || updated.body?.admission?.actorId) {
+    fail(`${role} candidate profile editing did not preserve the pre-access review state`, JSON.stringify(updated));
+  }
+  const approved = await request(dshBase, "POST", `${root}/${encodeURIComponent(admissionID)}/approve`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `${label}-profile-approve-${suffix}`) });
+  const roleBeforeGrant = await request(identityBase, "GET", `/internal/actor-roles/search?role=${role}&q=${encodeURIComponent(phone)}&limit=5`, { token: identityDshToken });
+  if (approved.status !== 200 || approved.body?.admission?.state !== "pending_identity" || approved.body?.admission?.fullNameAr !== reviewedName || approved.body?.admission?.actorId || roleBeforeGrant.status !== 200 || roleBeforeGrant.body?.items?.some((item) => item.phoneE164 === phone)) {
+    fail(`${role} approval must leave the Identity role ungranted`, JSON.stringify({ approved, roleBeforeGrant }));
+  }
+  const provision = await request(dshBase, "POST", `${root}/${encodeURIComponent(admissionID)}/provision`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `${label}-profile-grant-${suffix}`) });
+  const actorID = String(provision.body?.admission?.actorId || "");
+  const roleAfterGrant = await request(identityBase, "GET", `/internal/actor-roles/search?role=${role}&q=${encodeURIComponent(phone)}&limit=5`, { token: identityDshToken });
+  if (provision.status !== 200 || provision.body?.admission?.state !== "eligible" || provision.body?.admission?.fullNameAr !== reviewedName || !actorID || roleAfterGrant.status !== 200 || !roleAfterGrant.body?.items?.some((item) => item.actorId === actorID && item.phoneE164 === phone)) {
+    fail(`${role} approved candidate did not receive one Identity role with canonical readback`, JSON.stringify({ provision, roleAfterGrant }));
+  }
+  return { admissionID, actorID, created, replay, updated, approved, provision };
+}
 async function requestFieldPartnerAdmission(caseID, fieldToken, expectedVersion, label) {
   const fieldHeaders = partnerHeaders(label + "-field-admission-" + suffix, expectedVersion);
   const fieldAdmissionRequested = await request(dshBase, "POST", "/dsh/field/joining-cases/" + encodeURIComponent(caseID) + "/submit", { token: fieldToken, headers: fieldHeaders });
@@ -539,14 +567,19 @@ for (const table of ["captain_location_snapshots", "captain_location_mutation_id
   expectSQL("SELECT to_regclass('dsh.notification_read_state') IS NOT NULL", "t", "required notification read-state relation is missing");
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admissions_phone_chk'", "CHECK (((contact_phone_e164 IS NULL) OR (contact_phone_e164 ~ '^\\+[1-9][0-9]{7,14}$'::text)))", "Captain phone constraint is not canonical");
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admissions_suspended_availability_chk'", "CHECK (((state <> 'suspended'::text) OR (availability_state = 'unavailable'::text)))", "Captain suspended availability invariant is not canonical");
-expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admissions_state_chk'", "CHECK ((state = ANY (ARRAY['pending_identity'::text, 'eligible'::text, 'suspended'::text])))", "Captain admission state set is not canonical");
-expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admission_idempotency_state_chk'", "CHECK ((result_state = ANY (ARRAY['pending_identity'::text, 'eligible'::text, 'suspended'::text])))", "Captain admission idempotency state set is not canonical");
+expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admissions_state_chk'", "CHECK ((state = ANY (ARRAY['pending_review'::text, 'pending_identity'::text, 'eligible'::text, 'suspended'::text])))", "Captain admission state set is not canonical");
+expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admission_idempotency_state_chk'", "CHECK ((result_state = ANY (ARRAY['pending_review'::text, 'pending_identity'::text, 'eligible'::text, 'suspended'::text])))", "Captain admission idempotency state set is not canonical");
+expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admissions_profile_review_chk'", "CHECK (((NOT requires_profile_review) OR ((state = ANY (ARRAY['eligible'::text, 'suspended'::text])) AND (actor_id IS NOT NULL))))", "Captain profile review state is not canonical");
+expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admission_audit_event_type_chk'", "CHECK ((event_type = ANY (ARRAY['captain_admission_created'::text, 'captain_admission_profile_updated'::text, 'captain_admission_profile_reviewed'::text, 'captain_admission_approved'::text, 'captain_admission_bound'::text, 'captain_admission_suspended'::text, 'captain_admission_restored'::text, 'captain_availability_changed'::text])))", "Captain admission profile review audit events are not canonical");
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_operation_idempotency_operation_chk'", "CHECK ((operation = ANY (ARRAY['availability'::text, 'dispatch'::text, 'store_dispatch'::text, 'respond_offer'::text, 'reassign'::text, 'store_confirm'::text, 'pickup'::text, 'complete'::text, 'recover'::text])))", "Captain recovery operation is not canonical");
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_audit_event_type_chk'", "CHECK ((event_type = ANY (ARRAY['dispatch_offer_created'::text, 'dispatch_offer_accepted'::text, 'dispatch_offer_rejected'::text, 'dispatch_offer_expired'::text, 'captain_offer_superseded_by_access'::text, 'captain_assignment_reassigned'::text, 'store_handoff_confirmed'::text, 'captain_pickup_completed'::text, 'delivery_completed'::text, 'delivery_failed'::text, 'delivery_recovered'::text])))", "Captain delivery recovery audit events are not canonical");
 for (const table of ["field_admissions", "field_admission_idempotency", "field_admission_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required Field relation is missing: ${table}`);
-expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admissions_state_chk'", "CHECK ((state = ANY (ARRAY['pending_identity'::text, 'eligible'::text, 'suspended'::text])))", "Field admission state set is not canonical");
-expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admission_idempotency_operation_chk'", "CHECK ((operation = 'create'::text))", "Field admission idempotency operation is not canonical");
-expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admission_audit_event_type_chk'", "CHECK ((event_type = ANY (ARRAY['field_admission_created'::text, 'field_admission_bound'::text, 'field_admission_suspended'::text, 'field_admission_restored'::text])))", "Field admission audit events are not canonical");
+expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admissions_state_chk'", "CHECK ((state = ANY (ARRAY['pending_review'::text, 'pending_identity'::text, 'eligible'::text, 'suspended'::text])))", "Field admission state set is not canonical");
+expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admission_idempotency_operation_chk'", "CHECK ((operation = ANY (ARRAY['create'::text, 'approve'::text, 'bind'::text, 'profile'::text, 'profile_review'::text])))", "Field admission idempotency operations are not canonical");
+expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admission_idempotency_state_chk'", "CHECK ((result_state = ANY (ARRAY['pending_review'::text, 'pending_identity'::text, 'eligible'::text, 'suspended'::text])))", "Field admission idempotency states are not canonical");
+expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admission_audit_event_type_chk'", "CHECK ((event_type = ANY (ARRAY['field_admission_created'::text, 'field_admission_profile_updated'::text, 'field_admission_profile_reviewed'::text, 'field_admission_approved'::text, 'field_admission_bound'::text, 'field_admission_suspended'::text, 'field_admission_restored'::text])))", "Field admission profile review audit events are not canonical");
+expectSQL("SELECT NOT EXISTS (SELECT 1 FROM dsh.field_admissions WHERE state IN ('eligible','suspended') AND actor_id IS NOT NULL AND full_name_ar IS NULL AND NOT requires_profile_review)", "t", "unprofiled Field role remains outside profile review");
+expectSQL("SELECT NOT EXISTS (SELECT 1 FROM dsh.captain_admissions WHERE state IN ('eligible','suspended') AND actor_id IS NOT NULL AND full_name_ar IS NULL AND NOT requires_profile_review)", "t", "unprofiled Captain role remains outside profile review");
 expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%origin%' AND pg_get_constraintdef(oid) LIKE '%control_panel%' AND pg_get_constraintdef(oid) LIKE '%field%' FROM pg_constraint WHERE conname='joining_cases_origin_chk'", "t", "Joining-case origin values are not canonical");
 expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%control_panel%' AND pg_get_constraintdef(oid) LIKE '%originating_field_actor_id%' FROM pg_constraint WHERE conname='joining_cases_field_actor_chk'", "t", "Joining-case field provenance invariant is not canonical");
 expectSQL("SELECT to_regclass('dsh.joining_cases') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='dsh' AND table_name='joining_cases' AND column_name IN ('originating_field_actor_id','origin') GROUP BY table_schema,table_name HAVING count(*)=2)", "t", "Joining-case provenance columns are missing");
@@ -676,11 +709,12 @@ async function createApprovedPartner(phone, name, serviceCityId, origin = "contr
   return { accessToken, actorID, caseID, storeID };
 }
 const fieldPhone = `+96771${crypto.randomInt(1_000_000, 9_999_999)}`;
-const fieldAdmissionResponse = await request(dshBase, "POST", "/dsh/fields/admissions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-admit-${suffix}`), body: { contactPhoneE164: fieldPhone } });
-const fieldAdmissionReplay = await request(dshBase, "POST", "/dsh/fields/admissions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-admit-${suffix}`), body: { contactPhoneE164: fieldPhone } });
-if (fieldAdmissionResponse.status !== 201 || fieldAdmissionResponse.body?.admission?.state !== "eligible" || !fieldAdmissionResponse.body?.admission?.actorId || fieldAdmissionReplay.status !== 200 || fieldAdmissionReplay.body?.idempotentReplay !== true || fieldAdmissionReplay.body.admission.id !== fieldAdmissionResponse.body.admission.id) fail("Field admission did not bind and replay one DSH-owned actor", JSON.stringify({ fieldAdmissionResponse, fieldAdmissionReplay }));
-const fieldAdmissionID = String(fieldAdmissionResponse.body.admission.id);
-const fieldActorID = String(fieldAdmissionResponse.body.admission.actorId);
+const fieldCandidateLifecycle = await admitReviewedRoleCandidate("field", fieldPhone, "سامي ناصر", "سامي ناصر محمد العريقي", "field-admit");
+const fieldAdmissionResponse = fieldCandidateLifecycle.provision;
+const fieldAdmissionReplay = fieldCandidateLifecycle.replay;
+if (fieldAdmissionResponse.status !== 200 || fieldAdmissionResponse.body?.admission?.state !== "eligible" || !fieldAdmissionResponse.body?.admission?.actorId || fieldAdmissionReplay.status !== 200 || fieldAdmissionReplay.body?.idempotentReplay !== true || fieldAdmissionReplay.body.admission.id !== fieldAdmissionResponse.body.admission.id) fail("Field profile, review, role grant, or replay did not reach one DSH-owned actor", JSON.stringify({ fieldAdmissionResponse, fieldAdmissionReplay }));
+const fieldAdmissionID = fieldCandidateLifecycle.admissionID;
+const fieldActorID = fieldCandidateLifecycle.actorID;
 fieldAdmissionIDs.add(fieldAdmissionID); actorIDs.add(fieldActorID);
 const fieldPassword = `Fiel${suffix.slice(0, 4)}`;
 let fieldAccessToken = await activateField(fieldPhone, fieldPassword);
@@ -688,7 +722,7 @@ const fieldSelf = await request(dshBase, "GET", "/dsh/fields/me", { token: field
 const fieldAdmissionRead = await request(dshBase, "GET", `/dsh/fields/admissions/${encodeURIComponent(fieldAdmissionID)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 const fieldActorAdmissionRead = await request(dshBase, "GET", `/dsh/fields/actors/${encodeURIComponent(fieldActorID)}/admission`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 const fieldDirectIdentityWrite = await request(identityBase, "POST", "/internal/actor-roles/provision", { token: fieldAccessToken, body: { phoneE164: `+96770${crypto.randomInt(1_000_000, 9_999_999)}`, role: "field" } });
-if (fieldSelf.status !== 200 || fieldSelf.body?.admission?.actorId !== fieldActorID || fieldAdmissionRead.status !== 200 || fieldAdmissionRead.body?.admission?.id !== fieldAdmissionID || fieldActorAdmissionRead.status !== 200 || fieldActorAdmissionRead.body?.admission?.actorId !== fieldActorID || fieldDirectIdentityWrite.status !== 401) fail("Field admission readback or direct Identity creation boundary failed", JSON.stringify({ fieldSelf, fieldAdmissionRead, fieldActorAdmissionRead, fieldDirectIdentityWrite }));
+if (fieldSelf.status !== 200 || fieldSelf.body?.admission?.actorId !== fieldActorID || fieldSelf.body?.admission?.fullNameAr !== "سامي ناصر محمد العريقي" || fieldSelf.body?.admission?.contactPhoneE164 !== fieldPhone || fieldAdmissionRead.status !== 200 || fieldAdmissionRead.body?.admission?.id !== fieldAdmissionID || fieldAdmissionRead.body?.admission?.fullNameAr !== "سامي ناصر محمد العريقي" || fieldAdmissionRead.body?.admission?.contactPhoneE164 !== fieldPhone || fieldActorAdmissionRead.status !== 200 || fieldActorAdmissionRead.body?.admission?.actorId !== fieldActorID || fieldActorAdmissionRead.body?.admission?.fullNameAr !== "سامي ناصر محمد العريقي" || fieldDirectIdentityWrite.status !== 401) fail("Field name/phone profile readback or direct Identity creation boundary failed", JSON.stringify({ fieldSelf, fieldAdmissionRead, fieldActorAdmissionRead, fieldDirectIdentityWrite }));
 const fieldRoleBeforeReenrollment = await request(identityBase, "GET", `/internal/actors/${encodeURIComponent(fieldActorID)}/roles/field`, { token: identityDshToken });
 const fieldReenrollmentPath = `/dsh/fields/${encodeURIComponent(fieldActorID)}/reenrollment`;
 const fieldReenrollmentBody = { expectedActorVersion: fieldRoleBeforeReenrollment.body?.actorVersion, expectedRoleVersion: fieldRoleBeforeReenrollment.body?.roleVersion, reason: "استرداد جهاز الميدان وإعادة تسجيل الوصول" };
@@ -708,10 +742,13 @@ const first = await createApprovedPartner(`+96772${crypto.randomInt(1_000_000, 9
 const second = await createApprovedPartner(`+96774${crypto.randomInt(1_000_000, 9_999_999)}`, "Catalog Runtime B", cityB, "field");
 const storeLocal = await createApprovedPartner(`+96775${crypto.randomInt(1_000_000, 9_999_999)}`, "Store Local Runtime", cityA, "control_panel", storeLocalVerticalID);
 const secondFieldPhone = `+96773${crypto.randomInt(1_000_000, 9_999_999)}`;
-const secondFieldAdmission = await request(dshBase, "POST", "/dsh/fields/admissions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-admit-second-${suffix}`), body: { contactPhoneE164: secondFieldPhone } });
-if (secondFieldAdmission.status !== 201 || secondFieldAdmission.body?.admission?.state !== "eligible" || !secondFieldAdmission.body?.admission?.actorId) fail("second Field admission fixture failed", JSON.stringify(secondFieldAdmission));
-const secondFieldAdmissionID = String(secondFieldAdmission.body.admission.id); const secondFieldActorID = String(secondFieldAdmission.body.admission.actorId); fieldAdmissionIDs.add(secondFieldAdmissionID); actorIDs.add(secondFieldActorID);
+const secondFieldFlow = await admitReviewedRoleCandidate("field", secondFieldPhone, "فهد أحمد", "فهد أحمد صالح القيسي", "field-admit-second");
+const secondFieldAdmission = secondFieldFlow.provision;
+if (secondFieldAdmission.status !== 200 || secondFieldAdmission.body?.admission?.state !== "eligible" || !secondFieldAdmission.body?.admission?.actorId) fail("second Field profile, approval, or role grant fixture failed", JSON.stringify(secondFieldAdmission));
+const secondFieldAdmissionID = secondFieldFlow.admissionID; const secondFieldActorID = secondFieldFlow.actorID; fieldAdmissionIDs.add(secondFieldAdmissionID); actorIDs.add(secondFieldActorID);
 const secondFieldAccessToken = await activateField(secondFieldPhone, `Fiel${suffix.slice(0, 4)}`);
+const secondFieldSelf = await request(dshBase, "GET", "/dsh/fields/me", { token: secondFieldAccessToken });
+if (secondFieldSelf.status !== 200 || secondFieldSelf.body?.admission?.actorId !== secondFieldActorID || secondFieldSelf.body?.admission?.fullNameAr !== "فهد أحمد صالح القيسي" || secondFieldSelf.body?.admission?.contactPhoneE164 !== secondFieldPhone) fail("second Field app profile did not read its reviewed name and Identity phone", JSON.stringify(secondFieldSelf));
 const fieldCasePhone = `+96775${crypto.randomInt(1_000_000, 9_999_999)}`;
 const fieldCaseKey = `field-case-${suffix}`;
 const fieldCaseCreated = await request(dshBase, "POST", "/dsh/field/joining-cases", { token: fieldAccessToken, headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": fieldCaseKey }, body: { contactPhoneE164: fieldCasePhone, businessName: `Field ${suffix} business`, firstStoreName: `Field ${suffix} store`, serviceCityId: cityA, firstStoreVerticalId: verticalID, ...firstStoreOrigin } });
@@ -1451,10 +1488,11 @@ console.log("DSH_CART_CHECKOUT=PASS");
 console.log("DSH_ORDER_READY_FOR_DISPATCH=PASS");
 
 const captainPhone = `+96779${crypto.randomInt(1_000_000, 9_999_999)}`;
-const captainAdmissionResponse = await request(dshBase, "POST", "/dsh/captains/admissions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `captain-admit-${suffix}`), body: { contactPhoneE164: captainPhone } });
-if (captainAdmissionResponse.status !== 201 || captainAdmissionResponse.body?.admission?.state !== "eligible" || !captainAdmissionResponse.body.admission.actorId) fail("Captain admission did not bind an eligible Identity actor", JSON.stringify(captainAdmissionResponse));
-const captainAdmissionID = String(captainAdmissionResponse.body.admission.id);
-const captainActorID = String(captainAdmissionResponse.body.admission.actorId);
+const captainAdmissionFlow = await admitReviewedRoleCandidate("captain", captainPhone, "علي سالم", "علي سالم أحمد الصنعاني", "captain-admit");
+const captainAdmissionResponse = captainAdmissionFlow.provision;
+if (captainAdmissionResponse.status !== 200 || captainAdmissionResponse.body?.admission?.state !== "eligible" || !captainAdmissionResponse.body.admission.actorId) fail("Captain profile, review, or role grant did not bind an eligible Identity actor", JSON.stringify(captainAdmissionResponse));
+const captainAdmissionID = captainAdmissionFlow.admissionID;
+const captainActorID = captainAdmissionFlow.actorID;
 captainAdmissionIDs.add(captainAdmissionID); actorIDs.add(captainActorID);
 const captainAccessToken = await activateCaptain(captainPhone, `Capt${suffix.slice(0, 4)}`);
 const captainOpeningFunding = await request(wltBase, "POST", `/wlt/v1/operator/captains/${encodeURIComponent(captainActorID)}/opening-funding`, { token: wltToken, headers: serviceHeaders(actingOperatorID, `captain-opening-funding-${suffix}`), body: { amountMinor: mainOrderTotal, fundingReason: "runtime proof COD opening collateral", evidenceReference: `captain-opening-funding-proof-${suffix}` } });
@@ -1466,7 +1504,7 @@ if (captainWalletBeforeDispatch.status !== 200 || captainWalletBeforeDispatch.bo
 const captainSelf = await request(dshBase, "GET", "/dsh/captains/me", { token: captainAccessToken });
 const captainAvailability = await request(dshBase, "POST", "/dsh/captains/me/availability", { token: captainAccessToken, headers: partnerHeaders(`captain-availability-${suffix}`, captainSelf.body?.admission?.version), body: { available: true } });
 const partnerCaptainOffers = await request(dshBase, "GET", "/dsh/captains/me/offers", { token: first.accessToken });
-if (captainSelf.status !== 200 || captainSelf.body?.admission?.actorId !== captainActorID || captainAvailability.status !== 200 || captainAvailability.body?.admission?.availabilityState !== "available" || partnerCaptainOffers.status !== 403) fail("Captain session or cross-role Captain read boundary failed", JSON.stringify({ captainSelf, captainAvailability, partnerCaptainOffers }));
+if (captainSelf.status !== 200 || captainSelf.body?.admission?.actorId !== captainActorID || captainSelf.body?.admission?.fullNameAr !== "علي سالم أحمد الصنعاني" || captainSelf.body?.admission?.contactPhoneE164 !== captainPhone || captainAvailability.status !== 200 || captainAvailability.body?.admission?.availabilityState !== "available" || partnerCaptainOffers.status !== 403) fail("Captain profile readback, session, or cross-role read boundary failed", JSON.stringify({ captainSelf, captainAvailability, partnerCaptainOffers }));
 const firstDispatchKey = `captain-dispatch-first-${suffix}`;
 const firstDispatch = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(orderID)}/dispatch`, { token: dshToken, headers: serviceHeaders(actingOperatorID, firstDispatchKey) });
 if (firstDispatch.status !== 201 || firstDispatch.body?.offer?.state !== "offered" || firstDispatch.body.offer.captainActorId !== captainActorID || firstDispatch.body.offer.storeName !== "Catalog Runtime A store" || firstDispatch.body.offer.customerAddressText !== `عنوان أ ${suffix}` || firstDispatch.body.offer.amountDueMinor !== mainOrderTotal || firstDispatch.body.offer.currency !== "YER" || firstDispatch.body.offer.paymentMethod !== "CASH_ON_DELIVERY" || firstDispatch.body.offer.paymentState !== "REQUIRES_COLLECTION") fail("Captain dispatch did not create an addressed offer with canonical order context", JSON.stringify(firstDispatch));
@@ -1490,16 +1528,18 @@ const captainWalletAfterReserve = await request(wltBase, "GET", `/wlt/v1/captain
 const captainReservationCount = sql(`SELECT count(*) FROM wlt.captain_cod_reservations WHERE order_id='${sqlLiteral(orderID)}' AND payment_intent_id='${sqlLiteral(paymentIntentID)}' AND captain_actor_id='${sqlLiteral(captainActorID)}' AND amount_minor=${mainOrderTotal} AND state='ACTIVE'`);
 if (captainWalletAfterReserve.status !== 200 || captainWalletAfterReserve.body?.state?.availableMinor !== 0 || captainWalletAfterReserve.body?.state?.heldMinor !== mainOrderTotal || captainReservationCount !== "1") fail("Captain COD was not atomically reserved from the order allocation", JSON.stringify({ captainWalletAfterReserve, captainReservationCount }));
 const secondCaptainPhone = `+96779${crypto.randomInt(1_000_000, 9_999_999)}`;
-const secondCaptainAdmission = await request(dshBase, "POST", "/dsh/captains/admissions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `captain-admit-second-${suffix}`), body: { contactPhoneE164: secondCaptainPhone } });
-if (secondCaptainAdmission.status !== 201 || !secondCaptainAdmission.body?.admission?.actorId) fail("second Captain fixture failed", JSON.stringify(secondCaptainAdmission));
-const secondCaptainAdmissionID = String(secondCaptainAdmission.body.admission.id);
-const secondCaptainActorID = String(secondCaptainAdmission.body.admission.actorId);
+const secondCaptainFlow = await admitReviewedRoleCandidate("captain", secondCaptainPhone, "ياسر محمد", "ياسر محمد عبدالله المتوكل", "captain-admit-second");
+const secondCaptainAdmission = secondCaptainFlow.provision;
+if (secondCaptainAdmission.status !== 200 || !secondCaptainAdmission.body?.admission?.actorId) fail("second Captain profile, approval, or role grant fixture failed", JSON.stringify(secondCaptainAdmission));
+const secondCaptainAdmissionID = secondCaptainFlow.admissionID;
+const secondCaptainActorID = secondCaptainFlow.actorID;
 captainAdmissionIDs.add(secondCaptainAdmissionID); actorIDs.add(secondCaptainActorID);
 const secondCaptainAccessToken = await activateCaptain(secondCaptainPhone, `Capt${suffix.slice(0, 4)}`);
+const secondCaptainSelf = await request(dshBase, "GET", "/dsh/captains/me", { token: secondCaptainAccessToken });
+if (secondCaptainSelf.status !== 200 || secondCaptainSelf.body?.admission?.actorId !== secondCaptainActorID || secondCaptainSelf.body?.admission?.fullNameAr !== "ياسر محمد عبدالله المتوكل" || secondCaptainSelf.body?.admission?.contactPhoneE164 !== secondCaptainPhone) fail("second Captain app profile did not read its reviewed name and Identity phone", JSON.stringify(secondCaptainSelf));
 const secondCaptainFunding = await request(wltBase, "POST", `/wlt/v1/operator/captains/${encodeURIComponent(secondCaptainActorID)}/opening-funding`, { token: wltToken, headers: serviceHeaders(actingOperatorID, `captain-opening-funding-second-${suffix}`), body: { amountMinor: mainOrderTotal, fundingReason: "runtime proof reassignment COD collateral", evidenceReference: `captain-opening-funding-second-proof-${suffix}` } });
 if (secondCaptainFunding.status !== 201 || secondCaptainFunding.body?.funding?.captainActorId !== secondCaptainActorID || secondCaptainFunding.body.funding.amountMinor !== mainOrderTotal) fail("second Captain funding failed", JSON.stringify(secondCaptainFunding));
 captainFundingIDs.add(String(secondCaptainFunding.body.funding.id));
-const secondCaptainSelf = await request(dshBase, "GET", "/dsh/captains/me", { token: secondCaptainAccessToken });
 const secondCaptainAvailability = await request(dshBase, "POST", "/dsh/captains/me/availability", { token: secondCaptainAccessToken, headers: partnerHeaders(`captain-availability-second-${suffix}`, secondCaptainSelf.body?.admission?.version), body: { available: true } });
 if (secondCaptainSelf.status !== 200 || secondCaptainAvailability.status !== 200 || secondCaptainAvailability.body?.admission?.availabilityState !== "available") fail("second Captain availability failed", JSON.stringify({ secondCaptainSelf, secondCaptainAvailability }));
 

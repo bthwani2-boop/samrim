@@ -50,7 +50,12 @@ func New(actors *actor.Service, authenticationService *authentication.Service, c
 	mux.HandleFunc("POST /auth/managed/activation/request", s.requestManagedActivation)
 	mux.HandleFunc("POST /auth/managed/activate", s.activateManaged)
 	mux.HandleFunc("POST /auth/managed/login", s.loginManaged)
-	mux.HandleFunc("POST /internal/operator-enrollment-tokens", s.internal(s.issueOperatorEnrollmentToken))
+	mux.HandleFunc("GET /internal/operator-profiles", s.internal(s.listOperatorProfiles))
+	mux.HandleFunc("POST /internal/operator-profiles", s.internal(s.createOperatorProfile))
+	mux.HandleFunc("PATCH /internal/operator-profiles/{profileId}", s.internal(s.updateOperatorProfile))
+	mux.HandleFunc("POST /internal/operator-profiles/{profileId}/approve", s.internal(s.approveOperatorProfile))
+	mux.HandleFunc("POST /internal/operator-profiles/{profileId}/grant", s.internal(s.grantOperatorProfile))
+	mux.HandleFunc("POST /internal/operator-profiles/{profileId}/invitation", s.internal(s.issueOperatorProfileInvitation))
 	mux.HandleFunc("POST /auth/operator/enrollment/request", s.requestOperatorEnrollment)
 	mux.HandleFunc("POST /auth/operator/enrollment/registration/options", s.beginOperatorPasskeyRegistration)
 	mux.HandleFunc("POST /auth/operator/enrollment/registration/finish", s.finishOperatorPasskeyRegistration)
@@ -286,27 +291,6 @@ func (s *Server) finishOperatorPasskeyAuthentication(w http.ResponseWriter, r *h
 	}
 	writeJSON(w, http.StatusOK, result)
 }
-func (s *Server) issueOperatorEnrollmentToken(w http.ResponseWriter, r *http.Request, caller string) {
-	if r.Header.Get("X-Actor-ID") != "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
-		return
-	}
-	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if caller == "control-panel" && operatorActorID == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for control-panel operations"))
-		return
-	}
-	var input domain.OperatorEnrollmentTokenIssueRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	result, err := s.challenges.IssueOperatorEnrollmentToken(r.Context(), input, caller, operatorActorID)
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, result)
-}
 func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 	var input domain.RefreshRequest
 	if !decodeJSON(w, r, &input) {
@@ -402,6 +386,10 @@ func (s *Server) provisionRole(w http.ResponseWriter, r *http.Request, caller st
 	if !decodeJSON(w, r, &input) {
 		return
 	}
+	if caller == "control-panel" && strings.EqualFold(strings.TrimSpace(input.Role), "operator") {
+		writeDomainError(w, domain.ErrForbidden)
+		return
+	}
 	view, err := s.actors.ProvisionTrustedWithContext(r.Context(), caller, input, operatorActorID)
 	if err != nil {
 		writeDomainError(w, err)
@@ -431,7 +419,7 @@ func (s *Server) bootstrapFirstOperator(w http.ResponseWriter, r *http.Request, 
 	if view.ActorCreated || view.RoleCreated {
 		status = http.StatusCreated
 	}
-	token, err := s.challenges.IssueOperatorEnrollmentToken(r.Context(), domain.OperatorEnrollmentTokenIssueRequest{PhoneE164: input.PhoneE164, Role: "operator"}, caller, view.ActorID)
+	token, err := s.challenges.IssueOperatorEnrollmentToken(r.Context(), domain.OperatorEnrollmentTokenIssueRequest{PhoneE164: input.PhoneE164, Role: "operator"}, caller, view.ActorID, strings.TrimSpace(r.Header.Get("X-Correlation-ID")))
 	if err != nil {
 		writeDomainError(w, err)
 		return

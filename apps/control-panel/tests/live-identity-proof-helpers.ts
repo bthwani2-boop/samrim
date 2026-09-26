@@ -8,6 +8,8 @@ export type PreparedOperator = {
   actorId: string;
   phone: string;
   token: string;
+  profileId: string;
+  actorCreatedByTest: boolean;
   createdByTest: boolean;
 };
 
@@ -53,7 +55,11 @@ export function cleanupPreparedOperator(operator: PreparedOperator): void {
   if (!operator.createdByTest) return;
   const runtime = readCanonicalRuntime();
   const actorLiteral = operator.actorId.replaceAll("'", "''");
-  const query = `DELETE FROM identity_actors WHERE id='${actorLiteral}'; SELECT count(*) FROM identity_actors WHERE id='${actorLiteral}';`;
+  const profileLiteral = operator.profileId.replaceAll("'", "''");
+  const phoneLiteral = operator.phone.replaceAll("'", "''");
+  const removeCreatedActor = operator.actorCreatedByTest && actorLiteral ? "DELETE FROM identity_actors WHERE id='" + actorLiteral + "'; " : "";
+  const actorReadback = operator.actorCreatedByTest && actorLiteral ? "SELECT count(*) FROM identity_actors WHERE id='" + actorLiteral + "'" : "SELECT 0";
+  const query = "DELETE FROM identity_operator_profile_events WHERE profile_id IN (SELECT id FROM identity_operator_profiles WHERE id='" + profileLiteral + "' OR phone_e164='" + phoneLiteral + "'); DELETE FROM identity_operator_profiles WHERE id='" + profileLiteral + "' OR phone_e164='" + phoneLiteral + "'; " + removeCreatedActor + actorReadback + ";";
   const output = execFileSync(
     "docker",
     [
@@ -87,7 +93,7 @@ export async function findExistingOperator(identityBase: string, controlToken: s
   const existing = body.items?.[0];
   expect(existing?.actorId).toMatch(/^act_/);
   expect(existing?.phoneE164).toMatch(/^\+9677/);
-  return { actorId: String(existing?.actorId), phone: String(existing?.phoneE164), token: "", createdByTest: false };
+  return { actorId: String(existing?.actorId), phone: String(existing?.phoneE164), token: "", profileId: "", actorCreatedByTest: false, createdByTest: false };
 }
 
 export async function enrollAndAuthenticateIsolatedOperator(
@@ -143,17 +149,81 @@ export async function provisionIndependentOperator(
   onCreated?: (operator: PreparedOperator) => void,
 ): Promise<PreparedOperator> {
   const phone = "+9677" + String(randomInt(10_000_000, 99_999_999));
-  const provision = await jsonRequest(identityBase, "/internal/actor-roles/provision", controlToken, { phoneE164: phone, role: "operator" }, { "X-Acting-Actor-ID": actingOperatorID });
-  expect(provision.response.status, "independent operator provisioning must succeed").toBe(201);
-  const actorId = String(provision.body?.actorId || "");
-  expect(actorId).toMatch(/^act_/);
-  const operator: PreparedOperator = { actorId, phone, token: "", createdByTest: true };
+  await assertNoExistingActorForPhone(identityBase, controlToken, phone);
+  const operator: PreparedOperator = { actorId: "", phone, token: "", profileId: "", actorCreatedByTest: false, createdByTest: true };
   onCreated?.(operator);
-  const enrollment = await jsonRequest(identityBase, "/internal/operator-enrollment-tokens", controlToken, { phoneE164: phone, role: "operator" }, { "X-Acting-Actor-ID": actingOperatorID });
-  expect(enrollment.response.status, "independent operator enrollment token must be issued").toBe(201);
-  operator.token = String(enrollment.body?.code || "");
+  const mutationHeaders = (key: string) => ({ "X-Acting-Actor-ID": actingOperatorID, "X-Correlation-ID": randomUUID(), "Idempotency-Key": key });
+  const fullNameAr = "محمود أحمد علي الدوبحي";
+  const creation = await jsonRequest(identityBase, "/internal/operator-profiles", controlToken, { fullNameAr, phoneE164: phone }, mutationHeaders(randomUUID()));
+  operator.profileId = String(creation.body?.profile?.id || "");
+  if (!operator.profileId) {
+    const createdProfile = await findOperatorProfileByPhone(identityBase, controlToken, actingOperatorID, phone).catch(() => null);
+    if (createdProfile) operator.profileId = createdProfile.id;
+  }
+  expect(creation.response.status, "operator candidate profile creation must succeed").toBe(201);
+  expect(operator.profileId).toMatch(/^oprof_/);
+  expect(creation.body?.profile?.state).toBe("pending_review");
+
+  const approval = await jsonRequest(identityBase, "/internal/operator-profiles/" + encodeURIComponent(operator.profileId) + "/approve", controlToken, { expectedVersion: 1 }, mutationHeaders(randomUUID()));
+  expect(approval.response.status, "operator profile review must precede role admission").toBe(200);
+  expect(approval.body?.profile?.state).toBe("approved");
+
+  let grant: Awaited<ReturnType<typeof jsonRequest>>;
+  try {
+    grant = await jsonRequest(identityBase, "/internal/operator-profiles/" + encodeURIComponent(operator.profileId) + "/grant", controlToken, { expectedVersion: 2 }, mutationHeaders(randomUUID()));
+  } catch (cause) {
+    const readback = await findOperatorProfileByPhone(identityBase, controlToken, actingOperatorID, phone).catch(() => null);
+    if (readback?.state === "admitted" && readback.actorId) {
+      operator.actorId = readback.actorId;
+      operator.actorCreatedByTest = true;
+    }
+    throw cause;
+  }
+  operator.actorId = String(grant.body?.role?.actorId || grant.body?.profile?.actorId || "");
+  if (!operator.actorId) {
+    const readback = await findOperatorProfileByPhone(identityBase, controlToken, actingOperatorID, phone).catch(() => null);
+    if (readback?.state === "admitted" && readback.actorId) {
+      operator.actorId = readback.actorId;
+      operator.actorCreatedByTest = true;
+    }
+  }
+  operator.actorCreatedByTest = operator.actorCreatedByTest || grant.body?.role?.actorCreated === true;
+  expect(grant.response.status, "approved operator role admission must succeed").toBe(201);
+  expect(operator.actorId).toMatch(/^act_/);
+  expect(operator.actorCreatedByTest).toBe(true);
+  expect(grant.body?.profile?.state).toBe("admitted");
+
+  const invitation = await jsonRequest(identityBase, "/internal/operator-profiles/" + encodeURIComponent(operator.profileId) + "/invitation", controlToken, undefined, { "X-Acting-Actor-ID": actingOperatorID, "X-Correlation-ID": randomUUID() });
+  expect(invitation.response.status, "operator invitation should be issued after profile review and role grant").toBe(201);
+  operator.token = String(invitation.body?.enrollmentToken?.code || "");
   expect(operator.token).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
   return operator;
+}
+
+async function assertNoExistingActorForPhone(identityBase: string, controlToken: string, phone: string): Promise<void> {
+  for (const role of ["client", "partner", "captain", "field", "operator"]) {
+    const params = new URLSearchParams({ role, q: phone, limit: "5" });
+    const response = await fetch(identityBase + "/internal/actor-roles/search?" + params, {
+      headers: { Accept: "application/json", Authorization: "Bearer " + controlToken },
+      signal: AbortSignal.timeout(5_000),
+    });
+    expect(response.status, "proof phone must be checked against every existing role").toBe(200);
+    const body = await response.json() as { items?: Array<{ phoneE164: string }> };
+    expect(body.items?.some((item) => item.phoneE164 === phone)).toBe(false);
+  }
+}
+
+async function findOperatorProfileByPhone(identityBase: string, controlToken: string, actingOperatorID: string, phone: string): Promise<Readonly<{ id: string; actorId?: string; state: string }> | null> {
+  const params = new URLSearchParams({ q: phone, state: "all", sort: "created_desc", limit: "10" });
+  const response = await fetch(identityBase + "/internal/operator-profiles?" + params, {
+    headers: { Accept: "application/json", Authorization: "Bearer " + controlToken, "X-Acting-Actor-ID": actingOperatorID },
+    signal: AbortSignal.timeout(5_000),
+  });
+  if (!response.ok) return null;
+  const body = await response.json() as { items?: Array<{ id?: string; actorId?: string; phoneE164?: string; state?: string }> };
+  const profile = body.items?.find((item) => item.phoneE164 === phone);
+  if (!profile?.id || !profile.state) return null;
+  return { id: profile.id, ...(profile.actorId ? { actorId: profile.actorId } : {}), state: profile.state };
 }
 
 export async function waitForMailpitCode(mailpitBaseUrl: string, phone: string, purpose: string, sentAfter: number): Promise<string> {

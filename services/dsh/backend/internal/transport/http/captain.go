@@ -38,6 +38,7 @@ func (s *CaptainServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/captains/admissions", s.listAdmissions)
 	mux.HandleFunc("POST /dsh/captains/admissions", s.admit)
 	mux.HandleFunc("PATCH /dsh/captains/admissions/{admissionId}/profile", s.updateAdmissionProfile)
+	mux.HandleFunc("POST /dsh/captains/admissions/{admissionId}/profile-review", s.reviewAdmissionProfile)
 	mux.HandleFunc("POST /dsh/captains/admissions/{admissionId}/approve", s.approveAdmission)
 	mux.HandleFunc("POST /dsh/captains/admissions/{admissionId}/provision", s.provisionAdmission)
 	mux.HandleFunc("GET /dsh/captains/admissions/{admissionId}", s.readAdmission)
@@ -146,6 +147,23 @@ func (s *CaptainServer) updateAdmissionProfile(w http.ResponseWriter, r *http.Re
 		return
 	}
 	admission, replayed, err := s.service.UpdateAdmissionProfile(r.Context(), r.PathValue("admissionId"), input.FullNameAr, expected, idempotency, acting, correlation)
+	if err != nil {
+		writeCaptainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CaptainAdmissionResponse{Admission: toCaptainAdmission(admission), IdempotentReplay: replayed})
+}
+
+func (s *CaptainServer) reviewAdmissionProfile(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizedService(w, r) {
+		return
+	}
+	acting, correlation, idempotency, expected, ok := captainHeaders(w, r, true)
+	if !ok || acting == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Captain profile review attribution and current version are required")
+		return
+	}
+	admission, replayed, err := s.service.ReviewAdmissionProfile(r.Context(), r.PathValue("admissionId"), expected, idempotency, acting, correlation)
 	if err != nil {
 		writeCaptainError(w, err)
 		return
@@ -776,7 +794,7 @@ func captainLimit(w http.ResponseWriter, r *http.Request) (int, bool) {
 }
 
 func toCaptainAdmission(value postgres.CaptainAdmission) contract.CaptainAdmission {
-	return contract.CaptainAdmission{ID: value.ID, ActorID: value.ActorID, FullNameAr: value.FullNameAr, ContactPhoneE164: value.PhoneE164, State: value.State, AvailabilityState: value.AvailabilityState, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
+	return contract.CaptainAdmission{ID: value.ID, ActorID: value.ActorID, FullNameAr: value.FullNameAr, ContactPhoneE164: value.PhoneE164, State: value.State, AvailabilityState: value.AvailabilityState, RequiresProfileReview: value.RequiresProfileReview, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
 }
 
 func toStoreCaptainMembership(value postgres.StoreCaptainMembership) contract.StoreCaptainMembership {

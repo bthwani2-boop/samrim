@@ -37,6 +37,7 @@ func (s *FieldServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/fields/admissions", s.listAdmissions)
 	mux.HandleFunc("POST /dsh/fields/admissions", s.admit)
 	mux.HandleFunc("PATCH /dsh/fields/admissions/{admissionId}/profile", s.updateAdmissionProfile)
+	mux.HandleFunc("POST /dsh/fields/admissions/{admissionId}/profile-review", s.reviewAdmissionProfile)
 	mux.HandleFunc("POST /dsh/fields/admissions/{admissionId}/approve", s.approveAdmission)
 	mux.HandleFunc("POST /dsh/fields/admissions/{admissionId}/provision", s.provisionAdmission)
 	mux.HandleFunc("GET /dsh/fields/admissions/{admissionId}", s.readAdmission)
@@ -127,6 +128,23 @@ func (s *FieldServer) updateAdmissionProfile(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	admission, replayed, err := s.service.UpdateAdmissionProfile(r.Context(), r.PathValue("admissionId"), input.FullNameAr, expected, idempotency, acting, correlation)
+	if err != nil {
+		writeFieldError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.FieldAdmissionResponse{Admission: toFieldAdmission(admission), IdempotentReplay: replayed})
+}
+
+func (s *FieldServer) reviewAdmissionProfile(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizedService(w, r) {
+		return
+	}
+	acting, correlation, idempotency, expected, ok := captainHeaders(w, r, true)
+	if !ok || acting == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Field profile review attribution and current version are required")
+		return
+	}
+	admission, replayed, err := s.service.ReviewAdmissionProfile(r.Context(), r.PathValue("admissionId"), expected, idempotency, acting, correlation)
 	if err != nil {
 		writeFieldError(w, err)
 		return
@@ -361,7 +379,7 @@ func requiredFieldMutationHeaders(w http.ResponseWriter, r *http.Request) (strin
 }
 
 func toFieldAdmission(value postgres.FieldAdmission) contract.FieldAdmission {
-	return contract.FieldAdmission{ID: value.ID, ActorID: value.ActorID, FullNameAr: value.FullNameAr, ContactPhoneE164: value.PhoneE164, State: value.State, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
+	return contract.FieldAdmission{ID: value.ID, ActorID: value.ActorID, FullNameAr: value.FullNameAr, ContactPhoneE164: value.PhoneE164, State: value.State, RequiresProfileReview: value.RequiresProfileReview, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
 }
 
 func writeFieldError(w http.ResponseWriter, err error) {

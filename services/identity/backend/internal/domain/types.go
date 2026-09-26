@@ -36,6 +36,52 @@ type ActorRoleView struct {
 	RoleCreated       bool       `json:"roleCreated,omitempty"`
 }
 
+type OperatorProfile struct {
+	ID              string     `json:"id"`
+	FullNameAr      string     `json:"fullNameAr"`
+	PhoneE164       string     `json:"phoneE164,omitempty"`
+	ActorID         string     `json:"actorId,omitempty"`
+	RoleEnabled     *bool      `json:"roleEnabled,omitempty"`
+	SecurityEnabled *bool      `json:"securityEnabled,omitempty"`
+	ActivatedAt     *time.Time `json:"activatedAt,omitempty"`
+	State           string     `json:"state"`
+	Version         int        `json:"version"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	UpdatedAt       time.Time  `json:"updatedAt"`
+}
+
+type OperatorProfilePage struct {
+	Items      []OperatorProfile `json:"items"`
+	Limit      int               `json:"limit"`
+	NextCursor string            `json:"nextCursor,omitempty"`
+}
+
+type OperatorProfileCreateRequest struct {
+	FullNameAr string `json:"fullNameAr"`
+	PhoneE164  string `json:"phoneE164"`
+}
+
+type OperatorProfileUpdateRequest struct {
+	FullNameAr      string `json:"fullNameAr"`
+	PhoneE164       string `json:"phoneE164"`
+	ExpectedVersion int    `json:"expectedVersion"`
+}
+
+type OperatorProfileMutationRequest struct {
+	ExpectedVersion int `json:"expectedVersion"`
+}
+
+type OperatorProfileResponse struct {
+	Profile          OperatorProfile `json:"profile"`
+	IdempotentReplay bool            `json:"idempotentReplay"`
+}
+
+type OperatorProfileGrantResponse struct {
+	Profile          OperatorProfile `json:"profile"`
+	Role             ActorRoleView   `json:"role"`
+	IdempotentReplay bool            `json:"idempotentReplay"`
+}
+
 type OperatorPermissionAccess struct {
 	ActorID          string    `json:"actorId"`
 	Permission       string    `json:"permission"`
@@ -309,8 +355,6 @@ func CanProvisionRole(caller, role string) bool {
 	switch strings.ToLower(strings.TrimSpace(caller)) {
 	case "dsh":
 		return role == "partner" || role == "captain" || role == "field"
-	case "control-panel":
-		return role == "operator"
 	default:
 		return false
 	}

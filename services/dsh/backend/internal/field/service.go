@@ -142,6 +142,16 @@ func (s *Service) UpdateAdmissionProfile(ctx context.Context, admissionID, fullN
 	return postgres.UpdateFieldAdmissionProfile(ctx, s.db, admissionID, fullNameAr, expectedVersion, idempotencyKey, postgres.HashFieldAdmissionProfileRequest(admissionID, fullNameAr, expectedVersion), actingActorID, correlationID)
 }
 
+func (s *Service) ReviewAdmissionProfile(ctx context.Context, admissionID string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.FieldAdmission, bool, error) {
+	if expectedVersion < 1 || !validMutation(idempotencyKey, correlationID, actingActorID) {
+		return postgres.FieldAdmission{}, false, ErrInvalidInput
+	}
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return postgres.FieldAdmission{}, false, err
+	}
+	return postgres.ReviewFieldAdmissionProfile(ctx, s.db, admissionID, expectedVersion, idempotencyKey, postgres.HashFieldAdmissionProfileReviewRequest(admissionID, expectedVersion), actingActorID, correlationID)
+}
+
 func (s *Service) ReadForOperatorByActor(ctx context.Context, actorID, actingActorID string) (postgres.FieldAdmission, error) {
 	if strings.TrimSpace(actorID) == "" {
 		return postgres.FieldAdmission{}, ErrInvalidInput
@@ -204,16 +214,18 @@ func (s *Service) SetManagedRoleEnabled(ctx context.Context, actorID, operatorAc
 		if err != nil {
 			return err
 		}
-		if admission.State != "eligible" && admission.State != "suspended" {
+		if (admission.State != "eligible" && admission.State != "suspended") || admission.RequiresProfileReview || admission.FullNameAr == "" {
 			return ErrManagedRoleNotEligible
+		}
+		if admission.State == "suspended" {
+			if _, err := postgres.RestoreFieldAdmission(ctx, s.db, actorID, idempotencyKey, accessHash, operatorActorID, correlationID); err != nil {
+				return err
+			}
 		}
 		if identityRole.Enabled != enabled {
 			if err := s.identity.SetRoleEnabledWithContext(ctx, actorID, "field", true, correlationID, strings.TrimSpace(reason), operatorActorID, expectedVersion); err != nil {
 				return err
 			}
-		}
-		if _, err := postgres.RestoreFieldAdmission(ctx, s.db, actorID, idempotencyKey, accessHash, operatorActorID, correlationID); err != nil {
-			return err
 		}
 		return lifecycle.Commit()
 	}
@@ -337,7 +349,7 @@ func (s *Service) requireEligibleField(ctx context.Context, accessToken string) 
 	if err != nil {
 		return identityclient.ActorIdentity{}, err
 	}
-	if admission.State != "eligible" {
+	if admission.State != "eligible" || admission.RequiresProfileReview || admission.FullNameAr == "" {
 		return identityclient.ActorIdentity{}, ErrFieldSessionForbidden
 	}
 	return identity, nil

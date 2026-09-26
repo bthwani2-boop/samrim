@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/actor"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/domain"
@@ -271,10 +272,21 @@ func (s *Service) ConsumeOperatorEnrollmentPhoneProof(ctx context.Context, input
 	return actorID, nil
 }
 
-func (s *Service) IssueOperatorEnrollmentToken(ctx context.Context, input domain.OperatorEnrollmentTokenIssueRequest, caller, actingActorID string) (domain.OperatorEnrollmentToken, error) {
+func (s *Service) IssueOperatorEnrollmentToken(ctx context.Context, input domain.OperatorEnrollmentTokenIssueRequest, caller, actingActorID, correlationID string) (domain.OperatorEnrollmentToken, error) {
 	role := strings.ToLower(strings.TrimSpace(input.Role))
 	if !domain.CanIssueOperatorEnrollmentTokenForRole(caller, role) {
 		return domain.OperatorEnrollmentToken{}, domain.ErrForbidden
+	}
+	correlationID = strings.TrimSpace(correlationID)
+	if correlationID == "" {
+		var err error
+		correlationID, err = identitysecurity.RandomToken(18)
+		if err != nil {
+			return domain.OperatorEnrollmentToken{}, err
+		}
+	}
+	if utf8.RuneCountInString(correlationID) < 8 || utf8.RuneCountInString(correlationID) > 128 {
+		return domain.OperatorEnrollmentToken{}, domain.ErrInvalidInput
 	}
 	phone, err := identitysecurity.NormalizePhoneE164(input.PhoneE164)
 	if err != nil {
@@ -304,18 +316,7 @@ WHERE a.phone_e164=$1 AND r.role=$2 FOR UPDATE OF a,r`, phone, role).Scan(&actor
 		return domain.OperatorEnrollmentToken{}, domain.ErrForbidden
 	}
 	if activated.Valid {
-		if _, err := tx.ExecContext(ctx, "UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1 WHERE actor_id=$1 AND role='operator' AND revoked_at IS NULL", actorID); err != nil {
-			return domain.OperatorEnrollmentToken{}, err
-		}
-		if _, err := tx.ExecContext(ctx, "UPDATE identity_webauthn_credentials SET revoked_at=COALESCE(revoked_at,clock_timestamp()) WHERE actor_id=$1 AND rp_id IS NOT NULL AND revoked_at IS NULL", actorID); err != nil {
-			return domain.OperatorEnrollmentToken{}, err
-		}
-		if _, err := tx.ExecContext(ctx, "UPDATE identity_operator_recovery_credentials SET revoked_at=COALESCE(revoked_at,clock_timestamp()) WHERE actor_id=$1 AND revoked_at IS NULL", actorID); err != nil {
-			return domain.OperatorEnrollmentToken{}, err
-		}
-		if _, err := tx.ExecContext(ctx, "UPDATE identity_actor_roles SET activated_at=NULL,version=version+1,updated_at=clock_timestamp() WHERE actor_id=$1 AND role='operator'", actorID); err != nil {
-			return domain.OperatorEnrollmentToken{}, err
-		}
+		return domain.OperatorEnrollmentToken{}, domain.ErrConflict
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_operator_enrollment_tokens SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND status='pending'", actorID, role); err != nil {
 		return domain.OperatorEnrollmentToken{}, err
@@ -344,12 +345,12 @@ WHERE a.phone_e164=$1 AND r.role=$2 FOR UPDATE OF a,r`, phone, role).Scan(&actor
 		return domain.OperatorEnrollmentToken{}, err
 	}
 	auditPrincipal := caller
-	meta := map[string]any{"role": role, "expiresAt": expires.UTC().Format(time.RFC3339), "workload": caller}
+	meta := map[string]any{"role": role, "expiresAt": expires.UTC().Format(time.RFC3339), "caller": caller}
 	if strings.TrimSpace(actingActorID) != "" {
 		auditPrincipal = caller + ":" + strings.TrimSpace(actingActorID)
 		meta["actingActorId"] = strings.TrimSpace(actingActorID)
 	}
-	if err := auditTx(ctx, tx, "operator_enrollment_token.issued", actorID, auditPrincipal, "success", "", meta); err != nil {
+	if err := auditTx(ctx, tx, "operator_enrollment_token.issued", actorID, auditPrincipal, "success", correlationID, meta); err != nil {
 		return domain.OperatorEnrollmentToken{}, err
 	}
 	if err := tx.Commit(); err != nil {

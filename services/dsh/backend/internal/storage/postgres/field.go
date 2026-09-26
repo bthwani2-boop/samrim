@@ -37,14 +37,15 @@ type fieldAdmissionCursor struct {
 }
 
 type FieldAdmission struct {
-	ID         string
-	ActorID    string
-	FullNameAr string
-	PhoneE164  string
-	State      string
-	Version    int
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID                    string
+	ActorID               string
+	FullNameAr            string
+	PhoneE164             string
+	State                 string
+	RequiresProfileReview bool
+	Version               int
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 func HashFieldAdmissionRequest(fullNameAr, phone string) string {
@@ -57,6 +58,10 @@ func HashFieldAdmissionTransition(operation, admissionID string) string {
 
 func HashFieldAdmissionProfileRequest(admissionID, fullNameAr string, expectedVersion int) string {
 	return hashFacts("field-admission-profile", strings.TrimSpace(admissionID), strings.TrimSpace(fullNameAr), strconv.Itoa(expectedVersion))
+}
+
+func HashFieldAdmissionProfileReviewRequest(admissionID string, expectedVersion int) string {
+	return hashFacts("field-admission-profile-review", strings.TrimSpace(admissionID), strconv.Itoa(expectedVersion))
 }
 
 func HashFieldAccessRequest(actorID string, enabled bool, expectedVersion int) string {
@@ -223,13 +228,13 @@ func UpdateFieldAdmissionProfile(ctx context.Context, db *sql.DB, admissionID, f
 	if err != nil {
 		return FieldAdmission{}, false, err
 	}
-	if current.State != "pending_review" {
+	if current.State != "pending_review" && !(current.State == "suspended" && current.RequiresProfileReview) {
 		return FieldAdmission{}, false, ErrFieldAdmissionConflict
 	}
 	if current.Version != expectedVersion {
 		return FieldAdmission{}, false, ErrFieldVersionConflict
 	}
-	err = tx.QueryRowContext(ctx, `UPDATE dsh.field_admissions SET full_name_ar=$2,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='pending_review' AND version=$3 RETURNING id,COALESCE(actor_id,''),COALESCE(full_name_ar,''),COALESCE(contact_phone_e164,''),state,version,created_at,updated_at`, admissionID, fullNameAr, expectedVersion).Scan(&current.ID, &current.ActorID, &current.FullNameAr, &current.PhoneE164, &current.State, &current.Version, &current.CreatedAt, &current.UpdatedAt)
+	err = tx.QueryRowContext(ctx, `UPDATE dsh.field_admissions SET full_name_ar=$2,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND (state='pending_review' OR (state='suspended' AND requires_profile_review)) AND version=$3 RETURNING id,COALESCE(actor_id,''),COALESCE(full_name_ar,''),COALESCE(contact_phone_e164,''),state,requires_profile_review,version,created_at,updated_at`, admissionID, fullNameAr, expectedVersion).Scan(&current.ID, &current.ActorID, &current.FullNameAr, &current.PhoneE164, &current.State, &current.RequiresProfileReview, &current.Version, &current.CreatedAt, &current.UpdatedAt)
 	if err != nil {
 		return FieldAdmission{}, false, err
 	}
@@ -240,6 +245,59 @@ func UpdateFieldAdmissionProfile(ctx context.Context, db *sql.DB, admissionID, f
 		return FieldAdmission{}, false, err
 	}
 	if err = tx.Commit(); err != nil {
+		return FieldAdmission{}, false, err
+	}
+	return current, false, nil
+}
+
+func ReviewFieldAdmissionProfile(ctx context.Context, db *sql.DB, admissionID string, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string) (FieldAdmission, bool, error) {
+	if db == nil || strings.TrimSpace(admissionID) == "" || expectedVersion < 1 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
+		return FieldAdmission{}, false, ErrFieldAdmissionConflict
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return FieldAdmission{}, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var storedHash, storedID, operation string
+	err = tx.QueryRowContext(ctx, `SELECT request_hash,admission_id,operation FROM dsh.field_admission_idempotency WHERE idempotency_key=$1 FOR UPDATE`, idempotencyKey).Scan(&storedHash, &storedID, &operation)
+	if err == nil {
+		if storedHash != requestHash || storedID != admissionID || operation != "profile_review" {
+			return FieldAdmission{}, false, ErrFieldOperationConflict
+		}
+		item, readErr := readFieldAdmissionTx(ctx, tx, "id=$1", admissionID)
+		if readErr != nil {
+			return FieldAdmission{}, false, readErr
+		}
+		if err := tx.Commit(); err != nil {
+			return FieldAdmission{}, false, err
+		}
+		return item, true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return FieldAdmission{}, false, err
+	}
+	current, err := readFieldAdmissionTx(ctx, tx, "id=$1 FOR UPDATE", admissionID)
+	if err != nil {
+		return FieldAdmission{}, false, err
+	}
+	if current.State != "suspended" || !current.RequiresProfileReview || current.ActorID == "" || current.FullNameAr == "" {
+		return FieldAdmission{}, false, ErrFieldAdmissionConflict
+	}
+	if current.Version != expectedVersion {
+		return FieldAdmission{}, false, ErrFieldVersionConflict
+	}
+	err = tx.QueryRowContext(ctx, `UPDATE dsh.field_admissions SET requires_profile_review=false,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='suspended' AND requires_profile_review=true AND version=$2 RETURNING id,actor_id,COALESCE(full_name_ar,''),COALESCE(contact_phone_e164,''),state,requires_profile_review,version,created_at,updated_at`, admissionID, current.Version).Scan(&current.ID, &current.ActorID, &current.FullNameAr, &current.PhoneE164, &current.State, &current.RequiresProfileReview, &current.Version, &current.CreatedAt, &current.UpdatedAt)
+	if err != nil {
+		return FieldAdmission{}, false, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO dsh.field_admission_idempotency(idempotency_key,request_hash,admission_id,operation,result_version,result_state,result_actor_id) VALUES($1,$2,$3,'profile_review',$4,$5,$6)`, idempotencyKey, requestHash, admissionID, current.Version, current.State, current.ActorID); err != nil {
+		return FieldAdmission{}, false, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO dsh.field_admission_audit(event_type,idempotency_key,correlation_id,acting_actor_id,admission_id,actor_id,from_state,to_state,from_version,result_version,request_hash) VALUES('field_admission_profile_reviewed',$1,$2,$3,$4,$5,'suspended','suspended',$6,$7,$8)`, idempotencyKey, correlationID, actingActorID, admissionID, current.ActorID, current.Version-1, current.Version, requestHash); err != nil {
+		return FieldAdmission{}, false, err
+	}
+	if err := tx.Commit(); err != nil {
 		return FieldAdmission{}, false, err
 	}
 	return current, false, nil
@@ -256,7 +314,7 @@ func ListFieldAdmissions(ctx context.Context, db *sql.DB, query, state, sort str
 	if sort == "" {
 		sort = "created_desc"
 	}
-	if db == nil || len([]rune(query)) > 100 || limit < 1 || limit > 50 || (state != "all" && state != "pending" && state != "pending_review" && state != "pending_identity" && state != "eligible" && state != "suspended") || (sort != "created_desc" && sort != "created_asc") {
+	if db == nil || len([]rune(query)) > 100 || limit < 1 || limit > 50 || (state != "all" && state != "pending" && state != "pending_review" && state != "pending_identity" && state != "eligible" && state != "suspended" && state != "review_required") || (sort != "created_desc" && sort != "created_asc") {
 		return FieldAdmissionPage{}, ErrFieldAdmissionRegistry
 	}
 	cursor, err := decodeFieldAdmissionCursor(rawCursor, query, state, sort)
@@ -264,7 +322,7 @@ func ListFieldAdmissions(ctx context.Context, db *sql.DB, query, state, sort str
 		return FieldAdmissionPage{}, err
 	}
 	args := []any{query, state}
-	where := `($1='' OR full_name_ar ILIKE '%'||$1||'%' OR COALESCE(contact_phone_e164,'') ILIKE '%'||$1||'%') AND ($2='all' OR ($2='pending' AND state IN ('pending_review','pending_identity')) OR state=$2)`
+	where := `($1='' OR full_name_ar ILIKE '%'||$1||'%' OR COALESCE(contact_phone_e164,'') ILIKE '%'||$1||'%') AND ($2='all' OR ($2='pending' AND state IN ('pending_review','pending_identity')) OR ($2='review_required' AND requires_profile_review) OR state=$2)`
 	if cursor != nil {
 		args = append(args, cursor.CreatedAt, cursor.ID)
 		op := `<`
@@ -278,7 +336,7 @@ func ListFieldAdmissions(ctx context.Context, db *sql.DB, query, state, sort str
 		order = `created_at ASC,id ASC`
 	}
 	args = append(args, limit+1)
-	rows, err := db.QueryContext(ctx, `SELECT id,COALESCE(actor_id,''),COALESCE(full_name_ar,''),COALESCE(contact_phone_e164,''),state,version,created_at,updated_at FROM dsh.field_admissions WHERE `+where+` ORDER BY `+order+` LIMIT $`+strconv.Itoa(len(args)), args...)
+	rows, err := db.QueryContext(ctx, `SELECT id,COALESCE(actor_id,''),COALESCE(full_name_ar,''),COALESCE(contact_phone_e164,''),state,requires_profile_review,version,created_at,updated_at FROM dsh.field_admissions WHERE `+where+` ORDER BY `+order+` LIMIT $`+strconv.Itoa(len(args)), args...)
 	if err != nil {
 		return FieldAdmissionPage{}, err
 	}
@@ -286,7 +344,7 @@ func ListFieldAdmissions(ctx context.Context, db *sql.DB, query, state, sort str
 	items := make([]FieldAdmission, 0, limit+1)
 	for rows.Next() {
 		var v FieldAdmission
-		if err := rows.Scan(&v.ID, &v.ActorID, &v.FullNameAr, &v.PhoneE164, &v.State, &v.Version, &v.CreatedAt, &v.UpdatedAt); err != nil {
+		if err := rows.Scan(&v.ID, &v.ActorID, &v.FullNameAr, &v.PhoneE164, &v.State, &v.RequiresProfileReview, &v.Version, &v.CreatedAt, &v.UpdatedAt); err != nil {
 			return FieldAdmissionPage{}, err
 		}
 		items = append(items, v)
@@ -429,11 +487,11 @@ func transitionFieldAdmission(ctx context.Context, db *sql.DB, actorID, targetSt
 		}
 		return current, nil
 	}
-	if (targetState == "suspended" && current.State != "eligible") || (targetState == "eligible" && current.State != "suspended") {
+	if (targetState == "suspended" && current.State != "eligible") || (targetState == "eligible" && (current.State != "suspended" || current.RequiresProfileReview || current.FullNameAr == "")) {
 		return FieldAdmission{}, ErrFieldAdmissionConflict
 	}
 	var updated FieldAdmission
-	if err := tx.QueryRowContext(ctx, `UPDATE dsh.field_admissions SET state=$2,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state=$3 AND version=$4 RETURNING id,COALESCE(actor_id,''),state,version,created_at,updated_at`, current.ID, targetState, current.State, current.Version).Scan(&updated.ID, &updated.ActorID, &updated.State, &updated.Version, &updated.CreatedAt, &updated.UpdatedAt); err != nil {
+	if err := tx.QueryRowContext(ctx, `UPDATE dsh.field_admissions SET state=$2,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state=$3 AND version=$4 RETURNING id,COALESCE(actor_id,''),COALESCE(full_name_ar,''),state,requires_profile_review,version,created_at,updated_at`, current.ID, targetState, current.State, current.Version).Scan(&updated.ID, &updated.ActorID, &updated.FullNameAr, &updated.State, &updated.RequiresProfileReview, &updated.Version, &updated.CreatedAt, &updated.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return FieldAdmission{}, ErrFieldVersionConflict
 		}
@@ -483,7 +541,7 @@ func readFieldAdmissionTx(ctx context.Context, source interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, where string, args ...any) (FieldAdmission, error) {
 	var item FieldAdmission
-	err := source.QueryRowContext(ctx, `SELECT id,COALESCE(actor_id,''),COALESCE(full_name_ar,''),COALESCE(contact_phone_e164,''),state,version,created_at,updated_at FROM dsh.field_admissions WHERE `+where, args...).Scan(&item.ID, &item.ActorID, &item.FullNameAr, &item.PhoneE164, &item.State, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+	err := source.QueryRowContext(ctx, `SELECT id,COALESCE(actor_id,''),COALESCE(full_name_ar,''),COALESCE(contact_phone_e164,''),state,requires_profile_review,version,created_at,updated_at FROM dsh.field_admissions WHERE `+where, args...).Scan(&item.ID, &item.ActorID, &item.FullNameAr, &item.PhoneE164, &item.State, &item.RequiresProfileReview, &item.Version, &item.CreatedAt, &item.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return FieldAdmission{}, ErrFieldAdmissionNotFound
 	}

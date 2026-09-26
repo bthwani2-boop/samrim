@@ -12,7 +12,14 @@ import {
   type IdentityClientError,
   identityAuthorizesSurface,
   isIdentityClientError,
-  type OperatorEnrollmentToken,
+  type OperatorProfileCreateRequest,
+  type OperatorProfileGrantResponse,
+  type OperatorProfileInvitationResponse,
+  type OperatorProfileMutationContext,
+  type OperatorProfileMutationRequest,
+  type OperatorProfilePage,
+  type OperatorProfileResponse,
+  type OperatorProfileUpdateRequest,
   type OperatorPasskeyRegistrationResponse,
   type OperatorPermission,
   type OperatorPermissionAccess,
@@ -180,12 +187,28 @@ export async function finishOperatorRecoveryPasskeyRegistration(ceremonyId: stri
   return result;
 }
 
-export async function issueOperatorEnrollmentToken(phone: string, context: AttributedMutationContext): Promise<OperatorEnrollmentToken> {
-  return identityInternalClient().issueOperatorEnrollmentToken({ phoneE164: phone, role: "operator" }, context);
+export async function listOperatorProfiles(query: string, state: string, sort: "created_asc" | "created_desc", limit: number, cursor: string, context: AttributedMutationContext): Promise<OperatorProfilePage> {
+  return identityInternalClient().listOperatorProfiles(query, state, sort, limit, cursor, context);
 }
 
-export async function provisionOperator(phone: string, context: AttributedMutationContext): Promise<ActorRoleView> {
-  return identityInternalClient().provisionActorRole({ phoneE164: phone, role: "operator" }, context);
+export async function createOperatorProfile(request: OperatorProfileCreateRequest, context: OperatorProfileMutationContext): Promise<OperatorProfileResponse> {
+  return identityInternalClient().createOperatorProfile(request, context);
+}
+
+export async function updateOperatorProfile(profileId: string, request: OperatorProfileUpdateRequest, context: OperatorProfileMutationContext): Promise<OperatorProfileResponse> {
+  return identityInternalClient().updateOperatorProfile(profileId, request, context);
+}
+
+export async function approveOperatorProfile(profileId: string, request: OperatorProfileMutationRequest, context: OperatorProfileMutationContext): Promise<OperatorProfileResponse> {
+  return identityInternalClient().approveOperatorProfile(profileId, request, context);
+}
+
+export async function grantOperatorProfile(profileId: string, request: OperatorProfileMutationRequest, context: OperatorProfileMutationContext): Promise<OperatorProfileGrantResponse> {
+  return identityInternalClient().grantOperatorProfile(profileId, request, context);
+}
+
+export async function issueOperatorProfileInvitation(profileId: string, context: AttributedMutationContext): Promise<OperatorProfileInvitationResponse> {
+  return identityInternalClient().issueOperatorProfileInvitation(profileId, context);
 }
 
 export async function readOperatorPermission(actorId: string, permission: OperatorPermission, context: AttributedMutationContext): Promise<OperatorPermissionAccess> {

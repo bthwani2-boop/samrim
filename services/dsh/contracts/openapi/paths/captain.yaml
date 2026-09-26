@@ -280,7 +280,7 @@ paths:
           schema: { type: string, maxLength: 100 }
         - name: state
           in: query
-          schema: { type: string, enum: [all, pending, pending_review, pending_identity, eligible, suspended] }
+          schema: { type: string, enum: [all, pending, pending_review, pending_identity, eligible, suspended, review_required] }
         - name: sort
           in: query
           schema: { type: string, enum: [created_desc, created_asc] }
@@ -355,7 +355,34 @@ paths:
               $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAdmissionProfileRequest"
       responses:
         "200":
-          description: Updated Captain candidate profile.
+          description: Updated Captain candidate profile or a required legacy profile.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAdmissionResponse"
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
+  /dsh/captains/admissions/{admissionId}/profile-review:
+    post:
+      operationId: reviewCaptainAdmissionProfile
+      summary: Review a completed Captain profile before restoring its role
+      security:
+        - serviceBearer: []
+      parameters:
+        - name: admissionId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+      responses:
+        "200":
+          description: Legacy Captain profile reviewed; the role remains suspended until separate restoration.
           content:
             application/json:
               schema:

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
-import { admitField, approveFieldAdmission, authorizeDshFieldReenrollment, dshErrorPayload, dshHttpStatus, isDshClientError, listFieldAdmissions, provisionFieldAdmission, readFieldAdmissionByActor, setDshFieldRoleEnabled, updateFieldAdmissionProfile } from "../../../src/server/dsh/dsh-bff";
+import { admitField, approveFieldAdmission, authorizeDshFieldReenrollment, dshErrorPayload, dshHttpStatus, isDshClientError, listFieldAdmissions, provisionFieldAdmission, readFieldAdmissionByActor, reviewFieldAdmissionProfile, setDshFieldRoleEnabled, updateFieldAdmissionProfile } from "../../../src/server/dsh/dsh-bff";
 import { identityErrorPayload, identityHttpStatus, readOperatorSession, searchIdentityRoles } from "../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../src/server/security/csrf";
@@ -26,6 +26,17 @@ export async function POST(request: Request) {
     if (!admissionId) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "admissionId is required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
     try {
       const result = action === "approve" ? await approveFieldAdmission(admissionId, context) : await provisionFieldAdmission(admissionId, context);
+      return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
+    } catch (error) {
+      const payload = isDshClientError(error) ? dshErrorPayload(error) : { code: "DSH_INTERNAL_ERROR", message: "dsh request failed" };
+      return NextResponse.json({ error: payload }, { status: isDshClientError(error) ? dshHttpStatus(error) : 502, headers: { "Cache-Control": "no-store" } });
+    }
+  }
+  if (action === "review-profile") {
+    const expectedVersion = Number(body?.expectedVersion);
+    if (!admissionId || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "admissionId and expectedVersion are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
+    try {
+      const result = await reviewFieldAdmissionProfile(admissionId, { ...context, expectedVersion });
       return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
     } catch (error) {
       const payload = isDshClientError(error) ? dshErrorPayload(error) : { code: "DSH_INTERNAL_ERROR", message: "dsh request failed" };

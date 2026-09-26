@@ -32,6 +32,8 @@ var identityRuntimePrivileges = []tablePrivilegeRequirement{
 	{table: "identity_actor_legal_name_versions", privileges: []string{"SELECT", "INSERT", "UPDATE"}},
 	{table: "identity_actor_legal_names", privileges: []string{"SELECT", "INSERT", "UPDATE"}},
 	{table: "identity_actor_legal_name_events", privileges: []string{"SELECT", "INSERT"}},
+	{table: "identity_operator_profiles", privileges: []string{"SELECT", "INSERT", "UPDATE"}},
+	{table: "identity_operator_profile_events", privileges: []string{"SELECT", "INSERT"}},
 }
 
 var identityMaintenancePrivileges = []tablePrivilegeRequirement{

@@ -456,6 +456,9 @@ paths:
   /dsh/captains/admissions/{admissionId}/profile:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1admissions~1{admissionId}~1profile"
 
+  /dsh/captains/admissions/{admissionId}/profile-review:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1admissions~1{admissionId}~1profile-review"
+
   /dsh/captains/admissions/{admissionId}/approve:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1admissions~1{admissionId}~1approve"
 
@@ -528,6 +531,9 @@ paths:
 
   /dsh/fields/admissions/{admissionId}/profile:
     $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}~1profile"
+
+  /dsh/fields/admissions/{admissionId}/profile-review:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}~1profile-review"
 
   /dsh/fields/admissions/{admissionId}/approve:
     $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}~1approve"
@@ -3834,6 +3840,7 @@ components:
       properties:
         fullNameAr:
           type: string
+          description: Arabic display name for this Captain admission; this field is not a verified legal name.
           minLength: 2
           maxLength: 120
         contactPhoneE164:
@@ -3847,6 +3854,7 @@ components:
       properties:
         fullNameAr:
           type: string
+          description: Arabic display name for this Captain admission; this field is not a verified legal name.
           minLength: 2
           maxLength: 120
 
@@ -3864,7 +3872,7 @@ components:
 
     CaptainAdmission:
       type: object
-      required: [id, state, availabilityState, version, createdAt, updatedAt]
+      required: [id, state, availabilityState, requiresProfileReview, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -3874,6 +3882,7 @@ components:
           nullable: true
         fullNameAr:
           type: string
+          description: Arabic display name for this Captain admission; this field is not a verified legal name.
           nullable: true
         contactPhoneE164:
           type: string
@@ -3884,6 +3893,9 @@ components:
         availabilityState:
           type: string
           enum: [available, unavailable]
+        requiresProfileReview:
+          type: boolean
+          description: True when a legacy profile is incomplete or has not passed its required review.
         version:
           type: integer
           minimum: 1
@@ -3911,6 +3923,7 @@ components:
       properties:
         fullNameAr:
           type: string
+          description: Arabic display name for this Field admission; this field is not a verified legal name.
           minLength: 2
           maxLength: 120
         contactPhoneE164:
@@ -3924,6 +3937,7 @@ components:
       properties:
         fullNameAr:
           type: string
+          description: Arabic display name for this Field admission; this field is not a verified legal name.
           minLength: 2
           maxLength: 120
 
@@ -3941,7 +3955,7 @@ components:
 
     FieldAdmission:
       type: object
-      required: [id, state, version, createdAt, updatedAt]
+      required: [id, state, requiresProfileReview, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -3951,6 +3965,7 @@ components:
           nullable: true
         fullNameAr:
           type: string
+          description: Arabic display name for this Field admission; this field is not a verified legal name.
           nullable: true
         contactPhoneE164:
           type: string
@@ -3958,6 +3973,9 @@ components:
         state:
           type: string
           enum: [pending_review, pending_identity, eligible, suspended]
+        requiresProfileReview:
+          type: boolean
+          description: True when a legacy profile is incomplete or has not passed its required review.
         version:
           type: integer
           minimum: 1

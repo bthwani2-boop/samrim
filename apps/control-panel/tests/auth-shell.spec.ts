@@ -25,6 +25,132 @@ async function stubAuthenticatedSession(page: Page, permissions = authenticatedO
   });
 }
 
+async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "field", initialName: string, reviewedName: string, phone: string) {
+  const surface = role === "captain" ? "captains" : "fields";
+  const actorID = `act_${role}_reviewed_candidate`;
+  const admissionID = `${role === "captain" ? "cap" : "fld"}_adm_reviewed_candidate`;
+  let profile: { id: string; actorId?: string; fullNameAr: string; contactPhoneE164: string; state: string; version: number } | null = null;
+  const mutations: Record<string, unknown>[] = [];
+
+  await page.route(`**/api/${surface}**`, async (route) => {
+    const request = route.request();
+    if (request.method() === "GET") {
+      const params = new URL(request.url()).searchParams;
+      if (params.get("scope") !== "candidates") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 25, nextCursor: "" }) });
+        return;
+      }
+      const requestedState = params.get("state") ?? "pending_review";
+      const visible = profile && (requestedState === "all" || requestedState === profile.state) ? [profile] : [];
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: visible, limit: 25, nextCursor: "" }) });
+      return;
+    }
+
+    const body = request.postDataJSON() as Record<string, unknown>;
+    mutations.push(body);
+    const action = body.action;
+    if (action === "admit") {
+      profile = { id: admissionID, fullNameAr: String(body.fullNameAr), contactPhoneE164: String(body.contactPhoneE164), state: "pending_review", version: 1 };
+    } else if (action === "update-profile" && profile) {
+      profile = { ...profile, fullNameAr: String(body.fullNameAr), state: "pending_review", version: profile.version + 1 };
+    } else if (action === "approve" && profile) {
+      profile = { ...profile, state: "pending_identity", version: profile.version + 1 };
+    } else if (action === "provision" && profile) {
+      profile = { ...profile, actorId: actorID, state: "eligible", version: profile.version + 1 };
+    } else {
+      await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: { code: "INVALID_INPUT" } }) });
+      return;
+    }
+    await route.fulfill({ status: action === "admit" ? 201 : 200, contentType: "application/json", body: JSON.stringify({ admission: profile, idempotentReplay: false }) });
+  });
+
+  await page.goto(`/${surface}`);
+  await expect(page.getByRole("heading", { name: role === "captain" ? "ملف كابتن جديد" : "ملف ميداني جديد" })).toBeVisible();
+  await page.locator(`#${role}-candidate-name`).fill(initialName);
+  await page.locator(`#${role}-candidate-phone`).fill(phone);
+  await page.getByRole("button", { name: "حفظ الملف للمراجعة" }).click();
+  await expect(page.getByText(`أُنشئ ملف ${role === "captain" ? "الكابتن" : "الميداني"} بانتظار المراجعة. لم يُمنح دور التطبيق بعد.`)).toBeVisible();
+  await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(initialName);
+
+  await page.locator(`#${role}-candidate-name-${admissionID}`).fill(reviewedName);
+  await page.getByRole("button", { name: "حفظ الملف", exact: true }).click();
+  await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(reviewedName);
+  await page.getByRole("button", { name: "اعتماد الملف", exact: true }).click();
+  await page.locator(`#${role}-candidate-state`).selectOption("pending_identity");
+  await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(reviewedName);
+  await page.getByRole("button", { name: `منح دور ${role === "captain" ? "الكابتن" : "الميداني"}` }).click();
+  await page.locator(`#${role}-candidate-state`).selectOption("eligible");
+  await expect(page.getByText(`اكتمل منح الدور؛ ينتظر تفعيل الحساب من ${role === "captain" ? "الكابتن" : "الميداني"}.`)).toBeVisible();
+  await expect(page.getByText(actorID)).toHaveCount(0);
+  expect(mutations).toEqual([
+    { action: "admit", fullNameAr: initialName, contactPhoneE164: phone },
+    { action: "update-profile", admissionId: admissionID, fullNameAr: reviewedName, expectedVersion: 1 },
+    { action: "approve", admissionId: admissionID },
+    { action: "provision", admissionId: admissionID },
+  ]);
+}
+
+async function exerciseLegacyDshProfileReview(page: Page, role: "captain" | "field") {
+  const surface = role === "captain" ? "captains" : "fields";
+  const admissionID = `${role === "captain" ? "cap" : "fld"}_adm_legacy_review`;
+  const profile: { id: string; actorId: string; fullNameAr: string | null; contactPhoneE164: string | null; state: string; requiresProfileReview: boolean; version: number; availabilityState?: string } = {
+    id: admissionID,
+    actorId: `act_${role}_legacy_review`,
+    fullNameAr: null,
+    contactPhoneE164: null,
+    state: "suspended",
+    requiresProfileReview: true,
+    version: 9,
+    ...(role === "captain" ? { availabilityState: "unavailable" } : {}),
+  };
+  const mutations: Record<string, unknown>[] = [];
+  await page.route(`**/api/${surface}**`, async (route) => {
+    const request = route.request();
+    if (request.method() === "GET") {
+      const params = new URL(request.url()).searchParams;
+      if (params.get("scope") !== "candidates") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 25, nextCursor: "" }) });
+        return;
+      }
+      const state = params.get("state") ?? "review_required";
+      const visible = state === "all" || state === profile.state || (state === "review_required" && profile.requiresProfileReview) ? [profile] : [];
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: visible, limit: 25, nextCursor: "" }) });
+      return;
+    }
+
+    const body = request.postDataJSON() as Record<string, unknown>;
+    mutations.push(body);
+    if (body.action === "update-profile") {
+      profile.fullNameAr = String(body.fullNameAr);
+      profile.version += 1;
+    } else if (body.action === "review-profile") {
+      profile.requiresProfileReview = false;
+      profile.version += 1;
+    } else {
+      await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: { code: "INVALID_INPUT" } }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ admission: profile, idempotentReplay: false }) });
+  });
+
+  await page.goto(`/${surface}`);
+  await expect(page.getByRole("heading", { name: role === "captain" ? "ملفات الكباتن قبل منح الدور" : "ملفات الميدانيين قبل منح الدور" })).toBeVisible();
+  await expect(page.getByText("موقوف حتى استكمال الملف ومراجعته")).toBeVisible();
+  const name = "سامي ناصر محمد العريقي";
+  await page.locator(`#${role}-candidate-name-${admissionID}`).fill(name);
+  await page.getByRole("button", { name: "حفظ الملف", exact: true }).click();
+  await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(name);
+  await page.getByRole("button", { name: "اعتماد الملف بعد المراجعة" }).click();
+  await expect(page.getByRole("status")).toContainText("يبقى الدور موقوفًا حتى إعادة التفعيل");
+  await page.locator(`#${role}-candidate-state`).selectOption("suspended");
+  await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(name);
+  await expect(page.getByText("موقوف حتى استكمال الملف ومراجعته")).toHaveCount(0);
+  expect(mutations).toEqual([
+    { action: "update-profile", admissionId: admissionID, fullNameAr: name, expectedVersion: 9 },
+    { action: "review-profile", admissionId: admissionID, expectedVersion: 10 },
+  ]);
+}
+
 test("signed-out access to a protected workspace route returns to the identity surface", async ({ page }) => {
   await stubSession(page, 401);
   await page.goto("/workspace");
@@ -34,6 +160,12 @@ test("signed-out access to a protected workspace route returns to the identity s
 
 test("authenticated operator discovers the platform centers through workspace navigation", async ({ page }) => {
   await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "operations", "partners", "catalog"], true);
+  await page.route("**/api/access/operator-profiles**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 25, nextCursor: "" }) });
+  });
+  await page.route("**/api/access/operators**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 10, nextCursor: "" }) });
+  });
   let homeRequestsActionableOrders = false;
   let homeRequestsCatalogQueue = false;
   await page.route("**/api/operations**", async (route) => {
@@ -68,13 +200,31 @@ test("authenticated operator discovers the platform centers through workspace na
   await accessLink.click();
   await expect(page).toHaveURL(/\/access$/);
   await expect(page.locator('#workspace-navigation a[href="/access"][aria-current="page"]')).toHaveAttribute("href", "/access");
-  await expect(page.getByRole("heading", { name: "مشغّلو لوحة التحكم والصلاحيات" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "ملفات المشغّلين والوصول والصلاحيات" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "إنشاء ملف مشغّل" })).toBeVisible();
+  await expect(page.getByLabel("اسم العرض الكامل بالعربية")).toBeVisible();
+  await page.getByRole("button", { name: "الوصول والصلاحيات", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "قائمة المشغّلين وصلاحياتهم" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "إدارة حسابات مشغّلي لوحة التحكم" })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(page.locator("#workspace-main")).toBeFocused();
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "مشغّلو لوحة التحكم والصلاحيات" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "ملفات المشغّلين والوصول والصلاحيات" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "إنشاء ملف مشغّل" })).toBeVisible();
+});
+
+test("operator without profile-administration authority cannot open the operator files tab", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  await page.route("**/api/access/operators**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 10, nextCursor: "" }) });
+  });
+  await page.goto("/access");
+
+  await expect(page.getByRole("heading", { name: "ملفات المشغّلين والوصول والصلاحيات" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "ملفات المشغّلين", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "الوصول والصلاحيات", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("heading", { name: "إنشاء ملف مشغّل" })).toHaveCount(0);
 });
 
 test("operator home reads only work queues covered by the current session permissions", async ({ page }) => {
@@ -142,7 +292,7 @@ test("workspace routes keep one main landmark and an actor-specific page hierarc
   const routes = [
     ["/workspace", "الرئيسية"],
     ["/notifications", "الإشعارات"],
-    ["/access", "مشغّلو لوحة التحكم والصلاحيات"],
+    ["/access", "ملفات المشغّلين والوصول والصلاحيات"],
     ["/partners", "الشركاء"],
     ["/operations", "العمليات"],
     ["/finance", "المالية"],
@@ -310,9 +460,77 @@ test("mobile workspace navigation restores focus and account menu owns appearanc
 
 test("operator direct navigation to access exposes the canonical access capability", async ({ page }) => {
   await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
+  await page.route("**/api/access/operator-profiles**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 25, nextCursor: "" }) });
+  });
+  await page.route("**/api/access/operators**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 10, nextCursor: "" }) });
+  });
   await page.goto("/access");
-  await expect(page.getByRole("heading", { name: "مشغّلو لوحة التحكم والصلاحيات" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "ملفات المشغّلين والوصول والصلاحيات" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "إنشاء ملف مشغّل" })).toBeVisible();
+  await page.getByRole("button", { name: "الوصول والصلاحيات", exact: true }).click();
   await expect(page.getByRole("heading", { name: "قائمة المشغّلين وصلاحياتهم" })).toBeVisible();
+});
+
+test("operator profile is created, reviewed, admitted, and invited in separate steps", async ({ page }) => {
+  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
+  const profileId = "oprof_browser_review";
+  const actorId = "act_operator_browser_review";
+  const phoneE164 = "+96777000123";
+  const initialName = "محمود أحمد";
+  const reviewedName = "محمود أحمد علي الدوبحي";
+  const writes: Record<string, unknown>[] = [];
+  let profile: { id: string; actorId?: string; fullNameAr: string; phoneE164: string; roleEnabled?: boolean; securityEnabled?: boolean; activatedAt?: string; state: string; version: number } | null = null;
+
+  await page.route("**/api/access/operator-profiles**", async (route) => {
+    const request = route.request();
+    if (request.method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: profile ? [profile] : [], limit: 25, nextCursor: "" }) });
+      return;
+    }
+    const body = request.postDataJSON() as Record<string, unknown>;
+    writes.push(body);
+    if (new URL(request.url()).pathname === "/api/access/operator-profiles") {
+      profile = { id: profileId, fullNameAr: String(body.fullNameAr), phoneE164: String(body.phoneE164), state: "pending_review", version: 1 };
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ profile, idempotentReplay: false }) });
+      return;
+    }
+    if (body.action === "update-profile" && profile) profile = { ...profile, fullNameAr: String(body.fullNameAr), state: "pending_review", version: profile.version + 1 };
+    else if (body.action === "approve" && profile) profile = { ...profile, state: "approved", version: profile.version + 1 };
+    else if (body.action === "grant" && profile) profile = { ...profile, actorId, roleEnabled: true, securityEnabled: true, state: "admitted", version: profile.version + 1 };
+    else if (body.action === "invitation" && profile) {
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ profile, enrollmentToken: { code: "operator-enrollment-proof-code-123456", maskedPhone: "+967••••0123", role: "operator", expiresAt: "2099-01-01T00:00:00.000Z" } }) });
+      return;
+    } else {
+      await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: { code: "INVALID_INPUT" } }) });
+      return;
+    }
+    await route.fulfill({ status: body.action === "grant" ? 201 : 200, contentType: "application/json", body: JSON.stringify({ profile, role: { actorId, role: "operator", actorCreated: true, roleCreated: true }, idempotentReplay: false }) });
+  });
+
+  await page.goto("/access");
+  await page.locator("#operator-profile-name").fill(initialName);
+  await page.locator("#operator-profile-phone").fill(phoneE164);
+  await page.getByRole("button", { name: "حفظ الملف للمراجعة" }).click();
+  await expect(page.locator(`#operator-profile-name-${profileId}`)).toHaveValue(initialName);
+  await expect(page.getByText("بانتظار مراجعة الملف")).toBeVisible();
+  await page.locator(`#operator-profile-name-${profileId}`).fill(reviewedName);
+  await page.getByRole("button", { name: "حفظ الملف", exact: true }).click();
+  await page.getByRole("button", { name: "اعتماد الملف", exact: true }).click();
+  await expect(page.getByText("اعتُمد الملف. لم يُمنح دور المشغّل بعد.")).toBeVisible();
+  await page.getByRole("button", { name: "منح دور المشغّل", exact: true }).click();
+  await expect(page.getByText("مُنح دور المشغّل بعد الاعتماد. إصدار الدعوة هو الخطوة التالية.")).toBeVisible();
+  await page.getByRole("button", { name: "إصدار دعوة التفعيل", exact: true }).click();
+  await expect(page.getByText("operator-enrollment-proof-code-123456", { exact: true })).toBeVisible();
+  await expect(page.getByText("+967••••0123", { exact: true })).toBeVisible();
+  expect(writes).toEqual([
+    { fullNameAr: initialName, phoneE164 },
+    { action: "update-profile", fullNameAr: reviewedName, phoneE164, expectedVersion: 1 },
+    { action: "approve", expectedVersion: 2 },
+    { action: "grant", expectedVersion: 3 },
+    { action: "invitation" },
+  ]);
 });
 
 test("operator access keeps phone discovery separate from actorId mutation", async ({ page }) => {
@@ -376,6 +594,52 @@ test("Field center reads DSH eligibility and routes operational controls to the 
   await page.getByLabel("سبب الإجراء").fill("تجميد أهلية الميدان");
   await page.getByRole("button", { name: "إيقاف التشغيل" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_field_admitted", action: "disable", expectedVersion: 2, reason: "تجميد أهلية الميدان" });
+});
+
+test("legacy Field role with a missing profile is suspended before Identity access is already disabled", async ({ page }) => {
+  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
+  let admissionState = "eligible";
+  let mutationBody: Record<string, unknown> | undefined;
+  await page.route("**/api/fields**", async (route) => {
+    if (route.request().method() === "POST") {
+      mutationBody = route.request().postDataJSON() as Record<string, unknown>;
+      admissionState = "suspended";
+      await route.fulfill({ status: 204 });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_field_legacy", phoneE164: "+96777000108", role: "field", enabled: false, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_legacy", actorId: "act_field_legacy", fullNameAr: null, requiresProfileReview: true, state: admissionState, version: 10, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
+  });
+  await page.goto("/fields");
+  await expect(page.getByText("الملف يحتاج استكمالًا ومراجعة")).toBeVisible();
+  await page.getByLabel("سبب الإجراء").fill("إيقاف حتى مراجعة الملف");
+  await page.getByRole("button", { name: "إيقاف التشغيل" }).click();
+  expect(mutationBody).toMatchObject({ actorId: "act_field_legacy", action: "disable", expectedVersion: 2, reason: "إيقاف حتى مراجعة الملف" });
+  await expect(page.getByRole("status")).toContainText("الهوية موقوفة");
+});
+
+test("legacy Captain profile review never offers role activation before review", async ({ page }) => {
+  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
+  let admissionState = "eligible";
+  let enabled = false;
+  let mutationBody: Record<string, unknown> | undefined;
+  await page.route("**/api/captains**", async (route) => {
+    if (route.request().method() === "POST") {
+      mutationBody = route.request().postDataJSON() as Record<string, unknown>;
+      admissionState = "suspended";
+      await route.fulfill({ status: 204 });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_captain_legacy", phoneE164: "+96777000109", role: "captain", enabled, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "cap_adm_legacy", actorId: "act_captain_legacy", fullNameAr: null, requiresProfileReview: true, state: admissionState, availabilityState: "unavailable", version: 10, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
+  });
+  await page.goto("/captains");
+  await expect(page.getByText("الملف يحتاج استكمالًا ومراجعة")).toBeVisible();
+  await page.getByLabel("سبب الإجراء").fill("إيقاف حتى مراجعة الملف");
+  await page.getByRole("button", { name: "إيقاف التشغيل" }).click();
+  expect(mutationBody).toMatchObject({ actorId: "act_captain_legacy", action: "disable", expectedVersion: 2, reason: "إيقاف حتى مراجعة الملف" });
+  enabled = false;
+  await page.getByLabel("سبب الإجراء").fill("استكمال الملف قبل الإعادة");
+  await expect(page.getByText("استكمل الملف واعتمده قبل إعادة التفعيل.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "إعادة التفعيل" })).toHaveCount(0);
 });
 
 test("Field reenrollment uses DSH eligibility and carries fresh actor, role, and admission versions", async ({ page }) => {
@@ -449,24 +713,14 @@ test("captain center owns DSH eligibility and operational availability", async (
   expect(mutationBody).toMatchObject({ actorId: "act_captain_admitted", action: "availability", available: false, expectedVersion: 7, reason: "تحديث توافر الكابتن" });
 });
 
-test("operator captain operations present Arabic state without backend identifiers", async ({ page }) => {
+test("Captain candidate profile is reviewed before Identity grants the app role", async ({ page }) => {
   await stubAuthenticatedSession(page);
-  await page.route("**/api/captains", async (route) => {
-    await route.fulfill({
-      status: 201,
-      contentType: "application/json",
-      body: JSON.stringify({
-        operation: "admit",
-        idempotentReplay: false,
-        admission: { id: "cap_adm_test", actorId: "act_captain_test", state: "eligible", availabilityState: "unavailable", version: 4 },
-      }),
-    });
-  });
-  await page.goto("/captains");
-  await page.getByLabel("هاتف الكابتن المراد قبوله").fill("+96777000105");
-  await page.getByRole("button", { name: "قبول الكابتن" }).click();
-  await expect(page.getByText("الحالة: مؤهل للتشغيل · التوفر: غير متاح حاليًا")).toBeVisible();
-  await expect(page.getByText("act_captain_test")).toHaveCount(0);
+  await exerciseReviewedDshCandidateFlow(page, "captain", "علي سالم", "علي سالم أحمد الصنعاني", "+96777000105");
+});
+
+test("legacy Captain profile completion and review leave access suspended", async ({ page }) => {
+  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
+  await exerciseLegacyDshProfileReview(page, "captain");
 });
 
 test("operator operations uses the DSH read model and resource actions", async ({ page }) => {
@@ -564,23 +818,14 @@ test("operator finance reads only the bounded COD cash-custody projection", asyn
   await expect(page.getByText("dsh-order-1")).toBeVisible();
 });
 
-test("operator admits a Field actor through the DSH-owned Field surface", async ({ page }) => {
+test("Field candidate profile is reviewed before Identity grants the app role", async ({ page }) => {
   await stubAuthenticatedSession(page);
-  let requestBody: Record<string, unknown> | undefined;
-  await page.route("**/api/fields", async (route) => {
-    requestBody = route.request().postDataJSON() as Record<string, unknown>;
-    await route.fulfill({
-      status: 201,
-      contentType: "application/json",
-      body: JSON.stringify({ admission: { id: "fld_adm_test", actorId: "act_field_test", state: "eligible", version: 2 }, idempotentReplay: false }),
-    });
-  });
-  await page.goto("/fields");
-  await expect(page.getByRole("heading", { name: "قبول ممثل ميداني" })).toBeVisible();
-  await page.getByLabel("هاتف الممثل الميداني").fill("+96777000104");
-  await page.getByRole("button", { name: "قبول الميدان" }).click();
-  await expect(page.getByText(/أعيدت قراءة حالة القبول: مؤهل لإنشاء الملفات/)).toBeVisible();
-  expect(requestBody).toEqual({ action: "admit", contactPhoneE164: "+96777000104" });
+  await exerciseReviewedDshCandidateFlow(page, "field", "سامي ناصر", "سامي ناصر محمد العريقي", "+96777000104");
+});
+
+test("legacy Field profile completion and review leave access suspended", async ({ page }) => {
+  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
+  await exerciseLegacyDshProfileReview(page, "field");
 });
 
 test("operator creates a DSH-owned joining case from prospective partner facts", async ({ page }) => {
