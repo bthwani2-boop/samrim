@@ -44,5 +44,8 @@
   "tags": [
     "scope:app-field",
     "type:app"
+  ],
+  "implicitDependencies": [
+    "mobile-tooling"
   ]
 }
