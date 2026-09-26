@@ -7,23 +7,16 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 const data = (relative) => JSON.parse(read(relative));
 
 const nx = data("nx.json");
-const projects = [
-  ".github/project.json",
-  "apps/control-panel/project.json",
-  "apps/app-client/project.json",
-  "apps/app-partner/project.json",
-  "apps/app-captain/project.json",
-  "apps/app-field/project.json",
-  "packages/design-system/project.json",
-  "services/identity/project.json",
-  "services/identity/backend/project.json",
-  "services/identity/clients/go/project.json",
-  "services/dsh/project.json",
-  "services/dsh/backend/project.json",
-  "services/wlt/backend/project.json",
-  "tools/dev/project.json",
-  "tools/mobile/project.json",
-];
+const projects = [];
+function discoverProjects(dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (["node_modules", ".git", ".nx", ".next", "dist", "build", "coverage", ".cache"].includes(entry.name)) continue;
+    const absolute = path.join(dir, entry.name);
+    if (entry.isDirectory()) discoverProjects(absolute);
+    else if (entry.isFile() && entry.name === "project.json") projects.push(path.relative(root, absolute).replaceAll(path.sep, "/"));
+  }
+}
+discoverProjects(root);
 
 function effectiveCache(targetName, target) {
   if (typeof target?.cache === "boolean") return target.cache;
@@ -33,11 +26,11 @@ function effectiveCache(targetName, target) {
 
 const runtimeCommand = /(playwright|next\s+dev|expo\s+(start|run)|docker\s+compose|verify-(?:identity|dsh)-runtime|verify-(?:identity-migrations|dsh-baseline)|build-ci-image)/i;
 for (const file of projects) {
-  if (!fs.existsSync(path.join(root, file))) continue;
   const project = data(file);
   for (const [targetName, target] of Object.entries(project.targets ?? {})) {
     const command = target?.options?.command ?? "";
-    if (runtimeCommand.test(command) && effectiveCache(targetName, target)) {
+    const deterministicComposeRender = /docker\s+compose\b.*\bconfig\s+--quiet\b/i.test(command);
+    if (runtimeCommand.test(command) && !deterministicComposeRender && effectiveCache(targetName, target)) {
       failures.push(file + ":" + targetName + " runtime/stateful command must be cache=false");
     }
   }
@@ -123,4 +116,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log("NX_CACHE_CONTRACTS=PASS runtime_cache=0 known_writers_declared=3 control_env_hashed=1");
+console.log("NX_CACHE_CONTRACTS=PASS projects=" + projects.length + " runtime_cache=0 known_writers_declared=3 control_env_hashed=1");
