@@ -52,7 +52,7 @@ if (ci.targets?.["execution-proof-system"]?.cache !== true) failures.push("execu
 for (const old of ["tooling-lint","go-workspace-sync"]) if (ci.targets?.[old]) failures.push("repository-ci duplicate target " + old);
 
 const tooling = data("tools/dev/project.json");
-for (const target of ["lint","go-workspace-sync","structural-hygiene","knowledge-materialize"]) {
+for (const target of ["lint","go-workspace-sync","structural-hygiene","knowledge-materialize","cache-contracts"]) {
   if (tooling.targets?.[target]?.cache !== true) failures.push("workspace-tooling:" + target + " must be cache=true");
 }
 const knowledgeOutput = tooling.targets?.["knowledge-materialize"]?.outputs ?? [];
@@ -129,12 +129,14 @@ const local = read("tools/dev/verify-local-candidate.ps1");
 if (local.includes("git -C $Repo diff --name-only") || local.includes("--changed --since")) failures.push("local parallel affected engine remains");
 if (!local.includes("nx affected -t lint format-check typecheck unit contract build vet export-smoke")) failures.push("local Nx affected target set drifted");
 if (!local.includes("workspace-tooling:lint")) failures.push("local tooling lint owner drifted");
+if (!local.includes("cache-contracts")) failures.push("local cache contract proof missing");
 
 const staticCi = read(".github/workflows/ci-static.yml");
 if (staticCi.includes("--changed --since") || staticCi.includes("go work sync")) failures.push("static CI parallel/mutating proof remains");
 if (staticCi.includes("run: node tools/dev/knowledge-source.mjs")) failures.push("static CI bypasses Nx for knowledge materialization");
 for (const required of [
   "workspace-tooling:knowledge-materialize",
+  "cache-contracts",
   "workspace-tooling:lint",
   "workspace-tooling:go-workspace-sync",
   "repository-ci:execution-proof-system",
@@ -194,6 +196,12 @@ for (const name of [
 ]) {
   if (!Number.isFinite(budgets.budgetsMs?.[name])) failures.push("CI performance budget missing " + name);
 }
+const controlPanelBuildInputs = JSON.stringify(data("apps/control-panel/project.json").targets?.build?.inputs ?? []);
+if (!controlPanelBuildInputs.includes("controlPanelBuildEnvironment")) failures.push("Control Panel build environment cache input missing");
+const controlPanelEnvironment = JSON.stringify(data("nx.json").namedInputs?.controlPanelBuildEnvironment ?? []);
+if (!controlPanelEnvironment.includes("hash-control-panel-secret-input.mjs")) failures.push("Control Panel secret-file hash input missing");
+if (tooling.targets?.["cache-contracts"]?.options?.command !== "node tools/dev/verify-cache-contracts.mjs") failures.push("workspace-tooling cache contract owner drifted");
+
 const imageBuilder = read("tools/dev/build-ci-image.mjs");
 if (!imageBuilder.includes('process.env.GITHUB_EVENT_NAME !== "pull_request"')) failures.push("BuildKit PR cache write fence missing");
 if (!imageBuilder.includes('"--cache-from", "type=gha,version=2,scope=" + scope')) failures.push("BuildKit reusable cache v2 read missing");
