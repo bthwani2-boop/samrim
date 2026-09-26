@@ -76,7 +76,6 @@ for (const forbidden of ["branch", "branch_url"]) {
   }
 }
 
-
 for (const required of [
   "AGENTS.md",
   "knowledge.sources.json",
@@ -87,8 +86,10 @@ for (const required of [
   "tools/dev/verify-agent-knowledge-contract.mjs",
   "tools/dev/verify-knowledge-references.mjs",
   ".github/pull_request_template.md",
-  ".github/workflows/baseline-guard.yml",
-  ".github/workflows/pr-policy.yml",
+  ".github/workflows/ci-static.yml",
+  ".github/workflows/ci-runtime.yml",
+  ".github/workflows/ci-security.yml",
+  ".github/workflows/ci-policy.yml",
 ]) {
   requireFile(required);
 }
