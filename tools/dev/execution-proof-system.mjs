@@ -52,7 +52,7 @@ if (ci.targets?.["execution-proof-system"]?.cache !== true) failures.push("execu
 for (const old of ["tooling-lint","go-workspace-sync"]) if (ci.targets?.[old]) failures.push("repository-ci duplicate target " + old);
 
 const tooling = data("tools/dev/project.json");
-for (const target of ["lint","go-workspace-sync","structural-hygiene","knowledge-materialize","cache-contracts"]) {
+for (const target of ["lint","go-workspace-sync","structural-hygiene","knowledge-materialize","cache-contracts","sandbox-readiness"]) {
   if (tooling.targets?.[target]?.cache !== true) failures.push("workspace-tooling:" + target + " must be cache=true");
 }
 const knowledgeOutput = tooling.targets?.["knowledge-materialize"]?.outputs ?? [];
@@ -130,6 +130,7 @@ if (local.includes("git -C $Repo diff --name-only") || local.includes("--changed
 if (!local.includes("nx affected -t lint format-check typecheck unit contract build vet export-smoke")) failures.push("local Nx affected target set drifted");
 if (!local.includes("workspace-tooling:lint")) failures.push("local tooling lint owner drifted");
 if (!local.includes("cache-contracts")) failures.push("local cache contract proof missing");
+if (!local.includes("sandbox-readiness")) failures.push("local sandbox readiness proof missing");
 
 const staticCi = read(".github/workflows/ci-static.yml");
 if (staticCi.includes("--changed --since") || staticCi.includes("go work sync")) failures.push("static CI parallel/mutating proof remains");
@@ -137,6 +138,7 @@ if (staticCi.includes("run: node tools/dev/knowledge-source.mjs")) failures.push
 for (const required of [
   "workspace-tooling:knowledge-materialize",
   "cache-contracts",
+  "sandbox-readiness",
   "workspace-tooling:lint",
   "workspace-tooling:go-workspace-sync",
   "repository-ci:execution-proof-system",
@@ -196,6 +198,10 @@ for (const name of [
 ]) {
   if (!Number.isFinite(budgets.budgetsMs?.[name])) failures.push("CI performance budget missing " + name);
 }
+if (tooling.targets?.["sandbox-readiness"]?.options?.command !== "node tools/dev/verify-sandbox-readiness.mjs") failures.push("workspace-tooling sandbox readiness owner drifted");
+const sandboxConfig = path.join(root, ".nx", "workflows", "sandboxing-config.yaml");
+if (fs.existsSync(sandboxConfig) && fs.readFileSync(sandboxConfig, "utf8").trim()) failures.push("sandbox exclusions exist before audited admission");
+
 const controlPanelBuildInputs = JSON.stringify(data("apps/control-panel/project.json").targets?.build?.inputs ?? []);
 if (!controlPanelBuildInputs.includes("controlPanelBuildEnvironment")) failures.push("Control Panel build environment cache input missing");
 const controlPanelEnvironment = JSON.stringify(data("nx.json").namedInputs?.controlPanelBuildEnvironment ?? []);
