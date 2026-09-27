@@ -959,6 +959,56 @@ test("operator creates a DSH-owned joining case from prospective partner facts",
   expect(requestBody).toEqual({ contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, firstStoreFulfillmentModes: ["CUSTOMER_PICKUP"] });
 });
 
+test("operator resumes an uncertain joining-case create with the same idempotency key after reload", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  const attempts: Array<{ idempotencyKey: string; correlationId: string; body: unknown }> = [];
+  const expectedBody = { contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, firstStoreFulfillmentModes: ["CUSTOMER_PICKUP"] };
+  const createdCase = { id: "join_retry", contactPhoneE164: expectedBody.contactPhoneE164, businessName: expectedBody.businessName, firstStoreName: expectedBody.firstStoreName, serviceCityId: expectedBody.serviceCityId, firstStoreVerticalId: expectedBody.firstStoreVerticalId, firstStoreFulfillmentModes: expectedBody.firstStoreFulfillmentModes, firstStoreLatitude: expectedBody.firstStoreLatitude, firstStoreLongitude: expectedBody.firstStoreLongitude, state: "draft", version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" };
+  await page.route("**/api/service-cities**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cities: [{ id: "sanaa", displayNameAr: "صنعاء", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
+  });
+  await page.route("**/api/catalog/verticals**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", catalogModel: "SHARED_CATALOG", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
+  });
+  await page.route("**/api/partners/joining-cases", async (route) => {
+    const request = route.request();
+    attempts.push({ idempotencyKey: request.headers()["idempotency-key"] ?? "", correlationId: request.headers()["x-correlation-id"] ?? "", body: request.postDataJSON() });
+    if (attempts.length === 1) {
+      await route.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ error: { code: "DSH_UNAVAILABLE" } }) });
+      return;
+    }
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ case: createdCase, idempotentReplay: true }) });
+  });
+  await page.route("**/api/partners/joining-cases/join_retry", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ case: createdCase, idempotentReplay: true }) });
+  });
+
+  await page.goto("/partners/new");
+  await page.getByLabel("رقم هاتف الشريك").fill("+967 77000100");
+  await page.getByLabel("الاسم القانوني للنشاط").fill("نشاط الاختبار");
+  await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
+  await page.getByLabel("مدينة المتجر الأول").selectOption("sanaa");
+  await page.getByLabel("الفئة الرئيسية").selectOption("grocery");
+  await page.getByLabel("خط عرض موقع المتجر").fill("15.369445");
+  await page.getByLabel("خط طول موقع المتجر").fill("44.191006");
+  await page.getByRole("checkbox", { name: "استلم بنفسك من المتجر" }).check();
+  await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();
+  await expect(page.getByText(/أعد المحاولة بالبيانات نفسها للتحقق بالمفتاح المحفوظ/)).toBeVisible();
+  await expect(page.getByLabel("رقم هاتف الشريك")).toBeDisabled();
+
+  await page.reload();
+  await expect(page.getByLabel("رقم هاتف الشريك")).toHaveValue("+96777000100");
+  await expect(page.getByRole("button", { name: "إعادة محاولة إنشاء الحالة" })).toBeEnabled();
+  await page.getByRole("button", { name: "إعادة محاولة إنشاء الحالة" }).click();
+  await expect(page).toHaveURL(/\/partners\/join_retry$/);
+
+  expect(attempts).toHaveLength(2);
+  expect(attempts[0]!.idempotencyKey).toMatch(/^partner_joining_case_create_/);
+  expect(attempts[1]!.idempotencyKey).toBe(attempts[0]!.idempotencyKey);
+  expect(attempts[1]!.correlationId).toBe(attempts[0]!.correlationId);
+  expect(attempts.map((attempt) => attempt.body)).toEqual([expectedBody, expectedBody]);
+});
+
 test("operator gets an actionable empty state when no active commerce vertical exists", async ({ page }) => {
   await stubAuthenticatedSession(page);
   await page.route("**/api/service-cities**", async (route) => {
