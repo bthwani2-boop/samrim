@@ -17,9 +17,11 @@ import (
 )
 
 var (
-	ErrClientSessionForbidden     = errors.New("an active app-client session is required")
-	ErrCheckoutNotServiceable     = errors.New("address is not serviceable for this Store")
-	ErrFulfillmentModeUnavailable = errors.New("the requested fulfillment mode is not available")
+	ErrClientSessionForbidden      = errors.New("an active app-client session is required")
+	ErrCheckoutNotServiceable      = errors.New("address is not serviceable for this Store")
+	ErrFulfillmentModeUnavailable  = errors.New("the requested fulfillment mode is not available")
+	ErrInsufficientCustomerBalance = errors.New("customer internal balance does not cover the requested contribution")
+	ErrCheckoutBalanceContribution = errors.New("checkout internal balance contribution is invalid")
 )
 
 const FulfillmentModeBthwaniCaptain = "BTHWANI_CAPTAIN"
@@ -225,7 +227,7 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 	}, nil
 }
 
-func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, addressID, fulfillmentMode, promotionCode string, expectedCartVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
+func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, addressID, fulfillmentMode, promotionCode string, internalBalanceAmountMinor int64, expectedCartVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
 	actorID, err := s.requireClient(ctx, accessToken)
 	if err != nil {
 		return postgres.OrderRecord{}, false, err
@@ -235,6 +237,9 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 	idempotencyKey, correlationID = strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID)
 	if cartID == "" {
 		return postgres.OrderRecord{}, false, postgres.ErrCheckoutEvidenceStale
+	}
+	if internalBalanceAmountMinor < 0 {
+		return postgres.OrderRecord{}, false, ErrCheckoutBalanceContribution
 	}
 	paymentExternalReference := wlt.DerivedExternalReference("checkout", idempotencyKey)
 	paymentCancellationKey := wlt.DerivedIdempotencyKey("cancel-checkout", idempotencyKey)
@@ -246,7 +251,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 	}
 	attemptInput := postgres.CheckoutInput{
 		ClientActorID: actorID, CartID: cartID, StoreID: storeID, AddressID: addressID,
-		FulfillmentMode: fulfillmentMode, ExpectedCartVersion: expectedCartVersion,
+		FulfillmentMode: fulfillmentMode, InternalBalanceAmountMinor: internalBalanceAmountMinor, ExpectedCartVersion: expectedCartVersion,
 		IdempotencyKey: idempotencyKey, CorrelationID: correlationID,
 		PaymentExternalReference: paymentExternalReference, PaymentCancellationKey: paymentCancellationKey,
 		PaymentMethod: paymentMethod, PromotionCode: strings.ToUpper(strings.TrimSpace(promotionCode)),
@@ -284,7 +289,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		evidence = postgres.CheckoutEvidence{ServiceCityID: facts.StoreServiceCityID, PolicyVersion: serviceability.PolicyVersion, Status: serviceabilityResult.Status, StoreVersion: facts.StoreVersion, AddressVersion: facts.AddressVersion, StoreOriginLatitude: facts.StoreOriginLatitude, StoreOriginLongitude: facts.StoreOriginLongitude, AddressLatitude: facts.AddressLatitude, AddressLongitude: facts.AddressLongitude}
 	}
 	input := postgres.CheckoutInput{
-		ClientActorID: actorID, CartID: cartID, StoreID: storeID, AddressID: addressID, FulfillmentMode: fulfillmentMode, ExpectedCartVersion: expectedCartVersion, PromotionCode: strings.ToUpper(strings.TrimSpace(promotionCode)), PaymentMethod: paymentMethod, DeliveryProofKeyring: s.proofKeys,
+		ClientActorID: actorID, CartID: cartID, StoreID: storeID, AddressID: addressID, FulfillmentMode: fulfillmentMode, InternalBalanceAmountMinor: internalBalanceAmountMinor, ExpectedCartVersion: expectedCartVersion, PromotionCode: strings.ToUpper(strings.TrimSpace(promotionCode)), PaymentMethod: paymentMethod, DeliveryProofKeyring: s.proofKeys,
 		Evidence:       evidence,
 		IdempotencyKey: idempotencyKey, ActingActorID: actorID, CorrelationID: correlationID,
 		PaymentExternalReference: paymentExternalReference,
@@ -293,6 +298,9 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 	}
 	input.DeliveryFeeResolver = s.quoteDeliveryFee
 	input.PaymentProvisioner = func(provisionContext context.Context, orderID, externalReference, payerActorID string, subtotalMinor, discountMinor, deliveryFeeMinor int64, deliveryPolicyVersion string, amountMinor int64, paymentIdempotencyKey, paymentCorrelationID string) (postgres.ProvisionedPayment, error) {
+		if internalBalanceAmountMinor > amountMinor {
+			return postgres.ProvisionedPayment{}, ErrCheckoutBalanceContribution
+		}
 		allocationPolicy := fmt.Sprintf("cod-current-v2;delivery=%s", deliveryPolicyVersion)
 		if fulfillmentMode == FulfillmentModeCustomerPickup {
 			allocationPolicy = "cash-at-store-v1"
@@ -302,12 +310,13 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		if err := s.payment.EnsurePartnerStoreCommissionPolicies(provisionContext, store.ID, store.PartnerActorID, wlt.DerivedIdempotencyKey("ensure-store-commission-policy", store.ID), paymentCorrelationID); err != nil {
 			return postgres.ProvisionedPayment{}, externalMutationOutcome(err)
 		}
-		allocation := wlt.CustomerPaymentAllocation{OrderID: orderID, StoreID: store.ID, PartnerActorID: store.PartnerActorID, FulfillmentMode: fulfillmentMode, Currency: "YER", SubtotalMinor: subtotalMinor, DeliveryFeeMinor: deliveryFeeMinor, DiscountMinor: discountMinor, CashAmountMinor: amountMinor, CustomerPayableMinor: amountMinor, PolicyVersion: allocationPolicy}
-		intent, _, provisionErr := s.payment.CreateForOrderWithMethod(provisionContext, orderID, externalReference, payerActorID, amountMinor, paymentMethod, allocation, paymentIdempotencyKey, paymentCorrelationID)
+		cashAmountMinor := amountMinor - internalBalanceAmountMinor
+		allocation := wlt.CustomerPaymentAllocation{OrderID: orderID, StoreID: store.ID, PartnerActorID: store.PartnerActorID, FulfillmentMode: fulfillmentMode, Currency: "YER", SubtotalMinor: subtotalMinor, DeliveryFeeMinor: deliveryFeeMinor, DiscountMinor: discountMinor, InternalBalanceAmountMinor: internalBalanceAmountMinor, CashAmountMinor: cashAmountMinor, CustomerPayableMinor: amountMinor, PolicyVersion: allocationPolicy}
+		intent, _, provisionErr := s.payment.CreateForOrderWithMethod(provisionContext, orderID, externalReference, payerActorID, cashAmountMinor, paymentMethod, allocation, paymentIdempotencyKey, paymentCorrelationID)
 		if provisionErr != nil {
 			return postgres.ProvisionedPayment{}, externalMutationOutcome(provisionErr)
 		}
-		return postgres.ProvisionedPayment{IntentID: intent.ID, State: intent.State}, nil
+		return postgres.ProvisionedPayment{IntentID: intent.ID, State: intent.State, CashAmountMinor: intent.AmountMinor}, nil
 	}
 	input.PaymentIntentRecoveryReader = paymentRecoveryReader
 	input.PaymentCanceller = paymentCanceller
@@ -360,6 +369,9 @@ func externalMutationOutcome(err error) error {
 		return nil
 	}
 	var responseErr *wlt.Error
+	if errors.As(err, &responseErr) && responseErr.Status == http.StatusConflict && responseErr.Code == "INSUFFICIENT_CUSTOMER_BALANCE" {
+		return fmt.Errorf("%w: %w", ErrInsufficientCustomerBalance, err)
+	}
 	if errors.As(err, &responseErr) && responseErr.Status == http.StatusBadRequest && (responseErr.Code == "INVALID_INPUT" || responseErr.Code == "INVALID_PAYMENT_ALLOCATION") {
 		return err
 	}

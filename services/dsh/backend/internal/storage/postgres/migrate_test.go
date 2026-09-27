@@ -49,8 +49,8 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 		t.Fatalf("unexpected DSH migration graph size: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.SchemaVersion)
 	}
 	last := records[len(records)-1]
-	if last.Version != postgres.SchemaVersion || last.Name != "075_discovery_content_media_assets.sql" {
-		t.Fatalf("last DSH migration = v%d %q; want v%d 075_discovery_content_media_assets.sql", last.Version, last.Name, postgres.SchemaVersion)
+	if last.Version != postgres.SchemaVersion || last.Name != "077_balance_only_financial_handoffs.sql" {
+		t.Fatalf("last DSH migration = v%d %q; want v%d 077_balance_only_financial_handoffs.sql", last.Version, last.Name, postgres.SchemaVersion)
 	}
 	migrationByName := make(map[string]string, len(records))
 	for index, record := range records {
@@ -90,7 +90,19 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 			t.Fatalf("DSH migration 075 is missing discovery content media ownership cutover: %s", required)
 		}
 	}
-	assertRequiredMigrationOrder(t, records, "072_store_profile_media_provenance.sql", "073_catalog_media_asset_references.sql", "074_catalog_media_provenance.sql", "075_discovery_content_media_assets.sql")
+	paymentCashSnapshotMigration := migrationByName["076_payment_cash_amount_snapshot.sql"]
+	for _, required := range []string{"ADD COLUMN payment_cash_amount_minor bigint", "SET payment_cash_amount_minor = total_amount_minor", "payment_cash_amount_minor <= total_amount_minor"} {
+		if !strings.Contains(paymentCashSnapshotMigration, required) {
+			t.Fatalf("DSH migration 076 is missing payment cash snapshot behavior: %s", required)
+		}
+	}
+	balanceOnlyHandoffMigration := migrationByName["077_balance_only_financial_handoffs.sql"]
+	for _, required := range []string{"PARTNER_CAPTAIN_BALANCE_SETTLEMENT", "effect_type='DELIVERY_SETTLEMENT' AND amount_minor>=0", "effect_type='STORE_PICKUP_COLLECTION' AND amount_minor>=0"} {
+		if !strings.Contains(balanceOnlyHandoffMigration, required) {
+			t.Fatalf("DSH migration 077 is missing balance-only settlement behavior: %s", required)
+		}
+	}
+	assertRequiredMigrationOrder(t, records, "072_store_profile_media_provenance.sql", "073_catalog_media_asset_references.sql", "074_catalog_media_provenance.sql", "075_discovery_content_media_assets.sql", "076_payment_cash_amount_snapshot.sql", "077_balance_only_financial_handoffs.sql")
 	if !strings.Contains(migrationByName["068_field_operator_partner_admission.sql"], "admission_requested") || !strings.Contains(migrationByName["068_field_operator_partner_admission.sql"], "joining_case_admission_requested") || !strings.Contains(migrationByName["068_field_operator_partner_admission.sql"], "field-admission-request") {
 		t.Fatal("DSH migration 068 is missing the Field submission and Operator admission state")
 	}

@@ -61,7 +61,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken string, input postgr
 		childInput := inputForChild(child)
 		childKey := postgres.HashMarketingFacts("multi-store-child-checkout", checkout.ID, child.ID)
 		childCorrelation := postgres.HashMarketingFacts("multi-store-child-correlation", strings.TrimSpace(correlationID), checkout.ID, child.ID)
-		order, _, checkoutErr := s.cart.Checkout(ctx, accessToken, childInput.CartID, childInput.StoreID, childInput.AddressID, childInput.FulfillmentMode, childInput.PromotionCode, childInput.CartVersion, childKey, childCorrelation)
+		order, _, checkoutErr := s.cart.Checkout(ctx, accessToken, childInput.CartID, childInput.StoreID, childInput.AddressID, childInput.FulfillmentMode, childInput.PromotionCode, 0, childInput.CartVersion, childKey, childCorrelation)
 		if checkoutErr != nil {
 			if !isDefinitiveChildCheckoutError(checkoutErr) {
 				return postgres.MultiStoreCheckoutRecord{}, false, ErrCheckoutInProgress

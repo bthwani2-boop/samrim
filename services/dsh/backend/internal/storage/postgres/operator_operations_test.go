@@ -48,7 +48,7 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 			if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commerce_carts(id,client_actor_id,store_id,state,version) VALUES($1,$2,$3,'checked_out',1)", cartID, "client_operator_ops", "store_operator_ops"); err != nil {
 				t.Fatalf("insert cart fixture %s: %v", cartID, err)
 			}
-			if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,total_amount_minor,currency,version,created_at,updated_at) VALUES($1,$2,$3,$4,$5,1,$6,15.3694457,44.1910064,$7,'CITY_SCOPE_V1','SERVICEABLE',1,1,'READY_FOR_DISPATCH',1800,'YER',1,$8,$8)`, orderID, "client_operator_ops", "store_operator_ops", cartID, "address_"+orderID, "عنوان التشغيل", "sanaa_operator_ops", updatedAt); err != nil {
+			if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,total_amount_minor,payment_cash_amount_minor,currency,version,created_at,updated_at) VALUES($1,$2,$3,$4,$5,1,$6,15.3694457,44.1910064,$7,'CITY_SCOPE_V1','SERVICEABLE',1,1,'READY_FOR_DISPATCH',1800,1800,'YER',1,$8,$8)`, orderID, "client_operator_ops", "store_operator_ops", cartID, "address_"+orderID, "عنوان التشغيل", "sanaa_operator_ops", updatedAt); err != nil {
 				t.Fatalf("insert order fixture %s: %v", orderID, err)
 			}
 		}

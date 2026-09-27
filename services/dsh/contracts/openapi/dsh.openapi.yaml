@@ -3764,6 +3764,10 @@ components:
           maxLength: 128
         fulfillmentMode:
           $ref: "#/components/schemas/FulfillmentMode"
+        internalBalanceAmountMinor:
+          type: integer
+          minimum: 0
+          description: Exact amount requested from the customer's WLT internal balance; the remaining payable is collected using the fulfillment-specific cash route.
         promotionCode:
           type: string
           maxLength: 64
@@ -4753,8 +4757,8 @@ components:
         collectedAmountMinor:
           type: integer
           format: int64
-          minimum: 1
-          description: Required for a delivered cash-on-delivery assignment; must equal the order amount.
+          minimum: 0
+          description: Cash amount received from the customer; must equal the order cash remainder and is zero when the allocated balance covers the full payable.
         deliveryProofCode:
           type: string
           pattern: '^[0-9]{6}$'
@@ -6152,7 +6156,7 @@ components:
 
     Order:
       type: object
-      required: [id, clientActorId, storeId, storeName, pickupLocation, cartId, fulfillmentMode, addressId, addressVersion, addressText, addressLatitude, addressLongitude, serviceCityId, serviceabilityPolicyVersion, serviceabilityStatus, serviceabilityStoreVersion, serviceabilityAddressVersion, state, subtotalAmountMinor, discountMinor, totalAmountMinor, currency, paymentMethod, paymentState, paymentIntentId, version, lines, createdAt, updatedAt]
+      required: [id, clientActorId, storeId, storeName, pickupLocation, cartId, fulfillmentMode, addressId, addressVersion, addressText, addressLatitude, addressLongitude, serviceCityId, serviceabilityPolicyVersion, serviceabilityStatus, serviceabilityStoreVersion, serviceabilityAddressVersion, state, subtotalAmountMinor, discountMinor, totalAmountMinor, cashAmountMinor, currency, paymentMethod, paymentState, paymentIntentId, version, lines, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -6216,6 +6220,10 @@ components:
         totalAmountMinor:
           type: integer
           minimum: 1
+        cashAmountMinor:
+          type: integer
+          minimum: 0
+          description: Cash remainder due at the selected fulfillment handoff after the allocated customer balance contribution.
         currency:
           type: string
           const: YER

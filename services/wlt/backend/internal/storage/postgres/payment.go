@@ -110,7 +110,10 @@ func CreatePaymentIntent(ctx context.Context, db *sql.DB, input CreatePaymentInt
 	if db == nil || domain.ValidateCreate(input.ExternalReference, input.PayerActorID, input.Currency, input.Method, input.AmountMinor) != nil || (input.OrderID != "" && (input.CustomerPaymentAllocation == nil || input.CustomerPaymentAllocation.OrderID != input.OrderID)) || (input.CustomerPaymentAllocation != nil && validateCustomerPaymentAllocation(*input.CustomerPaymentAllocation) != nil) || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
 		return PaymentIntentRecord{}, false, ErrInvalidInput
 	}
-	if input.CustomerPaymentAllocation != nil && (input.AmountMinor != input.CustomerPaymentAllocation.CustomerPayableMinor || (input.CustomerPaymentAllocation.FulfillmentMode == "BTHWANI_CAPTAIN" && input.Method != domain.MethodCashOnDelivery) || (input.CustomerPaymentAllocation.FulfillmentMode != "BTHWANI_CAPTAIN" && input.Method != domain.MethodCashAtStore)) {
+	if input.CustomerPaymentAllocation == nil && input.AmountMinor == 0 {
+		return PaymentIntentRecord{}, false, ErrInvalidInput
+	}
+	if input.CustomerPaymentAllocation != nil && (input.AmountMinor != input.CustomerPaymentAllocation.CashAmountMinor || (input.CustomerPaymentAllocation.FulfillmentMode == "BTHWANI_CAPTAIN" && input.Method != domain.MethodCashOnDelivery) || (input.CustomerPaymentAllocation.FulfillmentMode != "BTHWANI_CAPTAIN" && input.Method != domain.MethodCashAtStore)) {
 		return PaymentIntentRecord{}, false, ErrInvalidInput
 	}
 	requestHash := HashCreateRequest(input)
@@ -148,6 +151,19 @@ func CreatePaymentIntent(ctx context.Context, db *sql.DB, input CreatePaymentInt
 		return PaymentIntentRecord{}, false, ErrIntentExists
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return PaymentIntentRecord{}, false, err
+	}
+	if input.CustomerPaymentAllocation != nil && input.CustomerPaymentAllocation.InternalBalanceAmountMinor > 0 {
+		payerActorID := strings.TrimSpace(input.PayerActorID)
+		if err := lockCustomerWalletBalance(ctx, tx, payerActorID); err != nil {
+			return PaymentIntentRecord{}, false, err
+		}
+		wallet, err := readCustomerWalletState(ctx, tx, payerActorID)
+		if err != nil {
+			return PaymentIntentRecord{}, false, err
+		}
+		if wallet.AvailableMinor < input.CustomerPaymentAllocation.InternalBalanceAmountMinor {
+			return PaymentIntentRecord{}, false, ErrInsufficientCustomerBalance
+		}
 	}
 	intentID, err := newID("payment")
 	if err != nil {
@@ -279,14 +295,32 @@ func CollectPaymentIntent(ctx context.Context, db *sql.DB, input CollectPaymentI
 	if !domain.CanCollect(current.State) {
 		return PaymentIntentRecord{}, false, ErrStateConflict
 	}
+	allocation, allocationErr := readCustomerPaymentAllocation(ctx, tx, input.IntentID)
+	if allocationErr != nil && !errors.Is(allocationErr, ErrCustomerPaymentAllocationNotFound) {
+		return PaymentIntentRecord{}, false, allocationErr
+	}
+	if allocationErr == nil && (current.AmountMinor != allocation.CashAmountMinor || (current.AmountMinor == 0 && allocation.InternalBalanceAmountMinor != allocation.CustomerPayableMinor)) {
+		return PaymentIntentRecord{}, false, ErrCustomerPaymentAllocationInvalidInput
+	}
+	if current.AmountMinor == 0 && allocationErr != nil {
+		return PaymentIntentRecord{}, false, ErrInvalidInput
+	}
 	if err := domain.ValidateCollect(input.CollectedByActorID, input.CollectionReference, input.CollectedAmountMinor, current.AmountMinor); err != nil {
 		return PaymentIntentRecord{}, false, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE wlt.payment_intents SET state=$2,version=version+1,collected_amount_minor=$3,collected_by_actor_id=$4,collection_reference=NULLIF($5,''),collected_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1 AND version=$6`, input.IntentID, domain.StateCollected, input.CollectedAmountMinor, input.CollectedByActorID, input.CollectionReference, input.ExpectedVersion); err != nil {
+	var collector *string
+	if input.CollectedByActorID != "" {
+		collector = &input.CollectedByActorID
+	}
+	eventType := "PAYMENT_INTENT_COLLECTED"
+	if current.AmountMinor == 0 {
+		eventType = "PAYMENT_INTENT_BALANCE_SETTLED"
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE wlt.payment_intents SET state=$2,version=version+1,collected_amount_minor=$3,collected_by_actor_id=$4,collection_reference=NULLIF($5,''),collected_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1 AND version=$6`, input.IntentID, domain.StateCollected, input.CollectedAmountMinor, collector, input.CollectionReference, input.ExpectedVersion); err != nil {
 		return PaymentIntentRecord{}, false, err
 	}
 	amount := input.CollectedAmountMinor
-	if err := insertEvent(ctx, tx, input.IntentID, "PAYMENT_INTENT_COLLECTED", input.IdempotencyKey, requestHash, &input.CollectedByActorID, input.CorrelationID, current.State, domain.StateCollected, &amount, nil); err != nil {
+	if err := insertEvent(ctx, tx, input.IntentID, eventType, input.IdempotencyKey, requestHash, collector, input.CorrelationID, current.State, domain.StateCollected, &amount, nil); err != nil {
 		return PaymentIntentRecord{}, false, err
 	}
 	if err := tx.Commit(); err != nil {

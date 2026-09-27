@@ -912,16 +912,21 @@ func ReconcileManualTransfer(ctx context.Context, db *sql.DB, cipher *Destinatio
 	if matchedTransferID.Valid || (statementBatchID.Valid && statementBatchID.String != transfer.BatchID) || statementProvider != transfer.ProviderKey || statementReference != transfer.ExternalReference || statementAmount != transfer.AmountMinor || statementCurrency != transfer.Currency || statementDestination != approvedDestination {
 		return ManualTransferExecutionRecord{}, ErrTransferState
 	}
+	accountCode := walletAccountCodeForTransfer(ctx, tx, transfer.PayoutID)
+	actorType, actorID, err := payoutActor(ctx, tx, transfer.PayoutID)
+	if err != nil {
+		return ManualTransferExecutionRecord{}, err
+	}
+	if actorType == "customer" {
+		if err := lockCustomerWalletBalance(ctx, tx, actorID); err != nil {
+			return ManualTransferExecutionRecord{}, err
+		}
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_transactions(id,transaction_type,source_type,source_id,currency,idempotency_key,request_hash,correlation_id) VALUES($1,'PAYOUT_COMPLETED','MANUAL_EXTERNAL_TRANSFER',$2,$3,$4,$5,$6)`, mustNewID("ledger"), transfer.PayoutID, transfer.Currency, "payout-completion-"+transfer.PayoutID, hash, input.CorrelationID); err != nil {
 		return ManualTransferExecutionRecord{}, err
 	}
 	var ledgerID string
 	if err := tx.QueryRowContext(ctx, "SELECT id FROM wlt.ledger_transactions WHERE source_type='MANUAL_EXTERNAL_TRANSFER' AND source_id=$1", transfer.PayoutID).Scan(&ledgerID); err != nil {
-		return ManualTransferExecutionRecord{}, err
-	}
-	accountCode := walletAccountCodeForTransfer(ctx, tx, transfer.PayoutID)
-	actorType, actorID, err := payoutActor(ctx, tx, transfer.PayoutID)
-	if err != nil {
 		return ManualTransferExecutionRecord{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_entries(transaction_id,line_sequence,account_class,account_code,actor_type,actor_id,direction,amount_minor,currency) VALUES($1,1,'liability',$2,$3,$4,'DEBIT',$5,$6),($1,2,'asset','EXTERNAL_SETTLEMENT_CASH',NULL,NULL,'CREDIT',$5,$6)`, ledgerID, accountCode, actorType, actorID, transfer.AmountMinor, transfer.Currency); err != nil {

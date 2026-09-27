@@ -257,7 +257,7 @@ func (s *Service) RespondToOffer(ctx context.Context, accessToken, offerID, deci
 		return postgres.CaptainOfferResult{}, err
 	}
 	reserved := false
-	if order.FulfillmentMode == "BTHWANI_CAPTAIN" && order.PaymentIntentID != nil && strings.TrimSpace(*order.PaymentIntentID) != "" {
+	if order.FulfillmentMode == "BTHWANI_CAPTAIN" && order.PaymentCashAmountMinor > 0 && order.PaymentIntentID != nil && strings.TrimSpace(*order.PaymentIntentID) != "" {
 		_, _, reserveErr := s.payment.ReserveCaptainCOD(ctx, order.ID, *order.PaymentIntentID, identity.Subject, wlt.DerivedIdempotencyKey("captain-cod-reserve", offer.ID), correlationID)
 		if reserveErr != nil {
 			return postgres.CaptainOfferResult{}, fmt.Errorf("%w: captain COD authorization unavailable: %v", ErrPaymentUnavailable, reserveErr)
@@ -359,44 +359,17 @@ func (s *Service) Complete(ctx context.Context, accessToken, assignmentID, resul
 	submittedResult := strings.TrimSpace(result)
 	result = strings.ToLower(submittedResult)
 	deliveryProofCode = strings.TrimSpace(deliveryProofCode)
-	assignment, err := postgres.ReadCaptainAssignment(ctx, s.db, strings.TrimSpace(assignmentID))
-	if err != nil {
-		return postgres.CaptainAssignment{}, false, err
-	}
-	if assignment.CaptainActorID != identity.Subject {
-		return postgres.CaptainAssignment{}, false, postgres.ErrCaptainOfferForbidden
-	}
-	if result == "delivered" {
-		order, orderErr := postgres.ReadOrder(ctx, s.db, assignment.OrderID)
-		if orderErr != nil {
-			return postgres.CaptainAssignment{}, false, orderErr
-		}
-		if order.FulfillmentMode != postgres.FulfillmentModeBthwaniCaptain && order.FulfillmentMode != postgres.FulfillmentModePartnerCaptain {
-			return postgres.CaptainAssignment{}, false, postgres.ErrOrderStateConflict
-		}
-		if order.FulfillmentMode == postgres.FulfillmentModePartnerCaptain && order.PaymentMethod != "CASH_AT_STORE" {
-			return postgres.CaptainAssignment{}, false, postgres.ErrPaymentStateConflict
-		}
-		switch order.PaymentState {
-		case "REQUIRES_COLLECTION":
-			if order.PaymentIntentID == nil || collectedAmountMinor <= 0 || collectedAmountMinor != order.TotalAmountMinor {
-				return postgres.CaptainAssignment{}, false, ErrCollectionAmountMismatch
-			}
-		case "COLLECTED":
-			if order.FulfillmentMode == postgres.FulfillmentModePartnerCaptain || collectedAmountMinor != 0 && collectedAmountMinor != order.TotalAmountMinor {
-				return postgres.CaptainAssignment{}, false, ErrCollectionAmountMismatch
-			}
-		default:
-			return postgres.CaptainAssignment{}, false, postgres.ErrPaymentStateConflict
-		}
-	} else if result == "delivery_failed" {
-		if collectedAmountMinor != 0 {
-			return postgres.CaptainAssignment{}, false, ErrInvalidInput
-		}
-	} else {
+	if result != "delivered" && result != "delivery_failed" {
 		return postgres.CaptainAssignment{}, false, ErrInvalidInput
 	}
-	return postgres.CompleteCaptainAssignment(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject, submittedResult, collectedAmountMinor, deliveryProofCode, expectedVersion, strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID), s.proofKeys)
+	if result == "delivery_failed" && collectedAmountMinor != 0 {
+		return postgres.CaptainAssignment{}, false, ErrInvalidInput
+	}
+	assignment, replayed, err := postgres.CompleteCaptainAssignment(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject, submittedResult, collectedAmountMinor, deliveryProofCode, expectedVersion, strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID), s.proofKeys)
+	if errors.Is(err, postgres.ErrCaptainCollectedAmountMismatch) {
+		return postgres.CaptainAssignment{}, false, ErrCollectionAmountMismatch
+	}
+	return assignment, replayed, err
 }
 
 func (s *Service) Recover(ctx context.Context, assignmentID, actingActorID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.CaptainAssignment, bool, error) {

@@ -80,7 +80,11 @@ func CreatePayoutIntent(ctx context.Context, db *sql.DB, input PayoutIntentInput
 		return PayoutRequestRecord{}, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:payout:"+input.ActorType+":"+input.ActorID); err != nil {
+	if input.ActorType == "customer" {
+		if err := lockCustomerWalletBalance(ctx, tx, input.ActorID); err != nil {
+			return PayoutRequestRecord{}, false, err
+		}
+	} else if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:payout:"+input.ActorType+":"+input.ActorID); err != nil {
 		return PayoutRequestRecord{}, false, err
 	}
 	var existingID, existingHash string
@@ -108,22 +112,31 @@ func CreatePayoutIntent(ctx context.Context, db *sql.DB, input PayoutIntentInput
 	} else if err != nil {
 		return PayoutRequestRecord{}, false, err
 	}
-	accountCode := walletAccountCode(input.ActorType)
-	var grossAvailable, held int64
-	if err := tx.QueryRowContext(ctx, "SELECT COALESCE(SUM(CASE WHEN direction='CREDIT' THEN amount_minor ELSE -amount_minor END),0) FROM wlt.ledger_entries WHERE account_code=$1 AND actor_id=$2", accountCode, input.ActorID).Scan(&grossAvailable); err != nil {
-		return PayoutRequestRecord{}, false, err
-	}
-	if err := tx.QueryRowContext(ctx, "SELECT COALESCE(SUM(amount_minor),0) FROM wlt.payout_holds WHERE actor_type=$1 AND actor_id=$2 AND status='ACTIVE'", input.ActorType, input.ActorID).Scan(&held); err != nil {
-		return PayoutRequestRecord{}, false, err
-	}
-	if input.ActorType == "captain" {
-		var codHeld int64
-		if err := tx.QueryRowContext(ctx, "SELECT COALESCE(SUM(amount_minor),0) FROM wlt.captain_cod_reservations WHERE captain_actor_id=$1 AND state IN ('ACTIVE','FINALIZED')", input.ActorID).Scan(&codHeld); err != nil {
+	var eligible int64
+	if input.ActorType == "customer" {
+		wallet, err := readCustomerWalletState(ctx, tx, input.ActorID)
+		if err != nil {
 			return PayoutRequestRecord{}, false, err
 		}
-		held += codHeld
+		eligible = wallet.AvailableMinor
+	} else {
+		accountCode := walletAccountCode(input.ActorType)
+		var grossAvailable, held int64
+		if err := tx.QueryRowContext(ctx, "SELECT COALESCE(SUM(CASE WHEN direction='CREDIT' THEN amount_minor ELSE -amount_minor END),0) FROM wlt.ledger_entries WHERE account_code=$1 AND actor_id=$2", accountCode, input.ActorID).Scan(&grossAvailable); err != nil {
+			return PayoutRequestRecord{}, false, err
+		}
+		if err := tx.QueryRowContext(ctx, "SELECT COALESCE(SUM(amount_minor),0) FROM wlt.payout_holds WHERE actor_type=$1 AND actor_id=$2 AND status='ACTIVE'", input.ActorType, input.ActorID).Scan(&held); err != nil {
+			return PayoutRequestRecord{}, false, err
+		}
+		if input.ActorType == "captain" {
+			var codHeld int64
+			if err := tx.QueryRowContext(ctx, "SELECT COALESCE(SUM(amount_minor),0) FROM wlt.captain_cod_reservations WHERE captain_actor_id=$1 AND state IN ('ACTIVE','FINALIZED')", input.ActorID).Scan(&codHeld); err != nil {
+				return PayoutRequestRecord{}, false, err
+			}
+			held += codHeld
+		}
+		eligible = grossAvailable - held
 	}
-	eligible := grossAvailable - held
 	if eligible <= 0 {
 		return PayoutRequestRecord{}, false, ErrPayoutNoFunds
 	}
@@ -168,23 +181,32 @@ func ReadPayoutState(ctx context.Context, db *sql.DB, actorType, actorID string)
 		return PayoutStateRecord{}, ErrPayoutInvalidInput
 	}
 	result := PayoutStateRecord{ActorType: actorType, ActorID: actorID, Currency: "YER"}
-	accountCode := walletAccountCode(actorType)
-	var gross, held int64
-	if err := db.QueryRowContext(ctx, "SELECT COALESCE(SUM(CASE WHEN direction='CREDIT' THEN amount_minor ELSE -amount_minor END),0) FROM wlt.ledger_entries WHERE account_code=$1 AND actor_id=$2", accountCode, actorID).Scan(&gross); err != nil {
-		return PayoutStateRecord{}, err
-	}
-	if err := db.QueryRowContext(ctx, "SELECT COALESCE(SUM(amount_minor),0) FROM wlt.payout_holds WHERE actor_type=$1 AND actor_id=$2 AND status='ACTIVE'", actorType, actorID).Scan(&held); err != nil {
-		return PayoutStateRecord{}, err
-	}
-	if actorType == "captain" {
-		var codHeld int64
-		if err := db.QueryRowContext(ctx, "SELECT COALESCE(SUM(amount_minor),0) FROM wlt.captain_cod_reservations WHERE captain_actor_id=$1 AND state IN ('ACTIVE','FINALIZED')", actorID).Scan(&codHeld); err != nil {
+	if actorType == "customer" {
+		wallet, err := ReadCustomerWalletState(ctx, db, actorID)
+		if err != nil {
 			return PayoutStateRecord{}, err
 		}
-		held += codHeld
+		result.HeldMinor = wallet.HeldMinor
+		result.EligibleAvailableMinor = wallet.AvailableMinor
+	} else {
+		accountCode := walletAccountCode(actorType)
+		var gross, held int64
+		if err := db.QueryRowContext(ctx, "SELECT COALESCE(SUM(CASE WHEN direction='CREDIT' THEN amount_minor ELSE -amount_minor END),0) FROM wlt.ledger_entries WHERE account_code=$1 AND actor_id=$2", accountCode, actorID).Scan(&gross); err != nil {
+			return PayoutStateRecord{}, err
+		}
+		if err := db.QueryRowContext(ctx, "SELECT COALESCE(SUM(amount_minor),0) FROM wlt.payout_holds WHERE actor_type=$1 AND actor_id=$2 AND status='ACTIVE'", actorType, actorID).Scan(&held); err != nil {
+			return PayoutStateRecord{}, err
+		}
+		if actorType == "captain" {
+			var codHeld int64
+			if err := db.QueryRowContext(ctx, "SELECT COALESCE(SUM(amount_minor),0) FROM wlt.captain_cod_reservations WHERE captain_actor_id=$1 AND state IN ('ACTIVE','FINALIZED')", actorID).Scan(&codHeld); err != nil {
+				return PayoutStateRecord{}, err
+			}
+			held += codHeld
+		}
+		result.HeldMinor = held
+		result.EligibleAvailableMinor = gross - held
 	}
-	result.HeldMinor = held
-	result.EligibleAvailableMinor = gross - held
 	if destination, err := ReadOfficialWalletDestination(ctx, db, actorType, actorID); err == nil {
 		result.Destination = &destination
 	} else if !errors.Is(err, ErrDestinationNotFound) {

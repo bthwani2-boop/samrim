@@ -90,6 +90,13 @@ func ListFinancialStatementSummaries(ctx context.Context, db *sql.DB, actorType 
 	), hold_components AS (
 		SELECT actor_id,amount_minor FROM wlt.payout_holds WHERE actor_type=$2 AND status='ACTIVE'
 		UNION ALL
+		SELECT p.payer_actor_id,SUM(a.internal_balance_amount_minor) FROM wlt.customer_payment_allocations a
+		JOIN wlt.payment_intents p ON p.id=a.payment_intent_id
+		WHERE $2='customer' AND p.state<>'CANCELLED' AND a.internal_balance_amount_minor>0
+		AND NOT EXISTS (SELECT 1 FROM wlt.partner_order_earnings e WHERE e.order_id=a.order_id)
+		AND NOT EXISTS (SELECT 1 FROM wlt.partner_store_cash_commissions c WHERE c.order_id=a.order_id)
+		GROUP BY p.payer_actor_id
+		UNION ALL
 		SELECT captain_actor_id,SUM(amount_minor) FROM wlt.captain_cod_reservations WHERE $2='captain' AND state IN ('ACTIVE','FINALIZED') GROUP BY captain_actor_id
 	), active_holds AS (
 		SELECT actor_id,SUM(amount_minor) held_minor FROM hold_components GROUP BY actor_id

@@ -117,22 +117,26 @@ func FinalizePartnerOrderEarning(ctx context.Context, db *sql.DB, input Finalize
 		return PartnerOrderEarningRecord{}, false, err
 	}
 
-	var paymentState, currency, method string
+	var paymentState, currency, method, payerActorID string
 	var paymentAmount int64
 	err = tx.QueryRowContext(ctx, `SELECT p.state,p.amount_minor,p.currency,p.method
+		,p.payer_actor_id
 		FROM wlt.payment_intents p JOIN wlt.customer_payment_allocations a ON a.payment_intent_id=p.id
-		WHERE p.id=$1 FOR UPDATE OF p,a`, input.PaymentIntentID).Scan(&paymentState, &paymentAmount, &currency, &method)
+		WHERE p.id=$1 FOR UPDATE OF p,a`, input.PaymentIntentID).Scan(&paymentState, &paymentAmount, &currency, &method, &payerActorID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PartnerOrderEarningRecord{}, false, ErrCustomerPaymentAllocationNotFound
 	}
 	if err != nil {
 		return PartnerOrderEarningRecord{}, false, err
 	}
+	if err := lockCustomerWalletBalance(ctx, tx, payerActorID); err != nil {
+		return PartnerOrderEarningRecord{}, false, err
+	}
 	allocation, err := readCustomerPaymentAllocation(ctx, tx, input.PaymentIntentID)
 	if err != nil {
 		return PartnerOrderEarningRecord{}, false, err
 	}
-	if paymentState != domain.StateCollected || method != domain.MethodCashOnDelivery || allocation.OrderID != input.OrderID || currency != allocation.Currency || paymentAmount != allocation.CustomerPayableMinor || allocation.PartnerActorID != input.PartnerActorID || allocation.FulfillmentMode != "BTHWANI_CAPTAIN" {
+	if paymentState != domain.StateCollected || method != domain.MethodCashOnDelivery || allocation.OrderID != input.OrderID || currency != allocation.Currency || paymentAmount != allocation.CashAmountMinor || allocation.PartnerActorID != input.PartnerActorID || allocation.FulfillmentMode != "BTHWANI_CAPTAIN" {
 		return PartnerOrderEarningRecord{}, false, ErrPartnerEarningPaymentState
 	}
 	if allocation.CommissionSnapshot == nil {
@@ -168,7 +172,7 @@ func FinalizePartnerOrderEarning(ctx context.Context, db *sql.DB, input Finalize
 	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_transactions(id,transaction_type,source_type,source_id,currency,idempotency_key,request_hash,correlation_id) VALUES($1,'PARTNER_ORDER_EARNING_POSTED','ORDER_DELIVERED',$2,$3,$4,$5,$6)`, transactionID, input.OrderID, allocation.Currency, input.IdempotencyKey, requestHash, input.CorrelationID); err != nil {
 		return PartnerOrderEarningRecord{}, false, err
 	}
-	entries := []ledgerEntryInput{{"asset", "CAPTAIN_CASH_RECEIVABLE", "DEBIT", allocation.CashAmountMinor}, {"asset", "CUSTOMER_PAYMENT_CLEARING", "DEBIT", allocation.CustomerPayableMinor - allocation.CashAmountMinor}, {"liability", "PARTNER_WALLET", "CREDIT", partnerNet - receivableOffset}, {"asset", "PARTNER_COMMISSION_RECEIVABLE", "CREDIT", receivableOffset}, {"income", "PLATFORM_COMMISSION_INCOME", "CREDIT", commission}, {"liability", "CAPTAIN_WALLET", "CREDIT", allocation.DeliveryFeeMinor}}
+	entries := []ledgerEntryInput{{"asset", "CAPTAIN_CASH_RECEIVABLE", "DEBIT", allocation.CashAmountMinor}, {"liability", "CUSTOMER_WALLET", "DEBIT", allocation.InternalBalanceAmountMinor}, {"liability", "PARTNER_WALLET", "CREDIT", partnerNet - receivableOffset}, {"asset", "PARTNER_COMMISSION_RECEIVABLE", "CREDIT", receivableOffset}, {"income", "PLATFORM_COMMISSION_INCOME", "CREDIT", commission}, {"liability", "CAPTAIN_WALLET", "CREDIT", allocation.DeliveryFeeMinor}}
 	debitTotal, creditTotal := int64(0), int64(0)
 	sequence := 1
 	for _, entry := range entries {
@@ -176,6 +180,9 @@ func FinalizePartnerOrderEarning(ctx context.Context, db *sql.DB, input Finalize
 			continue
 		}
 		var actorType, actorID *string
+		if entry.accountCode == "CUSTOMER_WALLET" {
+			actorType, actorID = stringPtr("customer"), &payerActorID
+		}
 		if entry.accountCode == "PARTNER_WALLET" || entry.accountCode == "PARTNER_COMMISSION_RECEIVABLE" {
 			actorType, actorID = stringPtr("partner"), &input.PartnerActorID
 		}

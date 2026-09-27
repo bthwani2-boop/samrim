@@ -22,7 +22,7 @@ var (
 )
 
 func ValidateCreate(externalReference, payerActorID, currency, method string, amountMinor int64) error {
-	if bounded(externalReference, 1, 128) == "" || bounded(payerActorID, 1, 128) == "" || amountMinor <= 0 {
+	if bounded(externalReference, 1, 128) == "" || bounded(payerActorID, 1, 128) == "" || amountMinor < 0 {
 		return ErrInvalidInput
 	}
 	if strings.TrimSpace(currency) != CurrencyYER || (strings.TrimSpace(method) != MethodCashOnDelivery && strings.TrimSpace(method) != MethodCashAtStore) {
@@ -32,7 +32,7 @@ func ValidateCreate(externalReference, payerActorID, currency, method string, am
 }
 
 func ValidateCollect(collectedByActorID, collectionReference string, collectedAmountMinor, expectedAmountMinor int64) error {
-	if bounded(collectedByActorID, 1, 128) == "" || collectedAmountMinor <= 0 || expectedAmountMinor <= 0 {
+	if collectedAmountMinor < 0 || expectedAmountMinor < 0 {
 		return ErrInvalidInput
 	}
 	if strings.TrimSpace(collectionReference) != "" && len(strings.TrimSpace(collectionReference)) > 128 {
@@ -40,6 +40,15 @@ func ValidateCollect(collectedByActorID, collectionReference string, collectedAm
 	}
 	if collectedAmountMinor != expectedAmountMinor {
 		return ErrAmountMismatch
+	}
+	if collectedAmountMinor == 0 {
+		if strings.TrimSpace(collectedByActorID) != "" || strings.TrimSpace(collectionReference) != "" {
+			return ErrInvalidInput
+		}
+		return nil
+	}
+	if bounded(collectedByActorID, 1, 128) == "" {
+		return ErrInvalidInput
 	}
 	return nil
 }

@@ -1647,6 +1647,8 @@ func writePaymentError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "payment input is invalid")
 	case errors.Is(err, postgres.ErrCustomerPaymentAllocationInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_PAYMENT_ALLOCATION", "payment allocation is invalid")
+	case errors.Is(err, postgres.ErrInsufficientCustomerBalance):
+		writeError(w, http.StatusConflict, "INSUFFICIENT_CUSTOMER_BALANCE", "available customer balance does not cover the requested contribution")
 	case errors.Is(err, postgres.ErrPartnerStoreCommissionPolicyUnavailable):
 		writeError(w, http.StatusConflict, "COMMISSION_POLICY_UNAVAILABLE", "the Store does not have an initialized commission policy for this fulfillment mode")
 	default:

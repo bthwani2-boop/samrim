@@ -900,17 +900,41 @@ func (c *Client) EnsureCollected(ctx context.Context, intentID, collectedByActor
 	if err != nil {
 		return PaymentIntent{}, err
 	}
-	if current.AmountMinor != amountMinor {
-		return PaymentIntent{}, &Error{Status: http.StatusConflict, Code: "AMOUNT_MISMATCH", Message: "WLT amount does not match the DSH order total"}
+	if current.CustomerPaymentAllocation == nil || current.CustomerPaymentAllocation.CustomerPayableMinor != amountMinor || current.CustomerPaymentAllocation.CashAmountMinor != current.AmountMinor {
+		return PaymentIntent{}, &Error{Status: http.StatusConflict, Code: "AMOUNT_MISMATCH", Message: "WLT allocation does not match the DSH order payable and cash remainder"}
+	}
+	cashAmountMinor := current.CustomerPaymentAllocation.CashAmountMinor
+	collector := strings.TrimSpace(collectedByActorID)
+	if cashAmountMinor == 0 {
+		collector = ""
+	}
+	collectionReferenceValue := strings.TrimSpace(collectionReference)
+	if cashAmountMinor == 0 {
+		collectionReferenceValue = ""
+	}
+	validCollected := func(item PaymentIntent) bool {
+		if item.State != stateCollected || item.CollectedAmountMinor == nil || *item.CollectedAmountMinor != cashAmountMinor {
+			return false
+		}
+		if cashAmountMinor == 0 {
+			return item.CollectedByActorID == nil || strings.TrimSpace(*item.CollectedByActorID) == ""
+		}
+		return item.CollectedByActorID != nil && strings.TrimSpace(*item.CollectedByActorID) == collector
 	}
 	if current.State == stateCollected {
+		if !validCollected(current) {
+			return PaymentIntent{}, &Error{Status: http.StatusConflict, Code: "AMOUNT_MISMATCH", Message: "collected WLT state does not match the allocated cash source"}
+		}
 		return current, nil
 	}
 	if current.State != stateRequiresCollect {
 		return PaymentIntent{}, &Error{Status: http.StatusConflict, Code: "STATE_CONFLICT", Message: "WLT payment intent is not collectable"}
 	}
-	collected, _, collectErr := c.Collect(ctx, intentID, collectedByActorID, collectionReference, amountMinor, current.Version, idempotencyKey, correlationID)
+	collected, _, collectErr := c.Collect(ctx, intentID, collector, collectionReferenceValue, cashAmountMinor, current.Version, idempotencyKey, correlationID)
 	if collectErr == nil {
+		if !validCollected(collected) {
+			return PaymentIntent{}, &Error{Status: http.StatusConflict, Code: "AMOUNT_MISMATCH", Message: "WLT collection response does not match the allocated cash source"}
+		}
 		return collected, nil
 	}
 	var wltErr *Error
@@ -921,7 +945,7 @@ func (c *Client) EnsureCollected(ctx context.Context, intentID, collectedByActor
 	if readErr != nil {
 		return PaymentIntent{}, readErr
 	}
-	if current.State == stateCollected && current.AmountMinor == amountMinor {
+	if validCollected(current) {
 		return current, nil
 	}
 	return PaymentIntent{}, collectErr

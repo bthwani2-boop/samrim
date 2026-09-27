@@ -672,13 +672,13 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.completeCaptainPickup.path.replace("{assignmentId}", encodeURIComponent(normalized));
       return userRequest<CaptainAssignmentResponse>(accessToken, path, dshOperationPaths.completeCaptainPickup.method, undefined, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
     },
-    async completeCaptainAssignment(accessToken: string, assignmentID: string, input: CaptainCompletionRequest, expectedVersion: number): Promise<CaptainAssignmentResponse> {
+    async completeCaptainAssignment(accessToken: string, assignmentID: string, input: CaptainCompletionRequest, expectedVersion: number, idempotencyKey?: string, correlationID?: string): Promise<CaptainAssignmentResponse> {
       const normalized = assignmentID.trim();
       if (!normalized || expectedVersion < 1 || !input.result) throw new Error("DSH_CAPTAIN_ASSIGNMENT_INPUT_INVALID");
       if (input.result === "delivered" && !/^[0-9]{6}$/.test(input.deliveryProofCode?.trim() ?? "")) throw new Error("DSH_DELIVERY_PROOF_REQUIRED");
       if (input.result === "delivery_failed" && input.deliveryProofCode?.trim()) throw new Error("DSH_DELIVERY_PROOF_NOT_ALLOWED");
       const path = dshOperationPaths.completeCaptainAssignment.path.replace("{assignmentId}", encodeURIComponent(normalized));
-      return userRequest<CaptainAssignmentResponse>(accessToken, path, dshOperationPaths.completeCaptainAssignment.method, { ...input, ...(input.deliveryProofCode === undefined ? {} : { deliveryProofCode: input.deliveryProofCode.trim() }) }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+      return userRequest<CaptainAssignmentResponse>(accessToken, path, dshOperationPaths.completeCaptainAssignment.method, { ...input, ...(input.deliveryProofCode === undefined ? {} : { deliveryProofCode: input.deliveryProofCode.trim() }) }, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) });
     },
     async readOwnFieldAdmission(accessToken: string): Promise<FieldAdmissionResponse> {
       return userRequest<FieldAdmissionResponse>(accessToken, dshOperationPaths.readOwnFieldAdmission.path, dshOperationPaths.readOwnFieldAdmission.method);

@@ -35,6 +35,16 @@ func TestCustomerPaymentAllocationRequiresCanonicalStoreModeFacts(t *testing.T) 
 			if err := validateCustomerPaymentAllocation(allocation); err != nil {
 				t.Fatalf("valid store-collected allocation rejected: %v", err)
 			}
+			allocation.InternalBalanceAmountMinor = 1200
+			allocation.CashAmountMinor = 3000
+			if err := validateCustomerPaymentAllocation(allocation); err != nil {
+				t.Fatalf("mixed balance and cash allocation rejected: %v", err)
+			}
+			allocation.CashAmountMinor = 0
+			allocation.InternalBalanceAmountMinor = allocation.CustomerPayableMinor
+			if err := validateCustomerPaymentAllocation(allocation); err != nil {
+				t.Fatalf("balance-only allocation rejected: %v", err)
+			}
 			allocation.DeliveryFeeMinor = 50
 			if validateCustomerPaymentAllocation(allocation) != ErrCustomerPaymentAllocationInvalidInput {
 				t.Fatal("store fulfillment accepted a delivery fee")

@@ -378,7 +378,7 @@ func AcceptCustomerWithdrawal(ctx context.Context, db *sql.DB, input CustomerWit
 	if status != "DESTINATION_PENDING" {
 		return PayoutRequestRecord{}, ErrCustomerWithdrawalState
 	}
-	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:payout:customer:"+customerID); err != nil {
+	if err := lockCustomerWalletBalance(ctx, tx, customerID); err != nil {
 		return PayoutRequestRecord{}, err
 	}
 	var destinationVersion, identityVersion int
@@ -389,14 +389,11 @@ func AcceptCustomerWithdrawal(ctx context.Context, db *sql.DB, input CustomerWit
 	if verificationStatus != "VERIFIED" || destinationStatus != "ACTIVE_FOR_PAYOUT" || identityVersion < 1 {
 		return PayoutRequestRecord{}, ErrPayoutDestination
 	}
-	var available, held int64
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(CASE WHEN direction='CREDIT' THEN amount_minor ELSE -amount_minor END),0) FROM wlt.ledger_entries WHERE account_code='CUSTOMER_WALLET' AND actor_type='customer' AND actor_id=$1`, customerID).Scan(&available); err != nil {
+	wallet, err := readCustomerWalletState(ctx, tx, customerID)
+	if err != nil {
 		return PayoutRequestRecord{}, err
 	}
-	if err := tx.QueryRowContext(ctx, "SELECT COALESCE(SUM(amount_minor),0) FROM wlt.payout_holds WHERE actor_type='customer' AND actor_id=$1 AND status='ACTIVE'", customerID).Scan(&held); err != nil {
-		return PayoutRequestRecord{}, err
-	}
-	available -= held
+	available := wallet.AvailableMinor
 	if available <= 0 {
 		return PayoutRequestRecord{}, ErrCustomerWithdrawalFunds
 	}

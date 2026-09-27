@@ -171,7 +171,7 @@ func (s *CartServer) checkout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cartId, storeId, addressId and fulfillmentMode are required")
 		return
 	}
-	result, replayed, err := s.service.Checkout(r.Context(), bearerToken(r), input.CartID, input.StoreID, input.AddressID, string(input.FulfillmentMode), input.PromotionCode, expected, idempotency, correlation)
+	result, replayed, err := s.service.Checkout(r.Context(), bearerToken(r), input.CartID, input.StoreID, input.AddressID, string(input.FulfillmentMode), input.PromotionCode, int64(input.InternalBalanceAmountMinor), expected, idempotency, correlation)
 	if err != nil {
 		writeCartError(w, err)
 		return
@@ -264,6 +264,10 @@ func writeCartError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "PROMOTION_UNAVAILABLE", "promotion is not currently eligible")
 	case errors.Is(err, postgres.ErrCheckoutPaymentReconciled):
 		writeError(w, http.StatusConflict, "CHECKOUT_PAYMENT_RECONCILED", "the previous payment was safely cancelled; refresh the cart and start a new checkout")
+	case errors.Is(err, cart.ErrInsufficientCustomerBalance):
+		writeError(w, http.StatusConflict, "INSUFFICIENT_CUSTOMER_BALANCE", "available customer balance does not cover the requested contribution; no order was created")
+	case errors.Is(err, cart.ErrCheckoutBalanceContribution):
+		writeError(w, http.StatusBadRequest, "INVALID_PAYMENT_ALLOCATION", "internal balance contribution must be between zero and the current payable amount")
 	case errors.Is(err, postgres.ErrPaymentProvisioning):
 		writeError(w, http.StatusBadGateway, "WLT_PAYMENT_UNAVAILABLE", "the payment service is temporarily unavailable; the order was not created")
 	case errors.Is(err, postgres.ErrDeliveryFeeUnavailable):

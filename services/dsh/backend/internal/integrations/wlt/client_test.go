@@ -83,7 +83,7 @@ func TestEnsureCollectedCollectsExactAmount(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		response.Header().Set("Content-Type", "application/json")
 		if request.Method == http.MethodGet {
-			_, _ = response.Write([]byte(`{"paymentIntent":{"id":"pi-1","state":"REQUIRES_COLLECTION","amountMinor":1500,"currency":"YER","method":"CASH_ON_DELIVERY","version":1}}`))
+			_, _ = response.Write([]byte(`{"paymentIntent":{"id":"pi-1","state":"REQUIRES_COLLECTION","amountMinor":300,"currency":"YER","method":"CASH_ON_DELIVERY","version":1,"customerPaymentAllocation":{"orderId":"order-1","cashAmountMinor":300,"internalBalanceAmountMinor":1200,"customerPayableMinor":1500}}}`))
 			return
 		}
 		if request.Method != http.MethodPost || request.URL.Path != "/wlt/v1/payment-intents/pi-1/collect" {
@@ -92,7 +92,17 @@ func TestEnsureCollectedCollectsExactAmount(t *testing.T) {
 		if request.Header.Get("X-Expected-Version") != "1" {
 			t.Fatalf("expected version = %q", request.Header.Get("X-Expected-Version"))
 		}
-		_, _ = response.Write([]byte(`{"paymentIntent":{"id":"pi-1","state":"COLLECTED","amountMinor":1500,"currency":"YER","method":"CASH_ON_DELIVERY","version":2}}`))
+		var body struct {
+			CollectedAmountMinor int64  `json:"collectedAmountMinor"`
+			CollectedByActorID   string `json:"collectedByActorId"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.CollectedAmountMinor != 300 || body.CollectedByActorID != "captain-1" {
+			t.Fatalf("collection body = %#v", body)
+		}
+		_, _ = response.Write([]byte(`{"paymentIntent":{"id":"pi-1","state":"COLLECTED","amountMinor":300,"currency":"YER","method":"CASH_ON_DELIVERY","version":2,"collectedAmountMinor":300,"collectedByActorId":"captain-1","customerPaymentAllocation":{"orderId":"order-1","cashAmountMinor":300,"internalBalanceAmountMinor":1200,"customerPayableMinor":1500}}}`))
 	}))
 	defer server.Close()
 
@@ -104,7 +114,44 @@ func TestEnsureCollectedCollectsExactAmount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if intent.State != stateCollected || intent.AmountMinor != 1500 {
+	if intent.State != stateCollected || intent.AmountMinor != 300 {
 		t.Fatalf("unexpected collected intent: %#v", intent)
+	}
+}
+
+func TestEnsureCollectedSettlesFullBalanceWithoutCashActor(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		if request.Method == http.MethodGet {
+			_, _ = response.Write([]byte(`{"paymentIntent":{"id":"pi-2","state":"REQUIRES_COLLECTION","amountMinor":0,"currency":"YER","method":"CASH_AT_STORE","version":1,"customerPaymentAllocation":{"orderId":"order-2","cashAmountMinor":0,"internalBalanceAmountMinor":900,"customerPayableMinor":900}}}`))
+			return
+		}
+		if request.Method != http.MethodPost || request.URL.Path != "/wlt/v1/payment-intents/pi-2/collect" {
+			t.Fatalf("unexpected balance settlement request: %s %s", request.Method, request.URL.Path)
+		}
+		var body struct {
+			CollectedAmountMinor int64  `json:"collectedAmountMinor"`
+			CollectedByActorID   string `json:"collectedByActorId"`
+			CollectionReference  string `json:"collectionReference"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.CollectedAmountMinor != 0 || body.CollectedByActorID != "" || body.CollectionReference != "" {
+			t.Fatalf("zero-cash settlement body = %#v", body)
+		}
+		_, _ = response.Write([]byte(`{"paymentIntent":{"id":"pi-2","state":"COLLECTED","amountMinor":0,"currency":"YER","method":"CASH_AT_STORE","version":2,"collectedAmountMinor":0,"customerPaymentAllocation":{"orderId":"order-2","cashAmountMinor":0,"internalBalanceAmountMinor":900,"customerPayableMinor":900}}}`))
+	}))
+	defer server.Close()
+	client, err := New(server.URL, "development", "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent, err := client.EnsureCollected(t.Context(), "pi-2", "partner-1", "cash-reference", 900, "balance-settle-key", "balance-settle-corr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if intent.State != stateCollected || intent.CollectedByActorID != nil || intent.CollectedAmountMinor == nil || *intent.CollectedAmountMinor != 0 {
+		t.Fatalf("unexpected balance-settled intent: %#v", intent)
 	}
 }
