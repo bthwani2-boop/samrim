@@ -28,6 +28,28 @@ One material meaning has one semantic owner; one mutable fact has one canonical 
 
 For every plausibly material quality dimension, resolve it as affected, proven unaffected, or not applicable with reason using the pinned Quality taxonomy. Do not silently omit a plausibly material dimension or apply a lower correctness standard because another layer is the visible focus.
 
+### Material closure contract
+
+Before the first material write, derive the smallest claim-specific closure contract that can falsify completion:
+
+AUTHORIZED OUTCOME
+× MATERIAL INVARIANTS
+× CANONICAL OWNER / WRITER / READBACK
+× AFFECTED SURFACES / LAYERS
+× REQUIRED FAILURE / NEGATIVE CASES
+× REQUIRED PROOF
+× FORBIDDEN RESIDUE
+
+This is a reasoning obligation, not a new persisted checklist or registry. Do not begin material implementation while a `DECISION_CRITICAL_UNKNOWN` can still change owner, boundary, migration, safety, solution or required proof.
+
+### Strongest enforcement owner
+
+Every deterministic invariant belongs at the strongest canonical boundary that can reliably prevent its violation. Database-enforceable persistent truth belongs in constraints/transactions; authorization at the canonical service owner; API/event shape at the executable contract/runtime boundary; repository invariants in deterministic verifiers. UI/client validation assists UX but never substitutes for stronger available enforcement. Do not duplicate the same invariant as competing authorities.
+
+### Independent proof oracle
+
+A material proof must not derive its expected truth solely from the same decision logic or implementation path under test when that reuse could reproduce the same defect. Prefer the applicable contract, invariant, canonical readback, independently derived expectation or normative rule. Shared setup/transport helpers are acceptable only when they do not decide the claim being proved.
+
 ### Program progression
 
 When explicit user authority permits continued Product/Core development, derive the active delivery gate from current user authority, pinned Governance and exact implementation truth. Do not hard-code a journey inventory, feature backlog or implementation sequence into this file.
