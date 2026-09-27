@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { listCatalogCategories, listCatalogProducts, listCatalogVerticals, listMarketingPromotions, listOperatorStores, dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../src/server/dsh/dsh-bff";
+import { listCatalogCategories, listCatalogProductRegistry, listCatalogVerticals, listMarketingPromotions, listOperatorStores, dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../../src/server/identity/operator-workspace-access";
 
@@ -46,8 +46,8 @@ export async function GET(request: Request) {
       nextCursor = result.nextCursor ?? "";
     } else if (targetType === "PRODUCT") {
       if (query.length < 2) return NextResponse.json({ options, nextCursor }, { headers: { "Cache-Control": "no-store" } });
-      const result = await listCatalogProducts(query, "", cursor, context);
-      options = result.products.filter((product) => product.active).map((product) => targetOption(product.id, product.canonicalName, product.brand));
+      const result = await listCatalogProductRegistry({ query, verticalId: "", categoryId: "", active: "active", sort: "name_asc", cursor }, context);
+      options = result.products.map((product) => targetOption(product.id, product.canonicalName, product.brand));
       nextCursor = result.nextCursor ?? "";
     } else if (targetType === "CATEGORY") {
       if (!verticalId) return errorResponse("INVALID_INPUT", "choose a commerce vertical to select a Category", 400);
