@@ -112,7 +112,7 @@ var identitySchemaConstraints = []schemaConstraint{
 	{table: "identity_operator_profiles", name: "identity_operator_profiles_reviewed_by_actor_id_fkey", definition: "FOREIGN KEY (reviewed_by_actor_id) REFERENCES identity_actors(id) ON DELETE RESTRICT", critical: true},
 	{table: "identity_operator_profiles", name: "identity_operator_profiles_actor_id_fkey", definition: "FOREIGN KEY (actor_id) REFERENCES identity_actors(id) ON DELETE RESTRICT", critical: true},
 	{table: "identity_operator_profiles", name: "identity_operator_profiles_name_chk", definition: "CHECK (((length(btrim(full_name_ar)) >= 2) AND (length(btrim(full_name_ar)) <= 120)))", critical: true},
-	{table: "identity_operator_profiles", name: "identity_operator_profiles_phone_chk", definition: `CHECK (((phone_e164 IS NULL) OR ((phone_e164)::text ~ '^\\+[1-9][0-9]{7,14}$'::text)))`, critical: true},
+	{table: "identity_operator_profiles", name: "identity_operator_profiles_phone_chk", definition: `CHECK (((phone_e164 IS NULL) OR (phone_e164 ~ '^\+[1-9][0-9]{7,14}$'::text)))`, critical: true},
 	{table: "identity_operator_profiles", name: "identity_operator_profiles_state_chk", definition: "CHECK ((state = ANY (ARRAY['pending_review'::text, 'approved'::text, 'admitted'::text])))", critical: true},
 	{table: "identity_operator_profiles", name: "identity_operator_profiles_version_chk", definition: "CHECK ((version > 0))", critical: true},
 	{table: "identity_operator_profiles", name: "identity_operator_profiles_review_chk", definition: "CHECK ((((state = 'pending_review'::text) AND (reviewed_by_actor_id IS NULL) AND (reviewed_at IS NULL)) OR ((state = ANY (ARRAY['approved'::text, 'admitted'::text])) AND (reviewed_by_actor_id IS NOT NULL) AND (reviewed_at IS NOT NULL))))", critical: true},

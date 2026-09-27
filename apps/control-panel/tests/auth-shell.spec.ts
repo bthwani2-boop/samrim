@@ -203,28 +203,26 @@ test("authenticated operator discovers the platform centers through workspace na
   await expect(page.getByRole("heading", { name: "ملفات المشغّلين والوصول والصلاحيات" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "إنشاء ملف مشغّل" })).toBeVisible();
   await expect(page.getByLabel("اسم العرض الكامل بالعربية")).toBeVisible();
+  await expect(page.locator("#workspace-main")).toBeFocused();
   await page.getByRole("button", { name: "الوصول والصلاحيات", exact: true }).click();
   await expect(page.getByRole("heading", { name: "قائمة المشغّلين وصلاحياتهم" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "إدارة حسابات مشغّلي لوحة التحكم" })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-  await expect(page.locator("#workspace-main")).toBeFocused();
+  await expect(page.getByRole("button", { name: "الوصول والصلاحيات", exact: true })).toBeFocused();
 
   await page.reload();
   await expect(page.getByRole("heading", { name: "ملفات المشغّلين والوصول والصلاحيات" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "إنشاء ملف مشغّل" })).toBeVisible();
 });
 
-test("operator without profile-administration authority cannot open the operator files tab", async ({ page }) => {
+test("operator without operator-administration authority cannot open access or profile controls", async ({ page }) => {
   await stubAuthenticatedSession(page);
-  await page.route("**/api/access/operators**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 10, nextCursor: "" }) });
-  });
   await page.goto("/access");
 
-  await expect(page.getByRole("heading", { name: "ملفات المشغّلين والوصول والصلاحيات" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "ملفات المشغّلين", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "الوصول والصلاحيات", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByRole("heading", { name: "إنشاء ملف مشغّل" })).toHaveCount(0);
+  await expect(page.getByRole("status")).toContainText("الوصول إلى هذه المساحة غير مفعّل");
+  await expect(page.getByRole("heading", { name: "ملفات المشغّلين والوصول والصلاحيات" })).toHaveCount(0);
+  await expect(page.getByLabel("اسم العرض الكامل بالعربية")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "قائمة المشغّلين وصلاحياتهم" })).toHaveCount(0);
 });
 
 test("operator home reads only work queues covered by the current session permissions", async ({ page }) => {
@@ -567,6 +565,7 @@ test("operator access keeps phone discovery separate from actorId mutation", asy
     await route.fulfill({ status: 204 });
   });
   await page.goto("/access");
+  await page.getByRole("button", { name: "الوصول والصلاحيات", exact: true }).click();
   await page.getByRole("button", { name: "إدارة الحساب" }).click();
   await expect(page.getByLabel("رقم هاتف المشغّل")).toHaveValue("+96777000102");
   await expect(page.getByText("act_operator_canonical")).toHaveCount(0);
