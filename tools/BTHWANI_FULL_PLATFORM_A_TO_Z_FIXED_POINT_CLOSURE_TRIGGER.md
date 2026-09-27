@@ -91,9 +91,9 @@ Local screenshots under the ignored competitor `local-photos/` tree remain machi
 
 External evidence may challenge a decision; it never becomes BThwani Product/System authority by existence.
 
-## No tracked closure matrix
+## Retained task-closure matrix
 
-Do not maintain a second tracked Product/journey inventory or permanent closure matrix for this objective.
+Retain the existing `tools/BTHWANI_FULL_PLATFORM_CLOSURE_MATRIX.md` at the user's direction. It is task-closure evidence only: it grants no semantic, execution, or implementation authority and is not a substitute for exact live owners or current proof. Re-pin current refs and revalidate each relevant row before relying on it; update it only with evidence tied to the exact candidate. Do not create another parallel inventory or matrix.
 
 Use the pinned `QUALITY.md` material-closure model as live reasoning:
 
@@ -116,7 +116,7 @@ Stop only for a real blocker defined by the live `AGENTS.md`, including an unres
 
 Do not merge to `main`, release, stage, deploy to Production, submit stores or perform another external consequential promotion without separate explicit authority.
 
-At objective closure, delete this task trigger and any remaining task-only tracked evidence. Git retains the history.
+At objective closure, delete this temporary task trigger. Retain `tools/BTHWANI_FULL_PLATFORM_CLOSURE_MATRIX.md` as the user-directed historical task evidence; do not represent it as a live implementation census after the objective closes.
 
 ## Final task contract
 
