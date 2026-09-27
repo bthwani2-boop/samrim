@@ -83,7 +83,7 @@ Do not mark an area `CURRENT` if only its visual layer was observed while materi
 - Installed on `SM-S9280`; package readback reports version `1.2.0` / versionCode `10236`.
 - Home presents a purple branded shell, a location selector, help/how-to entry, `انفعني` service promotion, a rewards sign-up prompt and image-led categories for supermarket, restaurants, sweets/cafes, shops, produce, meat/chicken and pharmacy.
 - Bottom navigation exposes Account, Orders, Cart, Search and Home.
-- Restaurant listing exposes category, nearest, new, favorites and all filters, promotional carousel and a list/grid choice. Rows show rating, address, distance, estimated time and a percentage badge.
+- Restaurant listing exposes category, nearest, new, favorites and all filters, promotional carousel and a list/grid choice. Rows show rating, address, distance, estimated time and a percentage badge. A live read of two visible Sana'a cards found no fulfillment-mode label.
 - Restaurant detail exposes rating, distance and time, order history/favorites/hours links, menu categories, minimum order and cashback copy, item search, and a product list/grid toggle.
 - Product detail shows product options/title, optional preparation notes, total, quantity and Add to Cart action. The dialog opened with a default quantity; Add to Cart was not pressed.
 - Bottom-tab Search has separate Restaurants and Item tabs. Searching `chicken` displayed restaurant matches with rating, distance, time and offer metadata; Item mode displayed chicken products with prices.
@@ -167,3 +167,4 @@ Do not mark an area `CURRENT` if only its visual layer was observed while materi
 - Added local-only links to the new screenshots; no cart/order/account mutation was made.
 ### 2026-09-27 — Delivery-type selector delta
 - Reopened the installed versionCode `10236` and inspected the blank `انفعني` type selector. It lists six delivery-service categories; none was selected, and no location, request or order was changed.
+- Read two visible restaurant discovery cards on the same installed version; neither showed a restaurant-order fulfillment-mode label. The `انفعني` selector remains a separate point-to-point service category choice. No cart, account, request or order state was changed.

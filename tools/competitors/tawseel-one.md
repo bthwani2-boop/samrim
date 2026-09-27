@@ -48,7 +48,7 @@ Allowed statuses: `NOT_REVIEWED`, `CURRENT`, `STALE`, `PARTIAL`, `N/A`. Do not m
 
 ## Current verified state
 - The four persistent destinations are Home, Orders, Subscriptions and Account. The home header includes search, notifications and contact entry points.
-- Home shows working-hours/open status, promotional banners, category tiles, offer filters (`All`, `Closest`, `New`, `Favorites`) and store cards with visible status, distance/category/benefit badges and favorite controls. The Favorites view was observed empty after the review cleanup.
+- Home shows working-hours/open status, promotional banners, category tiles, offer filters (`All`, `Closest`, `New`, `Favorites`) and store cards with visible status, distance/category/benefit badges and favorite controls. A live read of the visible Sana'a listing found one card with an `استلم بنفسك` badge in its badge row; this establishes pickup disclosure on that sampled card only. A second visible card had no fulfillment label in its accessible summary. The Favorites view was observed empty after the earlier review cleanup.
 - The category grid contained 21 visible groups. Restaurants, Pro, global shops, pickup and `وصل لي` were opened. The remaining groups (spices/nuts, sweets/juice/pastries, fruit/vegetables, honey/dates/nuts, supermarkets, chicken/meat/fish, fastest restaurants, home projects, perfume/beauty, accessories, cleaning, pharmacies, antiques/gifts/home goods, stationery/bookstores, online shops and clothes) were not individually reviewed.
 - Pro filtering exposed an offer and a `Subscribe now` action. Global shops showed SHEIN and a manual/custom order entry route. The custom-order submission and product-add action were not used.
 - The offers list exposed restaurant promotions. One promotion opened branch choices; a branch menu showed discounted and original prices. No offer purchase was made.
@@ -175,3 +175,7 @@ All 46 PNG captures below are under `local-photos/tawseel-one/`. That folder's `
 - Added local links for all 46 screenshots and marked screenshot storage as ignored/local-only.
 - Corrected earlier incomplete wording: a temporary cart item and favorite were exercised then removed; checkout was viewed without submitting an order. The observed cart returned empty and Favorites returned empty after cleanup.
 - Kept review confidence `PARTIAL`: substantial controls remain deliberately untested because they involve payment, personal data, destructive changes or external actions; offline/recovery, accessibility and performance were not measured.
+
+### 2026-09-27 — Store-card fulfillment disclosure delta
+- Rechecked the installed `2.0.63` app (`versionCode 263`) on `SM-S9280` with the current Sana'a location. One visible restaurant card exposed `استلم بنفسك`; a neighboring visible card did not expose a fulfillment label in its accessible summary. No account, address, cart, favorite or order state was changed.
+- This is a single-listing observation and does not prove all store cards expose every supported mode.

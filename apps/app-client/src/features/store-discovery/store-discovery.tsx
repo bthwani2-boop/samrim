@@ -1,6 +1,6 @@
 import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type CatalogCategory, type CatalogStoreOffer, type DeliveryAddress, type DiscoveryContentView, formatMoney, type PromotionView, type PublicStoreView } from "@bthwani/dsh";
+import { availableCustomerFulfillmentModes, type CatalogCategory, type CatalogStoreOffer, type DeliveryAddress, type DiscoveryContentView, formatMoney, fulfillmentModeLabel, type PromotionView, type PublicStoreView } from "@bthwani/dsh";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, I18nManager, Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
@@ -415,9 +415,18 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       </View>}
       renderItem={({ item: store }) => {
         const isFavorite = state.kind === "ready" && state.favoriteStoreIDs.includes(store.id);
-        return <Pressable accessibilityRole="button" accessibilityLabel={`فتح متجر ${store.name}`} onPress={() => router.push(`/store/${encodeURIComponent(store.id)}` as Href)} style={({ pressed }) => [styles.storeCard, pressed && styles.pressed]}>
+        const fulfillmentModes = availableCustomerFulfillmentModes(store.fulfillmentModes);
+        const fulfillmentModeLabels = fulfillmentModes.map(fulfillmentModeLabel);
+        const modeSummary = fulfillmentModeLabels.length ? `، طرق الطلب المتاحة: ${fulfillmentModeLabels.join("، ")}` : "";
+        return <Pressable accessibilityRole="button" accessibilityLabel={`فتح متجر ${store.name}${modeSummary}`} onPress={() => router.push(`/store/${encodeURIComponent(store.id)}` as Href)} style={({ pressed }) => [styles.storeCard, pressed && styles.pressed]}>
           {store.storeProfileImage?.uri ? <Image accessibilityLabel={`صورة متجر ${store.name}`} source={{ uri: store.storeProfileImage.uri }} style={styles.storeImage} resizeMode="cover" /> : <View style={styles.storeIcon}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>}
-          <View style={styles.storeCopy}><Text style={styles.storeTitle} numberOfLines={2}>{store.name}</Text><Text style={styles.storeMeta}>{typeof store.distanceMeters === "number" ? `${(store.distanceMeters / 1000).toFixed(2)} كم` : selectedCityName || "مدينة الخدمة"}</Text><Text style={styles.storeRating}>{store.ratingCount > 0 ? `★ ${store.ratingAverage.toFixed(1)} (${store.ratingCount})` : "لا توجد تقييمات بعد"}</Text><Text style={styles.storeHint}>افتح المتجر لتصفح الكتالوج والتحقق من التوفر</Text></View>
+          <View style={styles.storeCopy}>
+            <Text style={styles.storeTitle} numberOfLines={2}>{store.name}</Text>
+            <Text style={styles.storeMeta}>{typeof store.distanceMeters === "number" ? `${(store.distanceMeters / 1000).toFixed(2)} كم` : selectedCityName || "مدينة الخدمة"}</Text>
+            <Text style={styles.storeRating}>{store.ratingCount > 0 ? `★ ${store.ratingAverage.toFixed(1)} (${store.ratingCount})` : "لا توجد تقييمات بعد"}</Text>
+            {fulfillmentModeLabels.length ? <Text style={styles.storeModes}>طرق الطلب المتاحة: {fulfillmentModeLabels.join(" · ")}</Text> : null}
+            <Text style={styles.storeHint}>افتح المتجر لاختيار الوضع والتحقق من التوفر</Text>
+          </View>
           <View style={styles.storeActions}><BthwaniIconButton disabled={Boolean(favoriteBusyStoreID)} icon="favorite" label={isFavorite ? `إزالة ${store.name} من المفضلة` : `إضافة ${store.name} إلى المفضلة`} onPress={(event) => { event.stopPropagation(); void toggleFavorite(store.id); }} tone={isFavorite ? "primary" : "soft"} /><BthwaniIcon name="forward" color={theme.colorMuted} size={sizing.iconMd} /></View>
         </Pressable>;
       }}
@@ -580,6 +589,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     storeTitle: { ...typography.titleSm, color: theme.color },
     storeMeta: { ...typography.bodySm, color: theme.interactiveText },
     storeRating: { ...typography.bodySm, color: theme.warning },
+    storeModes: { ...typography.caption, color: theme.interactiveText },
     storeHint: { ...typography.caption, color: theme.colorMuted },
     pressed: { opacity: opacity.subtle },
     noResults: { alignItems: "center", borderRadius: radius.lg, gap: spacing[2], padding: spacing[5] },

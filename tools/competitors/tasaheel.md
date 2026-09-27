@@ -94,6 +94,7 @@ Do not mark an area `CURRENT` if only its visual layer was observed while materi
 ## Current observations
 - Visual language is pale cream with bright green controls, large Arabic RTL text, mixed Arabic/English store names, banner carousels and large photographic category/store cards.
 - Store lists provide New/Closest/Favorites/default ordering. Tapping Closest displayed a `select address first` prompt and a Change action; no address was selected.
+- Four visible Sana'a restaurant cards showed rating, estimated time and open status, with no delivery/pickup mode label in their accessible card summaries. The Castle storefront also had no store-level mode selector before cart entry.
 - Favorites displayed an explicit empty state (`لا يوجد عناصر حاليا`). New displayed both open and closed stores.
 - Storefront product cards present copy, image, price, stock/availability badge, favorite heart and quantity/cart controls together.
 - The inspected Castle hours sheet visibly rendered Friday twice: the regular 08:00–22:00 interval and another 13:00–22:00 interval. This is an observed UI duplication; its cause is unknown.
@@ -169,3 +170,4 @@ Do not mark an area `CURRENT` if only its visual layer was observed while materi
 - Inspected the Settings modal (Dark/Light, Privacy Policy, installed version) without changing the theme or opening external policy content; linked the new local captures.
 ### 2026-09-27 — Delivery-mode decision delta
 - Rechecked the installed versionCode `179` on `SM-S9280`; the open Castle storefront exposed its menu and estimated time but no delivery/pickup choice before cart entry. The existing sign-in gate prevents a checkout-mode comparison without authentication; no cart, address, branch or account state was changed.
+- Read the restaurant-list cards on the same installed version: four visible cards exposed rating, estimated time and open status but no fulfillment-mode label. No address, cart, branch, account or order state was changed.
