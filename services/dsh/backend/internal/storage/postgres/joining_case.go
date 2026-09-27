@@ -636,12 +636,6 @@ func ReviewJoiningCase(ctx context.Context, db *sql.DB, caseID, decision, correc
 	if current.Case.FirstStoreLatitude == nil || current.Case.FirstStoreLongitude == nil {
 		return JoiningCaseResult{}, ErrJoiningCaseStoreOrigin
 	}
-	var cityActive bool
-	if err := tx.QueryRowContext(ctx, "SELECT active FROM dsh.service_cities WHERE id=$1 FOR SHARE", current.Case.FirstStoreServiceCityID).Scan(&cityActive); errors.Is(err, sql.ErrNoRows) || (err == nil && !cityActive) {
-		return JoiningCaseResult{}, ErrJoiningCaseServiceCity
-	} else if err != nil {
-		return JoiningCaseResult{}, fmt.Errorf("read joining case service city: %w", err)
-	}
 	if strings.TrimSpace(actingActorID) == current.Case.PartnerActorID {
 		return JoiningCaseResult{}, ErrJoiningCaseSelfReview
 	}
@@ -656,6 +650,12 @@ func ReviewJoiningCase(ctx context.Context, db *sql.DB, caseID, decision, correc
 	}
 	storeID := ""
 	if decision == "approved" {
+		var cityActive bool
+		if err := tx.QueryRowContext(ctx, "SELECT active FROM dsh.service_cities WHERE id=$1 FOR SHARE", current.Case.FirstStoreServiceCityID).Scan(&cityActive); errors.Is(err, sql.ErrNoRows) || (err == nil && !cityActive) {
+			return JoiningCaseResult{}, ErrJoiningCaseServiceCity
+		} else if err != nil {
+			return JoiningCaseResult{}, fmt.Errorf("read joining case service city: %w", err)
+		}
 		var existingStore string
 		if err := tx.QueryRowContext(ctx, "SELECT id FROM dsh.stores WHERE partner_actor_id=$1 ORDER BY created_at ASC LIMIT 1", current.Case.PartnerActorID).Scan(&existingStore); err == nil {
 			return JoiningCaseResult{}, ErrJoiningCaseStoreExists

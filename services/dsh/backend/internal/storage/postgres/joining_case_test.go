@@ -76,9 +76,15 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 		if err != nil || !submittedReplay.Replayed || submittedReplay.Case.PartnerActorID != partnerActor || submittedReplay.Case.State != "submitted" {
 			t.Fatalf("Operator submission did not recover its canonical result: %+v err=%v", submittedReplay, err)
 		}
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.service_cities SET active=false WHERE id=$1", serviceCityID); err != nil {
+			t.Fatalf("deactivate Service City before correction decision: %v", err)
+		}
 		returned, err := postgres.ReviewJoiningCase(ctx, db, created.Case.ID, "needs_correction", "تصحيح بيانات المتجر", 0, "", "", submitted.Case.Version, "idem-join-field-review", postgres.HashJoiningCaseReviewWithFinancialTerms(created.Case.ID, "needs_correction", "تصحيح بيانات المتجر", submitted.Case.Version, 0, "", ""), operatorActor, "corr-join-field-review")
 		if err != nil || returned.Case.State != "needs_correction" || returned.Case.PartnerActorID != partnerActor {
-			t.Fatalf("return joining case for Partner correction failed: %+v err=%v", returned, err)
+			t.Fatalf("inactive Service City prevented return to Partner correction: %+v err=%v", returned, err)
+		}
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.service_cities SET active=true WHERE id=$1", serviceCityID); err != nil {
+			t.Fatalf("reactivate Service City before Partner correction: %v", err)
 		}
 
 		requestHash := postgres.HashJoiningCaseCorrectAndResubmit(created.Case.ID, partnerActor, "نشاط مصحح", "متجر مصحح", returned.Case.Version, serviceCityID, verticalID, 15.4, 44.2)
@@ -130,6 +136,24 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 		cityHash := postgres.HashJoiningCaseRequest("+967700000103", "مدينة غير نشطة", "متجر غير نشط", serviceCityID, verticalID, 15.369445, 44.191006, initialModes)
 		if _, err := postgres.CreateJoiningCase(ctx, db, "idem-join-inactive-city", cityHash, operatorActor, "corr-join-inactive-city", "+967700000103", "مدينة غير نشطة", "متجر غير نشط", serviceCityID, verticalID, 15.369445, 44.191006, initialModes); !errors.Is(err, postgres.ErrJoiningCaseServiceCity) {
 			t.Fatalf("new joining case with inactive service city error = %v, want inactive city", err)
+		}
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.service_cities SET active=true WHERE id=$1", serviceCityID); err != nil {
+			t.Fatalf("reactivate Service City for approval gate proof: %v", err)
+		}
+		approvalCase, err := postgres.CreateJoiningCase(ctx, db, "idem-join-approval-city-create", postgres.HashJoiningCaseRequest("+967700000104", "نشاط المدينة الموقوفة", "متجر المدينة الموقوفة", serviceCityID, verticalID, 15.369445, 44.191006, initialModes), operatorActor, "corr-join-approval-city-create", "+967700000104", "نشاط المدينة الموقوفة", "متجر المدينة الموقوفة", serviceCityID, verticalID, 15.369445, 44.191006, initialModes)
+		if err != nil {
+			t.Fatalf("create approval-gate joining case: %v", err)
+		}
+		approvalSubmitted, err := postgres.SubmitJoiningCase(ctx, db, approvalCase.Case.ID, "act_partner_inactive_city_approval", approvalCase.Case.Version, "idem-join-approval-city-submit", postgres.HashJoiningCaseSubmit(approvalCase.Case.ID, "act_partner_inactive_city_approval", approvalCase.Case.Version), operatorActor, "corr-join-approval-city-submit")
+		if err != nil {
+			t.Fatalf("submit approval-gate joining case: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.service_cities SET active=false WHERE id=$1", serviceCityID); err != nil {
+			t.Fatalf("deactivate Service City before approval: %v", err)
+		}
+		approvalHash := postgres.HashJoiningCaseReviewWithFinancialTerms(approvalCase.Case.ID, "approved", "", approvalSubmitted.Case.Version, 1000, "WEEKLY", "partner-financial-terms:v1")
+		if _, err := postgres.ReviewJoiningCase(ctx, db, approvalCase.Case.ID, "approved", "", 1000, "WEEKLY", "partner-financial-terms:v1", approvalSubmitted.Case.Version, "idem-join-approval-city-review", approvalHash, operatorActor, "corr-join-approval-city-review"); !errors.Is(err, postgres.ErrJoiningCaseServiceCity) {
+			t.Fatalf("approval with inactive Service City error = %v, want inactive city", err)
 		}
 	})
 }

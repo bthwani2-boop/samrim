@@ -27,3 +27,22 @@ func TestJoiningCaseErrorMapsUnavailableCommerceVertical(t *testing.T) {
 		t.Fatalf("error code = %q, want VERTICAL_UNAVAILABLE", body.Error.Code)
 	}
 }
+
+func TestJoiningCaseErrorMapsUnavailableServiceCity(t *testing.T) {
+	response := httptest.NewRecorder()
+	writeJoiningCaseError(response, postgres.ErrJoiningCaseServiceCity)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusConflict)
+	}
+	var body struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Error.Code != "SERVICE_CITY_UNAVAILABLE" {
+		t.Fatalf("error code = %q, want SERVICE_CITY_UNAVAILABLE", body.Error.Code)
+	}
+}
