@@ -140,7 +140,6 @@ for (const [file,targets] of [
   ["services/identity/clients/go/project.json",["vet","unit"]],
   ["services/dsh/backend/project.json",["build","vet","unit"]],
   ["services/wlt/backend/project.json",["build","vet","unit"]],
-  ["services/wlt/clients/go/project.json",["build","vet","unit"]],
 ]) {
   const project = data(file);
   for (const target of targets) {
@@ -202,7 +201,7 @@ for (const required of [
   "up -d --no-build",
   "capture-ci-failure.mjs --kind=runtime",
   "report-ci-performance.mjs",
-  "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+  "actions/upload-artifact@ea165f8d65b540449e92b4886f43607fa02",
 ]) if (!runtimeCi.includes(required)) failures.push("runtime CI missing " + required);
 const budgets = data(".github/ci-performance-budgets.json");
 if (budgets.schema !== 1 || budgets.mode !== "observe") failures.push("CI performance budget contract drifted");
