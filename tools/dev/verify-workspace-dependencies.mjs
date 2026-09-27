@@ -31,7 +31,10 @@ const packages = new Map();
 for (const manifest of manifests) {
   const json = JSON.parse(fs.readFileSync(manifest, "utf8"));
   if (typeof json.name === "string" && json.name.trim()) {
-    packages.set(json.name, path.posix.dirname(path.relative(repoRoot, manifest).replaceAll("\\", "/")));
+    packages.set(json.name, {
+      root: path.posix.dirname(path.relative(repoRoot, manifest).replaceAll("\\", "/")),
+      exports: json.exports ?? null,
+    });
   }
 }
 
@@ -104,14 +107,33 @@ function goImportSpecifiers(content) {
   return imports;
 }
 
+function exportedPath(value) {
+  if (typeof value === "string") return value;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  for (const key of ["default", "import", "types", "require", "react-native", "node"]) {
+    const candidate = exportedPath(value[key]);
+    if (candidate) return candidate;
+  }
+  for (const candidateValue of Object.values(value)) {
+    const candidate = exportedPath(candidateValue);
+    if (candidate) return candidate;
+  }
+  return null;
+}
+
 function workspacePackageTarget(specifier) {
   const matches = [...packages.keys()]
     .filter((name) => specifier === name || specifier.startsWith(`${name}/`))
     .sort((a, b) => b.length - a.length);
   if (matches.length === 0) return null;
   const packageName = matches[0];
+  const info = packages.get(packageName);
   const suffix = specifier.slice(packageName.length).replace(/^\//, "");
-  return suffix ? path.posix.join(packages.get(packageName), suffix) : packages.get(packageName);
+  const exportKey = suffix ? `./${suffix}` : ".";
+  const exportValue = info.exports && typeof info.exports === "object" ? info.exports[exportKey] : null;
+  const target = exportedPath(exportValue);
+  if (target?.startsWith("./")) return path.posix.normalize(path.posix.join(info.root, target.slice(2)));
+  return suffix ? path.posix.join(info.root, suffix) : info.root;
 }
 
 function resolveRepositoryTarget(relativePath, specifier) {
@@ -129,6 +151,10 @@ function serviceOwner(relativePath) {
   return match ? match[1] : null;
 }
 
+function isPublicServiceBoundary(target, service) {
+  return target.startsWith(`services/${service}/clients/`) || target.startsWith(`services/${service}/contracts/`);
+}
+
 function enforceBoundary(relativePath, specifier) {
   const target = resolveRepositoryTarget(relativePath, specifier);
   if (!target) return;
@@ -136,16 +162,15 @@ function enforceBoundary(relativePath, specifier) {
   const sourceIsApp = relativePath.startsWith("apps/");
   const sourceIsPackage = relativePath.startsWith("packages/");
   const targetService = serviceOwner(target);
-  if ((sourceIsApp || sourceIsPackage) && targetService) {
-    boundaryViolations.push(`${relativePath}: ${sourceIsApp ? "apps" : "packages"} cannot import service implementation (${specifier} -> ${target})`);
+  if ((sourceIsApp || sourceIsPackage) && targetService && !isPublicServiceBoundary(target, targetService)) {
+    boundaryViolations.push(`${relativePath}: ${sourceIsApp ? "apps" : "packages"} cannot import service implementation; consume an exported clients/ or contracts/ boundary (${specifier} -> ${target})`);
     return;
   }
 
   const sourceService = serviceOwner(relativePath);
   if (!sourceService || !targetService || sourceService === targetService) return;
 
-  const publicBoundary = target.startsWith(`services/${targetService}/clients/`) || target.startsWith(`services/${targetService}/contracts/`);
-  if (!publicBoundary) {
+  if (!isPublicServiceBoundary(target, targetService)) {
     const detail = target.includes("/internal/") ? "cross-service internal import" : "cross-service implementation import";
     boundaryViolations.push(`${relativePath}: ${detail} is forbidden; ${sourceService} must consume ${targetService} through clients/ or contracts/ (${specifier} -> ${target})`);
   }
