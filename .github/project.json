@@ -26,6 +26,7 @@
         "{workspaceRoot}/.github/workflows/**/*",
         "{workspaceRoot}/.github/ci-performance-budgets.json",
         "{workspaceRoot}/tools/dev/runtime-proof/**/*",
+        "{workspaceRoot}/tools/dev/verify-dsh-runtime-core.mjs",
         "{workspaceRoot}/tools/dev/verify-local-candidate.ps1",
         "{workspaceRoot}/tools/dev/run-ci-runtime-proof.mjs",
         "{workspaceRoot}/tools/dev/verify-execution-proof-system.mjs",

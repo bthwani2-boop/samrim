@@ -57,11 +57,12 @@ function readJsonIfPresent(file) {
   try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
 }
 
+const ansiColorPattern = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+
 function readLogLines(logPath) {
   if (!logPath || !fs.existsSync(logPath)) return [];
   return fs.readFileSync(logPath, "utf8")
-    .replaceAll(String.fromCharCode(27), "")
-    .replace(/\[[0-9;]*m/g, "")
+    .replace(ansiColorPattern, "")
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
@@ -69,8 +70,11 @@ function readLogLines(logPath) {
 
 function firstObservedFailureLine(logPath) {
   const lines = readLogLines(logPath);
-  const material = lines.find((line) => /(?:\bFAIL(?:ED|URE)?\b|\bERROR\b|\bINVALID[_ -]|\bPANIC\b|\bFATAL\b|exit code|timed out)/i.test(line));
-  return material || lines.at(-1) || null;
+  const material = lines.find((line) =>
+    /(?:\b[A-Z][A-Z0-9_]*=(?:FAIL|FAILED|FAILURE)\b|^\s*Failed tasks?:\s*$|^\s*NX\b.*\bfailed\b|^\s*(?:(?:[A-Za-z0-9_.-]+:\s*){0,4})?(?:ERROR|FATAL|PANIC)\s*:|\bexit code\s+[1-9]\d*\b|\bFound\s+\d+\s+errors?\b)/i.test(line)
+    || /^\s*[×✖]\s+/.test(line)
+  );
+  return material || null;
 }
 
 function failedNxTarget(logPath) {
