@@ -60,7 +60,8 @@ function readJsonIfPresent(file) {
 function readLogLines(logPath) {
   if (!logPath || !fs.existsSync(logPath)) return [];
   return fs.readFileSync(logPath, "utf8")
-    .replace(/\u001b\[[0-9;]*m/g, "")
+    .replaceAll(String.fromCharCode(27), "")
+    .replace(/\[[0-9;]*m/g, "")
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
