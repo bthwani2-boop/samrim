@@ -195,8 +195,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     return state.categories.filter((category) => category.active);
   }, [state]);
 
-  const mediaContent = useMemo(() => marketing.content.filter((item) => Boolean(item.mediaUri) && (item.kind === "BANNER" || item.kind === "CAROUSEL")).slice(0, 8), [marketing.content]);
-  const textContent = useMemo(() => marketing.content.filter((item) => !item.mediaUri || (item.kind !== "BANNER" && item.kind !== "CAROUSEL")).slice(0, 4), [marketing.content]);
+  const mediaContent = useMemo(() => marketing.content.filter((item) => Boolean(item.mediaUri) && (item.kind === "BANNER" || item.kind === "CAROUSEL")), [marketing.content]);
+  const textContent = useMemo(() => marketing.content.filter((item) => !item.mediaUri || (item.kind !== "BANNER" && item.kind !== "CAROUSEL")), [marketing.content]);
 
   async function openNearbyAddressChooser() {
     if (!selectedCityID || nearbyAddressState.kind === "loading") return;

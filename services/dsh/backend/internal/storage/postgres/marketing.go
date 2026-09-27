@@ -502,15 +502,35 @@ func ReadDiscoveryContent(ctx context.Context, db *sql.DB, id string) (Discovery
 func ListDiscoveryContent(ctx context.Context, db *sql.DB, public bool, serviceCityID string) ([]DiscoveryContentRecord, error) {
 	where := "1=1"
 	args := []any{}
+	query := "SELECT " + discoveryContentSelect + " FROM dsh.discovery_content content WHERE " + where + " ORDER BY ordinal ASC,starts_at DESC,id DESC"
 	if public {
 		serviceCityID = strings.TrimSpace(serviceCityID)
 		if serviceCityID == "" {
 			return nil, ErrDiscoveryContentInvalid
 		}
 		args = append(args, serviceCityID)
-		where += " AND state='PUBLISHED' AND starts_at <= clock_timestamp() AND (ends_at IS NULL OR ends_at > clock_timestamp()) AND (service_city_id IS NULL OR service_city_id=$1)"
+		query = `WITH eligible AS (
+			SELECT content.id,
+			       content.kind IN ('BANNER','CAROUSEL') AS media_group,
+			       row_number() OVER (
+				       PARTITION BY content.kind IN ('BANNER','CAROUSEL')
+				       ORDER BY content.ordinal ASC,content.starts_at DESC,content.id DESC
+			       ) AS priority_rank
+			FROM dsh.discovery_content content
+			WHERE content.state='PUBLISHED'
+			  AND content.starts_at <= statement_timestamp()
+			  AND (content.ends_at IS NULL OR content.ends_at > statement_timestamp())
+			  AND (content.service_city_id IS NULL OR content.service_city_id=$1)
+			  AND ` + discoveryContentTargetEligibilityPredicate("content", "$1", "statement_timestamp()") + `
+		)
+		SELECT ` + discoveryContentSelect + `
+		FROM dsh.discovery_content content
+		JOIN eligible ON eligible.id=content.id
+		WHERE (eligible.media_group AND eligible.priority_rank<=8)
+		   OR (NOT eligible.media_group AND eligible.priority_rank<=4)
+		ORDER BY content.ordinal ASC,content.starts_at DESC,content.id DESC`
 	}
-	rows, err := db.QueryContext(ctx, "SELECT "+discoveryContentSelect+" FROM dsh.discovery_content content WHERE "+where+" ORDER BY ordinal ASC,starts_at DESC,id DESC", args...)
+	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -529,28 +549,8 @@ func ListDiscoveryContent(ctx context.Context, db *sql.DB, public bool, serviceC
 	if err := rows.Close(); err != nil {
 		return nil, err
 	}
-	if !public {
-		return items, nil
-	}
-
-	return filterEligibleDiscoveryContent(ctx, db, items, serviceCityID)
+	return items, nil
 }
-
-func filterEligibleDiscoveryContent(ctx context.Context, db *sql.DB, items []DiscoveryContentRecord, serviceCityID string) ([]DiscoveryContentRecord, error) {
-	eligible := make([]DiscoveryContentRecord, 0, len(items))
-	now := time.Now().UTC()
-	for _, item := range items {
-		if _, err := resolveDiscoveryContentTarget(ctx, db, item.TargetType, item.TargetID, serviceCityID, now); err != nil {
-			if errors.Is(err, ErrDiscoveryContentNotFound) {
-				continue
-			}
-			return nil, err
-		}
-		eligible = append(eligible, item)
-	}
-	return eligible, nil
-}
-
 func SetDiscoveryContentState(ctx context.Context, db *sql.DB, id, state, idempotencyKey, requestHash string, expectedVersion int) (DiscoveryContentRecord, bool, error) {
 	state = strings.ToUpper(strings.TrimSpace(state))
 	if (state != "PUBLISHED" && state != "PAUSED") || strings.TrimSpace(id) == "" || expectedVersion < 1 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" {
