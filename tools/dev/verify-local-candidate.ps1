@@ -19,6 +19,47 @@ function Invoke-Git([string[]]$Arguments) {
     return $output
 }
 
+function Test-GitRef([string]$Ref) {
+    & git -C $Repo rev-parse --verify --quiet $Ref *> $null
+    return $LASTEXITCODE -eq 0
+}
+
+function Test-Ancestor([string]$Ancestor, [string]$Descendant) {
+    & git -C $Repo merge-base --is-ancestor $Ancestor $Descendant *> $null
+    return $LASTEXITCODE -eq 0
+}
+
+function Resolve-VerificationBase([string]$Branch, [string]$Head) {
+    $candidates = [System.Collections.Generic.List[string]]::new()
+
+    $originBranch = "refs/remotes/origin/$Branch"
+    if (Test-GitRef $originBranch) { $candidates.Add($originBranch) }
+
+    $upstream = @(& git -C $Repo rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>$null)
+    if ($LASTEXITCODE -eq 0) {
+        $upstreamRef = ($upstream -join '').Trim()
+        if ($upstreamRef -and -not $candidates.Contains($upstreamRef)) { $candidates.Add($upstreamRef) }
+    }
+
+    foreach ($candidateRef in $candidates) {
+        $candidateSha = ((Invoke-Git @('rev-parse',$candidateRef)) -join '').Trim()
+        if (Test-Ancestor $candidateSha $Head) {
+            Write-Host "VERIFY_BASE_SOURCE=REMOTE_TRACKING ref=$candidateRef sha=$candidateSha"
+            return $candidateSha
+        }
+    }
+
+    $mainRef = 'refs/remotes/origin/main'
+    if (-not (Test-GitRef $mainRef)) {
+        Fail "No usable remote-tracking base exists for '$Branch' and origin/main is unavailable. Fetch origin before verification."
+    }
+
+    $mergeBase = ((Invoke-Git @('merge-base',$Head,$mainRef)) -join '').Trim()
+    if (-not $mergeBase) { Fail "Unable to resolve merge-base with $mainRef." }
+    Write-Host "VERIFY_BASE_SOURCE=MAIN_MERGE_BASE ref=$mainRef sha=$mergeBase"
+    return $mergeBase
+}
+
 function Run-QuietStep([string]$Name, [scriptblock]$Action) {
     Write-Host ''
     $clock = [Diagnostics.Stopwatch]::StartNew()
@@ -53,15 +94,6 @@ function Run-QuietStep([string]$Name, [scriptblock]$Action) {
     }
 }
 
-function Test-ChangedPath([string[]]$Patterns, [string[]]$Paths) {
-    foreach ($candidate in $Paths) {
-        foreach ($pattern in $Patterns) {
-            if ($candidate -match $pattern) { return $true }
-        }
-    }
-    return $false
-}
-
 $verifyClock = [Diagnostics.Stopwatch]::StartNew()
 
 Push-Location $Repo
@@ -74,95 +106,26 @@ try {
     $status = @(Invoke-Git @('status','--porcelain=v1','--untracked-files=all'))
     if ($status.Count -gt 0) { Fail ("Candidate must be clean:" + [Environment]::NewLine + ($status -join [Environment]::NewLine)) }
 
-    if (-not $BaseSha) {
-        & git -C $Repo rev-parse 'HEAD^' *> $null
-        $BaseSha = if ($LASTEXITCODE -eq 0) { ((Invoke-Git @('rev-parse','HEAD^')) -join '').Trim() } else { $head }
-    }
+    if (-not $BaseSha) { $BaseSha = Resolve-VerificationBase $branch $head }
 
     if ($BaseSha -notmatch '^[0-9a-f]{40}$') { Fail "Invalid BaseSha: $BaseSha" }
-    & git -C $Repo merge-base --is-ancestor $BaseSha $head
-    if ($LASTEXITCODE -ne 0) { Fail "Verification base is not an ancestor of candidate: base=$BaseSha head=$head" }
+    if (-not (Test-Ancestor $BaseSha $head)) { Fail "Verification base is not an ancestor of candidate: base=$BaseSha head=$head" }
 
     Write-Host "VERIFY_BASE_SHA=$BaseSha"
     Write-Host "EXACT_LOCAL_CANDIDATE_SHA=$head"
+    Write-Host 'VERIFY_SCOPE_AUTHORITY=NX_TASK_INPUTS_AND_AFFECTED_GRAPH'
+    Write-Host 'VERIFY_OUTPUT_MODE=QUIET_SUCCESS_VERBOSE_FAILURE'
 
     if ((& node --version).Trim() -ne 'v24.17.0') { Fail 'Node version mismatch.' }
     if ((& pnpm --version).Trim() -ne '10.34.0') { Fail 'pnpm version mismatch.' }
     if ((& go version | Out-String).Trim() -notmatch '\bgo1\.27\.1\b') { Fail 'Go version mismatch.' }
 
-    $changeRows = @(Invoke-Git @('diff','--name-status','-M',$BaseSha,$head))
-    $changedPaths = @()
-    $structuralMutation = $false
-    foreach ($row in $changeRows) {
-        if ([string]::IsNullOrWhiteSpace($row)) { continue }
-        $parts = @($row -split "`t")
-        if ($parts.Count -lt 2) { continue }
-        if ($parts[0] -match '^[ADRC]') { $structuralMutation = $true }
-        for ($index = 1; $index -lt $parts.Count; $index++) {
-            $candidate = ($parts[$index] -replace '\\','/').Trim()
-            if ($candidate) { $changedPaths += $candidate }
-        }
-    }
-    $changedPaths = @($changedPaths | Sort-Object -Unique)
-
-    $workspaceSensitivePatterns = @(
-        '^\.github/',
-        '^tools/(dev|mobile)/',
-        '(^|/)project\.json$',
-        '(^|/)package\.json$',
-        '^(AGENTS\.md|CLAUDE\.md|GEMINI\.md|REPOSITORY-STRUCTURE\.md|README\.md|CONTRIBUTING\.md|SECURITY\.md|knowledge\.sources\.json|nx\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|go\.work|go\.work\.sum|\.node-version|\.go-version|biome\.json|\.gitattributes)$',
-        '^apps/app-(client|partner|captain|field)/(app\.config\.ts|mobile\.config\.json|eas\.json|fingerprint\.config\.js|assets/)',
-        '^packages/design-system/',
-        '^services/identity/clients/presentation/'
-    )
-    $deployabilityPatterns = @(
-        '^(pnpm-lock\.yaml|pnpm-workspace\.yaml|package\.json|nx\.json|tsconfig\.base\.json|\.node-version)$',
-        '^apps/app-(client|partner|captain|field)/(package\.json|app\.config\.ts|mobile\.config\.json|eas\.json|fingerprint\.config\.js|index\.(js|jsx|ts|tsx)|metro\.config\.(js|cjs|mjs|ts)|babel\.config\.(js|cjs|mjs|ts)|android/|ios/)',
-        '^packages/design-system/package\.json$',
-        '^tools/mobile/(export-mobile-smoke\.mjs|define-samrim-expo-app\.cjs|hash-mobile-secret-input\.mjs)$'
-    )
-    $infraPatterns = @('^infra/local/')
-
-    $workspaceInvariantRequired = $structuralMutation -or (Test-ChangedPath $workspaceSensitivePatterns $changedPaths)
-    $deployabilityProofRequired = Test-ChangedPath $deployabilityPatterns $changedPaths
-    $infraProofRequired = Test-ChangedPath $infraPatterns $changedPaths
-
-    Write-Host ("VERIFY_SCOPE changed_files={0} structural={1} workspace_invariants={2} deployability={3} infra={4}" -f $changedPaths.Count, [int]$structuralMutation, [int]$workspaceInvariantRequired, [int]$deployabilityProofRequired, [int]$infraProofRequired)
-    Write-Host 'VERIFY_OUTPUT_MODE=QUIET_SUCCESS_VERBOSE_FAILURE'
-
-    if ($workspaceInvariantRequired) {
-        Run-QuietStep 'Workspace invariant targets' {
-            pnpm exec nx run-many -t donor-residue repository-structure structural-hygiene runtime-ownership removed-domain-residue cache-contracts docs-command-parity docs-config-parity knowledge-system knowledge-references agent-contract workspace-dependencies go-workspace-sync nx-project-tags mobile-config brand theme-check theme-verify powershell-syntax knip --outputStyle=static --parallel=2
-        }
-
-        Run-QuietStep 'Execution proof system' {
-            pnpm exec nx run repository-ci:execution-proof-system --outputStyle=static
-        }
-    }
-    else {
-        Write-Host 'VERIFY_WORKSPACE_INVARIANTS=SKIP reason=unaffected'
-        Write-Host 'VERIFY_EXECUTION_PROOF_SYSTEM=SKIP reason=unaffected'
+    Run-QuietStep 'Reusable workspace invariant targets' {
+        pnpm exec nx run-many -t donor-residue repository-structure structural-hygiene runtime-ownership removed-domain-residue cache-contracts docs-command-parity docs-config-parity knowledge-system knowledge-references agent-contract workspace-dependencies go-workspace-sync nx-project-tags mobile-config brand theme-check theme-verify powershell-syntax knip execution-proof-system compose-config --outputStyle=static --parallel=2
     }
 
-    if ($infraProofRequired) {
-        Run-QuietStep 'Infrastructure invariant targets' {
-            pnpm exec nx run infra:compose-config --outputStyle=static
-        }
-    }
-    else {
-        Write-Host 'VERIFY_INFRASTRUCTURE=SKIP reason=unaffected'
-    }
-
-    if ($deployabilityProofRequired) {
-        Run-QuietStep 'Affected static targets with deployability proof' {
-            pnpm exec nx affected -t lint format-check typecheck unit contract build vet export-smoke --base=$BaseSha --head=$head --outputStyle=static --parallel=2
-        }
-    }
-    else {
-        Run-QuietStep 'Affected static targets' {
-            pnpm exec nx affected -t lint format-check typecheck unit contract build vet --base=$BaseSha --head=$head --outputStyle=static --parallel=2
-        }
-        Write-Host 'VERIFY_EXPORT_SMOKE=SKIP reason=no-deployability-sensitive-change'
+    Run-QuietStep 'Affected static targets' {
+        pnpm exec nx affected -t lint format-check typecheck unit contract build vet --base=$BaseSha --head=$head --outputStyle=static --parallel=2
     }
 
     $endHead = ((Invoke-Git @('rev-parse','HEAD')) -join '').Trim()

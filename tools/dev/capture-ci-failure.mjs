@@ -12,6 +12,7 @@ const outDir = fs.mkdtempSync(path.join(runnerTemp, "samrim-failure-package-" + 
 const metricsPath = process.env.SAMRIM_CI_METRICS_PATH || path.join(runnerTemp, "samrim-ci-metrics.jsonl");
 const logsDir = process.env.SAMRIM_CI_LOG_DIR || path.join(runnerTemp, "samrim-ci-logs");
 const profileDir = process.env.SAMRIM_CI_PROFILE_DIR || path.join(runnerTemp, "samrim-ci-profiles");
+const runtimeFailurePath = path.join(runnerTemp, "samrim-runtime-failure.json");
 const sensitiveName = /(?:secret|token|password|api[_-]?key|private[_-]?key|credential|dsn|database_url|authorization)/i;
 const sensitiveValues = new Map();
 
@@ -49,6 +50,18 @@ function run(command, args, options = {}) {
     ...options,
   });
   return { status: result.status ?? 1, stdout: result.stdout || "", stderr: result.stderr || "" };
+}
+
+function readJsonIfPresent(file) {
+  if (!fs.existsSync(file)) return null;
+  try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
+}
+
+function firstObservedFailureLine(logPath) {
+  if (!logPath || !fs.existsSync(logPath)) return null;
+  const lines = fs.readFileSync(logPath, "utf8").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const material = lines.find((line) => /(?:\bFAIL(?:ED|URE)?\b|\bERROR\b|\bINVALID[_ -]|\bPANIC\b|\bFATAL\b|exit code|timed out)/i.test(line));
+  return material || lines.at(-1) || null;
 }
 
 const metadata = {
@@ -91,10 +104,44 @@ if (metadata.nxBase && metadata.nxHead) {
   if (taskGraph.status !== 0) write("affected-task-graph-error.txt", taskGraph.stdout + taskGraph.stderr);
 }
 
+let metricRecords = [];
+let failedRecords = [];
+if (fs.existsSync(metricsPath)) {
+  fs.copyFileSync(metricsPath, path.join(outDir, "ci-metrics.jsonl"));
+  metricRecords = fs.readFileSync(metricsPath, "utf8")
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+  failedRecords = metricRecords
+    .filter((record) => record.exitCode !== 0)
+    .sort((a, b) => String(a.startedAt ?? "").localeCompare(String(b.startedAt ?? "")));
+  write("failed-commands.json", JSON.stringify(failedRecords, null, 2) + "\n");
+}
+
+const runtimeFailure = kind === "runtime" ? readJsonIfPresent(runtimeFailurePath) : null;
+const firstFailed = failedRecords[0] ?? null;
+const failureSummary = {
+  schema: 1,
+  candidate: metadata.sha,
+  gate: kind,
+  failedCommand: firstFailed?.name ?? null,
+  failedTarget: runtimeFailure?.target ?? null,
+  failureClass: "UNCLASSIFIED_REQUIRES_CAUSAL_REVIEW",
+  firstObservedFailureLine: firstObservedFailureLine(firstFailed?.logPath),
+  progressionBlocked: true,
+  nextAction: "classify-failure-find-highest-causal-root-repair-then-rerun-only-invalidated-evidence",
+  suggestedReproof: runtimeFailure?.target ?? firstFailed?.name ?? null,
+};
+write("failure-summary.json", JSON.stringify(failureSummary, null, 2) + "\n");
+
 if (kind === "runtime") {
-  const runtimeTaskGraphPath = path.join(outDir, "runtime-task-graph.json");
-  const runtimeTaskGraph = run("pnpm", ["exec", "nx", "run", "dsh-backend:runtime-proof", "--graph=" + runtimeTaskGraphPath]);
-  if (runtimeTaskGraph.status !== 0) write("runtime-task-graph-error.txt", runtimeTaskGraph.stdout + runtimeTaskGraph.stderr);
+  if (runtimeFailure?.target) {
+    const runtimeTaskGraphPath = path.join(outDir, "runtime-task-graph.json");
+    const runtimeTaskGraph = run("pnpm", ["exec", "nx", "run", runtimeFailure.target, "--graph=" + runtimeTaskGraphPath]);
+    if (runtimeTaskGraph.status !== 0) write("runtime-task-graph-error.txt", runtimeTaskGraph.stdout + runtimeTaskGraph.stderr);
+  } else {
+    write("runtime-task-graph-unavailable.txt", "No exact failed runtime target was recorded; do not guess one.\n");
+  }
 }
 
 for (const relative of ["nx.json", ".github/project.json"]) {
@@ -104,15 +151,6 @@ for (const relative of ["nx.json", ".github/project.json"]) {
   fs.copyFileSync(source, target);
 }
 
-if (fs.existsSync(metricsPath)) {
-  fs.copyFileSync(metricsPath, path.join(outDir, "ci-metrics.jsonl"));
-  const records = fs.readFileSync(metricsPath, "utf8")
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
-  const failed = records.filter((record) => record.exitCode !== 0);
-  write("failed-commands.json", JSON.stringify(failed, null, 2) + "\n");
-}
 if (fs.existsSync(logsDir)) fs.cpSync(logsDir, path.join(outDir, "command-logs"), { recursive: true });
 if (fs.existsSync(profileDir)) fs.cpSync(profileDir, path.join(outDir, "nx-profiles"), { recursive: true });
 
@@ -163,4 +201,5 @@ function redactTree(directory) {
 redactTree(outDir);
 
 if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, "path=" + outDir + "\n");
+console.log("CI_FAILURE_SUMMARY=PASS kind=" + kind + " failed_command=" + (failureSummary.failedCommand ?? "unknown") + " failed_target=" + (failureSummary.failedTarget ?? "unknown"));
 console.log("CI_FAILURE_PACKAGE=PASS kind=" + kind + " path=" + outDir);

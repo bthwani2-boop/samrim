@@ -7,6 +7,8 @@ import { laneTargets } from "./runtime-proof/resolve.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const envPath = path.join(root, "infra/local/.env");
+const runnerTemp = process.env.RUNNER_TEMP || os.tmpdir();
+const runtimeFailurePath = path.join(runnerTemp, "samrim-runtime-failure.json");
 
 function fail(message) {
   console.error("CI_RUNTIME_INTEGRATION=FAIL " + message);
@@ -23,7 +25,7 @@ const requestedTargets = (process.env.CI_RUNTIME_TARGETS ?? "")
 if (requestedTargets.length === 0) fail("CI_RUNTIME_TARGETS is empty");
 const needsDshCheckerFixture = requestedTargets.includes("dsh-backend:runtime-proof");
 const dshCheckerFixturePath = needsDshCheckerFixture
-  ? path.join(process.env.RUNNER_TEMP || os.tmpdir(), `samrim-dsh-checker-${process.pid}-${crypto.randomUUID()}.json`)
+  ? path.join(runnerTemp, `samrim-dsh-checker-${process.pid}-${crypto.randomUUID()}.json`)
   : "";
 
 const allowedTargets = new Set([
@@ -69,16 +71,30 @@ const childEnv = {
 
 const executable = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 let checkerFixtureCleanupFailed = false;
+try { fs.unlinkSync(runtimeFailurePath); } catch {}
 console.log("CI_RUNTIME_TASKS=" + requestedTargets.join(","));
 try {
   for (const target of requestedTargets) {
     console.log("CI_RUNTIME_TASK=START target=" + target);
-    execFileSync(
-      executable,
-      ["exec", "nx", "run", target, "--outputStyle=stream"],
-      { cwd: root, env: childEnv, stdio: "inherit" },
-    );
-    console.log("CI_RUNTIME_TASK=PASS target=" + target);
+    try {
+      execFileSync(
+        executable,
+        ["exec", "nx", "run", target, "--outputStyle=stream"],
+        { cwd: root, env: childEnv, stdio: "inherit" },
+      );
+      console.log("CI_RUNTIME_TASK=PASS target=" + target);
+    } catch (error) {
+      const failure = {
+        target,
+        candidate: process.env.CANDIDATE_SHA || process.env.GITHUB_SHA || null,
+        progressionBlocked: true,
+        nextAction: "classify-highest-causal-root-before-new-material-work",
+        capturedAt: new Date().toISOString(),
+      };
+      fs.writeFileSync(runtimeFailurePath, JSON.stringify(failure, null, 2) + "\n");
+      console.error("CI_RUNTIME_TASK=FAIL target=" + target);
+      throw error;
+    }
   }
 } finally {
   if (dshCheckerFixturePath && fs.existsSync(dshCheckerFixturePath)) {
@@ -91,6 +107,15 @@ try {
     } catch (error) {
       checkerFixtureCleanupFailed = true;
       console.error(`DSH_RUNTIME_CHECKER_FIXTURE_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`);
+      if (!fs.existsSync(runtimeFailurePath)) {
+        fs.writeFileSync(runtimeFailurePath, JSON.stringify({
+          target: "dsh-backend:runtime-fixture-cleanup",
+          candidate: process.env.CANDIDATE_SHA || process.env.GITHUB_SHA || null,
+          progressionBlocked: true,
+          nextAction: "classify-highest-causal-root-before-new-material-work",
+          capturedAt: new Date().toISOString(),
+        }, null, 2) + "\n");
+      }
       process.exitCode = 1;
     }
   }

@@ -152,6 +152,24 @@ Cache is evidence only when inputs cover every material computation input. Prefe
 
 Evidence is valid only for the exact state and claim it proves. If candidate, semantic owner, contract/schema, persistence/runtime composition, Governance binding or mutable external fact materially changes, rerun only the proof made stale.
 
+### Failure-driven closure and evidence reuse
+
+Every required proof result is actionable evidence, never passive logging.
+
+**PASS EVIDENCE REUSE:** preserve and reuse a successful deterministic proof while its material inputs, dependencies, canonical owner, contract/schema, environment class, tool version and governing invariant remain unaffected. Do not rerun successful work merely because an unrelated commit or a new candidate SHA exists; let Nx affected/task hashes/cache prove reuse, and refresh a required remote status by skip/cache rather than recomputation when the claim is unchanged.
+
+**RED CANDIDATE LAW:** a required proof failure on the current candidate immediately becomes the highest-priority `ACTIVE_CLOSURE_BLOCKER`. Until it is causally classified and reconciled, do not start an unrelated material journey, push unrelated material work, launch broader reassurance proof, or proceed through dependent heavy proof.
+
+For a cheap already-running bounded static batch, allow near-free sibling findings to finish so they can be collapsed by causal owner. For sequential or expensive proof, stop at the first material failure; do not continue into later dependent lanes. The goal is not the largest error list but zero highest causal roots.
+
+Classify a failure only far enough to choose the correct owner: implementation defect, proof defect, infrastructure/environment defect, external transient, or tooling/diagnostic defect. Collapse sibling findings to the highest common causal root, repair that root completely, run the smallest proof capable of falsifying the repair, then rerun only evidence materially invalidated by that repair.
+
+**NO GREENWASHING / ORACLE PRESERVATION:** a failing test, verifier, CI assertion, fixture or proof script is presumed to have found a real defect until a stronger independent oracle proves that the proof itself is stale or wrong. Do not manufacture green by skip/disable/allowlist, assertion or expected-value relaxation, catch-and-ignore, exit-code masking, fixture manipulation, timeout/retry inflation, or required-to-optional demotion. A proof-owner change made in response to its own failure requires an independent contract/invariant/canonical-readback justification and, where practical, a known-invalid negative case showing the repaired proof still fails when truth is violated.
+
+Blind retry is forbidden. Retry only when an independently supported transient cause makes retry the correct test, and keep it bounded. Cleanup failures and diagnostic failures are material findings until classified; never hide them with best-effort suppression unless best-effort semantics are themselves the canonical contract.
+
+Failure evidence should identify the exact candidate, gate, failed command/target, first observed material failure, progression-blocking state and smallest next reproving scope before emitting broad forensic logs. Diagnostics guide repair but do not become a parallel implementation or proof authority.
+
 Use subagents only for genuinely independent bounded lanes. Parallel mutation requires disjoint write sets. Subagents must not independently push, merge, repin Governance, reset persistent state, expose secrets or declare closure.
 
 ## 6. Safety, push and closure
