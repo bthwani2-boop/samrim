@@ -514,7 +514,7 @@ test("marketing create recovery reconciles promotions and resumes content with t
 
   await page.goto("/marketing/promotions");
   await page.getByText("إنشاء عرض جديد", { exact: true }).click();
-  await page.getByLabel("رمز العرض").fill("RESTORE10");
+  await page.getByLabel("رمز العرض", { exact: true }).fill("RESTORE10");
   await page.getByLabel("اسم العرض").fill("عرض الاستعادة");
   await page.getByRole("button", { name: "إنشاء مسودة العرض" }).click();
   await expect(page.getByText("تعذر تأكيد الحفظ؛ أعد المحاولة.")).toBeVisible();
