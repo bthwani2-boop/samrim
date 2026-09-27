@@ -58,6 +58,16 @@
         }
       ]
     },
+    "financial-invariants": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml exec -T wlt /financial-invariants"
+      },
+      "dependsOn": [
+        "schema-proof"
+      ]
+    },
     "format-check": {
       "executor": "nx:run-commands",
       "options": {
