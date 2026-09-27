@@ -9,88 +9,42 @@
   "targets": {
     "build": {
       "executor": "nx:run-commands",
-      "inputs": [
-        "default",
-        "^default",
-        "goToolchain"
-      ],
-      "options": {
-        "command": "go build ./...",
-        "cwd": "services/wlt/backend"
-      }
+      "inputs": ["default", "^default", "goToolchain"],
+      "options": {"command": "go build ./...", "cwd": "services/wlt/backend"}
     },
     "vet": {
       "executor": "nx:run-commands",
-      "inputs": [
-        "default",
-        "^default",
-        "goToolchain"
-      ],
-      "options": {
-        "command": "go vet ./...",
-        "cwd": "services/wlt/backend"
-      }
+      "inputs": ["default", "^default", "goToolchain"],
+      "options": {"command": "go vet ./...", "cwd": "services/wlt/backend"}
     },
     "unit": {
       "executor": "nx:run-commands",
-      "inputs": [
-        "default",
-        "^default",
-        "goToolchain"
-      ],
-      "options": {
-        "command": "go test ./...",
-        "cwd": "services/wlt/backend"
-      }
+      "inputs": ["default", "^default", "goToolchain"],
+      "options": {"command": "go test ./...", "cwd": "services/wlt/backend"}
     },
     "schema-proof": {
       "cache": false,
       "executor": "nx:run-commands",
-      "options": {
-        "command": "docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml exec -T wlt /schema-verify"
-      },
-      "dependsOn": [
-        {
-          "projects": [
-            "identity-backend"
-          ],
-          "target": "runtime-proof"
-        }
-      ]
+      "options": {"command": "docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml exec -T wlt /schema-verify"}
     },
     "financial-invariants": {
       "cache": false,
       "executor": "nx:run-commands",
-      "options": {
-        "command": "docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml exec -T wlt /financial-invariants"
-      },
-      "dependsOn": [
-        "schema-proof"
-      ]
+      "options": {"command": "docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml exec -T wlt /financial-invariants"},
+      "dependsOn": ["schema-proof"]
     },
     "format-check": {
       "executor": "nx:run-commands",
-      "options": {
-        "command": "node tools/dev/check-go-format.mjs services/wlt/backend"
-      }
+      "options": {"command": "node tools/dev/check-go-format.mjs services/wlt/backend"}
     },
     "ci-image": {
       "cache": false,
       "executor": "nx:run-commands",
-      "options": {
-        "command": "node tools/dev/build-ci-image.mjs wlt"
-      }
+      "options": {"command": "node tools/dev/build-ci-image.mjs wlt"}
     }
   },
-  "tags": [
-    "scope:wlt-backend",
-    "type:service"
-  ],
+  "tags": ["scope:wlt-backend", "type:service"],
   "namedInputs": {
-    "default": [
-      "{projectRoot}/**/*",
-      "{workspaceRoot}/go.work",
-      "{workspaceRoot}/go.work.sum"
-    ]
+    "default": ["{projectRoot}/**/*", "{workspaceRoot}/go.work", "{workspaceRoot}/go.work.sum"]
   }
 }
