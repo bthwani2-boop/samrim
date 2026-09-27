@@ -86,6 +86,9 @@ func isDefinitiveChildCheckoutError(err error) bool {
 	switch {
 	case errors.Is(err, postgres.ErrCheckoutPaymentReconciled),
 		errors.Is(err, postgres.ErrCheckoutEvidenceStale), errors.Is(err, postgres.ErrCartVersionConflict),
+		errors.Is(err, postgres.ErrCartNotFound), errors.Is(err, postgres.ErrCartEmpty),
+		errors.Is(err, postgres.ErrCartOfferUnavailable), errors.Is(err, postgres.ErrCartQuantityInvalid),
+		errors.Is(err, postgres.ErrCartModifierInvalid), errors.Is(err, postgres.ErrCartStateConflict),
 		errors.Is(err, cart.ErrCheckoutNotServiceable), errors.Is(err, cart.ErrFulfillmentModeUnavailable),
 		errors.Is(err, postgres.ErrCatalogInventoryInsufficient), errors.Is(err, postgres.ErrCatalogInventoryInvalid),
 		errors.Is(err, postgres.ErrDeliveryFeeUnavailable),
