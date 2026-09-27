@@ -55,7 +55,14 @@ const structure = requireTokens("REPOSITORY-STRUCTURE.md", [
   "`pnpm verify` is the stable public local verification entrypoint.",
   "governance-and-docs/docs/reference/competitors/",
 ]);
-if (/BTHWANI_FULL_PLATFORM_CLOSURE_MATRIX|single derived closure matrix/i.test(structure)) failures.push("REPOSITORY-STRUCTURE.md authorizes stale closure-matrix placement");
+const retainedMatrixPath = "tools/BTHWANI_FULL_PLATFORM_CLOSURE_MATRIX.md";
+const retainedMatrixEvidenceRule =
+  structure.includes("unless the user explicitly directs retention of a specific existing evidence file") &&
+  structure.includes(`The user directed retention of \`${retainedMatrixPath}\`; it records task evidence only, grants no authority, and must be revalidated against exact live state before use.`) &&
+  fs.existsSync(path.join(root, retainedMatrixPath));
+if (/single derived closure matrix/i.test(structure) || (structure.includes(retainedMatrixPath) && !retainedMatrixEvidenceRule)) {
+  failures.push("REPOSITORY-STRUCTURE.md authorizes unscoped closure-matrix placement");
+}
 
 const security = requireTokens("SECURITY.md", [
   "DOCUMENT_CLASS: SECURITY_REPORTING_AND_SECRET_HANDLING_GUIDANCE",
