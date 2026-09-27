@@ -87,6 +87,7 @@ Do not mark an area `CURRENT` if only its visual layer was observed while materi
 - Grocery exposes categories and subcategories; Produce showed Fruits, Vegetables, Leafy greens and Dates plus a two-column item grid with package weights and prices.
 - Orders and Rewards displayed explicit login gates. Login was not started, and Account was not opened.
 - Item detail showed product name, unit, quantity, price and Add to Cart; no item was added.
+- A 2026-09-27 live recheck of the installed versionCode `76` showed a delivery-address choice area in the current foreground. It did not expose a delivery-versus-pickup selector in that view; no address was opened or changed, and no cart or order action was taken.
 
 ## Current observations
 - Home prioritizes popular restaurants in an image tile grid. Grocery is a separate shopping destination with category tiles and produce subcategories.
@@ -97,10 +98,11 @@ Do not mark an area `CURRENT` if only its visual layer was observed while materi
 ## Interaction / experiment evidence
 - Tabs/routes entered: Home, Search/Stores, Search/Items, Grocery, Produce subcategory, restaurant list, restaurant menu, product detail, Orders and Rewards.
 - Buttons/controls exercised: search and submit, Stores/Items switch, Grocery tab/category, restaurant tile, store menu, product detail open/close, Orders and Rewards tabs.
+- A 2026-09-27 read-only recheck inspected the visible delivery-address choice area; no address control was opened or changed.
 - Paths/input variations tried: `chicken` search across store and item modes; switched Grocery to Produce; opened an item without adding it.
 - States reached: guest discovery, store and product search results, grocery subcategories/products, menu, item detail, explicit login-gated Orders and Rewards.
 - Results observed: search changed result type; login-gated sections showed sign-in prompt; no cart/order/account mutation occurred.
-- Unreached/not-tested items and reason: Account, login, checkout/payment, cart contents, order detail/tracking, reward redemption, favorites changes, promotions destination, errors/retry, offline/conflict/recovery, refresh/relaunch and accessibility were not exercised.
+- Unreached/not-tested items and reason: Account, login, delivery/pickup choice, checkout/payment, cart contents, order detail/tracking, reward redemption, favorites changes, promotions destination, errors/retry, offline/conflict/recovery, refresh/relaunch and accessibility were not exercised. The live recheck stopped at the visible address-choice area.
 
 ## Logic / behavioral inferences
 - Store and Item discovery are separate result types. Grocery has its own category hierarchy, distinct from restaurant cuisine categories.
@@ -145,3 +147,5 @@ Do not mark an area `CURRENT` if only its visual layer was observed while materi
 ### 2026-09-26 — Live Android partial review
 - Inspected the installed `1.0.52` app on `SM-S9280`; sampled guest home, store/item search, grocery/produce, restaurant listing/menu and login gates.
 - Did not log in, add products, open account-specific data or submit an order.
+### 2026-09-27 — Delivery-mode decision delta
+- Rechecked the installed versionCode `76`; the currently visible delivery-address choice did not show a fulfillment-mode selector. No address, account, cart or order state was changed; checkout remains unreviewed.

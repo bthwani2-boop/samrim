@@ -89,6 +89,7 @@ Do not mark an area `CURRENT` if only its visual layer was observed while materi
 - Bottom-tab Search has separate Restaurants and Item tabs. Searching `chicken` displayed restaurant matches with rating, distance, time and offer metadata; Item mode displayed chicken products with prices.
 - A launch-time promotional modal invited the user to play for prizes; it was closed without opening the promotion.
 - The home `انفعني` banner opened a form for delivering goods between locations. The visible form includes origin/destination location controls, optional sender/recipient information, immediate/scheduled timing, a delivery-type selector (default `توصيل أغراض`), a details field, optional image attachment and `Save and Continue`. No location/data was entered and the CTA was not submitted.
+- On a 2026-09-27 live recheck, opening the `نوع التوصيل` selector showed six service categories: goods, restaurants, pharmacies, groceries, cakes and gifts. This selector classifies the point-to-point delivery request; it is not a restaurant-order fulfillment choice. No option was selected or request submitted.
 - The Cart tab showed the explicit empty-cart illustration/message. The Account tab exposed profile/address/order-related sections; personal contents were not inspected. No order/cart mutation was made.
 
 ## Current observations
@@ -102,12 +103,13 @@ Do not mark an area `CURRENT` if only its visual layer was observed while materi
 
 ## Interaction / experiment evidence
 - Tabs/routes entered: Home, restaurant list, restaurant storefront, product detail, bottom-tab Search, restaurant results and item results, `انفعني` form, Cart tab and Account tab.
-- Buttons/controls exercised: restaurant category card, store row, item card, search field/submit, Restaurants/Item tabs, `انفعني` banner, promo modal close, Cart and Account tabs, back/close navigation.
+- Buttons/controls exercised: restaurant category card, store row, item card, search field/submit, Restaurants/Item tabs, `انفعني` banner, promo modal close, Cart and Account tabs, back/close navigation, and opening the delivery-type selector to read its choices without selecting one.
 - Paths/input variations tried: searched `chicken`; changed result type from restaurants to products; opened one product detail without pressing Add to Cart.
 - Additional paths: dismissed the launch-time prize promotion; opened the blank `انفعني` request form and returned without selecting addresses, entering details, attaching media or continuing; viewed empty Cart and Account destinations without opening private profile/order data.
+- The 2026-09-27 live selector check read the six service categories only; the form remained unsubmitted and no delivery request was created.
 - States reached: populated home and restaurant list, restaurant menu, product detail with notes/quantity/total, restaurant and item search results, promo modal, blank service form, empty cart and Account tab.
 - Results observed: search result type changed to products matching the chicken query; the Cart tab was empty. No request, order or cart mutation was made.
-- Unreached/not-tested items and reason: branch/address selection, service form submission and scheduling, category-specific error state, item addition, checkout/payment, order history/detail/tracking, profile/address contents, notifications, favorites mutation, offline/conflict/retry, refresh/relaunch and accessibility were not exercised.
+- Unreached/not-tested items and reason: branch/address selection, service form submission and scheduling, category-specific error state, item addition, restaurant-order fulfillment and checkout/payment, order history/detail/tracking, profile/address contents, notifications, favorites mutation, offline/conflict/retry, refresh/relaunch and accessibility were not exercised.
 
 ## Logic / behavioral inferences
 - Search visibly partitions restaurant results from item results and preserves the tested query across those two tabs.
@@ -163,3 +165,5 @@ Do not mark an area `CURRENT` if only its visual layer was observed while materi
 - Reopened the installed app and reviewed its launch promotion, `انفعني` blank request form, empty Cart and Account entry at a summary level.
 - Closed the promotion and left the form without selecting locations, entering data, attaching an image or continuing. The Account tab's personal/order details and Orders tab were not examined.
 - Added local-only links to the new screenshots; no cart/order/account mutation was made.
+### 2026-09-27 — Delivery-type selector delta
+- Reopened the installed versionCode `10236` and inspected the blank `انفعني` type selector. It lists six delivery-service categories; none was selected, and no location, request or order was changed.

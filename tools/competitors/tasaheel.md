@@ -89,6 +89,7 @@ Do not mark an area `CURRENT` if only its visual layer was observed while materi
 - Opening the account menu showed Favorites, Order History, Profile and Settings. Favorites, Order History and Profile led to the app sign-in screen; no credentials, OTP or social account were submitted.
 - Settings opened a modal with Dark/Light appearance options, Privacy Policy and displayed version `1.7.9 [179]`. Light was selected; the theme was not changed and the policy link was not opened.
 - Tapping a product's cart-add control led to the same sign-in gate. The add did not complete; no cart item, order, payment, favorite mutation or address/branch change was made.
+- A 2026-09-27 live recheck reopened the restaurant list and Castle storefront. The store detail showed open status, an estimated 40–60 minute time, menu categories and products, but no store-level delivery/pickup selector was visible before cart entry. The cart-add sign-in gate was retained from the prior observation; no item was added.
 
 ## Current observations
 - Visual language is pale cream with bright green controls, large Arabic RTL text, mixed Arabic/English store names, banner carousels and large photographic category/store cards.
@@ -107,7 +108,7 @@ Do not mark an area `CURRENT` if only its visual layer was observed while materi
 - Additional paths: opened account Favorites, Order History and Profile, each of which required sign-in; opened Settings and inspected its theme/privacy/version modal without changing settings; tapped a product cart-add control and stopped at the sign-in gate.
 - States reached: populated home, no-store result with alternate ordering route, product results, restaurant listing, empty favorites filter, address-required prompt, storefront menu, hours sheet, account menu, authentication gate and Settings modal.
 - Results observed: Closest requested an address; protected account/cart routes requested sign-in; no item was added and no business/account data was changed.
-- Unreached/not-tested items and reason: no address/branch was changed; checkout, payment, order details/tracking, profile data, authentication/OTP, notifications, privacy-policy content, promotion destination, favorite mutation, offline/conflict/retry, refresh/relaunch and accessibility were not exercised.
+- Unreached/not-tested items and reason: the current storefront did not expose a fulfillment selector; delivery/pickup choice, checkout, payment, order details/tracking, profile data, authentication/OTP, notifications, privacy-policy content, promotion destination, favorite mutation, offline/conflict/retry, refresh/relaunch and accessibility were not exercised. Cart entry remains sign-in gated; no address/branch was changed.
 
 ## Logic / behavioral inferences
 - Closest sorting appears address-dependent because the UI blocks it with a select-address prompt; the address selection flow itself was not tested.
@@ -166,3 +167,5 @@ Do not mark an area `CURRENT` if only its visual layer was observed while materi
 ### 2026-09-26 — Account and cart access delta
 - Revisited home, restaurant list/storefront and account entry points. Account Favorites, Order History and Profile, plus a product cart-add action, reached a sign-in gate; no account was selected and no purchase/cart mutation occurred.
 - Inspected the Settings modal (Dark/Light, Privacy Policy, installed version) without changing the theme or opening external policy content; linked the new local captures.
+### 2026-09-27 — Delivery-mode decision delta
+- Rechecked the installed versionCode `179` on `SM-S9280`; the open Castle storefront exposed its menu and estimated time but no delivery/pickup choice before cart entry. The existing sign-in gate prevents a checkout-mode comparison without authentication; no cart, address, branch or account state was changed.
