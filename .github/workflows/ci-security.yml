@@ -35,6 +35,16 @@ jobs:
         shell: bash
         run: node tools/dev/verify-ci-exact-sha.mjs
 
+      - name: Review introduced dependencies
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48
+        with:
+          fail-on-severity: high
+          vulnerability-check: true
+          license-check: true
+          show-openssf-scorecard: true
+          show-patched-versions: true
+
       - name: Set up Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
