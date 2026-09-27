@@ -45,7 +45,7 @@ if (dshToken.length < 24 || identityDshToken.length < 24 || bootstrapToken.lengt
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", path.join(root, "infra/local/compose/compose.yaml")];
 const suffix = `${Date.now().toString(36)}-${crypto.randomBytes(6).toString("hex")}`;
 const citySuffix = String(Date.now());
-const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), challengeIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), paymentIntentIDs = new Set(), deliveryFeePolicyIDs = new Set(), fieldCommissionPolicyIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set(), captainAdmissionIDs = new Set(), captainOfferIDs = new Set(), captainAssignmentIDs = new Set(), captainFundingIDs = new Set(), fieldAdmissionIDs = new Set(), destinationIDs = new Set(), payoutIDs = new Set(), settlementBatchIDs = new Set(), promotionIDs = new Set(), contentIDs = new Set(), multiStoreCheckoutIDs = new Set(), partnerCommissionRemittanceIDs = new Set();
+const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), challengeIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), paymentIntentIDs = new Set(), cashInFundingIntentIDs = new Set(), deliveryFeePolicyIDs = new Set(), fieldCommissionPolicyIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set(), captainAdmissionIDs = new Set(), captainOfferIDs = new Set(), captainAssignmentIDs = new Set(), fieldAdmissionIDs = new Set(), destinationIDs = new Set(), payoutIDs = new Set(), settlementBatchIDs = new Set(), promotionIDs = new Set(), contentIDs = new Set(), multiStoreCheckoutIDs = new Set(), partnerCommissionRemittanceIDs = new Set();
 let cityA = "";
 let cityB = "";
 let verticalID = "";
@@ -217,11 +217,13 @@ function cleanup() {
     sql(`DELETE FROM wlt.payment_intent_events WHERE intent_id='${value}'`);
     sql(`DELETE FROM wlt.payment_intents WHERE id='${value}'`);
   }
-  for (const fundingID of captainFundingIDs) {
+  for (const fundingID of cashInFundingIntentIDs) {
     const value = sqlLiteral(fundingID);
-    sql(`DELETE FROM wlt.ledger_entries WHERE transaction_id=(SELECT ledger_transaction_id FROM wlt.captain_wallet_funding WHERE id='${value}')`);
-    sql(`DELETE FROM wlt.captain_wallet_funding WHERE id='${value}'`);
-    sql(`DELETE FROM wlt.ledger_transactions WHERE source_type='CAPTAIN_OPENING_FUNDING' AND source_id='${value}'`);
+    sql(`DELETE FROM wlt.cash_in_funding_intent_events WHERE funding_intent_id='${value}'`);
+    sql(`UPDATE wlt.cash_in_funding_intents SET state='FAILED',provider_transaction_reference=NULL,ledger_transaction_id=NULL WHERE id='${value}'`);
+    sql(`DELETE FROM wlt.ledger_entries WHERE transaction_id IN (SELECT id FROM wlt.ledger_transactions WHERE source_type='FUNDING_INTENT' AND source_id='${value}')`);
+    sql(`DELETE FROM wlt.ledger_transactions WHERE source_type='FUNDING_INTENT' AND source_id='${value}'`);
+    sql(`DELETE FROM wlt.cash_in_funding_intents WHERE id='${value}'`);
   }
   for (const policyID of deliveryFeePolicyIDs) {
     const value = sqlLiteral(policyID);
@@ -393,6 +395,23 @@ async function request(base, method, pathname, options = {}) {
 }
 function serviceHeaders(operatorID, key, correlation = crypto.randomUUID(), expectedVersion) { return { "X-Acting-Actor-ID": operatorID, "X-Correlation-ID": correlation, "Idempotency-Key": key, ...(expectedVersion === undefined ? {} : { "X-Expected-Version": String(expectedVersion) }) }; }
 function partnerHeaders(key, expectedVersion) { return { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": key, ...(expectedVersion === undefined ? {} : { "X-Expected-Version": String(expectedVersion) }) }; }
+async function fundCaptainThroughDevelopmentCashIn(captainActorID, amountMinor, proofKey) {
+  const fundingIntentKey = `captain-cash-in-${proofKey}`;
+  const fundingIntent = await request(wltBase, "POST", `/wlt/v1/wallets/captain/${encodeURIComponent(captainActorID)}/funding-intents`, { token: wltToken, headers: serviceHeaders(actingOperatorID, fundingIntentKey), body: { amountMinor } });
+  if (fundingIntent.body?.intent?.id) cashInFundingIntentIDs.add(String(fundingIntent.body.intent.id));
+  const fundingIntentReplay = await request(wltBase, "POST", `/wlt/v1/wallets/captain/${encodeURIComponent(captainActorID)}/funding-intents`, { token: wltToken, headers: serviceHeaders(actingOperatorID, fundingIntentKey), body: { amountMinor } });
+  if (fundingIntent.status !== 201 || fundingIntent.body?.intent?.actorId !== captainActorID || fundingIntent.body?.intent?.amountMinor !== amountMinor || fundingIntent.body?.intent?.state !== "PENDING_PROVIDER" || fundingIntentReplay.status !== 200 || fundingIntentReplay.body?.idempotentReplay !== true || fundingIntentReplay.body?.intent?.id !== fundingIntent.body?.intent?.id) {
+    fail("Captain Cash-In did not create and replay its canonical WLT funding intent", JSON.stringify({ fundingIntent, fundingIntentReplay }));
+  }
+  const fundingIntentID = String(fundingIntent.body.intent.id);
+  const resultKey = `captain-cash-in-result-${proofKey}`;
+  const fundingResult = await request(wltBase, "POST", `/wlt/v1/development/funding-intents/${encodeURIComponent(fundingIntentID)}/simulate`, { token: wltToken, headers: serviceHeaders(actingOperatorID, resultKey), body: { outcome: "SUCCESS" } });
+  const fundingResultReplay = await request(wltBase, "POST", `/wlt/v1/development/funding-intents/${encodeURIComponent(fundingIntentID)}/simulate`, { token: wltToken, headers: serviceHeaders(actingOperatorID, resultKey), body: { outcome: "SUCCESS" } });
+  if (fundingResult.status !== 200 || fundingResult.body?.intent?.state !== "SETTLED" || fundingResultReplay.status !== 200 || fundingResultReplay.body?.idempotentReplay !== true || fundingResultReplay.body?.intent?.id !== fundingIntentID) {
+    fail("Captain Cash-In result did not settle and replay through the canonical WLT writer", JSON.stringify({ fundingResult, fundingResultReplay }));
+  }
+  return fundingResult.body.intent;
+}
 async function admitReviewedRoleCandidate(role, phone, candidateName, reviewedName, label) {
   if (role !== "field" && role !== "captain") fail("unsupported role candidate proof", role);
   const plural = role === "field" ? "fields" : "captains";
@@ -1495,12 +1514,9 @@ const captainAdmissionID = captainAdmissionFlow.admissionID;
 const captainActorID = captainAdmissionFlow.actorID;
 captainAdmissionIDs.add(captainAdmissionID); actorIDs.add(captainActorID);
 const captainAccessToken = await activateCaptain(captainPhone, `Capt${suffix.slice(0, 4)}`);
-const captainOpeningFunding = await request(wltBase, "POST", `/wlt/v1/operator/captains/${encodeURIComponent(captainActorID)}/opening-funding`, { token: wltToken, headers: serviceHeaders(actingOperatorID, `captain-opening-funding-${suffix}`), body: { amountMinor: mainOrderTotal, fundingReason: "runtime proof COD opening collateral", evidenceReference: `captain-opening-funding-proof-${suffix}` } });
-const captainOpeningFundingReplay = await request(wltBase, "POST", `/wlt/v1/operator/captains/${encodeURIComponent(captainActorID)}/opening-funding`, { token: wltToken, headers: serviceHeaders(actingOperatorID, `captain-opening-funding-${suffix}`), body: { amountMinor: mainOrderTotal, fundingReason: "runtime proof COD opening collateral", evidenceReference: `captain-opening-funding-proof-${suffix}` } });
-if (captainOpeningFunding.status !== 201 || captainOpeningFunding.body?.funding?.captainActorId !== captainActorID || captainOpeningFunding.body?.funding?.amountMinor !== mainOrderTotal || captainOpeningFundingReplay.status !== 200 || captainOpeningFundingReplay.body?.idempotentReplay !== true || captainOpeningFundingReplay.body?.funding?.id !== captainOpeningFunding.body?.funding?.id) fail("Captain opening funding did not produce an idempotent WLT ledger-backed balance", JSON.stringify({ captainOpeningFunding, captainOpeningFundingReplay }));
-captainFundingIDs.add(String(captainOpeningFunding.body.funding.id));
+await fundCaptainThroughDevelopmentCashIn(captainActorID, mainOrderTotal, `primary-${suffix}`);
 const captainWalletBeforeDispatch = await request(wltBase, "GET", `/wlt/v1/captains/${encodeURIComponent(captainActorID)}/wallet-state`, { token: wltToken });
-if (captainWalletBeforeDispatch.status !== 200 || captainWalletBeforeDispatch.body?.state?.availableMinor !== mainOrderTotal || captainWalletBeforeDispatch.body?.state?.heldMinor !== 0) fail("Captain opening wallet readback was not canonical", JSON.stringify(captainWalletBeforeDispatch));
+if (captainWalletBeforeDispatch.status !== 200 || captainWalletBeforeDispatch.body?.state?.availableMinor !== mainOrderTotal || captainWalletBeforeDispatch.body?.state?.heldMinor !== 0) fail("Captain Cash-In wallet readback was not canonical", JSON.stringify(captainWalletBeforeDispatch));
 const captainSelf = await request(dshBase, "GET", "/dsh/captains/me", { token: captainAccessToken });
 const captainAvailability = await request(dshBase, "POST", "/dsh/captains/me/availability", { token: captainAccessToken, headers: partnerHeaders(`captain-availability-${suffix}`, captainSelf.body?.admission?.version), body: { available: true } });
 const partnerCaptainOffers = await request(dshBase, "GET", "/dsh/captains/me/offers", { token: first.accessToken });
@@ -1537,9 +1553,7 @@ captainAdmissionIDs.add(secondCaptainAdmissionID); actorIDs.add(secondCaptainAct
 const secondCaptainAccessToken = await activateCaptain(secondCaptainPhone, `Capt${suffix.slice(0, 4)}`);
 const secondCaptainSelf = await request(dshBase, "GET", "/dsh/captains/me", { token: secondCaptainAccessToken });
 if (secondCaptainSelf.status !== 200 || secondCaptainSelf.body?.admission?.actorId !== secondCaptainActorID || secondCaptainSelf.body?.admission?.fullNameAr !== "ياسر محمد عبدالله المتوكل" || secondCaptainSelf.body?.admission?.contactPhoneE164 !== secondCaptainPhone) fail("second Captain app profile did not read its reviewed name and Identity phone", JSON.stringify(secondCaptainSelf));
-const secondCaptainFunding = await request(wltBase, "POST", `/wlt/v1/operator/captains/${encodeURIComponent(secondCaptainActorID)}/opening-funding`, { token: wltToken, headers: serviceHeaders(actingOperatorID, `captain-opening-funding-second-${suffix}`), body: { amountMinor: mainOrderTotal, fundingReason: "runtime proof reassignment COD collateral", evidenceReference: `captain-opening-funding-second-proof-${suffix}` } });
-if (secondCaptainFunding.status !== 201 || secondCaptainFunding.body?.funding?.captainActorId !== secondCaptainActorID || secondCaptainFunding.body.funding.amountMinor !== mainOrderTotal) fail("second Captain funding failed", JSON.stringify(secondCaptainFunding));
-captainFundingIDs.add(String(secondCaptainFunding.body.funding.id));
+await fundCaptainThroughDevelopmentCashIn(secondCaptainActorID, mainOrderTotal, `reassignment-${suffix}`);
 const secondCaptainAvailability = await request(dshBase, "POST", "/dsh/captains/me/availability", { token: secondCaptainAccessToken, headers: partnerHeaders(`captain-availability-second-${suffix}`, secondCaptainSelf.body?.admission?.version), body: { available: true } });
 if (secondCaptainSelf.status !== 200 || secondCaptainAvailability.status !== 200 || secondCaptainAvailability.body?.admission?.availabilityState !== "available") fail("second Captain availability failed", JSON.stringify({ secondCaptainSelf, secondCaptainAvailability }));
 

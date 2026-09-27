@@ -371,9 +371,24 @@ func transitionPayout(ctx context.Context, db *sql.DB, eventType, payoutID, acto
 		}
 		return item, nil
 	}
+	actorType, payoutActorID, err := payoutActor(ctx, tx, payoutID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return PayoutRequestRecord{}, ErrPayoutNotFound
+	}
+	if err != nil {
+		return PayoutRequestRecord{}, err
+	}
+	if actorType == "captain" {
+		if err := lockCaptainWalletBalance(ctx, tx, payoutActorID); err != nil {
+			return PayoutRequestRecord{}, err
+		}
+	}
 	payout, err := readPayoutForUpdate(ctx, tx, payoutID)
 	if err != nil {
 		return PayoutRequestRecord{}, err
+	}
+	if payout.ActorType != actorType || payout.ActorID != payoutActorID {
+		return PayoutRequestRecord{}, ErrPayoutState
 	}
 	if err := apply(tx, payout); err != nil {
 		return PayoutRequestRecord{}, err
@@ -880,6 +895,19 @@ func ReconcileManualTransfer(ctx context.Context, db *sql.DB, cipher *Destinatio
 		}
 		return item, nil
 	}
+	var actorType, actorID string
+	err = tx.QueryRowContext(ctx, `SELECT p.actor_type,p.actor_id FROM wlt.manual_transfer_executions t JOIN wlt.payout_requests p ON p.id=t.payout_id WHERE t.id=$1`, input.TransferID).Scan(&actorType, &actorID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ManualTransferExecutionRecord{}, ErrTransferNotFound
+	}
+	if err != nil {
+		return ManualTransferExecutionRecord{}, err
+	}
+	if actorType == "captain" {
+		if err := lockCaptainWalletBalance(ctx, tx, actorID); err != nil {
+			return ManualTransferExecutionRecord{}, err
+		}
+	}
 	var transfer ManualTransferExecutionRecord
 	if err := scanManualTransfer(ctx, tx, input.TransferID, true, &transfer); errors.Is(err, sql.ErrNoRows) {
 		return ManualTransferExecutionRecord{}, ErrTransferNotFound
@@ -913,10 +941,6 @@ func ReconcileManualTransfer(ctx context.Context, db *sql.DB, cipher *Destinatio
 		return ManualTransferExecutionRecord{}, ErrTransferState
 	}
 	accountCode := walletAccountCodeForTransfer(ctx, tx, transfer.PayoutID)
-	actorType, actorID, err := payoutActor(ctx, tx, transfer.PayoutID)
-	if err != nil {
-		return ManualTransferExecutionRecord{}, err
-	}
 	if actorType == "customer" {
 		if err := lockCustomerWalletBalance(ctx, tx, actorID); err != nil {
 			return ManualTransferExecutionRecord{}, err

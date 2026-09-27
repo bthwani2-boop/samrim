@@ -142,28 +142,6 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CaptainWalletStateResponse' }
-  /wlt/v1/operator/captains/{captainActorId}/opening-funding:
-    post:
-      operationId: createCaptainOpeningFunding
-      security: [{ serviceToken: [] }]
-      parameters:
-        - { $ref: '#/components/parameters/CaptainActorId' }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/CaptainOpeningFundingRequest' }
-      responses:
-        '201':
-          description: Operator-governed opening funding posted to the WLT ledger.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/CaptainWalletFundingResponse' }
-        '200':
-          description: Idempotent replay.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/CaptainWalletFundingResponse' }
   /wlt/v1/captain-cod-reservations:
     post:
       operationId: reserveCaptainCOD
@@ -2422,35 +2400,6 @@ components:
       required: [cashRemittance, idempotentReplay]
       properties:
         cashRemittance: { $ref: '#/components/schemas/CashRemittance' }
-        idempotentReplay: { type: boolean }
-    CaptainOpeningFundingRequest:
-      type: object
-      additionalProperties: false
-      required: [amountMinor, fundingReason, evidenceReference]
-      properties:
-        amountMinor: { type: integer, minimum: 1 }
-        fundingReason: { type: string, minLength: 1, maxLength: 256 }
-        evidenceReference: { type: string, minLength: 1, maxLength: 256 }
-    CaptainWalletFunding:
-      type: object
-      additionalProperties: false
-      required: [id, captainActorId, amountMinor, currency, fundingReason, evidenceReference, createdBy, ledgerTransactionId, createdAt]
-      properties:
-        id: { type: string }
-        captainActorId: { type: string }
-        amountMinor: { type: integer, minimum: 1 }
-        currency: { type: string, const: YER }
-        fundingReason: { type: string }
-        evidenceReference: { type: string }
-        createdBy: { type: string }
-        ledgerTransactionId: { type: string }
-        createdAt: { type: string, format: date-time }
-    CaptainWalletFundingResponse:
-      type: object
-      additionalProperties: false
-      required: [funding, idempotentReplay]
-      properties:
-        funding: { $ref: '#/components/schemas/CaptainWalletFunding' }
         idempotentReplay: { type: boolean }
     CaptainWalletState:
       type: object

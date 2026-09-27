@@ -207,6 +207,11 @@ func ApplyCashInFundingResult(ctx context.Context, db *sql.DB, input ApplyCashIn
 	if item.State != "PENDING_PROVIDER" && item.State != "UNKNOWN" {
 		return CashInFundingIntentRecord{}, false, ErrFundingIntentState
 	}
+	if input.Outcome == "SUCCESS" && item.ActorType == "captain" {
+		if err := lockCaptainWalletBalance(ctx, tx, item.ActorID); err != nil {
+			return CashInFundingIntentRecord{}, false, err
+		}
+	}
 	newState, eventType := item.State, ""
 	switch input.Outcome {
 	case "DELAYED":

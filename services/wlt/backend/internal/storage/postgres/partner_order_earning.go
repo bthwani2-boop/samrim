@@ -139,6 +139,11 @@ func FinalizePartnerOrderEarning(ctx context.Context, db *sql.DB, input Finalize
 	if paymentState != domain.StateCollected || method != domain.MethodCashOnDelivery || allocation.OrderID != input.OrderID || currency != allocation.Currency || paymentAmount != allocation.CashAmountMinor || allocation.PartnerActorID != input.PartnerActorID || allocation.FulfillmentMode != "BTHWANI_CAPTAIN" {
 		return PartnerOrderEarningRecord{}, false, ErrPartnerEarningPaymentState
 	}
+	if allocation.DeliveryFeeMinor > 0 {
+		if err := lockCaptainWalletBalance(ctx, tx, input.CaptainActorID); err != nil {
+			return PartnerOrderEarningRecord{}, false, err
+		}
+	}
 	if allocation.CommissionSnapshot == nil {
 		return PartnerOrderEarningRecord{}, false, ErrPartnerCommissionSnapshotMissing
 	}

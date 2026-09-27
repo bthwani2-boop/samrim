@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -14,35 +13,12 @@ import (
 var (
 	ErrCaptainWalletInvalidInput      = errors.New("captain wallet input is invalid")
 	ErrCaptainWalletInsufficientFunds = errors.New("captain wallet has insufficient available funds")
-	ErrCaptainWalletFundingNotFound   = errors.New("captain wallet funding was not found")
 	ErrCaptainCODReservationNotFound  = errors.New("captain COD reservation was not found")
 	ErrCaptainCODReservationState     = errors.New("captain COD reservation state does not allow this operation")
 	ErrCaptainCODReservationInput     = errors.New("captain COD reservation input is invalid")
 	ErrCaptainCODAllocationNotFound   = errors.New("captain COD payment allocation was not found")
 	ErrCaptainCODNoCashExposure       = errors.New("payment allocation has no cash COD exposure")
 )
-
-type CaptainWalletFundingInput struct {
-	CaptainActorID    string
-	AmountMinor       int64
-	FundingReason     string
-	EvidenceReference string
-	CreatedBy         string
-	IdempotencyKey    string
-	CorrelationID     string
-}
-
-type CaptainWalletFundingRecord struct {
-	ID                  string
-	CaptainActorID      string
-	AmountMinor         int64
-	Currency            string
-	FundingReason       string
-	EvidenceReference   string
-	CreatedBy           string
-	LedgerTransactionID string
-	CreatedAt           time.Time
-}
 
 type CaptainWalletStateRecord struct {
 	CaptainActorID     string
@@ -75,73 +51,8 @@ type CaptainCODReservationRecord struct {
 	RemittedAt      *time.Time
 }
 
-func HashCaptainWalletFunding(input CaptainWalletFundingInput) string {
-	return hashFacts("captain-wallet-funding", strings.TrimSpace(input.CaptainActorID), fmt.Sprintf("%d", input.AmountMinor), strings.TrimSpace(input.FundingReason), strings.TrimSpace(input.EvidenceReference), strings.TrimSpace(input.CreatedBy))
-}
-
 func HashCaptainCODReservation(input CaptainCODReservationInput, operation string) string {
 	return hashFacts("captain-cod-reservation", strings.TrimSpace(operation), strings.TrimSpace(input.OrderID), strings.TrimSpace(input.PaymentIntentID), strings.TrimSpace(input.CaptainActorID))
-}
-
-func CreateCaptainWalletFunding(ctx context.Context, db *sql.DB, input CaptainWalletFundingInput) (CaptainWalletFundingRecord, bool, error) {
-	input.CaptainActorID = strings.TrimSpace(input.CaptainActorID)
-	input.FundingReason = strings.TrimSpace(input.FundingReason)
-	input.EvidenceReference = strings.TrimSpace(input.EvidenceReference)
-	input.CreatedBy = strings.TrimSpace(input.CreatedBy)
-	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
-	input.CorrelationID = strings.TrimSpace(input.CorrelationID)
-	if db == nil || input.CaptainActorID == "" || input.AmountMinor <= 0 || input.FundingReason == "" || input.EvidenceReference == "" || input.CreatedBy == "" || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
-		return CaptainWalletFundingRecord{}, false, ErrCaptainWalletInvalidInput
-	}
-	requestHash := HashCaptainWalletFunding(input)
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return CaptainWalletFundingRecord{}, false, err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:captain-wallet:"+input.CaptainActorID); err != nil {
-		return CaptainWalletFundingRecord{}, false, err
-	}
-	var existingID, existingHash string
-	err = tx.QueryRowContext(ctx, "SELECT id,request_hash FROM wlt.captain_wallet_funding WHERE idempotency_key=$1 FOR UPDATE", input.IdempotencyKey).Scan(&existingID, &existingHash)
-	if err == nil {
-		if existingHash != requestHash {
-			return CaptainWalletFundingRecord{}, false, ErrIdempotencyConflict
-		}
-		item, readErr := readCaptainWalletFunding(ctx, tx, existingID)
-		if readErr != nil {
-			return CaptainWalletFundingRecord{}, false, readErr
-		}
-		if err := tx.Commit(); err != nil {
-			return CaptainWalletFundingRecord{}, false, err
-		}
-		return item, true, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return CaptainWalletFundingRecord{}, false, err
-	}
-	fundingID, err := newID("captain-funding")
-	if err != nil {
-		return CaptainWalletFundingRecord{}, false, err
-	}
-	transactionID, err := newID("ledger")
-	if err != nil {
-		return CaptainWalletFundingRecord{}, false, err
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_transactions(id,transaction_type,source_type,source_id,currency,idempotency_key,request_hash,correlation_id) VALUES($1,'CAPTAIN_OPENING_FUNDING','CAPTAIN_OPENING_FUNDING',$2,'YER',$3,$4,$5)`, transactionID, fundingID, input.IdempotencyKey, requestHash, input.CorrelationID); err != nil {
-		return CaptainWalletFundingRecord{}, false, err
-	}
-	if err := insertCaptainFundingLedgerEntries(ctx, tx, transactionID, input.CaptainActorID, input.AmountMinor); err != nil {
-		return CaptainWalletFundingRecord{}, false, err
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.captain_wallet_funding(id,captain_actor_id,amount_minor,currency,funding_reason,evidence_reference,created_by,ledger_transaction_id,idempotency_key,request_hash,correlation_id) VALUES($1,$2,$3,'YER',$4,$5,$6,$7,$8,$9,$10)`, fundingID, input.CaptainActorID, input.AmountMinor, input.FundingReason, input.EvidenceReference, input.CreatedBy, transactionID, input.IdempotencyKey, requestHash, input.CorrelationID); err != nil {
-		return CaptainWalletFundingRecord{}, false, err
-	}
-	if err := tx.Commit(); err != nil {
-		return CaptainWalletFundingRecord{}, false, err
-	}
-	item, err := readCaptainWalletFunding(ctx, db, fundingID)
-	return item, false, err
 }
 
 func ReadCaptainWalletState(ctx context.Context, db *sql.DB, captainActorID string) (CaptainWalletStateRecord, error) {
@@ -162,6 +73,15 @@ func ReadCaptainWalletState(ctx context.Context, db *sql.DB, captainActorID stri
 		return CaptainWalletStateRecord{}, err
 	}
 	return state, nil
+}
+
+func lockCaptainWalletBalance(ctx context.Context, tx *sql.Tx, captainActorID string) error {
+	captainActorID = strings.TrimSpace(captainActorID)
+	if tx == nil || boundedText(captainActorID, 1, 128) == "" {
+		return ErrCaptainWalletInvalidInput
+	}
+	_, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:captain-balance:"+captainActorID)
+	return err
 }
 
 func ReserveCaptainCOD(ctx context.Context, db *sql.DB, input CaptainCODReservationInput) (CaptainCODReservationRecord, bool, error) {
@@ -206,6 +126,9 @@ func ReserveCaptainCOD(ctx context.Context, db *sql.DB, input CaptainCODReservat
 	}
 	if amountMinor <= 0 {
 		return CaptainCODReservationRecord{}, false, ErrCaptainCODNoCashExposure
+	}
+	if err := lockCaptainWalletBalance(ctx, tx, input.CaptainActorID); err != nil {
+		return CaptainCODReservationRecord{}, false, err
 	}
 	state, err := readCaptainWalletStateTx(ctx, tx, input.CaptainActorID)
 	if err != nil {
@@ -271,6 +194,9 @@ func transitionCaptainCOD(ctx context.Context, db *sql.DB, input CaptainCODReser
 	if !errors.Is(err, sql.ErrNoRows) {
 		return CaptainCODReservationRecord{}, false, err
 	}
+	if err := lockCaptainWalletBalance(ctx, tx, input.CaptainActorID); err != nil {
+		return CaptainCODReservationRecord{}, false, err
+	}
 	var reservation CaptainCODReservationRecord
 	err = scanCaptainCODReservation(tx.QueryRowContext(ctx, `SELECT id,order_id,payment_intent_id,captain_actor_id,amount_minor,currency,state,created_at,updated_at,released_at,finalized_at,remitted_at FROM wlt.captain_cod_reservations WHERE order_id=$1 AND payment_intent_id=$2 AND captain_actor_id=$3 FOR UPDATE`, input.OrderID, input.PaymentIntentID, input.CaptainActorID), &reservation)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -320,43 +246,23 @@ func transitionCaptainCOD(ctx context.Context, db *sql.DB, input CaptainCODReser
 	return item, false, err
 }
 
-func readCaptainWalletFunding(ctx context.Context, source interface {
-	QueryRowContext(context.Context, string, ...any) *sql.Row
-}, id string) (CaptainWalletFundingRecord, error) {
-	var item CaptainWalletFundingRecord
-	err := source.QueryRowContext(ctx, `SELECT id,captain_actor_id,amount_minor,currency,funding_reason,evidence_reference,created_by,ledger_transaction_id,created_at FROM wlt.captain_wallet_funding WHERE id=$1`, id).Scan(&item.ID, &item.CaptainActorID, &item.AmountMinor, &item.Currency, &item.FundingReason, &item.EvidenceReference, &item.CreatedBy, &item.LedgerTransactionID, &item.CreatedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return CaptainWalletFundingRecord{}, ErrCaptainWalletFundingNotFound
-	}
-	return item, err
-}
-
 func readCaptainWalletStateTx(ctx context.Context, source interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, captainActorID string) (CaptainWalletStateRecord, error) {
 	var item CaptainWalletStateRecord
 	item.CaptainActorID, item.Currency = captainActorID, "YER"
-	if err := source.QueryRowContext(ctx, `SELECT COALESCE(SUM(CASE WHEN direction='CREDIT' THEN amount_minor ELSE -amount_minor END),0) FROM wlt.ledger_entries WHERE account_code='CAPTAIN_WALLET' AND actor_type='captain' AND actor_id=$1 AND currency='YER'`, captainActorID).Scan(&item.LedgerBalanceMinor); err != nil {
-		return CaptainWalletStateRecord{}, err
-	}
-	if err := source.QueryRowContext(ctx, `SELECT COALESCE((SELECT SUM(amount_minor) FROM wlt.captain_cod_reservations WHERE captain_actor_id=$1 AND state IN ('ACTIVE','FINALIZED')),0) + COALESCE((SELECT SUM(amount_minor) FROM wlt.payout_holds WHERE actor_type='captain' AND actor_id=$1 AND status='ACTIVE'),0)`, captainActorID).Scan(&item.HeldMinor); err != nil {
+	if err := source.QueryRowContext(ctx, `
+		SELECT
+			COALESCE((SELECT SUM(CASE WHEN direction='CREDIT' THEN amount_minor ELSE -amount_minor END)
+				FROM wlt.ledger_entries WHERE account_code='CAPTAIN_WALLET' AND actor_type='captain' AND actor_id=$1 AND currency='YER'),0),
+			COALESCE((SELECT SUM(amount_minor) FROM wlt.captain_cod_reservations
+				WHERE captain_actor_id=$1 AND state IN ('ACTIVE','FINALIZED')),0)
+			+ COALESCE((SELECT SUM(amount_minor) FROM wlt.payout_holds
+				WHERE actor_type='captain' AND actor_id=$1 AND status='ACTIVE'),0)`, captainActorID).Scan(&item.LedgerBalanceMinor, &item.HeldMinor); err != nil {
 		return CaptainWalletStateRecord{}, err
 	}
 	item.AvailableMinor = item.LedgerBalanceMinor - item.HeldMinor
 	return item, nil
-}
-
-func insertCaptainFundingLedgerEntries(ctx context.Context, tx *sql.Tx, transactionID, captainActorID string, amountMinor int64) error {
-	if amountMinor <= 0 {
-		return ErrCaptainWalletInvalidInput
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_entries(transaction_id,line_sequence,account_class,account_code,actor_type,actor_id,direction,amount_minor,currency) VALUES($1,1,'asset','EXTERNAL_SETTLEMENT_CASH',NULL,NULL,'DEBIT',$2,'YER')`, transactionID, amountMinor); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_entries(transaction_id,line_sequence,account_class,account_code,actor_type,actor_id,direction,amount_minor,currency) VALUES($1,2,'liability','CAPTAIN_WALLET','captain',$2,'CREDIT',$3,'YER')`, transactionID, captainActorID, amountMinor); err != nil {
-		return err
-	}
-	return nil
 }
 
 func insertCaptainCODReservationEvent(ctx context.Context, tx *sql.Tx, reservationID, eventType, idempotencyKey, requestHash, correlationID string) error {

@@ -79,7 +79,6 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/payment-intents/{intentId}/cancel", s.cancel)
 	mux.HandleFunc("GET /wlt/v1/captains/{captainActorId}/cash-liability", s.cashLiability)
 	mux.HandleFunc("GET /wlt/v1/captains/{captainActorId}/wallet-state", s.captainWalletState)
-	mux.HandleFunc("POST /wlt/v1/operator/captains/{captainActorId}/opening-funding", s.createCaptainOpeningFunding)
 	mux.HandleFunc("POST /wlt/v1/captain-cod-reservations", s.reserveCaptainCOD)
 	mux.HandleFunc("POST /wlt/v1/captain-cod-reservations/{orderId}/release", s.releaseCaptainCOD)
 	mux.HandleFunc("POST /wlt/v1/captain-cod-reservations/{orderId}/finalize", s.finalizeCaptainCOD)

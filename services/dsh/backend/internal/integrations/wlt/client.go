@@ -143,18 +143,6 @@ type CashInFundingIntent struct {
 	UpdatedAt                    string  `json:"updatedAt"`
 }
 
-type CaptainWalletFunding struct {
-	ID                  string `json:"id"`
-	CaptainActorID      string `json:"captainActorId"`
-	AmountMinor         int64  `json:"amountMinor"`
-	Currency            string `json:"currency"`
-	FundingReason       string `json:"fundingReason"`
-	EvidenceReference   string `json:"evidenceReference"`
-	CreatedBy           string `json:"createdBy"`
-	LedgerTransactionID string `json:"ledgerTransactionId"`
-	CreatedAt           string `json:"createdAt"`
-}
-
 type CaptainCODReservation struct {
 	ID              string  `json:"id"`
 	OrderID         string  `json:"orderId"`
@@ -1007,16 +995,6 @@ func (c *Client) RemitCash(ctx context.Context, intentID, captainActorID string,
 	var response cashRemittanceResponse
 	err := c.request(ctx, http.MethodPost, "/wlt/v1/payment-intents/"+url.PathEscape(strings.TrimSpace(intentID))+"/remit", body, idempotencyKey, correlationID, expectedPaymentVersion, &response)
 	return response.CashRemittance, response.IdempotentReplay, err
-}
-
-func (c *Client) CreateCaptainOpeningFunding(ctx context.Context, captainActorID string, amountMinor int64, fundingReason, evidenceReference, idempotencyKey, correlationID, actingActorID string) (CaptainWalletFunding, bool, error) {
-	body := map[string]any{"amountMinor": amountMinor, "fundingReason": strings.TrimSpace(fundingReason), "evidenceReference": strings.TrimSpace(evidenceReference)}
-	var response struct {
-		Funding          CaptainWalletFunding `json:"funding"`
-		IdempotentReplay bool                 `json:"idempotentReplay"`
-	}
-	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/captains/"+url.PathEscape(strings.TrimSpace(captainActorID))+"/opening-funding", body, idempotencyKey, correlationID, 0, actingActorID, &response)
-	return response.Funding, response.IdempotentReplay, err
 }
 
 func (c *Client) ReadCaptainWalletState(ctx context.Context, captainActorID string) (CaptainWalletState, error) {
