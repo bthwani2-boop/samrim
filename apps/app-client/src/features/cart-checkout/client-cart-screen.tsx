@@ -1,7 +1,7 @@
 import { borders, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { availableCustomerFulfillmentModes, type CustomerFulfillmentMode, type DeliveryAddress, fulfillmentModeLabel, type PublicStoreView, type ServiceabilityResponse } from "@bthwani/dsh";
-import { type Href, Link, useLocalSearchParams, useRouter } from "expo-router";
+import { type Href, Link, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { useServiceCityScope } from "../service-city/service-city-scope";
@@ -10,8 +10,14 @@ import { CartCheckout } from "./cart-checkout";
 
 type CartScreenState =
   | { kind: "loading" }
-  | { kind: "ready"; store: PublicStoreView; addresses: ReadonlyArray<DeliveryAddress> }
+  | { kind: "ready"; store: PublicStoreView }
   | { kind: "error" };
+
+type AddressesState =
+  | { kind: "idle"; addresses: ReadonlyArray<DeliveryAddress> }
+  | { kind: "loading"; addresses: ReadonlyArray<DeliveryAddress> }
+  | { kind: "ready"; addresses: ReadonlyArray<DeliveryAddress> }
+  | { kind: "error"; addresses: ReadonlyArray<DeliveryAddress> };
 
 type ServiceabilityState =
   | { kind: "idle" }
@@ -28,12 +34,28 @@ export default function ClientCartScreen() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<CartScreenState>({ kind: "loading" });
+  const [addressesState, setAddressesState] = useState<AddressesState>({ kind: "idle", addresses: [] });
   const [serviceability, setServiceability] = useState<ServiceabilityState>({ kind: "idle" });
   const [fulfillmentMode, setFulfillmentMode] = useState<CustomerFulfillmentMode | null>(null);
   const loadRequestID = useRef(0);
+  const addressRequestID = useRef(0);
   const serviceabilityRequestID = useRef(0);
+  const fulfillmentModeRef = useRef(fulfillmentMode);
+  fulfillmentModeRef.current = fulfillmentMode;
   const scopeRef = useRef({ storeId, selectedCityID });
   scopeRef.current = { storeId, selectedCityID };
+
+  const loadAddresses = useCallback(async () => {
+    const requestID = ++addressRequestID.current;
+    const isCurrent = () => requestID === addressRequestID.current && scopeRef.current.storeId === storeId && scopeRef.current.selectedCityID === selectedCityID;
+    setAddressesState((current) => ({ kind: "loading", addresses: current.addresses }));
+    try {
+      const response = await listOwnDeliveryAddresses();
+      if (isCurrent()) setAddressesState({ kind: "ready", addresses: response.addresses });
+    } catch {
+      if (isCurrent()) setAddressesState((current) => ({ kind: "error", addresses: current.addresses }));
+    }
+  }, [selectedCityID, storeId]);
 
   const load = useCallback(async () => {
     const requestID = ++loadRequestID.current;
@@ -44,14 +66,13 @@ export default function ClientCartScreen() {
       return;
     }
     setState({ kind: "loading" });
+    addressRequestID.current += 1;
+    setAddressesState({ kind: "idle", addresses: [] });
     setServiceability({ kind: "idle" });
     try {
-      const [store, addressResponse] = await Promise.all([
-        readPublishedStore(storeId, selectedCityID),
-        listOwnDeliveryAddresses(),
-      ]);
+      const store = await readPublishedStore(storeId, selectedCityID);
       if (!isCurrent()) return;
-      setState({ kind: "ready", store, addresses: addressResponse.addresses });
+      setState({ kind: "ready", store });
       const enabledModes = availableCustomerFulfillmentModes(store.fulfillmentModes);
       setFulfillmentMode(enabledModes.includes(requestedFulfillmentMode as CustomerFulfillmentMode) ? requestedFulfillmentMode as CustomerFulfillmentMode : null);
     } catch {
@@ -59,10 +80,16 @@ export default function ClientCartScreen() {
     }
   }, [requestedFulfillmentMode, selectedCityID, storeId]);
 
+  useFocusEffect(useCallback(() => {
+    if (state.kind === "ready" && fulfillmentModeRef.current !== null && fulfillmentModeRef.current !== "CUSTOMER_PICKUP") void loadAddresses();
+    return () => { addressRequestID.current += 1; };
+  }, [loadAddresses, state.kind]));
+
   useEffect(() => {
     void load();
     return () => {
       loadRequestID.current += 1;
+      addressRequestID.current += 1;
       serviceabilityRequestID.current += 1;
     };
   }, [load]);
@@ -105,13 +132,15 @@ export default function ClientCartScreen() {
       </BthwaniSurface>
       <BthwaniSectionHeader title="طريقة الاستلام" subtitle="اختر من الخيارات التي يدعمها هذا المتجر." />
       <View style={styles.addressCard} accessibilityLabel="خيارات استلام الطلب">
-        {availableFulfillmentModes.map((mode) => <BthwaniChip key={mode} label={fulfillmentModeLabel(mode)} onPress={() => { serviceabilityRequestID.current += 1; setFulfillmentMode(mode); setServiceability({ kind: "idle" }); }} selected={fulfillmentMode === mode} />)}
+        {availableFulfillmentModes.map((mode) => <BthwaniChip key={mode} label={fulfillmentModeLabel(mode)} onPress={() => { serviceabilityRequestID.current += 1; setFulfillmentMode(mode); setServiceability({ kind: "idle" }); if (mode !== "CUSTOMER_PICKUP" && addressesState.kind === "idle") void loadAddresses(); }} selected={fulfillmentMode === mode} />)}
       </View>
       {fulfillmentMode !== null && fulfillmentMode !== "CUSTOMER_PICKUP" ? <>
         <BthwaniSectionHeader title="عنوان التوصيل" subtitle="يعيد الخادم التحقق من الأهلية عند الإتمام." />
         <View style={styles.addressCard}>
-          {state.addresses.length === 0 ? <><Text style={styles.muted}>لا يوجد عنوان محفوظ. أضف عنوانًا ثم ارجع إلى السلة لمتابعة الطلب.</Text><Link href={"/addresses" as Href} asChild><BthwaniButton accessibilityLabel="إضافة عنوان توصيل" label="إضافة عنوان توصيل" variant="secondary" /></Link></> : null}
-          {state.addresses.map((address) => {
+          {addressesState.kind === "loading" && addressesState.addresses.length === 0 ? <View accessibilityLabel="جارٍ تحميل عناوين التوصيل"><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ تحميل عناوين التوصيل.</Text></View> : null}
+          {addressesState.kind === "ready" && addressesState.addresses.length === 0 ? <><Text style={styles.muted}>لا يوجد عنوان محفوظ. أضف عنوانًا ثم ارجع إلى السلة لمتابعة الطلب.</Text><Link href={"/addresses" as Href} asChild><BthwaniButton accessibilityLabel="إضافة عنوان توصيل" label="إضافة عنوان توصيل" variant="secondary" /></Link></> : null}
+          {addressesState.kind === "error" ? <><Text accessibilityRole="alert" style={styles.error}>تعذر تحميل عناوين التوصيل. أعد المحاولة أو أضف عنوانًا ثم ارجع إلى السلة.</Text><BthwaniButton label="إعادة تحميل العناوين" onPress={() => void loadAddresses()} variant="secondary" /><Link href={"/addresses" as Href} asChild><BthwaniButton accessibilityLabel="إضافة عنوان توصيل" label="إضافة عنوان توصيل" variant="quiet" /></Link></> : null}
+          {addressesState.addresses.map((address) => {
             const selected = serviceability.kind !== "idle" && serviceability.addressId === address.id;
             const busy = serviceability.kind === "loading" && selected;
             return <Pressable key={address.id} accessibilityRole="button" accessibilityState={{ selected, busy }} disabled={serviceability.kind === "loading"} onPress={() => void evaluateAddress(address.id)} style={[styles.address, selected && styles.addressSelected, serviceability.kind === "loading" && styles.disabled]}><Text style={styles.addressText}>{address.addressText}</Text><Text style={styles.muted}>{selected && serviceability.kind === "ready" ? serviceabilityMessage(serviceability.result.status) : "اضغط لتقييم أهلية التوصيل"}</Text>{busy ? <ActivityIndicator color={theme.actionBackground} /> : null}</Pressable>;
@@ -119,7 +148,7 @@ export default function ClientCartScreen() {
           {serviceability.kind === "error" ? <Text accessibilityRole="alert" style={styles.error}>تعذر تقييم العنوان. أعد المحاولة.</Text> : null}
         </View>
       </> : fulfillmentMode === "CUSTOMER_PICKUP" ? <BthwaniSurface tone="inset" style={styles.addressCard}><Text style={styles.addressText}>استلم بنفسك من المتجر</Text><Text style={styles.muted}>اذهب إلى المتجر لاستلام طلبك وادفع قيمة المنتجات نقدًا للمتجر.</Text></BthwaniSurface> : <Text accessibilityRole="alert" style={styles.error}>اختر أحد أوضاع الطلب المتاحة لإتمام الشراء.</Text>}
-      {fulfillmentMode ? <CartCheckout key={state.store.id} storeId={state.store.id} addresses={state.addresses} serviceableAddressId={serviceableAddressId} fulfillmentMode={fulfillmentMode} /> : null}
+      {fulfillmentMode ? <CartCheckout key={state.store.id} storeId={state.store.id} addresses={addressesState.addresses} serviceableAddressId={serviceableAddressId} fulfillmentMode={fulfillmentMode} /> : null}
     </View>
   );
 }
