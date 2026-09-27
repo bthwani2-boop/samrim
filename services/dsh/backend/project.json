@@ -39,6 +39,11 @@
       "executor": "nx:run-commands",
       "options": {"command": "node tools/dev/verify-dsh-runtime-core.mjs --env-file=infra/local/.env"}
     },
+    "runtime-fixture-cleanup": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {"command": "node tools/dev/verify-dsh-runtime-core.mjs --cleanup-checker-fixture --env-file=infra/local/.env"}
+    },
     "format-check": {
       "executor": "nx:run-commands",
       "options": {"command": "node tools/dev/check-go-format.mjs services/dsh/backend"}

@@ -50,6 +50,13 @@
         "e2e"
       ]
     },
+    "dsh-runtime-checker-fixture": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm --dir apps/control-panel test:e2e:live -- tests/zz-dsh-operator.spec.ts --grep=downstream.*separation.*proof --workers=1"
+      }
+    },
     "lint": {
       "executor": "nx:run-commands",
       "options": {

@@ -33,6 +33,18 @@ for (const [index, name] of dshMigrationNames.entries()) {
 }
 
 const env = readEnv(envPath);
+const checkerFixturePath = process.env.DSH_RUNTIME_CHECKER_FIXTURE_PATH?.trim() || "";
+function readCheckerFixture() {
+  if (!checkerFixturePath || !fs.existsSync(checkerFixturePath)) return null;
+  let fixture;
+  try { fixture = JSON.parse(fs.readFileSync(checkerFixturePath, "utf8")); }
+  catch { fail("DSH checker fixture metadata is invalid"); }
+  if (fixture?.createdByTest !== true || !/^act_[A-Za-z0-9_-]+$/.test(String(fixture.actorId || "")) || !/^oprof_[A-Za-z0-9_-]+$/.test(String(fixture.profileId || "")) || !/^\+9677[0-9]{8}$/.test(String(fixture.phone || ""))) {
+    fail("DSH checker fixture metadata does not identify one disposable reviewed Operator");
+  }
+  return { actorID: String(fixture.actorId), profileID: String(fixture.profileId), phone: String(fixture.phone) };
+}
+const checkerFixture = readCheckerFixture();
 const dshBase = required(env, "DSH_API_BASE_URL").replace(/\/+$/, "");
 const identityBase = required(env, "IDENTITY_API_BASE_URL").replace(/\/+$/, "");
 const dshToken = required(env, "CONTROL_PANEL_SERVICE_TOKEN");
@@ -372,11 +384,43 @@ function cleanup() {
     cleanupBatch = null;
   }
 }
+function cleanupCheckerFixture() {
+  if (!checkerFixturePath || !fs.existsSync(checkerFixturePath)) return false;
+  const fixture = readCheckerFixture();
+  const actorID = sqlLiteral(fixture.actorID);
+  const profileID = sqlLiteral(fixture.profileID);
+  const phone = sqlLiteral(fixture.phone);
+  const cleanupSQL = [
+    `DELETE FROM identity_operator_profile_events WHERE profile_id IN (SELECT id FROM identity_operator_profiles WHERE id='${profileID}' AND actor_id='${actorID}' AND state='admitted')`,
+    `DELETE FROM identity_operator_profiles WHERE id='${profileID}' AND actor_id='${actorID}'`,
+    `DELETE FROM identity_actors WHERE id='${actorID}' AND phone_e164='${phone}'`,
+    `SELECT (SELECT count(*) FROM identity_operator_profiles WHERE id='${profileID}') + (SELECT count(*) FROM identity_actors WHERE id='${actorID}')`,
+  ].join(";\n") + ";\n";
+  const output = execFileSync("docker", ["exec", "-i", postgresContainerID, "psql", "--no-psqlrc", "-A", "-t", "-q", "--set=ON_ERROR_STOP=1", "--single-transaction", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-f", "-"], { cwd: root, encoding: "utf8", input: cleanupSQL }).trim();
+  if (output.split(/\r?\n/).at(-1) !== "0") throw new Error("DSH checker fixture cleanup left the created Operator or reviewed profile");
+  fs.unlinkSync(checkerFixturePath);
+  console.log("DSH_RUNTIME_CHECKER_FIXTURE_CLEANUP=PASS");
+  return true;
+}
+const cleanupCheckerFixtureOnly = process.argv.includes("--cleanup-checker-fixture");
 process.on("exit", () => {
-  if (cleanupCompleted || cleanupAttempted) return;
-  try { cleanup(); }
-  catch (error) { console.error(`DSH_RUNTIME_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`); process.exitCode = 1; }
+  if (!cleanupCheckerFixtureOnly && !cleanupCompleted && !cleanupAttempted) {
+    try { cleanup(); }
+    catch (error) { console.error(`DSH_RUNTIME_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`); process.exitCode = 1; }
+  }
+  try { cleanupCheckerFixture(); }
+  catch (error) { console.error(`DSH_RUNTIME_CHECKER_FIXTURE_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`); process.exitCode = 1; }
 });
+if (cleanupCheckerFixtureOnly) {
+  try {
+    cleanupCheckerFixture();
+    console.log("DSH_RUNTIME_CHECKER_FIXTURE_CLEANUP=PASS");
+    process.exit(0);
+  } catch (error) {
+    console.error(`DSH_RUNTIME_CHECKER_FIXTURE_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
+}
 
 async function request(base, method, pathname, options = {}) {
   let response;
@@ -529,7 +573,10 @@ if (!actingOperatorID) {
 if (!actingOperatorID.startsWith("act_")) fail("acting operator identity is invalid", actingOperatorID);
 const platformPoliciesAccess = await request(identityBase, "GET", `/internal/operators/${encodeURIComponent(actingOperatorID)}/permissions/platform_policies`, { token: identityDshToken });
 if (platformPoliciesAccess.status !== 200 || platformPoliciesAccess.body?.actorId !== actingOperatorID || platformPoliciesAccess.body?.permission !== "platform_policies" || platformPoliciesAccess.body?.enabled !== true) fail("DSH proof operator lacks Platform Policies permission", JSON.stringify(platformPoliciesAccess));
-const checkerOperatorID = sql(`SELECT r.actor_id FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id WHERE r.role='operator' AND r.enabled AND a.security_enabled AND r.activated_at IS NOT NULL AND r.actor_id<>'' AND r.actor_id<> '${sqlLiteral(actingOperatorID)}' ORDER BY r.activated_at DESC, r.actor_id LIMIT 1`);
+if (checkerFixturePath && !checkerFixture) fail("disposable DSH checker Operator fixture was not established through canonical Identity review and Passkey enrollment");
+const checkerOperatorID = checkerFixture
+  ? sql(`SELECT r.actor_id FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id WHERE r.role='operator' AND r.enabled AND a.security_enabled AND r.activated_at IS NOT NULL AND r.actor_id='${sqlLiteral(checkerFixture.actorID)}' AND r.actor_id<> '${sqlLiteral(actingOperatorID)}'`)
+  : sql(`SELECT r.actor_id FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id WHERE r.role='operator' AND r.enabled AND a.security_enabled AND r.activated_at IS NOT NULL AND r.actor_id<>'' AND r.actor_id<> '${sqlLiteral(actingOperatorID)}' ORDER BY r.activated_at DESC, r.actor_id LIMIT 1`);
 if (!checkerOperatorID) fail("independent active checker Operator fixture is missing; establish it through the canonical Passkey flow before DSH runtime proof");
 if (!checkerOperatorID.startsWith("act_") || checkerOperatorID === actingOperatorID) fail("checker operator identity is invalid", checkerOperatorID);
 for (const permission of ["operations", "finance"]) {
@@ -1973,6 +2020,7 @@ await waitForIdentityReady();
 console.log("DSH_IDENTITY_FAILURE_RECOVERY=PASS");
 try {
   cleanup();
+  cleanupCheckerFixture();
   console.log("DSH_RUNTIME_CLEANUP=PASS");
 } catch (error) {
   console.error(`DSH_RUNTIME_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`);

@@ -70,6 +70,10 @@ for (const [file, independentTargets] of [
 const wlt = data("services/wlt/backend/project.json");
 assert(wlt.targets?.["financial-invariants"]?.cache === false, "wlt financial invariants must be cache=false");
 assert(JSON.stringify(wlt.targets?.["financial-invariants"]?.dependsOn ?? []) === JSON.stringify(["schema-proof"]), "wlt financial invariants must depend only on local schema-proof");
+const dsh = data("services/dsh/backend/project.json");
+assert(dsh.targets?.["runtime-fixture-cleanup"]?.cache === false, "DSH checker fixture cleanup must be uncached");
+const controlDshFixture = data("apps/control-panel/project.json");
+assert(controlDshFixture.targets?.["dsh-runtime-checker-fixture"]?.cache === false, "DSH checker fixture setup must be uncached");
 
 const routerProject = data("tools/dev/runtime-proof/project.json");
 assert(routerProject.name === "runtime-proof-routing", "runtime router Nx owner name drifted");
@@ -92,6 +96,8 @@ for (const token of [
   "control-only change selects only control runtime lane",
   "identity scope selects only identity runtime lane",
   "runtime-sensitive owner without classification fails closed",
+  "DSH-only runtime scope prepares one disposable Passkey checker before backend proofs",
+  "combined Control and DSH scope creates the checker in the existing browser proof only once",
   "scheduled/full regression selects every canonical lane",
 ]) assert(routerTests.includes(token), `runtime router tests missing ${token}`);
 

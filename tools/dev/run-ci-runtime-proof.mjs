@@ -1,5 +1,7 @@
 import { execFileSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { laneTargets } from "./runtime-proof/resolve.mjs";
 
@@ -19,8 +21,15 @@ const requestedTargets = (process.env.CI_RUNTIME_TARGETS ?? "")
   .map((value) => value.trim())
   .filter(Boolean);
 if (requestedTargets.length === 0) fail("CI_RUNTIME_TARGETS is empty");
+const needsDshCheckerFixture = requestedTargets.includes("dsh-backend:runtime-proof");
+const dshCheckerFixturePath = needsDshCheckerFixture
+  ? path.join(process.env.RUNNER_TEMP || os.tmpdir(), `samrim-dsh-checker-${process.pid}-${crypto.randomUUID()}.json`)
+  : "";
 
-const allowedTargets = new Set(Object.values(laneTargets).flat());
+const allowedTargets = new Set([
+  ...Object.values(laneTargets).flat(),
+  "control-panel:dsh-runtime-checker-fixture",
+]);
 for (const target of requestedTargets) {
   if (!allowedTargets.has(target)) fail("unowned runtime proof target requested: " + target);
 }
@@ -55,18 +64,40 @@ const childEnv = {
   PLAYWRIGHT_MAILPIT_BASE_URL: "http://127.0.0.1:" + runtimeEnv.SAMRIM_MAILPIT_WEB_PORT,
   PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN: runtimeEnv.OPERATOR_BOOTSTRAP_SECRET,
   PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN: runtimeEnv.CONTROL_PANEL_SERVICE_TOKEN,
+  ...(dshCheckerFixturePath ? { DSH_RUNTIME_CHECKER_FIXTURE_PATH: dshCheckerFixturePath } : {}),
 };
 
 const executable = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+let checkerFixtureCleanupFailed = false;
 console.log("CI_RUNTIME_TASKS=" + requestedTargets.join(","));
-for (const target of requestedTargets) {
-  console.log("CI_RUNTIME_TASK=START target=" + target);
-  execFileSync(
-    executable,
-    ["exec", "nx", "run", target, "--outputStyle=stream"],
-    { cwd: root, env: childEnv, stdio: "inherit" },
-  );
-  console.log("CI_RUNTIME_TASK=PASS target=" + target);
+try {
+  for (const target of requestedTargets) {
+    console.log("CI_RUNTIME_TASK=START target=" + target);
+    execFileSync(
+      executable,
+      ["exec", "nx", "run", target, "--outputStyle=stream"],
+      { cwd: root, env: childEnv, stdio: "inherit" },
+    );
+    console.log("CI_RUNTIME_TASK=PASS target=" + target);
+  }
+} finally {
+  if (dshCheckerFixturePath && fs.existsSync(dshCheckerFixturePath)) {
+    try {
+      execFileSync(
+        executable,
+        ["exec", "nx", "run", "dsh-backend:runtime-fixture-cleanup", "--outputStyle=stream"],
+        { cwd: root, env: childEnv, stdio: "inherit" },
+      );
+    } catch (error) {
+      checkerFixtureCleanupFailed = true;
+      console.error(`DSH_RUNTIME_CHECKER_FIXTURE_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`);
+      process.exitCode = 1;
+    }
+  }
 }
 
-console.log("CI_RUNTIME_INTEGRATION=PASS targets=" + requestedTargets.join(","));
+if (checkerFixtureCleanupFailed) {
+  console.error("CI_RUNTIME_INTEGRATION=FAIL disposable checker fixture cleanup failed");
+} else {
+  console.log("CI_RUNTIME_INTEGRATION=PASS targets=" + requestedTargets.join(","));
+}

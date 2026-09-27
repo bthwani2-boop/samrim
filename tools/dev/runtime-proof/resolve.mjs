@@ -105,13 +105,18 @@ export function resolveFromAffected(affected, configs, fullRegression = false) {
 }
 
 function buildResolution(affected, lanes, reasons) {
+  const targets = lanes.flatMap((lane) => {
+    if (lane !== "dsh") return laneTargets[lane];
+    const checkerFixtureTarget = lanes.includes("control") ? [] : ["control-panel:dsh-runtime-checker-fixture"];
+    return [...checkerFixtureTarget, ...laneTargets.dsh];
+  });
   return {
     affected: [...affected].sort(),
     lanes,
-    targets: unique(lanes.flatMap((lane) => laneTargets[lane])),
+    targets: unique(targets),
     images: unique(lanes.flatMap((lane) => laneImages[lane])),
     services: unique(lanes.flatMap((lane) => laneServices[lane])),
-    needsBrowser: lanes.includes("control"),
+    needsBrowser: lanes.includes("control") || lanes.includes("dsh"),
     run: lanes.length > 0,
     reasons: unique(reasons),
   };

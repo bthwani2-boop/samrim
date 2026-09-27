@@ -50,6 +50,36 @@ test("Nx-expanded cross-service cone composes lanes once", () => {
   assert.deepEqual(result.lanes, ["wlt", "dsh"]);
   assert.deepEqual(result.targets, [
     "wlt-backend:financial-invariants",
+    "control-panel:dsh-runtime-checker-fixture",
+    "dsh-backend:baseline-proof",
+    "dsh-backend:runtime-proof",
+  ]);
+  assert.equal(result.needsBrowser, true);
+});
+
+test("DSH-only runtime scope prepares one disposable Passkey checker before backend proofs", () => {
+  const result = resolveFromAffected(
+    ["dsh-backend"],
+    configs([["dsh-backend", ["scope:dsh-backend", "type:service"]]]),
+  );
+  assert.deepEqual(result.targets, [
+    "control-panel:dsh-runtime-checker-fixture",
+    "dsh-backend:baseline-proof",
+    "dsh-backend:runtime-proof",
+  ]);
+  assert.equal(result.needsBrowser, true);
+});
+
+test("combined Control and DSH scope creates the checker in the existing browser proof only once", () => {
+  const result = resolveFromAffected(
+    ["control-panel", "dsh-backend"],
+    configs([
+      ["control-panel", ["scope:control-panel", "type:app"]],
+      ["dsh-backend", ["scope:dsh-backend", "type:service"]],
+    ]),
+  );
+  assert.deepEqual(result.targets, [
+    "control-panel:browser-live-proof",
     "dsh-backend:baseline-proof",
     "dsh-backend:runtime-proof",
   ]);

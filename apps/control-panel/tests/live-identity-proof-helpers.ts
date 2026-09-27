@@ -114,7 +114,7 @@ export async function enrollAndAuthenticateIsolatedOperator(
   return operator;
 }
 
-async function enableOperatorPermission(identityBase: string, controlToken: string, actingOperatorID: string, actorID: string, permission: string): Promise<void> {
+export async function enableOperatorPermission(identityBase: string, controlToken: string, actingOperatorID: string, actorID: string, permission: string): Promise<void> {
   const pathName = `/internal/operators/${encodeURIComponent(actorID)}/permissions/${encodeURIComponent(permission)}`;
   const headers = { Accept: "application/json", Authorization: "Bearer " + controlToken, "X-Acting-Actor-ID": actingOperatorID };
   const read = await fetch(identityBase + pathName, { headers, signal: AbortSignal.timeout(5_000) });
