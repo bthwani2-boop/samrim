@@ -15,7 +15,7 @@ for (const required of [
   "{workspaceRoot}/REPOSITORY-STRUCTURE.md",
   "{workspaceRoot}/knowledge.sources.json",
   "{workspaceRoot}/**/project.json",
-  "{workspaceRoot}/tools/runtime-proof/**/*",
+  "{workspaceRoot}/tools/dev/runtime-proof/**/*",
 ]) {
   if (!executionProofInputs.includes(required)) failures.push("repository-ci:execution-proof-system missing causal input " + required);
 }
@@ -129,7 +129,7 @@ for (const [file, targetName] of [
   ["services/wlt/backend/project.json", "schema-proof"],
   ["services/wlt/backend/project.json", "financial-invariants"],
   ["services/wlt/backend/project.json", "ci-image"],
-  ["tools/runtime-proof/project.json", "resolve"],
+  ["tools/dev/runtime-proof/project.json", "resolve"],
 ]) {
   if (data(file).targets?.[targetName]?.cache !== false) failures.push(file + ":" + targetName + " must explicitly set cache=false");
 }
