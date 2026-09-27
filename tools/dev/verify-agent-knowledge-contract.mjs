@@ -27,6 +27,9 @@ const agent = requireTokens("AGENTS.md", [
   "PRODUCT_SEMANTIC_AUTHORITY: NONE",
   "CURRENT_IMPLEMENTATION_AUTHORITY: NONE",
   "knowledge.sources.json",
+  "CURRENT USER / TASK AUTHORITY",
+  "Temporary task authorization should normally remain outside durable repository authority",
+  "After one bounded discovery sufficient to choose owner, boundary, safety, treatment and proof, default to execution rather than repeated audit",
   "GOVERNANCE_IMPACT=NONE",
   "GOVERNANCE_IMPACT=REVALIDATE_ONLY",
   "GOVERNANCE_IMPACT=UPDATE_REQUIRED",
@@ -54,16 +57,20 @@ const structure = requireTokens("REPOSITORY-STRUCTURE.md", [
   "This is a placement grammar, not current inventory",
   "`pnpm verify` is the stable public local verification entrypoint.",
   "governance-and-docs/docs/reference/competitors/",
+  "Task authorization, branch/order instructions, checkpoint cadence and promotion constraints belong to current user/task authority outside durable tracked repository content",
 ]);
 const retainedMatrixPath = "tools/BTHWANI_FULL_PLATFORM_CLOSURE_MATRIX.md";
-const retainedMatrixEvidenceRule = [
-  `The user-directed \`${retainedMatrixPath}\` is the sole admitted retained task-evidence exception`,
-  "it grants no semantic/execution/implementation authority",
-  "must be revalidated against exact live state before use",
-  "Do not create another tracked task trigger, closure matrix or Product/journey inventory beside it.",
-].every((token) => structure.includes(token)) && fs.existsSync(path.join(root, retainedMatrixPath));
+const retainedMatrixEvidenceRule =
+  structure.includes(`The user-directed \`${retainedMatrixPath}\` is the sole admitted retained task-evidence exception`) &&
+  structure.includes("it grants no semantic/execution/implementation authority and must be revalidated against exact live state before use") &&
+  fs.existsSync(path.join(root, retainedMatrixPath));
 if (/single derived closure matrix/i.test(structure) || (structure.includes(retainedMatrixPath) && !retainedMatrixEvidenceRule)) {
   failures.push("REPOSITORY-STRUCTURE.md does not bound its closure-matrix exception to non-authoritative retained evidence");
+}
+
+const retiredTriggerPath = "tools/BTHWANI_FULL_PLATFORM_A_TO_Z_FIXED_POINT_CLOSURE_TRIGGER.md";
+if (fs.existsSync(path.join(root, retiredTriggerPath))) {
+  failures.push(`tracked task authorization must remain retired: ${retiredTriggerPath}`);
 }
 
 const security = requireTokens("SECURITY.md", [
@@ -148,6 +155,7 @@ if (failures.length) {
 console.log("AGENT_LAW_OWNER=AGENTS.md");
 console.log("PLACEMENT_OWNER=REPOSITORY-STRUCTURE.md");
 console.log("SECURITY_LOCAL_OWNER=REPORTING_AND_SECRET_HANDLING_ONLY");
-console.log("TASK_TRIGGER_AUTHORITY=TEMPORARY_NON_SEMANTIC");
+console.log("TASK_AUTHORIZATION_LOCATION=EXTERNAL_CURRENT_USER_AUTHORITY");
+console.log("TRACKED_TASK_TRIGGER=ABSENT");
 console.log("DUPLICATE_DURABLE_AUTHORITY=0");
 console.log("AGENT_KNOWLEDGE_CONTRACT=PASS");
