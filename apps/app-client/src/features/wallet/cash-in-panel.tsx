@@ -1,16 +1,17 @@
 import { borders, radius, resolveTheme, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type Href, useRouter } from "expo-router";
+import { type BeneficiaryWalletResponse, type CashInFundingIntent, createDshMobileClient, formatMoney } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
+import { type Href, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { createDshMobileClient, formatMoney, type BeneficiaryWalletResponse, type CashInFundingIntent } from "@bthwani/dsh";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 type FundingAttempt = Readonly<{ version: 1; actorID: string; amountMinor: number; idempotencyKey: string; correlationID: string; fundingIntentID?: string }>;
 type PanelMode = "wallet" | "cash-in";
+type SimulatedOutcome = "SUCCESS" | "FAILURE" | "UNKNOWN" | "DELAYED";
 
 function parseFundingAttempt(raw: string | null, actorID: string): FundingAttempt | null {
   if (!raw) return null;
@@ -149,7 +150,64 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
     }
   };
 
+  const simulateFundingOutcome = async (intent: CashInFundingIntent, outcome: SimulatedOutcome) => {
+    const attempt = pending;
+    const identity = currentIdentityState();
+    if (
+      !attempt ||
+      identity.kind !== "authenticated" ||
+      identity.identity.subject.trim() !== attempt.actorID ||
+      !wallet?.state.simulator ||
+      intent.providerKey !== "DEVELOPMENT_SIMULATOR" ||
+      !fundingIntentMatchesAttempt(intent, attempt) ||
+      !["PENDING_PROVIDER", "UNKNOWN"].includes(intent.state)
+    ) {
+      setError("تعذر التحقق من طلب المحاكاة. حدّث بيانات المحفظة.");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const digest = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, `${attempt.idempotencyKey}:${outcome}`);
+      const result = await api().simulateOwnFundingIntent(token, intent.id, outcome, `customer_sim_${digest}`, attempt.correlationID);
+      if (!result.simulator || !fundingIntentMatchesAttempt(result.intent, attempt)) throw new Error("CASH_IN_SIMULATION_RESPONSE_MISMATCH");
+
+      setWallet((current) => current ? walletWithFundingIntent(current, result.intent) : current);
+      if (isTerminalFundingIntent(result.intent)) {
+        await SecureStore.deleteItemAsync(attemptKey(attempt.actorID));
+        setPending(null);
+      }
+      setNotice(
+        result.intent.state === "SETTLED"
+          ? "نجح الاختبار المحلي وأكد WLT إضافة الرصيد التجريبي."
+          : result.intent.state === "FAILED"
+            ? "رُفض طلب الشحن التجريبي ولم يُضف الرصيد."
+            : "لم يصل تأكيد نهائي؛ بقي الطلب محفوظًا ويمكن متابعة الاختبار.",
+      );
+      await load();
+    } catch {
+      setError("تعذر تطبيق نتيجة المحاكي؛ بقيت محاولة الشحن محفوظة كما هي.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const state = wallet?.state;
+  const latest = wallet?.fundingIntents ?? [];
+  const simulatorIntent = pending?.fundingIntentID
+    ? latest.find((intent) => intent.id === pending.fundingIntentID)
+    : undefined;
+  const canSimulatePendingIntent = Boolean(
+    mode === "cash-in" &&
+    state?.simulator &&
+    pending &&
+    simulatorIntent?.providerKey === "DEVELOPMENT_SIMULATOR" &&
+    fundingIntentMatchesAttempt(simulatorIntent, pending) &&
+    ["PENDING_PROVIDER", "UNKNOWN"].includes(simulatorIntent.state),
+  );
 
   if (mode === "wallet") {
     return (
@@ -214,6 +272,22 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
 
         {busy && !wallet ? <ActivityIndicator accessibilityLabel="جارٍ تحميل وسائل الشحن" color={theme.actionBackground} /> : null}
         {pending ? <Text style={styles.pendingCopy}>لديك طلب محفوظ بقيمة {formatMoney(pending.amountMinor, "YER")}. إعادة المحاولة تستخدم الطلب نفسه.</Text> : null}
+        {canSimulatePendingIntent && simulatorIntent ? (
+          <View style={styles.simulatorActions}>
+            <Text accessibilityRole="header" style={styles.methodPrompt}>نتيجة اختبار طلب الشحن المحلي</Text>
+            <Text style={styles.muted}>اختر نتيجة محلية لطلب الشحن؛ لا تُستخدم أموال حقيقية.</Text>
+            {(["SUCCESS", "FAILURE", "UNKNOWN", "DELAYED"] as const).map((outcome) => (
+              <BthwaniButton
+                key={outcome}
+                busy={busy}
+                disabled={busy}
+                label={{ SUCCESS: "محاكاة نجاح", FAILURE: "محاكاة رفض", UNKNOWN: "محاكاة نتيجة غير مؤكدة", DELAYED: "محاكاة تأخر التأكيد" }[outcome]}
+                onPress={() => void simulateFundingOutcome(simulatorIntent, outcome)}
+                variant="secondary"
+              />
+            ))}
+          </View>
+        ) : null}
         {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
         {!wallet && error ? <BthwaniButton disabled={busy} label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /> : null}
@@ -261,6 +335,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     notice: { ...typography.bodySm, color: theme.interactiveText, textAlign: "right" },
     error: { ...typography.bodySm, color: theme.danger, textAlign: "right" },
     muted: { ...typography.caption, color: theme.colorMuted, textAlign: "right" },
+    simulatorActions: { gap: spacing[2] },
     footer: { backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, paddingHorizontal: spacing[4], paddingTop: spacing[3] },
   });
 }
