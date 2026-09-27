@@ -218,7 +218,7 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
     </nav>
 
     {notice ? <p className="success-inline" role="status">{notice}</p> : null}
-    {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر إكمال الإجراء</strong><p>{error}</p><button type="button" className="button button-secondary" onClick={() => void loadDetail()} disabled={loading || busy}>إعادة قراءة الحساب</button></div> : null}
+    {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر إكمال الإجراء</strong><p className="identity-error">{error}</p><button type="button" className="button button-secondary" onClick={() => void loadDetail()} disabled={loading || busy}>إعادة قراءة الحساب</button></div> : null}
     {loading ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة ملف الشريك</strong></div> : null}
     {!loading && !detail && !error ? <div className="collection-state"><strong>ملف الشريك غير متاح</strong></div> : null}
 

@@ -97,7 +97,6 @@ export function MarketingPromotionsWorkspace() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [promotionForm, setPromotionForm] = useState({ code: "", nameAr: "", descriptionAr: "", kind: "PERCENTAGE" as "PERCENTAGE" | "FIXED", valueMinor: "10", maxDiscountMinor: "", redemptionLimit: "", storeId: "", serviceCityId: "" });
-
   const load = useCallback(async (query: { search?: string; state?: string; sort?: "starts_desc" | "starts_asc"; cursor?: string } = {}) => {
     setLoading(true);
     const params = new URLSearchParams({ limit: "25", sort: query.sort ?? sort });
@@ -414,7 +413,7 @@ export function MarketingContentWorkspace() {
       <section className="access-card" aria-labelledby="marketing-content-title">
         <div className="access-card-heading"><h2 id="marketing-content-title">سجل محتوى الاكتشاف</h2>{message ? <p role="status" className="muted">{message}</p> : null}</div>
         <form className={styles.filters} onSubmit={(event) => { event.preventDefault(); setAppliedSearch(search.trim().slice(0, 128)); setCursor(""); setCursorStack([]); }}>
-          <label className="field-label" htmlFor="content-search">عنوان المحتوى<input id="content-search" type="search" maxLength={128} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+          <label className="field-label" htmlFor="content-search">عنوان المحتوى<input id="content-search" aria-label="البحث في سجل المحتوى" type="search" maxLength={128} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
           <label className="field-label" htmlFor="content-state">الحالة<select id="content-state" value={state} onChange={(event) => { setState(event.target.value); setCursor(""); setCursorStack([]); }}><option value="">كل الحالات</option><option value="DRAFT">مسودة</option><option value="PUBLISHED">منشور</option><option value="PAUSED">موقوف</option></select></label>
           <label className="field-label" htmlFor="content-kind-filter">النوع<select id="content-kind-filter" value={kind} onChange={(event) => { setKind(event.target.value); setCursor(""); setCursorStack([]); }}><option value="">كل الأنواع</option><option value="BANNER">بنر</option><option value="CAROUSEL">كاروسيل</option><option value="SHORT_FORM">قصة قصيرة</option></select></label>
           <label className="field-label" htmlFor="content-sort">الترتيب<select id="content-sort" value={sort} onChange={(event) => { setSort(event.target.value as typeof sort); setCursor(""); setCursorStack([]); }}><option value="priority">أولوية العرض</option><option value="created_desc">الأحدث إنشاءً</option></select></label>
