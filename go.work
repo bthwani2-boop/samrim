@@ -5,4 +5,5 @@ use (
 	./services/identity/backend
 	./services/identity/clients/go
 	./services/wlt/backend
+	./services/wlt/clients/go
 )
