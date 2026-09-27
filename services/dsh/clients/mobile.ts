@@ -1,4 +1,5 @@
 import { dshOperationPaths } from "./generated/dsh-operations";
+import type { MediaProvenanceInput } from "./generated/dsh-types";
 import type { AcceptStoreCaptainInvitationRequest, BeneficiaryPayoutStateResponse, BeneficiaryWalletResponse, BeneficiaryFundingIntentResponse, CashInFundingIntent, CaptainAdmissionResponse, CaptainAssignmentListResponse, CaptainAssignmentResponse, CaptainAvailabilityRequest, CaptainCashRemittanceRequest, CaptainCashRemittanceResponse, CaptainCompletionRequest, CaptainDeliveryTaskResponse, CaptainLocationResponse, CaptainOfferDecisionRequest, CaptainOfferListResponse, CaptainOfferResponse, CartResponse, CashLiabilityResponse, CatalogAttributeEnumOptionListResponse, CatalogAttributeRuleListResponse, CatalogCategoryListResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogStorefrontSectionResponse, CatalogStoreOffer, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogVariantResponse, CheckoutQuoteResponse, CheckoutRequest, ClientOpenCartListResponse, CommerceVerticalListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, CreateJoiningCaseRequest, CreateOrderConversationMessageRequest, CreateOrderRatingRequest, DeliveryAddressListResponse, DeliveryAddressResponse, DeliveryProofResponse, DiscoveryContentEventRequest, DiscoveryContentListResponse, DiscoveryContentTargetResolution, FavoriteStoreOfferListResponse, FavoriteStoreOfferResponse, FavoriteStoreListResponse, FavoriteStoreResponse, FieldAdmissionResponse, FieldFinancialSummaryResponse, JoiningCaseListResponse, JoiningCaseResponse, MarkOrderConversationReadRequest, MultiStoreCheckoutRequest, MultiStoreCheckoutResponse, NotificationListResponse, NotificationReadResponse, OrderConversationMessageResponse, OrderConversationReadResponse, OrderConversationResponse, OrderListResponse, OrderRatingResponse, OrderResponse, OrderTrackingResponse, OrderTransitionRequest, PartnerFinancialSummaryResponse, PayoutRequest, PromotionListResponse, PublicCatalogResponse, PublicCatalogSearchResponse, PublicStoreView, PublishedStoreListResponse, ReplaceCatalogProductMediaRequest, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, SetStoreFulfillmentModesRequest, StoreCaptainDispatchRequest, StoreCaptainInvitationResponse, StoreCaptainMembershipListResponse, StoreCaptainMembershipResponse, StoreCaptainMembershipTransitionRequest, StoreDeliveryOriginResponse, StoreFulfillmentModesResponse, UpdateCartLineRequest, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateDeliveryAddressRequest, UpsertCartLineRequest } from "./generated/dsh-types";
 
 export type DshMobileClientError =
@@ -30,6 +31,40 @@ export type DshImageUploadInput = Readonly<{
   blob?: Blob;
   nativeMultipartUpload?: DshNativeMultipartUpload;
 }>;
+
+function mediaProvenanceParameters(value: MediaProvenanceInput): Readonly<Record<string, string>> {
+  return {
+    creator: value.creator.trim(),
+    sourceDescription: value.sourceDescription.trim(),
+    sourceUri: value.sourceUri?.trim() ?? "",
+    rightsStatement: value.rightsStatement.trim(),
+    rightsUri: value.rightsUri?.trim() ?? "",
+    rightsAttested: String(value.rightsAttested),
+  };
+}
+
+export function isMediaProvenanceInputValid(value: MediaProvenanceInput): boolean {
+  const length = (input: string) => Array.from(input.trim()).length;
+  const validURI = (raw: string | undefined) => {
+    const candidate = raw?.trim() ?? "";
+    if (!candidate) return true;
+    if (length(candidate) > 2048) return false;
+    try {
+      const parsed = new URL(candidate);
+      return (parsed.protocol === "https:" || parsed.protocol === "http:") && !parsed.username && !parsed.password;
+    } catch {
+      return false;
+    }
+  };
+  return length(value.creator) >= 2 && length(value.creator) <= 200 &&
+    length(value.sourceDescription) >= 3 && length(value.sourceDescription) <= 1000 &&
+    length(value.rightsStatement) >= 5 && length(value.rightsStatement) <= 2000 && value.rightsAttested &&
+    validURI(value.sourceUri) && validURI(value.rightsUri);
+}
+
+function appendMediaProvenance(form: FormData, value: MediaProvenanceInput): void {
+  for (const [key, item] of Object.entries(mediaProvenanceParameters(value))) form.append(key, item);
+}
 
 function isDshMobileClientError(value: unknown): value is DshMobileClientError {
   return Boolean(value && typeof value === "object" && ((value as { kind?: unknown }).kind === "http" || (value as { kind?: unknown }).kind === "network"));
@@ -678,16 +713,20 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.submitFieldJoiningCase.path.replace("{caseId}", encodeURIComponent(normalized));
       return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.submitFieldJoiningCase.method, undefined, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) });
     },
-    async uploadJoiningCaseStoreImage(accessToken: string, caseID: string, input: DshImageUploadInput, expectedVersion: number, idempotencyKey?: string, correlationID?: string): Promise<JoiningCaseResponse> {
+    async uploadJoiningCaseStoreImage(accessToken: string, caseID: string, input: DshImageUploadInput, provenance: MediaProvenanceInput, expectedVersion: number, idempotencyKey?: string, correlationID?: string): Promise<JoiningCaseResponse> {
       const normalized = caseID.trim();
       const uri = input.uri.trim();
       if (!normalized || !uri || expectedVersion < 1) throw new Error("DSH_JOINING_CASE_STORE_IMAGE_INPUT_INVALID");
+      if (!isMediaProvenanceInputValid(provenance)) throw new Error("DSH_MEDIA_PROVENANCE_INVALID");
       const fileName = input.name?.trim() || "store-image.jpg";
       const mimeType = input.type?.trim() || "image/jpeg";
       const form = input.nativeMultipartUpload ? undefined : new FormData();
-      if (form) form.append("file", input.blob ?? ({ uri, name: fileName, type: mimeType } as unknown as Blob));
+      if (form) {
+        form.append("file", input.blob ?? ({ uri, name: fileName, type: mimeType } as unknown as Blob));
+        appendMediaProvenance(form, provenance);
+      }
       const path = dshOperationPaths.uploadJoiningCaseStoreImage.path.replace("{caseId}", encodeURIComponent(normalized));
-      return userMultipartRequest(accessToken, path, dshOperationPaths.uploadJoiningCaseStoreImage.method, form, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) }, input.nativeMultipartUpload, { fieldName: "file", fileName, mimeType, parameters: {} });
+      return userMultipartRequest(accessToken, path, dshOperationPaths.uploadJoiningCaseStoreImage.method, form, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) }, input.nativeMultipartUpload, { fieldName: "file", fileName, mimeType, parameters: mediaProvenanceParameters(provenance) });
     },
     async listOwnDeliveryAddresses(accessToken: string, limit = 50, cursor = ""): Promise<DeliveryAddressListResponse> {
       if (limit < 1 || limit > 50) throw new Error("DSH_ADDRESS_LIMIT_INVALID");

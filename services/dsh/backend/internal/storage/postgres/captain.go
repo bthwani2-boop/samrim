@@ -1184,7 +1184,7 @@ func ListCaptainOffers(ctx context.Context, db *sql.DB, actorID string, limit in
 	if err := canonicalizeCaptainOffersTx(ctx, tx, strings.TrimSpace(actorID)); err != nil {
 		return nil, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,COALESCE(offer.source_store_id,''),offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' LIMIT 1),''),o.address_text,o.total_amount_minor,o.currency,o.payment_method,o.payment_state
+	rows, err := tx.QueryContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,COALESCE(offer.source_store_id,''),offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' AND m.rights_attested_at IS NOT NULL LIMIT 1),''),o.address_text,o.total_amount_minor,o.currency,o.payment_method,o.payment_state
 		FROM dsh.captain_dispatch_offers offer
 		JOIN dsh.commerce_orders o ON o.id=offer.order_id
 		JOIN dsh.stores s ON s.id=o.store_id
@@ -1250,7 +1250,7 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 		return CaptainOfferResult{Offer: offer, Assignment: assignment, Replayed: true}, nil
 	}
 	var offer CaptainOffer
-	err = tx.QueryRowContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,COALESCE(offer.source_store_id,''),offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' LIMIT 1),''),o.address_text,o.total_amount_minor,o.currency,o.payment_method,o.payment_state
+	err = tx.QueryRowContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,COALESCE(offer.source_store_id,''),offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' AND m.rights_attested_at IS NOT NULL LIMIT 1),''),o.address_text,o.total_amount_minor,o.currency,o.payment_method,o.payment_state
 		FROM dsh.captain_dispatch_offers offer
 		JOIN dsh.commerce_orders o ON o.id=offer.order_id
 		JOIN dsh.stores s ON s.id=o.store_id
@@ -2011,7 +2011,7 @@ func ReadCaptainDeliveryTask(ctx context.Context, db *sql.DB, assignmentID, capt
 	}
 	var task CaptainDeliveryTask
 	var pickupLatitude, pickupLongitude, destinationLatitude, destinationLongitude sql.NullFloat64
-	err = tx.QueryRowContext(ctx, `SELECT a.id,a.order_id,s.id,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' LIMIT 1),''),s.delivery_origin_latitude,s.delivery_origin_longitude,o.address_text,o.address_latitude,o.address_longitude,o.state,h.state,a.state,o.payment_method,o.payment_state,o.total_amount_minor,o.currency,o.fulfillment_mode
+	err = tx.QueryRowContext(ctx, `SELECT a.id,a.order_id,s.id,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' AND m.rights_attested_at IS NOT NULL LIMIT 1),''),s.delivery_origin_latitude,s.delivery_origin_longitude,o.address_text,o.address_latitude,o.address_longitude,o.state,h.state,a.state,o.payment_method,o.payment_state,o.total_amount_minor,o.currency,o.fulfillment_mode
 		FROM dsh.captain_assignments a
 		JOIN dsh.captain_handoffs h ON h.assignment_id=a.id
 		JOIN dsh.commerce_orders o ON o.id=a.order_id
@@ -2290,7 +2290,7 @@ func readCaptainOfferTx(ctx context.Context, source interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, where string, args ...any) (CaptainOffer, error) {
 	var item CaptainOffer
-	err := source.QueryRowContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,COALESCE(offer.source_store_id,''),offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' LIMIT 1),''),o.address_text,o.total_amount_minor,o.currency,o.payment_method,o.payment_state
+	err := source.QueryRowContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,COALESCE(offer.source_store_id,''),offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' AND m.rights_attested_at IS NOT NULL LIMIT 1),''),o.address_text,o.total_amount_minor,o.currency,o.payment_method,o.payment_state
 		FROM dsh.captain_dispatch_offers offer
 		JOIN dsh.commerce_orders o ON o.id=offer.order_id
 		JOIN dsh.stores s ON s.id=o.store_id

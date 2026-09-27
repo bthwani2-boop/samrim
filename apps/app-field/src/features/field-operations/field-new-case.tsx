@@ -1,17 +1,18 @@
 import { BthwaniButton, BthwaniChip, BthwaniMap, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type CommerceVertical, type CreateJoiningCaseRequest, type DshImageUploadInput, type FieldAdmission, type JoiningCaseResponse, joiningCaseStateLabel, type ServiceCity } from "@bthwani/dsh";
+import { isMediaProvenanceInputValid, type CommerceVertical, type CreateJoiningCaseRequest, type DshImageUploadInput, type FieldAdmission, type JoiningCaseResponse, joiningCaseStateLabel, type MediaProvenanceInput, type ServiceCity } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import { type Href, Link } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Image, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, Switch, Text, TextInput, View } from "react-native";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient, isMissingFieldAdmission } from "./field-client";
 import { createFieldOperationStyles } from "./field-operation-styles";
 
 type PendingCreateAttempt = Readonly<{ request: CreateJoiningCaseRequest; idempotencyKey: string; correlationID: string }>;
-type PendingImageAttempt = Readonly<{ caseID: string; expectedVersion: number; image: DshImageUploadInput; idempotencyKey: string; correlationID: string }>;
+type StoreImageDraft = DshImageUploadInput & Readonly<{ provenance: MediaProvenanceInput }>;
+type PendingImageAttempt = Readonly<{ caseID: string; expectedVersion: number; image: StoreImageDraft; idempotencyKey: string; correlationID: string }>;
 
 function isOutcomeUncertain(cause: unknown): boolean {
   if (!cause || typeof cause !== "object") return false;
@@ -43,7 +44,7 @@ const theme = useAppearanceTheme();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [storeImage, setStoreImage] = useState<DshImageUploadInput | null>(null);
+  const [storeImage, setStoreImage] = useState<StoreImageDraft | null>(null);
   const [pendingCreateAttempt, setPendingCreateAttempt] = useState<PendingCreateAttempt | null>(null);
   const [pendingImageAttempt, setPendingImageAttempt] = useState<PendingImageAttempt | null>(null);
   const formLocked = busy || Boolean(pendingCreateAttempt) || Boolean(pendingImageAttempt) || Boolean(createdCase && storeImage);
@@ -88,6 +89,10 @@ const theme = useAppearanceTheme();
 
   async function createCase() {
     if (busy || (createdCase && storeImage)) return;
+    if (storeImage && !isMediaProvenanceInputValid(storeImage.provenance)) {
+      setError("أكمل منشئ الصورة ومصدرها وبيان حق استخدامها، ثم أكّد صحة التصريح.");
+      return;
+    }
     let attempt: PendingCreateAttempt;
     if (pendingCreateAttempt) {
       attempt = pendingCreateAttempt;
@@ -156,7 +161,7 @@ const theme = useAppearanceTheme();
       const response = await fetch(asset.uri);
       if (!response.ok) throw new Error("STORE_IMAGE_READ_FAILED");
       const blob = await response.blob();
-      setStoreImage({ uri: asset.uri, name: asset.fileName ?? "store-image.jpg", type: asset.mimeType ?? "image/jpeg", blob });
+      setStoreImage({ uri: asset.uri, name: asset.fileName ?? "store-image.jpg", type: asset.mimeType ?? "image/jpeg", blob, provenance: { creator: "", sourceDescription: "", sourceUri: "", rightsStatement: "", rightsUri: "", rightsAttested: false } });
       setError("");
     } catch (cause) {
       console.error("Field store image preparation failed", cause);
@@ -175,12 +180,12 @@ const theme = useAppearanceTheme();
     }
   }
 
-  async function uploadStoreImage(current: JoiningCaseResponse, image: DshImageUploadInput, existingAttempt?: PendingImageAttempt) {
+  async function uploadStoreImage(current: JoiningCaseResponse, image: StoreImageDraft, existingAttempt?: PendingImageAttempt) {
     const attempt = existingAttempt ?? { caseID: current.case.id, expectedVersion: current.case.version, image, idempotencyKey: `field_store_image_${Crypto.randomUUID()}`, correlationID: `field_store_image_corr_${Crypto.randomUUID()}` };
     setPendingImageAttempt(attempt);
     try {
       const token = await getUsableIdentityAccessToken();
-      const uploaded = await fieldClient().uploadJoiningCaseStoreImage(token, attempt.caseID, attempt.image, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
+      const uploaded = await fieldClient().uploadJoiningCaseStoreImage(token, attempt.caseID, attempt.image, attempt.image.provenance, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
       setCreatedCase(uploaded);
       setStoreImage(null);
       setPendingImageAttempt(null);
@@ -244,6 +249,16 @@ const theme = useAppearanceTheme();
         <Text style={styles.label}>صورة المتجر · اختياري</Text>
         <Text style={styles.muted}>يمكنك إضافة صورة واضحة للواجهة أو الهوية البصرية؛ تحفظ مركزيًا وتظهر بعد اعتماد المتجر.</Text>
         {storeImage ? <Image accessibilityLabel="معاينة صورة المتجر" source={{ uri: storeImage.uri }} style={{ borderRadius: 12, height: 160, width: "100%" }} resizeMode="cover" /> : null}
+        {storeImage ? <View style={styles.card}>
+          <Text style={styles.label}>مصدر الصورة وحق استخدامها</Text>
+          <Text style={styles.muted}>دوّن منشئ الصورة ومصدرها وبيان الحق أو الترخيص قبل رفعها.</Text>
+          <TextInput accessibilityLabel="منشئ الصورة" editable={!formLocked} placeholder="منشئ الصورة أو المصور" placeholderTextColor={theme.colorMuted} style={styles.input} value={storeImage.provenance.creator} onChangeText={(creator) => setStoreImage((current) => current ? { ...current, provenance: { ...current.provenance, creator } } : null)} />
+          <TextInput accessibilityLabel="مصدر الصورة" editable={!formLocked} placeholder="كيف حصلت على الصورة؟" placeholderTextColor={theme.colorMuted} style={styles.input} value={storeImage.provenance.sourceDescription} onChangeText={(sourceDescription) => setStoreImage((current) => current ? { ...current, provenance: { ...current.provenance, sourceDescription } } : null)} />
+          <TextInput accessibilityLabel="رابط مصدر الصورة اختياري" editable={!formLocked} autoCapitalize="none" keyboardType="url" placeholder="رابط المصدر، اختياري" placeholderTextColor={theme.colorMuted} style={styles.input} value={storeImage.provenance.sourceUri} onChangeText={(sourceUri) => setStoreImage((current) => current ? { ...current, provenance: { ...current.provenance, sourceUri } } : null)} />
+          <TextInput accessibilityLabel="بيان حق استخدام الصورة" editable={!formLocked} multiline placeholder="بيان الحق أو الترخيص الذي يسمح بعرض الصورة" placeholderTextColor={theme.colorMuted} style={styles.input} value={storeImage.provenance.rightsStatement} onChangeText={(rightsStatement) => setStoreImage((current) => current ? { ...current, provenance: { ...current.provenance, rightsStatement } } : null)} />
+          <TextInput accessibilityLabel="رابط شروط الترخيص اختياري" editable={!formLocked} autoCapitalize="none" keyboardType="url" placeholder="رابط شروط الترخيص، اختياري" placeholderTextColor={theme.colorMuted} style={styles.input} value={storeImage.provenance.rightsUri} onChangeText={(rightsUri) => setStoreImage((current) => current ? { ...current, provenance: { ...current.provenance, rightsUri } } : null)} />
+          <View style={styles.optionList}><Switch disabled={formLocked} value={storeImage.provenance.rightsAttested} onValueChange={(rightsAttested) => setStoreImage((current) => current ? { ...current, provenance: { ...current.provenance, rightsAttested } } : null)} /><Text style={styles.muted}>أؤكد أن بيانات المصدر وحق الاستخدام المدخلة صحيحة.</Text></View>
+        </View> : null}
         <BthwaniButton disabled={formLocked} label={storeImage ? "تغيير صورة المتجر" : "اختيار صورة المتجر"} onPress={() => void pickStoreImage()} variant="secondary" />
         <BthwaniButton busy={busy} disabled={busy || (!pendingCreateAttempt && (formLocked || optionsLoading || Boolean(optionsError)))} label={pendingCreateAttempt ? "إعادة التحقق من حفظ الملف" : "حفظ الملف"} onPress={() => void createCase()} />
       </View> : null}

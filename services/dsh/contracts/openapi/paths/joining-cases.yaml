@@ -133,10 +133,16 @@ paths:
           multipart/form-data:
             schema:
               type: object
-              required: [file]
+              required: [file, creator, sourceDescription, rightsStatement, rightsAttested]
               additionalProperties: false
               properties:
                 file: { type: string, format: binary }
+                creator: { type: string, minLength: 2, maxLength: 200 }
+                sourceDescription: { type: string, minLength: 3, maxLength: 1000 }
+                sourceUri: { type: string, format: uri }
+                rightsStatement: { type: string, minLength: 5, maxLength: 2000 }
+                rightsUri: { type: string, format: uri }
+                rightsAttested: { type: boolean, const: true }
       responses:
         "200": { description: Image attached and current joining-case readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
         "201": { description: Image attached and current joining-case readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }

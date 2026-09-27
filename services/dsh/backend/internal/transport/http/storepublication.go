@@ -473,7 +473,7 @@ func toPublicStoreView(store postgres.PublicStoreRecord) contract.PublicStoreVie
 		ID: store.ID, Name: store.Name, Version: store.Version, PublishedAt: store.PublishedAt,
 		RatingAverage:     store.RatingAverage,
 		RatingCount:       store.RatingCount,
-		StoreProfileImage: toStoreProfileImage(store.StoreProfileImage),
+		StoreProfileImage: toStoreProfileImageURI(storeProfileImageURI(store.StoreProfileImage)),
 		ServiceCity:       toServiceCityRecord(store.ServiceCity),
 		PrimaryVerticalID: store.PrimaryVerticalID,
 		DistanceMeters:    optionalDistanceValue(store.DistanceMeters),

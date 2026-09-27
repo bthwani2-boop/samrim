@@ -884,6 +884,68 @@ components:
         contentSha256:
           type: string
           pattern: '^[0-9a-f]{64}$'
+        provenance:
+          $ref: "#/components/schemas/MediaProvenance"
+          nullable: true
+
+    MediaProvenance:
+      type: object
+      required: [creator, sourceDescription, rightsStatement, attestedByActorId, attestedAt]
+      additionalProperties: false
+      properties:
+        creator:
+          type: string
+          minLength: 2
+          maxLength: 200
+        sourceDescription:
+          type: string
+          minLength: 3
+          maxLength: 1000
+        sourceUri:
+          type: string
+          format: uri
+          maxLength: 2048
+        rightsStatement:
+          type: string
+          minLength: 5
+          maxLength: 2000
+        rightsUri:
+          type: string
+          format: uri
+          maxLength: 2048
+        attestedByActorId:
+          type: string
+        attestedAt:
+          type: string
+          format: date-time
+
+    MediaProvenanceInput:
+      type: object
+      required: [creator, sourceDescription, rightsStatement, rightsAttested]
+      additionalProperties: false
+      properties:
+        creator:
+          type: string
+          minLength: 2
+          maxLength: 200
+        sourceDescription:
+          type: string
+          minLength: 3
+          maxLength: 1000
+        sourceUri:
+          type: string
+          format: uri
+          maxLength: 2048
+        rightsStatement:
+          type: string
+          minLength: 5
+          maxLength: 2000
+        rightsUri:
+          type: string
+          format: uri
+          maxLength: 2048
+        rightsAttested:
+          type: boolean
 
     JoiningCaseView:
       type: object

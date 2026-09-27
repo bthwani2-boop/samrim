@@ -18,7 +18,7 @@ var (
 	ErrStoreProfileMediaSessionForbidden = errors.New("an eligible Field or Partner session is required for this joining-case operation")
 )
 
-func (s *Service) UploadStoreProfileImage(ctx context.Context, accessToken, caseID, idempotencyKey, correlationID string, expectedVersion int, contentType string, data []byte) (postgres.JoiningCaseResult, error) {
+func (s *Service) UploadStoreProfileImage(ctx context.Context, accessToken, caseID, idempotencyKey, correlationID string, expectedVersion int, contentType string, data []byte, provenance media.Provenance) (postgres.JoiningCaseResult, error) {
 	identity, err := s.identity.ReadSession(ctx, strings.TrimSpace(accessToken))
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
@@ -55,7 +55,7 @@ func (s *Service) UploadStoreProfileImage(ctx context.Context, accessToken, case
 		if err != nil {
 			return postgres.JoiningCaseResult{}, err
 		}
-		if current.Case.State != "needs_correction" {
+		if current.Case.State != "needs_correction" && !(current.Case.State == "approved" && current.Case.StoreID != "") {
 			return postgres.JoiningCaseResult{}, postgres.ErrStoreProfileMediaState
 		}
 		scope = "partner"
@@ -63,12 +63,13 @@ func (s *Service) UploadStoreProfileImage(ctx context.Context, accessToken, case
 		return postgres.JoiningCaseResult{}, ErrStoreProfileMediaSessionForbidden
 	}
 	actualType, _, _, err := media.ValidateImageBytes(data)
-	if err != nil || (strings.TrimSpace(contentType) != "" && strings.TrimSpace(contentType) != actualType) {
+	provenance = provenance.Normalized()
+	if err != nil || (strings.TrimSpace(contentType) != "" && strings.TrimSpace(contentType) != actualType) || provenance.Validate() != nil {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
 	digest := sha256.Sum256(data)
 	contentSHA := hex.EncodeToString(digest[:])
-	requestHash := postgres.HashStoreProfileMediaUploadRequest(caseID, contentSHA, expectedVersion)
+	requestHash := postgres.HashStoreProfileMediaUploadRequest(caseID, contentSHA, expectedVersion, provenance)
 	assetHash := sha256.Sum256([]byte(caseID + "\x00" + strings.TrimSpace(idempotencyKey)))
 	assetID := "store_profile_media_" + hex.EncodeToString(assetHash[:])
 	objectKey, err := media.KeyForStoreProfileUpload(assetID, idempotencyKey, contentSHA, actualType)
@@ -79,7 +80,7 @@ func (s *Service) UploadStoreProfileImage(ctx context.Context, accessToken, case
 	if uri == "" {
 		return postgres.JoiningCaseResult{}, errors.New("store profile media storage is unavailable")
 	}
-	asset, replayed, err := postgres.RegisterStoreProfileMediaAssetPending(ctx, s.db, postgres.StoreProfileMediaAssetInput{ID: assetID, JoiningCaseID: caseID, IdempotencyKey: strings.TrimSpace(idempotencyKey), RequestHash: requestHash, ExpectedCaseVersion: expectedVersion, ObjectKey: objectKey, URI: uri, ContentSHA256: contentSHA, ContentType: actualType, ByteSize: int64(len(data)), ActingActorID: identity.Subject, CorrelationID: strings.TrimSpace(correlationID)})
+	asset, replayed, err := postgres.RegisterStoreProfileMediaAssetPending(ctx, s.db, postgres.StoreProfileMediaAssetInput{ID: assetID, JoiningCaseID: caseID, IdempotencyKey: strings.TrimSpace(idempotencyKey), RequestHash: requestHash, ExpectedCaseVersion: expectedVersion, ObjectKey: objectKey, URI: uri, ContentSHA256: contentSHA, ContentType: actualType, ByteSize: int64(len(data)), ActingActorID: identity.Subject, CorrelationID: strings.TrimSpace(correlationID), Provenance: provenance})
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}

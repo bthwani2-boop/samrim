@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
 
@@ -41,6 +42,7 @@ func TestStoreProfileMediaReplayAndCleanupOwnership(t *testing.T) {
 			serviceCityID = "field-media-cleanup-city"
 			verticalID    = "field-media-cleanup-food"
 		)
+		provenance := media.Provenance{Creator: "مالك المتجر", SourceDescription: "صورة مقدمة من مالك المتجر", RightsStatement: "يؤكد مالك المتجر حقه في استخدام الصورة على المنصة", RightsAttested: true}
 		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.service_cities(id,display_name_ar) VALUES($1,$2)", serviceCityID, "مدينة الوسائط"); err != nil {
 			t.Fatalf("insert Service City fixture: %v", err)
 		}
@@ -57,10 +59,10 @@ func TestStoreProfileMediaReplayAndCleanupOwnership(t *testing.T) {
 			key := "idem_store_profile_media_test_" + name
 			return postgres.StoreProfileMediaAssetInput{
 				ID: id, JoiningCaseID: created.Case.ID, IdempotencyKey: key,
-				RequestHash:         postgres.HashStoreProfileMediaUploadRequest(created.Case.ID, digest, expectedVersion),
+				RequestHash:         postgres.HashStoreProfileMediaUploadRequest(created.Case.ID, digest, expectedVersion, provenance),
 				ExpectedCaseVersion: expectedVersion, ObjectKey: "store-profile-media/" + id + ".png",
 				URI: "https://media.example/" + id + ".png", ContentSHA256: digest, ContentType: "image/png",
-				ByteSize: 1, ActingActorID: fieldActorID, CorrelationID: "corr_store_profile_media_" + name,
+				ByteSize: 1, ActingActorID: fieldActorID, CorrelationID: "corr_store_profile_media_" + name, Provenance: provenance,
 			}
 		}
 		firstInput := assetInput("first", 1, strings.Repeat("a", 64))
@@ -70,6 +72,10 @@ func TestStoreProfileMediaReplayAndCleanupOwnership(t *testing.T) {
 		}
 		if version, err := postgres.ActivateStoreProfileMediaAsset(ctx, db, first.ID, created.Case.ID, 1, firstInput.IdempotencyKey, firstInput.RequestHash, fieldActorID, firstInput.CorrelationID); err != nil || version != 2 {
 			t.Fatalf("activate first store image: version=%d err=%v", version, err)
+		}
+		firstReadback, err := postgres.ReadStoreProfileMedia(ctx, db, created.Case.ID, "")
+		if err != nil || firstReadback == nil || firstReadback.Provenance.Creator != provenance.Creator || firstReadback.Provenance.RightsStatement != provenance.RightsStatement || firstReadback.RightsAttestedByActorID != fieldActorID || firstReadback.RightsAttestedAt == nil {
+			t.Fatalf("active store image provenance did not read back: record=%+v err=%v", firstReadback, err)
 		}
 		replayedAsset, replayed, err := postgres.RegisterStoreProfileMediaAssetPending(ctx, db, firstInput)
 		if err != nil || !replayed || replayedAsset.State != "active" {
@@ -191,7 +197,7 @@ func TestStoreProfileMediaReplayAndCleanupOwnership(t *testing.T) {
 			t.Fatalf("abandoned pending object lacks terminal cleanup state: state=%q cleaned_at=%v err=%v", pendingState, pendingCleanedAt, err)
 		}
 		active, err := postgres.ReadStoreProfileMedia(ctx, db, created.Case.ID, "")
-		if err != nil || active == nil || active.ID != second.ID {
+		if err != nil || active == nil || active.ID != second.ID || active.Provenance.Creator != provenance.Creator || active.RightsAttestedByActorID != fieldActorID || active.RightsAttestedAt == nil {
 			t.Fatalf("cleanup changed canonical active store image: active=%+v err=%v", active, err)
 		}
 	})

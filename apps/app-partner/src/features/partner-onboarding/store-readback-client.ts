@@ -1,4 +1,4 @@
-import { type CommerceVertical, createDshMobileClient, type DshImageUploadInput, type JoiningCaseResponse, type ServiceCity, type StoreCaptainInvitationResponse, type StoreCaptainMembershipListResponse, type StoreCaptainMembershipResponse, type StoreCaptainMembershipTransitionRequest } from "@bthwani/dsh";
+import { type CommerceVertical, createDshMobileClient, type DshImageUploadInput, type JoiningCaseResponse, type MediaProvenanceInput, type ServiceCity, type StoreCaptainInvitationResponse, type StoreCaptainMembershipListResponse, type StoreCaptainMembershipResponse, type StoreCaptainMembershipTransitionRequest } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
@@ -24,9 +24,9 @@ export async function correctAndResubmitOwnJoiningCase(caseID: string, businessN
 	return dshClient().correctAndResubmitJoiningCase(token, caseID, { businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude }, expectedVersion, `partner_case_correction_${identity}`, `partner_case_correction_corr_${identity}`);
 }
 
-export async function uploadOwnJoiningCaseStoreImage(caseID: string, image: DshImageUploadInput, expectedVersion: number, idempotencyKey: string, correlationID: string): Promise<JoiningCaseResponse> {
+export async function uploadOwnJoiningCaseStoreImage(caseID: string, image: DshImageUploadInput, provenance: MediaProvenanceInput, expectedVersion: number, idempotencyKey: string, correlationID: string): Promise<JoiningCaseResponse> {
   const token = await accessToken();
-  return dshClient().uploadJoiningCaseStoreImage(token, caseID, image, expectedVersion, idempotencyKey, correlationID);
+  return dshClient().uploadJoiningCaseStoreImage(token, caseID, image, provenance, expectedVersion, idempotencyKey, correlationID);
 }
 
 export async function listOwnStoreCaptainMemberships(storeID: string): Promise<StoreCaptainMembershipListResponse> {

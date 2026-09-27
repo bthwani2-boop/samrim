@@ -1,10 +1,10 @@
 import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type DshImageUploadInput, type JoiningCaseResponse, type JoiningCaseSummary, joiningCaseStateLabel } from "@bthwani/dsh";
+import { isMediaProvenanceInputValid, type DshImageUploadInput, type JoiningCaseResponse, type JoiningCaseSummary, joiningCaseStateLabel, type MediaProvenanceInput } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Image, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, Image, Switch, Text, TextInput, View } from "react-native";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient, isMissingFieldAdmission } from "./field-client";
@@ -12,7 +12,8 @@ import { createFieldOperationStyles } from "./field-operation-styles";
 
 const FIELD_CASE_PAGE_SIZE = 25;
 
-type PendingStoreImageAttempt = Readonly<{ caseID: string; expectedVersion: number; image: DshImageUploadInput; idempotencyKey: string; correlationID: string }>;
+type StoreImageDraft = DshImageUploadInput & Readonly<{ provenance: MediaProvenanceInput }>;
+type PendingStoreImageAttempt = Readonly<{ caseID: string; expectedVersion: number; image: StoreImageDraft; idempotencyKey: string; correlationID: string }>;
 type FieldCasePagination = { sequence: number; query: string; cursor: string; loadingMore: boolean };
 
 function isOutcomeUncertain(cause: unknown): boolean {
@@ -48,7 +49,7 @@ export function FieldCases() {
   const [paginationError, setPaginationError] = useState("");
   const [notice, setNotice] = useState("");
   const [mediaCase, setMediaCase] = useState<JoiningCaseResponse | null>(null);
-  const [storeImage, setStoreImage] = useState<DshImageUploadInput | null>(null);
+  const [storeImage, setStoreImage] = useState<StoreImageDraft | null>(null);
   const [pendingImageAttempt, setPendingImageAttempt] = useState<PendingStoreImageAttempt | null>(null);
   const pagination = useRef<FieldCasePagination>({ sequence: 0, query: routeQuery.trim(), cursor: "", loadingMore: false });
 
@@ -188,7 +189,7 @@ export function FieldCases() {
     try {
       const response = await fetch(asset.uri);
       if (!response.ok) throw new Error("STORE_IMAGE_READ_FAILED");
-      setStoreImage({ uri: asset.uri, name: asset.fileName ?? "store-image.jpg", type: asset.mimeType ?? "image/jpeg", blob: await response.blob() });
+      setStoreImage({ uri: asset.uri, name: asset.fileName ?? "store-image.jpg", type: asset.mimeType ?? "image/jpeg", blob: await response.blob(), provenance: { creator: "", sourceDescription: "", sourceUri: "", rightsStatement: "", rightsUri: "", rightsAttested: false } });
       setError("");
     } catch (cause) {
       console.error("Field store image preparation failed", cause);
@@ -198,13 +199,17 @@ export function FieldCases() {
 
   async function uploadStoreImage() {
     if (!mediaCase || !storeImage || busy) return;
+    if (!isMediaProvenanceInputValid(storeImage.provenance)) {
+      setError("أكمل منشئ الصورة ومصدرها وبيان حق استخدامها، ثم أكّد صحة التصريح.");
+      return;
+    }
     const attempt = pendingImageAttempt ?? { caseID: mediaCase.case.id, expectedVersion: mediaCase.case.version, image: storeImage, idempotencyKey: `field_store_image_${Crypto.randomUUID()}`, correlationID: `field_store_image_corr_${Crypto.randomUUID()}` };
     setPendingImageAttempt(attempt);
     setBusy(attempt.caseID);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const saved = await fieldClient().uploadJoiningCaseStoreImage(token, attempt.caseID, attempt.image, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
+      const saved = await fieldClient().uploadJoiningCaseStoreImage(token, attempt.caseID, attempt.image, attempt.image.provenance, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
       setMediaCase(saved);
       setStoreImage(null);
       setPendingImageAttempt(null);
@@ -242,8 +247,17 @@ export function FieldCases() {
         <Text style={styles.cardTitle}>الصورة الكانونية للمتجر</Text>
         {mediaCase.case.storeProfileImage ? <Image accessibilityLabel="صورة المتجر المحفوظة في DSH" source={{ uri: mediaCase.case.storeProfileImage.uri }} style={{ borderRadius: 12, height: 150, width: "100%" }} resizeMode="cover" /> : <Text style={styles.muted}>لا توجد صورة محفوظة للملف بعد.</Text>}
         {storeImage ? <Image accessibilityLabel="معاينة صورة المتجر الجديدة" source={{ uri: storeImage.uri }} style={{ borderRadius: 12, height: 120, width: "100%" }} resizeMode="cover" /> : null}
+        {storeImage ? <View style={styles.card}>
+          <Text style={styles.cardTitle}>مصدر الصورة وحق استخدامها</Text>
+          <TextInput accessibilityLabel="منشئ الصورة" editable={!busy && !pendingImageAttempt} placeholder="منشئ الصورة أو المصور" style={styles.input} value={storeImage.provenance.creator} onChangeText={(creator) => setStoreImage((current) => current ? { ...current, provenance: { ...current.provenance, creator } } : null)} />
+          <TextInput accessibilityLabel="مصدر الصورة" editable={!busy && !pendingImageAttempt} placeholder="كيف حصلت على الصورة؟" style={styles.input} value={storeImage.provenance.sourceDescription} onChangeText={(sourceDescription) => setStoreImage((current) => current ? { ...current, provenance: { ...current.provenance, sourceDescription } } : null)} />
+          <TextInput accessibilityLabel="رابط مصدر الصورة اختياري" editable={!busy && !pendingImageAttempt} autoCapitalize="none" keyboardType="url" placeholder="رابط المصدر، اختياري" style={styles.input} value={storeImage.provenance.sourceUri} onChangeText={(sourceUri) => setStoreImage((current) => current ? { ...current, provenance: { ...current.provenance, sourceUri } } : null)} />
+          <TextInput accessibilityLabel="بيان حق استخدام الصورة" editable={!busy && !pendingImageAttempt} multiline placeholder="بيان الحق أو الترخيص الذي يسمح بعرض الصورة" style={styles.input} value={storeImage.provenance.rightsStatement} onChangeText={(rightsStatement) => setStoreImage((current) => current ? { ...current, provenance: { ...current.provenance, rightsStatement } } : null)} />
+          <TextInput accessibilityLabel="رابط شروط الترخيص اختياري" editable={!busy && !pendingImageAttempt} autoCapitalize="none" keyboardType="url" placeholder="رابط شروط الترخيص، اختياري" style={styles.input} value={storeImage.provenance.rightsUri} onChangeText={(rightsUri) => setStoreImage((current) => current ? { ...current, provenance: { ...current.provenance, rightsUri } } : null)} />
+          <View style={styles.caseListFooter}><Switch disabled={Boolean(busy) || Boolean(pendingImageAttempt)} value={storeImage.provenance.rightsAttested} onValueChange={(rightsAttested) => setStoreImage((current) => current ? { ...current, provenance: { ...current.provenance, rightsAttested } } : null)} /><Text style={styles.muted}>أؤكد صحة بيانات المصدر وحق الاستخدام.</Text></View>
+        </View> : null}
         <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label={storeImage ? "اختيار صورة أخرى" : mediaCase.case.storeProfileImage ? "تغيير صورة المتجر" : "اختيار صورة المتجر"} onPress={() => void pickStoreImage()} variant="secondary" />
-        {storeImage ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy)} label={pendingImageAttempt ? "إعادة التحقق من رفع الصورة" : "حفظ صورة المتجر"} onPress={() => void uploadStoreImage()} /> : null}
+        {storeImage ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || (!pendingImageAttempt && !isMediaProvenanceInputValid(storeImage.provenance))} label={pendingImageAttempt ? "إعادة التحقق من رفع الصورة" : "حفظ صورة المتجر"} onPress={() => void uploadStoreImage()} /> : null}
         <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label="إغلاق تفاصيل الصورة" onPress={() => { setMediaCase(null); setStoreImage(null); }} variant="secondary" />
       </View> : null}
     </View>
