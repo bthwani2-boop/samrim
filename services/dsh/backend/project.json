@@ -5,7 +5,8 @@
   "implicitDependencies": [
     "dsh",
     "dsh-database",
-    "identity-go-client"
+    "identity-go-client",
+    "wlt"
   ],
   "targets": {
     "build": {
@@ -42,6 +43,16 @@
       "options": {
         "command": "go test ./...",
         "cwd": "services/dsh/backend"
+      }
+    },
+    "contract": {
+      "executor": "nx:run-commands",
+      "inputs": [
+        "default",
+        "^default"
+      ],
+      "options": {
+        "command": "node tools/dev/verify-wlt-contract-conformance.mjs"
       }
     },
     "baseline-proof": {
