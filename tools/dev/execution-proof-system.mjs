@@ -90,6 +90,7 @@ for (const [file,target] of [
   ["services/dsh/backend/project.json","runtime-proof"],
   ["services/dsh/backend/project.json","ci-image"],
   ["services/wlt/backend/project.json","schema-proof"],
+  ["services/wlt/backend/project.json","financial-invariants"],
   ["services/wlt/backend/project.json","ci-image"],
 ]) {
   if (data(file).targets?.[target]?.cache !== false) failures.push(file + ":" + target + " must be cache=false");
@@ -105,11 +106,14 @@ const runtimeChain = [
   ["services/dsh/backend/project.json","baseline-proof","identity-backend","migration-proof"],
   ["services/identity/backend/project.json","runtime-proof","dsh-backend","baseline-proof"],
   ["services/wlt/backend/project.json","schema-proof","identity-backend","runtime-proof"],
-  ["services/dsh/backend/project.json","runtime-proof","wlt-backend","schema-proof"],
+  ["services/wlt/backend/project.json","financial-invariants","wlt-backend","schema-proof"],
+  ["services/dsh/backend/project.json","runtime-proof","wlt-backend","financial-invariants"],
 ];
 for (const [file,target,project,dependencyTarget] of runtimeChain) {
   const dependsOn = data(file).targets?.[target]?.dependsOn ?? [];
-  const expectedDependency = JSON.stringify([{ projects: [project], target: dependencyTarget }]);
+  const expectedDependency = project === "wlt-backend" && file === "services/wlt/backend/project.json" && target === "financial-invariants"
+    ? JSON.stringify([dependencyTarget])
+    : JSON.stringify([{ projects: [project], target: dependencyTarget }]);
   if (JSON.stringify(dependsOn) !== expectedDependency) failures.push(file + ":" + target + " runtime ordering drifted");
 }
 
@@ -121,6 +125,7 @@ for (const duplicate of [
   "dsh-backend:baseline-proof",
   "identity-backend:runtime-proof",
   "wlt-backend:schema-proof",
+  "wlt-backend:financial-invariants",
 ]) {
   if (runtimeOwner.includes(duplicate)) failures.push("runtime owner contains duplicate direct target " + duplicate);
 }
@@ -135,6 +140,7 @@ for (const [file,targets] of [
   ["services/identity/clients/go/project.json",["vet","unit"]],
   ["services/dsh/backend/project.json",["build","vet","unit"]],
   ["services/wlt/backend/project.json",["build","vet","unit"]],
+  ["services/wlt/clients/go/project.json",["build","vet","unit"]],
 ]) {
   const project = data(file);
   for (const target of targets) {
