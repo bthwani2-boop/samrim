@@ -925,6 +925,10 @@ const runtimePNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAA
 function mediaUploadForm() {
   const form = new FormData();
   form.set("role", "primary");
+  form.set("creator", "DSH runtime proof fixture generator");
+  form.set("sourceDescription", "One-pixel PNG generated for the isolated DSH runtime proof");
+  form.set("rightsStatement", "Generated solely for this disposable runtime proof and permitted for its test");
+  form.set("rightsAttested", "true");
   form.set("file", new Blob([runtimePNG], { type: "image/png" }), "runtime-product.png");
   return form;
 }
