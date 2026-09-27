@@ -97,10 +97,8 @@ const theme = useAppearanceTheme();
     if (pendingCreateAttempt) {
       attempt = pendingCreateAttempt;
     } else {
-      const latitude = Number(storeLatitude.trim());
-      const longitude = Number(storeLongitude.trim());
-      if (!input.contactPhoneE164.trim() || !input.businessName.trim() || !input.firstStoreName.trim() || !input.serviceCityId || !input.firstStoreVerticalId || input.firstStoreFulfillmentModes.length === 0 || !Number.isFinite(latitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-	        setError("أكمل بيانات المتجر واختر وضعًا واحدًا على الأقل.");
+      if (!input.contactPhoneE164.trim() || !input.businessName.trim() || !input.firstStoreName.trim() || !input.serviceCityId || !input.firstStoreVerticalId || input.firstStoreFulfillmentModes.length === 0 || !selectedStoreOrigin) {
+        setError("أكمل بيانات المتجر وموقعه، واختر وضعًا واحدًا على الأقل.");
         return;
       }
       const request: CreateJoiningCaseRequest = {
@@ -110,8 +108,8 @@ const theme = useAppearanceTheme();
         firstStoreName: input.firstStoreName.trim(),
         serviceCityId: input.serviceCityId.trim(),
         firstStoreVerticalId: input.firstStoreVerticalId.trim(),
-        firstStoreLatitude: latitude,
-        firstStoreLongitude: longitude,
+        firstStoreLatitude: selectedStoreOrigin.latitude,
+        firstStoreLongitude: selectedStoreOrigin.longitude,
       };
       attempt = { request, idempotencyKey: `field_joining_case_create_${Crypto.randomUUID()}`, correlationID: `field_joining_case_corr_${Crypto.randomUUID()}` };
     }
