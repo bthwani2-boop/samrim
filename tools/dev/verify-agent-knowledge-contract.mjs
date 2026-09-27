@@ -46,14 +46,13 @@ const agent = requireTokens("AGENTS.md", [
   "REQUIRED FAILURE/RECOVERY BEHAVIOR = PROVEN WHEN APPLICABLE",
   "PINNED GOVERNANCE = EXACT WHEN MATERIALLY REQUIRED",
   "KNOWN MATERIAL DEFECTS = 0",
+  "NX AFFECTED OWNER",
+  "ONLY REQUIRED RUNTIME PROOF LANES",
 ]);
 
-if (/(?:localhost|127\.0\.0\.1):\d{2,5}\b/i.test(agent)) {
-  failures.push("AGENTS.md must not hard-code mutable local runtime ports");
-}
-if (/Docker is the sole LOCAL_INTEGRATION runtime owner|all four Metro servers/i.test(agent)) {
-  failures.push("AGENTS.md retains mutable LOCAL_INTEGRATION participant inventory");
-}
+if (/(?:localhost|127\.0\.0\.1):\d{2,5}\b/i.test(agent)) failures.push("AGENTS.md must not hard-code mutable local runtime ports");
+if (/Docker is the sole LOCAL_INTEGRATION runtime owner|all four Metro servers/i.test(agent)) failures.push("AGENTS.md retains mutable LOCAL_INTEGRATION participant inventory");
+if (/Server-Driven Operational Registry|Control Panel operational-resource law/i.test(agent)) failures.push("AGENTS.md retains durable Operator presentation policy owned by Governance");
 
 requireTokens("REPOSITORY-STRUCTURE.md", [
   "ARTIFACT_CLASS: REPOSITORY_LOCAL_PLACEMENT_CONTRACT",
@@ -61,6 +60,8 @@ requireTokens("REPOSITORY-STRUCTURE.md", [
   "PRODUCT_SEMANTIC_AUTHORITY: NONE",
   "DURABLE_ARCHITECTURE_AUTHORITY: NONE",
   "CURRENT_IMPLEMENTATION_INVENTORY_AUTHORITY: NONE",
+  "Current app/service/package members are discovered from the exact project graph/source",
+  "This is a placement grammar, not current inventory",
   "`pnpm verify` is the stable public local verification entrypoint.",
 ]);
 
@@ -92,14 +93,8 @@ for (const forbidden of [
 }
 
 const runtimeOwnership = read("tools/dev/verify-local-runtime-ownership.mjs");
-for (const forbidden of [
-  'read("AGENTS.md")',
-  'read("README.md")',
-  'read("infra/local/compose/README.md")',
-]) {
-  if (runtimeOwnership.includes(forbidden)) {
-    failures.push(`runtime ownership verifier must derive runtime truth from executable source/config, not docs: ${forbidden}`);
-  }
+for (const forbidden of ['read("AGENTS.md")', 'read("README.md")', 'read("infra/local/compose/README.md")']) {
+  if (runtimeOwnership.includes(forbidden)) failures.push(`runtime ownership verifier must derive runtime truth from executable source/config, not docs: ${forbidden}`);
 }
 
 const safePush = requireTokens("tools/dev/safe-push.ps1", [
@@ -111,34 +106,19 @@ const safePush = requireTokens("tools/dev/safe-push.ps1", [
 ]);
 const noopIndex = safePush.indexOf("SAFE_PUSH=NOOP");
 const verifyIndex = safePush.indexOf("SAFE_PUSH_VERIFY=START");
-if (noopIndex < 0 || verifyIndex < 0 || noopIndex > verifyIndex) {
-  failures.push("safe push must resolve exact-remote NOOP before candidate verification");
-}
-if (safePush.includes("pnpm verify")) {
-  failures.push("safe push must invoke the canonical verifier once directly, not nest the public verify command");
-}
+if (noopIndex < 0 || verifyIndex < 0 || noopIndex > verifyIndex) failures.push("safe push must resolve exact-remote NOOP before candidate verification");
+if (safePush.includes("pnpm verify")) failures.push("safe push must invoke the canonical verifier once directly, not nest the public verify command");
 
 const pkg = JSON.parse(read("package.json"));
-if (pkg?.scripts?.verify !== "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-local-candidate.ps1") {
-  failures.push("package.json verify must own local candidate verification");
-}
-if (pkg?.scripts?.["safe:push"] !== "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/safe-push.ps1") {
-  failures.push("package.json safe:push must own push safety");
-}
+if (pkg?.scripts?.verify !== "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-local-candidate.ps1") failures.push("package.json verify must own local candidate verification");
+if (pkg?.scripts?.["safe:push"] !== "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/safe-push.ps1") failures.push("package.json safe:push must own push safety");
 for (const required of ["dev", "client", "partner", "captain", "field", "control", "scr", "runtime:up", "runtime:status", "runtime:down"]) {
   if (!pkg?.scripts?.[required]) failures.push(`package.json missing required local command: ${required}`);
 }
 
 const nx = JSON.parse(read("nx.json"));
 const exportInputs = nx?.targetDefaults?.["export-smoke"]?.inputs ?? [];
-for (const required of [
-  "default",
-  "^default",
-  "nodeToolchain",
-  "mobileExportEnvironment",
-  "{workspaceRoot}/tools/mobile/export-mobile-smoke.mjs",
-  "{workspaceRoot}/tools/mobile/define-samrim-expo-app.cjs",
-]) {
+for (const required of ["default", "^default", "nodeToolchain", "mobileExportEnvironment", "{workspaceRoot}/tools/mobile/export-mobile-smoke.mjs", "{workspaceRoot}/tools/mobile/define-samrim-expo-app.cjs"]) {
   if (!exportInputs.includes(required)) failures.push(`nx export-smoke missing cache input: ${required}`);
 }
 
@@ -150,23 +130,19 @@ const staticWorkflow = requireTokens(".github/workflows/ci-static.yml", [
   "nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet",
   "capture-ci-failure.mjs --kind=static-linux",
 ]);
-for (const forbidden of [
-  "Resolve affected base",
-  "Detect mobile-affecting integration change",
-  "steps.base.outputs",
-  "steps.mobile.outputs",
-  "--changed --since",
-]) {
+for (const forbidden of ["Resolve affected base", "Detect mobile-affecting integration change", "steps.base.outputs", "steps.mobile.outputs", "--changed --since"]) {
   if (staticWorkflow.includes(forbidden)) failures.push(`static workflow retains parallel affected logic: ${forbidden}`);
 }
 
 const runtimeWorkflow = requireTokens(".github/workflows/ci-runtime.yml", [
   "name: CI Runtime",
   "nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1",
-  "nx show projects --affected",
-  "--projects=repository-ci",
-  "CI_RUNTIME_SCOPE=UNAFFECTED",
-  "repository-ci:runtime-images",
+  "runtime-proof-routing:resolve",
+  "steps.scope.outputs.targets",
+  "steps.scope.outputs.images",
+  "steps.scope.outputs.services",
+  "steps.scope.outputs.browser",
+  "CI_RUNTIME_TARGETS:",
   "repository-ci:runtime-integration",
   "NX_NO_CLOUD: \"true\"",
 ]);
@@ -176,23 +152,35 @@ for (const forbidden of [
   "tag:ci-",
   "docker/build-push-action@",
   "up -d --build",
+  "--projects=repository-ci",
+  "repository-ci:runtime-images",
 ]) {
   if (runtimeWorkflow.includes(forbidden)) failures.push(`runtime workflow retains parallel or superseded logic: ${forbidden}`);
 }
 
-requireTokens(".github/workflows/ci-security.yml", [
-  "name: CI Security",
-  "node tools/dev/verify-secret-safety.mjs",
+const router = requireTokens("tools/runtime-proof/resolve.mjs", [
+  "nx\", \"show\", \"projects\", \"--affected",
+  "runtime-sensitive Nx projects lack runtime classification",
+  "full-escalation:",
+  "CI_RUNTIME_TARGETS=",
+  "CI_RUNTIME_IMAGES=",
+  "CI_RUNTIME_SERVICES=",
 ]);
+if (router.includes("git diff") || router.includes("git status")) failures.push("runtime router must consume Nx affected truth instead of building a parallel Git affected engine");
+requireTokens("tools/runtime-proof/resolve.test.mjs", [
+  "control-only change selects only control runtime lane",
+  "runtime-sensitive owner without classification fails closed",
+  "scheduled/full regression selects every canonical lane",
+]);
+
+requireTokens(".github/workflows/ci-security.yml", ["name: CI Security", "node tools/dev/verify-secret-safety.mjs"]);
 
 const prTemplate = requireTokens(".github/pull_request_template.md", [
   "## Governance impact",
   "GOVERNANCE_IMPACT=<NONE | REVALIDATE_ONLY | UPDATE_REQUIRED | DEFECT_FOUND>",
   "GOVERNANCE_CANONICAL_SHA=<40-char SHA>",
 ]);
-if (prTemplate.includes("GOVERNANCE_IMPACT=NONE\n")) {
-  failures.push("PR template must not preselect a Governance impact value");
-}
+if (prTemplate.includes("GOVERNANCE_IMPACT=NONE\n")) failures.push("PR template must not preselect a Governance impact value");
 
 requireTokens(".github/workflows/ci-policy.yml", [
   "name: CI Policy",
@@ -207,24 +195,12 @@ requireTokens(".github/workflows/ci-policy.yml", [
 ]);
 
 const adapterCandidates = [
-  ...fs.readdirSync(root, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
-    .map((entry) => entry.name),
-  ...fs.readdirSync(path.join(root, ".github"), { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
-    .map((entry) => ".github/" + entry.name),
+  ...fs.readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".md")).map((entry) => entry.name),
+  ...fs.readdirSync(path.join(root, ".github"), { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".md")).map((entry) => ".github/" + entry.name),
 ];
-const adapters = adapterCandidates.filter((file) =>
-  read(file).includes("ADAPTER_CLASS: DERIVED_AGENT_ROUTING"),
-);
+const adapters = adapterCandidates.filter((file) => read(file).includes("ADAPTER_CLASS: DERIVED_AGENT_ROUTING"));
 for (const file of adapters) {
-  requireTokens(file, [
-    "ADAPTER_CLASS: DERIVED_AGENT_ROUTING",
-    "SEMANTIC_AUTHORITY: NONE",
-    "EXECUTION_AUTHORITY: NONE",
-    "CLOSURE_AUTHORITY: NONE",
-    "AGENTS.md",
-  ]);
+  requireTokens(file, ["ADAPTER_CLASS: DERIVED_AGENT_ROUTING", "SEMANTIC_AUTHORITY: NONE", "EXECUTION_AUTHORITY: NONE", "CLOSURE_AUTHORITY: NONE", "AGENTS.md"]);
 }
 
 if (failures.length) {
