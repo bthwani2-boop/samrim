@@ -86,6 +86,63 @@ func TestPublicPromotionsAreStoreScopedAndBounded(t *testing.T) {
 	})
 }
 
+func TestOperatorPromotionRegistryFiltersCityBeforePageLimit(t *testing.T) {
+	databaseURL := strings.TrimSpace(os.Getenv("DSH_DATABASE_URL"))
+	if databaseURL == "" {
+		t.Skip("DSH_DATABASE_URL is required for operator promotion registry pagination proof")
+	}
+	rootDB, err := sql.Open("postgres", databaseURL)
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	t.Cleanup(func() { _ = rootDB.Close() })
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	if err := rootDB.PingContext(ctx); err != nil {
+		t.Fatalf("configured postgres is not reachable: %v", err)
+	}
+
+	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
+		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
+			t.Fatalf("apply DSH migrations: %v", err)
+		}
+		const cityA = "promotion-registry-city-a"
+		const cityB = "promotion-registry-city-b"
+		for _, city := range []struct{ id, name string }{{cityA, "مدينة أ"}, {cityB, "مدينة ب"}} {
+			if _, err := db.ExecContext(ctx, "INSERT INTO dsh.service_cities(id,display_name_ar,active) VALUES($1,$2,true)", city.id, city.name); err != nil {
+				t.Fatalf("insert service city %s: %v", city.id, err)
+			}
+		}
+
+		startsAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+		for _, promotion := range []struct {
+			id, code, cityID string
+			minute           int
+		}{{"city-a-1", "CITYA1", cityA, 1}, {"city-a-2", "CITYA2", cityA, 3}, {"city-a-3", "CITYA3", cityA, 5}, {"city-b-1", "CITYB1", cityB, 4}, {"city-b-2", "CITYB2", cityB, 6}} {
+			createPublishedPromotion(t, ctx, db, promotion.id, promotion.code, "", promotion.cityID, startsAt.Add(time.Duration(promotion.minute)*time.Minute))
+		}
+
+		query := postgres.OperatorPromotionRegistryQuery{State: "PUBLISHED", ServiceCityID: cityA, Sort: "starts_desc", Limit: 2}
+		first, err := postgres.ListOperatorPromotionRegistry(ctx, db, query)
+		if err != nil {
+			t.Fatalf("list first city A promotion page: %v", err)
+		}
+		if len(first.Promotions) != 2 || !first.HasMore || first.Promotions[0].ID != "city-a-3" || first.Promotions[1].ID != "city-a-2" {
+			t.Fatalf("city A first page must filter before its limit, got %+v", first)
+		}
+
+		query.AfterStartsAt = &first.Promotions[1].StartsAt
+		query.AfterID = first.Promotions[1].ID
+		second, err := postgres.ListOperatorPromotionRegistry(ctx, db, query)
+		if err != nil {
+			t.Fatalf("list second city A promotion page: %v", err)
+		}
+		if len(second.Promotions) != 1 || second.HasMore || second.Promotions[0].ID != "city-a-1" {
+			t.Fatalf("city A continuation must contain the remaining eligible row only, got %+v", second)
+		}
+	})
+}
+
 func createPublishedPromotion(t *testing.T, ctx context.Context, db *sql.DB, id, code, storeID, cityID string, startsAt time.Time) {
 	t.Helper()
 	_, replayed, err := postgres.CreatePromotion(ctx, db, postgres.PromotionInput{

@@ -1206,14 +1206,16 @@ export async function recoverCaptainDelivery(assignmentId: string, context: DshV
   return requestDshJson<CaptainAssignmentResponse>(dshOperationPaths.recoverCaptainDelivery.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim(), "X-Expected-Version": String(context.expectedVersion) });
 }
 
-export type OperatorPromotionRegistryQuery = Readonly<{ search: string; state: string; sort: "starts_desc" | "starts_asc"; cursor: string; limit: number }>;
+export type OperatorPromotionRegistryQuery = Readonly<{ search: string; state: string; serviceCityId?: string; sort: "starts_desc" | "starts_asc"; cursor: string; limit: number }>;
 export type OperatorDiscoveryContentRegistryQuery = Readonly<{ search: string; state: string; kind: string; sort: "priority" | "created_desc"; cursor: string; limit: number }>;
 
 export async function listMarketingPromotions(query: OperatorPromotionRegistryQuery, context: DshOperatorReadContext): Promise<OperatorPromotionRegistryResponse> {
   if (!context.operatorActorId.trim()) throw new Error("DSH_MARKETING_READ_INPUT_INVALID");
-  if (query.search.trim().length > 128 || query.cursor.length > 2048 || !["starts_desc", "starts_asc"].includes(query.sort) || !Number.isInteger(query.limit) || query.limit < 1 || query.limit > 100) throw new Error("DSH_MARKETING_PROMOTION_REGISTRY_INPUT_INVALID");
+  const serviceCityId = query.serviceCityId?.trim() ?? "";
+  if (query.search.trim().length > 128 || serviceCityId.length > 128 || query.cursor.length > 2048 || !["starts_desc", "starts_asc"].includes(query.sort) || !Number.isInteger(query.limit) || query.limit < 1 || query.limit > 100) throw new Error("DSH_MARKETING_PROMOTION_REGISTRY_INPUT_INVALID");
   const params = new URLSearchParams({ search: query.search.trim(), sort: query.sort, limit: String(query.limit) });
   if (query.state) params.set("state", query.state);
+  if (serviceCityId) params.set("serviceCityId", serviceCityId);
   if (query.cursor) params.set("cursor", query.cursor);
   const path = `${dshOperationPaths.listOperatorPromotions.path}?${params.toString()}`;
   return (await requestDshJson<OperatorPromotionRegistryResponse>(dshOperationPaths.listOperatorPromotions.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;

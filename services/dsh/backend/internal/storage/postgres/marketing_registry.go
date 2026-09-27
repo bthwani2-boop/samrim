@@ -11,6 +11,7 @@ import (
 type OperatorPromotionRegistryQuery struct {
 	Search        string
 	State         string
+	ServiceCityID string
 	Sort          string
 	AfterStartsAt *time.Time
 	AfterID       string
@@ -42,11 +43,12 @@ type OperatorDiscoveryContentRegistryPage struct {
 func ListOperatorPromotionRegistry(ctx context.Context, db *sql.DB, query OperatorPromotionRegistryQuery) (OperatorPromotionRegistryPage, error) {
 	query.Search = strings.TrimSpace(query.Search)
 	query.State = strings.ToUpper(strings.TrimSpace(query.State))
+	query.ServiceCityID = strings.TrimSpace(query.ServiceCityID)
 	query.Sort = strings.ToLower(strings.TrimSpace(query.Sort))
 	query.AfterID = strings.TrimSpace(query.AfterID)
 	validState := query.State == "" || query.State == "DRAFT" || query.State == "PUBLISHED" || query.State == "PAUSED"
 	validSort := query.Sort == "starts_desc" || query.Sort == "starts_asc"
-	if db == nil || len(query.Search) > 512 || !validState || !validSort || query.Limit < 1 || query.Limit > 100 || (query.AfterStartsAt == nil) != (query.AfterID == "") || len(query.AfterID) > 128 {
+	if db == nil || len(query.Search) > 512 || len(query.ServiceCityID) > 128 || !validState || !validSort || query.Limit < 1 || query.Limit > 100 || (query.AfterStartsAt == nil) != (query.AfterID == "") || len(query.AfterID) > 128 {
 		return OperatorPromotionRegistryPage{}, ErrPromotionInvalid
 	}
 
@@ -66,6 +68,10 @@ func ListOperatorPromotionRegistry(ctx context.Context, db *sql.DB, query Operat
 		args = append(args, strings.ToLower(escapeRegistryPrefix(query.Search))+"%")
 		placeholder := "$" + strconv.Itoa(len(args))
 		filters = append(filters, "(lower(id) LIKE "+placeholder+" ESCAPE E'\\' OR lower(code) LIKE "+placeholder+" ESCAPE E'\\' OR lower(name_ar) LIKE "+placeholder+" ESCAPE E'\\')")
+	}
+	if query.ServiceCityID != "" {
+		args = append(args, query.ServiceCityID)
+		filters = append(filters, "(service_city_id IS NULL OR service_city_id=$"+strconv.Itoa(len(args))+")")
 	}
 	if query.AfterStartsAt != nil {
 		args = append(args, *query.AfterStartsAt, query.AfterID)

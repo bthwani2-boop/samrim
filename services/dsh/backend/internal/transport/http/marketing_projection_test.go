@@ -1,13 +1,44 @@
 package transporthttp
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
+
+func TestOperatorPromotionRegistryCursorBindsServiceCity(t *testing.T) {
+	query := postgres.OperatorPromotionRegistryQuery{State: "PUBLISHED", ServiceCityID: "city-a", Sort: "starts_desc", Limit: 25}
+	startsAt := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	cursor, err := encodeOperatorPromotionRegistryCursor(postgres.PromotionRecord{ID: "promotion-a", StartsAt: startsAt}, query)
+	if err != nil {
+		t.Fatalf("encode scoped promotion cursor: %v", err)
+	}
+	request := httptest.NewRequest("GET", "/dsh/operator/promotions?state=PUBLISHED&serviceCityId=city-a&sort=starts_desc&limit=25&cursor="+cursor, nil)
+	parsed, err := parseOperatorPromotionRegistryQuery(request)
+	if err != nil || parsed.ServiceCityID != "city-a" || parsed.AfterID != "promotion-a" {
+		t.Fatalf("parse matching scoped promotion cursor: query=%+v err=%v", parsed, err)
+	}
+
+	request = httptest.NewRequest("GET", "/dsh/operator/promotions?state=PUBLISHED&serviceCityId=city-b&sort=starts_desc&limit=25&cursor="+cursor, nil)
+	if _, err := parseOperatorPromotionRegistryQuery(request); err == nil {
+		t.Fatal("promotion cursor from a different service city must be rejected")
+	}
+
+	legacyPayload, err := json.Marshal(operatorPromotionRegistryCursor{State: "PUBLISHED", Sort: "starts_desc", StartsAt: startsAt.Format(time.RFC3339Nano), ID: "promotion-a"})
+	if err != nil {
+		t.Fatalf("marshal unscoped legacy cursor: %v", err)
+	}
+	legacyCursor := base64.RawURLEncoding.EncodeToString(legacyPayload)
+	request = httptest.NewRequest("GET", "/dsh/operator/promotions?state=PUBLISHED&serviceCityId=city-a&sort=starts_desc&limit=25&cursor="+legacyCursor, nil)
+	if _, err := parseOperatorPromotionRegistryQuery(request); err == nil {
+		t.Fatal("cursor without the selected city must be rejected for a scoped page")
+	}
+}
 
 func TestPublicPromotionProjectionOmitsOperatorAndEligibilityInternals(t *testing.T) {
 	endsAt := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)

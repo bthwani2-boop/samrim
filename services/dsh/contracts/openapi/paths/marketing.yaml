@@ -69,6 +69,10 @@ paths:
       security: [{ serviceBearer: [] }]
       parameters:
         - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - name: serviceCityId
+          in: query
+          required: false
+          schema: { type: string, maxLength: 128 }
         - name: search
           in: query
           required: false

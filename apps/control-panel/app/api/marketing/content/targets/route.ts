@@ -59,8 +59,8 @@ export async function GET(request: Request) {
       nextCursor = result.nextCursor ?? "";
     } else if (targetType === "PROMOTION") {
       if (query.length < 2) return NextResponse.json({ options, nextCursor }, { headers: { "Cache-Control": "no-store" } });
-      const promotions = await listMarketingPromotions({ search: query, state: "PUBLISHED", sort: "starts_desc", cursor, limit: 25 }, context);
-      options = promotions.promotions.filter((promotion) => !serviceCityId || !promotion.serviceCityId || promotion.serviceCityId === serviceCityId).map((promotion) => targetOption(promotion.id, promotion.nameAr, promotion.code));
+      const promotions = await listMarketingPromotions({ search: query, state: "PUBLISHED", serviceCityId, sort: "starts_desc", cursor, limit: 25 }, context);
+      options = promotions.promotions.map((promotion) => targetOption(promotion.id, promotion.nameAr, promotion.code));
       nextCursor = promotions.nextCursor ?? "";
     }
 
