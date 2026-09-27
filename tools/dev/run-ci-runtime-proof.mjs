@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { laneTargets } from "../runtime-proof/resolve.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const envPath = path.join(root, "infra/local/.env");
@@ -12,6 +13,17 @@ function fail(message) {
 
 if (process.env.CI !== "true") fail("disposable CI environment required");
 if (!fs.existsSync(envPath)) fail("isolated runtime environment is missing");
+
+const requestedTargets = (process.env.CI_RUNTIME_TARGETS ?? "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+if (requestedTargets.length === 0) fail("CI_RUNTIME_TARGETS is empty");
+
+const allowedTargets = new Set(Object.values(laneTargets).flat());
+for (const target of requestedTargets) {
+  if (!allowedTargets.has(target)) fail("unowned runtime proof target requested: " + target);
+}
 
 const runtimeEnv = {};
 for (const rawLine of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
@@ -45,12 +57,16 @@ const childEnv = {
   PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN: runtimeEnv.CONTROL_PANEL_SERVICE_TOKEN,
 };
 
-const terminalTarget = "dsh-backend:runtime-proof";
-console.log("CI_RUNTIME_TASK_GRAPH_ROOT=" + terminalTarget);
-execFileSync(
-  process.platform === "win32" ? "pnpm.cmd" : "pnpm",
-  ["exec", "nx", "run", terminalTarget, "--outputStyle=stream"],
-  { cwd: root, env: childEnv, stdio: "inherit" },
-);
+const executable = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+console.log("CI_RUNTIME_TASKS=" + requestedTargets.join(","));
+for (const target of requestedTargets) {
+  console.log("CI_RUNTIME_TASK=START target=" + target);
+  execFileSync(
+    executable,
+    ["exec", "nx", "run", target, "--outputStyle=stream"],
+    { cwd: root, env: childEnv, stdio: "inherit" },
+  );
+  console.log("CI_RUNTIME_TASK=PASS target=" + target);
+}
 
-console.log("CI_RUNTIME_INTEGRATION=PASS root=" + terminalTarget);
+console.log("CI_RUNTIME_INTEGRATION=PASS targets=" + requestedTargets.join(","));
