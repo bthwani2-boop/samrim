@@ -7,7 +7,9 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 const data = (relative) => JSON.parse(read(relative));
 const assert = (condition, message) => { if (!condition) failures.push(message); };
 
-const workflowNames = ["ci-policy.yml", "ci-runtime.yml", "ci-security.yml", "ci-static.yml"];
+const ciWorkflowNames = ["ci-policy.yml", "ci-runtime.yml", "ci-security.yml", "ci-static.yml"];
+const observationWorkflowNames = ["sonar-observe.yml"];
+const workflowNames = [...ciWorkflowNames, ...observationWorkflowNames].sort();
 const discovered = fs.readdirSync(path.join(root, ".github/workflows"))
   .filter((name) => /\.ya?ml$/.test(name))
   .sort();
@@ -145,10 +147,35 @@ for (const file of workflowNames) {
   if (budgets.mode === "observe") assert(!body.includes("start-nx-agents"), `${file} enables distributed execution before measured admission`);
 }
 
+const sonarWorkflow = read(".github/workflows/sonar-observe.yml");
+assert(sonarWorkflow.includes("name: Sonar Quality Observe"), "Sonar observation workflow name missing");
+assert(sonarWorkflow.includes("uses: SonarSource/sonarqube-scan-action@"), "Sonar observation action missing");
+assert(sonarWorkflow.includes("SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}"), "Sonar observation token binding missing");
+assert(!sonarWorkflow.includes("sonar.qualitygate.wait=true"), "Sonar observation must not wait on or enforce the quality gate");
+for (const [, reference] of sonarWorkflow.matchAll(/^\s+uses:\s+([^\s]+)$/gm)) {
+  const [, ref] = reference.split("@");
+  assert(/^[0-9a-f]{40}$/.test(ref ?? ""), `Sonar observation action is not pinned to a full commit SHA: ${reference}`);
+}
+const sonarProperties = new Map(
+  read("sonar-project.properties")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"))
+    .map((line) => {
+      const separator = line.indexOf("=");
+      return separator < 0 ? [line, ""] : [line.slice(0, separator).trim(), line.slice(separator + 1).trim()];
+    }),
+);
+for (const key of ["sonar.organization", "sonar.projectKey", "sonar.projectName", "sonar.sources"]) {
+  assert(Boolean(sonarProperties.get(key)), `Sonar observation configuration is missing ${key}`);
+}
+assert(/^[A-Za-z0-9-]+$/.test(sonarProperties.get("sonar.organization") ?? ""), "Sonar organization key is malformed");
+assert(/^[A-Za-z0-9_.:-]+$/.test(sonarProperties.get("sonar.projectKey") ?? ""), "Sonar project key is malformed");
+
 if (failures.length) {
   console.error("EXECUTION_PROOF_SYSTEM=FAIL");
   for (const failure of [...new Set(failures)].sort()) console.error(`  ${failure}`);
   process.exit(1);
 }
 
-console.log("EXECUTION_PROOF_SYSTEM=PASS workflows=4 runtime_router=nx affected_scope=claim-driven runtime_dag=decoupled cache_inputs=causal");
+console.log("EXECUTION_PROOF_SYSTEM=PASS workflows=4 observation_workflows=1 runtime_router=nx affected_scope=claim-driven runtime_dag=decoupled cache_inputs=causal");
