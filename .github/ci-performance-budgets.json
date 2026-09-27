@@ -1,6 +1,7 @@
 {
   "schema": 1,
   "mode": "observe",
+  "enforcedBudgets": [],
   "budgetsMs": {
     "static-install": 45000,
     "static-affected": 60000,

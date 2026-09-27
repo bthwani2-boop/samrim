@@ -14,6 +14,7 @@ const records = fs.existsSync(metricsPath)
   : [];
 
 const mode = budgets.mode === "enforce" ? "enforce" : "observe";
+const enforcedBudgets = new Set(Array.isArray(budgets.enforcedBudgets) ? budgets.enforcedBudgets : []);
 let enforcedOverrun = false;
 let observedOverrun = false;
 const budgetNames = Object.keys(budgets.budgetsMs ?? {});
@@ -27,14 +28,14 @@ const lines = [
 for (const record of records) {
   const budget = budgets.budgetsMs?.[record.name];
   const overBudget = typeof budget === "number" && record.durationMs > budget;
-  const enforced = mode === "enforce";
+  const blocking = mode === "enforce" && enforcedBudgets.has(record.name);
   const status = typeof budget !== "number"
     ? "unbudgeted"
     : overBudget
-      ? enforced ? "over (blocking)" : "over (observe)"
+      ? blocking ? "over (blocking)" : "over (observe)"
       : "within";
-  if (overBudget && enforced) enforcedOverrun = true;
-  if (overBudget && !enforced) observedOverrun = true;
+  if (overBudget && blocking) enforcedOverrun = true;
+  if (overBudget && !blocking) observedOverrun = true;
   const budgetLabel = typeof budget === "number" ? (budget / 1000).toFixed(1) + "s" : "—";
   lines.push(
     "| " + record.name +
@@ -46,7 +47,7 @@ for (const record of records) {
 
 if (records.length === 0) lines.push("| no timed commands | — | — | — |");
 lines.push("");
-lines.push("Budget mode: " + mode + "; blocking budgets: " + (mode === "enforce" ? budgetNames.length : 0) + "/" + budgetNames.length + ". Single-run values are diagnostics in observe mode; p50/p95 remain Nx Cloud/GitHub historical metrics.");
+lines.push("Budget mode: " + mode + "; blocking budgets: " + (mode === "enforce" ? enforcedBudgets.size : 0) + "/" + budgetNames.length + ". Single-run values are diagnostics in observe mode; p50/p95 remain Nx Cloud/GitHub historical metrics.");
 
 const output = lines.join("\n") + "\n";
 if (summaryPath) fs.appendFileSync(summaryPath, output);
