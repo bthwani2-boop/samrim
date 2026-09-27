@@ -57,11 +57,36 @@ function readJsonIfPresent(file) {
   try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
 }
 
+function readLogLines(logPath) {
+  if (!logPath || !fs.existsSync(logPath)) return [];
+  return fs.readFileSync(logPath, "utf8")
+    .replace(/\u001b\[[0-9;]*m/g, "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
 function firstObservedFailureLine(logPath) {
-  if (!logPath || !fs.existsSync(logPath)) return null;
-  const lines = fs.readFileSync(logPath, "utf8").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const lines = readLogLines(logPath);
   const material = lines.find((line) => /(?:\bFAIL(?:ED|URE)?\b|\bERROR\b|\bINVALID[_ -]|\bPANIC\b|\bFATAL\b|exit code|timed out)/i.test(line));
   return material || lines.at(-1) || null;
+}
+
+function failedNxTarget(logPath) {
+  const lines = readLogLines(logPath);
+  const failedHeading = lines.findIndex((line) => /^Failed tasks:?$/i.test(line));
+  if (failedHeading >= 0) {
+    for (const line of lines.slice(failedHeading + 1)) {
+      const match = line.match(/^[-*]\s+([A-Za-z0-9._/-]+:[A-Za-z0-9._/-]+)\b/);
+      if (match) return match[1];
+      if (/^(?:Run duration:|See more details|NX\s)/i.test(line)) break;
+    }
+  }
+  for (const line of lines) {
+    const match = line.match(/\b([A-Za-z0-9._/-]+:[A-Za-z0-9._/-]+)\b.*\b(?:failed|failure)\b/i);
+    if (match) return match[1];
+  }
+  return null;
 }
 
 const metadata = {
@@ -104,11 +129,10 @@ if (metadata.nxBase && metadata.nxHead) {
   if (taskGraph.status !== 0) write("affected-task-graph-error.txt", taskGraph.stdout + taskGraph.stderr);
 }
 
-let metricRecords = [];
 let failedRecords = [];
 if (fs.existsSync(metricsPath)) {
   fs.copyFileSync(metricsPath, path.join(outDir, "ci-metrics.jsonl"));
-  metricRecords = fs.readFileSync(metricsPath, "utf8")
+  const metricRecords = fs.readFileSync(metricsPath, "utf8")
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => JSON.parse(line));
@@ -120,17 +144,18 @@ if (fs.existsSync(metricsPath)) {
 
 const runtimeFailure = kind === "runtime" ? readJsonIfPresent(runtimeFailurePath) : null;
 const firstFailed = failedRecords[0] ?? null;
+const observedFailedTarget = runtimeFailure?.target ?? failedNxTarget(firstFailed?.logPath) ?? null;
 const failureSummary = {
   schema: 1,
   candidate: metadata.sha,
   gate: kind,
   failedCommand: firstFailed?.name ?? null,
-  failedTarget: runtimeFailure?.target ?? null,
+  failedTarget: observedFailedTarget,
   failureClass: "UNCLASSIFIED_REQUIRES_CAUSAL_REVIEW",
   firstObservedFailureLine: firstObservedFailureLine(firstFailed?.logPath),
   progressionBlocked: true,
   nextAction: "classify-failure-find-highest-causal-root-repair-then-rerun-only-invalidated-evidence",
-  suggestedReproof: runtimeFailure?.target ?? firstFailed?.name ?? null,
+  suggestedReproof: observedFailedTarget ?? firstFailed?.name ?? null,
 };
 write("failure-summary.json", JSON.stringify(failureSummary, null, 2) + "\n");
 

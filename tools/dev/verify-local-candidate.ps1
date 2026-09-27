@@ -121,7 +121,11 @@ try {
     if ((& go version | Out-String).Trim() -notmatch '\bgo1\.27\.1\b') { Fail 'Go version mismatch.' }
 
     Run-QuietStep 'Reusable workspace invariant targets' {
-        pnpm exec nx run-many -t donor-residue repository-structure structural-hygiene runtime-ownership removed-domain-residue cache-contracts docs-command-parity docs-config-parity knowledge-system knowledge-references agent-contract workspace-dependencies go-workspace-sync nx-project-tags mobile-config brand theme-check theme-verify powershell-syntax knip execution-proof-system compose-config --outputStyle=static --parallel=2
+        pnpm exec nx run-many -t donor-residue repository-structure structural-hygiene runtime-ownership removed-domain-residue cache-contracts docs-command-parity docs-config-parity knowledge-system knowledge-references agent-contract workspace-dependencies go-workspace-sync nx-project-tags mobile-config brand theme-check theme-verify powershell-syntax knip compose-config --outputStyle=static --parallel=2
+    }
+
+    Run-QuietStep 'Execution proof system' {
+        pnpm exec nx run repository-ci:execution-proof-system --outputStyle=static
     }
 
     Run-QuietStep 'Affected static targets' {

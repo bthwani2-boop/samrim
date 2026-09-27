@@ -52,6 +52,7 @@ requireTokens(localVerifier, "local verifier", [
   "VERIFY_BASE_SOURCE=REMOTE_TRACKING",
   "refs/remotes/origin/main",
   "VERIFY_SCOPE_AUTHORITY=NX_TASK_INPUTS_AND_AFFECTED_GRAPH",
+  "repository-ci:execution-proof-system",
   "nx affected -t lint format-check typecheck unit contract build vet",
 ]);
 forbidTokens(localVerifier, "local verifier", [
@@ -69,6 +70,8 @@ requireTokens(failureCapture, "failure capture", [
   "UNCLASSIFIED_REQUIRES_CAUSAL_REVIEW",
   "progressionBlocked",
   "runtimeFailurePath",
+  "failedNxTarget",
+  "observedFailedTarget",
   "do not guess one",
 ]);
 forbidTokens(failureCapture, "failure capture", ['"dsh-backend:runtime-proof"']);
@@ -78,6 +81,14 @@ requireTokens(runtimeRunner, "runtime runner", [
   "samrim-runtime-failure.json",
   "CI_RUNTIME_TASK=FAIL target=",
   "classify-highest-causal-root-before-new-material-work",
+]);
+
+const staticWorkflow = read(".github/workflows/ci-static.yml");
+requireTokens(staticWorkflow, "static workflow diagnostics", [
+  "run-ci-command.mjs static-invariants",
+  "run-ci-command.mjs static-execution-proof",
+  "run-ci-command.mjs static-go-workspace",
+  "run-ci-command.mjs static-compose-config",
 ]);
 
 console.log("FAILURE_DRIVEN_CLOSURE_CONTRACT=PASS pass=reuse fail=block-and-repair affected=nx-only diagnostics=causal");
