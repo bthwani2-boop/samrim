@@ -36,11 +36,8 @@ function allProjectFiles(directory) {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     if ([".git", ".nx", "node_modules"].includes(entry.name)) continue;
     const absolute = path.join(directory, entry.name);
-    if (entry.isDirectory()) {
-      result.push(...allProjectFiles(absolute));
-    } else if (entry.name === "project.json") {
-      result.push(absolute);
-    }
+    if (entry.isDirectory()) result.push(...allProjectFiles(absolute));
+    else if (entry.name === "project.json") result.push(absolute);
   }
   return result;
 }
@@ -49,16 +46,23 @@ export function loadProjectConfigs() {
   const configs = new Map();
   for (const file of allProjectFiles(root)) {
     const value = JSON.parse(fs.readFileSync(file, "utf8"));
-    if (!value?.name) continue;
-    configs.set(value.name, value);
+    if (value?.name) configs.set(value.name, value);
   }
   return configs;
 }
 
+function implicitLane(tags) {
+  const scopes = [...tags].filter((tag) => tag.startsWith("scope:"));
+  if (scopes.some((tag) => tag === "scope:control-panel")) return "control";
+  if (scopes.some((tag) => tag === "scope:identity" || tag.startsWith("scope:identity-"))) return "identity";
+  if (scopes.some((tag) => tag === "scope:wlt" || tag.startsWith("scope:wlt-"))) return "wlt";
+  if (scopes.some((tag) => tag === "scope:dsh" || tag.startsWith("scope:dsh-"))) return "dsh";
+  if (scopes.some((tag) => ["scope:infra", "scope:repository-ci", "scope:runtime-proof-routing"].includes(tag))) return "full";
+  return null;
+}
+
 export function resolveFromAffected(affected, configs, fullRegression = false) {
-  if (fullRegression) {
-    return buildResolution(affected, laneOrder, ["explicit-full-regression"]);
-  }
+  if (fullRegression) return buildResolution(affected, laneOrder, ["explicit-full-regression"]);
 
   const lanes = new Set();
   const reasons = [];
@@ -72,19 +76,25 @@ export function resolveFromAffected(affected, configs, fullRegression = false) {
     const runtimeTags = [...tags].filter((tag) => tag.startsWith("runtime:"));
 
     if (runtimeTags.includes("runtime:none")) continue;
-    if (runtimeTags.includes("runtime:full")) {
-      return buildResolution(affected, laneOrder, [`full-escalation:${name}`]);
-    }
+    if (runtimeTags.includes("runtime:full")) return buildResolution(affected, laneOrder, [`full-escalation:${name}`]);
 
-    for (const tag of runtimeTags) {
-      const lane = tag.slice("runtime:".length);
+    const explicitLanes = runtimeTags.map((tag) => tag.slice("runtime:".length));
+    for (const lane of explicitLanes) {
       if (!laneTargets[lane]) throw new Error(`unknown runtime lane '${lane}' on Nx project '${name}'`);
       lanes.add(lane);
-      reasons.push(`${name}:${lane}`);
+      reasons.push(`${name}:${lane}:explicit`);
     }
 
-    const runtimeSensitive = tags.has("type:service") || name === "control-panel" || tags.has("type:infra");
-    if (runtimeSensitive && runtimeTags.length === 0) unclassified.push(name);
+    if (explicitLanes.length === 0) {
+      const inferred = implicitLane(tags);
+      if (inferred === "full") return buildResolution(affected, laneOrder, [`full-escalation:${name}:scope`]);
+      if (inferred) {
+        lanes.add(inferred);
+        reasons.push(`${name}:${inferred}:scope`);
+      } else if (tags.has("type:service") || tags.has("type:infra") || name === "control-panel") {
+        unclassified.push(name);
+      }
+    }
   }
 
   if (unclassified.length) {
@@ -95,15 +105,12 @@ export function resolveFromAffected(affected, configs, fullRegression = false) {
 }
 
 function buildResolution(affected, lanes, reasons) {
-  const targets = unique(lanes.flatMap((lane) => laneTargets[lane]));
-  const images = unique(lanes.flatMap((lane) => laneImages[lane]));
-  const services = unique(lanes.flatMap((lane) => laneServices[lane]));
   return {
     affected: [...affected].sort(),
     lanes,
-    targets,
-    images,
-    services,
+    targets: unique(lanes.flatMap((lane) => laneTargets[lane])),
+    images: unique(lanes.flatMap((lane) => laneImages[lane])),
+    services: unique(lanes.flatMap((lane) => laneServices[lane])),
     needsBrowser: lanes.includes("control"),
     run: lanes.length > 0,
     reasons: unique(reasons),
@@ -132,20 +139,21 @@ function affectedProjects(base, head) {
 }
 
 function appendGithubOutput(resolution) {
-  const output = process.env.GITHUB_OUTPUT;
-  if (!output) return;
-  const lines = [
-    `run=${resolution.run ? "true" : "false"}`,
-    `lanes=${resolution.lanes.join(",")}`,
-    `targets=${resolution.targets.join(",")}`,
-    `images=${resolution.images.join(",")}`,
-    `services=${resolution.services.join(",")}`,
-    `browser=${resolution.needsBrowser ? "true" : "false"}`,
-  ];
-  fs.appendFileSync(output, `${lines.join("\n")}\n`);
+  if (!process.env.GITHUB_OUTPUT) return;
+  fs.appendFileSync(
+    process.env.GITHUB_OUTPUT,
+    [
+      `run=${resolution.run ? "true" : "false"}`,
+      `lanes=${resolution.lanes.join(",")}`,
+      `targets=${resolution.targets.join(",")}`,
+      `images=${resolution.images.join(",")}`,
+      `services=${resolution.services.join(",")}`,
+      `browser=${resolution.needsBrowser ? "true" : "false"}`,
+    ].join("\n") + "\n",
+  );
 }
 
-if (import.meta.url === `file://${process.argv[1].replaceAll("\\", "/")}` || process.argv[1]?.endsWith("resolve.mjs")) {
+if (process.argv[1]?.endsWith("resolve.mjs")) {
   try {
     const args = parseArgs(process.argv.slice(2));
     const affected = affectedProjects(args.base, args.head);
