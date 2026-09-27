@@ -52,7 +52,7 @@
         "^default"
       ],
       "options": {
-        "command": "node tools/dev/verify-wlt-contract-conformance.mjs"
+        "command": "pnpm --dir services/wlt contract:conformance"
       }
     },
     "baseline-proof": {
