@@ -60,6 +60,11 @@ if (set.has(structurePath)) {
   }
 }
 
+assert(
+  !set.has("tools/BTHWANI_FULL_PLATFORM_A_TO_Z_FIXED_POINT_CLOSURE_TRIGGER.md"),
+  "Tracked task trigger is forbidden; keep temporary task authorization outside durable repository content",
+);
+
 const allowedTopLevel = new Set([".github", "apps", "contracts", "infra", "packages", "services", "tools"]);
 const topLevel = [...new Set(
   tracked.filter((value) => value.includes("/")).map((value) => value.split("/", 1)[0]),
