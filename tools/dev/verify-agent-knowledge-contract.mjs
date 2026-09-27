@@ -27,6 +27,9 @@ const agent = requireTokens("AGENTS.md", [
   "PRODUCT_SEMANTIC_AUTHORITY: NONE",
   "CURRENT_IMPLEMENTATION_AUTHORITY: NONE",
   "knowledge.sources.json",
+  "CURRENT USER / TASK AUTHORITY",
+  "Temporary task authorization should normally remain outside durable repository authority",
+  "After one bounded discovery sufficient to choose owner, boundary, safety, treatment and proof, default to execution rather than repeated audit",
   "GOVERNANCE_IMPACT=NONE",
   "GOVERNANCE_IMPACT=REVALIDATE_ONLY",
   "GOVERNANCE_IMPACT=UPDATE_REQUIRED",
@@ -54,14 +57,20 @@ const structure = requireTokens("REPOSITORY-STRUCTURE.md", [
   "This is a placement grammar, not current inventory",
   "`pnpm verify` is the stable public local verification entrypoint.",
   "governance-and-docs/docs/reference/competitors/",
+  "Task authorization, branch/order instructions, checkpoint cadence and promotion constraints belong to current user/task authority outside durable tracked repository content",
 ]);
 const retainedMatrixPath = "tools/BTHWANI_FULL_PLATFORM_CLOSURE_MATRIX.md";
 const retainedMatrixEvidenceRule =
-  structure.includes("unless the user explicitly directs retention of a specific existing evidence file") &&
-  structure.includes(`The user directed retention of \`${retainedMatrixPath}\`; it records task evidence only, grants no authority, and must be revalidated against exact live state before use.`) &&
+  structure.includes(`The user-directed \`${retainedMatrixPath}\` is the sole admitted retained task-evidence exception`) &&
+  structure.includes("it grants no semantic/execution/implementation authority and must be revalidated against exact live state before use") &&
   fs.existsSync(path.join(root, retainedMatrixPath));
 if (/single derived closure matrix/i.test(structure) || (structure.includes(retainedMatrixPath) && !retainedMatrixEvidenceRule)) {
   failures.push("REPOSITORY-STRUCTURE.md authorizes unscoped closure-matrix placement");
+}
+
+const retiredTriggerPath = "tools/BTHWANI_FULL_PLATFORM_A_TO_Z_FIXED_POINT_CLOSURE_TRIGGER.md";
+if (fs.existsSync(path.join(root, retiredTriggerPath))) {
+  failures.push(`tracked task authorization must remain retired: ${retiredTriggerPath}`);
 }
 
 const security = requireTokens("SECURITY.md", [
@@ -72,21 +81,6 @@ const security = requireTokens("SECURITY.md", [
   "GitHub Private Vulnerability Reporting",
 ]);
 if (/authorization matrix|session lifetime|actor scope|object scope/i.test(security)) failures.push("SECURITY.md duplicates durable application security policy");
-
-const trigger = requireTokens("tools/BTHWANI_FULL_PLATFORM_A_TO_Z_FIXED_POINT_CLOSURE_TRIGGER.md", [
-  "ARTIFACT_CLASS: ACTIVE_TASK_AUTHORIZATION",
-  "SEMANTIC_AUTHORITY: NONE",
-  "EXECUTION_LAW_AUTHORITY: NONE",
-  "IMPLEMENTATION_AUTHORITY: NONE",
-  "LIFETIME: CURRENT_OBJECTIVE_ONLY",
-  "EXECUTION-FIRST",
-  "AGENTS.md",
-  "knowledge.sources.json",
-]);
-if (Buffer.byteLength(trigger, "utf8") > 12000) failures.push("active task trigger has regrown into a handbook");
-for (const forbidden of ["## Finance", "## Database", "## Security policy", "## Product inventory", "## Journey inventory", "Server-Driven Operational Registry"]) {
-  if (trigger.includes(forbidden)) failures.push(`active task trigger duplicates durable authority: ${forbidden}`);
-}
 
 const manifest = JSON.parse(read("knowledge.sources.json"));
 if (manifest?.schema !== 2) failures.push("knowledge.sources.json schema drifted");
@@ -161,6 +155,7 @@ if (failures.length) {
 console.log("AGENT_LAW_OWNER=AGENTS.md");
 console.log("PLACEMENT_OWNER=REPOSITORY-STRUCTURE.md");
 console.log("SECURITY_LOCAL_OWNER=REPORTING_AND_SECRET_HANDLING_ONLY");
-console.log("TASK_TRIGGER_AUTHORITY=TEMPORARY_NON_SEMANTIC");
+console.log("TASK_AUTHORIZATION_LOCATION=EXTERNAL_CURRENT_USER_AUTHORITY");
+console.log("TRACKED_TASK_TRIGGER=ABSENT");
 console.log("DUPLICATE_DURABLE_AUTHORITY=0");
 console.log("AGENT_KNOWLEDGE_CONTRACT=PASS");
