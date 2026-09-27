@@ -145,7 +145,7 @@ A tool may inspect, generate, automate or prove; it never becomes Product/System
 
 Saved competitor observations live as non-authoritative revalidate-at-use evidence in `governance-and-docs/docs/reference/competitors/`. Machine-local screenshots remain in the ignored `local-photos/` subtree. Do not keep a parallel competitor cache in Samrim.
 
-An explicitly authorized active task trigger may temporarily remain at `tools/` root as non-authoritative task input. Do not maintain a tracked closure matrix or Product/journey inventory beside it unless the user explicitly directs retention of a specific existing evidence file. The user directed retention of `tools/BTHWANI_FULL_PLATFORM_CLOSURE_MATRIX.md`; it records task evidence only, grants no authority, and must be revalidated against exact live state before use. Delete the active trigger when its objective closes; Git retains history.
+Task authorization, branch/order instructions, checkpoint cadence and promotion constraints belong to current user/task authority outside durable tracked repository content; do not retain a task-trigger Markdown file merely to carry execution instructions. If task text reveals a durable rule, normalize it to the one canonical `AGENTS.md` or Governance owner and delete the temporary carrier. The user-directed `tools/BTHWANI_FULL_PLATFORM_CLOSURE_MATRIX.md` is the sole admitted retained task-evidence exception: it grants no semantic/execution/implementation authority and must be revalidated against exact live state before use. Do not create another tracked task trigger, closure matrix or Product/journey inventory beside it.
 
 ## 8. Tests, dependencies and cutover
 
