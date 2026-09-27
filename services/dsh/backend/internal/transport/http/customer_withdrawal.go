@@ -6,6 +6,9 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	dshcontract "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
+	wltintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 )
 
 func (s *BeneficiaryFinanceServer) RegisterCustomerWithdrawalGovernance(mux *http.ServeMux) {
@@ -18,6 +21,48 @@ func (s *BeneficiaryFinanceServer) RegisterCustomerWithdrawalGovernance(mux *htt
 	mux.HandleFunc("POST /dsh/operator/customer-withdrawal-intakes/{intakeId}/activate-destination", s.activateCustomerWithdrawalDestination)
 	mux.HandleFunc("POST /dsh/operator/customer-withdrawal-intakes/{intakeId}/accept", s.acceptCustomerWithdrawal)
 	mux.HandleFunc("POST /dsh/operator/customer-withdrawal-intakes/{intakeId}/reject", s.rejectCustomerWithdrawal)
+}
+
+func projectCustomerWithdrawalIntake(item wltintegration.CustomerWithdrawalIntake, state wltintegration.PayoutState) dshcontract.CustomerWithdrawalIntake {
+	return dshcontract.CustomerWithdrawalIntake{
+		ID: item.ID, CustomerActorID: item.CustomerActorID, ProviderKey: item.ProviderKey,
+		WalletIdentifierMasked: item.WalletIdentifierMasked, BeneficiaryName: item.BeneficiaryName,
+		BeneficiaryIdentityVersion: item.BeneficiaryIdentityVersion, RequestReason: item.RequestReason,
+		RequestEvidenceDocumentID: item.RequestEvidenceDocumentID, Status: item.Status,
+		DestinationID: withdrawalString(item.DestinationID), PayoutID: withdrawalString(item.PayoutID),
+		PayoutStatus: withdrawalString(item.PayoutStatus), PayoutAmountMinor: withdrawalAmount(item.PayoutAmountMinor),
+		PayoutCurrency: withdrawalString(item.PayoutCurrency), RequestedBy: item.RequestedBy,
+		RequestedAt: item.RequestedAt, FinanceActorID: withdrawalString(item.FinanceActorID),
+		ResolvedAt: item.ResolvedAt, ResolutionReason: withdrawalString(item.ResolutionReason),
+		Currency: state.Currency, EligibleAvailableMinor: int(state.EligibleAvailableMinor), HeldMinor: int(state.HeldMinor),
+	}
+}
+
+func projectCustomerWithdrawalIntakeSummary(item wltintegration.CustomerWithdrawalIntakeSummary) dshcontract.CustomerWithdrawalIntakeSummary {
+	return dshcontract.CustomerWithdrawalIntakeSummary{
+		ID: item.ID, CustomerActorID: item.CustomerActorID, ProviderKey: item.ProviderKey,
+		WalletIdentifierMasked: item.WalletIdentifierMasked, BeneficiaryName: item.BeneficiaryName,
+		Status: item.Status, DestinationID: withdrawalString(item.DestinationID),
+		DestinationStatus:             withdrawalString(item.DestinationStatus),
+		DestinationVerificationStatus: withdrawalString(item.DestinationVerificationStatus),
+		PayoutID:                      withdrawalString(item.PayoutID), PayoutStatus: withdrawalString(item.PayoutStatus),
+		PayoutAmountMinor: withdrawalAmount(item.PayoutAmountMinor), PayoutCurrency: withdrawalString(item.PayoutCurrency),
+		RequestedAt: item.RequestedAt,
+	}
+}
+
+func withdrawalString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func withdrawalAmount(value *int64) int {
+	if value == nil {
+		return 0
+	}
+	return int(*value)
 }
 
 func (s *BeneficiaryFinanceServer) uploadCustomerWithdrawalRequestEvidence(w http.ResponseWriter, r *http.Request) {
@@ -91,15 +136,13 @@ func (s *BeneficiaryFinanceServer) createCustomerWithdrawalIntake(w http.Respons
 		writeWLTFinanceError(w, err)
 		return
 	}
-	item.Currency = state.Currency
-	item.EligibleAvailableMinor = state.EligibleAvailableMinor
-	item.HeldMinor = state.HeldMinor
+	intake := projectCustomerWithdrawalIntake(item, state)
 	status := http.StatusCreated
 	if replayed {
 		status = http.StatusOK
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, status, map[string]any{"intake": item, "idempotentReplay": replayed})
+	writeJSON(w, status, map[string]any{"intake": intake, "idempotentReplay": replayed})
 }
 
 func (s *BeneficiaryFinanceServer) listCustomerWithdrawalIntakes(w http.ResponseWriter, r *http.Request) {
@@ -131,8 +174,12 @@ func (s *BeneficiaryFinanceServer) listCustomerWithdrawalIntakes(w http.Response
 		writeWLTFinanceError(w, err)
 		return
 	}
+	intakes := make([]dshcontract.CustomerWithdrawalIntakeSummary, 0, len(result.Intakes))
+	for _, item := range result.Intakes {
+		intakes = append(intakes, projectCustomerWithdrawalIntakeSummary(item))
+	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, dshcontract.CustomerWithdrawalIntakeListResponse{Intakes: intakes, NextCursor: result.NextCursor, Limit: result.Limit})
 }
 
 func (s *BeneficiaryFinanceServer) readCustomerWithdrawalIntake(w http.ResponseWriter, r *http.Request) {
@@ -149,10 +196,8 @@ func (s *BeneficiaryFinanceServer) readCustomerWithdrawalIntake(w http.ResponseW
 		writeWLTFinanceError(w, err)
 		return
 	}
-	item.Currency = state.Currency
-	item.EligibleAvailableMinor = state.EligibleAvailableMinor
-	item.HeldMinor = state.HeldMinor
-	var destination map[string]any
+	intake := projectCustomerWithdrawalIntake(item, state)
+	var destination *dshcontract.CustomerWithdrawalDestinationSummary
 	if item.DestinationID != nil {
 		readDestination, destinationErr := s.payment.ReadOfficialWalletDestinationByID(r.Context(), *item.DestinationID)
 		if destinationErr != nil {
@@ -163,17 +208,15 @@ func (s *BeneficiaryFinanceServer) readCustomerWithdrawalIntake(w http.ResponseW
 			writeError(w, http.StatusConflict, "DESTINATION_MISMATCH", "the intake wallet destination no longer matches its recorded destination")
 			return
 		}
-		destination = map[string]any{
-			"id":                     readDestination.ID,
-			"status":                 readDestination.Status,
-			"verificationStatus":     readDestination.VerificationStatus,
-			"walletIdentifierMasked": readDestination.WalletIdentifierMasked,
-			"beneficiaryName":        readDestination.BeneficiaryName,
-			"version":                readDestination.Version,
+		destination = &dshcontract.CustomerWithdrawalDestinationSummary{
+			ID: readDestination.ID, Status: readDestination.Status,
+			VerificationStatus:     readDestination.VerificationStatus,
+			WalletIdentifierMasked: readDestination.WalletIdentifierMasked,
+			BeneficiaryName:        readDestination.BeneficiaryName, Version: readDestination.Version,
 		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	response := map[string]any{"intake": item}
+	response := map[string]any{"intake": intake}
 	if destination != nil {
 		response["destination"] = destination
 	}
@@ -293,9 +336,7 @@ func (s *BeneficiaryFinanceServer) rejectCustomerWithdrawal(w http.ResponseWrite
 		writeWLTFinanceError(w, err)
 		return
 	}
-	item.Currency = state.Currency
-	item.EligibleAvailableMinor = state.EligibleAvailableMinor
-	item.HeldMinor = state.HeldMinor
+	intake := projectCustomerWithdrawalIntake(item, state)
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, map[string]any{"intake": item})
+	writeJSON(w, http.StatusOK, map[string]any{"intake": intake})
 }

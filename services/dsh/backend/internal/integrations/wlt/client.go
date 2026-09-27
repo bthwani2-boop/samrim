@@ -47,6 +47,8 @@ type PaymentIntent struct {
 	CollectedByActorID        *string                    `json:"collectedByActorId"`
 	CollectionReference       *string                    `json:"collectionReference"`
 	CancellationReason        *string                    `json:"cancellationReason"`
+	CreatedAt                 string                     `json:"createdAt"`
+	UpdatedAt                 string                     `json:"updatedAt"`
 	CustomerPaymentAllocation *CustomerPaymentAllocation `json:"customerPaymentAllocation,omitempty"`
 }
 
@@ -65,6 +67,7 @@ type CustomerPaymentAllocation struct {
 	CashAmountMinor            int64  `json:"cashAmountMinor"`
 	CustomerPayableMinor       int64  `json:"customerPayableMinor"`
 	PolicyVersion              string `json:"policyVersion"`
+	CreatedAt                  string `json:"createdAt"`
 }
 
 type paymentIntentResponse struct {
@@ -175,20 +178,21 @@ type PartnerFinancialProfile struct {
 }
 
 type PartnerOrderEarning struct {
-	OrderID             string `json:"orderId"`
-	PaymentIntentID     string `json:"paymentIntentId"`
-	PartnerActorID      string `json:"partnerActorId"`
-	CaptainActorID      string `json:"captainActorId"`
-	Currency            string `json:"currency"`
-	GrossProductMinor   int64  `json:"grossProductMinor"`
-	DeliveryFeeMinor    int64  `json:"deliveryFeeMinor"`
-	CommissionMinor     int64  `json:"commissionMinor"`
-	PartnerNetMinor     int64  `json:"partnerNetMinor"`
-	ProfileID           string `json:"profileId"`
-	ProfileVersion      int    `json:"profileVersion"`
-	PolicyVersion       string `json:"policyVersion"`
-	LedgerTransactionID string `json:"ledgerTransactionId"`
-	CreatedAt           string `json:"createdAt"`
+	OrderID                         string `json:"orderId"`
+	PaymentIntentID                 string `json:"paymentIntentId"`
+	PartnerActorID                  string `json:"partnerActorId"`
+	CaptainActorID                  string `json:"captainActorId"`
+	Currency                        string `json:"currency"`
+	GrossProductMinor               int64  `json:"grossProductMinor"`
+	DeliveryFeeMinor                int64  `json:"deliveryFeeMinor"`
+	CommissionMinor                 int64  `json:"commissionMinor"`
+	PartnerNetMinor                 int64  `json:"partnerNetMinor"`
+	CommissionReceivableOffsetMinor int64  `json:"commissionReceivableOffsetMinor"`
+	ProfileID                       string `json:"profileId"`
+	ProfileVersion                  int    `json:"profileVersion"`
+	PolicyVersion                   string `json:"policyVersion"`
+	LedgerTransactionID             string `json:"ledgerTransactionId"`
+	CreatedAt                       string `json:"createdAt"`
 }
 
 type PartnerFinancialSummary struct {
@@ -470,28 +474,25 @@ type FinanceEvidenceDocument struct {
 }
 
 type CustomerWithdrawalIntake struct {
-	ID                         string  `json:"id"`
-	CustomerActorID            string  `json:"customerActorId"`
-	ProviderKey                string  `json:"providerKey"`
-	WalletIdentifierMasked     string  `json:"walletIdentifierMasked"`
-	BeneficiaryName            string  `json:"beneficiaryName"`
-	BeneficiaryIdentityVersion int     `json:"beneficiaryIdentityVersion"`
-	RequestReason              string  `json:"requestReason"`
-	RequestEvidenceDocumentID  string  `json:"requestEvidenceDocumentId"`
-	Status                     string  `json:"status"`
-	DestinationID              *string `json:"destinationId,omitempty"`
-	PayoutID                   *string `json:"payoutId,omitempty"`
-	PayoutStatus               *string `json:"payoutStatus,omitempty"`
-	PayoutAmountMinor          *int64  `json:"payoutAmountMinor,omitempty"`
-	PayoutCurrency             *string `json:"payoutCurrency,omitempty"`
-	RequestedBy                string  `json:"requestedBy"`
-	RequestedAt                string  `json:"requestedAt"`
-	FinanceActorID             *string `json:"financeActorId,omitempty"`
-	ResolvedAt                 *string `json:"resolvedAt,omitempty"`
-	ResolutionReason           *string `json:"resolutionReason,omitempty"`
-	Currency                   string  `json:"currency,omitempty"`
-	EligibleAvailableMinor     int64   `json:"eligibleAvailableMinor,omitempty"`
-	HeldMinor                  int64   `json:"heldMinor,omitempty"`
+	ID                         string     `json:"id"`
+	CustomerActorID            string     `json:"customerActorId"`
+	ProviderKey                string     `json:"providerKey"`
+	WalletIdentifierMasked     string     `json:"walletIdentifierMasked"`
+	BeneficiaryName            string     `json:"beneficiaryName"`
+	BeneficiaryIdentityVersion int        `json:"beneficiaryIdentityVersion"`
+	RequestReason              string     `json:"requestReason"`
+	RequestEvidenceDocumentID  string     `json:"requestEvidenceDocumentId"`
+	Status                     string     `json:"status"`
+	DestinationID              *string    `json:"destinationId,omitempty"`
+	PayoutID                   *string    `json:"payoutId,omitempty"`
+	PayoutStatus               *string    `json:"payoutStatus,omitempty"`
+	PayoutAmountMinor          *int64     `json:"payoutAmountMinor,omitempty"`
+	PayoutCurrency             *string    `json:"payoutCurrency,omitempty"`
+	RequestedBy                string     `json:"requestedBy"`
+	RequestedAt                time.Time  `json:"requestedAt"`
+	FinanceActorID             *string    `json:"financeActorId,omitempty"`
+	ResolvedAt                 *time.Time `json:"resolvedAt,omitempty"`
+	ResolutionReason           *string    `json:"resolutionReason,omitempty"`
 }
 
 type customerWithdrawalIntakeResponse struct {
@@ -504,20 +505,20 @@ type customerWithdrawalIntakeListResponse struct {
 }
 
 type CustomerWithdrawalIntakeSummary struct {
-	ID                            string  `json:"id"`
-	CustomerActorID               string  `json:"customerActorId"`
-	ProviderKey                   string  `json:"providerKey"`
-	WalletIdentifierMasked        string  `json:"walletIdentifierMasked"`
-	BeneficiaryName               string  `json:"beneficiaryName"`
-	Status                        string  `json:"status"`
-	DestinationID                 *string `json:"destinationId,omitempty"`
-	DestinationStatus             *string `json:"destinationStatus,omitempty"`
-	DestinationVerificationStatus *string `json:"destinationVerificationStatus,omitempty"`
-	PayoutID                      *string `json:"payoutId,omitempty"`
-	PayoutStatus                  *string `json:"payoutStatus,omitempty"`
-	PayoutAmountMinor             *int64  `json:"payoutAmountMinor,omitempty"`
-	PayoutCurrency                *string `json:"payoutCurrency,omitempty"`
-	RequestedAt                   string  `json:"requestedAt"`
+	ID                            string    `json:"id"`
+	CustomerActorID               string    `json:"customerActorId"`
+	ProviderKey                   string    `json:"providerKey"`
+	WalletIdentifierMasked        string    `json:"walletIdentifierMasked"`
+	BeneficiaryName               string    `json:"beneficiaryName"`
+	Status                        string    `json:"status"`
+	DestinationID                 *string   `json:"destinationId,omitempty"`
+	DestinationStatus             *string   `json:"destinationStatus,omitempty"`
+	DestinationVerificationStatus *string   `json:"destinationVerificationStatus,omitempty"`
+	PayoutID                      *string   `json:"payoutId,omitempty"`
+	PayoutStatus                  *string   `json:"payoutStatus,omitempty"`
+	PayoutAmountMinor             *int64    `json:"payoutAmountMinor,omitempty"`
+	PayoutCurrency                *string   `json:"payoutCurrency,omitempty"`
+	RequestedAt                   time.Time `json:"requestedAt"`
 }
 
 type CustomerWithdrawalIntakeList struct {
