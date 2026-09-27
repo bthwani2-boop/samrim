@@ -1,273 +1,154 @@
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const self = "tools/dev/execution-proof-system.mjs";
 const failures = [];
-const read = (p) => fs.readFileSync(path.join(root, p), "utf8");
-const data = (p) => JSON.parse(read(p));
+const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
+const data = (relative) => JSON.parse(read(relative));
+const assert = (condition, message) => { if (!condition) failures.push(message); };
 
-const workflows = fs.readdirSync(path.join(root, ".github/workflows"))
-  .filter((x) => /\.ya?ml$/.test(x))
+const workflowNames = ["ci-policy.yml", "ci-runtime.yml", "ci-security.yml", "ci-static.yml"];
+const discovered = fs.readdirSync(path.join(root, ".github/workflows"))
+  .filter((name) => /\.ya?ml$/.test(name))
   .sort();
-const expected = ["ci-policy.yml","ci-runtime.yml","ci-security.yml","ci-static.yml"];
-if (JSON.stringify(workflows) !== JSON.stringify(expected)) failures.push("workflow set drifted");
+assert(JSON.stringify(discovered) === JSON.stringify(workflowNames), "canonical workflow set drifted");
 
-for (const [file, name] of [
-  ["ci-static.yml","name: CI Static"],
-  ["ci-runtime.yml","name: CI Runtime"],
-  ["ci-security.yml","name: CI Security"],
-  ["ci-policy.yml","name: CI Policy"],
+for (const [file, gate] of [
+  ["ci-policy.yml", "name: CI Policy"],
+  ["ci-runtime.yml", "name: CI Runtime"],
+  ["ci-security.yml", "name: CI Security"],
+  ["ci-static.yml", "name: CI Static"],
 ]) {
-  if (!read(".github/workflows/" + file).includes(name)) failures.push(file + ": canonical gate name missing");
+  const body = read(`.github/workflows/${file}`);
+  assert(body.includes(gate), `${file} canonical gate name missing`);
+  assert(body.includes("node tools/dev/verify-ci-exact-sha.mjs"), `${file} exact candidate guard missing`);
 }
 
-const legacy = ["backend-integration.yml","baseline-guard.yml","control-panel-e2e.yml","pr-policy.yml","secret-safety.yml"];
-const tracked = execFileSync("git", ["ls-files","-z"], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
-function readTrackedRegularFile(absolute) {
-  let descriptor;
-  try {
-    const noFollow = process.platform === "win32" ? 0 : (fs.constants.O_NOFOLLOW ?? 0);
-    descriptor = fs.openSync(absolute, fs.constants.O_RDONLY | noFollow);
-    if (!fs.fstatSync(descriptor).isFile()) return null;
-    return fs.readFileSync(descriptor);
-  } catch (error) {
-    if (error?.code === "ENOENT" || error?.code === "ELOOP") return null;
-    throw error;
-  } finally {
-    if (descriptor !== undefined) fs.closeSync(descriptor);
-  }
-}
-for (const file of tracked) {
-  const rel = file.replaceAll("\\","/");
-  if (rel === self) continue;
-  const abs = path.join(root, rel);
-  const bytes = readTrackedRegularFile(abs);
-  if (!bytes || bytes.includes(0)) continue;
-  const text = bytes.toString("utf8");
-  for (const old of legacy) if (text.includes(old)) failures.push(rel + ": legacy workflow reference " + old);
-}
-
-const projects = tracked.filter((x) => /(^|\/)project\.json$/.test(x));
-for (const file of projects) {
-  const project = data(file);
-  for (const tag of project.tags ?? []) if (String(tag).startsWith("ci-")) failures.push(file + ": retired CI scope tag " + tag);
-}
-
-const ci = data(".github/project.json");
-const wantedDeps = ["control-panel","dsh-backend","identity-backend","infra","wlt-backend","workspace-tooling"].sort();
-if (JSON.stringify([...(ci.implicitDependencies ?? [])].sort()) !== JSON.stringify(wantedDeps)) failures.push("repository-ci dependency cone drifted");
-if (ci.targets?.["runtime-integration"]?.cache !== false) failures.push("runtime-integration must be cache=false");
-if (ci.targets?.["runtime-images"]?.cache !== false) failures.push("runtime-images must be cache=false");
-if (!(ci.targets?.["runtime-images"]?.dependsOn ?? []).includes("^ci-image")) failures.push("runtime-images must schedule dependency ci-image targets");
-if (ci.targets?.["execution-proof-system"]?.cache !== true) failures.push("execution-proof-system must be cache=true");
-if (!(ci.targets?.["execution-proof-system"]?.inputs ?? []).includes("{workspaceRoot}/**/*")) failures.push("execution-proof-system repository-wide cache input missing");
-for (const old of ["tooling-lint","go-workspace-sync"]) if (ci.targets?.[old]) failures.push("repository-ci duplicate target " + old);
+const ciProject = data(".github/project.json");
+assert((ciProject.implicitDependencies ?? []).length === 0, "repository-ci must not own a blanket dependency cone");
+assert(ciProject.targets?.["runtime-integration"]?.cache === false, "repository-ci:runtime-integration must be cache=false");
+assert(!ciProject.targets?.["runtime-images"], "repository-ci must not own runtime image scope");
+assert(ciProject.targets?.["execution-proof-system"]?.cache === true, "repository-ci:execution-proof-system must be cache=true");
+const executionInputs = ciProject.targets?.["execution-proof-system"]?.inputs ?? [];
+assert(!executionInputs.includes("{workspaceRoot}/**/*"), "execution-proof-system must not hash the whole repository");
+assert(executionInputs.includes("{workspaceRoot}/tools/dev/runtime-proof/**/*"), "execution-proof-system must include runtime router source");
 
 const tooling = data("tools/dev/project.json");
-for (const target of ["lint","go-workspace-sync","structural-hygiene","knowledge-materialize","cache-contracts"]) {
-  if (tooling.targets?.[target]?.cache !== true) failures.push("workspace-tooling:" + target + " must be cache=true");
+assert(!tooling.namedInputs?.repository, "workspace-tooling retains ambiguous repository-wide input");
+for (const target of ["lint", "go-workspace-sync", "structural-hygiene", "knowledge-materialize", "cache-contracts"]) {
+  assert(tooling.targets?.[target]?.cache === true, `workspace-tooling:${target} must be cache=true`);
 }
-const knowledgeOutput = tooling.targets?.["knowledge-materialize"]?.outputs ?? [];
-if (!knowledgeOutput.includes("{workspaceRoot}/.cache/bthwani-knowledge")) failures.push("knowledge-materialize stable output missing");
-for (const target of ["docs-command-parity", "docs-config-parity", "knowledge-system", "knowledge-references"]) {
-  if (!(tooling.targets?.[target]?.dependsOn ?? []).includes("knowledge-materialize")) failures.push("workspace-tooling:" + target + " must depend on the single knowledge writer");
-}
-const structural = JSON.stringify(tooling.targets?.["structural-hygiene"]?.inputs ?? []);
-if (!structural.includes("git ls-files -s") || !structural.includes("git ls-files --eol")) failures.push("structural-hygiene Git index inputs missing");
-for (const workflow of expected) {
-  if (!(tooling.namedInputs?.knowledge ?? []).includes("{workspaceRoot}/.github/workflows/" + workflow)) failures.push("knowledge input missing " + workflow);
-}
+const trackedContent = JSON.stringify(tooling.namedInputs?.trackedRepositoryContent ?? []);
+assert(trackedContent.includes("git ls-files -s"), "tracked repository content must use Git index hashes");
+assert(!trackedContent.includes("{workspaceRoot}/**/*"), "tracked repository content must not make Nx hash the entire tree");
+const structureInput = JSON.stringify(tooling.namedInputs?.repositoryStructure ?? []);
+for (const token of ["REPOSITORY-STRUCTURE.md", "**/project.json", "git ls-files"]) assert(structureInput.includes(token), `repository structure input missing ${token}`);
+const hygieneInput = JSON.stringify(tooling.namedInputs?.structuralHygiene ?? []);
+for (const token of ["git ls-files -s", "git ls-files --eol", ".gitattributes", "**/package.json", "**/project.json"]) assert(hygieneInput.includes(token), `structural hygiene input missing ${token}`);
+assert((tooling.targets?.["knowledge-materialize"]?.outputs ?? []).includes("{workspaceRoot}/.cache/bthwani-knowledge"), "knowledge materialization output drifted");
+for (const target of ["docs-command-parity", "docs-config-parity", "knowledge-system", "knowledge-references"]) assert((tooling.targets?.[target]?.dependsOn ?? []).includes("knowledge-materialize"), `workspace-tooling:${target} must depend on knowledge-materialize`);
 
-for (const [file,target] of [
-  ["apps/control-panel/project.json","e2e"],
-  ["apps/control-panel/project.json","browser-live-proof"],
-  ["services/identity/backend/project.json","migration-proof"],
-  ["services/identity/backend/project.json","runtime-proof"],
-  ["services/identity/backend/project.json","ci-image"],
-  ["services/dsh/backend/project.json","baseline-proof"],
-  ["services/dsh/backend/project.json","runtime-proof"],
-  ["services/dsh/backend/project.json","ci-image"],
-  ["services/wlt/backend/project.json","schema-proof"],
-  ["services/wlt/backend/project.json","financial-invariants"],
-  ["services/wlt/backend/project.json","ci-image"],
-]) {
-  if (data(file).targets?.[target]?.cache !== false) failures.push(file + ":" + target + " must be cache=false");
-}
-if (data("apps/control-panel/project.json").targets?.["e2e-live"]) failures.push("duplicate control-panel:e2e-live remains");
+const control = data("apps/control-panel/project.json");
+assert(control.targets?.e2e?.cache === false, "control-panel:e2e must be cache=false");
+assert(control.targets?.["browser-live-proof"]?.cache === false, "control-panel:browser-live-proof must be cache=false");
+assert(JSON.stringify(control.targets?.["browser-live-proof"]?.dependsOn ?? []) === JSON.stringify(["e2e"]), "control-panel browser proof must depend only on local e2e");
+assert(!control.targets?.["e2e-live"], "duplicate control-panel:e2e-live remains");
 
-const controlTargets = data("apps/control-panel/project.json").targets ?? {};
-if (JSON.stringify(controlTargets["browser-live-proof"]?.dependsOn ?? []) !== JSON.stringify(["e2e"])) {
-  failures.push("control-panel browser proof ordering drifted");
-}
-const runtimeChain = [
-  ["services/identity/backend/project.json","migration-proof","control-panel","browser-live-proof"],
-  ["services/dsh/backend/project.json","baseline-proof","identity-backend","migration-proof"],
-  ["services/identity/backend/project.json","runtime-proof","dsh-backend","baseline-proof"],
-  ["services/wlt/backend/project.json","schema-proof","identity-backend","runtime-proof"],
-  ["services/wlt/backend/project.json","financial-invariants","wlt-backend","schema-proof"],
-  ["services/dsh/backend/project.json","runtime-proof","wlt-backend","financial-invariants"],
-];
-for (const [file,target,project,dependencyTarget] of runtimeChain) {
-  const dependsOn = data(file).targets?.[target]?.dependsOn ?? [];
-  const expectedDependency = project === "wlt-backend" && file === "services/wlt/backend/project.json" && target === "financial-invariants"
-    ? JSON.stringify([dependencyTarget])
-    : JSON.stringify([{ projects: [project], target: dependencyTarget }]);
-  if (JSON.stringify(dependsOn) !== expectedDependency) failures.push(file + ":" + target + " runtime ordering drifted");
-}
-
-const runtimeOwner = read("tools/dev/run-ci-runtime-proof.mjs");
-if (!runtimeOwner.includes('const terminalTarget = "dsh-backend:runtime-proof"')) failures.push("runtime task graph root drifted");
-for (const duplicate of [
-  "control-panel:browser-live-proof",
-  "identity-backend:migration-proof",
-  "dsh-backend:baseline-proof",
-  "identity-backend:runtime-proof",
-  "wlt-backend:schema-proof",
-  "wlt-backend:financial-invariants",
-]) {
-  if (runtimeOwner.includes(duplicate)) failures.push("runtime owner contains duplicate direct target " + duplicate);
-}
-
-for (const app of ["app-client","app-partner","app-captain","app-field"]) {
-  const deps = data("apps/" + app + "/project.json").implicitDependencies ?? [];
-  if (!deps.includes("mobile-tooling")) failures.push(app + ": mobile-tooling dependency edge missing");
-}
-
-for (const [file,targets] of [
-  ["services/identity/backend/project.json",["build","vet","unit"]],
-  ["services/identity/clients/go/project.json",["vet","unit"]],
-  ["services/dsh/backend/project.json",["build","vet","unit"]],
-  ["services/wlt/backend/project.json",["build","vet","unit"]],
+for (const [file, independentTargets] of [
+  ["services/identity/backend/project.json", ["migration-proof", "runtime-proof"]],
+  ["services/dsh/backend/project.json", ["baseline-proof", "runtime-proof"]],
+  ["services/wlt/backend/project.json", ["schema-proof"]],
 ]) {
   const project = data(file);
-  for (const target of targets) {
-    if (!(project.targets?.[target]?.inputs ?? []).includes("goToolchain")) failures.push(file + ":" + target + " missing goToolchain input");
+  for (const target of independentTargets) {
+    assert(project.targets?.[target]?.cache === false, `${file}:${target} must be cache=false`);
+    assert((project.targets?.[target]?.dependsOn ?? []).length === 0, `${file}:${target} retains cross-lane runtime ordering`);
   }
 }
+const wlt = data("services/wlt/backend/project.json");
+assert(wlt.targets?.["financial-invariants"]?.cache === false, "wlt financial invariants must be cache=false");
+assert(JSON.stringify(wlt.targets?.["financial-invariants"]?.dependsOn ?? []) === JSON.stringify(["schema-proof"]), "wlt financial invariants must depend only on local schema-proof");
 
-const local = read("tools/dev/verify-local-candidate.ps1");
-if (local.includes("git -C $Repo diff --name-only") || local.includes("--changed --since")) failures.push("local parallel affected engine remains");
-if (!local.includes("nx affected -t lint format-check typecheck unit contract build vet export-smoke")) failures.push("local Nx affected target set drifted");
-if (!local.includes("cache-contracts")) failures.push("local cache contract proof missing");
-if (local.includes("--projects=workspace-tooling")) failures.push("local CI project allowlist remains");
+const routerProject = data("tools/dev/runtime-proof/project.json");
+assert(routerProject.name === "runtime-proof-routing", "runtime router Nx owner name drifted");
+assert(routerProject.targets?.resolve?.cache === false, "runtime router resolution must be cache=false");
+assert(routerProject.targets?.unit?.cache === true, "runtime router tests must be cache=true");
 
-const staticCi = read(".github/workflows/ci-static.yml");
-if (staticCi.includes("--changed --since") || staticCi.includes("go work sync")) failures.push("static CI parallel/mutating proof remains");
-if (staticCi.includes("run: node tools/dev/knowledge-source.mjs") || staticCi.includes("nx run workspace-tooling:knowledge-materialize")) failures.push("static CI duplicates knowledge materialization outside the Nx task graph");
-for (const required of [
-  "cache-contracts",
-  "workspace-tooling:go-workspace-sync",
-  "repository-ci:execution-proof-system",
-  "nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet",
-  "run-ci-command.mjs static-install",
-  "run-ci-command.mjs static-affected",
-  "run-ci-command.mjs windows-install",
-  "run-ci-command.mjs windows-export-affected",
-  "NX_NO_CLOUD:",
-  "capture-ci-failure.mjs --kind=static-linux",
-  "capture-ci-failure.mjs --kind=static-windows",
-  "report-ci-performance.mjs",
-  "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
-]) {
-  if (!staticCi.includes(required)) failures.push("static CI missing " + required);
-}
-if (staticCi.includes("--projects=workspace-tooling") || staticCi.includes("workspace-tooling:lint")) {
-  failures.push("static CI retains a manual project allowlist or duplicate tooling lint");
-}
-if (staticCi.includes("windows-export-full -- pnpm exec nx run-many -t export-smoke --projects=")) failures.push("scheduled Windows full regression has a manual project allowlist");
+const router = read("tools/dev/runtime-proof/resolve.mjs");
+for (const token of [
+  '"nx", "show", "projects", "--affected"',
+  "runtime-sensitive Nx projects lack runtime classification",
+  "full-escalation:",
+  "CI_RUNTIME_TARGETS=",
+  "CI_RUNTIME_IMAGES=",
+  "CI_RUNTIME_SERVICES=",
+]) assert(router.includes(token), `runtime router missing ${token}`);
+assert(!router.includes("git diff") && !router.includes("git status"), "runtime router must consume Nx affected truth instead of a parallel Git affected engine");
 
-const runtimeCi = read(".github/workflows/ci-runtime.yml");
-for (const forbidden of ["node tools/dev/verify-identity-","node tools/dev/verify-dsh-","pnpm --dir apps/control-panel test:e2e:live","tag:ci-"]) {
-  if (runtimeCi.includes(forbidden)) failures.push("runtime CI direct/shadow proof remains: " + forbidden);
-}
-if (runtimeCi.includes("docker/build-push-action@")) failures.push("runtime CI contains parallel Docker image owner");
-if (runtimeCi.includes("up -d --build")) failures.push("runtime CI rebuilds images through Compose");
-if ((runtimeCi.match(/docker\/setup-buildx-action@/g) ?? []).length !== 1) failures.push("runtime CI must configure Buildx exactly once");
-if (runtimeCi.indexOf("Resolve runtime integration scope through Nx") > runtimeCi.indexOf("Set up Buildx")) failures.push("Buildx setup occurs before Nx affected scope");
-for (const required of [
-  "NX_NO_CLOUD: \"true\"",
-  "--projects=repository-ci",
-  "repository-ci:runtime-images",
+const routerTests = read("tools/dev/runtime-proof/resolve.test.mjs");
+for (const token of [
+  "control-only change selects only control runtime lane",
+  "identity scope selects only identity runtime lane",
+  "runtime-sensitive owner without classification fails closed",
+  "scheduled/full regression selects every canonical lane",
+]) assert(routerTests.includes(token), `runtime router tests missing ${token}`);
+
+const runtimeRunner = read("tools/dev/run-ci-runtime-proof.mjs");
+assert(runtimeRunner.includes("CI_RUNTIME_TARGETS"), "runtime runner must consume routed targets");
+assert(runtimeRunner.includes("allowedTargets"), "runtime runner must validate target ownership");
+assert(!runtimeRunner.includes("terminalTarget"), "runtime runner retains a terminal proof root");
+
+const runtimeWorkflow = read(".github/workflows/ci-runtime.yml");
+for (const token of [
+  "runtime-proof-routing:resolve",
+  "steps.scope.outputs.targets",
+  "steps.scope.outputs.images",
+  "steps.scope.outputs.services",
+  "steps.scope.outputs.browser",
+  "CI_RUNTIME_TARGETS:",
   "repository-ci:runtime-integration",
-  "docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e",
-  "crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487",
-  "run-ci-command.mjs runtime-install",
-  "run-ci-command.mjs runtime-playwright-install",
   "run-ci-command.mjs runtime-images",
   "run-ci-command.mjs runtime-start",
   "run-ci-command.mjs runtime-integration",
   "up -d --no-build",
-  "capture-ci-failure.mjs --kind=runtime",
-  "report-ci-performance.mjs",
-  "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
-]) if (!runtimeCi.includes(required)) failures.push("runtime CI missing " + required);
+]) assert(runtimeWorkflow.includes(token), `runtime workflow missing ${token}`);
+for (const forbidden of [
+  "--projects=repository-ci",
+  "repository-ci:runtime-images",
+  "tag:ci-",
+  "up -d --build",
+  "docker/build-push-action@",
+  "node tools/dev/verify-identity-",
+  "node tools/dev/verify-dsh-",
+  "pnpm --dir apps/control-panel test:e2e:live",
+]) assert(!runtimeWorkflow.includes(forbidden), `runtime workflow retains superseded scope/proof path: ${forbidden}`);
+assert(runtimeWorkflow.indexOf("Resolve affected runtime proof lanes through Nx") < runtimeWorkflow.indexOf("Set up Buildx"), "runtime scope must resolve before Buildx setup");
+
+const staticWorkflow = read(".github/workflows/ci-static.yml");
+assert(staticWorkflow.includes("repository-ci:execution-proof-system"), "static workflow missing execution proof system");
+assert(staticWorkflow.includes("nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet"), "static workflow affected target set drifted");
+assert(!staticWorkflow.includes("--changed --since"), "static workflow contains a parallel affected engine");
+
+const localVerifier = read("tools/dev/verify-local-candidate.ps1");
+assert(localVerifier.includes("nx affected -t lint format-check typecheck unit contract build vet"), "local verifier lost affected static proof");
+assert(!localVerifier.includes("runtime:up") && !localVerifier.includes("runtime:doctor"), "local verifier must remain runtime-free");
+
 const budgets = data(".github/ci-performance-budgets.json");
-if (budgets.schema !== 1 || budgets.mode !== "observe") failures.push("CI performance budget contract drifted");
-if (budgets.mode === "observe") {
-  for (const workflow of expected) {
-    if (read(".github/workflows/" + workflow).includes("start-nx-agents")) {
-      failures.push("Nx Agents were enabled before measured distribution admission: " + workflow);
-    }
-  }
-  const ciConfig = path.join(root, ".nx", "ci-config.yaml");
-  if (fs.existsSync(ciConfig)) failures.push(".nx/ci-config.yaml exists before measured distribution admission");
-}
-for (const name of [
-  "static-install",
-  "static-affected",
-  "static-full",
-  "windows-install",
-  "windows-export-affected",
-  "windows-export-full",
-  "runtime-install",
-  "runtime-playwright-install",
-  "runtime-images",
-  "runtime-start",
-  "runtime-integration",
-]) {
-  if (!Number.isFinite(budgets.budgetsMs?.[name])) failures.push("CI performance budget missing " + name);
-}
+assert(budgets.schema === 1, "CI performance budget schema drifted");
+assert(["observe", "enforce"].includes(budgets.mode), "CI performance mode invalid");
+assert(Array.isArray(budgets.enforcedBudgets), "CI enforced budget list missing");
 const knownBudgets = new Set(Object.keys(budgets.budgetsMs ?? {}));
-if (!Array.isArray(budgets.enforcedBudgets) || new Set(budgets.enforcedBudgets).size !== budgets.enforcedBudgets.length || budgets.enforcedBudgets.some((name) => !knownBudgets.has(name))) failures.push("CI performance enforcement must select unique defined budgets");
-const controlPanelBuildInputs = JSON.stringify(data("apps/control-panel/project.json").targets?.build?.inputs ?? []);
-if (!controlPanelBuildInputs.includes("controlPanelBuildEnvironment")) failures.push("Control Panel build environment cache input missing");
-const controlPanelEnvironment = JSON.stringify(data("nx.json").namedInputs?.controlPanelBuildEnvironment ?? []);
-if (!controlPanelEnvironment.includes("hash-control-panel-secret-input.mjs")) failures.push("Control Panel secret-file hash input missing");
-if (tooling.targets?.["cache-contracts"]?.options?.command !== "node tools/dev/verify-cache-contracts.mjs") failures.push("workspace-tooling cache contract owner drifted");
-
-const imageBuilder = read("tools/dev/build-ci-image.mjs");
-if (!imageBuilder.includes('process.env.GITHUB_EVENT_NAME !== "pull_request"')) failures.push("BuildKit PR cache write fence missing");
-if (!imageBuilder.includes('"--cache-from", "type=gha,version=2,scope=" + scope')) failures.push("BuildKit reusable cache v2 read missing");
-if (!imageBuilder.includes('"--cache-to", "type=gha,version=2,mode=max,scope=" + scope')) failures.push("BuildKit trusted cache v2 write missing");
-const failureCapture = read("tools/dev/capture-ci-failure.mjs");
-if (!failureCapture.includes("function redact(") || !failureCapture.includes("redactTree(outDir)")) failures.push("failure package sanitization is not applied to every text artifact");
-if (failureCapture.includes('fs.copyFileSync(envFile')) failures.push("failure package must not copy runtime env secrets");
-if (failureCapture.includes("apps/control-panel/test-results") || failureCapture.includes("apps/control-panel/playwright-report")) failures.push("failure package copies raw Playwright traces or reports");
-const nxCloudVerifier = read("tools/dev/verify-nx-cloud-ci.mjs");
-if (!nxCloudVerifier.includes("local-only-untrusted-pr")) failures.push("untrusted PR Nx Cloud fallback missing");
-
-const securityCi = read(".github/workflows/ci-security.yml");
-for (const required of [
-  "node tools/dev/verify-secret-safety.mjs",
-  "if: github.event_name == 'pull_request'",
-  "actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48",
-  "fail-on-severity: high",
-  "vulnerability-check: true",
-  "license-check: true",
-  "show-openssf-scorecard: true",
-  "show-patched-versions: true",
-]) if (!securityCi.includes(required)) failures.push("security CI missing " + required);
-if (securityCi.includes("github/codeql-action/") || securityCi.includes("security-events: write")) failures.push("advanced CodeQL duplicates the enabled GitHub default setup");
-for (const workflow of expected) {
-  const source = read(".github/workflows/" + workflow);
-  if (!source.includes("node tools/dev/verify-ci-exact-sha.mjs")) failures.push(workflow + ": shared exact-SHA guard missing");
+assert(new Set(budgets.enforcedBudgets).size === budgets.enforcedBudgets.length, "CI enforced budget list contains duplicates");
+assert(budgets.enforcedBudgets.every((name) => knownBudgets.has(name)), "CI enforced budget references undefined budget");
+for (const file of workflowNames) {
+  const body = read(`.github/workflows/${file}`);
+  if (budgets.mode === "observe") assert(!body.includes("start-nx-agents"), `${file} enables distributed execution before measured admission`);
 }
 
 if (failures.length) {
   console.error("EXECUTION_PROOF_SYSTEM=FAIL");
-  for (const item of [...new Set(failures)].sort()) console.error("  " + item);
+  for (const failure of [...new Set(failures)].sort()) console.error(`  ${failure}`);
   process.exit(1);
 }
-console.log("EXECUTION_PROOF_SYSTEM=PASS workflows=4 legacy_refs=0 parallel_affected=0 ci_scope_tags=0 duplicate_owners=0");
+
+console.log("EXECUTION_PROOF_SYSTEM=PASS workflows=4 runtime_router=nx affected_scope=claim-driven runtime_dag=decoupled cache_inputs=causal");

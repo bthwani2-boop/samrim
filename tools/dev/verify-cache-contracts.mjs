@@ -7,8 +7,33 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 const data = (relative) => JSON.parse(read(relative));
 
 const nx = data("nx.json");
-const executionProofInputs = JSON.stringify(data(".github/project.json").targets?.["execution-proof-system"]?.inputs ?? []);
-if (!executionProofInputs.includes("{workspaceRoot}/**/*")) failures.push("repository-ci:execution-proof-system missing repository-wide cache input");
+const ciProject = data(".github/project.json");
+const executionProofInputs = ciProject.targets?.["execution-proof-system"]?.inputs ?? [];
+if (executionProofInputs.includes("{workspaceRoot}/**/*")) failures.push("repository-ci:execution-proof-system must not hash the entire repository");
+for (const required of [
+  "{workspaceRoot}/AGENTS.md",
+  "{workspaceRoot}/REPOSITORY-STRUCTURE.md",
+  "{workspaceRoot}/knowledge.sources.json",
+  "{workspaceRoot}/**/project.json",
+  "{workspaceRoot}/tools/dev/runtime-proof/**/*",
+]) {
+  if (!executionProofInputs.includes(required)) failures.push("repository-ci:execution-proof-system missing causal input " + required);
+}
+
+const tooling = data("tools/dev/project.json");
+if (tooling.namedInputs?.repository) failures.push("workspace-tooling retains ambiguous repository-wide named input");
+const trackedRepositoryContent = JSON.stringify(tooling.namedInputs?.trackedRepositoryContent ?? []);
+if (!trackedRepositoryContent.includes("git ls-files -s")) failures.push("trackedRepositoryContent must use canonical Git index hashes");
+if (trackedRepositoryContent.includes("{workspaceRoot}/**/*")) failures.push("trackedRepositoryContent must not make Nx re-hash the whole workspace tree");
+const repositoryStructure = JSON.stringify(tooling.namedInputs?.repositoryStructure ?? []);
+for (const required of ["REPOSITORY-STRUCTURE.md", "**/project.json", "git ls-files"]) {
+  if (!repositoryStructure.includes(required)) failures.push("repositoryStructure cache input missing " + required);
+}
+const structuralHygiene = JSON.stringify(tooling.namedInputs?.structuralHygiene ?? []);
+for (const required of ["git ls-files -s", "git ls-files --eol", ".gitattributes", "**/package.json", "**/project.json"]) {
+  if (!structuralHygiene.includes(required)) failures.push("structuralHygiene cache input missing " + required);
+}
+
 const projects = [];
 function discoverProjects(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -93,7 +118,6 @@ for (const [file, targets] of [
 
 for (const [file, targetName] of [
   [".github/project.json", "runtime-integration"],
-  [".github/project.json", "runtime-images"],
   ["apps/control-panel/project.json", "e2e"],
   ["apps/control-panel/project.json", "browser-live-proof"],
   ["services/identity/backend/project.json", "migration-proof"],
@@ -103,10 +127,13 @@ for (const [file, targetName] of [
   ["services/dsh/backend/project.json", "runtime-proof"],
   ["services/dsh/backend/project.json", "ci-image"],
   ["services/wlt/backend/project.json", "schema-proof"],
+  ["services/wlt/backend/project.json", "financial-invariants"],
   ["services/wlt/backend/project.json", "ci-image"],
+  ["tools/dev/runtime-proof/project.json", "resolve"],
 ]) {
   if (data(file).targets?.[targetName]?.cache !== false) failures.push(file + ":" + targetName + " must explicitly set cache=false");
 }
+if (ciProject.targets?.["runtime-images"]) failures.push("repository-ci must not own a blanket runtime-images target");
 
 if (!read("tools/mobile/export-mobile-smoke.mjs").includes("fs.rmSync(distDir")) {
   failures.push("mobile export smoke no longer proves cleanup of transient output");
@@ -118,4 +145,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log("NX_CACHE_CONTRACTS=PASS projects=" + projects.length + " runtime_cache=0 known_writers_declared=3 control_env_hashed=1");
+console.log("NX_CACHE_CONTRACTS=PASS projects=" + projects.length + " runtime_cache=0 causal_repository_inputs=1 known_writers_declared=3 control_env_hashed=1");

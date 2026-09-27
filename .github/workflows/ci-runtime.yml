@@ -23,7 +23,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
-      NX_NO_CLOUD: "true"
       CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout exact candidate
@@ -63,27 +62,19 @@ jobs:
         shell: bash
         run: node tools/dev/run-ci-command.mjs runtime-install -- pnpm install --frozen-lockfile
 
-      - name: Resolve runtime integration scope through Nx
+      - name: Resolve affected runtime proof lanes through Nx
         id: scope
         shell: bash
         run: |
           set -euo pipefail
+          args=(--base="$NX_BASE" --head="$NX_HEAD")
           if [[ "$GITHUB_EVENT_NAME" == "schedule" ]]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "CI_RUNTIME_SCOPE=FULL_REGRESSION head=$CANDIDATE_SHA"
-            exit 0
+            args+=(--full)
           fi
-          affected="$(pnpm exec nx show projects --affected --base="$NX_BASE" --head="$NX_HEAD" --projects=repository-ci --sep=,)"
-          if [[ -n "$affected" ]]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "CI_RUNTIME_SCOPE=AFFECTED owner=$affected base=$NX_BASE head=$NX_HEAD"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "CI_RUNTIME_SCOPE=UNAFFECTED base=$NX_BASE head=$NX_HEAD"
-          fi
+          pnpm exec nx run runtime-proof-routing:resolve --outputStyle=stream -- "${args[@]}"
 
       - name: Install Chromium runtime
-        if: steps.scope.outputs.run == 'true'
+        if: steps.scope.outputs.browser == 'true'
         shell: bash
         run: node tools/dev/run-ci-command.mjs runtime-playwright-install -- pnpm --dir apps/control-panel exec playwright install --with-deps chromium
 
@@ -125,20 +116,32 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487
 
-      - name: Build runtime images through Nx and BuildKit
+      - name: Build affected runtime images through Nx and BuildKit
         if: steps.scope.outputs.run == 'true'
         shell: bash
         env:
           CI: "true"
-        run: node tools/dev/run-ci-command.mjs runtime-images -- pnpm exec nx run repository-ci:runtime-images --outputStyle=stream
+        run: |
+          set -euo pipefail
+          projects="${{ steps.scope.outputs.images }}"
+          [[ -n "$projects" ]] || { echo "Runtime scope selected no images"; exit 1; }
+          node tools/dev/run-ci-command.mjs runtime-images -- \
+            pnpm exec nx run-many -t ci-image --projects="$projects" --outputStyle=stream
 
-      - name: Start exact backend services
+      - name: Start affected backend services
         if: steps.scope.outputs.run == 'true'
         shell: bash
-        run: node tools/dev/run-ci-command.mjs runtime-start -- docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml up -d --no-build --wait --wait-timeout 300 postgres mailpit identity dsh wlt
+        run: |
+          set -euo pipefail
+          services="${{ steps.scope.outputs.services }}"
+          [[ -n "$services" ]] || { echo "Runtime scope selected no services"; exit 1; }
+          service_args="${services//,/ }"
+          node tools/dev/run-ci-command.mjs runtime-start -- \
+            docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml \
+            up -d --no-build --wait --wait-timeout 300 $service_args
 
       - name: Start Control Panel host
-        if: steps.scope.outputs.run == 'true'
+        if: steps.scope.outputs.browser == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -155,11 +158,13 @@ jobs:
           cat "$RUNNER_TEMP/control-panel.log" || true
           exit 1
 
-      - name: Run canonical runtime integration through Nx
+      - name: Run routed runtime proofs through Nx
         if: steps.scope.outputs.run == 'true'
         shell: bash
         env:
           CI: "true"
+          NX_NO_CLOUD: "true"
+          CI_RUNTIME_TARGETS: ${{ steps.scope.outputs.targets }}
         run: node tools/dev/run-ci-command.mjs runtime-integration -- pnpm exec nx run repository-ci:runtime-integration --outputStyle=stream
 
       - name: Report WLT payout registry diagnostics
@@ -189,7 +194,7 @@ jobs:
             echo "No classified DSH runtime diagnostics were emitted."
           fi
 
-      - name: Verify backend proof is non-mutating
+      - name: Verify runtime proof is non-mutating
         if: always() && steps.scope.outputs.run == 'true'
         shell: bash
         run: |
