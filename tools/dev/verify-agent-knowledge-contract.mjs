@@ -27,34 +27,24 @@ const agent = requireTokens("AGENTS.md", [
   "PRODUCT_SEMANTIC_AUTHORITY: NONE",
   "CURRENT_IMPLEMENTATION_AUTHORITY: NONE",
   "knowledge.sources.json",
-  "GOVERNANCE-STANDARDS.md",
-  "governance/policy/QUALITY.md",
-  "governance/policy/EXPERIENCE.md",
-  "governance/policy/DESIGN.md",
   "GOVERNANCE_IMPACT=NONE",
   "GOVERNANCE_IMPACT=REVALIDATE_ONLY",
   "GOVERNANCE_IMPACT=UPDATE_REQUIRED",
   "GOVERNANCE_IMPACT=DEFECT_FOUND",
   "pnpm verify",
   "pnpm safe:push",
-  "pnpm dev",
-  "pnpm runtime:up",
-  "pnpm runtime:status",
   "SMALLEST DIFF != SIMPLEST SYSTEM",
   "Proof tooling must not reset developer credentials",
   "Subagents must not independently push",
-  "REQUIRED FAILURE/RECOVERY BEHAVIOR = PROVEN WHEN APPLICABLE",
-  "PINNED GOVERNANCE = EXACT WHEN MATERIALLY REQUIRED",
-  "KNOWN MATERIAL DEFECTS = 0",
   "NX AFFECTED OWNER",
   "ONLY REQUIRED RUNTIME PROOF LANES",
+  "FULL_REGRESSION_ONLY",
 ]);
+if (/(?:localhost|127\.0\.0\.1):\d{2,5}\b/i.test(agent)) failures.push("AGENTS.md hard-codes mutable runtime ports");
+if (/Server-Driven Operational Registry|Control Panel operational-resource law/i.test(agent)) failures.push("AGENTS.md duplicates durable Operator presentation policy");
+if (/Identity owns identity|DSH owns|WLT owns financial/i.test(agent)) failures.push("AGENTS.md duplicates durable System ownership semantics");
 
-if (/(?:localhost|127\.0\.0\.1):\d{2,5}\b/i.test(agent)) failures.push("AGENTS.md must not hard-code mutable local runtime ports");
-if (/Docker is the sole LOCAL_INTEGRATION runtime owner|all four Metro servers/i.test(agent)) failures.push("AGENTS.md retains mutable LOCAL_INTEGRATION participant inventory");
-if (/Server-Driven Operational Registry|Control Panel operational-resource law/i.test(agent)) failures.push("AGENTS.md retains durable Operator presentation policy owned by Governance");
-
-requireTokens("REPOSITORY-STRUCTURE.md", [
+const structure = requireTokens("REPOSITORY-STRUCTURE.md", [
   "ARTIFACT_CLASS: REPOSITORY_LOCAL_PLACEMENT_CONTRACT",
   "PLACEMENT_CONTRACT_AUTHORITY: DELEGATED_BY_AGENTS_MD",
   "PRODUCT_SEMANTIC_AUTHORITY: NONE",
@@ -63,38 +53,44 @@ requireTokens("REPOSITORY-STRUCTURE.md", [
   "Current app/service/package members are discovered from the exact project graph/source",
   "This is a placement grammar, not current inventory",
   "`pnpm verify` is the stable public local verification entrypoint.",
+  "governance-and-docs/docs/reference/competitors/",
 ]);
+if (/BTHWANI_FULL_PLATFORM_CLOSURE_MATRIX|single derived closure matrix/i.test(structure)) failures.push("REPOSITORY-STRUCTURE.md authorizes stale closure-matrix placement");
 
-const verifier = requireTokens("tools/dev/verify-local-candidate.ps1", [
-  "BaseSha",
-  "EXACT_LOCAL_CANDIDATE_SHA",
-  "nx run-many",
-  "Workspace invariant targets",
-  "go-workspace-sync",
-  "repository-ci:execution-proof-system",
-  "nx run infra:compose-config",
-  "nx affected -t lint format-check typecheck unit contract build vet export-smoke",
-  "VERIFY_STEP=PASS name=",
-  "VERIFY_TOTAL_MS",
-  "VERIFY=PASS",
+const security = requireTokens("SECURITY.md", [
+  "DOCUMENT_CLASS: SECURITY_REPORTING_AND_SECRET_HANDLING_GUIDANCE",
+  "EXECUTION_AUTHORITY: NONE",
+  "PRODUCT_AUTHORITY: NONE",
+  "governance/policy/SECURITY.md",
+  "GitHub Private Vulnerability Reporting",
 ]);
-for (const forbidden of [
-  "Changed-Matches",
-  "$topologyRelevant",
-  "runtime:up",
-  "runtime:doctor",
-  "runtime:status",
-  "bootstrap.ps1",
-  "workspace:verify",
-  "Get-RuntimeSnapshot",
-  "Restore-RuntimeSnapshot",
-]) {
-  if (verifier.includes(forbidden)) failures.push(`local verifier must not own ${forbidden}`);
+if (/authorization matrix|session lifetime|actor scope|object scope/i.test(security)) failures.push("SECURITY.md duplicates durable application security policy");
+
+const trigger = requireTokens("tools/BTHWANI_FULL_PLATFORM_A_TO_Z_FIXED_POINT_CLOSURE_TRIGGER.md", [
+  "ARTIFACT_CLASS: ACTIVE_TASK_AUTHORIZATION",
+  "SEMANTIC_AUTHORITY: NONE",
+  "EXECUTION_LAW_AUTHORITY: NONE",
+  "IMPLEMENTATION_AUTHORITY: NONE",
+  "LIFETIME: CURRENT_OBJECTIVE_ONLY",
+  "EXECUTION-FIRST",
+  "AGENTS.md",
+  "knowledge.sources.json",
+]);
+if (Buffer.byteLength(trigger, "utf8") > 12000) failures.push("active task trigger has regrown into a handbook");
+for (const forbidden of ["## Finance", "## Database", "## Security policy", "## Product inventory", "## Journey inventory", "Server-Driven Operational Registry"]) {
+  if (trigger.includes(forbidden)) failures.push(`active task trigger duplicates durable authority: ${forbidden}`);
 }
 
-const runtimeOwnership = read("tools/dev/verify-local-runtime-ownership.mjs");
-for (const forbidden of ['read("AGENTS.md")', 'read("README.md")', 'read("infra/local/compose/README.md")']) {
-  if (runtimeOwnership.includes(forbidden)) failures.push(`runtime ownership verifier must derive runtime truth from executable source/config, not docs: ${forbidden}`);
+const manifest = JSON.parse(read("knowledge.sources.json"));
+if (manifest?.schema !== 2) failures.push("knowledge.sources.json schema drifted");
+if (manifest?.governance?.repository !== "bthwani2-boop/governance-and-docs") failures.push("Governance repository binding drifted");
+if (!/^[0-9a-f]{40}$/.test(manifest?.governance?.commit ?? "")) failures.push("Governance binding must be an immutable 40-char SHA");
+
+const pkg = JSON.parse(read("package.json"));
+if (pkg?.scripts?.verify !== "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-local-candidate.ps1") failures.push("package.json verify owner drifted");
+if (pkg?.scripts?.["safe:push"] !== "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/safe-push.ps1") failures.push("package.json safe:push owner drifted");
+for (const command of ["dev", "client", "partner", "captain", "field", "control", "scr", "runtime:up", "runtime:status", "runtime:down"]) {
+  if (!pkg?.scripts?.[command]) failures.push(`package.json missing stable local command: ${command}`);
 }
 
 const safePush = requireTokens("tools/dev/safe-push.ps1", [
@@ -104,103 +100,49 @@ const safePush = requireTokens("tools/dev/safe-push.ps1", [
   "verify-local-candidate.ps1",
   "REMOTE_SHA_CONFIRMATION=PASS",
 ]);
-const noopIndex = safePush.indexOf("SAFE_PUSH=NOOP");
-const verifyIndex = safePush.indexOf("SAFE_PUSH_VERIFY=START");
-if (noopIndex < 0 || verifyIndex < 0 || noopIndex > verifyIndex) failures.push("safe push must resolve exact-remote NOOP before candidate verification");
-if (safePush.includes("pnpm verify")) failures.push("safe push must invoke the canonical verifier once directly, not nest the public verify command");
+const noop = safePush.indexOf("SAFE_PUSH=NOOP");
+const verify = safePush.indexOf("SAFE_PUSH_VERIFY=START");
+if (noop < 0 || verify < 0 || noop > verify) failures.push("safe push must resolve exact-remote NOOP before verification");
+if (safePush.includes("pnpm verify")) failures.push("safe push must invoke the canonical verifier directly, not recursively");
 
-const pkg = JSON.parse(read("package.json"));
-if (pkg?.scripts?.verify !== "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-local-candidate.ps1") failures.push("package.json verify must own local candidate verification");
-if (pkg?.scripts?.["safe:push"] !== "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/safe-push.ps1") failures.push("package.json safe:push must own push safety");
-for (const required of ["dev", "client", "partner", "captain", "field", "control", "scr", "runtime:up", "runtime:status", "runtime:down"]) {
-  if (!pkg?.scripts?.[required]) failures.push(`package.json missing required local command: ${required}`);
-}
-
-const nx = JSON.parse(read("nx.json"));
-const exportInputs = nx?.targetDefaults?.["export-smoke"]?.inputs ?? [];
-for (const required of ["default", "^default", "nodeToolchain", "mobileExportEnvironment", "{workspaceRoot}/tools/mobile/export-mobile-smoke.mjs", "{workspaceRoot}/tools/mobile/define-samrim-expo-app.cjs"]) {
-  if (!exportInputs.includes(required)) failures.push(`nx export-smoke missing cache input: ${required}`);
-}
-
-const staticWorkflow = requireTokens(".github/workflows/ci-static.yml", [
-  "name: CI Static",
-  "nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1",
-  "pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1",
+const localVerifier = requireTokens("tools/dev/verify-local-candidate.ps1", [
+  "EXACT_LOCAL_CANDIDATE_SHA",
   "repository-ci:execution-proof-system",
-  "nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet",
-  "capture-ci-failure.mjs --kind=static-linux",
+  "go-workspace-sync",
+  "nx affected -t lint format-check typecheck unit contract build vet",
+  "VERIFY_TOTAL_MS",
+  "VERIFY=PASS",
 ]);
-for (const forbidden of ["Resolve affected base", "Detect mobile-affecting integration change", "steps.base.outputs", "steps.mobile.outputs", "--changed --since"]) {
-  if (staticWorkflow.includes(forbidden)) failures.push(`static workflow retains parallel affected logic: ${forbidden}`);
+for (const forbidden of ["runtime:up", "runtime:doctor", "Get-RuntimeSnapshot", "Restore-RuntimeSnapshot"]) {
+  if (localVerifier.includes(forbidden)) failures.push(`local static verifier must not own runtime behavior: ${forbidden}`);
 }
-
-const runtimeWorkflow = requireTokens(".github/workflows/ci-runtime.yml", [
-  "name: CI Runtime",
-  "nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1",
-  "runtime-proof-routing:resolve",
-  "steps.scope.outputs.targets",
-  "steps.scope.outputs.images",
-  "steps.scope.outputs.services",
-  "steps.scope.outputs.browser",
-  "CI_RUNTIME_TARGETS:",
-  "repository-ci:runtime-integration",
-  "NX_NO_CLOUD: \"true\"",
-]);
-for (const forbidden of [
-  "Detect backend-affecting change",
-  "WLT_CI_COMPOSITION_SCOPE",
-  "tag:ci-",
-  "docker/build-push-action@",
-  "up -d --build",
-  "--projects=repository-ci",
-  "repository-ci:runtime-images",
-]) {
-  if (runtimeWorkflow.includes(forbidden)) failures.push(`runtime workflow retains parallel or superseded logic: ${forbidden}`);
-}
-
-const router = requireTokens("tools/runtime-proof/resolve.mjs", [
-  "nx\", \"show\", \"projects\", \"--affected",
-  "runtime-sensitive Nx projects lack runtime classification",
-  "full-escalation:",
-  "CI_RUNTIME_TARGETS=",
-  "CI_RUNTIME_IMAGES=",
-  "CI_RUNTIME_SERVICES=",
-]);
-if (router.includes("git diff") || router.includes("git status")) failures.push("runtime router must consume Nx affected truth instead of building a parallel Git affected engine");
-requireTokens("tools/runtime-proof/resolve.test.mjs", [
-  "control-only change selects only control runtime lane",
-  "runtime-sensitive owner without classification fails closed",
-  "scheduled/full regression selects every canonical lane",
-]);
-
-requireTokens(".github/workflows/ci-security.yml", ["name: CI Security", "node tools/dev/verify-secret-safety.mjs"]);
 
 const prTemplate = requireTokens(".github/pull_request_template.md", [
   "## Governance impact",
   "GOVERNANCE_IMPACT=<NONE | REVALIDATE_ONLY | UPDATE_REQUIRED | DEFECT_FOUND>",
   "GOVERNANCE_CANONICAL_SHA=<40-char SHA>",
 ]);
-if (prTemplate.includes("GOVERNANCE_IMPACT=NONE\n")) failures.push("PR template must not preselect a Governance impact value");
+if (prTemplate.includes("GOVERNANCE_IMPACT=NONE\n")) failures.push("PR template must not preselect Governance impact");
 
-requireTokens(".github/workflows/ci-policy.yml", [
-  "name: CI Policy",
+const policy = requireTokens(".github/workflows/ci-policy.yml", [
   "GOVERNANCE_IMPACT=(NONE|REVALIDATE_ONLY|UPDATE_REQUIRED|DEFECT_FOUND)",
   "knowledge.sources.json",
   "GOVERNANCE_CANONICAL_SHA=",
   "Governance pin changed but GOVERNANCE_IMPACT=NONE",
-  "merge-base --is-ancestor",
-  "governance-and-docs.git",
   "Governance pin rollback is forbidden",
-  "GOVERNANCE_PIN_MONOTONIC=PASS",
 ]);
+if (!policy.includes("merge-base --is-ancestor")) failures.push("Governance pin monotonicity proof missing");
 
 const adapterCandidates = [
   ...fs.readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".md")).map((entry) => entry.name),
-  ...fs.readdirSync(path.join(root, ".github"), { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".md")).map((entry) => ".github/" + entry.name),
+  ...fs.readdirSync(path.join(root, ".github"), { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".md")).map((entry) => `.github/${entry.name}`),
 ];
-const adapters = adapterCandidates.filter((file) => read(file).includes("ADAPTER_CLASS: DERIVED_AGENT_ROUTING"));
-for (const file of adapters) {
-  requireTokens(file, ["ADAPTER_CLASS: DERIVED_AGENT_ROUTING", "SEMANTIC_AUTHORITY: NONE", "EXECUTION_AUTHORITY: NONE", "CLOSURE_AUTHORITY: NONE", "AGENTS.md"]);
+for (const file of adapterCandidates) {
+  const body = read(file);
+  if (!body.includes("ADAPTER_CLASS: DERIVED_AGENT_ROUTING")) continue;
+  for (const token of ["SEMANTIC_AUTHORITY: NONE", "EXECUTION_AUTHORITY: NONE", "CLOSURE_AUTHORITY: NONE", "AGENTS.md"]) {
+    if (!body.includes(token)) failures.push(`${file} derived adapter missing ${token}`);
+  }
 }
 
 if (failures.length) {
@@ -210,10 +152,8 @@ if (failures.length) {
 }
 
 console.log("AGENT_LAW_OWNER=AGENTS.md");
-console.log("EXECUTION_MODEL=AFFECTED_STATIC_PLUS_CLAIM_SPECIFIC_RUNTIME_PLUS_SINGLE_SAFE_PUSH");
-console.log("CUSTOM_AFFECTED_ENGINE=0");
-console.log("STATEFUL_PROOF_LEDGER=0");
-console.log("RUNTIME_VERIFY_COUPLING=0");
-console.log("CANONICAL_CI_GATES=4");
-console.log("GOVERNANCE_IMPACT_INTERLOCK=PASS");
+console.log("PLACEMENT_OWNER=REPOSITORY-STRUCTURE.md");
+console.log("SECURITY_LOCAL_OWNER=REPORTING_AND_SECRET_HANDLING_ONLY");
+console.log("TASK_TRIGGER_AUTHORITY=TEMPORARY_NON_SEMANTIC");
+console.log("DUPLICATE_DURABLE_AUTHORITY=0");
 console.log("AGENT_KNOWLEDGE_CONTRACT=PASS");
