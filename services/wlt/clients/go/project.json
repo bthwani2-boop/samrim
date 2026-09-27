@@ -1,0 +1,63 @@
+{
+  "name": "wlt-go-client",
+  "root": "services/wlt/clients/go",
+  "projectType": "library",
+  "implicitDependencies": [
+    "wlt"
+  ],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "inputs": [
+        "default",
+        "^default",
+        "goToolchain"
+      ],
+      "options": {
+        "command": "go build ./...",
+        "cwd": "services/wlt/clients/go"
+      }
+    },
+    "vet": {
+      "executor": "nx:run-commands",
+      "inputs": [
+        "default",
+        "^default",
+        "goToolchain"
+      ],
+      "options": {
+        "command": "go vet ./...",
+        "cwd": "services/wlt/clients/go"
+      }
+    },
+    "unit": {
+      "executor": "nx:run-commands",
+      "inputs": [
+        "default",
+        "^default",
+        "goToolchain"
+      ],
+      "options": {
+        "command": "go test ./...",
+        "cwd": "services/wlt/clients/go"
+      }
+    },
+    "format-check": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/dev/check-go-format.mjs services/wlt/clients/go"
+      }
+    }
+  },
+  "tags": [
+    "scope:wlt-go-client",
+    "type:library"
+  ],
+  "namedInputs": {
+    "default": [
+      "{projectRoot}/**/*",
+      "{workspaceRoot}/go.work",
+      "{workspaceRoot}/go.work.sum"
+    ]
+  }
+}
