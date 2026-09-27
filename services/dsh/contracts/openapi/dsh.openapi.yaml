@@ -6446,7 +6446,34 @@ components:
         promotions:
           type: array
           items:
-            $ref: "#/components/schemas/PromotionView"
+            $ref: "#/components/schemas/PublicPromotionView"
+
+    PublicPromotionView:
+      type: object
+      required: [id, code, nameAr, descriptionAr, kind, valueMinor]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        code:
+          type: string
+        nameAr:
+          type: string
+        descriptionAr:
+          type: string
+        kind:
+          $ref: "#/components/schemas/PromotionKind"
+        valueMinor:
+          type: integer
+          minimum: 1
+        maxDiscountMinor:
+          type: integer
+          minimum: 1
+          nullable: true
+        endsAt:
+          type: string
+          format: date-time
+          nullable: true
 
     OperatorPromotionRegistryResponse:
       type: object
@@ -6597,7 +6624,28 @@ components:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/DiscoveryContentView"
+            $ref: "#/components/schemas/PublicDiscoveryContentView"
+
+    PublicDiscoveryContentView:
+      type: object
+      required: [id, kind, titleAr, bodyAr, mediaUri, targetType]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          $ref: "#/components/schemas/DiscoveryContentKind"
+        titleAr:
+          type: string
+        bodyAr:
+          type: string
+        mediaUri:
+          type: string
+        targetType:
+          $ref: "#/components/schemas/DiscoveryContentTargetType"
+        targetId:
+          type: string
+          nullable: true
 
     OperatorDiscoveryContentRegistryResponse:
       type: object

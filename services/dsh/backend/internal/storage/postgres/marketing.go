@@ -182,6 +182,7 @@ func ReadPromotion(ctx context.Context, db *sql.DB, id string) (PromotionRecord,
 func ListPromotions(ctx context.Context, db *sql.DB, public bool, serviceCityID, storeID string) ([]PromotionRecord, error) {
 	args := []any{}
 	where := "1=1"
+	limit := ""
 	if public {
 		where += " AND state='PUBLISHED' AND starts_at <= clock_timestamp() AND (ends_at IS NULL OR ends_at > clock_timestamp())"
 		if strings.TrimSpace(serviceCityID) == "" {
@@ -192,9 +193,12 @@ func ListPromotions(ctx context.Context, db *sql.DB, public bool, serviceCityID,
 		if strings.TrimSpace(storeID) != "" {
 			args = append(args, strings.TrimSpace(storeID))
 			where += " AND (store_id IS NULL OR store_id=$" + itoa(len(args)) + ")"
+		} else {
+			where += " AND store_id IS NULL"
 		}
+		limit = " LIMIT 4"
 	}
-	rows, err := db.QueryContext(ctx, "SELECT "+promotionSelect+" FROM dsh.commerce_promotions WHERE "+where+" ORDER BY starts_at DESC,id DESC", args...)
+	rows, err := db.QueryContext(ctx, "SELECT "+promotionSelect+" FROM dsh.commerce_promotions WHERE "+where+" ORDER BY starts_at DESC,id DESC"+limit, args...)
 	if err != nil {
 		return nil, err
 	}

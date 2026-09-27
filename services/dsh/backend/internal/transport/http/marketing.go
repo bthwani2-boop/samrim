@@ -62,9 +62,9 @@ func (s *MarketingServer) listPublicPromotions(w http.ResponseWriter, r *http.Re
 		writeMarketingError(w, err)
 		return
 	}
-	values := make([]contract.PromotionView, 0, len(items))
+	values := make([]contract.PublicPromotionView, 0, len(items))
 	for _, item := range items {
-		values = append(values, toPromotionView(item))
+		values = append(values, toPublicPromotionView(item))
 	}
 	writeJSON(w, http.StatusOK, contract.PromotionListResponse{Promotions: values})
 }
@@ -75,9 +75,9 @@ func (s *MarketingServer) listPublicDiscoveryContent(w http.ResponseWriter, r *h
 		writeMarketingError(w, err)
 		return
 	}
-	values := make([]contract.DiscoveryContentView, 0, len(items))
+	values := make([]contract.PublicDiscoveryContentView, 0, len(items))
 	for _, item := range items {
-		values = append(values, toDiscoveryContentView(item))
+		values = append(values, toPublicDiscoveryContentView(item))
 	}
 	writeJSON(w, http.StatusOK, contract.DiscoveryContentListResponse{Items: values})
 }
@@ -487,8 +487,16 @@ func toPromotionView(item postgres.PromotionRecord) contract.PromotionView {
 	return contract.PromotionView{ID: item.ID, Code: item.Code, NameAr: item.NameAr, DescriptionAr: item.DescriptionAr, Kind: contract.PromotionKind(item.Kind), ValueMinor: int(item.ValueMinor), MaxDiscountMinor: intValue(item.MaxDiscountMinor), FundingSource: item.FundingSource, StoreID: item.StoreID, ServiceCityID: item.ServiceCityID, State: contract.PromotionState(item.State), StartsAt: item.StartsAt, EndsAt: item.EndsAt, RedemptionLimit: intValue(item.RedemptionLimit), RedeemedCount: int(item.RedeemedCount), Version: item.Version, CreatedByActorID: item.CreatedByActorID, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
+func toPublicPromotionView(item postgres.PromotionRecord) contract.PublicPromotionView {
+	return contract.PublicPromotionView{ID: item.ID, Code: item.Code, NameAr: item.NameAr, DescriptionAr: item.DescriptionAr, Kind: contract.PromotionKind(item.Kind), ValueMinor: int(item.ValueMinor), MaxDiscountMinor: intValue(item.MaxDiscountMinor), EndsAt: item.EndsAt}
+}
+
 func toDiscoveryContentView(item postgres.DiscoveryContentRecord) contract.DiscoveryContentView {
 	return contract.DiscoveryContentView{ID: item.ID, Kind: contract.DiscoveryContentKind(item.Kind), TitleAr: item.TitleAr, BodyAr: item.BodyAr, MediaUri: item.MediaURI, TargetType: contract.DiscoveryContentTargetType(item.TargetType), TargetID: item.TargetID, ServiceCityID: item.ServiceCityID, State: contract.PromotionState(item.State), StartsAt: item.StartsAt, EndsAt: item.EndsAt, Ordinal: item.Ordinal, Version: item.Version, CreatedByActorID: item.CreatedByActorID, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+}
+
+func toPublicDiscoveryContentView(item postgres.DiscoveryContentRecord) contract.PublicDiscoveryContentView {
+	return contract.PublicDiscoveryContentView{ID: item.ID, Kind: contract.DiscoveryContentKind(item.Kind), TitleAr: item.TitleAr, BodyAr: item.BodyAr, MediaUri: item.MediaURI, TargetType: contract.DiscoveryContentTargetType(item.TargetType), TargetID: item.TargetID}
 }
 
 func intValue(value *int64) int {
