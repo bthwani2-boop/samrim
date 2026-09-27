@@ -1,9 +1,10 @@
 "use client";
 
-import type { CatalogCategoryListItem, CatalogCategoryListResponse, CatalogCategoryResponse, CommerceVertical } from "@bthwani/dsh";
+import { isMediaProvenanceInputValid, type CatalogCategoryListItem, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CommerceVertical, type MediaProvenanceInput } from "@bthwani/dsh";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSession } from "../../session/session-provider";
 import { CatalogAttributePolicyWorkspace } from "./catalog-attribute-policy-workspace";
+import { appendMediaProvenance, CatalogMediaProvenanceFields } from "./catalog-media-provenance-fields";
 
 type CategoryStatus = "all" | "active" | "inactive";
 type CategorySort = "name_asc" | "name_desc" | "updated_desc";
@@ -51,6 +52,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   const [categoryImageFile, setCategoryImageFile] = useState<File | null>(null);
   const [categoryImagePreview, setCategoryImagePreview] = useState("");
   const [mediaReason, setMediaReason] = useState("إضافة صورة توضيحية للفئة");
+  const [mediaProvenance, setMediaProvenance] = useState<MediaProvenanceInput>({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false });
   const [busy, setBusy] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [error, setError] = useState("");
@@ -256,7 +258,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   }
 
   async function uploadCategoryImage(category: CatalogCategoryListItem) {
-    if (!canEdit || !categoryImageFile || mediaReason.trim().length < 5) return;
+    if (!canEdit || !categoryImageFile || mediaReason.trim().length < 5 || !isMediaProvenanceInputValid(mediaProvenance)) return;
     setBusy(true);
     setError("");
     setNotice("");
@@ -264,6 +266,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
       const form = new FormData();
       form.set("file", categoryImageFile, categoryImageFile.name || "category-image");
       form.set("reason", mediaReason.trim());
+      appendMediaProvenance(form, mediaProvenance);
       const response = await fetch(`/api/catalog/categories/${encodeURIComponent(category.id)}/media`, {
         method: "POST",
         headers: { "Idempotency-Key": crypto.randomUUID(), "X-Expected-Version": String(category.version) },
@@ -272,6 +275,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
       const payload = await parseResponse<CatalogCategoryResponse>(response);
       setNotice(`تم إرفاق صورة «${payload.category.nameAr}».`);
       setCategoryImageFile(null);
+      setMediaProvenance({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false });
       onCategoryChange(payload.category.id);
       await onSaved();
     } catch (nextError) {
@@ -351,9 +355,10 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
         <div className="catalog-category-media-editor">
           <div className="catalog-category-media-preview">{categoryImagePreview || focusedCategory.imageUri ? <img src={categoryImagePreview || focusedCategory.imageUri || ""} alt={`معاينة صورة ${focusedCategory.nameAr}`} /> : <span aria-hidden="true">صورة الفئة</span>}</div>
           <div className="catalog-category-media-controls">
-            <label className="field-label" htmlFor="catalog-category-image">صورة الفئة<input id="catalog-category-image" type="file" accept="image/jpeg,image/png" disabled={!canEdit || busy} onChange={(event) => setCategoryImageFile(event.target.files?.[0] ?? null)} /></label>
+            <label className="field-label" htmlFor="catalog-category-image">صورة الفئة<input id="catalog-category-image" type="file" accept="image/jpeg,image/png" disabled={!canEdit || busy} onChange={(event) => { setCategoryImageFile(event.target.files?.[0] ?? null); setMediaProvenance({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false }); }} /></label>
             <label className="field-label" htmlFor="catalog-category-image-reason">سبب الإرفاق<input id="catalog-category-image-reason" value={mediaReason} maxLength={500} disabled={!canEdit || busy} onChange={(event) => setMediaReason(event.target.value)} /></label>
-            <button type="button" className="button button-secondary" disabled={!canEdit || busy || !categoryImageFile || mediaReason.trim().length < 5} onClick={() => void uploadCategoryImage(focusedCategory)}>{busy ? "جارٍ الرفع…" : focusedCategory.imageUri ? "استبدال الصورة" : "إرفاق الصورة"}</button>
+            <CatalogMediaProvenanceFields idPrefix="catalog-category-media" disabled={!canEdit || busy} value={mediaProvenance} onChange={setMediaProvenance} />
+            <button type="button" className="button button-secondary" disabled={!canEdit || busy || !categoryImageFile || mediaReason.trim().length < 5 || !isMediaProvenanceInputValid(mediaProvenance)} onClick={() => void uploadCategoryImage(focusedCategory)}>{busy ? "جارٍ الرفع…" : focusedCategory.imageUri ? "استبدال الصورة" : "إرفاق الصورة"}</button>
           </div>
         </div>
         <div className="catalog-category-detail-actions">

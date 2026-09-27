@@ -1,12 +1,13 @@
 "use client";
 
-import type { CommerceVertical, DiscoveryContentAnalytics, DiscoveryContentView, OperatorDiscoveryContentRegistryResponse, OperatorPromotionRegistryResponse, PromotionView, ServiceCity } from "@bthwani/dsh";
+import { isMediaProvenanceInputValid, type CommerceVertical, type DiscoveryContentAnalytics, type DiscoveryContentView, type MediaProvenanceInput, type OperatorDiscoveryContentRegistryResponse, type OperatorPromotionRegistryResponse, type PromotionView, type ServiceCity } from "@bthwani/dsh";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { type MarketingResourceKey, workspaceMarketingResources } from "../../navigation/workspace-registry";
 import { useSession } from "../../session/session-provider";
 import { WorkspaceResourceIndex } from "../workspace/workspace-resource-index";
+import { appendMediaProvenance, CatalogMediaProvenanceFields } from "../central-catalog/catalog-media-provenance-fields";
 import styles from "./marketing-workspace.module.css";
 
 type ApiError = { error?: { message?: string } };
@@ -21,6 +22,10 @@ function futureDateInput(): string {
 
 function futureEndDateInput(): string {
   return new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString().slice(0, 16);
+}
+
+function emptyMediaProvenance(): MediaProvenanceInput {
+  return { creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false };
 }
 
 async function readActiveServiceCities(): Promise<ReadonlyArray<ServiceCity>> {
@@ -211,6 +216,8 @@ export function MarketingContentWorkspace() {
   const [targetLoading, setTargetLoading] = useState(false);
   const [targetMessage, setTargetMessage] = useState("");
   const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaProvenance, setMediaProvenance] = useState<MediaProvenanceInput>(emptyMediaProvenance());
+  const pendingContentMutation = useRef<Readonly<{ id: string; idempotencyKey: string }> | null>(null);
   const load = useCallback(async (query: { search?: string; state?: string; kind?: string; sort?: "priority" | "created_desc"; cursor?: string } = {}) => {
     setLoading(true);
     const params = new URLSearchParams({ limit: "25", sort: query.sort ?? sort });
@@ -316,12 +323,15 @@ export function MarketingContentWorkspace() {
       const ends = contentEndsAt ? new Date(contentEndsAt) : null;
       if (!contentForm.titleAr.trim() || Number.isNaN(starts.getTime()) || !Number.isSafeInteger(Number(contentForm.ordinal)) || Number(contentForm.ordinal) < 0) throw new Error("أكمل عنوان المحتوى وتاريخه وترتيبه.");
       if (!mediaFile) throw new Error("اختر صورة JPEG أو PNG للمحتوى.");
+      if (!isMediaProvenanceInputValid(mediaProvenance)) throw new Error("أكمل بيانات مصدر الصورة وبيان الحقوق وأكّد الإذن.");
       if (mediaFile.size > 10 * 1024 * 1024) throw new Error("حجم الصورة يجب ألا يتجاوز 10 ميجابايت.");
       if (!["image/jpeg", "image/png"].includes(mediaFile.type.toLowerCase())) throw new Error("الصورة يجب أن تكون JPEG أو PNG.");
       if (contentForm.targetType !== "INFO" && !targetOptions.some((option) => option.id === contentForm.targetId)) throw new Error("اختر وجهة من نتائج DSH الحالية قبل إنشاء المحتوى.");
       if (ends && (Number.isNaN(ends.getTime()) || ends <= starts)) throw new Error("نهاية المحتوى يجب أن تكون بعد بدايته.");
       const form = new FormData();
-      form.append("id", `content-${crypto.randomUUID()}`);
+      const mutation = pendingContentMutation.current ?? { id: `content-${crypto.randomUUID()}`, idempotencyKey: crypto.randomUUID() };
+      pendingContentMutation.current = mutation;
+      form.append("id", mutation.id);
       form.append("kind", contentForm.kind);
       form.append("titleAr", contentForm.titleAr.trim());
       if (contentForm.bodyAr.trim()) form.append("bodyAr", contentForm.bodyAr.trim());
@@ -332,13 +342,19 @@ export function MarketingContentWorkspace() {
       if (ends) form.append("endsAt", ends.toISOString());
       form.append("ordinal", String(Number(contentForm.ordinal)));
       form.append("file", mediaFile, mediaFile.name);
-      const response = await fetch("/api/marketing/content", { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: form });
+      appendMediaProvenance(form, mediaProvenance);
+      const response = await fetch("/api/marketing/content", { method: "POST", headers: { "Idempotency-Key": mutation.idempotencyKey }, body: form });
       const body = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(apiMessage(body));
+      if (!response.ok) {
+        if (response.status < 500) pendingContentMutation.current = null;
+        throw new Error(apiMessage(body));
+      }
+      pendingContentMutation.current = null;
       setContentForm({ titleAr: "", bodyAr: "", kind: "BANNER", targetType: "INFO", targetId: "", serviceCityId: "", ordinal: "0" });
       setTargetSearch("");
       setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor("");
       setMediaFile(null);
+      setMediaProvenance(emptyMediaProvenance());
       setSearch(""); setAppliedSearch(""); setState("DRAFT"); setKind(""); setSort("priority"); setCursor(""); setCursorStack([]);
       await load({ search: "", state: "DRAFT", kind: "", sort: "priority", cursor: "" });
       setMessage("تم إنشاء المحتوى كمسودة. انشره من السجل عندما يصبح جاهزًا.");
@@ -373,7 +389,7 @@ export function MarketingContentWorkspace() {
           <input aria-label="عنوان المحتوى" placeholder="مختارات الأسبوع" value={contentForm.titleAr} onChange={(event) => setContentForm((current) => ({ ...current, titleAr: event.target.value }))} />
           <input aria-label="نص المحتوى" placeholder="اكتشف الجديد في مدينتك" value={contentForm.bodyAr} onChange={(event) => setContentForm((current) => ({ ...current, bodyAr: event.target.value }))} />
           <label className="field-label" htmlFor="marketing-content-kind">نوع المحتوى<select id="marketing-content-kind" aria-label="نوع المحتوى" value={contentForm.kind} onChange={(event) => setContentForm((current) => ({ ...current, kind: event.target.value as typeof current.kind }))}><option value="BANNER">بنر رئيسي</option><option value="CAROUSEL">شريحة كاروسيل</option><option value="SHORT_FORM">قصة قصيرة</option></select></label>
-          <label className="field-label" htmlFor="marketing-content-media">صورة المحتوى<input id="marketing-content-media" aria-label="ملف صورة المحتوى" type="file" accept="image/jpeg,image/png" required onChange={(event) => setMediaFile(event.target.files?.[0] ?? null)} /></label>
+          <label className="field-label" htmlFor="marketing-content-media">صورة المحتوى<input id="marketing-content-media" aria-label="ملف صورة المحتوى" type="file" accept="image/jpeg,image/png" required onChange={(event) => { setMediaFile(event.target.files?.[0] ?? null); setMediaProvenance(emptyMediaProvenance()); }} /></label><CatalogMediaProvenanceFields idPrefix="marketing-content-media" disabled={busy} value={mediaProvenance} onChange={setMediaProvenance} />
           {mediaFile ? <p className="muted" data-testid="marketing-content-file">{mediaFile.name} · {(mediaFile.size / 1024).toFixed(0)} كيلوبايت</p> : <p className="muted">JPEG أو PNG، حتى 10 ميجابايت.</p>}
           <label className="field-label" htmlFor="marketing-content-target">نوع الوجهة<select id="marketing-content-target" aria-label="نوع وجهة المحتوى" value={contentForm.targetType} onChange={(event) => { setTargetSearch(""); setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setCategoryVerticalId(""); setContentForm((current) => ({ ...current, targetType: event.target.value as typeof current.targetType, targetId: "" })); }}><option value="INFO">معلومات فقط</option><option value="STORE">متجر</option><option value="PRODUCT">منتج</option><option value="CATEGORY">فئة</option><option value="PROMOTION">عرض</option></select></label>
           {contentForm.targetType !== "INFO" ? <>

@@ -292,20 +292,21 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.createStoreScopedProduct.path.replace("{storeId}", encodeURIComponent(normalizedStore));
       return userRequest(accessToken, path, dshOperationPaths.createStoreScopedProduct.method, { ...input, scope: "STORE_SCOPED", storeId: normalizedStore }, mutationHeaders());
     },
-    async uploadStoreProductMedia(accessToken: string, storeID: string, productID: string, input: DshImageUploadInput, role: "primary" | "gallery", expectedVersion: number): Promise<{ product: CatalogProduct; idempotentReplay: boolean }> {
+    async uploadStoreProductMedia(accessToken: string, storeID: string, productID: string, input: DshImageUploadInput, role: "primary" | "gallery", provenance: MediaProvenanceInput, expectedVersion: number, idempotencyKey: string): Promise<{ product: CatalogProduct; idempotentReplay: boolean }> {
       const normalizedStore = storeID.trim();
       const normalizedProduct = productID.trim();
       const uri = input.uri.trim();
-      if (!normalizedStore || !normalizedProduct || !uri || expectedVersion < 1 || (role !== "primary" && role !== "gallery")) throw new Error("DSH_STORE_PRODUCT_MEDIA_INPUT_INVALID");
+      if (!normalizedStore || !normalizedProduct || !uri || expectedVersion < 1 || !idempotencyKey.trim() || (role !== "primary" && role !== "gallery") || !isMediaProvenanceInputValid(provenance)) throw new Error("DSH_STORE_PRODUCT_MEDIA_INPUT_INVALID");
       const fileName = input.name?.trim() || "product-image.jpg";
       const mimeType = input.type?.trim() || "image/jpeg";
       const form = input.nativeMultipartUpload ? undefined : new FormData();
       if (form) {
         form.append("role", role);
         form.append("file", input.blob ?? ({ uri, name: fileName, type: mimeType } as unknown as Blob));
+        appendMediaProvenance(form, provenance);
       }
       const path = dshOperationPaths.uploadStoreProductMedia.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{productId}", encodeURIComponent(normalizedProduct));
-      return userMultipartRequest(accessToken, path, dshOperationPaths.uploadStoreProductMedia.method, form, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) }, input.nativeMultipartUpload, { fieldName: "file", fileName, mimeType, parameters: { role } });
+      return userMultipartRequest(accessToken, path, dshOperationPaths.uploadStoreProductMedia.method, form, { ...mutationHeaders(idempotencyKey), "X-Expected-Version": String(expectedVersion) }, input.nativeMultipartUpload, { fieldName: "file", fileName, mimeType, parameters: { role, ...mediaProvenanceParameters(provenance) } });
     },
     async replaceStoreProductMedia(accessToken: string, storeID: string, productID: string, input: ReplaceCatalogProductMediaRequest, expectedVersion: number): Promise<{ product: CatalogProduct; idempotentReplay: boolean }> {
       const normalizedStore = storeID.trim();

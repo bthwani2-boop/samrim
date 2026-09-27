@@ -1,7 +1,8 @@
 "use client";
 
-import type { BaseUnit, CatalogAttributeRule, CatalogAttributeValue, CatalogAttributeValueInput, CatalogCategoryListItem, CatalogCategoryListResponse, CatalogProduct, CatalogProductRegistryResponse, CatalogVariant, CommerceVertical, MeasurementKind } from "@bthwani/dsh";
+import { isMediaProvenanceInputValid, type BaseUnit, type CatalogAttributeRule, type CatalogAttributeValue, type CatalogAttributeValueInput, type CatalogCategoryListItem, type CatalogCategoryListResponse, type CatalogProduct, type CatalogProductRegistryResponse, type CatalogVariant, type CommerceVertical, type MediaProvenanceInput, type MeasurementKind } from "@bthwani/dsh";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type CSSProperties } from "react";
+import { appendMediaProvenance, CatalogMediaProvenanceFields } from "./catalog-media-provenance-fields";
 
 type ProductForm = { verticalId: string; scope: "SHARED" | "STORE_SCOPED"; canonicalName: string; description: string; brand: string; variantTitle: string; measurementKind: MeasurementKind; baseUnit: BaseUnit; categoryIds: ReadonlyArray<string>; identifierType: string; identifierValue: string; active: boolean };
 
@@ -121,6 +122,7 @@ export function CentralCatalog() {
   const [notice, setNotice] = useState("");
   const [uploadRole, setUploadRole] = useState<"primary" | "gallery">("primary");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadProvenance, setUploadProvenance] = useState<MediaProvenanceInput>({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false });
   const [uploadInputKey, setUploadInputKey] = useState(0);
   const listRequestSequence = useRef(0);
   const detailRequestSequence = useRef(0);
@@ -392,15 +394,16 @@ export function CentralCatalog() {
   }
 
   async function uploadMedia() {
-    if (!selected || !uploadFile || busy) return;
+    if (!selected || !uploadFile || busy || !isMediaProvenanceInputValid(uploadProvenance)) return;
     setBusy(true); setError(""); setNotice("");
     const body = new FormData();
     body.set("role", uploadRole);
     body.set("file", uploadFile, uploadFile.name);
+    appendMediaProvenance(body, uploadProvenance);
     try {
       const response = await fetch(`/api/catalog/products/${encodeURIComponent(selected.id)}/media`, { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID(), "X-Expected-Version": String(selected.version) }, body });
       const payload = await parseResponse<{ product: CatalogProduct }>(response);
-      setSelected(payload.product); setForm(toForm(payload.product)); setUploadFile(null); setUploadInputKey((value) => value + 1); setNotice(uploadRole === "primary" ? "تم رفع الصورة الأساسية وربطها بالمنتج." : "تم رفع الصورة وإضافتها إلى المعرض.");
+      setSelected(payload.product); setForm(toForm(payload.product)); setUploadFile(null); setUploadProvenance({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false }); setUploadInputKey((value) => value + 1); setNotice(uploadRole === "primary" ? "تم رفع الصورة الأساسية وربطها بالمنتج." : "تم رفع الصورة وإضافتها إلى المعرض.");
     } catch (nextError) {
       if (nextError && typeof nextError === "object" && (nextError as { status?: number }).status === 409) {
         setError("تغير المنتج قبل رفع الصورة. أُعيدت قراءة السجل الحالي؛ راجع النسخة ثم أعد المحاولة.");
@@ -485,7 +488,7 @@ export function CentralCatalog() {
           <label className="field-label" htmlFor="catalog-base-unit">الوحدة الأساسية<select id="catalog-base-unit" disabled={busy || selected !== null} value={form.baseUnit} onChange={(event) => setForm({ ...form, baseUnit: event.target.value as BaseUnit })}><option value="COUNT">قطعة</option><option value="GRAM">غرام</option><option value="MILLILITER">مل</option></select></label>
           <label className="field-label" htmlFor="catalog-identifier">نوع المعرّف<input id="catalog-identifier" disabled={busy || selected !== null} value={form.identifierType} onChange={(event) => setForm({ ...form, identifierType: event.target.value.toUpperCase() })} /></label>
           <label className="field-label" htmlFor="catalog-identifier-value">قيمة المعرّف<input id="catalog-identifier-value" disabled={busy || selected !== null} value={form.identifierValue} onChange={(event) => setForm({ ...form, identifierValue: event.target.value })} /></label>
-          {selected ? <><p className="muted">الصور محفوظة في مخزن الوسائط المركزي ومربوطة بالمنتج بعد الرفع.</p><div className="catalog-product-media-gallery">{[...selected.media].sort((left, right) => left.ordinal - right.ordinal).map((media) => <figure key={`${media.role}:${media.ordinal}:${media.uri}`}><img className="catalog-media-preview" src={media.uri} alt={`${media.role === "primary" ? "الصورة الأساسية" : "صورة المعرض"} لمنتج ${form.canonicalName}`} loading="lazy" /><figcaption>{media.role === "primary" ? "الصورة الأساسية" : `صورة المعرض ${media.ordinal}`}</figcaption></figure>)}{selected.media.length === 0 ? <p className="muted">لا توجد صور بعد. أنشئ المنتج أولًا ثم ارفع صورته هنا.</p> : null}</div><div className="catalog-media-upload"><label className="field-label" htmlFor="catalog-upload-role">موضع الصورة<select id="catalog-upload-role" disabled={busy} value={uploadRole} onChange={(event) => setUploadRole(event.target.value as "primary" | "gallery")}><option value="primary">الصورة الأساسية</option><option value="gallery">المعرض</option></select></label><label className="field-label" htmlFor="catalog-upload-file">ملف الصورة<input key={uploadInputKey} id="catalog-upload-file" disabled={busy} type="file" accept="image/jpeg,image/png" onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)} /></label><button type="button" className="button button-secondary" disabled={busy || !uploadFile} onClick={() => void uploadMedia()}>رفع الصورة وربطها</button></div></> : <p className="muted">بعد حفظ المنتج، افتح تفاصيله لإرفاق صورة من خلال مخزن الوسائط.</p>}
+          {selected ? <><p className="muted">الصور محفوظة في مخزن الوسائط المركزي ومربوطة بالمنتج بعد الرفع.</p><div className="catalog-product-media-gallery">{[...selected.media].sort((left, right) => left.ordinal - right.ordinal).map((media) => <figure key={`${media.role}:${media.ordinal}:${media.uri}`}><img className="catalog-media-preview" src={media.uri} alt={`${media.role === "primary" ? "الصورة الأساسية" : "صورة المعرض"} لمنتج ${form.canonicalName}`} loading="lazy" /><figcaption>{media.role === "primary" ? "الصورة الأساسية" : `صورة المعرض ${media.ordinal}`}</figcaption></figure>)}{selected.media.length === 0 ? <p className="muted">لا توجد صور بعد. أنشئ المنتج أولًا ثم ارفع صورته هنا.</p> : null}</div><div className="catalog-media-upload"><label className="field-label" htmlFor="catalog-upload-role">موضع الصورة<select id="catalog-upload-role" disabled={busy} value={uploadRole} onChange={(event) => setUploadRole(event.target.value as "primary" | "gallery")}><option value="primary">الصورة الأساسية</option><option value="gallery">المعرض</option></select></label><label className="field-label" htmlFor="catalog-upload-file">ملف الصورة<input key={uploadInputKey} id="catalog-upload-file" disabled={busy} type="file" accept="image/jpeg,image/png" onChange={(event) => { setUploadFile(event.target.files?.[0] ?? null); setUploadProvenance({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false }); }} /></label><CatalogMediaProvenanceFields idPrefix="catalog-product-media" disabled={busy} value={uploadProvenance} onChange={setUploadProvenance} /><button type="button" className="button button-secondary" disabled={busy || !uploadFile || !isMediaProvenanceInputValid(uploadProvenance)} onClick={() => void uploadMedia()}>رفع الصورة وربطها</button></div></> : <p className="muted">بعد حفظ المنتج، افتح تفاصيله لإرفاق صورة من خلال مخزن الوسائط.</p>}
           {selected ? <label className="central-active-toggle"><input type="checkbox" disabled={busy} checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} /> المنتج نشط وقابل للاختيار</label> : null}
           <button type="button" className="button button-primary" disabled={busy || form.scope !== "SHARED" || attributeReadState !== "ready" || !form.canonicalName.trim() || !form.verticalId || form.categoryIds.length === 0} onClick={() => void saveProduct()}>{busy ? "جارٍ الحفظ…" : selected ? "حفظ التعديل" : "إنشاء المنتج"}</button>
           <button type="button" className="button button-secondary" disabled={busy} onClick={() => { writeCatalogLocation({ query: appliedQuery, verticalId: verticalFilter, categoryId: categoryFilter, active: statusFilter, sort }); detailRequestSequence.current += 1; setDetailLoading(false); setEditorOpen(false); setSelected(null); }}>إغلاق التفاصيل</button>

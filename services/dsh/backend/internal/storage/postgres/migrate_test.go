@@ -49,8 +49,8 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 		t.Fatalf("unexpected DSH migration graph size: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.SchemaVersion)
 	}
 	last := records[len(records)-1]
-	if last.Version != postgres.SchemaVersion || last.Name != "073_catalog_media_asset_references.sql" {
-		t.Fatalf("last DSH migration = v%d %q; want v%d 073_catalog_media_asset_references.sql", last.Version, last.Name, postgres.SchemaVersion)
+	if last.Version != postgres.SchemaVersion || last.Name != "075_discovery_content_media_assets.sql" {
+		t.Fatalf("last DSH migration = v%d %q; want v%d 075_discovery_content_media_assets.sql", last.Version, last.Name, postgres.SchemaVersion)
 	}
 	migrationByName := make(map[string]string, len(records))
 	for index, record := range records {
@@ -78,6 +78,19 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 			t.Fatalf("DSH migration 073 is missing the product media asset cutover step: %s", required)
 		}
 	}
+	catalogMediaProvenanceMigration := migrationByName["074_catalog_media_provenance.sql"]
+	for _, required := range []string{"DROP COLUMN image_uri", "DELETE FROM dsh.catalog_media", "request_hash", "rights_attested_by_actor_id", "rights_attested_at", "catalog_media_assets_provenance_chk", "catalog_category_media_assets_provenance_chk"} {
+		if !strings.Contains(catalogMediaProvenanceMigration, required) {
+			t.Fatalf("DSH migration 074 is missing catalog media provenance cutover: %s", required)
+		}
+	}
+	discoveryContentMediaMigration := migrationByName["075_discovery_content_media_assets.sql"]
+	for _, required := range []string{"DROP COLUMN media_uri", "media_asset_id", "discovery_content_media_assets", "rights_attested_by_actor_id", "discovery_content_published_media_chk", "state = 'PAUSED'"} {
+		if !strings.Contains(discoveryContentMediaMigration, required) {
+			t.Fatalf("DSH migration 075 is missing discovery content media ownership cutover: %s", required)
+		}
+	}
+	assertRequiredMigrationOrder(t, records, "072_store_profile_media_provenance.sql", "073_catalog_media_asset_references.sql", "074_catalog_media_provenance.sql", "075_discovery_content_media_assets.sql")
 	if !strings.Contains(migrationByName["068_field_operator_partner_admission.sql"], "admission_requested") || !strings.Contains(migrationByName["068_field_operator_partner_admission.sql"], "joining_case_admission_requested") || !strings.Contains(migrationByName["068_field_operator_partner_admission.sql"], "field-admission-request") {
 		t.Fatal("DSH migration 068 is missing the Field submission and Operator admission state")
 	}

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import type { CreateDiscoveryContentRequest } from "@bthwani/dsh";
+import { isMediaProvenanceInputValid, type MediaProvenanceInput } from "@bthwani/dsh";
 import { createMarketingContentWithMedia, dshErrorPayload, dshHttpStatus, isDshClientError, listMarketingContent } from "../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../src/server/identity/operator-workspace-access";
@@ -62,13 +62,15 @@ export async function POST(request: Request) {
     const startsAt = text("startsAt");
     const ordinal = Number(text("ordinal"));
     const file = form.get("file");
+    const provenance: MediaProvenanceInput = { creator: text("creator"), sourceDescription: text("sourceDescription"), sourceUri: text("sourceUri"), rightsStatement: text("rightsStatement"), rightsUri: text("rightsUri"), rightsAttested: text("rightsAttested") === "true" };
     if (!id || !["BANNER", "CAROUSEL", "SHORT_FORM"].includes(kind) || !titleAr || !["STORE", "PRODUCT", "CATEGORY", "PROMOTION", "INFO"].includes(targetType) || !startsAt || !Number.isSafeInteger(ordinal) || ordinal < 0) return errorResponse("INVALID_INPUT", "content id, kind, title, target type, startsAt and ordinal are required", 400);
+    if (!isMediaProvenanceInputValid(provenance)) return errorResponse("INVALID_INPUT", "valid image source and rights attestation are required", 400);
     if (targetType !== "INFO" && !text("targetId")) return errorResponse("INVALID_INPUT", "targetId is required for this content target", 400);
     if ((kind === "BANNER" || kind === "CAROUSEL") && (!(file instanceof File) || file.size === 0)) return errorResponse("INVALID_INPUT", "an image file is required for banner and carousel content", 400);
     if (file instanceof File && file.size > 10 * 1024 * 1024) return errorResponse("INVALID_INPUT", "image files must be 10 MiB or smaller", 400);
     if (file instanceof File && !["image/jpeg", "image/png"].includes(file.type.toLowerCase())) return errorResponse("INVALID_INPUT", "only JPEG and PNG images are supported", 400);
     const forward = new FormData();
-    for (const name of ["id", "kind", "titleAr", "bodyAr", "targetType", "targetId", "serviceCityId", "startsAt", "endsAt", "ordinal"]) {
+    for (const name of ["id", "kind", "titleAr", "bodyAr", "targetType", "targetId", "serviceCityId", "startsAt", "endsAt", "ordinal", "creator", "sourceDescription", "sourceUri", "rightsStatement", "rightsUri", "rightsAttested"]) {
       const value = text(name);
       if (value) forward.append(name, value);
     }

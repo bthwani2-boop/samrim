@@ -17,6 +17,7 @@ type CatalogCategoryMediaUploadInput struct {
 	CategoryID, IdempotencyKey, CorrelationID, Reason string
 	ExpectedVersion                                   int
 	ContentType                                       string
+	Provenance                                        media.Provenance
 	Bytes                                             []byte
 }
 
@@ -31,7 +32,9 @@ func (s *Service) UploadCatalogCategoryMedia(ctx context.Context, actingActorID 
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
 	input.CorrelationID = strings.TrimSpace(input.CorrelationID)
 	input.Reason = strings.TrimSpace(input.Reason)
-	if input.CategoryID == "" || input.IdempotencyKey == "" || input.CorrelationID == "" || utf8.RuneCountInString(input.Reason) < 5 || utf8.RuneCountInString(input.Reason) > 500 || input.ExpectedVersion < 1 {
+	actingActorID = strings.TrimSpace(actingActorID)
+	input.Provenance = input.Provenance.Normalized()
+	if input.CategoryID == "" || input.IdempotencyKey == "" || input.CorrelationID == "" || utf8.RuneCountInString(input.Reason) < 5 || utf8.RuneCountInString(input.Reason) > 500 || input.ExpectedVersion < 1 || input.Provenance.Validate() != nil {
 		return postgres.CatalogCategoryRecord{}, ErrCatalogMediaUploadInvalid
 	}
 	contentType, _, _, err := media.ValidateImageBytes(input.Bytes)
@@ -48,8 +51,11 @@ func (s *Service) UploadCatalogCategoryMedia(ctx context.Context, actingActorID 
 	if uri == "" {
 		return postgres.CatalogCategoryRecord{}, ErrCatalogMediaStorageUnavailable
 	}
+	requestHash := postgres.HashCatalogCategoryMediaUploadRequest(input.CategoryID, input.IdempotencyKey, actingActorID, input.ExpectedVersion, contentSHA256, contentType, input.Reason, input.Provenance)
 	assetHash := sha256.Sum256([]byte(input.CategoryID + "\x00" + input.IdempotencyKey))
-	asset := postgres.CatalogCategoryMediaAssetInput{ID: "category_media_" + hex.EncodeToString(assetHash[:]), CategoryID: input.CategoryID, IdempotencyKey: input.IdempotencyKey, ExpectedVersion: input.ExpectedVersion, ObjectKey: objectKey, URI: uri, ContentSHA256: contentSHA256, ContentType: contentType, ByteSize: int64(len(input.Bytes)), Reason: input.Reason}
+	asset := postgres.CatalogCategoryMediaAssetInput{ID: "category_media_" + hex.EncodeToString(assetHash[:]), CategoryID: input.CategoryID, IdempotencyKey: input.IdempotencyKey, ExpectedVersion: input.ExpectedVersion, ObjectKey: objectKey, URI: uri, ContentSHA256: contentSHA256, ContentType: contentType, ByteSize: int64(len(input.Bytes)), Reason: input.Reason, RequestHash: requestHash,
+		Creator: input.Provenance.Creator, SourceDescription: input.Provenance.SourceDescription, SourceURI: input.Provenance.SourceURI,
+		RightsStatement: input.Provenance.RightsStatement, RightsURI: input.Provenance.RightsURI, RightsAttestedByActorID: actingActorID}
 	registered, replayed, err := postgres.RegisterCatalogCategoryMediaAssetPending(ctx, s.db, asset)
 	if err != nil {
 		return postgres.CatalogCategoryRecord{}, err

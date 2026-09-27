@@ -138,9 +138,13 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	marketingServer, err := transporthttp.NewMarketingWithDependencies(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, mediaStore)
+	if err != nil {
+		log.Fatal(err)
+	}
 	reconcileMediaStorage := func(ctx context.Context) error {
 		var firstErr error
-		for _, reconcile := range []func(context.Context) error{catalogServer.ReconcileMediaStorage, joiningCaseServer.ReconcileStoreProfileMedia} {
+		for _, reconcile := range []func(context.Context) error{catalogServer.ReconcileMediaStorage, joiningCaseServer.ReconcileStoreProfileMedia, marketingServer.ReconcileMediaStorage} {
 			if err := reconcile(ctx); err != nil && firstErr == nil {
 				firstErr = err
 			}
@@ -153,10 +157,6 @@ func main() {
 	}
 	cleanupCancel()
 	clientFavoritesServer, err := transporthttp.NewClientFavorites(identityClient, database)
-	if err != nil {
-		log.Fatal(err)
-	}
-	marketingServer, err := transporthttp.NewMarketingWithDependencies(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, mediaStore)
 	if err != nil {
 		log.Fatal(err)
 	}

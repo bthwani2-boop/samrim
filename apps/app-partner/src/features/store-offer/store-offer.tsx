@@ -1,6 +1,6 @@
 import { borders, radius, type resolveTheme, sizing, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type BaseUnit, baseUnitLabel, type CatalogAttributeRule, type CatalogAttributeValueInput, type CatalogCategoryListResponse, type CatalogMedia, type CatalogProduct, type CatalogProductProposal, type CatalogStoreOffer, type CatalogVariant, type CommerceVertical, catalogProductProposalStateLabel, createDshMobileClient, type DshImageUploadInput, formatMoney, type MeasurementKind, measurementKindLabel as sharedMeasurementKindLabel, pricingBasisLabel as sharedPricingBasisLabel, quantityPolicyLabel as sharedQuantityPolicyLabel, storeOfferPublicationStateLabel } from "@bthwani/dsh";
+import { type BaseUnit, baseUnitLabel, type CatalogAttributeRule, type CatalogAttributeValueInput, type CatalogCategoryListResponse, type CatalogMedia, type CatalogProduct, type CatalogProductProposal, type CatalogStoreOffer, type CatalogVariant, type CommerceVertical, catalogProductProposalStateLabel, createDshMobileClient, type DshImageUploadInput, isMediaProvenanceInputValid, type MediaProvenanceInput, formatMoney, type MeasurementKind, measurementKindLabel as sharedMeasurementKindLabel, pricingBasisLabel as sharedPricingBasisLabel, quantityPolicyLabel as sharedQuantityPolicyLabel, storeOfferPublicationStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -11,9 +11,30 @@ type OfferState = { kind: "loading" } | { kind: "ready"; offers: ReadonlyArray<C
 type QuantityPolicy = "DISCRETE" | "MEASURED" | "VARIABLE_MEASURE";
 type PricingBasis = "PER_UNIT" | "PER_MEASURE";
 type InventoryPolicy = "AVAILABILITY_ONLY" | "QUANTITY_ON_HAND";
-type PendingProductMedia = Readonly<{ productID: string; expectedVersion: number; image: DshImageUploadInput }>;
+type PendingProductMedia = Readonly<{ productID: string; expectedVersion: number; image: DshImageUploadInput; provenance: MediaProvenanceInput; idempotencyKey: string }>;
 type AttributeDrafts = Readonly<Record<string, string>>;
 type AttributeInputSet = Readonly<{ productValues: ReadonlyArray<CatalogAttributeValueInput>; variantValues: ReadonlyArray<CatalogAttributeValueInput> }>;
+
+function emptyMediaProvenance(): MediaProvenanceInput {
+  return { creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false };
+}
+
+function MediaProvenanceFields({ value, onChange, disabled, styles }: {
+  value: MediaProvenanceInput;
+  onChange: (value: MediaProvenanceInput) => void;
+  disabled: boolean;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  return <View style={styles.provenanceFields}>
+    <Text style={styles.fieldLabel}>مصدر الصورة وحقوق استخدامها</Text>
+    <TextInput accessibilityLabel="اسم المنشئ أو المصوّر" editable={!disabled} maxLength={200} onChangeText={(creator) => onChange({ ...value, creator })} placeholder="اسم المنشئ أو المصوّر" value={value.creator} style={[styles.input, disabled && styles.disabledInput]} />
+    <TextInput accessibilityLabel="مصدر الصورة" editable={!disabled} maxLength={1000} multiline onChangeText={(sourceDescription) => onChange({ ...value, sourceDescription })} placeholder="مصدر الصورة ووصفه" value={value.sourceDescription} style={[styles.input, disabled && styles.disabledInput]} />
+    <TextInput accessibilityLabel="رابط مصدر الصورة (اختياري)" autoCapitalize="none" editable={!disabled} keyboardType="url" maxLength={2048} onChangeText={(sourceUri) => onChange({ ...value, sourceUri })} placeholder="رابط المصدر (اختياري)" value={value.sourceUri ?? ""} style={[styles.input, disabled && styles.disabledInput]} />
+    <TextInput accessibilityLabel="بيان الإذن أو الترخيص" editable={!disabled} maxLength={2000} multiline onChangeText={(rightsStatement) => onChange({ ...value, rightsStatement })} placeholder="بيان الإذن أو الترخيص الذي يسمح بعرض الصورة" value={value.rightsStatement} style={[styles.input, disabled && styles.disabledInput]} />
+    <TextInput accessibilityLabel="رابط بيان الحقوق (اختياري)" autoCapitalize="none" editable={!disabled} keyboardType="url" maxLength={2048} onChangeText={(rightsUri) => onChange({ ...value, rightsUri })} placeholder="رابط بيان الحقوق (اختياري)" value={value.rightsUri ?? ""} style={[styles.input, disabled && styles.disabledInput]} />
+    <View style={styles.provenanceToggle}><Text style={styles.muted}>أقرّ بوجود إذن يسمح بعرض هذه الصورة</Text><Switch accessibilityLabel="إقرار الإذن بعرض الصورة" disabled={disabled} onValueChange={(rightsAttested) => onChange({ ...value, rightsAttested })} value={value.rightsAttested} /></View>
+  </View>;
+}
 
 function sortStoreOffersByCreation(offers: ReadonlyArray<CatalogStoreOffer>): CatalogStoreOffer[] {
   return [...offers].sort((left, right) => {
@@ -111,9 +132,14 @@ const theme = useAppearanceTheme();
   const [selectedProductName, setSelectedProductName] = useState("");
   const [selectedProductDescription, setSelectedProductDescription] = useState("");
   const [storeProductImage, setStoreProductImage] = useState<DshImageUploadInput | null>(null);
+  const [storeProductImageProvenance, setStoreProductImageProvenance] = useState<MediaProvenanceInput>(emptyMediaProvenance());
+  const [storeProductImageIdempotencyKey, setStoreProductImageIdempotencyKey] = useState("");
   const [pendingProductMedia, setPendingProductMedia] = useState<PendingProductMedia | null>(null);
   const [mediaDraft, setMediaDraft] = useState<ReadonlyArray<CatalogMedia>>([]);
   const [mediaUpload, setMediaUpload] = useState<DshImageUploadInput | null>(null);
+  const [mediaUploadProvenance, setMediaUploadProvenance] = useState<MediaProvenanceInput>(emptyMediaProvenance());
+  const [mediaUploadIdempotencyKey, setMediaUploadIdempotencyKey] = useState("");
+  const [mediaUploadAttempted, setMediaUploadAttempted] = useState(false);
   const [mediaUploadRole, setMediaUploadRole] = useState<"primary" | "gallery">("gallery");
   const [mediaBusy, setMediaBusy] = useState(false);
   const mediaBusyRef = useRef(false);
@@ -293,7 +319,8 @@ const theme = useAppearanceTheme();
   }
 
   async function createStoreProduct() {
-    if (busy || catalogModel !== "STORE_LOCAL_CATALOG" || !storeProductName.trim() || !verticalId || !storeProductMeasurementKind || !storeProductBaseUnit) return;
+    if (busy || pendingProductMedia || catalogModel !== "STORE_LOCAL_CATALOG" || !storeProductName.trim() || !verticalId || !storeProductMeasurementKind || !storeProductBaseUnit) return;
+    if (storeProductImage && (!storeProductImageIdempotencyKey || !isMediaProvenanceInputValid(storeProductImageProvenance))) { setError("أكمل مصدر الصورة وبيان الحقوق وأكّد الإذن قبل إنشاء المنتج بصورته."); return; }
     setBusy(true); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
@@ -301,18 +328,18 @@ const theme = useAppearanceTheme();
       let created = await dshClient().createStoreScopedProduct(token, storeId, { canonicalName: storeProductName, description: storeProductDescription, verticalId, scope: "STORE_SCOPED", storeId, variantTitle: "الافتراضي", measurementKind: storeProductMeasurementKind, baseUnit: storeProductBaseUnit, categoryIds: [] });
       if (image) {
         try {
-          created = await dshClient().uploadStoreProductMedia(token, storeId, created.product.id, image, "primary", created.product.version);
+          created = await dshClient().uploadStoreProductMedia(token, storeId, created.product.id, image, "primary", storeProductImageProvenance, created.product.version, storeProductImageIdempotencyKey);
           setPendingProductMedia(null);
         } catch (uploadError) {
           reportError(uploadError);
-          setPendingProductMedia({ productID: created.product.id, expectedVersion: created.product.version, image });
+          setPendingProductMedia({ productID: created.product.id, expectedVersion: created.product.version, image, provenance: storeProductImageProvenance, idempotencyKey: storeProductImageIdempotencyKey });
           setError("تم إنشاء المنتج، لكن رفع الصورة تعذر. أعد المحاولة من زر رفع الصورة.");
           const defaultVariant = created.product.variants[0];
           if (defaultVariant) selectProduct(created.product, defaultVariant);
           return;
         }
       }
-      setStoreProductName(""); setStoreProductDescription(""); setStoreProductImage(null); setBusy(false);
+      setStoreProductName(""); setStoreProductDescription(""); setStoreProductImage(null); setStoreProductImageProvenance(emptyMediaProvenance()); setStoreProductImageIdempotencyKey(""); setBusy(false);
       const defaultVariant = created.product.variants[0];
       if (defaultVariant) selectProduct(created.product, defaultVariant);
     }
@@ -324,12 +351,12 @@ const theme = useAppearanceTheme();
     setBusy(true); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const result = await dshClient().uploadStoreProductMedia(token, storeId, pendingProductMedia.productID, pendingProductMedia.image, "primary", pendingProductMedia.expectedVersion);
+      const result = await dshClient().uploadStoreProductMedia(token, storeId, pendingProductMedia.productID, pendingProductMedia.image, "primary", pendingProductMedia.provenance, pendingProductMedia.expectedVersion, pendingProductMedia.idempotencyKey);
       setSelectedProduct(result.product);
       setSelectedProductName(result.product.canonicalName);
       setSelectedProductDescription(result.product.description ?? "");
       setState((current) => current.kind === "ready" ? { ...current, offers: current.offers.map((offer) => offer.productId === result.product.id ? { ...offer, productName: result.product.canonicalName, productDescription: result.product.description ?? "", brand: result.product.brand ?? null, productActive: result.product.active, productVersion: result.product.version, media: result.product.media } : offer) } : current);
-      setPendingProductMedia(null); setStoreProductImage(null);
+      setPendingProductMedia(null); setStoreProductImage(null); setStoreProductImageProvenance(emptyMediaProvenance()); setStoreProductImageIdempotencyKey("");
     } catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
   }
 
@@ -354,7 +381,8 @@ const theme = useAppearanceTheme();
         blob,
       } satisfies DshImageUploadInput;
       setStoreProductImage(image);
-      setPendingProductMedia((current) => current ? { ...current, image } : current);
+      setStoreProductImageProvenance(emptyMediaProvenance());
+      setStoreProductImageIdempotencyKey(Crypto.randomUUID());
       setError("");
     } catch (nextError) {
       reportError(nextError);
@@ -369,6 +397,9 @@ const theme = useAppearanceTheme();
     setSelectedVariant(variant);
     setMediaDraft(product.media);
     setMediaUpload(null);
+    setMediaUploadProvenance(emptyMediaProvenance());
+    setMediaUploadIdempotencyKey("");
+    setMediaUploadAttempted(false);
     setMediaUploadRole("gallery");
     setQuantityPolicy(""); setPricingBasis(""); setQuantityMinBaseUnits(""); setQuantityMaxBaseUnits(""); setQuantityStepBaseUnits(""); setPricingUnitBaseUnits("");
   }
@@ -402,6 +433,9 @@ const theme = useAppearanceTheme();
       const imageResponse = await fetch(asset.uri);
       if (!imageResponse.ok) throw new Error("PRODUCT_IMAGE_READ_FAILED");
       setMediaUpload({ uri: asset.uri, name: asset.fileName ?? "product-image.jpg", type: asset.mimeType ?? "image/jpeg", blob: await imageResponse.blob() });
+      setMediaUploadProvenance(emptyMediaProvenance());
+      setMediaUploadIdempotencyKey(Crypto.randomUUID());
+      setMediaUploadAttempted(false);
       setError("");
     } catch (nextError) {
       reportError(nextError);
@@ -410,15 +444,25 @@ const theme = useAppearanceTheme();
   }
 
   async function uploadSelectedProductMedia() {
-    if (!mediaUpload || !selectedProduct || selectedProduct.scope !== "STORE_SCOPED" || selectedProduct.storeId !== storeId || !beginMediaMutation()) return;
+    if (!mediaUpload || !selectedProduct || selectedProduct.scope !== "STORE_SCOPED" || selectedProduct.storeId !== storeId) return;
+    if (!isMediaProvenanceInputValid(mediaUploadProvenance)) { setError("أكمل مصدر الصورة وبيان الحقوق وأكّد الإذن قبل الرفع."); return; }
+    if (!beginMediaMutation()) return;
+    setMediaUploadAttempted(true);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const result = await dshClient().uploadStoreProductMedia(token, storeId, selectedProduct.id, mediaUpload, mediaUploadRole, selectedProduct.version);
+      const result = await dshClient().uploadStoreProductMedia(token, storeId, selectedProduct.id, mediaUpload, mediaUploadRole, mediaUploadProvenance, selectedProduct.version, mediaUploadIdempotencyKey);
       replaceProductInSearch(result.product);
       setMediaUpload(null);
+      setMediaUploadProvenance(emptyMediaProvenance());
+      setMediaUploadIdempotencyKey("");
+      setMediaUploadAttempted(false);
     } catch (nextError) {
       reportError(nextError);
+      if (nextError && typeof nextError === "object" && (nextError as { kind?: unknown; status?: unknown }).kind === "http" && typeof (nextError as { status?: unknown }).status === "number" && ((nextError as { status: number }).status < 500)) {
+        setMediaUploadAttempted(false);
+        setMediaUploadIdempotencyKey(Crypto.randomUUID());
+      }
       setError(errorText(nextError));
     } finally { endMediaMutation(); }
   }
@@ -499,8 +543,8 @@ const theme = useAppearanceTheme();
       {searchSubmitted && !products.length && !error ? <Text style={styles.muted}>لا توجد نتائج مطابقة. جرّب اسمًا آخر أو امسح البحث.</Text> : null}
        {catalogModel === "SHARED_CATALOG" && products.length ? <><View style={styles.productList}>{products.map((product) => { const primaryMedia = getPrimaryMedia(product.media); return <View key={product.id} style={styles.product}><View style={styles.productHeader}>{primaryMedia ? <Image accessibilityLabel={`صورة ${product.canonicalName}`} source={{ uri: primaryMedia.uri }} resizeMode="cover" style={styles.productImage} /> : <View accessibilityLabel={`لا توجد صورة لـ ${product.canonicalName}`} style={styles.productImagePlaceholder}><Text style={styles.imagePlaceholderText}>لا توجد صورة</Text></View>}<View style={styles.productCopy}><Text style={styles.itemTitle}>{product.canonicalName}</Text><Text style={styles.muted}>{product.variants.length} نسخة متاحة للاختيار</Text></View></View>{product.variants.map((variant) => <BthwaniChip key={variant.id} label={`${variant.title} · ${measurementKindLabel(variant.measurementKind, variant.baseUnit)}`} onPress={() => selectProduct(product, variant)} selected={selectedVariant?.id === variant.id} />)}</View>; })}</View>{productNextCursor ? <BthwaniButton busy={busy} disabled={busy} label="تحميل المزيد من المنتجات" onPress={() => void searchProducts(productNextCursor, true)} variant="secondary" /> : null}</> : null}
       {selectedVariant && selectedProduct ? <View style={styles.form}><Text style={styles.selected}>المحدد: {selectedProduct.canonicalName} · {selectedVariant.title}</Text><Text style={styles.muted}>هوية القياس: {measurementKindLabel(selectedVariant.measurementKind, selectedVariant.baseUnit)}</Text>{selectedVariant.measurementKind === "VARIABLE_MEASURE" ? <Text style={styles.warning}>القياس المتغير غير متاح للطلب حتى يكتمل مسار الكمية الفعلية.</Text> : <><Text style={styles.fieldLabel}>سياسة الكمية</Text><View style={styles.choiceRow}>{([selectedVariant.measurementKind] as QuantityPolicy[]).map((value) => <BthwaniChip key={value} label={quantityPolicyLabel(value)} onPress={() => setQuantityPolicy(value)} selected={quantityPolicy === value} />)}</View><Text style={styles.fieldLabel}>أساس التسعير</Text><View style={styles.choiceRow}>{([expectedPricingBasis] as PricingBasis[]).map((value) => <BthwaniChip key={value} label={pricingBasisLabel(value)} onPress={() => setPricingBasis(value)} selected={pricingBasis === value} />)}</View><Text style={styles.fieldLabel}>سياسة المخزون</Text><View style={styles.choiceRow}><BthwaniChip label="التوافر فقط" onPress={() => { setInventoryPolicy("AVAILABILITY_ONLY"); setInventoryOnHandBaseUnits("0"); }} selected={inventoryPolicy === "AVAILABILITY_ONLY"} /><BthwaniChip label="كمية فعلية" onPress={() => setInventoryPolicy("QUANTITY_ON_HAND")} selected={inventoryPolicy === "QUANTITY_ON_HAND"} /></View><TextInput accessibilityLabel="الكمية المتاحة عند الإنشاء" editable={!busy && inventoryPolicy === "QUANTITY_ON_HAND"} keyboardType="number-pad" onChangeText={(value) => setInventoryOnHandBaseUnits(toAsciiDigits(value))} placeholder="الكمية المتاحة عند الإنشاء" value={inventoryOnHandBaseUnits} style={[styles.input, styles.numericInput, busy && styles.disabledInput]} /><TextInput accessibilityLabel="الحد الأدنى للكمية" editable={!busy} keyboardType="number-pad" onChangeText={(value) => setQuantityMinBaseUnits(toAsciiDigits(value))} placeholder="الحد الأدنى للكمية" value={quantityMinBaseUnits} style={[styles.input, styles.numericInput, busy && styles.disabledInput]} /><TextInput accessibilityLabel="الحد الأعلى للكمية" editable={!busy} keyboardType="number-pad" onChangeText={(value) => setQuantityMaxBaseUnits(toAsciiDigits(value))} placeholder="الحد الأعلى للكمية" value={quantityMaxBaseUnits} style={[styles.input, styles.numericInput, busy && styles.disabledInput]} /><TextInput accessibilityLabel="خطوة الكمية" editable={!busy} keyboardType="number-pad" onChangeText={(value) => setQuantityStepBaseUnits(toAsciiDigits(value))} placeholder="خطوة الكمية" value={quantityStepBaseUnits} style={[styles.input, styles.numericInput, busy && styles.disabledInput]} /><TextInput accessibilityLabel="وحدة التسعير الأساسية" editable={!busy} keyboardType="number-pad" onChangeText={(value) => setPricingUnitBaseUnits(toAsciiDigits(value))} placeholder="وحدة التسعير الأساسية" value={pricingUnitBaseUnits} style={[styles.input, styles.numericInput, busy && styles.disabledInput]} /><TextInput accessibilityLabel="السعر بالريال اليمني" editable={!busy} keyboardType="number-pad" onChangeText={(value) => setPriceMinor(toAsciiDigits(value))} placeholder="السعر بالريال اليمني" value={priceMinor} style={[styles.input, styles.numericInput, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={!canAdd} label="إضافة عرض للمتجر" onPress={() => void addOffer()} /></>}</View> : null}
-      {selectedProduct?.scope === "STORE_SCOPED" && selectedProduct.storeId === storeId ? <View style={styles.mediaManager} accessibilityLabel={`إدارة صور ${selectedProduct.canonicalName}`}><Text style={styles.itemTitle}>صور المنتج: {selectedProduct.canonicalName}</Text><Text style={styles.muted}>عدّل بيانات منتج المتجر وصوره، ثم احفظ التغييرات.</Text><TextInput accessibilityLabel="اسم المنتج" editable={!busy} onChangeText={setSelectedProductName} value={selectedProductName} style={[styles.input, busy && styles.disabledInput]} /><TextInput accessibilityLabel="وصف المنتج" editable={!busy} maxLength={4000} multiline onChangeText={setSelectedProductDescription} value={selectedProductDescription} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={!selectedProductName.trim()} label="حفظ بيانات المنتج" onPress={() => void saveSelectedStoreProduct()} variant="secondary" />{mediaDraft.length ? mediaDraft.map((item, index) => <View key={item.assetId} style={styles.mediaRow}><Image accessibilityLabel={`${item.role === "primary" ? "الصورة الأساسية" : "صورة المعرض"} ${index + 1}`} source={{ uri: item.uri }} resizeMode="cover" style={styles.mediaImage} /><View style={styles.mediaCopy}><Text style={styles.muted}>{item.role === "primary" ? "أساسية" : "معرض"} · {index + 1}</Text><Text numberOfLines={1} style={styles.muted}>{item.uri}</Text></View><BthwaniButton disabled={mediaBusy || index === 0} label="أعلى" onPress={() => moveMedia(index, -1)} variant="quiet" /><BthwaniButton disabled={mediaBusy || index === mediaDraft.length - 1 || index === 0} label="أسفل" onPress={() => moveMedia(index, 1)} variant="quiet" /><BthwaniButton disabled={mediaBusy} label="حذف" onPress={() => removeMedia(index)} variant="danger" /></View>) : <Text style={styles.muted}>لا توجد صور لهذا المنتج.</Text>}<View style={styles.choiceRow}><BthwaniChip label="صورة أساسية" selected={mediaUploadRole === "primary"} onPress={() => setMediaUploadRole("primary")} /><BthwaniChip label="صورة معرض" selected={mediaUploadRole === "gallery"} onPress={() => setMediaUploadRole("gallery")} /></View><BthwaniButton busy={mediaBusy} disabled={mediaBusy} label="اختيار صورة" onPress={() => void pickSelectedProductMedia()} variant="secondary" />{mediaUpload ? <View style={styles.mediaUploadPreview}><Image accessibilityLabel="معاينة الصورة الجديدة" source={{ uri: mediaUpload.uri }} resizeMode="cover" style={styles.mediaImage} /><BthwaniButton busy={mediaBusy} disabled={mediaBusy} label="رفع الصورة" onPress={() => void uploadSelectedProductMedia()} /></View> : null}<BthwaniButton busy={mediaBusy} disabled={mediaBusy} label="حفظ معرض الصور" onPress={() => void saveSelectedProductMedia()} variant="secondary" /></View> : null}
-      {catalogModel === "STORE_LOCAL_CATALOG" ? <View style={styles.managementBlock}><Text style={styles.itemTitle}>إضافة منتج لقائمة المتجر</Text><Text style={styles.muted}>الاسم والوصف والصورة والنسخة تخص هذا المتجر. أقسام القائمة تنظّم منتجاته للعميل.</Text><TextInput accessibilityLabel="اسم منتج المتجر" editable={!busy} onChangeText={setStoreProductName} placeholder="اسم المنتج" value={storeProductName} style={[styles.input, busy && styles.disabledInput]} /><TextInput accessibilityLabel="وصف منتج المتجر" editable={!busy} maxLength={4000} multiline onChangeText={setStoreProductDescription} placeholder="وصف المنتج (اختياري)" value={storeProductDescription} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={busy} label={storeProductImage ? "تغيير صورة المنتج" : "اختيار صورة من الجهاز"} onPress={() => void pickStoreProductImage()} variant="secondary" />{storeProductImage ? <Image accessibilityLabel={`معاينة صورة ${storeProductName || "المنتج"}`} source={{ uri: storeProductImage.uri }} resizeMode="cover" style={styles.productImage} /> : <Text style={styles.muted}>اختر صورة لرفعها مع المنتج أو اتركه دون صورة.</Text>}{pendingProductMedia ? <BthwaniButton busy={busy} disabled={busy} label="إعادة رفع صورة المنتج" onPress={() => void retryProductMedia()} /> : null}<Text style={styles.fieldLabel}>هوية القياس</Text><View style={styles.choiceList}>{(["DISCRETE", "MEASURED", "VARIABLE_MEASURE"] as MeasurementKind[]).map((value) => <BthwaniChip key={value} label={measurementKindLabel(value)} onPress={() => { setStoreProductMeasurementKind(value); setStoreProductBaseUnit(""); }} selected={storeProductMeasurementKind === value} />)}</View><Text style={styles.fieldLabel}>الوحدة الأساسية</Text><View style={styles.choiceRow}>{baseUnitOptions(storeProductMeasurementKind).map((value) => <BthwaniChip key={value} label={baseUnitLabel(value)} onPress={() => setStoreProductBaseUnit(value)} selected={storeProductBaseUnit === value} />)}</View><BthwaniButton busy={busy} disabled={!storeProductName.trim() || !verticalId || !storeProductMeasurementKind || !storeProductBaseUnit} label="إنشاء منتج المتجر" onPress={() => void createStoreProduct()} variant="secondary" /></View> : null}
+      {selectedProduct?.scope === "STORE_SCOPED" && selectedProduct.storeId === storeId ? <View style={styles.mediaManager} accessibilityLabel={`إدارة صور ${selectedProduct.canonicalName}`}><Text style={styles.itemTitle}>صور المنتج: {selectedProduct.canonicalName}</Text><Text style={styles.muted}>عدّل بيانات منتج المتجر وصوره، ثم احفظ التغييرات.</Text><TextInput accessibilityLabel="اسم المنتج" editable={!busy} onChangeText={setSelectedProductName} value={selectedProductName} style={[styles.input, busy && styles.disabledInput]} /><TextInput accessibilityLabel="وصف المنتج" editable={!busy} maxLength={4000} multiline onChangeText={setSelectedProductDescription} value={selectedProductDescription} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={!selectedProductName.trim()} label="حفظ بيانات المنتج" onPress={() => void saveSelectedStoreProduct()} variant="secondary" />{mediaDraft.length ? mediaDraft.map((item, index) => <View key={item.assetId} style={styles.mediaRow}><Image accessibilityLabel={`${item.role === "primary" ? "الصورة الأساسية" : "صورة المعرض"} ${index + 1}`} source={{ uri: item.uri }} resizeMode="cover" style={styles.mediaImage} /><View style={styles.mediaCopy}><Text style={styles.muted}>{item.role === "primary" ? "أساسية" : "معرض"} · {index + 1}</Text><Text numberOfLines={1} style={styles.muted}>{item.uri}</Text></View><BthwaniButton disabled={mediaBusy || index === 0} label="أعلى" onPress={() => moveMedia(index, -1)} variant="quiet" /><BthwaniButton disabled={mediaBusy || index === mediaDraft.length - 1 || index === 0} label="أسفل" onPress={() => moveMedia(index, 1)} variant="quiet" /><BthwaniButton disabled={mediaBusy} label="حذف" onPress={() => removeMedia(index)} variant="danger" /></View>) : <Text style={styles.muted}>لا توجد صور لهذا المنتج.</Text>}<View style={styles.choiceRow}><BthwaniChip disabled={mediaUploadAttempted} label="صورة أساسية" selected={mediaUploadRole === "primary"} onPress={() => setMediaUploadRole("primary")} /><BthwaniChip disabled={mediaUploadAttempted} label="صورة معرض" selected={mediaUploadRole === "gallery"} onPress={() => setMediaUploadRole("gallery")} /></View><BthwaniButton busy={mediaBusy} disabled={mediaBusy || mediaUploadAttempted} label="اختيار صورة" onPress={() => void pickSelectedProductMedia()} variant="secondary" />{mediaUpload ? <View style={styles.mediaUploadPreview}><Image accessibilityLabel="معاينة الصورة الجديدة" source={{ uri: mediaUpload.uri }} resizeMode="cover" style={styles.mediaImage} /><BthwaniButton busy={mediaBusy} disabled={mediaBusy || !mediaUploadIdempotencyKey || !isMediaProvenanceInputValid(mediaUploadProvenance)} label={mediaUploadAttempted ? "إعادة محاولة الرفع" : "رفع الصورة"} onPress={() => void uploadSelectedProductMedia()} /></View> : null}{mediaUpload ? <MediaProvenanceFields value={mediaUploadProvenance} onChange={setMediaUploadProvenance} disabled={mediaBusy || mediaUploadAttempted} styles={styles} /> : null}<BthwaniButton busy={mediaBusy} disabled={mediaBusy} label="حفظ معرض الصور" onPress={() => void saveSelectedProductMedia()} variant="secondary" /></View> : null}
+      {catalogModel === "STORE_LOCAL_CATALOG" ? <View style={styles.managementBlock}><Text style={styles.itemTitle}>إضافة منتج لقائمة المتجر</Text><Text style={styles.muted}>الاسم والوصف والصورة والنسخة تخص هذا المتجر. أقسام القائمة تنظّم منتجاته للعميل.</Text><TextInput accessibilityLabel="اسم منتج المتجر" editable={!busy} onChangeText={setStoreProductName} placeholder="اسم المنتج" value={storeProductName} style={[styles.input, busy && styles.disabledInput]} /><TextInput accessibilityLabel="وصف منتج المتجر" editable={!busy} maxLength={4000} multiline onChangeText={setStoreProductDescription} placeholder="وصف المنتج (اختياري)" value={storeProductDescription} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={busy || Boolean(pendingProductMedia)} label={storeProductImage ? "تغيير صورة المنتج" : "اختيار صورة من الجهاز"} onPress={() => void pickStoreProductImage()} variant="secondary" />{storeProductImage ? <Image accessibilityLabel={`معاينة صورة ${storeProductName || "المنتج"}`} source={{ uri: storeProductImage.uri }} resizeMode="cover" style={styles.productImage} /> : <Text style={styles.muted}>اختر صورة لرفعها مع المنتج أو اتركه دون صورة.</Text>}{storeProductImage ? <MediaProvenanceFields value={storeProductImageProvenance} onChange={setStoreProductImageProvenance} disabled={busy || Boolean(pendingProductMedia)} styles={styles} /> : null}{pendingProductMedia ? <BthwaniButton busy={busy} disabled={busy} label="إعادة رفع صورة المنتج" onPress={() => void retryProductMedia()} /> : null}<Text style={styles.fieldLabel}>هوية القياس</Text><View style={styles.choiceList}>{(["DISCRETE", "MEASURED", "VARIABLE_MEASURE"] as MeasurementKind[]).map((value) => <BthwaniChip key={value} label={measurementKindLabel(value)} onPress={() => { setStoreProductMeasurementKind(value); setStoreProductBaseUnit(""); }} selected={storeProductMeasurementKind === value} />)}</View><Text style={styles.fieldLabel}>الوحدة الأساسية</Text><View style={styles.choiceRow}>{baseUnitOptions(storeProductMeasurementKind).map((value) => <BthwaniChip key={value} label={baseUnitLabel(value)} onPress={() => setStoreProductBaseUnit(value)} selected={storeProductBaseUnit === value} />)}</View><BthwaniButton busy={busy} disabled={busy || Boolean(pendingProductMedia) || !storeProductName.trim() || !verticalId || !storeProductMeasurementKind || !storeProductBaseUnit || (Boolean(storeProductImage) && !isMediaProvenanceInputValid(storeProductImageProvenance))} label="إنشاء منتج المتجر" onPress={() => void createStoreProduct()} variant="secondary" /></View> : null}
        {catalogModel === "SHARED_CATALOG" ? <><View style={styles.managementBlock}><Text style={styles.itemTitle}>اقتراح منتج للمراجعة</Text><Text style={styles.muted}>أرسل اسم المنتج وتصنيفه للمراجعة؛ لا يظهر قبل اعتماد المراجعة.</Text><TextInput accessibilityLabel="اسم المقترح" editable={!busy} onChangeText={setProposalName} placeholder="اسم المنتج المقترح" value={proposalName} style={[styles.input, busy && styles.disabledInput]} /><Text style={styles.muted}>{verticals.find((vertical) => vertical.id === verticalId)?.nameAr ?? ""}</Text><Text style={styles.fieldLabel}>التصنيف</Text><View style={styles.choiceList}>{proposalCategories.map((category) => <BthwaniChip key={category.id} label={category.nameAr} onPress={() => { setProposalCategoryID(category.id); setProposalAttributeDrafts({}); }} selected={proposalCategoryID === category.id} />)}</View><TextInput accessibilityLabel="بحث في الفئات" placeholder="ابحث باسم الفئة" value={proposalCategoryQuery} onChangeText={setProposalCategoryQuery} style={styles.input} />{proposalCategoriesLoading ? <Text style={styles.muted}>جارٍ تحميل الفئات…</Text> : proposalCategories.length === 0 ? <Text style={styles.muted}>لا توجد فئات مطابقة.</Text> : null}{proposalCategoryNextCursor ? <BthwaniButton busy={proposalCategoriesLoading} disabled={proposalCategoriesLoading} label="تحميل المزيد من الفئات" onPress={() => void loadMoreProposalCategories()} variant="secondary" /> : null}<Text style={styles.fieldLabel}>هوية القياس</Text><View style={styles.choiceList}>{(["DISCRETE", "MEASURED", "VARIABLE_MEASURE"] as MeasurementKind[]).map((value) => <BthwaniChip key={value} label={measurementKindLabel(value)} onPress={() => { setProposalMeasurementKind(value); setProposalBaseUnit(""); }} selected={proposalMeasurementKind === value} />)}</View><Text style={styles.fieldLabel}>الوحدة الأساسية</Text><View style={styles.choiceRow}>{baseUnitOptions(proposalMeasurementKind).map((value) => <BthwaniChip key={value} label={baseUnitLabel(value)} onPress={() => setProposalBaseUnit(value)} selected={proposalBaseUnit === value} />)}</View>{proposalRuleState === "loading" ? <Text style={styles.muted}>جارٍ قراءة خصائص التصنيف…</Text> : proposalRuleState === "error" ? <Text style={styles.warning}>تعذرت قراءة قواعد الخصائص. أعد المحاولة قبل إرسال المقترح.</Text> : renderAttributeFields(proposalAttributeRules, proposalAttributeDrafts, proposalEnumOptions, (key, value) => setProposalAttributeDrafts((current) => ({ ...current, [key]: value })))}<BthwaniButton busy={busy} disabled={proposalRuleState !== "ready" || !proposalName.trim() || !proposalVerticalID.trim() || !proposalCategoryID.trim() || !proposalMeasurementKind || !proposalBaseUnit} label="إرسال المقترح" onPress={() => void createProposal()} variant="secondary" />{state.kind === "ready" && state.proposals.length ? state.proposals.map((proposal) => <Text key={proposal.id} style={styles.muted}>{catalogProductProposalStateLabel(proposal.state)}{proposal.correctionReason ? ` · ${proposal.correctionReason}` : ""}</Text>) : null}{proposalNextCursor ? <BthwaniButton busy={busy} disabled={busy} label="تحميل المزيد من المقترحات" onPress={() => void loadMoreProposals()} variant="secondary" /> : null}</View>
        </> : null}
        {catalogModel === "STORE_LOCAL_CATALOG" ? <View style={styles.managementBlock}><Text style={styles.itemTitle}>أقسام وإضافات المتجر</Text><Text style={styles.muted}>اختر عرضًا بالاسم ثم أنشئ مجموعة إضافات أو قسم عرض.</Text><View style={styles.offerPicker}>{state.kind === "ready" ? state.offers.map((offer) => <BthwaniChip key={offer.offerId} label={offer.productName} onPress={() => setExtensionOfferID(offer.offerId)} selected={extensionOfferID === offer.offerId} />) : null}</View><TextInput accessibilityLabel="اسم مجموعة الإضافات" editable={!busy} onChangeText={setModifierName} placeholder="اسم مجموعة الإضافات" value={modifierName} style={[styles.input, busy && styles.disabledInput]} /><TextInput accessibilityLabel="اسم خيار الإضافة" editable={!busy} onChangeText={setModifierOptionName} placeholder="اسم خيار اختياري" value={modifierOptionName} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={!modifierName.trim()} label="إنشاء مجموعة إضافات وربطها" onPress={() => void createModifiersAndAttach()} variant="secondary" /><TextInput accessibilityLabel="اسم القسم" editable={!busy} onChangeText={setSectionName} placeholder="اسم قسم المتجر" value={sectionName} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={!sectionName.trim()} label="إنشاء قسم وربطه" onPress={() => void createSectionAndAttach()} variant="secondary" /></View> : null}
@@ -534,6 +578,8 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     mediaCopy: { flex: 1, gap: spacing[1] },
     mediaImage: { backgroundColor: theme.surface, borderRadius: radius.sm, height: 56, width: 56 },
     mediaUploadPreview: { alignItems: "center", flexDirection: "row", gap: spacing[2] },
+    provenanceFields: { borderColor: theme.borderColor, borderTopWidth: borders.hairline, gap: spacing[2], paddingTop: spacing[2] },
+    provenanceToggle: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
     input: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.color, flex: 1, minHeight: sizing.controlMd, paddingHorizontal: spacing[2] },
     numericInput: { textAlign: "left", writingDirection: "ltr" },
     productList: { gap: spacing[2] },

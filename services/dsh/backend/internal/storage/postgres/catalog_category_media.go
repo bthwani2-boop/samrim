@@ -4,28 +4,39 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strconv"
 	"strings"
+
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 )
 
 type CatalogCategoryMediaAssetInput struct {
-	ID, CategoryID, IdempotencyKey, ObjectKey, URI string
-	ContentSHA256, ContentType, Reason             string
-	ExpectedVersion                                int
-	ByteSize                                       int64
+	ID, CategoryID, IdempotencyKey, ObjectKey, URI      string
+	ContentSHA256, ContentType, Reason, RequestHash     string
+	Creator, SourceDescription, SourceURI               string
+	RightsStatement, RightsURI, RightsAttestedByActorID string
+	ExpectedVersion                                     int
+	ByteSize                                            int64
 }
 
 type CatalogCategoryMediaAssetRecord struct {
 	ID, CategoryID, IdempotencyKey, ObjectKey, URI string
-	ContentSHA256, ContentType, State              string
+	ContentSHA256, ContentType, State, RequestHash string
 	ExpectedVersion                                int
 	ByteSize, CleanupAttempts                      int64
 	LastCleanupError                               *string
 }
 
+func HashCatalogCategoryMediaUploadRequest(categoryID, idempotencyKey, actingActorID string, expectedVersion int, contentSHA256, contentType, reason string, provenance media.Provenance) string {
+	return hashFacts("category-media-upload", strings.TrimSpace(categoryID), strings.TrimSpace(idempotencyKey), strings.TrimSpace(actingActorID), strconv.Itoa(expectedVersion), contentSHA256, contentType, strings.TrimSpace(reason), provenance.Creator, provenance.SourceDescription, provenance.SourceURI, provenance.RightsStatement, provenance.RightsURI, strconv.FormatBool(provenance.RightsAttested))
+}
+
 func ReadCatalogCategory(ctx context.Context, db *sql.DB, categoryID string) (CatalogCategoryRecord, error) {
 	var item CatalogCategoryRecord
 	var parent sql.NullString
-	err := db.QueryRowContext(ctx, "SELECT id,vertical_id,parent_category_id,name_ar,name_en,COALESCE(image_uri,''),active,version,created_at,updated_at FROM dsh.catalog_categories WHERE id=$1", strings.TrimSpace(categoryID)).Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+	err := db.QueryRowContext(ctx, `SELECT category.id,category.vertical_id,category.parent_category_id,category.name_ar,category.name_en,
+		COALESCE((SELECT asset.uri FROM dsh.catalog_category_media_assets asset WHERE asset.category_id=category.id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),
+		category.active,category.version,category.created_at,category.updated_at FROM dsh.catalog_categories category WHERE category.id=$1`, strings.TrimSpace(categoryID)).Scan(&item.ID, &item.VerticalID, &parent, &item.NameAr, &item.NameEn, &item.ImageURI, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CatalogCategoryRecord{}, ErrCatalogCategoryNotFound
 	}
@@ -36,7 +47,7 @@ func ReadCatalogCategory(ctx context.Context, db *sql.DB, categoryID string) (Ca
 }
 
 func RegisterCatalogCategoryMediaAssetPending(ctx context.Context, db *sql.DB, asset CatalogCategoryMediaAssetInput) (CatalogCategoryMediaAssetRecord, bool, error) {
-	if strings.TrimSpace(asset.ID) == "" || strings.TrimSpace(asset.CategoryID) == "" || strings.TrimSpace(asset.IdempotencyKey) == "" || strings.TrimSpace(asset.ObjectKey) == "" || strings.TrimSpace(asset.URI) == "" || asset.ExpectedVersion < 1 || len(asset.ContentSHA256) != 64 || asset.ByteSize < 1 || asset.ByteSize > 10485760 || (asset.ContentType != "image/jpeg" && asset.ContentType != "image/png") {
+	if strings.TrimSpace(asset.ID) == "" || strings.TrimSpace(asset.CategoryID) == "" || strings.TrimSpace(asset.IdempotencyKey) == "" || strings.TrimSpace(asset.ObjectKey) == "" || strings.TrimSpace(asset.URI) == "" || asset.ExpectedVersion < 1 || len(asset.ContentSHA256) != 64 || len(asset.RequestHash) != 64 || strings.TrimSpace(asset.RightsAttestedByActorID) == "" || asset.ByteSize < 1 || asset.ByteSize > 10485760 || (asset.ContentType != "image/jpeg" && asset.ContentType != "image/png") {
 		return CatalogCategoryMediaAssetRecord{}, false, ErrCatalogMediaInvalid
 	}
 	tx, err := db.BeginTx(ctx, nil)
@@ -49,7 +60,7 @@ func RegisterCatalogCategoryMediaAssetPending(ctx context.Context, db *sql.DB, a
 	}
 	stored, err := readCatalogCategoryMediaAssetByIdempotencyTx(ctx, tx, asset.IdempotencyKey)
 	if err == nil {
-		if stored.CategoryID != asset.CategoryID || stored.ExpectedVersion != asset.ExpectedVersion || stored.ObjectKey != asset.ObjectKey || stored.URI != asset.URI || stored.ContentSHA256 != asset.ContentSHA256 || stored.ContentType != asset.ContentType || stored.ByteSize != asset.ByteSize {
+		if stored.CategoryID != asset.CategoryID || stored.ExpectedVersion != asset.ExpectedVersion || stored.ObjectKey != asset.ObjectKey || stored.URI != asset.URI || stored.ContentSHA256 != asset.ContentSHA256 || stored.ContentType != asset.ContentType || stored.ByteSize != asset.ByteSize || stored.RequestHash != asset.RequestHash {
 			return CatalogCategoryMediaAssetRecord{}, false, ErrCatalogIdempotencyConflict
 		}
 		if stored.State == "failed" {
@@ -79,13 +90,14 @@ func RegisterCatalogCategoryMediaAssetPending(ctx context.Context, db *sql.DB, a
 	if category.Version != asset.ExpectedVersion {
 		return CatalogCategoryMediaAssetRecord{}, false, ErrCatalogVersionConflict
 	}
-	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_category_media_assets(id,category_id,idempotency_key,expected_version,object_key,uri,content_sha256,content_type,byte_size,state) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending')", asset.ID, asset.CategoryID, asset.IdempotencyKey, asset.ExpectedVersion, asset.ObjectKey, asset.URI, asset.ContentSHA256, asset.ContentType, asset.ByteSize); err != nil {
+	if _, err = tx.ExecContext(ctx, `INSERT INTO dsh.catalog_category_media_assets(id,category_id,idempotency_key,expected_version,object_key,uri,content_sha256,content_type,byte_size,state,request_hash,creator,source_description,source_uri,rights_statement,rights_uri,rights_attested_by_actor_id,rights_attested_at)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',$10,$11,$12,NULLIF($13,''),$14,NULLIF($15,''),$16,clock_timestamp())`, asset.ID, asset.CategoryID, asset.IdempotencyKey, asset.ExpectedVersion, asset.ObjectKey, asset.URI, asset.ContentSHA256, asset.ContentType, asset.ByteSize, asset.RequestHash, asset.Creator, asset.SourceDescription, asset.SourceURI, asset.RightsStatement, asset.RightsURI, asset.RightsAttestedByActorID); err != nil {
 		return CatalogCategoryMediaAssetRecord{}, false, err
 	}
 	if err = tx.Commit(); err != nil {
 		return CatalogCategoryMediaAssetRecord{}, false, err
 	}
-	return CatalogCategoryMediaAssetRecord{ID: asset.ID, CategoryID: asset.CategoryID, IdempotencyKey: asset.IdempotencyKey, ExpectedVersion: asset.ExpectedVersion, ObjectKey: asset.ObjectKey, URI: asset.URI, ContentSHA256: asset.ContentSHA256, ContentType: asset.ContentType, ByteSize: asset.ByteSize, State: "pending"}, false, nil
+	return CatalogCategoryMediaAssetRecord{ID: asset.ID, CategoryID: asset.CategoryID, IdempotencyKey: asset.IdempotencyKey, ExpectedVersion: asset.ExpectedVersion, ObjectKey: asset.ObjectKey, URI: asset.URI, ContentSHA256: asset.ContentSHA256, ContentType: asset.ContentType, ByteSize: asset.ByteSize, RequestHash: asset.RequestHash, State: "pending"}, false, nil
 }
 
 func AttachCatalogCategoryMediaAsset(ctx context.Context, db *sql.DB, asset CatalogCategoryMediaAssetInput, actingActorID, correlationID string) (CatalogCategoryRecord, bool, error) {
@@ -101,7 +113,7 @@ func AttachCatalogCategoryMediaAsset(ctx context.Context, db *sql.DB, asset Cata
 	if err != nil {
 		return CatalogCategoryRecord{}, false, err
 	}
-	if registered.ID != asset.ID || registered.CategoryID != asset.CategoryID || registered.ExpectedVersion != asset.ExpectedVersion || registered.ObjectKey != asset.ObjectKey || registered.URI != asset.URI || registered.ContentSHA256 != asset.ContentSHA256 || registered.ContentType != asset.ContentType || registered.ByteSize != asset.ByteSize || registered.State == "deleted" {
+	if registered.ID != asset.ID || registered.CategoryID != asset.CategoryID || registered.ExpectedVersion != asset.ExpectedVersion || registered.ObjectKey != asset.ObjectKey || registered.URI != asset.URI || registered.ContentSHA256 != asset.ContentSHA256 || registered.ContentType != asset.ContentType || registered.ByteSize != asset.ByteSize || registered.RequestHash != asset.RequestHash || registered.State == "deleted" {
 		return CatalogCategoryRecord{}, false, ErrCatalogMediaInvalid
 	}
 	category, err := readCatalogCategoryForUpdateTx(ctx, tx, asset.CategoryID)
@@ -136,7 +148,7 @@ func AttachCatalogCategoryMediaAsset(ctx context.Context, db *sql.DB, asset Cata
 	if affected, affectedErr := result.RowsAffected(); affectedErr != nil || affected != 1 {
 		return CatalogCategoryRecord{}, false, ErrCatalogMediaInvalid
 	}
-	result, err = tx.ExecContext(ctx, "UPDATE dsh.catalog_categories SET image_uri=$2,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$3", asset.CategoryID, asset.URI, asset.ExpectedVersion)
+	result, err = tx.ExecContext(ctx, "UPDATE dsh.catalog_categories SET version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$2", asset.CategoryID, asset.ExpectedVersion)
 	if err != nil {
 		return CatalogCategoryRecord{}, false, err
 	}
@@ -198,7 +210,7 @@ func MarkCatalogCategoryMediaAssetCleanupFailure(ctx context.Context, db *sql.DB
 func readCatalogCategoryMediaAssetByIdempotencyTx(ctx context.Context, tx *sql.Tx, idempotencyKey string) (CatalogCategoryMediaAssetRecord, error) {
 	var asset CatalogCategoryMediaAssetRecord
 	var lastError sql.NullString
-	err := tx.QueryRowContext(ctx, "SELECT id,category_id,idempotency_key,expected_version,object_key,uri,content_sha256,content_type,byte_size,state,cleanup_attempts,last_cleanup_error FROM dsh.catalog_category_media_assets WHERE idempotency_key=$1 FOR UPDATE", idempotencyKey).Scan(&asset.ID, &asset.CategoryID, &asset.IdempotencyKey, &asset.ExpectedVersion, &asset.ObjectKey, &asset.URI, &asset.ContentSHA256, &asset.ContentType, &asset.ByteSize, &asset.State, &asset.CleanupAttempts, &lastError)
+	err := tx.QueryRowContext(ctx, "SELECT id,category_id,idempotency_key,expected_version,object_key,uri,content_sha256,content_type,byte_size,state,cleanup_attempts,last_cleanup_error,request_hash FROM dsh.catalog_category_media_assets WHERE idempotency_key=$1 FOR UPDATE", idempotencyKey).Scan(&asset.ID, &asset.CategoryID, &asset.IdempotencyKey, &asset.ExpectedVersion, &asset.ObjectKey, &asset.URI, &asset.ContentSHA256, &asset.ContentType, &asset.ByteSize, &asset.State, &asset.CleanupAttempts, &lastError, &asset.RequestHash)
 	if lastError.Valid {
 		asset.LastCleanupError = &lastError.String
 	}

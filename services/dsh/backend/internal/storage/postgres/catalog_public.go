@@ -50,10 +50,14 @@ func ListPublicCatalogCategories(ctx context.Context, db *sql.DB, categoryIDs []
 		return []CatalogCategoryRecord{}, nil
 	}
 	rows, err := db.QueryContext(ctx, `WITH RECURSIVE category_tree(id, parent_category_id, vertical_id, name_ar, name_en, image_uri, active, version, created_at, updated_at) AS (
-		SELECT id, parent_category_id, vertical_id, name_ar, name_en, image_uri, active, version, created_at, updated_at
-		FROM dsh.catalog_categories WHERE active=true AND id=ANY($1)
+		SELECT category.id, category.parent_category_id, category.vertical_id, category.name_ar, category.name_en,
+		COALESCE((SELECT asset.uri FROM dsh.catalog_category_media_assets asset WHERE asset.category_id=category.id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),
+		category.active, category.version, category.created_at, category.updated_at
+		FROM dsh.catalog_categories category WHERE category.active=true AND category.id=ANY($1)
 		UNION
-		SELECT parent.id, parent.parent_category_id, parent.vertical_id, parent.name_ar, parent.name_en, parent.image_uri, parent.active, parent.version, parent.created_at, parent.updated_at
+		SELECT parent.id, parent.parent_category_id, parent.vertical_id, parent.name_ar, parent.name_en,
+		COALESCE((SELECT asset.uri FROM dsh.catalog_category_media_assets asset WHERE asset.category_id=parent.id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),
+		parent.active, parent.version, parent.created_at, parent.updated_at
 		FROM dsh.catalog_categories parent JOIN category_tree child ON parent.id=child.parent_category_id
 		WHERE parent.active=true AND parent.vertical_id=child.vertical_id
 	) SELECT id, vertical_id, COALESCE(parent_category_id,''), name_ar, name_en, COALESCE(image_uri,''), active, version, created_at, updated_at

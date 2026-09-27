@@ -17,6 +17,7 @@ type CatalogMediaUploadInput struct {
 	ProductID, Role, IdempotencyKey, CorrelationID string
 	ExpectedVersion                                int
 	ContentType                                    string
+	Provenance                                     media.Provenance
 	Bytes                                          []byte
 }
 
@@ -54,7 +55,9 @@ func (s *Service) uploadCatalogProductMedia(ctx context.Context, actingActorID s
 	input.Role = strings.TrimSpace(input.Role)
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
 	input.CorrelationID = strings.TrimSpace(input.CorrelationID)
-	if input.ProductID == "" || input.IdempotencyKey == "" || input.CorrelationID == "" || input.ExpectedVersion < 1 || (input.Role != "primary" && input.Role != "gallery") {
+	actingActorID = strings.TrimSpace(actingActorID)
+	input.Provenance = input.Provenance.Normalized()
+	if input.ProductID == "" || input.IdempotencyKey == "" || input.CorrelationID == "" || input.ExpectedVersion < 1 || (input.Role != "primary" && input.Role != "gallery") || input.Provenance.Validate() != nil {
 		return postgres.CatalogProductResult{}, ErrCatalogMediaUploadInvalid
 	}
 	contentType, _, _, err := media.ValidateImageBytes(input.Bytes)
@@ -71,6 +74,7 @@ func (s *Service) uploadCatalogProductMedia(ctx context.Context, actingActorID s
 	if uri == "" {
 		return postgres.CatalogProductResult{}, ErrCatalogMediaStorageUnavailable
 	}
+	requestHash := postgres.HashCatalogMediaUploadRequest(input.ProductID, input.Role, contentSHA256, input.ExpectedVersion, actingActorID, input.Provenance.Creator, input.Provenance.SourceDescription, input.Provenance.SourceURI, input.Provenance.RightsStatement, input.Provenance.RightsURI)
 	assetHash := sha256.Sum256([]byte(input.ProductID + "\x00" + input.IdempotencyKey))
 	asset := postgres.CatalogMediaAssetInput{
 		ID:              "media_asset_" + hex.EncodeToString(assetHash[:]),
@@ -82,7 +86,10 @@ func (s *Service) uploadCatalogProductMedia(ctx context.Context, actingActorID s
 		ContentSHA256:   contentSHA256,
 		ContentType:     contentType,
 		Role:            input.Role,
-		ByteSize:        int64(len(input.Bytes)),
+		RequestHash:     requestHash,
+		Creator:         input.Provenance.Creator, SourceDescription: input.Provenance.SourceDescription, SourceURI: input.Provenance.SourceURI,
+		RightsStatement: input.Provenance.RightsStatement, RightsURI: input.Provenance.RightsURI, RightsAttestedByActorID: actingActorID,
+		ByteSize: int64(len(input.Bytes)),
 	}
 	registered, replayed, err := postgres.RegisterCatalogMediaAssetPending(ctx, s.db, asset)
 	if err != nil {
@@ -120,7 +127,7 @@ func (s *Service) uploadCatalogProductMedia(ctx context.Context, actingActorID s
 		_ = s.removeFailedAsset(ctx, asset, err)
 		return postgres.CatalogProductResult{}, ErrCatalogMediaUploadInvalid
 	}
-	result, err := postgres.ReplaceCatalogProductMediaWithAsset(ctx, s.db, input.ProductID, normalized, input.ExpectedVersion, input.IdempotencyKey, postgres.HashCatalogMediaUploadRequest(input.ProductID, input.Role, contentSHA256, input.ExpectedVersion), actingActorID, input.CorrelationID, asset)
+	result, err := postgres.ReplaceCatalogProductMediaWithAsset(ctx, s.db, input.ProductID, normalized, input.ExpectedVersion, input.IdempotencyKey, requestHash, actingActorID, input.CorrelationID, asset)
 	if err != nil {
 		_ = s.removeFailedAsset(ctx, asset, err)
 		return postgres.CatalogProductResult{}, err

@@ -99,7 +99,7 @@ func hydrateCatalogOfferPage(ctx context.Context, db *sql.DB, offers []CatalogSt
 	mediaByProduct := make(map[string][]CatalogMediaRecord, len(productIDs))
 	mediaRows, err := db.QueryContext(ctx, `SELECT media.product_id,asset.id,asset.uri,media.media_role,media.ordinal
 		FROM dsh.catalog_media media
-		JOIN dsh.catalog_media_assets asset ON asset.product_id=media.product_id AND asset.id=media.media_asset_id AND asset.state='active'
+		JOIN dsh.catalog_media_assets asset ON asset.product_id=media.product_id AND asset.id=media.media_asset_id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL
 		WHERE media.product_id=ANY($1) ORDER BY media.product_id,media.ordinal`, pq.Array(productIDs))
 	if err != nil {
 		return err

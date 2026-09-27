@@ -313,7 +313,7 @@ func (s *CatalogServer) uploadCategoryMedia(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	reason := strings.TrimSpace(r.FormValue("reason"))
-	item, err := s.service.UploadCatalogCategoryMedia(r.Context(), acting, catalog.CatalogCategoryMediaUploadInput{CategoryID: r.PathValue("categoryId"), IdempotencyKey: idempotency, CorrelationID: correlation, ExpectedVersion: expected, ContentType: upload.contentType, Bytes: upload.bytes, Reason: reason})
+	item, err := s.service.UploadCatalogCategoryMedia(r.Context(), acting, catalog.CatalogCategoryMediaUploadInput{CategoryID: r.PathValue("categoryId"), IdempotencyKey: idempotency, CorrelationID: correlation, ExpectedVersion: expected, ContentType: upload.contentType, Provenance: upload.provenance, Bytes: upload.bytes, Reason: reason})
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -525,7 +525,7 @@ func (s *CatalogServer) uploadProductMedia(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	result, err := s.service.UploadCatalogProductMedia(r.Context(), acting, catalog.CatalogMediaUploadInput{ProductID: r.PathValue("productId"), Role: upload.role, IdempotencyKey: idempotency, CorrelationID: correlation, ExpectedVersion: expected, ContentType: upload.contentType, Bytes: upload.bytes})
+	result, err := s.service.UploadCatalogProductMedia(r.Context(), acting, catalog.CatalogMediaUploadInput{ProductID: r.PathValue("productId"), Role: upload.role, IdempotencyKey: idempotency, CorrelationID: correlation, ExpectedVersion: expected, ContentType: upload.contentType, Provenance: upload.provenance, Bytes: upload.bytes})
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -546,7 +546,7 @@ func (s *CatalogServer) uploadStoreProductMedia(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
-	result, err := s.service.UploadStoreScopedProductMedia(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("productId"), catalog.CatalogMediaUploadInput{Role: upload.role, IdempotencyKey: idempotency, CorrelationID: correlation, ExpectedVersion: expected, ContentType: upload.contentType, Bytes: upload.bytes})
+	result, err := s.service.UploadStoreScopedProductMedia(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("productId"), catalog.CatalogMediaUploadInput{Role: upload.role, IdempotencyKey: idempotency, CorrelationID: correlation, ExpectedVersion: expected, ContentType: upload.contentType, Provenance: upload.provenance, Bytes: upload.bytes})
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -578,11 +578,12 @@ func (s *CatalogServer) replaceStoreProductMedia(w http.ResponseWriter, r *http.
 type catalogMediaUpload struct {
 	role        string
 	contentType string
+	provenance  media.Provenance
 	bytes       []byte
 }
 
 func parseCatalogMediaUpload(w http.ResponseWriter, r *http.Request) (catalogMediaUpload, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, media.MaxUploadBytes+1)
+	r.Body = http.MaxBytesReader(w, r.Body, media.MaxUploadBytes+32*1024)
 	if err := r.ParseMultipartForm(media.MaxUploadBytes + 1); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a valid image upload is required")
 		return catalogMediaUpload{}, false
@@ -608,7 +609,15 @@ func parseCatalogMediaUpload(w http.ResponseWriter, r *http.Request) (catalogMed
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "only valid JPEG and PNG images are accepted")
 		return catalogMediaUpload{}, false
 	}
-	return catalogMediaUpload{role: role, contentType: contentType, bytes: bytes}, true
+	provenance := media.Provenance{
+		Creator: r.FormValue("creator"), SourceDescription: r.FormValue("sourceDescription"), SourceURI: r.FormValue("sourceUri"),
+		RightsStatement: r.FormValue("rightsStatement"), RightsURI: r.FormValue("rightsUri"), RightsAttested: strings.EqualFold(strings.TrimSpace(r.FormValue("rightsAttested")), "true"),
+	}
+	if err := provenance.Validate(); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "valid source and rights information with an explicit attestation is required")
+		return catalogMediaUpload{}, false
+	}
+	return catalogMediaUpload{role: role, contentType: contentType, provenance: provenance.Normalized(), bytes: bytes}, true
 }
 
 func (s *CatalogServer) readProductMedia(w http.ResponseWriter, r *http.Request) {

@@ -1,4 +1,4 @@
-import type { ActorLegalName, CatalogAttributeDefinitionListResponse, CatalogAttributeDefinitionResponse, CatalogAttributeEnumOptionListResponse, CatalogAttributeEnumOptionResponse, CatalogAttributeRuleListResponse, CatalogProduct, CatalogProductRegistryResponse, CreateCatalogAttributeDefinitionRequest, CreateCatalogAttributeEnumOptionRequest, CreateCustomerWithdrawalIntakeRequest, CustomerWithdrawalDecisionRequest, CustomerWithdrawalIntakeListResponse, CustomerWithdrawalIntakeResponse, ManagedCaptainAvailabilityRequest, PartnerStoreListResponse, SubmitActorLegalNameRequest, UpsertCatalogAttributeRuleRequest, VerifyActorLegalNameRequest } from "@bthwani/dsh";
+import { isMediaProvenanceInputValid, type ActorLegalName, type CatalogAttributeDefinitionListResponse, type CatalogAttributeDefinitionResponse, type CatalogAttributeEnumOptionListResponse, type CatalogAttributeEnumOptionResponse, type CatalogAttributeRuleListResponse, type CatalogProduct, type CatalogProductRegistryResponse, type CreateCatalogAttributeDefinitionRequest, type CreateCatalogAttributeEnumOptionRequest, type CreateCustomerWithdrawalIntakeRequest, type CustomerWithdrawalDecisionRequest, type CustomerWithdrawalIntakeListResponse, type CustomerWithdrawalIntakeResponse, type ManagedCaptainAvailabilityRequest, type MediaProvenanceInput, type PartnerStoreListResponse, type SubmitActorLegalNameRequest, type UpsertCatalogAttributeRuleRequest, type VerifyActorLegalNameRequest } from "@bthwani/dsh";
 import { type BeneficiaryPayoutState, type BeneficiaryPayoutStateResponse, type CaptainAdmissionListResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CashCustodyRegistryResponse, type CatalogCategoryDetailResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateDeliveryFeePolicyRequest, type CreateJoiningCaseRequest, type CreatePartnerFinancialTermsPolicyRequest, type CreatePromotionRequest, type CreateServiceCityRequest, type DeliveryFeePolicyResponse, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentResponse, dshOperationPaths, type FieldAdmissionListResponse, type FieldAdmissionRequest, type FieldAdmissionResponse, type FieldCommissionPolicy, type ManagedRoleReenrollmentRequest, type FinanceEvidenceDocument, type JoiningCaseListResponse, type JoiningCaseResponse, type ManagedRoleMutationRequest, type MarketingPublicationRequest, type NotificationListResponse, type NotificationReadResponse, type OfficialWalletDestination, type OperatorDiscoveryContentRegistryResponse, type OperatorOperationResponse, type OperatorOperationsResponse, type OperatorPromotionRegistryResponse, type OperatorStoreListResponse, type PartnerCommissionReceivableRegistryResponse, type PartnerCommissionRemittanceRequest, type PartnerCommissionRemittanceResponse, type PartnerFinancialSummaryResponse, type PartnerFinancialTermsPolicyResponse, type PartnerStoreCommissionPoliciesResponse, type PartnerStoreCommissionPolicyUpdateRequest, type PartnerStoreCommissionPolicyUpdateResponse, type PayoutRequest, type PromotionResponse, type PublicationAction, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type ReviewJoiningCaseRequest, type ServiceCityListResponse, type ServiceCityResponse, type SetStoreFulfillmentModesRequest, type SettlementBatch, type SettlementBatchExport, type StoreFulfillmentModesResponse, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogCategoryRequest, type UpdateCatalogProductRequest, type UpdateCommerceVerticalRequest, type UpdateServiceCityRequest } from "@bthwani/dsh";
 import { validateServiceUrl } from "@bthwani/identity";
 
@@ -873,26 +873,48 @@ export async function replaceCatalogProductMedia(productId: string, input: Repla
   return requestDshJson<CatalogProductResponse>(dshOperationPaths.replaceCatalogProductMedia.method, path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
-export async function uploadCatalogProductMedia(productId: string, file: File, role: "primary" | "gallery", context: CatalogProductMutationContext & Readonly<{ expectedVersion: number }>): Promise<Readonly<{ status: number; payload: CatalogProductResponse }>> {
-  if (!productId.trim() || file.size < 1 || file.size > 10 * 1024 * 1024 || (role !== "primary" && role !== "gallery")) throw new Error("DSH_PRODUCT_MEDIA_UPLOAD_INPUT_INVALID");
+function appendMediaProvenance(body: FormData, provenance: MediaProvenanceInput): void {
+  body.set("creator", provenance.creator.trim());
+  body.set("sourceDescription", provenance.sourceDescription.trim());
+  body.set("sourceUri", provenance.sourceUri?.trim() ?? "");
+  body.set("rightsStatement", provenance.rightsStatement.trim());
+  body.set("rightsUri", provenance.rightsUri?.trim() ?? "");
+  body.set("rightsAttested", String(provenance.rightsAttested));
+}
+
+export function readMediaProvenanceInput(form: FormData): MediaProvenanceInput | null {
+  const creator = form.get("creator");
+  const sourceDescription = form.get("sourceDescription");
+  const sourceUri = form.get("sourceUri");
+  const rightsStatement = form.get("rightsStatement");
+  const rightsUri = form.get("rightsUri");
+  if (typeof creator !== "string" || typeof sourceDescription !== "string" || (sourceUri !== null && typeof sourceUri !== "string") || typeof rightsStatement !== "string" || (rightsUri !== null && typeof rightsUri !== "string") || form.get("rightsAttested") !== "true") return null;
+  const value: MediaProvenanceInput = { creator, sourceDescription, ...(sourceUri ? { sourceUri } : {}), rightsStatement, ...(rightsUri ? { rightsUri } : {}), rightsAttested: true };
+  return isMediaProvenanceInputValid(value) ? value : null;
+}
+
+export async function uploadCatalogProductMedia(productId: string, file: File, role: "primary" | "gallery", provenance: MediaProvenanceInput, context: CatalogProductMutationContext & Readonly<{ expectedVersion: number }>): Promise<Readonly<{ status: number; payload: CatalogProductResponse }>> {
+  if (!productId.trim() || file.size < 1 || file.size > 10 * 1024 * 1024 || (role !== "primary" && role !== "gallery") || !isMediaProvenanceInputValid(provenance)) throw new Error("DSH_PRODUCT_MEDIA_UPLOAD_INPUT_INVALID");
   validateVersionedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_PRODUCT_MEDIA_UPLOAD_IDEMPOTENCY_INVALID");
   const path = dshOperationPaths.uploadCatalogProductMedia.path.replace("{productId}", encodeURIComponent(productId.trim()));
   const body = new FormData();
   body.set("role", role);
   body.set("file", file, file.name || "product-image");
+  appendMediaProvenance(body, provenance);
   return requestDshMultipart<CatalogProductResponse>(dshOperationPaths.uploadCatalogProductMedia.method, path, body, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
-export async function uploadCatalogCategoryMedia(categoryId: string, file: File, reason: string, context: CatalogProductMutationContext & Readonly<{ expectedVersion: number }>): Promise<Readonly<{ status: number; payload: CatalogCategoryResponse }>> {
+export async function uploadCatalogCategoryMedia(categoryId: string, file: File, reason: string, provenance: MediaProvenanceInput, context: CatalogProductMutationContext & Readonly<{ expectedVersion: number }>): Promise<Readonly<{ status: number; payload: CatalogCategoryResponse }>> {
   const normalizedReason = reason.trim();
-  if (!categoryId.trim() || file.size < 1 || file.size > 10 * 1024 * 1024 || normalizedReason.length < 5 || normalizedReason.length > 500) throw new Error("DSH_CATEGORY_MEDIA_UPLOAD_INPUT_INVALID");
+  if (!categoryId.trim() || file.size < 1 || file.size > 10 * 1024 * 1024 || normalizedReason.length < 5 || normalizedReason.length > 500 || !isMediaProvenanceInputValid(provenance)) throw new Error("DSH_CATEGORY_MEDIA_UPLOAD_INPUT_INVALID");
   validateVersionedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_CATEGORY_MEDIA_UPLOAD_IDEMPOTENCY_INVALID");
   const path = dshOperationPaths.uploadCatalogCategoryMedia.path.replace("{categoryId}", encodeURIComponent(categoryId.trim()));
   const body = new FormData();
   body.set("file", file, file.name || "category-image");
   body.set("reason", normalizedReason);
+  appendMediaProvenance(body, provenance);
   return requestDshMultipart<CatalogCategoryResponse>(dshOperationPaths.uploadCatalogCategoryMedia.method, path, body, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 

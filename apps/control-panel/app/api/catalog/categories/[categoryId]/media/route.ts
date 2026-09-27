@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
-import { dshErrorPayload, dshHttpStatus, isDshClientError, uploadCatalogCategoryMedia } from "../../../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError, readMediaProvenanceInput, uploadCatalogCategoryMedia } from "../../../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../../../src/server/security/csrf";
@@ -23,10 +23,11 @@ export async function POST(request: Request, context: { params: Promise<{ catego
   const form = await request.formData().catch(() => null);
   const reason = form?.get("reason");
   const file = form?.get("file");
-  if (!(file instanceof File) || file.size < 1 || file.size > 10 * 1024 * 1024 || typeof reason !== "string" || reason.trim().length < 5 || reason.trim().length > 500) return errorResponse("INVALID_INPUT", "a valid image and documented change reason are required", 400);
+  const provenance = form ? readMediaProvenanceInput(form) : null;
+  if (!(file instanceof File) || file.size < 1 || file.size > 10 * 1024 * 1024 || typeof reason !== "string" || reason.trim().length < 5 || reason.trim().length > 500 || !provenance) return errorResponse("INVALID_INPUT", "a valid image, source, rights attestation, and documented change reason are required", 400);
   try {
     const { categoryId } = await context.params;
-    const result = await uploadCatalogCategoryMedia(categoryId, file, reason, { operatorActorId: identity.subject, correlationId: request.headers.get("X-Correlation-ID")?.trim() || randomUUID(), expectedVersion, idempotencyKey });
+    const result = await uploadCatalogCategoryMedia(categoryId, file, reason, provenance, { operatorActorId: identity.subject, correlationId: request.headers.get("X-Correlation-ID")?.trim() || randomUUID(), expectedVersion, idempotencyKey });
     return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (!isDshClientError(error)) return errorResponse("INTERNAL_ERROR", "catalog Category image upload failed", 500);

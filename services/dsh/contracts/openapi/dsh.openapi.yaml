@@ -2108,7 +2108,7 @@ components:
 
     UploadCatalogProductMediaRequest:
       type: object
-      required: [role, file]
+      required: [role, file, creator, sourceDescription, rightsStatement, rightsAttested]
       additionalProperties: false
       properties:
         role:
@@ -2117,10 +2117,33 @@ components:
         file:
           type: string
           format: binary
+        creator:
+          type: string
+          minLength: 2
+          maxLength: 200
+        sourceDescription:
+          type: string
+          minLength: 3
+          maxLength: 1000
+        sourceUri:
+          type: string
+          format: uri
+          maxLength: 2048
+        rightsStatement:
+          type: string
+          minLength: 5
+          maxLength: 2000
+        rightsUri:
+          type: string
+          format: uri
+          maxLength: 2048
+        rightsAttested:
+          type: boolean
+          enum: [true]
 
     UploadCatalogCategoryMediaRequest:
       type: object
-      required: [file, reason]
+      required: [file, reason, creator, sourceDescription, rightsStatement, rightsAttested]
       additionalProperties: false
       properties:
         file:
@@ -2130,6 +2153,29 @@ components:
           type: string
           minLength: 5
           maxLength: 500
+        creator:
+          type: string
+          minLength: 2
+          maxLength: 200
+        sourceDescription:
+          type: string
+          minLength: 3
+          maxLength: 1000
+        sourceUri:
+          type: string
+          format: uri
+          maxLength: 2048
+        rightsStatement:
+          type: string
+          minLength: 5
+          maxLength: 2000
+        rightsUri:
+          type: string
+          format: uri
+          maxLength: 2048
+        rightsAttested:
+          type: boolean
+          enum: [true]
 
     CatalogProductResponse:
       type: object
@@ -6679,7 +6725,7 @@ components:
 
     CreateDiscoveryContentUploadRequest:
       type: object
-      required: [id, kind, titleAr, file, targetType, startsAt, ordinal]
+      required: [id, kind, titleAr, file, targetType, startsAt, ordinal, creator, sourceDescription, rightsStatement, rightsAttested]
       additionalProperties: false
       properties:
         id:
@@ -6698,6 +6744,28 @@ components:
         file:
           type: string
           format: binary
+        creator:
+          type: string
+          minLength: 2
+          maxLength: 200
+        sourceDescription:
+          type: string
+          minLength: 3
+          maxLength: 1000
+        sourceUri:
+          type: string
+          format: uri
+          maxLength: 2048
+        rightsStatement:
+          type: string
+          minLength: 5
+          maxLength: 2000
+        rightsUri:
+          type: string
+          format: uri
+          maxLength: 2048
+        rightsAttested:
+          type: boolean
         targetType:
           $ref: "#/components/schemas/DiscoveryContentTargetType"
         targetId:

@@ -392,11 +392,23 @@ test("finance and marketing centers expose only real independent resource routes
 });
 
 test("marketing resource pages keep promotions and discovery content separate", async ({ page }) => {
+  const contentUploadKeys: string[] = [];
+  const contentUploadBodies: string[] = [];
   await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "marketing"]);
   await page.route("**/api/marketing/promotions**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ promotions: [{ id: "promotion-1", code: "WELCOME10", nameAr: "خصم البداية", kind: "PERCENTAGE", valueMinor: 10, state: "DRAFT", version: 1 }] }) });
   });
   await page.route("**/api/marketing/content**", async (route) => {
+    if (route.request().method() === "POST") {
+      contentUploadKeys.push(route.request().headers()["idempotency-key"] ?? "");
+      contentUploadBodies.push(route.request().postDataBuffer()?.toString("latin1") ?? "");
+      if (contentUploadKeys.length === 1) {
+        await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { message: "تعذر تأكيد الحفظ؛ أعد المحاولة." } }) });
+        return;
+      }
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ content: { id: "content-2", kind: "BANNER", titleAr: "مختارات الاختبار", bodyAr: "", mediaUri: "http://localhost/content.png", targetType: "INFO", state: "DRAFT", startsAt: "2099-01-01T00:00:00Z", ordinal: 0, version: 1, createdByActorId: "actor-operator", createdAt: "2098-01-01T00:00:00Z", updatedAt: "2098-01-01T00:00:00Z" }, idempotentReplay: false }) });
+      return;
+    }
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ id: "content-1", kind: "BANNER", titleAr: "مختارات الأسبوع", bodyAr: "اكتشف الجديد", state: "DRAFT", version: 1 }] }) });
   });
   await page.route("**/api/marketing/analytics**", async (route) => {
@@ -414,10 +426,30 @@ test("marketing resource pages keep promotions and discovery content separate", 
   await page.goto("/marketing/content");
   await expect(page.getByTestId("marketing-content-workspace")).toBeVisible();
   await expect(page.getByText("مختارات الأسبوع")).toBeVisible();
+  await page.getByText("إنشاء محتوى اكتشاف", { exact: true }).click();
   await expect(page.getByLabel("ملف صورة المحتوى")).toHaveAttribute("required", "");
+  await expect(page.getByLabel("اسم المنشئ أو المصوّر")).toBeVisible();
+  await expect(page.getByLabel("بيان الإذن أو الترخيص")).toBeVisible();
+  await expect(page.getByLabel("أقرّ بوجود إذن يسمح بعرض هذه الصورة")).toBeVisible();
   await expect(page.getByLabel("نوع وجهة المحتوى")).toHaveValue("INFO");
   await expect(page.getByLabel("مدينة خدمة المحتوى")).toContainText("صنعاء");
   await expect(page.getByTestId("marketing-promotions-workspace")).toHaveCount(0);
+  await page.getByLabel("عنوان المحتوى").fill("مختارات الاختبار");
+  await page.getByLabel("ملف صورة المحتوى").setInputFiles({ name: "content.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") });
+  await page.getByLabel("اسم المنشئ أو المصوّر").fill("Photo Studio");
+  await page.getByLabel("مصدر الصورة").fill("Photo Studio original artwork");
+  await page.getByLabel("بيان الإذن أو الترخيص").fill("Permission granted for platform display");
+  await page.getByLabel("أقرّ بوجود إذن يسمح بعرض هذه الصورة").check();
+  await page.getByRole("button", { name: "إنشاء مسودة المحتوى" }).click();
+  await expect(page.getByText("تعذر تأكيد الحفظ؛ أعد المحاولة.")).toBeVisible();
+  await page.getByRole("button", { name: "إنشاء مسودة المحتوى" }).click();
+  await expect(page.getByText("تم إنشاء المحتوى كمسودة.")).toBeVisible();
+  expect(contentUploadKeys).toHaveLength(2);
+  expect(contentUploadKeys[1]).toBe(contentUploadKeys[0]);
+  expect(contentUploadBodies[1]).toContain('name="id"');
+  expect(contentUploadBodies[1]).toContain("Photo Studio");
+  expect(contentUploadBodies[1]).toContain('name="rightsAttested"');
+  expect(contentUploadBodies[1]).toContain("true");
 });
 
 test("workspace shell exposes nested breadcrumbs and the current resource", async ({ page }) => {
@@ -1084,7 +1116,13 @@ test("operator replaces the primary product image and adds a gallery image throu
     media: [] as Array<{ uri: string; role: "primary" | "gallery"; ordinal: number }>,
   };
   let currentProduct = product;
-  const uploadCalls: Array<{ role: string; filename: string; expectedVersion: string; idempotencyKey: string }> = [];
+  const uploadCalls: Array<{ role: string; filename: string; expectedVersion: string; idempotencyKey: string; creator: string; attested: string }> = [];
+  async function enterImageRights() {
+    await page.getByLabel("اسم المنشئ أو المصوّر").fill("فريق الاختبار");
+    await page.getByLabel("مصدر الصورة", { exact: true }).fill("صورة تجريبية مملوكة لفريق الاختبار");
+    await page.getByLabel("بيان الإذن أو الترخيص").fill("إذن خطي يسمح بعرض الصورة في الكتالوج");
+    await page.getByLabel("أقرّ بوجود إذن يسمح بعرض هذه الصورة").check();
+  }
   await page.route("**/api/catalog/verticals**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", catalogModel: "SHARED_CATALOG", active: true, version: 1, createdAt: product.createdAt, updatedAt: product.updatedAt }] }) });
   });
@@ -1112,7 +1150,10 @@ test("operator replaces the primary product image and adds a gallery image throu
     const body = route.request().postDataBuffer()?.toString("latin1") ?? "";
     const role = body.match(/name="role"\r\n\r\n([^\r\n]+)/)?.[1] ?? "";
     const filename = body.match(/name="file"; filename="([^"]+)"/)?.[1] ?? "";
-    uploadCalls.push({ role, filename, expectedVersion: headers["x-expected-version"] ?? "", idempotencyKey: headers["idempotency-key"] ?? "" });
+    const creatorBytes = body.match(/name="creator"\r\n\r\n([^\r\n]+)/)?.[1] ?? "";
+    const creator = Buffer.from(creatorBytes, "latin1").toString("utf8");
+    const attested = body.match(/name="rightsAttested"\r\n\r\n([^\r\n]+)/)?.[1] ?? "";
+    uploadCalls.push({ role, filename, expectedVersion: headers["x-expected-version"] ?? "", idempotencyKey: headers["idempotency-key"] ?? "", creator, attested });
     const uri = `http://localhost:18080/dsh/catalog/media/catalog/products/${currentProduct.id}/uploads/${role}.png`;
     const nextMedia = role === "primary"
       ? [...currentProduct.media.filter((item) => item.role !== "primary"), { uri, role: "primary" as const, ordinal: 0 }]
@@ -1126,18 +1167,20 @@ test("operator replaces the primary product image and adds a gallery image throu
   await expect(page.getByLabel("رابط الصورة الأساسية")).toHaveCount(0);
   const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
   await page.getByLabel("ملف الصورة").setInputFiles({ name: "coffee-primary.png", mimeType: "image/png", buffer: onePixelPng });
+  await enterImageRights();
   await page.getByRole("button", { name: "رفع الصورة وربطها" }).click();
   await expect(page.getByRole("status")).toContainText("تم رفع الصورة الأساسية وربطها بالمنتج.");
   await expect(page.locator(".catalog-media-preview")).toHaveCount(1);
   await expect(page.locator(".catalog-media-preview")).toHaveAttribute("src", currentProduct.media[0]!.uri);
   await page.getByLabel("موضع الصورة").selectOption("gallery");
   await page.getByLabel("ملف الصورة").setInputFiles({ name: "coffee-gallery.png", mimeType: "image/png", buffer: onePixelPng });
+  await enterImageRights();
   await page.getByRole("button", { name: "رفع الصورة وربطها" }).click();
   await expect(page.getByRole("status")).toContainText("تم رفع الصورة وإضافتها إلى المعرض.");
   await expect(page.locator(".catalog-media-preview")).toHaveCount(2);
   expect(uploadCalls).toEqual([
-    { role: "primary", filename: "coffee-primary.png", expectedVersion: "1", idempotencyKey: expect.any(String) },
-    { role: "gallery", filename: "coffee-gallery.png", expectedVersion: "2", idempotencyKey: expect.any(String) },
+    { role: "primary", filename: "coffee-primary.png", expectedVersion: "1", idempotencyKey: expect.any(String), creator: "فريق الاختبار", attested: "true" },
+    { role: "gallery", filename: "coffee-gallery.png", expectedVersion: "2", idempotencyKey: expect.any(String), creator: "فريق الاختبار", attested: "true" },
   ]);
   expect(uploadCalls.every((call) => call.idempotencyKey.length >= 20)).toBe(true);
   expect(currentProduct.media).toEqual([
