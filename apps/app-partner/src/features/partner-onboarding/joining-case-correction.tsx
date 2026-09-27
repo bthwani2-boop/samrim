@@ -7,6 +7,12 @@ import { StyleSheet, Text, TextInput, View } from "react-native";
 import { correctAndResubmitOwnJoiningCase, listCatalogVerticals, readOwnJoiningCase } from "./store-readback-client";
 import { StoreProfileImageEditor } from "./store-profile-image-editor";
 
+function dshErrorCode(error: unknown): string {
+  if (!error || typeof error !== "object") return "";
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : "";
+}
+
 export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: JoiningCaseResponse; cities: ReadonlyArray<ServiceCity>; onUpdated: (next: JoiningCaseResponse) => void }) {
   const current = value.case;
   const theme = useAppearanceTheme();
@@ -75,7 +81,12 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
       } catch (readError) {
         console.error("DSH Partner correction recovery read failed", readError);
       }
-      if (nextError && typeof nextError === "object" && "status" in nextError && (nextError as { status?: unknown }).status === 409) {
+      const code = dshErrorCode(nextError);
+      if (code === "SERVICE_CITY_UNAVAILABLE") {
+        setError("مدينة الخدمة لم تعد نشطة. أعد قراءة المدن واختر مدينة أخرى قبل إعادة الإرسال.");
+      } else if (code === "VERTICAL_UNAVAILABLE") {
+        setError("الفئة الرئيسية لم تعد نشطة. أعد قراءة الأنشطة واختر فئة أخرى قبل إعادة الإرسال.");
+      } else if (code === "VERSION_CONFLICT" || code === "STATE_CONFLICT") {
         setError("تغيّرت الحالة أثناء التصحيح. أعد قراءة حالة الانضمام ثم حاول مجددًا.");
       } else {
         setError("تعذر حفظ التصحيح وإعادة الإرسال. تحقق من الاتصال ثم أعد المحاولة.");

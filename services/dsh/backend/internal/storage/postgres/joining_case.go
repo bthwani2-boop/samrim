@@ -139,6 +139,14 @@ func createJoiningCase(ctx context.Context, db *sql.DB, idempotencyKey, requestH
 	if len(fulfillmentModes) == 0 {
 		return JoiningCaseResult{}, ErrFulfillmentModesInvalid
 	}
+	serviceCityID = strings.TrimSpace(serviceCityID)
+	verticalID = strings.TrimSpace(verticalID)
+	if serviceCityID == "" {
+		return JoiningCaseResult{}, ErrJoiningCaseServiceCity
+	}
+	if verticalID == "" {
+		return JoiningCaseResult{}, ErrCatalogVerticalNotFound
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return JoiningCaseResult{}, fmt.Errorf("begin joining case: %w", err)
@@ -175,8 +183,9 @@ func createJoiningCase(ctx context.Context, db *sql.DB, idempotencyKey, requestH
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return JoiningCaseResult{}, err
 	}
-	cityID := strings.TrimSpace(serviceCityID)
-	verticalID = strings.TrimSpace(verticalID)
+	if err := requireActiveJoiningCaseOptionsTx(ctx, tx, serviceCityID, verticalID); err != nil {
+		return JoiningCaseResult{}, err
+	}
 	fulfillmentModes, err = NormalizeStoreFulfillmentModes(fulfillmentModes)
 	if err != nil {
 		return JoiningCaseResult{}, err
@@ -189,7 +198,7 @@ func createJoiningCase(ctx context.Context, db *sql.DB, idempotencyKey, requestH
 	if err != nil {
 		return JoiningCaseResult{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.joining_cases(id,contact_phone_e164,business_name,first_store_name,first_store_service_city_id,first_store_vertical_id,first_store_latitude,first_store_longitude,first_store_fulfillment_modes,originating_field_actor_id,origin) VALUES($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),$7,$8,$9,NULLIF($10,''),$11)`, caseID, phone, businessName, firstStoreName, cityID, verticalID, latitude, longitude, pq.Array(fulfillmentModes), originatingFieldActorID, origin); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.joining_cases(id,contact_phone_e164,business_name,first_store_name,first_store_service_city_id,first_store_vertical_id,first_store_latitude,first_store_longitude,first_store_fulfillment_modes,originating_field_actor_id,origin) VALUES($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),$7,$8,$9,NULLIF($10,''),$11)`, caseID, phone, businessName, firstStoreName, serviceCityID, verticalID, latitude, longitude, pq.Array(fulfillmentModes), originatingFieldActorID, origin); err != nil {
 		return JoiningCaseResult{}, fmt.Errorf("create joining case: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.joining_case_mutation_idempotency(idempotency_key,request_hash,case_id,operation,result_version,result_state) VALUES($1,$2,$3,'create',1,'draft')`, idempotencyKey, requestHash, caseID); err != nil {
@@ -373,16 +382,24 @@ func correctAndResubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, acto
 	if current.Case.PartnerActorID == "" || current.Case.PartnerActorID != actorID {
 		return JoiningCaseResult{}, ErrJoiningCasePartnerAccess
 	}
-	cityID := current.Case.FirstStoreServiceCityID
-	cityID = strings.TrimSpace(serviceCityID)
+	serviceCityID = strings.TrimSpace(serviceCityID)
 	verticalID = strings.TrimSpace(verticalID)
+	if serviceCityID == "" {
+		return JoiningCaseResult{}, ErrJoiningCaseServiceCity
+	}
+	if verticalID == "" {
+		return JoiningCaseResult{}, ErrCatalogVerticalNotFound
+	}
+	if err := requireActiveJoiningCaseOptionsTx(ctx, tx, serviceCityID, verticalID); err != nil {
+		return JoiningCaseResult{}, err
+	}
 	latitude, longitude, err = normalizeLocation(latitude, longitude)
 	if err != nil {
 		return JoiningCaseResult{}, ErrJoiningCaseStoreOrigin
 	}
 	var updatedID string
 	query := `UPDATE dsh.joining_cases SET business_name=$2,first_store_name=$3,first_store_service_city_id=NULLIF($4,''),first_store_vertical_id=NULLIF($5,''),first_store_latitude=$6,first_store_longitude=$7,state='submitted',correction_reason=NULL,reviewed_by=NULL,store_id=NULL,commission_rate_bps=NULL,settlement_period=NULL,financial_profile_id=NULL,financial_profile_state='REQUIRED',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND partner_actor_id=$8 AND state='needs_correction' AND version=$9 RETURNING id`
-	if err := tx.QueryRowContext(ctx, query, current.Case.ID, businessName, firstStoreName, cityID, verticalID, latitude, longitude, actorID, expectedVersion).Scan(&updatedID); err != nil {
+	if err := tx.QueryRowContext(ctx, query, current.Case.ID, businessName, firstStoreName, serviceCityID, verticalID, latitude, longitude, actorID, expectedVersion).Scan(&updatedID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return JoiningCaseResult{}, ErrJoiningCaseVersion
 		}
@@ -404,6 +421,25 @@ func correctAndResubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, acto
 	result, err = ReadJoiningCase(ctx, db, caseID)
 	result.Replayed = false
 	return result, err
+}
+
+func requireActiveJoiningCaseOptionsTx(ctx context.Context, tx *sql.Tx, serviceCityID, verticalID string) error {
+	var active bool
+	err := tx.QueryRowContext(ctx, "SELECT active FROM dsh.service_cities WHERE id=$1 FOR SHARE", strings.TrimSpace(serviceCityID)).Scan(&active)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && !active) {
+		return ErrJoiningCaseServiceCity
+	}
+	if err != nil {
+		return fmt.Errorf("read joining case service city: %w", err)
+	}
+	err = tx.QueryRowContext(ctx, "SELECT active FROM dsh.commerce_verticals WHERE id=$1 FOR SHARE", strings.TrimSpace(verticalID)).Scan(&active)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && !active) {
+		return ErrCatalogVerticalNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("read joining case commerce vertical: %w", err)
+	}
+	return nil
 }
 
 type joiningCaseCursor struct {

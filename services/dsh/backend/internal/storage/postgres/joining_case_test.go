@@ -53,7 +53,8 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 		}
 
 		initialModes := []string{postgres.FulfillmentModeBthwaniCaptain}
-		created, err := postgres.CreateJoiningCaseForField(ctx, db, "idem-join-field-create", postgres.HashJoiningCaseRequest("+967700000101", "نشاط التصحيح", "متجر التصحيح", serviceCityID, verticalID, 15.369445, 44.191006, initialModes), fieldActorID, "corr-join-field-create", "+967700000101", "نشاط التصحيح", "متجر التصحيح", serviceCityID, verticalID, 15.369445, 44.191006, initialModes)
+		createHash := postgres.HashJoiningCaseRequest("+967700000101", "نشاط التصحيح", "متجر التصحيح", serviceCityID, verticalID, 15.369445, 44.191006, initialModes)
+		created, err := postgres.CreateJoiningCaseForField(ctx, db, "idem-join-field-create", createHash, fieldActorID, "corr-join-field-create", "+967700000101", "نشاط التصحيح", "متجر التصحيح", serviceCityID, verticalID, 15.369445, 44.191006, initialModes)
 		if err != nil || created.Case.Origin != "field" || created.Case.PartnerActorID != "" {
 			t.Fatalf("create Field-originated joining case failed: %+v err=%v", created, err)
 		}
@@ -92,6 +93,12 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 		if err != nil || corrected.Replayed || corrected.Case.State != "submitted" || corrected.Case.Version != returned.Case.Version+1 || corrected.Case.Origin != "field" || corrected.Case.PartnerActorID != partnerActor || corrected.Case.BusinessName != "نشاط مصحح" || corrected.Case.FirstStoreName != "متجر مصحح" || corrected.Case.FirstStoreLatitude == nil || *corrected.Case.FirstStoreLatitude != 15.4 || corrected.Case.FirstStoreLongitude == nil || *corrected.Case.FirstStoreLongitude != 44.2 || !equalStoreFulfillmentModes(corrected.Case.FirstStoreFulfillmentModes, initialModes) {
 			t.Fatalf("bound Partner did not atomically correct Field-originated case: %+v err=%v", corrected, err)
 		}
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.service_cities SET active=false WHERE id=$1", serviceCityID); err != nil {
+			t.Fatalf("deactivate Service City for idempotency recovery proof: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.commerce_verticals SET active=false WHERE id=$1", verticalID); err != nil {
+			t.Fatalf("deactivate Commerce Vertical for idempotency recovery proof: %v", err)
+		}
 
 		replay, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, created.Case.ID, partnerActor, "نشاط مصحح", "متجر مصحح", returned.Case.Version, "idem-join-partner-correct", requestHash, "corr-join-partner-correct-replay", serviceCityID, verticalID, 15.4, 44.2)
 		if err != nil || !replay.Replayed || replay.Case.Version != corrected.Case.Version || !equalStoreFulfillmentModes(replay.Case.FirstStoreFulfillmentModes, initialModes) {
@@ -101,6 +108,28 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 		conflictingHash := postgres.HashJoiningCaseCorrectAndResubmit(created.Case.ID, partnerActor, "نشاط مصحح", "اسم مختلف", returned.Case.Version, serviceCityID, verticalID, 15.4, 44.2)
 		if _, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, created.Case.ID, partnerActor, "نشاط مصحح", "اسم مختلف", returned.Case.Version, "idem-join-partner-correct", conflictingHash, "corr-join-partner-conflict", serviceCityID, verticalID, 15.4, 44.2); !errors.Is(err, postgres.ErrJoiningCaseIdempotency) {
 			t.Fatalf("changed correction facts did not affect correction idempotency: %v", err)
+		}
+		createReplay, err := postgres.CreateJoiningCaseForField(ctx, db, "idem-join-field-create", createHash, fieldActorID, "corr-join-field-create-replay", "+967700000101", "نشاط التصحيح", "متجر التصحيح", serviceCityID, verticalID, 15.369445, 44.191006, initialModes)
+		if err != nil || !createReplay.Replayed || createReplay.Case.ID != created.Case.ID {
+			t.Fatalf("Field create replay did not return its canonical case after option deactivation: %+v err=%v", createReplay, err)
+		}
+
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.service_cities SET active=true WHERE id=$1", serviceCityID); err != nil {
+			t.Fatalf("reactivate Service City for validation proof: %v", err)
+		}
+		verticalHash := postgres.HashJoiningCaseRequest("+967700000102", "نشاط غير نشط", "متجر غير نشط", serviceCityID, verticalID, 15.369445, 44.191006, initialModes)
+		if _, err := postgres.CreateJoiningCase(ctx, db, "idem-join-inactive-vertical", verticalHash, operatorActor, "corr-join-inactive-vertical", "+967700000102", "نشاط غير نشط", "متجر غير نشط", serviceCityID, verticalID, 15.369445, 44.191006, initialModes); !errors.Is(err, postgres.ErrCatalogVerticalNotFound) {
+			t.Fatalf("new joining case with inactive vertical error = %v, want inactive vertical", err)
+		}
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.commerce_verticals SET active=true WHERE id=$1", verticalID); err != nil {
+			t.Fatalf("reactivate Commerce Vertical for validation proof: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.service_cities SET active=false WHERE id=$1", serviceCityID); err != nil {
+			t.Fatalf("deactivate Service City for validation proof: %v", err)
+		}
+		cityHash := postgres.HashJoiningCaseRequest("+967700000103", "مدينة غير نشطة", "متجر غير نشط", serviceCityID, verticalID, 15.369445, 44.191006, initialModes)
+		if _, err := postgres.CreateJoiningCase(ctx, db, "idem-join-inactive-city", cityHash, operatorActor, "corr-join-inactive-city", "+967700000103", "مدينة غير نشطة", "متجر غير نشط", serviceCityID, verticalID, 15.369445, 44.191006, initialModes); !errors.Is(err, postgres.ErrJoiningCaseServiceCity) {
+			t.Fatalf("new joining case with inactive service city error = %v, want inactive city", err)
 		}
 	})
 }

@@ -384,8 +384,10 @@ func writeJoiningCaseError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an eligible app-field session is required")
 	case errors.Is(err, joiningcase.ErrStoreProfileMediaSessionForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an eligible Field or Partner session is required")
-	case errors.Is(err, joiningcase.ErrServiceCityUnavailable), errors.Is(err, postgres.ErrJoiningCaseServiceCity):
+	case errors.Is(err, postgres.ErrJoiningCaseServiceCity):
 		writeError(w, http.StatusConflict, "SERVICE_CITY_UNAVAILABLE", "an active service city is required")
+	case errors.Is(err, postgres.ErrCatalogVerticalNotFound):
+		writeError(w, http.StatusConflict, "VERTICAL_UNAVAILABLE", "an active commerce vertical is required")
 	case errors.Is(err, postgres.ErrJoiningCaseStoreOrigin):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a fixed store origin is required in the joining case")
 	default:

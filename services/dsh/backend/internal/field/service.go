@@ -10,7 +10,6 @@ import (
 	"unicode/utf8"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/joiningcase"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
@@ -289,14 +288,6 @@ func (s *Service) CreateJoiningCase(ctx context.Context, accessToken, idempotenc
 	}
 	if !phoneE164Pattern.MatchString(phone) || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || serviceCityID == "" || verticalID == "" || math.IsNaN(latitude) || math.IsInf(latitude, 0) || math.IsNaN(longitude) || math.IsInf(longitude, 0) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180 || strings.TrimSpace(idempotencyKey) == "" || len(strings.TrimSpace(correlationID)) < 8 {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
-	}
-	city, err := postgres.ReadServiceCity(ctx, s.db, serviceCityID)
-	if err != nil || !city.Active {
-		return postgres.JoiningCaseResult{}, joiningcase.ErrServiceCityUnavailable
-	}
-	vertical, err := postgres.ReadCommerceVertical(ctx, s.db, verticalID)
-	if err != nil || !vertical.Active {
-		return postgres.JoiningCaseResult{}, postgres.ErrCatalogVerticalNotFound
 	}
 	return postgres.CreateJoiningCaseForField(ctx, s.db, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseFieldRequest(identity.Subject, phone, businessName, firstStoreName, serviceCityID, verticalID, latitude, longitude, fulfillmentModes), identity.Subject, strings.TrimSpace(correlationID), phone, businessName, firstStoreName, serviceCityID, verticalID, latitude, longitude, fulfillmentModes)
 }

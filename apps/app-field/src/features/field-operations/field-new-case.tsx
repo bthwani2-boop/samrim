@@ -136,7 +136,14 @@ const theme = useAppearanceTheme();
         setError("تعذر تأكيد نتيجة الحفظ. أعد المحاولة لإعادة قراءة النتيجة من DSH بالمفتاح نفسه.");
       } else {
         setPendingCreateAttempt(null);
-        setError(dshErrorCode(cause) === "JOINING_CASE_EXISTS" ? "يوجد ملف نشط لهذا الهاتف. افتح ملفات الانضمام للتحقق من السجل قبل إنشاء ملف آخر." : "تعذر حفظ الملف. تحقق من الهاتف والأسماء والاختيارات ثم أعد المحاولة.");
+        const code = dshErrorCode(cause);
+        setError(code === "JOINING_CASE_EXISTS"
+          ? "يوجد ملف نشط لهذا الهاتف. افتح ملفات الانضمام للتحقق من السجل قبل إنشاء ملف آخر."
+          : code === "SERVICE_CITY_UNAVAILABLE"
+            ? "مدينة الخدمة لم تعد نشطة. أعد قراءة المدن واختر مدينة أخرى."
+            : code === "VERTICAL_UNAVAILABLE"
+              ? "الفئة الرئيسية لم تعد نشطة. أعد قراءة الأنشطة واختر فئة أخرى."
+              : "تعذر حفظ الملف. تحقق من الهاتف والأسماء والاختيارات ثم أعد المحاولة.");
       }
     } finally {
       setBusy(false);

@@ -22,7 +22,6 @@ var (
 	ErrPartnerIdentityUnavailable       = errors.New("partner identity admission is unavailable")
 	ErrPartnerFinancialTermsPolicyStale = errors.New("partner financial terms policy changed after it was read")
 	ErrInvalidInput                     = errors.New("joining case input is invalid")
-	ErrServiceCityUnavailable           = errors.New("an active service city is required")
 )
 
 var phoneE164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
@@ -59,14 +58,6 @@ func (s *Service) Create(ctx context.Context, input postgres.JoiningCaseRecord, 
 	}
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.JoiningCaseResult{}, err
-	}
-	city, err := postgres.ReadServiceCity(ctx, s.db, serviceCityID)
-	if err != nil || !city.Active {
-		return postgres.JoiningCaseResult{}, ErrServiceCityUnavailable
-	}
-	vertical, err := postgres.ReadCommerceVertical(ctx, s.db, verticalID)
-	if err != nil || !vertical.Active {
-		return postgres.JoiningCaseResult{}, postgres.ErrCatalogVerticalNotFound
 	}
 	return postgres.CreateJoiningCase(ctx, s.db, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseRequest(phone, businessName, firstStoreName, serviceCityID, verticalID, *input.FirstStoreLatitude, *input.FirstStoreLongitude, fulfillmentModes), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID), phone, businessName, firstStoreName, serviceCityID, verticalID, *input.FirstStoreLatitude, *input.FirstStoreLongitude, fulfillmentModes)
 }
@@ -334,14 +325,6 @@ func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken,
 	verticalID = strings.TrimSpace(verticalID)
 	if caseID == "" || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || serviceCityID == "" || verticalID == "" || expectedVersion < 1 || !validCoordinates(latitude, longitude) {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
-	}
-	city, err := postgres.ReadServiceCity(ctx, s.db, serviceCityID)
-	if err != nil || !city.Active {
-		return postgres.JoiningCaseResult{}, ErrServiceCityUnavailable
-	}
-	vertical, err := postgres.ReadCommerceVertical(ctx, s.db, verticalID)
-	if err != nil || !vertical.Active {
-		return postgres.JoiningCaseResult{}, postgres.ErrCatalogVerticalNotFound
 	}
 	return postgres.CorrectAndResubmitJoiningCase(ctx, s.db, caseID, identity.Subject, businessName, firstStoreName, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseCorrectAndResubmit(caseID, identity.Subject, businessName, firstStoreName, expectedVersion, serviceCityID, verticalID, latitude, longitude), strings.TrimSpace(correlationID), serviceCityID, verticalID, latitude, longitude)
 }
