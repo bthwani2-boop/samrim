@@ -5,7 +5,8 @@
   "implicitDependencies": [
     "dsh",
     "dsh-database",
-    "identity-go-client"
+    "identity-go-client",
+    "wlt-go-client"
   ],
   "targets": {
     "build": {
