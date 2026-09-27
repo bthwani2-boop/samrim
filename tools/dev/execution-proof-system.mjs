@@ -31,7 +31,7 @@ assert(!ciProject.targets?.["runtime-images"], "repository-ci must not own runti
 assert(ciProject.targets?.["execution-proof-system"]?.cache === true, "repository-ci:execution-proof-system must be cache=true");
 const executionInputs = ciProject.targets?.["execution-proof-system"]?.inputs ?? [];
 assert(!executionInputs.includes("{workspaceRoot}/**/*"), "execution-proof-system must not hash the whole repository");
-assert(executionInputs.includes("{workspaceRoot}/tools/runtime-proof/**/*"), "execution-proof-system must include runtime router source");
+assert(executionInputs.includes("{workspaceRoot}/tools/dev/runtime-proof/**/*"), "execution-proof-system must include runtime router source");
 
 const tooling = data("tools/dev/project.json");
 assert(!tooling.namedInputs?.repository, "workspace-tooling retains ambiguous repository-wide input");
@@ -42,17 +42,11 @@ const trackedContent = JSON.stringify(tooling.namedInputs?.trackedRepositoryCont
 assert(trackedContent.includes("git ls-files -s"), "tracked repository content must use Git index hashes");
 assert(!trackedContent.includes("{workspaceRoot}/**/*"), "tracked repository content must not make Nx hash the entire tree");
 const structureInput = JSON.stringify(tooling.namedInputs?.repositoryStructure ?? []);
-for (const token of ["REPOSITORY-STRUCTURE.md", "**/project.json", "git ls-files"]) {
-  assert(structureInput.includes(token), `repository structure input missing ${token}`);
-}
+for (const token of ["REPOSITORY-STRUCTURE.md", "**/project.json", "git ls-files"]) assert(structureInput.includes(token), `repository structure input missing ${token}`);
 const hygieneInput = JSON.stringify(tooling.namedInputs?.structuralHygiene ?? []);
-for (const token of ["git ls-files -s", "git ls-files --eol", ".gitattributes", "**/package.json", "**/project.json"]) {
-  assert(hygieneInput.includes(token), `structural hygiene input missing ${token}`);
-}
+for (const token of ["git ls-files -s", "git ls-files --eol", ".gitattributes", "**/package.json", "**/project.json"]) assert(hygieneInput.includes(token), `structural hygiene input missing ${token}`);
 assert((tooling.targets?.["knowledge-materialize"]?.outputs ?? []).includes("{workspaceRoot}/.cache/bthwani-knowledge"), "knowledge materialization output drifted");
-for (const target of ["docs-command-parity", "docs-config-parity", "knowledge-system", "knowledge-references"]) {
-  assert((tooling.targets?.[target]?.dependsOn ?? []).includes("knowledge-materialize"), `workspace-tooling:${target} must depend on knowledge-materialize`);
-}
+for (const target of ["docs-command-parity", "docs-config-parity", "knowledge-system", "knowledge-references"]) assert((tooling.targets?.[target]?.dependsOn ?? []).includes("knowledge-materialize"), `workspace-tooling:${target} must depend on knowledge-materialize`);
 
 const control = data("apps/control-panel/project.json");
 assert(control.targets?.e2e?.cache === false, "control-panel:e2e must be cache=false");
@@ -75,12 +69,12 @@ const wlt = data("services/wlt/backend/project.json");
 assert(wlt.targets?.["financial-invariants"]?.cache === false, "wlt financial invariants must be cache=false");
 assert(JSON.stringify(wlt.targets?.["financial-invariants"]?.dependsOn ?? []) === JSON.stringify(["schema-proof"]), "wlt financial invariants must depend only on local schema-proof");
 
-const routerProject = data("tools/runtime-proof/project.json");
+const routerProject = data("tools/dev/runtime-proof/project.json");
 assert(routerProject.name === "runtime-proof-routing", "runtime router Nx owner name drifted");
 assert(routerProject.targets?.resolve?.cache === false, "runtime router resolution must be cache=false");
 assert(routerProject.targets?.unit?.cache === true, "runtime router tests must be cache=true");
 
-const router = read("tools/runtime-proof/resolve.mjs");
+const router = read("tools/dev/runtime-proof/resolve.mjs");
 for (const token of [
   '"nx", "show", "projects", "--affected"',
   "runtime-sensitive Nx projects lack runtime classification",
@@ -88,20 +82,16 @@ for (const token of [
   "CI_RUNTIME_TARGETS=",
   "CI_RUNTIME_IMAGES=",
   "CI_RUNTIME_SERVICES=",
-]) {
-  assert(router.includes(token), `runtime router missing ${token}`);
-}
+]) assert(router.includes(token), `runtime router missing ${token}`);
 assert(!router.includes("git diff") && !router.includes("git status"), "runtime router must consume Nx affected truth instead of a parallel Git affected engine");
 
-const routerTests = read("tools/runtime-proof/resolve.test.mjs");
+const routerTests = read("tools/dev/runtime-proof/resolve.test.mjs");
 for (const token of [
   "control-only change selects only control runtime lane",
   "identity scope selects only identity runtime lane",
   "runtime-sensitive owner without classification fails closed",
   "scheduled/full regression selects every canonical lane",
-]) {
-  assert(routerTests.includes(token), `runtime router tests missing ${token}`);
-}
+]) assert(routerTests.includes(token), `runtime router tests missing ${token}`);
 
 const runtimeRunner = read("tools/dev/run-ci-runtime-proof.mjs");
 assert(runtimeRunner.includes("CI_RUNTIME_TARGETS"), "runtime runner must consume routed targets");
@@ -121,9 +111,7 @@ for (const token of [
   "run-ci-command.mjs runtime-start",
   "run-ci-command.mjs runtime-integration",
   "up -d --no-build",
-]) {
-  assert(runtimeWorkflow.includes(token), `runtime workflow missing ${token}`);
-}
+]) assert(runtimeWorkflow.includes(token), `runtime workflow missing ${token}`);
 for (const forbidden of [
   "--projects=repository-ci",
   "repository-ci:runtime-images",
@@ -133,9 +121,7 @@ for (const forbidden of [
   "node tools/dev/verify-identity-",
   "node tools/dev/verify-dsh-",
   "pnpm --dir apps/control-panel test:e2e:live",
-]) {
-  assert(!runtimeWorkflow.includes(forbidden), `runtime workflow retains superseded scope/proof path: ${forbidden}`);
-}
+]) assert(!runtimeWorkflow.includes(forbidden), `runtime workflow retains superseded scope/proof path: ${forbidden}`);
 assert(runtimeWorkflow.indexOf("Resolve affected runtime proof lanes through Nx") < runtimeWorkflow.indexOf("Set up Buildx"), "runtime scope must resolve before Buildx setup");
 
 const staticWorkflow = read(".github/workflows/ci-static.yml");
@@ -154,7 +140,6 @@ assert(Array.isArray(budgets.enforcedBudgets), "CI enforced budget list missing"
 const knownBudgets = new Set(Object.keys(budgets.budgetsMs ?? {}));
 assert(new Set(budgets.enforcedBudgets).size === budgets.enforcedBudgets.length, "CI enforced budget list contains duplicates");
 assert(budgets.enforcedBudgets.every((name) => knownBudgets.has(name)), "CI enforced budget references undefined budget");
-
 for (const file of workflowNames) {
   const body = read(`.github/workflows/${file}`);
   if (budgets.mode === "observe") assert(!body.includes("start-nx-agents"), `${file} enables distributed execution before measured admission`);
