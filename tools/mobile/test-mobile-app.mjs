@@ -104,6 +104,12 @@ import { pathToFileURL } from "node:url";
 register(pathToFileURL(path.join(root, "tools/dev/ts-resolver.mjs")).href, import.meta.url);
 const { IdentitySessionManager } = await import(pathToFileURL(path.join(root, "services/identity/clients/session.ts")).href);
 const { identitySessionSignOutMessage } = await import(pathToFileURL(path.join(root, "services/identity/clients/errors.ts")).href);
+const {
+  createOrderConversationMessageAttempt,
+  orderConversationMessageAttemptStorageKey,
+  parseOrderConversationMessageAttempt,
+} = await import(pathToFileURL(path.join(root, "services/dsh/clients/order-conversation-attempt.ts")).href);
+const { createDshMobileClient } = await import(pathToFileURL(path.join(root, "services/dsh/clients/mobile.ts")).href);
 
 const { defineSamrimExpoApp } = await import(pathToFileURL(path.join(root, "tools/mobile/define-samrim-expo-app.cjs")).href);
 const expectsForegroundLocation = app === "app-client" || app === "app-captain";
@@ -199,6 +205,47 @@ const samplePair = {
   refreshToken: "token_refresh_valid_len_32_characters_ok",
   identity: sampleIdentity,
 };
+
+if (app !== "app-field") {
+  const attempt = createOrderConversationMessageAttempt(
+    sampleIdentity.subject,
+    "order_conversation_test_001",
+    "  محادثة تشغيلية  ",
+    "conversation_idempotency_001",
+    "conversation_correlation_001",
+  );
+  const serializedAttempt = JSON.stringify(attempt);
+  assert.deepEqual(parseOrderConversationMessageAttempt(serializedAttempt, sampleIdentity.subject, attempt.orderID), attempt);
+  assert.notEqual(
+    orderConversationMessageAttemptStorageKey(role, sampleIdentity.subject, attempt.orderID),
+    orderConversationMessageAttemptStorageKey(role, sampleIdentity.subject, "order_conversation_test_002"),
+  );
+  assert.throws(
+    () => parseOrderConversationMessageAttempt(serializedAttempt, "usr_another_actor", attempt.orderID),
+    /DSH_ORDER_CONVERSATION_ATTEMPT_SCOPE_MISMATCH/,
+  );
+
+  const originalFetch = globalThis.fetch;
+  const capturedHeaders = [];
+  globalThis.fetch = async (_input, init) => {
+    capturedHeaders.push(new Headers(init?.headers));
+    return new Response("{}", { status: 201, headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    const dshClient = createDshMobileClient("https://dsh.test", { cryptoRandomUUID: () => "fallback-generated-id" });
+    await dshClient.sendOrderConversationMessage("access-token", attempt.orderID, { body: attempt.body }, attempt.idempotencyKey, attempt.correlationID);
+    await dshClient.sendOrderConversationMessage("access-token", attempt.orderID, { body: attempt.body }, attempt.idempotencyKey, attempt.correlationID);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.equal(capturedHeaders.length, 2);
+  for (const headers of capturedHeaders) {
+    assert.equal(headers.get("Idempotency-Key"), attempt.idempotencyKey);
+    assert.equal(headers.get("X-Correlation-ID"), attempt.correlationID);
+    assert.notEqual(headers.get("Idempotency-Key"), "fallback-generated-id");
+  }
+  console.log(`MOBILE_ORDER_CONVERSATION_RETRY=PASS app=${app}`);
+}
 
 // Test 1: Clean storage -> signed_out
 {
@@ -526,4 +573,4 @@ for (const [status, code, reason] of [[429, "RATE_LIMITED", "rate_limited"], [50
   assert.equal(developmentCalls, 1);
 }
 
-console.log(`MOBILE_TEST=PASS app=${app} cases=19+`);
+console.log(`MOBILE_TEST=PASS app=${app} cases=${app === "app-field" ? "19+" : "20+"}`);

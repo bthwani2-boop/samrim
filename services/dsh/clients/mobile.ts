@@ -499,12 +499,13 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = `${dshOperationPaths.readOrderConversation.path.replace("{orderId}", encodeURIComponent(normalized))}?${new URLSearchParams({ limit: String(limit) }).toString()}`;
       return userRequest<OrderConversationResponse>(accessToken, path, dshOperationPaths.readOrderConversation.method);
     },
-    async sendOrderConversationMessage(accessToken: string, orderID: string, input: CreateOrderConversationMessageRequest): Promise<OrderConversationMessageResponse> {
+    async sendOrderConversationMessage(accessToken: string, orderID: string, input: CreateOrderConversationMessageRequest, idempotencyKey: string, correlationID: string): Promise<OrderConversationMessageResponse> {
       const normalized = orderID.trim();
       const body = input.body.trim();
       if (!normalized || Array.from(body).length < 1 || Array.from(body).length > 2000) throw new Error("DSH_ORDER_CONVERSATION_BODY_INVALID");
+      if (idempotencyKey.trim().length < 8 || idempotencyKey.trim().length > 128 || correlationID.trim().length < 8 || correlationID.trim().length > 128) throw new Error("DSH_ORDER_CONVERSATION_ATTEMPT_REQUIRED");
       const path = dshOperationPaths.sendOrderConversationMessage.path.replace("{orderId}", encodeURIComponent(normalized));
-      return userRequest<OrderConversationMessageResponse>(accessToken, path, dshOperationPaths.sendOrderConversationMessage.method, { body }, mutationHeaders());
+      return userRequest<OrderConversationMessageResponse>(accessToken, path, dshOperationPaths.sendOrderConversationMessage.method, { body }, mutationHeaders(idempotencyKey, correlationID));
     },
     async markOrderConversationRead(accessToken: string, orderID: string, input: MarkOrderConversationReadRequest): Promise<OrderConversationReadResponse> {
       const normalized = orderID.trim();
