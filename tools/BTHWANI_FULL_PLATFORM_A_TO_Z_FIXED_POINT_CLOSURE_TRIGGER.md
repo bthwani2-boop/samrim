@@ -355,7 +355,7 @@ REUSABLE ASSETS WHEN LICENSED/VALID
 قبل أي live competitor inspection اقرأ الملفات الخمسة canonical تحت:
 
 ```text
-tools/competitors/
+D:\governance-and-docs\docs\reference\competitors\
 ├── tawseel-one.md
 ├── tasaheel.md
 ├── etlobni.md
@@ -479,13 +479,13 @@ CURRENT BTHWANI + GOVERNANCE
 
 ## 7.2. Sequential competitor-review checkpoint — 2026-09-26
 
-- Tawseel One: refreshed its canonical file at `tools/competitors/tawseel-one.md` from the installed app (`2.0.63`, versionCode `263`) using visible black-box interaction. Status remains `PARTIAL_INTERACTIVE_BLACK_BOX_REVIEW`; the file separates observed behavior, temporary reversible checks, and untested payment/destructive/account/external paths.
-- Local evidence: 46 linked PNG captures are in `tools/competitors/local-photos/tawseel-one/`. The folder ignores all captures; they are local-only and must not be staged, committed, uploaded or pushed.
+- Tawseel One: refreshed its canonical file at `D:\governance-and-docs\docs\reference\competitors\tawseel-one.md` from the installed app (`2.0.63`, versionCode `263`) using visible black-box interaction. Status remains `PARTIAL_INTERACTIVE_BLACK_BOX_REVIEW`; the file separates observed behavior, temporary reversible checks, and untested payment/destructive/account/external paths.
+- Local evidence: 46 linked PNG captures are in `D:\governance-and-docs\docs\reference\competitors\local-photos/tawseel-one/`. The folder ignores all captures; they are local-only and must not be staged, committed, uploaded or pushed.
 - This checkpoint records review progress only. Tawseel observations are decision evidence and do not change BThwani Product truth or close any BThwani implementation gap.
-- Tasaheel: refreshed `tools/competitors/tasaheel.md` from the installed `1.7.9` app (versionCode `179`). Account routes and a cart-add action reached sign-in gates; the Settings modal was inspected read-only. Status remains partial, with no authentication or cart/order mutation.
-- Tasaheel local evidence: 17 PNG captures are in `tools/competitors/local-photos/tasaheel/`, with selected review captures linked from the canonical file. All captures are ignored by Git and remain local-only; none may be staged, committed, uploaded or pushed.
-- Etlobni: refreshed `tools/competitors/etlobni.md` from the installed `1.2.0` app (versionCode `10236`) with a moderate pass focused on its launch promotion, `انفعني` form, empty cart and account entry points. Status remains partial; no request, account or order was submitted.
-- Etlobni local evidence: 8 PNG captures are linked from the canonical file under `tools/competitors/local-photos/etlobni/`. All are ignored by Git and remain local-only; none may be staged, committed, uploaded or pushed.
+- Tasaheel: refreshed `D:\governance-and-docs\docs\reference\competitors\tasaheel.md` from the installed `1.7.9` app (versionCode `179`). Account routes and a cart-add action reached sign-in gates; the Settings modal was inspected read-only. Status remains partial, with no authentication or cart/order mutation.
+- Tasaheel local evidence: 17 PNG captures are in `D:\governance-and-docs\docs\reference\competitors\local-photos/tasaheel/`, with selected review captures linked from the canonical file. All captures are ignored by Git and remain local-only; none may be staged, committed, uploaded or pushed.
+- Etlobni: refreshed `D:\governance-and-docs\docs\reference\competitors\etlobni.md` from the installed `1.2.0` app (versionCode `10236`) with a moderate pass focused on its launch promotion, `انفعني` form, empty cart and account entry points. Status remains partial; no request, account or order was submitted.
+- Etlobni local evidence: 8 PNG captures are linked from the canonical file under `D:\governance-and-docs\docs\reference\competitors\local-photos/etlobni/`. All are ignored by Git and remain local-only; none may be staged, committed, uploaded or pushed.
 - Nass and HungerStation: their current canonical reviews were reused at their already-recorded partial scope; installed readback still matches Nass `1.0.52`/versionCode `76` and HungerStation `8.0.299`/versionCode `1527`. No deeper pass or account/order interaction was done for these supporting competitors.
 - Focus for the remaining review work: return to Tawseel One for the deeper pass requested by the user, prioritizing its remaining safe category and control coverage. The other competitor apps receive proportionate review only.
 
