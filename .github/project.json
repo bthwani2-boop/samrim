@@ -25,7 +25,7 @@
         "{workspaceRoot}/**/project.json",
         "{workspaceRoot}/.github/workflows/**/*",
         "{workspaceRoot}/.github/ci-performance-budgets.json",
-        "{workspaceRoot}/tools/runtime-proof/**/*",
+        "{workspaceRoot}/tools/dev/runtime-proof/**/*",
         "{workspaceRoot}/tools/dev/verify-local-candidate.ps1",
         "{workspaceRoot}/tools/dev/run-ci-runtime-proof.mjs",
         "{workspaceRoot}/tools/dev/verify-execution-proof-system.mjs",
