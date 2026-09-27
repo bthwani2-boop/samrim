@@ -48,6 +48,15 @@ func main() {
 			) violations`,
 		},
 		{
+			name: "duplicate-ledger-source-postings",
+			query: `SELECT COUNT(*) FROM (
+				SELECT source_type,source_id
+				FROM wlt.ledger_transactions
+				GROUP BY source_type,source_id
+				HAVING COUNT(*) <> 1
+			) violations`,
+		},
+		{
 			name: "settled-cash-in-ledger-link",
 			query: `SELECT COUNT(*)
 			FROM wlt.cash_in_funding_intents f
@@ -60,6 +69,66 @@ func main() {
 				OR (f.actor_type='customer' AND t.transaction_type <> 'CUSTOMER_WALLET_TOPUP')
 				OR (f.actor_type='captain' AND t.transaction_type <> 'CAPTAIN_TOPUP')
 			)`,
+		},
+		{
+			name: "settled-cash-in-exact-ledger-effect",
+			query: `SELECT COUNT(*)
+			FROM wlt.cash_in_funding_intents f
+			WHERE f.state='SETTLED' AND (
+				(SELECT COUNT(*) FROM wlt.ledger_entries e
+					WHERE e.transaction_id=f.ledger_transaction_id
+					AND e.account_class='asset'
+					AND e.account_code='EXTERNAL_SETTLEMENT_CASH'
+					AND e.actor_type IS NULL AND e.actor_id IS NULL
+					AND e.direction='DEBIT'
+					AND e.amount_minor=f.requested_amount_minor
+					AND e.currency=f.currency) <> 1
+				OR (SELECT COUNT(*) FROM wlt.ledger_entries e
+					WHERE e.transaction_id=f.ledger_transaction_id
+					AND e.account_class='liability'
+					AND e.account_code=CASE WHEN f.actor_type='customer' THEN 'CUSTOMER_WALLET' ELSE 'CAPTAIN_WALLET' END
+					AND e.actor_type=f.actor_type
+					AND e.actor_id=f.actor_id
+					AND e.direction='CREDIT'
+					AND e.amount_minor=f.requested_amount_minor
+					AND e.currency=f.currency) <> 1
+				OR (SELECT COUNT(*) FROM wlt.ledger_entries e WHERE e.transaction_id=f.ledger_transaction_id) <> 2
+			)`,
+		},
+		{
+			name: "captain-wallet-not-overheld",
+			query: `SELECT COUNT(*) FROM (
+				SELECT actors.actor_id,
+					COALESCE((SELECT SUM(CASE WHEN e.direction='CREDIT' THEN e.amount_minor ELSE -e.amount_minor END)
+						FROM wlt.ledger_entries e
+						WHERE e.account_code='CAPTAIN_WALLET' AND e.actor_type='captain' AND e.actor_id=actors.actor_id AND e.currency='YER'),0)
+					- COALESCE((SELECT SUM(c.amount_minor) FROM wlt.captain_cod_reservations c
+						WHERE c.captain_actor_id=actors.actor_id AND c.state IN ('ACTIVE','FINALIZED')),0)
+					- COALESCE((SELECT SUM(h.amount_minor) FROM wlt.payout_holds h
+						WHERE h.actor_type='captain' AND h.actor_id=actors.actor_id AND h.status='ACTIVE'),0) AS available_minor
+				FROM (
+					SELECT actor_id FROM wlt.ledger_entries WHERE account_code='CAPTAIN_WALLET' AND actor_type='captain'
+					UNION SELECT captain_actor_id FROM wlt.captain_cod_reservations
+					UNION SELECT actor_id FROM wlt.payout_holds WHERE actor_type='captain'
+				) actors
+			) balances
+			WHERE available_minor < 0`,
+		},
+		{
+			name: "partner-commission-receivable-derived",
+			query: `SELECT COUNT(*) FROM (
+				SELECT actors.actor_id,
+					COALESCE((SELECT SUM(c.commission_minor) FROM wlt.partner_store_cash_commissions c WHERE c.partner_actor_id=actors.actor_id),0)
+					- COALESCE((SELECT SUM(r.amount_minor) FROM wlt.partner_commission_remittances r WHERE r.partner_actor_id=actors.actor_id),0) AS expected_minor,
+					COALESCE((SELECT SUM(CASE WHEN e.direction='DEBIT' THEN e.amount_minor ELSE -e.amount_minor END)
+						FROM wlt.ledger_entries e WHERE e.account_code='PARTNER_COMMISSION_RECEIVABLE' AND e.actor_type='partner' AND e.actor_id=actors.actor_id),0) AS ledger_minor
+				FROM (
+					SELECT partner_actor_id AS actor_id FROM wlt.partner_store_cash_commissions
+					UNION SELECT partner_actor_id FROM wlt.partner_commission_remittances
+					UNION SELECT actor_id FROM wlt.ledger_entries WHERE account_code='PARTNER_COMMISSION_RECEIVABLE' AND actor_type='partner'
+				) actors
+			) balances
+			WHERE expected_minor <> ledger_minor OR expected_minor < 0 OR ledger_minor < 0`,
 		},
 		{
 			name: "completed-payout-chain",
