@@ -393,7 +393,9 @@ test("finance and marketing centers expose only real independent resource routes
 
 test("marketing resource pages keep promotions and discovery content separate", async ({ page }) => {
   const contentUploadKeys: string[] = [];
+  const contentUploadCorrelations: string[] = [];
   const contentUploadBodies: string[] = [];
+  let createdContent: (Record<string, unknown> & { id: string }) | null = null;
   await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "marketing"]);
   await page.route("**/api/marketing/promotions**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ promotions: [{ id: "promotion-1", code: "WELCOME10", nameAr: "خصم البداية", kind: "PERCENTAGE", valueMinor: 10, state: "DRAFT", version: 1 }] }) });
@@ -401,15 +403,21 @@ test("marketing resource pages keep promotions and discovery content separate", 
   await page.route("**/api/marketing/content**", async (route) => {
     if (route.request().method() === "POST") {
       contentUploadKeys.push(route.request().headers()["idempotency-key"] ?? "");
+      contentUploadCorrelations.push(route.request().headers()["x-correlation-id"] ?? "");
       contentUploadBodies.push(route.request().postDataBuffer()?.toString("latin1") ?? "");
       if (contentUploadKeys.length === 1) {
         await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { message: "تعذر تأكيد الحفظ؛ أعد المحاولة." } }) });
         return;
       }
-      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ content: { id: "content-2", kind: "BANNER", titleAr: "مختارات الاختبار", bodyAr: "", mediaUri: "http://localhost/content.png", targetType: "INFO", state: "DRAFT", startsAt: "2099-01-01T00:00:00Z", ordinal: 0, version: 1, createdByActorId: "actor-operator", createdAt: "2098-01-01T00:00:00Z", updatedAt: "2098-01-01T00:00:00Z" }, idempotentReplay: false }) });
+      const raw = route.request().postDataBuffer()?.toString("latin1") ?? "";
+      const id = raw.match(/name="id"\r\n\r\n([^\r\n]+)/)?.[1] ?? "";
+      createdContent = { id, kind: "BANNER", titleAr: "مختارات الاختبار", bodyAr: "", mediaUri: "http://localhost/content.png", targetType: "INFO", state: "DRAFT", startsAt: "2099-01-01T00:00:00Z", ordinal: 0, version: 1, createdByActorId: "actor-operator", createdAt: "2098-01-01T00:00:00Z", updatedAt: "2098-01-01T00:00:00Z" };
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ content: createdContent, idempotentReplay: false }) });
       return;
     }
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ id: "content-1", kind: "BANNER", titleAr: "مختارات الأسبوع", bodyAr: "اكتشف الجديد", state: "DRAFT", version: 1 }] }) });
+    const search = new URL(route.request().url()).searchParams.get("search");
+    const items = search && createdContent?.id === search ? [createdContent] : [{ id: "content-1", kind: "BANNER", titleAr: "مختارات الأسبوع", bodyAr: "اكتشف الجديد", state: "DRAFT", version: 1 }];
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items }) });
   });
   await page.route("**/api/marketing/analytics**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [] }) });
@@ -442,14 +450,103 @@ test("marketing resource pages keep promotions and discovery content separate", 
   await page.getByLabel("أقرّ بوجود إذن يسمح بعرض هذه الصورة").check();
   await page.getByRole("button", { name: "إنشاء مسودة المحتوى" }).click();
   await expect(page.getByText("تعذر تأكيد الحفظ؛ أعد المحاولة.")).toBeVisible();
-  await page.getByRole("button", { name: "إنشاء مسودة المحتوى" }).click();
-  await expect(page.getByText("تم إنشاء المحتوى كمسودة.")).toBeVisible();
+  await page.getByRole("button", { name: "التحقق / إعادة محاولة الإنشاء" }).click();
+  await expect(page.getByText("تم إنشاء المحتوى وقراءته كمسودة من سجل DSH. انشره من السجل عندما يصبح جاهزًا.")).toBeVisible();
   expect(contentUploadKeys).toHaveLength(2);
   expect(contentUploadKeys[1]).toBe(contentUploadKeys[0]);
+  expect(contentUploadCorrelations[1]).toBe(contentUploadCorrelations[0]);
+  const contentID = (contentUploadBodies[0] ?? "").match(/name="id"\r\n\r\n([^\r\n]+)/)?.[1] ?? "";
+  expect(contentUploadBodies[1]).toContain(contentID);
   expect(contentUploadBodies[1]).toContain('name="id"');
   expect(contentUploadBodies[1]).toContain("Photo Studio");
   expect(contentUploadBodies[1]).toContain('name="rightsAttested"');
   expect(contentUploadBodies[1]).toContain("true");
+});
+
+test("marketing create recovery reconciles promotions and resumes content with the same image after reload", async ({ page }) => {
+  let promotionPostCount = 0;
+  let promotionId = "";
+  const promotionIdempotencyKeys: string[] = [];
+  let contentPostCount = 0;
+  let contentId = "";
+  let createdContent: (Record<string, unknown> & { id: string }) | null = null;
+  const contentIdempotencyKeys: string[] = [];
+  const contentCorrelations: string[] = [];
+  const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+  await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "marketing"]);
+  await page.route("**/api/marketing/promotions**", async (route) => {
+    if (route.request().method() === "POST") {
+      promotionPostCount += 1;
+      const body = route.request().postDataJSON() as { id: string; startsAt: string };
+      promotionId = body.id;
+      promotionIdempotencyKeys.push(route.request().headers()["idempotency-key"] ?? "");
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { message: "تعذر تأكيد الحفظ؛ أعد المحاولة." } }) });
+      return;
+    }
+    const search = new URL(route.request().url()).searchParams.get("search");
+    const promotions = search === promotionId && promotionId
+      ? [{ id: promotionId, code: "RESTORE10", nameAr: "عرض الاستعادة", descriptionAr: "", kind: "PERCENTAGE", valueMinor: 10, fundingSource: "MERCHANT", state: "DRAFT", startsAt: "2099-01-01T00:00:00Z", redeemedCount: 0, version: 1, createdByActorId: "actor-operator", createdAt: "2098-01-01T00:00:00Z", updatedAt: "2098-01-01T00:00:00Z" }]
+      : [];
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ promotions }) });
+  });
+  await page.route("**/api/marketing/content**", async (route) => {
+    if (route.request().method() === "POST") {
+      contentPostCount += 1;
+      contentIdempotencyKeys.push(route.request().headers()["idempotency-key"] ?? "");
+      contentCorrelations.push(route.request().headers()["x-correlation-id"] ?? "");
+      const raw = route.request().postDataBuffer()?.toString("latin1") ?? "";
+      contentId = raw.match(/name="id"\r\n\r\n([^\r\n]+)/)?.[1] ?? "";
+      if (contentPostCount === 1) {
+        await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { message: "تعذر تأكيد الحفظ؛ أعد المحاولة." } }) });
+        return;
+      }
+      createdContent = { id: contentId, kind: "BANNER", titleAr: "محتوى الاستعادة", bodyAr: "", mediaUri: "http://localhost/content.png", targetType: "INFO", state: "DRAFT", startsAt: "2099-01-01T00:00:00Z", ordinal: 0, version: 1, createdByActorId: "actor-operator", createdAt: "2098-01-01T00:00:00Z", updatedAt: "2098-01-01T00:00:00Z" };
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ content: createdContent, idempotentReplay: false }) });
+      return;
+    }
+    const search = new URL(route.request().url()).searchParams.get("search");
+    const items = search && createdContent?.id === search ? [createdContent] : [];
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items }) });
+  });
+  await page.route("**/api/service-cities**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cities: [{ id: "city-sanaa", displayNameAr: "صنعاء", active: true, version: 1 }] }) });
+  });
+
+  await page.goto("/marketing/promotions");
+  await page.getByText("إنشاء عرض جديد", { exact: true }).click();
+  await page.getByLabel("رمز العرض").fill("RESTORE10");
+  await page.getByLabel("اسم العرض").fill("عرض الاستعادة");
+  await page.getByRole("button", { name: "إنشاء مسودة العرض" }).click();
+  await expect(page.getByText("تعذر تأكيد الحفظ؛ أعد المحاولة.")).toBeVisible();
+  expect(promotionPostCount).toBe(1);
+  await page.reload();
+  await expect(page.getByText("تمت قراءة العرض المنشأ من سجل DSH؛ استعيدت نتيجته دون إنشاء نسخة أخرى.")).toBeVisible();
+  expect(promotionPostCount).toBe(1);
+  expect(await page.evaluate(() => window.sessionStorage.getItem("bthwani.control.marketing.promotion-create.v1.actor-operator"))).toBeNull();
+  expect(promotionIdempotencyKeys).toHaveLength(1);
+
+  await page.goto("/marketing/content");
+  await page.getByText("إنشاء محتوى اكتشاف", { exact: true }).click();
+  await page.getByLabel("عنوان المحتوى").fill("محتوى الاستعادة");
+  await page.getByLabel("ملف صورة المحتوى").setInputFiles({ name: "content.png", mimeType: "image/png", buffer: image });
+  await page.getByLabel("اسم المنشئ أو المصوّر").fill("Photo Studio");
+  await page.getByLabel("مصدر الصورة").fill("Photo Studio original artwork");
+  await page.getByLabel("بيان الإذن أو الترخيص").fill("Permission granted for platform display");
+  await page.getByLabel("أقرّ بوجود إذن يسمح بعرض هذه الصورة").check();
+  await page.getByRole("button", { name: "إنشاء مسودة المحتوى" }).click();
+  await expect(page.getByText("تعذر تأكيد الحفظ؛ أعد المحاولة.")).toBeVisible();
+  expect(contentPostCount).toBe(1);
+  await page.reload();
+  await expect(page.getByText(/لم يظهر المحتوى في السجل بعد/)).toBeVisible();
+  await expect(page.getByLabel("عنوان المحتوى")).toHaveValue("محتوى الاستعادة");
+  await page.getByLabel("ملف صورة المحتوى").setInputFiles({ name: "content.png", mimeType: "image/png", buffer: image });
+  await page.getByRole("button", { name: "التحقق / إعادة محاولة الإنشاء" }).click();
+  await expect(page.getByText("تم إنشاء المحتوى وقراءته كمسودة من سجل DSH. انشره من السجل عندما يصبح جاهزًا.")).toBeVisible();
+  expect(contentPostCount).toBe(2);
+  expect(contentIdempotencyKeys).toHaveLength(2);
+  expect(contentIdempotencyKeys[1]).toBe(contentIdempotencyKeys[0]);
+  expect(contentCorrelations[1]).toBe(contentCorrelations[0]);
+  expect(await page.evaluate(() => window.sessionStorage.getItem("bthwani.control.marketing.content-create.v1.actor-operator"))).toBeNull();
 });
 
 test("workspace shell exposes nested breadcrumbs and the current resource", async ({ page }) => {
