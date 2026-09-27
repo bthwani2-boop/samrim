@@ -84,12 +84,12 @@ type UpdateCatalogCategoryInput struct {
 }
 type CatalogIdentifierRecord struct{ Type, Value string }
 type CatalogMediaRecord struct {
-	URI, Role string
-	Ordinal   int
+	AssetID, URI, Role string
+	Ordinal            int
 }
 type CatalogMediaInput struct {
-	URI, Role string
-	Ordinal   int
+	AssetID, Role string
+	Ordinal       int
 }
 type CatalogMediaAssetInput struct {
 	ID, ProductID, IdempotencyKey, ObjectKey, URI string
@@ -299,7 +299,7 @@ func HashCatalogProductUpdateRequest(productID string, input CatalogProductUpdat
 func HashCatalogMediaReplaceRequest(productID string, media []CatalogMediaInput, expectedVersion int) string {
 	facts := []string{"media-replace", productID, strconv.Itoa(expectedVersion)}
 	for _, item := range media {
-		facts = append(facts, item.URI, item.Role, strconv.Itoa(item.Ordinal))
+		facts = append(facts, item.AssetID, item.Role, strconv.Itoa(item.Ordinal))
 	}
 	return hashFacts(facts...)
 }
@@ -1410,9 +1410,9 @@ func replaceCatalogProductMedia(ctx context.Context, db *sql.DB, productID strin
 	for _, item := range media {
 		var stored bool
 		if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM dsh.catalog_media_assets
-			WHERE product_id=$1 AND uri=$2 AND state='active') OR
+			WHERE product_id=$1 AND id=$2 AND state='active') OR
 			($3<>'' AND EXISTS(SELECT 1 FROM dsh.catalog_media_assets
-			WHERE product_id=$1 AND uri=$2 AND idempotency_key=$3 AND state='pending'))`, productID, item.URI, optionalMediaAssetKey(asset)).Scan(&stored); err != nil {
+			WHERE product_id=$1 AND id=$2 AND idempotency_key=$3 AND state='pending'))`, productID, item.AssetID, optionalMediaAssetKey(asset)).Scan(&stored); err != nil {
 			return CatalogProductResult{}, err
 		}
 		if !stored {
@@ -1427,7 +1427,7 @@ func replaceCatalogProductMedia(ctx context.Context, db *sql.DB, productID strin
 		return CatalogProductResult{}, err
 	}
 	for _, item := range media {
-		if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_media(product_id,uri,media_role,ordinal) VALUES($1,$2,$3,$4)", productID, item.URI, item.Role, item.Ordinal); err != nil {
+		if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_media(product_id,media_asset_id,media_role,ordinal) VALUES($1,$2,$3,$4)", productID, item.AssetID, item.Role, item.Ordinal); err != nil {
 			return CatalogProductResult{}, err
 		}
 	}
@@ -1440,15 +1440,15 @@ func replaceCatalogProductMedia(ctx context.Context, db *sql.DB, productID strin
 			return CatalogProductResult{}, ErrCatalogMediaInvalid
 		}
 	}
-	newURIs := make(map[string]struct{}, len(media))
+	newAssetIDs := make(map[string]struct{}, len(media))
 	for _, item := range media {
-		newURIs[item.URI] = struct{}{}
+		newAssetIDs[item.AssetID] = struct{}{}
 	}
 	for _, item := range oldMedia {
-		if _, retained := newURIs[item.URI]; retained {
+		if _, retained := newAssetIDs[item.AssetID]; retained {
 			continue
 		}
-		if _, err = tx.ExecContext(ctx, "UPDATE dsh.catalog_media_assets SET state='retired', retired_at=COALESCE(retired_at,clock_timestamp()), last_cleanup_error=NULL WHERE product_id=$1 AND uri=$2 AND state='active'", productID, item.URI); err != nil {
+		if _, err = tx.ExecContext(ctx, "UPDATE dsh.catalog_media_assets SET state='retired', retired_at=COALESCE(retired_at,clock_timestamp()), last_cleanup_error=NULL WHERE product_id=$1 AND id=$2 AND state='active'", productID, item.AssetID); err != nil {
 			return CatalogProductResult{}, err
 		}
 	}
@@ -2038,9 +2038,9 @@ func hydrateCatalogProduct(ctx context.Context, db queryer, item CatalogProductR
 }
 
 func listCatalogMedia(ctx context.Context, db queryer, productID string) ([]CatalogMediaRecord, error) {
-	rows, err := db.QueryContext(ctx, `SELECT media.uri,media.media_role,media.ordinal
+	rows, err := db.QueryContext(ctx, `SELECT asset.id,asset.uri,media.media_role,media.ordinal
 		FROM dsh.catalog_media media
-		JOIN dsh.catalog_media_assets asset ON asset.product_id=media.product_id AND asset.uri=media.uri AND asset.state='active'
+		JOIN dsh.catalog_media_assets asset ON asset.product_id=media.product_id AND asset.id=media.media_asset_id AND asset.state='active'
 		WHERE media.product_id=$1 ORDER BY media.ordinal`, productID)
 	if err != nil {
 		return nil, err
@@ -2049,7 +2049,7 @@ func listCatalogMedia(ctx context.Context, db queryer, productID string) ([]Cata
 	items := make([]CatalogMediaRecord, 0)
 	for rows.Next() {
 		var item CatalogMediaRecord
-		if err := rows.Scan(&item.URI, &item.Role, &item.Ordinal); err != nil {
+		if err := rows.Scan(&item.AssetID, &item.URI, &item.Role, &item.Ordinal); err != nil {
 			return nil, err
 		}
 		items = append(items, item)

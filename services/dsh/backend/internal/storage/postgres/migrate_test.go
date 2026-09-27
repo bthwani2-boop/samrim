@@ -49,8 +49,8 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 		t.Fatalf("unexpected DSH migration graph size: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.SchemaVersion)
 	}
 	last := records[len(records)-1]
-	if last.Version != postgres.SchemaVersion || last.Name != "072_store_profile_media_provenance.sql" {
-		t.Fatalf("last DSH migration = v%d %q; want v%d 072_store_profile_media_provenance.sql", last.Version, last.Name, postgres.SchemaVersion)
+	if last.Version != postgres.SchemaVersion || last.Name != "073_catalog_media_asset_references.sql" {
+		t.Fatalf("last DSH migration = v%d %q; want v%d 073_catalog_media_asset_references.sql", last.Version, last.Name, postgres.SchemaVersion)
 	}
 	migrationByName := make(map[string]string, len(records))
 	for index, record := range records {
@@ -71,6 +71,12 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 	mediaProvenanceMigration := migrationByName["072_store_profile_media_provenance.sql"]
 	if !strings.Contains(mediaProvenanceMigration, "rights_attested_by_actor_id") || !strings.Contains(mediaProvenanceMigration, "rights_attested_at") || !strings.Contains(mediaProvenanceMigration, "store_profile_media_provenance_chk") || !strings.Contains(mediaProvenanceMigration, "SET state = 'retired', retired_at = clock_timestamp()") {
 		t.Fatal("DSH migration 072 is missing attributed media provenance or retirement of unverified legacy images")
+	}
+	productMediaReferenceMigration := migrationByName["073_catalog_media_asset_references.sql"]
+	for _, required := range []string{"SET media_asset_id = asset.id", "WHERE media_asset_id IS NULL", "state = 'retired'", "DROP COLUMN uri", "FOREIGN KEY (product_id, media_asset_id)", "UNIQUE (product_id, media_asset_id)", "DROP COLUMN proposed_image_uri"} {
+		if !strings.Contains(productMediaReferenceMigration, required) {
+			t.Fatalf("DSH migration 073 is missing the product media asset cutover step: %s", required)
+		}
 	}
 	if !strings.Contains(migrationByName["068_field_operator_partner_admission.sql"], "admission_requested") || !strings.Contains(migrationByName["068_field_operator_partner_admission.sql"], "joining_case_admission_requested") || !strings.Contains(migrationByName["068_field_operator_partner_admission.sql"], "field-admission-request") {
 		t.Fatal("DSH migration 068 is missing the Field submission and Operator admission state")

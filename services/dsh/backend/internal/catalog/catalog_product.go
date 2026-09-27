@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -23,7 +22,7 @@ var (
 	ErrStoreOwnershipForbidden         = errors.New("partner does not own this store")
 	ErrCatalogProductNameInvalid       = errors.New("catalog Product name is invalid")
 	ErrCatalogProductIdentifierInvalid = errors.New("catalog Product identifier is invalid")
-	ErrCatalogProductImageInvalid      = errors.New("catalog Product image URL is invalid")
+	ErrCatalogProductImageInvalid      = errors.New("catalog Product media references are invalid")
 	ErrCatalogMediaUploadInvalid       = errors.New("catalog Product media upload is invalid")
 	ErrCatalogMediaStorageUnavailable  = errors.New("catalog Product media storage is unavailable")
 	ErrCatalogProductScopeInvalid      = errors.New("catalog Product scope is invalid")
@@ -36,6 +35,7 @@ var (
 
 var identifierPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
 var verticalIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{1,127}$`)
+var catalogMediaAssetIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 
 type Service struct {
 	identity *identityintegration.Client
@@ -566,26 +566,22 @@ func normalizeCatalogMedia(input []postgres.CatalogMediaInput) ([]postgres.Catal
 	}
 	normalized := make([]postgres.CatalogMediaInput, 0, len(input))
 	ordinals := make(map[int]struct{}, len(input))
-	uris := make(map[string]struct{}, len(input))
+	assetIDs := make(map[string]struct{}, len(input))
 	primaryCount := 0
 	for _, item := range input {
-		uri := strings.TrimSpace(item.URI)
+		assetID := strings.TrimSpace(item.AssetID)
 		role := strings.ToLower(strings.TrimSpace(item.Role))
-		if (role != "primary" && role != "gallery") || item.Ordinal < 0 || item.Ordinal > 20 || uri == "" || len(uri) > 2048 {
-			return nil, ErrCatalogProductImageInvalid
-		}
-		parsed, parseErr := url.ParseRequestURI(uri)
-		if parseErr != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || parsed.User != nil {
+		if (role != "primary" && role != "gallery") || item.Ordinal < 0 || item.Ordinal > 20 || assetID != item.AssetID || !catalogMediaAssetIDPattern.MatchString(assetID) {
 			return nil, ErrCatalogProductImageInvalid
 		}
 		if _, exists := ordinals[item.Ordinal]; exists {
 			return nil, ErrCatalogProductImageInvalid
 		}
-		if _, exists := uris[uri]; exists {
+		if _, exists := assetIDs[assetID]; exists {
 			return nil, ErrCatalogProductImageInvalid
 		}
 		ordinals[item.Ordinal] = struct{}{}
-		uris[uri] = struct{}{}
+		assetIDs[assetID] = struct{}{}
 		if role == "primary" {
 			primaryCount++
 			if item.Ordinal != 0 {
@@ -594,7 +590,7 @@ func normalizeCatalogMedia(input []postgres.CatalogMediaInput) ([]postgres.Catal
 		} else if item.Ordinal == 0 {
 			return nil, ErrCatalogProductImageInvalid
 		}
-		normalized = append(normalized, postgres.CatalogMediaInput{URI: uri, Role: role, Ordinal: item.Ordinal})
+		normalized = append(normalized, postgres.CatalogMediaInput{AssetID: assetID, Role: role, Ordinal: item.Ordinal})
 	}
 	if len(normalized) > 0 && primaryCount != 1 {
 		return nil, ErrCatalogProductImageInvalid

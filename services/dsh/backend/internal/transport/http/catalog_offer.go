@@ -42,7 +42,7 @@ func toStoreOffer(item postgres.CatalogStoreOfferRecord) contract.CatalogStoreOf
 func toCatalogMedia(items []postgres.CatalogMediaRecord) []contract.CatalogMedia {
 	values := make([]contract.CatalogMedia, 0, len(items))
 	for _, item := range items {
-		values = append(values, contract.CatalogMedia{Uri: item.URI, Role: item.Role, Ordinal: item.Ordinal})
+		values = append(values, contract.CatalogMedia{AssetID: item.AssetID, Uri: item.URI, Role: item.Role, Ordinal: item.Ordinal})
 	}
 	return values
 }

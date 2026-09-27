@@ -76,7 +76,7 @@ test("catalog import uses the existing CSV file adapter and closes the loop", as
 test("catalog proposal review shows detail and re-reads after approval", async ({ page }) => {
   await stubAuthenticatedSession(page);
   let queueRead = 0;
-  const proposal = { id: "proposal-1", partnerActorId: "actor-partner", verticalId: "grocery", categoryId: "coffee", proposedName: "قهوة", proposedBrand: "علامة", proposedVariantTitle: "الافتراضي", proposedMeasurementKind: "DISCRETE", proposedBaseUnit: "COUNT", proposedIdentifierType: null, proposedIdentifierValue: null, proposedImageUri: null, state: "submitted", correctionReason: null, reviewedBy: null, version: 3, createdAt: "2026-09-18T00:00:00.000Z", updatedAt: "2026-09-18T00:00:00.000Z" };
+  const proposal = { id: "proposal-1", partnerActorId: "actor-partner", verticalId: "grocery", categoryId: "coffee", proposedName: "قهوة", proposedBrand: "علامة", proposedVariantTitle: "الافتراضي", proposedMeasurementKind: "DISCRETE", proposedBaseUnit: "COUNT", proposedIdentifierType: null, proposedIdentifierValue: null, state: "submitted", correctionReason: null, reviewedBy: null, version: 3, createdAt: "2026-09-18T00:00:00.000Z", updatedAt: "2026-09-18T00:00:00.000Z" };
   await page.route("**/api/catalog/proposals*", async (route) => {
     if (route.request().method() !== "GET") return route.fallback();
     queueRead += 1;

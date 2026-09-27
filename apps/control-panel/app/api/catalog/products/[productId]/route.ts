@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
-import type { CatalogAttributeValueInput, CatalogVariantAttributeValueSet, ReplaceCatalogProductMediaRequest, UpdateCatalogProductRequest } from "@bthwani/dsh";
+import type { CatalogAttributeValueInput, CatalogVariantAttributeValueSet, ReplaceCatalogProductMediaItem, ReplaceCatalogProductMediaRequest, UpdateCatalogProductRequest } from "@bthwani/dsh";
 import { verifySameOrigin } from "../../../../../src/server/security/csrf";
 import { dshErrorPayload, dshHttpStatus, isDshClientError, readCatalogProduct, replaceCatalogProductMedia, updateCatalogProduct } from "../../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../../src/server/identity/identity-bff";
@@ -79,12 +79,12 @@ export async function PUT(request: Request, context: { params: Promise<{ product
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   const rawMedia = body?.media;
   if (!body || !Array.isArray(rawMedia) || rawMedia.length > 21) return errorResponse("INVALID_INPUT", "media must be an array with at most 21 items", 400);
-  const media: Array<ReplaceCatalogProductMediaRequest["media"][number]> = [];
+  const media: Array<ReplaceCatalogProductMediaItem> = [];
   for (const item of rawMedia) {
     if (!item || typeof item !== "object") return errorResponse("INVALID_INPUT", "media items are invalid", 400);
     const value = item as Record<string, unknown>;
-    if (typeof value.uri !== "string" || typeof value.role !== "string" || !Number.isInteger(value.ordinal)) return errorResponse("INVALID_INPUT", "media items require uri, role and ordinal", 400);
-    media.push({ uri: value.uri.trim(), role: value.role as "primary" | "gallery", ordinal: value.ordinal as number });
+    if (typeof value.assetId !== "string" || typeof value.role !== "string" || !Number.isInteger(value.ordinal)) return errorResponse("INVALID_INPUT", "media items require assetId, role and ordinal", 400);
+    media.push({ assetId: value.assetId.trim(), role: value.role as "primary" | "gallery", ordinal: value.ordinal as number });
   }
   try {
     const { productId } = await context.params;

@@ -498,7 +498,7 @@ func (s *CatalogServer) replaceProductMedia(w http.ResponseWriter, r *http.Reque
 	}
 	media := make([]postgres.CatalogMediaInput, 0, len(input.Media))
 	for _, item := range input.Media {
-		media = append(media, postgres.CatalogMediaInput{URI: item.Uri, Role: item.Role, Ordinal: item.Ordinal})
+		media = append(media, postgres.CatalogMediaInput{AssetID: item.AssetID, Role: item.Role, Ordinal: item.Ordinal})
 	}
 	result, err := s.service.ReplaceCatalogProductMedia(r.Context(), acting, r.PathValue("productId"), media, expected, idempotency, correlation)
 	if err != nil {
@@ -565,7 +565,7 @@ func (s *CatalogServer) replaceStoreProductMedia(w http.ResponseWriter, r *http.
 	}
 	media := make([]postgres.CatalogMediaInput, 0, len(input.Media))
 	for _, item := range input.Media {
-		media = append(media, postgres.CatalogMediaInput{URI: item.Uri, Role: item.Role, Ordinal: item.Ordinal})
+		media = append(media, postgres.CatalogMediaInput{AssetID: item.AssetID, Role: item.Role, Ordinal: item.Ordinal})
 	}
 	result, err := s.service.ReplaceStoreScopedProductMedia(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("productId"), media, expected, idempotency, correlation)
 	if err != nil {
@@ -757,7 +757,7 @@ func toCatalogProduct(item postgres.CatalogProductRecord) contract.CatalogProduc
 	}
 	media := make([]contract.CatalogMedia, 0, len(item.Media))
 	for _, m := range item.Media {
-		media = append(media, contract.CatalogMedia{Uri: m.URI, Role: m.Role, Ordinal: m.Ordinal})
+		media = append(media, contract.CatalogMedia{AssetID: m.AssetID, Uri: m.URI, Role: m.Role, Ordinal: m.Ordinal})
 	}
 	attributes := make([]contract.CatalogAttributeValue, 0, len(item.Attributes))
 	for _, attribute := range item.Attributes {

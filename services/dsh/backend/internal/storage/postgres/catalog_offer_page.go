@@ -97,9 +97,9 @@ func hydrateCatalogOfferPage(ctx context.Context, db *sql.DB, offers []CatalogSt
 		}
 	}
 	mediaByProduct := make(map[string][]CatalogMediaRecord, len(productIDs))
-	mediaRows, err := db.QueryContext(ctx, `SELECT media.product_id,media.uri,media.media_role,media.ordinal
+	mediaRows, err := db.QueryContext(ctx, `SELECT media.product_id,asset.id,asset.uri,media.media_role,media.ordinal
 		FROM dsh.catalog_media media
-		JOIN dsh.catalog_media_assets asset ON asset.product_id=media.product_id AND asset.uri=media.uri AND asset.state='active'
+		JOIN dsh.catalog_media_assets asset ON asset.product_id=media.product_id AND asset.id=media.media_asset_id AND asset.state='active'
 		WHERE media.product_id=ANY($1) ORDER BY media.product_id,media.ordinal`, pq.Array(productIDs))
 	if err != nil {
 		return err
@@ -107,7 +107,7 @@ func hydrateCatalogOfferPage(ctx context.Context, db *sql.DB, offers []CatalogSt
 	for mediaRows.Next() {
 		var productID string
 		var media CatalogMediaRecord
-		if err := mediaRows.Scan(&productID, &media.URI, &media.Role, &media.Ordinal); err != nil {
+		if err := mediaRows.Scan(&productID, &media.AssetID, &media.URI, &media.Role, &media.Ordinal); err != nil {
 			_ = mediaRows.Close()
 			return err
 		}

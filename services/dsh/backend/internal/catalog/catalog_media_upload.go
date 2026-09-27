@@ -110,7 +110,7 @@ func (s *Service) uploadCatalogProductMedia(ctx context.Context, actingActorID s
 		_ = postgres.MarkCatalogMediaAssetFailed(ctx, s.db, asset.ID, err.Error())
 		return postgres.CatalogProductResult{}, ErrCatalogMediaStorageUnavailable
 	}
-	mediaItems, err := uploadedMedia(product.Media, input.Role, uri)
+	mediaItems, err := uploadedMedia(product.Media, input.Role, asset.ID)
 	if err != nil {
 		_ = s.removeFailedAsset(ctx, asset, err)
 		return postgres.CatalogProductResult{}, err
@@ -132,15 +132,15 @@ func (s *Service) uploadCatalogProductMedia(ctx context.Context, actingActorID s
 	return result, nil
 }
 
-func uploadedMedia(current []postgres.CatalogMediaRecord, role, uri string) ([]postgres.CatalogMediaInput, error) {
+func uploadedMedia(current []postgres.CatalogMediaRecord, role, assetID string) ([]postgres.CatalogMediaInput, error) {
 	ordered := append([]postgres.CatalogMediaRecord(nil), current...)
 	sort.SliceStable(ordered, func(left, right int) bool { return ordered[left].Ordinal < ordered[right].Ordinal })
 	mediaItems := make([]postgres.CatalogMediaInput, 0, len(ordered)+1)
 	if role == "primary" {
-		mediaItems = append(mediaItems, postgres.CatalogMediaInput{URI: uri, Role: "primary", Ordinal: 0})
+		mediaItems = append(mediaItems, postgres.CatalogMediaInput{AssetID: assetID, Role: "primary", Ordinal: 0})
 		for _, item := range ordered {
 			if item.Role == "gallery" {
-				mediaItems = append(mediaItems, postgres.CatalogMediaInput{URI: item.URI, Role: "gallery", Ordinal: len(mediaItems)})
+				mediaItems = append(mediaItems, postgres.CatalogMediaInput{AssetID: item.AssetID, Role: "gallery", Ordinal: len(mediaItems)})
 			}
 		}
 		return mediaItems, nil
@@ -149,15 +149,15 @@ func uploadedMedia(current []postgres.CatalogMediaRecord, role, uri string) ([]p
 	for _, item := range ordered {
 		if item.Role == "primary" {
 			hasPrimary = true
-			mediaItems = append(mediaItems, postgres.CatalogMediaInput{URI: item.URI, Role: "primary", Ordinal: 0})
+			mediaItems = append(mediaItems, postgres.CatalogMediaInput{AssetID: item.AssetID, Role: "primary", Ordinal: 0})
 		} else if item.Role == "gallery" {
-			mediaItems = append(mediaItems, postgres.CatalogMediaInput{URI: item.URI, Role: "gallery", Ordinal: len(mediaItems)})
+			mediaItems = append(mediaItems, postgres.CatalogMediaInput{AssetID: item.AssetID, Role: "gallery", Ordinal: len(mediaItems)})
 		}
 	}
 	if !hasPrimary {
 		return nil, ErrCatalogMediaUploadInvalid
 	}
-	mediaItems = append(mediaItems, postgres.CatalogMediaInput{URI: uri, Role: "gallery", Ordinal: len(mediaItems)})
+	mediaItems = append(mediaItems, postgres.CatalogMediaInput{AssetID: assetID, Role: "gallery", Ordinal: len(mediaItems)})
 	return mediaItems, nil
 }
 

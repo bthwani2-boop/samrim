@@ -61,3 +61,22 @@ func TestNormalizeCatalogProductUpdateRequiresCategoryValuesTogether(t *testing.
 		t.Fatalf("partial category assignment update error = %v, want ErrCatalogCategoryNotFound", err)
 	}
 }
+
+func TestNormalizeCatalogMediaAcceptsOnlyUniqueAssetReferences(t *testing.T) {
+	items, err := normalizeCatalogMedia([]postgres.CatalogMediaInput{
+		{AssetID: "media_asset_primary", Role: " primary ", Ordinal: 0},
+		{AssetID: "media_asset_gallery", Role: "GALLERY", Ordinal: 1},
+	})
+	if err != nil || len(items) != 2 || items[0].AssetID != "media_asset_primary" || items[1].AssetID != "media_asset_gallery" {
+		t.Fatalf("normalized catalog media = %#v, err=%v", items, err)
+	}
+	for _, invalid := range [][]postgres.CatalogMediaInput{
+		{{AssetID: "https://example.test/image.jpg", Role: "primary", Ordinal: 0}},
+		{{AssetID: "media_asset_same", Role: "primary", Ordinal: 0}, {AssetID: "media_asset_same", Role: "gallery", Ordinal: 1}},
+		{{AssetID: " media_asset_primary", Role: "primary", Ordinal: 0}},
+	} {
+		if _, err := normalizeCatalogMedia(invalid); err != ErrCatalogProductImageInvalid {
+			t.Fatalf("invalid catalog media %#v returned %v, want ErrCatalogProductImageInvalid", invalid, err)
+		}
+	}
+}

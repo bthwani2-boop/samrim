@@ -1973,11 +1973,30 @@ components:
 
     CatalogMedia:
       type: object
-      required: [uri, role, ordinal]
+      required: [assetId, uri, role, ordinal]
       additionalProperties: false
       properties:
+        assetId:
+          type: string
+          minLength: 1
+          maxLength: 128
         uri:
           type: string
+        role:
+          type: string
+          enum: [primary, gallery]
+        ordinal:
+          type: integer
+
+    ReplaceCatalogProductMediaItem:
+      type: object
+      required: [assetId, role, ordinal]
+      additionalProperties: false
+      properties:
+        assetId:
+          type: string
+          minLength: 1
+          maxLength: 128
         role:
           type: string
           enum: [primary, gallery]
@@ -2085,7 +2104,7 @@ components:
           type: array
           maxItems: 21
           items:
-            $ref: "#/components/schemas/CatalogMedia"
+            $ref: "#/components/schemas/ReplaceCatalogProductMediaItem"
 
     UploadCatalogProductMediaRequest:
       type: object
