@@ -70,7 +70,7 @@
           "projects": [
             "wlt-backend"
           ],
-          "target": "schema-proof"
+          "target": "financial-invariants"
         }
       ]
     },
