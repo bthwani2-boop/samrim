@@ -50,7 +50,6 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   const [reason, setReason] = useState("");
   const [active, setActive] = useState(true);
   const [categoryImageFile, setCategoryImageFile] = useState<File | null>(null);
-  const [categoryImagePreview, setCategoryImagePreview] = useState("");
   const [mediaReason, setMediaReason] = useState("إضافة صورة توضيحية للفئة");
   const [mediaProvenance, setMediaProvenance] = useState<MediaProvenanceInput>({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false });
   const [busy, setBusy] = useState(false);
@@ -64,16 +63,6 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   const parentSearchSequence = useRef(0);
   const categoryDetailSequence = useRef(0);
   const verticalSettingsRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!categoryImageFile) {
-      setCategoryImagePreview("");
-      return;
-    }
-    const preview = URL.createObjectURL(categoryImageFile);
-    setCategoryImagePreview(preview);
-    return () => URL.revokeObjectURL(preview);
-  }, [categoryImageFile]);
 
   const categoryIndex = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
   const selectedVertical = verticals.find((vertical) => vertical.id === verticalId);
@@ -353,9 +342,10 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
         <p className="catalog-category-breadcrumb">{focusedCategory.pathAr}</p>
         <span className={"catalog-state-pill " + (focusedCategory.active ? "is-active" : "is-inactive")}>{focusedCategory.active ? "نشطة" : "متوقفة"}</span>
         <div className="catalog-category-media-editor">
-          <div className="catalog-category-media-preview">{categoryImagePreview || focusedCategory.imageUri ? <img src={categoryImagePreview || focusedCategory.imageUri || ""} alt={`معاينة صورة ${focusedCategory.nameAr}`} /> : <span aria-hidden="true">صورة الفئة</span>}</div>
+          <div className="catalog-category-media-preview">{focusedCategory.imageUri ? <img src={focusedCategory.imageUri} alt={`معاينة صورة ${focusedCategory.nameAr}`} /> : <span aria-hidden="true">صورة الفئة</span>}</div>
           <div className="catalog-category-media-controls">
             <label className="field-label" htmlFor="catalog-category-image">صورة الفئة<input id="catalog-category-image" type="file" accept="image/jpeg,image/png" disabled={!canEdit || busy} onChange={(event) => { setCategoryImageFile(event.target.files?.[0] ?? null); setMediaProvenance({ creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false }); }} /></label>
+            {categoryImageFile ? <p className="muted" role="status">تم اختيار {categoryImageFile.name}. ستظهر المعاينة بعد حفظ الصورة في الوسائط المركزية.</p> : null}
             <label className="field-label" htmlFor="catalog-category-image-reason">سبب الإرفاق<input id="catalog-category-image-reason" value={mediaReason} maxLength={500} disabled={!canEdit || busy} onChange={(event) => setMediaReason(event.target.value)} /></label>
             <CatalogMediaProvenanceFields idPrefix="catalog-category-media" disabled={!canEdit || busy} value={mediaProvenance} onChange={setMediaProvenance} />
             <button type="button" className="button button-secondary" disabled={!canEdit || busy || !categoryImageFile || mediaReason.trim().length < 5 || !isMediaProvenanceInputValid(mediaProvenance)} onClick={() => void uploadCategoryImage(focusedCategory)}>{busy ? "جارٍ الرفع…" : focusedCategory.imageUri ? "استبدال الصورة" : "إرفاق الصورة"}</button>
