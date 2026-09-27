@@ -4,6 +4,7 @@ go 1.27.1
 
 require (
 	github.com/bthwani2-boop/samrim/services/identity/clients/go v0.0.0
+	github.com/bthwani2-boop/samrim/services/wlt/clients/go v0.0.0
 	github.com/lib/pq v1.12.3
 	github.com/minio/minio-go/v7 v7.2.0
 )
@@ -30,3 +31,4 @@ require (
 )
 
 replace github.com/bthwani2-boop/samrim/services/identity/clients/go => ../../identity/clients/go
+replace github.com/bthwani2-boop/samrim/services/wlt/clients/go => ../../wlt/clients/go
