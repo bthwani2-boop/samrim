@@ -1,0 +1,56 @@
+name: Sonar Quality Observe
+
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonar-observe-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sonar:
+    name: SonarQube Cloud Observe
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # SONAR_TOKEN is unavailable to untrusted fork PRs.
+    if: >
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: SonarQube Cloud scan
+        uses: SonarSource/sonarqube-scan-action@v8
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      # ------------------------------------------------------
+      # OBSERVE MODE
+      # ------------------------------------------------------
+      #
+      # Do NOT add:
+      #
+      #   sonar.qualitygate.wait=true
+      #
+      # Do NOT make this check required in the GitHub ruleset
+      # during the observation phase.

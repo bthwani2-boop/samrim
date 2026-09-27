@@ -192,6 +192,7 @@ const rootFiles = new Set([
   "README.md",
   "REPOSITORY-STRUCTURE.md",
   "SECURITY.md",
+  "sonar-project.properties",
   "knowledge.sources.json",
   "go.work",
   "go.work.sum",
