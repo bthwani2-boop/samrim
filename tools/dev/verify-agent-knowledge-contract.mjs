@@ -56,12 +56,14 @@ const structure = requireTokens("REPOSITORY-STRUCTURE.md", [
   "governance-and-docs/docs/reference/competitors/",
 ]);
 const retainedMatrixPath = "tools/BTHWANI_FULL_PLATFORM_CLOSURE_MATRIX.md";
-const retainedMatrixEvidenceRule =
-  structure.includes("unless the user explicitly directs retention of a specific existing evidence file") &&
-  structure.includes(`The user directed retention of \`${retainedMatrixPath}\`; it records task evidence only, grants no authority, and must be revalidated against exact live state before use.`) &&
-  fs.existsSync(path.join(root, retainedMatrixPath));
+const retainedMatrixEvidenceRule = [
+  `The user-directed \`${retainedMatrixPath}\` is the sole admitted retained task-evidence exception`,
+  "it grants no semantic/execution/implementation authority",
+  "must be revalidated against exact live state before use",
+  "Do not create another tracked task trigger, closure matrix or Product/journey inventory beside it.",
+].every((token) => structure.includes(token)) && fs.existsSync(path.join(root, retainedMatrixPath));
 if (/single derived closure matrix/i.test(structure) || (structure.includes(retainedMatrixPath) && !retainedMatrixEvidenceRule)) {
-  failures.push("REPOSITORY-STRUCTURE.md authorizes unscoped closure-matrix placement");
+  failures.push("REPOSITORY-STRUCTURE.md does not bound its closure-matrix exception to non-authoritative retained evidence");
 }
 
 const security = requireTokens("SECURITY.md", [
@@ -72,21 +74,6 @@ const security = requireTokens("SECURITY.md", [
   "GitHub Private Vulnerability Reporting",
 ]);
 if (/authorization matrix|session lifetime|actor scope|object scope/i.test(security)) failures.push("SECURITY.md duplicates durable application security policy");
-
-const trigger = requireTokens("tools/BTHWANI_FULL_PLATFORM_A_TO_Z_FIXED_POINT_CLOSURE_TRIGGER.md", [
-  "ARTIFACT_CLASS: ACTIVE_TASK_AUTHORIZATION",
-  "SEMANTIC_AUTHORITY: NONE",
-  "EXECUTION_LAW_AUTHORITY: NONE",
-  "IMPLEMENTATION_AUTHORITY: NONE",
-  "LIFETIME: CURRENT_OBJECTIVE_ONLY",
-  "EXECUTION-FIRST",
-  "AGENTS.md",
-  "knowledge.sources.json",
-]);
-if (Buffer.byteLength(trigger, "utf8") > 12000) failures.push("active task trigger has regrown into a handbook");
-for (const forbidden of ["## Finance", "## Database", "## Security policy", "## Product inventory", "## Journey inventory", "Server-Driven Operational Registry"]) {
-  if (trigger.includes(forbidden)) failures.push(`active task trigger duplicates durable authority: ${forbidden}`);
-}
 
 const manifest = JSON.parse(read("knowledge.sources.json"));
 if (manifest?.schema !== 2) failures.push("knowledge.sources.json schema drifted");
