@@ -246,6 +246,13 @@ if (!nxCloudVerifier.includes("local-only-untrusted-pr")) failures.push("untrust
 const securityCi = read(".github/workflows/ci-security.yml");
 for (const required of [
   "node tools/dev/verify-secret-safety.mjs",
+  "if: github.event_name == 'pull_request'",
+  "actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48",
+  "fail-on-severity: high",
+  "vulnerability-check: true",
+  "license-check: true",
+  "show-openssf-scorecard: true",
+  "show-patched-versions: true",
 ]) if (!securityCi.includes(required)) failures.push("security CI missing " + required);
 if (securityCi.includes("github/codeql-action/") || securityCi.includes("security-events: write")) failures.push("advanced CodeQL duplicates the enabled GitHub default setup");
 for (const workflow of expected) {
