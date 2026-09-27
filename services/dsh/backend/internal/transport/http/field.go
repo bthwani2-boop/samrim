@@ -264,7 +264,7 @@ func (s *FieldServer) authorizeReenrollment(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "acting actor, correlation ID, and positive admission version are required")
 		return
 	}
-	var input contract.FieldReenrollmentRequest
+	var input contract.ManagedRoleReenrollmentRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}

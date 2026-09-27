@@ -537,6 +537,65 @@ func (s *Service) SetManagedRoleEnabled(ctx context.Context, role, actorID, oper
 	return s.identity.SetRoleEnabledWithContext(ctx, actorID, role, false, strings.TrimSpace(correlationID), strings.TrimSpace(reason), strings.TrimSpace(operatorActorID), expectedVersion)
 }
 
+func (s *Service) AuthorizeManagedRoleReenrollment(ctx context.Context, role, actorID, operatorActorID, correlationID, reason string, expectedDomainVersion, expectedActorVersion, expectedRoleVersion int) error {
+	role = strings.ToLower(strings.TrimSpace(role))
+	actorID = strings.TrimSpace(actorID)
+	operatorActorID = strings.TrimSpace(operatorActorID)
+	correlationID = strings.TrimSpace(correlationID)
+	reason = strings.TrimSpace(reason)
+	if (role != "partner" && role != "captain") || actorID == "" || expectedDomainVersion < 1 || expectedActorVersion < 1 || expectedRoleVersion < 1 || len([]rune(reason)) < 5 || len([]rune(reason)) > 500 || !validMutation("managed-role-reenrollment", correlationID, operatorActorID) {
+		return ErrInvalidInput
+	}
+	permission := "operations"
+	if role == "partner" {
+		permission = "partners"
+	}
+	if err := s.requireOperatorPermission(ctx, operatorActorID, permission); err != nil {
+		return err
+	}
+
+	if role == "partner" {
+		tx, state, version, err := postgres.LockPartnerJoiningCase(ctx, s.db, actorID)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback() }()
+		if version != expectedDomainVersion {
+			return ErrManagedRoleVersionConflict
+		}
+		if !partnerJoiningStateAllowsReenrollment(state) {
+			return ErrManagedRoleNotEligible
+		}
+		return s.identity.AuthorizeReenrollmentWithContext(ctx, actorID, role, correlationID, reason, operatorActorID, expectedActorVersion, expectedRoleVersion)
+	}
+
+	tx, admission, err := postgres.LockCaptainReenrollmentAdmission(ctx, s.db, actorID)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if admission.Version != expectedDomainVersion {
+		return ErrManagedRoleVersionConflict
+	}
+	if !captainAdmissionAllowsReenrollment(admission) {
+		return ErrManagedRoleNotEligible
+	}
+	return s.identity.AuthorizeReenrollmentWithContext(ctx, actorID, role, correlationID, reason, operatorActorID, expectedActorVersion, expectedRoleVersion)
+}
+
+func partnerJoiningStateAllowsReenrollment(state string) bool {
+	switch state {
+	case "submitted", "needs_correction", "approved":
+		return true
+	default:
+		return false
+	}
+}
+
+func captainAdmissionAllowsReenrollment(admission postgres.CaptainAdmission) bool {
+	return admission.State == "eligible" && !admission.RequiresProfileReview
+}
+
 func (s *Service) requireCaptain(ctx context.Context, accessToken string) (identityclient.ActorIdentity, error) {
 	identity, err := s.identity.ReadSession(ctx, strings.TrimSpace(accessToken))
 	if err != nil {

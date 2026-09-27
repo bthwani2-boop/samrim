@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
-import { admitCaptain, approveCaptainAdmission, dispatchCaptainOffer, dshErrorPayload, dshHttpStatus, isDshClientError, listCaptainAdmissions, provisionCaptainAdmission, readCaptainAdmissionByActor, reassignCaptainOffer, recoverCaptainDelivery, reviewCaptainAdmissionProfile, setDshCaptainAvailability, setDshCaptainRoleEnabled, updateCaptainAdmissionProfile } from "../../../src/server/dsh/dsh-bff";
+import { admitCaptain, approveCaptainAdmission, authorizeDshCaptainReenrollment, dispatchCaptainOffer, dshErrorPayload, dshHttpStatus, isDshClientError, listCaptainAdmissions, provisionCaptainAdmission, readCaptainAdmissionByActor, reassignCaptainOffer, recoverCaptainDelivery, reviewCaptainAdmissionProfile, setDshCaptainAvailability, setDshCaptainRoleEnabled, updateCaptainAdmissionProfile } from "../../../src/server/dsh/dsh-bff";
 import { identityErrorPayload, identityHttpStatus, readOperatorSession, searchIdentityRoles } from "../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../src/server/security/csrf";
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
   if (identity.role !== "operator") return jsonError("FORBIDDEN", "operator access is required", 403);
   const permissionDenied = operatorWorkspacePermissionDenied(identity, "operations");
   if (permissionDenied) return permissionDenied;
-  const body = (await request.json().catch(() => null)) as { action?: unknown; fullNameAr?: unknown; admissionId?: unknown; contactPhoneE164?: unknown; orderId?: unknown; assignmentId?: unknown; actorId?: unknown; available?: unknown; reason?: unknown; expectedVersion?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as { action?: unknown; fullNameAr?: unknown; admissionId?: unknown; contactPhoneE164?: unknown; orderId?: unknown; assignmentId?: unknown; actorId?: unknown; available?: unknown; reason?: unknown; expectedVersion?: unknown; expectedActorVersion?: unknown; expectedRoleVersion?: unknown; expectedAdmissionVersion?: unknown } | null;
   const action = typeof body?.action === "string" ? body.action.trim() : "";
   const admissionId = typeof body?.admissionId === "string" ? body.admissionId.trim() : "";
   const fullNameAr = typeof body?.fullNameAr === "string" ? body.fullNameAr.trim() : "";
@@ -43,9 +43,17 @@ export async function POST(request: Request) {
   const available = body?.available;
   const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
   const expectedVersion = typeof body?.expectedVersion === "number" ? body.expectedVersion : typeof body?.expectedVersion === "string" && /^[1-9]\d*$/.test(body.expectedVersion.trim()) ? Number(body.expectedVersion.trim()) : NaN;
+  const expectedActorVersion = typeof body?.expectedActorVersion === "number" ? body.expectedActorVersion : typeof body?.expectedActorVersion === "string" && /^[1-9]\d*$/.test(body.expectedActorVersion.trim()) ? Number(body.expectedActorVersion.trim()) : NaN;
+  const expectedRoleVersion = typeof body?.expectedRoleVersion === "number" ? body.expectedRoleVersion : typeof body?.expectedRoleVersion === "string" && /^[1-9]\d*$/.test(body.expectedRoleVersion.trim()) ? Number(body.expectedRoleVersion.trim()) : NaN;
+  const expectedAdmissionVersion = typeof body?.expectedAdmissionVersion === "number" ? body.expectedAdmissionVersion : typeof body?.expectedAdmissionVersion === "string" && /^[1-9]\d*$/.test(body.expectedAdmissionVersion.trim()) ? Number(body.expectedAdmissionVersion.trim()) : NaN;
   if (action === "recover" && (!assignmentId || !Number.isInteger(expectedVersion) || expectedVersion < 1)) return jsonError("INVALID_INPUT", "assignmentId and a positive expectedVersion are required for recovery", 400);
   const context = { operatorActorId: identity.subject, correlationId: randomUUID(), idempotencyKey: randomUUID() };
   try {
+    if (action === "reenroll") {
+      if (!actorId || !Number.isSafeInteger(expectedAdmissionVersion) || expectedAdmissionVersion < 1 || !Number.isSafeInteger(expectedActorVersion) || expectedActorVersion < 1 || !Number.isSafeInteger(expectedRoleVersion) || expectedRoleVersion < 1 || Array.from(reason).length < 5 || Array.from(reason).length > 500) return jsonError("INVALID_INPUT", "actorId, current DSH admission, actor and role versions, and a reason of 5 to 500 characters are required", 400);
+      await authorizeDshCaptainReenrollment(actorId, { expectedActorVersion, expectedRoleVersion, reason }, { operatorActorId: identity.subject, correlationId: context.correlationId, expectedDomainVersion: expectedAdmissionVersion });
+      return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+    }
 		if (action === "approve" || action === "provision") {
 			if (!admissionId) return jsonError("INVALID_INPUT", "admissionId is required", 400);
 			const result = action === "approve" ? await approveCaptainAdmission(admissionId, context) : await provisionCaptainAdmission(admissionId, context);

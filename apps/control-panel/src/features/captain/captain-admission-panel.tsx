@@ -25,7 +25,7 @@ export function CaptainAdmissionPanel() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  const load = useCallback(async (cursor = "", append = false) => {
+  const load = useCallback(async (cursor = "", append = false): Promise<boolean> => {
     if (append) setLoadingMore(true);
     else setLoading(true);
     setError("");
@@ -34,12 +34,14 @@ export function CaptainAdmissionPanel() {
       if (cursor) params.set("cursor", cursor);
       if (enabledFilter) params.set("enabled", enabledFilter);
       const response = await identityFetch(`/api/captains?${params}`);
-      if (!response.ok) { setError(await responseMessage(response)); return; }
+      if (!response.ok) { setError(await responseMessage(response)); return false; }
       const page = await response.json() as CaptainPage;
       setItems((current) => append ? [...current, ...page.items] : page.items);
       setNextCursor(page.nextCursor ?? "");
+      return true;
     } catch (cause) {
       setError(isRequestFailure(cause) ? cause.message : "تعذر قراءة سجل الكباتن.");
+      return false;
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -92,6 +94,69 @@ export function CaptainAdmissionPanel() {
       await load();
     } catch (cause) {
       setError(isRequestFailure(cause) ? cause.message : "تعذر تحديث أهلية الكابتن.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function reenroll(captain: CaptainRecord) {
+    const reason = reasons[captain.actorId]?.trim() ?? "";
+    if (Array.from(reason).length < 5 || Array.from(reason).length > 500) {
+      setError("اكتب سببًا من 5 إلى 500 حرف قبل إجازة إعادة التسجيل.");
+      return;
+    }
+    if (!captain.enabled || !captain.securityEnabled || !captain.activatedAt || captain.admission?.state !== "eligible" || captain.admission.requiresProfileReview) {
+      setError("تتطلب إعادة التسجيل هوية نشطة وأهلية كابتن سارية ومراجعة مكتملة في DSH.");
+      return;
+    }
+    setBusy(captain.actorId + ":reenroll");
+    setError("");
+    setNotice("");
+    try {
+      const response = await identityFetch("/api/captains", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "reenroll",
+          actorId: captain.actorId,
+          expectedAdmissionVersion: captain.admission.version,
+          expectedActorVersion: captain.actorVersion,
+          expectedRoleVersion: captain.roleVersion,
+          reason,
+        }),
+      });
+      if (!response.ok) {
+        const message = await responseMessage(response);
+        if (response.status === 409 || response.status === 412 || response.status >= 500) {
+          const reloaded = await load();
+          setError(reloaded
+            ? (response.status >= 500 ? "تعذر تأكيد نتيجة الطلب؛ أُعيد تحميل الحالة الكانونية قبل أي محاولة أخرى. " : "تغيرت أهلية DSH أو نسخة الهوية قبل إعادة التسجيل. أُعيد تحميل الحالة الكانونية: ") + message
+            : "تعذر تأكيد النتيجة أو إعادة قراءة سجل الكباتن. حدّث السجل قبل أي محاولة أخرى. " + message);
+        } else setError(message);
+        return;
+      }
+      const readbackParams = new URLSearchParams({ limit: "10", q: captain.phoneE164 });
+      const readbackResponse = await identityFetch("/api/captains?" + readbackParams);
+      if (!readbackResponse.ok) {
+        const reloaded = await load();
+        setError(reloaded ? "تعذرت إعادة قراءة التفصيل لكن تم تحديث سجل الكباتن. تحقق من التفعيل قبل أي إجراء آخر." : "تم إرسال الإجازة لكن تعذرت إعادة قراءة هوية الكابتن وأهلية DSH. حدّث السجل قبل أي إجراء آخر.");
+        return;
+      }
+      const readback = await readbackResponse.json() as CaptainPage;
+      const canonical = readback.items.find((item) => item.actorId === captain.actorId);
+      if (!canonical || canonical.activatedAt || canonical.actorVersion !== captain.actorVersion || canonical.roleVersion !== captain.roleVersion + 1 || canonical.admission?.state !== "eligible" || canonical.admission.requiresProfileReview) {
+        const reloaded = await load();
+        setError(reloaded ? "إعادة القراءة لم تطابق التفعيل المتوقع؛ عُرضت أحدث حالة في السجل. راجعها قبل أي إجراء آخر." : "إعادة القراءة لم تثبت النتيجة وتعذر تحديث السجل. حدّثه قبل أي إجراء آخر.");
+        return;
+      }
+      setReasons((current) => ({ ...current, [captain.actorId]: "" }));
+      setNotice("تمت إجازة إعادة تسجيل الكابتن بعد تحقق DSH؛ أُعيدت قراءة النسخة " + canonical.roleVersion + ".");
+      await load();
+    } catch (cause) {
+      const reloaded = await load();
+      setError(reloaded
+        ? "تعذر تأكيد نتيجة الطلب؛ أُعيد تحميل الحالة الكانونية قبل أي محاولة أخرى. " + (isRequestFailure(cause) ? cause.message : "تحقق من التفعيل المعروض.")
+        : "تعذر تأكيد نتيجة الطلب أو إعادة قراءة سجل الكباتن. حدّث السجل قبل أي محاولة أخرى.");
     } finally {
       setBusy("");
     }
@@ -163,6 +228,7 @@ export function CaptainAdmissionPanel() {
             const mustDisableForProfileReview = requiresProfileReview && captain.admission?.state === "eligible";
             const shouldDisable = captain.enabled || mustDisableForProfileReview;
             const canChangeAvailability = operationallyEnabled && captain.securityEnabled && Boolean(captain.activatedAt);
+            const canReenroll = operationallyEnabled && captain.securityEnabled && Boolean(captain.activatedAt);
             return <tr key={captain.actorId}>
             <th scope="row"><strong>{captain.admission?.fullNameAr || "—"}</strong><br /><bdi dir="ltr">{captain.phoneE164}</bdi></th>
             <td>{!captain.securityEnabled ? "الهوية موقوفة أمنيًا" : requiresProfileReview && captain.enabled ? "بانتظار إيقاف الوصول" : requiresProfileReview ? "الوصول موقوف" : captain.activatedAt ? captain.enabled ? "نشط" : "الدور موقوف" : "بانتظار التفعيل"}</td>
@@ -171,6 +237,7 @@ export function CaptainAdmissionPanel() {
             <td>{captain.admission && captain.activatedAt ? <div className="access-form">
               <label className="field-label" htmlFor={`captain-reason-${index}`}>سبب الإجراء<input id={`captain-reason-${index}`} maxLength={500} value={reasons[captain.actorId] ?? ""} onChange={(event) => setReasons((current) => ({ ...current, [captain.actorId]: event.target.value }))} disabled={Boolean(busy)} /></label>
               {shouldDisable || !requiresProfileReview ? <button type="button" className={shouldDisable ? "button button-secondary" : "button button-primary"} disabled={Boolean(busy) || (reasons[captain.actorId] ?? "").trim().length < 5} onClick={() => void changeStatus(captain)}>{busy === captain.actorId ? "جارٍ التحديث…" : shouldDisable ? "إيقاف التشغيل" : "إعادة التفعيل"}</button> : <span className="muted">استكمل الملف واعتمده قبل إعادة التفعيل.</span>}
+              {canReenroll ? <button type="button" className="button button-secondary" disabled={Boolean(busy) || (reasons[captain.actorId] ?? "").trim().length < 5} onClick={() => void reenroll(captain)}>{busy === captain.actorId + ":reenroll" ? "جارٍ التحقق وإجازة التسجيل…" : "إجازة إعادة التسجيل"}</button> : null}
               <button type="button" className="button button-secondary" disabled={Boolean(busy) || !canChangeAvailability || (reasons[captain.actorId] ?? "").trim().length < 5} onClick={() => void changeAvailability(captain)}>{busy === `${captain.actorId}:availability` ? "جارٍ التحديث…" : captain.admission.availabilityState === "available" ? "جعله غير متاح" : "جعله متاحًا"}</button>
             </div> : <span className="muted">يبدأ التحكم بعد اكتمال التسجيل ووجود أهلية DSH.</span>}</td>
           </tr>;

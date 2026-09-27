@@ -666,6 +666,54 @@ test("Field reenrollment uses DSH eligibility and carries fresh actor, role, and
   });
 });
 
+test("Captain reenrollment goes through DSH eligibility and verifies the Identity readback", async ({ page }) => {
+  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
+  let reauthorized = false;
+  let reenrollmentBody: Record<string, unknown> | undefined;
+  await page.route("**/api/captains**", async (route) => {
+    if (route.request().method() === "POST") {
+      reenrollmentBody = route.request().postDataJSON() as Record<string, unknown>;
+      reauthorized = true;
+      await route.fulfill({ status: 204 });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_captain_reenroll", phoneE164: "+96777000111", role: "captain", enabled: true, securityEnabled: true, activatedAt: reauthorized ? null : "2026-09-20T08:00:00.000Z", actorVersion: 4, roleVersion: reauthorized ? 3 : 2, admission: { id: "cap_adm_reenroll", actorId: "act_captain_reenroll", state: "eligible", availabilityState: "unavailable", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
+  });
+  await page.goto("/captains");
+  await page.getByLabel("سبب الإجراء").fill("استعادة وصول الكابتن");
+  await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
+  await expect(page.getByRole("status")).toContainText("تمت إجازة إعادة تسجيل الكابتن بعد تحقق DSH");
+  expect(reenrollmentBody).toMatchObject({
+    actorId: "act_captain_reenroll",
+    action: "reenroll",
+    expectedActorVersion: 4,
+    expectedRoleVersion: 2,
+    expectedAdmissionVersion: 8,
+    reason: "استعادة وصول الكابتن",
+  });
+  await expect(page.getByText("بانتظار التفعيل")).toBeVisible();
+  await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
+});
+
+test("Captain reenrollment reconciles a server error against the current Identity and DSH state", async ({ page }) => {
+  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
+  let reenrollmentReachedCanonicalWriter = false;
+  await page.route("**/api/captains**", async (route) => {
+    if (route.request().method() === "POST") {
+      reenrollmentReachedCanonicalWriter = true;
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "DEPENDENCY_UNAVAILABLE" } }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_captain_unknown_result", phoneE164: "+96777000113", role: "captain", enabled: true, securityEnabled: true, activatedAt: reenrollmentReachedCanonicalWriter ? null : "2026-09-20T08:00:00.000Z", actorVersion: 4, roleVersion: reenrollmentReachedCanonicalWriter ? 3 : 2, admission: { id: "cap_adm_unknown_result", actorId: "act_captain_unknown_result", state: "eligible", availabilityState: "unavailable", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
+  });
+  await page.goto("/captains");
+  await page.getByLabel("سبب الإجراء").fill("تسوية نتيجة إعادة التسجيل");
+  await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
+  await expect(page.locator("p.identity-error")).toContainText("أُعيد تحميل الحالة الكانونية قبل أي محاولة أخرى");
+  await expect(page.getByText("بانتظار التفعيل")).toBeVisible();
+  await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
+});
+
 test("Field reenrollment conflicts reload the canonical DSH-owned roster before retry", async ({ page }) => {
   await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
   let conflictStateApplied = false;
@@ -1131,6 +1179,64 @@ test("operator resumes a canonical joining case from the DSH queue", async ({ pa
   await page.getByRole("link", { name: "فتح الحالة" }).click();
   await expect(page.getByRole("status").first()).toContainText("الحالة: قيد المراجعة");
   await expect(page.getByRole("status").first()).toContainText("نشاط مستعاد");
+});
+
+test("Partner reenrollment verifies DSH joining eligibility and the Identity readback", async ({ page }) => {
+  await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "partners"], true);
+  let reauthorized = false;
+  let reenrollmentBody: Record<string, unknown> | undefined;
+  await page.route("**/api/partners/roster/act_partner_reenroll", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        partner: { actorId: "act_partner_reenroll", phoneE164: "+96777000112", role: "partner", enabled: true, securityEnabled: true, activatedAt: reauthorized ? null : "2026-09-20T08:00:00.000Z", actorVersion: 6, roleVersion: reauthorized ? 4 : 3 },
+        joiningCase: { id: "join_partner_reenroll", partnerActorId: "act_partner_reenroll", state: "approved", version: 9, businessName: "نشاط مستعاد", firstStoreName: "متجر مستعاد", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"], createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" },
+      }),
+    });
+  });
+  await page.route("**/api/partners/roster", async (route) => {
+    reenrollmentBody = route.request().postDataJSON() as Record<string, unknown>;
+    reauthorized = true;
+    await route.fulfill({ status: 204 });
+  });
+  await page.goto("/partners/actors/act_partner_reenroll");
+  await page.getByLabel("سبب الإجراء").fill("استعادة وصول الشريك");
+  await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
+  await expect(page.getByRole("status")).toContainText("تمت إجازة إعادة تسجيل الشريك بعد تحقق DSH");
+  expect(reenrollmentBody).toMatchObject({
+    actorId: "act_partner_reenroll",
+    action: "reenroll",
+    expectedActorVersion: 6,
+    expectedRoleVersion: 3,
+    expectedJoiningCaseVersion: 9,
+    reason: "استعادة وصول الشريك",
+  });
+});
+
+test("Partner reenrollment reconciles a server error against the current Identity and DSH state", async ({ page }) => {
+  await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "partners"], true);
+  let reenrollmentReachedCanonicalWriter = false;
+  await page.route("**/api/partners/roster/act_partner_unknown_result", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        partner: { actorId: "act_partner_unknown_result", phoneE164: "+96777000114", role: "partner", enabled: true, securityEnabled: true, activatedAt: reenrollmentReachedCanonicalWriter ? null : "2026-09-20T08:00:00.000Z", actorVersion: 6, roleVersion: reenrollmentReachedCanonicalWriter ? 4 : 3 },
+        joiningCase: { id: "join_partner_unknown_result", partnerActorId: "act_partner_unknown_result", state: "approved", version: 9, businessName: "نشاط مستعاد", firstStoreName: "متجر مستعاد", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"], createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" },
+      }),
+    });
+  });
+  await page.route("**/api/partners/roster", async (route) => {
+    reenrollmentReachedCanonicalWriter = true;
+    await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "DEPENDENCY_UNAVAILABLE" } }) });
+  });
+  await page.goto("/partners/actors/act_partner_unknown_result");
+  await page.getByLabel("سبب الإجراء").fill("تسوية نتيجة إعادة التسجيل");
+  await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
+  await expect(page.locator("p.identity-error")).toContainText("أُعيد تحميل الحالة الكانونية قبل أي محاولة أخرى");
+  await expect(page.getByText("بانتظار التفعيل")).toBeVisible();
+  await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
 });
 
 test("operator approves joining terms with commission and settlement cadence", async ({ page }) => {

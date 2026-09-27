@@ -525,7 +525,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "../dsh.openapi.yaml#/components/schemas/FieldReenrollmentRequest"
+              $ref: "../dsh.openapi.yaml#/components/schemas/ManagedRoleReenrollmentRequest"
       responses:
         "204":
           description: Field reauthorization succeeded only if DSH admission and Identity actor/role versions still match.

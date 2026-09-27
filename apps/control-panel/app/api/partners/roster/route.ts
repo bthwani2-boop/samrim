@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
-import { dshErrorPayload, dshHttpStatus, isDshClientError, setDshPartnerRoleEnabled } from "../../../../src/server/dsh/dsh-bff";
+import { authorizeDshPartnerReenrollment, dshErrorPayload, dshHttpStatus, isDshClientError, setDshPartnerRoleEnabled } from "../../../../src/server/dsh/dsh-bff";
 import { identityErrorPayload, identityHttpStatus, readOperatorSession, searchIdentityRoles } from "../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";
@@ -48,8 +48,18 @@ export async function POST(request: Request) {
   const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
   const rawVersion = body?.expectedVersion;
   const expectedVersion = typeof rawVersion === "number" ? rawVersion : typeof rawVersion === "string" && /^[1-9]\d*$/.test(rawVersion.trim()) ? Number(rawVersion.trim()) : NaN;
-  if (!body || Object.keys(body).some((key) => !["action", "actorId", "reason", "expectedVersion"].includes(key)) || !["activate", "disable"].includes(action) || !actorId || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1 || Array.from(reason).length < 5 || Array.from(reason).length > 500) return errorResponse("INVALID_INPUT", "actorId, action, current role version, and a reason of 5 to 500 characters are required", 400);
+  const expectedActorVersion = typeof body?.expectedActorVersion === "number" ? body.expectedActorVersion : typeof body?.expectedActorVersion === "string" && /^[1-9]\d*$/.test(body.expectedActorVersion.trim()) ? Number(body.expectedActorVersion.trim()) : NaN;
+  const expectedRoleVersion = typeof body?.expectedRoleVersion === "number" ? body.expectedRoleVersion : typeof body?.expectedRoleVersion === "string" && /^[1-9]\d*$/.test(body.expectedRoleVersion.trim()) ? Number(body.expectedRoleVersion.trim()) : NaN;
+  const expectedJoiningCaseVersion = typeof body?.expectedJoiningCaseVersion === "number" ? body.expectedJoiningCaseVersion : typeof body?.expectedJoiningCaseVersion === "string" && /^[1-9]\d*$/.test(body.expectedJoiningCaseVersion.trim()) ? Number(body.expectedJoiningCaseVersion.trim()) : NaN;
+  const allowedKeys = ["action", "actorId", "reason", "expectedVersion", "expectedActorVersion", "expectedRoleVersion", "expectedJoiningCaseVersion"];
+  if (!body || Object.keys(body).some((key) => !allowedKeys.includes(key)) || !["activate", "disable", "reenroll"].includes(action) || !actorId || Array.from(reason).length < 5 || Array.from(reason).length > 500) return errorResponse("INVALID_INPUT", "actorId, a supported action, and a reason of 5 to 500 characters are required", 400);
+  if (action === "reenroll" && (!Number.isSafeInteger(expectedActorVersion) || expectedActorVersion < 1 || !Number.isSafeInteger(expectedRoleVersion) || expectedRoleVersion < 1 || !Number.isSafeInteger(expectedJoiningCaseVersion) || expectedJoiningCaseVersion < 1)) return errorResponse("INVALID_INPUT", "current joining-case, actor and role versions are required for re-enrollment", 400);
+  if (action !== "reenroll" && (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1)) return errorResponse("INVALID_INPUT", "current role version is required for role activation or suspension", 400);
   try {
+    if (action === "reenroll") {
+      await authorizeDshPartnerReenrollment(actorId, { expectedActorVersion, expectedRoleVersion, reason }, { operatorActorId: identity.subject, correlationId: randomUUID(), expectedDomainVersion: expectedJoiningCaseVersion });
+      return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+    }
     await setDshPartnerRoleEnabled(actorId, { enabled: action === "activate", reason }, { operatorActorId: identity.subject, correlationId: randomUUID(), idempotencyKey: randomUUID(), expectedVersion });
     return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
   } catch (error) {

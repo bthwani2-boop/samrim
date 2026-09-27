@@ -78,12 +78,6 @@ export type OperatorProfileMutationContext = AttributedMutationContext & Readonl
   idempotencyKey: string;
 }>;
 
-export type ReenrollmentMutationContext = AttributedMutationContext & Readonly<{
-  expectedActorVersion: number;
-  expectedRoleVersion: number;
-  reason: string;
-}>;
-
 export type IdentityInternalClient = Readonly<{
   listOperatorProfiles(query: string, state: string, sort: "created_asc" | "created_desc", limit: number, cursor: string, context: AttributedMutationContext): Promise<OperatorProfilePage>;
   createOperatorProfile(request: OperatorProfileCreateRequest, context: OperatorProfileMutationContext): Promise<OperatorProfileResponse>;
@@ -96,7 +90,6 @@ export type IdentityInternalClient = Readonly<{
   readActorRole(actorId: string, role: ActorType): Promise<ActorRoleView>;
   readOperatorPermission(actorId: string, permission: OperatorPermission, context: AttributedMutationContext): Promise<OperatorPermissionAccess>;
   setOperatorPermission(actorId: string, permission: OperatorPermission, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<OperatorPermissionAccess>;
-  authorizeActorRoleReenrollment(actorId: string, role: ActorType, context: ReenrollmentMutationContext): Promise<void>;
   setActorRoleEnabled(actorId: string, role: ActorType, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<void>;
   setActorSecurityEnabled(actorId: string, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<void>;
 }>;
@@ -207,13 +200,6 @@ function validateAttributedMutationContext(context: AttributedMutationContext): 
 function validateVersionedMutationContext(context: VersionedMutationContext): void {
   validateAttributedMutationContext(context);
   if (!Number.isInteger(context.expectedVersion) || context.expectedVersion < 1) throw new Error("IDENTITY_MUTATION_VERSION_INVALID");
-}
-
-function validateReenrollmentMutationContext(context: ReenrollmentMutationContext): void {
-  validateAttributedMutationContext(context);
-  if (!Number.isSafeInteger(context.expectedActorVersion) || context.expectedActorVersion < 1 || !Number.isSafeInteger(context.expectedRoleVersion) || context.expectedRoleVersion < 1) throw new Error("IDENTITY_REENROLLMENT_VERSION_INVALID");
-  const reasonLength = Array.from(context.reason.trim()).length;
-  if (reasonLength < 5 || reasonLength > 500) throw new Error("IDENTITY_REENROLLMENT_REASON_INVALID");
 }
 
 export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: string, timeoutMs = 8_000): IdentityInternalClient {
@@ -377,39 +363,6 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
     }
   }
 
-  async function requestReenrollmentNoContent(pathname: string, context: ReenrollmentMutationContext): Promise<void> {
-    validateReenrollmentMutationContext(context);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      let response: Response;
-      try {
-        response = await fetch(resolveUrl(baseUrl, pathname), {
-          method: "POST",
-          headers: {
-            Accept: "application/json",
-            Authorization: "Bearer " + token,
-            "X-Correlation-ID": context.correlationId.trim(),
-            "X-Acting-Actor-ID": context.operatorActorId.trim(),
-            "X-Expected-Version": String(context.expectedRoleVersion),
-            "X-Expected-Actor-Version": String(context.expectedActorVersion),
-            "X-Reason": context.reason.trim(),
-          },
-          ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
-          signal: controller.signal,
-        });
-      } catch (error) {
-        throw { kind: "network", message: error instanceof Error ? error.message : "identity network error" } satisfies IdentityClientError;
-      }
-      if (!response.ok) {
-        const parsed = parseErrorPayload(await response.json().catch(() => null));
-        throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies IdentityClientError;
-      }
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-
   return {
     listOperatorProfiles: async (query, state, sort, limit, cursor, context) => {
       const params = new URLSearchParams({ q: query, state, sort, limit: String(limit) });
@@ -497,8 +450,6 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
     },
     readOperatorPermission: (actorId, permission, context) => requestOperatorPermission(actorId, permission, "GET", context),
     setOperatorPermission: (actorId, permission, enabled, reason, context) => requestOperatorPermission(actorId, permission, "PUT", context, enabled, reason),
-    authorizeActorRoleReenrollment: (actorId, role, context) =>
-      requestReenrollmentNoContent(expandPath(identityOperationPaths.authorizeManagedRoleReenrollment.path, { actorId, role }), context),
     setActorRoleEnabled: (actorId, role, enabled, reason, context) => {
       const op = enabled ? identityOperationPaths.enableActorRole : identityOperationPaths.disableActorRole;
       return requestNoContent(

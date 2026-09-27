@@ -393,7 +393,7 @@ func CanSetRoleEnabled(caller, role string) bool {
 func CanAuthorizeReenrollment(caller, role string) bool {
 	caller = strings.ToLower(strings.TrimSpace(caller))
 	role = strings.ToLower(strings.TrimSpace(role))
-	return (caller == "control-panel" && (role == "partner" || role == "captain")) || (caller == "dsh" && role == "field")
+	return caller == "dsh" && IsManagedRole(role)
 }
 
 func CanIssueOperatorEnrollmentTokenForRole(caller, role string) bool {

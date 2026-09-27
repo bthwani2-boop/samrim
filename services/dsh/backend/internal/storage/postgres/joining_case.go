@@ -767,6 +767,29 @@ func ReadJoiningCaseForPartner(ctx context.Context, db *sql.DB, actorID string) 
 	return JoiningCaseResult{Case: caseRecord}, nil
 }
 
+func LockPartnerJoiningCase(ctx context.Context, db *sql.DB, actorID string) (*sql.Tx, string, int, error) {
+	actorID = strings.TrimSpace(actorID)
+	if db == nil || actorID == "" || len(actorID) > 128 {
+		return nil, "", 0, ErrJoiningCaseNotFound
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, "", 0, err
+	}
+	var state string
+	var version int
+	err = tx.QueryRowContext(ctx, "SELECT state,version FROM dsh.joining_cases WHERE partner_actor_id=$1 FOR UPDATE", actorID).Scan(&state, &version)
+	if errors.Is(err, sql.ErrNoRows) {
+		_ = tx.Rollback()
+		return nil, "", 0, ErrJoiningCaseNotFound
+	}
+	if err != nil {
+		_ = tx.Rollback()
+		return nil, "", 0, err
+	}
+	return tx, state, version, nil
+}
+
 func ReadJoiningCaseForField(ctx context.Context, db *sql.DB, fieldActorID, caseID string) (JoiningCaseResult, error) {
 	caseRecord, err := readJoiningCaseRow(ctx, db.QueryRowContext(ctx, joiningCaseSelect+" WHERE c.originating_field_actor_id=$1 AND c.id=$2", strings.TrimSpace(fieldActorID), strings.TrimSpace(caseID)), false)
 	if errors.Is(err, sql.ErrNoRows) {

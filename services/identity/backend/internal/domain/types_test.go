@@ -135,13 +135,15 @@ func TestManagedRoleSecurityMutationBoundary(t *testing.T) {
 }
 
 func TestManagedRoleReenrollmentBoundary(t *testing.T) {
-	if !CanAuthorizeReenrollment("control-panel", "partner") || !CanAuthorizeReenrollment("control-panel", "captain") {
-		t.Fatal("operator must be able to request governed partner/captain reenrollment")
+	for _, role := range []string{"partner", "captain", "field"} {
+		if !CanAuthorizeReenrollment("dsh", role) {
+			t.Fatalf("DSH must authorize %s reenrollment after current domain eligibility is verified", role)
+		}
+		if CanAuthorizeReenrollment("control-panel", role) {
+			t.Fatalf("Control Panel must not bypass DSH eligibility for %s reenrollment", role)
+		}
 	}
-	if !CanAuthorizeReenrollment("dsh", "field") {
-		t.Fatal("DSH must be able to authorize Field reenrollment through its admission lifecycle")
-	}
-	if CanAuthorizeReenrollment("control-panel", "field") || CanAuthorizeReenrollment("dsh", "partner") || CanAuthorizeReenrollment("dsh", "captain") {
-		t.Fatal("reenrollment must remain scoped to the lifecycle owner for each role")
+	if CanAuthorizeReenrollment("identity", "partner") || CanAuthorizeReenrollment("dsh", "client") || CanAuthorizeReenrollment("dsh", "operator") {
+		t.Fatal("reenrollment must remain limited to DSH-managed roles and their lifecycle owner")
 	}
 }

@@ -69,6 +69,8 @@ func (s *CaptainServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders/{orderId}/captain-assignment", s.readStoreAssignment)
 	mux.HandleFunc("POST /dsh/partners/{actorId}/identity-role", s.setPartnerRole)
 	mux.HandleFunc("POST /dsh/captains/{actorId}/identity-role", s.setCaptainRole)
+	mux.HandleFunc("POST /dsh/partners/{actorId}/reenrollment", s.authorizePartnerReenrollment)
+	mux.HandleFunc("POST /dsh/captains/{actorId}/reenrollment", s.authorizeCaptainReenrollment)
 }
 
 func (s *CaptainServer) admit(w http.ResponseWriter, r *http.Request) {
@@ -748,6 +750,34 @@ func (s *CaptainServer) setManagedRole(w http.ResponseWriter, r *http.Request, r
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *CaptainServer) authorizePartnerReenrollment(w http.ResponseWriter, r *http.Request) {
+	s.authorizeManagedRoleReenrollment(w, r, "partner")
+}
+
+func (s *CaptainServer) authorizeCaptainReenrollment(w http.ResponseWriter, r *http.Request) {
+	s.authorizeManagedRoleReenrollment(w, r, "captain")
+}
+
+func (s *CaptainServer) authorizeManagedRoleReenrollment(w http.ResponseWriter, r *http.Request, role string) {
+	if !s.authorizedService(w, r) {
+		return
+	}
+	acting, correlation, _, expectedDomainVersion, ok := captainHeaders(w, r, false)
+	if !ok || acting == "" || expectedDomainVersion < 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID, X-Correlation-ID, and a positive X-Expected-Version are required")
+		return
+	}
+	var input contract.ManagedRoleReenrollmentRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	if err := s.service.AuthorizeManagedRoleReenrollment(r.Context(), role, r.PathValue("actorId"), acting, correlation, input.Reason, expectedDomainVersion, input.ExpectedActorVersion, input.ExpectedRoleVersion); err != nil {
+		writeCaptainError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *CaptainServer) authorizedService(w http.ResponseWriter, r *http.Request) bool {
 	if s.auth.Authorized(r) {
 		return true
@@ -847,7 +877,7 @@ func writeCaptainError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "Store Captain membership was not found")
 	case errors.Is(err, captain.ErrCaptainSessionForbidden), errors.Is(err, captain.ErrPartnerSessionForbidden), errors.Is(err, captain.ErrOperatorNotActive), errors.Is(err, captain.ErrManagedRoleClosed):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the authenticated actor is not permitted for this Captain operation")
-	case errors.Is(err, postgres.ErrCaptainAdmissionNotFound), errors.Is(err, postgres.ErrCaptainOfferNotFound), errors.Is(err, postgres.ErrCaptainAssignmentNotFound), errors.Is(err, postgres.ErrCaptainDeliveryTaskNotFound), errors.Is(err, postgres.ErrOrderNotFound):
+	case errors.Is(err, postgres.ErrCaptainAdmissionNotFound), errors.Is(err, postgres.ErrCaptainOfferNotFound), errors.Is(err, postgres.ErrCaptainAssignmentNotFound), errors.Is(err, postgres.ErrCaptainDeliveryTaskNotFound), errors.Is(err, postgres.ErrJoiningCaseNotFound), errors.Is(err, postgres.ErrOrderNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "Captain operational resource was not found")
 	case errors.Is(err, postgres.ErrCaptainLocationNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "Captain location assignment was not found")

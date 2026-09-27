@@ -581,6 +581,23 @@ func ReadCaptainAdmissionForActor(ctx context.Context, db *sql.DB, actorID strin
 	return admission, nil
 }
 
+func LockCaptainReenrollmentAdmission(ctx context.Context, db *sql.DB, actorID string) (*sql.Tx, CaptainAdmission, error) {
+	actorID = strings.TrimSpace(actorID)
+	if db == nil || actorID == "" || len(actorID) > 128 {
+		return nil, CaptainAdmission{}, ErrCaptainAdmissionNotFound
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, CaptainAdmission{}, err
+	}
+	admission, err := readCaptainAdmissionTx(ctx, tx, "actor_id=$1 FOR UPDATE", actorID)
+	if err != nil {
+		_ = tx.Rollback()
+		return nil, CaptainAdmission{}, err
+	}
+	return tx, admission, nil
+}
+
 func ReadCaptainFinancialAdmissionState(ctx context.Context, db *sql.DB, actorID string) (string, error) {
 	actorID = strings.TrimSpace(actorID)
 	if db == nil || actorID == "" || len(actorID) > 128 {

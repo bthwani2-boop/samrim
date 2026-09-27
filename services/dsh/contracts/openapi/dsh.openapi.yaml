@@ -523,8 +523,14 @@ paths:
   /dsh/partners/{actorId}/identity-role:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1partners~1{actorId}~1identity-role"
 
+  /dsh/partners/{actorId}/reenrollment:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1partners~1{actorId}~1reenrollment"
+
   /dsh/captains/{actorId}/identity-role:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1{actorId}~1identity-role"
+
+  /dsh/captains/{actorId}/reenrollment:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1{actorId}~1reenrollment"
 
   /dsh/fields/admissions:
     $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions"
@@ -3996,7 +4002,7 @@ components:
         idempotentReplay:
           type: boolean
 
-    FieldReenrollmentRequest:
+    ManagedRoleReenrollmentRequest:
       type: object
       required: [expectedActorVersion, expectedRoleVersion, reason]
       additionalProperties: false
