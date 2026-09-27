@@ -18,6 +18,18 @@ CURRENT STATE
 
 Before material reasoning, pin repository, requested/active ref, exact HEAD, objective, environment and mutation authority. Revalidate live HEAD before a material write. Deep means maximum rigor inside the proven material cone, not repository-wide inspection.
 
+Resolve authority in this order whenever scopes appear to overlap:
+
+CURRENT USER / TASK AUTHORITY
+→ EXACT LIVE `AGENTS.md`
+→ EXACT `knowledge.sources.json`
+→ EXACT PINNED GOVERNANCE
+→ EXACT LIVE SOURCE / CONFIG / SCHEMA / NX GRAPH / RUNTIME / DATABASE / READBACK
+
+Task-specific branch choice, starting order, checkpoint cadence and promotion constraints remain current user/task authority unless independently admitted as durable law. A tracked task trigger grants no semantic, execution-law or implementation authority merely by existing. If temporary task text contains a genuinely durable rule, move that rule to its one canonical owner (`AGENTS.md` for repository execution/safety, Governance for durable Product/System/Policy/Quality/Experience/Data/Design meaning), remove duplicates, then delete the temporary trigger and stale references once it carries no unique active need. Temporary task authorization should normally remain outside durable repository authority; task evidence or matrices, when explicitly retained, remain non-authoritative evidence and must be revalidated against the exact candidate before reuse.
+
+After one bounded discovery sufficient to choose owner, boundary, safety, treatment and proof, default to execution rather than repeated audit. Rediscover or widen only when new evidence can materially change those decisions.
+
 One material meaning has one semantic owner; one mutable fact has one canonical writer; one cross-boundary contract has one executable provenance. Treat the highest proven causal root; do not preserve, wrap, suppress or document around a surviving root defect.
 
 For each material change derive the smallest falsifiable closure contract:
