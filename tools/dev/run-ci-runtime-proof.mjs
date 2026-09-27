@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { laneTargets } from "../runtime-proof/resolve.mjs";
+import { laneTargets } from "./runtime-proof/resolve.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const envPath = path.join(root, "infra/local/.env");
