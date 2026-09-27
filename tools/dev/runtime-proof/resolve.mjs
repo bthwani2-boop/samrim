@@ -13,14 +13,14 @@ export const laneTargets = {
   dsh: ["dsh-backend:baseline-proof", "dsh-backend:runtime-proof"],
 };
 
-export const laneImages = {
+const laneImages = {
   control: ["identity-backend", "dsh-backend", "wlt-backend"],
   identity: ["identity-backend"],
   wlt: ["wlt-backend"],
   dsh: ["identity-backend", "dsh-backend", "wlt-backend"],
 };
 
-export const laneServices = {
+const laneServices = {
   control: ["postgres", "mailpit", "identity", "dsh", "wlt"],
   identity: ["postgres", "mailpit", "identity"],
   wlt: ["postgres", "wlt"],
@@ -42,7 +42,7 @@ function allProjectFiles(directory) {
   return result;
 }
 
-export function loadProjectConfigs() {
+function loadProjectConfigs() {
   const configs = new Map();
   for (const file of allProjectFiles(root)) {
     const value = JSON.parse(fs.readFileSync(file, "utf8"));
