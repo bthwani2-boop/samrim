@@ -260,7 +260,7 @@ func (s *Service) AuthorizeReenrollment(ctx context.Context, actorID, operatorAc
 	if err != nil {
 		return err
 	}
-	if admission.State != "eligible" {
+	if admission.State != "eligible" || admission.RequiresProfileReview || strings.TrimSpace(admission.FullNameAr) == "" {
 		return ErrManagedRoleNotEligible
 	}
 	if admission.Version != expectedAdmissionVersion {

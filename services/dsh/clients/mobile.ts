@@ -6,6 +6,10 @@ export type DshMobileClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
   | Readonly<{ kind: "network"; message: string }>;
 
+export function isDefinitiveDshMobileClientRejection(value: unknown): value is Extract<DshMobileClientError, { kind: "http" }> {
+  return isDshMobileClientError(value) && value.kind === "http" && value.status >= 400 && value.status < 500;
+}
+
 export type DshMobileClientOptions = Readonly<{
   timeoutMs?: number;
   cryptoRandomUUID?: () => string;

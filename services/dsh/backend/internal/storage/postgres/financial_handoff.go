@@ -106,9 +106,15 @@ func MarkFinancialHandoffPosted(ctx context.Context, db *sql.DB, item FinancialH
 		} else if current != "COLLECTED" {
 			return ErrPaymentStateConflict
 		}
+		auditAmount := item.AmountMinor
+		if item.EffectType == "PARTNER_CAPTAIN_BALANCE_SETTLEMENT" {
+			if err := tx.QueryRowContext(ctx, `SELECT total_amount_minor FROM dsh.commerce_orders WHERE id=$1 AND payment_intent_id=$2`, item.OrderID, item.PaymentIntentID).Scan(&auditAmount); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_payment_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,payment_intent_id,from_state,to_state,amount_minor)
 			VALUES('payment_collected',$1,$2,$3,$4,$5,'REQUIRES_COLLECTION','COLLECTED',$6)
-			ON CONFLICT (event_type,idempotency_key) DO NOTHING`, item.IdempotencyKey, item.CorrelationID, item.ActingActorID, item.OrderID, item.PaymentIntentID, item.AmountMinor); err != nil {
+			ON CONFLICT (event_type,idempotency_key) DO NOTHING`, item.IdempotencyKey, item.CorrelationID, item.ActingActorID, item.OrderID, item.PaymentIntentID, auditAmount); err != nil {
 			return err
 		}
 		if item.EffectType == "PARTNER_CAPTAIN_STORE_CASH_COLLECTION" {

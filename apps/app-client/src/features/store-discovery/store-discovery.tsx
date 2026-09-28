@@ -188,7 +188,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     }
   }
 
-  const filteredStores = useMemo(() => state.kind === "ready" ? state.stores : [], [state]);
+  const filteredStores = useMemo(() => state.kind === "ready" ? (storeFilter === "favorites" ? state.stores.filter((store) => state.favoriteStoreIDs.includes(store.id)) : state.stores) : [], [state, storeFilter]);
 
   const visibleCategories = useMemo(() => {
     if (state.kind !== "ready") return [];

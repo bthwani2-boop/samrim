@@ -2,7 +2,7 @@
 
 import { toAsciiDigits } from "@bthwani/design-system";
 import { type CaptainAdmission, captainAdmissionStateLabel } from "@bthwani/dsh";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "../access/identity-error-message";
 
@@ -22,8 +22,10 @@ export function CaptainCandidatePanel() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const loadRequestID = useRef(0);
 
   const load = useCallback(async (cursor = "", append = false) => {
+    const requestID = ++loadRequestID.current;
     if (append) setLoadingMore(true);
     else setLoading(true);
     setError("");
@@ -31,15 +33,15 @@ export function CaptainCandidatePanel() {
       const params = new URLSearchParams({ scope: "candidates", state, candidateSort: sort, q: query.trim(), limit: "25" });
       if (cursor) params.set("cursor", cursor);
       const response = await identityFetch("/api/captains?" + params);
-      if (!response.ok) { setError(await responseMessage(response)); return; }
+      if (!response.ok) { const message = await responseMessage(response); if (loadRequestID.current === requestID) setError(message); return; }
       const page = await response.json() as CandidatePage;
+      if (loadRequestID.current !== requestID) return;
       setItems((current) => append ? [...current, ...page.items] : page.items);
       setNextCursor(page.nextCursor ?? "");
     } catch (cause) {
-      setError(isRequestFailure(cause) ? cause.message : "تعذرت قراءة ملفات الكباتن.");
+      if (loadRequestID.current === requestID) setError(isRequestFailure(cause) ? cause.message : "تعذرت قراءة ملفات الكباتن.");
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      if (loadRequestID.current === requestID) { setLoading(false); setLoadingMore(false); }
     }
   }, [query, sort, state]);
 
@@ -62,7 +64,6 @@ export function CaptainCandidatePanel() {
       setPhone("");
       setState("pending_review");
       setNotice("أُنشئ ملف الكابتن بانتظار المراجعة. لم يُمنح دور التطبيق بعد.");
-      await load();
     } catch (cause) {
       setError(isRequestFailure(cause) ? cause.message : "تعذر حفظ ملف الكابتن.");
       await load();

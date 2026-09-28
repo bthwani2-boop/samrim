@@ -36,7 +36,7 @@ func (s *Service) UploadStoreProfileImage(ctx context.Context, accessToken, case
 		if err != nil {
 			return postgres.JoiningCaseResult{}, err
 		}
-		if admission.State != "eligible" {
+		if admission.State != "eligible" || admission.RequiresProfileReview || strings.TrimSpace(admission.FullNameAr) == "" {
 			return postgres.JoiningCaseResult{}, ErrFieldSessionForbidden
 		}
 		current, err = postgres.ReadJoiningCaseForField(ctx, s.db, identity.Subject, caseID)

@@ -1,6 +1,6 @@
 import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, createOrderConversationMessageAttempt, orderConversationMessageAttemptStorageKey, parseOrderConversationMessageAttempt, type OrderConversationMessageAttempt } from "@bthwani/dsh";
+import { createDshMobileClient, createOrderConversationMessageAttempt, isDefinitiveDshMobileClientRejection, orderConversationMessageAttemptStorageKey, parseOrderConversationMessageAttempt, type OrderConversationMessageAttempt } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -60,6 +60,20 @@ export function OrderConversation({ orderId }: { orderId: string }) {
       await client().sendOrderConversationMessage(token, attempt.orderID, { body: attempt.body }, attempt.idempotencyKey, attempt.correlationID);
     } catch (cause) {
       console.error("DSH client order conversation send failed", cause);
+      if (isDefinitiveDshMobileClientRejection(cause)) {
+        let storageCleared = false;
+        try {
+          await SecureStore.deleteItemAsync(orderConversationMessageAttemptStorageKey(conversationRole, attempt.actorID, attempt.orderID));
+          storageCleared = true;
+        } catch (cleanupCause) {
+          console.error("DSH client rejected order conversation attempt cleanup failed", cleanupCause);
+        }
+        setPendingAttempt(storageCleared ? null : attempt);
+        setBody(storageCleared ? "" : attempt.body);
+        await load();
+        setError(storageCleared ? "رفض الخادم إرسال الرسالة؛ حدّثنا حالة المحادثة ويمكنك تعديل الرسالة والمحاولة مجددًا." : "رفض الخادم إرسال الرسالة، وتعذر حذف محاولة الاستعادة المحفوظة. أعد القراءة قبل أي محاولة جديدة.");
+        return;
+      }
       setPendingAttempt(attempt);
       setBody(attempt.body);
       setError("لم نتأكد من نتيجة الإرسال. بقيت الرسالة محفوظة؛ أعد المحاولة بالمفتاح نفسه لتفادي تكرارها.");
