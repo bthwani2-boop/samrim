@@ -85,7 +85,7 @@ async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "f
   expect(mutations).toEqual([
     { action: "admit", fullNameAr: initialName, contactPhoneE164: phone },
     { action: "update-profile", admissionId: admissionID, fullNameAr: reviewedName, expectedVersion: 1 },
-    { action: "approve", admissionId: admissionID },
+    { action: "approve", admissionId: admissionID, expectedVersion: 2 },
     { action: "provision", admissionId: admissionID },
   ]);
 }
