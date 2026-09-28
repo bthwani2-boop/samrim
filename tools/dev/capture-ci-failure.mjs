@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildAgentDiagnostic } from "./ci-failure-diagnostics.mjs";
+import { buildClosureDiagnostic } from "./ci-failure-diagnostics.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const kindArg = process.argv.find((arg) => arg.startsWith("--kind="));
@@ -59,6 +59,11 @@ function readJsonLinesIfPresent(file) {
   });
 }
 
+function readNonEmptyLines(file) {
+  if (!fs.existsSync(file)) return [];
+  return fs.readFileSync(file, "utf8").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
 const metadata = {
   kind,
   repository: process.env.GITHUB_REPOSITORY || null,
@@ -67,6 +72,7 @@ const metadata = {
   runId: process.env.GITHUB_RUN_ID || null,
   runAttempt: process.env.GITHUB_RUN_ATTEMPT || null,
   sha: process.env.CANDIDATE_SHA || process.env.GITHUB_SHA || null,
+  branch: process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME || null,
   nxBase: process.env.NX_BASE || null,
   nxHead: process.env.NX_HEAD || null,
   runnerOs: process.env.RUNNER_OS || process.platform,
@@ -79,6 +85,7 @@ write("git-status.txt", gitStatus.stdout + gitStatus.stderr);
 const gitHead = run("git", ["rev-parse", "HEAD"]);
 write("git-head.txt", gitHead.stdout + gitHead.stderr);
 
+let affectedProjects = [];
 const nxKinds = new Set(["static-linux", "static-windows", "runtime", "local-static"]);
 if (nxKinds.has(kind)) {
   const nxReport = run("pnpm", ["exec", "nx", "report"]);
@@ -90,6 +97,7 @@ if (nxKinds.has(kind)) {
   if (metadata.nxBase && metadata.nxHead) {
     const affected = run("pnpm", ["exec", "nx", "show", "projects", "--affected", `--base=${metadata.nxBase}`, `--head=${metadata.nxHead}`]);
     write("affected-projects.txt", affected.stdout + affected.stderr);
+    affectedProjects = affected.status === 0 ? readNonEmptyLines(path.join(outDir, "affected-projects.txt")) : [];
     const taskGraphPath = path.join(outDir, "affected-static-task-graph.json");
     const taskGraph = run("pnpm", ["exec", "nx", "affected", "-t", "lint,format-check,typecheck,unit,contract,build,export-smoke,vet", `--base=${metadata.nxBase}`, `--head=${metadata.nxHead}`, `--graph=${taskGraphPath}`]);
     if (taskGraph.status !== 0) write("affected-task-graph-error.txt", taskGraph.stdout + taskGraph.stderr);
@@ -106,21 +114,8 @@ const externalRecords = readJsonLinesIfPresent(externalResultsPath);
 if (externalRecords.length > 0) fs.copyFileSync(externalResultsPath, path.join(outDir, "external-results.jsonl"));
 
 const runtimeFailure = kind === "runtime" ? readJsonIfPresent(runtimeFailurePath) : null;
-const diagnostic = buildAgentDiagnostic({ metadata, metricRecords, externalRecords, runtimeFailure });
-write("agent-diagnostic.json", JSON.stringify(diagnostic, null, 2) + "\n");
-write("failure-summary.json", JSON.stringify({
-  schema: 2,
-  candidate: diagnostic.candidate,
-  gate: diagnostic.gate,
-  failedCommand: diagnostic.failedCommands[0]?.name ?? null,
-  failedTarget: diagnostic.failedTargets[0] ?? null,
-  failureClass: diagnostic.rootCauseStatus,
-  firstObservedFailureLine: diagnostic.materialFindings[0]?.evidence ?? null,
-  materialFindingCount: diagnostic.materialFindings.length,
-  progressionBlocked: diagnostic.progressionBlocked,
-  nextAction: "consume-agent-diagnostic-collapse-causes-repair-then-rerun-only-invalidated-evidence",
-  suggestedReproof: diagnostic.reproofHints,
-}, null, 2) + "\n");
+const diagnostic = buildClosureDiagnostic({ metadata, metricRecords, externalRecords, runtimeFailure, affectedProjects });
+write("closure-diagnostic.json", JSON.stringify(diagnostic, null, 2) + "\n");
 
 if (kind === "runtime") {
   if (runtimeFailure?.target) {
@@ -175,5 +170,5 @@ function redactTree(directory) {
 redactTree(outDir);
 
 if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `path=${outDir}\n`);
-console.log(`CI_AGENT_DIAGNOSTIC=PASS kind=${kind} findings=${diagnostic.materialFindings.length} failed_targets=${diagnostic.failedTargets.length}`);
+console.log(`CI_CLOSURE_DIAGNOSTIC=PASS kind=${kind} findings=${diagnostic.findings.length} causal_groups=${diagnostic.causalGroups.length} failed_targets=${diagnostic.failedTargets.length}`);
 console.log(`CI_FAILURE_PACKAGE=PASS kind=${kind} path=${outDir}`);
