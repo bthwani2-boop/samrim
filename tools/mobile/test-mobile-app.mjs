@@ -8,9 +8,6 @@ if (!app) {
   process.exit(1);
 }
 
-const root = path.resolve(import.meta.dirname, "../..");
-const appDir = path.join(root, "apps", app);
-
 const role =
   app === "app-client" ? "client" :
   app === "app-partner" ? "partner" :
@@ -19,9 +16,11 @@ const role =
 
 if (!role) {
   console.error(`Unknown mobile app: ${app}`);
-  process.exit(1);
+  throw new Error("Mobile app must be one of the supported application names");
 }
 
+const root = path.resolve(import.meta.dirname, "../..");
+const appDir = path.join(root, "apps", app);
 const surface = app;
 
 // 1. Structural and Configuration Verification
