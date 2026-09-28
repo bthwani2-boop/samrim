@@ -44,7 +44,7 @@ function Resolve-VerificationBase([string]$Branch, [string]$Head) {
 }
 
 function Invoke-RecordedProof([string]$Name, [string[]]$Command) {
-    & node (Join-Path $Repo 'tools/dev/run-ci-command.mjs') $Name '--' @Command
+    & node (Join-Path $Repo 'tools/dev/run-ci-command.mjs') $Name '--' @Command | Out-Host
     return $LASTEXITCODE
 }
 
