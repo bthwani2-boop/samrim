@@ -23,9 +23,9 @@ export async function POST(request: Request) {
   const expectedVersion = typeof rawExpectedVersion === "number" ? rawExpectedVersion : typeof rawExpectedVersion === "string" && /^[1-9]\d*$/.test(rawExpectedVersion.trim()) ? Number(rawExpectedVersion.trim()) : NaN;
   const context = { operatorActorId: identity.subject, correlationId: randomUUID(), idempotencyKey: randomUUID() };
   if (["approve", "provision"].includes(action)) {
-    if (!admissionId) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "admissionId is required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
+    if (!admissionId || (action === "approve" && (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1))) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "admissionId and a positive expectedVersion are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
     try {
-      const result = action === "approve" ? await approveFieldAdmission(admissionId, context) : await provisionFieldAdmission(admissionId, context);
+      const result = action === "approve" ? await approveFieldAdmission(admissionId, expectedVersion, context) : await provisionFieldAdmission(admissionId, context);
       return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
     } catch (error) {
       const payload = isDshClientError(error) ? dshErrorPayload(error) : { code: "DSH_INTERNAL_ERROR", message: "dsh request failed" };

@@ -156,12 +156,12 @@ func (s *FieldServer) approveAdmission(w http.ResponseWriter, r *http.Request) {
 	if !s.authorizedService(w, r) {
 		return
 	}
-	acting, correlation, idempotency, _, ok := captainHeaders(w, r, false)
-	if !ok || acting == "" || idempotency == "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Field approval attribution and Idempotency-Key are required")
+	acting, correlation, idempotency, expectedVersion, ok := captainHeaders(w, r, true)
+	if !ok || acting == "" || idempotency == "" || expectedVersion < 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Field approval attribution, Idempotency-Key, and X-Expected-Version are required")
 		return
 	}
-	admission, replayed, err := s.service.Approve(r.Context(), r.PathValue("admissionId"), idempotency, acting, correlation)
+	admission, replayed, err := s.service.Approve(r.Context(), r.PathValue("admissionId"), expectedVersion, idempotency, acting, correlation)
 	if err != nil {
 		writeFieldError(w, err)
 		return

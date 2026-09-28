@@ -85,7 +85,7 @@ export function CaptainCandidatePanel() {
       const response = await identityFetch("/api/captains", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, admissionId: profile.id, ...(action === "update-profile" ? { fullNameAr: nextName, expectedVersion: profile.version } : action === "review-profile" ? { expectedVersion: profile.version } : {}) }),
+        body: JSON.stringify({ action, admissionId: profile.id, ...(action === "update-profile" ? { fullNameAr: nextName, expectedVersion: profile.version } : action === "review-profile" || action === "approve" ? { expectedVersion: profile.version } : {}) }),
       });
       if (!response.ok) {
         const message = await responseMessage(response);

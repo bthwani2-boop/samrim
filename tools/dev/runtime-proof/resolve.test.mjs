@@ -131,6 +131,16 @@ test("runtime-sensitive owner without classification fails closed", () => {
   );
 });
 
+test("mobile app scope without runtime policy fails closed instead of skipping runtime proof", () => {
+  assert.throws(
+    () => resolveFromAffected(
+      ["app-client"],
+      configs([["app-client", ["type:app"]]]),
+    ),
+    /lack runtime classification.*app-client/,
+  );
+});
+
 test("scheduled/full regression selects every canonical lane", () => {
   const result = resolveFromAffected([], new Map(), true);
   assert.deepEqual(result.lanes, laneOrder);

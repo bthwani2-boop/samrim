@@ -231,7 +231,8 @@ func readOrderConversationOrder(ctx context.Context, source rowQueryer, orderID,
 		lockClause = " FOR UPDATE"
 	}
 	var order orderConversationOrder
-	err := source.QueryRowContext(ctx, `SELECT o.client_actor_id,s.partner_actor_id,o.state,o.updated_at
+	err := source.QueryRowContext(ctx, `SELECT o.client_actor_id,s.partner_actor_id,o.state,
+		COALESCE((SELECT audit.created_at FROM dsh.commerce_order_audit audit WHERE audit.order_id=o.id AND audit.to_state=o.state ORDER BY audit.created_at DESC LIMIT 1),o.updated_at)
 		FROM dsh.commerce_orders o JOIN dsh.stores s ON s.id=o.store_id WHERE o.id=$1`+lockClause, orderID).Scan(&order.ClientActorID, &order.PartnerActorID, &order.State, &order.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return orderConversationOrder{}, ErrOrderConversationNotFound

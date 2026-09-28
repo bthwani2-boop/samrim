@@ -80,6 +80,44 @@ func ListPublicCatalogCategories(ctx context.Context, db *sql.DB, categoryIDs []
 	return categories, nil
 }
 
+func ListPublicDiscoveryCategories(ctx context.Context, db *sql.DB, serviceCityID string) ([]CatalogCategoryRecord, error) {
+	if db == nil || strings.TrimSpace(serviceCityID) == "" {
+		return nil, errors.New("public discovery category scope is invalid")
+	}
+	visibleConditions := strings.Join(customerVisibleOfferConditions(), " AND ")
+	rows, err := db.QueryContext(ctx, `SELECT DISTINCT pc.category_id
+		FROM dsh.stores s
+		JOIN dsh.service_cities sc ON sc.id=s.service_city_id AND sc.active=true
+		JOIN dsh.joining_cases jc ON jc.partner_actor_id=s.partner_actor_id AND jc.financial_profile_state='ACTIVE'
+		JOIN dsh.catalog_store_offers o ON o.store_id=s.id
+		JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
+		JOIN dsh.catalog_products p ON p.id=v.product_id
+		JOIN dsh.catalog_product_categories pc ON pc.product_id=p.id
+		JOIN dsh.catalog_categories c ON c.id=pc.category_id AND c.active=true AND c.vertical_id=p.vertical_id
+		WHERE sc.id=$1 AND s.publication_state='published' AND s.publication_changed_at IS NOT NULL AND `+visibleConditions+`
+		ORDER BY pc.category_id`, strings.TrimSpace(serviceCityID))
+	if err != nil {
+		return nil, fmt.Errorf("list public discovery categories: %w", err)
+	}
+	categoryIDs := make([]string, 0)
+	for rows.Next() {
+		var categoryID string
+		if err := rows.Scan(&categoryID); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("scan public discovery category: %w", err)
+		}
+		categoryIDs = append(categoryIDs, categoryID)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, fmt.Errorf("read public discovery categories: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close public discovery categories: %w", err)
+	}
+	return ListPublicCatalogCategories(ctx, db, categoryIDs)
+}
+
 func listPublicStoreCatalogCategories(ctx context.Context, db *sql.DB, storeID, serviceCityID, verticalID string) ([]CatalogCategoryRecord, error) {
 	visibleConditions := strings.Join(customerVisibleOfferConditions(), " AND ")
 	rows, err := db.QueryContext(ctx, `SELECT DISTINCT pc.category_id FROM dsh.catalog_store_offers o

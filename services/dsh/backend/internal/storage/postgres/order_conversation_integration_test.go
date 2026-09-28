@@ -96,12 +96,20 @@ func TestOrderConversationReturnsLatestBoundedHistoryAndReplaysAfterClosure(t *t
 			t.Fatalf("canonical conversation contains %d messages, %v; want %d", storedCount, err, messageCount)
 		}
 
-		if _, err := db.ExecContext(ctx, "UPDATE dsh.commerce_orders SET state='PICKED_UP',version=version+1,updated_at=clock_timestamp()-interval '2 hours' WHERE id=$1", orderID); err != nil {
+		pickupAt := time.Now().UTC().Add(-2 * time.Hour)
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.commerce_orders SET state='PICKED_UP',version=version+1,updated_at=$2 WHERE id=$1", orderID, pickupAt); err != nil {
 			t.Fatalf("complete pickup order: %v", err)
 		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_order_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,from_state,to_state,from_version,result_version,request_hash)
+			VALUES('order_picked_up','conversation-pickup-audit-key','conversation-pickup-audit-correlation','conversation-history-partner',$1,'READY_FOR_PICKUP','PICKED_UP',1,2,'conversation-pickup-request-hash')`, orderID); err != nil {
+			t.Fatalf("record pickup transition: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, "UPDATE dsh.commerce_orders SET updated_at=clock_timestamp() WHERE id=$1", orderID); err != nil {
+			t.Fatalf("simulate later financial handoff update: %v", err)
+		}
 		closed, err := postgres.ReadOrderConversation(ctx, db, orderID, clientID, "client", 10)
-		if err != nil || closed.CanSend || closed.ReadOnlyAt == nil {
-			t.Fatalf("completed pickup conversation = %+v err=%v, want closed history", closed, err)
+		if err != nil || closed.CanSend || closed.ReadOnlyAt == nil || !closed.ReadOnlyAt.Equal(pickupAt.Add(time.Hour)) {
+			t.Fatalf("completed pickup conversation = %+v err=%v, want expiry anchored to the pickup event", closed, err)
 		}
 		lateBody := "رسالة بعد الإغلاق"
 		if _, _, err := postgres.SendOrderConversationMessage(ctx, db, orderID, clientID, "client", lateBody, "conversation-late-message-key", postgres.HashOrderConversationMessageRequest(orderID, lateBody), "conversation-late-message-correlation"); !errors.Is(err, postgres.ErrOrderConversationReadOnly) {

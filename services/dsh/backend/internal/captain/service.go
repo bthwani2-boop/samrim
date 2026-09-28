@@ -63,14 +63,17 @@ func (s *Service) Admit(ctx context.Context, fullNameAr, phone, idempotencyKey, 
 	return admission, replayed, nil
 }
 
-func (s *Service) Approve(ctx context.Context, admissionID, idempotencyKey, actingActorID, correlationID string) (postgres.CaptainAdmission, bool, error) {
+func (s *Service) Approve(ctx context.Context, admissionID string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.CaptainAdmission, bool, error) {
 	if !validMutation(idempotencyKey, correlationID, actingActorID) {
+		return postgres.CaptainAdmission{}, false, ErrInvalidInput
+	}
+	if expectedVersion < 1 {
 		return postgres.CaptainAdmission{}, false, ErrInvalidInput
 	}
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.CaptainAdmission{}, false, err
 	}
-	return postgres.ApproveCaptainAdmission(ctx, s.db, admissionID, idempotencyKey, postgres.HashCaptainAdmissionTransition("approve", admissionID), actingActorID, correlationID)
+	return postgres.ApproveCaptainAdmission(ctx, s.db, admissionID, expectedVersion, idempotencyKey, postgres.HashCaptainAdmissionApprovalRequest(admissionID, expectedVersion), actingActorID, correlationID)
 }
 
 func (s *Service) Provision(ctx context.Context, admissionID, idempotencyKey, actingActorID, correlationID string) (postgres.CaptainAdmission, error) {

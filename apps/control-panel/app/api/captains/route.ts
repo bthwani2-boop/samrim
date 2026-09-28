@@ -55,8 +55,8 @@ export async function POST(request: Request) {
       return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
     }
 		if (action === "approve" || action === "provision") {
-			if (!admissionId) return jsonError("INVALID_INPUT", "admissionId is required", 400);
-			const result = action === "approve" ? await approveCaptainAdmission(admissionId, context) : await provisionCaptainAdmission(admissionId, context);
+			if (!admissionId || (action === "approve" && (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1))) return jsonError("INVALID_INPUT", "admissionId and a positive expectedVersion are required", 400);
+			const result = action === "approve" ? await approveCaptainAdmission(admissionId, expectedVersion, context) : await provisionCaptainAdmission(admissionId, context);
 			return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
 		}
 		if (action === "update-profile") {

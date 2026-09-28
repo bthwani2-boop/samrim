@@ -91,7 +91,7 @@ export function resolveFromAffected(affected, configs, fullRegression = false) {
       if (inferred) {
         lanes.add(inferred);
         reasons.push(`${name}:${inferred}:scope`);
-      } else if (tags.has("type:service") || tags.has("type:infra") || name === "control-panel") {
+      } else if (tags.has("type:service") || tags.has("type:infra") || tags.has("type:app") || name === "control-panel") {
         unclassified.push(name);
       }
     }

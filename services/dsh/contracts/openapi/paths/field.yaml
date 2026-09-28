@@ -138,6 +138,7 @@ paths:
         - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
         - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
         - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
       responses:
         "200":
           description: DSH eligibility approved; Identity role remains unprovisioned.

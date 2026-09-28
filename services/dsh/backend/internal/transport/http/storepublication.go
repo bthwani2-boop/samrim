@@ -232,12 +232,10 @@ func (s *StorePublicationServer) listPublic(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	values := make([]contract.PublicStoreView, 0, len(page.Stores))
-	categoryIDs := make([]string, 0)
 	for _, store := range page.Stores {
 		values = append(values, toPublicStoreView(store))
-		categoryIDs = append(categoryIDs, store.CategoryIDs...)
 	}
-	categoryRecords, err := postgres.ListPublicCatalogCategories(r.Context(), s.db, categoryIDs)
+	categoryRecords, err := postgres.ListPublicDiscoveryCategories(r.Context(), s.db, serviceCityID)
 	if err != nil {
 		writeStorageError(w, err)
 		return

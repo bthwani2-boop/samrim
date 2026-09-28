@@ -149,6 +149,10 @@ func HashCaptainAdmissionTransition(operation, admissionID string) string {
 	return hashFacts("captain-admission-"+strings.TrimSpace(operation), strings.TrimSpace(admissionID))
 }
 
+func HashCaptainAdmissionApprovalRequest(admissionID string, expectedVersion int) string {
+	return hashFacts("captain-admission-approve", strings.TrimSpace(admissionID), strconv.Itoa(expectedVersion))
+}
+
 func HashCaptainAdmissionProfileRequest(admissionID, fullNameAr string, expectedVersion int) string {
 	return hashFacts("captain-admission-profile", strings.TrimSpace(admissionID), strings.TrimSpace(fullNameAr), strconv.Itoa(expectedVersion))
 }
@@ -285,8 +289,8 @@ func CreateCaptainAdmissionCandidate(ctx context.Context, db *sql.DB, fullNameAr
 	return admission, false, err
 }
 
-func ApproveCaptainAdmission(ctx context.Context, db *sql.DB, admissionID, idempotencyKey, requestHash, actingActorID, correlationID string) (CaptainAdmission, bool, error) {
-	if db == nil || strings.TrimSpace(admissionID) == "" || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
+func ApproveCaptainAdmission(ctx context.Context, db *sql.DB, admissionID string, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string) (CaptainAdmission, bool, error) {
+	if db == nil || strings.TrimSpace(admissionID) == "" || expectedVersion < 1 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
 		return CaptainAdmission{}, false, ErrCaptainAdmissionConflict
 	}
 	tx, err := db.BeginTx(ctx, nil)
@@ -329,6 +333,9 @@ func ApproveCaptainAdmission(ctx context.Context, db *sql.DB, admissionID, idemp
 	}
 	if current.State != "pending_review" || current.FullNameAr == "" {
 		return CaptainAdmission{}, false, ErrCaptainAdmissionConflict
+	}
+	if current.Version != expectedVersion {
+		return CaptainAdmission{}, false, ErrCaptainVersionConflict
 	}
 	err = tx.QueryRowContext(ctx, `UPDATE dsh.captain_admissions SET state='pending_identity',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='pending_review' AND version=$2 RETURNING id,COALESCE(actor_id,''),COALESCE(full_name_ar,''),COALESCE(contact_phone_e164,''),state,availability_state,version,created_at,updated_at`, admissionID, current.Version).Scan(&current.ID, &current.ActorID, &current.FullNameAr, &current.PhoneE164, &current.State, &current.AvailabilityState, &current.Version, &current.CreatedAt, &current.UpdatedAt)
 	if err != nil {

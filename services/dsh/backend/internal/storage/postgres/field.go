@@ -56,6 +56,10 @@ func HashFieldAdmissionTransition(operation, admissionID string) string {
 	return hashFacts("field-admission-"+strings.TrimSpace(operation), strings.TrimSpace(admissionID))
 }
 
+func HashFieldAdmissionApprovalRequest(admissionID string, expectedVersion int) string {
+	return hashFacts("field-admission-approve", strings.TrimSpace(admissionID), strconv.Itoa(expectedVersion))
+}
+
 func HashFieldAdmissionProfileRequest(admissionID, fullNameAr string, expectedVersion int) string {
 	return hashFacts("field-admission-profile", strings.TrimSpace(admissionID), strings.TrimSpace(fullNameAr), strconv.Itoa(expectedVersion))
 }
@@ -147,8 +151,8 @@ func CreateFieldAdmissionCandidate(ctx context.Context, db *sql.DB, fullNameAr, 
 	return admission, idempotencyKey, false, err
 }
 
-func ApproveFieldAdmission(ctx context.Context, db *sql.DB, admissionID, idempotencyKey, requestHash, actingActorID, correlationID string) (FieldAdmission, bool, error) {
-	if db == nil || strings.TrimSpace(admissionID) == "" || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
+func ApproveFieldAdmission(ctx context.Context, db *sql.DB, admissionID string, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string) (FieldAdmission, bool, error) {
+	if db == nil || strings.TrimSpace(admissionID) == "" || expectedVersion < 1 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
 		return FieldAdmission{}, false, ErrFieldAdmissionConflict
 	}
 	tx, err := db.BeginTx(ctx, nil)
@@ -177,6 +181,9 @@ func ApproveFieldAdmission(ctx context.Context, db *sql.DB, admissionID, idempot
 	current, err := readFieldAdmissionTx(ctx, tx, "id=$1 FOR UPDATE", admissionID)
 	if err != nil {
 		return FieldAdmission{}, false, err
+	}
+	if current.Version != expectedVersion {
+		return FieldAdmission{}, false, ErrFieldVersionConflict
 	}
 	if current.State != "pending_review" || current.FullNameAr == "" {
 		return FieldAdmission{}, false, ErrFieldAdmissionConflict
