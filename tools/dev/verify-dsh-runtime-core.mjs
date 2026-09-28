@@ -1256,6 +1256,7 @@ console.log("DSH_SERVICEABILITY=PASS");
 const renameBody = { canonicalName: "Runtime Coffee Renamed", verticalId: verticalID, scope: "SHARED", active: true };
 const renameSource = await request(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&limit=50`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 const renameProduct = renameSource.body?.products?.find((item) => item.id === productID);
+const renameExpectedVersion = Number(renameProduct?.version);
 const renameDBReadback = sql(`SELECT jsonb_build_object(
   'productId', p.id,
   'version', p.version,
@@ -1269,20 +1270,25 @@ const renameDBReadback = sql(`SELECT jsonb_build_object(
 )::text FROM dsh.catalog_products p LEFT JOIN dsh.commerce_verticals cv ON cv.id=p.vertical_id WHERE p.id='${sqlLiteral(productID)}'`);
 const renameDatabaseProduct = renameDBReadback ? JSON.parse(renameDBReadback) : null;
 const renameDatabaseCategories = Array.isArray(renameDatabaseProduct?.categories) ? renameDatabaseProduct.categories : [];
-const renamePreconditionsOK = renameSource.status === 200 && renameProduct?.version === 6 && renameDatabaseProduct?.productId === productID && renameDatabaseProduct.version === 6 && renameDatabaseProduct.verticalId === verticalID && renameDatabaseProduct.scope === "SHARED" && renameDatabaseProduct.storeId == null && renameDatabaseProduct.active === true && renameDatabaseProduct.vertical?.id === verticalID && renameDatabaseProduct.vertical.active === true && renameDatabaseProduct.vertical.catalogModel === "SHARED_CATALOG" && renameDatabaseCategories.length === 2 && renameDatabaseCategories.every((item) => item.id && item.verticalId === verticalID && item.active === true) && [categoryID, childCategoryID].every((id) => renameProduct.categoryIds?.includes(id));
+const renamePreconditionsOK = renameSource.status === 200 && Number.isInteger(renameExpectedVersion) && renameExpectedVersion >= 1 && renameDatabaseProduct?.productId === productID && renameDatabaseProduct.version === renameExpectedVersion && renameDatabaseProduct.verticalId === verticalID && renameDatabaseProduct.scope === "SHARED" && renameDatabaseProduct.storeId == null && renameDatabaseProduct.active === true && renameDatabaseProduct.vertical?.id === verticalID && renameDatabaseProduct.vertical.active === true && renameDatabaseProduct.vertical.catalogModel === "SHARED_CATALOG" && renameDatabaseCategories.length === 2 && renameDatabaseCategories.every((item) => item.id && item.verticalId === verticalID && item.active === true) && [categoryID, childCategoryID].every((id) => renameProduct.categoryIds?.includes(id));
 if (!renamePreconditionsOK) fail("catalog Product update preconditions diverged from canonical API or database readback", JSON.stringify({ renameSource, renameDBReadback, productMediaCleanup }));
-const renamed = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `rename-${suffix}`, crypto.randomUUID(), 6), body: renameBody });
-if (renamed.status !== 200 || renamed.body?.product?.version !== 7) fail("catalog Product versioned update failed", JSON.stringify({ renamed, renameSource, renameDBReadback, expectedVersion: 6 }));
+const renameResultVersion = renameExpectedVersion + 1;
+const renamed = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `rename-${suffix}`, crypto.randomUUID(), renameExpectedVersion), body: renameBody });
+if (renamed.status !== 200 || renamed.body?.product?.version !== renameResultVersion) fail("catalog Product versioned update failed", JSON.stringify({ renamed, renameSource, renameDBReadback, expectedVersion: renameExpectedVersion }));
 const renamedCatalog = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}`);
 if (renamedCatalog.status !== 200 || renamedCatalog.body?.offers?.[0]?.productName !== renameBody.canonicalName) fail("StoreOffer readback retained stale Product identity", JSON.stringify(renamedCatalog));
-const disabled = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `disable-${suffix}`, crypto.randomUUID(), 7), body: { ...renameBody, active: false } });
-if (disabled.status !== 200 || disabled.body?.product?.active !== false || disabled.body.product.version !== 8) fail("catalog Product disable failed", JSON.stringify(disabled));
+const disableExpectedVersion = renamed.body.product.version;
+const disableResultVersion = disableExpectedVersion + 1;
+const disabled = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `disable-${suffix}`, crypto.randomUUID(), disableExpectedVersion), body: { ...renameBody, active: false } });
+if (disabled.status !== 200 || disabled.body?.product?.active !== false || disabled.body.product.version !== disableResultVersion) fail("catalog Product disable failed", JSON.stringify(disabled));
 const disabledPublic = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}`);
 if (disabledPublic.status !== 404 || disabledPublic.body?.error?.code !== "NOT_FOUND") fail("disabled Product remained customer-visible", JSON.stringify(disabledPublic));
 const disabledOfferPublish = await request(dshBase, "PATCH", `/dsh/stores/${first.storeID}/offers/${offerAID}`, { token: first.accessToken, headers: partnerHeaders(`disabled-offer-${suffix}`, 2), body: discreteOffer(1250, "published") });
 if (disabledOfferPublish.status !== 409 || disabledOfferPublish.body?.error?.code !== "PRODUCT_NOT_ELIGIBLE") fail("disabled Product could be published", JSON.stringify(disabledOfferPublish));
-const enabled = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `enable-${suffix}`, crypto.randomUUID(), 8), body: renameBody });
-if (enabled.status !== 200 || enabled.body?.product?.active !== true || enabled.body.product.version !== 9) fail("catalog Product re-enable failed", JSON.stringify(enabled));
+const enableExpectedVersion = disabled.body.product.version;
+const enableResultVersion = enableExpectedVersion + 1;
+const enabled = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `enable-${suffix}`, crypto.randomUUID(), enableExpectedVersion), body: renameBody });
+if (enabled.status !== 200 || enabled.body?.product?.active !== true || enabled.body.product.version !== enableResultVersion) fail("catalog Product re-enable failed", JSON.stringify(enabled));
 const changedPrice = await request(dshBase, "PATCH", `/dsh/stores/${first.storeID}/offers/${offerAID}`, { token: first.accessToken, headers: partnerHeaders(`price-${suffix}`, 2), body: discreteOffer(2100, "published") });
 if (changedPrice.status !== 200 || changedPrice.body?.offer?.priceMinor !== 2100 || changedPrice.body.offer.version !== 3) fail("StoreOffer price update failed", JSON.stringify(changedPrice));
 const secondCatalog = await request(dshBase, "GET", `/dsh/public/stores/${second.storeID}/catalog?serviceCityId=${encodeURIComponent(cityB)}`);

@@ -35,6 +35,9 @@ func catalogAttributeInputs(values []catalogAttributeValueRequest) []postgres.Ca
 }
 
 func catalogAttributeInputsFromContract(values []contract.CatalogAttributeValueInput) []postgres.CatalogAttributeValueInput {
+	if values == nil {
+		return nil
+	}
 	inputs := make([]postgres.CatalogAttributeValueInput, 0, len(values))
 	for _, value := range values {
 		var integerValue *int64
@@ -48,6 +51,9 @@ func catalogAttributeInputsFromContract(values []contract.CatalogAttributeValueI
 }
 
 func catalogVariantAttributeValueSets(values []contract.CatalogVariantAttributeValueSet) []postgres.CatalogVariantAttributeValueSet {
+	if values == nil {
+		return nil
+	}
 	sets := make([]postgres.CatalogVariantAttributeValueSet, 0, len(values))
 	for _, value := range values {
 		sets = append(sets, postgres.CatalogVariantAttributeValueSet{VariantID: value.VariantID, Values: catalogAttributeInputsFromContract(value.Values)})
