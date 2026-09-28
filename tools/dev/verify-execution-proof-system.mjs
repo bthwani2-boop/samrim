@@ -23,11 +23,11 @@ requireTokens(localVerifier, "local verifier", ["VERIFY_BASE_SOURCE=REMOTE_TRACK
 forbidTokens(localVerifier, "local verifier", ["HEAD^", "Test-ChangedPath", "workspaceSensitivePatterns", "deployabilityPatterns", "infraPatterns", "export-smoke"]);
 
 const failureCapture = read("tools/dev/capture-ci-failure.mjs");
-requireTokens(failureCapture, "failure capture", ["agent-diagnostic.json", "buildAgentDiagnostic", "UNCLASSIFIED_REQUIRES_CAUSAL_REVIEW", "progressionBlocked", "runtimeFailurePath", "do not guess one"]);
+requireTokens(failureCapture, "failure capture", ["agent-diagnostic.json", "buildAgentDiagnostic", "runtimeFailurePath", "do not guess one"]);
 forbidTokens(failureCapture, "failure capture", ['"dsh-backend:runtime-proof"']);
 
 const diagnosticHelper = read("tools/dev/ci-failure-diagnostics.mjs");
-requireTokens(diagnosticHelper, "agent diagnostic", ["AGENT_FAILURE_DIAGNOSTIC", "EVIDENCE_ONLY_NOT_ROOT_CAUSE_AUTHORITY", "materialFindings", "successfulCommands", "completedTargets", "COLLAPSE_FINDINGS_BY_HIGHEST_COMMON_CAUSAL_ROOT", "RERUN_ONLY_MATERIALLY_INVALIDATED_EVIDENCE"]);
+requireTokens(diagnosticHelper, "agent diagnostic", ["AGENT_FAILURE_DIAGNOSTIC", "EVIDENCE_ONLY_NOT_ROOT_CAUSE_AUTHORITY", "UNCLASSIFIED_REQUIRES_CAUSAL_REVIEW", "progressionBlocked", "materialFindings", "successfulCommands", "completedTargets", "COLLAPSE_FINDINGS_BY_HIGHEST_COMMON_CAUSAL_ROOT", "RERUN_ONLY_MATERIALLY_INVALIDATED_EVIDENCE"]);
 execFileSync(process.execPath, ["--test", "tools/dev/ci-failure-diagnostics.test.mjs"], { cwd: root, stdio: "inherit" });
 execFileSync(process.execPath, ["--test", "tools/dev/verify-pr-policy.test.mjs"], { cwd: root, stdio: "inherit" });
 
