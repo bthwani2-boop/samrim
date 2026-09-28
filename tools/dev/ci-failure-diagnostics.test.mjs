@@ -78,6 +78,32 @@ test("runtime completed targets stay reusable while failed target blocks progres
   assert.deepEqual(diagnostic.closure.smallestFalsifyingProof, ["dsh-backend:runtime-proof"]);
 });
 
+test("runtime START context collapses leaf failure and wrapper symptoms under the leaf owner without inventing root cause", () => {
+  const logPath = tempLog([
+    "CI_RUNTIME_TASK=START target=dsh-backend:runtime-proof",
+    "DSH_RUNTIME=FAIL payment service unavailable",
+    "Failed tasks:",
+    "- dsh-backend:runtime-proof",
+    "Run duration: 1s",
+    "CI_RUNTIME_TASK=FAIL target=dsh-backend:runtime-proof",
+    "Failed tasks:",
+    "- repository-ci:runtime-integration",
+    "Run duration: 2s",
+  ]);
+  const diagnostic = buildClosureDiagnostic({
+    metadata: { kind: "runtime", sha: "abc" },
+    metricRecords: [{ name: "runtime-integration", exitCode: 1, logPath }],
+    runtimeFailure: { target: "dsh-backend:runtime-proof" },
+  });
+  assert.ok(diagnostic.findings.length >= 3);
+  assert.deepEqual([...new Set(diagnostic.findings.map((finding) => finding.owner))], ["dsh-backend"]);
+  assert.equal(diagnostic.causalGroups.length, 1);
+  assert.equal(diagnostic.causalGroups[0].canonicalOwner, "dsh-backend");
+  assert.equal(diagnostic.causalGroups[0].rootCandidate, null);
+  assert.equal(diagnostic.causalGroups[0].confidence, "UNCLASSIFIED");
+  assert.deepEqual(diagnostic.closure.smallestFalsifyingProof, ["dsh-backend:runtime-proof"]);
+});
+
 test("causal groups correlate by owner without inventing a root cause", () => {
   const logPath = tempLog([
     "Failed tasks:",
