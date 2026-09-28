@@ -16,18 +16,19 @@ for (const required of ['"/dsh/operator/finance-evidence-documents"', '"TRANSFER
 console.log("RUNTIME_SETTLEMENT_PROOF_CONTRACT=PASS evidence=canonical reconciliation=statement-row");
 
 const agents = read("AGENTS.md");
-requireTokens(agents, "AGENTS.md", ["PASS EVIDENCE REUSE", "RED CANDIDATE LAW", "ACTIVE_CLOSURE_BLOCKER", "NO GREENWASHING / ORACLE PRESERVATION", "Blind retry is forbidden"]);
+requireTokens(agents, "AGENTS.md", ["CAUSAL DIAGNOSTIC CLOSURE LAW", "PASS EVIDENCE REUSE", "RED CANDIDATE LAW", "ACTIVE_CLOSURE_BLOCKER", "NO GREENWASHING / ORACLE PRESERVATION", "Blind retry is forbidden", "bounded diagnostic batch", "machine-readable"]);
 
 const localVerifier = read("tools/dev/verify-local-candidate.ps1");
-requireTokens(localVerifier, "local verifier", ["VERIFY_BASE_SOURCE=REMOTE_TRACKING", "refs/remotes/origin/main", "VERIFY_SCOPE_AUTHORITY=NX_TASK_INPUTS_AND_AFFECTED_GRAPH", "repository-ci:execution-proof-system", "'nx','affected'", "--nxBail=false", "capture-ci-failure.mjs", "agent-diagnostic.json"]);
-forbidTokens(localVerifier, "local verifier", ["HEAD^", "Test-ChangedPath", "workspaceSensitivePatterns", "deployabilityPatterns", "infraPatterns", "export-smoke"]);
+requireTokens(localVerifier, "local verifier", ["VERIFY_BASE_SOURCE=REMOTE_TRACKING", "refs/remotes/origin/main", "VERIFY_SCOPE_AUTHORITY=NX_TASK_INPUTS_AND_AFFECTED_GRAPH", "repository-ci:execution-proof-system", "'nx','affected'", "--nxBail=false", "capture-ci-failure.mjs", "closure-diagnostic.json"]);
+forbidTokens(localVerifier, "local verifier", ["HEAD^", "Test-ChangedPath", "workspaceSensitivePatterns", "deployabilityPatterns", "infraPatterns", "export-smoke", "agent-diagnostic.json"]);
 
 const failureCapture = read("tools/dev/capture-ci-failure.mjs");
-requireTokens(failureCapture, "failure capture", ["agent-diagnostic.json", "buildAgentDiagnostic", "runtimeFailurePath", "do not guess one"]);
-forbidTokens(failureCapture, "failure capture", ['"dsh-backend:runtime-proof"']);
+requireTokens(failureCapture, "failure capture", ["closure-diagnostic.json", "buildClosureDiagnostic", "runtimeFailurePath", "do not guess one", "affectedProjects"]);
+forbidTokens(failureCapture, "failure capture", ['"dsh-backend:runtime-proof"', "agent-diagnostic.json", "failure-summary.json", "buildAgentDiagnostic"]);
 
 const diagnosticHelper = read("tools/dev/ci-failure-diagnostics.mjs");
-requireTokens(diagnosticHelper, "agent diagnostic", ["AGENT_FAILURE_DIAGNOSTIC", "EVIDENCE_ONLY_NOT_ROOT_CAUSE_AUTHORITY", "UNCLASSIFIED_REQUIRES_CAUSAL_REVIEW", "progressionBlocked", "materialFindings", "successfulCommands", "completedTargets", "COLLAPSE_FINDINGS_BY_HIGHEST_COMMON_CAUSAL_ROOT", "RERUN_ONLY_MATERIALLY_INVALIDATED_EVIDENCE"]);
+requireTokens(diagnosticHelper, "closure diagnostic", ["CAUSAL_DIAGNOSTIC_CLOSURE", "EVIDENCE_ONLY_NOT_ROOT_CAUSE_AUTHORITY", "UNCLASSIFIED_REQUIRES_CAUSAL_REVIEW", "schemaVersion", "findings", "causalGroups", "SHARED_CANONICAL_OWNER_HINT_ONLY_NOT_CAUSAL_PROOF", "highestPriorityRoot", "smallestFalsifyingProof", "NEVER_INFER_AN_UNPROVEN_ROOT_CAUSE", "RERUN_ONLY_MATERIALLY_INVALIDATED_EVIDENCE"]);
+forbidTokens(diagnosticHelper, "closure diagnostic", ["AGENT_FAILURE_DIAGNOSTIC"]);
 execFileSync(process.execPath, ["--test", "tools/dev/ci-failure-diagnostics.test.mjs"], { cwd: root, stdio: "inherit" });
 execFileSync(process.execPath, ["--test", "tools/dev/verify-pr-policy.test.mjs"], { cwd: root, stdio: "inherit" });
 
@@ -47,4 +48,4 @@ const securityWorkflow = read(".github/workflows/ci-security.yml");
 requireTokens(securityWorkflow, "security bounded batch", ["continue-on-error: true", "record-ci-external-result.mjs", "run-ci-command.mjs security-secret-safety", "enforce-ci-batch.mjs SECURITY"]);
 const staticWorkflow = read(".github/workflows/ci-static.yml");
 requireTokens(staticWorkflow, "static workflow diagnostics", ["run-ci-command.mjs static-invariants", "run-ci-command.mjs static-execution-proof", "run-ci-command.mjs static-go-workspace", "run-ci-command.mjs static-compose-config"]);
-console.log("FAILURE_DRIVEN_CLOSURE_CONTRACT=PASS pass=reuse fail=machine-diagnostic-bounded-harvest-and-repair affected=nx-only diagnostics=agent-first");
+console.log("CAUSAL_DIAGNOSTIC_CLOSURE_CONTRACT=PASS pass=reuse fail=bounded-machine-diagnostic causal-root=prove-before-repair affected=nx-only artifact=closure-diagnostic-json");
