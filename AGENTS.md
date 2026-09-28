@@ -162,6 +162,36 @@ Evidence is valid only for the exact state and claim it proves. If candidate, se
 
 For every task, change, proof or failure, execution MUST be demand-driven, evidence-preserving and causal-root-first. Select only the smallest complete diagnostics justified by the canonical affected graph, material inputs, risk and stale evidence. Within one cheap bounded diagnostic batch, harvest all near-free material findings before repair; then normalize, fingerprint, deduplicate, correlate and collapse them toward the highest provable common causal roots. Emit one canonical machine-readable `closure-diagnostic.json` before broad forensic reading, containing exact candidate identity, scope authority, selected/skipped proofs, failed commands/targets/claims, all material findings with evidence references, causal groups, explicit unproven/proven causal state, progression state and the smallest falsifying reproof. Diagnostic grouping is evidence organization only: never infer, rank or repair an unproven root cause. Never patch symptoms one-by-one when a higher common root can still explain them, never hide or weaken a failure, never blindly retry, never begin unrelated material work while a required failure remains unresolved, and never rerun unaffected successful evidence for reassurance. Repair the highest proven canonical causal root completely—including delete/refound/restructure when required—then run the smallest proof capable of falsifying that repair and rerun only evidence materially invalidated by it. PASS evidence remains reusable until causally invalidated; FAIL evidence remains an `ACTIVE_CLOSURE_BLOCKER` until reconciled and proven; no candidate is closed while material findings, stale/shadow truth, unresolved residue, decision-critical causal unknowns or required invalidated evidence remain.
 
+### FAILURE-TO-REPAIR CONVERSION LAW
+
+A material failure may consume **one bounded diagnostic cycle only** before execution must convert from diagnosis to repair. The required state machine is:
+
+FAIL
+→ HARVEST NEAR-FREE SIBLING FINDINGS FROM THE SAME BOUNDED RUN
+→ COLLAPSE TO CANONICAL OWNER / BOUNDARY / HIGHEST PROVABLE ROOT
+→ ROOT SUFFICIENTLY PROVEN?
+→ YES: REPAIR NOW
+→ SMALLEST FALSIFYING REPROOF
+→ REUSE EVERY UNAFFECTED PASS
+
+If the root is not yet sufficiently proven, exactly one additional **decision-changing probe** may be taken for each unresolved `DECISION_CRITICAL_UNKNOWN`. Before running it, state the concrete question and which repair decision its answer can change. If no repair decision can change, the probe is forbidden. Do not widen scope merely to gain confidence.
+
+Once canonical owner, defect boundary and complete treatment are sufficiently determined, **diagnostics stop and the next material action MUST be implementation repair**. A second broad scan, unchanged retry of the failed tool, unrelated CI/runtime lane, extra log harvest, or repository-wide search is forbidden until the repair is made or a named blocker proves repair unsafe.
+
+Every failed proof must therefore end in exactly one of these states:
+
+- `REPAIR_NOW`: root sufficiently proven; perform the complete canonical repair immediately.
+- `ONE_DECISION_PROBE`: one named decision-critical fact is still missing; gather only that fact, then repair or declare a real blocker.
+- `REAL_BLOCKER`: authority, credential/environment, target movement, irreversibility/safety, or unresolved Product decision prevents safe repair.
+
+`INVESTIGATE_MORE`, `RERUN_TO_SEE`, `COLLECT_MORE_LOGS`, `RUN_FULL_CI`, and equivalent open-ended states are not valid progression states.
+
+Repair production/source/schema/data/contract/config/runtime ownership first. A proof, fixture, verifier or diagnostic script may be changed in response to failure only when a stronger independent oracle proves the proof itself is causally defective. In that case repair the proof at its canonical owner and preserve, where practical, a negative control proving the repaired oracle still fails on known-invalid truth. Never edit proof infrastructure to route around a surviving implementation defect.
+
+After repair, run only the smallest proof that could falsify the repaired root. If that proof fails again, update the **same** `ACTIVE_CLOSURE_BLOCKER` with the new evidence and continue root repair; do not fan out into unrelated diagnostics. Successful evidence remains valid until its material inputs are actually invalidated.
+
+Diagnostic output is valuable only when it accelerates repair. When a highest root is proven, `closure-diagnostic.json` should make the next state executable (`REPAIR_NOW` + canonical owner + root + smallest falsifying reproof), not merely describe the failure.
+
 Every required proof result is actionable evidence, never passive logging.
 
 **PASS EVIDENCE REUSE:** preserve and reuse a successful deterministic proof while its material inputs, dependencies, canonical owner, contract/schema, environment class, tool version and governing invariant remain unaffected. Do not rerun successful work merely because an unrelated commit or a new candidate SHA exists; let Nx affected/task hashes/cache prove reuse, and refresh a required remote status by skip/cache rather than recomputation when the claim is unchanged.
