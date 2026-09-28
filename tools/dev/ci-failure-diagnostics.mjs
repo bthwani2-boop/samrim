@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-const ansiColorPattern = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+const ansiColorPattern = new RegExp(`${String.fromCodePoint(27)}\\[[0-9;]*m`, "g");
 const rootCauseUnknown = "UNCLASSIFIED_REQUIRES_CAUSAL_REVIEW";
 
 function artifactLogPath(logPath) {

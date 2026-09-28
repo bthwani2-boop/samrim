@@ -1,0 +1,49 @@
+{
+  "candidate": {
+    "branch": "sonar-final-closure",
+    "head": "1ee39563c03e7c054c799916e504e6274364cc23",
+    "baseMain": "1ee39563c03e7c054c799916e504e6274364cc23",
+    "worktree": "DIRTY"
+  },
+  "scopeAuthority": "User-authorized final Sonar closure; fresh branch only, PR to main without merge",
+  "selectedProofs": [
+    "Sonar main analysis task and warnings",
+    "Sonar current BUG/VULNERABILITY issue census",
+    "execution proof-system focused test"
+  ],
+  "skippedProofs": [
+    "Local runtime/database deletion: unrelated samrim-local data must be preserved",
+    "Full repository tests: current earliest blocker is reproducible tooling reliability issue"
+  ],
+  "failedClaims": [
+    {
+      "status": "FAIL",
+      "evidence": "CE task AaDp-FJBmyPzE9OLS-Z5 reports warningCount=1: PL/SQL Data Dictionary is not configured, disabling S3641/S3921/S3618/S3651",
+      "claim": "Sonar analysis warnings=0"
+    },
+    {
+      "status": "FAIL",
+      "evidence": "Sonar API /api/issues/search reports 115 OPEN BUG+VULNERABILITY issues on main",
+      "claim": "No open bugs/vulnerabilities"
+    }
+  ],
+  "causalGroups": [
+    {
+      "next": "Commit coherent tool reliability fix and verify candidate through pnpm safe:push",
+      "owner": "tools/dev/execution-proof-system.mjs",
+      "state": "REPAIRED_STATIC_PROOF_PASS",
+      "root": "Default JavaScript sort is locale/runtime dependent; action parser regex permits unnecessary backtracking",
+      "evidence": "Comparator uses String.localeCompare, regex excludes whitespace backtracking, ANSI uses fromCodePoint; node tools/dev/verify-execution-proof-system.mjs PASS (10 tests plus SHA/runtime proof contracts)."
+    },
+    {
+      "decisionCriticalUnknown": "Whether repository has Oracle PL/SQL schema requiring dictionary vs SQL files are generic PostgreSQL SQL",
+      "owner": "Sonar PL/SQL analyzer configuration",
+      "state": "UNPROVEN",
+      "root": "Data Dictionary absent",
+      "next": "Inspect only tracked SQL extensions and PL/SQL constructs/config ownership before choosing valid data dictionary setup"
+    }
+  ],
+  "progression": "COMMIT_AND_SAFE_PUSH",
+  "smallestFalsifyingReproof": "node tools/dev/verify-execution-proof-system.mjs",
+  "governanceImpact": "NONE"
+}

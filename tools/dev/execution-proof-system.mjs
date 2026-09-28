@@ -11,7 +11,7 @@ const assert = (condition, message) => { if (!condition) failures.push(message);
 const ciWorkflowNames = ["ci-policy.yml", "ci-runtime.yml", "ci-security.yml", "ci-static.yml"];
 const observationWorkflowNames = ["sonar-observe.yml"];
 const workflowNames = [...ciWorkflowNames, ...observationWorkflowNames].sort(compareStrings);
-const discovered = fs.readdirSync(path.join(root, ".github/workflows")).filter((name) => /\.ya?ml$/.test(name)).sort();
+const discovered = fs.readdirSync(path.join(root, ".github/workflows")).filter((name) => /\.ya?ml$/.test(name)).sort((left, right) => left.localeCompare(right));
 assert(JSON.stringify(discovered) === JSON.stringify(workflowNames), "canonical workflow set drifted");
 
 for (const [file, gate] of [["ci-policy.yml", "name: CI Policy"], ["ci-runtime.yml", "name: CI Runtime"], ["ci-security.yml", "name: CI Security"], ["ci-static.yml", "name: CI Static"]]) {
@@ -111,7 +111,7 @@ assert(sonarWorkflow.includes("SONAR_TOKEN: $" + "{{ secrets.SONAR_TOKEN }}"), "
 for (const token of ["image: postgis/postgis:16-3.4-alpine", "POSTGRES_HOST_AUTH_METHOD: trust", "DSH_DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable", "IDENTITY_DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable", "go -C services/dsh/backend test -coverprofile=", "go -C services/identity/backend test -coverprofile=", "go -C services/wlt/backend test -coverprofile=", "node --experimental-test-coverage --test --test-reporter=lcov", "coverage/sonar/tools-dev.lcov"]) assert(sonarWorkflow.includes(token), `Sonar coverage preparation missing ${token}`);
 assert(!sonarWorkflow.includes("POSTGRES_PASSWORD:") && !sonarWorkflow.includes("sonar-proof"), "Sonar workflow must not retain a hardcoded database credential");
 assert(!sonarWorkflow.includes("sonar.qualitygate.wait=true"), "Sonar observation must not wait on or enforce the quality gate");
-for (const [, reference] of sonarWorkflow.matchAll(/^\s+uses:\s+([^\s]+)$/gm)) {
+for (const [, reference] of sonarWorkflow.matchAll(/^[ \t]+uses:[ \t]+([^\t ]+)$/gm)) {
   const [, ref] = reference.split("@");
   assert(/^[0-9a-f]{40}$/.test(ref ?? ""), `Sonar observation action is not pinned to a full commit SHA: ${reference}`);
 }
