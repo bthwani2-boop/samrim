@@ -1466,7 +1466,6 @@ func mutationHeaders(w http.ResponseWriter, r *http.Request) (string, string, bo
 	correlation := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
 	idempotency := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 	if len(correlation) < 8 || len(correlation) > 128 || len(idempotency) < 8 || len(idempotency) > 128 {
-		log.Printf("WLT mutation rejected: reason=mutation_headers_invalid path=%s", r.URL.Path)
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Correlation-ID and Idempotency-Key are required")
 		return "", "", false
 	}
@@ -1491,28 +1490,11 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
-		var typeError *json.UnmarshalTypeError
-		var syntaxError *json.SyntaxError
-		switch {
-		case errors.As(err, &typeError):
-			log.Printf("WLT request rejected: reason=request_body_type_invalid path=%s field=%s value_type=%s expected_type=%s", r.URL.Path, typeError.Field, typeError.Value, typeError.Type)
-		case errors.As(err, &syntaxError):
-			log.Printf("WLT request rejected: reason=request_body_syntax_invalid path=%s offset=%d", r.URL.Path, syntaxError.Offset)
-		case strings.HasPrefix(err.Error(), "json: unknown field "):
-			field := strings.Trim(strings.TrimPrefix(err.Error(), "json: unknown field "), "\"")
-			if len(field) > 80 {
-				field = field[:80]
-			}
-			log.Printf("WLT request rejected: reason=request_body_unknown_field path=%s field=%q", r.URL.Path, field)
-		default:
-			log.Printf("WLT request rejected: reason=request_body_decode_invalid path=%s error_type=%T", r.URL.Path, err)
-		}
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "request body is invalid")
 		return false
 	}
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		log.Printf("WLT request rejected: reason=request_body_multiple_values path=%s", r.URL.Path)
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "request body must contain exactly one JSON value")
 		return false
 	}

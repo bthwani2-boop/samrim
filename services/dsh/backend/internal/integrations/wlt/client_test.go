@@ -55,6 +55,54 @@ func TestCreateUsesServiceContract(t *testing.T) {
 	}
 }
 
+func TestCreateForOrderUsesRequestOnlyAllocationFields(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		var body struct {
+			OrderID                   string `json:"orderId"`
+			ExternalReference         string `json:"externalReference"`
+			PayerActorID              string `json:"payerActorId"`
+			AmountMinor               int64  `json:"amountMinor"`
+			Currency                  string `json:"currency"`
+			Method                    string `json:"method"`
+			CustomerPaymentAllocation struct {
+				OrderID                    string `json:"orderId"`
+				StoreID                    string `json:"storeId"`
+				PartnerActorID             string `json:"partnerActorId"`
+				FulfillmentMode            string `json:"fulfillmentMode"`
+				Currency                   string `json:"currency"`
+				SubtotalMinor              int64  `json:"subtotalMinor"`
+				DeliveryFeeMinor           int64  `json:"deliveryFeeMinor"`
+				DiscountMinor              int64  `json:"discountMinor"`
+				InternalBalanceAmountMinor int64  `json:"internalBalanceAmountMinor"`
+				CashAmountMinor            int64  `json:"cashAmountMinor"`
+				CustomerPayableMinor       int64  `json:"customerPayableMinor"`
+				PolicyVersion              string `json:"policyVersion"`
+			} `json:"customerPaymentAllocation"`
+		}
+		decoder := json.NewDecoder(request.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&body); err != nil {
+			t.Fatalf("request did not match WLT create contract: %v", err)
+		}
+		allocation := body.CustomerPaymentAllocation
+		if body.OrderID != "order-1" || body.AmountMinor != 1300 || body.Method != methodCashOnDelivery || allocation.OrderID != body.OrderID || allocation.StoreID != "store-1" || allocation.PartnerActorID != "partner-1" || allocation.SubtotalMinor != 1300 || allocation.CashAmountMinor != 1300 || allocation.CustomerPayableMinor != 1300 {
+			t.Fatalf("unexpected create-for-order body: %#v", body)
+		}
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{"paymentIntent":{"id":"pi-order-1","state":"REQUIRES_COLLECTION","amountMinor":1300,"currency":"YER","method":"CASH_ON_DELIVERY"},"idempotentReplay":false}`))
+	}))
+	defer server.Close()
+
+	client, err := New(server.URL, "development", "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	allocation := CustomerPaymentAllocation{ID: "allocation-response-only", OrderID: "order-1", StoreID: "store-1", PartnerActorID: "partner-1", FulfillmentMode: "BTHWANI_CAPTAIN", Currency: "YER", SubtotalMinor: 1300, CashAmountMinor: 1300, CustomerPayableMinor: 1300, PolicyVersion: "cod-current-v2", PaymentIntentID: "response-only", CreatedAt: "2026-09-28T00:00:00Z"}
+	if _, _, err := client.CreateForOrderWithMethod(t.Context(), "order-1", "external-1", "client-1", 1300, methodCashOnDelivery, allocation, "create-order-key", "create-order-correlation"); err != nil {
+		t.Fatalf("create order payment intent: %v", err)
+	}
+}
+
 func TestListOperatorCashLiabilityUsesRegistryQuery(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet || request.URL.Path != "/wlt/v1/operator/cash-liability" {
