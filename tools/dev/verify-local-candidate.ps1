@@ -50,6 +50,10 @@ function Invoke-RecordedProof([string]$Name, [string[]]$Command) {
 
 $verifyClock = [Diagnostics.Stopwatch]::StartNew()
 $diagnosticWork = $null
+$profileWork = $null
+$verificationSucceeded = $false
+$verificationFailure = $null
+$cleanupFailures = [System.Collections.Generic.List[string]]::new()
 Push-Location $Repo
 try {
     $branch = ((Invoke-Git @('branch','--show-current')) -join '').Trim()
@@ -72,10 +76,12 @@ try {
     if ((& go version | Out-String).Trim() -notmatch '\bgo1\.27\.1\b') { Fail 'Go version mismatch.' }
 
     $diagnosticWork = Join-Path ([IO.Path]::GetTempPath()) ("samrim-local-proof-{0}" -f [guid]::NewGuid().ToString('N'))
+    $profileWork = Join-Path $Repo (".nx/cache/samrim-local-proof-profiles-{0}" -f [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $diagnosticWork -Force | Out-Null
+    New-Item -ItemType Directory -Path $profileWork -Force | Out-Null
     $env:SAMRIM_CI_METRICS_PATH = Join-Path $diagnosticWork 'metrics.jsonl'
     $env:SAMRIM_CI_LOG_DIR = Join-Path $diagnosticWork 'logs'
-    $env:SAMRIM_CI_PROFILE_DIR = Join-Path $diagnosticWork 'profiles'
+    $env:SAMRIM_CI_PROFILE_DIR = $profileWork
     $env:CANDIDATE_SHA = $head
     $env:NX_BASE = $BaseSha
     $env:NX_HEAD = $head
@@ -98,11 +104,40 @@ try {
     if ($endHead -ne $head) { Fail "Candidate HEAD changed during verification: before=$head after=$endHead" }
     $endStatus = @(Invoke-Git @('status','--porcelain=v1','--untracked-files=all'))
     if ($endStatus.Count -gt 0) { Fail 'Verification mutated repository state.' }
-    Write-Host "VERIFY=PASS base=$BaseSha head=$head"
+    $verificationSucceeded = $true
+}
+catch {
+    $verificationFailure = $_
 }
 finally {
     $verifyClock.Stop()
     Write-Host "VERIFY_TOTAL_MS=$($verifyClock.ElapsedMilliseconds)"
-    if ($diagnosticWork -and (Test-Path $diagnosticWork)) { Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $diagnosticWork }
-    Pop-Location
+    if ($diagnosticWork) {
+        try {
+            if (Test-Path -LiteralPath $diagnosticWork) {
+                Remove-Item -LiteralPath $diagnosticWork -Recurse -Force -ErrorAction Stop
+                if (Test-Path -LiteralPath $diagnosticWork) { throw "Temporary diagnostic directory remains: $diagnosticWork" }
+            }
+        }
+        catch { $cleanupFailures.Add("diagnostic cleanup failed: $($_.Exception.Message)") }
+    }
+    if ($profileWork) {
+        try {
+            if (Test-Path -LiteralPath $profileWork) {
+                Remove-Item -LiteralPath $profileWork -Recurse -Force -ErrorAction Stop
+                if (Test-Path -LiteralPath $profileWork) { throw "Nx profile directory remains: $profileWork" }
+            }
+        }
+        catch { $cleanupFailures.Add("Nx profile cleanup failed: $($_.Exception.Message)") }
+    }
+    try { Pop-Location }
+    catch { $cleanupFailures.Add("location cleanup failed: $($_.Exception.Message)") }
 }
+
+if ($cleanupFailures.Count -gt 0) {
+    $cleanupSummary = $cleanupFailures -join '; '
+    if ($verificationFailure) { Fail "Verification failed: $($verificationFailure.Exception.Message); $cleanupSummary" }
+    Fail $cleanupSummary
+}
+if ($verificationFailure) { throw $verificationFailure }
+if ($verificationSucceeded) { Write-Host "VERIFY=PASS base=$BaseSha head=$head" }
