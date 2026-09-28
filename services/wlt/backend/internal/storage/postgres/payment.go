@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -107,13 +108,35 @@ func CreatePaymentIntent(ctx context.Context, db *sql.DB, input CreatePaymentInt
 		input.CustomerPaymentAllocation.Currency = strings.TrimSpace(input.CustomerPaymentAllocation.Currency)
 		input.CustomerPaymentAllocation.PolicyVersion = strings.TrimSpace(input.CustomerPaymentAllocation.PolicyVersion)
 	}
-	if db == nil || domain.ValidateCreate(input.ExternalReference, input.PayerActorID, input.Currency, input.Method, input.AmountMinor) != nil || (input.OrderID != "" && (input.CustomerPaymentAllocation == nil || input.CustomerPaymentAllocation.OrderID != input.OrderID)) || (input.CustomerPaymentAllocation != nil && validateCustomerPaymentAllocation(*input.CustomerPaymentAllocation) != nil) || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
+	if db == nil {
+		log.Printf("WLT create payment intent rejected: reason=database_unavailable")
+		return PaymentIntentRecord{}, false, ErrInvalidInput
+	}
+	if domain.ValidateCreate(input.ExternalReference, input.PayerActorID, input.Currency, input.Method, input.AmountMinor) != nil {
+		log.Printf("WLT create payment intent rejected: reason=payment_facts_invalid")
+		return PaymentIntentRecord{}, false, ErrInvalidInput
+	}
+	if input.OrderID != "" && (input.CustomerPaymentAllocation == nil || input.CustomerPaymentAllocation.OrderID != input.OrderID) {
+		log.Printf("WLT create payment intent rejected: reason=order_allocation_mismatch")
+		return PaymentIntentRecord{}, false, ErrInvalidInput
+	}
+	if input.CustomerPaymentAllocation != nil && validateCustomerPaymentAllocation(*input.CustomerPaymentAllocation) != nil {
+		log.Printf("WLT create payment intent rejected: reason=payment_allocation_invalid")
+		return PaymentIntentRecord{}, false, ErrInvalidInput
+	}
+	if len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 {
+		log.Printf("WLT create payment intent rejected: reason=idempotency_key_length")
+		return PaymentIntentRecord{}, false, ErrInvalidInput
+	}
+	if len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
+		log.Printf("WLT create payment intent rejected: reason=correlation_id_length")
 		return PaymentIntentRecord{}, false, ErrInvalidInput
 	}
 	if input.CustomerPaymentAllocation == nil && input.AmountMinor == 0 {
 		return PaymentIntentRecord{}, false, ErrInvalidInput
 	}
 	if input.CustomerPaymentAllocation != nil && (input.AmountMinor != input.CustomerPaymentAllocation.CashAmountMinor || (input.CustomerPaymentAllocation.FulfillmentMode == "BTHWANI_CAPTAIN" && input.Method != domain.MethodCashOnDelivery) || (input.CustomerPaymentAllocation.FulfillmentMode != "BTHWANI_CAPTAIN" && input.Method != domain.MethodCashAtStore)) {
+		log.Printf("WLT create payment intent rejected: reason=payment_allocation_mismatch")
 		return PaymentIntentRecord{}, false, ErrInvalidInput
 	}
 	requestHash := HashCreateRequest(input)
