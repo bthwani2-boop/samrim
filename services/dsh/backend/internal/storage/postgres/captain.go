@@ -282,7 +282,7 @@ func CreateCaptainAdmissionCandidate(ctx context.Context, db *sql.DB, fullNameAr
 		return CaptainAdmission{}, false, err
 	}
 	admission, err := ReadCaptainAdmission(ctx, db, admissionID)
-	return admission, true, err
+	return admission, false, err
 }
 
 func ApproveCaptainAdmission(ctx context.Context, db *sql.DB, admissionID, idempotencyKey, requestHash, actingActorID, correlationID string) (CaptainAdmission, bool, error) {
