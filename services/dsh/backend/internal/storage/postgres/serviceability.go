@@ -53,7 +53,6 @@ func ReadServiceabilityFacts(ctx context.Context, db *sql.DB, storeID, clientAct
 	var serviceCityActive, addressCityActive sql.NullBool
 	var storeOriginLatitude, storeOriginLongitude, addressLatitude, addressLongitude sql.NullFloat64
 	var addressCityFound, hasPublishedOffer bool
-	visibleOfferConditions := strings.Join(customerVisibleOfferConditionsForAliases("co", "cv", "cp", "s"), " AND ")
 	err := db.QueryRowContext(ctx, `
 		SELECT s.id, s.partner_actor_id, s.version, s.service_city_id, s.publication_state,
 		       s.delivery_origin_latitude, s.delivery_origin_longitude,
@@ -65,7 +64,8 @@ func ReadServiceabilityFacts(ctx context.Context, db *sql.DB, storeID, clientAct
 					FROM dsh.catalog_store_offers co
 					JOIN dsh.catalog_product_variants cv ON cv.id=co.variant_id
 					JOIN dsh.catalog_products cp ON cp.id=cv.product_id
-					WHERE co.store_id=s.id AND `+visibleOfferConditions+`
+					WHERE co.store_id=s.id
+					  AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=co.id)
 			)
 		FROM (SELECT $1::text AS store_id, $2::text AS address_id, $3::text AS client_actor_id) input
 		LEFT JOIN dsh.stores s ON s.id=input.store_id

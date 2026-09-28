@@ -111,18 +111,6 @@ func ListPublishedStorePage(ctx context.Context, db *sql.DB, input PublicStoreLi
 			cursorDistance = *cursor.DistanceMeters
 		}
 	}
-	const storeCategories = `ARRAY(WITH RECURSIVE store_categories(id,parent_category_id,vertical_id) AS (
-		SELECT c.id,c.parent_category_id,c.vertical_id FROM dsh.catalog_store_offers o
-		JOIN dsh.stores s ON s.id=o.store_id
-		JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
-		JOIN dsh.catalog_products p ON p.id=v.product_id
-		JOIN dsh.catalog_product_categories pc ON pc.product_id=p.id
-		JOIN dsh.catalog_categories c ON c.id=pc.category_id AND c.active=true AND c.vertical_id=p.vertical_id
-		WHERE o.store_id=candidate.id AND ` + customerVisibleOfferConditionsSQL + `
-		UNION
-		SELECT parent.id,parent.parent_category_id,parent.vertical_id FROM store_categories child
-		JOIN dsh.catalog_categories parent ON parent.id=child.parent_category_id AND parent.vertical_id=child.vertical_id AND parent.active=true
-	) SELECT DISTINCT id FROM store_categories ORDER BY id)`
 	const statement = `WITH candidate_page AS MATERIALIZED (
 		SELECT s.id,s.partner_actor_id,s.name,s.primary_vertical_id,s.version,s.publication_changed_at,s.created_at,s.updated_at,s.fulfillment_modes,lower(s.name) AS name_sort_key,
 		location.distance_meters,
@@ -137,12 +125,12 @@ func ListPublishedStorePage(ctx context.Context, db *sql.DB, input PublicStoreLi
 			JOIN dsh.catalog_products p ON p.id=v.product_id
 			JOIN dsh.catalog_product_categories pc ON pc.product_id=p.id
 			JOIN dsh.catalog_categories c ON c.id=pc.category_id AND c.active=true AND c.vertical_id=p.vertical_id
-			WHERE o.store_id=s.id AND ` + customerVisibleOfferConditionsSQL + `
+			WHERE o.store_id=s.id AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id)
 			UNION
 			SELECT parent.id,parent.parent_category_id,parent.vertical_id FROM store_categories child
 			JOIN dsh.catalog_categories parent ON parent.id=child.parent_category_id AND parent.vertical_id=child.vertical_id AND parent.active=true
 		) SELECT 1 FROM store_categories WHERE id=$3))
-		AND EXISTS (SELECT 1 FROM dsh.catalog_store_offers o JOIN dsh.catalog_product_variants v ON v.id=o.variant_id JOIN dsh.catalog_products p ON p.id=v.product_id WHERE o.store_id=s.id AND ` + customerVisibleOfferConditionsSQL + `)
+		AND EXISTS (SELECT 1 FROM dsh.catalog_store_offers o WHERE o.store_id=s.id AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id))
 		AND EXISTS (SELECT 1 FROM dsh.joining_cases jc WHERE jc.partner_actor_id=s.partner_actor_id AND jc.financial_profile_state='ACTIVE')
 		AND ($6='' OR EXISTS (SELECT 1 FROM dsh.client_favorite_stores f WHERE f.client_actor_id=$6 AND f.store_id=s.id))
 		AND (NOT $7::boolean OR (s.delivery_origin_latitude IS NOT NULL AND s.delivery_origin_longitude IS NOT NULL))
@@ -162,7 +150,18 @@ func ListPublishedStorePage(ctx context.Context, db *sql.DB, input PublicStoreLi
 	)
 	SELECT candidate.id,candidate.partner_actor_id,candidate.name,candidate.primary_vertical_id,candidate.version,candidate.name_sort_key,
 		COALESCE(rating.rating_average,0),COALESCE(rating.rating_count,0),candidate.publication_changed_at,candidate.created_at,candidate.updated_at,candidate.fulfillment_modes,
-		` + storeCategories + `,candidate.distance_meters,
+		ARRAY(WITH RECURSIVE store_categories(id,parent_category_id,vertical_id) AS (
+			SELECT c.id,c.parent_category_id,c.vertical_id FROM dsh.catalog_store_offers o
+			JOIN dsh.stores s ON s.id=o.store_id
+			JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
+			JOIN dsh.catalog_products p ON p.id=v.product_id
+			JOIN dsh.catalog_product_categories pc ON pc.product_id=p.id
+			JOIN dsh.catalog_categories c ON c.id=pc.category_id AND c.active=true AND c.vertical_id=p.vertical_id
+			WHERE o.store_id=candidate.id AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id)
+			UNION
+			SELECT parent.id,parent.parent_category_id,parent.vertical_id FROM store_categories child
+			JOIN dsh.catalog_categories parent ON parent.id=child.parent_category_id AND parent.vertical_id=child.vertical_id AND parent.active=true
+		) SELECT DISTINCT id FROM store_categories ORDER BY id),candidate.distance_meters,
 		candidate.service_city_id,candidate.display_name_ar,candidate.service_city_active,candidate.service_city_version,candidate.service_city_created_at,candidate.service_city_updated_at,
 		media.id,media.joining_case_id,media.store_id,media.uri,media.object_key,media.content_sha256,media.content_type,media.byte_size,media.media_role,media.state,media.creator,media.source_description,media.source_uri,media.rights_statement,media.rights_uri,media.rights_attested_by_actor_id,media.rights_attested_at,media.created_at,media.attached_at
 	FROM candidate_page candidate

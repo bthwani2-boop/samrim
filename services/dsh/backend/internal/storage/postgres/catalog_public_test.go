@@ -43,24 +43,6 @@ func TestCatalogCategoryCursorBindsRegistryScope(t *testing.T) {
 	}
 }
 
-func TestCustomerVisibleOfferConditionsUseFixedAliasReferences(t *testing.T) {
-	conditions := strings.Join(customerVisibleOfferConditionsForAliases("offer", "variant", "product", "store"), " AND ")
-	for _, expected := range []string{
-		"offer.publication_state='published'",
-		"variant.measurement_kind",
-		"product.vertical_id=store.primary_vertical_id",
-		"store.publication_state='published'",
-		"offer.store_id",
-	} {
-		if !strings.Contains(conditions, expected) {
-			t.Fatalf("catalog visibility predicate omitted canonical alias reference %q", expected)
-		}
-	}
-	if strings.Contains(conditions, "svariant.") || strings.Contains(conditions, "cstore.") {
-		t.Fatalf("catalog visibility predicate corrupted aliases: %s", conditions)
-	}
-}
-
 func TestCatalogStoreOfferCursorBindsStoreAndRejectsMalformedTokens(t *testing.T) {
 	createdAt := time.Date(2026, 9, 26, 12, 0, 0, 123000000, time.UTC)
 	cursor := catalogStoreOfferCursor{Version: 1, StoreID: "store-1", CreatedAt: createdAt, OfferID: "offer-1"}

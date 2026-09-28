@@ -49,8 +49,8 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 		t.Fatalf("unexpected DSH migration graph size: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.SchemaVersion)
 	}
 	last := records[len(records)-1]
-	if last.Version != postgres.SchemaVersion || last.Name != "077_balance_only_financial_handoffs.sql" {
-		t.Fatalf("last DSH migration = v%d %q; want v%d 077_balance_only_financial_handoffs.sql", last.Version, last.Name, postgres.SchemaVersion)
+	if last.Version != postgres.SchemaVersion || last.Name != "078_catalog_offer_visibility_views.sql" {
+		t.Fatalf("last DSH migration = v%d %q; want v%d 078_catalog_offer_visibility_views.sql", last.Version, last.Name, postgres.SchemaVersion)
 	}
 	migrationByName := make(map[string]string, len(records))
 	for index, record := range records {
@@ -102,7 +102,13 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 			t.Fatalf("DSH migration 077 is missing balance-only settlement behavior: %s", required)
 		}
 	}
-	assertRequiredMigrationOrder(t, records, "072_store_profile_media_provenance.sql", "073_catalog_media_asset_references.sql", "074_catalog_media_provenance.sql", "075_discovery_content_media_assets.sql", "076_payment_cash_amount_snapshot.sql", "077_balance_only_financial_handoffs.sql")
+	catalogOfferVisibilityMigration := migrationByName["078_catalog_offer_visibility_views.sql"]
+	for _, required := range []string{"CREATE OR REPLACE VIEW dsh.catalog_publishable_offers", "o.quantity_policy<>'VARIABLE_MEASURE'", "CREATE OR REPLACE VIEW dsh.catalog_customer_visible_offers", "s.publication_state='published'"} {
+		if !strings.Contains(catalogOfferVisibilityMigration, required) {
+			t.Fatalf("DSH migration 078 is missing canonical catalog offer visibility: %s", required)
+		}
+	}
+	assertRequiredMigrationOrder(t, records, "072_store_profile_media_provenance.sql", "073_catalog_media_asset_references.sql", "074_catalog_media_provenance.sql", "075_discovery_content_media_assets.sql", "076_payment_cash_amount_snapshot.sql", "077_balance_only_financial_handoffs.sql", "078_catalog_offer_visibility_views.sql")
 	if !strings.Contains(migrationByName["068_field_operator_partner_admission.sql"], "admission_requested") || !strings.Contains(migrationByName["068_field_operator_partner_admission.sql"], "joining_case_admission_requested") || !strings.Contains(migrationByName["068_field_operator_partner_admission.sql"], "field-admission-request") {
 		t.Fatal("DSH migration 068 is missing the Field submission and Operator admission state")
 	}
@@ -174,6 +180,25 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
 			t.Fatalf("rerun DSH migrations with matching checksums: %v", err)
 		}
+		var visibilityViews int
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM pg_views WHERE schemaname='dsh' AND viewname IN ('catalog_publishable_offers','catalog_customer_visible_offers')`).Scan(&visibilityViews); err != nil || visibilityViews != 2 {
+			t.Fatalf("catalog offer visibility views are not installed: count=%d err=%v", visibilityViews, err)
+		}
+		var publishableViewDefinition, customerVisibleViewDefinition string
+		if err := db.QueryRowContext(ctx, `SELECT pg_get_viewdef('dsh.catalog_publishable_offers'::regclass,true)`).Scan(&publishableViewDefinition); err != nil {
+			t.Fatalf("read canonical catalog publishable-offer view: %v", err)
+		}
+		for _, required := range []string{"availability = true", "price_minor > 0", "quantity_policy <> 'VARIABLE_MEASURE'", "inventory_policy", "catalog_model", "catalog_category_attribute_rules", "catalog_store_offer_modifier_groups"} {
+			if !strings.Contains(publishableViewDefinition, required) {
+				t.Fatalf("canonical catalog publishable-offer view omits required condition %q", required)
+			}
+		}
+		if err := db.QueryRowContext(ctx, `SELECT pg_get_viewdef('dsh.catalog_customer_visible_offers'::regclass,true)`).Scan(&customerVisibleViewDefinition); err != nil {
+			t.Fatalf("read canonical customer-visible-offer view: %v", err)
+		}
+		if !strings.Contains(customerVisibleViewDefinition, "publication_state = 'published'") {
+			t.Fatal("canonical customer-visible-offer view omits published-store state")
+		}
 		for _, table := range []string{"central_products", "central_product_mutation_idempotency", "central_product_audit", "store_assortments", "store_assortment_mutation_idempotency", "store_assortment_audit"} {
 			var absent bool
 			if err := db.QueryRowContext(ctx, "SELECT to_regclass($1) IS NULL", "dsh."+table).Scan(&absent); err != nil || !absent {
@@ -233,6 +258,56 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 		createdProduct, err := postgres.CreateCatalogProduct(ctx, db, productInput, "idem-product-v1", postgres.HashCatalogProductCreateRequest(productInput), testOperatorActorID, "corr-product-v1")
 		if err != nil || createdProduct.Product.ID == "" || createdProduct.Product.Version != 1 {
 			t.Fatalf("create catalog product: %+v err=%v", createdProduct, err)
+		}
+		secondProductInput := productInput
+		secondProductInput.CanonicalName = "قهوة مختصة"
+		secondProductInput.IdentifierValue = "6281000000002"
+		secondProduct, err := postgres.CreateCatalogProduct(ctx, db, secondProductInput, "idem-product-second-v1", postgres.HashCatalogProductCreateRequest(secondProductInput), testOperatorActorID, "corr-product-second-v1")
+		if err != nil || secondProduct.Product.ID == "" || secondProduct.Product.ID == createdProduct.Product.ID {
+			t.Fatalf("create second catalog product for keyset proof: %+v err=%v", secondProduct, err)
+		}
+		sharedProductPage, err := postgres.ListCatalogProducts(ctx, db, "", vertical.ID, false, 1, "")
+		if err != nil || len(sharedProductPage.Products) != 1 || sharedProductPage.NextCursor == "" {
+			t.Fatalf("shared catalog product first page failed: %+v err=%v", sharedProductPage, err)
+		}
+		sharedProductNextPage, err := postgres.ListCatalogProducts(ctx, db, "", vertical.ID, false, 1, sharedProductPage.NextCursor)
+		if err != nil || len(sharedProductNextPage.Products) != 1 || sharedProductNextPage.NextCursor != "" || sharedProductNextPage.Products[0].ID == sharedProductPage.Products[0].ID {
+			t.Fatalf("shared catalog product cursor failed: first=%+v second=%+v err=%v", sharedProductPage, sharedProductNextPage, err)
+		}
+		partnerProductPage, err := postgres.ListCatalogProductsForPartner(ctx, db, "", vertical.ID, testPartnerActorID, 1, "")
+		if err != nil || len(partnerProductPage.Products) != 1 || partnerProductPage.NextCursor == "" {
+			t.Fatalf("partner shared catalog product first page failed: %+v err=%v", partnerProductPage, err)
+		}
+		partnerProductNextPage, err := postgres.ListCatalogProductsForPartner(ctx, db, "", vertical.ID, testPartnerActorID, 1, partnerProductPage.NextCursor)
+		if err != nil || len(partnerProductNextPage.Products) != 1 || partnerProductNextPage.NextCursor != "" || partnerProductNextPage.Products[0].ID == partnerProductPage.Products[0].ID {
+			t.Fatalf("partner shared catalog product cursor failed: first=%+v second=%+v err=%v", partnerProductPage, partnerProductNextPage, err)
+		}
+		localVertical := postgres.CommerceVerticalRecord{NameAr: "مخبوزات محلية", NameEn: "Local Bakery", CatalogModel: "STORE_LOCAL_CATALOG", Active: true}
+		localVerticalAudit := postgres.CatalogRegistryAuditInput{ActingActorID: testOperatorActorID, CorrelationID: "corr-local-vertical-v1", Reason: "Initial local catalog vertical"}
+		createdLocalVertical, err := postgres.CreateCommerceVertical(ctx, db, localVertical, "idem-local-vertical-v1", postgres.HashCatalogVerticalCreateRequest(localVertical, localVerticalAudit.Reason), localVerticalAudit)
+		if err != nil || createdLocalVertical.Vertical.ID == "" {
+			t.Fatalf("create local catalog vertical: %+v err=%v", createdLocalVertical, err)
+		}
+		localStoreID := "store_catalog_local_v1"
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.stores(id,partner_actor_id,name,service_city_id,primary_vertical_id,publication_state,publication_changed_at) VALUES($1,$2,'متجر المخبوزات',$3,$4,'published',clock_timestamp())`, localStoreID, testPartnerActorID, createdCity.City.ID, createdLocalVertical.Vertical.ID); err != nil {
+			t.Fatalf("create store for local catalog ownership proof: %v", err)
+		}
+		localProductInput := postgres.CatalogProductInput{VerticalID: createdLocalVertical.Vertical.ID, Scope: "STORE_SCOPED", StoreID: localStoreID, CanonicalName: "خبز محلي", MeasurementKind: "DISCRETE", BaseUnit: "COUNT", VariantTitle: "رغيف"}
+		localProduct, err := postgres.CreateCatalogProduct(ctx, db, localProductInput, "idem-local-product-v1", postgres.HashCatalogProductCreateRequest(localProductInput), testOperatorActorID, "corr-local-product-v1")
+		if err != nil || localProduct.Product.ID == "" {
+			t.Fatalf("create store-scoped catalog product: %+v err=%v", localProduct, err)
+		}
+		ownedLocalProducts, err := postgres.ListCatalogProductsForPartner(ctx, db, "", createdLocalVertical.Vertical.ID, testPartnerActorID, 10, "")
+		if err != nil || len(ownedLocalProducts.Products) != 1 || ownedLocalProducts.Products[0].ID != localProduct.Product.ID {
+			t.Fatalf("owning partner cannot read its store-scoped catalog product: %+v err=%v", ownedLocalProducts, err)
+		}
+		otherPartnerProducts, err := postgres.ListCatalogProductsForPartner(ctx, db, "", createdLocalVertical.Vertical.ID, "partner_not_the_owner", 10, "")
+		if err != nil || len(otherPartnerProducts.Products) != 0 {
+			t.Fatalf("unrelated partner can read a store-scoped catalog product: %+v err=%v", otherPartnerProducts, err)
+		}
+		publicLocalProducts, err := postgres.ListCatalogProducts(ctx, db, "", createdLocalVertical.Vertical.ID, false, 10, "")
+		if err != nil || len(publicLocalProducts.Products) != 0 {
+			t.Fatalf("public catalog list exposed a store-scoped product: %+v err=%v", publicLocalProducts, err)
 		}
 		product, err := postgres.ReadCatalogProduct(ctx, db, createdProduct.Product.ID)
 		if err != nil || len(product.Variants) != 1 || len(product.Variants[0].Identifiers) != 1 || len(product.CategoryIDs) != 1 || len(product.Media) != 0 {

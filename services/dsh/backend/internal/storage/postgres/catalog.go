@@ -963,12 +963,24 @@ func ReadCatalogVariant(ctx context.Context, db *sql.DB, variantID string) (Cata
 	return variant, err
 }
 func ListCatalogProducts(ctx context.Context, db *sql.DB, query, verticalID string, activeOnly bool, limit int, rawCursor string) (CatalogProductPage, error) {
+	return listCatalogProducts(ctx, db, query, verticalID, "", activeOnly, limit, rawCursor)
+}
+
+func ListCatalogProductsForPartner(ctx context.Context, db *sql.DB, query, verticalID, partnerActorID string, limit int, rawCursor string) (CatalogProductPage, error) {
+	partnerActorID = strings.TrimSpace(partnerActorID)
+	if partnerActorID == "" {
+		return CatalogProductPage{}, errors.New("catalog Product partner listing facts are invalid")
+	}
+	return listCatalogProducts(ctx, db, query, verticalID, partnerActorID, false, limit, rawCursor)
+}
+
+func listCatalogProducts(ctx context.Context, db *sql.DB, query, verticalID, partnerActorID string, activeOnly bool, limit int, rawCursor string) (CatalogProductPage, error) {
 	if limit < 1 || limit > 100 {
 		return CatalogProductPage{}, errors.New("catalog Product limit is invalid")
 	}
 	query = strings.TrimSpace(query)
 	verticalID = strings.TrimSpace(verticalID)
-	cursor, err := decodeCatalogProductCursor(rawCursor, query, verticalID, "", activeOnly)
+	cursor, err := decodeCatalogProductCursor(rawCursor, query, verticalID, partnerActorID, activeOnly)
 	if err != nil {
 		return CatalogProductPage{}, err
 	}
@@ -977,54 +989,14 @@ func ListCatalogProducts(ctx context.Context, db *sql.DB, query, verticalID stri
 	if cursor != nil {
 		cursorName, cursorProductID = cursor.CanonicalName, cursor.ProductID
 	}
-	rows, err := db.QueryContext(ctx, catalogProductSelect+` WHERE p.scope='SHARED'
-		AND ($1='' OR p.vertical_id=$1)
-		AND ($2='' OR lower(p.canonical_name) LIKE lower($2))
-		AND (NOT $5::boolean OR (lower(p.canonical_name),p.id)>($3::text,$4::text))
-		AND (NOT $6::boolean OR p.active=true)
-		ORDER BY lower(p.canonical_name),p.id LIMIT $7`, verticalID, query+"%", cursorName, cursorProductID, cursor != nil, activeOnly, limit+1)
-	if err != nil {
-		return CatalogProductPage{}, err
-	}
-	defer rows.Close()
-	items := []CatalogProductRecord{}
-	for rows.Next() {
-		item, err := readCatalogProductRow(rows)
-		if err != nil {
-			return CatalogProductPage{}, err
-		}
-		items = append(items, item)
-	}
-	if err = rows.Err(); err != nil {
-		return CatalogProductPage{}, err
-	}
-	pageCursor := catalogProductCursor{Version: 1, Query: query, VerticalID: verticalID, ActiveOnly: activeOnly}
-	return finishCatalogProductPage(ctx, db, items, limit, pageCursor)
-}
-
-func ListCatalogProductsForPartner(ctx context.Context, db *sql.DB, query, verticalID, partnerActorID string, limit int, rawCursor string) (CatalogProductPage, error) {
-	if limit < 1 || limit > 100 || strings.TrimSpace(partnerActorID) == "" {
-		return CatalogProductPage{}, errors.New("catalog Product partner listing facts are invalid")
-	}
-	query = strings.TrimSpace(query)
-	verticalID = strings.TrimSpace(verticalID)
-	partnerActorID = strings.TrimSpace(partnerActorID)
-	cursor, err := decodeCatalogProductCursor(rawCursor, query, verticalID, partnerActorID, false)
-	if err != nil {
-		return CatalogProductPage{}, err
-	}
-	var cursorName string
-	var cursorProductID string
-	if cursor != nil {
-		cursorName, cursorProductID = cursor.CanonicalName, cursor.ProductID
-	}
-	rows, err := db.QueryContext(ctx, catalogProductSelect+` WHERE
-		((p.scope='SHARED' AND EXISTS (SELECT 1 FROM dsh.commerce_verticals cv WHERE cv.id=p.vertical_id AND cv.catalog_model='SHARED_CATALOG'))
-		OR (p.scope='STORE_SCOPED' AND EXISTS (SELECT 1 FROM dsh.stores owned_store JOIN dsh.commerce_verticals cv ON cv.id=owned_store.primary_vertical_id WHERE owned_store.id=p.store_id AND owned_store.partner_actor_id=$1 AND cv.id=p.vertical_id AND cv.catalog_model='STORE_LOCAL_CATALOG')))
+	rows, err := db.QueryContext(ctx, `SELECT p.id,p.vertical_id,p.scope,p.store_id,p.canonical_name,p.description,p.brand,p.active,p.version,p.created_at,p.updated_at
+		FROM dsh.catalog_products p
+		WHERE (($1='' AND p.scope='SHARED') OR ($1<>'' AND ((p.scope='SHARED' AND EXISTS (SELECT 1 FROM dsh.commerce_verticals cv WHERE cv.id=p.vertical_id AND cv.catalog_model='SHARED_CATALOG')) OR (p.scope='STORE_SCOPED' AND EXISTS (SELECT 1 FROM dsh.stores owned_store JOIN dsh.commerce_verticals cv ON cv.id=owned_store.primary_vertical_id WHERE owned_store.id=p.store_id AND owned_store.partner_actor_id=$1 AND cv.id=p.vertical_id AND cv.catalog_model='STORE_LOCAL_CATALOG')))))
 		AND ($2='' OR p.vertical_id=$2)
 		AND ($3='' OR lower(p.canonical_name) LIKE lower($3))
 		AND (NOT $6::boolean OR (lower(p.canonical_name),p.id)>($4::text,$5::text))
-		ORDER BY lower(p.canonical_name),p.id LIMIT $7`, partnerActorID, verticalID, query+"%", cursorName, cursorProductID, cursor != nil, limit+1)
+		AND (NOT $7::boolean OR p.active=true)
+		ORDER BY lower(p.canonical_name),p.id LIMIT $8`, partnerActorID, verticalID, query+"%", cursorName, cursorProductID, cursor != nil, activeOnly, limit+1)
 	if err != nil {
 		return CatalogProductPage{}, err
 	}
@@ -1040,7 +1012,7 @@ func ListCatalogProductsForPartner(ctx context.Context, db *sql.DB, query, verti
 	if err := rows.Err(); err != nil {
 		return CatalogProductPage{}, err
 	}
-	pageCursor := catalogProductCursor{Version: 1, Query: query, VerticalID: verticalID, PartnerActorID: partnerActorID}
+	pageCursor := catalogProductCursor{Version: 1, Query: query, VerticalID: verticalID, PartnerActorID: partnerActorID, ActiveOnly: activeOnly}
 	return finishCatalogProductPage(ctx, db, items, limit, pageCursor)
 }
 

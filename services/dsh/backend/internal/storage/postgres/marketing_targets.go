@@ -61,7 +61,6 @@ func resolveDiscoveryContentTarget(ctx context.Context, source discoveryContentT
 		return DiscoveryContentTargetResolution{}, ErrDiscoveryContentTargetInvalid
 	}
 
-	catalogConditions := strings.Join(customerVisibleOfferConditionsForAliases("offer", "variant", "product", "store"), " AND ")
 	targetPredicate := discoveryContentTargetEligibilityPredicate("target", "$3", "$4")
 	query := `WITH target AS (
 		SELECT $1::text AS target_type,NULLIF($2::text,'') AS target_id
@@ -84,7 +83,7 @@ func resolveDiscoveryContentTarget(ctx context.Context, source discoveryContentT
 	           WHERE ($3='' OR store.service_city_id=$3)
 	             AND ((target.target_type='PRODUCT' AND product.id=target.target_id)
 	               OR (target.target_type='CATEGORY' AND product_category.category_id=target.target_id))
-	             AND ` + catalogConditions + `
+	             AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=offer.id)
 	           ORDER BY store.id ASC LIMIT 1
 	         ),'')
 	         ELSE ''
@@ -106,7 +105,6 @@ func resolveDiscoveryContentTarget(ctx context.Context, source discoveryContentT
 }
 
 func discoveryContentTargetEligibilityPredicate(contentAlias, serviceCityPlaceholder, atExpression string) string {
-	catalogConditions := strings.Join(customerVisibleOfferConditionsForAliases("offer", "variant", "product", "store"), " AND ")
 	return `(
 		(` + contentAlias + `.target_type='INFO' AND ` + contentAlias + `.target_id IS NULL)
 		OR (` + contentAlias + `.target_type='STORE' AND EXISTS (
@@ -150,7 +148,7 @@ func discoveryContentTargetEligibilityPredicate(contentAlias, serviceCityPlaceho
 			JOIN dsh.catalog_products product ON product.id=variant.product_id
 			WHERE (` + serviceCityPlaceholder + `='' OR store.service_city_id=` + serviceCityPlaceholder + `)
 			  AND product.id=` + contentAlias + `.target_id
-			  AND ` + catalogConditions + `
+			  AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=offer.id)
 		))
 		OR (` + contentAlias + `.target_type='CATEGORY' AND EXISTS (
 			SELECT 1
@@ -162,7 +160,7 @@ func discoveryContentTargetEligibilityPredicate(contentAlias, serviceCityPlaceho
 			JOIN dsh.catalog_product_categories product_category ON product_category.product_id=product.id
 			WHERE (` + serviceCityPlaceholder + `='' OR store.service_city_id=` + serviceCityPlaceholder + `)
 			  AND product_category.category_id=` + contentAlias + `.target_id
-			  AND ` + catalogConditions + `
+			  AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=offer.id)
 		))
 	)`
 }
