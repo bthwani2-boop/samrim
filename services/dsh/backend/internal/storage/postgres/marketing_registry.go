@@ -166,7 +166,7 @@ func ListOperatorDiscoveryContentRegistry(ctx context.Context, db *sql.DB, query
 	args = append(args, query.Limit+1)
 	rows, err := db.QueryContext(ctx, `
 		SELECT `+discoveryContentSelect+`
-		FROM dsh.discovery_content
+		FROM dsh.discovery_content AS content
 		WHERE `+strings.Join(filters, " AND ")+`
 		ORDER BY `+orderBy+`
 		LIMIT $`+strconv.Itoa(len(args))+`
