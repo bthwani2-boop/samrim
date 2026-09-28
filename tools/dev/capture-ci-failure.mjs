@@ -59,9 +59,8 @@ function readJsonLinesIfPresent(file) {
   });
 }
 
-function readNonEmptyLines(file) {
-  if (!fs.existsSync(file)) return [];
-  return fs.readFileSync(file, "utf8").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+function nonEmptyLines(value) {
+  return String(value ?? "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 }
 
 const metadata = {
@@ -97,7 +96,7 @@ if (nxKinds.has(kind)) {
   if (metadata.nxBase && metadata.nxHead) {
     const affected = run("pnpm", ["exec", "nx", "show", "projects", "--affected", `--base=${metadata.nxBase}`, `--head=${metadata.nxHead}`]);
     write("affected-projects.txt", affected.stdout + affected.stderr);
-    affectedProjects = affected.status === 0 ? readNonEmptyLines(path.join(outDir, "affected-projects.txt")) : [];
+    affectedProjects = affected.status === 0 ? nonEmptyLines(affected.stdout) : [];
     const taskGraphPath = path.join(outDir, "affected-static-task-graph.json");
     const taskGraph = run("pnpm", ["exec", "nx", "affected", "-t", "lint,format-check,typecheck,unit,contract,build,export-smoke,vet", `--base=${metadata.nxBase}`, `--head=${metadata.nxHead}`, `--graph=${taskGraphPath}`]);
     if (taskGraph.status !== 0) write("affected-task-graph-error.txt", taskGraph.stdout + taskGraph.stderr);
