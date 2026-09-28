@@ -5,6 +5,7 @@ import path from "node:path";
 const root = path.resolve(import.meta.dirname, "../../..");
 
 export const laneOrder = ["control", "identity", "wlt", "dsh"];
+const compareStrings = (left, right) => String(left).localeCompare(String(right), "en");
 
 export const laneTargets = {
   control: ["control-panel:browser-live-proof"],
@@ -98,7 +99,7 @@ export function resolveFromAffected(affected, configs, fullRegression = false) {
   }
 
   if (unclassified.length) {
-    throw new Error(`runtime-sensitive Nx projects lack runtime classification: ${unclassified.sort().join(",")}`);
+    throw new Error(`runtime-sensitive Nx projects lack runtime classification: ${unclassified.sort(compareStrings).join(",")}`);
   }
 
   return buildResolution(affected, laneOrder.filter((lane) => lanes.has(lane)), reasons);
@@ -111,7 +112,7 @@ function buildResolution(affected, lanes, reasons) {
     return [...checkerFixtureTarget, ...laneTargets.dsh];
   });
   return {
-    affected: [...affected].sort(),
+    affected: [...affected].sort(compareStrings),
     lanes,
     targets: unique(targets),
     images: unique(lanes.flatMap((lane) => laneImages[lane])),

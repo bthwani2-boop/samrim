@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "../..");
+const compareStrings = (left, right) => String(left).localeCompare(String(right), "en");
 const openApiPath = path.join(root, "services/wlt/contracts/openapi/wlt.openapi.yaml");
 const clientPath = path.join(root, "services/dsh/backend/internal/integrations/wlt/client.go");
 const openApi = fs.readFileSync(openApiPath, "utf8");
@@ -31,7 +32,7 @@ for (const match of client.matchAll(/["`]([^"`\n]*\/wlt\/v1\/[^"`\n]*)["`]/g)) {
 }
 if (clientRouteLiterals.size < 10) failures.push(`DSH WLT client endpoint census is unexpectedly small: ${clientRouteLiterals.size}`);
 
-for (const literal of [...clientRouteLiterals].sort()) {
+for (const literal of [...clientRouteLiterals].sort(compareStrings)) {
   const shape = pathShape(literal);
   const hasFormatSlot = /%[-+#0-9.]*[a-zA-Z]/.test(literal);
   const matched = hasFormatSlot
@@ -126,7 +127,7 @@ if (matchedSchemas.length < 5) failures.push(`WLT client/OpenAPI schema overlap 
 
 if (failures.length) {
   console.error("WLT_CONTRACT_CONFORMANCE=FAIL");
-  for (const failure of [...new Set(failures)].sort()) console.error(`  ${failure}`);
+  for (const failure of [...new Set(failures)].sort(compareStrings)) console.error(`  ${failure}`);
   process.exit(1);
 }
 console.log(`WLT_CONTRACT_CONFORMANCE=PASS openapi_paths=${openApiPaths.size} client_endpoints=${clientRouteLiterals.size} matched_schemas=${matchedSchemas.length}`);

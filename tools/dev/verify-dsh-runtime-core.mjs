@@ -57,7 +57,7 @@ if (dshToken.length < 24 || identityDshToken.length < 24 || bootstrapToken.lengt
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", path.join(root, "infra/local/compose/compose.yaml")];
 const suffix = `${Date.now().toString(36)}-${crypto.randomBytes(6).toString("hex")}`;
 const citySuffix = String(Date.now());
-const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), challengeIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), paymentIntentIDs = new Set(), cashInFundingIntentIDs = new Set(), deliveryFeePolicyIDs = new Set(), fieldCommissionPolicyIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set(), captainAdmissionIDs = new Set(), captainOfferIDs = new Set(), captainAssignmentIDs = new Set(), fieldAdmissionIDs = new Set(), destinationIDs = new Set(), payoutIDs = new Set(), settlementBatchIDs = new Set(), promotionIDs = new Set(), contentIDs = new Set(), multiStoreCheckoutIDs = new Set(), partnerCommissionRemittanceIDs = new Set();
+const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), challengeIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), paymentIntentIDs = new Set(), cashInFundingIntentIDs = new Set(), deliveryFeePolicyIDs = new Set(), fieldCommissionPolicyIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set(), captainAdmissionIDs = new Set(), captainOfferIDs = new Set(), captainAssignmentIDs = new Set(), fieldAdmissionIDs = new Set(), destinationIDs = new Set(), payoutIDs = new Set(), settlementBatchIDs = new Set(), promotionIDs = new Set(), multiStoreCheckoutIDs = new Set(), partnerCommissionRemittanceIDs = new Set();
 let cityA = "";
 let cityB = "";
 let verticalID = "";
@@ -293,12 +293,7 @@ function cleanup() {
     sql(`DELETE FROM dsh.joining_case_mutation_idempotency WHERE case_id='${value}'`);
     sql(`DELETE FROM dsh.joining_cases WHERE id='${value}'`);
   }
-  for (const contentID of contentIDs) {
-    const value = sqlLiteral(contentID);
-    sql(`DELETE FROM dsh.commerce_marketing_mutation_idempotency WHERE resource_id='${value}'`);
-    sql(`DELETE FROM dsh.discovery_content WHERE id='${value}'`);
-  }
-  for (const promotionID of promotionIDs) {
+for (const promotionID of promotionIDs) {
     const value = sqlLiteral(promotionID);
     sql(`DELETE FROM dsh.commerce_promotion_redemptions WHERE promotion_id='${value}'`);
     sql(`DELETE FROM dsh.commerce_marketing_mutation_idempotency WHERE resource_id='${value}'`);

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "../..");
+const compareStrings = (left, right) => String(left).localeCompare(String(right), "en");
 const failures = [];
 const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 const data = (relative) => JSON.parse(read(relative));
@@ -9,7 +10,7 @@ const assert = (condition, message) => { if (!condition) failures.push(message);
 
 const ciWorkflowNames = ["ci-policy.yml", "ci-runtime.yml", "ci-security.yml", "ci-static.yml"];
 const observationWorkflowNames = ["sonar-observe.yml"];
-const workflowNames = [...ciWorkflowNames, ...observationWorkflowNames].sort();
+const workflowNames = [...ciWorkflowNames, ...observationWorkflowNames].sort(compareStrings);
 const discovered = fs.readdirSync(path.join(root, ".github/workflows")).filter((name) => /\.ya?ml$/.test(name)).sort();
 assert(JSON.stringify(discovered) === JSON.stringify(workflowNames), "canonical workflow set drifted");
 
@@ -119,7 +120,7 @@ assert(/^[A-Za-z0-9_.:-]+$/.test(sonarProperties.get("sonar.projectKey") ?? ""),
 
 if (failures.length) {
   console.error("EXECUTION_PROOF_SYSTEM=FAIL");
-  for (const failure of [...new Set(failures)].sort()) console.error(`  ${failure}`);
+  for (const failure of [...new Set(failures)].sort(compareStrings)) console.error(`  ${failure}`);
   process.exit(1);
 }
 console.log("EXECUTION_PROOF_SYSTEM=PASS workflows=4 observation_workflows=1 runtime_router=nx affected_scope=claim-driven runtime_dag=decoupled diagnostics=agent-first-bounded-harvest cache_inputs=causal");
