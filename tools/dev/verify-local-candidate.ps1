@@ -65,7 +65,7 @@ try {
     Write-Host "VERIFY_BASE_SHA=$BaseSha"
     Write-Host "EXACT_LOCAL_CANDIDATE_SHA=$head"
     Write-Host 'VERIFY_SCOPE_AUTHORITY=NX_TASK_INPUTS_AND_AFFECTED_GRAPH'
-    Write-Host 'VERIFY_OUTPUT_MODE=MACHINE_DIAGNOSTIC_ON_FAILURE'
+    Write-Host 'VERIFY_OUTPUT_MODE=CAUSAL_MACHINE_DIAGNOSTIC_ON_FAILURE'
 
     if ((& node --version).Trim() -ne 'v24.17.0') { Fail 'Node version mismatch.' }
     if ((& pnpm --version).Trim() -ne '10.34.0') { Fail 'pnpm version mismatch.' }
@@ -90,7 +90,7 @@ try {
         $exitCode = Invoke-RecordedProof $step.Name $step.Command
         if ($exitCode -ne 0) {
             & node (Join-Path $Repo 'tools/dev/capture-ci-failure.mjs') '--kind=local-static'
-            Fail "Required local proof failed: $($step.Name). Consume the emitted agent-diagnostic.json before any unrelated material work."
+            Fail "Required local proof failed: $($step.Name). Consume closure-diagnostic.json, collapse the highest provable causal roots, repair them, and rerun only invalidated evidence before unrelated material work."
         }
     }
 
