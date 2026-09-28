@@ -113,6 +113,12 @@ Proof tooling must not reset developer credentials, authorize re-enrollment, rev
 
 Use Git plus the canonical Nx graph.
 
+### Graphify
+
+- If `graphify-out/graph.json` exists, use the global Graphify skill or `graphify query` for code navigation. Treat results as derived evidence; verify implementation claims against canonical sources, contracts and runtime evidence.
+- After code changes, run `graphify update .` before relying on the graph again.
+- Keep watchers off by default. Use a temporary, repository-scoped watcher only for long, multi-wave work that needs fresh graph queries between waves; stop it and confirm it stopped when done. For documentation, papers or images, follow the skill's semantic update flow when `graphify-out/needs_update` is set.
+
 CHANGED INPUT
 → NX AFFECTED OWNER
 → AFFECTED CLAIM
