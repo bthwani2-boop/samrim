@@ -3,9 +3,12 @@ package transporthttp
 import (
 	"database/sql"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/lib/pq"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/cart"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
@@ -118,7 +121,7 @@ func (s *CartServer) upsertLine(w http.ResponseWriter, r *http.Request) {
 	}
 	result, replayed, err := s.service.UpsertLine(r.Context(), bearerToken(r), storeID, input.StoreOfferID, int64(input.QuantityBaseUnits), input.SelectedModifierOptionIds, expected, idempotency, correlation)
 	if err != nil {
-		writeCartError(w, err)
+		writeCartErrorWithCorrelation(w, err, correlation)
 		return
 	}
 	writeJSON(w, responseStatus(replayed), contract.CartResponse{Cart: toCart(result), IdempotentReplay: replayed})
@@ -235,6 +238,10 @@ func toCheckoutQuote(item cart.CheckoutQuote) contract.CheckoutQuote {
 }
 
 func writeCartError(w http.ResponseWriter, err error) {
+	writeCartErrorWithCorrelation(w, err, "")
+}
+
+func writeCartErrorWithCorrelation(w http.ResponseWriter, err error, correlationID string) {
 	switch {
 	case errors.Is(err, postgres.ErrExternalOutcomeUnknown):
 		writeError(w, http.StatusBadGateway, "CHECKOUT_OUTCOME_UNKNOWN", "the order or payment outcome could not be confirmed; read the cart's order status before continuing")
@@ -282,6 +289,22 @@ func writeCartError(w http.ResponseWriter, err error) {
 			writeIdentityError(w, err)
 			return
 		}
+		if correlationID != "" {
+			logCartInternalFailure(correlationID, err)
+		}
 		writeError(w, http.StatusBadGateway, "DSH_STORAGE_UNAVAILABLE", "DSH persistence, Identity, or serviceability is unavailable")
 	}
+}
+
+func logCartInternalFailure(correlationID string, err error) {
+	var databaseErr *pq.Error
+	if errors.As(err, &databaseErr) {
+		log.Printf("cart persistence failure correlation_id=%q sqlstate=%q schema=%q table=%q column=%q constraint=%q", correlationID, string(databaseErr.Code), databaseErr.Schema, databaseErr.Table, databaseErr.Column, databaseErr.Constraint)
+		return
+	}
+	cause := err
+	for errors.Unwrap(cause) != nil {
+		cause = errors.Unwrap(cause)
+	}
+	log.Printf("cart internal failure correlation_id=%q cause_type=%T cause=%q", correlationID, cause, cause.Error())
 }
