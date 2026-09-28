@@ -10,10 +10,11 @@ import (
 )
 
 var (
-	ErrFundingIntentNotFound = errors.New("cash-in funding intent was not found")
-	ErrFundingIntentState    = errors.New("cash-in funding intent does not allow this result")
-	ErrFundingUnavailable    = errors.New("cash-in is unavailable because no approved provider rail is configured")
-	ErrFundingActor          = errors.New("actor is not admitted for cash-in")
+	ErrFundingIntentNotFound          = errors.New("cash-in funding intent was not found")
+	ErrFundingIntentState             = errors.New("cash-in funding intent does not allow this result")
+	ErrFundingUnavailable             = errors.New("cash-in is unavailable because no approved provider rail is configured")
+	ErrFundingActor                   = errors.New("actor is not admitted for cash-in")
+	ErrCustomerWalletBalanceInvariant = errors.New("customer wallet holds exceed its ledger balance")
 )
 
 const DevelopmentSimulatorProvider = "DEVELOPMENT_SIMULATOR"
@@ -206,6 +207,11 @@ func ApplyCashInFundingResult(ctx context.Context, db *sql.DB, input ApplyCashIn
 	if item.State != "PENDING_PROVIDER" && item.State != "UNKNOWN" {
 		return CashInFundingIntentRecord{}, false, ErrFundingIntentState
 	}
+	if input.Outcome == "SUCCESS" && item.ActorType == "captain" {
+		if err := lockCaptainWalletBalance(ctx, tx, item.ActorID); err != nil {
+			return CashInFundingIntentRecord{}, false, err
+		}
+	}
 	newState, eventType := item.State, ""
 	switch input.Outcome {
 	case "DELAYED":
@@ -274,6 +280,63 @@ func ReadWalletBalance(ctx context.Context, db *sql.DB, actorType, actorID strin
 		return 0, err
 	}
 	return balance, nil
+}
+
+type CustomerWalletStateRecord struct {
+	LedgerBalanceMinor int64
+	HeldMinor          int64
+	AvailableMinor     int64
+}
+
+type walletStateQuerier interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func ReadCustomerWalletState(ctx context.Context, db *sql.DB, actorID string) (CustomerWalletStateRecord, error) {
+	actorID = strings.TrimSpace(actorID)
+	if db == nil || boundedText(actorID, 1, 128) == "" {
+		return CustomerWalletStateRecord{}, ErrInvalidInput
+	}
+	return readCustomerWalletState(ctx, db, actorID)
+}
+
+func lockCustomerWalletBalance(ctx context.Context, tx *sql.Tx, actorID string) error {
+	actorID = strings.TrimSpace(actorID)
+	if tx == nil || boundedText(actorID, 1, 128) == "" {
+		return ErrInvalidInput
+	}
+	_, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:customer-balance:"+actorID)
+	return err
+}
+
+func readCustomerWalletState(ctx context.Context, source walletStateQuerier, actorID string) (CustomerWalletStateRecord, error) {
+	var state CustomerWalletStateRecord
+	var payoutHolds, orderReservations int64
+	err := source.QueryRowContext(ctx, `
+		SELECT
+			COALESCE((SELECT SUM(CASE direction WHEN 'CREDIT' THEN amount_minor ELSE -amount_minor END)
+				FROM wlt.ledger_entries WHERE account_code='CUSTOMER_WALLET' AND actor_type='customer' AND actor_id=$1),0),
+			COALESCE((SELECT SUM(amount_minor) FROM wlt.payout_holds
+				WHERE actor_type='customer' AND actor_id=$1 AND status='ACTIVE'),0),
+			COALESCE((SELECT SUM(a.internal_balance_amount_minor)
+				FROM wlt.customer_payment_allocations a
+				JOIN wlt.payment_intents p ON p.id=a.payment_intent_id
+				WHERE p.payer_actor_id=$1 AND p.state<>'CANCELLED' AND a.internal_balance_amount_minor>0
+					AND NOT EXISTS (SELECT 1 FROM wlt.partner_order_earnings e WHERE e.order_id=a.order_id)
+					AND NOT EXISTS (SELECT 1 FROM wlt.partner_store_cash_commissions c WHERE c.order_id=a.order_id)),0)`, actorID).
+		Scan(&state.LedgerBalanceMinor, &payoutHolds, &orderReservations)
+	if err != nil {
+		return CustomerWalletStateRecord{}, err
+	}
+	if payoutHolds < 0 || orderReservations < 0 || payoutHolds > int64(^uint64(0)>>1)-orderReservations {
+		return CustomerWalletStateRecord{}, ErrCustomerWalletBalanceInvariant
+	}
+	state.HeldMinor = payoutHolds + orderReservations
+	if state.LedgerBalanceMinor < state.HeldMinor {
+		return CustomerWalletStateRecord{}, ErrCustomerWalletBalanceInvariant
+	}
+	state.AvailableMinor = state.LedgerBalanceMinor - state.HeldMinor
+	return state, nil
 }
 
 func ListCashInFundingIntents(ctx context.Context, db *sql.DB, actorType, actorID string, limit int) ([]CashInFundingIntentRecord, error) {

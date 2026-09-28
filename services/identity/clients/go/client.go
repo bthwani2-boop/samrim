@@ -79,12 +79,6 @@ func New(endpoint Endpoint, serviceToken string) (*Client, error) {
 	return &Client{endpoint: endpoint, token: serviceToken, http: &http.Client{Timeout: 8 * time.Second}}, nil
 }
 
-func (c *Client) IssueOperatorEnrollmentTokenWithContext(ctx context.Context, input OperatorEnrollmentTokenIssueRequest, correlationID, operatorActorID string) (OperatorEnrollmentToken, error) {
-	var result OperatorEnrollmentToken
-	err := c.doWithContext(ctx, IdentityOperationIssueOperatorEnrollmentToken.Method, IdentityOperationIssueOperatorEnrollmentToken.Path, correlationID, "", operatorActorID, 0, input, &result)
-	return result, err
-}
-
 func (c *Client) ProvisionRoleWithContext(ctx context.Context, input ProvisionActorRoleRequest, correlationID, operatorActorID string) (ActorRoleView, error) {
 	var result ActorRoleView
 	err := c.doWithContext(ctx, IdentityOperationProvisionActorRole.Method, IdentityOperationProvisionActorRole.Path, correlationID, "", operatorActorID, 0, input, &result)
@@ -94,6 +88,12 @@ func (c *Client) ReadRole(ctx context.Context, actorID, role string) (ActorRoleV
 	var result ActorRoleView
 	pathname := identityRoute(IdentityOperationReadActorRole.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "role", url.PathEscape(strings.TrimSpace(role)))
 	err := c.do(ctx, IdentityOperationReadActorRole.Method, pathname, "", nil, &result)
+	return result, err
+}
+
+func (c *Client) ReadRoles(ctx context.Context, input ActorRoleReadBatchRequest) (ActorRoleReadBatchResponse, error) {
+	var result ActorRoleReadBatchResponse
+	err := c.do(ctx, IdentityOperationReadActorRoles.Method, IdentityOperationReadActorRoles.Path, "", input, &result)
 	return result, err
 }
 

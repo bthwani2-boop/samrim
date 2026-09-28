@@ -1,7 +1,7 @@
 "use client";
 
 import { toAsciiDigits } from "@bthwani/design-system";
-import type { OperatorEnrollmentToken, OperatorPermission, OperatorPermissionAccess } from "@bthwani/identity";
+import type { OperatorPermission, OperatorPermissionAccess } from "@bthwani/identity";
 import { useEffect, useRef, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { operatorWorkspacePermissions } from "../../session/operator-permissions";
@@ -35,7 +35,6 @@ export function AccountAccessPanel({ selectedPhone = "" }: Readonly<{ selectedPh
   const [reason, setReason] = useState("");
   const [permissionReasons, setPermissionReasons] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<ManagedOperatorStatus | null>(null);
-  const [result, setResult] = useState<OperatorEnrollmentToken | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [finalStateUnverified, setFinalStateUnverified] = useState(false);
@@ -77,7 +76,6 @@ export function AccountAccessPanel({ selectedPhone = "" }: Readonly<{ selectedPh
   useEffect(() => {
     const value = phone.trim();
     const id = ++requestId.current;
-    setResult(null);
     setError("");
     setReason("");
     setStatus(null);
@@ -100,34 +98,6 @@ export function AccountAccessPanel({ selectedPhone = "" }: Readonly<{ selectedPh
     })(), 450);
     return () => window.clearTimeout(timeout);
   }, [phone]);
-
-  async function provision() {
-    if (!phone.trim()) return;
-    setBusy(true);
-    setError("");
-    setResult(null);
-    let mutationApplied = false;
-    try {
-      const response = await identityFetch("/api/access/managed-user", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: phone.trim(), role: "operator" }),
-      });
-      if (!response.ok) {
-        setError(await responseMessage(response));
-        return;
-      }
-      mutationApplied = true;
-      setResult(await response.json() as OperatorEnrollmentToken);
-      await refreshCanonicalStatus();
-    } catch (cause) {
-      if (mutationApplied) markFinalStateUnverified();
-      else if (isRequestFailure(cause)) setError(cause.message);
-      else setError("تعذر تهيئة مشغّل لوحة التحكم.");
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function changeAccount(action: "disable-role" | "enable-role" | "disable-identity" | "enable-identity") {
     const reasonLength = Array.from(reason.trim()).length;
@@ -210,7 +180,6 @@ export function AccountAccessPanel({ selectedPhone = "" }: Readonly<{ selectedPh
 
   const canManagePermissionTarget = sessionState.kind === "authenticated" && sessionState.identity.canManageOperatorPermissions === true && status?.role === "operator" && Boolean(status.actorId) && status.actorId !== sessionState.identity.subject && operatorWorkspacePermissions.every(({ key }) => Boolean(status.operatorPermissions?.[key]));
   const canViewOwnPermissions = sessionState.kind === "authenticated" && status?.role === "operator" && status.actorId === sessionState.identity.subject;
-  const canIssueActivation = status !== null && !status.activated && (status.exists === false || status.enabled);
 
   return (
     <section className="access-card" aria-labelledby="account-access-title">
@@ -222,7 +191,6 @@ export function AccountAccessPanel({ selectedPhone = "" }: Readonly<{ selectedPh
       </div>
       <div className="access-form">
         <label className="field-label" htmlFor="account-phone">رقم هاتف المشغّل<input id="account-phone" autoComplete="tel" disabled={busy} inputMode="tel" placeholder="مثال: 967 77 000 100" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} /></label>
-        {canIssueActivation ? <button type="button" className="button button-primary" disabled={busy || !phone.trim()} onClick={() => void provision()}>{busy ? "جارٍ تجهيز الحساب…" : "تهيئة المشغّل وإصدار دعوة آمنة"}</button> : null}
       </div>
       {status ? (
         <div className={`managed-status ${status.exists && status.enabled && status.securityEnabled ? "managed-status-info" : "managed-status-warning"}`} role="status">
@@ -251,11 +219,10 @@ export function AccountAccessPanel({ selectedPhone = "" }: Readonly<{ selectedPh
             </div>
           </> : <>
             <strong>لا يوجد مشغّل مهيأ لهذا الرقم.</strong>
-            <p>يمكن إصدار دعوة تسجيل لمشغّل لوحة التحكم من هنا.</p>
+            <p>أنشئ ملف المشغّل وراجعه في تبويب «ملفات المشغّلين» قبل منح الدور وإصدار الدعوة.</p>
           </>}
         </div>
       ) : null}
-      {result ? <div className="code-output" role="status"><span className="summary-label">دعوة مشغّل عالية الأمان</span><code>{result.code}</code><p>تُعرض هذه الدعوة مرة واحدة وتُستخدم لتفعيل مشغّل لوحة التحكم، وتنتهي في {new Date(result.expiresAt).toLocaleString("ar-YE-u-nu-latn", { dateStyle: "medium", timeStyle: "short" })}.</p></div> : null}
       {finalStateUnverified ? <p className="identity-error" role="alert">الحالة النهائية غير متحققة؛ أعد تحميل الحالة قبل تنفيذ إجراء آخر.</p> : null}
       {error ? <p className="identity-error" role="alert">{error}</p> : null}
     </section>

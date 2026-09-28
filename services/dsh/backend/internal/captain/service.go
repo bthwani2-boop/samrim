@@ -46,34 +46,64 @@ func New(identity *identityintegration.Client, db *sql.DB, payment *wlt.Client, 
 	return &Service{identity: identity, db: db, payment: payment, proofKeys: proofKeys}, nil
 }
 
-func (s *Service) Admit(ctx context.Context, phone, idempotencyKey, actingActorID, correlationID string) (postgres.CaptainAdmission, bool, error) {
+func (s *Service) Admit(ctx context.Context, fullNameAr, phone, idempotencyKey, actingActorID, correlationID string) (postgres.CaptainAdmission, bool, error) {
+	fullNameAr = strings.TrimSpace(fullNameAr)
 	phone = strings.TrimSpace(phone)
-	if !phoneE164Pattern.MatchString(phone) || !validMutation(idempotencyKey, correlationID, actingActorID) {
+	if len([]rune(fullNameAr)) < 2 || len([]rune(fullNameAr)) > 120 || !phoneE164Pattern.MatchString(phone) || !validMutation(idempotencyKey, correlationID, actingActorID) {
 		return postgres.CaptainAdmission{}, false, ErrInvalidInput
 	}
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.CaptainAdmission{}, false, err
 	}
-	hash := postgres.HashCaptainAdmissionRequest(phone)
-	admission, replayed, err := postgres.CreateCaptainAdmissionCandidate(ctx, s.db, phone, strings.TrimSpace(idempotencyKey), hash, strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
+	hash := postgres.HashCaptainAdmissionRequest(fullNameAr, phone)
+	admission, replayed, err := postgres.CreateCaptainAdmissionCandidate(ctx, s.db, fullNameAr, phone, strings.TrimSpace(idempotencyKey), hash, strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
 	if err != nil {
 		return postgres.CaptainAdmission{}, false, err
+	}
+	return admission, replayed, nil
+}
+
+func (s *Service) Approve(ctx context.Context, admissionID string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.CaptainAdmission, bool, error) {
+	if !validMutation(idempotencyKey, correlationID, actingActorID) {
+		return postgres.CaptainAdmission{}, false, ErrInvalidInput
+	}
+	if expectedVersion < 1 {
+		return postgres.CaptainAdmission{}, false, ErrInvalidInput
+	}
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return postgres.CaptainAdmission{}, false, err
+	}
+	return postgres.ApproveCaptainAdmission(ctx, s.db, admissionID, expectedVersion, idempotencyKey, postgres.HashCaptainAdmissionApprovalRequest(admissionID, expectedVersion), actingActorID, correlationID)
+}
+
+func (s *Service) Provision(ctx context.Context, admissionID, idempotencyKey, actingActorID, correlationID string) (postgres.CaptainAdmission, error) {
+	if !validMutation(idempotencyKey, correlationID, actingActorID) {
+		return postgres.CaptainAdmission{}, ErrInvalidInput
+	}
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return postgres.CaptainAdmission{}, err
+	}
+	admission, err := postgres.ReadCaptainAdmission(ctx, s.db, admissionID)
+	if err != nil {
+		return postgres.CaptainAdmission{}, err
 	}
 	if admission.State == "eligible" {
-		return admission, replayed, nil
+		return admission, nil
 	}
-	role, err := s.identity.ProvisionCaptainWithContext(ctx, identityintegration.ActorInput{PhoneE164: phone}, correlationID, actingActorID)
+	if admission.State != "pending_identity" || admission.PhoneE164 == "" {
+		return postgres.CaptainAdmission{}, postgres.ErrCaptainAdmissionNotEligible
+	}
+	role, err := s.identity.ProvisionCaptainWithContext(ctx, identityintegration.ActorInput{PhoneE164: admission.PhoneE164}, correlationID, actingActorID)
 	if err != nil {
-		return postgres.CaptainAdmission{}, false, err
+		return postgres.CaptainAdmission{}, err
 	}
 	if role.Role != "captain" || strings.TrimSpace(role.ActorID) == "" {
-		return postgres.CaptainAdmission{}, false, ErrCaptainIdentityUnavailable
+		return postgres.CaptainAdmission{}, ErrCaptainIdentityUnavailable
 	}
-	bound, err := postgres.BindCaptainAdmission(ctx, s.db, admission.ID, role.ActorID, strings.TrimSpace(idempotencyKey), hash, strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
-	if err != nil {
-		return postgres.CaptainAdmission{}, false, err
+	if !role.Enabled || !role.SecurityEnabled {
+		return postgres.CaptainAdmission{}, ErrManagedRoleNotEligible
 	}
-	return bound, false, nil
+	return postgres.BindCaptainAdmission(ctx, s.db, admission.ID, role.ActorID, idempotencyKey, postgres.HashCaptainAdmissionTransition("bind", admissionID), actingActorID, correlationID)
 }
 
 func (s *Service) ReadForOperator(ctx context.Context, admissionID, actingActorID string) (postgres.CaptainAdmission, error) {
@@ -81,6 +111,33 @@ func (s *Service) ReadForOperator(ctx context.Context, admissionID, actingActorI
 		return postgres.CaptainAdmission{}, err
 	}
 	return postgres.ReadCaptainAdmission(ctx, s.db, admissionID)
+}
+
+func (s *Service) ListAdmissionsForOperator(ctx context.Context, query, state, sort string, limit int, cursor, actingActorID string) (postgres.CaptainAdmissionPage, error) {
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return postgres.CaptainAdmissionPage{}, err
+	}
+	return postgres.ListCaptainAdmissions(ctx, s.db, query, state, sort, limit, cursor)
+}
+
+func (s *Service) UpdateAdmissionProfile(ctx context.Context, admissionID, fullNameAr string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.CaptainAdmission, bool, error) {
+	if expectedVersion < 1 || !validMutation(idempotencyKey, correlationID, actingActorID) {
+		return postgres.CaptainAdmission{}, false, ErrInvalidInput
+	}
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return postgres.CaptainAdmission{}, false, err
+	}
+	return postgres.UpdateCaptainAdmissionProfile(ctx, s.db, admissionID, fullNameAr, expectedVersion, idempotencyKey, postgres.HashCaptainAdmissionProfileRequest(admissionID, fullNameAr, expectedVersion), actingActorID, correlationID)
+}
+
+func (s *Service) ReviewAdmissionProfile(ctx context.Context, admissionID string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.CaptainAdmission, bool, error) {
+	if expectedVersion < 1 || !validMutation(idempotencyKey, correlationID, actingActorID) {
+		return postgres.CaptainAdmission{}, false, ErrInvalidInput
+	}
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return postgres.CaptainAdmission{}, false, err
+	}
+	return postgres.ReviewCaptainAdmissionProfile(ctx, s.db, admissionID, expectedVersion, idempotencyKey, postgres.HashCaptainAdmissionProfileReviewRequest(admissionID, expectedVersion), actingActorID, correlationID)
 }
 
 func (s *Service) ReadForOperatorByActor(ctx context.Context, actorID, actingActorID string) (postgres.CaptainAdmission, error) {
@@ -98,7 +155,19 @@ func (s *Service) ReadForCaptain(ctx context.Context, accessToken string) (postg
 	if err != nil {
 		return postgres.CaptainAdmission{}, err
 	}
-	return postgres.ReadCaptainAdmissionForActor(ctx, s.db, identity.Subject)
+	admission, err := postgres.ReadCaptainAdmissionForActor(ctx, s.db, identity.Subject)
+	if err != nil {
+		return postgres.CaptainAdmission{}, err
+	}
+	role, err := s.identity.ReadActorRole(ctx, identity.Subject, "captain")
+	if err != nil {
+		return postgres.CaptainAdmission{}, err
+	}
+	if role.Role != "captain" {
+		return postgres.CaptainAdmission{}, ErrCaptainIdentityUnavailable
+	}
+	admission.PhoneE164 = role.PhoneE164
+	return admission, nil
 }
 
 func (s *Service) ReadForPartner(ctx context.Context, accessToken, storeID, orderID string) (postgres.CaptainAssignment, error) {
@@ -191,7 +260,7 @@ func (s *Service) RespondToOffer(ctx context.Context, accessToken, offerID, deci
 		return postgres.CaptainOfferResult{}, err
 	}
 	reserved := false
-	if order.FulfillmentMode == "BTHWANI_CAPTAIN" && order.PaymentIntentID != nil && strings.TrimSpace(*order.PaymentIntentID) != "" {
+	if order.FulfillmentMode == "BTHWANI_CAPTAIN" && order.PaymentCashAmountMinor > 0 && order.PaymentIntentID != nil && strings.TrimSpace(*order.PaymentIntentID) != "" {
 		_, _, reserveErr := s.payment.ReserveCaptainCOD(ctx, order.ID, *order.PaymentIntentID, identity.Subject, wlt.DerivedIdempotencyKey("captain-cod-reserve", offer.ID), correlationID)
 		if reserveErr != nil {
 			return postgres.CaptainOfferResult{}, fmt.Errorf("%w: captain COD authorization unavailable: %v", ErrPaymentUnavailable, reserveErr)
@@ -293,44 +362,17 @@ func (s *Service) Complete(ctx context.Context, accessToken, assignmentID, resul
 	submittedResult := strings.TrimSpace(result)
 	result = strings.ToLower(submittedResult)
 	deliveryProofCode = strings.TrimSpace(deliveryProofCode)
-	assignment, err := postgres.ReadCaptainAssignment(ctx, s.db, strings.TrimSpace(assignmentID))
-	if err != nil {
-		return postgres.CaptainAssignment{}, false, err
-	}
-	if assignment.CaptainActorID != identity.Subject {
-		return postgres.CaptainAssignment{}, false, postgres.ErrCaptainOfferForbidden
-	}
-	if result == "delivered" {
-		order, orderErr := postgres.ReadOrder(ctx, s.db, assignment.OrderID)
-		if orderErr != nil {
-			return postgres.CaptainAssignment{}, false, orderErr
-		}
-		if order.FulfillmentMode != postgres.FulfillmentModeBthwaniCaptain && order.FulfillmentMode != postgres.FulfillmentModePartnerCaptain {
-			return postgres.CaptainAssignment{}, false, postgres.ErrOrderStateConflict
-		}
-		if order.FulfillmentMode == postgres.FulfillmentModePartnerCaptain && order.PaymentMethod != "CASH_AT_STORE" {
-			return postgres.CaptainAssignment{}, false, postgres.ErrPaymentStateConflict
-		}
-		switch order.PaymentState {
-		case "REQUIRES_COLLECTION":
-			if order.PaymentIntentID == nil || collectedAmountMinor <= 0 || collectedAmountMinor != order.TotalAmountMinor {
-				return postgres.CaptainAssignment{}, false, ErrCollectionAmountMismatch
-			}
-		case "COLLECTED":
-			if order.FulfillmentMode == postgres.FulfillmentModePartnerCaptain || collectedAmountMinor != 0 && collectedAmountMinor != order.TotalAmountMinor {
-				return postgres.CaptainAssignment{}, false, ErrCollectionAmountMismatch
-			}
-		default:
-			return postgres.CaptainAssignment{}, false, postgres.ErrPaymentStateConflict
-		}
-	} else if result == "delivery_failed" {
-		if collectedAmountMinor != 0 {
-			return postgres.CaptainAssignment{}, false, ErrInvalidInput
-		}
-	} else {
+	if result != "delivered" && result != "delivery_failed" {
 		return postgres.CaptainAssignment{}, false, ErrInvalidInput
 	}
-	return postgres.CompleteCaptainAssignment(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject, submittedResult, collectedAmountMinor, deliveryProofCode, expectedVersion, strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID), s.proofKeys)
+	if result == "delivery_failed" && collectedAmountMinor != 0 {
+		return postgres.CaptainAssignment{}, false, ErrInvalidInput
+	}
+	assignment, replayed, err := postgres.CompleteCaptainAssignment(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject, submittedResult, collectedAmountMinor, deliveryProofCode, expectedVersion, strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID), s.proofKeys)
+	if errors.Is(err, postgres.ErrCaptainCollectedAmountMismatch) {
+		return postgres.CaptainAssignment{}, false, ErrCollectionAmountMismatch
+	}
+	return assignment, replayed, err
 }
 
 func (s *Service) Recover(ctx context.Context, assignmentID, actingActorID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.CaptainAssignment, bool, error) {
@@ -453,13 +495,13 @@ func (s *Service) SetManagedRoleEnabled(ctx context.Context, role, actorID, oper
 
 	accessHash := postgres.HashCaptainAccessRequest(actorID, role, enabled, expectedVersion)
 	if enabled {
-		if identityRole.Enabled != enabled {
-			if err := s.identity.SetRoleEnabledWithContext(ctx, actorID, role, true, strings.TrimSpace(correlationID), strings.TrimSpace(reason), strings.TrimSpace(operatorActorID), expectedVersion); err != nil {
-				return err
-			}
+		if _, err := postgres.RestoreCaptainAdmission(ctx, s.db, actorID, idempotencyKey, accessHash, strings.TrimSpace(operatorActorID), strings.TrimSpace(correlationID)); err != nil {
+			return err
 		}
-		_, err := postgres.RestoreCaptainAdmission(ctx, s.db, actorID, idempotencyKey, accessHash, strings.TrimSpace(operatorActorID), strings.TrimSpace(correlationID))
-		return err
+		if identityRole.Enabled != enabled {
+			return s.identity.SetRoleEnabledWithContext(ctx, actorID, role, true, strings.TrimSpace(correlationID), strings.TrimSpace(reason), strings.TrimSpace(operatorActorID), expectedVersion)
+		}
+		return nil
 	}
 
 	if _, err := postgres.SuspendCaptainAdmission(ctx, s.db, actorID, idempotencyKey, accessHash, strings.TrimSpace(operatorActorID), strings.TrimSpace(correlationID)); err != nil {
@@ -469,6 +511,65 @@ func (s *Service) SetManagedRoleEnabled(ctx context.Context, role, actorID, oper
 		return nil
 	}
 	return s.identity.SetRoleEnabledWithContext(ctx, actorID, role, false, strings.TrimSpace(correlationID), strings.TrimSpace(reason), strings.TrimSpace(operatorActorID), expectedVersion)
+}
+
+func (s *Service) AuthorizeManagedRoleReenrollment(ctx context.Context, role, actorID, operatorActorID, correlationID, reason string, expectedDomainVersion, expectedActorVersion, expectedRoleVersion int) error {
+	role = strings.ToLower(strings.TrimSpace(role))
+	actorID = strings.TrimSpace(actorID)
+	operatorActorID = strings.TrimSpace(operatorActorID)
+	correlationID = strings.TrimSpace(correlationID)
+	reason = strings.TrimSpace(reason)
+	if (role != "partner" && role != "captain") || actorID == "" || expectedDomainVersion < 1 || expectedActorVersion < 1 || expectedRoleVersion < 1 || len([]rune(reason)) < 5 || len([]rune(reason)) > 500 || !validMutation("managed-role-reenrollment", correlationID, operatorActorID) {
+		return ErrInvalidInput
+	}
+	permission := "operations"
+	if role == "partner" {
+		permission = "partners"
+	}
+	if err := s.requireOperatorPermission(ctx, operatorActorID, permission); err != nil {
+		return err
+	}
+
+	if role == "partner" {
+		tx, state, version, err := postgres.LockPartnerJoiningCase(ctx, s.db, actorID)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback() }()
+		if version != expectedDomainVersion {
+			return ErrManagedRoleVersionConflict
+		}
+		if !partnerJoiningStateAllowsReenrollment(state) {
+			return ErrManagedRoleNotEligible
+		}
+		return s.identity.AuthorizeReenrollmentWithContext(ctx, actorID, role, correlationID, reason, operatorActorID, expectedActorVersion, expectedRoleVersion)
+	}
+
+	tx, admission, err := postgres.LockCaptainReenrollmentAdmission(ctx, s.db, actorID)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if admission.Version != expectedDomainVersion {
+		return ErrManagedRoleVersionConflict
+	}
+	if !captainAdmissionAllowsReenrollment(admission) {
+		return ErrManagedRoleNotEligible
+	}
+	return s.identity.AuthorizeReenrollmentWithContext(ctx, actorID, role, correlationID, reason, operatorActorID, expectedActorVersion, expectedRoleVersion)
+}
+
+func partnerJoiningStateAllowsReenrollment(state string) bool {
+	switch state {
+	case "submitted", "needs_correction", "approved":
+		return true
+	default:
+		return false
+	}
+}
+
+func captainAdmissionAllowsReenrollment(admission postgres.CaptainAdmission) bool {
+	return admission.State == "eligible" && !admission.RequiresProfileReview
 }
 
 func (s *Service) requireCaptain(ctx context.Context, accessToken string) (identityclient.ActorIdentity, error) {

@@ -371,9 +371,24 @@ func transitionPayout(ctx context.Context, db *sql.DB, eventType, payoutID, acto
 		}
 		return item, nil
 	}
+	actorType, payoutActorID, err := payoutActor(ctx, tx, payoutID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return PayoutRequestRecord{}, ErrPayoutNotFound
+	}
+	if err != nil {
+		return PayoutRequestRecord{}, err
+	}
+	if actorType == "captain" {
+		if err := lockCaptainWalletBalance(ctx, tx, payoutActorID); err != nil {
+			return PayoutRequestRecord{}, err
+		}
+	}
 	payout, err := readPayoutForUpdate(ctx, tx, payoutID)
 	if err != nil {
 		return PayoutRequestRecord{}, err
+	}
+	if payout.ActorType != actorType || payout.ActorID != payoutActorID {
+		return PayoutRequestRecord{}, ErrPayoutState
 	}
 	if err := apply(tx, payout); err != nil {
 		return PayoutRequestRecord{}, err
@@ -880,6 +895,19 @@ func ReconcileManualTransfer(ctx context.Context, db *sql.DB, cipher *Destinatio
 		}
 		return item, nil
 	}
+	var actorType, actorID string
+	err = tx.QueryRowContext(ctx, `SELECT p.actor_type,p.actor_id FROM wlt.manual_transfer_executions t JOIN wlt.payout_requests p ON p.id=t.payout_id WHERE t.id=$1`, input.TransferID).Scan(&actorType, &actorID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ManualTransferExecutionRecord{}, ErrTransferNotFound
+	}
+	if err != nil {
+		return ManualTransferExecutionRecord{}, err
+	}
+	if actorType == "captain" {
+		if err := lockCaptainWalletBalance(ctx, tx, actorID); err != nil {
+			return ManualTransferExecutionRecord{}, err
+		}
+	}
 	var transfer ManualTransferExecutionRecord
 	if err := scanManualTransfer(ctx, tx, input.TransferID, true, &transfer); errors.Is(err, sql.ErrNoRows) {
 		return ManualTransferExecutionRecord{}, ErrTransferNotFound
@@ -912,16 +940,17 @@ func ReconcileManualTransfer(ctx context.Context, db *sql.DB, cipher *Destinatio
 	if matchedTransferID.Valid || (statementBatchID.Valid && statementBatchID.String != transfer.BatchID) || statementProvider != transfer.ProviderKey || statementReference != transfer.ExternalReference || statementAmount != transfer.AmountMinor || statementCurrency != transfer.Currency || statementDestination != approvedDestination {
 		return ManualTransferExecutionRecord{}, ErrTransferState
 	}
+	accountCode := walletAccountCodeForTransfer(ctx, tx, transfer.PayoutID)
+	if actorType == "customer" {
+		if err := lockCustomerWalletBalance(ctx, tx, actorID); err != nil {
+			return ManualTransferExecutionRecord{}, err
+		}
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_transactions(id,transaction_type,source_type,source_id,currency,idempotency_key,request_hash,correlation_id) VALUES($1,'PAYOUT_COMPLETED','MANUAL_EXTERNAL_TRANSFER',$2,$3,$4,$5,$6)`, mustNewID("ledger"), transfer.PayoutID, transfer.Currency, "payout-completion-"+transfer.PayoutID, hash, input.CorrelationID); err != nil {
 		return ManualTransferExecutionRecord{}, err
 	}
 	var ledgerID string
 	if err := tx.QueryRowContext(ctx, "SELECT id FROM wlt.ledger_transactions WHERE source_type='MANUAL_EXTERNAL_TRANSFER' AND source_id=$1", transfer.PayoutID).Scan(&ledgerID); err != nil {
-		return ManualTransferExecutionRecord{}, err
-	}
-	accountCode := walletAccountCodeForTransfer(ctx, tx, transfer.PayoutID)
-	actorType, actorID, err := payoutActor(ctx, tx, transfer.PayoutID)
-	if err != nil {
 		return ManualTransferExecutionRecord{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_entries(transaction_id,line_sequence,account_class,account_code,actor_type,actor_id,direction,amount_minor,currency) VALUES($1,1,'liability',$2,$3,$4,'DEBIT',$5,$6),($1,2,'asset','EXTERNAL_SETTLEMENT_CASH',NULL,NULL,'CREDIT',$5,$6)`, ledgerID, accountCode, actorType, actorID, transfer.AmountMinor, transfer.Currency); err != nil {

@@ -21,6 +21,7 @@ export default function ClientAppLayout() {
       <Tabs.Screen name="home" options={{ title: "الرئيسية", tabBarAccessibilityLabel: "الرئيسية" }} />
       <Tabs.Screen name="orders" options={{ title: "الطلبات", tabBarAccessibilityLabel: "الطلبات" }} />
       <Tabs.Screen name="wallet" options={{ title: "المحفظة", tabBarAccessibilityLabel: "المحفظة" }} />
+      <Tabs.Screen name="wallet-cash-in" options={{ href: null, headerShown: false, tabBarStyle: { display: "none" } }} />
       <Tabs.Screen name="account" options={{ title: "الحساب", tabBarAccessibilityLabel: "الحساب" }} />
       <Tabs.Screen name="addresses" options={{ href: null }} />
       <Tabs.Screen name="cart/[storeId]" options={{ href: null }} />
@@ -28,7 +29,7 @@ export default function ClientAppLayout() {
       <Tabs.Screen name="orders/[orderId]" options={{ href: null }} />
     </Tabs>
   );
-  const requiresAuthentication = pathname === "/orders" || pathname.startsWith("/orders/") || pathname.startsWith("/cart/") || pathname === "/multi-store-checkout" || pathname === "/wallet" || pathname === "/addresses";
+  const requiresAuthentication = pathname === "/orders" || pathname.startsWith("/orders/") || pathname.startsWith("/cart/") || pathname === "/multi-store-checkout" || pathname === "/wallet" || pathname === "/wallet-cash-in" || pathname === "/addresses";
   return (
     <ServiceCityScope>
       {requiresAuthentication ? <AuthenticatedMobileBoundary binding={identity} onUnauthenticated={onUnauthenticated}>{tabs}</AuthenticatedMobileBoundary> : tabs}

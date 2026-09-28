@@ -3,8 +3,6 @@ package transporthttp
 import (
 	"database/sql"
 	"errors"
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,12 +21,12 @@ type FieldServer struct {
 	service *field.Service
 }
 
-func NewField(identityClient *identityintegration.Client, accessToken string, db *sql.DB, mediaStore media.Store) (*FieldServer, error) {
+func NewField(identityClient *identityintegration.Client, accessToken string, db *sql.DB) (*FieldServer, error) {
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
 		return nil, err
 	}
-	service, err := field.New(identityClient, db, mediaStore)
+	service, err := field.New(identityClient, db)
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +34,12 @@ func NewField(identityClient *identityintegration.Client, accessToken string, db
 }
 
 func (s *FieldServer) Register(mux *http.ServeMux) {
+	mux.HandleFunc("GET /dsh/fields/admissions", s.listAdmissions)
 	mux.HandleFunc("POST /dsh/fields/admissions", s.admit)
+	mux.HandleFunc("PATCH /dsh/fields/admissions/{admissionId}/profile", s.updateAdmissionProfile)
+	mux.HandleFunc("POST /dsh/fields/admissions/{admissionId}/profile-review", s.reviewAdmissionProfile)
+	mux.HandleFunc("POST /dsh/fields/admissions/{admissionId}/approve", s.approveAdmission)
+	mux.HandleFunc("POST /dsh/fields/admissions/{admissionId}/provision", s.provisionAdmission)
 	mux.HandleFunc("GET /dsh/fields/admissions/{admissionId}", s.readAdmission)
 	mux.HandleFunc("GET /dsh/fields/actors/{actorId}/admission", s.readAdmissionForActor)
 	mux.HandleFunc("GET /dsh/fields/me", s.readOwnAdmission)
@@ -46,7 +49,6 @@ func (s *FieldServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/field/joining-cases", s.listJoiningCases)
 	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}", s.readJoiningCase)
 	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/submit", s.submitJoiningCase)
-	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/store-image", s.uploadJoiningCaseStoreImage)
 }
 
 func (s *FieldServer) admit(w http.ResponseWriter, r *http.Request) {
@@ -62,7 +64,7 @@ func (s *FieldServer) admit(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	admission, replayed, err := s.service.Admit(r.Context(), input.ContactPhoneE164, idempotency, acting, correlation)
+	admission, replayed, err := s.service.Admit(r.Context(), input.FullNameAr, input.ContactPhoneE164, idempotency, acting, correlation)
 	if err != nil {
 		writeFieldError(w, err)
 		return
@@ -72,6 +74,116 @@ func (s *FieldServer) admit(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusOK
 	}
 	writeJSON(w, status, contract.FieldAdmissionResponse{Admission: toFieldAdmission(admission), IdempotentReplay: replayed})
+}
+
+func (s *FieldServer) listAdmissions(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizedService(w, r) {
+		return
+	}
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if acting == "" || len(acting) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return
+	}
+	limit := 25
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 50 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "limit must be between 1 and 50")
+			return
+		}
+		limit = parsed
+	}
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
+	state := strings.TrimSpace(r.URL.Query().Get("state"))
+	if len([]rune(query)) > 100 || len(cursor) > 1024 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Field admission search or cursor is invalid")
+		return
+	}
+	page, err := s.service.ListAdmissionsForOperator(r.Context(), query, state, sort, limit, cursor, acting)
+	if err != nil {
+		writeFieldError(w, err)
+		return
+	}
+	items := make([]contract.FieldAdmission, 0, len(page.Admissions))
+	for _, v := range page.Admissions {
+		items = append(items, toFieldAdmission(v))
+	}
+	writeJSON(w, http.StatusOK, contract.FieldAdmissionListResponse{Admissions: items, NextCursor: page.NextCursor})
+}
+
+func (s *FieldServer) updateAdmissionProfile(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizedService(w, r) {
+		return
+	}
+	acting, correlation, idempotency, expected, ok := captainHeaders(w, r, true)
+	if !ok || acting == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Field profile mutation attribution and current version are required")
+		return
+	}
+	var input contract.FieldAdmissionProfileRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	admission, replayed, err := s.service.UpdateAdmissionProfile(r.Context(), r.PathValue("admissionId"), input.FullNameAr, expected, idempotency, acting, correlation)
+	if err != nil {
+		writeFieldError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.FieldAdmissionResponse{Admission: toFieldAdmission(admission), IdempotentReplay: replayed})
+}
+
+func (s *FieldServer) reviewAdmissionProfile(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizedService(w, r) {
+		return
+	}
+	acting, correlation, idempotency, expected, ok := captainHeaders(w, r, true)
+	if !ok || acting == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Field profile review attribution and current version are required")
+		return
+	}
+	admission, replayed, err := s.service.ReviewAdmissionProfile(r.Context(), r.PathValue("admissionId"), expected, idempotency, acting, correlation)
+	if err != nil {
+		writeFieldError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.FieldAdmissionResponse{Admission: toFieldAdmission(admission), IdempotentReplay: replayed})
+}
+
+func (s *FieldServer) approveAdmission(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizedService(w, r) {
+		return
+	}
+	acting, correlation, idempotency, expectedVersion, ok := captainHeaders(w, r, true)
+	if !ok || acting == "" || idempotency == "" || expectedVersion < 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Field approval attribution, Idempotency-Key, and X-Expected-Version are required")
+		return
+	}
+	admission, replayed, err := s.service.Approve(r.Context(), r.PathValue("admissionId"), expectedVersion, idempotency, acting, correlation)
+	if err != nil {
+		writeFieldError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.FieldAdmissionResponse{Admission: toFieldAdmission(admission), IdempotentReplay: replayed})
+}
+
+func (s *FieldServer) provisionAdmission(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizedService(w, r) {
+		return
+	}
+	acting, correlation, idempotency, _, ok := captainHeaders(w, r, false)
+	if !ok || acting == "" || idempotency == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Field role provisioning attribution and Idempotency-Key are required")
+		return
+	}
+	admission, err := s.service.Provision(r.Context(), r.PathValue("admissionId"), idempotency, acting, correlation)
+	if err != nil {
+		writeFieldError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.FieldAdmissionResponse{Admission: toFieldAdmission(admission), IdempotentReplay: false})
 }
 
 func (s *FieldServer) readAdmission(w http.ResponseWriter, r *http.Request) {
@@ -152,7 +264,7 @@ func (s *FieldServer) authorizeReenrollment(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "acting actor, correlation ID, and positive admission version are required")
 		return
 	}
-	var input contract.FieldReenrollmentRequest
+	var input contract.ManagedRoleReenrollmentRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
@@ -202,7 +314,7 @@ func (s *FieldServer) listJoiningCases(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = parsed
 	}
-	result, err := s.service.ListJoiningCases(r.Context(), bearerToken(r), limit)
+	result, err := s.service.ListJoiningCases(r.Context(), bearerToken(r), r.URL.Query().Get("q"), limit, r.URL.Query().Get("cursor"))
 	if err != nil {
 		writeFieldError(w, err)
 		return
@@ -211,7 +323,7 @@ func (s *FieldServer) listJoiningCases(w http.ResponseWriter, r *http.Request) {
 	for _, item := range result.Cases {
 		items = append(items, contract.JoiningCaseSummary{ID: item.ID, ContactPhoneE164: item.ContactPhoneE164, BusinessName: item.BusinessName, FirstStoreName: item.FirstStoreName, ServiceCityID: item.FirstStoreServiceCityID, FirstStoreVerticalID: item.FirstStoreVerticalID, FirstStoreLatitude: nullableFloatValue(item.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(item.FirstStoreLongitude), Origin: contract.JoiningCaseOrigin(item.Origin), State: contract.JoiningCaseState(item.State), CorrectionReason: item.CorrectionReason, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
 	}
-	writeJSON(w, http.StatusOK, contract.JoiningCaseListResponse{Cases: items})
+	writeJSON(w, http.StatusOK, contract.JoiningCaseListResponse{Cases: items, NextCursor: result.NextCursor})
 }
 
 func (s *FieldServer) readJoiningCase(w http.ResponseWriter, r *http.Request) {
@@ -238,43 +350,6 @@ func (s *FieldServer) submitJoiningCase(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeFieldCaseResult(w, http.StatusOK, result)
-}
-
-func (s *FieldServer) uploadJoiningCaseStoreImage(w http.ResponseWriter, r *http.Request) {
-	if bearerToken(r) == "" {
-		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Field session is required")
-		return
-	}
-	correlation, idempotency, expected, ok := requiredPartnerCaseHeaders(w, r)
-	if !ok {
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, media.MaxUploadBytes+1)
-	if err := r.ParseMultipartForm(media.MaxUploadBytes + 1); err != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a valid image upload is required")
-		return
-	}
-	file, header, err := r.FormFile("file")
-	if err != nil || header == nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a file field is required")
-		return
-	}
-	defer file.Close()
-	if header.Size < 1 || header.Size > media.MaxUploadBytes {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
-		return
-	}
-	data, err := io.ReadAll(io.LimitReader(file, media.MaxUploadBytes+1))
-	if err != nil || int64(len(data)) > media.MaxUploadBytes {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
-		return
-	}
-	result, err := s.service.UploadJoiningCaseStoreImage(r.Context(), bearerToken(r), r.PathValue("caseId"), idempotency, correlation, expected, header.Header.Get("Content-Type"), data)
-	if err != nil {
-		writeFieldError(w, err)
-		return
-	}
-	writeFieldCaseResult(w, responseStatus(result.Replayed), result)
 }
 
 func (s *FieldServer) authorizedService(w http.ResponseWriter, r *http.Request) bool {
@@ -304,7 +379,7 @@ func requiredFieldMutationHeaders(w http.ResponseWriter, r *http.Request) (strin
 }
 
 func toFieldAdmission(value postgres.FieldAdmission) contract.FieldAdmission {
-	return contract.FieldAdmission{ID: value.ID, ActorID: value.ActorID, State: value.State, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
+	return contract.FieldAdmission{ID: value.ID, ActorID: value.ActorID, FullNameAr: value.FullNameAr, ContactPhoneE164: value.PhoneE164, State: value.State, RequiresProfileReview: value.RequiresProfileReview, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
 }
 
 func writeFieldError(w http.ResponseWriter, err error) {
@@ -315,12 +390,12 @@ func writeFieldError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the authenticated actor is not permitted for this Field operation")
 	case errors.Is(err, postgres.ErrFieldAdmissionNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "Field admission was not found")
-	case errors.Is(err, postgres.ErrFieldAdmissionExists), errors.Is(err, postgres.ErrFieldAdmissionConflict), errors.Is(err, field.ErrManagedRoleNotEligible), errors.Is(err, postgres.ErrFieldOperationConflict), errors.Is(err, postgres.ErrFieldVersionConflict), errors.Is(err, postgres.ErrJoiningCaseVersion), errors.Is(err, postgres.ErrJoiningCaseState), errors.Is(err, postgres.ErrJoiningCaseExists), errors.Is(err, postgres.ErrJoiningCaseActor), errors.Is(err, postgres.ErrJoiningCaseRebind):
+	case errors.Is(err, postgres.ErrFieldAdmissionExists), errors.Is(err, postgres.ErrFieldAdmissionConflict), errors.Is(err, postgres.ErrFieldAdmissionNotEligible), errors.Is(err, postgres.ErrFieldAdmissionRegistry), errors.Is(err, field.ErrManagedRoleNotEligible), errors.Is(err, postgres.ErrFieldOperationConflict), errors.Is(err, postgres.ErrFieldVersionConflict), errors.Is(err, postgres.ErrJoiningCaseVersion), errors.Is(err, postgres.ErrJoiningCaseState), errors.Is(err, postgres.ErrJoiningCaseActor), errors.Is(err, postgres.ErrJoiningCaseRebind):
 		writeError(w, http.StatusConflict, "VERSION_OR_STATE_CONFLICT", "Field or joining-case state is stale or not actionable")
 	case errors.Is(err, postgres.ErrJoiningCaseNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "joining case was not found")
-	case errors.Is(err, postgres.ErrStoreProfileMediaFailed):
-		writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "the previous store image upload failed; choose the image again")
+	case errors.Is(err, postgres.ErrJoiningCaseExists):
+		writeError(w, http.StatusConflict, "JOINING_CASE_EXISTS", "an active joining case already exists for this phone")
 	default:
 		var identityErr *identityclient.Error
 		if errors.As(err, &identityErr) {

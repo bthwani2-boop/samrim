@@ -1,9 +1,21 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { laneTargets } from "./runtime-proof/resolve.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const envPath = path.join(root, "infra/local/.env");
+const runnerTemp = fs.realpathSync(process.env.RUNNER_TEMP || os.tmpdir());
+const runtimeProofDirectory = fs.mkdtempSync(path.join(runnerTemp, "samrim-runtime-proof-"));
+fs.chmodSync(runtimeProofDirectory, 0o700);
+const runtimeFailurePath = path.join(runtimeProofDirectory, "runtime-failure.json");
+const dshCheckerFixturePath = process.env.CI_RUNTIME_TARGETS?.split(",").map((value) => value.trim()).includes("dsh-backend:runtime-proof")
+  ? path.join(runtimeProofDirectory, "dsh-checker-fixture.json")
+  : "";
+
+if (!process.env.GITHUB_ENV || /[\r\n]/.test(runtimeFailurePath)) fail("secure runtime failure path handoff is unavailable");
+fs.appendFileSync(process.env.GITHUB_ENV, `SAMRIM_RUNTIME_FAILURE_PATH=${runtimeFailurePath}\n`, { encoding: "utf8" });
 
 function fail(message) {
   console.error("CI_RUNTIME_INTEGRATION=FAIL " + message);
@@ -12,6 +24,20 @@ function fail(message) {
 
 if (process.env.CI !== "true") fail("disposable CI environment required");
 if (!fs.existsSync(envPath)) fail("isolated runtime environment is missing");
+
+const requestedTargets = (process.env.CI_RUNTIME_TARGETS ?? "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+if (requestedTargets.length === 0) fail("CI_RUNTIME_TARGETS is empty");
+
+const allowedTargets = new Set([
+  ...Object.values(laneTargets).flat(),
+  "control-panel:dsh-runtime-checker-fixture",
+]);
+for (const target of requestedTargets) {
+  if (!allowedTargets.has(target)) fail("unowned runtime proof target requested: " + target);
+}
 
 const runtimeEnv = {};
 for (const rawLine of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
@@ -43,14 +69,78 @@ const childEnv = {
   PLAYWRIGHT_MAILPIT_BASE_URL: "http://127.0.0.1:" + runtimeEnv.SAMRIM_MAILPIT_WEB_PORT,
   PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN: runtimeEnv.OPERATOR_BOOTSTRAP_SECRET,
   PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN: runtimeEnv.CONTROL_PANEL_SERVICE_TOKEN,
+  ...(dshCheckerFixturePath ? { DSH_RUNTIME_CHECKER_FIXTURE_PATH: dshCheckerFixturePath } : {}),
 };
 
-const terminalTarget = "dsh-backend:runtime-proof";
-console.log("CI_RUNTIME_TASK_GRAPH_ROOT=" + terminalTarget);
-execFileSync(
-  process.platform === "win32" ? "pnpm.cmd" : "pnpm",
-  ["exec", "nx", "run", terminalTarget, "--outputStyle=stream"],
-  { cwd: root, env: childEnv, stdio: "inherit" },
-);
+const executable = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+let checkerFixtureCleanupFailed = false;
+let runtimeFailureRecorded = false;
 
-console.log("CI_RUNTIME_INTEGRATION=PASS root=" + terminalTarget);
+function writeRuntimeFailureOnce(failure) {
+  try {
+    fs.writeFileSync(runtimeFailurePath, JSON.stringify(failure, null, 2) + "\n", { encoding: "utf8", flag: "wx", mode: 0o600 });
+    runtimeFailureRecorded = true;
+    return true;
+  } catch (error) {
+    if (error?.code === "EEXIST" && runtimeFailureRecorded) return false;
+    throw error;
+  }
+}
+
+console.log("CI_RUNTIME_TASKS=" + requestedTargets.join(","));
+try {
+  for (const target of requestedTargets) {
+    console.log("CI_RUNTIME_TASK=START target=" + target);
+    try {
+      execFileSync(
+        executable,
+        ["exec", "nx", "run", target, "--outputStyle=stream"],
+        { cwd: root, env: childEnv, stdio: "inherit" },
+      );
+      console.log("CI_RUNTIME_TASK=PASS target=" + target);
+    } catch (error) {
+      const failure = {
+        target,
+        candidate: process.env.CANDIDATE_SHA || process.env.GITHUB_SHA || null,
+        progressionBlocked: true,
+        nextAction: "classify-highest-causal-root-before-new-material-work",
+        capturedAt: new Date().toISOString(),
+      };
+      writeRuntimeFailureOnce(failure);
+      console.error("CI_RUNTIME_TASK=FAIL target=" + target);
+      throw error;
+    }
+  }
+} finally {
+  if (dshCheckerFixturePath && fs.existsSync(dshCheckerFixturePath)) {
+    try {
+      execFileSync(
+        executable,
+        ["exec", "nx", "run", "dsh-backend:runtime-fixture-cleanup", "--outputStyle=stream"],
+        { cwd: root, env: childEnv, stdio: "inherit" },
+      );
+    } catch (error) {
+      checkerFixtureCleanupFailed = true;
+      console.error(`DSH_RUNTIME_CHECKER_FIXTURE_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`);
+      try {
+        writeRuntimeFailureOnce({
+          target: "dsh-backend:runtime-fixture-cleanup",
+          candidate: process.env.CANDIDATE_SHA || process.env.GITHUB_SHA || null,
+          progressionBlocked: true,
+          nextAction: "classify-highest-causal-root-before-new-material-work",
+          capturedAt: new Date().toISOString(),
+        });
+      } catch (writeError) {
+        checkerFixtureCleanupFailed = true;
+        console.error(`CI_RUNTIME_FAILURE_RECORD=FAIL ${writeError instanceof Error ? writeError.message : String(writeError)}`);
+      }
+      process.exitCode = 1;
+    }
+  }
+}
+
+if (checkerFixtureCleanupFailed) {
+  console.error("CI_RUNTIME_INTEGRATION=FAIL disposable checker fixture cleanup failed");
+} else {
+  console.log("CI_RUNTIME_INTEGRATION=PASS targets=" + requestedTargets.join(","));
+}

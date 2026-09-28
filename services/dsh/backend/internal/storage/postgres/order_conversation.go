@@ -69,12 +69,16 @@ func ReadOrderConversation(ctx context.Context, db *sql.DB, orderID, actorID, ro
 	result := conversationResult(orderID, order, time.Now())
 	rows, err := db.QueryContext(ctx, `SELECT m.id,m.order_id,m.sender_actor_id,m.sender_role,m.body,m.created_at,
 		COALESCE(read_state.read_at, CASE WHEN m.sender_actor_id=$2 THEN m.created_at END) AS read_at
-		FROM dsh.commerce_order_conversation_messages m
+		FROM (
+			SELECT id,order_id,sender_actor_id,sender_role,body,created_at
+			FROM dsh.commerce_order_conversation_messages
+			WHERE order_id=$1
+			ORDER BY created_at DESC,id DESC
+			LIMIT $3
+		) m
 		LEFT JOIN dsh.commerce_order_conversation_read_state read_state
 		  ON read_state.actor_id=$2 AND read_state.message_id=m.id
-		WHERE m.order_id=$1
-		ORDER BY m.created_at,m.id
-		LIMIT $3`, orderID, actorID, limit)
+		ORDER BY m.created_at,m.id`, orderID, actorID, limit)
 	if err != nil {
 		return OrderConversationRecord{}, err
 	}
@@ -227,7 +231,8 @@ func readOrderConversationOrder(ctx context.Context, source rowQueryer, orderID,
 		lockClause = " FOR UPDATE"
 	}
 	var order orderConversationOrder
-	err := source.QueryRowContext(ctx, `SELECT o.client_actor_id,s.partner_actor_id,o.state,o.updated_at
+	err := source.QueryRowContext(ctx, `SELECT o.client_actor_id,s.partner_actor_id,o.state,
+		COALESCE((SELECT audit.created_at FROM dsh.commerce_order_audit audit WHERE audit.order_id=o.id AND audit.to_state=o.state ORDER BY audit.created_at DESC LIMIT 1),o.updated_at)
 		FROM dsh.commerce_orders o JOIN dsh.stores s ON s.id=o.store_id WHERE o.id=$1`+lockClause, orderID).Scan(&order.ClientActorID, &order.PartnerActorID, &order.State, &order.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return orderConversationOrder{}, ErrOrderConversationNotFound
@@ -250,7 +255,7 @@ func readOrderConversationOrder(ctx context.Context, source rowQueryer, orderID,
 }
 
 func (order orderConversationOrder) ReadOnlyAt() *time.Time {
-	if order.State != "DELIVERED" && order.State != "REJECTED" && order.State != "CANCELLED" {
+	if order.State != "DELIVERED" && order.State != "PICKED_UP" && order.State != "REJECTED" && order.State != "CANCELLED" {
 		return nil
 	}
 	value := order.UpdatedAt.Add(orderConversationGracePeriod)

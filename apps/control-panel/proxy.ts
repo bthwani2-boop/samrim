@@ -3,14 +3,30 @@ import { verifySameOrigin } from "./src/server/security/csrf";
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
+function catalogMediaSource(isDevelopment: boolean): string {
+  const configuredBase = process.env.DSH_API_BASE_URL?.trim();
+  if (!configuredBase) return "";
+
+  try {
+    const serviceUrl = new URL(configuredBase);
+    const localHttp = isDevelopment && serviceUrl.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(serviceUrl.hostname);
+    if (serviceUrl.protocol !== "https:" && !localHttp) return "";
+    if (serviceUrl.username || serviceUrl.password || serviceUrl.search || serviceUrl.hash) return "";
+    return `${serviceUrl.origin}/dsh/catalog/media/`;
+  } catch {
+    return "";
+  }
+}
+
 function createContentSecurityPolicy(): Readonly<{ nonce: string; value: string }> {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const isDevelopment = process.env.NODE_ENV === "development";
+  const mediaSource = catalogMediaSource(isDevelopment);
   const value = [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDevelopment ? " 'unsafe-eval'" : ""}`,
     isDevelopment ? "style-src 'self' 'unsafe-inline'" : `style-src 'self' 'nonce-${nonce}'`,
-    "img-src 'self' data: blob:",
+    `img-src 'self' data: blob:${mediaSource ? ` ${mediaSource}` : ""}`,
     "font-src 'self' data:",
     "frame-src 'self' https://www.google.com",
     "connect-src 'self'",

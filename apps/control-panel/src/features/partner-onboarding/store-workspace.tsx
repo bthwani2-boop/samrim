@@ -135,14 +135,20 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
       {store ? <>
         <section className="store-detail-section" aria-labelledby="store-detail-context-title">
           <div className="store-detail-heading"><div><p className="eyebrow">ملكية DSH</p><h2 id="store-detail-context-title">معلومات المتجر والعلاقات</h2></div><button type="button" className="button button-secondary" disabled={loading || busy} onClick={() => void readStore()}>{loading ? "جارٍ القراءة…" : "إعادة القراءة"}</button></div>
-          <dl className="store-detail-facts">
-            <div><dt>الشريك المالك</dt><dd><Link href={`/partners/actors/${encodeURIComponent(store.partnerActorId)}`}><bdi dir="ltr">{store.partnerActorId}</bdi></Link></dd></div>
-            <div><dt>مدينة الخدمة</dt><dd>{store.serviceCityId ? <bdi dir="ltr">{store.serviceCityId}</bdi> : "غير محددة"}</dd></div>
-            <div><dt>الفئة الرئيسية</dt><dd>{store.primaryVerticalId ? <bdi dir="ltr">{store.primaryVerticalId}</bdi> : "غير محددة"}</dd></div>
-            <div><dt>نسخة المتجر</dt><dd>v{store.version}</dd></div>
-            <div><dt>تاريخ الإنشاء</dt><dd><time dateTime={store.createdAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium", timeStyle: "short" }).format(new Date(store.createdAt))}</time></dd></div>
-            <div><dt>آخر تحديث</dt><dd><time dateTime={store.updatedAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium", timeStyle: "short" }).format(new Date(store.updatedAt))}</time></dd></div>
-          </dl>
+          <div className="store-detail-overview">
+            <dl className="store-detail-facts">
+              <div><dt>الشريك المالك</dt><dd><Link href={`/partners/actors/${encodeURIComponent(store.partnerActorId)}`}><bdi dir="ltr">{store.partnerActorId}</bdi></Link></dd></div>
+              <div><dt>مدينة الخدمة</dt><dd>{store.serviceCityId ? <bdi dir="ltr">{store.serviceCityId}</bdi> : "غير محددة"}</dd></div>
+              <div><dt>الفئة الرئيسية</dt><dd>{store.primaryVerticalId ? <bdi dir="ltr">{store.primaryVerticalId}</bdi> : "غير محددة"}</dd></div>
+              <div><dt>نسخة المتجر</dt><dd>v{store.version}</dd></div>
+              <div><dt>تاريخ الإنشاء</dt><dd><time dateTime={store.createdAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium", timeStyle: "short" }).format(new Date(store.createdAt))}</time></dd></div>
+              <div><dt>آخر تحديث</dt><dd><time dateTime={store.updatedAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium", timeStyle: "short" }).format(new Date(store.updatedAt))}</time></dd></div>
+            </dl>
+            <figure className="store-profile-media">
+              {store.storeProfileImage?.uri ? <img src={store.storeProfileImage.uri} alt={`صورة متجر ${store.name}`} loading="lazy" /> : <div className="store-profile-media-empty" role="img" aria-label={`لم تُرفق صورة لمتجر ${store.name}`}>لا توجد صورة مرفقة</div>}
+              <figcaption>صورة المتجر</figcaption>
+            </figure>
+          </div>
         </section>
 
         <section className="store-detail-section" aria-labelledby="store-publication-title">

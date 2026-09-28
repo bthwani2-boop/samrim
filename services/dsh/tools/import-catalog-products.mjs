@@ -26,7 +26,7 @@ function normalizeRow(row, line) {
   const brand = value("brand");
   const identifierType = value("identifierType").toUpperCase();
   const identifierValue = value("identifierValue") || value("barcode");
-  const imageUri = value("imageUri") || value("canonicalImageUrl");
+  if (value("imageUri") || value("canonicalImageUrl")) throw new Error(`line ${line}: Product images must be uploaded through the canonical media upload after import`);
   const rawCategories = Array.isArray(row.categoryIds) ? row.categoryIds : value("categoryIds").split(/[|;]/);
   const categoryIds = [...new Set(rawCategories.map((item) => String(item).trim()).filter(Boolean))];
   if (!canonicalName || [...canonicalName].length > 160) throw new Error(`line ${line}: canonicalName must contain 1..160 characters`);
@@ -41,12 +41,7 @@ function normalizeRow(row, line) {
   if (scope === "SHARED" && storeId) throw new Error(`line ${line}: storeId is forbidden for SHARED imports`);
   if (identifierValue && !["GTIN", "EAN", "UPC", "SKU"].includes(identifierType)) throw new Error(`line ${line}: identifierType is required for a typed identifier`);
   if (identifierValue && !/^[A-Za-z0-9._-]{1,128}$/.test(identifierValue)) throw new Error(`line ${line}: identifierValue is invalid`);
-  if (imageUri) {
-    let parsed;
-    try { parsed = new URL(imageUri); } catch { parsed = null; }
-    if (!parsed || !["http:", "https:"].includes(parsed.protocol) || !parsed.hostname || parsed.username || parsed.password) throw new Error(`line ${line}: imageUri must be an http(s) URL without credentials`);
-  }
-  return { verticalId, scope, ...(storeId ? { storeId } : {}), canonicalName, ...(brand ? { brand } : {}), variantTitle, measurementKind, baseUnit, categoryIds, ...(identifierValue ? { identifierType, identifierValue } : {}), ...(imageUri ? { imageUri } : {}) };
+  return { verticalId, scope, ...(storeId ? { storeId } : {}), canonicalName, ...(brand ? { brand } : {}), variantTitle, measurementKind, baseUnit, categoryIds, ...(identifierValue ? { identifierType, identifierValue } : {}) };
 }
 
 function parseCsvRecords(text) {

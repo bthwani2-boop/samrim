@@ -55,8 +55,9 @@ func (s *Server) readWalletState(w http.ResponseWriter, r *http.Request) {
 		err = readErr
 		balance, held, available = captainState.LedgerBalanceMinor, captainState.HeldMinor, captainState.AvailableMinor
 	} else {
-		balance, err = postgres.ReadWalletBalance(r.Context(), s.db, actorType, actorID)
-		available = balance
+		customerState, readErr := postgres.ReadCustomerWalletState(r.Context(), s.db, actorID)
+		err = readErr
+		balance, held, available = customerState.LedgerBalanceMinor, customerState.HeldMinor, customerState.AvailableMinor
 	}
 	if err != nil {
 		writeCashInError(w, err)
@@ -221,6 +222,8 @@ func toCashInFundingIntent(item postgres.CashInFundingIntentRecord) cashInFundin
 
 func writeCashInError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, postgres.ErrCustomerWalletBalanceInvariant):
+		writeError(w, http.StatusInternalServerError, "WALLET_BALANCE_INVARIANT", "customer balance holds exceed the ledger balance")
 	case errors.Is(err, postgres.ErrInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Cash-In input is invalid")
 	case errors.Is(err, postgres.ErrFundingIntentNotFound):

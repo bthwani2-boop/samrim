@@ -85,6 +85,7 @@ func TestCheckoutOrderMatchesRequest(t *testing.T) {
 		{name: "address", change: func(input *CheckoutInput) { input.AddressID = "different-address" }},
 		{name: "fulfillment", change: func(input *CheckoutInput) { input.FulfillmentMode = FulfillmentModeCustomerPickup }},
 		{name: "payment method", change: func(input *CheckoutInput) { input.PaymentMethod = "CASH_AT_STORE" }},
+		{name: "internal balance contribution", change: func(input *CheckoutInput) { input.InternalBalanceAmountMinor = 1 }},
 		{name: "promotion", change: func(input *CheckoutInput) { input.PromotionCode = "DIFFERENT" }},
 	} {
 		t.Run(mismatch.name, func(t *testing.T) {
@@ -94,6 +95,18 @@ func TestCheckoutOrderMatchesRequest(t *testing.T) {
 				t.Fatal("request with different checkout facts was accepted")
 			}
 		})
+	}
+}
+
+func TestCheckoutRequestHashPreservesCashOnlyReplayAndBindsBalanceContribution(t *testing.T) {
+	input := CheckoutInput{ClientActorID: "client-1", CartID: "cart-1", StoreID: "store-1", AddressID: "address-1", FulfillmentMode: FulfillmentModeBthwaniCaptain, PaymentMethod: "CASH_ON_DELIVERY", ExpectedCartVersion: 4, PromotionCode: "SAVE10"}
+	legacyCashOnlyHash := hashFacts(input.ClientActorID, input.CartID, input.StoreID, input.AddressID, input.FulfillmentMode, input.PaymentMethod, "4", "", "", "", "0", "0", "SAVE10")
+	if got := HashCheckoutRequest(input); got != legacyCashOnlyHash {
+		t.Fatal("cash-only checkout hash changed and would break existing idempotent replays")
+	}
+	input.InternalBalanceAmountMinor = 100
+	if got := HashCheckoutRequest(input); got == legacyCashOnlyHash {
+		t.Fatal("balance contribution was not bound to checkout idempotency")
 	}
 }
 

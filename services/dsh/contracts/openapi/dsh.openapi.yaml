@@ -33,6 +33,9 @@ paths:
   /dsh/joining-cases/{caseId}/submit:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1submit"
 
+  /dsh/joining-cases/{caseId}/store-image:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1store-image"
+
   /dsh/joining-cases/{caseId}/correct-and-resubmit:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1correct-and-resubmit"
 
@@ -50,6 +53,9 @@ paths:
 
   /dsh/catalog/categories/{categoryId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1categories~1{categoryId}"
+
+  /dsh/catalog/categories/{categoryId}/media/upload:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1categories~1{categoryId}~1media~1upload"
 
   /dsh/catalog/attributes:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1attributes"
@@ -447,6 +453,18 @@ paths:
   /dsh/captains/admissions:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1admissions"
 
+  /dsh/captains/admissions/{admissionId}/profile:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1admissions~1{admissionId}~1profile"
+
+  /dsh/captains/admissions/{admissionId}/profile-review:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1admissions~1{admissionId}~1profile-review"
+
+  /dsh/captains/admissions/{admissionId}/approve:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1admissions~1{admissionId}~1approve"
+
+  /dsh/captains/admissions/{admissionId}/provision:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1admissions~1{admissionId}~1provision"
+
   /dsh/captains/admissions/{admissionId}:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1admissions~1{admissionId}"
 
@@ -505,11 +523,29 @@ paths:
   /dsh/partners/{actorId}/identity-role:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1partners~1{actorId}~1identity-role"
 
+  /dsh/partners/{actorId}/reenrollment:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1partners~1{actorId}~1reenrollment"
+
   /dsh/captains/{actorId}/identity-role:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1{actorId}~1identity-role"
 
+  /dsh/captains/{actorId}/reenrollment:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1{actorId}~1reenrollment"
+
   /dsh/fields/admissions:
     $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions"
+
+  /dsh/fields/admissions/{admissionId}/profile:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}~1profile"
+
+  /dsh/fields/admissions/{admissionId}/profile-review:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}~1profile-review"
+
+  /dsh/fields/admissions/{admissionId}/approve:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}~1approve"
+
+  /dsh/fields/admissions/{admissionId}/provision:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}~1provision"
 
   /dsh/fields/admissions/{admissionId}:
     $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}"
@@ -534,9 +570,6 @@ paths:
 
   /dsh/field/joining-cases/{caseId}/submit:
     $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1submit"
-
-  /dsh/field/joining-cases/{caseId}/store-image:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1store-image"
 
   /dsh/fields/me/financial-summary:
     $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me~1financial-summary"
@@ -831,7 +864,7 @@ components:
 
     JoiningCaseState:
       type: string
-      enum: [draft, submitted, needs_correction, approved]
+      enum: [draft, admission_requested, submitted, needs_correction, approved]
 
     JoiningCaseOrigin:
       type: string
@@ -848,6 +881,71 @@ components:
         role:
           type: string
           const: primary
+        contentSha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        provenance:
+          $ref: "#/components/schemas/MediaProvenance"
+          nullable: true
+
+    MediaProvenance:
+      type: object
+      required: [creator, sourceDescription, rightsStatement, attestedByActorId, attestedAt]
+      additionalProperties: false
+      properties:
+        creator:
+          type: string
+          minLength: 2
+          maxLength: 200
+        sourceDescription:
+          type: string
+          minLength: 3
+          maxLength: 1000
+        sourceUri:
+          type: string
+          format: uri
+          maxLength: 2048
+        rightsStatement:
+          type: string
+          minLength: 5
+          maxLength: 2000
+        rightsUri:
+          type: string
+          format: uri
+          maxLength: 2048
+        attestedByActorId:
+          type: string
+        attestedAt:
+          type: string
+          format: date-time
+
+    MediaProvenanceInput:
+      type: object
+      required: [creator, sourceDescription, rightsStatement, rightsAttested]
+      additionalProperties: false
+      properties:
+        creator:
+          type: string
+          minLength: 2
+          maxLength: 200
+        sourceDescription:
+          type: string
+          minLength: 3
+          maxLength: 1000
+        sourceUri:
+          type: string
+          format: uri
+          maxLength: 2048
+        rightsStatement:
+          type: string
+          minLength: 5
+          maxLength: 2000
+        rightsUri:
+          type: string
+          format: uri
+          maxLength: 2048
+        rightsAttested:
+          type: boolean
 
     JoiningCaseView:
       type: object
@@ -1548,6 +1646,18 @@ components:
           nullable: true
           x-go-pointer: true
 
+    CatalogVariantAttributeValueSet:
+      type: object
+      required: [variantId, values]
+      additionalProperties: false
+      properties:
+        variantId:
+          type: string
+        values:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogAttributeValueInput"
+
     CatalogAttributeDefinition:
       type: object
       required: [id, verticalId, code, nameAr, valueKind, active, filterable, version]
@@ -1863,11 +1973,30 @@ components:
 
     CatalogMedia:
       type: object
-      required: [uri, role, ordinal]
+      required: [assetId, uri, role, ordinal]
       additionalProperties: false
       properties:
+        assetId:
+          type: string
+          minLength: 1
+          maxLength: 128
         uri:
           type: string
+        role:
+          type: string
+          enum: [primary, gallery]
+        ordinal:
+          type: integer
+
+    ReplaceCatalogProductMediaItem:
+      type: object
+      required: [assetId, role, ordinal]
+      additionalProperties: false
+      properties:
+        assetId:
+          type: string
+          minLength: 1
+          maxLength: 128
         role:
           type: string
           enum: [primary, gallery]
@@ -1926,10 +2055,6 @@ components:
           type: string
           nullable: true
           maxLength: 128
-        imageUri:
-          type: string
-          nullable: true
-          maxLength: 2048
 
     UpdateCatalogProductRequest:
       type: object
@@ -1957,6 +2082,18 @@ components:
           maxLength: 160
         active:
           type: boolean
+        categoryIds:
+          type: array
+          items:
+            type: string
+        attributeValues:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogAttributeValueInput"
+        variantAttributeValues:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogVariantAttributeValueSet"
 
     ReplaceCatalogProductMediaRequest:
       type: object
@@ -1967,11 +2104,11 @@ components:
           type: array
           maxItems: 21
           items:
-            $ref: "#/components/schemas/CatalogMedia"
+            $ref: "#/components/schemas/ReplaceCatalogProductMediaItem"
 
     UploadCatalogProductMediaRequest:
       type: object
-      required: [role, file]
+      required: [role, file, creator, sourceDescription, rightsStatement, rightsAttested]
       additionalProperties: false
       properties:
         role:
@@ -1980,6 +2117,65 @@ components:
         file:
           type: string
           format: binary
+        creator:
+          type: string
+          minLength: 2
+          maxLength: 200
+        sourceDescription:
+          type: string
+          minLength: 3
+          maxLength: 1000
+        sourceUri:
+          type: string
+          format: uri
+          maxLength: 2048
+        rightsStatement:
+          type: string
+          minLength: 5
+          maxLength: 2000
+        rightsUri:
+          type: string
+          format: uri
+          maxLength: 2048
+        rightsAttested:
+          type: boolean
+          enum: [true]
+
+    UploadCatalogCategoryMediaRequest:
+      type: object
+      required: [file, reason, creator, sourceDescription, rightsStatement, rightsAttested]
+      additionalProperties: false
+      properties:
+        file:
+          type: string
+          format: binary
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+        creator:
+          type: string
+          minLength: 2
+          maxLength: 200
+        sourceDescription:
+          type: string
+          minLength: 3
+          maxLength: 1000
+        sourceUri:
+          type: string
+          format: uri
+          maxLength: 2048
+        rightsStatement:
+          type: string
+          minLength: 5
+          maxLength: 2000
+        rightsUri:
+          type: string
+          format: uri
+          maxLength: 2048
+        rightsAttested:
+          type: boolean
+          enum: [true]
 
     CatalogProductResponse:
       type: object
@@ -2006,7 +2202,7 @@ components:
 
     CatalogProductRegistryItem:
       type: object
-      required: [id, verticalId, canonicalName, active, version, variantCount, categoryIds, createdAt, updatedAt]
+      required: [id, verticalId, canonicalName, active, version, variantCount, storeCount, categoryIds, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -2023,6 +2219,9 @@ components:
         version:
           type: integer
         variantCount:
+          type: integer
+          minimum: 0
+        storeCount:
           type: integer
           minimum: 0
         categoryIds:
@@ -2143,10 +2342,6 @@ components:
           type: string
           nullable: true
           maxLength: 128
-        proposedImageUri:
-          type: string
-          nullable: true
-          maxLength: 2048
         attributeValues:
           type: array
           items:
@@ -2201,10 +2396,6 @@ components:
           type: string
           nullable: true
           maxLength: 128
-        proposedImageUri:
-          type: string
-          nullable: true
-          maxLength: 2048
         attributeValues:
           type: array
           items:
@@ -2263,10 +2454,6 @@ components:
           type: string
           nullable: true
           maxLength: 128
-        imageUri:
-          type: string
-          nullable: true
-          maxLength: 2048
         attributeValues:
           type: array
           items:
@@ -2417,9 +2604,6 @@ components:
         proposedIdentifierValue:
           type: string
           nullable: true
-        proposedImageUri:
-          type: string
-          nullable: true
         attributeValues:
           type: array
           items:
@@ -2483,6 +2667,9 @@ components:
           type: string
         storeId:
           type: string
+        storeName:
+          type: string
+          description: Canonical DSH Store name for this customer-visible offer.
         variantId:
           type: string
         productId:
@@ -2797,6 +2984,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CatalogStoreOffer"
+        nextCursor:
+          type: string
 
     CatalogModel:
       type: string
@@ -2908,6 +3097,9 @@ components:
           type: string
         nameEn:
           type: string
+        imageUri:
+          type: string
+          nullable: true
         active:
           type: boolean
         version:
@@ -2977,15 +3169,59 @@ components:
         category:
           $ref: "#/components/schemas/CatalogCategory"
 
+    CatalogCategoryListItem:
+      type: object
+      required: [id, verticalId, nameAr, nameEn, pathAr, pathEn, active, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        verticalId:
+          type: string
+        parentCategoryId:
+          type: string
+          nullable: true
+        nameAr:
+          type: string
+        nameEn:
+          type: string
+        imageUri:
+          type: string
+          nullable: true
+        pathAr:
+          type: string
+        pathEn:
+          type: string
+        active:
+          type: boolean
+        version:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CatalogCategoryDetailResponse:
+      type: object
+      required: [category]
+      additionalProperties: false
+      properties:
+        category:
+          $ref: "#/components/schemas/CatalogCategoryListItem"
+
     CatalogCategoryListResponse:
       type: object
-      required: [categories]
+      required: [categories, nextCursor]
       additionalProperties: false
       properties:
         categories:
           type: array
           items:
-            $ref: "#/components/schemas/CatalogCategory"
+            $ref: "#/components/schemas/CatalogCategoryListItem"
+        nextCursor:
+          type: string
 
     PublicCatalogResponse:
       type: object
@@ -3155,7 +3391,7 @@ components:
 
     PublishedStoreListResponse:
       type: object
-      required: [stores, categories]
+      required: [stores, categories, limit]
       additionalProperties: false
       properties:
         stores:
@@ -3164,9 +3400,16 @@ components:
             $ref: "#/components/schemas/PublicStoreView"
         categories:
           type: array
-          description: Active categories represented by customer-visible offers in the listed published stores.
+          description: Active categories represented by customer-visible offers in this page of eligible published stores.
           items:
             $ref: "#/components/schemas/CatalogCategory"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+        nextCursor:
+          type: string
+          maxLength: 2048
 
     ServiceCity:
       type: object
@@ -3521,6 +3764,10 @@ components:
           maxLength: 128
         fulfillmentMode:
           $ref: "#/components/schemas/FulfillmentMode"
+        internalBalanceAmountMinor:
+          type: integer
+          minimum: 0
+          description: Exact amount requested from the customer's WLT internal balance; the remaining payable is collected using the fulfillment-specific cash route.
         promotionCode:
           type: string
           maxLength: 64
@@ -3725,16 +3972,44 @@ components:
 
     CaptainAdmissionRequest:
       type: object
-      required: [contactPhoneE164]
+      required: [fullNameAr, contactPhoneE164]
       additionalProperties: false
       properties:
+        fullNameAr:
+          type: string
+          description: Arabic display name for this Captain admission; this field is not a verified legal name.
+          minLength: 2
+          maxLength: 120
         contactPhoneE164:
           type: string
           pattern: '^\+[1-9][0-9]{7,14}$'
 
+    CaptainAdmissionProfileRequest:
+      type: object
+      required: [fullNameAr]
+      additionalProperties: false
+      properties:
+        fullNameAr:
+          type: string
+          description: Arabic display name for this Captain admission; this field is not a verified legal name.
+          minLength: 2
+          maxLength: 120
+
+    CaptainAdmissionListResponse:
+      type: object
+      required: [admissions, nextCursor]
+      additionalProperties: false
+      properties:
+        admissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CaptainAdmission"
+        nextCursor:
+          type: string
+
     CaptainAdmission:
       type: object
-      required: [id, state, availabilityState, version, createdAt, updatedAt]
+      required: [id, state, availabilityState, requiresProfileReview, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -3742,12 +4017,22 @@ components:
         actorId:
           type: string
           nullable: true
+        fullNameAr:
+          type: string
+          description: Arabic display name for this Captain admission; this field is not a verified legal name.
+          nullable: true
+        contactPhoneE164:
+          type: string
+          nullable: true
         state:
           type: string
-          enum: [pending_identity, eligible, suspended]
+          enum: [pending_review, pending_identity, eligible, suspended]
         availabilityState:
           type: string
           enum: [available, unavailable]
+        requiresProfileReview:
+          type: boolean
+          description: True when a legacy profile is incomplete or has not passed its required review.
         version:
           type: integer
           minimum: 1
@@ -3770,16 +4055,44 @@ components:
 
     FieldAdmissionRequest:
       type: object
-      required: [contactPhoneE164]
+      required: [fullNameAr, contactPhoneE164]
       additionalProperties: false
       properties:
+        fullNameAr:
+          type: string
+          description: Arabic display name for this Field admission; this field is not a verified legal name.
+          minLength: 2
+          maxLength: 120
         contactPhoneE164:
           type: string
           pattern: '^\+[1-9][0-9]{7,14}$'
 
+    FieldAdmissionProfileRequest:
+      type: object
+      required: [fullNameAr]
+      additionalProperties: false
+      properties:
+        fullNameAr:
+          type: string
+          description: Arabic display name for this Field admission; this field is not a verified legal name.
+          minLength: 2
+          maxLength: 120
+
+    FieldAdmissionListResponse:
+      type: object
+      required: [admissions, nextCursor]
+      additionalProperties: false
+      properties:
+        admissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldAdmission"
+        nextCursor:
+          type: string
+
     FieldAdmission:
       type: object
-      required: [id, state, version, createdAt, updatedAt]
+      required: [id, state, requiresProfileReview, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -3787,9 +4100,19 @@ components:
         actorId:
           type: string
           nullable: true
+        fullNameAr:
+          type: string
+          description: Arabic display name for this Field admission; this field is not a verified legal name.
+          nullable: true
+        contactPhoneE164:
+          type: string
+          nullable: true
         state:
           type: string
-          enum: [pending_identity, eligible, suspended]
+          enum: [pending_review, pending_identity, eligible, suspended]
+        requiresProfileReview:
+          type: boolean
+          description: True when a legacy profile is incomplete or has not passed its required review.
         version:
           type: integer
           minimum: 1
@@ -3810,7 +4133,7 @@ components:
         idempotentReplay:
           type: boolean
 
-    FieldReenrollmentRequest:
+    ManagedRoleReenrollmentRequest:
       type: object
       required: [expectedActorVersion, expectedRoleVersion, reason]
       additionalProperties: false
@@ -4434,8 +4757,8 @@ components:
         collectedAmountMinor:
           type: integer
           format: int64
-          minimum: 1
-          description: Required for a delivered cash-on-delivery assignment; must equal the order amount.
+          minimum: 0
+          description: Cash amount received from the customer; must equal the order cash remainder and is zero when the allocated balance covers the full payable.
         deliveryProofCode:
           type: string
           pattern: '^[0-9]{6}$'
@@ -5833,7 +6156,7 @@ components:
 
     Order:
       type: object
-      required: [id, clientActorId, storeId, storeName, pickupLocation, cartId, fulfillmentMode, addressId, addressVersion, addressText, addressLatitude, addressLongitude, serviceCityId, serviceabilityPolicyVersion, serviceabilityStatus, serviceabilityStoreVersion, serviceabilityAddressVersion, state, subtotalAmountMinor, discountMinor, totalAmountMinor, currency, paymentMethod, paymentState, paymentIntentId, version, lines, createdAt, updatedAt]
+      required: [id, clientActorId, storeId, storeName, pickupLocation, cartId, fulfillmentMode, addressId, addressVersion, addressText, addressLatitude, addressLongitude, serviceCityId, serviceabilityPolicyVersion, serviceabilityStatus, serviceabilityStoreVersion, serviceabilityAddressVersion, state, subtotalAmountMinor, discountMinor, totalAmountMinor, cashAmountMinor, currency, paymentMethod, paymentState, paymentIntentId, version, lines, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -5897,6 +6220,10 @@ components:
         totalAmountMinor:
           type: integer
           minimum: 1
+        cashAmountMinor:
+          type: integer
+          minimum: 0
+          description: Cash remainder due at the selected fulfillment handoff after the allocated customer balance contribution.
         currency:
           type: string
           const: YER
@@ -6119,7 +6446,34 @@ components:
         promotions:
           type: array
           items:
-            $ref: "#/components/schemas/PromotionView"
+            $ref: "#/components/schemas/PublicPromotionView"
+
+    PublicPromotionView:
+      type: object
+      required: [id, code, nameAr, descriptionAr, kind, valueMinor]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        code:
+          type: string
+        nameAr:
+          type: string
+        descriptionAr:
+          type: string
+        kind:
+          $ref: "#/components/schemas/PromotionKind"
+        valueMinor:
+          type: integer
+          minimum: 1
+        maxDiscountMinor:
+          type: integer
+          minimum: 1
+          nullable: true
+        endsAt:
+          type: string
+          format: date-time
+          nullable: true
 
     OperatorPromotionRegistryResponse:
       type: object
@@ -6270,7 +6624,28 @@ components:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/DiscoveryContentView"
+            $ref: "#/components/schemas/PublicDiscoveryContentView"
+
+    PublicDiscoveryContentView:
+      type: object
+      required: [id, kind, titleAr, bodyAr, mediaUri, targetType]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          $ref: "#/components/schemas/DiscoveryContentKind"
+        titleAr:
+          type: string
+        bodyAr:
+          type: string
+        mediaUri:
+          type: string
+        targetType:
+          $ref: "#/components/schemas/DiscoveryContentTargetType"
+        targetId:
+          type: string
+          nullable: true
 
     OperatorDiscoveryContentRegistryResponse:
       type: object
@@ -6385,9 +6760,6 @@ components:
         bodyAr:
           type: string
           maxLength: 1000
-        mediaUri:
-          type: string
-          maxLength: 2048
         targetType:
           $ref: "#/components/schemas/DiscoveryContentTargetType"
         targetId:
@@ -6403,6 +6775,67 @@ components:
           type: string
           format: date-time
           nullable: true
+        ordinal:
+          type: integer
+          minimum: 0
+
+    CreateDiscoveryContentUploadRequest:
+      type: object
+      required: [id, kind, titleAr, file, targetType, startsAt, ordinal, creator, sourceDescription, rightsStatement, rightsAttested]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        kind:
+          $ref: "#/components/schemas/DiscoveryContentKind"
+        titleAr:
+          type: string
+          minLength: 2
+          maxLength: 160
+        bodyAr:
+          type: string
+          maxLength: 1000
+        file:
+          type: string
+          format: binary
+        creator:
+          type: string
+          minLength: 2
+          maxLength: 200
+        sourceDescription:
+          type: string
+          minLength: 3
+          maxLength: 1000
+        sourceUri:
+          type: string
+          format: uri
+          maxLength: 2048
+        rightsStatement:
+          type: string
+          minLength: 5
+          maxLength: 2000
+        rightsUri:
+          type: string
+          format: uri
+          maxLength: 2048
+        rightsAttested:
+          type: boolean
+        targetType:
+          $ref: "#/components/schemas/DiscoveryContentTargetType"
+        targetId:
+          type: string
+          maxLength: 128
+        serviceCityId:
+          type: string
+          maxLength: 128
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
         ordinal:
           type: integer
           minimum: 0

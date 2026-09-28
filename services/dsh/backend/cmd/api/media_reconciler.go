@@ -21,7 +21,7 @@ func runMediaReconciliationLoop(ctx context.Context, interval time.Duration, rec
 			err := reconcile(attemptContext)
 			cancel()
 			if err != nil {
-				log.Printf("catalog media reconciliation retry deferred: %v", err)
+				log.Printf("DSH media reconciliation retry deferred: %v", err)
 			}
 		}
 	}

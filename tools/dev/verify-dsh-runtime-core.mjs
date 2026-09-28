@@ -33,6 +33,18 @@ for (const [index, name] of dshMigrationNames.entries()) {
 }
 
 const env = readEnv(envPath);
+const checkerFixturePath = process.env.DSH_RUNTIME_CHECKER_FIXTURE_PATH?.trim() || "";
+function readCheckerFixture() {
+  if (!checkerFixturePath || !fs.existsSync(checkerFixturePath)) return null;
+  let fixture;
+  try { fixture = JSON.parse(fs.readFileSync(checkerFixturePath, "utf8")); }
+  catch { fail("DSH checker fixture metadata is invalid"); }
+  if (fixture?.createdByTest !== true || !/^act_[A-Za-z0-9_-]+$/.test(String(fixture.actorId || "")) || !/^oprof_[A-Za-z0-9_-]+$/.test(String(fixture.profileId || "")) || !/^\+9677[0-9]{8}$/.test(String(fixture.phone || ""))) {
+    fail("DSH checker fixture metadata does not identify one disposable reviewed Operator");
+  }
+  return { actorID: String(fixture.actorId), profileID: String(fixture.profileId), phone: String(fixture.phone) };
+}
+const checkerFixture = readCheckerFixture();
 const dshBase = required(env, "DSH_API_BASE_URL").replace(/\/+$/, "");
 const identityBase = required(env, "IDENTITY_API_BASE_URL").replace(/\/+$/, "");
 const dshToken = required(env, "CONTROL_PANEL_SERVICE_TOKEN");
@@ -45,7 +57,7 @@ if (dshToken.length < 24 || identityDshToken.length < 24 || bootstrapToken.lengt
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", path.join(root, "infra/local/compose/compose.yaml")];
 const suffix = `${Date.now().toString(36)}-${crypto.randomBytes(6).toString("hex")}`;
 const citySuffix = String(Date.now());
-const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), challengeIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), paymentIntentIDs = new Set(), deliveryFeePolicyIDs = new Set(), fieldCommissionPolicyIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set(), captainAdmissionIDs = new Set(), captainOfferIDs = new Set(), captainAssignmentIDs = new Set(), captainFundingIDs = new Set(), fieldAdmissionIDs = new Set(), destinationIDs = new Set(), payoutIDs = new Set(), settlementBatchIDs = new Set(), promotionIDs = new Set(), contentIDs = new Set(), multiStoreCheckoutIDs = new Set(), partnerCommissionRemittanceIDs = new Set();
+const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), challengeIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), paymentIntentIDs = new Set(), cashInFundingIntentIDs = new Set(), deliveryFeePolicyIDs = new Set(), fieldCommissionPolicyIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set(), captainAdmissionIDs = new Set(), captainOfferIDs = new Set(), captainAssignmentIDs = new Set(), fieldAdmissionIDs = new Set(), destinationIDs = new Set(), payoutIDs = new Set(), settlementBatchIDs = new Set(), promotionIDs = new Set(), contentIDs = new Set(), multiStoreCheckoutIDs = new Set(), partnerCommissionRemittanceIDs = new Set();
 let cityA = "";
 let cityB = "";
 let verticalID = "";
@@ -56,6 +68,9 @@ const enumAttributeID = `roast-${suffix}`;
 const measurementAttributeID = `net-weight-${suffix}`;
 const dateAttributeID = `expiry-${suffix}`;
 const clientPhone = `+96778${crypto.randomInt(1_000_000, 9_999_999)}`;
+let cleanupBatch = null;
+let cleanupAttempted = false;
+let cleanupCompleted = false;
 
 function compose(...args) { return execFileSync("docker", [...composeArgs, ...args], { cwd: root, encoding: "utf8" }); }
 function sqlLiteral(value) { return String(value).replaceAll("'", "''"); }
@@ -64,15 +79,27 @@ function sqlLiteral(value) { return String(value).replaceAll("'", "''"); }
 // are created through canonical HTTP owners; this is not a SQL setup path.
 const postgresContainerID = compose("ps", "-aq", "postgres").trim();
 function sql(query) {
+  if (cleanupBatch && /^(DELETE|UPDATE)\b/i.test(query.trim())) {
+    cleanupBatch.push(query);
+    return "";
+  }
   try {
     if (!postgresContainerID) fail("postgres container is not present");
     return execFileSync("docker", ["exec", postgresContainerID, "psql", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-Atc", query], { cwd: root, encoding: "utf8" }).trim();
   }
-  catch (error) { fail("database proof failed", String(error?.stderr || error?.message || error)); }
+  catch (error) {
+    const detail = String(error?.stderr || error?.message || error);
+    if (cleanupBatch) throw new Error(`database cleanup read failed: ${detail}`);
+    fail("database proof failed", detail);
+  }
 }
 function expectSQL(query, expected, message) { const observed = sql(query); if (observed !== expected) fail(message, `expected=${expected} observed=${observed}`); }
 
 function cleanup() {
+  if (cleanupCompleted || cleanupAttempted) return;
+  cleanupAttempted = true;
+  cleanupBatch = [];
+  try {
   // Disposable cleanup is intentionally ID-scoped to this verifier's fresh state;
   // it must never delete the reusable local baseline or synthetic world locators.
   for (const challengeID of challengeIDs) {
@@ -202,11 +229,13 @@ function cleanup() {
     sql(`DELETE FROM wlt.payment_intent_events WHERE intent_id='${value}'`);
     sql(`DELETE FROM wlt.payment_intents WHERE id='${value}'`);
   }
-  for (const fundingID of captainFundingIDs) {
+  for (const fundingID of cashInFundingIntentIDs) {
     const value = sqlLiteral(fundingID);
-    sql(`DELETE FROM wlt.ledger_entries WHERE transaction_id=(SELECT ledger_transaction_id FROM wlt.captain_wallet_funding WHERE id='${value}')`);
-    sql(`DELETE FROM wlt.captain_wallet_funding WHERE id='${value}'`);
-    sql(`DELETE FROM wlt.ledger_transactions WHERE source_type='CAPTAIN_OPENING_FUNDING' AND source_id='${value}'`);
+    sql(`DELETE FROM wlt.cash_in_funding_intent_events WHERE funding_intent_id='${value}'`);
+    sql(`UPDATE wlt.cash_in_funding_intents SET state='FAILED',provider_transaction_reference=NULL,ledger_transaction_id=NULL WHERE id='${value}'`);
+    sql(`DELETE FROM wlt.ledger_entries WHERE transaction_id IN (SELECT id FROM wlt.ledger_transactions WHERE source_type='FUNDING_INTENT' AND source_id='${value}')`);
+    sql(`DELETE FROM wlt.ledger_transactions WHERE source_type='FUNDING_INTENT' AND source_id='${value}'`);
+    sql(`DELETE FROM wlt.cash_in_funding_intents WHERE id='${value}'`);
   }
   for (const policyID of deliveryFeePolicyIDs) {
     const value = sqlLiteral(policyID);
@@ -242,12 +271,12 @@ function cleanup() {
     sql(`DELETE FROM dsh.catalog_variant_mutation_idempotency WHERE variant_id IN (SELECT id FROM dsh.catalog_product_variants WHERE product_id='${value}')`);
     sql(`DELETE FROM dsh.catalog_product_audit WHERE product_id='${value}'`);
     sql(`DELETE FROM dsh.catalog_product_mutation_idempotency WHERE product_id='${value}'`);
+    sql(`DELETE FROM dsh.catalog_media WHERE product_id='${value}'`);
     sql(`DELETE FROM dsh.catalog_media_assets WHERE product_id='${value}'`);
     sql(`DELETE FROM dsh.catalog_media_audit WHERE product_id='${value}'`);
     sql(`DELETE FROM dsh.catalog_media_mutation_idempotency WHERE product_id='${value}'`);
     sql(`DELETE FROM dsh.catalog_product_attribute_values WHERE product_id='${value}'`);
     sql(`DELETE FROM dsh.catalog_product_categories WHERE product_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_media WHERE product_id='${value}'`);
     sql(`DELETE FROM dsh.catalog_variant_identifiers WHERE variant_id IN (SELECT id FROM dsh.catalog_product_variants WHERE product_id='${value}')`);
     sql(`DELETE FROM dsh.catalog_product_variants WHERE product_id='${value}'`);
     sql(`DELETE FROM dsh.catalog_products WHERE id='${value}'`);
@@ -344,9 +373,54 @@ function cleanup() {
     const value = sqlLiteral(actorID);
     sql(`DELETE FROM dsh.notification_read_state WHERE actor_id='${value}'`);
     sql(`DELETE FROM identity_actors WHERE id='${value}'`);
+    }
+    if (cleanupBatch.length > 0) {
+      execFileSync("docker", ["exec", "-i", postgresContainerID, "psql", "--no-psqlrc", "--set=ON_ERROR_STOP=1", "--single-transaction", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-f", "-"], { cwd: root, encoding: "utf8", input: `${cleanupBatch.join(";\n")};\n` });
+    }
+    cleanupCompleted = true;
+  } catch (error) {
+    throw new Error(`bounded runtime cleanup failed: ${String(error?.stderr || error?.message || error)}`);
+  } finally {
+    cleanupBatch = null;
   }
 }
-process.on("exit", () => { try { cleanup(); } catch (error) { console.error(`DSH_RUNTIME_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`); } });
+function cleanupCheckerFixture() {
+  if (!checkerFixturePath || !fs.existsSync(checkerFixturePath)) return false;
+  const fixture = readCheckerFixture();
+  const actorID = sqlLiteral(fixture.actorID);
+  const profileID = sqlLiteral(fixture.profileID);
+  const phone = sqlLiteral(fixture.phone);
+  const cleanupSQL = [
+    `DELETE FROM identity_operator_profile_events WHERE profile_id IN (SELECT id FROM identity_operator_profiles WHERE id='${profileID}' AND actor_id='${actorID}' AND state='admitted')`,
+    `DELETE FROM identity_operator_profiles WHERE id='${profileID}' AND actor_id='${actorID}'`,
+    `DELETE FROM identity_actors WHERE id='${actorID}' AND phone_e164='${phone}'`,
+    `SELECT (SELECT count(*) FROM identity_operator_profiles WHERE id='${profileID}') + (SELECT count(*) FROM identity_actors WHERE id='${actorID}')`,
+  ].join(";\n") + ";\n";
+  const output = execFileSync("docker", ["exec", "-i", postgresContainerID, "psql", "--no-psqlrc", "-A", "-t", "-q", "--set=ON_ERROR_STOP=1", "--single-transaction", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-f", "-"], { cwd: root, encoding: "utf8", input: cleanupSQL }).trim();
+  if (output.split(/\r?\n/).at(-1) !== "0") throw new Error("DSH checker fixture cleanup left the created Operator or reviewed profile");
+  fs.unlinkSync(checkerFixturePath);
+  console.log("DSH_RUNTIME_CHECKER_FIXTURE_CLEANUP=PASS");
+  return true;
+}
+const cleanupCheckerFixtureOnly = process.argv.includes("--cleanup-checker-fixture");
+process.on("exit", () => {
+  if (!cleanupCheckerFixtureOnly && !cleanupCompleted && !cleanupAttempted) {
+    try { cleanup(); }
+    catch (error) { console.error(`DSH_RUNTIME_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`); process.exitCode = 1; }
+  }
+  try { cleanupCheckerFixture(); }
+  catch (error) { console.error(`DSH_RUNTIME_CHECKER_FIXTURE_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`); process.exitCode = 1; }
+});
+if (cleanupCheckerFixtureOnly) {
+  try {
+    cleanupCheckerFixture();
+    console.log("DSH_RUNTIME_CHECKER_FIXTURE_CLEANUP=PASS");
+    process.exit(0);
+  } catch (error) {
+    console.error(`DSH_RUNTIME_CHECKER_FIXTURE_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
+}
 
 async function request(base, method, pathname, options = {}) {
   let response;
@@ -365,6 +439,63 @@ async function request(base, method, pathname, options = {}) {
 }
 function serviceHeaders(operatorID, key, correlation = crypto.randomUUID(), expectedVersion) { return { "X-Acting-Actor-ID": operatorID, "X-Correlation-ID": correlation, "Idempotency-Key": key, ...(expectedVersion === undefined ? {} : { "X-Expected-Version": String(expectedVersion) }) }; }
 function partnerHeaders(key, expectedVersion) { return { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": key, ...(expectedVersion === undefined ? {} : { "X-Expected-Version": String(expectedVersion) }) }; }
+async function fundCaptainThroughDevelopmentCashIn(captainActorID, amountMinor, proofKey) {
+  const fundingIntentKey = `captain-cash-in-${proofKey}`;
+  const fundingIntent = await request(wltBase, "POST", `/wlt/v1/wallets/captain/${encodeURIComponent(captainActorID)}/funding-intents`, { token: wltToken, headers: serviceHeaders(actingOperatorID, fundingIntentKey), body: { amountMinor } });
+  if (fundingIntent.body?.intent?.id) cashInFundingIntentIDs.add(String(fundingIntent.body.intent.id));
+  const fundingIntentReplay = await request(wltBase, "POST", `/wlt/v1/wallets/captain/${encodeURIComponent(captainActorID)}/funding-intents`, { token: wltToken, headers: serviceHeaders(actingOperatorID, fundingIntentKey), body: { amountMinor } });
+  if (fundingIntent.status !== 201 || fundingIntent.body?.intent?.actorId !== captainActorID || fundingIntent.body?.intent?.amountMinor !== amountMinor || fundingIntent.body?.intent?.state !== "PENDING_PROVIDER" || fundingIntentReplay.status !== 200 || fundingIntentReplay.body?.idempotentReplay !== true || fundingIntentReplay.body?.intent?.id !== fundingIntent.body?.intent?.id) {
+    fail("Captain Cash-In did not create and replay its canonical WLT funding intent", JSON.stringify({ fundingIntent, fundingIntentReplay }));
+  }
+  const fundingIntentID = String(fundingIntent.body.intent.id);
+  const resultKey = `captain-cash-in-result-${proofKey}`;
+  const fundingResult = await request(wltBase, "POST", `/wlt/v1/development/funding-intents/${encodeURIComponent(fundingIntentID)}/simulate`, { token: wltToken, headers: serviceHeaders(actingOperatorID, resultKey), body: { outcome: "SUCCESS" } });
+  const fundingResultReplay = await request(wltBase, "POST", `/wlt/v1/development/funding-intents/${encodeURIComponent(fundingIntentID)}/simulate`, { token: wltToken, headers: serviceHeaders(actingOperatorID, resultKey), body: { outcome: "SUCCESS" } });
+  if (fundingResult.status !== 200 || fundingResult.body?.intent?.state !== "SETTLED" || fundingResultReplay.status !== 200 || fundingResultReplay.body?.idempotentReplay !== true || fundingResultReplay.body?.intent?.id !== fundingIntentID) {
+    fail("Captain Cash-In result did not settle and replay through the canonical WLT writer", JSON.stringify({ fundingResult, fundingResultReplay }));
+  }
+  return fundingResult.body.intent;
+}
+async function admitReviewedRoleCandidate(role, phone, candidateName, reviewedName, label) {
+  if (role !== "field" && role !== "captain") fail("unsupported role candidate proof", role);
+  const plural = role === "field" ? "fields" : "captains";
+  const root = `/dsh/${plural}/admissions`;
+  const createHeaders = serviceHeaders(actingOperatorID, `${label}-profile-${suffix}`);
+  const created = await request(dshBase, "POST", root, { token: dshToken, headers: createHeaders, body: { fullNameAr: candidateName, contactPhoneE164: phone } });
+  const replay = await request(dshBase, "POST", root, { token: dshToken, headers: createHeaders, body: { fullNameAr: candidateName, contactPhoneE164: phone } });
+  if (created.status !== 201 || created.body?.admission?.state !== "pending_review" || created.body?.admission?.actorId || created.body?.admission?.fullNameAr !== candidateName || replay.status !== 200 || replay.body?.idempotentReplay !== true || replay.body?.admission?.id !== created.body?.admission?.id) {
+    fail(`${role} profile creation did not persist a reviewable candidate before Identity role access`, JSON.stringify({ created, replay }));
+  }
+  const admissionID = String(created.body.admission.id);
+  const updated = await request(dshBase, "PATCH", `${root}/${encodeURIComponent(admissionID)}/profile`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `${label}-profile-edit-${suffix}`, crypto.randomUUID(), Number(created.body.admission.version)), body: { fullNameAr: reviewedName } });
+  if (updated.status !== 200 || updated.body?.admission?.state !== "pending_review" || updated.body?.admission?.fullNameAr !== reviewedName || updated.body?.admission?.actorId) {
+    fail(`${role} candidate profile editing did not preserve the pre-access review state`, JSON.stringify(updated));
+  }
+  const approved = await request(dshBase, "POST", `${root}/${encodeURIComponent(admissionID)}/approve`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `${label}-profile-approve-${suffix}`, crypto.randomUUID(), Number(updated.body?.admission?.version)) });
+  const roleBeforeGrant = await request(identityBase, "GET", `/internal/actor-roles/search?role=${role}&q=${encodeURIComponent(phone)}&limit=5`, { token: identityDshToken });
+  if (approved.status !== 200 || approved.body?.admission?.state !== "pending_identity" || approved.body?.admission?.fullNameAr !== reviewedName || approved.body?.admission?.actorId || roleBeforeGrant.status !== 200 || roleBeforeGrant.body?.items?.some((item) => item.phoneE164 === phone)) {
+    fail(`${role} approval must leave the Identity role ungranted`, JSON.stringify({ approved, roleBeforeGrant }));
+  }
+  const provision = await request(dshBase, "POST", `${root}/${encodeURIComponent(admissionID)}/provision`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `${label}-profile-grant-${suffix}`) });
+  const actorID = String(provision.body?.admission?.actorId || "");
+  const roleAfterGrant = await request(identityBase, "GET", `/internal/actor-roles/search?role=${role}&q=${encodeURIComponent(phone)}&limit=5`, { token: identityDshToken });
+  if (provision.status !== 200 || provision.body?.admission?.state !== "eligible" || provision.body?.admission?.fullNameAr !== reviewedName || !actorID || roleAfterGrant.status !== 200 || !roleAfterGrant.body?.items?.some((item) => item.actorId === actorID && item.phoneE164 === phone)) {
+    fail(`${role} approved candidate did not receive one Identity role with canonical readback`, JSON.stringify({ provision, roleAfterGrant }));
+  }
+  return { admissionID, actorID, created, replay, updated, approved, provision };
+}
+async function requestFieldPartnerAdmission(caseID, fieldToken, expectedVersion, label) {
+  const fieldHeaders = partnerHeaders(label + "-field-admission-" + suffix, expectedVersion);
+  const fieldAdmissionRequested = await request(dshBase, "POST", "/dsh/field/joining-cases/" + encodeURIComponent(caseID) + "/submit", { token: fieldToken, headers: fieldHeaders });
+  const fieldAdmissionReplay = await request(dshBase, "POST", "/dsh/field/joining-cases/" + encodeURIComponent(caseID) + "/submit", { token: fieldToken, headers: fieldHeaders });
+  const fieldAdmissionReadback = await request(dshBase, "GET", "/dsh/joining-cases/" + encodeURIComponent(caseID), { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+  if (fieldAdmissionRequested.status !== 200 || fieldAdmissionRequested.body?.case?.state !== "admission_requested" || fieldAdmissionRequested.body?.case?.version !== expectedVersion + 1 || fieldAdmissionRequested.body?.case?.partnerActorId || fieldAdmissionReplay.status !== 200 || fieldAdmissionReplay.body?.idempotentReplay !== true || fieldAdmissionReplay.body?.case?.state !== "admission_requested" || fieldAdmissionReplay.body?.case?.version !== expectedVersion + 1 || fieldAdmissionReadback.status !== 200 || fieldAdmissionReadback.body?.case?.state !== "admission_requested" || fieldAdmissionReadback.body?.case?.version !== expectedVersion + 1 || fieldAdmissionReadback.body?.case?.partnerActorId) fail("Field admission request, replay, or canonical readback failed", JSON.stringify({ fieldAdmissionRequested, fieldAdmissionReplay, fieldAdmissionReadback }));
+  const operatorSubmitted = await request(dshBase, "POST", "/dsh/joining-cases/" + encodeURIComponent(caseID) + "/submit", { token: dshToken, headers: serviceHeaders(actingOperatorID, label + "-operator-admission-" + suffix, crypto.randomUUID(), expectedVersion + 1) });
+  const partnerActorID = String(operatorSubmitted.body?.case?.partnerActorId || "");
+  if (partnerActorID) actorIDs.add(partnerActorID);
+  if (operatorSubmitted.status !== 200 || operatorSubmitted.body?.case?.state !== "submitted" || operatorSubmitted.body?.case?.version !== expectedVersion + 2 || !partnerActorID) fail("Operator admission did not bind the Field referral to one Partner", JSON.stringify(operatorSubmitted));
+  return { fieldAdmissionRequested, fieldAdmissionReplay, fieldAdmissionReadback, operatorSubmitted };
+}
 function discreteOffer(priceMinor, publicationState, availability = true, inventoryPolicy = "QUANTITY_ON_HAND", inventoryOnHandBaseUnits = 10) { return { priceMinor, availability, publicationState, quantityPolicy: "DISCRETE", quantityMinBaseUnits: 1, quantityMaxBaseUnits: 1000, quantityStepBaseUnits: 1, pricingBasis: "PER_UNIT", pricingUnitBaseUnits: 1, inventoryPolicy, inventoryOnHandBaseUnits }; }
 function discreteCreateOffer(variantId, priceMinor, inventoryPolicy = "AVAILABILITY_ONLY", inventoryOnHandBaseUnits = 0) { return { variantId, priceMinor, quantityPolicy: "DISCRETE", quantityMinBaseUnits: 1, quantityMaxBaseUnits: 1000, quantityStepBaseUnits: 1, pricingBasis: "PER_UNIT", pricingUnitBaseUnits: 1, inventoryPolicy, inventoryOnHandBaseUnits }; }
 function variableCreateOffer(variantId, priceMinor) { return { variantId, priceMinor, quantityPolicy: "VARIABLE_MEASURE", quantityMinBaseUnits: 1, quantityMaxBaseUnits: 10000, quantityStepBaseUnits: 1, pricingBasis: "PER_MEASURE", pricingUnitBaseUnits: 1, inventoryPolicy: "AVAILABILITY_ONLY", inventoryOnHandBaseUnits: 0 }; }
@@ -431,6 +562,7 @@ async function waitForSQL(query, expected, message, timeoutMs = 20_000) { const 
 async function waitForFinancialHandoff(effectType, orderID, message, timeoutMs = 20_000) { const deadline = Date.now() + timeoutMs; let actual = ""; while (Date.now() < deadline) { actual = sql(`SELECT state || '|' || COALESCE(last_error,'') FROM dsh.commerce_financial_handoff_outbox WHERE effect_type='${sqlLiteral(effectType)}' AND order_id='${sqlLiteral(orderID)}'`); if (actual.startsWith("POSTED|")) return; await new Promise((resolve) => setTimeout(resolve, 250)); } fail(message, `actual=${actual}`); }
 
 let actingOperatorID = sql("SELECT r.actor_id FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id JOIN identity_operator_permissions p ON p.actor_id=r.actor_id AND p.permission='platform_policies' AND p.enabled JOIN identity_bootstrap_state b ON b.id=1 WHERE r.role='operator' AND r.enabled AND a.security_enabled AND r.activated_at IS NOT NULL ORDER BY (r.actor_id=b.initial_operator_actor_id) DESC, r.activated_at DESC, r.actor_id LIMIT 1");
+if (!actingOperatorID && process.env.BTHWANI_IDENTITY_PROOF_SCOPE === "isolated-local-actors") fail("isolated local DSH proof requires an existing active Operator with Platform Policies permission; it will not create a permanent bootstrap actor as test residue");
 if (!actingOperatorID) console.log(`DSH_OPERATOR_CANDIDATES=${sql("SELECT COALESCE(string_agg(r.actor_id || ':' || r.enabled::text || ':' || (r.activated_at IS NOT NULL)::text || ':' || a.security_enabled::text, ',' ORDER BY r.activated_at DESC NULLS LAST, r.actor_id), 'none') FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id WHERE r.role='operator'")}`);
 if (!actingOperatorID) actingOperatorID = sql("SELECT b.initial_operator_actor_id FROM identity_bootstrap_state b JOIN identity_actor_roles r ON r.actor_id=b.initial_operator_actor_id AND r.role='operator' JOIN identity_actors a ON a.id=r.actor_id WHERE b.id=1 AND r.enabled AND a.security_enabled AND r.activated_at IS NOT NULL");
 if (!actingOperatorID) {
@@ -441,7 +573,10 @@ if (!actingOperatorID) {
 if (!actingOperatorID.startsWith("act_")) fail("acting operator identity is invalid", actingOperatorID);
 const platformPoliciesAccess = await request(identityBase, "GET", `/internal/operators/${encodeURIComponent(actingOperatorID)}/permissions/platform_policies`, { token: identityDshToken });
 if (platformPoliciesAccess.status !== 200 || platformPoliciesAccess.body?.actorId !== actingOperatorID || platformPoliciesAccess.body?.permission !== "platform_policies" || platformPoliciesAccess.body?.enabled !== true) fail("DSH proof operator lacks Platform Policies permission", JSON.stringify(platformPoliciesAccess));
-const checkerOperatorID = sql(`SELECT r.actor_id FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id WHERE r.role='operator' AND r.enabled AND a.security_enabled AND r.activated_at IS NOT NULL AND r.actor_id<>'' AND r.actor_id<> '${sqlLiteral(actingOperatorID)}' ORDER BY r.activated_at DESC, r.actor_id LIMIT 1`);
+if (checkerFixturePath && !checkerFixture) fail("disposable DSH checker Operator fixture was not established through canonical Identity review and Passkey enrollment");
+const checkerOperatorID = checkerFixture
+  ? sql(`SELECT r.actor_id FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id WHERE r.role='operator' AND r.enabled AND a.security_enabled AND r.activated_at IS NOT NULL AND r.actor_id='${sqlLiteral(checkerFixture.actorID)}' AND r.actor_id<> '${sqlLiteral(actingOperatorID)}'`)
+  : sql(`SELECT r.actor_id FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id WHERE r.role='operator' AND r.enabled AND a.security_enabled AND r.activated_at IS NOT NULL AND r.actor_id<>'' AND r.actor_id<> '${sqlLiteral(actingOperatorID)}' ORDER BY r.activated_at DESC, r.actor_id LIMIT 1`);
 if (!checkerOperatorID) fail("independent active checker Operator fixture is missing; establish it through the canonical Passkey flow before DSH runtime proof");
 if (!checkerOperatorID.startsWith("act_") || checkerOperatorID === actingOperatorID) fail("checker operator identity is invalid", checkerOperatorID);
 for (const permission of ["operations", "finance"]) {
@@ -453,19 +588,7 @@ for (const permission of ["operations", "finance"]) {
     fail("checker Operator permission readback failed", JSON.stringify({ permission, currentPermission }));
   }
   if (currentPermission.body.enabled !== true) {
-    const grantedPermission = await request(identityBase, "PUT", `/internal/operators/${encodeURIComponent(checkerOperatorID)}/permissions/${permission}`, {
-      token: dshToken,
-      headers: {
-        "X-Acting-Actor-ID": actingOperatorID,
-        "X-Correlation-ID": crypto.randomUUID(),
-        "X-Expected-Version": String(currentPermission.body.version),
-        "X-Reason": `disposable CI independent checker ${permission} proof`,
-      },
-      body: { enabled: true },
-    });
-    if (grantedPermission.status !== 200 || grantedPermission.body?.actorId !== checkerOperatorID || grantedPermission.body?.permission !== permission || grantedPermission.body?.enabled !== true || grantedPermission.body?.version !== currentPermission.body.version + 1) {
-      fail("checker Operator canonical permission grant failed", JSON.stringify({ permission, currentPermission, grantedPermission }));
-    }
+    fail(`independent checker Operator must already hold canonical ${permission} permission before DSH proof`, JSON.stringify({ permission, currentPermission }));
   }
 }
 console.log("DSH_CHECKER_OPERATOR_PERMISSIONS=PASS");
@@ -482,6 +605,11 @@ expectSQL(
   "SELECT count(*) FROM dsh.schema_migrations",
   String(dshMigrationNames.length),
   `DSH migration history is incomplete through v${dshMigrationNames.length}`,
+);
+expectSQL(
+  "SELECT to_regclass('dsh.catalog_store_offers_store_created_registry_idx') IS NOT NULL",
+  "t",
+  "DSH StoreOffer keyset paging index is missing",
 );
   expectSQL("SELECT to_regclass('dsh.joining_case_financial_profile_outbox') IS NOT NULL", "t", "DSH financial profile outbox is missing");
   expectSQL("SELECT to_regclass('dsh.field_commission_publication_outbox') IS NOT NULL", "t", "DSH field commission publication outbox is missing");
@@ -505,14 +633,19 @@ for (const table of ["captain_location_snapshots", "captain_location_mutation_id
   expectSQL("SELECT to_regclass('dsh.notification_read_state') IS NOT NULL", "t", "required notification read-state relation is missing");
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admissions_phone_chk'", "CHECK (((contact_phone_e164 IS NULL) OR (contact_phone_e164 ~ '^\\+[1-9][0-9]{7,14}$'::text)))", "Captain phone constraint is not canonical");
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admissions_suspended_availability_chk'", "CHECK (((state <> 'suspended'::text) OR (availability_state = 'unavailable'::text)))", "Captain suspended availability invariant is not canonical");
-expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admissions_state_chk'", "CHECK ((state = ANY (ARRAY['pending_identity'::text, 'eligible'::text, 'suspended'::text])))", "Captain admission state set is not canonical");
-expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admission_idempotency_state_chk'", "CHECK ((result_state = ANY (ARRAY['pending_identity'::text, 'eligible'::text, 'suspended'::text])))", "Captain admission idempotency state set is not canonical");
+expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admissions_state_chk'", "CHECK ((state = ANY (ARRAY['pending_review'::text, 'pending_identity'::text, 'eligible'::text, 'suspended'::text])))", "Captain admission state set is not canonical");
+expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admission_idempotency_state_chk'", "CHECK ((result_state = ANY (ARRAY['pending_review'::text, 'pending_identity'::text, 'eligible'::text, 'suspended'::text])))", "Captain admission idempotency state set is not canonical");
+expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admissions_profile_review_chk'", "CHECK (((NOT requires_profile_review) OR ((state = ANY (ARRAY['eligible'::text, 'suspended'::text])) AND (actor_id IS NOT NULL))))", "Captain profile review state is not canonical");
+expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admission_audit_event_type_chk'", "CHECK ((event_type = ANY (ARRAY['captain_admission_created'::text, 'captain_admission_profile_updated'::text, 'captain_admission_profile_reviewed'::text, 'captain_admission_approved'::text, 'captain_admission_bound'::text, 'captain_admission_suspended'::text, 'captain_admission_restored'::text, 'captain_availability_changed'::text])))", "Captain admission profile review audit events are not canonical");
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_operation_idempotency_operation_chk'", "CHECK ((operation = ANY (ARRAY['availability'::text, 'dispatch'::text, 'store_dispatch'::text, 'respond_offer'::text, 'reassign'::text, 'store_confirm'::text, 'pickup'::text, 'complete'::text, 'recover'::text])))", "Captain recovery operation is not canonical");
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_audit_event_type_chk'", "CHECK ((event_type = ANY (ARRAY['dispatch_offer_created'::text, 'dispatch_offer_accepted'::text, 'dispatch_offer_rejected'::text, 'dispatch_offer_expired'::text, 'captain_offer_superseded_by_access'::text, 'captain_assignment_reassigned'::text, 'store_handoff_confirmed'::text, 'captain_pickup_completed'::text, 'delivery_completed'::text, 'delivery_failed'::text, 'delivery_recovered'::text])))", "Captain delivery recovery audit events are not canonical");
 for (const table of ["field_admissions", "field_admission_idempotency", "field_admission_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required Field relation is missing: ${table}`);
-expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admissions_state_chk'", "CHECK ((state = ANY (ARRAY['pending_identity'::text, 'eligible'::text, 'suspended'::text])))", "Field admission state set is not canonical");
-expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admission_idempotency_operation_chk'", "CHECK ((operation = 'create'::text))", "Field admission idempotency operation is not canonical");
-expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admission_audit_event_type_chk'", "CHECK ((event_type = ANY (ARRAY['field_admission_created'::text, 'field_admission_bound'::text, 'field_admission_suspended'::text, 'field_admission_restored'::text])))", "Field admission audit events are not canonical");
+expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admissions_state_chk'", "CHECK ((state = ANY (ARRAY['pending_review'::text, 'pending_identity'::text, 'eligible'::text, 'suspended'::text])))", "Field admission state set is not canonical");
+expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admission_idempotency_operation_chk'", "CHECK ((operation = ANY (ARRAY['create'::text, 'approve'::text, 'bind'::text, 'profile'::text, 'profile_review'::text])))", "Field admission idempotency operations are not canonical");
+expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admission_idempotency_state_chk'", "CHECK ((result_state = ANY (ARRAY['pending_review'::text, 'pending_identity'::text, 'eligible'::text, 'suspended'::text])))", "Field admission idempotency states are not canonical");
+expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admission_audit_event_type_chk'", "CHECK ((event_type = ANY (ARRAY['field_admission_created'::text, 'field_admission_profile_updated'::text, 'field_admission_profile_reviewed'::text, 'field_admission_approved'::text, 'field_admission_bound'::text, 'field_admission_suspended'::text, 'field_admission_restored'::text])))", "Field admission profile review audit events are not canonical");
+expectSQL("SELECT NOT EXISTS (SELECT 1 FROM dsh.field_admissions WHERE state IN ('eligible','suspended') AND actor_id IS NOT NULL AND full_name_ar IS NULL AND NOT requires_profile_review)", "t", "unprofiled Field role remains outside profile review");
+expectSQL("SELECT NOT EXISTS (SELECT 1 FROM dsh.captain_admissions WHERE state IN ('eligible','suspended') AND actor_id IS NOT NULL AND full_name_ar IS NULL AND NOT requires_profile_review)", "t", "unprofiled Captain role remains outside profile review");
 expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%origin%' AND pg_get_constraintdef(oid) LIKE '%control_panel%' AND pg_get_constraintdef(oid) LIKE '%field%' FROM pg_constraint WHERE conname='joining_cases_origin_chk'", "t", "Joining-case origin values are not canonical");
 expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%control_panel%' AND pg_get_constraintdef(oid) LIKE '%originating_field_actor_id%' FROM pg_constraint WHERE conname='joining_cases_field_actor_chk'", "t", "Joining-case field provenance invariant is not canonical");
 expectSQL("SELECT to_regclass('dsh.joining_cases') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='dsh' AND table_name='joining_cases' AND column_name IN ('originating_field_actor_id','origin') GROUP BY table_schema,table_name HAVING count(*)=2)", "t", "Joining-case provenance columns are missing");
@@ -575,7 +708,26 @@ categoryID = String(categoryCreate.body.category.id);
 const childCategoryCreate = await request(dshBase, "POST", "/dsh/catalog/categories", { token: dshToken, headers: serviceHeaders(actingOperatorID, `category-child-${suffix}`), body: { verticalId: verticalID, parentCategoryId: categoryID, nameAr: `حبوب ${suffix}`, nameEn: `Beans ${suffix}`, active: true, reason: "DSH runtime child catalog category proof" } });
 if (childCategoryCreate.status !== 201 || !String(childCategoryCreate.body?.category?.id || "").startsWith("category_") || childCategoryCreate.body?.category?.parentCategoryId !== categoryID) fail("catalog parent category tree failed", JSON.stringify({ categoryCreate, childCategoryCreate }));
 childCategoryID = String(childCategoryCreate.body.category.id);
-categoryIDs.add(categoryID); categoryIDs.add(childCategoryID);
+const unrelatedCategoryCreate = await request(dshBase, "POST", "/dsh/catalog/categories", { token: dshToken, headers: serviceHeaders(actingOperatorID, `category-unrelated-${suffix}`), body: { verticalId: verticalID, nameAr: `شاي ${suffix}`, nameEn: `Tea ${suffix}`, active: true, reason: "DSH runtime unrelated catalog category proof" } });
+if (unrelatedCategoryCreate.status !== 201 || !String(unrelatedCategoryCreate.body?.category?.id || "").startsWith("category_")) fail("unrelated catalog category creation failed", JSON.stringify(unrelatedCategoryCreate));
+const unrelatedCategoryID = String(unrelatedCategoryCreate.body.category.id);
+categoryIDs.add(categoryID); categoryIDs.add(childCategoryID); categoryIDs.add(unrelatedCategoryID);
+const categorySearch = await request(dshBase, "GET", `/dsh/catalog/categories?verticalId=${encodeURIComponent(verticalID)}&status=all&query=${encodeURIComponent(`Beans ${suffix}`)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+if (categorySearch.status !== 200 || categorySearch.body?.categories?.length !== 1 || categorySearch.body.categories[0]?.id !== childCategoryID || !categorySearch.body.categories[0]?.pathAr?.includes(`قهوة ${suffix}`)) fail("operator category search did not return the matching category with its ancestry path", JSON.stringify(categorySearch));
+const categoryDetail = await request(dshBase, "GET", `/dsh/catalog/categories/${encodeURIComponent(childCategoryID)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+if (categoryDetail.status !== 200 || categoryDetail.body?.category?.id !== childCategoryID || !categoryDetail.body.category.pathAr?.includes(`قهوة ${suffix}`)) fail("operator category detail did not return the selected category path", JSON.stringify(categoryDetail));
+const categoryPageQuery = encodeURIComponent(suffix);
+const categoryPageOne = await request(dshBase, "GET", `/dsh/catalog/categories?verticalId=${encodeURIComponent(verticalID)}&status=all&sort=name_desc&limit=2&query=${categoryPageQuery}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+if (categoryPageOne.status !== 200 || categoryPageOne.body?.categories?.length !== 2 || !categoryPageOne.body?.nextCursor) fail("operator category registry did not bound the first page or return a continuation cursor", JSON.stringify(categoryPageOne));
+const categoryPageTwo = await request(dshBase, "GET", `/dsh/catalog/categories?verticalId=${encodeURIComponent(verticalID)}&status=all&sort=name_desc&limit=2&query=${categoryPageQuery}&cursor=${encodeURIComponent(categoryPageOne.body.nextCursor)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+const categoryPageIDs = [...(categoryPageOne.body?.categories ?? []), ...(categoryPageTwo.body?.categories ?? [])].map((item) => item.id);
+if (categoryPageTwo.status !== 200 || categoryPageOne.body?.categories?.[0]?.id !== unrelatedCategoryID || categoryPageTwo.body?.categories?.length !== 1 || categoryPageTwo.body?.nextCursor || new Set(categoryPageIDs).size !== 3 || ![categoryID, childCategoryID, unrelatedCategoryID].every((id) => categoryPageIDs.includes(id))) fail("operator category registry continuation did not preserve descending order and return each matching category exactly once", JSON.stringify({ categoryPageOne, categoryPageTwo }));
+const updatedPageOne = await request(dshBase, "GET", `/dsh/catalog/categories?verticalId=${encodeURIComponent(verticalID)}&status=all&sort=updated_desc&limit=2&query=${categoryPageQuery}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+if (updatedPageOne.status !== 200 || updatedPageOne.body?.categories?.length !== 2 || !updatedPageOne.body?.nextCursor) fail("operator category updated-order page did not return its continuation cursor", JSON.stringify(updatedPageOne));
+const updatedPageTwo = await request(dshBase, "GET", `/dsh/catalog/categories?verticalId=${encodeURIComponent(verticalID)}&status=all&sort=updated_desc&limit=2&query=${categoryPageQuery}&cursor=${encodeURIComponent(updatedPageOne.body.nextCursor)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+const updatedCategories = [...(updatedPageOne.body?.categories ?? []), ...(updatedPageTwo.body?.categories ?? [])];
+const updatedOrderIsValid = updatedCategories.every((item, index) => index === 0 || Date.parse(updatedCategories[index - 1].updatedAt) > Date.parse(item.updatedAt) || (Date.parse(updatedCategories[index - 1].updatedAt) === Date.parse(item.updatedAt) && updatedCategories[index - 1].id >= item.id));
+if (updatedPageTwo.status !== 200 || updatedPageTwo.body?.categories?.length !== 1 || updatedPageTwo.body?.nextCursor || new Set(updatedCategories.map((item) => item.id)).size !== 3 || !updatedOrderIsValid) fail("operator category updated-order continuation was not ordered or complete", JSON.stringify({ updatedPageOne, updatedPageTwo }));
 console.log("DSH_CATALOG_REGISTRY=PASS");
 
 const attributeDefinitions = [
@@ -608,21 +760,27 @@ async function createApprovedPartner(phone, name, serviceCityId, origin = "contr
   const created = await request(dshBase, "POST", fieldOrigin ? "/dsh/field/joining-cases" : "/dsh/joining-cases", { token: fieldOrigin ? fieldAccessToken : dshToken, headers: fieldOrigin ? partnerHeaders(createKey) : serviceHeaders(actingOperatorID, createKey), body: { contactPhoneE164: phone, businessName: `${name} business`, firstStoreName: `${name} store`, serviceCityId, firstStoreVerticalId: partnerVerticalID, firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"], ...firstStoreOrigin } });
   if (created.status !== 201 || created.body?.case?.state !== "draft" || created.body?.case?.origin !== origin || created.body?.case?.firstStoreVerticalId !== partnerVerticalID || created.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || created.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude) fail("joining case creation did not preserve source provenance or fixed store origin", JSON.stringify(created));
   const caseID = String(created.body.case.id); caseIDs.add(caseID);
-  const submitted = await request(dshBase, "POST", fieldOrigin ? `/dsh/field/joining-cases/${caseID}/submit` : `/dsh/joining-cases/${caseID}/submit`, { token: fieldOrigin ? fieldAccessToken : dshToken, headers: fieldOrigin ? partnerHeaders(`submit-${crypto.randomUUID()}`, 1) : serviceHeaders(actingOperatorID, `submit-${crypto.randomUUID()}`, crypto.randomUUID(), 1) });
+  let submitted;
+  if (fieldOrigin) {
+    submitted = (await requestFieldPartnerAdmission(caseID, fieldAccessToken, 1, "catalog-runtime-" + name)).operatorSubmitted;
+  } else {
+    submitted = await request(dshBase, "POST", "/dsh/joining-cases/" + encodeURIComponent(caseID) + "/submit", { token: dshToken, headers: serviceHeaders(actingOperatorID, "submit-" + crypto.randomUUID(), crypto.randomUUID(), 1) });
+  }
   if (submitted.status !== 200 || submitted.body?.case?.state !== "submitted" || !submitted.body?.case?.partnerActorId) fail("joining case submission failed", JSON.stringify(submitted));
   const actorID = String(submitted.body.case.partnerActorId); actorIDs.add(actorID);
   const accessToken = await activatePartner(phone, name.slice(0, 4).padEnd(4, "x") + suffix.slice(0, 4));
-  const approved = await request(dshBase, "POST", `/dsh/joining-cases/${caseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `approve-${crypto.randomUUID()}`, crypto.randomUUID(), 2), body: { decision: "approved", expectedTermsPolicyVersion: partnerFinancialTermsPolicy.policyVersion } });
+  const approved = await request(dshBase, "POST", `/dsh/joining-cases/${caseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `approve-${crypto.randomUUID()}`, crypto.randomUUID(), Number(submitted.body?.case?.version)), body: { decision: "approved", expectedTermsPolicyVersion: partnerFinancialTermsPolicy.policyVersion } });
   const storeID = String(approved.body?.case?.store?.id || ""); if (storeID) storeIDs.add(storeID);
   if (approved.status !== 200 || approved.body?.case?.state !== "approved" || approved.body?.case?.financialProfileState !== "ACTIVE" || approved.body?.case?.commissionRateBps !== 1500 || approved.body?.case?.settlementPeriod !== "MONTHLY" || typeof approved.body?.case?.financialProfileId !== "string" || approved.body?.case?.store?.primaryVerticalId !== partnerVerticalID || approved.body?.case?.store?.deliveryOrigin?.latitude !== firstStoreOrigin.firstStoreLatitude || approved.body?.case?.store?.deliveryOrigin?.longitude !== firstStoreOrigin.firstStoreLongitude) fail("joining case approval did not bind financial terms and transfer the fixed store origin", JSON.stringify(approved));
   return { accessToken, actorID, caseID, storeID };
 }
 const fieldPhone = `+96771${crypto.randomInt(1_000_000, 9_999_999)}`;
-const fieldAdmissionResponse = await request(dshBase, "POST", "/dsh/fields/admissions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-admit-${suffix}`), body: { contactPhoneE164: fieldPhone } });
-const fieldAdmissionReplay = await request(dshBase, "POST", "/dsh/fields/admissions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-admit-${suffix}`), body: { contactPhoneE164: fieldPhone } });
-if (fieldAdmissionResponse.status !== 201 || fieldAdmissionResponse.body?.admission?.state !== "eligible" || !fieldAdmissionResponse.body?.admission?.actorId || fieldAdmissionReplay.status !== 200 || fieldAdmissionReplay.body?.idempotentReplay !== true || fieldAdmissionReplay.body.admission.id !== fieldAdmissionResponse.body.admission.id) fail("Field admission did not bind and replay one DSH-owned actor", JSON.stringify({ fieldAdmissionResponse, fieldAdmissionReplay }));
-const fieldAdmissionID = String(fieldAdmissionResponse.body.admission.id);
-const fieldActorID = String(fieldAdmissionResponse.body.admission.actorId);
+const fieldCandidateLifecycle = await admitReviewedRoleCandidate("field", fieldPhone, "سامي ناصر", "سامي ناصر محمد العريقي", "field-admit");
+const fieldAdmissionResponse = fieldCandidateLifecycle.provision;
+const fieldAdmissionReplay = fieldCandidateLifecycle.replay;
+if (fieldAdmissionResponse.status !== 200 || fieldAdmissionResponse.body?.admission?.state !== "eligible" || !fieldAdmissionResponse.body?.admission?.actorId || fieldAdmissionReplay.status !== 200 || fieldAdmissionReplay.body?.idempotentReplay !== true || fieldAdmissionReplay.body.admission.id !== fieldAdmissionResponse.body.admission.id) fail("Field profile, review, role grant, or replay did not reach one DSH-owned actor", JSON.stringify({ fieldAdmissionResponse, fieldAdmissionReplay }));
+const fieldAdmissionID = fieldCandidateLifecycle.admissionID;
+const fieldActorID = fieldCandidateLifecycle.actorID;
 fieldAdmissionIDs.add(fieldAdmissionID); actorIDs.add(fieldActorID);
 const fieldPassword = `Fiel${suffix.slice(0, 4)}`;
 let fieldAccessToken = await activateField(fieldPhone, fieldPassword);
@@ -630,7 +788,7 @@ const fieldSelf = await request(dshBase, "GET", "/dsh/fields/me", { token: field
 const fieldAdmissionRead = await request(dshBase, "GET", `/dsh/fields/admissions/${encodeURIComponent(fieldAdmissionID)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 const fieldActorAdmissionRead = await request(dshBase, "GET", `/dsh/fields/actors/${encodeURIComponent(fieldActorID)}/admission`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 const fieldDirectIdentityWrite = await request(identityBase, "POST", "/internal/actor-roles/provision", { token: fieldAccessToken, body: { phoneE164: `+96770${crypto.randomInt(1_000_000, 9_999_999)}`, role: "field" } });
-if (fieldSelf.status !== 200 || fieldSelf.body?.admission?.actorId !== fieldActorID || fieldAdmissionRead.status !== 200 || fieldAdmissionRead.body?.admission?.id !== fieldAdmissionID || fieldActorAdmissionRead.status !== 200 || fieldActorAdmissionRead.body?.admission?.actorId !== fieldActorID || fieldDirectIdentityWrite.status !== 401) fail("Field admission readback or direct Identity creation boundary failed", JSON.stringify({ fieldSelf, fieldAdmissionRead, fieldActorAdmissionRead, fieldDirectIdentityWrite }));
+if (fieldSelf.status !== 200 || fieldSelf.body?.admission?.actorId !== fieldActorID || fieldSelf.body?.admission?.fullNameAr !== "سامي ناصر محمد العريقي" || fieldSelf.body?.admission?.contactPhoneE164 !== fieldPhone || fieldAdmissionRead.status !== 200 || fieldAdmissionRead.body?.admission?.id !== fieldAdmissionID || fieldAdmissionRead.body?.admission?.fullNameAr !== "سامي ناصر محمد العريقي" || fieldAdmissionRead.body?.admission?.contactPhoneE164 != null || fieldActorAdmissionRead.status !== 200 || fieldActorAdmissionRead.body?.admission?.actorId !== fieldActorID || fieldActorAdmissionRead.body?.admission?.fullNameAr !== "سامي ناصر محمد العريقي" || fieldActorAdmissionRead.body?.admission?.contactPhoneE164 != null || fieldDirectIdentityWrite.status !== 401) fail("Field profile owner-scoped name/phone readback or direct Identity creation boundary failed", JSON.stringify({ fieldSelf, fieldAdmissionRead, fieldActorAdmissionRead, fieldDirectIdentityWrite }));
 const fieldRoleBeforeReenrollment = await request(identityBase, "GET", `/internal/actors/${encodeURIComponent(fieldActorID)}/roles/field`, { token: identityDshToken });
 const fieldReenrollmentPath = `/dsh/fields/${encodeURIComponent(fieldActorID)}/reenrollment`;
 const fieldReenrollmentBody = { expectedActorVersion: fieldRoleBeforeReenrollment.body?.actorVersion, expectedRoleVersion: fieldRoleBeforeReenrollment.body?.roleVersion, reason: "استرداد جهاز الميدان وإعادة تسجيل الوصول" };
@@ -650,31 +808,50 @@ const first = await createApprovedPartner(`+96772${crypto.randomInt(1_000_000, 9
 const second = await createApprovedPartner(`+96774${crypto.randomInt(1_000_000, 9_999_999)}`, "Catalog Runtime B", cityB, "field");
 const storeLocal = await createApprovedPartner(`+96775${crypto.randomInt(1_000_000, 9_999_999)}`, "Store Local Runtime", cityA, "control_panel", storeLocalVerticalID);
 const secondFieldPhone = `+96773${crypto.randomInt(1_000_000, 9_999_999)}`;
-const secondFieldAdmission = await request(dshBase, "POST", "/dsh/fields/admissions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-admit-second-${suffix}`), body: { contactPhoneE164: secondFieldPhone } });
-if (secondFieldAdmission.status !== 201 || secondFieldAdmission.body?.admission?.state !== "eligible" || !secondFieldAdmission.body?.admission?.actorId) fail("second Field admission fixture failed", JSON.stringify(secondFieldAdmission));
-const secondFieldAdmissionID = String(secondFieldAdmission.body.admission.id); const secondFieldActorID = String(secondFieldAdmission.body.admission.actorId); fieldAdmissionIDs.add(secondFieldAdmissionID); actorIDs.add(secondFieldActorID);
+const secondFieldFlow = await admitReviewedRoleCandidate("field", secondFieldPhone, "فهد أحمد", "فهد أحمد صالح القيسي", "field-admit-second");
+const secondFieldAdmission = secondFieldFlow.provision;
+if (secondFieldAdmission.status !== 200 || secondFieldAdmission.body?.admission?.state !== "eligible" || !secondFieldAdmission.body?.admission?.actorId) fail("second Field profile, approval, or role grant fixture failed", JSON.stringify(secondFieldAdmission));
+const secondFieldAdmissionID = secondFieldFlow.admissionID; const secondFieldActorID = secondFieldFlow.actorID; fieldAdmissionIDs.add(secondFieldAdmissionID); actorIDs.add(secondFieldActorID);
 const secondFieldAccessToken = await activateField(secondFieldPhone, `Fiel${suffix.slice(0, 4)}`);
+const secondFieldSelf = await request(dshBase, "GET", "/dsh/fields/me", { token: secondFieldAccessToken });
+if (secondFieldSelf.status !== 200 || secondFieldSelf.body?.admission?.actorId !== secondFieldActorID || secondFieldSelf.body?.admission?.fullNameAr !== "فهد أحمد صالح القيسي" || secondFieldSelf.body?.admission?.contactPhoneE164 !== secondFieldPhone) fail("second Field app profile did not read its reviewed name and Identity phone", JSON.stringify(secondFieldSelf));
 const fieldCasePhone = `+96775${crypto.randomInt(1_000_000, 9_999_999)}`;
 const fieldCaseKey = `field-case-${suffix}`;
 const fieldCaseCreated = await request(dshBase, "POST", "/dsh/field/joining-cases", { token: fieldAccessToken, headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": fieldCaseKey }, body: { contactPhoneE164: fieldCasePhone, businessName: `Field ${suffix} business`, firstStoreName: `Field ${suffix} store`, serviceCityId: cityA, firstStoreVerticalId: verticalID, ...firstStoreOrigin } });
 const fieldCaseReplay = await request(dshBase, "POST", "/dsh/field/joining-cases", { token: fieldAccessToken, headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": fieldCaseKey }, body: { contactPhoneE164: fieldCasePhone, businessName: `Field ${suffix} business`, firstStoreName: `Field ${suffix} store`, serviceCityId: cityA, firstStoreVerticalId: verticalID, ...firstStoreOrigin } });
 if (fieldCaseCreated.status !== 201 || fieldCaseCreated.body?.case?.state !== "draft" || fieldCaseCreated.body?.case?.version !== 1 || fieldCaseCreated.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || fieldCaseCreated.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || fieldCaseReplay.status !== 200 || fieldCaseReplay.body?.idempotentReplay !== true || fieldCaseReplay.body.case.id !== fieldCaseCreated.body.case.id || fieldCaseReplay.body.case.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || fieldCaseReplay.body.case.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude) fail("Field joining-case create/replay did not preserve one draft and its fixed store origin", JSON.stringify({ fieldCaseCreated, fieldCaseReplay }));
 const fieldCaseID = String(fieldCaseCreated.body.case.id); caseIDs.add(fieldCaseID);
+const fieldPageCasePhone = `+96777${crypto.randomInt(1_000_000, 9_999_999)}`;
+const fieldPageCaseCreated = await request(dshBase, "POST", "/dsh/field/joining-cases", { token: fieldAccessToken, headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": `field-page-case-${suffix}` }, body: { contactPhoneE164: fieldPageCasePhone, businessName: `Field ${suffix} queue business`, firstStoreName: `Field ${suffix} queue store`, serviceCityId: cityA, firstStoreVerticalId: verticalID, ...firstStoreOrigin } });
+if (fieldPageCaseCreated.status !== 201 || fieldPageCaseCreated.body?.case?.state !== "draft") fail("second Field page fixture could not be created through the canonical writer", JSON.stringify(fieldPageCaseCreated));
+const fieldPageCaseID = String(fieldPageCaseCreated.body.case.id); caseIDs.add(fieldPageCaseID);
 const fieldCases = await request(dshBase, "GET", "/dsh/field/joining-cases?limit=25", { token: fieldAccessToken });
+const fieldPageQuery = `Field ${suffix}`;
+const fieldPageOne = await request(dshBase, "GET", `/dsh/field/joining-cases?limit=1&q=${encodeURIComponent(fieldPageQuery)}`, { token: fieldAccessToken });
+const fieldPageTwo = fieldPageOne.body?.nextCursor ? await request(dshBase, "GET", `/dsh/field/joining-cases?limit=1&q=${encodeURIComponent(fieldPageQuery)}&cursor=${encodeURIComponent(fieldPageOne.body.nextCursor)}`, { token: fieldAccessToken }) : null;
+const fieldPageChangedQuery = fieldPageOne.body?.nextCursor ? await request(dshBase, "GET", `/dsh/field/joining-cases?limit=1&q=${encodeURIComponent(`${fieldPageQuery} changed`)}&cursor=${encodeURIComponent(fieldPageOne.body.nextCursor)}`, { token: fieldAccessToken }) : null;
+const fieldPageOtherActor = fieldPageOne.body?.nextCursor ? await request(dshBase, "GET", `/dsh/field/joining-cases?limit=1&q=${encodeURIComponent(fieldPageQuery)}&cursor=${encodeURIComponent(fieldPageOne.body.nextCursor)}`, { token: secondFieldAccessToken }) : null;
+const expectedFieldPageOrder = sql(`SELECT string_agg(id::text, ',' ORDER BY created_at DESC,id DESC) FROM dsh.joining_cases WHERE id IN ('${sqlLiteral(fieldCaseID)}','${sqlLiteral(fieldPageCaseID)}')`);
+const observedFieldPageOrder = [...(fieldPageOne.body?.cases || []), ...(fieldPageTwo?.body?.cases || [])].map((item) => String(item.id)).join(",");
+const operatorFieldPageOne = await request(dshBase, "GET", `/dsh/joining-cases?state=draft&q=${encodeURIComponent(fieldPageQuery)}&sort=created_desc&limit=1`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+const operatorFieldPageTwo = operatorFieldPageOne.body?.nextCursor ? await request(dshBase, "GET", `/dsh/joining-cases?state=draft&q=${encodeURIComponent(fieldPageQuery)}&sort=created_desc&limit=1&cursor=${encodeURIComponent(operatorFieldPageOne.body.nextCursor)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } }) : null;
+const operatorFieldPageChangedState = operatorFieldPageOne.body?.nextCursor ? await request(dshBase, "GET", `/dsh/joining-cases?state=approved&q=${encodeURIComponent(fieldPageQuery)}&sort=created_desc&limit=1&cursor=${encodeURIComponent(operatorFieldPageOne.body.nextCursor)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } }) : null;
+const observedOperatorFieldPageOrder = [...(operatorFieldPageOne.body?.cases || []), ...(operatorFieldPageTwo?.body?.cases || [])].map((item) => String(item.id)).join(",");
 const fieldCaseRead = await request(dshBase, "GET", `/dsh/field/joining-cases/${encodeURIComponent(fieldCaseID)}`, { token: fieldAccessToken });
 const secondFieldCaseRead = await request(dshBase, "GET", `/dsh/field/joining-cases/${encodeURIComponent(fieldCaseID)}`, { token: secondFieldAccessToken });
 const secondFieldCases = await request(dshBase, "GET", "/dsh/field/joining-cases?limit=25", { token: secondFieldAccessToken });
-if (fieldCases.status !== 200 || !fieldCases.body?.cases?.some((item) => item.id === fieldCaseID && item.state === "draft" && item.firstStoreLatitude === firstStoreOrigin.firstStoreLatitude && item.firstStoreLongitude === firstStoreOrigin.firstStoreLongitude) || fieldCaseRead.status !== 200 || fieldCaseRead.body?.case?.id !== fieldCaseID || fieldCaseRead.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || fieldCaseRead.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || secondFieldCaseRead.status !== 404 || secondFieldCases.status !== 200 || secondFieldCases.body?.cases?.some((item) => item.id === fieldCaseID)) fail("Field joining-case scope or fixed store origin readback failed", JSON.stringify({ fieldCases, fieldCaseRead, secondFieldCaseRead, secondFieldCases }));
-const fieldSubmitKey = `field-submit-${suffix}`;
-const fieldSubmitted = await request(dshBase, "POST", `/dsh/field/joining-cases/${encodeURIComponent(fieldCaseID)}/submit`, { token: fieldAccessToken, headers: partnerHeaders(fieldSubmitKey, 1) });
-const fieldSubmittedReplay = await request(dshBase, "POST", `/dsh/field/joining-cases/${encodeURIComponent(fieldCaseID)}/submit`, { token: fieldAccessToken, headers: partnerHeaders(fieldSubmitKey, 1) });
-const fieldSubmittedCanonical = await request(dshBase, "GET", `/dsh/joining-cases/${encodeURIComponent(fieldCaseID)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+if (fieldCases.status !== 200 || !fieldCases.body?.cases?.some((item) => item.id === fieldCaseID && item.state === "draft" && item.firstStoreLatitude === firstStoreOrigin.firstStoreLatitude && item.firstStoreLongitude === firstStoreOrigin.firstStoreLongitude) || fieldPageOne.status !== 200 || fieldPageOne.body?.cases?.length !== 1 || !fieldPageOne.body?.nextCursor || fieldPageTwo?.status !== 200 || fieldPageTwo.body?.cases?.length !== 1 || fieldPageTwo.body?.nextCursor || observedFieldPageOrder !== expectedFieldPageOrder || new Set([...(fieldPageOne.body?.cases || []), ...(fieldPageTwo?.body?.cases || [])].map((item) => item.id)).size !== 2 || fieldPageChangedQuery?.status !== 400 || fieldPageOtherActor?.status !== 400 || operatorFieldPageOne.status !== 200 || operatorFieldPageOne.body?.cases?.length !== 1 || !operatorFieldPageOne.body?.nextCursor || operatorFieldPageTwo?.status !== 200 || operatorFieldPageTwo.body?.cases?.length !== 1 || operatorFieldPageTwo.body?.nextCursor || observedOperatorFieldPageOrder !== expectedFieldPageOrder || operatorFieldPageChangedState?.status !== 400 || fieldCaseRead.status !== 200 || fieldCaseRead.body?.case?.id !== fieldCaseID || fieldCaseRead.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || fieldCaseRead.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || secondFieldCaseRead.status !== 404 || secondFieldCases.status !== 200 || secondFieldCases.body?.cases?.some((item) => item.id === fieldCaseID)) fail("Field or operator joining-case pagination, cursor scope, search, or fixed store origin readback failed", JSON.stringify({ fieldCases, fieldPageOne, fieldPageTwo, fieldPageChangedQuery, fieldPageOtherActor, expectedFieldPageOrder, operatorFieldPageOne, operatorFieldPageTwo, operatorFieldPageChangedState, observedFieldPageOrder, observedOperatorFieldPageOrder, fieldCaseRead, secondFieldCaseRead, secondFieldCases }));
+const fieldAdmissionFlow = await requestFieldPartnerAdmission(fieldCaseID, fieldAccessToken, 1, "field-main-" + suffix);
+const fieldAdmissionRequested = fieldAdmissionFlow.fieldAdmissionRequested;
+const fieldCaseAdmissionReplay = fieldAdmissionFlow.fieldAdmissionReplay;
+const fieldAdmissionCanonical = fieldAdmissionFlow.fieldAdmissionReadback;
+const fieldSubmitted = fieldAdmissionFlow.operatorSubmitted;
 const fieldReviewAttempt = await request(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(fieldCaseID)}/review`, { token: fieldAccessToken, headers: serviceHeaders(fieldActorID, `field-self-review-${suffix}`, crypto.randomUUID(), 2), body: { decision: "approved" } });
-if (fieldSubmitted.status !== 200 || fieldSubmitted.body?.case?.state !== "submitted" || fieldSubmitted.body?.case?.version !== 2 || fieldSubmitted.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || fieldSubmitted.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || fieldSubmittedReplay.status !== 200 || fieldSubmittedReplay.body?.idempotentReplay !== true || fieldSubmittedReplay.body.case.version !== 2 || fieldSubmittedReplay.body.case.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || fieldSubmittedReplay.body.case.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || fieldSubmittedCanonical.status !== 200 || !fieldSubmittedCanonical.body?.case?.partnerActorId || fieldSubmittedCanonical.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || fieldSubmittedCanonical.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || fieldReviewAttempt.status !== 401) fail("Field joining-case submission, replay, readback, or review boundary failed", JSON.stringify({ fieldSubmitted, fieldSubmittedReplay, fieldSubmittedCanonical, fieldReviewAttempt }));
-const fieldPartnerActorID = String(fieldSubmittedCanonical.body.case.partnerActorId); actorIDs.add(fieldPartnerActorID);
+if (fieldAdmissionRequested.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || fieldAdmissionRequested.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || fieldCaseAdmissionReplay.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || fieldCaseAdmissionReplay.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || fieldAdmissionCanonical.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || fieldAdmissionCanonical.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || fieldSubmitted.body?.case?.version !== 3 || fieldSubmitted.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || fieldSubmitted.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || fieldReviewAttempt.status !== 401) fail("Field admission-to-Partner lifecycle or review boundary failed", JSON.stringify({ fieldAdmissionFlow, fieldSubmitted, fieldReviewAttempt }));
+const fieldPartnerActorID = String(fieldSubmitted.body.case.partnerActorId); actorIDs.add(fieldPartnerActorID);
 const fieldPublicationAttempt = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(first.storeID)}/publication`, { token: fieldAccessToken, headers: partnerHeaders(`field-publication-${suffix}`, 1), body: { state: "published" } });
 if (fieldPublicationAttempt.status !== 401 && fieldPublicationAttempt.status !== 403) fail("Field reached the Store publication writer", JSON.stringify(fieldPublicationAttempt));
-const fieldApproved = await request(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(fieldCaseID)}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-approve-${suffix}`, crypto.randomUUID(), 2), body: { decision: "approved", expectedTermsPolicyVersion: partnerFinancialTermsPolicy.policyVersion } });
+const fieldApproved = await request(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(fieldCaseID)}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-approve-${suffix}`, crypto.randomUUID(), 3), body: { decision: "approved", expectedTermsPolicyVersion: partnerFinancialTermsPolicy.policyVersion } });
 if (fieldApproved.status !== 200 || fieldApproved.body?.case?.state !== "approved" || fieldApproved.body?.case?.financialProfileState !== "ACTIVE" || fieldApproved.body?.case?.commissionRateBps !== 1500 || fieldApproved.body?.case?.settlementPeriod !== "MONTHLY" || typeof fieldApproved.body?.case?.financialProfileId !== "string" || !fieldApproved.body?.case?.store?.id || fieldApproved.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || fieldApproved.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || fieldApproved.body?.case?.store?.deliveryOrigin?.latitude !== firstStoreOrigin.firstStoreLatitude || fieldApproved.body?.case?.store?.deliveryOrigin?.longitude !== firstStoreOrigin.firstStoreLongitude) fail("operator approval of Field-originated joining case did not bind financial terms and preserve the fixed store origin", JSON.stringify(fieldApproved));
 storeIDs.add(String(fieldApproved.body.case.store.id));
 const fieldRoleBeforeDisable = await request(identityBase, "GET", `/internal/actors/${encodeURIComponent(fieldActorID)}/roles/field`, { token: identityDshToken });
@@ -710,11 +887,14 @@ const fieldCorrectionCreated = await request(dshBase, "POST", "/dsh/field/joinin
 const fieldCorrectionCaseID = String(fieldCorrectionCreated.body?.case?.id || "");
 if (fieldCorrectionCreated.status !== 201 || fieldCorrectionCreated.body?.case?.origin !== "field" || fieldCorrectionCreated.body?.case?.state !== "draft") fail("Field correction fixture creation did not preserve provenance", JSON.stringify(fieldCorrectionCreated));
 caseIDs.add(fieldCorrectionCaseID);
-const fieldCorrectionSubmitted = await request(dshBase, "POST", `/dsh/field/joining-cases/${fieldCorrectionCaseID}/submit`, { token: secondFieldAccessToken, headers: partnerHeaders(`field-correction-submit-${suffix}`, 1) });
-const fieldNeedsCorrection = await request(dshBase, "POST", `/dsh/joining-cases/${fieldCorrectionCaseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-needs-correction-${suffix}`, crypto.randomUUID(), 2), body: { decision: "needs_correction", correctionReason: "أكمل بيانات ملف الميداني" } });
+const fieldCorrectionFlow = await requestFieldPartnerAdmission(fieldCorrectionCaseID, secondFieldAccessToken, 1, "field-correction-" + suffix);
+const fieldCorrectionSubmitted = fieldCorrectionFlow.operatorSubmitted;
+const fieldNeedsCorrection = await request(dshBase, "POST", `/dsh/joining-cases/${fieldCorrectionCaseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-needs-correction-${suffix}`, crypto.randomUUID(), 3), body: { decision: "needs_correction", correctionReason: "أكمل بيانات ملف الميداني" } });
 const fieldCorrectionAsField = await request(dshBase, "POST", `/dsh/joining-cases/${fieldCorrectionCaseID}/correct-and-resubmit`, { token: secondFieldAccessToken, headers: partnerHeaders(`field-correction-as-field-${suffix}`, Number(fieldNeedsCorrection.body?.case?.version)), body: { businessName: "Field correction business fixed", firstStoreName: "Field correction store fixed", serviceCityId: cityA, firstStoreVerticalId: verticalID, ...correctedStoreOrigin } });
+const fieldCorrectionPartnerAccessToken = await activatePartner(fieldCorrectionPhone, "FCor" + suffix.slice(0, 4));
+const fieldCorrectionAsPartner = await request(dshBase, "POST", `/dsh/joining-cases/${fieldCorrectionCaseID}/correct-and-resubmit`, { token: fieldCorrectionPartnerAccessToken, headers: partnerHeaders(`field-correction-as-partner-${suffix}`, Number(fieldNeedsCorrection.body?.case?.version)), body: { businessName: "Field correction business fixed", firstStoreName: "Field correction store fixed", serviceCityId: cityA, firstStoreVerticalId: verticalID, ...correctedStoreOrigin } });
 const fieldCorrectionReadback = await request(dshBase, "GET", `/dsh/field/joining-cases/${fieldCorrectionCaseID}`, { token: secondFieldAccessToken });
-if (fieldCorrectionCreated.status !== 201 || fieldCorrectionSubmitted.status !== 200 || fieldNeedsCorrection.status !== 200 || fieldNeedsCorrection.body?.case?.state !== "needs_correction" || fieldCorrectionAsField.status !== 403 || fieldCorrectionReadback.status !== 200 || fieldCorrectionReadback.body?.case?.state !== "needs_correction" || fieldCorrectionReadback.body?.case?.version !== fieldNeedsCorrection.body?.case?.version || fieldCorrectionReadback.body?.case?.businessName !== fieldCorrectionCreated.body?.case?.businessName) fail("Field writer crossed the bound Partner correction boundary", JSON.stringify({ fieldCorrectionCreated, fieldCorrectionSubmitted, fieldNeedsCorrection, fieldCorrectionAsField, fieldCorrectionReadback }));
+if (fieldCorrectionCreated.status !== 201 || fieldCorrectionSubmitted.status !== 200 || fieldNeedsCorrection.status !== 200 || fieldNeedsCorrection.body?.case?.state !== "needs_correction" || fieldNeedsCorrection.body?.case?.version !== 4 || fieldCorrectionAsField.status !== 403 || fieldCorrectionAsPartner.status !== 200 || fieldCorrectionAsPartner.body?.case?.state !== "submitted" || fieldCorrectionAsPartner.body?.case?.version !== 5 || fieldCorrectionReadback.status !== 200 || fieldCorrectionReadback.body?.case?.state !== "submitted" || fieldCorrectionReadback.body?.case?.version !== 5 || fieldCorrectionReadback.body?.case?.businessName !== "Field correction business fixed" || fieldCorrectionReadback.body?.case?.firstStoreLatitude !== correctedStoreOrigin.firstStoreLatitude || fieldCorrectionReadback.body?.case?.firstStoreLongitude !== correctedStoreOrigin.firstStoreLongitude) fail("Field admission, Partner-owned correction, or canonical readback failed", JSON.stringify({ fieldCorrectionCreated, fieldCorrectionFlow, fieldCorrectionSubmitted, fieldNeedsCorrection, fieldCorrectionAsField, fieldCorrectionAsPartner, fieldCorrectionReadback }));
 const fieldCorrectionPartnerActorID = String(fieldCorrectionSubmitted.body.case.partnerActorId || "");
 if (!fieldCorrectionPartnerActorID) fail("Field correction submission did not expose its canonical partner actor", JSON.stringify(fieldCorrectionSubmitted));
 actorIDs.add(fieldCorrectionPartnerActorID);
@@ -722,8 +902,8 @@ console.log("DSH_JOINING_CASE_VERTICAL=PASS");
 console.log("DSH_JOINING_CASE_CORRECTION=PASS");
 
 const runtimeCoffeeName = `Runtime Coffee ${suffix}`;
-const productInput = { canonicalName: runtimeCoffeeName, verticalId: verticalID, scope: "SHARED", variantTitle: "عبوة 250 غ", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], identifierType: "GTIN", identifierValue: `628100${suffix.replaceAll("-", "").slice(-7)}`, imageUri: "https://example.com/runtime-coffee.jpg" };
-const productCategoryRead = await request(dshBase, "GET", `/dsh/catalog/categories?verticalId=${encodeURIComponent(verticalID)}`, { token: dshToken });
+const productInput = { canonicalName: runtimeCoffeeName, verticalId: verticalID, scope: "SHARED", variantTitle: "عبوة 250 غ", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], identifierType: "GTIN", identifierValue: `628100${suffix.replaceAll("-", "").slice(-7)}` };
+const productCategoryRead = await request(dshBase, "GET", `/dsh/catalog/categories?verticalId=${encodeURIComponent(verticalID)}&limit=50`, { token: dshToken });
 if (productCategoryRead.status !== 200 || !productCategoryRead.body?.categories?.some((category) => category.id === childCategoryID && category.verticalId === verticalID && category.active)) fail("catalog Product category was not active in its vertical at canonical readback", JSON.stringify({ verticalID, childCategoryID, productCategoryRead }));
 const productCategorySQL = sql(`SELECT COALESCE((SELECT vertical_id || ':' || active::text FROM dsh.catalog_categories WHERE id='${sqlLiteral(childCategoryID)}'), 'missing')`);
 if (productCategorySQL !== `${verticalID}:true`) fail("catalog Product category differs between canonical API and database readback", JSON.stringify({ verticalID, childCategoryID, productCategorySQL, productCategoryRead }));
@@ -732,34 +912,47 @@ const productCreate = await request(dshBase, "POST", "/dsh/catalog/products", { 
 if (productCreate.status !== 201 || productCreate.body?.product?.version !== 1 || !productCreate.body?.product?.id) fail("catalog Product creation failed", JSON.stringify({ productInput, productCategoryRead, productCategorySQL, productCreate }));
 const productID = String(productCreate.body.product.id); productIDs.add(productID);
 const productRead = await request(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&limit=50`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
-if (productRead.status !== 200 || productRead.body?.products?.length !== 1 || productRead.body.products[0].variants?.length !== 1 || productRead.body.products[0].variants[0].identifiers?.[0]?.value !== productInput.identifierValue || !productRead.body.products[0].media?.some((media) => media.role === "primary" && media.uri === productInput.imageUri)) fail("catalog Product/Variant/media canonical readback failed", JSON.stringify(productRead));
+if (productRead.status !== 200 || productRead.body?.products?.length !== 1 || productRead.body.products[0].variants?.length !== 1 || productRead.body.products[0].variants[0].identifiers?.[0]?.value !== productInput.identifierValue || productRead.body.products[0].media?.length !== 0) fail("catalog Product/Variant canonical readback failed", JSON.stringify(productRead));
 const variantID = String(productRead.body.products[0].variants[0].id);
 const attributeRule = await request(dshBase, "PUT", `/dsh/catalog/categories/${childCategoryID}/attribute-rules/${enumAttributeID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `attribute-rule-${suffix}`), body: { required: true, filterable: false, variantAxis: true, expectedVersion: 0, reason: "DSH runtime category attribute rule proof" } });
 if (attributeRule.status !== 200 || !attributeRule.body?.rules?.some((item) => item.attributeId === enumAttributeID && item.required && item.variantAxis)) fail("required category Attribute rule failed", JSON.stringify(attributeRule));
 console.log("DSH_TYPED_ATTRIBUTES=PASS");
 const replacementMedia = { media: [{ uri: "https://example.com/runtime-coffee-updated.jpg", role: "primary", ordinal: 0 }, { uri: "https://example.com/runtime-coffee-gallery.jpg", role: "gallery", ordinal: 1 }] };
 const mediaKey = `product-media-${suffix}`;
-const productMediaReplaceHeaders = serviceHeaders(actingOperatorID, mediaKey, crypto.randomUUID(), 1);
-const productMediaReplace = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/media`, { token: dshToken, headers: productMediaReplaceHeaders, body: replacementMedia });
-const productMediaReplay = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/media`, { token: dshToken, headers: productMediaReplaceHeaders, body: replacementMedia });
-const productMediaStale = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/media`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `product-media-stale-${suffix}`, crypto.randomUUID(), 1), body: replacementMedia });
-const productMediaRead = await request(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&limit=50`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
-const mediaReadback = productMediaRead.body?.products?.[0]?.media;
-if (productMediaReplace.status !== 200 || productMediaReplace.body?.product?.version !== 2 || productMediaReplace.body?.product?.media?.length !== 2 || productMediaReplay.status !== 200 || productMediaReplay.body?.idempotentReplay !== true || productMediaReplay.body?.product?.version !== 2 || productMediaStale.status !== 409 || productMediaRead.status !== 200 || productMediaRead.body?.products?.[0]?.id !== productID || productMediaRead.body?.products?.[0]?.version !== 2 || JSON.stringify(mediaReadback) !== JSON.stringify(replacementMedia.media)) fail("catalog product media replacement, idempotency, or version guard failed", JSON.stringify({ productMediaReplace, productMediaReplay, productMediaStale, productMediaRead }));
-console.log("DSH_CATALOG_MEDIA_MANAGEMENT=PASS");
+const rawMediaReplacement = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/media`, { token: dshToken, headers: serviceHeaders(actingOperatorID, mediaKey, crypto.randomUUID(), 1), body: replacementMedia });
+if (rawMediaReplacement.status !== 400 || rawMediaReplacement.body?.error?.code !== "INVALID_INPUT") fail("catalog media accepted a URL without a canonical uploaded asset", JSON.stringify(rawMediaReplacement));
 const runtimePNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 function mediaUploadForm() {
   const form = new FormData();
   form.set("role", "primary");
+  form.set("creator", "DSH runtime proof fixture generator");
+  form.set("sourceDescription", "One-pixel PNG generated for the isolated DSH runtime proof");
+  form.set("rightsStatement", "Generated solely for this disposable runtime proof and permitted for its test");
+  form.set("rightsAttested", "true");
   form.set("file", new Blob([runtimePNG], { type: "image/png" }), "runtime-product.png");
   return form;
 }
 const mediaUploadKey = `product-media-upload-${suffix}`;
-const productMediaUpload = await request(dshBase, "POST", `/dsh/catalog/products/${productID}/media/upload`, { token: dshToken, headers: serviceHeaders(actingOperatorID, mediaUploadKey, crypto.randomUUID(), 2), rawBody: mediaUploadForm() });
+const productMediaUpload = await request(dshBase, "POST", `/dsh/catalog/products/${productID}/media/upload`, { token: dshToken, headers: serviceHeaders(actingOperatorID, mediaUploadKey, crypto.randomUUID(), 1), rawBody: mediaUploadForm() });
+const uploadedAssetID = productMediaUpload.body?.product?.media?.find((item) => item.role === "primary")?.assetId;
 const uploadedURI = productMediaUpload.body?.product?.media?.find((item) => item.role === "primary")?.uri;
 const uploadedImageResponse = uploadedURI ? await fetch(uploadedURI, { headers: { Accept: "image/png" }, signal: AbortSignal.timeout(8_000) }) : null;
-const productMediaUploadReplay = await request(dshBase, "POST", `/dsh/catalog/products/${productID}/media/upload`, { token: dshToken, headers: serviceHeaders(actingOperatorID, mediaUploadKey, crypto.randomUUID(), 2), rawBody: mediaUploadForm() });
-if (productMediaUpload.status !== 201 || productMediaUpload.body?.product?.version !== 3 || typeof uploadedURI !== "string" || !uploadedURI.includes("/dsh/catalog/media/catalog/products/") || uploadedImageResponse?.status !== 200 || uploadedImageResponse.headers.get("content-type") !== "image/png" || Number((await uploadedImageResponse.arrayBuffer()).byteLength) !== runtimePNG.byteLength || productMediaUploadReplay.status !== 200 || productMediaUploadReplay.body?.idempotentReplay !== true || productMediaUploadReplay.body?.product?.version !== 3) fail("catalog product binary media upload, read proxy, or replay failed", JSON.stringify({ productMediaUpload, productMediaUploadReplay, uploadedURI, uploadedImageResponse: uploadedImageResponse?.status }));
+const productMediaUploadReplay = await request(dshBase, "POST", `/dsh/catalog/products/${productID}/media/upload`, { token: dshToken, headers: serviceHeaders(actingOperatorID, mediaUploadKey, crypto.randomUUID(), 1), rawBody: mediaUploadForm() });
+const galleryMediaKey = `product-media-gallery-${suffix}`;
+const galleryMediaUpload = await request(dshBase, "POST", `/dsh/catalog/products/${productID}/media/upload`, { token: dshToken, headers: serviceHeaders(actingOperatorID, galleryMediaKey, crypto.randomUUID(), 2), rawBody: (() => { const form = mediaUploadForm(); form.set("role", "gallery"); form.set("file", new Blob([runtimePNG], { type: "image/png" }), "runtime-product-gallery.png"); return form; })() });
+const uploadedGalleryAssetID = galleryMediaUpload.body?.product?.media?.find((item) => item.role === "gallery")?.assetId;
+const uploadedGalleryURI = galleryMediaUpload.body?.product?.media?.find((item) => item.role === "gallery")?.uri;
+if (productMediaUpload.status !== 201 || productMediaUpload.body?.product?.version !== 2 || typeof uploadedAssetID !== "string" || typeof uploadedURI !== "string" || !uploadedURI.includes("/dsh/catalog/media/catalog/products/") || uploadedImageResponse?.status !== 200 || uploadedImageResponse.headers.get("content-type") !== "image/png" || Number((await uploadedImageResponse.arrayBuffer()).byteLength) !== runtimePNG.byteLength || productMediaUploadReplay.status !== 200 || productMediaUploadReplay.body?.idempotentReplay !== true || productMediaUploadReplay.body?.product?.version !== 2 || galleryMediaUpload.status !== 201 || galleryMediaUpload.body?.product?.version !== 3 || typeof uploadedGalleryAssetID !== "string" || typeof uploadedGalleryURI !== "string" || !uploadedGalleryURI.includes("/dsh/catalog/media/catalog/products/")) fail("catalog product binary media upload, read proxy, or replay failed", JSON.stringify({ productMediaUpload, productMediaUploadReplay, galleryMediaUpload, uploadedAssetID, uploadedURI, uploadedGalleryAssetID, uploadedGalleryURI, uploadedImageResponse: uploadedImageResponse?.status }));
+const canonicalReplacement = { media: [{ assetId: uploadedAssetID, role: "primary", ordinal: 0 }, { assetId: uploadedGalleryAssetID, role: "gallery", ordinal: 1 }] };
+const expectedMediaReadback = [{ assetId: uploadedAssetID, uri: uploadedURI, role: "primary", ordinal: 0 }, { assetId: uploadedGalleryAssetID, uri: uploadedGalleryURI, role: "gallery", ordinal: 1 }];
+const productMediaReplaceHeaders = serviceHeaders(actingOperatorID, `product-media-replace-${suffix}`, crypto.randomUUID(), 3);
+const productMediaReplace = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/media`, { token: dshToken, headers: productMediaReplaceHeaders, body: canonicalReplacement });
+const productMediaReplay = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/media`, { token: dshToken, headers: productMediaReplaceHeaders, body: canonicalReplacement });
+const productMediaStale = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/media`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `product-media-stale-${suffix}`, crypto.randomUUID(), 3), body: canonicalReplacement });
+const productMediaRead = await request(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&limit=50`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+const mediaReadback = productMediaRead.body?.products?.[0]?.media;
+if (productMediaReplace.status !== 200 || productMediaReplace.body?.product?.version !== 4 || productMediaReplace.body?.product?.media?.length !== 2 || productMediaReplay.status !== 200 || productMediaReplay.body?.idempotentReplay !== true || productMediaReplay.body?.product?.version !== 4 || productMediaStale.status !== 409 || productMediaRead.status !== 200 || productMediaRead.body?.products?.[0]?.id !== productID || productMediaRead.body?.products?.[0]?.version !== 4 || JSON.stringify(mediaReadback) !== JSON.stringify(expectedMediaReadback)) fail("catalog product media replacement, idempotency, or version guard failed", JSON.stringify({ productMediaReplace, productMediaReplay, productMediaStale, productMediaRead }));
+console.log("DSH_CATALOG_MEDIA_MANAGEMENT=PASS");
 console.log("DSH_CATALOG_MEDIA_UPLOAD=PASS");
 const productMeasurement = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/attributes/${measurementAttributeID}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID }, body: { valueKind: "MEASUREMENT", decimalValue: "0.25", measurementUnit: "kg" } });
 const productExpiry = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/attributes/${dateAttributeID}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID }, body: { valueKind: "DATE", dateValue: "2026-12-31" } });
@@ -773,9 +966,9 @@ const secondVariantUpdate = await request(dshBase, "PATCH", `/dsh/catalog/varian
 const secondVariantStale = await request(dshBase, "PATCH", `/dsh/catalog/variants/${secondVariantID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `variant-secondary-stale-${suffix}`, crypto.randomUUID(), 1), body: { title: "نسخة متقادمة", measurementKind: "DISCRETE", baseUnit: "COUNT", active: true } });
 const duplicateVariant = await request(dshBase, "POST", `/dsh/catalog/products/${productID}/variants`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `variant-duplicate-${suffix}`), body: { id: `variant-duplicate-${suffix}`, title: "معرّف مكرر", measurementKind: "DISCRETE", baseUnit: "COUNT", active: true, identifierType: "GTIN", identifierValue: productInput.identifierValue } });
 if (secondVariant.status !== 201 || secondVariant.body?.variant?.id !== secondVariantID || secondVariantReplay.status !== 200 || secondVariantReplay.body?.idempotentReplay !== true || secondVariantUpdate.status !== 200 || secondVariantUpdate.body?.variant?.version !== 2 || secondVariantStale.status !== 409 || duplicateVariant.status !== 409 || duplicateVariant.body?.error?.code !== "DUPLICATE_IDENTIFIER") fail("Variant lifecycle, version, or identifier guard failed", JSON.stringify({ secondVariant, secondVariantReplay, secondVariantUpdate, secondVariantStale, duplicateVariant }));
-const storeProductInput = { verticalId: storeLocalVerticalID, scope: "STORE_SCOPED", storeId: storeLocal.storeID, canonicalName: `Store Only ${suffix}`, variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", identifierType: "SKU", identifierValue: `STORE-${suffix}`, imageUri: "https://example.com/store-only.jpg" };
+const storeProductInput = { verticalId: storeLocalVerticalID, scope: "STORE_SCOPED", storeId: storeLocal.storeID, canonicalName: `Store Only ${suffix}`, variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", identifierType: "SKU", identifierValue: `STORE-${suffix}` };
 const storeProduct = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/products`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-product-${suffix}`), body: storeProductInput });
-if (storeProduct.status !== 201 || storeProduct.body?.product?.scope !== "STORE_SCOPED" || storeProduct.body.product.storeId !== storeLocal.storeID || !storeProduct.body.product.media?.some((media) => media.role === "primary" && media.uri === storeProductInput.imageUri)) fail("Store-scoped Product creation did not preserve owner scope or primary media", JSON.stringify(storeProduct));
+if (storeProduct.status !== 201 || storeProduct.body?.product?.scope !== "STORE_SCOPED" || storeProduct.body.product.storeId !== storeLocal.storeID || storeProduct.body.product.media?.length !== 0) fail("Store-scoped Product creation did not preserve owner scope or start without unbacked media", JSON.stringify(storeProduct));
 const storeProductID = String(storeProduct.body.product.id); productIDs.add(storeProductID);
 const crossStoreProduct = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/products`, { token: first.accessToken, headers: partnerHeaders(`cross-store-product-${suffix}`), body: storeProductInput });
 const storeVariantID = `store-variant-${suffix}`;
@@ -787,28 +980,32 @@ const storeProductUpdate = await request(dshBase, "PATCH", `/dsh/stores/${storeL
 const storeProductStale = await request(dshBase, "PATCH", `/dsh/stores/${storeLocal.storeID}/products/${storeProductID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-product-stale-${suffix}`, 1), body: { verticalId: storeLocalVerticalID, scope: "STORE_SCOPED", canonicalName: `Store Only Stale ${suffix}`, active: true } });
 const storeVariantUpdate = await request(dshBase, "PATCH", `/dsh/stores/${storeLocal.storeID}/variants/${storeVariantID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-variant-update-${suffix}`, 1), body: { title: "عبوة المتجر محدثة", measurementKind: "DISCRETE", baseUnit: "COUNT", active: true } });
 if (crossStoreProduct.status !== 403 || storeVariant.status !== 201 || storeVariant.body?.variant?.productId !== storeProductID || storeProductUpdate.status !== 200 || storeProductUpdate.body?.product?.version !== 2 || storeProductStale.status !== 409 || storeVariantUpdate.status !== 200 || storeVariantUpdate.body?.variant?.version !== 2) fail("Store-scoped Product/Variant ownership or version boundary failed", JSON.stringify({ crossStoreProduct, storeVariant, storeProductUpdate, storeProductStale, storeVariantUpdate }));
-const partnerImageBytes = fs.readFileSync(path.join(root, "tools/dev/fixtures/catalog/local-world-rice.png"));
 const partnerMediaUploadForm = () => {
-  const form = new FormData();
-  form.set("role", "primary");
-  form.set("file", new Blob([partnerImageBytes], { type: "image/png" }), "local-world-rice.png");
+  const form = mediaUploadForm();
+  form.set("file", new Blob([runtimePNG], { type: "image/png" }), "runtime-store-product.png");
   return form;
 };
 const partnerMediaKey = `store-product-media-${suffix}`;
 const crossStoreMediaUpload = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/products/${storeProductID}/media/upload`, { token: first.accessToken, headers: partnerHeaders(`cross-store-media-${suffix}`, 2), rawBody: partnerMediaUploadForm() });
 const partnerMediaUpload = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/products/${storeProductID}/media/upload`, { token: storeLocal.accessToken, headers: partnerHeaders(partnerMediaKey, 2), rawBody: partnerMediaUploadForm() });
+const partnerUploadedAssetID = partnerMediaUpload.body?.product?.media?.find((item) => item.role === "primary")?.assetId;
 const partnerUploadedURI = partnerMediaUpload.body?.product?.media?.find((item) => item.role === "primary")?.uri;
 const partnerUploadedImageResponse = partnerUploadedURI ? await fetch(partnerUploadedURI, { headers: { Accept: "image/png" }, signal: AbortSignal.timeout(8_000) }) : null;
 const partnerMediaReplay = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/products/${storeProductID}/media/upload`, { token: storeLocal.accessToken, headers: partnerHeaders(partnerMediaKey, 2), rawBody: partnerMediaUploadForm() });
 const partnerMediaStale = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/products/${storeProductID}/media/upload`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-product-media-stale-${suffix}`, 2), rawBody: partnerMediaUploadForm() });
 const partnerGalleryMediaKey = `store-product-gallery-${suffix}`;
-const partnerGalleryMediaUpload = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/products/${storeProductID}/media/upload`, { token: storeLocal.accessToken, headers: partnerHeaders(partnerGalleryMediaKey, 3), rawBody: (() => { const form = new FormData(); form.set("role", "gallery"); form.set("file", new Blob([partnerImageBytes], { type: "image/png" }), "local-world-rice-gallery.png"); return form; })() });
+const partnerGalleryMediaForm = partnerMediaUploadForm();
+partnerGalleryMediaForm.set("role", "gallery");
+partnerGalleryMediaForm.set("file", new Blob([runtimePNG], { type: "image/png" }), "runtime-store-product-gallery.png");
+const partnerGalleryMediaUpload = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/products/${storeProductID}/media/upload`, { token: storeLocal.accessToken, headers: partnerHeaders(partnerGalleryMediaKey, 3), rawBody: partnerGalleryMediaForm });
+const partnerGalleryAssetID = partnerGalleryMediaUpload.body?.product?.media?.find((item) => item.role === "gallery")?.assetId;
 const partnerGalleryURI = partnerGalleryMediaUpload.body?.product?.media?.find((item) => item.role === "gallery")?.uri;
-const partnerReplaceMedia = await request(dshBase, "PUT", `/dsh/stores/${storeLocal.storeID}/products/${storeProductID}/media`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-product-gallery-remove-${suffix}`, 4), body: { media: [{ uri: partnerUploadedURI, role: "primary", ordinal: 0 }] } });
-const partnerReplaceReplay = await request(dshBase, "PUT", `/dsh/stores/${storeLocal.storeID}/products/${storeProductID}/media`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-product-gallery-remove-${suffix}`, 4), body: { media: [{ uri: partnerUploadedURI, role: "primary", ordinal: 0 }] } });
-const crossStoreMediaReplace = await request(dshBase, "PUT", `/dsh/stores/${storeLocal.storeID}/products/${storeProductID}/media`, { token: first.accessToken, headers: partnerHeaders(`cross-store-media-replace-${suffix}`, 5), body: { media: [{ uri: partnerUploadedURI, role: "primary", ordinal: 0 }] } });
-const partnerReplaceStale = await request(dshBase, "PUT", `/dsh/stores/${storeLocal.storeID}/products/${storeProductID}/media`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-product-media-replace-stale-${suffix}`, 4), body: { media: [{ uri: partnerUploadedURI, role: "primary", ordinal: 0 }] } });
-if (crossStoreMediaUpload.status !== 403 || partnerMediaUpload.status !== 201 || partnerMediaUpload.body?.product?.version !== 3 || typeof partnerUploadedURI !== "string" || !partnerUploadedURI.includes("/dsh/catalog/media/catalog/products/") || partnerUploadedImageResponse?.status !== 200 || partnerUploadedImageResponse.headers.get("content-type") !== "image/png" || !crypto.timingSafeEqual(crypto.createHash("sha256").update(Buffer.from(await partnerUploadedImageResponse.arrayBuffer())).digest(), crypto.createHash("sha256").update(partnerImageBytes).digest()) || partnerMediaReplay.status !== 200 || partnerMediaReplay.body?.idempotentReplay !== true || partnerMediaReplay.body?.product?.version !== 3 || partnerMediaStale.status !== 409 || partnerMediaStale.body?.error?.code !== "VERSION_CONFLICT" || partnerGalleryMediaUpload.status !== 201 || partnerGalleryMediaUpload.body?.product?.version !== 4 || typeof partnerGalleryURI !== "string" || partnerGalleryMediaUpload.body?.product?.media?.length !== 2 || partnerGalleryMediaUpload.body?.product?.media?.[1]?.role !== "gallery" || partnerReplaceMedia.status !== 200 || partnerReplaceMedia.body?.product?.version !== 5 || partnerReplaceMedia.body?.product?.media?.length !== 1 || partnerReplaceReplay.status !== 200 || partnerReplaceReplay.body?.idempotentReplay !== true || partnerReplaceReplay.body?.product?.version !== 5 || crossStoreMediaReplace.status !== 403 || partnerReplaceStale.status !== 409 || partnerReplaceStale.body?.error?.code !== "VERSION_CONFLICT") fail("partner store-scoped product media gallery, ownership, replay, replacement, or version guard failed", JSON.stringify({ crossStoreMediaUpload, partnerMediaUpload, partnerMediaReplay, partnerMediaStale, partnerGalleryMediaUpload, partnerReplaceMedia, partnerReplaceReplay, crossStoreMediaReplace, partnerReplaceStale, partnerUploadedURI, partnerGalleryURI, partnerUploadedImageResponse: partnerUploadedImageResponse?.status }));
+const partnerReplacementMedia = { media: [{ assetId: partnerUploadedAssetID, role: "primary", ordinal: 0 }] };
+const partnerReplaceMedia = await request(dshBase, "PUT", `/dsh/stores/${storeLocal.storeID}/products/${storeProductID}/media`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-product-gallery-remove-${suffix}`, 4), body: partnerReplacementMedia });
+const partnerReplaceReplay = await request(dshBase, "PUT", `/dsh/stores/${storeLocal.storeID}/products/${storeProductID}/media`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-product-gallery-remove-${suffix}`, 4), body: partnerReplacementMedia });
+const crossStoreMediaReplace = await request(dshBase, "PUT", `/dsh/stores/${storeLocal.storeID}/products/${storeProductID}/media`, { token: first.accessToken, headers: partnerHeaders(`cross-store-media-replace-${suffix}`, 5), body: partnerReplacementMedia });
+const partnerReplaceStale = await request(dshBase, "PUT", `/dsh/stores/${storeLocal.storeID}/products/${storeProductID}/media`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-product-media-replace-stale-${suffix}`, 4), body: partnerReplacementMedia });
+if (crossStoreMediaUpload.status !== 403 || partnerMediaUpload.status !== 201 || partnerMediaUpload.body?.product?.version !== 3 || typeof partnerUploadedAssetID !== "string" || typeof partnerUploadedURI !== "string" || !partnerUploadedURI.includes("/dsh/catalog/media/catalog/products/") || partnerUploadedImageResponse?.status !== 200 || partnerUploadedImageResponse.headers.get("content-type") !== "image/png" || !crypto.timingSafeEqual(crypto.createHash("sha256").update(Buffer.from(await partnerUploadedImageResponse.arrayBuffer())).digest(), crypto.createHash("sha256").update(runtimePNG).digest()) || partnerMediaReplay.status !== 200 || partnerMediaReplay.body?.idempotentReplay !== true || partnerMediaReplay.body?.product?.version !== 3 || partnerMediaStale.status !== 409 || partnerMediaStale.body?.error?.code !== "VERSION_CONFLICT" || partnerGalleryMediaUpload.status !== 201 || partnerGalleryMediaUpload.body?.product?.version !== 4 || typeof partnerGalleryAssetID !== "string" || typeof partnerGalleryURI !== "string" || partnerGalleryMediaUpload.body?.product?.media?.length !== 2 || partnerGalleryMediaUpload.body?.product?.media?.[1]?.role !== "gallery" || partnerGalleryMediaUpload.body?.product?.media?.[1]?.assetId !== partnerGalleryAssetID || partnerReplaceMedia.status !== 200 || partnerReplaceMedia.body?.product?.version !== 5 || partnerReplaceMedia.body?.product?.media?.length !== 1 || partnerReplaceMedia.body?.product?.media?.[0]?.assetId !== partnerUploadedAssetID || partnerReplaceMedia.body?.product?.media?.[0]?.uri !== partnerUploadedURI || partnerReplaceReplay.status !== 200 || partnerReplaceReplay.body?.idempotentReplay !== true || partnerReplaceReplay.body?.product?.version !== 5 || crossStoreMediaReplace.status !== 403 || partnerReplaceStale.status !== 409 || partnerReplaceStale.body?.error?.code !== "VERSION_CONFLICT") fail("partner store-scoped product media gallery, ownership, replay, replacement, or version guard failed", JSON.stringify({ crossStoreMediaUpload, partnerMediaUpload, partnerMediaReplay, partnerMediaStale, partnerGalleryMediaUpload, partnerReplaceMedia, partnerReplaceReplay, crossStoreMediaReplace, partnerReplaceStale, partnerUploadedAssetID, partnerUploadedURI, partnerGalleryAssetID, partnerGalleryURI, partnerUploadedImageResponse: partnerUploadedImageResponse?.status }));
 console.log("DSH_PARTNER_PRODUCT_MEDIA_UPLOAD=PASS");
 const productReplay = await request(dshBase, "POST", "/dsh/catalog/products", { token: dshToken, headers: serviceHeaders(actingOperatorID, productKey), body: productInput });
 if (productReplay.status !== 200 || productReplay.body?.idempotentReplay !== true || productReplay.body.product.id !== productID) fail("catalog Product replay failed", JSON.stringify(productReplay));
@@ -820,7 +1017,7 @@ const partnerLookup = await request(dshBase, "GET", `/dsh/catalog/products?verti
 if (partnerLookup.status !== 200 || !partnerLookup.body?.products?.some((item) => item.id === productID && item.variants?.some((variant) => variant.id === variantID))) fail("partner Product/Variant lookup failed", JSON.stringify(partnerLookup));
 console.log("DSH_PRODUCT_VARIANT=PASS");
 
-const variableProductInput = { canonicalName: `Variable Coffee ${suffix}`, verticalId: verticalID, scope: "SHARED", variantTitle: "وزن متغير", measurementKind: "VARIABLE_MEASURE", baseUnit: "GRAM", categoryIds: [childCategoryID], variantAttributeValues: [{ attributeId: enumAttributeID, valueKind: "ENUM", enumValue: "Dark" }], identifierType: "SKU", identifierValue: `VARIABLE-${suffix}`, imageUri: "https://example.com/variable-coffee.jpg" };
+const variableProductInput = { canonicalName: `Variable Coffee ${suffix}`, verticalId: verticalID, scope: "SHARED", variantTitle: "وزن متغير", measurementKind: "VARIABLE_MEASURE", baseUnit: "GRAM", categoryIds: [childCategoryID], variantAttributeValues: [{ attributeId: enumAttributeID, valueKind: "ENUM", enumValue: "Dark" }], identifierType: "SKU", identifierValue: `VARIABLE-${suffix}` };
 const variableProduct = await request(dshBase, "POST", "/dsh/catalog/products", { token: dshToken, headers: serviceHeaders(actingOperatorID, `variable-product-${suffix}`), body: variableProductInput });
 if (variableProduct.status !== 201 || variableProduct.body?.product?.variants?.[0]?.measurementKind !== "VARIABLE_MEASURE") fail("VARIABLE_MEASURE Product creation failed", JSON.stringify(variableProduct));
 const variableProductID = String(variableProduct.body.product.id); productIDs.add(variableProductID);
@@ -842,6 +1039,33 @@ const invalidEnumValue = await request(dshBase, "PUT", `/dsh/catalog/variants/${
 const validEnumValue = await request(dshBase, "PUT", `/dsh/catalog/variants/${variantID}/attributes/${enumAttributeID}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID }, body: { valueKind: "ENUM", enumValue: "Dark" } });
 const variantAttributeRead = await collectCursorPages(dshBase, `/dsh/catalog/products?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&limit=1`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } }, "products");
 if (missingRequiredAttributePublish.status !== 409 || missingRequiredAttributePublish.body?.error?.code !== "PRODUCT_NOT_ELIGIBLE" || invalidEnumValue.status !== 404 || validEnumValue.status !== 200 || !variantAttributeRead.body?.products?.[0]?.variants?.some((variant) => variant.id === variantID && variant.attributes?.some((item) => item.attributeId === enumAttributeID && item.enumValue === "Dark"))) fail("required/typed Variant Attribute enforcement failed", JSON.stringify({ missingRequiredAttributePublish, invalidEnumValue, validEnumValue, variantAttributeRead }));
+const categoryUpdateSource = await request(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&limit=50`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+const categoryUpdateBefore = categoryUpdateSource.body?.products?.find((item) => item.id === productID);
+const categoryUpdateBody = {
+  verticalId: verticalID,
+  scope: "SHARED",
+  canonicalName: runtimeCoffeeName,
+  description: "",
+  active: true,
+  categoryIds: [categoryID, childCategoryID],
+  attributeValues: [
+    { attributeId: measurementAttributeID, valueKind: "MEASUREMENT", decimalValue: "0.25", measurementUnit: "kg" },
+    { attributeId: dateAttributeID, valueKind: "DATE", dateValue: "2026-12-31" },
+  ],
+  variantAttributeValues: [
+    { variantId: variantID, values: [{ attributeId: enumAttributeID, valueKind: "ENUM", enumValue: "Dark" }] },
+    { variantId: secondVariantID, values: [{ attributeId: enumAttributeID, valueKind: "ENUM", enumValue: "Dark" }] },
+  ],
+};
+const categoryUpdateHeaders = serviceHeaders(actingOperatorID, `product-category-update-${suffix}`, crypto.randomUUID(), categoryUpdateBefore?.version);
+const categoryUpdate = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: categoryUpdateHeaders, body: categoryUpdateBody });
+const categoryUpdateReplay = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: categoryUpdateHeaders, body: categoryUpdateBody });
+const categoryUpdateStale = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `product-category-update-stale-${suffix}`, crypto.randomUUID(), categoryUpdateBefore?.version), body: categoryUpdateBody });
+const categoryUpdateRead = await request(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&limit=50`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+const categoryUpdatedProduct = categoryUpdateRead.body?.products?.find((item) => item.id === productID);
+const categoryUpdateOK = categoryUpdate.status === 200 && categoryUpdate.body?.product?.version === categoryUpdateBefore?.version + 1 && categoryUpdateReplay.status === 200 && categoryUpdateReplay.body?.idempotentReplay === true && categoryUpdateStale.status === 409 && categoryUpdateStale.body?.error?.code === "VERSION_CONFLICT" && categoryUpdateRead.status === 200 && categoryUpdatedProduct?.categoryIds?.includes(categoryID) && categoryUpdatedProduct?.categoryIds?.includes(childCategoryID) && categoryUpdatedProduct?.attributes?.some((item) => item.attributeId === measurementAttributeID && item.measurementUnit === "kg") && categoryUpdatedProduct?.attributes?.some((item) => item.attributeId === dateAttributeID && item.dateValue === "2026-12-31") && [variantID, secondVariantID].every((id) => categoryUpdatedProduct?.variants?.some((item) => item.id === id && item.attributes?.some((attribute) => attribute.attributeId === enumAttributeID && attribute.enumValue === "Dark")));
+if (!categoryUpdateOK) fail("atomic product category, common attributes, per-variant attributes, idempotency, or version guard failed", JSON.stringify({ categoryUpdate, categoryUpdateReplay, categoryUpdateStale, categoryUpdateRead }));
+console.log("DSH_PRODUCT_MULTI_CATEGORY_UPDATE=PASS");
 const offerReplay = await request(dshBase, "POST", `/dsh/stores/${first.storeID}/offers`, { token: first.accessToken, headers: partnerHeaders(offerKey), body: discreteCreateOffer(variantID, 1250) });
 if (offerReplay.status !== 200 || offerReplay.body?.idempotentReplay !== true) fail("StoreOffer replay failed", JSON.stringify(offerReplay));
 const offerConflict = await request(dshBase, "POST", `/dsh/stores/${first.storeID}/offers`, { token: first.accessToken, headers: partnerHeaders(offerKey), body: discreteCreateOffer(variantID, 1300) });
@@ -858,20 +1082,31 @@ if (offerB.status !== 201) fail("second StoreOffer creation failed", JSON.string
 const offerBID = String(offerB.body.offer.offerId); offerIDs.add(offerBID);
 const publishedOfferB = await request(dshBase, "PATCH", `/dsh/stores/${second.storeID}/offers/${offerBID}`, { token: second.accessToken, headers: partnerHeaders(`offer-b-publish-${suffix}`, 1), body: discreteOffer(1500, "published") });
 if (publishedOfferB.status !== 200) fail("second StoreOffer publication failed", JSON.stringify(publishedOfferB));
+const offerPageFirst = await request(dshBase, "GET", `/dsh/stores/${first.storeID}/offers?limit=1`, { token: first.accessToken });
+const offerPageSecond = offerPageFirst.body?.nextCursor ? await request(dshBase, "GET", `/dsh/stores/${first.storeID}/offers?limit=1&cursor=${encodeURIComponent(offerPageFirst.body.nextCursor)}`, { token: first.accessToken }) : null;
+const offerPageDefault = await request(dshBase, "GET", `/dsh/stores/${first.storeID}/offers`, { token: first.accessToken });
+const offerPageInvalidLimit = await request(dshBase, "GET", `/dsh/stores/${first.storeID}/offers?limit=101`, { token: first.accessToken });
+const offerPageMalformedCursor = await request(dshBase, "GET", `/dsh/stores/${first.storeID}/offers?cursor=not-a-cursor`, { token: first.accessToken });
+const offerPageSecondStore = await request(dshBase, "GET", `/dsh/stores/${second.storeID}/offers?limit=1`, { token: second.accessToken });
+const offerPageCrossStoreCursor = offerPageFirst.body?.nextCursor ? await request(dshBase, "GET", `/dsh/stores/${second.storeID}/offers?limit=1&cursor=${encodeURIComponent(offerPageFirst.body.nextCursor)}`, { token: second.accessToken }) : null;
+const expectedOfferPageOrder = sql(`SELECT string_agg(id, ',' ORDER BY created_at ASC,id ASC) FROM dsh.catalog_store_offers WHERE store_id='${sqlLiteral(first.storeID)}' AND id IN ('${sqlLiteral(variableOfferID)}','${sqlLiteral(offerAID)}')`);
+const pagedOfferOrder = [offerPageFirst.body?.offers?.[0]?.offerId, offerPageSecond?.body?.offers?.[0]?.offerId].join(",");
+if (offerPageFirst.status !== 200 || offerPageFirst.body?.offers?.length !== 1 || !offerPageFirst.body?.nextCursor || offerPageSecond?.status !== 200 || offerPageSecond.body?.offers?.length !== 1 || Boolean(offerPageSecond.body?.nextCursor) || offerPageDefault.status !== 200 || offerPageDefault.body?.offers?.length !== 2 || ![variableOfferID, offerAID].every((id) => offerPageDefault.body?.offers?.some((offer) => offer.offerId === id)) || expectedOfferPageOrder !== pagedOfferOrder || offerPageInvalidLimit.status !== 400 || offerPageMalformedCursor.status !== 400 || offerPageSecondStore.status !== 200 || offerPageSecondStore.body?.offers?.length !== 1 || offerPageSecondStore.body?.offers?.[0]?.offerId !== offerBID || offerPageCrossStoreCursor?.status !== 400) fail("Partner StoreOffer paging boundary, default/max limit, or store-scoped cursor failed", JSON.stringify({ offerPageFirst, offerPageSecond, offerPageDefault, expectedOfferPageOrder, offerPageInvalidLimit, offerPageMalformedCursor, offerPageSecondStore, offerPageCrossStoreCursor }));
+console.log("DSH_PARTNER_STORE_OFFER_PAGING=PASS");
 const sectionCreate = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/sections`, { token: storeLocal.accessToken, headers: partnerHeaders(`section-${suffix}`), body: { nameAr: `العروض ${suffix}`, nameEn: `Offers ${suffix}`, ordinal: 0, active: true } });
 if (sectionCreate.status !== 201 || !sectionCreate.body?.section?.id) fail("Storefront section creation failed", JSON.stringify(sectionCreate));
 const sectionID = String(sectionCreate.body.section.id); sectionIDs.add(sectionID);
 const sectionAttach = await request(dshBase, "PUT", `/dsh/stores/${storeLocal.storeID}/sections/${sectionID}/offers/${storeLocalOfferID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`section-attach-${suffix}`), body: { ordinal: 0 } });
 if (sectionAttach.status !== 200 || !sectionAttach.body?.section?.offerIds?.includes(storeLocalOfferID)) fail("Storefront section offer attachment failed", JSON.stringify(sectionAttach));
 const proposalID = `proposal-${suffix}`;
-const proposalBody = { id: proposalID, verticalId: verticalID, categoryId: childCategoryID, proposedName: `Runtime Proposal ${suffix}`, proposedBrand: "Samrim", proposedVariantTitle: "الافتراضي", proposedMeasurementKind: "DISCRETE", proposedBaseUnit: "COUNT", proposedIdentifierType: "SKU", proposedIdentifierValue: `PROPOSAL-${suffix}`, proposedImageUri: "https://example.com/proposal.jpg" };
+const proposalBody = { id: proposalID, verticalId: verticalID, categoryId: childCategoryID, proposedName: `Runtime Proposal ${suffix}`, proposedBrand: "Samrim", proposedVariantTitle: "الافتراضي", proposedMeasurementKind: "DISCRETE", proposedBaseUnit: "COUNT", proposedIdentifierType: "SKU", proposedIdentifierValue: `PROPOSAL-${suffix}` };
 const proposalCreate = await request(dshBase, "POST", "/dsh/catalog/product-proposals", { token: first.accessToken, headers: partnerHeaders(`proposal-create-${suffix}`), body: proposalBody });
-if (proposalCreate.status !== 201 || proposalCreate.body?.proposal?.state !== "draft" || proposalCreate.body.proposal.version !== 1 || proposalCreate.body.proposal.proposedImageUri !== proposalBody.proposedImageUri) fail("Product proposal creation failed", JSON.stringify(proposalCreate));
+if (proposalCreate.status !== 201 || proposalCreate.body?.proposal?.state !== "draft" || proposalCreate.body.proposal.version !== 1 || Object.hasOwn(proposalCreate.body.proposal, "proposedImageUri")) fail("Product proposal creation failed or exposed a raw image URL", JSON.stringify(proposalCreate));
 proposalIDs.add(proposalID);
 const proposalOwnList = await collectCursorPages(dshBase, "/dsh/catalog/product-proposals?limit=1", { token: first.accessToken }, "proposals");
 const proposalSubmit = await request(dshBase, "POST", `/dsh/catalog/product-proposals/${proposalID}/submit`, { token: first.accessToken, headers: partnerHeaders(`proposal-submit-${suffix}`, 1) });
 const proposalCorrection = await request(dshBase, "POST", `/dsh/catalog/product-proposals/${proposalID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `proposal-correction-${suffix}`, crypto.randomUUID(), 2), body: { state: "needs_correction", reason: "صحح البيانات" } });
-const proposalUpdateBody = { verticalId: proposalBody.verticalId, categoryId: proposalBody.categoryId, proposedName: `Runtime Proposal Corrected ${suffix}`, proposedBrand: proposalBody.proposedBrand, proposedVariantTitle: proposalBody.proposedVariantTitle, proposedMeasurementKind: proposalBody.proposedMeasurementKind, proposedBaseUnit: proposalBody.proposedBaseUnit, variantAttributeValues: [{ attributeId: enumAttributeID, valueKind: "ENUM", enumValue: "Dark" }], proposedIdentifierType: proposalBody.proposedIdentifierType, proposedIdentifierValue: proposalBody.proposedIdentifierValue, proposedImageUri: proposalBody.proposedImageUri };
+const proposalUpdateBody = { verticalId: proposalBody.verticalId, categoryId: proposalBody.categoryId, proposedName: `Runtime Proposal Corrected ${suffix}`, proposedBrand: proposalBody.proposedBrand, proposedVariantTitle: proposalBody.proposedVariantTitle, proposedMeasurementKind: proposalBody.proposedMeasurementKind, proposedBaseUnit: proposalBody.proposedBaseUnit, variantAttributeValues: [{ attributeId: enumAttributeID, valueKind: "ENUM", enumValue: "Dark" }], proposedIdentifierType: proposalBody.proposedIdentifierType, proposedIdentifierValue: proposalBody.proposedIdentifierValue };
 const proposalUpdate = await request(dshBase, "PATCH", `/dsh/catalog/product-proposals/${proposalID}`, { token: first.accessToken, headers: partnerHeaders(`proposal-update-${suffix}`, 3), body: proposalUpdateBody });
 const proposalResubmit = await request(dshBase, "POST", `/dsh/catalog/product-proposals/${proposalID}/submit`, { token: first.accessToken, headers: partnerHeaders(`proposal-resubmit-${suffix}`, 4) });
 const proposalApprove = await request(dshBase, "POST", `/dsh/catalog/product-proposals/${proposalID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `proposal-approve-${suffix}`, crypto.randomUUID(), 5), body: { state: "approved", reason: "" } });
@@ -879,7 +1114,7 @@ const proposalProductID = `proposal_product_${proposalID}`;
 productIDs.add(proposalProductID);
 const proposalProductRead = await collectCursorPages(dshBase, `/dsh/catalog/products?q=${encodeURIComponent(proposalUpdateBody.proposedName)}&verticalId=${encodeURIComponent(verticalID)}&limit=1`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } }, "products");
 const proposalReviewQueue = await collectCursorPages(dshBase, "/dsh/catalog/product-proposals/review-queue?state=approved&limit=1", { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } }, "proposals");
-if (proposalOwnList.status !== 200 || !proposalOwnList.body?.proposals?.some((item) => item.id === proposalID) || proposalSubmit.status !== 200 || proposalSubmit.body?.proposal?.state !== "submitted" || proposalCorrection.status !== 200 || proposalCorrection.body?.proposal?.state !== "needs_correction" || proposalUpdate.status !== 200 || proposalUpdate.body?.proposal?.state !== "draft" || proposalUpdate.body.proposal.version !== 4 || proposalUpdate.body.proposal.proposedImageUri !== proposalUpdateBody.proposedImageUri || proposalResubmit.status !== 200 || proposalResubmit.body?.proposal?.state !== "submitted" || proposalApprove.status !== 200 || proposalApprove.body?.proposal?.state !== "approved" || proposalApprove.body.proposal.version !== 6 || proposalProductRead.status !== 200 || !proposalProductRead.body?.products?.some((item) => item.id === proposalProductID && item.canonicalName === proposalUpdateBody.proposedName && item.media?.some((media) => media.role === "primary" && media.uri === proposalUpdateBody.proposedImageUri)) || proposalReviewQueue.status !== 200 || !proposalReviewQueue.body?.proposals?.some((item) => item.id === proposalID && item.state === "approved")) fail("Product proposal lifecycle and canonical adoption failed", JSON.stringify({ proposalOwnList, proposalSubmit, proposalCorrection, proposalUpdate, proposalResubmit, proposalApprove, proposalProductRead, proposalReviewQueue }));
+if (proposalOwnList.status !== 200 || !proposalOwnList.body?.proposals?.some((item) => item.id === proposalID) || proposalSubmit.status !== 200 || proposalSubmit.body?.proposal?.state !== "submitted" || proposalCorrection.status !== 200 || proposalCorrection.body?.proposal?.state !== "needs_correction" || proposalUpdate.status !== 200 || proposalUpdate.body?.proposal?.state !== "draft" || proposalUpdate.body.proposal.version !== 4 || Object.hasOwn(proposalUpdate.body.proposal, "proposedImageUri") || proposalResubmit.status !== 200 || proposalResubmit.body?.proposal?.state !== "submitted" || proposalApprove.status !== 200 || proposalApprove.body?.proposal?.state !== "approved" || proposalApprove.body.proposal.version !== 6 || proposalProductRead.status !== 200 || !proposalProductRead.body?.products?.some((item) => item.id === proposalProductID && item.canonicalName === proposalUpdateBody.proposedName && item.media?.length === 0) || proposalReviewQueue.status !== 200 || !proposalReviewQueue.body?.proposals?.some((item) => item.id === proposalID && item.state === "approved")) fail("Product proposal lifecycle and canonical adoption failed", JSON.stringify({ proposalOwnList, proposalSubmit, proposalCorrection, proposalUpdate, proposalResubmit, proposalApprove, proposalProductRead, proposalReviewQueue }));
 const importRunID = `import-${suffix}`;
 const importedName = `Runtime Imported ${suffix}`;
 const importSourceSha256 = crypto.createHash("sha256").update(importRunID).digest("hex");
@@ -937,6 +1172,11 @@ if (publishA.status !== 200 || publishB.status !== 200) {
   };
   fail("Store publication failed after catalog readiness", JSON.stringify({ publishA, publishB, publicationReadback }));
 }
+const productRegistryRead = await request(dshBase, "GET", `/dsh/catalog/product-registry?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&categoryId=${encodeURIComponent(categoryID)}&active=active&sort=name_asc&limit=10`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+const productRegistryItem = productRegistryRead.body?.products?.find((item) => item.id === productID);
+const productRegistryWrongCategory = await request(dshBase, "GET", `/dsh/catalog/product-registry?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&categoryId=${encodeURIComponent(unrelatedCategoryID)}&limit=10`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+if (productRegistryRead.status !== 200 || productRegistryRead.body?.products?.length !== 1 || productRegistryItem?.storeCount !== 2 || productRegistryItem?.primaryImageUri !== uploadedURI || productRegistryWrongCategory.status !== 200 || productRegistryWrongCategory.body?.products?.length !== 0) fail("operator Product registry image, published Store count, or descendant category filter failed", JSON.stringify({ productRegistryRead, productRegistryWrongCategory }));
+console.log("DSH_PRODUCT_REGISTRY_PROJECTION=PASS");
 const secondPickupModesKey = "store-b-fulfillment-modes-" + suffix;
 const secondPickupModesPath = "/dsh/stores/" + encodeURIComponent(second.storeID) + "/fulfillment-modes";
 const secondPickupModesBody = { fulfillmentModes: ["BTHWANI_CAPTAIN", "CUSTOMER_PICKUP"] };
@@ -964,12 +1204,16 @@ const fieldEarningCountAfterRepublish = sql(`SELECT count(*) FROM wlt.field_comm
 if (fieldHidden.status !== 200 || fieldPublicAfterHide.status !== 404 || fieldRepublished.status !== 200 || fieldSummaryAfterRepublish.status !== 200 || fieldSummaryAfterRepublish.body?.summary?.earnedMinor !== 7500 || fieldSummaryAfterRepublish.body?.summary?.storeCount !== 1 || fieldEarningCountAfterRepublish !== "1") fail("Field commission was reversed or duplicated across hide and republish", JSON.stringify({ fieldHidden, fieldPublicAfterHide, fieldRepublished, fieldSummaryAfterRepublish, fieldEarningCountAfterRepublish }));
 console.log("DSH_FIELD_COMMISSION_PUBLICATION=PASS");
 const publicCatalog = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}&categoryId=${encodeURIComponent(childCategoryID)}&q=${encodeURIComponent(productInput.canonicalName)}`);
-const publicWrongCategory = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}&categoryId=${encodeURIComponent(categoryID)}`);
+const publicParentCategory = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}&categoryId=${encodeURIComponent(categoryID)}`);
+const publicWrongCategory = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}&categoryId=${encodeURIComponent(unrelatedCategoryID)}`);
 const publicWrongCity = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityB)}`);
-const productMediaCleanup = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/media`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `product-media-upload-cleanup-${suffix}`, crypto.randomUUID(), 3), body: { media: [] } });
+const productMediaCleanup = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/media`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `product-media-upload-cleanup-${suffix}`, crypto.randomUUID(), 5), body: { media: [] } });
+const deletedAssetCountQuery = `SELECT count(*) FROM dsh.catalog_media_assets WHERE product_id='${sqlLiteral(productID)}' AND state='deleted'`;
+await waitForSQL(deletedAssetCountQuery, "2", "retired Product media assets were not removed from local storage", 60_000);
+const uploadedAssetsDeleted = sql(deletedAssetCountQuery);
 const uploadedImageAfterCleanup = uploadedURI ? await fetch(uploadedURI, { headers: { Accept: "image/png" }, signal: AbortSignal.timeout(8_000) }) : null;
-const uploadedAssetState = sql(`SELECT state FROM dsh.catalog_media_assets WHERE product_id='${sqlLiteral(productID)}' ORDER BY created_at DESC LIMIT 1`);
-if (publicCatalog.status !== 200 || publicCatalog.body?.offers?.length !== 1 || publicCatalog.body.offers[0].offerId !== offerAID || publicCatalog.body.offers[0].productName !== productInput.canonicalName || !publicCatalog.body.offers[0].media?.some((media) => media.role === "primary" && media.uri === uploadedURI) || !publicCatalog.body.offers[0].media?.some((media) => media.role === "gallery" && media.uri === "https://example.com/runtime-coffee-gallery.jpg") || publicWrongCategory.status !== 200 || publicWrongCategory.body?.offers?.length !== 0 || publicWrongCity.status !== 404 || productMediaCleanup.status !== 200 || productMediaCleanup.body?.product?.version !== 4 || productMediaCleanup.body?.product?.media?.length !== 0 || uploadedImageAfterCleanup?.status !== 404 || uploadedAssetState !== "deleted") fail("customer-visible catalog evaluator, media, city/category scope, or media cleanup failed", JSON.stringify({ publicCatalog, publicWrongCategory, publicWrongCity, productMediaCleanup, uploadedURI, uploadedAssetState, uploadedImageAfterCleanup: uploadedImageAfterCleanup?.status }));
+const uploadedGalleryAfterCleanup = uploadedGalleryURI ? await fetch(uploadedGalleryURI, { headers: { Accept: "image/png" }, signal: AbortSignal.timeout(8_000) }) : null;
+if (publicCatalog.status !== 200 || publicCatalog.body?.offers?.length !== 1 || publicCatalog.body.offers[0].offerId !== offerAID || publicCatalog.body.offers[0].productName !== productInput.canonicalName || !publicCatalog.body.offers[0].media?.some((media) => media.role === "primary" && media.uri === uploadedURI) || !publicCatalog.body.offers[0].media?.some((media) => media.role === "gallery" && media.uri === uploadedGalleryURI) || !publicCatalog.body?.categories?.some((category) => category.id === categoryID) || !publicCatalog.body?.categories?.some((category) => category.id === childCategoryID) || publicParentCategory.status !== 200 || publicParentCategory.body?.offers?.length !== 1 || publicParentCategory.body.offers[0].offerId !== offerAID || publicWrongCategory.status !== 200 || publicWrongCategory.body?.offers?.length !== 0 || publicWrongCity.status !== 404 || productMediaCleanup.status !== 200 || productMediaCleanup.body?.product?.version !== 6 || productMediaCleanup.body?.product?.media?.length !== 0 || uploadedAssetsDeleted !== "2" || uploadedImageAfterCleanup?.status !== 404 || uploadedGalleryAfterCleanup?.status !== 404) fail("customer-visible catalog evaluator, hierarchy, media, city/category scope, or media cleanup failed", JSON.stringify({ publicCatalog, publicParentCategory, publicWrongCategory, publicWrongCity, productMediaCleanup, uploadedURI, uploadedGalleryURI, uploadedAssetsDeleted, uploadedImageAfterCleanup: uploadedImageAfterCleanup?.status, uploadedGalleryAfterCleanup: uploadedGalleryAfterCleanup?.status }));
 const publicStores = await request(dshBase, "GET", `/dsh/public/stores?serviceCityId=${encodeURIComponent(cityA)}`);
 if (publicStores.status !== 200 || !publicStores.body?.stores?.some((store) => store.id === first.storeID) || publicStores.body.stores.find((store) => store.id === first.storeID)?.partnerActorId) fail("public Store projection leaked or omitted the eligible store", JSON.stringify(publicStores));
 console.log("DSH_CUSTOMER_VISIBLE_CATALOG=PASS");
@@ -1010,18 +1254,41 @@ if (wrongRole.status !== 403) fail("serviceability accepted partner role", JSON.
 console.log("DSH_SERVICEABILITY=PASS");
 
 const renameBody = { canonicalName: "Runtime Coffee Renamed", verticalId: verticalID, scope: "SHARED", active: true };
-const renamed = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `rename-${suffix}`, crypto.randomUUID(), 4), body: renameBody });
-if (renamed.status !== 200 || renamed.body?.product?.version !== 5) fail("catalog Product versioned update failed", JSON.stringify(renamed));
+const renameSource = await request(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&limit=50`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+const renameProduct = renameSource.body?.products?.find((item) => item.id === productID);
+const renameExpectedVersion = Number(renameProduct?.version);
+const renameDBReadback = sql(`SELECT jsonb_build_object(
+  'productId', p.id,
+  'version', p.version,
+  'verticalId', p.vertical_id,
+  'scope', p.scope,
+  'storeId', p.store_id,
+  'active', p.active,
+  'vertical', CASE WHEN cv.id IS NULL THEN NULL ELSE jsonb_build_object('id', cv.id, 'active', cv.active, 'catalogModel', cv.catalog_model) END,
+  'categories', COALESCE((SELECT jsonb_agg(jsonb_build_object('id', c.id, 'verticalId', c.vertical_id, 'active', c.active) ORDER BY c.id)
+    FROM dsh.catalog_product_categories pc LEFT JOIN dsh.catalog_categories c ON c.id=pc.category_id WHERE pc.product_id=p.id), '[]'::jsonb)
+)::text FROM dsh.catalog_products p LEFT JOIN dsh.commerce_verticals cv ON cv.id=p.vertical_id WHERE p.id='${sqlLiteral(productID)}'`);
+const renameDatabaseProduct = renameDBReadback ? JSON.parse(renameDBReadback) : null;
+const renameDatabaseCategories = Array.isArray(renameDatabaseProduct?.categories) ? renameDatabaseProduct.categories : [];
+const renamePreconditionsOK = renameSource.status === 200 && Number.isInteger(renameExpectedVersion) && renameExpectedVersion >= 1 && renameDatabaseProduct?.productId === productID && renameDatabaseProduct.version === renameExpectedVersion && renameDatabaseProduct.verticalId === verticalID && renameDatabaseProduct.scope === "SHARED" && renameDatabaseProduct.storeId == null && renameDatabaseProduct.active === true && renameDatabaseProduct.vertical?.id === verticalID && renameDatabaseProduct.vertical.active === true && renameDatabaseProduct.vertical.catalogModel === "SHARED_CATALOG" && renameDatabaseCategories.length === 2 && renameDatabaseCategories.every((item) => item.id && item.verticalId === verticalID && item.active === true) && [categoryID, childCategoryID].every((id) => renameProduct.categoryIds?.includes(id));
+if (!renamePreconditionsOK) fail("catalog Product update preconditions diverged from canonical API or database readback", JSON.stringify({ renameSource, renameDBReadback, productMediaCleanup }));
+const renameResultVersion = renameExpectedVersion + 1;
+const renamed = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `rename-${suffix}`, crypto.randomUUID(), renameExpectedVersion), body: renameBody });
+if (renamed.status !== 200 || renamed.body?.product?.version !== renameResultVersion) fail("catalog Product versioned update failed", JSON.stringify({ renamed, renameSource, renameDBReadback, expectedVersion: renameExpectedVersion }));
 const renamedCatalog = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}`);
 if (renamedCatalog.status !== 200 || renamedCatalog.body?.offers?.[0]?.productName !== renameBody.canonicalName) fail("StoreOffer readback retained stale Product identity", JSON.stringify(renamedCatalog));
-const disabled = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `disable-${suffix}`, crypto.randomUUID(), 5), body: { ...renameBody, active: false } });
-if (disabled.status !== 200 || disabled.body?.product?.active !== false || disabled.body.product.version !== 6) fail("catalog Product disable failed", JSON.stringify(disabled));
+const disableExpectedVersion = renamed.body.product.version;
+const disableResultVersion = disableExpectedVersion + 1;
+const disabled = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `disable-${suffix}`, crypto.randomUUID(), disableExpectedVersion), body: { ...renameBody, active: false } });
+if (disabled.status !== 200 || disabled.body?.product?.active !== false || disabled.body.product.version !== disableResultVersion) fail("catalog Product disable failed", JSON.stringify(disabled));
 const disabledPublic = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}`);
 if (disabledPublic.status !== 404 || disabledPublic.body?.error?.code !== "NOT_FOUND") fail("disabled Product remained customer-visible", JSON.stringify(disabledPublic));
 const disabledOfferPublish = await request(dshBase, "PATCH", `/dsh/stores/${first.storeID}/offers/${offerAID}`, { token: first.accessToken, headers: partnerHeaders(`disabled-offer-${suffix}`, 2), body: discreteOffer(1250, "published") });
 if (disabledOfferPublish.status !== 409 || disabledOfferPublish.body?.error?.code !== "PRODUCT_NOT_ELIGIBLE") fail("disabled Product could be published", JSON.stringify(disabledOfferPublish));
-const enabled = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `enable-${suffix}`, crypto.randomUUID(), 6), body: renameBody });
-if (enabled.status !== 200 || enabled.body?.product?.active !== true || enabled.body.product.version !== 7) fail("catalog Product re-enable failed", JSON.stringify(enabled));
+const enableExpectedVersion = disabled.body.product.version;
+const enableResultVersion = enableExpectedVersion + 1;
+const enabled = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `enable-${suffix}`, crypto.randomUUID(), enableExpectedVersion), body: renameBody });
+if (enabled.status !== 200 || enabled.body?.product?.active !== true || enabled.body.product.version !== enableResultVersion) fail("catalog Product re-enable failed", JSON.stringify(enabled));
 const changedPrice = await request(dshBase, "PATCH", `/dsh/stores/${first.storeID}/offers/${offerAID}`, { token: first.accessToken, headers: partnerHeaders(`price-${suffix}`, 2), body: discreteOffer(2100, "published") });
 if (changedPrice.status !== 200 || changedPrice.body?.offer?.priceMinor !== 2100 || changedPrice.body.offer.version !== 3) fail("StoreOffer price update failed", JSON.stringify(changedPrice));
 const secondCatalog = await request(dshBase, "GET", `/dsh/public/stores/${second.storeID}/catalog?serviceCityId=${encodeURIComponent(cityB)}`);
@@ -1091,13 +1358,10 @@ if (promotionCreate.status !== 201 || promotionCreate.body?.promotion?.state !==
 const promotionID = String(promotionCreate.body.promotion.id); promotionIDs.add(promotionID);
 const promotionPublish = await request(dshBase, "POST", `/dsh/operator/promotions/${encodeURIComponent(promotionID)}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `marketing-promotion-publish-${suffix}`, crypto.randomUUID(), promotionCreate.body.promotion.version), body: { state: "PUBLISHED" } });
 const promotionPublic = await request(dshBase, "GET", `/dsh/public/promotions?serviceCityId=${encodeURIComponent(cityA)}&storeId=${encodeURIComponent(first.storeID)}`);
-if (promotionPublish.status !== 201 || promotionPublish.body?.promotion?.state !== "PUBLISHED" || promotionPublic.status !== 200 || !promotionPublic.body?.promotions?.some((item) => item.id === promotionID && item.code === promotionCode && item.state === "PUBLISHED")) fail("promotion publication/public readback failed", JSON.stringify({ promotionCreate, promotionPublish, promotionPublic }));
-const contentCreate = await request(dshBase, "POST", "/dsh/operator/discovery-content", { token: dshToken, headers: serviceHeaders(actingOperatorID, `marketing-content-create-${suffix}`), body: { id: `content-${suffix}`, kind: "BANNER", titleAr: `اكتشاف ${suffix}`, bodyAr: "محتوى تجريبي منشور", targetType: "INFO", serviceCityId: cityA, startsAt: new Date(Date.now() - 60_000).toISOString(), ordinal: 0 } });
-if (contentCreate.status !== 201 || contentCreate.body?.content?.state !== "DRAFT") fail("discovery content draft creation failed", JSON.stringify(contentCreate));
-const contentID = String(contentCreate.body.content.id); contentIDs.add(contentID);
-const contentPublish = await request(dshBase, "POST", `/dsh/operator/discovery-content/${encodeURIComponent(contentID)}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `marketing-content-publish-${suffix}`, crypto.randomUUID(), contentCreate.body.content.version), body: { state: "PUBLISHED" } });
-const contentPublic = await request(dshBase, "GET", `/dsh/public/discovery-content?serviceCityId=${encodeURIComponent(cityA)}`);
-if (contentPublish.status !== 201 || contentPublish.body?.content?.state !== "PUBLISHED" || contentPublic.status !== 200 || !contentPublic.body?.items?.some((item) => item.id === contentID && item.titleAr === `اكتشاف ${suffix}` && item.state === "PUBLISHED")) fail("discovery content publication/public readback failed", JSON.stringify({ contentCreate, contentPublish, contentPublic }));
+if (promotionPublish.status !== 201 || promotionPublish.body?.promotion?.state !== "PUBLISHED" || promotionPublic.status !== 200 || !promotionPublic.body?.promotions?.some((item) => item.id === promotionID && item.code === promotionCode)) fail("promotion publication/public readback failed", JSON.stringify({ promotionCreate, promotionPublish, promotionPublic }));
+const contentRawURI = await request(dshBase, "POST", "/dsh/operator/discovery-content", { token: dshToken, headers: serviceHeaders(actingOperatorID, `marketing-content-raw-uri-${suffix}`), body: { id: `content-raw-uri-${suffix}`, kind: "BANNER", titleAr: `اكتشاف ${suffix}`, bodyAr: "محتوى تجريبي", mediaUri: "https://example.com/banner.png", targetType: "INFO", serviceCityId: cityA, startsAt: new Date(Date.now() - 60_000).toISOString(), ordinal: 0 } });
+const contentRawURIRead = await request(dshBase, "GET", `/dsh/operator/discovery-content?search=${encodeURIComponent(`content-raw-uri-${suffix}`)}&limit=10`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+if (contentRawURI.status !== 400 || contentRawURI.body?.error?.code !== "INVALID_INPUT" || contentRawURIRead.status !== 200 || contentRawURIRead.body?.items?.some((item) => item.id === `content-raw-uri-${suffix}`)) fail("discovery content accepted or persisted a raw media URL", JSON.stringify({ contentRawURI, contentRawURIRead }));
 
 const promotionCartCreate = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`marketing-cart-${suffix}`, 0), body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
 if (promotionCartCreate.status !== 201 || !promotionCartCreate.body?.cart?.id) fail("promotion checkout cart fixture failed", JSON.stringify(promotionCartCreate));
@@ -1132,39 +1396,50 @@ const multiCartAResponse = await request(dshBase, "POST", "/dsh/cart/lines", { t
 const multiCartBResponse = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`multi-store-cart-b-${suffix}`, 0), body: { storeId: second.storeID, storeOfferId: offerBID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
 if (multiCartAResponse.status !== 201 || multiCartBResponse.status !== 201 || !multiCartAResponse.body?.cart?.id || !multiCartBResponse.body?.cart?.id) fail("multi-store child cart fixtures failed", JSON.stringify({ multiCartAResponse, multiCartBResponse }));
 const multiCartAID = String(multiCartAResponse.body.cart.id); const multiCartBID = String(multiCartBResponse.body.cart.id); cartIDs.add(multiCartAID); cartIDs.add(multiCartBID);
+const cityBScopedFeePolicyCount = sql(`SELECT count(*) FROM wlt.delivery_fee_policies WHERE state='ACTIVE' AND service_city_id='${sqlLiteral(cityB)}'`);
+const globalFeePolicyCount = sql("SELECT count(*) FROM wlt.delivery_fee_policies WHERE state='ACTIVE' AND service_city_id=''");
+if (cityBScopedFeePolicyCount !== "0" || globalFeePolicyCount !== "1") fail("multi-store fee fallback fixture does not match the canonical WLT global policy", JSON.stringify({ cityBScopedFeePolicyCount, globalFeePolicyCount }));
 const multiCheckoutID = `multi-store-${suffix}`; const multiCheckoutKey = `multi-store-create-${suffix}`;
 const multiCheckoutBody = { id: multiCheckoutID, children: [
   { cartId: multiCartAID, storeId: first.storeID, addressId: addressAID, cartVersion: multiCartAResponse.body.cart.version, fulfillmentMode: "BTHWANI_CAPTAIN" },
-  { cartId: multiCartBID, storeId: second.storeID, addressId: addressAID, cartVersion: multiCartBResponse.body.cart.version, fulfillmentMode: "BTHWANI_CAPTAIN" },
+  // City B has no city-scoped delivery-fee policy, so WLT resolves its active
+  // global policy after serviceability succeeds.
+  { cartId: multiCartBID, storeId: second.storeID, addressId: addressBID, cartVersion: multiCartBResponse.body.cart.version, fulfillmentMode: "BTHWANI_CAPTAIN" },
 ] };
 const multiCheckout = await request(dshBase, "POST", "/dsh/multi-store-checkouts", { token: client.accessToken, headers: partnerHeaders(multiCheckoutKey), body: multiCheckoutBody });
 if (multiCheckout.body?.checkout?.id) multiStoreCheckoutIDs.add(String(multiCheckout.body.checkout.id));
+const multiCheckoutChildren = multiCheckout.body?.checkout?.children || [];
+for (const child of multiCheckoutChildren) if (child?.orderId) orderIDs.add(String(child.orderId));
 const multiChildSuccess = multiCheckout.body?.checkout?.children?.find((child) => child.storeId === first.storeID);
-const multiChildFailure = multiCheckout.body?.checkout?.children?.find((child) => child.storeId === second.storeID);
+const multiChildGlobalPolicy = multiCheckout.body?.checkout?.children?.find((child) => child.storeId === second.storeID);
 const multiChildOrderID = String(multiChildSuccess?.orderId || "");
-if (multiChildOrderID) orderIDs.add(multiChildOrderID);
-const multiChildPaymentID = multiChildOrderID ? String((await request(dshBase, "GET", `/dsh/orders/${encodeURIComponent(multiChildOrderID)}`, { token: client.accessToken })).body?.order?.paymentIntentId || "") : "";
-if (multiChildPaymentID) paymentIntentIDs.add(multiChildPaymentID);
+const multiChildGlobalPolicyOrderID = String(multiChildGlobalPolicy?.orderId || "");
+const multiChildOrderIDs = [multiChildOrderID, multiChildGlobalPolicyOrderID].filter(Boolean);
+const multiChildOrderReads = await Promise.all([multiChildOrderID, multiChildGlobalPolicyOrderID].filter(Boolean).map((orderID) => request(dshBase, "GET", `/dsh/orders/${encodeURIComponent(orderID)}`, { token: client.accessToken })));
+const multiChildPaymentIDs = multiChildOrderReads.map((response) => String(response.body?.order?.paymentIntentId || ""));
+for (const paymentIntentID of multiChildPaymentIDs) if (paymentIntentID) paymentIntentIDs.add(paymentIntentID);
 const multiCheckoutReplay = await request(dshBase, "POST", "/dsh/multi-store-checkouts", { token: client.accessToken, headers: partnerHeaders(multiCheckoutKey), body: multiCheckoutBody });
 const multiCheckoutRead = await request(dshBase, "GET", `/dsh/multi-store-checkouts/${encodeURIComponent(multiCheckoutID)}`, { token: client.accessToken });
 const multiChildReadbackCount = sql(`SELECT count(*) FROM dsh.commerce_multi_store_checkout_children c JOIN dsh.commerce_multi_store_checkouts p ON p.id=c.checkout_id WHERE p.id='${sqlLiteral(multiCheckoutID)}' AND c.state IN ('SUCCEEDED','FAILED') AND c.store_id IN ('${sqlLiteral(first.storeID)}','${sqlLiteral(second.storeID)}')`);
-const multiChildAllocationCount = multiChildOrderID ? sql(`SELECT count(*) FROM wlt.customer_payment_allocations WHERE order_id='${sqlLiteral(multiChildOrderID)}'`) : "0";
-if (multiCheckout.status !== 201 || multiCheckout.body?.checkout?.state !== "PARTIAL_FAILURE" || multiCheckout.body.checkout.successfulChildCount !== 1 || multiCheckout.body.checkout.failedChildCount !== 1 || multiChildSuccess?.state !== "SUCCEEDED" || multiChildFailure?.state !== "FAILED" || multiChildFailure?.failureCode !== "UNSERVICEABLE" || multiCheckoutReplay.status !== 200 || multiCheckoutReplay.body?.idempotentReplay !== true || multiCheckoutReplay.body.checkout.id !== multiCheckoutID || multiCheckoutRead.status !== 200 || multiCheckoutRead.body?.checkout?.state !== "PARTIAL_FAILURE" || multiChildReadbackCount !== "2" || multiChildAllocationCount !== "1") fail("multi-store checkout did not preserve independent child success/failure, idempotency, or WLT allocation", JSON.stringify({ multiCheckout, multiCheckoutReplay, multiCheckoutRead, multiChildReadbackCount, multiChildAllocationCount }));
+const multiChildAllocationCount = multiChildOrderIDs.length === 2 ? sql(`SELECT count(*) FROM wlt.customer_payment_allocations WHERE order_id IN ('${sqlLiteral(multiChildOrderID)}','${sqlLiteral(multiChildGlobalPolicyOrderID)}')`) : "0";
+const multiChildOrderCount = sql(`SELECT count(*) FROM dsh.commerce_orders WHERE cart_id IN ('${sqlLiteral(multiCartAID)}','${sqlLiteral(multiCartBID)}')`);
+if (multiCheckout.status !== 201 || multiCheckout.body?.checkout?.state !== "COMPLETE" || multiCheckout.body.checkout.successfulChildCount !== 2 || multiCheckout.body.checkout.failedChildCount !== 0 || multiChildSuccess?.state !== "SUCCEEDED" || multiChildGlobalPolicy?.state !== "SUCCEEDED" || multiChildOrderIDs.length !== 2 || multiChildOrderReads.length !== 2 || multiChildOrderReads.some((response) => response.status !== 200 || !response.body?.order?.paymentIntentId) || multiChildPaymentIDs.some((paymentIntentID) => !paymentIntentID) || multiCheckoutReplay.status !== 200 || multiCheckoutReplay.body?.idempotentReplay !== true || multiCheckoutReplay.body.checkout.id !== multiCheckoutID || multiCheckoutRead.status !== 200 || multiCheckoutRead.body?.checkout?.state !== "COMPLETE" || multiChildReadbackCount !== "2" || multiChildAllocationCount !== "2" || multiChildOrderCount !== "2") fail("multi-store checkout did not use the city-scoped and global fee policies with canonical child/order/WLT readback", JSON.stringify({ multiCheckout, multiCheckoutReplay, multiCheckoutRead, multiChildReadbackCount, multiChildAllocationCount, multiChildOrderCount, multiChildOrderReads, cityBScopedFeePolicyCount, globalFeePolicyCount }));
 const multiCancelKey = `multi-store-cancel-${suffix}`;
 const multiCancel = await request(dshBase, "POST", `/dsh/multi-store-checkouts/${encodeURIComponent(multiCheckoutID)}/cancel`, { token: client.accessToken, headers: partnerHeaders(multiCancelKey, multiCheckout.body.checkout.version) });
-await waitForSQL(`SELECT state FROM dsh.commerce_financial_handoff_outbox WHERE effect_type='PAYMENT_CANCEL' AND order_id='${sqlLiteral(multiChildOrderID)}'`, "POSTED", "multi-store child payment cancellation did not reconcile");
+for (const orderID of multiChildOrderIDs) await waitForSQL(`SELECT state FROM dsh.commerce_financial_handoff_outbox WHERE effect_type='PAYMENT_CANCEL' AND order_id='${sqlLiteral(orderID)}'`, "POSTED", "multi-store child payment cancellation did not reconcile");
 const multiCancelReplay = await request(dshBase, "POST", `/dsh/multi-store-checkouts/${encodeURIComponent(multiCheckoutID)}/cancel`, { token: client.accessToken, headers: partnerHeaders(multiCancelKey, multiCheckout.body.checkout.version) });
 const multiCancelRead = await request(dshBase, "GET", `/dsh/multi-store-checkouts/${encodeURIComponent(multiCheckoutID)}`, { token: client.accessToken });
 const multiParentState = sql(`SELECT state || '|' || successful_child_count::text || '|' || failed_child_count::text FROM dsh.commerce_multi_store_checkouts WHERE id='${sqlLiteral(multiCheckoutID)}'`);
 const multiChildState = sql(`SELECT string_agg(store_id || ':' || state, ',' ORDER BY child_index) FROM dsh.commerce_multi_store_checkout_children WHERE checkout_id='${sqlLiteral(multiCheckoutID)}'`);
-if (multiCancel.status !== 201 || multiCancel.body?.checkout?.state !== "CANCELLED" || multiCancel.body.checkout.children?.find((child) => child.storeId === first.storeID)?.state !== "CANCELLED" || multiCancel.body.checkout.children?.find((child) => child.storeId === second.storeID)?.state !== "FAILED" || multiCancelReplay.status !== 200 || multiCancelReplay.body?.idempotentReplay !== true || multiCancelRead.status !== 200 || multiCancelRead.body?.checkout?.state !== "CANCELLED" || multiParentState !== "CANCELLED|1|1" || !multiChildState.includes(`${first.storeID}:CANCELLED`) || !multiChildState.includes(`${second.storeID}:FAILED`)) fail("multi-store parent cancellation or child outcome reconciliation failed", JSON.stringify({ multiCancel, multiCancelReplay, multiCancelRead, multiParentState, multiChildState }));
+if (multiCancel.status !== 201 || multiCancel.body?.checkout?.state !== "CANCELLED" || multiCancel.body.checkout.children?.find((child) => child.storeId === first.storeID)?.state !== "CANCELLED" || multiCancel.body.checkout.children?.find((child) => child.storeId === second.storeID)?.state !== "CANCELLED" || multiCancelReplay.status !== 200 || multiCancelReplay.body?.idempotentReplay !== true || multiCancelRead.status !== 200 || multiCancelRead.body?.checkout?.state !== "CANCELLED" || multiParentState !== "CANCELLED|2|0" || !multiChildState.includes(`${first.storeID}:CANCELLED`) || !multiChildState.includes(`${second.storeID}:CANCELLED`)) fail("multi-store parent cancellation or child outcome reconciliation failed", JSON.stringify({ multiCancel, multiCancelReplay, multiCancelRead, multiParentState, multiChildState }));
 console.log("DSH_MULTI_STORE_CHECKOUT=PASS");
 
 const pickupStoreOrigin = await request(dshBase, "GET", "/dsh/stores/" + encodeURIComponent(second.storeID) + "/delivery-origin", { token: second.accessToken });
+const pickupCartCreated = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`pickup-cart-${suffix}`, 0), body: { storeId: second.storeID, storeOfferId: offerBID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
+const pickupCartID = String(pickupCartCreated.body?.cart?.id || "");
+if (pickupCartID) cartIDs.add(pickupCartID);
 const pickupCartRead = await request(dshBase, "GET", "/dsh/cart?storeId=" + encodeURIComponent(second.storeID), { token: client.accessToken });
-if (pickupStoreOrigin.status !== 200 || !pickupStoreOrigin.body?.origin || pickupCartRead.status !== 200 || pickupCartRead.body?.cart?.id !== multiCartBID || pickupCartRead.body?.cart?.storeId !== second.storeID || !pickupCartRead.body?.cart?.lines?.some((line) => line.storeOfferId === offerBID)) fail("customer pickup origin or failed-delivery cart recovery fixture failed", JSON.stringify({ pickupStoreOrigin, pickupCartRead }));
-const pickupCartID = String(pickupCartRead.body.cart.id);
-cartIDs.add(pickupCartID);
+if (pickupStoreOrigin.status !== 200 || !pickupStoreOrigin.body?.origin || pickupCartCreated.status !== 201 || !pickupCartID || pickupCartRead.status !== 200 || pickupCartRead.body?.cart?.id !== pickupCartID || pickupCartRead.body?.cart?.storeId !== second.storeID || !pickupCartRead.body?.cart?.lines?.some((line) => line.storeOfferId === offerBID)) fail("customer pickup origin or fresh cart fixture failed", JSON.stringify({ pickupStoreOrigin, pickupCartCreated, pickupCartRead }));
 const pickupCartVersion = pickupCartRead.body.cart.version;
 const pickupQuote = await request(dshBase, "POST", "/dsh/cart/quote", { token: client.accessToken, headers: { "X-Expected-Version": String(pickupCartVersion) }, body: { cartId: pickupCartID, storeId: second.storeID, fulfillmentMode: "CUSTOMER_PICKUP" } });
 if (pickupQuote.status !== 200 || pickupQuote.body?.quote?.fulfillmentMode !== "CUSTOMER_PICKUP" || pickupQuote.body.quote.subtotalMinor !== 1500 || pickupQuote.body.quote.deliveryFeeMinor !== 0 || pickupQuote.body.quote.totalAmountMinor !== 1500 || pickupQuote.body.quote.currency !== "YER") fail("pickup quote charged a delivery fee or diverged from the store product total", JSON.stringify(pickupQuote));
@@ -1321,22 +1596,20 @@ console.log("DSH_CART_CHECKOUT=PASS");
 console.log("DSH_ORDER_READY_FOR_DISPATCH=PASS");
 
 const captainPhone = `+96779${crypto.randomInt(1_000_000, 9_999_999)}`;
-const captainAdmissionResponse = await request(dshBase, "POST", "/dsh/captains/admissions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `captain-admit-${suffix}`), body: { contactPhoneE164: captainPhone } });
-if (captainAdmissionResponse.status !== 201 || captainAdmissionResponse.body?.admission?.state !== "eligible" || !captainAdmissionResponse.body.admission.actorId) fail("Captain admission did not bind an eligible Identity actor", JSON.stringify(captainAdmissionResponse));
-const captainAdmissionID = String(captainAdmissionResponse.body.admission.id);
-const captainActorID = String(captainAdmissionResponse.body.admission.actorId);
+const captainAdmissionFlow = await admitReviewedRoleCandidate("captain", captainPhone, "علي سالم", "علي سالم أحمد الصنعاني", "captain-admit");
+const captainAdmissionResponse = captainAdmissionFlow.provision;
+if (captainAdmissionResponse.status !== 200 || captainAdmissionResponse.body?.admission?.state !== "eligible" || !captainAdmissionResponse.body.admission.actorId) fail("Captain profile, review, or role grant did not bind an eligible Identity actor", JSON.stringify(captainAdmissionResponse));
+const captainAdmissionID = captainAdmissionFlow.admissionID;
+const captainActorID = captainAdmissionFlow.actorID;
 captainAdmissionIDs.add(captainAdmissionID); actorIDs.add(captainActorID);
 const captainAccessToken = await activateCaptain(captainPhone, `Capt${suffix.slice(0, 4)}`);
-const captainOpeningFunding = await request(wltBase, "POST", `/wlt/v1/operator/captains/${encodeURIComponent(captainActorID)}/opening-funding`, { token: wltToken, headers: serviceHeaders(actingOperatorID, `captain-opening-funding-${suffix}`), body: { amountMinor: mainOrderTotal, fundingReason: "runtime proof COD opening collateral", evidenceReference: `captain-opening-funding-proof-${suffix}` } });
-const captainOpeningFundingReplay = await request(wltBase, "POST", `/wlt/v1/operator/captains/${encodeURIComponent(captainActorID)}/opening-funding`, { token: wltToken, headers: serviceHeaders(actingOperatorID, `captain-opening-funding-${suffix}`), body: { amountMinor: mainOrderTotal, fundingReason: "runtime proof COD opening collateral", evidenceReference: `captain-opening-funding-proof-${suffix}` } });
-if (captainOpeningFunding.status !== 201 || captainOpeningFunding.body?.funding?.captainActorId !== captainActorID || captainOpeningFunding.body?.funding?.amountMinor !== mainOrderTotal || captainOpeningFundingReplay.status !== 200 || captainOpeningFundingReplay.body?.idempotentReplay !== true || captainOpeningFundingReplay.body?.funding?.id !== captainOpeningFunding.body?.funding?.id) fail("Captain opening funding did not produce an idempotent WLT ledger-backed balance", JSON.stringify({ captainOpeningFunding, captainOpeningFundingReplay }));
-captainFundingIDs.add(String(captainOpeningFunding.body.funding.id));
+await fundCaptainThroughDevelopmentCashIn(captainActorID, mainOrderTotal, `primary-${suffix}`);
 const captainWalletBeforeDispatch = await request(wltBase, "GET", `/wlt/v1/captains/${encodeURIComponent(captainActorID)}/wallet-state`, { token: wltToken });
-if (captainWalletBeforeDispatch.status !== 200 || captainWalletBeforeDispatch.body?.state?.availableMinor !== mainOrderTotal || captainWalletBeforeDispatch.body?.state?.heldMinor !== 0) fail("Captain opening wallet readback was not canonical", JSON.stringify(captainWalletBeforeDispatch));
+if (captainWalletBeforeDispatch.status !== 200 || captainWalletBeforeDispatch.body?.state?.availableMinor !== mainOrderTotal || captainWalletBeforeDispatch.body?.state?.heldMinor !== 0) fail("Captain Cash-In wallet readback was not canonical", JSON.stringify(captainWalletBeforeDispatch));
 const captainSelf = await request(dshBase, "GET", "/dsh/captains/me", { token: captainAccessToken });
 const captainAvailability = await request(dshBase, "POST", "/dsh/captains/me/availability", { token: captainAccessToken, headers: partnerHeaders(`captain-availability-${suffix}`, captainSelf.body?.admission?.version), body: { available: true } });
 const partnerCaptainOffers = await request(dshBase, "GET", "/dsh/captains/me/offers", { token: first.accessToken });
-if (captainSelf.status !== 200 || captainSelf.body?.admission?.actorId !== captainActorID || captainAvailability.status !== 200 || captainAvailability.body?.admission?.availabilityState !== "available" || partnerCaptainOffers.status !== 403) fail("Captain session or cross-role Captain read boundary failed", JSON.stringify({ captainSelf, captainAvailability, partnerCaptainOffers }));
+if (captainSelf.status !== 200 || captainSelf.body?.admission?.actorId !== captainActorID || captainSelf.body?.admission?.fullNameAr !== "علي سالم أحمد الصنعاني" || captainSelf.body?.admission?.contactPhoneE164 !== captainPhone || captainAvailability.status !== 200 || captainAvailability.body?.admission?.availabilityState !== "available" || partnerCaptainOffers.status !== 403) fail("Captain profile readback, session, or cross-role read boundary failed", JSON.stringify({ captainSelf, captainAvailability, partnerCaptainOffers }));
 const firstDispatchKey = `captain-dispatch-first-${suffix}`;
 const firstDispatch = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(orderID)}/dispatch`, { token: dshToken, headers: serviceHeaders(actingOperatorID, firstDispatchKey) });
 if (firstDispatch.status !== 201 || firstDispatch.body?.offer?.state !== "offered" || firstDispatch.body.offer.captainActorId !== captainActorID || firstDispatch.body.offer.storeName !== "Catalog Runtime A store" || firstDispatch.body.offer.customerAddressText !== `عنوان أ ${suffix}` || firstDispatch.body.offer.amountDueMinor !== mainOrderTotal || firstDispatch.body.offer.currency !== "YER" || firstDispatch.body.offer.paymentMethod !== "CASH_ON_DELIVERY" || firstDispatch.body.offer.paymentState !== "REQUIRES_COLLECTION") fail("Captain dispatch did not create an addressed offer with canonical order context", JSON.stringify(firstDispatch));
@@ -1360,16 +1633,16 @@ const captainWalletAfterReserve = await request(wltBase, "GET", `/wlt/v1/captain
 const captainReservationCount = sql(`SELECT count(*) FROM wlt.captain_cod_reservations WHERE order_id='${sqlLiteral(orderID)}' AND payment_intent_id='${sqlLiteral(paymentIntentID)}' AND captain_actor_id='${sqlLiteral(captainActorID)}' AND amount_minor=${mainOrderTotal} AND state='ACTIVE'`);
 if (captainWalletAfterReserve.status !== 200 || captainWalletAfterReserve.body?.state?.availableMinor !== 0 || captainWalletAfterReserve.body?.state?.heldMinor !== mainOrderTotal || captainReservationCount !== "1") fail("Captain COD was not atomically reserved from the order allocation", JSON.stringify({ captainWalletAfterReserve, captainReservationCount }));
 const secondCaptainPhone = `+96779${crypto.randomInt(1_000_000, 9_999_999)}`;
-const secondCaptainAdmission = await request(dshBase, "POST", "/dsh/captains/admissions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `captain-admit-second-${suffix}`), body: { contactPhoneE164: secondCaptainPhone } });
-if (secondCaptainAdmission.status !== 201 || !secondCaptainAdmission.body?.admission?.actorId) fail("second Captain fixture failed", JSON.stringify(secondCaptainAdmission));
-const secondCaptainAdmissionID = String(secondCaptainAdmission.body.admission.id);
-const secondCaptainActorID = String(secondCaptainAdmission.body.admission.actorId);
+const secondCaptainFlow = await admitReviewedRoleCandidate("captain", secondCaptainPhone, "ياسر محمد", "ياسر محمد عبدالله المتوكل", "captain-admit-second");
+const secondCaptainAdmission = secondCaptainFlow.provision;
+if (secondCaptainAdmission.status !== 200 || !secondCaptainAdmission.body?.admission?.actorId) fail("second Captain profile, approval, or role grant fixture failed", JSON.stringify(secondCaptainAdmission));
+const secondCaptainAdmissionID = secondCaptainFlow.admissionID;
+const secondCaptainActorID = secondCaptainFlow.actorID;
 captainAdmissionIDs.add(secondCaptainAdmissionID); actorIDs.add(secondCaptainActorID);
 const secondCaptainAccessToken = await activateCaptain(secondCaptainPhone, `Capt${suffix.slice(0, 4)}`);
-const secondCaptainFunding = await request(wltBase, "POST", `/wlt/v1/operator/captains/${encodeURIComponent(secondCaptainActorID)}/opening-funding`, { token: wltToken, headers: serviceHeaders(actingOperatorID, `captain-opening-funding-second-${suffix}`), body: { amountMinor: mainOrderTotal, fundingReason: "runtime proof reassignment COD collateral", evidenceReference: `captain-opening-funding-second-proof-${suffix}` } });
-if (secondCaptainFunding.status !== 201 || secondCaptainFunding.body?.funding?.captainActorId !== secondCaptainActorID || secondCaptainFunding.body.funding.amountMinor !== mainOrderTotal) fail("second Captain funding failed", JSON.stringify(secondCaptainFunding));
-captainFundingIDs.add(String(secondCaptainFunding.body.funding.id));
 const secondCaptainSelf = await request(dshBase, "GET", "/dsh/captains/me", { token: secondCaptainAccessToken });
+if (secondCaptainSelf.status !== 200 || secondCaptainSelf.body?.admission?.actorId !== secondCaptainActorID || secondCaptainSelf.body?.admission?.fullNameAr !== "ياسر محمد عبدالله المتوكل" || secondCaptainSelf.body?.admission?.contactPhoneE164 !== secondCaptainPhone) fail("second Captain app profile did not read its reviewed name and Identity phone", JSON.stringify(secondCaptainSelf));
+await fundCaptainThroughDevelopmentCashIn(secondCaptainActorID, mainOrderTotal, `reassignment-${suffix}`);
 const secondCaptainAvailability = await request(dshBase, "POST", "/dsh/captains/me/availability", { token: secondCaptainAccessToken, headers: partnerHeaders(`captain-availability-second-${suffix}`, secondCaptainSelf.body?.admission?.version), body: { available: true } });
 if (secondCaptainSelf.status !== 200 || secondCaptainAvailability.status !== 200 || secondCaptainAvailability.body?.admission?.availabilityState !== "available") fail("second Captain availability failed", JSON.stringify({ secondCaptainSelf, secondCaptainAvailability }));
 
@@ -1577,8 +1850,9 @@ const fieldPayoutPhone = `+96779${crypto.randomInt(1_000_000, 9_999_999)}`;
 const fieldPayoutCase = await request(dshBase, "POST", "/dsh/field/joining-cases", { token: secondFieldAccessToken, headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": `field-payout-case-${suffix}` }, body: { contactPhoneE164: fieldPayoutPhone, businessName: "Field payout business", firstStoreName: "Field payout store", serviceCityId: cityA, firstStoreVerticalId: verticalID, ...firstStoreOrigin } });
 const fieldPayoutCaseID = String(fieldPayoutCase.body?.case?.id || "");
 if (fieldPayoutCaseID) caseIDs.add(fieldPayoutCaseID);
-const fieldPayoutSubmitted = await request(dshBase, "POST", `/dsh/field/joining-cases/${encodeURIComponent(fieldPayoutCaseID)}/submit`, { token: secondFieldAccessToken, headers: partnerHeaders(`field-payout-submit-${suffix}`, 1) });
-const fieldPayoutApproved = await request(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(fieldPayoutCaseID)}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-payout-approve-${suffix}`, crypto.randomUUID(), 2), body: { decision: "approved", expectedTermsPolicyVersion: partnerFinancialTermsPolicy.policyVersion } });
+const fieldPayoutFlow = await requestFieldPartnerAdmission(fieldPayoutCaseID, secondFieldAccessToken, 1, "field-payout-" + suffix);
+const fieldPayoutSubmitted = fieldPayoutFlow.operatorSubmitted;
+const fieldPayoutApproved = await request(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(fieldPayoutCaseID)}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-payout-approve-${suffix}`, crypto.randomUUID(), 3), body: { decision: "approved", expectedTermsPolicyVersion: partnerFinancialTermsPolicy.policyVersion } });
 const fieldPayoutStoreID = String(fieldPayoutApproved.body?.case?.store?.id || "");
 if (fieldPayoutStoreID) storeIDs.add(fieldPayoutStoreID);
 const fieldPayoutPartnerActorID = String(fieldPayoutApproved.body?.case?.partnerActorId || "");
@@ -1600,7 +1874,7 @@ while (Date.now() < fieldPayoutSummaryDeadline) {
   await new Promise((resolve) => setTimeout(resolve, 2_000));
 }
 const fieldPayoutEarningCount = sql(`SELECT count(*) FROM wlt.field_commission_earnings WHERE field_actor_id='${sqlLiteral(secondFieldActorID)}' AND store_id='${sqlLiteral(fieldPayoutStoreID)}'`);
-if (fieldPayoutCase.status !== 201 || fieldPayoutCase.body?.case?.origin !== "field" || fieldPayoutCase.body?.case?.state !== "draft" || fieldPayoutSubmitted.status !== 200 || fieldPayoutSubmitted.body?.case?.state !== "submitted" || fieldPayoutApproved.status !== 200 || fieldPayoutApproved.body?.case?.state !== "approved" || fieldPayoutPartnerActorID === "" || fieldPayoutOffer.status !== 201 || fieldPayoutOfferPublished.status !== 200 || fieldPayoutPublication.status !== 200 || !fieldPayoutSummary || fieldPayoutEarningCount !== "1") fail("Field payout proof fixture did not reach one customer-visible commission", JSON.stringify({ fieldPayoutCase, fieldPayoutSubmitted, fieldPayoutApproved, fieldPayoutOffer, fieldPayoutOfferPublished, fieldPayoutPublication, fieldPayoutSummary, fieldPayoutEarningCount }));
+if (fieldPayoutCase.status !== 201 || fieldPayoutCase.body?.case?.origin !== "field" || fieldPayoutCase.body?.case?.state !== "draft" || fieldPayoutSubmitted.status !== 200 || fieldPayoutSubmitted.body?.case?.state !== "submitted" || fieldPayoutSubmitted.body?.case?.version !== 3 || fieldPayoutApproved.status !== 200 || fieldPayoutApproved.body?.case?.state !== "approved" || fieldPayoutPartnerActorID === "" || fieldPayoutOffer.status !== 201 || fieldPayoutOfferPublished.status !== 200 || fieldPayoutPublication.status !== 200 || !fieldPayoutSummary || fieldPayoutEarningCount !== "1") fail("Field payout proof fixture did not reach one customer-visible commission", JSON.stringify({ fieldPayoutCase, fieldPayoutFlow, fieldPayoutSubmitted, fieldPayoutApproved, fieldPayoutOffer, fieldPayoutOfferPublished, fieldPayoutPublication, fieldPayoutSummary, fieldPayoutEarningCount }));
 async function verifyPayoutBeneficiaryName(actorID, role) {
   const path = `/dsh/operator/actors/${encodeURIComponent(actorID)}/legal-name`;
   const submitted = await request(dshBase, "POST", path, { token: dshToken, headers: serviceHeaders(actingOperatorID, `${role}-legal-name-${suffix}`), body: { givenName: "محمد", secondName: "علي", thirdName: "صالح", familyName: "الحديدة", evidenceReference: `${role}-identity-proof-${suffix}` } });
@@ -1786,5 +2060,14 @@ try {
 if (outageFailure) fail(outageFailure);
 await waitForIdentityReady();
 console.log("DSH_IDENTITY_FAILURE_RECOVERY=PASS");
+try {
+  cleanup();
+  cleanupCheckerFixture();
+  console.log("DSH_RUNTIME_CLEANUP=PASS");
+} catch (error) {
+  console.error(`DSH_RUNTIME_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`);
+  process.exitCode = 1;
+  throw error;
+}
 console.log("DSH_RUNTIME=PASS");
 process.exit(0);

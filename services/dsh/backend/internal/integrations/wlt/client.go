@@ -47,6 +47,8 @@ type PaymentIntent struct {
 	CollectedByActorID        *string                    `json:"collectedByActorId"`
 	CollectionReference       *string                    `json:"collectionReference"`
 	CancellationReason        *string                    `json:"cancellationReason"`
+	CreatedAt                 string                     `json:"createdAt"`
+	UpdatedAt                 string                     `json:"updatedAt"`
 	CustomerPaymentAllocation *CustomerPaymentAllocation `json:"customerPaymentAllocation,omitempty"`
 }
 
@@ -57,6 +59,22 @@ type CustomerPaymentAllocation struct {
 	PartnerActorID             string `json:"partnerActorId"`
 	FulfillmentMode            string `json:"fulfillmentMode"`
 	PaymentIntentID            string `json:"paymentIntentId,omitempty"`
+	Currency                   string `json:"currency"`
+	SubtotalMinor              int64  `json:"subtotalMinor"`
+	DeliveryFeeMinor           int64  `json:"deliveryFeeMinor"`
+	DiscountMinor              int64  `json:"discountMinor"`
+	InternalBalanceAmountMinor int64  `json:"internalBalanceAmountMinor"`
+	CashAmountMinor            int64  `json:"cashAmountMinor"`
+	CustomerPayableMinor       int64  `json:"customerPayableMinor"`
+	PolicyVersion              string `json:"policyVersion"`
+	CreatedAt                  string `json:"createdAt"`
+}
+
+type customerPaymentAllocationRequest struct {
+	OrderID                    string `json:"orderId"`
+	StoreID                    string `json:"storeId"`
+	PartnerActorID             string `json:"partnerActorId"`
+	FulfillmentMode            string `json:"fulfillmentMode"`
 	Currency                   string `json:"currency"`
 	SubtotalMinor              int64  `json:"subtotalMinor"`
 	DeliveryFeeMinor           int64  `json:"deliveryFeeMinor"`
@@ -143,18 +161,6 @@ type CashInFundingIntent struct {
 	UpdatedAt                    string  `json:"updatedAt"`
 }
 
-type CaptainWalletFunding struct {
-	ID                  string `json:"id"`
-	CaptainActorID      string `json:"captainActorId"`
-	AmountMinor         int64  `json:"amountMinor"`
-	Currency            string `json:"currency"`
-	FundingReason       string `json:"fundingReason"`
-	EvidenceReference   string `json:"evidenceReference"`
-	CreatedBy           string `json:"createdBy"`
-	LedgerTransactionID string `json:"ledgerTransactionId"`
-	CreatedAt           string `json:"createdAt"`
-}
-
 type CaptainCODReservation struct {
 	ID              string  `json:"id"`
 	OrderID         string  `json:"orderId"`
@@ -187,20 +193,21 @@ type PartnerFinancialProfile struct {
 }
 
 type PartnerOrderEarning struct {
-	OrderID             string `json:"orderId"`
-	PaymentIntentID     string `json:"paymentIntentId"`
-	PartnerActorID      string `json:"partnerActorId"`
-	CaptainActorID      string `json:"captainActorId"`
-	Currency            string `json:"currency"`
-	GrossProductMinor   int64  `json:"grossProductMinor"`
-	DeliveryFeeMinor    int64  `json:"deliveryFeeMinor"`
-	CommissionMinor     int64  `json:"commissionMinor"`
-	PartnerNetMinor     int64  `json:"partnerNetMinor"`
-	ProfileID           string `json:"profileId"`
-	ProfileVersion      int    `json:"profileVersion"`
-	PolicyVersion       string `json:"policyVersion"`
-	LedgerTransactionID string `json:"ledgerTransactionId"`
-	CreatedAt           string `json:"createdAt"`
+	OrderID                         string `json:"orderId"`
+	PaymentIntentID                 string `json:"paymentIntentId"`
+	PartnerActorID                  string `json:"partnerActorId"`
+	CaptainActorID                  string `json:"captainActorId"`
+	Currency                        string `json:"currency"`
+	GrossProductMinor               int64  `json:"grossProductMinor"`
+	DeliveryFeeMinor                int64  `json:"deliveryFeeMinor"`
+	CommissionMinor                 int64  `json:"commissionMinor"`
+	PartnerNetMinor                 int64  `json:"partnerNetMinor"`
+	CommissionReceivableOffsetMinor int64  `json:"commissionReceivableOffsetMinor"`
+	ProfileID                       string `json:"profileId"`
+	ProfileVersion                  int    `json:"profileVersion"`
+	PolicyVersion                   string `json:"policyVersion"`
+	LedgerTransactionID             string `json:"ledgerTransactionId"`
+	CreatedAt                       string `json:"createdAt"`
 }
 
 type PartnerFinancialSummary struct {
@@ -482,28 +489,25 @@ type FinanceEvidenceDocument struct {
 }
 
 type CustomerWithdrawalIntake struct {
-	ID                         string  `json:"id"`
-	CustomerActorID            string  `json:"customerActorId"`
-	ProviderKey                string  `json:"providerKey"`
-	WalletIdentifierMasked     string  `json:"walletIdentifierMasked"`
-	BeneficiaryName            string  `json:"beneficiaryName"`
-	BeneficiaryIdentityVersion int     `json:"beneficiaryIdentityVersion"`
-	RequestReason              string  `json:"requestReason"`
-	RequestEvidenceDocumentID  string  `json:"requestEvidenceDocumentId"`
-	Status                     string  `json:"status"`
-	DestinationID              *string `json:"destinationId,omitempty"`
-	PayoutID                   *string `json:"payoutId,omitempty"`
-	PayoutStatus               *string `json:"payoutStatus,omitempty"`
-	PayoutAmountMinor          *int64  `json:"payoutAmountMinor,omitempty"`
-	PayoutCurrency             *string `json:"payoutCurrency,omitempty"`
-	RequestedBy                string  `json:"requestedBy"`
-	RequestedAt                string  `json:"requestedAt"`
-	FinanceActorID             *string `json:"financeActorId,omitempty"`
-	ResolvedAt                 *string `json:"resolvedAt,omitempty"`
-	ResolutionReason           *string `json:"resolutionReason,omitempty"`
-	Currency                   string  `json:"currency,omitempty"`
-	EligibleAvailableMinor     int64   `json:"eligibleAvailableMinor,omitempty"`
-	HeldMinor                  int64   `json:"heldMinor,omitempty"`
+	ID                         string     `json:"id"`
+	CustomerActorID            string     `json:"customerActorId"`
+	ProviderKey                string     `json:"providerKey"`
+	WalletIdentifierMasked     string     `json:"walletIdentifierMasked"`
+	BeneficiaryName            string     `json:"beneficiaryName"`
+	BeneficiaryIdentityVersion int        `json:"beneficiaryIdentityVersion"`
+	RequestReason              string     `json:"requestReason"`
+	RequestEvidenceDocumentID  string     `json:"requestEvidenceDocumentId"`
+	Status                     string     `json:"status"`
+	DestinationID              *string    `json:"destinationId,omitempty"`
+	PayoutID                   *string    `json:"payoutId,omitempty"`
+	PayoutStatus               *string    `json:"payoutStatus,omitempty"`
+	PayoutAmountMinor          *int64     `json:"payoutAmountMinor,omitempty"`
+	PayoutCurrency             *string    `json:"payoutCurrency,omitempty"`
+	RequestedBy                string     `json:"requestedBy"`
+	RequestedAt                time.Time  `json:"requestedAt"`
+	FinanceActorID             *string    `json:"financeActorId,omitempty"`
+	ResolvedAt                 *time.Time `json:"resolvedAt,omitempty"`
+	ResolutionReason           *string    `json:"resolutionReason,omitempty"`
 }
 
 type customerWithdrawalIntakeResponse struct {
@@ -516,20 +520,20 @@ type customerWithdrawalIntakeListResponse struct {
 }
 
 type CustomerWithdrawalIntakeSummary struct {
-	ID                            string  `json:"id"`
-	CustomerActorID               string  `json:"customerActorId"`
-	ProviderKey                   string  `json:"providerKey"`
-	WalletIdentifierMasked        string  `json:"walletIdentifierMasked"`
-	BeneficiaryName               string  `json:"beneficiaryName"`
-	Status                        string  `json:"status"`
-	DestinationID                 *string `json:"destinationId,omitempty"`
-	DestinationStatus             *string `json:"destinationStatus,omitempty"`
-	DestinationVerificationStatus *string `json:"destinationVerificationStatus,omitempty"`
-	PayoutID                      *string `json:"payoutId,omitempty"`
-	PayoutStatus                  *string `json:"payoutStatus,omitempty"`
-	PayoutAmountMinor             *int64  `json:"payoutAmountMinor,omitempty"`
-	PayoutCurrency                *string `json:"payoutCurrency,omitempty"`
-	RequestedAt                   string  `json:"requestedAt"`
+	ID                            string    `json:"id"`
+	CustomerActorID               string    `json:"customerActorId"`
+	ProviderKey                   string    `json:"providerKey"`
+	WalletIdentifierMasked        string    `json:"walletIdentifierMasked"`
+	BeneficiaryName               string    `json:"beneficiaryName"`
+	Status                        string    `json:"status"`
+	DestinationID                 *string   `json:"destinationId,omitempty"`
+	DestinationStatus             *string   `json:"destinationStatus,omitempty"`
+	DestinationVerificationStatus *string   `json:"destinationVerificationStatus,omitempty"`
+	PayoutID                      *string   `json:"payoutId,omitempty"`
+	PayoutStatus                  *string   `json:"payoutStatus,omitempty"`
+	PayoutAmountMinor             *int64    `json:"payoutAmountMinor,omitempty"`
+	PayoutCurrency                *string   `json:"payoutCurrency,omitempty"`
+	RequestedAt                   time.Time `json:"requestedAt"`
 }
 
 type CustomerWithdrawalIntakeList struct {
@@ -819,13 +823,26 @@ func (c *Client) CreateForOrder(ctx context.Context, orderID, externalReference,
 
 func (c *Client) CreateForOrderWithMethod(ctx context.Context, orderID, externalReference, payerActorID string, amountMinor int64, method string, allocation CustomerPaymentAllocation, idempotencyKey, correlationID string) (PaymentIntent, bool, error) {
 	body := map[string]any{
-		"orderId":                   strings.TrimSpace(orderID),
-		"externalReference":         strings.TrimSpace(externalReference),
-		"payerActorId":              strings.TrimSpace(payerActorID),
-		"amountMinor":               amountMinor,
-		"currency":                  "YER",
-		"method":                    strings.TrimSpace(method),
-		"customerPaymentAllocation": allocation,
+		"orderId":           strings.TrimSpace(orderID),
+		"externalReference": strings.TrimSpace(externalReference),
+		"payerActorId":      strings.TrimSpace(payerActorID),
+		"amountMinor":       amountMinor,
+		"currency":          "YER",
+		"method":            strings.TrimSpace(method),
+		"customerPaymentAllocation": customerPaymentAllocationRequest{
+			OrderID:                    allocation.OrderID,
+			StoreID:                    allocation.StoreID,
+			PartnerActorID:             allocation.PartnerActorID,
+			FulfillmentMode:            allocation.FulfillmentMode,
+			Currency:                   allocation.Currency,
+			SubtotalMinor:              allocation.SubtotalMinor,
+			DeliveryFeeMinor:           allocation.DeliveryFeeMinor,
+			DiscountMinor:              allocation.DiscountMinor,
+			InternalBalanceAmountMinor: allocation.InternalBalanceAmountMinor,
+			CashAmountMinor:            allocation.CashAmountMinor,
+			CustomerPayableMinor:       allocation.CustomerPayableMinor,
+			PolicyVersion:              allocation.PolicyVersion,
+		},
 	}
 	var response paymentIntentResponse
 	err := c.request(ctx, http.MethodPost, "/wlt/v1/payment-intents", body, idempotencyKey, correlationID, 0, &response)
@@ -900,17 +917,41 @@ func (c *Client) EnsureCollected(ctx context.Context, intentID, collectedByActor
 	if err != nil {
 		return PaymentIntent{}, err
 	}
-	if current.AmountMinor != amountMinor {
-		return PaymentIntent{}, &Error{Status: http.StatusConflict, Code: "AMOUNT_MISMATCH", Message: "WLT amount does not match the DSH order total"}
+	if current.CustomerPaymentAllocation == nil || current.CustomerPaymentAllocation.CustomerPayableMinor != amountMinor || current.CustomerPaymentAllocation.CashAmountMinor != current.AmountMinor {
+		return PaymentIntent{}, &Error{Status: http.StatusConflict, Code: "AMOUNT_MISMATCH", Message: "WLT allocation does not match the DSH order payable and cash remainder"}
+	}
+	cashAmountMinor := current.CustomerPaymentAllocation.CashAmountMinor
+	collector := strings.TrimSpace(collectedByActorID)
+	if cashAmountMinor == 0 {
+		collector = ""
+	}
+	collectionReferenceValue := strings.TrimSpace(collectionReference)
+	if cashAmountMinor == 0 {
+		collectionReferenceValue = ""
+	}
+	validCollected := func(item PaymentIntent) bool {
+		if item.State != stateCollected || item.CollectedAmountMinor == nil || *item.CollectedAmountMinor != cashAmountMinor {
+			return false
+		}
+		if cashAmountMinor == 0 {
+			return item.CollectedByActorID == nil || strings.TrimSpace(*item.CollectedByActorID) == ""
+		}
+		return item.CollectedByActorID != nil && strings.TrimSpace(*item.CollectedByActorID) == collector
 	}
 	if current.State == stateCollected {
+		if !validCollected(current) {
+			return PaymentIntent{}, &Error{Status: http.StatusConflict, Code: "AMOUNT_MISMATCH", Message: "collected WLT state does not match the allocated cash source"}
+		}
 		return current, nil
 	}
 	if current.State != stateRequiresCollect {
 		return PaymentIntent{}, &Error{Status: http.StatusConflict, Code: "STATE_CONFLICT", Message: "WLT payment intent is not collectable"}
 	}
-	collected, _, collectErr := c.Collect(ctx, intentID, collectedByActorID, collectionReference, amountMinor, current.Version, idempotencyKey, correlationID)
+	collected, _, collectErr := c.Collect(ctx, intentID, collector, collectionReferenceValue, cashAmountMinor, current.Version, idempotencyKey, correlationID)
 	if collectErr == nil {
+		if !validCollected(collected) {
+			return PaymentIntent{}, &Error{Status: http.StatusConflict, Code: "AMOUNT_MISMATCH", Message: "WLT collection response does not match the allocated cash source"}
+		}
 		return collected, nil
 	}
 	var wltErr *Error
@@ -921,7 +962,7 @@ func (c *Client) EnsureCollected(ctx context.Context, intentID, collectedByActor
 	if readErr != nil {
 		return PaymentIntent{}, readErr
 	}
-	if current.State == stateCollected && current.AmountMinor == amountMinor {
+	if validCollected(current) {
 		return current, nil
 	}
 	return PaymentIntent{}, collectErr
@@ -983,16 +1024,6 @@ func (c *Client) RemitCash(ctx context.Context, intentID, captainActorID string,
 	var response cashRemittanceResponse
 	err := c.request(ctx, http.MethodPost, "/wlt/v1/payment-intents/"+url.PathEscape(strings.TrimSpace(intentID))+"/remit", body, idempotencyKey, correlationID, expectedPaymentVersion, &response)
 	return response.CashRemittance, response.IdempotentReplay, err
-}
-
-func (c *Client) CreateCaptainOpeningFunding(ctx context.Context, captainActorID string, amountMinor int64, fundingReason, evidenceReference, idempotencyKey, correlationID, actingActorID string) (CaptainWalletFunding, bool, error) {
-	body := map[string]any{"amountMinor": amountMinor, "fundingReason": strings.TrimSpace(fundingReason), "evidenceReference": strings.TrimSpace(evidenceReference)}
-	var response struct {
-		Funding          CaptainWalletFunding `json:"funding"`
-		IdempotentReplay bool                 `json:"idempotentReplay"`
-	}
-	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/captains/"+url.PathEscape(strings.TrimSpace(captainActorID))+"/opening-funding", body, idempotencyKey, correlationID, 0, actingActorID, &response)
-	return response.Funding, response.IdempotentReplay, err
 }
 
 func (c *Client) ReadCaptainWalletState(ctx context.Context, captainActorID string) (CaptainWalletState, error) {

@@ -95,7 +95,7 @@ func (s *CatalogServer) createStoreScopedProduct(w http.ResponseWriter, r *http.
 	}
 	request := input.CreateCatalogProductRequest
 	storeID := strings.TrimSpace(r.PathValue("storeId"))
-	result, err := s.service.CreateStoreScopedProduct(r.Context(), bearerToken(r), storeID, postgres.CatalogProductInput{ID: "", VerticalID: request.VerticalID, Scope: "STORE_SCOPED", StoreID: storeID, CanonicalName: request.CanonicalName, Description: request.Description, Brand: optionalRequestString(request.Brand), VariantTitle: request.VariantTitle, MeasurementKind: string(request.MeasurementKind), BaseUnit: string(request.BaseUnit), CategoryIDs: request.CategoryIds, AttributeValues: catalogAttributeInputs(input.AttributeValues), VariantAttributeValues: catalogAttributeInputs(input.VariantAttributeValues), IdentifierType: request.IdentifierType, IdentifierValue: request.IdentifierValue, ImageURI: request.ImageUri}, idempotency, correlation)
+	result, err := s.service.CreateStoreScopedProduct(r.Context(), bearerToken(r), storeID, postgres.CatalogProductInput{ID: "", VerticalID: request.VerticalID, Scope: "STORE_SCOPED", StoreID: storeID, CanonicalName: request.CanonicalName, Description: request.Description, Brand: optionalRequestString(request.Brand), VariantTitle: request.VariantTitle, MeasurementKind: string(request.MeasurementKind), BaseUnit: string(request.BaseUnit), CategoryIDs: request.CategoryIds, AttributeValues: catalogAttributeInputs(input.AttributeValues), VariantAttributeValues: catalogAttributeInputs(input.VariantAttributeValues), IdentifierType: request.IdentifierType, IdentifierValue: request.IdentifierValue}, idempotency, correlation)
 	if err != nil {
 		writeCatalogError(w, err)
 		return

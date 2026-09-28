@@ -1,6 +1,4 @@
-"use client";
-
-import { CashCustodyWorkspace, type CashCustodyInitialQuery } from "../../../../src/features/finance/cash-custody-workspace";
+import { type CashCustodyInitialQuery, CashCustodyWorkspace } from "../../../../src/features/finance/cash-custody-workspace";
 import { FinanceWorkspace } from "../../../../src/features/finance/finance-workspace";
 
 export default async function FinanceCashCustodyPage({ searchParams }: Readonly<{ searchParams: Promise<Record<string, string | string[] | undefined>> }>) {

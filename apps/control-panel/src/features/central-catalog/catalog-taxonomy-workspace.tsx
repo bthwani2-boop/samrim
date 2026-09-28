@@ -1,8 +1,7 @@
 "use client";
 
-import type { CatalogCategory, CommerceVertical } from "@bthwani/dsh";
-import { useCallback, useEffect, useState } from "react";
-import { CatalogAttributePolicyWorkspace } from "./catalog-attribute-policy-workspace";
+import type { CatalogCategoryListResponse, CommerceVertical } from "@bthwani/dsh";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CatalogCategoryRegistry } from "./catalog-category-registry";
 import { CatalogVerticalRegistry } from "./catalog-vertical-registry";
 
@@ -15,11 +14,13 @@ async function readResponse<T>(response: Response): Promise<T> {
 export function CatalogTaxonomyWorkspace() {
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
   const [verticalId, setVerticalId] = useState("");
-  const [categories, setCategories] = useState<ReadonlyArray<CatalogCategory>>([]);
+  const [categories, setCategories] = useState<CatalogCategoryListResponse["categories"]>([]);
+  const [nextCursor, setNextCursor] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [loadingVerticals, setLoadingVerticals] = useState(true);
   const [loadingCategories, setLoadingCategories] = useState(false);
   const [error, setError] = useState("");
+  const categoryLoadSequence = useRef(0);
 
   const loadVerticals = useCallback(async () => {
     setLoadingVerticals(true);
@@ -29,7 +30,13 @@ export function CatalogTaxonomyWorkspace() {
       const body = await readResponse<{ verticals: ReadonlyArray<CommerceVertical> }>(response);
       setVerticals(body.verticals);
       const shared = body.verticals.filter((item) => item.catalogModel === "SHARED_CATALOG");
-      setVerticalId((current) => current && shared.some((item) => item.id === current) ? current : "");
+      const requestedVerticalId = new URL(window.location.href).searchParams.get("verticalId") ?? "";
+      const requestedCategoryId = new URL(window.location.href).searchParams.get("categoryId") ?? "";
+      setCategoryId((current) => current || requestedCategoryId);
+      setVerticalId((current) => {
+        const preferredId = current || requestedVerticalId;
+        return shared.some((item) => item.id === preferredId) ? preferredId : shared.find((item) => item.active)?.id ?? "";
+      });
     } catch (value) {
       setError(value instanceof Error ? value.message : "تعذر قراءة الفئات.");
     } finally {
@@ -37,57 +44,52 @@ export function CatalogTaxonomyWorkspace() {
     }
   }, []);
 
-  const loadCategories = useCallback(async (nextVerticalId: string) => {
+  const loadCategories = useCallback(async (nextVerticalId: string, query = "", status = "all", sort = "name_asc", cursor = "", append = false, silent = false) => {
+    const requestId = ++categoryLoadSequence.current;
     if (!nextVerticalId) {
       setCategories([]);
+      setNextCursor("");
       setCategoryId("");
-      setLoadingCategories(false);
+      if (!silent) setLoadingCategories(false);
       return;
     }
-    setLoadingCategories(true);
+    if (!silent) setLoadingCategories(true);
     setError("");
     try {
-      const response = await fetch(`/api/catalog/categories?verticalId=${encodeURIComponent(nextVerticalId)}&includeInactive=true`, { cache: "no-store" });
-      const body = await readResponse<{ categories: ReadonlyArray<CatalogCategory> }>(response);
-      setCategories(body.categories);
-      setCategoryId((current) => current && body.categories.some((item) => item.id === current) ? current : "");
+      const params = new URLSearchParams({ verticalId: nextVerticalId, status, sort, limit: "50" });
+      if (query.trim()) params.set("query", query.trim());
+      if (cursor) params.set("cursor", cursor);
+      const response = await fetch(`/api/catalog/categories?${params.toString()}`, { cache: "no-store" });
+      const body = await readResponse<CatalogCategoryListResponse>(response);
+      if (requestId !== categoryLoadSequence.current) return;
+      setCategories((current) => append ? [...current, ...body.categories] : body.categories);
+      setNextCursor(body.nextCursor ?? "");
     } catch (value) {
-      setError(value instanceof Error ? value.message : "تعذر قراءة الفئات.");
+      if (requestId === categoryLoadSequence.current) setError(value instanceof Error ? value.message : "تعذر قراءة الفئات.");
     } finally {
-      setLoadingCategories(false);
+      if (!silent && requestId === categoryLoadSequence.current) setLoadingCategories(false);
     }
   }, []);
 
   useEffect(() => { void loadVerticals(); }, [loadVerticals]);
   useEffect(() => { void loadCategories(verticalId); }, [verticalId, loadCategories]);
-  useEffect(() => {
-    const params = new URL(window.location.href).searchParams;
-    setVerticalId(params.get("verticalId") ?? "");
-    setCategoryId(params.get("categoryId") ?? "");
-  }, []);
 
   const sharedVerticals = verticals.filter((item) => item.catalogModel === "SHARED_CATALOG");
   const chooseVertical = useCallback((nextVerticalId: string) => {
+    categoryLoadSequence.current += 1;
     setVerticalId(nextVerticalId);
+    setCategories([]);
+    setNextCursor("");
     setCategoryId("");
+    setError("");
   }, []);
 
-  return <section className="catalog-taxonomy-workspace" aria-labelledby="catalog-taxonomy-workspace-title">
-    <div className="access-card-heading">
-      <span className="step-chip">DSH · سجل الفئات</span>
-      <p className="eyebrow">إدارة موحدة</p>
-      <h2 id="catalog-taxonomy-workspace-title">إدارة الفئات</h2>
-      <p className="muted">اختر الفئة الرئيسية، ثم أدر شجرتها وخصائص منتجاتها في مساحة واحدة.</p>
-    </div>
+  return <section className="catalog-taxonomy-workspace" aria-label="إدارة الفئات">
     {error ? <p className="identity-error" role="alert">{error} <button type="button" className="button button-secondary" disabled={loadingVerticals || loadingCategories} onClick={() => { void loadVerticals(); if (verticalId) void loadCategories(verticalId); }}>إعادة قراءة السجل</button></p> : null}
-    <details className="catalog-taxonomy-disclosure">
-      <summary>إدارة الفئات الرئيسية</summary>
-      <CatalogVerticalRegistry verticals={verticals} onSaved={loadVerticals} />
-    </details>
-    <CatalogCategoryRegistry verticals={sharedVerticals} verticalId={verticalId} onVerticalChange={chooseVertical} categories={categories} categoryId={categoryId} onCategoryChange={setCategoryId} loading={loadingVerticals || loadingCategories} onSaved={() => loadCategories(verticalId)} />
-    <details className="catalog-taxonomy-disclosure" open={Boolean(categoryId)}>
-      <summary>خصائص المنتجات للفئة المحددة</summary>
-      <CatalogAttributePolicyWorkspace verticalId={verticalId} categoryId={categoryId} />
-    </details>
+    <CatalogCategoryRegistry key={verticalId} verticals={sharedVerticals} verticalId={verticalId} onVerticalChange={chooseVertical} categories={categories} nextCursor={nextCursor} onFilter={(query, status, sort, cursor, append) => loadCategories(verticalId, query, status, sort, cursor, append)} categoryId={categoryId} onCategoryChange={setCategoryId} loading={loadingVerticals || loadingCategories} onSaved={() => loadCategories(verticalId, "", "all", "name_asc", "", false, true)} management={<details className="catalog-vertical-settings">
+      <summary><span>إدارة المجالات التجارية</span><small>{verticals.length} مجال</small></summary>
+      <p className="muted">إعدادات مصادر شجرة الفئات ومسار المنتجات.</p>
+      <CatalogVerticalRegistry verticals={verticals} selectedVerticalId={verticalId} onSelectVertical={chooseVertical} onSaved={loadVerticals} />
+    </details>} />
   </section>;
 }

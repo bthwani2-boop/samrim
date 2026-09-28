@@ -4,6 +4,8 @@ export async function partnerErrorMessage(response: Response): Promise<string> {
     case "PARTNER_NOT_FOUND": return "لم يتم العثور على دور شريك بهذا الرقم.";
     case "PARTNER_NOT_ACTIVE": return "لا يمكن اعتماد الحالة قبل تفعيل دور الشريك.";
     case "JOINING_CASE_EXISTS": return "توجد حالة انضمام نشطة لهذا الرقم بالفعل.";
+	case "SERVICE_CITY_UNAVAILABLE": return "مدينة الخدمة لم تعد نشطة. أعد قراءة المدن، أو أعد الحالة للشريك ليختار مدينة متاحة.";
+	case "VERTICAL_UNAVAILABLE": return "الفئة الرئيسية لم تعد نشطة. أعد قراءة الأنشطة، أو أعد الحالة للشريك ليختار فئة متاحة.";
 	case "ACTOR_CONFLICT": return "هوية الشريك مرتبطة بحالة انضمام أخرى.";
 	case "ACTOR_REBIND_FORBIDDEN": return "لا يمكن تغيير هوية الشريك بعد ربطها بالحالة.";
     case "STATE_CONFLICT": return "لا تسمح حالة الانضمام الحالية بهذه العملية.";

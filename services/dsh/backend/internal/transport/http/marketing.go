@@ -2,6 +2,7 @@ package transporthttp
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"errors"
@@ -61,9 +62,9 @@ func (s *MarketingServer) listPublicPromotions(w http.ResponseWriter, r *http.Re
 		writeMarketingError(w, err)
 		return
 	}
-	values := make([]contract.PromotionView, 0, len(items))
+	values := make([]contract.PublicPromotionView, 0, len(items))
 	for _, item := range items {
-		values = append(values, toPromotionView(item))
+		values = append(values, toPublicPromotionView(item))
 	}
 	writeJSON(w, http.StatusOK, contract.PromotionListResponse{Promotions: values})
 }
@@ -74,9 +75,9 @@ func (s *MarketingServer) listPublicDiscoveryContent(w http.ResponseWriter, r *h
 		writeMarketingError(w, err)
 		return
 	}
-	values := make([]contract.DiscoveryContentView, 0, len(items))
+	values := make([]contract.PublicDiscoveryContentView, 0, len(items))
 	for _, item := range items {
-		values = append(values, toDiscoveryContentView(item))
+		values = append(values, toPublicDiscoveryContentView(item))
 	}
 	writeJSON(w, http.StatusOK, contract.DiscoveryContentListResponse{Items: values})
 }
@@ -260,59 +261,92 @@ func (s *MarketingServer) createOperatorDiscoveryContent(w http.ResponseWriter, 
 	if !s.operatorAuthorized(w, r) {
 		return
 	}
-	acting, correlation, idempotency, ok := requiredMutationHeaders(w, r)
+	acting, _, idempotency, ok := requiredMutationHeaders(w, r)
 	if !ok {
 		return
 	}
-	var input contract.CreateDiscoveryContentRequest
-	var uploadedObjectKey string
-	if strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "multipart/form-data") {
-		if s.media == nil {
-			writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "media storage is unavailable")
+	if !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "multipart/form-data") {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "discovery content requires a canonical image file upload")
+		return
+	}
+	if s.media == nil {
+		writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "media storage is unavailable")
+		return
+	}
+	parsed, ok := parseMarketingContentUpload(w, r)
+	if !ok {
+		return
+	}
+	input := parsed.input
+	digest := sha256Bytes(parsed.bytes)
+	objectKey, keyErr := media.KeyForMarketingUpload(input.ID, idempotency, digest, parsed.contentType)
+	if keyErr != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "marketing image upload is invalid")
+		return
+	}
+	uri := s.media.PublicURL(objectKey)
+	if uri == "" {
+		writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "marketing media URL is unavailable")
+		return
+	}
+	provenance := parsed.provenance.Normalized()
+	requestHash := postgres.HashMarketingFacts("discovery-content-create", input.ID, string(input.Kind), input.TitleAr, input.BodyAr, digest, parsed.contentType, string(input.TargetType), input.TargetID, input.ServiceCityID, input.StartsAt.UTC().Format(time.RFC3339Nano), optionalTimeString(input.EndsAt), fmt.Sprint(input.Ordinal), acting, provenance.Creator, provenance.SourceDescription, provenance.SourceURI, provenance.RightsStatement, provenance.RightsURI)
+	assetDigest := sha256Bytes([]byte(input.ID + "\x00" + idempotency))
+	asset := postgres.DiscoveryContentMediaAssetInput{ID: "discovery_content_media_" + assetDigest, IdempotencyKey: idempotency, RequestHash: requestHash, ObjectKey: objectKey, URI: uri, ContentSHA256: digest, ContentType: parsed.contentType, ByteSize: int64(len(parsed.bytes)), Creator: provenance.Creator, SourceDescription: provenance.SourceDescription, SourceURI: provenance.SourceURI, RightsStatement: provenance.RightsStatement, RightsURI: provenance.RightsURI, RightsAttestedBy: acting}
+	registered, replayed, err := postgres.RegisterDiscoveryContentMediaAssetPending(r.Context(), s.db, asset)
+	if err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	if replayed {
+		item, readErr := postgres.ReadDiscoveryContent(r.Context(), s.db, input.ID)
+		if readErr != nil {
+			writeError(w, http.StatusServiceUnavailable, "DISCOVERY_CONTENT_READBACK_UNAVAILABLE", "discovery content is being reconciled")
 			return
 		}
-		parsed, ok := parseMarketingContentUpload(w, r)
-		if !ok {
-			return
-		}
-		input = parsed.input
-		digest := sha256Bytes(parsed.bytes)
-		objectKey, keyErr := media.KeyForMarketingUpload(input.ID, idempotency, digest, parsed.contentType)
-		if keyErr != nil {
-			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "marketing image upload is invalid")
-			return
-		}
-		if err := s.media.Put(r.Context(), objectKey, bytes.NewReader(parsed.bytes), int64(len(parsed.bytes)), parsed.contentType); err != nil {
-			writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "marketing media upload failed")
-			return
-		}
-		uploadedObjectKey = objectKey
-		input.MediaUri = s.media.PublicURL(objectKey)
-	} else if !decodeJSON(w, r, &input) {
+		writeJSON(w, http.StatusOK, contract.DiscoveryContentResponse{Content: toDiscoveryContentView(item), IdempotentReplay: true})
+		return
+	}
+	if registered.State != "pending" {
+		writeError(w, http.StatusConflict, "DISCOVERY_CONTENT_MEDIA_UNAVAILABLE", "the previous image upload is being cleaned up")
+		return
+	}
+	if err := s.media.Put(r.Context(), objectKey, bytes.NewReader(parsed.bytes), int64(len(parsed.bytes)), parsed.contentType); err != nil {
+		_ = postgres.MarkDiscoveryContentMediaAssetFailed(r.Context(), s.db, asset.ID, err.Error())
+		_ = s.ReconcileMediaStorage(r.Context())
+		writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "marketing media upload failed")
 		return
 	}
 	item, replayed, err := postgres.CreateDiscoveryContent(r.Context(), s.db, postgres.DiscoveryContentInput{
-		ID: input.ID, Kind: string(input.Kind), TitleAr: input.TitleAr, BodyAr: input.BodyAr, MediaURI: input.MediaUri, TargetType: string(input.TargetType), TargetID: input.TargetID, ServiceCityID: input.ServiceCityID, StartsAt: input.StartsAt, EndsAt: input.EndsAt, Ordinal: input.Ordinal, CreatedByActorID: acting,
-	}, idempotency, postgres.HashMarketingFacts("discovery-content-create", input.ID, string(input.Kind), input.TitleAr, input.BodyAr, input.MediaUri, string(input.TargetType), input.TargetID, input.ServiceCityID, input.StartsAt.UTC().Format(time.RFC3339Nano), optionalTimeString(input.EndsAt), fmt.Sprint(input.Ordinal), correlation))
+		ID: input.ID, Kind: string(input.Kind), TitleAr: input.TitleAr, BodyAr: input.BodyAr, MediaAssetID: asset.ID, TargetType: string(input.TargetType), TargetID: input.TargetID, ServiceCityID: input.ServiceCityID, StartsAt: input.StartsAt, EndsAt: input.EndsAt, Ordinal: input.Ordinal, CreatedByActorID: acting,
+	}, idempotency, requestHash)
 	if err != nil {
-		if uploadedObjectKey != "" {
-			_ = s.media.Delete(r.Context(), uploadedObjectKey)
+		resolved, found, readErr := postgres.ReadDiscoveryContentMutation(r.Context(), s.db, idempotency, input.ID, requestHash)
+		if readErr == nil && found {
+			writeJSON(w, http.StatusOK, contract.DiscoveryContentResponse{Content: toDiscoveryContentView(resolved), IdempotentReplay: true})
+			return
+		}
+		if readErr == nil {
+			_ = postgres.MarkDiscoveryContentMediaAssetFailed(r.Context(), s.db, asset.ID, err.Error())
+			_ = s.ReconcileMediaStorage(r.Context())
 		}
 		writeMarketingError(w, err)
 		return
 	}
+	_ = s.ReconcileMediaStorage(r.Context())
 	writeJSON(w, responseStatus(replayed), contract.DiscoveryContentResponse{Content: toDiscoveryContentView(item), IdempotentReplay: replayed})
 }
 
 type marketingContentUpload struct {
 	input       contract.CreateDiscoveryContentRequest
+	provenance  media.Provenance
 	bytes       []byte
 	contentType string
 }
 
 func parseMarketingContentUpload(w http.ResponseWriter, r *http.Request) (marketingContentUpload, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, media.MaxUploadBytes+1)
-	if err := r.ParseMultipartForm(media.MaxUploadBytes + 1); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, media.MaxUploadBytes+32*1024)
+	if err := r.ParseMultipartForm(media.MaxUploadBytes + 32*1024); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a valid marketing image upload is required")
 		return marketingContentUpload{}, false
 	}
@@ -349,6 +383,11 @@ func parseMarketingContentUpload(w http.ResponseWriter, r *http.Request) (market
 		}
 	}
 	input := contract.CreateDiscoveryContentRequest{ID: strings.TrimSpace(r.FormValue("id")), Kind: contract.DiscoveryContentKind(strings.TrimSpace(r.FormValue("kind"))), TitleAr: strings.TrimSpace(r.FormValue("titleAr")), BodyAr: strings.TrimSpace(r.FormValue("bodyAr")), TargetType: contract.DiscoveryContentTargetType(strings.TrimSpace(r.FormValue("targetType"))), TargetID: strings.TrimSpace(r.FormValue("targetId")), ServiceCityID: strings.TrimSpace(r.FormValue("serviceCityId")), StartsAt: startsAt, Ordinal: ordinal}
+	provenance := media.Provenance{Creator: r.FormValue("creator"), SourceDescription: r.FormValue("sourceDescription"), SourceURI: r.FormValue("sourceUri"), RightsStatement: r.FormValue("rightsStatement"), RightsURI: r.FormValue("rightsUri"), RightsAttested: strings.TrimSpace(r.FormValue("rightsAttested")) == "true"}
+	if provenance.Validate() != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "valid creator, source, rights statement and rights attestation are required")
+		return marketingContentUpload{}, false
+	}
 	if rawEnds := strings.TrimSpace(r.FormValue("endsAt")); rawEnds != "" {
 		endsAt, parseErr := time.Parse(time.RFC3339, rawEnds)
 		if parseErr != nil {
@@ -357,7 +396,7 @@ func parseMarketingContentUpload(w http.ResponseWriter, r *http.Request) (market
 		}
 		input.EndsAt = &endsAt
 	}
-	return marketingContentUpload{input: input, bytes: bytes, contentType: contentType}, true
+	return marketingContentUpload{input: input, provenance: provenance.Normalized(), bytes: bytes, contentType: contentType}, true
 }
 
 func sha256Bytes(value []byte) string {
@@ -420,12 +459,44 @@ func (s *MarketingServer) operatorAuthorized(w http.ResponseWriter, r *http.Requ
 	return true
 }
 
+func (s *MarketingServer) ReconcileMediaStorage(ctx context.Context) error {
+	if s.media == nil {
+		return nil
+	}
+	assets, err := postgres.ListDiscoveryContentMediaAssetsForCleanup(ctx, s.db, 100)
+	if err != nil {
+		return err
+	}
+	var firstErr error
+	for _, asset := range assets {
+		if err := s.media.Delete(ctx, asset.ObjectKey); err != nil {
+			_ = postgres.MarkDiscoveryContentMediaAssetCleanupFailure(ctx, s.db, asset.ID, err.Error())
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if err := postgres.MarkDiscoveryContentMediaAssetDeleted(ctx, s.db, asset.ID); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
 func toPromotionView(item postgres.PromotionRecord) contract.PromotionView {
 	return contract.PromotionView{ID: item.ID, Code: item.Code, NameAr: item.NameAr, DescriptionAr: item.DescriptionAr, Kind: contract.PromotionKind(item.Kind), ValueMinor: int(item.ValueMinor), MaxDiscountMinor: intValue(item.MaxDiscountMinor), FundingSource: item.FundingSource, StoreID: item.StoreID, ServiceCityID: item.ServiceCityID, State: contract.PromotionState(item.State), StartsAt: item.StartsAt, EndsAt: item.EndsAt, RedemptionLimit: intValue(item.RedemptionLimit), RedeemedCount: int(item.RedeemedCount), Version: item.Version, CreatedByActorID: item.CreatedByActorID, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
+func toPublicPromotionView(item postgres.PromotionRecord) contract.PublicPromotionView {
+	return contract.PublicPromotionView{ID: item.ID, Code: item.Code, NameAr: item.NameAr, DescriptionAr: item.DescriptionAr, Kind: contract.PromotionKind(item.Kind), ValueMinor: int(item.ValueMinor), MaxDiscountMinor: intValue(item.MaxDiscountMinor), EndsAt: item.EndsAt}
+}
+
 func toDiscoveryContentView(item postgres.DiscoveryContentRecord) contract.DiscoveryContentView {
 	return contract.DiscoveryContentView{ID: item.ID, Kind: contract.DiscoveryContentKind(item.Kind), TitleAr: item.TitleAr, BodyAr: item.BodyAr, MediaUri: item.MediaURI, TargetType: contract.DiscoveryContentTargetType(item.TargetType), TargetID: item.TargetID, ServiceCityID: item.ServiceCityID, State: contract.PromotionState(item.State), StartsAt: item.StartsAt, EndsAt: item.EndsAt, Ordinal: item.Ordinal, Version: item.Version, CreatedByActorID: item.CreatedByActorID, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+}
+
+func toPublicDiscoveryContentView(item postgres.DiscoveryContentRecord) contract.PublicDiscoveryContentView {
+	return contract.PublicDiscoveryContentView{ID: item.ID, Kind: contract.DiscoveryContentKind(item.Kind), TitleAr: item.TitleAr, BodyAr: item.BodyAr, MediaUri: item.MediaURI, TargetType: contract.DiscoveryContentTargetType(item.TargetType), TargetID: item.TargetID}
 }
 
 func intValue(value *int64) int {

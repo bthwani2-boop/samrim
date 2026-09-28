@@ -3,6 +3,7 @@
 import { type FieldAdmission, fieldAdmissionStateLabel } from "@bthwani/dsh";
 import type { ActorRoleView } from "@bthwani/identity";
 import { useCallback, useEffect, useState } from "react";
+import { FieldCandidatePanel } from "./field-candidate-panel";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "../access/identity-error-message";
 
@@ -10,7 +11,6 @@ type FieldRecord = ActorRoleView & Readonly<{ admission: FieldAdmission | null }
 type FieldPage = Readonly<{ items: ReadonlyArray<FieldRecord>; nextCursor?: string }>;
 
 export function FieldAdmissionPanel() {
-  const [phone, setPhone] = useState("");
   const [query, setQuery] = useState("");
   const [enabledFilter, setEnabledFilter] = useState("");
   const [sort, setSort] = useState<"phone_asc" | "phone_desc">("phone_asc");
@@ -19,7 +19,6 @@ export function FieldAdmissionPanel() {
   const [busy, setBusy] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [result, setResult] = useState<FieldAdmission | null>(null);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -47,28 +46,6 @@ export function FieldAdmissionPanel() {
 
   useEffect(() => { void load(); }, [load]);
 
-  async function admit() {
-    if (!/^\+[1-9][0-9]{7,14}$/.test(phone.replace(/\s+/g, ""))) {
-      setError("أدخل رقم هاتف بصيغة E.164 مثل +96777000100.");
-      return;
-    }
-    setBusy("admit");
-    setError("");
-    setNotice("");
-    try {
-      const response = await identityFetch("/api/fields", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "admit", contactPhoneE164: phone.replace(/\s+/g, "") }) });
-      if (!response.ok) { setError(await responseMessage(response)); return; }
-      const body = await response.json() as { admission?: FieldAdmission };
-      setResult(body.admission ?? null);
-      setNotice("قُبل الميداني وأعيدت قراءة قائمة الميدانيين من Identity وحالة الأهلية من DSH.");
-      await load();
-    } catch (cause) {
-      setError(isRequestFailure(cause) ? cause.message : "تعذر الوصول إلى خدمة القبول الميداني.");
-    } finally {
-      setBusy("");
-    }
-  }
-
   async function changeStatus(field: FieldRecord) {
     const reason = reasons[field.actorId]?.trim() ?? "";
     if (Array.from(reason).length < 5 || Array.from(reason).length > 500) {
@@ -79,6 +56,11 @@ export function FieldAdmissionPanel() {
       setError("تتطلب إدارة أهلية الميدان تسجيل الهوية ووجود أهلية DSH.");
       return;
     }
+    const mustDisable = field.enabled || (field.admission.requiresProfileReview && field.admission.state === "eligible");
+    if (!mustDisable && field.admission.requiresProfileReview) {
+      setError("ملف الميداني معلّق حتى استكماله ومراجعته؛ لا يمكن إعادة تفعيل الدور الآن.");
+      return;
+    }
     setBusy(field.actorId);
     setError("");
     setNotice("");
@@ -86,7 +68,7 @@ export function FieldAdmissionPanel() {
       const response = await identityFetch("/api/fields", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: field.enabled && field.admission.state === "eligible" ? "disable" : "activate", actorId: field.actorId, expectedVersion: field.roleVersion, reason }),
+        body: JSON.stringify({ action: mustDisable ? "disable" : "activate", actorId: field.actorId, expectedVersion: field.roleVersion, reason }),
       });
       if (!response.ok) {
         const message = await responseMessage(response);
@@ -157,29 +139,28 @@ export function FieldAdmissionPanel() {
 
   return (
     <>
-      <section className="access-card" aria-labelledby="field-admission-title">
-        <div className="access-card-heading"><span className="step-chip">قبول تشغيلي</span><p className="eyebrow">الممثلون الميدانيون</p><h2 id="field-admission-title">قبول ممثل ميداني</h2><p className="muted">تنشئ DSH أهلية الميدان ثم تثبت Identity الدور المرتبط بها. تبقى الحسابات والصلاحيات الإدارية في مركز الوصول.</p></div>
-        <div className="access-form"><label className="field-label" htmlFor="field-phone">هاتف الممثل الميداني<input id="field-phone" autoComplete="tel" inputMode="tel" placeholder="+96777000100" value={phone} onChange={(event) => setPhone(event.target.value)} disabled={Boolean(busy)} /></label><button type="button" className="button button-primary" disabled={Boolean(busy) || !phone.trim()} onClick={() => void admit()}>{busy === "admit" ? "جارٍ القبول…" : "قبول الميدان"}</button></div>
-        {result ? <div className="managed-status managed-status-info" role="status"><p>أعيدت قراءة حالة القبول: {fieldAdmissionStateLabel(result.state)}.</p></div> : null}
-      </section>
+      <FieldCandidatePanel />
       <section className="access-card" aria-labelledby="field-roster-title">
         <div className="access-card-heading"><span className="step-chip">سجل الشركاء</span><h2 id="field-roster-title">قائمة الميدانيين وأهليتهم</h2><p className="muted">تُقرأ الأدوار من Identity والأهلية التشغيلية من DSH. التفعيل والإيقاف وإجازة إعادة التسجيل تتطلب سببًا ونسخًا حديثة.</p></div>
         <div className="workspace-toolbar"><label className="field-label" htmlFor="field-search">بحث برقم الهاتف<input id="field-search" inputMode="tel" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث في أرقام الميدانيين" /></label><label className="field-label" htmlFor="field-status-filter">حالة الدور<select id="field-status-filter" value={enabledFilter} onChange={(event) => setEnabledFilter(event.target.value)}><option value="">كل الحالات</option><option value="true">مفعّل</option><option value="false">موقوف</option></select></label><label className="field-label" htmlFor="field-sort">ترتيب رقم الهاتف<select id="field-sort" value={sort} onChange={(event) => setSort(event.target.value as "phone_asc" | "phone_desc")}><option value="phone_asc">تصاعدي</option><option value="phone_desc">تنازلي</option></select></label><button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={() => void load()}>{loading ? "جارٍ القراءة…" : "إعادة القراءة"}</button></div>
         {notice ? <p className="success-inline" role="status">{notice}</p> : null}{error ? <p className="identity-error" role="alert">{error}</p> : null}
         {loading && items.length === 0 ? <p role="status">جارٍ قراءة قائمة الميدانيين…</p> : null}{!loading && !error && items.length === 0 ? <div className="collection-state"><strong>لا توجد نتائج</strong><p>جرّب إزالة المرشح أو البحث برقم آخر.</p></div> : null}
-        {items.length > 0 ? <div className="operations-table-wrap"><table className="operations-table"><thead><tr><th scope="col">الهاتف</th><th scope="col">تسجيل الهوية</th><th scope="col">أهلية DSH</th><th scope="col">الإدارة</th></tr></thead><tbody>
+        {items.length > 0 ? <div className="operations-table-wrap"><table className="operations-table"><thead><tr><th scope="col">الاسم والهاتف</th><th scope="col">تسجيل الهوية</th><th scope="col">أهلية DSH</th><th scope="col">الإدارة</th></tr></thead><tbody>
           {items.map((field, index) => {
-            const operationallyEnabled = field.enabled && field.admission?.state === "eligible";
-            const waitingForReenrollment = field.enabled && !field.activatedAt && field.admission?.state === "eligible";
+            const requiresProfileReview = field.admission?.requiresProfileReview === true;
+            const mustDisableForProfileReview = requiresProfileReview && field.admission?.state === "eligible";
+            const shouldDisable = field.enabled || mustDisableForProfileReview;
+            const waitingForReenrollment = !requiresProfileReview && field.enabled && !field.activatedAt && field.admission?.state === "eligible";
             const reason = reasons[field.actorId] ?? "";
             return <tr key={field.actorId}>
-              <th scope="row"><bdi dir="ltr">{field.phoneE164}</bdi></th>
-              <td>{!field.securityEnabled ? "الهوية موقوفة أمنيًا" : field.activatedAt ? field.enabled ? "نشط" : "الدور موقوف" : "بانتظار التفعيل"}</td>
-              <td>{field.admission ? fieldAdmissionStateLabel(field.admission.state) : "لا توجد أهلية تشغيل في DSH"}</td>
+              <th scope="row"><strong>{field.admission?.fullNameAr || "—"}</strong><br /><bdi dir="ltr">{field.phoneE164}</bdi></th>
+              <td>{!field.securityEnabled ? "الهوية موقوفة أمنيًا" : requiresProfileReview && field.enabled ? "بانتظار إيقاف الوصول" : requiresProfileReview ? "الوصول موقوف" : field.activatedAt ? field.enabled ? "نشط" : "الدور موقوف" : "بانتظار التفعيل"}</td>
+              <td>{requiresProfileReview ? "الملف يحتاج استكمالًا ومراجعة" : field.admission ? fieldAdmissionStateLabel(field.admission.state) : "لا توجد أهلية تشغيل في DSH"}</td>
               <td>{field.admission ? <div className="access-form">
                 <label className="field-label" htmlFor={`field-reason-${index}`}>سبب الإجراء<input id={`field-reason-${index}`} maxLength={500} value={reason} onChange={(event) => setReasons((current) => ({ ...current, [field.actorId]: event.target.value }))} disabled={Boolean(busy)} /></label>
                 {waitingForReenrollment ? <button type="button" className="button button-primary" disabled={Boolean(busy) || Array.from(reason.trim()).length < 5} onClick={() => void reenroll(field)}>{busy === field.actorId ? "جارٍ الإجازة…" : "إجازة إعادة التسجيل"}</button> : null}
-                {field.activatedAt ? <button type="button" className={operationallyEnabled ? "button button-secondary" : "button button-primary"} disabled={Boolean(busy) || Array.from(reason.trim()).length < 5} onClick={() => void changeStatus(field)}>{busy === field.actorId ? "جارٍ التحديث…" : operationallyEnabled ? "إيقاف التشغيل" : "إعادة التفعيل"}</button> : null}
+                {(field.activatedAt || shouldDisable) && (shouldDisable || !requiresProfileReview) ? <button type="button" className={shouldDisable ? "button button-secondary" : "button button-primary"} disabled={Boolean(busy) || Array.from(reason.trim()).length < 5} onClick={() => void changeStatus(field)}>{busy === field.actorId ? "جارٍ التحديث…" : shouldDisable ? "إيقاف التشغيل" : "إعادة التفعيل"}</button> : null}
+                {requiresProfileReview && !mustDisableForProfileReview && !field.enabled ? <span className="muted">استكمل الملف واعتمده قبل إعادة التفعيل.</span> : null}
               </div> : <span className="muted">يبدأ التحكم بعد وجود أهلية DSH.</span>}</td>
             </tr>;
           })}

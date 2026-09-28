@@ -1,6 +1,6 @@
 import { borders, radius, type resolveTheme, sizing, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type BaseUnit, baseUnitLabel, type CatalogAttributeRule, type CatalogAttributeValueInput, type CatalogCategory, type CatalogMedia, type CatalogProduct, type CatalogProductProposal, type CatalogStoreOffer, type CatalogVariant, type CommerceVertical, catalogProductProposalStateLabel, createDshMobileClient, type DshImageUploadInput, formatMoney, type MeasurementKind, measurementKindLabel as sharedMeasurementKindLabel, pricingBasisLabel as sharedPricingBasisLabel, quantityPolicyLabel as sharedQuantityPolicyLabel, storeOfferPublicationStateLabel } from "@bthwani/dsh";
+import { type BaseUnit, baseUnitLabel, type CatalogAttributeRule, type CatalogAttributeValueInput, type CatalogCategoryListResponse, type CatalogMedia, type CatalogProduct, type CatalogProductProposal, type CatalogStoreOffer, type CatalogVariant, type CommerceVertical, catalogProductProposalStateLabel, createDshMobileClient, type DshImageUploadInput, isMediaProvenanceInputValid, type MediaProvenanceInput, formatMoney, type MeasurementKind, measurementKindLabel as sharedMeasurementKindLabel, pricingBasisLabel as sharedPricingBasisLabel, quantityPolicyLabel as sharedQuantityPolicyLabel, storeOfferPublicationStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -11,9 +11,43 @@ type OfferState = { kind: "loading" } | { kind: "ready"; offers: ReadonlyArray<C
 type QuantityPolicy = "DISCRETE" | "MEASURED" | "VARIABLE_MEASURE";
 type PricingBasis = "PER_UNIT" | "PER_MEASURE";
 type InventoryPolicy = "AVAILABILITY_ONLY" | "QUANTITY_ON_HAND";
-type PendingProductMedia = Readonly<{ productID: string; expectedVersion: number; image: DshImageUploadInput }>;
+type PendingProductMedia = Readonly<{ productID: string; expectedVersion: number; image: DshImageUploadInput; provenance: MediaProvenanceInput; idempotencyKey: string }>;
 type AttributeDrafts = Readonly<Record<string, string>>;
 type AttributeInputSet = Readonly<{ productValues: ReadonlyArray<CatalogAttributeValueInput>; variantValues: ReadonlyArray<CatalogAttributeValueInput> }>;
+
+function emptyMediaProvenance(): MediaProvenanceInput {
+  return { creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false };
+}
+
+function MediaProvenanceFields({ value, onChange, disabled, styles }: {
+  value: MediaProvenanceInput;
+  onChange: (value: MediaProvenanceInput) => void;
+  disabled: boolean;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  return <View style={styles.provenanceFields}>
+    <Text style={styles.fieldLabel}>مصدر الصورة وحقوق استخدامها</Text>
+    <TextInput accessibilityLabel="اسم المنشئ أو المصوّر" editable={!disabled} maxLength={200} onChangeText={(creator) => onChange({ ...value, creator })} placeholder="اسم المنشئ أو المصوّر" value={value.creator} style={[styles.input, disabled && styles.disabledInput]} />
+    <TextInput accessibilityLabel="مصدر الصورة" editable={!disabled} maxLength={1000} multiline onChangeText={(sourceDescription) => onChange({ ...value, sourceDescription })} placeholder="مصدر الصورة ووصفه" value={value.sourceDescription} style={[styles.input, disabled && styles.disabledInput]} />
+    <TextInput accessibilityLabel="رابط مصدر الصورة (اختياري)" autoCapitalize="none" editable={!disabled} keyboardType="url" maxLength={2048} onChangeText={(sourceUri) => onChange({ ...value, sourceUri })} placeholder="رابط المصدر (اختياري)" value={value.sourceUri ?? ""} style={[styles.input, disabled && styles.disabledInput]} />
+    <TextInput accessibilityLabel="بيان الإذن أو الترخيص" editable={!disabled} maxLength={2000} multiline onChangeText={(rightsStatement) => onChange({ ...value, rightsStatement })} placeholder="بيان الإذن أو الترخيص الذي يسمح بعرض الصورة" value={value.rightsStatement} style={[styles.input, disabled && styles.disabledInput]} />
+    <TextInput accessibilityLabel="رابط بيان الحقوق (اختياري)" autoCapitalize="none" editable={!disabled} keyboardType="url" maxLength={2048} onChangeText={(rightsUri) => onChange({ ...value, rightsUri })} placeholder="رابط بيان الحقوق (اختياري)" value={value.rightsUri ?? ""} style={[styles.input, disabled && styles.disabledInput]} />
+    <View style={styles.provenanceToggle}><Text style={styles.muted}>أقرّ بوجود إذن يسمح بعرض هذه الصورة</Text><Switch accessibilityLabel="إقرار الإذن بعرض الصورة" disabled={disabled} onValueChange={(rightsAttested) => onChange({ ...value, rightsAttested })} value={value.rightsAttested} /></View>
+  </View>;
+}
+
+function sortStoreOffersByCreation(offers: ReadonlyArray<CatalogStoreOffer>): CatalogStoreOffer[] {
+  return [...offers].sort((left, right) => {
+    const leftMillis = Date.parse(left.createdAt);
+    const rightMillis = Date.parse(right.createdAt);
+    if (Number.isFinite(leftMillis) && Number.isFinite(rightMillis) && leftMillis !== rightMillis) return leftMillis - rightMillis;
+    const fraction = (value: string) => value.match(/\.(\d+)(?:Z|[+-]\d{2}:\d{2})$/)?.[1]?.padEnd(9, "0").slice(0, 9) ?? "000000000";
+    const leftFraction = fraction(left.createdAt);
+    const rightFraction = fraction(right.createdAt);
+    if (leftFraction !== rightFraction) return leftFraction < rightFraction ? -1 : 1;
+    return left.offerId < right.offerId ? -1 : left.offerId > right.offerId ? 1 : 0;
+  });
+}
 
 function buildAttributeInputs(rules: ReadonlyArray<CatalogAttributeRule>, drafts: AttributeDrafts): AttributeInputSet | null {
   const productValues: CatalogAttributeValueInput[] = [];
@@ -57,6 +91,11 @@ export function StoreOfferManagement({ storeId, verticalId }: { storeId: string;
 const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<OfferState>({ kind: "loading" });
+  const [offerNextCursor, setOfferNextCursor] = useState("");
+  const [loadingMoreOffers, setLoadingMoreOffers] = useState(false);
+  const offerLoadedPageCount = useRef(1);
+  const offerLoadSequence = useRef(0);
+  const offerLoadedStoreID = useRef(storeId);
   const [products, setProducts] = useState<ReadonlyArray<CatalogProduct>>([]);
   const [productNextCursor, setProductNextCursor] = useState("");
   const [proposalNextCursor, setProposalNextCursor] = useState("");
@@ -77,7 +116,11 @@ const theme = useAppearanceTheme();
   const [inventoryDrafts, setInventoryDrafts] = useState<Record<string, string>>({});
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
   const catalogModel = verticals.find((vertical) => vertical.id === verticalId)?.catalogModel ?? "";
-  const [proposalCategories, setProposalCategories] = useState<ReadonlyArray<CatalogCategory>>([]);
+  const [proposalCategories, setProposalCategories] = useState<CatalogCategoryListResponse["categories"]>([]);
+  const [proposalCategoryQuery, setProposalCategoryQuery] = useState("");
+  const [proposalCategoryNextCursor, setProposalCategoryNextCursor] = useState("");
+  const [proposalCategoriesLoading, setProposalCategoriesLoading] = useState(false);
+  const proposalCategorySequence = useRef(0);
   const [proposalAttributeRules, setProposalAttributeRules] = useState<ReadonlyArray<CatalogAttributeRule>>([]);
   const [proposalRuleState, setProposalRuleState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [proposalAttributeDrafts, setProposalAttributeDrafts] = useState<AttributeDrafts>({});
@@ -88,18 +131,21 @@ const theme = useAppearanceTheme();
   const [storeProductDescription, setStoreProductDescription] = useState("");
   const [selectedProductName, setSelectedProductName] = useState("");
   const [selectedProductDescription, setSelectedProductDescription] = useState("");
-  const [storeProductImageURI, setStoreProductImageURI] = useState("");
   const [storeProductImage, setStoreProductImage] = useState<DshImageUploadInput | null>(null);
+  const [storeProductImageProvenance, setStoreProductImageProvenance] = useState<MediaProvenanceInput>(emptyMediaProvenance());
+  const [storeProductImageIdempotencyKey, setStoreProductImageIdempotencyKey] = useState("");
   const [pendingProductMedia, setPendingProductMedia] = useState<PendingProductMedia | null>(null);
   const [mediaDraft, setMediaDraft] = useState<ReadonlyArray<CatalogMedia>>([]);
   const [mediaUpload, setMediaUpload] = useState<DshImageUploadInput | null>(null);
+  const [mediaUploadProvenance, setMediaUploadProvenance] = useState<MediaProvenanceInput>(emptyMediaProvenance());
+  const [mediaUploadIdempotencyKey, setMediaUploadIdempotencyKey] = useState("");
+  const [mediaUploadAttempted, setMediaUploadAttempted] = useState(false);
   const [mediaUploadRole, setMediaUploadRole] = useState<"primary" | "gallery">("gallery");
   const [mediaBusy, setMediaBusy] = useState(false);
   const mediaBusyRef = useRef(false);
   const [storeProductMeasurementKind, setStoreProductMeasurementKind] = useState<MeasurementKind | "">("");
   const [storeProductBaseUnit, setStoreProductBaseUnit] = useState<BaseUnit | "">("");
   const [proposalName, setProposalName] = useState("");
-  const [proposalImageURI, setProposalImageURI] = useState("");
   const [proposalVerticalID, setProposalVerticalID] = useState(verticalId);
   const [proposalCategoryID, setProposalCategoryID] = useState("");
   const [proposalMeasurementKind, setProposalMeasurementKind] = useState<MeasurementKind | "">("");
@@ -110,24 +156,71 @@ const theme = useAppearanceTheme();
   const [extensionOfferID, setExtensionOfferID] = useState("");
 
   const load = useCallback(async () => {
-    setState({ kind: "loading" }); setError("");
+    const requestSequence = ++offerLoadSequence.current;
+    const requestedPageCount = Math.max(1, offerLoadedPageCount.current);
+    setState({ kind: "loading" }); setOfferNextCursor(""); setLoadingMoreOffers(false); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const [offers, registry] = await Promise.all([dshClient().readOwnStoreOffers(token, storeId), dshClient().listCatalogVerticals()]);
+      const [firstPage, registry] = await Promise.all([dshClient().readOwnStoreOffers(token, storeId), dshClient().listCatalogVerticals()]);
+      const offers = [...firstPage.offers];
+      let nextCursor = firstPage.nextCursor ?? "";
+      let loadedPageCount = 1;
+      for (let pageIndex = 1; pageIndex < requestedPageCount && nextCursor; pageIndex += 1) {
+        const page = await dshClient().readOwnStoreOffers(token, storeId, 50, nextCursor);
+        if (requestSequence !== offerLoadSequence.current) return;
+        const seen = new Set(offers.map((offer) => offer.offerId));
+        offers.push(...page.offers.filter((offer) => !seen.has(offer.offerId)));
+        nextCursor = page.nextCursor ?? "";
+        loadedPageCount += 1;
+      }
+      if (requestSequence !== offerLoadSequence.current) return;
       setVerticals(registry);
       const model = registry.find((vertical) => vertical.id === verticalId)?.catalogModel;
       const proposals = model === "SHARED_CATALOG" ? await dshClient().listOwnCatalogProductProposals(token) : { proposals: [], nextCursor: undefined };
-      setState({ kind: "ready", offers, proposals: proposals.proposals });
+      if (requestSequence !== offerLoadSequence.current) return;
+      offerLoadedPageCount.current = loadedPageCount;
+      setOfferNextCursor(nextCursor);
+      setState({ kind: "ready", offers: sortStoreOffersByCreation(offers), proposals: proposals.proposals });
       setProposalNextCursor(proposals.nextCursor ?? "");
-    } catch (nextError) { reportError(nextError); setState({ kind: "error" }); setError(errorText(nextError)); }
+    } catch (nextError) { if (requestSequence === offerLoadSequence.current) { reportError(nextError); setState({ kind: "error" }); setError(errorText(nextError)); } }
   }, [storeId, verticalId]);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (offerLoadedStoreID.current !== storeId) {
+      offerLoadedStoreID.current = storeId;
+      offerLoadedPageCount.current = 1;
+    }
+    void load();
+    return () => { offerLoadSequence.current += 1; };
+  }, [load, storeId]);
   useEffect(() => { setProposalVerticalID(verticalId); }, [verticalId]);
 
   useEffect(() => {
-    if (!proposalVerticalID) { setProposalCategories([]); return; }
-    void dshClient().listCatalogCategories(proposalVerticalID).then(setProposalCategories).catch((nextError) => { reportError(nextError); setError(errorText(nextError)); });
-  }, [proposalVerticalID]);
+    const sequence = ++proposalCategorySequence.current;
+    setProposalCategories([]);
+    setProposalCategoryNextCursor("");
+    setProposalCategoryID("");
+    if (!proposalVerticalID) { setProposalCategoriesLoading(false); return; }
+    const timer = setTimeout(() => {
+      setProposalCategoriesLoading(true);
+      void dshClient().listCatalogCategories(proposalVerticalID, proposalCategoryQuery, 25).then((page) => {
+        if (sequence === proposalCategorySequence.current) { setProposalCategories(page.categories); setProposalCategoryNextCursor(page.nextCursor ?? ""); }
+      }).catch((nextError) => { if (sequence === proposalCategorySequence.current) { reportError(nextError); setError(errorText(nextError)); } }).finally(() => {
+        if (sequence === proposalCategorySequence.current) setProposalCategoriesLoading(false);
+      });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [proposalVerticalID, proposalCategoryQuery]);
+
+  async function loadMoreProposalCategories() {
+    if (!proposalCategoryNextCursor || proposalCategoriesLoading || !proposalVerticalID) return;
+    setProposalCategoriesLoading(true);
+    try {
+      const page = await dshClient().listCatalogCategories(proposalVerticalID, proposalCategoryQuery, 25, proposalCategoryNextCursor);
+      setProposalCategories((current) => [...current, ...page.categories]);
+      setProposalCategoryNextCursor(page.nextCursor ?? "");
+    } catch (nextError) { reportError(nextError); setError(errorText(nextError)); }
+    finally { setProposalCategoriesLoading(false); }
+  }
 
   useEffect(() => {
     let current = true;
@@ -157,6 +250,29 @@ const theme = useAppearanceTheme();
     } catch (nextError) { reportError(nextError); setError(errorText(nextError)); }
   }
 
+  async function loadMoreOffers() {
+    if (!offerNextCursor || loadingMoreOffers || state.kind !== "ready") return;
+    const requestSequence = offerLoadSequence.current;
+    setLoadingMoreOffers(true);
+    setError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const page = await dshClient().readOwnStoreOffers(token, storeId, 50, offerNextCursor);
+      if (requestSequence !== offerLoadSequence.current) return;
+      setState((current) => {
+        if (current.kind !== "ready") return current;
+        const seen = new Set(current.offers.map((offer) => offer.offerId));
+        return { ...current, offers: sortStoreOffersByCreation([...current.offers, ...page.offers.filter((offer) => !seen.has(offer.offerId))]) };
+      });
+      setOfferNextCursor(page.nextCursor ?? "");
+      offerLoadedPageCount.current += 1;
+    } catch (nextError) {
+      if (requestSequence === offerLoadSequence.current) { reportError(nextError); setError(errorText(nextError)); }
+    } finally {
+      if (requestSequence === offerLoadSequence.current) setLoadingMoreOffers(false);
+    }
+  }
+
   async function addOffer() {
     const parsedPrice = Number(priceMinor.trim());
     const parsedMin = Number(quantityMinBaseUnits.trim());
@@ -170,16 +286,22 @@ const theme = useAppearanceTheme();
     setBusy(true); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      await dshClient().createStoreOffer(token, storeId, selectedVariant.id, parsedPrice, quantityPolicy, submittedPricingBasis, parsedMin, parsedMax, parsedStep, parsedPricingUnit, inventoryPolicy, parsedInventoryOnHand);
-      setSelectedProduct(null); setSelectedVariant(null); setPriceMinor(""); setQuantityPolicy(""); setPricingBasis(""); setQuantityMinBaseUnits(""); setQuantityMaxBaseUnits(""); setQuantityStepBaseUnits(""); setPricingUnitBaseUnits(""); setInventoryPolicy("AVAILABILITY_ONLY"); setInventoryOnHandBaseUnits("0"); await load();
+      const created = await dshClient().createStoreOffer(token, storeId, selectedVariant.id, parsedPrice, quantityPolicy, submittedPricingBasis, parsedMin, parsedMax, parsedStep, parsedPricingUnit, inventoryPolicy, parsedInventoryOnHand);
+      setSelectedProduct(null); setSelectedVariant(null); setPriceMinor(""); setQuantityPolicy(""); setPricingBasis(""); setQuantityMinBaseUnits(""); setQuantityMaxBaseUnits(""); setQuantityStepBaseUnits(""); setPricingUnitBaseUnits(""); setInventoryPolicy("AVAILABILITY_ONLY"); setInventoryOnHandBaseUnits("0");
+      const createdOffer = { ...created.offer, media: selectedProduct?.media ?? created.offer.media };
+      setState((current) => current.kind === "ready" ? { ...current, offers: sortStoreOffersByCreation([...current.offers.filter((offer) => offer.offerId !== createdOffer.offerId), createdOffer]) } : current);
     } catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
   }
 
   async function updateOffer(offer: CatalogStoreOffer, publicationState: "draft" | "published" | "hidden", availability: boolean, nextInventoryPolicy: InventoryPolicy = offer.inventoryPolicy as InventoryPolicy, nextInventoryOnHandBaseUnits = offer.inventoryOnHandBaseUnits) {
     if (busy) return;
     setBusy(true); setError("");
-      try { const token = await getUsableIdentityAccessToken(); await dshClient().updateStoreOffer(token, storeId, offer.offerId, offer.priceMinor, publicationState, availability, offer.version, offer.quantityPolicy, offer.pricingBasis, offer.quantityMinBaseUnits, offer.quantityMaxBaseUnits, offer.quantityStepBaseUnits, offer.pricingUnitBaseUnits, nextInventoryPolicy, nextInventoryOnHandBaseUnits); await load(); }
-    catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
+      try {
+        const token = await getUsableIdentityAccessToken();
+        const result = await dshClient().updateStoreOffer(token, storeId, offer.offerId, offer.priceMinor, publicationState, availability, offer.version, offer.quantityPolicy, offer.pricingBasis, offer.quantityMinBaseUnits, offer.quantityMaxBaseUnits, offer.quantityStepBaseUnits, offer.pricingUnitBaseUnits, nextInventoryPolicy, nextInventoryOnHandBaseUnits);
+        setState((current) => current.kind === "ready" ? { ...current, offers: current.offers.map((item) => item.offerId === result.offer.offerId ? { ...result.offer, media: item.media, modifierGroups: item.modifierGroups } : item) } : current);
+      }
+      catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
   }
 
   async function saveSelectedStoreProduct() {
@@ -197,29 +319,29 @@ const theme = useAppearanceTheme();
   }
 
   async function createStoreProduct() {
-    if (busy || catalogModel !== "STORE_LOCAL_CATALOG" || !storeProductName.trim() || !verticalId || !storeProductMeasurementKind || !storeProductBaseUnit) return;
+    if (busy || pendingProductMedia || catalogModel !== "STORE_LOCAL_CATALOG" || !storeProductName.trim() || !verticalId || !storeProductMeasurementKind || !storeProductBaseUnit) return;
+    if (storeProductImage && (!storeProductImageIdempotencyKey || !isMediaProvenanceInputValid(storeProductImageProvenance))) { setError("أكمل مصدر الصورة وبيان الحقوق وأكّد الإذن قبل إنشاء المنتج بصورته."); return; }
     setBusy(true); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
       const image = storeProductImage;
-      let created = await dshClient().createStoreScopedProduct(token, storeId, { canonicalName: storeProductName, description: storeProductDescription, verticalId, scope: "STORE_SCOPED", storeId, variantTitle: "الافتراضي", measurementKind: storeProductMeasurementKind, baseUnit: storeProductBaseUnit, categoryIds: [], ...(!image && storeProductImageURI.trim() ? { imageUri: storeProductImageURI.trim() } : {}) });
+      let created = await dshClient().createStoreScopedProduct(token, storeId, { canonicalName: storeProductName, description: storeProductDescription, verticalId, scope: "STORE_SCOPED", storeId, variantTitle: "الافتراضي", measurementKind: storeProductMeasurementKind, baseUnit: storeProductBaseUnit, categoryIds: [] });
       if (image) {
         try {
-          created = await dshClient().uploadStoreProductMedia(token, storeId, created.product.id, image, "primary", created.product.version);
+          created = await dshClient().uploadStoreProductMedia(token, storeId, created.product.id, image, "primary", storeProductImageProvenance, created.product.version, storeProductImageIdempotencyKey);
           setPendingProductMedia(null);
         } catch (uploadError) {
           reportError(uploadError);
-          setPendingProductMedia({ productID: created.product.id, expectedVersion: created.product.version, image });
+          setPendingProductMedia({ productID: created.product.id, expectedVersion: created.product.version, image, provenance: storeProductImageProvenance, idempotencyKey: storeProductImageIdempotencyKey });
           setError("تم إنشاء المنتج، لكن رفع الصورة تعذر. أعد المحاولة من زر رفع الصورة.");
           const defaultVariant = created.product.variants[0];
           if (defaultVariant) selectProduct(created.product, defaultVariant);
           return;
         }
       }
-      setStoreProductName(""); setStoreProductDescription(""); setStoreProductImageURI(""); setStoreProductImage(null); setBusy(false);
+      setStoreProductName(""); setStoreProductDescription(""); setStoreProductImage(null); setStoreProductImageProvenance(emptyMediaProvenance()); setStoreProductImageIdempotencyKey(""); setBusy(false);
       const defaultVariant = created.product.variants[0];
       if (defaultVariant) selectProduct(created.product, defaultVariant);
-      void load();
     }
     catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
   }
@@ -229,11 +351,12 @@ const theme = useAppearanceTheme();
     setBusy(true); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const result = await dshClient().uploadStoreProductMedia(token, storeId, pendingProductMedia.productID, pendingProductMedia.image, "primary", pendingProductMedia.expectedVersion);
+      const result = await dshClient().uploadStoreProductMedia(token, storeId, pendingProductMedia.productID, pendingProductMedia.image, "primary", pendingProductMedia.provenance, pendingProductMedia.expectedVersion, pendingProductMedia.idempotencyKey);
       setSelectedProduct(result.product);
       setSelectedProductName(result.product.canonicalName);
       setSelectedProductDescription(result.product.description ?? "");
-      setPendingProductMedia(null); setStoreProductImage(null); await load();
+      setState((current) => current.kind === "ready" ? { ...current, offers: current.offers.map((offer) => offer.productId === result.product.id ? { ...offer, productName: result.product.canonicalName, productDescription: result.product.description ?? "", brand: result.product.brand ?? null, productActive: result.product.active, productVersion: result.product.version, media: result.product.media } : offer) } : current);
+      setPendingProductMedia(null); setStoreProductImage(null); setStoreProductImageProvenance(emptyMediaProvenance()); setStoreProductImageIdempotencyKey("");
     } catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
   }
 
@@ -258,7 +381,8 @@ const theme = useAppearanceTheme();
         blob,
       } satisfies DshImageUploadInput;
       setStoreProductImage(image);
-      setPendingProductMedia((current) => current ? { ...current, image } : current);
+      setStoreProductImageProvenance(emptyMediaProvenance());
+      setStoreProductImageIdempotencyKey(Crypto.randomUUID());
       setError("");
     } catch (nextError) {
       reportError(nextError);
@@ -273,6 +397,9 @@ const theme = useAppearanceTheme();
     setSelectedVariant(variant);
     setMediaDraft(product.media);
     setMediaUpload(null);
+    setMediaUploadProvenance(emptyMediaProvenance());
+    setMediaUploadIdempotencyKey("");
+    setMediaUploadAttempted(false);
     setMediaUploadRole("gallery");
     setQuantityPolicy(""); setPricingBasis(""); setQuantityMinBaseUnits(""); setQuantityMaxBaseUnits(""); setQuantityStepBaseUnits(""); setPricingUnitBaseUnits("");
   }
@@ -306,6 +433,9 @@ const theme = useAppearanceTheme();
       const imageResponse = await fetch(asset.uri);
       if (!imageResponse.ok) throw new Error("PRODUCT_IMAGE_READ_FAILED");
       setMediaUpload({ uri: asset.uri, name: asset.fileName ?? "product-image.jpg", type: asset.mimeType ?? "image/jpeg", blob: await imageResponse.blob() });
+      setMediaUploadProvenance(emptyMediaProvenance());
+      setMediaUploadIdempotencyKey(Crypto.randomUUID());
+      setMediaUploadAttempted(false);
       setError("");
     } catch (nextError) {
       reportError(nextError);
@@ -314,15 +444,25 @@ const theme = useAppearanceTheme();
   }
 
   async function uploadSelectedProductMedia() {
-    if (!mediaUpload || !selectedProduct || selectedProduct.scope !== "STORE_SCOPED" || selectedProduct.storeId !== storeId || !beginMediaMutation()) return;
+    if (!mediaUpload || !selectedProduct || selectedProduct.scope !== "STORE_SCOPED" || selectedProduct.storeId !== storeId) return;
+    if (!isMediaProvenanceInputValid(mediaUploadProvenance)) { setError("أكمل مصدر الصورة وبيان الحقوق وأكّد الإذن قبل الرفع."); return; }
+    if (!beginMediaMutation()) return;
+    setMediaUploadAttempted(true);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const result = await dshClient().uploadStoreProductMedia(token, storeId, selectedProduct.id, mediaUpload, mediaUploadRole, selectedProduct.version);
+      const result = await dshClient().uploadStoreProductMedia(token, storeId, selectedProduct.id, mediaUpload, mediaUploadRole, mediaUploadProvenance, selectedProduct.version, mediaUploadIdempotencyKey);
       replaceProductInSearch(result.product);
       setMediaUpload(null);
+      setMediaUploadProvenance(emptyMediaProvenance());
+      setMediaUploadIdempotencyKey("");
+      setMediaUploadAttempted(false);
     } catch (nextError) {
       reportError(nextError);
+      if (nextError && typeof nextError === "object" && (nextError as { kind?: unknown; status?: unknown }).kind === "http" && typeof (nextError as { status?: unknown }).status === "number" && ((nextError as { status: number }).status < 500)) {
+        setMediaUploadAttempted(false);
+        setMediaUploadIdempotencyKey(Crypto.randomUUID());
+      }
       setError(errorText(nextError));
     } finally { endMediaMutation(); }
   }
@@ -350,7 +490,7 @@ const theme = useAppearanceTheme();
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const result = await dshClient().replaceStoreProductMedia(token, storeId, selectedProduct.id, { media: mediaDraft.map((item, ordinal) => ({ uri: item.uri, role: ordinal === 0 ? "primary" : "gallery", ordinal })) }, selectedProduct.version);
+      const result = await dshClient().replaceStoreProductMedia(token, storeId, selectedProduct.id, { media: mediaDraft.map((item, ordinal) => ({ assetId: item.assetId, role: ordinal === 0 ? "primary" : "gallery", ordinal })) }, selectedProduct.version);
       replaceProductInSearch(result.product);
     } catch (nextError) {
       reportError(nextError);
@@ -364,7 +504,7 @@ const theme = useAppearanceTheme();
     const attributes = buildAttributeInputs(proposalAttributeRules, proposalAttributeDrafts);
     if (!attributes) { setError("أكمل الخصائص المطلوبة وتحقق من أنواع القيم قبل إرسال المقترح."); return; }
     setBusy(true); setError("");
-    try { const token = await getUsableIdentityAccessToken(); await dshClient().createCatalogProductProposal(token, { id: Crypto.randomUUID(), verticalId: proposalVerticalID, categoryId: proposalCategoryID, proposedName: proposalName, proposedVariantTitle: "الافتراضي", proposedMeasurementKind: proposalMeasurementKind, proposedBaseUnit: proposalBaseUnit, attributeValues: attributes.productValues, variantAttributeValues: attributes.variantValues, ...(proposalImageURI.trim() ? { proposedImageUri: proposalImageURI.trim() } : {}) }); setProposalName(""); setProposalImageURI(""); await load(); }
+    try { const token = await getUsableIdentityAccessToken(); await dshClient().createCatalogProductProposal(token, { id: Crypto.randomUUID(), verticalId: proposalVerticalID, categoryId: proposalCategoryID, proposedName: proposalName, proposedVariantTitle: "الافتراضي", proposedMeasurementKind: proposalMeasurementKind, proposedBaseUnit: proposalBaseUnit, attributeValues: attributes.productValues, variantAttributeValues: attributes.variantValues }); setProposalName(""); await load(); }
     catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
   }
 
@@ -378,7 +518,7 @@ const theme = useAppearanceTheme();
   async function createSectionAndAttach() {
     if (busy || !sectionName.trim()) return;
     setBusy(true); setError("");
-    try { const token = await getUsableIdentityAccessToken(); const section = await dshClient().createCatalogStorefrontSection(token, storeId, { nameAr: sectionName, ordinal: 0, active: true }); if (extensionOfferID) await dshClient().attachCatalogOfferToSection(token, storeId, section.section.id, extensionOfferID); setSectionName(""); await load(); }
+    try { const token = await getUsableIdentityAccessToken(); const section = await dshClient().createCatalogStorefrontSection(token, storeId, { nameAr: sectionName, ordinal: 0, active: true }); if (extensionOfferID) await dshClient().attachCatalogOfferToSection(token, storeId, section.section.id, extensionOfferID); setSectionName(""); }
     catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
   }
 
@@ -403,14 +543,15 @@ const theme = useAppearanceTheme();
       {searchSubmitted && !products.length && !error ? <Text style={styles.muted}>لا توجد نتائج مطابقة. جرّب اسمًا آخر أو امسح البحث.</Text> : null}
        {catalogModel === "SHARED_CATALOG" && products.length ? <><View style={styles.productList}>{products.map((product) => { const primaryMedia = getPrimaryMedia(product.media); return <View key={product.id} style={styles.product}><View style={styles.productHeader}>{primaryMedia ? <Image accessibilityLabel={`صورة ${product.canonicalName}`} source={{ uri: primaryMedia.uri }} resizeMode="cover" style={styles.productImage} /> : <View accessibilityLabel={`لا توجد صورة لـ ${product.canonicalName}`} style={styles.productImagePlaceholder}><Text style={styles.imagePlaceholderText}>لا توجد صورة</Text></View>}<View style={styles.productCopy}><Text style={styles.itemTitle}>{product.canonicalName}</Text><Text style={styles.muted}>{product.variants.length} نسخة متاحة للاختيار</Text></View></View>{product.variants.map((variant) => <BthwaniChip key={variant.id} label={`${variant.title} · ${measurementKindLabel(variant.measurementKind, variant.baseUnit)}`} onPress={() => selectProduct(product, variant)} selected={selectedVariant?.id === variant.id} />)}</View>; })}</View>{productNextCursor ? <BthwaniButton busy={busy} disabled={busy} label="تحميل المزيد من المنتجات" onPress={() => void searchProducts(productNextCursor, true)} variant="secondary" /> : null}</> : null}
       {selectedVariant && selectedProduct ? <View style={styles.form}><Text style={styles.selected}>المحدد: {selectedProduct.canonicalName} · {selectedVariant.title}</Text><Text style={styles.muted}>هوية القياس: {measurementKindLabel(selectedVariant.measurementKind, selectedVariant.baseUnit)}</Text>{selectedVariant.measurementKind === "VARIABLE_MEASURE" ? <Text style={styles.warning}>القياس المتغير غير متاح للطلب حتى يكتمل مسار الكمية الفعلية.</Text> : <><Text style={styles.fieldLabel}>سياسة الكمية</Text><View style={styles.choiceRow}>{([selectedVariant.measurementKind] as QuantityPolicy[]).map((value) => <BthwaniChip key={value} label={quantityPolicyLabel(value)} onPress={() => setQuantityPolicy(value)} selected={quantityPolicy === value} />)}</View><Text style={styles.fieldLabel}>أساس التسعير</Text><View style={styles.choiceRow}>{([expectedPricingBasis] as PricingBasis[]).map((value) => <BthwaniChip key={value} label={pricingBasisLabel(value)} onPress={() => setPricingBasis(value)} selected={pricingBasis === value} />)}</View><Text style={styles.fieldLabel}>سياسة المخزون</Text><View style={styles.choiceRow}><BthwaniChip label="التوافر فقط" onPress={() => { setInventoryPolicy("AVAILABILITY_ONLY"); setInventoryOnHandBaseUnits("0"); }} selected={inventoryPolicy === "AVAILABILITY_ONLY"} /><BthwaniChip label="كمية فعلية" onPress={() => setInventoryPolicy("QUANTITY_ON_HAND")} selected={inventoryPolicy === "QUANTITY_ON_HAND"} /></View><TextInput accessibilityLabel="الكمية المتاحة عند الإنشاء" editable={!busy && inventoryPolicy === "QUANTITY_ON_HAND"} keyboardType="number-pad" onChangeText={(value) => setInventoryOnHandBaseUnits(toAsciiDigits(value))} placeholder="الكمية المتاحة عند الإنشاء" value={inventoryOnHandBaseUnits} style={[styles.input, styles.numericInput, busy && styles.disabledInput]} /><TextInput accessibilityLabel="الحد الأدنى للكمية" editable={!busy} keyboardType="number-pad" onChangeText={(value) => setQuantityMinBaseUnits(toAsciiDigits(value))} placeholder="الحد الأدنى للكمية" value={quantityMinBaseUnits} style={[styles.input, styles.numericInput, busy && styles.disabledInput]} /><TextInput accessibilityLabel="الحد الأعلى للكمية" editable={!busy} keyboardType="number-pad" onChangeText={(value) => setQuantityMaxBaseUnits(toAsciiDigits(value))} placeholder="الحد الأعلى للكمية" value={quantityMaxBaseUnits} style={[styles.input, styles.numericInput, busy && styles.disabledInput]} /><TextInput accessibilityLabel="خطوة الكمية" editable={!busy} keyboardType="number-pad" onChangeText={(value) => setQuantityStepBaseUnits(toAsciiDigits(value))} placeholder="خطوة الكمية" value={quantityStepBaseUnits} style={[styles.input, styles.numericInput, busy && styles.disabledInput]} /><TextInput accessibilityLabel="وحدة التسعير الأساسية" editable={!busy} keyboardType="number-pad" onChangeText={(value) => setPricingUnitBaseUnits(toAsciiDigits(value))} placeholder="وحدة التسعير الأساسية" value={pricingUnitBaseUnits} style={[styles.input, styles.numericInput, busy && styles.disabledInput]} /><TextInput accessibilityLabel="السعر بالريال اليمني" editable={!busy} keyboardType="number-pad" onChangeText={(value) => setPriceMinor(toAsciiDigits(value))} placeholder="السعر بالريال اليمني" value={priceMinor} style={[styles.input, styles.numericInput, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={!canAdd} label="إضافة عرض للمتجر" onPress={() => void addOffer()} /></>}</View> : null}
-      {selectedProduct?.scope === "STORE_SCOPED" && selectedProduct.storeId === storeId ? <View style={styles.mediaManager} accessibilityLabel={`إدارة صور ${selectedProduct.canonicalName}`}><Text style={styles.itemTitle}>صور المنتج: {selectedProduct.canonicalName}</Text><Text style={styles.muted}>عدّل بيانات منتج المتجر وصوره، ثم احفظ التغييرات.</Text><TextInput accessibilityLabel="اسم المنتج" editable={!busy} onChangeText={setSelectedProductName} value={selectedProductName} style={[styles.input, busy && styles.disabledInput]} /><TextInput accessibilityLabel="وصف المنتج" editable={!busy} maxLength={4000} multiline onChangeText={setSelectedProductDescription} value={selectedProductDescription} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={!selectedProductName.trim()} label="حفظ بيانات المنتج" onPress={() => void saveSelectedStoreProduct()} variant="secondary" />{mediaDraft.length ? mediaDraft.map((item, index) => <View key={item.uri} style={styles.mediaRow}><Image accessibilityLabel={`${item.role === "primary" ? "الصورة الأساسية" : "صورة المعرض"} ${index + 1}`} source={{ uri: item.uri }} resizeMode="cover" style={styles.mediaImage} /><View style={styles.mediaCopy}><Text style={styles.muted}>{item.role === "primary" ? "أساسية" : "معرض"} · {index + 1}</Text><Text numberOfLines={1} style={styles.muted}>{item.uri}</Text></View><BthwaniButton disabled={mediaBusy || index === 0} label="أعلى" onPress={() => moveMedia(index, -1)} variant="quiet" /><BthwaniButton disabled={mediaBusy || index === mediaDraft.length - 1 || index === 0} label="أسفل" onPress={() => moveMedia(index, 1)} variant="quiet" /><BthwaniButton disabled={mediaBusy} label="حذف" onPress={() => removeMedia(index)} variant="danger" /></View>) : <Text style={styles.muted}>لا توجد صور لهذا المنتج.</Text>}<View style={styles.choiceRow}><BthwaniChip label="صورة أساسية" selected={mediaUploadRole === "primary"} onPress={() => setMediaUploadRole("primary")} /><BthwaniChip label="صورة معرض" selected={mediaUploadRole === "gallery"} onPress={() => setMediaUploadRole("gallery")} /></View><BthwaniButton busy={mediaBusy} disabled={mediaBusy} label="اختيار صورة" onPress={() => void pickSelectedProductMedia()} variant="secondary" />{mediaUpload ? <View style={styles.mediaUploadPreview}><Image accessibilityLabel="معاينة الصورة الجديدة" source={{ uri: mediaUpload.uri }} resizeMode="cover" style={styles.mediaImage} /><BthwaniButton busy={mediaBusy} disabled={mediaBusy} label="رفع الصورة" onPress={() => void uploadSelectedProductMedia()} /></View> : null}<BthwaniButton busy={mediaBusy} disabled={mediaBusy} label="حفظ معرض الصور" onPress={() => void saveSelectedProductMedia()} variant="secondary" /></View> : null}
-      {catalogModel === "STORE_LOCAL_CATALOG" ? <View style={styles.managementBlock}><Text style={styles.itemTitle}>إضافة منتج لقائمة المتجر</Text><Text style={styles.muted}>الاسم والوصف والصورة والنسخة تخص هذا المتجر. أقسام القائمة تنظّم منتجاته للعميل.</Text><TextInput accessibilityLabel="اسم منتج المتجر" editable={!busy} onChangeText={setStoreProductName} placeholder="اسم المنتج" value={storeProductName} style={[styles.input, busy && styles.disabledInput]} /><TextInput accessibilityLabel="وصف منتج المتجر" editable={!busy} maxLength={4000} multiline onChangeText={setStoreProductDescription} placeholder="وصف المنتج (اختياري)" value={storeProductDescription} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={busy} label={storeProductImage ? "تغيير صورة المنتج" : "اختيار صورة من الجهاز"} onPress={() => void pickStoreProductImage()} variant="secondary" />{storeProductImage ? <Image accessibilityLabel={`معاينة صورة ${storeProductName || "المنتج"}`} source={{ uri: storeProductImage.uri }} resizeMode="cover" style={styles.productImage} /> : <TextInput accessibilityLabel="رابط صورة منتج المتجر" autoCapitalize="none" autoCorrect={false} editable={!busy} keyboardType="url" onChangeText={setStoreProductImageURI} placeholder="رابط صورة المنتج (اختياري)" value={storeProductImageURI} style={[styles.input, busy && styles.disabledInput]} />}{pendingProductMedia ? <BthwaniButton busy={busy} disabled={busy} label="إعادة رفع صورة المنتج" onPress={() => void retryProductMedia()} /> : null}<Text style={styles.fieldLabel}>هوية القياس</Text><View style={styles.choiceList}>{(["DISCRETE", "MEASURED", "VARIABLE_MEASURE"] as MeasurementKind[]).map((value) => <BthwaniChip key={value} label={measurementKindLabel(value)} onPress={() => { setStoreProductMeasurementKind(value); setStoreProductBaseUnit(""); }} selected={storeProductMeasurementKind === value} />)}</View><Text style={styles.fieldLabel}>الوحدة الأساسية</Text><View style={styles.choiceRow}>{baseUnitOptions(storeProductMeasurementKind).map((value) => <BthwaniChip key={value} label={baseUnitLabel(value)} onPress={() => setStoreProductBaseUnit(value)} selected={storeProductBaseUnit === value} />)}</View><BthwaniButton busy={busy} disabled={!storeProductName.trim() || !verticalId || !storeProductMeasurementKind || !storeProductBaseUnit} label="إنشاء منتج المتجر" onPress={() => void createStoreProduct()} variant="secondary" /></View> : null}
-       {catalogModel === "SHARED_CATALOG" ? <><View style={styles.managementBlock}><Text style={styles.itemTitle}>اقتراح منتج للمراجعة</Text><Text style={styles.muted}>أرسل اسم المنتج وتصنيفه للمراجعة؛ لا يظهر قبل اعتماد المراجعة.</Text><TextInput accessibilityLabel="اسم المقترح" editable={!busy} onChangeText={setProposalName} placeholder="اسم المنتج المقترح" value={proposalName} style={[styles.input, busy && styles.disabledInput]} /><TextInput accessibilityLabel="رابط صورة المقترح" autoCapitalize="none" autoCorrect={false} editable={!busy} keyboardType="url" onChangeText={setProposalImageURI} placeholder="رابط صورة المقترح (اختياري)" value={proposalImageURI} style={[styles.input, busy && styles.disabledInput]} />{proposalImageURI.trim() ? <Image accessibilityLabel={`معاينة صورة ${proposalName || "المقترح"}`} source={{ uri: proposalImageURI.trim() }} resizeMode="cover" style={styles.productImage} /> : null}<Text style={styles.muted}>{verticals.find((vertical) => vertical.id === verticalId)?.nameAr ?? ""}</Text><Text style={styles.fieldLabel}>التصنيف</Text><View style={styles.choiceList}>{proposalCategories.map((category) => <BthwaniChip key={category.id} label={category.nameAr} onPress={() => { setProposalCategoryID(category.id); setProposalAttributeDrafts({}); }} selected={proposalCategoryID === category.id} />)}</View><Text style={styles.fieldLabel}>هوية القياس</Text><View style={styles.choiceList}>{(["DISCRETE", "MEASURED", "VARIABLE_MEASURE"] as MeasurementKind[]).map((value) => <BthwaniChip key={value} label={measurementKindLabel(value)} onPress={() => { setProposalMeasurementKind(value); setProposalBaseUnit(""); }} selected={proposalMeasurementKind === value} />)}</View><Text style={styles.fieldLabel}>الوحدة الأساسية</Text><View style={styles.choiceRow}>{baseUnitOptions(proposalMeasurementKind).map((value) => <BthwaniChip key={value} label={baseUnitLabel(value)} onPress={() => setProposalBaseUnit(value)} selected={proposalBaseUnit === value} />)}</View>{proposalRuleState === "loading" ? <Text style={styles.muted}>جارٍ قراءة خصائص التصنيف…</Text> : proposalRuleState === "error" ? <Text style={styles.warning}>تعذرت قراءة قواعد الخصائص. أعد المحاولة قبل إرسال المقترح.</Text> : renderAttributeFields(proposalAttributeRules, proposalAttributeDrafts, proposalEnumOptions, (key, value) => setProposalAttributeDrafts((current) => ({ ...current, [key]: value })))}<BthwaniButton busy={busy} disabled={proposalRuleState !== "ready" || !proposalName.trim() || !proposalVerticalID.trim() || !proposalCategoryID.trim() || !proposalMeasurementKind || !proposalBaseUnit} label="إرسال المقترح" onPress={() => void createProposal()} variant="secondary" />{state.kind === "ready" && state.proposals.length ? state.proposals.map((proposal) => <Text key={proposal.id} style={styles.muted}>{catalogProductProposalStateLabel(proposal.state)}{proposal.correctionReason ? ` · ${proposal.correctionReason}` : ""}</Text>) : null}{proposalNextCursor ? <BthwaniButton busy={busy} disabled={busy} label="تحميل المزيد من المقترحات" onPress={() => void loadMoreProposals()} variant="secondary" /> : null}</View>
+      {selectedProduct?.scope === "STORE_SCOPED" && selectedProduct.storeId === storeId ? <View style={styles.mediaManager} accessibilityLabel={`إدارة صور ${selectedProduct.canonicalName}`}><Text style={styles.itemTitle}>صور المنتج: {selectedProduct.canonicalName}</Text><Text style={styles.muted}>عدّل بيانات منتج المتجر وصوره، ثم احفظ التغييرات.</Text><TextInput accessibilityLabel="اسم المنتج" editable={!busy} onChangeText={setSelectedProductName} value={selectedProductName} style={[styles.input, busy && styles.disabledInput]} /><TextInput accessibilityLabel="وصف المنتج" editable={!busy} maxLength={4000} multiline onChangeText={setSelectedProductDescription} value={selectedProductDescription} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={!selectedProductName.trim()} label="حفظ بيانات المنتج" onPress={() => void saveSelectedStoreProduct()} variant="secondary" />{mediaDraft.length ? mediaDraft.map((item, index) => <View key={item.assetId} style={styles.mediaRow}><Image accessibilityLabel={`${item.role === "primary" ? "الصورة الأساسية" : "صورة المعرض"} ${index + 1}`} source={{ uri: item.uri }} resizeMode="cover" style={styles.mediaImage} /><View style={styles.mediaCopy}><Text style={styles.muted}>{item.role === "primary" ? "أساسية" : "معرض"} · {index + 1}</Text><Text numberOfLines={1} style={styles.muted}>{item.uri}</Text></View><BthwaniButton disabled={mediaBusy || index === 0} label="أعلى" onPress={() => moveMedia(index, -1)} variant="quiet" /><BthwaniButton disabled={mediaBusy || index === mediaDraft.length - 1 || index === 0} label="أسفل" onPress={() => moveMedia(index, 1)} variant="quiet" /><BthwaniButton disabled={mediaBusy} label="حذف" onPress={() => removeMedia(index)} variant="danger" /></View>) : <Text style={styles.muted}>لا توجد صور لهذا المنتج.</Text>}<View style={styles.choiceRow}><BthwaniChip disabled={mediaUploadAttempted} label="صورة أساسية" selected={mediaUploadRole === "primary"} onPress={() => setMediaUploadRole("primary")} /><BthwaniChip disabled={mediaUploadAttempted} label="صورة معرض" selected={mediaUploadRole === "gallery"} onPress={() => setMediaUploadRole("gallery")} /></View><BthwaniButton busy={mediaBusy} disabled={mediaBusy || mediaUploadAttempted} label="اختيار صورة" onPress={() => void pickSelectedProductMedia()} variant="secondary" />{mediaUpload ? <View style={styles.mediaUploadPreview}><Image accessibilityLabel="معاينة الصورة الجديدة" source={{ uri: mediaUpload.uri }} resizeMode="cover" style={styles.mediaImage} /><BthwaniButton busy={mediaBusy} disabled={mediaBusy || !mediaUploadIdempotencyKey || !isMediaProvenanceInputValid(mediaUploadProvenance)} label={mediaUploadAttempted ? "إعادة محاولة الرفع" : "رفع الصورة"} onPress={() => void uploadSelectedProductMedia()} /></View> : null}{mediaUpload ? <MediaProvenanceFields value={mediaUploadProvenance} onChange={setMediaUploadProvenance} disabled={mediaBusy || mediaUploadAttempted} styles={styles} /> : null}<BthwaniButton busy={mediaBusy} disabled={mediaBusy} label="حفظ معرض الصور" onPress={() => void saveSelectedProductMedia()} variant="secondary" /></View> : null}
+      {catalogModel === "STORE_LOCAL_CATALOG" ? <View style={styles.managementBlock}><Text style={styles.itemTitle}>إضافة منتج لقائمة المتجر</Text><Text style={styles.muted}>الاسم والوصف والصورة والنسخة تخص هذا المتجر. أقسام القائمة تنظّم منتجاته للعميل.</Text><TextInput accessibilityLabel="اسم منتج المتجر" editable={!busy} onChangeText={setStoreProductName} placeholder="اسم المنتج" value={storeProductName} style={[styles.input, busy && styles.disabledInput]} /><TextInput accessibilityLabel="وصف منتج المتجر" editable={!busy} maxLength={4000} multiline onChangeText={setStoreProductDescription} placeholder="وصف المنتج (اختياري)" value={storeProductDescription} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={busy || Boolean(pendingProductMedia)} label={storeProductImage ? "تغيير صورة المنتج" : "اختيار صورة من الجهاز"} onPress={() => void pickStoreProductImage()} variant="secondary" />{storeProductImage ? <Image accessibilityLabel={`معاينة صورة ${storeProductName || "المنتج"}`} source={{ uri: storeProductImage.uri }} resizeMode="cover" style={styles.productImage} /> : <Text style={styles.muted}>اختر صورة لرفعها مع المنتج أو اتركه دون صورة.</Text>}{storeProductImage ? <MediaProvenanceFields value={storeProductImageProvenance} onChange={setStoreProductImageProvenance} disabled={busy || Boolean(pendingProductMedia)} styles={styles} /> : null}{pendingProductMedia ? <BthwaniButton busy={busy} disabled={busy} label="إعادة رفع صورة المنتج" onPress={() => void retryProductMedia()} /> : null}<Text style={styles.fieldLabel}>هوية القياس</Text><View style={styles.choiceList}>{(["DISCRETE", "MEASURED", "VARIABLE_MEASURE"] as MeasurementKind[]).map((value) => <BthwaniChip key={value} label={measurementKindLabel(value)} onPress={() => { setStoreProductMeasurementKind(value); setStoreProductBaseUnit(""); }} selected={storeProductMeasurementKind === value} />)}</View><Text style={styles.fieldLabel}>الوحدة الأساسية</Text><View style={styles.choiceRow}>{baseUnitOptions(storeProductMeasurementKind).map((value) => <BthwaniChip key={value} label={baseUnitLabel(value)} onPress={() => setStoreProductBaseUnit(value)} selected={storeProductBaseUnit === value} />)}</View><BthwaniButton busy={busy} disabled={busy || Boolean(pendingProductMedia) || !storeProductName.trim() || !verticalId || !storeProductMeasurementKind || !storeProductBaseUnit || (Boolean(storeProductImage) && !isMediaProvenanceInputValid(storeProductImageProvenance))} label="إنشاء منتج المتجر" onPress={() => void createStoreProduct()} variant="secondary" /></View> : null}
+       {catalogModel === "SHARED_CATALOG" ? <><View style={styles.managementBlock}><Text style={styles.itemTitle}>اقتراح منتج للمراجعة</Text><Text style={styles.muted}>أرسل اسم المنتج وتصنيفه للمراجعة؛ لا يظهر قبل اعتماد المراجعة.</Text><TextInput accessibilityLabel="اسم المقترح" editable={!busy} onChangeText={setProposalName} placeholder="اسم المنتج المقترح" value={proposalName} style={[styles.input, busy && styles.disabledInput]} /><Text style={styles.muted}>{verticals.find((vertical) => vertical.id === verticalId)?.nameAr ?? ""}</Text><Text style={styles.fieldLabel}>التصنيف</Text><View style={styles.choiceList}>{proposalCategories.map((category) => <BthwaniChip key={category.id} label={category.nameAr} onPress={() => { setProposalCategoryID(category.id); setProposalAttributeDrafts({}); }} selected={proposalCategoryID === category.id} />)}</View><TextInput accessibilityLabel="بحث في الفئات" placeholder="ابحث باسم الفئة" value={proposalCategoryQuery} onChangeText={setProposalCategoryQuery} style={styles.input} />{proposalCategoriesLoading ? <Text style={styles.muted}>جارٍ تحميل الفئات…</Text> : proposalCategories.length === 0 ? <Text style={styles.muted}>لا توجد فئات مطابقة.</Text> : null}{proposalCategoryNextCursor ? <BthwaniButton busy={proposalCategoriesLoading} disabled={proposalCategoriesLoading} label="تحميل المزيد من الفئات" onPress={() => void loadMoreProposalCategories()} variant="secondary" /> : null}<Text style={styles.fieldLabel}>هوية القياس</Text><View style={styles.choiceList}>{(["DISCRETE", "MEASURED", "VARIABLE_MEASURE"] as MeasurementKind[]).map((value) => <BthwaniChip key={value} label={measurementKindLabel(value)} onPress={() => { setProposalMeasurementKind(value); setProposalBaseUnit(""); }} selected={proposalMeasurementKind === value} />)}</View><Text style={styles.fieldLabel}>الوحدة الأساسية</Text><View style={styles.choiceRow}>{baseUnitOptions(proposalMeasurementKind).map((value) => <BthwaniChip key={value} label={baseUnitLabel(value)} onPress={() => setProposalBaseUnit(value)} selected={proposalBaseUnit === value} />)}</View>{proposalRuleState === "loading" ? <Text style={styles.muted}>جارٍ قراءة خصائص التصنيف…</Text> : proposalRuleState === "error" ? <Text style={styles.warning}>تعذرت قراءة قواعد الخصائص. أعد المحاولة قبل إرسال المقترح.</Text> : renderAttributeFields(proposalAttributeRules, proposalAttributeDrafts, proposalEnumOptions, (key, value) => setProposalAttributeDrafts((current) => ({ ...current, [key]: value })))}<BthwaniButton busy={busy} disabled={proposalRuleState !== "ready" || !proposalName.trim() || !proposalVerticalID.trim() || !proposalCategoryID.trim() || !proposalMeasurementKind || !proposalBaseUnit} label="إرسال المقترح" onPress={() => void createProposal()} variant="secondary" />{state.kind === "ready" && state.proposals.length ? state.proposals.map((proposal) => <Text key={proposal.id} style={styles.muted}>{catalogProductProposalStateLabel(proposal.state)}{proposal.correctionReason ? ` · ${proposal.correctionReason}` : ""}</Text>) : null}{proposalNextCursor ? <BthwaniButton busy={busy} disabled={busy} label="تحميل المزيد من المقترحات" onPress={() => void loadMoreProposals()} variant="secondary" /> : null}</View>
        </> : null}
        {catalogModel === "STORE_LOCAL_CATALOG" ? <View style={styles.managementBlock}><Text style={styles.itemTitle}>أقسام وإضافات المتجر</Text><Text style={styles.muted}>اختر عرضًا بالاسم ثم أنشئ مجموعة إضافات أو قسم عرض.</Text><View style={styles.offerPicker}>{state.kind === "ready" ? state.offers.map((offer) => <BthwaniChip key={offer.offerId} label={offer.productName} onPress={() => setExtensionOfferID(offer.offerId)} selected={extensionOfferID === offer.offerId} />) : null}</View><TextInput accessibilityLabel="اسم مجموعة الإضافات" editable={!busy} onChangeText={setModifierName} placeholder="اسم مجموعة الإضافات" value={modifierName} style={[styles.input, busy && styles.disabledInput]} /><TextInput accessibilityLabel="اسم خيار الإضافة" editable={!busy} onChangeText={setModifierOptionName} placeholder="اسم خيار اختياري" value={modifierOptionName} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={!modifierName.trim()} label="إنشاء مجموعة إضافات وربطها" onPress={() => void createModifiersAndAttach()} variant="secondary" /><TextInput accessibilityLabel="اسم القسم" editable={!busy} onChangeText={setSectionName} placeholder="اسم قسم المتجر" value={sectionName} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={!sectionName.trim()} label="إنشاء قسم وربطه" onPress={() => void createSectionAndAttach()} variant="secondary" /></View> : null}
       {state.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة عروض المتجر…</Text></View> : null}
       {state.kind === "error" ? <View style={styles.state}><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{error || "تعذر قراءة عروض المتجر."}</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View> : null}
         {state.kind === "ready" ? state.offers.length === 0 ? <Text style={styles.muted}>لا توجد عروض مرتبطة بهذا المتجر بعد.</Text> : <View style={styles.offerList}>{state.offers.map((offer) => { const primaryMedia = getPrimaryMedia(offer.media); const inventoryDraft = inventoryDrafts[offer.offerId] ?? String(offer.inventoryOnHandBaseUnits); return <View key={offer.offerId} style={styles.item}>{primaryMedia ? <Image accessibilityLabel={`صورة ${offer.productName}`} source={{ uri: primaryMedia.uri }} resizeMode="cover" style={styles.offerImage} /> : <View accessibilityLabel={`لا توجد صورة لـ ${offer.productName}`} style={styles.offerImagePlaceholder}><Text style={styles.imagePlaceholderText}>لا توجد صورة</Text></View>}<View style={styles.itemText}><Text style={styles.itemTitle}>{offer.productName}</Text><Text style={styles.muted}>{formatMoney(offer.priceMinor, offer.currency)} · {measurementKindLabel(offer.measurementKind, offer.baseUnit)} · {storeOfferPublicationStateLabel(offer.publicationState)}</Text>{offer.inventoryPolicy === "QUANTITY_ON_HAND" ? <View style={styles.inventoryBlock}><Text style={styles.fieldLabel}>مخزون فعلي</Text><TextInput accessibilityLabel={`مخزون ${offer.productName}`} editable={!busy} keyboardType="number-pad" onChangeText={(value) => setInventoryDrafts((current) => ({ ...current, [offer.offerId]: toAsciiDigits(value) }))} value={inventoryDraft} style={[styles.input, styles.numericInput, busy && styles.disabledInput]} /><Text style={styles.muted}>محجوز: {offer.inventoryReservedBaseUnits} · متاح: {Math.max(0, offer.inventoryOnHandBaseUnits - offer.inventoryReservedBaseUnits)}</Text><BthwaniButton busy={busy} disabled={busy} label="تحديث المخزون" onPress={() => { const next = Number(inventoryDraft); if (!Number.isSafeInteger(next) || next < 0) { setError("أدخل كمية مخزون صحيحة غير سالبة."); return; } void updateOffer(offer, offer.publicationState, offer.availability, "QUANTITY_ON_HAND", next); }} variant="secondary" /></View> : <Text style={styles.muted}>التوافر اليدوي فقط</Text>}</View><Switch accessibilityLabel={`توافر ${offer.productName}`} disabled={busy} onValueChange={(available) => void updateOffer(offer, offer.publicationState, available)} value={offer.availability} /><BthwaniButton busy={busy} disabled={busy} label={offer.publicationState === "published" ? "إخفاء" : "نشر"} onPress={() => void updateOffer(offer, offer.publicationState === "published" ? "hidden" : "published", offer.availability)} variant="secondary" /></View>; })}</View> : null}
+      {offerNextCursor ? <BthwaniButton busy={loadingMoreOffers} disabled={loadingMoreOffers || busy} label={loadingMoreOffers ? "جارٍ تحميل العروض…" : "تحميل المزيد من العروض"} onPress={() => void loadMoreOffers()} variant="secondary" /> : null}
       {error && state.kind !== "error" ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     </View>
   );
@@ -437,6 +578,8 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     mediaCopy: { flex: 1, gap: spacing[1] },
     mediaImage: { backgroundColor: theme.surface, borderRadius: radius.sm, height: 56, width: 56 },
     mediaUploadPreview: { alignItems: "center", flexDirection: "row", gap: spacing[2] },
+    provenanceFields: { borderColor: theme.borderColor, borderTopWidth: borders.hairline, gap: spacing[2], paddingTop: spacing[2] },
+    provenanceToggle: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
     input: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.color, flex: 1, minHeight: sizing.controlMd, paddingHorizontal: spacing[2] },
     numericInput: { textAlign: "left", writingDirection: "ltr" },
     productList: { gap: spacing[2] },

@@ -35,15 +35,59 @@ jobs:
         shell: bash
         run: node tools/dev/verify-ci-exact-sha.mjs
 
+      - name: Review introduced dependencies
+        id: dependency_review
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48
+        with:
+          fail-on-severity: high
+          vulnerability-check: true
+          license-check: true
+          show-openssf-scorecard: true
+          show-patched-versions: true
+
+      - name: Record dependency review result
+        if: always() && github.event_name == 'pull_request'
+        shell: bash
+        env:
+          DEPENDENCY_REVIEW_OUTCOME: ${{ steps.dependency_review.outcome }}
+        run: node tools/dev/record-ci-external-result.mjs dependency-review "$DEPENDENCY_REVIEW_OUTCOME" "actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48"
+
       - name: Set up Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 24.17.0
 
       - name: Verify current candidate and introduced history
+        id: secret_safety
+        continue-on-error: true
         shell: bash
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: node tools/dev/verify-secret-safety.mjs
+        run: node tools/dev/run-ci-command.mjs security-secret-safety -- node tools/dev/verify-secret-safety.mjs
+
+      - name: Enforce bounded security batch
+        if: always()
+        shell: bash
+        env:
+          DEPENDENCY_REVIEW_OUTCOME: ${{ github.event_name == 'pull_request' && steps.dependency_review.outcome || 'skipped' }}
+          SECRET_SAFETY_OUTCOME: ${{ steps.secret_safety.outcome }}
+        run: node tools/dev/run-ci-command.mjs security-batch -- node tools/dev/enforce-ci-batch.mjs SECURITY "dependency-review=$DEPENDENCY_REVIEW_OUTCOME" "secret-safety=$SECRET_SAFETY_OUTCOME"
+
+      - name: Capture security failure package
+        id: failure_package
+        if: failure()
+        shell: bash
+        run: node tools/dev/capture-ci-failure.mjs --kind=security
+
+      - name: Upload security failure package
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: security-failure-${{ env.CANDIDATE_SHA }}-${{ github.run_attempt }}
+          path: ${{ steps.failure_package.outputs.path }}
+          if-no-files-found: error
+          retention-days: 14

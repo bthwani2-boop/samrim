@@ -1,6 +1,6 @@
 "use client";
 
-import { type CatalogCategory, type CatalogProductProposal, type CommerceVertical, catalogProductProposalStateLabel } from "@bthwani/dsh";
+import { type CatalogCategoryListItem, type CatalogProductProposal, type CommerceVertical, catalogProductProposalStateLabel } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type ProposalDecision = "approved" | "needs_correction" | "rejected";
@@ -30,7 +30,7 @@ const unitLabels = { COUNT: "قطعة", GRAM: "غرام", MILLILITER: "مل" } a
 export function CatalogProposalReview() {
   const [proposals, setProposals] = useState<ReadonlyArray<CatalogProductProposal>>([]);
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
-  const [categories, setCategories] = useState<ReadonlyArray<CatalogCategory>>([]);
+  const [category, setCategory] = useState<CatalogCategoryListItem | null>(null);
   const [selectedId, setSelectedId] = useState("");
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(true);
@@ -41,8 +41,8 @@ export function CatalogProposalReview() {
   const [conflict, setConflict] = useState(false);
 
   const selected = useMemo(() => proposals.find((proposal) => proposal.id === selectedId) ?? null, [proposals, selectedId]);
+  const selectedCategoryId = selected?.categoryId ?? "";
   const vertical = selected ? verticals.find((item) => item.id === selected.verticalId) : undefined;
-  const category = selected ? categories.find((item) => item.id === selected.categoryId) : undefined;
 
   const loadQueue = useCallback(async (cursor = "", append = false) => {
     setLoading(true);
@@ -90,15 +90,18 @@ export function CatalogProposalReview() {
   }
 
   useEffect(() => {
-    if (!selected) {
-      setCategories([]);
+    if (!selectedCategoryId) {
+      setCategory(null);
       return;
     }
-    void fetch(`/api/catalog/categories?verticalId=${encodeURIComponent(selected.verticalId)}`, { cache: "no-store" })
-      .then((response) => readJson<{ categories: ReadonlyArray<CatalogCategory> }>(response))
-      .then((payload) => setCategories(payload.categories))
-      .catch(() => setCategories([]));
-  }, [selected]);
+    let current = true;
+    setCategory(null);
+    void fetch(`/api/catalog/categories/${encodeURIComponent(selectedCategoryId)}`, { cache: "no-store" })
+      .then((response) => readJson<{ category: CatalogCategoryListItem }>(response))
+      .then((payload) => { if (current) setCategory(payload.category); })
+      .catch(() => { if (current) setCategory(null); });
+    return () => { current = false; };
+  }, [selectedCategoryId]);
 
   useEffect(() => {
     void fetch("/api/catalog/verticals", { cache: "no-store" })

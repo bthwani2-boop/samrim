@@ -130,10 +130,11 @@ func toFulfillmentModes(values []string) []contract.StoreFulfillmentMode {
 }
 
 func toStoreProfileImage(value *postgres.StoreProfileMediaRecord) *contract.StoreProfileImage {
-	if value == nil || strings.TrimSpace(value.URI) == "" {
+	if value == nil || strings.TrimSpace(value.URI) == "" || value.RightsAttestedAt == nil || strings.TrimSpace(value.RightsAttestedByActorID) == "" {
 		return nil
 	}
-	return toStoreProfileImageURI(value.URI)
+	provenance := contract.MediaProvenance{Creator: value.Provenance.Creator, SourceDescription: value.Provenance.SourceDescription, SourceUri: value.Provenance.SourceURI, RightsStatement: value.Provenance.RightsStatement, RightsUri: value.Provenance.RightsURI, AttestedByActorID: value.RightsAttestedByActorID, AttestedAt: *value.RightsAttestedAt}
+	return &contract.StoreProfileImage{Uri: strings.TrimSpace(value.URI), Role: "primary", ContentSha256: strings.TrimSpace(value.ContentSHA256), Provenance: &provenance}
 }
 
 func toStoreProfileImageURI(uri string) *contract.StoreProfileImage {
@@ -141,6 +142,13 @@ func toStoreProfileImageURI(uri string) *contract.StoreProfileImage {
 		return nil
 	}
 	return &contract.StoreProfileImage{Uri: strings.TrimSpace(uri), Role: "primary"}
+}
+
+func storeProfileImageURI(value *postgres.StoreProfileMediaRecord) string {
+	if value == nil {
+		return ""
+	}
+	return value.URI
 }
 
 func nullableString(value string) string {

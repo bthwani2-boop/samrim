@@ -245,6 +245,9 @@ func RemitCash(ctx context.Context, db *sql.DB, input RemitCashInput) (CashRemit
 	if !matchesCaptainCashRemittance(payment, input) {
 		return CashRemittanceRecord{}, false, ErrRemittanceInvalidInput
 	}
+	if err := lockCaptainWalletBalance(ctx, tx, input.CaptainActorID); err != nil {
+		return CashRemittanceRecord{}, false, err
+	}
 	var duplicateID string
 	if err := tx.QueryRowContext(ctx, "SELECT id FROM wlt.cash_remittances WHERE payment_intent_id=$1 FOR UPDATE", input.PaymentIntentID).Scan(&duplicateID); err == nil {
 		return CashRemittanceRecord{}, false, ErrRemittanceExists

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
-import { dshErrorPayload, dshHttpStatus, isDshClientError, uploadCatalogProductMedia } from "../../../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError, readMediaProvenanceInput, uploadCatalogProductMedia } from "../../../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../../../src/server/security/csrf";
@@ -23,10 +23,11 @@ export async function POST(request: Request, context: { params: Promise<{ produc
   const form = await request.formData().catch(() => null);
   const role = form?.get("role");
   const file = form?.get("file");
-  if ((role !== "primary" && role !== "gallery") || !(file instanceof File) || file.size < 1 || file.size > 10 * 1024 * 1024) return errorResponse("INVALID_INPUT", "a valid JPEG or PNG image is required", 400);
+  const provenance = form ? readMediaProvenanceInput(form) : null;
+  if ((role !== "primary" && role !== "gallery") || !(file instanceof File) || file.size < 1 || file.size > 10 * 1024 * 1024 || !provenance) return errorResponse("INVALID_INPUT", "a valid JPEG or PNG image with source and rights attestation is required", 400);
   try {
     const { productId } = await context.params;
-    const result = await uploadCatalogProductMedia(productId, file, role, { operatorActorId: identity.subject, correlationId: request.headers.get("X-Correlation-ID")?.trim() || randomUUID(), expectedVersion, idempotencyKey });
+    const result = await uploadCatalogProductMedia(productId, file, role, provenance, { operatorActorId: identity.subject, correlationId: request.headers.get("X-Correlation-ID")?.trim() || randomUUID(), expectedVersion, idempotencyKey });
     return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (!isDshClientError(error)) return errorResponse("INTERNAL_ERROR", "catalog Product image upload failed", 500);

@@ -11,8 +11,13 @@ import type {
   ManagedChallengeRequest,
   ManagedPasswordLoginRequest,
   OperatorEnrollmentRequest,
-  OperatorEnrollmentToken,
-  OperatorEnrollmentTokenIssueRequest,
+  OperatorProfileCreateRequest,
+  OperatorProfileGrantResponse,
+  OperatorProfileInvitationResponse,
+  OperatorProfileMutationRequest,
+  OperatorProfilePage,
+  OperatorProfileResponse,
+  OperatorProfileUpdateRequest,
   OperatorPasskeyAuthenticationFinishRequest,
   OperatorPasskeyRecoveryFinishRequest,
   OperatorPasskeyRecoveryRegistrationOptionsRequest,
@@ -69,20 +74,22 @@ export type VersionedMutationContext = AttributedMutationContext & Readonly<{
   expectedVersion: number;
 }>;
 
-export type ReenrollmentMutationContext = AttributedMutationContext & Readonly<{
-  expectedActorVersion: number;
-  expectedRoleVersion: number;
-  reason: string;
+export type OperatorProfileMutationContext = AttributedMutationContext & Readonly<{
+  idempotencyKey: string;
 }>;
 
 export type IdentityInternalClient = Readonly<{
-  issueOperatorEnrollmentToken(request: OperatorEnrollmentTokenIssueRequest, context: AttributedMutationContext): Promise<OperatorEnrollmentToken>;
+  listOperatorProfiles(query: string, state: string, sort: "created_asc" | "created_desc", limit: number, cursor: string, context: AttributedMutationContext): Promise<OperatorProfilePage>;
+  createOperatorProfile(request: OperatorProfileCreateRequest, context: OperatorProfileMutationContext): Promise<OperatorProfileResponse>;
+  updateOperatorProfile(profileId: string, request: OperatorProfileUpdateRequest, context: OperatorProfileMutationContext): Promise<OperatorProfileResponse>;
+  approveOperatorProfile(profileId: string, request: OperatorProfileMutationRequest, context: OperatorProfileMutationContext): Promise<OperatorProfileResponse>;
+  grantOperatorProfile(profileId: string, request: OperatorProfileMutationRequest, context: OperatorProfileMutationContext): Promise<OperatorProfileGrantResponse>;
+  issueOperatorProfileInvitation(profileId: string, context: AttributedMutationContext): Promise<OperatorProfileInvitationResponse>;
   provisionActorRole(request: ProvisionActorRoleRequest, context: AttributedMutationContext): Promise<ActorRoleView>;
   searchActorRoles(role: ActorType, query: string, enabled?: boolean, page?: Readonly<{ limit?: number; cursor?: string; sort?: "phone_asc" | "phone_desc" }>): Promise<ActorRoleSearchPage>;
   readActorRole(actorId: string, role: ActorType): Promise<ActorRoleView>;
   readOperatorPermission(actorId: string, permission: OperatorPermission, context: AttributedMutationContext): Promise<OperatorPermissionAccess>;
   setOperatorPermission(actorId: string, permission: OperatorPermission, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<OperatorPermissionAccess>;
-  authorizeActorRoleReenrollment(actorId: string, role: ActorType, context: ReenrollmentMutationContext): Promise<void>;
   setActorRoleEnabled(actorId: string, role: ActorType, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<void>;
   setActorSecurityEnabled(actorId: string, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<void>;
 }>;
@@ -193,13 +200,6 @@ function validateAttributedMutationContext(context: AttributedMutationContext): 
 function validateVersionedMutationContext(context: VersionedMutationContext): void {
   validateAttributedMutationContext(context);
   if (!Number.isInteger(context.expectedVersion) || context.expectedVersion < 1) throw new Error("IDENTITY_MUTATION_VERSION_INVALID");
-}
-
-function validateReenrollmentMutationContext(context: ReenrollmentMutationContext): void {
-  validateAttributedMutationContext(context);
-  if (!Number.isSafeInteger(context.expectedActorVersion) || context.expectedActorVersion < 1 || !Number.isSafeInteger(context.expectedRoleVersion) || context.expectedRoleVersion < 1) throw new Error("IDENTITY_REENROLLMENT_VERSION_INVALID");
-  const reasonLength = Array.from(context.reason.trim()).length;
-  if (reasonLength < 5 || reasonLength > 500) throw new Error("IDENTITY_REENROLLMENT_REASON_INVALID");
 }
 
 export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: string, timeoutMs = 8_000): IdentityInternalClient {
@@ -320,57 +320,33 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
     }
   }
 
-  async function issueToken(body: OperatorEnrollmentTokenIssueRequest, context: AttributedMutationContext): Promise<OperatorEnrollmentToken> {
+  async function requestOperatorProfile<T>(
+    operation: Readonly<{ method: "GET" | "POST" | "PATCH"; path: string }>,
+    context: AttributedMutationContext,
+    body?: unknown,
+    idempotencyKey?: string,
+  ): Promise<T> {
     validateAttributedMutationContext(context);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      let response: Response;
-      try {
-        response = await fetch(resolveUrl(baseUrl, identityOperationPaths.issueOperatorEnrollmentToken.path), {
-          method: identityOperationPaths.issueOperatorEnrollmentToken.method,
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
-            Authorization: "Bearer " + token,
-            "X-Correlation-ID": context.correlationId.trim(),
-            "X-Acting-Actor-ID": context.operatorActorId.trim(),
-          },
-          body: JSON.stringify(body),
-          ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
-          signal: controller.signal,
-        });
-      } catch (error) {
-        throw { kind: "network", message: error instanceof Error ? error.message : "identity network error" } satisfies IdentityClientError;
-      }
-      if (!response.ok) {
-        const parsed = parseErrorPayload(await response.json().catch(() => null));
-        throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies IdentityClientError;
-      }
-      return (await response.json()) as OperatorEnrollmentToken;
-    } finally {
-      clearTimeout(timeout);
+    if (idempotencyKey !== undefined && (idempotencyKey.trim().length < 8 || idempotencyKey.trim().length > 128)) {
+      throw new Error("IDENTITY_OPERATOR_PROFILE_IDEMPOTENCY_KEY_INVALID");
     }
-  }
-
-  async function requestReenrollmentNoContent(pathname: string, context: ReenrollmentMutationContext): Promise<void> {
-    validateReenrollmentMutationContext(context);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       let response: Response;
       try {
-        response = await fetch(resolveUrl(baseUrl, pathname), {
-          method: "POST",
+        response = await fetch(resolveUrl(baseUrl, operation.path), {
+          method: operation.method,
+          cache: "no-store",
           headers: {
             Accept: "application/json",
             Authorization: "Bearer " + token,
-            "X-Correlation-ID": context.correlationId.trim(),
             "X-Acting-Actor-ID": context.operatorActorId.trim(),
-            "X-Expected-Version": String(context.expectedRoleVersion),
-            "X-Expected-Actor-Version": String(context.expectedActorVersion),
-            "X-Reason": context.reason.trim(),
+            ...(operation.method === "GET" ? {} : { "X-Correlation-ID": context.correlationId.trim() }),
+            ...(idempotencyKey === undefined ? {} : { "Idempotency-Key": idempotencyKey.trim() }),
+            ...(body === undefined ? {} : { "Content-Type": "application/json" }),
           },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
           ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
           signal: controller.signal,
         });
@@ -381,13 +357,36 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
         const parsed = parseErrorPayload(await response.json().catch(() => null));
         throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies IdentityClientError;
       }
+      return (await response.json()) as T;
     } finally {
       clearTimeout(timeout);
     }
   }
 
   return {
-    issueOperatorEnrollmentToken: issueToken,
+    listOperatorProfiles: async (query, state, sort, limit, cursor, context) => {
+      const params = new URLSearchParams({ q: query, state, sort, limit: String(limit) });
+      if (cursor) params.set("cursor", cursor);
+      return requestOperatorProfile<OperatorProfilePage>({
+        method: identityOperationPaths.listOperatorProfiles.method,
+        path: identityOperationPaths.listOperatorProfiles.path + "?" + params.toString(),
+      }, context);
+    },
+    createOperatorProfile: (request, context) => requestOperatorProfile<OperatorProfileResponse>(
+      identityOperationPaths.createOperatorProfile, context, request, context.idempotencyKey,
+    ),
+    updateOperatorProfile: (profileId, request, context) => requestOperatorProfile<OperatorProfileResponse>(
+      { ...identityOperationPaths.updateOperatorProfile, path: expandPath(identityOperationPaths.updateOperatorProfile.path, { profileId }) }, context, request, context.idempotencyKey,
+    ),
+    approveOperatorProfile: (profileId, request, context) => requestOperatorProfile<OperatorProfileResponse>(
+      { ...identityOperationPaths.approveOperatorProfile, path: expandPath(identityOperationPaths.approveOperatorProfile.path, { profileId }) }, context, request, context.idempotencyKey,
+    ),
+    grantOperatorProfile: (profileId, request, context) => requestOperatorProfile<OperatorProfileGrantResponse>(
+      { ...identityOperationPaths.grantOperatorProfile, path: expandPath(identityOperationPaths.grantOperatorProfile.path, { profileId }) }, context, request, context.idempotencyKey,
+    ),
+    issueOperatorProfileInvitation: (profileId, context) => requestOperatorProfile<OperatorProfileInvitationResponse>(
+      { ...identityOperationPaths.issueOperatorProfileInvitation, path: expandPath(identityOperationPaths.issueOperatorProfileInvitation.path, { profileId }) }, context,
+    ),
     provisionActorRole: async (body, context) => {
       validateAttributedMutationContext(context);
       const controller = new AbortController();
@@ -451,8 +450,6 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
     },
     readOperatorPermission: (actorId, permission, context) => requestOperatorPermission(actorId, permission, "GET", context),
     setOperatorPermission: (actorId, permission, enabled, reason, context) => requestOperatorPermission(actorId, permission, "PUT", context, enabled, reason),
-    authorizeActorRoleReenrollment: (actorId, role, context) =>
-      requestReenrollmentNoContent(expandPath(identityOperationPaths.authorizeManagedRoleReenrollment.path, { actorId, role }), context),
     setActorRoleEnabled: (actorId, role, enabled, reason, context) => {
       const op = enabled ? identityOperationPaths.enableActorRole : identityOperationPaths.disableActorRole;
       return requestNoContent(

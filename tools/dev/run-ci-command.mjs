@@ -25,68 +25,58 @@ const isWindows = process.platform === "win32";
 const executable = isWindows && commandArgs[0] === "pnpm" ? "pnpm.cmd" : commandArgs[0];
 const args = commandArgs.slice(1);
 const safeName = name.replace(/[^A-Za-z0-9._-]+/g, "-");
-const logPath = path.join(logDir, safeName + ".log");
+const logPath = path.join(logDir, `${safeName}.log`);
 const isNxCommand = commandArgs[0] === "pnpm" && commandArgs[1] === "exec" && commandArgs[2] === "nx";
-const profilePath = isNxCommand ? path.join(profileDir, safeName + ".json") : null;
+const profilePath = isNxCommand ? path.join(profileDir, `${safeName}.json`) : null;
 const nxProfilePath = profilePath ? path.relative(root, profilePath) : null;
 const childEnv = nxProfilePath ? { ...process.env, NX_PROFILE: nxProfilePath } : process.env;
 const log = fs.createWriteStream(logPath, { flags: "w" });
 const startedAt = new Date();
 const started = performance.now();
+let outputBytes = 0;
 
-console.log("CI_TIMED_COMMAND_START name=" + name + " command=" + commandArgs.join(" "));
+console.log(`CI_TIMED_COMMAND_START name=${name} command=${commandArgs.join(" ")}`);
+console.log(`CI_OUTPUT_MODE=QUIET_SUCCESS_BOUNDED_FAILURE_RAW_ARTIFACT name=${name}`);
 
 let exitCode = 1;
 try {
-  const child = spawn(executable, args, {
-    cwd: root,
-    env: childEnv,
-    stdio: ["inherit", "pipe", "pipe"],
-    shell: isWindows,
-  });
-
-  for (const [stream, destination] of [
-    [child.stdout, process.stdout],
-    [child.stderr, process.stderr],
-  ]) {
-    stream?.on("data", (chunk) => {
-      destination.write(chunk);
-      log.write(chunk);
-    });
-  }
-
+  const child = spawn(executable, args, { cwd: root, env: childEnv, stdio: ["inherit", "pipe", "pipe"], shell: isWindows });
+  for (const stream of [child.stdout, child.stderr]) stream?.on("data", (chunk) => { outputBytes += chunk.length; log.write(chunk); });
   exitCode = await new Promise((resolve) => {
-    child.once("error", (error) => {
-      const message = "CI_TIMED_COMMAND=FAIL name=" + name + " error=" + String(error?.message || error);
-      console.error(message);
-      log.write(message + "\n");
-      resolve(1);
-    });
+    child.once("error", (error) => { log.write(`CI_TIMED_COMMAND=FAIL name=${name} error=${String(error?.message || error)}\n`); resolve(1); });
     child.once("close", (code, signal) => {
-      if (signal) {
-        const message = "CI_TIMED_COMMAND_SIGNAL name=" + name + " signal=" + signal;
-        console.error(message);
-        log.write(message + "\n");
-        resolve(1);
-        return;
-      }
+      if (signal) { log.write(`CI_TIMED_COMMAND_SIGNAL name=${name} signal=${signal}\n`); resolve(1); return; }
       resolve(code ?? 1);
     });
   });
 } catch (error) {
-  const message = "CI_TIMED_COMMAND=FAIL name=" + name + " error=" + String(error?.message || error);
-  console.error(message);
-  log.write(message + "\n");
+  log.write(`CI_TIMED_COMMAND=FAIL name=${name} error=${String(error?.message || error)}\n`);
   exitCode = 1;
 }
 
 await new Promise((resolve) => log.end(resolve));
 const durationMs = Math.round(performance.now() - started);
+
+if (exitCode !== 0) {
+  console.error(`CI_TIMED_COMMAND_OUTPUT_BEGIN name=${name}`);
+  try {
+    const lines = fs.readFileSync(logPath, "utf8").split(/\r?\n/);
+    const maxLines = 240;
+    const rendered = lines.length <= maxLines ? lines : [...lines.slice(0, 80), `CI_TIMED_COMMAND_OUTPUT_TRUNCATED omitted_lines=${lines.length - maxLines} raw_log=${logPath}`, ...lines.slice(-160)];
+    const failureOutput = rendered.join("\n");
+    if (failureOutput) process.stderr.write(failureOutput.endsWith("\n") ? failureOutput : `${failureOutput}\n`);
+  } catch (error) {
+    console.error(`CI_TIMED_COMMAND_LOG_READ=FAIL name=${name} error=${String(error?.message || error)}`);
+  }
+  console.error(`CI_TIMED_COMMAND_OUTPUT_END name=${name}`);
+}
+
 const record = {
   name,
   startedAt: startedAt.toISOString(),
   durationMs,
   exitCode,
+  outputBytes,
   logPath,
   profilePath,
   sha: process.env.CANDIDATE_SHA || process.env.GITHUB_SHA || null,
@@ -94,7 +84,6 @@ const record = {
   head: process.env.NX_HEAD || null,
   runner: process.env.RUNNER_OS || process.platform,
 };
-fs.appendFileSync(metricsPath, JSON.stringify(record) + "\n");
-console.log("CI_TIMED_COMMAND_END name=" + name + " ms=" + durationMs + " exit=" + exitCode);
-
+fs.appendFileSync(metricsPath, `${JSON.stringify(record)}\n`);
+console.log(`CI_TIMED_COMMAND_END name=${name} ms=${durationMs} exit=${exitCode} output_bytes=${outputBytes}`);
 process.exit(exitCode);

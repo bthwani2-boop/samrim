@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
+import type { JoiningCaseState } from "@bthwani/dsh";
 
 import { createJoiningCase, dshErrorPayload, dshHttpStatus, isDshClientError, listJoiningCases } from "../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
@@ -12,6 +13,7 @@ function errorResponse(code: string, message: string, status: number) {
 
 const phoneE164Pattern = /^\+[1-9][0-9]{7,14}$/;
 const fulfillmentModes = ["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"] as const;
+const joiningCaseStates = new Set<JoiningCaseState>(["draft", "admission_requested", "submitted", "needs_correction", "approved"]);
 
 export async function POST(request: Request) {
   if (!verifySameOrigin(request)) return errorResponse("FORBIDDEN", "cross-site requests are forbidden", 403);
@@ -53,7 +55,7 @@ export async function GET(request: Request) {
   const sort = rawSort === "created_asc" || rawSort === "created_desc" ? rawSort : null;
   const state = params.get("state") ?? "";
   const query = params.get("q")?.trim() ?? "";
-  if (!Number.isInteger(limit) || limit < 1 || limit > 50 || sort === null || query.length > 128 || (state && !["draft", "submitted", "needs_correction", "approved"].includes(state))) return errorResponse("INVALID_INPUT", "joining case search, state, sort, or page limit is invalid", 400);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50 || sort === null || query.length > 128 || (state && !joiningCaseStates.has(state as JoiningCaseState))) return errorResponse("INVALID_INPUT", "joining case search, state, sort, or page limit is invalid", 400);
   try {
     return NextResponse.json(await listJoiningCases(state, query, sort, limit, params.get("cursor") ?? "", { operatorActorId: identity.subject }), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

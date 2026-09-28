@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { listCatalogCategories, listCatalogProducts, listCatalogVerticals, listMarketingPromotions, listOperatorStores, dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../src/server/dsh/dsh-bff";
+import { listCatalogCategories, listCatalogProductRegistry, listCatalogVerticals, listMarketingPromotions, listOperatorStores, dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../../src/server/identity/operator-workspace-access";
 
@@ -26,12 +26,13 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const targetType = params.get("targetType") as TargetType | null;
   const serviceCityId = params.get("serviceCityId")?.trim() ?? "";
+  const verticalId = params.get("verticalId")?.trim() ?? "";
   const query = params.get("query")?.trim() ?? "";
   const rawCursor = params.get("cursor") ?? "";
   const cursor = rawCursor.trim();
   if (rawCursor.length > 1024) return errorResponse("INVALID_INPUT", "target cursor is invalid", 400);
   if (!targetType || !["STORE", "PRODUCT", "CATEGORY", "PROMOTION", "INFO"].includes(targetType)) return errorResponse("INVALID_INPUT", "a valid targetType is required", 400);
-  if (Array.from(query).length > 128 || serviceCityId.length > 128) return errorResponse("INVALID_INPUT", "target search or service city is too long", 400);
+  if (Array.from(query).length > 128 || serviceCityId.length > 128 || verticalId.length > 128) return errorResponse("INVALID_INPUT", "target search or scope is too long", 400);
 
   const context = { operatorActorId: identity.subject };
   try {
@@ -45,17 +46,21 @@ export async function GET(request: Request) {
       nextCursor = result.nextCursor ?? "";
     } else if (targetType === "PRODUCT") {
       if (query.length < 2) return NextResponse.json({ options, nextCursor }, { headers: { "Cache-Control": "no-store" } });
-      const result = await listCatalogProducts(query, "", cursor, context);
-      options = result.products.filter((product) => product.active).map((product) => targetOption(product.id, product.canonicalName, product.brand));
+      const result = await listCatalogProductRegistry({ query, verticalId: "", categoryId: "", active: "active", sort: "name_asc", cursor }, context);
+      options = result.products.map((product) => targetOption(product.id, product.canonicalName, product.brand));
       nextCursor = result.nextCursor ?? "";
     } else if (targetType === "CATEGORY") {
-      const verticals = (await listCatalogVerticals(context)).verticals.filter((vertical) => vertical.active);
-      const groups = await Promise.all(verticals.map((vertical) => listCatalogCategories(vertical.id)));
-      options = groups.flatMap((group) => group.categories.filter((category) => category.active).map((category) => targetOption(category.id, category.nameAr, category.nameEn)));
+      if (!verticalId) return errorResponse("INVALID_INPUT", "choose a commerce vertical to select a Category", 400);
+      if (query.length < 2) return NextResponse.json({ options, nextCursor }, { headers: { "Cache-Control": "no-store" } });
+      const vertical = (await listCatalogVerticals(context)).verticals.find((item) => item.id === verticalId && item.active && item.catalogModel === "SHARED_CATALOG");
+      if (!vertical) return errorResponse("INVALID_INPUT", "choose an active shared-catalog vertical", 400);
+      const result = await listCatalogCategories(vertical.id, query, "active", "name_asc", 25, cursor, context);
+      options = result.categories.map((category) => targetOption(category.id, category.pathAr, category.pathEn));
+      nextCursor = result.nextCursor ?? "";
     } else if (targetType === "PROMOTION") {
       if (query.length < 2) return NextResponse.json({ options, nextCursor }, { headers: { "Cache-Control": "no-store" } });
-      const promotions = await listMarketingPromotions({ search: query, state: "PUBLISHED", sort: "starts_desc", cursor, limit: 25 }, context);
-      options = promotions.promotions.filter((promotion) => !serviceCityId || !promotion.serviceCityId || promotion.serviceCityId === serviceCityId).map((promotion) => targetOption(promotion.id, promotion.nameAr, promotion.code));
+      const promotions = await listMarketingPromotions({ search: query, state: "PUBLISHED", serviceCityId, sort: "starts_desc", cursor, limit: 25 }, context);
+      options = promotions.promotions.map((promotion) => targetOption(promotion.id, promotion.nameAr, promotion.code));
       nextCursor = promotions.nextCursor ?? "";
     }
 

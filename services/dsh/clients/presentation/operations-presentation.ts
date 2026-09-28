@@ -17,6 +17,7 @@ import type {
 
 const joiningCaseLabels: Record<JoiningCaseState, string> = {
   draft: "مسودة",
+  admission_requested: "بانتظار قبول المشغّل",
   submitted: "قيد المراجعة",
   needs_correction: "يحتاج إلى تصحيح",
   approved: "تمت الموافقة",
@@ -52,6 +53,7 @@ const proposalLabels: Record<CatalogProductProposal["state"], string> = {
 };
 
 const captainAdmissionLabels: Record<CaptainAdmission["state"], string> = {
+  pending_review: "قيد مراجعة الملف",
   pending_identity: "بانتظار تثبيت الهوية",
   eligible: "مؤهل للتشغيل",
   suspended: "موقوف",
@@ -86,6 +88,7 @@ const captainHandoffLabels: Record<CaptainHandoff["state"], string> = {
 };
 
 const fieldAdmissionLabels: Record<FieldAdmission["state"], string> = {
+  pending_review: "قيد مراجعة الملف",
   pending_identity: "بانتظار تثبيت الهوية",
   eligible: "مؤهل لإنشاء الملفات",
   suspended: "موقوف",

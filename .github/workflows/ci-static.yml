@@ -98,13 +98,17 @@ jobs:
           GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
         run: |
           set -euo pipefail
-          pnpm exec nx run-many \
-            -t donor-residue,repository-structure,structural-hygiene,runtime-ownership,removed-domain-residue,cache-contracts,docs-command-parity,docs-config-parity,knowledge-system,knowledge-references,agent-contract,workspace-dependencies,nx-project-tags,mobile-config,brand,theme-check,theme-verify,powershell-syntax,knip \
-            --outputStyle=stream \
-            --parallel=3
-          pnpm exec nx run repository-ci:execution-proof-system --outputStyle=stream
-          pnpm exec nx run workspace-tooling:go-workspace-sync --outputStyle=stream
-          pnpm exec nx run infra:compose-config --outputStyle=stream
+          node tools/dev/run-ci-command.mjs static-invariants -- \
+            pnpm exec nx run-many \
+              -t donor-residue,repository-structure,structural-hygiene,runtime-ownership,removed-domain-residue,cache-contracts,docs-command-parity,docs-config-parity,knowledge-system,knowledge-references,agent-contract,workspace-dependencies,nx-project-tags,mobile-config,brand,theme-check,theme-verify,powershell-syntax,knip \
+              --outputStyle=stream \
+              --parallel=3
+          node tools/dev/run-ci-command.mjs static-execution-proof -- \
+            pnpm exec nx run repository-ci:execution-proof-system --outputStyle=stream
+          node tools/dev/run-ci-command.mjs static-go-workspace -- \
+            pnpm exec nx run workspace-tooling:go-workspace-sync --outputStyle=stream
+          node tools/dev/run-ci-command.mjs static-compose-config -- \
+            pnpm exec nx run infra:compose-config --outputStyle=stream
 
       - name: Verify affected static graph
         if: github.event_name != 'schedule'

@@ -123,23 +123,26 @@ func RecordPartnerStoreCashCommission(ctx context.Context, db *sql.DB, input Par
 		return PartnerStoreCashCommissionRecord{}, false, err
 	}
 
-	var paymentState, method, currency string
+	var paymentState, method, currency, payerActorID string
 	var paymentAmount int64
 	var collectedBy sql.NullString
-	err = tx.QueryRowContext(ctx, `SELECT p.state,p.method,p.amount_minor,p.currency,p.collected_by_actor_id
+	err = tx.QueryRowContext(ctx, `SELECT p.state,p.method,p.amount_minor,p.currency,p.collected_by_actor_id,p.payer_actor_id
 		FROM wlt.payment_intents p JOIN wlt.customer_payment_allocations a ON a.payment_intent_id=p.id
-		WHERE p.id=$1 FOR UPDATE OF p,a`, input.PaymentIntentID).Scan(&paymentState, &method, &paymentAmount, &currency, &collectedBy)
+		WHERE p.id=$1 FOR UPDATE OF p,a`, input.PaymentIntentID).Scan(&paymentState, &method, &paymentAmount, &currency, &collectedBy, &payerActorID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PartnerStoreCashCommissionRecord{}, false, ErrCustomerPaymentAllocationNotFound
 	}
 	if err != nil {
 		return PartnerStoreCashCommissionRecord{}, false, err
 	}
+	if err := lockCustomerWalletBalance(ctx, tx, payerActorID); err != nil {
+		return PartnerStoreCashCommissionRecord{}, false, err
+	}
 	allocation, err := readCustomerPaymentAllocation(ctx, tx, input.PaymentIntentID)
 	if err != nil {
 		return PartnerStoreCashCommissionRecord{}, false, err
 	}
-	if paymentState != domain.StateCollected || method != domain.MethodCashAtStore || !collectedBy.Valid || collectedBy.String != input.PartnerActorID || allocation.OrderID != input.OrderID || allocation.Currency != currency || paymentAmount != allocation.CustomerPayableMinor || allocation.DeliveryFeeMinor != 0 || allocation.InternalBalanceAmountMinor != 0 || allocation.CashAmountMinor != allocation.CustomerPayableMinor || allocation.CustomerPayableMinor != allocation.SubtotalMinor-allocation.DiscountMinor || allocation.PartnerActorID != input.PartnerActorID || allocation.FulfillmentMode != input.FulfillmentMode {
+	if paymentState != domain.StateCollected || method != domain.MethodCashAtStore || paymentAmount != allocation.CashAmountMinor || (allocation.CashAmountMinor > 0 && (!collectedBy.Valid || collectedBy.String != input.PartnerActorID)) || (allocation.CashAmountMinor == 0 && collectedBy.Valid) || allocation.OrderID != input.OrderID || allocation.Currency != currency || allocation.DeliveryFeeMinor != 0 || allocation.CashAmountMinor+allocation.InternalBalanceAmountMinor != allocation.CustomerPayableMinor || allocation.CustomerPayableMinor != allocation.SubtotalMinor-allocation.DiscountMinor || allocation.PartnerActorID != input.PartnerActorID || allocation.FulfillmentMode != input.FulfillmentMode {
 		return PartnerStoreCashCommissionRecord{}, false, ErrPartnerCashCommissionState
 	}
 	if allocation.CommissionSnapshot == nil {
@@ -156,7 +159,7 @@ func RecordPartnerStoreCashCommission(ctx context.Context, db *sql.DB, input Par
 	}
 
 	var ledgerTransactionID *string
-	if commission > 0 {
+	if commission > 0 || allocation.InternalBalanceAmountMinor > 0 {
 		transactionID, idErr := newID("ledger")
 		if idErr != nil {
 			return PartnerStoreCashCommissionRecord{}, false, idErr
@@ -165,8 +168,17 @@ func RecordPartnerStoreCashCommission(ctx context.Context, db *sql.DB, input Par
 			return PartnerStoreCashCommissionRecord{}, false, err
 		}
 		partnerActorType, partnerActorID := "partner", input.PartnerActorID
-		if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_entries(transaction_id,line_sequence,account_class,account_code,actor_type,actor_id,direction,amount_minor,currency) VALUES($1,1,'asset','PARTNER_COMMISSION_RECEIVABLE',$2,$3,'DEBIT',$4,$5),($1,2,'income','PLATFORM_COMMISSION_INCOME',NULL,NULL,'CREDIT',$4,$5)`, transactionID, partnerActorType, partnerActorID, commission, currency); err != nil {
-			return PartnerStoreCashCommissionRecord{}, false, err
+		sequence := 1
+		if allocation.InternalBalanceAmountMinor > 0 {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_entries(transaction_id,line_sequence,account_class,account_code,actor_type,actor_id,direction,amount_minor,currency) VALUES($1,$2,'liability','CUSTOMER_WALLET','customer',$3,'DEBIT',$4,$5),($1,$6,'liability','PARTNER_WALLET','partner',$7,'CREDIT',$4,$5)`, transactionID, sequence, payerActorID, allocation.InternalBalanceAmountMinor, currency, sequence+1, input.PartnerActorID); err != nil {
+				return PartnerStoreCashCommissionRecord{}, false, err
+			}
+			sequence += 2
+		}
+		if commission > 0 {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_entries(transaction_id,line_sequence,account_class,account_code,actor_type,actor_id,direction,amount_minor,currency) VALUES($1,$2,'asset','PARTNER_COMMISSION_RECEIVABLE',$3,$4,'DEBIT',$5,$6),($1,$7,'income','PLATFORM_COMMISSION_INCOME',NULL,NULL,'CREDIT',$5,$6)`, transactionID, sequence, partnerActorType, partnerActorID, commission, currency, sequence+1); err != nil {
+				return PartnerStoreCashCommissionRecord{}, false, err
+			}
 		}
 		ledgerTransactionID = &transactionID
 	}

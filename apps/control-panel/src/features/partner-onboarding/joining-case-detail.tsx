@@ -4,7 +4,7 @@ import { type CommerceVertical, financialProfileStateLabel, type JoiningCaseResp
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { partnerErrorMessage } from "./partner-error-message";
-import { partnerMutationHeaders } from "./partner-request";
+import { stablePartnerMutationHeaders } from "./partner-request";
 import { useSession } from "../../session/session-provider";
 
 const fulfillmentModeOptions: ReadonlyArray<Readonly<{ value: StoreFulfillmentMode; label: string; description: string }>> = [
@@ -90,13 +90,14 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
 
   async function submitCase() {
     const current = result?.case;
-    if (current?.state !== "draft" || current.origin !== "control_panel") return;
+    const canAdmit = current && ((current.origin === "control_panel" && current.state === "draft") || (current.origin === "field" && current.state === "admission_requested"));
+    if (!current || !canAdmit) return;
     setBusy(true);
     setError("");
     try {
       const response = await fetch(`/api/partners/joining-cases/${encodeURIComponent(caseId)}/submit`, {
         method: "POST",
-        headers: partnerMutationHeaders(),
+        headers: await stablePartnerMutationHeaders(`joining-case-admission:${caseId}:${current.version}`),
         body: JSON.stringify({ expectedVersion: current.version }),
       });
       if (!response.ok) {
@@ -105,6 +106,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
       }
       setResult(await response.json() as JoiningCaseResponse);
     } catch {
+      await readCase(false);
       setError("تعذر إرسال حالة الانضمام. أعد قراءة الحالة قبل التكرار.");
     } finally {
       setBusy(false);
@@ -127,7 +129,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
     try {
       const response = await fetch(`/api/partners/joining-cases/${encodeURIComponent(caseId)}/review`, {
         method: "POST",
-        headers: partnerMutationHeaders(),
+        headers: await stablePartnerMutationHeaders(`joining-case-review:${caseId}:${current.version}:${decision}:${correctionReason.trim()}:${decision === "approved" ? activeTermsPolicy?.policyVersion ?? "" : ""}`),
         body: JSON.stringify({
           expectedVersion: current.version,
           decision,
@@ -143,6 +145,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
       setCorrectionReason("");
       if (decision === "approved") await readFinancialTermsPolicy();
     } catch {
+      await readCase(false);
       setError("تعذر تسجيل قرار المراجعة. أعد قراءة الحالة قبل التكرار.");
     } finally {
       setBusy(false);
@@ -157,7 +160,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
     try {
       const response = await fetch("/api/partners/joining-cases/" + encodeURIComponent(caseId) + "/financial-terms", {
         method: "POST",
-        headers: partnerMutationHeaders(),
+        headers: await stablePartnerMutationHeaders(`joining-case-financial-terms:${caseId}:${current.version}:${activeTermsPolicy.policyVersion}`),
         body: JSON.stringify({ expectedVersion: current.version, expectedTermsPolicyVersion: activeTermsPolicy.policyVersion }),
       });
       if (!response.ok) {
@@ -166,6 +169,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
       }
       setResult(await response.json() as JoiningCaseResponse);
     } catch {
+      await readCase(false);
       setError("تعذر استكمال الربط المالي. أعد قراءة الحالة قبل التكرار.");
     } finally {
       setBusy(false);
@@ -212,8 +216,9 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
           </div>
           <div className="managed-status managed-status-info">
             <strong>العمليات المتاحة</strong>
-            {current.state === "draft" && current.origin === "field" ? <p>المسودة قيد استكمال تطبيق الميداني، وهو المسار الوحيد المسموح بإرسالها للمراجعة.</p> : null}
-            {current.state === "draft" && current.origin === "control_panel" ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>إرسال للمراجعة</button> : null}
+            {current.state === "draft" && current.origin === "field" ? <p>يستكمل الميداني الملف ثم يطلب قبول المشغّل؛ لا يُنشأ دور الشريك من تطبيق الميداني.</p> : null}
+            {current.state === "draft" && current.origin === "control_panel" ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>قبول الإحالة وإنشاء دور الشريك</button> : null}
+            {current.state === "admission_requested" && current.origin === "field" ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>قبول الإحالة وإنشاء دور الشريك</button> : null}
             {current.state === "submitted" ? <>
               {activeTermsPolicy ? <p className="managed-status managed-status-info">سيُعتمد إصدار السياسة {activeTermsPolicy.policyVersion}: عمولة {(activeTermsPolicy.commissionRateBps / 100).toFixed(2)}%، وتسوية {settlementPeriodLabel(activeTermsPolicy.settlementPeriod)}.</p> : <><p className="managed-status managed-status-warning" role="status">{policyReadMessage || "تُقرأ العمولة وفترة التسوية من قسم السياسات ولا تُدخلان في ملف الانضمام."}</p><Link className="button button-secondary" href="/policies/partner-financial-terms">فتح سياسة الشريك المالية</Link><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readFinancialTermsPolicy()}>إعادة قراءة السياسة النشطة</button></>}
               <label className="field-label" htmlFor="joining-correction">سبب التصحيح عند الحاجة<textarea className="resize-none" id="joining-correction" disabled={busy} value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} /></label>

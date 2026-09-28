@@ -3,7 +3,15 @@ import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-
 import type { CommerceVertical, JoiningCaseResponse, ServiceCity, StoreFulfillmentMode } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
-import { correctAndResubmitOwnJoiningCase, listCatalogVerticals } from "./store-readback-client";
+
+import { correctAndResubmitOwnJoiningCase, listCatalogVerticals, readOwnJoiningCase } from "./store-readback-client";
+import { StoreProfileImageEditor } from "./store-profile-image-editor";
+
+function dshErrorCode(error: unknown): string {
+  if (!error || typeof error !== "object") return "";
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : "";
+}
 
 export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: JoiningCaseResponse; cities: ReadonlyArray<ServiceCity>; onUpdated: (next: JoiningCaseResponse) => void }) {
   const current = value.case;
@@ -63,7 +71,22 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
       const resubmitted = await correctAndResubmitOwnJoiningCase(current.id, nextBusinessName, nextStoreName, serviceCityId, verticalId, latitude, longitude, current.version);
       onUpdated(resubmitted);
     } catch (nextError) {
-      if (nextError && typeof nextError === "object" && "status" in nextError && (nextError as { status?: unknown }).status === 409) {
+      try {
+        const latest = await readOwnJoiningCase();
+        onUpdated(latest);
+        if (latest.case.state === "submitted" && latest.case.businessName === nextBusinessName && latest.case.firstStoreName === nextStoreName && latest.case.serviceCityId === serviceCityId && latest.case.firstStoreVerticalId === verticalId && latest.case.firstStoreLatitude === latitude && latest.case.firstStoreLongitude === longitude) {
+          setError("");
+          return;
+        }
+      } catch (readError) {
+        console.error("DSH Partner correction recovery read failed", readError);
+      }
+      const code = dshErrorCode(nextError);
+      if (code === "SERVICE_CITY_UNAVAILABLE") {
+        setError("مدينة الخدمة لم تعد نشطة. أعد قراءة المدن واختر مدينة أخرى قبل إعادة الإرسال.");
+      } else if (code === "VERTICAL_UNAVAILABLE") {
+        setError("الفئة الرئيسية لم تعد نشطة. أعد قراءة الأنشطة واختر فئة أخرى قبل إعادة الإرسال.");
+      } else if (code === "VERSION_CONFLICT" || code === "STATE_CONFLICT") {
         setError("تغيّرت الحالة أثناء التصحيح. أعد قراءة حالة الانضمام ثم حاول مجددًا.");
       } else {
         setError("تعذر حفظ التصحيح وإعادة الإرسال. تحقق من الاتصال ثم أعد المحاولة.");
@@ -78,6 +101,7 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
       <Text style={styles.title}>التصحيح مطلوب قبل إعادة الإرسال</Text>
       <Text style={styles.reason}>{current.correctionReason || "طلب المشغّل تصحيح البيانات."}</Text>
       <Text style={styles.phone}>رقم الهاتف المعتمد: <Text style={styles.phoneValue}>{current.contactPhoneE164}</Text></Text>
+      <StoreProfileImageEditor value={value} onUpdated={onUpdated} />
       <View style={styles.locationBox}><Text style={styles.label}>موقع المتجر الثابت</Text><Text selectable style={styles.muted}>{latitude !== null && longitude !== null ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` : "لم يُسجل الموقع ضمن ملف الانضمام"}</Text><Text style={styles.muted}>يُجمع الموقع مع ملف الانضمام ولا يُعدّل من شاشة إدارة المتجر.</Text></View>
       <TextInput accessibilityLabel="تصحيح اسم النشاط" editable={!busy} onChangeText={setBusinessName} value={businessName} style={styles.input} />
       <TextInput accessibilityLabel="تصحيح اسم المتجر الأول" editable={!busy} onChangeText={setFirstStoreName} value={firstStoreName} style={styles.input} />

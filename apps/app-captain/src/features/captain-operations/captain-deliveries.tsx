@@ -1,14 +1,51 @@
 import { toAsciiDigits } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniMap, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type CaptainAssignment, type CaptainDeliveryTask, type CashLiabilityItem, captainAssignmentStateLabel, captainHandoffStateLabel, captainTaskProgressLabel, formatMoney, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
+import { type CaptainAssignment, type CaptainCompletionRequest, type CaptainDeliveryTask, type CashLiabilityItem, captainAssignmentStateLabel, captainHandoffStateLabel, captainTaskProgressLabel, formatMoney, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
+import * as Crypto from "expo-crypto";
 import * as Location from "expo-location";
+import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, Text, TextInput, View } from "react-native";
 
-import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
 import { createCaptainOperationStyles } from "./captain-operation-styles";
 import { OrderConversation } from "./order-conversation";
+
+type PendingCaptainCompletionAttempt = Readonly<{
+  version: 1;
+  actorID: string;
+  assignmentID: string;
+  expectedVersion: number;
+  request: CaptainCompletionRequest;
+  idempotencyKey: string;
+  correlationID: string;
+}>;
+
+function pendingCaptainCompletionKey(actorID: string): string {
+  return `bthwani.captain.delivery-completion.pending.v1.${encodeURIComponent(actorID)}`;
+}
+
+function parsePendingCaptainCompletion(raw: string | null, actorID: string): PendingCaptainCompletionAttempt | null {
+  if (!raw) return null;
+  let value: Partial<PendingCaptainCompletionAttempt>;
+  try {
+    value = JSON.parse(raw) as Partial<PendingCaptainCompletionAttempt>;
+  } catch {
+    throw new Error("CAPTAIN_COMPLETION_ATTEMPT_INVALID");
+  }
+  const request = value.request;
+  if (value.version !== 1 || value.actorID !== actorID || typeof value.assignmentID !== "string" || !value.assignmentID || !Number.isSafeInteger(value.expectedVersion) || Number(value.expectedVersion) < 1 || !request || (request.result !== "delivered" && request.result !== "delivery_failed") || (request.collectedAmountMinor !== undefined && (!Number.isSafeInteger(request.collectedAmountMinor) || request.collectedAmountMinor < 0)) || (request.result === "delivered" && !/^[0-9]{6}$/.test(request.deliveryProofCode?.trim() ?? "")) || (request.result === "delivery_failed" && request.deliveryProofCode?.trim()) || typeof value.idempotencyKey !== "string" || value.idempotencyKey.length < 8 || value.idempotencyKey.length > 128 || typeof value.correlationID !== "string" || value.correlationID.length < 8 || value.correlationID.length > 128) {
+    throw new Error("CAPTAIN_COMPLETION_ATTEMPT_INVALID");
+  }
+  return value as PendingCaptainCompletionAttempt;
+}
+
+function captainCompletionHttpRejected(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const value = error as { kind?: unknown; status?: unknown };
+  return value.kind === "http" && typeof value.status === "number" && value.status >= 400 && value.status < 500;
+}
 
 export function CaptainDeliveries() {
   const theme = useAppearanceTheme();
@@ -26,13 +63,33 @@ export function CaptainDeliveries() {
   const [cashLiability, setCashLiability] = useState<{ items: ReadonlyArray<CashLiabilityItem>; totalAmountMinor: number } | null>(null);
   const [cashRemittanceReferences, setCashRemittanceReferences] = useState<Record<string, string>>({});
   const [cashBusy, setCashBusy] = useState("");
+  const [pendingCompletion, setPendingCompletion] = useState<PendingCaptainCompletionAttempt | null>(null);
+  const [completionStorageReady, setCompletionStorageReady] = useState(false);
+  const [completionStorageIssue, setCompletionStorageIssue] = useState(false);
+  const [completionRejected, setCompletionRejected] = useState(false);
   const activeAssignmentID = useMemo(() => assignments.find((assignment) => assignment.state === "in_custody")?.id ?? "", [assignments]);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setCompletionStorageReady(false);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      const identity = currentIdentityState();
+      if (identity.kind !== "authenticated" || !identity.identity.subject.trim()) throw new Error("CAPTAIN_SESSION_REQUIRED");
+      const actorID = identity.identity.subject.trim();
+      const rawAttempt = await SecureStore.getItemAsync(pendingCaptainCompletionKey(actorID));
+      let attempt: PendingCaptainCompletionAttempt | null;
+      try {
+        attempt = parsePendingCaptainCompletion(rawAttempt, actorID);
+      } catch (cause) {
+        setCompletionStorageIssue(true);
+        throw cause;
+      }
+      setPendingCompletion(attempt);
+      setCompletionRejected(false);
+      setCompletionStorageIssue(false);
+      setCompletionStorageReady(true);
       const api = captainClient();
       const response = await api.listOwnCaptainAssignments(token);
       setAssignments(response.assignments);
@@ -111,7 +168,7 @@ export function CaptainDeliveries() {
   }, [activeAssignmentID]);
 
   async function pickup(assignment: CaptainAssignment) {
-    if (busy || assignment.state !== "assigned") return;
+    if (busy || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "assigned") return;
     setBusy(assignment.id);
     setError("");
     try {
@@ -127,17 +184,85 @@ export function CaptainDeliveries() {
   }
 
   async function complete(assignment: CaptainAssignment, result: "delivered" | "delivery_failed", collectedAmountMinor?: number) {
-    if (busy || assignment.state !== "in_custody") return;
+    if (busy || !completionStorageReady || completionStorageIssue || pendingCompletion || assignment.state !== "in_custody") return;
     setBusy(assignment.id);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
+      const identity = currentIdentityState();
+      if (identity.kind !== "authenticated" || !identity.identity.subject.trim()) throw new Error("CAPTAIN_SESSION_REQUIRED");
       const deliveryProofCode = deliveryProofCodes[assignment.id]?.trim() ?? "";
-      await captainClient().completeCaptainAssignment(token, assignment.id, { result, ...(collectedAmountMinor === undefined ? {} : { collectedAmountMinor }), ...(result === "delivered" ? { deliveryProofCode } : {}) }, assignment.version);
+      const request: CaptainCompletionRequest = { result, ...(collectedAmountMinor === undefined ? {} : { collectedAmountMinor }), ...(result === "delivered" ? { deliveryProofCode } : {}) };
+      const attempt: PendingCaptainCompletionAttempt = {
+        version: 1,
+        actorID: identity.identity.subject.trim(),
+        assignmentID: assignment.id,
+        expectedVersion: assignment.version,
+        request,
+        idempotencyKey: `captain_complete_${Crypto.randomUUID()}`,
+        correlationID: `captain_complete_corr_${Crypto.randomUUID()}`,
+      };
+      await SecureStore.setItemAsync(pendingCaptainCompletionKey(attempt.actorID), JSON.stringify(attempt));
+      setPendingCompletion(attempt);
+      setCompletionRejected(false);
+      await captainClient().completeCaptainAssignment(token, attempt.assignmentID, attempt.request, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
+      await SecureStore.deleteItemAsync(pendingCaptainCompletionKey(attempt.actorID));
+      setPendingCompletion(null);
+      setDeliveryProofCodes((current) => ({ ...current, [assignment.id]: "" }));
       await load();
     } catch (cause) {
       console.error("DSH Captain completion failed", cause);
-      setError("تعذر تسجيل النتيجة النهائية. أعد القراءة قبل المحاولة.");
+      setCompletionRejected(captainCompletionHttpRejected(cause));
+      setError(captainCompletionHttpRejected(cause) ? "رفض الخادم المحاولة ولم نعدّل بياناتها. أعد إرسالها بالمفتاح نفسه أو تحقق من المهمة لفتح تعديل آمن." : "تعذر تأكيد النتيجة. بقيت المحاولة ومفتاحها محفوظين؛ أعد إرسالها بالمفتاح نفسه.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function retryPendingCompletion() {
+    const attempt = pendingCompletion;
+    if (!attempt || busy) return;
+    setBusy(attempt.assignmentID);
+    setError("");
+    setCompletionRejected(false);
+    try {
+      const token = await getUsableIdentityAccessToken();
+      await captainClient().completeCaptainAssignment(token, attempt.assignmentID, attempt.request, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
+      await SecureStore.deleteItemAsync(pendingCaptainCompletionKey(attempt.actorID));
+      setPendingCompletion(null);
+      setDeliveryProofCodes((current) => ({ ...current, [attempt.assignmentID]: "" }));
+      await load();
+    } catch (cause) {
+      console.error("DSH Captain completion recovery failed", cause);
+      setCompletionRejected(captainCompletionHttpRejected(cause));
+      setError(captainCompletionHttpRejected(cause) ? "رفض الخادم المحاولة ولم نعدّل بياناتها. تحقق من المهمة قبل تصحيحها." : "لم نتأكد من النتيجة. بقيت المحاولة محفوظة؛ أعد إرسالها بالمفتاح نفسه.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function replaceRejectedCompletionAfterReadback() {
+    const attempt = pendingCompletion;
+    if (!attempt || !completionRejected || busy) return;
+    setBusy(attempt.assignmentID);
+    setError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const response = await captainClient().listOwnCaptainAssignments(token);
+      const current = response.assignments.find((item) => item.id === attempt.assignmentID);
+      if (!current || current.state !== "in_custody" || current.version !== attempt.expectedVersion) {
+        setCompletionRejected(false);
+        setError("تغيرت المهمة أو تعذر إثبات بقائها دون تنفيذ؛ احتفظنا بالمحاولة الأصلية وأعد قراءتها.");
+        return;
+      }
+      await SecureStore.deleteItemAsync(pendingCaptainCompletionKey(attempt.actorID));
+      setPendingCompletion(null);
+      setCompletionRejected(false);
+      await load();
+      setError("ثبت أن المحاولة لم تُنفذ وأن المهمة ما زالت في عهدتك؛ حدّث التوصيلات ثم صحح الرمز أو المبلغ.");
+    } catch (cause) {
+      console.error("DSH Captain completion rejection reconciliation failed", cause);
+      setError("تعذر تأكيد حالة المهمة. بقيت المحاولة الأصلية محفوظة كما هي.");
     } finally {
       setBusy("");
     }
@@ -167,6 +292,9 @@ export function CaptainDeliveries() {
     <View style={styles.container} accessibilityLabel="التوصيلات الحالية">
       <Text style={styles.title}>التوصيلات الحالية</Text>
       <Text style={styles.muted}>رتّب عملك من الاستلام إلى التسليم، وتعرّف على العائق قبل بدء الإجراء.</Text>
+      {pendingCompletion ? <View style={styles.warningBox}><Text style={styles.warning}>توجد محاولة تسليم محفوظة للمهمة. أعد إرسال الحقائق والمفتاح نفسيهما حتى نثبت النتيجة.</Text><BthwaniButton busy={busy === pendingCompletion.assignmentID} disabled={Boolean(busy) || !completionStorageReady} label="التحقق من نتيجة التسليم" onPress={() => void retryPendingCompletion()} />{completionRejected ? <BthwaniButton busy={Boolean(busy)} disabled={Boolean(busy)} label="تحقق من المهمة لفتح تصحيح آمن" onPress={() => void replaceRejectedCompletionAfterReadback()} variant="secondary" /> : null}</View> : null}
+      {completionStorageIssue ? <Text accessibilityRole="alert" style={styles.error}>تعذر قراءة المحاولة الآمنة السابقة. لا تؤكد تسليمًا جديدًا؛ أعد قراءة الحالة أو اطلب مراجعة المشغل.</Text> : null}
+      {!completionStorageReady && !completionStorageIssue && !loading ? <Text accessibilityRole="alert" style={styles.warning}>تعذر التحقق من المحاولات المحفوظة؛ لن نرسل تأكيدًا حتى تنجح إعادة القراءة.</Text> : null}
       {cashLiability ? <View style={styles.summaryCard} accessibilityLabel="العهدة النقدية"><Text style={styles.sectionTitle}>العهدة النقدية غير المورّدة</Text><Text style={styles.warning}>الإجمالي: {formatMoney(cashLiability.totalAmountMinor, "YER")}</Text>{cashLiability.items.length === 0 ? <Text style={styles.muted}>لا توجد مبالغ معلّقة.</Text> : cashLiability.items.map((item) => { const reference = cashRemittanceReferences[item.paymentIntentId] ?? ""; return <View key={item.paymentIntentId} style={styles.task}><Text style={styles.cardTitle}>طلب {item.externalReference}</Text><Text style={styles.muted}>المبلغ: {formatMoney(item.amountMinor, item.currency)}</Text><TextInput accessibilityLabel={`مرجع توريد العهدة ${item.externalReference}`} onChangeText={(value) => setCashRemittanceReferences((current) => ({ ...current, [item.paymentIntentId]: value }))} value={reference} style={styles.input} placeholder="مرجع الإيصال أو التوريد" /><BthwaniButton busy={cashBusy === item.paymentIntentId} disabled={Boolean(cashBusy) || !reference.trim()} label="تأكيد توريد العهدة" onPress={() => void remitCash(item)} /></View>; })}</View> : null}
       {activeAssignmentID ? <Text accessibilityLiveRegion="polite" style={locationError ? styles.warning : styles.progress}>{locationError || (lastLocationUpdatedAt ? "الموقع المباشر مفعّل أثناء العهدة." : "جارٍ تفعيل الموقع المباشر أثناء العهدة…")}</Text> : null}
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View> : null}
@@ -177,9 +305,10 @@ export function CaptainDeliveries() {
         const assignmentLabel = task ? captainAssignmentStateLabel(task.deliveryState) : captainAssignmentStateLabel(assignment.state);
         const handoffLabel = task ? captainHandoffStateLabel(task.handoffState) : captainHandoffStateLabel(assignment.handoff.state);
         const requiresCollection = task?.paymentState === "REQUIRES_COLLECTION";
+        const requiresCashCollection = requiresCollection && task.amountDueMinor > 0;
         const collectionAmountText = collectionAmounts[assignment.id] ?? (requiresCollection ? String(task.amountDueMinor) : "");
         const parsedCollectionAmount = Number(collectionAmountText);
-        const collectionAmountInvalid = requiresCollection && (!Number.isSafeInteger(parsedCollectionAmount) || parsedCollectionAmount !== task.amountDueMinor);
+        const collectionAmountInvalid = requiresCashCollection && (!Number.isSafeInteger(parsedCollectionAmount) || parsedCollectionAmount !== task.amountDueMinor);
         const deliveryProofCode = deliveryProofCodes[assignment.id] ?? "";
         const deliveryProofInvalid = assignment.state === "in_custody" && !/^[0-9]{6}$/.test(deliveryProofCode);
         return (
@@ -193,7 +322,7 @@ export function CaptainDeliveries() {
               <View style={styles.task}>
                 {task.storeProfileImage?.uri ? <Image accessibilityLabel={`صورة متجر ${task.storeName}`} source={{ uri: task.storeProfileImage.uri }} style={{ borderRadius: 10, height: 100, width: "100%" }} resizeMode="cover" /> : null}
                 <Text style={styles.muted}>نوع التوصيل: {task.fulfillmentMode === "PARTNER_CAPTAIN" ? "توصيل المتجر" : "توصيل بثواني"}</Text>
-                {task.fulfillmentMode === "PARTNER_CAPTAIN" ? <Text style={styles.warning}>بعد استلام النقد من العميل، سلّمه إلى المتجر. سيؤكد الشريك الاستلام في التطبيق؛ هذا المبلغ لا يدخل في عهدة محفظة الكابتن لدى المنصة.</Text> : null}
+                {task.fulfillmentMode === "PARTNER_CAPTAIN" && task.amountDueMinor > 0 ? <Text style={styles.warning}>بعد استلام النقد من العميل، سلّمه إلى المتجر. سيؤكد الشريك الاستلام في التطبيق؛ هذا المبلغ لا يدخل في عهدة محفظة الكابتن لدى المنصة.</Text> : null}
                 <Text style={styles.muted}>المتجر: {task.storeName}</Text>
                 <Text style={styles.muted}>عنوان العميل: {task.customerAddressText}</Text>
                 <Text style={styles.sectionTitle}>خريطة مهمة التوصيل</Text>
@@ -207,14 +336,15 @@ export function CaptainDeliveries() {
                   selectionTitle="موقعك الحالي"
                 />
                 <Text style={styles.muted}>حالة الطلب: {orderStateLabel(task.orderState)}</Text>
-                <Text style={styles.payment}>{paymentMethodLabel(task.paymentMethod, task.fulfillmentMode)} · {paymentStateLabel(task.paymentState, task.paymentMethod, task.fulfillmentMode)}</Text>
-                {requiresCollection ? (
+                <Text style={styles.payment}>{paymentMethodLabel(task.paymentMethod, task.fulfillmentMode, task.amountDueMinor)} · {paymentStateLabel(task.paymentState, task.paymentMethod, task.fulfillmentMode, task.amountDueMinor)}</Text>
+                {requiresCashCollection ? (
                   <>
                     <Text style={styles.warning}>{task.fulfillmentMode === "PARTNER_CAPTAIN" ? "المبلغ الذي ستستلمه من العميل ثم تسلّمه للمتجر:" : "المطلوب تحصيله عند التسليم:"} {formatMoney(task.amountDueMinor, task.currency)}</Text>
                     <TextInput accessibilityLabel={`المبلغ المحصل للمهمة ${task.orderReference}`} keyboardType="number-pad" onChangeText={(value) => setCollectionAmounts((current) => ({ ...current, [assignment.id]: toAsciiDigits(value).replace(/[^0-9]/g, "") }))} value={collectionAmountText} style={styles.input} />
-                    <Text style={collectionAmountInvalid ? styles.error : styles.muted}>{collectionAmountInvalid ? "يجب أن يساوي المبلغ المحصل إجمالي الطلب قبل تأكيد التسليم." : "أكّد المبلغ الذي استلمه الكابتن نقدًا."}</Text>
+                    <Text style={collectionAmountInvalid ? styles.error : styles.muted}>{collectionAmountInvalid ? "يجب أن يساوي المبلغ المحصل النقد المتبقي في الطلب." : "أكّد المبلغ الذي استلمه الكابتن نقدًا."}</Text>
                   </>
                 ) : null}
+                {requiresCollection && task.amountDueMinor === 0 ? <Text style={styles.muted}>غطّى رصيد العميل كامل الطلب؛ لا تستلم نقدًا. ستتم التسوية المالية عند تأكيد التسليم.</Text> : null}
                 {assignment.state === "in_custody" ? (
                   <>
                     <Text style={styles.warning}>اطلب رمز التسليم الظاهر لدى العميل وأدخله قبل إتمام الرحلة.</Text>
@@ -225,12 +355,13 @@ export function CaptainDeliveries() {
                 <Text style={task.deliveryState === "delivery_failed" ? styles.warning : styles.progress}>{captainTaskProgressLabel(task)}</Text>
               </View>
             ) : <Text style={styles.muted}>جارٍ تجهيز تفاصيل المهمة.</Text>}
-            {assignment.state === "assigned" && assignment.handoff.state === "store_confirmed" ? <BthwaniButton busy={busy === assignment.id} disabled={Boolean(busy)} label="تأكيد استلام الطلب" onPress={() => void pickup(assignment)} /> : null}
+            {assignment.state === "assigned" && assignment.handoff.state === "store_confirmed" ? <BthwaniButton busy={busy === assignment.id} disabled={Boolean(busy) || !completionStorageReady || Boolean(pendingCompletion)} label="تأكيد استلام الطلب" onPress={() => void pickup(assignment)} /> : null}
             {assignment.state === "assigned" && assignment.handoff.state === "pending" ? <Text style={styles.muted}>بانتظار تأكيد المتجر قبل الاستلام.</Text> : null}
-            {assignment.state === "in_custody" ? (
+            {assignment.state === "in_custody" && pendingCompletion?.assignmentID === assignment.id ? <Text style={styles.warning}>يُحسم هذا الإجراء من المحاولة المحفوظة أعلاه.</Text> : null}
+            {assignment.state === "in_custody" && !pendingCompletion ? (
               <View style={styles.row}>
-                <BthwaniButton busy={busy === assignment.id} disabled={Boolean(busy) || collectionAmountInvalid || deliveryProofInvalid} label={requiresCollection ? "تحصيل المبلغ وتأكيد التسليم" : "تأكيد التسليم"} onPress={() => void complete(assignment, "delivered", requiresCollection ? parsedCollectionAmount : undefined)} style={styles.actionButton} />
-                <BthwaniButton disabled={Boolean(busy)} label="تعذر التسليم" onPress={() => void complete(assignment, "delivery_failed")} style={styles.actionButton} variant="danger" />
+                <BthwaniButton busy={busy === assignment.id} disabled={Boolean(busy) || !completionStorageReady || completionStorageIssue || collectionAmountInvalid || deliveryProofInvalid} label={requiresCashCollection ? "تحصيل النقد وتأكيد التسليم" : requiresCollection ? "تأكيد التسليم وتسوية الرصيد" : "تأكيد التسليم"} onPress={() => void complete(assignment, "delivered", requiresCollection ? (requiresCashCollection ? parsedCollectionAmount : 0) : undefined)} style={styles.actionButton} />
+                <BthwaniButton disabled={Boolean(busy) || !completionStorageReady || completionStorageIssue} label="تعذر التسليم" onPress={() => void complete(assignment, "delivery_failed")} style={styles.actionButton} variant="danger" />
               </View>
             ) : null}
             {assignment.state === "delivery_failed" ? <View style={styles.warningBox}><Text style={styles.warning}>يبقى الطلب في عهدتك حتى يعالج المشغل التعذر؛ لن تُفتح لك مهمة جديدة قبل الاسترداد.</Text></View> : null}

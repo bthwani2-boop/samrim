@@ -28,15 +28,17 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
   const [storesError, setStoresError] = useState("");
   const [notice, setNotice] = useState("");
 
-  const loadDetail = useCallback(async () => {
+  const loadDetail = useCallback(async (): Promise<boolean> => {
     setLoading(true);
     setError("");
     try {
       const response = await identityFetch(`/api/partners/roster/${encodeURIComponent(actorId)}`, { cache: "no-store" });
       if (!response.ok) throw new Error(await partnerErrorMessage(response));
       setDetail(await response.json() as PartnerDetail);
+      return true;
     } catch (cause) {
       setError(isRequestFailure(cause) ? cause.message : cause instanceof Error ? cause.message : "تعذرت قراءة ملف الشريك.");
+      return false;
     } finally { setLoading(false); }
   }, [actorId]);
 
@@ -139,8 +141,70 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
     } finally { setBusy(false); }
   }
 
+  async function reenroll() {
+    if (!detail) return;
+    const normalizedReason = reason.trim();
+    const eligibleStates = ["submitted", "needs_correction", "approved"];
+    if (Array.from(normalizedReason).length < 5 || Array.from(normalizedReason).length > 500) {
+      setError("اكتب سببًا من 5 إلى 500 حرف قبل إجازة إعادة التسجيل.");
+      return;
+    }
+    if (!eligibleStates.includes(detail.joiningCase?.state ?? "") || !detail.partner.enabled || !detail.partner.securityEnabled || !detail.partner.activatedAt) {
+      setError("تتطلب إعادة التسجيل دورًا نشطًا وأهلية انضمام سارية في DSH.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await identityFetch("/api/partners/roster", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "reenroll",
+          actorId,
+          expectedJoiningCaseVersion: detail.joiningCase!.version,
+          expectedActorVersion: detail.partner.actorVersion,
+          expectedRoleVersion: detail.partner.roleVersion,
+          reason: normalizedReason,
+        }),
+      });
+      if (!response.ok) {
+        const message = await partnerErrorMessage(response);
+        if (response.status === 409 || response.status === 412 || response.status >= 500) {
+          const reloaded = await loadDetail();
+          setError(reloaded
+            ? (response.status >= 500 ? "تعذر تأكيد نتيجة الطلب؛ أُعيد تحميل الحالة الكانونية قبل أي محاولة أخرى. " : "تغيرت أهلية الانضمام أو نسخة الهوية قبل إعادة التسجيل. أُعيد تحميل الحالة الكانونية: ") + message
+            : "تعذر تأكيد النتيجة أو إعادة قراءة ملف الشريك. حدّث الملف قبل أي محاولة أخرى. " + message);
+        } else setError(message);
+        return;
+      }
+      const readbackResponse = await identityFetch("/api/partners/roster/" + encodeURIComponent(actorId), { cache: "no-store" });
+      if (!readbackResponse.ok) {
+        const reloaded = await loadDetail();
+        setError(reloaded ? "تعذرت إعادة قراءة التفصيل لكن تم تحديث ملف الشريك. تحقق من التفعيل قبل أي إجراء آخر." : "تم إرسال الإجازة لكن تعذرت إعادة قراءة Identity وDSH. حدّث الملف قبل أي إجراء آخر.");
+        return;
+      }
+      const canonical = await readbackResponse.json() as PartnerDetail;
+      setDetail(canonical);
+      if (canonical.partner.activatedAt || canonical.partner.actorVersion !== detail.partner.actorVersion || canonical.partner.roleVersion !== detail.partner.roleVersion + 1 || !eligibleStates.includes(canonical.joiningCase?.state ?? "")) {
+        const reloaded = await loadDetail();
+        setError(reloaded ? "إعادة القراءة لم تطابق التفعيل المتوقع؛ عُرضت أحدث حالة في الملف. راجعها قبل أي إجراء آخر." : "إعادة القراءة لم تثبت النتيجة وتعذر تحديث ملف الشريك. حدّثه قبل أي إجراء آخر.");
+        return;
+      }
+      setReason("");
+      setNotice("تمت إجازة إعادة تسجيل الشريك بعد تحقق DSH؛ يلزمه إكمال التفعيل من تطبيق الشريك.");
+    } catch (cause) {
+      const reloaded = await loadDetail();
+      setError(reloaded
+        ? "تعذر تأكيد نتيجة الطلب؛ أُعيد تحميل الحالة الكانونية قبل أي محاولة أخرى. " + (isRequestFailure(cause) ? cause.message : "تحقق من التفعيل المعروض.")
+        : "تعذر تأكيد نتيجة الطلب أو إعادة قراءة ملف الشريك. حدّثه قبل أي محاولة أخرى.");
+    } finally { setBusy(false); }
+  }
+
   const partner = detail?.partner;
   const canChangeStatus = detail?.joiningCase?.state === "approved" && Boolean(partner?.activatedAt) && Boolean(partner?.securityEnabled);
+  const canReenroll = ["submitted", "needs_correction", "approved"].includes(detail?.joiningCase?.state ?? "") && Boolean(partner?.enabled) && Boolean(partner?.activatedAt) && Boolean(partner?.securityEnabled);
 
   return <section className="workspace-page partner-detail-workspace" aria-labelledby="partner-detail-title">
     <div className="workspace-page-heading partner-detail-page-heading">
@@ -154,7 +218,7 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
     </nav>
 
     {notice ? <p className="success-inline" role="status">{notice}</p> : null}
-    {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر إكمال الإجراء</strong><p>{error}</p><button type="button" className="button button-secondary" onClick={() => void loadDetail()} disabled={loading || busy}>إعادة قراءة الحساب</button></div> : null}
+    {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر إكمال الإجراء</strong><p className="identity-error">{error}</p><button type="button" className="button button-secondary" onClick={() => void loadDetail()} disabled={loading || busy}>إعادة قراءة الحساب</button></div> : null}
     {loading ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة ملف الشريك</strong></div> : null}
     {!loading && !detail && !error ? <div className="collection-state"><strong>ملف الشريك غير متاح</strong></div> : null}
 
@@ -170,8 +234,9 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
       </section>
       <section className="partner-detail-section partner-status-action" aria-labelledby="partner-status-action-title">
         <div><p className="eyebrow">إجراء موثق</p><h2 id="partner-status-action-title">{detail.partner.enabled ? "إيقاف دور الشريك" : "تفعيل دور الشريك"}</h2><p className="muted">يتطلب السبب ويُحفظ عبر Identity مع نسخة الدور الحالية.</p></div>
-        <label className="field-label" htmlFor="partner-status-reason">سبب التغيير<input id="partner-status-reason" value={reason} minLength={5} maxLength={500} onChange={(event) => setReason(event.target.value)} placeholder="اكتب سببًا واضحًا للتغيير" disabled={!canChangeStatus || busy} /></label>
+        <label className="field-label" htmlFor="partner-status-reason">سبب الإجراء<input id="partner-status-reason" value={reason} minLength={5} maxLength={500} onChange={(event) => setReason(event.target.value)} placeholder="اكتب سببًا واضحًا للتغيير" disabled={!(canChangeStatus || canReenroll) || busy} /></label>
         <button type="button" className={detail.partner.enabled ? "button button-secondary" : "button button-primary"} disabled={!canChangeStatus || busy || reason.trim().length < 5} onClick={() => void changeStatus()}>{busy ? "جارٍ التحديث والتحقق…" : detail.partner.enabled ? "إيقاف الدور" : "تفعيل الدور"}</button>
+        {canReenroll ? <button type="button" className="button button-secondary" disabled={busy || Array.from(reason.trim()).length < 5} onClick={() => void reenroll()}>{busy ? "جارٍ التحقق وإجازة التسجيل…" : "إجازة إعادة التسجيل"}</button> : null}
         {!canChangeStatus ? <p className="muted">يتاح التحكم بعد اعتماد الانضمام وتسجيل الهوية وبقاء الهوية الأمنية نشطة.</p> : null}
       </section>
       <ActorLegalNameWorkspace actorId={actorId} />

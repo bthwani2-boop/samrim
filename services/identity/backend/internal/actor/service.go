@@ -424,6 +424,55 @@ func (s *Service) GetRole(ctx context.Context, caller, actorID, role string) (do
 	return view, err
 }
 
+func (s *Service) ReadRoles(ctx context.Context, caller, role string, actorIDs []string) ([]domain.ActorRoleView, error) {
+	caller = strings.ToLower(strings.TrimSpace(caller))
+	role = strings.ToLower(strings.TrimSpace(role))
+	if !domain.CanReadRole(caller, role) || len(actorIDs) < 1 || len(actorIDs) > 100 {
+		if !domain.CanReadRole(caller, role) {
+			return nil, domain.ErrForbidden
+		}
+		return nil, domain.ErrInvalidInput
+	}
+
+	ids := make([]string, 0, len(actorIDs))
+	seen := make(map[string]struct{}, len(actorIDs))
+	for _, actorID := range actorIDs {
+		actorID = strings.TrimSpace(actorID)
+		if actorID == "" || len(actorID) > 128 || !utf8.ValidString(actorID) {
+			return nil, domain.ErrInvalidInput
+		}
+		if _, exists := seen[actorID]; exists {
+			return nil, domain.ErrInvalidInput
+		}
+		seen[actorID] = struct{}{}
+		ids = append(ids, actorID)
+	}
+
+	rows, err := s.db.QueryContext(ctx, `SELECT a.id,a.phone_e164,r.role,r.enabled,r.activated_at,a.security_enabled,a.version,r.version,c.version
+		FROM identity_actors a
+		JOIN identity_actor_roles r ON r.actor_id=a.id
+		LEFT JOIN identity_password_credentials c ON c.actor_id=r.actor_id AND c.role=r.role
+		WHERE r.role=$1 AND a.id=ANY($2::text[])
+		ORDER BY a.id`, role, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]domain.ActorRoleView, 0, len(ids))
+	for rows.Next() {
+		item, scanErr := scanRoleView(rows.Scan)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 func (s *Service) Search(ctx context.Context, caller string, input domain.ActorSearchInput) (domain.ActorSearchPage, error) {
 	role := strings.ToLower(strings.TrimSpace(input.Role))
 	if !domain.CanReadRole(caller, role) {

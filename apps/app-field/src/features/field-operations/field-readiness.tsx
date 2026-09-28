@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
-import { fieldClient } from "./field-client";
+import { fieldClient, isMissingFieldAdmission } from "./field-client";
 import { createFieldOperationStyles } from "./field-operation-styles";
 
 export function FieldReadiness() {
@@ -23,6 +23,10 @@ const theme = useAppearanceTheme();
       const response = await fieldClient().readOwnFieldAdmission(token);
       setAdmission(response.admission);
     } catch (cause) {
+      if (isMissingFieldAdmission(cause)) {
+        setAdmission(null);
+        return;
+      }
       console.error("DSH Field admission readback failed", cause);
       setError("تعذر قراءة قبول الميدان. أعد المحاولة.");
     } finally {

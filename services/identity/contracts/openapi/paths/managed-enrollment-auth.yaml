@@ -38,24 +38,3 @@ paths:
         "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "429": { $ref: "#/components/responses/RateLimited" }
-
-
-  /internal/operator-enrollment-tokens:
-    post:
-      tags: [internal-actor-roles]
-      operationId: issueOperatorEnrollmentToken
-      security: [{ internalServiceToken: [] }]
-      description: Issues a single-use enrollment token for an already admitted, enabled operator role. The token is returned once, stored only as a digest, and never creates or grants a role.
-      parameters:
-        - { $ref: "#/components/parameters/CorrelationId" }
-        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/OperatorEnrollmentTokenIssueRequest" } } }
-      responses:
-        "201": { $ref: "#/components/responses/OperatorEnrollmentTokenIssued" }
-        "400": { $ref: "#/components/responses/Invalid" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409": { $ref: "#/components/responses/Conflict" }

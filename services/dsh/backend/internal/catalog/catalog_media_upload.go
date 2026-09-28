@@ -17,6 +17,7 @@ type CatalogMediaUploadInput struct {
 	ProductID, Role, IdempotencyKey, CorrelationID string
 	ExpectedVersion                                int
 	ContentType                                    string
+	Provenance                                     media.Provenance
 	Bytes                                          []byte
 }
 
@@ -54,7 +55,9 @@ func (s *Service) uploadCatalogProductMedia(ctx context.Context, actingActorID s
 	input.Role = strings.TrimSpace(input.Role)
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
 	input.CorrelationID = strings.TrimSpace(input.CorrelationID)
-	if input.ProductID == "" || input.IdempotencyKey == "" || input.CorrelationID == "" || input.ExpectedVersion < 1 || (input.Role != "primary" && input.Role != "gallery") {
+	actingActorID = strings.TrimSpace(actingActorID)
+	input.Provenance = input.Provenance.Normalized()
+	if input.ProductID == "" || input.IdempotencyKey == "" || input.CorrelationID == "" || input.ExpectedVersion < 1 || (input.Role != "primary" && input.Role != "gallery") || input.Provenance.Validate() != nil {
 		return postgres.CatalogProductResult{}, ErrCatalogMediaUploadInvalid
 	}
 	contentType, _, _, err := media.ValidateImageBytes(input.Bytes)
@@ -71,6 +74,7 @@ func (s *Service) uploadCatalogProductMedia(ctx context.Context, actingActorID s
 	if uri == "" {
 		return postgres.CatalogProductResult{}, ErrCatalogMediaStorageUnavailable
 	}
+	requestHash := postgres.HashCatalogMediaUploadRequest(input.ProductID, input.Role, contentSHA256, input.ExpectedVersion, actingActorID, input.Provenance.Creator, input.Provenance.SourceDescription, input.Provenance.SourceURI, input.Provenance.RightsStatement, input.Provenance.RightsURI)
 	assetHash := sha256.Sum256([]byte(input.ProductID + "\x00" + input.IdempotencyKey))
 	asset := postgres.CatalogMediaAssetInput{
 		ID:              "media_asset_" + hex.EncodeToString(assetHash[:]),
@@ -82,7 +86,10 @@ func (s *Service) uploadCatalogProductMedia(ctx context.Context, actingActorID s
 		ContentSHA256:   contentSHA256,
 		ContentType:     contentType,
 		Role:            input.Role,
-		ByteSize:        int64(len(input.Bytes)),
+		RequestHash:     requestHash,
+		Creator:         input.Provenance.Creator, SourceDescription: input.Provenance.SourceDescription, SourceURI: input.Provenance.SourceURI,
+		RightsStatement: input.Provenance.RightsStatement, RightsURI: input.Provenance.RightsURI, RightsAttestedByActorID: actingActorID,
+		ByteSize: int64(len(input.Bytes)),
 	}
 	registered, replayed, err := postgres.RegisterCatalogMediaAssetPending(ctx, s.db, asset)
 	if err != nil {
@@ -110,7 +117,7 @@ func (s *Service) uploadCatalogProductMedia(ctx context.Context, actingActorID s
 		_ = postgres.MarkCatalogMediaAssetFailed(ctx, s.db, asset.ID, err.Error())
 		return postgres.CatalogProductResult{}, ErrCatalogMediaStorageUnavailable
 	}
-	mediaItems, err := uploadedMedia(product.Media, input.Role, uri)
+	mediaItems, err := uploadedMedia(product.Media, input.Role, asset.ID)
 	if err != nil {
 		_ = s.removeFailedAsset(ctx, asset, err)
 		return postgres.CatalogProductResult{}, err
@@ -120,7 +127,7 @@ func (s *Service) uploadCatalogProductMedia(ctx context.Context, actingActorID s
 		_ = s.removeFailedAsset(ctx, asset, err)
 		return postgres.CatalogProductResult{}, ErrCatalogMediaUploadInvalid
 	}
-	result, err := postgres.ReplaceCatalogProductMediaWithAsset(ctx, s.db, input.ProductID, normalized, input.ExpectedVersion, input.IdempotencyKey, postgres.HashCatalogMediaUploadRequest(input.ProductID, input.Role, contentSHA256, input.ExpectedVersion), actingActorID, input.CorrelationID, asset)
+	result, err := postgres.ReplaceCatalogProductMediaWithAsset(ctx, s.db, input.ProductID, normalized, input.ExpectedVersion, input.IdempotencyKey, requestHash, actingActorID, input.CorrelationID, asset)
 	if err != nil {
 		_ = s.removeFailedAsset(ctx, asset, err)
 		return postgres.CatalogProductResult{}, err
@@ -132,15 +139,15 @@ func (s *Service) uploadCatalogProductMedia(ctx context.Context, actingActorID s
 	return result, nil
 }
 
-func uploadedMedia(current []postgres.CatalogMediaRecord, role, uri string) ([]postgres.CatalogMediaInput, error) {
+func uploadedMedia(current []postgres.CatalogMediaRecord, role, assetID string) ([]postgres.CatalogMediaInput, error) {
 	ordered := append([]postgres.CatalogMediaRecord(nil), current...)
 	sort.SliceStable(ordered, func(left, right int) bool { return ordered[left].Ordinal < ordered[right].Ordinal })
 	mediaItems := make([]postgres.CatalogMediaInput, 0, len(ordered)+1)
 	if role == "primary" {
-		mediaItems = append(mediaItems, postgres.CatalogMediaInput{URI: uri, Role: "primary", Ordinal: 0})
+		mediaItems = append(mediaItems, postgres.CatalogMediaInput{AssetID: assetID, Role: "primary", Ordinal: 0})
 		for _, item := range ordered {
 			if item.Role == "gallery" {
-				mediaItems = append(mediaItems, postgres.CatalogMediaInput{URI: item.URI, Role: "gallery", Ordinal: len(mediaItems)})
+				mediaItems = append(mediaItems, postgres.CatalogMediaInput{AssetID: item.AssetID, Role: "gallery", Ordinal: len(mediaItems)})
 			}
 		}
 		return mediaItems, nil
@@ -149,15 +156,15 @@ func uploadedMedia(current []postgres.CatalogMediaRecord, role, uri string) ([]p
 	for _, item := range ordered {
 		if item.Role == "primary" {
 			hasPrimary = true
-			mediaItems = append(mediaItems, postgres.CatalogMediaInput{URI: item.URI, Role: "primary", Ordinal: 0})
+			mediaItems = append(mediaItems, postgres.CatalogMediaInput{AssetID: item.AssetID, Role: "primary", Ordinal: 0})
 		} else if item.Role == "gallery" {
-			mediaItems = append(mediaItems, postgres.CatalogMediaInput{URI: item.URI, Role: "gallery", Ordinal: len(mediaItems)})
+			mediaItems = append(mediaItems, postgres.CatalogMediaInput{AssetID: item.AssetID, Role: "gallery", Ordinal: len(mediaItems)})
 		}
 	}
 	if !hasPrimary {
 		return nil, ErrCatalogMediaUploadInvalid
 	}
-	mediaItems = append(mediaItems, postgres.CatalogMediaInput{URI: uri, Role: "gallery", Ordinal: len(mediaItems)})
+	mediaItems = append(mediaItems, postgres.CatalogMediaInput{AssetID: assetID, Role: "gallery", Ordinal: len(mediaItems)})
 	return mediaItems, nil
 }
 
@@ -183,6 +190,22 @@ func (s *Service) ReconcileMediaStorage(ctx context.Context) error {
 			continue
 		}
 		if err := postgres.MarkCatalogMediaAssetDeleted(ctx, s.db, asset.ID); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	categoryAssets, err := postgres.ListCatalogCategoryMediaAssetsForCleanup(ctx, s.db, 100)
+	if err != nil {
+		return err
+	}
+	for _, asset := range categoryAssets {
+		if err := s.media.Delete(ctx, asset.ObjectKey); err != nil {
+			_ = postgres.MarkCatalogCategoryMediaAssetCleanupFailure(ctx, s.db, asset.ID, err.Error())
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if err := postgres.MarkCatalogCategoryMediaAssetDeleted(ctx, s.db, asset.ID); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}

@@ -23,6 +23,18 @@ func TestCollectRequiresExactAmountAndCollector(t *testing.T) {
 	}
 }
 
+func TestCollectAllowsOnlyUnattributedZeroBalanceSettlement(t *testing.T) {
+	if err := ValidateCollect("", "", 0, 0); err != nil {
+		t.Fatalf("zero-cash balance settlement rejected: %v", err)
+	}
+	if err := ValidateCollect("actor_partner", "cash_1", 0, 0); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("zero-cash settlement accepted a cash collector: %v", err)
+	}
+	if err := ValidateCollect("", "", 0, 1); !errors.Is(err, ErrAmountMismatch) {
+		t.Fatalf("zero-cash settlement accepted when cash is due: %v", err)
+	}
+}
+
 func TestCODTransitionsAreNarrow(t *testing.T) {
 	if !CanCollect(StateRequiresCollect) || !CanCancel(StateRequiresCollect) {
 		t.Fatal("pending collection should allow collect and cancel")

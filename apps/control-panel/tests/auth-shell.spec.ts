@@ -25,6 +25,132 @@ async function stubAuthenticatedSession(page: Page, permissions = authenticatedO
   });
 }
 
+async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "field", initialName: string, reviewedName: string, phone: string) {
+  const surface = role === "captain" ? "captains" : "fields";
+  const actorID = `act_${role}_reviewed_candidate`;
+  const admissionID = `${role === "captain" ? "cap" : "fld"}_adm_reviewed_candidate`;
+  let profile: { id: string; actorId?: string; fullNameAr: string; contactPhoneE164: string; state: string; version: number } | null = null;
+  const mutations: Record<string, unknown>[] = [];
+
+  await page.route(`**/api/${surface}**`, async (route) => {
+    const request = route.request();
+    if (request.method() === "GET") {
+      const params = new URL(request.url()).searchParams;
+      if (params.get("scope") !== "candidates") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 25, nextCursor: "" }) });
+        return;
+      }
+      const requestedState = params.get("state") ?? "pending_review";
+      const visible = profile && (requestedState === "all" || requestedState === profile.state) ? [profile] : [];
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: visible, limit: 25, nextCursor: "" }) });
+      return;
+    }
+
+    const body = request.postDataJSON() as Record<string, unknown>;
+    mutations.push(body);
+    const action = body.action;
+    if (action === "admit") {
+      profile = { id: admissionID, fullNameAr: String(body.fullNameAr), contactPhoneE164: String(body.contactPhoneE164), state: "pending_review", version: 1 };
+    } else if (action === "update-profile" && profile) {
+      profile = { ...profile, fullNameAr: String(body.fullNameAr), state: "pending_review", version: profile.version + 1 };
+    } else if (action === "approve" && profile) {
+      profile = { ...profile, state: "pending_identity", version: profile.version + 1 };
+    } else if (action === "provision" && profile) {
+      profile = { ...profile, actorId: actorID, state: "eligible", version: profile.version + 1 };
+    } else {
+      await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: { code: "INVALID_INPUT" } }) });
+      return;
+    }
+    await route.fulfill({ status: action === "admit" ? 201 : 200, contentType: "application/json", body: JSON.stringify({ admission: profile, idempotentReplay: false }) });
+  });
+
+  await page.goto(`/${surface}`);
+  await expect(page.getByRole("heading", { name: role === "captain" ? "ملف كابتن جديد" : "ملف ميداني جديد" })).toBeVisible();
+  await page.locator(`#${role}-candidate-name`).fill(initialName);
+  await page.locator(`#${role}-candidate-phone`).fill(phone);
+  await page.getByRole("button", { name: "حفظ الملف للمراجعة" }).click();
+  await expect(page.getByText(`أُنشئ ملف ${role === "captain" ? "الكابتن" : "الميداني"} بانتظار المراجعة. لم يُمنح دور التطبيق بعد.`)).toBeVisible();
+  await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(initialName);
+
+  await page.locator(`#${role}-candidate-name-${admissionID}`).fill(reviewedName);
+  await page.getByRole("button", { name: "حفظ الملف", exact: true }).click();
+  await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(reviewedName);
+  await page.getByRole("button", { name: "اعتماد الملف", exact: true }).click();
+  await page.locator(`#${role}-candidate-state`).selectOption("pending_identity");
+  await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(reviewedName);
+  await page.getByRole("button", { name: `منح دور ${role === "captain" ? "الكابتن" : "الميداني"}` }).click();
+  await page.locator(`#${role}-candidate-state`).selectOption("eligible");
+  await expect(page.getByText(`اكتمل منح الدور؛ ينتظر تفعيل الحساب من ${role === "captain" ? "الكابتن" : "الميداني"}.`)).toBeVisible();
+  await expect(page.getByText(actorID)).toHaveCount(0);
+  expect(mutations).toEqual([
+    { action: "admit", fullNameAr: initialName, contactPhoneE164: phone },
+    { action: "update-profile", admissionId: admissionID, fullNameAr: reviewedName, expectedVersion: 1 },
+    { action: "approve", admissionId: admissionID, expectedVersion: 2 },
+    { action: "provision", admissionId: admissionID },
+  ]);
+}
+
+async function exerciseLegacyDshProfileReview(page: Page, role: "captain" | "field") {
+  const surface = role === "captain" ? "captains" : "fields";
+  const admissionID = `${role === "captain" ? "cap" : "fld"}_adm_legacy_review`;
+  const profile: { id: string; actorId: string; fullNameAr: string | null; contactPhoneE164: string | null; state: string; requiresProfileReview: boolean; version: number; availabilityState?: string } = {
+    id: admissionID,
+    actorId: `act_${role}_legacy_review`,
+    fullNameAr: null,
+    contactPhoneE164: null,
+    state: "suspended",
+    requiresProfileReview: true,
+    version: 9,
+    ...(role === "captain" ? { availabilityState: "unavailable" } : {}),
+  };
+  const mutations: Record<string, unknown>[] = [];
+  await page.route(`**/api/${surface}**`, async (route) => {
+    const request = route.request();
+    if (request.method() === "GET") {
+      const params = new URL(request.url()).searchParams;
+      if (params.get("scope") !== "candidates") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 25, nextCursor: "" }) });
+        return;
+      }
+      const state = params.get("state") ?? "review_required";
+      const visible = state === "all" || state === profile.state || (state === "review_required" && profile.requiresProfileReview) ? [profile] : [];
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: visible, limit: 25, nextCursor: "" }) });
+      return;
+    }
+
+    const body = request.postDataJSON() as Record<string, unknown>;
+    mutations.push(body);
+    if (body.action === "update-profile") {
+      profile.fullNameAr = String(body.fullNameAr);
+      profile.version += 1;
+    } else if (body.action === "review-profile") {
+      profile.requiresProfileReview = false;
+      profile.version += 1;
+    } else {
+      await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: { code: "INVALID_INPUT" } }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ admission: profile, idempotentReplay: false }) });
+  });
+
+  await page.goto(`/${surface}`);
+  await expect(page.getByRole("heading", { name: role === "captain" ? "ملفات الكباتن قبل منح الدور" : "ملفات الميدانيين قبل منح الدور" })).toBeVisible();
+  await expect(page.getByText("موقوف حتى استكمال الملف ومراجعته")).toBeVisible();
+  const name = "سامي ناصر محمد العريقي";
+  await page.locator(`#${role}-candidate-name-${admissionID}`).fill(name);
+  await page.getByRole("button", { name: "حفظ الملف", exact: true }).click();
+  await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(name);
+  await page.getByRole("button", { name: "اعتماد الملف بعد المراجعة" }).click();
+  await expect(page.getByRole("status")).toContainText("يبقى الدور موقوفًا حتى إعادة التفعيل");
+  await page.locator(`#${role}-candidate-state`).selectOption("suspended");
+  await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(name);
+  await expect(page.getByText("موقوف حتى استكمال الملف ومراجعته")).toHaveCount(0);
+  expect(mutations).toEqual([
+    { action: "update-profile", admissionId: admissionID, fullNameAr: name, expectedVersion: 9 },
+    { action: "review-profile", admissionId: admissionID, expectedVersion: 10 },
+  ]);
+}
+
 test("signed-out access to a protected workspace route returns to the identity surface", async ({ page }) => {
   await stubSession(page, 401);
   await page.goto("/workspace");
@@ -34,6 +160,12 @@ test("signed-out access to a protected workspace route returns to the identity s
 
 test("authenticated operator discovers the platform centers through workspace navigation", async ({ page }) => {
   await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "operations", "partners", "catalog"], true);
+  await page.route("**/api/access/operator-profiles**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 25, nextCursor: "" }) });
+  });
+  await page.route("**/api/access/operators**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 10, nextCursor: "" }) });
+  });
   let homeRequestsActionableOrders = false;
   let homeRequestsCatalogQueue = false;
   await page.route("**/api/operations**", async (route) => {
@@ -68,13 +200,29 @@ test("authenticated operator discovers the platform centers through workspace na
   await accessLink.click();
   await expect(page).toHaveURL(/\/access$/);
   await expect(page.locator('#workspace-navigation a[href="/access"][aria-current="page"]')).toHaveAttribute("href", "/access");
-  await expect(page.getByRole("heading", { name: "مشغّلو لوحة التحكم والصلاحيات" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "ملفات المشغّلين والوصول والصلاحيات" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "إنشاء ملف مشغّل" })).toBeVisible();
+  await expect(page.getByLabel("اسم العرض الكامل بالعربية")).toBeVisible();
+  await expect(page.locator("#workspace-main")).toBeFocused();
+  await page.getByRole("button", { name: "الوصول والصلاحيات", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "قائمة المشغّلين وصلاحياتهم" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "إدارة حسابات مشغّلي لوحة التحكم" })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-  await expect(page.locator("#workspace-main")).toBeFocused();
+  await expect(page.getByRole("button", { name: "الوصول والصلاحيات", exact: true })).toBeFocused();
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "مشغّلو لوحة التحكم والصلاحيات" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "ملفات المشغّلين والوصول والصلاحيات" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "إنشاء ملف مشغّل" })).toBeVisible();
+});
+
+test("operator without operator-administration authority cannot open access or profile controls", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  await page.goto("/access");
+
+  await expect(page.getByRole("status")).toContainText("الوصول إلى هذه المساحة غير مفعّل");
+  await expect(page.getByRole("heading", { name: "ملفات المشغّلين والوصول والصلاحيات" })).toHaveCount(0);
+  await expect(page.getByLabel("اسم العرض الكامل بالعربية")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "قائمة المشغّلين وصلاحياتهم" })).toHaveCount(0);
 });
 
 test("operator home reads only work queues covered by the current session permissions", async ({ page }) => {
@@ -142,7 +290,7 @@ test("workspace routes keep one main landmark and an actor-specific page hierarc
   const routes = [
     ["/workspace", "الرئيسية"],
     ["/notifications", "الإشعارات"],
-    ["/access", "مشغّلو لوحة التحكم والصلاحيات"],
+    ["/access", "ملفات المشغّلين والوصول والصلاحيات"],
     ["/partners", "الشركاء"],
     ["/operations", "العمليات"],
     ["/finance", "المالية"],
@@ -216,6 +364,11 @@ test("partner registry, joining queue, and stores are separate workspace destina
   await page.goto("/partners/joining");
   await expect(page.getByRole("heading", { name: "طلبات انضمام الشركاء", exact: true })).toBeVisible();
   await expect(partnerTabs.getByRole("link", { name: "طلبات الانضمام", exact: true })).toHaveAttribute("aria-current", "page");
+
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "قبول إحالات الميدانيين", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "فتح الشركاء" }).first()).toHaveAttribute("href", "/partners/joining?state=admission_requested");
+  await expect(page.getByRole("link", { name: "فتح الشركاء" }).nth(1)).toHaveAttribute("href", "/partners/joining?state=submitted");
 });
 
 test("finance and marketing centers expose only real independent resource routes", async ({ page }) => {
@@ -239,12 +392,32 @@ test("finance and marketing centers expose only real independent resource routes
 });
 
 test("marketing resource pages keep promotions and discovery content separate", async ({ page }) => {
+  const contentUploadKeys: string[] = [];
+  const contentUploadCorrelations: string[] = [];
+  const contentUploadBodies: string[] = [];
+  let createdContent: (Record<string, unknown> & { id: string }) | null = null;
   await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "marketing"]);
   await page.route("**/api/marketing/promotions**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ promotions: [{ id: "promotion-1", code: "WELCOME10", nameAr: "خصم البداية", kind: "PERCENTAGE", valueMinor: 10, state: "DRAFT", version: 1 }] }) });
   });
   await page.route("**/api/marketing/content**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ id: "content-1", kind: "BANNER", titleAr: "مختارات الأسبوع", bodyAr: "اكتشف الجديد", state: "DRAFT", version: 1 }] }) });
+    if (route.request().method() === "POST") {
+      contentUploadKeys.push(route.request().headers()["idempotency-key"] ?? "");
+      contentUploadCorrelations.push(route.request().headers()["x-correlation-id"] ?? "");
+      contentUploadBodies.push(route.request().postDataBuffer()?.toString("latin1") ?? "");
+      if (contentUploadKeys.length === 1) {
+        await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { message: "تعذر تأكيد الحفظ؛ أعد المحاولة." } }) });
+        return;
+      }
+      const raw = route.request().postDataBuffer()?.toString("latin1") ?? "";
+      const id = raw.match(/name="id"\r\n\r\n([^\r\n]+)/)?.[1] ?? "";
+      createdContent = { id, kind: "BANNER", titleAr: "مختارات الاختبار", bodyAr: "", mediaUri: "http://localhost/content.png", targetType: "INFO", state: "DRAFT", startsAt: "2099-01-01T00:00:00Z", ordinal: 0, version: 1, createdByActorId: "actor-operator", createdAt: "2098-01-01T00:00:00Z", updatedAt: "2098-01-01T00:00:00Z" };
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ content: createdContent, idempotentReplay: false }) });
+      return;
+    }
+    const search = new URL(route.request().url()).searchParams.get("search");
+    const items = search && createdContent?.id === search ? [createdContent] : [{ id: "content-1", kind: "BANNER", titleAr: "مختارات الأسبوع", bodyAr: "اكتشف الجديد", state: "DRAFT", version: 1 }];
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items }) });
   });
   await page.route("**/api/marketing/analytics**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [] }) });
@@ -261,10 +434,119 @@ test("marketing resource pages keep promotions and discovery content separate", 
   await page.goto("/marketing/content");
   await expect(page.getByTestId("marketing-content-workspace")).toBeVisible();
   await expect(page.getByText("مختارات الأسبوع")).toBeVisible();
+  await page.getByText("إنشاء محتوى اكتشاف", { exact: true }).click();
   await expect(page.getByLabel("ملف صورة المحتوى")).toHaveAttribute("required", "");
+  await expect(page.getByLabel("اسم المنشئ أو المصوّر")).toBeVisible();
+  await expect(page.getByLabel("بيان الإذن أو الترخيص")).toBeVisible();
+  await expect(page.getByLabel("أقرّ بوجود إذن يسمح بعرض هذه الصورة")).toBeVisible();
   await expect(page.getByLabel("نوع وجهة المحتوى")).toHaveValue("INFO");
   await expect(page.getByLabel("مدينة خدمة المحتوى")).toContainText("صنعاء");
   await expect(page.getByTestId("marketing-promotions-workspace")).toHaveCount(0);
+  await page.getByLabel("عنوان المحتوى").fill("مختارات الاختبار");
+  await page.getByLabel("ملف صورة المحتوى").setInputFiles({ name: "content.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") });
+  await page.getByLabel("اسم المنشئ أو المصوّر").fill("Photo Studio");
+  await page.getByLabel("مصدر الصورة").fill("Photo Studio original artwork");
+  await page.getByLabel("بيان الإذن أو الترخيص").fill("Permission granted for platform display");
+  await page.getByLabel("أقرّ بوجود إذن يسمح بعرض هذه الصورة").check();
+  await page.getByRole("button", { name: "إنشاء مسودة المحتوى" }).click();
+  await expect(page.getByText("تعذر تأكيد الحفظ؛ أعد المحاولة.")).toBeVisible();
+  await page.getByRole("button", { name: "التحقق / إعادة محاولة الإنشاء" }).click();
+  await expect(page.getByText("تم إنشاء المحتوى وقراءته كمسودة من سجل DSH. انشره من السجل عندما يصبح جاهزًا.")).toBeVisible();
+  expect(contentUploadKeys).toHaveLength(2);
+  expect(contentUploadKeys[1]).toBe(contentUploadKeys[0]);
+  expect(contentUploadCorrelations[1]).toBe(contentUploadCorrelations[0]);
+  const contentID = (contentUploadBodies[0] ?? "").match(/name="id"\r\n\r\n([^\r\n]+)/)?.[1] ?? "";
+  expect(contentUploadBodies[1]).toContain(contentID);
+  expect(contentUploadBodies[1]).toContain('name="id"');
+  expect(contentUploadBodies[1]).toContain("Photo Studio");
+  expect(contentUploadBodies[1]).toContain('name="rightsAttested"');
+  expect(contentUploadBodies[1]).toContain("true");
+});
+
+test("marketing create recovery reconciles promotions and resumes content with the same image after reload", async ({ page }) => {
+  let promotionPostCount = 0;
+  let promotionId = "";
+  const promotionIdempotencyKeys: string[] = [];
+  let contentPostCount = 0;
+  let contentId = "";
+  let createdContent: (Record<string, unknown> & { id: string }) | null = null;
+  const contentIdempotencyKeys: string[] = [];
+  const contentCorrelations: string[] = [];
+  const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+  await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "marketing"]);
+  await page.route("**/api/marketing/promotions**", async (route) => {
+    if (route.request().method() === "POST") {
+      promotionPostCount += 1;
+      const body = route.request().postDataJSON() as { id: string; startsAt: string };
+      promotionId = body.id;
+      promotionIdempotencyKeys.push(route.request().headers()["idempotency-key"] ?? "");
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { message: "تعذر تأكيد الحفظ؛ أعد المحاولة." } }) });
+      return;
+    }
+    const search = new URL(route.request().url()).searchParams.get("search");
+    const promotions = search === promotionId && promotionId
+      ? [{ id: promotionId, code: "RESTORE10", nameAr: "عرض الاستعادة", descriptionAr: "", kind: "PERCENTAGE", valueMinor: 10, fundingSource: "MERCHANT", state: "DRAFT", startsAt: "2099-01-01T00:00:00Z", redeemedCount: 0, version: 1, createdByActorId: "actor-operator", createdAt: "2098-01-01T00:00:00Z", updatedAt: "2098-01-01T00:00:00Z" }]
+      : [];
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ promotions }) });
+  });
+  await page.route("**/api/marketing/content**", async (route) => {
+    if (route.request().method() === "POST") {
+      contentPostCount += 1;
+      contentIdempotencyKeys.push(route.request().headers()["idempotency-key"] ?? "");
+      contentCorrelations.push(route.request().headers()["x-correlation-id"] ?? "");
+      const raw = route.request().postDataBuffer()?.toString("latin1") ?? "";
+      contentId = raw.match(/name="id"\r\n\r\n([^\r\n]+)/)?.[1] ?? "";
+      if (contentPostCount === 1) {
+        await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { message: "تعذر تأكيد الحفظ؛ أعد المحاولة." } }) });
+        return;
+      }
+      createdContent = { id: contentId, kind: "BANNER", titleAr: "محتوى الاستعادة", bodyAr: "", mediaUri: "http://localhost/content.png", targetType: "INFO", state: "DRAFT", startsAt: "2099-01-01T00:00:00Z", ordinal: 0, version: 1, createdByActorId: "actor-operator", createdAt: "2098-01-01T00:00:00Z", updatedAt: "2098-01-01T00:00:00Z" };
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ content: createdContent, idempotentReplay: false }) });
+      return;
+    }
+    const search = new URL(route.request().url()).searchParams.get("search");
+    const items = search && createdContent?.id === search ? [createdContent] : [];
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items }) });
+  });
+  await page.route("**/api/service-cities**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cities: [{ id: "city-sanaa", displayNameAr: "صنعاء", active: true, version: 1 }] }) });
+  });
+
+  await page.goto("/marketing/promotions");
+  await page.getByText("إنشاء عرض جديد", { exact: true }).click();
+  await page.getByLabel("رمز العرض", { exact: true }).fill("RESTORE10");
+  await page.getByLabel("اسم العرض").fill("عرض الاستعادة");
+  await page.getByRole("button", { name: "إنشاء مسودة العرض" }).click();
+  await expect(page.getByText("تعذر تأكيد الحفظ؛ أعد المحاولة.")).toBeVisible();
+  expect(promotionPostCount).toBe(1);
+  await page.reload();
+  await expect(page.getByText("تمت قراءة العرض المنشأ من سجل DSH؛ استعيدت نتيجته دون إنشاء نسخة أخرى.")).toBeVisible();
+  expect(promotionPostCount).toBe(1);
+  expect(await page.evaluate(() => window.sessionStorage.getItem("bthwani.control.marketing.promotion-create.v1.actor-operator"))).toBeNull();
+  expect(promotionIdempotencyKeys).toHaveLength(1);
+
+  await page.goto("/marketing/content");
+  await page.getByText("إنشاء محتوى اكتشاف", { exact: true }).click();
+  await page.getByLabel("عنوان المحتوى").fill("محتوى الاستعادة");
+  await page.getByLabel("ملف صورة المحتوى").setInputFiles({ name: "content.png", mimeType: "image/png", buffer: image });
+  await page.getByLabel("اسم المنشئ أو المصوّر").fill("Photo Studio");
+  await page.getByLabel("مصدر الصورة").fill("Photo Studio original artwork");
+  await page.getByLabel("بيان الإذن أو الترخيص").fill("Permission granted for platform display");
+  await page.getByLabel("أقرّ بوجود إذن يسمح بعرض هذه الصورة").check();
+  await page.getByRole("button", { name: "إنشاء مسودة المحتوى" }).click();
+  await expect(page.getByText("تعذر تأكيد الحفظ؛ أعد المحاولة.")).toBeVisible();
+  expect(contentPostCount).toBe(1);
+  await page.reload();
+  await expect(page.getByText(/لم يظهر المحتوى في السجل بعد/)).toBeVisible();
+  await expect(page.getByLabel("عنوان المحتوى")).toHaveValue("محتوى الاستعادة");
+  await page.getByLabel("ملف صورة المحتوى").setInputFiles({ name: "content.png", mimeType: "image/png", buffer: image });
+  await page.getByRole("button", { name: "التحقق / إعادة محاولة الإنشاء" }).click();
+  await expect(page.getByText("تم إنشاء المحتوى وقراءته كمسودة من سجل DSH. انشره من السجل عندما يصبح جاهزًا.")).toBeVisible();
+  expect(contentPostCount).toBe(2);
+  expect(contentIdempotencyKeys).toHaveLength(2);
+  expect(contentIdempotencyKeys[1]).toBe(contentIdempotencyKeys[0]);
+  expect(contentCorrelations[1]).toBe(contentCorrelations[0]);
+  expect(await page.evaluate(() => window.sessionStorage.getItem("bthwani.control.marketing.content-create.v1.actor-operator"))).toBeNull();
 });
 
 test("workspace shell exposes nested breadcrumbs and the current resource", async ({ page }) => {
@@ -305,9 +587,77 @@ test("mobile workspace navigation restores focus and account menu owns appearanc
 
 test("operator direct navigation to access exposes the canonical access capability", async ({ page }) => {
   await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
+  await page.route("**/api/access/operator-profiles**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 25, nextCursor: "" }) });
+  });
+  await page.route("**/api/access/operators**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 10, nextCursor: "" }) });
+  });
   await page.goto("/access");
-  await expect(page.getByRole("heading", { name: "مشغّلو لوحة التحكم والصلاحيات" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "ملفات المشغّلين والوصول والصلاحيات" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "إنشاء ملف مشغّل" })).toBeVisible();
+  await page.getByRole("button", { name: "الوصول والصلاحيات", exact: true }).click();
   await expect(page.getByRole("heading", { name: "قائمة المشغّلين وصلاحياتهم" })).toBeVisible();
+});
+
+test("operator profile is created, reviewed, admitted, and invited in separate steps", async ({ page }) => {
+  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
+  const profileId = "oprof_browser_review";
+  const actorId = "act_operator_browser_review";
+  const phoneE164 = "+96777000123";
+  const initialName = "محمود أحمد";
+  const reviewedName = "محمود أحمد علي الدوبحي";
+  const writes: Record<string, unknown>[] = [];
+  let profile: { id: string; actorId?: string; fullNameAr: string; phoneE164: string; roleEnabled?: boolean; securityEnabled?: boolean; activatedAt?: string; state: string; version: number } | null = null;
+
+  await page.route("**/api/access/operator-profiles**", async (route) => {
+    const request = route.request();
+    if (request.method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: profile ? [profile] : [], limit: 25, nextCursor: "" }) });
+      return;
+    }
+    const body = request.postDataJSON() as Record<string, unknown>;
+    writes.push(body);
+    if (new URL(request.url()).pathname === "/api/access/operator-profiles") {
+      profile = { id: profileId, fullNameAr: String(body.fullNameAr), phoneE164: String(body.phoneE164), state: "pending_review", version: 1 };
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ profile, idempotentReplay: false }) });
+      return;
+    }
+    if (body.action === "update-profile" && profile) profile = { ...profile, fullNameAr: String(body.fullNameAr), state: "pending_review", version: profile.version + 1 };
+    else if (body.action === "approve" && profile) profile = { ...profile, state: "approved", version: profile.version + 1 };
+    else if (body.action === "grant" && profile) profile = { ...profile, actorId, roleEnabled: true, securityEnabled: true, state: "admitted", version: profile.version + 1 };
+    else if (body.action === "invitation" && profile) {
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ profile, enrollmentToken: { code: "operator-enrollment-proof-code-123456", maskedPhone: "+967••••0123", role: "operator", expiresAt: "2099-01-01T00:00:00.000Z" } }) });
+      return;
+    } else {
+      await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: { code: "INVALID_INPUT" } }) });
+      return;
+    }
+    await route.fulfill({ status: body.action === "grant" ? 201 : 200, contentType: "application/json", body: JSON.stringify({ profile, role: { actorId, role: "operator", actorCreated: true, roleCreated: true }, idempotentReplay: false }) });
+  });
+
+  await page.goto("/access");
+  await page.locator("#operator-profile-name").fill(initialName);
+  await page.locator("#operator-profile-phone").fill(phoneE164);
+  await page.getByRole("button", { name: "حفظ الملف للمراجعة" }).click();
+  await expect(page.locator(`#operator-profile-name-${profileId}`)).toHaveValue(initialName);
+  await expect(page.getByText("بانتظار مراجعة الملف")).toBeVisible();
+  await page.locator(`#operator-profile-name-${profileId}`).fill(reviewedName);
+  await page.getByRole("button", { name: "حفظ الملف", exact: true }).click();
+  await page.getByRole("button", { name: "اعتماد الملف", exact: true }).click();
+  await expect(page.getByText("اعتُمد الملف. لم يُمنح دور المشغّل بعد.")).toBeVisible();
+  await page.getByRole("button", { name: "منح دور المشغّل", exact: true }).click();
+  await expect(page.getByText("مُنح دور المشغّل بعد الاعتماد. إصدار الدعوة هو الخطوة التالية.")).toBeVisible();
+  await page.getByRole("button", { name: "إصدار دعوة التفعيل", exact: true }).click();
+  await expect(page.getByText("operator-enrollment-proof-code-123456", { exact: true })).toBeVisible();
+  await expect(page.getByText("+967••••0123", { exact: true })).toBeVisible();
+  expect(writes).toEqual([
+    { fullNameAr: initialName, phoneE164 },
+    { action: "update-profile", fullNameAr: reviewedName, phoneE164, expectedVersion: 1 },
+    { action: "approve", expectedVersion: 2 },
+    { action: "grant", expectedVersion: 3 },
+    { action: "invitation" },
+  ]);
 });
 
 test("operator access keeps phone discovery separate from actorId mutation", async ({ page }) => {
@@ -344,6 +694,7 @@ test("operator access keeps phone discovery separate from actorId mutation", asy
     await route.fulfill({ status: 204 });
   });
   await page.goto("/access");
+  await page.getByRole("button", { name: "الوصول والصلاحيات", exact: true }).click();
   await page.getByRole("button", { name: "إدارة الحساب" }).click();
   await expect(page.getByLabel("رقم هاتف المشغّل")).toHaveValue("+96777000102");
   await expect(page.getByText("act_operator_canonical")).toHaveCount(0);
@@ -373,6 +724,52 @@ test("Field center reads DSH eligibility and routes operational controls to the 
   expect(mutationBody).toMatchObject({ actorId: "act_field_admitted", action: "disable", expectedVersion: 2, reason: "تجميد أهلية الميدان" });
 });
 
+test("legacy Field role with a missing profile is suspended before Identity access is already disabled", async ({ page }) => {
+  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
+  let admissionState = "eligible";
+  let mutationBody: Record<string, unknown> | undefined;
+  await page.route("**/api/fields**", async (route) => {
+    if (route.request().method() === "POST") {
+      mutationBody = route.request().postDataJSON() as Record<string, unknown>;
+      admissionState = "suspended";
+      await route.fulfill({ status: 204 });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_field_legacy", phoneE164: "+96777000108", role: "field", enabled: false, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_legacy", actorId: "act_field_legacy", fullNameAr: null, requiresProfileReview: true, state: admissionState, version: 10, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
+  });
+  await page.goto("/fields");
+  await expect(page.getByText("الملف يحتاج استكمالًا ومراجعة")).toBeVisible();
+  await page.getByLabel("سبب الإجراء").fill("إيقاف حتى مراجعة الملف");
+  await page.getByRole("button", { name: "إيقاف التشغيل" }).click();
+  expect(mutationBody).toMatchObject({ actorId: "act_field_legacy", action: "disable", expectedVersion: 2, reason: "إيقاف حتى مراجعة الملف" });
+  await expect(page.getByRole("status")).toContainText("الهوية موقوفة");
+});
+
+test("legacy Captain profile review never offers role activation before review", async ({ page }) => {
+  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
+  let admissionState = "eligible";
+  let enabled = false;
+  let mutationBody: Record<string, unknown> | undefined;
+  await page.route("**/api/captains**", async (route) => {
+    if (route.request().method() === "POST") {
+      mutationBody = route.request().postDataJSON() as Record<string, unknown>;
+      admissionState = "suspended";
+      await route.fulfill({ status: 204 });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_captain_legacy", phoneE164: "+96777000109", role: "captain", enabled, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "cap_adm_legacy", actorId: "act_captain_legacy", fullNameAr: null, requiresProfileReview: true, state: admissionState, availabilityState: "unavailable", version: 10, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
+  });
+  await page.goto("/captains");
+  await expect(page.getByText("الملف يحتاج استكمالًا ومراجعة")).toBeVisible();
+  await page.getByLabel("سبب الإجراء").fill("إيقاف حتى مراجعة الملف");
+  await page.getByRole("button", { name: "إيقاف التشغيل" }).click();
+  expect(mutationBody).toMatchObject({ actorId: "act_captain_legacy", action: "disable", expectedVersion: 2, reason: "إيقاف حتى مراجعة الملف" });
+  enabled = false;
+  await page.getByLabel("سبب الإجراء").fill("استكمال الملف قبل الإعادة");
+  await expect(page.getByText("استكمل الملف واعتمده قبل إعادة التفعيل.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "إعادة التفعيل" })).toHaveCount(0);
+});
+
 test("Field reenrollment uses DSH eligibility and carries fresh actor, role, and admission versions", async ({ page }) => {
   await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
   let reenrollmentBody: Record<string, unknown> | undefined;
@@ -396,6 +793,54 @@ test("Field reenrollment uses DSH eligibility and carries fresh actor, role, and
     expectedAdmissionVersion: 8,
     reason: "استرداد جهاز الميدان",
   });
+});
+
+test("Captain reenrollment goes through DSH eligibility and verifies the Identity readback", async ({ page }) => {
+  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
+  let reauthorized = false;
+  let reenrollmentBody: Record<string, unknown> | undefined;
+  await page.route("**/api/captains**", async (route) => {
+    if (route.request().method() === "POST") {
+      reenrollmentBody = route.request().postDataJSON() as Record<string, unknown>;
+      reauthorized = true;
+      await route.fulfill({ status: 204 });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_captain_reenroll", phoneE164: "+96777000111", role: "captain", enabled: true, securityEnabled: true, activatedAt: reauthorized ? null : "2026-09-20T08:00:00.000Z", actorVersion: 4, roleVersion: reauthorized ? 3 : 2, admission: { id: "cap_adm_reenroll", actorId: "act_captain_reenroll", state: "eligible", availabilityState: "unavailable", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
+  });
+  await page.goto("/captains");
+  await page.getByLabel("سبب الإجراء").fill("استعادة وصول الكابتن");
+  await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
+  await expect(page.getByRole("status")).toContainText("تمت إجازة إعادة تسجيل الكابتن بعد تحقق DSH");
+  expect(reenrollmentBody).toMatchObject({
+    actorId: "act_captain_reenroll",
+    action: "reenroll",
+    expectedActorVersion: 4,
+    expectedRoleVersion: 2,
+    expectedAdmissionVersion: 8,
+    reason: "استعادة وصول الكابتن",
+  });
+  await expect(page.getByText("بانتظار التفعيل")).toBeVisible();
+  await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
+});
+
+test("Captain reenrollment reconciles a server error against the current Identity and DSH state", async ({ page }) => {
+  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
+  let reenrollmentReachedCanonicalWriter = false;
+  await page.route("**/api/captains**", async (route) => {
+    if (route.request().method() === "POST") {
+      reenrollmentReachedCanonicalWriter = true;
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "DEPENDENCY_UNAVAILABLE" } }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_captain_unknown_result", phoneE164: "+96777000113", role: "captain", enabled: true, securityEnabled: true, activatedAt: reenrollmentReachedCanonicalWriter ? null : "2026-09-20T08:00:00.000Z", actorVersion: 4, roleVersion: reenrollmentReachedCanonicalWriter ? 3 : 2, admission: { id: "cap_adm_unknown_result", actorId: "act_captain_unknown_result", state: "eligible", availabilityState: "unavailable", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
+  });
+  await page.goto("/captains");
+  await page.getByLabel("سبب الإجراء").fill("تسوية نتيجة إعادة التسجيل");
+  await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
+  await expect(page.locator("p.identity-error")).toContainText("أُعيد تحميل الحالة الكانونية قبل أي محاولة أخرى");
+  await expect(page.getByText("بانتظار التفعيل")).toBeVisible();
+  await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
 });
 
 test("Field reenrollment conflicts reload the canonical DSH-owned roster before retry", async ({ page }) => {
@@ -444,24 +889,14 @@ test("captain center owns DSH eligibility and operational availability", async (
   expect(mutationBody).toMatchObject({ actorId: "act_captain_admitted", action: "availability", available: false, expectedVersion: 7, reason: "تحديث توافر الكابتن" });
 });
 
-test("operator captain operations present Arabic state without backend identifiers", async ({ page }) => {
+test("Captain candidate profile is reviewed before Identity grants the app role", async ({ page }) => {
   await stubAuthenticatedSession(page);
-  await page.route("**/api/captains", async (route) => {
-    await route.fulfill({
-      status: 201,
-      contentType: "application/json",
-      body: JSON.stringify({
-        operation: "admit",
-        idempotentReplay: false,
-        admission: { id: "cap_adm_test", actorId: "act_captain_test", state: "eligible", availabilityState: "unavailable", version: 4 },
-      }),
-    });
-  });
-  await page.goto("/captains");
-  await page.getByLabel("هاتف الكابتن المراد قبوله").fill("+96777000105");
-  await page.getByRole("button", { name: "قبول الكابتن" }).click();
-  await expect(page.getByText("الحالة: مؤهل للتشغيل · التوفر: غير متاح حاليًا")).toBeVisible();
-  await expect(page.getByText("act_captain_test")).toHaveCount(0);
+  await exerciseReviewedDshCandidateFlow(page, "captain", "علي سالم", "علي سالم أحمد الصنعاني", "+96777000105");
+});
+
+test("legacy Captain profile completion and review leave access suspended", async ({ page }) => {
+  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
+  await exerciseLegacyDshProfileReview(page, "captain");
 });
 
 test("operator operations uses the DSH read model and resource actions", async ({ page }) => {
@@ -559,23 +994,14 @@ test("operator finance reads only the bounded COD cash-custody projection", asyn
   await expect(page.getByText("dsh-order-1")).toBeVisible();
 });
 
-test("operator admits a Field actor through the DSH-owned Field surface", async ({ page }) => {
+test("Field candidate profile is reviewed before Identity grants the app role", async ({ page }) => {
   await stubAuthenticatedSession(page);
-  let requestBody: Record<string, unknown> | undefined;
-  await page.route("**/api/fields", async (route) => {
-    requestBody = route.request().postDataJSON() as Record<string, unknown>;
-    await route.fulfill({
-      status: 201,
-      contentType: "application/json",
-      body: JSON.stringify({ admission: { id: "fld_adm_test", actorId: "act_field_test", state: "eligible", version: 2 }, idempotentReplay: false }),
-    });
-  });
-  await page.goto("/fields");
-  await expect(page.getByRole("heading", { name: "قبول ممثل ميداني" })).toBeVisible();
-  await page.getByLabel("هاتف الممثل الميداني").fill("+96777000104");
-  await page.getByRole("button", { name: "قبول الميدان" }).click();
-  await expect(page.getByText(/أعيدت قراءة حالة القبول: مؤهل لإنشاء الملفات/)).toBeVisible();
-  expect(requestBody).toEqual({ action: "admit", contactPhoneE164: "+96777000104" });
+  await exerciseReviewedDshCandidateFlow(page, "field", "سامي ناصر", "سامي ناصر محمد العريقي", "+96777000104");
+});
+
+test("legacy Field profile completion and review leave access suspended", async ({ page }) => {
+  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
+  await exerciseLegacyDshProfileReview(page, "field");
 });
 
 test("operator creates a DSH-owned joining case from prospective partner facts", async ({ page }) => {
@@ -628,6 +1054,56 @@ test("operator creates a DSH-owned joining case from prospective partner facts",
 
   await expect(page.getByRole("status")).toContainText("الحالة: مسودة");
   expect(requestBody).toEqual({ contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, firstStoreFulfillmentModes: ["CUSTOMER_PICKUP"] });
+});
+
+test("operator resumes an uncertain joining-case create with the same idempotency key after reload", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  const attempts: Array<{ idempotencyKey: string; correlationId: string; body: unknown }> = [];
+  const expectedBody = { contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, firstStoreFulfillmentModes: ["CUSTOMER_PICKUP"] };
+  const createdCase = { id: "join_retry", contactPhoneE164: expectedBody.contactPhoneE164, businessName: expectedBody.businessName, firstStoreName: expectedBody.firstStoreName, serviceCityId: expectedBody.serviceCityId, firstStoreVerticalId: expectedBody.firstStoreVerticalId, firstStoreFulfillmentModes: expectedBody.firstStoreFulfillmentModes, firstStoreLatitude: expectedBody.firstStoreLatitude, firstStoreLongitude: expectedBody.firstStoreLongitude, state: "draft", version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" };
+  await page.route("**/api/service-cities**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cities: [{ id: "sanaa", displayNameAr: "صنعاء", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
+  });
+  await page.route("**/api/catalog/verticals**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", catalogModel: "SHARED_CATALOG", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
+  });
+  await page.route("**/api/partners/joining-cases", async (route) => {
+    const request = route.request();
+    attempts.push({ idempotencyKey: request.headers()["idempotency-key"] ?? "", correlationId: request.headers()["x-correlation-id"] ?? "", body: request.postDataJSON() });
+    if (attempts.length === 1) {
+      await route.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ error: { code: "DSH_UNAVAILABLE" } }) });
+      return;
+    }
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ case: createdCase, idempotentReplay: true }) });
+  });
+  await page.route("**/api/partners/joining-cases/join_retry", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ case: createdCase, idempotentReplay: true }) });
+  });
+
+  await page.goto("/partners/new");
+  await page.getByLabel("رقم هاتف الشريك").fill("+967 77000100");
+  await page.getByLabel("الاسم القانوني للنشاط").fill("نشاط الاختبار");
+  await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
+  await page.getByLabel("مدينة المتجر الأول").selectOption("sanaa");
+  await page.getByLabel("الفئة الرئيسية").selectOption("grocery");
+  await page.getByLabel("خط عرض موقع المتجر").fill("15.369445");
+  await page.getByLabel("خط طول موقع المتجر").fill("44.191006");
+  await page.getByRole("checkbox", { name: "استلم بنفسك من المتجر" }).check();
+  await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();
+  await expect(page.getByText(/أعد المحاولة بالبيانات نفسها للتحقق بالمفتاح المحفوظ/)).toBeVisible();
+  await expect(page.getByLabel("رقم هاتف الشريك")).toBeDisabled();
+
+  await page.reload();
+  await expect(page.getByLabel("رقم هاتف الشريك")).toHaveValue("+96777000100");
+  await expect(page.getByRole("button", { name: "إعادة محاولة إنشاء الحالة" })).toBeEnabled();
+  await page.getByRole("button", { name: "إعادة محاولة إنشاء الحالة" }).click();
+  await expect(page).toHaveURL(/\/partners\/join_retry$/);
+
+  expect(attempts).toHaveLength(2);
+  expect(attempts[0]!.idempotencyKey).toMatch(/^partner_joining_case_create_/);
+  expect(attempts[1]!.idempotencyKey).toBe(attempts[0]!.idempotencyKey);
+  expect(attempts[1]!.correlationId).toBe(attempts[0]!.correlationId);
+  expect(attempts.map((attempt) => attempt.body)).toEqual([expectedBody, expectedBody]);
 });
 
 test("operator gets an actionable empty state when no active commerce vertical exists", async ({ page }) => {
@@ -711,14 +1187,14 @@ test("operator creates a canonical commerce vertical before onboarding partners"
   });
   await page.goto("/catalog/categories");
   await expect(page.getByLabel("المعرف البرمجي", { exact: true })).toHaveCount(0);
-  await page.getByText("إدارة الفئات الرئيسية", { exact: true }).click();
-  await page.getByRole("button", { name: "إضافة فئة رئيسية" }).click();
+  await page.getByRole("button", { name: "إعداد المجال التجاري" }).click();
+  await page.getByRole("button", { name: "إضافة مجال تجاري" }).click();
   await page.locator("#catalog-vertical-name-ar").fill("مطاعم");
   await page.locator("#catalog-vertical-name-en").fill("Restaurants");
   await page.locator("#catalog-vertical-model").selectOption("STORE_LOCAL_CATALOG");
   await page.locator("#catalog-vertical-reason").fill("إنشاء فئة جديدة للاختبار");
-  await page.getByRole("button", { name: "إضافة فئة رئيسية" }).last().click();
-  await expect(page.getByRole("status")).toContainText("تم حفظ الفئة الرئيسية: مطاعم.");
+  await page.getByRole("button", { name: "إضافة مجال تجاري" }).click();
+  await expect(page.getByRole("status")).toContainText("تم حفظ المجال التجاري: مطاعم.");
   await expect(page.getByRole("status")).not.toContainText("vertical_0123456789abcdef0123456789abcdef");
   expect(requestBody).toEqual({ nameAr: "مطاعم", nameEn: "Restaurants", catalogModel: "STORE_LOCAL_CATALOG", active: true, reason: "إنشاء فئة جديدة للاختبار" });
 });
@@ -731,8 +1207,15 @@ test("operator creates a product category under its commerce vertical", async ({
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "vertical_0123456789abcdef0123456789abcdef", nameAr: "بقالات", nameEn: "Groceries", catalogModel: "SHARED_CATALOG", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
   });
   await page.route("**/api/catalog/categories**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/attribute-rules")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ rules: [] }) });
+      return;
+    }
     if (route.request().method() === "GET") {
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories: [] }) });
+      const detail = url.pathname.endsWith("/category_0123456789abcdef0123456789abcdef");
+      const category = { id: "category_0123456789abcdef0123456789abcdef", verticalId: "vertical_0123456789abcdef0123456789abcdef", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", pathAr: "قهوة", pathEn: "Coffee", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" };
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(detail ? { category } : { categories: [], nextCursor: "" }) });
       return;
     }
     requestBody = route.request().postDataJSON();
@@ -742,81 +1225,26 @@ test("operator creates a product category under its commerce vertical", async ({
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [] }) });
   });
   await page.goto("/catalog/categories?verticalId=vertical_0123456789abcdef0123456789abcdef");
-  await expect(page.getByRole("heading", { name: "إدارة الفئات" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "شجرة الفئات" })).toBeVisible();
-  await expect(page.getByText("خصائص المنتجات للفئة المحددة", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "إدارة الفئات" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "إدارة الفئات" }).getByRole("heading", { name: "الفئات", exact: true })).toBeVisible();
   await expect(page.locator(".catalog-taxonomy-workspace")).toHaveCount(1);
-  await expect(page.locator(".catalog-taxonomy-workspace > .access-card")).toHaveCount(0);
-  await expect(page.locator(".catalog-taxonomy-section")).toHaveCount(3);
+  await expect(page.locator(".catalog-taxonomy-workspace > .catalog-taxonomy-workbench")).toHaveCount(1);
+  await expect(page.locator(".catalog-taxonomy-section")).toHaveCount(1);
   await page.screenshot({ path: "test-results/catalog-taxonomy-workspace.png", fullPage: true });
   await expect(page.getByLabel("المعرف البرمجي للتصنيف", { exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "إضافة فئة", exact: true }).click();
-  await page.getByLabel("اسم الفئة بالعربية").fill("قهوة");
-  await page.getByLabel("اسم الفئة بالإنجليزية").fill("Coffee");
+  await page.getByRole("button", { name: "فئة رئيسية جديدة", exact: true }).click();
+  await page.getByLabel("الاسم بالعربية").fill("قهوة");
+  await page.getByLabel("الاسم بالإنجليزية").fill("Coffee");
   await page.locator("#catalog-category-reason").fill("إنشاء فئة جديدة للاختبار");
-  await page.getByRole("button", { name: "إضافة فئة", exact: true }).last().click();
-  await expect(page.getByRole("status")).toContainText("تم حفظ الفئة: قهوة.");
+  await page.locator(".catalog-category-editor").getByRole("button", { name: "إضافة الفئة", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("تمت إضافة «قهوة».");
+  await expect(page.getByRole("heading", { name: "قهوة", exact: true })).toBeVisible();
+  await expect(page.getByText("خصائص المنتجات وقواعد هذه الفئة", { exact: true })).toBeVisible();
   await expect(page.getByRole("status")).not.toContainText("category_0123456789abcdef0123456789abcdef");
   expect(requestBody).toEqual({ verticalId: "vertical_0123456789abcdef0123456789abcdef", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", active: true, reason: "إنشاء فئة جديدة للاختبار" });
 });
 
-test("operator replaces a product primary image and gallery through the canonical media mutation", async ({ page }) => {
-  await stubAuthenticatedSession(page);
-  const product = {
-    id: "product_media_test",
-    verticalId: "grocery",
-    scope: "SHARED",
-    canonicalName: "قهوة الصور",
-    brand: null,
-    storeId: null,
-    active: true,
-    version: 1,
-    createdAt: "2026-09-12T00:00:00.000Z",
-    updatedAt: "2026-09-12T00:00:00.000Z",
-    variants: [{ id: "variant_media_test", productId: "product_media_test", title: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", active: true, version: 1, identifiers: [{ type: "SKU", value: "MEDIA-TEST" }], attributes: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }],
-    categoryIds: ["coffee"],
-    attributes: [],
-    media: [{ uri: "https://example.com/coffee.jpg", role: "primary", ordinal: 0 }],
-  } as const;
-  let mediaRequest: unknown;
-  await page.route("**/api/catalog/verticals**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", catalogModel: "SHARED_CATALOG", active: true, version: 1, createdAt: product.createdAt, updatedAt: product.updatedAt }] }) });
-  });
-  await page.route("**/api/catalog/categories**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories: [{ id: "coffee", verticalId: "grocery", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", active: true, version: 1, createdAt: product.createdAt, updatedAt: product.updatedAt }] }) });
-  });
-  await page.route("**/api/catalog/product-registry**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [{ id: product.id, verticalId: product.verticalId, canonicalName: product.canonicalName, brand: product.brand, active: product.active, version: product.version, variantCount: product.variants.length, categoryIds: product.categoryIds, primaryImageUri: product.media[0]?.uri, createdAt: product.createdAt, updatedAt: product.updatedAt }], nextCursor: "" }) });
-  });
-  await page.route("**/api/catalog/products/product_media_test", async (route) => {
-    if (route.request().method() === "GET") {
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(product) });
-      return;
-    }
-    if (route.request().method() === "PUT") {
-      mediaRequest = route.request().postDataJSON();
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ product: { ...product, version: 2, media: mediaRequest && typeof mediaRequest === "object" && "media" in mediaRequest ? (mediaRequest as { media: unknown }).media : product.media }, idempotentReplay: false }) });
-      return;
-    }
-    await route.fallback();
-  });
-
-  await page.goto("/catalog/products");
-  await page.getByRole("row", { name: /قهوة الصور/ }).getByRole("button", { name: "تفاصيل وتعديل" }).click();
-  await expect(page.getByLabel("رابط الصورة الأساسية")).toHaveValue("https://example.com/coffee.jpg");
-  await page.getByLabel("رابط الصورة الأساسية").fill("https://example.com/coffee-updated.jpg");
-  await page.getByLabel("صور المعرض").fill("https://example.com/coffee-gallery-1.jpg\nhttps://example.com/coffee-gallery-2.jpg");
-  await page.getByRole("button", { name: "حفظ الصور" }).click();
-
-  await expect(page.getByRole("status")).toContainText("تم حفظ صور المنتج.");
-  expect(mediaRequest).toEqual({ media: [
-    { uri: "https://example.com/coffee-updated.jpg", role: "primary", ordinal: 0 },
-    { uri: "https://example.com/coffee-gallery-1.jpg", role: "gallery", ordinal: 1 },
-    { uri: "https://example.com/coffee-gallery-2.jpg", role: "gallery", ordinal: 2 },
-  ] });
-});
-
-test("operator uploads a real product image through the catalog media control", async ({ page }) => {
+test("operator replaces the primary product image and adds a gallery image through canonical media upload", async ({ page }) => {
   await stubAuthenticatedSession(page);
   const product = {
     id: "product_media_upload_test",
@@ -832,38 +1260,86 @@ test("operator uploads a real product image through the catalog media control", 
     variants: [{ id: "variant_media_upload_test", productId: "product_media_upload_test", title: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", active: true, version: 1, identifiers: [{ type: "SKU", value: "MEDIA-UPLOAD-TEST" }], attributes: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }],
     categoryIds: ["coffee"],
     attributes: [],
-    media: [{ uri: "https://example.com/coffee.jpg", role: "primary", ordinal: 0 }],
-  } as const;
-  let uploadContentType = "";
-  let uploadBody = "";
+    media: [] as Array<{ uri: string; role: "primary" | "gallery"; ordinal: number }>,
+  };
+  let currentProduct = product;
+  const uploadCalls: Array<{ role: string; filename: string; expectedVersion: string; idempotencyKey: string; creator: string; attested: string }> = [];
+  async function enterImageRights() {
+    await page.getByLabel("اسم المنشئ أو المصوّر").fill("فريق الاختبار");
+    await page.getByLabel("مصدر الصورة", { exact: true }).fill("صورة تجريبية مملوكة لفريق الاختبار");
+    await page.getByLabel("بيان الإذن أو الترخيص").fill("إذن خطي يسمح بعرض الصورة في الكتالوج");
+    await page.getByLabel("أقرّ بوجود إذن يسمح بعرض هذه الصورة").check();
+  }
   await page.route("**/api/catalog/verticals**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", catalogModel: "SHARED_CATALOG", active: true, version: 1, createdAt: product.createdAt, updatedAt: product.updatedAt }] }) });
   });
   await page.route("**/api/catalog/categories**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories: [{ id: "coffee", verticalId: "grocery", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", active: true, version: 1, createdAt: product.createdAt, updatedAt: product.updatedAt }] }) });
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/attribute-rules")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ rules: [] }) });
+      return;
+    }
+    const category = { id: "coffee", verticalId: "grocery", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", pathAr: "قهوة", pathEn: "Coffee", active: true, version: 1, createdAt: product.createdAt, updatedAt: product.updatedAt };
+    if (url.pathname.endsWith("/coffee")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ category }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories: [category], nextCursor: "" }) });
   });
   await page.route("**/api/catalog/product-registry**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [{ id: product.id, verticalId: product.verticalId, canonicalName: product.canonicalName, brand: product.brand, active: product.active, version: product.version, variantCount: product.variants.length, categoryIds: product.categoryIds, primaryImageUri: product.media[0]?.uri, createdAt: product.createdAt, updatedAt: product.updatedAt }], nextCursor: "" }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [{ id: currentProduct.id, verticalId: currentProduct.verticalId, canonicalName: currentProduct.canonicalName, brand: currentProduct.brand, active: currentProduct.active, version: currentProduct.version, variantCount: currentProduct.variants.length, categoryIds: currentProduct.categoryIds, primaryImageUri: currentProduct.media.find((media) => media.role === "primary")?.uri ?? null, createdAt: currentProduct.createdAt, updatedAt: currentProduct.updatedAt }], nextCursor: "" }) });
   });
   await page.route("**/api/catalog/products/product_media_upload_test", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(product) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(currentProduct) });
   });
   await page.route("**/api/catalog/products/product_media_upload_test/media", async (route) => {
-    uploadContentType = route.request().headers()["content-type"] ?? "";
-    uploadBody = route.request().postDataBuffer()?.toString("latin1") ?? "";
-    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ product: { ...product, version: 2, media: [{ uri: "http://127.0.0.1:18080/dsh/catalog/media/catalog/products/product_media_upload_test/uploads/test.png", role: "primary", ordinal: 0 }] }, idempotentReplay: false }) });
+    const headers = route.request().headers();
+    const body = route.request().postDataBuffer()?.toString("latin1") ?? "";
+    const role = body.match(/name="role"\r\n\r\n([^\r\n]+)/)?.[1] ?? "";
+    const filename = body.match(/name="file"; filename="([^"]+)"/)?.[1] ?? "";
+    const creatorBytes = body.match(/name="creator"\r\n\r\n([^\r\n]+)/)?.[1] ?? "";
+    const creator = Buffer.from(creatorBytes, "latin1").toString("utf8");
+    const attested = body.match(/name="rightsAttested"\r\n\r\n([^\r\n]+)/)?.[1] ?? "";
+    uploadCalls.push({ role, filename, expectedVersion: headers["x-expected-version"] ?? "", idempotencyKey: headers["idempotency-key"] ?? "", creator, attested });
+    const uri = `http://localhost:18080/dsh/catalog/media/catalog/products/${currentProduct.id}/uploads/${role}.png`;
+    const nextMedia = role === "primary"
+      ? [...currentProduct.media.filter((item) => item.role !== "primary"), { uri, role: "primary" as const, ordinal: 0 }]
+      : [...currentProduct.media, { uri, role: "gallery" as const, ordinal: currentProduct.media.filter((item) => item.role === "gallery").length + 1 }];
+    currentProduct = { ...currentProduct, version: currentProduct.version + 1, media: nextMedia };
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ product: currentProduct, idempotentReplay: false }) });
   });
 
   await page.goto("/catalog/products");
   await page.getByRole("row", { name: /قهوة رفع الصور/ }).getByRole("button", { name: "تفاصيل وتعديل" }).click();
-  await page.getByLabel("ملف الصورة").setInputFiles({ name: "coffee.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") });
+  await expect(page.getByLabel("رابط الصورة الأساسية")).toHaveCount(0);
+  const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+  await page.getByLabel("ملف الصورة").setInputFiles({ name: "coffee-primary.png", mimeType: "image/png", buffer: onePixelPng });
+  await enterImageRights();
   await page.getByRole("button", { name: "رفع الصورة وربطها" }).click();
-
   await expect(page.getByRole("status")).toContainText("تم رفع الصورة الأساسية وربطها بالمنتج.");
-  expect(uploadContentType).toContain("multipart/form-data");
-  expect(uploadBody).toContain('name="role"');
-  expect(uploadBody).toContain('name="file"');
-  expect(uploadBody).toContain("coffee.png");
+  await expect(page.locator(".catalog-media-preview")).toHaveCount(1);
+  await expect(page.locator(".catalog-media-preview")).toHaveAttribute("src", currentProduct.media[0]!.uri);
+  await page.getByLabel("موضع الصورة").selectOption("gallery");
+  await page.getByLabel("ملف الصورة").setInputFiles({ name: "coffee-gallery.png", mimeType: "image/png", buffer: onePixelPng });
+  await enterImageRights();
+  await page.getByRole("button", { name: "رفع الصورة وربطها" }).click();
+  await expect(page.getByRole("status")).toContainText("تم رفع الصورة وإضافتها إلى المعرض.");
+  await expect(page.locator(".catalog-media-preview")).toHaveCount(2);
+  expect(uploadCalls).toEqual([
+    { role: "primary", filename: "coffee-primary.png", expectedVersion: "1", idempotencyKey: expect.any(String), creator: "فريق الاختبار", attested: "true" },
+    { role: "gallery", filename: "coffee-gallery.png", expectedVersion: "2", idempotencyKey: expect.any(String), creator: "فريق الاختبار", attested: "true" },
+  ]);
+  expect(uploadCalls.every((call) => call.idempotencyKey.length >= 20)).toBe(true);
+  expect(currentProduct.media).toEqual([
+    { uri: "http://localhost:18080/dsh/catalog/media/catalog/products/product_media_upload_test/uploads/primary.png", role: "primary", ordinal: 0 },
+    { uri: "http://localhost:18080/dsh/catalog/media/catalog/products/product_media_upload_test/uploads/gallery.png", role: "gallery", ordinal: 1 },
+  ]);
+
+  await page.reload();
+  await page.getByRole("row", { name: /قهوة رفع الصور/ }).getByRole("button", { name: "تفاصيل وتعديل" }).click();
+  await expect(page.locator(".catalog-media-preview")).toHaveCount(2);
+  await expect(page.locator(".catalog-media-preview").nth(0)).toHaveAttribute("src", currentProduct.media[0]!.uri);
+  await expect(page.locator(".catalog-media-preview").nth(1)).toHaveAttribute("src", currentProduct.media[1]!.uri);
 });
 
 test("operator resumes a canonical joining case from the DSH queue", async ({ page }) => {
@@ -893,6 +1369,64 @@ test("operator resumes a canonical joining case from the DSH queue", async ({ pa
   await page.getByRole("link", { name: "فتح الحالة" }).click();
   await expect(page.getByRole("status").first()).toContainText("الحالة: قيد المراجعة");
   await expect(page.getByRole("status").first()).toContainText("نشاط مستعاد");
+});
+
+test("Partner reenrollment verifies DSH joining eligibility and the Identity readback", async ({ page }) => {
+  await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "partners"], true);
+  let reauthorized = false;
+  let reenrollmentBody: Record<string, unknown> | undefined;
+  await page.route("**/api/partners/roster/act_partner_reenroll", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        partner: { actorId: "act_partner_reenroll", phoneE164: "+96777000112", role: "partner", enabled: true, securityEnabled: true, activatedAt: reauthorized ? null : "2026-09-20T08:00:00.000Z", actorVersion: 6, roleVersion: reauthorized ? 4 : 3 },
+        joiningCase: { id: "join_partner_reenroll", partnerActorId: "act_partner_reenroll", state: "approved", version: 9, businessName: "نشاط مستعاد", firstStoreName: "متجر مستعاد", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"], createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" },
+      }),
+    });
+  });
+  await page.route("**/api/partners/roster", async (route) => {
+    reenrollmentBody = route.request().postDataJSON() as Record<string, unknown>;
+    reauthorized = true;
+    await route.fulfill({ status: 204 });
+  });
+  await page.goto("/partners/actors/act_partner_reenroll");
+  await page.getByLabel("سبب الإجراء").fill("استعادة وصول الشريك");
+  await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
+  await expect(page.getByRole("status")).toContainText("تمت إجازة إعادة تسجيل الشريك بعد تحقق DSH");
+  expect(reenrollmentBody).toMatchObject({
+    actorId: "act_partner_reenroll",
+    action: "reenroll",
+    expectedActorVersion: 6,
+    expectedRoleVersion: 3,
+    expectedJoiningCaseVersion: 9,
+    reason: "استعادة وصول الشريك",
+  });
+});
+
+test("Partner reenrollment reconciles a server error against the current Identity and DSH state", async ({ page }) => {
+  await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "partners"], true);
+  let reenrollmentReachedCanonicalWriter = false;
+  await page.route("**/api/partners/roster/act_partner_unknown_result", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        partner: { actorId: "act_partner_unknown_result", phoneE164: "+96777000114", role: "partner", enabled: true, securityEnabled: true, activatedAt: reenrollmentReachedCanonicalWriter ? null : "2026-09-20T08:00:00.000Z", actorVersion: 6, roleVersion: reenrollmentReachedCanonicalWriter ? 4 : 3 },
+        joiningCase: { id: "join_partner_unknown_result", partnerActorId: "act_partner_unknown_result", state: "approved", version: 9, businessName: "نشاط مستعاد", firstStoreName: "متجر مستعاد", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"], createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" },
+      }),
+    });
+  });
+  await page.route("**/api/partners/roster", async (route) => {
+    reenrollmentReachedCanonicalWriter = true;
+    await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "DEPENDENCY_UNAVAILABLE" } }) });
+  });
+  await page.goto("/partners/actors/act_partner_unknown_result");
+  await page.getByLabel("سبب الإجراء").fill("تسوية نتيجة إعادة التسجيل");
+  await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
+  await expect(page.locator("p.identity-error")).toContainText("أُعيد تحميل الحالة الكانونية قبل أي محاولة أخرى");
+  await expect(page.getByText("بانتظار التفعيل")).toBeVisible();
+  await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
 });
 
 test("operator approves joining terms with commission and settlement cadence", async ({ page }) => {

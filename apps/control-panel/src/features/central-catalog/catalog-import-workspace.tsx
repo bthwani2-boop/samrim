@@ -90,7 +90,6 @@ function normalizeRow(record: Record<string, unknown>, line: number): CatalogImp
   const brand = field(record, "brand");
   const identifierType = field(record, "identifierType").toUpperCase();
   const identifierValue = field(record, "identifierValue") || field(record, "barcode");
-  const imageUri = field(record, "imageUri") || field(record, "canonicalImageUrl");
   const sourceCategories = Array.isArray(record.categoryIds) ? record.categoryIds : field(record, "categoryIds").split(/[|;]/);
   const categoryIds = [...new Set(sourceCategories.map((item) => String(item).trim()).filter(Boolean))];
 
@@ -106,14 +105,7 @@ function normalizeRow(record: Record<string, unknown>, line: number): CatalogImp
   if (scope === "SHARED" && storeId) throw new Error(`السطر ${line}: storeId غير مسموح للمنتج المشترك.`);
   if (identifierValue && !["GTIN", "EAN", "UPC", "SKU"].includes(identifierType)) throw new Error(`السطر ${line}: identifierType مطلوب عند وجود معرّف.`);
   if (identifierValue && !/^[A-Za-z0-9._-]{1,128}$/.test(identifierValue)) throw new Error(`السطر ${line}: قيمة المعرّف غير صالحة.`);
-  if (imageUri) {
-    try {
-      const parsed = new URL(imageUri);
-      if (!(parsed.protocol === "http:" || parsed.protocol === "https:") || !parsed.hostname || parsed.username || parsed.password) throw new Error("invalid");
-    } catch {
-      throw new Error(`السطر ${line}: رابط الصورة يجب أن يكون http(s) بلا بيانات اعتماد.`);
-    }
-  }
+  if (field(record, "imageUri") || field(record, "canonicalImageUrl")) throw new Error(`السطر ${line}: الصور لا تُستورد كرابط. أكمل استيراد المنتج ثم ارفع ملف الصورة إلى الوسائط المركزية.`);
 
   const stableKey = identifierValue
     ? `identifier:${identifierType}:${identifierValue}`
@@ -131,7 +123,6 @@ function normalizeRow(record: Record<string, unknown>, line: number): CatalogImp
     baseUnit: baseUnit as CatalogImportRow["baseUnit"],
     categoryIds,
     ...(identifierValue ? { identifierType: identifierType as NonNullable<CatalogImportRow["identifierType"]>, identifierValue } : {}),
-    ...(imageUri ? { imageUri } : {}),
   };
 }
 

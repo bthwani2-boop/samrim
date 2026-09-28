@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const SchemaVersion = 23
+const SchemaVersion = 24
 
 type MigrationRecord struct {
 	Version int
@@ -40,6 +40,8 @@ var identitySchemaRequirements = []schemaRequirement{
 	{table: "identity_webauthn_ceremonies", columns: []string{"id", "kind", "actor_id", "challenge", "session_data", "expires_at", "consumed_at", "created_at"}, indexes: []string{"identity_webauthn_ceremonies_pkey", "identity_webauthn_ceremonies_challenge_uq", "identity_webauthn_ceremonies_expiry_idx"}},
 	{table: "identity_operator_recovery_credentials", columns: []string{"id", "actor_id", "credential_hash", "created_at", "used_at", "revoked_at"}, indexes: []string{"identity_operator_recovery_credentials_pkey", "identity_operator_recovery_credentials_active_uq", "identity_operator_recovery_credentials_hash_uq", "identity_operator_recovery_credentials_actor_idx"}},
 	{table: "identity_operator_permissions", columns: []string{"actor_id", "role", "permission", "enabled", "version", "changed_by_actor_id", "reason", "created_at", "updated_at"}, indexes: []string{"identity_operator_permissions_pkey"}},
+	{table: "identity_operator_profiles", columns: []string{"id", "full_name_ar", "phone_e164", "actor_id", "state", "version", "created_by_actor_id", "reviewed_by_actor_id", "reviewed_at", "created_at", "updated_at"}, indexes: []string{"identity_operator_profiles_pkey", "identity_operator_profiles_actor_id_key", "identity_operator_profiles_pending_phone_uq", "identity_operator_profiles_registry_idx"}},
+	{table: "identity_operator_profile_events", columns: []string{"id", "profile_id", "event_type", "acting_actor_id", "idempotency_key", "request_hash", "correlation_id", "created_at"}, indexes: []string{"identity_operator_profile_events_pkey", "identity_operator_profile_events_idempotency_key_key", "identity_operator_profile_events_profile_idx"}},
 }
 
 type queryer interface {

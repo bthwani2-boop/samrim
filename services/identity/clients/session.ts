@@ -170,6 +170,7 @@ export class IdentitySessionManager {
   private stateValue: IdentitySessionState = { kind: "signed_out", reason: "no_local_session" };
   private tokens: StoredTokens | null = null;
   private refreshInFlight: Promise<IdentitySessionState> | null = null;
+  private restoreInFlight: Promise<IdentitySessionState> | null = null;
   private readonly listeners = new Set<IdentitySessionListener>();
 
   constructor(
@@ -203,8 +204,12 @@ export class IdentitySessionManager {
   }
 
   async getUsableAccessToken(): Promise<string> {
-    const currentState = this.stateValue;
-    const currentToken = this.tokens?.accessToken;
+    let currentState = this.stateValue;
+    let currentToken = this.tokens?.accessToken;
+    if (currentState.kind === "restoring" || (currentState.kind === "authenticated" && !currentToken)) {
+      currentState = this.restoreInFlight ? await this.restoreInFlight : await this.restore();
+      currentToken = this.tokens?.accessToken;
+    }
     if (currentState.kind !== "authenticated" || !currentToken) {
       throw new Error("IDENTITY_ACCESS_TOKEN_UNAVAILABLE");
     }
@@ -231,6 +236,18 @@ export class IdentitySessionManager {
     if (this.stateValue.kind === "signed_out" && (this.stateValue.reason === "explicit_logout" || this.stateValue.reason === "recovery")) {
       return this.stateValue;
     }
+    if (this.restoreInFlight) return this.restoreInFlight;
+
+    const restoreOperation = Promise.resolve().then(() => this.restoreFromStorage());
+    this.restoreInFlight = restoreOperation;
+    try {
+      return await restoreOperation;
+    } finally {
+      if (this.restoreInFlight === restoreOperation) this.restoreInFlight = null;
+    }
+  }
+
+  private async restoreFromStorage(): Promise<IdentitySessionState> {
     this.transition({ kind: "restoring" });
 
     let raw: string | null;

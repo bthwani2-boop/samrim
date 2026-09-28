@@ -76,13 +76,6 @@ func FindCatalogImportMatch(ctx context.Context, db *sql.DB, input CatalogProduc
 	if err != nil {
 		return "", "", false, err
 	}
-	primaryImage := ""
-	for _, media := range product.Media {
-		if media.Role == "primary" {
-			primaryImage = media.URI
-			break
-		}
-	}
 	sameCategories := len(product.CategoryIDs) == len(input.CategoryIDs)
 	if sameCategories {
 		seen := make(map[string]bool, len(product.CategoryIDs))
@@ -97,7 +90,7 @@ func FindCatalogImportMatch(ctx context.Context, db *sql.DB, input CatalogProduc
 		}
 	}
 	variant := productVariantByID(product, variantID)
-	sameFacts := product.VerticalID == input.VerticalID && product.Scope == input.Scope && product.StoreID == input.StoreID && product.CanonicalName == input.CanonicalName && optionalProductFact(product.Brand) == optionalProductFact(input.Brand) && variant.Title == input.VariantTitle && variant.MeasurementKind == input.MeasurementKind && variant.BaseUnit == input.BaseUnit && sameCategories && primaryImage == input.ImageURI
+	sameFacts := product.VerticalID == input.VerticalID && product.Scope == input.Scope && product.StoreID == input.StoreID && product.CanonicalName == input.CanonicalName && optionalProductFact(product.Brand) == optionalProductFact(input.Brand) && variant.Title == input.VariantTitle && variant.MeasurementKind == input.MeasurementKind && variant.BaseUnit == input.BaseUnit && sameCategories
 	return productID, variantID, sameFacts, nil
 }
 

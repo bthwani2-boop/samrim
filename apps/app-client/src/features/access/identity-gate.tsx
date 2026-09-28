@@ -95,10 +95,6 @@ export default function IdentityGate() {
     return unsubscribe;
   }, []);
 
-  useEffect(() => {
-    if (state.kind === "signed_out" && returnTo && !authPromptVisible) setAuthPromptVisible(true);
-  }, [authPromptVisible, returnTo, state.kind]);
-
   const selectMode = useCallback((next: AuthMode) => {
     setMode(next);
     setCode("");
@@ -112,6 +108,13 @@ export default function IdentityGate() {
     setFocusedField(null);
     setLoginFailed(false);
   }, []);
+
+  useEffect(() => {
+    if (state.kind === "signed_out" && returnTo && !authPromptVisible) {
+      selectMode("login");
+      setAuthPromptVisible(true);
+    }
+  }, [authPromptVisible, returnTo, selectMode, state.kind]);
 
   const requestAuthentication = useCallback(() => {
     selectMode("login");

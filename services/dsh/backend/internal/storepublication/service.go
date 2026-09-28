@@ -175,28 +175,48 @@ func storeRegistryPermissions(state string) []string {
 	return []string{"partners"}
 }
 
-func (s *Service) ListPublished(ctx context.Context, serviceCityID string, latitude, longitude *float64) ([]postgres.PublicStoreRecord, error) {
-	var stores []postgres.PublicStoreRecord
-	var err error
-	if latitude != nil && longitude != nil {
-		stores, err = postgres.ListPublishedStoresNear(ctx, s.db, serviceCityID, *latitude, *longitude)
-	} else {
-		stores, err = postgres.ListPublishedStores(ctx, s.db, serviceCityID)
-	}
+func (s *Service) ListPublished(ctx context.Context, input postgres.PublicStoreListQuery) (postgres.PublicStorePage, error) {
+	page, err := postgres.ListPublishedStorePage(ctx, s.db, input)
 	if err != nil {
-		return nil, err
+		return postgres.PublicStorePage{}, err
 	}
-	visible := make([]postgres.PublicStoreRecord, 0, len(stores))
-	for _, store := range stores {
-		readiness, readinessErr := s.ReadinessForPartner(ctx, store.PartnerActorID)
-		if readinessErr != nil {
-			return nil, readinessErr
+	if len(page.Stores) == 0 {
+		return page, nil
+	}
+	actorIDs := make([]string, 0, len(page.Stores))
+	seenActorIDs := make(map[string]struct{}, len(page.Stores))
+	for _, store := range page.Stores {
+		actorID := strings.TrimSpace(store.PartnerActorID)
+		if actorID == "" {
+			continue
 		}
-		if readiness.Ready {
+		if _, exists := seenActorIDs[actorID]; exists {
+			continue
+		}
+		seenActorIDs[actorID] = struct{}{}
+		actorIDs = append(actorIDs, actorID)
+	}
+	if len(actorIDs) == 0 {
+		page.Stores = []postgres.PublicStoreRecord{}
+		return page, nil
+	}
+	roles, err := s.identity.ReadActorRoles(ctx, "partner", actorIDs)
+	if err != nil {
+		return postgres.PublicStorePage{}, fmt.Errorf("%w: %w", ErrPartnerIdentityUnavailable, err)
+	}
+	eligibleRoles := make(map[string]identityclient.ActorRoleView, len(roles.Items))
+	for _, role := range roles.Items {
+		eligibleRoles[role.ActorID] = role
+	}
+	visible := make([]postgres.PublicStoreRecord, 0, len(page.Stores))
+	for _, store := range page.Stores {
+		role, exists := eligibleRoles[store.PartnerActorID]
+		if exists && evaluatePartnerReadiness(role).Ready {
 			visible = append(visible, store)
 		}
 	}
-	return visible, nil
+	page.Stores = visible
+	return page, nil
 }
 
 func (s *Service) ReadPublished(ctx context.Context, storeID, serviceCityID string) (postgres.PublicStoreRecord, error) {

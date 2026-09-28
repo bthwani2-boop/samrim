@@ -54,9 +54,11 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/catalog/verticals", s.createVertical)
 	mux.HandleFunc("PATCH /dsh/catalog/verticals/{verticalId}", s.updateVertical)
 	mux.HandleFunc("GET /dsh/catalog/categories", s.listCategories)
+	mux.HandleFunc("GET /dsh/catalog/categories/{categoryId}", s.readCategory)
 	mux.HandleFunc("GET /dsh/public/catalog/categories/{categoryId}/attribute-rules", s.listPublicCategoryAttributeRules)
 	mux.HandleFunc("POST /dsh/catalog/categories", s.createCategory)
 	mux.HandleFunc("PATCH /dsh/catalog/categories/{categoryId}", s.updateCategory)
+	mux.HandleFunc("POST /dsh/catalog/categories/{categoryId}/media/upload", s.uploadCategoryMedia)
 	mux.HandleFunc("GET /dsh/catalog/attributes", s.listAttributeDefinitions)
 	mux.HandleFunc("POST /dsh/catalog/attributes", s.createAttributeDefinition)
 	mux.HandleFunc("GET /dsh/catalog/products", s.listProducts)
@@ -173,15 +175,40 @@ func (s *CatalogServer) updateVertical(w http.ResponseWriter, r *http.Request) {
 
 func (s *CatalogServer) listCategories(w http.ResponseWriter, r *http.Request) {
 	verticalID := strings.TrimSpace(r.URL.Query().Get("verticalId"))
-	if verticalID == "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "verticalId is required")
+	query := strings.TrimSpace(r.URL.Query().Get("query"))
+	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	if r.URL.Query().Has("includeInactive") {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "use the status filter for catalog Category state")
 		return
 	}
-	activeOnly := r.URL.Query().Get("includeInactive") != "true"
-	var items []postgres.CatalogCategoryRecord
+	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	limit, ok := catalogLimit(w, r)
+	if !ok {
+		return
+	}
+	if len(query) > 160 || (status != "" && status != "all" && status != "active" && status != "inactive") {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog Category search or status filter is invalid")
+		return
+	}
+	if len(cursor) > 2048 || (sort != "" && sort != "name_asc" && sort != "name_desc" && sort != "updated_desc") {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog Category cursor or sort order is invalid")
+		return
+	}
+	if verticalID == "" || len(verticalID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "verticalId is invalid")
+		return
+	}
+	if sort == "" {
+		sort = "name_asc"
+	}
+	if status == "" {
+		status = "active"
+	}
+	var page postgres.CatalogCategoryPage
 	var err error
-	if activeOnly {
-		items, err = s.service.ListCategories(r.Context(), verticalID, true)
+	if status == "active" {
+		page, err = s.service.ListCategoryPage(r.Context(), verticalID, query, sort, limit, cursor)
 	} else {
 		if !s.auth.Authorized(r) {
 			writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
@@ -192,17 +219,37 @@ func (s *CatalogServer) listCategories(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
 			return
 		}
-		items, err = s.service.ListCategoriesForOperator(r.Context(), acting, verticalID, false)
+		page, err = s.service.ListCategoryPageForOperator(r.Context(), acting, verticalID, query, status, sort, limit, cursor)
 	}
 	if err != nil {
 		writeCatalogError(w, err)
 		return
 	}
-	values := make([]contract.CatalogCategory, 0, len(items))
-	for _, item := range items {
-		values = append(values, toCatalogCategory(item))
+	values := make([]contract.CatalogCategoryListItem, 0, len(page.Categories))
+	for _, item := range page.Categories {
+		values = append(values, toCatalogCategoryListItem(item))
 	}
-	writeJSON(w, http.StatusOK, contract.CatalogCategoryListResponse{Categories: values})
+	writeJSON(w, http.StatusOK, contract.CatalogCategoryListResponse{Categories: values, NextCursor: page.NextCursor})
+}
+
+func (s *CatalogServer) readCategory(w http.ResponseWriter, r *http.Request) {
+	var item postgres.CatalogCategoryListItem
+	var err error
+	if s.auth.Authorized(r) {
+		acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+		if acting == "" {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+			return
+		}
+		item, err = s.service.ReadCategoryForOperator(r.Context(), acting, r.PathValue("categoryId"))
+	} else {
+		item, err = s.service.ReadCategory(r.Context(), r.PathValue("categoryId"))
+	}
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CatalogCategoryDetailResponse{Category: toCatalogCategoryListItem(item)})
 }
 
 func (s *CatalogServer) createCategory(w http.ResponseWriter, r *http.Request) {
@@ -241,6 +288,32 @@ func (s *CatalogServer) updateCategory(w http.ResponseWriter, r *http.Request) {
 	}
 	parentID := strings.TrimSpace(input.ParentCategoryID)
 	item, _, err := s.service.UpdateCategory(r.Context(), acting, r.PathValue("categoryId"), postgres.UpdateCatalogCategoryInput{ParentCategoryID: parentID, NameAr: input.NameAr, NameEn: input.NameEn, Active: input.Active, ExpectedVersion: input.ExpectedVersion}, idempotency, correlation, input.Reason)
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CatalogCategoryResponse{Category: toCatalogCategory(item)})
+}
+
+func (s *CatalogServer) uploadCategoryMedia(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting, correlation, idempotency, expected, ok := requiredVersionedCaseHeaders(w, r)
+	if !ok {
+		return
+	}
+	if s.media == nil {
+		writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "media storage is unavailable")
+		return
+	}
+	upload, ok := parseCatalogMediaUpload(w, r)
+	if !ok {
+		return
+	}
+	reason := strings.TrimSpace(r.FormValue("reason"))
+	item, err := s.service.UploadCatalogCategoryMedia(r.Context(), acting, catalog.CatalogCategoryMediaUploadInput{CategoryID: r.PathValue("categoryId"), IdempotencyKey: idempotency, CorrelationID: correlation, ExpectedVersion: expected, ContentType: upload.contentType, Provenance: upload.provenance, Bytes: upload.bytes, Reason: reason})
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -329,7 +402,7 @@ func (s *CatalogServer) listProductRegistry(w http.ResponseWriter, r *http.Reque
 		if product.PrimaryImageURI != nil {
 			image = *product.PrimaryImageURI
 		}
-		items = append(items, contract.CatalogProductRegistryItem{ID: product.ID, VerticalID: product.VerticalID, CanonicalName: product.CanonicalName, Brand: brand, Active: product.Active, Version: product.Version, VariantCount: product.VariantCount, CategoryIds: product.CategoryIDs, PrimaryImageUri: image, CreatedAt: product.CreatedAt, UpdatedAt: product.UpdatedAt})
+		items = append(items, contract.CatalogProductRegistryItem{ID: product.ID, VerticalID: product.VerticalID, CanonicalName: product.CanonicalName, Brand: brand, Active: product.Active, Version: product.Version, VariantCount: product.VariantCount, StoreCount: product.StoreCount, CategoryIds: product.CategoryIDs, PrimaryImageUri: image, CreatedAt: product.CreatedAt, UpdatedAt: product.UpdatedAt})
 	}
 	writeJSON(w, http.StatusOK, contract.CatalogProductRegistryResponse{Products: items, NextCursor: page.NextCursor})
 }
@@ -366,7 +439,7 @@ func (s *CatalogServer) createProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	request := input.CreateCatalogProductRequest
-	result, err := s.service.CreateCatalogProduct(r.Context(), acting, postgres.CatalogProductInput{VerticalID: request.VerticalID, Scope: request.Scope, StoreID: request.StoreID, CanonicalName: request.CanonicalName, Description: request.Description, Brand: optionalRequestString(request.Brand), MeasurementKind: string(request.MeasurementKind), BaseUnit: string(request.BaseUnit), VariantTitle: request.VariantTitle, CategoryIDs: request.CategoryIds, AttributeValues: catalogAttributeInputs(input.AttributeValues), VariantAttributeValues: catalogAttributeInputs(input.VariantAttributeValues), IdentifierType: request.IdentifierType, IdentifierValue: request.IdentifierValue, ImageURI: request.ImageUri}, idempotency, correlation)
+	result, err := s.service.CreateCatalogProduct(r.Context(), acting, postgres.CatalogProductInput{VerticalID: request.VerticalID, Scope: request.Scope, StoreID: request.StoreID, CanonicalName: request.CanonicalName, Description: request.Description, Brand: optionalRequestString(request.Brand), MeasurementKind: string(request.MeasurementKind), BaseUnit: string(request.BaseUnit), VariantTitle: request.VariantTitle, CategoryIDs: request.CategoryIds, AttributeValues: catalogAttributeInputs(input.AttributeValues), VariantAttributeValues: catalogAttributeInputs(input.VariantAttributeValues), IdentifierType: request.IdentifierType, IdentifierValue: request.IdentifierValue}, idempotency, correlation)
 	if err != nil {
 		switch {
 		case errors.Is(err, postgres.ErrCatalogCategoryNotFound):
@@ -398,7 +471,11 @@ func (s *CatalogServer) updateProduct(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.UpdateCatalogProduct(r.Context(), acting, r.PathValue("productId"), postgres.CatalogProductUpdateInput{VerticalID: input.VerticalID, Scope: input.Scope, StoreID: input.StoreID, CanonicalName: input.CanonicalName, Description: input.Description, Brand: optionalRequestString(input.Brand), Active: input.Active}, expected, idempotency, correlation)
+	if (input.CategoryIds != nil) != (input.AttributeValues != nil) || (input.CategoryIds != nil) != (input.VariantAttributeValues != nil) {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "categoryIds and both typed attribute arrays must be supplied together")
+		return
+	}
+	result, err := s.service.UpdateCatalogProduct(r.Context(), acting, r.PathValue("productId"), postgres.CatalogProductUpdateInput{VerticalID: input.VerticalID, Scope: input.Scope, StoreID: input.StoreID, CanonicalName: input.CanonicalName, Description: input.Description, Brand: optionalRequestString(input.Brand), Active: input.Active, CategoryIDs: input.CategoryIds, AttributeValues: catalogAttributeInputsFromContract(input.AttributeValues), VariantAttributeValues: catalogVariantAttributeValueSets(input.VariantAttributeValues)}, expected, idempotency, correlation)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -421,7 +498,7 @@ func (s *CatalogServer) replaceProductMedia(w http.ResponseWriter, r *http.Reque
 	}
 	media := make([]postgres.CatalogMediaInput, 0, len(input.Media))
 	for _, item := range input.Media {
-		media = append(media, postgres.CatalogMediaInput{URI: item.Uri, Role: item.Role, Ordinal: item.Ordinal})
+		media = append(media, postgres.CatalogMediaInput{AssetID: item.AssetID, Role: item.Role, Ordinal: item.Ordinal})
 	}
 	result, err := s.service.ReplaceCatalogProductMedia(r.Context(), acting, r.PathValue("productId"), media, expected, idempotency, correlation)
 	if err != nil {
@@ -448,7 +525,7 @@ func (s *CatalogServer) uploadProductMedia(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	result, err := s.service.UploadCatalogProductMedia(r.Context(), acting, catalog.CatalogMediaUploadInput{ProductID: r.PathValue("productId"), Role: upload.role, IdempotencyKey: idempotency, CorrelationID: correlation, ExpectedVersion: expected, ContentType: upload.contentType, Bytes: upload.bytes})
+	result, err := s.service.UploadCatalogProductMedia(r.Context(), acting, catalog.CatalogMediaUploadInput{ProductID: r.PathValue("productId"), Role: upload.role, IdempotencyKey: idempotency, CorrelationID: correlation, ExpectedVersion: expected, ContentType: upload.contentType, Provenance: upload.provenance, Bytes: upload.bytes})
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -469,7 +546,7 @@ func (s *CatalogServer) uploadStoreProductMedia(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
-	result, err := s.service.UploadStoreScopedProductMedia(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("productId"), catalog.CatalogMediaUploadInput{Role: upload.role, IdempotencyKey: idempotency, CorrelationID: correlation, ExpectedVersion: expected, ContentType: upload.contentType, Bytes: upload.bytes})
+	result, err := s.service.UploadStoreScopedProductMedia(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("productId"), catalog.CatalogMediaUploadInput{Role: upload.role, IdempotencyKey: idempotency, CorrelationID: correlation, ExpectedVersion: expected, ContentType: upload.contentType, Provenance: upload.provenance, Bytes: upload.bytes})
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -488,7 +565,7 @@ func (s *CatalogServer) replaceStoreProductMedia(w http.ResponseWriter, r *http.
 	}
 	media := make([]postgres.CatalogMediaInput, 0, len(input.Media))
 	for _, item := range input.Media {
-		media = append(media, postgres.CatalogMediaInput{URI: item.Uri, Role: item.Role, Ordinal: item.Ordinal})
+		media = append(media, postgres.CatalogMediaInput{AssetID: item.AssetID, Role: item.Role, Ordinal: item.Ordinal})
 	}
 	result, err := s.service.ReplaceStoreScopedProductMedia(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("productId"), media, expected, idempotency, correlation)
 	if err != nil {
@@ -501,11 +578,12 @@ func (s *CatalogServer) replaceStoreProductMedia(w http.ResponseWriter, r *http.
 type catalogMediaUpload struct {
 	role        string
 	contentType string
+	provenance  media.Provenance
 	bytes       []byte
 }
 
 func parseCatalogMediaUpload(w http.ResponseWriter, r *http.Request) (catalogMediaUpload, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, media.MaxUploadBytes+1)
+	r.Body = http.MaxBytesReader(w, r.Body, media.MaxUploadBytes+32*1024)
 	if err := r.ParseMultipartForm(media.MaxUploadBytes + 1); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a valid image upload is required")
 		return catalogMediaUpload{}, false
@@ -531,7 +609,15 @@ func parseCatalogMediaUpload(w http.ResponseWriter, r *http.Request) (catalogMed
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "only valid JPEG and PNG images are accepted")
 		return catalogMediaUpload{}, false
 	}
-	return catalogMediaUpload{role: role, contentType: contentType, bytes: bytes}, true
+	provenance := media.Provenance{
+		Creator: r.FormValue("creator"), SourceDescription: r.FormValue("sourceDescription"), SourceURI: r.FormValue("sourceUri"),
+		RightsStatement: r.FormValue("rightsStatement"), RightsURI: r.FormValue("rightsUri"), RightsAttested: strings.EqualFold(strings.TrimSpace(r.FormValue("rightsAttested")), "true"),
+	}
+	if err := provenance.Validate(); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "valid source and rights information with an explicit attestation is required")
+		return catalogMediaUpload{}, false
+	}
+	return catalogMediaUpload{role: role, contentType: contentType, provenance: provenance.Normalized(), bytes: bytes}, true
 }
 
 func (s *CatalogServer) readProductMedia(w http.ResponseWriter, r *http.Request) {
@@ -585,12 +671,26 @@ func (s *CatalogServer) listOffers(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "partner session is required")
 		return
 	}
-	items, err := s.service.ListOffersForPartner(r.Context(), bearerToken(r), r.PathValue("storeId"))
+	limit := 100
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 100 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "limit must be between 1 and 100")
+			return
+		}
+		limit = parsed
+	}
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	if len(cursor) > 2048 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "offer cursor is invalid")
+		return
+	}
+	page, err := s.service.ListOffersForPartner(r.Context(), bearerToken(r), r.PathValue("storeId"), limit, cursor)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
 	}
-	writeOffers(w, http.StatusOK, items)
+	writeOffers(w, http.StatusOK, page)
 }
 func (s *CatalogServer) createOffer(w http.ResponseWriter, r *http.Request) {
 	correlation, idempotency, _, ok := requiredPartnerOfferHeaders(w, r, false)
@@ -646,7 +746,10 @@ func toCommerceVertical(item postgres.CommerceVerticalRecord) contract.CommerceV
 	return contract.CommerceVertical{ID: item.ID, NameAr: item.NameAr, NameEn: item.NameEn, CatalogModel: model, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 func toCatalogCategory(item postgres.CatalogCategoryRecord) contract.CatalogCategory {
-	return contract.CatalogCategory{ID: item.ID, VerticalID: item.VerticalID, ParentCategoryID: item.ParentCategoryID, NameAr: item.NameAr, NameEn: item.NameEn, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return contract.CatalogCategory{ID: item.ID, VerticalID: item.VerticalID, ParentCategoryID: item.ParentCategoryID, NameAr: item.NameAr, NameEn: item.NameEn, ImageUri: item.ImageURI, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+}
+func toCatalogCategoryListItem(item postgres.CatalogCategoryListItem) contract.CatalogCategoryListItem {
+	return contract.CatalogCategoryListItem{ID: item.ID, VerticalID: item.VerticalID, ParentCategoryID: item.ParentCategoryID, NameAr: item.NameAr, NameEn: item.NameEn, ImageUri: item.ImageURI, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt, PathAr: item.PathAr, PathEn: item.PathEn}
 }
 func toCatalogProduct(item postgres.CatalogProductRecord) contract.CatalogProduct {
 	variants := make([]contract.CatalogVariant, 0, len(item.Variants))
@@ -663,7 +766,7 @@ func toCatalogProduct(item postgres.CatalogProductRecord) contract.CatalogProduc
 	}
 	media := make([]contract.CatalogMedia, 0, len(item.Media))
 	for _, m := range item.Media {
-		media = append(media, contract.CatalogMedia{Uri: m.URI, Role: m.Role, Ordinal: m.Ordinal})
+		media = append(media, contract.CatalogMedia{AssetID: m.AssetID, Uri: m.URI, Role: m.Role, Ordinal: m.Ordinal})
 	}
 	attributes := make([]contract.CatalogAttributeValue, 0, len(item.Attributes))
 	for _, attribute := range item.Attributes {
@@ -703,6 +806,10 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, postgres.ErrCatalogProductRegistryInvalidCursor):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog Product registry cursor, filters, status, or sort order are invalid")
+	case errors.Is(err, postgres.ErrCatalogCategoryInvalidCursor):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog Category cursor, filters, or sort order are invalid")
+	case errors.Is(err, postgres.ErrCatalogOfferInvalidCursor):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "StoreOffer cursor or page size is invalid")
 	case errors.Is(err, postgres.ErrCatalogProductNotFound), errors.Is(err, postgres.ErrCatalogVariantNotFound), errors.Is(err, postgres.ErrCatalogOfferNotFound), errors.Is(err, postgres.ErrCatalogCategoryNotFound), errors.Is(err, postgres.ErrCatalogVerticalNotFound), errors.Is(err, postgres.ErrCatalogProposalNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "catalog record was not found")
 	case errors.Is(err, postgres.ErrCatalogIdempotencyConflict):

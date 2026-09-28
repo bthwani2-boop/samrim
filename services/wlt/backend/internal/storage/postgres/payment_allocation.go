@@ -12,6 +12,7 @@ import (
 var (
 	ErrCustomerPaymentAllocationInvalidInput = errors.New("customer payment allocation input is invalid")
 	ErrCustomerPaymentAllocationNotFound     = errors.New("customer payment allocation was not found")
+	ErrInsufficientCustomerBalance           = errors.New("customer internal balance is insufficient")
 )
 
 type CustomerPaymentAllocationInput struct {
@@ -41,7 +42,7 @@ func validateCustomerPaymentAllocation(i CustomerPaymentAllocationInput) error {
 	if strings.TrimSpace(i.OrderID) == "" || strings.TrimSpace(i.StoreID) == "" || strings.TrimSpace(i.PartnerActorID) == "" || !isPartnerStoreCommissionMode(i.FulfillmentMode) || strings.TrimSpace(i.Currency) != "YER" || strings.TrimSpace(i.PolicyVersion) == "" || i.CustomerPayableMinor <= 0 {
 		return ErrCustomerPaymentAllocationInvalidInput
 	}
-	if i.FulfillmentMode != "BTHWANI_CAPTAIN" && (i.DeliveryFeeMinor != 0 || i.InternalBalanceAmountMinor != 0 || i.CashAmountMinor != i.CustomerPayableMinor) {
+	if i.FulfillmentMode != "BTHWANI_CAPTAIN" && i.DeliveryFeeMinor != 0 {
 		return ErrCustomerPaymentAllocationInvalidInput
 	}
 	for _, v := range []int64{i.SubtotalMinor, i.DeliveryFeeMinor, i.DiscountMinor, i.InternalBalanceAmountMinor, i.CashAmountMinor} {

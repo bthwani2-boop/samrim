@@ -1,12 +1,13 @@
 "use client";
 
-import type { DiscoveryContentAnalytics, DiscoveryContentView, OperatorDiscoveryContentRegistryResponse, OperatorPromotionRegistryResponse, PromotionView, ServiceCity } from "@bthwani/dsh";
+import { isMediaProvenanceInputValid, type CommerceVertical, type CreatePromotionRequest, type DiscoveryContentAnalytics, type DiscoveryContentView, type MediaProvenanceInput, type OperatorDiscoveryContentRegistryResponse, type OperatorPromotionRegistryResponse, type PromotionView, type ServiceCity } from "@bthwani/dsh";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { type MarketingResourceKey, workspaceMarketingResources } from "../../navigation/workspace-registry";
 import { useSession } from "../../session/session-provider";
 import { WorkspaceResourceIndex } from "../workspace/workspace-resource-index";
+import { appendMediaProvenance, CatalogMediaProvenanceFields } from "../central-catalog/catalog-media-provenance-fields";
 import styles from "./marketing-workspace.module.css";
 
 type ApiError = { error?: { message?: string } };
@@ -21,6 +22,139 @@ function futureDateInput(): string {
 
 function futureEndDateInput(): string {
   return new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString().slice(0, 16);
+}
+
+function emptyMediaProvenance(): MediaProvenanceInput {
+  return { creator: "", sourceDescription: "", rightsStatement: "", rightsAttested: false };
+}
+
+type PendingPromotionCreate = Readonly<{
+  id: string;
+  idempotencyKey: string;
+  correlationId: string;
+  body: string;
+}>;
+
+type PendingDiscoveryContentCreateInput = Readonly<{
+  id: string;
+  kind: "BANNER" | "CAROUSEL" | "SHORT_FORM";
+  titleAr: string;
+  bodyAr?: string;
+  targetType: "STORE" | "PRODUCT" | "CATEGORY" | "PROMOTION" | "INFO";
+  targetId?: string;
+  serviceCityId?: string;
+  startsAt: string;
+  endsAt?: string;
+  ordinal: number;
+  provenance: MediaProvenanceInput;
+  media: Readonly<{ name: string; size: number; type: string; lastModified: number; sha256: string }>;
+}>;
+
+type PendingDiscoveryContentCreate = Readonly<{
+  idempotencyKey: string;
+  correlationId: string;
+  input: PendingDiscoveryContentCreateInput;
+}>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readPendingPromotionCreate(raw: string | null): PendingPromotionCreate | null {
+  if (!raw) return null;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!isRecord(value) || typeof value.id !== "string" || value.id.length < 8 || value.id.length > 128 || typeof value.idempotencyKey !== "string" || value.idempotencyKey.length < 8 || value.idempotencyKey.length > 128 || typeof value.correlationId !== "string" || value.correlationId.length < 8 || value.correlationId.length > 128 || typeof value.body !== "string" || value.body.length > 8192) return null;
+    const body: unknown = JSON.parse(value.body);
+    if (!isRecord(body) || body.id !== value.id || typeof body.code !== "string" || typeof body.nameAr !== "string" || !["PERCENTAGE", "FIXED"].includes(String(body.kind)) || !Number.isSafeInteger(body.valueMinor) || body.fundingSource !== "MERCHANT" || typeof body.startsAt !== "string") return null;
+    return { id: value.id, idempotencyKey: value.idempotencyKey, correlationId: value.correlationId, body: value.body };
+  } catch {
+    return null;
+  }
+}
+
+function readPendingDiscoveryContentCreate(raw: string | null): PendingDiscoveryContentCreate | null {
+  if (!raw) return null;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!isRecord(value) || typeof value.idempotencyKey !== "string" || value.idempotencyKey.length < 8 || value.idempotencyKey.length > 128 || typeof value.correlationId !== "string" || value.correlationId.length < 8 || value.correlationId.length > 128 || !isRecord(value.input)) return null;
+    const input = value.input;
+    const provenance = input.provenance;
+    const media = input.media;
+    if (typeof input.id !== "string" || input.id.length < 8 || input.id.length > 128 || !["BANNER", "CAROUSEL", "SHORT_FORM"].includes(String(input.kind)) || typeof input.titleAr !== "string" || !input.titleAr.trim() || (input.bodyAr !== undefined && typeof input.bodyAr !== "string") || !["STORE", "PRODUCT", "CATEGORY", "PROMOTION", "INFO"].includes(String(input.targetType)) || (input.targetId !== undefined && typeof input.targetId !== "string") || (input.serviceCityId !== undefined && typeof input.serviceCityId !== "string") || typeof input.startsAt !== "string" || Number.isNaN(Date.parse(input.startsAt)) || (input.endsAt !== undefined && (typeof input.endsAt !== "string" || Number.isNaN(Date.parse(input.endsAt)))) || !Number.isSafeInteger(input.ordinal) || Number(input.ordinal) < 0 || !isRecord(provenance) || typeof provenance.creator !== "string" || typeof provenance.sourceDescription !== "string" || (provenance.sourceUri !== undefined && typeof provenance.sourceUri !== "string") || typeof provenance.rightsStatement !== "string" || (provenance.rightsUri !== undefined && typeof provenance.rightsUri !== "string") || typeof provenance.rightsAttested !== "boolean" || !isMediaProvenanceInputValid(provenance as unknown as MediaProvenanceInput) || !isRecord(media) || typeof media.name !== "string" || !media.name || !Number.isSafeInteger(media.size) || Number(media.size) < 1 || Number(media.size) > 10 * 1024 * 1024 || !["image/jpeg", "image/png"].includes(String(media.type).toLowerCase()) || !Number.isSafeInteger(media.lastModified) || Number(media.lastModified) < 0 || typeof media.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(media.sha256)) return null;
+    return {
+      idempotencyKey: value.idempotencyKey,
+      correlationId: value.correlationId,
+      input: {
+        id: input.id,
+        kind: input.kind as PendingDiscoveryContentCreateInput["kind"],
+        titleAr: input.titleAr,
+        ...(typeof input.bodyAr === "string" ? { bodyAr: input.bodyAr } : {}),
+        targetType: input.targetType as PendingDiscoveryContentCreateInput["targetType"],
+        ...(typeof input.targetId === "string" ? { targetId: input.targetId } : {}),
+        ...(typeof input.serviceCityId === "string" ? { serviceCityId: input.serviceCityId } : {}),
+        startsAt: input.startsAt,
+        ...(typeof input.endsAt === "string" ? { endsAt: input.endsAt } : {}),
+        ordinal: Number(input.ordinal),
+        provenance: provenance as unknown as MediaProvenanceInput,
+        media: {
+          name: media.name,
+          size: Number(media.size),
+          type: String(media.type).toLowerCase(),
+          lastModified: Number(media.lastModified),
+          sha256: media.sha256,
+        },
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+function clearPendingMarketingCreate(storageKey: string): void {
+  try {
+    window.sessionStorage.removeItem(storageKey);
+  } catch {
+    // A retained key can only replay the same immutable request.
+  }
+}
+
+function persistMarketingCreate(storageKey: string, value: PendingPromotionCreate | PendingDiscoveryContentCreate): boolean {
+  try {
+    window.sessionStorage.setItem(storageKey, JSON.stringify(value));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function dateTimeLocalValue(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
+async function sha256File(file: File): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+async function readPromotionById(id: string): Promise<PromotionView | null> {
+  const params = new URLSearchParams({ search: id, sort: "starts_desc", limit: "100" });
+  const response = await fetch("/api/marketing/promotions?" + params, { cache: "no-store" });
+  const body = await response.json().catch(() => null) as OperatorPromotionRegistryResponse | { error?: { message?: string } } | null;
+  if (!response.ok) throw new Error(body && "error" in body ? body.error?.message ?? "تعذر التحقق من نتيجة إنشاء العرض." : "تعذر التحقق من نتيجة إنشاء العرض.");
+  if (!body || !("promotions" in body) || !Array.isArray(body.promotions)) throw new Error("تعذر التحقق من القراءة الكانونية للعرض.");
+  return body.promotions.find((promotion) => promotion.id === id) ?? null;
+}
+
+async function readDiscoveryContentById(id: string): Promise<DiscoveryContentView | null> {
+  const params = new URLSearchParams({ search: id, sort: "created_desc", limit: "100" });
+  const response = await fetch("/api/marketing/content?" + params, { cache: "no-store" });
+  const body = await response.json().catch(() => null) as OperatorDiscoveryContentRegistryResponse | { error?: { message?: string } } | null;
+  if (!response.ok) throw new Error(body && "error" in body ? body.error?.message ?? "تعذر التحقق من نتيجة إنشاء المحتوى." : "تعذر التحقق من نتيجة إنشاء المحتوى.");
+  if (!body || !("items" in body) || !Array.isArray(body.items)) throw new Error("تعذر التحقق من القراءة الكانونية للمحتوى.");
+  return body.items.find((item) => item.id === id) ?? null;
 }
 
 async function readActiveServiceCities(): Promise<ReadonlyArray<ServiceCity>> {
@@ -79,6 +213,9 @@ export function MarketingOverview() {
 }
 
 export function MarketingPromotionsWorkspace() {
+  const { state: sessionState } = useSession();
+  const operatorActorId = sessionState.kind === "authenticated" && sessionState.identity.role === "operator" ? sessionState.identity.subject : "";
+  const pendingStorageKey = operatorActorId ? "bthwani.control.marketing.promotion-create.v1." + encodeURIComponent(operatorActorId) : "";
   const [registry, setRegistry] = useState<OperatorPromotionRegistryResponse | null>(null);
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
@@ -91,7 +228,12 @@ export function MarketingPromotionsWorkspace() {
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [pendingCreate, setPendingCreate] = useState<PendingPromotionCreate | null>(null);
+  const [loadedStorageKey, setLoadedStorageKey] = useState("");
+  const [storageError, setStorageError] = useState("");
+  const [attemptChecking, setAttemptChecking] = useState(false);
   const [promotionForm, setPromotionForm] = useState({ code: "", nameAr: "", descriptionAr: "", kind: "PERCENTAGE" as "PERCENTAGE" | "FIXED", valueMinor: "10", maxDiscountMinor: "", redemptionLimit: "", storeId: "", serviceCityId: "" });
+  const attemptReady = Boolean(pendingStorageKey) && loadedStorageKey === pendingStorageKey && !storageError;
 
   const load = useCallback(async (query: { search?: string; state?: string; sort?: "starts_desc" | "starts_asc"; cursor?: string } = {}) => {
     setLoading(true);
@@ -112,19 +254,127 @@ export function MarketingPromotionsWorkspace() {
   useEffect(() => { void load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل العروض.")); }, [load]);
   useEffect(() => { void readActiveServiceCities().then(setCities).catch(() => setMessage("تعذر قراءة مدن الخدمة؛ يمكنك إنشاء العرض دون تقييد مدينة.")); }, []);
 
+  useEffect(() => {
+    let active = true;
+    setPendingCreate(null);
+    setLoadedStorageKey("");
+    setStorageError("");
+    if (!pendingStorageKey) return () => { active = false; };
+    let raw: string | null;
+    try {
+      raw = window.sessionStorage.getItem(pendingStorageKey);
+    } catch {
+      setStorageError("تعذر قراءة محاولة إنشاء العرض المحفوظة؛ لن يُرسل طلب جديد قبل استعادة نتيجتها.");
+      setLoadedStorageKey(pendingStorageKey);
+      return () => { active = false; };
+    }
+    if (!raw) {
+      setLoadedStorageKey(pendingStorageKey);
+      return () => { active = false; };
+    }
+    const restored = readPendingPromotionCreate(raw);
+    if (!restored) {
+      setStorageError("تعذر التحقق من محاولة إنشاء العرض المحفوظة. افحص سجل العروض قبل بدء محاولة جديدة.");
+      setLoadedStorageKey(pendingStorageKey);
+      return () => { active = false; };
+    }
+    setPendingCreate(restored);
+    const input = JSON.parse(restored.body) as CreatePromotionRequest;
+    setPromotionForm({
+      code: input.code,
+      nameAr: input.nameAr,
+      descriptionAr: input.descriptionAr ?? "",
+      kind: input.kind,
+      valueMinor: String(input.valueMinor),
+      maxDiscountMinor: input.maxDiscountMinor ? String(input.maxDiscountMinor) : "",
+      redemptionLimit: input.redemptionLimit ? String(input.redemptionLimit) : "",
+      storeId: input.storeId ?? "",
+      serviceCityId: input.serviceCityId ?? "",
+    });
+    setStartsAt(dateTimeLocalValue(input.startsAt));
+    setAttemptChecking(true);
+    setMessage("استعدت محاولة إنشاء العرض؛ أتحقق من سجل DSH قبل إعادة الإرسال.");
+    void readPromotionById(restored.id)
+      .then((item) => {
+        if (!active) return;
+        if (item) {
+          clearPendingMarketingCreate(pendingStorageKey);
+          setPendingCreate(null);
+          setPromotionForm({ code: "", nameAr: "", descriptionAr: "", kind: "PERCENTAGE", valueMinor: "10", maxDiscountMinor: "", redemptionLimit: "", storeId: "", serviceCityId: "" });
+          setSearch(""); setAppliedSearch(""); setState("DRAFT"); setSort("starts_desc"); setCursor(""); setCursorStack([]);
+          setMessage("تمت قراءة العرض المنشأ من سجل DSH؛ استعيدت نتيجته دون إنشاء نسخة أخرى.");
+        } else {
+          setMessage("لم يظهر العرض في السجل بعد. أعد المحاولة للتحقق بالمفتاح والبيانات المحفوظة نفسيهما.");
+        }
+      })
+      .catch((error) => {
+        if (active) setMessage(error instanceof Error ? error.message : "تعذر التحقق من نتيجة إنشاء العرض.");
+      })
+      .finally(() => {
+        if (active) {
+          setAttemptChecking(false);
+          setLoadedStorageKey(pendingStorageKey);
+        }
+      });
+    return () => { active = false; };
+  }, [pendingStorageKey]);
+
   async function createPromotion() {
     setBusy(true);
     setMessage("");
     try {
-      const starts = new Date(startsAt);
-      if (!promotionForm.code.trim() || !promotionForm.nameAr.trim() || !Number.isSafeInteger(Number(promotionForm.valueMinor)) || Number(promotionForm.valueMinor) <= 0 || Number.isNaN(starts.getTime())) throw new Error("أكمل بيانات العرض الأساسية.");
-      const response = await fetch("/api/marketing/promotions", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ id: `promotion-${crypto.randomUUID()}`, code: promotionForm.code, nameAr: promotionForm.nameAr, descriptionAr: promotionForm.descriptionAr, kind: promotionForm.kind, valueMinor: Number(promotionForm.valueMinor), fundingSource: "MERCHANT", startsAt: starts.toISOString(), ...(promotionForm.maxDiscountMinor ? { maxDiscountMinor: Number(promotionForm.maxDiscountMinor) } : {}), ...(promotionForm.redemptionLimit ? { redemptionLimit: Number(promotionForm.redemptionLimit) } : {}), ...(promotionForm.storeId.trim() ? { storeId: promotionForm.storeId.trim() } : {}), ...(promotionForm.serviceCityId ? { serviceCityId: promotionForm.serviceCityId } : {}) }) });
-      const body = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(apiMessage(body));
+      if (!attemptReady) throw new Error(storageError || "جارٍ استعادة محاولة سابقة؛ انتظر التحقق من سجل DSH.");
+      let attempt: PendingPromotionCreate;
+      if (pendingCreate) {
+        attempt = pendingCreate;
+        const existing = await readPromotionById(attempt.id);
+        if (existing) {
+          clearPendingMarketingCreate(pendingStorageKey);
+          setPendingCreate(null);
+          setPromotionForm({ code: "", nameAr: "", descriptionAr: "", kind: "PERCENTAGE", valueMinor: "10", maxDiscountMinor: "", redemptionLimit: "", storeId: "", serviceCityId: "" });
+          setSearch(""); setAppliedSearch(""); setState("DRAFT"); setSort("starts_desc"); setCursor(""); setCursorStack([]);
+          await load({ search: "", state: "DRAFT", sort: "starts_desc", cursor: "" });
+          setMessage("تمت قراءة العرض المنشأ من سجل DSH؛ استعيدت نتيجته دون إنشاء نسخة أخرى.");
+          return;
+        }
+      } else {
+        const starts = new Date(startsAt);
+        if (!promotionForm.code.trim() || !promotionForm.nameAr.trim() || !Number.isSafeInteger(Number(promotionForm.valueMinor)) || Number(promotionForm.valueMinor) <= 0 || Number.isNaN(starts.getTime())) throw new Error("أكمل بيانات العرض الأساسية.");
+        const input: CreatePromotionRequest = {
+          id: "promotion-" + crypto.randomUUID(),
+          code: promotionForm.code,
+          nameAr: promotionForm.nameAr,
+          descriptionAr: promotionForm.descriptionAr,
+          kind: promotionForm.kind,
+          valueMinor: Number(promotionForm.valueMinor),
+          fundingSource: "MERCHANT",
+          startsAt: starts.toISOString(),
+          ...(promotionForm.maxDiscountMinor ? { maxDiscountMinor: Number(promotionForm.maxDiscountMinor) } : {}),
+          ...(promotionForm.redemptionLimit ? { redemptionLimit: Number(promotionForm.redemptionLimit) } : {}),
+          ...(promotionForm.storeId.trim() ? { storeId: promotionForm.storeId.trim() } : {}),
+          ...(promotionForm.serviceCityId ? { serviceCityId: promotionForm.serviceCityId } : {}),
+        };
+        attempt = { id: input.id, idempotencyKey: crypto.randomUUID(), correlationId: "marketing_promotion_create_" + crypto.randomUUID(), body: JSON.stringify(input) };
+        if (!persistMarketingCreate(pendingStorageKey, attempt)) throw new Error("تعذر حفظ مفتاح المحاولة؛ لم يُرسل طلب الإنشاء. أعد المحاولة بعد تفعيل تخزين الجلسة.");
+        setPendingCreate(attempt);
+      }
+      const response = await fetch("/api/marketing/promotions", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": attempt.idempotencyKey, "X-Correlation-ID": attempt.correlationId }, body: attempt.body });
+      const responseBody = await response.json().catch(() => null);
+      if (!response.ok) {
+        if (response.status < 500 && response.status !== 408) {
+          clearPendingMarketingCreate(pendingStorageKey);
+          setPendingCreate(null);
+        }
+        throw new Error(apiMessage(responseBody));
+      }
+      const created = await readPromotionById(attempt.id);
+      if (!created) throw new Error("تعذر تأكيد العرض من سجل DSH. بقيت المحاولة محفوظة لإعادة التحقق بالمفتاح نفسه.");
+      clearPendingMarketingCreate(pendingStorageKey);
+      setPendingCreate(null);
       setPromotionForm({ code: "", nameAr: "", descriptionAr: "", kind: "PERCENTAGE", valueMinor: "10", maxDiscountMinor: "", redemptionLimit: "", storeId: "", serviceCityId: "" });
       setSearch(""); setAppliedSearch(""); setState("DRAFT"); setSort("starts_desc"); setCursor(""); setCursorStack([]);
       await load({ search: "", state: "DRAFT", sort: "starts_desc", cursor: "" });
-      setMessage("تم إنشاء العرض كمسودة. انشره من السجل عندما يصبح جاهزًا.");
+      setMessage("تم إنشاء العرض وقراءته كمسودة من سجل DSH. انشره من السجل عندما يصبح جاهزًا.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "تعذر إنشاء العرض.");
     } finally {
@@ -149,21 +399,23 @@ export function MarketingPromotionsWorkspace() {
 
   return (
     <div className={styles.workspace} data-testid="marketing-promotions-workspace">
-      <details className="access-card">
+      {storageError ? <p className="managed-status managed-status-warning" role="alert">{storageError}</p> : null}
+      {pendingCreate ? <p className="managed-status managed-status-warning" role="status">{attemptChecking ? "جارٍ التحقق من نتيجة المحاولة المحفوظة في DSH…" : "المحاولة لم تُحسم بعد. الحقول مقفلة وستعيد المحاولة بالبيانات والمفتاح نفسيهما."}</p> : null}
+      <details className="access-card" open={Boolean(pendingCreate)}>
         <summary className={styles.createSummary}>إنشاء عرض جديد</summary>
         <div className="access-card-heading"><span className="step-chip">العروض</span><p className="eyebrow">تسويق مضبوط</p><h2>إنشاء عرض</h2><p className="muted">العرض يُنشأ كمسودة، ثم يُنشر بعد مراجعة النطاق والفترة.</p></div>
         <div className="workspace-form-grid">
-          <input aria-label="رمز العرض" placeholder="WELCOME10" value={promotionForm.code} onChange={(event) => setPromotionForm((current) => ({ ...current, code: event.target.value }))} />
-          <input aria-label="اسم العرض" placeholder="خصم العملاء الجدد" value={promotionForm.nameAr} onChange={(event) => setPromotionForm((current) => ({ ...current, nameAr: event.target.value }))} />
-          <input aria-label="وصف العرض" placeholder="خصم على أول طلب" value={promotionForm.descriptionAr} onChange={(event) => setPromotionForm((current) => ({ ...current, descriptionAr: event.target.value }))} />
-          <select aria-label="نوع العرض" value={promotionForm.kind} onChange={(event) => setPromotionForm((current) => ({ ...current, kind: event.target.value as typeof current.kind }))}><option value="PERCENTAGE">نسبة مئوية</option><option value="FIXED">قيمة ثابتة</option></select>
-          <input aria-label="قيمة العرض" inputMode="numeric" type="number" min="1" value={promotionForm.valueMinor} onChange={(event) => setPromotionForm((current) => ({ ...current, valueMinor: event.target.value }))} />
-          {promotionForm.kind === "PERCENTAGE" ? <input aria-label="الحد الأعلى للخصم" inputMode="numeric" type="number" min="1" placeholder="اختياري" value={promotionForm.maxDiscountMinor} onChange={(event) => setPromotionForm((current) => ({ ...current, maxDiscountMinor: event.target.value }))} /> : null}
-          <input aria-label="حد الاستخدام" inputMode="numeric" type="number" min="1" placeholder="اختياري" value={promotionForm.redemptionLimit} onChange={(event) => setPromotionForm((current) => ({ ...current, redemptionLimit: event.target.value }))} />
-          <input aria-label="معرّف المتجر" placeholder="اختياري: تقييد العرض بمتجر" value={promotionForm.storeId} onChange={(event) => setPromotionForm((current) => ({ ...current, storeId: event.target.value }))} />
-          <label className="field-label" htmlFor="promotion-city">مدينة الخدمة<select id="promotion-city" value={promotionForm.serviceCityId} onChange={(event) => setPromotionForm((current) => ({ ...current, serviceCityId: event.target.value }))}><option value="">كل المدن</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
-          <input aria-label="بداية العرض" type="datetime-local" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} />
-          <button className="button" type="button" disabled={busy} onClick={() => void createPromotion()}>إنشاء مسودة العرض</button>
+          <input aria-label="رمز العرض" placeholder="WELCOME10" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={promotionForm.code} onChange={(event) => setPromotionForm((current) => ({ ...current, code: event.target.value }))} />
+          <input aria-label="اسم العرض" placeholder="خصم العملاء الجدد" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={promotionForm.nameAr} onChange={(event) => setPromotionForm((current) => ({ ...current, nameAr: event.target.value }))} />
+          <input aria-label="وصف العرض" placeholder="خصم على أول طلب" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={promotionForm.descriptionAr} onChange={(event) => setPromotionForm((current) => ({ ...current, descriptionAr: event.target.value }))} />
+          <select aria-label="نوع العرض" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={promotionForm.kind} onChange={(event) => setPromotionForm((current) => ({ ...current, kind: event.target.value as typeof current.kind }))}><option value="PERCENTAGE">نسبة مئوية</option><option value="FIXED">قيمة ثابتة</option></select>
+          <input aria-label="قيمة العرض" inputMode="numeric" type="number" min="1" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={promotionForm.valueMinor} onChange={(event) => setPromotionForm((current) => ({ ...current, valueMinor: event.target.value }))} />
+          {promotionForm.kind === "PERCENTAGE" ? <input aria-label="الحد الأعلى للخصم" inputMode="numeric" type="number" min="1" placeholder="اختياري" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={promotionForm.maxDiscountMinor} onChange={(event) => setPromotionForm((current) => ({ ...current, maxDiscountMinor: event.target.value }))} /> : null}
+          <input aria-label="حد الاستخدام" inputMode="numeric" type="number" min="1" placeholder="اختياري" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={promotionForm.redemptionLimit} onChange={(event) => setPromotionForm((current) => ({ ...current, redemptionLimit: event.target.value }))} />
+          <input aria-label="معرّف المتجر" placeholder="اختياري: تقييد العرض بمتجر" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={promotionForm.storeId} onChange={(event) => setPromotionForm((current) => ({ ...current, storeId: event.target.value }))} />
+          <label className="field-label" htmlFor="promotion-city">مدينة الخدمة<select id="promotion-city" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={promotionForm.serviceCityId} onChange={(event) => setPromotionForm((current) => ({ ...current, serviceCityId: event.target.value }))}><option value="">كل المدن</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
+          <input aria-label="بداية العرض" type="datetime-local" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={startsAt} onChange={(event) => setStartsAt(event.target.value)} />
+          <button className="button" type="button" disabled={busy || attemptChecking || !attemptReady} onClick={() => void createPromotion()}>{pendingCreate ? "التحقق / إعادة محاولة الإنشاء" : "إنشاء مسودة العرض"}</button>
         </div>
       </details>
       <section className="access-card" aria-labelledby="marketing-promotions-title">
@@ -183,6 +435,9 @@ export function MarketingPromotionsWorkspace() {
 }
 
 export function MarketingContentWorkspace() {
+  const { state: sessionState } = useSession();
+  const operatorActorId = sessionState.kind === "authenticated" && sessionState.identity.role === "operator" ? sessionState.identity.subject : "";
+  const pendingStorageKey = operatorActorId ? "bthwani.control.marketing.content-create.v1." + encodeURIComponent(operatorActorId) : "";
   const [registry, setRegistry] = useState<OperatorDiscoveryContentRegistryResponse | null>(null);
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
@@ -200,15 +455,23 @@ export function MarketingContentWorkspace() {
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [pendingCreate, setPendingCreate] = useState<PendingDiscoveryContentCreate | null>(null);
+  const [loadedStorageKey, setLoadedStorageKey] = useState("");
+  const [storageError, setStorageError] = useState("");
+  const [attemptChecking, setAttemptChecking] = useState(false);
   const [contentForm, setContentForm] = useState({ titleAr: "", bodyAr: "", kind: "BANNER" as "BANNER" | "CAROUSEL" | "SHORT_FORM", targetType: "INFO" as "STORE" | "PRODUCT" | "CATEGORY" | "PROMOTION" | "INFO", targetId: "", serviceCityId: "", ordinal: "0" });
   const [targetOptions, setTargetOptions] = useState<ReadonlyArray<{ id: string; label: string; detail?: string }>>([]);
   const [targetSearch, setTargetSearch] = useState("");
+  const [categoryVerticals, setCategoryVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
+  const [categoryVerticalId, setCategoryVerticalId] = useState("");
   const [targetCursor, setTargetCursor] = useState("");
   const [targetCursorStack, setTargetCursorStack] = useState<ReadonlyArray<string>>([]);
   const [targetNextCursor, setTargetNextCursor] = useState("");
   const [targetLoading, setTargetLoading] = useState(false);
   const [targetMessage, setTargetMessage] = useState("");
   const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaProvenance, setMediaProvenance] = useState<MediaProvenanceInput>(emptyMediaProvenance());
+  const attemptReady = Boolean(pendingStorageKey) && loadedStorageKey === pendingStorageKey && !storageError;
   const load = useCallback(async (query: { search?: string; state?: string; kind?: string; sort?: "priority" | "created_desc"; cursor?: string } = {}) => {
     setLoading(true);
     const params = new URLSearchParams({ limit: "25", sort: query.sort ?? sort });
@@ -245,6 +508,18 @@ export function MarketingContentWorkspace() {
   useEffect(() => { void load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل محتوى الاكتشاف.")); }, [load]);
   useEffect(() => { void readActiveServiceCities().then(setCities).catch(() => setMessage("تعذر قراءة مدن الخدمة؛ يمكنك نشر المحتوى على كل المدن.")); }, []);
   useEffect(() => {
+    if (contentForm.targetType !== "CATEGORY") return;
+    const controller = new AbortController();
+    void fetch("/api/catalog/verticals", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const body = await response.json().catch(() => null) as { verticals?: ReadonlyArray<CommerceVertical> } | null;
+        if (!response.ok) throw new Error("تعذر قراءة المجالات التجارية.");
+        if (!controller.signal.aborted) setCategoryVerticals((body?.verticals ?? []).filter((item) => item.active && item.catalogModel === "SHARED_CATALOG"));
+      })
+      .catch((error) => { if (!controller.signal.aborted) setTargetMessage(error instanceof Error ? error.message : "تعذر قراءة المجالات التجارية."); });
+    return () => controller.abort();
+  }, [contentForm.targetType]);
+  useEffect(() => {
     if (contentForm.targetType === "INFO") {
       setTargetOptions([]);
       setTargetMessage("");
@@ -257,7 +532,10 @@ export function MarketingContentWorkspace() {
       setTargetLoading(false);
       return;
     }
-    if (["STORE", "PRODUCT", "PROMOTION"].includes(contentForm.targetType) && targetSearch.trim().length < 2) {
+    if (contentForm.targetType === "CATEGORY" && !categoryVerticalId) {
+      setTargetOptions([]); setTargetNextCursor(""); setTargetMessage("اختر المجال التجاري أولًا لعرض فئاته."); setTargetLoading(false); return;
+    }
+    if (["STORE", "PRODUCT", "PROMOTION", "CATEGORY"].includes(contentForm.targetType) && targetSearch.trim().length < 2) {
       setTargetOptions([]);
       setTargetNextCursor("");
       setTargetMessage("اكتب حرفين على الأقل للبحث في الوجهات المتاحة.");
@@ -268,7 +546,8 @@ export function MarketingContentWorkspace() {
     const controller = new AbortController();
     const params = new URLSearchParams({ targetType: contentForm.targetType });
     if (contentForm.serviceCityId) params.set("serviceCityId", contentForm.serviceCityId);
-    if (["STORE", "PRODUCT", "PROMOTION"].includes(contentForm.targetType)) params.set("query", targetSearch.trim());
+    if (["STORE", "PRODUCT", "PROMOTION", "CATEGORY"].includes(contentForm.targetType)) params.set("query", targetSearch.trim());
+    if (contentForm.targetType === "CATEGORY") params.set("verticalId", categoryVerticalId);
     if (targetCursor) params.set("cursor", targetCursor);
     setTargetLoading(true);
     setTargetMessage("");
@@ -288,42 +567,164 @@ export function MarketingContentWorkspace() {
         if (!controller.signal.aborted) setTargetLoading(false);
       });
     return () => controller.abort();
-  }, [contentForm.serviceCityId, contentForm.targetType, targetCursor, targetSearch]);
+  }, [categoryVerticalId, contentForm.serviceCityId, contentForm.targetType, targetCursor, targetSearch]);
+
+  useEffect(() => {
+    let active = true;
+    setPendingCreate(null);
+    setMediaFile(null);
+    setLoadedStorageKey("");
+    setStorageError("");
+    if (!pendingStorageKey) return () => { active = false; };
+    let raw: string | null;
+    try {
+      raw = window.sessionStorage.getItem(pendingStorageKey);
+    } catch {
+      setStorageError("تعذر قراءة محاولة إنشاء المحتوى المحفوظة؛ لن يُرسل طلب جديد قبل استعادة نتيجتها.");
+      setLoadedStorageKey(pendingStorageKey);
+      return () => { active = false; };
+    }
+    if (!raw) {
+      setLoadedStorageKey(pendingStorageKey);
+      return () => { active = false; };
+    }
+    const restored = readPendingDiscoveryContentCreate(raw);
+    if (!restored) {
+      setStorageError("تعذر التحقق من محاولة إنشاء المحتوى المحفوظة. افحص سجل المحتوى قبل بدء محاولة جديدة.");
+      setLoadedStorageKey(pendingStorageKey);
+      return () => { active = false; };
+    }
+    setPendingCreate(restored);
+    setContentForm({
+      titleAr: restored.input.titleAr,
+      bodyAr: restored.input.bodyAr ?? "",
+      kind: restored.input.kind,
+      targetType: restored.input.targetType,
+      targetId: restored.input.targetId ?? "",
+      serviceCityId: restored.input.serviceCityId ?? "",
+      ordinal: String(restored.input.ordinal),
+    });
+    setContentStartsAt(dateTimeLocalValue(restored.input.startsAt));
+    setContentEndsAt(restored.input.endsAt ? dateTimeLocalValue(restored.input.endsAt) : "");
+    setMediaProvenance(restored.input.provenance);
+    setAttemptChecking(true);
+    setMessage("استعدت محاولة إنشاء المحتوى؛ أتحقق من سجل DSH قبل إعادة الإرسال.");
+    void readDiscoveryContentById(restored.input.id)
+      .then((item) => {
+        if (!active) return;
+        if (item) {
+          clearPendingMarketingCreate(pendingStorageKey);
+          setPendingCreate(null);
+          setContentForm({ titleAr: "", bodyAr: "", kind: "BANNER", targetType: "INFO", targetId: "", serviceCityId: "", ordinal: "0" });
+          setMediaProvenance(emptyMediaProvenance());
+          setSearch(""); setAppliedSearch(""); setState("DRAFT"); setKind(""); setSort("priority"); setCursor(""); setCursorStack([]);
+          setMessage("تمت قراءة المحتوى المنشأ من سجل DSH؛ استعيدت نتيجته دون إنشاء نسخة أخرى.");
+        } else {
+          setMessage("لم يظهر المحتوى في السجل بعد. أعد اختيار الصورة نفسها للتحقق ببصمتها ثم أعد المحاولة بالمفتاح المحفوظ.");
+        }
+      })
+      .catch((error) => {
+        if (active) setMessage(error instanceof Error ? error.message : "تعذر التحقق من نتيجة إنشاء المحتوى.");
+      })
+      .finally(() => {
+        if (active) {
+          setAttemptChecking(false);
+          setLoadedStorageKey(pendingStorageKey);
+        }
+      });
+    return () => { active = false; };
+  }, [pendingStorageKey]);
 
   async function createContent() {
     setBusy(true);
     setMessage("");
     try {
-      const starts = new Date(contentStartsAt);
-      const ends = contentEndsAt ? new Date(contentEndsAt) : null;
-      if (!contentForm.titleAr.trim() || Number.isNaN(starts.getTime()) || !Number.isSafeInteger(Number(contentForm.ordinal)) || Number(contentForm.ordinal) < 0) throw new Error("أكمل عنوان المحتوى وتاريخه وترتيبه.");
-      if (!mediaFile) throw new Error("اختر صورة JPEG أو PNG للمحتوى.");
-      if (mediaFile.size > 10 * 1024 * 1024) throw new Error("حجم الصورة يجب ألا يتجاوز 10 ميجابايت.");
-      if (!["image/jpeg", "image/png"].includes(mediaFile.type.toLowerCase())) throw new Error("الصورة يجب أن تكون JPEG أو PNG.");
-      if (contentForm.targetType !== "INFO" && !targetOptions.some((option) => option.id === contentForm.targetId)) throw new Error("اختر وجهة من نتائج DSH الحالية قبل إنشاء المحتوى.");
-      if (ends && (Number.isNaN(ends.getTime()) || ends <= starts)) throw new Error("نهاية المحتوى يجب أن تكون بعد بدايته.");
+      if (!attemptReady) throw new Error(storageError || "جارٍ استعادة محاولة سابقة؛ انتظر التحقق من سجل DSH.");
+      let attempt: PendingDiscoveryContentCreate;
+      if (pendingCreate) {
+        attempt = pendingCreate;
+        const existing = await readDiscoveryContentById(attempt.input.id);
+        if (existing) {
+          clearPendingMarketingCreate(pendingStorageKey);
+          setPendingCreate(null);
+          setContentForm({ titleAr: "", bodyAr: "", kind: "BANNER", targetType: "INFO", targetId: "", serviceCityId: "", ordinal: "0" });
+          setMediaFile(null);
+          setMediaProvenance(emptyMediaProvenance());
+          setSearch(""); setAppliedSearch(""); setState("DRAFT"); setKind(""); setSort("priority"); setCursor(""); setCursorStack([]);
+          await load({ search: "", state: "DRAFT", kind: "", sort: "priority", cursor: "" });
+          setMessage("تمت قراءة المحتوى المنشأ من سجل DSH؛ استعيدت نتيجته دون إنشاء نسخة أخرى.");
+          return;
+        }
+        if (!mediaFile) throw new Error("لم يظهر المحتوى في السجل. أعد اختيار الصورة الأصلية أولًا لمطابقة بصمتها قبل إعادة المحاولة.");
+        if (mediaFile.size !== attempt.input.media.size || mediaFile.type.toLowerCase() !== attempt.input.media.type) throw new Error("الصورة المختارة لا تطابق المحاولة المحفوظة. اختر الملف الأصلي نفسه دون تغيير بقية البيانات.");
+        if (await sha256File(mediaFile) !== attempt.input.media.sha256) throw new Error("بصمة الصورة لا تطابق المحاولة المحفوظة. لم يُرسل طلب جديد؛ اختر الصورة الأصلية.");
+      } else {
+        const starts = new Date(contentStartsAt);
+        const ends = contentEndsAt ? new Date(contentEndsAt) : null;
+        if (!contentForm.titleAr.trim() || Number.isNaN(starts.getTime()) || !Number.isSafeInteger(Number(contentForm.ordinal)) || Number(contentForm.ordinal) < 0) throw new Error("أكمل عنوان المحتوى وتاريخه وترتيبه.");
+        if (!mediaFile) throw new Error("اختر صورة JPEG أو PNG للمحتوى.");
+        if (!isMediaProvenanceInputValid(mediaProvenance)) throw new Error("أكمل بيانات مصدر الصورة وبيان الحقوق وأكّد الإذن.");
+        if (mediaFile.size > 10 * 1024 * 1024) throw new Error("حجم الصورة يجب ألا يتجاوز 10 ميجابايت.");
+        if (!["image/jpeg", "image/png"].includes(mediaFile.type.toLowerCase())) throw new Error("الصورة يجب أن تكون JPEG أو PNG.");
+        if (contentForm.targetType !== "INFO" && !targetOptions.some((option) => option.id === contentForm.targetId)) throw new Error("اختر وجهة من نتائج DSH الحالية قبل إنشاء المحتوى.");
+        if (ends && (Number.isNaN(ends.getTime()) || ends <= starts)) throw new Error("نهاية المحتوى يجب أن تكون بعد بدايته.");
+        const media = { name: mediaFile.name, size: mediaFile.size, type: mediaFile.type.toLowerCase(), lastModified: mediaFile.lastModified, sha256: await sha256File(mediaFile) };
+        attempt = {
+          idempotencyKey: crypto.randomUUID(),
+          correlationId: "marketing_content_create_" + crypto.randomUUID(),
+          input: {
+            id: "content-" + crypto.randomUUID(),
+            kind: contentForm.kind,
+            titleAr: contentForm.titleAr.trim(),
+            ...(contentForm.bodyAr.trim() ? { bodyAr: contentForm.bodyAr.trim() } : {}),
+            targetType: contentForm.targetType,
+            ...(contentForm.targetId.trim() ? { targetId: contentForm.targetId.trim() } : {}),
+            ...(contentForm.serviceCityId ? { serviceCityId: contentForm.serviceCityId } : {}),
+            startsAt: starts.toISOString(),
+            ...(ends ? { endsAt: ends.toISOString() } : {}),
+            ordinal: Number(contentForm.ordinal),
+            provenance: mediaProvenance,
+            media,
+          },
+        };
+        if (!persistMarketingCreate(pendingStorageKey, attempt)) throw new Error("تعذر حفظ مفتاح المحاولة؛ لم يُرسل طلب الإنشاء. أعد المحاولة بعد تفعيل تخزين الجلسة.");
+        setPendingCreate(attempt);
+      }
+      const input = attempt.input;
       const form = new FormData();
-      form.append("id", `content-${crypto.randomUUID()}`);
-      form.append("kind", contentForm.kind);
-      form.append("titleAr", contentForm.titleAr.trim());
-      if (contentForm.bodyAr.trim()) form.append("bodyAr", contentForm.bodyAr.trim());
-      form.append("targetType", contentForm.targetType);
-      if (contentForm.targetId.trim()) form.append("targetId", contentForm.targetId.trim());
-      if (contentForm.serviceCityId) form.append("serviceCityId", contentForm.serviceCityId);
-      form.append("startsAt", starts.toISOString());
-      if (ends) form.append("endsAt", ends.toISOString());
-      form.append("ordinal", String(Number(contentForm.ordinal)));
-      form.append("file", mediaFile, mediaFile.name);
-      const response = await fetch("/api/marketing/content", { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: form });
-      const body = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(apiMessage(body));
+      form.append("id", input.id);
+      form.append("kind", input.kind);
+      form.append("titleAr", input.titleAr);
+      if (input.bodyAr) form.append("bodyAr", input.bodyAr);
+      form.append("targetType", input.targetType);
+      if (input.targetId) form.append("targetId", input.targetId);
+      if (input.serviceCityId) form.append("serviceCityId", input.serviceCityId);
+      form.append("startsAt", input.startsAt);
+      if (input.endsAt) form.append("endsAt", input.endsAt);
+      form.append("ordinal", String(input.ordinal));
+      form.append("file", mediaFile!, mediaFile!.name);
+      appendMediaProvenance(form, input.provenance);
+      const response = await fetch("/api/marketing/content", { method: "POST", headers: { "Idempotency-Key": attempt.idempotencyKey, "X-Correlation-ID": attempt.correlationId }, body: form });
+      const responseBody = await response.json().catch(() => null);
+      if (!response.ok) {
+        if (response.status < 500 && response.status !== 408) {
+          clearPendingMarketingCreate(pendingStorageKey);
+          setPendingCreate(null);
+        }
+        throw new Error(apiMessage(responseBody));
+      }
+      const created = await readDiscoveryContentById(input.id);
+      if (!created) throw new Error("تعذر تأكيد المحتوى من سجل DSH. بقيت المحاولة محفوظة لإعادة التحقق بالمفتاح نفسه.");
+      clearPendingMarketingCreate(pendingStorageKey);
+      setPendingCreate(null);
       setContentForm({ titleAr: "", bodyAr: "", kind: "BANNER", targetType: "INFO", targetId: "", serviceCityId: "", ordinal: "0" });
       setTargetSearch("");
       setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor("");
       setMediaFile(null);
+      setMediaProvenance(emptyMediaProvenance());
       setSearch(""); setAppliedSearch(""); setState("DRAFT"); setKind(""); setSort("priority"); setCursor(""); setCursorStack([]);
       await load({ search: "", state: "DRAFT", kind: "", sort: "priority", cursor: "" });
-      setMessage("تم إنشاء المحتوى كمسودة. انشره من السجل عندما يصبح جاهزًا.");
+      setMessage("تم إنشاء المحتوى وقراءته كمسودة من سجل DSH. انشره من السجل عندما يصبح جاهزًا.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "تعذر إنشاء المحتوى.");
     } finally {
@@ -348,37 +749,41 @@ export function MarketingContentWorkspace() {
 
   return (
     <div className={styles.workspace} data-testid="marketing-content-workspace">
-      <details className="access-card">
+      {storageError ? <p className="managed-status managed-status-warning" role="alert">{storageError}</p> : null}
+      {pendingCreate ? <p className="managed-status managed-status-warning" role="status">{attemptChecking ? "جارٍ التحقق من نتيجة المحاولة المحفوظة في DSH…" : mediaFile ? "المحاولة لم تُحسم بعد. البيانات مقفلة وستعاد الصورة والطلب بالمفتاح نفسيهما." : "استعيدت المحاولة دون الملف؛ تحقّق من السجل أولًا ثم اختر الصورة الأصلية لمطابقة بصمتها وإعادة المحاولة."}</p> : null}
+      <details className="access-card" open={Boolean(pendingCreate)}>
         <summary className={styles.createSummary}>إنشاء محتوى اكتشاف</summary>
         <div className="access-card-heading"><span className="step-chip">الاكتشاف</span><p className="eyebrow">محتوى منشور</p><h2>إنشاء بطاقة اكتشاف</h2><p className="muted">المحتوى العام لا يظهر إلا بعد نشره ومن خلال مسار DSH القانوني.</p></div>
         <div className="workspace-form-grid">
-          <input aria-label="عنوان المحتوى" placeholder="مختارات الأسبوع" value={contentForm.titleAr} onChange={(event) => setContentForm((current) => ({ ...current, titleAr: event.target.value }))} />
-          <input aria-label="نص المحتوى" placeholder="اكتشف الجديد في مدينتك" value={contentForm.bodyAr} onChange={(event) => setContentForm((current) => ({ ...current, bodyAr: event.target.value }))} />
-          <label className="field-label" htmlFor="marketing-content-kind">نوع المحتوى<select id="marketing-content-kind" aria-label="نوع المحتوى" value={contentForm.kind} onChange={(event) => setContentForm((current) => ({ ...current, kind: event.target.value as typeof current.kind }))}><option value="BANNER">بنر رئيسي</option><option value="CAROUSEL">شريحة كاروسيل</option><option value="SHORT_FORM">قصة قصيرة</option></select></label>
-          <label className="field-label" htmlFor="marketing-content-media">صورة المحتوى<input id="marketing-content-media" aria-label="ملف صورة المحتوى" type="file" accept="image/jpeg,image/png" required onChange={(event) => setMediaFile(event.target.files?.[0] ?? null)} /></label>
+          <input aria-label="عنوان المحتوى" placeholder="مختارات الأسبوع" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.titleAr} onChange={(event) => setContentForm((current) => ({ ...current, titleAr: event.target.value }))} />
+          <input aria-label="نص المحتوى" placeholder="اكتشف الجديد في مدينتك" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.bodyAr} onChange={(event) => setContentForm((current) => ({ ...current, bodyAr: event.target.value }))} />
+          <label className="field-label" htmlFor="marketing-content-kind">نوع المحتوى<select id="marketing-content-kind" aria-label="نوع المحتوى" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.kind} onChange={(event) => setContentForm((current) => ({ ...current, kind: event.target.value as typeof current.kind }))}><option value="BANNER">بنر رئيسي</option><option value="CAROUSEL">شريحة كاروسيل</option><option value="SHORT_FORM">قصة قصيرة</option></select></label>
+          <label className="field-label" htmlFor="marketing-content-media">صورة المحتوى<input id="marketing-content-media" aria-label="ملف صورة المحتوى" type="file" accept="image/jpeg,image/png" required disabled={busy || !attemptReady || Boolean(pendingCreate && mediaFile)} onChange={(event) => { setMediaFile(event.target.files?.[0] ?? null); if (!pendingCreate) setMediaProvenance(emptyMediaProvenance()); }} /></label><CatalogMediaProvenanceFields idPrefix="marketing-content-media" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={mediaProvenance} onChange={setMediaProvenance} />
           {mediaFile ? <p className="muted" data-testid="marketing-content-file">{mediaFile.name} · {(mediaFile.size / 1024).toFixed(0)} كيلوبايت</p> : <p className="muted">JPEG أو PNG، حتى 10 ميجابايت.</p>}
-          <label className="field-label" htmlFor="marketing-content-target">نوع الوجهة<select id="marketing-content-target" aria-label="نوع وجهة المحتوى" value={contentForm.targetType} onChange={(event) => { setTargetSearch(""); setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, targetType: event.target.value as typeof current.targetType, targetId: "" })); }}><option value="INFO">معلومات فقط</option><option value="STORE">متجر</option><option value="PRODUCT">منتج</option><option value="CATEGORY">فئة</option><option value="PROMOTION">عرض</option></select></label>
+          <label className="field-label" htmlFor="marketing-content-target">نوع الوجهة<select id="marketing-content-target" aria-label="نوع وجهة المحتوى" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.targetType} onChange={(event) => { setTargetSearch(""); setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setCategoryVerticalId(""); setContentForm((current) => ({ ...current, targetType: event.target.value as typeof current.targetType, targetId: "" })); }}><option value="INFO">معلومات فقط</option><option value="STORE">متجر</option><option value="PRODUCT">منتج</option><option value="CATEGORY">فئة</option><option value="PROMOTION">عرض</option></select></label>
           {contentForm.targetType !== "INFO" ? <>
-            <input aria-label="بحث في الوجهات" placeholder={`ابحث ${contentForm.targetType === "STORE" ? "عن متجر" : contentForm.targetType === "PRODUCT" ? "عن منتج" : contentForm.targetType === "PROMOTION" ? "عن عرض" : "لتصفية الوجهات"}`} value={targetSearch} onChange={(event) => { setTargetSearch(event.target.value); setTargetCursor(""); setTargetCursorStack([]); setTargetOptions([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, targetId: "" })); }} />
-            <label className="field-label" htmlFor="marketing-content-target-option">الوجهة المعتمدة<select id="marketing-content-target-option" aria-label="الوجهة المعتمدة" value={contentForm.targetId} disabled={targetLoading || targetOptions.length === 0} onChange={(event) => setContentForm((current) => ({ ...current, targetId: event.target.value }))}>
+            {contentForm.targetType === "CATEGORY" ? <label className="field-label" htmlFor="marketing-content-category-vertical">المجال التجاري<select id="marketing-content-category-vertical" aria-label="المجال التجاري للفئة" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={categoryVerticalId} onChange={(event) => { setCategoryVerticalId(event.target.value); setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, targetId: "" })); }}><option value="">اختر المجال التجاري</option>{categoryVerticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}</option>)}</select></label> : null}
+            <input aria-label="بحث في الوجهات" maxLength={128} placeholder={`ابحث ${contentForm.targetType === "STORE" ? "عن متجر" : contentForm.targetType === "PRODUCT" ? "عن منتج" : contentForm.targetType === "PROMOTION" ? "عن عرض" : "عن فئة"}`} disabled={busy || Boolean(pendingCreate) || !attemptReady} value={targetSearch} onChange={(event) => { setTargetSearch(event.target.value); setTargetCursor(""); setTargetCursorStack([]); setTargetOptions([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, targetId: "" })); }} />
+            <label className="field-label" htmlFor="marketing-content-target-option">الوجهة المعتمدة<select id="marketing-content-target-option" aria-label="الوجهة المعتمدة" value={contentForm.targetId} disabled={busy || Boolean(pendingCreate) || !attemptReady || targetLoading || targetOptions.length === 0} onChange={(event) => setContentForm((current) => ({ ...current, targetId: event.target.value }))}>
               <option value="">{targetLoading ? "جارٍ تحميل الوجهات…" : "اختر وجهة من بيانات DSH"}</option>
               {targetOptions.map((option) => <option key={option.id} value={option.id}>{option.detail ? `${option.label} · ${option.detail}` : option.label}</option>)}
             </select></label>
             {!["CATEGORY", "INFO"].includes(contentForm.targetType) ? <nav className={styles.pagination} aria-label="صفحات وجهات المحتوى"><button className="button button-quiet" type="button" disabled={targetLoading || targetCursorStack.length === 0} onClick={() => { const next = [...targetCursorStack]; setTargetCursor(next.pop() ?? ""); setTargetCursorStack(next); }}>السابق</button><span>{targetCursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={targetLoading || !targetNextCursor} onClick={() => { setTargetCursorStack((items) => [...items, targetCursor]); setTargetCursor(targetNextCursor); }}>تحميل المزيد</button></nav> : null}
+            {contentForm.targetType === "CATEGORY" ? <nav className={styles.pagination} aria-label="صفحات فئات المحتوى"><button className="button button-quiet" type="button" disabled={targetLoading || targetCursorStack.length === 0} onClick={() => { const next = [...targetCursorStack]; setTargetCursor(next.pop() ?? ""); setTargetCursorStack(next); }}>السابق</button><span>{targetCursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={targetLoading || !targetNextCursor} onClick={() => { setTargetCursorStack((items) => [...items, targetCursor]); setTargetCursor(targetNextCursor); }}>تحميل المزيد</button></nav> : null}
             {targetMessage ? <p className="muted" role="status">{targetMessage}</p> : null}
             <p className="muted">تُختار الوجهة من السجلات المعتمدة، ويعيد DSH التحقق من صلاحيتها حسب المدينة ووقت العرض.</p>
           </> : null}
-          <label className="field-label" htmlFor="marketing-content-city">مدينة الخدمة<select id="marketing-content-city" aria-label="مدينة خدمة المحتوى" value={contentForm.serviceCityId} onChange={(event) => { setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, serviceCityId: event.target.value, targetId: "" })); }}><option value="">كل المدن</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
-          <input aria-label="بداية المحتوى" type="datetime-local" value={contentStartsAt} onChange={(event) => setContentStartsAt(event.target.value)} />
-          <input aria-label="نهاية المحتوى" type="datetime-local" value={contentEndsAt} onChange={(event) => setContentEndsAt(event.target.value)} />
-          <input aria-label="ترتيب المحتوى" inputMode="numeric" type="number" min="0" value={contentForm.ordinal} onChange={(event) => setContentForm((current) => ({ ...current, ordinal: event.target.value }))} />
-          <button className="button" type="button" disabled={busy} onClick={() => void createContent()}>إنشاء مسودة المحتوى</button>
+          <label className="field-label" htmlFor="marketing-content-city">مدينة الخدمة<select id="marketing-content-city" aria-label="مدينة خدمة المحتوى" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.serviceCityId} onChange={(event) => { setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, serviceCityId: event.target.value, targetId: "" })); }}><option value="">كل المدن</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
+          <input aria-label="بداية المحتوى" type="datetime-local" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentStartsAt} onChange={(event) => setContentStartsAt(event.target.value)} />
+          <input aria-label="نهاية المحتوى" type="datetime-local" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentEndsAt} onChange={(event) => setContentEndsAt(event.target.value)} />
+          <input aria-label="ترتيب المحتوى" inputMode="numeric" type="number" min="0" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.ordinal} onChange={(event) => setContentForm((current) => ({ ...current, ordinal: event.target.value }))} />
+          <button className="button" type="button" disabled={busy || attemptChecking || !attemptReady} onClick={() => void createContent()}>{pendingCreate ? "التحقق / إعادة محاولة الإنشاء" : "إنشاء مسودة المحتوى"}</button>
         </div>
       </details>
       <section className="access-card" aria-labelledby="marketing-content-title">
         <div className="access-card-heading"><h2 id="marketing-content-title">سجل محتوى الاكتشاف</h2>{message ? <p role="status" className="muted">{message}</p> : null}</div>
         <form className={styles.filters} onSubmit={(event) => { event.preventDefault(); setAppliedSearch(search.trim().slice(0, 128)); setCursor(""); setCursorStack([]); }}>
-          <label className="field-label" htmlFor="content-search">عنوان المحتوى<input id="content-search" type="search" maxLength={128} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+          <label className="field-label" htmlFor="content-search">عنوان المحتوى<input id="content-search" aria-label="البحث في سجل المحتوى" type="search" maxLength={128} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
           <label className="field-label" htmlFor="content-state">الحالة<select id="content-state" value={state} onChange={(event) => { setState(event.target.value); setCursor(""); setCursorStack([]); }}><option value="">كل الحالات</option><option value="DRAFT">مسودة</option><option value="PUBLISHED">منشور</option><option value="PAUSED">موقوف</option></select></label>
           <label className="field-label" htmlFor="content-kind-filter">النوع<select id="content-kind-filter" value={kind} onChange={(event) => { setKind(event.target.value); setCursor(""); setCursorStack([]); }}><option value="">كل الأنواع</option><option value="BANNER">بنر</option><option value="CAROUSEL">كاروسيل</option><option value="SHORT_FORM">قصة قصيرة</option></select></label>
           <label className="field-label" htmlFor="content-sort">الترتيب<select id="content-sort" value={sort} onChange={(event) => { setSort(event.target.value as typeof sort); setCursor(""); setCursorStack([]); }}><option value="priority">أولوية العرض</option><option value="created_desc">الأحدث إنشاءً</option></select></label>

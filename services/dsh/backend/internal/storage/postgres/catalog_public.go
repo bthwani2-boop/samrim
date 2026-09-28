@@ -49,9 +49,19 @@ func ListPublicCatalogCategories(ctx context.Context, db *sql.DB, categoryIDs []
 	if len(ids) == 0 {
 		return []CatalogCategoryRecord{}, nil
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id, vertical_id, COALESCE(parent_category_id,''), name_ar, name_en,
-		active, version, created_at, updated_at FROM dsh.catalog_categories
-		WHERE active=true AND id=ANY($1) ORDER BY lower(name_ar), id`, pq.Array(ids))
+	rows, err := db.QueryContext(ctx, `WITH RECURSIVE category_tree(id, parent_category_id, vertical_id, name_ar, name_en, image_uri, active, version, created_at, updated_at) AS (
+		SELECT category.id, category.parent_category_id, category.vertical_id, category.name_ar, category.name_en,
+		COALESCE((SELECT asset.uri FROM dsh.catalog_category_media_assets asset WHERE asset.category_id=category.id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),
+		category.active, category.version, category.created_at, category.updated_at
+		FROM dsh.catalog_categories category WHERE category.active=true AND category.id=ANY($1)
+		UNION
+		SELECT parent.id, parent.parent_category_id, parent.vertical_id, parent.name_ar, parent.name_en,
+		COALESCE((SELECT asset.uri FROM dsh.catalog_category_media_assets asset WHERE asset.category_id=parent.id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),''),
+		parent.active, parent.version, parent.created_at, parent.updated_at
+		FROM dsh.catalog_categories parent JOIN category_tree child ON parent.id=child.parent_category_id
+		WHERE parent.active=true AND parent.vertical_id=child.vertical_id
+	) SELECT id, vertical_id, COALESCE(parent_category_id,''), name_ar, name_en, COALESCE(image_uri,''), active, version, created_at, updated_at
+	FROM category_tree ORDER BY lower(name_ar), id`, pq.Array(ids))
 	if err != nil {
 		return nil, fmt.Errorf("list public catalog categories: %w", err)
 	}
@@ -59,7 +69,7 @@ func ListPublicCatalogCategories(ctx context.Context, db *sql.DB, categoryIDs []
 	categories := make([]CatalogCategoryRecord, 0, len(ids))
 	for rows.Next() {
 		var category CatalogCategoryRecord
-		if err := rows.Scan(&category.ID, &category.VerticalID, &category.ParentCategoryID, &category.NameAr, &category.NameEn, &category.Active, &category.Version, &category.CreatedAt, &category.UpdatedAt); err != nil {
+		if err := rows.Scan(&category.ID, &category.VerticalID, &category.ParentCategoryID, &category.NameAr, &category.NameEn, &category.ImageURI, &category.Active, &category.Version, &category.CreatedAt, &category.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan public catalog category: %w", err)
 		}
 		categories = append(categories, category)
@@ -68,6 +78,76 @@ func ListPublicCatalogCategories(ctx context.Context, db *sql.DB, categoryIDs []
 		return nil, fmt.Errorf("read public catalog categories: %w", err)
 	}
 	return categories, nil
+}
+
+func ListPublicDiscoveryCategories(ctx context.Context, db *sql.DB, serviceCityID string) ([]CatalogCategoryRecord, error) {
+	if db == nil || strings.TrimSpace(serviceCityID) == "" {
+		return nil, errors.New("public discovery category scope is invalid")
+	}
+	visibleConditions := strings.Join(customerVisibleOfferConditions(), " AND ")
+	rows, err := db.QueryContext(ctx, `SELECT DISTINCT pc.category_id
+		FROM dsh.stores s
+		JOIN dsh.service_cities sc ON sc.id=s.service_city_id AND sc.active=true
+		JOIN dsh.joining_cases jc ON jc.partner_actor_id=s.partner_actor_id AND jc.financial_profile_state='ACTIVE'
+		JOIN dsh.catalog_store_offers o ON o.store_id=s.id
+		JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
+		JOIN dsh.catalog_products p ON p.id=v.product_id
+		JOIN dsh.catalog_product_categories pc ON pc.product_id=p.id
+		JOIN dsh.catalog_categories c ON c.id=pc.category_id AND c.active=true AND c.vertical_id=p.vertical_id
+		WHERE sc.id=$1 AND s.publication_state='published' AND s.publication_changed_at IS NOT NULL AND `+visibleConditions+`
+		ORDER BY pc.category_id`, strings.TrimSpace(serviceCityID))
+	if err != nil {
+		return nil, fmt.Errorf("list public discovery categories: %w", err)
+	}
+	categoryIDs := make([]string, 0)
+	for rows.Next() {
+		var categoryID string
+		if err := rows.Scan(&categoryID); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("scan public discovery category: %w", err)
+		}
+		categoryIDs = append(categoryIDs, categoryID)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, fmt.Errorf("read public discovery categories: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close public discovery categories: %w", err)
+	}
+	return ListPublicCatalogCategories(ctx, db, categoryIDs)
+}
+
+func listPublicStoreCatalogCategories(ctx context.Context, db *sql.DB, storeID, serviceCityID, verticalID string) ([]CatalogCategoryRecord, error) {
+	visibleConditions := strings.Join(customerVisibleOfferConditions(), " AND ")
+	rows, err := db.QueryContext(ctx, `SELECT DISTINCT pc.category_id FROM dsh.catalog_store_offers o
+		JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
+		JOIN dsh.catalog_products p ON p.id=v.product_id
+		JOIN dsh.stores s ON s.id=o.store_id
+		JOIN dsh.service_cities sc ON sc.id=s.service_city_id AND sc.active=true
+		JOIN dsh.catalog_product_categories pc ON pc.product_id=p.id
+		JOIN dsh.catalog_categories c ON c.id=pc.category_id AND c.active=true AND c.vertical_id=p.vertical_id
+		WHERE s.id=$1 AND s.service_city_id=$2 AND p.vertical_id=$3 AND `+visibleConditions+` ORDER BY pc.category_id`, storeID, serviceCityID, verticalID)
+	if err != nil {
+		return nil, fmt.Errorf("list public store catalog category assignments: %w", err)
+	}
+	categoryIDs := make([]string, 0)
+	for rows.Next() {
+		var categoryID string
+		if err := rows.Scan(&categoryID); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("scan public store catalog category: %w", err)
+		}
+		categoryIDs = append(categoryIDs, categoryID)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, fmt.Errorf("read public store catalog categories: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close public store catalog categories: %w", err)
+	}
+	return ListPublicCatalogCategories(ctx, db, categoryIDs)
 }
 
 type rowQueryer interface {
@@ -149,7 +229,7 @@ func readPublicCatalog(ctx context.Context, db *sql.DB, storeID, serviceCityID, 
 	categories := []CatalogCategoryRecord{}
 	sections := []CatalogStorefrontSectionRecord{}
 	if favoriteActorID == "" {
-		categories, err = ListCatalogCategories(ctx, db, verticalID, true)
+		categories, err = listPublicStoreCatalogCategories(ctx, db, storeID, serviceCityID, verticalID)
 		if err != nil {
 			return PublicCatalogRecord{}, err
 		}
@@ -204,7 +284,11 @@ func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, service
 	}
 	if categoryID != "" {
 		args = append(args, categoryID)
-		conditions = append(conditions, fmt.Sprintf("EXISTS (SELECT 1 FROM dsh.catalog_product_categories pc JOIN dsh.catalog_categories c ON c.id=pc.category_id WHERE pc.product_id=p.id AND c.id=$%d AND c.active=true AND c.vertical_id=s.primary_vertical_id)", len(args)))
+		conditions = append(conditions, fmt.Sprintf(`EXISTS (WITH RECURSIVE category_subtree(id) AS (
+			SELECT c.id FROM dsh.catalog_categories c WHERE c.id=$%d AND c.active=true AND c.vertical_id=s.primary_vertical_id
+			UNION
+			SELECT child.id FROM dsh.catalog_categories child JOIN category_subtree parent ON child.parent_category_id=parent.id WHERE child.active=true AND child.vertical_id=s.primary_vertical_id
+		) SELECT 1 FROM dsh.catalog_product_categories pc JOIN category_subtree subtree ON subtree.id=pc.category_id WHERE pc.product_id=p.id)`, len(args)))
 	}
 	if query != "" {
 		args = append(args, escapeCatalogSearchPrefix(query))

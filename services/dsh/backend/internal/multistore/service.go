@@ -61,7 +61,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken string, input postgr
 		childInput := inputForChild(child)
 		childKey := postgres.HashMarketingFacts("multi-store-child-checkout", checkout.ID, child.ID)
 		childCorrelation := postgres.HashMarketingFacts("multi-store-child-correlation", strings.TrimSpace(correlationID), checkout.ID, child.ID)
-		order, _, checkoutErr := s.cart.Checkout(ctx, accessToken, childInput.CartID, childInput.StoreID, childInput.AddressID, childInput.FulfillmentMode, childInput.PromotionCode, childInput.CartVersion, childKey, childCorrelation)
+		order, _, checkoutErr := s.cart.Checkout(ctx, accessToken, childInput.CartID, childInput.StoreID, childInput.AddressID, childInput.FulfillmentMode, childInput.PromotionCode, 0, childInput.CartVersion, childKey, childCorrelation)
 		if checkoutErr != nil {
 			if !isDefinitiveChildCheckoutError(checkoutErr) {
 				return postgres.MultiStoreCheckoutRecord{}, false, ErrCheckoutInProgress
@@ -86,8 +86,12 @@ func isDefinitiveChildCheckoutError(err error) bool {
 	switch {
 	case errors.Is(err, postgres.ErrCheckoutPaymentReconciled),
 		errors.Is(err, postgres.ErrCheckoutEvidenceStale), errors.Is(err, postgres.ErrCartVersionConflict),
+		errors.Is(err, postgres.ErrCartNotFound), errors.Is(err, postgres.ErrCartEmpty),
+		errors.Is(err, postgres.ErrCartOfferUnavailable), errors.Is(err, postgres.ErrCartQuantityInvalid),
+		errors.Is(err, postgres.ErrCartModifierInvalid), errors.Is(err, postgres.ErrCartStateConflict),
 		errors.Is(err, cart.ErrCheckoutNotServiceable), errors.Is(err, cart.ErrFulfillmentModeUnavailable),
 		errors.Is(err, postgres.ErrCatalogInventoryInsufficient), errors.Is(err, postgres.ErrCatalogInventoryInvalid),
+		errors.Is(err, postgres.ErrDeliveryFeeUnavailable),
 		errors.Is(err, postgres.ErrPromotionUnavailable), errors.Is(err, postgres.ErrPromotionAlreadyRedeemed),
 		errors.Is(err, postgres.ErrPromotionLimitReached):
 		return true
@@ -194,7 +198,9 @@ func childFailureCode(err error) string {
 		return "INVENTORY_INSUFFICIENT"
 	case errors.Is(err, postgres.ErrPromotionUnavailable), errors.Is(err, postgres.ErrPromotionAlreadyRedeemed), errors.Is(err, postgres.ErrPromotionLimitReached):
 		return "PROMOTION_UNAVAILABLE"
-	case errors.Is(err, postgres.ErrPaymentProvisioning), errors.Is(err, postgres.ErrDeliveryFeeUnavailable):
+	case errors.Is(err, postgres.ErrDeliveryFeeUnavailable):
+		return "DELIVERY_FEE_UNAVAILABLE"
+	case errors.Is(err, postgres.ErrPaymentProvisioning):
 		return "PAYMENT_UNAVAILABLE"
 	default:
 		return "CHILD_CHECKOUT_FAILED"

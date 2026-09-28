@@ -2,13 +2,29 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import type { UpdateCatalogCategoryRequest } from "@bthwani/dsh";
-import { dshErrorPayload, dshHttpStatus, isDshClientError, updateCatalogCategory } from "../../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError, readCatalogCategory, updateCatalogCategory } from "../../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../../src/server/identity/identity-bff";
 import { operatorWorkspacePermissionDenied } from "../../../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../../../src/server/security/csrf";
 
 function errorResponse(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status, headers: { "Cache-Control": "no-store" } });
+}
+
+export async function GET(_request: Request, context: { params: Promise<{ categoryId: string }> }) {
+  const identity = await readOperatorSession();
+  if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
+  if (identity.role !== "operator") return errorResponse("FORBIDDEN", "Catalog permission is required", 403);
+  const permissionDenied = operatorWorkspacePermissionDenied(identity, "catalog");
+  if (permissionDenied) return permissionDenied;
+  try {
+    const { categoryId } = await context.params;
+    return NextResponse.json(await readCatalogCategory(categoryId, { operatorActorId: identity.subject }), { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    if (!isDshClientError(error)) return errorResponse("INTERNAL_ERROR", "catalog category lookup failed", 500);
+    const payload = dshErrorPayload(error);
+    return errorResponse(payload.code, payload.message, dshHttpStatus(error));
+  }
 }
 
 export async function PATCH(request: Request, context: { params: Promise<{ categoryId: string }> }) {
