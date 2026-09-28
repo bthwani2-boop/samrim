@@ -67,7 +67,7 @@ func ListOperatorPromotionRegistry(ctx context.Context, db *sql.DB, query Operat
 	if query.Search != "" {
 		args = append(args, strings.ToLower(escapeRegistryPrefix(query.Search))+"%")
 		placeholder := "$" + strconv.Itoa(len(args))
-		filters = append(filters, "(lower(id) LIKE "+placeholder+" ESCAPE E'\\' OR lower(code) LIKE "+placeholder+" ESCAPE E'\\' OR lower(name_ar) LIKE "+placeholder+" ESCAPE E'\\')")
+		filters = append(filters, "(lower(id) LIKE "+placeholder+" ESCAPE E'\\\\' OR lower(code) LIKE "+placeholder+" ESCAPE E'\\\\' OR lower(name_ar) LIKE "+placeholder+" ESCAPE E'\\\\')")
 	}
 	if query.ServiceCityID != "" {
 		args = append(args, query.ServiceCityID)
@@ -146,7 +146,7 @@ func ListOperatorDiscoveryContentRegistry(ctx context.Context, db *sql.DB, query
 	if query.Search != "" {
 		args = append(args, strings.ToLower(escapeRegistryPrefix(query.Search))+"%")
 		placeholder := "$" + strconv.Itoa(len(args))
-		filters = append(filters, "(lower(id) LIKE "+placeholder+" ESCAPE E'\\' OR lower(title_ar) LIKE "+placeholder+" ESCAPE E'\\')")
+		filters = append(filters, "(lower(id) LIKE "+placeholder+" ESCAPE E'\\\\' OR lower(title_ar) LIKE "+placeholder+" ESCAPE E'\\\\')")
 	}
 	if query.Sort == "priority" && query.AfterOrdinal != nil {
 		args = append(args, *query.AfterOrdinal, *query.AfterStartsAt, query.AfterID)
