@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"strconv"
 	"strings"
 	"time"
 
@@ -60,42 +59,37 @@ func ListCatalogProductRegistry(ctx context.Context, db *sql.DB, query, vertical
 	if err != nil {
 		return CatalogProductRegistryPage{}, err
 	}
-	args := []any{query, verticalID, categoryID, active}
-	where := `p.scope='SHARED' AND cv.catalog_model='SHARED_CATALOG' AND ($1='' OR p.canonical_name ILIKE '%'||$1||'%' OR COALESCE(p.brand,'') ILIKE '%'||$1||'%') AND ($2='' OR p.vertical_id=$2) AND ($3='' OR EXISTS (WITH RECURSIVE category_subtree(id) AS (SELECT c.id FROM dsh.catalog_categories c WHERE c.id=$3 AND c.vertical_id=p.vertical_id AND c.active=true UNION SELECT child.id FROM dsh.catalog_categories child JOIN category_subtree parent ON child.parent_category_id=parent.id WHERE child.vertical_id=p.vertical_id AND child.active=true) SELECT 1 FROM dsh.catalog_product_categories pc JOIN category_subtree subtree ON subtree.id=pc.category_id WHERE pc.product_id=p.id)) AND ($4='all' OR p.active=($4='active'))`
+	var cursorValue string
+	var cursorProductID string
 	if cursor != nil {
-		args = append(args, cursor.Value, cursor.ProductID)
-		valueArg, idArg := len(args)-1, len(args)
-		valueExpr := `lower(p.canonical_name)`
-		operator := `>`
-		if sort == "name_desc" {
-			operator = `<`
-		}
-		if strings.HasPrefix(sort, "updated_") {
-			valueExpr = `p.updated_at`
-			args[len(args)-2] = cursor.Value
-			if sort == "updated_desc" {
-				operator = `<`
-			} else {
-				operator = `>`
-			}
-			where += ` AND (` + valueExpr + ` ` + operator + ` $` + strconv.Itoa(valueArg) + `::timestamptz OR (` + valueExpr + `=$` + strconv.Itoa(valueArg) + `::timestamptz AND p.id ` + operator + ` $` + strconv.Itoa(idArg) + `))`
-		} else {
-			where += ` AND (` + valueExpr + ` ` + operator + ` $` + strconv.Itoa(valueArg) + ` OR (` + valueExpr + `=$` + strconv.Itoa(valueArg) + ` AND p.id ` + operator + ` $` + strconv.Itoa(idArg) + `))`
-		}
+		cursorValue = cursor.Value
+		cursorProductID = cursor.ProductID
 	}
-	order := `lower(p.canonical_name) ASC,p.id ASC`
-	if sort == "name_desc" {
-		order = `lower(p.canonical_name) DESC,p.id DESC`
-	}
-	if sort == "updated_desc" {
-		order = `p.updated_at DESC,p.id DESC`
-	}
-	if sort == "updated_asc" {
-		order = `p.updated_at ASC,p.id ASC`
-	}
-	args = append(args, limit+1)
-	visibleOfferConditions := strings.Join(customerVisibleOfferConditionsForAliases("o", "sv", "sp", "s"), " AND ")
-	rows, err := db.QueryContext(ctx, `SELECT p.id,p.vertical_id,p.canonical_name,p.brand,p.active,p.version,COUNT(DISTINCT v.id),ARRAY(SELECT pc.category_id FROM dsh.catalog_product_categories pc WHERE pc.product_id=p.id ORDER BY pc.category_id), (SELECT ma.uri FROM dsh.catalog_media cm JOIN dsh.catalog_media_assets ma ON ma.product_id=cm.product_id AND ma.id=cm.media_asset_id AND ma.state='active' AND ma.rights_attested_at IS NOT NULL WHERE cm.product_id=p.id AND cm.media_role='primary' ORDER BY cm.ordinal LIMIT 1), (SELECT COUNT(DISTINCT o.store_id) FROM dsh.catalog_store_offers o JOIN dsh.catalog_product_variants sv ON sv.id=o.variant_id JOIN dsh.catalog_products sp ON sp.id=sv.product_id JOIN dsh.stores s ON s.id=o.store_id WHERE sp.id=p.id AND `+visibleOfferConditions+`),p.created_at,p.updated_at FROM dsh.catalog_products p JOIN dsh.commerce_verticals cv ON cv.id=p.vertical_id LEFT JOIN dsh.catalog_product_variants v ON v.product_id=p.id WHERE `+where+` GROUP BY p.id ORDER BY `+order+` LIMIT $`+strconv.Itoa(len(args)), args...)
+	const querySQL = `SELECT product.id,product.vertical_id,product.canonical_name,product.brand,product.active,product.version,COUNT(DISTINCT variant.id),
+		ARRAY(SELECT pc.category_id FROM dsh.catalog_product_categories pc WHERE pc.product_id=product.id ORDER BY pc.category_id),
+		(SELECT ma.uri FROM dsh.catalog_media cm JOIN dsh.catalog_media_assets ma ON ma.product_id=cm.product_id AND ma.id=cm.media_asset_id AND ma.state='active' AND ma.rights_attested_at IS NOT NULL WHERE cm.product_id=product.id AND cm.media_role='primary' ORDER BY cm.ordinal LIMIT 1),
+		(SELECT COUNT(DISTINCT o.store_id) FROM dsh.catalog_store_offers o JOIN dsh.catalog_product_variants v ON v.id=o.variant_id JOIN dsh.catalog_products p ON p.id=v.product_id JOIN dsh.stores s ON s.id=o.store_id WHERE p.id=product.id AND ` + customerVisibleOfferConditionsSQL + `),
+		product.created_at,product.updated_at
+		FROM dsh.catalog_products product JOIN dsh.commerce_verticals cv ON cv.id=product.vertical_id LEFT JOIN dsh.catalog_product_variants variant ON variant.product_id=product.id
+		WHERE product.scope='SHARED' AND cv.catalog_model='SHARED_CATALOG'
+		AND ($1='' OR product.canonical_name ILIKE '%'||$1||'%' OR COALESCE(product.brand,'') ILIKE '%'||$1||'%')
+		AND ($2='' OR product.vertical_id=$2)
+		AND ($3='' OR EXISTS (WITH RECURSIVE category_subtree(id) AS (
+			SELECT c.id FROM dsh.catalog_categories c WHERE c.id=$3 AND c.vertical_id=product.vertical_id AND c.active=true
+			UNION SELECT child.id FROM dsh.catalog_categories child JOIN category_subtree parent ON child.parent_category_id=parent.id WHERE child.vertical_id=product.vertical_id AND child.active=true
+		) SELECT 1 FROM dsh.catalog_product_categories pc JOIN category_subtree subtree ON subtree.id=pc.category_id WHERE pc.product_id=product.id))
+		AND ($4='all' OR product.active=($4='active'))
+		AND (NOT $8::boolean
+			OR ($9='name_asc' AND (lower(product.canonical_name),product.id)>($5::text,$7::text))
+			OR ($9='name_desc' AND (lower(product.canonical_name),product.id)<($5::text,$7::text))
+			OR ($9='updated_asc' AND (product.updated_at,product.id)>($6::timestamptz,$7::text))
+			OR ($9='updated_desc' AND (product.updated_at,product.id)<($6::timestamptz,$7::text)))
+		GROUP BY product.id
+		ORDER BY CASE WHEN $9='name_asc' THEN lower(product.canonical_name) END ASC,CASE WHEN $9='name_desc' THEN lower(product.canonical_name) END DESC,
+		CASE WHEN $9='updated_asc' THEN product.updated_at END ASC,CASE WHEN $9='updated_desc' THEN product.updated_at END DESC,
+		CASE WHEN $9 IN ('name_asc','updated_asc') THEN product.id END ASC,CASE WHEN $9 IN ('name_desc','updated_desc') THEN product.id END DESC
+		LIMIT $10`
+	rows, err := db.QueryContext(ctx, querySQL, query, verticalID, categoryID, active, cursorValue, cursorValue, cursorProductID, cursor != nil, sort, limit+1)
 	if err != nil {
 		return CatalogProductRegistryPage{}, err
 	}

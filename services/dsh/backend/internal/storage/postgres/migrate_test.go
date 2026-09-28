@@ -79,7 +79,7 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 		}
 	}
 	catalogMediaProvenanceMigration := migrationByName["074_catalog_media_provenance.sql"]
-	for _, required := range []string{"DROP COLUMN image_uri", "DELETE FROM dsh.catalog_media", "request_hash", "rights_attested_by_actor_id", "rights_attested_at", "catalog_media_assets_provenance_chk", "catalog_category_media_assets_provenance_chk"} {
+	for _, required := range []string{"DROP COLUMN image_uri", "TRUNCATE TABLE dsh.catalog_media", "request_hash", "rights_attested_by_actor_id", "rights_attested_at", "catalog_media_assets_provenance_chk", "catalog_category_media_assets_provenance_chk"} {
 		if !strings.Contains(catalogMediaProvenanceMigration, required) {
 			t.Fatalf("DSH migration 074 is missing catalog media provenance cutover: %s", required)
 		}

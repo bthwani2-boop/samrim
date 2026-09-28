@@ -1,7 +1,8 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { resolveTrustedExecutable } from "./runtime-proof/trusted-executables.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const event = process.env.GH_EVENT || process.env.GITHUB_EVENT_NAME || "";
@@ -16,7 +17,7 @@ function finding(code, detail) {
 }
 
 function git(args, cwd = root) {
-  const result = spawnSync("git", args, { cwd, encoding: "utf8", maxBuffer: 20 * 1024 * 1024 });
+  const result = spawnSync(resolveTrustedExecutable("git"), args, { cwd, encoding: "utf8", maxBuffer: 20 * 1024 * 1024 });
   return { status: result.status ?? 1, stdout: result.stdout || "", stderr: result.stderr || "" };
 }
 

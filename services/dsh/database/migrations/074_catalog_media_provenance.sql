@@ -25,7 +25,9 @@ SET request_hash = repeat('0', 64),
     last_cleanup_error = NULL
 WHERE request_hash IS NULL;
 
-DELETE FROM dsh.catalog_media;
+-- Every legacy catalog media asset is retired above because it has no rights attestation.
+-- Remove only the old asset references before the provenance constraints are installed.
+TRUNCATE TABLE dsh.catalog_media;
 
 UPDATE dsh.catalog_category_media_assets
 SET request_hash = repeat('0', 64),

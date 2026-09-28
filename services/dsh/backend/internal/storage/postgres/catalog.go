@@ -761,37 +761,28 @@ func ListCatalogCategoryPage(ctx context.Context, db *sql.DB, verticalID, query,
 	if query != "" {
 		queryPattern = "%" + strings.TrimSuffix(escapeCatalogSearchPrefix(query), "%") + "%"
 	}
-	args := []any{verticalID, status, queryPattern}
-	cursorFilter := ""
+	var cursorUpdatedAt any
+	var cursorNameKey string
+	var cursorCategoryID string
 	if cursor != nil {
-		if sort == "updated_desc" {
-			args = append(args, cursor.UpdatedAt, cursor.CategoryID)
-			cursorFilter = " AND (updated_at,id)<($4,$5)"
-		} else {
-			args = append(args, cursor.NameKey, cursor.CategoryID)
-			operator := ">"
-			if sort == "name_desc" {
-				operator = "<"
-			}
-			cursorFilter = " AND (lower(name_en),id)" + operator + "($4,$5)"
-		}
+		cursorUpdatedAt = cursor.UpdatedAt
+		cursorNameKey = cursor.NameKey
+		cursorCategoryID = cursor.CategoryID
 	}
-	limitParameter := len(args) + 1
-	args = append(args, limit+1)
-	orderBy := "lower(name_en),id"
-	if sort == "name_desc" {
-		orderBy = "lower(name_en) DESC,id DESC"
-	} else if sort == "updated_desc" {
-		orderBy = "updated_at DESC,id DESC"
-	}
-	statement := `WITH RECURSIVE page AS MATERIALIZED (
+	const statement = `WITH RECURSIVE page AS MATERIALIZED (
 		SELECT category.id,category.parent_category_id,category.vertical_id,category.name_ar,category.name_en,
 		COALESCE((SELECT asset.uri FROM dsh.catalog_category_media_assets asset WHERE asset.category_id=category.id AND asset.state='active' AND asset.rights_attested_at IS NOT NULL),'') AS image_uri,
 		category.active,category.version,category.created_at,category.updated_at
 		FROM dsh.catalog_categories category
 		WHERE category.vertical_id=$1 AND ($2='all' OR category.active=($2='active'))
-		AND ($3='' OR category.name_ar ILIKE $3 ESCAPE '!' OR category.name_en ILIKE $3 ESCAPE '!')` + cursorFilter + `
-		ORDER BY ` + orderBy + ` LIMIT $` + strconv.Itoa(limitParameter) + `
+		AND ($3='' OR category.name_ar ILIKE $3 ESCAPE '!' OR category.name_en ILIKE $3 ESCAPE '!')
+		AND (NOT $7::boolean
+			OR ($8='updated_desc' AND (category.updated_at,category.id)<($4::timestamptz,$6::text))
+			OR ($8='name_asc' AND (lower(category.name_en),category.id)>($5::text,$6::text))
+			OR ($8='name_desc' AND (lower(category.name_en),category.id)<($5::text,$6::text)))
+		ORDER BY CASE WHEN $8='name_asc' THEN lower(category.name_en) END ASC,CASE WHEN $8='name_desc' THEN lower(category.name_en) END DESC,
+		CASE WHEN $8='updated_desc' THEN category.updated_at END DESC,CASE WHEN $8='name_asc' THEN category.id END ASC,CASE WHEN $8 IN ('name_desc','updated_desc') THEN category.id END DESC
+		LIMIT $9
 	), ancestors AS (
 		SELECT page.id AS leaf_id, category.id, category.parent_category_id, category.vertical_id, category.name_ar, category.name_en, 0 AS depth, ARRAY[category.id] AS visited
 		FROM page JOIN dsh.catalog_categories category ON category.id=page.id
@@ -804,8 +795,10 @@ func ListCatalogCategoryPage(ctx context.Context, db *sql.DB, verticalID, query,
 		COALESCE((SELECT string_agg(ancestor.name_ar,' / ' ORDER BY ancestor.depth DESC) FROM ancestors ancestor WHERE ancestor.leaf_id=page.id),page.name_ar),
 		COALESCE((SELECT string_agg(ancestor.name_en,' / ' ORDER BY ancestor.depth DESC) FROM ancestors ancestor WHERE ancestor.leaf_id=page.id),page.name_en),
 		lower(page.name_en)
-	FROM page ORDER BY ` + orderBy
-	rows, err := db.QueryContext(ctx, statement, args...)
+	FROM page
+	ORDER BY CASE WHEN $8='name_asc' THEN lower(page.name_en) END ASC,CASE WHEN $8='name_desc' THEN lower(page.name_en) END DESC,
+	CASE WHEN $8='updated_desc' THEN page.updated_at END DESC,CASE WHEN $8='name_asc' THEN page.id END ASC,CASE WHEN $8 IN ('name_desc','updated_desc') THEN page.id END DESC`
+	rows, err := db.QueryContext(ctx, statement, verticalID, status, queryPattern, cursorUpdatedAt, cursorNameKey, cursorCategoryID, cursor != nil, sort, limit+1)
 	if err != nil {
 		return CatalogCategoryPage{}, err
 	}
@@ -979,29 +972,17 @@ func ListCatalogProducts(ctx context.Context, db *sql.DB, query, verticalID stri
 	if err != nil {
 		return CatalogProductPage{}, err
 	}
-	args := []any{}
-	where := []string{"p.scope='SHARED'"}
-	if activeOnly {
-		where = append(where, "p.active=true")
-	}
-	if verticalID != "" {
-		args = append(args, verticalID)
-		where = append(where, fmt.Sprintf("p.vertical_id=$%d", len(args)))
-	}
-	if query != "" {
-		args = append(args, query+"%")
-		where = append(where, fmt.Sprintf("lower(p.canonical_name) LIKE lower($%d)", len(args)))
-	}
+	var cursorName string
+	var cursorProductID string
 	if cursor != nil {
-		args = append(args, cursor.CanonicalName, cursor.ProductID)
-		where = append(where, fmt.Sprintf("(lower(p.canonical_name)>$%d OR (lower(p.canonical_name)=$%d AND p.id>$%d))", len(args)-1, len(args)-1, len(args)))
+		cursorName, cursorProductID = cursor.CanonicalName, cursor.ProductID
 	}
-	clause := ""
-	if len(where) > 0 {
-		clause = " WHERE " + strings.Join(where, " AND ")
-	}
-	args = append(args, limit+1)
-	rows, err := db.QueryContext(ctx, catalogProductSelect+clause+fmt.Sprintf(" ORDER BY lower(p.canonical_name),p.id LIMIT $%d", len(args)), args...)
+	rows, err := db.QueryContext(ctx, catalogProductSelect+` WHERE p.scope='SHARED'
+		AND ($1='' OR p.vertical_id=$1)
+		AND ($2='' OR lower(p.canonical_name) LIKE lower($2))
+		AND (NOT $5::boolean OR (lower(p.canonical_name),p.id)>($3::text,$4::text))
+		AND (NOT $6::boolean OR p.active=true)
+		ORDER BY lower(p.canonical_name),p.id LIMIT $7`, verticalID, query+"%", cursorName, cursorProductID, cursor != nil, activeOnly, limit+1)
 	if err != nil {
 		return CatalogProductPage{}, err
 	}
@@ -1032,22 +1013,18 @@ func ListCatalogProductsForPartner(ctx context.Context, db *sql.DB, query, verti
 	if err != nil {
 		return CatalogProductPage{}, err
 	}
-	args := []any{partnerActorID}
-	where := []string{"((p.scope='SHARED' AND EXISTS (SELECT 1 FROM dsh.commerce_verticals cv WHERE cv.id=p.vertical_id AND cv.catalog_model='SHARED_CATALOG')) OR (p.scope='STORE_SCOPED' AND EXISTS (SELECT 1 FROM dsh.stores owned_store JOIN dsh.commerce_verticals cv ON cv.id=owned_store.primary_vertical_id WHERE owned_store.id=p.store_id AND owned_store.partner_actor_id=$1 AND cv.id=p.vertical_id AND cv.catalog_model='STORE_LOCAL_CATALOG')))"}
-	if verticalID != "" {
-		args = append(args, verticalID)
-		where = append(where, fmt.Sprintf("p.vertical_id=$%d", len(args)))
-	}
-	if query != "" {
-		args = append(args, query+"%")
-		where = append(where, fmt.Sprintf("lower(p.canonical_name) LIKE lower($%d)", len(args)))
-	}
+	var cursorName string
+	var cursorProductID string
 	if cursor != nil {
-		args = append(args, cursor.CanonicalName, cursor.ProductID)
-		where = append(where, fmt.Sprintf("(lower(p.canonical_name)>$%d OR (lower(p.canonical_name)=$%d AND p.id>$%d))", len(args)-1, len(args)-1, len(args)))
+		cursorName, cursorProductID = cursor.CanonicalName, cursor.ProductID
 	}
-	args = append(args, limit+1)
-	rows, err := db.QueryContext(ctx, catalogProductSelect+" WHERE "+strings.Join(where, " AND ")+fmt.Sprintf(" ORDER BY lower(p.canonical_name),p.id LIMIT $%d", len(args)), args...)
+	rows, err := db.QueryContext(ctx, catalogProductSelect+` WHERE
+		((p.scope='SHARED' AND EXISTS (SELECT 1 FROM dsh.commerce_verticals cv WHERE cv.id=p.vertical_id AND cv.catalog_model='SHARED_CATALOG'))
+		OR (p.scope='STORE_SCOPED' AND EXISTS (SELECT 1 FROM dsh.stores owned_store JOIN dsh.commerce_verticals cv ON cv.id=owned_store.primary_vertical_id WHERE owned_store.id=p.store_id AND owned_store.partner_actor_id=$1 AND cv.id=p.vertical_id AND cv.catalog_model='STORE_LOCAL_CATALOG')))
+		AND ($2='' OR p.vertical_id=$2)
+		AND ($3='' OR lower(p.canonical_name) LIKE lower($3))
+		AND (NOT $6::boolean OR (lower(p.canonical_name),p.id)>($4::text,$5::text))
+		ORDER BY lower(p.canonical_name),p.id LIMIT $7`, partnerActorID, verticalID, query+"%", cursorName, cursorProductID, cursor != nil, limit+1)
 	if err != nil {
 		return CatalogProductPage{}, err
 	}

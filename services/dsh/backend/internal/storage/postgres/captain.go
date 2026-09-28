@@ -478,22 +478,20 @@ func ListCaptainAdmissions(ctx context.Context, db *sql.DB, query, state, sort s
 	if err != nil {
 		return CaptainAdmissionPage{}, err
 	}
-	args := []any{query, state}
-	where := `($1='' OR full_name_ar ILIKE '%'||$1||'%' OR COALESCE(contact_phone_e164,'') ILIKE '%'||$1||'%') AND ($2='all' OR ($2='pending' AND state IN ('pending_review','pending_identity')) OR ($2='review_required' AND requires_profile_review) OR state=$2)`
+	var cursorCreatedAt any
+	var cursorID string
 	if cursor != nil {
-		args = append(args, cursor.CreatedAt, cursor.ID)
-		op := `<`
-		if sort == "created_asc" {
-			op = `>`
-		}
-		where += ` AND (created_at ` + op + ` $3::timestamptz OR (created_at=$3::timestamptz AND id ` + op + ` $4))`
+		cursorCreatedAt = cursor.CreatedAt
+		cursorID = cursor.ID
 	}
-	order := `created_at DESC,id DESC`
-	if sort == "created_asc" {
-		order = `created_at ASC,id ASC`
-	}
-	args = append(args, limit+1)
-	rows, err := db.QueryContext(ctx, `SELECT id,COALESCE(actor_id,''),COALESCE(full_name_ar,''),COALESCE(contact_phone_e164,''),state,availability_state,requires_profile_review,version,created_at,updated_at FROM dsh.captain_admissions WHERE `+where+` ORDER BY `+order+` LIMIT $`+strconv.Itoa(len(args)), args...)
+	rows, err := db.QueryContext(ctx, `SELECT id,COALESCE(actor_id,''),COALESCE(full_name_ar,''),COALESCE(contact_phone_e164,''),state,availability_state,requires_profile_review,version,created_at,updated_at
+		FROM dsh.captain_admissions
+		WHERE ($1='' OR full_name_ar ILIKE '%'||$1||'%' OR COALESCE(contact_phone_e164,'') ILIKE '%'||$1||'%')
+		AND ($2='all' OR ($2='pending' AND state IN ('pending_review','pending_identity')) OR ($2='review_required' AND requires_profile_review) OR state=$2)
+		AND (NOT $5::boolean OR ($6='created_asc' AND (created_at,id)>($3::timestamptz,$4)) OR ($6='created_desc' AND (created_at,id)<($3::timestamptz,$4)))
+		ORDER BY CASE WHEN $6='created_asc' THEN created_at END ASC,CASE WHEN $6='created_desc' THEN created_at END DESC,
+		CASE WHEN $6='created_asc' THEN id END ASC,CASE WHEN $6='created_desc' THEN id END DESC
+		LIMIT $7`, query, state, cursorCreatedAt, cursorID, cursor != nil, sort, limit+1)
 	if err != nil {
 		return CaptainAdmissionPage{}, err
 	}

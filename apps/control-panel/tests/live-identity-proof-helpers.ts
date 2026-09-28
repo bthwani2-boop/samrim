@@ -3,6 +3,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page } from "@playwright/test";
+import { resolveTrustedExecutable } from "../../../tools/dev/runtime-proof/trusted-executables.mjs";
 
 export type PreparedOperator = {
   actorId: string;
@@ -61,7 +62,7 @@ export function cleanupPreparedOperator(operator: PreparedOperator): void {
   const actorReadback = operator.actorCreatedByTest && actorLiteral ? "SELECT count(*) FROM identity_actors WHERE id='" + actorLiteral + "'" : "SELECT 0";
   const query = "DELETE FROM identity_operator_profile_events WHERE profile_id IN (SELECT id FROM identity_operator_profiles WHERE id='" + profileLiteral + "' OR phone_e164='" + phoneLiteral + "'); DELETE FROM identity_operator_profiles WHERE id='" + profileLiteral + "' OR phone_e164='" + phoneLiteral + "'; " + removeCreatedActor + actorReadback + ";";
   const output = execFileSync(
-    "docker",
+    resolveTrustedExecutable("docker"),
     [
       "compose", "--project-name", "samrim-local", "--env-file", runtime.envFile,
       "-f", path.join(runtime.repoRoot, "infra/local/compose/compose.yaml"), "exec", "-T", "postgres",

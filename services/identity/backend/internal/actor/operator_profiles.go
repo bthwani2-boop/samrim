@@ -187,35 +187,29 @@ func (s *Service) ListOperatorProfiles(ctx context.Context, caller, actingActorI
 		return domain.OperatorProfilePage{}, err
 	}
 	state = strings.TrimSpace(state)
-	args := []any{}
-	clauses := []string{"true"}
-	if state != "" && state != "all" {
-		args = append(args, state)
-		clauses = append(clauses, fmt.Sprintf("p.state=$%d", len(args)))
-	}
+	searchPattern := ""
 	if query != "" {
-		args = append(args, "%"+strings.ToLower(query)+"%")
-		clauses = append(clauses, fmt.Sprintf("(lower(p.full_name_ar) LIKE $%d OR coalesce(CASE WHEN p.state='admitted' THEN a.phone_e164 ELSE p.phone_e164 END,'') LIKE $%d)", len(args), len(args)))
+		searchPattern = "%" + strings.ToLower(query) + "%"
 	}
+	var cursorCreatedAt any
+	var cursorID string
 	if cursor != "" {
 		decoded, err := decodeOperatorProfileCursor(cursor, query, state, sort)
 		if err != nil {
 			return domain.OperatorProfilePage{}, domain.ErrInvalidInput
 		}
-		args = append(args, decoded.CreatedAt, decoded.ID)
-		op := ">"
-		if sort == "created_desc" {
-			op = "<"
-		}
-		clauses = append(clauses, fmt.Sprintf("(p.created_at %s $%d::timestamptz OR (p.created_at=$%d::timestamptz AND p.id %s $%d))", op, len(args)-1, len(args)-1, op, len(args)))
+		cursorCreatedAt, cursorID = decoded.CreatedAt, decoded.ID
 	}
-	args = append(args, limit+1)
-	order := "ASC"
-	if sort == "created_desc" {
-		order = "DESC"
-	}
-	querySQL := "SELECT p.id,p.full_name_ar,coalesce(CASE WHEN p.state='admitted' THEN a.phone_e164 ELSE p.phone_e164 END,''),coalesce(p.actor_id,''),r.enabled,a.security_enabled,r.activated_at,p.state,p.version,p.created_at,p.updated_at FROM identity_operator_profiles p LEFT JOIN identity_actors a ON a.id=p.actor_id LEFT JOIN identity_actor_roles r ON r.actor_id=p.actor_id AND r.role='operator' WHERE " + strings.Join(clauses, " AND ") + " ORDER BY p.created_at " + order + ",p.id " + order + " LIMIT $" + fmt.Sprint(len(args))
-	rows, err := s.db.QueryContext(ctx, querySQL, args...)
+	rows, err := s.db.QueryContext(ctx, `SELECT p.id,p.full_name_ar,coalesce(CASE WHEN p.state='admitted' THEN a.phone_e164 ELSE p.phone_e164 END,''),coalesce(p.actor_id,''),r.enabled,a.security_enabled,r.activated_at,p.state,p.version,p.created_at,p.updated_at
+		FROM identity_operator_profiles p
+		LEFT JOIN identity_actors a ON a.id=p.actor_id
+		LEFT JOIN identity_actor_roles r ON r.actor_id=p.actor_id AND r.role='operator'
+		WHERE ($1='' OR $1='all' OR p.state=$1)
+		AND ($2='' OR lower(p.full_name_ar) LIKE $2 OR coalesce(CASE WHEN p.state='admitted' THEN a.phone_e164 ELSE p.phone_e164 END,'') LIKE $2)
+		AND (NOT $3::boolean OR ($7='created_asc' AND (p.created_at,p.id)>($4::timestamptz,$5::text)) OR ($7='created_desc' AND (p.created_at,p.id)<($4::timestamptz,$5::text)))
+		ORDER BY CASE WHEN $7='created_asc' THEN p.created_at END ASC,CASE WHEN $7='created_desc' THEN p.created_at END DESC,
+		CASE WHEN $7='created_asc' THEN p.id END ASC,CASE WHEN $7='created_desc' THEN p.id END DESC
+		LIMIT $6`, state, searchPattern, cursorCreatedAt != nil, cursorCreatedAt, cursorID, limit+1, sort)
 	if err != nil {
 		return domain.OperatorProfilePage{}, err
 	}
