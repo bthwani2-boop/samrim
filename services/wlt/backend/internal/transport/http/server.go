@@ -1491,7 +1491,22 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
-		log.Printf("WLT request rejected: reason=request_body_decode_invalid path=%s", r.URL.Path)
+		var typeError *json.UnmarshalTypeError
+		var syntaxError *json.SyntaxError
+		switch {
+		case errors.As(err, &typeError):
+			log.Printf("WLT request rejected: reason=request_body_type_invalid path=%s field=%s value_type=%s expected_type=%s", r.URL.Path, typeError.Field, typeError.Value, typeError.Type)
+		case errors.As(err, &syntaxError):
+			log.Printf("WLT request rejected: reason=request_body_syntax_invalid path=%s offset=%d", r.URL.Path, syntaxError.Offset)
+		case strings.HasPrefix(err.Error(), "json: unknown field "):
+			field := strings.Trim(strings.TrimPrefix(err.Error(), "json: unknown field "), "\"")
+			if len(field) > 80 {
+				field = field[:80]
+			}
+			log.Printf("WLT request rejected: reason=request_body_unknown_field path=%s field=%q", r.URL.Path, field)
+		default:
+			log.Printf("WLT request rejected: reason=request_body_decode_invalid path=%s error_type=%T", r.URL.Path, err)
+		}
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "request body is invalid")
 		return false
 	}
