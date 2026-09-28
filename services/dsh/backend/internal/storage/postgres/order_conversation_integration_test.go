@@ -96,12 +96,12 @@ func TestOrderConversationReturnsLatestBoundedHistoryAndReplaysAfterClosure(t *t
 			t.Fatalf("canonical conversation contains %d messages, %v; want %d", storedCount, err, messageCount)
 		}
 
-		pickupAt := time.Now().UTC().Add(-2 * time.Hour)
+		pickupAt := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Microsecond)
 		if _, err := db.ExecContext(ctx, "UPDATE dsh.commerce_orders SET state='PICKED_UP',version=version+1,updated_at=$2 WHERE id=$1", orderID, pickupAt); err != nil {
 			t.Fatalf("complete pickup order: %v", err)
 		}
-		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_order_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,from_state,to_state,from_version,result_version,request_hash)
-			VALUES('order_picked_up','conversation-pickup-audit-key','conversation-pickup-audit-correlation','conversation-history-partner',$1,'READY_FOR_PICKUP','PICKED_UP',1,2,'conversation-pickup-request-hash')`, orderID); err != nil {
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_order_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,from_state,to_state,from_version,result_version,request_hash,created_at)
+			VALUES('order_picked_up','conversation-pickup-audit-key','conversation-pickup-audit-correlation','conversation-history-partner',$1,'READY_FOR_PICKUP','PICKED_UP',1,2,'conversation-pickup-request-hash',$2)`, orderID, pickupAt); err != nil {
 			t.Fatalf("record pickup transition: %v", err)
 		}
 		if _, err := db.ExecContext(ctx, "UPDATE dsh.commerce_orders SET updated_at=clock_timestamp() WHERE id=$1", orderID); err != nil {

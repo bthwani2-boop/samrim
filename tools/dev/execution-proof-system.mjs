@@ -108,15 +108,21 @@ const sonarWorkflow = read(".github/workflows/sonar-observe.yml");
 assert(sonarWorkflow.includes("name: Sonar Quality Observe"), "Sonar observation workflow name missing");
 assert(sonarWorkflow.includes("uses: SonarSource/sonarqube-scan-action@"), "Sonar observation action missing");
 assert(sonarWorkflow.includes("SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}"), "Sonar observation token binding missing");
+for (const token of ["image: postgis/postgis:16-3.4-alpine", "DSH_DATABASE_URL:", "go test -coverprofile=coverage/sonar/dsh-postgres.out -count=1 ./services/dsh/backend/internal/storage/postgres", "node --experimental-test-coverage --test --test-reporter=lcov", "coverage/sonar/tools-dev.lcov"]) assert(sonarWorkflow.includes(token), `Sonar coverage preparation missing ${token}`);
 assert(!sonarWorkflow.includes("sonar.qualitygate.wait=true"), "Sonar observation must not wait on or enforce the quality gate");
 for (const [, reference] of sonarWorkflow.matchAll(/^\s+uses:\s+([^\s]+)$/gm)) {
   const [, ref] = reference.split("@");
   assert(/^[0-9a-f]{40}$/.test(ref ?? ""), `Sonar observation action is not pinned to a full commit SHA: ${reference}`);
 }
 const sonarProperties = new Map(read("sonar-project.properties").split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#")).map((line) => { const separator = line.indexOf("="); return separator < 0 ? [line, ""] : [line.slice(0, separator).trim(), line.slice(separator + 1).trim()]; }));
-for (const key of ["sonar.organization", "sonar.projectKey", "sonar.projectName", "sonar.sources"]) assert(Boolean(sonarProperties.get(key)), `Sonar observation configuration is missing ${key}`);
+for (const key of ["sonar.organization", "sonar.projectKey", "sonar.projectName", "sonar.sources", "sonar.tests", "sonar.test.inclusions", "sonar.go.coverage.reportPaths", "sonar.javascript.lcov.reportPaths"]) assert(Boolean(sonarProperties.get(key)), `Sonar observation configuration is missing ${key}`);
 assert(/^[A-Za-z0-9-]+$/.test(sonarProperties.get("sonar.organization") ?? ""), "Sonar organization key is malformed");
 assert(/^[A-Za-z0-9_.:-]+$/.test(sonarProperties.get("sonar.projectKey") ?? ""), "Sonar project key is malformed");
+for (const pattern of ["**/*_test.go", "**/*.test.mjs", "**/tests/**/*.ts"]) {
+  assert(sonarProperties.get("sonar.test.inclusions")?.split(",").includes(pattern), `Sonar test classification missing ${pattern}`);
+  assert(sonarProperties.get("sonar.exclusions")?.split(",").includes(pattern), `Sonar source scope still includes test files matching ${pattern}`);
+}
+assert(!sonarProperties.has("sonar.coverage.exclusions"), "Sonar coverage exclusions must not conceal uncovered source lines");
 
 if (failures.length) {
   console.error("EXECUTION_PROOF_SYSTEM=FAIL");

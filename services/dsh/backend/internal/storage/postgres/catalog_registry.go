@@ -59,10 +59,15 @@ func ListCatalogProductRegistry(ctx context.Context, db *sql.DB, query, vertical
 	if err != nil {
 		return CatalogProductRegistryPage{}, err
 	}
-	var cursorValue string
+	var cursorNameKey string
+	var cursorUpdatedAt any
 	var cursorProductID string
 	if cursor != nil {
-		cursorValue = cursor.Value
+		if strings.HasPrefix(sort, "updated_") {
+			cursorUpdatedAt = cursor.Value
+		} else {
+			cursorNameKey = cursor.Value
+		}
 		cursorProductID = cursor.ProductID
 	}
 	const querySQL = `SELECT product.id,product.vertical_id,product.canonical_name,product.brand,product.active,product.version,COUNT(DISTINCT variant.id),
@@ -89,7 +94,7 @@ func ListCatalogProductRegistry(ctx context.Context, db *sql.DB, query, vertical
 		CASE WHEN $9='updated_asc' THEN product.updated_at END ASC,CASE WHEN $9='updated_desc' THEN product.updated_at END DESC,
 		CASE WHEN $9 IN ('name_asc','updated_asc') THEN product.id END ASC,CASE WHEN $9 IN ('name_desc','updated_desc') THEN product.id END DESC
 		LIMIT $10`
-	rows, err := db.QueryContext(ctx, querySQL, query, verticalID, categoryID, active, cursorValue, cursorValue, cursorProductID, cursor != nil, sort, limit+1)
+	rows, err := db.QueryContext(ctx, querySQL, query, verticalID, categoryID, active, cursorNameKey, cursorUpdatedAt, cursorProductID, cursor != nil, sort, limit+1)
 	if err != nil {
 		return CatalogProductRegistryPage{}, err
 	}

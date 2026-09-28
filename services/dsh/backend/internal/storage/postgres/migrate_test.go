@@ -266,6 +266,14 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 		if err != nil || secondProduct.Product.ID == "" || secondProduct.Product.ID == createdProduct.Product.ID {
 			t.Fatalf("create second catalog product for keyset proof: %+v err=%v", secondProduct, err)
 		}
+		registryPage, err := postgres.ListCatalogProductRegistry(ctx, db, "", vertical.ID, "", "all", "name_asc", 1, "")
+		if err != nil || len(registryPage.Products) != 1 || registryPage.NextCursor == "" {
+			t.Fatalf("catalog product registry first page failed: %+v err=%v", registryPage, err)
+		}
+		registryNextPage, err := postgres.ListCatalogProductRegistry(ctx, db, "", vertical.ID, "", "all", "name_asc", 1, registryPage.NextCursor)
+		if err != nil || len(registryNextPage.Products) != 1 || registryNextPage.NextCursor != "" || registryNextPage.Products[0].ID == registryPage.Products[0].ID {
+			t.Fatalf("catalog product registry cursor failed: first=%+v second=%+v err=%v", registryPage, registryNextPage, err)
+		}
 		sharedProductPage, err := postgres.ListCatalogProducts(ctx, db, "", vertical.ID, false, 1, "")
 		if err != nil || len(sharedProductPage.Products) != 1 || sharedProductPage.NextCursor == "" {
 			t.Fatalf("shared catalog product first page failed: %+v err=%v", sharedProductPage, err)
