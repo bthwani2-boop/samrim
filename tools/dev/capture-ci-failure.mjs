@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { buildClosureDiagnostic } from "./ci-failure-diagnostics.mjs";
+import { laneTargets } from "./runtime-proof/resolve.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const kindArg = process.argv.find((arg) => arg.startsWith("--kind="));
@@ -14,7 +15,7 @@ const metricsPath = process.env.SAMRIM_CI_METRICS_PATH || path.join(runnerTemp, 
 const logsDir = process.env.SAMRIM_CI_LOG_DIR || path.join(runnerTemp, "samrim-ci-logs");
 const profileDir = process.env.SAMRIM_CI_PROFILE_DIR || path.join(runnerTemp, "samrim-ci-profiles");
 const externalResultsPath = process.env.SAMRIM_CI_EXTERNAL_RESULTS_PATH || path.join(runnerTemp, "samrim-ci-external-results.jsonl");
-const runtimeFailurePath = path.join(runnerTemp, "samrim-runtime-failure.json");
+const runtimeFailurePath = kind === "runtime" ? process.env.SAMRIM_RUNTIME_FAILURE_PATH : "";
 const sensitiveName = /(?:secret|token|password|api[_-]?key|private[_-]?key|credential|dsn|database_url|authorization)/i;
 const sensitiveValues = new Map();
 
@@ -34,6 +35,18 @@ if (kind === "runtime" && fs.existsSync(envFile)) {
     const name = line.slice(0, separator).trim();
     const value = line.slice(separator + 1).trim();
     if ((sensitiveName.test(name) || value.length >= 12) && value.length >= 4) sensitiveValues.set(value, name);
+  }
+}
+
+if (kind === "runtime") {
+  if (!runtimeFailurePath || path.basename(runtimeFailurePath) !== "runtime-failure.json") {
+    throw new Error("runtime failure package requires the exact runner-owned failure record path");
+  }
+  const runtimeDirectory = fs.realpathSync(path.dirname(runtimeFailurePath));
+  const relativeRuntimeDirectory = path.relative(runnerTemp, runtimeDirectory);
+  const runtimeDirectoryMode = fs.statSync(runtimeDirectory).mode & 0o777;
+  if (!path.basename(runtimeDirectory).startsWith("samrim-runtime-proof-") || relativeRuntimeDirectory.startsWith("..") || path.isAbsolute(relativeRuntimeDirectory) || runtimeDirectoryMode !== 0o700) {
+    throw new Error("runtime failure record is outside its private runner directory");
   }
 }
 
@@ -112,7 +125,20 @@ if (metricRecords.length > 0) {
 const externalRecords = readJsonLinesIfPresent(externalResultsPath);
 if (externalRecords.length > 0) fs.copyFileSync(externalResultsPath, path.join(outDir, "external-results.jsonl"));
 
-const runtimeFailure = kind === "runtime" ? readJsonIfPresent(runtimeFailurePath) : null;
+const runtimeFailureCandidate = kind === "runtime" ? readJsonIfPresent(runtimeFailurePath) : null;
+const allowedRuntimeTargets = new Set([
+  ...Object.values(laneTargets).flat(),
+  "control-panel:dsh-runtime-checker-fixture",
+  "dsh-backend:runtime-fixture-cleanup",
+]);
+const runtimeFailureIsValid = kind === "runtime" && runtimeFailureCandidate &&
+  allowedRuntimeTargets.has(runtimeFailureCandidate.target) &&
+  runtimeFailureCandidate.candidate === metadata.sha &&
+  runtimeFailureCandidate.progressionBlocked === true;
+const runtimeFailure = runtimeFailureIsValid ? runtimeFailureCandidate : null;
+if (kind === "runtime" && runtimeFailureCandidate && !runtimeFailureIsValid) {
+  write("runtime-failure-record-invalid.txt", "Failure record did not match the current candidate and owned runtime targets; no target graph was run.\n");
+}
 const diagnostic = buildClosureDiagnostic({ metadata, metricRecords, externalRecords, runtimeFailure, affectedProjects });
 write("closure-diagnostic.json", JSON.stringify(diagnostic, null, 2) + "\n");
 

@@ -33,7 +33,7 @@ execFileSync(process.execPath, ["--test", "tools/dev/ci-failure-diagnostics.test
 execFileSync(process.execPath, ["--test", "tools/dev/verify-pr-policy.test.mjs"], { cwd: root, stdio: "inherit" });
 
 const runtimeRunner = read("tools/dev/run-ci-runtime-proof.mjs");
-requireTokens(runtimeRunner, "runtime runner", ["samrim-runtime-failure.json", "CI_RUNTIME_TASK=FAIL target=", "classify-highest-causal-root-before-new-material-work"]);
+requireTokens(runtimeRunner, "runtime runner", ["samrim-runtime-proof-", "runtime-failure.json", "SAMRIM_RUNTIME_FAILURE_PATH", "flag: \"wx\"", "mode: 0o600", "CI_RUNTIME_TASK=FAIL target=", "classify-highest-causal-root-before-new-material-work"]);
 const commandRunner = read("tools/dev/run-ci-command.mjs");
 requireTokens(commandRunner, "command runner", ["QUIET_SUCCESS_BOUNDED_FAILURE_RAW_ARTIFACT", "CI_TIMED_COMMAND_OUTPUT_TRUNCATED"]);
 for (const [file, kind] of [["ci-static.yml", "static"], ["ci-runtime.yml", "runtime"], ["ci-policy.yml", "policy"], ["ci-security.yml", "security"]]) {
