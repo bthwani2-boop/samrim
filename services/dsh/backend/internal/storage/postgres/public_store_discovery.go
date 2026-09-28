@@ -143,7 +143,7 @@ func ListPublishedStorePage(ctx context.Context, db *sql.DB, input PublicStoreLi
 			OR ($13<>'newest' AND $4::double precision IS NOT NULL AND $11::double precision IS NOT NULL
 				AND (location.distance_meters>$11
 				OR (location.distance_meters=$11 AND (lower(s.name),s.id)>($9::text,$10::text))
-				OR ($13='all' AND (s.delivery_origin_latitude IS NULL OR s.delivery_origin_longitude IS NULL))))
+				OR ($13='all' AND (s.delivery_origin_latitude IS NULL OR s.delivery_origin_longitude IS NULL)))))
 		ORDER BY CASE WHEN $13='newest' THEN s.created_at END DESC,CASE WHEN $13='newest' THEN s.id END DESC,
 		CASE WHEN $13 IN ('all','nearest') AND $4::double precision IS NOT NULL THEN location.distance_meters END ASC NULLS LAST,
 		CASE WHEN $13<>'newest' THEN lower(s.name) END ASC,CASE WHEN $13<>'newest' THEN s.id END ASC LIMIT $14

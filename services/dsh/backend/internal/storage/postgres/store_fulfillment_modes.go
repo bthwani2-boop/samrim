@@ -97,7 +97,7 @@ func SetStoreFulfillmentModes(ctx context.Context, db *sql.DB, storeID, operator
 	var currentVersion int
 	var currentModes pq.StringArray
 	err = tx.QueryRowContext(ctx, `SELECT partner_actor_id,version,fulfillment_modes FROM dsh.stores
-		WHERE id=$1 AND partner_actor_id=$2 FOR UPDATE`, storeID, operatorActorID).Scan(&partnerActorID, &currentVersion, &currentModes)
+		WHERE id=$1 FOR UPDATE`, storeID).Scan(&partnerActorID, &currentVersion, &currentModes)
 	if errors.Is(err, sql.ErrNoRows) {
 		return StoreFulfillmentModesResult{}, ErrStoreFulfillmentModesNotFound
 	}

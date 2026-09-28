@@ -107,8 +107,9 @@ for (const file of workflowNames) if (budgets.mode === "observe") assert(!read(`
 const sonarWorkflow = read(".github/workflows/sonar-observe.yml");
 assert(sonarWorkflow.includes("name: Sonar Quality Observe"), "Sonar observation workflow name missing");
 assert(sonarWorkflow.includes("uses: SonarSource/sonarqube-scan-action@"), "Sonar observation action missing");
-assert(sonarWorkflow.includes("SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}"), "Sonar observation token binding missing");
-for (const token of ["image: postgis/postgis:16-3.4-alpine", "DSH_DATABASE_URL:", "go test -coverprofile=coverage/sonar/dsh-postgres.out -count=1 ./services/dsh/backend/internal/storage/postgres", "node --experimental-test-coverage --test --test-reporter=lcov", "coverage/sonar/tools-dev.lcov"]) assert(sonarWorkflow.includes(token), `Sonar coverage preparation missing ${token}`);
+assert(sonarWorkflow.includes("SONAR_TOKEN: $" + "{{ secrets.SONAR_TOKEN }}"), "Sonar observation token binding missing");
+for (const token of ["image: postgis/postgis:16-3.4-alpine", "POSTGRES_HOST_AUTH_METHOD: trust", "DSH_DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable", "IDENTITY_DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable", "go -C services/dsh/backend test -coverprofile=", "go -C services/identity/backend test -coverprofile=", "go -C services/wlt/backend test -coverprofile=", "node --experimental-test-coverage --test --test-reporter=lcov", "coverage/sonar/tools-dev.lcov"]) assert(sonarWorkflow.includes(token), `Sonar coverage preparation missing ${token}`);
+assert(!sonarWorkflow.includes("POSTGRES_PASSWORD:") && !sonarWorkflow.includes("sonar-proof"), "Sonar workflow must not retain a hardcoded database credential");
 assert(!sonarWorkflow.includes("sonar.qualitygate.wait=true"), "Sonar observation must not wait on or enforce the quality gate");
 for (const [, reference] of sonarWorkflow.matchAll(/^\s+uses:\s+([^\s]+)$/gm)) {
   const [, ref] = reference.split("@");
@@ -118,7 +119,7 @@ const sonarProperties = new Map(read("sonar-project.properties").split(/\r?\n/).
 for (const key of ["sonar.organization", "sonar.projectKey", "sonar.projectName", "sonar.sources", "sonar.tests", "sonar.test.inclusions", "sonar.go.coverage.reportPaths", "sonar.javascript.lcov.reportPaths"]) assert(Boolean(sonarProperties.get(key)), `Sonar observation configuration is missing ${key}`);
 assert(/^[A-Za-z0-9-]+$/.test(sonarProperties.get("sonar.organization") ?? ""), "Sonar organization key is malformed");
 assert(/^[A-Za-z0-9_.:-]+$/.test(sonarProperties.get("sonar.projectKey") ?? ""), "Sonar project key is malformed");
-for (const pattern of ["**/*_test.go", "**/*.test.mjs", "**/tests/**/*.ts"]) {
+for (const pattern of ["**/*_test.go", "**/*.test.mjs", "**/tests/**/*.ts", "tools/dev/verify-dsh-runtime-core.mjs"]) {
   assert(sonarProperties.get("sonar.test.inclusions")?.split(",").includes(pattern), `Sonar test classification missing ${pattern}`);
   assert(sonarProperties.get("sonar.exclusions")?.split(",").includes(pattern), `Sonar source scope still includes test files matching ${pattern}`);
 }

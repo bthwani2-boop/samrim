@@ -32,7 +32,7 @@ jobs:
       postgres:
         image: postgis/postgis:16-3.4-alpine
         env:
-          POSTGRES_PASSWORD: sonar-proof
+          POSTGRES_HOST_AUTH_METHOD: trust
         ports:
           - 5432:5432
         options: >-
@@ -42,7 +42,8 @@ jobs:
           --health-retries 10
 
     env:
-      DSH_DATABASE_URL: postgres://postgres:sonar-proof@127.0.0.1:5432/postgres?sslmode=disable
+      DSH_DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable
+      IDENTITY_DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable
 
     if: >
       github.event_name != 'pull_request' ||
@@ -74,6 +75,8 @@ jobs:
           cache: true
           cache-dependency-path: |
             services/dsh/backend/go.sum
+            services/identity/backend/go.sum
+            services/wlt/backend/go.sum
             go.work.sum
 
       - name: Install dependencies
@@ -82,7 +85,9 @@ jobs:
       - name: Generate Sonar coverage reports
         run: |
           mkdir -p coverage/sonar
-          go test -coverprofile=coverage/sonar/dsh-postgres.out -count=1 ./services/dsh/backend/internal/storage/postgres
+          go -C services/dsh/backend test -coverprofile="$GITHUB_WORKSPACE/coverage/sonar/dsh.out" -count=1 ./...
+          go -C services/identity/backend test -coverprofile="$GITHUB_WORKSPACE/coverage/sonar/identity.out" -count=1 ./...
+          go -C services/wlt/backend test -coverprofile="$GITHUB_WORKSPACE/coverage/sonar/wlt.out" -count=1 ./...
           node --experimental-test-coverage --test --test-reporter=lcov --test-reporter-destination=coverage/sonar/tools-dev.lcov \
             tools/dev/runtime-proof/resolve.test.mjs \
             tools/dev/runtime-proof/trusted-executables.test.mjs \

@@ -359,6 +359,119 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 		if err != nil || len(publicCatalog.Offers) != 1 || publicCatalog.Offers[0].VariantID != variantID || publicCatalog.Offers[0].Product.ID != product.ID {
 			t.Fatalf("customer-visible offer readback failed: %+v err=%v", publicCatalog.Offers, err)
 		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.joining_cases(id,contact_phone_e164,business_name,first_store_name,partner_actor_id,state,store_id,origin,financial_profile_state)
+			VALUES('joining_store_discovery_v1','+967770001234','مؤسسة القهوة','متجر القهوة',$1,'approved','store_catalog_v1','control_panel','ACTIVE')`, testPartnerActorID); err != nil {
+			t.Fatalf("create published store discovery eligibility fixture: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.stores(id,partner_actor_id,name,service_city_id,primary_vertical_id,publication_state,publication_changed_at)
+			VALUES('store_catalog_v2',$1,'متجر القهوة الثاني',$2,$3,'published',clock_timestamp())`, testPartnerActorID, createdCity.City.ID, vertical.ID); err != nil {
+			t.Fatalf("create second published store fixture: %v", err)
+		}
+		secondStoreOfferInput := postgres.CatalogOfferInput{StoreID: "store_catalog_v2", VariantID: variantID, PriceMinor: 1300, QuantityPolicy: "DISCRETE", QuantityMinBaseUnits: 1, QuantityMaxBaseUnits: 10, QuantityStepBaseUnits: 1, PricingBasis: "PER_UNIT", PricingUnitBaseUnits: 1}
+		secondStoreOffer, err := postgres.CreateCatalogOffer(ctx, db, secondStoreOfferInput, "idem-offer-second-store-v1", postgres.HashCatalogOfferCreateRequest(secondStoreOfferInput), testPartnerActorID, "corr-offer-second-store-v1")
+		if err != nil {
+			t.Fatalf("create second published store offer: %v", err)
+		}
+		secondStoreOfferUpdate := postgres.CatalogOfferUpdateInput{PriceMinor: 1300, Availability: true, PublicationState: "published", QuantityPolicy: "DISCRETE", QuantityMinBaseUnits: 1, QuantityMaxBaseUnits: 10, QuantityStepBaseUnits: 1, PricingBasis: "PER_UNIT", PricingUnitBaseUnits: 1}
+		if _, err := postgres.UpdateCatalogOffer(ctx, db, secondStoreOffer.Offer.ID, secondStoreOfferUpdate, 1, "idem-offer-second-store-publish-v1", postgres.HashCatalogOfferUpdateRequest(secondStoreOffer.Offer.ID, secondStoreOfferUpdate, 1), testPartnerActorID, "corr-offer-second-store-publish-v1"); err != nil {
+			t.Fatalf("publish second store offer: %v", err)
+		}
+		for index, store := range []string{"store_catalog_v1", "store_catalog_v2"} {
+			latitude, longitude := 15.3+float64(index)/100, 44.1+float64(index)/100
+			if _, err := postgres.SetStoreDeliveryOrigin(ctx, db, store, testPartnerActorID, latitude, longitude, 0, "idem-origin-"+store, postgres.HashStoreDeliveryOriginRequest(store, testPartnerActorID, latitude, longitude, 0), "corr-origin-"+store); err != nil {
+				t.Fatalf("set discovery origin for %s: %v", store, err)
+			}
+		}
+		newestPage, err := postgres.ListPublishedStorePage(ctx, db, postgres.PublicStoreListQuery{ServiceCityID: createdCity.City.ID, Sort: "newest", Limit: 1})
+		if err != nil || len(newestPage.Stores) != 1 || newestPage.NextCursor == "" {
+			t.Fatalf("published store newest first page failed: %+v err=%v", newestPage, err)
+		}
+		newestNext, err := postgres.ListPublishedStorePage(ctx, db, postgres.PublicStoreListQuery{ServiceCityID: createdCity.City.ID, Sort: "newest", Limit: 1, Cursor: newestPage.NextCursor})
+		if err != nil || len(newestNext.Stores) != 1 || newestNext.NextCursor != "" || newestNext.Stores[0].ID == newestPage.Stores[0].ID {
+			t.Fatalf("published store newest cursor failed: first=%+v second=%+v err=%v", newestPage, newestNext, err)
+		}
+		latitude, longitude := 15.3, 44.1
+		nearestPage, err := postgres.ListPublishedStorePage(ctx, db, postgres.PublicStoreListQuery{ServiceCityID: createdCity.City.ID, Sort: "nearest", Limit: 1, Latitude: &latitude, Longitude: &longitude})
+		if err != nil || len(nearestPage.Stores) != 1 || nearestPage.NextCursor == "" {
+			t.Fatalf("published store nearest first page failed: %+v err=%v", nearestPage, err)
+		}
+		nearestNext, err := postgres.ListPublishedStorePage(ctx, db, postgres.PublicStoreListQuery{ServiceCityID: createdCity.City.ID, Sort: "nearest", Limit: 1, Cursor: nearestPage.NextCursor, Latitude: &latitude, Longitude: &longitude})
+		if err != nil || len(nearestNext.Stores) != 1 || nearestNext.NextCursor != "" || nearestNext.Stores[0].ID == nearestPage.Stores[0].ID {
+			t.Fatalf("published store nearest cursor failed: first=%+v second=%+v err=%v", nearestPage, nearestNext, err)
+		}
+		publicStores, err := postgres.ListPublishedStorePage(ctx, db, postgres.PublicStoreListQuery{ServiceCityID: createdCity.City.ID, Sort: "newest", Limit: 10})
+		if err != nil || len(publicStores.Stores) != 2 {
+			t.Fatalf("published store discovery query failed: %+v err=%v", publicStores, err)
+		}
+		publishedStore, err := postgres.ReadPublishedStore(ctx, db, "store_catalog_v1", createdCity.City.ID)
+		if err != nil || publishedStore.ID != "store_catalog_v1" || len(publishedStore.CategoryIDs) != 1 || publishedStore.CategoryIDs[0] != category.ID {
+			t.Fatalf("published store canonical readback failed: %+v err=%v", publishedStore, err)
+		}
+		discoveryCategories, err := postgres.ListPublicDiscoveryCategories(ctx, db, createdCity.City.ID)
+		if err != nil || len(discoveryCategories) != 1 || discoveryCategories[0].ID != category.ID {
+			t.Fatalf("public discovery categories failed: %+v err=%v", discoveryCategories, err)
+		}
+		publicSearch, err := postgres.SearchPublicCatalog(ctx, db, createdCity.City.ID, category.ID, "قهوة", 10, "")
+		if err != nil || len(publicSearch.Offers) != 2 || publicSearch.Offers[0].StoreID == publicSearch.Offers[1].StoreID {
+			t.Fatalf("public catalog search failed: %+v err=%v", publicSearch, err)
+		}
+		const favoriteClientID = "client_catalog_favorite_v1"
+		favoriteStore, err := postgres.SetClientFavoriteStore(ctx, db, favoriteClientID, "store_catalog_v1", "add", "idem-favorite-store-v1", postgres.HashClientFavoriteStoreMutation("add", "store_catalog_v1"), "corr-favorite-store-v1")
+		if err != nil || !favoriteStore.IsFavorite {
+			t.Fatalf("favorite published store mutation failed: %+v err=%v", favoriteStore, err)
+		}
+		favoriteOffer, err := postgres.SetClientFavoriteStoreOffer(ctx, db, favoriteClientID, offer.Offer.ID, "add", "idem-favorite-offer-v1", postgres.HashClientFavoriteStoreOfferMutation("add", offer.Offer.ID), "corr-favorite-offer-v1")
+		if err != nil || !favoriteOffer.IsFavorite {
+			t.Fatalf("favorite customer-visible offer mutation failed: %+v err=%v", favoriteOffer, err)
+		}
+		favoriteCatalog, err := postgres.ReadPublicFavoriteStoreCatalog(ctx, db, "store_catalog_v1", createdCity.City.ID, favoriteClientID, 10, "")
+		if err != nil || len(favoriteCatalog.Offers) != 1 || favoriteCatalog.Offers[0].ID != offer.Offer.ID {
+			t.Fatalf("favorite store public catalog failed: %+v err=%v", favoriteCatalog, err)
+		}
+
+		for index, suffix := range []string{"first", "second"} {
+			if _, err := db.ExecContext(ctx, `INSERT INTO dsh.catalog_product_proposals(id,partner_actor_id,vertical_id,category_id,proposed_name,proposed_base_unit,created_at)
+				VALUES($1,$2,$3,$4,$5,'COUNT',clock_timestamp()+($6::int * interval '1 second'))`, "proposal_"+suffix, testPartnerActorID, vertical.ID, category.ID, "اقتراح "+suffix, index); err != nil {
+				t.Fatalf("insert catalog proposal fixture %s: %v", suffix, err)
+			}
+		}
+		proposalPage, err := postgres.ListCatalogProductProposalsForPartner(ctx, db, testPartnerActorID, "", 1, "")
+		if err != nil || len(proposalPage.Proposals) != 1 || proposalPage.NextCursor == "" {
+			t.Fatalf("catalog proposal first page failed: %+v err=%v", proposalPage, err)
+		}
+		proposalNext, err := postgres.ListCatalogProductProposalsForPartner(ctx, db, testPartnerActorID, "", 1, proposalPage.NextCursor)
+		if err != nil || len(proposalNext.Proposals) != 1 || proposalNext.NextCursor != "" || proposalNext.Proposals[0].ID == proposalPage.Proposals[0].ID {
+			t.Fatalf("catalog proposal cursor failed: first=%+v second=%+v err=%v", proposalPage, proposalNext, err)
+		}
+
+		for index, suffix := range []string{"first", "second"} {
+			phone := fmt.Sprintf("+967770010%03d", index+1)
+			createdAt := time.Now().UTC().Add(time.Duration(index) * time.Second)
+			if _, err := db.ExecContext(ctx, `INSERT INTO dsh.captain_admissions(id,contact_phone_e164,full_name_ar,state,created_at)
+				VALUES($1,$2,$3,'pending_identity',$4)`, "captain_"+suffix, phone, "كابتن "+suffix, createdAt); err != nil {
+				t.Fatalf("insert Captain admission fixture %s: %v", suffix, err)
+			}
+			if _, err := db.ExecContext(ctx, `INSERT INTO dsh.field_admissions(id,contact_phone_e164,full_name_ar,state,created_at)
+				VALUES($1,$2,$3,'pending_identity',$4)`, "field_"+suffix, fmt.Sprintf("+967770011%03d", index+1), "مندوب "+suffix, createdAt); err != nil {
+				t.Fatalf("insert Field admission fixture %s: %v", suffix, err)
+			}
+		}
+		captainPage, err := postgres.ListCaptainAdmissions(ctx, db, "", "all", "created_asc", 1, "")
+		if err != nil || len(captainPage.Admissions) != 1 || captainPage.NextCursor == "" {
+			t.Fatalf("Captain admission first page failed: %+v err=%v", captainPage, err)
+		}
+		captainNext, err := postgres.ListCaptainAdmissions(ctx, db, "", "all", "created_asc", 1, captainPage.NextCursor)
+		if err != nil || len(captainNext.Admissions) != 1 || captainNext.NextCursor != "" || captainNext.Admissions[0].ID == captainPage.Admissions[0].ID {
+			t.Fatalf("Captain admission cursor failed: first=%+v second=%+v err=%v", captainPage, captainNext, err)
+		}
+		fieldPage, err := postgres.ListFieldAdmissions(ctx, db, "", "all", "created_asc", 1, "")
+		if err != nil || len(fieldPage.Admissions) != 1 || fieldPage.NextCursor == "" {
+			t.Fatalf("Field admission first page failed: %+v err=%v", fieldPage, err)
+		}
+		fieldNext, err := postgres.ListFieldAdmissions(ctx, db, "", "all", "created_asc", 1, fieldPage.NextCursor)
+		if err != nil || len(fieldNext.Admissions) != 1 || fieldNext.NextCursor != "" || fieldNext.Admissions[0].ID == fieldPage.Admissions[0].ID {
+			t.Fatalf("Field admission cursor failed: first=%+v second=%+v err=%v", fieldPage, fieldNext, err)
+		}
 	})
 }
 
