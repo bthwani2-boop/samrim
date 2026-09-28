@@ -471,7 +471,7 @@ async function admitReviewedRoleCandidate(role, phone, candidateName, reviewedNa
   if (updated.status !== 200 || updated.body?.admission?.state !== "pending_review" || updated.body?.admission?.fullNameAr !== reviewedName || updated.body?.admission?.actorId) {
     fail(`${role} candidate profile editing did not preserve the pre-access review state`, JSON.stringify(updated));
   }
-  const approved = await request(dshBase, "POST", `${root}/${encodeURIComponent(admissionID)}/approve`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `${label}-profile-approve-${suffix}`) });
+  const approved = await request(dshBase, "POST", `${root}/${encodeURIComponent(admissionID)}/approve`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `${label}-profile-approve-${suffix}`, crypto.randomUUID(), Number(updated.body?.admission?.version)) });
   const roleBeforeGrant = await request(identityBase, "GET", `/internal/actor-roles/search?role=${role}&q=${encodeURIComponent(phone)}&limit=5`, { token: identityDshToken });
   if (approved.status !== 200 || approved.body?.admission?.state !== "pending_identity" || approved.body?.admission?.fullNameAr !== reviewedName || approved.body?.admission?.actorId || roleBeforeGrant.status !== 200 || roleBeforeGrant.body?.items?.some((item) => item.phoneE164 === phone)) {
     fail(`${role} approval must leave the Identity role ungranted`, JSON.stringify({ approved, roleBeforeGrant }));
