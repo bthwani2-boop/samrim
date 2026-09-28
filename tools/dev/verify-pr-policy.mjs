@@ -28,6 +28,7 @@ function finish(extra = {}) {
   }
   for (const [key, value] of Object.entries(extra)) console.log(`${key}=${value}`);
   console.log("PR_POLICY=PASS");
+  process.exit(0);
 }
 
 if (event === "push") {

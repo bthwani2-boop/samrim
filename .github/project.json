@@ -41,6 +41,7 @@
         "{workspaceRoot}/tools/dev/record-ci-external-result.mjs",
         "{workspaceRoot}/tools/dev/enforce-ci-batch.mjs",
         "{workspaceRoot}/tools/dev/verify-pr-policy.mjs",
+        "{workspaceRoot}/tools/dev/verify-pr-policy.test.mjs",
         "{workspaceRoot}/tools/dev/report-ci-performance.mjs",
         "{workspaceRoot}/tools/dev/verify-cache-contracts.mjs",
         "{workspaceRoot}/tools/dev/hash-control-panel-secret-input.mjs",

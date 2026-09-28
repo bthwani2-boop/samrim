@@ -29,27 +29,22 @@ forbidTokens(failureCapture, "failure capture", ['"dsh-backend:runtime-proof"'])
 const diagnosticHelper = read("tools/dev/ci-failure-diagnostics.mjs");
 requireTokens(diagnosticHelper, "agent diagnostic", ["AGENT_FAILURE_DIAGNOSTIC", "EVIDENCE_ONLY_NOT_ROOT_CAUSE_AUTHORITY", "materialFindings", "successfulCommands", "completedTargets", "COLLAPSE_FINDINGS_BY_HIGHEST_COMMON_CAUSAL_ROOT", "RERUN_ONLY_MATERIALLY_INVALIDATED_EVIDENCE"]);
 execFileSync(process.execPath, ["--test", "tools/dev/ci-failure-diagnostics.test.mjs"], { cwd: root, stdio: "inherit" });
+execFileSync(process.execPath, ["--test", "tools/dev/verify-pr-policy.test.mjs"], { cwd: root, stdio: "inherit" });
 
 const runtimeRunner = read("tools/dev/run-ci-runtime-proof.mjs");
 requireTokens(runtimeRunner, "runtime runner", ["samrim-runtime-failure.json", "CI_RUNTIME_TASK=FAIL target=", "classify-highest-causal-root-before-new-material-work"]);
-
 const commandRunner = read("tools/dev/run-ci-command.mjs");
 requireTokens(commandRunner, "command runner", ["QUIET_SUCCESS_BOUNDED_FAILURE_RAW_ARTIFACT", "CI_TIMED_COMMAND_OUTPUT_TRUNCATED"]);
-
 for (const [file, kind] of [["ci-static.yml", "static"], ["ci-runtime.yml", "runtime"], ["ci-policy.yml", "policy"], ["ci-security.yml", "security"]]) {
   const workflow = read(`.github/workflows/${file}`);
   requireTokens(workflow, `${kind} workflow diagnostics`, ["capture-ci-failure.mjs", "actions/upload-artifact@"]);
 }
-
 const policyWorkflow = read(".github/workflows/ci-policy.yml");
 requireTokens(policyWorkflow, "policy bounded batch", ["run-ci-command.mjs policy-validation", "verify-pr-policy.mjs"]);
 const policyVerifier = read("tools/dev/verify-pr-policy.mjs");
-requireTokens(policyVerifier, "policy verifier", ["POLICY_FINDING=FAIL", "PR_POLICY=FAIL count="]);
-
+requireTokens(policyVerifier, "policy verifier", ["POLICY_FINDING=FAIL", "PR_POLICY=FAIL count=", "process.exit(0)"]);
 const securityWorkflow = read(".github/workflows/ci-security.yml");
 requireTokens(securityWorkflow, "security bounded batch", ["continue-on-error: true", "record-ci-external-result.mjs", "run-ci-command.mjs security-secret-safety", "enforce-ci-batch.mjs SECURITY"]);
-
 const staticWorkflow = read(".github/workflows/ci-static.yml");
 requireTokens(staticWorkflow, "static workflow diagnostics", ["run-ci-command.mjs static-invariants", "run-ci-command.mjs static-execution-proof", "run-ci-command.mjs static-go-workspace", "run-ci-command.mjs static-compose-config"]);
-
 console.log("FAILURE_DRIVEN_CLOSURE_CONTRACT=PASS pass=reuse fail=machine-diagnostic-bounded-harvest-and-repair affected=nx-only diagnostics=agent-first");
