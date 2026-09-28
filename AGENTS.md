@@ -158,7 +158,9 @@ Cache is evidence only when inputs cover every material computation input. Prefe
 
 Evidence is valid only for the exact state and claim it proves. If candidate, semantic owner, contract/schema, persistence/runtime composition, Governance binding or mutable external fact materially changes, rerun only the proof made stale.
 
-### Failure-driven closure and evidence reuse
+### CAUSAL DIAGNOSTIC CLOSURE LAW
+
+For every task, change, proof or failure, execution MUST be demand-driven, evidence-preserving and causal-root-first. Select only the smallest complete diagnostics justified by the canonical affected graph, material inputs, risk and stale evidence. Within one cheap bounded diagnostic batch, harvest all near-free material findings before repair; then normalize, fingerprint, deduplicate, correlate and collapse them toward the highest provable common causal roots. Emit one canonical machine-readable `closure-diagnostic.json` before broad forensic reading, containing exact candidate identity, scope authority, selected/skipped proofs, failed commands/targets/claims, all material findings with evidence references, causal groups, explicit unproven/proven causal state, progression state and the smallest falsifying reproof. Diagnostic grouping is evidence organization only: never infer, rank or repair an unproven root cause. Never patch symptoms one-by-one when a higher common root can still explain them, never hide or weaken a failure, never blindly retry, never begin unrelated material work while a required failure remains unresolved, and never rerun unaffected successful evidence for reassurance. Repair the highest proven canonical causal root completely—including delete/refound/restructure when required—then run the smallest proof capable of falsifying that repair and rerun only evidence materially invalidated by it. PASS evidence remains reusable until causally invalidated; FAIL evidence remains an `ACTIVE_CLOSURE_BLOCKER` until reconciled and proven; no candidate is closed while material findings, stale/shadow truth, unresolved residue, decision-critical causal unknowns or required invalidated evidence remain.
 
 Every required proof result is actionable evidence, never passive logging.
 
@@ -166,7 +168,7 @@ Every required proof result is actionable evidence, never passive logging.
 
 **RED CANDIDATE LAW:** a required proof failure on the current candidate immediately becomes the highest-priority `ACTIVE_CLOSURE_BLOCKER`. Until it is causally classified and reconciled, do not start an unrelated material journey, push unrelated material work, launch broader reassurance proof, or proceed through dependent heavy proof.
 
-For a cheap already-running bounded static batch, allow near-free sibling findings to finish so they can be collapsed by causal owner. For sequential or expensive proof, stop at the first material failure; do not continue into later dependent lanes. The goal is not the largest error list but zero highest causal roots.
+For a cheap already-running bounded diagnostic batch, allow near-free sibling findings to finish so they can be collapsed by causal owner. For sequential or expensive proof, stop at the first material failure; do not continue into later dependent lanes. The goal is not the largest error list but zero highest causal roots.
 
 Classify a failure only far enough to choose the correct owner: implementation defect, proof defect, infrastructure/environment defect, external transient, or tooling/diagnostic defect. Collapse sibling findings to the highest common causal root, repair that root completely, run the smallest proof capable of falsifying the repair, then rerun only evidence materially invalidated by that repair.
 
