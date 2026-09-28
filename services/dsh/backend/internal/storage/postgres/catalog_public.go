@@ -180,9 +180,9 @@ func readCustomerVisibleOfferTx(ctx context.Context, tx *sql.Tx, storeID, offerI
 }
 
 func readCustomerVisibleOffer(ctx context.Context, rowSource rowQueryer, storeID, offerID string, lock bool) (CatalogStoreOfferRecord, error) {
-	const unlockedQuery = `SELECT o.id,o.store_id,o.variant_id,o.publication_state,o.availability,o.price_minor,o.quantity_policy,o.quantity_min_base_units,o.quantity_max_base_units,o.quantity_step_base_units,o.pricing_basis,o.pricing_unit_base_units,o.inventory_policy,o.inventory_on_hand_base_units,o.inventory_reserved_base_units,o.version,o.created_at,o.updated_at,
+	const unlockedQuery = `SELECT o.id,o.store_id,o.variant_id,o.price_minor,o.currency,o.quantity_policy,o.quantity_min_base_units,o.quantity_max_base_units,o.quantity_step_base_units,o.pricing_basis,o.pricing_unit_base_units,o.inventory_policy,o.inventory_on_hand_base_units,o.inventory_reserved_base_units,o.availability,o.publication_state,o.version,o.created_at,o.updated_at,
 		v.id,v.product_id,v.title,v.measurement_kind,v.base_unit,v.active,v.version,v.created_at,v.updated_at,
-		p.id,p.vertical_id,p.scope,p.store_id,p.canonical_name,p.description,p.brand,p.active,p.version,p.created_at,p.updated_at,
+		p.id,p.vertical_id,p.scope,p.store_id,p.canonical_name,p.brand,p.active,p.version,p.created_at,p.updated_at,
 		s.name
 		FROM dsh.catalog_store_offers o
 		JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
@@ -190,9 +190,9 @@ func readCustomerVisibleOffer(ctx context.Context, rowSource rowQueryer, storeID
 		JOIN dsh.stores s ON s.id=o.store_id
 		WHERE o.store_id=$1 AND o.id=$2
 		AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id)`
-	const lockedQuery = `SELECT o.id,o.store_id,o.variant_id,o.publication_state,o.availability,o.price_minor,o.quantity_policy,o.quantity_min_base_units,o.quantity_max_base_units,o.quantity_step_base_units,o.pricing_basis,o.pricing_unit_base_units,o.inventory_policy,o.inventory_on_hand_base_units,o.inventory_reserved_base_units,o.version,o.created_at,o.updated_at,
+	const lockedQuery = `SELECT o.id,o.store_id,o.variant_id,o.price_minor,o.currency,o.quantity_policy,o.quantity_min_base_units,o.quantity_max_base_units,o.quantity_step_base_units,o.pricing_basis,o.pricing_unit_base_units,o.inventory_policy,o.inventory_on_hand_base_units,o.inventory_reserved_base_units,o.availability,o.publication_state,o.version,o.created_at,o.updated_at,
 		v.id,v.product_id,v.title,v.measurement_kind,v.base_unit,v.active,v.version,v.created_at,v.updated_at,
-		p.id,p.vertical_id,p.scope,p.store_id,p.canonical_name,p.description,p.brand,p.active,p.version,p.created_at,p.updated_at,
+		p.id,p.vertical_id,p.scope,p.store_id,p.canonical_name,p.brand,p.active,p.version,p.created_at,p.updated_at,
 		s.name
 		FROM dsh.catalog_store_offers o
 		JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
