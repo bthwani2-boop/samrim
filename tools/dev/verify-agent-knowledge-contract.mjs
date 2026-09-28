@@ -15,9 +15,7 @@ function read(relative) {
 
 function requireTokens(file, tokens) {
   const body = read(file);
-  for (const token of tokens) {
-    if (!body.includes(token)) failures.push(`${file} missing invariant: ${token}`);
-  }
+  for (const token of tokens) if (!body.includes(token)) failures.push(`${file} missing invariant: ${token}`);
   return body;
 }
 
@@ -64,14 +62,10 @@ const retainedMatrixEvidenceRule =
   structure.includes(`The user-directed \`${retainedMatrixPath}\` is the sole admitted retained task-evidence exception`) &&
   structure.includes("it grants no semantic/execution/implementation authority and must be revalidated against exact live state before use") &&
   fs.existsSync(path.join(root, retainedMatrixPath));
-if (/single derived closure matrix/i.test(structure) || (structure.includes(retainedMatrixPath) && !retainedMatrixEvidenceRule)) {
-  failures.push("REPOSITORY-STRUCTURE.md does not bound its closure-matrix exception to non-authoritative retained evidence");
-}
+if (/single derived closure matrix/i.test(structure) || (structure.includes(retainedMatrixPath) && !retainedMatrixEvidenceRule)) failures.push("REPOSITORY-STRUCTURE.md does not bound its closure-matrix exception to non-authoritative retained evidence");
 
 const retiredTriggerPath = "tools/BTHWANI_FULL_PLATFORM_A_TO_Z_FIXED_POINT_CLOSURE_TRIGGER.md";
-if (fs.existsSync(path.join(root, retiredTriggerPath))) {
-  failures.push(`tracked task authorization must remain retired: ${retiredTriggerPath}`);
-}
+if (fs.existsSync(path.join(root, retiredTriggerPath))) failures.push(`tracked task authorization must remain retired: ${retiredTriggerPath}`);
 
 const security = requireTokens("SECURITY.md", [
   "DOCUMENT_CLASS: SECURITY_REPORTING_AND_SECRET_HANDLING_GUIDANCE",
@@ -90,17 +84,9 @@ if (!/^[0-9a-f]{40}$/.test(manifest?.governance?.commit ?? "")) failures.push("G
 const pkg = JSON.parse(read("package.json"));
 if (pkg?.scripts?.verify !== "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-local-candidate.ps1") failures.push("package.json verify owner drifted");
 if (pkg?.scripts?.["safe:push"] !== "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/safe-push.ps1") failures.push("package.json safe:push owner drifted");
-for (const command of ["dev", "client", "partner", "captain", "field", "control", "scr", "runtime:up", "runtime:status", "runtime:down"]) {
-  if (!pkg?.scripts?.[command]) failures.push(`package.json missing stable local command: ${command}`);
-}
+for (const command of ["dev", "client", "partner", "captain", "field", "control", "scr", "runtime:up", "runtime:status", "runtime:down"]) if (!pkg?.scripts?.[command]) failures.push(`package.json missing stable local command: ${command}`);
 
-const safePush = requireTokens("tools/dev/safe-push.ps1", [
-  "SAFE_PUSH=NOOP",
-  "VERIFY_BASE=REMOTE_BRANCH",
-  "VERIFY_BASE=MAIN_MERGE_BASE",
-  "verify-local-candidate.ps1",
-  "REMOTE_SHA_CONFIRMATION=PASS",
-]);
+const safePush = requireTokens("tools/dev/safe-push.ps1", ["SAFE_PUSH=NOOP", "VERIFY_BASE=REMOTE_BRANCH", "VERIFY_BASE=MAIN_MERGE_BASE", "verify-local-candidate.ps1", "REMOTE_SHA_CONFIRMATION=PASS"]);
 const noop = safePush.indexOf("SAFE_PUSH=NOOP");
 const verify = safePush.indexOf("SAFE_PUSH_VERIFY=START");
 if (noop < 0 || verify < 0 || noop > verify) failures.push("safe push must resolve exact-remote NOOP before verification");
@@ -110,13 +96,14 @@ const localVerifier = requireTokens("tools/dev/verify-local-candidate.ps1", [
   "EXACT_LOCAL_CANDIDATE_SHA",
   "repository-ci:execution-proof-system",
   "go-workspace-sync",
-  "nx affected -t lint format-check typecheck unit contract build vet",
+  "'nx','affected'",
+  "'lint','format-check','typecheck','unit','contract','build','vet'",
+  "--nxBail=false",
+  "capture-ci-failure.mjs",
   "VERIFY_TOTAL_MS",
   "VERIFY=PASS",
 ]);
-for (const forbidden of ["runtime:up", "runtime:doctor", "Get-RuntimeSnapshot", "Restore-RuntimeSnapshot"]) {
-  if (localVerifier.includes(forbidden)) failures.push(`local static verifier must not own runtime behavior: ${forbidden}`);
-}
+for (const forbidden of ["runtime:up", "runtime:doctor", "Get-RuntimeSnapshot", "Restore-RuntimeSnapshot"]) if (localVerifier.includes(forbidden)) failures.push(`local static verifier must not own runtime behavior: ${forbidden}`);
 
 const prTemplate = requireTokens(".github/pull_request_template.md", [
   "## Governance impact",
@@ -125,14 +112,17 @@ const prTemplate = requireTokens(".github/pull_request_template.md", [
 ]);
 if (prTemplate.includes("GOVERNANCE_IMPACT=NONE\n")) failures.push("PR template must not preselect Governance impact");
 
-const policy = requireTokens(".github/workflows/ci-policy.yml", [
+requireTokens(".github/workflows/ci-policy.yml", ["run-ci-command.mjs policy-validation", "verify-pr-policy.mjs"]);
+const policyOwner = requireTokens("tools/dev/verify-pr-policy.mjs", [
   "GOVERNANCE_IMPACT=(NONE|REVALIDATE_ONLY|UPDATE_REQUIRED|DEFECT_FOUND)",
   "knowledge.sources.json",
   "GOVERNANCE_CANONICAL_SHA=",
-  "Governance pin changed but GOVERNANCE_IMPACT=NONE",
-  "Governance pin rollback is forbidden",
+  "GOVERNANCE_PIN_WITH_NONE",
+  "GOVERNANCE_PIN_ROLLBACK",
+  "merge-base",
+  "--is-ancestor",
 ]);
-if (!policy.includes("merge-base --is-ancestor")) failures.push("Governance pin monotonicity proof missing");
+if (!policyOwner.includes("previousPinned") || !policyOwner.includes("pinned")) failures.push("Governance pin monotonicity proof missing");
 
 const adapterCandidates = [
   ...fs.readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".md")).map((entry) => entry.name),
@@ -141,9 +131,7 @@ const adapterCandidates = [
 for (const file of adapterCandidates) {
   const body = read(file);
   if (!body.includes("ADAPTER_CLASS: DERIVED_AGENT_ROUTING")) continue;
-  for (const token of ["SEMANTIC_AUTHORITY: NONE", "EXECUTION_AUTHORITY: NONE", "CLOSURE_AUTHORITY: NONE", "AGENTS.md"]) {
-    if (!body.includes(token)) failures.push(`${file} derived adapter missing ${token}`);
-  }
+  for (const token of ["SEMANTIC_AUTHORITY: NONE", "EXECUTION_AUTHORITY: NONE", "CLOSURE_AUTHORITY: NONE", "AGENTS.md"]) if (!body.includes(token)) failures.push(`${file} derived adapter missing ${token}`);
 }
 
 if (failures.length) {
