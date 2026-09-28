@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { captureMailpitMessageIds, readMailpitCode } from "./mailpit-challenge.mjs";
+import { resolveTrustedExecutable } from "./runtime-proof/trusted-executables.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const envArg = process.argv.find((arg) => arg.startsWith("--env-file="));
@@ -57,7 +58,7 @@ if (dshToken.length < 24 || identityDshToken.length < 24 || bootstrapToken.lengt
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", path.join(root, "infra/local/compose/compose.yaml")];
 const suffix = `${Date.now().toString(36)}-${crypto.randomBytes(6).toString("hex")}`;
 const citySuffix = String(Date.now());
-const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), challengeIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), paymentIntentIDs = new Set(), cashInFundingIntentIDs = new Set(), deliveryFeePolicyIDs = new Set(), fieldCommissionPolicyIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set(), captainAdmissionIDs = new Set(), captainOfferIDs = new Set(), captainAssignmentIDs = new Set(), fieldAdmissionIDs = new Set(), destinationIDs = new Set(), payoutIDs = new Set(), settlementBatchIDs = new Set(), promotionIDs = new Set(), contentIDs = new Set(), multiStoreCheckoutIDs = new Set(), partnerCommissionRemittanceIDs = new Set();
+const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), challengeIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), paymentIntentIDs = new Set(), cashInFundingIntentIDs = new Set(), deliveryFeePolicyIDs = new Set(), fieldCommissionPolicyIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set(), captainAdmissionIDs = new Set(), captainOfferIDs = new Set(), captainAssignmentIDs = new Set(), fieldAdmissionIDs = new Set(), destinationIDs = new Set(), payoutIDs = new Set(), settlementBatchIDs = new Set(), promotionIDs = new Set(), multiStoreCheckoutIDs = new Set(), partnerCommissionRemittanceIDs = new Set();
 let cityA = "";
 let cityB = "";
 let verticalID = "";
@@ -72,7 +73,8 @@ let cleanupBatch = null;
 let cleanupAttempted = false;
 let cleanupCompleted = false;
 
-function compose(...args) { return execFileSync("docker", [...composeArgs, ...args], { cwd: root, encoding: "utf8" }); }
+const dockerExecutable = resolveTrustedExecutable("docker");
+function compose(...args) { return execFileSync(dockerExecutable, [...composeArgs, ...args], { cwd: root, encoding: "utf8" }); }
 function sqlLiteral(value) { return String(value).replaceAll("'", "''"); }
 // SQL is limited to schema/readback assertions, bounded cleanup of IDs captured
   // by this run, and the bounded database-time fault injections below. Business fixtures
@@ -85,7 +87,7 @@ function sql(query) {
   }
   try {
     if (!postgresContainerID) fail("postgres container is not present");
-    return execFileSync("docker", ["exec", postgresContainerID, "psql", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-Atc", query], { cwd: root, encoding: "utf8" }).trim();
+    return execFileSync(dockerExecutable, ["exec", postgresContainerID, "psql", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-Atc", query], { cwd: root, encoding: "utf8" }).trim();
   }
   catch (error) {
     const detail = String(error?.stderr || error?.message || error);
@@ -293,12 +295,7 @@ function cleanup() {
     sql(`DELETE FROM dsh.joining_case_mutation_idempotency WHERE case_id='${value}'`);
     sql(`DELETE FROM dsh.joining_cases WHERE id='${value}'`);
   }
-  for (const contentID of contentIDs) {
-    const value = sqlLiteral(contentID);
-    sql(`DELETE FROM dsh.commerce_marketing_mutation_idempotency WHERE resource_id='${value}'`);
-    sql(`DELETE FROM dsh.discovery_content WHERE id='${value}'`);
-  }
-  for (const promotionID of promotionIDs) {
+for (const promotionID of promotionIDs) {
     const value = sqlLiteral(promotionID);
     sql(`DELETE FROM dsh.commerce_promotion_redemptions WHERE promotion_id='${value}'`);
     sql(`DELETE FROM dsh.commerce_marketing_mutation_idempotency WHERE resource_id='${value}'`);
@@ -375,7 +372,7 @@ function cleanup() {
     sql(`DELETE FROM identity_actors WHERE id='${value}'`);
     }
     if (cleanupBatch.length > 0) {
-      execFileSync("docker", ["exec", "-i", postgresContainerID, "psql", "--no-psqlrc", "--set=ON_ERROR_STOP=1", "--single-transaction", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-f", "-"], { cwd: root, encoding: "utf8", input: `${cleanupBatch.join(";\n")};\n` });
+      execFileSync(dockerExecutable, ["exec", "-i", postgresContainerID, "psql", "--no-psqlrc", "--set=ON_ERROR_STOP=1", "--single-transaction", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-f", "-"], { cwd: root, encoding: "utf8", input: `${cleanupBatch.join(";\n")};\n` });
     }
     cleanupCompleted = true;
   } catch (error) {
@@ -396,7 +393,7 @@ function cleanupCheckerFixture() {
     `DELETE FROM identity_actors WHERE id='${actorID}' AND phone_e164='${phone}'`,
     `SELECT (SELECT count(*) FROM identity_operator_profiles WHERE id='${profileID}') + (SELECT count(*) FROM identity_actors WHERE id='${actorID}')`,
   ].join(";\n") + ";\n";
-  const output = execFileSync("docker", ["exec", "-i", postgresContainerID, "psql", "--no-psqlrc", "-A", "-t", "-q", "--set=ON_ERROR_STOP=1", "--single-transaction", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-f", "-"], { cwd: root, encoding: "utf8", input: cleanupSQL }).trim();
+  const output = execFileSync(dockerExecutable, ["exec", "-i", postgresContainerID, "psql", "--no-psqlrc", "-A", "-t", "-q", "--set=ON_ERROR_STOP=1", "--single-transaction", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-f", "-"], { cwd: root, encoding: "utf8", input: cleanupSQL }).trim();
   if (output.split(/\r?\n/).at(-1) !== "0") throw new Error("DSH checker fixture cleanup left the created Operator or reviewed profile");
   fs.unlinkSync(checkerFixturePath);
   console.log("DSH_RUNTIME_CHECKER_FIXTURE_CLEANUP=PASS");
@@ -2046,14 +2043,14 @@ let outageFailure = "";
 const identityContainerID = compose("ps", "-aq", "identity").trim();
 try {
   if (!identityContainerID) throw new Error("identity container is not present");
-  execFileSync("docker", ["stop", identityContainerID], { cwd: root, encoding: "utf8" });
+  execFileSync(dockerExecutable, ["stop", identityContainerID], { cwd: root, encoding: "utf8" });
   const unavailable = await request(dshBase, "GET", `/dsh/public/stores?serviceCityId=${encodeURIComponent(cityB)}`, { timeoutMs: 15_000, allowNetworkError: true });
   if (unavailable.status !== 502 || unavailable.body?.error?.code !== "IDENTITY_UNAVAILABLE") outageFailure = `Identity outage did not fail closed: ${JSON.stringify(unavailable)}`;
 } finally {
   if (!identityContainerID) {
     outageFailure ||= "Identity restart failed: identity container is not present";
   } else {
-    try { execFileSync("docker", ["start", identityContainerID], { cwd: root, encoding: "utf8" }); }
+    try { execFileSync(dockerExecutable, ["start", identityContainerID], { cwd: root, encoding: "utf8" }); }
     catch (error) { outageFailure ||= `Identity restart failed: ${String(error?.message || error)}`; }
   }
 }

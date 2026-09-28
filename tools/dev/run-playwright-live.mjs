@@ -9,9 +9,11 @@ if (!disposableCiProofAuthorized && !isolatedLocalActorsProofAuthorized) {
 }
 
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+const forwardedArgs = process.argv.slice(2);
+if (forwardedArgs[0] === "--") forwardedArgs.shift();
 const result = spawnSync(
   pnpm,
-  ["exec", "playwright", "test", "--config", "playwright.config.ts", ...process.argv.slice(2)],
+  ["exec", "playwright", "test", "--config", "playwright.config.ts", ...forwardedArgs],
   {
     cwd: process.cwd(),
     env: { ...process.env, PLAYWRIGHT_LIVE_IDENTITY: "1" },

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "../..");
+const compareStrings = (left, right) => String(left).localeCompare(String(right), "en");
 const failures = [];
 const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 const data = (relative) => JSON.parse(read(relative));
@@ -9,7 +10,7 @@ const assert = (condition, message) => { if (!condition) failures.push(message);
 
 const ciWorkflowNames = ["ci-policy.yml", "ci-runtime.yml", "ci-security.yml", "ci-static.yml"];
 const observationWorkflowNames = ["sonar-observe.yml"];
-const workflowNames = [...ciWorkflowNames, ...observationWorkflowNames].sort();
+const workflowNames = [...ciWorkflowNames, ...observationWorkflowNames].sort(compareStrings);
 const discovered = fs.readdirSync(path.join(root, ".github/workflows")).filter((name) => /\.ya?ml$/.test(name)).sort();
 assert(JSON.stringify(discovered) === JSON.stringify(workflowNames), "canonical workflow set drifted");
 
@@ -106,20 +107,27 @@ for (const file of workflowNames) if (budgets.mode === "observe") assert(!read(`
 const sonarWorkflow = read(".github/workflows/sonar-observe.yml");
 assert(sonarWorkflow.includes("name: Sonar Quality Observe"), "Sonar observation workflow name missing");
 assert(sonarWorkflow.includes("uses: SonarSource/sonarqube-scan-action@"), "Sonar observation action missing");
-assert(sonarWorkflow.includes("SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}"), "Sonar observation token binding missing");
+assert(sonarWorkflow.includes("SONAR_TOKEN: $" + "{{ secrets.SONAR_TOKEN }}"), "Sonar observation token binding missing");
+for (const token of ["image: postgis/postgis:16-3.4-alpine", "POSTGRES_HOST_AUTH_METHOD: trust", "DSH_DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable", "IDENTITY_DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable", "go -C services/dsh/backend test -coverprofile=", "go -C services/identity/backend test -coverprofile=", "go -C services/wlt/backend test -coverprofile=", "node --experimental-test-coverage --test --test-reporter=lcov", "coverage/sonar/tools-dev.lcov"]) assert(sonarWorkflow.includes(token), `Sonar coverage preparation missing ${token}`);
+assert(!sonarWorkflow.includes("POSTGRES_PASSWORD:") && !sonarWorkflow.includes("sonar-proof"), "Sonar workflow must not retain a hardcoded database credential");
 assert(!sonarWorkflow.includes("sonar.qualitygate.wait=true"), "Sonar observation must not wait on or enforce the quality gate");
 for (const [, reference] of sonarWorkflow.matchAll(/^\s+uses:\s+([^\s]+)$/gm)) {
   const [, ref] = reference.split("@");
   assert(/^[0-9a-f]{40}$/.test(ref ?? ""), `Sonar observation action is not pinned to a full commit SHA: ${reference}`);
 }
 const sonarProperties = new Map(read("sonar-project.properties").split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#")).map((line) => { const separator = line.indexOf("="); return separator < 0 ? [line, ""] : [line.slice(0, separator).trim(), line.slice(separator + 1).trim()]; }));
-for (const key of ["sonar.organization", "sonar.projectKey", "sonar.projectName", "sonar.sources"]) assert(Boolean(sonarProperties.get(key)), `Sonar observation configuration is missing ${key}`);
+for (const key of ["sonar.organization", "sonar.projectKey", "sonar.projectName", "sonar.sources", "sonar.tests", "sonar.test.inclusions", "sonar.go.coverage.reportPaths", "sonar.javascript.lcov.reportPaths"]) assert(Boolean(sonarProperties.get(key)), `Sonar observation configuration is missing ${key}`);
 assert(/^[A-Za-z0-9-]+$/.test(sonarProperties.get("sonar.organization") ?? ""), "Sonar organization key is malformed");
 assert(/^[A-Za-z0-9_.:-]+$/.test(sonarProperties.get("sonar.projectKey") ?? ""), "Sonar project key is malformed");
+for (const pattern of ["**/*_test.go", "**/*.test.mjs", "**/tests/**/*.ts", "tools/dev/verify-dsh-runtime-core.mjs"]) {
+  assert(sonarProperties.get("sonar.test.inclusions")?.split(",").includes(pattern), `Sonar test classification missing ${pattern}`);
+  assert(sonarProperties.get("sonar.exclusions")?.split(",").includes(pattern), `Sonar source scope still includes test files matching ${pattern}`);
+}
+assert(!sonarProperties.has("sonar.coverage.exclusions"), "Sonar coverage exclusions must not conceal uncovered source lines");
 
 if (failures.length) {
   console.error("EXECUTION_PROOF_SYSTEM=FAIL");
-  for (const failure of [...new Set(failures)].sort()) console.error(`  ${failure}`);
+  for (const failure of [...new Set(failures)].sort(compareStrings)) console.error(`  ${failure}`);
   process.exit(1);
 }
 console.log("EXECUTION_PROOF_SYSTEM=PASS workflows=4 observation_workflows=1 runtime_router=nx affected_scope=claim-driven runtime_dag=decoupled diagnostics=agent-first-bounded-harvest cache_inputs=causal");

@@ -84,8 +84,7 @@ func ListPublicDiscoveryCategories(ctx context.Context, db *sql.DB, serviceCityI
 	if db == nil || strings.TrimSpace(serviceCityID) == "" {
 		return nil, errors.New("public discovery category scope is invalid")
 	}
-	visibleConditions := strings.Join(customerVisibleOfferConditions(), " AND ")
-	rows, err := db.QueryContext(ctx, `SELECT DISTINCT pc.category_id
+	const query = `SELECT DISTINCT pc.category_id
 		FROM dsh.stores s
 		JOIN dsh.service_cities sc ON sc.id=s.service_city_id AND sc.active=true
 		JOIN dsh.joining_cases jc ON jc.partner_actor_id=s.partner_actor_id AND jc.financial_profile_state='ACTIVE'
@@ -94,8 +93,10 @@ func ListPublicDiscoveryCategories(ctx context.Context, db *sql.DB, serviceCityI
 		JOIN dsh.catalog_products p ON p.id=v.product_id
 		JOIN dsh.catalog_product_categories pc ON pc.product_id=p.id
 		JOIN dsh.catalog_categories c ON c.id=pc.category_id AND c.active=true AND c.vertical_id=p.vertical_id
-		WHERE sc.id=$1 AND s.publication_state='published' AND s.publication_changed_at IS NOT NULL AND `+visibleConditions+`
-		ORDER BY pc.category_id`, strings.TrimSpace(serviceCityID))
+		WHERE sc.id=$1 AND s.publication_state='published' AND s.publication_changed_at IS NOT NULL
+		AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id)
+		ORDER BY pc.category_id`
+	rows, err := db.QueryContext(ctx, query, strings.TrimSpace(serviceCityID))
 	if err != nil {
 		return nil, fmt.Errorf("list public discovery categories: %w", err)
 	}
@@ -119,15 +120,17 @@ func ListPublicDiscoveryCategories(ctx context.Context, db *sql.DB, serviceCityI
 }
 
 func listPublicStoreCatalogCategories(ctx context.Context, db *sql.DB, storeID, serviceCityID, verticalID string) ([]CatalogCategoryRecord, error) {
-	visibleConditions := strings.Join(customerVisibleOfferConditions(), " AND ")
-	rows, err := db.QueryContext(ctx, `SELECT DISTINCT pc.category_id FROM dsh.catalog_store_offers o
+	const query = `SELECT DISTINCT pc.category_id FROM dsh.catalog_store_offers o
 		JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
 		JOIN dsh.catalog_products p ON p.id=v.product_id
 		JOIN dsh.stores s ON s.id=o.store_id
 		JOIN dsh.service_cities sc ON sc.id=s.service_city_id AND sc.active=true
 		JOIN dsh.catalog_product_categories pc ON pc.product_id=p.id
 		JOIN dsh.catalog_categories c ON c.id=pc.category_id AND c.active=true AND c.vertical_id=p.vertical_id
-		WHERE s.id=$1 AND s.service_city_id=$2 AND p.vertical_id=$3 AND `+visibleConditions+` ORDER BY pc.category_id`, storeID, serviceCityID, verticalID)
+		WHERE s.id=$1 AND s.service_city_id=$2 AND p.vertical_id=$3
+		AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id)
+		ORDER BY pc.category_id`
+	rows, err := db.QueryContext(ctx, query, storeID, serviceCityID, verticalID)
 	if err != nil {
 		return nil, fmt.Errorf("list public store catalog category assignments: %w", err)
 	}
@@ -157,12 +160,10 @@ type rowQueryer interface {
 
 func HasPublishableCatalog(ctx context.Context, db *sql.DB, storeID string) (bool, error) {
 	var present bool
-	query := `SELECT EXISTS (SELECT 1 FROM dsh.catalog_store_offers o
-		JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
-		JOIN dsh.catalog_products p ON p.id=v.product_id
-		JOIN dsh.stores s ON s.id=o.store_id
-		WHERE o.store_id=$1 AND ` + strings.Join(publishableCatalogOfferConditionsForAliases("o", "v", "p", "s"), " AND ") + `)`
-	err := db.QueryRowContext(ctx, query, strings.TrimSpace(storeID)).Scan(&present)
+	err := db.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM dsh.catalog_publishable_offers publishable
+		JOIN dsh.catalog_store_offers o ON o.id=publishable.offer_id
+		WHERE o.store_id=$1)`, strings.TrimSpace(storeID)).Scan(&present)
 	return present, err
 }
 
@@ -179,10 +180,30 @@ func readCustomerVisibleOfferTx(ctx context.Context, tx *sql.Tx, storeID, offerI
 }
 
 func readCustomerVisibleOffer(ctx context.Context, rowSource rowQueryer, storeID, offerID string, lock bool) (CatalogStoreOfferRecord, error) {
-	conditions := append([]string{"o.store_id=$1", "o.id=$2"}, customerVisibleOfferConditions()...)
-	query := catalogOfferSelect + " WHERE " + strings.Join(conditions, " AND ")
+	const unlockedQuery = `SELECT o.id,o.store_id,o.variant_id,o.price_minor,o.currency,o.quantity_policy,o.quantity_min_base_units,o.quantity_max_base_units,o.quantity_step_base_units,o.pricing_basis,o.pricing_unit_base_units,o.inventory_policy,o.inventory_on_hand_base_units,o.inventory_reserved_base_units,o.availability,o.publication_state,o.version,o.created_at,o.updated_at,
+		v.id,v.product_id,v.title,v.measurement_kind,v.base_unit,v.active,v.version,v.created_at,v.updated_at,
+		p.id,p.vertical_id,p.scope,p.store_id,p.canonical_name,p.brand,p.active,p.version,p.created_at,p.updated_at,
+		s.name
+		FROM dsh.catalog_store_offers o
+		JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
+		JOIN dsh.catalog_products p ON p.id=v.product_id
+		JOIN dsh.stores s ON s.id=o.store_id
+		WHERE o.store_id=$1 AND o.id=$2
+		AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id)`
+	const lockedQuery = `SELECT o.id,o.store_id,o.variant_id,o.price_minor,o.currency,o.quantity_policy,o.quantity_min_base_units,o.quantity_max_base_units,o.quantity_step_base_units,o.pricing_basis,o.pricing_unit_base_units,o.inventory_policy,o.inventory_on_hand_base_units,o.inventory_reserved_base_units,o.availability,o.publication_state,o.version,o.created_at,o.updated_at,
+		v.id,v.product_id,v.title,v.measurement_kind,v.base_unit,v.active,v.version,v.created_at,v.updated_at,
+		p.id,p.vertical_id,p.scope,p.store_id,p.canonical_name,p.brand,p.active,p.version,p.created_at,p.updated_at,
+		s.name
+		FROM dsh.catalog_store_offers o
+		JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
+		JOIN dsh.catalog_products p ON p.id=v.product_id
+		JOIN dsh.stores s ON s.id=o.store_id
+		WHERE o.store_id=$1 AND o.id=$2
+		AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id)
+		FOR UPDATE OF o,v,p,s`
+	query := unlockedQuery
 	if lock {
-		query += " FOR UPDATE OF o,v,p,s"
+		query = lockedQuery
 	}
 	item, err := scanCatalogOffer(rowSource.QueryRowContext(ctx, query, strings.TrimSpace(storeID), strings.TrimSpace(offerID)))
 	if err != nil {
@@ -260,7 +281,7 @@ func SearchPublicCatalog(ctx context.Context, db *sql.DB, serviceCityID, categor
 }
 
 func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, serviceCityID, categoryID, productID, query, favoriteActorID string, limit int, cursor string) ([]CatalogStoreOfferRecord, *string, error) {
-	conditions := customerVisibleOfferConditions()
+	conditions := []string{"EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id)"}
 	args := make([]any, 0, 7)
 	storeID = strings.TrimSpace(storeID)
 	serviceCityID = strings.TrimSpace(serviceCityID)
@@ -431,7 +452,7 @@ func listStorefrontSections(ctx context.Context, db queryer, storeID string) ([]
 		JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
 		JOIN dsh.catalog_products p ON p.id=v.product_id
 		JOIN dsh.stores s ON s.id=o.store_id
-		WHERE so.section_id=$1 AND `+strings.Join(customerVisibleOfferConditionsForAliases("o", "v", "p", "s"), " AND ")+`
+		WHERE so.section_id=$1 AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id)
 		ORDER BY so.ordinal,so.offer_id`, sections[i].ID)
 		if err != nil {
 			return nil, err
@@ -453,41 +474,6 @@ func listStorefrontSections(ctx context.Context, db queryer, storeID string) ([]
 		}
 	}
 	return sections, nil
-}
-
-func customerVisibleOfferConditions() []string {
-	return customerVisibleOfferConditionsForAliases("o", "v", "p", "s")
-}
-
-func customerVisibleOfferConditionsForAliases(offerAlias, variantAlias, productAlias, storeAlias string) []string {
-	conditions := publishableCatalogOfferConditionsForAliases(offerAlias, variantAlias, productAlias, storeAlias)
-	return append(conditions, storeAlias+".publication_state='published'")
-}
-
-func publishableCatalogOfferConditionsForAliases(offerAlias, variantAlias, productAlias, storeAlias string) []string {
-	return []string{
-		offerAlias + ".publication_state='published'",
-		offerAlias + ".availability=true",
-		offerAlias + ".price_minor>0",
-		productAlias + ".active=true",
-		variantAlias + ".active=true",
-		storeAlias + ".service_city_id IS NOT NULL",
-		storeAlias + ".primary_vertical_id IS NOT NULL",
-		productAlias + ".vertical_id=" + storeAlias + ".primary_vertical_id",
-		"EXISTS (SELECT 1 FROM dsh.commerce_verticals cv WHERE cv.id=" + storeAlias + ".primary_vertical_id AND cv.active=true AND ((cv.catalog_model='SHARED_CATALOG' AND " + productAlias + ".scope='SHARED') OR (cv.catalog_model='STORE_LOCAL_CATALOG' AND " + productAlias + ".scope='STORE_SCOPED' AND " + productAlias + ".store_id=" + offerAlias + ".store_id)))",
-		offerAlias + ".quantity_policy=" + variantAlias + ".measurement_kind",
-		offerAlias + ".quantity_policy<>'VARIABLE_MEASURE'",
-		offerAlias + ".quantity_min_base_units IS NOT NULL",
-		offerAlias + ".quantity_max_base_units IS NOT NULL",
-		offerAlias + ".quantity_step_base_units IS NOT NULL",
-		offerAlias + ".quantity_min_base_units>0 AND " + offerAlias + ".quantity_max_base_units>=" + offerAlias + ".quantity_min_base_units AND " + offerAlias + ".quantity_step_base_units>0",
-		"(" + offerAlias + ".quantity_max_base_units-" + offerAlias + ".quantity_min_base_units)%" + offerAlias + ".quantity_step_base_units=0",
-		"((" + offerAlias + ".pricing_basis='PER_UNIT' AND " + offerAlias + ".pricing_unit_base_units=1) OR (" + offerAlias + ".pricing_basis='PER_MEASURE' AND " + offerAlias + ".pricing_unit_base_units>0))",
-		"(" + offerAlias + ".inventory_policy='AVAILABILITY_ONLY' OR (" + offerAlias + ".inventory_on_hand_base_units-" + offerAlias + ".inventory_reserved_base_units>=" + offerAlias + ".quantity_min_base_units))",
-		"((" + productAlias + ".scope='SHARED' AND EXISTS (SELECT 1 FROM dsh.catalog_product_categories pc JOIN dsh.catalog_categories c ON c.id=pc.category_id AND c.active=true AND c.vertical_id=" + productAlias + ".vertical_id WHERE pc.product_id=" + productAlias + ".id)) OR (" + productAlias + ".scope='STORE_SCOPED' AND NOT EXISTS (SELECT 1 FROM dsh.catalog_product_categories pc WHERE pc.product_id=" + productAlias + ".id)))",
-		"NOT EXISTS (SELECT 1 FROM dsh.catalog_product_categories pc JOIN dsh.catalog_categories c ON c.id=pc.category_id JOIN dsh.catalog_category_attribute_rules r ON r.category_id=c.id JOIN dsh.catalog_attribute_definitions ad ON ad.id=r.attribute_id WHERE pc.product_id=" + productAlias + ".id AND c.active=true AND ad.active=true AND ad.vertical_id=" + productAlias + ".vertical_id AND r.required AND ((r.variant_axis AND NOT EXISTS (SELECT 1 FROM dsh.catalog_variant_attribute_values av WHERE av.variant_id=" + variantAlias + ".id AND av.attribute_id=r.attribute_id)) OR (NOT r.variant_axis AND NOT EXISTS (SELECT 1 FROM dsh.catalog_product_attribute_values av WHERE av.product_id=" + productAlias + ".id AND av.attribute_id=r.attribute_id))))",
-		"NOT EXISTS (SELECT 1 FROM dsh.catalog_store_offer_modifier_groups og JOIN dsh.catalog_modifier_groups mg ON mg.id=og.group_id WHERE og.offer_id=" + offerAlias + ".id AND (mg.store_id<>" + offerAlias + ".store_id OR NOT mg.active OR mg.min_selections > (SELECT COUNT(*) FROM dsh.catalog_modifier_options mo WHERE mo.group_id=mg.id AND mo.availability=true)))",
-	}
 }
 
 func validateCatalogOfferQuantity(offer CatalogStoreOfferRecord, quantity int64) error {

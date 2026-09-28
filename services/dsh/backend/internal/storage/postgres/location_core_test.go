@@ -92,6 +92,10 @@ func TestLocationCoreIntegrity(t *testing.T) {
 		if err != nil || len(listed.Addresses) != 1 || listed.Addresses[0].ID != created.Address.ID || listed.NextCursor != "" {
 			t.Fatalf("owned delivery address list failed: %+v err=%v", listed, err)
 		}
+		serviceability, err := postgres.ReadServiceabilityFacts(ctx, db, storeID, clientActorID, created.Address.ID)
+		if err != nil || !serviceability.StoreFound || !serviceability.AddressFound || serviceability.HasPublishedOffer {
+			t.Fatalf("serviceability facts query failed: %+v err=%v", serviceability, err)
+		}
 		otherAddresses, err := postgres.ListDeliveryAddresses(ctx, db, otherClientID, 50, "")
 		if err != nil || len(otherAddresses.Addresses) != 0 || otherAddresses.NextCursor != "" {
 			t.Fatalf("delivery address ownership read leaked records: %+v err=%v", otherAddresses, err)

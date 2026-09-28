@@ -180,25 +180,20 @@ func ReadPromotion(ctx context.Context, db *sql.DB, id string) (PromotionRecord,
 }
 
 func ListPromotions(ctx context.Context, db *sql.DB, public bool, serviceCityID, storeID string) ([]PromotionRecord, error) {
-	args := []any{}
-	where := "1=1"
-	limit := ""
+	serviceCityID = strings.TrimSpace(serviceCityID)
+	storeID = strings.TrimSpace(storeID)
 	if public {
-		where += " AND state='PUBLISHED' AND starts_at <= clock_timestamp() AND (ends_at IS NULL OR ends_at > clock_timestamp())"
-		if strings.TrimSpace(serviceCityID) == "" {
+		if serviceCityID == "" {
 			return nil, ErrPromotionInvalid
 		}
-		args = append(args, strings.TrimSpace(serviceCityID))
-		where += " AND (service_city_id IS NULL OR service_city_id=$" + itoa(len(args)) + ")"
-		if strings.TrimSpace(storeID) != "" {
-			args = append(args, strings.TrimSpace(storeID))
-			where += " AND (store_id IS NULL OR store_id=$" + itoa(len(args)) + ")"
-		} else {
-			where += " AND store_id IS NULL"
-		}
-		limit = " LIMIT 4"
 	}
-	rows, err := db.QueryContext(ctx, "SELECT "+promotionSelect+" FROM dsh.commerce_promotions WHERE "+where+" ORDER BY starts_at DESC,id DESC"+limit, args...)
+	rows, err := db.QueryContext(ctx, `SELECT id,code,name_ar,description_ar,kind,value_minor,max_discount_minor,funding_source,store_id,service_city_id,state,starts_at,ends_at,redemption_limit,redeemed_count,version,created_by_actor_id,created_at,updated_at
+		FROM dsh.commerce_promotions
+		WHERE (NOT $1 OR (state='PUBLISHED' AND starts_at <= clock_timestamp() AND (ends_at IS NULL OR ends_at > clock_timestamp())))
+		AND (NOT $1 OR service_city_id IS NULL OR service_city_id=$2)
+		AND (NOT $1 OR store_id IS NULL OR ($3<>'' AND store_id=$3))
+		ORDER BY starts_at DESC,id DESC
+		LIMIT CASE WHEN $1 THEN 4 ELSE NULL END`, public, serviceCityID, storeID)
 	if err != nil {
 		return nil, err
 	}

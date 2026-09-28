@@ -276,13 +276,14 @@ func validateFavoriteStoreOfferTargetTx(ctx context.Context, tx *sql.Tx, storeOf
 	if operation != "add" {
 		return nil
 	}
-	conditions := append(customerVisibleOfferConditions(), "EXISTS (SELECT 1 FROM dsh.service_cities city WHERE city.id=s.service_city_id AND city.active=true)")
-	query := `SELECT 1
+	const query = `SELECT 1
 		FROM dsh.catalog_store_offers o
 		JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
 		JOIN dsh.catalog_products p ON p.id=v.product_id
 		JOIN dsh.stores s ON s.id=o.store_id
-		WHERE o.id=$1 AND ` + strings.Join(conditions, " AND ") + `
+		WHERE o.id=$1
+		AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id)
+		AND EXISTS (SELECT 1 FROM dsh.service_cities city WHERE city.id=s.service_city_id AND city.active=true)
 		FOR SHARE OF o,v,p,s`
 	var visible int
 	if err := tx.QueryRowContext(ctx, query, storeOfferID).Scan(&visible); errors.Is(err, sql.ErrNoRows) {

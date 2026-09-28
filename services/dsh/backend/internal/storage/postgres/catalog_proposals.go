@@ -287,32 +287,33 @@ func ListCatalogProductProposalsForPartner(ctx context.Context, db *sql.DB, part
 	if partnerActorID == "" {
 		return CatalogProductProposalPage{}, ErrCatalogProposalInvalid
 	}
-	return listCatalogProductProposals(ctx, db, "partner_actor_id=$1", []any{partnerActorID}, state, limit, rawCursor, "partner", partnerActorID)
+	return listCatalogProductProposals(ctx, db, partnerActorID, state, limit, rawCursor, "partner", partnerActorID)
 }
 
 func ListCatalogProductProposalsForReview(ctx context.Context, db *sql.DB, state string, limit int, rawCursor string) (CatalogProductProposalPage, error) {
-	return listCatalogProductProposals(ctx, db, "1=1", nil, state, limit, rawCursor, "review", "")
+	return listCatalogProductProposals(ctx, db, "", state, limit, rawCursor, "review", "")
 }
 
-func listCatalogProductProposals(ctx context.Context, db *sql.DB, where string, args []any, state string, limit int, rawCursor, scope, partnerActorID string) (CatalogProductProposalPage, error) {
+func listCatalogProductProposals(ctx context.Context, db *sql.DB, partnerActorID, state string, limit int, rawCursor, scope, cursorPartnerActorID string) (CatalogProductProposalPage, error) {
 	if limit < 1 || limit > 100 {
 		return CatalogProductProposalPage{}, ErrCatalogProposalInvalid
 	}
 	state = strings.TrimSpace(state)
-	cursor, err := decodeCatalogProductProposalCursor(rawCursor, scope, state, partnerActorID)
+	cursor, err := decodeCatalogProductProposalCursor(rawCursor, scope, state, cursorPartnerActorID)
 	if err != nil {
 		return CatalogProductProposalPage{}, err
 	}
-	if strings.TrimSpace(state) != "" {
-		args = append(args, state)
-		where += " AND state=$" + strconv.Itoa(len(args))
-	}
+	var cursorCreatedAt any
+	var cursorProposalID string
 	if cursor != nil {
-		args = append(args, cursor.CreatedAt, cursor.ProposalID)
-		where += " AND (created_at<$" + strconv.Itoa(len(args)-1) + " OR (created_at=$" + strconv.Itoa(len(args)-1) + " AND id<$" + strconv.Itoa(len(args)) + "))"
+		cursorCreatedAt = cursor.CreatedAt
+		cursorProposalID = cursor.ProposalID
 	}
-	args = append(args, limit+1)
-	rows, err := db.QueryContext(ctx, "SELECT id,partner_actor_id,vertical_id,category_id,proposed_name,proposed_brand,proposed_variant_title,proposed_measurement_kind,proposed_base_unit,proposed_identifier_type,proposed_identifier_value,proposed_attribute_values,proposed_variant_attribute_values,state,correction_reason,reviewed_by,version,created_at,updated_at FROM dsh.catalog_product_proposals WHERE "+where+" ORDER BY created_at DESC,id DESC LIMIT $"+strconv.Itoa(len(args)), args...)
+	rows, err := db.QueryContext(ctx, `SELECT id,partner_actor_id,vertical_id,category_id,proposed_name,proposed_brand,proposed_variant_title,proposed_measurement_kind,proposed_base_unit,proposed_identifier_type,proposed_identifier_value,proposed_attribute_values,proposed_variant_attribute_values,state,correction_reason,reviewed_by,version,created_at,updated_at
+		FROM dsh.catalog_product_proposals
+		WHERE ($1='' OR partner_actor_id=$1) AND ($2='' OR state=$2)
+		AND (NOT $5::boolean OR (created_at,id)<($3::timestamptz,$4))
+		ORDER BY created_at DESC,id DESC LIMIT $6`, partnerActorID, state, cursorCreatedAt, cursorProposalID, cursor != nil, limit+1)
 	if err != nil {
 		return CatalogProductProposalPage{}, err
 	}

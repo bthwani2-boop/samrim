@@ -1,7 +1,6 @@
 package postgres
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -62,15 +61,4 @@ func TestValidateOfferInputRequiresExplicitMeasurementPricing(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestPublishableCatalogOfferConditionsExcludeVariableMeasurement(t *testing.T) {
-	conditions := publishableCatalogOfferConditionsForAliases("offer", "variant", "product", "store")
-	needle := "offer.quantity_policy<>'VARIABLE_MEASURE'"
-	for _, condition := range conditions {
-		if strings.TrimSpace(condition) == needle {
-			return
-		}
-	}
-	t.Fatalf("publishable conditions do not contain %q", needle)
 }

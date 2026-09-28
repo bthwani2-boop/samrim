@@ -92,84 +92,31 @@ func ListPublishedStorePage(ctx context.Context, db *sql.DB, input PublicStoreLi
 		return PublicStorePage{}, err
 	}
 
-	distanceExpression := "NULL::double precision"
-	if input.Latitude != nil {
-		distanceExpression = `CASE WHEN s.delivery_origin_latitude IS NULL OR s.delivery_origin_longitude IS NULL THEN NULL ELSE (6371000.0 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians($4)) * cos(radians(s.delivery_origin_latitude)) * cos(radians(s.delivery_origin_longitude) - radians($5)) + sin(radians($4)) * sin(radians(s.delivery_origin_latitude))))))::double precision END`
-	}
 	searchPattern := ""
 	if input.Query != "" {
 		searchPattern = "%" + escapePublicStoreSearch(input.Query) + "%"
 	}
-	args := []any{input.ServiceCityID, searchPattern, input.CategoryID}
+	var latitude, longitude any
 	if input.Latitude != nil {
-		args = append(args, *input.Latitude, *input.Longitude)
+		latitude, longitude = *input.Latitude, *input.Longitude
 	}
-	favoriteFilter := ""
-	if input.FavoriteClientActorID != "" {
-		favoriteActorArg := appendPublicStoreArg(&args, input.FavoriteClientActorID)
-		favoriteFilter = fmt.Sprintf(" AND EXISTS (SELECT 1 FROM dsh.client_favorite_stores f WHERE f.client_actor_id=$%d AND f.store_id=s.id)", favoriteActorArg)
-	}
-	cursorFilter := ""
+	var cursorCreatedAt, cursorDistance any
+	var cursorNameKey, cursorID string
 	if cursor != nil {
-		switch input.Sort {
-		case "newest":
-			createdAtArg := appendPublicStoreArg(&args, *cursor.CreatedAt)
-			idArg := appendPublicStoreArg(&args, cursor.ID)
-			cursorFilter = fmt.Sprintf(" AND (s.created_at,s.id)<($%d,$%d)", createdAtArg, idArg)
-		default:
-			if input.Latitude == nil {
-				nameArg := appendPublicStoreArg(&args, cursor.NameKey)
-				idArg := appendPublicStoreArg(&args, cursor.ID)
-				cursorFilter = fmt.Sprintf(" AND (lower(s.name),s.id)>($%d,$%d)", nameArg, idArg)
-			} else if cursor.DistanceMeters == nil {
-				nameArg := appendPublicStoreArg(&args, cursor.NameKey)
-				idArg := appendPublicStoreArg(&args, cursor.ID)
-				cursorFilter = fmt.Sprintf(" AND %s IS NULL AND (lower(s.name),s.id)>($%d,$%d)", distanceExpression, nameArg, idArg)
-			} else {
-				distanceArg := appendPublicStoreArg(&args, *cursor.DistanceMeters)
-				nameArg := appendPublicStoreArg(&args, cursor.NameKey)
-				idArg := appendPublicStoreArg(&args, cursor.ID)
-				nullTail := ""
-				if input.Sort == "all" {
-					nullTail = " OR " + distanceExpression + " IS NULL"
-				}
-				cursorFilter = fmt.Sprintf(" AND (%s>$%d OR (%s=$%d AND (lower(s.name),s.id)>($%d,$%d))%s)", distanceExpression, distanceArg, distanceExpression, distanceArg, nameArg, idArg, nullTail)
-			}
+		cursorNameKey, cursorID = cursor.NameKey, cursor.ID
+		if cursor.CreatedAt != nil {
+			cursorCreatedAt = *cursor.CreatedAt
+		}
+		if cursor.DistanceMeters != nil {
+			cursorDistance = *cursor.DistanceMeters
 		}
 	}
-	limitArg := len(args) + 1
-	args = append(args, input.Limit+1)
-	orderBy := "lower(s.name),s.id"
-	pageOrderBy := "lower(candidate.name),candidate.id"
-	if input.Sort == "newest" {
-		orderBy = "s.created_at DESC,s.id DESC"
-		pageOrderBy = "candidate.created_at DESC,candidate.id DESC"
-	} else if input.Latitude != nil {
-		orderBy = distanceExpression + " ASC NULLS LAST,lower(s.name),s.id"
-		pageOrderBy = "candidate.distance_meters ASC NULLS LAST,lower(candidate.name),candidate.id"
-	}
-	nearestOnly := ""
-	if input.Sort == "nearest" {
-		nearestOnly = " AND s.delivery_origin_latitude IS NOT NULL AND s.delivery_origin_longitude IS NOT NULL"
-	}
-	visibleOfferConditions := strings.Join(customerVisibleOfferConditions(), " AND ")
-	storeCategories := `ARRAY(WITH RECURSIVE store_categories(id,parent_category_id,vertical_id) AS (
-		SELECT c.id,c.parent_category_id,c.vertical_id FROM dsh.catalog_store_offers o
-		JOIN dsh.stores s ON s.id=o.store_id
-		JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
-		JOIN dsh.catalog_products p ON p.id=v.product_id
-		JOIN dsh.catalog_product_categories pc ON pc.product_id=p.id
-		JOIN dsh.catalog_categories c ON c.id=pc.category_id AND c.active=true AND c.vertical_id=p.vertical_id
-		WHERE o.store_id=candidate.id AND ` + visibleOfferConditions + `
-		UNION
-		SELECT parent.id,parent.parent_category_id,parent.vertical_id FROM store_categories child
-		JOIN dsh.catalog_categories parent ON parent.id=child.parent_category_id AND parent.vertical_id=child.vertical_id AND parent.active=true
-	) SELECT DISTINCT id FROM store_categories ORDER BY id)`
-	statement := `WITH candidate_page AS MATERIALIZED (
+	const statement = `WITH candidate_page AS MATERIALIZED (
 		SELECT s.id,s.partner_actor_id,s.name,s.primary_vertical_id,s.version,s.publication_changed_at,s.created_at,s.updated_at,s.fulfillment_modes,lower(s.name) AS name_sort_key,
-		` + distanceExpression + ` AS distance_meters,
+		location.distance_meters,
 		sc.id AS service_city_id,sc.display_name_ar,sc.active AS service_city_active,sc.version AS service_city_version,sc.created_at AS service_city_created_at,sc.updated_at AS service_city_updated_at
 		FROM dsh.stores s JOIN dsh.service_cities sc ON sc.id=s.service_city_id
+		CROSS JOIN LATERAL (SELECT CASE WHEN $4::double precision IS NULL OR $5::double precision IS NULL OR s.delivery_origin_latitude IS NULL OR s.delivery_origin_longitude IS NULL THEN NULL ELSE (6371000.0 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians($4)) * cos(radians(s.delivery_origin_latitude)) * cos(radians(s.delivery_origin_longitude) - radians($5)) + sin(radians($4)) * sin(radians(s.delivery_origin_latitude))))))::double precision END AS distance_meters) location
 		WHERE s.service_city_id=$1 AND sc.active=true AND s.publication_state='published' AND s.publication_changed_at IS NOT NULL
 		AND ($2='' OR lower(s.name) LIKE $2 ESCAPE '!')
 		AND ($3='' OR EXISTS (WITH RECURSIVE store_categories(id,parent_category_id,vertical_id) AS (
@@ -178,27 +125,54 @@ func ListPublishedStorePage(ctx context.Context, db *sql.DB, input PublicStoreLi
 			JOIN dsh.catalog_products p ON p.id=v.product_id
 			JOIN dsh.catalog_product_categories pc ON pc.product_id=p.id
 			JOIN dsh.catalog_categories c ON c.id=pc.category_id AND c.active=true AND c.vertical_id=p.vertical_id
-			WHERE o.store_id=s.id AND ` + visibleOfferConditions + `
+			WHERE o.store_id=s.id AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id)
 			UNION
 			SELECT parent.id,parent.parent_category_id,parent.vertical_id FROM store_categories child
 			JOIN dsh.catalog_categories parent ON parent.id=child.parent_category_id AND parent.vertical_id=child.vertical_id AND parent.active=true
 		) SELECT 1 FROM store_categories WHERE id=$3))
-		AND EXISTS (SELECT 1 FROM dsh.catalog_store_offers o JOIN dsh.catalog_product_variants v ON v.id=o.variant_id JOIN dsh.catalog_products p ON p.id=v.product_id WHERE o.store_id=s.id AND ` + visibleOfferConditions + `)
-		AND EXISTS (SELECT 1 FROM dsh.joining_cases jc WHERE jc.partner_actor_id=s.partner_actor_id AND jc.financial_profile_state='ACTIVE')` + favoriteFilter + nearestOnly + cursorFilter + `
-		ORDER BY ` + orderBy + ` LIMIT $` + fmt.Sprint(limitArg) + `
+		AND EXISTS (SELECT 1 FROM dsh.catalog_store_offers o WHERE o.store_id=s.id AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id))
+		AND EXISTS (SELECT 1 FROM dsh.joining_cases jc WHERE jc.partner_actor_id=s.partner_actor_id AND jc.financial_profile_state='ACTIVE')
+		AND ($6='' OR EXISTS (SELECT 1 FROM dsh.client_favorite_stores f WHERE f.client_actor_id=$6 AND f.store_id=s.id))
+		AND (NOT $7::boolean OR (s.delivery_origin_latitude IS NOT NULL AND s.delivery_origin_longitude IS NOT NULL))
+		AND (NOT $12::boolean
+			OR ($13='newest' AND (s.created_at,s.id)<($8::timestamptz,$10::text))
+			OR ($13<>'newest' AND $4::double precision IS NULL AND (lower(s.name),s.id)>($9::text,$10::text))
+			OR ($13<>'newest' AND $4::double precision IS NOT NULL AND $11::double precision IS NULL
+				AND location.distance_meters IS NULL
+				AND (lower(s.name),s.id)>($9::text,$10::text))
+			OR ($13<>'newest' AND $4::double precision IS NOT NULL AND $11::double precision IS NOT NULL
+				AND (location.distance_meters>$11
+				OR (location.distance_meters=$11 AND (lower(s.name),s.id)>($9::text,$10::text))
+				OR ($13='all' AND (s.delivery_origin_latitude IS NULL OR s.delivery_origin_longitude IS NULL)))))
+		ORDER BY CASE WHEN $13='newest' THEN s.created_at END DESC,CASE WHEN $13='newest' THEN s.id END DESC,
+		CASE WHEN $13 IN ('all','nearest') AND $4::double precision IS NOT NULL THEN location.distance_meters END ASC NULLS LAST,
+		CASE WHEN $13<>'newest' THEN lower(s.name) END ASC,CASE WHEN $13<>'newest' THEN s.id END ASC LIMIT $14
 	)
 	SELECT candidate.id,candidate.partner_actor_id,candidate.name,candidate.primary_vertical_id,candidate.version,candidate.name_sort_key,
 		COALESCE(rating.rating_average,0),COALESCE(rating.rating_count,0),candidate.publication_changed_at,candidate.created_at,candidate.updated_at,candidate.fulfillment_modes,
-		` + storeCategories + `,candidate.distance_meters,
+		ARRAY(WITH RECURSIVE store_categories(id,parent_category_id,vertical_id) AS (
+			SELECT c.id,c.parent_category_id,c.vertical_id FROM dsh.catalog_store_offers o
+			JOIN dsh.stores s ON s.id=o.store_id
+			JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
+			JOIN dsh.catalog_products p ON p.id=v.product_id
+			JOIN dsh.catalog_product_categories pc ON pc.product_id=p.id
+			JOIN dsh.catalog_categories c ON c.id=pc.category_id AND c.active=true AND c.vertical_id=p.vertical_id
+			WHERE o.store_id=candidate.id AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id)
+			UNION
+			SELECT parent.id,parent.parent_category_id,parent.vertical_id FROM store_categories child
+			JOIN dsh.catalog_categories parent ON parent.id=child.parent_category_id AND parent.vertical_id=child.vertical_id AND parent.active=true
+		) SELECT DISTINCT id FROM store_categories ORDER BY id),candidate.distance_meters,
 		candidate.service_city_id,candidate.display_name_ar,candidate.service_city_active,candidate.service_city_version,candidate.service_city_created_at,candidate.service_city_updated_at,
 		media.id,media.joining_case_id,media.store_id,media.uri,media.object_key,media.content_sha256,media.content_type,media.byte_size,media.media_role,media.state,media.creator,media.source_description,media.source_uri,media.rights_statement,media.rights_uri,media.rights_attested_by_actor_id,media.rights_attested_at,media.created_at,media.attached_at
 	FROM candidate_page candidate
 	LEFT JOIN LATERAL (SELECT AVG(r.rating)::double precision AS rating_average,COUNT(*)::int AS rating_count FROM dsh.commerce_order_ratings r WHERE r.store_id=candidate.id) rating ON true
 	LEFT JOIN LATERAL (SELECT a.id,a.joining_case_id,COALESCE(a.store_id,'') AS store_id,a.uri,a.object_key,a.content_sha256,a.content_type,a.byte_size,a.media_role,a.state,a.creator,a.source_description,COALESCE(a.source_uri,'') AS source_uri,a.rights_statement,COALESCE(a.rights_uri,'') AS rights_uri,a.rights_attested_by_actor_id,a.rights_attested_at,a.created_at,a.attached_at
 		FROM dsh.store_profile_media_assets a WHERE a.state='active' AND a.rights_attested_at IS NOT NULL AND a.store_id=candidate.id ORDER BY a.created_at DESC LIMIT 1) media ON true
-	ORDER BY ` + pageOrderBy
+	ORDER BY CASE WHEN $13='newest' THEN candidate.created_at END DESC,CASE WHEN $13='newest' THEN candidate.id END DESC,
+	CASE WHEN $13 IN ('all','nearest') AND $4::double precision IS NOT NULL THEN candidate.distance_meters END ASC NULLS LAST,
+	CASE WHEN $13<>'newest' THEN lower(candidate.name) END ASC,CASE WHEN $13<>'newest' THEN candidate.id END ASC`
 
-	rows, err := db.QueryContext(ctx, statement, args...)
+	rows, err := db.QueryContext(ctx, statement, input.ServiceCityID, searchPattern, input.CategoryID, latitude, longitude, input.FavoriteClientActorID, input.Sort == "nearest", cursorCreatedAt, cursorNameKey, cursorID, cursorDistance, cursor != nil, input.Sort, input.Limit+1)
 	if err != nil {
 		return PublicStorePage{}, fmt.Errorf("list published store page: %w", err)
 	}
@@ -275,11 +249,6 @@ func ListPublishedStorePage(ctx context.Context, db *sql.DB, input PublicStoreLi
 		}
 	}
 	return page, nil
-}
-
-func appendPublicStoreArg(args *[]any, value any) int {
-	*args = append(*args, value)
-	return len(*args)
 }
 
 func escapePublicStoreSearch(value string) string {
