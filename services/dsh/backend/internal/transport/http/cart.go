@@ -286,6 +286,9 @@ func writeCartErrorWithCorrelation(w http.ResponseWriter, err error, correlation
 	default:
 		var identityErr *identityclient.Error
 		if errors.As(err, &identityErr) {
+			if correlationID != "" && identityErr.Status >= http.StatusInternalServerError {
+				log.Printf("cart Identity failure correlation_id=%q status=%d code=%q", correlationID, identityErr.Status, identityErr.Code)
+			}
 			writeIdentityError(w, err)
 			return
 		}

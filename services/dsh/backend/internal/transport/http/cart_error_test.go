@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
+	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 	"github.com/lib/pq"
 )
 
@@ -70,5 +71,42 @@ func TestWriteCartErrorDoesNotLogKnownClientErrors(t *testing.T) {
 	}
 	if output.Len() != 0 {
 		t.Fatalf("known client failure should not emit an internal diagnostic: %s", output.String())
+	}
+}
+
+func TestWriteCartErrorLogsSafeIdentityServerFailure(t *testing.T) {
+	previousOutput := log.Writer()
+	previousFlags := log.Flags()
+	previousPrefix := log.Prefix()
+	var output bytes.Buffer
+	log.SetOutput(&output)
+	log.SetFlags(0)
+	log.SetPrefix("")
+	t.Cleanup(func() {
+		log.SetOutput(previousOutput)
+		log.SetFlags(previousFlags)
+		log.SetPrefix(previousPrefix)
+	})
+
+	response := httptest.NewRecorder()
+	writeCartErrorWithCorrelation(response, fmt.Errorf("resolve client session: %w", &identityclient.Error{
+		Status:  http.StatusInternalServerError,
+		Code:    "IDENTITY_STORAGE_UNAVAILABLE",
+		Message: "private identity backend details",
+	}), "cart-correlation-789")
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusInternalServerError)
+	}
+	if !strings.Contains(response.Body.String(), "IDENTITY_STORAGE_UNAVAILABLE") {
+		t.Fatalf("response did not preserve the Identity error contract: %s", response.Body.String())
+	}
+	if strings.Contains(output.String(), "private identity backend details") {
+		t.Fatalf("Identity diagnostic exposed internal message: %s", output.String())
+	}
+	for _, expected := range []string{"cart Identity failure", `correlation_id="cart-correlation-789"`, `status=500`, `code="IDENTITY_STORAGE_UNAVAILABLE"`} {
+		if !strings.Contains(output.String(), expected) {
+			t.Errorf("log output missing %q: %s", expected, output.String())
+		}
 	}
 }
