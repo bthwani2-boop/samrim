@@ -1466,6 +1466,7 @@ func mutationHeaders(w http.ResponseWriter, r *http.Request) (string, string, bo
 	correlation := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
 	idempotency := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 	if len(correlation) < 8 || len(correlation) > 128 || len(idempotency) < 8 || len(idempotency) > 128 {
+		log.Printf("WLT mutation rejected: reason=mutation_headers_invalid path=%s", r.URL.Path)
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Correlation-ID and Idempotency-Key are required")
 		return "", "", false
 	}
@@ -1490,11 +1491,13 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
+		log.Printf("WLT request rejected: reason=request_body_decode_invalid path=%s", r.URL.Path)
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "request body is invalid")
 		return false
 	}
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		log.Printf("WLT request rejected: reason=request_body_multiple_values path=%s", r.URL.Path)
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "request body must contain exactly one JSON value")
 		return false
 	}
