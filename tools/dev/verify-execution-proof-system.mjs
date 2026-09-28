@@ -19,7 +19,7 @@ const agents = read("AGENTS.md");
 requireTokens(agents, "AGENTS.md", ["PASS EVIDENCE REUSE", "RED CANDIDATE LAW", "ACTIVE_CLOSURE_BLOCKER", "NO GREENWASHING / ORACLE PRESERVATION", "Blind retry is forbidden"]);
 
 const localVerifier = read("tools/dev/verify-local-candidate.ps1");
-requireTokens(localVerifier, "local verifier", ["VERIFY_BASE_SOURCE=REMOTE_TRACKING", "refs/remotes/origin/main", "VERIFY_SCOPE_AUTHORITY=NX_TASK_INPUTS_AND_AFFECTED_GRAPH", "repository-ci:execution-proof-system", "nx affected", "--nxBail=false", "capture-ci-failure.mjs", "agent-diagnostic.json"]);
+requireTokens(localVerifier, "local verifier", ["VERIFY_BASE_SOURCE=REMOTE_TRACKING", "refs/remotes/origin/main", "VERIFY_SCOPE_AUTHORITY=NX_TASK_INPUTS_AND_AFFECTED_GRAPH", "repository-ci:execution-proof-system", "'nx','affected'", "--nxBail=false", "capture-ci-failure.mjs", "agent-diagnostic.json"]);
 forbidTokens(localVerifier, "local verifier", ["HEAD^", "Test-ChangedPath", "workspaceSensitivePatterns", "deployabilityPatterns", "infraPatterns", "export-smoke"]);
 
 const failureCapture = read("tools/dev/capture-ci-failure.mjs");
