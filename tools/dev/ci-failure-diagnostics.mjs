@@ -52,7 +52,8 @@ function ownerHint(target, sourceCommand) {
 }
 
 function enrichFinding(finding) {
-  const fingerprintBasis = [finding.kind, finding.marker, finding.sourceCommand, finding.target, finding.evidence].join("|");
+  const causalTarget = finding.causalContextTarget ?? finding.target ?? null;
+  const fingerprintBasis = [finding.kind, finding.marker, finding.sourceCommand, finding.target, causalTarget, finding.evidence].join("|");
   const fingerprint = stableHash(fingerprintBasis, 20);
   const evidenceRef = finding.artifactLog
     ? `${finding.artifactLog}${finding.lineNumber ? `#L${finding.lineNumber}` : ""}`
@@ -62,8 +63,9 @@ function enrichFinding(finding) {
     fingerprint,
     tool: finding.sourceCommand ?? null,
     target: finding.target ?? null,
-    claim: finding.target ?? finding.marker ?? null,
-    owner: ownerHint(finding.target, finding.sourceCommand),
+    causalContextTarget: causalTarget,
+    claim: finding.target ?? causalTarget ?? finding.marker ?? null,
+    owner: ownerHint(causalTarget, finding.sourceCommand),
     severity: "MATERIAL_UNCLASSIFIED",
     class: rootCauseUnknown,
     kind: finding.kind,
@@ -81,13 +83,28 @@ export function analyzeCommandLog(logPath, sourceCommand = null) {
   const completedTargets = [];
   const failedTargets = [];
   let failedTasksSection = false;
+  let activeRuntimeTarget = null;
+  let terminalFailedTarget = null;
 
   for (const line of lines) {
+    const startTarget = line.text.match(/\bCI_RUNTIME_TASK=START\s+target=([^\s]+)/i);
+    if (startTarget) {
+      activeRuntimeTarget = startTarget[1];
+      terminalFailedTarget = null;
+    }
+
     const passTarget = line.text.match(/\bCI_RUNTIME_TASK=PASS\s+target=([^\s]+)/i);
-    if (passTarget) completedTargets.push(passTarget[1]);
+    if (passTarget) {
+      completedTargets.push(passTarget[1]);
+      if (activeRuntimeTarget === passTarget[1]) activeRuntimeTarget = null;
+    }
 
     const failedTarget = line.text.match(/\bCI_RUNTIME_TASK=FAIL\s+target=([^\s]+)/i);
-    if (failedTarget) failedTargets.push(failedTarget[1]);
+    if (failedTarget) {
+      failedTargets.push(failedTarget[1]);
+      terminalFailedTarget = failedTarget[1];
+      activeRuntimeTarget = failedTarget[1];
+    }
 
     if (/^Failed tasks:?$/i.test(line.text)) {
       failedTasksSection = true;
@@ -103,6 +120,7 @@ export function analyzeCommandLog(logPath, sourceCommand = null) {
           marker: "NX_TASK_FAILED",
           sourceCommand,
           target: target[1],
+          causalContextTarget: activeRuntimeTarget ?? terminalFailedTarget ?? target[1],
           lineNumber: line.lineNumber,
           artifactLog: artifactLogPath(logPath),
           evidence: truncate(line.text),
@@ -117,7 +135,8 @@ export function analyzeCommandLog(logPath, sourceCommand = null) {
     findings.push({
       ...classified,
       sourceCommand,
-      target: failedTarget?.[1] ?? null,
+      target: failedTarget?.[1] ?? activeRuntimeTarget ?? null,
+      causalContextTarget: activeRuntimeTarget ?? terminalFailedTarget ?? failedTarget?.[1] ?? null,
       lineNumber: line.lineNumber,
       artifactLog: artifactLogPath(logPath),
       evidence: truncate(line.text),
@@ -199,6 +218,7 @@ export function buildClosureDiagnostic({ metadata, metricRecords = [], externalR
       marker: "EXTERNAL_ACTION_FAIL",
       sourceCommand: record.name,
       target: null,
+      causalContextTarget: null,
       lineNumber: null,
       artifactLog: null,
       evidence: `external action ${record.name} outcome=${record.outcome} source=${record.source ?? "unknown"}`,
@@ -213,6 +233,7 @@ export function buildClosureDiagnostic({ metadata, metricRecords = [], externalR
         marker: "COMMAND_EXIT_NONZERO",
         sourceCommand: record.name,
         target: null,
+        causalContextTarget: runtimeFailure?.target ?? null,
         lineNumber: null,
         artifactLog: artifactLogPath(record.logPath),
         evidence: `command exited nonzero: ${record.name} exit=${record.exitCode}`,
@@ -224,9 +245,11 @@ export function buildClosureDiagnostic({ metadata, metricRecords = [], externalR
   const finalCompletedTargets = unique(completedTargets);
   const finalFailedTargets = unique(failedTargets);
   const observedTargets = unique([...finalCompletedTargets, ...finalFailedTargets]);
-  const reproofHints = finalFailedTargets.length > 0
-    ? finalFailedTargets
-    : unique([...failedRecords.map((record) => record.name), ...externalFailures.map((record) => record.name)]);
+  const reproofHints = runtimeFailure?.target
+    ? [runtimeFailure.target]
+    : finalFailedTargets.length > 0
+      ? finalFailedTargets
+      : unique([...failedRecords.map((record) => record.name), ...externalFailures.map((record) => record.name)]);
   const skippedExternal = externalResults.filter((record) => record.outcome === "skipped");
 
   return {
