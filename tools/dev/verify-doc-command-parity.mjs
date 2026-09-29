@@ -59,7 +59,7 @@ const forbiddenLegacyPatterns = [
   },
   {
     label: "donor branch authority",
-    regex: new RegExp(String.raw`\borigin/h\b`, "i"),
+    regex: new RegExp(String.raw`\b${["origin", "h"].join("/")}\b`, "i"),
   },
   {
     label: "wrong diagnosis-plan authority",
