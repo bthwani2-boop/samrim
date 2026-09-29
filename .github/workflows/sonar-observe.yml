@@ -95,6 +95,8 @@ jobs:
           node --experimental-test-coverage --test --test-reporter=lcov --test-reporter-destination=coverage/sonar/tools-dev.lcov \
             tools/dev/runtime-proof/resolve.test.mjs \
             tools/dev/runtime-proof/trusted-executables.test.mjs \
+            tools/dev/check-go-format.test.mjs \
+            tools/dev/ci-failure-diagnostics.test.mjs \
             tools/dev/verify-pr-policy.test.mjs \
             tools/dev/execution-proof-system.mjs \
             tools/dev/verify-wlt-contract-conformance.mjs
