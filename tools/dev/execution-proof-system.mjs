@@ -136,7 +136,8 @@ function verifyCiWorkflowTopology() {
     const start = staticWorkflow.indexOf(`  ${job}:\n`);
     assert(start >= 0, `ci-static workflow is missing ${job} job`);
     const nextJob = job === "baseline" ? staticWorkflow.indexOf("\n  windows:", start + 4) : staticWorkflow.length;
-    const body = staticWorkflow.slice(start, nextJob < 0 ? undefined : nextJob);
+    const end = nextJob < 0 ? staticWorkflow.length : nextJob;
+    const body = staticWorkflow.slice(start, end);
     requireTokens(body, `ci-static ${job} job`, ["    permissions:\n      actions: read\n      contents: read"]);
   }
   requireTokens(staticWorkflow, "static workflow", ["repository-ci:execution-proof-system", "nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet"]);
