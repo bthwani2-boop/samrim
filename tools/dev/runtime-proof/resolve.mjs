@@ -106,11 +106,10 @@ export function resolveFromAffected(affected, configs, fullRegression = false) {
 }
 
 function buildResolution(affected, lanes, reasons) {
-  const targets = lanes.flatMap((lane) => {
-    if (lane !== "dsh") return laneTargets[lane];
-    const checkerFixtureTarget = lanes.includes("control") ? [] : ["control-panel:dsh-runtime-checker-fixture"];
-    return [...checkerFixtureTarget, ...laneTargets.dsh];
-  });
+  const targets = [
+    ...(lanes.includes("dsh") ? ["control-panel:dsh-runtime-checker-fixture"] : []),
+    ...lanes.flatMap((lane) => laneTargets[lane]),
+  ];
   return {
     affected: [...affected].sort(compareStrings),
     lanes,

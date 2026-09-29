@@ -8,6 +8,7 @@ import {
   cleanupPreparedOperator,
   enableOperatorPermission,
   enableVirtualAuthenticator,
+  findExistingOperator,
   jsonRequest,
   type PreparedOperator,
   provisionIndependentOperator,
@@ -65,19 +66,7 @@ async function findOrBootstrapPrimaryOperator(
   });
   expect(response.status, "primary operator search must succeed for the DSH fixture").toBe(200);
   const body = await response.json() as { items?: Array<{ actorId: string; phoneE164: string }> };
-  const existing = body.items?.[0];
-  if (existing) {
-    expect(existing.actorId).toMatch(/^act_/);
-    expect(existing.phoneE164).toMatch(/^\+9677/);
-    return {
-      actorId: existing.actorId,
-      phone: existing.phoneE164,
-      token: "",
-      profileId: "",
-      actorCreatedByTest: false,
-      createdByTest: false,
-    };
-  }
+  if (body.items?.[0]) return findExistingOperator(identityBase, controlToken);
 
   if (process.env.BTHWANI_IDENTITY_PROOF_SCOPE !== "disposable-ci" || process.env.CI !== "true") {
     throw new Error("DSH checker fixture requires an existing primary operator outside disposable CI");
@@ -108,6 +97,11 @@ async function findOrBootstrapPrimaryOperator(
 
 test("@live provision and activate an independent operator for downstream DSH separation proof", async ({ page }) => {
   test.setTimeout(60_000);
+  if (process.env.CI === "true") {
+    test.skip(!dshRuntimeFixturePath, "DSH checker fixture is owned by the DSH runtime lane in CI");
+    test.skip(existsSync(dshRuntimeFixturePath), "DSH checker fixture was already prepared by its dedicated runtime target");
+  }
+
   const identityBase = requiredEnv("PLAYWRIGHT_IDENTITY_API_BASE_URL").replace(/\/+$/, "");
   const controlToken = requiredEnv("PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN");
   const bootstrapToken = requiredEnv("PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN");

@@ -38,7 +38,7 @@ test("WLT scopes select WLT proof without unrelated lanes", () => {
   assert.deepEqual(result.targets, ["wlt-backend:financial-invariants"]);
 });
 
-test("Nx-expanded cross-service cone composes lanes once", () => {
+test("Nx-expanded cross-service cone prepares DSH checker before unrelated lane proofs", () => {
   const result = resolveFromAffected(
     ["wlt", "dsh-backend", "dsh-database"],
     configs([
@@ -49,8 +49,8 @@ test("Nx-expanded cross-service cone composes lanes once", () => {
   );
   assert.deepEqual(result.lanes, ["wlt", "dsh"]);
   assert.deepEqual(result.targets, [
-    "wlt-backend:financial-invariants",
     "control-panel:dsh-runtime-checker-fixture",
+    "wlt-backend:financial-invariants",
     "dsh-backend:baseline-proof",
     "dsh-backend:runtime-proof",
   ]);
@@ -70,7 +70,7 @@ test("DSH-only runtime scope prepares one disposable Passkey checker before back
   assert.equal(result.needsBrowser, true);
 });
 
-test("combined Control and DSH scope creates the checker in the existing browser proof only once", () => {
+test("combined Control and DSH scope prepares the DSH checker before the broad browser proof", () => {
   const result = resolveFromAffected(
     ["control-panel", "dsh-backend"],
     configs([
@@ -79,6 +79,7 @@ test("combined Control and DSH scope creates the checker in the existing browser
     ]),
   );
   assert.deepEqual(result.targets, [
+    "control-panel:dsh-runtime-checker-fixture",
     "control-panel:browser-live-proof",
     "dsh-backend:baseline-proof",
     "dsh-backend:runtime-proof",
@@ -91,6 +92,7 @@ test("infra scope escalates explicitly to full", () => {
     configs([["infra", ["scope:infra", "type:infra"]]]),
   );
   assert.deepEqual(result.lanes, laneOrder);
+  assert.equal(result.targets[0], "control-panel:dsh-runtime-checker-fixture");
   assert.match(result.reasons[0], /^full-escalation:/);
 });
 
@@ -100,6 +102,7 @@ test("runtime routing owner escalates its own implementation changes to full", (
     configs([["runtime-proof-routing", ["scope:runtime-proof-routing", "type:tool"]]]),
   );
   assert.deepEqual(result.lanes, laneOrder);
+  assert.equal(result.targets[0], "control-panel:dsh-runtime-checker-fixture");
   assert.match(result.reasons[0], /^full-escalation:/);
 });
 
@@ -141,8 +144,9 @@ test("mobile app scope without runtime policy fails closed instead of skipping r
   );
 });
 
-test("scheduled/full regression selects every canonical lane", () => {
+test("scheduled/full regression selects every canonical lane and prepares DSH first", () => {
   const result = resolveFromAffected([], new Map(), true);
   assert.deepEqual(result.lanes, laneOrder);
+  assert.equal(result.targets[0], "control-panel:dsh-runtime-checker-fixture");
   assert.equal(result.run, true);
 });
