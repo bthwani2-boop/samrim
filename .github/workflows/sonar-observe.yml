@@ -1,4 +1,4 @@
-name: Sonar Quality Observe
+name: Sonar Quality Gate
 
 on:
   push:
@@ -12,6 +12,7 @@ on:
       - opened
       - synchronize
       - reopened
+      - ready_for_review
 
   workflow_dispatch:
 
@@ -19,12 +20,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: sonar-observe-${{ github.event.pull_request.number || github.ref }}
+  group: sonar-quality-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   sonar:
-    name: SonarQube Cloud Observe
+    name: SonarQube Cloud Quality Gate
     runs-on: ubuntu-24.04
     timeout-minutes: 30
 
@@ -136,7 +137,7 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-      - name: Read back SonarQube Cloud evidence
+      - name: Read back and enforce SonarQube Cloud evidence
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_PROJECT_KEY: bthwani2-boop_samrim
@@ -199,22 +200,26 @@ jobs:
 
           quality_gate_url="https://sonarcloud.io/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}&${scope}"
           measures_url="https://sonarcloud.io/api/measures/component?component=${SONAR_PROJECT_KEY}&${scope}&metricKeys=coverage,new_coverage,line_coverage,lines_to_cover,uncovered_lines,duplicated_lines_density,new_duplicated_lines_density,duplicated_lines,ncloc,bugs,vulnerabilities,code_smells,reliability_rating,security_rating,sqale_rating,security_hotspots"
-          issues_url="https://sonarcloud.io/api/issues/search?componentKeys=${SONAR_PROJECT_KEY}&${scope}&resolved=false&ps=100"
-          main_uncovered_url="https://sonarcloud.io/api/measures/component_tree?component=${SONAR_PROJECT_KEY}&branch=main&metricKeys=coverage,lines_to_cover,uncovered_lines&qualifiers=FIL&ps=40&s=metric&metricSort=uncovered_lines&asc=false"
-          main_duplicated_url="https://sonarcloud.io/api/measures/component_tree?component=${SONAR_PROJECT_KEY}&branch=main&metricKeys=duplicated_lines_density,duplicated_lines,ncloc&qualifiers=FIL&ps=40&s=metric&metricSort=duplicated_lines&asc=false"
+          issues_url="https://sonarcloud.io/api/issues/search?componentKeys=${SONAR_PROJECT_KEY}&${scope}&resolved=false&ps=500"
+          main_uncovered_url="https://sonarcloud.io/api/measures/component_tree?component=${SONAR_PROJECT_KEY}&branch=main&metricKeys=coverage,lines_to_cover,uncovered_lines&qualifiers=FIL&ps=100&s=metric&metricSort=uncovered_lines&asc=false"
+          main_duplicated_url="https://sonarcloud.io/api/measures/component_tree?component=${SONAR_PROJECT_KEY}&branch=main&metricKeys=duplicated_lines_density,duplicated_lines,ncloc&qualifiers=FIL&ps=100&s=metric&metricSort=duplicated_lines&asc=false"
+
+          quality_gate_json="$(curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$quality_gate_url")"
+          measures_json="$(curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$measures_url")"
+          issues_json="$(curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$issues_url")"
+          gate_status="$(jq -r '.projectStatus.status // empty' <<<"$quality_gate_json")"
 
           echo "Sonar analysisId: ${analysis_id}"
           echo "::group::Sonar quality gate"
-          curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$quality_gate_url" | jq .
+          jq . <<<"$quality_gate_json"
           echo "::endgroup::"
 
           echo "::group::Sonar measures"
-          curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$measures_url" | jq .
+          jq . <<<"$measures_json"
           echo "::endgroup::"
 
           echo "::group::Sonar active issues"
-          curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$issues_url" \
-            | jq '{total, issues: [.issues[] | {key, rule, severity, type, component, line, message}]}'
+          jq '{total, returned: (.issues | length), issues: [.issues[] | {key, rule, severity, type, component, line, message}]}' <<<"$issues_json"
           echo "::endgroup::"
 
           echo "::group::Main baseline top uncovered files"
@@ -227,6 +232,10 @@ jobs:
             | jq '[.components[] | {path, measures}]'
           echo "::endgroup::"
 
-      # OBSERVE MODE
-      # Do not enable sonar.qualitygate.wait yet.
-      # Do not make this check required yet.
+          if [[ "$gate_status" != "OK" ]]; then
+            echo "SONAR_QUALITY_GATE=${gate_status:-UNKNOWN}" >&2
+            echo "SonarQube Cloud Quality Gate is authoritative and must be OK before merge." >&2
+            exit 1
+          fi
+
+          echo "SONAR_QUALITY_GATE=OK"
