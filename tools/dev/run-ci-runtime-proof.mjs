@@ -131,7 +131,6 @@ try {
           capturedAt: new Date().toISOString(),
         });
       } catch (writeError) {
-        checkerFixtureCleanupFailed = true;
         console.error(`CI_RUNTIME_FAILURE_RECORD=FAIL ${writeError instanceof Error ? writeError.message : String(writeError)}`);
       }
       process.exitCode = 1;

@@ -21,13 +21,18 @@ type BthwaniMapProps = Readonly<{
 
 const fallbackCoordinate = { latitude: 15.3694, longitude: 44.191 };
 
+function coordinateSpan(values: ReadonlyArray<number>) {
+  if (values.length < 2) return 0.035;
+  return Math.max(0.025, (Math.max(...values) - Math.min(...values)) * 1.8);
+}
+
 function initialRegion(markers: ReadonlyArray<BthwaniMapMarker>, selection?: BthwaniMapCoordinate | null): Region {
   const coordinates = [...markers.map((marker) => marker.coordinate), ...(selection ? [selection] : [])];
   if (coordinates.length === 0) coordinates.push(fallbackCoordinate);
   const latitude = coordinates.reduce((sum, point) => sum + point.latitude, 0) / coordinates.length;
   const longitude = coordinates.reduce((sum, point) => sum + point.longitude, 0) / coordinates.length;
-  const latitudeSpan = coordinates.length < 2 ? 0.035 : Math.max(0.025, (Math.max(...coordinates.map((point) => point.latitude)) - Math.min(...coordinates.map((point) => point.latitude))) * 1.8);
-  const longitudeSpan = coordinates.length < 2 ? 0.035 : Math.max(0.025, (Math.max(...coordinates.map((point) => point.longitude)) - Math.min(...coordinates.map((point) => point.longitude))) * 1.8);
+  const latitudeSpan = coordinateSpan(coordinates.map((point) => point.latitude));
+  const longitudeSpan = coordinateSpan(coordinates.map((point) => point.longitude));
   return { latitude, longitude, latitudeDelta: latitudeSpan, longitudeDelta: longitudeSpan };
 }
 

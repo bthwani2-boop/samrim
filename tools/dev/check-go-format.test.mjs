@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { ensureKnowledgeRoot } from "./knowledge-source.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const script = path.join(root, "tools", "dev", "check-go-format.mjs");
@@ -76,5 +77,18 @@ test("rejects a path whose real target escapes the repository", (t) => {
   } finally {
     fs.rmSync(link, { recursive: true, force: true });
     fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test("repository governance verifiers execute against materialized pinned knowledge", async () => {
+  const knowledgeRoot = ensureKnowledgeRoot({ materialize: true });
+  assert.ok(fs.existsSync(knowledgeRoot));
+  for (const modulePath of [
+    "./verify-doc-config-parity.mjs",
+    "./verify-agent-knowledge-contract.mjs",
+    "./verify-local-runtime-ownership.mjs",
+    "./verify-go-workspace-sync.mjs",
+  ]) {
+    await import(modulePath);
   }
 });

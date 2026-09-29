@@ -8,6 +8,12 @@ import (
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/domain"
 )
 
+const (
+	operatorProfileActingActorHeader = "X-Acting-Actor-ID"
+	operatorProfileCorrelationHeader = "X-Correlation-ID"
+	operatorProfileIdempotencyHeader = "Idempotency-Key"
+)
+
 func (s *Server) listOperatorProfiles(w http.ResponseWriter, r *http.Request, caller string) {
 	limit := 25
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
@@ -18,7 +24,7 @@ func (s *Server) listOperatorProfiles(w http.ResponseWriter, r *http.Request, ca
 		}
 		limit = parsed
 	}
-	page, err := s.actors.ListOperatorProfiles(r.Context(), caller, strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")), r.URL.Query().Get("q"), r.URL.Query().Get("state"), r.URL.Query().Get("sort"), limit, r.URL.Query().Get("cursor"))
+	page, err := s.actors.ListOperatorProfiles(r.Context(), caller, strings.TrimSpace(r.Header.Get(operatorProfileActingActorHeader)), r.URL.Query().Get("q"), r.URL.Query().Get("state"), r.URL.Query().Get("sort"), limit, r.URL.Query().Get("cursor"))
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -31,7 +37,7 @@ func (s *Server) createOperatorProfile(w http.ResponseWriter, r *http.Request, c
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.actors.CreateOperatorProfile(r.Context(), caller, strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")), strings.TrimSpace(r.Header.Get("X-Correlation-ID")), strings.TrimSpace(r.Header.Get("Idempotency-Key")), input)
+	result, err := s.actors.CreateOperatorProfile(r.Context(), caller, strings.TrimSpace(r.Header.Get(operatorProfileActingActorHeader)), strings.TrimSpace(r.Header.Get(operatorProfileCorrelationHeader)), strings.TrimSpace(r.Header.Get(operatorProfileIdempotencyHeader)), input)
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -48,7 +54,7 @@ func (s *Server) updateOperatorProfile(w http.ResponseWriter, r *http.Request, c
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.actors.UpdateOperatorProfile(r.Context(), caller, strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")), strings.TrimSpace(r.Header.Get("X-Correlation-ID")), strings.TrimSpace(r.Header.Get("Idempotency-Key")), r.PathValue("profileId"), input)
+	result, err := s.actors.UpdateOperatorProfile(r.Context(), caller, strings.TrimSpace(r.Header.Get(operatorProfileActingActorHeader)), strings.TrimSpace(r.Header.Get(operatorProfileCorrelationHeader)), strings.TrimSpace(r.Header.Get(operatorProfileIdempotencyHeader)), r.PathValue("profileId"), input)
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -61,7 +67,7 @@ func (s *Server) approveOperatorProfile(w http.ResponseWriter, r *http.Request, 
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.actors.ApproveOperatorProfile(r.Context(), caller, strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")), strings.TrimSpace(r.Header.Get("X-Correlation-ID")), strings.TrimSpace(r.Header.Get("Idempotency-Key")), r.PathValue("profileId"), input.ExpectedVersion)
+	result, err := s.actors.ApproveOperatorProfile(r.Context(), caller, strings.TrimSpace(r.Header.Get(operatorProfileActingActorHeader)), strings.TrimSpace(r.Header.Get(operatorProfileCorrelationHeader)), strings.TrimSpace(r.Header.Get(operatorProfileIdempotencyHeader)), r.PathValue("profileId"), input.ExpectedVersion)
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -74,7 +80,7 @@ func (s *Server) grantOperatorProfile(w http.ResponseWriter, r *http.Request, ca
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.actors.GrantOperatorProfile(r.Context(), caller, strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")), strings.TrimSpace(r.Header.Get("X-Correlation-ID")), strings.TrimSpace(r.Header.Get("Idempotency-Key")), r.PathValue("profileId"), input.ExpectedVersion)
+	result, err := s.actors.GrantOperatorProfile(r.Context(), caller, strings.TrimSpace(r.Header.Get(operatorProfileActingActorHeader)), strings.TrimSpace(r.Header.Get(operatorProfileCorrelationHeader)), strings.TrimSpace(r.Header.Get(operatorProfileIdempotencyHeader)), r.PathValue("profileId"), input.ExpectedVersion)
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -87,7 +93,7 @@ func (s *Server) grantOperatorProfile(w http.ResponseWriter, r *http.Request, ca
 }
 
 func (s *Server) issueOperatorProfileInvitation(w http.ResponseWriter, r *http.Request, caller string) {
-	actingActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	actingActorID := strings.TrimSpace(r.Header.Get(operatorProfileActingActorHeader))
 	profile, err := s.actors.ReadOperatorProfile(r.Context(), caller, actingActorID, r.PathValue("profileId"))
 	if err != nil {
 		writeDomainError(w, err)
@@ -106,7 +112,7 @@ func (s *Server) issueOperatorProfileInvitation(w http.ResponseWriter, r *http.R
 		writeDomainError(w, domain.ErrConflict)
 		return
 	}
-	token, err := s.challenges.IssueOperatorEnrollmentToken(r.Context(), domain.OperatorEnrollmentTokenIssueRequest{PhoneE164: role.PhoneE164, Role: "operator"}, caller, actingActorID, strings.TrimSpace(r.Header.Get("X-Correlation-ID")))
+	token, err := s.challenges.IssueOperatorEnrollmentToken(r.Context(), domain.OperatorEnrollmentTokenIssueRequest{PhoneE164: role.PhoneE164, Role: "operator"}, caller, actingActorID, strings.TrimSpace(r.Header.Get(operatorProfileCorrelationHeader)))
 	if err != nil {
 		writeDomainError(w, err)
 		return

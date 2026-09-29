@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "../..");
+const compareStrings = (left, right) => String(left).localeCompare(String(right), "en");
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "samrim-go-workspace-"));
 const isWorkspaceModuleFile = (file) => file === "go.work" || file === "go.work.sum" || /(^|\/)go\.(mod|sum)$/.test(file);
 
@@ -29,7 +30,7 @@ function moduleFiles(dir) {
     }
   };
   walk(dir);
-  return files.sort();
+  return files.toSorted(compareStrings);
 }
 
 try {
@@ -46,7 +47,7 @@ try {
 
   const before = repositoryFiles.filter(isWorkspaceModuleFile);
   const after = moduleFiles(tempRoot);
-  const all = [...new Set([...before, ...after])].sort();
+  const all = [...new Set([...before, ...after])].toSorted(compareStrings);
   const drift = [];
 
   for (const file of all) {

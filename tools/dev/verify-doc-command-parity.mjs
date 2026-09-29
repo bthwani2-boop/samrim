@@ -4,6 +4,7 @@ import { ensureKnowledgeRoot } from "./knowledge-source.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 const knowledgeRoot = ensureKnowledgeRoot({ materialize: false });
+const compareStrings = (left, right) => String(left).localeCompare(String(right), "en");
 const packageJson = JSON.parse(
   fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"),
 );
@@ -47,7 +48,7 @@ const forbiddenLegacyPatterns = [
   { label: "legacy foundation runtime command", regex: /\b(?:foundation:|runtime:foundation:)\S*/i },
   {
     label: "legacy foundation compose profile",
-    regex: new RegExp("--pro" + "file\\s+foundation\\b", "i"),
+    regex: new RegExp("--pro" + String.raw`file\s+foundation\b`, "i"),
   },
   { label: "legacy verify full command", regex: /verify:full/i },
   { label: "legacy reverse wrapper", regex: /\bpnpm\s+reverse\b/i },
@@ -58,7 +59,7 @@ const forbiddenLegacyPatterns = [
   },
   {
     label: "donor branch authority",
-    regex: new RegExp("\\borigin" + "\\/h\\b", "i"),
+    regex: new RegExp(String.raw`\b${["origin", "h"].join("/")}\b`, "i"),
   },
   {
     label: "wrong diagnosis-plan authority",
@@ -103,6 +104,13 @@ function resolveRepositoryPath(candidate) {
   return path.join(repoRoot, ...normalized.split("/"));
 }
 
+function trimReferencePunctuation(value) {
+  let end = value.length;
+  while (end > 0 && ".,;:".includes(value[end - 1])) end -= 1;
+  const trimmed = value.slice(0, end);
+  return trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
+}
+
 const failures = [];
 const documentationFiles = [
   ...collectMarkdownFiles(repoRoot).filter((file) => {
@@ -122,61 +130,58 @@ const documentationFiles = [
   path.join(repoRoot, "tools", "README.md"),
 ].filter((file, index, all) => fs.existsSync(file) && all.indexOf(file) === index);
 
+function recordForbiddenLegacy(line, relative, lineNumber) {
+  for (const pattern of forbiddenLegacyPatterns) {
+    if (!pattern.regex.test(line)) continue;
+    failures.push(relative + ":" + lineNumber + " -> " + pattern.label + ": " + line.trim());
+  }
+}
+
+function recordMissingRepositoryPaths(line, relative, lineNumber) {
+  if (relative === "knowledge:docs/reference/donor.md") return;
+  for (const codeMatch of line.matchAll(/`([^`]+)`/g)) {
+    const code = codeMatch[1];
+    for (const match of code.matchAll(
+      /\b(?:governance|docs|tools|apps|services|packages|infra)\/[A-Za-z0-9._@+/-]+/g,
+    )) {
+      const candidate = trimReferencePunctuation(match[0]);
+      if (!candidate || /[*{}<>]/.test(candidate)) continue;
+      const absolute = resolveRepositoryPath(candidate);
+      if (!fs.existsSync(absolute)) {
+        failures.push(relative + ":" + lineNumber + " -> missing referenced path: " + candidate);
+      }
+    }
+  }
+}
+
+function recordMissingPnpmCommands(line, relative, lineNumber) {
+  if (/\bpnpm\s+--dir\b/.test(line)) return;
+  for (const match of line.matchAll(/\bpnpm\s+(?:run\s+)?([A-Za-z0-9][A-Za-z0-9:_-]*)/g)) {
+    const command = match[1];
+    if (pnpmBuiltins.has(command) || scripts.has(command)) continue;
+    failures.push(
+      relative + ":" + lineNumber +
+        " -> command not present in current repository: pnpm " + command,
+    );
+  }
+}
+
 for (const file of documentationFiles) {
   const relative = displayPath(file);
   const body = fs.readFileSync(file, "utf8");
   const lines = body.split("\n");
 
-  lines.forEach((line, index) => {
+  for (const [index, line] of lines.entries()) {
     const lineNumber = index + 1;
-
-    for (const pattern of forbiddenLegacyPatterns) {
-      if (pattern.regex.test(line)) {
-        failures.push(
-          relative + ":" + lineNumber + " -> " + pattern.label + ": " + line.trim(),
-        );
-      }
-    }
-
-    if (relative !== "knowledge:docs/reference/donor.md") {
-      for (const codeMatch of line.matchAll(/`([^`]+)`/g)) {
-        const code = codeMatch[1];
-        for (const match of code.matchAll(
-          /\b(?:governance|docs|tools|apps|services|packages|infra)\/[A-Za-z0-9._@+\/-]+/g,
-        )) {
-          const candidate = match[0].replace(/[.,;:]+$/, "").replace(/\/$/, "");
-          if (!candidate || /[*{}<>]/.test(candidate)) continue;
-          const absolute = resolveRepositoryPath(candidate);
-          if (!fs.existsSync(absolute)) {
-            failures.push(
-              relative + ":" + lineNumber +
-                " -> missing referenced path: " + candidate,
-            );
-          }
-        }
-      }
-    }
-
-    if (/\bpnpm\s+--dir\b/.test(line)) return;
-
-    for (const match of line.matchAll(
-      /\bpnpm\s+(?:run\s+)?([A-Za-z0-9][A-Za-z0-9:_-]*)/g,
-    )) {
-      const command = match[1];
-      if (pnpmBuiltins.has(command)) continue;
-      if (!scripts.has(command)) {
-        failures.push(
-          relative + ":" + lineNumber +
-            " -> command not present in current repository: pnpm " + command,
-        );
-      }
-    }
-  });
+    recordForbiddenLegacy(line, relative, lineNumber);
+    recordMissingRepositoryPaths(line, relative, lineNumber);
+    recordMissingPnpmCommands(line, relative, lineNumber);
+  }
 }
 
 if (failures.length > 0) {
   console.error("DOC_REPOSITORY_COMMAND_PARITY=FAIL");
-  for (const failure of [...new Set(failures)].sort()) {
+  for (const failure of [...new Set(failures)].toSorted(compareStrings)) {
     console.error("  " + failure);
   }
   process.exit(1);

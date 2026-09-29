@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { buildClosureDiagnostic } from "./ci-failure-diagnostics.mjs";
+import { redactFailureArtifact } from "./ci-failure-redaction.mjs";
 import { laneTargets } from "./runtime-proof/resolve.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -170,18 +171,6 @@ if (kind === "runtime" && fs.existsSync(envFile)) {
   write("compose.log", logs.stdout + logs.stderr);
 }
 
-function redact(value) {
-  let text = String(value ?? "");
-  for (const [secret, name] of [...sensitiveValues].sort((a, b) => b[0].length - a[0].length)) text = text.split(secret).join(`[REDACTED:${name}]`);
-  return text
-    .replace(/(\bBearer\s+)[A-Za-z0-9._~+\/-]{8,}={0,2}/gi, "$1[REDACTED:bearer]")
-    .replace(/\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,})\b/g, "[REDACTED:token]")
-    .replace(/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, "[REDACTED:jwt]")
-    .replace(/(https?:\/\/[^\s/:]+:)[^\s/@]+(@)/gi, "$1[REDACTED:credential]$2")
-    .replace(/("(?:password|secret|access[_-]?token|api[_-]?key|client[_-]?secret)"\s*:\s*)"[^"\r\n]*"/gi, "$1\"[REDACTED]\"")
-    .replace(/((?:password|secret|access[_-]?token|api[_-]?key|client[_-]?secret)\s*[=:]\s*)(["']?)[^\s,"'&;}\]]+\2/gi, "$1$2[REDACTED]$2");
-}
-
 function redactTree(directory) {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     const absolute = path.join(directory, entry.name);
@@ -189,7 +178,7 @@ function redactTree(directory) {
     if (!entry.isFile()) { fs.unlinkSync(absolute); continue; }
     const bytes = fs.readFileSync(absolute);
     if (bytes.includes(0)) { fs.unlinkSync(absolute); continue; }
-    fs.writeFileSync(absolute, redact(bytes.toString("utf8")));
+    fs.writeFileSync(absolute, redactFailureArtifact(bytes.toString("utf8"), sensitiveValues));
   }
 }
 redactTree(outDir);

@@ -2,8 +2,9 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-const ansiColorPattern = new RegExp(`${String.fromCodePoint(27)}\\[[0-9;]*m`, "g");
+const ansiColorPattern = new RegExp(String.raw`${String.fromCodePoint(27)}\[[0-9;]*m`, "g");
 const rootCauseUnknown = "UNCLASSIFIED_REQUIRES_CAUSAL_REVIEW";
+const compareStrings = (left, right) => String(left).localeCompare(String(right), "en");
 
 function artifactLogPath(logPath) {
   return logPath ? `command-logs/${path.basename(logPath)}` : null;
@@ -33,7 +34,7 @@ function readLogLines(logPath) {
 
 function classifyFinding(line) {
   const text = line.text;
-  const structured = text.match(/\b([A-Z][A-Z0-9_]*)=(FAIL|FAILED|FAILURE)\b/i);
+  const structured = /\b([A-Z][A-Z0-9_]*)=(FAIL|FAILED|FAILURE)\b/i.exec(text);
   if (structured) return { kind: "STRUCTURED_FAILURE_MARKER", marker: structured[1].toUpperCase() };
   if (/^::error(?::|\s|$)/i.test(text)) return { kind: "GITHUB_ERROR_ANNOTATION", marker: "GITHUB_ERROR" };
   if (/^--- FAIL:\s+/i.test(text)) return { kind: "GO_TEST_FAILURE", marker: "GO_TEST_FAIL" };
@@ -51,13 +52,16 @@ function ownerHint(target, sourceCommand) {
   return sourceCommand ?? "unresolved-owner";
 }
 
+function evidenceReference(finding) {
+  if (!finding.artifactLog) return null;
+  if (!finding.lineNumber) return finding.artifactLog;
+  return `${finding.artifactLog}#L${finding.lineNumber}`;
+}
+
 function enrichFinding(finding) {
   const causalTarget = finding.causalContextTarget ?? finding.target ?? null;
   const fingerprintBasis = [finding.kind, finding.marker, finding.sourceCommand, finding.target, causalTarget, finding.evidence].join("|");
   const fingerprint = stableHash(fingerprintBasis, 20);
-  const evidenceRef = finding.artifactLog
-    ? `${finding.artifactLog}${finding.lineNumber ? `#L${finding.lineNumber}` : ""}`
-    : null;
   return {
     id: `F-${fingerprint.slice(0, 12)}`,
     fingerprint,
@@ -71,40 +75,59 @@ function enrichFinding(finding) {
     kind: finding.kind,
     marker: finding.marker,
     evidence: finding.evidence,
-    evidenceRefs: unique([evidenceRef]),
+    evidenceRefs: unique([evidenceReference(finding)]),
     artifactLog: finding.artifactLog ?? null,
     lineNumber: finding.lineNumber ?? null,
   };
 }
 
+function runtimeTaskEvent(text) {
+  for (const [kind, pattern] of [
+    ["START", /\bCI_RUNTIME_TASK=START\s+target=([^\s]+)/i],
+    ["PASS", /\bCI_RUNTIME_TASK=PASS\s+target=([^\s]+)/i],
+    ["FAIL", /\bCI_RUNTIME_TASK=FAIL\s+target=([^\s]+)/i],
+  ]) {
+    const match = pattern.exec(text);
+    if (match) return { kind, target: match[1] };
+  }
+  return null;
+}
+
+function applyRuntimeTaskEvent(state, event) {
+  if (!event) return;
+  if (event.kind === "START") {
+    state.activeRuntimeTarget = event.target;
+    state.terminalFailedTarget = null;
+    return;
+  }
+  if (event.kind === "PASS") {
+    state.completedTargets.push(event.target);
+    if (state.activeRuntimeTarget === event.target) state.activeRuntimeTarget = null;
+    return;
+  }
+  state.failedTargets.push(event.target);
+  state.terminalFailedTarget = event.target;
+  state.activeRuntimeTarget = event.target;
+}
+
+function failedNxTarget(text) {
+  return /^[-*]\s+([A-Za-z0-9._/-]+:[A-Za-z0-9._/-]+)\b/.exec(text)?.[1] ?? null;
+}
+
 export function analyzeCommandLog(logPath, sourceCommand = null) {
   const lines = readLogLines(logPath);
   const findings = [];
-  const completedTargets = [];
-  const failedTargets = [];
+  const state = {
+    completedTargets: [],
+    failedTargets: [],
+    activeRuntimeTarget: null,
+    terminalFailedTarget: null,
+  };
   let failedTasksSection = false;
-  let activeRuntimeTarget = null;
-  let terminalFailedTarget = null;
 
   for (const line of lines) {
-    const startTarget = line.text.match(/\bCI_RUNTIME_TASK=START\s+target=([^\s]+)/i);
-    if (startTarget) {
-      activeRuntimeTarget = startTarget[1];
-      terminalFailedTarget = null;
-    }
-
-    const passTarget = line.text.match(/\bCI_RUNTIME_TASK=PASS\s+target=([^\s]+)/i);
-    if (passTarget) {
-      completedTargets.push(passTarget[1]);
-      if (activeRuntimeTarget === passTarget[1]) activeRuntimeTarget = null;
-    }
-
-    const failedTarget = line.text.match(/\bCI_RUNTIME_TASK=FAIL\s+target=([^\s]+)/i);
-    if (failedTarget) {
-      failedTargets.push(failedTarget[1]);
-      terminalFailedTarget = failedTarget[1];
-      activeRuntimeTarget = failedTarget[1];
-    }
+    const runtimeEvent = runtimeTaskEvent(line.text);
+    applyRuntimeTaskEvent(state, runtimeEvent);
 
     if (/^Failed tasks:?$/i.test(line.text)) {
       failedTasksSection = true;
@@ -112,15 +135,15 @@ export function analyzeCommandLog(logPath, sourceCommand = null) {
     }
 
     if (failedTasksSection) {
-      const target = line.text.match(/^[-*]\s+([A-Za-z0-9._/-]+:[A-Za-z0-9._/-]+)\b/);
+      const target = failedNxTarget(line.text);
       if (target) {
-        failedTargets.push(target[1]);
+        state.failedTargets.push(target);
         findings.push({
           kind: "NX_TASK_FAILURE",
           marker: "NX_TASK_FAILED",
           sourceCommand,
-          target: target[1],
-          causalContextTarget: activeRuntimeTarget ?? terminalFailedTarget ?? target[1],
+          target,
+          causalContextTarget: state.activeRuntimeTarget ?? state.terminalFailedTarget ?? target,
           lineNumber: line.lineNumber,
           artifactLog: artifactLogPath(logPath),
           evidence: truncate(line.text),
@@ -135,8 +158,8 @@ export function analyzeCommandLog(logPath, sourceCommand = null) {
     findings.push({
       ...classified,
       sourceCommand,
-      target: failedTarget?.[1] ?? activeRuntimeTarget ?? null,
-      causalContextTarget: activeRuntimeTarget ?? terminalFailedTarget ?? failedTarget?.[1] ?? null,
+      target: runtimeEvent?.kind === "FAIL" ? runtimeEvent.target : state.activeRuntimeTarget,
+      causalContextTarget: state.activeRuntimeTarget ?? state.terminalFailedTarget,
       lineNumber: line.lineNumber,
       artifactLog: artifactLogPath(logPath),
       evidence: truncate(line.text),
@@ -150,8 +173,8 @@ export function analyzeCommandLog(logPath, sourceCommand = null) {
 
   return {
     findings: [...deduped.values()],
-    completedTargets: unique(completedTargets),
-    failedTargets: unique(failedTargets),
+    completedTargets: unique(state.completedTargets),
+    failedTargets: unique(state.failedTargets),
   };
 }
 
@@ -163,19 +186,29 @@ function buildCausalGroups(findings) {
     groups.get(key).push(finding.id);
   }
 
-  return [...groups.entries()].map(([owner, findingIds]) => ({
-    id: `G-${stableHash(`${owner}|${findingIds.sort().join(",")}`, 12)}`,
-    rootCandidate: null,
-    confidence: "UNCLASSIFIED",
-    groupingBasis: "SHARED_CANONICAL_OWNER_HINT_ONLY_NOT_CAUSAL_PROOF",
-    findingIds,
-    canonicalOwner: owner === "unresolved-owner" ? null : owner,
-    requiredInvestigation: [
-      "ESTABLISH_STRONGER_INDEPENDENT_ORACLE",
-      "PROVE_HIGHEST_COMMON_CAUSAL_ROOT",
-      "DO_NOT_PATCH_INDIVIDUAL_SYMPTOMS_BEFORE_CAUSAL_COLLAPSE",
-    ],
-  }));
+  return [...groups.entries()].map(([owner, findingIds]) => {
+    const orderedFindingIds = findingIds.toSorted(compareStrings);
+    const groupBasis = `${owner}|${orderedFindingIds.join(",")}`;
+    return {
+      id: `G-${stableHash(groupBasis, 12)}`,
+      rootCandidate: null,
+      confidence: "UNCLASSIFIED",
+      groupingBasis: "SHARED_CANONICAL_OWNER_HINT_ONLY_NOT_CAUSAL_PROOF",
+      findingIds: orderedFindingIds,
+      canonicalOwner: owner === "unresolved-owner" ? null : owner,
+      requiredInvestigation: [
+        "ESTABLISH_STRONGER_INDEPENDENT_ORACLE",
+        "PROVE_HIGHEST_COMMON_CAUSAL_ROOT",
+        "DO_NOT_PATCH_INDIVIDUAL_SYMPTOMS_BEFORE_CAUSAL_COLLAPSE",
+      ],
+    };
+  });
+}
+
+function reproofTargets(runtimeFailure, finalFailedTargets, failedRecords, externalFailures) {
+  if (runtimeFailure?.target) return [runtimeFailure.target];
+  if (finalFailedTargets.length > 0) return finalFailedTargets;
+  return unique([...failedRecords.map((record) => record.name), ...externalFailures.map((record) => record.name)]);
 }
 
 export function buildClosureDiagnostic({ metadata, metricRecords = [], externalRecords = [], runtimeFailure = null, affectedProjects = [] }) {
@@ -245,11 +278,7 @@ export function buildClosureDiagnostic({ metadata, metricRecords = [], externalR
   const finalCompletedTargets = unique(completedTargets);
   const finalFailedTargets = unique(failedTargets);
   const observedTargets = unique([...finalCompletedTargets, ...finalFailedTargets]);
-  const reproofHints = runtimeFailure?.target
-    ? [runtimeFailure.target]
-    : finalFailedTargets.length > 0
-      ? finalFailedTargets
-      : unique([...failedRecords.map((record) => record.name), ...externalFailures.map((record) => record.name)]);
+  const reproofHints = reproofTargets(runtimeFailure, finalFailedTargets, failedRecords, externalFailures);
   const skippedExternal = externalResults.filter((record) => record.outcome === "skipped");
 
   return {

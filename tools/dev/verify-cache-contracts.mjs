@@ -3,6 +3,7 @@ import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const failures = [];
+const compareStrings = (left, right) => String(left).localeCompare(String(right), "en");
 const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 const data = (relative) => JSON.parse(read(relative));
 
@@ -144,7 +145,7 @@ if (!read("tools/mobile/export-mobile-smoke.mjs").includes("fs.rmSync(distDir"))
 
 if (failures.length) {
   console.error("NX_CACHE_CONTRACTS=FAIL");
-  for (const failure of [...new Set(failures)].sort()) console.error("  " + failure);
+  for (const failure of [...new Set(failures)].toSorted(compareStrings)) console.error("  " + failure);
   process.exit(1);
 }
 

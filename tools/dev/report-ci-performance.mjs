@@ -25,18 +25,27 @@ const lines = [
   "|---|---:|---:|---|",
 ];
 
+function budgetStatus(hasBudget, overBudget, blocking) {
+  if (!hasBudget) return "unbudgeted";
+  if (!overBudget) return "within";
+  return blocking ? "over (blocking)" : "over (observe)";
+}
+
+function performanceState() {
+  if (enforcedOverrun) return "FAIL";
+  if (observedOverrun) return "OBSERVE";
+  return "PASS";
+}
+
 for (const record of records) {
   const budget = budgets.budgetsMs?.[record.name];
-  const overBudget = typeof budget === "number" && record.durationMs > budget;
+  const hasBudget = typeof budget === "number";
+  const overBudget = hasBudget && record.durationMs > budget;
   const blocking = mode === "enforce" && enforcedBudgets.has(record.name);
-  const status = typeof budget !== "number"
-    ? "unbudgeted"
-    : overBudget
-      ? blocking ? "over (blocking)" : "over (observe)"
-      : "within";
+  const status = budgetStatus(hasBudget, overBudget, blocking);
   if (overBudget && blocking) enforcedOverrun = true;
   if (overBudget && !blocking) observedOverrun = true;
-  const budgetLabel = typeof budget === "number" ? (budget / 1000).toFixed(1) + "s" : "—";
+  const budgetLabel = hasBudget ? (budget / 1000).toFixed(1) + "s" : "—";
   lines.push(
     "| " + record.name +
     " | " + (record.durationMs / 1000).toFixed(1) + "s" +
@@ -46,12 +55,15 @@ for (const record of records) {
 }
 
 if (records.length === 0) lines.push("| no timed commands | — | — | — |");
-lines.push("");
-lines.push("Budget mode: " + mode + "; blocking budgets: " + (mode === "enforce" ? enforcedBudgets.size : 0) + "/" + budgetNames.length + ". Single-run values are diagnostics in observe mode; p50/p95 remain Nx Cloud/GitHub historical metrics.");
+const blockingBudgetCount = mode === "enforce" ? enforcedBudgets.size : 0;
+lines.push(
+  "",
+  "Budget mode: " + mode + "; blocking budgets: " + blockingBudgetCount + "/" + budgetNames.length + ". Single-run values are diagnostics in observe mode; p50/p95 remain Nx Cloud/GitHub historical metrics.",
+);
 
 const output = lines.join("\n") + "\n";
 if (summaryPath) fs.appendFileSync(summaryPath, output);
 console.log(output);
-const reportState = enforcedOverrun ? "FAIL" : observedOverrun ? "OBSERVE" : "PASS";
+const reportState = performanceState();
 console.log("CI_PERFORMANCE_REPORT=" + reportState + " records=" + records.length + " mode=" + mode);
 if (enforcedOverrun) process.exitCode = 1;

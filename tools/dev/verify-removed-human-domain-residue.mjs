@@ -4,6 +4,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
+const compareStrings = (left, right) => String(left).localeCompare(String(right), "en");
 const retiredDomain = ["work", "force"].join("").toLowerCase();
 const tracked = execFileSync(resolveTrustedExecutable("git"), ["ls-files", "-z"], {
   cwd: repoRoot,
@@ -21,17 +22,17 @@ const currentAuthorityPatterns = [
   {
     label: "CURRENT_DOMAIN_PATH_REFERENCE",
     regex: new RegExp(
-      "(?:services|core|packages)/" + retiredDomain + "(?:/|\\b)",
+      String.raw`(?:services|core|packages)/${retiredDomain}(?:/|\b)`,
       "i",
     ),
   },
   {
     label: "CURRENT_DOMAIN_PACKAGE_REFERENCE",
-    regex: new RegExp("@[A-Za-z0-9._-]+/" + retiredDomain + "\\b", "i"),
+    regex: new RegExp(String.raw`@[A-Za-z0-9._-]+/${retiredDomain}\b`, "i"),
   },
   {
     label: "CURRENT_DOMAIN_OWNERSHIP_ASSERTION",
-    regex: new RegExp("\\b" + retiredDomain + "\\s+owns\\b", "i"),
+    regex: new RegExp(String.raw`\b${retiredDomain}\s+owns\b`, "i"),
   },
 ];
 
@@ -89,7 +90,7 @@ for (const file of tracked) {
 
 if (failures.length > 0) {
   console.error("REMOVED_HUMAN_DOMAIN_RESIDUE=FAIL");
-  for (const failure of [...new Set(failures)].sort()) {
+  for (const failure of [...new Set(failures)].toSorted(compareStrings)) {
     console.error("  " + failure);
   }
   process.exit(1);

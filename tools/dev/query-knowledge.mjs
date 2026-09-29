@@ -3,9 +3,34 @@ import path from "node:path";
 import { ensureKnowledgeRoot } from "./knowledge-source.mjs";
 
 const root = ensureKnowledgeRoot({ materialize: true });
+const compareStrings = (left, right) => String(left).localeCompare(String(right), "en");
 
 function read(relativePath) {
   return fs.readFileSync(path.join(root, ...relativePath.split("/")), "utf8");
+}
+
+function lines(body) {
+  return body.split(/\r?\n/);
+}
+
+function metadataValue(body, key) {
+  const prefix = `${key}:`;
+  const line = lines(body).find((value) => value.startsWith(prefix));
+  if (!line) return "";
+  return line.slice(prefix.length).trim().split(/\s+/)[0] ?? "";
+}
+
+function metadataValues(body, key) {
+  const prefix = `${key}:`;
+  return lines(body)
+    .filter((value) => value.startsWith(prefix))
+    .map((value) => value.slice(prefix.length).trim().split(/\s+/)[0] ?? "")
+    .filter(Boolean);
+}
+
+function firstHeadingTitle(body) {
+  const line = lines(body).find((value) => value.startsWith("# "));
+  return line ? line.slice(2).trim() : "";
 }
 
 function collectMarkdown(dir) {
@@ -16,7 +41,7 @@ function collectMarkdown(dir) {
     if (entry.isDirectory()) out.push(...collectMarkdown(absolute));
     else if (entry.isFile() && entry.name.endsWith(".md")) out.push(absolute);
   }
-  return out.sort();
+  return out.toSorted(compareStrings);
 }
 
 function relative(absolute) {
@@ -40,16 +65,16 @@ function governanceOwners() {
   const owners = [];
   for (const absolute of collectMarkdown(governanceRoot)) {
     const body = fs.readFileSync(absolute, "utf8");
-    const owner = body.match(/^SEMANTIC_OWNER:\s*(\S+)\s*$/m)?.[1];
+    const owner = metadataValue(body, "SEMANTIC_OWNER");
     if (!owner) continue;
     owners.push({
       owner,
       source: relative(absolute),
-      title: body.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? "",
-      artifactClass: body.match(/^ARTIFACT_CLASS:\s*(\S+)\s*$/m)?.[1]?.trim() ?? "",
+      title: firstHeadingTitle(body),
+      artifactClass: metadataValue(body, "ARTIFACT_CLASS"),
     });
   }
-  return owners.sort((a, b) => a.owner.localeCompare(b.owner));
+  return owners.toSorted((a, b) => compareStrings(a.owner, b.owner));
 }
 
 function capabilityRecords() {
@@ -57,16 +82,16 @@ function capabilityRecords() {
   const out = [];
   for (const absolute of collectMarkdown(capabilityRoot)) {
     const body = fs.readFileSync(absolute, "utf8");
-    const id = body.match(/^CAPABILITY_ID:\s*([A-Z0-9_]+)\s*$/m)?.[1];
-    if (!id) continue;
+    const id = metadataValue(body, "CAPABILITY_ID");
+    if (!/^[A-Z0-9_]+$/.test(id)) continue;
     out.push({
       id,
       source: relative(absolute),
-      owner: body.match(/^SEMANTIC_OWNER:\s*(\S+)\s*$/m)?.[1] ?? relative(absolute),
+      owner: metadataValue(body, "SEMANTIC_OWNER") || relative(absolute),
       body,
     });
   }
-  return out.sort((a, b) => a.id.localeCompare(b.id));
+  return out.toSorted((a, b) => compareStrings(a.id, b.id));
 }
 
 function referenceRecords() {
@@ -75,11 +100,11 @@ function referenceRecords() {
     const body = fs.readFileSync(absolute, "utf8");
     return {
       source: relative(absolute),
-      title: body.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? "",
-      referenceClass: body.match(/^REFERENCE_CLASS:\s*(\S+)\s*$/m)?.[1] ?? "",
+      title: firstHeadingTitle(body),
+      referenceClass: metadataValue(body, "REFERENCE_CLASS"),
       body,
     };
-  }).sort((a, b) => a.source.localeCompare(b.source));
+  }).toSorted((a, b) => compareStrings(a.source, b.source));
 }
 
 function policyRecords() {
@@ -88,16 +113,16 @@ function policyRecords() {
     const body = fs.readFileSync(absolute, "utf8");
     return {
       source: relative(absolute),
-      title: body.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? "",
-      owner: body.match(/^SEMANTIC_OWNER:\s*(\S+)\s*$/m)?.[1] ?? "",
+      title: firstHeadingTitle(body),
+      owner: metadataValue(body, "SEMANTIC_OWNER"),
       body,
     };
-  }).sort((a, b) => a.source.localeCompare(b.source));
+  }).toSorted((a, b) => compareStrings(a.source, b.source));
 }
 
 function qualityDimensions() {
-  const body = read("governance/policy/QUALITY.md");
-  return [...body.matchAll(/^QUALITY_DIMENSION:\s*([A-Z0-9_]+)\s*$/gm)].map((match) => match[1]);
+  return metadataValues(read("governance/policy/QUALITY.md"), "QUALITY_DIMENSION")
+    .filter((value) => /^[A-Z0-9_]+$/.test(value));
 }
 
 const journeyBody = () => read("governance/product/JOURNEYS.md");

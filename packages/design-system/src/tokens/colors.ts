@@ -8,7 +8,7 @@ export type BrandRoot = keyof typeof brandRoots;
 
 export function alpha(color: string, opacity: number): string {
   if (!color) return `rgba(0, 0, 0, ${opacity})`;
-  const rgbMatch = color.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+  const rgbMatch = /^rgba?\((\d+),\s*(\d+),\s*(\d+)/i.exec(color);
   if (rgbMatch) {
     const [, r, g, b] = rgbMatch;
     return `rgba(${r}, ${g}, ${b}, ${opacity})`;

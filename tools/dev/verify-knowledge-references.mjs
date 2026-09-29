@@ -4,6 +4,7 @@ import { ensureKnowledgeRoot } from "./knowledge-source.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 const knowledgeRoot = ensureKnowledgeRoot({ materialize: false });
+const compareStrings = (left, right) => String(left).localeCompare(String(right), "en");
 
 function collectMarkdown(dir) {
   if (!fs.existsSync(dir)) return [];
@@ -30,11 +31,26 @@ function rootForLogicalPath(ref) {
     : repoRoot;
 }
 
-function extractKnowledgeRefs(body) {
+function markdownLinkTargets(body) {
   const refs = [];
-  for (const match of body.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
-    refs.push(match[1].trim());
+  let cursor = 0;
+  while (cursor < body.length) {
+    const marker = body.indexOf("](", cursor);
+    if (marker < 0) break;
+    const openingBracket = body.lastIndexOf("[", marker);
+    const closingParen = body.indexOf(")", marker + 2);
+    if (openingBracket < 0 || closingParen < 0) {
+      cursor = marker + 2;
+      continue;
+    }
+    refs.push(body.slice(marker + 2, closingParen).trim());
+    cursor = closingParen + 1;
   }
+  return refs;
+}
+
+function extractKnowledgeRefs(body) {
+  const refs = markdownLinkTargets(body);
   for (const match of body.matchAll(/`([^`\n]+\.md(?:#[^`]*)?)`/g)) {
     refs.push(match[1].trim());
   }
@@ -49,7 +65,7 @@ function resolveKnowledgeRef(sourceFile, raw) {
   if (/[<>{}*]/.test(ref) || ref.includes("...")) return null;
 
   ref = ref.split("#", 1)[0].split("?", 1)[0].replaceAll("\\", "/");
-  if (!ref || !ref.endsWith(".md")) return null;
+  if (!ref?.endsWith(".md")) return null;
 
   const rootRelativePrefixes = [
     "governance/",
@@ -160,7 +176,7 @@ if (fs.existsSync(donorAbsolute) && (docsInbound.get(donorReference) ?? 0) === 0
 
 if (failures.length) {
   console.error("KNOWLEDGE_REFERENCE_VERIFY=FAIL");
-  for (const failure of [...new Set(failures)].sort()) console.error("  " + failure);
+  for (const failure of [...new Set(failures)].toSorted(compareStrings)) console.error("  " + failure);
   process.exit(1);
 }
 

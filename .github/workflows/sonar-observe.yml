@@ -1,4 +1,4 @@
-name: Sonar Quality Observe
+name: Sonar Quality Gate
 
 on:
   push:
@@ -12,6 +12,7 @@ on:
       - opened
       - synchronize
       - reopened
+      - ready_for_review
 
   workflow_dispatch:
 
@@ -19,12 +20,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: sonar-observe-${{ github.event.pull_request.number || github.ref }}
+  group: sonar-quality-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   sonar:
-    name: SonarQube Cloud Observe
+    name: SonarQube Cloud Quality Gate
     runs-on: ubuntu-24.04
     timeout-minutes: 30
 
@@ -44,6 +45,7 @@ jobs:
     env:
       DSH_DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable
       IDENTITY_DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable
+      CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
     if: >
       github.ref == 'refs/heads/main' ||
@@ -54,10 +56,15 @@ jobs:
       )
 
     steps:
-      - name: Checkout
+      - name: Checkout exact candidate
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: ${{ env.CANDIDATE_SHA }}
           fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact candidate checkout
+        run: node tools/dev/verify-ci-exact-sha.mjs
 
       - name: Setup pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -92,7 +99,9 @@ jobs:
           go -C services/dsh/backend test -coverprofile="$GITHUB_WORKSPACE/coverage/sonar/dsh.out" -count=1 ./...
           go -C services/identity/backend test -coverprofile="$GITHUB_WORKSPACE/coverage/sonar/identity.out" -count=1 ./...
           go -C services/wlt/backend test -coverprofile="$GITHUB_WORKSPACE/coverage/sonar/wlt.out" -count=1 ./...
-          node --experimental-test-coverage --test --test-reporter=lcov --test-reporter-destination=coverage/sonar/tools-dev.lcov \
+          node --experimental-test-coverage --test --test-concurrency=1 \
+            --test-reporter=spec --test-reporter-destination=stdout \
+            --test-reporter=lcov --test-reporter-destination=coverage/sonar/tools-dev.lcov \
             tools/dev/runtime-proof/resolve.test.mjs \
             tools/dev/runtime-proof/trusted-executables.test.mjs \
             tools/dev/check-go-format.test.mjs \
@@ -136,7 +145,8 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-      - name: Read back SonarQube Cloud evidence
+      - name: Read back and enforce SonarQube Cloud evidence
+        id: readback
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_PROJECT_KEY: bthwani2-boop_samrim
@@ -197,36 +207,123 @@ jobs:
             scope="branch=${GITHUB_REF_NAME}"
           fi
 
+          evidence_dir="coverage/sonar/evidence"
+          mkdir -p "$evidence_dir/scope-issue-pages" "$evidence_dir/main-issue-pages"
+
           quality_gate_url="https://sonarcloud.io/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}&${scope}"
           measures_url="https://sonarcloud.io/api/measures/component?component=${SONAR_PROJECT_KEY}&${scope}&metricKeys=coverage,new_coverage,line_coverage,lines_to_cover,uncovered_lines,duplicated_lines_density,new_duplicated_lines_density,duplicated_lines,ncloc,bugs,vulnerabilities,code_smells,reliability_rating,security_rating,sqale_rating,security_hotspots"
-          issues_url="https://sonarcloud.io/api/issues/search?componentKeys=${SONAR_PROJECT_KEY}&${scope}&resolved=false&ps=100"
-          main_uncovered_url="https://sonarcloud.io/api/measures/component_tree?component=${SONAR_PROJECT_KEY}&branch=main&metricKeys=coverage,lines_to_cover,uncovered_lines&qualifiers=FIL&ps=40&s=metric&metricSort=uncovered_lines&asc=false"
-          main_duplicated_url="https://sonarcloud.io/api/measures/component_tree?component=${SONAR_PROJECT_KEY}&branch=main&metricKeys=duplicated_lines_density,duplicated_lines,ncloc&qualifiers=FIL&ps=40&s=metric&metricSort=duplicated_lines&asc=false"
+          main_quality_gate_url="https://sonarcloud.io/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}&branch=main"
+          main_measures_url="https://sonarcloud.io/api/measures/component?component=${SONAR_PROJECT_KEY}&branch=main&metricKeys=coverage,new_coverage,line_coverage,lines_to_cover,uncovered_lines,duplicated_lines_density,new_duplicated_lines_density,duplicated_lines,ncloc,bugs,vulnerabilities,code_smells,reliability_rating,security_rating,sqale_rating,security_hotspots"
+          main_uncovered_url="https://sonarcloud.io/api/measures/component_tree?component=${SONAR_PROJECT_KEY}&branch=main&metricKeys=coverage,lines_to_cover,uncovered_lines&qualifiers=FIL&ps=100&s=metric&metricSort=uncovered_lines&asc=false"
+          main_duplicated_url="https://sonarcloud.io/api/measures/component_tree?component=${SONAR_PROJECT_KEY}&branch=main&metricKeys=duplicated_lines_density,duplicated_lines,ncloc&qualifiers=FIL&ps=100&s=metric&metricSort=duplicated_lines&asc=false"
+
+          quality_gate_json="$(curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$quality_gate_url")"
+          measures_json="$(curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$measures_url")"
+          main_quality_gate_json="$(curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$main_quality_gate_url")"
+          main_measures_json="$(curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$main_measures_url")"
+          main_uncovered_json="$(curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$main_uncovered_url")"
+          main_duplicated_json="$(curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$main_duplicated_url")"
+          gate_status="$(jq -r '.projectStatus.status // empty' <<<"$quality_gate_json")"
+
+          printf '%s\n' "$ce_json" | jq . > "$evidence_dir/compute-engine.json"
+          printf '%s\n' "$quality_gate_json" | jq . > "$evidence_dir/scope-quality-gate.json"
+          printf '%s\n' "$measures_json" | jq . > "$evidence_dir/scope-measures.json"
+          printf '%s\n' "$main_quality_gate_json" | jq . > "$evidence_dir/main-quality-gate.json"
+          printf '%s\n' "$main_measures_json" | jq . > "$evidence_dir/main-measures.json"
+          printf '%s\n' "$main_uncovered_json" | jq . > "$evidence_dir/main-top-uncovered.json"
+          printf '%s\n' "$main_duplicated_json" | jq . > "$evidence_dir/main-top-duplicated.json"
+
+          fetch_issue_pages() {
+            local issue_scope="$1"
+            local output_dir="$2"
+            local page=1
+            local fetched=0
+            local total=0
+            local count=0
+            local page_file=""
+
+            while :; do
+              page_file="${output_dir}/page-${page}.json"
+              curl --fail --silent --show-error --user "${SONAR_TOKEN}:" \
+                "https://sonarcloud.io/api/issues/search?componentKeys=${SONAR_PROJECT_KEY}&${issue_scope}&resolved=false&ps=500&p=${page}" \
+                | jq . > "$page_file"
+              total="$(jq -r '.total // 0' "$page_file")"
+              count="$(jq -r '.issues | length' "$page_file")"
+              fetched=$((fetched + count))
+              if (( count == 0 || fetched >= total )); then
+                break
+              fi
+              page=$((page + 1))
+            done
+          }
+
+          fetch_issue_pages "$scope" "$evidence_dir/scope-issue-pages"
+          fetch_issue_pages "branch=main" "$evidence_dir/main-issue-pages"
+
+          jq -s '{total: (.[0].total // 0), issues: [.[].issues[]]}' "$evidence_dir"/scope-issue-pages/page-*.json > "$evidence_dir/scope-active-issues.json"
+          jq -s '{total: (.[0].total // 0), issues: [.[].issues[]]}' "$evidence_dir"/main-issue-pages/page-*.json > "$evidence_dir/main-active-issues.json"
+
+          scope_issue_total="$(jq -r '.total // 0' "$evidence_dir/scope-active-issues.json")"
+          main_issue_total="$(jq -r '.total // 0' "$evidence_dir/main-active-issues.json")"
+
+          jq -n \
+            --arg candidateSha "$CANDIDATE_SHA" \
+            --arg analysisId "$analysis_id" \
+            --arg scope "$scope" \
+            --arg gateStatus "$gate_status" \
+            --argjson scopeActiveIssues "$scope_issue_total" \
+            --argjson mainActiveIssues "$main_issue_total" \
+            '{candidateSha:$candidateSha,analysisId:$analysisId,scope:$scope,gateStatus:$gateStatus,scopeActiveIssues:$scopeActiveIssues,mainActiveIssues:$mainActiveIssues}' \
+            > "$evidence_dir/summary.json"
 
           echo "Sonar analysisId: ${analysis_id}"
+          echo "SONAR_CANDIDATE_SHA=${CANDIDATE_SHA}"
+          echo "SONAR_SCOPE_ACTIVE_ISSUES=${scope_issue_total}"
+          echo "SONAR_MAIN_ACTIVE_ISSUES=${main_issue_total}"
+
           echo "::group::Sonar quality gate"
-          curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$quality_gate_url" | jq .
+          jq . <<<"$quality_gate_json"
           echo "::endgroup::"
 
           echo "::group::Sonar measures"
-          curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$measures_url" | jq .
+          jq . <<<"$measures_json"
           echo "::endgroup::"
 
           echo "::group::Sonar active issues"
-          curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$issues_url" \
-            | jq '{total, issues: [.issues[] | {key, rule, severity, type, component, line, message}]}'
+          jq '{total, issues: [.issues[] | {key, rule, severity, type, component, line, message}]}' "$evidence_dir/scope-active-issues.json"
+          echo "::endgroup::"
+
+          echo "::group::Main baseline measures"
+          jq . <<<"$main_measures_json"
           echo "::endgroup::"
 
           echo "::group::Main baseline top uncovered files"
-          curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$main_uncovered_url" \
-            | jq '[.components[] | {path, measures}]'
+          jq '[.components[] | {path, measures}]' <<<"$main_uncovered_json"
           echo "::endgroup::"
 
           echo "::group::Main baseline top duplicated files"
-          curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$main_duplicated_url" \
-            | jq '[.components[] | {path, measures}]'
+          jq '[.components[] | {path, measures}]' <<<"$main_duplicated_json"
           echo "::endgroup::"
 
-      # OBSERVE MODE
-      # Do not enable sonar.qualitygate.wait yet.
-      # Do not make this check required yet.
+          if [[ "$gate_status" != "OK" ]]; then
+            echo "SONAR_QUALITY_GATE=${gate_status:-UNKNOWN}" >&2
+            echo "SonarQube Cloud Quality Gate is authoritative and must be OK before merge." >&2
+            exit 1
+          fi
+
+          if (( scope_issue_total != 0 )); then
+            echo "SONAR_SCOPE_ACTIVE_ISSUES=${scope_issue_total}" >&2
+            echo "Active Sonar issues remain on the exact candidate scope." >&2
+            exit 1
+          fi
+
+          echo "SONAR_QUALITY_GATE=OK"
+
+      - name: Upload exact Sonar evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sonar-evidence-${{ env.CANDIDATE_SHA }}-${{ github.run_attempt }}
+          path: coverage/sonar/evidence
+          if-no-files-found: warn
+          retention-days: 14
