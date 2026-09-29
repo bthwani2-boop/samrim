@@ -86,6 +86,8 @@ test("repository governance verifiers execute against materialized pinned knowle
   for (const modulePath of [
     "./verify-doc-config-parity.mjs",
     "./verify-agent-knowledge-contract.mjs",
+    "./verify-local-runtime-ownership.mjs",
+    "./verify-go-workspace-sync.mjs",
   ]) {
     await import(modulePath);
   }
