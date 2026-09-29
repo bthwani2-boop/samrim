@@ -34,11 +34,15 @@ export function availableCustomerFulfillmentModes(modes: ReadonlyArray<Fulfillme
 
 export function defaultCustomerFulfillmentMode(modes: ReadonlyArray<FulfillmentMode>): CustomerFulfillmentMode | null {
   const available = availableCustomerFulfillmentModes(modes);
-  return available.includes("BTHWANI_CAPTAIN") ? "BTHWANI_CAPTAIN" : available.includes("CUSTOMER_PICKUP") ? "CUSTOMER_PICKUP" : null;
+  if (available.includes("BTHWANI_CAPTAIN")) return "BTHWANI_CAPTAIN";
+  if (available.includes("CUSTOMER_PICKUP")) return "CUSTOMER_PICKUP";
+  return null;
 }
 
 export function fulfillmentModeLabel(mode: FulfillmentMode): string {
-  return mode === "CUSTOMER_PICKUP" ? "استلم بنفسك من المتجر" : mode === "BTHWANI_CAPTAIN" ? "توصيل بثواني" : "توصيل المتجر";
+  if (mode === "CUSTOMER_PICKUP") return "استلم بنفسك من المتجر";
+  if (mode === "BTHWANI_CAPTAIN") return "توصيل بثواني";
+  return "توصيل المتجر";
 }
 
 export function paymentMethodLabel(method: PaymentMethod, fulfillmentMode?: FulfillmentMode, cashAmountMinor?: number): string {
@@ -69,6 +73,8 @@ export function formatOrderDate(value: string): string {
 }
 
 export function formatQuantity(baseUnit: Order["lines"][number]["baseUnit"], quantity: number): string {
-  const unit = baseUnit === "COUNT" ? "قطعة" : baseUnit === "GRAM" ? "غرام" : "مل";
+  let unit = "مل";
+  if (baseUnit === "COUNT") unit = "قطعة";
+  else if (baseUnit === "GRAM") unit = "غرام";
   return `${new Intl.NumberFormat(arabicTextLatinNumbersLocale).format(quantity)} ${unit}`;
 }

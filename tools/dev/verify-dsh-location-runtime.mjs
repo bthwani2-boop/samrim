@@ -1,3 +1,4 @@
+import { resolveTrustedExecutable } from "./runtime-proof/trusted-executables.mjs";
 import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -51,7 +52,7 @@ function sqlLiteral(value) {
 function sql(query) {
   // Readback is allowed for schema/contract assertions. DELETE statements below
   // are bounded cleanup of IDs captured by this run, never business fixture setup.
-  return execFileSync("docker", [...composeArgs, "exec", "-T", "postgres", "psql", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-Atc", query], { cwd: root, encoding: "utf8" }).trim();
+  return execFileSync(resolveTrustedExecutable("docker"), [...composeArgs, "exec", "-T", "postgres", "psql", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-Atc", query], { cwd: root, encoding: "utf8" }).trim();
 }
 
 async function request(base, method, pathname, options = {}) {

@@ -2,7 +2,7 @@
 
 import { type CatalogProductProposal, catalogProductProposalStateLabel, type JoiningCaseSummary, joiningCaseStateLabel, type Notification, type OperatorOperationListItem, orderStateLabel } from "@bthwani/dsh";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { responseMessage } from "../access/identity-error-message";
 import { notificationKindLabel } from "../notifications/notification-presentation";
@@ -83,25 +83,35 @@ export function OperatorHome() {
         <div className="home-work-areas">
           {canReadOperations ? <section className="home-work-area" aria-labelledby="home-operations-title">
             <div className="home-work-area-heading"><div><p className="eyebrow">التشغيل</p><h2 id="home-operations-title">طلبات تحتاج إجراءً</h2></div><Link href="/operations">فتح العمليات</Link></div>
-            {errors.operations ? <QueueError message={errors.operations} /> : operations.length === 0 ? <p className="empty-inline">لا توجد طلبات تحتاج إجراءً في القراءة الحالية.</p> : <ul className="home-list">{operations.slice(0, 4).map((item) => <li key={item.orderId}><Link href={`/operations/${encodeURIComponent(item.orderId)}`}><span><strong>{item.storeName}</strong><small><bdi dir="ltr">{item.orderId}</bdi></small></span><strong>{orderStateLabel(item.state)}</strong></Link></li>)}</ul>}
+            <QueueContent error={errors.operations} emptyMessage="لا توجد طلبات تحتاج إجراءً في القراءة الحالية." hasItems={operations.length > 0}>
+              <ul className="home-list">{operations.slice(0, 4).map((item) => <li key={item.orderId}><Link href={`/operations/${encodeURIComponent(item.orderId)}`}><span><strong>{item.storeName}</strong><small><bdi dir="ltr">{item.orderId}</bdi></small></span><strong>{orderStateLabel(item.state)}</strong></Link></li>)}</ul>
+            </QueueContent>
           </section> : null}
           {canReadPartners ? <>
             <section className="home-work-area" aria-labelledby="home-joining-admission-title">
               <div className="home-work-area-heading"><div><p className="eyebrow">الشركاء</p><h2 id="home-joining-admission-title">قبول إحالات الميدانيين</h2></div><Link href="/partners/joining?state=admission_requested">فتح الشركاء</Link></div>
-              {errors.joiningAdmissions ? <QueueError message={errors.joiningAdmissions} /> : joiningAdmissions.length === 0 ? <p className="empty-inline">لا توجد إحالات تنتظر قبول المشغّل.</p> : <ul className="home-list">{joiningAdmissions.map((item) => <li key={item.id}><Link href={`/partners/${encodeURIComponent(item.id)}`}><span><strong>{item.businessName}</strong><small><bdi dir="ltr">{item.id}</bdi></small></span><strong>{joiningCaseStateLabel(item.state)}</strong></Link></li>)}</ul>}
+              <QueueContent error={errors.joiningAdmissions} emptyMessage="لا توجد إحالات تنتظر قبول المشغّل." hasItems={joiningAdmissions.length > 0}>
+                <ul className="home-list">{joiningAdmissions.map((item) => <li key={item.id}><Link href={`/partners/${encodeURIComponent(item.id)}`}><span><strong>{item.businessName}</strong><small><bdi dir="ltr">{item.id}</bdi></small></span><strong>{joiningCaseStateLabel(item.state)}</strong></Link></li>)}</ul>
+              </QueueContent>
             </section>
             <section className="home-work-area" aria-labelledby="home-joining-title">
               <div className="home-work-area-heading"><div><p className="eyebrow">الشركاء</p><h2 id="home-joining-title">طلبات الانضمام المقدمة للمراجعة</h2></div><Link href="/partners/joining?state=submitted">فتح الشركاء</Link></div>
-              {errors.joiningCases ? <QueueError message={errors.joiningCases} /> : joiningCases.length === 0 ? <p className="empty-inline">لا توجد طلبات انضمام مقدمة تحتاج المراجعة.</p> : <ul className="home-list">{joiningCases.map((item) => <li key={item.id}><Link href={`/partners/${encodeURIComponent(item.id)}`}><span><strong>{item.businessName}</strong><small><bdi dir="ltr">{item.id}</bdi></small></span><strong>{joiningCaseStateLabel(item.state)}</strong></Link></li>)}</ul>}
+              <QueueContent error={errors.joiningCases} emptyMessage="لا توجد طلبات انضمام مقدمة تحتاج المراجعة." hasItems={joiningCases.length > 0}>
+                <ul className="home-list">{joiningCases.map((item) => <li key={item.id}><Link href={`/partners/${encodeURIComponent(item.id)}`}><span><strong>{item.businessName}</strong><small><bdi dir="ltr">{item.id}</bdi></small></span><strong>{joiningCaseStateLabel(item.state)}</strong></Link></li>)}</ul>
+              </QueueContent>
             </section>
           </> : null}
           {canReadCatalog ? <section className="home-work-area" aria-labelledby="home-proposals-title">
             <div className="home-work-area-heading"><div><p className="eyebrow">الكتالوج</p><h2 id="home-proposals-title">مقترحات منتجات للمراجعة</h2></div><Link href="/catalog/proposals">فتح المقترحات</Link></div>
-            {errors.proposals ? <QueueError message={errors.proposals} /> : proposals.length === 0 ? <p className="empty-inline">لا توجد مقترحات مقدمة تنتظر المراجعة.</p> : <ul className="home-list">{proposals.slice(0, 4).map((item) => <li key={item.id}><Link href={`/catalog/proposals?proposalId=${encodeURIComponent(item.id)}`}><span><strong>{item.proposedName}</strong><small><bdi dir="ltr">{item.id}</bdi></small></span><strong>{catalogProductProposalStateLabel(item.state)}</strong></Link></li>)}</ul>}
+            <QueueContent error={errors.proposals} emptyMessage="لا توجد مقترحات مقدمة تنتظر المراجعة." hasItems={proposals.length > 0}>
+              <ul className="home-list">{proposals.slice(0, 4).map((item) => <li key={item.id}><Link href={`/catalog/proposals?proposalId=${encodeURIComponent(item.id)}`}><span><strong>{item.proposedName}</strong><small><bdi dir="ltr">{item.id}</bdi></small></span><strong>{catalogProductProposalStateLabel(item.state)}</strong></Link></li>)}</ul>
+            </QueueContent>
           </section> : null}
           <section className="home-work-area" aria-labelledby="home-notifications-title">
             <div className="home-work-area-heading"><div><p className="eyebrow">الإشعارات</p><h2 id="home-notifications-title">إشعارات غير مقروءة</h2></div><Link href="/notifications">فتح الإشعارات</Link></div>
-            {errors.notifications ? <QueueError message={errors.notifications} /> : unreadNotifications.length === 0 ? <p className="empty-inline">لا توجد إشعارات غير مقروءة ضمن القراءة الحالية.</p> : <ul className="home-list">{unreadNotifications.map((item) => <li key={item.id}><Link href="/notifications"><span><strong>{item.title}</strong><small>{item.body}</small></span><strong>{notificationKindLabel(item.kind)}</strong></Link></li>)}</ul>}
+            <QueueContent error={errors.notifications} emptyMessage="لا توجد إشعارات غير مقروءة ضمن القراءة الحالية." hasItems={unreadNotifications.length > 0}>
+              <ul className="home-list">{unreadNotifications.map((item) => <li key={item.id}><Link href="/notifications"><span><strong>{item.title}</strong><small>{item.body}</small></span><strong>{notificationKindLabel(item.kind)}</strong></Link></li>)}</ul>
+            </QueueContent>
           </section>
         </div>
       ) : null}
@@ -111,4 +121,10 @@ export function OperatorHome() {
 
 function QueueError({ message }: Readonly<{ message: string }>) {
   return <p className="home-queue-error" role="alert">تعذرت قراءة هذا الطابور: {message}</p>;
+}
+
+function QueueContent({ error, emptyMessage, hasItems, children }: Readonly<{ error: string | undefined; emptyMessage: string; hasItems: boolean; children: ReactNode }>) {
+  if (error) return <QueueError message={error} />;
+  if (!hasItems) return <p className="empty-inline">{emptyMessage}</p>;
+  return <>{children}</>;
 }

@@ -14,6 +14,12 @@ type PartnerDetail = Readonly<{ partner: ActorRoleView; joiningCase: JoiningCase
 type PartnerStoresPage = Readonly<{ stores: ReadonlyArray<PartnerManagedStore>; nextCursor?: string }>;
 type PartnerDetailTab = "profile" | "stores";
 
+function partnerRequestError(cause: unknown, fallback: string): string {
+  if (isRequestFailure(cause)) return cause.message;
+  if (cause instanceof Error) return cause.message;
+  return fallback;
+}
+
 export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }>) {
   const [detail, setDetail] = useState<PartnerDetail | null>(null);
   const [stores, setStores] = useState<ReadonlyArray<PartnerManagedStore>>([]);
@@ -37,7 +43,7 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
       setDetail(await response.json() as PartnerDetail);
       return true;
     } catch (cause) {
-      setError(isRequestFailure(cause) ? cause.message : cause instanceof Error ? cause.message : "تعذرت قراءة ملف الشريك.");
+      setError(partnerRequestError(cause, "تعذرت قراءة ملف الشريك."));
       return false;
     } finally { setLoading(false); }
   }, [actorId]);
@@ -55,7 +61,7 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
       setStoresCursor(page.nextCursor ?? "");
       setStoresPageStack(pageStack);
     } catch (cause) {
-      setStoresError(isRequestFailure(cause) ? cause.message : cause instanceof Error ? cause.message : "تعذرت قراءة متاجر الشريك من DSH.");
+      setStoresError(partnerRequestError(cause, "تعذرت قراءة متاجر الشريك من DSH."));
       setStores([]);
       setStoresCursor("");
     } finally { setLoadingStores(false); }
@@ -173,9 +179,17 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
         const message = await partnerErrorMessage(response);
         if (response.status === 409 || response.status === 412 || response.status >= 500) {
           const reloaded = await loadDetail();
-          setError(reloaded
-            ? (response.status >= 500 ? "تعذر تأكيد نتيجة الطلب؛ أُعيد تحميل الحالة الكانونية قبل أي محاولة أخرى. " : "تغيرت أهلية الانضمام أو نسخة الهوية قبل إعادة التسجيل. أُعيد تحميل الحالة الكانونية: ") + message
-            : "تعذر تأكيد النتيجة أو إعادة قراءة ملف الشريك. حدّث الملف قبل أي محاولة أخرى. " + message);
+          if (reloaded) {
+            let recoveryMessage: string;
+            if (response.status >= 500) {
+              recoveryMessage = "تعذر تأكيد نتيجة الطلب؛ أُعيد تحميل الحالة الكانونية قبل أي محاولة أخرى. ";
+            } else {
+              recoveryMessage = "تغيرت أهلية الانضمام أو نسخة الهوية قبل إعادة التسجيل. أُعيد تحميل الحالة الكانونية: ";
+            }
+            setError(recoveryMessage + message);
+          } else {
+            setError("تعذر تأكيد النتيجة أو إعادة قراءة ملف الشريك. حدّث الملف قبل أي محاولة أخرى. " + message);
+          }
         } else setError(message);
         return;
       }
@@ -196,15 +210,29 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
       setNotice("تمت إجازة إعادة تسجيل الشريك بعد تحقق DSH؛ يلزمه إكمال التفعيل من تطبيق الشريك.");
     } catch (cause) {
       const reloaded = await loadDetail();
-      setError(reloaded
-        ? "تعذر تأكيد نتيجة الطلب؛ أُعيد تحميل الحالة الكانونية قبل أي محاولة أخرى. " + (isRequestFailure(cause) ? cause.message : "تحقق من التفعيل المعروض.")
-        : "تعذر تأكيد نتيجة الطلب أو إعادة قراءة ملف الشريك. حدّثه قبل أي محاولة أخرى.");
+      if (reloaded) {
+        let recoveryDetail = "تحقق من التفعيل المعروض.";
+        if (isRequestFailure(cause)) recoveryDetail = cause.message;
+        setError("تعذر تأكيد نتيجة الطلب؛ أُعيد تحميل الحالة الكانونية قبل أي محاولة أخرى. " + recoveryDetail);
+      } else {
+        setError("تعذر تأكيد نتيجة الطلب أو إعادة قراءة ملف الشريك. حدّثه قبل أي محاولة أخرى.");
+      }
     } finally { setBusy(false); }
   }
 
   const partner = detail?.partner;
   const canChangeStatus = detail?.joiningCase?.state === "approved" && Boolean(partner?.activatedAt) && Boolean(partner?.securityEnabled);
   const canReenroll = ["submitted", "needs_correction", "approved"].includes(detail?.joiningCase?.state ?? "") && Boolean(partner?.enabled) && Boolean(partner?.activatedAt) && Boolean(partner?.securityEnabled);
+  let roleStatusLabel = "موقوف";
+  let statusActionClass = "button button-primary";
+  let statusActionLabel = "تفعيل الدور";
+  if (partner?.enabled) {
+    statusActionClass = "button button-secondary";
+    statusActionLabel = "إيقاف الدور";
+    if (partner.activatedAt) roleStatusLabel = "مفعّل";
+    else roleStatusLabel = "بانتظار التفعيل";
+  }
+  if (busy) statusActionLabel = "جارٍ التحديث والتحقق…";
 
   return <section className="workspace-page partner-detail-workspace" aria-labelledby="partner-detail-title">
     <div className="workspace-page-heading partner-detail-page-heading">
@@ -228,14 +256,14 @@ export function PartnerDetailWorkspace({ actorId }: Readonly<{ actorId: string }
         <dl className="partner-detail-facts">
           <div><dt>الهاتف</dt><dd><bdi dir="ltr">{detail.partner.phoneE164}</bdi></dd></div>
           <div><dt>حالة الهوية</dt><dd>{detail.partner.securityEnabled ? "نشطة" : "موقوفة"}</dd></div>
-          <div><dt>حالة الدور</dt><dd>{detail.partner.enabled ? detail.partner.activatedAt ? "مفعّل" : "بانتظار التفعيل" : "موقوف"}</dd></div>
+          <div><dt>حالة الدور</dt><dd>{roleStatusLabel}</dd></div>
           <div><dt>طلب الانضمام</dt><dd>{detail.joiningCase ? <><Link href={`/partners/${encodeURIComponent(detail.joiningCase.id)}`}>{joiningCaseStateLabel(detail.joiningCase.state)}</Link> · {detail.joiningCase.businessName}</> : "لا توجد حالة DSH مرتبطة"}</dd></div>
         </dl>
       </section>
       <section className="partner-detail-section partner-status-action" aria-labelledby="partner-status-action-title">
         <div><p className="eyebrow">إجراء موثق</p><h2 id="partner-status-action-title">{detail.partner.enabled ? "إيقاف دور الشريك" : "تفعيل دور الشريك"}</h2><p className="muted">يتطلب السبب ويُحفظ عبر Identity مع نسخة الدور الحالية.</p></div>
         <label className="field-label" htmlFor="partner-status-reason">سبب الإجراء<input id="partner-status-reason" value={reason} minLength={5} maxLength={500} onChange={(event) => setReason(event.target.value)} placeholder="اكتب سببًا واضحًا للتغيير" disabled={!(canChangeStatus || canReenroll) || busy} /></label>
-        <button type="button" className={detail.partner.enabled ? "button button-secondary" : "button button-primary"} disabled={!canChangeStatus || busy || reason.trim().length < 5} onClick={() => void changeStatus()}>{busy ? "جارٍ التحديث والتحقق…" : detail.partner.enabled ? "إيقاف الدور" : "تفعيل الدور"}</button>
+        <button type="button" className={statusActionClass} disabled={!canChangeStatus || busy || reason.trim().length < 5} onClick={() => void changeStatus()}>{statusActionLabel}</button>
         {canReenroll ? <button type="button" className="button button-secondary" disabled={busy || Array.from(reason.trim()).length < 5} onClick={() => void reenroll()}>{busy ? "جارٍ التحقق وإجازة التسجيل…" : "إجازة إعادة التسجيل"}</button> : null}
         {!canChangeStatus ? <p className="muted">يتاح التحكم بعد اعتماد الانضمام وتسجيل الهوية وبقاء الهوية الأمنية نشطة.</p> : null}
       </section>

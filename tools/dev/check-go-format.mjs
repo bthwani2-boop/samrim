@@ -1,3 +1,4 @@
+import { resolveTrustedExecutable } from "./runtime-proof/trusted-executables.mjs";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -46,7 +47,7 @@ const unformatted = [];
 for (let index = 0; index < files.length; index += 100) {
   const chunk = files.slice(index, index + 100);
   if (chunk.length === 0) continue;
-  const output = execFileSync("gofmt", ["-l", ...chunk], {
+  const output = execFileSync(resolveTrustedExecutable("gofmt"), ["-l", ...chunk], {
     cwd: repoRoot,
     encoding: "utf8",
   });

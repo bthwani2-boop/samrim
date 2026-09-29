@@ -8,6 +8,21 @@ import { responseMessage } from "./identity-error-message";
 
 type OperatorRow = ActorRoleView & Readonly<{ permissions: ReadonlyArray<Readonly<{ permission: OperatorPermission; enabled: boolean }>> | null }>;
 type OperatorPage = Readonly<{ items: ReadonlyArray<OperatorRow>; nextCursor?: string }>;
+
+function identityStatusLabel(operator: OperatorRow): string {
+  if (!operator.securityEnabled) return "الهوية موقوفة";
+  if (!operator.enabled) return "الدور موقوف";
+  if (!operator.activatedAt) return "بانتظار التفعيل";
+  return "نشط";
+}
+
+function permissionLabel(permissions: OperatorRow["permissions"], permission: OperatorPermission): string {
+  if (permissions === null) return "غير متاحة لهذه الجلسة";
+  const access = permissions.find((item) => item.permission === permission);
+  if (access?.enabled) return "ممنوحة";
+  return "غير ممنوحة";
+}
+
 export function OperatorDirectory({ onSelectPhone }: Readonly<{ onSelectPhone: (phone: string) => void }>) {
   const [query, setQuery] = useState("");
   const [enabled, setEnabled] = useState("");
@@ -48,10 +63,7 @@ export function OperatorDirectory({ onSelectPhone }: Readonly<{ onSelectPhone: (
     {loading && items.length === 0 ? <p role="status">جارٍ قراءة المشغّلين…</p> : null}
     {!loading && !error && items.length === 0 ? <div className="collection-state"><strong>لا توجد نتائج</strong><p>جرّب إزالة المرشح أو البحث برقم آخر.</p></div> : null}
     {items.length > 0 ? <div className="operations-table-wrap"><table className="operations-table"><thead><tr><th scope="col">المشغّل</th><th scope="col">الحساب</th>{operatorWorkspacePermissions.map(({ key, label }) => <th key={key} scope="col">{label}</th>)}<th scope="col">إجراء</th></tr></thead><tbody>
-      {items.map((operator) => <tr key={operator.actorId}><th scope="row"><bdi dir="ltr">{operator.phoneE164}</bdi></th><td>{!operator.securityEnabled ? "الهوية موقوفة" : !operator.enabled ? "الدور موقوف" : !operator.activatedAt ? "بانتظار التفعيل" : "نشط"}</td>{operatorWorkspacePermissions.map(({ key: permission }) => {
-        const access = operator.permissions?.find((item) => item.permission === permission);
-        return <td key={permission}>{access ? access.enabled ? "ممنوحة" : "غير ممنوحة" : operator.permissions === null ? "غير متاحة لهذه الجلسة" : operator.permissions ? "غير ممنوحة" : "—"}</td>;
-      })}<td><button type="button" className="button button-secondary" onClick={() => onSelectPhone(operator.phoneE164)}>إدارة الحساب</button></td></tr>)}
+      {items.map((operator) => <tr key={operator.actorId}><th scope="row"><bdi dir="ltr">{operator.phoneE164}</bdi></th><td>{identityStatusLabel(operator)}</td>{operatorWorkspacePermissions.map(({ key: permission }) => <td key={permission}>{permissionLabel(operator.permissions, permission)}</td>)}<td><button type="button" className="button button-secondary" onClick={() => onSelectPhone(operator.phoneE164)}>إدارة الحساب</button></td></tr>)}
     </tbody></table></div> : null}
     {nextCursor ? <div className="workspace-toolbar"><button type="button" className="button button-secondary" disabled={loadingMore} onClick={() => void load(nextCursor, true)}>{loadingMore ? "جارٍ تحميل المزيد…" : "تحميل المزيد"}</button></div> : null}
   </section>;

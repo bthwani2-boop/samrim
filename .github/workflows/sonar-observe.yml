@@ -98,6 +98,7 @@ jobs:
             tools/dev/check-go-format.test.mjs \
             tools/dev/ci-failure-diagnostics.test.mjs \
             tools/dev/verify-pr-policy.test.mjs \
+            services/identity/tests/contract-guard.test.mjs \
             tools/dev/execution-proof-system.mjs \
             tools/dev/verify-wlt-contract-conformance.mjs
 

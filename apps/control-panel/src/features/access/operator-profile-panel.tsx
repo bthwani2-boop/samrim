@@ -17,6 +17,20 @@ function stateLabel(profile: OperatorProfile): string {
   return "نشط";
 }
 
+function accountStatusLabel(profile: OperatorProfile, active: boolean): string {
+  if (active) return "مفعّل";
+  if (profile.state === "admitted" && !profile.activatedAt) return "بانتظار التفعيل";
+  if (profile.roleEnabled === false) return "الدور موقوف";
+  if (profile.securityEnabled === false) return "الهوية موقوفة";
+  return "لا يوجد حساب بعد";
+}
+
+function mutationSuccessLabel(action: "update-profile" | "approve" | "grant" | "invitation"): string {
+  if (action === "approve") return "اعتُمد الملف. لم يُمنح دور المشغّل بعد.";
+  if (action === "grant") return "مُنح دور المشغّل بعد الاعتماد. إصدار الدعوة هو الخطوة التالية.";
+  return "تم تحديث الملف.";
+}
+
 export function OperatorProfilePanel() {
   const [fullNameAr, setFullNameAr] = useState("");
   const [phoneE164, setPhoneE164] = useState("");
@@ -116,7 +130,7 @@ export function OperatorProfilePanel() {
       }
       if (action === "invitation") setInvitation(await response.json() as OperatorProfileInvitationResponse);
       else await response.json();
-      setNotice(successMessage || (action === "approve" ? "اعتُمد الملف. لم يُمنح دور المشغّل بعد." : action === "grant" ? "مُنح دور المشغّل بعد الاعتماد. إصدار الدعوة هو الخطوة التالية." : "تم تحديث الملف."));
+      setNotice(successMessage || mutationSuccessLabel(action));
       await load();
     } catch (cause) {
       setError(isRequestFailure(cause) ? cause.message : "تعذر إكمال الإجراء. أعد قراءة الملف قبل أي محاولة أخرى.");
@@ -156,7 +170,7 @@ export function OperatorProfilePanel() {
           const canInvite = profile.state === "admitted" && profile.roleEnabled === true && profile.securityEnabled === true && !profile.activatedAt;
           return <tr key={profile.id}>
             <th scope="row"><div className="access-form"><label className="field-label" htmlFor={`operator-profile-name-${profile.id}`}>الاسم<input id={`operator-profile-name-${profile.id}`} value={edit.fullNameAr} maxLength={120} disabled={Boolean(busy) || profile.state !== "pending_review"} onChange={(event) => setEdits((current) => ({ ...current, [profile.id]: { ...edit, fullNameAr: event.target.value } }))} /></label><label className="field-label" htmlFor={`operator-profile-phone-${profile.id}`}>الهاتف<input id={`operator-profile-phone-${profile.id}`} inputMode="tel" value={edit.phoneE164} disabled={Boolean(busy) || profile.state !== "pending_review"} onChange={(event) => setEdits((current) => ({ ...current, [profile.id]: { ...edit, phoneE164: toAsciiDigits(event.target.value) } }))} /></label>{profile.state === "pending_review" ? <button type="button" className="button button-secondary" disabled={Boolean(busy) || !changed} onClick={() => void updateProfile(profile)}>حفظ الملف</button> : <bdi dir="ltr">{profile.phoneE164 || "—"}</bdi>}</div></th>
-            <td>{active ? "مفعّل" : profile.state === "admitted" && !profile.activatedAt ? "بانتظار التفعيل" : profile.roleEnabled === false ? "الدور موقوف" : profile.securityEnabled === false ? "الهوية موقوفة" : "لا يوجد حساب بعد"}</td>
+            <td>{accountStatusLabel(profile, active)}</td>
             <td>{stateLabel(profile)} · الإصدار {profile.version}</td>
             <td><div className="access-form">
               {profile.state === "pending_review" ? <button type="button" className="button button-primary" disabled={Boolean(busy) || changed} onClick={() => void mutate(profile, "approve")}>{busy === `${profile.id}:approve` ? "جارٍ الاعتماد…" : "اعتماد الملف"}</button> : null}

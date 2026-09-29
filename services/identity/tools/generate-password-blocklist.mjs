@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { resolveTrustedExecutable } from "../../../tools/dev/runtime-proof/trusted-executables.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -19,7 +20,7 @@ const temporaryPath = path.join(temporaryDirectory, "password_blocklist_generate
 let rendered;
 try {
   fs.writeFileSync(temporaryPath, unformatted, "utf8");
-  execFileSync("gofmt", ["-w", temporaryPath], { encoding: "utf8" });
+  execFileSync(resolveTrustedExecutable("gofmt"), ["-w", temporaryPath], { encoding: "utf8" });
   rendered = fs.readFileSync(temporaryPath, "utf8");
 } finally {
   fs.rmSync(temporaryDirectory, { recursive: true, force: true });

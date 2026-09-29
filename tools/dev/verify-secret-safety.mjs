@@ -1,3 +1,4 @@
+import { resolveTrustedExecutable } from "./runtime-proof/trusted-executables.mjs";
 import { execFileSync, spawnSync } from "node:child_process";
 
 const root = process.cwd();
@@ -8,7 +9,7 @@ const prHead = process.env.PR_HEAD_SHA || "";
 const githubSha = process.env.GITHUB_SHA || "";
 
 function git(args, options = {}) {
-  return execFileSync("git", args, {
+  return execFileSync(resolveTrustedExecutable("git"), args, {
     cwd: root,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
@@ -25,7 +26,7 @@ function grepAt(ref = null) {
   const args = ["grep", "-n", "-I", "-E", "--", pattern];
   if (ref) args.push(ref);
   args.push("--", ".");
-  const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  const result = spawnSync(resolveTrustedExecutable("git"), args, { cwd: root, encoding: "utf8" });
   if (result.status === 0 && result.stdout.trim()) return result.stdout.trim();
   if (result.status === 1) return "";
   throw new Error(result.stderr || "git grep failed");
@@ -58,7 +59,7 @@ if (event === "schedule" || event === "workflow_dispatch") {
   commits = git(["rev-list", pushBefore + ".." + githubSha]).split(/\r?\n/).filter(Boolean);
   console.log("SECRET_HISTORY_SCOPE=PUSH_DELTA");
 } else if (githubSha) {
-  execFileSync("git", ["fetch", "--no-tags", "origin", "main:refs/remotes/origin/main"], { cwd: root, stdio: "inherit" });
+  execFileSync(resolveTrustedExecutable("git"), ["fetch", "--no-tags", "origin", "main:refs/remotes/origin/main"], { cwd: root, stdio: "inherit" });
   const base = git(["merge-base", githubSha, "refs/remotes/origin/main"]);
   commits = git(["rev-list", base + ".." + githubSha]).split(/\r?\n/).filter(Boolean);
   console.log("SECRET_HISTORY_SCOPE=NEW_BRANCH_DELTA");

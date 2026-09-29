@@ -55,6 +55,7 @@
     }
   },
   "ignore": [
+    ".kilo/worktrees/**",
     "apps/*/fingerprint.config.js",
     "services/dsh/tools/generate-types.mjs",
     "services/identity/tools/generate-types.mjs",

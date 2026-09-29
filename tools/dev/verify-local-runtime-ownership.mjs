@@ -1,3 +1,4 @@
+import { resolveTrustedExecutable } from "./runtime-proof/trusted-executables.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -20,11 +21,11 @@ const liveFinanceSpec=read("apps/control-panel/tests/finance-runtime.spec.ts");
 const liveDshOperatorSpec=read("apps/control-panel/tests/zz-dsh-operator.spec.ts");
 const check=(ok,msg)=>{if(!ok)fail.push(msg)};
 
-const ps=spawnSync("pwsh",["-NoProfile","-Command",
+const ps=spawnSync(resolveTrustedExecutable("pwsh"),["-NoProfile","-Command",
   "$e=$null;$t=$null;[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'tools/dev/dev.ps1'),[ref]$t,[ref]$e)|Out-Null;if($e.Count){exit 1}"
 ],{cwd:root,encoding:"utf8"});
 check(ps.status===0,"dev.ps1 PowerShell syntax must parse cleanly");
-const psScr=spawnSync("pwsh",["-NoProfile","-Command","$e=$null;$t=$null;[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'tools/dev/scr.ps1'),[ref]$t,[ref]$e)|Out-Null;if($e.Count){exit 1}"],{cwd:root,encoding:"utf8"});
+const psScr=spawnSync(resolveTrustedExecutable("pwsh"),["-NoProfile","-Command","$e=$null;$t=$null;[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'tools/dev/scr.ps1'),[ref]$t,[ref]$e)|Out-Null;if($e.Count){exit 1}"],{cwd:root,encoding:"utf8"});
 check(psScr.status===0,"scr.ps1 PowerShell syntax must parse cleanly");
 for(const script of ["tools/dev/start-surface.mjs","tools/dev/run-playwright-live.mjs","tools/dev/verify-identity-runtime.mjs"]){
   check(spawnSync(process.execPath,["--check",script],{cwd:root}).status===0,`${script} syntax must parse cleanly`);

@@ -129,9 +129,17 @@ export function CaptainAdmissionPanel() {
         const message = await responseMessage(response);
         if (response.status === 409 || response.status === 412 || response.status >= 500) {
           const reloaded = await load();
-          setError(reloaded
-            ? (response.status >= 500 ? "تعذر تأكيد نتيجة الطلب؛ أُعيد تحميل الحالة الكانونية قبل أي محاولة أخرى. " : "تغيرت أهلية DSH أو نسخة الهوية قبل إعادة التسجيل. أُعيد تحميل الحالة الكانونية: ") + message
-            : "تعذر تأكيد النتيجة أو إعادة قراءة سجل الكباتن. حدّث السجل قبل أي محاولة أخرى. " + message);
+          if (reloaded) {
+            let recoveryMessage: string;
+            if (response.status >= 500) {
+              recoveryMessage = "تعذر تأكيد نتيجة الطلب؛ أُعيد تحميل الحالة الكانونية قبل أي محاولة أخرى. ";
+            } else {
+              recoveryMessage = "تغيرت أهلية DSH أو نسخة الهوية قبل إعادة التسجيل. أُعيد تحميل الحالة الكانونية: ";
+            }
+            setError(recoveryMessage + message);
+          } else {
+            setError("تعذر تأكيد النتيجة أو إعادة قراءة سجل الكباتن. حدّث السجل قبل أي محاولة أخرى. " + message);
+          }
         } else setError(message);
         return;
       }
@@ -154,9 +162,13 @@ export function CaptainAdmissionPanel() {
       await load();
     } catch (cause) {
       const reloaded = await load();
-      setError(reloaded
-        ? "تعذر تأكيد نتيجة الطلب؛ أُعيد تحميل الحالة الكانونية قبل أي محاولة أخرى. " + (isRequestFailure(cause) ? cause.message : "تحقق من التفعيل المعروض.")
-        : "تعذر تأكيد نتيجة الطلب أو إعادة قراءة سجل الكباتن. حدّث السجل قبل أي محاولة أخرى.");
+      if (reloaded) {
+        let recoveryDetail = "تحقق من التفعيل المعروض.";
+        if (isRequestFailure(cause)) recoveryDetail = cause.message;
+        setError("تعذر تأكيد نتيجة الطلب؛ أُعيد تحميل الحالة الكانونية قبل أي محاولة أخرى. " + recoveryDetail);
+      } else {
+        setError("تعذر تأكيد نتيجة الطلب أو إعادة قراءة سجل الكباتن. حدّث السجل قبل أي محاولة أخرى.");
+      }
     } finally {
       setBusy("");
     }
@@ -229,16 +241,34 @@ export function CaptainAdmissionPanel() {
             const shouldDisable = captain.enabled || mustDisableForProfileReview;
             const canChangeAvailability = operationallyEnabled && captain.securityEnabled && Boolean(captain.activatedAt);
             const canReenroll = operationallyEnabled && captain.securityEnabled && Boolean(captain.activatedAt);
+            let identityStatusLabel: string;
+            if (!captain.securityEnabled) {
+              identityStatusLabel = "الهوية موقوفة أمنيًا";
+            } else if (requiresProfileReview) {
+              identityStatusLabel = captain.enabled ? "بانتظار إيقاف الوصول" : "الوصول موقوف";
+            } else if (captain.activatedAt) {
+              identityStatusLabel = captain.enabled ? "نشط" : "الدور موقوف";
+            } else {
+              identityStatusLabel = "بانتظار التفعيل";
+            }
+
+            const statusActionClass = shouldDisable ? "button button-secondary" : "button button-primary";
+            let statusActionLabel = shouldDisable ? "إيقاف التشغيل" : "إعادة التفعيل";
+            if (busy === captain.actorId) statusActionLabel = "جارٍ التحديث…";
+
+            let availabilityActionLabel = captain.admission?.availabilityState === "available" ? "جعله غير متاح" : "جعله متاحًا";
+            if (busy === `${captain.actorId}:availability`) availabilityActionLabel = "جارٍ التحديث…";
+
             return <tr key={captain.actorId}>
             <th scope="row"><strong>{captain.admission?.fullNameAr || "—"}</strong><br /><bdi dir="ltr">{captain.phoneE164}</bdi></th>
-            <td>{!captain.securityEnabled ? "الهوية موقوفة أمنيًا" : requiresProfileReview && captain.enabled ? "بانتظار إيقاف الوصول" : requiresProfileReview ? "الوصول موقوف" : captain.activatedAt ? captain.enabled ? "نشط" : "الدور موقوف" : "بانتظار التفعيل"}</td>
+            <td>{identityStatusLabel}</td>
             <td>{requiresProfileReview ? "الملف يحتاج استكمالًا ومراجعة" : admissionLabel(captain.admission)}</td>
             <td>{captain.admission ? captainAvailabilityStateLabel(captain.admission.availabilityState) : "—"}</td>
             <td>{captain.admission && (captain.activatedAt || shouldDisable) ? <div className="access-form">
               <label className="field-label" htmlFor={`captain-reason-${index}`}>سبب الإجراء<input id={`captain-reason-${index}`} maxLength={500} value={reasons[captain.actorId] ?? ""} onChange={(event) => setReasons((current) => ({ ...current, [captain.actorId]: event.target.value }))} disabled={Boolean(busy)} /></label>
-              {shouldDisable || !requiresProfileReview ? <button type="button" className={shouldDisable ? "button button-secondary" : "button button-primary"} disabled={Boolean(busy) || (reasons[captain.actorId] ?? "").trim().length < 5} onClick={() => void changeStatus(captain)}>{busy === captain.actorId ? "جارٍ التحديث…" : shouldDisable ? "إيقاف التشغيل" : "إعادة التفعيل"}</button> : <span className="muted">استكمل الملف واعتمده قبل إعادة التفعيل.</span>}
+              {shouldDisable || !requiresProfileReview ? <button type="button" className={statusActionClass} disabled={Boolean(busy) || (reasons[captain.actorId] ?? "").trim().length < 5} onClick={() => void changeStatus(captain)}>{statusActionLabel}</button> : <span className="muted">استكمل الملف واعتمده قبل إعادة التفعيل.</span>}
               {canReenroll ? <button type="button" className="button button-secondary" disabled={Boolean(busy) || (reasons[captain.actorId] ?? "").trim().length < 5} onClick={() => void reenroll(captain)}>{busy === captain.actorId + ":reenroll" ? "جارٍ التحقق وإجازة التسجيل…" : "إجازة إعادة التسجيل"}</button> : null}
-              <button type="button" className="button button-secondary" disabled={Boolean(busy) || !canChangeAvailability || (reasons[captain.actorId] ?? "").trim().length < 5} onClick={() => void changeAvailability(captain)}>{busy === `${captain.actorId}:availability` ? "جارٍ التحديث…" : captain.admission.availabilityState === "available" ? "جعله غير متاح" : "جعله متاحًا"}</button>
+              <button type="button" className="button button-secondary" disabled={Boolean(busy) || !canChangeAvailability || (reasons[captain.actorId] ?? "").trim().length < 5} onClick={() => void changeAvailability(captain)}>{availabilityActionLabel}</button>
             </div> : <span className="muted">يبدأ التحكم بعد اكتمال التسجيل ووجود أهلية DSH.</span>}</td>
           </tr>;
           })}

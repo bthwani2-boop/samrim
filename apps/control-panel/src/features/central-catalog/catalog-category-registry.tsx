@@ -68,7 +68,16 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   const selectedVertical = verticals.find((vertical) => vertical.id === verticalId);
   const focusedCategory = categoryIndex.get(categoryId) ?? categoryDetail;
   const verticalReady = Boolean(selectedVertical?.active && selectedVertical.catalogModel === "SHARED_CATALOG");
-  const mainActionLabel = verticalReady ? "فئة رئيسية جديدة" : selectedVertical ? selectedVertical.active ? "راجع مسار المجال" : "إعداد المجال المتوقف" : verticals.length ? "اختر المجال أولًا" : "إعداد المجال التجاري";
+  let mainActionLabel: string;
+  if (verticalReady) {
+    mainActionLabel = "فئة رئيسية جديدة";
+  } else if (selectedVertical) {
+    mainActionLabel = selectedVertical.active ? "راجع مسار المجال" : "إعداد المجال المتوقف";
+  } else if (verticals.length > 0) {
+    mainActionLabel = "اختر المجال أولًا";
+  } else {
+    mainActionLabel = "إعداد المجال التجاري";
+  }
 
   useEffect(() => {
     const requestId = ++categoryDetailSequence.current;
@@ -274,6 +283,20 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
     }
   }
 
+  let categoryEditorEyebrow = "فئة رئيسية جديدة";
+  if (editingCategory) {
+    categoryEditorEyebrow = "تحرير";
+  } else if (parentCategoryId) {
+    categoryEditorEyebrow = "فئة فرعية جديدة";
+  }
+
+  let categoryEditorActionLabel = "إضافة الفئة";
+  if (editingCategory) categoryEditorActionLabel = "حفظ التعديل";
+  if (busy) categoryEditorActionLabel = "جارٍ الحفظ…";
+
+  let categoryImageActionLabel = focusedCategory?.imageUri ? "استبدال الصورة" : "إرفاق الصورة";
+  if (busy) categoryImageActionLabel = "جارٍ الرفع…";
+
   return <section className="access-card catalog-taxonomy-workbench" aria-labelledby="catalog-category-registry-title">
     <div className="catalog-taxonomy-workbench-heading">
       <div>
@@ -289,7 +312,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
     {editorOpen ? <div className="catalog-category-editor">
       <div className="catalog-category-detail-heading">
         <span className="catalog-category-monogram" aria-hidden="true">{nameAr.trim().slice(0, 1) || "＋"}</span>
-        <div><span className="eyebrow">{editingCategory ? "تحرير" : parentCategoryId ? "فئة فرعية جديدة" : "فئة رئيسية جديدة"}</span><h4>{editingCategory ? "تعديل الفئة" : "إضافة فئة"}</h4></div>
+        <div><span className="eyebrow">{categoryEditorEyebrow}</span><h4>{editingCategory ? "تعديل الفئة" : "إضافة فئة"}</h4></div>
       </div>
       <form className="catalog-category-filters" noValidate onSubmit={(event) => { event.preventDefault(); void searchParents(); }}>
         <label className="field-label" htmlFor="catalog-category-parent-search">بحث عن الفئة الأعلى<input id="catalog-category-parent-search" type="search" maxLength={160} value={parentSearch} disabled={busy || !canEdit || !verticalId} onChange={(event) => setParentSearch(event.target.value)} placeholder="اتركه فارغًا لعرض الفئات المحملة أو ابحث بالاسم" /></label>
@@ -303,7 +326,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
       {editingCategory ? <label className="catalog-category-active-toggle"><input id="catalog-category-active" type="checkbox" disabled={busy || !canEdit} checked={active} onChange={(event) => setActive(event.target.checked)} /> إظهار الفئة للمنتجات</label> : null}
       <label className="field-label" htmlFor="catalog-category-reason">سبب التغيير<textarea id="catalog-category-reason" className="resize-none" disabled={busy || !canEdit} minLength={5} maxLength={500} rows={2} value={reason} onChange={(event) => setReason(event.target.value)} aria-describedby="catalog-category-reason-help" /></label>
       <small id="catalog-category-reason-help" className="muted">مطلوب للتوثيق · {reason.trim().length}/500</small>
-      <div className="catalog-category-editor-actions"><button type="button" className="button button-primary" disabled={busy || !canEdit || reason.trim().length < 5} onClick={() => void saveCategory()}>{busy ? "جارٍ الحفظ…" : editingCategory ? "حفظ التعديل" : "إضافة الفئة"}</button><button type="button" className="button button-secondary" disabled={busy} onClick={closeEditor}>إلغاء</button></div>
+      <div className="catalog-category-editor-actions"><button type="button" className="button button-primary" disabled={busy || !canEdit || reason.trim().length < 5} onClick={() => void saveCategory()}>{categoryEditorActionLabel}</button><button type="button" className="button button-secondary" disabled={busy} onClick={closeEditor}>إلغاء</button></div>
     </div> : null}
 
     {verticalId && selectedVertical?.active && selectedVertical.catalogModel === "SHARED_CATALOG" ? <>
@@ -316,7 +339,9 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
       <div className="catalog-taxonomy-results-line"><span>{categories.length}{nextCursor ? "+" : ""} سجل في {selectedVertical.nameAr}</span><span>{nextCursor ? "تتوفر صفحات أخرى" : "نهاية النتائج"}</span></div>
       <div className="catalog-taxonomy-records">
         <div className="catalog-taxonomy-record-heading" aria-hidden="true"><span>الفئة ومسارها</span><span>الموقع</span><span>الحالة</span><span>الإجراء</span></div>
-        {loading && categories.length === 0 ? <p className="catalog-taxonomy-feedback" role="status">جارٍ تحميل صفحة الفئات…</p> : categories.length === 0 ? <div className="catalog-taxonomy-empty catalog-taxonomy-empty-inset"><strong>{categoryQuery ? "لا توجد فئات مطابقة" : "لا توجد فئات في هذا المجال"}</strong><p>{categoryQuery ? "غيّر نص البحث أو الحالة." : "أنشئ الفئة الرئيسية الأولى من الزر أعلى السجل، ثم أضف الفروع عند الحاجة."}</p></div> : <ul className="catalog-taxonomy-tree">{categories.map((category) => <li key={category.id} className="catalog-taxonomy-tree-node">
+        {loading && categories.length === 0 ? <p className="catalog-taxonomy-feedback" role="status">جارٍ تحميل صفحة الفئات…</p> : null}
+        {!loading && categories.length === 0 ? <div className="catalog-taxonomy-empty catalog-taxonomy-empty-inset"><strong>{categoryQuery ? "لا توجد فئات مطابقة" : "لا توجد فئات في هذا المجال"}</strong><p>{categoryQuery ? "غيّر نص البحث أو الحالة." : "أنشئ الفئة الرئيسية الأولى من الزر أعلى السجل، ثم أضف الفروع عند الحاجة."}</p></div> : null}
+        {categories.length > 0 ? <ul className="catalog-taxonomy-tree">{categories.map((category) => <li key={category.id} className="catalog-taxonomy-tree-node">
           <div className={"catalog-taxonomy-tree-row" + (category.id === categoryId ? " is-selected" : "")}>
             <span className="catalog-taxonomy-tree-spacer" aria-hidden="true" />
             <button type="button" className="catalog-taxonomy-tree-select" aria-pressed={category.id === categoryId} onClick={() => { onCategoryChange(category.id); setEditorOpen(false); setEditingCategory(null); setError(""); }}>
@@ -331,7 +356,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
               <button type="button" className="catalog-row-action" disabled={!canEdit || busy} onClick={() => edit(category)}>تعديل</button>
             </div>
           </div>
-        </li>)}</ul>}
+        </li>)}</ul> : null}
       </div>
       {nextCursor ? <div className="catalog-category-editor-actions"><button type="button" className="button button-secondary" disabled={loading || filtering} onClick={() => void loadMoreCategories()}>{filtering ? "جارٍ التحميل…" : "تحميل الصفحة التالية"}</button></div> : null}
       {focusedCategory && !editorOpen ? <section className="catalog-category-detail" aria-labelledby="catalog-category-detail-title">
@@ -348,7 +373,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
             {categoryImageFile ? <p className="muted" role="status">تم اختيار {categoryImageFile.name}. ستظهر المعاينة بعد حفظ الصورة في الوسائط المركزية.</p> : null}
             <label className="field-label" htmlFor="catalog-category-image-reason">سبب الإرفاق<input id="catalog-category-image-reason" value={mediaReason} maxLength={500} disabled={!canEdit || busy} onChange={(event) => setMediaReason(event.target.value)} /></label>
             <CatalogMediaProvenanceFields idPrefix="catalog-category-media" disabled={!canEdit || busy} value={mediaProvenance} onChange={setMediaProvenance} />
-            <button type="button" className="button button-secondary" disabled={!canEdit || busy || !categoryImageFile || mediaReason.trim().length < 5 || !isMediaProvenanceInputValid(mediaProvenance)} onClick={() => void uploadCategoryImage(focusedCategory)}>{busy ? "جارٍ الرفع…" : focusedCategory.imageUri ? "استبدال الصورة" : "إرفاق الصورة"}</button>
+            <button type="button" className="button button-secondary" disabled={!canEdit || busy || !categoryImageFile || mediaReason.trim().length < 5 || !isMediaProvenanceInputValid(mediaProvenance)} onClick={() => void uploadCategoryImage(focusedCategory)}>{categoryImageActionLabel}</button>
           </div>
         </div>
         <div className="catalog-category-detail-actions">
@@ -360,7 +385,9 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
           <CatalogAttributePolicyWorkspace key={focusedCategory.id} verticalId={verticalId} categoryId={focusedCategory.id} />
         </details>
       </section> : null}
-    </> : verticalId ? <div className="catalog-taxonomy-empty"><strong>المجال المحدد لا يستخدم المنتجات المشتركة</strong><p>اختر مجالًا بمسار «منتجات مشتركة» أو عدّل المسار من إعدادات المجالات التجارية أدناه.</p></div> : <div className="catalog-taxonomy-empty"><strong>لا توجد مجالات مشتركة نشطة</strong><p>فعّل مجالًا بمسار «منتجات مشتركة» من إدارة المجالات التجارية أدناه.</p></div>}
+    </> : null}
+    {!verticalReady && verticalId ? <div className="catalog-taxonomy-empty"><strong>المجال المحدد لا يستخدم المنتجات المشتركة</strong><p>اختر مجالًا بمسار «منتجات مشتركة» أو عدّل المسار من إعدادات المجالات التجارية أدناه.</p></div> : null}
+    {!verticalId ? <div className="catalog-taxonomy-empty"><strong>لا توجد مجالات مشتركة نشطة</strong><p>فعّل مجالًا بمسار «منتجات مشتركة» من إدارة المجالات التجارية أدناه.</p></div> : null}
     <div ref={verticalSettingsRef}>{management}</div>
   </section>;
 }

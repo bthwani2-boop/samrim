@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { resolveTrustedExecutable } from "../../../tools/dev/runtime-proof/trusted-executables.mjs";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -31,7 +32,7 @@ const sourceGraph = [
   `entrypoint:${path.relative(root, contractPath).replaceAll(path.sep, "/")}\n${source}`,
   ...pathModuleSources.map(({ path: modulePath, source: moduleSource }) => `${path.relative(root, modulePath).replaceAll(path.sep, "/")}\n${moduleSource}`),
 ].join("\n---\n");
-const sourceGraphSha = crypto.createHash("sha1").update(sourceGraph).digest("hex");
+const sourceGraphSha = crypto.createHash("sha256").update(sourceGraph).digest("hex");
 
 const schemaNames = [
   "StatusResponse",
@@ -386,7 +387,7 @@ function formatGoTypes(sourceText) {
   const temporaryPath = goOutputPath + ".tmp";
   fs.writeFileSync(temporaryPath, sourceText, "utf8");
   try {
-    execFileSync("gofmt", ["-w", temporaryPath]);
+    execFileSync(resolveTrustedExecutable("gofmt"), ["-w", temporaryPath]);
     return fs.readFileSync(temporaryPath, "utf8");
   } finally {
     if (fs.existsSync(temporaryPath)) fs.unlinkSync(temporaryPath);

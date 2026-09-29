@@ -1,3 +1,4 @@
+import { resolveTrustedExecutable } from "./runtime-proof/trusted-executables.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -28,7 +29,7 @@ const controlToken = env.CONTROL_PANEL_SERVICE_TOKEN;
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envFile, "-f", path.join(root, "infra/local/compose/compose.yaml")];
 const fail = (message) => { console.error("IDENTITY_RUNTIME_SEMANTICS=FAIL"); console.error("  " + message); process.exit(1); };
 const assert = (condition, message) => { if (!condition) fail(message); };
-const sql = (query) => execFileSync("docker", [...composeArgs, "exec", "-T", "postgres", "psql", "-U", env.SAMRIM_POSTGRES_USER, "-d", env.SAMRIM_POSTGRES_DB, "-Atc", query], { encoding: "utf8" }).trim();
+const sql = (query) => execFileSync(resolveTrustedExecutable("docker"), [...composeArgs, "exec", "-T", "postgres", "psql", "-U", env.SAMRIM_POSTGRES_USER, "-d", env.SAMRIM_POSTGRES_DB, "-Atc", query], { encoding: "utf8" }).trim();
 const sqlLiteral = (value) => String(value).replaceAll("'", "''");
 const generatedPhones = new Set();
 let cleanupAttempted = false;

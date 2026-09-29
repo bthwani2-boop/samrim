@@ -1,3 +1,4 @@
+import { resolveTrustedExecutable } from "./runtime-proof/trusted-executables.mjs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 
@@ -33,5 +34,5 @@ if (trustedCacheWriter) args.push("--cache-to", "type=gha,version=2,mode=max,sco
 args.push(".");
 
 console.log("CI_IMAGE_BUILD_START service=" + service + " scope=" + scope + " cache_write=" + trustedCacheWriter);
-execFileSync("docker", args, { cwd: root, env: process.env, stdio: "inherit" });
+execFileSync(resolveTrustedExecutable("docker"), args, { cwd: root, env: process.env, stdio: "inherit" });
 console.log("CI_IMAGE_BUILD=PASS service=" + service + " tag=" + definition.tag);

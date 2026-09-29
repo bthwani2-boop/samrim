@@ -85,6 +85,14 @@ for (const forbidden of ["--projects=repository-ci", "repository-ci:runtime-imag
 assert(runtimeWorkflow.indexOf("Resolve affected runtime proof lanes through Nx") < runtimeWorkflow.indexOf("Set up Buildx"), "runtime scope must resolve before Buildx setup");
 
 const staticWorkflow = read(".github/workflows/ci-static.yml");
+assert(!/^permissions:\s*$/m.test(staticWorkflow), "ci-static permissions must be scoped to jobs");
+for (const job of ["baseline", "windows"]) {
+  const start = staticWorkflow.indexOf(`  ${job}:\n`);
+  assert(start >= 0, `ci-static workflow is missing ${job} job`);
+  const nextJob = job === "baseline" ? staticWorkflow.indexOf("\n  windows:", start + 4) : staticWorkflow.length;
+  const body = staticWorkflow.slice(start, nextJob < 0 ? undefined : nextJob);
+  assert(body.includes("    permissions:\n      actions: read\n      contents: read"), `ci-static ${job} job permissions are too broad or missing`);
+}
 assert(staticWorkflow.includes("repository-ci:execution-proof-system"), "static workflow missing execution proof system");
 assert(staticWorkflow.includes("nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet"), "static workflow affected target set drifted");
 assert(!staticWorkflow.includes("--changed --since"), "static workflow contains a parallel affected engine");
@@ -109,6 +117,7 @@ assert(sonarWorkflow.includes("name: Sonar Quality Observe"), "Sonar observation
 assert(sonarWorkflow.includes("runs-on: ubuntu-24.04") && !sonarWorkflow.includes("ubuntu-latest"), "Sonar observation runner must be pinned to ubuntu-24.04");
 for (const token of ["github.ref == 'refs/heads/main'", "github.event_name == 'pull_request'", "github.event.pull_request.base.ref == 'main'", "github.event.pull_request.head.repo.full_name == github.repository"]) assert(sonarWorkflow.includes(token), `Sonar analysis scope is missing ${token}`);
 assert(sonarWorkflow.includes("uses: SonarSource/sonarqube-scan-action@"), "Sonar observation action missing");
+assert(sonarWorkflow.includes("services/identity/tests/contract-guard.test.mjs"), "Sonar observation must execute the Identity contract guard test");
 assert(sonarWorkflow.includes("SONAR_TOKEN: $" + "{{ secrets.SONAR_TOKEN }}"), "Sonar observation token binding missing");
 for (const token of ["image: postgis/postgis:16-3.4-alpine", "POSTGRES_HOST_AUTH_METHOD: trust", "DSH_DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable", "IDENTITY_DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable", "go -C services/dsh/backend test -coverprofile=", "go -C services/identity/backend test -coverprofile=", "go -C services/wlt/backend test -coverprofile=", "node --experimental-test-coverage --test --test-reporter=lcov", "coverage/sonar/tools-dev.lcov"]) assert(sonarWorkflow.includes(token), `Sonar coverage preparation missing ${token}`);
 assert(!sonarWorkflow.includes("POSTGRES_PASSWORD:") && !sonarWorkflow.includes("sonar-proof"), "Sonar workflow must not retain a hardcoded database credential");

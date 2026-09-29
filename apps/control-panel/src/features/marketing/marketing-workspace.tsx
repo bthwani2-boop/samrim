@@ -12,6 +12,12 @@ import styles from "./marketing-workspace.module.css";
 
 type ApiError = { error?: { message?: string } };
 
+function discoveryContentStateLabel(state: DiscoveryContentView["state"]): string {
+  if (state === "DRAFT") return "مسودة";
+  if (state === "PUBLISHED") return "منشور";
+  return "موقوف";
+}
+
 function apiMessage(value: unknown): string {
   return value && typeof value === "object" && "error" in value && (value as ApiError).error?.message ? String((value as ApiError).error?.message) : "تعذر تنفيذ العملية.";
 }
@@ -427,7 +433,9 @@ export function MarketingPromotionsWorkspace() {
           <button className="button button-secondary" type="submit" disabled={loading}>بحث</button>
           <button className="button button-quiet" type="button" onClick={() => void load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل العروض."))} disabled={loading}>{loading ? "جارٍ القراءة…" : "تحديث"}</button>
         </form>
-        {registry?.promotions.length ? <div className="finance-table-wrap"><table className="finance-table"><caption className="visually-hidden">سجل العروض</caption><thead><tr><th scope="col">العرض</th><th scope="col">الرمز</th><th scope="col">النوع والقيمة</th><th scope="col">الحالة</th><th scope="col">بداية العرض</th><th scope="col">الإجراء</th></tr></thead><tbody>{registry.promotions.map((item) => <tr key={item.id}><th scope="row">{item.nameAr}<br /><bdi dir="ltr">{item.id}</bdi></th><td><bdi dir="ltr">{item.code}</bdi></td><td>{item.kind === "PERCENTAGE" ? `${item.valueMinor}%` : item.valueMinor}</td><td>{item.state}</td><td><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td><button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishPromotion(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف العرض" : "نشر العرض"}</button></td></tr>)}</tbody></table></div> : loading ? <p role="status" className="collection-state">جارٍ قراءة صفحة العروض…</p> : <p className="collection-state">لا توجد عروض مطابقة.</p>}
+        {registry?.promotions.length ? <div className="finance-table-wrap"><table className="finance-table"><caption className="visually-hidden">سجل العروض</caption><thead><tr><th scope="col">العرض</th><th scope="col">الرمز</th><th scope="col">النوع والقيمة</th><th scope="col">الحالة</th><th scope="col">بداية العرض</th><th scope="col">الإجراء</th></tr></thead><tbody>{registry.promotions.map((item) => <tr key={item.id}><th scope="row">{item.nameAr}<br /><bdi dir="ltr">{item.id}</bdi></th><td><bdi dir="ltr">{item.code}</bdi></td><td>{item.kind === "PERCENTAGE" ? `${item.valueMinor}%` : item.valueMinor}</td><td>{item.state}</td><td><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td><button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishPromotion(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف العرض" : "نشر العرض"}</button></td></tr>)}</tbody></table></div> : null}
+        {!registry?.promotions.length && loading ? <p role="status" className="collection-state">جارٍ قراءة صفحة العروض…</p> : null}
+        {!registry?.promotions.length && !loading ? <p className="collection-state">لا توجد عروض مطابقة.</p> : null}
         <nav className={styles.pagination} aria-label="صفحات سجل العروض"><button className="button button-quiet" type="button" disabled={loading || cursorStack.length === 0} onClick={() => { const next = [...cursorStack]; const previous = next.pop() ?? ""; setCursorStack(next); setCursor(previous); }}>السابق</button><span>صفحة {cursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={loading || !registry?.nextCursor} onClick={() => { setCursorStack((items) => [...items, cursor]); setCursor(registry?.nextCursor ?? ""); }}>التالي</button></nav>
       </section>
     </div>
@@ -747,10 +755,34 @@ export function MarketingContentWorkspace() {
     }
   }
 
+  let pendingCreateStatusMessage = "استعيدت المحاولة دون الملف؛ تحقّق من السجل أولًا ثم اختر الصورة الأصلية لمطابقة بصمتها وإعادة المحاولة.";
+  if (attemptChecking) {
+    pendingCreateStatusMessage = "جارٍ التحقق من نتيجة المحاولة المحفوظة في DSH…";
+  } else if (mediaFile) {
+    pendingCreateStatusMessage = "المحاولة لم تُحسم بعد. البيانات مقفلة وستعاد الصورة والطلب بالمفتاح نفسيهما.";
+  }
+
+  let targetSearchDescription = "عن فئة";
+  if (contentForm.targetType === "STORE") targetSearchDescription = "عن متجر";
+  else if (contentForm.targetType === "PRODUCT") targetSearchDescription = "عن منتج";
+  else if (contentForm.targetType === "PROMOTION") targetSearchDescription = "عن عرض";
+  const targetSearchPlaceholder = `ابحث ${targetSearchDescription}`;
+
+  let analyticsPanel: ReactNode = null;
+  if (analyticsContentId) {
+    let analyticsContent: ReactNode = null;
+    if (analyticsLoading) {
+      analyticsContent = <p role="status">جارٍ قراءة النتائج…</p>;
+    } else if (analytics) {
+      analyticsContent = <dl><div><dt>الظهور</dt><dd>{analytics.find((item) => item.eventType === "IMPRESSION")?.count ?? 0}</dd></div><div><dt>النقر</dt><dd>{analytics.find((item) => item.eventType === "CLICK")?.count ?? 0}</dd></div><div><dt>التحويل</dt><dd>{analytics.find((item) => item.eventType === "CONVERSION")?.count ?? 0}</dd></div></dl>;
+    }
+    analyticsPanel = <aside className={styles.analyticsPanel} aria-live="polite"><strong>تحليلات المحتوى <bdi dir="ltr">{analyticsContentId}</bdi></strong>{analyticsContent}<button className="button button-quiet" type="button" onClick={() => { setAnalyticsContentId(""); setAnalytics(null); }}>إغلاق التحليلات</button></aside>;
+  }
+
   return (
     <div className={styles.workspace} data-testid="marketing-content-workspace">
       {storageError ? <p className="managed-status managed-status-warning" role="alert">{storageError}</p> : null}
-      {pendingCreate ? <p className="managed-status managed-status-warning" role="status">{attemptChecking ? "جارٍ التحقق من نتيجة المحاولة المحفوظة في DSH…" : mediaFile ? "المحاولة لم تُحسم بعد. البيانات مقفلة وستعاد الصورة والطلب بالمفتاح نفسيهما." : "استعيدت المحاولة دون الملف؛ تحقّق من السجل أولًا ثم اختر الصورة الأصلية لمطابقة بصمتها وإعادة المحاولة."}</p> : null}
+      {pendingCreate ? <p className="managed-status managed-status-warning" role="status">{pendingCreateStatusMessage}</p> : null}
       <details className="access-card" open={Boolean(pendingCreate)}>
         <summary className={styles.createSummary}>إنشاء محتوى اكتشاف</summary>
         <div className="access-card-heading"><span className="step-chip">الاكتشاف</span><p className="eyebrow">محتوى منشور</p><h2>إنشاء بطاقة اكتشاف</h2><p className="muted">المحتوى العام لا يظهر إلا بعد نشره ومن خلال مسار DSH القانوني.</p></div>
@@ -763,7 +795,7 @@ export function MarketingContentWorkspace() {
           <label className="field-label" htmlFor="marketing-content-target">نوع الوجهة<select id="marketing-content-target" aria-label="نوع وجهة المحتوى" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={contentForm.targetType} onChange={(event) => { setTargetSearch(""); setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setCategoryVerticalId(""); setContentForm((current) => ({ ...current, targetType: event.target.value as typeof current.targetType, targetId: "" })); }}><option value="INFO">معلومات فقط</option><option value="STORE">متجر</option><option value="PRODUCT">منتج</option><option value="CATEGORY">فئة</option><option value="PROMOTION">عرض</option></select></label>
           {contentForm.targetType !== "INFO" ? <>
             {contentForm.targetType === "CATEGORY" ? <label className="field-label" htmlFor="marketing-content-category-vertical">المجال التجاري<select id="marketing-content-category-vertical" aria-label="المجال التجاري للفئة" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={categoryVerticalId} onChange={(event) => { setCategoryVerticalId(event.target.value); setTargetOptions([]); setTargetCursor(""); setTargetCursorStack([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, targetId: "" })); }}><option value="">اختر المجال التجاري</option>{categoryVerticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}</option>)}</select></label> : null}
-            <input aria-label="بحث في الوجهات" maxLength={128} placeholder={`ابحث ${contentForm.targetType === "STORE" ? "عن متجر" : contentForm.targetType === "PRODUCT" ? "عن منتج" : contentForm.targetType === "PROMOTION" ? "عن عرض" : "عن فئة"}`} disabled={busy || Boolean(pendingCreate) || !attemptReady} value={targetSearch} onChange={(event) => { setTargetSearch(event.target.value); setTargetCursor(""); setTargetCursorStack([]); setTargetOptions([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, targetId: "" })); }} />
+            <input aria-label="بحث في الوجهات" maxLength={128} placeholder={targetSearchPlaceholder} disabled={busy || Boolean(pendingCreate) || !attemptReady} value={targetSearch} onChange={(event) => { setTargetSearch(event.target.value); setTargetCursor(""); setTargetCursorStack([]); setTargetOptions([]); setTargetNextCursor(""); setContentForm((current) => ({ ...current, targetId: "" })); }} />
             <label className="field-label" htmlFor="marketing-content-target-option">الوجهة المعتمدة<select id="marketing-content-target-option" aria-label="الوجهة المعتمدة" value={contentForm.targetId} disabled={busy || Boolean(pendingCreate) || !attemptReady || targetLoading || targetOptions.length === 0} onChange={(event) => setContentForm((current) => ({ ...current, targetId: event.target.value }))}>
               <option value="">{targetLoading ? "جارٍ تحميل الوجهات…" : "اختر وجهة من بيانات DSH"}</option>
               {targetOptions.map((option) => <option key={option.id} value={option.id}>{option.detail ? `${option.label} · ${option.detail}` : option.label}</option>)}
@@ -790,9 +822,11 @@ export function MarketingContentWorkspace() {
           <button className="button button-secondary" type="submit" disabled={loading}>بحث</button>
           <button className="button button-quiet" type="button" onClick={() => void load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل محتوى الاكتشاف."))} disabled={loading}>{loading ? "جارٍ القراءة…" : "تحديث"}</button>
         </form>
-        {registry?.items.length ? <div className="finance-table-wrap"><table className="finance-table"><caption className="visually-hidden">سجل محتوى الاكتشاف</caption><thead><tr><th scope="col">المحتوى</th><th scope="col">النوع والوجهة</th><th scope="col">الحالة</th><th scope="col">الأولوية والبداية</th><th scope="col">الإجراءات</th></tr></thead><tbody>{registry.items.map((item) => <tr key={item.id}><th scope="row">{item.mediaUri ? <img className={styles.mediaPreview} src={item.mediaUri} alt="" loading="lazy" /> : null}{item.titleAr}<br /><bdi dir="ltr">{item.id}</bdi></th><td>{item.kind} · {item.targetType}<br />{item.targetId ? <bdi dir="ltr">{item.targetId}</bdi> : "معلومات عامة"}</td><td>{item.state === "DRAFT" ? "مسودة" : item.state === "PUBLISHED" ? "منشور" : "موقوف"}</td><td>{item.ordinal}<br /><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td><div className={styles.actions}><button className="button button-quiet" type="button" disabled={analyticsLoading} onClick={() => void readAnalytics(item.id)}>{analyticsLoading && analyticsContentId === item.id ? "جارٍ قراءة التحليلات…" : "قراءة التحليلات"}</button><button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishContent(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف المحتوى" : "نشر المحتوى"}</button></div></td></tr>)}</tbody></table></div> : loading ? <p role="status" className="collection-state">جارٍ قراءة صفحة المحتوى…</p> : <p className="collection-state">لا يوجد محتوى مطابق.</p>}
+        {registry?.items.length ? <div className="finance-table-wrap"><table className="finance-table"><caption className="visually-hidden">سجل محتوى الاكتشاف</caption><thead><tr><th scope="col">المحتوى</th><th scope="col">النوع والوجهة</th><th scope="col">الحالة</th><th scope="col">الأولوية والبداية</th><th scope="col">الإجراءات</th></tr></thead><tbody>{registry.items.map((item) => <tr key={item.id}><th scope="row">{item.mediaUri ? <img className={styles.mediaPreview} src={item.mediaUri} alt="" loading="lazy" /> : null}{item.titleAr}<br /><bdi dir="ltr">{item.id}</bdi></th><td>{item.kind} · {item.targetType}<br />{item.targetId ? <bdi dir="ltr">{item.targetId}</bdi> : "معلومات عامة"}</td><td>{discoveryContentStateLabel(item.state)}</td><td>{item.ordinal}<br /><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td><div className={styles.actions}><button className="button button-quiet" type="button" disabled={analyticsLoading} onClick={() => void readAnalytics(item.id)}>{analyticsLoading && analyticsContentId === item.id ? "جارٍ قراءة التحليلات…" : "قراءة التحليلات"}</button><button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishContent(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف المحتوى" : "نشر المحتوى"}</button></div></td></tr>)}</tbody></table></div> : null}
+        {!registry?.items.length && loading ? <p role="status" className="collection-state">جارٍ قراءة صفحة المحتوى…</p> : null}
+        {!registry?.items.length && !loading ? <p className="collection-state">لا يوجد محتوى مطابق.</p> : null}
         <nav className={styles.pagination} aria-label="صفحات سجل محتوى الاكتشاف"><button className="button button-quiet" type="button" disabled={loading || cursorStack.length === 0} onClick={() => { const next = [...cursorStack]; const previous = next.pop() ?? ""; setCursorStack(next); setCursor(previous); }}>السابق</button><span>صفحة {cursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={loading || !registry?.nextCursor} onClick={() => { setCursorStack((items) => [...items, cursor]); setCursor(registry?.nextCursor ?? ""); }}>التالي</button></nav>
-        {analyticsContentId ? <aside className={styles.analyticsPanel} aria-live="polite"><strong>تحليلات المحتوى <bdi dir="ltr">{analyticsContentId}</bdi></strong>{analyticsLoading ? <p role="status">جارٍ قراءة النتائج…</p> : analytics ? <dl><div><dt>الظهور</dt><dd>{analytics.find((item) => item.eventType === "IMPRESSION")?.count ?? 0}</dd></div><div><dt>النقر</dt><dd>{analytics.find((item) => item.eventType === "CLICK")?.count ?? 0}</dd></div><div><dt>التحويل</dt><dd>{analytics.find((item) => item.eventType === "CONVERSION")?.count ?? 0}</dd></div></dl> : null}<button className="button button-quiet" type="button" onClick={() => { setAnalyticsContentId(""); setAnalytics(null); }}>إغلاق التحليلات</button></aside> : null}
+        {analyticsPanel}
       </section>
     </div>
   );

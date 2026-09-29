@@ -176,6 +176,19 @@ export default function ClientOrderDetail() {
   const proofAvailableMessage = isStorePickup ? "أظهر الرمز لموظف المتجر بعد تجهيز طلبك." : "لا تشارك الرمز إلا مع الكابتن عند وصول الطلب.";
   const proofWaitingMessage = isStorePickup ? "سيظهر رمز الاستلام بعد جاهزية الطلب." : "سيظهر رمز التسليم عندما يصبح الطلب في عهدة الكابتن.";
   const completedState = order.state === "DELIVERED" || order.state === "PICKED_UP";
+  let statusIcon: "success" | "warning" | "orders" = "orders";
+  let statusTone: "success" | "danger" | "info" = "info";
+  if (order.state === "DELIVERED") {
+    statusIcon = "success";
+    statusTone = "success";
+  } else if (order.state === "DELIVERY_FAILED" || order.state === "CANCELLED") {
+    statusIcon = "warning";
+    statusTone = "danger";
+  }
+  let paymentAmountCopy = "مغطى بالكامل من رصيد المحفظة";
+  if (order.cashAmountMinor !== 0) {
+    paymentAmountCopy = `النقد المتبقي عند الاستلام: ${formatMoney(order.cashAmountMinor, order.currency)}`;
+  }
   return (
     <View style={styles.container} accessibilityLabel="تفاصيل الطلب">
       <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى الطلبات" onPress={() => router.back()} style={styles.backButton}><BthwaniIcon name="back" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.back}>طلباتي</Text></Pressable>
@@ -183,7 +196,7 @@ export default function ClientOrderDetail() {
         <View style={styles.summaryIcon}><BthwaniIcon name="orders" color={theme.onAction} size={sizing.iconXl} /></View>
         <View style={styles.summaryCopy}><Text style={styles.eyebrow}>طلبك</Text><Text style={styles.title}>طلب {formatOrderDate(order.createdAt)}</Text><Text style={styles.muted}>{isStorePickup ? `الاستلام من ${order.storeName}` : order.addressText}</Text></View>
       </BthwaniSurface>
-      <View style={styles.status}><View style={styles.statusCopy}><Text style={styles.statusTitle}>الحالة الحالية</Text><BthwaniStatusBadge icon={order.state === "DELIVERED" ? "success" : order.state === "DELIVERY_FAILED" ? "warning" : order.state === "CANCELLED" ? "warning" : "orders"} label={orderStateLabel(order.state)} tone={order.state === "DELIVERED" ? "success" : order.state === "DELIVERY_FAILED" || order.state === "CANCELLED" ? "danger" : "info"} /><Text style={styles.statusTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{order.cashAmountMinor === 0 ? "مغطى بالكامل من رصيد المحفظة" : `النقد المتبقي عند الاستلام: ${formatMoney(order.cashAmountMinor, order.currency)}`}</Text><Text style={styles.payment}>{paymentMethodLabel(order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)} · {paymentStateLabel(order.paymentState, order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)}</Text></View><View style={styles.actionStack}><BthwaniButton accessibilityLabel="تحديث حالة الطلب" busy={refreshing} label="تحديث الحالة" onPress={() => void load(true)} variant="secondary" />{order.state === "CREATED" ? <BthwaniButton accessibilityLabel="إلغاء الطلب" busy={cancelling} disabled={cancelling || refreshing} label="إلغاء الطلب" onPress={requestCancel} variant="danger" /> : null}</View></View>
+      <View style={styles.status}><View style={styles.statusCopy}><Text style={styles.statusTitle}>الحالة الحالية</Text><BthwaniStatusBadge icon={statusIcon} label={orderStateLabel(order.state)} tone={statusTone} /><Text style={styles.statusTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{paymentAmountCopy}</Text><Text style={styles.payment}>{paymentMethodLabel(order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)} · {paymentStateLabel(order.paymentState, order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)}</Text></View><View style={styles.actionStack}><BthwaniButton accessibilityLabel="تحديث حالة الطلب" busy={refreshing} label="تحديث الحالة" onPress={() => void load(true)} variant="secondary" />{order.state === "CREATED" ? <BthwaniButton accessibilityLabel="إلغاء الطلب" busy={cancelling} disabled={cancelling || refreshing} label="إلغاء الطلب" onPress={requestCancel} variant="danger" /> : null}</View></View>
       {refreshError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{refreshError}</Text> : null}
       {cancelError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{cancelError}</Text> : null}
       <OrderConversation orderId={order.id} />
@@ -216,7 +229,7 @@ export default function ClientOrderDetail() {
         {tracking.kind === "error" ? <Text style={styles.refreshError}>تعذر قراءة التتبع الآن. حدّث الحالة لإعادة المحاولة.</Text> : null}
         {tracking.kind === "ready" && tracking.value.trackingState === "NOT_ASSIGNED" ? <Text style={styles.muted}>سيظهر التتبع بعد إسناد الطلب إلى كابتن.</Text> : null}
         {tracking.kind === "ready" && tracking.value.trackingState === "AWAITING_LOCATION" ? <Text style={styles.muted}>تم إسناد الطلب، وبانتظار أول تحديث موقع من الكابتن.</Text> : null}
-        {tracking.kind === "ready" && tracking.value.trackingState === "COMPLETED" ? <Text style={styles.muted}>{order.state === "DELIVERY_FAILED" ? "تعذرت محاولة التوصيل، فأوقفنا التتبع المباشر إلى أن يعالج المشغل الحالة." : order.state === "CANCELLED" ? "أُلغي الطلب، لذلك أوقفنا التتبع المباشر." : "اكتملت رحلة التوصيل، وتم إيقاف عرض الموقع."}</Text> : null}
+        {tracking.kind === "ready" && tracking.value.trackingState === "COMPLETED" ? <Text style={styles.muted}>{trackingCompletionMessage(order.state)}</Text> : null}
         {tracking.kind === "ready" && tracking.value.trackingState === "LIVE" && tracking.value.captainLocation ? <><Text style={styles.trackingTitle}>الكابتن في الطريق</Text><Text style={styles.muted}>آخر تحديث: {formatTrackingTime(tracking.value.captainLocation.updatedAt)}</Text><BthwaniMap accessibilityLabel="خريطة تتبع طلبك" markers={[{ id: "destination", coordinate: { latitude: order.addressLatitude, longitude: order.addressLongitude }, title: "عنوان التوصيل" }, ...(order.pickupLocation ? [{ id: "pickup", coordinate: order.pickupLocation, title: `استلام من ${order.storeName}` }] : [])]} selection={{ latitude: tracking.value.captainLocation.latitude, longitude: tracking.value.captainLocation.longitude }} selectionTitle="موقع الكابتن" /><BthwaniButton label="فتح الموقع على الخريطة" onPress={() => void Linking.openURL(`geo:${tracking.value.captainLocation?.latitude},${tracking.value.captainLocation?.longitude}?q=${tracking.value.captainLocation?.latitude},${tracking.value.captainLocation?.longitude}`)} variant="secondary" /></> : null}
       </BthwaniSurface>
       </> : null}
@@ -292,4 +305,10 @@ function formatTrackingTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "غير معروف";
   return new Intl.DateTimeFormat("ar-YE", { dateStyle: "short", timeStyle: "short" }).format(date);
+}
+
+function trackingCompletionMessage(state: Order["state"]): string {
+  if (state === "DELIVERY_FAILED") return "تعذرت محاولة التوصيل، فأوقفنا التتبع المباشر إلى أن يعالج المشغل الحالة.";
+  if (state === "CANCELLED") return "أُلغي الطلب، لذلك أوقفنا التتبع المباشر.";
+  return "اكتملت رحلة التوصيل، وتم إيقاف عرض الموقع.";
 }

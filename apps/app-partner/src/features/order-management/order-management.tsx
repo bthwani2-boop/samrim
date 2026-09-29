@@ -189,6 +189,43 @@ const theme = useAppearanceTheme();
         const assignment = assignments[order.id];
         const dispatchOffer = dispatchOffers[order.id];
         const actionDisabled = loading || Boolean(busy);
+        let badgeIcon: "warning" | "success" | "orders" = "orders";
+        let badgeTone: "danger" | "success" | "info" = "info";
+        if (order.state === "REJECTED") {
+          badgeIcon = "warning";
+          badgeTone = "danger";
+        } else if (order.state === "READY_FOR_DISPATCH" || order.state === "READY_FOR_PICKUP" || order.state === "PICKED_UP") {
+          badgeIcon = "success";
+          badgeTone = "success";
+        }
+
+        let settlementContent = <Text style={styles.muted}>ينتظر النظام تسجيل اكتمال تسليم الكابتن.</Text>;
+        if (order.cashAmountMinor === 0) {
+          if (order.paymentState === "COLLECTED") {
+            settlementContent = <Text style={styles.muted}>غطّى رصيد العميل كامل المبلغ؛ لا يوجد نقد لاستلامه من الكابتن، وتم تسجيل التسوية.</Text>;
+          } else {
+            settlementContent = <Text style={styles.muted}>غطّى رصيد العميل كامل المبلغ؛ يجري تسجيل التسوية من دون عهدة نقدية.</Text>;
+          }
+        } else if (order.storeCashHandoffState === "AWAITING_STORE_HANDOFF") {
+          settlementContent = <>
+            <Text style={styles.muted}>استلم من الكابتن النقد المتبقي فقط: {formatMoney(order.cashAmountMinor, order.currency)}. لن تُسجل العمولة حتى تؤكد الاستلام الفعلي.</Text>
+            <BthwaniButton busy={busy === order.id} disabled={actionDisabled} label="أكد استلام النقد من الكابتن" onPress={() => void confirmStoreCaptainCashHandoff(order)} />
+          </>;
+        } else if (order.storeCashHandoffState === "STORE_CONFIRMED") {
+          settlementContent = <Text style={styles.muted}>أكدت استلام النقد. جارٍ تسجيل التحصيل والعمولة.</Text>;
+        } else if (order.storeCashHandoffState === "SETTLED") {
+          settlementContent = <Text style={styles.muted}>تم تأكيد التحصيل من المتجر وتسوية عمولة المنصة.</Text>;
+        }
+
+        let nextActionLabel = "جاهز للتسليم";
+        if (next === "PARTNER_ACCEPTED") {
+          nextActionLabel = "قبول الطلب";
+        } else if (next === "PREPARING") {
+          nextActionLabel = "بدء التجهيز";
+        } else if (next === "READY_FOR_PICKUP") {
+          nextActionLabel = "جاهز للاستلام";
+        }
+
         return (
           <View key={order.id} style={styles.order}>
             <View style={styles.orderHeader}>
@@ -196,7 +233,7 @@ const theme = useAppearanceTheme();
                 <Text style={styles.orderTitle}>طلب بتاريخ {formatOrderDate(order.createdAt)}</Text>
                 <Text style={styles.muted}>{order.lines.length} منتج · {formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{order.cashAmountMinor === 0 ? "لا يوجد نقد مطلوب؛ المبلغ مغطى من رصيد العميل" : `النقد المطلوب عند الاستلام: ${formatMoney(order.cashAmountMinor, order.currency)}`}</Text><Text style={styles.payment}>{paymentMethodLabel(order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)} · {paymentStateLabel(order.paymentState, order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)}</Text>
               </View>
-              <BthwaniStatusBadge icon={order.state === "REJECTED" ? "warning" : order.state === "READY_FOR_DISPATCH" || order.state === "READY_FOR_PICKUP" || order.state === "PICKED_UP" ? "success" : "orders"} label={orderStateLabel(order.state)} tone={order.state === "REJECTED" ? "danger" : order.state === "READY_FOR_DISPATCH" || order.state === "READY_FOR_PICKUP" || order.state === "PICKED_UP" ? "success" : "info"} />
+              <BthwaniStatusBadge icon={badgeIcon} label={orderStateLabel(order.state)} tone={badgeTone} />
             </View>
             <Text style={styles.muted}>{order.fulfillmentMode === "CUSTOMER_PICKUP" ? "طريقة الاستلام: الاستلام من المتجر" : `العنوان: ${order.addressText}`}</Text>
             <View style={styles.lines}>
@@ -205,8 +242,8 @@ const theme = useAppearanceTheme();
             {assignment ? <View style={styles.handoff}><BthwaniStatusBadge icon={assignment.handoff.state === "completed" ? "success" : "deliveries"} label={`تسليم المتجر: ${captainHandoffStateLabel(assignment.handoff.state)}`} tone={assignment.handoff.state === "completed" ? "success" : "warning"} />{assignment.handoff.state === "pending" ? <BthwaniButton busy={busy === order.id} disabled={actionDisabled} label="تأكيد جاهزية التسليم" onPress={() => void confirmHandoff(order, assignment)} /> : null}</View> : null}
             {order.fulfillmentMode === "PARTNER_CAPTAIN" && order.state === "READY_FOR_DISPATCH" ? <View style={styles.handoff} accessibilityLabel="إسناد طلب التوصيل إلى كابتن المتجر"><Text style={styles.lineTitle}>إسناد الطلب إلى كابتن المتجر</Text>{dispatchOffer?.state === "offered" ? <Text style={styles.muted}>أُرسل الطلب إلى {dispatchOffer.captainActorId} وبانتظار قبوله.</Text> : <>{dispatchOffer ? <Text style={styles.muted}>{dispatchOffer.state === "rejected" ? "رفض الكابتن العرض. يمكنك إرساله إلى كابتن آخر." : "انتهت مهلة العرض. يمكنك إرساله إلى كابتن آخر."}</Text> : null}{storeCaptainActorIDs.length ? storeCaptainActorIDs.map((captainActorId) => <BthwaniButton key={captainActorId} busy={busy === order.id} disabled={actionDisabled} label={`إرسال الطلب إلى ${captainActorId}`} onPress={() => void dispatchToStoreCaptain(order, captainActorId)} variant="secondary" />) : <Text style={styles.muted}>لا يوجد كابتن نشط مرتبط بهذا المتجر. أرسل دعوة للكابتن واطلب منه قبولها في تطبيق الكابتن.</Text>}</>}</View> : null}
             {order.state === "READY_FOR_PICKUP" ? <View style={styles.pickupConfirmation}><TextInput accessibilityLabel="رمز الاستلام الذي قدمه العميل" editable={!actionDisabled} keyboardType="number-pad" maxLength={6} onChangeText={(value) => setPickupCodes((current) => ({ ...current, [order.id]: toAsciiDigits(value).replace(/[^0-9]/g, "").slice(0, 6) }))} placeholder="رمز الاستلام من العميل" placeholderTextColor={theme.colorMuted} style={styles.pickupCodeInput} textAlign="center" value={pickupCodes[order.id] ?? ""} /><BthwaniButton busy={busy === order.id} disabled={actionDisabled || toAsciiDigits(pickupCodes[order.id] ?? "").length !== 6} label="تأكيد استلام العميل" onPress={() => void confirmStorePickup(order)} />{order.fulfillmentMode === "CUSTOMER_PICKUP" && order.paymentMethod === "CASH_AT_STORE" && order.paymentState === "REQUIRES_COLLECTION" ? <BthwaniButton disabled={actionDisabled} label="العميل لم يحضر" onPress={() => markPickupNoShow(order)} variant="danger" /> : null}</View> : null}
-            {order.fulfillmentMode === "PARTNER_CAPTAIN" && order.state === "DELIVERED" ? <View style={styles.pickupConfirmation}><Text style={styles.lineTitle}>تسوية طلب توصيل المتجر</Text>{order.cashAmountMinor === 0 && order.paymentState === "COLLECTED" ? <Text style={styles.muted}>غطّى رصيد العميل كامل المبلغ؛ لا يوجد نقد لاستلامه من الكابتن، وتم تسجيل التسوية.</Text> : order.cashAmountMinor === 0 ? <Text style={styles.muted}>غطّى رصيد العميل كامل المبلغ؛ يجري تسجيل التسوية من دون عهدة نقدية.</Text> : order.storeCashHandoffState === "AWAITING_STORE_HANDOFF" ? <><Text style={styles.muted}>استلم من الكابتن النقد المتبقي فقط: {formatMoney(order.cashAmountMinor, order.currency)}. لن تُسجل العمولة حتى تؤكد الاستلام الفعلي.</Text><BthwaniButton busy={busy === order.id} disabled={actionDisabled} label="أكد استلام النقد من الكابتن" onPress={() => void confirmStoreCaptainCashHandoff(order)} /></> : order.storeCashHandoffState === "STORE_CONFIRMED" ? <Text style={styles.muted}>أكدت استلام النقد. جارٍ تسجيل التحصيل والعمولة.</Text> : order.storeCashHandoffState === "SETTLED" ? <Text style={styles.muted}>تم تأكيد التحصيل من المتجر وتسوية عمولة المنصة.</Text> : <Text style={styles.muted}>ينتظر النظام تسجيل اكتمال تسليم الكابتن.</Text>}</View> : null}
-            {next ? <View style={styles.actionRow}><BthwaniButton busy={busy === order.id} disabled={actionDisabled} label={next === "PARTNER_ACCEPTED" ? "قبول الطلب" : next === "PREPARING" ? "بدء التجهيز" : next === "READY_FOR_PICKUP" ? "جاهز للاستلام" : "جاهز للتسليم"} onPress={() => void transition(order)} style={styles.actionButton} />{next === "PARTNER_ACCEPTED" ? <BthwaniButton disabled={actionDisabled} label="رفض الطلب" onPress={() => void transition(order, "REJECTED")} style={styles.actionButton} variant="danger" /> : null}</View> : null}
+            {order.fulfillmentMode === "PARTNER_CAPTAIN" && order.state === "DELIVERED" ? <View style={styles.pickupConfirmation}><Text style={styles.lineTitle}>تسوية طلب توصيل المتجر</Text>{settlementContent}</View> : null}
+            {next ? <View style={styles.actionRow}><BthwaniButton busy={busy === order.id} disabled={actionDisabled} label={nextActionLabel} onPress={() => void transition(order)} style={styles.actionButton} />{next === "PARTNER_ACCEPTED" ? <BthwaniButton disabled={actionDisabled} label="رفض الطلب" onPress={() => void transition(order, "REJECTED")} style={styles.actionButton} variant="danger" /> : null}</View> : null}
             <OrderConversation orderId={order.id} />
           </View>
         );
