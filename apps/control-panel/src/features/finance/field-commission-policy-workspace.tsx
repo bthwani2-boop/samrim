@@ -10,6 +10,20 @@ type Policy = Readonly<{ id: string; scopeType: ScopeType; scopeId: string; rewa
 type StoreOption = Readonly<{ id: string; name: string; serviceCityId: string }>;
 type ReadState = "unselected" | "loading" | "ready" | "missing" | "error";
 
+function storeSearchStateMessage(cityCount: number, cityId: string, query: string, storeCount: number, loading: boolean, error: string): string | null {
+  if (cityCount === 0) return "لا توجد مدينة خدمة نشطة لاختيار متاجرها.";
+  if (!cityId) return "اختر مدينة الخدمة أولًا لتضييق البحث إلى متاجرها.";
+  if (Array.from(query.trim()).length < 2) return "اكتب حرفين على الأقل للبحث في المتاجر المنشورة.";
+  if (storeCount === 0 && !loading && !error) return "لا توجد متاجر منشورة مطابقة.";
+  return null;
+}
+
+function saveButtonLabel(busy: boolean, hasPolicy: boolean): string {
+  if (busy) return "جارٍ التفعيل والتحقق…";
+  if (hasPolicy) return "تفعيل نسخة معدلة";
+  return "إنشاء السياسة الأولى";
+}
+
 export function FieldCommissionPolicyWorkspace() {
   const { state } = useSession();
   const canEdit = state.kind === "authenticated" && state.identity.permissions?.includes("platform_policies") === true;
@@ -184,6 +198,7 @@ export function FieldCommissionPolicyWorkspace() {
   };
 
   const scopeSelected = scopeType === "DEFAULT" || ((scopeType === "VERTICAL" || scopeType === "STORE") && Boolean(scopeId));
+  const storeSearchMessage = storeSearchStateMessage(cities.length, storeCityId, storeSearch, stores.length, storesLoading, storeSearchError);
 
   return <section className="access-card" aria-labelledby="field-commission-policy-title">
     <div className="finance-toolbar"><div><p className="eyebrow">مركز السياسات · WLT</p><h2 id="field-commission-policy-title">مكافأة الميدان</h2></div><button className="button button-secondary" type="button" onClick={() => { if (scopeType && scopeSelected) void read(scopeType, scopeType === "DEFAULT" ? "" : scopeId); }} disabled={!scopeSelected || busy || readState === "loading"}>إعادة القراءة</button></div>
@@ -195,7 +210,7 @@ export function FieldCommissionPolicyWorkspace() {
         <label className="field-label" htmlFor="field-commission-store-city">مدينة الخدمة<select id="field-commission-store-city" value={storeCityId} onChange={(event) => { setStoreCityId(event.target.value); setStoreCursor(""); setStores([]); setStoreNextCursor(""); chooseScopeId(""); }} disabled={busy}><option value="">اختر مدينة الخدمة</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
         <label className="field-label" htmlFor="field-commission-store-search">بحث المتاجر<input id="field-commission-store-search" type="search" minLength={2} maxLength={256} value={storeSearch} onChange={(event) => { setStoreSearch(Array.from(event.target.value).slice(0, 128).join("")); setStoreCursor(""); setStores([]); setStoreNextCursor(""); chooseScopeId(""); }} disabled={busy} /></label>
         <label className="field-label" htmlFor="field-commission-store">المتجر<select id="field-commission-store" value={scopeId} onChange={(event) => chooseScopeId(event.target.value)} disabled={busy || !storeCityId || storesLoading || stores.length === 0}><option value="">{storesLoading ? "جارٍ البحث…" : "اختر متجرًا منشورًا"}</option>{stores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</select></label>
-        {cities.length === 0 ? <p className="muted">لا توجد مدينة خدمة نشطة لاختيار متاجرها.</p> : !storeCityId ? <p className="muted">اختر مدينة الخدمة أولًا لتضييق البحث إلى متاجرها.</p> : Array.from(storeSearch.trim()).length < 2 ? <p className="muted">اكتب حرفين على الأقل للبحث في المتاجر المنشورة.</p> : stores.length === 0 && !storesLoading && !storeSearchError ? <p className="muted">لا توجد متاجر منشورة مطابقة.</p> : null}
+        {storeSearchMessage ? <p className="muted">{storeSearchMessage}</p> : null}
         {storeNextCursor ? <button className="button button-quiet" type="button" onClick={() => setStoreCursor(storeNextCursor)} disabled={storesLoading || busy}>تحميل متاجر أخرى</button> : null}
       </> : null}
       <label className="field-label" htmlFor="field-commission-reward">المكافأة (ريال)<input id="field-commission-reward" type="number" min="50" step="50" value={rewardMinor} onChange={(event) => setRewardMinor(event.target.value)} disabled={busy || !canEdit || (readState !== "ready" && readState !== "missing")} /></label>
@@ -212,7 +227,7 @@ export function FieldCommissionPolicyWorkspace() {
     {scopeSelected && (readState === "ready" || readState === "missing") ? <>
       <label className="field-label" htmlFor="field-reward-reason">سبب التغيير<textarea id="field-reward-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} maxLength={500} disabled={busy || !canEdit} /></label>
       {error ? <p className="validation-error" role="alert">{error}</p> : null}
-      <button className="button button-primary" type="button" onClick={() => void save()} disabled={busy || !canEdit || !Number.isInteger(Number(rewardMinor)) || Number(rewardMinor) < 50 || reason.trim().length < 5 || reason.trim().length > 500}>{busy ? "جارٍ التفعيل والتحقق…" : policy ? "تفعيل نسخة معدلة" : "إنشاء السياسة الأولى"}</button>
+      <button className="button button-primary" type="button" onClick={() => void save()} disabled={busy || !canEdit || !Number.isInteger(Number(rewardMinor)) || Number(rewardMinor) < 50 || reason.trim().length < 5 || reason.trim().length > 500}>{saveButtonLabel(busy, Boolean(policy))}</button>
     </> : null}
   </section>;
 }
