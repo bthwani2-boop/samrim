@@ -12,6 +12,12 @@ import { ControlShell } from "../../shell/public-shell";
 
 type Flow = "access" | "enrollment" | "recovery";
 
+function flowActionLabel(busy: boolean, challengeStarted: boolean, challengeLabel: string): string {
+  if (busy) return "جارٍ التنفيذ…";
+  if (challengeStarted) return challengeLabel;
+  return "إرسال رمز إثبات الهاتف";
+}
+
 function toBytes(value: unknown): Uint8Array {
   if (typeof value !== "string") throw new Error("WEBAUTHN_OPTION_INVALID");
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
@@ -87,6 +93,23 @@ export function IdentitySurface() {
   const [notice, setNotice] = useState("");
   const [recoveryCredential, setRecoveryCredential] = useState("");
   const [pendingIdentity, setPendingIdentity] = useState<ActorIdentity | null>(null);
+  const flowPresentation = {
+    access: {
+      eyebrow: "دخول آمن",
+      title: "الدخول بمفتاح المرور",
+      description: "استخدم native passkey gesture للوصول إلى لوحة التحكم.",
+    },
+    enrollment: {
+      eyebrow: "تفعيل حساب المشغل",
+      title: "تفعيل بمفتاح مرور",
+      description: "تحتاج إلى دعوة محكومة ورمز إثبات الهاتف، ثم يسجّل المتصفح مفتاح مرور جديداً.",
+    },
+    recovery: {
+      eyebrow: "استرداد وصول محكوم",
+      title: "اطلب إعادة التسجيل",
+      description: "لا يعيد الهاتف وحده إنشاء وصول المشغل. اطلب إعادة التسجيل من مشغل مخول أو استخدم اعتماد الاسترداد المحكوم.",
+    },
+  }[flow];
 
   function reset() {
     setFlow("access");
@@ -222,9 +245,9 @@ export function IdentitySurface() {
         <section className="auth-card" aria-labelledby="identity-surface-title" hidden={Boolean(recoveryCredential)}>
           <div className="auth-card-header">
             <span className="step-chip">هوية المشغل</span>
-            <p className="eyebrow">{flow === "enrollment" ? "تفعيل حساب المشغل" : flow === "recovery" ? "استرداد وصول محكوم" : "دخول آمن"}</p>
-            <h2 id="identity-surface-title">{flow === "enrollment" ? "تفعيل بمفتاح مرور" : flow === "recovery" ? "اطلب إعادة التسجيل" : "الدخول بمفتاح المرور"}</h2>
-            <p className="muted">{flow === "enrollment" ? "تحتاج إلى دعوة محكومة ورمز إثبات الهاتف، ثم يسجّل المتصفح مفتاح مرور جديداً." : flow === "recovery" ? "لا يعيد الهاتف وحده إنشاء وصول المشغل. اطلب إعادة التسجيل من مشغل مخول أو استخدم اعتماد الاسترداد المحكوم." : "استخدم native passkey gesture للوصول إلى لوحة التحكم."}</p>
+            <p className="eyebrow">{flowPresentation.eyebrow}</p>
+            <h2 id="identity-surface-title">{flowPresentation.title}</h2>
+            <p className="muted">{flowPresentation.description}</p>
             {sessionState.kind === "signed_out" && sessionState.notice ? <p className="success-inline" role="status">{sessionState.notice}</p> : null}
           </div>
           {flow === "access" ? (
@@ -239,7 +262,8 @@ export function IdentitySurface() {
                 استرداد الوصول
               </button>
             </div>
-          ) : flow === "recovery" ? (
+          ) : null}
+          {flow === "recovery" ? (
             <form onSubmit={(event) => { event.preventDefault(); if (challengeStarted) void beginRecoveryRegistration(); else void requestOperatorRecovery(); }} noValidate>
               <p className="security-note">أدخل اعتماد الاسترداد الذي عُرض مرة واحدة بعد تفعيل المشغل. يلزم أيضًا إثبات الهاتف؛ الهاتف وحده لا يمنح وصولًا.</p>
               <label className="field-label" htmlFor="operator-recovery-phone">رقم الهاتف<input id="operator-recovery-phone" autoComplete="tel" disabled={challengeStarted || busy} inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} placeholder="مثال: 967 77 000 100" /></label>
@@ -249,12 +273,13 @@ export function IdentitySurface() {
               {notice ? <p className="success-inline" role="status">{notice}</p> : null}
               <div className="form-actions">
                 <button className="button button-primary" disabled={busy || !phone.trim() || recoveryInput.trim().length < 24 || (challengeStarted && code.trim().length !== 6)} type="submit">
-                  {busy ? "جارٍ التنفيذ…" : challengeStarted ? "إثبات الهاتف وتسجيل مفتاح مرور بديل" : "إرسال رمز إثبات الهاتف"}
+                  {flowActionLabel(busy, challengeStarted, "إثبات الهاتف وتسجيل مفتاح مرور بديل")}
                 </button>
                 <button className="text-button" disabled={busy} type="button" onClick={reset}>العودة للدخول</button>
               </div>
             </form>
-          ) : (
+          ) : null}
+          {flow === "enrollment" ? (
             <form onSubmit={(event) => { event.preventDefault(); if (challengeStarted) void beginEnrollmentRegistration(); else void requestEnrollment(); }} noValidate>
               <label className="field-label" htmlFor="operator-phone">رقم الهاتف<input id="operator-phone" autoComplete="tel" disabled={challengeStarted || busy} inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} placeholder="مثال: 967 77 000 100" /></label>
               <label className="field-label" htmlFor="operator-enrollment-token">دعوة التفعيل عالية الأمان<input id="operator-enrollment-token" autoComplete="one-time-code" disabled={challengeStarted || busy} maxLength={256} value={token} onChange={(event) => setToken(event.target.value.trim())} /></label>
@@ -263,12 +288,12 @@ export function IdentitySurface() {
               {notice ? <p className="success-inline" role="status">{notice}</p> : null}
               <div className="form-actions">
                 <button className="button button-primary" disabled={busy || !phone.trim() || token.trim().length < 24 || (challengeStarted && code.trim().length !== 6)} type="submit">
-                  {busy ? "جارٍ التنفيذ…" : challengeStarted ? "إثبات الهاتف وتسجيل مفتاح المرور" : "إرسال رمز إثبات الهاتف"}
+                  {flowActionLabel(busy, challengeStarted, "إثبات الهاتف وتسجيل مفتاح المرور")}
                 </button>
                 <button className="text-button" disabled={busy} type="button" onClick={reset}>العودة للدخول</button>
               </div>
             </form>
-          )}
+          ) : null}
           {flow === "access" && error ? <p className="identity-error" role="alert">{error}</p> : null}
         </section>
       </main>
