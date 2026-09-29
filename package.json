@@ -33,7 +33,7 @@
     "control": "pnpm --dir apps/control-panel dev",
     "scr": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/scr.ps1",
     "test:check-go-format": "node --test tools/dev/check-go-format.test.mjs",
-    "test:mobile-shared-coverage": "node --test tools/mobile/test-mobile-app-coverage.test.mjs"
+    "test:mobile-shared-coverage": "node --test tools/mobile/test-mobile-app-coverage.test.mjs tools/mobile/test-mobile-app-coverage-partner.test.mjs tools/mobile/test-mobile-app-coverage-captain.test.mjs tools/mobile/test-mobile-app-coverage-field.test.mjs"
   },
   "pnpm": {
     "overrides": {
