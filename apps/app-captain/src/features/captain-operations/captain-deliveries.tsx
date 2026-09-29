@@ -311,11 +311,25 @@ export function CaptainDeliveries() {
         const collectionAmountInvalid = requiresCashCollection && (!Number.isSafeInteger(parsedCollectionAmount) || parsedCollectionAmount !== task.amountDueMinor);
         const deliveryProofCode = deliveryProofCodes[assignment.id] ?? "";
         const deliveryProofInvalid = assignment.state === "in_custody" && !/^[0-9]{6}$/.test(deliveryProofCode);
+        let assignmentStatusIcon: "warning" | "deliveries" = "deliveries";
+        let assignmentStatusTone: "danger" | "success" | "info" = "info";
+        if (assignment.state === "delivery_failed") {
+          assignmentStatusIcon = "warning";
+          assignmentStatusTone = "danger";
+        } else if (assignment.state === "in_custody") {
+          assignmentStatusTone = "success";
+        }
+        let collectedAmountMinor: number | undefined;
+        if (requiresCollection) {
+          collectedAmountMinor = 0;
+          if (requiresCashCollection) collectedAmountMinor = parsedCollectionAmount;
+        }
+        const completionLabel = captainCompletionActionLabel(requiresCashCollection, requiresCollection);
         return (
           <View key={assignment.id} style={styles.card}>
             <View style={styles.orderHeader}>
               <Text style={styles.cardTitle}>{task?.orderReference ? `مهمة التوصيل ${task.orderReference}` : "مهمة توصيل"}</Text>
-              <BthwaniStatusBadge icon={assignment.state === "delivery_failed" ? "warning" : "deliveries"} label={assignmentLabel} tone={assignment.state === "delivery_failed" ? "danger" : assignment.state === "in_custody" ? "success" : "info"} />
+              <BthwaniStatusBadge icon={assignmentStatusIcon} label={assignmentLabel} tone={assignmentStatusTone} />
             </View>
             <BthwaniStatusBadge icon={assignment.handoff.state === "completed" ? "success" : "store"} label={`التسليم من المتجر: ${handoffLabel}`} tone={assignment.handoff.state === "completed" ? "success" : "warning"} />
             {task ? (
@@ -360,7 +374,7 @@ export function CaptainDeliveries() {
             {assignment.state === "in_custody" && pendingCompletion?.assignmentID === assignment.id ? <Text style={styles.warning}>يُحسم هذا الإجراء من المحاولة المحفوظة أعلاه.</Text> : null}
             {assignment.state === "in_custody" && !pendingCompletion ? (
               <View style={styles.row}>
-                <BthwaniButton busy={busy === assignment.id} disabled={Boolean(busy) || !completionStorageReady || completionStorageIssue || collectionAmountInvalid || deliveryProofInvalid} label={requiresCashCollection ? "تحصيل النقد وتأكيد التسليم" : requiresCollection ? "تأكيد التسليم وتسوية الرصيد" : "تأكيد التسليم"} onPress={() => void complete(assignment, "delivered", requiresCollection ? (requiresCashCollection ? parsedCollectionAmount : 0) : undefined)} style={styles.actionButton} />
+                <BthwaniButton busy={busy === assignment.id} disabled={Boolean(busy) || !completionStorageReady || completionStorageIssue || collectionAmountInvalid || deliveryProofInvalid} label={completionLabel} onPress={() => void complete(assignment, "delivered", collectedAmountMinor)} style={styles.actionButton} />
                 <BthwaniButton disabled={Boolean(busy) || !completionStorageReady || completionStorageIssue} label="تعذر التسليم" onPress={() => void complete(assignment, "delivery_failed")} style={styles.actionButton} variant="danger" />
               </View>
             ) : null}
@@ -373,4 +387,10 @@ export function CaptainDeliveries() {
       <BthwaniButton busy={Boolean(busy)} disabled={Boolean(busy)} label="تحديث التوصيلات" onPress={() => void load()} variant="secondary" />
     </View>
   );
+}
+
+function captainCompletionActionLabel(requiresCashCollection: boolean, requiresCollection: boolean): string {
+  if (requiresCashCollection) return "تحصيل النقد وتأكيد التسليم";
+  if (requiresCollection) return "تأكيد التسليم وتسوية الرصيد";
+  return "تأكيد التسليم";
 }
