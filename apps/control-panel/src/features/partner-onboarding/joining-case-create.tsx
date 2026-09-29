@@ -26,6 +26,17 @@ type PendingJoiningCaseCreate = Readonly<{
   correlationId: string;
 }>;
 
+function toggleFulfillmentMode(current: JoiningCaseCreateInput["firstStoreFulfillmentModes"], mode: JoiningCaseCreateInput["firstStoreFulfillmentModes"][number], checked: boolean) {
+  if (checked) return current.includes(mode) ? current : [...current, mode];
+  return current.filter((item) => item !== mode);
+}
+
+function createButtonLabel(busy: boolean, hasPendingAttempt: boolean): string {
+  if (busy) return "جارٍ إنشاء الحالة…";
+  if (hasPendingAttempt) return "إعادة محاولة إنشاء الحالة";
+  return "إنشاء حالة انضمام";
+}
+
 function readPendingCreate(raw: string | null): PendingJoiningCaseCreate | null {
   if (!raw) return null;
   try {
@@ -216,12 +227,12 @@ export function JoiningCaseCreate() {
         <label className="field-label" htmlFor="joining-longitude">خط طول موقع المتجر<input id="joining-longitude" disabled={busy || optionsBusy || Boolean(pendingAttempt) || !attemptReady} inputMode="decimal" value={longitude} onChange={(event) => setLongitude(toAsciiDigits(event.target.value))} placeholder="مثال: 44.191006" /></label>
         <fieldset className="field-label" disabled={busy || optionsBusy || Boolean(pendingAttempt) || !attemptReady}>
           <legend>أوضاع الطلب التي اختارها الشريك عند الانضمام</legend>
-          <label><input type="checkbox" checked={fulfillmentModes.includes("BTHWANI_CAPTAIN")} onChange={(event) => setFulfillmentModes((current) => event.target.checked ? current.includes("BTHWANI_CAPTAIN") ? current : [...current, "BTHWANI_CAPTAIN"] : current.filter((mode) => mode !== "BTHWANI_CAPTAIN"))} /> توصيل بثواني · مسؤولية المنصة</label>
-          <label><input type="checkbox" checked={fulfillmentModes.includes("PARTNER_CAPTAIN")} onChange={(event) => setFulfillmentModes((current) => event.target.checked ? current.includes("PARTNER_CAPTAIN") ? current : [...current, "PARTNER_CAPTAIN"] : current.filter((mode) => mode !== "PARTNER_CAPTAIN"))} /> توصيل المتجر · يختار المتجر أحد كباتنه</label>
-          <label><input type="checkbox" checked={fulfillmentModes.includes("CUSTOMER_PICKUP")} onChange={(event) => setFulfillmentModes((current) => event.target.checked ? current.includes("CUSTOMER_PICKUP") ? current : [...current, "CUSTOMER_PICKUP"] : current.filter((mode) => mode !== "CUSTOMER_PICKUP"))} /> استلم بنفسك من المتجر</label>
+          <label><input type="checkbox" checked={fulfillmentModes.includes("BTHWANI_CAPTAIN")} onChange={(event) => setFulfillmentModes((current) => toggleFulfillmentMode(current, "BTHWANI_CAPTAIN", event.target.checked))} /> توصيل بثواني · مسؤولية المنصة</label>
+          <label><input type="checkbox" checked={fulfillmentModes.includes("PARTNER_CAPTAIN")} onChange={(event) => setFulfillmentModes((current) => toggleFulfillmentMode(current, "PARTNER_CAPTAIN", event.target.checked))} /> توصيل المتجر · يختار المتجر أحد كباتنه</label>
+          <label><input type="checkbox" checked={fulfillmentModes.includes("CUSTOMER_PICKUP")} onChange={(event) => setFulfillmentModes((current) => toggleFulfillmentMode(current, "CUSTOMER_PICKUP", event.target.checked))} /> استلم بنفسك من المتجر</label>
           <span className="muted">تُثبت هذه الإتاحة عند الانضمام، وتظهر للعميل الخيارات المفعّلة فقط. تغييرها بعد إنشاء المتجر متاح للمشغّل في لوحة التحكم.</span>
         </fieldset>
-        <button type="button" className="button button-primary" disabled={busy || Boolean(createdCaseId) || !attemptReady || optionsBusy || Boolean(optionsError) || activeCities.length === 0 || activeVerticals.length === 0} onClick={() => void createCase()}>{busy ? "جارٍ إنشاء الحالة…" : pendingAttempt ? "إعادة محاولة إنشاء الحالة" : "إنشاء حالة انضمام"}</button>
+        <button type="button" className="button button-primary" disabled={busy || Boolean(createdCaseId) || !attemptReady || optionsBusy || Boolean(optionsError) || activeCities.length === 0 || activeVerticals.length === 0} onClick={() => void createCase()}>{createButtonLabel(busy, Boolean(pendingAttempt))}</button>
       </div>
       {error ? <p className="identity-error" role="alert">{error}</p> : null}
       <Link className="button button-secondary" href="/partners">العودة إلى الطابور</Link>
