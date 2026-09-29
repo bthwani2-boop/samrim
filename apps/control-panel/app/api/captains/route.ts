@@ -10,6 +10,12 @@ function jsonError(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status, headers: { "Cache-Control": "no-store" } });
 }
 
+function parseVersion(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "string" && /^[1-9]\d*$/.test(value.trim())) return Number(value.trim());
+  return NaN;
+}
+
 type DshCaptainResponse = Readonly<{
   idempotentReplay?: boolean;
   admission?: Readonly<{ id: string; actorId?: string | null; state: string; availabilityState: string; version: number }>;
@@ -42,10 +48,10 @@ export async function POST(request: Request) {
   const actorId = typeof body?.actorId === "string" ? body.actorId.trim() : "";
   const available = body?.available;
   const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
-  const expectedVersion = typeof body?.expectedVersion === "number" ? body.expectedVersion : typeof body?.expectedVersion === "string" && /^[1-9]\d*$/.test(body.expectedVersion.trim()) ? Number(body.expectedVersion.trim()) : NaN;
-  const expectedActorVersion = typeof body?.expectedActorVersion === "number" ? body.expectedActorVersion : typeof body?.expectedActorVersion === "string" && /^[1-9]\d*$/.test(body.expectedActorVersion.trim()) ? Number(body.expectedActorVersion.trim()) : NaN;
-  const expectedRoleVersion = typeof body?.expectedRoleVersion === "number" ? body.expectedRoleVersion : typeof body?.expectedRoleVersion === "string" && /^[1-9]\d*$/.test(body.expectedRoleVersion.trim()) ? Number(body.expectedRoleVersion.trim()) : NaN;
-  const expectedAdmissionVersion = typeof body?.expectedAdmissionVersion === "number" ? body.expectedAdmissionVersion : typeof body?.expectedAdmissionVersion === "string" && /^[1-9]\d*$/.test(body.expectedAdmissionVersion.trim()) ? Number(body.expectedAdmissionVersion.trim()) : NaN;
+  const expectedVersion = parseVersion(body?.expectedVersion);
+  const expectedActorVersion = parseVersion(body?.expectedActorVersion);
+  const expectedRoleVersion = parseVersion(body?.expectedRoleVersion);
+  const expectedAdmissionVersion = parseVersion(body?.expectedAdmissionVersion);
   if (action === "recover" && (!assignmentId || !Number.isInteger(expectedVersion) || expectedVersion < 1)) return jsonError("INVALID_INPUT", "assignmentId and a positive expectedVersion are required for recovery", 400);
   const context = { operatorActorId: identity.subject, correlationId: randomUUID(), idempotencyKey: randomUUID() };
   try {
@@ -110,7 +116,11 @@ export async function GET(request: Request) {
   const rawSort = params.get("sort") ?? "phone_asc";
   const sort = rawSort === "phone_asc" || rawSort === "phone_desc" ? rawSort : null;
   const rawEnabled = params.get("enabled");
-  const enabled = rawEnabled === null ? undefined : rawEnabled === "true" ? true : rawEnabled === "false" ? false : null;
+  let enabled: boolean | null | undefined;
+  if (rawEnabled === null) enabled = undefined;
+  else if (rawEnabled === "true") enabled = true;
+  else if (rawEnabled === "false") enabled = false;
+  else enabled = null;
   if (!Number.isInteger(limit) || limit < 1 || limit > 50 || enabled === null || sort === null || query.trim().length > 100 || cursor.length > 512) return jsonError("INVALID_INPUT", "valid search, cursor, sort, limit, and enabled filters are required", 400);
   try {
     if (params.get("scope") === "candidates") {
