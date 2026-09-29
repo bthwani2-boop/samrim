@@ -1,5 +1,5 @@
 const [batchNameRaw, ...components] = process.argv.slice(2);
-const batchName = String(batchNameRaw || "CI").replace(/[^A-Za-z0-9_]+/g, "_").toUpperCase();
+const batchName = String(batchNameRaw || "CI").replace(/\W+/g, "_").toUpperCase();
 if (components.length === 0) {
   console.error(`${batchName}_BATCH=FAIL reason=no-components`);
   process.exit(2);
