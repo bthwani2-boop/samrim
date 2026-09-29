@@ -91,7 +91,7 @@ func TestMutationHeadersRejectInvalidLengths(t *testing.T) {
 			if response.Code != nethttp.StatusBadRequest {
 				t.Fatalf("status: got %d, want %d", response.Code, nethttp.StatusBadRequest)
 			}
-	})
+		})
 	}
 }
 
