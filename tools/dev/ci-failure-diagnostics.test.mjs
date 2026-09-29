@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { analyzeCommandLog, buildClosureDiagnostic } from "./ci-failure-diagnostics.mjs";
+import { redactFailureArtifact } from "./ci-failure-redaction.mjs";
 
 function tempLog(lines) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "samrim-ci-diagnostic-test-"));
@@ -11,6 +12,44 @@ function tempLog(lines) {
   fs.writeFileSync(logPath, lines.join("\n") + "\n");
   return logPath;
 }
+
+test("failure artifact redaction removes every supported credential shape and prefers longest exact secrets", () => {
+  const sensitiveValues = new Map([
+    ["alpha-secret", "SHORT_SECRET"],
+    ["alpha-secret-long", "LONG_SECRET"],
+  ]);
+  const input = [
+    "exact alpha-secret-long and alpha-secret",
+    "Authorization: Bearer AbcdEF12._~+/-",
+    `token=${["ghp_", "1234567890", "abcdefghij"].join("")}`,
+    `token=${["github", "_pat_", "1234567890", "abcdefghij"].join("")}`,
+    `token=${["sk", "-", "1234567890", "abcdefghij"].join("")}`,
+    "jwt=eyJabcdefgh.abcdefgh.abcdefgh",
+    "url=https://alice:s3cr3t@example.com/path",
+    '{"password":"json-secret"}',
+    'api_key = "quoted-secret"',
+    "client-secret='single-secret'",
+    "access_token=plain-secret",
+  ].join("\n");
+
+  const redacted = redactFailureArtifact(input, sensitiveValues);
+  assert.match(redacted, /\[REDACTED:LONG_SECRET\]/);
+  assert.match(redacted, /\[REDACTED:SHORT_SECRET\]/);
+  assert.match(redacted, /Bearer \[REDACTED:bearer\]/);
+  assert.equal((redacted.match(/\[REDACTED:token\]/g) ?? []).length, 3);
+  assert.match(redacted, /jwt=\[REDACTED:jwt\]/);
+  assert.match(redacted, /https:\/\/alice:\[REDACTED:credential\]@example\.com\/path/);
+  assert.match(redacted, /"password":"\[REDACTED\]"/);
+  assert.match(redacted, /api_key = "\[REDACTED\]"/);
+  assert.match(redacted, /client-secret='\[REDACTED\]'/);
+  assert.match(redacted, /access_token=\[REDACTED\]/);
+  assert.doesNotMatch(redacted, /alpha-secret|s3cr3t|json-secret|quoted-secret|single-secret|plain-secret/);
+});
+
+test("failure artifact redaction preserves benign text and normalizes nullish input", () => {
+  assert.equal(redactFailureArtifact("safe diagnostic text"), "safe diagnostic text");
+  assert.equal(redactFailureArtifact(null), "");
+});
 
 test("successful test names containing error or failure are not findings", () => {
   const logPath = tempLog([
