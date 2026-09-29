@@ -302,6 +302,7 @@ for (const file of tracked) {
   if (top === "tools") {
     if (file === "tools/README.md") { classify(file, "tools-orientation"); continue; }
     if (file === "tools/BTHWANI_FULL_PLATFORM_CLOSURE_MATRIX.md") { classify(file, "active-task-evidence"); continue; }
+    if (segments[1] === "sonar-audit") { classify(file, "non-authoritative-quality-audit-evidence"); continue; }
     if (segments[1] === "dev") { classify(file, "developer-tooling"); continue; }
     if (segments[1] === "mobile") { classify(file, "mobile-tooling"); continue; }
     if (segments[1] === "competitors") { classify(file, "decision-evidence"); continue; }

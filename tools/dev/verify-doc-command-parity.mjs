@@ -69,9 +69,19 @@ const forbiddenLegacyPatterns = [
 function collectMarkdownFiles(root) {
   if (!fs.existsSync(root)) return [];
   const files = [];
+  const ignoredDirectories = new Set([
+    ".git",
+    ".graphify",
+    ".kilo",
+    ".nx",
+    ".tmp",
+    ".cache",
+    "graphify-out",
+    "node_modules",
+  ]);
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
     const absolute = path.join(root, entry.name);
-    if (entry.isDirectory() && entry.name !== ".kilo") files.push(...collectMarkdownFiles(absolute));
+    if (entry.isDirectory() && !ignoredDirectories.has(entry.name)) files.push(...collectMarkdownFiles(absolute));
     else if (entry.isFile() && entry.name.endsWith(".md")) files.push(absolute);
   }
   return files;

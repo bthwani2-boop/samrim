@@ -1,5 +1,9 @@
 # تدقيق SonarQube — 2026-09-29
 
+ARTIFACT_CLASS: NONAUTHORITATIVE_QUALITY_AUDIT_EVIDENCE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
+SOURCE: SonarQube Cloud project `bthwani2-boop_samrim`, main snapshot dated `2026-09-29T03:30:05Z`
+
 ## نطاق ومرجع التدقيق
 
 - المشروع: `bthwani2-boop_samrim` في SonarQube Cloud.
