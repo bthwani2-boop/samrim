@@ -175,14 +175,56 @@ jobs:
           fi
 
           quality_gate_url="https://sonarcloud.io/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}&${scope}"
-          measures_url="https://sonarcloud.io/api/measures/component?component=${SONAR_PROJECT_KEY}&${scope}&metricKeys=coverage,new_coverage,duplicated_lines_density,new_duplicated_lines_density,bugs,vulnerabilities,code_smells,reliability_rating,security_rating,sqale_rating,security_hotspots"
+          measures_url="https://sonarcloud.io/api/measures/component?component=${SONAR_PROJECT_KEY}&${scope}&metricKeys=coverage,new_coverage,line_coverage,lines_to_cover,uncovered_lines,duplicated_lines_density,new_duplicated_lines_density,duplicated_lines,ncloc,bugs,vulnerabilities,code_smells,reliability_rating,security_rating,sqale_rating,security_hotspots"
+          issues_url="https://sonarcloud.io/api/issues/search?componentKeys=${SONAR_PROJECT_KEY}&${scope}&resolved=false&ps=100"
+          component_tree_url="https://sonarcloud.io/api/measures/component_tree?component=${SONAR_PROJECT_KEY}&${scope}&metricKeys=coverage,lines_to_cover,uncovered_lines,duplicated_lines_density,duplicated_lines,ncloc&qualifiers=FIL&ps=500"
 
           echo "Sonar analysisId: ${analysis_id}"
           echo "::group::Sonar quality gate"
           curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$quality_gate_url" | jq .
           echo "::endgroup::"
+
           echo "::group::Sonar measures"
           curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$measures_url" | jq .
+          echo "::endgroup::"
+
+          echo "::group::Sonar active issues"
+          curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$issues_url" \
+            | jq '{total, issues: [.issues[] | {key, rule, severity, type, component, line, message}]}'
+          echo "::endgroup::"
+
+          component_tree_json="$(curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$component_tree_url")"
+
+          echo "::group::Top Sonar uncovered files"
+          jq '
+            def metric($key): ([.measures[]? | select(.metric == $key) | .value] | first // "0");
+            [.components[] | {
+              path,
+              uncovered_lines: (metric("uncovered_lines") | tonumber),
+              lines_to_cover: (metric("lines_to_cover") | tonumber),
+              coverage: (metric("coverage") | tonumber)
+            }]
+            | map(select(.uncovered_lines > 0))
+            | sort_by(.uncovered_lines)
+            | reverse
+            | .[:40]
+          ' <<<"$component_tree_json"
+          echo "::endgroup::"
+
+          echo "::group::Top Sonar duplicated files"
+          jq '
+            def metric($key): ([.measures[]? | select(.metric == $key) | .value] | first // "0");
+            [.components[] | {
+              path,
+              duplicated_lines: (metric("duplicated_lines") | tonumber),
+              duplicated_lines_density: (metric("duplicated_lines_density") | tonumber),
+              ncloc: (metric("ncloc") | tonumber)
+            }]
+            | map(select(.duplicated_lines > 0))
+            | sort_by(.duplicated_lines)
+            | reverse
+            | .[:40]
+          ' <<<"$component_tree_json"
           echo "::endgroup::"
 
       # OBSERVE MODE
