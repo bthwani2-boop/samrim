@@ -1,3 +1,6 @@
-// Sonar coverage entry point for the existing Captain mobile behavioral harness.
-process.argv[2] = "app-captain";
-await import("./test-mobile-app.mjs");
+import test from "node:test";
+
+test("app-captain mobile behavioral harness", async () => {
+  process.argv[2] = "app-captain";
+  await import("./test-mobile-app.mjs");
+});
