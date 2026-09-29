@@ -127,7 +127,7 @@ jobs:
             exit 1
           fi
 
-          ce_task_url="$(awk -F= '$1 == "ceTaskUrl" { print $2 }' "$task_file")"
+          ce_task_url="$(sed -n 's/^ceTaskUrl=//p' "$task_file")"
           if [[ -z "$ce_task_url" ]]; then
             echo "Sonar ceTaskUrl is missing from report-task.txt." >&2
             exit 1
