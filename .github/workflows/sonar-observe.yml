@@ -106,6 +106,29 @@ jobs:
             tools/mobile/test-mobile-app-coverage-captain.test.mjs \
             tools/mobile/test-mobile-app-coverage-field.test.mjs
 
+      - name: Rank current Go coverage debt
+        run: |
+          set -euo pipefail
+          echo "uncovered_statements total_statements coverage file"
+          for profile in coverage/sonar/dsh.out coverage/sonar/identity.out coverage/sonar/wlt.out; do
+            awk '
+              NR == 1 { next }
+              {
+                split($1, location, ":")
+                file = location[1]
+                statements = $2 + 0
+                total[file] += statements
+                if (($3 + 0) == 0) uncovered[file] += statements
+              }
+              END {
+                for (file in total) {
+                  coverage = total[file] == 0 ? 100 : 100 * (total[file] - uncovered[file]) / total[file]
+                  printf "%d\t%d\t%.1f\t%s\n", uncovered[file] + 0, total[file], coverage, file
+                }
+              }
+            ' "$profile"
+          done | sort -nr -k1,1 | sed -n '1,40p'
+
       - name: SonarQube Cloud scan
         uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
         with:
@@ -177,7 +200,8 @@ jobs:
           quality_gate_url="https://sonarcloud.io/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}&${scope}"
           measures_url="https://sonarcloud.io/api/measures/component?component=${SONAR_PROJECT_KEY}&${scope}&metricKeys=coverage,new_coverage,line_coverage,lines_to_cover,uncovered_lines,duplicated_lines_density,new_duplicated_lines_density,duplicated_lines,ncloc,bugs,vulnerabilities,code_smells,reliability_rating,security_rating,sqale_rating,security_hotspots"
           issues_url="https://sonarcloud.io/api/issues/search?componentKeys=${SONAR_PROJECT_KEY}&${scope}&resolved=false&ps=100"
-          component_tree_url="https://sonarcloud.io/api/measures/component_tree?component=${SONAR_PROJECT_KEY}&${scope}&metricKeys=coverage,lines_to_cover,uncovered_lines,duplicated_lines_density,duplicated_lines,ncloc&qualifiers=FIL&ps=500"
+          main_uncovered_url="https://sonarcloud.io/api/measures/component_tree?component=${SONAR_PROJECT_KEY}&branch=main&metricKeys=coverage,lines_to_cover,uncovered_lines&qualifiers=FIL&ps=40&s=metric&metricSort=uncovered_lines&asc=false"
+          main_duplicated_url="https://sonarcloud.io/api/measures/component_tree?component=${SONAR_PROJECT_KEY}&branch=main&metricKeys=duplicated_lines_density,duplicated_lines,ncloc&qualifiers=FIL&ps=40&s=metric&metricSort=duplicated_lines&asc=false"
 
           echo "Sonar analysisId: ${analysis_id}"
           echo "::group::Sonar quality gate"
@@ -193,38 +217,14 @@ jobs:
             | jq '{total, issues: [.issues[] | {key, rule, severity, type, component, line, message}]}'
           echo "::endgroup::"
 
-          component_tree_json="$(curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$component_tree_url")"
-
-          echo "::group::Top Sonar uncovered files"
-          jq '
-            def metric($key): ([.measures[]? | select(.metric == $key) | .value] | first // "0");
-            [.components[] | {
-              path,
-              uncovered_lines: (metric("uncovered_lines") | tonumber),
-              lines_to_cover: (metric("lines_to_cover") | tonumber),
-              coverage: (metric("coverage") | tonumber)
-            }]
-            | map(select(.uncovered_lines > 0))
-            | sort_by(.uncovered_lines)
-            | reverse
-            | .[:40]
-          ' <<<"$component_tree_json"
+          echo "::group::Main baseline top uncovered files"
+          curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$main_uncovered_url" \
+            | jq '[.components[] | {path, measures}]'
           echo "::endgroup::"
 
-          echo "::group::Top Sonar duplicated files"
-          jq '
-            def metric($key): ([.measures[]? | select(.metric == $key) | .value] | first // "0");
-            [.components[] | {
-              path,
-              duplicated_lines: (metric("duplicated_lines") | tonumber),
-              duplicated_lines_density: (metric("duplicated_lines_density") | tonumber),
-              ncloc: (metric("ncloc") | tonumber)
-            }]
-            | map(select(.duplicated_lines > 0))
-            | sort_by(.duplicated_lines)
-            | reverse
-            | .[:40]
-          ' <<<"$component_tree_json"
+          echo "::group::Main baseline top duplicated files"
+          curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$main_duplicated_url" \
+            | jq '[.components[] | {path, measures}]'
           echo "::endgroup::"
 
       # OBSERVE MODE
