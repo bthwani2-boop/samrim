@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 const knowledgeSourcesPath = path.join(repoRoot, "knowledge.sources.json");
+const compareStrings = (left, right) => String(left).localeCompare(String(right), "en");
 
 const GOVERNANCE_REPOSITORY = "bthwani2-boop/governance-and-docs";
 const ALLOWED_TOP_LEVEL_KEYS = ["governance", "schema"];
@@ -20,8 +21,8 @@ function exactSha(value, label) {
 }
 
 function exactKeys(value, expected, label) {
-  const actual = Object.keys(value ?? {}).sort();
-  const wanted = [...expected].sort();
+  const actual = Object.keys(value ?? {}).toSorted(compareStrings);
+  const wanted = expected.toSorted(compareStrings);
   if (JSON.stringify(actual) !== JSON.stringify(wanted)) {
     fail(label + " keys must be exactly: " + wanted.join(", "));
   }
