@@ -60,7 +60,7 @@ func TestValidSettlementBatchStatus(t *testing.T) {
 func TestValidSHA256(t *testing.T) {
 	cases := map[string]bool{
 		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef": true,
-		"": false,
+		"":                 false,
 		"0123456789abcdef": false,
 		"0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef": false,
 		"g123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef": false,
