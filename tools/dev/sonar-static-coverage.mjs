@@ -19,5 +19,5 @@ const verifierModules = [
 
 export async function executeStaticCoverageOwners() {
   ensureKnowledgeRoot({ materialize: true });
-  for (const modulePath of verifierModules) await import(modulePath);
+  await Promise.all(verifierModules.map((modulePath) => import(modulePath)));
 }
