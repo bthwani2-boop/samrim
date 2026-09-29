@@ -10,6 +10,16 @@ import { currentIdentityState, getUsableIdentityAccessToken, role } from "../../
 function client() { const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim(); if (!value) throw new Error("DSH_BASE_URL_REQUIRED"); return createDshMobileClient(value, { cryptoRandomUUID: () => Crypto.randomUUID() }); }
 function senderLabel(role: string): string { return role === "client" ? "العميل" : role === "partner" ? "أنت" : "الكابتن"; }
 
+async function clearStoredAttempt(attempt: OrderConversationMessageAttempt, failureMessage: string): Promise<boolean> {
+  try {
+    await SecureStore.deleteItemAsync(orderConversationMessageAttemptStorageKey(role, attempt.actorID, attempt.orderID));
+    return true;
+  } catch (error_) {
+    console.error(failureMessage, error_);
+    return false;
+  }
+}
+
 export function OrderConversation({ orderId }: { orderId: string }) {
   const theme = useAppearanceTheme(); const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<{ kind: "loading" } | { kind: "ready"; value: Awaited<ReturnType<ReturnType<typeof client>["readOrderConversation"]>> } | { kind: "error" }>({ kind: "loading" });
@@ -35,12 +45,29 @@ export function OrderConversation({ orderId }: { orderId: string }) {
   }, [orderId]);
   useEffect(() => { setBody(""); setPendingAttempt(null); void load(); }, [load]);
 
+  async function refreshAfterDefinitiveRejection(attempt: OrderConversationMessageAttempt): Promise<void> {
+    const cleared = await clearStoredAttempt(attempt, "DSH partner rejected order conversation attempt cleanup failed");
+    setPendingAttempt(cleared ? null : attempt);
+    setBody(cleared ? "" : attempt.body);
+    await load();
+    setError(cleared ? "رفض الخادم إرسال الرسالة؛ حدّثنا حالة المحادثة ويمكنك تعديل الرسالة والمحاولة مجددًا." : "رفض الخادم إرسال الرسالة، وتعذر حذف محاولة الاستعادة المحفوظة. أعد القراءة قبل أي محاولة جديدة.");
+  }
+
   async function submitAttempt(attempt: OrderConversationMessageAttempt, token: string) {
-    try { await client().sendOrderConversationMessage(token, attempt.orderID, { body: attempt.body }, attempt.idempotencyKey, attempt.correlationID); }
-    catch (cause) { console.error("DSH partner order conversation send failed", cause); if (isDefinitiveDshMobileClientRejection(cause)) { let cleared = false; try { await SecureStore.deleteItemAsync(orderConversationMessageAttemptStorageKey(role, attempt.actorID, attempt.orderID)); cleared = true; } catch (cleanupCause) { console.error("DSH partner rejected order conversation attempt cleanup failed", cleanupCause); } setPendingAttempt(cleared ? null : attempt); setBody(cleared ? "" : attempt.body); await load(); setError(cleared ? "رفض الخادم إرسال الرسالة؛ حدّثنا حالة المحادثة ويمكنك تعديل الرسالة والمحاولة مجددًا." : "رفض الخادم إرسال الرسالة، وتعذر حذف محاولة الاستعادة المحفوظة. أعد القراءة قبل أي محاولة جديدة."); return; } setPendingAttempt(attempt); setBody(attempt.body); setError("لم نتأكد من نتيجة الإرسال. بقيت الرسالة محفوظة؛ أعد المحاولة بالمفتاح نفسه لتفادي تكرارها."); return; }
-    let storageCleared = false;
-    try { await SecureStore.deleteItemAsync(orderConversationMessageAttemptStorageKey(role, attempt.actorID, attempt.orderID)); storageCleared = true; }
-    catch (cause) { console.error("DSH partner order conversation recovery record cleanup failed", cause); }
+    try {
+      await client().sendOrderConversationMessage(token, attempt.orderID, { body: attempt.body }, attempt.idempotencyKey, attempt.correlationID);
+    } catch (cause) {
+      console.error("DSH partner order conversation send failed", cause);
+      if (isDefinitiveDshMobileClientRejection(cause)) {
+        await refreshAfterDefinitiveRejection(attempt);
+        return;
+      }
+      setPendingAttempt(attempt);
+      setBody(attempt.body);
+      setError("لم نتأكد من نتيجة الإرسال. بقيت الرسالة محفوظة؛ أعد المحاولة بالمفتاح نفسه لتفادي تكرارها.");
+      return;
+    }
+    const storageCleared = await clearStoredAttempt(attempt, "DSH partner order conversation recovery record cleanup failed");
     setPendingAttempt(storageCleared ? null : attempt); setBody(storageCleared ? "" : attempt.body);
     const refreshed = await load();
     if (!storageCleared) setError("تأكد إرسال الرسالة، وبقي سجل الاستعادة المحلي. إعادة المحاولة بالمفتاح نفسه آمنة.");
