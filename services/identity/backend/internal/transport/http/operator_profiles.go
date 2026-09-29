@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	operatorProfileActingActorHeader  = "X-Acting-Actor-ID"
-	operatorProfileCorrelationHeader  = "X-Correlation-ID"
-	operatorProfileIdempotencyHeader   = "Idempotency-Key"
+	operatorProfileActingActorHeader = "X-Acting-Actor-ID"
+	operatorProfileCorrelationHeader = "X-Correlation-ID"
+	operatorProfileIdempotencyHeader = "Idempotency-Key"
 )
 
 func (s *Server) listOperatorProfiles(w http.ResponseWriter, r *http.Request, caller string) {
