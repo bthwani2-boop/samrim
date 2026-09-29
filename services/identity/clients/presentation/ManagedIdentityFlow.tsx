@@ -99,16 +99,19 @@ export function AuthenticatedMobileBoundary({ binding, onUnauthenticated, childr
 
   if (state.kind === "authenticated") return <>{children}</>;
 
+  const boundaryTitle = identityBoundaryTitle(state.kind);
+  const boundaryMessage = identityBoundaryMessage(state.kind);
+
   return (
     <View style={styles.boundaryContainer}>
       <BrandHeader styles={styles} />
       <View style={styles.stateCard}>
         {state.kind === "restoring" ? <ActivityIndicator accessibilityLabel="جارٍ التحقق من الجلسة" color={theme.actionBackground} size="large" /> : null}
         <Text style={styles.stateTitle}>
-          {state.kind === "degraded" ? "تعذر التحقق من الجلسة" : state.kind === "signed_out" ? "انتهت الجلسة" : "جارٍ تجهيز المساحة"}
+          {boundaryTitle}
         </Text>
         <Text style={styles.muted}>
-          {state.kind === "degraded" ? "تحقق من الاتصال ثم أعد المحاولة." : state.kind === "signed_out" ? "نعيدك إلى بوابة تسجيل الدخول." : "نتحقق من الوصول قبل عرض بيانات التشغيل."}
+          {boundaryMessage}
         </Text>
         {state.kind === "degraded" ? (
           <Pressable
@@ -368,7 +371,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
           onPress={requestActivationVerification}
            style={({ pressed }: { pressed: boolean }) => [styles.secondaryButton, pressed && styles.secondaryButtonPressed, (busy || !phoneReady) && styles.disabledButton]}
          >
-           <Text style={[styles.secondaryButtonText, (busy || !phoneReady) && styles.disabledButtonText]}>{busy ? "جارٍ إرسال رمز الهاتف…" : challengeRequested ? "إعادة إرسال رمز الهاتف" : "إرسال رمز تحقق الهاتف"}</Text>
+           <Text style={[styles.secondaryButtonText, (busy || !phoneReady) && styles.disabledButtonText]}>{activationRequestLabel(busy, challengeRequested)}</Text>
         </Pressable>
         {challengeRequested ? (
           <>
@@ -448,6 +451,24 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
       </View>
     )
   );
+}
+
+function identityBoundaryTitle(kind: IdentitySessionState["kind"]): string {
+  if (kind === "degraded") return "تعذر التحقق من الجلسة";
+  if (kind === "signed_out") return "انتهت الجلسة";
+  return "جارٍ تجهيز المساحة";
+}
+
+function identityBoundaryMessage(kind: IdentitySessionState["kind"]): string {
+  if (kind === "degraded") return "تحقق من الاتصال ثم أعد المحاولة.";
+  if (kind === "signed_out") return "نعيدك إلى بوابة تسجيل الدخول.";
+  return "نتحقق من الوصول قبل عرض بيانات التشغيل.";
+}
+
+function activationRequestLabel(busy: boolean, challengeRequested: boolean): string {
+  if (busy) return "جارٍ إرسال رمز الهاتف…";
+  if (challengeRequested) return "إعادة إرسال رمز الهاتف";
+  return "إرسال رمز تحقق الهاتف";
 }
 
 function createStyles(theme: ThemeColors) {
