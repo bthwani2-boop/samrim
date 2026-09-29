@@ -19,7 +19,7 @@ const agents = read("AGENTS.md");
 requireTokens(agents, "AGENTS.md", ["CAUSAL DIAGNOSTIC CLOSURE LAW", "PASS EVIDENCE REUSE", "RED CANDIDATE LAW", "ACTIVE_CLOSURE_BLOCKER", "NO GREENWASHING / ORACLE PRESERVATION", "Blind retry is forbidden", "bounded diagnostic batch", "machine-readable"]);
 
 const localVerifier = read("tools/dev/verify-local-candidate.ps1");
-requireTokens(localVerifier, "local verifier", ["VERIFY_BASE_SOURCE=REMOTE_TRACKING", "refs/remotes/origin/main", "VERIFY_SCOPE_AUTHORITY=NX_TASK_INPUTS_AND_AFFECTED_GRAPH", "repository-ci:execution-proof-system", "'nx','affected'", "--nxBail=false", "capture-ci-failure.mjs", "closure-diagnostic.json"]);
+requireTokens(localVerifier, "local verifier", ["SourceKind = 'REMOTE_TRACKING'", 'Write-Host "VERIFY_BASE_SOURCE=$($resolvedBase.SourceKind)', "refs/remotes/origin/main", "VERIFY_SCOPE_AUTHORITY=NX_TASK_INPUTS_AND_AFFECTED_GRAPH", "repository-ci:execution-proof-system", "'nx','affected'", "--nxBail=false", "capture-ci-failure.mjs", "closure-diagnostic.json"]);
 forbidTokens(localVerifier, "local verifier", ["HEAD^", "Test-ChangedPath", "workspaceSensitivePatterns", "deployabilityPatterns", "infraPatterns", "export-smoke", "agent-diagnostic.json"]);
 
 const failureCapture = read("tools/dev/capture-ci-failure.mjs");
