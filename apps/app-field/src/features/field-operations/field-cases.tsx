@@ -236,11 +236,47 @@ export function FieldCases() {
     }
   }
 
-  const renderCase = ({ item }: { item: JoiningCaseSummary }) => (
+  const renderCase = ({ item }: { item: JoiningCaseSummary }) => {
+    let badgeIcon: "edit" | "warning" | "cases";
+    let badgeTone: "info" | "warning" | "neutral";
+    if (item.state === "draft") {
+      badgeIcon = "edit";
+      badgeTone = "info";
+    } else if (item.state === "needs_correction") {
+      badgeIcon = "warning";
+      badgeTone = "warning";
+    } else {
+      badgeIcon = "cases";
+      badgeTone = "neutral";
+    }
+
+    let nextStepText: string;
+    if (item.state === "draft") {
+      nextStepText = "الخطوة التالية: راجع البيانات ثم أرسل الملف للمراجعة.";
+    } else if (item.state === "admission_requested") {
+      nextStepText = "وصل الملف إلى طابور المشغّل لإنشاء دور الشريك بعد القبول.";
+    } else if (item.state === "submitted") {
+      nextStepText = "قُبلت الإحالة؛ أصبحت الحالة لدى الشريك والمشغّل للمراجعة.";
+    } else if (item.state === "needs_correction") {
+      nextStepText = "الخطوة التالية: يصحح الشريك المرتبط البيانات ويعيد الإرسال.";
+    } else {
+      nextStepText = "اعتمد المشغّل الحالة؛ يظهر المتجر للعميل بعد اكتمال النشر والكتالوج.";
+    }
+
+    let storeImageButtonLabel: string;
+    if (storeImage) {
+      storeImageButtonLabel = "اختيار صورة أخرى";
+    } else if (mediaCase?.case.storeProfileImage) {
+      storeImageButtonLabel = "تغيير صورة المتجر";
+    } else {
+      storeImageButtonLabel = "اختيار صورة المتجر";
+    }
+
+    return (
     <View style={styles.card}>
-      <View style={styles.orderHeader}><Text style={styles.cardTitle}>{item.businessName} · {item.firstStoreName}</Text><BthwaniStatusBadge icon={item.state === "draft" ? "edit" : item.state === "needs_correction" ? "warning" : "cases"} label={joiningCaseStateLabel(item.state)} tone={item.state === "draft" ? "info" : item.state === "needs_correction" ? "warning" : "neutral"} /></View>
+      <View style={styles.orderHeader}><Text style={styles.cardTitle}>{item.businessName} · {item.firstStoreName}</Text><BthwaniStatusBadge icon={badgeIcon} label={joiningCaseStateLabel(item.state)} tone={badgeTone} /></View>
       {item.correctionReason ? <Text style={styles.error}>التصحيح المطلوب: {item.correctionReason}</Text> : null}
-      <Text style={styles.muted}>{item.state === "draft" ? "الخطوة التالية: راجع البيانات ثم أرسل الملف للمراجعة." : item.state === "admission_requested" ? "وصل الملف إلى طابور المشغّل لإنشاء دور الشريك بعد القبول." : item.state === "submitted" ? "قُبلت الإحالة؛ أصبحت الحالة لدى الشريك والمشغّل للمراجعة." : item.state === "needs_correction" ? "الخطوة التالية: يصحح الشريك المرتبط البيانات ويعيد الإرسال." : "اعتمد المشغّل الحالة؛ يظهر المتجر للعميل بعد اكتمال النشر والكتالوج."}</Text>
+      <Text style={styles.muted}>{nextStepText}</Text>
       {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt)} label="قراءة صورة المتجر أو استكمالها" onPress={() => void openStoreImage(item)} variant="secondary" /> : null}
       {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(pendingImageAttempt) || (Boolean(storeImage) && mediaCase?.case.id !== item.id)} label="إرسال للمراجعة" onPress={() => void submitCase(item)} /> : null}
       {mediaCase?.case.id === item.id ? <View style={styles.card}>
@@ -256,18 +292,33 @@ export function FieldCases() {
           <TextInput accessibilityLabel="رابط شروط الترخيص اختياري" editable={!busy && !pendingImageAttempt} autoCapitalize="none" keyboardType="url" placeholder="رابط شروط الترخيص، اختياري" style={styles.input} value={storeImage.provenance.rightsUri} onChangeText={(rightsUri) => setStoreImage((current) => current ? { ...current, provenance: { ...current.provenance, rightsUri } } : null)} />
           <View style={styles.caseListFooter}><Switch disabled={Boolean(busy) || Boolean(pendingImageAttempt)} value={storeImage.provenance.rightsAttested} onValueChange={(rightsAttested) => setStoreImage((current) => current ? { ...current, provenance: { ...current.provenance, rightsAttested } } : null)} /><Text style={styles.muted}>أؤكد صحة بيانات المصدر وحق الاستخدام.</Text></View>
         </View> : null}
-        <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label={storeImage ? "اختيار صورة أخرى" : mediaCase.case.storeProfileImage ? "تغيير صورة المتجر" : "اختيار صورة المتجر"} onPress={() => void pickStoreImage()} variant="secondary" />
+        <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label={storeImageButtonLabel} onPress={() => void pickStoreImage()} variant="secondary" />
         {storeImage ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || (!pendingImageAttempt && !isMediaProvenanceInputValid(storeImage.provenance))} label={pendingImageAttempt ? "إعادة التحقق من رفع الصورة" : "حفظ صورة المتجر"} onPress={() => void uploadStoreImage()} /> : null}
         <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label="إغلاق تفاصيل الصورة" onPress={() => { setMediaCase(null); setStoreImage(null); }} variant="secondary" />
       </View> : null}
     </View>
-  );
+    );
+  };
 
-  const emptyMessage = missingAdmission
-    ? "لا يوجد حساب ميداني مؤهل لقراءة الملفات."
-    : appliedQuery
-      ? "لا توجد ملفات مطابقة للبحث."
-      : "لا توجد ملفات انضمام من هذا الميدان بعد.";
+  let emptyMessage: string;
+  if (missingAdmission) {
+    emptyMessage = "لا يوجد حساب ميداني مؤهل لقراءة الملفات.";
+  } else if (appliedQuery) {
+    emptyMessage = "لا توجد ملفات مطابقة للبحث.";
+  } else {
+    emptyMessage = "لا توجد ملفات انضمام من هذا الميدان بعد.";
+  }
+
+  let paginationFooter = null;
+  if (loadingMore) {
+    paginationFooter = <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ تحميل بقية الملفات…</Text></View>;
+  } else if (paginationError) {
+    paginationFooter = <View style={styles.caseListFooter}><Text accessibilityRole="alert" style={styles.error}>{paginationError}</Text><BthwaniButton disabled={Boolean(busy)} label="إعادة تحميل بقية الملفات" onPress={() => void loadMore()} variant="secondary" /></View>;
+  } else if (nextCursor) {
+    paginationFooter = <View style={styles.caseListFooter}><BthwaniButton disabled={Boolean(busy) || loading} label="تحميل المزيد من الملفات" onPress={() => void loadMore()} variant="secondary" /></View>;
+  } else if (cases.length > 0) {
+    paginationFooter = <View style={styles.caseListFooter}><Text style={styles.muted}>تم تحميل كل الملفات المطابقة.</Text></View>;
+  }
 
   return <FlatList
     accessibilityLabel="ملفات الانضمام"
@@ -278,15 +329,7 @@ export function FieldCases() {
     ListEmptyComponent={loading
       ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View>
       : <View style={styles.state}><Text style={styles.muted}>{error || emptyMessage}</Text>{error ? <BthwaniButton disabled={Boolean(busy)} label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /> : null}</View>}
-    ListFooterComponent={loadingMore
-      ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ تحميل بقية الملفات…</Text></View>
-      : paginationError
-        ? <View style={styles.caseListFooter}><Text accessibilityRole="alert" style={styles.error}>{paginationError}</Text><BthwaniButton disabled={Boolean(busy)} label="إعادة تحميل بقية الملفات" onPress={() => void loadMore()} variant="secondary" /></View>
-        : nextCursor
-          ? <View style={styles.caseListFooter}><BthwaniButton disabled={Boolean(busy) || loading} label="تحميل المزيد من الملفات" onPress={() => void loadMore()} variant="secondary" /></View>
-          : cases.length > 0
-            ? <View style={styles.caseListFooter}><Text style={styles.muted}>تم تحميل كل الملفات المطابقة.</Text></View>
-            : null}
+    ListFooterComponent={paginationFooter}
     ListFooterComponentStyle={styles.caseListFooter}
     ListHeaderComponent={<View style={styles.container}>
       <Text style={styles.title}>ملفات الانضمام</Text>
