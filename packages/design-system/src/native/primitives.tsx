@@ -11,7 +11,12 @@ type StatusTone = "neutral" | "info" | "success" | "warning" | "danger";
 export function BthwaniSurface({ tone = "base", children, style, ...props }: ViewProps & { tone?: SurfaceTone }) {
   const theme = useAppearanceTheme();
   const styles = React.useMemo(() => createPrimitiveStyles(theme), [theme]);
-  const toneStyle = tone === "raised" ? styles.surfaceRaised : tone === "inset" ? styles.surfaceInset : styles.surfaceBase;
+  const toneStyles: Record<SurfaceTone, ViewStyle> = {
+    base: styles.surfaceBase,
+    raised: styles.surfaceRaised,
+    inset: styles.surfaceInset,
+  };
+  const toneStyle = toneStyles[tone];
   return <View {...props} style={[styles.surface, toneStyle, style]}>{children}</View>;
 }
 
@@ -19,9 +24,28 @@ export function BthwaniButton({ label, variant = "primary", busy = false, disabl
   const theme = useAppearanceTheme();
   const styles = React.useMemo(() => createPrimitiveStyles(theme), [theme]);
   const blocked = disabled || busy;
-  const variantStyle = variant === "secondary" ? styles.buttonSecondary : variant === "quiet" ? styles.buttonQuiet : variant === "danger" ? styles.buttonDanger : styles.buttonPrimary;
-  const textVariantStyle = variant === "secondary" ? styles.buttonTextSecondary : variant === "quiet" ? styles.buttonTextQuiet : variant === "danger" ? styles.buttonTextDanger : styles.buttonTextPrimary;
-  const busyColor = variant === "primary" ? theme.onAction : variant === "danger" ? theme.danger : theme.interactiveText;
+  const variantStyles = {
+    primary: styles.buttonPrimary,
+    secondary: styles.buttonSecondary,
+    quiet: styles.buttonQuiet,
+    danger: styles.buttonDanger,
+  };
+  const textVariantStyles = {
+    primary: styles.buttonTextPrimary,
+    secondary: styles.buttonTextSecondary,
+    quiet: styles.buttonTextQuiet,
+    danger: styles.buttonTextDanger,
+  };
+  const variantStyle = variantStyles[variant];
+  const textVariantStyle = textVariantStyles[variant];
+  let busyColor: string;
+  if (variant === "primary") {
+    busyColor = theme.onAction;
+  } else if (variant === "danger") {
+    busyColor = theme.danger;
+  } else {
+    busyColor = theme.interactiveText;
+  }
   return (
     <Pressable
       {...props}
@@ -66,7 +90,12 @@ export function BthwaniIconButton({ icon, label, tone = "surface", size = sizing
   const theme = useAppearanceTheme();
   const styles = React.useMemo(() => createPrimitiveStyles(theme), [theme]);
   const iconColor = tone === "primary" ? theme.onAction : theme.interactiveText;
-  const toneStyle = tone === "soft" ? styles.iconButtonSoft : tone === "primary" ? styles.iconButtonPrimary : styles.iconButtonSurface;
+  const toneStyles = {
+    surface: styles.iconButtonSurface,
+    soft: styles.iconButtonSoft,
+    primary: styles.iconButtonPrimary,
+  };
+  const toneStyle = toneStyles[tone];
   return (
     <Pressable {...props} accessibilityLabel={label} accessibilityRole={props.accessibilityRole ?? "button"} hitSlop={props.hitSlop ?? 4} style={(state) => [styles.iconButton, toneStyle, { height: size, width: size }, state.pressed && styles.buttonPressed, resolvePressableStyle(style, state)]}>
       <BthwaniIcon name={icon} color={iconColor} size={sizing.iconMd} />
@@ -78,9 +107,15 @@ export function BthwaniChip({ label, selected = false, icon, style, ...props }: 
   const theme = useAppearanceTheme();
   const styles = React.useMemo(() => createPrimitiveStyles(theme), [theme]);
   const disabled = Boolean(props.disabled);
+  let iconColor = theme.colorMuted;
+  if (disabled) {
+    iconColor = theme.disabledText;
+  } else if (selected) {
+    iconColor = theme.interactiveText;
+  }
   return (
     <Pressable {...props} accessibilityRole={props.accessibilityRole ?? "button"} accessibilityState={{ ...props.accessibilityState, disabled, selected }} disabled={disabled} style={(state) => [styles.chip, selected && styles.chipSelected, disabled && styles.chipDisabled, state.pressed && !disabled && styles.buttonPressed, resolvePressableStyle(style, state)]}>
-      {icon ? <BthwaniIcon name={icon} color={disabled ? theme.disabledText : selected ? theme.interactiveText : theme.colorMuted} size={sizing.iconSm} /> : null}
+      {icon ? <BthwaniIcon name={icon} color={iconColor} size={sizing.iconSm} /> : null}
       <Text style={[styles.chipText, selected && styles.chipTextSelected, disabled && styles.chipTextDisabled]}>{label}</Text>
     </Pressable>
   );
