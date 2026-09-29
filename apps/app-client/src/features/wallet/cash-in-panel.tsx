@@ -37,6 +37,12 @@ function isTerminalFundingIntent(intent: Pick<CashInFundingIntent, "state">): bo
   return intent.state === "SETTLED" || intent.state === "FAILED";
 }
 
+function simulationResultNotice(state: CashInFundingIntent["state"]): string {
+  if (state === "SETTLED") return "نجح الاختبار المحلي وأكد WLT إضافة الرصيد التجريبي.";
+  if (state === "FAILED") return "رُفض طلب الشحن التجريبي ولم يُضف الرصيد.";
+  return "لم يصل تأكيد نهائي؛ بقي الطلب محفوظًا ويمكن متابعة الاختبار.";
+}
+
 function fundingIntentMatchesAttempt(intent: CashInFundingIntent, attempt: FundingAttempt): boolean {
   return intent.id === attempt.fundingIntentID && intent.actorId === attempt.actorID && intent.fundingPurpose === "CUSTOMER_TOPUP" && intent.amountMinor === attempt.amountMinor && intent.currency === "YER";
 }
@@ -180,13 +186,7 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
         await SecureStore.deleteItemAsync(attemptKey(attempt.actorID));
         setPending(null);
       }
-      setNotice(
-        result.intent.state === "SETTLED"
-          ? "نجح الاختبار المحلي وأكد WLT إضافة الرصيد التجريبي."
-          : result.intent.state === "FAILED"
-            ? "رُفض طلب الشحن التجريبي ولم يُضف الرصيد."
-            : "لم يصل تأكيد نهائي؛ بقي الطلب محفوظًا ويمكن متابعة الاختبار.",
-      );
+      setNotice(simulationResultNotice(result.intent.state));
       await load();
     } catch {
       setError("تعذر تطبيق نتيجة المحاكي؛ بقيت محاولة الشحن محفوظة كما هي.");
@@ -222,11 +222,9 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
         {pending ? <Text style={styles.pendingCopy}>طلب شحن قيد التأكيد: {formatMoney(pending.amountMinor, "YER")}.</Text> : null}
         {busy && !wallet ? <ActivityIndicator accessibilityLabel="جارٍ قراءة الرصيد" color={theme.actionBackground} /> : null}
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-        {state?.cashInEnabled
-          ? <BthwaniButton disabled={busy} label="＋ إضافة رصيد" onPress={onAddFunds ?? (() => router.push("/wallet-cash-in" as Href))} />
-          : state
-            ? <Text style={styles.muted}>الشحن غير متاح حاليًا.</Text>
-            : error ? <BthwaniButton disabled={busy} label="تحديث" onPress={() => void load()} variant="secondary" /> : null}
+        {state?.cashInEnabled ? <BthwaniButton disabled={busy} label="＋ إضافة رصيد" onPress={onAddFunds ?? (() => router.push("/wallet-cash-in" as Href))} /> : null}
+        {!state?.cashInEnabled && state ? <Text style={styles.muted}>الشحن غير متاح حاليًا.</Text> : null}
+        {!state && error ? <BthwaniButton disabled={busy} label="تحديث" onPress={() => void load()} variant="secondary" /> : null}
       </BthwaniSurface>
     );
   }
@@ -268,7 +266,8 @@ export function ClientCashInPanel({ mode = "wallet", onAddFunds }: { mode?: Pane
             </View>
             <View style={styles.radioOuter}><View style={styles.radioInner} /></View>
           </View>
-        ) : state ? <Text style={styles.unavailable}>لا توجد وسيلة شحن مفعّلة حاليًا.</Text> : null}
+        ) : null}
+        {!state?.cashInEnabled && state ? <Text style={styles.unavailable}>لا توجد وسيلة شحن مفعّلة حاليًا.</Text> : null}
 
         {busy && !wallet ? <ActivityIndicator accessibilityLabel="جارٍ تحميل وسائل الشحن" color={theme.actionBackground} /> : null}
         {pending ? <Text style={styles.pendingCopy}>لديك طلب محفوظ بقيمة {formatMoney(pending.amountMinor, "YER")}. إعادة المحاولة تستخدم الطلب نفسه.</Text> : null}
