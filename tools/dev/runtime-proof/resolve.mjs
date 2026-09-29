@@ -54,12 +54,42 @@ function loadProjectConfigs() {
 
 function implicitLane(tags) {
   const scopes = [...tags].filter((tag) => tag.startsWith("scope:"));
-  if (scopes.some((tag) => tag === "scope:control-panel")) return "control";
+  if (scopes.includes("scope:control-panel")) return "control";
   if (scopes.some((tag) => tag === "scope:identity" || tag.startsWith("scope:identity-"))) return "identity";
   if (scopes.some((tag) => tag === "scope:wlt" || tag.startsWith("scope:wlt-"))) return "wlt";
   if (scopes.some((tag) => tag === "scope:dsh" || tag.startsWith("scope:dsh-"))) return "dsh";
-  if (scopes.some((tag) => ["scope:infra", "scope:repository-ci", "scope:runtime-proof-routing"].includes(tag))) return "full";
+  const fullScopes = new Set(["scope:infra", "scope:repository-ci", "scope:runtime-proof-routing"]);
+  if (scopes.some((tag) => fullScopes.has(tag))) return "full";
   return null;
+}
+
+function isRuntimeSensitive(name, tags) {
+  return tags.has("type:service") || tags.has("type:infra") || tags.has("type:app") || name === "control-panel";
+}
+
+function classifyRuntimeProject(name, project) {
+  const tags = new Set(project.tags ?? []);
+  const runtimeTags = [...tags].filter((tag) => tag.startsWith("runtime:"));
+
+  if (runtimeTags.includes("runtime:none")) return { mode: "none" };
+  if (runtimeTags.includes("runtime:full")) return { mode: "full", reason: `full-escalation:${name}` };
+
+  const explicitLanes = runtimeTags.map((tag) => tag.slice("runtime:".length));
+  if (explicitLanes.length > 0) {
+    for (const lane of explicitLanes) {
+      if (!laneTargets[lane]) throw new Error(`unknown runtime lane '${lane}' on Nx project '${name}'`);
+    }
+    return {
+      mode: "lanes",
+      lanes: explicitLanes,
+      reasons: explicitLanes.map((lane) => `${name}:${lane}:explicit`),
+    };
+  }
+
+  const inferred = implicitLane(tags);
+  if (inferred === "full") return { mode: "full", reason: `full-escalation:${name}:scope` };
+  if (inferred) return { mode: "lanes", lanes: [inferred], reasons: [`${name}:${inferred}:scope`] };
+  return isRuntimeSensitive(name, tags) ? { mode: "unclassified" } : { mode: "none" };
 }
 
 export function resolveFromAffected(affected, configs, fullRegression = false) {
@@ -73,33 +103,20 @@ export function resolveFromAffected(affected, configs, fullRegression = false) {
     const project = configs.get(name);
     if (!project) throw new Error(`affected Nx project is missing project.json metadata: ${name}`);
 
-    const tags = new Set(project.tags ?? []);
-    const runtimeTags = [...tags].filter((tag) => tag.startsWith("runtime:"));
-
-    if (runtimeTags.includes("runtime:none")) continue;
-    if (runtimeTags.includes("runtime:full")) return buildResolution(affected, laneOrder, [`full-escalation:${name}`]);
-
-    const explicitLanes = runtimeTags.map((tag) => tag.slice("runtime:".length));
-    for (const lane of explicitLanes) {
-      if (!laneTargets[lane]) throw new Error(`unknown runtime lane '${lane}' on Nx project '${name}'`);
-      lanes.add(lane);
-      reasons.push(`${name}:${lane}:explicit`);
+    const classification = classifyRuntimeProject(name, project);
+    if (classification.mode === "full") return buildResolution(affected, laneOrder, [classification.reason]);
+    if (classification.mode === "unclassified") {
+      unclassified.push(name);
+      continue;
     }
+    if (classification.mode !== "lanes") continue;
 
-    if (explicitLanes.length === 0) {
-      const inferred = implicitLane(tags);
-      if (inferred === "full") return buildResolution(affected, laneOrder, [`full-escalation:${name}:scope`]);
-      if (inferred) {
-        lanes.add(inferred);
-        reasons.push(`${name}:${inferred}:scope`);
-      } else if (tags.has("type:service") || tags.has("type:infra") || tags.has("type:app") || name === "control-panel") {
-        unclassified.push(name);
-      }
-    }
+    for (const lane of classification.lanes) lanes.add(lane);
+    reasons.push(...classification.reasons);
   }
 
-  if (unclassified.length) {
-    throw new Error(`runtime-sensitive Nx projects lack runtime classification: ${unclassified.sort(compareStrings).join(",")}`);
+  if (unclassified.length > 0) {
+    throw new Error(`runtime-sensitive Nx projects lack runtime classification: ${unclassified.toSorted(compareStrings).join(",")}`);
   }
 
   return buildResolution(affected, laneOrder.filter((lane) => lanes.has(lane)), reasons);
@@ -112,7 +129,7 @@ function buildResolution(affected, lanes, reasons) {
     return [...checkerFixtureTarget, ...laneTargets.dsh];
   });
   return {
-    affected: [...affected].sort(compareStrings),
+    affected: [...affected].toSorted(compareStrings),
     lanes,
     targets: unique(targets),
     images: unique(lanes.flatMap((lane) => laneImages[lane])),
@@ -165,7 +182,9 @@ if (process.argv[1]?.endsWith("resolve.mjs")) {
     const affected = affectedProjects(args.base, args.head);
     const resolution = resolveFromAffected(affected, loadProjectConfigs(), args.full);
     appendGithubOutput(resolution);
-    console.log(`CI_RUNTIME_SCOPE=${resolution.run ? (args.full ? "FULL_REGRESSION" : "AFFECTED") : "UNAFFECTED"}`);
+    let scope = "UNAFFECTED";
+    if (resolution.run) scope = args.full ? "FULL_REGRESSION" : "AFFECTED";
+    console.log(`CI_RUNTIME_SCOPE=${scope}`);
     console.log(`CI_RUNTIME_AFFECTED=${resolution.affected.join(",")}`);
     console.log(`CI_RUNTIME_LANES=${resolution.lanes.join(",")}`);
     console.log(`CI_RUNTIME_TARGETS=${resolution.targets.join(",")}`);
