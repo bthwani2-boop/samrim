@@ -1,3 +1,4 @@
+import { resolveTrustedExecutable } from "./runtime-proof/trusted-executables.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
@@ -94,7 +95,7 @@ if (candidateSha) {
     console.error("CI_EXACT_SHA=FAIL invalid CANDIDATE_SHA");
     process.exit(1);
   }
-  const observedHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  const observedHead = execFileSync(resolveTrustedExecutable("git"), ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
   if (observedHead !== candidateSha) {
     console.error("CI_EXACT_SHA=FAIL checkout mismatch expected=" + candidateSha + " observed=" + observedHead);
     process.exit(1);

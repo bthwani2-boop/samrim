@@ -1,1 +1,1 @@
-export function resolveTrustedExecutable(name: "git" | "docker"): string;
+export function resolveTrustedExecutable(name: "git" | "docker" | "go" | "gofmt" | "pwsh"): string;

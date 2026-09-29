@@ -1,3 +1,4 @@
+import { resolveTrustedExecutable } from "./runtime-proof/trusted-executables.mjs";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -8,7 +9,7 @@ const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "samrim-go-workspace-"));
 const isWorkspaceModuleFile = (file) => file === "go.work" || file === "go.work.sum" || /(^|\/)go\.(mod|sum)$/.test(file);
 
 function trackedFiles() {
-  return execFileSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" })
+  return execFileSync(resolveTrustedExecutable("git"), ["ls-files", "-z"], { cwd: root, encoding: "utf8" })
     .split("\0")
     .filter(Boolean)
     .map((file) => file.replaceAll("\\", "/"));
@@ -41,7 +42,7 @@ try {
     fs.copyFileSync(source, destination);
   }
 
-  execFileSync("go", ["work", "sync"], { cwd: tempRoot, stdio: "inherit" });
+  execFileSync(resolveTrustedExecutable("go"), ["work", "sync"], { cwd: tempRoot, stdio: "inherit" });
 
   const before = repositoryFiles.filter(isWorkspaceModuleFile);
   const after = moduleFiles(tempRoot);

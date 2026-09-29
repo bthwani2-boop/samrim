@@ -1,3 +1,4 @@
+import { resolveTrustedExecutable } from "./runtime-proof/trusted-executables.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
@@ -61,7 +62,7 @@ export function readKnowledgePin() {
 }
 
 function runGit(args, cwd) {
-  return execFileSync("git", args, {
+  return execFileSync(resolveTrustedExecutable("git"), args, {
     cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],

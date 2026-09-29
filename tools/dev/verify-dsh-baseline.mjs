@@ -1,3 +1,4 @@
+import { resolveTrustedExecutable } from "./runtime-proof/trusted-executables.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
@@ -51,7 +52,7 @@ const databaseURL = `postgres://${encodeURIComponent(postgresUser)}:${encodeURIC
 let networks;
 try {
   networks = execFileSync(
-    "docker",
+    resolveTrustedExecutable("docker"),
     [
       "network",
       "ls",
@@ -76,7 +77,7 @@ if (networks.length !== 1) fail(`expected exactly one canonical Docker network; 
 let output;
 try {
   output = execFileSync(
-    "docker",
+    resolveTrustedExecutable("docker"),
     [
       "run",
       "--rm",

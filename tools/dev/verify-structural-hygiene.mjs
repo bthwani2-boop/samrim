@@ -1,9 +1,10 @@
+import { resolveTrustedExecutable } from "./runtime-proof/trusted-executables.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
-const records = execFileSync("git", ["ls-files", "-s", "-z"], {
+const records = execFileSync(resolveTrustedExecutable("git"), ["ls-files", "-s", "-z"], {
   cwd: repoRoot,
   encoding: "utf8",
 })
@@ -34,7 +35,7 @@ if (!/^\*\s+text=auto\s+eol=lf\s*$/m.test(attributesText)) {
   failures.push("Canonical repository text EOL policy is missing: expected '* text=auto eol=lf'");
 }
 
-const eolRecords = execFileSync("git", ["ls-files", "--eol", "-z"], {
+const eolRecords = execFileSync(resolveTrustedExecutable("git"), ["ls-files", "--eol", "-z"], {
   cwd: repoRoot,
   encoding: "utf8",
 })
@@ -349,7 +350,7 @@ for (const file of unclassified) failures.push("UNCLASSIFIED_TRACKED_ARTIFACT: "
 const goFiles = tracked.filter((file) => file.endsWith(".go"));
 if (goFiles.length > 0) {
   try {
-    const unformatted = execFileSync("gofmt", ["-l", ...goFiles], { cwd: repoRoot, encoding: "utf8" }).trim();
+    const unformatted = execFileSync(resolveTrustedExecutable("gofmt"), ["-l", ...goFiles], { cwd: repoRoot, encoding: "utf8" }).trim();
     if (unformatted) failures.push("Go source files are not canonical formatted (gofmt -l):\n" + unformatted);
   } catch (err) {
     failures.push("Failed to run gofmt: " + err.message);

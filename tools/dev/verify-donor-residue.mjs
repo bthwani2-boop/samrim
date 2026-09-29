@@ -1,9 +1,10 @@
+import { resolveTrustedExecutable } from "./runtime-proof/trusted-executables.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
-const tracked = execFileSync("git", ["ls-files", "-z"], {
+const tracked = execFileSync(resolveTrustedExecutable("git"), ["ls-files", "-z"], {
   cwd: repoRoot,
   encoding: "utf8",
 })

@@ -1,3 +1,4 @@
+import { resolveTrustedExecutable } from "./runtime-proof/trusted-executables.mjs";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -58,7 +59,7 @@ const databaseURL = `postgres://${encodeURIComponent(postgresUser)}:${encodeURIC
 let networks;
 try {
   networks = execFileSync(
-    "docker",
+    resolveTrustedExecutable("docker"),
     [
       "network",
       "ls",
@@ -87,7 +88,7 @@ const workdir = "/src/services/identity/backend/internal/storage/postgres";
 let output;
 try {
   output = execFileSync(
-    "docker",
+    resolveTrustedExecutable("docker"),
     [
       "run",
       "--rm",

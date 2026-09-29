@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { resolveTrustedExecutable } from "./trusted-executables.mjs";
@@ -51,4 +52,30 @@ test("trusted Git resolution works with an empty PATH", () => {
 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(path.isAbsolute(result.stdout.trim()), true);
+});
+
+test("trusted Go resolution uses the pinned GitHub tool cache without PATH", () => {
+  const runnerToolCache = fs.mkdtempSync(path.join(os.tmpdir(), "samrim-trusted-go-"));
+  const goDirectory = path.join(runnerToolCache, "go", "1.27.1", process.arch === "arm64" ? "arm64" : process.arch === "ia32" ? "x86" : "x64", "bin");
+  fs.mkdirSync(goDirectory, { recursive: true });
+  const executableName = process.platform === "win32" ? "go.exe" : "go";
+  const executablePath = path.join(goDirectory, executableName);
+  fs.copyFileSync(process.execPath, executablePath);
+  if (process.platform !== "win32") fs.chmodSync(executablePath, 0o755);
+
+  const previous = {
+    githubActions: process.env.GITHUB_ACTIONS,
+    runnerToolCache: process.env.RUNNER_TOOL_CACHE,
+  };
+  process.env.GITHUB_ACTIONS = "true";
+  process.env.RUNNER_TOOL_CACHE = runnerToolCache;
+  try {
+    assert.equal(resolveTrustedExecutable("go"), fs.realpathSync(executablePath));
+  } finally {
+    if (previous.githubActions === undefined) delete process.env.GITHUB_ACTIONS;
+    else process.env.GITHUB_ACTIONS = previous.githubActions;
+    if (previous.runnerToolCache === undefined) delete process.env.RUNNER_TOOL_CACHE;
+    else process.env.RUNNER_TOOL_CACHE = previous.runnerToolCache;
+    fs.rmSync(runnerToolCache, { recursive: true, force: true });
+  }
 });
