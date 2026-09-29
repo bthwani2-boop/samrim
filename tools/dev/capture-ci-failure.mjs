@@ -170,15 +170,14 @@ if (kind === "runtime" && fs.existsSync(envFile)) {
   write("compose.log", logs.stdout + logs.stderr);
 }
 
-const secretFieldName = String.raw`(?:password|secret|access[_-]?token|api[_-]?key|client[_-]?secret)`;
-const bearerPattern = new RegExp(String.raw`(\bBearer\s+)[\w._~+/-]{8,}={0,2}`, "gi");
-const tokenPattern = new RegExp(String.raw`\b(?:gh[pousr]_\w{20,}|github_pat_\w{20,}|sk-[\w-]{20,})\b`, "g");
-const jwtPattern = new RegExp(String.raw`\beyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{8,}\b`, "g");
-const urlCredentialPattern = new RegExp(String.raw`(https?://[^\s/:]+:)[^\s/@]+(@)`, "gi");
-const jsonSecretPattern = new RegExp(String.raw`("${secretFieldName}"\s*:\s*)"[^"\r\n]*"`, "gi");
-const doubleQuotedSecretPattern = new RegExp(String.raw`(${secretFieldName}\s*[=:]\s*)"[^"\s,&;}\]]+"`, "gi");
-const singleQuotedSecretPattern = new RegExp(String.raw`(${secretFieldName}\s*[=:]\s*)'[^'\s,&;}\]]+'`, "gi");
-const unquotedSecretPattern = new RegExp(String.raw`(${secretFieldName}\s*[=:]\s*)[^\s,"'&;}\]]+`, "gi");
+const bearerPattern = /(\bBearer\s+)[A-Za-z0-9._~+/-]{8,}={0,2}/gi;
+const tokenPattern = /\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,})\b/g;
+const jwtPattern = /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g;
+const urlCredentialPattern = /(https?:\/\/[^\s/:]+:)[^\s/@]+(@)/gi;
+const jsonSecretPattern = /("(?:password|secret|access[_-]?token|api[_-]?key|client[_-]?secret)"\s*:\s*)"[^"\r\n]*"/gi;
+const doubleQuotedSecretPattern = /((?:password|secret|access[_-]?token|api[_-]?key|client[_-]?secret)\s*[=:]\s*)"[^"\s,&;}\]]+"/gi;
+const singleQuotedSecretPattern = /((?:password|secret|access[_-]?token|api[_-]?key|client[_-]?secret)\s*[=:]\s*)'[^'\s,&;}\]]+'/gi;
+const unquotedSecretPattern = /((?:password|secret|access[_-]?token|api[_-]?key|client[_-]?secret)\s*[=:]\s*)[^\s,"'&;}\]]+/gi;
 
 function redact(value) {
   let text = String(value ?? "");
