@@ -20,6 +20,13 @@ if (!fs.existsSync(targetRoot) || !fs.statSync(targetRoot).isDirectory()) {
   console.error("GO_FORMAT_CHECK=FAIL project root does not exist: " + requested);
   process.exit(1);
 }
+const realRepoRoot = fs.realpathSync(repoRoot);
+const realTargetRoot = fs.realpathSync(targetRoot);
+const realRelative = path.relative(realRepoRoot, realTargetRoot);
+if (!realRelative || path.isAbsolute(realRelative) || realRelative === ".." || realRelative.startsWith(".." + path.sep)) {
+  console.error("GO_FORMAT_CHECK=FAIL project root must resolve inside repository");
+  process.exit(1);
+}
 
 const ignored = new Set([".git", "node_modules", "vendor", "dist", "build", "coverage"]);
 const files = [];
@@ -33,7 +40,7 @@ function walk(dir) {
   }
 }
 
-walk(targetRoot);
+walk(realTargetRoot);
 
 const unformatted = [];
 for (let index = 0; index < files.length; index += 100) {
