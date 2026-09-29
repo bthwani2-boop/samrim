@@ -19,7 +19,7 @@ function walk(rootPath, relativeRoot, visitor) {
 }
 
 for (const root of roots) {
-  walk(path.join(repoRoot, root), root, (fullPath, relativePath) => {
+  walk(path.join(repoRoot, root), root, (fullPath) => {
     if (path.basename(fullPath) === "package.json") manifests.push(fullPath);
   });
 }
@@ -97,11 +97,11 @@ function goImportSpecifiers(content) {
         inBlock = false;
         continue;
       }
-      const match = line.match(/(?:^|\s)["`]([^"`]+)["`]$/);
+      const match = /(?:^|\s)["`]([^"`]+)["`]$/.exec(line);
       if (match) imports.push(match[1]);
       continue;
     }
-    const match = line.match(/^import\s+(?:[._A-Za-z][A-Za-z0-9_]*\s+)?["`]([^"`]+)["`]$/);
+    const match = /^import\s+(?:[._A-Za-z]\w*\s+)?["`]([^"`]+)["`]$/.exec(line);
     if (match) imports.push(match[1]);
   }
   return imports;
@@ -112,9 +112,12 @@ function packageExportTargets(exportsField, subpath) {
 
   const isSubpathMap = exportsField && typeof exportsField === "object" && !Array.isArray(exportsField)
     && Object.keys(exportsField).some((key) => key.startsWith("."));
-  const selected = isSubpathMap
-    ? Object.hasOwn(exportsField, subpath) ? exportsField[subpath] : undefined
-    : subpath === "." ? exportsField : undefined;
+  let selected;
+  if (isSubpathMap && Object.hasOwn(exportsField, subpath)) {
+    selected = exportsField[subpath];
+  } else if (!isSubpathMap && subpath === ".") {
+    selected = exportsField;
+  }
   if (selected === undefined) return [];
 
   const collect = (value) => {
@@ -158,7 +161,7 @@ function resolveRepositoryTargets(relativePath, specifier) {
 }
 
 function serviceOwner(relativePath) {
-  const match = relativePath.match(/^services\/([^/]+)(?:\/|$)/);
+  const match = /^services\/([^/]+)(?:\/|$)/.exec(relativePath);
   return match ? match[1] : null;
 }
 
@@ -166,25 +169,37 @@ function isPublicServiceBoundary(target, service) {
   return target.startsWith(`services/${service}/clients/`) || target.startsWith(`services/${service}/contracts/`);
 }
 
+function sourceLayer(relativePath) {
+  if (relativePath.startsWith("apps/")) return "apps";
+  if (relativePath.startsWith("packages/")) return "packages";
+  return null;
+}
+
+function applicationBoundaryViolation(relativePath, specifier, target, packageExported, targetService, publicBoundary) {
+  const layer = sourceLayer(relativePath);
+  if (!layer || !targetService || (publicBoundary && packageExported)) return null;
+  const detail = packageExported ? "service implementation" : "unexported service package path";
+  return `${relativePath}: ${layer} cannot import ${detail} (${specifier} -> ${target})`;
+}
+
+function crossServiceBoundaryViolation(relativePath, specifier, target, packageExported, targetService, publicBoundary) {
+  const sourceService = serviceOwner(relativePath);
+  if (!sourceService || !targetService || sourceService === targetService || (publicBoundary && packageExported)) return null;
+  const detail = target.includes("/internal/") ? "cross-service internal import" : "cross-service implementation import";
+  return `${relativePath}: ${detail} is forbidden; ${sourceService} must consume ${targetService} through clients/ or contracts/ (${specifier} -> ${target})`;
+}
+
 function enforceBoundary(relativePath, specifier) {
-  const sourceIsApp = relativePath.startsWith("apps/");
-  const sourceIsPackage = relativePath.startsWith("packages/");
   for (const { target, packageExported } of resolveRepositoryTargets(relativePath, specifier)) {
     const targetService = serviceOwner(target);
-    const publicBoundary = targetService && isPublicServiceBoundary(target, targetService);
-    if ((sourceIsApp || sourceIsPackage) && targetService && (!publicBoundary || !packageExported)) {
-      const detail = packageExported ? "service implementation" : "unexported service package path";
-      boundaryViolations.push(`${relativePath}: ${sourceIsApp ? "apps" : "packages"} cannot import ${detail} (${specifier} -> ${target})`);
+    const publicBoundary = Boolean(targetService && isPublicServiceBoundary(target, targetService));
+    const applicationViolation = applicationBoundaryViolation(relativePath, specifier, target, packageExported, targetService, publicBoundary);
+    if (applicationViolation) {
+      boundaryViolations.push(applicationViolation);
       continue;
     }
-
-    const sourceService = serviceOwner(relativePath);
-    if (!sourceService || !targetService || sourceService === targetService) continue;
-
-    if (!publicBoundary || !packageExported) {
-      const detail = target.includes("/internal/") ? "cross-service internal import" : "cross-service implementation import";
-      boundaryViolations.push(`${relativePath}: ${detail} is forbidden; ${sourceService} must consume ${targetService} through clients/ or contracts/ (${specifier} -> ${target})`);
-    }
+    const crossServiceViolation = crossServiceBoundaryViolation(relativePath, specifier, target, packageExported, targetService, publicBoundary);
+    if (crossServiceViolation) boundaryViolations.push(crossServiceViolation);
   }
 }
 
