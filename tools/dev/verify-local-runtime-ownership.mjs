@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 
 const root=path.resolve(import.meta.dirname,"../..");
 const fail=[];
+const compareStrings=(left,right)=>String(left).localeCompare(String(right),"en");
 const read=(p)=>fs.readFileSync(path.join(root,p),"utf8");
 const pkg=JSON.parse(read("package.json"));
 const dev=read("tools/dev/dev.ps1");
@@ -51,10 +52,10 @@ for(const removed of ["Start-MobileServer","Start-ControlServer","Stop-OwnedList
   check(!dev.includes(removed),`dev.ps1 retains surface runtime ownership: ${removed}`);
 }
 check(!dev.includes("--dev-client"),"dev.ps1 must not launch Expo");
-check(!dev.includes("dist\\bin\\next"),"dev.ps1 must not launch Next");
+check(!dev.includes(String.raw`dist\bin\next`),"dev.ps1 must not launch Next");
 check(dev.includes("Read-RunningBackendServices"),"dev.ps1 must read canonical Compose service state after reconciliation");
-check(dev.includes("Compose @(\'up\',\'-d\',\'--build\',\'--wait\',\'--wait-timeout\',\'300\',\'--remove-orphans\')"),"backend readiness must reconcile current source through Compose build before declaring ready");
-check(dev.includes("Compose @(\'ps\',\'--status\',\'running\',\'--services\')"),"backend readiness must read back running Compose services after reconciliation");
+check(dev.includes("Compose @('up','-d','--build','--wait','--wait-timeout','300','--remove-orphans')"),"backend readiness must reconcile current source through Compose build before declaring ready");
+check(dev.includes("Compose @('ps','--status','running','--services')"),"backend readiness must read back running Compose services after reconciliation");
 check(!/\badb(?:\.exe)?\b/i.test(dev)&&!dev.toLowerCase().includes("scrcpy"),"dev.ps1 must not retain device or scrcpy ownership");
 check(!dev.includes("Active-Ports")&&!dev.includes("GetActiveTcpListeners"),"backend reuse must not trust occupied host ports");
 check(scr.includes("$env:ADB=$Adb"),"scr.ps1 must pin scrcpy to the exact ADB executable used by the script");
@@ -90,7 +91,7 @@ check(!/request\(identityBase,\s*"PUT",\s*`\/internal\/operators\/\$\{encodeURIC
 
 if(fail.length){
   console.error("LOCAL_RUNTIME_OWNERSHIP=FAIL");
-  for(const x of [...new Set(fail)].sort()) console.error("  "+x);
+  for(const x of [...new Set(fail)].toSorted(compareStrings)) console.error("  "+x);
   process.exit(1);
 }
 console.log("LOCAL_RUNTIME_OWNERSHIP=PASS");
