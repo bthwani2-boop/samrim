@@ -3,6 +3,7 @@ import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const failures = [];
+const compareStrings = (left, right) => String(left).localeCompare(String(right), "en");
 
 function read(relative) {
   try {
@@ -136,7 +137,7 @@ for (const file of adapterCandidates) {
 
 if (failures.length) {
   console.error("AGENT_KNOWLEDGE_CONTRACT=FAIL");
-  for (const failure of [...new Set(failures)].sort()) console.error(`  ${failure}`);
+  for (const failure of [...new Set(failures)].toSorted(compareStrings)) console.error(`  ${failure}`);
   process.exit(1);
 }
 
