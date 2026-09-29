@@ -170,16 +170,28 @@ if (kind === "runtime" && fs.existsSync(envFile)) {
   write("compose.log", logs.stdout + logs.stderr);
 }
 
+const secretFieldName = String.raw`(?:password|secret|access[_-]?token|api[_-]?key|client[_-]?secret)`;
+const bearerPattern = new RegExp(String.raw`(\bBearer\s+)[\w._~+/-]{8,}={0,2}`, "gi");
+const tokenPattern = new RegExp(String.raw`\b(?:gh[pousr]_\w{20,}|github_pat_\w{20,}|sk-[\w-]{20,})\b`, "g");
+const jwtPattern = new RegExp(String.raw`\beyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{8,}\b`, "g");
+const urlCredentialPattern = new RegExp(String.raw`(https?://[^\s/:]+:)[^\s/@]+(@)`, "gi");
+const jsonSecretPattern = new RegExp(String.raw`("${secretFieldName}"\s*:\s*)"[^"\r\n]*"`, "gi");
+const doubleQuotedSecretPattern = new RegExp(String.raw`(${secretFieldName}\s*[=:]\s*)"[^"\s,&;}\]]+"`, "gi");
+const singleQuotedSecretPattern = new RegExp(String.raw`(${secretFieldName}\s*[=:]\s*)'[^'\s,&;}\]]+'`, "gi");
+const unquotedSecretPattern = new RegExp(String.raw`(${secretFieldName}\s*[=:]\s*)[^\s,"'&;}\]]+`, "gi");
+
 function redact(value) {
   let text = String(value ?? "");
   for (const [secret, name] of [...sensitiveValues].sort((a, b) => b[0].length - a[0].length)) text = text.split(secret).join(`[REDACTED:${name}]`);
   return text
-    .replace(/(\bBearer\s+)[A-Za-z0-9._~+\/-]{8,}={0,2}/gi, "$1[REDACTED:bearer]")
-    .replace(/\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,})\b/g, "[REDACTED:token]")
-    .replace(/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, "[REDACTED:jwt]")
-    .replace(/(https?:\/\/[^\s/:]+:)[^\s/@]+(@)/gi, "$1[REDACTED:credential]$2")
-    .replace(/("(?:password|secret|access[_-]?token|api[_-]?key|client[_-]?secret)"\s*:\s*)"[^"\r\n]*"/gi, "$1\"[REDACTED]\"")
-    .replace(/((?:password|secret|access[_-]?token|api[_-]?key|client[_-]?secret)\s*[=:]\s*)(["']?)[^\s,"'&;}\]]+\2/gi, "$1$2[REDACTED]$2");
+    .replace(bearerPattern, "$1[REDACTED:bearer]")
+    .replace(tokenPattern, "[REDACTED:token]")
+    .replace(jwtPattern, "[REDACTED:jwt]")
+    .replace(urlCredentialPattern, "$1[REDACTED:credential]$2")
+    .replace(jsonSecretPattern, '$1"[REDACTED]"')
+    .replace(doubleQuotedSecretPattern, '$1"[REDACTED]"')
+    .replace(singleQuotedSecretPattern, "$1'[REDACTED]'")
+    .replace(unquotedSecretPattern, "$1[REDACTED]");
 }
 
 function redactTree(directory) {
