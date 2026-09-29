@@ -113,6 +113,78 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
+      - name: Read back SonarQube Cloud evidence
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_PROJECT_KEY: bthwani2-boop_samrim
+          SONAR_PULL_REQUEST: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          task_file=.scannerwork/report-task.txt
+          if [[ ! -f "$task_file" ]]; then
+            echo "Sonar report-task.txt is missing." >&2
+            exit 1
+          fi
+
+          ce_task_url="$(awk -F= '$1 == "ceTaskUrl" { print $2 }' "$task_file")"
+          if [[ -z "$ce_task_url" ]]; then
+            echo "Sonar ceTaskUrl is missing from report-task.txt." >&2
+            exit 1
+          fi
+
+          ce_json=""
+          for attempt in {1..30}; do
+            ce_json="$(curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$ce_task_url")"
+            ce_status="$(jq -r '.task.status // empty' <<<"$ce_json")"
+            case "$ce_status" in
+              SUCCESS)
+                break
+                ;;
+              FAILED|CANCELED)
+                echo "Sonar compute-engine task ended with status ${ce_status}." >&2
+                jq . <<<"$ce_json"
+                exit 1
+                ;;
+              PENDING|IN_PROGRESS)
+                sleep 2
+                ;;
+              *)
+                echo "Unexpected Sonar compute-engine status: ${ce_status:-<empty>}" >&2
+                jq . <<<"$ce_json"
+                exit 1
+                ;;
+            esac
+          done
+
+          if [[ "$(jq -r '.task.status // empty' <<<"$ce_json")" != "SUCCESS" ]]; then
+            echo "Timed out waiting for Sonar compute-engine processing." >&2
+            exit 1
+          fi
+
+          analysis_id="$(jq -r '.task.analysisId // empty' <<<"$ce_json")"
+          if [[ -z "$analysis_id" ]]; then
+            echo "Sonar analysisId is missing after successful processing." >&2
+            exit 1
+          fi
+
+          if [[ -n "${SONAR_PULL_REQUEST:-}" ]]; then
+            scope="pullRequest=${SONAR_PULL_REQUEST}"
+          else
+            scope="branch=${GITHUB_REF_NAME}"
+          fi
+
+          quality_gate_url="https://sonarcloud.io/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}&${scope}"
+          measures_url="https://sonarcloud.io/api/measures/component?component=${SONAR_PROJECT_KEY}&${scope}&metricKeys=coverage,new_coverage,duplicated_lines_density,new_duplicated_lines_density,bugs,vulnerabilities,code_smells,reliability_rating,security_rating,sqale_rating,security_hotspots"
+
+          echo "Sonar analysisId: ${analysis_id}"
+          echo "::group::Sonar quality gate"
+          curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$quality_gate_url" | jq .
+          echo "::endgroup::"
+          echo "::group::Sonar measures"
+          curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$measures_url" | jq .
+          echo "::endgroup::"
+
       # OBSERVE MODE
       # Do not enable sonar.qualitygate.wait yet.
       # Do not make this check required yet.
