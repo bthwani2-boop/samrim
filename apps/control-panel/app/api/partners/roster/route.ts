@@ -13,7 +13,7 @@ function errorResponse(code: string, message: string, status: number) {
 function parseVersion(value: unknown): number {
   if (typeof value === "number") return value;
   if (typeof value === "string" && /^[1-9]\d*$/.test(value.trim())) return Number(value.trim());
-  return NaN;
+  return Number.NaN;
 }
 
 export async function GET(request: Request) {
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
   const query = params.get("q") ?? "";
   const cursor = params.get("cursor") ?? "";
   const rawLimit = params.get("limit") ?? "25";
-  const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;
+  const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : Number.NaN;
   const rawEnabled = params.get("enabled");
   let enabled: boolean | null | undefined;
   if (rawEnabled === null) enabled = undefined;
