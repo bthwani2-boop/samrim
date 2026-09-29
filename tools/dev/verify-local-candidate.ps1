@@ -31,16 +31,22 @@ function Resolve-VerificationBase([string]$Branch, [string]$Head) {
     foreach ($candidateRef in $candidates) {
         $candidateSha = ((Invoke-Git @('rev-parse',$candidateRef)) -join '').Trim()
         if (Test-Ancestor $candidateSha $Head) {
-            Write-Host "VERIFY_BASE_SOURCE=REMOTE_TRACKING ref=$candidateRef sha=$candidateSha"
-            return $candidateSha
+            return [pscustomobject]@{
+                Sha = $candidateSha
+                SourceKind = 'REMOTE_TRACKING'
+                Ref = $candidateRef
+            }
         }
     }
     $mainRef = 'refs/remotes/origin/main'
     if (-not (Test-GitRef $mainRef)) { Fail "No usable remote-tracking base exists for '$Branch' and origin/main is unavailable. Fetch origin before verification." }
     $mergeBase = ((Invoke-Git @('merge-base',$Head,$mainRef)) -join '').Trim()
     if (-not $mergeBase) { Fail "Unable to resolve merge-base with $mainRef." }
-    Write-Host "VERIFY_BASE_SOURCE=MAIN_MERGE_BASE ref=$mainRef sha=$mergeBase"
-    return $mergeBase
+    return [pscustomobject]@{
+        Sha = $mergeBase
+        SourceKind = 'MAIN_MERGE_BASE'
+        Ref = $mainRef
+    }
 }
 
 function Invoke-RecordedProof([string]$Name, [string[]]$Command) {
@@ -62,7 +68,11 @@ try {
     $head = ((Invoke-Git @('rev-parse','HEAD')) -join '').Trim()
     $status = @(Invoke-Git @('status','--porcelain=v1','--untracked-files=all'))
     if ($status.Count -gt 0) { Fail ("Candidate must be clean:" + [Environment]::NewLine + ($status -join [Environment]::NewLine)) }
-    if (-not $BaseSha) { $BaseSha = Resolve-VerificationBase $branch $head }
+    if (-not $BaseSha) {
+        $resolvedBase = Resolve-VerificationBase $branch $head
+        $BaseSha = $resolvedBase.Sha
+        Write-Host "VERIFY_BASE_SOURCE=$($resolvedBase.SourceKind) ref=$($resolvedBase.Ref) sha=$BaseSha"
+    }
     if ($BaseSha -notmatch '^[0-9a-f]{40}$') { Fail "Invalid BaseSha: $BaseSha" }
     if (-not (Test-Ancestor $BaseSha $head)) { Fail "Verification base is not an ancestor of candidate: base=$BaseSha head=$head" }
 
