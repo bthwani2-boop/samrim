@@ -7,81 +7,72 @@ import (
 	"time"
 )
 
-func TestPayoutSettlementValidators(t *testing.T) {
-	t.Run("mutation context boundaries", func(t *testing.T) {
-		valid := []struct {
-			idempotencyKey string
-			correlationID  string
-		}{
-			{idempotencyKey: "12345678", correlationID: "abcdefgh"},
-			{idempotencyKey: string(make([]byte, 128)), correlationID: string(make([]byte, 128))},
-		}
-		for _, item := range valid {
-			if !validMutationContext(item.idempotencyKey, item.correlationID) {
-				t.Fatalf("expected valid mutation context for lengths %d/%d", len(item.idempotencyKey), len(item.correlationID))
+func TestValidMutationContext(t *testing.T) {
+	cases := []struct {
+		name           string
+		idempotencyKey string
+		correlationID  string
+		want           bool
+	}{
+		{name: "minimum lengths", idempotencyKey: "12345678", correlationID: "abcdefgh", want: true},
+		{name: "maximum lengths", idempotencyKey: string(make([]byte, 128)), correlationID: string(make([]byte, 128)), want: true},
+		{name: "short idempotency key", idempotencyKey: "1234567", correlationID: "abcdefgh", want: false},
+		{name: "short correlation id", idempotencyKey: "12345678", correlationID: "abcdefg", want: false},
+		{name: "long idempotency key", idempotencyKey: string(make([]byte, 129)), correlationID: "abcdefgh", want: false},
+		{name: "long correlation id", idempotencyKey: "12345678", correlationID: string(make([]byte, 129)), want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := validMutationContext(tc.idempotencyKey, tc.correlationID); got != tc.want {
+				t.Fatalf("validMutationContext lengths %d/%d: got %v, want %v", len(tc.idempotencyKey), len(tc.correlationID), got, tc.want)
 			}
-		}
-
-		invalid := []struct {
-			idempotencyKey string
-			correlationID  string
-		}{
-			{idempotencyKey: "1234567", correlationID: "abcdefgh"},
-			{idempotencyKey: "12345678", correlationID: "abcdefg"},
-			{idempotencyKey: string(make([]byte, 129)), correlationID: "abcdefgh"},
-			{idempotencyKey: "12345678", correlationID: string(make([]byte, 129))},
-		}
-		for _, item := range invalid {
-			if validMutationContext(item.idempotencyKey, item.correlationID) {
-				t.Fatalf("expected invalid mutation context for lengths %d/%d", len(item.idempotencyKey), len(item.correlationID))
-			}
-		}
-	})
-
-	t.Run("payout statuses", func(t *testing.T) {
-		for _, status := range []string{"HELD", "CANCELLED", "PREPARED", "APPROVED", "FROZEN", "EXECUTED", "COMPLETED", "EXCEPTION"} {
-			if !validPayoutStatus(status) {
-				t.Fatalf("expected payout status %q to be valid", status)
-			}
-		}
-		for _, status := range []string{"", "held", "PENDING", "APPROVE"} {
-			if validPayoutStatus(status) {
-				t.Fatalf("expected payout status %q to be invalid", status)
-			}
-		}
-	})
-
-	t.Run("settlement batch statuses", func(t *testing.T) {
-		for _, status := range []string{"DRAFT", "PREPARED", "APPROVED", "FROZEN", "EXECUTION_IN_PROGRESS", "AWAITING_VERIFICATION", "AWAITING_RECONCILIATION", "COMPLETED", "CANCELLED", "EXCEPTION"} {
-			if !validSettlementBatchStatus(status) {
-				t.Fatalf("expected settlement batch status %q to be valid", status)
-			}
-		}
-		for _, status := range []string{"", "frozen", "EXECUTED", "PENDING"} {
-			if validSettlementBatchStatus(status) {
-				t.Fatalf("expected settlement batch status %q to be invalid", status)
-			}
-		}
-	})
-
-	t.Run("sha256 format", func(t *testing.T) {
-		if !validSHA256("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef") {
-			t.Fatal("expected lowercase 64-character SHA-256 to be valid")
-		}
-		for _, value := range []string{
-			"",
-			"0123456789abcdef",
-			"0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef",
-			"g123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-		} {
-			if validSHA256(value) {
-				t.Fatalf("expected SHA-256 value %q to be invalid", value)
-			}
-		}
-	})
+		})
+	}
 }
 
-func TestPayoutSettlementRejectsInvalidInputsBeforeDatabaseMutation(t *testing.T) {
+func TestValidPayoutStatus(t *testing.T) {
+	cases := map[string]bool{
+		"HELD": true, "CANCELLED": true, "PREPARED": true, "APPROVED": true,
+		"FROZEN": true, "EXECUTED": true, "COMPLETED": true, "EXCEPTION": true,
+		"": false, "held": false, "PENDING": false, "APPROVE": false,
+	}
+	for status, want := range cases {
+		if got := validPayoutStatus(status); got != want {
+			t.Fatalf("validPayoutStatus(%q): got %v, want %v", status, got, want)
+		}
+	}
+}
+
+func TestValidSettlementBatchStatus(t *testing.T) {
+	cases := map[string]bool{
+		"DRAFT": true, "PREPARED": true, "APPROVED": true, "FROZEN": true,
+		"EXECUTION_IN_PROGRESS": true, "AWAITING_VERIFICATION": true,
+		"AWAITING_RECONCILIATION": true, "COMPLETED": true, "CANCELLED": true,
+		"EXCEPTION": true, "": false, "frozen": false, "EXECUTED": false, "PENDING": false,
+	}
+	for status, want := range cases {
+		if got := validSettlementBatchStatus(status); got != want {
+			t.Fatalf("validSettlementBatchStatus(%q): got %v, want %v", status, got, want)
+		}
+	}
+}
+
+func TestValidSHA256(t *testing.T) {
+	cases := map[string]bool{
+		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef": true,
+		"": false,
+		"0123456789abcdef": false,
+		"0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef": false,
+		"g123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef": false,
+	}
+	for value, want := range cases {
+		if got := validSHA256(value); got != want {
+			t.Fatalf("validSHA256(%q): got %v, want %v", value, got, want)
+		}
+	}
+}
+
+func TestPayoutMutationInputsRejectBeforeDatabase(t *testing.T) {
 	ctx := context.Background()
 	zeroDB := &sql.DB{}
 	validKey := "idem-key"
@@ -94,7 +85,7 @@ func TestPayoutSettlementRejectsInvalidInputsBeforeDatabaseMutation(t *testing.T
 		t.Fatalf("ListPayoutRequests invalid status: got %v, want %v", err, ErrPayoutInvalidInput)
 	}
 
-	payoutCases := []struct {
+	cases := []struct {
 		name string
 		call func() error
 	}{
@@ -120,15 +111,22 @@ func TestPayoutSettlementRejectsInvalidInputsBeforeDatabaseMutation(t *testing.T
 			},
 		},
 	}
-	for _, tc := range payoutCases {
+	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := tc.call(); err != ErrPayoutInvalidInput {
 				t.Fatalf("got %v, want %v", err, ErrPayoutInvalidInput)
 			}
 		})
 	}
+}
 
-	batchCases := []struct {
+func TestSettlementBatchMutationInputsRejectBeforeDatabase(t *testing.T) {
+	ctx := context.Background()
+	zeroDB := &sql.DB{}
+	validKey := "idem-key"
+	validCorrelation := "corr-key"
+
+	cases := []struct {
 		name string
 		call func() error
 	}{
@@ -168,16 +166,23 @@ func TestPayoutSettlementRejectsInvalidInputsBeforeDatabaseMutation(t *testing.T
 			},
 		},
 	}
-	for _, tc := range batchCases {
+	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := tc.call(); err != ErrSettlementBatchInput {
 				t.Fatalf("got %v, want %v", err, ErrSettlementBatchInput)
 			}
 		})
 	}
+}
 
+func TestSettlementStatementInputsRejectBeforeDatabase(t *testing.T) {
+	ctx := context.Background()
+	zeroDB := &sql.DB{}
+	validKey := "idem-key"
+	validCorrelation := "corr-key"
 	now := time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
-	statementCases := []struct {
+
+	cases := []struct {
 		name string
 		call func() error
 	}{
@@ -210,14 +215,17 @@ func TestPayoutSettlementRejectsInvalidInputsBeforeDatabaseMutation(t *testing.T
 			},
 		},
 	}
-	for _, tc := range statementCases {
+	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := tc.call(); err != ErrSettlementBatchInput {
 				t.Fatalf("got %v, want %v", err, ErrSettlementBatchInput)
 			}
 		})
 	}
+}
 
+func TestSettlementReadsRejectInvalidInput(t *testing.T) {
+	ctx := context.Background()
 	if _, err := ReadSettlementBatch(ctx, nil, "batch-1"); err != ErrSettlementBatchInput {
 		t.Fatalf("ReadSettlementBatch nil db: got %v, want %v", err, ErrSettlementBatchInput)
 	}
