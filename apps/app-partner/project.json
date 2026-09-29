@@ -43,7 +43,8 @@
   },
   "tags": [
     "scope:app-partner",
-    "type:app"
+    "type:app",
+    "runtime:none"
   ],
   "implicitDependencies": [
     "mobile-tooling"
