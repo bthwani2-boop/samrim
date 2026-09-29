@@ -13,7 +13,7 @@ function jsonError(code: string, message: string, status: number) {
 function parseVersion(value: unknown): number {
   if (typeof value === "number") return value;
   if (typeof value === "string" && /^[1-9]\d*$/.test(value.trim())) return Number(value.trim());
-  return NaN;
+  return Number.NaN;
 }
 
 type DshCaptainResponse = Readonly<{
@@ -60,37 +60,37 @@ export async function POST(request: Request) {
       await authorizeDshCaptainReenrollment(actorId, { expectedActorVersion, expectedRoleVersion, reason }, { operatorActorId: identity.subject, correlationId: context.correlationId, expectedDomainVersion: expectedAdmissionVersion });
       return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
     }
-		if (action === "approve" || action === "provision") {
-			if (!admissionId || (action === "approve" && (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1))) return jsonError("INVALID_INPUT", "admissionId and a positive expectedVersion are required", 400);
-			const result = action === "approve" ? await approveCaptainAdmission(admissionId, expectedVersion, context) : await provisionCaptainAdmission(admissionId, context);
-			return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
-		}
-		if (action === "update-profile") {
-			const expectedVersion = Number(body?.expectedVersion);
-			if (!admissionId || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1 || Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120) return jsonError("INVALID_INPUT", "admissionId, fullNameAr, and expectedVersion are required", 400);
-			const result = await updateCaptainAdmissionProfile(admissionId, fullNameAr, { ...context, expectedVersion });
-			return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
-		}
-		if (action === "review-profile") {
-			const expectedVersion = Number(body?.expectedVersion);
-			if (!admissionId || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1) return jsonError("INVALID_INPUT", "admissionId and expectedVersion are required", 400);
-			const result = await reviewCaptainAdmissionProfile(admissionId, { ...context, expectedVersion });
-			return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
-		}
-		if (action === "activate" || action === "disable") {
-			if (!actorId || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1 || Array.from(reason).length < 5 || Array.from(reason).length > 500) return jsonError("INVALID_INPUT", "actorId, current role version, and a reason of 5 to 500 characters are required", 400);
-			await setDshCaptainRoleEnabled(actorId, { enabled: action === "activate", reason }, { ...context, expectedVersion });
-			return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
-		}
-		if (action === "availability") {
-			if (!actorId || typeof available !== "boolean" || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1 || Array.from(reason).length < 5 || Array.from(reason).length > 500) return jsonError("INVALID_INPUT", "actorId, desired availability, current DSH version, and a reason of 5 to 500 characters are required", 400);
-			const result = await setDshCaptainAvailability(actorId, { available, reason }, { ...context, expectedVersion });
-			return NextResponse.json(boundedResult(action, result.payload), { status: result.status, headers: { "Cache-Control": "no-store" } });
-		}
-		if (action === "admit") { if (Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(contactPhoneE164)) return jsonError("INVALID_INPUT", "a full Arabic name and valid E.164 phone are required", 400); const result = await admitCaptain({ fullNameAr, contactPhoneE164 }, context); return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } }); }
-		if (action === "dispatch") { const result = await dispatchCaptainOffer(orderId, context); return NextResponse.json(boundedResult(action, result.payload), { status: result.status, headers: { "Cache-Control": "no-store" } }); }
-		if (action === "reassign") { const result = await reassignCaptainOffer(orderId, context); return NextResponse.json(boundedResult(action, result.payload), { status: result.status, headers: { "Cache-Control": "no-store" } }); }
-		if (action === "recover") { const result = await recoverCaptainDelivery(assignmentId, { ...context, expectedVersion }); return NextResponse.json(boundedResult(action, result.payload), { status: result.status, headers: { "Cache-Control": "no-store" } }); }
+    if (action === "approve" || action === "provision") {
+      if (!admissionId || (action === "approve" && (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1))) return jsonError("INVALID_INPUT", "admissionId and a positive expectedVersion are required", 400);
+      const result = action === "approve" ? await approveCaptainAdmission(admissionId, expectedVersion, context) : await provisionCaptainAdmission(admissionId, context);
+      return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
+    }
+    if (action === "update-profile") {
+      const expectedProfileVersion = Number(body?.expectedVersion);
+      if (!admissionId || !Number.isSafeInteger(expectedProfileVersion) || expectedProfileVersion < 1 || Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120) return jsonError("INVALID_INPUT", "admissionId, fullNameAr, and expectedVersion are required", 400);
+      const result = await updateCaptainAdmissionProfile(admissionId, fullNameAr, { ...context, expectedVersion: expectedProfileVersion });
+      return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
+    }
+    if (action === "review-profile") {
+      const expectedProfileVersion = Number(body?.expectedVersion);
+      if (!admissionId || !Number.isSafeInteger(expectedProfileVersion) || expectedProfileVersion < 1) return jsonError("INVALID_INPUT", "admissionId and expectedVersion are required", 400);
+      const result = await reviewCaptainAdmissionProfile(admissionId, { ...context, expectedVersion: expectedProfileVersion });
+      return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
+    }
+    if (action === "activate" || action === "disable") {
+      if (!actorId || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1 || Array.from(reason).length < 5 || Array.from(reason).length > 500) return jsonError("INVALID_INPUT", "actorId, current role version, and a reason of 5 to 500 characters are required", 400);
+      await setDshCaptainRoleEnabled(actorId, { enabled: action === "activate", reason }, { ...context, expectedVersion });
+      return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+    }
+    if (action === "availability") {
+      if (!actorId || typeof available !== "boolean" || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1 || Array.from(reason).length < 5 || Array.from(reason).length > 500) return jsonError("INVALID_INPUT", "actorId, desired availability, current DSH version, and a reason of 5 to 500 characters are required", 400);
+      const result = await setDshCaptainAvailability(actorId, { available, reason }, { ...context, expectedVersion });
+      return NextResponse.json(boundedResult(action, result.payload), { status: result.status, headers: { "Cache-Control": "no-store" } });
+    }
+    if (action === "admit") { if (Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(contactPhoneE164)) return jsonError("INVALID_INPUT", "a full Arabic name and valid E.164 phone are required", 400); const result = await admitCaptain({ fullNameAr, contactPhoneE164 }, context); return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } }); }
+    if (action === "dispatch") { const result = await dispatchCaptainOffer(orderId, context); return NextResponse.json(boundedResult(action, result.payload), { status: result.status, headers: { "Cache-Control": "no-store" } }); }
+    if (action === "reassign") { const result = await reassignCaptainOffer(orderId, context); return NextResponse.json(boundedResult(action, result.payload), { status: result.status, headers: { "Cache-Control": "no-store" } }); }
+    if (action === "recover") { const result = await recoverCaptainDelivery(assignmentId, { ...context, expectedVersion }); return NextResponse.json(boundedResult(action, result.payload), { status: result.status, headers: { "Cache-Control": "no-store" } }); }
     return jsonError("INVALID_INPUT", "a supported Captain operation is required", 400);
   } catch (error) {
     if (isDshClientError(error)) {
@@ -110,7 +110,7 @@ export async function GET(request: Request) {
   if (permissionDenied) return permissionDenied;
   const params = new URL(request.url).searchParams;
   const rawLimit = params.get("limit") ?? "25";
-  const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;
+  const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : Number.NaN;
   const query = params.get("q") ?? "";
   const cursor = params.get("cursor") ?? "";
   const rawSort = params.get("sort") ?? "phone_asc";
