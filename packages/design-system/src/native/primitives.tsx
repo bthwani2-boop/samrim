@@ -135,7 +135,7 @@ export function BthwaniSearchField({ value, onChangeText, placeholder, accessibi
   );
 }
 
-export function BthwaniSectionHeader({ title, subtitle, actionLabel, onAction, style }: { title: string; subtitle?: string; actionLabel?: string; onAction?: () => void; style?: StyleProp<ViewStyle> }) {
+export function BthwaniSectionHeader({ title, subtitle, actionLabel, onAction, style }: Readonly<{ title: string; subtitle?: string; actionLabel?: string; onAction?: () => void; style?: StyleProp<ViewStyle> }>) {
   const theme = useAppearanceTheme();
   const styles = React.useMemo(() => createPrimitiveStyles(theme), [theme]);
   return (
@@ -153,7 +153,7 @@ export function BthwaniSectionHeader({ title, subtitle, actionLabel, onAction, s
  * A compact, semantic status treatment shared by role surfaces.
  * Product screens own the wording; the design system owns the visual grammar.
  */
-export function BthwaniStatusBadge({ label, tone = "neutral", icon, accessibilityLabel }: { label: string; tone?: StatusTone; icon?: MobileIconName; accessibilityLabel?: string }) {
+export function BthwaniStatusBadge({ label, tone = "neutral", icon, accessibilityLabel }: Readonly<{ label: string; tone?: StatusTone; icon?: MobileIconName; accessibilityLabel?: string }>) {
   const theme = useAppearanceTheme();
   const styles = React.useMemo(() => createPrimitiveStyles(theme), [theme]);
   const palette = {
@@ -171,7 +171,7 @@ export function BthwaniStatusBadge({ label, tone = "neutral", icon, accessibilit
   );
 }
 
-export function BthwaniSkeleton({ width = "100%", height = sizing.controlMd, style }: { width?: number | `${number}%`; height?: number; style?: StyleProp<ViewStyle> }) {
+export function BthwaniSkeleton({ width = "100%", height = sizing.controlMd, style }: Readonly<{ width?: number | `${number}%`; height?: number; style?: StyleProp<ViewStyle> }>) {
   const theme = useAppearanceTheme();
   const styles = React.useMemo(() => createPrimitiveStyles(theme), [theme]);
   return <View accessibilityLabel="جارٍ التحميل" style={[styles.skeleton, { height, width }, style]} />;
