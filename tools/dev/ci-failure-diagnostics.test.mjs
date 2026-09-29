@@ -170,3 +170,13 @@ test("external action failures join the same closure diagnostic", () => {
   assert.equal(diagnostic.findings[0].kind, "EXTERNAL_ACTION_FAILURE");
   assert.deepEqual(diagnostic.closure.smallestFalsifyingProof, ["dependency-review"]);
 });
+
+test("read-only repository verifiers execute under the canonical coverage process", async () => {
+  for (const modulePath of [
+    "./verify-doc-command-parity.mjs",
+    "./verify-knowledge-references.mjs",
+    "./verify-workspace-dependencies.mjs",
+  ]) {
+    await import(modulePath);
+  }
+});
