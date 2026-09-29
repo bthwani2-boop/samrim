@@ -5,16 +5,16 @@ import path from "node:path";
 const candidatesByPlatform = {
   win32: {
     git: [
-      "C:\\Program Files\\Git\\cmd\\git.exe",
-      "C:\\Program Files (x86)\\Git\\cmd\\git.exe",
+      String.raw`C:\Program Files\Git\cmd\git.exe`,
+      String.raw`C:\Program Files (x86)\Git\cmd\git.exe`,
     ],
     docker: [
-      "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe",
-      "C:\\Program Files (x86)\\Docker\\Docker\\resources\\bin\\docker.exe",
+      String.raw`C:\Program Files\Docker\Docker\resources\bin\docker.exe`,
+      String.raw`C:\Program Files (x86)\Docker\Docker\resources\bin\docker.exe`,
     ],
-    go: ["C:\\Program Files\\Go\\bin\\go.exe"],
-    gofmt: ["C:\\Program Files\\Go\\bin\\gofmt.exe"],
-    pwsh: ["C:\\Program Files\\PowerShell\\7\\pwsh.exe"],
+    go: [String.raw`C:\Program Files\Go\bin\go.exe`],
+    gofmt: [String.raw`C:\Program Files\Go\bin\gofmt.exe`],
+    pwsh: [String.raw`C:\Program Files\PowerShell\7\pwsh.exe`],
   },
   linux: {
     git: ["/usr/bin/git", "/bin/git"],
