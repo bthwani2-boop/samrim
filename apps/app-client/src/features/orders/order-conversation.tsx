@@ -19,6 +19,16 @@ function senderLabel(role: string): string {
   return role === "client" ? "العميل" : role === "partner" ? "المتجر" : "الكابتن";
 }
 
+async function clearStoredAttempt(attempt: OrderConversationMessageAttempt, failureMessage: string): Promise<boolean> {
+  try {
+    await SecureStore.deleteItemAsync(orderConversationMessageAttemptStorageKey(conversationRole, attempt.actorID, attempt.orderID));
+    return true;
+  } catch (error_) {
+    console.error(failureMessage, error_);
+    return false;
+  }
+}
+
 export function OrderConversation({ orderId }: { orderId: string }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -55,23 +65,21 @@ export function OrderConversation({ orderId }: { orderId: string }) {
 
   useEffect(() => { setBody(""); setPendingAttempt(null); void load(); }, [load]);
 
+  async function refreshAfterDefinitiveRejection(attempt: OrderConversationMessageAttempt): Promise<void> {
+    const storageCleared = await clearStoredAttempt(attempt, "DSH client rejected order conversation attempt cleanup failed");
+    setPendingAttempt(storageCleared ? null : attempt);
+    setBody(storageCleared ? "" : attempt.body);
+    await load();
+    setError(storageCleared ? "رفض الخادم إرسال الرسالة؛ حدّثنا حالة المحادثة ويمكنك تعديل الرسالة والمحاولة مجددًا." : "رفض الخادم إرسال الرسالة، وتعذر حذف محاولة الاستعادة المحفوظة. أعد القراءة قبل أي محاولة جديدة.");
+  }
+
   async function submitAttempt(attempt: OrderConversationMessageAttempt, token: string) {
     try {
       await client().sendOrderConversationMessage(token, attempt.orderID, { body: attempt.body }, attempt.idempotencyKey, attempt.correlationID);
     } catch (cause) {
       console.error("DSH client order conversation send failed", cause);
       if (isDefinitiveDshMobileClientRejection(cause)) {
-        let storageCleared = false;
-        try {
-          await SecureStore.deleteItemAsync(orderConversationMessageAttemptStorageKey(conversationRole, attempt.actorID, attempt.orderID));
-          storageCleared = true;
-        } catch (cleanupCause) {
-          console.error("DSH client rejected order conversation attempt cleanup failed", cleanupCause);
-        }
-        setPendingAttempt(storageCleared ? null : attempt);
-        setBody(storageCleared ? "" : attempt.body);
-        await load();
-        setError(storageCleared ? "رفض الخادم إرسال الرسالة؛ حدّثنا حالة المحادثة ويمكنك تعديل الرسالة والمحاولة مجددًا." : "رفض الخادم إرسال الرسالة، وتعذر حذف محاولة الاستعادة المحفوظة. أعد القراءة قبل أي محاولة جديدة.");
+        await refreshAfterDefinitiveRejection(attempt);
         return;
       }
       setPendingAttempt(attempt);
@@ -80,13 +88,7 @@ export function OrderConversation({ orderId }: { orderId: string }) {
       return;
     }
 
-    let storageCleared = false;
-    try {
-      await SecureStore.deleteItemAsync(orderConversationMessageAttemptStorageKey(conversationRole, attempt.actorID, attempt.orderID));
-      storageCleared = true;
-    } catch (cause) {
-      console.error("DSH client order conversation recovery record cleanup failed", cause);
-    }
+    const storageCleared = await clearStoredAttempt(attempt, "DSH client order conversation recovery record cleanup failed");
     setPendingAttempt(storageCleared ? null : attempt);
     setBody(storageCleared ? "" : attempt.body);
     const refreshed = await load();
