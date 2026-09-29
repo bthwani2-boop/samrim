@@ -105,6 +105,8 @@ pnpm runtime:down                    → stop local runtime
 pnpm verify                          → exact clean-candidate affected static/workspace proof
 pnpm safe:push                       → exact-candidate verification, safe push and remote SHA confirmation
 
+**SONAR CLOUD-ONLY:** no local Sonar server/container/image/MCP runtime; SonarQube Cloud only.
+
 Executable config/runtime owns ports, process inventory and mutable runtime details; do not duplicate them here.
 
 Proof tooling must not reset developer credentials, authorize re-enrollment, revoke unrelated sessions, mutate established actors merely to regain access, or destroy reusable business state merely for convenience. A dev-only provisioner may orchestrate canonical writers/APIs only; never direct-database business writes or hidden seed authority.
