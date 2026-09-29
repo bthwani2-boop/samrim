@@ -1,6 +1,6 @@
 import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, createOrderConversationMessageAttempt, isDefinitiveDshMobileClientRejection, orderConversationMessageAttemptStorageKey, parseOrderConversationMessageAttempt, type OrderConversationMessageAttempt } from "@bthwani/dsh";
+import { clearOrderConversationMessageAttempt, createDshMobileClient, createOrderConversationMessageAttempt, isDefinitiveDshMobileClientRejection, orderConversationMessageAttemptStorageKey, parseOrderConversationMessageAttempt, type OrderConversationMessageAttempt } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -19,14 +19,8 @@ function senderLabel(role: string): string {
   return role === "client" ? "العميل" : role === "partner" ? "المتجر" : "الكابتن";
 }
 
-async function clearStoredAttempt(attempt: OrderConversationMessageAttempt, failureMessage: string): Promise<boolean> {
-  try {
-    await SecureStore.deleteItemAsync(orderConversationMessageAttemptStorageKey(conversationRole, attempt.actorID, attempt.orderID));
-    return true;
-  } catch (error_) {
-    console.error(failureMessage, error_);
-    return false;
-  }
+function clearStoredAttempt(attempt: OrderConversationMessageAttempt, failureMessage: string): Promise<boolean> {
+  return clearOrderConversationMessageAttempt(conversationRole, attempt, SecureStore.deleteItemAsync, (error_) => console.error(failureMessage, error_));
 }
 
 export function OrderConversation({ orderId }: { orderId: string }) {
