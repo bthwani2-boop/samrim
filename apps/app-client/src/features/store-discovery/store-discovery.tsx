@@ -188,7 +188,23 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     }
   }
 
-  const filteredStores = useMemo(() => state.kind === "ready" ? (storeFilter === "favorites" ? state.stores.filter((store) => state.favoriteStoreIDs.includes(store.id)) : state.stores) : [], [state, storeFilter]);
+  const filteredStores = useMemo(() => {
+    if (state.kind !== "ready") return [];
+    if (storeFilter === "favorites") return state.stores.filter((store) => state.favoriteStoreIDs.includes(store.id));
+    return state.stores;
+  }, [state, storeFilter]);
+
+  let directoryStatusKind: "loading" | "error" | "empty" = "empty";
+  if (directoryLoading || state.kind === "loading") directoryStatusKind = "loading";
+  else if (directoryError || state.kind === "error") directoryStatusKind = "error";
+
+  let nearbyAddressLoadMoreLabel = "عرض المزيد من العناوين";
+  if (nearbyAddressState.kind === "ready") {
+    if (nearbyAddressState.moreError) nearbyAddressLoadMoreLabel = "إعادة المحاولة";
+    if (nearbyAddressState.loadingMore) nearbyAddressLoadMoreLabel = "جارٍ تحميل العناوين";
+  }
+
+  const hasMarketingItems = marketing.content.length > 0 || marketing.promotions.length > 0;
 
   const visibleCategories = useMemo(() => {
     if (state.kind !== "ready") return [];
@@ -330,7 +346,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         </ScrollView>
       </View> : null}
 
-      {!searchIsActive && (marketing.content.length || marketing.promotions.length) ? <View accessibilityLabel="العروض ومحتوى الاكتشاف" style={styles.marketingBlock}>
+      {!searchIsActive && hasMarketingItems ? <View accessibilityLabel="العروض ومحتوى الاكتشاف" style={styles.marketingBlock}>
         {mediaContent.length ? <>
           {mediaContent.length > 1 ? <BthwaniSectionHeader title="العروض والاختيارات" subtitle="اسحب أو اختر إحدى الشرائح" /> : <BthwaniSectionHeader title="العروض والاختيارات" />}
           <DiscoveryMediaCarousel cardWidth={carouselCardWidth} items={mediaContent} styles={styles} theme={theme} onOpen={(item) => {
@@ -341,13 +357,19 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         </> : null}
         {textContent.length ? <>
           <BthwaniSectionHeader title="مختارات لك" subtitle="محتوى منشور من بثواني" />
-          <View style={styles.marketingList}>{textContent.map((item) => <BthwaniSurface key={item.id} tone="inset" style={styles.marketingCard}><Text style={styles.eyebrow}>{item.kind === "BANNER" ? "إعلان" : item.kind === "CAROUSEL" ? "اختيارات" : "قصة قصيرة"}</Text><Text style={styles.cardTitle}>{item.titleAr}</Text>{item.bodyAr ? <Text style={styles.muted}>{item.bodyAr}</Text> : null}</BthwaniSurface>)}</View>
+          <View style={styles.marketingList}>{textContent.map((item) => {
+            let contentKindLabel = "قصة قصيرة";
+            if (item.kind === "BANNER") contentKindLabel = "إعلان";
+            else if (item.kind === "CAROUSEL") contentKindLabel = "اختيارات";
+            return <BthwaniSurface key={item.id} tone="inset" style={styles.marketingCard}><Text style={styles.eyebrow}>{contentKindLabel}</Text><Text style={styles.cardTitle}>{item.titleAr}</Text>{item.bodyAr ? <Text style={styles.muted}>{item.bodyAr}</Text> : null}</BthwaniSurface>;
+          })}</View>
         </> : null}
         {marketing.promotions.length ? <>
           <BthwaniSectionHeader title="عروض نشطة" subtitle="طبّق الرمز عند إتمام الطلب" />
           <View style={styles.marketingList}>{marketing.promotions.map((promotion) => <PromotionCard key={promotion.id} promotion={promotion} />)}</View>
         </> : null}
-      </View> : !searchIsActive && marketing.error ? <Text accessibilityRole="alert" style={styles.error}>تعذر تحميل بعض العروض والمحتوى. يمكنك متابعة تصفح المتاجر.</Text> : null}
+      </View> : null}
+      {!searchIsActive && !hasMarketingItems && marketing.error ? <Text accessibilityRole="alert" style={styles.error}>تعذر تحميل بعض العروض والمحتوى. يمكنك متابعة تصفح المتاجر.</Text> : null}
 
       {searchScope === "products" && searchIsActive ? (
         <ProductSearchResults
@@ -406,7 +428,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           {nearbyAddressState.addresses.filter((address) => address.serviceCityId === selectedCityID && Number.isFinite(address.latitude) && Number.isFinite(address.longitude)).map((address) => <Pressable key={address.id} accessibilityRole="button" accessibilityLabel={`ترتيب المتاجر بالقرب من ${address.addressText}`} onPress={() => selectNearbyAddress(address)} style={styles.nearestAddressOption}><Text style={styles.nearestAddressOptionTitle}>{address.addressText}</Text><Text style={styles.nearestAddressHint}>{selectedCityName}</Text></Pressable>)}
           {nearbyAddressState.addresses.every((address) => address.serviceCityId !== selectedCityID || !Number.isFinite(address.latitude) || !Number.isFinite(address.longitude)) ? <View style={styles.nearestAddressStatus}><Text style={styles.muted}>{nearbyAddressState.nextCursor ? `لم يظهر عنوان في ${selectedCityName} ضمن هذه الصفحة.` : `لا يوجد عنوان محفوظ بإحداثيات في ${selectedCityName}.`}</Text><BthwaniButton label={`إضافة عنوان في ${selectedCityName}`} onPress={() => { closeNearbyAddressChooser(); router.push("/addresses" as Href); }} variant="secondary" /></View> : null}
           {nearbyAddressState.moreError ? <Text accessibilityRole="alert" style={styles.error}>تعذر تحميل بقية العناوين.</Text> : null}
-          {nearbyAddressState.nextCursor ? <BthwaniButton busy={nearbyAddressState.loadingMore} disabled={nearbyAddressState.loadingMore} label={nearbyAddressState.loadingMore ? "جارٍ تحميل العناوين" : nearbyAddressState.moreError ? "إعادة المحاولة" : "عرض المزيد من العناوين"} onPress={() => void loadMoreNearbyAddresses()} variant="secondary" /> : null}
+          {nearbyAddressState.nextCursor ? <BthwaniButton busy={nearbyAddressState.loadingMore} disabled={nearbyAddressState.loadingMore} label={nearbyAddressLoadMoreLabel} onPress={() => void loadMoreNearbyAddresses()} variant="secondary" /> : null}
         </> : null}
       </BthwaniSurface> : null}
 
@@ -431,7 +453,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           <View style={styles.storeActions}><BthwaniIconButton disabled={Boolean(favoriteBusyStoreID)} icon="favorite" label={isFavorite ? `إزالة ${store.name} من المفضلة` : `إضافة ${store.name} إلى المفضلة`} onPress={(event) => { event.stopPropagation(); void toggleFavorite(store.id); }} tone={isFavorite ? "primary" : "soft"} /><BthwaniIcon name="forward" color={theme.colorMuted} size={sizing.iconMd} /></View>
         </Pressable>;
       }}
-      ListEmptyComponent={directoryMode ? <StoreDirectoryStatus hasServiceCity={Boolean(selectedCityID)} kind={directoryLoading || state.kind === "loading" ? "loading" : directoryError || state.kind === "error" ? "error" : "empty"} query={query} selectedCategory={Boolean(selectedCategoryID)} onRetry={() => void load()} onClearSearch={() => { if (onSearchQueryChange) onSearchQueryChange(""); else router.setParams({ q: "" }); }} /> : null}
+      ListEmptyComponent={directoryMode ? <StoreDirectoryStatus hasServiceCity={Boolean(selectedCityID)} kind={directoryStatusKind} query={query} selectedCategory={Boolean(selectedCategoryID)} onRetry={() => void load()} onClearSearch={() => { if (onSearchQueryChange) onSearchQueryChange(""); else router.setParams({ q: "" }); }} /> : null}
       ListFooterComponent={<View style={styles.footer}>
         {directoryMode && state.kind === "ready" && state.nextCursor ? <>
           {loadMoreStoresError ? <Text accessibilityRole="alert" style={styles.error}>تعذر تحميل المزيد من المتاجر.</Text> : null}
@@ -514,10 +536,25 @@ function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selec
     }
   }
 
+  if (!query.trim()) {
+    return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}><BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>اكتب اسم المنتج للبحث</Text><Text style={styles.muted}>استخدم مربع البحث أعلى الصفحة، ويمكنك تضييق النتائج حسب الفئة.</Text></BthwaniSurface></View>;
+  }
+  if (!selectedCityID) {
+    return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}><BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="location" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>اختر مدينة الخدمة للبحث</Text><Text style={styles.muted}>أغلق البحث ثم اختر المدينة من أعلى الشاشة لتظهر المنتجات المتاحة فيها.</Text></BthwaniSurface></View>;
+  }
+  if (productSearch.kind === "loading" || productSearch.kind === "idle") {
+    return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}><View style={styles.productSkeletons} accessibilityLabel="جارٍ البحث عن المنتجات"><BthwaniSkeleton height={104} /><BthwaniSkeleton height={104} /><BthwaniSkeleton height={104} /></View></View>;
+  }
+  if (productSearch.kind === "error") {
+    return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}><BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" style={styles.cardTitle}>تعذر البحث عن المنتجات</Text><Text style={styles.muted}>تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void runProductSearch()} /></BthwaniSurface></View>;
+  }
+  if (productSearch.offers.length === 0) {
+    return <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}><BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>لا توجد منتجات مطابقة</Text><Text style={styles.muted}>جرّب كلمة أقصر أو اختر فئة أخرى.</Text><BthwaniButton label="مسح الفئة" onPress={onClearCategory} variant="quiet" /></BthwaniSurface></View>;
+  }
+
   return (
     <View accessibilityLabel="نتائج البحث عن المنتجات" style={styles.productSearchSection}>
-      {!query.trim() ? <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>اكتب اسم المنتج للبحث</Text><Text style={styles.muted}>استخدم مربع البحث أعلى الصفحة، ويمكنك تضييق النتائج حسب الفئة.</Text></BthwaniSurface> : !selectedCityID ? <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="location" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>اختر مدينة الخدمة للبحث</Text><Text style={styles.muted}>أغلق البحث ثم اختر المدينة من أعلى الشاشة لتظهر المنتجات المتاحة فيها.</Text></BthwaniSurface> : productSearch.kind === "loading" || productSearch.kind === "idle" ? <View style={styles.productSkeletons} accessibilityLabel="جارٍ البحث عن المنتجات"><BthwaniSkeleton height={104} /><BthwaniSkeleton height={104} /><BthwaniSkeleton height={104} /></View> : productSearch.kind === "error" ? <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" style={styles.cardTitle}>تعذر البحث عن المنتجات</Text><Text style={styles.muted}>تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void runProductSearch()} /></BthwaniSurface> : productSearch.offers.length === 0 ? <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>لا توجد منتجات مطابقة</Text><Text style={styles.muted}>جرّب كلمة أقصر أو اختر فئة أخرى.</Text><BthwaniButton label="مسح الفئة" onPress={onClearCategory} variant="quiet" /></BthwaniSurface> : <>
-        <BthwaniSectionHeader title="نتائج المنتجات" subtitle={`${productSearch.offers.length} منتج · ${selectedCityName || "مدينة الخدمة"}`} />
+      <BthwaniSectionHeader title="نتائج المنتجات" subtitle={`${productSearch.offers.length} منتج · ${selectedCityName || "مدينة الخدمة"}`} />
         <View style={styles.list}>{productSearch.offers.map((offer) => {
           const primaryMedia = offer.media.find((media) => media.role === "primary") ?? offer.media[0];
           const imageFailed = failedProductImages.has(offer.offerId);
@@ -534,7 +571,6 @@ function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selec
         })}</View>
         {loadMoreProductsError ? <Text accessibilityRole="alert" style={styles.error}>تعذر تحميل المزيد من المنتجات.</Text> : null}
         {productSearch.nextCursor ? <BthwaniButton disabled={loadingMoreProducts} label={loadingMoreProducts ? "جارٍ تحميل المزيد" : "تحميل المزيد"} onPress={() => void loadMoreProductOffers()} variant="secondary" /> : null}
-      </>}
     </View>
   );
 }
@@ -545,8 +581,17 @@ function StoreDirectoryStatus({ hasServiceCity, kind, query, selectedCategory, o
   if (!hasServiceCity) return <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="location" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>اختر مدينة الخدمة</Text><Text style={styles.muted}>أغلق البحث ثم اختر المدينة من أعلى الشاشة لعرض المتاجر المتاحة فيها.</Text></BthwaniSurface>;
   if (kind === "loading") return <View style={styles.productSkeletons} accessibilityLabel="جارٍ تجهيز المتاجر"><BthwaniSkeleton height={104} /><BthwaniSkeleton height={104} /></View>;
   if (kind === "error") return <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" style={styles.cardTitle}>تعذر تحميل المتاجر</Text><Text style={styles.muted}>تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={onRetry} /></BthwaniSurface>;
-  const emptyTitle = kind === "empty" && !query.trim() ? "لا توجد متاجر منشورة للطلب حاليًا" : query.trim() ? "لا توجد نتائج بهذا الاسم" : selectedCategory ? "لا توجد متاجر ضمن هذه الفئة" : "لا توجد متاجر مطابقة";
-  const emptyDescription = kind === "empty" && !query.trim() ? "يمكنك البحث عن المنتجات المتاحة في مدينة الخدمة." : query.trim() ? "جرّب اسمًا أقصر أو امسح البحث لعرض كل المتاجر." : "غيّر الفئة أو أزل الفلاتر لعرض المتاجر المتاحة.";
+  let emptyTitle = "لا توجد متاجر مطابقة";
+  let emptyDescription = "غيّر الفئة أو أزل الفلاتر لعرض المتاجر المتاحة.";
+  if (kind === "empty" && !query.trim()) {
+    emptyTitle = "لا توجد متاجر منشورة للطلب حاليًا";
+    emptyDescription = "يمكنك البحث عن المنتجات المتاحة في مدينة الخدمة.";
+  } else if (query.trim()) {
+    emptyTitle = "لا توجد نتائج بهذا الاسم";
+    emptyDescription = "جرّب اسمًا أقصر أو امسح البحث لعرض كل المتاجر.";
+  } else if (selectedCategory) {
+    emptyTitle = "لا توجد متاجر ضمن هذه الفئة";
+  }
   return <BthwaniSurface tone="inset" style={styles.noResults}><BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} /><Text style={styles.cardTitle}>{emptyTitle}</Text><Text style={styles.muted}>{emptyDescription}</Text>{query.trim() ? <BthwaniButton label="مسح البحث" onPress={onClearSearch} variant="quiet" /> : null}</BthwaniSurface>;
 }
 
