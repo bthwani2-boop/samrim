@@ -4,6 +4,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 
 const root = path.resolve(import.meta.dirname, "../..");
+const compareStrings = (left, right) => String(left).localeCompare(String(right), "en");
 const tracked = execFileSync(resolveTrustedExecutable("git"), ["ls-files", "-z"], { cwd: root, encoding: "utf8" })
   .split("\0")
   .filter(Boolean)
@@ -30,7 +31,7 @@ const children = (base) =>
       .map((value) => value.slice(base.length + 1))
       .filter((value) => value.includes("/"))
       .map((value) => value.split("/", 1)[0]),
-  )].sort();
+  )].toSorted(compareStrings);
 
 function project(base, name, tag) {
   const file = `${base}/${name}/project.json`;
@@ -69,7 +70,7 @@ assert(
 const allowedTopLevel = new Set([".github", "apps", "contracts", "infra", "packages", "services", "tools"]);
 const topLevel = [...new Set(
   tracked.filter((value) => value.includes("/")).map((value) => value.split("/", 1)[0]),
-)].sort();
+)].toSorted(compareStrings);
 for (const item of topLevel) {
   assert(allowedTopLevel.has(item), `Unadmitted top-level ownership class tracked: ${item}`);
 }
@@ -183,7 +184,8 @@ for (const service of services) {
 
   if (set.has(base + "backend/go.mod")) {
     assert(set.has(base + "backend/Dockerfile"), `${base}backend/Dockerfile missing`);
-    const processMains = tracked.filter((item) => new RegExp(`^${base}backend/cmd/[^/]+/main\\.go$`).test(item));
+    const processMainPattern = new RegExp(String.raw`^${base}backend/cmd/[^/]+/main\.go$`);
+    const processMains = tracked.filter((item) => processMainPattern.test(item));
     assert(processMains.length > 0, `${service} Go backend has no backend/cmd/<process>/main.go`);
   }
 
@@ -205,8 +207,9 @@ for (const service of services) {
   }
 
   const migrationRoots = new Set();
+  const migrationPattern = new RegExp(`^${base}(.*/)?migrations?/`, "i");
   for (const item of tracked.filter((entry) => entry.startsWith(base))) {
-    const match = item.match(new RegExp(`^${base}(.*/)?migrations?/`, "i"));
+    const match = migrationPattern.exec(item);
     if (!match) continue;
     const index = item.toLowerCase().indexOf("/migrations/");
     const singularIndex = item.toLowerCase().indexOf("/migration/");
@@ -215,7 +218,7 @@ for (const service of services) {
   }
   assert(
     migrationRoots.size <= 1,
-    `${service} has parallel migration histories: ${[...migrationRoots].sort().join(",")}`,
+    `${service} has parallel migration histories: ${[...migrationRoots].toSorted(compareStrings).join(",")}`,
   );
 }
 
@@ -277,7 +280,7 @@ for (const item of tracked.filter((value) => value.startsWith("infra/"))) {
 
 if (failures.length) {
   console.error("REPOSITORY_STRUCTURE=FAIL");
-  for (const failure of [...new Set(failures)].sort()) console.error(`  ${failure}`);
+  for (const failure of [...new Set(failures)].toSorted(compareStrings)) console.error(`  ${failure}`);
   process.exit(1);
 }
 
