@@ -50,8 +50,11 @@ export function OperatorProfilePanel() {
 
   const load = useCallback(async (cursor = "", append = false) => {
     const requestID = ++loadRequestID.current;
-    if (append) setLoadingMore(true);
-    else setLoading(true);
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+    }
     setError("");
     try {
       const params = new URLSearchParams({ q: query.trim(), state, sort, limit: "25" });
