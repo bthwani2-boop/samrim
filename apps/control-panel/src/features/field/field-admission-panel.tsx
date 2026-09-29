@@ -10,6 +10,27 @@ import { responseMessage } from "../access/identity-error-message";
 type FieldRecord = ActorRoleView & Readonly<{ admission: FieldAdmission | null }>;
 type FieldPage = Readonly<{ items: ReadonlyArray<FieldRecord>; nextCursor?: string }>;
 
+function identityStatusLabel(field: FieldRecord, requiresProfileReview: boolean): string {
+  if (!field.securityEnabled) return "الهوية موقوفة أمنيًا";
+  if (requiresProfileReview && field.enabled) return "بانتظار إيقاف الوصول";
+  if (requiresProfileReview) return "الوصول موقوف";
+  if (field.activatedAt && field.enabled) return "نشط";
+  if (field.activatedAt) return "الدور موقوف";
+  return "بانتظار التفعيل";
+}
+
+function admissionStatusLabel(admission: FieldAdmission | null, requiresProfileReview: boolean): string {
+  if (requiresProfileReview) return "الملف يحتاج استكمالًا ومراجعة";
+  if (admission) return fieldAdmissionStateLabel(admission.state);
+  return "لا توجد أهلية تشغيل في DSH";
+}
+
+function statusActionLabel(isBusy: boolean, shouldDisable: boolean): string {
+  if (isBusy) return "جارٍ التحديث…";
+  if (shouldDisable) return "إيقاف التشغيل";
+  return "إعادة التفعيل";
+}
+
 export function FieldAdmissionPanel() {
   const [query, setQuery] = useState("");
   const [enabledFilter, setEnabledFilter] = useState("");
@@ -154,12 +175,12 @@ export function FieldAdmissionPanel() {
             const reason = reasons[field.actorId] ?? "";
             return <tr key={field.actorId}>
               <th scope="row"><strong>{field.admission?.fullNameAr || "—"}</strong><br /><bdi dir="ltr">{field.phoneE164}</bdi></th>
-              <td>{!field.securityEnabled ? "الهوية موقوفة أمنيًا" : requiresProfileReview && field.enabled ? "بانتظار إيقاف الوصول" : requiresProfileReview ? "الوصول موقوف" : field.activatedAt ? field.enabled ? "نشط" : "الدور موقوف" : "بانتظار التفعيل"}</td>
-              <td>{requiresProfileReview ? "الملف يحتاج استكمالًا ومراجعة" : field.admission ? fieldAdmissionStateLabel(field.admission.state) : "لا توجد أهلية تشغيل في DSH"}</td>
+              <td>{identityStatusLabel(field, requiresProfileReview)}</td>
+              <td>{admissionStatusLabel(field.admission, requiresProfileReview)}</td>
               <td>{field.admission ? <div className="access-form">
                 <label className="field-label" htmlFor={`field-reason-${index}`}>سبب الإجراء<input id={`field-reason-${index}`} maxLength={500} value={reason} onChange={(event) => setReasons((current) => ({ ...current, [field.actorId]: event.target.value }))} disabled={Boolean(busy)} /></label>
                 {waitingForReenrollment ? <button type="button" className="button button-primary" disabled={Boolean(busy) || Array.from(reason.trim()).length < 5} onClick={() => void reenroll(field)}>{busy === field.actorId ? "جارٍ الإجازة…" : "إجازة إعادة التسجيل"}</button> : null}
-                {(field.activatedAt || shouldDisable) && (shouldDisable || !requiresProfileReview) ? <button type="button" className={shouldDisable ? "button button-secondary" : "button button-primary"} disabled={Boolean(busy) || Array.from(reason.trim()).length < 5} onClick={() => void changeStatus(field)}>{busy === field.actorId ? "جارٍ التحديث…" : shouldDisable ? "إيقاف التشغيل" : "إعادة التفعيل"}</button> : null}
+                {(field.activatedAt || shouldDisable) && (shouldDisable || !requiresProfileReview) ? <button type="button" className={shouldDisable ? "button button-secondary" : "button button-primary"} disabled={Boolean(busy) || Array.from(reason.trim()).length < 5} onClick={() => void changeStatus(field)}>{statusActionLabel(busy === field.actorId, shouldDisable)}</button> : null}
                 {requiresProfileReview && !mustDisableForProfileReview && !field.enabled ? <span className="muted">استكمل الملف واعتمده قبل إعادة التفعيل.</span> : null}
               </div> : <span className="muted">يبدأ التحكم بعد وجود أهلية DSH.</span>}</td>
             </tr>;
