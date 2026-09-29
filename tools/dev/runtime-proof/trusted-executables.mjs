@@ -39,7 +39,7 @@ function runnerGoCandidates(name) {
 
   const repoRoot = path.resolve(import.meta.dirname, "../../..");
   const workspace = fs.readFileSync(path.join(repoRoot, "go.work"), "utf8");
-  const version = workspace.match(/^go\s+(\d+\.\d+(?:\.\d+)?)\s*$/m)?.[1];
+  const version = /^go\s+(\d+\.\d+(?:\.\d+)?)\s*$/m.exec(workspace)?.[1];
   if (!version) throw new Error("trusted Go version is missing from go.work");
 
   const architecture = { x64: "x64", arm64: "arm64", ia32: "x86" }[process.arch];
