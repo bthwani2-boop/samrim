@@ -179,6 +179,9 @@ test("read-only repository verifiers execute under the canonical coverage proces
     "./verify-doc-command-parity.mjs",
     "./verify-knowledge-references.mjs",
     "./verify-workspace-dependencies.mjs",
+    "./verify-repository-structure.mjs",
+    "./verify-cache-contracts.mjs",
+    "./verify-removed-human-domain-residue.mjs",
   ]) {
     await import(modulePath);
   }
