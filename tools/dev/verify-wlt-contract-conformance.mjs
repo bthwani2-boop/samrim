@@ -55,11 +55,17 @@ function normalizeFormatSlots(value) {
   return { value: result, found };
 }
 
+function trimTrailingSlashes(value) {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === "/") end -= 1;
+  return value.slice(0, end);
+}
+
 function pathShape(value) {
   const withoutQuery = value.split("?", 1)[0];
   const bracesNormalized = replaceBracePlaceholders(withoutQuery);
   const formatNormalized = normalizeFormatSlots(bracesNormalized).value;
-  return formatNormalized.replaceAll(/\/+$/g, "");
+  return trimTrailingSlashes(formatNormalized);
 }
 
 function identifier(value) {
