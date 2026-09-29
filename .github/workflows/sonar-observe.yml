@@ -25,7 +25,7 @@ concurrency:
 jobs:
   sonar:
     name: SonarQube Cloud Observe
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     services:
@@ -46,8 +46,12 @@ jobs:
       IDENTITY_DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable
 
     if: >
-      github.event_name != 'pull_request' ||
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.ref == 'refs/heads/main' ||
+      (
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.base.ref == 'main' &&
+        github.event.pull_request.head.repo.full_name == github.repository
+      )
 
     steps:
       - name: Checkout
