@@ -12,6 +12,7 @@ const knowledgeRoot = ensureKnowledgeRoot({ materialize: false });
 const pin = readKnowledgePin();
 const sources = readKnowledgeSources();
 const failures = [];
+const compareStrings = (left, right) => String(left).localeCompare(String(right), "en");
 
 function requireFile(relative) {
   const absolute = path.join(root, relative);
@@ -116,7 +117,7 @@ for (const args of [
 
 if (failures.length) {
   console.error("KNOWLEDGE_SYSTEM_VERIFY=FAIL");
-  for (const failure of [...new Set(failures)].sort()) console.error(`  ${failure}`);
+  for (const failure of [...new Set(failures)].toSorted(compareStrings)) console.error(`  ${failure}`);
   process.exit(1);
 }
 
