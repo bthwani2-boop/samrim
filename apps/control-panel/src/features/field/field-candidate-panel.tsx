@@ -82,10 +82,20 @@ export function FieldCandidatePanel() {
     setError("");
     setNotice("");
     try {
+      const body: { action: typeof action; admissionId: string; fullNameAr?: string; expectedVersion?: number } = {
+        action,
+        admissionId: profile.id,
+      };
+      if (action === "update-profile") {
+        body.fullNameAr = nextName;
+        body.expectedVersion = profile.version;
+      } else if (action === "review-profile" || action === "approve") {
+        body.expectedVersion = profile.version;
+      }
       const response = await identityFetch("/api/fields", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, admissionId: profile.id, ...(action === "update-profile" ? { fullNameAr: nextName, expectedVersion: profile.version } : action === "review-profile" || action === "approve" ? { expectedVersion: profile.version } : {}) }),
+        body: JSON.stringify(body),
       });
       if (!response.ok) {
         const message = await responseMessage(response);
@@ -94,7 +104,7 @@ export function FieldCandidatePanel() {
         return;
       }
       await response.json();
-      setNotice(action === "approve" ? "اعتُمد ملف الميداني. أصبح منح الدور متاحًا بعد المراجعة." : action === "provision" ? "مُنح دور الميداني بعد اعتماد الملف." : action === "review-profile" ? "اعتُمد الملف بعد مراجعته. يبقى الدور موقوفًا حتى إعادة التفعيل." : "حُدّث ملف الميداني.");
+      setNotice(fieldMutationSuccessMessage(action));
       setEdits((current) => { const next = { ...current }; delete next[profile.id]; return next; });
       await load();
     } catch (cause) {
@@ -152,4 +162,11 @@ export function FieldCandidatePanel() {
       {nextCursor ? <div className="workspace-toolbar"><button type="button" className="button button-secondary" disabled={loadingMore || Boolean(busy)} onClick={() => void load(nextCursor, true)}>{loadingMore ? "جارٍ تحميل المزيد…" : "تحميل المزيد"}</button></div> : null}
     </section>
   </>;
+}
+
+function fieldMutationSuccessMessage(action: "update-profile" | "approve" | "provision" | "review-profile"): string {
+  if (action === "approve") return "اعتُمد ملف الميداني. أصبح منح الدور متاحًا بعد المراجعة.";
+  if (action === "provision") return "مُنح دور الميداني بعد اعتماد الملف.";
+  if (action === "review-profile") return "اعتُمد الملف بعد مراجعته. يبقى الدور موقوفًا حتى إعادة التفعيل.";
+  return "حُدّث ملف الميداني.";
 }
