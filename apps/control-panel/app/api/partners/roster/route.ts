@@ -10,6 +10,12 @@ function errorResponse(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status, headers: { "Cache-Control": "no-store" } });
 }
 
+function parseVersion(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "string" && /^[1-9]\d*$/.test(value.trim())) return Number(value.trim());
+  return NaN;
+}
+
 export async function GET(request: Request) {
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
@@ -22,7 +28,11 @@ export async function GET(request: Request) {
   const rawLimit = params.get("limit") ?? "25";
   const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;
   const rawEnabled = params.get("enabled");
-  const enabled = rawEnabled === null ? undefined : rawEnabled === "true" ? true : rawEnabled === "false" ? false : null;
+  let enabled: boolean | null | undefined;
+  if (rawEnabled === null) enabled = undefined;
+  else if (rawEnabled === "true") enabled = true;
+  else if (rawEnabled === "false") enabled = false;
+  else enabled = null;
   const rawSort = params.get("sort") ?? "phone_asc";
   const sort = rawSort === "phone_asc" || rawSort === "phone_desc" ? rawSort : null;
   if (!Number.isInteger(limit) || limit < 1 || limit > 50 || enabled === null || sort === null || query.trim().length > 100 || cursor.length > 512) return errorResponse("INVALID_INPUT", "valid search, cursor, sort, limit, and enabled filters are required", 400);
@@ -46,11 +56,10 @@ export async function POST(request: Request) {
   const action = typeof body?.action === "string" ? body.action : "";
   const actorId = typeof body?.actorId === "string" ? body.actorId.trim() : "";
   const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
-  const rawVersion = body?.expectedVersion;
-  const expectedVersion = typeof rawVersion === "number" ? rawVersion : typeof rawVersion === "string" && /^[1-9]\d*$/.test(rawVersion.trim()) ? Number(rawVersion.trim()) : NaN;
-  const expectedActorVersion = typeof body?.expectedActorVersion === "number" ? body.expectedActorVersion : typeof body?.expectedActorVersion === "string" && /^[1-9]\d*$/.test(body.expectedActorVersion.trim()) ? Number(body.expectedActorVersion.trim()) : NaN;
-  const expectedRoleVersion = typeof body?.expectedRoleVersion === "number" ? body.expectedRoleVersion : typeof body?.expectedRoleVersion === "string" && /^[1-9]\d*$/.test(body.expectedRoleVersion.trim()) ? Number(body.expectedRoleVersion.trim()) : NaN;
-  const expectedJoiningCaseVersion = typeof body?.expectedJoiningCaseVersion === "number" ? body.expectedJoiningCaseVersion : typeof body?.expectedJoiningCaseVersion === "string" && /^[1-9]\d*$/.test(body.expectedJoiningCaseVersion.trim()) ? Number(body.expectedJoiningCaseVersion.trim()) : NaN;
+  const expectedVersion = parseVersion(body?.expectedVersion);
+  const expectedActorVersion = parseVersion(body?.expectedActorVersion);
+  const expectedRoleVersion = parseVersion(body?.expectedRoleVersion);
+  const expectedJoiningCaseVersion = parseVersion(body?.expectedJoiningCaseVersion);
   const allowedKeys = ["action", "actorId", "reason", "expectedVersion", "expectedActorVersion", "expectedRoleVersion", "expectedJoiningCaseVersion"];
   if (!body || Object.keys(body).some((key) => !allowedKeys.includes(key)) || !["activate", "disable", "reenroll"].includes(action) || !actorId || Array.from(reason).length < 5 || Array.from(reason).length > 500) return errorResponse("INVALID_INPUT", "actorId, a supported action, and a reason of 5 to 500 characters are required", 400);
   if (action === "reenroll" && (!Number.isSafeInteger(expectedActorVersion) || expectedActorVersion < 1 || !Number.isSafeInteger(expectedRoleVersion) || expectedRoleVersion < 1 || !Number.isSafeInteger(expectedJoiningCaseVersion) || expectedJoiningCaseVersion < 1)) return errorResponse("INVALID_INPUT", "current joining-case, actor and role versions are required for re-enrollment", 400);
