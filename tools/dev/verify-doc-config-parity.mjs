@@ -14,8 +14,8 @@ const operationsGuide = readKnowledge("docs/OPERATIONS.md");
 
 const nodeVersion = read(".nvmrc").trim();
 const nodeVersionFile = read(".node-version").trim();
-const pnpmVersion = (packageJson.packageManager ?? "").match(/^pnpm@(.+)$/)?.[1];
-const goVersion = read("go.work").match(/^go\s+(\S+)\s*$/m)?.[1];
+const pnpmVersion = /^pnpm@(.+)$/.exec(packageJson.packageManager ?? "")?.[1];
+const goVersion = /^go\s+(\S+)\s*$/m.exec(read("go.work"))?.[1];
 
 if (!nodeVersion || nodeVersion !== nodeVersionFile) failures.push("Node pin mismatch between .nvmrc and .node-version");
 if (!pnpmVersion || pnpmVersion !== packageJson.engines?.pnpm) failures.push("pnpm pin mismatch between packageManager and engines.pnpm");
@@ -36,14 +36,15 @@ function findGoMods(dir) {
   return results;
 }
 
-const allGoMods = findGoMods(root).map((f) => path.relative(root, f).replace(/\\/g, "/"));
+const allGoMods = findGoMods(root).map((f) => path.relative(root, f).replaceAll("\\", "/"));
 for (const mod of allGoMods) {
-  const version = read(mod).match(/^go\s+(\S+)\s*$/m)?.[1];
+  const version = /^go\s+(\S+)\s*$/m.exec(read(mod))?.[1];
   if (version !== goVersion) failures.push(mod + " Go version differs from go.work");
 }
 
 function requireMetadata(body, key, expected, owner) {
-  const match = body.match(new RegExp(`^${key}:\\s*(\\S+)\\s*$`, "m"));
+  const pattern = new RegExp(String.raw`^${key}:\s*(\S+)\s*$`, "m");
+  const match = pattern.exec(body);
   if (!match || match[1] !== expected) failures.push(`${owner} must declare ${key}: ${expected}`);
 }
 
