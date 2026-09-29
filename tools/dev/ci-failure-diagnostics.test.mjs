@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { analyzeCommandLog, buildClosureDiagnostic } from "./ci-failure-diagnostics.mjs";
 import { redactFailureArtifact } from "./ci-failure-redaction.mjs";
+import { ensureKnowledgeRoot } from "./knowledge-source.mjs";
 
 function tempLog(lines) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "samrim-ci-diagnostic-test-"));
@@ -172,6 +173,8 @@ test("external action failures join the same closure diagnostic", () => {
 });
 
 test("read-only repository verifiers execute under the canonical coverage process", async () => {
+  const knowledgeRoot = ensureKnowledgeRoot({ materialize: true });
+  assert.ok(fs.existsSync(knowledgeRoot));
   for (const modulePath of [
     "./verify-doc-command-parity.mjs",
     "./verify-knowledge-references.mjs",
