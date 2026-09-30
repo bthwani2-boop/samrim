@@ -28,9 +28,39 @@ func (s *Service) UploadStoreProfileImage(ctx context.Context, accessToken, case
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
 
-	current, scope, err := s.readStoreProfileMutationCase(ctx, identity.Role, identity.Surface, identity.Subject, caseID)
-	if err != nil {
-		return postgres.JoiningCaseResult{}, err
+	var current postgres.JoiningCaseResult
+	scope := ""
+	switch {
+	case identity.Role == "field" && identity.Surface == "app-field" && strings.TrimSpace(identity.Subject) != "":
+		admission, err := postgres.ReadFieldAdmissionForActor(ctx, s.db, identity.Subject)
+		if err != nil {
+			return postgres.JoiningCaseResult{}, err
+		}
+		if admission.State != "eligible" || admission.RequiresProfileReview || strings.TrimSpace(admission.FullNameAr) == "" {
+			return postgres.JoiningCaseResult{}, ErrFieldSessionForbidden
+		}
+		current, err = postgres.ReadJoiningCaseForField(ctx, s.db, identity.Subject, caseID)
+		if err != nil {
+			return postgres.JoiningCaseResult{}, err
+		}
+		if current.Case.State != "draft" {
+			return postgres.JoiningCaseResult{}, postgres.ErrStoreProfileMediaState
+		}
+		scope = "field"
+	case identity.Role == "partner" && identity.Surface == "app-partner" && strings.TrimSpace(identity.Subject) != "":
+		current, err = postgres.ReadJoiningCaseForPartner(ctx, s.db, identity.Subject)
+		if errors.Is(err, postgres.ErrJoiningCaseNotFound) || (err == nil && current.Case.ID != caseID) {
+			return postgres.JoiningCaseResult{}, postgres.ErrJoiningCaseNotFound
+		}
+		if err != nil {
+			return postgres.JoiningCaseResult{}, err
+		}
+		if current.Case.State != "needs_correction" && !(current.Case.State == "approved" && current.Case.StoreID != "") {
+			return postgres.JoiningCaseResult{}, postgres.ErrStoreProfileMediaState
+		}
+		scope = "partner"
+	default:
+		return postgres.JoiningCaseResult{}, ErrStoreProfileMediaSessionForbidden
 	}
 	actualType, _, _, err := media.ValidateImageBytes(data)
 	provenance = provenance.Normalized()
@@ -55,9 +85,17 @@ func (s *Service) UploadStoreProfileImage(ctx context.Context, accessToken, case
 		return postgres.JoiningCaseResult{}, err
 	}
 	if replayed {
-		result, handled, replayErr := s.resolveReplayedStoreProfileAsset(ctx, asset, current, scope, identity.Subject, caseID, expectedVersion)
-		if handled {
-			return result, replayErr
+		switch asset.State {
+		case "active", "retired":
+			return s.readStoreProfileImageCase(ctx, scope, identity.Subject, caseID, true)
+		case "failed":
+			return postgres.JoiningCaseResult{}, postgres.ErrStoreProfileMediaFailed
+		case "pending":
+			if current.Case.Version != expectedVersion {
+				return postgres.JoiningCaseResult{}, postgres.ErrStoreProfileMediaVersion
+			}
+		default:
+			return postgres.JoiningCaseResult{}, postgres.ErrStoreProfileMediaFailed
 		}
 	}
 	putContext, cancelPut := context.WithTimeout(ctx, 5*time.Minute)
@@ -70,66 +108,6 @@ func (s *Service) UploadStoreProfileImage(ctx context.Context, accessToken, case
 		return postgres.JoiningCaseResult{}, err
 	}
 	return s.readStoreProfileImageCase(ctx, scope, identity.Subject, caseID, replayed)
-}
-
-func isFieldStoreProfileActor(role, surface, subject string) bool {
-	return role == "field" && surface == "app-field" && subject != ""
-}
-
-func isPartnerStoreProfileActor(role, surface, subject string) bool {
-	return role == "partner" && surface == "app-partner" && subject != ""
-}
-
-func (s *Service) readStoreProfileMutationCase(ctx context.Context, role, surface, subject, caseID string) (postgres.JoiningCaseResult, string, error) {
-	subject = strings.TrimSpace(subject)
-	if isFieldStoreProfileActor(role, surface, subject) {
-		admission, err := postgres.ReadFieldAdmissionForActor(ctx, s.db, subject)
-		if err != nil {
-			return postgres.JoiningCaseResult{}, "", err
-		}
-		if admission.State != "eligible" || admission.RequiresProfileReview || strings.TrimSpace(admission.FullNameAr) == "" {
-			return postgres.JoiningCaseResult{}, "", ErrFieldSessionForbidden
-		}
-		current, err := postgres.ReadJoiningCaseForField(ctx, s.db, subject, caseID)
-		if err != nil {
-			return postgres.JoiningCaseResult{}, "", err
-		}
-		if current.Case.State != "draft" {
-			return postgres.JoiningCaseResult{}, "", postgres.ErrStoreProfileMediaState
-		}
-		return current, "field", nil
-	}
-	if isPartnerStoreProfileActor(role, surface, subject) {
-		current, err := postgres.ReadJoiningCaseForPartner(ctx, s.db, subject)
-		if errors.Is(err, postgres.ErrJoiningCaseNotFound) || (err == nil && current.Case.ID != caseID) {
-			return postgres.JoiningCaseResult{}, "", postgres.ErrJoiningCaseNotFound
-		}
-		if err != nil {
-			return postgres.JoiningCaseResult{}, "", err
-		}
-		if current.Case.State != "needs_correction" && !(current.Case.State == "approved" && current.Case.StoreID != "") {
-			return postgres.JoiningCaseResult{}, "", postgres.ErrStoreProfileMediaState
-		}
-		return current, "partner", nil
-	}
-	return postgres.JoiningCaseResult{}, "", ErrStoreProfileMediaSessionForbidden
-}
-
-func (s *Service) resolveReplayedStoreProfileAsset(ctx context.Context, asset postgres.StoreProfileMediaRecord, current postgres.JoiningCaseResult, scope, actorID, caseID string, expectedVersion int) (postgres.JoiningCaseResult, bool, error) {
-	switch asset.State {
-	case "active", "retired":
-		result, err := s.readStoreProfileImageCase(ctx, scope, actorID, caseID, true)
-		return result, true, err
-	case "failed":
-		return postgres.JoiningCaseResult{}, true, postgres.ErrStoreProfileMediaFailed
-	case "pending":
-		if current.Case.Version != expectedVersion {
-			return postgres.JoiningCaseResult{}, true, postgres.ErrStoreProfileMediaVersion
-		}
-		return postgres.JoiningCaseResult{}, false, nil
-	default:
-		return postgres.JoiningCaseResult{}, true, postgres.ErrStoreProfileMediaFailed
-	}
 }
 
 func (s *Service) readStoreProfileImageCase(ctx context.Context, scope, actorID, caseID string, replayed bool) (postgres.JoiningCaseResult, error) {
