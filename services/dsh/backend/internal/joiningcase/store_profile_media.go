@@ -72,9 +72,17 @@ func (s *Service) UploadStoreProfileImage(ctx context.Context, accessToken, case
 	return s.readStoreProfileImageCase(ctx, scope, identity.Subject, caseID, replayed)
 }
 
+func isFieldStoreProfileActor(role, surface, subject string) bool {
+	return role == "field" && surface == "app-field" && subject != ""
+}
+
+func isPartnerStoreProfileActor(role, surface, subject string) bool {
+	return role == "partner" && surface == "app-partner" && subject != ""
+}
+
 func (s *Service) readStoreProfileMutationCase(ctx context.Context, role, surface, subject, caseID string) (postgres.JoiningCaseResult, string, error) {
 	subject = strings.TrimSpace(subject)
-	if role == "field" && surface == "app-field" && subject != "" {
+	if isFieldStoreProfileActor(role, surface, subject) {
 		admission, err := postgres.ReadFieldAdmissionForActor(ctx, s.db, subject)
 		if err != nil {
 			return postgres.JoiningCaseResult{}, "", err
@@ -91,7 +99,7 @@ func (s *Service) readStoreProfileMutationCase(ctx context.Context, role, surfac
 		}
 		return current, "field", nil
 	}
-	if role == "partner" && surface == "app-partner" && subject != "" {
+	if isPartnerStoreProfileActor(role, surface, subject) {
 		current, err := postgres.ReadJoiningCaseForPartner(ctx, s.db, subject)
 		if errors.Is(err, postgres.ErrJoiningCaseNotFound) || (err == nil && current.Case.ID != caseID) {
 			return postgres.JoiningCaseResult{}, "", postgres.ErrJoiningCaseNotFound
