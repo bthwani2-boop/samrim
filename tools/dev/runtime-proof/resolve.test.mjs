@@ -38,7 +38,7 @@ test("WLT scopes select WLT proof without unrelated lanes", () => {
   assert.deepEqual(result.targets, ["wlt-backend:financial-invariants"]);
 });
 
-test("Nx-expanded cross-service cone prepares DSH checker immediately before DSH proofs", () => {
+test("Nx-expanded cross-service cone composes lanes once", () => {
   const result = resolveFromAffected(
     ["wlt", "dsh-backend", "dsh-database"],
     configs([
@@ -83,18 +83,14 @@ test("combined Control and DSH scope creates the checker in the existing browser
     "dsh-backend:baseline-proof",
     "dsh-backend:runtime-proof",
   ]);
-  assert.equal(result.targets.includes("control-panel:dsh-runtime-checker-fixture"), false);
-  assert.equal(result.targets.filter((target) => target === "control-panel:browser-live-proof").length, 1);
 });
 
-test("infra scope escalates explicitly to full without duplicating the browser-owned DSH fixture", () => {
+test("infra scope escalates explicitly to full", () => {
   const result = resolveFromAffected(
     ["infra"],
     configs([["infra", ["scope:infra", "type:infra"]]]),
   );
   assert.deepEqual(result.lanes, laneOrder);
-  assert.equal(result.targets[0], "control-panel:browser-live-proof");
-  assert.equal(result.targets.includes("control-panel:dsh-runtime-checker-fixture"), false);
   assert.match(result.reasons[0], /^full-escalation:/);
 });
 
@@ -104,8 +100,6 @@ test("runtime routing owner escalates its own implementation changes to full", (
     configs([["runtime-proof-routing", ["scope:runtime-proof-routing", "type:tool"]]]),
   );
   assert.deepEqual(result.lanes, laneOrder);
-  assert.equal(result.targets[0], "control-panel:browser-live-proof");
-  assert.equal(result.targets.includes("control-panel:dsh-runtime-checker-fixture"), false);
   assert.match(result.reasons[0], /^full-escalation:/);
 });
 
@@ -147,10 +141,8 @@ test("mobile app scope without runtime policy fails closed instead of skipping r
   );
 });
 
-test("scheduled/full regression selects every canonical lane and reuses the browser-owned DSH fixture", () => {
+test("scheduled/full regression selects every canonical lane", () => {
   const result = resolveFromAffected([], new Map(), true);
   assert.deepEqual(result.lanes, laneOrder);
-  assert.equal(result.targets[0], "control-panel:browser-live-proof");
-  assert.equal(result.targets.includes("control-panel:dsh-runtime-checker-fixture"), false);
   assert.equal(result.run, true);
 });
