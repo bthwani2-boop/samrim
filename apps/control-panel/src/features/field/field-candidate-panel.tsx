@@ -115,7 +115,7 @@ export function FieldCandidatePanel() {
     }
   }
 
-  return <div className="field-workbench-pane" aria-labelledby="field-candidate-create-title">
+  return <section className="field-workbench-pane" aria-labelledby="field-candidate-create-title">
     <details className="field-create-disclosure">
       <summary className="button button-secondary">إنشاء ملف ميداني</summary>
       <div className="field-create-content">
@@ -157,7 +157,7 @@ export function FieldCandidatePanel() {
         })}
       </tbody></table></div> : null}
       {nextCursor ? <div className="workspace-toolbar"><button type="button" className="button button-secondary" disabled={loadingMore || Boolean(busy)} onClick={() => void load(nextCursor, true)}>{loadingMore ? "جارٍ تحميل المزيد…" : "تحميل المزيد"}</button></div> : null}
-  </div>;
+  </section>;
 }
 
 function fieldMutationSuccessMessage(action: "update-profile" | "approve" | "provision" | "review-profile"): string {
