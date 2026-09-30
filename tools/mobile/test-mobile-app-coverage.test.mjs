@@ -31,5 +31,5 @@ test("app-client mobile behavioral harness", async () => {
 });
 
 test("static verifier owners execute under Sonar coverage", async () => {
-  await executeStaticCoverageOwners();
+  assert.equal(await executeStaticCoverageOwners(), 14);
 });
