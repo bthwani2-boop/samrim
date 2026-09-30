@@ -70,7 +70,7 @@ test("DSH-only runtime scope prepares one disposable Passkey checker before back
   assert.equal(result.needsBrowser, true);
 });
 
-test("combined Control and DSH scope prepares the DSH checker before the broad browser proof", () => {
+test("combined Control and DSH scope creates the checker in the existing browser proof only once", () => {
   const result = resolveFromAffected(
     ["control-panel", "dsh-backend"],
     configs([
@@ -84,6 +84,8 @@ test("combined Control and DSH scope prepares the DSH checker before the broad b
     "dsh-backend:baseline-proof",
     "dsh-backend:runtime-proof",
   ]);
+  assert.equal(result.targets.filter((target) => target === "control-panel:dsh-runtime-checker-fixture").length, 1);
+  assert.equal(result.targets.filter((target) => target === "control-panel:browser-live-proof").length, 1);
 });
 
 test("infra scope escalates explicitly to full", () => {
