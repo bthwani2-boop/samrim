@@ -49,21 +49,6 @@ export function createOrderConversationMessageAttempt(
   };
 }
 
-export async function clearOrderConversationMessageAttempt(
-  role: OrderConversationRole,
-  attempt: OrderConversationMessageAttempt,
-  removeStoredItem: (key: string) => Promise<void>,
-  onFailure: (error: unknown) => void,
-): Promise<boolean> {
-  try {
-    await removeStoredItem(orderConversationMessageAttemptStorageKey(role, attempt.actorID, attempt.orderID));
-    return true;
-  } catch (error_) {
-    onFailure(error_);
-    return false;
-  }
-}
-
 export function parseOrderConversationMessageAttempt(
   raw: string | null,
   actorID: string,

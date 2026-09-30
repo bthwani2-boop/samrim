@@ -1,6 +1,6 @@
 import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { clearOrderConversationMessageAttempt, createDshMobileClient, createOrderConversationMessageAttempt, isDefinitiveDshMobileClientRejection, orderConversationMessageAttemptStorageKey, parseOrderConversationMessageAttempt, type OrderConversationMessageAttempt } from "@bthwani/dsh";
+import { createDshMobileClient, createOrderConversationMessageAttempt, isDefinitiveDshMobileClientRejection, orderConversationMessageAttemptStorageKey, parseOrderConversationMessageAttempt, type OrderConversationMessageAttempt } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -17,10 +17,6 @@ function client() {
 
 function senderLabel(role: string): string {
   return role === "client" ? "العميل" : role === "partner" ? "المتجر" : "الكابتن";
-}
-
-function clearStoredAttempt(attempt: OrderConversationMessageAttempt, failureMessage: string): Promise<boolean> {
-  return clearOrderConversationMessageAttempt(conversationRole, attempt, SecureStore.deleteItemAsync, (error_) => console.error(failureMessage, error_));
 }
 
 export function OrderConversation({ orderId }: { orderId: string }) {
@@ -59,21 +55,23 @@ export function OrderConversation({ orderId }: { orderId: string }) {
 
   useEffect(() => { setBody(""); setPendingAttempt(null); void load(); }, [load]);
 
-  async function refreshAfterDefinitiveRejection(attempt: OrderConversationMessageAttempt): Promise<void> {
-    const storageCleared = await clearStoredAttempt(attempt, "DSH client rejected order conversation attempt cleanup failed");
-    setPendingAttempt(storageCleared ? null : attempt);
-    setBody(storageCleared ? "" : attempt.body);
-    await load();
-    setError(storageCleared ? "رفض الخادم إرسال الرسالة؛ حدّثنا حالة المحادثة ويمكنك تعديل الرسالة والمحاولة مجددًا." : "رفض الخادم إرسال الرسالة، وتعذر حذف محاولة الاستعادة المحفوظة. أعد القراءة قبل أي محاولة جديدة.");
-  }
-
   async function submitAttempt(attempt: OrderConversationMessageAttempt, token: string) {
     try {
       await client().sendOrderConversationMessage(token, attempt.orderID, { body: attempt.body }, attempt.idempotencyKey, attempt.correlationID);
     } catch (cause) {
       console.error("DSH client order conversation send failed", cause);
       if (isDefinitiveDshMobileClientRejection(cause)) {
-        await refreshAfterDefinitiveRejection(attempt);
+        let storageCleared = false;
+        try {
+          await SecureStore.deleteItemAsync(orderConversationMessageAttemptStorageKey(conversationRole, attempt.actorID, attempt.orderID));
+          storageCleared = true;
+        } catch (cleanupCause) {
+          console.error("DSH client rejected order conversation attempt cleanup failed", cleanupCause);
+        }
+        setPendingAttempt(storageCleared ? null : attempt);
+        setBody(storageCleared ? "" : attempt.body);
+        await load();
+        setError(storageCleared ? "رفض الخادم إرسال الرسالة؛ حدّثنا حالة المحادثة ويمكنك تعديل الرسالة والمحاولة مجددًا." : "رفض الخادم إرسال الرسالة، وتعذر حذف محاولة الاستعادة المحفوظة. أعد القراءة قبل أي محاولة جديدة.");
         return;
       }
       setPendingAttempt(attempt);
@@ -82,7 +80,13 @@ export function OrderConversation({ orderId }: { orderId: string }) {
       return;
     }
 
-    const storageCleared = await clearStoredAttempt(attempt, "DSH client order conversation recovery record cleanup failed");
+    let storageCleared = false;
+    try {
+      await SecureStore.deleteItemAsync(orderConversationMessageAttemptStorageKey(conversationRole, attempt.actorID, attempt.orderID));
+      storageCleared = true;
+    } catch (cause) {
+      console.error("DSH client order conversation recovery record cleanup failed", cause);
+    }
     setPendingAttempt(storageCleared ? null : attempt);
     setBody(storageCleared ? "" : attempt.body);
     const refreshed = await load();
