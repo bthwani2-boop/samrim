@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import { existsSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -8,6 +9,7 @@ import {
   enableOperatorPermission,
   enableVirtualAuthenticator,
   findExistingOperator,
+  jsonRequest,
   type PreparedOperator,
   provisionIndependentOperator,
   registerOperator,
@@ -53,13 +55,63 @@ function validatedRuntimeFixtureValue(value: unknown, field: string, pattern: Re
   return value;
 }
 
+async function findOrBootstrapPrimaryOperator(
+  identityBase: string,
+  controlToken: string,
+  bootstrapToken: string,
+): Promise<PreparedOperator> {
+  const response = await fetch(identityBase + "/internal/actor-roles/search?role=operator&limit=2", {
+    headers: { Accept: "application/json", Authorization: "Bearer " + controlToken },
+    signal: AbortSignal.timeout(5_000),
+  });
+  expect(response.status, "primary operator search must succeed for the DSH fixture").toBe(200);
+  const body = await response.json() as { items?: Array<{ actorId: string; phoneE164: string }> };
+  const operators = body.items ?? [];
+  if (operators.length > 1) {
+    throw new Error(`DSH checker fixture requires deterministic primary Operator selection; found ${operators.length}`);
+  }
+  if (operators.length === 1) return findExistingOperator(identityBase, controlToken);
+
+  if (process.env.BTHWANI_IDENTITY_PROOF_SCOPE !== "disposable-ci" || process.env.CI !== "true") {
+    throw new Error("DSH checker fixture requires an existing primary operator outside disposable CI");
+  }
+
+  const phone = "+9677" + String(randomInt(10_000_000, 99_999_999));
+  const bootstrap = await jsonRequest(
+    identityBase,
+    "/internal/bootstrap/operator",
+    bootstrapToken,
+    { phoneE164: phone, role: "operator" },
+  );
+  expect(bootstrap.response.status, "fresh disposable CI must bootstrap its primary operator").toBe(201);
+  expect(bootstrap.body?.role?.role).toBe("operator");
+  const actorId = String(bootstrap.body?.role?.actorId || "");
+  const enrollmentToken = String(bootstrap.body?.enrollmentToken?.code || "");
+  expect(actorId).toMatch(/^act_/);
+  expect(enrollmentToken).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
+  return {
+    actorId,
+    phone,
+    token: enrollmentToken,
+    profileId: "",
+    actorCreatedByTest: false,
+    createdByTest: false,
+  };
+}
+
 test("@live provision and activate an independent operator for downstream DSH separation proof", async ({ page }) => {
   test.setTimeout(60_000);
+  if (process.env.CI === "true") {
+    test.skip(!dshRuntimeFixturePath, "DSH checker fixture is owned by the DSH runtime lane in CI");
+    test.skip(existsSync(dshRuntimeFixturePath), "DSH checker fixture was already prepared by its dedicated runtime target");
+  }
+
   const identityBase = requiredEnv("PLAYWRIGHT_IDENTITY_API_BASE_URL").replace(/\/+$/, "");
   const controlToken = requiredEnv("PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN");
+  const bootstrapToken = requiredEnv("PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN");
   const baseUrl = requiredEnv("PLAYWRIGHT_BASE_URL").replace(/\/+$/, "");
   const mailpitBase = requiredEnv("PLAYWRIGHT_MAILPIT_BASE_URL").replace(/\/+$/, "");
-  const primaryOperator = await findExistingOperator(identityBase, controlToken);
+  const primaryOperator = await findOrBootstrapPrimaryOperator(identityBase, controlToken, bootstrapToken);
   const independentOperator = await provisionIndependentOperator(identityBase, controlToken, primaryOperator.actorId, (operator) => {
     preparedOperatorForCleanup = operator;
   });
