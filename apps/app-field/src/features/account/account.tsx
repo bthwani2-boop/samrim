@@ -1,10 +1,11 @@
 import { elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { AppearancePicker, BthwaniButton, BthwaniIcon, BthwaniNavigationRow, BthwaniSectionHeader, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { fieldAdmissionStateLabel } from "@bthwani/dsh";
 import { type Href, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { getUsableIdentityAccessToken, logoutIdentity } from "../../bootstrap/identity";
-import { fieldClient } from "../field-operations/field-client";
+import { logoutIdentity } from "../../bootstrap/identity";
+import { useOwnFieldAdmission } from "../field-operations/use-field-admission";
 
 const actions: ReadonlyArray<Readonly<{
   description: string;
@@ -23,23 +24,8 @@ export default function FieldAccount() {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
-  const [profile, setProfile] = useState<Readonly<{ fullNameAr?: string | null; contactPhoneE164?: string | null; state: string }> | null>(null);
-  const [profileState, setProfileState] = useState<"loading" | "ready" | "error">("loading");
-
-  useEffect(() => {
-    let current = true;
-    void (async () => {
-      try {
-        const token = await getUsableIdentityAccessToken();
-        const response = await fieldClient().readOwnFieldAdmission(token);
-        if (current) { setProfile(response.admission); setProfileState("ready"); }
-      } catch (cause) {
-        console.error("DSH Field profile readback failed", cause);
-        if (current) setProfileState("error");
-      }
-    })();
-    return () => { current = false; };
-  }, []);
+  const { state: profileState, refresh: refreshProfile } = useOwnFieldAdmission();
+  const profile = profileState.kind === "ready" ? profileState.admission : null;
 
   async function logout() {
     if (busy) return;
@@ -68,10 +54,11 @@ export default function FieldAccount() {
         </View>
         <View style={styles.profileCopy}>
           <Text style={styles.profileTitle}>{profile?.fullNameAr || "ملف الميداني"}</Text>
-          <Text style={styles.profileDescription}>{profileState === "loading" ? "جارٍ قراءة الملف…" : profileState === "error" ? "تعذر قراءة الملف الآن؛ أعد المحاولة لاحقًا." : profile?.contactPhoneE164 || "رقم الهاتف غير متاح"}</Text>
-          {profileState === "ready" && profile ? <Text style={styles.profileDescription}>حالة الأهلية: {profile.state === "eligible" ? "مؤهل للعمل الميداني" : "قيد المراجعة"}</Text> : null}
+          <Text style={styles.profileDescription}>{profileState.kind === "loading" ? "جارٍ قراءة الملف…" : profileState.kind === "missing" ? "لا يوجد سجل أهلية ميدانية لهذا الحساب في DSH. تواصل مع المشغّل لإكمال إجراءات التسجيل." : profileState.kind === "error" ? "تعذر قراءة الملف الآن؛ أعد المحاولة عند توفر الاتصال." : profile?.contactPhoneE164 || "رقم الهاتف غير متاح"}</Text>
+          {profileState.kind === "ready" && profile ? <Text style={styles.profileDescription}>حالة الأهلية: {fieldAdmissionStateLabel(profile.state)}</Text> : null}
         </View>
       </BthwaniSurface>
+      {profileState.kind === "missing" || profileState.kind === "error" ? <BthwaniButton label="تحديث حالة الأهلية" onPress={() => void refreshProfile()} variant="secondary" /> : null}
 
       <BthwaniSectionHeader title="مساحات العمل" subtitle="افتح الخدمة التي تحتاجها مباشرة." />
       <View style={styles.actions}>

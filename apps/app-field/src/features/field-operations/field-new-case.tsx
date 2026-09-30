@@ -1,5 +1,5 @@
 import { BthwaniButton, BthwaniChip, BthwaniMap, useAppearanceTheme } from "@bthwani/design-system/native";
-import { isMediaProvenanceInputValid, type CommerceVertical, type CreateJoiningCaseRequest, type DshImageUploadInput, type FieldAdmission, type JoiningCaseResponse, joiningCaseStateLabel, type MediaProvenanceInput, type ServiceCity } from "@bthwani/dsh";
+import { fieldAdmissionStateLabel, isMediaProvenanceInputValid, type CommerceVertical, type CreateJoiningCaseRequest, type DshImageUploadInput, type JoiningCaseResponse, joiningCaseStateLabel, type MediaProvenanceInput, type ServiceCity } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import { type Href, Link } from "expo-router";
@@ -7,8 +7,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, Switch, Text, TextInput, View } from "react-native";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
-import { fieldClient, isMissingFieldAdmission } from "./field-client";
+import { fieldClient } from "./field-client";
 import { createFieldOperationStyles } from "./field-operation-styles";
+import { useOwnFieldAdmission } from "./use-field-admission";
 
 type PendingCreateAttempt = Readonly<{ request: CreateJoiningCaseRequest; idempotencyKey: string; correlationID: string }>;
 type StoreImageDraft = DshImageUploadInput & Readonly<{ provenance: MediaProvenanceInput }>;
@@ -29,7 +30,7 @@ function dshErrorCode(cause: unknown): string {
 export function FieldNewCase() {
 const theme = useAppearanceTheme();
   const styles = useMemo(() => createFieldOperationStyles(theme), [theme]);
-  const [admission, setAdmission] = useState<FieldAdmission | null>(null);
+  const { state: admissionState, refresh: refreshAdmission } = useOwnFieldAdmission();
   const [input, setInput] = useState<CreateJoiningCaseRequest>({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "", firstStoreLatitude: 0, firstStoreLongitude: 0, firstStoreFulfillmentModes: [] });
   const [storeLatitude, setStoreLatitude] = useState("");
   const [storeLongitude, setStoreLongitude] = useState("");
@@ -41,7 +42,6 @@ const theme = useAppearanceTheme();
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
   const [optionsLoading, setOptionsLoading] = useState(true);
   const [optionsError, setOptionsError] = useState("");
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [storeImage, setStoreImage] = useState<StoreImageDraft | null>(null);
@@ -50,25 +50,9 @@ const theme = useAppearanceTheme();
   const formLocked = busy || Boolean(pendingCreateAttempt) || Boolean(pendingImageAttempt) || Boolean(createdCase && storeImage);
 
   const loadAdmission = useCallback(async () => {
-    setLoading(true);
     setError("");
-    try {
-      const token = await getUsableIdentityAccessToken();
-      const response = await fieldClient().readOwnFieldAdmission(token);
-      setAdmission(response.admission);
-    } catch (cause) {
-      if (isMissingFieldAdmission(cause)) {
-        setAdmission(null);
-        return;
-      }
-      console.error("DSH Field admission readback failed", cause);
-      setError("تعذر قراءة قبول الميدان. أعد المحاولة.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { void loadAdmission(); }, [loadAdmission]);
+    await refreshAdmission();
+  }, [refreshAdmission]);
 
   const loadOptions = useCallback(async () => {
     setOptionsLoading(true);
@@ -221,9 +205,11 @@ const theme = useAppearanceTheme();
     <View style={styles.container} accessibilityLabel="ملف انضمام جديد">
       <Text style={styles.title}>ملف انضمام جديد</Text>
       <Text style={styles.muted}>اجمع بيانات النشاط والمتجر في ملف واحد، ثم أرسله للمراجعة عند اكتماله.</Text>
-      {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ التحقق من الأهلية…</Text></View> : null}
-      {!loading && admission?.state !== "eligible" ? <View style={styles.card}><Text style={styles.cardTitle}>لا يمكن إنشاء ملف الآن</Text><Text style={styles.muted}>أهلية الميدان الحالية لا تسمح بإنشاء ملف جديد.</Text></View> : null}
-      {!loading && admission?.state === "eligible" ? <View style={styles.card}>
+      {admissionState.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ التحقق من الأهلية…</Text></View> : null}
+      {admissionState.kind === "missing" ? <View style={styles.card}><Text style={styles.cardTitle}>لا يمكن إنشاء ملف الآن</Text><Text style={styles.muted}>لا يوجد سجل أهلية ميدانية لهذا الحساب في DSH. تواصل مع المشغّل لإكمال إجراءات التسجيل.</Text></View> : null}
+      {admissionState.kind === "ready" && admissionState.admission.state !== "eligible" ? <View style={styles.card}><Text style={styles.cardTitle}>لا يمكن إنشاء ملف الآن</Text><Text style={styles.muted}>حالة الأهلية الحالية: {fieldAdmissionStateLabel(admissionState.admission.state)}. تابع الحالة أو تواصل مع المشغّل.</Text></View> : null}
+      {admissionState.kind === "error" ? <View style={styles.card}><Text accessibilityRole="alert" style={styles.error}>تعذر التحقق من أهلية الميدان. لم نتمكن من قراءة حالتها؛ أعد المحاولة عند توفر الاتصال.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void loadAdmission()} variant="secondary" /></View> : null}
+      {admissionState.kind === "ready" && admissionState.admission.state === "eligible" ? <View style={styles.card}>
         <Text style={styles.label}>هاتف صاحب النشاط</Text>
         <TextInput accessibilityLabel="هاتف صاحب النشاط" editable={!formLocked} autoCapitalize="none" keyboardType="phone-pad" placeholder="مثال: ‎+967…" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput]} value={input.contactPhoneE164} onChangeText={(value) => setInput((current) => ({ ...current, contactPhoneE164: value }))} />
         <Text style={styles.label}>اسم النشاط</Text>
@@ -279,7 +265,7 @@ const theme = useAppearanceTheme();
         <Link href={"/cases" as Href} asChild><BthwaniButton label="فتح ملفات الانضمام" variant="secondary" /></Link>
       </View> : null}
       {error ? <View><Text accessibilityRole="alert" style={styles.error}>{error}</Text>{pendingCreateAttempt || error.startsWith("يوجد ملف نشط") ? <Link href={"/cases" as Href} asChild><BthwaniButton label="قراءة ملفات الانضمام المحفوظة" variant="secondary" /></Link> : null}</View> : null}
-      <BthwaniButton busy={busy} disabled={busy} label="تحديث الأهلية" onPress={() => void loadAdmission()} variant="secondary" />
+      <BthwaniButton busy={busy} disabled={busy || admissionState.kind === "loading"} label="تحديث الأهلية" onPress={() => void loadAdmission()} variant="secondary" />
     </View>
   );
 }
