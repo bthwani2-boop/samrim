@@ -8,6 +8,7 @@ import {
   cleanupPreparedOperator,
   enableOperatorPermission,
   enableVirtualAuthenticator,
+  findExistingOperator,
   jsonRequest,
   type PreparedOperator,
   provisionIndependentOperator,
@@ -69,19 +70,7 @@ async function findOrBootstrapPrimaryOperator(
   if (operators.length > 1) {
     throw new Error(`DSH checker fixture requires deterministic primary Operator selection; found ${operators.length}`);
   }
-  if (operators.length === 1) {
-    const existing = operators[0];
-    expect(existing?.actorId).toMatch(/^act_/);
-    expect(existing?.phoneE164).toMatch(/^\+9677/);
-    return {
-      actorId: String(existing?.actorId),
-      phone: String(existing?.phoneE164),
-      token: "",
-      profileId: "",
-      actorCreatedByTest: false,
-      createdByTest: false,
-    };
-  }
+  if (operators.length === 1) return findExistingOperator(identityBase, controlToken);
 
   if (process.env.BTHWANI_IDENTITY_PROOF_SCOPE !== "disposable-ci" || process.env.CI !== "true") {
     throw new Error("DSH checker fixture requires an existing primary operator outside disposable CI");
