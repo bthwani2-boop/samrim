@@ -2,8 +2,9 @@
 
 import { type FieldAdmission, fieldAdmissionStateLabel } from "@bthwani/dsh";
 import type { ActorRoleView } from "@bthwani/identity";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FieldCandidatePanel } from "./field-candidate-panel";
+import styles from "./field-workbench.module.css";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "../access/identity-error-message";
 
@@ -32,6 +33,7 @@ function statusActionLabel(isBusy: boolean, shouldDisable: boolean): string {
 }
 
 export function FieldAdmissionPanel() {
+  const [view, setView] = useState<"queue" | "accounts">("queue");
   const [query, setQuery] = useState("");
   const [enabledFilter, setEnabledFilter] = useState("");
   const [sort, setSort] = useState<"phone_asc" | "phone_desc">("phone_asc");
@@ -43,8 +45,11 @@ export function FieldAdmissionPanel() {
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [profileEdits, setProfileEdits] = useState<Record<string, string>>({});
+  const loadRequestID = useRef(0);
 
   const load = useCallback(async (cursor = "", append = false) => {
+    const requestID = ++loadRequestID.current;
     if (append) setLoadingMore(true);
     else setLoading(true);
     setError("");
@@ -53,19 +58,19 @@ export function FieldAdmissionPanel() {
       if (cursor) params.set("cursor", cursor);
       if (enabledFilter) params.set("enabled", enabledFilter);
       const response = await identityFetch(`/api/fields?${params}`);
-      if (!response.ok) { setError(await responseMessage(response)); return; }
+      if (!response.ok) { const message = await responseMessage(response); if (loadRequestID.current === requestID) setError(message); return; }
       const page = await response.json() as FieldPage;
+      if (loadRequestID.current !== requestID) return;
       setItems((current) => append ? [...current, ...page.items] : page.items);
       setNextCursor(page.nextCursor ?? "");
     } catch (cause) {
-      setError(isRequestFailure(cause) ? cause.message : "تعذر قراءة سجل الميدانيين.");
+      if (loadRequestID.current === requestID) setError(isRequestFailure(cause) ? cause.message : "تعذر قراءة سجل الميدانيين.");
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      if (loadRequestID.current === requestID) { setLoading(false); setLoadingMore(false); }
     }
   }, [enabledFilter, query, sort]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { const timer = window.setTimeout(() => { void load(); }, 250); return () => window.clearTimeout(timer); }, [load]);
 
   async function changeStatus(field: FieldRecord) {
     const reason = reasons[field.actorId]?.trim() ?? "";
@@ -158,11 +163,58 @@ export function FieldAdmissionPanel() {
     }
   }
 
+  async function completeProfileReview(field: FieldRecord, action: "update-profile" | "review-profile") {
+    const admission = field.admission;
+    const fullNameAr = (profileEdits[field.actorId] ?? admission?.fullNameAr ?? "").trim();
+    if (!admission || admission.state !== "suspended" || !admission.requiresProfileReview) {
+      setError("يجب إيقاف أهلية الحساب أولًا قبل استكمال الملف ومراجعته.");
+      return;
+    }
+    if (action === "update-profile" && (Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120)) {
+      setError("أدخل اسم العرض الكامل قبل حفظ الملف.");
+      return;
+    }
+    if (action === "review-profile" && !fullNameAr) {
+      setError("أدخل اسم العرض واحفظه قبل اعتماد المراجعة.");
+      return;
+    }
+    setBusy(field.actorId);
+    setError("");
+    setNotice("");
+    try {
+      const response = await identityFetch("/api/fields", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, admissionId: admission.id, fullNameAr, expectedVersion: admission.version }),
+      });
+      if (!response.ok) {
+        const message = await responseMessage(response);
+        await load();
+        setError(response.status === 409 || response.status === 412 ? `تغير إصدار الملف؛ أُعيدت قراءة الحالة. ${message}` : message);
+        return;
+      }
+      await load();
+      setProfileEdits((current) => { const next = { ...current }; delete next[field.actorId]; return next; });
+      setNotice(action === "review-profile" ? "اكتملت مراجعة الملف في DSH؛ بقي الدور موقوفًا حتى إعادة تفعيله." : "حُفظ اسم الملف في DSH.");
+    } catch (cause) {
+      setError(isRequestFailure(cause) ? cause.message : "تعذرت مراجعة الملف؛ أعد قراءة الحالة قبل إجراء آخر.");
+      await load();
+    } finally {
+      setBusy("");
+    }
+  }
+
   return (
-    <>
-      <FieldCandidatePanel />
-      <section className="access-card" aria-labelledby="field-roster-title">
-        <div className="access-card-heading"><span className="step-chip">سجل الشركاء</span><h2 id="field-roster-title">قائمة الميدانيين وأهليتهم</h2><p className="muted">تُقرأ الأدوار من Identity والأهلية التشغيلية من DSH. التفعيل والإيقاف وإجازة إعادة التسجيل تتطلب سببًا ونسخًا حديثة.</p></div>
+    <section className={`access-card field-workbench ${styles.root}`} aria-labelledby="field-workbench-title">
+      <header className="field-workbench-heading">
+        <div><span className="step-chip">مساحة تشغيل موحّدة</span><h2 id="field-workbench-title">إدارة الميدانيين</h2><p className="muted">ملف DSH يمنح الأهلية؛ حساب Identity يحدد الوصول. كل شخص يظهر في المرحلة التي يملكها حاليًا.</p></div>
+        <nav className="field-workbench-tabs" aria-label="مراحل إدارة الميدانيين">
+          <button type="button" className="button button-secondary" aria-pressed={view === "queue"} onClick={() => setView("queue")}>قائمة الأهلية قبل منح الدور</button>
+          <button type="button" className="button button-secondary" aria-pressed={view === "accounts"} onClick={() => setView("accounts")}>الحسابات والأهلية التشغيلية</button>
+        </nav>
+      </header>
+      {view === "queue" ? <FieldCandidatePanel /> : <div className="field-workbench-pane">
+      <div className="field-list-heading"><div><h3 id="field-roster-title">الحسابات الميدانية</h3><p className="muted">الحسابات من Identity وملف الأهلية المرتبط من DSH. استكمال الملفات القديمة يتم هنا في صف الحساب نفسه.</p></div></div>
         <div className="workspace-toolbar"><label className="field-label" htmlFor="field-search">بحث برقم الهاتف<input id="field-search" inputMode="tel" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث في أرقام الميدانيين" /></label><label className="field-label" htmlFor="field-status-filter">حالة الدور<select id="field-status-filter" value={enabledFilter} onChange={(event) => setEnabledFilter(event.target.value)}><option value="">كل الحالات</option><option value="true">مفعّل</option><option value="false">موقوف</option></select></label><label className="field-label" htmlFor="field-sort">ترتيب رقم الهاتف<select id="field-sort" value={sort} onChange={(event) => setSort(event.target.value as "phone_asc" | "phone_desc")}><option value="phone_asc">تصاعدي</option><option value="phone_desc">تنازلي</option></select></label><button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={() => void load()}>{loading ? "جارٍ القراءة…" : "إعادة القراءة"}</button></div>
         {notice ? <p className="success-inline" role="status">{notice}</p> : null}{error ? <p className="identity-error" role="alert">{error}</p> : null}
         {loading && items.length === 0 ? <p role="status">جارٍ قراءة قائمة الميدانيين…</p> : null}{!loading && !error && items.length === 0 ? <div className="collection-state"><strong>لا توجد نتائج</strong><p>جرّب إزالة المرشح أو البحث برقم آخر.</p></div> : null}
@@ -173,11 +225,14 @@ export function FieldAdmissionPanel() {
             const shouldDisable = field.enabled || mustDisableForProfileReview;
             const waitingForReenrollment = !requiresProfileReview && field.enabled && !field.activatedAt && field.admission?.state === "eligible";
             const reason = reasons[field.actorId] ?? "";
+            const editedName = profileEdits[field.actorId] ?? field.admission?.fullNameAr ?? "";
+            const isLegacyReview = requiresProfileReview && field.admission?.state === "suspended";
             return <tr key={field.actorId}>
-              <th scope="row"><strong>{field.admission?.fullNameAr || "—"}</strong><br /><bdi dir="ltr">{field.phoneE164}</bdi></th>
+              <th scope="row"><strong>{field.admission?.fullNameAr || "حساب بلا ملف اسم مكتمل"}</strong><br /><bdi dir="ltr">{field.phoneE164}</bdi>{isLegacyReview ? <label className="field-label field-inline-name" htmlFor={`field-profile-name-${index}`}>استكمال اسم العرض<input id={`field-profile-name-${index}`} value={editedName} maxLength={120} disabled={Boolean(busy)} onChange={(event) => setProfileEdits((current) => ({ ...current, [field.actorId]: event.target.value }))} /></label> : null}</th>
               <td>{identityStatusLabel(field, requiresProfileReview)}</td>
               <td>{admissionStatusLabel(field.admission, requiresProfileReview)}</td>
-              <td>{field.admission ? <div className="access-form">
+              <td>{field.admission ? <div className="field-row-actions">
+                {isLegacyReview ? <><button type="button" className="button button-secondary" disabled={Boolean(busy) || Array.from(editedName.trim()).length < 2 || editedName.trim() === (field.admission?.fullNameAr ?? "")} onClick={() => void completeProfileReview(field, "update-profile")}>{busy === field.actorId ? "جارٍ الحفظ…" : "حفظ الاسم"}</button><button type="button" className="button button-primary" disabled={Boolean(busy) || !editedName.trim() || editedName.trim() !== (field.admission?.fullNameAr ?? "")} onClick={() => void completeProfileReview(field, "review-profile")}>اعتماد مراجعة الملف</button></> : null}
                 <label className="field-label" htmlFor={`field-reason-${index}`}>سبب الإجراء<input id={`field-reason-${index}`} maxLength={500} value={reason} onChange={(event) => setReasons((current) => ({ ...current, [field.actorId]: event.target.value }))} disabled={Boolean(busy)} /></label>
                 {waitingForReenrollment ? <button type="button" className="button button-primary" disabled={Boolean(busy) || Array.from(reason.trim()).length < 5} onClick={() => void reenroll(field)}>{busy === field.actorId ? "جارٍ الإجازة…" : "إجازة إعادة التسجيل"}</button> : null}
                 {(field.activatedAt || shouldDisable) && (shouldDisable || !requiresProfileReview) ? <button type="button" className={shouldDisable ? "button button-secondary" : "button button-primary"} disabled={Boolean(busy) || Array.from(reason.trim()).length < 5} onClick={() => void changeStatus(field)}>{statusActionLabel(busy === field.actorId, shouldDisable)}</button> : null}
@@ -187,7 +242,6 @@ export function FieldAdmissionPanel() {
           })}
         </tbody></table></div> : null}
         {nextCursor ? <div className="workspace-toolbar"><button type="button" className="button button-secondary" disabled={loadingMore || Boolean(busy)} onClick={() => void load(nextCursor, true)}>{loadingMore ? "جارٍ تحميل المزيد…" : "تحميل المزيد"}</button></div> : null}
-      </section>
-    </>
+      </div>}</section>
   );
 }

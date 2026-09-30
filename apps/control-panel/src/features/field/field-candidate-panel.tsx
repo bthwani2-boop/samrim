@@ -12,7 +12,7 @@ export function FieldCandidatePanel() {
   const [fullNameAr, setFullNameAr] = useState("");
   const [phone, setPhone] = useState("");
   const [query, setQuery] = useState("");
-  const [state, setState] = useState("review_required");
+  const [state, setState] = useState("pending");
   const [sort, setSort] = useState<"created_asc" | "created_desc">("created_desc");
   const [items, setItems] = useState<ReadonlyArray<FieldAdmission>>([]);
   const [edits, setEdits] = useState<Record<string, string>>({});
@@ -45,7 +45,7 @@ export function FieldCandidatePanel() {
     }
   }, [query, sort, state]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { const timer = window.setTimeout(() => { void load(); }, 250); return () => window.clearTimeout(timer); }, [load]);
 
   async function createProfile() {
     const name = fullNameAr.trim();
@@ -115,20 +115,22 @@ export function FieldCandidatePanel() {
     }
   }
 
-  return <>
-    <section className="access-card" aria-labelledby="field-candidate-create-title">
-      <div className="access-card-heading"><span className="step-chip">الخطوة الأولى · ملف بلا دور</span><h2 id="field-candidate-create-title">ملف ميداني جديد</h2><p className="muted">سجّل اسم العرض بالعربية ورقم الاتصال؛ الاسم خاص بملف الميداني وليس اسمًا قانونيًا موثّقًا. بعد المراجعة والاعتماد فقط يُمنح الدور في التطبيق.</p></div>
-      <div className="access-form">
+  return <div className="field-workbench-pane" aria-labelledby="field-candidate-create-title">
+    <details className="field-create-disclosure">
+      <summary className="button button-secondary">إنشاء ملف ميداني</summary>
+      <div className="field-create-content">
+      <div className="access-card-heading"><h3 id="field-candidate-create-title">ملف ميداني جديد</h3><p className="muted">سجّل اسم العرض ورقم الاتصال. الملف لا يمنح صلاحية دخول؛ يمر بالاعتماد ثم إنشاء دور Identity.</p></div>
+      <form className="access-form" onSubmit={(event) => { event.preventDefault(); void createProfile(); }}>
         <label className="field-label" htmlFor="field-candidate-name">اسم العرض الكامل بالعربية<input id="field-candidate-name" autoComplete="name" maxLength={120} value={fullNameAr} onChange={(event) => setFullNameAr(event.target.value)} disabled={Boolean(busy)} placeholder="مثال: سامي ناصر محمد العريقي" /></label>
         <label className="field-label" htmlFor="field-candidate-phone">رقم الهاتف<input id="field-candidate-phone" autoComplete="tel" inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} disabled={Boolean(busy)} placeholder="+96777000100" /></label>
-        <button type="button" className="button button-primary" disabled={Boolean(busy) || !fullNameAr.trim() || !phone.trim()} onClick={() => void createProfile()}>{busy === "create" ? "جارٍ حفظ الملف…" : "حفظ الملف للمراجعة"}</button>
+        <button type="submit" className="button button-primary" disabled={Boolean(busy) || !fullNameAr.trim() || !phone.trim()}>{busy === "create" ? "جارٍ حفظ الملف…" : "حفظ الملف للمراجعة"}</button>
+      </form>
       </div>
-    </section>
-    <section className="access-card" aria-labelledby="field-candidate-registry-title">
-      <div className="access-card-heading"><span className="step-chip">سجل ملفات DSH</span><h2 id="field-candidate-registry-title">ملفات الميدانيين قبل منح الدور</h2><p className="muted">بحث وترتيب وصفحات خادمية؛ المراجعة تسبق إنشاء دور Identity، والتفعيل الذاتي يأتي بعد منح الدور.</p></div>
+    </details>
+    <div className="field-list-heading"><div><h3 id="field-candidate-registry-title">قائمة انتظار الأهلية</h3><p className="muted">تعرض الملفات التي لم يُمنح أصحابها دور الميداني بعد. الحسابات المرتبطة تظهر في سجل الحسابات.</p></div></div>
       <div className="workspace-toolbar">
         <label className="field-label" htmlFor="field-candidate-search">بحث بالاسم أو الهاتف<input id="field-candidate-search" value={query} disabled={Boolean(busy)} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث في ملفات الميدانيين" /></label>
-        <label className="field-label" htmlFor="field-candidate-state">مرحلة الملف<select id="field-candidate-state" value={state} disabled={Boolean(busy)} onChange={(event) => setState(event.target.value)}><option value="review_required">يحتاج استكمالًا ومراجعة</option><option value="pending_review">ملف جديد بانتظار المراجعة</option><option value="pending_identity">معتمد وينتظر منح الدور</option><option value="eligible">مؤهل</option><option value="suspended">موقوف</option><option value="all">كل المراحل</option></select></label>
+        <label className="field-label" htmlFor="field-candidate-state">مرحلة الملف<select id="field-candidate-state" value={state} disabled={Boolean(busy)} onChange={(event) => setState(event.target.value)}><option value="pending">كل الملفات قبل منح الدور</option><option value="pending_review">بانتظار المراجعة</option><option value="pending_identity">معتمد وينتظر منح الدور</option></select></label>
         <label className="field-label" htmlFor="field-candidate-sort">ترتيب الإنشاء<select id="field-candidate-sort" value={sort} disabled={Boolean(busy)} onChange={(event) => setSort(event.target.value as "created_asc" | "created_desc")}><option value="created_desc">الأحدث أولًا</option><option value="created_asc">الأقدم أولًا</option></select></label>
         <button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={() => void load()}>{loading ? "جارٍ القراءة…" : "إعادة القراءة"}</button>
       </div>
@@ -140,8 +142,7 @@ export function FieldCandidatePanel() {
         {items.map((profile) => {
           const name = edits[profile.id] ?? profile.fullNameAr ?? "";
           const changed = name.trim() !== (profile.fullNameAr ?? "");
-          const canCompleteLegacy = profile.state === "suspended" && profile.requiresProfileReview;
-          const canEdit = profile.state === "pending_review" || canCompleteLegacy;
+          const canEdit = profile.state === "pending_review";
           return <tr key={profile.id}>
             <th scope="row"><div className="access-form"><label className="field-label" htmlFor={"field-candidate-name-" + profile.id}>الاسم<input id={"field-candidate-name-" + profile.id} value={name} maxLength={120} disabled={Boolean(busy) || !canEdit} onChange={(event) => setEdits((current) => ({ ...current, [profile.id]: event.target.value }))} /></label><bdi dir="ltr">{profile.contactPhoneE164 || "—"}</bdi></div></th>
             <td>{profile.requiresProfileReview ? "موقوف حتى استكمال الملف ومراجعته" : fieldAdmissionStateLabel(profile.state)} · الإصدار {profile.version}</td>
@@ -149,19 +150,14 @@ export function FieldCandidatePanel() {
               {canEdit ? <>
                 <button type="button" className="button button-secondary" disabled={Boolean(busy) || !changed} onClick={() => void mutate(profile, "update-profile")}>{busy === profile.id + ":update-profile" ? "جارٍ الحفظ…" : "حفظ الملف"}</button>
                 {profile.state === "pending_review" ? <button type="button" className="button button-primary" disabled={Boolean(busy) || changed} onClick={() => void mutate(profile, "approve")}>{busy === profile.id + ":approve" ? "جارٍ الاعتماد…" : "اعتماد الملف"}</button> : null}
-                {canCompleteLegacy ? <button type="button" className="button button-primary" disabled={Boolean(busy) || changed || !name.trim()} onClick={() => void mutate(profile, "review-profile")}>{busy === profile.id + ":review-profile" ? "جارٍ اعتماد المراجعة…" : "اعتماد الملف بعد المراجعة"}</button> : null}
               </> : null}
-              {profile.state === "eligible" && profile.requiresProfileReview ? <span className="muted">أوقف الدور من قائمة الحسابات قبل استكمال الملف ومراجعته.</span> : null}
               {profile.state === "pending_identity" ? <button type="button" className="button button-primary" disabled={Boolean(busy)} onClick={() => void mutate(profile, "provision")}>{busy === profile.id + ":provision" ? "جارٍ منح الدور…" : "منح دور الميداني"}</button> : null}
-              {profile.state === "eligible" && !profile.requiresProfileReview ? <span className="muted">اكتمل منح الدور؛ ينتظر تفعيل الحساب من الميداني.</span> : null}
-              {profile.state === "suspended" ? <span className="muted">الأهلية موقوفة في DSH.</span> : null}
             </div></td>
           </tr>;
         })}
       </tbody></table></div> : null}
       {nextCursor ? <div className="workspace-toolbar"><button type="button" className="button button-secondary" disabled={loadingMore || Boolean(busy)} onClick={() => void load(nextCursor, true)}>{loadingMore ? "جارٍ تحميل المزيد…" : "تحميل المزيد"}</button></div> : null}
-    </section>
-  </>;
+  </div>;
 }
 
 function fieldMutationSuccessMessage(action: "update-profile" | "approve" | "provision" | "review-profile"): string {

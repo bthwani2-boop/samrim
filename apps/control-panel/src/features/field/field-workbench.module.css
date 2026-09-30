@@ -1,0 +1,48 @@
+.root { min-width: 0; }
+
+:global(.field-workbench) { display: grid; gap: 20px; padding: clamp(18px, 2.2vw, 30px); }
+:global(.field-workbench-heading) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, auto); align-items: end; gap: 20px; }
+:global(.field-workbench-heading h2) { margin: 6px 0; color: var(--color-primary); font-size: clamp(24px, 2.5vw, 32px); font-weight: 850; letter-spacing: -.035em; }
+:global(.field-workbench-heading p), :global(.field-list-heading p), :global(.field-create-content p) { margin: 0; line-height: 1.7; }
+:global(.field-workbench-tabs) { display: flex; flex-wrap: wrap; justify-content: end; gap: 8px; }
+:global(.field-workbench-tabs .button) { min-height: 44px; }
+:global(.field-workbench-tabs .button[aria-pressed="true"]) { border-color: var(--action-bg); background: var(--action-soft); color: var(--interactive-text); box-shadow: inset 0 -2px var(--action-bg); }
+:global(.field-workbench-pane) { display: grid; min-width: 0; gap: 16px; }
+:global(.field-create-disclosure) { overflow: hidden; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-muted); }
+:global(.field-create-disclosure > summary) { display: flex; width: fit-content; min-height: 42px; align-items: center; justify-content: center; margin: 12px; padding-inline: 16px; cursor: pointer; list-style: none; }
+:global(.field-create-disclosure > summary::-webkit-details-marker) { display: none; }
+:global(.field-create-disclosure > summary::before) { content: "+"; margin-inline-end: 8px; font-size: 18px; line-height: 1; }
+:global(.field-create-disclosure[open] > summary::before) { content: "−"; }
+:global(.field-create-content) { display: grid; gap: 12px; padding: 4px 18px 18px; border-top: 1px solid var(--border-subtle); }
+:global(.field-create-content .access-card-heading) { margin-top: 14px; }
+:global(.field-create-content h3), :global(.field-list-heading h3) { margin: 0 0 5px; color: var(--color-primary); font-size: 18px; font-weight: 800; }
+:global(.field-create-content .access-form) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; margin-top: 4px; }
+:global(.field-create-content .access-form .button) { min-width: 190px; }
+:global(.field-list-heading) { display: flex; align-items: end; justify-content: space-between; gap: 12px; padding-top: 4px; }
+:global(.field-workbench .workspace-toolbar) { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(190px, .7fr) minmax(160px, .6fr) auto; align-items: end; gap: 12px; padding: 14px; }
+:global(.field-workbench .workspace-toolbar .field-label) { min-width: 0; }
+:global(.field-workbench .workspace-toolbar .field-label input), :global(.field-workbench .field-inline-name input) { width: 100%; min-height: 44px; }
+:global(.field-workbench .workspace-toolbar .button) { min-height: 44px; }
+:global(.field-workbench .operations-table) { min-width: 850px; }
+:global(.field-workbench .operations-table th), :global(.field-workbench .operations-table td) { padding: 12px 14px; }
+:global(.field-workbench .field-row-actions) { display: grid; min-width: 180px; justify-items: stretch; gap: 8px; }
+:global(.field-workbench .field-row-actions .field-label) { margin: 0; }
+:global(.field-workbench .field-row-actions .button) { min-width: 0; min-height: 40px; }
+:global(.field-workbench .field-inline-name) { display: grid; max-width: 280px; gap: 6px; margin-top: 10px; color: var(--text-muted); font-size: 12px; }
+:global(.field-workbench :focus-visible) { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
+
+@media (max-width: 900px) {
+  :global(.field-workbench-heading) { grid-template-columns: minmax(0, 1fr); }
+  :global(.field-workbench-tabs) { justify-content: start; }
+  :global(.field-workbench .workspace-toolbar) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  :global(.field-create-content .access-form) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  :global(.field-create-content .access-form .button) { grid-column: 1 / -1; justify-self: start; }
+}
+
+@media (max-width: 560px) {
+  :global(.field-workbench) { gap: 16px; padding: 16px; }
+  :global(.field-workbench-tabs) { display: grid; grid-template-columns: 1fr; width: 100%; }
+  :global(.field-workbench-tabs .button) { width: 100%; }
+  :global(.field-workbench .workspace-toolbar), :global(.field-create-content .access-form) { grid-template-columns: minmax(0, 1fr); }
+  :global(.field-create-content .access-form .button) { grid-column: auto; width: 100%; }
+}
