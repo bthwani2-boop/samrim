@@ -26,11 +26,8 @@ export function CaptainCandidatePanel() {
 
   const load = useCallback(async (cursor = "", append = false) => {
     const requestID = ++loadRequestID.current;
-    if (append) {
-      setLoadingMore(true);
-    } else {
-      setLoading(true);
-    }
+    if (append) setLoadingMore(true);
+    else setLoading(true);
     setError("");
     try {
       const params = new URLSearchParams({ scope: "candidates", state, candidateSort: sort, q: query.trim(), limit: "25" });
