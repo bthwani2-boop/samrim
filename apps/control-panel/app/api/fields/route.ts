@@ -6,6 +6,21 @@ import { identityErrorPayload, identityHttpStatus, readOperatorSession, searchId
 import { operatorWorkspacePermissionDenied } from "../../../src/server/identity/operator-workspace-access";
 import { verifySameOrigin } from "../../../src/server/security/csrf";
 
+type WorkbenchCursor = Readonly<{ version: 1; phase: "candidates" | "accounts"; sourceCursor: string }>;
+
+function encodeWorkbenchCursor(cursor: WorkbenchCursor): string {
+  return Buffer.from(JSON.stringify(cursor)).toString("base64url");
+}
+
+function decodeWorkbenchCursor(value: string): WorkbenchCursor | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as Partial<WorkbenchCursor>;
+    if (parsed.version !== 1 || (parsed.phase !== "candidates" && parsed.phase !== "accounts") || typeof parsed.sourceCursor !== "string" || parsed.sourceCursor.length > 512) return null;
+    return { version: 1, phase: parsed.phase, sourceCursor: parsed.sourceCursor };
+  } catch { return null; }
+}
+
 export async function POST(request: Request) {
   if (!verifySameOrigin(request)) return NextResponse.json({ error: { code: "FORBIDDEN", message: "cross-site requests are forbidden" } }, { status: 403, headers: { "Cache-Control": "no-store" } });
   const identity = await readOperatorSession();
@@ -106,11 +121,36 @@ export async function GET(request: Request) {
   const enabled = rawEnabled === null ? undefined : rawEnabled === "true" ? true : rawEnabled === "false" ? false : null;
   if (!Number.isInteger(limit) || limit < 1 || limit > 50 || enabled === null || sort === null || query.trim().length > 100 || cursor.length > 512) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "valid search, cursor, sort, limit, and enabled filters are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
   try {
-    if (params.get("scope") === "candidates") {
-      const state = params.get("state") ?? "pending";
-      const candidateSort = params.get("candidateSort") ?? "created_desc";
-      const candidates = await listFieldAdmissions(query, state, candidateSort, Math.min(limit, 50), cursor, { operatorActorId: identity.subject });
-      return NextResponse.json({ items: candidates.admissions, limit: Math.min(limit, 50), nextCursor: candidates.nextCursor }, { headers: { "Cache-Control": "no-store" } });
+    if (params.get("scope") === "workbench") {
+      const workbenchCursor = decodeWorkbenchCursor(cursor);
+      if (cursor && !workbenchCursor) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "field workbench cursor is invalid" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
+      const phase = workbenchCursor?.phase ?? "candidates";
+      const items: Array<Readonly<{ kind: "candidate"; admission: Awaited<ReturnType<typeof listFieldAdmissions>>["admissions"][number] }> | Readonly<{ kind: "account"; account: Awaited<ReturnType<typeof searchIdentityRoles>>["items"][number] & { admission: Awaited<ReturnType<typeof readFieldAdmissionByActor>>["admission"] | null } }>> = [];
+      let accountsCursor = "";
+      if (phase === "candidates") {
+        const candidates = await listFieldAdmissions(query, "pending", "created_desc", limit, workbenchCursor?.sourceCursor ?? "", { operatorActorId: identity.subject });
+        items.push(...candidates.admissions.map((admission) => ({ kind: "candidate" as const, admission })));
+        if (candidates.nextCursor) return NextResponse.json({ items, nextCursor: encodeWorkbenchCursor({ version: 1, phase: "candidates", sourceCursor: candidates.nextCursor }) }, { headers: { "Cache-Control": "no-store" } });
+        if (items.length < limit) accountsCursor = "";
+        else {
+          const firstAccount = await searchIdentityRoles("field", query, 1, "", enabled ?? undefined, sort);
+          return NextResponse.json({ items, nextCursor: firstAccount.items.length ? encodeWorkbenchCursor({ version: 1, phase: "accounts", sourceCursor: "" }) : undefined }, { headers: { "Cache-Control": "no-store" } });
+        }
+      } else accountsCursor = workbenchCursor?.sourceCursor ?? "";
+      const accountLimit = Math.max(1, limit - items.length);
+      const accounts = await searchIdentityRoles("field", query, accountLimit, accountsCursor, enabled ?? undefined, sort);
+      const roster = await Promise.all(accounts.items.map(async (role) => {
+        try {
+          const result = await readFieldAdmissionByActor(role.actorId, { operatorActorId: identity.subject });
+          return { kind: "account" as const, account: { ...role, admission: result.admission } };
+        } catch (error) {
+          if (isDshClientError(error) && dshHttpStatus(error) === 404) return { kind: "account" as const, account: { ...role, admission: null } };
+          throw error;
+        }
+      }));
+      items.push(...roster);
+      const nextCursor = accounts.nextCursor ? encodeWorkbenchCursor({ version: 1, phase: "accounts", sourceCursor: accounts.nextCursor }) : undefined;
+      return NextResponse.json({ items, nextCursor }, { headers: { "Cache-Control": "no-store" } });
     }
     const page = await searchIdentityRoles("field", query, limit, cursor, enabled, sort);
     const items = await Promise.all(page.items.map(async (role) => {

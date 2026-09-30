@@ -29,6 +29,7 @@ async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "f
   const surface = role === "captain" ? "captains" : "fields";
   const actorID = `act_${role}_reviewed_candidate`;
   const admissionID = `${role === "captain" ? "cap" : "fld"}_adm_reviewed_candidate`;
+  const candidateNameSelector = role === "field" ? `#candidate-name-${admissionID}` : `#${role}-candidate-name-${admissionID}`;
   let profile: { id: string; actorId?: string; fullNameAr: string; contactPhoneE164: string; state: string; version: number } | null = null;
   const mutations: Record<string, unknown>[] = [];
 
@@ -36,6 +37,13 @@ async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "f
     const request = route.request();
     if (request.method() === "GET") {
       const params = new URL(request.url()).searchParams;
+      if (role === "field" && params.get("scope") === "workbench") {
+        const items = profile?.actorId
+          ? [{ kind: "account", account: { actorId: profile.actorId, phoneE164: profile.contactPhoneE164, role: "field", enabled: true, activatedAt: undefined, securityEnabled: true, actorVersion: 1, roleVersion: 1, admission: profile } }]
+          : profile && (profile.state === "pending_review" || profile.state === "pending_identity") ? [{ kind: "candidate", admission: profile }] : [];
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items, limit: 25 }) });
+        return;
+      }
       if (params.get("scope") !== "candidates") {
         await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 25, nextCursor: "" }) });
         return;
@@ -65,22 +73,30 @@ async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "f
   });
 
   await page.goto(`/${surface}`);
-  await expect(page.getByRole("heading", { name: role === "captain" ? "ملف كابتن جديد" : "ملف ميداني جديد" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: role === "captain" ? "ملف كابتن جديد" : "إدارة الميدانيين" })).toBeVisible();
+  if (role === "field") await page.getByText("إنشاء ملف ميداني").click();
   await page.locator(`#${role}-candidate-name`).fill(initialName);
   await page.locator(`#${role}-candidate-phone`).fill(phone);
-  await page.getByRole("button", { name: "حفظ الملف للمراجعة" }).click();
-  await expect(page.getByText(`أُنشئ ملف ${role === "captain" ? "الكابتن" : "الميداني"} بانتظار المراجعة. لم يُمنح دور التطبيق بعد.`)).toBeVisible();
-  await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(initialName);
+  await page.getByRole("button", { name: role === "captain" ? "حفظ الملف للمراجعة" : "حفظ للمراجعة" }).click();
+  await expect(page.getByText(role === "captain" ? "أُنشئ ملف الكابتن بانتظار المراجعة. لم يُمنح دور التطبيق بعد." : "أُنشئ الملف وظهر في سجل الميدانيين بانتظار المراجعة.")).toBeVisible();
+  if (role === "field" && !(await page.locator(candidateNameSelector).isVisible())) await page.getByText("الخطوة التالية", { exact: true }).click();
+  await expect(page.locator(candidateNameSelector)).toHaveValue(initialName);
 
-  await page.locator(`#${role}-candidate-name-${admissionID}`).fill(reviewedName);
-  await page.getByRole("button", { name: "حفظ الملف", exact: true }).click();
-  await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(reviewedName);
+  if (role === "field" && !(await page.getByRole("button", { name: "اعتماد الملف", exact: true }).isVisible())) await page.getByText("الخطوة التالية", { exact: true }).click();
+  await page.locator(candidateNameSelector).fill(reviewedName);
+  await page.getByRole("button", { name: role === "field" ? "حفظ الاسم" : "حفظ الملف", exact: true }).click();
+  if (role === "field" && !(await page.locator(candidateNameSelector).isVisible())) await page.getByText("الخطوة التالية", { exact: true }).click();
+  await expect(page.locator(candidateNameSelector)).toHaveValue(reviewedName);
   await page.getByRole("button", { name: "اعتماد الملف", exact: true }).click();
-  await page.locator(`#${role}-candidate-state`).selectOption("pending_identity");
-  await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(reviewedName);
+  if (role === "field") {
+    if (!(await page.getByRole("button", { name: "منح دور الميداني" }).isVisible())) await page.getByText("الخطوة التالية", { exact: true }).click();
+  } else {
+    await page.locator(`#${role}-candidate-state`).selectOption("pending_identity");
+    await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(reviewedName);
+  }
   await page.getByRole("button", { name: `منح دور ${role === "captain" ? "الكابتن" : "الميداني"}` }).click();
-  await page.locator(`#${role}-candidate-state`).selectOption("eligible");
-  await expect(page.getByText(`اكتمل منح الدور؛ ينتظر تفعيل الحساب من ${role === "captain" ? "الكابتن" : "الميداني"}.`)).toBeVisible();
+  if (role === "captain") await page.locator(`#${role}-candidate-state`).selectOption("eligible");
+  await expect(page.getByText(role === "captain" ? "اكتمل منح الدور؛ ينتظر تفعيل الحساب من الكابتن." : "مُنح الدور وأُعيدت قراءة ربط Identity وDSH.")).toBeVisible();
   await expect(page.getByText(actorID)).toHaveCount(0);
   expect(mutations).toEqual([
     { action: "admit", fullNameAr: initialName, contactPhoneE164: phone },
@@ -108,6 +124,10 @@ async function exerciseLegacyDshProfileReview(page: Page, role: "captain" | "fie
     const request = route.request();
     if (request.method() === "GET") {
       const params = new URL(request.url()).searchParams;
+      if (role === "field" && params.get("scope") === "workbench") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: profile.actorId, phoneE164: "+96777000998", role: "field", enabled: false, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: profile } }] }) });
+        return;
+      }
       if (params.get("scope") !== "candidates") {
         await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 25, nextCursor: "" }) });
         return;
@@ -134,18 +154,31 @@ async function exerciseLegacyDshProfileReview(page: Page, role: "captain" | "fie
   });
 
   await page.goto(`/${surface}`);
-  await expect(page.getByRole("heading", { name: role === "captain" ? "ملفات الكباتن قبل منح الدور" : "ملفات الميدانيين قبل منح الدور" })).toBeVisible();
-  await expect(page.getByText("موقوف حتى استكمال الملف ومراجعته")).toBeVisible();
+  await expect(page.getByRole("heading", { name: role === "captain" ? "ملفات الكباتن قبل منح الدور" : "إدارة الميدانيين" })).toBeVisible();
+  await expect(page.getByText(role === "captain" ? "موقوف حتى استكمال الملف ومراجعته" : "الملف يحتاج استكمالًا ومراجعة")).toBeVisible();
   const name = "سامي ناصر محمد العريقي";
-  await page.locator(`#${role}-candidate-name-${admissionID}`).fill(name);
-  await page.getByRole("button", { name: "حفظ الملف", exact: true }).click();
-  await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(name);
-  await page.getByRole("button", { name: "اعتماد الملف بعد المراجعة" }).click();
-  await expect(page.getByRole("status")).toContainText("يبقى الدور موقوفًا حتى إعادة التفعيل");
-  await page.locator(`#${role}-candidate-state`).selectOption("suspended");
-  await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(name);
-  await expect(page.getByText("موقوف حتى استكمال الملف ومراجعته")).toHaveCount(0);
-  expect(mutations).toEqual([
+  if (role === "field") {
+    if (!(await page.getByRole("button", { name: "اعتماد مراجعة الملف" }).isVisible())) await page.getByText("الخطوة التالية", { exact: true }).click();
+    await page.locator(`#field-profile-name-act_field_legacy_review`).fill(name);
+    await page.getByRole("button", { name: "حفظ الاسم" }).click();
+    if (!(await page.getByRole("button", { name: "اعتماد مراجعة الملف" }).isVisible())) await page.getByText("الخطوة التالية", { exact: true }).click();
+    await expect(page.locator("#field-profile-name-act_field_legacy_review")).toHaveValue(name);
+    await page.getByRole("button", { name: "اعتماد مراجعة الملف" }).click();
+    await expect(page.getByRole("status")).toContainText("تم الإجراء وأُعيدت قراءة حالة الحساب وأهلية DSH");
+  } else {
+    await page.locator(`#${role}-candidate-name-${admissionID}`).fill(name);
+    await page.getByRole("button", { name: "حفظ الملف", exact: true }).click();
+    await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(name);
+    await page.getByRole("button", { name: "اعتماد الملف بعد المراجعة" }).click();
+    await expect(page.getByRole("status")).toContainText("يبقى الدور موقوفًا حتى إعادة التفعيل");
+    await page.locator(`#${role}-candidate-state`).selectOption("suspended");
+    await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(name);
+    await expect(page.getByText("موقوف حتى استكمال الملف ومراجعته")).toHaveCount(0);
+  }
+  expect(mutations).toEqual(role === "field" ? [
+    { action: "update-profile", actorId: profile.actorId, admissionId: admissionID, reason: "", fullNameAr: name, expectedVersion: 9 },
+    { action: "review-profile", actorId: profile.actorId, admissionId: admissionID, reason: "", fullNameAr: name, expectedVersion: 10 },
+  ] : [
     { action: "update-profile", admissionId: admissionID, fullNameAr: name, expectedVersion: 9 },
     { action: "review-profile", admissionId: admissionID, expectedVersion: 10 },
   ]);
@@ -714,13 +747,13 @@ test("Field center reads DSH eligibility and routes operational controls to the 
       await route.fulfill({ status: 204 });
       return;
     }
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_field_admitted", phoneE164: "+96777000103", role: "field", enabled, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_field_admitted", actorId: "act_field_admitted", state: "eligible", version: 4, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_admitted", phoneE164: "+96777000103", role: "field", enabled, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_field_admitted", actorId: "act_field_admitted", state: "eligible", version: 4, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
   });
   await page.goto("/fields");
-  await expect(page.getByRole("heading", { name: "قائمة الميدانيين وأهليتهم" })).toBeVisible();
-  await expect(page.getByText("مؤهل لإنشاء الملفات")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "إدارة الميدانيين" })).toBeVisible();
+  await page.getByText("الخطوة التالية", { exact: true }).click();
   await page.getByLabel("سبب الإجراء").fill("تجميد أهلية الميدان");
-  await page.getByRole("button", { name: "إيقاف التشغيل" }).click();
+  await page.getByRole("button", { name: "إيقاف الوصول" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_field_admitted", action: "disable", expectedVersion: 2, reason: "تجميد أهلية الميدان" });
 });
 
@@ -735,14 +768,15 @@ test("legacy Field role with a missing profile is suspended before Identity acce
       await route.fulfill({ status: 204 });
       return;
     }
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_field_legacy", phoneE164: "+96777000108", role: "field", enabled: false, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_legacy", actorId: "act_field_legacy", fullNameAr: null, requiresProfileReview: true, state: admissionState, version: 10, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_legacy", phoneE164: "+96777000108", role: "field", enabled: false, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_legacy", actorId: "act_field_legacy", fullNameAr: null, requiresProfileReview: true, state: admissionState, version: 10, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
   });
   await page.goto("/fields");
   await expect(page.getByText("الملف يحتاج استكمالًا ومراجعة")).toBeVisible();
+  await page.getByText("الخطوة التالية", { exact: true }).click();
   await page.getByLabel("سبب الإجراء").fill("إيقاف حتى مراجعة الملف");
-  await page.getByRole("button", { name: "إيقاف التشغيل" }).click();
+  await page.getByRole("button", { name: "إيقاف الوصول" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_field_legacy", action: "disable", expectedVersion: 2, reason: "إيقاف حتى مراجعة الملف" });
-  await expect(page.getByRole("status")).toContainText("الهوية موقوفة");
+  await expect(page.getByRole("status")).toContainText("تم الإجراء وأُعيدت قراءة حالة الحساب وأهلية DSH");
 });
 
 test("legacy Captain profile review never offers role activation before review", async ({ page }) => {
@@ -779,12 +813,13 @@ test("Field reenrollment uses DSH eligibility and carries fresh actor, role, and
       await route.fulfill({ status: 204 });
       return;
     }
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_field_reenroll", phoneE164: "+96777000105", role: "field", enabled: true, securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_reenroll", actorId: "act_field_reenroll", state: "eligible", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_reenroll", phoneE164: "+96777000105", role: "field", enabled: true, securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_reenroll", actorId: "act_field_reenroll", state: "eligible", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
   });
   await page.goto("/fields");
+  await page.getByText("الخطوة التالية", { exact: true }).click();
   await page.getByLabel("سبب الإجراء").fill("استرداد جهاز الميدان");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
-  await expect(page.getByRole("status")).toContainText("تمت إجازة إعادة تسجيل الميداني بعد تحقق DSH");
+  await expect(page.getByRole("status")).toContainText("تم الإجراء وأُعيدت قراءة حالة الحساب وأهلية DSH");
   expect(reenrollmentBody).toMatchObject({
     actorId: "act_field_reenroll",
     action: "reenroll",
@@ -852,22 +887,24 @@ test("Field reenrollment conflicts reload the canonical DSH-owned roster before 
       await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: { code: "CONFLICT", message: "the access versions changed" } }) });
       return;
     }
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_field_conflict", phoneE164: "+96777000106", role: "field", enabled: true, securityEnabled: true, actorVersion: 4, roleVersion: conflictStateApplied ? 3 : 2, admission: { id: "fld_adm_conflict", actorId: "act_field_conflict", state: "eligible", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_conflict", phoneE164: "+96777000106", role: "field", enabled: true, securityEnabled: true, actorVersion: 4, roleVersion: conflictStateApplied ? 3 : 2, admission: { id: "fld_adm_conflict", actorId: "act_field_conflict", state: "eligible", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
   });
   await page.goto("/fields");
+  await page.getByText("الخطوة التالية", { exact: true }).click();
   await page.getByLabel("سبب الإجراء").fill("استرداد جهاز الميدان");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
-  await expect(page.locator("p.identity-error")).toContainText("أُعيد تحميل الحالة الكانونية");
+  await expect(page.locator("p.identity-error")).toContainText("أُعيد تحميل الحالة الحالية");
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toBeVisible();
 });
 
 test("Field reenrollment remains unavailable until DSH restores eligibility", async ({ page }) => {
   await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
   await page.route("**/api/fields**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_field_suspended", phoneE164: "+96777000107", role: "field", enabled: true, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_suspended", actorId: "act_field_suspended", state: "suspended", version: 9, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_suspended", phoneE164: "+96777000107", role: "field", enabled: true, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_suspended", actorId: "act_field_suspended", state: "suspended", version: 9, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
   });
   await page.goto("/fields");
-  await expect(page.getByRole("cell", { name: "موقوف" })).toBeVisible();
+  await expect(page.getByText("موقوف").first()).toBeVisible();
+  await page.getByText("الخطوة التالية", { exact: true }).click();
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
 });
 
