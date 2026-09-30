@@ -7,6 +7,7 @@ import {
   assertIdentityProofScope,
   enableOperatorPermission,
   enableVirtualAuthenticator,
+  findInitialOperator,
   jsonRequest,
   type PreparedOperator,
   provisionIndependentOperator,
@@ -51,27 +52,11 @@ async function findOrBootstrapPrimaryOperator(
   controlToken: string,
   bootstrapToken: string,
 ): Promise<PreparedOperator> {
-  const response = await fetch(identityBase + "/internal/actor-roles/search?role=operator&limit=2", {
-    headers: { Accept: "application/json", Authorization: "Bearer " + controlToken },
-    signal: AbortSignal.timeout(5_000),
-  });
-  expect(response.status, "primary operator search must succeed for the DSH fixture").toBe(200);
-  const body = await response.json() as { items?: Array<{ actorId: string; phoneE164: string }> };
-  const operators = body.items ?? [];
-  if (operators.length > 1) {
-    throw new Error(`DSH checker fixture requires deterministic primary Operator selection; found ${operators.length}`);
-  }
-  const existing = operators[0];
+  const existing = await findInitialOperator(identityBase, controlToken);
   if (existing) {
     expect(existing.actorId).toMatch(/^act_/);
-    expect(existing.phoneE164).toMatch(/^\+9677/);
-    return {
-      actorId: String(existing.actorId),
-      phone: String(existing.phoneE164),
-      token: "",
-      profileId: "",
-      actorCreatedByTest: false,
-    };
+    expect(existing.phone).toMatch(/^\+9677/);
+    return existing;
   }
 
   if (process.env.BTHWANI_IDENTITY_PROOF_SCOPE !== "disposable-ci" || process.env.CI !== "true") {

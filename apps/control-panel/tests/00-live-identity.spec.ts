@@ -1,32 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { randomInt, randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page, request, test } from "@playwright/test";
-import { assertIdentityProofScope, enableVirtualAuthenticator, jsonRequest, type PreparedOperator, provisionIndependentOperator, registerOperator, requiredEnv, waitForMailpitCode } from "./live-identity-proof-helpers";
+import { assertIdentityProofScope, enableVirtualAuthenticator, findInitialOperator, jsonRequest, type PreparedOperator, provisionIndependentOperator, readCanonicalRuntime, registerOperator, requiredEnv, waitForMailpitCode } from "./live-identity-proof-helpers";
 
 test.beforeAll(() => {
   assertIdentityProofScope();
 });
-
-function readCanonicalRuntime(): { envFile: string; repoRoot: string; postgresUser: string; postgresDatabase: string } {
-  const repoRoots = [path.resolve(process.cwd()), path.resolve(process.cwd(), "../..")];
-  const repoRoot = repoRoots.find((candidate) =>
-    existsSync(path.join(candidate, "infra/local/.env")) &&
-    existsSync(path.join(candidate, "infra/local/compose/compose.yaml")),
-  );
-  if (!repoRoot) throw new Error("canonical local runtime environment is required for live Identity proof");
-  const envFile = path.join(repoRoot, "infra/local/.env");
-  const values = Object.fromEntries(readFileSync(envFile, "utf8").split(/\r?\n/).filter((line) => line.trim() && !line.trim().startsWith("#")).map((line) => {
-    const separator = line.indexOf("=");
-    if (separator < 1) throw new Error("malformed canonical local runtime environment");
-    return [line.slice(0, separator).trim(), line.slice(separator + 1).trim()];
-  }));
-  const postgresUser = String(values.SAMRIM_POSTGRES_USER || "");
-  const postgresDatabase = String(values.SAMRIM_POSTGRES_DB || "");
-  if (!postgresUser || !postgresDatabase) throw new Error("canonical Postgres credentials are required for live Identity proof");
-  return { envFile, repoRoot, postgresUser, postgresDatabase };
-}
 
 function mutateOperatorSessions(actorId: string, mutation: string): void {
   const runtime = readCanonicalRuntime();
@@ -90,13 +70,10 @@ async function readBrowserSession(page: Page): Promise<{ status: number; body: R
 }
 
 async function prepareOperator(identityBase: string, controlToken: string, bootstrapToken: string): Promise<PreparedOperator> {
-  const search = await fetch(identityBase + "/internal/actor-roles/search?role=operator&limit=10", { headers: { Accept: "application/json", Authorization: "Bearer " + controlToken }, signal: AbortSignal.timeout(5_000) });
-  expect(search.status, "operator search must read the current Identity owner").toBe(200);
-  const searchBody = await search.json() as { items?: Array<{ actorId: string; phoneE164: string }> };
-  const existing = searchBody.items?.[0];
+  const existing = await findInitialOperator(identityBase, controlToken);
   if (existing) {
     expect(existing.actorId).toMatch(/^act_/);
-    expect(existing.phoneE164).toMatch(/^\+9677/);
+    expect(existing.phone).toMatch(/^\+9677/);
     return provisionIndependentOperator(identityBase, controlToken, existing.actorId);
   }
 

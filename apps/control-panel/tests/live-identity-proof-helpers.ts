@@ -1,5 +1,9 @@
 import { randomInt, randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { expect, type Page } from "@playwright/test";
+import { resolveTrustedExecutable } from "../../../tools/dev/runtime-proof/trusted-executables.mjs";
 
 export type PreparedOperator = {
   actorId: string;
@@ -32,17 +36,56 @@ export async function jsonRequest(base: string, pathname: string, token: string,
   return { response, body: await response.json().catch(() => null) as Record<string, any> | null };
 }
 
-async function findExistingOperator(identityBase: string, controlToken: string): Promise<PreparedOperator> {
-  const response = await fetch(identityBase + "/internal/actor-roles/search?role=operator&limit=10", {
+export function readCanonicalRuntime(): { envFile: string; repoRoot: string; postgresUser: string; postgresDatabase: string } {
+  const repoRoots = [path.resolve(process.cwd()), path.resolve(process.cwd(), "../..")];
+  const repoRoot = repoRoots.find((candidate) =>
+    existsSync(path.join(candidate, "infra/local/.env")) &&
+    existsSync(path.join(candidate, "infra/local/compose/compose.yaml")),
+  );
+  if (!repoRoot) throw new Error("canonical local runtime environment is required to identify the bootstrap Operator");
+  const envFile = path.join(repoRoot, "infra/local/.env");
+  const env = Object.fromEntries(readFileSync(envFile, "utf8").split(/\r?\n/).filter((line) => line.trim() && !line.trim().startsWith("#")).map((line) => {
+    const separator = line.indexOf("=");
+    if (separator < 1) throw new Error("malformed canonical local runtime environment");
+    return [line.slice(0, separator).trim(), line.slice(separator + 1).trim()];
+  }));
+  const postgresUser = String(env.SAMRIM_POSTGRES_USER || "");
+  const postgresDatabase = String(env.SAMRIM_POSTGRES_DB || "");
+  if (!postgresUser || !postgresDatabase) throw new Error("canonical Postgres credentials are required for live Identity proof");
+  return { envFile, repoRoot, postgresUser, postgresDatabase };
+}
+
+function readCanonicalInitialOperator(): { actorId: string; phone: string } | null {
+  const { envFile, repoRoot, postgresUser, postgresDatabase } = readCanonicalRuntime();
+  const output = execFileSync(resolveTrustedExecutable("docker"), [
+    "compose", "--project-name", "samrim-local", "--env-file", envFile,
+    "-f", path.join(repoRoot, "infra/local/compose/compose.yaml"), "exec", "-T", "postgres",
+    "psql", "-U", postgresUser, "-d", postgresDatabase, "-Atc",
+    "SELECT a.id || '|' || a.phone_e164 FROM identity_bootstrap_state b JOIN identity_actors a ON a.id=b.initial_operator_actor_id WHERE b.id=1",
+  ], { cwd: repoRoot, encoding: "utf8" }).trim();
+  if (!output) return null;
+  const [actorIdValue, phoneValue] = output.split("|");
+  const actorId = actorIdValue || "";
+  const phone = phoneValue || "";
+  if (!/^act_[A-Za-z0-9_-]+$/.test(actorId) || !/^\+9677[0-9]{8}$/.test(phone)) {
+    throw new Error("canonical bootstrap Operator readback is malformed");
+  }
+  return { actorId, phone };
+}
+
+export async function findInitialOperator(identityBase: string, controlToken: string): Promise<PreparedOperator | null> {
+  const bootstrap = readCanonicalInitialOperator();
+  if (!bootstrap) return null;
+  const params = new URLSearchParams({ role: "operator", q: bootstrap.phone, limit: "5" });
+  const response = await fetch(identityBase + "/internal/actor-roles/search?" + params, {
     headers: { Accept: "application/json", Authorization: "Bearer " + controlToken },
     signal: AbortSignal.timeout(5_000),
   });
-  expect(response.status, "an established primary operator must exist for the DSH fixture").toBe(200);
+  expect(response.status, "the canonical bootstrap Operator must be readable through Identity").toBe(200);
   const body = await response.json() as { items?: Array<{ actorId: string; phoneE164: string }> };
-  const existing = body.items?.[0];
-  expect(existing?.actorId).toMatch(/^act_/);
-  expect(existing?.phoneE164).toMatch(/^\+9677/);
-  return { actorId: String(existing?.actorId), phone: String(existing?.phoneE164), token: "", profileId: "", actorCreatedByTest: false };
+  const existing = body.items?.find((item) => item.actorId === bootstrap.actorId && item.phoneE164 === bootstrap.phone);
+  expect(existing?.actorId, "Identity readback must match the canonical bootstrap Operator").toBe(bootstrap.actorId);
+  return { actorId: bootstrap.actorId, phone: bootstrap.phone, token: "", profileId: "", actorCreatedByTest: false };
 }
 
 export async function enrollAndAuthenticateIsolatedOperator(
@@ -54,7 +97,8 @@ export async function enrollAndAuthenticateIsolatedOperator(
   const controlToken = requiredEnv("PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN");
   const mailpitBase = requiredEnv("PLAYWRIGHT_MAILPIT_BASE_URL").replace(/\/+$/, "");
   const baseUrl = requiredEnv("PLAYWRIGHT_BASE_URL").replace(/\/+$/, "");
-  const primaryOperator = await findExistingOperator(identityBase, controlToken);
+  const primaryOperator = await findInitialOperator(identityBase, controlToken);
+  if (!primaryOperator) throw new Error("canonical bootstrap Operator is required before provisioning a Finance proof actor");
   const operator = await provisionIndependentOperator(identityBase, controlToken, primaryOperator.actorId);
   for (const permission of permissions) await enableOperatorPermission(identityBase, controlToken, primaryOperator.actorId, operator.actorId, permission);
   await enableVirtualAuthenticator(page);

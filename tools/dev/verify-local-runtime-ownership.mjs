@@ -88,9 +88,11 @@ for(const [name,source] of [["DSH runtime proof",dshRuntimeProof],["Location Cor
 }
 check(liveIdentitySpec.includes("provisionIndependentOperator")&&!liveIdentitySpec.includes("phoneE164: operator.phone"),"live Identity browser proof must enroll an independent test actor instead of re-enrolling a current operator");
 check(!liveIdentityHelpers.includes("DELETE FROM")&&!liveIdentityHelpers.includes("cleanupPreparedOperator"),"live Identity fixture helper must not delete business state directly");
+check(liveIdentityHelpers.includes("identity_bootstrap_state b JOIN identity_actors a")&&liveIdentityHelpers.includes("item.actorId === bootstrap.actorId"),"live Identity fixtures must select and API-verify the canonical bootstrap Operator instead of relying on search ordering");
 check(!identityRuntimeProof.includes("DELETE FROM"),"Identity runtime proof must not delete business state directly");
 check(liveFinanceSpec.includes("enrollAndAuthenticateIsolatedOperator")&&liveFinanceSpec.includes('["finance"]'),"live Finance browser proof must use a disposable actor with scoped Finance permission");
 check(!liveDshOperatorSpec.includes("cleanupPreparedOperator"),"live DSH operator fixture must rely on disposable CI database teardown");
+check(!liveDshOperatorSpec.includes("operators.length > 1")&&!liveDshOperatorSpec.includes("operators[0]"),"live DSH fixture must remain stable when disposable proof actors accumulate");
 check(!/\bDELETE\s+FROM\b/i.test(dshRuntimeProof)&&!dshRuntimeProof.includes("cleanupCheckerFixture"),"DSH runtime proof must not clean up business state with direct SQL");
 check(!/\bDELETE\s+FROM\b/i.test(dshLocationRuntimeProof)&&!dshLocationRuntimeProof.includes("function cleanup"),"Location Core runtime proof must not clean up business state with direct SQL");
 check(ciRuntimeRunner.includes('"down"')||read(".github/workflows/ci-runtime.yml").includes("--volumes"),"CI runtime proof must rely on disposable environment teardown for persistent fixture cleanup");
