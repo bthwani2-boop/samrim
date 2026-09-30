@@ -221,6 +221,9 @@ func (s *FieldServer) readAdmissionForActor(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *FieldServer) readOwnAdmission(w http.ResponseWriter, r *http.Request) {
+	if !authorizedFieldSession(w, r) {
+		return
+	}
 	admission, err := s.service.ReadForField(r.Context(), bearerToken(r))
 	if err != nil {
 		writeFieldError(w, err)
@@ -276,8 +279,7 @@ func (s *FieldServer) authorizeReenrollment(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *FieldServer) createJoiningCase(w http.ResponseWriter, r *http.Request) {
-	if bearerToken(r) == "" {
-		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Field session is required")
+	if !authorizedFieldSession(w, r) {
 		return
 	}
 	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" || r.Header.Get("If-Match") != "" {
@@ -305,6 +307,9 @@ func (s *FieldServer) createJoiningCase(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *FieldServer) listJoiningCases(w http.ResponseWriter, r *http.Request) {
+	if !authorizedFieldSession(w, r) {
+		return
+	}
 	limit := 25
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		parsed, err := strconv.Atoi(raw)
@@ -327,6 +332,9 @@ func (s *FieldServer) listJoiningCases(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *FieldServer) readJoiningCase(w http.ResponseWriter, r *http.Request) {
+	if !authorizedFieldSession(w, r) {
+		return
+	}
 	result, err := s.service.ReadJoiningCase(r.Context(), bearerToken(r), r.PathValue("caseId"))
 	if err != nil {
 		writeFieldError(w, err)
@@ -336,8 +344,7 @@ func (s *FieldServer) readJoiningCase(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *FieldServer) submitJoiningCase(w http.ResponseWriter, r *http.Request) {
-	if bearerToken(r) == "" {
-		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Field session is required")
+	if !authorizedFieldSession(w, r) {
 		return
 	}
 	correlation, idempotency, expected, ok := requiredPartnerCaseHeaders(w, r)
@@ -357,6 +364,14 @@ func (s *FieldServer) authorizedService(w http.ResponseWriter, r *http.Request) 
 		return true
 	}
 	writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+	return false
+}
+
+func authorizedFieldSession(w http.ResponseWriter, r *http.Request) bool {
+	if bearerToken(r) != "" {
+		return true
+	}
+	writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Field session is required")
 	return false
 }
 

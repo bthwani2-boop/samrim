@@ -84,7 +84,7 @@ export async function jsonRequest(base: string, pathname: string, token: string,
   return { response, body: await response.json().catch(() => null) as Record<string, any> | null };
 }
 
-export async function findExistingOperator(identityBase: string, controlToken: string): Promise<PreparedOperator> {
+async function findExistingOperator(identityBase: string, controlToken: string): Promise<PreparedOperator> {
   const response = await fetch(identityBase + "/internal/actor-roles/search?role=operator&limit=10", {
     headers: { Accept: "application/json", Authorization: "Bearer " + controlToken },
     signal: AbortSignal.timeout(5_000),
