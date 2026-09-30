@@ -123,12 +123,11 @@ export function resolveFromAffected(affected, configs, fullRegression = false) {
 }
 
 function buildResolution(affected, lanes, reasons) {
-  const controlOwnsDshFixture = lanes.includes("control") && lanes.includes("dsh");
-  const targets = [];
-  for (const lane of lanes) {
-    if (lane === "dsh" && !controlOwnsDshFixture) targets.push("control-panel:dsh-runtime-checker-fixture");
-    targets.push(...laneTargets[lane]);
-  }
+  const targets = lanes.flatMap((lane) => {
+    if (lane !== "dsh") return laneTargets[lane];
+    const checkerFixtureTarget = lanes.includes("control") ? [] : ["control-panel:dsh-runtime-checker-fixture"];
+    return [...checkerFixtureTarget, ...laneTargets.dsh];
+  });
   return {
     affected: [...affected].toSorted(compareStrings),
     lanes,
