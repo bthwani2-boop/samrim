@@ -17,6 +17,7 @@ const liveRunner=read("tools/dev/run-playwright-live.mjs");
 const identityRuntimeProof=read("tools/dev/verify-identity-runtime.mjs");
 const dshRuntimeProof=read("tools/dev/verify-dsh-runtime-core.mjs");
 const dshLocationRuntimeProof=read("tools/dev/verify-dsh-location-runtime.mjs");
+const dshProject=JSON.parse(read("services/dsh/backend/project.json"));
 const ciRuntimeRunner=read("tools/dev/run-ci-runtime-proof.mjs");
 const liveIdentitySpec=read("apps/control-panel/tests/00-live-identity.spec.ts");
 const liveIdentityHelpers=read("apps/control-panel/tests/live-identity-proof-helpers.ts");
@@ -86,6 +87,9 @@ check(identityRuntimeProof.includes('process.env.CI === "true"')&&identityRuntim
 for(const [name,source] of [["DSH runtime proof",dshRuntimeProof],["Location Core runtime proof",dshLocationRuntimeProof]]){
   check(source.includes('process.env.CI !== "true"')&&source.includes('process.env.BTHWANI_IDENTITY_PROOF_SCOPE !== "disposable-ci"')&&!source.includes('"isolated-local-actors"'),`${name} must require disposable CI state`);
 }
+check(dshProject.targets?.["location-proof"]?.cache===false,"DSH location proof must be an uncached Nx runtime target");
+check(dshProject.targets?.["location-proof"]?.options?.command==="node tools/dev/verify-dsh-location-runtime.mjs --env-file=infra/local/.env","DSH location proof must execute the canonical location runtime proof");
+check((dshProject.targets?.["location-proof"]?.inputs??[]).includes("{workspaceRoot}/tools/dev/verify-dsh-location-runtime.mjs"),"DSH location proof must hash its external runtime proof source");
 check(liveIdentitySpec.includes("provisionIndependentOperator")&&!liveIdentitySpec.includes("phoneE164: operator.phone"),"live Identity browser proof must enroll an independent test actor instead of re-enrolling a current operator");
 check(!liveIdentityHelpers.includes("DELETE FROM")&&!liveIdentityHelpers.includes("cleanupPreparedOperator"),"live Identity fixture helper must not delete business state directly");
 check(liveIdentityHelpers.includes("identity_bootstrap_state b JOIN identity_actors a")&&liveIdentityHelpers.includes("item.actorId === bootstrap.actorId"),"live Identity fixtures must select and API-verify the canonical bootstrap Operator instead of relying on search ordering");

@@ -80,7 +80,7 @@ function verifyRuntimeOwnership() {
 
   const independent = [
     ["services/identity/backend/project.json", ["migration-proof", "runtime-proof"]],
-    ["services/dsh/backend/project.json", ["baseline-proof", "runtime-proof"]],
+    ["services/dsh/backend/project.json", ["baseline-proof", "runtime-proof", "location-proof"]],
     ["services/wlt/backend/project.json", ["schema-proof"]],
   ];
   for (const [file, targets] of independent) {

@@ -18,6 +18,7 @@ for (const required of [
   "{workspaceRoot}/**/project.json",
   "{workspaceRoot}/tools/dev/runtime-proof/**/*",
   "{workspaceRoot}/tools/dev/verify-dsh-runtime-core.mjs",
+  "{workspaceRoot}/tools/dev/verify-dsh-location-runtime.mjs",
 ]) {
   if (!executionProofInputs.includes(required)) failures.push("repository-ci:execution-proof-system missing causal input " + required);
 }

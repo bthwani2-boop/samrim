@@ -53,6 +53,7 @@ test("Nx-expanded cross-service cone composes lanes once", () => {
     "control-panel:dsh-runtime-checker-fixture",
     "dsh-backend:baseline-proof",
     "dsh-backend:runtime-proof",
+    "dsh-backend:location-proof",
   ]);
   assert.equal(result.needsBrowser, true);
 });
@@ -66,6 +67,7 @@ test("DSH-only runtime scope prepares one disposable Passkey checker before back
     "control-panel:dsh-runtime-checker-fixture",
     "dsh-backend:baseline-proof",
     "dsh-backend:runtime-proof",
+    "dsh-backend:location-proof",
   ]);
   assert.equal(result.needsBrowser, true);
 });
@@ -82,6 +84,7 @@ test("combined Control and DSH scope creates the checker in the existing browser
     "control-panel:browser-live-proof",
     "dsh-backend:baseline-proof",
     "dsh-backend:runtime-proof",
+    "dsh-backend:location-proof",
   ]);
 });
 

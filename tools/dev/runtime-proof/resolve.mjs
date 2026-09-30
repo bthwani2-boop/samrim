@@ -11,7 +11,7 @@ export const laneTargets = {
   control: ["control-panel:browser-live-proof"],
   identity: ["identity-backend:migration-proof", "identity-backend:runtime-proof"],
   wlt: ["wlt-backend:financial-invariants"],
-  dsh: ["dsh-backend:baseline-proof", "dsh-backend:runtime-proof"],
+  dsh: ["dsh-backend:baseline-proof", "dsh-backend:runtime-proof", "dsh-backend:location-proof"],
 };
 
 const laneImages = {
