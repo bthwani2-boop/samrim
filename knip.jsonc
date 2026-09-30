@@ -45,6 +45,18 @@
         "tools/mobile/test-mobile-app.mjs"
       ]
     },
+    "apps/app-captain": {
+      "entry": ["index.js", "app/**/*.ts", "app/**/*.tsx", "app.config.ts"]
+    },
+    "apps/app-client": {
+      "entry": ["index.js", "app/**/*.ts", "app/**/*.tsx", "app.config.ts"]
+    },
+    "apps/app-field": {
+      "entry": ["index.js", "app/**/*.ts", "app/**/*.tsx", "app.config.ts"]
+    },
+    "apps/app-partner": {
+      "entry": ["index.js", "app/**/*.ts", "app/**/*.tsx", "app.config.ts"]
+    },
     "apps/control-panel": {
       "entry": [
         "app/**/route.ts",
@@ -52,6 +64,9 @@
         "tests/**/*.spec.ts"
       ],
       "playwright": false
+    },
+    "packages/design-system": {
+      "entry": ["src/index.ts", "src/native/index.tsx"]
     }
   },
   "ignore": [
