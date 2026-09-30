@@ -1,6 +1,7 @@
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { runTrackedArtifactEvidenceAudit } from "./tracked-artifact-evidence.mjs";
+import { applyTrackedArtifactOwnerContract } from "./tracked-artifact-owner-contract.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 const regressionTest = path.join(repoRoot, "tools/dev/tracked-artifact-evidence.test.mjs");
@@ -39,6 +40,7 @@ for (const line of legacyLines) {
 let audit;
 try {
   audit = runTrackedArtifactEvidenceAudit(repoRoot);
+  audit = applyTrackedArtifactOwnerContract(audit);
 } catch (error) {
   console.error("STRUCTURAL_HYGIENE=FAIL");
   console.error("DEAD_TRACKED_FILES_AUDIT=REVIEW_REQUIRED");
