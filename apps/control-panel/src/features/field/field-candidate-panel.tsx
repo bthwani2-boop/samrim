@@ -7,6 +7,7 @@ import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "../access/identity-error-message";
 
 type CandidatePage = Readonly<{ items: ReadonlyArray<FieldAdmission>; nextCursor?: string }>;
+type AdmissionMutationResponse = Readonly<{ admission?: FieldAdmission }>;
 
 export function FieldCandidatePanel() {
   const [fullNameAr, setFullNameAr] = useState("");
@@ -60,6 +61,12 @@ export function FieldCandidatePanel() {
     try {
       const response = await identityFetch("/api/fields", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "admit", fullNameAr: name, contactPhoneE164 }) });
       if (!response.ok) { setError(await responseMessage(response)); await load(); return; }
+      const created = (await response.json() as AdmissionMutationResponse).admission;
+      if (!created || created.state !== "pending_review" || created.contactPhoneE164 !== contactPhoneE164 || created.fullNameAr !== name) {
+        setError("استجاب DSH للحفظ لكن سجل القراءة المرجع لا يطابق الملف المطلوب. أعد القراءة قبل أي إجراء آخر.");
+        await load();
+        return;
+      }
       setFullNameAr("");
       setPhone("");
       setState("pending_review");
@@ -103,7 +110,13 @@ export function FieldCandidatePanel() {
         setError(response.status === 409 || response.status === 412 ? "تغيرت حالة الملف بالتزامن؛ أُعيدت قراءته. " + message : message);
         return;
       }
-      await response.json();
+      const result = (await response.json() as AdmissionMutationResponse).admission;
+      const expectedState = action === "approve" ? "pending_identity" : action === "provision" ? "eligible" : profile.state;
+      if (!result || result.id !== profile.id || result.state !== expectedState || (action === "update-profile" && result.fullNameAr !== nextName) || (action === "review-profile" && result.requiresProfileReview)) {
+        setError("استجاب DSH للإجراء لكن حالة الملف المرجعة لا تطابق الخطوة المتوقعة. أعد قراءة السجل قبل المتابعة.");
+        await load();
+        return;
+      }
       setNotice(fieldMutationSuccessMessage(action));
       setEdits((current) => { const next = { ...current }; delete next[profile.id]; return next; });
       await load();

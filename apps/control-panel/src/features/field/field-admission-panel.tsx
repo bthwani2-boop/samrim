@@ -48,6 +48,20 @@ export function FieldAdmissionPanel() {
   const [profileEdits, setProfileEdits] = useState<Record<string, string>>({});
   const loadRequestID = useRef(0);
 
+  useEffect(() => {
+    const syncView = () => setView(new URLSearchParams(window.location.search).get("view") === "accounts" ? "accounts" : "queue");
+    syncView();
+    window.addEventListener("popstate", syncView);
+    return () => window.removeEventListener("popstate", syncView);
+  }, []);
+
+  function navigateView(nextView: "queue" | "accounts") {
+    const params = new URLSearchParams(window.location.search);
+    if (nextView === "accounts") params.set("view", nextView); else params.delete("view");
+    window.history.pushState({}, "", window.location.pathname + (params.size ? `?${params.toString()}` : ""));
+    setView(nextView);
+  }
+
   const load = useCallback(async (cursor = "", append = false) => {
     const requestID = ++loadRequestID.current;
     if (append) setLoadingMore(true);
@@ -209,8 +223,8 @@ export function FieldAdmissionPanel() {
       <header className="field-workbench-heading">
         <div><span className="step-chip">مساحة تشغيل موحّدة</span><h2 id="field-workbench-title">إدارة الميدانيين</h2><p className="muted">ملف DSH يمنح الأهلية؛ حساب Identity يحدد الوصول. كل شخص يظهر في المرحلة التي يملكها حاليًا.</p></div>
         <nav className="field-workbench-tabs" aria-label="مراحل إدارة الميدانيين">
-          <button type="button" className="button button-secondary" aria-pressed={view === "queue"} onClick={() => setView("queue")}>قائمة الأهلية قبل منح الدور</button>
-          <button type="button" className="button button-secondary" aria-pressed={view === "accounts"} onClick={() => setView("accounts")}>الحسابات والأهلية التشغيلية</button>
+          <button type="button" className="button button-secondary" aria-pressed={view === "queue"} onClick={() => navigateView("queue")}>قائمة الأهلية قبل منح الدور</button>
+          <button type="button" className="button button-secondary" aria-pressed={view === "accounts"} onClick={() => navigateView("accounts")}>الحسابات والأهلية التشغيلية</button>
         </nav>
       </header>
       {view === "queue" ? <FieldCandidatePanel /> : <div className="field-workbench-pane">
