@@ -1,3 +1,7 @@
+function compareText(left, right) {
+  return left.localeCompare(right);
+}
+
 function ownerEvidence(file, trackedFiles) {
   if (/^apps\/[^/]+\/(?:DESIGN|UX-CONTRACT)\.md$/.test(file)) {
     return "PROJECT_DOCUMENTATION_CONTRACT";
@@ -44,6 +48,6 @@ export function applyTrackedArtifactOwnerContract(audit) {
     else audit.directoryEvidence.set(directory, "DESCENDANT_EVIDENCE_COMPLETE");
   }
 
-  audit.review = [...new Set([...preserved, ...unresolvedFiles, ...unresolvedDirectories])].sort();
+  audit.review = [...new Set([...preserved, ...unresolvedFiles, ...unresolvedDirectories])].sort(compareText);
   return audit;
 }

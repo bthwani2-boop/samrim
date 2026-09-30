@@ -27,6 +27,10 @@ const trackedSet = new Set(tracked);
 const failures = [];
 const classifications = new Map();
 
+function compareText(left, right) {
+  return left.localeCompare(right);
+}
+
 const attributesText = fs
   .readFileSync(path.join(repoRoot, ".gitattributes"), "utf8")
   .replace(/\r\n?/g, "\n");
@@ -70,50 +74,53 @@ function classify(file, category) {
 }
 
 const executablePathExtension = /\.(?:mjs|cjs|js|mts|cts|ts|tsx|jsx|ps1|psm1|bat|cmd|sh|bash|zsh|fish|py|rb|pl|go)$/i;
+const shellSeparators = new Set([";", "|", "&", "(", ")"]);
+
+function flushShellToken(state, tokens) {
+  if (state.token) tokens.push(state.token);
+  state.token = "";
+}
+
+function consumeQuotedShellCharacter(state, character) {
+  if (state.escaped) {
+    state.token += character;
+    state.escaped = false;
+    return true;
+  }
+  if (character === "\\" && state.quote !== "'") {
+    state.escaped = true;
+    return true;
+  }
+  if (!state.quote) return false;
+  if (character === state.quote) state.quote = null;
+  else state.token += character;
+  return true;
+}
+
+function consumeShellCharacter(state, character, tokens) {
+  if (consumeQuotedShellCharacter(state, character)) return;
+  if (character === "'" || character === '"') {
+    state.quote = character;
+    return;
+  }
+  if (/\s/.test(character)) {
+    flushShellToken(state, tokens);
+    return;
+  }
+  if (shellSeparators.has(character)) {
+    flushShellToken(state, tokens);
+    tokens.push(character);
+    return;
+  }
+  state.token += character;
+}
 
 function shellTokens(script) {
   const tokens = [];
-  let token = "";
-  let quote = null;
-  let escaped = false;
-
-  const flush = () => {
-    if (token) tokens.push(token);
-    token = "";
-  };
-
-  for (const character of script) {
-    if (escaped) {
-      token += character;
-      escaped = false;
-      continue;
-    }
-    if (character === "\\" && quote !== "'") {
-      escaped = true;
-      continue;
-    }
-    if (quote) {
-      if (character === quote) quote = null;
-      else token += character;
-      continue;
-    }
-    if (character === "'" || character === '"') {
-      quote = character;
-      continue;
-    }
-    if (/\s/.test(character)) {
-      flush();
-      continue;
-    }
-    if ([";", "|", "&", "(", ")"].includes(character)) {
-      flush();
-      tokens.push(character);
-      continue;
-    }
-    token += character;
-  }
-  if (escaped) token += "\\";
-  flush();
+  const state = { token: "", quote: null, escaped: false };
+  for (const character of script) consumeShellCharacter(state, character, tokens);
+  if (state.escaped) state.token += "\\";
+  flushShellToken(state, tokens);
   return tokens;
 }
 
@@ -123,8 +130,16 @@ function repoRelativePath(absolutePath) {
   return relative.replaceAll(path.sep, "/");
 }
 
+function trimCommas(value) {
+  let start = 0;
+  let end = value.length;
+  while (start < end && value[start] === ",") start += 1;
+  while (end > start && value[end - 1] === ",") end -= 1;
+  return value.slice(start, end);
+}
+
 function packageScriptTarget(manifest, operand) {
-  const normalizedOperand = operand.replaceAll("\\", "/").replace(/^[,]+|[,]+$/g, "");
+  const normalizedOperand = trimCommas(operand.replaceAll("\\", "/"));
   if (!executablePathExtension.test(normalizedOperand)) return null;
   if (!normalizedOperand || normalizedOperand.startsWith("-") || normalizedOperand.includes("://") || /[*?$`]/.test(normalizedOperand)) return null;
   if (normalizedOperand.startsWith("@")) return null;
@@ -360,7 +375,7 @@ if (goFiles.length > 0) {
 
 if (failures.length) {
   console.error("STRUCTURAL_HYGIENE=FAIL");
-  for (const failure of [...new Set(failures)].sort()) console.error("  " + failure);
+  for (const failure of [...new Set(failures)].sort(compareText)) console.error("  " + failure);
   process.exit(1);
 }
 
