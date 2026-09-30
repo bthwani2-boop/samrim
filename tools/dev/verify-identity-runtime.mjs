@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { captureMailpitMessageIds, readMailpitCode } from "./mailpit-challenge.mjs";
+import { challengeSourceHash, challengeSourceHeaders } from "./runtime-proof/challenge-source.mjs";
 
 const proofScope = process.env.BTHWANI_IDENTITY_PROOF_SCOPE;
 const disposableCiProofAuthorized = process.env.CI === "true" && proofScope === "disposable-ci";
@@ -52,8 +53,9 @@ const phone = () => "+9677" + String(crypto.randomInt(10_000_000, 99_999_999));
 const password = (label) => label.slice(0, 4).padEnd(4, "x") + crypto.randomBytes(2).toString("hex");
 const issue = async (pathname, body, purpose, role = "client") => {
   const previousMessageIds = await captureMailpitMessageIds({ port: mailpitPort, phone: body.phone, purpose });
-  const challenge = await expect("POST", pathname, 201, { body });
+  const challenge = await expect("POST", pathname, 201, { body, headers: challengeSourceHeaders(body.phone) });
   assert(typeof challenge.challengeId === "string", purpose + " challenge id missing");
+  assert(sql(`SELECT request_ip_hash FROM identity_challenges WHERE id='${sqlLiteral(challenge.challengeId)}'`) === challengeSourceHash(body.phone, env.IDENTITY_ABUSE_HMAC_SECRET), "challenge source readback does not match the isolated proof actor");
   assert(typeof mailpitPort === "string" && mailpitPort.trim(), "canonical Mailpit web port missing");
   return { ...challenge, code: await readMailpitCode({ port: mailpitPort, phone: body.phone, purpose, excludeMessageIds: previousMessageIds }), role };
 };
@@ -241,7 +243,7 @@ const managedPassword = password("Partner");
 const managedChallenge = await issue("/auth/managed/activation/request", { phone: managedPhone, role: "partner" }, "managed_activate", "partner");
 const managedPair = await expect("POST", "/auth/managed/activate", 200, { body: { phone: managedPhone, role: "partner", verificationCode: managedChallenge.code, password: managedPassword, clientInstanceId: "runtime-managed-instance-" + crypto.randomUUID() } });
 session(managedPair, "partner", "app-partner", managedPair.identity.subject);
-const repeatedManagedChallenge = await expect("POST", "/auth/managed/activation/request", 201, { body: { phone: managedPhone, role: "partner" } });
+const repeatedManagedChallenge = await expect("POST", "/auth/managed/activation/request", 201, { body: { phone: managedPhone, role: "partner" }, headers: challengeSourceHeaders(managedPhone) });
 assert(typeof repeatedManagedChallenge.challengeId === "string", "repeated managed activation challenge id missing");
 await expect("POST", "/auth/managed/activate", 401, { body: { phone: managedPhone, role: "partner", verificationCode: "000000", password: password("Repeated"), clientInstanceId: "runtime-repeat-activation-" + crypto.randomUUID() } });
 assert(sql("SELECT count(*) FROM identity_sessions WHERE actor_id='" + sqlLiteral(managedPair.identity.subject) + "' AND role='partner' AND revoked_at IS NULL") === "1", "repeated managed activation created a second live session");
@@ -275,7 +277,7 @@ assert([400, 401].includes(invalidFinish.status), "invalid operator passkey cred
 sql("UPDATE identity_webauthn_ceremonies SET expires_at=clock_timestamp()-interval '1 second' WHERE id='" + sqlLiteral(enrollmentOptions.ceremonyId) + "'");
 assert(sql("SELECT count(*) FROM identity_webauthn_ceremonies WHERE id='" + sqlLiteral(enrollmentOptions.ceremonyId) + "' AND expires_at < clock_timestamp()") === "1", "passkey ceremony expiry readback failed");
 await expect("POST", "/auth/operator/enrollment/registration/finish", 401, { body: { ceremonyId: enrollmentOptions.ceremonyId, credential: {}, clientInstanceId: "runtime-expired-passkey-instance-" + crypto.randomUUID() } });
-const recoveryWithoutCredential = await request("POST", "/auth/operator/recovery/request", { body: { phone: operatorProofPhone, recoveryCredential: "not-a-real-recovery-credential" } });
+const recoveryWithoutCredential = await request("POST", "/auth/operator/recovery/request", { body: { phone: operatorProofPhone, recoveryCredential: "not-a-real-recovery-credential" }, headers: challengeSourceHeaders(operatorProofPhone) });
 assert(recoveryWithoutCredential.status === 201, "operator recovery leaked whether an invalid recovery credential matched");
 assert(recoveryWithoutCredential.body?.challengeId && sql("SELECT admissible::text FROM identity_challenges WHERE id='" + sqlLiteral(recoveryWithoutCredential.body.challengeId) + "'") === "false", "invalid operator recovery credential became admissible");
 
