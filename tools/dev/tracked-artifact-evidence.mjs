@@ -57,13 +57,17 @@ export function deriveTrackedDirectories(files) {
 
 function readTextIfBounded(repoRoot, file) {
   const absolute = path.join(repoRoot, file);
+  let descriptor;
   try {
-    const stat = fs.statSync(absolute);
+    descriptor = fs.openSync(absolute, "r");
+    const stat = fs.fstatSync(descriptor);
     if (!stat.isFile() || stat.size > 2_000_000) return "";
     if (!isTextFile(file) && !path.basename(file).startsWith(".")) return "";
-    return fs.readFileSync(absolute, "utf8");
+    return fs.readFileSync(descriptor, "utf8");
   } catch {
     return "";
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
   }
 }
 
