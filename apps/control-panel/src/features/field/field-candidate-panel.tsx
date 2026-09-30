@@ -8,6 +8,7 @@ import { responseMessage } from "../access/identity-error-message";
 
 type CandidatePage = Readonly<{ items: ReadonlyArray<FieldAdmission>; nextCursor?: string }>;
 type AdmissionMutationResponse = Readonly<{ admission?: FieldAdmission }>;
+type FieldRosterPage = Readonly<{ items: ReadonlyArray<Readonly<{ actorId: string; admission: FieldAdmission | null }>> }>;
 
 export function FieldCandidatePanel() {
   const [fullNameAr, setFullNameAr] = useState("");
@@ -63,7 +64,15 @@ export function FieldCandidatePanel() {
       if (!response.ok) { setError(await responseMessage(response)); await load(); return; }
       const created = (await response.json() as AdmissionMutationResponse).admission;
       if (!created || created.state !== "pending_review" || created.contactPhoneE164 !== contactPhoneE164 || created.fullNameAr !== name) {
-        setError("استجاب DSH للحفظ لكن سجل القراءة المرجع لا يطابق الملف المطلوب. أعد القراءة قبل أي إجراء آخر.");
+        setError("استجاب DSH للحفظ لكن سجل العملية لا يطابق الملف المطلوب. أعد القراءة قبل أي إجراء آخر.");
+        await load();
+        return;
+      }
+      const readbackResponse = await identityFetch(`/api/fields?scope=candidates&state=pending_review&q=${encodeURIComponent(contactPhoneE164)}&limit=10`, { cache: "no-store" });
+      if (!readbackResponse.ok) { setError("حُفظ الملف لكن تعذرت إعادة قراءته من DSH. أعد القراءة قبل أي إجراء آخر."); await load(); return; }
+      const readback = await readbackResponse.json() as CandidatePage;
+      if (!readback.items.some((item) => item.id === created.id && item.state === "pending_review" && item.contactPhoneE164 === contactPhoneE164 && item.fullNameAr === name)) {
+        setError("حُفظ الملف لكن إعادة قراءة DSH لا تطابق السجل المنشأ. أعد القراءة قبل المتابعة.");
         await load();
         return;
       }
@@ -113,9 +122,28 @@ export function FieldCandidatePanel() {
       const result = (await response.json() as AdmissionMutationResponse).admission;
       const expectedState = action === "approve" ? "pending_identity" : action === "provision" ? "eligible" : profile.state;
       if (!result || result.id !== profile.id || result.state !== expectedState || (action === "update-profile" && result.fullNameAr !== nextName) || (action === "review-profile" && result.requiresProfileReview)) {
-        setError("استجاب DSH للإجراء لكن حالة الملف المرجعة لا تطابق الخطوة المتوقعة. أعد قراءة السجل قبل المتابعة.");
+        setError("استجاب DSH للإجراء لكن سجل العملية لا يطابق الخطوة المتوقعة. أعد قراءة السجل قبل المتابعة.");
         await load();
         return;
+      }
+      if (action === "provision") {
+        const readbackResponse = await identityFetch(`/api/fields?q=${encodeURIComponent(profile.contactPhoneE164 ?? "")}&limit=10`, { cache: "no-store" });
+        if (!readbackResponse.ok || !result.actorId) { setError("مُنح الدور لكن تعذرت إعادة قراءة حساب Identity المرتبط. أعد القراءة قبل إجراء آخر."); await load(); return; }
+        const readback = await readbackResponse.json() as FieldRosterPage;
+        if (!readback.items.some((item) => item.actorId === result.actorId && item.admission?.id === profile.id && item.admission.state === "eligible")) {
+          setError("مُنح الدور لكن إعادة قراءة Identity وDSH لا تثبت الربط المتوقع. أعد القراءة قبل المتابعة.");
+          await load();
+          return;
+        }
+      } else {
+        const readbackResponse = await identityFetch(`/api/fields?scope=candidates&state=${expectedState}&q=${encodeURIComponent(profile.contactPhoneE164 ?? "")}&limit=10`, { cache: "no-store" });
+        if (!readbackResponse.ok) { setError("نُفذ الإجراء لكن تعذرت إعادة قراءة حالة الملف من DSH."); await load(); return; }
+        const readback = await readbackResponse.json() as CandidatePage;
+        if (!readback.items.some((item) => item.id === profile.id && item.state === expectedState && (action !== "update-profile" || item.fullNameAr === nextName))) {
+          setError("نُفذ الإجراء لكن إعادة قراءة DSH لا تثبت الحالة والملف المتوقعين.");
+          await load();
+          return;
+        }
       }
       setNotice(fieldMutationSuccessMessage(action));
       setEdits((current) => { const next = { ...current }; delete next[profile.id]; return next; });
