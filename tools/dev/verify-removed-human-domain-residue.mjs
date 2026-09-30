@@ -12,7 +12,8 @@ const tracked = execFileSync(resolveTrustedExecutable("git"), ["ls-files", "-z"]
 })
   .split("\0")
   .filter(Boolean)
-  .map((item) => item.replaceAll("\\", "/"));
+  .map((item) => item.replaceAll("\\", "/"))
+  .filter((item) => fs.existsSync(path.join(repoRoot, item)));
 
 const failures = [];
 let historicalReferenceMatches = 0;

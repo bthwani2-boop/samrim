@@ -16,6 +16,8 @@ const mobileBuild=read("tools/mobile/build-development.ps1");
 const liveRunner=read("tools/dev/run-playwright-live.mjs");
 const identityRuntimeProof=read("tools/dev/verify-identity-runtime.mjs");
 const dshRuntimeProof=read("tools/dev/verify-dsh-runtime-core.mjs");
+const dshLocationRuntimeProof=read("tools/dev/verify-dsh-location-runtime.mjs");
+const ciRuntimeRunner=read("tools/dev/run-ci-runtime-proof.mjs");
 const liveIdentitySpec=read("apps/control-panel/tests/00-live-identity.spec.ts");
 const liveIdentityHelpers=read("apps/control-panel/tests/live-identity-proof-helpers.ts");
 const liveFinanceSpec=read("apps/control-panel/tests/finance-runtime.spec.ts");
@@ -79,14 +81,19 @@ check(!/\badb(?:\.exe)?\b[^\r\n]*\buninstall\b/i.test(persistentLocalTooling),"p
 check(!/\bpm\s+clear\b/i.test(persistentLocalTooling),"persistent local tooling must not clear Android app data");
 check(!/\bdocker\s+volume\s+rm\b/i.test(persistentLocalTooling),"persistent local tooling must not remove Docker volumes");
 check(!/\bdown\b[^\r\n]*(?:--volumes|\s-v(?:\s|$))/i.test(dev),"daily runtime shutdown must not delete Compose volumes");
-for(const [name,source] of [["live Identity browser runner",liveRunner],["Identity runtime proof",identityRuntimeProof]]){
-  check(source.includes('process.env.CI === "true"')&&source.includes('"disposable-ci"')&&source.includes('"isolated-local-actors"'),`${name} must require disposable CI state or an isolated local actor scope`);
+check(liveRunner.includes('process.env.CI === "true"')&&liveRunner.includes('proofScope === "disposable-ci"')&&!liveRunner.includes('"isolated-local-actors"'),"live Identity browser runner must require disposable CI state");
+check(identityRuntimeProof.includes('process.env.CI === "true"')&&identityRuntimeProof.includes('proofScope === "disposable-ci"')&&!identityRuntimeProof.includes('"isolated-local-actors"'),"Identity runtime proof must require disposable CI state");
+for(const [name,source] of [["DSH runtime proof",dshRuntimeProof],["Location Core runtime proof",dshLocationRuntimeProof]]){
+  check(source.includes('process.env.CI !== "true"')&&source.includes('process.env.BTHWANI_IDENTITY_PROOF_SCOPE !== "disposable-ci"')&&!source.includes('"isolated-local-actors"'),`${name} must require disposable CI state`);
 }
 check(liveIdentitySpec.includes("provisionIndependentOperator")&&!liveIdentitySpec.includes("phoneE164: operator.phone"),"live Identity browser proof must enroll an independent test actor instead of re-enrolling a current operator");
-check(liveIdentityHelpers.includes("cleanupPreparedOperator")&&liveIdentityHelpers.includes("createdByTest"),"live Identity fixtures must clean up only actors created by the proof");
-check(identityRuntimeProof.includes("isolatedLocalActorsProofAuthorized && sql(\"SELECT count(*) FROM identity_bootstrap_state WHERE id=1\")"),"isolated local Identity proof must require the permanent first Operator to pre-exist");
+check(!liveIdentityHelpers.includes("DELETE FROM")&&!liveIdentityHelpers.includes("cleanupPreparedOperator"),"live Identity fixture helper must not delete business state directly");
+check(!identityRuntimeProof.includes("DELETE FROM"),"Identity runtime proof must not delete business state directly");
 check(liveFinanceSpec.includes("enrollAndAuthenticateIsolatedOperator")&&liveFinanceSpec.includes('["finance"]'),"live Finance browser proof must use a disposable actor with scoped Finance permission");
-check(liveDshOperatorSpec.includes("cleanupPreparedOperator"),"live DSH operator fixture must clean up its isolated actor");
+check(!liveDshOperatorSpec.includes("cleanupPreparedOperator"),"live DSH operator fixture must rely on disposable CI database teardown");
+check(!/\bDELETE\s+FROM\b/i.test(dshRuntimeProof)&&!dshRuntimeProof.includes("cleanupCheckerFixture"),"DSH runtime proof must not clean up business state with direct SQL");
+check(!/\bDELETE\s+FROM\b/i.test(dshLocationRuntimeProof)&&!dshLocationRuntimeProof.includes("function cleanup"),"Location Core runtime proof must not clean up business state with direct SQL");
+check(ciRuntimeRunner.includes('"down"')||read(".github/workflows/ci-runtime.yml").includes("--volumes"),"CI runtime proof must rely on disposable environment teardown for persistent fixture cleanup");
 check(!/request\(identityBase,\s*"PUT",\s*`\/internal\/operators\/\$\{encodeURIComponent\(checkerOperatorID\)\}/.test(dshRuntimeProof),"DSH runtime proof must not grant permissions to an existing checker operator");
 
 if(fail.length){

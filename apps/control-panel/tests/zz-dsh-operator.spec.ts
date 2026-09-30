@@ -5,7 +5,6 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 import {
   assertIdentityProofScope,
-  cleanupPreparedOperator,
   enableOperatorPermission,
   enableVirtualAuthenticator,
   jsonRequest,
@@ -15,7 +14,6 @@ import {
   requiredEnv,
 } from "./live-identity-proof-helpers";
 
-let preparedOperatorForCleanup: PreparedOperator | undefined;
 let dshRuntimeFixturePath = "";
 
 function validateRuntimeFixturePath(value: string): string {
@@ -39,12 +37,6 @@ test.beforeAll(() => {
   assertIdentityProofScope();
   const fixturePath = process.env.DSH_RUNTIME_CHECKER_FIXTURE_PATH;
   if (fixturePath) dshRuntimeFixturePath = validateRuntimeFixturePath(fixturePath);
-});
-
-test.afterEach(() => {
-  const operator = preparedOperatorForCleanup;
-  preparedOperatorForCleanup = undefined;
-  if (operator?.createdByTest && !(dshRuntimeFixturePath && existsSync(dshRuntimeFixturePath))) cleanupPreparedOperator(operator);
 });
 
 function validatedRuntimeFixtureValue(value: unknown, field: string, pattern: RegExp): string {
@@ -79,7 +71,6 @@ async function findOrBootstrapPrimaryOperator(
       token: "",
       profileId: "",
       actorCreatedByTest: false,
-      createdByTest: false,
     };
   }
 
@@ -106,7 +97,6 @@ async function findOrBootstrapPrimaryOperator(
     token: enrollmentToken,
     profileId: "",
     actorCreatedByTest: false,
-    createdByTest: false,
   };
 }
 
@@ -123,9 +113,7 @@ test("@live provision and activate an independent operator for downstream DSH se
   const baseUrl = requiredEnv("PLAYWRIGHT_BASE_URL").replace(/\/+$/, "");
   const mailpitBase = requiredEnv("PLAYWRIGHT_MAILPIT_BASE_URL").replace(/\/+$/, "");
   const primaryOperator = await findOrBootstrapPrimaryOperator(identityBase, controlToken, bootstrapToken);
-  const independentOperator = await provisionIndependentOperator(identityBase, controlToken, primaryOperator.actorId, (operator) => {
-    preparedOperatorForCleanup = operator;
-  });
+  const independentOperator = await provisionIndependentOperator(identityBase, controlToken, primaryOperator.actorId);
   const fixturePath = dshRuntimeFixturePath;
   if (fixturePath) {
     await enableOperatorPermission(identityBase, controlToken, primaryOperator.actorId, independentOperator.actorId, "operations");

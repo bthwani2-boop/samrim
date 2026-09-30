@@ -127,7 +127,6 @@ for (const [file, targetName] of [
   ["services/identity/backend/project.json", "ci-image"],
   ["services/dsh/backend/project.json", "baseline-proof"],
   ["services/dsh/backend/project.json", "runtime-proof"],
-  ["services/dsh/backend/project.json", "runtime-fixture-cleanup"],
   ["apps/control-panel/project.json", "dsh-runtime-checker-fixture"],
   ["services/dsh/backend/project.json", "ci-image"],
   ["services/wlt/backend/project.json", "schema-proof"],

@@ -7,9 +7,8 @@ import { captureMailpitMessageIds, readMailpitCode } from "./mailpit-challenge.m
 
 const proofScope = process.env.BTHWANI_IDENTITY_PROOF_SCOPE;
 const disposableCiProofAuthorized = process.env.CI === "true" && proofScope === "disposable-ci";
-const isolatedLocalActorsProofAuthorized = proofScope === "isolated-local-actors";
-if (!disposableCiProofAuthorized && !isolatedLocalActorsProofAuthorized) {
-  console.error(`IDENTITY_PROOF_REFUSED scope=${proofScope || "unspecified"} reason=isolated-actor-scope-required`);
+if (!disposableCiProofAuthorized) {
+  console.error(`IDENTITY_PROOF_REFUSED scope=${proofScope || "unspecified"} reason=disposable-ci-required`);
   process.exit(1);
 }
 
@@ -31,28 +30,6 @@ const fail = (message) => { console.error("IDENTITY_RUNTIME_SEMANTICS=FAIL"); co
 const assert = (condition, message) => { if (!condition) fail(message); };
 const sql = (query) => execFileSync(resolveTrustedExecutable("docker"), [...composeArgs, "exec", "-T", "postgres", "psql", "-U", env.SAMRIM_POSTGRES_USER, "-d", env.SAMRIM_POSTGRES_DB, "-Atc", query], { encoding: "utf8" }).trim();
 const sqlLiteral = (value) => String(value).replaceAll("'", "''");
-const generatedPhones = new Set();
-let cleanupAttempted = false;
-const cleanup = () => {
-  if (cleanupAttempted || generatedPhones.size === 0) return;
-  cleanupAttempted = true;
-  try {
-    const phones = [...generatedPhones].map((value) => "'" + sqlLiteral(value) + "'").join(",");
-    const profilePredicate = "phone_e164 IN (" + phones + ") OR actor_id IN (SELECT id FROM identity_actors WHERE phone_e164 IN (" + phones + "))";
-    const profileIDs = "SELECT id FROM identity_operator_profiles WHERE " + profilePredicate;
-    sql("DELETE FROM identity_operator_profile_events WHERE profile_id IN (" + profileIDs + ")");
-    sql("DELETE FROM identity_operator_profiles WHERE " + profilePredicate);
-    assert(sql("SELECT count(*) FROM identity_operator_profiles WHERE " + profilePredicate) === "0", "generated Identity operator profiles remain after cleanup");
-    const removable = "phone_e164 IN (" + phones + ") AND id <> COALESCE((SELECT initial_operator_actor_id FROM identity_bootstrap_state WHERE id=1), '')";
-    sql("DELETE FROM identity_actors WHERE " + removable);
-    assert(sql("SELECT count(*) FROM identity_actors WHERE " + removable) === "0", "generated Identity actors remain after cleanup");
-    console.log("IDENTITY_RUNTIME_CLEANUP=PASS");
-  } catch (error) {
-    console.error("IDENTITY_RUNTIME_CLEANUP=FAIL " + String(error?.stderr || error?.message || error));
-    process.exitCode = 1;
-  }
-};
-process.on("exit", cleanup);
 const request = async (method, pathname, options = {}) => {
   const response = await fetch(baseUrl + pathname, {
     method,
@@ -90,12 +67,7 @@ const randomRefreshRequestId = () => crypto.randomBytes(24).toString("base64url"
 for (const pathName of ["/identity/health", "/identity/readiness"]) await expect("GET", pathName, 200);
 for (const pathName of ["/auth/operator/login/start", "/auth/operator/login/complete", "/auth/managed/recovery/request", "/auth/managed/recover"]) await expect("POST", pathName, 404, { body: {} });
 
-if (isolatedLocalActorsProofAuthorized && sql("SELECT count(*) FROM identity_bootstrap_state WHERE id=1") !== "1") {
-  fail("isolated local Identity proof requires the canonical first Operator to exist; it will not create a permanent bootstrap actor as test residue");
-}
-
 const bootstrapPhone = phone();
-generatedPhones.add(bootstrapPhone);
 const bootstrap = await request("POST", "/internal/bootstrap/operator", { token: bootstrapToken, body: { phoneE164: bootstrapPhone, role: "operator" } });
 assert([201, 409].includes(bootstrap.status), "first-operator bootstrap fence returned " + bootstrap.status);
 let operator = sql("SELECT a.id || '|' || a.phone_e164 FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id AND r.role='operator' ORDER BY a.created_at LIMIT 1").split("|");
@@ -140,7 +112,6 @@ const admitReviewedOperatorCandidate = async (candidatePhone, fullNameAr, expect
 };
 
 const clientPhone = phone();
-generatedPhones.add(clientPhone);
 const clientPassword = password("Client");
 const registration = await issue("/auth/client/registration/request", { phone: clientPhone }, "client_register");
 const clientPair = await expect("POST", "/auth/client/register", 201, { body: { phone: clientPhone, code: registration.code, password: clientPassword, clientInstanceId: "runtime-client-instance-" + crypto.randomUUID() } });
@@ -265,7 +236,6 @@ const recoveredPair = await expect("POST", "/auth/client/login", 200, { body: { 
 session(recoveredPair, "client", "app-client", clientPair.identity.subject);
 
 const managedPhone = phone();
-generatedPhones.add(managedPhone);
 await expect("POST", "/internal/actor-roles/provision", 201, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorActorID }, body: { phoneE164: managedPhone, role: "partner" } });
 const managedPassword = password("Partner");
 const managedChallenge = await issue("/auth/managed/activation/request", { phone: managedPhone, role: "partner" }, "managed_activate", "partner");
@@ -289,7 +259,6 @@ const authOptions = await expect("POST", "/auth/operator/authentication/options"
 assert(typeof authOptions.ceremonyId === "string" && authOptions.publicKey?.challenge, "operator passkey options are not server-owned");
 assert(!authOptions.accessToken && !authOptions.refreshToken, "passkey options created a session");
 const operatorProofPhone = phone();
-generatedPhones.add(operatorProofPhone);
 const operatorProof = await admitReviewedOperatorCandidate(operatorProofPhone, "محمود أحمد علي الدوبحي");
 assert(operatorProof.role?.actorId && operatorProof.role?.role === "operator", "disposable operator proof fixture was not admitted through profile review");
 const operatorInvitation = await expect("POST", "/internal/operator-profiles/" + encodeURIComponent(operatorProof.profileID) + "/invitation", 201, {

@@ -8,6 +8,9 @@ import { captureMailpitMessageIds, readMailpitCode } from "./mailpit-challenge.m
 const root = path.resolve(import.meta.dirname, "../..");
 const envArg = process.argv.find((arg) => arg.startsWith("--env-file="));
 const envPath = envArg ? path.resolve(root, envArg.slice("--env-file=".length)) : path.resolve(root, "infra/local/.env");
+if (process.env.CI !== "true" || process.env.BTHWANI_IDENTITY_PROOF_SCOPE !== "disposable-ci") {
+  throw new Error("Location Core runtime proof requires disposable CI state because it creates persistent business records");
+}
 
 function readEnv(file) {
   if (!fs.existsSync(file)) throw new Error(`canonical runtime env file missing: ${file}`);
@@ -39,8 +42,6 @@ const foreignPartnerPhone = `+96777${crypto.randomInt(1_000_000, 9_999_999)}`;
 let partnerStoreID = "";
 let foreignStoreID = "";
 let serviceCityID = "";
-const actorIDs = new Set();
-const caseIDs = new Set();
 let clientActorID = "";
 let verticalID = "";
 const firstStoreOrigin = { firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006 };
@@ -50,8 +51,7 @@ function sqlLiteral(value) {
 }
 
 function sql(query) {
-  // Readback is allowed for schema/contract assertions. DELETE statements below
-  // are bounded cleanup of IDs captured by this run, never business fixture setup.
+  // SQL is limited to schema/readback assertions and claim-specific fault injection.
   return execFileSync(resolveTrustedExecutable("docker"), [...composeArgs, "exec", "-T", "postgres", "psql", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-Atc", query], { cwd: root, encoding: "utf8" }).trim();
 }
 
@@ -95,7 +95,6 @@ async function createClientSession(phone, instance) {
   const challenge = await issueChallenge("/auth/client/registration/request", { phone }, "client_register");
   const pair = await expect(identityBase, "POST", "/auth/client/register", 201, { body: { phone, code: challenge.code, password: `Loca${crypto.randomBytes(2).toString("hex")}`, clientInstanceId: instance } });
   if (pair.identity?.role !== "client" || pair.identity?.surface !== "app-client") throw new Error("client fixture session identity is not app-client");
-  actorIDs.add(String(pair.identity.subject));
   clientActorID = String(pair.identity.subject);
   return pair;
 }
@@ -103,7 +102,6 @@ async function createClientSession(phone, instance) {
 async function createPartnerSession(operatorID, phone, instance) {
   const provisioned = await request(identityBase, "POST", "/internal/actor-roles/provision", { token: identityDshToken, headers: { "X-Acting-Actor-ID": operatorID, "X-Correlation-ID": crypto.randomUUID() }, body: { phoneE164: phone, role: "partner" } });
   const actorID = String(provisioned.body.actorId);
-  if (actorID && actorID !== "undefined") actorIDs.add(actorID);
   if (![200, 201].includes(provisioned.status) || !actorID || actorID === "undefined") throw new Error(`partner fixture provisioning failed: ${JSON.stringify(provisioned.body)}`);
   const challenge = await issueChallenge("/auth/managed/activation/request", { phone, role: "partner" }, "managed_activate");
   const pairResponse = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role: "partner", verificationCode: challenge.code, password: `Part${crypto.randomBytes(2).toString("hex")}`, clientInstanceId: instance } });
@@ -121,7 +119,6 @@ async function createApprovedPartner(operatorID, phone, name, serviceCityId) {
   });
   if (created?.case?.state !== "draft" || created.case.firstStoreVerticalId !== verticalID || created.case.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || created.case.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude) throw new Error("location joining case create readback failed");
   const caseID = String(created.case.id);
-  caseIDs.add(caseID);
   const submitted = await expect(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(caseID)}/submit`, 200, {
     token: controlPanelToken,
     headers: { ...serviceHeaders(operatorID), "X-Expected-Version": "1" },
@@ -136,52 +133,6 @@ async function createApprovedPartner(operatorID, phone, name, serviceCityId) {
   });
   if (approved?.case?.state !== "approved" || approved.case.financialProfileState !== "ACTIVE" || approved.case.commissionRateBps !== 1500 || approved.case.settlementPeriod !== "MONTHLY" || typeof approved.case.financialProfileId !== "string" || !approved.case.store?.id || approved.case.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || approved.case.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || approved.case.store.deliveryOrigin?.latitude !== firstStoreOrigin.firstStoreLatitude || approved.case.store.deliveryOrigin?.longitude !== firstStoreOrigin.firstStoreLongitude) throw new Error("location joining case approval did not bind financial terms or preserve store origin");
   return { ...fixture, caseID, storeID: String(approved.case.store.id) };
-}
-
-function cleanup() {
-  // Cleanup is intentionally scoped to this verifier's freshly created actors,
-  // cases, stores, city and addresses; it must preserve the reusable local world.
-  try {
-    const locationSchemaExists = sql("SELECT to_regclass('dsh.delivery_addresses') IS NOT NULL");
-    if (locationSchemaExists === "t" && clientActorID) {
-      const actor = sqlLiteral(clientActorID);
-      sql(`DELETE FROM dsh.delivery_address_audit WHERE client_actor_id='${actor}'`);
-      sql(`DELETE FROM dsh.delivery_address_mutation_idempotency WHERE client_actor_id='${actor}'`);
-      sql(`DELETE FROM dsh.delivery_addresses WHERE client_actor_id='${actor}'`);
-    }
-    if (locationSchemaExists === "t") {
-      for (const caseID of caseIDs) {
-        const value = sqlLiteral(caseID);
-        sql(`DELETE FROM dsh.joining_case_financial_profile_outbox WHERE case_id='${value}'`);
-        sql(`DELETE FROM wlt.partner_financial_profile_events WHERE profile_id IN (SELECT id FROM wlt.partner_financial_profiles WHERE joining_case_id='${value}')`);
-        sql(`DELETE FROM wlt.partner_financial_profiles WHERE joining_case_id='${value}'`);
-        sql(`DELETE FROM dsh.joining_case_audit WHERE case_id='${value}'`);
-        sql(`DELETE FROM dsh.joining_case_mutation_idempotency WHERE case_id='${value}'`);
-        sql(`DELETE FROM dsh.joining_cases WHERE id='${value}'`);
-      }
-      const stores = `'${sqlLiteral(partnerStoreID)}','${sqlLiteral(foreignStoreID)}'`;
-      sql(`DELETE FROM dsh.store_origin_audit WHERE store_id IN (${stores})`);
-      sql(`DELETE FROM dsh.store_origin_mutation_idempotency WHERE store_id IN (${stores})`);
-      sql(`DELETE FROM dsh.store_publication_audit WHERE store_id IN (${stores})`);
-      sql(`DELETE FROM dsh.store_publication_idempotency WHERE store_id IN (${stores})`);
-      sql(`DELETE FROM dsh.stores WHERE id IN (${stores})`);
-    }
-    if (verticalID) {
-      const vertical = sqlLiteral(verticalID);
-      sql(`DELETE FROM dsh.catalog_registry_mutation_idempotency WHERE entity_id='${vertical}'`);
-      sql(`DELETE FROM dsh.commerce_verticals WHERE id='${vertical}'`);
-    }
-    if (locationSchemaExists === "t") {
-      const city = sqlLiteral(serviceCityID);
-      sql(`DELETE FROM dsh.service_city_audit WHERE city_id='${city}'`);
-      sql(`DELETE FROM dsh.service_city_mutation_idempotency WHERE city_id='${city}'`);
-      sql(`DELETE FROM dsh.service_cities WHERE id='${city}'`);
-    }
-    for (const actorID of actorIDs) sql(`DELETE FROM identity_actors WHERE id='${sqlLiteral(actorID)}'`);
-    console.log("LOCATION_CORE_RUNTIME_CLEANUP=PASS");
-  } catch (error) {
-    console.error(`LOCATION_CORE_RUNTIME_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`);
-  }
 }
 
 let exitCode = 1;
@@ -315,8 +266,6 @@ try {
   exitCode = 0;
 } catch (error) {
   console.error(`LOCATION_CORE_RUNTIME=FAIL ${error instanceof Error ? error.message : String(error)}`);
-} finally {
-  cleanup();
 }
 
 process.exit(exitCode);

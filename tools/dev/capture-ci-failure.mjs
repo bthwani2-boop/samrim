@@ -130,7 +130,6 @@ const runtimeFailureCandidate = kind === "runtime" ? readJsonIfPresent(runtimeFa
 const allowedRuntimeTargets = new Set([
   ...Object.values(laneTargets).flat(),
   "control-panel:dsh-runtime-checker-fixture",
-  "dsh-backend:runtime-fixture-cleanup",
 ]);
 const runtimeFailureIsValid = kind === "runtime" && runtimeFailureCandidate &&
   allowedRuntimeTargets.has(runtimeFailureCandidate.target) &&

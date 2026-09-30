@@ -1,9 +1,5 @@
-import { execFileSync } from "node:child_process";
 import { randomInt, randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
-import path from "node:path";
 import { expect, type Page } from "@playwright/test";
-import { resolveTrustedExecutable } from "../../../tools/dev/runtime-proof/trusted-executables.mjs";
 
 export type PreparedOperator = {
   actorId: string;
@@ -11,7 +7,6 @@ export type PreparedOperator = {
   token: string;
   profileId: string;
   actorCreatedByTest: boolean;
-  createdByTest: boolean;
 };
 
 export function requiredEnv(name: string): string {
@@ -22,56 +17,9 @@ export function requiredEnv(name: string): string {
 
 export function assertIdentityProofScope(): void {
   const disposableCi = process.env.CI === "true" && process.env.BTHWANI_IDENTITY_PROOF_SCOPE === "disposable-ci";
-  const isolatedLocalActors = process.env.BTHWANI_IDENTITY_PROOF_SCOPE === "isolated-local-actors";
-  if (!disposableCi && !isolatedLocalActors) {
-    throw new Error("live Identity proof requires disposable CI state or the isolated-local-actors scope");
+  if (!disposableCi) {
+    throw new Error("live Identity proof that provisions actors requires disposable CI state");
   }
-}
-
-function readCanonicalRuntime(): { envFile: string; repoRoot: string; postgresUser: string; postgresDatabase: string } {
-  const repoRoots = [path.resolve(process.cwd()), path.resolve(process.cwd(), "../..")];
-  const repoRoot = repoRoots.find((candidate) =>
-    existsSync(path.join(candidate, "infra/local/.env")) &&
-    existsSync(path.join(candidate, "infra/local/compose/compose.yaml")),
-  );
-  if (!repoRoot) throw new Error("canonical local runtime environment is required for live Identity fixture cleanup");
-  const envFile = path.join(repoRoot, "infra/local/.env");
-  const values = Object.fromEntries(
-    readFileSync(envFile, "utf8")
-      .split(/\r?\n/)
-      .filter((line) => line.trim() && !line.trim().startsWith("#"))
-      .map((line) => {
-        const separator = line.indexOf("=");
-        if (separator < 1) throw new Error("malformed canonical local runtime environment");
-        return [line.slice(0, separator).trim(), line.slice(separator + 1).trim()];
-      }),
-  );
-  const postgresUser = String(values.SAMRIM_POSTGRES_USER || "");
-  const postgresDatabase = String(values.SAMRIM_POSTGRES_DB || "");
-  if (!postgresUser || !postgresDatabase) throw new Error("canonical Postgres credentials are required for live Identity fixture cleanup");
-  return { envFile, repoRoot, postgresUser, postgresDatabase };
-}
-
-export function cleanupPreparedOperator(operator: PreparedOperator): void {
-  if (!operator.createdByTest) return;
-  const runtime = readCanonicalRuntime();
-  const actorLiteral = operator.actorId.replaceAll("'", "''");
-  const profileLiteral = operator.profileId.replaceAll("'", "''");
-  const phoneLiteral = operator.phone.replaceAll("'", "''");
-  const removeCreatedActor = operator.actorCreatedByTest && actorLiteral ? "DELETE FROM identity_actors WHERE id='" + actorLiteral + "'; " : "";
-  const actorReadback = operator.actorCreatedByTest && actorLiteral ? "SELECT count(*) FROM identity_actors WHERE id='" + actorLiteral + "'" : "SELECT 0";
-  const query = "DELETE FROM identity_operator_profile_events WHERE profile_id IN (SELECT id FROM identity_operator_profiles WHERE id='" + profileLiteral + "' OR phone_e164='" + phoneLiteral + "'); DELETE FROM identity_operator_profiles WHERE id='" + profileLiteral + "' OR phone_e164='" + phoneLiteral + "'; " + removeCreatedActor + actorReadback + ";";
-  const output = execFileSync(
-    resolveTrustedExecutable("docker"),
-    [
-      "compose", "--project-name", "samrim-local", "--env-file", runtime.envFile,
-      "-f", path.join(runtime.repoRoot, "infra/local/compose/compose.yaml"), "exec", "-T", "postgres",
-      "psql", "-v", "ON_ERROR_STOP=1", "-U", runtime.postgresUser, "-d", runtime.postgresDatabase,
-      "-Atc", query,
-    ],
-    { cwd: runtime.repoRoot, encoding: "utf8" },
-  ).trim();
-  if (output.split(/\r?\n/).at(-1) !== "0") throw new Error("live Identity fixture cleanup left actor data");
 }
 
 export async function jsonRequest(base: string, pathname: string, token: string, body?: unknown, extraHeaders: Record<string, string> = {}) {
@@ -94,13 +42,12 @@ async function findExistingOperator(identityBase: string, controlToken: string):
   const existing = body.items?.[0];
   expect(existing?.actorId).toMatch(/^act_/);
   expect(existing?.phoneE164).toMatch(/^\+9677/);
-  return { actorId: String(existing?.actorId), phone: String(existing?.phoneE164), token: "", profileId: "", actorCreatedByTest: false, createdByTest: false };
+  return { actorId: String(existing?.actorId), phone: String(existing?.phoneE164), token: "", profileId: "", actorCreatedByTest: false };
 }
 
 export async function enrollAndAuthenticateIsolatedOperator(
   page: Page,
   permissions: string[] = [],
-  onCreated?: (operator: PreparedOperator) => void,
 ): Promise<PreparedOperator> {
   assertIdentityProofScope();
   const identityBase = requiredEnv("PLAYWRIGHT_IDENTITY_API_BASE_URL").replace(/\/+$/, "");
@@ -108,7 +55,7 @@ export async function enrollAndAuthenticateIsolatedOperator(
   const mailpitBase = requiredEnv("PLAYWRIGHT_MAILPIT_BASE_URL").replace(/\/+$/, "");
   const baseUrl = requiredEnv("PLAYWRIGHT_BASE_URL").replace(/\/+$/, "");
   const primaryOperator = await findExistingOperator(identityBase, controlToken);
-  const operator = await provisionIndependentOperator(identityBase, controlToken, primaryOperator.actorId, onCreated);
+  const operator = await provisionIndependentOperator(identityBase, controlToken, primaryOperator.actorId);
   for (const permission of permissions) await enableOperatorPermission(identityBase, controlToken, primaryOperator.actorId, operator.actorId, permission);
   await enableVirtualAuthenticator(page);
   await registerOperator(page, operator, baseUrl, mailpitBase);
@@ -147,12 +94,10 @@ export async function provisionIndependentOperator(
   identityBase: string,
   controlToken: string,
   actingOperatorID: string,
-  onCreated?: (operator: PreparedOperator) => void,
 ): Promise<PreparedOperator> {
   const phone = "+9677" + String(randomInt(10_000_000, 99_999_999));
   await assertNoExistingActorForPhone(identityBase, controlToken, phone);
-  const operator: PreparedOperator = { actorId: "", phone, token: "", profileId: "", actorCreatedByTest: false, createdByTest: true };
-  onCreated?.(operator);
+  const operator: PreparedOperator = { actorId: "", phone, token: "", profileId: "", actorCreatedByTest: false };
   const mutationHeaders = (key: string) => ({ "X-Acting-Actor-ID": actingOperatorID, "X-Correlation-ID": randomUUID(), "Idempotency-Key": key });
   const fullNameAr = "محمود أحمد علي الدوبحي";
   const creation = await jsonRequest(identityBase, "/internal/operator-profiles", controlToken, { fullNameAr, phoneE164: phone }, mutationHeaders(randomUUID()));

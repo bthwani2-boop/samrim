@@ -73,7 +73,6 @@ const childEnv = {
 };
 
 const executable = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-let checkerFixtureCleanupFailed = false;
 let runtimeFailureRecorded = false;
 
 function writeRuntimeFailureOnce(failure) {
@@ -88,58 +87,27 @@ function writeRuntimeFailureOnce(failure) {
 }
 
 console.log("CI_RUNTIME_TASKS=" + requestedTargets.join(","));
-try {
-  for (const target of requestedTargets) {
-    console.log("CI_RUNTIME_TASK=START target=" + target);
-    try {
-      execFileSync(
-        executable,
-        ["exec", "nx", "run", target, "--outputStyle=stream"],
-        { cwd: root, env: childEnv, stdio: "inherit" },
-      );
-      console.log("CI_RUNTIME_TASK=PASS target=" + target);
-    } catch (error) {
-      const failure = {
-        target,
-        candidate: process.env.CANDIDATE_SHA || process.env.GITHUB_SHA || null,
-        progressionBlocked: true,
-        nextAction: "classify-highest-causal-root-before-new-material-work",
-        capturedAt: new Date().toISOString(),
-      };
-      writeRuntimeFailureOnce(failure);
-      console.error("CI_RUNTIME_TASK=FAIL target=" + target);
-      throw error;
-    }
-  }
-} finally {
-  if (dshCheckerFixturePath && fs.existsSync(dshCheckerFixturePath)) {
-    try {
-      execFileSync(
-        executable,
-        ["exec", "nx", "run", "dsh-backend:runtime-fixture-cleanup", "--outputStyle=stream"],
-        { cwd: root, env: childEnv, stdio: "inherit" },
-      );
-    } catch (error) {
-      checkerFixtureCleanupFailed = true;
-      console.error(`DSH_RUNTIME_CHECKER_FIXTURE_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`);
-      try {
-        writeRuntimeFailureOnce({
-          target: "dsh-backend:runtime-fixture-cleanup",
-          candidate: process.env.CANDIDATE_SHA || process.env.GITHUB_SHA || null,
-          progressionBlocked: true,
-          nextAction: "classify-highest-causal-root-before-new-material-work",
-          capturedAt: new Date().toISOString(),
-        });
-      } catch (writeError) {
-        console.error(`CI_RUNTIME_FAILURE_RECORD=FAIL ${writeError instanceof Error ? writeError.message : String(writeError)}`);
-      }
-      process.exitCode = 1;
-    }
+for (const target of requestedTargets) {
+  console.log("CI_RUNTIME_TASK=START target=" + target);
+  try {
+    execFileSync(
+      executable,
+      ["exec", "nx", "run", target, "--outputStyle=stream"],
+      { cwd: root, env: childEnv, stdio: "inherit" },
+    );
+    console.log("CI_RUNTIME_TASK=PASS target=" + target);
+  } catch (error) {
+    const failure = {
+      target,
+      candidate: process.env.CANDIDATE_SHA || process.env.GITHUB_SHA || null,
+      progressionBlocked: true,
+      nextAction: "classify-highest-causal-root-before-new-material-work",
+      capturedAt: new Date().toISOString(),
+    };
+    writeRuntimeFailureOnce(failure);
+    console.error("CI_RUNTIME_TASK=FAIL target=" + target);
+    throw error;
   }
 }
 
-if (checkerFixtureCleanupFailed) {
-  console.error("CI_RUNTIME_INTEGRATION=FAIL disposable checker fixture cleanup failed");
-} else {
-  console.log("CI_RUNTIME_INTEGRATION=PASS targets=" + requestedTargets.join(","));
-}
+console.log("CI_RUNTIME_INTEGRATION=PASS targets=" + requestedTargets.join(","));

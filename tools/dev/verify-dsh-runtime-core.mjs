@@ -10,6 +10,7 @@ const envArg = process.argv.find((arg) => arg.startsWith("--env-file="));
 const envPath = envArg ? path.resolve(root, envArg.slice("--env-file=".length)) : path.resolve(root, "infra/local/.env");
 
 function fail(message, detail = "") { console.error(`DSH_RUNTIME=FAIL ${message}${detail ? ` detail=${detail}` : ""}`); process.exit(1); }
+if (process.env.CI !== "true" || process.env.BTHWANI_IDENTITY_PROOF_SCOPE !== "disposable-ci") fail("runtime proof requires disposable CI state because it creates persistent business records");
 function readEnv(file) {
   if (!fs.existsSync(file)) fail("canonical env file missing", file);
   const values = {};
@@ -58,7 +59,6 @@ if (dshToken.length < 24 || identityDshToken.length < 24 || bootstrapToken.lengt
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", path.join(root, "infra/local/compose/compose.yaml")];
 const suffix = `${Date.now().toString(36)}-${crypto.randomBytes(6).toString("hex")}`;
 const citySuffix = String(Date.now());
-const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), challengeIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), paymentIntentIDs = new Set(), cashInFundingIntentIDs = new Set(), deliveryFeePolicyIDs = new Set(), fieldCommissionPolicyIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set(), captainAdmissionIDs = new Set(), captainOfferIDs = new Set(), captainAssignmentIDs = new Set(), fieldAdmissionIDs = new Set(), destinationIDs = new Set(), payoutIDs = new Set(), settlementBatchIDs = new Set(), promotionIDs = new Set(), multiStoreCheckoutIDs = new Set(), partnerCommissionRemittanceIDs = new Set();
 let cityA = "";
 let cityB = "";
 let verticalID = "";
@@ -69,355 +69,23 @@ const enumAttributeID = `roast-${suffix}`;
 const measurementAttributeID = `net-weight-${suffix}`;
 const dateAttributeID = `expiry-${suffix}`;
 const clientPhone = `+96778${crypto.randomInt(1_000_000, 9_999_999)}`;
-let cleanupBatch = null;
-let cleanupAttempted = false;
-let cleanupCompleted = false;
 
 const dockerExecutable = resolveTrustedExecutable("docker");
 function compose(...args) { return execFileSync(dockerExecutable, [...composeArgs, ...args], { cwd: root, encoding: "utf8" }); }
 function sqlLiteral(value) { return String(value).replaceAll("'", "''"); }
-// SQL is limited to schema/readback assertions, bounded cleanup of IDs captured
-  // by this run, and the bounded database-time fault injections below. Business fixtures
-// are created through canonical HTTP owners; this is not a SQL setup path.
+// SQL is limited to schema/readback assertions and bounded database-time fault injections.
+// Business fixtures are created through canonical HTTP owners; this is not a SQL setup path.
 const postgresContainerID = compose("ps", "-aq", "postgres").trim();
 function sql(query) {
-  if (cleanupBatch && /^(DELETE|UPDATE)\b/i.test(query.trim())) {
-    cleanupBatch.push(query);
-    return "";
-  }
   try {
     if (!postgresContainerID) fail("postgres container is not present");
     return execFileSync(dockerExecutable, ["exec", postgresContainerID, "psql", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-Atc", query], { cwd: root, encoding: "utf8" }).trim();
-  }
-  catch (error) {
+  } catch (error) {
     const detail = String(error?.stderr || error?.message || error);
-    if (cleanupBatch) throw new Error(`database cleanup read failed: ${detail}`);
     fail("database proof failed", detail);
   }
 }
 function expectSQL(query, expected, message) { const observed = sql(query); if (observed !== expected) fail(message, `expected=${expected} observed=${observed}`); }
-
-function cleanup() {
-  if (cleanupCompleted || cleanupAttempted) return;
-  cleanupAttempted = true;
-  cleanupBatch = [];
-  try {
-  // Disposable cleanup is intentionally ID-scoped to this verifier's fresh state;
-  // it must never delete the reusable local baseline or synthetic world locators.
-  for (const challengeID of challengeIDs) {
-    sql(`DELETE FROM identity_challenges WHERE id='${sqlLiteral(challengeID)}'`);
-  }
-  for (const importRunID of importRunIDs) {
-    const value = sqlLiteral(importRunID);
-    sql(`DELETE FROM dsh.catalog_import_audit WHERE run_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_import_mutation_idempotency WHERE run_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_import_run_items WHERE run_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_import_runs WHERE id='${value}'`);
-  }
-  for (const assignmentID of captainAssignmentIDs) {
-    const value = sqlLiteral(assignmentID);
-    sql(`DELETE FROM dsh.captain_location_audit WHERE assignment_id='${value}'`);
-    sql(`DELETE FROM dsh.captain_location_mutation_idempotency WHERE assignment_id='${value}'`);
-    sql(`DELETE FROM dsh.captain_location_snapshots WHERE assignment_id='${value}'`);
-    sql(`DELETE FROM dsh.captain_audit WHERE assignment_id='${value}'`);
-    sql(`DELETE FROM dsh.captain_operation_idempotency WHERE assignment_id='${value}'`);
-    sql(`DELETE FROM dsh.captain_handoffs WHERE assignment_id='${value}'`);
-    sql(`DELETE FROM dsh.captain_assignments WHERE id='${value}'`);
-  }
-  for (const offerID of captainOfferIDs) {
-    const value = sqlLiteral(offerID);
-    sql(`DELETE FROM dsh.captain_audit WHERE offer_id='${value}'`);
-    sql(`DELETE FROM dsh.captain_operation_idempotency WHERE offer_id='${value}'`);
-    sql(`DELETE FROM dsh.captain_dispatch_offers WHERE id='${value}'`);
-  }
-  for (const admissionID of captainAdmissionIDs) {
-    const value = sqlLiteral(admissionID);
-    sql(`DELETE FROM dsh.captain_admission_audit WHERE admission_id='${value}'`);
-    sql(`DELETE FROM dsh.captain_admission_idempotency WHERE admission_id='${value}'`);
-    sql(`DELETE FROM dsh.captain_operation_idempotency WHERE admission_id='${value}'`);
-    sql(`DELETE FROM dsh.captain_admissions WHERE id='${value}'`);
-  }
-  for (const admissionID of fieldAdmissionIDs) {
-    const value = sqlLiteral(admissionID);
-    sql(`DELETE FROM dsh.field_admission_audit WHERE admission_id='${value}'`);
-    sql(`DELETE FROM dsh.field_admission_idempotency WHERE admission_id='${value}'`);
-    sql(`DELETE FROM dsh.field_admissions WHERE id='${value}'`);
-  }
-  for (const checkoutID of multiStoreCheckoutIDs) {
-    const value = sqlLiteral(checkoutID);
-    sql(`DELETE FROM dsh.commerce_multi_store_checkout_idempotency WHERE checkout_id='${value}'`);
-    sql(`DELETE FROM dsh.commerce_multi_store_checkout_children WHERE checkout_id='${value}'`);
-    sql(`DELETE FROM dsh.commerce_multi_store_checkouts WHERE id='${value}'`);
-  }
-  for (const orderID of orderIDs) {
-    const value = sqlLiteral(orderID);
-    sql(`DELETE FROM wlt.captain_cod_reservation_events WHERE reservation_id IN (SELECT id FROM wlt.captain_cod_reservations WHERE order_id='${value}')`);
-    sql(`DELETE FROM wlt.captain_cod_reservations WHERE order_id='${value}'`);
-    sql(`DELETE FROM wlt.ledger_entries WHERE transaction_id IN (SELECT ledger_transaction_id FROM wlt.partner_order_earnings WHERE order_id='${value}')`);
-    sql(`DELETE FROM wlt.partner_order_earnings WHERE order_id='${value}'`);
-    sql("DELETE FROM wlt.ledger_entries WHERE transaction_id IN (SELECT ledger_transaction_id FROM wlt.partner_store_cash_commissions WHERE order_id='" + value + "')");
-    sql("DELETE FROM wlt.partner_store_cash_commissions WHERE order_id='" + value + "'");
-    sql("DELETE FROM wlt.ledger_transactions WHERE source_type='PARTNER_STORE_CASH_COMMISSION' AND source_id='" + value + "'");
-    sql(`DELETE FROM wlt.ledger_transactions WHERE source_type='ORDER_DELIVERED' AND source_id='${value}'`);
-    sql(`DELETE FROM dsh.captain_location_audit WHERE order_id='${value}'`);
-    sql(`DELETE FROM dsh.captain_location_mutation_idempotency WHERE order_id='${value}'`);
-    sql(`DELETE FROM dsh.captain_location_snapshots WHERE order_id='${value}'`);
-    sql(`DELETE FROM dsh.captain_audit WHERE order_id='${value}'`);
-    sql(`DELETE FROM dsh.captain_operation_idempotency WHERE order_id='${value}'`);
-    sql(`DELETE FROM dsh.captain_handoffs WHERE order_id='${value}'`);
-    sql(`DELETE FROM dsh.captain_assignments WHERE order_id='${value}'`);
-    sql(`DELETE FROM dsh.captain_dispatch_offers WHERE order_id='${value}'`);
-    sql(`DELETE FROM dsh.commerce_order_rating_audit WHERE order_id='${value}'`);
-    sql(`DELETE FROM dsh.commerce_order_ratings WHERE order_id='${value}'`);
-    sql(`DELETE FROM dsh.commerce_financial_handoff_outbox WHERE order_id='${value}'`);
-    sql(`DELETE FROM dsh.commerce_order_payment_audit WHERE order_id='${value}'`);
-    sql(`DELETE FROM dsh.commerce_order_audit WHERE order_id='${value}'`);
-    sql(`DELETE FROM dsh.commerce_order_transition_idempotency WHERE order_id='${value}'`);
-    sql(`DELETE FROM dsh.commerce_order_checkout_idempotency WHERE order_id='${value}'`);
-    sql(`DELETE FROM dsh.commerce_order_line_modifier_snapshots WHERE order_line_id IN (SELECT id FROM dsh.commerce_order_lines WHERE order_id='${value}')`);
-    sql(`DELETE FROM dsh.commerce_order_line_attribute_snapshots WHERE order_line_id IN (SELECT id FROM dsh.commerce_order_lines WHERE order_id='${value}')`);
-    sql(`DELETE FROM dsh.commerce_promotion_redemptions WHERE order_id='${value}'`);
-    sql(`DELETE FROM dsh.commerce_order_lines WHERE order_id='${value}'`);
-    sql(`DELETE FROM dsh.commerce_orders WHERE id='${value}'`);
-  }
-  for (const remittanceID of partnerCommissionRemittanceIDs) {
-    const value = sqlLiteral(remittanceID);
-    sql("DELETE FROM wlt.ledger_entries WHERE transaction_id IN (SELECT ledger_transaction_id FROM wlt.partner_commission_remittances WHERE id='" + value + "')");
-    sql("DELETE FROM wlt.partner_commission_remittances WHERE id='" + value + "'");
-    sql("DELETE FROM wlt.ledger_transactions WHERE source_type='PARTNER_COMMISSION_REMITTANCE' AND source_id='" + value + "'");
-  }
-  for (const batchID of settlementBatchIDs) {
-    const value = sqlLiteral(batchID);
-    sql(`DELETE FROM wlt.payout_audit_events WHERE batch_id='${value}'`);
-    sql(`UPDATE wlt.settlement_statement_rows SET matched_transfer_id=NULL, matched_by=NULL, matched_at=NULL WHERE statement_id IN (SELECT id FROM wlt.settlement_statements WHERE batch_id='${value}')`);
-    sql(`UPDATE wlt.manual_transfer_executions SET execution_status='VERIFIED', statement_row_id=NULL, reconciled_by=NULL, reconciled_at=NULL WHERE batch_id='${value}' AND statement_row_id IS NOT NULL`);
-    sql(`DELETE FROM wlt.settlement_statement_rows WHERE statement_id IN (SELECT id FROM wlt.settlement_statements WHERE batch_id='${value}')`);
-    sql(`DELETE FROM wlt.settlement_statements WHERE batch_id='${value}'`);
-    sql(`DELETE FROM wlt.manual_transfer_executions WHERE batch_id='${value}'`);
-    sql(`DELETE FROM wlt.settlement_batch_items WHERE batch_id='${value}'`);
-    sql(`DELETE FROM wlt.settlement_batches WHERE id='${value}'`);
-  }
-  sql(`DELETE FROM wlt.payout_audit_events WHERE evidence_reference IN (SELECT id FROM wlt.finance_evidence_documents WHERE idempotency_key IN ('partner-transfer-receipt-${sqlLiteral(suffix)}','partner-settlement-statement-evidence-${sqlLiteral(suffix)}'))`);
-  sql(`DELETE FROM wlt.finance_evidence_documents WHERE idempotency_key IN ('partner-transfer-receipt-${sqlLiteral(suffix)}','partner-settlement-statement-evidence-${sqlLiteral(suffix)}')`);
-  for (const payoutID of payoutIDs) {
-    const value = sqlLiteral(payoutID);
-    const ledgerTransactionID = sql(`SELECT COALESCE(ledger_transaction_id,'') FROM wlt.payout_requests WHERE id='${value}'`);
-    sql(`DELETE FROM wlt.payout_audit_events WHERE payout_id='${value}'`);
-    sql(`DELETE FROM wlt.manual_transfer_executions WHERE payout_id='${value}'`);
-    sql(`DELETE FROM wlt.settlement_batch_items WHERE payout_id='${value}'`);
-    sql(`DELETE FROM wlt.approved_payout_snapshots WHERE payout_id='${value}'`);
-    if (ledgerTransactionID) {
-      const ledgerValue = sqlLiteral(ledgerTransactionID);
-      sql(`DELETE FROM wlt.ledger_entries WHERE transaction_id='${ledgerValue}'`);
-    }
-    sql(`DELETE FROM wlt.payout_holds WHERE payout_id='${value}'`);
-    sql(`DELETE FROM wlt.payout_requests WHERE id='${value}'`);
-    if (ledgerTransactionID) {
-      sql(`DELETE FROM wlt.ledger_transactions WHERE id='${sqlLiteral(ledgerTransactionID)}'`);
-    }
-  }
-  for (const destinationID of destinationIDs) {
-    sql(`DELETE FROM wlt.official_wallet_destination_transitions WHERE destination_id='${sqlLiteral(destinationID)}'`);
-    sql(`DELETE FROM wlt.official_wallet_destinations WHERE id='${sqlLiteral(destinationID)}'`);
-  }
-  for (const paymentIntentID of paymentIntentIDs) {
-    const value = sqlLiteral(paymentIntentID);
-    sql(`DELETE FROM wlt.cash_remittance_events WHERE payment_intent_id='${value}'`);
-    sql(`DELETE FROM wlt.ledger_entries WHERE transaction_id IN (SELECT t.id FROM wlt.ledger_transactions t JOIN wlt.cash_remittances r ON t.source_type='CASH_REMITTANCE' AND t.source_id=r.id WHERE r.payment_intent_id='${value}')`);
-    sql(`DELETE FROM wlt.ledger_transactions WHERE source_type='CASH_REMITTANCE' AND source_id IN (SELECT id FROM wlt.cash_remittances WHERE payment_intent_id='${value}')`);
-    sql(`DELETE FROM wlt.cash_remittances WHERE payment_intent_id='${value}'`);
-    sql(`DELETE FROM wlt.customer_payment_allocation_events WHERE payment_intent_id='${value}'`);
-    sql(`DELETE FROM wlt.customer_payment_allocations WHERE payment_intent_id='${value}'`);
-    sql(`DELETE FROM wlt.payment_intent_events WHERE intent_id='${value}'`);
-    sql(`DELETE FROM wlt.payment_intents WHERE id='${value}'`);
-  }
-  for (const fundingID of cashInFundingIntentIDs) {
-    const value = sqlLiteral(fundingID);
-    sql(`DELETE FROM wlt.cash_in_funding_intent_events WHERE funding_intent_id='${value}'`);
-    sql(`UPDATE wlt.cash_in_funding_intents SET state='FAILED',provider_transaction_reference=NULL,ledger_transaction_id=NULL WHERE id='${value}'`);
-    sql(`DELETE FROM wlt.ledger_entries WHERE transaction_id IN (SELECT id FROM wlt.ledger_transactions WHERE source_type='FUNDING_INTENT' AND source_id='${value}')`);
-    sql(`DELETE FROM wlt.ledger_transactions WHERE source_type='FUNDING_INTENT' AND source_id='${value}'`);
-    sql(`DELETE FROM wlt.cash_in_funding_intents WHERE id='${value}'`);
-  }
-  for (const policyID of deliveryFeePolicyIDs) {
-    const value = sqlLiteral(policyID);
-    sql(`DELETE FROM wlt.delivery_fee_policy_events WHERE policy_id='${value}'`);
-    sql(`DELETE FROM wlt.delivery_fee_policies WHERE id='${value}'`);
-  }
-  for (const cartID of cartIDs) {
-    const value = sqlLiteral(cartID);
-    sql(`DELETE FROM dsh.commerce_order_checkout_idempotency WHERE cart_id='${value}'`);
-    sql(`DELETE FROM dsh.commerce_cart_audit WHERE cart_id='${value}'`);
-    sql(`DELETE FROM dsh.commerce_cart_mutation_idempotency WHERE cart_id='${value}'`);
-    sql(`DELETE FROM dsh.commerce_cart_lines WHERE cart_id='${value}'`);
-    sql(`DELETE FROM dsh.commerce_carts WHERE id='${value}'`);
-  }
-  for (const proposalID of proposalIDs) {
-    const value = sqlLiteral(proposalID);
-    sql(`DELETE FROM dsh.catalog_product_proposal_audit WHERE proposal_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_product_proposal_idempotency WHERE proposal_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_product_proposals WHERE id='${value}'`);
-  }
-  for (const offerID of offerIDs) {
-    const value = sqlLiteral(offerID);
-    sql(`DELETE FROM dsh.catalog_storefront_section_offers WHERE offer_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_store_offer_modifier_groups WHERE offer_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_store_offer_audit WHERE offer_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_store_offer_mutation_idempotency WHERE offer_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_store_offers WHERE id='${value}'`);
-  }
-  for (const productID of productIDs) {
-    const value = sqlLiteral(productID);
-    sql(`DELETE FROM dsh.catalog_variant_attribute_values WHERE variant_id IN (SELECT id FROM dsh.catalog_product_variants WHERE product_id='${value}')`);
-    sql(`DELETE FROM dsh.catalog_variant_audit WHERE product_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_variant_mutation_idempotency WHERE variant_id IN (SELECT id FROM dsh.catalog_product_variants WHERE product_id='${value}')`);
-    sql(`DELETE FROM dsh.catalog_product_audit WHERE product_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_product_mutation_idempotency WHERE product_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_media WHERE product_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_media_assets WHERE product_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_media_audit WHERE product_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_media_mutation_idempotency WHERE product_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_product_attribute_values WHERE product_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_product_categories WHERE product_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_variant_identifiers WHERE variant_id IN (SELECT id FROM dsh.catalog_product_variants WHERE product_id='${value}')`);
-    sql(`DELETE FROM dsh.catalog_product_variants WHERE product_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_products WHERE id='${value}'`);
-  }
-  for (const caseID of caseIDs) {
-    const value = sqlLiteral(caseID);
-    sql(`DELETE FROM dsh.joining_case_financial_profile_outbox WHERE case_id='${value}'`);
-    sql(`DELETE FROM wlt.partner_store_commission_policy_events WHERE store_id IN (SELECT store_id FROM wlt.partner_store_commission_policies WHERE profile_id IN (SELECT id FROM wlt.partner_financial_profiles WHERE joining_case_id='${value}'))`);
-    sql(`DELETE FROM wlt.partner_store_commission_policies WHERE profile_id IN (SELECT id FROM wlt.partner_financial_profiles WHERE joining_case_id='${value}')`);
-    sql(`DELETE FROM wlt.partner_store_commission_policy_initializations WHERE profile_id IN (SELECT id FROM wlt.partner_financial_profiles WHERE joining_case_id='${value}')`);
-    sql(`DELETE FROM wlt.partner_financial_profile_events WHERE profile_id IN (SELECT id FROM wlt.partner_financial_profiles WHERE joining_case_id='${value}')`);
-    sql(`DELETE FROM wlt.partner_financial_profiles WHERE joining_case_id='${value}'`);
-    sql(`DELETE FROM dsh.joining_case_audit WHERE case_id='${value}'`);
-    sql(`DELETE FROM dsh.joining_case_mutation_idempotency WHERE case_id='${value}'`);
-    sql(`DELETE FROM dsh.joining_cases WHERE id='${value}'`);
-  }
-for (const promotionID of promotionIDs) {
-    const value = sqlLiteral(promotionID);
-    sql(`DELETE FROM dsh.commerce_promotion_redemptions WHERE promotion_id='${value}'`);
-    sql(`DELETE FROM dsh.commerce_marketing_mutation_idempotency WHERE resource_id='${value}'`);
-    sql(`DELETE FROM dsh.commerce_promotions WHERE id='${value}'`);
-  }
-  for (const storeID of storeIDs) {
-    const value = sqlLiteral(storeID);
-    sql(`DELETE FROM wlt.ledger_entries WHERE transaction_id IN (SELECT ledger_transaction_id FROM wlt.field_commission_earnings WHERE store_id='${value}')`);
-    sql(`DELETE FROM wlt.field_commission_earnings WHERE store_id='${value}'`);
-    sql(`DELETE FROM wlt.ledger_transactions WHERE source_type='STORE_CLIENT_VISIBLE' AND source_id='${value}'`);
-    sql(`DELETE FROM dsh.field_commission_publication_outbox WHERE store_id='${value}'`);
-    sql(`DELETE FROM dsh.client_favorite_store_audit WHERE store_id='${value}'`);
-    sql(`DELETE FROM dsh.client_favorite_store_mutation_idempotency WHERE store_id='${value}'`);
-    sql(`DELETE FROM dsh.client_favorite_stores WHERE store_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_storefront_section_offers WHERE section_id IN (SELECT id FROM dsh.catalog_storefront_sections WHERE store_id='${value}')`);
-    sql(`DELETE FROM dsh.catalog_storefront_sections WHERE store_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_store_offer_modifier_groups WHERE offer_id IN (SELECT id FROM dsh.catalog_store_offers WHERE store_id='${value}')`);
-    sql(`DELETE FROM dsh.catalog_modifier_options WHERE group_id IN (SELECT id FROM dsh.catalog_modifier_groups WHERE store_id='${value}')`);
-    sql(`DELETE FROM dsh.catalog_modifier_groups WHERE store_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_store_offer_audit WHERE store_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_store_offer_mutation_idempotency WHERE offer_id IN (SELECT id FROM dsh.catalog_store_offers WHERE store_id='${value}')`);
-    sql(`DELETE FROM dsh.catalog_store_offers WHERE store_id='${value}'`);
-    sql(`DELETE FROM dsh.store_origin_audit WHERE store_id='${value}'`);
-    sql(`DELETE FROM dsh.store_origin_mutation_idempotency WHERE store_id='${value}'`);
-    sql(`DELETE FROM dsh.store_publication_audit WHERE store_id='${value}'`);
-    sql(`DELETE FROM dsh.store_publication_idempotency WHERE store_id='${value}'`);
-    sql("DELETE FROM dsh.store_fulfillment_modes_audit WHERE store_id='" + value + "'");
-    sql("DELETE FROM dsh.store_fulfillment_modes_idempotency WHERE store_id='" + value + "'");
-    sql(`DELETE FROM dsh.stores WHERE id='${value}'`);
-  }
-  for (const policyID of fieldCommissionPolicyIDs) {
-    sql(`DELETE FROM wlt.field_commission_policies WHERE id='${sqlLiteral(policyID)}'`);
-  }
-  for (const cityID of cityIDs) {
-    const value = sqlLiteral(cityID);
-    sql(`DELETE FROM dsh.delivery_address_audit WHERE address_id IN (SELECT id FROM dsh.delivery_addresses WHERE service_city_id='${value}')`);
-    sql(`DELETE FROM dsh.delivery_address_mutation_idempotency WHERE address_id IN (SELECT id FROM dsh.delivery_addresses WHERE service_city_id='${value}')`);
-    sql(`DELETE FROM dsh.delivery_addresses WHERE service_city_id='${value}'`);
-    sql(`DELETE FROM dsh.service_city_audit WHERE city_id='${value}'`);
-    sql(`DELETE FROM dsh.service_city_mutation_idempotency WHERE city_id='${value}'`);
-    sql(`DELETE FROM dsh.service_cities WHERE id='${value}'`);
-  }
-  for (const addressID of addressIDs) {
-    const value = sqlLiteral(addressID);
-    sql(`DELETE FROM dsh.delivery_address_audit WHERE address_id='${value}'`);
-    sql(`DELETE FROM dsh.delivery_address_mutation_idempotency WHERE address_id='${value}'`);
-    sql(`DELETE FROM dsh.delivery_addresses WHERE id='${value}'`);
-  }
-  for (const categoryIDValue of [...categoryIDs].sort((left, right) => Number(left === categoryID) - Number(right === categoryID))) {
-    const value = sqlLiteral(categoryIDValue);
-    sql(`DELETE FROM dsh.catalog_category_attribute_rules WHERE category_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_registry_mutation_idempotency WHERE entity_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_categories WHERE id='${value}'`);
-  }
-  sql(`DELETE FROM dsh.catalog_registry_mutation_idempotency WHERE entity_id='${sqlLiteral(verticalID)}'`);
-  if (storeLocalVerticalID) sql(`DELETE FROM dsh.catalog_registry_mutation_idempotency WHERE entity_id='${sqlLiteral(storeLocalVerticalID)}'`);
-  for (const attributeID of attributeIDs) {
-    const value = sqlLiteral(attributeID);
-    sql(`DELETE FROM dsh.catalog_attribute_enum_options WHERE attribute_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_attribute_mutation_idempotency WHERE attribute_id='${value}'`);
-    sql(`DELETE FROM dsh.catalog_attribute_definitions WHERE id='${value}'`);
-  }
-  if (storeLocalVerticalID) sql(`DELETE FROM dsh.commerce_verticals WHERE id='${sqlLiteral(storeLocalVerticalID)}'`);
-  sql(`DELETE FROM dsh.commerce_verticals WHERE id='${sqlLiteral(verticalID)}'`);
-  if (actorIDs.size > 0) {
-    const generatedActorValues = [...actorIDs].map((actorID) => `'${sqlLiteral(actorID)}'`).join(",");
-    sql(`DELETE FROM identity_actor_legal_name_events WHERE actor_id IN (${generatedActorValues}) OR acting_actor_id IN (${generatedActorValues})`);
-    sql(`DELETE FROM identity_actor_legal_names WHERE actor_id IN (${generatedActorValues})`);
-    sql(`DELETE FROM identity_actor_legal_name_versions WHERE actor_id IN (${generatedActorValues})`);
-  }
-  for (const actorID of actorIDs) {
-    const value = sqlLiteral(actorID);
-    sql(`DELETE FROM dsh.notification_read_state WHERE actor_id='${value}'`);
-    sql(`DELETE FROM identity_actors WHERE id='${value}'`);
-    }
-    if (cleanupBatch.length > 0) {
-      execFileSync(dockerExecutable, ["exec", "-i", postgresContainerID, "psql", "--no-psqlrc", "--set=ON_ERROR_STOP=1", "--single-transaction", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-f", "-"], { cwd: root, encoding: "utf8", input: `${cleanupBatch.join(";\n")};\n` });
-    }
-    cleanupCompleted = true;
-  } catch (error) {
-    throw new Error(`bounded runtime cleanup failed: ${String(error?.stderr || error?.message || error)}`);
-  } finally {
-    cleanupBatch = null;
-  }
-}
-function cleanupCheckerFixture() {
-  if (!checkerFixturePath || !fs.existsSync(checkerFixturePath)) return false;
-  const fixture = readCheckerFixture();
-  const actorID = sqlLiteral(fixture.actorID);
-  const profileID = sqlLiteral(fixture.profileID);
-  const phone = sqlLiteral(fixture.phone);
-  const cleanupSQL = [
-    `DELETE FROM identity_operator_profile_events WHERE profile_id IN (SELECT id FROM identity_operator_profiles WHERE id='${profileID}' AND actor_id='${actorID}' AND state='admitted')`,
-    `DELETE FROM identity_operator_profiles WHERE id='${profileID}' AND actor_id='${actorID}'`,
-    `DELETE FROM identity_actors WHERE id='${actorID}' AND phone_e164='${phone}'`,
-    `SELECT (SELECT count(*) FROM identity_operator_profiles WHERE id='${profileID}') + (SELECT count(*) FROM identity_actors WHERE id='${actorID}')`,
-  ].join(";\n") + ";\n";
-  const output = execFileSync(dockerExecutable, ["exec", "-i", postgresContainerID, "psql", "--no-psqlrc", "-A", "-t", "-q", "--set=ON_ERROR_STOP=1", "--single-transaction", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-f", "-"], { cwd: root, encoding: "utf8", input: cleanupSQL }).trim();
-  if (output.split(/\r?\n/).at(-1) !== "0") throw new Error("DSH checker fixture cleanup left the created Operator or reviewed profile");
-  fs.unlinkSync(checkerFixturePath);
-  console.log("DSH_RUNTIME_CHECKER_FIXTURE_CLEANUP=PASS");
-  return true;
-}
-const cleanupCheckerFixtureOnly = process.argv.includes("--cleanup-checker-fixture");
-process.on("exit", () => {
-  if (!cleanupCheckerFixtureOnly && !cleanupCompleted && !cleanupAttempted) {
-    try { cleanup(); }
-    catch (error) { console.error(`DSH_RUNTIME_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`); process.exitCode = 1; }
-  }
-  try { cleanupCheckerFixture(); }
-  catch (error) { console.error(`DSH_RUNTIME_CHECKER_FIXTURE_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`); process.exitCode = 1; }
-});
-if (cleanupCheckerFixtureOnly) {
-  try {
-    cleanupCheckerFixture();
-    console.log("DSH_RUNTIME_CHECKER_FIXTURE_CLEANUP=PASS");
-    process.exit(0);
-  } catch (error) {
-    console.error(`DSH_RUNTIME_CHECKER_FIXTURE_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`);
-    process.exit(1);
-  }
-}
 
 async function request(base, method, pathname, options = {}) {
   let response;
@@ -439,7 +107,6 @@ function partnerHeaders(key, expectedVersion) { return { "X-Correlation-ID": cry
 async function fundCaptainThroughDevelopmentCashIn(captainActorID, amountMinor, proofKey) {
   const fundingIntentKey = `captain-cash-in-${proofKey}`;
   const fundingIntent = await request(wltBase, "POST", `/wlt/v1/wallets/captain/${encodeURIComponent(captainActorID)}/funding-intents`, { token: wltToken, headers: serviceHeaders(actingOperatorID, fundingIntentKey), body: { amountMinor } });
-  if (fundingIntent.body?.intent?.id) cashInFundingIntentIDs.add(String(fundingIntent.body.intent.id));
   const fundingIntentReplay = await request(wltBase, "POST", `/wlt/v1/wallets/captain/${encodeURIComponent(captainActorID)}/funding-intents`, { token: wltToken, headers: serviceHeaders(actingOperatorID, fundingIntentKey), body: { amountMinor } });
   if (fundingIntent.status !== 201 || fundingIntent.body?.intent?.actorId !== captainActorID || fundingIntent.body?.intent?.amountMinor !== amountMinor || fundingIntent.body?.intent?.state !== "PENDING_PROVIDER" || fundingIntentReplay.status !== 200 || fundingIntentReplay.body?.idempotentReplay !== true || fundingIntentReplay.body?.intent?.id !== fundingIntent.body?.intent?.id) {
     fail("Captain Cash-In did not create and replay its canonical WLT funding intent", JSON.stringify({ fundingIntent, fundingIntentReplay }));
@@ -489,7 +156,6 @@ async function requestFieldPartnerAdmission(caseID, fieldToken, expectedVersion,
   if (fieldAdmissionRequested.status !== 200 || fieldAdmissionRequested.body?.case?.state !== "admission_requested" || fieldAdmissionRequested.body?.case?.version !== expectedVersion + 1 || fieldAdmissionRequested.body?.case?.partnerActorId || fieldAdmissionReplay.status !== 200 || fieldAdmissionReplay.body?.idempotentReplay !== true || fieldAdmissionReplay.body?.case?.state !== "admission_requested" || fieldAdmissionReplay.body?.case?.version !== expectedVersion + 1 || fieldAdmissionReadback.status !== 200 || fieldAdmissionReadback.body?.case?.state !== "admission_requested" || fieldAdmissionReadback.body?.case?.version !== expectedVersion + 1 || fieldAdmissionReadback.body?.case?.partnerActorId) fail("Field admission request, replay, or canonical readback failed", JSON.stringify({ fieldAdmissionRequested, fieldAdmissionReplay, fieldAdmissionReadback }));
   const operatorSubmitted = await request(dshBase, "POST", "/dsh/joining-cases/" + encodeURIComponent(caseID) + "/submit", { token: dshToken, headers: serviceHeaders(actingOperatorID, label + "-operator-admission-" + suffix, crypto.randomUUID(), expectedVersion + 1) });
   const partnerActorID = String(operatorSubmitted.body?.case?.partnerActorId || "");
-  if (partnerActorID) actorIDs.add(partnerActorID);
   if (operatorSubmitted.status !== 200 || operatorSubmitted.body?.case?.state !== "submitted" || operatorSubmitted.body?.case?.version !== expectedVersion + 2 || !partnerActorID) fail("Operator admission did not bind the Field referral to one Partner", JSON.stringify(operatorSubmitted));
   return { fieldAdmissionRequested, fieldAdmissionReplay, fieldAdmissionReadback, operatorSubmitted };
 }
@@ -517,7 +183,7 @@ async function activatePartner(phone, password) {
   const previousMessageIds = await captureMailpitMessageIds({ port: mailpitPort, phone, purpose: "managed_activate" });
   const challenge = await request(identityBase, "POST", "/auth/managed/activation/request", { body: { phone, role: "partner" } });
   if (challenge.status !== 201 || typeof challenge.body?.challengeId !== "string") fail("Partner activation challenge failed", JSON.stringify(challenge));
-  challengeIDs.add(String(challenge.body.challengeId));
+
   const verificationCode = await readMailpitCode({ port: mailpitPort, phone, purpose: "managed_activate", excludeMessageIds: previousMessageIds });
   const activation = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role: "partner", verificationCode, password, clientInstanceId: `dsh-runtime-${suffix}` } });
   if (activation.status !== 200 || typeof activation.body?.accessToken !== "string" || activation.body?.identity?.role !== "partner") fail("Partner activation failed", JSON.stringify(activation));
@@ -527,7 +193,7 @@ async function activateCaptain(phone, password) {
   const previousMessageIds = await captureMailpitMessageIds({ port: mailpitPort, phone, purpose: "managed_activate" });
   const challenge = await request(identityBase, "POST", "/auth/managed/activation/request", { body: { phone, role: "captain" } });
   if (challenge.status !== 201 || typeof challenge.body?.challengeId !== "string") fail("Captain activation challenge failed", JSON.stringify(challenge));
-  challengeIDs.add(String(challenge.body.challengeId));
+
   const verificationCode = await readMailpitCode({ port: mailpitPort, phone, purpose: "managed_activate", excludeMessageIds: previousMessageIds });
   const activation = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role: "captain", verificationCode, password, clientInstanceId: `dsh-captain-${suffix}` } });
   if (activation.status !== 200 || typeof activation.body?.accessToken !== "string" || activation.body?.identity?.role !== "captain" || activation.body?.identity?.surface !== "app-captain") fail("Captain activation failed", JSON.stringify(activation));
@@ -537,7 +203,7 @@ async function activateField(phone, password) {
   const previousMessageIds = await captureMailpitMessageIds({ port: mailpitPort, phone, purpose: "managed_activate" });
   const challenge = await request(identityBase, "POST", "/auth/managed/activation/request", { body: { phone, role: "field" } });
   if (challenge.status !== 201 || typeof challenge.body?.challengeId !== "string") fail("Field activation challenge failed", JSON.stringify(challenge));
-  challengeIDs.add(String(challenge.body.challengeId));
+
   const verificationCode = await readMailpitCode({ port: mailpitPort, phone, purpose: "managed_activate", excludeMessageIds: previousMessageIds });
   const activation = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role: "field", verificationCode, password, clientInstanceId: `dsh-field-${suffix}` } });
   if (activation.status !== 200 || typeof activation.body?.accessToken !== "string" || activation.body?.identity?.role !== "field" || activation.body?.identity?.surface !== "app-field") fail("Field activation failed", JSON.stringify(activation));
@@ -547,11 +213,11 @@ async function createClientSession(phone) {
   const previousMessageIds = await captureMailpitMessageIds({ port: mailpitPort, phone, purpose: "client_register" });
   const challenge = await request(identityBase, "POST", "/auth/client/registration/request", { body: { phone } });
   if (challenge.status !== 201 || typeof challenge.body?.challengeId !== "string") fail("Client registration challenge failed", JSON.stringify(challenge));
-  challengeIDs.add(String(challenge.body.challengeId));
+
   const code = await readMailpitCode({ port: mailpitPort, phone, purpose: "client_register", excludeMessageIds: previousMessageIds });
   const registration = await request(identityBase, "POST", "/auth/client/register", { body: { phone, code, password: `Clie${crypto.randomBytes(2).toString("hex")}`, clientInstanceId: `dsh-client-${suffix}` } });
   if (registration.status !== 201 || typeof registration.body?.accessToken !== "string" || registration.body?.identity?.role !== "client") fail("Client registration failed", JSON.stringify(registration));
-  actorIDs.add(String(registration.body.identity.subject));
+
   return { accessToken: String(registration.body.accessToken), actorID: String(registration.body.identity.subject) };
 }
 async function waitForIdentityReady(timeoutMs = 30_000) { const deadline = Date.now() + timeoutMs; while (Date.now() < deadline) { const health = await request(identityBase, "GET", "/identity/health", { timeoutMs: 1_000, allowNetworkError: true }); if (health.status === 200) return; await new Promise((resolve) => setTimeout(resolve, 250)); } fail("Identity did not become ready after restart"); }
@@ -559,7 +225,6 @@ async function waitForSQL(query, expected, message, timeoutMs = 20_000) { const 
 async function waitForFinancialHandoff(effectType, orderID, message, timeoutMs = 20_000) { const deadline = Date.now() + timeoutMs; let actual = ""; while (Date.now() < deadline) { actual = sql(`SELECT state || '|' || COALESCE(last_error,'') FROM dsh.commerce_financial_handoff_outbox WHERE effect_type='${sqlLiteral(effectType)}' AND order_id='${sqlLiteral(orderID)}'`); if (actual.startsWith("POSTED|")) return; await new Promise((resolve) => setTimeout(resolve, 250)); } fail(message, `actual=${actual}`); }
 
 let actingOperatorID = sql("SELECT r.actor_id FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id JOIN identity_operator_permissions p ON p.actor_id=r.actor_id AND p.permission='platform_policies' AND p.enabled JOIN identity_bootstrap_state b ON b.id=1 WHERE r.role='operator' AND r.enabled AND a.security_enabled AND r.activated_at IS NOT NULL ORDER BY (r.actor_id=b.initial_operator_actor_id) DESC, r.activated_at DESC, r.actor_id LIMIT 1");
-if (!actingOperatorID && process.env.BTHWANI_IDENTITY_PROOF_SCOPE === "isolated-local-actors") fail("isolated local DSH proof requires an existing active Operator with Platform Policies permission; it will not create a permanent bootstrap actor as test residue");
 if (!actingOperatorID) console.log(`DSH_OPERATOR_CANDIDATES=${sql("SELECT COALESCE(string_agg(r.actor_id || ':' || r.enabled::text || ':' || (r.activated_at IS NOT NULL)::text || ':' || a.security_enabled::text, ',' ORDER BY r.activated_at DESC NULLS LAST, r.actor_id), 'none') FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id WHERE r.role='operator'")}`);
 if (!actingOperatorID) actingOperatorID = sql("SELECT b.initial_operator_actor_id FROM identity_bootstrap_state b JOIN identity_actor_roles r ON r.actor_id=b.initial_operator_actor_id AND r.role='operator' JOIN identity_actors a ON a.id=r.actor_id WHERE b.id=1 AND r.enabled AND a.security_enabled AND r.activated_at IS NOT NULL");
 if (!actingOperatorID) {
@@ -665,10 +330,10 @@ const cityBResponse = await request(dshBase, "POST", "/dsh/service-cities", { to
 if (cityAResponse.status !== 201 || cityBResponse.status !== 201 || typeof cityAResponse.body?.city?.id !== "string" || typeof cityBResponse.body?.city?.id !== "string") fail("service city fixtures could not be created", JSON.stringify({ cityAResponse, cityBResponse }));
 cityA = cityAResponse.body.city.id;
 cityB = cityBResponse.body.city.id;
-cityIDs.add(cityA); cityIDs.add(cityB);
+
 const deliveryFeePolicyCreate = await request(dshBase, "POST", "/dsh/operator/delivery-fee-policy", { token: dshToken, headers: serviceHeaders(actingOperatorID, `delivery-fee-policy-${suffix}`), body: { serviceCityId: cityA, baseFeeMinor: 100, distanceUnitMeters: 1000000, distanceRateMinor: 0, orderSizeUnitBaseUnits: 100, orderSizeRateMinor: 0, zoneSurchargeMinor: 0, roundingUnitMinor: 50, expectedVersion: 0, reason: "DSH runtime city delivery fee policy proof" } });
 if (deliveryFeePolicyCreate.status !== 201 || deliveryFeePolicyCreate.body?.policy?.serviceCityId !== cityA || deliveryFeePolicyCreate.body.policy?.state !== "ACTIVE" || deliveryFeePolicyCreate.body.policy?.baseFeeMinor !== 100 || deliveryFeePolicyCreate.body.policy?.roundingUnitMinor !== 50 || typeof deliveryFeePolicyCreate.body.policy?.policyVersion !== "string") fail("city-scoped delivery-fee policy could not be activated", JSON.stringify(deliveryFeePolicyCreate));
-deliveryFeePolicyIDs.add(String(deliveryFeePolicyCreate.body.policy.id));
+
 const deliveryFeePolicyRead = await request(dshBase, "GET", `/dsh/operator/delivery-fee-policy?serviceCityId=${encodeURIComponent(cityA)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 if (deliveryFeePolicyRead.status !== 200 || deliveryFeePolicyRead.body?.policy?.id !== deliveryFeePolicyCreate.body.policy.id || deliveryFeePolicyRead.body.policy?.serviceCityId !== cityA) fail("delivery-fee policy readback did not return the active city policy", JSON.stringify({ deliveryFeePolicyCreate, deliveryFeePolicyRead }));
 console.log("DSH_DELIVERY_FEE_POLICY=PASS");
@@ -708,7 +373,7 @@ childCategoryID = String(childCategoryCreate.body.category.id);
 const unrelatedCategoryCreate = await request(dshBase, "POST", "/dsh/catalog/categories", { token: dshToken, headers: serviceHeaders(actingOperatorID, `category-unrelated-${suffix}`), body: { verticalId: verticalID, nameAr: `شاي ${suffix}`, nameEn: `Tea ${suffix}`, active: true, reason: "DSH runtime unrelated catalog category proof" } });
 if (unrelatedCategoryCreate.status !== 201 || !String(unrelatedCategoryCreate.body?.category?.id || "").startsWith("category_")) fail("unrelated catalog category creation failed", JSON.stringify(unrelatedCategoryCreate));
 const unrelatedCategoryID = String(unrelatedCategoryCreate.body.category.id);
-categoryIDs.add(categoryID); categoryIDs.add(childCategoryID); categoryIDs.add(unrelatedCategoryID);
+
 const categorySearch = await request(dshBase, "GET", `/dsh/catalog/categories?verticalId=${encodeURIComponent(verticalID)}&status=all&query=${encodeURIComponent(`Beans ${suffix}`)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 if (categorySearch.status !== 200 || categorySearch.body?.categories?.length !== 1 || categorySearch.body.categories[0]?.id !== childCategoryID || !categorySearch.body.categories[0]?.pathAr?.includes(`قهوة ${suffix}`)) fail("operator category search did not return the matching category with its ancestry path", JSON.stringify(categorySearch));
 const categoryDetail = await request(dshBase, "GET", `/dsh/catalog/categories/${encodeURIComponent(childCategoryID)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
@@ -735,7 +400,7 @@ const attributeDefinitions = [
 for (const definition of attributeDefinitions) {
   const response = await request(dshBase, "POST", "/dsh/catalog/attributes", { token: dshToken, headers: serviceHeaders(actingOperatorID, `attribute-${definition.id}`), body: { ...definition, verticalId: verticalID, active: true } });
   if (response.status !== 201 || response.body?.definition?.id !== definition.id || response.body.definition.valueKind !== definition.valueKind) fail("typed catalog Attribute definition failed", JSON.stringify({ definition, response }));
-  attributeIDs.add(definition.id);
+
 }
 const attributeRead = await request(dshBase, "GET", `/dsh/catalog/attributes?verticalId=${encodeURIComponent(verticalID)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 if (attributeRead.status !== 200 || !attributeRead.body?.definitions?.some((item) => item.id === enumAttributeID && item.valueKind === "ENUM")) fail("typed Attribute definition readback failed", JSON.stringify(attributeRead));
@@ -756,7 +421,7 @@ async function createApprovedPartner(phone, name, serviceCityId, origin = "contr
   const fieldOrigin = origin === "field";
   const created = await request(dshBase, "POST", fieldOrigin ? "/dsh/field/joining-cases" : "/dsh/joining-cases", { token: fieldOrigin ? fieldAccessToken : dshToken, headers: fieldOrigin ? partnerHeaders(createKey) : serviceHeaders(actingOperatorID, createKey), body: { contactPhoneE164: phone, businessName: `${name} business`, firstStoreName: `${name} store`, serviceCityId, firstStoreVerticalId: partnerVerticalID, firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"], ...firstStoreOrigin } });
   if (created.status !== 201 || created.body?.case?.state !== "draft" || created.body?.case?.origin !== origin || created.body?.case?.firstStoreVerticalId !== partnerVerticalID || created.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || created.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude) fail("joining case creation did not preserve source provenance or fixed store origin", JSON.stringify(created));
-  const caseID = String(created.body.case.id); caseIDs.add(caseID);
+  const caseID = String(created.body.case.id);
   let submitted;
   if (fieldOrigin) {
     submitted = (await requestFieldPartnerAdmission(caseID, fieldAccessToken, 1, "catalog-runtime-" + name)).operatorSubmitted;
@@ -764,10 +429,10 @@ async function createApprovedPartner(phone, name, serviceCityId, origin = "contr
     submitted = await request(dshBase, "POST", "/dsh/joining-cases/" + encodeURIComponent(caseID) + "/submit", { token: dshToken, headers: serviceHeaders(actingOperatorID, "submit-" + crypto.randomUUID(), crypto.randomUUID(), 1) });
   }
   if (submitted.status !== 200 || submitted.body?.case?.state !== "submitted" || !submitted.body?.case?.partnerActorId) fail("joining case submission failed", JSON.stringify(submitted));
-  const actorID = String(submitted.body.case.partnerActorId); actorIDs.add(actorID);
+  const actorID = String(submitted.body.case.partnerActorId);
   const accessToken = await activatePartner(phone, name.slice(0, 4).padEnd(4, "x") + suffix.slice(0, 4));
   const approved = await request(dshBase, "POST", `/dsh/joining-cases/${caseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `approve-${crypto.randomUUID()}`, crypto.randomUUID(), Number(submitted.body?.case?.version)), body: { decision: "approved", expectedTermsPolicyVersion: partnerFinancialTermsPolicy.policyVersion } });
-  const storeID = String(approved.body?.case?.store?.id || ""); if (storeID) storeIDs.add(storeID);
+  const storeID = String(approved.body?.case?.store?.id || "");
   if (approved.status !== 200 || approved.body?.case?.state !== "approved" || approved.body?.case?.financialProfileState !== "ACTIVE" || approved.body?.case?.commissionRateBps !== 1500 || approved.body?.case?.settlementPeriod !== "MONTHLY" || typeof approved.body?.case?.financialProfileId !== "string" || approved.body?.case?.store?.primaryVerticalId !== partnerVerticalID || approved.body?.case?.store?.deliveryOrigin?.latitude !== firstStoreOrigin.firstStoreLatitude || approved.body?.case?.store?.deliveryOrigin?.longitude !== firstStoreOrigin.firstStoreLongitude) fail("joining case approval did not bind financial terms and transfer the fixed store origin", JSON.stringify(approved));
   return { accessToken, actorID, caseID, storeID };
 }
@@ -778,7 +443,7 @@ const fieldAdmissionReplay = fieldCandidateLifecycle.replay;
 if (fieldAdmissionResponse.status !== 200 || fieldAdmissionResponse.body?.admission?.state !== "eligible" || !fieldAdmissionResponse.body?.admission?.actorId || fieldAdmissionReplay.status !== 200 || fieldAdmissionReplay.body?.idempotentReplay !== true || fieldAdmissionReplay.body.admission.id !== fieldAdmissionResponse.body.admission.id) fail("Field profile, review, role grant, or replay did not reach one DSH-owned actor", JSON.stringify({ fieldAdmissionResponse, fieldAdmissionReplay }));
 const fieldAdmissionID = fieldCandidateLifecycle.admissionID;
 const fieldActorID = fieldCandidateLifecycle.actorID;
-fieldAdmissionIDs.add(fieldAdmissionID); actorIDs.add(fieldActorID);
+
 const fieldPassword = `Fiel${suffix.slice(0, 4)}`;
 let fieldAccessToken = await activateField(fieldPhone, fieldPassword);
 const fieldSelf = await request(dshBase, "GET", "/dsh/fields/me", { token: fieldAccessToken });
@@ -808,7 +473,7 @@ const secondFieldPhone = `+96773${crypto.randomInt(1_000_000, 9_999_999)}`;
 const secondFieldFlow = await admitReviewedRoleCandidate("field", secondFieldPhone, "فهد أحمد", "فهد أحمد صالح القيسي", "field-admit-second");
 const secondFieldAdmission = secondFieldFlow.provision;
 if (secondFieldAdmission.status !== 200 || secondFieldAdmission.body?.admission?.state !== "eligible" || !secondFieldAdmission.body?.admission?.actorId) fail("second Field profile, approval, or role grant fixture failed", JSON.stringify(secondFieldAdmission));
-const secondFieldAdmissionID = secondFieldFlow.admissionID; const secondFieldActorID = secondFieldFlow.actorID; fieldAdmissionIDs.add(secondFieldAdmissionID); actorIDs.add(secondFieldActorID);
+const secondFieldAdmissionID = secondFieldFlow.admissionID; const secondFieldActorID = secondFieldFlow.actorID;
 const secondFieldAccessToken = await activateField(secondFieldPhone, `Fiel${suffix.slice(0, 4)}`);
 const secondFieldSelf = await request(dshBase, "GET", "/dsh/fields/me", { token: secondFieldAccessToken });
 if (secondFieldSelf.status !== 200 || secondFieldSelf.body?.admission?.actorId !== secondFieldActorID || secondFieldSelf.body?.admission?.fullNameAr !== "فهد أحمد صالح القيسي" || secondFieldSelf.body?.admission?.contactPhoneE164 !== secondFieldPhone) fail("second Field app profile did not read its reviewed name and Identity phone", JSON.stringify(secondFieldSelf));
@@ -817,11 +482,11 @@ const fieldCaseKey = `field-case-${suffix}`;
 const fieldCaseCreated = await request(dshBase, "POST", "/dsh/field/joining-cases", { token: fieldAccessToken, headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": fieldCaseKey }, body: { contactPhoneE164: fieldCasePhone, businessName: `Field ${suffix} business`, firstStoreName: `Field ${suffix} store`, serviceCityId: cityA, firstStoreVerticalId: verticalID, ...firstStoreOrigin } });
 const fieldCaseReplay = await request(dshBase, "POST", "/dsh/field/joining-cases", { token: fieldAccessToken, headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": fieldCaseKey }, body: { contactPhoneE164: fieldCasePhone, businessName: `Field ${suffix} business`, firstStoreName: `Field ${suffix} store`, serviceCityId: cityA, firstStoreVerticalId: verticalID, ...firstStoreOrigin } });
 if (fieldCaseCreated.status !== 201 || fieldCaseCreated.body?.case?.state !== "draft" || fieldCaseCreated.body?.case?.version !== 1 || fieldCaseCreated.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || fieldCaseCreated.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || fieldCaseReplay.status !== 200 || fieldCaseReplay.body?.idempotentReplay !== true || fieldCaseReplay.body.case.id !== fieldCaseCreated.body.case.id || fieldCaseReplay.body.case.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || fieldCaseReplay.body.case.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude) fail("Field joining-case create/replay did not preserve one draft and its fixed store origin", JSON.stringify({ fieldCaseCreated, fieldCaseReplay }));
-const fieldCaseID = String(fieldCaseCreated.body.case.id); caseIDs.add(fieldCaseID);
+const fieldCaseID = String(fieldCaseCreated.body.case.id);
 const fieldPageCasePhone = `+96777${crypto.randomInt(1_000_000, 9_999_999)}`;
 const fieldPageCaseCreated = await request(dshBase, "POST", "/dsh/field/joining-cases", { token: fieldAccessToken, headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": `field-page-case-${suffix}` }, body: { contactPhoneE164: fieldPageCasePhone, businessName: `Field ${suffix} queue business`, firstStoreName: `Field ${suffix} queue store`, serviceCityId: cityA, firstStoreVerticalId: verticalID, ...firstStoreOrigin } });
 if (fieldPageCaseCreated.status !== 201 || fieldPageCaseCreated.body?.case?.state !== "draft") fail("second Field page fixture could not be created through the canonical writer", JSON.stringify(fieldPageCaseCreated));
-const fieldPageCaseID = String(fieldPageCaseCreated.body.case.id); caseIDs.add(fieldPageCaseID);
+const fieldPageCaseID = String(fieldPageCaseCreated.body.case.id);
 const fieldCases = await request(dshBase, "GET", "/dsh/field/joining-cases?limit=25", { token: fieldAccessToken });
 const fieldPageQuery = `Field ${suffix}`;
 const fieldPageOne = await request(dshBase, "GET", `/dsh/field/joining-cases?limit=1&q=${encodeURIComponent(fieldPageQuery)}`, { token: fieldAccessToken });
@@ -845,12 +510,12 @@ const fieldAdmissionCanonical = fieldAdmissionFlow.fieldAdmissionReadback;
 const fieldSubmitted = fieldAdmissionFlow.operatorSubmitted;
 const fieldReviewAttempt = await request(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(fieldCaseID)}/review`, { token: fieldAccessToken, headers: serviceHeaders(fieldActorID, `field-self-review-${suffix}`, crypto.randomUUID(), 2), body: { decision: "approved" } });
 if (fieldAdmissionRequested.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || fieldAdmissionRequested.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || fieldCaseAdmissionReplay.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || fieldCaseAdmissionReplay.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || fieldAdmissionCanonical.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || fieldAdmissionCanonical.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || fieldSubmitted.body?.case?.version !== 3 || fieldSubmitted.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || fieldSubmitted.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || fieldReviewAttempt.status !== 401) fail("Field admission-to-Partner lifecycle or review boundary failed", JSON.stringify({ fieldAdmissionFlow, fieldSubmitted, fieldReviewAttempt }));
-const fieldPartnerActorID = String(fieldSubmitted.body.case.partnerActorId); actorIDs.add(fieldPartnerActorID);
+const fieldPartnerActorID = String(fieldSubmitted.body.case.partnerActorId);
 const fieldPublicationAttempt = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(first.storeID)}/publication`, { token: fieldAccessToken, headers: partnerHeaders(`field-publication-${suffix}`, 1), body: { state: "published" } });
 if (fieldPublicationAttempt.status !== 401 && fieldPublicationAttempt.status !== 403) fail("Field reached the Store publication writer", JSON.stringify(fieldPublicationAttempt));
 const fieldApproved = await request(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(fieldCaseID)}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-approve-${suffix}`, crypto.randomUUID(), 3), body: { decision: "approved", expectedTermsPolicyVersion: partnerFinancialTermsPolicy.policyVersion } });
 if (fieldApproved.status !== 200 || fieldApproved.body?.case?.state !== "approved" || fieldApproved.body?.case?.financialProfileState !== "ACTIVE" || fieldApproved.body?.case?.commissionRateBps !== 1500 || fieldApproved.body?.case?.settlementPeriod !== "MONTHLY" || typeof fieldApproved.body?.case?.financialProfileId !== "string" || !fieldApproved.body?.case?.store?.id || fieldApproved.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || fieldApproved.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || fieldApproved.body?.case?.store?.deliveryOrigin?.latitude !== firstStoreOrigin.firstStoreLatitude || fieldApproved.body?.case?.store?.deliveryOrigin?.longitude !== firstStoreOrigin.firstStoreLongitude) fail("operator approval of Field-originated joining case did not bind financial terms and preserve the fixed store origin", JSON.stringify(fieldApproved));
-storeIDs.add(String(fieldApproved.body.case.store.id));
+
 const fieldRoleBeforeDisable = await request(identityBase, "GET", `/internal/actors/${encodeURIComponent(fieldActorID)}/roles/field`, { token: identityDshToken });
 const fieldDisabled = await request(dshBase, "POST", `/dsh/fields/${encodeURIComponent(fieldActorID)}/identity-role`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-disable-${suffix}`, crypto.randomUUID(), fieldRoleBeforeDisable.body?.roleVersion), body: { enabled: false, reason: "تعليق Field واختبار إلغاء الجلسة" } });
 const fieldAdmissionSuspended = await request(dshBase, "GET", `/dsh/fields/actors/${encodeURIComponent(fieldActorID)}/admission`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
@@ -863,10 +528,10 @@ console.log("DSH_FIELD_ADMISSION_AND_SCOPED_JOINING=PASS");
 const correctionPhone = `+96776${crypto.randomInt(1_000_000, 9_999_999)}`;
 const correctionCreated = await request(dshBase, "POST", "/dsh/joining-cases", { token: dshToken, headers: serviceHeaders(actingOperatorID, `joining-correction-${suffix}`), body: { contactPhoneE164: correctionPhone, businessName: "Correction business", firstStoreName: "Correction store", serviceCityId: cityA, firstStoreVerticalId: verticalID, firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"], ...firstStoreOrigin } });
 if (correctionCreated.status !== 201 || correctionCreated.body?.case?.state !== "draft" || correctionCreated.body?.case?.origin !== "control_panel" || correctionCreated.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || correctionCreated.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude) fail("control-panel correction case creation did not preserve provenance or fixed store origin", JSON.stringify(correctionCreated));
-const correctionCaseID = String(correctionCreated.body.case.id); caseIDs.add(correctionCaseID);
+const correctionCaseID = String(correctionCreated.body.case.id);
 const correctionSubmitted = await request(dshBase, "POST", `/dsh/joining-cases/${correctionCaseID}/submit`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `submit-correction-${suffix}`, crypto.randomUUID(), 1) });
 if (correctionSubmitted.status !== 200 || correctionSubmitted.body?.case?.state !== "submitted" || !correctionSubmitted.body?.case?.partnerActorId) fail("correction joining case submission failed", JSON.stringify(correctionSubmitted));
-const correctionActorID = String(correctionSubmitted.body.case.partnerActorId); actorIDs.add(correctionActorID);
+const correctionActorID = String(correctionSubmitted.body.case.partnerActorId);
 const correctionAccessToken = await activatePartner(correctionPhone, `Corr${suffix.slice(0, 4)}`);
 const needsCorrection = await request(dshBase, "POST", `/dsh/joining-cases/${correctionCaseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `needs-correction-${suffix}`, crypto.randomUUID(), 2), body: { decision: "needs_correction", correctionReason: "صحح اسم المتجر قبل الاعتماد" } });
 if (needsCorrection.status !== 200 || needsCorrection.body?.case?.state !== "needs_correction" || needsCorrection.body.case.version !== 3) fail("joining case correction review failed", JSON.stringify(needsCorrection));
@@ -878,12 +543,12 @@ const correctionRoleAfterDisable = await request(identityBase, "GET", `/internal
 const correctionRoleEnable = await request(dshBase, "POST", `/dsh/partners/${encodeURIComponent(correctionActorID)}/identity-role`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-enable-needs-correction-${suffix}`, crypto.randomUUID(), correctionRoleAfterDisable.body?.roleVersion), body: { enabled: true, reason: "إعادة تفعيل بعد تصحيح مطلوب" } });
 const approvedAfterReenable = await request(dshBase, "POST", `/dsh/joining-cases/${correctionCaseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `approve-reenable-${suffix}`, crypto.randomUUID(), 4), body: { decision: "approved", expectedTermsPolicyVersion: partnerFinancialTermsPolicy.policyVersion } });
 if (correctionRoleBeforeDisable.status !== 200 || correctionRoleDisable.status !== 204 || correctionRoleAfterDisable.status !== 200 || correctionRoleEnable.status !== 204 || approvedAfterReenable.status !== 200 || approvedAfterReenable.body?.case?.state !== "approved" || approvedAfterReenable.body?.case?.financialProfileState !== "ACTIVE" || approvedAfterReenable.body?.case?.commissionRateBps !== 1500 || approvedAfterReenable.body?.case?.settlementPeriod !== "MONTHLY" || typeof approvedAfterReenable.body?.case?.financialProfileId !== "string" || approvedAfterReenable.body?.case?.firstStoreLatitude !== correctedStoreOrigin.firstStoreLatitude || approvedAfterReenable.body?.case?.firstStoreLongitude !== correctedStoreOrigin.firstStoreLongitude || approvedAfterReenable.body?.case?.store?.deliveryOrigin?.latitude !== correctedStoreOrigin.firstStoreLatitude || approvedAfterReenable.body?.case?.store?.deliveryOrigin?.longitude !== correctedStoreOrigin.firstStoreLongitude) fail("Partner re-enable did not honor the submitted joining lifecycle, financial terms, or corrected store origin", JSON.stringify({ correctionRoleBeforeDisable, correctionRoleDisable, correctionRoleAfterDisable, correctionRoleEnable, approvedAfterReenable }));
-storeIDs.add(String(approvedAfterReenable.body.case.store.id));
+
 const fieldCorrectionPhone = `+96777${crypto.randomInt(1_000_000, 9_999_999)}`;
 const fieldCorrectionCreated = await request(dshBase, "POST", "/dsh/field/joining-cases", { token: secondFieldAccessToken, headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": `field-correction-${suffix}` }, body: { contactPhoneE164: fieldCorrectionPhone, businessName: "Field correction business", firstStoreName: "Field correction store", serviceCityId: cityA, firstStoreVerticalId: verticalID, ...firstStoreOrigin } });
 const fieldCorrectionCaseID = String(fieldCorrectionCreated.body?.case?.id || "");
 if (fieldCorrectionCreated.status !== 201 || fieldCorrectionCreated.body?.case?.origin !== "field" || fieldCorrectionCreated.body?.case?.state !== "draft") fail("Field correction fixture creation did not preserve provenance", JSON.stringify(fieldCorrectionCreated));
-caseIDs.add(fieldCorrectionCaseID);
+
 const fieldCorrectionFlow = await requestFieldPartnerAdmission(fieldCorrectionCaseID, secondFieldAccessToken, 1, "field-correction-" + suffix);
 const fieldCorrectionSubmitted = fieldCorrectionFlow.operatorSubmitted;
 const fieldNeedsCorrection = await request(dshBase, "POST", `/dsh/joining-cases/${fieldCorrectionCaseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-needs-correction-${suffix}`, crypto.randomUUID(), 3), body: { decision: "needs_correction", correctionReason: "أكمل بيانات ملف الميداني" } });
@@ -894,7 +559,7 @@ const fieldCorrectionReadback = await request(dshBase, "GET", `/dsh/field/joinin
 if (fieldCorrectionCreated.status !== 201 || fieldCorrectionSubmitted.status !== 200 || fieldNeedsCorrection.status !== 200 || fieldNeedsCorrection.body?.case?.state !== "needs_correction" || fieldNeedsCorrection.body?.case?.version !== 4 || fieldCorrectionAsField.status !== 403 || fieldCorrectionAsPartner.status !== 200 || fieldCorrectionAsPartner.body?.case?.state !== "submitted" || fieldCorrectionAsPartner.body?.case?.version !== 5 || fieldCorrectionReadback.status !== 200 || fieldCorrectionReadback.body?.case?.state !== "submitted" || fieldCorrectionReadback.body?.case?.version !== 5 || fieldCorrectionReadback.body?.case?.businessName !== "Field correction business fixed" || fieldCorrectionReadback.body?.case?.firstStoreLatitude !== correctedStoreOrigin.firstStoreLatitude || fieldCorrectionReadback.body?.case?.firstStoreLongitude !== correctedStoreOrigin.firstStoreLongitude) fail("Field admission, Partner-owned correction, or canonical readback failed", JSON.stringify({ fieldCorrectionCreated, fieldCorrectionFlow, fieldCorrectionSubmitted, fieldNeedsCorrection, fieldCorrectionAsField, fieldCorrectionAsPartner, fieldCorrectionReadback }));
 const fieldCorrectionPartnerActorID = String(fieldCorrectionSubmitted.body.case.partnerActorId || "");
 if (!fieldCorrectionPartnerActorID) fail("Field correction submission did not expose its canonical partner actor", JSON.stringify(fieldCorrectionSubmitted));
-actorIDs.add(fieldCorrectionPartnerActorID);
+
 console.log("DSH_JOINING_CASE_VERTICAL=PASS");
 console.log("DSH_JOINING_CASE_CORRECTION=PASS");
 
@@ -907,7 +572,7 @@ if (productCategorySQL !== `${verticalID}:true`) fail("catalog Product category 
 const productKey = `product-${suffix}`;
 const productCreate = await request(dshBase, "POST", "/dsh/catalog/products", { token: dshToken, headers: serviceHeaders(actingOperatorID, productKey), body: productInput });
 if (productCreate.status !== 201 || productCreate.body?.product?.version !== 1 || !productCreate.body?.product?.id) fail("catalog Product creation failed", JSON.stringify({ productInput, productCategoryRead, productCategorySQL, productCreate }));
-const productID = String(productCreate.body.product.id); productIDs.add(productID);
+const productID = String(productCreate.body.product.id);
 const productRead = await request(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&limit=50`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 if (productRead.status !== 200 || productRead.body?.products?.length !== 1 || productRead.body.products[0].variants?.length !== 1 || productRead.body.products[0].variants[0].identifiers?.[0]?.value !== productInput.identifierValue || productRead.body.products[0].media?.length !== 0) fail("catalog Product/Variant canonical readback failed", JSON.stringify(productRead));
 const variantID = String(productRead.body.products[0].variants[0].id);
@@ -966,13 +631,13 @@ if (secondVariant.status !== 201 || secondVariant.body?.variant?.id !== secondVa
 const storeProductInput = { verticalId: storeLocalVerticalID, scope: "STORE_SCOPED", storeId: storeLocal.storeID, canonicalName: `Store Only ${suffix}`, variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", identifierType: "SKU", identifierValue: `STORE-${suffix}` };
 const storeProduct = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/products`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-product-${suffix}`), body: storeProductInput });
 if (storeProduct.status !== 201 || storeProduct.body?.product?.scope !== "STORE_SCOPED" || storeProduct.body.product.storeId !== storeLocal.storeID || storeProduct.body.product.media?.length !== 0) fail("Store-scoped Product creation did not preserve owner scope or start without unbacked media", JSON.stringify(storeProduct));
-const storeProductID = String(storeProduct.body.product.id); productIDs.add(storeProductID);
+const storeProductID = String(storeProduct.body.product.id);
 const crossStoreProduct = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/products`, { token: first.accessToken, headers: partnerHeaders(`cross-store-product-${suffix}`), body: storeProductInput });
 const storeVariantID = `store-variant-${suffix}`;
 const storeVariant = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/products/${storeProductID}/variants`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-variant-${suffix}`), body: { id: storeVariantID, title: "عبوة المتجر", measurementKind: "DISCRETE", baseUnit: "COUNT", active: true, identifierType: "SKU", identifierValue: `STORE-VARIANT-${suffix}` } });
 const storeLocalOffer = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/offers`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-local-offer-${suffix}`), body: discreteCreateOffer(storeVariantID, 1000) });
 if (storeVariant.status !== 201 || storeVariant.body?.variant?.productId !== storeProductID || storeLocalOffer.status !== 201 || storeLocalOffer.body?.offer?.publicationState !== "draft") fail("store-local Product Variant or StoreOffer creation failed", JSON.stringify({ storeVariant, storeLocalOffer }));
-const storeLocalOfferID = String(storeLocalOffer.body.offer.offerId); offerIDs.add(storeLocalOfferID);
+const storeLocalOfferID = String(storeLocalOffer.body.offer.offerId);
 const storeProductUpdate = await request(dshBase, "PATCH", `/dsh/stores/${storeLocal.storeID}/products/${storeProductID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-product-update-${suffix}`, 1), body: { verticalId: storeLocalVerticalID, scope: "STORE_SCOPED", canonicalName: `Store Only Updated ${suffix}`, active: true } });
 const storeProductStale = await request(dshBase, "PATCH", `/dsh/stores/${storeLocal.storeID}/products/${storeProductID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-product-stale-${suffix}`, 1), body: { verticalId: storeLocalVerticalID, scope: "STORE_SCOPED", canonicalName: `Store Only Stale ${suffix}`, active: true } });
 const storeVariantUpdate = await request(dshBase, "PATCH", `/dsh/stores/${storeLocal.storeID}/variants/${storeVariantID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-variant-update-${suffix}`, 1), body: { title: "عبوة المتجر محدثة", measurementKind: "DISCRETE", baseUnit: "COUNT", active: true } });
@@ -1017,11 +682,11 @@ console.log("DSH_PRODUCT_VARIANT=PASS");
 const variableProductInput = { canonicalName: `Variable Coffee ${suffix}`, verticalId: verticalID, scope: "SHARED", variantTitle: "وزن متغير", measurementKind: "VARIABLE_MEASURE", baseUnit: "GRAM", categoryIds: [childCategoryID], variantAttributeValues: [{ attributeId: enumAttributeID, valueKind: "ENUM", enumValue: "Dark" }], identifierType: "SKU", identifierValue: `VARIABLE-${suffix}` };
 const variableProduct = await request(dshBase, "POST", "/dsh/catalog/products", { token: dshToken, headers: serviceHeaders(actingOperatorID, `variable-product-${suffix}`), body: variableProductInput });
 if (variableProduct.status !== 201 || variableProduct.body?.product?.variants?.[0]?.measurementKind !== "VARIABLE_MEASURE") fail("VARIABLE_MEASURE Product creation failed", JSON.stringify(variableProduct));
-const variableProductID = String(variableProduct.body.product.id); productIDs.add(variableProductID);
+const variableProductID = String(variableProduct.body.product.id);
 const variableVariantID = String(variableProduct.body.product.variants[0].id);
 const variableOffer = await request(dshBase, "POST", `/dsh/stores/${first.storeID}/offers`, { token: first.accessToken, headers: partnerHeaders(`variable-offer-${suffix}`), body: variableCreateOffer(variableVariantID, 25) });
 if (variableOffer.status !== 201 || variableOffer.body?.offer?.publicationState !== "draft") fail("VARIABLE_MEASURE StoreOffer creation failed", JSON.stringify(variableOffer));
-const variableOfferID = String(variableOffer.body.offer.offerId); offerIDs.add(variableOfferID);
+const variableOfferID = String(variableOffer.body.offer.offerId);
 const variablePublish = await request(dshBase, "PATCH", `/dsh/stores/${first.storeID}/offers/${variableOfferID}`, { token: first.accessToken, headers: partnerHeaders(`variable-publish-${suffix}`, 1), body: { priceMinor: 25, availability: true, publicationState: "published", quantityPolicy: "VARIABLE_MEASURE", quantityMinBaseUnits: 1, quantityMaxBaseUnits: 10000, quantityStepBaseUnits: 1, pricingBasis: "PER_MEASURE", pricingUnitBaseUnits: 1 } });
 const variablePublic = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}`);
 if (variablePublish.status !== 409 || variablePublish.body?.error?.code !== "PRODUCT_NOT_ELIGIBLE" || variablePublic.status !== 404) fail("VARIABLE_MEASURE remained publishable or customer-visible without final-quantity lifecycle", JSON.stringify({ variablePublish, variablePublic }));
@@ -1030,7 +695,7 @@ console.log("DSH_VARIABLE_MEASURE_FAIL_CLOSED=PASS");
 const offerKey = `offer-a-${suffix}`;
 const offerCreate = await request(dshBase, "POST", `/dsh/stores/${first.storeID}/offers`, { token: first.accessToken, headers: partnerHeaders(offerKey), body: discreteCreateOffer(variantID, 1250) });
 if (offerCreate.status !== 201 || offerCreate.body?.offer?.publicationState !== "draft" || offerCreate.body?.offer?.variantId !== variantID) fail("StoreOffer creation failed", JSON.stringify(offerCreate));
-const offerAID = String(offerCreate.body.offer.offerId); offerIDs.add(offerAID);
+const offerAID = String(offerCreate.body.offer.offerId);
 const missingRequiredAttributePublish = await request(dshBase, "PATCH", `/dsh/stores/${first.storeID}/offers/${offerAID}`, { token: first.accessToken, headers: partnerHeaders(`offer-missing-attribute-${suffix}`, 1), body: discreteOffer(1250, "published") });
 const invalidEnumValue = await request(dshBase, "PUT", `/dsh/catalog/variants/${variantID}/attributes/${enumAttributeID}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID }, body: { valueKind: "ENUM", enumValue: "Light" } });
 const validEnumValue = await request(dshBase, "PUT", `/dsh/catalog/variants/${variantID}/attributes/${enumAttributeID}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID }, body: { valueKind: "ENUM", enumValue: "Dark" } });
@@ -1076,7 +741,7 @@ const publishedOffer = await request(dshBase, "PATCH", `/dsh/stores/${first.stor
 if (publishedOffer.status !== 200 || publishedOffer.body?.offer?.publicationState !== "published" || publishedOffer.body.offer.version !== 2) fail("StoreOffer publication failed", JSON.stringify(publishedOffer));
 const offerB = await request(dshBase, "POST", `/dsh/stores/${second.storeID}/offers`, { token: second.accessToken, headers: partnerHeaders(`offer-b-${suffix}`), body: discreteCreateOffer(variantID, 1500) });
 if (offerB.status !== 201) fail("second StoreOffer creation failed", JSON.stringify(offerB));
-const offerBID = String(offerB.body.offer.offerId); offerIDs.add(offerBID);
+const offerBID = String(offerB.body.offer.offerId);
 const publishedOfferB = await request(dshBase, "PATCH", `/dsh/stores/${second.storeID}/offers/${offerBID}`, { token: second.accessToken, headers: partnerHeaders(`offer-b-publish-${suffix}`, 1), body: discreteOffer(1500, "published") });
 if (publishedOfferB.status !== 200) fail("second StoreOffer publication failed", JSON.stringify(publishedOfferB));
 const offerPageFirst = await request(dshBase, "GET", `/dsh/stores/${first.storeID}/offers?limit=1`, { token: first.accessToken });
@@ -1092,14 +757,14 @@ if (offerPageFirst.status !== 200 || offerPageFirst.body?.offers?.length !== 1 |
 console.log("DSH_PARTNER_STORE_OFFER_PAGING=PASS");
 const sectionCreate = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/sections`, { token: storeLocal.accessToken, headers: partnerHeaders(`section-${suffix}`), body: { nameAr: `العروض ${suffix}`, nameEn: `Offers ${suffix}`, ordinal: 0, active: true } });
 if (sectionCreate.status !== 201 || !sectionCreate.body?.section?.id) fail("Storefront section creation failed", JSON.stringify(sectionCreate));
-const sectionID = String(sectionCreate.body.section.id); sectionIDs.add(sectionID);
+const sectionID = String(sectionCreate.body.section.id);
 const sectionAttach = await request(dshBase, "PUT", `/dsh/stores/${storeLocal.storeID}/sections/${sectionID}/offers/${storeLocalOfferID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`section-attach-${suffix}`), body: { ordinal: 0 } });
 if (sectionAttach.status !== 200 || !sectionAttach.body?.section?.offerIds?.includes(storeLocalOfferID)) fail("Storefront section offer attachment failed", JSON.stringify(sectionAttach));
 const proposalID = `proposal-${suffix}`;
 const proposalBody = { id: proposalID, verticalId: verticalID, categoryId: childCategoryID, proposedName: `Runtime Proposal ${suffix}`, proposedBrand: "Samrim", proposedVariantTitle: "الافتراضي", proposedMeasurementKind: "DISCRETE", proposedBaseUnit: "COUNT", proposedIdentifierType: "SKU", proposedIdentifierValue: `PROPOSAL-${suffix}` };
 const proposalCreate = await request(dshBase, "POST", "/dsh/catalog/product-proposals", { token: first.accessToken, headers: partnerHeaders(`proposal-create-${suffix}`), body: proposalBody });
 if (proposalCreate.status !== 201 || proposalCreate.body?.proposal?.state !== "draft" || proposalCreate.body.proposal.version !== 1 || Object.hasOwn(proposalCreate.body.proposal, "proposedImageUri")) fail("Product proposal creation failed or exposed a raw image URL", JSON.stringify(proposalCreate));
-proposalIDs.add(proposalID);
+
 const proposalOwnList = await collectCursorPages(dshBase, "/dsh/catalog/product-proposals?limit=1", { token: first.accessToken }, "proposals");
 const proposalSubmit = await request(dshBase, "POST", `/dsh/catalog/product-proposals/${proposalID}/submit`, { token: first.accessToken, headers: partnerHeaders(`proposal-submit-${suffix}`, 1) });
 const proposalCorrection = await request(dshBase, "POST", `/dsh/catalog/product-proposals/${proposalID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `proposal-correction-${suffix}`, crypto.randomUUID(), 2), body: { state: "needs_correction", reason: "صحح البيانات" } });
@@ -1108,7 +773,7 @@ const proposalUpdate = await request(dshBase, "PATCH", `/dsh/catalog/product-pro
 const proposalResubmit = await request(dshBase, "POST", `/dsh/catalog/product-proposals/${proposalID}/submit`, { token: first.accessToken, headers: partnerHeaders(`proposal-resubmit-${suffix}`, 4) });
 const proposalApprove = await request(dshBase, "POST", `/dsh/catalog/product-proposals/${proposalID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `proposal-approve-${suffix}`, crypto.randomUUID(), 5), body: { state: "approved", reason: "" } });
 const proposalProductID = `proposal_product_${proposalID}`;
-productIDs.add(proposalProductID);
+
 const proposalProductRead = await collectCursorPages(dshBase, `/dsh/catalog/products?q=${encodeURIComponent(proposalUpdateBody.proposedName)}&verticalId=${encodeURIComponent(verticalID)}&limit=1`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } }, "products");
 const proposalReviewQueue = await collectCursorPages(dshBase, "/dsh/catalog/product-proposals/review-queue?state=approved&limit=1", { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } }, "proposals");
 if (proposalOwnList.status !== 200 || !proposalOwnList.body?.proposals?.some((item) => item.id === proposalID) || proposalSubmit.status !== 200 || proposalSubmit.body?.proposal?.state !== "submitted" || proposalCorrection.status !== 200 || proposalCorrection.body?.proposal?.state !== "needs_correction" || proposalUpdate.status !== 200 || proposalUpdate.body?.proposal?.state !== "draft" || proposalUpdate.body.proposal.version !== 4 || Object.hasOwn(proposalUpdate.body.proposal, "proposedImageUri") || proposalResubmit.status !== 200 || proposalResubmit.body?.proposal?.state !== "submitted" || proposalApprove.status !== 200 || proposalApprove.body?.proposal?.state !== "approved" || proposalApprove.body.proposal.version !== 6 || proposalProductRead.status !== 200 || !proposalProductRead.body?.products?.some((item) => item.id === proposalProductID && item.canonicalName === proposalUpdateBody.proposedName && item.media?.length === 0) || proposalReviewQueue.status !== 200 || !proposalReviewQueue.body?.proposals?.some((item) => item.id === proposalID && item.state === "approved")) fail("Product proposal lifecycle and canonical adoption failed", JSON.stringify({ proposalOwnList, proposalSubmit, proposalCorrection, proposalUpdate, proposalResubmit, proposalApprove, proposalProductRead, proposalReviewQueue }));
@@ -1122,21 +787,20 @@ const importRows = [
   { rowNumber: 3, stableKey: `import-ready-${suffix}`, verticalId: verticalID, scope: "SHARED", canonicalName: `Duplicate ${suffix}`, variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], variantAttributeValues: importVariantAttributeValues, identifierType: "SKU", identifierValue: `IMPORTED-DUP-${suffix}` },
 ];
 const importPreview = await request(dshBase, "POST", "/dsh/catalog/imports/preview", { token: dshToken, headers: serviceHeaders(actingOperatorID, `import-preview-${suffix}`), body: { runId: importRunID, sourceSha256: importSourceSha256, rows: importRows } });
-importRunIDs.add(importRunID);
+
 const importPreviewReplay = await request(dshBase, "POST", "/dsh/catalog/imports/preview", { token: dshToken, headers: serviceHeaders(actingOperatorID, `import-preview-${suffix}`), body: { runId: importRunID, sourceSha256: importSourceSha256, rows: importRows } });
 const importedBeforeCommit = await request(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(importedName)}&verticalId=${encodeURIComponent(verticalID)}&limit=10`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 const importCommitKey = `import-commit-${suffix}`;
 const importCommit = await request(dshBase, "POST", `/dsh/catalog/imports/${importRunID}/commit`, { token: dshToken, headers: serviceHeaders(actingOperatorID, importCommitKey), body: undefined });
 const importedProductID = String(importCommit.body?.items?.find((item) => item.rowNumber === 1)?.productId || "");
-if (importedProductID) productIDs.add(importedProductID);
 const importedProductRead = await request(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(importedName)}&verticalId=${encodeURIComponent(verticalID)}&limit=10`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 const importRunRead = await request(dshBase, "GET", `/dsh/catalog/imports/${importRunID}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 const importCommitReplay = await request(dshBase, "POST", `/dsh/catalog/imports/${importRunID}/commit`, { token: dshToken, headers: serviceHeaders(actingOperatorID, importCommitKey), body: undefined });
 if (importPreview.status !== 201 || importPreview.body?.run?.state !== "previewed" || importPreview.body?.items?.find((item) => item.rowNumber === 2)?.classification !== "CONFLICT_EXISTING" || importPreview.body?.items?.find((item) => item.rowNumber === 3)?.classification !== "DUPLICATE_INPUT" || importPreviewReplay.status !== 200 || importPreviewReplay.body?.idempotentReplay !== true || importedBeforeCommit.status !== 200 || importedBeforeCommit.body?.products?.length !== 0 || importCommit.status !== 200 || importCommit.body?.run?.state !== "committed" || importCommit.body?.items?.find((item) => item.rowNumber === 1)?.classification !== "IMPORTED" || importedProductRead.status !== 200 || importedProductRead.body?.products?.length !== 1 || importRunRead.status !== 200 || importRunRead.body?.run?.state !== "committed" || importCommitReplay.status !== 200 || importCommitReplay.body?.idempotentReplay !== true) fail("catalog import preview/commit/readback/idempotency failed", JSON.stringify({ importPreview, importPreviewReplay, importedBeforeCommit, importCommit, importedProductRead, importRunRead, importCommitReplay }));
 const retryCategoryID = `import-retry-category-${suffix}`;
-categoryIDs.add(retryCategoryID);
+
 const retryRunID = `import-retry-${suffix}`;
-importRunIDs.add(retryRunID);
+
 const retrySourceSha256 = crypto.createHash("sha256").update(retryRunID).digest("hex");
 const retryRow = { rowNumber: 1, stableKey: `import-retry-row-${suffix}`, verticalId: verticalID, scope: "SHARED", canonicalName: `Runtime Retry ${suffix}`, variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [retryCategoryID], identifierType: "SKU", identifierValue: `RETRY-${suffix}` };
 const retryPreview = await request(dshBase, "POST", "/dsh/catalog/imports/preview", { token: dshToken, headers: serviceHeaders(actingOperatorID, `import-retry-preview-${suffix}`), body: { runId: retryRunID, sourceSha256: retrySourceSha256, rows: [retryRow] } });
@@ -1144,7 +808,6 @@ const retryCommitFailed = await request(dshBase, "POST", `/dsh/catalog/imports/$
 const retryCategoryCreate = await request(dshBase, "POST", "/dsh/catalog/categories", { token: dshToken, headers: serviceHeaders(actingOperatorID, `import-retry-category-${suffix}`), body: { id: retryCategoryID, verticalId: verticalID, nameAr: `استرداد ${suffix}`, nameEn: `Recovery ${suffix}`, active: true, reason: "DSH runtime import recovery proof" } });
 const retryCommitRecovered = await request(dshBase, "POST", `/dsh/catalog/imports/${retryRunID}/commit`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `import-retry-commit-${suffix}`), body: undefined });
 const retryItem = retryCommitRecovered.body?.items?.find((item) => item.rowNumber === 1);
-if (retryItem?.productId) productIDs.add(String(retryItem.productId));
 if (retryPreview.status !== 201 || retryCommitFailed.status !== 200 || retryCommitFailed.body?.run?.state !== "rejected" || retryCommitFailed.body?.items?.[0]?.classification !== "FAILED" || retryCategoryCreate.status !== 201 || retryCommitRecovered.status !== 200 || retryCommitRecovered.body?.run?.state !== "committed" || retryItem?.classification !== "IMPORTED") fail("catalog import rejected-run recovery retry failed", JSON.stringify({ retryPreview, retryCommitFailed, retryCategoryCreate, retryCommitRecovered }));
 console.log("DSH_CATALOG_IMPORT=PASS");
 console.log("DSH_STORE_OFFER=PASS");
@@ -1153,8 +816,8 @@ console.log("DSH_PROPOSAL_LIFECYCLE=PASS");
 const defaultFieldCommissionPolicy = await request(dshBase, "POST", "/dsh/operator/field-commission-policies", { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-policy-default-${suffix}`), body: { scopeType: "DEFAULT", scopeId: "", rewardMinor: 5000, roundingUnitMinor: 50, expectedVersion: 0, reason: "DSH runtime default Field commission proof" } });
 const verticalFieldCommissionPolicy = await request(dshBase, "POST", "/dsh/operator/field-commission-policies", { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-policy-vertical-${suffix}`), body: { scopeType: "VERTICAL", scopeId: verticalID, rewardMinor: 7500, roundingUnitMinor: 50, expectedVersion: 0, reason: "DSH runtime vertical Field commission proof" } });
 if (defaultFieldCommissionPolicy.status !== 201 || defaultFieldCommissionPolicy.body?.policy?.scopeType !== "DEFAULT" || defaultFieldCommissionPolicy.body?.policy?.rewardMinor !== 5000 || verticalFieldCommissionPolicy.status !== 201 || verticalFieldCommissionPolicy.body?.policy?.scopeType !== "VERTICAL" || verticalFieldCommissionPolicy.body?.policy?.scopeId !== verticalID || verticalFieldCommissionPolicy.body?.policy?.rewardMinor !== 7500 || verticalFieldCommissionPolicy.body?.policy?.roundingUnitMinor !== 50) fail("Field commission policy activation did not preserve Finance-owned scope and rounding", JSON.stringify({ defaultFieldCommissionPolicy, verticalFieldCommissionPolicy }));
-fieldCommissionPolicyIDs.add(String(defaultFieldCommissionPolicy.body.policy.id));
-fieldCommissionPolicyIDs.add(String(verticalFieldCommissionPolicy.body.policy.id));
+
+
 const verticalFieldCommissionPolicyRead = await request(dshBase, "GET", `/dsh/operator/field-commission-policies/${encodeURIComponent(verticalFieldCommissionPolicy.body.policy.id)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 if (verticalFieldCommissionPolicyRead.status !== 200 || verticalFieldCommissionPolicyRead.body?.policy?.id !== verticalFieldCommissionPolicy.body.policy.id || verticalFieldCommissionPolicyRead.body.policy?.state !== "ACTIVE") fail("Field commission policy readback did not return the active vertical policy", JSON.stringify({ verticalFieldCommissionPolicy, verticalFieldCommissionPolicyRead }));
 console.log("DSH_FIELD_COMMISSION_POLICY=PASS");
@@ -1240,7 +903,7 @@ console.log("DSH_CLIENT_FAVORITES=PASS");
 const addressA = await request(dshBase, "POST", "/dsh/addresses", { token: client.accessToken, headers: partnerHeaders(`address-a-${suffix}`), body: { addressText: `عنوان أ ${suffix}`, latitude: 15.3694457, longitude: 44.1910064, serviceCityId: cityA } });
 const addressB = await request(dshBase, "POST", "/dsh/addresses", { token: client.accessToken, headers: partnerHeaders(`address-b-${suffix}`), body: { addressText: `عنوان ب ${suffix}`, latitude: 15.3694458, longitude: 44.1910065, serviceCityId: cityB } });
 if (addressA.status !== 201 || addressB.status !== 201) fail("serviceability address fixtures failed", JSON.stringify({ addressA, addressB }));
-const addressAID = String(addressA.body.address.id), addressBID = String(addressB.body.address.id); addressIDs.add(addressAID); addressIDs.add(addressBID);
+const addressAID = String(addressA.body.address.id), addressBID = String(addressB.body.address.id);
 const storeOrigin = await request(dshBase, "GET", `/dsh/stores/${encodeURIComponent(first.storeID)}/delivery-origin`, { token: first.accessToken });
 if (storeOrigin.status !== 200 || storeOrigin.body?.origin?.latitude !== firstStoreOrigin.firstStoreLatitude || storeOrigin.body?.origin?.longitude !== firstStoreOrigin.firstStoreLongitude) fail("Store delivery origin canonical readback failed", JSON.stringify(storeOrigin));
 const serviceable = await request(dshBase, "POST", "/dsh/serviceability", { token: client.accessToken, body: { storeId: first.storeID, addressId: addressAID } });
@@ -1296,7 +959,7 @@ const cartLineBody = { storeId: first.storeID, storeOfferId: offerAID, quantityB
 const cartCreateKey = `cart-add-${suffix}`;
 const cartCreate = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(cartCreateKey, 0), body: cartLineBody });
 if (cartCreate.status !== 201 || cartCreate.body?.cart?.state !== "open" || cartCreate.body?.cart?.version !== 1 || cartCreate.body?.cart?.lines?.length !== 1) fail("cart line creation failed", JSON.stringify(cartCreate));
-const cartID = String(cartCreate.body.cart.id); cartIDs.add(cartID);
+const cartID = String(cartCreate.body.cart.id);
 const cartLineID = String(cartCreate.body.cart.lines[0].id);
 const cartReplay = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(cartCreateKey, 0), body: cartLineBody });
 if (cartReplay.status !== 200 || cartReplay.body?.idempotentReplay !== true || cartReplay.body.cart.id !== cartID || cartReplay.body.cart.version !== 1) fail("cart line idempotency replay failed", JSON.stringify(cartReplay));
@@ -1306,14 +969,14 @@ const cartStale = await request(dshBase, "PATCH", `/dsh/cart/lines/${encodeURICo
 if (cartStale.status !== 409 || cartStale.body?.error?.code !== "STALE_CHECKOUT") fail("stale cart mutation was accepted", JSON.stringify(cartStale));
 const modifierGroupCreate = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/modifier-groups`, { token: storeLocal.accessToken, headers: partnerHeaders(`modifier-group-${suffix}`), body: { nameAr: `إضافات ${suffix}`, required: true, minSelections: 1, maxSelections: 1, active: true } });
 if (modifierGroupCreate.status !== 201 || !modifierGroupCreate.body?.group?.id) fail("modifier group creation failed", JSON.stringify(modifierGroupCreate));
-const modifierGroupID = String(modifierGroupCreate.body.group.id); modifierGroupIDs.add(modifierGroupID);
+const modifierGroupID = String(modifierGroupCreate.body.group.id);
 const modifierOptionCreate = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/modifier-groups/${modifierGroupID}/options`, { token: storeLocal.accessToken, headers: partnerHeaders(`modifier-option-${suffix}`), body: { nameAr: `حليب ${suffix}`, priceDeltaMinor: 300, availability: true, ordinal: 0 } });
 if (modifierOptionCreate.status !== 201 || !modifierOptionCreate.body?.option?.id) fail("modifier option creation failed", JSON.stringify(modifierOptionCreate));
 const modifierOptionID = String(modifierOptionCreate.body.option.id);
 const storeLocalOfferPublished = await request(dshBase, "PATCH", `/dsh/stores/${storeLocal.storeID}/offers/${storeLocalOfferID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-local-offer-publish-${suffix}`, 1), body: discreteOffer(1000, "published") });
 const storeLocalPublished = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-local-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
 const storeLocalCartCreate = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`store-local-cart-${suffix}`, 0), body: { storeId: storeLocal.storeID, storeOfferId: storeLocalOfferID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
-const storeLocalCartID = String(storeLocalCartCreate.body?.cart?.id || ""); if (storeLocalCartID) cartIDs.add(storeLocalCartID);
+const storeLocalCartID = String(storeLocalCartCreate.body?.cart?.id || "");
 const modifierAttach = await request(dshBase, "PUT", `/dsh/stores/${storeLocal.storeID}/offers/${storeLocalOfferID}/modifier-groups/${modifierGroupID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`modifier-attach-${suffix}`), body: { ordinal: 0 } });
 const modifierOfferRead = await request(dshBase, "GET", `/dsh/stores/${storeLocal.storeID}/offers`, { token: storeLocal.accessToken });
 if (modifierAttach.status !== 200 || !modifierOfferRead.body?.offers?.some((offer) => offer.offerId === storeLocalOfferID && offer.modifierGroups?.some((group) => group.id === modifierGroupID && group.options?.some((option) => option.id === modifierOptionID)))) fail("modifier offer attachment/readback failed", JSON.stringify({ modifierAttach, modifierOfferRead }));
@@ -1326,9 +989,9 @@ if (missingFulfillmentModeCheckout.status !== 400 || missingFulfillmentModeCheck
 const storeLocalMissingModifierCheckout = storeLocalCartID ? await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`store-local-checkout-missing-modifier-${suffix}`, 1), body: { cartId: storeLocalCartID, storeId: storeLocal.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN" } }) : null;
 const storeLocalCartWithModifier = storeLocalCartID ? await request(dshBase, "PATCH", `/dsh/cart/lines/${encodeURIComponent(storeLocalCartCreate.body.cart.lines[0].id)}`, { token: client.accessToken, headers: partnerHeaders(`store-local-cart-modifier-${suffix}`, 1), body: { quantityBaseUnits: 1, selectedModifierOptionIds: [modifierOptionID] } }) : null;
 const storeLocalModifierCheckout = storeLocalCartID ? await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`store-local-checkout-${suffix}`, 2), body: { cartId: storeLocalCartID, storeId: storeLocal.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN" } }) : null;
-const storeLocalOrderID = String(storeLocalModifierCheckout?.body?.order?.id || ""); if (storeLocalOrderID) orderIDs.add(storeLocalOrderID);
+const storeLocalOrderID = String(storeLocalModifierCheckout?.body?.order?.id || "");
 const storeLocalCheckoutLineID = String(storeLocalModifierCheckout?.body?.order?.lines?.[0]?.id || "");
-const storeLocalPaymentIntentID = String(storeLocalModifierCheckout?.body?.order?.paymentIntentId || ""); if (storeLocalPaymentIntentID) paymentIntentIDs.add(storeLocalPaymentIntentID);
+const storeLocalPaymentIntentID = String(storeLocalModifierCheckout?.body?.order?.paymentIntentId || "");
 if (storeLocalCartCreate.status !== 201 || storeLocalMissingModifierCheckout?.status !== 400 || storeLocalMissingModifierCheckout.body?.error?.code !== "INVALID_INPUT" || storeLocalCartWithModifier?.status !== 201 || storeLocalCartWithModifier.body?.cart?.version !== 2 || !storeLocalCartWithModifier.body.cart.lines[0]?.selectedModifierOptionIds?.includes(modifierOptionID) || storeLocalModifierCheckout?.status !== 201 || storeLocalModifierCheckout.body?.order?.lines?.[0]?.modifierAmountMinor !== 300 || !storeLocalModifierCheckout.body?.order?.lines?.[0]?.modifierSnapshots?.some((snapshot) => snapshot.optionId === modifierOptionID && snapshot.priceDeltaMinor === 300)) fail("Store-local required modifier selection and Order snapshot failed", JSON.stringify({ storeLocalCartCreate, storeLocalMissingModifierCheckout, storeLocalCartWithModifier, storeLocalModifierCheckout }));
 const storeLocalModifierCancellation = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(storeLocalOrderID)}/cancel`, { token: client.accessToken, headers: partnerHeaders(`store-local-checkout-cancel-${suffix}`, 1) });
 await waitForSQL(`SELECT state FROM dsh.commerce_financial_handoff_outbox WHERE effect_type='PAYMENT_CANCEL' AND order_id='${sqlLiteral(storeLocalOrderID)}'`, "POSTED", "store-local modifier proof payment cancellation did not reconcile");
@@ -1347,12 +1010,12 @@ const checkoutKey = `checkout-${suffix}`;
 const checkout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(checkoutKey, 2), body: { cartId: cartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN" } });
 if (checkout.status !== 201 || checkout.body?.order?.state !== "CREATED" || checkout.body.order.version !== 1 || checkout.body.order.fulfillmentMode !== "BTHWANI_CAPTAIN" || checkout.body.order.totalAmountMinor !== mainOrderTotal || checkout.body.order.paymentMethod !== "CASH_ON_DELIVERY" || checkout.body.order.paymentState !== "REQUIRES_COLLECTION" || typeof checkout.body.order.paymentIntentId !== "string" || checkout.body.order.lines?.[0]?.requestedQuantityBaseUnits !== 2 || checkout.body.order.lines?.[0]?.unitPriceMinor !== 2100 || checkout.body.order.lines?.[0]?.modifierAmountMinor !== 0 || checkout.body.order.lines?.[0]?.modifierSnapshots?.length !== 0 || checkout.body.order.lines?.[0]?.attributeSnapshots?.length !== 3 || !checkout.body.order.lines?.[0]?.attributeSnapshots?.some((snapshot) => snapshot.attributeId === enumAttributeID && snapshot.valueKind === "ENUM" && snapshot.enumValue === "Dark")) fail("cart checkout did not create an immutable Order/payment snapshot", JSON.stringify(checkout));
 const checkoutLineID = String(checkout.body.order.lines?.[0]?.id || "");
-const orderID = String(checkout.body.order.id); orderIDs.add(orderID);
+const orderID = String(checkout.body.order.id);
 
 const promotionCode = `SAVE${suffix.replace(/[^A-Za-z0-9]/g, "").slice(-12).toUpperCase()}`;
 const promotionCreate = await request(dshBase, "POST", "/dsh/operator/promotions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `marketing-promotion-create-${suffix}`), body: { id: `promotion-${suffix}`, code: promotionCode, nameAr: `خصم تجريبي ${suffix}`, descriptionAr: "خصم على الطلب التجريبي", kind: "FIXED", valueMinor: 300, fundingSource: "MERCHANT", storeId: first.storeID, serviceCityId: cityA, startsAt: new Date(Date.now() - 60_000).toISOString() } });
 if (promotionCreate.status !== 201 || promotionCreate.body?.promotion?.state !== "DRAFT" || promotionCreate.body.promotion.code !== promotionCode) fail("promotion draft creation failed", JSON.stringify(promotionCreate));
-const promotionID = String(promotionCreate.body.promotion.id); promotionIDs.add(promotionID);
+const promotionID = String(promotionCreate.body.promotion.id);
 const promotionPublish = await request(dshBase, "POST", `/dsh/operator/promotions/${encodeURIComponent(promotionID)}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `marketing-promotion-publish-${suffix}`, crypto.randomUUID(), promotionCreate.body.promotion.version), body: { state: "PUBLISHED" } });
 const promotionPublic = await request(dshBase, "GET", `/dsh/public/promotions?serviceCityId=${encodeURIComponent(cityA)}&storeId=${encodeURIComponent(first.storeID)}`);
 if (promotionPublish.status !== 201 || promotionPublish.body?.promotion?.state !== "PUBLISHED" || promotionPublic.status !== 200 || !promotionPublic.body?.promotions?.some((item) => item.id === promotionID && item.code === promotionCode)) fail("promotion publication/public readback failed", JSON.stringify({ promotionCreate, promotionPublish, promotionPublic }));
@@ -1362,25 +1025,23 @@ if (contentRawURI.status !== 400 || contentRawURI.body?.error?.code !== "INVALID
 
 const promotionCartCreate = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`marketing-cart-${suffix}`, 0), body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
 if (promotionCartCreate.status !== 201 || !promotionCartCreate.body?.cart?.id) fail("promotion checkout cart fixture failed", JSON.stringify(promotionCartCreate));
-const promotionCartID = String(promotionCartCreate.body.cart.id); cartIDs.add(promotionCartID);
+const promotionCartID = String(promotionCartCreate.body.cart.id);
 const promotionQuote = await request(dshBase, "POST", "/dsh/cart/quote", { token: client.accessToken, headers: { "X-Expected-Version": "1" }, body: { cartId: promotionCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN", promotionCode } });
 if (promotionQuote.status !== 200 || promotionQuote.body?.quote?.subtotalMinor !== 2100 || promotionQuote.body.quote.discountMinor !== 300 || promotionQuote.body.quote.promotionCode !== promotionCode || promotionQuote.body.quote.totalAmountMinor !== 1900) fail("promotion checkout quote did not apply the canonical discount", JSON.stringify(promotionQuote));
 const promotionCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`marketing-checkout-${suffix}`, 1), body: { cartId: promotionCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN", promotionCode } });
 if (promotionCheckout.status !== 201 || promotionCheckout.body?.order?.subtotalAmountMinor !== 2100 || promotionCheckout.body.order.discountMinor !== 300 || promotionCheckout.body.order.promotionCode !== promotionCode || promotionCheckout.body.order.totalAmountMinor !== 1900) fail("promotion checkout did not snapshot the canonical discount", JSON.stringify(promotionCheckout));
-const promotionOrderID = String(promotionCheckout.body.order.id); orderIDs.add(promotionOrderID);
-const promotionPaymentIntentID = String(promotionCheckout.body.order.paymentIntentId); paymentIntentIDs.add(promotionPaymentIntentID);
+const promotionOrderID = String(promotionCheckout.body.order.id);
+const promotionPaymentIntentID = String(promotionCheckout.body.order.paymentIntentId);
 const promotionPayment = await request(wltBase, "GET", `/wlt/v1/payment-intents/${encodeURIComponent(promotionPaymentIntentID)}`, { token: wltToken });
 const promotionAllocationCount = sql(`SELECT count(*) FROM wlt.customer_payment_allocations WHERE order_id='${sqlLiteral(promotionOrderID)}' AND subtotal_minor=2100 AND discount_minor=300 AND customer_payable_minor=1900 AND cash_amount_minor=1900`);
 const promotionRedemptionCount = sql(`SELECT count(*) FROM dsh.commerce_promotion_redemptions WHERE promotion_id='${sqlLiteral(promotionID)}' AND order_id='${sqlLiteral(promotionOrderID)}' AND discount_minor=300`);
 const reusedPromotionCart = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`marketing-reuse-cart-${suffix}`, 0), body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
 if (reusedPromotionCart.status !== 201 || !reusedPromotionCart.body?.cart?.id) fail("promotion reuse cart fixture failed", JSON.stringify(reusedPromotionCart));
-const reusedPromotionCartID = String(reusedPromotionCart.body.cart.id); cartIDs.add(reusedPromotionCartID);
+const reusedPromotionCartID = String(reusedPromotionCart.body.cart.id);
 const reusedPromotionQuote = await request(dshBase, "POST", "/dsh/cart/quote", { token: client.accessToken, headers: { "X-Expected-Version": "1" }, body: { cartId: reusedPromotionCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN", promotionCode } });
 const reusedPromotionFallbackCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`marketing-reuse-fallback-${suffix}`, 1), body: { cartId: reusedPromotionCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN" } });
 const reusedPromotionFallbackOrderID = String(reusedPromotionFallbackCheckout.body?.order?.id || "");
-if (reusedPromotionFallbackOrderID) orderIDs.add(reusedPromotionFallbackOrderID);
 const reusedPromotionFallbackPaymentID = String(reusedPromotionFallbackCheckout.body?.order?.paymentIntentId || "");
-if (reusedPromotionFallbackPaymentID) paymentIntentIDs.add(reusedPromotionFallbackPaymentID);
 const reusedPromotionFallbackCancellation = reusedPromotionFallbackOrderID ? await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(reusedPromotionFallbackOrderID)}/cancel`, { token: client.accessToken, headers: partnerHeaders(`marketing-reuse-fallback-cancel-${suffix}`, 1) }) : null;
 if (reusedPromotionFallbackOrderID) await waitForSQL(`SELECT state FROM dsh.commerce_financial_handoff_outbox WHERE effect_type='PAYMENT_CANCEL' AND order_id='${sqlLiteral(reusedPromotionFallbackOrderID)}'`, "POSTED", "promotion reuse fallback cancellation did not reconcile");
 if (promotionPayment.status !== 200 || promotionPayment.body?.paymentIntent?.amountMinor !== 1900 || promotionAllocationCount !== "1" || promotionRedemptionCount !== "1" || reusedPromotionQuote.status !== 409 || reusedPromotionQuote.body?.error?.code !== "PROMOTION_UNAVAILABLE" || reusedPromotionFallbackCheckout.status !== 201 || reusedPromotionFallbackCancellation?.status !== 201 || reusedPromotionFallbackCancellation.body?.order?.state !== "CANCELLED") fail("promotion funding, redemption, or reuse boundary failed", JSON.stringify({ promotionCheckout, promotionPayment, promotionAllocationCount, promotionRedemptionCount, reusedPromotionQuote, reusedPromotionFallbackCheckout, reusedPromotionFallbackCancellation }));
@@ -1392,7 +1053,7 @@ console.log("DSH_PROMOTIONS_DISCOVERY=PASS");
 const multiCartAResponse = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`multi-store-cart-a-${suffix}`, 0), body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
 const multiCartBResponse = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`multi-store-cart-b-${suffix}`, 0), body: { storeId: second.storeID, storeOfferId: offerBID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
 if (multiCartAResponse.status !== 201 || multiCartBResponse.status !== 201 || !multiCartAResponse.body?.cart?.id || !multiCartBResponse.body?.cart?.id) fail("multi-store child cart fixtures failed", JSON.stringify({ multiCartAResponse, multiCartBResponse }));
-const multiCartAID = String(multiCartAResponse.body.cart.id); const multiCartBID = String(multiCartBResponse.body.cart.id); cartIDs.add(multiCartAID); cartIDs.add(multiCartBID);
+const multiCartAID = String(multiCartAResponse.body.cart.id); const multiCartBID = String(multiCartBResponse.body.cart.id);
 const cityBScopedFeePolicyCount = sql(`SELECT count(*) FROM wlt.delivery_fee_policies WHERE state='ACTIVE' AND service_city_id='${sqlLiteral(cityB)}'`);
 const globalFeePolicyCount = sql("SELECT count(*) FROM wlt.delivery_fee_policies WHERE state='ACTIVE' AND service_city_id=''");
 if (cityBScopedFeePolicyCount !== "0" || globalFeePolicyCount !== "1") fail("multi-store fee fallback fixture does not match the canonical WLT global policy", JSON.stringify({ cityBScopedFeePolicyCount, globalFeePolicyCount }));
@@ -1404,9 +1065,7 @@ const multiCheckoutBody = { id: multiCheckoutID, children: [
   { cartId: multiCartBID, storeId: second.storeID, addressId: addressBID, cartVersion: multiCartBResponse.body.cart.version, fulfillmentMode: "BTHWANI_CAPTAIN" },
 ] };
 const multiCheckout = await request(dshBase, "POST", "/dsh/multi-store-checkouts", { token: client.accessToken, headers: partnerHeaders(multiCheckoutKey), body: multiCheckoutBody });
-if (multiCheckout.body?.checkout?.id) multiStoreCheckoutIDs.add(String(multiCheckout.body.checkout.id));
 const multiCheckoutChildren = multiCheckout.body?.checkout?.children || [];
-for (const child of multiCheckoutChildren) if (child?.orderId) orderIDs.add(String(child.orderId));
 const multiChildSuccess = multiCheckout.body?.checkout?.children?.find((child) => child.storeId === first.storeID);
 const multiChildGlobalPolicy = multiCheckout.body?.checkout?.children?.find((child) => child.storeId === second.storeID);
 const multiChildOrderID = String(multiChildSuccess?.orderId || "");
@@ -1414,7 +1073,6 @@ const multiChildGlobalPolicyOrderID = String(multiChildGlobalPolicy?.orderId || 
 const multiChildOrderIDs = [multiChildOrderID, multiChildGlobalPolicyOrderID].filter(Boolean);
 const multiChildOrderReads = await Promise.all([multiChildOrderID, multiChildGlobalPolicyOrderID].filter(Boolean).map((orderID) => request(dshBase, "GET", `/dsh/orders/${encodeURIComponent(orderID)}`, { token: client.accessToken })));
 const multiChildPaymentIDs = multiChildOrderReads.map((response) => String(response.body?.order?.paymentIntentId || ""));
-for (const paymentIntentID of multiChildPaymentIDs) if (paymentIntentID) paymentIntentIDs.add(paymentIntentID);
 const multiCheckoutReplay = await request(dshBase, "POST", "/dsh/multi-store-checkouts", { token: client.accessToken, headers: partnerHeaders(multiCheckoutKey), body: multiCheckoutBody });
 const multiCheckoutRead = await request(dshBase, "GET", `/dsh/multi-store-checkouts/${encodeURIComponent(multiCheckoutID)}`, { token: client.accessToken });
 const multiChildReadbackCount = sql(`SELECT count(*) FROM dsh.commerce_multi_store_checkout_children c JOIN dsh.commerce_multi_store_checkouts p ON p.id=c.checkout_id WHERE p.id='${sqlLiteral(multiCheckoutID)}' AND c.state IN ('SUCCEEDED','FAILED') AND c.store_id IN ('${sqlLiteral(first.storeID)}','${sqlLiteral(second.storeID)}')`);
@@ -1434,7 +1092,6 @@ console.log("DSH_MULTI_STORE_CHECKOUT=PASS");
 const pickupStoreOrigin = await request(dshBase, "GET", "/dsh/stores/" + encodeURIComponent(second.storeID) + "/delivery-origin", { token: second.accessToken });
 const pickupCartCreated = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`pickup-cart-${suffix}`, 0), body: { storeId: second.storeID, storeOfferId: offerBID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
 const pickupCartID = String(pickupCartCreated.body?.cart?.id || "");
-if (pickupCartID) cartIDs.add(pickupCartID);
 const pickupCartRead = await request(dshBase, "GET", "/dsh/cart?storeId=" + encodeURIComponent(second.storeID), { token: client.accessToken });
 if (pickupStoreOrigin.status !== 200 || !pickupStoreOrigin.body?.origin || pickupCartCreated.status !== 201 || !pickupCartID || pickupCartRead.status !== 200 || pickupCartRead.body?.cart?.id !== pickupCartID || pickupCartRead.body?.cart?.storeId !== second.storeID || !pickupCartRead.body?.cart?.lines?.some((line) => line.storeOfferId === offerBID)) fail("customer pickup origin or fresh cart fixture failed", JSON.stringify({ pickupStoreOrigin, pickupCartCreated, pickupCartRead }));
 const pickupCartVersion = pickupCartRead.body.cart.version;
@@ -1447,10 +1104,10 @@ const pickupCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { to
 if (pickupCheckout.status !== 201 || !pickupCheckout.body?.order?.id) fail("cash-at-store pickup checkout failed", JSON.stringify(pickupCheckout));
 const pickupOrder = pickupCheckout.body.order;
 const pickupOrderID = String(pickupOrder.id);
-orderIDs.add(pickupOrderID);
+
 const pickupPaymentIntentID = String(pickupOrder.paymentIntentId || "");
 if (!pickupPaymentIntentID) fail("pickup checkout did not link a WLT payment intent", JSON.stringify(pickupCheckout));
-paymentIntentIDs.add(pickupPaymentIntentID);
+
 const pickupCheckoutReplay = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: pickupCheckoutHeaders, body: pickupCheckoutBody });
 const pickupPaymentBeforeCollection = await request(wltBase, "GET", "/wlt/v1/payment-intents/" + encodeURIComponent(pickupPaymentIntentID), { token: wltToken });
 const pickupInitialAllocation = pickupPaymentBeforeCollection.body?.paymentIntent?.customerPaymentAllocation;
@@ -1504,7 +1161,6 @@ const pickupRemittanceHeaders = serviceHeaders(actingOperatorID, pickupRemittanc
 const pickupRemittanceBody = { amountMinor: pickupCommissionMinor, remittanceReference: "runtime-pickup-remittance-" + suffix, evidenceReference: "runtime-proof-pickup-remittance-" + suffix };
 const pickupRemittance = await request(wltBase, "POST", "/wlt/v1/operator/partners/" + encodeURIComponent(second.actorID) + "/commission-remittances", { token: wltToken, headers: pickupRemittanceHeaders, body: pickupRemittanceBody });
 const pickupRemittanceID = String(pickupRemittance.body?.remittance?.id || "");
-if (pickupRemittanceID) partnerCommissionRemittanceIDs.add(pickupRemittanceID);
 const pickupRemittanceReplay = await request(wltBase, "POST", "/wlt/v1/operator/partners/" + encodeURIComponent(second.actorID) + "/commission-remittances", { token: wltToken, headers: pickupRemittanceHeaders, body: pickupRemittanceBody });
 const pickupReceivableAfterRemittance = sql("SELECT COALESCE(SUM(CASE WHEN direction='DEBIT' THEN amount_minor ELSE -amount_minor END),0)::text FROM wlt.ledger_entries WHERE account_code='PARTNER_COMMISSION_RECEIVABLE' AND actor_type='partner' AND actor_id='" + sqlLiteral(second.actorID) + "'");
 const pickupRemittanceLedgerCount = pickupRemittanceID ? sql("SELECT count(*) FROM wlt.ledger_entries e JOIN wlt.ledger_transactions t ON t.id=e.transaction_id WHERE t.source_type='PARTNER_COMMISSION_REMITTANCE' AND t.source_id='" + sqlLiteral(pickupRemittanceID) + "' AND ((e.account_code='EXTERNAL_SETTLEMENT_CASH' AND e.direction='DEBIT' AND e.amount_minor=" + pickupCommissionMinor + ") OR (e.account_code='PARTNER_COMMISSION_RECEIVABLE' AND e.actor_type='partner' AND e.actor_id='" + sqlLiteral(second.actorID) + "' AND e.direction='CREDIT' AND e.amount_minor=" + pickupCommissionMinor + "))") : "0";
@@ -1517,7 +1173,7 @@ const deliveryProofBeforeHandoff = await request(dshBase, "GET", `/dsh/orders/${
 const partnerDeliveryProof = await request(dshBase, "GET", `/dsh/orders/${encodeURIComponent(orderID)}/delivery-proof`, { token: first.accessToken });
 if (deliveryProofBeforeHandoff.status !== 200 || deliveryProofBeforeHandoff.body?.orderId !== orderID || deliveryProofBeforeHandoff.body?.state !== "PENDING" || deliveryProofBeforeHandoff.body?.code != null || partnerDeliveryProof.status !== 403) fail("delivery proof was disclosed before captain custody or crossed the customer role boundary", JSON.stringify({ status: deliveryProofBeforeHandoff.status, proofState: deliveryProofBeforeHandoff.body?.state, codeDisclosed: deliveryProofBeforeHandoff.body?.code != null, partnerStatus: partnerDeliveryProof.status }));
 let deliveryProofCode = "";
-const paymentIntentID = String(checkout.body.order.paymentIntentId); paymentIntentIDs.add(paymentIntentID);
+const paymentIntentID = String(checkout.body.order.paymentIntentId);
 const linkedPaymentRead = await request(wltBase, "GET", `/wlt/v1/payment-intents/${encodeURIComponent(paymentIntentID)}`, { token: wltToken });
 const linkedPaymentAuditCount = sql(`SELECT count(*) FROM dsh.commerce_order_payment_audit WHERE order_id='${sqlLiteral(orderID)}' AND event_type='payment_intent_linked' AND payment_intent_id='${sqlLiteral(paymentIntentID)}' AND amount_minor=${mainOrderTotal}`);
 const linkedAllocation = linkedPaymentRead.body?.paymentIntent?.customerPaymentAllocation;
@@ -1534,11 +1190,11 @@ const closedCart = await request(dshBase, "GET", `/dsh/cart?storeId=${encodeURIC
 if (closedCart.status !== 404) fail("checked-out cart remained an open cart", JSON.stringify(closedCart));
 const rejectedCartCreate = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`payment-reject-cart-${suffix}`, 0), body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
 if (rejectedCartCreate.status !== 201 || !rejectedCartCreate.body?.cart?.id) fail("payment rejection cart fixture failed", JSON.stringify(rejectedCartCreate));
-const rejectedCartID = String(rejectedCartCreate.body.cart.id); cartIDs.add(rejectedCartID);
+const rejectedCartID = String(rejectedCartCreate.body.cart.id);
 const rejectedCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`payment-reject-checkout-${suffix}`, 1), body: { cartId: rejectedCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN" } });
 if (rejectedCheckout.status !== 201 || rejectedCheckout.body?.order?.paymentState !== "REQUIRES_COLLECTION" || rejectedCheckout.body.order.totalAmountMinor !== singleOrderTotal || typeof rejectedCheckout.body.order.paymentIntentId !== "string") fail("payment rejection checkout fixture failed", JSON.stringify(rejectedCheckout));
-const rejectedOrderID = String(rejectedCheckout.body.order.id); orderIDs.add(rejectedOrderID);
-const rejectedPaymentIntentID = String(rejectedCheckout.body.order.paymentIntentId); paymentIntentIDs.add(rejectedPaymentIntentID);
+const rejectedOrderID = String(rejectedCheckout.body.order.id);
+const rejectedPaymentIntentID = String(rejectedCheckout.body.order.paymentIntentId);
 const rejectedTransition = await request(dshBase, "POST", `/dsh/stores/${first.storeID}/orders/${encodeURIComponent(rejectedOrderID)}/transition`, { token: first.accessToken, headers: partnerHeaders(`payment-reject-transition-${suffix}`, 1), body: { state: "REJECTED" } });
 await waitForSQL(`SELECT state FROM dsh.commerce_financial_handoff_outbox WHERE effect_type='PAYMENT_CANCEL' AND order_id='${sqlLiteral(rejectedOrderID)}' AND reason='partner_rejected'`, "POSTED", "partner rejection financial handoff did not reconcile");
 expectSQL(`SELECT acting_actor_id FROM dsh.commerce_financial_handoff_outbox WHERE effect_type='PAYMENT_CANCEL' AND order_id='${sqlLiteral(rejectedOrderID)}'`, first.actorID, "partner rejection financial handoff lost actor provenance");
@@ -1550,11 +1206,11 @@ expectSQL(`SELECT inventory_on_hand_base_units || '|' || inventory_reserved_base
 console.log("DSH_PAYMENT_REJECTION_CANCEL=PASS");
 const clientCancelCartCreate = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`client-cancel-cart-${suffix}`, 0), body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
 if (clientCancelCartCreate.status !== 201 || !clientCancelCartCreate.body?.cart?.id) fail("client cancellation cart fixture failed", JSON.stringify(clientCancelCartCreate));
-const clientCancelCartID = String(clientCancelCartCreate.body.cart.id); cartIDs.add(clientCancelCartID);
+const clientCancelCartID = String(clientCancelCartCreate.body.cart.id);
 const clientCancelCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`client-cancel-checkout-${suffix}`, 1), body: { cartId: clientCancelCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN" } });
 if (clientCancelCheckout.status !== 201 || clientCancelCheckout.body?.order?.state !== "CREATED" || clientCancelCheckout.body.order.version !== 1 || clientCancelCheckout.body.order.paymentState !== "REQUIRES_COLLECTION") fail("client cancellation checkout fixture failed", JSON.stringify(clientCancelCheckout));
-const clientCancelOrderID = String(clientCancelCheckout.body.order.id); orderIDs.add(clientCancelOrderID);
-const clientCancelPaymentIntentID = String(clientCancelCheckout.body.order.paymentIntentId); paymentIntentIDs.add(clientCancelPaymentIntentID);
+const clientCancelOrderID = String(clientCancelCheckout.body.order.id);
+const clientCancelPaymentIntentID = String(clientCancelCheckout.body.order.paymentIntentId);
 const clientCancelKey = `client-cancel-${suffix}`;
 const clientCancellation = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(clientCancelOrderID)}/cancel`, { token: client.accessToken, headers: partnerHeaders(clientCancelKey, 1) });
 const clientCancellationReplay = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(clientCancelOrderID)}/cancel`, { token: client.accessToken, headers: partnerHeaders(clientCancelKey, 1) });
@@ -1598,7 +1254,7 @@ const captainAdmissionResponse = captainAdmissionFlow.provision;
 if (captainAdmissionResponse.status !== 200 || captainAdmissionResponse.body?.admission?.state !== "eligible" || !captainAdmissionResponse.body.admission.actorId) fail("Captain profile, review, or role grant did not bind an eligible Identity actor", JSON.stringify(captainAdmissionResponse));
 const captainAdmissionID = captainAdmissionFlow.admissionID;
 const captainActorID = captainAdmissionFlow.actorID;
-captainAdmissionIDs.add(captainAdmissionID); actorIDs.add(captainActorID);
+
 const captainAccessToken = await activateCaptain(captainPhone, `Capt${suffix.slice(0, 4)}`);
 await fundCaptainThroughDevelopmentCashIn(captainActorID, mainOrderTotal, `primary-${suffix}`);
 const captainWalletBeforeDispatch = await request(wltBase, "GET", `/wlt/v1/captains/${encodeURIComponent(captainActorID)}/wallet-state`, { token: wltToken });
@@ -1610,7 +1266,7 @@ if (captainSelf.status !== 200 || captainSelf.body?.admission?.actorId !== capta
 const firstDispatchKey = `captain-dispatch-first-${suffix}`;
 const firstDispatch = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(orderID)}/dispatch`, { token: dshToken, headers: serviceHeaders(actingOperatorID, firstDispatchKey) });
 if (firstDispatch.status !== 201 || firstDispatch.body?.offer?.state !== "offered" || firstDispatch.body.offer.captainActorId !== captainActorID || firstDispatch.body.offer.storeName !== "Catalog Runtime A store" || firstDispatch.body.offer.customerAddressText !== `عنوان أ ${suffix}` || firstDispatch.body.offer.amountDueMinor !== mainOrderTotal || firstDispatch.body.offer.currency !== "YER" || firstDispatch.body.offer.paymentMethod !== "CASH_ON_DELIVERY" || firstDispatch.body.offer.paymentState !== "REQUIRES_COLLECTION") fail("Captain dispatch did not create an addressed offer with canonical order context", JSON.stringify(firstDispatch));
-const firstCaptainOfferID = String(firstDispatch.body.offer.id); captainOfferIDs.add(firstCaptainOfferID);
+const firstCaptainOfferID = String(firstDispatch.body.offer.id);
 const firstDispatchReplay = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(orderID)}/dispatch`, { token: dshToken, headers: serviceHeaders(actingOperatorID, firstDispatchKey) });
 const captainOffersAfterDispatch = await request(dshBase, "GET", "/dsh/captains/me/offers", { token: captainAccessToken });
 if (firstDispatchReplay.status !== 200 || firstDispatchReplay.body?.idempotentReplay !== true || firstDispatchReplay.body.offer.id !== firstCaptainOfferID || captainOffersAfterDispatch.status !== 200 || !captainOffersAfterDispatch.body?.offers?.some((offer) => offer.id === firstCaptainOfferID && offer.state === "offered" && offer.storeName === "Catalog Runtime A store" && offer.customerAddressText === `عنوان أ ${suffix}` && offer.amountDueMinor === mainOrderTotal && offer.paymentState === "REQUIRES_COLLECTION")) fail("Captain dispatch idempotent readback did not preserve canonical order context", JSON.stringify({ firstDispatchReplay, captainOffersAfterDispatch }));
@@ -1622,10 +1278,10 @@ expectSQL(`SELECT captain_actor_id || '|' || acting_actor_id FROM dsh.commerce_f
 if (rejectedOffer.status !== 200 || rejectedOffer.body?.offer?.state !== "rejected" || rejectedReplay.status !== 200 || rejectedReplay.body?.idempotentReplay !== true || rejectedReplay.body.offer.state !== "rejected") fail("Captain offer rejection or replay failed", JSON.stringify({ rejectedOffer, rejectedReplay }));
 const secondDispatch = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(orderID)}/dispatch`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `captain-dispatch-second-${suffix}`) });
 if (secondDispatch.status !== 201 || secondDispatch.body?.offer?.state !== "offered" || secondDispatch.body.offer.captainActorId !== captainActorID) fail("Captain redispatch after rejection failed", JSON.stringify(secondDispatch));
-const secondCaptainOfferID = String(secondDispatch.body.offer.id); captainOfferIDs.add(secondCaptainOfferID);
+const secondCaptainOfferID = String(secondDispatch.body.offer.id);
 const acceptedCaptainOffer = await request(dshBase, "POST", `/dsh/captains/me/offers/${encodeURIComponent(secondCaptainOfferID)}/respond`, { token: captainAccessToken, headers: partnerHeaders(`captain-accept-${suffix}`, 1), body: { decision: "accept" } });
 if (acceptedCaptainOffer.status !== 200 || acceptedCaptainOffer.body?.offer?.state !== "accepted" || acceptedCaptainOffer.body?.assignment?.state !== "assigned") fail("Captain offer acceptance did not create one assignment", JSON.stringify(acceptedCaptainOffer));
-const captainAssignmentID = String(acceptedCaptainOffer.body.assignment.id); captainAssignmentIDs.add(captainAssignmentID);
+const captainAssignmentID = String(acceptedCaptainOffer.body.assignment.id);
 const captainWalletAfterReserve = await request(wltBase, "GET", `/wlt/v1/captains/${encodeURIComponent(captainActorID)}/wallet-state`, { token: wltToken });
 const captainReservationCount = sql(`SELECT count(*) FROM wlt.captain_cod_reservations WHERE order_id='${sqlLiteral(orderID)}' AND payment_intent_id='${sqlLiteral(paymentIntentID)}' AND captain_actor_id='${sqlLiteral(captainActorID)}' AND amount_minor=${mainOrderTotal} AND state='ACTIVE'`);
 if (captainWalletAfterReserve.status !== 200 || captainWalletAfterReserve.body?.state?.availableMinor !== 0 || captainWalletAfterReserve.body?.state?.heldMinor !== mainOrderTotal || captainReservationCount !== "1") fail("Captain COD was not atomically reserved from the order allocation", JSON.stringify({ captainWalletAfterReserve, captainReservationCount }));
@@ -1635,7 +1291,7 @@ const secondCaptainAdmission = secondCaptainFlow.provision;
 if (secondCaptainAdmission.status !== 200 || !secondCaptainAdmission.body?.admission?.actorId) fail("second Captain profile, approval, or role grant fixture failed", JSON.stringify(secondCaptainAdmission));
 const secondCaptainAdmissionID = secondCaptainFlow.admissionID;
 const secondCaptainActorID = secondCaptainFlow.actorID;
-captainAdmissionIDs.add(secondCaptainAdmissionID); actorIDs.add(secondCaptainActorID);
+
 const secondCaptainAccessToken = await activateCaptain(secondCaptainPhone, `Capt${suffix.slice(0, 4)}`);
 const secondCaptainSelf = await request(dshBase, "GET", "/dsh/captains/me", { token: secondCaptainAccessToken });
 if (secondCaptainSelf.status !== 200 || secondCaptainSelf.body?.admission?.actorId !== secondCaptainActorID || secondCaptainSelf.body?.admission?.fullNameAr !== "ياسر محمد عبدالله المتوكل" || secondCaptainSelf.body?.admission?.contactPhoneE164 !== secondCaptainPhone) fail("second Captain app profile did not read its reviewed name and Identity phone", JSON.stringify(secondCaptainSelf));
@@ -1647,7 +1303,7 @@ const reassignKey = `captain-reassign-active-${suffix}`;
 const reassigned = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(orderID)}/reassign`, { token: dshToken, headers: serviceHeaders(actingOperatorID, reassignKey) });
 const reassignedReplay = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(orderID)}/reassign`, { token: dshToken, headers: serviceHeaders(actingOperatorID, reassignKey) });
 if (reassigned.status !== 201 || reassigned.body?.offer?.state !== "offered" || reassigned.body.offer.captainActorId !== secondCaptainActorID || reassignedReplay.status !== 200 || reassignedReplay.body?.idempotentReplay !== true || reassignedReplay.body.offer.id !== reassigned.body.offer.id) fail("Captain reassignment did not produce one idempotent replacement offer", JSON.stringify({ reassigned, reassignedReplay }));
-const reassignedOfferID = String(reassigned.body.offer.id); captainOfferIDs.add(reassignedOfferID);
+const reassignedOfferID = String(reassigned.body.offer.id);
 await waitForSQL(`SELECT state FROM dsh.commerce_financial_handoff_outbox WHERE effect_type='CAPTAIN_COD_RELEASE' AND order_id='${sqlLiteral(orderID)}' AND source_ref='${sqlLiteral(captainAssignmentID)}'`, "POSTED", "reassignment COD release handoff did not reconcile");
 expectSQL(`SELECT captain_actor_id || '|' || acting_actor_id FROM dsh.commerce_financial_handoff_outbox WHERE effect_type='CAPTAIN_COD_RELEASE' AND order_id='${sqlLiteral(orderID)}' AND source_ref='${sqlLiteral(captainAssignmentID)}'`, `${captainActorID}|${actingOperatorID}`, "reassignment COD release lost actor provenance");
 expectSQL(`SELECT state FROM wlt.captain_cod_reservations WHERE order_id='${sqlLiteral(orderID)}' AND captain_actor_id='${sqlLiteral(captainActorID)}'`, "RELEASED", "reassignment did not release the previous Captain COD reservation");
@@ -1658,7 +1314,7 @@ const reassignedAccepted = await request(dshBase, "POST", `/dsh/captains/me/offe
 if (reassignedAccepted.status !== 200 || reassignedAccepted.body?.offer?.state !== "accepted" || reassignedAccepted.body?.assignment?.state !== "assigned" || reassignedAccepted.body.assignment.captainActorId !== secondCaptainActorID) fail("reassigned Captain did not accept the replacement offer", JSON.stringify(reassignedAccepted));
 const activeCaptainActorID = secondCaptainActorID;
 const activeCaptainAccessToken = secondCaptainAccessToken;
-const activeCaptainAssignmentID = String(reassignedAccepted.body.assignment.id); captainAssignmentIDs.add(activeCaptainAssignmentID);
+const activeCaptainAssignmentID = String(reassignedAccepted.body.assignment.id);
 const activeCaptainWalletAfterReserve = await request(wltBase, "GET", `/wlt/v1/captains/${encodeURIComponent(activeCaptainActorID)}/wallet-state`, { token: wltToken });
 const activeReservationCountAfterReassign = sql(`SELECT count(*) FROM wlt.captain_cod_reservations WHERE order_id='${sqlLiteral(orderID)}' AND payment_intent_id='${sqlLiteral(paymentIntentID)}' AND captain_actor_id='${sqlLiteral(activeCaptainActorID)}' AND amount_minor=${mainOrderTotal} AND state='ACTIVE'`);
 if (activeCaptainWalletAfterReserve.status !== 200 || activeCaptainWalletAfterReserve.body?.state?.availableMinor !== 0 || activeCaptainWalletAfterReserve.body?.state?.heldMinor !== mainOrderTotal || activeReservationCountAfterReassign !== "1") fail("replacement Captain COD reservation was not canonical", JSON.stringify({ activeCaptainWalletAfterReserve, activeReservationCountAfterReassign }));
@@ -1770,7 +1426,6 @@ console.log("DSH_PARTNER_LEGAL_NAME=PASS");
 const destinationWalletIdentifier = `+96777000${crypto.randomInt(1000, 9999)}`;
 const destinationCreate = await request(dshBase, "POST", `/dsh/operator/partner/${encodeURIComponent(first.actorID)}/official-wallet-destination`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-destination-${suffix}`), body: { providerKey: "official_wallet", walletIdentifier: destinationWalletIdentifier, changeReason: "runtime proof destination", verificationEvidenceReference: `destination-proof-${suffix}`, changeEvidenceReference: `destination-proof-${suffix}` } });
 const destinationID = String(destinationCreate.body?.destination?.id || "");
-if (destinationID) destinationIDs.add(destinationID);
 const destinationVerify = await request(dshBase, "POST", `/dsh/operator/partner/${encodeURIComponent(first.actorID)}/official-wallet-destination/${encodeURIComponent(destinationID)}/verify`, { token: dshToken, headers: serviceHeaders(checkerOperatorID, `partner-destination-verify-${suffix}`), body: { evidenceReference: `destination-proof-verified-${suffix}` } });
 const destinationVerifyReplay = await request(dshBase, "POST", `/dsh/operator/partner/${encodeURIComponent(first.actorID)}/official-wallet-destination/${encodeURIComponent(destinationID)}/verify`, { token: dshToken, headers: serviceHeaders(checkerOperatorID, `partner-destination-verify-${suffix}`), body: { evidenceReference: `destination-proof-verified-${suffix}` } });
 const destinationActivate = await request(dshBase, "POST", `/dsh/operator/partner/${encodeURIComponent(first.actorID)}/official-wallet-destination/${encodeURIComponent(destinationID)}/activate`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-destination-activate-${suffix}`), body: {} });
@@ -1780,12 +1435,10 @@ const payoutOversized = await request(dshBase, "POST", "/dsh/me/payout-intents",
 const payoutSpecifiedKey = `partner-payout-specified-${suffix}`;
 const payoutSpecified = await request(dshBase, "POST", "/dsh/me/payout-intents", { token: first.accessToken, headers: partnerHeaders(payoutSpecifiedKey), body: { amountMode: "SPECIFIED", amountMinor: 1000 } });
 const payoutSpecifiedID = String(payoutSpecified.body?.payout?.id || "");
-if (payoutSpecifiedID) payoutIDs.add(payoutSpecifiedID);
 const payoutSpecifiedReplay = await request(dshBase, "POST", "/dsh/me/payout-intents", { token: first.accessToken, headers: partnerHeaders(payoutSpecifiedKey), body: { amountMode: "SPECIFIED", amountMinor: 1000 } });
 const ownPayoutStateAfterSpecified = await request(dshBase, "GET", "/dsh/me/payout-state", { token: first.accessToken });
 const payoutFull = await request(dshBase, "POST", "/dsh/me/payout-intents", { token: first.accessToken, headers: partnerHeaders(`partner-payout-full-${suffix}`), body: { amountMode: "FULL_AVAILABLE" } });
 const payoutFullID = String(payoutFull.body?.payout?.id || "");
-if (payoutFullID) payoutIDs.add(payoutFullID);
 const ownPayoutStateAfterFull = await request(dshBase, "GET", "/dsh/me/payout-state", { token: first.accessToken });
 const operatorDestinationRead = await request(dshBase, "GET", `/dsh/operator/partner/${encodeURIComponent(first.actorID)}/official-wallet-destination`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 const operatorPayoutState = await request(dshBase, "GET", `/dsh/operator/partner/${encodeURIComponent(first.actorID)}/payout-state`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
@@ -1797,7 +1450,6 @@ const payoutSameOperatorApproval = await request(dshBase, "POST", `/dsh/operator
 const payoutApproved = await request(dshBase, "POST", `/dsh/operator/payout-requests/${encodeURIComponent(payoutFullID)}/approve`, { token: dshToken, headers: serviceHeaders(checkerOperatorID, `partner-payout-approve-${suffix}`), body: { reason: "independent payout approval" } });
 const settlementBatchCreated = await request(dshBase, "POST", "/dsh/operator/settlement-batches", { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-settlement-batch-${suffix}`), body: { payoutIds: [payoutFullID] } });
 const settlementBatchID = String(settlementBatchCreated.body?.batch?.id || "");
-if (settlementBatchID) settlementBatchIDs.add(settlementBatchID);
 const settlementBatchApproved = await request(dshBase, "POST", `/dsh/operator/settlement-batches/${encodeURIComponent(settlementBatchID)}/approve`, { token: dshToken, headers: serviceHeaders(checkerOperatorID, `partner-settlement-batch-approve-${suffix}`), body: { reason: "independent batch approval" } });
 const settlementBatchFrozen = await request(dshBase, "POST", `/dsh/operator/settlement-batches/${encodeURIComponent(settlementBatchID)}/freeze`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-settlement-batch-freeze-${suffix}`), body: { reason: "freeze approved execution snapshot" } });
 const transferReference = `wallet-transfer-${suffix}`;
@@ -1846,18 +1498,14 @@ console.log("WLT_MANUAL_SETTLEMENT=PASS");
 const fieldPayoutPhone = `+96779${crypto.randomInt(1_000_000, 9_999_999)}`;
 const fieldPayoutCase = await request(dshBase, "POST", "/dsh/field/joining-cases", { token: secondFieldAccessToken, headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": `field-payout-case-${suffix}` }, body: { contactPhoneE164: fieldPayoutPhone, businessName: "Field payout business", firstStoreName: "Field payout store", serviceCityId: cityA, firstStoreVerticalId: verticalID, ...firstStoreOrigin } });
 const fieldPayoutCaseID = String(fieldPayoutCase.body?.case?.id || "");
-if (fieldPayoutCaseID) caseIDs.add(fieldPayoutCaseID);
 const fieldPayoutFlow = await requestFieldPartnerAdmission(fieldPayoutCaseID, secondFieldAccessToken, 1, "field-payout-" + suffix);
 const fieldPayoutSubmitted = fieldPayoutFlow.operatorSubmitted;
 const fieldPayoutApproved = await request(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(fieldPayoutCaseID)}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-payout-approve-${suffix}`, crypto.randomUUID(), 3), body: { decision: "approved", expectedTermsPolicyVersion: partnerFinancialTermsPolicy.policyVersion } });
 const fieldPayoutStoreID = String(fieldPayoutApproved.body?.case?.store?.id || "");
-if (fieldPayoutStoreID) storeIDs.add(fieldPayoutStoreID);
 const fieldPayoutPartnerActorID = String(fieldPayoutApproved.body?.case?.partnerActorId || "");
-if (fieldPayoutPartnerActorID) actorIDs.add(fieldPayoutPartnerActorID);
 const fieldPayoutPartnerAccessToken = await activatePartner(fieldPayoutPhone, `FPay${suffix.slice(0, 4)}`);
 const fieldPayoutOffer = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(fieldPayoutStoreID)}/offers`, { token: fieldPayoutPartnerAccessToken, headers: partnerHeaders(`field-payout-offer-${suffix}`), body: discreteCreateOffer(variantID, 1250) });
 const fieldPayoutOfferID = String(fieldPayoutOffer.body?.offer?.offerId || "");
-if (fieldPayoutOfferID) offerIDs.add(fieldPayoutOfferID);
 const fieldPayoutOfferPublished = await request(dshBase, "PATCH", `/dsh/stores/${encodeURIComponent(fieldPayoutStoreID)}/offers/${encodeURIComponent(fieldPayoutOfferID)}`, { token: fieldPayoutPartnerAccessToken, headers: partnerHeaders(`field-payout-offer-publish-${suffix}`, 1), body: discreteOffer(1250, "published") });
 const fieldPayoutPublication = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(fieldPayoutStoreID)}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-payout-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
 const fieldPayoutSummaryDeadline = Date.now() + 95_000;
@@ -1885,7 +1533,7 @@ const fieldDestinationWalletIdentifier = `+96777100${crypto.randomInt(1000, 9999
 const fieldDestinationCreate = await request(dshBase, "POST", `/dsh/operator/field/${encodeURIComponent(secondFieldActorID)}/official-wallet-destination`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-destination-${suffix}`), body: { providerKey: "official_wallet", walletIdentifier: fieldDestinationWalletIdentifier, changeReason: "runtime proof field destination", verificationEvidenceReference: `field-destination-proof-${suffix}`, changeEvidenceReference: `field-destination-proof-${suffix}` } });
 const fieldDestinationID = String(fieldDestinationCreate.body?.destination?.id || "");
 if (fieldDestinationCreate.status !== 201 || !fieldDestinationID) fail("Field official wallet destination creation failed", JSON.stringify(fieldDestinationCreate));
-destinationIDs.add(fieldDestinationID);
+
 const fieldDestinationVerify = await request(dshBase, "POST", `/dsh/operator/field/${encodeURIComponent(secondFieldActorID)}/official-wallet-destination/${encodeURIComponent(fieldDestinationID)}/verify`, { token: dshToken, headers: serviceHeaders(checkerOperatorID, `field-destination-verify-${suffix}`), body: { evidenceReference: `field-destination-verified-${suffix}` } });
 if (fieldDestinationVerify.status !== 200) fail("Field official wallet destination verification failed", JSON.stringify(fieldDestinationVerify));
 const fieldDestinationActivate = await request(dshBase, "POST", `/dsh/operator/field/${encodeURIComponent(secondFieldActorID)}/official-wallet-destination/${encodeURIComponent(fieldDestinationID)}/activate`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-destination-activate-${suffix}`), body: {} });
@@ -1894,7 +1542,6 @@ const fieldOwnPayoutState = await request(dshBase, "GET", "/dsh/me/payout-state"
 const fieldPayoutKey = `field-payout-${suffix}`;
 const fieldPayout = await request(dshBase, "POST", "/dsh/me/payout-intents", { token: secondFieldAccessToken, headers: partnerHeaders(fieldPayoutKey), body: { amountMode: "FULL_AVAILABLE" } });
 const fieldPayoutID = String(fieldPayout.body?.payout?.id || "");
-if (fieldPayoutID) payoutIDs.add(fieldPayoutID);
 const fieldPayoutReplay = await request(dshBase, "POST", "/dsh/me/payout-intents", { token: secondFieldAccessToken, headers: partnerHeaders(fieldPayoutKey), body: { amountMode: "FULL_AVAILABLE" } });
 const fieldOwnPayoutAfter = await request(dshBase, "GET", "/dsh/me/payout-state", { token: secondFieldAccessToken });
 const fieldOperatorPayoutState = await request(dshBase, "GET", `/dsh/operator/field/${encodeURIComponent(secondFieldActorID)}/payout-state`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
@@ -1903,7 +1550,7 @@ const captainDestinationWalletIdentifier = `+96777200${crypto.randomInt(1000, 99
 const captainDestinationCreate = await request(dshBase, "POST", `/dsh/operator/captain/${encodeURIComponent(activeCaptainActorID)}/official-wallet-destination`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `captain-destination-${suffix}`), body: { providerKey: "official_wallet", walletIdentifier: captainDestinationWalletIdentifier, changeReason: "runtime proof captain destination", verificationEvidenceReference: `captain-destination-proof-${suffix}`, changeEvidenceReference: `captain-destination-proof-${suffix}` } });
 const captainDestinationID = String(captainDestinationCreate.body?.destination?.id || "");
 if (captainDestinationCreate.status !== 201 || !captainDestinationID) fail("Captain official wallet destination creation failed", JSON.stringify(captainDestinationCreate));
-destinationIDs.add(captainDestinationID);
+
 const captainDestinationVerify = await request(dshBase, "POST", `/dsh/operator/captain/${encodeURIComponent(activeCaptainActorID)}/official-wallet-destination/${encodeURIComponent(captainDestinationID)}/verify`, { token: dshToken, headers: serviceHeaders(checkerOperatorID, `captain-destination-verify-${suffix}`), body: { evidenceReference: `captain-destination-verified-${suffix}` } });
 if (captainDestinationVerify.status !== 200) fail("Captain official wallet destination verification failed", JSON.stringify(captainDestinationVerify));
 const captainDestinationActivate = await request(dshBase, "POST", `/dsh/operator/captain/${encodeURIComponent(activeCaptainActorID)}/official-wallet-destination/${encodeURIComponent(captainDestinationID)}/activate`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `captain-destination-activate-${suffix}`), body: {} });
@@ -1911,7 +1558,6 @@ if (captainDestinationActivate.status !== 200) fail("Captain official wallet des
 const captainOwnPayoutState = await request(dshBase, "GET", "/dsh/me/payout-state", { token: activeCaptainAccessToken });
 const captainPayout = await request(dshBase, "POST", "/dsh/me/payout-intents", { token: activeCaptainAccessToken, headers: partnerHeaders(`captain-payout-${suffix}`), body: { amountMode: "FULL_AVAILABLE" } });
 const captainPayoutID = String(captainPayout.body?.payout?.id || "");
-if (captainPayoutID) payoutIDs.add(captainPayoutID);
 const captainOwnPayoutAfter = await request(dshBase, "GET", "/dsh/me/payout-state", { token: activeCaptainAccessToken });
 if (fieldDestinationCreate.status !== 201 || fieldDestinationCreate.body?.destination?.actorType !== "field" || fieldDestinationVerify.status !== 200 || fieldDestinationActivate.status !== 200 || fieldOwnPayoutState.status !== 200 || fieldOwnPayoutState.body?.state?.actorType !== "field" || fieldOwnPayoutState.body.state.actorId !== secondFieldActorID || fieldOwnPayoutState.body.state.eligibleAvailableMinor !== 7500 || fieldPayout.status !== 201 || fieldPayout.body?.payout?.actorType !== "field" || fieldPayout.body.payout.resolvedAmountMinor !== 7500 || fieldPayoutReplay.status !== 200 || fieldPayoutReplay.body?.idempotentReplay !== true || fieldOwnPayoutAfter.status !== 200 || fieldOwnPayoutAfter.body?.state?.eligibleAvailableMinor !== 0 || fieldOwnPayoutAfter.body.state.heldMinor !== 7500 || fieldOperatorPayoutState.status !== 200 || fieldOperatorPayoutState.body?.state?.actorType !== "field" || captainDestinationCreate.status !== 201 || captainDestinationCreate.body?.destination?.actorType !== "captain" || captainDestinationVerify.status !== 200 || captainDestinationActivate.status !== 200 || captainOwnPayoutState.status !== 200 || captainOwnPayoutState.body?.state?.actorType !== "captain" || captainOwnPayoutState.body.state.actorId !== activeCaptainActorID || captainOwnPayoutState.body.state.eligibleAvailableMinor !== deliveryFeeMinor || captainOwnPayoutState.body.state.heldMinor !== mainOrderTotal || captainPayout.status !== 201 || captainPayout.body?.payout?.actorType !== "captain" || captainPayout.body.payout.resolvedAmountMinor !== deliveryFeeMinor || captainOwnPayoutAfter.status !== 200 || captainOwnPayoutAfter.body?.state?.eligibleAvailableMinor !== 0 || captainOwnPayoutAfter.body.state.heldMinor !== mainOrderTotal + deliveryFeeMinor) fail("Unified beneficiary payout state, destination, hold, and role-boundary journey failed", JSON.stringify({ fieldDestinationCreate, fieldDestinationVerify, fieldDestinationActivate, fieldOwnPayoutState, fieldPayout, fieldPayoutReplay, fieldOwnPayoutAfter, fieldOperatorPayoutState, captainDestinationCreate, captainDestinationVerify, captainDestinationActivate, captainOwnPayoutState, captainPayout, captainOwnPayoutAfter }));
 console.log("WLT_UNIFIED_BENEFICIARY_PAYOUT=PASS");
@@ -1982,11 +1628,10 @@ console.log("DSH_NOTIFICATIONS=PASS");
 
 const expiryCartCreate = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`captain-expiry-cart-${suffix}`, 0), body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
 if (expiryCartCreate.status !== 201 || !expiryCartCreate.body?.cart?.id) fail("Captain expiry order cart fixture failed", JSON.stringify(expiryCartCreate));
-const expiryCartID = String(expiryCartCreate.body.cart.id); cartIDs.add(expiryCartID);
+const expiryCartID = String(expiryCartCreate.body.cart.id);
 const expiryCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`captain-expiry-checkout-${suffix}`, 1), body: { cartId: expiryCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN" } });
 if (expiryCheckout.status !== 201 || !expiryCheckout.body?.order?.id) fail("Captain expiry order checkout fixture failed", JSON.stringify(expiryCheckout));
-const expiryOrderID = String(expiryCheckout.body.order.id); orderIDs.add(expiryOrderID);
-if (typeof expiryCheckout.body.order.paymentIntentId === "string") paymentIntentIDs.add(String(expiryCheckout.body.order.paymentIntentId));
+const expiryOrderID = String(expiryCheckout.body.order.id);
 for (const [next, expectedVersion] of [["PARTNER_ACCEPTED", 1], ["PREPARING", 2], ["READY_FOR_DISPATCH", 3]]) {
   const transition = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(first.storeID)}/orders/${encodeURIComponent(expiryOrderID)}/transition`, { token: first.accessToken, headers: partnerHeaders(`captain-expiry-transition-${next}-${suffix}`, expectedVersion), body: { state: next } });
   if (transition.status !== 200 || transition.body?.order?.state !== next) fail("Captain expiry order did not reach READY_FOR_DISPATCH", JSON.stringify({ next, transition }));
@@ -2004,7 +1649,7 @@ const expiryCaptainSelf = await request(dshBase, "GET", "/dsh/captains/me", { to
 if (expiryCaptainSelf.status !== 200 || expiryCaptainSelf.body?.admission?.actorId !== expiryCaptainActorID || expiryCaptainSelf.body.admission.availabilityState !== "available") fail("Existing Captain expiry session is not available", JSON.stringify(expiryCaptainSelf));
 const expiryDispatch = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(expiryOrderID)}/dispatch`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `captain-expiry-dispatch-${suffix}`) });
 if (expiryDispatch.status !== 201 || expiryDispatch.body?.offer?.state !== "offered" || expiryDispatch.body.offer.captainActorId !== expiryCaptainActorID) fail("Captain expiry offer fixture failed", JSON.stringify({ expiryDispatch, expiryCaptainActorID }));
-const expiryOfferID = String(expiryDispatch.body.offer.id); captainOfferIDs.add(expiryOfferID);
+const expiryOfferID = String(expiryDispatch.body.offer.id);
   // Claim-specific database-time fault injection; not business-state setup.
   sql(`UPDATE dsh.captain_dispatch_offers SET expires_at=clock_timestamp()-interval '1 second' WHERE id='${sqlLiteral(expiryOfferID)}'`);
 const [expiredOfferRead, captainAfterExpiry, concurrentExpiryRead] = await Promise.all([
@@ -2057,14 +1702,5 @@ try {
 if (outageFailure) fail(outageFailure);
 await waitForIdentityReady();
 console.log("DSH_IDENTITY_FAILURE_RECOVERY=PASS");
-try {
-  cleanup();
-  cleanupCheckerFixture();
-  console.log("DSH_RUNTIME_CLEANUP=PASS");
-} catch (error) {
-  console.error(`DSH_RUNTIME_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
-  throw error;
-}
 console.log("DSH_RUNTIME=PASS");
 process.exit(0);

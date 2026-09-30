@@ -95,7 +95,7 @@ function verifyRuntimeOwnership() {
   assert(wlt.targets?.["financial-invariants"]?.cache === false, "wlt financial invariants must be cache=false");
   assert(JSON.stringify(wlt.targets?.["financial-invariants"]?.dependsOn ?? []) === JSON.stringify(["schema-proof"]), "wlt financial invariants must depend only on local schema-proof");
   const dsh = data("services/dsh/backend/project.json");
-  assert(dsh.targets?.["runtime-fixture-cleanup"]?.cache === false, "DSH checker fixture cleanup must be uncached");
+  assert(!dsh.targets?.["runtime-fixture-cleanup"], "DSH checker fixtures must be discarded with the disposable CI database");
   assert(control.targets?.["dsh-runtime-checker-fixture"]?.cache === false, "DSH checker fixture setup must be uncached");
 }
 
