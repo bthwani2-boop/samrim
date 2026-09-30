@@ -18,6 +18,27 @@ type fieldRegisteredRoute struct {
 
 var fieldRouteParameterPattern = regexp.MustCompile(`\{[^}/]+\}`)
 
+var fieldOperatorRoutes = []fieldRegisteredRoute{
+	{method: "GET", path: "/dsh/fields/admissions"},
+	{method: "POST", path: "/dsh/fields/admissions"},
+	{method: "PATCH", path: "/dsh/fields/admissions/{admissionId}/profile"},
+	{method: "POST", path: "/dsh/fields/admissions/{admissionId}/profile-review"},
+	{method: "POST", path: "/dsh/fields/admissions/{admissionId}/approve"},
+	{method: "POST", path: "/dsh/fields/admissions/{admissionId}/provision"},
+	{method: "GET", path: "/dsh/fields/admissions/{admissionId}"},
+	{method: "GET", path: "/dsh/fields/actors/{actorId}/admission"},
+	{method: "POST", path: "/dsh/fields/{actorId}/identity-role"},
+	{method: "POST", path: "/dsh/fields/{actorId}/reenrollment"},
+}
+
+var fieldSessionRoutes = []fieldRegisteredRoute{
+	{method: "GET", path: "/dsh/fields/me"},
+	{method: "POST", path: "/dsh/field/joining-cases"},
+	{method: "GET", path: "/dsh/field/joining-cases"},
+	{method: "GET", path: "/dsh/field/joining-cases/{caseId}"},
+	{method: "POST", path: "/dsh/field/joining-cases/{caseId}/submit"},
+}
+
 func fieldRegisteredRoutes(t *testing.T) []fieldRegisteredRoute {
 	t.Helper()
 	source, err := os.ReadFile("field.go")
@@ -42,26 +63,18 @@ func concreteFieldRoutePath(path string) string {
 }
 
 func TestFieldRegisteredRouteAuthenticationModelIsExhaustive(t *testing.T) {
-	expected := map[string]struct{}{
-		"GET /dsh/fields/admissions":                               {},
-		"POST /dsh/fields/admissions":                              {},
-		"PATCH /dsh/fields/admissions/{admissionId}/profile":       {},
-		"POST /dsh/fields/admissions/{admissionId}/profile-review": {},
-		"POST /dsh/fields/admissions/{admissionId}/approve":        {},
-		"POST /dsh/fields/admissions/{admissionId}/provision":      {},
-		"GET /dsh/fields/admissions/{admissionId}":                 {},
-		"GET /dsh/fields/actors/{actorId}/admission":               {},
-		"GET /dsh/fields/me":                                       {},
-		"POST /dsh/fields/{actorId}/identity-role":                 {},
-		"POST /dsh/fields/{actorId}/reenrollment":                  {},
-		"POST /dsh/field/joining-cases":                            {},
-		"GET /dsh/field/joining-cases":                             {},
-		"GET /dsh/field/joining-cases/{caseId}":                    {},
-		"POST /dsh/field/joining-cases/{caseId}/submit":            {},
+	expected := make(map[string]struct{}, len(fieldOperatorRoutes)+len(fieldSessionRoutes))
+	for _, route := range append(append([]fieldRegisteredRoute{}, fieldOperatorRoutes...), fieldSessionRoutes...) {
+		key := fieldRouteKey(route)
+		if _, exists := expected[key]; exists {
+			t.Fatalf("Field authentication route classified more than once: %s", key)
+		}
+		expected[key] = struct{}{}
 	}
+
 	routes := fieldRegisteredRoutes(t)
 	if len(routes) != len(expected) {
-		t.Fatalf("Field route census changed: got %d, want %d", len(routes), len(expected))
+		t.Fatalf("Field route census changed: got %d registered routes, want %d classified routes", len(routes), len(expected))
 	}
 	for _, route := range routes {
 		key := fieldRouteKey(route)
@@ -71,35 +84,16 @@ func TestFieldRegisteredRouteAuthenticationModelIsExhaustive(t *testing.T) {
 		delete(expected, key)
 	}
 	if len(expected) != 0 {
-		t.Fatalf("expected Field routes are no longer registered: %v", expected)
+		t.Fatalf("classified Field routes are no longer registered: %v", expected)
 	}
 }
 
 func TestFieldOperatorRoutesRejectUnauthenticatedRequests(t *testing.T) {
-	routes := []fieldRegisteredRoute{
-		{method: "GET", path: "/dsh/fields/admissions"},
-		{method: "POST", path: "/dsh/fields/admissions"},
-		{method: "PATCH", path: "/dsh/fields/admissions/{admissionId}/profile"},
-		{method: "POST", path: "/dsh/fields/admissions/{admissionId}/profile-review"},
-		{method: "POST", path: "/dsh/fields/admissions/{admissionId}/approve"},
-		{method: "POST", path: "/dsh/fields/admissions/{admissionId}/provision"},
-		{method: "GET", path: "/dsh/fields/admissions/{admissionId}"},
-		{method: "GET", path: "/dsh/fields/actors/{actorId}/admission"},
-		{method: "POST", path: "/dsh/fields/{actorId}/identity-role"},
-		{method: "POST", path: "/dsh/fields/{actorId}/reenrollment"},
-	}
-	testFieldRoutesRejectUnauthenticated(t, routes)
+	testFieldRoutesRejectUnauthenticated(t, fieldOperatorRoutes)
 }
 
 func TestFieldSessionRoutesRejectUnauthenticatedRequests(t *testing.T) {
-	routes := []fieldRegisteredRoute{
-		{method: "GET", path: "/dsh/fields/me"},
-		{method: "POST", path: "/dsh/field/joining-cases"},
-		{method: "GET", path: "/dsh/field/joining-cases"},
-		{method: "GET", path: "/dsh/field/joining-cases/{caseId}"},
-		{method: "POST", path: "/dsh/field/joining-cases/{caseId}/submit"},
-	}
-	testFieldRoutesRejectUnauthenticated(t, routes)
+	testFieldRoutesRejectUnauthenticated(t, fieldSessionRoutes)
 }
 
 func testFieldRoutesRejectUnauthenticated(t *testing.T, routes []fieldRegisteredRoute) {
