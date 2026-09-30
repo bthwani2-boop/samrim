@@ -107,7 +107,7 @@ func (s *Service) readStoreProfileMutationCase(ctx context.Context, role, surfac
 	return postgres.JoiningCaseResult{}, "", ErrStoreProfileMediaSessionForbidden
 }
 
-func (s *Service) resolveReplayedStoreProfileAsset(ctx context.Context, asset postgres.StoreProfileMediaAsset, current postgres.JoiningCaseResult, scope, actorID, caseID string, expectedVersion int) (postgres.JoiningCaseResult, bool, error) {
+func (s *Service) resolveReplayedStoreProfileAsset(ctx context.Context, asset postgres.StoreProfileMediaRecord, current postgres.JoiningCaseResult, scope, actorID, caseID string, expectedVersion int) (postgres.JoiningCaseResult, bool, error) {
 	switch asset.State {
 	case "active", "retired":
 		result, err := s.readStoreProfileImageCase(ctx, scope, actorID, caseID, true)
