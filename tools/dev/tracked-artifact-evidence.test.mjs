@@ -50,6 +50,29 @@ test("owner contract resolves only explicit durable artifact classes", () => {
   );
 });
 
+test("native icon type contract requires its canonical consumer", () => {
+  const withConsumer = auditSyntheticTrackedArtifacts(
+    [
+      "packages/design-system/src/native/icons.tsx",
+      "packages/design-system/src/native/icon-types.ts",
+    ],
+    (file) => file.endsWith("icons.tsx") ? "TEST_OWNER" : null,
+  );
+  applyTrackedArtifactOwnerContract(withConsumer);
+  assert.deepEqual(withConsumer.review, []);
+  assert.equal(
+    withConsumer.fileEvidence.get("packages/design-system/src/native/icon-types.ts"),
+    "DESIGN_SYSTEM_NATIVE_ICON_CONTRACT",
+  );
+
+  const withoutConsumer = auditSyntheticTrackedArtifacts(
+    ["packages/design-system/src/native/icon-types.ts"],
+    () => null,
+  );
+  applyTrackedArtifactOwnerContract(withoutConsumer);
+  assert.ok(withoutConsumer.review.includes("REVIEW_REQUIRED:FILE:packages/design-system/src/native/icon-types.ts"));
+});
+
 test("owner contract does not rescue an unknown artifact", () => {
   const result = auditSyntheticTrackedArtifacts(["tools/orphan/dead-artifact.bin"], () => null);
   applyTrackedArtifactOwnerContract(result);

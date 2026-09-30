@@ -1,4 +1,4 @@
-function ownerEvidence(file) {
+function ownerEvidence(file, trackedFiles) {
   if (/^apps\/[^/]+\/(?:DESIGN|UX-CONTRACT)\.md$/.test(file)) {
     return "PROJECT_DOCUMENTATION_CONTRACT";
   }
@@ -11,6 +11,12 @@ function ownerEvidence(file) {
   if (/^services\/[^/]+\/backend\/internal\/security\/[^/]+\.txt$/.test(file)) {
     return "SECURITY_DATA_SOURCE";
   }
+  if (
+    file === "packages/design-system/src/native/icon-types.ts" &&
+    trackedFiles.has("packages/design-system/src/native/icons.tsx")
+  ) {
+    return "DESIGN_SYSTEM_NATIVE_ICON_CONTRACT";
+  }
   return null;
 }
 
@@ -19,11 +25,12 @@ export function applyTrackedArtifactOwnerContract(audit) {
     (item) => !item.startsWith("REVIEW_REQUIRED:FILE:") && !item.startsWith("REVIEW_REQUIRED:DIRECTORY:"),
   );
   const unresolvedFiles = [];
+  const trackedFiles = new Set(audit.files);
 
   for (const item of audit.review) {
     if (!item.startsWith("REVIEW_REQUIRED:FILE:")) continue;
     const file = item.slice("REVIEW_REQUIRED:FILE:".length);
-    const evidence = ownerEvidence(file);
+    const evidence = ownerEvidence(file, trackedFiles);
     if (evidence) audit.fileEvidence.set(file, evidence);
     else unresolvedFiles.push(item);
   }
