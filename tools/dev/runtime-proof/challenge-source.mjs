@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 const benchmarkRangeStart = 0xc6120000;
 const benchmarkRangeSize = 131_070;
 
-export function challengeSourceIP(phone) {
+function challengeSourceIP(phone) {
   if (!/^\+[1-9][0-9]{7,14}$/.test(phone)) throw new TypeError("challenge source requires a normalized E.164 phone");
   const hash = crypto.createHash("sha256").update("bthwani-disposable-runtime-client\0").update(phone).digest();
   const offset = hash.readUInt32BE(0) % benchmarkRangeSize + 1;
