@@ -151,13 +151,15 @@ try {
     if (sql(`SELECT count(*) FROM information_schema.columns WHERE table_schema='dsh' AND table_name='${table}' AND column_name='${column}'`) !== "0") throw new Error(`Location Core precise/dead column remains: dsh.${table}.${column}`);
   }
 
-  let operatorID = sql("SELECT actor_id FROM identity_actor_roles WHERE role='operator' AND enabled AND activated_at IS NOT NULL ORDER BY activated_at DESC, actor_id LIMIT 1");
+  let operatorID = sql("SELECT r.actor_id FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id JOIN identity_operator_permissions p ON p.actor_id=r.actor_id AND p.permission='platform_policies' AND p.enabled JOIN identity_bootstrap_state b ON b.id=1 WHERE r.role='operator' AND r.enabled AND a.security_enabled AND r.activated_at IS NOT NULL ORDER BY (r.actor_id=b.initial_operator_actor_id) DESC, r.activated_at DESC, r.actor_id LIMIT 1");
   if (!operatorID) {
     const bootstrap = await request(identityBase, "POST", "/internal/bootstrap/operator", { token: bootstrapToken, body: { phoneE164: `+96775${crypto.randomInt(1_000_000, 9_999_999)}`, role: "operator" } });
     if (![201, 409].includes(bootstrap.status)) throw new Error(`operator bootstrap failed: ${JSON.stringify(bootstrap.body)}`);
     operatorID = sql("SELECT COALESCE(initial_operator_actor_id,'') FROM identity_bootstrap_state WHERE id=1");
   }
   if (!operatorID) throw new Error("Location Core runtime operator fixture is unavailable");
+  const platformPoliciesAccess = await request(identityBase, "GET", `/internal/operators/${encodeURIComponent(operatorID)}/permissions/platform_policies`, { token: identityDshToken });
+  if (platformPoliciesAccess.status !== 200 || platformPoliciesAccess.body?.actorId !== operatorID || platformPoliciesAccess.body?.permission !== "platform_policies" || platformPoliciesAccess.body?.enabled !== true) throw new Error("Location Core runtime operator lacks Platform Policies permission");
 
   const cityCreated = await expect(dshBase, "POST", "/dsh/service-cities", 201, {
     token: controlPanelToken,
