@@ -203,17 +203,19 @@ jobs:
 
           if [[ -n "${SONAR_PULL_REQUEST:-}" ]]; then
             scope="pullRequest=${SONAR_PULL_REQUEST}"
+            issue_scope="$scope"
           else
             scope="branch=${GITHUB_REF_NAME}"
+            issue_scope="${scope}&inNewCodePeriod=true"
           fi
 
           evidence_dir="coverage/sonar/evidence"
           mkdir -p "$evidence_dir/scope-issue-pages" "$evidence_dir/main-issue-pages"
 
           quality_gate_url="https://sonarcloud.io/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}&${scope}"
-          measures_url="https://sonarcloud.io/api/measures/component?component=${SONAR_PROJECT_KEY}&${scope}&metricKeys=coverage,new_coverage,line_coverage,lines_to_cover,uncovered_lines,duplicated_lines_density,new_duplicated_lines_density,duplicated_lines,ncloc,bugs,vulnerabilities,code_smells,reliability_rating,security_rating,sqale_rating,security_hotspots"
+          measures_url="https://sonarcloud.io/api/measures/component?component=${SONAR_PROJECT_KEY}&${scope}&metricKeys=coverage,new_coverage,new_lines_to_cover,new_uncovered_lines,line_coverage,lines_to_cover,uncovered_lines,duplicated_lines_density,new_duplicated_lines_density,duplicated_lines,ncloc,bugs,vulnerabilities,code_smells,reliability_rating,security_rating,sqale_rating,security_hotspots"
           main_quality_gate_url="https://sonarcloud.io/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}&branch=main"
-          main_measures_url="https://sonarcloud.io/api/measures/component?component=${SONAR_PROJECT_KEY}&branch=main&metricKeys=coverage,new_coverage,line_coverage,lines_to_cover,uncovered_lines,duplicated_lines_density,new_duplicated_lines_density,duplicated_lines,ncloc,bugs,vulnerabilities,code_smells,reliability_rating,security_rating,sqale_rating,security_hotspots"
+          main_measures_url="https://sonarcloud.io/api/measures/component?component=${SONAR_PROJECT_KEY}&branch=main&metricKeys=coverage,new_coverage,new_lines_to_cover,new_uncovered_lines,line_coverage,lines_to_cover,uncovered_lines,duplicated_lines_density,new_duplicated_lines_density,duplicated_lines,ncloc,bugs,vulnerabilities,code_smells,reliability_rating,security_rating,sqale_rating,security_hotspots"
           main_uncovered_url="https://sonarcloud.io/api/measures/component_tree?component=${SONAR_PROJECT_KEY}&branch=main&metricKeys=coverage,lines_to_cover,uncovered_lines&qualifiers=FIL&ps=100&s=metric&metricSort=uncovered_lines&asc=false"
           main_duplicated_url="https://sonarcloud.io/api/measures/component_tree?component=${SONAR_PROJECT_KEY}&branch=main&metricKeys=duplicated_lines_density,duplicated_lines,ncloc&qualifiers=FIL&ps=100&s=metric&metricSort=duplicated_lines&asc=false"
 
@@ -257,7 +259,7 @@ jobs:
             done
           }
 
-          fetch_issue_pages "$scope" "$evidence_dir/scope-issue-pages"
+          fetch_issue_pages "$issue_scope" "$evidence_dir/scope-issue-pages"
           fetch_issue_pages "branch=main" "$evidence_dir/main-issue-pages"
 
           jq -s '{total: (.[0].total // 0), issues: [.[].issues[]]}' "$evidence_dir"/scope-issue-pages/page-*.json > "$evidence_dir/scope-active-issues.json"
@@ -270,14 +272,17 @@ jobs:
             --arg candidateSha "$CANDIDATE_SHA" \
             --arg analysisId "$analysis_id" \
             --arg scope "$scope" \
+            --arg issueScope "$issue_scope" \
             --arg gateStatus "$gate_status" \
             --argjson scopeActiveIssues "$scope_issue_total" \
             --argjson mainActiveIssues "$main_issue_total" \
-            '{candidateSha:$candidateSha,analysisId:$analysisId,scope:$scope,gateStatus:$gateStatus,scopeActiveIssues:$scopeActiveIssues,mainActiveIssues:$mainActiveIssues}' \
+            '{candidateSha:$candidateSha,analysisId:$analysisId,scope:$scope,issueScope:$issueScope,gateStatus:$gateStatus,scopeActiveIssues:$scopeActiveIssues,mainActiveIssues:$mainActiveIssues}' \
             > "$evidence_dir/summary.json"
 
           echo "Sonar analysisId: ${analysis_id}"
           echo "SONAR_CANDIDATE_SHA=${CANDIDATE_SHA}"
+          echo "SONAR_SCOPE=${scope}"
+          echo "SONAR_ISSUE_SCOPE=${issue_scope}"
           echo "SONAR_SCOPE_ACTIVE_ISSUES=${scope_issue_total}"
           echo "SONAR_MAIN_ACTIVE_ISSUES=${main_issue_total}"
 
@@ -307,7 +312,7 @@ jobs:
 
           if [[ "$gate_status" != "OK" ]]; then
             echo "SONAR_QUALITY_GATE=${gate_status:-UNKNOWN}" >&2
-            echo "SonarQube Cloud Quality Gate is authoritative and must be OK before merge." >&2
+            echo "SonarQube Cloud Quality Gate is authoritative and must be OK on the exact candidate." >&2
             exit 1
           fi
 
