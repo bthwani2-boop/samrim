@@ -104,6 +104,7 @@ jobs:
             --test-reporter=lcov --test-reporter-destination=coverage/sonar/tools-dev.lcov \
             tools/dev/runtime-proof/resolve.test.mjs \
             tools/dev/runtime-proof/challenge-source.test.mjs \
+            tools/dev/runtime-proof/canonical-dsh-migration-history.test.mjs \
             tools/dev/runtime-proof/trusted-executables.test.mjs \
             tools/dev/check-go-format.test.mjs \
             tools/dev/ci-failure-diagnostics.test.mjs \

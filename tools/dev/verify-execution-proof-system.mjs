@@ -12,7 +12,7 @@ const forbidTokens = (body, label, tokens) => { for (const token of tokens) if (
 
 const runtimeProof = read("tools/dev/verify-dsh-runtime-core.mjs");
 const locationRuntimeProof = read("tools/dev/verify-dsh-location-runtime.mjs");
-requireTokens(locationRuntimeProof, "Location Core runtime proof", ["services/dsh/database/migrations", "dshMigrationNames.length", "DSH_SCHEMA_CANONICAL_HISTORY=PASS", "LOCATION_CORE_VERSION_CONCURRENCY=PASS", "LOCATION_CORE_IDEMPOTENCY=PASS", "LOCATION_CORE_DB_READBACK=PASS"]);
+requireTokens(locationRuntimeProof, "Location Core runtime proof", ["services/dsh/database/migrations", "readCanonicalDshMigrationNames(dshMigrationDirectory)", "assertCanonicalDshMigrationHistory(dshMigrationNames, schema, sql(canonicalDshMigrationHistoryQuery(dshMigrationNames)))", "LOCATION_CORE_VERSION_CONCURRENCY=PASS", "LOCATION_CORE_IDEMPOTENCY=PASS", "LOCATION_CORE_DB_READBACK=PASS"]);
 for (const stale of ['evidenceReference: `wallet-receipt-${suffix}`', 'statementReference: `official-wallet-statement-${suffix}`']) if (runtimeProof.includes(stale)) fail(`stale settlement proof contract=${stale}`);
 for (const required of ['"/dsh/operator/finance-evidence-documents"', '"TRANSFER_RECEIPT"', '"SETTLEMENT_STATEMENT"', "receiptDocumentId: transferReceiptDocumentID", "statementRowId: settlementStatementRowID", "settlementStatementRowRecorded"]) if (!runtimeProof.includes(required)) fail(`missing settlement proof contract=${required}`);
 console.log("RUNTIME_SETTLEMENT_PROOF_CONTRACT=PASS evidence=canonical reconciliation=statement-row");

@@ -5,17 +5,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { captureMailpitMessageIds, readMailpitCode } from "./mailpit-challenge.mjs";
 import { challengeSourceHeaders } from "./runtime-proof/challenge-source.mjs";
+import { assertCanonicalDshMigrationHistory, canonicalDshMigrationHistoryQuery, readCanonicalDshMigrationNames } from "./runtime-proof/canonical-dsh-migration-history.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const dshMigrationDirectory = path.resolve(root, "services/dsh/database/migrations");
-const dshMigrationNames = fs.readdirSync(dshMigrationDirectory, { withFileTypes: true })
-  .filter((entry) => entry.isFile() && /^\d{3}_.+\.sql$/.test(entry.name))
-  .map((entry) => entry.name)
-  .sort();
-if (dshMigrationNames.length === 0) throw new Error("canonical DSH migration set is empty");
-for (const [index, name] of dshMigrationNames.entries()) {
-  if (Number(name.slice(0, 3)) !== index + 1) throw new Error(`canonical DSH migration sequence is not contiguous: ${name}`);
-}
+const dshMigrationNames = readCanonicalDshMigrationNames(dshMigrationDirectory);
 const envArg = process.argv.find((arg) => arg.startsWith("--env-file="));
 const envPath = envArg ? path.resolve(root, envArg.slice("--env-file=".length)) : path.resolve(root, "infra/local/.env");
 if (process.env.CI !== "true" || process.env.BTHWANI_IDENTITY_PROOF_SCOPE !== "disposable-ci") {
@@ -148,11 +142,7 @@ async function createApprovedPartner(operatorID, phone, name, serviceCityId) {
 let exitCode = 1;
 try {
   const schema = sql("SELECT count(*) FROM dsh.schema_migrations");
-  const canonicalMigrationRows = dshMigrationNames.map((name, index) => `(${index + 1}, '${sqlLiteral(name)}')`).join(",");
-  const migrationHistoryMismatch = sql(`SELECT count(*) FROM (VALUES ${canonicalMigrationRows}) AS expected(version, name) LEFT JOIN dsh.schema_migrations actual USING (version) WHERE actual.name IS DISTINCT FROM expected.name`);
-  if (schema !== String(dshMigrationNames.length) || migrationHistoryMismatch !== "0") {
-    throw new Error(`DSH schema history differs from canonical migrations: count=${schema} expected=${dshMigrationNames.length} mismatches=${migrationHistoryMismatch}`);
-  }
+  assertCanonicalDshMigrationHistory(dshMigrationNames, schema, sql(canonicalDshMigrationHistoryQuery(dshMigrationNames)));
   if (sql("SELECT name FROM dsh.schema_migrations WHERE version=10") !== "010_central_catalog_refoundation.sql") throw new Error("Catalog refoundation migration is not canonical");
   if (sql("SELECT name FROM dsh.schema_migrations WHERE version=20") !== "020_field_standing_admission_and_joining_scope.sql") throw new Error("Field standing admission migration is not canonical");
   if (sql("SELECT name FROM dsh.schema_migrations WHERE version=21") !== "021_joining_case_store_origin.sql") throw new Error("Joining-case store-origin migration is not canonical");
