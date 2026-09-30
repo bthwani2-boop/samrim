@@ -24,8 +24,8 @@ const (
 )
 
 type conversationSeed struct {
-	firstMessageID       string
-	firstIdempotencyKey  string
+	firstMessageID      string
+	firstIdempotencyKey string
 }
 
 func TestOrderConversationReturnsLatestBoundedHistoryAndReplaysAfterClosure(t *testing.T) {
