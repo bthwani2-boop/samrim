@@ -114,6 +114,31 @@ function failedNxTarget(text) {
   return /^[-*]\s+([A-Za-z0-9._/-]+:[A-Za-z0-9._/-]+)\b/.exec(text)?.[1] ?? null;
 }
 
+function readFailedTasksLine(line, state, sourceCommand, logPath, failedTasksSection) {
+  if (!failedTasksSection) return { active: false, finding: null };
+  const target = failedNxTarget(line.text);
+  if (target) {
+    state.failedTargets.push(target);
+    return {
+      active: true,
+      finding: {
+        kind: "NX_TASK_FAILURE",
+        marker: "NX_TASK_FAILED",
+        sourceCommand,
+        target,
+        causalContextTarget: state.activeRuntimeTarget ?? state.terminalFailedTarget ?? target,
+        lineNumber: line.lineNumber,
+        artifactLog: artifactLogPath(logPath),
+        evidence: truncate(line.text),
+      },
+    };
+  }
+  return {
+    active: !/^(?:Run duration:|See more details|NX\s)/i.test(line.text),
+    finding: null,
+  };
+}
+
 export function analyzeCommandLog(logPath, sourceCommand = null) {
   const lines = readLogLines(logPath);
   const findings = [];
@@ -134,23 +159,11 @@ export function analyzeCommandLog(logPath, sourceCommand = null) {
       continue;
     }
 
-    if (failedTasksSection) {
-      const target = failedNxTarget(line.text);
-      if (target) {
-        state.failedTargets.push(target);
-        findings.push({
-          kind: "NX_TASK_FAILURE",
-          marker: "NX_TASK_FAILED",
-          sourceCommand,
-          target,
-          causalContextTarget: state.activeRuntimeTarget ?? state.terminalFailedTarget ?? target,
-          lineNumber: line.lineNumber,
-          artifactLog: artifactLogPath(logPath),
-          evidence: truncate(line.text),
-        });
-        continue;
-      }
-      if (/^(?:Run duration:|See more details|NX\s)/i.test(line.text)) failedTasksSection = false;
+    const failedTask = readFailedTasksLine(line, state, sourceCommand, logPath, failedTasksSection);
+    failedTasksSection = failedTask.active;
+    if (failedTask.finding) {
+      findings.push(failedTask.finding);
+      continue;
     }
 
     const classified = classifyFinding(line);

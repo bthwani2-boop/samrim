@@ -43,7 +43,9 @@
   },
   "tags": [
     "scope:app-captain",
-    "type:app"
+    "type:app",
+    "runtime:identity",
+    "runtime:dsh"
   ],
   "implicitDependencies": [
     "mobile-tooling"

@@ -20,10 +20,10 @@ func TestCatalogUpdateConvertersPreserveOmission(t *testing.T) {
 func TestCatalogUpdateConvertersPreserveExplicitEmpty(t *testing.T) {
 	t.Helper()
 
-	if got := catalogAttributeInputsFromContract([]contract.CatalogAttributeValueInput{}); got == nil {
+	if catalogAttributeInputsFromContract([]contract.CatalogAttributeValueInput{}) == nil {
 		t.Fatal("explicit empty attributeValues must remain non-nil")
 	}
-	if got := catalogVariantAttributeValueSets([]contract.CatalogVariantAttributeValueSet{}); got == nil {
+	if catalogVariantAttributeValueSets([]contract.CatalogVariantAttributeValueSet{}) == nil {
 		t.Fatal("explicit empty variantAttributeValues must remain non-nil")
 	}
 }

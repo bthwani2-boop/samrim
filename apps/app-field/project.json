@@ -43,7 +43,9 @@
   },
   "tags": [
     "scope:app-field",
-    "type:app"
+    "type:app",
+    "runtime:identity",
+    "runtime:dsh"
   ],
   "implicitDependencies": [
     "mobile-tooling"
