@@ -69,10 +69,10 @@ async function findOrBootstrapPrimaryOperator(
   if (operators.length > 1) {
     throw new Error(`DSH checker fixture requires deterministic primary Operator selection; found ${operators.length}`);
   }
-  if (operators.length === 1) {
-    const existing = operators[0];
-    expect(existing?.actorId).toMatch(/^act_/);
-    expect(existing?.phoneE164).toMatch(/^\+9677/);
+  const existing = operators[0];
+  if (existing) {
+    expect(existing.actorId).toMatch(/^act_/);
+    expect(existing.phoneE164).toMatch(/^\+9677/);
     return {
       actorId: String(existing.actorId),
       phone: String(existing.phoneE164),
