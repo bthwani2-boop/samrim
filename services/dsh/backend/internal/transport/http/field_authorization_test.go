@@ -91,9 +91,12 @@ func TestFieldOperatorRoutesRejectUnauthenticatedRequests(t *testing.T) {
 	testFieldRoutesRejectUnauthenticated(t, routes)
 }
 
-func TestFieldSessionMutationRoutesRejectUnauthenticatedRequests(t *testing.T) {
+func TestFieldSessionRoutesRejectUnauthenticatedRequests(t *testing.T) {
 	routes := []fieldRegisteredRoute{
+		{method: "GET", path: "/dsh/fields/me"},
 		{method: "POST", path: "/dsh/field/joining-cases"},
+		{method: "GET", path: "/dsh/field/joining-cases"},
+		{method: "GET", path: "/dsh/field/joining-cases/{caseId}"},
 		{method: "POST", path: "/dsh/field/joining-cases/{caseId}/submit"},
 	}
 	testFieldRoutesRejectUnauthenticated(t, routes)
