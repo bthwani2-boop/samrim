@@ -17,6 +17,7 @@ const liveRunner=read("tools/dev/run-playwright-live.mjs");
 const identityRuntimeProof=read("tools/dev/verify-identity-runtime.mjs");
 const dshRuntimeProof=read("tools/dev/verify-dsh-runtime-core.mjs");
 const dshLocationRuntimeProof=read("tools/dev/verify-dsh-location-runtime.mjs");
+const hostCleanup=dev.slice(dev.indexOf("function Stop-RepositoryHosts {"),dev.indexOf("\nswitch ($Target)"));
 const dshProject=JSON.parse(read("services/dsh/backend/project.json"));
 const ciRuntimeRunner=read("tools/dev/run-ci-runtime-proof.mjs");
 const liveIdentitySpec=read("apps/control-panel/tests/00-live-identity.spec.ts");
@@ -24,6 +25,9 @@ const liveIdentityHelpers=read("apps/control-panel/tests/live-identity-proof-hel
 const liveFinanceSpec=read("apps/control-panel/tests/finance-runtime.spec.ts");
 const liveDshOperatorSpec=read("apps/control-panel/tests/zz-dsh-operator.spec.ts");
 const check=(ok,msg)=>{if(!ok)fail.push(msg)};
+const cleanupPatternSources=[...hostCleanup.matchAll(/^\s*"\(\?i\)([^"]+)"[,]?$/gm)].map((match)=>match[1]);
+const escapedAppsRoot=path.join(root,"apps").replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+const ownedSurfaceMatches=(command)=>cleanupPatternSources.some((source)=>new RegExp(source.replace("$appsRoot",escapedAppsRoot),"i").test(command));
 
 const ps=spawnSync(resolveTrustedExecutable("pwsh"),["-NoProfile","-Command",
   "$e=$null;$t=$null;[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'tools/dev/dev.ps1'),[ref]$t,[ref]$e)|Out-Null;if($e.Count){exit 1}"
@@ -72,6 +76,16 @@ check(dev.includes("Compose (@('build') + $buildServices.ToArray())"),"changed b
 check(dev.includes("Compose @('ps', '-a', '--format', '{{.ID}}|{{.Service}}|{{.State}}|{{.Health}}')"),"backend readiness must use one canonical Compose state read per observation");
 check(!/\badb(?:\.exe)?\b/i.test(dev)&&!dev.toLowerCase().includes("scrcpy"),"dev.ps1 must not retain device or scrcpy ownership");
 check(!dev.includes("Active-Ports")&&!dev.includes("GetActiveTcpListeners"),"backend reuse must not trust occupied host ports");
+check(hostCleanup.includes("app-(?:client|partner|captain|field)")&&hostCleanup.includes("control-panel")&&hostCleanup.includes("node_modules")&&hostCleanup.includes("expo")&&hostCleanup.includes("next"),"runtime:down must select only the canonical Expo and Next surface entrypoints");
+check(!hostCleanup.includes("$command.Contains($Root"),"runtime:down must not terminate every Node process belonging to the repository");
+check(hostCleanup.includes("taskkill.exe /PID $processId /T /F"),"runtime:down must stop each owned surface process tree without killing unrelated repository processes");
+check(cleanupPatternSources.length===2,"runtime:down must expose exactly the two canonical app-surface process patterns");
+for(const [name,command,expected] of [
+  ["Expo",`node ${path.join(root,"apps/app-client/node_modules/expo/bin/cli")} start --dev-client --localhost`,true],
+  ["Next",`node ${path.join(root,"apps/control-panel/node_modules/next/dist/bin/next")} dev -H 127.0.0.1`,true],
+  ["Nx daemon",`node ${path.join(root,"node_modules/.pnpm/nx@23.2.0/node_modules/nx/dist/src/daemon/server/start.js")}`,false],
+  ["repository verifier",`node ${path.join(root,"tools/dev/verify-cache-contracts.mjs")}`,false],
+]) check(ownedSurfaceMatches(command)===expected,`runtime:down process selection mismatch for ${name}`);
 check(scr.includes("$env:ADB=$Adb"),"scr.ps1 must pin scrcpy to the exact ADB executable used by the script");
 check(scr.includes("--select-usb")&&scr.includes("--serial"),"scr.ps1 must preserve explicit USB-first and TCP selectors");
 check(scr.includes("SCRCPY_FAILOVER")&&scr.includes("SCRCPY_FAILBACK"),"scr.ps1 must preserve automatic TCP failover and USB failback");

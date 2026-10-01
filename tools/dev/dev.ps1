@@ -240,10 +240,21 @@ function Ensure-Backend {
 }
 
 function Stop-RepositoryHosts {
-    foreach ($process in @(Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue)) {
-        $command = [string]$process.CommandLine
-        if ($command.Contains($Root, [StringComparison]::OrdinalIgnoreCase)) {
-            Stop-Process -Id ([int]$process.ProcessId) -Force -ErrorAction SilentlyContinue
+    $appsRoot = [regex]::Escape((Join-Path $Root 'apps'))
+    $surfaceEntrypoints = @(
+        "(?i)$appsRoot[\\/]app-(?:client|partner|captain|field)[\\/]node_modules[\\/]expo[\\/]bin[\\/]cli(?:\.js)?\s+start(?:\s|$)",
+        "(?i)$appsRoot[\\/]control-panel[\\/]node_modules[\\/]next[\\/]dist[\\/]bin[\\/]next(?:\.js)?\s+dev(?:\s|$)"
+    )
+    $ownedRoots = @(Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction Stop | Where-Object {
+        $command = [string]$_.CommandLine
+        $command -and (@($surfaceEntrypoints | Where-Object { [regex]::IsMatch($command, $_) }).Count -gt 0)
+    })
+    foreach ($process in $ownedRoots) {
+        $processId = [int]$process.ProcessId
+        & taskkill.exe /PID $processId /T /F *> $null
+        if ($LASTEXITCODE -ne 0) {
+            $stillRunning = Get-CimInstance Win32_Process -Filter "ProcessId = $processId" -ErrorAction SilentlyContinue
+            if ($stillRunning) { Fail "LOCAL_SURFACE_STOP_FAILED process_id=$processId" }
         }
     }
 }
