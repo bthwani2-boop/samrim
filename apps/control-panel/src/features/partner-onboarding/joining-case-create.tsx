@@ -168,7 +168,7 @@ export function JoiningCaseCreate() {
   }, [verticalId]);
 
   async function createCase() {
-    const input: JoiningCaseCreateInput = {
+    const currentInput: JoiningCaseCreateInput = {
       contactPhoneE164: phone.replace(/\s+/g, ""),
       businessName: businessName.trim(),
       firstStoreName: storeName.trim(),
@@ -179,17 +179,18 @@ export function JoiningCaseCreate() {
       firstStoreLongitude: Number(longitude),
       firstStoreFulfillmentModes: fulfillmentModes,
     };
+    const attempt = pendingAttempt ?? {
+      input: currentInput,
+      idempotencyKey: `partner_joining_case_create_${crypto.randomUUID()}`,
+      correlationId: `partner_joining_case_create_corr_${crypto.randomUUID()}`,
+    };
+    const input = attempt.input;
     if (!phoneE164Pattern.test(input.contactPhoneE164) || input.businessName.length < 2 || input.firstStoreName.length < 2 || !input.serviceCityId || !input.firstStoreVerticalId || !input.firstStoreCommercialTypeId || input.firstStoreFulfillmentModes.length === 0 || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180) {
       setError("أدخل بيانات النشاط والمتجر ومدينة الخدمة والفئة الرئيسية ونوع المتجر وإحداثيات الموقع.");
       return;
     }
     setBusy(true);
     setError("");
-    const attempt = pendingAttempt ?? {
-      input,
-      idempotencyKey: `partner_joining_case_create_${crypto.randomUUID()}`,
-      correlationId: `partner_joining_case_create_corr_${crypto.randomUUID()}`,
-    };
     if (!pendingAttempt) {
       setPendingAttempt(attempt);
       try {

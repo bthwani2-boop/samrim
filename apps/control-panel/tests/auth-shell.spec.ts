@@ -911,7 +911,7 @@ test("Field reenrollment conflicts reload the canonical DSH-owned roster before 
   await page.getByText("الخطوة التالية", { exact: true }).click();
   await page.getByLabel("سبب الإجراء").fill("استرداد جهاز الميدان");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
-  await expect(page.getByText(/أُعيد تحميل الحالة الحالية/)).toBeVisible();
+  await expect(page.getByText(/^تغيرت حالة الحساب بالتزامن\. أُعيد تحميل الحالة الحالية/)).toBeVisible();
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toBeVisible();
 });
 
@@ -1288,6 +1288,7 @@ test("operator creates a product category under its commerce vertical", async ({
   await expect(page.getByRole("region", { name: "إدارة الفئات" }).getByRole("heading", { name: "الفئات", exact: true })).toBeVisible();
   await expect(page.locator(".catalog-taxonomy-workspace")).toHaveCount(1);
   await expect(page.locator(".catalog-taxonomy-workspace > .catalog-taxonomy-workbench")).toHaveCount(1);
+  await expect(page.locator(".catalog-taxonomy-section")).toHaveCount(2);
   await page.screenshot({ path: "test-results/catalog-taxonomy-workspace.png", fullPage: true });
   await expect(page.getByLabel("المعرف البرمجي للتصنيف", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "فئة رئيسية جديدة", exact: true }).click();
