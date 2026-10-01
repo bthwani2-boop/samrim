@@ -53,8 +53,8 @@ absent(localCheck, [
   /\bruntime:up\b/i,
   /\bruntime:down\b/i,
 ], "inner-loop check");
-check(!/targets\s*=\s*['\"][^'\"]*\bbuild\b/i.test(localCheck), "inner-loop targets must not include build");
-check(!/targets\s*=\s*['\"][^'\"]*export-smoke/i.test(localCheck), "inner-loop targets must not include export-smoke");
+check(!/targets\s*=\s*['"][^'"]*\bbuild\b/i.test(localCheck), "inner-loop targets must not include build");
+check(!/targets\s*=\s*['"][^'"]*export-smoke/i.test(localCheck), "inner-loop targets must not include export-smoke");
 
 check(surface.includes('args=[cli,"start","--dev-client","--localhost","--port",port]'), "mobile surface must start Expo directly");
 check(surface.includes('args=[cli,"dev","-H","127.0.0.1","-p",port]'), "Control surface must start Next directly");
