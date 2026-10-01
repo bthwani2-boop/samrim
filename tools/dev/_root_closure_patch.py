@@ -113,20 +113,4 @@ replace_once(
     '''  await expect(page.getByText(/سيُعتمد إصدار شروط التسوية partner-terms-v3/)).toBeVisible();''',
 )
 
-# Keep mocked joining cases aligned with the now-required commercial store type.
-for case_id in ["join_test"]:
-    pass
-replace_exact_count(
-    ts,
-    '''serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreFulfillmentModes:''',
-    '''serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreCommercialTypeId: "grocery-market", firstStoreFulfillmentModes:''',
-    4,
-)
-replace_exact_count(
-    ts,
-    '''serviceCityId: "sanaa", primaryVerticalId: "grocery", fulfillmentModes:''',
-    '''serviceCityId: "sanaa", primaryVerticalId: "grocery", commercialStoreTypeId: "grocery-market", fulfillmentModes:''',
-    3,
-)
-
 print("ROOT_CLOSURE_PATCH=APPLIED")
