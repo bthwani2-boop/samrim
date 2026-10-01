@@ -41,6 +41,27 @@ for (const required of ["git ls-files -s", "git ls-files --eol", "git diff --bin
 }
 const knowledgeInputs = tooling.namedInputs?.knowledge ?? [];
 if (!knowledgeInputs.includes("{workspaceRoot}/**/*.md")) failures.push("knowledge cache input must cover Markdown files scanned by knowledge verifiers");
+const runtimeOwnershipInputs = tooling.namedInputs?.runtimeOwnership ?? [];
+for (const required of [
+  "{workspaceRoot}/apps/control-panel/tests/00-live-identity.spec.ts",
+  "{workspaceRoot}/apps/control-panel/tests/finance-runtime.spec.ts",
+  "{workspaceRoot}/apps/control-panel/tests/live-identity-proof-helpers.ts",
+  "{workspaceRoot}/apps/control-panel/tests/zz-dsh-operator.spec.ts",
+  "{workspaceRoot}/.github/workflows/ci-runtime.yml",
+  "{workspaceRoot}/go.work",
+  "{workspaceRoot}/services/dsh/backend/project.json",
+  "{projectRoot}/scr.ps1",
+  "{projectRoot}/check-local.ps1",
+  "{projectRoot}/verify-local-candidate.ps1",
+  "{projectRoot}/safe-push.ps1",
+  "{projectRoot}/run-ci-runtime-proof.mjs",
+  "{projectRoot}/verify-dsh-runtime-core.mjs",
+  "{projectRoot}/verify-dsh-location-runtime.mjs",
+  "{projectRoot}/runtime-proof/trusted-executables.mjs",
+]) {
+  if (!runtimeOwnershipInputs.includes(required)) failures.push("runtimeOwnership cache input missing " + required);
+}
+if (!JSON.stringify(runtimeOwnershipInputs).includes("pwsh --version")) failures.push("runtimeOwnership cache input missing PowerShell tool version");
 const workspaceDependencyInputs = tooling.namedInputs?.workspaceDependencies ?? [];
 for (const required of [
   "{workspaceRoot}/apps/**/*.{ts,tsx,js,jsx,mjs,cjs,go}",

@@ -6,8 +6,6 @@ import { fileURLToPath } from "node:url";
 const toolDir=path.dirname(fileURLToPath(import.meta.url));
 const repoRoot=path.resolve(toolDir,"../..");
 const appsRoot=path.join(repoRoot,"apps");
-const surfaceRoot=process.cwd();
-const surface=path.basename(surfaceRoot);
 const envPath=path.join(repoRoot,"infra/local/.env");
 
 function fail(message){
@@ -15,7 +13,14 @@ function fail(message){
   process.exit(1);
 }
 
-if(path.dirname(surfaceRoot)!==appsRoot){
+const supportedSurfaces=new Set(["app-client","app-partner","app-captain","app-field","control-panel"]);
+const requestedSurface=(process.argv[2]??"").trim();
+if(requestedSurface&&!supportedSurfaces.has(requestedSurface)){
+  fail("UNSUPPORTED_LOCAL_SURFACE");
+}
+const surfaceRoot=requestedSurface?path.join(appsRoot,requestedSurface):process.cwd();
+const surface=path.basename(surfaceRoot);
+if(path.dirname(surfaceRoot)!==appsRoot||!supportedSurfaces.has(surface)){
   fail(`LOCAL_SURFACE_ROOT_REQUIRED cwd=${surfaceRoot} expected_parent=${appsRoot}`);
 }
 if(!fs.existsSync(envPath)){

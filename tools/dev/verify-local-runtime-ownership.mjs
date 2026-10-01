@@ -45,10 +45,12 @@ for(const [name,target] of Object.entries({dev:"daily","runtime:up":"up","runtim
 }
 check(pkg.scripts?.scr==="pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/scr.ps1","scr must route directly to the dedicated device owner");
 for(const [name,dir] of Object.entries({client:"app-client",partner:"app-partner",captain:"app-captain",field:"app-field",control:"control-panel"})){
-  check(pkg.scripts?.[name]===`pnpm --dir apps/${dir} dev`,`${name} must enter its own package directory`);
+  check(pkg.scripts?.[name]===`node tools/dev/start-surface.mjs ${dir}`,`${name} must invoke the shared launcher with its explicit app identity`);
   const surfacePkg=JSON.parse(read(`apps/${dir}/package.json`));
   check(surfacePkg.scripts?.dev==="node ../../tools/dev/start-surface.mjs",`${name} package must own direct dev startup`);
 }
+check(launcher.includes("const surfaceRoot=requestedSurface?path.join(appsRoot,requestedSurface):process.cwd()"),"root surface launch must resolve the selected app to its own package directory");
+check(launcher.includes("supportedSurfaces.has(requestedSurface)"),"surface launcher must validate explicit app identities before resolving a path");
 check(!Object.keys(pkg.scripts??{}).some((name)=>name.startsWith("world:")),"persistent synthetic world commands must remain absent");
 check(pkg.scripts?.["runtime:verify-ownership"]===undefined,"runtime ownership verifier must remain internal to candidate verification");
 check(pkg.scripts?.["runtime:reset"]===undefined&&pkg.scripts?.["runtime:purge"]===undefined,"unproven destructive runtime command aliases must remain absent");
