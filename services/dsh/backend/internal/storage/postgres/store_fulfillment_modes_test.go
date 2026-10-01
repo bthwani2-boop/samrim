@@ -16,9 +16,11 @@ func verifyStoreFulfillmentModes(t *testing.T, ctx context.Context, db *sql.DB) 
 		partnerActorID  = "act_partner_fulfillment_modes_v1"
 		operatorActorID = "act_operator_fulfillment_modes_v1"
 	)
-	if _, err := db.ExecContext(ctx, "INSERT INTO dsh.stores(id, partner_actor_id, name) VALUES($1,$2,$3)", storeID, partnerActorID, "Fulfillment Modes Store"); err != nil {
-		t.Fatalf("insert fulfillment mode Store fixture: %v", err)
-	}
+	insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{
+		ID:             storeID,
+		PartnerActorID: partnerActorID,
+		Name:           "Fulfillment Modes Store",
+	})
 
 	_, err := postgres.SetStoreFulfillmentModes(ctx, db, storeID, operatorActorID, nil, 1, "idem-mode-empty-v1", "corr-mode-empty-v1")
 	requireStoreFulfillmentModesError(t, err, postgres.ErrFulfillmentModesInvalid)

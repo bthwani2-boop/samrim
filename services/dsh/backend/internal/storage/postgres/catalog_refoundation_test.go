@@ -335,8 +335,8 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 				VALUES($1,$2,$3,'pending_identity',$4)`, "captain_"+suffix, phone, "كابتن "+suffix, createdAt); err != nil {
 				t.Fatalf("insert Captain admission fixture %s: %v", suffix, err)
 			}
-			if _, err := db.ExecContext(ctx, `INSERT INTO dsh.field_admissions(id,contact_phone_e164,full_name_ar,state,created_at)
-				VALUES($1,$2,$3,'pending_identity',$4)`, "field_"+suffix, fmt.Sprintf("+967770011%03d", index+1), "مندوب "+suffix, createdAt); err != nil {
+			if _, err := db.ExecContext(ctx, `INSERT INTO dsh.field_admissions(id,contact_phone_e164,full_name_ar,service_city_id,state,created_at)
+				VALUES($1,$2,$3,$4,'pending_identity',$5)`, "field_"+suffix, fmt.Sprintf("+967770011%03d", index+1), "مندوب "+suffix, createdCity.City.ID, createdAt); err != nil {
 				t.Fatalf("insert Field admission fixture %s: %v", suffix, err)
 			}
 		}
