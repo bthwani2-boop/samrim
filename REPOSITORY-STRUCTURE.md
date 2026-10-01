@@ -171,25 +171,8 @@ CENSUS OWNER + PRODUCERS + CONSUMERS + BUILD/RUNTIME/TEST REFERENCES
 → CREATE/SELECT TARGET OWNER
 → MOVE/REFINE REQUIRED VALUE
 → CUT OVER CONSUMERS / CONTRACTS / GENERATION / RUNTIME / TESTS
-→ VERIFY EXACT CANDIDATE
 → DELETE LOSING PATH / ALIASES / SHADOWS
 → FRESH RESIDUE CENSUS
 ```
 
 Compatibility aliases require a proven coexistence need and explicit deletion trigger.
-
-## 9. Verification contract
-
-`pnpm verify` is the stable public local verification entrypoint.
-
-It selects current structural/hygiene/dependency/project-graph checks from the exact candidate. Internal verifier filenames are implementation detail, not permanent documentation inventory.
-
-Run runtime/journey proof only when a structural change materially affects behavior, contracts, persistence, deployable identity, runtime or users. Structural verifiers prove observable placement invariants; they do not replace ownership reasoning.
-
-```text
-PROVE THE RESPONSIBILITY FIRST.
-PLACE IT AT ONE CANONICAL OWNER.
-DISCOVER CURRENT INVENTORY FROM SOURCE / PROJECT GRAPH.
-CREATE ONLY WHAT CURRENT WORK NEEDS.
-NEVER GROW A SECOND TREE FOR THE SAME MEANING.
-```

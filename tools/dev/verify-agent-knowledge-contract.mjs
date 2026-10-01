@@ -33,6 +33,7 @@ const agent = requireTokens("AGENTS.md", [
   "GOVERNANCE_IMPACT=REVALIDATE_ONLY",
   "GOVERNANCE_IMPACT=UPDATE_REQUIRED",
   "GOVERNANCE_IMPACT=DEFECT_FOUND",
+  "pnpm check",
   "pnpm verify",
   "pnpm safe:push",
   "SMALLEST DIFF != SIMPLEST SYSTEM",
@@ -54,10 +55,10 @@ const structure = requireTokens("REPOSITORY-STRUCTURE.md", [
   "CURRENT_IMPLEMENTATION_INVENTORY_AUTHORITY: NONE",
   "Current app/service/package members are discovered from the exact project graph/source",
   "This is a placement grammar, not current inventory",
-  "`pnpm verify` is the stable public local verification entrypoint.",
   "governance-and-docs/docs/reference/competitors/",
   "Task authorization, branch/order instructions, checkpoint cadence and promotion constraints belong to current user/task authority outside durable tracked repository content",
 ]);
+if (/\bpnpm\s+(?:check|verify|safe:push)\b/.test(structure)) failures.push("REPOSITORY-STRUCTURE.md must not own the local execution interface");
 const retainedMatrixPath = "tools/BTHWANI_FULL_PLATFORM_CLOSURE_MATRIX.md";
 const retainedMatrixEvidenceRule =
   structure.includes(`The user-directed \`${retainedMatrixPath}\` is the sole admitted retained task-evidence exception`) &&
