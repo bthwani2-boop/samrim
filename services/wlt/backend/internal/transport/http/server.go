@@ -619,14 +619,14 @@ type partnerFinancialTermsPolicyResponse struct {
 }
 
 type partnerFinancialTermsPolicyJSON struct {
-	ID                string  `json:"id"`
-	PolicyVersion     string  `json:"policyVersion"`
-	State             string  `json:"state"`
-	SettlementPeriod  string  `json:"settlementPeriod"`
-	Version           int     `json:"version"`
-	CreatedBy         string  `json:"createdBy"`
-	CreatedAt         string  `json:"createdAt"`
-	RetiredAt         *string `json:"retiredAt"`
+	ID               string  `json:"id"`
+	PolicyVersion    string  `json:"policyVersion"`
+	State            string  `json:"state"`
+	SettlementPeriod string  `json:"settlementPeriod"`
+	Version          int     `json:"version"`
+	CreatedBy        string  `json:"createdBy"`
+	CreatedAt        string  `json:"createdAt"`
+	RetiredAt        *string `json:"retiredAt"`
 }
 
 type createPartnerFinancialTermsPolicyRequest struct {

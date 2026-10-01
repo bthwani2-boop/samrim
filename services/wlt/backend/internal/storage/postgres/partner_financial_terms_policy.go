@@ -16,23 +16,23 @@ var (
 )
 
 type PartnerFinancialTermsPolicyRecord struct {
-	ID                string
-	PolicyVersion     string
-	State             string
-	SettlementPeriod  string
-	Version           int
-	CreatedBy         string
-	CreatedAt         time.Time
-	RetiredAt         *time.Time
+	ID               string
+	PolicyVersion    string
+	State            string
+	SettlementPeriod string
+	Version          int
+	CreatedBy        string
+	CreatedAt        time.Time
+	RetiredAt        *time.Time
 }
 
 type CreatePartnerFinancialTermsPolicyInput struct {
-	SettlementPeriod  string
-	ExpectedVersion   int
-	Reason            string
-	ActingActorID     string
-	IdempotencyKey    string
-	CorrelationID     string
+	SettlementPeriod string
+	ExpectedVersion  int
+	Reason           string
+	ActingActorID    string
+	IdempotencyKey   string
+	CorrelationID    string
 }
 
 func HashPartnerFinancialTermsPolicyRequest(input CreatePartnerFinancialTermsPolicyInput) string {
