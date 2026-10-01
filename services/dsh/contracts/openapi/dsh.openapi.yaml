@@ -589,6 +589,9 @@ paths:
   /dsh/operator/fields/{fieldActorId}/financial-summary:
     $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1fields~1{fieldActorId}~1financial-summary"
 
+  /dsh/operator/fields/{fieldActorId}/acquisition-cases:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1fields~1{fieldActorId}~1acquisition-cases"
+
   /dsh/operator/field-acquisition-reward-policies:
     $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1field-acquisition-reward-policies"
 

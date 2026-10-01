@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
@@ -46,9 +47,57 @@ func NewFieldFinance(identity *identityintegration.Client, accessToken string, p
 func (s *FieldFinanceServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/fields/me/financial-summary", s.readOwnSummary)
 	mux.HandleFunc("GET /dsh/fields/me/acquisition-entitlements", s.listOwnAcquisitionEntitlements)
+	mux.HandleFunc("GET /dsh/operator/fields/{fieldActorId}/acquisition-cases", s.listOperatorAcquisitionCases)
 	mux.HandleFunc("GET /dsh/operator/fields/{fieldActorId}/financial-summary", s.readOperatorSummary)
 	mux.HandleFunc("POST /dsh/operator/field-acquisition-reward-policies", s.createPolicy)
 	mux.HandleFunc("GET /dsh/operator/field-acquisition-reward-policies", s.readPolicyByScope)
+}
+
+func (s *FieldFinanceServer) listOperatorAcquisitionCases(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeOperator(w, r) {
+		return
+	}
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if !s.requireOperator(w, r.Context(), acting) {
+		return
+	}
+	if !s.requirePermission(w, r.Context(), acting, "partners") {
+		return
+	}
+	fieldActorID := strings.TrimSpace(r.PathValue("fieldActorId"))
+	if fieldActorID == "" || len(fieldActorID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "fieldActorId is required")
+		return
+	}
+	limit := 25
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 50 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "limit must be between 1 and 50")
+			return
+		}
+		limit = parsed
+	}
+	cursor := r.URL.Query().Get("cursor")
+	if len(cursor) > 512 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "field acquisition case cursor is invalid")
+		return
+	}
+	page, err := postgres.ListJoiningCasesForField(r.Context(), s.db, fieldActorID, r.URL.Query().Get("q"), limit, cursor)
+	if err != nil {
+		if errors.Is(err, postgres.ErrJoiningCaseInvalidLimit) || errors.Is(err, postgres.ErrJoiningCaseInvalidSearch) || errors.Is(err, postgres.ErrJoiningCaseInvalidCursor) {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "field acquisition case query is invalid")
+		} else {
+			writeError(w, http.StatusBadGateway, "FIELD_ACQUISITION_READ_UNAVAILABLE", "field acquisition cases could not be read")
+		}
+		return
+	}
+	items := make([]contract.JoiningCaseSummary, 0, len(page.Cases))
+	for _, item := range page.Cases {
+		items = append(items, contract.JoiningCaseSummary{ID: item.ID, ContactPhoneE164: item.ContactPhoneE164, BusinessName: item.BusinessName, FirstStoreName: item.FirstStoreName, ServiceCityID: item.FirstStoreServiceCityID, FirstStoreVerticalID: item.FirstStoreVerticalID, FirstStoreCommercialTypeID: item.FirstStoreCommercialTypeID, FirstStoreLatitude: nullableFloatValue(item.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(item.FirstStoreLongitude), Origin: contract.JoiningCaseOrigin(item.Origin), PartnerActorID: item.PartnerActorID, State: contract.JoiningCaseState(item.State), CorrectionReason: item.CorrectionReason, ReviewedBy: item.ReviewedBy, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, contract.JoiningCaseListResponse{Cases: items, NextCursor: page.NextCursor})
 }
 
 func (s *FieldFinanceServer) listOwnAcquisitionEntitlements(w http.ResponseWriter, r *http.Request) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { toAsciiDigits } from "@bthwani/design-system";
-import { type FieldAdmission, type ServiceCity, type ServiceCityListResponse, fieldAdmissionStateLabel } from "@bthwani/dsh";
+import { type FieldAdmission, type JoiningCaseListResponse, type ServiceCity, type ServiceCityListResponse, fieldAdmissionStateLabel, joiningCaseStateLabel } from "@bthwani/dsh";
 import type { ActorRoleView } from "@bthwani/identity";
 import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./field-workbench.module.css";
@@ -11,6 +11,7 @@ import { responseMessage } from "../access/identity-error-message";
 type FieldAccount = ActorRoleView & Readonly<{ admission: FieldAdmission | null }>;
 type FieldWorkbenchItem = Readonly<{ kind: "candidate"; admission: FieldAdmission }> | Readonly<{ kind: "account"; account: FieldAccount }>;
 type FieldPage = Readonly<{ items: ReadonlyArray<FieldWorkbenchItem>; nextCursor?: string }>;
+type FieldAcquisitionCase = JoiningCaseListResponse["cases"][number];
 type AdmissionMutationResponse = Readonly<{ admission?: FieldAdmission }>;
 
 function fieldRequestError(cause: unknown, fallback: string): string {
@@ -55,6 +56,9 @@ export function FieldAdmissionPanel() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [acquisitionCases, setAcquisitionCases] = useState<Record<string, JoiningCaseListResponse>>({});
+  const [acquisitionCaseErrors, setAcquisitionCaseErrors] = useState<Record<string, string>>({});
+  const [acquisitionCaseBusy, setAcquisitionCaseBusy] = useState<Record<string, boolean>>({});
   const loadRequestID = useRef(0);
 
   useEffect(() => {
@@ -88,6 +92,29 @@ export function FieldAdmissionPanel() {
       if (loadRequestID.current === requestID) { setLoading(false); setLoadingMore(false); }
     }
   }, [query]);
+
+  async function loadAcquisitionCases(fieldActorId: string, cursor = "", append = false) {
+    setAcquisitionCaseBusy((current) => ({ ...current, [fieldActorId]: true }));
+    setAcquisitionCaseErrors((current) => ({ ...current, [fieldActorId]: "" }));
+    try {
+      const params = new URLSearchParams({ limit: "25" });
+      if (cursor) params.set("cursor", cursor);
+      const response = await identityFetch(`/api/fields/${encodeURIComponent(fieldActorId)}/acquisition-cases?${params.toString()}`, { cache: "no-store" });
+      if (!response.ok) throw new Error(await responseMessage(response));
+      const page = await response.json() as JoiningCaseListResponse;
+      setAcquisitionCases((current) => ({
+        ...current,
+        [fieldActorId]: append && current[fieldActorId] ? {
+          cases: [...current[fieldActorId].cases, ...page.cases],
+          ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
+        } : page,
+      }));
+    } catch (cause) {
+      setAcquisitionCaseErrors((current) => ({ ...current, [fieldActorId]: fieldRequestError(cause, "تعذرت قراءة رحلات ضم الشركاء لهذا الميداني.") }));
+    } finally {
+      setAcquisitionCaseBusy((current) => ({ ...current, [fieldActorId]: false }));
+    }
+  }
 
   useEffect(() => { const timer = window.setTimeout(() => { void load(); }, 250); return () => window.clearTimeout(timer); }, [load]);
   useEffect(() => {
@@ -229,6 +256,8 @@ export function FieldAdmissionPanel() {
           const name = profileEdits[field.actorId] ?? admission?.fullNameAr ?? "";
           const reason = reasons[field.actorId] ?? "";
           const legacyReview = requiresProfileReview && admission?.state === "suspended";
+          const fieldAcquisitionPage = acquisitionCases[field.actorId];
+          const fieldAcquisitionBusy = acquisitionCaseBusy[field.actorId] ?? false;
           return <tr key={`account:${field.actorId}`}>
             <th scope="row"><strong>{admission?.fullNameAr || "حساب بلا ملف اسم مكتمل"}</strong><br /><bdi dir="ltr">{field.phoneE164}</bdi></th>
             <td>{admissionStatusLabel(admission)}{admission ? <><br /><span className="muted">الإصدار {admission.version}</span></> : null}</td>
@@ -240,7 +269,26 @@ export function FieldAdmissionPanel() {
               {(field.activatedAt || shouldDisable) && (shouldDisable || !requiresProfileReview) ? <button type="button" className={shouldDisable ? "button button-secondary" : "button button-primary"} disabled={Boolean(busy) || Array.from(reason.trim()).length < 5} onClick={() => void mutateAccount(field, shouldDisable ? "disable" : "activate")}>{busy === field.actorId ? "جارٍ التحديث…" : shouldDisable ? "إيقاف الوصول" : "إعادة التفعيل"}</button> : null}
               {requiresProfileReview && !mustDisable && !field.enabled ? <span className="muted">أكمل مراجعة الملف قبل إعادة التفعيل.</span> : null}
               <a className="button button-secondary" href={`/finance/beneficiary-settlement/field?search=${encodeURIComponent(field.actorId)}`}>كشف المحفظة والحركات المالية</a>
-            </div></details> : <span className="muted">راجع الأهلية قبل إتاحة العمل الميداني.</span>}</td>
+            </div></details> : <span className="muted">راجع الأهلية قبل إتاحة العمل الميداني.</span>}
+              <details className="field-row-disclosure" onToggle={(event) => {
+                if (event.currentTarget.open && !acquisitionCases[field.actorId] && !acquisitionCaseBusy[field.actorId]) void loadAcquisitionCases(field.actorId);
+              }}>
+                <summary className="button button-secondary">الشركاء ورحلات الانضمام</summary>
+                <div className="field-row-actions">
+                  {fieldAcquisitionBusy && !fieldAcquisitionPage ? <span className="muted" role="status">جارٍ قراءة رحلات DSH…</span> : null}
+                  {acquisitionCaseErrors[field.actorId] ? <><span className="identity-error" role="alert">{acquisitionCaseErrors[field.actorId]}</span><button type="button" className="button button-secondary" disabled={fieldAcquisitionBusy} onClick={() => void loadAcquisitionCases(field.actorId)}>إعادة المحاولة</button></> : null}
+                  {fieldAcquisitionPage?.cases.map((partnerCase: FieldAcquisitionCase) => <div key={partnerCase.id} className="field-row-actions">
+                    <strong>{partnerCase.businessName}</strong>
+                    <span>{partnerCase.firstStoreName}</span>
+                    <span className="muted">حالة طلب الشريك: {joiningCaseStateLabel(partnerCase.state)}</span>
+                    {partnerCase.state === "needs_correction" && partnerCase.correctionReason ? <span className="muted">المطلوب استكماله: {partnerCase.correctionReason}</span> : null}
+                    {partnerCase.partnerActorId ? <span className="muted">حساب الشريك مرتبط</span> : null}
+                  </div>)}
+                  {!fieldAcquisitionBusy && !acquisitionCaseErrors[field.actorId] && fieldAcquisitionPage?.cases.length === 0 ? <span className="muted">لا توجد رحلات انضمام منسوبة إلى هذا الحساب في DSH.</span> : null}
+                  {fieldAcquisitionPage?.nextCursor ? <button type="button" className="button button-secondary" disabled={fieldAcquisitionBusy} onClick={() => void loadAcquisitionCases(field.actorId, fieldAcquisitionPage.nextCursor, true)}>{fieldAcquisitionBusy ? "جارٍ تحميل المزيد…" : "تحميل رحلات أقدم"}</button> : null}
+                </div>
+              </details>
+            </td>
           </tr>;
         })}
       </tbody></table></div> : null}

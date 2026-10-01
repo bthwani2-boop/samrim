@@ -549,6 +549,15 @@ export async function listOperatorFinancialStatementSummaries(actorType: Operato
   return (await requestDshJson<OperatorFinancialStatementSummaryRegistry>(dshOperationPaths.listOperatorFinancialStatementSummaries.method, `${dshOperationPaths.listOperatorFinancialStatementSummaries.path}?${query.toString()}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
+export async function listOperatorFieldAcquisitionCases(fieldActorId: string, queryText: string, limit: number, cursor: string, context: DshOperatorReadContext): Promise<JoiningCaseListResponse> {
+  if (!fieldActorId.trim() || fieldActorId.length > 128 || queryText.trim().length > 100 || !Number.isInteger(limit) || limit < 1 || limit > 50 || cursor.length > 512 || !context.operatorActorId.trim()) throw new Error("DSH_FIELD_ACQUISITION_QUERY_INVALID");
+  const path = dshOperationPaths.listOperatorFieldAcquisitionCases.path.replace("{fieldActorId}", encodeURIComponent(fieldActorId.trim()));
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (queryText.trim()) query.set("q", queryText.trim());
+  if (cursor.trim()) query.set("cursor", cursor.trim());
+  return (await requestDshJson<JoiningCaseListResponse>(dshOperationPaths.listOperatorFieldAcquisitionCases.method, `${path}?${query.toString()}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
 export async function createOperatorSettlementBatch(payoutIds: readonly string[], context: JoiningCaseMutationContext): Promise<Readonly<{ batch: SettlementBatch }>> {
   if (!payoutIds.length || payoutIds.length > 100 || payoutIds.some((id) => !id.trim())) throw new Error("DSH_SETTLEMENT_BATCH_INPUT_INVALID");
   validateAttributedMutationContext(context);
