@@ -45,6 +45,11 @@ jobs:
     env:
       DSH_DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable
       IDENTITY_DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable
+      WLT_TEST_DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable
+      BTHWANI_EXPECTED_DATABASE_HOST: 127.0.0.1
+      BTHWANI_EXPECTED_DATABASE_PORT: "5432"
+      BTHWANI_EXPECTED_DATABASE_NAME: postgres
+      BTHWANI_EXPECTED_DATABASE_USER: postgres
       CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
     if: >
