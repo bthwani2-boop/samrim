@@ -81,30 +81,51 @@ function Get-FileSha256([string]$Path) {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
-function Test-RuntimeBuildMaterial([System.IO.FileInfo]$File) {
-    if ($File.Name -in @('Dockerfile', 'go.mod', 'go.sum')) { return $true }
-    if ($File.Extension -eq '.sql') { return $true }
-    if ($File.Extension -eq '.go' -and -not $File.Name.EndsWith('_test.go', [StringComparison]::OrdinalIgnoreCase)) { return $true }
+function Test-RuntimeBuildPath([string]$RelativePath) {
+    $name = [IO.Path]::GetFileName($RelativePath)
+    $extension = [IO.Path]::GetExtension($RelativePath)
+    if ($name -in @('Dockerfile', 'go.mod', 'go.sum')) { return $true }
+    if ($extension -eq '.sql') { return $true }
+    if ($extension -eq '.go' -and -not $name.EndsWith('_test.go', [StringComparison]::OrdinalIgnoreCase)) { return $true }
     return $false
 }
 
-function Get-PathFingerprint([string[]]$PathSpecs) {
-    $files = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
-    foreach ($pathSpec in $PathSpecs) {
-        $absolute = Join-Path $Root ($pathSpec -replace '/', [IO.Path]::DirectorySeparatorChar)
-        if (Test-Path -LiteralPath $absolute -PathType Leaf) {
-            $files.Add((Get-Item -LiteralPath $absolute -Force))
-            continue
-        }
-        if (Test-Path -LiteralPath $absolute -PathType Container) {
-            foreach ($file in @(Get-ChildItem -LiteralPath $absolute -Recurse -Force -File | Where-Object { Test-RuntimeBuildMaterial $_ })) { $files.Add($file) }
-        }
+function Get-GitObjectID([string]$PathSpec) {
+    $output = @(& git -C $Root rev-parse --verify "HEAD:$PathSpec" 2>$null)
+    if ($LASTEXITCODE -ne 0) { return 'missing' }
+    return (($output -join '').Trim())
+}
+
+function Get-WorkingTreeMaterialRecords([string[]]$PathSpecs) {
+    $paths = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($path in @(& git -C $Root diff --name-only HEAD -- @PathSpecs)) {
+        if ($LASTEXITCODE -ne 0) { Fail 'GIT_RUNTIME_DIFF_FAILED' }
+        $normalized = ([string]$path).Trim().Replace('\', '/')
+        if ($normalized) { [void]$paths.Add($normalized) }
+    }
+    foreach ($path in @(& git -C $Root ls-files --others --exclude-standard -- @PathSpecs)) {
+        if ($LASTEXITCODE -ne 0) { Fail 'GIT_RUNTIME_UNTRACKED_FAILED' }
+        $normalized = ([string]$path).Trim().Replace('\', '/')
+        if ($normalized) { [void]$paths.Add($normalized) }
     }
 
     $records = [System.Collections.Generic.List[string]]::new()
-    foreach ($file in @($files | Sort-Object FullName -Unique)) {
-        $relative = [IO.Path]::GetRelativePath($Root, $file.FullName).Replace('\', '/')
-        $records.Add("$relative=$(Get-FileSha256 $file.FullName)")
+    foreach ($relative in @($paths | Sort-Object)) {
+        if ($relative -ne '.dockerignore' -and -not (Test-RuntimeBuildPath $relative)) { continue }
+        $absolute = Join-Path $Root ($relative -replace '/', [IO.Path]::DirectorySeparatorChar)
+        $records.Add("$relative=$(Get-FileSha256 $absolute)")
+    }
+    return $records
+}
+
+function Get-PathFingerprint([string[]]$PathSpecs) {
+    $records = [System.Collections.Generic.List[string]]::new()
+    foreach ($pathSpec in @($PathSpecs | Sort-Object -Unique)) {
+        $normalized = $pathSpec.Replace('\', '/')
+        $records.Add("git:$normalized=$(Get-GitObjectID $normalized)")
+    }
+    foreach ($record in @(Get-WorkingTreeMaterialRecords $PathSpecs)) {
+        $records.Add("work:$record")
     }
     return (Get-TextSha256 ($records -join "`n"))
 }
@@ -112,7 +133,7 @@ function Get-PathFingerprint([string[]]$PathSpecs) {
 function Get-BackendInputState {
     if (-not (Test-Path -LiteralPath $EnvPath -PathType Leaf)) { Fail "LOCAL_ENV_MISSING path=$EnvPath" }
     return @{
-        schema   = 2
+        schema   = 3
         compose  = (Get-FileSha256 $ComposePath)
         env      = (Get-FileSha256 $EnvPath)
         identity = (Get-PathFingerprint @('.dockerignore', 'services/identity/backend', 'services/identity/database/migrations'))
@@ -125,7 +146,7 @@ function Read-BackendInputState {
     if (-not (Test-Path -LiteralPath $RuntimeStatePath -PathType Leaf)) { return $null }
     try {
         $state = Get-Content -LiteralPath $RuntimeStatePath -Raw | ConvertFrom-Json -AsHashtable
-        if ($state['schema'] -ne 2) { return $null }
+        if ($state['schema'] -ne 3) { return $null }
         return $state
     }
     catch {
