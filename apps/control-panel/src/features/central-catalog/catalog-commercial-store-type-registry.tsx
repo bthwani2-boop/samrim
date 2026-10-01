@@ -47,8 +47,6 @@ export function CatalogCommercialStoreTypeRegistry({ verticals, verticalId }: { 
     finally { setLoading(false); }
   }, [verticalId]);
 
-  useEffect(() => { clearEditor(); setNotice(""); void reload(); }, [reload]);
-
   function edit(item: CommercialStoreType) {
     setSelected(item);
     setEditorOpen(true);
@@ -60,14 +58,16 @@ export function CatalogCommercialStoreTypeRegistry({ verticals, verticalId }: { 
     setNotice("");
   }
 
-  function clearEditor() {
+  const clearEditor = useCallback(() => {
     setSelected(null);
     setEditorOpen(false);
     setNameAr("");
     setNameEn("");
     setActive(true);
     setReason("");
-  }
+  }, []);
+
+  useEffect(() => { clearEditor(); setNotice(""); void reload(); }, [clearEditor, reload]);
 
   async function save() {
     if (!canEdit || !verticalId) return;
