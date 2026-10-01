@@ -95,6 +95,8 @@ try {
     $env:CANDIDATE_SHA = $head
     $env:NX_BASE = $BaseSha
     $env:NX_HEAD = $head
+    $env:NX_NO_CLOUD = 'true'
+    $env:NX_DAEMON = 'true'
 
     $steps = @(
         @{ Name = 'local-invariants'; Command = @('pnpm','exec','nx','run-many','-t','donor-residue','repository-structure','structural-hygiene','runtime-ownership','removed-domain-residue','cache-contracts','docs-command-parity','docs-config-parity','knowledge-system','knowledge-references','agent-contract','workspace-dependencies','go-workspace-sync','nx-project-tags','mobile-config','brand','theme-check','theme-verify','powershell-syntax','knip','compose-config','--outputStyle=static','--parallel=2','--nxBail=false') },
