@@ -8,6 +8,8 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 const data = (relative) => JSON.parse(read(relative));
 
 const nx = data("nx.json");
+const nxIgnore = read(".nxignore").split(/\r?\n/).map((entry) => entry.trim());
+if (!nxIgnore.includes(".kilo/worktrees/")) failures.push("Nx must ignore local auxiliary worktrees");
 const ciProject = data(".github/project.json");
 const executionProofInputs = ciProject.targets?.["execution-proof-system"]?.inputs ?? [];
 if (executionProofInputs.includes("{workspaceRoot}/**/*")) failures.push("repository-ci:execution-proof-system must not hash the entire repository");
@@ -40,7 +42,7 @@ for (const required of ["git ls-files -s", "git ls-files --eol", ".gitattributes
 const projects = [];
 function discoverProjects(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (["node_modules", ".git", ".nx", ".next", "dist", "build", "coverage", ".cache"].includes(entry.name)) continue;
+    if (["node_modules", ".git", ".nx", ".next", ".kilo", "dist", "build", "coverage", ".cache"].includes(entry.name)) continue;
     const absolute = path.join(dir, entry.name);
     if (entry.isDirectory()) discoverProjects(absolute);
     else if (entry.isFile() && entry.name === "project.json") projects.push(path.relative(root, absolute).replaceAll(path.sep, "/"));

@@ -280,6 +280,7 @@
       "cache": true,
       "inputs": [
         "{workspaceRoot}/nx.json",
+        "{workspaceRoot}/.nxignore",
         "{workspaceRoot}/**/project.json",
         "{projectRoot}/verify-cache-contracts.mjs",
         "{projectRoot}/hash-control-panel-secret-input.mjs",

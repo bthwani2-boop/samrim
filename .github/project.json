@@ -47,7 +47,6 @@
         "{workspaceRoot}/tools/dev/verify-cache-contracts.mjs",
         "{workspaceRoot}/tools/dev/hash-control-panel-secret-input.mjs",
         "{workspaceRoot}/tools/mobile/hash-mobile-secret-input.mjs",
-        "{workspaceRoot}/.nx/**/*",
         {
           "runtime": "node --version"
         }
