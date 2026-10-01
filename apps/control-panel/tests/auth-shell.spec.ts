@@ -106,6 +106,7 @@ async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "f
   await expect(page.locator(candidateNameSelector)).toHaveValue(reviewedName);
   await page.getByRole("button", { name: "اعتماد الملف", exact: true }).click();
   if (role === "field") {
+    await expect(page.getByText("اعتُمد الملف وأُعيدت قراءته؛ أصبح منح الدور خطوته التالية.")).toBeVisible();
     if (!(await page.getByRole("button", { name: "منح دور الميداني" }).isVisible())) await page.getByText("الخطوة التالية", { exact: true }).click();
   } else {
     await page.locator(`#${role}-candidate-state`).selectOption("pending_identity");
@@ -1099,8 +1100,8 @@ test("operator creates a DSH-owned joining case from prospective partner facts",
   await page.getByLabel("الاسم القانوني للنشاط").fill("نشاط الاختبار");
   await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
   await page.getByLabel("مدينة المتجر الأول").selectOption("sanaa");
-  await page.getByLabel("الفئة الرئيسية", { exact: true }).selectOption("grocery");
-  await page.getByLabel("نوع المتجر التجاري", { exact: true }).selectOption("grocery-market");
+  await page.locator("#joining-vertical").selectOption("grocery");
+  await page.locator("#joining-commercial-type").selectOption("grocery-market");
   await page.getByLabel("خط عرض موقع المتجر").fill("15.369445");
   await page.getByLabel("خط طول موقع المتجر").fill("44.191006");
   const fulfillmentModes = page.getByRole("group", { name: "أوضاع الطلب التي اختارها الشريك عند الانضمام" });
@@ -1142,8 +1143,8 @@ test("operator resumes an uncertain joining-case create with the same idempotenc
   await page.getByLabel("الاسم القانوني للنشاط").fill("نشاط الاختبار");
   await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
   await page.getByLabel("مدينة المتجر الأول").selectOption("sanaa");
-  await page.getByLabel("الفئة الرئيسية", { exact: true }).selectOption("grocery");
-  await page.getByLabel("نوع المتجر التجاري", { exact: true }).selectOption("grocery-market");
+  await page.locator("#joining-vertical").selectOption("grocery");
+  await page.locator("#joining-commercial-type").selectOption("grocery-market");
   await page.getByLabel("خط عرض موقع المتجر").fill("15.369445");
   await page.getByLabel("خط طول موقع المتجر").fill("44.191006");
   await page.getByRole("checkbox", { name: "استلم بنفسك من المتجر" }).check();
@@ -1558,8 +1559,8 @@ test("partner Store publication exposes the canonical readiness block", async ({
   await page.getByLabel("الاسم القانوني للنشاط").fill("نشاط الاختبار");
   await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
   await page.getByLabel("مدينة المتجر الأول").selectOption("sanaa");
-  await page.getByLabel("الفئة الرئيسية", { exact: true }).selectOption("grocery");
-  await page.getByLabel("نوع المتجر التجاري", { exact: true }).selectOption("grocery-market");
+  await page.locator("#joining-vertical").selectOption("grocery");
+  await page.locator("#joining-commercial-type").selectOption("grocery-market");
   await page.getByLabel("خط عرض موقع المتجر").fill("15.369445");
   await page.getByLabel("خط طول موقع المتجر").fill("44.191006");
   await page.getByRole("checkbox", { name: "توصيل بثواني · مسؤولية المنصة" }).check();

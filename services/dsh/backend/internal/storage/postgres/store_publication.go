@@ -247,36 +247,20 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, servic
 		return OperatorStorePage{}, ErrOperatorStoreInvalidCursor
 	}
 	cursor = strings.TrimSpace(cursor)
-	ascending := sort == "updated_asc"
-	args := []any{}
-	where := "TRUE"
-	if state != "" {
-		args = append(args, state)
-		where += " AND s.publication_state=$" + strconv.Itoa(len(args))
-	}
-	if query != "" {
-		if searchMode == "name_prefix" {
-			args = append(args, strings.ToLower(escapeOperatorStoreSearch(query))+"%")
-			where += " AND lower(s.name) LIKE $" + strconv.Itoa(len(args)) + " ESCAPE '!'"
-		} else {
-			args = append(args, "%"+escapeOperatorStoreSearch(query)+"%")
-			where += " AND (s.id ILIKE $" + strconv.Itoa(len(args)) + " ESCAPE '!' OR s.name ILIKE $" + strconv.Itoa(len(args)) + " ESCAPE '!' OR s.partner_actor_id ILIKE $" + strconv.Itoa(len(args)) + " ESCAPE '!')"
-		}
-	}
-	if serviceCityID != "" {
-		args = append(args, serviceCityID)
-		where += " AND s.service_city_id=$" + strconv.Itoa(len(args))
-	}
-	if strings.TrimSpace(cursor) != "" {
+	hasCursor := cursor != ""
+	var cursorName, cursorID string
+	var cursorUpdatedAt time.Time
+	if hasCursor {
 		decoded, err := decodeOperatorStoreCursor(cursor, state, query, serviceCityID, searchMode, sort)
 		if err != nil {
 			return OperatorStorePage{}, err
 		}
+		cursorID = decoded.ID
 		if sort == "name_asc" {
-			anchorName := decoded.Name
+			cursorName = decoded.Name
 			if decoded.Scope != "" {
 				prefix := strings.ToLower(escapeOperatorStoreSearch(query)) + "%"
-				err := db.QueryRowContext(ctx, "SELECT name FROM dsh.stores WHERE id=$1 AND publication_state='published' AND service_city_id=$2 AND lower(name) LIKE $3 ESCAPE '!'", decoded.ID, serviceCityID, prefix).Scan(&anchorName)
+				err := db.QueryRowContext(ctx, "SELECT name FROM dsh.stores WHERE id=$1 AND publication_state='published' AND service_city_id=$2 AND lower(name) LIKE $3 ESCAPE '!'", decoded.ID, serviceCityID, prefix).Scan(&cursorName)
 				if errors.Is(err, sql.ErrNoRows) {
 					return OperatorStorePage{}, ErrOperatorStoreInvalidCursor
 				}
@@ -284,28 +268,31 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, servic
 					return OperatorStorePage{}, fmt.Errorf("read operator store cursor anchor: %w", err)
 				}
 			}
-			args = append(args, anchorName, decoded.ID)
-			where += " AND (lower(s.name),s.id)>(lower($" + strconv.Itoa(len(args)-1) + "),$" + strconv.Itoa(len(args)) + ")"
 		} else {
-			args = append(args, decoded.UpdatedAt, decoded.ID)
-			operator := "<"
-			if ascending {
-				operator = ">"
-			}
-			where += " AND (s.updated_at,s.id)" + operator + "($" + strconv.Itoa(len(args)-1) + ",$" + strconv.Itoa(len(args)) + ")"
+			cursorUpdatedAt = decoded.UpdatedAt
 		}
 	}
-	args = append(args, limit+1)
-	order := "DESC"
-	if ascending {
-		order = "ASC"
-	}
-	orderBy := "s.updated_at " + order + ",s.id " + order
-	if sort == "name_asc" {
-		orderBy = "lower(s.name) ASC,s.id ASC"
+	escapedQuery := escapeOperatorStoreSearch(query)
+	prefixPattern := ""
+	containsPattern := ""
+	if query != "" {
+		prefixPattern = strings.ToLower(escapedQuery) + "%"
+		containsPattern = "%" + escapedQuery + "%"
 	}
 	rows, err := db.QueryContext(ctx, `SELECT s.id,s.partner_actor_id,s.name,s.service_city_id,s.primary_vertical_id,s.commercial_store_type_id,s.version,s.publication_state,s.fulfillment_modes,s.created_at,s.updated_at
-		FROM dsh.stores s WHERE `+where+" ORDER BY "+orderBy+" LIMIT $"+strconv.Itoa(len(args)), args...)
+		FROM dsh.stores s
+		WHERE ($1::text='' OR s.publication_state=$1)
+		  AND ($2::text='' OR (($4::text='name_prefix' AND lower(s.name) LIKE $5::text ESCAPE '!') OR ($4::text='contains' AND (s.id ILIKE $6::text ESCAPE '!' OR s.name ILIKE $6::text ESCAPE '!' OR s.partner_actor_id ILIKE $6::text ESCAPE '!'))))
+		  AND ($3::text='' OR s.service_city_id=$3)
+		  AND (NOT $7::boolean OR ($8::text='name_asc' AND (lower(s.name),s.id)>(lower($9::text),$10::text)) OR ($8::text='updated_asc' AND (s.updated_at,s.id)>($11::timestamptz,$10::text)) OR ($8::text='updated_desc' AND (s.updated_at,s.id)<($11::timestamptz,$10::text)))
+		ORDER BY
+		  CASE WHEN $8::text='name_asc' THEN lower(s.name) END ASC,
+		  CASE WHEN $8::text='name_asc' THEN s.id END ASC,
+		  CASE WHEN $8::text='updated_asc' THEN s.updated_at END ASC,
+		  CASE WHEN $8::text='updated_asc' THEN s.id END ASC,
+		  CASE WHEN $8::text='updated_desc' THEN s.updated_at END DESC,
+		  CASE WHEN $8::text='updated_desc' THEN s.id END DESC
+		LIMIT $12`, state, query, serviceCityID, searchMode, prefixPattern, containsPattern, hasCursor, sort, cursorName, cursorID, cursorUpdatedAt, limit+1)
 	if err != nil {
 		return OperatorStorePage{}, fmt.Errorf("list canonical operator stores: %w", err)
 	}

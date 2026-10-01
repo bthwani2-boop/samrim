@@ -88,7 +88,7 @@ check(!safePush.includes("pnpm verify"), "safe push must not duplicate final ver
 
 if (failures.length > 0) {
   console.error("LOCAL_SPEED_CONTRACT=FAIL");
-  for (const failure of [...new Set(failures)].sort()) console.error(`  ${failure}`);
+  for (const failure of [...new Set(failures)].sort((left, right) => left.localeCompare(right, "en"))) console.error(`  ${failure}`);
   process.exit(1);
 }
 

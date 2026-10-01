@@ -1,8 +1,10 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { resolveTrustedExecutable } from "./trusted-executables.mjs";
 
 const root = path.resolve(import.meta.dirname, "../../..");
+const gitExecutable = resolveTrustedExecutable("git");
 
 export const laneOrder = ["control", "identity", "wlt", "dsh"];
 const compareStrings = (left, right) => String(left).localeCompare(String(right), "en");
@@ -114,7 +116,7 @@ function stableJson(value) {
 
 function readJsonAtRef(ref, file) {
   try {
-    const body = execFileSync("git", ["show", `${ref}:${file}`], { cwd: root, encoding: "utf8" });
+    const body = execFileSync(gitExecutable, ["show", `${ref}:${file}`], { cwd: root, encoding: "utf8" });
     return JSON.parse(body);
   } catch {
     return null;
@@ -225,7 +227,7 @@ function affectedProjects(base, head) {
 
 function changedFiles(base, head) {
   if (!base || !head) throw new Error("NX_BASE/NX_HEAD (or --base/--head) are required");
-  const output = execFileSync("git", ["diff", "--name-only", "-z", base, head, "--"], { cwd: root, encoding: "utf8" });
+  const output = execFileSync(gitExecutable, ["diff", "--name-only", "-z", base, head, "--"], { cwd: root, encoding: "utf8" });
   return output.split("\0").map((value) => value.trim()).filter(Boolean);
 }
 
