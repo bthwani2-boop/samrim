@@ -196,24 +196,4 @@ if coverage_line not in props:
     props = props.replace(marker, marker + coverage_line, 1)
     sonar_props.write_text(props, encoding="utf-8")
 
-workflow = ".github/workflows/sonar-observe.yml"
-replace_once(
-    workflow,
-    '''          measures_url="https://sonarcloud.io/api/measures/component?component=${SONAR_PROJECT_KEY}&${scope}&metricKeys=coverage,new_coverage,new_lines_to_cover,new_uncovered_lines,line_coverage,lines_to_cover,uncovered_lines,duplicated_lines_density,new_duplicated_lines_density,duplicated_lines,ncloc,bugs,vulnerabilities,code_smells,reliability_rating,security_rating,sqale_rating,security_hotspots"''',
-    '''          measures_url="https://sonarcloud.io/api/measures/component?component=${SONAR_PROJECT_KEY}&${scope}&metricKeys=coverage,new_coverage,new_lines_to_cover,new_uncovered_lines,line_coverage,lines_to_cover,uncovered_lines,duplicated_lines_density,new_duplicated_lines_density,duplicated_lines,ncloc,bugs,vulnerabilities,code_smells,reliability_rating,security_rating,sqale_rating,security_hotspots"
-          scope_uncovered_url="https://sonarcloud.io/api/measures/component_tree?component=${SONAR_PROJECT_KEY}&${scope}&metricKeys=coverage,new_coverage,lines_to_cover,new_lines_to_cover,uncovered_lines,new_uncovered_lines&qualifiers=FIL&ps=500&s=metric&metricSort=new_uncovered_lines&asc=false"''',
-)
-replace_once(
-    workflow,
-    '''          measures_json="$(curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$measures_url")"''',
-    '''          measures_json="$(curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$measures_url")"
-          scope_uncovered_json="$(curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$scope_uncovered_url")"''',
-)
-replace_once(
-    workflow,
-    '''          printf '%s\\n' "$measures_json" | jq . > "$evidence_dir/scope-measures.json"''',
-    '''          printf '%s\\n' "$measures_json" | jq . > "$evidence_dir/scope-measures.json"
-          printf '%s\\n' "$scope_uncovered_json" | jq . > "$evidence_dir/scope-top-uncovered.json"''',
-)
-
 print("MERGE_CLOSURE_PATCH=APPLIED")
