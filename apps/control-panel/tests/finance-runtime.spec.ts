@@ -63,7 +63,17 @@ test("@live operator sees the WLT-managed Field acquisition reward store-type po
   await page.goto("/policies/field-acquisition");
   await expect(page.getByRole("heading", { name: "استحقاق ضم الشريك للميداني", level: 2 })).toBeVisible();
   await expect(page.getByText(/لكل نوع متجر تجاري سياسة مبلغ مستقلة/)).toBeVisible();
-  await expect(page.getByLabel("نوع المتجر التجاري")).toBeVisible();
-  await expect(page.getByLabel("مبلغ الاستحقاق لهذا النوع (ريال يمني)")).toBeVisible();
+
+  const vertical = page.getByLabel("المجال التجاري");
+  await expect(vertical).toBeVisible();
+  await expect(vertical.locator("option").nth(1)).toHaveAttribute("value", /.+/);
+  await vertical.selectOption({ index: 1 });
+
+  const storeType = page.getByLabel("نوع المتجر التجاري");
+  await expect(storeType).toBeVisible();
+  await expect(storeType.locator("option").nth(1)).toHaveAttribute("value", /.+/);
+  await storeType.selectOption({ index: 1 });
+
+  await expect(page.getByLabel("مبلغ الاستحقاق لهذا النوع (ريال يمني)")).toBeEnabled();
   await expect(page.getByText(/وحدة التقريب ثابتة عند ٥٠ ريالًا/)).toBeVisible();
 });

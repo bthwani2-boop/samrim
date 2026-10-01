@@ -41,11 +41,11 @@ export async function POST(request: Request) {
   const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() ?? "";
   if (idempotencyKey.length < 8 || idempotencyKey.length > 128) return errorResponse("INVALID_INPUT", "Idempotency-Key is required", 400);
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-  const allowed = ["scopeType", "scopeId", "rewardMinor", "roundingUnitMinor", "expectedVersion", "reason"];
+  const allowed = new Set(["scopeType", "scopeId", "rewardMinor", "roundingUnitMinor", "expectedVersion", "reason"]);
   const scopeType = typeof body?.scopeType === "string" ? body.scopeType.trim() : "";
   const scopeId = typeof body?.scopeId === "string" ? body.scopeId.trim() : "";
   const validScope = scopeType === "STORE_TYPE" && scopeId.length > 0 && scopeId.length <= 128;
-  if (!body || Object.keys(body).some((key) => !allowed.includes(key)) || !validScope || !Number.isInteger(body.rewardMinor) || Number(body.rewardMinor) < 50 || body.roundingUnitMinor !== 50 || !Number.isInteger(body.expectedVersion) || Number(body.expectedVersion) < 0 || typeof body.reason !== "string" || body.reason.trim().length < 5 || body.reason.trim().length > 500) return errorResponse("INVALID_INPUT", "field category acquisition policy fields are invalid", 400);
+  if (!body || Object.keys(body).some((key) => !allowed.has(key)) || !validScope || !Number.isInteger(body.rewardMinor) || Number(body.rewardMinor) < 50 || body.roundingUnitMinor !== 50 || !Number.isInteger(body.expectedVersion) || Number(body.expectedVersion) < 0 || typeof body.reason !== "string" || body.reason.trim().length < 5 || body.reason.trim().length > 500) return errorResponse("INVALID_INPUT", "field category acquisition policy fields are invalid", 400);
   try {
     const result = await createOperatorFieldAcquisitionRewardPolicy({ scopeType, scopeId, rewardMinor: Number(body.rewardMinor), roundingUnitMinor: 50, expectedVersion: Number(body.expectedVersion), reason: (body.reason as string).trim() }, { operatorActorId: access.identity.subject, correlationId: request.headers.get("X-Correlation-ID")?.trim() || randomUUID(), idempotencyKey });
     return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
