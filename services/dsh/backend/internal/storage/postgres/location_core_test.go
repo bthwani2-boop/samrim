@@ -72,9 +72,11 @@ func TestLocationCoreIntegrity(t *testing.T) {
 			foreignPartner = "act_foreign_partner_location_v8"
 			storeID        = "store_location_v8"
 		)
-		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.stores(id, partner_actor_id, name) VALUES($1,$2,$3)", storeID, partnerActorID, "Location Core Store"); err != nil {
-			t.Fatalf("insert canonical Store fixture: %v", err)
-		}
+		insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{
+			ID:             storeID,
+			PartnerActorID: partnerActorID,
+			Name:           "Location Core Store",
+		})
 
 		created, err := postgres.CreateDeliveryAddress(ctx, db, clientActorID, "شارع التحرير، صنعاء", 15.3694457, 44.1910064, "idem-location-create-v8", postgres.HashDeliveryAddressCreateRequest(clientActorID, "شارع التحرير، صنعاء", 15.3694457, 44.1910064), "corr-location-create-v8")
 		if err != nil || created.Replayed || created.Address.Version != 1 || created.Address.Latitude != 15.369446 || created.Address.Longitude != 44.191006 {
