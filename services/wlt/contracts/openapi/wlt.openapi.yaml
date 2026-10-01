@@ -589,6 +589,27 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/FieldFinancialSummaryResponse' }
+  /wlt/v1/fields/{fieldActorId}/acquisition-entitlements:
+    get:
+      operationId: listFieldAcquisitionEntitlements
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: fieldActorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 512 }
+      responses:
+        '200':
+          description: Cursor-paged actor-owned Field acquisition entitlement history.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FieldAcquisitionEntitlementPage' }
   /wlt/v1/operator/official-wallet-destinations:
     post:
       operationId: createOfficialWalletDestination
@@ -1766,6 +1787,32 @@ components:
       required: [summary]
       properties:
         summary: { $ref: '#/components/schemas/FieldFinancialSummary' }
+    FieldAcquisitionEntitlement:
+      type: object
+      additionalProperties: false
+      required: [joiningCaseId, storeId, partnerActorId, fieldActorId, verticalId, commercialStoreTypeId, policyId, policyVersion, rewardMinor, currency, ledgerTransactionId, createdAt]
+      properties:
+        joiningCaseId: { type: string }
+        storeId: { type: string }
+        partnerActorId: { type: string }
+        fieldActorId: { type: string }
+        verticalId: { type: string }
+        commercialStoreTypeId: { type: string }
+        policyId: { type: string }
+        policyVersion: { type: integer, minimum: 1 }
+        rewardMinor: { type: integer, minimum: 1 }
+        currency: { type: string, const: YER }
+        ledgerTransactionId: { type: string }
+        createdAt: { type: string, format: date-time }
+    FieldAcquisitionEntitlementPage:
+      type: object
+      additionalProperties: false
+      required: [entitlements]
+      properties:
+        entitlements:
+          type: array
+          items: { $ref: '#/components/schemas/FieldAcquisitionEntitlement' }
+        nextCursor: { type: string }
     CreateOfficialWalletDestinationRequest:
       type: object
       additionalProperties: false

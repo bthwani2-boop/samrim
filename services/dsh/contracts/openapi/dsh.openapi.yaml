@@ -583,6 +583,9 @@ paths:
   /dsh/fields/me/financial-summary:
     $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me~1financial-summary"
 
+  /dsh/fields/me/acquisition-entitlements:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me~1acquisition-entitlements"
+
   /dsh/operator/fields/{fieldActorId}/financial-summary:
     $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1fields~1{fieldActorId}~1financial-summary"
 
@@ -5515,6 +5518,54 @@ components:
       properties:
         summary:
           $ref: "#/components/schemas/FieldFinancialSummary"
+
+    FieldAcquisitionEntitlement:
+      type: object
+      additionalProperties: false
+      required: [joiningCaseId, storeId, partnerActorId, fieldActorId, verticalId, commercialStoreTypeId, policyId, policyVersion, rewardMinor, currency, ledgerTransactionId, createdAt, storeName]
+      properties:
+        joiningCaseId:
+          type: string
+        storeId:
+          type: string
+        partnerActorId:
+          type: string
+        fieldActorId:
+          type: string
+        verticalId:
+          type: string
+        commercialStoreTypeId:
+          type: string
+        policyId:
+          type: string
+        policyVersion:
+          type: integer
+          minimum: 1
+        rewardMinor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        ledgerTransactionId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        storeName:
+          type: string
+
+    FieldAcquisitionEntitlementPage:
+      type: object
+      additionalProperties: false
+      required: [entitlements]
+      properties:
+        entitlements:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldAcquisitionEntitlement"
+        nextCursor:
+          type: string
 
     OfficialWalletDestination:
       type: object

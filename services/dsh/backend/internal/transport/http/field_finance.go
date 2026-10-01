@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
@@ -21,6 +22,16 @@ type FieldFinanceServer struct {
 	db       *sql.DB
 }
 
+type fieldAcquisitionEntitlementView struct {
+	wlt.FieldAcquisitionEntitlement
+	StoreName string `json:"storeName"`
+}
+
+type fieldAcquisitionEntitlementPageView struct {
+	Entitlements []fieldAcquisitionEntitlementView `json:"entitlements"`
+	NextCursor   string                            `json:"nextCursor,omitempty"`
+}
+
 func NewFieldFinance(identity *identityintegration.Client, accessToken string, payment *wlt.Client, db *sql.DB) (*FieldFinanceServer, error) {
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
@@ -34,9 +45,42 @@ func NewFieldFinance(identity *identityintegration.Client, accessToken string, p
 
 func (s *FieldFinanceServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/fields/me/financial-summary", s.readOwnSummary)
+	mux.HandleFunc("GET /dsh/fields/me/acquisition-entitlements", s.listOwnAcquisitionEntitlements)
 	mux.HandleFunc("GET /dsh/operator/fields/{fieldActorId}/financial-summary", s.readOperatorSummary)
 	mux.HandleFunc("POST /dsh/operator/field-acquisition-reward-policies", s.createPolicy)
 	mux.HandleFunc("GET /dsh/operator/field-acquisition-reward-policies", s.readPolicyByScope)
+}
+
+func (s *FieldFinanceServer) listOwnAcquisitionEntitlements(w http.ResponseWriter, r *http.Request) {
+	identity, ok := s.requireFieldSession(w, r)
+	if !ok {
+		return
+	}
+	limit := 50
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 100 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "limit must be between 1 and 100")
+			return
+		}
+		limit = parsed
+	}
+	page, err := s.payment.ListFieldAcquisitionEntitlements(r.Context(), identity.Subject, r.URL.Query().Get("cursor"), limit)
+	if err != nil {
+		writeWLTFinanceError(w, err)
+		return
+	}
+	view := fieldAcquisitionEntitlementPageView{Entitlements: make([]fieldAcquisitionEntitlementView, 0, len(page.Entitlements)), NextCursor: page.NextCursor}
+	for _, item := range page.Entitlements {
+		var storeName string
+		if err := s.db.QueryRowContext(r.Context(), `SELECT name FROM dsh.stores WHERE id=$1`, item.StoreID).Scan(&storeName); err != nil {
+			writeError(w, http.StatusBadGateway, "FINANCIAL_SOURCE_UNAVAILABLE", "the store for a field acquisition entitlement could not be read")
+			return
+		}
+		view.Entitlements = append(view.Entitlements, fieldAcquisitionEntitlementView{FieldAcquisitionEntitlement: item, StoreName: storeName})
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, view)
 }
 
 func (s *FieldFinanceServer) readOwnSummary(w http.ResponseWriter, r *http.Request) {

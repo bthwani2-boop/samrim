@@ -18,6 +18,62 @@ import (
 	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/storage/postgres"
 )
 
+type fieldAcquisitionEntitlementListResponse struct {
+	Entitlements []fieldAcquisitionEntitlementJSON `json:"entitlements"`
+	NextCursor   string                            `json:"nextCursor,omitempty"`
+}
+
+func (s *Server) listFieldAcquisitionEntitlements(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	fieldActorID := strings.TrimSpace(r.PathValue("fieldActorId"))
+	limit := 50
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 100 {
+			writeFieldAcquisitionRewardError(w, postgres.ErrFieldAcquisitionEntitlementInvalid)
+			return
+		}
+		limit = parsed
+	}
+	var before *time.Time
+	beforeJoiningCaseID := ""
+	if raw := strings.TrimSpace(r.URL.Query().Get("cursor")); raw != "" {
+		if len(raw) > 512 {
+			writeFieldAcquisitionRewardError(w, postgres.ErrFieldAcquisitionEntitlementInvalid)
+			return
+		}
+		decoded, err := base64.RawURLEncoding.DecodeString(raw)
+		parts := strings.SplitN(string(decoded), "|", 2)
+		if err != nil || len(parts) != 2 || strings.TrimSpace(parts[1]) == "" {
+			writeFieldAcquisitionRewardError(w, postgres.ErrFieldAcquisitionEntitlementInvalid)
+			return
+		}
+		parsed, err := time.Parse(time.RFC3339Nano, parts[0])
+		if err != nil {
+			writeFieldAcquisitionRewardError(w, postgres.ErrFieldAcquisitionEntitlementInvalid)
+			return
+		}
+		before, beforeJoiningCaseID = &parsed, parts[1]
+	}
+	page, err := postgres.ListFieldAcquisitionEntitlements(r.Context(), s.db, fieldActorID, before, beforeJoiningCaseID, limit)
+	if err != nil {
+		writeFieldAcquisitionRewardError(w, err)
+		return
+	}
+	items := make([]fieldAcquisitionEntitlementJSON, 0, len(page.Entitlements))
+	for _, item := range page.Entitlements {
+		items = append(items, toFieldAcquisitionEntitlement(item))
+	}
+	response := fieldAcquisitionEntitlementListResponse{Entitlements: items}
+	if page.NextCursor != "" {
+		response.NextCursor = base64.RawURLEncoding.EncodeToString([]byte(page.NextCursor))
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, response)
+}
+
 type payoutActionRequest struct {
 	Reason            string `json:"reason"`
 	EvidenceReference string `json:"evidenceReference"`

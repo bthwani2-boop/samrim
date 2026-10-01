@@ -76,6 +76,11 @@ type FieldFinancialSummaryRecord struct {
 	LastEarningAt    *time.Time
 }
 
+type FieldAcquisitionEntitlementPage struct {
+	Entitlements []FieldAcquisitionEntitlementRecord
+	NextCursor   string
+}
+
 func HashCreateFieldAcquisitionRewardPolicy(input CreateFieldAcquisitionRewardPolicyInput) string {
 	return hashFacts("field-acquisition-reward-policy", strings.ToUpper(strings.TrimSpace(input.ScopeType)), strings.TrimSpace(input.ScopeID), formatInt64(input.RewardMinor), formatInt64(input.RoundingUnitMinor), formatInt64(int64(input.ExpectedVersion)), strings.TrimSpace(input.Reason))
 }
@@ -338,4 +343,37 @@ func ReadFieldFinancialSummary(ctx context.Context, db *sql.DB, fieldActorID str
 	result.Currency = "YER"
 	err := db.QueryRowContext(ctx, `SELECT COALESCE(SUM(e.amount_minor) FILTER (WHERE e.direction='CREDIT'),0),COALESCE(SUM(earning.reward_minor),0),COUNT(DISTINCT COALESCE(earning.joining_case_id,'legacy-store:'||earning.store_id)),MAX(earning.created_at) FROM wlt.field_acquisition_entitlements earning JOIN wlt.ledger_entries e ON e.transaction_id=earning.ledger_transaction_id AND e.account_code='FIELD_WALLET' AND e.actor_id=earning.field_actor_id WHERE earning.field_actor_id=$1`, fieldActorID).Scan(&result.EarnedMinor, &result.EntitlementMinor, &result.PartnerCount, &result.LastEarningAt)
 	return result, err
+}
+
+func ListFieldAcquisitionEntitlements(ctx context.Context, db *sql.DB, fieldActorID string, before *time.Time, beforeJoiningCaseID string, limit int) (FieldAcquisitionEntitlementPage, error) {
+	fieldActorID = strings.TrimSpace(fieldActorID)
+	beforeJoiningCaseID = strings.TrimSpace(beforeJoiningCaseID)
+	if db == nil || boundedText(fieldActorID, 1, 128) == "" || (before != nil && boundedText(beforeJoiningCaseID, 1, 128) == "") || (before == nil && beforeJoiningCaseID != "") || limit < 1 || limit > 100 {
+		return FieldAcquisitionEntitlementPage{}, ErrFieldAcquisitionEntitlementInvalid
+	}
+	rows, err := db.QueryContext(ctx, `SELECT COALESCE(joining_case_id,'legacy-store:'||store_id),store_id,COALESCE(partner_actor_id,''),field_actor_id,vertical_id,COALESCE(commercial_store_type_id,''),policy_id,policy_version,reward_minor,currency,ledger_transaction_id,created_at
+		FROM wlt.field_acquisition_entitlements
+		WHERE field_actor_id=$1 AND ($2::timestamptz IS NULL OR (created_at,COALESCE(joining_case_id,'legacy-store:'||store_id))<($2,$3))
+		ORDER BY created_at DESC,COALESCE(joining_case_id,'legacy-store:'||store_id) DESC LIMIT $4`, fieldActorID, before, beforeJoiningCaseID, limit+1)
+	if err != nil {
+		return FieldAcquisitionEntitlementPage{}, err
+	}
+	defer rows.Close()
+	page := FieldAcquisitionEntitlementPage{Entitlements: make([]FieldAcquisitionEntitlementRecord, 0, limit)}
+	for rows.Next() {
+		var item FieldAcquisitionEntitlementRecord
+		if err := rows.Scan(&item.JoiningCaseID, &item.StoreID, &item.PartnerActorID, &item.FieldActorID, &item.VerticalID, &item.CommercialStoreTypeID, &item.PolicyID, &item.PolicyVersion, &item.RewardMinor, &item.Currency, &item.LedgerTransactionID, &item.CreatedAt); err != nil {
+			return FieldAcquisitionEntitlementPage{}, err
+		}
+		page.Entitlements = append(page.Entitlements, item)
+	}
+	if err := rows.Err(); err != nil {
+		return FieldAcquisitionEntitlementPage{}, err
+	}
+	if len(page.Entitlements) > limit {
+		last := page.Entitlements[limit-1]
+		page.NextCursor = last.CreatedAt.UTC().Format(time.RFC3339Nano) + "|" + last.JoiningCaseID
+		page.Entitlements = page.Entitlements[:limit]
+	}
+	return page, nil
 }

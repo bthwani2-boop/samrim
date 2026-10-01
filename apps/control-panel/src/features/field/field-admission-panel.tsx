@@ -239,6 +239,7 @@ export function FieldAdmissionPanel() {
               {waitingForReenrollment ? <button type="button" className="button button-primary" disabled={Boolean(busy) || Array.from(reason.trim()).length < 5} onClick={() => void mutateAccount(field, "reenroll")}>{busy === field.actorId ? "جارٍ الإجازة…" : "إجازة إعادة التسجيل"}</button> : null}
               {(field.activatedAt || shouldDisable) && (shouldDisable || !requiresProfileReview) ? <button type="button" className={shouldDisable ? "button button-secondary" : "button button-primary"} disabled={Boolean(busy) || Array.from(reason.trim()).length < 5} onClick={() => void mutateAccount(field, shouldDisable ? "disable" : "activate")}>{busy === field.actorId ? "جارٍ التحديث…" : shouldDisable ? "إيقاف الوصول" : "إعادة التفعيل"}</button> : null}
               {requiresProfileReview && !mustDisable && !field.enabled ? <span className="muted">أكمل مراجعة الملف قبل إعادة التفعيل.</span> : null}
+              <a className="button button-secondary" href={`/finance/beneficiary-settlement/field?search=${encodeURIComponent(field.actorId)}`}>كشف المحفظة والحركات المالية</a>
             </div></details> : <span className="muted">راجع الأهلية قبل إتاحة العمل الميداني.</span>}</td>
           </tr>;
         })}

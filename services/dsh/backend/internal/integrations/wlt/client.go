@@ -273,6 +273,11 @@ type FieldFinancialSummary struct {
 	LastEarningAt    *string `json:"lastEarningAt"`
 }
 
+type FieldAcquisitionEntitlementPage struct {
+	Entitlements []FieldAcquisitionEntitlement `json:"entitlements"`
+	NextCursor   string                        `json:"nextCursor,omitempty"`
+}
+
 type FinancialStatementEntry struct {
 	TransactionID   string                   `json:"transactionId"`
 	TransactionType string                   `json:"transactionType"`
@@ -1208,6 +1213,23 @@ func (c *Client) ReadFieldFinancialSummary(ctx context.Context, fieldActorID str
 	var response fieldFinancialSummaryResponse
 	err := c.request(ctx, http.MethodGet, "/wlt/v1/fields/"+url.PathEscape(strings.TrimSpace(fieldActorID))+"/financial-summary", nil, "", "", 0, &response)
 	return response.Summary, err
+}
+
+func (c *Client) ListFieldAcquisitionEntitlements(ctx context.Context, fieldActorID, cursor string, limit int) (FieldAcquisitionEntitlementPage, error) {
+	query := url.Values{}
+	if strings.TrimSpace(cursor) != "" {
+		query.Set("cursor", strings.TrimSpace(cursor))
+	}
+	if limit > 0 {
+		query.Set("limit", strconv.Itoa(limit))
+	}
+	path := "/wlt/v1/fields/" + url.PathEscape(strings.TrimSpace(fieldActorID)) + "/acquisition-entitlements"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var response FieldAcquisitionEntitlementPage
+	err := c.request(ctx, http.MethodGet, path, nil, "", "", 0, &response)
+	return response, err
 }
 
 func (c *Client) CreateOfficialWalletDestination(ctx context.Context, destination OfficialWalletDestination, walletIdentifier, changeReason, verificationEvidenceReference, changeEvidenceReference, idempotencyKey, correlationID, actingActorID string) (OfficialWalletDestination, bool, error) {

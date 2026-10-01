@@ -198,6 +198,31 @@ paths:
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 
+  /dsh/fields/me/acquisition-entitlements:
+    get:
+      operationId: listOwnFieldAcquisitionEntitlements
+      summary: Read the authenticated Field representative's WLT entitlement ledger entries
+      security:
+        - userBearer: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 512 }
+      responses:
+        "200":
+          description: Cursor-paged Field acquisition entitlements from WLT, enriched with canonical DSH store names.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/FieldAcquisitionEntitlementPage"
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/operator/fields/{fieldActorId}/financial-summary:
     get:
       operationId: readOperatorFieldFinancialSummary
