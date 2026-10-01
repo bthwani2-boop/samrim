@@ -149,6 +149,44 @@ function verifyCiWorkflowTopology() {
   }
   requireTokens(staticWorkflow, "static workflow", ["repository-ci:execution-proof-system", "nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet"]);
   forbidTokens(staticWorkflow, "static workflow", ["--changed --since"]);
+  requireTokens(staticWorkflow, "static workflow Nx Agents opt-in", [
+    "enable_nx_agents:",
+    "default: false",
+    "NX_DTE_ENABLED:",
+    "if: env.NX_DTE_ENABLED == 'true'",
+    "pnpm dlx nx-cloud start-nx-agents",
+    "if: github.event_name == 'workflow_dispatch' && env.NX_DTE_ENABLED == 'true'",
+    "--outputStyle=stream --dte",
+  ]);
+  assert(
+    staticWorkflow.indexOf("Start opt-in Nx Agents") < staticWorkflow.indexOf("Verify repository invariants through Nx"),
+    "opt-in Nx Agents must start before the first Nx task in the Linux static job",
+  );
+  const nxCiConfig = read(".nx/ci-config.yaml");
+  const nxAgentWorkflow = read(".nx/workflows/agents.yaml");
+  assert(
+    nxCiConfig.includes("enabled-by-default: false") &&
+      nxCiConfig.includes("distribute-on: 2 linux-medium-js") &&
+      nxCiConfig.includes("with-env-vars:") &&
+      [
+        "GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT",
+        "GOOGLE_MAPS_IOS_API_KEY",
+        "GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN",
+        "GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN",
+        "GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD",
+      ].every((name) => nxCiConfig.includes(`- ${name}`) && staticWorkflow.includes(`${name}: maps-config-placeholder-`)),
+    "Nx Agents must stay opt-in and capped at two medium agents",
+  );
+  requireTokens(nxAgentWorkflow, "Nx Agents launch template", [
+    "resource-class: 'docker_linux_amd64/medium'",
+    "image: 'ubuntu22.04-node24.14-v1'",
+    "node=24.17.0",
+    "go=1.27.1",
+    "pnpm=10.34.0",
+    'test "$(node -p \'process.version\')" = "v24.17.0"',
+    'test "$(go env GOVERSION)" = "go1.27.1"',
+    'test "$(pnpm --version)" = "10.34.0"',
+  ]);
 
   const localVerifier = read("tools/dev/verify-local-candidate.ps1");
   requireTokens(localVerifier, "local verifier", ["nx','affected", "--nxBail=false", "capture-ci-failure.mjs"]);
@@ -164,7 +202,21 @@ function verifyPerformanceBudget(workflowNames) {
   assert(new Set(budgets.enforcedBudgets).size === budgets.enforcedBudgets.length, "CI enforced budget list contains duplicates");
   assert(budgets.enforcedBudgets.every((name) => knownBudgets.has(name)), "CI enforced budget references undefined budget");
   if (budgets.mode === "observe") {
-    for (const file of workflowNames) forbidTokens(read(`.github/workflows/${file}`), file, ["start-nx-agents"]);
+    for (const file of workflowNames.filter((name) => name !== "ci-static.yml")) {
+      forbidTokens(read(`.github/workflows/${file}`), file, ["start-nx-agents"]);
+    }
+    const staticWorkflow = read(".github/workflows/ci-static.yml");
+    requireTokens(staticWorkflow, "observe-mode Nx Agents guard", [
+      "enable_nx_agents:",
+      "default: false",
+      "if: env.NX_DTE_ENABLED == 'true'",
+      "if: github.event_name == 'workflow_dispatch' && env.NX_DTE_ENABLED == 'true'",
+      "--outputStyle=stream --dte",
+    ]);
+    assert(
+      (staticWorkflow.match(/start-nx-agents/g) ?? []).length === 1,
+      "observe mode permits exactly one explicitly guarded Nx Agents start",
+    );
   }
 }
 

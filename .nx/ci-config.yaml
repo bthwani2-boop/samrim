@@ -1,0 +1,24 @@
+dte:
+  enabled-by-default: false
+  distribute-on: 2 linux-medium-js
+
+nx-agents:
+  with-env-vars:
+    - GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT
+    - GOOGLE_MAPS_IOS_API_KEY
+    - GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN
+    - GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN
+    - GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD
+
+lifecycle:
+  fail-after: 1
+  heartbeat: true
+  stop-after:
+    - lint
+    - format-check
+    - typecheck
+    - unit
+    - contract
+    - build
+    - export-smoke
+    - vet
