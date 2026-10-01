@@ -53,9 +53,7 @@ func TestMultiStoreCheckoutPersistsPartialOutcomesAndCancelReplay(t *testing.T) 
 			{firstStoreID, "multi-checkout-partner-one", "متجر الطلب الأول"},
 			{secondStoreID, "multi-checkout-partner-two", "متجر الطلب الثاني"},
 		} {
-			if _, err := db.ExecContext(ctx, "INSERT INTO dsh.stores(id,partner_actor_id,name) VALUES($1,$2,$3)", store.id, store.partner, store.name); err != nil {
-				t.Fatalf("insert store %s: %v", store.id, err)
-			}
+			insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{ID: store.id, PartnerActorID: store.partner, Name: store.name})
 		}
 		for _, cart := range []struct{ id, storeID string }{{firstCartID, firstStoreID}, {secondCartID, secondStoreID}} {
 			if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commerce_carts(id,client_actor_id,store_id,state,version) VALUES($1,$2,$3,'checked_out',1)", cart.id, clientID, cart.storeID); err != nil {
