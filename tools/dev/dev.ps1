@@ -90,28 +90,40 @@ function Test-RuntimeBuildPath([string]$RelativePath) {
     return $false
 }
 
-function Get-GitObjectID([string]$PathSpec) {
-    $output = @(& git -C $Root rev-parse --verify "HEAD:$PathSpec" 2>$null)
-    if ($LASTEXITCODE -ne 0) { return 'missing' }
-    return (($output -join '').Trim())
+function Test-RuntimeTrackedPath([string]$RelativePath) {
+    return $RelativePath -eq '.dockerignore' -or (Test-RuntimeBuildPath $RelativePath)
+}
+
+function Get-TrackedMaterialRecords([string[]]$PathSpecs) {
+    $lines = @(& git -C $Root ls-files -s -- @PathSpecs)
+    if ($LASTEXITCODE -ne 0) { Fail 'GIT_RUNTIME_INDEX_FAILED' }
+    $records = [System.Collections.Generic.List[string]]::new()
+    foreach ($line in $lines) {
+        $text = [string]$line
+        $tab = $text.IndexOf("`t", [StringComparison]::Ordinal)
+        if ($tab -lt 0) { continue }
+        $metadata = $text.Substring(0, $tab).Trim()
+        $relative = $text.Substring($tab + 1).Trim().Replace('\', '/')
+        if (-not (Test-RuntimeTrackedPath $relative)) { continue }
+        $records.Add("$relative=$metadata")
+    }
+    return $records
 }
 
 function Get-WorkingTreeMaterialRecords([string[]]$PathSpecs) {
+    $changed = @(& git -C $Root diff --name-only HEAD -- @PathSpecs)
+    if ($LASTEXITCODE -ne 0) { Fail 'GIT_RUNTIME_DIFF_FAILED' }
+    $untracked = @(& git -C $Root ls-files --others --exclude-standard -- @PathSpecs)
+    if ($LASTEXITCODE -ne 0) { Fail 'GIT_RUNTIME_UNTRACKED_FAILED' }
+
     $paths = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    foreach ($path in @(& git -C $Root diff --name-only HEAD -- @PathSpecs)) {
-        if ($LASTEXITCODE -ne 0) { Fail 'GIT_RUNTIME_DIFF_FAILED' }
+    foreach ($path in @($changed + $untracked)) {
         $normalized = ([string]$path).Trim().Replace('\', '/')
-        if ($normalized) { [void]$paths.Add($normalized) }
-    }
-    foreach ($path in @(& git -C $Root ls-files --others --exclude-standard -- @PathSpecs)) {
-        if ($LASTEXITCODE -ne 0) { Fail 'GIT_RUNTIME_UNTRACKED_FAILED' }
-        $normalized = ([string]$path).Trim().Replace('\', '/')
-        if ($normalized) { [void]$paths.Add($normalized) }
+        if ($normalized -and (Test-RuntimeTrackedPath $normalized)) { [void]$paths.Add($normalized) }
     }
 
     $records = [System.Collections.Generic.List[string]]::new()
     foreach ($relative in @($paths | Sort-Object)) {
-        if ($relative -ne '.dockerignore' -and -not (Test-RuntimeBuildPath $relative)) { continue }
         $absolute = Join-Path $Root ($relative -replace '/', [IO.Path]::DirectorySeparatorChar)
         $records.Add("$relative=$(Get-FileSha256 $absolute)")
     }
@@ -120,13 +132,8 @@ function Get-WorkingTreeMaterialRecords([string[]]$PathSpecs) {
 
 function Get-PathFingerprint([string[]]$PathSpecs) {
     $records = [System.Collections.Generic.List[string]]::new()
-    foreach ($pathSpec in @($PathSpecs | Sort-Object -Unique)) {
-        $normalized = $pathSpec.Replace('\', '/')
-        $records.Add("git:$normalized=$(Get-GitObjectID $normalized)")
-    }
-    foreach ($record in @(Get-WorkingTreeMaterialRecords $PathSpecs)) {
-        $records.Add("work:$record")
-    }
+    foreach ($record in @(Get-TrackedMaterialRecords $PathSpecs)) { $records.Add("index:$record") }
+    foreach ($record in @(Get-WorkingTreeMaterialRecords $PathSpecs)) { $records.Add("work:$record") }
     return (Get-TextSha256 ($records -join "`n"))
 }
 
