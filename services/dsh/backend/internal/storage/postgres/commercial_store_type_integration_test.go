@@ -34,130 +34,162 @@ func TestCommercialStoreTypeRegistryLifecycle(t *testing.T) {
 	}
 
 	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
-		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
-			t.Fatalf("apply canonical DSH migrations: %v", err)
-		}
-		if err := postgres.VerifySchema(ctx, db, records); err != nil {
-			t.Fatalf("verify canonical DSH schema: %v", err)
-		}
-
-		suffix := fmt.Sprintf("%d", time.Now().UTC().UnixNano())
-		verticalID := "storetype-vertical-" + suffix
-		vertical := postgres.CommerceVerticalRecord{
-			ID: verticalID, NameAr: "تصنيف اختبار", NameEn: "Test Vertical",
-			CatalogModel: "SHARED_CATALOG", Active: true,
-		}
-		verticalReason := "Create commercial type test vertical"
-		verticalAudit := postgres.CatalogRegistryAuditInput{
-			ActingActorID: testOperatorActorID,
-			CorrelationID: "corr-storetype-vertical-" + suffix,
-			Reason:        verticalReason,
-		}
-		createdVertical, err := postgres.CreateCommerceVertical(ctx, db, vertical, "idem-storetype-vertical-"+suffix,
-			postgres.HashCatalogVerticalCreateRequest(vertical, verticalReason), verticalAudit)
-		if err != nil {
-			t.Fatalf("create commercial type owner vertical: %v", err)
-		}
-		verticalID = createdVertical.Vertical.ID
-
-		item := postgres.CommercialStoreTypeRecord{
-			ID: "commercial-type-" + suffix, VerticalID: verticalID,
-			NameAr: "محل جزارة", NameEn: "Butcher Shop", Active: true,
-		}
-		createReason := "Add butcher commercial type"
-		createAudit := postgres.CatalogRegistryAuditInput{
-			ActingActorID: testOperatorActorID,
-			CorrelationID: "corr-storetype-create-" + suffix,
-			Reason:        createReason,
-		}
-		createKey := "idem-storetype-create-" + suffix
-		createHash := postgres.HashCommercialStoreTypeCreateRequest(item, createReason)
-		created, err := postgres.CreateCommercialStoreType(ctx, db, item, createKey, createHash, createAudit)
-		if err != nil || created.Replayed || created.StoreType.ID != item.ID || created.StoreType.Version != 1 {
-			t.Fatalf("create commercial store type = %+v, error=%v", created, err)
-		}
-		replayed, err := postgres.CreateCommercialStoreType(ctx, db, item, createKey, createHash, createAudit)
-		if err != nil || !replayed.Replayed || replayed.StoreType.ID != created.StoreType.ID || replayed.StoreType.Version != 1 {
-			t.Fatalf("replay commercial store type create = %+v, error=%v", replayed, err)
-		}
-		conflictingCreate := item
-		conflictingCreate.NameEn = "Fish Shop"
-		if _, err := postgres.CreateCommercialStoreType(ctx, db, conflictingCreate, createKey,
-			postgres.HashCommercialStoreTypeCreateRequest(conflictingCreate, createReason), createAudit); !errors.Is(err, postgres.ErrCatalogIdempotencyConflict) {
-			t.Fatalf("changed create request error = %v", err)
-		}
-		missingVertical := item
-		missingVertical.ID = "missing-vertical-type-" + suffix
-		missingVertical.VerticalID = "missing-vertical-" + suffix
-		if _, err := postgres.CreateCommercialStoreType(ctx, db, missingVertical, "idem-storetype-missing-"+suffix,
-			postgres.HashCommercialStoreTypeCreateRequest(missingVertical, createReason), createAudit); !errors.Is(err, postgres.ErrCatalogVerticalNotFound) {
-			t.Fatalf("missing owner vertical create error = %v", err)
-		}
-
-		listed, err := postgres.ListCommercialStoreTypes(ctx, db, verticalID, true)
-		if err != nil || len(listed) != 1 || listed[0].ID != item.ID {
-			t.Fatalf("active vertical commercial type list = %+v, error=%v", listed, err)
-		}
-		read, err := postgres.ReadCommercialStoreType(ctx, db, item.ID)
-		if err != nil || read.NameEn != item.NameEn || read.Version != 1 {
-			t.Fatalf("commercial type read = %+v, error=%v", read, err)
-		}
-		active, err := postgres.ReadActiveCommercialStoreType(ctx, db, item.ID)
-		if err != nil || !active.Active || active.VerticalID != verticalID {
-			t.Fatalf("active commercial type read = %+v, error=%v", active, err)
-		}
-		if _, err := postgres.ReadCommercialStoreType(ctx, db, "missing-type-"+suffix); !errors.Is(err, postgres.ErrCommercialStoreTypeNotFound) {
-			t.Fatalf("missing commercial type read error = %v", err)
-		}
-		if _, err := postgres.ReadActiveCommercialStoreType(ctx, db, "missing-type-"+suffix); !errors.Is(err, postgres.ErrCommercialStoreTypeNotFound) {
-			t.Fatalf("missing active commercial type read error = %v", err)
-		}
-		if _, err := postgres.ReadCommercialStoreType(ctx, db, strings.Repeat("x", 129)); !errors.Is(err, postgres.ErrCommercialStoreTypeInvalid) {
-			t.Fatalf("invalid commercial type read error = %v", err)
-		}
-
-		update := postgres.UpdateCommercialStoreTypeInput{
-			NameAr: "محل أسماك", NameEn: "Fish Shop", Active: false, ExpectedVersion: 1,
-		}
-		updateReason := "Rename and deactivate type"
-		updateAudit := postgres.CatalogRegistryAuditInput{
-			ActingActorID: testOperatorActorID,
-			CorrelationID: "corr-storetype-update-" + suffix,
-			Reason:        updateReason,
-		}
-		updateKey := "idem-storetype-update-" + suffix
-		updateHash := postgres.HashCommercialStoreTypeUpdateRequest(item.ID, update, updateReason)
-		updated, err := postgres.UpdateCommercialStoreType(ctx, db, item.ID, update, updateKey, updateHash, updateAudit)
-		if err != nil || updated.Replayed || updated.StoreType.Version != 2 || updated.StoreType.Active || updated.StoreType.NameEn != "Fish Shop" {
-			t.Fatalf("update commercial store type = %+v, error=%v", updated, err)
-		}
-		updateReplay, err := postgres.UpdateCommercialStoreType(ctx, db, item.ID, update, updateKey, updateHash, updateAudit)
-		if err != nil || !updateReplay.Replayed || updateReplay.StoreType.Version != 2 {
-			t.Fatalf("replay commercial store type update = %+v, error=%v", updateReplay, err)
-		}
-		changedUpdate := update
-		changedUpdate.NameEn = "Seafood Shop"
-		if _, err := postgres.UpdateCommercialStoreType(ctx, db, item.ID, changedUpdate, updateKey,
-			postgres.HashCommercialStoreTypeUpdateRequest(item.ID, changedUpdate, updateReason), updateAudit); !errors.Is(err, postgres.ErrCatalogIdempotencyConflict) {
-			t.Fatalf("changed update request error = %v", err)
-		}
-		staleUpdate := update
-		staleUpdate.ExpectedVersion = 1
-		staleUpdate.NameEn = "Stale Name"
-		if _, err := postgres.UpdateCommercialStoreType(ctx, db, item.ID, staleUpdate, "idem-storetype-stale-"+suffix,
-			postgres.HashCommercialStoreTypeUpdateRequest(item.ID, staleUpdate, updateReason), updateAudit); !errors.Is(err, postgres.ErrCatalogVersionConflict) {
-			t.Fatalf("stale update version error = %v", err)
-		}
-		if _, err := postgres.ReadActiveCommercialStoreType(ctx, db, item.ID); !errors.Is(err, postgres.ErrCommercialStoreTypeNotFound) {
-			t.Fatalf("inactive commercial type remains visible as active: %v", err)
-		}
-		inactiveTypes, err := postgres.ListCommercialStoreTypes(ctx, db, verticalID, true)
-		if err != nil || len(inactiveTypes) != 0 {
-			t.Fatalf("active-only list returned inactive type: %+v, error=%v", inactiveTypes, err)
-		}
-		allTypes, err := postgres.ListCommercialStoreTypes(ctx, db, verticalID, false)
-		if err != nil || len(allTypes) != 1 || allTypes[0].Version != 2 {
-			t.Fatalf("unfiltered type list = %+v, error=%v", allTypes, err)
-		}
+		runCommercialStoreTypeScenario(t, ctx, db, records, migrationSQL)
 	})
+}
+
+func runCommercialStoreTypeScenario(t *testing.T, ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
+	t.Helper()
+	if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
+		t.Fatalf("apply canonical DSH migrations: %v", err)
+	}
+	if err := postgres.VerifySchema(ctx, db, records); err != nil {
+		t.Fatalf("verify canonical DSH schema: %v", err)
+	}
+
+	suffix := fmt.Sprintf("%d", time.Now().UTC().UnixNano())
+	verticalID := createCommercialTypeVertical(t, ctx, db, suffix)
+	item := createCommercialTypeAndVerifyIdempotency(t, ctx, db, verticalID, suffix)
+	verifyCommercialTypeReads(t, ctx, db, item, verticalID, suffix)
+	updateCommercialType(t, ctx, db, item, verticalID, suffix)
+}
+
+func createCommercialTypeVertical(t *testing.T, ctx context.Context, db *sql.DB, suffix string) string {
+	t.Helper()
+	vertical := postgres.CommerceVerticalRecord{
+		ID: "storetype-vertical-" + suffix, NameAr: "تصنيف اختبار", NameEn: "Test Vertical",
+		CatalogModel: "SHARED_CATALOG", Active: true,
+	}
+	reason := "Create commercial type test vertical"
+	audit := postgres.CatalogRegistryAuditInput{
+		ActingActorID: testOperatorActorID,
+		CorrelationID: "corr-storetype-vertical-" + suffix,
+		Reason:        reason,
+	}
+	created, err := postgres.CreateCommerceVertical(ctx, db, vertical, "idem-storetype-vertical-"+suffix,
+		postgres.HashCatalogVerticalCreateRequest(vertical, reason), audit)
+	if err != nil {
+		t.Fatalf("create commercial type owner vertical: %v", err)
+	}
+	return created.Vertical.ID
+}
+
+func createCommercialTypeAndVerifyIdempotency(t *testing.T, ctx context.Context, db *sql.DB, verticalID, suffix string) postgres.CommercialStoreTypeRecord {
+	t.Helper()
+	item := postgres.CommercialStoreTypeRecord{
+		ID: "commercial-type-" + suffix, VerticalID: verticalID,
+		NameAr: "محل جزارة", NameEn: "Butcher Shop", Active: true,
+	}
+	reason := "Add butcher commercial type"
+	audit := postgres.CatalogRegistryAuditInput{
+		ActingActorID: testOperatorActorID,
+		CorrelationID: "corr-storetype-create-" + suffix,
+		Reason:        reason,
+	}
+	key := "idem-storetype-create-" + suffix
+	hash := postgres.HashCommercialStoreTypeCreateRequest(item, reason)
+	created, err := postgres.CreateCommercialStoreType(ctx, db, item, key, hash, audit)
+	if err != nil || created.Replayed || created.StoreType.ID != item.ID || created.StoreType.Version != 1 {
+		t.Fatalf("create commercial store type = %+v, error=%v", created, err)
+	}
+	replayed, err := postgres.CreateCommercialStoreType(ctx, db, item, key, hash, audit)
+	if err != nil || !replayed.Replayed || replayed.StoreType.ID != item.ID || replayed.StoreType.Version != 1 {
+		t.Fatalf("replay commercial store type create = %+v, error=%v", replayed, err)
+	}
+	conflicting := item
+	conflicting.NameEn = "Fish Shop"
+	if _, err := postgres.CreateCommercialStoreType(ctx, db, conflicting, key,
+		postgres.HashCommercialStoreTypeCreateRequest(conflicting, reason), audit); !errors.Is(err, postgres.ErrCatalogIdempotencyConflict) {
+		t.Fatalf("changed create request error = %v", err)
+	}
+	missingVertical := item
+	missingVertical.ID = "missing-vertical-type-" + suffix
+	missingVertical.VerticalID = "missing-vertical-" + suffix
+	if _, err := postgres.CreateCommercialStoreType(ctx, db, missingVertical, "idem-storetype-missing-"+suffix,
+		postgres.HashCommercialStoreTypeCreateRequest(missingVertical, reason), audit); !errors.Is(err, postgres.ErrCatalogVerticalNotFound) {
+		t.Fatalf("missing owner vertical create error = %v", err)
+	}
+	return created.StoreType
+}
+
+func verifyCommercialTypeReads(t *testing.T, ctx context.Context, db *sql.DB, item postgres.CommercialStoreTypeRecord, verticalID, suffix string) {
+	t.Helper()
+	listed, err := postgres.ListCommercialStoreTypes(ctx, db, verticalID, true)
+	if err != nil || len(listed) != 1 || listed[0].ID != item.ID {
+		t.Fatalf("active vertical commercial type list = %+v, error=%v", listed, err)
+	}
+	read, err := postgres.ReadCommercialStoreType(ctx, db, item.ID)
+	if err != nil || read.NameEn != item.NameEn || read.Version != 1 {
+		t.Fatalf("commercial type read = %+v, error=%v", read, err)
+	}
+	active, err := postgres.ReadActiveCommercialStoreType(ctx, db, item.ID)
+	if err != nil || !active.Active || active.VerticalID != verticalID {
+		t.Fatalf("active commercial type read = %+v, error=%v", active, err)
+	}
+	if _, err := postgres.ReadCommercialStoreType(ctx, db, "missing-type-"+suffix); !errors.Is(err, postgres.ErrCommercialStoreTypeNotFound) {
+		t.Fatalf("missing commercial type read error = %v", err)
+	}
+	if _, err := postgres.ReadActiveCommercialStoreType(ctx, db, "missing-type-"+suffix); !errors.Is(err, postgres.ErrCommercialStoreTypeNotFound) {
+		t.Fatalf("missing active commercial type read error = %v", err)
+	}
+	if _, err := postgres.ReadCommercialStoreType(ctx, db, strings.Repeat("x", 129)); !errors.Is(err, postgres.ErrCommercialStoreTypeInvalid) {
+		t.Fatalf("invalid commercial type read error = %v", err)
+	}
+}
+
+func updateCommercialType(t *testing.T, ctx context.Context, db *sql.DB, item postgres.CommercialStoreTypeRecord, verticalID, suffix string) {
+	t.Helper()
+	update := postgres.UpdateCommercialStoreTypeInput{
+		NameAr: "محل أسماك", NameEn: "Fish Shop", Active: false, ExpectedVersion: 1,
+	}
+	reason := "Rename and deactivate type"
+	audit := postgres.CatalogRegistryAuditInput{
+		ActingActorID: testOperatorActorID,
+		CorrelationID: "corr-storetype-update-" + suffix,
+		Reason:        reason,
+	}
+	key := "idem-storetype-update-" + suffix
+	hash := postgres.HashCommercialStoreTypeUpdateRequest(item.ID, update, reason)
+	updated, err := postgres.UpdateCommercialStoreType(ctx, db, item.ID, update, key, hash, audit)
+	if err != nil || updated.Replayed || updated.StoreType.Version != 2 || updated.StoreType.Active || updated.StoreType.NameEn != "Fish Shop" {
+		t.Fatalf("update commercial store type = %+v, error=%v", updated, err)
+	}
+	replayed, err := postgres.UpdateCommercialStoreType(ctx, db, item.ID, update, key, hash, audit)
+	if err != nil || !replayed.Replayed || replayed.StoreType.Version != 2 {
+		t.Fatalf("replay commercial store type update = %+v, error=%v", replayed, err)
+	}
+	verifyCommercialTypeUpdateFailures(t, ctx, db, item.ID, update, key, reason, audit, suffix)
+	verifyInactiveCommercialTypeReads(t, ctx, db, item.ID, verticalID)
+}
+
+func verifyCommercialTypeUpdateFailures(t *testing.T, ctx context.Context, db *sql.DB, id string, update postgres.UpdateCommercialStoreTypeInput, key, reason string, audit postgres.CatalogRegistryAuditInput, suffix string) {
+	t.Helper()
+	changed := update
+	changed.NameEn = "Seafood Shop"
+	if _, err := postgres.UpdateCommercialStoreType(ctx, db, id, changed, key,
+		postgres.HashCommercialStoreTypeUpdateRequest(id, changed, reason), audit); !errors.Is(err, postgres.ErrCatalogIdempotencyConflict) {
+		t.Fatalf("changed update request error = %v", err)
+	}
+	stale := update
+	stale.ExpectedVersion = 1
+	stale.NameEn = "Stale Name"
+	if _, err := postgres.UpdateCommercialStoreType(ctx, db, id, stale, "idem-storetype-stale-"+suffix,
+		postgres.HashCommercialStoreTypeUpdateRequest(id, stale, reason), audit); !errors.Is(err, postgres.ErrCatalogVersionConflict) {
+		t.Fatalf("stale update version error = %v", err)
+	}
+}
+
+func verifyInactiveCommercialTypeReads(t *testing.T, ctx context.Context, db *sql.DB, id, verticalID string) {
+	t.Helper()
+	if _, err := postgres.ReadActiveCommercialStoreType(ctx, db, id); !errors.Is(err, postgres.ErrCommercialStoreTypeNotFound) {
+		t.Fatalf("inactive commercial type remains visible as active: %v", err)
+	}
+	inactiveTypes, err := postgres.ListCommercialStoreTypes(ctx, db, verticalID, true)
+	if err != nil || len(inactiveTypes) != 0 {
+		t.Fatalf("active-only list returned inactive type: %+v, error=%v", inactiveTypes, err)
+	}
+	allTypes, err := postgres.ListCommercialStoreTypes(ctx, db, verticalID, false)
+	if err != nil || len(allTypes) != 1 || allTypes[0].Version != 2 {
+		t.Fatalf("unfiltered type list = %+v, error=%v", allTypes, err)
+	}
 }

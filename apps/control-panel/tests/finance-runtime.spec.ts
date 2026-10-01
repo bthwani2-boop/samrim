@@ -61,7 +61,7 @@ test("@live operator reads the WLT-managed unified beneficiary settlement worksp
 test("@live operator sees the WLT-managed Field acquisition reward category policy workspace", async ({ page }) => {
   test.setTimeout(30_000);
   await page.goto("/policies/field-acquisition");
-  await expect(page.getByRole("heading", { name: "استحقاق ضم الشريك للميداني" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "استحقاق ضم الشريك للميداني", level: 2 })).toBeVisible();
   await expect(page.getByText(/لكل فئة متجر سياسة مبلغ مستقلة/)).toBeVisible();
   await expect(page.getByLabel("فئة المتجر")).toBeVisible();
   await expect(page.getByLabel("مبلغ الاستحقاق لهذه الفئة (ريال يمني)")).toBeVisible();
