@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { enrollAndAuthenticateIsolatedOperator } from "./live-identity-proof-helpers";
 
 test.beforeEach(async ({ page }, testInfo) => {
-  const permissions = /delivery-fee policy|Field acquisition reward category policy/.test(testInfo.title) ? ["platform_policies"] : ["finance"];
+  const permissions = /delivery-fee policy|Field acquisition reward store-type policy/.test(testInfo.title) ? ["platform_policies"] : ["finance"];
   await enrollAndAuthenticateIsolatedOperator(page, permissions);
 });
 
@@ -58,12 +58,12 @@ test("@live operator reads the WLT-managed unified beneficiary settlement worksp
   expect(Array.isArray(registryRead.body.beneficiaries)).toBe(true);
 });
 
-test("@live operator sees the WLT-managed Field acquisition reward category policy workspace", async ({ page }) => {
+test("@live operator sees the WLT-managed Field acquisition reward store-type policy workspace", async ({ page }) => {
   test.setTimeout(30_000);
   await page.goto("/policies/field-acquisition");
   await expect(page.getByRole("heading", { name: "استحقاق ضم الشريك للميداني", level: 2 })).toBeVisible();
-  await expect(page.getByText(/لكل فئة متجر سياسة مبلغ مستقلة/)).toBeVisible();
-  await expect(page.getByLabel("فئة المتجر")).toBeVisible();
-  await expect(page.getByLabel("مبلغ الاستحقاق لهذه الفئة (ريال يمني)")).toBeVisible();
+  await expect(page.getByText(/لكل نوع متجر تجاري سياسة مبلغ مستقلة/)).toBeVisible();
+  await expect(page.getByLabel("نوع المتجر التجاري")).toBeVisible();
+  await expect(page.getByLabel("مبلغ الاستحقاق لهذا النوع (ريال يمني)")).toBeVisible();
   await expect(page.getByText(/وحدة التقريب ثابتة عند ٥٠ ريالًا/)).toBeVisible();
 });
