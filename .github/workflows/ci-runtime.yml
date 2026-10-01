@@ -23,6 +23,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
+      NX_NO_CLOUD: "true"
       CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout exact candidate
@@ -163,7 +164,6 @@ jobs:
         shell: bash
         env:
           CI: "true"
-          NX_NO_CLOUD: "true"
           CI_RUNTIME_TARGETS: ${{ steps.scope.outputs.targets }}
         run: node tools/dev/run-ci-command.mjs runtime-integration -- pnpm exec nx run repository-ci:runtime-integration --outputStyle=stream
 
