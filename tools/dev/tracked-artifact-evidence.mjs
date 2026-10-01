@@ -18,7 +18,7 @@ const APP_METADATA_NAMES = new Set([
   "app.config.mjs", "app.config.mts",
 ]);
 const ROOT_EVIDENCE = new Set([
-  ".dockerignore", ".editorconfig", ".gitattributes", ".gitignore", ".go-version",
+  ".dockerignore", ".editorconfig", ".gitattributes", ".gitignore", ".go-version", ".nxignore",
   ".node-version", ".nvmrc", "AGENTS.md", "CLAUDE.md", "CONTRIBUTING.md",
   "DESIGN.md", "GEMINI.md", "README.md", "REPOSITORY-STRUCTURE.md", "SECURITY.md",
   "biome.json", "go.work", "go.work.sum", "knip.jsonc", "knowledge.sources.json",
