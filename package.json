@@ -19,6 +19,7 @@
     "runtime:down": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 down",
     "runtime:status": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 status",
     "bootstrap": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/bootstrap.ps1",
+    "check": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/check-local.ps1",
     "safe:push": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/safe-push.ps1",
     "theme:generate": "node --loader ./tools/dev/ts-resolver.mjs tools/dev/generate-theme-css.mjs",
     "theme:check": "node --loader ./tools/dev/ts-resolver.mjs tools/dev/generate-theme-css.mjs --check",
