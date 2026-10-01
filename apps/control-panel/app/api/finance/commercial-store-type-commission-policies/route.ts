@@ -41,14 +41,14 @@ export async function POST(request: Request) {
   const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() ?? "";
   if (idempotencyKey.length < 8 || idempotencyKey.length > 128) return errorResponse("INVALID_INPUT", "Idempotency-Key is required", 400);
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-  const allowed = ["commercialStoreTypeId", "fulfillmentMode", "commissionRateBps", "expectedVersion", "reason"];
+  const allowed = new Set(["commercialStoreTypeId", "fulfillmentMode", "commissionRateBps", "expectedVersion", "reason"]);
   const commercialStoreTypeId = typeof body?.commercialStoreTypeId === "string" ? body.commercialStoreTypeId.trim() : "";
   const fulfillmentMode = typeof body?.fulfillmentMode === "string" ? body.fulfillmentMode.trim() : "";
   const commissionRateBps = body?.commissionRateBps;
   const expectedVersion = body?.expectedVersion;
   const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
   const validMode = fulfillmentMode === "BTHWANI_CAPTAIN" || fulfillmentMode === "PARTNER_CAPTAIN" || fulfillmentMode === "CUSTOMER_PICKUP";
-  if (!body || Object.keys(body).some((key) => !allowed.includes(key)) || !commercialStoreTypeId || commercialStoreTypeId.length > 128 || !validMode || !Number.isInteger(commissionRateBps) || Number(commissionRateBps) < 0 || Number(commissionRateBps) > 10000 || !Number.isInteger(expectedVersion) || Number(expectedVersion) < 0 || Array.from(reason).length < 8 || Array.from(reason).length > 500) {
+  if (!body || Object.keys(body).some((key) => !allowed.has(key)) || !commercialStoreTypeId || commercialStoreTypeId.length > 128 || !validMode || !Number.isInteger(commissionRateBps) || Number(commissionRateBps) < 0 || Number(commissionRateBps) > 10000 || !Number.isInteger(expectedVersion) || Number(expectedVersion) < 0 || Array.from(reason).length < 8 || Array.from(reason).length > 500) {
     return errorResponse("INVALID_INPUT", "Commercial store type commission policy fields are invalid", 400);
   }
   const input: PartnerStoreCommissionPolicyUpdateRequest = { commercialStoreTypeId, fulfillmentMode: fulfillmentMode as PartnerStoreCommissionPolicyUpdateRequest["fulfillmentMode"], commissionRateBps: Number(commissionRateBps), expectedVersion: Number(expectedVersion), reason };

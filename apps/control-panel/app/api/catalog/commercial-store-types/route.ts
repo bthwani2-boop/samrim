@@ -45,8 +45,8 @@ export async function POST(request: Request) {
   const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() ?? "";
   if (idempotencyKey.length < 8 || idempotencyKey.length > 128) return errorResponse("INVALID_INPUT", "Idempotency-Key is required", 400);
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-  const allowed = ["id", "verticalId", "nameAr", "nameEn", "active", "reason"];
-  if (!body || Object.keys(body).some((key) => !allowed.includes(key)) || (Object.keys(body).length !== 5 && Object.keys(body).length !== 6) || (body.id !== undefined && (typeof body.id !== "string" || !body.id.trim())) || typeof body.verticalId !== "string" || !body.verticalId.trim() || typeof body.nameAr !== "string" || !body.nameAr.trim() || typeof body.nameEn !== "string" || !body.nameEn.trim() || typeof body.active !== "boolean" || typeof body.reason !== "string" || body.reason.trim().length < 5 || body.reason.trim().length > 500) {
+  const allowed = new Set(["id", "verticalId", "nameAr", "nameEn", "active", "reason"]);
+  if (!body || Object.keys(body).some((key) => !allowed.has(key)) || (Object.keys(body).length !== 5 && Object.keys(body).length !== 6) || (body.id !== undefined && (typeof body.id !== "string" || !body.id.trim())) || typeof body.verticalId !== "string" || !body.verticalId.trim() || typeof body.nameAr !== "string" || !body.nameAr.trim() || typeof body.nameEn !== "string" || !body.nameEn.trim() || typeof body.active !== "boolean" || typeof body.reason !== "string" || body.reason.trim().length < 5 || body.reason.trim().length > 500) {
     return errorResponse("INVALID_INPUT", "verticalId, nameAr, nameEn, active and reason are required", 400);
   }
   const input: CreateCommercialStoreTypeRequest = { ...(typeof body.id === "string" ? { id: body.id.trim() } : {}), verticalId: body.verticalId.trim(), nameAr: body.nameAr.trim(), nameEn: body.nameEn.trim(), active: body.active, reason: body.reason.trim() };

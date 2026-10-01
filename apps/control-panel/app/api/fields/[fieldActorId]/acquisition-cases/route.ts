@@ -14,7 +14,7 @@ export async function GET(request: Request, context: Readonly<{ params: Promise<
   const { fieldActorId } = await context.params;
   const query = new URL(request.url).searchParams;
   const rawLimit = query.get("limit") ?? "25";
-  const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;
+  const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : Number.NaN;
   const search = query.get("q") ?? "";
   const cursor = query.get("cursor") ?? "";
   if (!fieldActorId.trim() || fieldActorId.length > 128 || !Number.isInteger(limit) || limit < 1 || limit > 50 || Array.from(search.trim()).length > 100 || cursor.length > 512) {
