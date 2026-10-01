@@ -153,6 +153,8 @@ function verifyCiWorkflowTopology() {
     "enable_nx_agents:",
     "default: false",
     "NX_DTE_ENABLED:",
+    "github.event_name == 'pull_request' && secrets.NX_CLOUD_RO_TOKEN != ''",
+    "github.event_name == 'push' && secrets.NX_CLOUD_RW_TOKEN != ''",
     "if: env.NX_DTE_ENABLED == 'true'",
     "pnpm dlx nx-cloud start-nx-agents",
     "if: github.event_name == 'workflow_dispatch' && env.NX_DTE_ENABLED == 'true'",
@@ -206,16 +208,16 @@ function verifyPerformanceBudget(workflowNames) {
       forbidTokens(read(`.github/workflows/${file}`), file, ["start-nx-agents"]);
     }
     const staticWorkflow = read(".github/workflows/ci-static.yml");
+    requireTokens(read(".nx/ci-config.yaml"), "observe-mode Nx Agents guard", [
+      "distribute-on: 2 linux-medium-js",
+    ]);
     requireTokens(staticWorkflow, "observe-mode Nx Agents guard", [
-      "enable_nx_agents:",
-      "default: false",
       "if: env.NX_DTE_ENABLED == 'true'",
-      "if: github.event_name == 'workflow_dispatch' && env.NX_DTE_ENABLED == 'true'",
       "--outputStyle=stream --dte",
     ]);
     assert(
       (staticWorkflow.match(/start-nx-agents/g) ?? []).length === 1,
-      "observe mode permits exactly one explicitly guarded Nx Agents start",
+      "observe mode permits exactly one two-agent bounded CI start",
     );
   }
 }

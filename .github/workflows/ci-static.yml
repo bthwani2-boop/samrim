@@ -32,7 +32,7 @@ jobs:
     env:
       NX_CLOUD_ACCESS_TOKEN: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && secrets.NX_CLOUD_RW_TOKEN || secrets.NX_CLOUD_RO_TOKEN }}
       NX_NO_CLOUD: ${{ github.event_name == 'pull_request' && secrets.NX_CLOUD_RO_TOKEN == '' && 'true' || 'false' }}
-      NX_DTE_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.enable_nx_agents || false }}
+      NX_DTE_ENABLED: ${{ (github.event_name == 'pull_request' && secrets.NX_CLOUD_RO_TOKEN != '') || (github.event_name == 'push' && secrets.NX_CLOUD_RW_TOKEN != '') || (github.event_name == 'workflow_dispatch' && inputs.enable_nx_agents && (secrets.NX_CLOUD_RW_TOKEN != '' || secrets.NX_CLOUD_RO_TOKEN != '')) }}
       CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT: maps-config-placeholder-0
       GOOGLE_MAPS_IOS_API_KEY: maps-config-placeholder-1

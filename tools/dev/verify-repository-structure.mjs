@@ -57,6 +57,7 @@ if (set.has(structurePath)) {
     "CURRENT_IMPLEMENTATION_INVENTORY_AUTHORITY: NONE",
     "Current app/service/package members are discovered from the exact project graph/source",
     "This is a placement grammar, not current inventory",
+    ".nx/        Nx task distribution configuration and ignored local Nx state",
   ]) {
     assert(structure.includes(token), `${structurePath} missing placement-only invariant: ${token}`);
   }
@@ -67,14 +68,14 @@ assert(
   "Tracked task trigger is forbidden; keep temporary task authorization outside durable repository content",
 );
 
-const allowedTopLevel = new Set([".github", "apps", "contracts", "infra", "packages", "services", "tools"]);
+const allowedTopLevel = new Set([".github", ".nx", "apps", "contracts", "infra", "packages", "services", "tools"]);
 const topLevel = [...new Set(
   tracked.filter((value) => value.includes("/")).map((value) => value.split("/", 1)[0]),
 )].toSorted(compareStrings);
 for (const item of topLevel) {
   assert(allowedTopLevel.has(item), `Unadmitted top-level ownership class tracked: ${item}`);
 }
-for (const required of [".github", "tools"]) {
+for (const required of [".github", ".nx", "tools"]) {
   assert(topLevel.includes(required), `Required repository/tool root missing: ${required}`);
 }
 
