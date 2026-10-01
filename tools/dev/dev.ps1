@@ -29,37 +29,45 @@ function Compose([string[]]$Arguments) {
     if ($LASTEXITCODE -ne 0) { Fail "DOCKER_COMPOSE_FAILED args=$($Arguments -join ' ')" }
 }
 
-function Read-RunningBackendServices {
-    return @(Compose @('ps','--status','running','--services') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-}
-
 function Read-BackendServiceStates {
     $states = @{}
-    foreach ($line in @(Compose @('ps', '-a', '--format', '{{.Service}}|{{.State}}|{{.Health}}'))) {
-        $parts = @($line -split '\|', 3)
-        if ($parts.Count -lt 2) { continue }
-        $service = $parts[0].Trim()
+    foreach ($line in @(Compose @('ps', '-a', '--format', '{{.ID}}|{{.Service}}|{{.State}}|{{.Health}}'))) {
+        $parts = @($line -split '\|', 4)
+        if ($parts.Count -lt 3) { continue }
+        $containerID = $parts[0].Trim()
+        $service = $parts[1].Trim()
         if (-not $service) { continue }
         $states[$service] = [pscustomobject]@{
-            State  = $parts[1].Trim().ToLowerInvariant()
-            Health = if ($parts.Count -ge 3) { $parts[2].Trim().ToLowerInvariant() } else { '' }
+            ContainerID = $containerID
+            State       = $parts[2].Trim().ToLowerInvariant()
+            Health      = if ($parts.Count -ge 4) { $parts[3].Trim().ToLowerInvariant() } else { '' }
         }
     }
     return $states
 }
 
-function Test-BackendReady {
+function Test-BackendReady([hashtable]$States) {
     $required = @('postgres', 'mailpit', 'media', 'identity', 'dsh', 'wlt')
     $healthRequired = @('postgres', 'media', 'identity', 'dsh', 'wlt')
-    $running = @(Read-RunningBackendServices)
-    $states = Read-BackendServiceStates
     foreach ($service in $required) {
-        if ($running -notcontains $service) { return $false }
-        if (-not $states.ContainsKey($service)) { return $false }
-        if ($states[$service].State -ne 'running') { return $false }
-        if ($healthRequired -contains $service -and $states[$service].Health -ne 'healthy') { return $false }
+        if (-not $States.ContainsKey($service)) { return $false }
+        if ($States[$service].State -ne 'running') { return $false }
+        if ($healthRequired -contains $service -and $States[$service].Health -ne 'healthy') { return $false }
     }
     return $true
+}
+
+function Read-RunningBackendImages([hashtable]$States) {
+    $services = @('identity', 'dsh', 'wlt')
+    $containerIDs = @($services | ForEach-Object { [string]$States[$_].ContainerID })
+    if ($containerIDs | Where-Object { -not $_ }) { Fail 'BACKEND_IMAGE_PROVENANCE_MISSING_CONTAINER' }
+    $imageIDs = @(& docker inspect --format '{{.Image}}' @containerIDs)
+    if ($LASTEXITCODE -ne 0 -or $imageIDs.Count -ne $services.Count) { Fail 'BACKEND_IMAGE_PROVENANCE_READ_FAILED' }
+    $images = @{}
+    for ($index = 0; $index -lt $services.Count; $index++) {
+        $images[$services[$index]] = ([string]$imageIDs[$index]).Trim()
+    }
+    return $images
 }
 
 function Get-TextSha256([string]$Text) {
@@ -73,6 +81,13 @@ function Get-FileSha256([string]$Path) {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
+function Test-RuntimeBuildMaterial([System.IO.FileInfo]$File) {
+    if ($File.Name -in @('Dockerfile', 'go.mod', 'go.sum')) { return $true }
+    if ($File.Extension -eq '.sql') { return $true }
+    if ($File.Extension -eq '.go' -and -not $File.Name.EndsWith('_test.go', [StringComparison]::OrdinalIgnoreCase)) { return $true }
+    return $false
+}
+
 function Get-PathFingerprint([string[]]$PathSpecs) {
     $files = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
     foreach ($pathSpec in $PathSpecs) {
@@ -82,7 +97,7 @@ function Get-PathFingerprint([string[]]$PathSpecs) {
             continue
         }
         if (Test-Path -LiteralPath $absolute -PathType Container) {
-            foreach ($file in @(Get-ChildItem -LiteralPath $absolute -Recurse -Force -File)) { $files.Add($file) }
+            foreach ($file in @(Get-ChildItem -LiteralPath $absolute -Recurse -Force -File | Where-Object { Test-RuntimeBuildMaterial $_ })) { $files.Add($file) }
         }
     }
 
@@ -96,13 +111,10 @@ function Get-PathFingerprint([string[]]$PathSpecs) {
 
 function Get-BackendInputState {
     if (-not (Test-Path -LiteralPath $EnvPath -PathType Leaf)) { Fail "LOCAL_ENV_MISSING path=$EnvPath" }
-    $configMaterial = @(
-        "compose=$(Get-FileSha256 $ComposePath)",
-        "env=$(Get-FileSha256 $EnvPath)"
-    ) -join "`n"
     return @{
-        schema   = 1
-        config   = (Get-TextSha256 $configMaterial)
+        schema   = 2
+        compose  = (Get-FileSha256 $ComposePath)
+        env      = (Get-FileSha256 $EnvPath)
         identity = (Get-PathFingerprint @('.dockerignore', 'services/identity/backend', 'services/identity/database/migrations'))
         dsh      = (Get-PathFingerprint @('.dockerignore', 'services/dsh/backend', 'services/dsh/database/migrations', 'services/identity/clients/go'))
         wlt      = (Get-PathFingerprint @('.dockerignore', 'services/wlt/backend', 'services/wlt/database/migrations'))
@@ -113,7 +125,7 @@ function Read-BackendInputState {
     if (-not (Test-Path -LiteralPath $RuntimeStatePath -PathType Leaf)) { return $null }
     try {
         $state = Get-Content -LiteralPath $RuntimeStatePath -Raw | ConvertFrom-Json -AsHashtable
-        if ($state['schema'] -ne 1) { return $null }
+        if ($state['schema'] -ne 2) { return $null }
         return $state
     }
     catch {
@@ -125,7 +137,7 @@ function Write-BackendInputState([hashtable]$State) {
     New-Item -ItemType Directory -Path $RuntimeStateDir -Force | Out-Null
     $temp = Join-Path $RuntimeStateDir ("backend-input-state-{0}.tmp" -f [guid]::NewGuid().ToString('N'))
     try {
-        $State | ConvertTo-Json -Compress | Set-Content -LiteralPath $temp -Encoding utf8NoBOM
+        $State | ConvertTo-Json -Depth 4 -Compress | Set-Content -LiteralPath $temp -Encoding utf8NoBOM
         Move-Item -LiteralPath $temp -Destination $RuntimeStatePath -Force
     }
     finally {
@@ -135,8 +147,18 @@ function Write-BackendInputState([hashtable]$State) {
 
 function Test-BackendInputStateEqual([hashtable]$Left, [hashtable]$Right) {
     if ($null -eq $Left -or $null -eq $Right) { return $false }
-    foreach ($key in @('schema', 'config', 'identity', 'dsh', 'wlt')) {
+    foreach ($key in @('schema', 'compose', 'env', 'identity', 'dsh', 'wlt')) {
         if (([string]$Left[$key]) -ne ([string]$Right[$key])) { return $false }
+    }
+    return $true
+}
+
+function Test-BackendImageStateEqual([hashtable]$StoredState, [hashtable]$RunningImages) {
+    if ($null -eq $StoredState -or -not $StoredState.ContainsKey('images')) { return $false }
+    $storedImages = $StoredState['images']
+    if ($storedImages -isnot [hashtable]) { return $false }
+    foreach ($service in @('identity', 'dsh', 'wlt')) {
+        if (([string]$storedImages[$service]) -ne ([string]$RunningImages[$service])) { return $false }
     }
     return $true
 }
@@ -155,18 +177,23 @@ function Reconcile-BackendCold {
 function Ensure-Backend {
     $currentState = Get-BackendInputState
     $previousState = Read-BackendInputState
-    if ((Test-BackendReady) -and (Test-BackendInputStateEqual $previousState $currentState)) {
-        Write-Host 'BACKEND_REUSE=PASS state=healthy inputs=unchanged'
-        return
+    $states = Read-BackendServiceStates
+    if ((Test-BackendReady $states) -and (Test-BackendInputStateEqual $previousState $currentState)) {
+        $runningImages = Read-RunningBackendImages $states
+        if (Test-BackendImageStateEqual $previousState $runningImages) {
+            Write-Host 'BACKEND_REUSE=PASS state=healthy inputs=unchanged images=verified'
+            return
+        }
     }
 
     if ($null -eq $previousState) {
         Reconcile-BackendCold
     }
     else {
+        $composeChanged = ([string]$previousState['compose']) -ne ([string]$currentState['compose'])
         $buildServices = [System.Collections.Generic.List[string]]::new()
         foreach ($service in @('identity', 'dsh', 'wlt')) {
-            if ((([string]$previousState[$service]) -ne ([string]$currentState[$service])) -or -not (Test-BackendImageExists $service)) {
+            if ($composeChanged -or (([string]$previousState[$service]) -ne ([string]$currentState[$service])) -or -not (Test-BackendImageExists $service)) {
                 $buildServices.Add($service)
             }
         }
@@ -177,9 +204,11 @@ function Ensure-Backend {
         Compose @('up', '-d', '--no-build', '--wait', '--wait-timeout', '300', '--remove-orphans')
     }
 
-    if (-not (Test-BackendReady)) { Fail 'BACKEND_NOT_READY after=reconcile' }
+    $states = Read-BackendServiceStates
+    if (-not (Test-BackendReady $states)) { Fail 'BACKEND_NOT_READY after=reconcile' }
+    $currentState['images'] = Read-RunningBackendImages $states
     Write-BackendInputState $currentState
-    Write-Host 'BACKEND_RECONCILE=PASS state=healthy inputs=current'
+    Write-Host 'BACKEND_RECONCILE=PASS state=healthy inputs=current images=recorded'
 }
 
 function Stop-RepositoryHosts {

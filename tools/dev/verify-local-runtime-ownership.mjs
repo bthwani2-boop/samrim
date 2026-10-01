@@ -56,9 +56,19 @@ for(const removed of ["Start-MobileServer","Start-ControlServer","Stop-OwnedList
 }
 check(!dev.includes("--dev-client"),"dev.ps1 must not launch Expo");
 check(!dev.includes(String.raw`dist\bin\next`),"dev.ps1 must not launch Next");
-check(dev.includes("Read-RunningBackendServices"),"dev.ps1 must read canonical Compose service state after reconciliation");
-check(dev.includes("Compose @('up','-d','--build','--wait','--wait-timeout','300','--remove-orphans')"),"backend readiness must reconcile current source through Compose build before declaring ready");
-check(dev.includes("Compose @('ps','--status','running','--services')"),"backend readiness must read back running Compose services after reconciliation");
+check(dev.includes("Read-BackendServiceStates"),"dev.ps1 must read canonical Compose service state");
+check(!dev.includes("Read-RunningBackendServices"),"dev.ps1 must not duplicate Compose state reads on the warm path");
+check(dev.includes("BACKEND_REUSE=PASS state=healthy inputs=unchanged images=verified"),"healthy unchanged runtime must have a no-build reuse path");
+check(dev.includes("Read-RunningBackendImages"),"runtime reuse must prove running backend image provenance");
+check(dev.includes("Test-BackendImageStateEqual"),"runtime reuse must reject stale container image provenance");
+check(dev.includes("schema   = 2")&&dev.includes("compose  = (Get-FileSha256 $ComposePath)")&&dev.includes("env      = (Get-FileSha256 $EnvPath)"),"runtime state must distinguish Compose topology from runtime environment changes");
+check(dev.includes("$composeChanged")&&dev.includes("$composeChanged -or"),"Compose topology changes must force backend image reconciliation");
+check(dev.includes("Test-RuntimeBuildMaterial")&&dev.includes("_test.go"),"runtime fingerprint must exclude Go test-only files from backend image invalidation");
+check(dev.includes("@('postgres', 'mailpit', 'media', 'identity', 'dsh', 'wlt')"),"backend readiness must include media dependency");
+check(dev.includes("Compose @('up','-d','--build','--wait','--wait-timeout','300','--remove-orphans')"),"cold backend readiness must retain canonical Compose build reconciliation");
+check(dev.includes("Compose @('up', '-d', '--no-build', '--wait', '--wait-timeout', '300', '--remove-orphans')"),"warm/selective backend reconciliation must not rebuild unchanged images");
+check(dev.includes("Compose (@('build') + $buildServices.ToArray())"),"changed backend source must rebuild only the affected backend image set");
+check(dev.includes("Compose @('ps', '-a', '--format', '{{.ID}}|{{.Service}}|{{.State}}|{{.Health}}')"),"backend readiness must use one canonical Compose state read per observation");
 check(!/\badb(?:\.exe)?\b/i.test(dev)&&!dev.toLowerCase().includes("scrcpy"),"dev.ps1 must not retain device or scrcpy ownership");
 check(!dev.includes("Active-Ports")&&!dev.includes("GetActiveTcpListeners"),"backend reuse must not trust occupied host ports");
 check(scr.includes("$env:ADB=$Adb"),"scr.ps1 must pin scrcpy to the exact ADB executable used by the script");
