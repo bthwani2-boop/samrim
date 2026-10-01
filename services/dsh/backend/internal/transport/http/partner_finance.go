@@ -2,6 +2,7 @@ package transporthttp
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"strconv"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
@@ -17,6 +19,7 @@ type PartnerFinanceServer struct {
 	auth     *auth.ServiceToken
 	identity *identityintegration.Client
 	payment  *wlt.Client
+	db       *sql.DB
 }
 
 type partnerCommissionRemittanceRequest struct {
@@ -31,22 +34,22 @@ type partnerCommissionRemittanceResponse struct {
 }
 
 type partnerStoreCommissionPolicyUpdateRequest struct {
-	StoreID           string `json:"storeId"`
-	FulfillmentMode   string `json:"fulfillmentMode"`
-	CommissionRateBps int    `json:"commissionRateBps"`
-	ExpectedVersion   int    `json:"expectedVersion"`
-	Reason            string `json:"reason"`
+	CommercialStoreTypeID string `json:"commercialStoreTypeId"`
+	FulfillmentMode       string `json:"fulfillmentMode"`
+	CommissionRateBps     int    `json:"commissionRateBps"`
+	ExpectedVersion       int    `json:"expectedVersion"`
+	Reason                string `json:"reason"`
 }
 
-func NewPartnerFinance(identity *identityintegration.Client, accessToken string, payment *wlt.Client) (*PartnerFinanceServer, error) {
+func NewPartnerFinance(identity *identityintegration.Client, accessToken string, payment *wlt.Client, db *sql.DB) (*PartnerFinanceServer, error) {
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
 		return nil, err
 	}
-	if identity == nil || payment == nil {
+	if identity == nil || payment == nil || db == nil {
 		return nil, &identityclient.Error{Status: http.StatusInternalServerError, Code: "CONFIGURATION_ERROR", Message: "partner finance dependencies are required"}
 	}
-	return &PartnerFinanceServer{auth: authorizer, identity: identity, payment: payment}, nil
+	return &PartnerFinanceServer{auth: authorizer, identity: identity, payment: payment, db: db}, nil
 }
 
 func (s *PartnerFinanceServer) Register(mux *http.ServeMux) {
@@ -54,8 +57,8 @@ func (s *PartnerFinanceServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/operator/partner-commission-receivables", s.listOperatorCommissionReceivables)
 	mux.HandleFunc("GET /dsh/operator/partners/{partnerActorId}/financial-summary", s.readOperatorSummary)
 	mux.HandleFunc("POST /dsh/operator/partners/{partnerActorId}/commission-remittances", s.recordCommissionRemittance)
-	mux.HandleFunc("GET /dsh/operator/partner-store-commission-policies", s.readStoreCommissionPolicies)
-	mux.HandleFunc("POST /dsh/operator/partner-store-commission-policies", s.updateStoreCommissionPolicy)
+	mux.HandleFunc("GET /dsh/operator/commercial-store-type-commission-policies", s.readStoreCommissionPolicies)
+	mux.HandleFunc("POST /dsh/operator/commercial-store-type-commission-policies", s.updateStoreCommissionPolicy)
 }
 
 func (s *PartnerFinanceServer) readStoreCommissionPolicies(w http.ResponseWriter, r *http.Request) {
@@ -70,12 +73,12 @@ func (s *PartnerFinanceServer) readStoreCommissionPolicies(w http.ResponseWriter
 	if !s.requirePermission(w, r.Context(), acting, "finance") {
 		return
 	}
-	storeID := strings.TrimSpace(r.URL.Query().Get("storeId"))
-	if storeID == "" || len(storeID) > 128 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "storeId is required")
+	typeID := strings.TrimSpace(r.URL.Query().Get("commercialStoreTypeId"))
+	if _, err := postgres.ReadCommercialStoreType(r.Context(), s.db, typeID); err != nil {
+		writeError(w, http.StatusNotFound, "COMMERCIAL_STORE_TYPE_NOT_FOUND", "commercial store type was not found")
 		return
 	}
-	result, err := s.payment.ReadPartnerStoreCommissionPolicies(r.Context(), storeID)
+	result, err := s.payment.ReadPartnerStoreCommissionPolicies(r.Context(), typeID)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return
@@ -99,15 +102,19 @@ func (s *PartnerFinanceServer) updateStoreCommissionPolicy(w http.ResponseWriter
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	input.StoreID = strings.TrimSpace(input.StoreID)
+	input.CommercialStoreTypeID = strings.TrimSpace(input.CommercialStoreTypeID)
 	input.FulfillmentMode = strings.TrimSpace(input.FulfillmentMode)
 	input.Reason = strings.TrimSpace(input.Reason)
 	validMode := input.FulfillmentMode == "BTHWANI_CAPTAIN" || input.FulfillmentMode == "PARTNER_CAPTAIN" || input.FulfillmentMode == "CUSTOMER_PICKUP"
-	if input.StoreID == "" || len(input.StoreID) > 128 || !validMode || input.CommissionRateBps < 0 || input.CommissionRateBps > 10000 || input.ExpectedVersion < 1 || utf8.RuneCountInString(input.Reason) < 8 || utf8.RuneCountInString(input.Reason) > 500 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "store commission policy fields are invalid")
+	if _, err := postgres.ReadActiveCommercialStoreType(r.Context(), s.db, input.CommercialStoreTypeID); err != nil {
+		writeError(w, http.StatusNotFound, "COMMERCIAL_STORE_TYPE_NOT_ACTIVE", "active commercial store type is required for policy changes")
 		return
 	}
-	result, err := s.payment.UpdatePartnerStoreCommissionPolicy(r.Context(), input.StoreID, input.FulfillmentMode, input.CommissionRateBps, input.ExpectedVersion, input.Reason, idempotencyKey, correlationID, acting)
+	if input.CommercialStoreTypeID == "" || len(input.CommercialStoreTypeID) > 128 || !validMode || input.CommissionRateBps < 0 || input.CommissionRateBps > 10000 || input.ExpectedVersion < 0 || utf8.RuneCountInString(input.Reason) < 8 || utf8.RuneCountInString(input.Reason) > 500 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "commercial store type commission policy fields are invalid")
+		return
+	}
+	result, err := s.payment.UpdatePartnerStoreCommissionPolicy(r.Context(), input.CommercialStoreTypeID, input.FulfillmentMode, input.CommissionRateBps, input.ExpectedVersion, input.Reason, idempotencyKey, correlationID, acting)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return

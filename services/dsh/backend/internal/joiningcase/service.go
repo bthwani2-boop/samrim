@@ -46,6 +46,7 @@ func (s *Service) Create(ctx context.Context, input postgres.JoiningCaseRecord, 
 	firstStoreName := strings.TrimSpace(input.FirstStoreName)
 	serviceCityID := strings.TrimSpace(input.FirstStoreServiceCityID)
 	verticalID := strings.TrimSpace(input.FirstStoreVerticalID)
+	commercialTypeID := strings.TrimSpace(input.FirstStoreCommercialTypeID)
 	if len(input.FirstStoreFulfillmentModes) == 0 {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
@@ -53,13 +54,13 @@ func (s *Service) Create(ctx context.Context, input postgres.JoiningCaseRecord, 
 	if modesErr != nil {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
-	if !phoneE164Pattern.MatchString(phone) || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || serviceCityID == "" || verticalID == "" || input.FirstStoreLatitude == nil || input.FirstStoreLongitude == nil || !validCoordinates(*input.FirstStoreLatitude, *input.FirstStoreLongitude) {
+	if !phoneE164Pattern.MatchString(phone) || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || serviceCityID == "" || verticalID == "" || commercialTypeID == "" || input.FirstStoreLatitude == nil || input.FirstStoreLongitude == nil || !validCoordinates(*input.FirstStoreLatitude, *input.FirstStoreLongitude) {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
-	return postgres.CreateJoiningCase(ctx, s.db, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseRequest(phone, businessName, firstStoreName, serviceCityID, verticalID, *input.FirstStoreLatitude, *input.FirstStoreLongitude, fulfillmentModes), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID), phone, businessName, firstStoreName, serviceCityID, verticalID, *input.FirstStoreLatitude, *input.FirstStoreLongitude, fulfillmentModes)
+	return postgres.CreateJoiningCase(ctx, s.db, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseRequest(phone, businessName, firstStoreName, serviceCityID, verticalID, commercialTypeID, *input.FirstStoreLatitude, *input.FirstStoreLongitude, fulfillmentModes), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID), phone, businessName, firstStoreName, serviceCityID, verticalID, commercialTypeID, *input.FirstStoreLatitude, *input.FirstStoreLongitude, fulfillmentModes)
 }
 
 func (s *Service) Submit(ctx context.Context, caseID string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.JoiningCaseResult, error) {
@@ -105,7 +106,6 @@ func (s *Service) Review(ctx context.Context, caseID, decision, correctionReason
 	if decision == "needs_correction" && (len(correctionReason) < 5 || len(correctionReason) > 500) {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
-	commission := 0
 	period := ""
 	policyVersion := ""
 	if decision == "approved" {
@@ -120,17 +120,16 @@ func (s *Service) Review(ctx context.Context, caseID, decision, correctionReason
 		if err != nil {
 			return postgres.JoiningCaseResult{}, err
 		}
-		commission = policy.CommissionRateBps
 		period = strings.ToUpper(strings.TrimSpace(policy.SettlementPeriod))
 		policyVersion = strings.TrimSpace(policy.PolicyVersion)
 		if policyVersion != expectedTermsPolicyVersion {
 			return postgres.JoiningCaseResult{}, ErrPartnerFinancialTermsPolicyStale
 		}
-		if commission < 0 || commission > 10000 || (period != "DAILY" && period != "WEEKLY" && period != "MONTHLY") || len(policyVersion) > 128 || !strings.HasPrefix(policyVersion, "partner-financial-terms:v") {
+		if (period != "DAILY" && period != "WEEKLY" && period != "MONTHLY") || len(policyVersion) > 128 || !strings.HasPrefix(policyVersion, "partner-financial-terms:v") {
 			return postgres.JoiningCaseResult{}, ErrInvalidInput
 		}
 	}
-	result, err := postgres.ReviewJoiningCase(ctx, s.db, caseID, decision, correctionReason, commission, period, policyVersion, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseReviewWithFinancialTerms(caseID, decision, correctionReason, expectedVersion, commission, period, policyVersion), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
+	result, err := postgres.ReviewJoiningCase(ctx, s.db, caseID, decision, correctionReason, period, policyVersion, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseReviewWithFinancialTerms(caseID, decision, correctionReason, expectedVersion, period, policyVersion), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
@@ -162,13 +161,13 @@ func (s *Service) BindFinancialTerms(ctx context.Context, caseID, expectedTermsP
 	if strings.TrimSpace(policy.PolicyVersion) != expectedTermsPolicyVersion {
 		return postgres.JoiningCaseResult{}, ErrPartnerFinancialTermsPolicyStale
 	}
-	if policy.CommissionRateBps < 0 || policy.CommissionRateBps > 10000 || (policy.SettlementPeriod != "DAILY" && policy.SettlementPeriod != "WEEKLY" && policy.SettlementPeriod != "MONTHLY") || len(strings.TrimSpace(policy.PolicyVersion)) > 128 || !strings.HasPrefix(strings.TrimSpace(policy.PolicyVersion), "partner-financial-terms:v") {
+	if (policy.SettlementPeriod != "DAILY" && policy.SettlementPeriod != "WEEKLY" && policy.SettlementPeriod != "MONTHLY") || len(strings.TrimSpace(policy.PolicyVersion)) > 128 || !strings.HasPrefix(strings.TrimSpace(policy.PolicyVersion), "partner-financial-terms:v") {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
 	caseID = strings.TrimSpace(caseID)
 	policyVersion := strings.TrimSpace(policy.PolicyVersion)
-	requestHash := postgres.HashJoiningCaseReviewWithFinancialTerms(caseID, "bind-financial-terms", "", expectedVersion, policy.CommissionRateBps, policy.SettlementPeriod, policyVersion)
-	result, err := postgres.BindApprovedJoiningCaseFinancialTerms(ctx, s.db, caseID, policy.CommissionRateBps, strings.ToUpper(policy.SettlementPeriod), policyVersion, expectedVersion, strings.TrimSpace(idempotencyKey), requestHash, strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
+	requestHash := postgres.HashJoiningCaseReviewWithFinancialTerms(caseID, "bind-financial-terms", "", expectedVersion, policy.SettlementPeriod, policyVersion)
+	result, err := postgres.BindApprovedJoiningCaseFinancialTerms(ctx, s.db, caseID, strings.ToUpper(policy.SettlementPeriod), policyVersion, expectedVersion, strings.TrimSpace(idempotencyKey), requestHash, strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
@@ -208,7 +207,7 @@ func (s *Service) syncFinancialProfileItem(ctx context.Context, item postgres.Pe
 	profileID := strings.TrimSpace(item.FinancialProfileID)
 	var profile wlt.PartnerFinancialProfile
 	if profileID == "" {
-		prepared, _, err := s.wlt.PreparePartnerFinancialProfile(ctx, item.CaseID, item.PartnerActorID, item.Origin, item.CommissionRateBps, item.SettlementPeriod, item.TermsPolicyVersion, item.IdempotencyKey, item.CorrelationID)
+		prepared, _, err := s.wlt.PreparePartnerFinancialProfile(ctx, item.CaseID, item.PartnerActorID, item.Origin, item.SettlementPeriod, item.TermsPolicyVersion, item.IdempotencyKey, item.CorrelationID)
 		if err != nil {
 			return err
 		}
@@ -225,9 +224,6 @@ func (s *Service) syncFinancialProfileItem(ctx context.Context, item postgres.Pe
 		profile = read
 	}
 	if profile.State == "ACTIVE" {
-		if err := s.initializeStoreCommissionPolicies(ctx, item, profile); err != nil {
-			return err
-		}
 		return postgres.MarkFinancialProfileActive(ctx, s.db, item.CaseID, item.ID)
 	}
 	if profile.State != "PENDING_BINDING" {
@@ -239,9 +235,6 @@ func (s *Service) syncFinancialProfileItem(ctx context.Context, item postgres.Pe
 		if errors.As(err, &wltErr) && wltErr.Code == "VERSION_CONFLICT" {
 			read, readErr := s.wlt.ReadPartnerFinancialProfile(ctx, profile.ID)
 			if readErr == nil && read.State == "ACTIVE" {
-				if err := s.initializeStoreCommissionPolicies(ctx, item, read); err != nil {
-					return err
-				}
 				return postgres.MarkFinancialProfileActive(ctx, s.db, item.CaseID, item.ID)
 			}
 		}
@@ -250,22 +243,7 @@ func (s *Service) syncFinancialProfileItem(ctx context.Context, item postgres.Pe
 	if activated.State != "ACTIVE" {
 		return errors.New("WLT financial profile activation did not reach ACTIVE")
 	}
-	if err := s.initializeStoreCommissionPolicies(ctx, item, activated); err != nil {
-		return err
-	}
 	return postgres.MarkFinancialProfileActive(ctx, s.db, item.CaseID, item.ID)
-}
-
-func (s *Service) initializeStoreCommissionPolicies(ctx context.Context, item postgres.PendingFinancialProfileBinding, profile wlt.PartnerFinancialProfile) error {
-	joiningCase, err := postgres.ReadJoiningCase(ctx, s.db, item.CaseID)
-	if err != nil {
-		return err
-	}
-	storeID := strings.TrimSpace(joiningCase.Case.StoreID)
-	if storeID == "" {
-		return errors.New("approved joining case has no canonical Store for commission policy initialization")
-	}
-	return s.wlt.InitializePartnerStoreCommissionPolicies(ctx, storeID, item.PartnerActorID, profile.ID, wlt.DerivedIdempotencyKey("initialize-store-commission-policies", item.IdempotencyKey+"-"+storeID), item.CorrelationID)
 }
 
 func (s *Service) ReadForOperator(ctx context.Context, caseID, actingActorID string) (postgres.JoiningCaseResult, error) {
@@ -313,7 +291,7 @@ func (s *Service) ListStoresForOperatorByPartnerActor(ctx context.Context, actor
 	return postgres.ListStoresForPartnerActor(ctx, s.db, actorID, limit, cursor)
 }
 
-func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken, caseID, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64, expectedVersion int, idempotencyKey, correlationID string) (postgres.JoiningCaseResult, error) {
+func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken, caseID, businessName, firstStoreName, serviceCityID, verticalID, commercialTypeID string, latitude, longitude float64, expectedVersion int, idempotencyKey, correlationID string) (postgres.JoiningCaseResult, error) {
 	identity, err := s.requirePartner(ctx, accessToken)
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
@@ -323,10 +301,11 @@ func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken,
 	firstStoreName = strings.TrimSpace(firstStoreName)
 	serviceCityID = strings.TrimSpace(serviceCityID)
 	verticalID = strings.TrimSpace(verticalID)
-	if caseID == "" || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || serviceCityID == "" || verticalID == "" || expectedVersion < 1 || !validCoordinates(latitude, longitude) {
+	commercialTypeID = strings.TrimSpace(commercialTypeID)
+	if caseID == "" || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || serviceCityID == "" || verticalID == "" || commercialTypeID == "" || expectedVersion < 1 || !validCoordinates(latitude, longitude) {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
-	return postgres.CorrectAndResubmitJoiningCase(ctx, s.db, caseID, identity.Subject, businessName, firstStoreName, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseCorrectAndResubmit(caseID, identity.Subject, businessName, firstStoreName, expectedVersion, serviceCityID, verticalID, latitude, longitude), strings.TrimSpace(correlationID), serviceCityID, verticalID, latitude, longitude)
+	return postgres.CorrectAndResubmitJoiningCase(ctx, s.db, caseID, identity.Subject, businessName, firstStoreName, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseCorrectAndResubmit(caseID, identity.Subject, businessName, firstStoreName, expectedVersion, serviceCityID, verticalID, commercialTypeID, latitude, longitude), strings.TrimSpace(correlationID), serviceCityID, verticalID, commercialTypeID, latitude, longitude)
 }
 
 func validCoordinates(latitude, longitude float64) bool {

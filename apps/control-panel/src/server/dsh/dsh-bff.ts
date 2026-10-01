@@ -1,5 +1,7 @@
 import { isMediaProvenanceInputValid, type ActorLegalName, type CatalogAttributeDefinitionListResponse, type CatalogAttributeDefinitionResponse, type CatalogAttributeEnumOptionListResponse, type CatalogAttributeEnumOptionResponse, type CatalogAttributeRuleListResponse, type CatalogProduct, type CatalogProductRegistryResponse, type CreateCatalogAttributeDefinitionRequest, type CreateCatalogAttributeEnumOptionRequest, type CreateCustomerWithdrawalIntakeRequest, type CustomerWithdrawalDecisionRequest, type CustomerWithdrawalIntakeListResponse, type CustomerWithdrawalIntakeResponse, type ManagedCaptainAvailabilityRequest, type MediaProvenanceInput, type PartnerStoreListResponse, type SubmitActorLegalNameRequest, type UpsertCatalogAttributeRuleRequest, type VerifyActorLegalNameRequest } from "@bthwani/dsh";
-import { type BeneficiaryPayoutState, type BeneficiaryPayoutStateResponse, type CaptainAdmissionListResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CashCustodyRegistryResponse, type CatalogCategoryDetailResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateDeliveryFeePolicyRequest, type CreateJoiningCaseRequest, type CreatePartnerFinancialTermsPolicyRequest, type CreatePromotionRequest, type CreateServiceCityRequest, type DeliveryFeePolicyResponse, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentResponse, dshOperationPaths, type FieldAdmissionListResponse, type FieldAdmissionRequest, type FieldAdmissionResponse, type FieldCommissionPolicy, type ManagedRoleReenrollmentRequest, type FinanceEvidenceDocument, type JoiningCaseListResponse, type JoiningCaseResponse, type ManagedRoleMutationRequest, type MarketingPublicationRequest, type NotificationListResponse, type NotificationReadResponse, type OfficialWalletDestination, type OperatorDiscoveryContentRegistryResponse, type OperatorOperationResponse, type OperatorOperationsResponse, type OperatorPromotionRegistryResponse, type OperatorStoreListResponse, type PartnerCommissionReceivableRegistryResponse, type PartnerCommissionRemittanceRequest, type PartnerCommissionRemittanceResponse, type PartnerFinancialSummaryResponse, type PartnerFinancialTermsPolicyResponse, type PartnerStoreCommissionPoliciesResponse, type PartnerStoreCommissionPolicyUpdateRequest, type PartnerStoreCommissionPolicyUpdateResponse, type PayoutRequest, type PromotionResponse, type PublicationAction, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type ReviewJoiningCaseRequest, type ServiceCityListResponse, type ServiceCityResponse, type SetStoreFulfillmentModesRequest, type SettlementBatch, type SettlementBatchExport, type StoreFulfillmentModesResponse, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogCategoryRequest, type UpdateCatalogProductRequest, type UpdateCommerceVerticalRequest, type UpdateServiceCityRequest } from "@bthwani/dsh";
+import { type BeneficiaryPayoutState, type BeneficiaryPayoutStateResponse, type CaptainAdmissionListResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CashCustodyRegistryResponse, type CatalogCategoryDetailResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateDeliveryFeePolicyRequest, type CreateJoiningCaseRequest, type CreatePartnerFinancialTermsPolicyRequest, type CreatePromotionRequest, type CreateServiceCityRequest, type DeliveryFeePolicyResponse, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentResponse, dshOperationPaths, type FieldAdmissionListResponse, type FieldAdmissionRequest, type FieldAdmissionResponse, type FieldAcquisitionRewardPolicy, type ManagedRoleReenrollmentRequest, type FinanceEvidenceDocument, type JoiningCaseListResponse, type JoiningCaseResponse, type ManagedRoleMutationRequest, type MarketingPublicationRequest, type NotificationListResponse, type NotificationReadResponse, type OfficialWalletDestination, type OperatorDiscoveryContentRegistryResponse, type OperatorOperationResponse, type OperatorOperationsResponse, type OperatorPromotionRegistryResponse, type OperatorStoreListResponse, type PartnerCommissionReceivableRegistryResponse, type PartnerCommissionRemittanceRequest, type PartnerCommissionRemittanceResponse, type PartnerFinancialSummaryResponse, type PartnerFinancialTermsPolicyResponse, type PartnerStoreCommissionPoliciesResponse, type PartnerStoreCommissionPolicyUpdateRequest, type PartnerStoreCommissionPolicyUpdateResponse, type PayoutRequest, type PromotionResponse, type PublicationAction, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type ReviewJoiningCaseRequest, type ServiceCityListResponse, type ServiceCityResponse, type SetStoreFulfillmentModesRequest, type SettlementBatch, type SettlementBatchExport, type StoreFulfillmentModesResponse, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogCategoryRequest, type UpdateCatalogProductRequest, type UpdateCommerceVerticalRequest, type UpdateServiceCityRequest } from "@bthwani/dsh";
+import type { CommercialStoreTypeListResponse, CommercialStoreTypeResponse, CreateCommercialStoreTypeRequest, UpdateCommercialStoreTypeRequest } from "@bthwani/dsh";
+import type { SetStoreCommercialTypeRequest, SetStoreCommercialTypeResponse } from "@bthwani/dsh";
 import { validateServiceUrl } from "@bthwani/identity";
 
 type DshClientError =
@@ -28,17 +30,18 @@ export type DshOperatorReadContext = Readonly<{
 export type CatalogProductMutationContext = JoiningCaseMutationContext;
 export type CatalogVerticalMutationContext = JoiningCaseMutationContext;
 export type CatalogCategoryMutationContext = JoiningCaseMutationContext;
+export type CommercialStoreTypeMutationContext = JoiningCaseMutationContext;
 
-export type CreateFieldCommissionPolicyRequest = Readonly<{
-  scopeType: "DEFAULT" | "VERTICAL" | "STORE";
-  scopeId?: string;
+export type CreateFieldAcquisitionRewardPolicyRequest = Readonly<{
+  scopeType: "STORE_TYPE";
+  scopeId: string;
   rewardMinor: number;
   roundingUnitMinor: 50;
   expectedVersion: number;
   reason: string;
 }>;
-type FieldCommissionPolicyScope = Readonly<{ scopeType: "DEFAULT" | "VERTICAL" | "STORE"; scopeId?: string }>;
-type FieldCommissionPolicyResponse = Readonly<{ policy: FieldCommissionPolicy; idempotentReplay: boolean }>;
+type FieldAcquisitionRewardPolicyScope = Readonly<{ scopeType: "STORE_TYPE"; scopeId: string }>;
+type FieldAcquisitionRewardPolicyResponse = Readonly<{ policy: FieldAcquisitionRewardPolicy; idempotentReplay: boolean }>;
 
 function dshBaseUrl(): string {
   const explicit = process.env.DSH_API_BASE_URL?.trim();
@@ -625,41 +628,41 @@ export async function readOperatorPartnerFinancialTermsPolicy(context: DshOperat
 }
 
 export async function createOperatorPartnerFinancialTermsPolicy(input: CreatePartnerFinancialTermsPolicyRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: PartnerFinancialTermsPolicyResponse }>> {
-  if (!Number.isInteger(input.commissionRateBps) || input.commissionRateBps < 0 || input.commissionRateBps > 10000 || !["DAILY", "WEEKLY", "MONTHLY"].includes(input.settlementPeriod) || !Number.isInteger(input.expectedVersion) || input.expectedVersion < 0 || input.reason.trim().length < 5 || input.reason.trim().length > 500) throw new Error("DSH_PARTNER_FINANCIAL_TERMS_INPUT_INVALID");
+  if (!["DAILY", "WEEKLY", "MONTHLY"].includes(input.settlementPeriod) || !Number.isInteger(input.expectedVersion) || input.expectedVersion < 0 || input.reason.trim().length < 5 || input.reason.trim().length > 500) throw new Error("DSH_PARTNER_FINANCIAL_TERMS_INPUT_INVALID");
   validateAttributedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_PARTNER_FINANCIAL_TERMS_IDEMPOTENCY_INVALID");
   return requestDshJson<PartnerFinancialTermsPolicyResponse>(dshOperationPaths.createOperatorPartnerFinancialTermsPolicy.method, dshOperationPaths.createOperatorPartnerFinancialTermsPolicy.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
-export async function createOperatorFieldCommissionPolicy(input: CreateFieldCommissionPolicyRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: FieldCommissionPolicyResponse }>> {
-  if (!(["DEFAULT", "VERTICAL", "STORE"] as const).includes(input.scopeType) || (input.scopeType === "DEFAULT" && Boolean(input.scopeId?.trim())) || (input.scopeType !== "DEFAULT" && !input.scopeId?.trim()) || !Number.isInteger(input.rewardMinor) || input.rewardMinor < 50 || input.roundingUnitMinor !== 50 || !Number.isInteger(input.expectedVersion) || input.expectedVersion < 0 || input.reason.trim().length < 5 || input.reason.trim().length > 500) throw new Error("DSH_FIELD_COMMISSION_POLICY_INPUT_INVALID");
+export async function createOperatorFieldAcquisitionRewardPolicy(input: CreateFieldAcquisitionRewardPolicyRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: FieldAcquisitionRewardPolicyResponse }>> {
+  if (!input.scopeId.trim() || input.scopeId.length > 128 || !Number.isInteger(input.rewardMinor) || input.rewardMinor < 50 || input.roundingUnitMinor !== 50 || !Number.isInteger(input.expectedVersion) || input.expectedVersion < 0 || input.reason.trim().length < 5 || input.reason.trim().length > 500) throw new Error("DSH_FIELD_ACQUISITION_REWARD_POLICY_INPUT_INVALID");
   validateAttributedMutationContext(context);
-  if (!context.idempotencyKey.trim()) throw new Error("DSH_FIELD_COMMISSION_POLICY_IDEMPOTENCY_INVALID");
-  return requestDshJson<FieldCommissionPolicyResponse>(dshOperationPaths.createFieldCommissionPolicy.method, dshOperationPaths.createFieldCommissionPolicy.path, { ...input, scopeId: input.scopeId?.trim() || "" }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_FIELD_ACQUISITION_REWARD_POLICY_IDEMPOTENCY_INVALID");
+  return requestDshJson<FieldAcquisitionRewardPolicyResponse>(dshOperationPaths.createFieldAcquisitionRewardPolicy.method, dshOperationPaths.createFieldAcquisitionRewardPolicy.path, { ...input, scopeId: input.scopeId.trim() }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
-export async function readOperatorFieldCommissionPolicyByScope(scope: FieldCommissionPolicyScope, context: DshOperatorReadContext): Promise<FieldCommissionPolicyResponse> {
-  const scopeId = scope.scopeId?.trim() ?? "";
-  if (!context.operatorActorId.trim() || (scope.scopeType === "DEFAULT" ? scopeId !== "" : scopeId.length === 0 || scopeId.length > 128)) throw new Error("DSH_FIELD_COMMISSION_POLICY_READ_INPUT_INVALID");
+export async function readOperatorFieldAcquisitionRewardPolicyByScope(scope: FieldAcquisitionRewardPolicyScope, context: DshOperatorReadContext): Promise<FieldAcquisitionRewardPolicyResponse> {
+  const scopeId = scope.scopeId.trim();
+  if (!context.operatorActorId.trim() || !scopeId || scopeId.length > 128) throw new Error("DSH_FIELD_ACQUISITION_REWARD_POLICY_READ_INPUT_INVALID");
   const query = new URLSearchParams({ scopeType: scope.scopeType, scopeId });
-  const path = `${dshOperationPaths.readFieldCommissionPolicyByScope.path}?${query.toString()}`;
-  return (await requestDshJson<FieldCommissionPolicyResponse>(dshOperationPaths.readFieldCommissionPolicyByScope.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+  const path = `${dshOperationPaths.readFieldAcquisitionRewardPolicyByScope.path}?${query.toString()}`;
+  return (await requestDshJson<FieldAcquisitionRewardPolicyResponse>(dshOperationPaths.readFieldAcquisitionRewardPolicyByScope.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export async function readOperatorPartnerStoreCommissionPolicies(storeId: string, context: DshOperatorReadContext): Promise<PartnerStoreCommissionPoliciesResponse> {
-  const normalizedStoreId = storeId.trim();
-  if (!context.operatorActorId.trim() || !normalizedStoreId || normalizedStoreId.length > 128) throw new Error("DSH_PARTNER_STORE_COMMISSION_POLICY_READ_INPUT_INVALID");
-  const path = `${dshOperationPaths.readOperatorPartnerStoreCommissionPolicies.path}?storeId=${encodeURIComponent(normalizedStoreId)}`;
-  return (await requestDshJson<PartnerStoreCommissionPoliciesResponse>(dshOperationPaths.readOperatorPartnerStoreCommissionPolicies.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+export async function readOperatorPartnerStoreCommissionPolicies(commercialStoreTypeId: string, context: DshOperatorReadContext): Promise<PartnerStoreCommissionPoliciesResponse> {
+	const normalizedTypeId = commercialStoreTypeId.trim();
+	if (!context.operatorActorId.trim() || !normalizedTypeId || normalizedTypeId.length > 128) throw new Error("DSH_COMMERCIAL_STORE_TYPE_COMMISSION_POLICY_READ_INPUT_INVALID");
+	const path = `${dshOperationPaths.readOperatorCommercialStoreTypeCommissionPolicies.path}?commercialStoreTypeId=${encodeURIComponent(normalizedTypeId)}`;
+	return (await requestDshJson<PartnerStoreCommissionPoliciesResponse>(dshOperationPaths.readOperatorCommercialStoreTypeCommissionPolicies.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
 export async function updateOperatorPartnerStoreCommissionPolicy(input: PartnerStoreCommissionPolicyUpdateRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: PartnerStoreCommissionPolicyUpdateResponse }>> {
   const validMode = ["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"].includes(input.fulfillmentMode);
   const reasonLength = Array.from(input.reason.trim()).length;
-  if (!input.storeId.trim() || input.storeId.trim().length > 128 || !validMode || !Number.isInteger(input.commissionRateBps) || input.commissionRateBps < 0 || input.commissionRateBps > 10000 || !Number.isInteger(input.expectedVersion) || input.expectedVersion < 1 || reasonLength < 8 || reasonLength > 500) throw new Error("DSH_PARTNER_STORE_COMMISSION_POLICY_INPUT_INVALID");
+	if (!input.commercialStoreTypeId.trim() || input.commercialStoreTypeId.trim().length > 128 || !validMode || !Number.isInteger(input.commissionRateBps) || input.commissionRateBps < 0 || input.commissionRateBps > 10000 || !Number.isInteger(input.expectedVersion) || input.expectedVersion < 0 || reasonLength < 8 || reasonLength > 500) throw new Error("DSH_COMMERCIAL_STORE_TYPE_COMMISSION_POLICY_INPUT_INVALID");
   validateAttributedMutationContext(context);
-  if (!context.idempotencyKey.trim()) throw new Error("DSH_PARTNER_STORE_COMMISSION_POLICY_IDEMPOTENCY_INVALID");
-  return requestDshJson<PartnerStoreCommissionPolicyUpdateResponse>(dshOperationPaths.updateOperatorPartnerStoreCommissionPolicy.method, dshOperationPaths.updateOperatorPartnerStoreCommissionPolicy.path, { ...input, storeId: input.storeId.trim(), reason: input.reason.trim() }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+	if (!context.idempotencyKey.trim()) throw new Error("DSH_COMMERCIAL_STORE_TYPE_COMMISSION_POLICY_IDEMPOTENCY_INVALID");
+	return requestDshJson<PartnerStoreCommissionPolicyUpdateResponse>(dshOperationPaths.updateOperatorCommercialStoreTypeCommissionPolicy.method, dshOperationPaths.updateOperatorCommercialStoreTypeCommissionPolicy.path, { ...input, commercialStoreTypeId: input.commercialStoreTypeId.trim(), reason: input.reason.trim() }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
 export async function listJoiningCases(state: string, query: string, sort: "created_asc" | "created_desc", limit: number, cursor: string, context: DshOperatorReadContext): Promise<JoiningCaseListResponse> {
@@ -674,7 +677,7 @@ export async function listJoiningCases(state: string, query: string, sort: "crea
 }
 
 export async function createJoiningCase(input: CreateJoiningCaseRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: JoiningCaseResponse }>> {
-  if (!phoneE164Pattern.test(input.contactPhoneE164.replace(/\s+/g, "")) || input.businessName.trim().length < 2 || input.firstStoreName.trim().length < 2 || !input.serviceCityId.trim() || !input.firstStoreVerticalId.trim() || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude)) {
+  if (!phoneE164Pattern.test(input.contactPhoneE164.replace(/\s+/g, "")) || input.businessName.trim().length < 2 || input.firstStoreName.trim().length < 2 || !input.serviceCityId.trim() || !input.firstStoreVerticalId.trim() || !input.firstStoreCommercialTypeId.trim() || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude)) {
     throw new Error("DSH_JOINING_CASE_INPUT_INVALID");
   }
   validateAttributedMutationContext(context);
@@ -702,6 +705,30 @@ export async function updateCatalogVertical(verticalId: string, input: UpdateCom
   if (!context.idempotencyKey.trim()) throw new Error("DSH_CATALOG_VERTICAL_IDEMPOTENCY_INVALID");
   const path = dshOperationPaths.updateCatalogVertical.path.replace("{verticalId}", encodeURIComponent(normalizedId));
   return requestDshJson<CommerceVerticalResponse>(dshOperationPaths.updateCatalogVertical.method, path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function listCommercialStoreTypes(context: DshOperatorReadContext, verticalId: string, includeInactive = false): Promise<CommercialStoreTypeListResponse> {
+  const normalizedVerticalId = verticalId.trim();
+  if (!context.operatorActorId.trim() || !normalizedVerticalId) throw new Error("DSH_COMMERCIAL_STORE_TYPE_READ_INPUT_INVALID");
+  const query = new URLSearchParams({ verticalId: normalizedVerticalId });
+  if (includeInactive) query.set("includeInactive", "true");
+  return (await requestDshJson<CommercialStoreTypeListResponse>(dshOperationPaths.listCommercialStoreTypes.method, `${dshOperationPaths.listCommercialStoreTypes.path}?${query}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function createCommercialStoreType(input: CreateCommercialStoreTypeRequest, context: CommercialStoreTypeMutationContext): Promise<Readonly<{ status: number; payload: CommercialStoreTypeResponse }>> {
+  if (!input.verticalId.trim() || !input.nameAr.trim() || !input.nameEn.trim() || input.reason.trim().length < 5 || input.reason.trim().length > 500) throw new Error("DSH_COMMERCIAL_STORE_TYPE_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_COMMERCIAL_STORE_TYPE_IDEMPOTENCY_INVALID");
+  return requestDshJson<CommercialStoreTypeResponse>(dshOperationPaths.createCommercialStoreType.method, dshOperationPaths.createCommercialStoreType.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function updateCommercialStoreType(storeTypeId: string, input: UpdateCommercialStoreTypeRequest, context: CommercialStoreTypeMutationContext): Promise<Readonly<{ status: number; payload: CommercialStoreTypeResponse }>> {
+  const normalizedId = storeTypeId.trim();
+  if (!normalizedId || !input.nameAr.trim() || !input.nameEn.trim() || !Number.isInteger(input.expectedVersion) || input.expectedVersion < 1 || input.reason.trim().length < 5 || input.reason.trim().length > 500) throw new Error("DSH_COMMERCIAL_STORE_TYPE_UPDATE_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_COMMERCIAL_STORE_TYPE_IDEMPOTENCY_INVALID");
+  const path = dshOperationPaths.updateCommercialStoreType.path.replace("{storeTypeId}", encodeURIComponent(normalizedId));
+  return requestDshJson<CommercialStoreTypeResponse>(dshOperationPaths.updateCommercialStoreType.method, path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
 export async function createCatalogCategory(input: CreateCatalogCategoryRequest, context: CatalogCategoryMutationContext): Promise<Readonly<{ status: number; payload: CatalogCategoryResponse }>> {
@@ -1039,6 +1066,23 @@ export async function setStoreFulfillmentModes(
   });
 }
 
+export async function setStoreCommercialType(
+  storeId: string,
+  input: SetStoreCommercialTypeRequest,
+  context: StorePublicationMutationContext,
+): Promise<Readonly<{ status: number; payload: SetStoreCommercialTypeResponse }>> {
+  if (!storeId.trim() || !input.commercialStoreTypeId.trim() || input.reason.trim().length < 5 || input.reason.trim().length > 500) throw new Error("DSH_STORE_COMMERCIAL_TYPE_INPUT_INVALID");
+  validateVersionedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_STORE_COMMERCIAL_TYPE_IDEMPOTENCY_INVALID");
+  const path = dshOperationPaths.setStoreCommercialType.path.replace("{storeId}", encodeURIComponent(storeId.trim()));
+  return requestDshJson<SetStoreCommercialTypeResponse>(dshOperationPaths.setStoreCommercialType.method, path, input, {
+    "X-Acting-Actor-ID": context.operatorActorId.trim(),
+    "X-Correlation-ID": context.correlationId.trim(),
+    "X-Expected-Version": String(context.expectedVersion),
+    "Idempotency-Key": context.idempotencyKey.trim(),
+  });
+}
+
 type DshManagedRoleMutationContext = DshVersionedMutationContext & Readonly<{ idempotencyKey: string }>;
 
 async function setDshManagedRoleEnabled(path: string, input: ManagedRoleMutationRequest, context: DshManagedRoleMutationContext): Promise<void> {
@@ -1123,9 +1167,10 @@ export async function readCaptainAdmissionByActor(actorId: string, context: DshO
 export async function admitField(input: FieldAdmissionRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: FieldAdmissionResponse }>> {
   if (Array.from(input.fullNameAr.trim()).length < 2 || Array.from(input.fullNameAr.trim()).length > 120) throw new Error("DSH_FIELD_NAME_INVALID");
   if (!/^\+[1-9][0-9]{7,14}$/.test(input.contactPhoneE164.trim())) throw new Error("DSH_FIELD_PHONE_INVALID");
+  if (!input.serviceCityId.trim() || input.serviceCityId.trim().length > 128) throw new Error("DSH_FIELD_SERVICE_CITY_INVALID");
   validateAttributedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_FIELD_IDEMPOTENCY_INVALID");
-  return requestDshJson<FieldAdmissionResponse>(dshOperationPaths.admitField.method, dshOperationPaths.admitField.path, { fullNameAr: input.fullNameAr.trim(), contactPhoneE164: input.contactPhoneE164.trim() }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+  return requestDshJson<FieldAdmissionResponse>(dshOperationPaths.admitField.method, dshOperationPaths.admitField.path, { fullNameAr: input.fullNameAr.trim(), contactPhoneE164: input.contactPhoneE164.trim(), serviceCityId: input.serviceCityId.trim() }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
 export async function listFieldAdmissions(query: string, state: string, sort: string, limit: number, cursor: string, context: DshOperatorReadContext): Promise<FieldAdmissionListResponse> {

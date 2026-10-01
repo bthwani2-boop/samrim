@@ -55,6 +55,39 @@ paths:
         "409":
           $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
 
+  /dsh/stores/{storeId}/commercial-type:
+    post:
+      operationId: setStoreCommercialType
+      summary: Assign the canonical commercial type once to an existing unclassified store
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/StoreId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/SetStoreCommercialTypeRequest" }
+      responses:
+        "200":
+          description: Canonical store commercial type assignment after idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/SetStoreCommercialTypeResponse" }
+        "201":
+          description: Canonical store commercial type assignment created.
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/SetStoreCommercialTypeResponse" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
   /dsh/stores/{storeId}/publication:
     get:
       operationId: readStorePublication

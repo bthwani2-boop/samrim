@@ -92,18 +92,16 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/partner-financial-profiles", s.preparePartnerFinancialProfile)
 	mux.HandleFunc("GET /wlt/v1/partner-financial-profiles/{profileId}", s.readPartnerFinancialProfile)
 	mux.HandleFunc("POST /wlt/v1/partner-financial-profiles/{profileId}/activate", s.activatePartnerFinancialProfile)
-	mux.HandleFunc("POST /wlt/v1/partner-store-commission-policies/initialize", s.initializePartnerStoreCommissionPolicies)
-	mux.HandleFunc("GET /wlt/v1/operator/partner-store-commission-policies", s.readPartnerStoreCommissionPolicies)
-	mux.HandleFunc("POST /wlt/v1/operator/partner-store-commission-policies", s.updatePartnerStoreCommissionPolicy)
+	mux.HandleFunc("GET /wlt/v1/operator/commercial-store-type-commission-policies", s.readPartnerStoreCommissionPolicies)
+	mux.HandleFunc("POST /wlt/v1/operator/commercial-store-type-commission-policies", s.updatePartnerStoreCommissionPolicy)
 	mux.HandleFunc("POST /wlt/v1/partner-order-earnings/finalize", s.finalizePartnerOrderEarning)
 	mux.HandleFunc("POST /wlt/v1/partner-store-cash-commissions/finalize", s.finalizePartnerStoreCashCommission)
 	mux.HandleFunc("POST /wlt/v1/operator/partners/{partnerActorId}/commission-remittances", s.recordPartnerCommissionRemittance)
 	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/financial-summary", s.readPartnerFinancialSummary)
 	mux.HandleFunc("GET /wlt/v1/operator/partner-commission-receivables", s.listPartnerCommissionReceivables)
-	mux.HandleFunc("POST /wlt/v1/operator/field-commission-policies", s.createFieldCommissionPolicy)
-	mux.HandleFunc("GET /wlt/v1/operator/field-commission-policies", s.readOperatorFieldCommissionPolicy)
-	mux.HandleFunc("GET /wlt/v1/field-commission-policies/{policyId}", s.readFieldCommissionPolicy)
-	mux.HandleFunc("POST /wlt/v1/field-commission-earnings/finalize", s.finalizeFieldCommission)
+	mux.HandleFunc("POST /wlt/v1/operator/field-acquisition-reward-policies", s.createFieldAcquisitionRewardPolicy)
+	mux.HandleFunc("GET /wlt/v1/operator/field-acquisition-reward-policies", s.readOperatorFieldAcquisitionRewardPolicy)
+	mux.HandleFunc("POST /wlt/v1/field-acquisition-entitlements/finalize", s.finalizeFieldAcquisitionEntitlement)
 	mux.HandleFunc("GET /wlt/v1/fields/{fieldActorId}/financial-summary", s.readFieldFinancialSummary)
 	mux.HandleFunc("POST /wlt/v1/operator/official-wallet-destinations", s.createOfficialWalletDestination)
 	mux.HandleFunc("POST /wlt/v1/operator/official-wallet-destinations/{destinationId}/verify", s.verifyOfficialWalletDestination)
@@ -162,6 +160,7 @@ type customerPaymentAllocationRequest struct {
 	OrderID                    string `json:"orderId"`
 	StoreID                    string `json:"storeId"`
 	PartnerActorID             string `json:"partnerActorId"`
+	CommercialStoreTypeID      string `json:"commercialStoreTypeId"`
 	FulfillmentMode            string `json:"fulfillmentMode"`
 	Currency                   string `json:"currency"`
 	SubtotalMinor              int64  `json:"subtotalMinor"`
@@ -173,18 +172,12 @@ type customerPaymentAllocationRequest struct {
 	PolicyVersion              string `json:"policyVersion"`
 }
 
-type initializePartnerStoreCommissionPoliciesRequest struct {
-	StoreID        string `json:"storeId"`
-	PartnerActorID string `json:"partnerActorId"`
-	ProfileID      string `json:"profileId"`
-}
-
 type updatePartnerStoreCommissionPolicyRequest struct {
-	StoreID           string `json:"storeId"`
-	FulfillmentMode   string `json:"fulfillmentMode"`
-	CommissionRateBps int    `json:"commissionRateBps"`
-	ExpectedVersion   int    `json:"expectedVersion"`
-	Reason            string `json:"reason"`
+	CommercialStoreTypeID string `json:"commercialStoreTypeId"`
+	FulfillmentMode       string `json:"fulfillmentMode"`
+	CommissionRateBps     int    `json:"commissionRateBps"`
+	ExpectedVersion       int    `json:"expectedVersion"`
+	Reason                string `json:"reason"`
 }
 
 type collectRequest struct {
@@ -207,12 +200,11 @@ type preparePartnerFinancialProfileRequest struct {
 	JoiningCaseID      string `json:"joiningCaseId"`
 	PartnerActorID     string `json:"partnerActorId"`
 	Origin             string `json:"origin"`
-	CommissionRateBps  int    `json:"commissionRateBps"`
 	SettlementPeriod   string `json:"settlementPeriod"`
 	TermsPolicyVersion string `json:"termsPolicyVersion"`
 }
 
-type createFieldCommissionPolicyRequest struct {
+type createFieldAcquisitionRewardPolicyRequest struct {
 	ScopeType         string `json:"scopeType"`
 	ScopeID           string `json:"scopeId"`
 	RewardMinor       int64  `json:"rewardMinor"`
@@ -221,10 +213,13 @@ type createFieldCommissionPolicyRequest struct {
 	Reason            string `json:"reason"`
 }
 
-type finalizeFieldCommissionRequest struct {
-	StoreID      string `json:"storeId"`
-	FieldActorID string `json:"fieldActorId"`
-	VerticalID   string `json:"verticalId"`
+type finalizeFieldAcquisitionEntitlementRequest struct {
+	JoiningCaseID         string `json:"joiningCaseId"`
+	StoreID               string `json:"storeId"`
+	PartnerActorID        string `json:"partnerActorId"`
+	FieldActorID          string `json:"fieldActorId"`
+	VerticalID            string `json:"verticalId"`
+	CommercialStoreTypeID string `json:"commercialStoreTypeId"`
 }
 
 type activatePartnerFinancialProfileRequest struct{}
@@ -414,12 +409,12 @@ type partnerFinancialSummaryResponse struct {
 	Summary partnerFinancialSummaryJSON `json:"summary"`
 }
 
-type fieldCommissionPolicyResponse struct {
-	Policy           fieldCommissionPolicyJSON `json:"policy"`
-	IdempotentReplay bool                      `json:"idempotentReplay,omitempty"`
+type fieldAcquisitionRewardPolicyResponse struct {
+	Policy           fieldAcquisitionRewardPolicyJSON `json:"policy"`
+	IdempotentReplay bool                             `json:"idempotentReplay,omitempty"`
 }
 
-type fieldCommissionPolicyJSON struct {
+type fieldAcquisitionRewardPolicyJSON struct {
 	ID                string  `json:"id"`
 	ScopeType         string  `json:"scopeType"`
 	ScopeID           string  `json:"scopeId"`
@@ -432,21 +427,24 @@ type fieldCommissionPolicyJSON struct {
 	RetiredAt         *string `json:"retiredAt"`
 }
 
-type fieldCommissionEarningResponse struct {
-	Earning          fieldCommissionEarningJSON `json:"earning"`
-	IdempotentReplay bool                       `json:"idempotentReplay"`
+type fieldAcquisitionEntitlementResponse struct {
+	Entitlement      fieldAcquisitionEntitlementJSON `json:"entitlement"`
+	IdempotentReplay bool                            `json:"idempotentReplay"`
 }
 
-type fieldCommissionEarningJSON struct {
-	StoreID             string `json:"storeId"`
-	FieldActorID        string `json:"fieldActorId"`
-	VerticalID          string `json:"verticalId"`
-	PolicyID            string `json:"policyId"`
-	PolicyVersion       int    `json:"policyVersion"`
-	RewardMinor         int64  `json:"rewardMinor"`
-	Currency            string `json:"currency"`
-	LedgerTransactionID string `json:"ledgerTransactionId"`
-	CreatedAt           string `json:"createdAt"`
+type fieldAcquisitionEntitlementJSON struct {
+	JoiningCaseID         string `json:"joiningCaseId"`
+	StoreID               string `json:"storeId"`
+	PartnerActorID        string `json:"partnerActorId"`
+	FieldActorID          string `json:"fieldActorId"`
+	VerticalID            string `json:"verticalId"`
+	CommercialStoreTypeID string `json:"commercialStoreTypeId"`
+	PolicyID              string `json:"policyId"`
+	PolicyVersion         int    `json:"policyVersion"`
+	RewardMinor           int64  `json:"rewardMinor"`
+	Currency              string `json:"currency"`
+	LedgerTransactionID   string `json:"ledgerTransactionId"`
+	CreatedAt             string `json:"createdAt"`
 }
 
 type fieldFinancialSummaryResponse struct {
@@ -454,12 +452,12 @@ type fieldFinancialSummaryResponse struct {
 }
 
 type fieldFinancialSummaryJSON struct {
-	FieldActorID    string  `json:"fieldActorId"`
-	Currency        string  `json:"currency"`
-	EarnedMinor     int64   `json:"earnedMinor"`
-	CommissionMinor int64   `json:"commissionMinor"`
-	StoreCount      int64   `json:"storeCount"`
-	LastEarningAt   *string `json:"lastEarningAt"`
+	FieldActorID     string  `json:"fieldActorId"`
+	Currency         string  `json:"currency"`
+	EarnedMinor      int64   `json:"earnedMinor"`
+	EntitlementMinor int64   `json:"entitlementMinor"`
+	PartnerCount     int64   `json:"partnerCount"`
+	LastEarningAt    *string `json:"lastEarningAt"`
 }
 
 type partnerFinancialSummaryJSON struct {
@@ -527,6 +525,7 @@ type customerPaymentAllocationJSON struct {
 	PaymentIntentID            string                              `json:"paymentIntentId"`
 	StoreID                    string                              `json:"storeId"`
 	PartnerActorID             string                              `json:"partnerActorId"`
+	CommercialStoreTypeID      string                              `json:"commercialStoreTypeId,omitempty"`
 	FulfillmentMode            string                              `json:"fulfillmentMode"`
 	Currency                   string                              `json:"currency"`
 	SubtotalMinor              int64                               `json:"subtotalMinor"`
@@ -541,12 +540,13 @@ type customerPaymentAllocationJSON struct {
 }
 
 type partnerStoreCommissionSnapshotJSON struct {
-	RateBps           int    `json:"rateBps"`
-	PolicyVersion     int    `json:"policyVersion"`
-	ProfileID         string `json:"profileId"`
-	ProfileVersion    int    `json:"profileVersion"`
-	RoundingUnitMinor int64  `json:"roundingUnitMinor"`
-	SettlementPeriod  string `json:"settlementPeriod"`
+	CommercialStoreTypeID string `json:"commercialStoreTypeId,omitempty"`
+	RateBps               int    `json:"rateBps"`
+	PolicyVersion         int    `json:"policyVersion"`
+	ProfileID             string `json:"profileId"`
+	ProfileVersion        int    `json:"profileVersion"`
+	RoundingUnitMinor     int64  `json:"roundingUnitMinor"`
+	SettlementPeriod      string `json:"settlementPeriod"`
 }
 
 type cashLiabilityItemJSON struct {
@@ -598,7 +598,6 @@ type partnerFinancialProfileJSON struct {
 	JoiningCaseID      string  `json:"joiningCaseId"`
 	PartnerActorID     string  `json:"partnerActorId"`
 	Origin             string  `json:"origin"`
-	CommissionRateBps  int     `json:"commissionRateBps"`
 	SettlementPeriod   string  `json:"settlementPeriod"`
 	TermsPolicyVersion string  `json:"termsPolicyVersion,omitempty"`
 	RoundingUnitMinor  int64   `json:"roundingUnitMinor"`
@@ -623,7 +622,6 @@ type partnerFinancialTermsPolicyJSON struct {
 	ID                string  `json:"id"`
 	PolicyVersion     string  `json:"policyVersion"`
 	State             string  `json:"state"`
-	CommissionRateBps int     `json:"commissionRateBps"`
 	SettlementPeriod  string  `json:"settlementPeriod"`
 	Version           int     `json:"version"`
 	CreatedBy         string  `json:"createdBy"`
@@ -632,10 +630,9 @@ type partnerFinancialTermsPolicyJSON struct {
 }
 
 type createPartnerFinancialTermsPolicyRequest struct {
-	CommissionRateBps int    `json:"commissionRateBps"`
-	SettlementPeriod  string `json:"settlementPeriod"`
-	ExpectedVersion   int    `json:"expectedVersion"`
-	Reason            string `json:"reason"`
+	SettlementPeriod string `json:"settlementPeriod"`
+	ExpectedVersion  int    `json:"expectedVersion"`
+	Reason           string `json:"reason"`
 }
 
 type deliveryFeePolicyJSON struct {
@@ -685,7 +682,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 	}
 	var allocation *postgres.CustomerPaymentAllocationInput
 	if input.CustomerPaymentAllocation != nil {
-		value := postgres.CustomerPaymentAllocationInput{OrderID: input.CustomerPaymentAllocation.OrderID, StoreID: input.CustomerPaymentAllocation.StoreID, PartnerActorID: input.CustomerPaymentAllocation.PartnerActorID, FulfillmentMode: input.CustomerPaymentAllocation.FulfillmentMode, Currency: input.CustomerPaymentAllocation.Currency, SubtotalMinor: input.CustomerPaymentAllocation.SubtotalMinor, DeliveryFeeMinor: input.CustomerPaymentAllocation.DeliveryFeeMinor, DiscountMinor: input.CustomerPaymentAllocation.DiscountMinor, InternalBalanceAmountMinor: input.CustomerPaymentAllocation.InternalBalanceAmountMinor, CashAmountMinor: input.CustomerPaymentAllocation.CashAmountMinor, CustomerPayableMinor: input.CustomerPaymentAllocation.CustomerPayableMinor, PolicyVersion: input.CustomerPaymentAllocation.PolicyVersion}
+		value := postgres.CustomerPaymentAllocationInput{OrderID: input.CustomerPaymentAllocation.OrderID, StoreID: input.CustomerPaymentAllocation.StoreID, PartnerActorID: input.CustomerPaymentAllocation.PartnerActorID, CommercialStoreTypeID: input.CustomerPaymentAllocation.CommercialStoreTypeID, FulfillmentMode: input.CustomerPaymentAllocation.FulfillmentMode, Currency: input.CustomerPaymentAllocation.Currency, SubtotalMinor: input.CustomerPaymentAllocation.SubtotalMinor, DeliveryFeeMinor: input.CustomerPaymentAllocation.DeliveryFeeMinor, DiscountMinor: input.CustomerPaymentAllocation.DiscountMinor, InternalBalanceAmountMinor: input.CustomerPaymentAllocation.InternalBalanceAmountMinor, CashAmountMinor: input.CustomerPaymentAllocation.CashAmountMinor, CustomerPayableMinor: input.CustomerPaymentAllocation.CustomerPayableMinor, PolicyVersion: input.CustomerPaymentAllocation.PolicyVersion}
 		allocation = &value
 	}
 	result, replayed, err := postgres.CreatePaymentIntent(r.Context(), s.db, postgres.CreatePaymentIntentInput{ExternalReference: input.ExternalReference, PayerActorID: input.PayerActorID, OrderID: input.OrderID, AmountMinor: input.AmountMinor, Currency: input.Currency, Method: input.Method, CustomerPaymentAllocation: allocation, IdempotencyKey: idempotency, CorrelationID: correlation})
@@ -895,7 +892,7 @@ func (s *Server) createPartnerFinancialTermsPolicy(w http.ResponseWriter, r *htt
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	policy, replayed, err := postgres.CreatePartnerFinancialTermsPolicy(r.Context(), s.db, postgres.CreatePartnerFinancialTermsPolicyInput{CommissionRateBps: input.CommissionRateBps, SettlementPeriod: input.SettlementPeriod, ExpectedVersion: input.ExpectedVersion, Reason: input.Reason, ActingActorID: acting, IdempotencyKey: idempotency, CorrelationID: correlation})
+	policy, replayed, err := postgres.CreatePartnerFinancialTermsPolicy(r.Context(), s.db, postgres.CreatePartnerFinancialTermsPolicyInput{SettlementPeriod: input.SettlementPeriod, ExpectedVersion: input.ExpectedVersion, Reason: input.Reason, ActingActorID: acting, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writePartnerFinancialTermsPolicyError(w, err)
 		return
@@ -908,7 +905,7 @@ func (s *Server) createPartnerFinancialTermsPolicy(w http.ResponseWriter, r *htt
 }
 
 func toPartnerFinancialTermsPolicy(item postgres.PartnerFinancialTermsPolicyRecord) partnerFinancialTermsPolicyJSON {
-	result := partnerFinancialTermsPolicyJSON{ID: item.ID, PolicyVersion: item.PolicyVersion, State: item.State, CommissionRateBps: item.CommissionRateBps, SettlementPeriod: item.SettlementPeriod, Version: item.Version, CreatedBy: item.CreatedBy, CreatedAt: item.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
+	result := partnerFinancialTermsPolicyJSON{ID: item.ID, PolicyVersion: item.PolicyVersion, State: item.State, SettlementPeriod: item.SettlementPeriod, Version: item.Version, CreatedBy: item.CreatedBy, CreatedAt: item.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
 	if item.RetiredAt != nil {
 		value := item.RetiredAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")
 		result.RetiredAt = &value
@@ -948,7 +945,6 @@ func (s *Server) preparePartnerFinancialProfile(w http.ResponseWriter, r *http.R
 		JoiningCaseID:      input.JoiningCaseID,
 		PartnerActorID:     input.PartnerActorID,
 		Origin:             input.Origin,
-		CommissionRateBps:  input.CommissionRateBps,
 		SettlementPeriod:   input.SettlementPeriod,
 		TermsPolicyVersion: input.TermsPolicyVersion,
 		IdempotencyKey:     idempotency,
@@ -1003,41 +999,21 @@ func (s *Server) activatePartnerFinancialProfile(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, partnerFinancialProfileResponse{Profile: toPartnerFinancialProfile(result), IdempotentReplay: replayed})
 }
 
-func (s *Server) initializePartnerStoreCommissionPolicies(w http.ResponseWriter, r *http.Request) {
-	if !s.authorize(w, r) {
-		return
-	}
-	correlation, idempotency, ok := mutationHeaders(w, r)
-	if !ok {
-		return
-	}
-	var input initializePartnerStoreCommissionPoliciesRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	policies, err := postgres.InitializePartnerStoreCommissionPolicies(r.Context(), s.db, input.StoreID, input.PartnerActorID, input.ProfileID, idempotency, correlation)
-	if err != nil {
-		writeFinancialProfileError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"storeId": strings.TrimSpace(input.StoreID), "policies": policies})
-}
-
 func (s *Server) readPartnerStoreCommissionPolicies(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
 	}
-	storeID := strings.TrimSpace(r.URL.Query().Get("storeId"))
-	if storeID == "" || len(storeID) > 128 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "storeId is required")
+	typeID := strings.TrimSpace(r.URL.Query().Get("commercialStoreTypeId"))
+	if typeID == "" || len(typeID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "commercialStoreTypeId is required")
 		return
 	}
-	policies, err := postgres.ReadPartnerStoreCommissionPolicies(r.Context(), s.db, storeID)
+	policies, err := postgres.ReadPartnerStoreCommissionPolicies(r.Context(), s.db, typeID)
 	if err != nil {
 		writePartnerStoreCommissionPolicyError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"storeId": storeID, "policies": policies})
+	writeJSON(w, http.StatusOK, map[string]any{"commercialStoreTypeId": typeID, "policies": policies})
 }
 
 func (s *Server) updatePartnerStoreCommissionPolicy(w http.ResponseWriter, r *http.Request) {
@@ -1058,7 +1034,7 @@ func (s *Server) updatePartnerStoreCommissionPolicy(w http.ResponseWriter, r *ht
 		return
 	}
 	policy, replayed, err := postgres.UpdatePartnerStoreCommissionPolicy(r.Context(), s.db, postgres.PartnerStoreCommissionPolicyUpdate{
-		StoreID: input.StoreID, FulfillmentMode: input.FulfillmentMode, CommissionRateBps: input.CommissionRateBps,
+		CommercialStoreTypeID: input.CommercialStoreTypeID, FulfillmentMode: input.FulfillmentMode, CommissionRateBps: input.CommissionRateBps,
 		ExpectedVersion: input.ExpectedVersion, ChangedByActorID: actingActorID, Reason: input.Reason,
 		IdempotencyKey: idempotency, CorrelationID: correlation,
 	})
@@ -1174,7 +1150,7 @@ func (s *Server) readPartnerFinancialSummary(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, partnerFinancialSummaryResponse{Summary: toPartnerFinancialSummary(result)})
 }
 
-func (s *Server) createFieldCommissionPolicy(w http.ResponseWriter, r *http.Request) {
+func (s *Server) createFieldAcquisitionRewardPolicy(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
 	}
@@ -1187,47 +1163,35 @@ func (s *Server) createFieldCommissionPolicy(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
 		return
 	}
-	var input createFieldCommissionPolicyRequest
+	var input createFieldAcquisitionRewardPolicyRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, replayed, err := postgres.CreateFieldCommissionPolicy(r.Context(), s.db, postgres.CreateFieldCommissionPolicyInput{ScopeType: input.ScopeType, ScopeID: input.ScopeID, RewardMinor: input.RewardMinor, RoundingUnitMinor: input.RoundingUnitMinor, ExpectedVersion: input.ExpectedVersion, Reason: input.Reason, CreatedBy: acting, IdempotencyKey: idempotency, CorrelationID: correlation})
+	result, replayed, err := postgres.CreateFieldAcquisitionRewardPolicy(r.Context(), s.db, postgres.CreateFieldAcquisitionRewardPolicyInput{ScopeType: input.ScopeType, ScopeID: input.ScopeID, RewardMinor: input.RewardMinor, RoundingUnitMinor: input.RoundingUnitMinor, ExpectedVersion: input.ExpectedVersion, Reason: input.Reason, CreatedBy: acting, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
-		writeFieldCommissionError(w, err)
+		writeFieldAcquisitionRewardError(w, err)
 		return
 	}
 	status := http.StatusCreated
 	if replayed {
 		status = http.StatusOK
 	}
-	writeJSON(w, status, fieldCommissionPolicyResponse{Policy: toFieldCommissionPolicy(result), IdempotentReplay: replayed})
+	writeJSON(w, status, fieldAcquisitionRewardPolicyResponse{Policy: toFieldAcquisitionRewardPolicy(result), IdempotentReplay: replayed})
 }
 
-func (s *Server) readFieldCommissionPolicy(w http.ResponseWriter, r *http.Request) {
+func (s *Server) readOperatorFieldAcquisitionRewardPolicy(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
 	}
-	result, err := postgres.ReadFieldCommissionPolicy(r.Context(), s.db, r.PathValue("policyId"))
+	result, err := postgres.ReadActiveFieldAcquisitionRewardPolicyByScope(r.Context(), s.db, r.URL.Query().Get("scopeType"), r.URL.Query().Get("scopeId"))
 	if err != nil {
-		writeFieldCommissionError(w, err)
+		writeFieldAcquisitionRewardError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, fieldCommissionPolicyResponse{Policy: toFieldCommissionPolicy(result)})
+	writeJSON(w, http.StatusOK, fieldAcquisitionRewardPolicyResponse{Policy: toFieldAcquisitionRewardPolicy(result)})
 }
 
-func (s *Server) readOperatorFieldCommissionPolicy(w http.ResponseWriter, r *http.Request) {
-	if !s.authorize(w, r) {
-		return
-	}
-	result, err := postgres.ReadActiveFieldCommissionPolicyByScope(r.Context(), s.db, r.URL.Query().Get("scopeType"), r.URL.Query().Get("scopeId"))
-	if err != nil {
-		writeFieldCommissionError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, fieldCommissionPolicyResponse{Policy: toFieldCommissionPolicy(result)})
-}
-
-func (s *Server) finalizeFieldCommission(w http.ResponseWriter, r *http.Request) {
+func (s *Server) finalizeFieldAcquisitionEntitlement(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
 	}
@@ -1235,20 +1199,20 @@ func (s *Server) finalizeFieldCommission(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	var input finalizeFieldCommissionRequest
+	var input finalizeFieldAcquisitionEntitlementRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, replayed, err := postgres.FinalizeFieldCommission(r.Context(), s.db, postgres.FinalizeFieldCommissionInput{StoreID: input.StoreID, FieldActorID: input.FieldActorID, VerticalID: input.VerticalID, IdempotencyKey: idempotency, CorrelationID: correlation})
+	result, replayed, err := postgres.FinalizeFieldAcquisitionReward(r.Context(), s.db, postgres.FinalizeFieldAcquisitionRewardInput{JoiningCaseID: input.JoiningCaseID, StoreID: input.StoreID, PartnerActorID: input.PartnerActorID, FieldActorID: input.FieldActorID, VerticalID: input.VerticalID, CommercialStoreTypeID: input.CommercialStoreTypeID, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
-		writeFieldCommissionError(w, err)
+		writeFieldAcquisitionRewardError(w, err)
 		return
 	}
 	status := http.StatusCreated
 	if replayed {
 		status = http.StatusOK
 	}
-	writeJSON(w, status, fieldCommissionEarningResponse{Earning: toFieldCommissionEarning(result), IdempotentReplay: replayed})
+	writeJSON(w, status, fieldAcquisitionEntitlementResponse{Entitlement: toFieldAcquisitionEntitlement(result), IdempotentReplay: replayed})
 }
 
 func (s *Server) readFieldFinancialSummary(w http.ResponseWriter, r *http.Request) {
@@ -1257,7 +1221,7 @@ func (s *Server) readFieldFinancialSummary(w http.ResponseWriter, r *http.Reques
 	}
 	result, err := postgres.ReadFieldFinancialSummary(r.Context(), s.db, r.PathValue("fieldActorId"))
 	if err != nil {
-		writeFieldCommissionError(w, err)
+		writeFieldAcquisitionRewardError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, fieldFinancialSummaryResponse{Summary: toFieldFinancialSummary(result)})
@@ -1509,10 +1473,10 @@ func toPaymentIntent(item postgres.PaymentIntentRecord) paymentIntentJSON {
 	}
 	if item.CustomerPaymentAllocation != nil {
 		allocation := item.CustomerPaymentAllocation
-		jsonAllocation := &customerPaymentAllocationJSON{ID: allocation.ID, OrderID: allocation.OrderID, PaymentIntentID: allocation.PaymentIntentID, StoreID: allocation.StoreID, PartnerActorID: allocation.PartnerActorID, FulfillmentMode: allocation.FulfillmentMode, Currency: allocation.Currency, SubtotalMinor: allocation.SubtotalMinor, DeliveryFeeMinor: allocation.DeliveryFeeMinor, DiscountMinor: allocation.DiscountMinor, InternalBalanceAmountMinor: allocation.InternalBalanceAmountMinor, CashAmountMinor: allocation.CashAmountMinor, CustomerPayableMinor: allocation.CustomerPayableMinor, PolicyVersion: allocation.PolicyVersion, CreatedAt: allocation.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
+		jsonAllocation := &customerPaymentAllocationJSON{ID: allocation.ID, OrderID: allocation.OrderID, PaymentIntentID: allocation.PaymentIntentID, StoreID: allocation.StoreID, PartnerActorID: allocation.PartnerActorID, CommercialStoreTypeID: allocation.CommercialStoreTypeID, FulfillmentMode: allocation.FulfillmentMode, Currency: allocation.Currency, SubtotalMinor: allocation.SubtotalMinor, DeliveryFeeMinor: allocation.DeliveryFeeMinor, DiscountMinor: allocation.DiscountMinor, InternalBalanceAmountMinor: allocation.InternalBalanceAmountMinor, CashAmountMinor: allocation.CashAmountMinor, CustomerPayableMinor: allocation.CustomerPayableMinor, PolicyVersion: allocation.PolicyVersion, CreatedAt: allocation.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
 		if allocation.CommissionSnapshot != nil {
 			snapshot := allocation.CommissionSnapshot
-			jsonAllocation.CommissionSnapshot = &partnerStoreCommissionSnapshotJSON{RateBps: snapshot.RateBps, PolicyVersion: snapshot.PolicyVersion, ProfileID: snapshot.ProfileID, ProfileVersion: snapshot.ProfileVersion, RoundingUnitMinor: snapshot.RoundingUnitMinor, SettlementPeriod: snapshot.SettlementPeriod}
+			jsonAllocation.CommissionSnapshot = &partnerStoreCommissionSnapshotJSON{CommercialStoreTypeID: snapshot.CommercialStoreTypeID, RateBps: snapshot.RateBps, PolicyVersion: snapshot.PolicyVersion, ProfileID: snapshot.ProfileID, ProfileVersion: snapshot.ProfileVersion, RoundingUnitMinor: snapshot.RoundingUnitMinor, SettlementPeriod: snapshot.SettlementPeriod}
 		}
 		result.CustomerPaymentAllocation = jsonAllocation
 	}
@@ -1678,7 +1642,6 @@ func toPartnerFinancialProfile(item postgres.PartnerFinancialProfileRecord) part
 		JoiningCaseID:      item.JoiningCaseID,
 		PartnerActorID:     item.PartnerActorID,
 		Origin:             item.Origin,
-		CommissionRateBps:  item.CommissionRateBps,
 		SettlementPeriod:   item.SettlementPeriod,
 		TermsPolicyVersion: item.TermsPolicyVersion,
 		RoundingUnitMinor:  item.RoundingUnitMinor,
@@ -1709,9 +1672,7 @@ func writeFinancialProfileError(w http.ResponseWriter, err error) {
 	case errors.Is(err, postgres.ErrFinancialProfileInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "financial profile input is invalid")
 	case errors.Is(err, postgres.ErrPartnerStoreCommissionPolicyUnavailable):
-		writeError(w, http.StatusConflict, "COMMISSION_POLICY_UNAVAILABLE", "the Store commission policy could not be initialized")
-	case errors.Is(err, postgres.ErrPartnerStoreCommissionPolicyConflict):
-		writeError(w, http.StatusConflict, "COMMISSION_POLICY_CONFLICT", "the Store commission policy was already initialized with different terms")
+		writeError(w, http.StatusConflict, "COMMISSION_POLICY_UNAVAILABLE", "no commission policy is configured for this commercial store type and fulfillment mode")
 	default:
 		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT persistence is unavailable")
 	}
@@ -1762,8 +1723,8 @@ func writePartnerCashCommissionError(w http.ResponseWriter, err error) {
 	}
 }
 
-func toFieldCommissionPolicy(item postgres.FieldCommissionPolicyRecord) fieldCommissionPolicyJSON {
-	result := fieldCommissionPolicyJSON{ID: item.ID, ScopeType: item.ScopeType, ScopeID: item.ScopeID, RewardMinor: item.RewardMinor, RoundingUnitMinor: item.RoundingUnitMinor, State: item.State, Version: item.Version, CreatedBy: item.CreatedBy, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano)}
+func toFieldAcquisitionRewardPolicy(item postgres.FieldAcquisitionRewardPolicyRecord) fieldAcquisitionRewardPolicyJSON {
+	result := fieldAcquisitionRewardPolicyJSON{ID: item.ID, ScopeType: item.ScopeType, ScopeID: item.ScopeID, RewardMinor: item.RewardMinor, RoundingUnitMinor: item.RoundingUnitMinor, State: item.State, Version: item.Version, CreatedBy: item.CreatedBy, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano)}
 	if item.RetiredAt != nil {
 		value := item.RetiredAt.UTC().Format(time.RFC3339Nano)
 		result.RetiredAt = &value
@@ -1771,12 +1732,12 @@ func toFieldCommissionPolicy(item postgres.FieldCommissionPolicyRecord) fieldCom
 	return result
 }
 
-func toFieldCommissionEarning(item postgres.FieldCommissionEarningRecord) fieldCommissionEarningJSON {
-	return fieldCommissionEarningJSON{StoreID: item.StoreID, FieldActorID: item.FieldActorID, VerticalID: item.VerticalID, PolicyID: item.PolicyID, PolicyVersion: item.PolicyVersion, RewardMinor: item.RewardMinor, Currency: item.Currency, LedgerTransactionID: item.LedgerTransactionID, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano)}
+func toFieldAcquisitionEntitlement(item postgres.FieldAcquisitionEntitlementRecord) fieldAcquisitionEntitlementJSON {
+	return fieldAcquisitionEntitlementJSON{JoiningCaseID: item.JoiningCaseID, StoreID: item.StoreID, PartnerActorID: item.PartnerActorID, FieldActorID: item.FieldActorID, VerticalID: item.VerticalID, CommercialStoreTypeID: item.CommercialStoreTypeID, PolicyID: item.PolicyID, PolicyVersion: item.PolicyVersion, RewardMinor: item.RewardMinor, Currency: item.Currency, LedgerTransactionID: item.LedgerTransactionID, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano)}
 }
 
 func toFieldFinancialSummary(item postgres.FieldFinancialSummaryRecord) fieldFinancialSummaryJSON {
-	result := fieldFinancialSummaryJSON{FieldActorID: item.FieldActorID, Currency: item.Currency, EarnedMinor: item.EarnedMinor, CommissionMinor: item.CommissionMinor, StoreCount: item.StoreCount}
+	result := fieldFinancialSummaryJSON{FieldActorID: item.FieldActorID, Currency: item.Currency, EarnedMinor: item.EarnedMinor, EntitlementMinor: item.EntitlementMinor, PartnerCount: item.PartnerCount}
 	if item.LastEarningAt != nil {
 		value := item.LastEarningAt.UTC().Format(time.RFC3339Nano)
 		result.LastEarningAt = &value
@@ -1784,21 +1745,21 @@ func toFieldFinancialSummary(item postgres.FieldFinancialSummaryRecord) fieldFin
 	return result
 }
 
-func writeFieldCommissionError(w http.ResponseWriter, err error) {
+func writeFieldAcquisitionRewardError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, postgres.ErrFieldCommissionPolicyNotFound):
-		writeError(w, http.StatusNotFound, "FIELD_COMMISSION_POLICY_NOT_FOUND", "no active Field commission policy is available for this scope")
-	case errors.Is(err, postgres.ErrFieldCommissionPolicyInvalidInput), errors.Is(err, postgres.ErrFieldCommissionEarningInvalid):
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Field commission facts are invalid")
-	case errors.Is(err, postgres.ErrFieldCommissionPolicyExists), errors.Is(err, postgres.ErrFieldCommissionEarningExists):
-		writeError(w, http.StatusConflict, "FIELD_COMMISSION_EXISTS", "the Field commission already exists")
+	case errors.Is(err, postgres.ErrFieldAcquisitionRewardPolicyNotFound):
+		writeError(w, http.StatusNotFound, "FIELD_ACQUISITION_POLICY_NOT_FOUND", "no active Field acquisition reward policy is available for this scope")
+	case errors.Is(err, postgres.ErrFieldAcquisitionRewardPolicyInvalidInput), errors.Is(err, postgres.ErrFieldAcquisitionEntitlementInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Field acquisition reward facts are invalid")
+	case errors.Is(err, postgres.ErrFieldAcquisitionRewardPolicyExists), errors.Is(err, postgres.ErrFieldAcquisitionEntitlementExists):
+		writeError(w, http.StatusConflict, "FIELD_ACQUISITION_ENTITLEMENT_EXISTS", "the Field acquisition reward already exists")
 	case errors.Is(err, postgres.ErrVersionConflict):
 		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "the active Field reward policy changed after it was read")
 	case errors.Is(err, postgres.ErrIdempotencyConflict):
-		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different Field commission facts")
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different Field acquisition reward facts")
 	default:
-		log.Printf("WLT Field commission persistence error: %T %v", err, err)
-		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT Field commission persistence is unavailable")
+		log.Printf("WLT Field acquisition reward persistence error: %T %v", err, err)
+		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT Field acquisition reward persistence is unavailable")
 	}
 }
 

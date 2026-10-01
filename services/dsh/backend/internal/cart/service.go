@@ -308,12 +308,8 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		} else if fulfillmentMode == FulfillmentModePartnerCaptain {
 			allocationPolicy = "store-captain-cash-v1"
 		}
-		if err := s.payment.EnsurePartnerStoreCommissionPolicies(provisionContext, store.ID, store.PartnerActorID, wlt.DerivedIdempotencyKey("ensure-store-commission-policy", store.ID), paymentCorrelationID); err != nil {
-			logWLTCheckoutProvisioningFailure(provisionContext, "ensure_partner_store_commission_policies", err)
-			return postgres.ProvisionedPayment{}, externalMutationOutcome(err)
-		}
 		cashAmountMinor := amountMinor - internalBalanceAmountMinor
-		allocation := wlt.CustomerPaymentAllocation{OrderID: orderID, StoreID: store.ID, PartnerActorID: store.PartnerActorID, FulfillmentMode: fulfillmentMode, Currency: "YER", SubtotalMinor: subtotalMinor, DeliveryFeeMinor: deliveryFeeMinor, DiscountMinor: discountMinor, InternalBalanceAmountMinor: internalBalanceAmountMinor, CashAmountMinor: cashAmountMinor, CustomerPayableMinor: amountMinor, PolicyVersion: allocationPolicy}
+		allocation := wlt.CustomerPaymentAllocation{OrderID: orderID, StoreID: store.ID, PartnerActorID: store.PartnerActorID, CommercialStoreTypeID: store.CommercialStoreTypeID, FulfillmentMode: fulfillmentMode, Currency: "YER", SubtotalMinor: subtotalMinor, DeliveryFeeMinor: deliveryFeeMinor, DiscountMinor: discountMinor, InternalBalanceAmountMinor: internalBalanceAmountMinor, CashAmountMinor: cashAmountMinor, CustomerPayableMinor: amountMinor, PolicyVersion: allocationPolicy}
 		intent, _, provisionErr := s.payment.CreateForOrderWithMethod(provisionContext, orderID, externalReference, payerActorID, cashAmountMinor, paymentMethod, allocation, paymentIdempotencyKey, paymentCorrelationID)
 		if provisionErr != nil {
 			logWLTCheckoutProvisioningFailure(provisionContext, "create_payment_intent", provisionErr)

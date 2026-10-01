@@ -12,13 +12,15 @@ function errorResponse(code: string, message: string, status: number) {
 }
 
 export async function GET(request: Request) {
+	const includeInactive = new URL(request.url).searchParams.get("includeInactive") === "true";
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return errorResponse("FORBIDDEN", "control operator access is required", 403);
-  const permissionDenied = operatorWorkspacePermissionDenied(identity, "catalog");
-  if (permissionDenied) return permissionDenied;
+	if (includeInactive) {
+		const permissionDenied = operatorWorkspacePermissionDenied(identity, "catalog");
+		if (permissionDenied) return permissionDenied;
+	}
   try {
-    const includeInactive = new URL(request.url).searchParams.get("includeInactive") === "true";
     return NextResponse.json(await listCatalogVerticals({ operatorActorId: identity.subject }, includeInactive), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (!isDshClientError(error)) return errorResponse("INTERNAL_ERROR", "catalog vertical lookup failed", 500);

@@ -33,7 +33,7 @@ export function PoliciesWorkspace({ resource, children }: { resource: PolicyReso
         description="تُقرأ السياسة من المالك القانوني وتُحفظ لديه؛ الشارة توضح المالك قبل الدخول."
         resources={workspacePolicyResources.slice(1).map((item) => ({
           ...item,
-          source: item.key === "delivery-fees" || item.key === "field-rewards" || item.key === "partner-financial-terms" ? "WLT" : "DSH",
+          source: item.key === "delivery-fees" || item.key === "field-acquisition" || item.key === "partner-financial-terms" ? "WLT" : "DSH",
         }))}
       />}
     </section>

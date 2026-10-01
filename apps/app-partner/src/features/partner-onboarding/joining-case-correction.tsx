@@ -1,10 +1,10 @@
 import { borders, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
-import type { CommerceVertical, JoiningCaseResponse, ServiceCity, StoreFulfillmentMode } from "@bthwani/dsh";
+import type { CommercialStoreType, CommerceVertical, JoiningCaseResponse, ServiceCity, StoreFulfillmentMode } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 
-import { correctAndResubmitOwnJoiningCase, listCatalogVerticals, readOwnJoiningCase } from "./store-readback-client";
+import { correctAndResubmitOwnJoiningCase, listCatalogVerticals, listCommercialStoreTypes, readOwnJoiningCase } from "./store-readback-client";
 import { StoreProfileImageEditor } from "./store-profile-image-editor";
 
 function dshErrorCode(error: unknown): string {
@@ -21,9 +21,13 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
   const [firstStoreName, setFirstStoreName] = useState(current.firstStoreName);
   const [serviceCityId, setServiceCityId] = useState(current.serviceCityId || "");
   const [verticalId, setVerticalId] = useState(current.firstStoreVerticalId || "");
+  const [commercialTypeId, setCommercialTypeId] = useState(current.firstStoreCommercialTypeId || "");
   const [latitude, setLatitude] = useState<number | null>(current.firstStoreLatitude);
   const [longitude, setLongitude] = useState<number | null>(current.firstStoreLongitude);
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
+  const [commercialTypes, setCommercialTypes] = useState<ReadonlyArray<CommercialStoreType>>([]);
+  const [commercialTypesLoading, setCommercialTypesLoading] = useState(false);
+  const [commercialTypesError, setCommercialTypesError] = useState(false);
   const [optionsLoading, setOptionsLoading] = useState(false);
   const [optionsError, setOptionsError] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -34,9 +38,10 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
     setFirstStoreName(current.firstStoreName);
     setServiceCityId(current.serviceCityId || "");
     setVerticalId(current.firstStoreVerticalId || "");
+    setCommercialTypeId(current.firstStoreCommercialTypeId || "");
     setLatitude(current.firstStoreLatitude);
     setLongitude(current.firstStoreLongitude);
-  }, [current.businessName, current.firstStoreName, current.serviceCityId, current.firstStoreVerticalId, current.firstStoreLatitude, current.firstStoreLongitude]);
+  }, [current.businessName, current.firstStoreName, current.serviceCityId, current.firstStoreVerticalId, current.firstStoreCommercialTypeId, current.firstStoreLatitude, current.firstStoreLongitude]);
 
   const loadOptions = useCallback(async () => {
     setOptionsLoading(true);
@@ -56,25 +61,42 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
     if (current.state === "needs_correction") void loadOptions();
   }, [current.state, loadOptions]);
 
+  useEffect(() => {
+    setCommercialTypes([]);
+    if (current.firstStoreVerticalId !== verticalId) setCommercialTypeId("");
+    setCommercialTypesError(false);
+    if (!verticalId || current.state !== "needs_correction") return;
+    let active = true;
+    setCommercialTypesLoading(true);
+    void listCommercialStoreTypes(verticalId)
+      .then((items) => { if (active) setCommercialTypes(items.filter((item) => item.active)); })
+      .catch((cause) => {
+        console.error("DSH Partner commercial store type read failed", cause);
+        if (active) setCommercialTypesError(true);
+      })
+      .finally(() => { if (active) setCommercialTypesLoading(false); });
+    return () => { active = false; };
+  }, [current.firstStoreVerticalId, current.state, verticalId]);
+
   if (current.state !== "needs_correction") return null;
 
   async function correctAndResubmit() {
     const nextBusinessName = businessName.trim();
     const nextStoreName = firstStoreName.trim();
-	    if (nextBusinessName.length < 2 || nextBusinessName.length > 160 || nextStoreName.length < 2 || nextStoreName.length > 160 || !serviceCityId || !verticalId || latitude === null || longitude === null) {
-		setError("أدخل الأسماء واختر المدينة والنشاط، وتأكد من وجود موقع المتجر الثابت.");
+	    if (nextBusinessName.length < 2 || nextBusinessName.length > 160 || nextStoreName.length < 2 || nextStoreName.length > 160 || !serviceCityId || !verticalId || !commercialTypeId || latitude === null || longitude === null) {
+		setError("أدخل الأسماء واختر المدينة والنشاط ونوع المتجر، وتأكد من وجود موقع المتجر الثابت.");
       return;
     }
     setBusy(true);
     setError("");
     try {
-      const resubmitted = await correctAndResubmitOwnJoiningCase(current.id, nextBusinessName, nextStoreName, serviceCityId, verticalId, latitude, longitude, current.version);
+      const resubmitted = await correctAndResubmitOwnJoiningCase(current.id, nextBusinessName, nextStoreName, serviceCityId, verticalId, commercialTypeId, latitude, longitude, current.version);
       onUpdated(resubmitted);
     } catch (nextError) {
       try {
         const latest = await readOwnJoiningCase();
         onUpdated(latest);
-        if (latest.case.state === "submitted" && latest.case.businessName === nextBusinessName && latest.case.firstStoreName === nextStoreName && latest.case.serviceCityId === serviceCityId && latest.case.firstStoreVerticalId === verticalId && latest.case.firstStoreLatitude === latitude && latest.case.firstStoreLongitude === longitude) {
+        if (latest.case.state === "submitted" && latest.case.businessName === nextBusinessName && latest.case.firstStoreName === nextStoreName && latest.case.serviceCityId === serviceCityId && latest.case.firstStoreVerticalId === verticalId && latest.case.firstStoreCommercialTypeId === commercialTypeId && latest.case.firstStoreLatitude === latitude && latest.case.firstStoreLongitude === longitude) {
           setError("");
           return;
         }
@@ -86,6 +108,8 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
         setError("مدينة الخدمة لم تعد نشطة. أعد قراءة المدن واختر مدينة أخرى قبل إعادة الإرسال.");
       } else if (code === "VERTICAL_UNAVAILABLE") {
         setError("الفئة الرئيسية لم تعد نشطة. أعد قراءة الأنشطة واختر فئة أخرى قبل إعادة الإرسال.");
+      } else if (code === "COMMERCIAL_STORE_TYPE_UNAVAILABLE") {
+        setError("نوع المتجر لم يعد نشطًا لهذه الفئة. أعد قراءة الأنواع واختر نوعًا متاحًا.");
       } else if (code === "VERSION_CONFLICT" || code === "STATE_CONFLICT") {
         setError("تغيّرت الحالة أثناء التصحيح. أعد قراءة حالة الانضمام ثم حاول مجددًا.");
       } else {
@@ -111,7 +135,12 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
       <Text style={styles.label}>النشاط التجاري</Text>
       {optionsLoading ? <Text style={styles.muted}>جارٍ قراءة الأنشطة المتاحة…</Text> : null}
       {optionsError ? <View style={styles.optionError}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة الأنشطة التجارية.</Text><BthwaniButton label="إعادة قراءة الأنشطة" onPress={() => void loadOptions()} variant="secondary" /></View> : null}
-      <View style={styles.cityList}>{verticals.map((vertical) => <BthwaniChip key={vertical.id} disabled={busy} label={vertical.nameAr} onPress={() => setVerticalId(vertical.id)} selected={verticalId === vertical.id} />)}</View>
+      <View style={styles.cityList}>{verticals.map((vertical) => <BthwaniChip key={vertical.id} disabled={busy} label={vertical.nameAr} onPress={() => { setVerticalId(vertical.id); setCommercialTypeId(""); }} selected={verticalId === vertical.id} />)}</View>
+      <Text style={styles.label}>نوع المتجر التجاري</Text>
+      {commercialTypesLoading ? <Text style={styles.muted}>جارٍ قراءة الأنواع لهذه الفئة…</Text> : null}
+      {commercialTypesError ? <View style={styles.optionError}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة أنواع المتاجر.</Text><BthwaniButton label="إعادة قراءة الأنواع" onPress={() => { const selectedVertical = verticalId; if (selectedVertical) { setCommercialTypesError(false); setCommercialTypesLoading(true); void listCommercialStoreTypes(selectedVertical).then((items) => setCommercialTypes(items.filter((item) => item.active))).catch(() => setCommercialTypesError(true)).finally(() => setCommercialTypesLoading(false)); } }} variant="secondary" /></View> : null}
+      {!commercialTypesLoading && !commercialTypesError && verticalId && commercialTypes.length === 0 ? <Text style={styles.muted}>لا توجد أنواع متاجر مفعّلة لهذه الفئة. اطلب من المشغّل إعداد النوع التجاري.</Text> : null}
+      <View style={styles.cityList}>{commercialTypes.map((item) => <BthwaniChip key={item.id} disabled={busy} label={item.nameAr} onPress={() => setCommercialTypeId(item.id)} selected={commercialTypeId === item.id} />)}</View>
       <View style={styles.locationBox}><Text style={styles.label}>أوضاع الطلب المثبتة عند الانضمام</Text><Text style={styles.muted}>{current.firstStoreFulfillmentModes.map(fulfillmentModeLabel).join(" · ")}</Text><Text style={styles.muted}>لا يتغير اختيار الأوضاع أثناء التصحيح أو إعادة الإرسال. بعد إنشاء المتجر يديره المشغّل من لوحة التحكم.</Text></View>
       <BthwaniButton busy={busy} disabled={optionsLoading} label="حفظ التصحيح وإعادة الإرسال" onPress={() => void correctAndResubmit()} />
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}

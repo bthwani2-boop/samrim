@@ -7,6 +7,7 @@ import (
 	"math"
 	"regexp"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
@@ -37,24 +38,42 @@ func New(identity *identityintegration.Client, db *sql.DB) (*Service, error) {
 	return &Service{identity: identity, db: db}, nil
 }
 
-func (s *Service) Admit(ctx context.Context, fullNameAr, phone, idempotencyKey, actingActorID, correlationID string) (postgres.FieldAdmission, bool, error) {
+func (s *Service) Admit(ctx context.Context, fullNameAr, phone, serviceCityID, idempotencyKey, actingActorID, correlationID string) (postgres.FieldAdmission, bool, error) {
 	fullNameAr = strings.TrimSpace(fullNameAr)
-	phone = strings.TrimSpace(phone)
+	phone = normalizePhoneE164(phone)
+	serviceCityID = strings.TrimSpace(serviceCityID)
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	actingActorID = strings.TrimSpace(actingActorID)
 	correlationID = strings.TrimSpace(correlationID)
-	if len([]rune(fullNameAr)) < 2 || len([]rune(fullNameAr)) > 120 || !phoneE164Pattern.MatchString(phone) || !validMutation(idempotencyKey, correlationID, actingActorID) {
+	if len([]rune(fullNameAr)) < 2 || len([]rune(fullNameAr)) > 120 || !phoneE164Pattern.MatchString(phone) || serviceCityID == "" || !validMutation(idempotencyKey, correlationID, actingActorID) {
 		return postgres.FieldAdmission{}, false, ErrInvalidInput
 	}
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.FieldAdmission{}, false, err
 	}
-	hash := postgres.HashFieldAdmissionRequest(fullNameAr, phone)
-	admission, _, replayed, err := postgres.CreateFieldAdmissionCandidate(ctx, s.db, fullNameAr, phone, idempotencyKey, hash, actingActorID, correlationID)
+	hash := postgres.HashFieldAdmissionRequest(fullNameAr, phone, serviceCityID)
+	admission, _, replayed, err := postgres.CreateFieldAdmissionCandidate(ctx, s.db, fullNameAr, phone, serviceCityID, idempotencyKey, hash, actingActorID, correlationID)
 	if err != nil {
 		return postgres.FieldAdmission{}, false, err
 	}
 	return admission, replayed, nil
+}
+
+func normalizePhoneE164(value string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= '0' && r <= '9', r == '+':
+			return r
+		case r >= '\u0660' && r <= '\u0669':
+			return '0' + (r - '\u0660')
+		case r >= '\u06f0' && r <= '\u06f9':
+			return '0' + (r - '\u06f0')
+		case unicode.IsSpace(r), r == '-', r == '(', r == ')':
+			return -1
+		default:
+			return r
+		}
+	}, strings.TrimSpace(value))
 }
 
 func (s *Service) Approve(ctx context.Context, admissionID string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.FieldAdmission, bool, error) {
@@ -275,7 +294,7 @@ func (s *Service) AuthorizeReenrollment(ctx context.Context, actorID, operatorAc
 	return lifecycle.Commit()
 }
 
-func (s *Service) CreateJoiningCase(ctx context.Context, accessToken, idempotencyKey, correlationID, phone, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64, rawFulfillmentModes []string) (postgres.JoiningCaseResult, error) {
+func (s *Service) CreateJoiningCase(ctx context.Context, accessToken, idempotencyKey, correlationID, phone, businessName, firstStoreName, serviceCityID, verticalID, commercialTypeID string, latitude, longitude float64, rawFulfillmentModes []string) (postgres.JoiningCaseResult, error) {
 	identity, err := s.requireEligibleField(ctx, accessToken)
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
@@ -285,14 +304,15 @@ func (s *Service) CreateJoiningCase(ctx context.Context, accessToken, idempotenc
 	firstStoreName = strings.TrimSpace(firstStoreName)
 	serviceCityID = strings.TrimSpace(serviceCityID)
 	verticalID = strings.TrimSpace(verticalID)
+	commercialTypeID = strings.TrimSpace(commercialTypeID)
 	fulfillmentModes, modesErr := postgres.NormalizeStoreFulfillmentModes(rawFulfillmentModes)
 	if modesErr != nil {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
-	if !phoneE164Pattern.MatchString(phone) || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || serviceCityID == "" || verticalID == "" || math.IsNaN(latitude) || math.IsInf(latitude, 0) || math.IsNaN(longitude) || math.IsInf(longitude, 0) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180 || strings.TrimSpace(idempotencyKey) == "" || len(strings.TrimSpace(correlationID)) < 8 {
+	if !phoneE164Pattern.MatchString(phone) || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || serviceCityID == "" || verticalID == "" || commercialTypeID == "" || math.IsNaN(latitude) || math.IsInf(latitude, 0) || math.IsNaN(longitude) || math.IsInf(longitude, 0) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180 || strings.TrimSpace(idempotencyKey) == "" || len(strings.TrimSpace(correlationID)) < 8 {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
-	return postgres.CreateJoiningCaseForField(ctx, s.db, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseFieldRequest(identity.Subject, phone, businessName, firstStoreName, serviceCityID, verticalID, latitude, longitude, fulfillmentModes), identity.Subject, strings.TrimSpace(correlationID), phone, businessName, firstStoreName, serviceCityID, verticalID, latitude, longitude, fulfillmentModes)
+	return postgres.CreateJoiningCaseForField(ctx, s.db, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseFieldRequest(identity.Subject, phone, businessName, firstStoreName, serviceCityID, verticalID, commercialTypeID, latitude, longitude, fulfillmentModes), identity.Subject, strings.TrimSpace(correlationID), phone, businessName, firstStoreName, serviceCityID, verticalID, commercialTypeID, latitude, longitude, fulfillmentModes)
 }
 
 func (s *Service) ListJoiningCases(ctx context.Context, accessToken, queryText string, limit int, cursor string) (postgres.JoiningCaseListResult, error) {

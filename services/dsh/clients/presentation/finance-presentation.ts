@@ -1,6 +1,6 @@
 import type {
   DeliveryFeePolicy,
-  FieldCommissionPolicy,
+  FieldAcquisitionRewardPolicy,
   JoiningCaseView,
   OfficialWalletDestination,
   PartnerFinancialSummary,
@@ -22,15 +22,9 @@ const financialProfileStateLabels: Record<JoiningCaseView["financialProfileState
   FAILED: "يحتاج معالجة مالية",
 };
 
-const financialPolicyStateLabels: Record<DeliveryFeePolicy["state"] | FieldCommissionPolicy["state"], string> = {
+const financialPolicyStateLabels: Record<DeliveryFeePolicy["state"] | FieldAcquisitionRewardPolicy["state"], string> = {
   ACTIVE: "نشطة",
   RETIRED: "منتهية",
-};
-
-const fieldCommissionScopeLabels: Record<FieldCommissionPolicy["scopeType"], string> = {
-  DEFAULT: "افتراضي",
-  VERTICAL: "مجال تجاري",
-  STORE: "متجر",
 };
 
 const officialWalletVerificationLabels: Record<OfficialWalletDestination["verificationStatus"], string> = {
@@ -69,13 +63,9 @@ export function financialProfileStateLabel(
 }
 
 export function financialPolicyStateLabel(
-  state: DeliveryFeePolicy["state"] | FieldCommissionPolicy["state"],
+  state: DeliveryFeePolicy["state"] | FieldAcquisitionRewardPolicy["state"],
 ): string {
   return financialPolicyStateLabels[state];
-}
-
-export function fieldCommissionScopeLabel(scope: FieldCommissionPolicy["scopeType"]): string {
-  return fieldCommissionScopeLabels[scope];
 }
 
 export function officialWalletVerificationStatusLabel(

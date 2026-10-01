@@ -3,7 +3,7 @@ package postgres
 import "testing"
 
 func validCustomerPaymentAllocation() CustomerPaymentAllocationInput {
-	return CustomerPaymentAllocationInput{OrderID: "o", StoreID: "s", PartnerActorID: "p", FulfillmentMode: "BTHWANI_CAPTAIN", Currency: "YER", SubtotalMinor: 4200, CashAmountMinor: 4200, CustomerPayableMinor: 4200, PolicyVersion: "v2"}
+	return CustomerPaymentAllocationInput{OrderID: "o", StoreID: "s", PartnerActorID: "p", CommercialStoreTypeID: "butcher", FulfillmentMode: "BTHWANI_CAPTAIN", Currency: "YER", SubtotalMinor: 4200, CashAmountMinor: 4200, CustomerPayableMinor: 4200, PolicyVersion: "v2"}
 }
 func TestCustomerPaymentAllocation(t *testing.T) {
 	i := validCustomerPaymentAllocation()
@@ -26,6 +26,12 @@ func TestCustomerPaymentAllocationRequiresCanonicalStoreModeFacts(t *testing.T) 
 	i.FulfillmentMode = "UNSUPPORTED"
 	if validateCustomerPaymentAllocation(i) != ErrCustomerPaymentAllocationInvalidInput {
 		t.Fatal("unsupported fulfillment mode accepted")
+	}
+
+	missingType := validCustomerPaymentAllocation()
+	missingType.CommercialStoreTypeID = ""
+	if validateCustomerPaymentAllocation(missingType) != ErrCustomerPaymentAllocationInvalidInput {
+		t.Fatal("allocation without canonical commercial store type accepted")
 	}
 
 	for _, mode := range []string{"PARTNER_CAPTAIN", "CUSTOMER_PICKUP"} {
@@ -69,6 +75,15 @@ func TestCustomerPaymentAllocationHashBindsStoreAndFulfillment(t *testing.T) {
 	changedMode.CustomerPaymentAllocation.FulfillmentMode = "PARTNER_CAPTAIN"
 	if HashCreateRequest(changedMode) == baseHash {
 		t.Fatal("request hash did not bind the fulfillment mode")
+	}
+}
+
+func TestCustomerPaymentAllocationHashBindsCommercialStoreType(t *testing.T) {
+	base := validCustomerPaymentAllocation()
+	changed := base
+	changed.CommercialStoreTypeID = "fishmonger"
+	if HashCreateRequest(CreatePaymentIntentInput{CustomerPaymentAllocation: &changed}) == HashCreateRequest(CreatePaymentIntentInput{CustomerPaymentAllocation: &base}) {
+		t.Fatal("request hash did not bind commercial store type")
 	}
 }
 

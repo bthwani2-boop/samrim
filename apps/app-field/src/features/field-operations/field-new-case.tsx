@@ -1,5 +1,5 @@
 import { BthwaniButton, BthwaniChip, BthwaniMap, useAppearanceTheme } from "@bthwani/design-system/native";
-import { fieldAdmissionStateLabel, isMediaProvenanceInputValid, type CommerceVertical, type CreateJoiningCaseRequest, type DshImageUploadInput, type JoiningCaseResponse, joiningCaseStateLabel, type MediaProvenanceInput, type ServiceCity } from "@bthwani/dsh";
+import { fieldAdmissionStateLabel, isMediaProvenanceInputValid, type CommercialStoreType, type CommerceVertical, type CreateJoiningCaseRequest, type DshImageUploadInput, type JoiningCaseResponse, joiningCaseStateLabel, type MediaProvenanceInput, type ServiceCity } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import { type Href, Link } from "expo-router";
@@ -31,7 +31,7 @@ export function FieldNewCase() {
 const theme = useAppearanceTheme();
   const styles = useMemo(() => createFieldOperationStyles(theme), [theme]);
   const { state: admissionState, refresh: refreshAdmission } = useOwnFieldAdmission();
-  const [input, setInput] = useState<CreateJoiningCaseRequest>({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "", firstStoreLatitude: 0, firstStoreLongitude: 0, firstStoreFulfillmentModes: [] });
+  const [input, setInput] = useState<CreateJoiningCaseRequest>({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "", firstStoreCommercialTypeId: "", firstStoreLatitude: 0, firstStoreLongitude: 0, firstStoreFulfillmentModes: [] });
   const [storeLatitude, setStoreLatitude] = useState("");
   const [storeLongitude, setStoreLongitude] = useState("");
   const parsedStoreLatitude = Number(storeLatitude);
@@ -40,6 +40,9 @@ const theme = useAppearanceTheme();
   const [createdCase, setCreatedCase] = useState<JoiningCaseResponse | null>(null);
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
+  const [commercialTypes, setCommercialTypes] = useState<ReadonlyArray<CommercialStoreType>>([]);
+  const [commercialTypesLoading, setCommercialTypesLoading] = useState(false);
+  const [commercialTypesError, setCommercialTypesError] = useState("");
   const [optionsLoading, setOptionsLoading] = useState(true);
   const [optionsError, setOptionsError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -71,6 +74,24 @@ const theme = useAppearanceTheme();
 
   useEffect(() => { void loadOptions(); }, [loadOptions]);
 
+  useEffect(() => {
+    const verticalId = input.firstStoreVerticalId;
+    setCommercialTypes([]);
+    setCommercialTypesError("");
+    setInput((current) => current.firstStoreCommercialTypeId ? { ...current, firstStoreCommercialTypeId: "" } : current);
+    if (!verticalId) return;
+    let active = true;
+    setCommercialTypesLoading(true);
+    void fieldClient().listCommercialStoreTypes(verticalId)
+      .then((items) => { if (active) setCommercialTypes(items.filter((item) => item.active)); })
+      .catch((cause: unknown) => {
+        console.error("DSH Field commercial store type read failed", cause);
+        if (active) setCommercialTypesError("تعذر قراءة أنواع المتاجر لهذه الفئة.");
+      })
+      .finally(() => { if (active) setCommercialTypesLoading(false); });
+    return () => { active = false; };
+  }, [input.firstStoreVerticalId]);
+
   async function createCase() {
     if (busy || (createdCase && storeImage)) return;
     if (storeImage && !isMediaProvenanceInputValid(storeImage.provenance)) {
@@ -81,8 +102,8 @@ const theme = useAppearanceTheme();
     if (pendingCreateAttempt) {
       attempt = pendingCreateAttempt;
     } else {
-      if (!input.contactPhoneE164.trim() || !input.businessName.trim() || !input.firstStoreName.trim() || !input.serviceCityId || !input.firstStoreVerticalId || input.firstStoreFulfillmentModes.length === 0 || !selectedStoreOrigin) {
-        setError("أكمل بيانات المتجر وموقعه، واختر وضعًا واحدًا على الأقل.");
+      if (!input.contactPhoneE164.trim() || !input.businessName.trim() || !input.firstStoreName.trim() || !input.serviceCityId || !input.firstStoreVerticalId || !input.firstStoreCommercialTypeId || input.firstStoreFulfillmentModes.length === 0 || !selectedStoreOrigin) {
+        setError("أكمل بيانات المتجر ومدينة الخدمة والفئة ونوع المتجر وموقعه، واختر وضعًا واحدًا على الأقل.");
         return;
       }
       const request: CreateJoiningCaseRequest = {
@@ -110,7 +131,7 @@ const theme = useAppearanceTheme();
       }
       setStoreLatitude("");
       setStoreLongitude("");
-      setInput({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "", firstStoreLatitude: 0, firstStoreLongitude: 0, firstStoreFulfillmentModes: [] });
+      setInput({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "", firstStoreCommercialTypeId: "", firstStoreLatitude: 0, firstStoreLongitude: 0, firstStoreFulfillmentModes: [] });
       await loadAdmission();
     } catch (cause) {
       console.error("DSH Field joining-case creation failed", cause);
@@ -225,6 +246,11 @@ const theme = useAppearanceTheme();
         {optionsLoading ? <Text style={styles.muted}>جارٍ قراءة الأنشطة المتاحة…</Text> : null}
         {!optionsLoading && !optionsError && verticals.length === 0 ? <Text style={styles.error}>لا يوجد نشاط تجاري متاح حاليًا.</Text> : null}
         <View style={styles.optionList}>{verticals.map((vertical) => <BthwaniChip key={vertical.id} label={vertical.nameAr} onPress={() => { if (!formLocked) setInput((current) => ({ ...current, firstStoreVerticalId: vertical.id })); }} selected={input.firstStoreVerticalId === vertical.id} />)}</View>
+        <Text style={styles.label}>نوع المتجر التجاري</Text>
+        {commercialTypesLoading ? <Text style={styles.muted}>جارٍ قراءة أنواع المتاجر لهذه الفئة…</Text> : null}
+        {commercialTypesError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{commercialTypesError}</Text><BthwaniButton label="إعادة قراءة أنواع المتاجر" onPress={() => { const verticalId = input.firstStoreVerticalId; if (verticalId) { setCommercialTypesError(""); setCommercialTypesLoading(true); void fieldClient().listCommercialStoreTypes(verticalId).then((items) => setCommercialTypes(items.filter((item) => item.active))).catch(() => setCommercialTypesError("تعذر قراءة أنواع المتاجر لهذه الفئة.")).finally(() => setCommercialTypesLoading(false)); } }} variant="secondary" /></View> : null}
+        {!commercialTypesLoading && !commercialTypesError && input.firstStoreVerticalId && commercialTypes.length === 0 ? <Text style={styles.muted}>لا توجد أنواع متاجر مفعّلة لهذه الفئة. اطلب من المشغّل إعداد النوع التجاري أولًا.</Text> : null}
+        <View style={styles.optionList}>{commercialTypes.map((item) => <BthwaniChip key={item.id} disabled={formLocked} label={item.nameAr} onPress={() => setInput((current) => ({ ...current, firstStoreCommercialTypeId: item.id }))} selected={input.firstStoreCommercialTypeId === item.id} />)}</View>
         <Text style={styles.label}>أوضاع الطلب التي اختارها الشريك عند الانضمام</Text>
         <Text style={styles.muted}>سجّل الأوضاع المتاحة في المتجر لأول مرة. بعد إنشاء المتجر لا يغيّرها الشريك من التطبيق؛ يديرها المشغّل من لوحة التحكم.</Text>
         <View style={styles.optionList}>

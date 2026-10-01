@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func runFieldCommissionReconciliationLoop(ctx context.Context, interval time.Duration, reconcile func(context.Context) error) {
+func runFieldAcquisitionRewardReconciliationLoop(ctx context.Context, interval time.Duration, reconcile func(context.Context) error) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -16,7 +16,7 @@ func runFieldCommissionReconciliationLoop(ctx context.Context, interval time.Dur
 			return
 		case <-ticker.C:
 			if err := reconcile(ctx); err != nil {
-				log.Printf("field commission reconciliation failed: %v", err)
+				log.Printf("field acquisition reward reconciliation failed: %v", err)
 			}
 		}
 	}

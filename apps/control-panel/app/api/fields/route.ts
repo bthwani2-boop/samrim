@@ -28,7 +28,7 @@ export async function POST(request: Request) {
   if (identity.role !== "operator") return NextResponse.json({ error: { code: "FORBIDDEN", message: "operator access is required" } }, { status: 403, headers: { "Cache-Control": "no-store" } });
   const permissionDenied = operatorWorkspacePermissionDenied(identity, "partners");
   if (permissionDenied) return permissionDenied;
-  const body = (await request.json().catch(() => null)) as { action?: unknown; fullNameAr?: unknown; contactPhoneE164?: unknown; admissionId?: unknown; actorId?: unknown; reason?: unknown; expectedVersion?: unknown; expectedAdmissionVersion?: unknown; expectedActorVersion?: unknown; expectedRoleVersion?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as { action?: unknown; fullNameAr?: unknown; contactPhoneE164?: unknown; serviceCityId?: unknown; admissionId?: unknown; actorId?: unknown; reason?: unknown; expectedVersion?: unknown; expectedAdmissionVersion?: unknown; expectedActorVersion?: unknown; expectedRoleVersion?: unknown } | null;
   const action = typeof body?.action === "string" ? body.action.trim() : "admit";
   const admissionId = typeof body?.admissionId === "string" ? body.admissionId.trim() : "";
   const fullNameAr = typeof body?.fullNameAr === "string" ? body.fullNameAr.trim() : "";
@@ -93,10 +93,12 @@ export async function POST(request: Request) {
     }
   }
   if (action !== "admit") return NextResponse.json({ error: { code: "INVALID_INPUT", message: "a supported Field operation is required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
+  if (!body || Object.keys(body).some((key) => !["action", "fullNameAr", "contactPhoneE164", "serviceCityId"].includes(key))) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "Field creation accepts only fullNameAr, contactPhoneE164, and serviceCityId" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
   const contactPhoneE164 = typeof body?.contactPhoneE164 === "string" ? body.contactPhoneE164.trim() : "";
-  if (Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(contactPhoneE164)) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "full Arabic name and a valid E.164 phone are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
+  const serviceCityId = typeof body?.serviceCityId === "string" ? body.serviceCityId.trim() : "";
+  if (Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(contactPhoneE164) || !serviceCityId || serviceCityId.length > 128) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "full Arabic name, valid E.164 phone, and service city are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
   try {
-    const result = await admitField({ fullNameAr, contactPhoneE164 }, context);
+    const result = await admitField({ fullNameAr, contactPhoneE164, serviceCityId }, context);
     return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const payload = isDshClientError(error) ? dshErrorPayload(error) : { code: "DSH_INTERNAL_ERROR", message: "dsh request failed" };

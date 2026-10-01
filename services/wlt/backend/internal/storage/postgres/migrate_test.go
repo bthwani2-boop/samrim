@@ -32,3 +32,20 @@ func TestCanonicalMigrationGraphRegistersEveryMigrationFile(t *testing.T) {
 		}
 	}
 }
+
+func TestStoreTypeCommissionCutoverArchivesOldRatesBeforeDroppingOwners(t *testing.T) {
+	directory := filepath.Join("..", "..", "..", "..", "database", "migrations")
+	data, err := os.ReadFile(filepath.Join(directory, "034_store_type_commission_owns_rate.sql"))
+	if err != nil {
+		t.Fatalf("read store type commission cutover: %v", err)
+	}
+	sql := string(data)
+	archive := strings.Index(sql, "CREATE TABLE wlt.partner_commission_rate_history")
+	profileCopy := strings.Index(sql, "FROM wlt.partner_financial_profiles")
+	eventCopy := strings.Index(sql, "FROM wlt.partner_financial_profile_events")
+	policyCopy := strings.Index(sql, "FROM wlt.partner_financial_terms_policies")
+	drop := strings.Index(sql, "DROP COLUMN commission_rate_bps")
+	if archive < 0 || profileCopy < archive || eventCopy < profileCopy || policyCopy < eventCopy || drop < policyCopy {
+		t.Fatal("commission rates must be copied to inactive history before live profile and terms owners are removed")
+	}
+}

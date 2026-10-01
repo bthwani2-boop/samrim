@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { enrollAndAuthenticateIsolatedOperator } from "./live-identity-proof-helpers";
 
 test.beforeEach(async ({ page }, testInfo) => {
-  const permissions = /delivery-fee policy|Field commission policy/.test(testInfo.title) ? ["platform_policies"] : ["finance"];
+  const permissions = /delivery-fee policy|Field acquisition reward category policy/.test(testInfo.title) ? ["platform_policies"] : ["finance"];
   await enrollAndAuthenticateIsolatedOperator(page, permissions);
 });
 
@@ -58,12 +58,12 @@ test("@live operator reads the WLT-managed unified beneficiary settlement worksp
   expect(Array.isArray(registryRead.body.beneficiaries)).toBe(true);
 });
 
-test("@live operator sees the WLT-managed Field commission policy workspace", async ({ page }) => {
+test("@live operator sees the WLT-managed Field acquisition reward category policy workspace", async ({ page }) => {
   test.setTimeout(30_000);
-  await page.goto("/policies/field-rewards");
-  await expect(page.getByRole("heading", { name: "مكافأة الميدان" })).toBeVisible();
-  await expect(page.getByText("تُستحق المكافأة مرة واحدة عند نشر المتجر.")).toBeVisible();
-  await expect(page.getByLabel("نطاق السياسة")).toBeVisible();
-  await expect(page.getByLabel("المكافأة (ريال)")).toBeVisible();
-  await expect(page.getByText("وحدة التقريب: 50 ريال — لا يمكن تغييرها من الواجهة.")).toBeVisible();
+  await page.goto("/policies/field-acquisition");
+  await expect(page.getByRole("heading", { name: "استحقاق ضم الشريك للميداني" })).toBeVisible();
+  await expect(page.getByText(/لكل فئة متجر سياسة مبلغ مستقلة/)).toBeVisible();
+  await expect(page.getByLabel("فئة المتجر")).toBeVisible();
+  await expect(page.getByLabel("مبلغ الاستحقاق لهذه الفئة (ريال يمني)")).toBeVisible();
+  await expect(page.getByText(/وحدة التقريب ثابتة عند ٥٠ ريالًا/)).toBeVisible();
 });

@@ -57,6 +57,7 @@ type CustomerPaymentAllocation struct {
 	OrderID                    string `json:"orderId"`
 	StoreID                    string `json:"storeId"`
 	PartnerActorID             string `json:"partnerActorId"`
+	CommercialStoreTypeID      string `json:"commercialStoreTypeId"`
 	FulfillmentMode            string `json:"fulfillmentMode"`
 	PaymentIntentID            string `json:"paymentIntentId,omitempty"`
 	Currency                   string `json:"currency"`
@@ -181,7 +182,6 @@ type PartnerFinancialProfile struct {
 	JoiningCaseID      string  `json:"joiningCaseId"`
 	PartnerActorID     string  `json:"partnerActorId"`
 	Origin             string  `json:"origin"`
-	CommissionRateBps  int     `json:"commissionRateBps"`
 	SettlementPeriod   string  `json:"settlementPeriod"`
 	TermsPolicyVersion string  `json:"termsPolicyVersion,omitempty"`
 	RoundingUnitMinor  int64   `json:"roundingUnitMinor"`
@@ -236,7 +236,7 @@ type PartnerCommissionReceivableRegistry struct {
 	Limit      int                           `json:"limit"`
 }
 
-type FieldCommissionPolicy struct {
+type FieldAcquisitionRewardPolicy struct {
 	ID                string  `json:"id"`
 	ScopeType         string  `json:"scopeType"`
 	ScopeID           string  `json:"scopeId"`
@@ -249,25 +249,28 @@ type FieldCommissionPolicy struct {
 	RetiredAt         *string `json:"retiredAt"`
 }
 
-type FieldCommissionEarning struct {
-	StoreID             string `json:"storeId"`
-	FieldActorID        string `json:"fieldActorId"`
-	VerticalID          string `json:"verticalId"`
-	PolicyID            string `json:"policyId"`
-	PolicyVersion       int    `json:"policyVersion"`
-	RewardMinor         int64  `json:"rewardMinor"`
-	Currency            string `json:"currency"`
-	LedgerTransactionID string `json:"ledgerTransactionId"`
-	CreatedAt           string `json:"createdAt"`
+type FieldAcquisitionEntitlement struct {
+	JoiningCaseID         string `json:"joiningCaseId"`
+	StoreID               string `json:"storeId"`
+	PartnerActorID        string `json:"partnerActorId"`
+	FieldActorID          string `json:"fieldActorId"`
+	VerticalID            string `json:"verticalId"`
+	CommercialStoreTypeID string `json:"commercialStoreTypeId"`
+	PolicyID              string `json:"policyId"`
+	PolicyVersion         int    `json:"policyVersion"`
+	RewardMinor           int64  `json:"rewardMinor"`
+	Currency              string `json:"currency"`
+	LedgerTransactionID   string `json:"ledgerTransactionId"`
+	CreatedAt             string `json:"createdAt"`
 }
 
 type FieldFinancialSummary struct {
-	FieldActorID    string  `json:"fieldActorId"`
-	Currency        string  `json:"currency"`
-	EarnedMinor     int64   `json:"earnedMinor"`
-	CommissionMinor int64   `json:"commissionMinor"`
-	StoreCount      int64   `json:"storeCount"`
-	LastEarningAt   *string `json:"lastEarningAt"`
+	FieldActorID     string  `json:"fieldActorId"`
+	Currency         string  `json:"currency"`
+	EarnedMinor      int64   `json:"earnedMinor"`
+	EntitlementMinor int64   `json:"entitlementMinor"`
+	PartnerCount     int64   `json:"partnerCount"`
+	LastEarningAt    *string `json:"lastEarningAt"`
 }
 
 type FinancialStatementEntry struct {
@@ -623,7 +626,6 @@ type PartnerFinancialTermsPolicy struct {
 	ID                string  `json:"id"`
 	PolicyVersion     string  `json:"policyVersion"`
 	State             string  `json:"state"`
-	CommissionRateBps int     `json:"commissionRateBps"`
 	SettlementPeriod  string  `json:"settlementPeriod"`
 	Version           int     `json:"version"`
 	CreatedBy         string  `json:"createdBy"`
@@ -632,23 +634,18 @@ type PartnerFinancialTermsPolicy struct {
 }
 
 type PartnerStoreCommissionPolicy struct {
-	StoreID           string `json:"storeId"`
-	PartnerActorID    string `json:"partnerActorId"`
-	FulfillmentMode   string `json:"fulfillmentMode"`
-	CommissionRateBps int    `json:"commissionRateBps"`
-	PolicyVersion     int    `json:"policyVersion"`
-	ProfileID         string `json:"profileId"`
-	ProfileVersion    int    `json:"profileVersion"`
-	RoundingUnitMinor int64  `json:"roundingUnitMinor"`
-	SettlementPeriod  string `json:"settlementPeriod"`
-	UpdatedAt         string `json:"updatedAt"`
-	ChangedByActorID  string `json:"changedByActorId,omitempty"`
-	ChangeReason      string `json:"changeReason,omitempty"`
+	CommercialStoreTypeID string `json:"commercialStoreTypeId"`
+	FulfillmentMode       string `json:"fulfillmentMode"`
+	CommissionRateBps     int    `json:"commissionRateBps"`
+	PolicyVersion         int    `json:"policyVersion"`
+	UpdatedAt             string `json:"updatedAt"`
+	ChangedByActorID      string `json:"changedByActorId,omitempty"`
+	ChangeReason          string `json:"changeReason,omitempty"`
 }
 
 type PartnerStoreCommissionPoliciesResponse struct {
-	StoreID  string                         `json:"storeId"`
-	Policies []PartnerStoreCommissionPolicy `json:"policies"`
+	CommercialStoreTypeID string                         `json:"commercialStoreTypeId"`
+	Policies              []PartnerStoreCommissionPolicy `json:"policies"`
 }
 
 type PartnerStoreCommissionPolicyResponse struct {
@@ -695,14 +692,14 @@ type partnerFinancialSummaryResponse struct {
 	Summary PartnerFinancialSummary `json:"summary"`
 }
 
-type fieldCommissionPolicyResponse struct {
-	Policy           FieldCommissionPolicy `json:"policy"`
-	IdempotentReplay bool                  `json:"idempotentReplay"`
+type fieldAcquisitionRewardPolicyResponse struct {
+	Policy           FieldAcquisitionRewardPolicy `json:"policy"`
+	IdempotentReplay bool                         `json:"idempotentReplay"`
 }
 
-type fieldCommissionEarningResponse struct {
-	Earning          FieldCommissionEarning `json:"earning"`
-	IdempotentReplay bool                   `json:"idempotentReplay"`
+type fieldAcquisitionEntitlementResponse struct {
+	Entitlement      FieldAcquisitionEntitlement `json:"entitlement"`
+	IdempotentReplay bool                        `json:"idempotentReplay"`
 }
 
 type fieldFinancialSummaryResponse struct {
@@ -1113,12 +1110,11 @@ func (c *Client) transitionCaptainCOD(ctx context.Context, operation, orderID, p
 	return response.Reservation, response.IdempotentReplay, err
 }
 
-func (c *Client) PreparePartnerFinancialProfile(ctx context.Context, joiningCaseID, partnerActorID, origin string, commissionRateBps int, settlementPeriod, termsPolicyVersion, idempotencyKey, correlationID string) (PartnerFinancialProfile, bool, error) {
+func (c *Client) PreparePartnerFinancialProfile(ctx context.Context, joiningCaseID, partnerActorID, origin, settlementPeriod, termsPolicyVersion, idempotencyKey, correlationID string) (PartnerFinancialProfile, bool, error) {
 	body := map[string]any{
 		"joiningCaseId":      joiningCaseID,
 		"partnerActorId":     partnerActorID,
 		"origin":             origin,
-		"commissionRateBps":  commissionRateBps,
 		"settlementPeriod":   settlementPeriod,
 		"termsPolicyVersion": termsPolicyVersion,
 	}
@@ -1137,18 +1133,6 @@ func (c *Client) ActivatePartnerFinancialProfile(ctx context.Context, profileID 
 	var response partnerFinancialProfileResponse
 	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/partner-financial-profiles/"+url.PathEscape(strings.TrimSpace(profileID))+"/activate", map[string]any{}, idempotencyKey, correlationID, expectedVersion, actingActorID, &response)
 	return response.Profile, response.IdempotentReplay, err
-}
-
-func (c *Client) InitializePartnerStoreCommissionPolicies(ctx context.Context, storeID, partnerActorID, profileID, idempotencyKey, correlationID string) error {
-	body := map[string]any{"storeId": strings.TrimSpace(storeID), "partnerActorId": strings.TrimSpace(partnerActorID)}
-	if strings.TrimSpace(profileID) != "" {
-		body["profileId"] = strings.TrimSpace(profileID)
-	}
-	return c.request(ctx, http.MethodPost, "/wlt/v1/partner-store-commission-policies/initialize", body, idempotencyKey, correlationID, 0, nil)
-}
-
-func (c *Client) EnsurePartnerStoreCommissionPolicies(ctx context.Context, storeID, partnerActorID, idempotencyKey, correlationID string) error {
-	return c.InitializePartnerStoreCommissionPolicies(ctx, storeID, partnerActorID, "", idempotencyKey, correlationID)
 }
 
 func (c *Client) FinalizePartnerOrderEarning(ctx context.Context, orderID, paymentIntentID, partnerActorID, captainActorID, idempotencyKey, correlationID string) (PartnerOrderEarning, bool, error) {
@@ -1197,33 +1181,27 @@ func (c *Client) ListPartnerCommissionReceivables(ctx context.Context, actingAct
 	return response, err
 }
 
-func (c *Client) CreateFieldCommissionPolicy(ctx context.Context, scopeType, scopeID string, rewardMinor, roundingUnitMinor int64, expectedVersion int, reason, idempotencyKey, correlationID, actingActorID string) (FieldCommissionPolicy, bool, error) {
+func (c *Client) CreateFieldAcquisitionRewardPolicy(ctx context.Context, scopeType, scopeID string, rewardMinor, roundingUnitMinor int64, expectedVersion int, reason, idempotencyKey, correlationID, actingActorID string) (FieldAcquisitionRewardPolicy, bool, error) {
 	body := map[string]any{"scopeType": strings.TrimSpace(scopeType), "scopeId": strings.TrimSpace(scopeID), "rewardMinor": rewardMinor, "roundingUnitMinor": roundingUnitMinor, "expectedVersion": expectedVersion, "reason": strings.TrimSpace(reason)}
-	var response fieldCommissionPolicyResponse
-	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/field-commission-policies", body, idempotencyKey, correlationID, 0, actingActorID, &response)
+	var response fieldAcquisitionRewardPolicyResponse
+	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/field-acquisition-reward-policies", body, idempotencyKey, correlationID, 0, actingActorID, &response)
 	return response.Policy, response.IdempotentReplay, err
 }
 
-func (c *Client) ReadFieldCommissionPolicyByScope(ctx context.Context, scopeType, scopeID string) (FieldCommissionPolicy, error) {
+func (c *Client) ReadFieldAcquisitionRewardPolicyByScope(ctx context.Context, scopeType, scopeID string) (FieldAcquisitionRewardPolicy, error) {
 	query := url.Values{}
 	query.Set("scopeType", strings.TrimSpace(scopeType))
 	query.Set("scopeId", strings.TrimSpace(scopeID))
-	var response fieldCommissionPolicyResponse
-	err := c.request(ctx, http.MethodGet, "/wlt/v1/operator/field-commission-policies?"+query.Encode(), nil, "", "", 0, &response)
+	var response fieldAcquisitionRewardPolicyResponse
+	err := c.request(ctx, http.MethodGet, "/wlt/v1/operator/field-acquisition-reward-policies?"+query.Encode(), nil, "", "", 0, &response)
 	return response.Policy, err
 }
 
-func (c *Client) ReadFieldCommissionPolicy(ctx context.Context, policyID string) (FieldCommissionPolicy, error) {
-	var response fieldCommissionPolicyResponse
-	err := c.request(ctx, http.MethodGet, "/wlt/v1/field-commission-policies/"+url.PathEscape(strings.TrimSpace(policyID)), nil, "", "", 0, &response)
-	return response.Policy, err
-}
-
-func (c *Client) FinalizeFieldCommission(ctx context.Context, storeID, fieldActorID, verticalID, idempotencyKey, correlationID string) (FieldCommissionEarning, bool, error) {
-	body := map[string]any{"storeId": strings.TrimSpace(storeID), "fieldActorId": strings.TrimSpace(fieldActorID), "verticalId": strings.TrimSpace(verticalID)}
-	var response fieldCommissionEarningResponse
-	err := c.request(ctx, http.MethodPost, "/wlt/v1/field-commission-earnings/finalize", body, idempotencyKey, correlationID, 0, &response)
-	return response.Earning, response.IdempotentReplay, err
+func (c *Client) FinalizeFieldAcquisitionReward(ctx context.Context, joiningCaseID, storeID, partnerActorID, fieldActorID, verticalID, commercialStoreTypeID, idempotencyKey, correlationID string) (FieldAcquisitionEntitlement, bool, error) {
+	body := map[string]any{"joiningCaseId": strings.TrimSpace(joiningCaseID), "storeId": strings.TrimSpace(storeID), "partnerActorId": strings.TrimSpace(partnerActorID), "fieldActorId": strings.TrimSpace(fieldActorID), "verticalId": strings.TrimSpace(verticalID), "commercialStoreTypeId": strings.TrimSpace(commercialStoreTypeID)}
+	var response fieldAcquisitionEntitlementResponse
+	err := c.request(ctx, http.MethodPost, "/wlt/v1/field-acquisition-entitlements/finalize", body, idempotencyKey, correlationID, 0, &response)
+	return response.Entitlement, response.IdempotentReplay, err
 }
 
 func (c *Client) ReadFieldFinancialSummary(ctx context.Context, fieldActorID string) (FieldFinancialSummary, error) {
@@ -1612,27 +1590,27 @@ func (c *Client) ReadPartnerFinancialTermsPolicy(ctx context.Context) (PartnerFi
 	return response.Policy, err
 }
 
-func (c *Client) CreatePartnerFinancialTermsPolicy(ctx context.Context, commissionRateBps int, settlementPeriod string, expectedVersion int, reason, idempotencyKey, correlationID, actingActorID string) (PartnerFinancialTermsPolicy, bool, error) {
-	body := map[string]any{"commissionRateBps": commissionRateBps, "settlementPeriod": strings.ToUpper(strings.TrimSpace(settlementPeriod)), "expectedVersion": expectedVersion, "reason": strings.TrimSpace(reason)}
+func (c *Client) CreatePartnerFinancialTermsPolicy(ctx context.Context, settlementPeriod string, expectedVersion int, reason, idempotencyKey, correlationID, actingActorID string) (PartnerFinancialTermsPolicy, bool, error) {
+	body := map[string]any{"settlementPeriod": strings.ToUpper(strings.TrimSpace(settlementPeriod)), "expectedVersion": expectedVersion, "reason": strings.TrimSpace(reason)}
 	var response partnerFinancialTermsPolicyResponse
 	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/partner-financial-terms-policy", body, idempotencyKey, correlationID, 0, actingActorID, &response)
 	return response.Policy, response.IdempotentReplay, err
 }
 
-func (c *Client) ReadPartnerStoreCommissionPolicies(ctx context.Context, storeID string) (PartnerStoreCommissionPoliciesResponse, error) {
+func (c *Client) ReadPartnerStoreCommissionPolicies(ctx context.Context, commercialStoreTypeID string) (PartnerStoreCommissionPoliciesResponse, error) {
 	var response PartnerStoreCommissionPoliciesResponse
-	path := "/wlt/v1/operator/partner-store-commission-policies?storeId=" + url.QueryEscape(strings.TrimSpace(storeID))
+	path := "/wlt/v1/operator/commercial-store-type-commission-policies?commercialStoreTypeId=" + url.QueryEscape(strings.TrimSpace(commercialStoreTypeID))
 	err := c.request(ctx, http.MethodGet, path, nil, "", "", 0, &response)
 	return response, err
 }
 
-func (c *Client) UpdatePartnerStoreCommissionPolicy(ctx context.Context, storeID, fulfillmentMode string, commissionRateBps, expectedVersion int, reason, idempotencyKey, correlationID, actingActorID string) (PartnerStoreCommissionPolicyResponse, error) {
+func (c *Client) UpdatePartnerStoreCommissionPolicy(ctx context.Context, commercialStoreTypeID, fulfillmentMode string, commissionRateBps, expectedVersion int, reason, idempotencyKey, correlationID, actingActorID string) (PartnerStoreCommissionPolicyResponse, error) {
 	body := map[string]any{
-		"storeId": strings.TrimSpace(storeID), "fulfillmentMode": strings.TrimSpace(fulfillmentMode),
+		"commercialStoreTypeId": strings.TrimSpace(commercialStoreTypeID), "fulfillmentMode": strings.TrimSpace(fulfillmentMode),
 		"commissionRateBps": commissionRateBps, "expectedVersion": expectedVersion, "reason": strings.TrimSpace(reason),
 	}
 	var response PartnerStoreCommissionPolicyResponse
-	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/partner-store-commission-policies", body, idempotencyKey, correlationID, 0, actingActorID, &response)
+	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/commercial-store-type-commission-policies", body, idempotencyKey, correlationID, 0, actingActorID, &response)
 	return response, err
 }
 

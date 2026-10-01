@@ -2,12 +2,15 @@ package transporthttp
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
@@ -15,25 +18,25 @@ type FieldFinanceServer struct {
 	auth     *auth.ServiceToken
 	identity *identityintegration.Client
 	payment  *wlt.Client
+	db       *sql.DB
 }
 
-func NewFieldFinance(identity *identityintegration.Client, accessToken string, payment *wlt.Client) (*FieldFinanceServer, error) {
+func NewFieldFinance(identity *identityintegration.Client, accessToken string, payment *wlt.Client, db *sql.DB) (*FieldFinanceServer, error) {
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
 		return nil, err
 	}
-	if identity == nil || payment == nil {
+	if identity == nil || payment == nil || db == nil {
 		return nil, &identityclient.Error{Status: http.StatusInternalServerError, Code: "CONFIGURATION_ERROR", Message: "Field finance dependencies are required"}
 	}
-	return &FieldFinanceServer{auth: authorizer, identity: identity, payment: payment}, nil
+	return &FieldFinanceServer{auth: authorizer, identity: identity, payment: payment, db: db}, nil
 }
 
 func (s *FieldFinanceServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/fields/me/financial-summary", s.readOwnSummary)
 	mux.HandleFunc("GET /dsh/operator/fields/{fieldActorId}/financial-summary", s.readOperatorSummary)
-	mux.HandleFunc("POST /dsh/operator/field-commission-policies", s.createPolicy)
-	mux.HandleFunc("GET /dsh/operator/field-commission-policies", s.readPolicyByScope)
-	mux.HandleFunc("GET /dsh/operator/field-commission-policies/{policyId}", s.readPolicy)
+	mux.HandleFunc("POST /dsh/operator/field-acquisition-reward-policies", s.createPolicy)
+	mux.HandleFunc("GET /dsh/operator/field-acquisition-reward-policies", s.readPolicyByScope)
 }
 
 func (s *FieldFinanceServer) readOwnSummary(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +98,14 @@ func (s *FieldFinanceServer) createPolicy(w http.ResponseWriter, r *http.Request
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	policy, replayed, err := s.payment.CreateFieldCommissionPolicy(r.Context(), input.ScopeType, input.ScopeID, input.RewardMinor, input.RoundingUnitMinor, input.ExpectedVersion, input.Reason, idempotency, correlation, acting)
+	if strings.TrimSpace(input.ScopeType) != "STORE_TYPE" || strings.TrimSpace(input.ScopeID) == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a commercial store type policy is required")
+		return
+	}
+	if !s.requireActiveCommercialStoreType(w, r, input.ScopeID) {
+		return
+	}
+	policy, replayed, err := s.payment.CreateFieldAcquisitionRewardPolicy(r.Context(), input.ScopeType, input.ScopeID, input.RewardMinor, input.RoundingUnitMinor, input.ExpectedVersion, input.Reason, idempotency, correlation, acting)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return
@@ -118,7 +128,15 @@ func (s *FieldFinanceServer) readPolicyByScope(w http.ResponseWriter, r *http.Re
 	if !s.requirePermission(w, r.Context(), acting, "platform_policies") {
 		return
 	}
-	policy, err := s.payment.ReadFieldCommissionPolicyByScope(r.Context(), r.URL.Query().Get("scopeType"), r.URL.Query().Get("scopeId"))
+	scopeType, scopeID := strings.TrimSpace(r.URL.Query().Get("scopeType")), strings.TrimSpace(r.URL.Query().Get("scopeId"))
+	if scopeType != "STORE_TYPE" || scopeID == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a commercial store type policy is required")
+		return
+	}
+	if !s.requireActiveCommercialStoreType(w, r, scopeID) {
+		return
+	}
+	policy, err := s.payment.ReadFieldAcquisitionRewardPolicyByScope(r.Context(), scopeType, scopeID)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return
@@ -126,23 +144,26 @@ func (s *FieldFinanceServer) readPolicyByScope(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, map[string]any{"policy": policy})
 }
 
-func (s *FieldFinanceServer) readPolicy(w http.ResponseWriter, r *http.Request) {
-	if !s.authorizeOperator(w, r) {
-		return
+func (s *FieldFinanceServer) requireActiveCommercialStoreType(w http.ResponseWriter, r *http.Request, typeID string) bool {
+	item, err := postgres.ReadCommercialStoreType(r.Context(), s.db, typeID)
+	if errors.Is(err, postgres.ErrCommercialStoreTypeNotFound) {
+		writeError(w, http.StatusNotFound, "COMMERCIAL_STORE_TYPE_NOT_FOUND", "the commercial store type was not found")
+		return false
 	}
-	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if !s.requireOperator(w, r.Context(), acting) {
-		return
-	}
-	if !s.requirePermission(w, r.Context(), acting, "platform_policies") {
-		return
-	}
-	policy, err := s.payment.ReadFieldCommissionPolicy(r.Context(), r.PathValue("policyId"))
 	if err != nil {
-		writeWLTFinanceError(w, err)
-		return
+		writeError(w, http.StatusInternalServerError, "COMMERCIAL_STORE_TYPE_READ_FAILED", "the commercial store type could not be verified")
+		return false
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"policy": policy})
+	if !item.Active {
+		writeError(w, http.StatusBadRequest, "COMMERCIAL_STORE_TYPE_INACTIVE", "a reward policy can only be changed for an active commercial store type")
+		return false
+	}
+	vertical, err := postgres.ReadCommerceVertical(r.Context(), s.db, item.VerticalID)
+	if err != nil || !vertical.Active {
+		writeError(w, http.StatusBadRequest, "COMMERCIAL_STORE_TYPE_VERTICAL_INACTIVE", "a reward policy requires an active parent vertical")
+		return false
+	}
+	return true
 }
 
 func (s *FieldFinanceServer) authorizeOperator(w http.ResponseWriter, r *http.Request) bool {

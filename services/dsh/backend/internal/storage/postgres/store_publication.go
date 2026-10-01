@@ -24,6 +24,7 @@ type StoreRecord struct {
 	Name                    string
 	ServiceCityID           string
 	PrimaryVerticalID       string
+	CommercialStoreTypeID   string
 	Version                 int
 	PublicationState        string
 	PublicationChangedAt    *time.Time
@@ -65,16 +66,17 @@ var (
 )
 
 type OperatorStoreSummary struct {
-	ID                string
-	PartnerActorID    string
-	Name              string
-	ServiceCityID     string
-	PrimaryVerticalID string
-	Version           int
-	PublicationState  string
-	FulfillmentModes  []string
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	ID                    string
+	PartnerActorID        string
+	Name                  string
+	ServiceCityID         string
+	PrimaryVerticalID     string
+	CommercialStoreTypeID string
+	Version               int
+	PublicationState      string
+	FulfillmentModes      []string
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 type OperatorStorePage struct {
@@ -302,7 +304,7 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, servic
 	if sort == "name_asc" {
 		orderBy = "lower(s.name) ASC,s.id ASC"
 	}
-	rows, err := db.QueryContext(ctx, `SELECT s.id,s.partner_actor_id,s.name,s.service_city_id,s.primary_vertical_id,s.version,s.publication_state,s.fulfillment_modes,s.created_at,s.updated_at
+	rows, err := db.QueryContext(ctx, `SELECT s.id,s.partner_actor_id,s.name,s.service_city_id,s.primary_vertical_id,s.commercial_store_type_id,s.version,s.publication_state,s.fulfillment_modes,s.created_at,s.updated_at
 		FROM dsh.stores s WHERE `+where+" ORDER BY "+orderBy+" LIMIT $"+strconv.Itoa(len(args)), args...)
 	if err != nil {
 		return OperatorStorePage{}, fmt.Errorf("list canonical operator stores: %w", err)
@@ -311,8 +313,8 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, servic
 	page := OperatorStorePage{Stores: make([]OperatorStoreSummary, 0, limit)}
 	for rows.Next() {
 		var store OperatorStoreSummary
-		var cityID, verticalID sql.NullString
-		if err := rows.Scan(&store.ID, &store.PartnerActorID, &store.Name, &cityID, &verticalID, &store.Version, &store.PublicationState, pq.Array(&store.FulfillmentModes), &store.CreatedAt, &store.UpdatedAt); err != nil {
+		var cityID, verticalID, commercialTypeID sql.NullString
+		if err := rows.Scan(&store.ID, &store.PartnerActorID, &store.Name, &cityID, &verticalID, &commercialTypeID, &store.Version, &store.PublicationState, pq.Array(&store.FulfillmentModes), &store.CreatedAt, &store.UpdatedAt); err != nil {
 			return OperatorStorePage{}, err
 		}
 		if len(page.Stores) == limit {
@@ -325,6 +327,9 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, servic
 		}
 		if verticalID.Valid {
 			store.PrimaryVerticalID = verticalID.String
+		}
+		if commercialTypeID.Valid {
+			store.CommercialStoreTypeID = commercialTypeID.String
 		}
 		page.Stores = append(page.Stores, store)
 	}
@@ -477,7 +482,7 @@ func setStorePublication(ctx context.Context, db *sql.DB, storeID, requestedStat
 	updated, err := scanStore(tx.QueryRowContext(ctx, `UPDATE dsh.stores
 		SET publication_state=$2, publication_changed_at=clock_timestamp(), version=version+1, updated_at=clock_timestamp()
 		WHERE id=$1 AND version=$3
-		RETURNING id, partner_actor_id, name, service_city_id, primary_vertical_id, version, publication_state, publication_changed_at, created_at, updated_at,
+		RETURNING id, partner_actor_id, name, service_city_id, primary_vertical_id, commercial_store_type_id, version, publication_state, publication_changed_at, created_at, updated_at,
 			delivery_origin_latitude, delivery_origin_longitude, delivery_origin_version, delivery_origin_updated_at, fulfillment_modes`, storeID, requestedState, expectedVersion))
 	if err != nil {
 		return PublicationResult{}, fmt.Errorf("update canonical store publication: %w", err)
@@ -497,8 +502,8 @@ func setStorePublication(ctx context.Context, db *sql.DB, storeID, requestedStat
 		return PublicationResult{}, fmt.Errorf("record store publication audit: %w", err)
 	}
 	if requestedState == "published" && store.PublicationState != "published" {
-		if err := enqueueFieldCommissionPublicationTx(ctx, tx, storeID, correlationID); err != nil {
-			return PublicationResult{}, fmt.Errorf("enqueue Field commission publication: %w", err)
+		if err := enqueueFieldAcquisitionRewardPublicationTx(ctx, tx, storeID, correlationID); err != nil {
+			return PublicationResult{}, fmt.Errorf("enqueue Field acquisition reward publication: %w", err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
@@ -554,7 +559,7 @@ func ReadPublishedStore(ctx context.Context, db *sql.DB, storeID string, service
 	return store, nil
 }
 
-const storeSelect = `SELECT id, partner_actor_id, name, service_city_id, primary_vertical_id, version, publication_state, publication_changed_at, created_at, updated_at, delivery_origin_latitude, delivery_origin_longitude, delivery_origin_version, delivery_origin_updated_at, fulfillment_modes FROM dsh.stores`
+const storeSelect = `SELECT id, partner_actor_id, name, service_city_id, primary_vertical_id, commercial_store_type_id, version, publication_state, publication_changed_at, created_at, updated_at, delivery_origin_latitude, delivery_origin_longitude, delivery_origin_version, delivery_origin_updated_at, fulfillment_modes FROM dsh.stores`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -562,11 +567,11 @@ type rowScanner interface {
 
 func scanStore(row rowScanner) (StoreRecord, error) {
 	var store StoreRecord
-	var serviceCityID, primaryVerticalID sql.NullString
+	var serviceCityID, primaryVerticalID, commercialStoreTypeID sql.NullString
 	var publicationChangedAt sql.NullTime
 	var deliveryOriginLatitude, deliveryOriginLongitude sql.NullFloat64
 	var deliveryOriginUpdatedAt sql.NullTime
-	if err := row.Scan(&store.ID, &store.PartnerActorID, &store.Name, &serviceCityID, &primaryVerticalID, &store.Version, &store.PublicationState, &publicationChangedAt, &store.CreatedAt, &store.UpdatedAt, &deliveryOriginLatitude, &deliveryOriginLongitude, &store.DeliveryOriginVersion, &deliveryOriginUpdatedAt, pq.Array(&store.FulfillmentModes)); err != nil {
+	if err := row.Scan(&store.ID, &store.PartnerActorID, &store.Name, &serviceCityID, &primaryVerticalID, &commercialStoreTypeID, &store.Version, &store.PublicationState, &publicationChangedAt, &store.CreatedAt, &store.UpdatedAt, &deliveryOriginLatitude, &deliveryOriginLongitude, &store.DeliveryOriginVersion, &deliveryOriginUpdatedAt, pq.Array(&store.FulfillmentModes)); err != nil {
 		return StoreRecord{}, err
 	}
 	if serviceCityID.Valid {
@@ -574,6 +579,9 @@ func scanStore(row rowScanner) (StoreRecord, error) {
 	}
 	if primaryVerticalID.Valid {
 		store.PrimaryVerticalID = primaryVerticalID.String
+	}
+	if commercialStoreTypeID.Valid {
+		store.CommercialStoreTypeID = commercialStoreTypeID.String
 	}
 	if publicationChangedAt.Valid {
 		store.PublicationChangedAt = &publicationChangedAt.Time

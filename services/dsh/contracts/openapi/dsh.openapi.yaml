@@ -48,6 +48,12 @@ paths:
   /dsh/catalog/verticals/{verticalId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1verticals~1{verticalId}"
 
+  /dsh/catalog/commercial-store-types:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1commercial-store-types"
+
+  /dsh/catalog/commercial-store-types/{storeTypeId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1commercial-store-types~1{storeTypeId}"
+
   /dsh/catalog/categories:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1categories"
 
@@ -179,6 +185,9 @@ paths:
 
   /dsh/stores/{storeId}/fulfillment-modes:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores~1{storeId}~1fulfillment-modes"
+
+  /dsh/stores/{storeId}/commercial-type:
+    $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores~1{storeId}~1commercial-type"
 
   /dsh/public/stores:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1public~1stores"
@@ -339,8 +348,8 @@ paths:
   /dsh/operator/partners/{partnerActorId}/commission-remittances:
     $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1commission-remittances"
 
-  /dsh/operator/partner-store-commission-policies:
-    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partner-store-commission-policies"
+  /dsh/operator/commercial-store-type-commission-policies:
+    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1commercial-store-type-commission-policies"
 
   /dsh/me/payout-state:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1me~1payout-state"
@@ -577,11 +586,8 @@ paths:
   /dsh/operator/fields/{fieldActorId}/financial-summary:
     $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1fields~1{fieldActorId}~1financial-summary"
 
-  /dsh/operator/field-commission-policies:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1field-commission-policies"
-
-  /dsh/operator/field-commission-policies/{policyId}:
-    $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1field-commission-policies~1{policyId}"
+  /dsh/operator/field-acquisition-reward-policies:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1field-acquisition-reward-policies"
 
   /dsh/partners/me/stores/{storeId}/captain-memberships:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1partners~1me~1stores~1{storeId}~1captain-memberships"
@@ -827,7 +833,7 @@ components:
 
     CreateJoiningCaseRequest:
       type: object
-      required: [contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, firstStoreFulfillmentModes]
+      required: [contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreCommercialTypeId, firstStoreLatitude, firstStoreLongitude, firstStoreFulfillmentModes]
       additionalProperties: false
       properties:
         contactPhoneE164:
@@ -845,6 +851,9 @@ components:
           type: string
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
         firstStoreVerticalId:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
+        firstStoreCommercialTypeId:
           type: string
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
         firstStoreLatitude:
@@ -966,6 +975,9 @@ components:
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
         firstStoreVerticalId:
           type: string
+        firstStoreCommercialTypeId:
+          type: string
+          nullable: true
           nullable: true
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
         firstStoreLatitude:
@@ -991,12 +1003,6 @@ components:
           nullable: true
         state:
           $ref: "#/components/schemas/JoiningCaseState"
-        commissionRateBps:
-          type: integer
-          nullable: true
-          x-go-pointer: true
-          minimum: 0
-          maximum: 10000
         settlementPeriod:
           type: string
           nullable: true
@@ -1089,7 +1095,7 @@ components:
 
     OperatorStoreSummary:
       type: object
-      required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, version, publicationState, fulfillmentModes, createdAt, updatedAt]
+      required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, commercialStoreTypeId, version, publicationState, fulfillmentModes, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -1102,6 +1108,9 @@ components:
           type: string
           nullable: true
         primaryVerticalId:
+          type: string
+          nullable: true
+        commercialStoreTypeId:
           type: string
           nullable: true
         version:
@@ -1151,6 +1160,9 @@ components:
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
         firstStoreVerticalId:
           type: string
+        firstStoreCommercialTypeId:
+          type: string
+          nullable: true
           nullable: true
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
         firstStoreLatitude:
@@ -1200,7 +1212,7 @@ components:
 
     CorrectJoiningCaseRequest:
       type: object
-      required: [businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude]
+      required: [businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreCommercialTypeId, firstStoreLatitude, firstStoreLongitude]
       additionalProperties: false
       properties:
         businessName:
@@ -1216,6 +1228,9 @@ components:
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
         firstStoreVerticalId:
           type: string
+        firstStoreCommercialTypeId:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
         firstStoreLatitude:
           type: number
@@ -1252,7 +1267,7 @@ components:
           maxLength: 128
     PartnerFinancialTermsPolicy:
       type: object
-      required: [id, policyVersion, state, commissionRateBps, settlementPeriod, version, createdBy, createdAt, retiredAt]
+      required: [id, policyVersion, state, settlementPeriod, version, createdBy, createdAt, retiredAt]
       additionalProperties: false
       properties:
         id:
@@ -1263,10 +1278,6 @@ components:
         state:
           type: string
           enum: [ACTIVE, RETIRED]
-        commissionRateBps:
-          type: integer
-          minimum: 0
-          maximum: 10000
         settlementPeriod:
           type: string
           enum: [DAILY, WEEKLY, MONTHLY]
@@ -1293,13 +1304,9 @@ components:
           type: boolean
     CreatePartnerFinancialTermsPolicyRequest:
       type: object
-      required: [commissionRateBps, settlementPeriod, expectedVersion, reason]
+      required: [settlementPeriod, expectedVersion, reason]
       additionalProperties: false
       properties:
-        commissionRateBps:
-          type: integer
-          minimum: 0
-          maximum: 10000
         settlementPeriod:
           type: string
           enum: [DAILY, WEEKLY, MONTHLY]
@@ -1324,7 +1331,7 @@ components:
 
     StoreView:
       type: object
-      required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, deliveryOrigin, fulfillmentModes, version, publicationState, publicationReadiness, createdAt, updatedAt]
+      required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, commercialStoreTypeId, deliveryOrigin, fulfillmentModes, version, publicationState, publicationReadiness, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -1338,6 +1345,10 @@ components:
           nullable: true
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
         primaryVerticalId:
+          type: string
+          nullable: true
+          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
+        commercialStoreTypeId:
           type: string
           nullable: true
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
@@ -1555,6 +1566,35 @@ components:
           uniqueItems: true
           items:
             $ref: "#/components/schemas/StoreFulfillmentMode"
+        idempotentReplay:
+          type: boolean
+
+    SetStoreCommercialTypeRequest:
+      type: object
+      required: [commercialStoreTypeId, reason]
+      additionalProperties: false
+      properties:
+        commercialStoreTypeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+
+    SetStoreCommercialTypeResponse:
+      type: object
+      required: [storeId, commercialStoreTypeId, version, idempotentReplay]
+      additionalProperties: false
+      properties:
+        storeId:
+          type: string
+        commercialStoreTypeId:
+          type: string
+        version:
+          type: integer
+          minimum: 1
         idempotentReplay:
           type: boolean
 
@@ -3081,6 +3121,102 @@ components:
           items:
             $ref: "#/components/schemas/CommerceVertical"
 
+    CommercialStoreType:
+      type: object
+      required: [id, verticalId, nameAr, nameEn, active, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
+        verticalId:
+          type: string
+        nameAr:
+          type: string
+        nameEn:
+          type: string
+        active:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateCommercialStoreTypeRequest:
+      type: object
+      required: [verticalId, nameAr, nameEn, active, reason]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
+          description: Optional import identifier. DSH generates the canonical ID when omitted.
+        verticalId:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
+        nameAr:
+          type: string
+          minLength: 2
+          maxLength: 160
+        nameEn:
+          type: string
+          minLength: 2
+          maxLength: 160
+        active:
+          type: boolean
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+
+    UpdateCommercialStoreTypeRequest:
+      type: object
+      required: [nameAr, nameEn, active, expectedVersion, reason]
+      additionalProperties: false
+      properties:
+        nameAr:
+          type: string
+          minLength: 2
+          maxLength: 160
+        nameEn:
+          type: string
+          minLength: 2
+          maxLength: 160
+        active:
+          type: boolean
+        expectedVersion:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+
+    CommercialStoreTypeResponse:
+      type: object
+      required: [storeType, idempotentReplay]
+      additionalProperties: false
+      properties:
+        storeType:
+          $ref: "#/components/schemas/CommercialStoreType"
+        idempotentReplay:
+          type: boolean
+
+    CommercialStoreTypeListResponse:
+      type: object
+      required: [storeTypes]
+      additionalProperties: false
+      properties:
+        storeTypes:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommercialStoreType"
+
     CatalogCategory:
       type: object
       required: [id, verticalId, nameAr, nameEn, active, version, createdAt, updatedAt]
@@ -4055,7 +4191,7 @@ components:
 
     FieldAdmissionRequest:
       type: object
-      required: [fullNameAr, contactPhoneE164]
+      required: [fullNameAr, contactPhoneE164, serviceCityId]
       additionalProperties: false
       properties:
         fullNameAr:
@@ -4066,6 +4202,10 @@ components:
         contactPhoneE164:
           type: string
           pattern: '^\+[1-9][0-9]{7,14}$'
+        serviceCityId:
+          type: string
+          minLength: 1
+          maxLength: 128
 
     FieldAdmissionProfileRequest:
       type: object
@@ -4105,6 +4245,9 @@ components:
           description: Arabic display name for this Field admission; this field is not a verified legal name.
           nullable: true
         contactPhoneE164:
+          type: string
+          nullable: true
+        serviceCityId:
           type: string
           nullable: true
         state:
@@ -5230,13 +5373,9 @@ components:
     PartnerStoreCommissionPolicy:
       type: object
       additionalProperties: false
-      required: [storeId, partnerActorId, fulfillmentMode, commissionRateBps, policyVersion, profileId, profileVersion, roundingUnitMinor, settlementPeriod, updatedAt]
+      required: [commercialStoreTypeId, fulfillmentMode, commissionRateBps, policyVersion, updatedAt]
       properties:
-        storeId:
-          type: string
-          minLength: 1
-          maxLength: 128
-        partnerActorId:
+        commercialStoreTypeId:
           type: string
           minLength: 1
           maxLength: 128
@@ -5250,19 +5389,6 @@ components:
         policyVersion:
           type: integer
           minimum: 1
-        profileId:
-          type: string
-          minLength: 1
-          maxLength: 128
-        profileVersion:
-          type: integer
-          minimum: 1
-        roundingUnitMinor:
-          type: integer
-          const: 50
-        settlementPeriod:
-          type: string
-          enum: [DAILY, WEEKLY, MONTHLY]
         updatedAt:
           type: string
           format: date-time
@@ -5278,15 +5404,14 @@ components:
     PartnerStoreCommissionPoliciesResponse:
       type: object
       additionalProperties: false
-      required: [storeId, policies]
+      required: [commercialStoreTypeId, policies]
       properties:
-        storeId:
+        commercialStoreTypeId:
           type: string
           minLength: 1
           maxLength: 128
         policies:
           type: array
-          minItems: 3
           maxItems: 3
           items:
             $ref: "#/components/schemas/PartnerStoreCommissionPolicy"
@@ -5294,9 +5419,9 @@ components:
     PartnerStoreCommissionPolicyUpdateRequest:
       type: object
       additionalProperties: false
-      required: [storeId, fulfillmentMode, commissionRateBps, expectedVersion, reason]
+      required: [commercialStoreTypeId, fulfillmentMode, commissionRateBps, expectedVersion, reason]
       properties:
-        storeId:
+        commercialStoreTypeId:
           type: string
           minLength: 1
           maxLength: 128
@@ -5309,7 +5434,7 @@ components:
           maximum: 10000
         expectedVersion:
           type: integer
-          minimum: 1
+          minimum: 0
         reason:
           type: string
           minLength: 8
@@ -5325,7 +5450,7 @@ components:
         idempotentReplay:
           type: boolean
 
-    FieldCommissionPolicy:
+    FieldAcquisitionRewardPolicy:
       type: object
       additionalProperties: false
       required: [id, scopeType, scopeId, rewardMinor, roundingUnitMinor, state, version, createdBy, createdAt, retiredAt]
@@ -5334,7 +5459,7 @@ components:
           type: string
         scopeType:
           type: string
-          enum: [DEFAULT, VERTICAL, STORE]
+          enum: [STORE_TYPE]
         scopeId:
           type: string
         rewardMinor:
@@ -5362,7 +5487,7 @@ components:
     FieldFinancialSummary:
       type: object
       additionalProperties: false
-      required: [fieldActorId, currency, earnedMinor, commissionMinor, storeCount, lastEarningAt]
+      required: [fieldActorId, currency, earnedMinor, entitlementMinor, partnerCount, lastEarningAt]
       properties:
         fieldActorId:
           type: string
@@ -5372,10 +5497,10 @@ components:
         earnedMinor:
           type: integer
           minimum: 0
-        commissionMinor:
+        entitlementMinor:
           type: integer
           minimum: 0
-        storeCount:
+        partnerCount:
           type: integer
           minimum: 0
         lastEarningAt:

@@ -38,7 +38,7 @@
 :global(.catalog-selection-bar) { display: flex; min-height: 28px; align-items: center; justify-content: space-between; color: var(--text-muted); font-size: 12px; }
 :global(.catalog-selection-bar .button) { width: auto; min-height: 32px; padding: 0 8px; }
 :global(.catalog-registry-table-wrap) { overflow-x: auto; border: 1px solid var(--border-subtle); border-radius: 12px; }
-:global(.catalog-registry-table) { width: 100%; min-width: 900px; border-collapse: collapse; background: var(--surface-base); text-align: right; }
+:global(.catalog-registry-table) { width: 100%; min-width: 1040px; border-collapse: collapse; background: var(--surface-base); text-align: right; }
 :global(.catalog-registry-table th), :global(.catalog-registry-table td) { height: 54px; padding: 9px 12px; border-bottom: 1px solid var(--border-subtle); white-space: nowrap; }
 :global(.catalog-registry-table th) { height: 42px; background: var(--surface-muted); color: var(--text-muted); font-size: 11px; font-weight: 800; }
 :global(.catalog-registry-table td) { color: var(--color-primary); font-size: 13px; }
@@ -48,6 +48,8 @@
 :global(.catalog-registry-table input[type="checkbox"]) { width: 16px; height: 16px; accent-color: var(--action-bg); }
 :global(.catalog-registry-table td strong), :global(.catalog-registry-table td small) { display: block; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
 :global(.catalog-registry-table td small) { margin-top: 3px; color: var(--text-muted); font-size: 11px; }
+:global(.catalog-vertical-image) { display: block; width: 64px; height: 48px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border-subtle); }
+:global(.catalog-vertical-image-empty) { color: var(--text-muted); font-size: 11px; }
 :global(.catalog-registry-product) { display: flex; align-items: center; gap: 10px; min-width: 210px; }
 :global(.catalog-registry-product > span:last-child) { display: grid; min-width: 0; }
 :global(.catalog-registry-product-image), :global(.catalog-registry-product-placeholder) { display: grid; width: 42px; height: 42px; flex: 0 0 42px; place-items: center; overflow: hidden; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--surface-muted); object-fit: cover; color: var(--interactive-text); font-weight: 800; }

@@ -22,14 +22,11 @@ var (
 	ErrFinancialProfileState        = errors.New("financial profile state does not allow this operation")
 )
 
-func ValidateFinancialProfile(joiningCaseID, partnerActorID, origin, settlementPeriod string, commissionRateBps int) error {
+func ValidateFinancialProfile(joiningCaseID, partnerActorID, origin, settlementPeriod string) error {
 	if bounded(joiningCaseID, 1, 128) == "" || bounded(partnerActorID, 1, 128) == "" {
 		return ErrFinancialProfileInvalidInput
 	}
 	if origin != OriginField && origin != OriginControlPanel {
-		return ErrFinancialProfileInvalidInput
-	}
-	if commissionRateBps < 0 || commissionRateBps > 10000 {
 		return ErrFinancialProfileInvalidInput
 	}
 	switch strings.TrimSpace(settlementPeriod) {

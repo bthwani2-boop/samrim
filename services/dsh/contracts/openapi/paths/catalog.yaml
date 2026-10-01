@@ -61,6 +61,54 @@ paths:
       responses:
         "200": { description: Vertical updated or idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CommerceVerticalResponse" } } } }
 
+  /dsh/catalog/commercial-store-types:
+    get:
+      operationId: listCommercialStoreTypes
+      summary: Read canonical commercial store types for one Commerce Vertical
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/VerticalIdRequired"
+        - { name: includeInactive, in: query, required: false, schema: { type: boolean, default: false } }
+        - { name: X-Acting-Actor-ID, in: header, required: false, schema: { type: string, maxLength: 128 } }
+      responses:
+        "200": { description: Commercial store types under the selected active Commerce Vertical., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CommercialStoreTypeListResponse" } } } }
+    post:
+      operationId: createCommercialStoreType
+      summary: Create a commercial store type under an active Commerce Vertical
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateCommercialStoreTypeRequest" } }
+      responses:
+        "201": { description: Commercial store type created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CommercialStoreTypeResponse" } } } }
+        "200": { description: Idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CommercialStoreTypeResponse" } } } }
+
+  /dsh/catalog/commercial-store-types/{storeTypeId}:
+    patch:
+      operationId: updateCommercialStoreType
+      summary: Update one commercial store type with version and audit control
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: storeTypeId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{1,127}$' }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UpdateCommercialStoreTypeRequest" } }
+      responses:
+        "200": { description: Commercial store type updated or idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CommercialStoreTypeResponse" } } } }
+
   /dsh/catalog/categories:
     get:
       operationId: listCatalogCategories

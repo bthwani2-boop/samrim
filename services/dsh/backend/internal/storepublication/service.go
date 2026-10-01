@@ -42,19 +42,50 @@ func New(identity *identityintegration.Client, db *sql.DB, wlt *wltintegration.C
 	return &Service{identity: identity, db: db, wlt: wlt}, nil
 }
 
-func (s *Service) ReconcileFieldCommissions(ctx context.Context) error {
-	items, err := postgres.ListPendingFieldCommissionPublications(ctx, s.db, 100)
+func (s *Service) ReconcileFieldAcquisitionRewards(ctx context.Context) error {
+	items, err := postgres.ListPendingFieldAcquisitionRewardPublications(ctx, s.db, 100)
 	if err != nil {
 		return err
 	}
 	for _, item := range items {
-		if _, _, finalizeErr := s.wlt.FinalizeFieldCommission(ctx, item.StoreID, item.FieldActorID, item.VerticalID, item.IdempotencyKey, item.CorrelationID); finalizeErr != nil {
-			if markErr := postgres.MarkFieldCommissionPublicationFailure(ctx, s.db, item.ID, finalizeErr.Error()); markErr != nil {
+		if strings.TrimSpace(item.CommercialStoreTypeID) == "" {
+			if deferErr := postgres.DeferFieldAcquisitionPublication(ctx, s.db, item.ID, false, true); deferErr != nil {
+				return deferErr
+			}
+			continue
+		}
+		store, readErr := postgres.ReadStore(ctx, s.db, item.StoreID)
+		if readErr != nil {
+			if markErr := postgres.MarkFieldAcquisitionRewardPublicationFailure(ctx, s.db, item.ID, readErr.Error()); markErr != nil {
 				return markErr
 			}
 			continue
 		}
-		if err := postgres.MarkFieldCommissionPublicationPosted(ctx, s.db, item.ID); err != nil {
+		if _, visibleErr := s.ReadPublished(ctx, item.StoreID, store.ServiceCityID); errors.Is(visibleErr, postgres.ErrStoreNotFound) {
+			if deferErr := postgres.DeferFieldAcquisitionPublication(ctx, s.db, item.ID, false, false); deferErr != nil {
+				return deferErr
+			}
+			continue
+		} else if visibleErr != nil {
+			if markErr := postgres.MarkFieldAcquisitionRewardPublicationFailure(ctx, s.db, item.ID, visibleErr.Error()); markErr != nil {
+				return markErr
+			}
+			continue
+		}
+		if _, _, finalizeErr := s.wlt.FinalizeFieldAcquisitionReward(ctx, item.JoiningCaseID, item.StoreID, item.PartnerActorID, item.FieldActorID, item.VerticalID, item.CommercialStoreTypeID, item.IdempotencyKey, item.CorrelationID); finalizeErr != nil {
+			var wltErr *wltintegration.Error
+			if errors.As(finalizeErr, &wltErr) && wltErr.Code == "FIELD_ACQUISITION_POLICY_NOT_FOUND" {
+				if deferErr := postgres.DeferFieldAcquisitionPublication(ctx, s.db, item.ID, true, false); deferErr != nil {
+					return deferErr
+				}
+				continue
+			}
+			if markErr := postgres.MarkFieldAcquisitionRewardPublicationFailure(ctx, s.db, item.ID, finalizeErr.Error()); markErr != nil {
+				return markErr
+			}
+			continue
+		}
+		if err := postgres.MarkFieldAcquisitionRewardPublicationPosted(ctx, s.db, item.ID); err != nil {
 			return err
 		}
 	}
@@ -111,6 +142,21 @@ func (s *Service) SetFulfillmentModes(ctx context.Context, storeID string, modes
 		return postgres.StoreFulfillmentModesResult{}, err
 	}
 	return postgres.SetStoreFulfillmentModes(ctx, s.db, storeID, actingActorID, modes, expectedVersion, idempotencyKey, correlationID)
+}
+
+func (s *Service) SetCommercialStoreType(ctx context.Context, storeID, typeID, reason string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.StoreCommercialTypeAssignmentResult, error) {
+	actingActorID = strings.TrimSpace(actingActorID)
+	operator, err := s.identity.ReadActorRole(ctx, actingActorID, "operator")
+	if err != nil {
+		return postgres.StoreCommercialTypeAssignmentResult{}, err
+	}
+	if operator.Role != "operator" || !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
+		return postgres.StoreCommercialTypeAssignmentResult{}, ErrOperatorNotActive
+	}
+	if err := s.identity.RequireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
+		return postgres.StoreCommercialTypeAssignmentResult{}, err
+	}
+	return postgres.SetStoreCommercialType(ctx, s.db, storeID, typeID, actingActorID, reason, correlationID, idempotencyKey, expectedVersion)
 }
 
 func (s *Service) ReadForOperator(ctx context.Context, storeID, actingActorID string) (postgres.StoreRecord, PublicationReadiness, error) {
