@@ -52,9 +52,7 @@ func TestCaptainCompletionReplaysAfterOrderTransitions(t *testing.T) {
 		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.service_cities(id,display_name_ar,active) VALUES($1,$2,true)", cityID, "مدينة اختبار الكابتن"); err != nil {
 			t.Fatalf("insert service city: %v", err)
 		}
-		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.stores(id,partner_actor_id,name) VALUES($1,$2,$3)", storeID, "captain-replay-partner", "متجر اختبار الكابتن"); err != nil {
-			t.Fatalf("insert store: %v", err)
-		}
+		insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{ID: storeID, PartnerActorID: "captain-replay-partner", Name: "متجر اختبار الكابتن"})
 		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commerce_carts(id,client_actor_id,store_id,state,version) VALUES($1,$2,$3,'checked_out',1)", cartID, "captain-replay-client", storeID); err != nil {
 			t.Fatalf("insert cart: %v", err)
 		}
