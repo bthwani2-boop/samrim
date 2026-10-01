@@ -65,10 +65,20 @@ check(!dev.includes("Read-RunningBackendServices"),"dev.ps1 must not duplicate C
 check(dev.includes("BACKEND_REUSE=PASS state=healthy inputs=unchanged images=verified"),"healthy unchanged runtime must have a no-build reuse path");
 check(dev.includes("Read-RunningBackendImages"),"runtime reuse must prove running backend image provenance");
 check(dev.includes("Test-BackendImageStateEqual"),"runtime reuse must reject stale container image provenance");
-check(dev.includes("schema   = 3")&&dev.includes("compose  = (Get-FileSha256 $ComposePath)")&&dev.includes("env      = (Get-FileSha256 $EnvPath)"),"runtime state must distinguish Compose topology from runtime environment changes");
+check(/schema\s*= 3/.test(dev)&&/\$state\['schema'\] -ne 3/.test(dev)&&/compose\s*= \(Get-FileSha256 \$ComposePath\)/.test(dev)&&/env\s*= \(Get-FileSha256 \$EnvPath\)/.test(dev),"runtime state must distinguish Compose topology from runtime environment changes");
 check(dev.includes("$composeChanged")&&dev.includes("$composeChanged -or"),"Compose topology changes must force backend image reconciliation");
-check(dev.includes("Test-RuntimeBuildPath")&&dev.includes("_test.go")&&dev.includes("git -C $Root ls-files -s"),"runtime fingerprint must use Git index material and exclude Go test-only files from backend image invalidation");
+check(dev.includes("Test-RuntimeBuildPath")&&dev.includes("git -C $Root ls-files -s"),"runtime fingerprint must use Git index material for backend image invalidation");
 check(dev.includes("Get-WorkingTreeMaterialRecords")&&dev.includes("git -C $Root diff --name-only HEAD"),"runtime fingerprint must overlay only changed working-tree runtime material");
+const buildPathProbe=spawnSync(resolveTrustedExecutable("pwsh"),["-NoProfile","-Command",[
+  "$errors=$null;$tokens=$null;$ast=[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'tools/dev/dev.ps1'),[ref]$tokens,[ref]$errors)",
+  "if($errors.Count){exit 2}",
+  "$function=$ast.Find({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Test-RuntimeBuildPath'},$true)",
+  "if(-not $function){exit 3}",
+  "Invoke-Expression $function.Extent.Text",
+  "$cases=@(@('services/dsh/backend/internal/x.go',$true),@('services/dsh/backend/internal/x_test.go',$false),@('services/dsh/backend/Dockerfile',$true),@('services/dsh/backend/schema.sql',$true),@('services/dsh/backend/readme.md',$false))",
+  "foreach($case in $cases){if((Test-RuntimeBuildPath $case[0]) -ne $case[1]){exit 1}}"
+].join(";")],{cwd:root,encoding:"utf8"});
+check(buildPathProbe.status===0,"runtime fingerprint must include build inputs and exclude Go test-only files");
 check(dev.includes("@('postgres', 'mailpit', 'media', 'identity', 'dsh', 'wlt')"),"backend readiness must include media dependency");
 check(dev.includes("Compose @('up','-d','--build','--wait','--wait-timeout','300','--remove-orphans')"),"cold backend readiness must retain canonical Compose build reconciliation");
 check(dev.includes("Compose @('up', '-d', '--no-build', '--wait', '--wait-timeout', '300', '--remove-orphans')"),"warm/selective backend reconciliation must not rebuild unchanged images");
