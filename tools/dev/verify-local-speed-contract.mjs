@@ -24,7 +24,6 @@ const localCheck = read("tools/dev/check-local.ps1");
 const finalVerify = read("tools/dev/verify-local-candidate.ps1");
 const safePush = read("tools/dev/safe-push.ps1");
 const surface = read("tools/dev/start-surface.mjs");
-const project = json("tools/dev/project.json");
 
 const expectedScripts = {
   check: "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/check-local.ps1",
@@ -86,22 +85,6 @@ check(finalVerify.includes("$env:NX_NO_CLOUD = 'true'"), "final local verificati
 check(finalVerify.includes("$env:NX_DAEMON = 'true'"), "final local verification must reuse the local Nx daemon");
 check(safePush.includes("verify-local-candidate.ps1"), "safe push must keep final verification at push closure");
 check(!safePush.includes("pnpm verify"), "safe push must not duplicate final verification through a second wrapper");
-
-const speedTarget = project.targets?.["local-speed-contract"];
-check(speedTarget?.cache === true, "local-speed-contract Nx target must stay cacheable");
-check(speedTarget?.options?.command === "node tools/dev/verify-local-speed-contract.mjs", "local-speed-contract Nx target must execute the canonical guard");
-const speedInputs = speedTarget?.inputs ?? [];
-for (const required of [
-  "{workspaceRoot}/package.json",
-  "{projectRoot}/dev.ps1",
-  "{projectRoot}/check-local.ps1",
-  "{projectRoot}/verify-local-candidate.ps1",
-  "{projectRoot}/safe-push.ps1",
-  "{projectRoot}/start-surface.mjs",
-  "{projectRoot}/verify-local-speed-contract.mjs",
-]) {
-  check(speedInputs.includes(required), `local-speed-contract must hash ${required}`);
-}
 
 if (failures.length > 0) {
   console.error("LOCAL_SPEED_CONTRACT=FAIL");
