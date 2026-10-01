@@ -62,7 +62,7 @@ test("@live operator sees the WLT-managed Field acquisition reward category poli
   test.setTimeout(30_000);
   await page.goto("/policies/field-acquisition");
   await expect(page.getByRole("heading", { name: "استحقاق ضم الشريك للميداني", level: 2 })).toBeVisible();
-  await expect(page.getByText(/لكل فئة متجر سياسة مبلغ مستقلة/)).toBeVisible();
+  await expect(page.getByText(/لكل نوع متجر تجاري سياسة مبلغ مستقلة من مركز السياسات/)).toBeVisible();
   await expect(page.getByLabel("فئة المتجر")).toBeVisible();
   await expect(page.getByLabel("مبلغ الاستحقاق لهذه الفئة (ريال يمني)")).toBeVisible();
   await expect(page.getByText(/وحدة التقريب ثابتة عند ٥٠ ريالًا/)).toBeVisible();
