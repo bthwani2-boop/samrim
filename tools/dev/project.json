@@ -5,6 +5,7 @@
   "namedInputs": {
     "trackedRepositoryContent": [
       { "runtime": "git ls-files -s" },
+      { "runtime": "git diff --binary HEAD --" },
       { "runtime": "node --version" },
       { "runtime": "pnpm --version" }
     ],
@@ -32,6 +33,7 @@
       "{workspaceRoot}/**/project.json",
       { "runtime": "git ls-files -s" },
       { "runtime": "git ls-files --eol" },
+      { "runtime": "git diff --binary HEAD --" },
       { "runtime": "node --version" }
     ],
     "projectGraph": [
@@ -41,13 +43,7 @@
       { "runtime": "node --version" }
     ],
     "knowledge": [
-      "{workspaceRoot}/AGENTS.md",
-      "{workspaceRoot}/REPOSITORY-STRUCTURE.md",
-      "{workspaceRoot}/CLAUDE.md",
-      "{workspaceRoot}/GEMINI.md",
-      "{workspaceRoot}/README.md",
-      "{workspaceRoot}/CONTRIBUTING.md",
-      "{workspaceRoot}/SECURITY.md",
+      "{workspaceRoot}/**/*.md",
       "{workspaceRoot}/knowledge.sources.json",
       "{workspaceRoot}/package.json",
       "{workspaceRoot}/nx.json",
@@ -116,11 +112,12 @@
       { "runtime": "node --version" }
     ],
     "workspaceDependencies": [
-      "{workspaceRoot}/apps/**/*",
-      "{workspaceRoot}/services/dsh/**/*",
-      "{workspaceRoot}/apps/*/package.json",
-      "{workspaceRoot}/services/*/package.json",
-      "{workspaceRoot}/packages/*/package.json",
+      "{workspaceRoot}/apps/**/*.{ts,tsx,js,jsx,mjs,cjs,go}",
+      "{workspaceRoot}/apps/**/package.json",
+      "{workspaceRoot}/services/**/*.{ts,tsx,js,jsx,mjs,cjs,go}",
+      "{workspaceRoot}/services/**/package.json",
+      "{workspaceRoot}/packages/**/*.{ts,tsx,js,jsx,mjs,cjs,go}",
+      "{workspaceRoot}/packages/**/package.json",
       "{workspaceRoot}/contracts/package.json",
       "{workspaceRoot}/pnpm-workspace.yaml",
       "{projectRoot}/verify-workspace-dependencies.mjs",

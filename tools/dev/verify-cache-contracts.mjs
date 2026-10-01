@@ -29,14 +29,30 @@ const tooling = data("tools/dev/project.json");
 if (tooling.namedInputs?.repository) failures.push("workspace-tooling retains ambiguous repository-wide named input");
 const trackedRepositoryContent = JSON.stringify(tooling.namedInputs?.trackedRepositoryContent ?? []);
 if (!trackedRepositoryContent.includes("git ls-files -s")) failures.push("trackedRepositoryContent must use canonical Git index hashes");
+if (!trackedRepositoryContent.includes("git diff --binary HEAD --")) failures.push("trackedRepositoryContent must hash dirty tracked-file content");
 if (trackedRepositoryContent.includes("{workspaceRoot}/**/*")) failures.push("trackedRepositoryContent must not make Nx re-hash the whole workspace tree");
 const repositoryStructure = JSON.stringify(tooling.namedInputs?.repositoryStructure ?? []);
 for (const required of ["REPOSITORY-STRUCTURE.md", "**/project.json", "git ls-files"]) {
   if (!repositoryStructure.includes(required)) failures.push("repositoryStructure cache input missing " + required);
 }
 const structuralHygiene = JSON.stringify(tooling.namedInputs?.structuralHygiene ?? []);
-for (const required of ["git ls-files -s", "git ls-files --eol", ".gitattributes", "**/package.json", "**/project.json"]) {
+for (const required of ["git ls-files -s", "git ls-files --eol", "git diff --binary HEAD --", ".gitattributes", "**/package.json", "**/project.json"]) {
   if (!structuralHygiene.includes(required)) failures.push("structuralHygiene cache input missing " + required);
+}
+const knowledgeInputs = tooling.namedInputs?.knowledge ?? [];
+if (!knowledgeInputs.includes("{workspaceRoot}/**/*.md")) failures.push("knowledge cache input must cover Markdown files scanned by knowledge verifiers");
+const workspaceDependencyInputs = tooling.namedInputs?.workspaceDependencies ?? [];
+for (const required of [
+  "{workspaceRoot}/apps/**/*.{ts,tsx,js,jsx,mjs,cjs,go}",
+  "{workspaceRoot}/services/**/*.{ts,tsx,js,jsx,mjs,cjs,go}",
+  "{workspaceRoot}/packages/**/*.{ts,tsx,js,jsx,mjs,cjs,go}",
+  "{workspaceRoot}/apps/**/package.json",
+  "{workspaceRoot}/services/**/package.json",
+  "{workspaceRoot}/packages/**/package.json",
+  "{workspaceRoot}/contracts/package.json",
+  "{projectRoot}/verify-workspace-dependencies.mjs",
+]) {
+  if (!workspaceDependencyInputs.includes(required)) failures.push("workspaceDependencies cache input missing " + required);
 }
 
 const projects = [];

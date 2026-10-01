@@ -61,10 +61,17 @@ function verifyNxOwnership() {
     assert(tooling.targets?.[target]?.cache === true, `workspace-tooling:${target} must be cache=true`);
   }
   const trackedContent = JSON.stringify(tooling.namedInputs?.trackedRepositoryContent ?? []);
-  requireTokens(trackedContent, "tracked repository content", ["git ls-files -s"]);
+  requireTokens(trackedContent, "tracked repository content", ["git ls-files -s", "git diff --binary HEAD --"]);
   forbidTokens(trackedContent, "tracked repository content", ["{workspaceRoot}/**/*"]);
   requireTokens(JSON.stringify(tooling.namedInputs?.repositoryStructure ?? []), "repository structure input", ["REPOSITORY-STRUCTURE.md", "**/project.json", "git ls-files"]);
-  requireTokens(JSON.stringify(tooling.namedInputs?.structuralHygiene ?? []), "structural hygiene input", ["git ls-files -s", "git ls-files --eol", ".gitattributes", "**/package.json", "**/project.json"]);
+  requireTokens(JSON.stringify(tooling.namedInputs?.structuralHygiene ?? []), "structural hygiene input", ["git ls-files -s", "git ls-files --eol", "git diff --binary HEAD --", ".gitattributes", "**/package.json", "**/project.json"]);
+  requireTokens(JSON.stringify(tooling.namedInputs?.knowledge ?? []), "knowledge input", ["{workspaceRoot}/**/*.md"]);
+  requireTokens(JSON.stringify(tooling.namedInputs?.workspaceDependencies ?? []), "workspace dependency input", [
+    "{workspaceRoot}/apps/**/*.{ts,tsx,js,jsx,mjs,cjs,go}",
+    "{workspaceRoot}/services/**/*.{ts,tsx,js,jsx,mjs,cjs,go}",
+    "{workspaceRoot}/packages/**/*.{ts,tsx,js,jsx,mjs,cjs,go}",
+    "{projectRoot}/verify-workspace-dependencies.mjs",
+  ]);
   assert((tooling.targets?.["knowledge-materialize"]?.outputs ?? []).includes("{workspaceRoot}/.cache/bthwani-knowledge"), "knowledge materialization output drifted");
   for (const target of ["docs-command-parity", "docs-config-parity", "knowledge-system", "knowledge-references"]) {
     assert((tooling.targets?.[target]?.dependsOn ?? []).includes("knowledge-materialize"), `workspace-tooling:${target} must depend on knowledge-materialize`);
