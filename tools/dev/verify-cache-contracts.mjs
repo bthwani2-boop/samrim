@@ -56,6 +56,28 @@ function effectiveCache(targetName, target) {
   return typeof inherited === "boolean" ? inherited : false;
 }
 
+const generatedInputPath = /(?:^|\/)(?:\.nx|\.next|dist|build|coverage|\.cache|\.tmp)(?:\/|$)/;
+function collectDeclaredInputPaths(inputs, project, seen = new Set()) {
+  const paths = [];
+  for (const input of inputs ?? []) {
+    if (typeof input === "string") {
+      const projectNamed = project.namedInputs?.[input];
+      const workspaceNamed = nx.namedInputs?.[input];
+      const named = projectNamed ?? workspaceNamed;
+      if (named && !seen.has(input)) {
+        const nextSeen = new Set(seen);
+        nextSeen.add(input);
+        paths.push(...collectDeclaredInputPaths(named, project, nextSeen));
+      } else if (input.includes("{workspaceRoot}") || input.includes("{projectRoot}")) {
+        paths.push(input);
+      }
+      continue;
+    }
+    if (input && typeof input === "object" && typeof input.fileset === "string") paths.push(input.fileset);
+  }
+  return paths;
+}
+
 const runtimeCommand = /(playwright|next\s+dev|expo\s+(start|run)|docker\s+compose|verify-(?:identity|dsh)-runtime|verify-(?:identity-migrations|dsh-baseline)|build-ci-image)/i;
 for (const file of projects) {
   const project = data(file);
@@ -64,6 +86,16 @@ for (const file of projects) {
     const deterministicComposeRender = /docker\s+compose\b.*\bconfig\s+--quiet\b/i.test(command);
     if (runtimeCommand.test(command) && !deterministicComposeRender && effectiveCache(targetName, target)) {
       failures.push(file + ":" + targetName + " runtime/stateful command must be cache=false");
+    }
+
+    if (effectiveCache(targetName, target)) {
+      const declaredInputs = target?.inputs ?? nx.targetDefaults?.[targetName]?.inputs ?? [];
+      for (const inputPath of collectDeclaredInputPaths(declaredInputs, project)) {
+        const normalized = inputPath.replaceAll("\\", "/");
+        if (generatedInputPath.test(normalized)) {
+          failures.push(file + ":" + targetName + " cache input must not consume volatile/generated path " + inputPath);
+        }
+      }
     }
   }
 }
@@ -151,4 +183,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log("NX_CACHE_CONTRACTS=PASS projects=" + projects.length + " runtime_cache=0 causal_repository_inputs=1 known_writers_declared=3 control_env_hashed=1");
+console.log("NX_CACHE_CONTRACTS=PASS projects=" + projects.length + " runtime_cache=0 causal_repository_inputs=1 volatile_generated_inputs=0 known_writers_declared=3 control_env_hashed=1");
