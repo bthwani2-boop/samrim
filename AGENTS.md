@@ -1,253 +1,112 @@
-# BThwani / Samrim Agent Operating Constitution
+# BThwani / Samrim Agent Law
 
-ARTIFACT_CLASS: REPOSITORY_AGENT_OPERATING_CONSTITUTION
-REPOSITORY_AGENT_LAW_AUTHORITY: CANONICAL
-PRODUCT_SEMANTIC_AUTHORITY: NONE
-CURRENT_IMPLEMENTATION_AUTHORITY: NONE
+`AGENTS.md` is the repository-local execution and safety law. It does not own Product meaning or current implementation truth.
 
-`AGENTS.md` is the sole repository-local execution and safety law. `REPOSITORY-STRUCTURE.md` owns repository placement only. `knowledge.sources.json` binds the exact immutable Governance baseline. Pinned Governance owns durable BThwani Product/System/Policy meaning; exact source/config/schema/Nx/runtime/database/readback owns current implementation truth; Git owns history.
+## Authority
 
-## 1. Execution law
-
-CURRENT STATE
-→ PROVEN AFFECTED CONE
-→ HIGHEST CAUSAL ROOT
-→ SIMPLEST COMPLETE CANONICAL TREATMENT
-→ CLAIM-SPECIFIC PROOF
-→ FRESH CLOSURE CENSUS
-
-Before material reasoning, pin repository, requested/active ref, exact HEAD, objective, environment and mutation authority. Revalidate live HEAD before a material write. Deep means maximum rigor inside the proven material cone, not repository-wide inspection.
-
-Resolve authority in this order whenever scopes appear to overlap:
+Resolve conflicts in this order:
 
 CURRENT USER / TASK AUTHORITY
-→ EXACT LIVE `AGENTS.md`
-→ EXACT `knowledge.sources.json`
-→ EXACT PINNED GOVERNANCE
-→ EXACT LIVE SOURCE / CONFIG / SCHEMA / NX GRAPH / RUNTIME / DATABASE / READBACK
+→ this `AGENTS.md`
+→ pinned Governance in `knowledge.sources.json`
+→ exact live source / contracts / schema / migrations / Nx / config / runtime / database / canonical readback
+→ Git history
 
-Task-specific branch choice, starting order, checkpoint cadence and promotion constraints remain current user/task authority unless independently admitted as durable law. A tracked task trigger grants no semantic, execution-law or implementation authority merely by existing. If temporary task text contains a genuinely durable rule, move that rule to its one canonical owner (`AGENTS.md` for repository execution/safety, Governance for durable Product/System/Policy/Quality/Experience/Data/Design meaning), remove duplicates, then delete the temporary trigger and stale references once it carries no unique active need. Temporary task authorization should normally remain outside durable repository authority; task evidence or matrices, when explicitly retained, remain non-authoritative evidence and must be revalidated against the exact candidate before reuse.
+Use one bounded discovery sufficient to identify the affected scope, canonical owner, real risk and required proof. After that, execute. Widen discovery only when new evidence can materially change the repair decision.
 
-After one bounded discovery sufficient to choose owner, boundary, safety, treatment and proof, default to execution rather than repeated audit. Rediscover or widen only when new evidence can materially change those decisions.
+## Simplification law
 
-One material meaning has one semantic owner; one mutable fact has one canonical writer; one cross-boundary contract has one executable provenance. Treat the highest proven causal root; do not preserve, wrap, suppress or document around a surviving root defect.
+The target is always the **simplest complete correct system**.
 
-For each material change derive the smallest falsifiable closure contract:
+For every repository-owned mechanism ask what current material problem it solves, whether that problem still exists, whether Git/Nx/the native tool/current owner already solves it, and what actually breaks if the mechanism is removed. If no current material value is proven, delete it.
 
-AUTHORIZED OUTCOME
-× MATERIAL INVARIANTS
-× CANONICAL OWNER / WRITER / READBACK
-× AFFECTED SURFACES / LAYERS
-× REQUIRED FAILURE / NEGATIVE CASES
-× REQUIRED PROOF
-× FORBIDDEN RESIDUE
+Treatment order:
 
-Do not start material implementation while a `DECISION_CRITICAL_UNKNOWN` can still change owner, boundary, migration, safety, solution or proof.
+DELETE
+→ DIRECT USE
+→ STANDARD TOOL
+→ REUSE EXISTING OWNER
+→ MERGE DUPLICATES
+→ SIMPLIFY / REFACTOR
+→ REFOUND
+→ NEW MECHANISM ONLY WHEN REQUIRED
 
-Every deterministic invariant belongs at the strongest canonical boundary that can reliably prevent its violation. Database-enforceable persistent truth belongs in constraints/transactions; authorization at the canonical service owner; API/event shape at the executable contract/runtime boundary; repository invariants in deterministic verifiers. UI/client validation is complementary only.
+Do not solve complexity by adding another abstraction. Do not retain wrappers, verifiers, diagnostics, compatibility paths, state machines, generated evidence, caches or duplicated ownership merely because they already exist or because another custom verifier depends on them.
 
-A material proof must not derive expected truth solely from the same implementation path under test when that could reproduce the defect. Prefer contract, invariant, canonical readback or independently derived expectation.
+A small change must remain small. Local feedback, CI, runtime work and agent reasoning must stay proportional to the proven affected scope.
 
-### Program progression
+## Correctness boundaries
 
-When current user authority permits continued Product/Core development, derive the active delivery gate from user authority + pinned Governance + exact implementation truth. Do not hard-code journey inventory or feature backlog here.
+Simplification must preserve required Product behavior, security, authorization, data integrity, canonical persistence, externally required compatibility and real operational safety.
 
-CURRENT AUTHORIZED DELIVERY GATE
-→ EARLIEST UNRESOLVED MATERIAL JOURNEY / SHARED BOUNDARY
-→ PROVEN AFFECTED CONE
-→ STATIC CLOSURE
-→ NEXT DEPENDENCY-VALID JOURNEY / INCREMENT
+One material meaning has one semantic owner. One mutable fact has one canonical writer. One contract has one executable owner. Fix the highest proven causal root; do not preserve a defective path behind aliases, wrappers, suppressions or documentation.
 
-Dependent work must not advance through an unclosed prerequisite. Proven-independent lanes may continue only when they do not consume unproven prerequisite state or invalidate evidence.
+When replacing a path, cut over all real producers, consumers, config, runtime, tests and references, then delete the loser. No shadow truth or partial cutover.
 
-## 2. Durable meaning and Governance
+Persistent invariants belong at the strongest reliable boundary: database constraints/transactions for durable data truth, service authorization at the owning service, executable contracts for API/event shape. UI validation is complementary.
 
-Every material task classifies exactly one:
+Secrets stay outside the repository. Never commit secret values or create hidden seed/business-data authority.
 
-GOVERNANCE_IMPACT=NONE
-GOVERNANCE_IMPACT=REVALIDATE_ONLY
-GOVERNANCE_IMPACT=UPDATE_REQUIRED
-GOVERNANCE_IMPACT=DEFECT_FOUND
+## Development path
 
-Relevant durable owners include `GOVERNANCE-STANDARDS.md`, `governance/policy/QUALITY.md`, `governance/policy/EXPERIENCE.md`, `governance/policy/DESIGN.md` and the other pinned Product/System/Policy owners when material.
+The normal path is:
 
-If UPDATE_REQUIRED or DEFECT_FOUND, correct and merge the canonical Governance owner first, then repin `knowledge.sources.json` to the resulting immutable canonical SHA and re-prove the affected implementation cone. A Governance pin change can never be NONE. Do not duplicate durable Governance meaning into repository-local Markdown.
+SMALL CHANGE
+→ SMALL AFFECTED CHECK
+→ IMPLEMENT
+→ DIRECT PROOF
+→ DONE
 
-External sources, donor/history and competitor observations are evidence only. Revalidate mutable evidence only when it can change the current decision. For user-facing work, durable IA/interaction/operator presentation belongs to pinned Experience; visual language belongs to Design; quality/proof obligations belong to Quality.
+Stable local commands:
 
-## 3. Complexity and cutover
+- `pnpm bootstrap` — install/sync setup when setup inputs changed.
+- `pnpm dev` or `pnpm runtime:up` — prepare/reuse backend and state.
+- `pnpm runtime:status` — direct backend/state readback.
+- `pnpm client|partner|captain|field|control` — run only the requested host.
+- `pnpm scr` — device transport/reverse/scrcpy.
+- `pnpm runtime:down` — stop local runtime.
+- `pnpm check` — dirty-tree affected static feedback only.
+- `pnpm verify` — exact clean-candidate affected static proof only.
+- `pnpm safe:push` — verify the exact clean candidate, push it, confirm the remote SHA.
 
-### SIMPLIFICATION LAW
+Do not run repository-wide checks merely for reassurance. Do not repeat install/build/discovery/proof when unchanged evidence already exists.
 
-Prefer the **simplest complete correct solution**. Complexity may exist only for a proven current material need; otherwise delete or simplify it.
+Sonar is cloud-only. Do not run a local Sonar server/container/image or local Sonar analysis path.
 
-Default: DELETE → DIRECT USE → REUSE EXISTING OWNER / TOOL → SIMPLIFY / REFACTOR → NEW MECHANISM ONLY IF NECESSARY. SMALLEST DIFF != SIMPLEST SYSTEM.
+## Proof selection
 
-A small change must remain small. Discovery, implementation, proof and diagnostics must stay proportional to the proven affected cone. Do not add repository-wide checks, duplicate proof, extra wrappers/layers/states, diagnostic packages/graphs/profiling, or "just in case" machinery unless they can materially change a correctness, safety or repair decision.
+Use Git for changed state and Nx for the project/task graph.
 
-On failure, use the direct failing command and native evidence first. Broader diagnostics are allowed only when needed to choose the repair.
+Choose the smallest proof that can falsify the materially affected claim:
 
-Do not solve complexity by adding another abstraction. When two mechanisms provide the same required outcome, keep the simpler one and delete the other completely.
+- static source/type/contract/schema/unit evidence when sufficient;
+- runtime only for claims that actually require process, DB, HTTP, browser/device, concurrency or runtime readback;
+- broad/full regression only when explicitly justified, scheduled or required for final integration.
 
-Required Product behavior, correctness, security and data integrity remain protected.
+Native tool output is the first diagnostic. Do not automatically create forensic packages, graphs, profiles or secondary diagnostic artifacts. Gather extra diagnostics only when the direct failure is insufficient to choose the repair.
 
-If no real data-preservation or compatibility obligation exists, refound the clean canonical truth and delete every superseded legacy artifact, migration, file or corrective path instead of accumulating patches and residue.
+A failed proof blocks dependent work until classified and repaired. Do not hide failures with skips, allowlists, weakened assertions, catch-and-ignore, exit-code masking or retry inflation. Retry only for an independently supported transient cause.
 
-**NO TECHNICAL IMMUNITY IN LOCAL DEVELOPMENT:** inside authorized `LOCAL DEVELOPMENT`, no repository-owned technical artifact is protected merely because it already exists. Diagnose the highest causal root and execute the simplest complete canonical treatment, including deletion, rewrite, restructuring, refoundation, remodeling, re-migration or regeneration when required. Preserve actual authority boundaries, secrets, unrelated user-owned state and external consequences.
+After a repair, rerun only the smallest proof invalidated by that repair. Unaffected successful evidence remains reusable.
 
-A replacement is complete only after all material producers, consumers, contracts, persistence/config/runtime paths, tests and implementation descriptions use the winner; then delete the loser and prove it absent. No shadow truth or partial cutover.
+## Governance and repository placement
 
-## 4. Local development interface
+Pinned Governance owns durable Product/System/Policy/Quality/Experience/Data/Design meaning. Update and repin Governance only when the task materially changes or finds a defect in that durable meaning; implementation-only work must not manufacture Governance churn.
 
-The stable public interface is intentionally small:
+`REPOSITORY-STRUCTURE.md` owns placement rules only. Exact Nx/source/config/runtime owns current inventory. Do not duplicate mutable inventory into Markdown.
 
-pnpm bootstrap                       → setup/materialization when setup inputs changed
-pnpm dev | pnpm runtime:up           → prepare/reuse backend/state
-pnpm runtime:status                  → backend/state readback
-pnpm client|partner|captain|field    → run only that app's Expo development process
-pnpm control                         → run only Control's Next development process
-pnpm scr                             → device transport/reverse/scrcpy
-pnpm runtime:down                    → stop local runtime
-pnpm check                           → dirty-tree affected static feedback; no runtime/cloud
-pnpm verify                          → exact clean-candidate affected static/workspace proof
-pnpm safe:push                       → exact-candidate verification, safe push and remote SHA confirmation
+## Local-development refoundation authority
 
-**SONAR CLOUD-ONLY:** no local Sonar server/container/image/MCP runtime; SonarQube Cloud only.
+Within authorized local development, no repository-owned technical artifact is protected merely because it exists. Delete, rewrite, restructure, refound, regenerate or replace repository-owned tooling/config/code when that is the simplest complete repair. Preserve unrelated user-owned state, external systems, secrets and irreversible external consequences.
 
-Executable config/runtime owns ports, process inventory and mutable runtime details; do not duplicate them here.
+## Completion
 
-Proof tooling must not reset developer credentials, authorize re-enrollment, revoke unrelated sessions, mutate established actors merely to regain access, or destroy reusable business state merely for convenience. A dev-only provisioner may orchestrate canonical writers/APIs only; never direct-database business writes or hidden seed authority.
+Before declaring closure:
 
-## 5. Static-first, claim-driven proof selection
+1. Review the complete diff.
+2. Run the smallest complete static proof.
+3. Run runtime only for remaining runtime-dependent claims.
+4. Confirm the winning path has all required consumers and the losing path has no live references.
+5. Fix any material finding that appears; rerun only stale proof.
 
-Use Git plus the canonical Nx graph.
-
-### Graphify
-
-- If `graphify-out/graph.json` exists, use the global Graphify skill or `graphify query` for code navigation. Treat results as derived evidence; verify implementation claims against canonical sources, contracts and runtime evidence.
-- After code changes, run `graphify update .` before relying on the graph again.
-- Keep watchers off by default. Use a temporary, repository-scoped watcher only for long, multi-wave work that needs fresh graph queries between waves; stop it and confirm it stopped when done. For documentation, papers or images, follow the skill's semantic update flow when `graphify-out/needs_update` is set.
-
-CHANGED INPUT
-→ NX AFFECTED OWNER
-→ AFFECTED CLAIM
-→ SMALLEST COMPLETE STATIC PROOF
-→ ONLY REQUIRED RUNTIME PROOF LANES
-→ FINAL / SCHEDULED FULL REGRESSION WHEN JUSTIFIED
-
-No proof, build, runtime, browser or device run exists merely for reassurance. Every ordinary run must prove a materially affected claim.
-
-Classify each material proof need:
-
-- `STATIC_SUFFICIENT`: source/types/contracts/schema/generation/deterministic tests fully prove it; runtime is forbidden as duplicate evidence.
-- `RUNTIME_REQUIRED`: process boundary, real DB, HTTP, browser/device interaction, concurrency or canonical runtime readback is required.
-- `FULL_REGRESSION_ONLY`: intentionally broader negative-space/system assurance, scheduled or final.
-
-Runtime selection must be deterministic, Nx/graph-owned, reusable and fail closed. Unknown runtime-sensitive scope must fail explicitly or escalate to FULL with an explicit reason; it must never silently skip proof. Exact proof-lane names and project mappings belong to executable Nx/tooling, not this document.
-
-STATIC CLOSURE means implementation, root-cause repair, cutover, cleanup and residue removal are complete as far as non-runtime evidence can prove. FINAL OPERATIONAL CLOSURE proves only remaining runtime-dependent claims.
-
-Normal order:
-
-STATIC DISCOVERY
-→ STATIC IMPLEMENTATION
-→ STATIC CLOSURE
-→ REQUIRED AFFECTED RUNTIME PROOF LANES
-→ REPAIR ONLY REAL RUNTIME FINDINGS
-→ RERUN ONLY INVALIDATED EVIDENCE
-→ FINAL CLOSURE
-
-EARLY RUNTIME is allowed only when runtime truth is required to make the next correct implementation decision or continuing statically would create material rework risk.
-
-The local verifier remains affected-aware and non-runtime-owning. CI ordinary runtime scope must also be claim/affected-driven; scheduled/final full regression remains separate.
-
-Prefer an existing reusable boundary-owned proof lane. Add a new proof mechanism only when no existing owner can cleanly prove the materially distinct claim.
-
-Cache is evidence only when inputs cover every material computation input. Prefer Nx cache/project graph; do not build a parallel cache/dependency engine. Deterministic/stateless preparation may use remote cache with complete inputs; stateful runtime truth may not be accepted from remote cache.
-
-Evidence is valid only for the exact state and claim it proves. If candidate, semantic owner, contract/schema, persistence/runtime composition, Governance binding or mutable external fact materially changes, rerun only the proof made stale.
-
-### CAUSAL DIAGNOSTIC CLOSURE LAW
-
-For every task, change, proof or failure, execution MUST be demand-driven, evidence-preserving and causal-root-first. Select only the smallest complete diagnostics justified by the canonical affected graph, material inputs, risk and stale evidence. Within one cheap bounded diagnostic batch, harvest all near-free material findings before repair; then normalize, fingerprint, deduplicate, correlate and collapse them toward the highest provable common causal roots. Emit one canonical machine-readable `closure-diagnostic.json` before broad forensic reading, containing exact candidate identity, scope authority, selected/skipped proofs, failed commands/targets/claims, all material findings with evidence references, causal groups, explicit unproven/proven causal state, progression state and the smallest falsifying reproof. Diagnostic grouping is evidence organization only: never infer, rank or repair an unproven root cause. Never patch symptoms one-by-one when a higher common root can still explain them, never hide or weaken a failure, never blindly retry, never begin unrelated material work while a required failure remains unresolved, and never rerun unaffected successful evidence for reassurance. Repair the highest proven canonical causal root completely—including delete/refound/restructure when required—then run the smallest proof capable of falsifying that repair and rerun only evidence materially invalidated by it. PASS evidence remains reusable until causally invalidated; FAIL evidence remains an `ACTIVE_CLOSURE_BLOCKER` until reconciled and proven; no candidate is closed while material findings, stale/shadow truth, unresolved residue, decision-critical causal unknowns or required invalidated evidence remain.
-
-### FAILURE-TO-REPAIR CONVERSION LAW
-
-A material failure may consume **one bounded diagnostic cycle only** before execution must convert from diagnosis to repair. The required state machine is:
-
-FAIL
-→ HARVEST NEAR-FREE SIBLING FINDINGS FROM THE SAME BOUNDED RUN
-→ COLLAPSE TO CANONICAL OWNER / BOUNDARY / HIGHEST PROVABLE ROOT
-→ ROOT SUFFICIENTLY PROVEN?
-→ YES: REPAIR NOW
-→ SMALLEST FALSIFYING REPROOF
-→ REUSE EVERY UNAFFECTED PASS
-
-If the root is not yet sufficiently proven, exactly one additional **decision-changing probe** may be taken for each unresolved `DECISION_CRITICAL_UNKNOWN`. Before running it, state the concrete question and which repair decision its answer can change. If no repair decision can change, the probe is forbidden. Do not widen scope merely to gain confidence.
-
-Once canonical owner, defect boundary and complete treatment are sufficiently determined, **diagnostics stop and the next material action MUST be implementation repair**. A second broad scan, unchanged retry of the failed tool, unrelated CI/runtime lane, extra log harvest, or repository-wide search is forbidden until the repair is made or a named blocker proves repair unsafe.
-
-Every failed proof must therefore end in exactly one of these states:
-
-- `REPAIR_NOW`: root sufficiently proven; perform the complete canonical repair immediately.
-- `ONE_DECISION_PROBE`: one named decision-critical fact is still missing; gather only that fact, then repair or declare a real blocker.
-- `REAL_BLOCKER`: authority, credential/environment, target movement, irreversibility/safety, or unresolved Product decision prevents safe repair.
-
-`INVESTIGATE_MORE`, `RERUN_TO_SEE`, `COLLECT_MORE_LOGS`, `RUN_FULL_CI`, and equivalent open-ended states are not valid progression states.
-
-Repair production/source/schema/data/contract/config/runtime ownership first. A proof, fixture, verifier or diagnostic script may be changed in response to failure only when a stronger independent oracle proves the proof itself is causally defective. In that case repair the proof at its canonical owner and preserve, where practical, a negative control proving the repaired oracle still fails on known-invalid truth. Never edit proof infrastructure to route around a surviving implementation defect.
-
-After repair, run only the smallest proof that could falsify the repaired root. If that proof fails again, update the **same** `ACTIVE_CLOSURE_BLOCKER` with the new evidence and continue root repair; do not fan out into unrelated diagnostics. Successful evidence remains valid until its material inputs are actually invalidated.
-
-Diagnostic output is valuable only when it accelerates repair. When a highest root is proven, `closure-diagnostic.json` should make the next state executable (`REPAIR_NOW` + canonical owner + root + smallest falsifying reproof), not merely describe the failure.
-
-Every required proof result is actionable evidence, never passive logging.
-
-**PASS EVIDENCE REUSE:** preserve and reuse a successful deterministic proof while its material inputs, dependencies, canonical owner, contract/schema, environment class, tool version and governing invariant remain unaffected. Do not rerun successful work merely because an unrelated commit or a new candidate SHA exists; let Nx affected/task hashes/cache prove reuse, and refresh a required remote status by skip/cache rather than recomputation when the claim is unchanged.
-
-**RED CANDIDATE LAW:** a required proof failure on the current candidate immediately becomes the highest-priority `ACTIVE_CLOSURE_BLOCKER`. Until it is causally classified and reconciled, do not start an unrelated material journey, push unrelated material work, launch broader reassurance proof, or proceed through dependent heavy proof.
-
-For a cheap already-running bounded diagnostic batch, allow near-free sibling findings to finish so they can be collapsed by causal owner. For sequential or expensive proof, stop at the first material failure; do not continue into later dependent lanes. The goal is not the largest error list but zero highest causal roots.
-
-Classify a failure only far enough to choose the correct owner: implementation defect, proof defect, infrastructure/environment defect, external transient, or tooling/diagnostic defect. Collapse sibling findings to the highest common causal root, repair that root completely, run the smallest proof capable of falsifying the repair, then rerun only evidence materially invalidated by that repair.
-
-**NO GREENWASHING / ORACLE PRESERVATION:** a failing test, verifier, CI assertion, fixture or proof script is presumed to have found a real defect until a stronger independent oracle proves that the proof itself is stale or wrong. Do not manufacture green by skip/disable/allowlist, assertion or expected-value relaxation, catch-and-ignore, exit-code masking, fixture manipulation, timeout/retry inflation, or required-to-optional demotion. A proof-owner change made in response to its own failure requires an independent contract/invariant/canonical-readback justification and, where practical, a known-invalid negative case showing the repaired proof still fails when truth is violated.
-
-Blind retry is forbidden. Retry only when an independently supported transient cause makes retry the correct test, and keep it bounded. Cleanup failures and diagnostic failures are material findings until classified; never hide them with best-effort suppression unless best-effort semantics are themselves the canonical contract.
-
-Failure evidence should identify the exact candidate, gate, failed command/target, first observed material failure, progression-blocking state and smallest next reproving scope before emitting broad forensic logs. Diagnostics guide repair but do not become a parallel implementation or proof authority.
-
-Use subagents only for genuinely independent bounded lanes. Parallel mutation requires disjoint write sets. Subagents must not independently push, merge, repin Governance, reset persistent state, expose secrets or declare closure.
-
-## 6. Safety, push and closure
-
-Do not force-push, blind-merge/cherry-pick, bypass interlocks, suppress failures to manufacture green, retry ambiguous consequential mutations without reconciliation, expose secrets, or perform merge/release/external consequential effects unless explicitly authorized.
-
-A task-specific authorization may require an explicit remote checkpoint after each coherent closure. Otherwise multiple coherent local commits may share one `pnpm safe:push` at objective closure. `safe:push` must preserve branch/origin/fast-forward/HEAD stability and exact remote SHA confirmation.
-
-Before closure, perform a fresh adversarial census only across the material affected cone. Closure requires:
-
-AUTHORIZED OBJECTIVE = PROVEN
-MATERIAL AFFECTED CONE = ACCOUNTED
-CANONICAL OWNER/WRITER/READBACK = PROVEN
-REQUIRED DATA/CONTRACT/RUNTIME/USER-FACING CLAIMS = PROVEN
-REQUIRED FAILURE/RECOVERY BEHAVIOR = PROVEN WHEN APPLICABLE
-PINNED GOVERNANCE = EXACT WHEN MATERIALLY REQUIRED
-KNOWN MATERIAL DEFECTS = 0
-KNOWN MATERIAL WEAKNESSES/REGRESSIONS = 0
-KNOWN DUPLICATE/SHADOW OWNERSHIP = 0
-KNOWN PARTIAL CUTOVERS/UNJUSTIFIED RESIDUE = 0
-UNPROVEN MATERIAL CLAIMS = 0
-DECISION-CRITICAL UNKNOWNS = 0
-INVALIDATED REQUIRED EVIDENCE = 0
-GOVERNANCE_IMPACT = RESOLVED
-
-For each coherent change unit:
-
-REVIEW DIFF → PROPORTIONAL STATIC / DIRECT CLAIM-SPECIFIC PROOF → LOCAL COMMIT
-
-At authorized objective closure or explicit remote checkpoint:
-
-REVIEW COMPLETE UNPUSHED DELTA → REPOSITORY-OWNED SAFE PUSH ONCE → CONFIRM EXACT REMOTE SHA
-
-Do not ask for "next" when the next safe action is derivable and inside authority. Stop only for a real authority/scope boundary, missing Product decision, unreconciled target movement, unavailable required credential/environment, material safety/irreversibility risk, or a decision-critical unknown that cannot presently be resolved.
+Closure means no known material defect, no known material gap, no unjustified duplicate owner/path, and no temporary workaround remains in the affected scope.
