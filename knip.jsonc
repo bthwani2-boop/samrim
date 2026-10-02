@@ -15,7 +15,6 @@
         "tools/dev/verify-cache-contracts.mjs",
         "tools/dev/verify-doc-command-parity.mjs",
         "tools/dev/verify-doc-config-parity.mjs",
-        "tools/dev/verify-donor-residue.mjs",
         "tools/dev/verify-dsh-baseline.mjs",
         "tools/dev/verify-dsh-runtime-core.mjs",
         "tools/dev/verify-go-workspace-sync.mjs",

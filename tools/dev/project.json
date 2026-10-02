@@ -146,12 +146,6 @@
     ]
   },
   "targets": {
-    "donor-residue": {
-      "executor": "nx:run-commands",
-      "cache": true,
-      "inputs": ["trackedRepositoryContent"],
-      "options": { "command": "node tools/dev/verify-donor-residue.mjs" }
-    },
     "repository-structure": {
       "executor": "nx:run-commands",
       "cache": true,
