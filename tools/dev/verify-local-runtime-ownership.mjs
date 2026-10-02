@@ -26,7 +26,7 @@ const liveFinanceSpec=read("apps/control-panel/tests/finance-runtime.spec.ts");
 const liveDshOperatorSpec=read("apps/control-panel/tests/zz-dsh-operator.spec.ts");
 const check=(ok,msg)=>{if(!ok)fail.push(msg)};
 const cleanupPatternSources=hostCleanup.split(/\r?\n/).map((line)=>line.trim()).filter((line)=>line.startsWith('"(?i)')&&(line.endsWith('"')||line.endsWith('",'))).map((line)=>line.slice(5,line.endsWith('",')?-2:-1));
-const regexMetaCharacters=new Set([".","*","+","?","^","$","{","}","(",")","|","[","]",String.fromCharCode(92)]);
+const regexMetaCharacters=new Set([".","*","+","?","^","$","{","}","(",")","|","[","]",String.fromCodePoint(92)]);
 const escapedAppsRoot=[...path.join(root,"apps")].map((character)=>regexMetaCharacters.has(character)?String.fromCodePoint(92)+character:character).join("");
 const ownedSurfaceMatches=(command)=>cleanupPatternSources.some((source)=>new RegExp(source.replace("$appsRoot",escapedAppsRoot),"i").test(command));
 

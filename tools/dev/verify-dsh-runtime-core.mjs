@@ -322,7 +322,7 @@ expectSQL("SELECT to_regclass('wlt.customer_payment_allocations') IS NOT NULL AN
 expectSQL("SELECT name FROM wlt.schema_migrations WHERE version=5", "005_delivery_fee_policies.sql", "WLT delivery-fee policy migration is not canonical");
 expectSQL("SELECT to_regclass('wlt.delivery_fee_policies') IS NOT NULL AND to_regclass('wlt.delivery_fee_policy_events') IS NOT NULL", "t", "WLT delivery-fee policy relations are missing");
 expectSQL("SELECT to_regclass('wlt.official_wallet_destinations') IS NOT NULL AND to_regclass('wlt.official_wallet_destination_transitions') IS NOT NULL AND to_regclass('wlt.payout_requests') IS NOT NULL AND to_regclass('wlt.payout_holds') IS NOT NULL", "t", "WLT official-wallet destination and payout relations are missing");
-expectSQL("SELECT to_regclass('wlt.field_commission_policies') IS NOT NULL AND to_regclass('wlt.field_commission_earnings') IS NOT NULL", "t", "WLT field commission relations are missing");
+expectSQL("SELECT to_regclass('wlt.field_acquisition_reward_policies') IS NOT NULL AND to_regclass('wlt.field_acquisition_entitlements') IS NOT NULL", "t", "WLT field acquisition reward relations are missing");
   expectSQL("SELECT name FROM wlt.schema_migrations WHERE version=13", "013_captain_cod_reassignment_reservations.sql", "WLT Captain COD reassignment migration is not canonical");
   console.log("WLT_SCHEMA_V13=PASS");
 const cityAResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-a-${suffix}`), body: { displayNameAr: `مدينة أ ${citySuffix}`, active: true } });
@@ -820,7 +820,7 @@ if (defaultFieldCommissionPolicy.status !== 201 || defaultFieldCommissionPolicy.
 
 const verticalFieldCommissionPolicyRead = await request(dshBase, "GET", `/dsh/operator/field-commission-policies/${encodeURIComponent(verticalFieldCommissionPolicy.body.policy.id)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 if (verticalFieldCommissionPolicyRead.status !== 200 || verticalFieldCommissionPolicyRead.body?.policy?.id !== verticalFieldCommissionPolicy.body.policy.id || verticalFieldCommissionPolicyRead.body.policy?.state !== "ACTIVE") fail("Field commission policy readback did not return the active vertical policy", JSON.stringify({ verticalFieldCommissionPolicy, verticalFieldCommissionPolicyRead }));
-console.log("DSH_FIELD_COMMISSION_POLICY=PASS");
+console.log("DSH_FIELD_ACQUISITION_REWARD_POLICY=PASS");
 const publishA = await request(dshBase, "POST", `/dsh/stores/${first.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-a-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
 const publishB = await request(dshBase, "POST", `/dsh/stores/${second.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-b-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
 if (publishA.status !== 200 || publishB.status !== 200) {
@@ -854,15 +854,15 @@ while (Date.now() < fieldSummaryDeadline) {
   }
   await new Promise((resolve) => setTimeout(resolve, 2_000));
 }
-const fieldEarningCount = sql(`SELECT count(*) FROM wlt.field_commission_earnings WHERE field_actor_id='${sqlLiteral(fieldActorID)}' AND store_id='${sqlLiteral(second.storeID)}'`);
+const fieldEarningCount = sql(`SELECT count(*) FROM wlt.field_acquisition_entitlements WHERE field_actor_id='${sqlLiteral(fieldActorID)}' AND store_id='${sqlLiteral(second.storeID)}'`);
 if (!fieldFinancialSummary || fieldEarningCount !== "1") fail("Field commission was not posted exactly once after customer-visible publication", JSON.stringify({ fieldFinancialSummary, fieldEarningCount, publishB }));
 const fieldHidden = await request(dshBase, "POST", `/dsh/stores/${second.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-b-hide-${suffix}`, crypto.randomUUID(), secondPickupModes.body.version), body: { state: "hidden" } });
 const fieldPublicAfterHide = await request(dshBase, "GET", `/dsh/public/stores/${second.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}`);
 const fieldRepublished = await request(dshBase, "POST", `/dsh/stores/${second.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-b-republish-${suffix}`, crypto.randomUUID(), fieldHidden.body.store.version), body: { state: "published" } });
 const fieldSummaryAfterRepublish = await request(dshBase, "GET", `/dsh/operator/fields/${encodeURIComponent(fieldActorID)}/financial-summary`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
-const fieldEarningCountAfterRepublish = sql(`SELECT count(*) FROM wlt.field_commission_earnings WHERE field_actor_id='${sqlLiteral(fieldActorID)}' AND store_id='${sqlLiteral(second.storeID)}'`);
+const fieldEarningCountAfterRepublish = sql(`SELECT count(*) FROM wlt.field_acquisition_entitlements WHERE field_actor_id='${sqlLiteral(fieldActorID)}' AND store_id='${sqlLiteral(second.storeID)}'`);
 if (fieldHidden.status !== 200 || fieldPublicAfterHide.status !== 404 || fieldRepublished.status !== 200 || fieldSummaryAfterRepublish.status !== 200 || fieldSummaryAfterRepublish.body?.summary?.earnedMinor !== 7500 || fieldSummaryAfterRepublish.body?.summary?.storeCount !== 1 || fieldEarningCountAfterRepublish !== "1") fail("Field commission was reversed or duplicated across hide and republish", JSON.stringify({ fieldHidden, fieldPublicAfterHide, fieldRepublished, fieldSummaryAfterRepublish, fieldEarningCountAfterRepublish }));
-console.log("DSH_FIELD_COMMISSION_PUBLICATION=PASS");
+console.log("DSH_FIELD_ACQUISITION_ENTITLEMENT_PUBLICATION=PASS");
 const publicCatalog = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}&categoryId=${encodeURIComponent(childCategoryID)}&q=${encodeURIComponent(productInput.canonicalName)}`);
 const publicParentCategory = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}&categoryId=${encodeURIComponent(categoryID)}`);
 const publicWrongCategory = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}&categoryId=${encodeURIComponent(unrelatedCategoryID)}`);
@@ -1518,7 +1518,7 @@ while (Date.now() < fieldPayoutSummaryDeadline) {
   }
   await new Promise((resolve) => setTimeout(resolve, 2_000));
 }
-const fieldPayoutEarningCount = sql(`SELECT count(*) FROM wlt.field_commission_earnings WHERE field_actor_id='${sqlLiteral(secondFieldActorID)}' AND store_id='${sqlLiteral(fieldPayoutStoreID)}'`);
+const fieldPayoutEarningCount = sql(`SELECT count(*) FROM wlt.field_acquisition_entitlements WHERE field_actor_id='${sqlLiteral(secondFieldActorID)}' AND store_id='${sqlLiteral(fieldPayoutStoreID)}'`);
 if (fieldPayoutCase.status !== 201 || fieldPayoutCase.body?.case?.origin !== "field" || fieldPayoutCase.body?.case?.state !== "draft" || fieldPayoutSubmitted.status !== 200 || fieldPayoutSubmitted.body?.case?.state !== "submitted" || fieldPayoutSubmitted.body?.case?.version !== 3 || fieldPayoutApproved.status !== 200 || fieldPayoutApproved.body?.case?.state !== "approved" || fieldPayoutPartnerActorID === "" || fieldPayoutOffer.status !== 201 || fieldPayoutOfferPublished.status !== 200 || fieldPayoutPublication.status !== 200 || !fieldPayoutSummary || fieldPayoutEarningCount !== "1") fail("Field payout proof fixture did not reach one customer-visible commission", JSON.stringify({ fieldPayoutCase, fieldPayoutFlow, fieldPayoutSubmitted, fieldPayoutApproved, fieldPayoutOffer, fieldPayoutOfferPublished, fieldPayoutPublication, fieldPayoutSummary, fieldPayoutEarningCount }));
 async function verifyPayoutBeneficiaryName(actorID, role) {
   const path = `/dsh/operator/actors/${encodeURIComponent(actorID)}/legal-name`;

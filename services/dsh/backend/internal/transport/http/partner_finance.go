@@ -114,7 +114,16 @@ func (s *PartnerFinanceServer) updateStoreCommissionPolicy(w http.ResponseWriter
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "commercial store type commission policy fields are invalid")
 		return
 	}
-	result, err := s.payment.UpdatePartnerStoreCommissionPolicy(r.Context(), input.CommercialStoreTypeID, input.FulfillmentMode, input.CommissionRateBps, input.ExpectedVersion, input.Reason, idempotencyKey, correlationID, acting)
+	result, err := s.payment.UpdatePartnerStoreCommissionPolicy(r.Context(), wlt.PartnerStoreCommissionPolicyUpdate{
+		CommercialStoreTypeID: input.CommercialStoreTypeID,
+		FulfillmentMode:       input.FulfillmentMode,
+		CommissionRateBps:     input.CommissionRateBps,
+		ExpectedVersion:       input.ExpectedVersion,
+		Reason:                input.Reason,
+		IdempotencyKey:        idempotencyKey,
+		CorrelationID:         correlationID,
+		ActingActorID:         acting,
+	})
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return

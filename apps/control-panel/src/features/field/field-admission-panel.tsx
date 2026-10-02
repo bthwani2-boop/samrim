@@ -93,6 +93,117 @@ function accountReadbackMatches(action: FieldAccountAction, fullNameAr: string, 
   );
 }
 
+type FieldCandidateRowProps = Readonly<{
+  profile: FieldAdmission;
+  name: string;
+  changed: boolean;
+  busy: string;
+  serviceCities: ReadonlyArray<ServiceCity>;
+  onNameChange: (value: string) => void;
+  onMutate: (admission: FieldAdmission, action: FieldCandidateAction) => void;
+}>;
+
+function FieldCandidateRow({ profile, name, changed, busy, serviceCities, onNameChange, onMutate }: FieldCandidateRowProps) {
+  const pendingReview = profile.state === "pending_review";
+  const pendingIdentity = profile.state === "pending_identity";
+  return <tr>
+    <th scope="row"><strong>{profile.fullNameAr || "ملف بلا اسم مكتمل"}</strong><br /><bdi dir="ltr">{profile.contactPhoneE164 || "—"}</bdi><br /><span className="muted">مدينة الخدمة: {serviceCities.find((city) => city.id === profile.serviceCityId)?.displayNameAr ?? "غير محددة في الملف التاريخي"}</span></th>
+    <td>{fieldAdmissionStateLabel(profile.state)}<br /><span className="muted">الإصدار {profile.version}</span></td>
+    <td><span className="muted">لم يُنشأ الدور بعد</span></td>
+    <td><details className="field-row-disclosure"><summary className="button button-secondary">الخطوة التالية</summary><div className="field-row-actions">
+      {pendingReview ? <><label className="field-label" htmlFor={`candidate-name-${profile.id}`}>اسم العرض<input id={`candidate-name-${profile.id}`} value={name} maxLength={120} disabled={Boolean(busy)} onChange={(event) => onNameChange(event.target.value)} /></label><button type="button" className="button button-secondary" disabled={Boolean(busy) || !changed} onClick={() => onMutate(profile, "update-profile")}>حفظ الاسم</button><button type="button" className="button button-primary" disabled={Boolean(busy) || changed} onClick={() => onMutate(profile, "approve")}>{busy === profile.id ? "جارٍ الاعتماد…" : "اعتماد الملف"}</button></> : null}
+      {pendingIdentity ? <button type="button" className="button button-primary" disabled={Boolean(busy)} onClick={() => onMutate(profile, "provision")}>{busy === profile.id ? "جارٍ منح الدور…" : "منح دور الميداني"}</button> : null}
+      {!pendingReview && !pendingIdentity ? <span className="muted">لا توجد خطوة متاحة لهذه المرحلة.</span> : null}
+    </div></details></td>
+  </tr>;
+}
+
+type FieldAccountMutationActionsProps = Readonly<{
+  field: FieldAccount;
+  name: string;
+  reason: string;
+  busy: string;
+  onNameChange: (value: string) => void;
+  onReasonChange: (value: string) => void;
+  onMutate: (field: FieldAccount, action: FieldAccountAction) => void;
+}>;
+
+function FieldAccountMutationActions({ field, name, reason, busy, onNameChange, onReasonChange, onMutate }: FieldAccountMutationActionsProps) {
+  const admission = field.admission;
+  const requiresProfileReview = admission?.requiresProfileReview === true;
+  const mustDisable = requiresProfileReview && admission?.state === "eligible";
+  const shouldDisable = field.enabled || mustDisable;
+  const waitingForReenrollment = !requiresProfileReview && field.enabled && !field.activatedAt && admission?.state === "eligible";
+  const legacyReview = requiresProfileReview && admission?.state === "suspended";
+  const accessAction: FieldAccountAction = shouldDisable ? "disable" : "activate";
+  const reasonIsValid = Array.from(reason.trim()).length >= 5;
+
+  return admission ? <details className="field-row-disclosure"><summary className="button button-secondary">الخطوة التالية</summary><div className="field-row-actions">
+    {legacyReview ? <><label className="field-label" htmlFor={`field-profile-name-${field.actorId}`}>استكمال اسم العرض<input id={`field-profile-name-${field.actorId}`} value={name} maxLength={120} disabled={Boolean(busy)} onChange={(event) => onNameChange(event.target.value)} /></label><button type="button" className="button button-secondary" disabled={Boolean(busy) || Array.from(name.trim()).length < 2 || name.trim() === (admission.fullNameAr ?? "")} onClick={() => onMutate(field, "update-profile")}>حفظ الاسم</button><button type="button" className="button button-primary" disabled={Boolean(busy) || !name.trim() || name.trim() !== (admission.fullNameAr ?? "")} onClick={() => onMutate(field, "review-profile")}>اعتماد مراجعة الملف</button></> : null}
+    <label className="field-label" htmlFor={`field-reason-${field.actorId}`}>سبب الإجراء<input id={`field-reason-${field.actorId}`} maxLength={500} value={reason} onChange={(event) => onReasonChange(event.target.value)} disabled={Boolean(busy)} /></label>
+    {waitingForReenrollment ? <button type="button" className="button button-primary" disabled={Boolean(busy) || !reasonIsValid} onClick={() => onMutate(field, "reenroll")}>{busy === field.actorId ? "جارٍ الإجازة…" : "إجازة إعادة التسجيل"}</button> : null}
+    {(field.activatedAt || shouldDisable) && (shouldDisable || !requiresProfileReview) ? <button type="button" className={shouldDisable ? "button button-secondary" : "button button-primary"} disabled={Boolean(busy) || !reasonIsValid} onClick={() => onMutate(field, accessAction)}>{accessActionButtonLabel(busy === field.actorId, shouldDisable)}</button> : null}
+    {requiresProfileReview && !mustDisable && !field.enabled ? <span className="muted">أكمل مراجعة الملف قبل إعادة التفعيل.</span> : null}
+    <a className="button button-secondary" href={`/finance/beneficiary-settlement/field?search=${encodeURIComponent(field.actorId)}`}>كشف المحفظة والحركات المالية</a>
+  </div></details> : <span className="muted">راجع الأهلية قبل إتاحة العمل الميداني.</span>;
+}
+
+type FieldAcquisitionDisclosureProps = Readonly<{
+  fieldActorId: string;
+  page: JoiningCaseListResponse | undefined;
+  error: string;
+  busy: boolean;
+  onLoad: (fieldActorId: string, cursor?: string, append?: boolean) => void;
+}>;
+
+function FieldAcquisitionDisclosure({ fieldActorId, page, error, busy, onLoad }: FieldAcquisitionDisclosureProps) {
+  return <details className="field-row-disclosure" onToggle={(event) => {
+    if (event.currentTarget.open && !page && !busy) onLoad(fieldActorId);
+  }}>
+    <summary className="button button-secondary">الشركاء ورحلات الانضمام</summary>
+    <div className="field-row-actions">
+      {busy && !page ? <output className="muted">جارٍ قراءة رحلات DSH…</output> : null}
+      {error ? <><span className="identity-error" role="alert">{error}</span><button type="button" className="button button-secondary" disabled={busy} onClick={() => onLoad(fieldActorId)}>إعادة المحاولة</button></> : null}
+      {page?.cases.map((partnerCase: FieldAcquisitionCase) => <div key={partnerCase.id} className="field-row-actions">
+        <strong>{partnerCase.businessName}</strong>
+        <span>{partnerCase.firstStoreName}</span>
+        <span className="muted">حالة طلب الشريك: {joiningCaseStateLabel(partnerCase.state)}</span>
+        {partnerCase.state === "needs_correction" && partnerCase.correctionReason ? <span className="muted">المطلوب استكماله: {partnerCase.correctionReason}</span> : null}
+        {partnerCase.partnerActorId ? <span className="muted">حساب الشريك مرتبط</span> : null}
+      </div>)}
+      {!busy && !error && page?.cases.length === 0 ? <span className="muted">لا توجد رحلات انضمام منسوبة إلى هذا الحساب في DSH.</span> : null}
+      {page?.nextCursor ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => onLoad(fieldActorId, page.nextCursor, true)}>{busy ? "جارٍ تحميل المزيد…" : "تحميل رحلات أقدم"}</button> : null}
+    </div>
+  </details>;
+}
+
+type FieldAccountRowProps = Readonly<{
+  field: FieldAccount;
+  name: string;
+  reason: string;
+  busy: string;
+  acquisitionPage: JoiningCaseListResponse | undefined;
+  acquisitionError: string;
+  acquisitionBusy: boolean;
+  onNameChange: (value: string) => void;
+  onReasonChange: (value: string) => void;
+  onMutate: (field: FieldAccount, action: FieldAccountAction) => void;
+  onLoadAcquisitionCases: (fieldActorId: string, cursor?: string, append?: boolean) => void;
+}>;
+
+function FieldAccountRow({ field, name, reason, busy, acquisitionPage, acquisitionError, acquisitionBusy, onNameChange, onReasonChange, onMutate, onLoadAcquisitionCases }: FieldAccountRowProps) {
+  const admission = field.admission;
+  return <tr>
+    <th scope="row"><strong>{admission?.fullNameAr || "حساب بلا ملف اسم مكتمل"}</strong><br /><bdi dir="ltr">{field.phoneE164}</bdi></th>
+    <td>{admissionStatusLabel(admission)}{admission ? <><br /><span className="muted">الإصدار {admission.version}</span></> : null}</td>
+    <td>{identityStatusLabel(field)}</td>
+    <td>
+      <FieldAccountMutationActions field={field} name={name} reason={reason} busy={busy} onNameChange={onNameChange} onReasonChange={onReasonChange} onMutate={onMutate} />
+      <FieldAcquisitionDisclosure fieldActorId={field.actorId} page={acquisitionPage} error={acquisitionError} busy={acquisitionBusy} onLoad={onLoadAcquisitionCases} />
+    </td>
+  </tr>;
+}
+
 export function FieldAdmissionPanel() {
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<ReadonlyArray<FieldWorkbenchItem>>([]);
@@ -284,66 +395,9 @@ export function FieldAdmissionPanel() {
        {loading && items.length === 0 ? <output>جارٍ قراءة سجل الميدانيين…</output> : null}
       {!loading && !error && items.length === 0 ? <div className="collection-state"><strong>{query ? "لا توجد نتائج مطابقة" : "لا توجد ملفات أو حسابات ميدانية"}</strong><p>{query ? "امسح البحث لعرض السجل كاملًا." : "أنشئ ملفًا جديدًا لبدء مسار الأهلية."}</p></div> : null}
       {items.length > 0 ? <div className="operations-table-wrap"><table className="operations-table"><thead><tr><th scope="col">الميداني</th><th scope="col">مرحلة الملف</th><th scope="col">حساب التطبيق</th><th scope="col">الإجراء</th></tr></thead><tbody>
-        {items.map((item) => {
-          if (item.kind === "candidate") {
-            const profile = item.admission;
-            const name = candidateEdits[profile.id] ?? profile.fullNameAr ?? "";
-            const changed = name.trim() !== (profile.fullNameAr ?? "");
-            const pendingReview = profile.state === "pending_review";
-            const pendingIdentity = profile.state === "pending_identity";
-            return <tr key={`candidate:${profile.id}`}>
-              <th scope="row"><strong>{profile.fullNameAr || "ملف بلا اسم مكتمل"}</strong><br /><bdi dir="ltr">{profile.contactPhoneE164 || "—"}</bdi><br /><span className="muted">مدينة الخدمة: {serviceCities.find((city) => city.id === profile.serviceCityId)?.displayNameAr ?? "غير محددة في الملف التاريخي"}</span></th>
-              <td>{fieldAdmissionStateLabel(profile.state)}<br /><span className="muted">الإصدار {profile.version}</span></td>
-              <td><span className="muted">لم يُنشأ الدور بعد</span></td>
-              <td><details className="field-row-disclosure"><summary className="button button-secondary">الخطوة التالية</summary><div className="field-row-actions">{pendingReview ? <><label className="field-label" htmlFor={`candidate-name-${profile.id}`}>اسم العرض<input id={`candidate-name-${profile.id}`} value={name} maxLength={120} disabled={Boolean(busy)} onChange={(event) => setCandidateEdits((current) => ({ ...current, [profile.id]: event.target.value }))} /></label><button type="button" className="button button-secondary" disabled={Boolean(busy) || !changed} onClick={() => void mutateCandidate(profile, "update-profile")}>حفظ الاسم</button><button type="button" className="button button-primary" disabled={Boolean(busy) || changed} onClick={() => void mutateCandidate(profile, "approve")}>{busy === profile.id ? "جارٍ الاعتماد…" : "اعتماد الملف"}</button></> : null}{pendingIdentity ? <button type="button" className="button button-primary" disabled={Boolean(busy)} onClick={() => void mutateCandidate(profile, "provision")}>{busy === profile.id ? "جارٍ منح الدور…" : "منح دور الميداني"}</button> : null}{!pendingReview && !pendingIdentity ? <span className="muted">لا توجد خطوة متاحة لهذه المرحلة.</span> : null}</div></details></td>
-            </tr>;
-          }
-          const field = item.account;
-          const admission = field.admission;
-          const requiresProfileReview = admission?.requiresProfileReview === true;
-          const mustDisable = requiresProfileReview && admission?.state === "eligible";
-          const shouldDisable = field.enabled || mustDisable;
-          const waitingForReenrollment = !requiresProfileReview && field.enabled && !field.activatedAt && admission?.state === "eligible";
-          const name = profileEdits[field.actorId] ?? admission?.fullNameAr ?? "";
-          const reason = reasons[field.actorId] ?? "";
-          const legacyReview = requiresProfileReview && admission?.state === "suspended";
-          const fieldAcquisitionPage = acquisitionCases[field.actorId];
-          const fieldAcquisitionBusy = acquisitionCaseBusy[field.actorId] ?? false;
-          const accessAction = shouldDisable ? "disable" : "activate";
-          const accessActionLabel = accessActionButtonLabel(busy === field.actorId, shouldDisable);
-          return <tr key={`account:${field.actorId}`}>
-            <th scope="row"><strong>{admission?.fullNameAr || "حساب بلا ملف اسم مكتمل"}</strong><br /><bdi dir="ltr">{field.phoneE164}</bdi></th>
-            <td>{admissionStatusLabel(admission)}{admission ? <><br /><span className="muted">الإصدار {admission.version}</span></> : null}</td>
-            <td>{identityStatusLabel(field)}</td>
-            <td>{admission ? <details className="field-row-disclosure"><summary className="button button-secondary">الخطوة التالية</summary><div className="field-row-actions">
-              {legacyReview ? <><label className="field-label" htmlFor={`field-profile-name-${field.actorId}`}>استكمال اسم العرض<input id={`field-profile-name-${field.actorId}`} value={name} maxLength={120} disabled={Boolean(busy)} onChange={(event) => setProfileEdits((current) => ({ ...current, [field.actorId]: event.target.value }))} /></label><button type="button" className="button button-secondary" disabled={Boolean(busy) || Array.from(name.trim()).length < 2 || name.trim() === (admission?.fullNameAr ?? "")} onClick={() => void mutateAccount(field, "update-profile")}>حفظ الاسم</button><button type="button" className="button button-primary" disabled={Boolean(busy) || !name.trim() || name.trim() !== (admission?.fullNameAr ?? "")} onClick={() => void mutateAccount(field, "review-profile")}>اعتماد مراجعة الملف</button></> : null}
-              <label className="field-label" htmlFor={`field-reason-${field.actorId}`}>سبب الإجراء<input id={`field-reason-${field.actorId}`} maxLength={500} value={reason} onChange={(event) => setReasons((current) => ({ ...current, [field.actorId]: event.target.value }))} disabled={Boolean(busy)} /></label>
-              {waitingForReenrollment ? <button type="button" className="button button-primary" disabled={Boolean(busy) || Array.from(reason.trim()).length < 5} onClick={() => void mutateAccount(field, "reenroll")}>{busy === field.actorId ? "جارٍ الإجازة…" : "إجازة إعادة التسجيل"}</button> : null}
-              {(field.activatedAt || shouldDisable) && (shouldDisable || !requiresProfileReview) ? <button type="button" className={shouldDisable ? "button button-secondary" : "button button-primary"} disabled={Boolean(busy) || Array.from(reason.trim()).length < 5} onClick={() => void mutateAccount(field, accessAction)}>{accessActionLabel}</button> : null}
-              {requiresProfileReview && !mustDisable && !field.enabled ? <span className="muted">أكمل مراجعة الملف قبل إعادة التفعيل.</span> : null}
-              <a className="button button-secondary" href={`/finance/beneficiary-settlement/field?search=${encodeURIComponent(field.actorId)}`}>كشف المحفظة والحركات المالية</a>
-            </div></details> : <span className="muted">راجع الأهلية قبل إتاحة العمل الميداني.</span>}
-              <details className="field-row-disclosure" onToggle={(event) => {
-                if (event.currentTarget.open && !acquisitionCases[field.actorId] && !acquisitionCaseBusy[field.actorId]) void loadAcquisitionCases(field.actorId);
-              }}>
-                <summary className="button button-secondary">الشركاء ورحلات الانضمام</summary>
-                <div className="field-row-actions">
-                   {fieldAcquisitionBusy && !fieldAcquisitionPage ? <output className="muted">جارٍ قراءة رحلات DSH…</output> : null}
-                  {acquisitionCaseErrors[field.actorId] ? <><span className="identity-error" role="alert">{acquisitionCaseErrors[field.actorId]}</span><button type="button" className="button button-secondary" disabled={fieldAcquisitionBusy} onClick={() => void loadAcquisitionCases(field.actorId)}>إعادة المحاولة</button></> : null}
-                  {fieldAcquisitionPage?.cases.map((partnerCase: FieldAcquisitionCase) => <div key={partnerCase.id} className="field-row-actions">
-                    <strong>{partnerCase.businessName}</strong>
-                    <span>{partnerCase.firstStoreName}</span>
-                    <span className="muted">حالة طلب الشريك: {joiningCaseStateLabel(partnerCase.state)}</span>
-                    {partnerCase.state === "needs_correction" && partnerCase.correctionReason ? <span className="muted">المطلوب استكماله: {partnerCase.correctionReason}</span> : null}
-                    {partnerCase.partnerActorId ? <span className="muted">حساب الشريك مرتبط</span> : null}
-                  </div>)}
-                  {!fieldAcquisitionBusy && !acquisitionCaseErrors[field.actorId] && fieldAcquisitionPage?.cases.length === 0 ? <span className="muted">لا توجد رحلات انضمام منسوبة إلى هذا الحساب في DSH.</span> : null}
-                  {fieldAcquisitionPage?.nextCursor ? <button type="button" className="button button-secondary" disabled={fieldAcquisitionBusy} onClick={() => void loadAcquisitionCases(field.actorId, fieldAcquisitionPage.nextCursor, true)}>{fieldAcquisitionBusy ? "جارٍ تحميل المزيد…" : "تحميل رحلات أقدم"}</button> : null}
-                </div>
-              </details>
-            </td>
-          </tr>;
-        })}
+        {items.map((item) => item.kind === "candidate"
+          ? <FieldCandidateRow key={`candidate:${item.admission.id}`} profile={item.admission} name={candidateEdits[item.admission.id] ?? item.admission.fullNameAr ?? ""} changed={(candidateEdits[item.admission.id] ?? item.admission.fullNameAr ?? "").trim() !== (item.admission.fullNameAr ?? "")} busy={busy} serviceCities={serviceCities} onNameChange={(value) => setCandidateEdits((current) => ({ ...current, [item.admission.id]: value }))} onMutate={mutateCandidate} />
+          : <FieldAccountRow key={`account:${item.account.actorId}`} field={item.account} name={profileEdits[item.account.actorId] ?? item.account.admission?.fullNameAr ?? ""} reason={reasons[item.account.actorId] ?? ""} busy={busy} acquisitionPage={acquisitionCases[item.account.actorId]} acquisitionError={acquisitionCaseErrors[item.account.actorId] ?? ""} acquisitionBusy={acquisitionCaseBusy[item.account.actorId] ?? false} onNameChange={(value) => setProfileEdits((current) => ({ ...current, [item.account.actorId]: value }))} onReasonChange={(value) => setReasons((current) => ({ ...current, [item.account.actorId]: value }))} onMutate={mutateAccount} onLoadAcquisitionCases={loadAcquisitionCases} />)}
       </tbody></table></div> : null}
       {nextCursor ? <div className="workspace-toolbar"><button type="button" className="button button-secondary" disabled={loadingMore || Boolean(busy)} onClick={() => void load(nextCursor, true)}>{loadingMore ? "جارٍ تحميل المزيد…" : "تحميل المزيد"}</button></div> : null}
     </div>

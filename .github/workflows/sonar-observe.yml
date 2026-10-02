@@ -216,6 +216,7 @@ jobs:
 
           quality_gate_url="https://sonarcloud.io/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}&${scope}"
           measures_url="https://sonarcloud.io/api/measures/component?component=${SONAR_PROJECT_KEY}&${scope}&metricKeys=coverage,new_coverage,new_lines_to_cover,new_uncovered_lines,line_coverage,lines_to_cover,uncovered_lines,duplicated_lines_density,new_duplicated_lines_density,duplicated_lines,ncloc,bugs,vulnerabilities,code_smells,reliability_rating,security_rating,sqale_rating,security_hotspots"
+          scope_coverage_files_url="https://sonarcloud.io/api/measures/component_tree?component=${SONAR_PROJECT_KEY}&${scope}&metricKeys=new_coverage,new_lines_to_cover,new_uncovered_lines&qualifiers=FIL&ps=500&s=metric&metricSort=new_uncovered_lines&asc=false"
           main_quality_gate_url="https://sonarcloud.io/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}&branch=main"
           main_measures_url="https://sonarcloud.io/api/measures/component?component=${SONAR_PROJECT_KEY}&branch=main&metricKeys=coverage,new_coverage,new_lines_to_cover,new_uncovered_lines,line_coverage,lines_to_cover,uncovered_lines,duplicated_lines_density,new_duplicated_lines_density,duplicated_lines,ncloc,bugs,vulnerabilities,code_smells,reliability_rating,security_rating,sqale_rating,security_hotspots"
           main_uncovered_url="https://sonarcloud.io/api/measures/component_tree?component=${SONAR_PROJECT_KEY}&branch=main&metricKeys=coverage,lines_to_cover,uncovered_lines&qualifiers=FIL&ps=100&s=metric&metricSort=uncovered_lines&asc=false"
@@ -223,6 +224,7 @@ jobs:
 
           quality_gate_json="$(curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$quality_gate_url")"
           measures_json="$(curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$measures_url")"
+          scope_coverage_files_json="$(curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$scope_coverage_files_url")"
           main_quality_gate_json="$(curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$main_quality_gate_url")"
           main_measures_json="$(curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$main_measures_url")"
           main_uncovered_json="$(curl --fail --silent --show-error --user "${SONAR_TOKEN}:" "$main_uncovered_url")"
@@ -232,6 +234,7 @@ jobs:
           printf '%s\n' "$ce_json" | jq . > "$evidence_dir/compute-engine.json"
           printf '%s\n' "$quality_gate_json" | jq . > "$evidence_dir/scope-quality-gate.json"
           printf '%s\n' "$measures_json" | jq . > "$evidence_dir/scope-measures.json"
+          printf '%s\n' "$scope_coverage_files_json" | jq . > "$evidence_dir/scope-new-coverage-by-file.json"
           printf '%s\n' "$main_quality_gate_json" | jq . > "$evidence_dir/main-quality-gate.json"
           printf '%s\n' "$main_measures_json" | jq . > "$evidence_dir/main-measures.json"
           printf '%s\n' "$main_uncovered_json" | jq . > "$evidence_dir/main-top-uncovered.json"
@@ -294,6 +297,10 @@ jobs:
 
           echo "::group::Sonar measures"
           jq . <<<"$measures_json"
+          echo "::endgroup::"
+
+          echo "::group::PR new coverage by file"
+          jq '[.components[] | {path, measures}]' <<<"$scope_coverage_files_json"
           echo "::endgroup::"
 
           echo "::group::Sonar active issues"

@@ -13,14 +13,20 @@ function fail(message){
   process.exit(1);
 }
 
-const supportedSurfaces=new Set(["app-client","app-partner","app-captain","app-field","control-panel"]);
+const surfaceRoots=new Map([
+  ["app-client",path.join(appsRoot,"app-client")],
+  ["app-partner",path.join(appsRoot,"app-partner")],
+  ["app-captain",path.join(appsRoot,"app-captain")],
+  ["app-field",path.join(appsRoot,"app-field")],
+  ["control-panel",path.join(appsRoot,"control-panel")],
+]);
 const requestedSurface=(process.argv[2]??"").trim();
-if(requestedSurface&&(!/^(?:app-client|app-partner|app-captain|app-field|control-panel)$/.test(requestedSurface)||!supportedSurfaces.has(requestedSurface))){
+if(requestedSurface&&!surfaceRoots.has(requestedSurface)){
   fail("UNSUPPORTED_LOCAL_SURFACE");
 }
-const surfaceRoot=requestedSurface?path.join(appsRoot,requestedSurface):process.cwd();
+const surfaceRoot=requestedSurface?surfaceRoots.get(requestedSurface):process.cwd();
 const surface=path.basename(surfaceRoot);
-if(path.dirname(surfaceRoot)!==appsRoot||!supportedSurfaces.has(surface)){
+if(path.dirname(surfaceRoot)!==appsRoot||!surfaceRoots.has(surface)){
   fail(`LOCAL_SURFACE_ROOT_REQUIRED cwd=${surfaceRoot} expected_parent=${appsRoot}`);
 }
 if(!fs.existsSync(envPath)){
