@@ -9,6 +9,9 @@ const read=(p)=>fs.readFileSync(path.join(root,p),"utf8");
 const pkg=JSON.parse(read("package.json"));
 const dev=read("tools/dev/dev.ps1");
 const scr=read("tools/dev/scr.ps1");
+const localCheck=read("tools/dev/check-local.ps1");
+const candidateVerify=read("tools/dev/verify-local-candidate.ps1");
+const safePush=read("tools/dev/safe-push.ps1");
 const launcher=read("tools/dev/start-surface.mjs");
 const mobilePrepare=read("tools/mobile/prepare-local-development.ps1");
 const mobileBuild=read("tools/mobile/build-development.ps1");
@@ -36,6 +39,12 @@ for(const script of ["tools/dev/start-surface.mjs","tools/dev/run-playwright-liv
 const run="pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1";
 check(pkg.scripts?.dev===run,"dev must be the single backend start command");
 check(pkg.scripts?.scr==="pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/scr.ps1","scr must route directly to the dedicated device owner");
+check(localCheck.includes("pnpm exec nx affected -t lint format-check typecheck unit contract vet")&&localCheck.includes("--files=")&&localCheck.includes("--nxBail=true"),"daily check must run file-scoped affected tasks and stop at first failure");
+check(localCheck.includes("$env:NX_NO_CLOUD = 'true'")&&localCheck.includes("--parallel=2"),"daily check must stay local with bounded parallelism");
+check(!/\bnx\s+run-many\b|\bdocker(?:\.exe)?\b|run-playwright|\bsonar\b|--skip-nx-cache/i.test(localCheck),"daily check must not start global or runtime work");
+check(candidateVerify.includes("nx affected -t lint format-check typecheck unit contract vet")&&candidateVerify.includes("--base=$BaseSha --head=$head"),"candidate proof must verify only changed projects at exact SHAs");
+check(candidateVerify.includes("$env:NX_NO_CLOUD = 'true'")&&!/\bdocker(?:\.exe)?\b|run-playwright|\bsonar\b/i.test(candidateVerify),"candidate proof must remain static and local");
+check(safePush.includes("verify-local-candidate.ps1")&&!safePush.includes("pnpm verify"),"safe push must call the canonical candidate proof only once");
 for(const [name,dir] of Object.entries({client:"app-client",partner:"app-partner",captain:"app-captain",field:"app-field",control:"control-panel"})){
   check(pkg.scripts?.[name]===`pnpm --dir apps/${dir} dev`,`${name} must route through its owning app package`);
   const surfacePkg=JSON.parse(read(`apps/${dir}/package.json`));
