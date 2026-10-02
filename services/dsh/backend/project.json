@@ -2,7 +2,12 @@
   "name": "dsh-backend",
   "root": "services/dsh/backend",
   "projectType": "application",
-  "implicitDependencies": ["dsh", "dsh-database", "identity-go-client", "wlt"],
+  "implicitDependencies": [
+    "dsh",
+    "dsh-database",
+    "identity-go-client",
+    "wlt"
+  ],
   "targets": {
     "build": {
       "executor": "nx:run-commands",
@@ -42,7 +47,7 @@
     },
     "format-check": {
       "executor": "nx:run-commands",
-      "options": {"command": "node tools/dev/check-go-format.mjs services/dsh/backend"}
+      "options": {"command": "node tools/go/format-check.mjs services/dsh/backend"}
     }
   },
   "tags": ["scope:dsh-backend", "type:service"],

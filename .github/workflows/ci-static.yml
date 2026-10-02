@@ -95,4 +95,4 @@ jobs:
 
       - name: Verify PowerShell syntax
         shell: pwsh
-        run: pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-powershell-syntax.ps1
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File tools/powershell/verify-syntax.ps1

@@ -18,7 +18,7 @@ try {
     $env:NX_NO_CLOUD = 'true'
     pnpm exec biome lint tools/dev --diagnostic-level=error
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-powershell-syntax.ps1
+    pwsh -NoProfile -ExecutionPolicy Bypass -File tools/powershell/verify-syntax.ps1
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     $filesArg = '--files=' + ($files -join ',')

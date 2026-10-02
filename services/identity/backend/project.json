@@ -2,7 +2,10 @@
   "name": "identity-backend",
   "root": "services/identity/backend",
   "projectType": "application",
-  "implicitDependencies": ["identity", "identity-database"],
+  "implicitDependencies": [
+    "identity",
+    "identity-database"
+  ],
   "targets": {
     "build": {
       "executor": "nx:run-commands",
@@ -31,7 +34,7 @@
     },
     "format-check": {
       "executor": "nx:run-commands",
-      "options": {"command": "node tools/dev/check-go-format.mjs services/identity/backend"}
+      "options": {"command": "node tools/go/format-check.mjs services/identity/backend"}
     }
   },
   "tags": ["scope:identity-backend", "type:service"],
