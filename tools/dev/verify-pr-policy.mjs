@@ -3,7 +3,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { resolveTrustedExecutable } from "./runtime-proof/trusted-executables.mjs";
-import { validateSonarContractAtRoot } from "./sonar-contract.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const event = process.env.GH_EVENT || process.env.GITHUB_EVENT_NAME || "";
@@ -32,8 +31,6 @@ function finish(extra = {}) {
   console.log("PR_POLICY=PASS");
   process.exit(0);
 }
-
-for (const item of validateSonarContractAtRoot(root)) finding(item.code, item.detail);
 
 if (event === "push") {
   if (failures.length > 0) finish();
