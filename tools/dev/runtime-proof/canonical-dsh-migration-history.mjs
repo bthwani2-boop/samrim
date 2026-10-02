@@ -4,7 +4,7 @@ export function readCanonicalDshMigrationNames(directory) {
   const names = fs.readdirSync(directory, { withFileTypes: true })
     .filter((entry) => entry.isFile() && /^\d{3}_.+\.sql$/.test(entry.name))
     .map((entry) => entry.name)
-    .sort();
+    .sort((left, right) => left.localeCompare(right));
   if (names.length === 0) throw new Error("canonical DSH migration set is empty");
   for (const [index, name] of names.entries()) {
     if (Number(name.slice(0, 3)) !== index + 1) throw new Error(`canonical DSH migration sequence is not contiguous: ${name}`);
