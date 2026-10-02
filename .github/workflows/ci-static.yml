@@ -35,6 +35,21 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Review introduced dependencies
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48
+        with:
+          fail-on-severity: high
+          vulnerability-check: true
+          license-check: true
+
+      - name: Verify candidate secret safety
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node tools/security/verify-secrets.mjs
+
       - name: Resolve affected SHAs
         uses: nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1
 
