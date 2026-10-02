@@ -23,16 +23,21 @@ jobs:
     timeout-minutes: 35
     env:
       NX_NO_CLOUD: "true"
+      CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ env.CANDIDATE_SHA }}
           fetch-depth: 0
           persist-credentials: false
 
       - name: Resolve affected SHAs
         uses: nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1
+
+      - name: Confirm exact candidate
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA" && test "$NX_HEAD" = "$CANDIDATE_SHA"
 
       - name: Set up pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
@@ -58,16 +63,24 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" == "schedule" ]]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
             echo "browser=true" >> "$GITHUB_OUTPUT"
+            echo "checker=true" >> "$GITHUB_OUTPUT"
+            echo "control_proof=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           run=false
           browser=false
+          checker=false
+          control_proof=false
           for target in migration-proof runtime-proof schema-proof financial-invariants baseline-proof location-proof; do
             projects="$(pnpm exec nx show projects --affected --with-target="$target" --base="$NX_BASE" --head="$NX_HEAD" --sep=, --no-cloud)"
             if [[ -n "$projects" ]]; then
               echo "RUNTIME_TARGET $target -> $projects"
               run=true
+              if [[ "$target" == "runtime-proof" && ",$projects," == *,dsh-backend,* ]]; then
+                browser=true
+                checker=true
+              fi
             fi
           done
           browser_projects="$(pnpm exec nx show projects --affected --with-target=browser-live-proof --base="$NX_BASE" --head="$NX_HEAD" --sep=, --no-cloud)"
@@ -75,9 +88,21 @@ jobs:
             echo "RUNTIME_TARGET browser-live-proof -> $browser_projects"
             run=true
             browser=true
+            control_proof=true
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
           echo "browser=$browser" >> "$GITHUB_OUTPUT"
+          echo "checker=$checker" >> "$GITHUB_OUTPUT"
+          echo "control_proof=$control_proof" >> "$GITHUB_OUTPUT"
+
+      - name: Create private DSH checker fixture path
+        if: steps.scope.outputs.checker == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture_dir="$(mktemp -d "$RUNNER_TEMP/samrim-runtime-proof-XXXXXX")"
+          chmod 700 "$fixture_dir"
+          printf 'DSH_RUNTIME_CHECKER_FIXTURE_PATH=%s/dsh-checker-fixture.json\n' "$fixture_dir" >> "$GITHUB_ENV"
 
       - name: Create isolated runtime environment
         if: steps.scope.outputs.run == 'true'
@@ -114,20 +139,6 @@ jobs:
         shell: bash
         run: docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml up -d --build --wait --wait-timeout 300 --remove-orphans postgres mailpit media identity dsh wlt
 
-      - name: Run affected backend runtime proofs
-        if: steps.scope.outputs.run == 'true' && github.event_name != 'schedule'
-        env:
-          CI: "true"
-          BTHWANI_IDENTITY_PROOF_SCOPE: disposable-ci
-        run: pnpm exec nx affected -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
-
-      - name: Run weekly backend runtime regression
-        if: steps.scope.outputs.run == 'true' && github.event_name == 'schedule'
-        env:
-          CI: "true"
-          BTHWANI_IDENTITY_PROOF_SCOPE: disposable-ci
-        run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache
-
       - name: Install Chromium
         if: steps.scope.outputs.browser == 'true'
         run: pnpm --dir apps/control-panel exec playwright install --with-deps chromium
@@ -150,8 +161,41 @@ jobs:
           cat "$RUNNER_TEMP/control-panel.log"
           exit 1
 
-      - name: Run affected browser proof
-        if: steps.scope.outputs.browser == 'true' && github.event_name != 'schedule'
+      - name: Prepare isolated DSH checker operator
+        if: steps.scope.outputs.checker == 'true'
+        shell: bash
+        env:
+          CI: "true"
+          BTHWANI_IDENTITY_PROOF_SCOPE: disposable-ci
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run control-panel:dsh-runtime-checker-fixture --outputStyle=stream
+
+      - name: Run affected backend runtime proofs
+        if: steps.scope.outputs.run == 'true' && github.event_name != 'schedule'
+        env:
+          CI: "true"
+          BTHWANI_IDENTITY_PROOF_SCOPE: disposable-ci
+        run: pnpm exec nx affected -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
+
+      - name: Run weekly backend runtime regression
+        if: steps.scope.outputs.run == 'true' && github.event_name == 'schedule'
+        env:
+          CI: "true"
+          BTHWANI_IDENTITY_PROOF_SCOPE: disposable-ci
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache
+
+      - name: Run affected Control Panel proof
+        if: steps.scope.outputs.control_proof == 'true' && github.event_name != 'schedule'
         shell: bash
         run: |
           set -euo pipefail
@@ -166,8 +210,8 @@ jobs:
           export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
           pnpm exec nx affected -t browser-live-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
 
-      - name: Run weekly browser regression
-        if: steps.scope.outputs.browser == 'true' && github.event_name == 'schedule'
+      - name: Run weekly Control Panel regression
+        if: steps.scope.outputs.control_proof == 'true' && github.event_name == 'schedule'
         shell: bash
         run: |
           set -euo pipefail
