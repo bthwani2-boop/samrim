@@ -11,7 +11,7 @@
     "build": "next build",
     "typecheck": "next typegen && tsc --noEmit -p tsconfig.json",
     "test:e2e": "playwright test --config playwright.config.ts",
-    "test:e2e:live": "node ../../tools/dev/run-playwright-live.mjs"
+    "test:e2e:live": "node run-live-e2e.mjs"
   },
   "dependencies": {
     "@bthwani/design-system": "workspace:*",
@@ -26,8 +26,6 @@
     "@types/node": "24.10.1",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
-    "monocart-coverage-reports": "2.10.8",
-    "monocart-reporter": "2.14.0",
     "typescript": "6.0.2"
   }
 }

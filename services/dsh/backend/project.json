@@ -32,27 +32,22 @@
     "baseline-proof": {
       "cache": false,
       "executor": "nx:run-commands",
-      "options": {"command": "node tools/dev/verify-dsh-baseline.mjs --env-file=infra/local/.env"}
+      "options": {"command": "node tests/runtime/verify-dsh-baseline.mjs --env-file=infra/local/.env"}
     },
     "runtime-proof": {
       "cache": false,
       "executor": "nx:run-commands",
-      "options": {"command": "node tools/dev/verify-dsh-runtime-core.mjs --env-file=infra/local/.env"}
+      "options": {"command": "node tests/runtime/verify-dsh-runtime-core.mjs --env-file=infra/local/.env"}
     },
     "location-proof": {
       "cache": false,
       "executor": "nx:run-commands",
-      "inputs": ["default", "{workspaceRoot}/tools/dev/verify-dsh-location-runtime.mjs"],
-      "options": {"command": "node tools/dev/verify-dsh-location-runtime.mjs --env-file=infra/local/.env"}
+      "inputs": ["default", "{workspaceRoot}/tests/runtime/verify-dsh-location-runtime.mjs"],
+      "options": {"command": "node tests/runtime/verify-dsh-location-runtime.mjs --env-file=infra/local/.env"}
     },
     "format-check": {
       "executor": "nx:run-commands",
-      "options": {"command": "node tools/dev/check-go-format.mjs services/dsh/backend"}
-    },
-    "ci-image": {
-      "cache": false,
-      "executor": "nx:run-commands",
-      "options": {"command": "node tools/dev/build-ci-image.mjs dsh"}
+      "options": {"command": "node tools/go/format-check.mjs services/dsh/backend"}
     }
   },
   "tags": ["scope:dsh-backend", "type:service"],

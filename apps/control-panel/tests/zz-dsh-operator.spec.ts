@@ -2,7 +2,7 @@ import { randomInt } from "node:crypto";
 import { existsSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { expect, test } from "./coverage-fixtures";
+import { expect, test } from "@playwright/test";
 import {
   assertIdentityProofScope,
   enableOperatorPermission,
@@ -106,6 +106,17 @@ test("@live provision and activate an independent operator for downstream DSH se
   }
   const browser = page.context().browser();
   if (!browser) throw new Error("live Identity proof requires a browser instance for the independent operator fixture");
+  if (primaryOperator.token) {
+    const primaryContext = await browser.newContext({ baseURL: baseUrl, locale: "ar-YE" });
+    const primaryPage = await primaryContext.newPage();
+    try {
+      await enableVirtualAuthenticator(primaryPage);
+      await registerOperator(primaryPage, primaryOperator, baseUrl, mailpitBase);
+      console.log("DSH_PRIMARY_OPERATOR_ACTIVATION=PASS");
+    } finally {
+      await primaryContext.close();
+    }
+  }
   const independentContext = await browser.newContext({ baseURL: baseUrl, locale: "ar-YE" });
   const independentPage = await independentContext.newPage();
   try {

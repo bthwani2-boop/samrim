@@ -25,21 +25,16 @@
     "migration-proof": {
       "cache": false,
       "executor": "nx:run-commands",
-      "options": {"command": "node tools/dev/verify-identity-migrations.mjs --env-file=infra/local/.env"}
+      "options": {"command": "node tests/runtime/verify-identity-migrations.mjs --env-file=infra/local/.env"}
     },
     "runtime-proof": {
       "cache": false,
       "executor": "nx:run-commands",
-      "options": {"command": "node tools/dev/verify-identity-runtime.mjs --env-file=infra/local/.env"}
+      "options": {"command": "node tests/runtime/verify-identity-runtime.mjs --env-file=infra/local/.env"}
     },
     "format-check": {
       "executor": "nx:run-commands",
-      "options": {"command": "node tools/dev/check-go-format.mjs services/identity/backend"}
-    },
-    "ci-image": {
-      "cache": false,
-      "executor": "nx:run-commands",
-      "options": {"command": "node tools/dev/build-ci-image.mjs identity"}
+      "options": {"command": "node tools/go/format-check.mjs services/identity/backend"}
     }
   },
   "tags": ["scope:identity-backend", "type:service"],

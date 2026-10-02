@@ -4,6 +4,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "contract:conformance": "node ../../tools/dev/verify-wlt-contract-conformance.mjs"
+    "contract:conformance": "node verify-contract-conformance.mjs"
   }
 }

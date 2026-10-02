@@ -1,4 +1,4 @@
-import { expect, test } from "./coverage-fixtures";
+import { expect, test } from "@playwright/test";
 
 const operatorSession = {
   subject: "actor-finance-coverage",

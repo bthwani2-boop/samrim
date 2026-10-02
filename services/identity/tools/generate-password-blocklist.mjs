@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { resolveTrustedExecutable } from "../../../tools/dev/runtime-proof/trusted-executables.mjs";
+import { resolveTrustedExecutable } from "../../../tests/runtime/runtime-proof/trusted-executables.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";

@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page } from "@playwright/test";
-import { resolveTrustedExecutable } from "../../../tools/dev/runtime-proof/trusted-executables.mjs";
+import { resolveTrustedExecutable } from "../../../tests/runtime/runtime-proof/trusted-executables.mjs";
 
 export type PreparedOperator = {
   actorId: string;

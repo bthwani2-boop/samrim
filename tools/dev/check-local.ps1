@@ -1,47 +1,69 @@
 #Requires -Version 7.4
+[CmdletBinding()]
+param(
+    [switch]$Candidate,
+    [string]$BaseSha = ''
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$PSNativeCommandUseErrorActionPreference = $false
 
 $Repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-
-function Fail([string]$Message) { throw "LOCAL_CHECK=FAIL $Message" }
-
-function Invoke-Git([string[]]$Arguments) {
-    $output = @(& git -C $Repo @Arguments 2>&1)
-    if ($LASTEXITCODE -ne 0) { Fail ("git " + ($Arguments -join ' ') + " failed: " + ($output -join [Environment]::NewLine)) }
-    return $output
-}
-
 Push-Location $Repo
 try {
-    $changed = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    foreach ($path in @(Invoke-Git @('diff', '--name-only', 'HEAD', '--'))) {
-        $normalized = ([string]$path).Trim().Replace('\', '/')
-        if ($normalized) { [void]$changed.Add($normalized) }
-    }
-    foreach ($path in @(Invoke-Git @('ls-files', '--others', '--exclude-standard', '--'))) {
-        $normalized = ([string]$path).Trim().Replace('\', '/')
-        if ($normalized) { [void]$changed.Add($normalized) }
+    if ($Candidate) {
+        $branch = (git branch --show-current).Trim()
+        if ($LASTEXITCODE -ne 0 -or -not $branch) { throw 'Candidate verification requires a named branch.' }
+        $status = @(git status --porcelain=v1 --untracked-files=all)
+        if ($LASTEXITCODE -ne 0 -or $status.Count -gt 0) { throw "Candidate must be clean.`n$($status -join [Environment]::NewLine)" }
+        $head = (git rev-parse HEAD).Trim()
+        if ($LASTEXITCODE -ne 0) { throw 'Unable to resolve candidate HEAD.' }
+        if (-not $BaseSha) {
+            git rev-parse --verify --quiet "refs/remotes/origin/$branch" *> $null
+            if ($LASTEXITCODE -eq 0) {
+                $BaseSha = (git rev-parse "refs/remotes/origin/$branch").Trim()
+                git merge-base --is-ancestor $BaseSha $head *> $null
+                if ($LASTEXITCODE -ne 0) { throw 'Remote branch is not an ancestor of candidate HEAD.' }
+            }
+            else {
+                git rev-parse --verify --quiet refs/remotes/origin/main *> $null
+                if ($LASTEXITCODE -ne 0) { throw 'Fetch origin/main before verifying this candidate.' }
+                $BaseSha = (git merge-base $head refs/remotes/origin/main).Trim()
+            }
+        }
+        $env:NX_BASE = $BaseSha
+        $env:NX_HEAD = $head
+        $env:NX_NO_CLOUD = 'true'
+        Write-Host "VERIFY_SCOPE base=$BaseSha head=$head runtime=off cloud=off"
+        pnpm exec nx affected -t lint,format-check,typecheck,unit,contract,build,vet,export-smoke --base=$BaseSha --head=$head --outputStyle=static --parallel=2 --nxBail=true
+        if ($LASTEXITCODE -ne 0) { throw "VERIFY=FAIL exit=$LASTEXITCODE" }
+        if ((git rev-parse HEAD).Trim() -ne $head -or @(git status --porcelain=v1 --untracked-files=all).Count -gt 0) {
+            throw 'Candidate changed during verification.'
+        }
+        Write-Host "VERIFY=PASS base=$BaseSha head=$head"
+        return
     }
 
-    $files = @($changed | Sort-Object)
+    $files = @(
+        git diff --name-only HEAD --
+        git ls-files --others --exclude-standard --
+    ) | ForEach-Object { ([string]$_).Trim().Replace('\','/') } | Where-Object { $_ } | Sort-Object -Unique
+
     if ($files.Count -eq 0) {
-        Write-Host 'LOCAL_CHECK=PASS scope=no-working-tree-changes work=none'
+        Write-Host 'LOCAL_CHECK=PASS scope=no-working-tree-changes'
         return
     }
 
     $env:NX_NO_CLOUD = 'true'
-    $env:NX_DAEMON = 'true'
-    $targets = 'lint,format-check,typecheck,unit,contract,vet'
-    $filesArgument = '--files=' + ($files -join ',')
+    pnpm exec biome lint tools/dev --diagnostic-level=error
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    pwsh -NoProfile -ExecutionPolicy Bypass -File tools/powershell/verify-syntax.ps1
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-    Write-Host "LOCAL_CHECK_SCOPE files=$($files.Count) targets=$targets cloud=off runtime=off"
-    & pnpm exec nx affected -t $targets $filesArgument '--outputStyle=static' '--parallel=2' '--nxBail=true'
-    if ($LASTEXITCODE -ne 0) { Fail "affected static proof failed exit=$LASTEXITCODE" }
-
-    Write-Host "LOCAL_CHECK=PASS files=$($files.Count) runtime=not-run cloud=off"
+    $filesArg = '--files=' + ($files -join ',')
+    pnpm exec nx affected -t lint,format-check,typecheck,unit,contract,vet $filesArg --outputStyle=static --parallel=2 --nxBail=true
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    Write-Host "LOCAL_CHECK=PASS files=$($files.Count)"
 }
 finally {
     Pop-Location

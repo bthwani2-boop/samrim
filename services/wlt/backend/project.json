@@ -35,12 +35,7 @@
     },
     "format-check": {
       "executor": "nx:run-commands",
-      "options": {"command": "node tools/dev/check-go-format.mjs services/wlt/backend"}
-    },
-    "ci-image": {
-      "cache": false,
-      "executor": "nx:run-commands",
-      "options": {"command": "node tools/dev/build-ci-image.mjs wlt"}
+      "options": {"command": "node tools/go/format-check.mjs services/wlt/backend"}
     }
   },
   "tags": ["scope:wlt-backend", "type:service"],

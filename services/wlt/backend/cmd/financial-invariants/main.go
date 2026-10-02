@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log"
 	"os"
 	"strings"
@@ -195,31 +196,6 @@ func main() {
 				OR t.currency <> e.currency`,
 		},
 		{
-			name: "posted-delivery-handoff-readback",
-			query: `SELECT COUNT(*)
-			FROM dsh.commerce_financial_handoff_outbox o
-			LEFT JOIN wlt.payment_intents p ON p.id=o.payment_intent_id
-			LEFT JOIN wlt.partner_order_earnings e ON e.order_id=o.order_id
-			LEFT JOIN wlt.captain_cod_reservations c ON c.order_id=o.order_id
-			WHERE o.state='POSTED' AND o.effect_type='DELIVERY_SETTLEMENT' AND (
-				p.id IS NULL OR p.state <> 'COLLECTED' OR p.collected_by_actor_id IS DISTINCT FROM o.captain_actor_id OR p.amount_minor <> o.amount_minor
-				OR e.order_id IS NULL OR e.payment_intent_id <> o.payment_intent_id OR e.partner_actor_id IS DISTINCT FROM o.partner_actor_id OR e.captain_actor_id IS DISTINCT FROM o.captain_actor_id
-				OR c.order_id IS NULL OR c.payment_intent_id <> o.payment_intent_id OR c.captain_actor_id IS DISTINCT FROM o.captain_actor_id OR c.amount_minor <> o.amount_minor OR c.state <> 'FINALIZED'
-			)`,
-		},
-		{
-			name: "posted-store-cash-handoff-readback",
-			query: `SELECT COUNT(*)
-			FROM dsh.commerce_financial_handoff_outbox o
-			LEFT JOIN wlt.payment_intents p ON p.id=o.payment_intent_id
-			LEFT JOIN wlt.partner_store_cash_commissions c ON c.order_id=o.order_id
-			WHERE o.state='POSTED' AND o.effect_type IN ('STORE_PICKUP_COLLECTION','PARTNER_CAPTAIN_STORE_CASH_COLLECTION') AND (
-				p.id IS NULL OR p.state <> 'COLLECTED' OR p.method <> 'CASH_AT_STORE' OR p.collected_by_actor_id IS DISTINCT FROM o.partner_actor_id OR p.amount_minor <> o.amount_minor
-				OR c.order_id IS NULL OR c.payment_intent_id <> o.payment_intent_id OR c.partner_actor_id IS DISTINCT FROM o.partner_actor_id
-				OR c.fulfillment_mode <> CASE WHEN o.effect_type='STORE_PICKUP_COLLECTION' THEN 'CUSTOMER_PICKUP' ELSE 'PARTNER_CAPTAIN' END
-			)`,
-		},
-		{
 			name: "posted-cod-release-readback",
 			query: `SELECT COUNT(*)
 			FROM dsh.commerce_financial_handoff_outbox o
@@ -238,6 +214,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	failed := false
+	checkCount := len(checks)
 	for _, check := range checks {
 		var violations int64
 		if err := db.QueryRowContext(ctx, check.query).Scan(&violations); err != nil {
@@ -250,8 +227,24 @@ func main() {
 		}
 		log.Printf("WLT_FINANCIAL_INVARIANT=%s PASS", check.name)
 	}
+	for _, verify := range []struct {
+		name string
+		fn   func(context.Context, *sql.DB) (int, error)
+	}{
+		{name: "posted-delivery-handoff-readback", fn: verifyDeliveryHandoffReadbacks},
+		{name: "posted-store-cash-handoff-readback", fn: verifyStoreCashHandoffReadbacks},
+	} {
+		checkCount++
+		violations, err := verify.fn(ctx, db)
+		if err != nil {
+			failed = true
+			log.Printf("WLT_FINANCIAL_INVARIANT=%s ERROR %v", verify.name, err)
+		} else if violations > 0 {
+			failed = true
+		}
+	}
 	if failed {
 		log.Fatal("WLT_FINANCIAL_INVARIANTS=FAIL")
 	}
-	log.Printf("WLT_FINANCIAL_INVARIANTS=PASS checks=%d", len(checks))
+	log.Printf("WLT_FINANCIAL_INVARIANTS=PASS checks=%d", checkCount)
 }

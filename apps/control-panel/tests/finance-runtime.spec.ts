@@ -1,4 +1,4 @@
-import { expect, test } from "./coverage-fixtures";
+import { expect, test } from "@playwright/test";
 import { enrollAndAuthenticateIsolatedOperator } from "./live-identity-proof-helpers";
 
 test.beforeEach(async ({ page }, testInfo) => {
