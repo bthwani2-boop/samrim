@@ -34,25 +34,50 @@ export default function ClientHomeRoute() {
 
   function setSearchVisibility(open: boolean) {
     setSearchOpen(open);
-    if (open) return;
+    if (open) {
+      router.setParams({ focus: "search", q: searchQuery, scope: searchScope });
+      return;
+    }
     setSearchQuery("");
     setSearchScope("stores");
     router.replace("/home" as Href);
+  }
+
+  function updateSearchQuery(value: string) {
+    setSearchQuery(value);
+    router.setParams({ focus: "search", q: value, scope: searchScope });
+  }
+
+  function updateSearchScope(value: SearchScope) {
+    setSearchScope(value);
+    router.setParams({ focus: "search", q: searchQuery, scope: value });
+  }
+
+  function requireAuthentication() {
+    router.replace({
+      pathname: "/",
+      params: {
+        returnTo: "/home",
+        ...(searchOpen ? { focus: "search" } : {}),
+        ...(searchQuery ? { q: searchQuery } : {}),
+        ...(searchScope === "products" ? { scope: searchScope } : {}),
+      },
+    } as Href);
   }
 
   return (
     <View style={styles.root}>
       <ClientPublicHeader
         onSearchOpenChange={setSearchVisibility}
-        onSearchQueryChange={setSearchQuery}
+        onSearchQueryChange={updateSearchQuery}
         searchOpen={searchOpen}
         searchQuery={searchQuery}
       />
       <StoreDiscovery
         isAuthenticated={isAuthenticated}
-        onRequireAuthentication={!isAuthenticated ? () => router.replace("/?returnTo=/home" as Href) : undefined}
-        onSearchQueryChange={setSearchQuery}
-        onSearchScopeChange={setSearchScope}
+        onRequireAuthentication={!isAuthenticated ? requireAuthentication : undefined}
+        onSearchQueryChange={updateSearchQuery}
+        onSearchScopeChange={updateSearchScope}
         searchOpen={searchOpen}
         searchQuery={searchQuery}
         searchScope={searchScope}

@@ -103,6 +103,26 @@ import { pathToFileURL } from "node:url";
 register(pathToFileURL(path.join(root, "packages/design-system/tools/ts-resolver.mjs")).href, import.meta.url);
 const { IdentitySessionManager } = await import(pathToFileURL(path.join(root, "services/identity/clients/session.ts")).href);
 const { identitySessionSignOutMessage } = await import(pathToFileURL(path.join(root, "services/identity/clients/errors.ts")).href);
+if (app === "app-client") {
+  const { resolveClientIdentityReturnHref } = await import(pathToFileURL(path.join(appDir, "src/features/access/identity-return.ts")).href);
+  assert.deepEqual(
+    resolveClientIdentityReturnHref("/home", { focus: "search", q: "خبز طازج", scope: "products" }),
+    { pathname: "/home", params: { focus: "search", q: "خبز طازج", scope: "products" } },
+    "client authentication must resume the active product search",
+  );
+  assert.deepEqual(
+    resolveClientIdentityReturnHref("/home", { focus: "search", q: "", scope: "stores" }),
+    { pathname: "/home", params: { focus: "search" } },
+    "client authentication must resume search mode without requiring a query",
+  );
+  assert.equal(
+    resolveClientIdentityReturnHref("/store/store-1", { focus: "search", q: "ignored", scope: "products" }),
+    "/store/store-1",
+    "search context must not bleed into another admitted return route",
+  );
+  const untrustedReturn = resolveClientIdentityReturnHref("//outside.example/path", { focus: "search", q: "safe context" });
+  assert.equal(typeof untrustedReturn === "string" ? untrustedReturn : untrustedReturn.pathname, "/home", "client authentication return must remain internal");
+}
 const {
   createOrderConversationMessageAttempt,
   orderConversationMessageAttemptStorageKey,

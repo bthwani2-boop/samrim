@@ -1,8 +1,7 @@
 import { borders, elevation, radius, sizing, spacing, type ThemeColors, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type IdentitySessionState, identityErrorMessage, identitySessionSignOutMessage, isIdentityClientError, limitPasswordInput, validatePasswordInputShape } from "@bthwani/identity";
-import { resolveInternalReturnPath } from "@bthwani/identity/presentation";
-import { type Href, Redirect, useLocalSearchParams } from "expo-router";
+import { Redirect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -29,6 +28,7 @@ import { ClientPublicHeader } from "../../shell/client-shell";
 import ServiceCityScope from "../service-city/service-city-scope";
 import StoreDiscovery from "../store-discovery/store-discovery";
 import { type IdentityCopy, identityPresentation } from "./identity-presentation";
+import { resolveClientIdentityReturnHref } from "./identity-return";
 
 type AuthMode = "login" | "register" | "recover";
 type FieldName = "phone" | "code" | "password" | "passwordConfirmation";
@@ -43,12 +43,8 @@ function isCredentialFailure(value: unknown): boolean {
   return isIdentityClientError(value) && value.kind === "http" && value.status === 401;
 }
 
-function safeReturnTo(value: string | string[] | undefined): Href {
-  return resolveInternalReturnPath(value, "/home", /^\/(?:home|account|wallet|addresses|multi-store-checkout|orders(?:\/[A-Za-z0-9._~%-]+)?|store\/[A-Za-z0-9._~%-]+|cart\/[A-Za-z0-9._~%-]+)$/u) as Href;
-}
-
 export default function IdentityGate() {
-  const { returnTo } = useLocalSearchParams<{ returnTo?: string | string[] }>();
+  const { returnTo, focus, q, scope } = useLocalSearchParams<{ returnTo?: string | string[]; focus?: string | string[]; q?: string | string[]; scope?: string | string[] }>();
   const theme = useAppearanceTheme();
   const { copy } = identityPresentation;
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -68,9 +64,19 @@ export default function IdentityGate() {
   const [focusedField, setFocusedField] = useState<FieldName | null>(null);
   const [loginFailed, setLoginFailed] = useState(false);
   const [authPromptVisible, setAuthPromptVisible] = useState(false);
-  const [discoverySearchOpen, setDiscoverySearchOpen] = useState(false);
-  const [discoverySearchQuery, setDiscoverySearchQuery] = useState("");
-  const [discoverySearchScope, setDiscoverySearchScope] = useState<"stores" | "products">("stores");
+  const routeFocus = Array.isArray(focus) ? focus[0] : focus;
+  const routeQuery = Array.isArray(q) ? q[0] ?? "" : q ?? "";
+  const routeScope = Array.isArray(scope) ? scope[0] : scope;
+  const [discoverySearchOpen, setDiscoverySearchOpen] = useState(routeFocus === "search" || Boolean(routeQuery.trim()));
+  const [discoverySearchQuery, setDiscoverySearchQuery] = useState(routeQuery);
+  const [discoverySearchScope, setDiscoverySearchScope] = useState<"stores" | "products">(routeScope === "products" ? "products" : "stores");
+
+  useEffect(() => {
+    if (focus === undefined && q === undefined && scope === undefined) return;
+    setDiscoverySearchOpen(routeFocus === "search" || Boolean(routeQuery.trim()));
+    setDiscoverySearchQuery(routeQuery);
+    setDiscoverySearchScope(routeScope === "products" ? "products" : "stores");
+  }, [focus, q, routeFocus, routeQuery, routeScope, scope]);
 
   const restore = useCallback(async () => {
     setBusy(true);
@@ -217,7 +223,15 @@ export default function IdentityGate() {
   }
 
   if (state.kind === "authenticated") {
-    return <Redirect href={safeReturnTo(returnTo)} />;
+    return (
+      <Redirect
+        href={resolveClientIdentityReturnHref(returnTo, {
+          focus: routeFocus ?? (discoverySearchOpen ? "search" : undefined),
+          q: q ?? discoverySearchQuery,
+          scope: routeScope ?? discoverySearchScope,
+        })}
+      />
+    );
   }
 
   if (state.kind === "signed_out" && !returnTo && !authPromptVisible) {

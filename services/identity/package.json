@@ -12,6 +12,10 @@
     "./presentation": {
       "types": "./clients/presentation/ManagedIdentityFlow.tsx",
       "default": "./clients/presentation/ManagedIdentityFlow.tsx"
+    },
+    "./presentation/return-path": {
+      "types": "./clients/presentation/return-path.ts",
+      "default": "./clients/presentation/return-path.ts"
     }
   },
   "peerDependencies": {

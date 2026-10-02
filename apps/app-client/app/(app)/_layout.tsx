@@ -1,6 +1,6 @@
 import { useAppearanceTheme } from "@bthwani/design-system/native";
 import { AuthenticatedMobileBoundary } from "@bthwani/identity/presentation";
-import { type Href, Tabs, usePathname, useRouter } from "expo-router";
+import { type Href, Tabs, useGlobalSearchParams, usePathname, useRouter } from "expo-router";
 import { useCallback, useMemo } from "react";
 import { currentIdentityState, restoreIdentitySession, subscribeIdentitySession } from "../../src/bootstrap/identity";
 import ServiceCityScope from "../../src/features/service-city/service-city-scope";
@@ -11,11 +11,24 @@ const identity = { restoreIdentitySession, currentIdentityState, subscribe: subs
 export default function ClientAppLayout() {
   const router = useRouter();
   const pathname = usePathname();
+  const { focus, q, scope } = useGlobalSearchParams<{ focus?: string | string[]; q?: string | string[]; scope?: string | string[] }>();
   const theme = useAppearanceTheme();
   const tabOptions = useMemo(() => createClientTabOptions(theme), [theme]);
   const onUnauthenticated = useCallback(() => {
-    router.replace(pathname === "/" ? "/" : `/?returnTo=${encodeURIComponent(pathname)}` as Href);
-  }, [pathname, router]);
+    if (pathname === "/") {
+      router.replace("/" as Href);
+      return;
+    }
+    router.replace({
+      pathname: "/",
+      params: {
+        returnTo: pathname,
+        ...(pathname === "/home" && focus === "search" ? { focus } : {}),
+        ...(pathname === "/home" && typeof q === "string" && q ? { q } : {}),
+        ...(pathname === "/home" && scope === "products" ? { scope } : {}),
+      },
+    } as Href);
+  }, [focus, pathname, q, router, scope]);
   const tabs = (
     <Tabs screenOptions={tabOptions}>
       <Tabs.Screen name="home" options={{ title: "الرئيسية", tabBarAccessibilityLabel: "الرئيسية" }} />
