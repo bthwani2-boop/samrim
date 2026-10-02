@@ -1,4 +1,4 @@
-import { expect, test } from "./coverage-fixtures";
+import { expect, test } from "@playwright/test";
 
 const forbiddenError = {
   error: {
