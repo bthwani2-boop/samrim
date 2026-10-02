@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"database/sql"
 	"log"
 	"os"
 	"strings"
@@ -13,35 +13,9 @@ import (
 )
 
 type invariant struct {
-	name            string
-	query           string
-	diagnosticQuery string
+	name  string
+	query string
 }
-
-const deliveryHandoffFrom = `FROM dsh.commerce_financial_handoff_outbox o
-LEFT JOIN dsh.commerce_orders d ON d.id=o.order_id AND d.payment_intent_id=o.payment_intent_id
-LEFT JOIN wlt.payment_intents p ON p.id=o.payment_intent_id
-LEFT JOIN wlt.partner_order_earnings e ON e.order_id=o.order_id
-LEFT JOIN wlt.captain_cod_reservations c ON c.order_id=o.order_id AND c.payment_intent_id=o.payment_intent_id AND c.captain_actor_id=o.captain_actor_id`
-
-const deliveryHandoffViolationPredicate = `d.id IS NULL
-OR d.payment_cash_amount_minor <> o.amount_minor
-OR p.id IS NULL
-OR p.state <> 'COLLECTED'
-OR p.amount_minor <> o.amount_minor
-OR (o.amount_minor > 0 AND p.collected_by_actor_id IS DISTINCT FROM o.captain_actor_id)
-OR (o.amount_minor = 0 AND p.collected_by_actor_id IS NOT NULL)
-OR e.order_id IS NULL
-OR e.payment_intent_id <> o.payment_intent_id
-OR e.partner_actor_id IS DISTINCT FROM o.partner_actor_id
-OR e.captain_actor_id IS DISTINCT FROM o.captain_actor_id
-OR (o.amount_minor > 0 AND (
-	c.order_id IS NULL
-	OR c.payment_intent_id <> o.payment_intent_id
-	OR c.captain_actor_id IS DISTINCT FROM o.captain_actor_id
-	OR c.amount_minor <> o.amount_minor
-	OR c.state NOT IN ('FINALIZED','REMITTED')
-))`
 
 func main() {
 	if _, err := opsafety.RequireOrdinaryCLIEnvironment(os.Getenv("BTHWANI_ENV"), "wlt financial invariant verification"); err != nil {
@@ -222,41 +196,6 @@ func main() {
 				OR t.currency <> e.currency`,
 		},
 		{
-			name: "posted-delivery-handoff-readback",
-			query: fmt.Sprintf(`SELECT COUNT(*)
-%s
-WHERE o.state='POSTED' AND o.effect_type='DELIVERY_SETTLEMENT' AND (%s)`, deliveryHandoffFrom, deliveryHandoffViolationPredicate),
-			diagnosticQuery: fmt.Sprintf(`SELECT COALESCE(jsonb_agg(v.detail), '[]'::jsonb)::text
-FROM (
-	SELECT jsonb_build_object(
-		'order_id',o.order_id,'outbox_payment_intent_id',o.payment_intent_id,'outbox_captain',o.captain_actor_id,'outbox_partner',o.partner_actor_id,'outbox_cash',o.amount_minor,
-		'order_payment_intent_id',d.payment_intent_id,'order_total',d.total_amount_minor,'order_cash',d.payment_cash_amount_minor,
-		'wlt_state',p.state,'wlt_amount',p.amount_minor,'wlt_collected_by',p.collected_by_actor_id,
-		'earning_payment_intent_id',e.payment_intent_id,'earning_partner',e.partner_actor_id,'earning_captain',e.captain_actor_id,
-		'cod_reservation_id',c.id,'cod_amount',c.amount_minor,'cod_state',c.state
-	) AS detail
-	%s
-	WHERE o.state='POSTED' AND o.effect_type='DELIVERY_SETTLEMENT' AND (%s)
-	LIMIT 10
-) v`, deliveryHandoffFrom, deliveryHandoffViolationPredicate),
-		},
-		{
-			name: "posted-store-cash-handoff-readback",
-			query: `SELECT COUNT(*)
-			FROM dsh.commerce_financial_handoff_outbox o
-			LEFT JOIN dsh.commerce_orders d ON d.id=o.order_id AND d.payment_intent_id=o.payment_intent_id
-			LEFT JOIN wlt.payment_intents p ON p.id=o.payment_intent_id
-			LEFT JOIN wlt.partner_store_cash_commissions c ON c.order_id=o.order_id
-			WHERE o.state='POSTED' AND o.effect_type IN ('STORE_PICKUP_COLLECTION','PARTNER_CAPTAIN_STORE_CASH_COLLECTION','PARTNER_CAPTAIN_BALANCE_SETTLEMENT') AND (
-				d.id IS NULL OR d.payment_cash_amount_minor <> o.amount_minor
-				OR p.id IS NULL OR p.state <> 'COLLECTED' OR p.method <> 'CASH_AT_STORE' OR p.amount_minor <> o.amount_minor
-				OR (o.amount_minor > 0 AND p.collected_by_actor_id IS DISTINCT FROM o.partner_actor_id)
-				OR (o.amount_minor = 0 AND p.collected_by_actor_id IS NOT NULL)
-				OR c.order_id IS NULL OR c.payment_intent_id <> o.payment_intent_id OR c.partner_actor_id IS DISTINCT FROM o.partner_actor_id
-				OR c.fulfillment_mode <> CASE WHEN o.effect_type='STORE_PICKUP_COLLECTION' THEN 'CUSTOMER_PICKUP' ELSE 'PARTNER_CAPTAIN' END
-			)`,
-		},
-		{
 			name: "posted-cod-release-readback",
 			query: `SELECT COUNT(*)
 			FROM dsh.commerce_financial_handoff_outbox o
@@ -275,6 +214,7 @@ FROM (
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	failed := false
+	checkCount := len(checks)
 	for _, check := range checks {
 		var violations int64
 		if err := db.QueryRowContext(ctx, check.query).Scan(&violations); err != nil {
@@ -283,20 +223,28 @@ FROM (
 		if violations != 0 {
 			failed = true
 			log.Printf("WLT_FINANCIAL_INVARIANT=%s FAIL violations=%d", check.name, violations)
-			if check.diagnosticQuery != "" {
-				var details string
-				if err := db.QueryRowContext(ctx, check.diagnosticQuery).Scan(&details); err != nil {
-					log.Printf("WLT_FINANCIAL_INVARIANT=%s DIAGNOSTIC_ERROR=%v", check.name, err)
-				} else {
-					log.Printf("WLT_FINANCIAL_INVARIANT=%s DIAGNOSTIC=%s", check.name, details)
-				}
-			}
 			continue
 		}
 		log.Printf("WLT_FINANCIAL_INVARIANT=%s PASS", check.name)
 	}
+	for _, verify := range []struct {
+		name string
+		fn   func(context.Context, *sql.DB) (int, error)
+	}{
+		{name: "posted-delivery-handoff-readback", fn: verifyDeliveryHandoffReadbacks},
+		{name: "posted-store-cash-handoff-readback", fn: verifyStoreCashHandoffReadbacks},
+	} {
+		checkCount++
+		violations, err := verify.fn(ctx, db)
+		if err != nil {
+			failed = true
+			log.Printf("WLT_FINANCIAL_INVARIANT=%s ERROR %v", verify.name, err)
+		} else if violations > 0 {
+			failed = true
+		}
+	}
 	if failed {
 		log.Fatal("WLT_FINANCIAL_INVARIANTS=FAIL")
 	}
-	log.Printf("WLT_FINANCIAL_INVARIANTS=PASS checks=%d", len(checks))
+	log.Printf("WLT_FINANCIAL_INVARIANTS=PASS checks=%d", checkCount)
 }

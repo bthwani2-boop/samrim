@@ -2,7 +2,7 @@ name: samrim-local
 
 services:
   postgres:
-    image: postgis/postgis:16-3.4-alpine
+    image: postgis/postgis:16-3.4-alpine@sha256:681931a625df344215e9b8998bf34daf146b6a395ceacee4439eb9c85869239f
     restart: unless-stopped
     environment:
       POSTGRES_USER: "${SAMRIM_POSTGRES_USER}"
@@ -19,13 +19,13 @@ services:
       start_interval: 2s
 
   mailpit:
-    image: axllent/mailpit:v1.27.8
+    image: axllent/mailpit:v1.27.8@sha256:6abc8e633df15eaf785cfcf38bae48e66f64beecdc03121e249d0f9ec15f0707
     restart: unless-stopped
     ports:
       - "127.0.0.1:${SAMRIM_MAILPIT_WEB_PORT:-18026}:8025"
 
   media:
-    image: chrislusf/seaweedfs:4.47
+    image: chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
     restart: unless-stopped
     command: ["mini", "-dir=/data"]
     environment:
