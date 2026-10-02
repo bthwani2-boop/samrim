@@ -9,6 +9,12 @@ type SettlementPeriod = "DAILY" | "WEEKLY" | "MONTHLY";
 
 const settlementLabels: Record<SettlementPeriod, string> = { DAILY: "يومية", WEEKLY: "أسبوعية", MONTHLY: "شهرية" };
 
+function saveActionLabel(busy: boolean, hasPolicy: boolean): string {
+  if (busy) return "جارٍ التفعيل والتحقق…";
+  if (hasPolicy) return "تفعيل إصدار جديد";
+  return "إنشاء الإصدار الأول";
+}
+
 export function PartnerFinancialTermsPolicyWorkspace() {
   const { state } = useSession();
   const canEdit = state.kind === "authenticated" && state.identity.permissions?.includes("platform_policies") === true && state.identity.permissions?.includes("finance") === true;
@@ -48,6 +54,7 @@ export function PartnerFinancialTermsPolicyWorkspace() {
   useEffect(() => { void read(); }, [read]);
 
   const validReason = reason.trim().length >= 5 && reason.trim().length <= 500;
+  const saveLabel = saveActionLabel(busy, Boolean(policy));
 
   async function save() {
     if (!canEdit || (readState !== "ready" && readState !== "missing") || !settlementPeriod || !validReason) return;
@@ -89,7 +96,7 @@ export function PartnerFinancialTermsPolicyWorkspace() {
       <label className="field-label" htmlFor="partner-terms-reason">سبب التفعيل أو التغيير<textarea id="partner-terms-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} maxLength={500} rows={3} disabled={busy || !canEdit} /></label>
       {error ? <p className="validation-error" role="alert">{error}</p> : null}
       {message ? <p className="success" role="status">{message}</p> : null}
-      <button className="button button-primary" type="button" onClick={() => void save()} disabled={busy || !canEdit || !settlementPeriod || !validReason}>{busy ? "جارٍ التفعيل والتحقق…" : policy ? "تفعيل إصدار جديد" : "إنشاء الإصدار الأول"}</button>
+      <button className="button button-primary" type="button" onClick={() => void save()} disabled={busy || !canEdit || !settlementPeriod || !validReason}>{saveLabel}</button>
     </> : null}
   </section>;
 }

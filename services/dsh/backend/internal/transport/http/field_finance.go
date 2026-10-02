@@ -198,7 +198,7 @@ func (s *FieldFinanceServer) createPolicy(w http.ResponseWriter, r *http.Request
 	if !s.requireActiveCommercialStoreType(w, r, input.ScopeID) {
 		return
 	}
-	policy, replayed, err := s.payment.CreateFieldAcquisitionRewardPolicy(r.Context(), input.ScopeType, input.ScopeID, input.RewardMinor, input.RoundingUnitMinor, input.ExpectedVersion, input.Reason, idempotency, correlation, acting)
+	policy, replayed, err := s.payment.CreateFieldAcquisitionRewardPolicy(r.Context(), wlt.CreateFieldAcquisitionRewardPolicyInput{ScopeType: input.ScopeType, ScopeID: input.ScopeID, RewardMinor: input.RewardMinor, RoundingUnitMinor: input.RoundingUnitMinor, ExpectedVersion: input.ExpectedVersion, Reason: input.Reason, IdempotencyKey: idempotency, CorrelationID: correlation, ActingActorID: acting})
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return

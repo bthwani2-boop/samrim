@@ -35,6 +35,16 @@ type Service struct {
 	wlt      *wltintegration.Client
 }
 
+type SetCommercialStoreTypeInput struct {
+	StoreID         string
+	TypeID          string
+	Reason          string
+	ExpectedVersion int
+	IdempotencyKey  string
+	ActingActorID   string
+	CorrelationID   string
+}
+
 func New(identity *identityintegration.Client, db *sql.DB, wlt *wltintegration.Client) (*Service, error) {
 	if identity == nil || db == nil || wlt == nil {
 		return nil, errors.New("store publication configuration is invalid")
@@ -72,7 +82,7 @@ func (s *Service) ReconcileFieldAcquisitionRewards(ctx context.Context) error {
 			}
 			continue
 		}
-		if _, _, finalizeErr := s.wlt.FinalizeFieldAcquisitionReward(ctx, item.JoiningCaseID, item.StoreID, item.PartnerActorID, item.FieldActorID, item.VerticalID, item.CommercialStoreTypeID, item.IdempotencyKey, item.CorrelationID); finalizeErr != nil {
+		if _, _, finalizeErr := s.wlt.FinalizeFieldAcquisitionReward(ctx, wltintegration.FinalizeFieldAcquisitionRewardInput{JoiningCaseID: item.JoiningCaseID, StoreID: item.StoreID, PartnerActorID: item.PartnerActorID, FieldActorID: item.FieldActorID, VerticalID: item.VerticalID, CommercialStoreTypeID: item.CommercialStoreTypeID, IdempotencyKey: item.IdempotencyKey, CorrelationID: item.CorrelationID}); finalizeErr != nil {
 			var wltErr *wltintegration.Error
 			if errors.As(finalizeErr, &wltErr) && wltErr.Code == "FIELD_ACQUISITION_POLICY_NOT_FOUND" {
 				if deferErr := postgres.DeferFieldAcquisitionPublication(ctx, s.db, item.ID, true, false); deferErr != nil {
@@ -144,8 +154,8 @@ func (s *Service) SetFulfillmentModes(ctx context.Context, storeID string, modes
 	return postgres.SetStoreFulfillmentModes(ctx, s.db, storeID, actingActorID, modes, expectedVersion, idempotencyKey, correlationID)
 }
 
-func (s *Service) SetCommercialStoreType(ctx context.Context, storeID, typeID, reason string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.StoreCommercialTypeAssignmentResult, error) {
-	actingActorID = strings.TrimSpace(actingActorID)
+func (s *Service) SetCommercialStoreType(ctx context.Context, input SetCommercialStoreTypeInput) (postgres.StoreCommercialTypeAssignmentResult, error) {
+	actingActorID := strings.TrimSpace(input.ActingActorID)
 	operator, err := s.identity.ReadActorRole(ctx, actingActorID, "operator")
 	if err != nil {
 		return postgres.StoreCommercialTypeAssignmentResult{}, err
@@ -156,7 +166,7 @@ func (s *Service) SetCommercialStoreType(ctx context.Context, storeID, typeID, r
 	if err := s.identity.RequireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
 		return postgres.StoreCommercialTypeAssignmentResult{}, err
 	}
-	return postgres.SetStoreCommercialType(ctx, s.db, storeID, typeID, actingActorID, reason, correlationID, idempotencyKey, expectedVersion)
+	return postgres.SetStoreCommercialType(ctx, s.db, postgres.StoreCommercialTypeAssignmentInput{StoreID: input.StoreID, TypeID: input.TypeID, ActorID: actingActorID, Reason: input.Reason, CorrelationID: input.CorrelationID, IdempotencyKey: input.IdempotencyKey, ExpectedVersion: input.ExpectedVersion})
 }
 
 func (s *Service) ReadForOperator(ctx context.Context, storeID, actingActorID string) (postgres.StoreRecord, PublicationReadiness, error) {

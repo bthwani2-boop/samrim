@@ -38,6 +38,30 @@ function readbackQuery(query: string, limit = 25): string {
   return `/api/fields?${params.toString()}`;
 }
 
+async function readWorkbench(currentQuery: string): Promise<FieldPage> {
+  const response = await identityFetch(readbackQuery(currentQuery, 50), { cache: "no-store" });
+  if (!response.ok) throw new Error(await responseMessage(response));
+  return await response.json() as FieldPage;
+}
+
+function expectedCandidateState(action: "update-profile" | "approve" | "provision", currentState: FieldAdmission["state"]): FieldAdmission["state"] {
+  if (action === "approve") return "pending_identity";
+  if (action === "provision") return "eligible";
+  return currentState;
+}
+
+function candidateMutationNotice(action: "update-profile" | "approve" | "provision"): string {
+  if (action === "approve") return "اعتُمد الملف وأُعيدت قراءته؛ أصبح منح الدور خطوته التالية.";
+  if (action === "provision") return "مُنح الدور وأُعيدت قراءة ربط Identity وDSH.";
+  return "حُفظ الاسم وأُعيدت قراءة الملف من DSH.";
+}
+
+function accessActionButtonLabel(busy: boolean, shouldDisable: boolean): string {
+  if (busy) return "جارٍ التحديث…";
+  if (shouldDisable) return "إيقاف الوصول";
+  return "إعادة التفعيل";
+}
+
 export function FieldAdmissionPanel() {
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<ReadonlyArray<FieldWorkbenchItem>>([]);
@@ -81,7 +105,13 @@ export function FieldAdmissionPanel() {
       const params = new URLSearchParams({ scope: "workbench", limit: "25", q: query.trim() });
       if (cursor) params.set("cursor", cursor);
       const response = await identityFetch(`/api/fields?${params}`, { cache: "no-store" });
-      if (!response.ok) { const message = await responseMessage(response); if (loadRequestID.current === requestID) setError(message); return; }
+      if (!response.ok) {
+        const message = await responseMessage(response);
+        if (loadRequestID.current === requestID) {
+          setError(message);
+        }
+        return;
+      }
       const page = await response.json() as FieldPage;
       if (loadRequestID.current !== requestID) return;
       setItems((current) => append ? [...current, ...page.items] : page.items);
@@ -132,17 +162,11 @@ export function FieldAdmissionPanel() {
     window.history.replaceState(window.history.state, "", window.location.pathname + (params.size ? `?${params.toString()}` : ""));
   }
 
-  async function readWorkbench(currentQuery: string): Promise<FieldPage> {
-    const response = await identityFetch(readbackQuery(currentQuery, 50), { cache: "no-store" });
-    if (!response.ok) throw new Error(await responseMessage(response));
-    return await response.json() as FieldPage;
-  }
-
   async function createProfile() {
     const name = fullNameAr.trim();
     const contactPhoneE164 = toAsciiDigits(phone).replace(/\s+/g, "");
     const activeCity = serviceCities.find((city) => city.id === serviceCityId && city.active);
-    if (Array.from(name).length < 2 || Array.from(name).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(contactPhoneE164) || !activeCity) {
+    if (Array.from(name).length < 2 || Array.from(name).length > 120 || !/^\+[1-9]\d{7,14}$/.test(contactPhoneE164) || !activeCity) {
       setError("أدخل الاسم الكامل والهاتف الدولي واختر مدينة خدمة نشطة قبل حفظ الملف.");
       return;
     }
@@ -151,7 +175,7 @@ export function FieldAdmissionPanel() {
       const response = await identityFetch("/api/fields", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "admit", fullNameAr: name, contactPhoneE164, serviceCityId: activeCity.id }) });
       if (!response.ok) { setError(await responseMessage(response)); await load(); return; }
       const created = (await response.json() as AdmissionMutationResponse).admission;
-      if (!created || created.state !== "pending_review" || created.contactPhoneE164 !== contactPhoneE164 || created.fullNameAr !== name || created.serviceCityId !== activeCity.id) {
+      if (!created?.id || created.state !== "pending_review" || created.contactPhoneE164 !== contactPhoneE164 || created.fullNameAr !== name || created.serviceCityId !== activeCity.id) {
         setError("استجاب DSH للحفظ لكن سجل العملية لا يطابق الملف المطلوب. أعد القراءة قبل أي إجراء آخر."); await load(); return;
       }
       const page = await readWorkbench(contactPhoneE164);
@@ -177,8 +201,8 @@ export function FieldAdmissionPanel() {
       const response = await identityFetch("/api/fields", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (!response.ok) { const message = await responseMessage(response); await load(); setError(response.status === 409 || response.status === 412 ? `تغيرت حالة الملف بالتزامن. ${message}` : message); return; }
       const result = (await response.json() as AdmissionMutationResponse).admission;
-      const expectedState = action === "approve" ? "pending_identity" : action === "provision" ? "eligible" : admission.state;
-      if (!result || result.id !== admission.id || result.state !== expectedState || (action === "update-profile" && result.fullNameAr !== nextName)) { setError("استجاب DSH لكن حالة الملف المرجعة لا تطابق الخطوة المطلوبة."); await load(); return; }
+      const expectedState = expectedCandidateState(action, admission.state);
+      if (!result?.id || result.id !== admission.id || result.state !== expectedState || (action === "update-profile" && result.fullNameAr !== nextName)) { setError("استجاب DSH لكن حالة الملف المرجعة لا تطابق الخطوة المطلوبة."); await load(); return; }
       const page = await readWorkbench(admission.contactPhoneE164 ?? "");
       if (action === "provision") {
         if (!result.actorId || !page.items.some((item) => item.kind === "account" && item.account.actorId === result.actorId && item.account.admission?.id === admission.id && item.account.admission.state === "eligible")) { setError("مُنح الدور لكن إعادة القراءة لا تثبت ربط حساب Identity بأهلية DSH."); await load(); return; }
@@ -186,8 +210,8 @@ export function FieldAdmissionPanel() {
         setError("نُفذ الإجراء لكن إعادة القراءة لا تثبت حالة الملف المطلوبة."); await load(); return;
       }
       setCandidateEdits((current) => { const next = { ...current }; delete next[admission.id]; return next; });
-      setNotice(action === "approve" ? "اعتُمد الملف وأُعيدت قراءته؛ أصبح منح الدور خطوته التالية." : action === "provision" ? "مُنح الدور وأُعيدت قراءة ربط Identity وDSH." : "حُفظ الاسم وأُعيدت قراءة الملف من DSH.");
       await load();
+      setNotice(candidateMutationNotice(action));
     } catch (cause) { setError(fieldRequestError(cause, "تعذر إكمال الإجراء.")); await load(); }
     finally { setBusy(""); }
   }
@@ -198,7 +222,7 @@ export function FieldAdmissionPanel() {
     const fullNameAr = (profileEdits[field.actorId] ?? admission?.fullNameAr ?? "").trim();
     const needsReason = action === "activate" || action === "disable" || action === "reenroll";
     if (needsReason && (Array.from(reason).length < 5 || Array.from(reason).length > 500)) { setError("اكتب سببًا من 5 إلى 500 حرف قبل تنفيذ الإجراء."); return; }
-    if ((action === "update-profile" || action === "review-profile") && (!admission || admission.state !== "suspended" || !admission.requiresProfileReview)) { setError("هذا الملف لا يحتاج مراجعة حاليًا."); return; }
+    if ((action === "update-profile" || action === "review-profile") && (admission?.state !== "suspended" || !admission.requiresProfileReview)) { setError("هذا الملف لا يحتاج مراجعة حاليًا."); return; }
     if (action === "update-profile" && (Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120)) { setError("أدخل اسم العرض الكامل قبل الحفظ."); return; }
     if (action === "reenroll" && (admission?.state !== "eligible" || !field.enabled || field.activatedAt)) { setError("إعادة التسجيل تتطلب دورًا مفعّلًا وأهلية DSH سارية قبل التفعيل."); return; }
     setBusy(field.actorId); setError(""); setNotice("");
@@ -231,8 +255,8 @@ export function FieldAdmissionPanel() {
     <div className="field-workbench-pane">
       <div className="field-list-heading"><div><h3 id="field-roster-title">سجل الميدانيين</h3><p className="muted">كل شخص يظهر مرة واحدة، مع مرحلته والخطوة التالية.</p></div></div>
       <div className="workspace-toolbar"><label className="field-label" htmlFor="field-search">بحث بالاسم أو الهاتف<input id="field-search" value={query} onChange={(event) => updateQuery(event.target.value)} placeholder="ابحث في ملفات وحسابات الميدانيين" /></label><button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={() => void load()}>{loading ? "جارٍ التحديث…" : "إعادة القراءة"}</button></div>
-      {notice ? <p className="success-inline" role="status">{notice}</p> : null}{error ? <p className="identity-error" role="alert">{error}</p> : null}
-      {loading && items.length === 0 ? <p role="status">جارٍ قراءة سجل الميدانيين…</p> : null}
+      {notice ? <output className="success-inline">{notice}</output> : null}{error ? <p className="identity-error" role="alert">{error}</p> : null}
+       {loading && items.length === 0 ? <output>جارٍ قراءة سجل الميدانيين…</output> : null}
       {!loading && !error && items.length === 0 ? <div className="collection-state"><strong>{query ? "لا توجد نتائج مطابقة" : "لا توجد ملفات أو حسابات ميدانية"}</strong><p>{query ? "امسح البحث لعرض السجل كاملًا." : "أنشئ ملفًا جديدًا لبدء مسار الأهلية."}</p></div> : null}
       {items.length > 0 ? <div className="operations-table-wrap"><table className="operations-table"><thead><tr><th scope="col">الميداني</th><th scope="col">مرحلة الملف</th><th scope="col">حساب التطبيق</th><th scope="col">الإجراء</th></tr></thead><tbody>
         {items.map((item) => {
@@ -240,11 +264,13 @@ export function FieldAdmissionPanel() {
             const profile = item.admission;
             const name = candidateEdits[profile.id] ?? profile.fullNameAr ?? "";
             const changed = name.trim() !== (profile.fullNameAr ?? "");
+            const pendingReview = profile.state === "pending_review";
+            const pendingIdentity = profile.state === "pending_identity";
             return <tr key={`candidate:${profile.id}`}>
               <th scope="row"><strong>{profile.fullNameAr || "ملف بلا اسم مكتمل"}</strong><br /><bdi dir="ltr">{profile.contactPhoneE164 || "—"}</bdi><br /><span className="muted">مدينة الخدمة: {serviceCities.find((city) => city.id === profile.serviceCityId)?.displayNameAr ?? "غير محددة في الملف التاريخي"}</span></th>
               <td>{fieldAdmissionStateLabel(profile.state)}<br /><span className="muted">الإصدار {profile.version}</span></td>
               <td><span className="muted">لم يُنشأ الدور بعد</span></td>
-              <td><details className="field-row-disclosure"><summary className="button button-secondary">الخطوة التالية</summary><div className="field-row-actions">{profile.state === "pending_review" ? <><label className="field-label" htmlFor={`candidate-name-${profile.id}`}>اسم العرض<input id={`candidate-name-${profile.id}`} value={name} maxLength={120} disabled={Boolean(busy)} onChange={(event) => setCandidateEdits((current) => ({ ...current, [profile.id]: event.target.value }))} /></label><button type="button" className="button button-secondary" disabled={Boolean(busy) || !changed} onClick={() => void mutateCandidate(profile, "update-profile")}>حفظ الاسم</button><button type="button" className="button button-primary" disabled={Boolean(busy) || changed} onClick={() => void mutateCandidate(profile, "approve")}>{busy === profile.id ? "جارٍ الاعتماد…" : "اعتماد الملف"}</button></> : profile.state === "pending_identity" ? <button type="button" className="button button-primary" disabled={Boolean(busy)} onClick={() => void mutateCandidate(profile, "provision")}>{busy === profile.id ? "جارٍ منح الدور…" : "منح دور الميداني"}</button> : <span className="muted">لا توجد خطوة متاحة لهذه المرحلة.</span>}</div></details></td>
+              <td><details className="field-row-disclosure"><summary className="button button-secondary">الخطوة التالية</summary><div className="field-row-actions">{pendingReview ? <><label className="field-label" htmlFor={`candidate-name-${profile.id}`}>اسم العرض<input id={`candidate-name-${profile.id}`} value={name} maxLength={120} disabled={Boolean(busy)} onChange={(event) => setCandidateEdits((current) => ({ ...current, [profile.id]: event.target.value }))} /></label><button type="button" className="button button-secondary" disabled={Boolean(busy) || !changed} onClick={() => void mutateCandidate(profile, "update-profile")}>حفظ الاسم</button><button type="button" className="button button-primary" disabled={Boolean(busy) || changed} onClick={() => void mutateCandidate(profile, "approve")}>{busy === profile.id ? "جارٍ الاعتماد…" : "اعتماد الملف"}</button></> : null}{pendingIdentity ? <button type="button" className="button button-primary" disabled={Boolean(busy)} onClick={() => void mutateCandidate(profile, "provision")}>{busy === profile.id ? "جارٍ منح الدور…" : "منح دور الميداني"}</button> : null}{!pendingReview && !pendingIdentity ? <span className="muted">لا توجد خطوة متاحة لهذه المرحلة.</span> : null}</div></details></td>
             </tr>;
           }
           const field = item.account;
@@ -258,6 +284,8 @@ export function FieldAdmissionPanel() {
           const legacyReview = requiresProfileReview && admission?.state === "suspended";
           const fieldAcquisitionPage = acquisitionCases[field.actorId];
           const fieldAcquisitionBusy = acquisitionCaseBusy[field.actorId] ?? false;
+          const accessAction = shouldDisable ? "disable" : "activate";
+          const accessActionLabel = accessActionButtonLabel(busy === field.actorId, shouldDisable);
           return <tr key={`account:${field.actorId}`}>
             <th scope="row"><strong>{admission?.fullNameAr || "حساب بلا ملف اسم مكتمل"}</strong><br /><bdi dir="ltr">{field.phoneE164}</bdi></th>
             <td>{admissionStatusLabel(admission)}{admission ? <><br /><span className="muted">الإصدار {admission.version}</span></> : null}</td>
@@ -266,7 +294,7 @@ export function FieldAdmissionPanel() {
               {legacyReview ? <><label className="field-label" htmlFor={`field-profile-name-${field.actorId}`}>استكمال اسم العرض<input id={`field-profile-name-${field.actorId}`} value={name} maxLength={120} disabled={Boolean(busy)} onChange={(event) => setProfileEdits((current) => ({ ...current, [field.actorId]: event.target.value }))} /></label><button type="button" className="button button-secondary" disabled={Boolean(busy) || Array.from(name.trim()).length < 2 || name.trim() === (admission?.fullNameAr ?? "")} onClick={() => void mutateAccount(field, "update-profile")}>حفظ الاسم</button><button type="button" className="button button-primary" disabled={Boolean(busy) || !name.trim() || name.trim() !== (admission?.fullNameAr ?? "")} onClick={() => void mutateAccount(field, "review-profile")}>اعتماد مراجعة الملف</button></> : null}
               <label className="field-label" htmlFor={`field-reason-${field.actorId}`}>سبب الإجراء<input id={`field-reason-${field.actorId}`} maxLength={500} value={reason} onChange={(event) => setReasons((current) => ({ ...current, [field.actorId]: event.target.value }))} disabled={Boolean(busy)} /></label>
               {waitingForReenrollment ? <button type="button" className="button button-primary" disabled={Boolean(busy) || Array.from(reason.trim()).length < 5} onClick={() => void mutateAccount(field, "reenroll")}>{busy === field.actorId ? "جارٍ الإجازة…" : "إجازة إعادة التسجيل"}</button> : null}
-              {(field.activatedAt || shouldDisable) && (shouldDisable || !requiresProfileReview) ? <button type="button" className={shouldDisable ? "button button-secondary" : "button button-primary"} disabled={Boolean(busy) || Array.from(reason.trim()).length < 5} onClick={() => void mutateAccount(field, shouldDisable ? "disable" : "activate")}>{busy === field.actorId ? "جارٍ التحديث…" : shouldDisable ? "إيقاف الوصول" : "إعادة التفعيل"}</button> : null}
+              {(field.activatedAt || shouldDisable) && (shouldDisable || !requiresProfileReview) ? <button type="button" className={shouldDisable ? "button button-secondary" : "button button-primary"} disabled={Boolean(busy) || Array.from(reason.trim()).length < 5} onClick={() => void mutateAccount(field, accessAction)}>{accessActionLabel}</button> : null}
               {requiresProfileReview && !mustDisable && !field.enabled ? <span className="muted">أكمل مراجعة الملف قبل إعادة التفعيل.</span> : null}
               <a className="button button-secondary" href={`/finance/beneficiary-settlement/field?search=${encodeURIComponent(field.actorId)}`}>كشف المحفظة والحركات المالية</a>
             </div></details> : <span className="muted">راجع الأهلية قبل إتاحة العمل الميداني.</span>}
@@ -275,7 +303,7 @@ export function FieldAdmissionPanel() {
               }}>
                 <summary className="button button-secondary">الشركاء ورحلات الانضمام</summary>
                 <div className="field-row-actions">
-                  {fieldAcquisitionBusy && !fieldAcquisitionPage ? <span className="muted" role="status">جارٍ قراءة رحلات DSH…</span> : null}
+                   {fieldAcquisitionBusy && !fieldAcquisitionPage ? <output className="muted">جارٍ قراءة رحلات DSH…</output> : null}
                   {acquisitionCaseErrors[field.actorId] ? <><span className="identity-error" role="alert">{acquisitionCaseErrors[field.actorId]}</span><button type="button" className="button button-secondary" disabled={fieldAcquisitionBusy} onClick={() => void loadAcquisitionCases(field.actorId)}>إعادة المحاولة</button></> : null}
                   {fieldAcquisitionPage?.cases.map((partnerCase: FieldAcquisitionCase) => <div key={partnerCase.id} className="field-row-actions">
                     <strong>{partnerCase.businessName}</strong>

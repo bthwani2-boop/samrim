@@ -21,19 +21,19 @@ func TestFieldAcquisitionEntitlementIdempotencyIsPerJoiningCase(t *testing.T) {
 
 	otherCase := base
 	otherCase.JoiningCaseID = "joining-case-2"
-	if got := HashFinalizeFieldAcquisitionReward(otherCase); got == baseHash {
+	if HashFinalizeFieldAcquisitionReward(otherCase) == baseHash {
 		t.Fatal("a different partner acquisition shared the same idempotency hash")
 	}
 
 	otherField := base
 	otherField.FieldActorID = "field-2"
-	if got := HashFinalizeFieldAcquisitionReward(otherField); got == baseHash {
+	if HashFinalizeFieldAcquisitionReward(otherField) == baseHash {
 		t.Fatal("a different field owner shared the same idempotency hash")
 	}
 
 	otherType := base
 	otherType.CommercialStoreTypeID = "fish-shop"
-	if got := HashFinalizeFieldAcquisitionReward(otherType); got == baseHash {
+	if HashFinalizeFieldAcquisitionReward(otherType) == baseHash {
 		t.Fatal("a different commercial store type shared the same idempotency hash")
 	}
 }

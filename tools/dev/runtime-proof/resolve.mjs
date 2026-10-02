@@ -155,12 +155,15 @@ export function resolveChangedFileRuntime(changedFiles, repositoryCiRuntimeTarge
   return { mode: lanes.size > 0 ? "lanes" : "none", lanes: laneOrder.filter((lane) => lanes.has(lane)), reasons };
 }
 
-export function resolveFromAffected(affected, configs, fullRegression = false, changedFileRouting = { mode: "none", lanes: [], reasons: [] }) {
-  if (fullRegression) return buildResolution(affected, laneOrder, ["explicit-full-regression"]);
-  if (changedFileRouting.mode === "full") return buildResolution(affected, laneOrder, changedFileRouting.reasons ?? ["full-escalation:changed-file"]);
+const EMPTY_CHANGED_FILE_ROUTING = Object.freeze({ mode: "none", lanes: Object.freeze([]), reasons: Object.freeze([]) });
 
-  const lanes = new Set(changedFileRouting.lanes ?? []);
-  const reasons = [...(changedFileRouting.reasons ?? [])];
+export function resolveFromAffected(affected, configs, fullRegression = false, changedFileRouting = null) {
+  const routing = changedFileRouting ?? EMPTY_CHANGED_FILE_ROUTING;
+  if (fullRegression) return buildResolution(affected, laneOrder, ["explicit-full-regression"]);
+  if (routing.mode === "full") return buildResolution(affected, laneOrder, routing.reasons ?? ["full-escalation:changed-file"]);
+
+  const lanes = new Set(routing.lanes ?? []);
+  const reasons = [...(routing.reasons ?? [])];
   const unclassified = [];
 
   for (const name of affected) {

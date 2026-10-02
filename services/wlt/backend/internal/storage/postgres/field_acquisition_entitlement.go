@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+const advisoryTransactionLockSQL = "SELECT pg_advisory_xact_lock(hashtextextended($1,0))"
+
 var (
 	ErrFieldAcquisitionRewardPolicyInvalidInput = errors.New("field acquisition reward policy input is invalid")
 	ErrFieldAcquisitionRewardPolicyNotFound     = errors.New("field acquisition reward policy was not found")
@@ -105,10 +107,10 @@ func CreateFieldAcquisitionRewardPolicy(ctx context.Context, db *sql.DB, input C
 		return FieldAcquisitionRewardPolicyRecord{}, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:field-acquisition-reward-policy:idempotency:"+input.IdempotencyKey); err != nil {
+	if _, err := tx.ExecContext(ctx, advisoryTransactionLockSQL, "wlt:field-acquisition-reward-policy:idempotency:"+input.IdempotencyKey); err != nil {
 		return FieldAcquisitionRewardPolicyRecord{}, false, err
 	}
-	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:field-acquisition-reward-policy:scope:"+input.ScopeType+":"+input.ScopeID); err != nil {
+	if _, err := tx.ExecContext(ctx, advisoryTransactionLockSQL, "wlt:field-acquisition-reward-policy:scope:"+input.ScopeType+":"+input.ScopeID); err != nil {
 		return FieldAcquisitionRewardPolicyRecord{}, false, err
 	}
 	var existingHash, existingID string
@@ -226,7 +228,7 @@ func FinalizeFieldAcquisitionReward(ctx context.Context, db *sql.DB, input Final
 		return FieldAcquisitionEntitlementRecord{}, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:field-acquisition:joining-case:"+input.JoiningCaseID); err != nil {
+	if _, err := tx.ExecContext(ctx, advisoryTransactionLockSQL, "wlt:field-acquisition:joining-case:"+input.JoiningCaseID); err != nil {
 		return FieldAcquisitionEntitlementRecord{}, false, err
 	}
 	var existingHash, existingJoiningCase string

@@ -39,8 +39,8 @@ export function CatalogTaxonomyWorkspace() {
         const preferredId = current || requestedVerticalId;
         return shared.some((item) => item.id === preferredId) ? preferredId : shared.find((item) => item.active)?.id ?? "";
       });
-    } catch (value) {
-      setError(value instanceof Error ? value.message : "تعذر قراءة الفئات.");
+    } catch (error_) {
+      setError(error_ instanceof Error ? error_.message : "تعذر قراءة الفئات.");
     } finally {
       setLoadingVerticals(false);
     }
@@ -66,8 +66,8 @@ export function CatalogTaxonomyWorkspace() {
       if (requestId !== categoryLoadSequence.current) return;
       setCategories((current) => append ? [...current, ...body.categories] : body.categories);
       setNextCursor(body.nextCursor ?? "");
-    } catch (value) {
-      if (requestId === categoryLoadSequence.current) setError(value instanceof Error ? value.message : "تعذر قراءة الفئات.");
+    } catch (error_) {
+      if (requestId === categoryLoadSequence.current) setError(error_ instanceof Error ? error_.message : "تعذر قراءة الفئات.");
     } finally {
       if (!silent && requestId === categoryLoadSequence.current) setLoadingCategories(false);
     }
@@ -86,7 +86,7 @@ export function CatalogTaxonomyWorkspace() {
   }, []);
 
   useEffect(() => { void loadVerticals(); }, [loadVerticals]);
-  useEffect(() => { if (verticals.length) void loadRootCategoryImages(verticals).catch((value) => setError(value instanceof Error ? value.message : "تعذر تحميل صور المجالات.")); }, [verticals, loadRootCategoryImages]);
+  useEffect(() => { if (verticals.length) void loadRootCategoryImages(verticals).catch((error_) => setError(error_ instanceof Error ? error_.message : "تعذر تحميل صور المجالات.")); }, [verticals, loadRootCategoryImages]);
   useEffect(() => { void loadCategories(verticalId); }, [verticalId, loadCategories]);
 
   const sharedVerticals = verticals.filter((item) => item.catalogModel === "SHARED_CATALOG");

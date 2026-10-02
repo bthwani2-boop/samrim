@@ -10,6 +10,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
@@ -52,7 +53,7 @@ func (s *Service) Admit(ctx context.Context, fullNameAr, phone, serviceCityID, i
 		return postgres.FieldAdmission{}, false, err
 	}
 	hash := postgres.HashFieldAdmissionRequest(fullNameAr, phone, serviceCityID)
-	admission, _, replayed, err := postgres.CreateFieldAdmissionCandidate(ctx, s.db, fullNameAr, phone, serviceCityID, idempotencyKey, hash, actingActorID, correlationID)
+	admission, _, replayed, err := postgres.CreateFieldAdmissionCandidate(ctx, s.db, postgres.FieldAdmissionCandidateInput{FullNameAr: fullNameAr, Phone: phone, ServiceCityID: serviceCityID, IdempotencyKey: idempotencyKey, RequestHash: hash, ActingActorID: actingActorID, CorrelationID: correlationID})
 	if err != nil {
 		return postgres.FieldAdmission{}, false, err
 	}
@@ -294,17 +295,23 @@ func (s *Service) AuthorizeReenrollment(ctx context.Context, actorID, operatorAc
 	return lifecycle.Commit()
 }
 
-func (s *Service) CreateJoiningCase(ctx context.Context, accessToken, idempotencyKey, correlationID, phone, businessName, firstStoreName, serviceCityID, verticalID, commercialTypeID string, latitude, longitude float64, rawFulfillmentModes []string) (postgres.JoiningCaseResult, error) {
+func (s *Service) CreateJoiningCase(ctx context.Context, accessToken, idempotencyKey, correlationID string, input contract.CreateJoiningCaseRequest) (postgres.JoiningCaseResult, error) {
 	identity, err := s.requireEligibleField(ctx, accessToken)
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
-	phone = strings.TrimSpace(phone)
-	businessName = strings.TrimSpace(businessName)
-	firstStoreName = strings.TrimSpace(firstStoreName)
-	serviceCityID = strings.TrimSpace(serviceCityID)
-	verticalID = strings.TrimSpace(verticalID)
-	commercialTypeID = strings.TrimSpace(commercialTypeID)
+	phone := strings.TrimSpace(input.ContactPhoneE164)
+	businessName := strings.TrimSpace(input.BusinessName)
+	firstStoreName := strings.TrimSpace(input.FirstStoreName)
+	serviceCityID := strings.TrimSpace(input.ServiceCityID)
+	verticalID := strings.TrimSpace(input.FirstStoreVerticalID)
+	commercialTypeID := strings.TrimSpace(input.FirstStoreCommercialTypeID)
+	latitude := input.FirstStoreLatitude
+	longitude := input.FirstStoreLongitude
+	rawFulfillmentModes := make([]string, len(input.FirstStoreFulfillmentModes))
+	for index, mode := range input.FirstStoreFulfillmentModes {
+		rawFulfillmentModes[index] = string(mode)
+	}
 	fulfillmentModes, modesErr := postgres.NormalizeStoreFulfillmentModes(rawFulfillmentModes)
 	if modesErr != nil {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
@@ -312,7 +319,8 @@ func (s *Service) CreateJoiningCase(ctx context.Context, accessToken, idempotenc
 	if !phoneE164Pattern.MatchString(phone) || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || serviceCityID == "" || verticalID == "" || commercialTypeID == "" || math.IsNaN(latitude) || math.IsInf(latitude, 0) || math.IsNaN(longitude) || math.IsInf(longitude, 0) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180 || strings.TrimSpace(idempotencyKey) == "" || len(strings.TrimSpace(correlationID)) < 8 {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
-	return postgres.CreateJoiningCaseForField(ctx, s.db, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseFieldRequest(identity.Subject, phone, businessName, firstStoreName, serviceCityID, verticalID, commercialTypeID, latitude, longitude, fulfillmentModes), identity.Subject, strings.TrimSpace(correlationID), phone, businessName, firstStoreName, serviceCityID, verticalID, commercialTypeID, latitude, longitude, fulfillmentModes)
+	request := postgres.JoiningCaseRequest{Phone: phone, BusinessName: businessName, FirstStoreName: firstStoreName, ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: commercialTypeID, Latitude: latitude, Longitude: longitude, FulfillmentModes: fulfillmentModes}
+	return postgres.CreateJoiningCaseForField(ctx, s.db, postgres.CreateJoiningCaseInput{IdempotencyKey: strings.TrimSpace(idempotencyKey), RequestHash: postgres.HashJoiningCaseFieldRequest(identity.Subject, request), ActingActorID: identity.Subject, CorrelationID: strings.TrimSpace(correlationID), Request: request})
 }
 
 func (s *Service) ListJoiningCases(ctx context.Context, accessToken, queryText string, limit int, cursor string) (postgres.JoiningCaseListResult, error) {

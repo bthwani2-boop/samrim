@@ -73,15 +73,24 @@ func HashFieldAccessRequest(actorID string, enabled bool, expectedVersion int) s
 	return hashFacts("field-access", strings.TrimSpace(actorID), strconv.FormatBool(enabled), strconv.Itoa(expectedVersion))
 }
 
-func HashJoiningCaseFieldRequest(fieldActorID, phone, businessName, firstStoreName, serviceCityID, verticalID, commercialTypeID string, latitude, longitude float64, fulfillmentModes []string) string {
-	return hashFacts("field-joining-case", strings.TrimSpace(fieldActorID), strings.TrimSpace(phone), strings.TrimSpace(businessName), strings.TrimSpace(firstStoreName), strings.TrimSpace(serviceCityID), strings.TrimSpace(verticalID), strings.TrimSpace(commercialTypeID), fmt.Sprintf("%.6f", latitude), fmt.Sprintf("%.6f", longitude), strings.Join(fulfillmentModes, ","))
+func HashJoiningCaseFieldRequest(fieldActorID string, input JoiningCaseRequest) string {
+	return hashFacts("field-joining-case", strings.TrimSpace(fieldActorID), strings.TrimSpace(input.Phone), strings.TrimSpace(input.BusinessName), strings.TrimSpace(input.FirstStoreName), strings.TrimSpace(input.ServiceCityID), strings.TrimSpace(input.VerticalID), strings.TrimSpace(input.CommercialTypeID), fmt.Sprintf("%.6f", input.Latitude), fmt.Sprintf("%.6f", input.Longitude), strings.Join(input.FulfillmentModes, ","))
 }
 
-func CreateFieldAdmissionCandidate(ctx context.Context, db *sql.DB, fullNameAr, phone, serviceCityID, idempotencyKey, requestHash, actingActorID, correlationID string) (FieldAdmission, string, bool, error) {
-	fullNameAr = strings.TrimSpace(fullNameAr)
-	phone = strings.TrimSpace(phone)
-	serviceCityID = strings.TrimSpace(serviceCityID)
-	idempotencyKey = strings.TrimSpace(idempotencyKey)
+type FieldAdmissionCandidateInput struct {
+	FullNameAr, Phone, ServiceCityID string
+	IdempotencyKey, RequestHash      string
+	ActingActorID, CorrelationID     string
+}
+
+func CreateFieldAdmissionCandidate(ctx context.Context, db *sql.DB, input FieldAdmissionCandidateInput) (FieldAdmission, string, bool, error) {
+	fullNameAr := strings.TrimSpace(input.FullNameAr)
+	phone := strings.TrimSpace(input.Phone)
+	serviceCityID := strings.TrimSpace(input.ServiceCityID)
+	idempotencyKey := strings.TrimSpace(input.IdempotencyKey)
+	requestHash := input.RequestHash
+	actingActorID := input.ActingActorID
+	correlationID := input.CorrelationID
 	if db == nil || len([]rune(fullNameAr)) < 2 || len([]rune(fullNameAr)) > 120 || phone == "" || serviceCityID == "" || idempotencyKey == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
 		return FieldAdmission{}, "", false, ErrFieldAdmissionConflict
 	}

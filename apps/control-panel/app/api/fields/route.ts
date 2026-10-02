@@ -96,7 +96,7 @@ export async function POST(request: Request) {
   if (!body || Object.keys(body).some((key) => !["action", "fullNameAr", "contactPhoneE164", "serviceCityId"].includes(key))) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "Field creation accepts only fullNameAr, contactPhoneE164, and serviceCityId" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
   const contactPhoneE164 = typeof body?.contactPhoneE164 === "string" ? body.contactPhoneE164.trim() : "";
   const serviceCityId = typeof body?.serviceCityId === "string" ? body.serviceCityId.trim() : "";
-  if (Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(contactPhoneE164) || !serviceCityId || serviceCityId.length > 128) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "full Arabic name, valid E.164 phone, and service city are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
+  if (Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120 || !/^\+[1-9]\d{7,14}$/.test(contactPhoneE164) || !serviceCityId || serviceCityId.length > 128) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "full Arabic name, valid E.164 phone, and service city are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
   try {
     const result = await admitField({ fullNameAr, contactPhoneE164, serviceCityId }, context);
     return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
@@ -133,8 +133,7 @@ export async function GET(request: Request) {
         const candidates = await listFieldAdmissions(query, "pending", "created_desc", limit, workbenchCursor?.sourceCursor ?? "", { operatorActorId: identity.subject });
         items.push(...candidates.admissions.map((admission) => ({ kind: "candidate" as const, admission })));
         if (candidates.nextCursor) return NextResponse.json({ items, nextCursor: encodeWorkbenchCursor({ version: 1, phase: "candidates", sourceCursor: candidates.nextCursor }) }, { headers: { "Cache-Control": "no-store" } });
-        if (items.length < limit) accountsCursor = "";
-        else {
+        if (items.length >= limit) {
           const firstAccount = await searchIdentityRoles("field", query, 1, "", enabled ?? undefined, sort);
           return NextResponse.json({ items, nextCursor: firstAccount.items.length ? encodeWorkbenchCursor({ version: 1, phase: "accounts", sourceCursor: "" }) : undefined }, { headers: { "Cache-Control": "no-store" } });
         }

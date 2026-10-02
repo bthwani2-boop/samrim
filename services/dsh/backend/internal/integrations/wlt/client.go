@@ -192,6 +192,39 @@ type PartnerFinancialProfile struct {
 	UpdatedAt          string  `json:"updatedAt"`
 }
 
+type PreparePartnerFinancialProfileInput struct {
+	JoiningCaseID      string
+	PartnerActorID     string
+	Origin             string
+	SettlementPeriod   string
+	TermsPolicyVersion string
+	IdempotencyKey     string
+	CorrelationID      string
+}
+
+type CreateFieldAcquisitionRewardPolicyInput struct {
+	ScopeType         string
+	ScopeID           string
+	RewardMinor       int64
+	RoundingUnitMinor int64
+	ExpectedVersion   int
+	Reason            string
+	IdempotencyKey    string
+	CorrelationID     string
+	ActingActorID     string
+}
+
+type FinalizeFieldAcquisitionRewardInput struct {
+	JoiningCaseID         string
+	StoreID               string
+	PartnerActorID        string
+	FieldActorID          string
+	VerticalID            string
+	CommercialStoreTypeID string
+	IdempotencyKey        string
+	CorrelationID         string
+}
+
 type PartnerOrderEarning struct {
 	OrderID                         string `json:"orderId"`
 	PaymentIntentID                 string `json:"paymentIntentId"`
@@ -1115,16 +1148,16 @@ func (c *Client) transitionCaptainCOD(ctx context.Context, operation, orderID, p
 	return response.Reservation, response.IdempotentReplay, err
 }
 
-func (c *Client) PreparePartnerFinancialProfile(ctx context.Context, joiningCaseID, partnerActorID, origin, settlementPeriod, termsPolicyVersion, idempotencyKey, correlationID string) (PartnerFinancialProfile, bool, error) {
+func (c *Client) PreparePartnerFinancialProfile(ctx context.Context, input PreparePartnerFinancialProfileInput) (PartnerFinancialProfile, bool, error) {
 	body := map[string]any{
-		"joiningCaseId":      joiningCaseID,
-		"partnerActorId":     partnerActorID,
-		"origin":             origin,
-		"settlementPeriod":   settlementPeriod,
-		"termsPolicyVersion": termsPolicyVersion,
+		"joiningCaseId":      input.JoiningCaseID,
+		"partnerActorId":     input.PartnerActorID,
+		"origin":             input.Origin,
+		"settlementPeriod":   input.SettlementPeriod,
+		"termsPolicyVersion": input.TermsPolicyVersion,
 	}
 	var response partnerFinancialProfileResponse
-	err := c.request(ctx, http.MethodPost, "/wlt/v1/partner-financial-profiles", body, idempotencyKey, correlationID, 0, &response)
+	err := c.request(ctx, http.MethodPost, "/wlt/v1/partner-financial-profiles", body, input.IdempotencyKey, input.CorrelationID, 0, &response)
 	return response.Profile, response.IdempotentReplay, err
 }
 
@@ -1186,10 +1219,10 @@ func (c *Client) ListPartnerCommissionReceivables(ctx context.Context, actingAct
 	return response, err
 }
 
-func (c *Client) CreateFieldAcquisitionRewardPolicy(ctx context.Context, scopeType, scopeID string, rewardMinor, roundingUnitMinor int64, expectedVersion int, reason, idempotencyKey, correlationID, actingActorID string) (FieldAcquisitionRewardPolicy, bool, error) {
-	body := map[string]any{"scopeType": strings.TrimSpace(scopeType), "scopeId": strings.TrimSpace(scopeID), "rewardMinor": rewardMinor, "roundingUnitMinor": roundingUnitMinor, "expectedVersion": expectedVersion, "reason": strings.TrimSpace(reason)}
+func (c *Client) CreateFieldAcquisitionRewardPolicy(ctx context.Context, input CreateFieldAcquisitionRewardPolicyInput) (FieldAcquisitionRewardPolicy, bool, error) {
+	body := map[string]any{"scopeType": strings.TrimSpace(input.ScopeType), "scopeId": strings.TrimSpace(input.ScopeID), "rewardMinor": input.RewardMinor, "roundingUnitMinor": input.RoundingUnitMinor, "expectedVersion": input.ExpectedVersion, "reason": strings.TrimSpace(input.Reason)}
 	var response fieldAcquisitionRewardPolicyResponse
-	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/field-acquisition-reward-policies", body, idempotencyKey, correlationID, 0, actingActorID, &response)
+	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/field-acquisition-reward-policies", body, input.IdempotencyKey, input.CorrelationID, 0, input.ActingActorID, &response)
 	return response.Policy, response.IdempotentReplay, err
 }
 
@@ -1202,10 +1235,10 @@ func (c *Client) ReadFieldAcquisitionRewardPolicyByScope(ctx context.Context, sc
 	return response.Policy, err
 }
 
-func (c *Client) FinalizeFieldAcquisitionReward(ctx context.Context, joiningCaseID, storeID, partnerActorID, fieldActorID, verticalID, commercialStoreTypeID, idempotencyKey, correlationID string) (FieldAcquisitionEntitlement, bool, error) {
-	body := map[string]any{"joiningCaseId": strings.TrimSpace(joiningCaseID), "storeId": strings.TrimSpace(storeID), "partnerActorId": strings.TrimSpace(partnerActorID), "fieldActorId": strings.TrimSpace(fieldActorID), "verticalId": strings.TrimSpace(verticalID), "commercialStoreTypeId": strings.TrimSpace(commercialStoreTypeID)}
+func (c *Client) FinalizeFieldAcquisitionReward(ctx context.Context, input FinalizeFieldAcquisitionRewardInput) (FieldAcquisitionEntitlement, bool, error) {
+	body := map[string]any{"joiningCaseId": strings.TrimSpace(input.JoiningCaseID), "storeId": strings.TrimSpace(input.StoreID), "partnerActorId": strings.TrimSpace(input.PartnerActorID), "fieldActorId": strings.TrimSpace(input.FieldActorID), "verticalId": strings.TrimSpace(input.VerticalID), "commercialStoreTypeId": strings.TrimSpace(input.CommercialStoreTypeID)}
 	var response fieldAcquisitionEntitlementResponse
-	err := c.request(ctx, http.MethodPost, "/wlt/v1/field-acquisition-entitlements/finalize", body, idempotencyKey, correlationID, 0, &response)
+	err := c.request(ctx, http.MethodPost, "/wlt/v1/field-acquisition-entitlements/finalize", body, input.IdempotencyKey, input.CorrelationID, 0, &response)
 	return response.Entitlement, response.IdempotentReplay, err
 }
 

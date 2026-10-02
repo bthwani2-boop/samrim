@@ -27,6 +27,12 @@ type PendingJoiningCaseCreate = Readonly<{
   correlationId: string;
 }>;
 
+function commercialTypePrompt(verticalId: string, loading: boolean): string {
+  if (!verticalId) return "اختر الفئة الرئيسية أولاً";
+  if (loading) return "جارٍ تحميل الأنواع…";
+  return "اختر نوع المتجر";
+}
+
 function toggleFulfillmentMode(current: JoiningCaseCreateInput["firstStoreFulfillmentModes"], mode: JoiningCaseCreateInput["firstStoreFulfillmentModes"][number], checked: boolean) {
   if (checked) return current.includes(mode) ? current : [...current, mode];
   return current.filter((item) => item !== mode);
@@ -235,6 +241,8 @@ export function JoiningCaseCreate() {
   const activeCities = cities.filter((city) => city.active);
   const activeVerticals = verticals.filter((vertical) => vertical.active);
   const activeCommercialTypes = commercialTypes.filter((item) => item.active && item.verticalId === verticalId);
+  const commercialTypePlaceholder = commercialTypePrompt(verticalId, commercialTypesBusy);
+  const hasNoActiveCommercialTypes = Boolean(verticalId && !commercialTypesBusy && !commercialTypesError && activeCommercialTypes.length === 0);
   return (
     <section className="access-card" aria-labelledby="joining-case-create-title">
       <div className="access-card-heading">
@@ -253,7 +261,7 @@ export function JoiningCaseCreate() {
         <label className="field-label" htmlFor="joining-store">اسم المتجر الأول<input id="joining-store" disabled={busy || optionsBusy || Boolean(pendingAttempt) || !attemptReady} value={storeName} onChange={(event) => setStoreName(event.target.value)} /></label>
         <label className="field-label" htmlFor="joining-city">مدينة المتجر الأول<select id="joining-city" disabled={busy || optionsBusy || Boolean(optionsError) || Boolean(pendingAttempt) || !attemptReady} value={serviceCityId} onChange={(event) => setServiceCityId(event.target.value)}><option value="">اختر مدينة نشطة</option>{activeCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
         <label className="field-label" htmlFor="joining-vertical">الفئة الرئيسية<select id="joining-vertical" disabled={busy || optionsBusy || Boolean(optionsError) || Boolean(pendingAttempt) || !attemptReady} value={verticalId} onChange={(event) => setVerticalId(event.target.value)}><option value="">اختر الفئة الرئيسية</option>{activeVerticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}</option>)}</select></label>
-        <label className="field-label" htmlFor="joining-commercial-type">نوع المتجر التجاري<select id="joining-commercial-type" disabled={busy || optionsBusy || commercialTypesBusy || !verticalId || Boolean(commercialTypesError) || Boolean(pendingAttempt) || !attemptReady} value={commercialTypeId} onChange={(event) => setCommercialTypeId(event.target.value)}><option value="">{!verticalId ? "اختر الفئة الرئيسية أولاً" : commercialTypesBusy ? "جارٍ تحميل الأنواع…" : "اختر نوع المتجر"}</option>{activeCommercialTypes.map((item) => <option key={item.id} value={item.id}>{item.nameAr}</option>)}</select>{commercialTypesError ? <span className="identity-error" role="alert">{commercialTypesError}</span> : verticalId && !commercialTypesBusy && !commercialTypesError && activeCommercialTypes.length === 0 ? <span className="muted">لا توجد أنواع نشطة لهذه الفئة. أضف النوع من سجل أنواع المتاجر قبل إنشاء الحالة.</span> : null}</label>
+         <label className="field-label" htmlFor="joining-commercial-type">نوع المتجر التجاري<select id="joining-commercial-type" disabled={busy || optionsBusy || commercialTypesBusy || !verticalId || Boolean(commercialTypesError) || Boolean(pendingAttempt) || !attemptReady} value={commercialTypeId} onChange={(event) => setCommercialTypeId(event.target.value)}><option value="">{commercialTypePlaceholder}</option>{activeCommercialTypes.map((item) => <option key={item.id} value={item.id}>{item.nameAr}</option>)}</select>{commercialTypesError ? <span className="identity-error" role="alert">{commercialTypesError}</span> : null}{hasNoActiveCommercialTypes ? <span className="muted">لا توجد أنواع نشطة لهذه الفئة. أضف النوع من سجل أنواع المتاجر قبل إنشاء الحالة.</span> : null}</label>
         <label className="field-label" htmlFor="joining-latitude">خط عرض موقع المتجر<input id="joining-latitude" disabled={busy || optionsBusy || Boolean(pendingAttempt) || !attemptReady} inputMode="decimal" value={latitude} onChange={(event) => setLatitude(toAsciiDigits(event.target.value))} placeholder="مثال: 15.369445" /></label>
         <label className="field-label" htmlFor="joining-longitude">خط طول موقع المتجر<input id="joining-longitude" disabled={busy || optionsBusy || Boolean(pendingAttempt) || !attemptReady} inputMode="decimal" value={longitude} onChange={(event) => setLongitude(toAsciiDigits(event.target.value))} placeholder="مثال: 44.191006" /></label>
         <fieldset className="field-label" disabled={busy || optionsBusy || Boolean(pendingAttempt) || !attemptReady}>

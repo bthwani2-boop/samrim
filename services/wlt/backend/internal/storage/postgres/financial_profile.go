@@ -113,7 +113,7 @@ func PreparePartnerFinancialProfile(ctx context.Context, db *sql.DB, input Prepa
 	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.partner_financial_profiles(id,joining_case_id,partner_actor_id,origin,settlement_period,idempotency_key,request_hash,terms_policy_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, profileID, input.JoiningCaseID, input.PartnerActorID, input.Origin, input.SettlementPeriod, input.IdempotencyKey, requestHash, input.TermsPolicyVersion); err != nil {
 		return PartnerFinancialProfileRecord{}, false, err
 	}
-	if err := insertFinancialProfileEvent(ctx, tx, profileID, "PROFILE_PREPARED", input.IdempotencyKey, requestHash, input.CorrelationID, nil, "", domain.ProfilePendingBinding, 1, input.SettlementPeriod, input.TermsPolicyVersion); err != nil {
+	if err := insertFinancialProfileEvent(ctx, tx, financialProfileEventInput{profileID: profileID, eventType: "PROFILE_PREPARED", idempotencyKey: input.IdempotencyKey, requestHash: requestHash, correlationID: input.CorrelationID, toState: domain.ProfilePendingBinding, version: 1, settlementPeriod: input.SettlementPeriod, termsPolicyVersion: input.TermsPolicyVersion}); err != nil {
 		return PartnerFinancialProfileRecord{}, false, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -176,7 +176,7 @@ func ActivatePartnerFinancialProfile(ctx context.Context, db *sql.DB, input Acti
 	if _, err := tx.ExecContext(ctx, `UPDATE wlt.partner_financial_profiles SET state=$2,version=version+1,activated_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1 AND version=$3`, input.ProfileID, domain.ProfileActive, input.ExpectedVersion); err != nil {
 		return PartnerFinancialProfileRecord{}, false, err
 	}
-	if err := insertFinancialProfileEvent(ctx, tx, input.ProfileID, "PROFILE_ACTIVATED", input.IdempotencyKey, requestHash, input.CorrelationID, &input.ActorID, current.State, domain.ProfileActive, current.Version+1, current.SettlementPeriod, current.TermsPolicyVersion); err != nil {
+	if err := insertFinancialProfileEvent(ctx, tx, financialProfileEventInput{profileID: input.ProfileID, eventType: "PROFILE_ACTIVATED", idempotencyKey: input.IdempotencyKey, requestHash: requestHash, correlationID: input.CorrelationID, actorID: &input.ActorID, fromState: current.State, toState: domain.ProfileActive, version: current.Version + 1, settlementPeriod: current.SettlementPeriod, termsPolicyVersion: current.TermsPolicyVersion}); err != nil {
 		return PartnerFinancialProfileRecord{}, false, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -217,7 +217,15 @@ func scanPartnerFinancialProfile(row rowScanner, profile *PartnerFinancialProfil
 	return nil
 }
 
-func insertFinancialProfileEvent(ctx context.Context, tx *sql.Tx, profileID, eventType, idempotencyKey, requestHash, correlationID string, actorID *string, fromState, toState string, version int, settlementPeriod, termsPolicyVersion string) error {
-	_, err := tx.ExecContext(ctx, `INSERT INTO wlt.partner_financial_profile_events(profile_id,event_type,idempotency_key,request_hash,correlation_id,actor_id,from_state,to_state,version,settlement_period,terms_policy_version) VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,''),$8,$9,$10,$11)`, profileID, eventType, idempotencyKey, requestHash, correlationID, actorID, fromState, toState, version, settlementPeriod, termsPolicyVersion)
+type financialProfileEventInput struct {
+	profileID, eventType, idempotencyKey, requestHash, correlationID string
+	actorID                                                          *string
+	fromState, toState                                               string
+	version                                                          int
+	settlementPeriod, termsPolicyVersion                             string
+}
+
+func insertFinancialProfileEvent(ctx context.Context, tx *sql.Tx, input financialProfileEventInput) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO wlt.partner_financial_profile_events(profile_id,event_type,idempotency_key,request_hash,correlation_id,actor_id,from_state,to_state,version,settlement_period,terms_policy_version) VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,''),$8,$9,$10,$11)`, input.profileID, input.eventType, input.idempotencyKey, input.requestHash, input.correlationID, input.actorID, input.fromState, input.toState, input.version, input.settlementPeriod, input.termsPolicyVersion)
 	return err
 }

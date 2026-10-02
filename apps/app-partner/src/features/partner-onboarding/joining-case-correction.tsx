@@ -90,7 +90,7 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
     setBusy(true);
     setError("");
     try {
-      const resubmitted = await correctAndResubmitOwnJoiningCase(current.id, nextBusinessName, nextStoreName, serviceCityId, verticalId, commercialTypeId, latitude, longitude, current.version);
+      const resubmitted = await correctAndResubmitOwnJoiningCase({ caseID: current.id, businessName: nextBusinessName, firstStoreName: nextStoreName, serviceCityId, firstStoreVerticalId: verticalId, firstStoreCommercialTypeId: commercialTypeId, firstStoreLatitude: latitude, firstStoreLongitude: longitude, expectedVersion: current.version });
       onUpdated(resubmitted);
     } catch (nextError) {
       try {

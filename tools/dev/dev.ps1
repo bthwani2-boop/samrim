@@ -209,7 +209,7 @@ function Ensure-Backend {
     if ((Test-BackendReady $states) -and (Test-BackendInputStateEqual $previousState $currentState)) {
         $runningImages = Read-RunningBackendImages $states
         if (Test-BackendImageStateEqual $previousState $runningImages) {
-            Write-Host 'BACKEND_REUSE=PASS state=healthy inputs=unchanged images=verified'
+            Write-Output 'BACKEND_REUSE=PASS state=healthy inputs=unchanged images=verified'
             return
         }
     }
@@ -226,7 +226,7 @@ function Ensure-Backend {
             }
         }
         if ($buildServices.Count -gt 0) {
-            Write-Host "BACKEND_BUILD_REQUIRED services=$($buildServices -join ',')"
+            Write-Output "BACKEND_BUILD_REQUIRED services=$($buildServices -join ',')"
             Compose (@('build') + $buildServices.ToArray())
         }
         Compose @('up', '-d', '--no-build', '--wait', '--wait-timeout', '300', '--remove-orphans')
@@ -236,7 +236,7 @@ function Ensure-Backend {
     if (-not (Test-BackendReady $states)) { Fail 'BACKEND_NOT_READY after=reconcile' }
     $currentState['images'] = Read-RunningBackendImages $states
     Write-BackendInputState $currentState
-    Write-Host 'BACKEND_RECONCILE=PASS state=healthy inputs=current images=recorded'
+    Write-Output 'BACKEND_RECONCILE=PASS state=healthy inputs=current images=recorded'
 }
 
 function Stop-RepositoryHosts {

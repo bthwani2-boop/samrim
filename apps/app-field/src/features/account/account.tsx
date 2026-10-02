@@ -18,6 +18,15 @@ const actions: ReadonlyArray<Readonly<{
   { description: "راجع مكافآت الميدان", icon: "wallet", label: "محفظة الميداني", route: "/wallet" as Href },
 ];
 
+type OwnAdmissionState = ReturnType<typeof useOwnFieldAdmission>["state"];
+
+function profileDescription(state: OwnAdmissionState, phone?: string | null): string {
+  if (state.kind === "loading") return "جارٍ قراءة الملف…";
+  if (state.kind === "missing") return "لا يوجد سجل أهلية ميدانية لهذا الحساب في DSH. تواصل مع المشغّل لإكمال إجراءات التسجيل.";
+  if (state.kind === "error") return "تعذر قراءة الملف الآن؛ أعد المحاولة عند توفر الاتصال.";
+  return phone || "رقم الهاتف غير متاح";
+}
+
 export default function FieldAccount() {
   const router = useRouter();
   const theme = useAppearanceTheme();
@@ -54,7 +63,7 @@ export default function FieldAccount() {
         </View>
         <View style={styles.profileCopy}>
           <Text style={styles.profileTitle}>{profile?.fullNameAr || "ملف الميداني"}</Text>
-          <Text style={styles.profileDescription}>{profileState.kind === "loading" ? "جارٍ قراءة الملف…" : profileState.kind === "missing" ? "لا يوجد سجل أهلية ميدانية لهذا الحساب في DSH. تواصل مع المشغّل لإكمال إجراءات التسجيل." : profileState.kind === "error" ? "تعذر قراءة الملف الآن؛ أعد المحاولة عند توفر الاتصال." : profile?.contactPhoneE164 || "رقم الهاتف غير متاح"}</Text>
+          <Text style={styles.profileDescription}>{profileDescription(profileState, profile?.contactPhoneE164)}</Text>
           {profileState.kind === "ready" && profile ? <Text style={styles.profileDescription}>حالة الأهلية: {fieldAdmissionStateLabel(profile.state)}</Text> : null}
         </View>
       </BthwaniSurface>

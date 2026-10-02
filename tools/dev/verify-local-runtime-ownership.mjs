@@ -26,7 +26,8 @@ const liveFinanceSpec=read("apps/control-panel/tests/finance-runtime.spec.ts");
 const liveDshOperatorSpec=read("apps/control-panel/tests/zz-dsh-operator.spec.ts");
 const check=(ok,msg)=>{if(!ok)fail.push(msg)};
 const cleanupPatternSources=[...hostCleanup.matchAll(/^\s*"\(\?i\)([^"]+)"[,]?$/gm)].map((match)=>match[1]);
-const escapedAppsRoot=path.join(root,"apps").replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+const regexMetaCharacters=new Set([".","*","+","?","^","$","{","}","(",")","|","[","]",String.fromCharCode(92)]);
+const escapedAppsRoot=[...path.join(root,"apps")].map((character)=>regexMetaCharacters.has(character)?String.fromCharCode(92)+character:character).join("");
 const ownedSurfaceMatches=(command)=>cleanupPatternSources.some((source)=>new RegExp(source.replace("$appsRoot",escapedAppsRoot),"i").test(command));
 
 const ps=spawnSync(resolveTrustedExecutable("pwsh"),["-NoProfile","-Command",

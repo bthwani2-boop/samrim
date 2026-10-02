@@ -152,7 +152,7 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
       }
       const result = await response.json() as SetStoreCommercialTypeResponse;
       const readback = await readStore(false);
-      if (!readback || readback.store.commercialStoreTypeId !== result.commercialStoreTypeId) {
+      if (readback?.store.commercialStoreTypeId !== result.commercialStoreTypeId) {
         setError("تم إرسال التغيير لكن قراءة DSH لم تطابق النوع التجاري؛ راجع الحالة قبل إعادة المحاولة.");
         return;
       }
@@ -176,9 +176,9 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
         <Link className="button button-secondary" href="/partners/stores">العودة إلى سجل المتاجر</Link>
       </div>
 
-      {loading ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة الملف الكانوني من DSH</strong></div> : null}
+      {loading ? <output className="collection-state"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة الملف الكانوني من DSH</strong></output> : null}
       {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر إكمال العملية</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readStore()}>إعادة قراءة المتجر</button></div> : null}
-      {notice ? <p className="managed-status managed-status-success" role="status">{notice}</p> : null}
+      {notice ? <output className="managed-status managed-status-success">{notice}</output> : null}
 
       {store ? <>
         <section className="store-detail-section" aria-labelledby="store-detail-context-title">
@@ -218,8 +218,8 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
         <section className="store-detail-section" aria-labelledby="store-commercial-type-title">
           <div className="store-detail-heading"><div><p className="eyebrow">الهوية التجارية والسياسات</p><h2 id="store-commercial-type-title">نوع المتجر التجاري</h2></div></div>
           <p className="muted">هذا التصنيف التجاري يحدد سياسة عمولة المنصة لهذا المتجر. لا يغيّر فئة منتجات الكتالوج.</p>
-          {store.commercialStoreTypeId ? <p className="managed-status managed-status-info" role="status">{commercialTypes.find((item) => item.id === store.commercialStoreTypeId)?.nameAr ?? store.commercialStoreTypeId} · التعيين مثبت في DSH. تؤخذ العمولة من سياسة هذا النوع ووضع الطلب عند إنشاء المعاملة.</p> : <>
-            <label className="field-label" htmlFor="store-commercial-type">اختر نوعًا تجاريًا نشطًا
+           {store.commercialStoreTypeId ? <output className="managed-status managed-status-info">{commercialTypes.find((item) => item.id === store.commercialStoreTypeId)?.nameAr ?? store.commercialStoreTypeId} · التعيين مثبت في DSH. تؤخذ العمولة من سياسة هذا النوع ووضع الطلب عند إنشاء المعاملة.</output> : <>
+            <label className="field-label" htmlFor="store-commercial-type"><span>اختر نوعًا تجاريًا نشطًا</span>
               <select id="store-commercial-type" value={selectedCommercialTypeID} onChange={(event) => setSelectedCommercialTypeID(event.target.value)} disabled={busy || loading || !store.primaryVerticalId}>
                 <option value="">اختر نوع المتجر</option>
                 {commercialTypes.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.nameAr}</option>)}
@@ -227,7 +227,7 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
             </label>
             <label className="field-label" htmlFor="store-commercial-type-reason">سبب التعيين<textarea id="store-commercial-type-reason" value={commercialTypeReason} onChange={(event) => setCommercialTypeReason(event.target.value)} minLength={5} maxLength={500} rows={2} disabled={busy || loading} /></label>
             <div className="button-row"><button type="button" className="button button-primary" disabled={busy || loading || !selectedCommercialTypeID || commercialTypeReason.trim().length < 5} onClick={() => void saveCommercialType()}>{busy ? "جارٍ الحفظ…" : "تعيين نوع المتجر"}</button><button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => { setSelectedCommercialTypeID(""); setCommercialTypeReason(""); }}>إلغاء التغييرات</button></div>
-            <p className="managed-status managed-status-warning" role="status">لا تُحتسب العمولة أو استحقاق الميداني لهذا المتجر قبل تثبيت نوعه التجاري وتفعيل السياسة المناسبة لهذا النوع.</p>
+             <output className="managed-status managed-status-warning">لا تُحتسب العمولة أو استحقاق الميداني لهذا المتجر قبل تثبيت نوعه التجاري وتفعيل السياسة المناسبة لهذا النوع.</output>
           </>}
         </section>
 

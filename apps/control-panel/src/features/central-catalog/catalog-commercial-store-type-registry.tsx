@@ -6,6 +6,12 @@ import { useSession } from "../../session/session-provider";
 
 type TypeListResponse = Readonly<{ storeTypes: ReadonlyArray<CommercialStoreType> }>;
 
+function saveActionLabel(busy: boolean, hasSelection: boolean): string {
+  if (busy) return "جارٍ الحفظ…";
+  if (hasSelection) return "حفظ نوع المتجر";
+  return "إنشاء نوع المتجر";
+}
+
 function message(payload: unknown): string {
   if (!payload || typeof payload !== "object") return "تعذر تنفيذ العملية.";
   const error = (payload as { error?: unknown }).error;
@@ -22,7 +28,24 @@ async function readTypes(verticalId: string): Promise<ReadonlyArray<CommercialSt
   return body.storeTypes;
 }
 
-export function CatalogCommercialStoreTypeRegistry({ verticals, verticalId }: { verticals: ReadonlyArray<CommerceVertical>; verticalId: string }) {
+function CommercialStoreTypeRegistryFeedback({ verticalId, vertical, notice, error, loading, itemCount }: Readonly<{
+  verticalId: string;
+  vertical: CommerceVertical | undefined;
+  notice: string;
+  error: string;
+  loading: boolean;
+  itemCount: number;
+}>) {
+  return <>
+    {verticalId && !vertical?.active ? <output className="managed-status managed-status-warning">المجال متوقف؛ يمكن مراجعة الأنواع، لكن لا يمكن إنشاء نوع جديد فيه.</output> : null}
+    {notice ? <output className="managed-status managed-status-success">{notice}</output> : null}
+    {error ? <p className="identity-error" role="alert">{error}</p> : null}
+    {loading ? <output>جارٍ قراءة سجل أنواع المتاجر…</output> : null}
+    {verticalId && !loading && itemCount === 0 && !error ? <p className="muted">لا توجد أنواع متجر مسجلة لهذا المجال بعد.</p> : null}
+  </>;
+}
+
+export function CatalogCommercialStoreTypeRegistry({ verticals, verticalId }: Readonly<{ verticals: ReadonlyArray<CommerceVertical>; verticalId: string }>) {
   const { state } = useSession();
   const canEdit = state.kind === "authenticated" && state.identity.permissions?.includes("catalog") === true;
   const [items, setItems] = useState<ReadonlyArray<CommercialStoreType>>([]);
@@ -37,6 +60,7 @@ export function CatalogCommercialStoreTypeRegistry({ verticals, verticalId }: { 
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const vertical = verticals.find((item) => item.id === verticalId);
+  const saveLabel = saveActionLabel(busy, Boolean(selected));
 
   const reload = useCallback(async () => {
     if (!verticalId) { setItems([]); return; }
@@ -107,18 +131,14 @@ export function CatalogCommercialStoreTypeRegistry({ verticals, verticalId }: { 
       {vertical ? <p className="muted">المجال التجاري: <strong>{vertical.nameAr}</strong></p> : <p className="muted">اختر مجالًا تجاريًا لعرض أنواعه.</p>}
       {!editorOpen ? <button type="button" className="button button-primary" disabled={!canEdit || !verticalId || !vertical?.active || busy} onClick={() => { clearEditor(); setEditorOpen(true); setNotice(""); }}>نوع متجر جديد</button> : null}
     </div>
-    {verticalId && !vertical?.active ? <p className="managed-status managed-status-warning" role="status">المجال متوقف؛ يمكن مراجعة الأنواع، لكن لا يمكن إنشاء نوع جديد فيه.</p> : null}
+    <CommercialStoreTypeRegistryFeedback verticalId={verticalId} vertical={vertical} notice={notice} error={error} loading={loading} itemCount={items.length} />
     {editorOpen ? <div className="access-form">
       <label className="field-label" htmlFor="commercial-type-name-ar">الاسم العربي<input id="commercial-type-name-ar" disabled={busy || !canEdit || !vertical?.active} value={nameAr} onChange={(event) => setNameAr(event.target.value)} placeholder="ملحمة" /></label>
       <label className="field-label" htmlFor="commercial-type-name-en">الاسم الإنجليزي<input id="commercial-type-name-en" disabled={busy || !canEdit || !vertical?.active} value={nameEn} onChange={(event) => setNameEn(event.target.value)} placeholder="Butcher" /></label>
       <label className="field-label"><input type="checkbox" disabled={busy || !canEdit} checked={active} onChange={(event) => setActive(event.target.checked)} /> نشط للاستخدام في ملفات الانضمام والسياسات</label>
       <label className="field-label" htmlFor="commercial-type-reason">سبب التغيير<textarea id="commercial-type-reason" disabled={busy || !canEdit} minLength={5} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
-      <div className="catalog-registry-actions"><button type="button" className="button button-primary" disabled={busy || !canEdit || !vertical?.active} onClick={() => void save()}>{busy ? "جارٍ الحفظ…" : selected ? "حفظ نوع المتجر" : "إنشاء نوع المتجر"}</button><button type="button" className="button button-secondary" disabled={busy} onClick={clearEditor}>إلغاء</button></div>
+      <div className="catalog-registry-actions"><button type="button" className="button button-primary" disabled={busy || !canEdit || !vertical?.active} onClick={() => void save()}>{saveLabel}</button><button type="button" className="button button-secondary" disabled={busy} onClick={clearEditor}>إلغاء</button></div>
     </div> : null}
-    {notice ? <p className="managed-status managed-status-success" role="status">{notice}</p> : null}
-    {error ? <p className="identity-error" role="alert">{error}</p> : null}
-    {loading ? <p role="status">جارٍ قراءة سجل أنواع المتاجر…</p> : null}
-    {verticalId && !loading && items.length === 0 && !error ? <p className="muted">لا توجد أنواع متجر مسجلة لهذا المجال بعد.</p> : null}
     {items.length > 0 ? <div className="catalog-registry-table-wrap"><table className="catalog-registry-table"><thead><tr><th>النوع التجاري</th><th>الاسم الدولي</th><th>الحالة</th><th>الإصدار</th><th>الإجراء</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{item.nameAr}</strong></td><td><bdi dir="ltr">{item.nameEn}</bdi></td><td>{item.active ? "نشط" : "متوقف"}</td><td>v{item.version}</td><td><button type="button" className="catalog-row-action" disabled={busy || !canEdit} onClick={() => edit(item)}>تعديل</button></td></tr>)}</tbody></table></div> : null}
   </section>;
 }

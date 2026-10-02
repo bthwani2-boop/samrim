@@ -32,6 +32,14 @@ export function FieldFinancialSummaryCard() {
     }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  const entitlementRows = ledger?.entitlements.map((entry) => <View key={entry.ledgerTransactionId} style={styles.entry}>
+    <View style={styles.entryMain}>
+      <Text style={styles.value}>+{formatMoney(entry.rewardMinor, entry.currency)}</Text>
+      <Text style={styles.label}>استحقاق ضم شريك · {entry.storeName}</Text>
+      <Text style={styles.muted}>تحقق بنشر المتجر وظهوره للعميل · {new Date(entry.createdAt).toLocaleDateString("ar-YE")}</Text>
+    </View>
+    <Text accessibilityLabel={`معرّف الحركة ${entry.ledgerTransactionId}`} style={styles.transactionID}>{entry.ledgerTransactionId}</Text>
+  </View>);
   return <BthwaniSurface tone="base" style={styles.card}>
     <Text style={styles.eyebrow}>المحفظة والاستحقاقات</Text>
     <Text style={styles.title}>استحقاق ضم الشريك</Text>
@@ -44,14 +52,8 @@ export function FieldFinancialSummaryCard() {
     {!summary || !ledger ? <Text style={styles.muted}>جارٍ قراءة سجل المحفظة من WLT…</Text> : null}
     <Text style={styles.muted}>يُثبت الاستحقاق بعد ظهور متجر الشريك للعميل؛ الرصيد المتاح والمحجوز يظهران في قسم التسوية.</Text>
     <Text style={styles.sectionTitle}>حركات استحقاق ضم الشريك</Text>
-    {ledger?.entitlements.length ? ledger.entitlements.map((entry) => <View key={entry.ledgerTransactionId} style={styles.entry}>
-      <View style={styles.entryMain}>
-        <Text style={styles.value}>+{formatMoney(entry.rewardMinor, entry.currency)}</Text>
-        <Text style={styles.label}>استحقاق ضم شريك · {entry.storeName}</Text>
-        <Text style={styles.muted}>تحقق بنشر المتجر وظهوره للعميل · {new Date(entry.createdAt).toLocaleDateString("ar-YE")}</Text>
-      </View>
-      <Text accessibilityLabel={`معرّف الحركة ${entry.ledgerTransactionId}`} style={styles.transactionID}>{entry.ledgerTransactionId}</Text>
-    </View>) : ledger ? <Text style={styles.muted}>لا توجد حركات استحقاق مسجلة حتى الآن.</Text> : null}
+    {entitlementRows}
+    {ledger && ledger.entitlements.length === 0 ? <Text style={styles.muted}>لا توجد حركات استحقاق مسجلة حتى الآن.</Text> : null}
     {ledger?.nextCursor ? <BthwaniButton busy={loadingMore} label="عرض الحركات الأقدم" onPress={() => void load(ledger.nextCursor, true)} variant="secondary" /> : null}
     <BthwaniButton busy={loadingMore} label="تحديث السجل" onPress={() => void load()} variant="secondary" />
   </BthwaniSurface>;

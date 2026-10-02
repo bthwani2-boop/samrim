@@ -14,6 +14,11 @@ type Policy = PartnerStoreCommissionPolicy & Readonly<{ fulfillmentMode: Fulfill
 type StoreTypeOption = Readonly<{ type: CommercialStoreType; vertical: CommerceVertical }>;
 
 function formatPercent(rateBps: number) { return `${(rateBps / 100).toFixed(2)}%`; }
+function saveLabel(busy: boolean, policy: Policy | undefined, label: string): string {
+  if (busy) return "جارٍ الحفظ…";
+  if (policy) return `حفظ نسبة ${label}`;
+  return `إنشاء سياسة ${label}`;
+}
 function formatTimestamp(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("ar-YE", { dateStyle: "medium", timeStyle: "short" }).format(date);
@@ -44,12 +49,12 @@ export function PartnerStoreCommissionPolicyWorkspace() {
       setError("");
       try {
         const verticalResponse = await fetch("/api/catalog/verticals", { cache: "no-store" });
-        const verticalBody = await verticalResponse.json() as CommerceVerticalListResponse | unknown;
+        const verticalBody = await verticalResponse.json() as unknown;
         if (!verticalResponse.ok || !verticalBody || typeof verticalBody !== "object" || !("verticals" in verticalBody) || !Array.isArray(verticalBody.verticals)) throw new Error(apiMessage(verticalBody));
         const verticals = (verticalBody as CommerceVerticalListResponse).verticals.filter((item) => item.active);
         const grouped = await Promise.all(verticals.map(async (vertical) => {
           const response = await fetch(`/api/catalog/commercial-store-types?verticalId=${encodeURIComponent(vertical.id)}`, { cache: "no-store" });
-          const body = await response.json() as CommercialStoreTypeListResponse | unknown;
+          const body = await response.json() as unknown;
           if (!response.ok || !body || typeof body !== "object" || !("storeTypes" in body) || !Array.isArray(body.storeTypes)) throw new Error(apiMessage(body));
           return (body as CommercialStoreTypeListResponse).storeTypes.filter((type) => type.active).map((type) => ({ type, vertical }));
         }));
@@ -71,7 +76,10 @@ export function PartnerStoreCommissionPolicyWorkspace() {
       if (!response.ok || body.commercialStoreTypeId !== typeID || !Array.isArray(body.policies) || body.policies.length > modes.length) throw new Error(body.error?.message || "تعذر قراءة سياسة العمولة لهذا النوع.");
       const current = body.policies as readonly Policy[];
       setPolicies(current);
-      setRates(Object.fromEntries(modes.map(({ key }) => [key, current.find((item) => item.fulfillmentMode === key) ? String((current.find((item) => item.fulfillmentMode === key)!.commissionRateBps) / 100) : ""])) as Record<FulfillmentMode, string>);
+      setRates(Object.fromEntries(modes.map(({ key }) => {
+        const policy = current.find((item) => item.fulfillmentMode === key);
+        return [key, policy ? String(policy.commissionRateBps / 100) : ""];
+      })) as Record<FulfillmentMode, string>);
       setLoadedTypeID(typeID);
       setMessage("تمت قراءة السياسات المركزية لهذا النوع من WLT.");
       return true;
@@ -113,7 +121,7 @@ export function PartnerStoreCommissionPolicyWorkspace() {
     </div>
     <p className="muted">كل نوع تجاري له نسب مركزية حسب وضع التنفيذ؛ جميع المتاجر المصنفة بالنوع نفسه تستخدم السياسة ذاتها. لا ينسخ النظام نسبة من ملف الشريك، ولا توجد قيمة افتراضية. تحفظ الطلبات لقطة النسبة وإصدار السياسة اللذين استخدما عند إنشائها.</p>
     <div className="form-grid">
-      <label className="field-label" htmlFor="partner-store-commission-type">نوع المتجر التجاري
+      <label className="field-label" htmlFor="partner-store-commission-type"><span>نوع المتجر التجاري</span>
         <select id="partner-store-commission-type" value={selectedTypeID} onChange={(event) => { setSelectedTypeID(event.target.value); setLoadedTypeID(""); setPolicies([]); setError(""); setMessage(""); }} disabled={busyMode !== null || options.length === 0}>
           <option value="">اختر نوع المتجر</option>
           {options.map(({ type, vertical }) => <option key={type.id} value={type.id}>{vertical.nameAr} · {type.nameAr}</option>)}
@@ -121,7 +129,7 @@ export function PartnerStoreCommissionPolicyWorkspace() {
       </label>
       <button className="button button-secondary" type="button" onClick={() => void readPolicies()} disabled={busyMode !== null || !selectedTypeID}>{busyMode === "load" ? "جارٍ القراءة…" : "قراءة السياسة"}</button>
     </div>
-    {busyMode === "registry" ? <p role="status">جارٍ تحميل الأنواع التجارية النشطة…</p> : null}
+    {busyMode === "registry" ? <output>جارٍ تحميل الأنواع التجارية النشطة…</output> : null}
     {!error && busyMode !== "registry" && options.length === 0 ? <p className="muted">لا توجد أنواع متاجر نشطة يمكن ربط سياسة بها.</p> : null}
     {policies.length >= 0 && loadedTypeID ? <>
       <p className="muted">النوع المختار: <strong>{selectedType?.nameAr ?? loadedTypeID}</strong>{selectedType ? ` · ${selectedType.verticalId}` : ""}</p>
@@ -133,13 +141,13 @@ export function PartnerStoreCommissionPolicyWorkspace() {
             <label className="field-label" htmlFor={`commission-rate-${key}`}>نسبة العمولة (%)<input id={`commission-rate-${key}`} type="number" min="0" max="100" step="0.01" value={rates[key]} onChange={(event) => setRates((current) => ({ ...current, [key]: event.target.value }))} disabled={busyMode !== null} /></label>
             {policy ? <p className="muted">آخر تحديث: {formatTimestamp(policy.updatedAt)}{policy.changedByActorId ? ` · غيّره ${policy.changedByActorId}` : ""}</p> : <p className="muted">يلزم إنشاء السياسة قبل استخدام هذا الوضع للطلبات.</p>}
             {policy?.changeReason ? <p className="muted">سبب آخر تغيير: {policy.changeReason}</p> : null}
-            <button className="button button-primary" type="button" onClick={() => void save(key)} disabled={busyMode !== null || Array.from(reason.trim()).length < 8 || loadedTypeID !== selectedTypeID || rates[key] === ""}>{busyMode === key ? "جارٍ الحفظ…" : policy ? `حفظ نسبة ${label}` : `إنشاء سياسة ${label}`}</button>
+            <button className="button button-primary" type="button" onClick={() => void save(key)} disabled={busyMode !== null || Array.from(reason.trim()).length < 8 || loadedTypeID !== selectedTypeID || rates[key] === ""}>{saveLabel(busyMode === key, policy, label)}</button>
           </div>;
         })}
       </fieldset>
       <label className="field-label" htmlFor="partner-store-commission-reason">سبب التغيير (إلزامي، 8 إلى 500 حرف)<textarea id="partner-store-commission-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={8} maxLength={500} rows={3} disabled={busyMode !== null} placeholder="وضح سبب اعتماد أو تعديل النسبة" /></label>
     </> : null}
     {error ? <p className="validation-error" role="alert">{error}</p> : null}
-    {message ? <p className="success" role="status">{message}</p> : null}
+    {message ? <output className="success">{message}</output> : null}
   </section>;
 }

@@ -158,23 +158,34 @@ func updateCommercialType(t *testing.T, ctx context.Context, db *sql.DB, item po
 	if err != nil || !replayed.Replayed || replayed.StoreType.Version != 2 {
 		t.Fatalf("replay commercial store type update = %+v, error=%v", replayed, err)
 	}
-	verifyCommercialTypeUpdateFailures(t, ctx, db, item.ID, update, key, reason, audit, suffix)
+	verifyCommercialTypeUpdateFailures(t, ctx, db, commercialTypeUpdateFailureCase{
+		id: item.ID, update: update, key: key, reason: reason, audit: audit, suffix: suffix,
+	})
 	verifyInactiveCommercialTypeReads(t, ctx, db, item.ID, verticalID)
 }
 
-func verifyCommercialTypeUpdateFailures(t *testing.T, ctx context.Context, db *sql.DB, id string, update postgres.UpdateCommercialStoreTypeInput, key, reason string, audit postgres.CatalogRegistryAuditInput, suffix string) {
+type commercialTypeUpdateFailureCase struct {
+	id     string
+	update postgres.UpdateCommercialStoreTypeInput
+	key    string
+	reason string
+	audit  postgres.CatalogRegistryAuditInput
+	suffix string
+}
+
+func verifyCommercialTypeUpdateFailures(t *testing.T, ctx context.Context, db *sql.DB, scenario commercialTypeUpdateFailureCase) {
 	t.Helper()
-	changed := update
+	changed := scenario.update
 	changed.NameEn = "Seafood Shop"
-	if _, err := postgres.UpdateCommercialStoreType(ctx, db, id, changed, key,
-		postgres.HashCommercialStoreTypeUpdateRequest(id, changed, reason), audit); !errors.Is(err, postgres.ErrCatalogIdempotencyConflict) {
+	if _, err := postgres.UpdateCommercialStoreType(ctx, db, scenario.id, changed, scenario.key,
+		postgres.HashCommercialStoreTypeUpdateRequest(scenario.id, changed, scenario.reason), scenario.audit); !errors.Is(err, postgres.ErrCatalogIdempotencyConflict) {
 		t.Fatalf("changed update request error = %v", err)
 	}
-	stale := update
+	stale := scenario.update
 	stale.ExpectedVersion = 1
 	stale.NameEn = "Stale Name"
-	if _, err := postgres.UpdateCommercialStoreType(ctx, db, id, stale, "idem-storetype-stale-"+suffix,
-		postgres.HashCommercialStoreTypeUpdateRequest(id, stale, reason), audit); !errors.Is(err, postgres.ErrCatalogVersionConflict) {
+	if _, err := postgres.UpdateCommercialStoreType(ctx, db, scenario.id, stale, "idem-storetype-stale-"+scenario.suffix,
+		postgres.HashCommercialStoreTypeUpdateRequest(scenario.id, stale, scenario.reason), scenario.audit); !errors.Is(err, postgres.ErrCatalogVersionConflict) {
 		t.Fatalf("stale update version error = %v", err)
 	}
 }

@@ -22,6 +22,12 @@ import (
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
+const (
+	forbiddenActorIDHeader      = "X-Actor-ID"
+	forbiddenIfMatchHeader      = "If-Match"
+	forbiddenLegacyHeadersError = "X-Actor-ID and If-Match are forbidden"
+)
+
 type StorePublicationServer struct {
 	auth     *auth.ServiceToken
 	identity *identity.Client
@@ -87,8 +93,8 @@ func (s *StorePublicationServer) publish(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
 		return
 	}
-	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("If-Match") != "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Actor-ID and If-Match are forbidden")
+	if r.Header.Get(forbiddenActorIDHeader) != "" || r.Header.Get(forbiddenIfMatchHeader) != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", forbiddenLegacyHeadersError)
 		return
 	}
 	acting, correlation, idempotency, expectedVersion, ok := requiredPublicationHeaders(w, r)
@@ -117,8 +123,8 @@ func (s *StorePublicationServer) setFulfillmentModes(w http.ResponseWriter, r *h
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
 		return
 	}
-	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("If-Match") != "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Actor-ID and If-Match are forbidden")
+	if r.Header.Get(forbiddenActorIDHeader) != "" || r.Header.Get(forbiddenIfMatchHeader) != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", forbiddenLegacyHeadersError)
 		return
 	}
 	acting, correlation, idempotency, expectedVersion, ok := requiredPublicationHeaders(w, r)
@@ -147,8 +153,8 @@ func (s *StorePublicationServer) setCommercialStoreType(w http.ResponseWriter, r
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
 		return
 	}
-	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("If-Match") != "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Actor-ID and If-Match are forbidden")
+	if r.Header.Get(forbiddenActorIDHeader) != "" || r.Header.Get(forbiddenIfMatchHeader) != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", forbiddenLegacyHeadersError)
 		return
 	}
 	acting, correlation, idempotency, expectedVersion, ok := requiredPublicationHeaders(w, r)
@@ -159,7 +165,7 @@ func (s *StorePublicationServer) setCommercialStoreType(w http.ResponseWriter, r
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.SetCommercialStoreType(r.Context(), r.PathValue("storeId"), input.CommercialStoreTypeID, input.Reason, expectedVersion, idempotency, acting, correlation)
+	result, err := s.service.SetCommercialStoreType(r.Context(), storepublication.SetCommercialStoreTypeInput{StoreID: r.PathValue("storeId"), TypeID: input.CommercialStoreTypeID, Reason: input.Reason, ExpectedVersion: expectedVersion, IdempotencyKey: idempotency, ActingActorID: acting, CorrelationID: correlation})
 	if err != nil {
 		writeStorePublicationError(w, err)
 		return

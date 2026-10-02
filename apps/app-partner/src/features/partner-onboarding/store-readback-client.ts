@@ -14,11 +14,23 @@ function dshClient() {
 
 const accessToken = getUsableIdentityAccessToken;
 
+type OwnJoiningCaseCorrection = Readonly<{
+  caseID: string;
+  businessName: string;
+  firstStoreName: string;
+  serviceCityId: string;
+  firstStoreVerticalId: string;
+  firstStoreCommercialTypeId: string;
+  firstStoreLatitude: number;
+  firstStoreLongitude: number;
+  expectedVersion: number;
+}>;
+
 export async function readOwnJoiningCase(): Promise<JoiningCaseResponse> {
   return accessToken().then((token) => dshClient().readOwnJoiningCase(token));
 }
 
-export async function correctAndResubmitOwnJoiningCase(caseID: string, businessName: string, firstStoreName: string, serviceCityId: string, firstStoreVerticalId: string, firstStoreCommercialTypeId: string, firstStoreLatitude: number, firstStoreLongitude: number, expectedVersion: number): Promise<JoiningCaseResponse> {
+export async function correctAndResubmitOwnJoiningCase({ caseID, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreCommercialTypeId, firstStoreLatitude, firstStoreLongitude, expectedVersion }: OwnJoiningCaseCorrection): Promise<JoiningCaseResponse> {
 	const identity = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, [caseID.trim(), businessName.trim(), firstStoreName.trim(), serviceCityId.trim(), firstStoreVerticalId.trim(), firstStoreCommercialTypeId.trim(), String(firstStoreLatitude), String(firstStoreLongitude), String(expectedVersion)].join("\u0000"));
 	const token = await accessToken();
 	return dshClient().correctAndResubmitJoiningCase(token, caseID, { businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreCommercialTypeId, firstStoreLatitude, firstStoreLongitude }, expectedVersion, `partner_case_correction_${identity}`, `partner_case_correction_corr_${identity}`);

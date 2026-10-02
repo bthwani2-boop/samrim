@@ -21,13 +21,24 @@ type StoreCommercialTypeAssignmentResult struct {
 	Replayed              bool
 }
 
-func SetStoreCommercialType(ctx context.Context, db *sql.DB, storeID, typeID, actorID, reason, correlationID, idempotencyKey string, expectedVersion int) (StoreCommercialTypeAssignmentResult, error) {
-	storeID = strings.TrimSpace(storeID)
-	typeID = strings.TrimSpace(typeID)
-	actorID = strings.TrimSpace(actorID)
-	reason = strings.Join(strings.Fields(strings.TrimSpace(reason)), " ")
-	correlationID = strings.TrimSpace(correlationID)
-	idempotencyKey = strings.TrimSpace(idempotencyKey)
+type StoreCommercialTypeAssignmentInput struct {
+	StoreID         string
+	TypeID          string
+	ActorID         string
+	Reason          string
+	CorrelationID   string
+	IdempotencyKey  string
+	ExpectedVersion int
+}
+
+func SetStoreCommercialType(ctx context.Context, db *sql.DB, input StoreCommercialTypeAssignmentInput) (StoreCommercialTypeAssignmentResult, error) {
+	storeID := strings.TrimSpace(input.StoreID)
+	typeID := strings.TrimSpace(input.TypeID)
+	actorID := strings.TrimSpace(input.ActorID)
+	reason := strings.Join(strings.Fields(strings.TrimSpace(input.Reason)), " ")
+	correlationID := strings.TrimSpace(input.CorrelationID)
+	idempotencyKey := strings.TrimSpace(input.IdempotencyKey)
+	expectedVersion := input.ExpectedVersion
 	if db == nil || storeID == "" || len(storeID) > 128 || typeID == "" || len(typeID) > 128 || actorID == "" || len(actorID) > 128 || len(reason) < 5 || len(reason) > 500 || len(correlationID) < 8 || len(correlationID) > 128 || len(idempotencyKey) < 8 || len(idempotencyKey) > 128 || expectedVersion < 1 {
 		return StoreCommercialTypeAssignmentResult{}, ErrStoreCommercialTypeAssignmentInvalid
 	}
