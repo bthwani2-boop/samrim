@@ -124,9 +124,10 @@ async function admitReviewedRoleCandidate(role, phone, candidateName, reviewedNa
   if (role !== "field" && role !== "captain") fail("unsupported role candidate proof", role);
   const plural = role === "field" ? "fields" : "captains";
   const root = `/dsh/${plural}/admissions`;
+  const candidateBody = { fullNameAr: candidateName, contactPhoneE164: phone, ...(role === "field" ? { serviceCityId: cityA } : {}) };
   const createHeaders = serviceHeaders(actingOperatorID, `${label}-profile-${suffix}`);
-  const created = await request(dshBase, "POST", root, { token: dshToken, headers: createHeaders, body: { fullNameAr: candidateName, contactPhoneE164: phone } });
-  const replay = await request(dshBase, "POST", root, { token: dshToken, headers: createHeaders, body: { fullNameAr: candidateName, contactPhoneE164: phone } });
+  const created = await request(dshBase, "POST", root, { token: dshToken, headers: createHeaders, body: candidateBody });
+  const replay = await request(dshBase, "POST", root, { token: dshToken, headers: createHeaders, body: candidateBody });
   if (created.status !== 201 || created.body?.admission?.state !== "pending_review" || created.body?.admission?.actorId || created.body?.admission?.fullNameAr !== candidateName || replay.status !== 200 || replay.body?.idempotentReplay !== true || replay.body?.admission?.id !== created.body?.admission?.id) {
     fail(`${role} profile creation did not persist a reviewable candidate before Identity role access`, JSON.stringify({ created, replay }));
   }
