@@ -1,6 +1,7 @@
 CREATE TABLE dsh.store_operational_availability (
     store_id text PRIMARY KEY REFERENCES dsh.stores(id) ON DELETE CASCADE,
     schedule_mode text NOT NULL DEFAULT 'ALWAYS_OPEN',
+    schedule_timezone text NOT NULL DEFAULT 'Asia/Aden',
     weekly_schedule jsonb NOT NULL DEFAULT '[]'::jsonb,
     paused boolean NOT NULL DEFAULT false,
     pause_reason text,
@@ -12,6 +13,8 @@ CREATE TABLE dsh.store_operational_availability (
     updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     CONSTRAINT store_operational_availability_schedule_mode_chk
         CHECK (schedule_mode IN ('ALWAYS_OPEN','WEEKLY')),
+    CONSTRAINT store_operational_availability_timezone_chk
+        CHECK (schedule_timezone = 'Asia/Aden'),
     CONSTRAINT store_operational_availability_schedule_chk
         CHECK (
             (schedule_mode = 'ALWAYS_OPEN' AND weekly_schedule = '[]'::jsonb)
@@ -30,8 +33,8 @@ CREATE TABLE dsh.store_operational_availability (
     CONSTRAINT store_operational_availability_actor_chk CHECK (length(btrim(updated_by_actor_id)) BETWEEN 1 AND 128)
 );
 
-INSERT INTO dsh.store_operational_availability(store_id, schedule_mode, weekly_schedule, paused, unavailable_fulfillment_modes, version, updated_by_actor_id)
-SELECT id, 'ALWAYS_OPEN', '[]'::jsonb, false, ARRAY[]::text[], 1, 'system:migration:085'
+INSERT INTO dsh.store_operational_availability(store_id, schedule_mode, schedule_timezone, weekly_schedule, paused, unavailable_fulfillment_modes, version, updated_by_actor_id)
+SELECT id, 'ALWAYS_OPEN', 'Asia/Aden', '[]'::jsonb, false, ARRAY[]::text[], 1, 'system:migration:085'
 FROM dsh.stores
 ON CONFLICT(store_id) DO NOTHING;
 
