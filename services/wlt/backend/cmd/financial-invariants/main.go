@@ -12,8 +12,9 @@ import (
 )
 
 type invariant struct {
-	name  string
-	query string
+	name            string
+	query           string
+	diagnosticQuery string
 }
 
 func main() {
@@ -207,6 +208,23 @@ func main() {
 				OR e.order_id IS NULL OR e.payment_intent_id <> o.payment_intent_id OR e.partner_actor_id IS DISTINCT FROM o.partner_actor_id OR e.captain_actor_id IS DISTINCT FROM o.captain_actor_id
 				OR (o.amount_minor > 0 AND (c.order_id IS NULL OR c.payment_intent_id <> o.payment_intent_id OR c.captain_actor_id IS DISTINCT FROM o.captain_actor_id OR c.amount_minor <> o.amount_minor OR c.state <> 'FINALIZED'))
 			)`,
+			diagnosticQuery: `SELECT COALESCE(jsonb_agg(jsonb_build_object(
+				'order_id',o.order_id,'outbox_payment_intent_id',o.payment_intent_id,'outbox_captain',o.captain_actor_id,'outbox_partner',o.partner_actor_id,'outbox_cash',o.amount_minor,
+				'order_payment_intent_id',d.payment_intent_id,'order_total',d.total_amount_minor,'order_cash',d.payment_cash_amount_minor,
+				'wlt_state',p.state,'wlt_amount',p.amount_minor,'wlt_collected_by',p.collected_by_actor_id,
+				'earning_payment_intent_id',e.payment_intent_id,'earning_partner',e.partner_actor_id,'earning_captain',e.captain_actor_id,
+				'cod_reservation_id',c.id,'cod_amount',c.amount_minor,'cod_state',c.state
+			)), '[]'::jsonb)::text
+			FROM dsh.commerce_financial_handoff_outbox o
+			LEFT JOIN dsh.commerce_orders d ON d.id=o.order_id AND d.payment_intent_id=o.payment_intent_id
+			LEFT JOIN wlt.payment_intents p ON p.id=o.payment_intent_id
+			LEFT JOIN wlt.partner_order_earnings e ON e.order_id=o.order_id
+			LEFT JOIN wlt.captain_cod_reservations c ON c.order_id=o.order_id AND c.payment_intent_id=o.payment_intent_id AND c.captain_actor_id=o.captain_actor_id
+			WHERE o.state='POSTED' AND o.effect_type='DELIVERY_SETTLEMENT' AND (
+				d.id IS NULL OR d.payment_cash_amount_minor <> o.amount_minor OR p.id IS NULL OR p.state <> 'COLLECTED' OR p.collected_by_actor_id IS DISTINCT FROM o.captain_actor_id OR p.amount_minor <> d.total_amount_minor
+				OR e.order_id IS NULL OR e.payment_intent_id <> o.payment_intent_id OR e.partner_actor_id IS DISTINCT FROM o.partner_actor_id OR e.captain_actor_id IS DISTINCT FROM o.captain_actor_id
+				OR (o.amount_minor > 0 AND (c.order_id IS NULL OR c.payment_intent_id <> o.payment_intent_id OR c.captain_actor_id IS DISTINCT FROM o.captain_actor_id OR c.amount_minor <> o.amount_minor OR c.state <> 'FINALIZED'))
+			) LIMIT 10`,
 		},
 		{
 			name: "posted-store-cash-handoff-readback",
@@ -247,6 +265,14 @@ func main() {
 		if violations != 0 {
 			failed = true
 			log.Printf("WLT_FINANCIAL_INVARIANT=%s FAIL violations=%d", check.name, violations)
+			if check.diagnosticQuery != "" {
+				var details string
+				if err := db.QueryRowContext(ctx, check.diagnosticQuery).Scan(&details); err != nil {
+					log.Printf("WLT_FINANCIAL_INVARIANT=%s DIAGNOSTIC_ERROR=%v", check.name, err)
+				} else {
+					log.Printf("WLT_FINANCIAL_INVARIANT=%s DIAGNOSTIC=%s", check.name, details)
+				}
+			}
 			continue
 		}
 		log.Printf("WLT_FINANCIAL_INVARIANT=%s PASS", check.name)
