@@ -232,6 +232,55 @@ function FieldAccountRow({ field, name, reason, busy, acquisitionPage, acquisiti
   </tr>;
 }
 
+type FieldAdmissionRosterProps = Readonly<{
+  items: ReadonlyArray<FieldWorkbenchItem>;
+  query: string;
+  notice: string;
+  error: string;
+  loading: boolean;
+  loadingMore: boolean;
+  nextCursor: string;
+  busy: string;
+  serviceCities: ReadonlyArray<ServiceCity>;
+  candidateEdits: Record<string, string>;
+  profileEdits: Record<string, string>;
+  reasons: Record<string, string>;
+  acquisitionCases: Record<string, JoiningCaseListResponse>;
+  acquisitionCaseErrors: Record<string, string>;
+  acquisitionCaseBusy: Record<string, boolean>;
+  onQueryChange: (value: string) => void;
+  onRefresh: () => void;
+  onLoadMore: () => void;
+  onCandidateNameChange: (admissionId: string, value: string) => void;
+  onCandidateMutate: (admission: FieldAdmission, action: FieldCandidateAction) => void;
+  onProfileNameChange: (actorId: string, value: string) => void;
+  onReasonChange: (actorId: string, value: string) => void;
+  onAccountMutate: (field: FieldAccount, action: FieldAccountAction) => void;
+  onLoadAcquisitionCases: (fieldActorId: string, cursor?: string, append?: boolean) => void;
+}>;
+
+function FieldEmptyRoster({ query }: Readonly<{ query: string }>) {
+  const title = query ? "لا توجد نتائج مطابقة" : "لا توجد ملفات أو حسابات ميدانية";
+  const description = query ? "امسح البحث لعرض السجل كاملًا." : "أنشئ ملفًا جديدًا لبدء مسار الأهلية.";
+  return <div className="collection-state"><strong>{title}</strong><p>{description}</p></div>;
+}
+
+function FieldAdmissionRoster({ items, query, notice, error, loading, loadingMore, nextCursor, busy, serviceCities, candidateEdits, profileEdits, reasons, acquisitionCases, acquisitionCaseErrors, acquisitionCaseBusy, onQueryChange, onRefresh, onLoadMore, onCandidateNameChange, onCandidateMutate, onProfileNameChange, onReasonChange, onAccountMutate, onLoadAcquisitionCases }: FieldAdmissionRosterProps) {
+  return <div className="field-workbench-pane">
+    <div className="field-list-heading"><div><h3 id="field-roster-title">سجل الميدانيين</h3><p className="muted">كل شخص يظهر مرة واحدة، مع مرحلته والخطوة التالية.</p></div></div>
+    <div className="workspace-toolbar"><label className="field-label" htmlFor="field-search">بحث بالاسم أو الهاتف<input id="field-search" value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="ابحث في ملفات وحسابات الميدانيين" /></label><button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={onRefresh}>{loading ? "جارٍ التحديث…" : "إعادة القراءة"}</button></div>
+    {notice ? <output className="success-inline">{notice}</output> : null}{error ? <p className="identity-error" role="alert">{error}</p> : null}
+    {loading && items.length === 0 ? <output>جارٍ قراءة سجل الميدانيين…</output> : null}
+    {!loading && !error && items.length === 0 ? <FieldEmptyRoster query={query} /> : null}
+    {items.length > 0 ? <div className="operations-table-wrap"><table className="operations-table"><thead><tr><th scope="col">الميداني</th><th scope="col">مرحلة الملف</th><th scope="col">حساب التطبيق</th><th scope="col">الإجراء</th></tr></thead><tbody>
+      {items.map((item) => item.kind === "candidate"
+        ? <FieldCandidateRow key={`candidate:${item.admission.id}`} profile={item.admission} name={candidateEdits[item.admission.id] ?? item.admission.fullNameAr ?? ""} changed={(candidateEdits[item.admission.id] ?? item.admission.fullNameAr ?? "").trim() !== (item.admission.fullNameAr ?? "")} busy={busy} serviceCities={serviceCities} onNameChange={(value) => onCandidateNameChange(item.admission.id, value)} onMutate={onCandidateMutate} />
+        : <FieldAccountRow key={`account:${item.account.actorId}`} field={item.account} name={profileEdits[item.account.actorId] ?? item.account.admission?.fullNameAr ?? ""} reason={reasons[item.account.actorId] ?? ""} busy={busy} acquisitionPage={acquisitionCases[item.account.actorId]} acquisitionError={acquisitionCaseErrors[item.account.actorId] ?? ""} acquisitionBusy={acquisitionCaseBusy[item.account.actorId] ?? false} onNameChange={(value) => onProfileNameChange(item.account.actorId, value)} onReasonChange={(value) => onReasonChange(item.account.actorId, value)} onMutate={onAccountMutate} onLoadAcquisitionCases={onLoadAcquisitionCases} />)}
+    </tbody></table></div> : null}
+    {nextCursor ? <div className="workspace-toolbar"><button type="button" className="button button-secondary" disabled={loadingMore || Boolean(busy)} onClick={onLoadMore}>{loadingMore ? "جارٍ تحميل المزيد…" : "تحميل المزيد"}</button></div> : null}
+  </div>;
+}
+
 export function FieldAdmissionPanel() {
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<ReadonlyArray<FieldWorkbenchItem>>([]);
@@ -416,18 +465,6 @@ export function FieldAdmissionPanel() {
       <div><span className="step-chip">مساحة الشركاء</span><h2 id="field-workbench-title">إدارة الميدانيين</h2><p className="muted">قائمة واحدة تجمع ملفات الأهلية والحسابات. DSH يملك الأهلية وIdentity يملك دور الدخول.</p></div>
       <details className="field-create-disclosure"><summary className="button button-primary">إنشاء ملف ميداني</summary><div className="field-create-content"><div className="access-card-heading"><h3>ملف ميداني جديد</h3><p className="muted">يبدأ الملف بالمراجعة؛ إنشاء الملف لا يمنح دور الدخول.</p></div><form className="access-form" onSubmit={(event) => { event.preventDefault(); void createProfile(); }}><label className="field-label" htmlFor="field-candidate-name">الاسم الكامل بالعربية<input id="field-candidate-name" autoComplete="name" maxLength={120} value={fullNameAr} onChange={(event) => setFullNameAr(event.target.value)} disabled={Boolean(busy)} /></label><label className="field-label" htmlFor="field-candidate-phone">رقم الهاتف<input id="field-candidate-phone" autoComplete="tel" inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} disabled={Boolean(busy)} placeholder="+967…" /></label><label className="field-label" htmlFor="field-candidate-city">مدينة الخدمة<select id="field-candidate-city" value={serviceCityId} onChange={(event) => setServiceCityId(event.target.value)} disabled={Boolean(busy) || serviceCitiesLoading || Boolean(serviceCitiesError)}><option value="">{serviceCitiesLoading ? "جارٍ تحميل المدن…" : "اختر مدينة نشطة"}</option>{serviceCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>{serviceCitiesError ? <p className="identity-error" role="alert">{serviceCitiesError}</p> : null}<button type="submit" className="button button-primary" disabled={Boolean(busy) || serviceCitiesLoading || !fullNameAr.trim() || !phone.trim() || !serviceCityId}>{busy === "create" ? "جارٍ الحفظ…" : "حفظ للمراجعة"}</button></form></div></details>
     </header>
-    <div className="field-workbench-pane">
-      <div className="field-list-heading"><div><h3 id="field-roster-title">سجل الميدانيين</h3><p className="muted">كل شخص يظهر مرة واحدة، مع مرحلته والخطوة التالية.</p></div></div>
-      <div className="workspace-toolbar"><label className="field-label" htmlFor="field-search">بحث بالاسم أو الهاتف<input id="field-search" value={query} onChange={(event) => updateQuery(event.target.value)} placeholder="ابحث في ملفات وحسابات الميدانيين" /></label><button type="button" className="button button-secondary" disabled={loading || Boolean(busy)} onClick={() => void load()}>{loading ? "جارٍ التحديث…" : "إعادة القراءة"}</button></div>
-      {notice ? <output className="success-inline">{notice}</output> : null}{error ? <p className="identity-error" role="alert">{error}</p> : null}
-       {loading && items.length === 0 ? <output>جارٍ قراءة سجل الميدانيين…</output> : null}
-      {!loading && !error && items.length === 0 ? <div className="collection-state"><strong>{query ? "لا توجد نتائج مطابقة" : "لا توجد ملفات أو حسابات ميدانية"}</strong><p>{query ? "امسح البحث لعرض السجل كاملًا." : "أنشئ ملفًا جديدًا لبدء مسار الأهلية."}</p></div> : null}
-      {items.length > 0 ? <div className="operations-table-wrap"><table className="operations-table"><thead><tr><th scope="col">الميداني</th><th scope="col">مرحلة الملف</th><th scope="col">حساب التطبيق</th><th scope="col">الإجراء</th></tr></thead><tbody>
-        {items.map((item) => item.kind === "candidate"
-          ? <FieldCandidateRow key={`candidate:${item.admission.id}`} profile={item.admission} name={candidateEdits[item.admission.id] ?? item.admission.fullNameAr ?? ""} changed={(candidateEdits[item.admission.id] ?? item.admission.fullNameAr ?? "").trim() !== (item.admission.fullNameAr ?? "")} busy={busy} serviceCities={serviceCities} onNameChange={(value) => setCandidateEdits((current) => ({ ...current, [item.admission.id]: value }))} onMutate={mutateCandidate} />
-          : <FieldAccountRow key={`account:${item.account.actorId}`} field={item.account} name={profileEdits[item.account.actorId] ?? item.account.admission?.fullNameAr ?? ""} reason={reasons[item.account.actorId] ?? ""} busy={busy} acquisitionPage={acquisitionCases[item.account.actorId]} acquisitionError={acquisitionCaseErrors[item.account.actorId] ?? ""} acquisitionBusy={acquisitionCaseBusy[item.account.actorId] ?? false} onNameChange={(value) => setProfileEdits((current) => ({ ...current, [item.account.actorId]: value }))} onReasonChange={(value) => setReasons((current) => ({ ...current, [item.account.actorId]: value }))} onMutate={mutateAccount} onLoadAcquisitionCases={loadAcquisitionCases} />)}
-      </tbody></table></div> : null}
-      {nextCursor ? <div className="workspace-toolbar"><button type="button" className="button button-secondary" disabled={loadingMore || Boolean(busy)} onClick={() => void load(nextCursor, true)}>{loadingMore ? "جارٍ تحميل المزيد…" : "تحميل المزيد"}</button></div> : null}
-    </div>
+    <FieldAdmissionRoster items={items} query={query} notice={notice} error={error} loading={loading} loadingMore={loadingMore} nextCursor={nextCursor} busy={busy} serviceCities={serviceCities} candidateEdits={candidateEdits} profileEdits={profileEdits} reasons={reasons} acquisitionCases={acquisitionCases} acquisitionCaseErrors={acquisitionCaseErrors} acquisitionCaseBusy={acquisitionCaseBusy} onQueryChange={updateQuery} onRefresh={() => { void load(); }} onLoadMore={() => { void load(nextCursor, true); }} onCandidateNameChange={(id, value) => setCandidateEdits((current) => ({ ...current, [id]: value }))} onCandidateMutate={mutateCandidate} onProfileNameChange={(id, value) => setProfileEdits((current) => ({ ...current, [id]: value }))} onReasonChange={(id, value) => setReasons((current) => ({ ...current, [id]: value }))} onAccountMutate={mutateAccount} onLoadAcquisitionCases={loadAcquisitionCases} />
   </section>;
 }
