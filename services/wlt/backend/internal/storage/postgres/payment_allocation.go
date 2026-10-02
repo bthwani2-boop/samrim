@@ -119,7 +119,7 @@ func scanCustomerPaymentAllocation(row interface{ Scan(...any) error }, a *Custo
 		if !storeID.Valid || !partnerActorID.Valid || !fulfillmentMode.Valid || !rateBps.Valid || !policyVersion.Valid || !profileID.Valid || !profileVersion.Valid || !roundingUnit.Valid || !settlementPeriod.Valid {
 			return ErrCustomerPaymentAllocationInvalidInput
 		}
-		a.CommissionSnapshot = &PartnerStoreCommissionSnapshot{RateBps: int(rateBps.Int64), PolicyVersion: int(policyVersion.Int64), ProfileID: profileID.String, ProfileVersion: int(profileVersion.Int64), RoundingUnitMinor: roundingUnit.Int64, SettlementPeriod: settlementPeriod.String}
+		a.CommissionSnapshot = &PartnerStoreCommissionSnapshot{CommercialStoreTypeID: a.CommercialStoreTypeID, RateBps: int(rateBps.Int64), PolicyVersion: int(policyVersion.Int64), ProfileID: profileID.String, ProfileVersion: int(profileVersion.Int64), RoundingUnitMinor: roundingUnit.Int64, SettlementPeriod: settlementPeriod.String}
 	}
 	return nil
 }
