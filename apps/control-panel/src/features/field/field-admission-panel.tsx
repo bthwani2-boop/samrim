@@ -133,12 +133,12 @@ type FieldLegacyReviewActionsProps = Readonly<Pick<FieldAccountMutationActionsPr
 function FieldLegacyReviewActions({ field, name, busy, onNameChange, onMutate }: FieldLegacyReviewActionsProps) {
   const admission = field.admission;
   if (!admission) return null;
-  const unchanged = name.trim() === (admission.fullNameAr ?? "");
+  const matchesSavedProfile = name.trim() === (admission.fullNameAr ?? "");
   const nameIsValid = Array.from(name.trim()).length >= 2;
   return <>
     <label className="field-label" htmlFor={`field-profile-name-${field.actorId}`}>استكمال اسم العرض<input id={`field-profile-name-${field.actorId}`} value={name} maxLength={120} disabled={Boolean(busy)} onChange={(event) => onNameChange(event.target.value)} /></label>
-    <button type="button" className="button button-secondary" disabled={Boolean(busy) || !nameIsValid || unchanged} onClick={() => onMutate(field, "update-profile")}>حفظ الاسم</button>
-    <button type="button" className="button button-primary" disabled={Boolean(busy) || !name.trim() || unchanged} onClick={() => onMutate(field, "review-profile")}>اعتماد مراجعة الملف</button>
+    <button type="button" className="button button-secondary" disabled={Boolean(busy) || !nameIsValid || matchesSavedProfile} onClick={() => onMutate(field, "update-profile")}>حفظ الاسم</button>
+    <button type="button" className="button button-primary" disabled={Boolean(busy) || !name.trim() || !matchesSavedProfile} onClick={() => onMutate(field, "review-profile")}>اعتماد مراجعة الملف</button>
   </>;
 }
 
