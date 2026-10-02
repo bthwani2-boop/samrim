@@ -28,14 +28,14 @@ const surface = read("tools/dev/start-surface.mjs");
 const expectedScripts = {
   check: "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/check-local.ps1",
   "speed:check": "node tools/dev/verify-local-speed-contract.mjs",
-  client: "node tools/dev/start-surface.mjs app-client",
-  partner: "node tools/dev/start-surface.mjs app-partner",
-  captain: "node tools/dev/start-surface.mjs app-captain",
-  field: "node tools/dev/start-surface.mjs app-field",
-  control: "node tools/dev/start-surface.mjs control-panel",
+  client: "pnpm --dir apps/app-client dev",
+  partner: "pnpm --dir apps/app-partner dev",
+  captain: "pnpm --dir apps/app-captain dev",
+  field: "pnpm --dir apps/app-field dev",
+  control: "pnpm --dir apps/control-panel dev",
 };
 for (const [name, command] of Object.entries(expectedScripts)) {
-  check(pkg.scripts?.[name] === command, `package script ${name} must remain direct and canonical`);
+  check(pkg.scripts?.[name] === command, `package script ${name} must route through its owning app package`);
 }
 
 check(localCheck.includes("$env:NX_NO_CLOUD = 'true'"), "inner-loop check must keep Nx Cloud disabled");

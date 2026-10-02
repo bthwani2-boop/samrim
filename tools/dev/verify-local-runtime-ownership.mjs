@@ -46,7 +46,7 @@ for(const [name,target] of Object.entries({dev:"daily","runtime:up":"up","runtim
 }
 check(pkg.scripts?.scr==="pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/scr.ps1","scr must route directly to the dedicated device owner");
 for(const [name,dir] of Object.entries({client:"app-client",partner:"app-partner",captain:"app-captain",field:"app-field",control:"control-panel"})){
-  check(pkg.scripts?.[name]===`node tools/dev/start-surface.mjs ${dir}`,`${name} must invoke the shared launcher with its explicit app identity`);
+  check(pkg.scripts?.[name]===`pnpm --dir apps/${dir} dev`,`${name} must route through its owning app package`);
   const surfacePkg=JSON.parse(read(`apps/${dir}/package.json`));
   check(surfacePkg.scripts?.dev==="node ../../tools/dev/start-surface.mjs",`${name} package must own direct dev startup`);
 }
