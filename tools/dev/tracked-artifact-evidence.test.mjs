@@ -50,18 +50,6 @@ test("owner contract resolves only explicit durable artifact classes", () => {
   );
 });
 
-test("owner contract recognizes the declared Nx task distribution files", () => {
-  const result = auditSyntheticTrackedArtifacts(
-    [".nx/ci-config.yaml", ".nx/workflows/agents.yaml"],
-    () => null,
-  );
-
-  applyTrackedArtifactOwnerContract(result);
-  assert.deepEqual(result.review, []);
-  assert.equal(result.fileEvidence.get(".nx/ci-config.yaml"), "NX_DISTRIBUTION_CONFIG");
-  assert.equal(result.fileEvidence.get(".nx/workflows/agents.yaml"), "NX_DISTRIBUTION_CONFIG");
-});
-
 test("native icon type contract requires its canonical consumer", () => {
   const withConsumer = auditSyntheticTrackedArtifacts(
     [

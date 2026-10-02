@@ -49,7 +49,7 @@ samrim/
 ├── infra/      environment/deployment composition
 ├── tools/      repository-wide development/verification/build tooling
 └── .github/    repository-platform policy and CI integration
-└── .nx/        Nx task distribution configuration and ignored local Nx state
+└── .nx/        ignored local Nx state
 ```
 
 Forbidden top-level ownership roots include `core/`, `shared/`, `common/`, `platform/`, `frontend/` and `backend/`.

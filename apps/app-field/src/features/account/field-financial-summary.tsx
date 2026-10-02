@@ -53,7 +53,7 @@ export function FieldFinancialSummaryCard() {
     <Text style={styles.muted}>يُثبت الاستحقاق بعد ظهور متجر الشريك للعميل؛ الرصيد المتاح والمحجوز يظهران في قسم التسوية.</Text>
     <Text style={styles.sectionTitle}>حركات استحقاق ضم الشريك</Text>
     {entitlementRows}
-    {ledger && ledger.entitlements.length === 0 ? <Text style={styles.muted}>لا توجد حركات استحقاق مسجلة حتى الآن.</Text> : null}
+    {ledger?.entitlements.length === 0 ? <Text style={styles.muted}>لا توجد حركات استحقاق مسجلة حتى الآن.</Text> : null}
     {ledger?.nextCursor ? <BthwaniButton busy={loadingMore} label="عرض الحركات الأقدم" onPress={() => void load(ledger.nextCursor, true)} variant="secondary" /> : null}
     <BthwaniButton busy={loadingMore} label="تحديث السجل" onPress={() => void load()} variant="secondary" />
   </BthwaniSurface>;

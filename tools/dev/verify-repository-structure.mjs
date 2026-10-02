@@ -57,7 +57,7 @@ if (set.has(structurePath)) {
     "CURRENT_IMPLEMENTATION_INVENTORY_AUTHORITY: NONE",
     "Current app/service/package members are discovered from the exact project graph/source",
     "This is a placement grammar, not current inventory",
-    ".nx/        Nx task distribution configuration and ignored local Nx state",
+    ".nx/        ignored local Nx state",
   ]) {
     assert(structure.includes(token), `${structurePath} missing placement-only invariant: ${token}`);
   }
@@ -75,7 +75,7 @@ const topLevel = [...new Set(
 for (const item of topLevel) {
   assert(allowedTopLevel.has(item), `Unadmitted top-level ownership class tracked: ${item}`);
 }
-for (const required of [".github", ".nx", "tools"]) {
+for (const required of [".github", "tools"]) {
   assert(topLevel.includes(required), `Required repository/tool root missing: ${required}`);
 }
 

@@ -12,6 +12,8 @@ type FieldAccount = ActorRoleView & Readonly<{ admission: FieldAdmission | null 
 type FieldWorkbenchItem = Readonly<{ kind: "candidate"; admission: FieldAdmission }> | Readonly<{ kind: "account"; account: FieldAccount }>;
 type FieldPage = Readonly<{ items: ReadonlyArray<FieldWorkbenchItem>; nextCursor?: string }>;
 type FieldAcquisitionCase = JoiningCaseListResponse["cases"][number];
+type FieldCandidateAction = "update-profile" | "approve" | "provision";
+type FieldAccountAction = "update-profile" | "review-profile" | "activate" | "disable" | "reenroll";
 type AdmissionMutationResponse = Readonly<{ admission?: FieldAdmission }>;
 
 function fieldRequestError(cause: unknown, fallback: string): string {
@@ -44,13 +46,13 @@ async function readWorkbench(currentQuery: string): Promise<FieldPage> {
   return await response.json() as FieldPage;
 }
 
-function expectedCandidateState(action: "update-profile" | "approve" | "provision", currentState: FieldAdmission["state"]): FieldAdmission["state"] {
+function expectedCandidateState(action: FieldCandidateAction, currentState: FieldAdmission["state"]): FieldAdmission["state"] {
   if (action === "approve") return "pending_identity";
   if (action === "provision") return "eligible";
   return currentState;
 }
 
-function candidateMutationNotice(action: "update-profile" | "approve" | "provision"): string {
+function candidateMutationNotice(action: FieldCandidateAction): string {
   if (action === "approve") return "اعتُمد الملف وأُعيدت قراءته؛ أصبح منح الدور خطوته التالية.";
   if (action === "provision") return "مُنح الدور وأُعيدت قراءة ربط Identity وDSH.";
   return "حُفظ الاسم وأُعيدت قراءة الملف من DSH.";
@@ -60,6 +62,35 @@ function accessActionButtonLabel(busy: boolean, shouldDisable: boolean): string 
   if (busy) return "جارٍ التحديث…";
   if (shouldDisable) return "إيقاف الوصول";
   return "إعادة التفعيل";
+}
+
+function accountMutationValidation(field: FieldAccount, action: FieldAccountAction, reason: string, fullNameAr: string): string | undefined {
+  const admission = field.admission;
+  const needsReason = action === "activate" || action === "disable" || action === "reenroll";
+  if (needsReason && (Array.from(reason).length < 5 || Array.from(reason).length > 500)) return "اكتب سببًا من 5 إلى 500 حرف قبل تنفيذ الإجراء.";
+  if ((action === "update-profile" || action === "review-profile") && (admission?.state !== "suspended" || !admission.requiresProfileReview)) return "هذا الملف لا يحتاج مراجعة حاليًا.";
+  if (action === "update-profile" && (Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120)) return "أدخل اسم العرض الكامل قبل الحفظ.";
+  if (action === "reenroll" && (admission?.state !== "eligible" || !field.enabled || field.activatedAt)) return "إعادة التسجيل تتطلب دورًا مفعّلًا وأهلية DSH سارية قبل التفعيل.";
+  return undefined;
+}
+
+function accountMutationBody(field: FieldAccount, action: FieldAccountAction, reason: string, fullNameAr: string): Record<string, unknown> {
+  const admission = field.admission;
+  const body: Record<string, unknown> = { action, actorId: field.actorId, admissionId: admission?.id, reason };
+  if (action === "update-profile" || action === "review-profile") { body.fullNameAr = fullNameAr; body.expectedVersion = admission?.version; }
+  if (action === "activate" || action === "disable") body.expectedVersion = field.roleVersion;
+  if (action === "reenroll") { body.expectedActorVersion = field.actorVersion; body.expectedRoleVersion = field.roleVersion; body.expectedAdmissionVersion = admission?.version; }
+  return body;
+}
+
+function accountReadbackMatches(action: FieldAccountAction, fullNameAr: string, canonical: FieldAccount): boolean {
+  return !(
+    (action === "update-profile" && canonical.admission?.fullNameAr !== fullNameAr) ||
+    (action === "review-profile" && canonical.admission?.requiresProfileReview) ||
+    (action === "disable" && canonical.enabled) ||
+    (action === "activate" && !canonical.enabled) ||
+    (action === "reenroll" && canonical.activatedAt)
+  );
 }
 
 export function FieldAdmissionPanel() {
@@ -190,7 +221,7 @@ export function FieldAdmissionPanel() {
     } finally { setBusy(""); }
   }
 
-  async function mutateCandidate(admission: FieldAdmission, action: "update-profile" | "approve" | "provision") {
+  async function mutateCandidate(admission: FieldAdmission, action: FieldCandidateAction) {
     const nextName = (candidateEdits[admission.id] ?? admission.fullNameAr ?? "").trim();
     if (action === "update-profile" && (Array.from(nextName).length < 2 || Array.from(nextName).length > 120)) { setError("أدخل الاسم الكامل قبل حفظ الملف."); return; }
     setBusy(admission.id); setError(""); setNotice("");
@@ -216,27 +247,21 @@ export function FieldAdmissionPanel() {
     finally { setBusy(""); }
   }
 
-  async function mutateAccount(field: FieldAccount, action: "update-profile" | "review-profile" | "activate" | "disable" | "reenroll") {
+  async function mutateAccount(field: FieldAccount, action: FieldAccountAction) {
     const reason = reasons[field.actorId]?.trim() ?? "";
     const admission = field.admission;
     const fullNameAr = (profileEdits[field.actorId] ?? admission?.fullNameAr ?? "").trim();
-    const needsReason = action === "activate" || action === "disable" || action === "reenroll";
-    if (needsReason && (Array.from(reason).length < 5 || Array.from(reason).length > 500)) { setError("اكتب سببًا من 5 إلى 500 حرف قبل تنفيذ الإجراء."); return; }
-    if ((action === "update-profile" || action === "review-profile") && (admission?.state !== "suspended" || !admission.requiresProfileReview)) { setError("هذا الملف لا يحتاج مراجعة حاليًا."); return; }
-    if (action === "update-profile" && (Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120)) { setError("أدخل اسم العرض الكامل قبل الحفظ."); return; }
-    if (action === "reenroll" && (admission?.state !== "eligible" || !field.enabled || field.activatedAt)) { setError("إعادة التسجيل تتطلب دورًا مفعّلًا وأهلية DSH سارية قبل التفعيل."); return; }
+    const validationError = accountMutationValidation(field, action, reason, fullNameAr);
+    if (validationError) { setError(validationError); return; }
     setBusy(field.actorId); setError(""); setNotice("");
     try {
-      const body: Record<string, unknown> = { action, actorId: field.actorId, admissionId: admission?.id, reason };
-      if (action === "update-profile" || action === "review-profile") { body.fullNameAr = fullNameAr; body.expectedVersion = admission?.version; }
-      if (action === "activate" || action === "disable") body.expectedVersion = field.roleVersion;
-      if (action === "reenroll") { body.expectedActorVersion = field.actorVersion; body.expectedRoleVersion = field.roleVersion; body.expectedAdmissionVersion = admission?.version; }
+      const body = accountMutationBody(field, action, reason, fullNameAr);
       const response = await identityFetch("/api/fields", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (!response.ok) { const message = await responseMessage(response); await load(); setError(response.status === 409 || response.status === 412 ? `تغيرت حالة الحساب بالتزامن. أُعيد تحميل الحالة الحالية؛ راجعها قبل المحاولة مجددًا. ${message}` : message); return; }
       const page = await readWorkbench(field.phoneE164);
       const canonical = page.items.find((item): item is Extract<FieldWorkbenchItem, { kind: "account" }> => item.kind === "account" && item.account.actorId === field.actorId)?.account;
       if (!canonical) { setError("نُفذ الإجراء لكن الحساب لم يظهر في إعادة القراءة الموحّدة."); await load(); return; }
-      if ((action === "update-profile" && canonical.admission?.fullNameAr !== fullNameAr) || (action === "review-profile" && canonical.admission?.requiresProfileReview) || (action === "disable" && canonical.enabled) || (action === "activate" && !canonical.enabled) || (action === "reenroll" && canonical.activatedAt)) {
+      if (!accountReadbackMatches(action, fullNameAr, canonical)) {
         setError("نُفذ الإجراء لكن إعادة القراءة لا تطابق الحالة المطلوبة."); await load(); return;
       }
       setReasons((current) => ({ ...current, [field.actorId]: "" }));

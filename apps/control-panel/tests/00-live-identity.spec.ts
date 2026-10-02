@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { randomInt, randomUUID } from "node:crypto";
 import path from "node:path";
-import { expect, type Page, request, test } from "@playwright/test";
+import { expect, type Page, request, test } from "./coverage-fixtures";
 import { assertIdentityProofScope, enableVirtualAuthenticator, findInitialOperator, jsonRequest, type PreparedOperator, provisionIndependentOperator, readCanonicalRuntime, registerOperator, requiredEnv, waitForMailpitCode } from "./live-identity-proof-helpers";
 
 test.beforeAll(() => {

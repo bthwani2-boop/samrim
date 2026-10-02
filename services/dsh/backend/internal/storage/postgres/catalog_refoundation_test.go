@@ -177,6 +177,11 @@ func (s *catalogRefoundationScenario) verifySharedProducts() {
 	if err != nil || secondProduct.Product.ID == "" || secondProduct.Product.ID == s.productID {
 		s.t.Fatalf("create second catalog product for keyset proof: %+v err=%v", secondProduct, err)
 	}
+	s.verifySharedProductPagination()
+}
+
+func (s *catalogRefoundationScenario) verifySharedProductPagination() {
+	s.t.Helper()
 	registryPage, err := postgres.ListCatalogProductRegistry(s.ctx, s.db, "", s.verticalID, "", "all", "name_asc", 1, "")
 	if err != nil || len(registryPage.Products) != 1 || registryPage.NextCursor == "" {
 		s.t.Fatalf("catalog product registry first page failed: %+v err=%v", registryPage, err)
@@ -303,6 +308,27 @@ func (s *catalogRefoundationScenario) publishSecondStoreOffer() {
 
 func (s *catalogRefoundationScenario) verifyPublicStoreDiscovery() {
 	s.t.Helper()
+	s.verifyPublishedStorePagination()
+	publicStores, err := postgres.ListPublishedStorePage(s.ctx, s.db, postgres.PublicStoreListQuery{ServiceCityID: s.cityID, Sort: "newest", Limit: 10})
+	if err != nil || len(publicStores.Stores) != 2 {
+		s.t.Fatalf("published store discovery query failed: %+v err=%v", publicStores, err)
+	}
+	publishedStore, err := postgres.ReadPublishedStore(s.ctx, s.db, "store_catalog_v1", s.cityID)
+	if err != nil || publishedStore.ID != "store_catalog_v1" || len(publishedStore.CategoryIDs) != 1 || publishedStore.CategoryIDs[0] != s.categoryID {
+		s.t.Fatalf("published store canonical readback failed: %+v err=%v", publishedStore, err)
+	}
+	discoveryCategories, err := postgres.ListPublicDiscoveryCategories(s.ctx, s.db, s.cityID)
+	if err != nil || len(discoveryCategories) != 1 || discoveryCategories[0].ID != s.categoryID {
+		s.t.Fatalf("public discovery categories failed: %+v err=%v", discoveryCategories, err)
+	}
+	publicSearch, err := postgres.SearchPublicCatalog(s.ctx, s.db, s.cityID, s.categoryID, "قهوة", 10, "")
+	if err != nil || len(publicSearch.Offers) != 2 || publicSearch.Offers[0].StoreID == publicSearch.Offers[1].StoreID {
+		s.t.Fatalf("public catalog search failed: %+v err=%v", publicSearch, err)
+	}
+}
+
+func (s *catalogRefoundationScenario) verifyPublishedStorePagination() {
+	s.t.Helper()
 	newestPage, err := postgres.ListPublishedStorePage(s.ctx, s.db, postgres.PublicStoreListQuery{ServiceCityID: s.cityID, Sort: "newest", Limit: 1})
 	if err != nil || len(newestPage.Stores) != 1 || newestPage.NextCursor == "" {
 		s.t.Fatalf("published store newest first page failed: %+v err=%v", newestPage, err)
@@ -319,22 +345,6 @@ func (s *catalogRefoundationScenario) verifyPublicStoreDiscovery() {
 	nearestNext, err := postgres.ListPublishedStorePage(s.ctx, s.db, postgres.PublicStoreListQuery{ServiceCityID: s.cityID, Sort: "nearest", Limit: 1, Cursor: nearestPage.NextCursor, Latitude: &latitude, Longitude: &longitude})
 	if err != nil || len(nearestNext.Stores) != 1 || nearestNext.NextCursor != "" || nearestNext.Stores[0].ID == nearestPage.Stores[0].ID {
 		s.t.Fatalf("published store nearest cursor failed: first=%+v second=%+v err=%v", nearestPage, nearestNext, err)
-	}
-	publicStores, err := postgres.ListPublishedStorePage(s.ctx, s.db, postgres.PublicStoreListQuery{ServiceCityID: s.cityID, Sort: "newest", Limit: 10})
-	if err != nil || len(publicStores.Stores) != 2 {
-		s.t.Fatalf("published store discovery query failed: %+v err=%v", publicStores, err)
-	}
-	publishedStore, err := postgres.ReadPublishedStore(s.ctx, s.db, "store_catalog_v1", s.cityID)
-	if err != nil || publishedStore.ID != "store_catalog_v1" || len(publishedStore.CategoryIDs) != 1 || publishedStore.CategoryIDs[0] != s.categoryID {
-		s.t.Fatalf("published store canonical readback failed: %+v err=%v", publishedStore, err)
-	}
-	discoveryCategories, err := postgres.ListPublicDiscoveryCategories(s.ctx, s.db, s.cityID)
-	if err != nil || len(discoveryCategories) != 1 || discoveryCategories[0].ID != s.categoryID {
-		s.t.Fatalf("public discovery categories failed: %+v err=%v", discoveryCategories, err)
-	}
-	publicSearch, err := postgres.SearchPublicCatalog(s.ctx, s.db, s.cityID, s.categoryID, "قهوة", 10, "")
-	if err != nil || len(publicSearch.Offers) != 2 || publicSearch.Offers[0].StoreID == publicSearch.Offers[1].StoreID {
-		s.t.Fatalf("public catalog search failed: %+v err=%v", publicSearch, err)
 	}
 }
 

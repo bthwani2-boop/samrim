@@ -8,12 +8,6 @@ on:
   schedule:
     - cron: "23 1 * * 0"
   workflow_dispatch:
-    inputs:
-      enable_nx_agents:
-        description: "Distribute the affected Linux static graph across two Nx Cloud agents"
-        required: false
-        type: boolean
-        default: false
 
 concurrency:
   group: ci-static-${{ github.ref }}
@@ -32,7 +26,6 @@ jobs:
     env:
       NX_CLOUD_ACCESS_TOKEN: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && secrets.NX_CLOUD_RW_TOKEN || secrets.NX_CLOUD_RO_TOKEN }}
       NX_NO_CLOUD: ${{ github.event_name == 'pull_request' && secrets.NX_CLOUD_RO_TOKEN == '' && 'true' || 'false' }}
-      NX_DTE_ENABLED: ${{ (github.event_name == 'pull_request' && secrets.NX_CLOUD_RO_TOKEN != '') || (github.event_name == 'push' && secrets.NX_CLOUD_RW_TOKEN != '') || (github.event_name == 'workflow_dispatch' && inputs.enable_nx_agents && (secrets.NX_CLOUD_RW_TOKEN != '' || secrets.NX_CLOUD_RO_TOKEN != '')) }}
       CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT: maps-config-placeholder-0
       GOOGLE_MAPS_IOS_API_KEY: maps-config-placeholder-1
@@ -99,11 +92,6 @@ jobs:
         shell: bash
         run: node tools/dev/run-ci-command.mjs static-install -- pnpm install --frozen-lockfile
 
-      - name: Start opt-in Nx Agents
-        if: env.NX_DTE_ENABLED == 'true'
-        shell: bash
-        run: pnpm dlx nx-cloud start-nx-agents
-
       - name: Verify repository invariants through Nx
         shell: bash
         run: |
@@ -121,14 +109,9 @@ jobs:
             pnpm exec nx run infra:compose-config --outputStyle=stream
 
       - name: Verify affected static graph
-        if: github.event_name != 'schedule' && env.NX_DTE_ENABLED != 'true'
+        if: github.event_name != 'schedule'
         shell: bash
         run: node tools/dev/run-ci-command.mjs static-affected -- pnpm exec nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream
-
-      - name: Verify affected static graph with Nx Agents
-        if: github.event_name == 'workflow_dispatch' && env.NX_DTE_ENABLED == 'true'
-        shell: bash
-        run: node tools/dev/run-ci-command.mjs static-affected -- pnpm exec nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --dte
 
       - name: Verify full static graph
         if: github.event_name == 'schedule'

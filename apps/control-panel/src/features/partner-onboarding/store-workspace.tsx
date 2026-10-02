@@ -13,6 +13,13 @@ const fulfillmentModeOptions: ReadonlyArray<Readonly<{ value: StoreFulfillmentMo
   { value: "CUSTOMER_PICKUP", label: "استلام من المتجر", description: "يستلم العميل طلبه مباشرة من المتجر." },
 ];
 
+async function readCommercialStoreTypes(verticalId?: string | null): Promise<ReadonlyArray<CommercialStoreType>> {
+  if (!verticalId) return [];
+  const response = await fetch(`/api/catalog/commercial-store-types?verticalId=${encodeURIComponent(verticalId)}`, { cache: "no-store" });
+  if (!response.ok) throw new Error(await partnerErrorMessage(response));
+  return (await response.json() as CommercialStoreTypeListResponse).storeTypes;
+}
+
 export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
   const [publication, setPublication] = useState<StorePublicationResponse | null>(null);
   const [selectedModes, setSelectedModes] = useState<ReadonlyArray<StoreFulfillmentMode>>([]);
@@ -37,15 +44,9 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
       setPublication(next);
       setSelectedModes(next.store.fulfillmentModes);
       setSelectedCommercialTypeID(next.store.commercialStoreTypeId ?? "");
-      if (next.store.primaryVerticalId) {
-        const typesResponse = await fetch(`/api/catalog/commercial-store-types?verticalId=${encodeURIComponent(next.store.primaryVerticalId)}`, { cache: "no-store" });
-        if (!typesResponse.ok) throw new Error(await partnerErrorMessage(typesResponse));
-        const typesBody = await typesResponse.json() as CommercialStoreTypeListResponse;
-        if (sequence !== requestSequence.current) return null;
-        setCommercialTypes(typesBody.storeTypes);
-      } else {
-        setCommercialTypes([]);
-      }
+      const storeTypes = await readCommercialStoreTypes(next.store.primaryVerticalId);
+      if (sequence !== requestSequence.current) return null;
+      setCommercialTypes(storeTypes);
       return next;
     } catch (cause) {
       if (sequence !== requestSequence.current) return null;

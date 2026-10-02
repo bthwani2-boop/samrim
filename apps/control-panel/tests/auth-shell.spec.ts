@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./coverage-fixtures";
 
 async function stubSession(page: Page, status: number) {
   await page.route("**/api/auth/session**", async (route) => {
@@ -40,7 +40,7 @@ async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "f
   const actorID = `act_${role}_reviewed_candidate`;
   const admissionID = `${role === "captain" ? "cap" : "fld"}_adm_reviewed_candidate`;
   const candidateNameSelector = role === "field" ? `#candidate-name-${admissionID}` : `#${role}-candidate-name-${admissionID}`;
-  let profile: { id: string; actorId?: string; fullNameAr: string; contactPhoneE164: string; serviceCityId?: string; state: string; version: number } | null = null;
+  let profile: { id: string; actorId?: string; fullNameAr: string; contactPhoneE164: string; serviceCityId?: string; state: string; requiresProfileReview?: boolean; version: number } | null = null;
   const mutations: Record<string, unknown>[] = [];
 
   if (role === "field") {
@@ -53,6 +53,17 @@ async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "f
     const request = route.request();
     if (request.method() === "GET") {
       const params = new URL(request.url()).searchParams;
+      if (role === "captain" && params.get("scope") !== "candidates") {
+        const items = profile?.actorId ? [{ actorId: profile.actorId, phoneE164: profile.contactPhoneE164, role: "captain", enabled: true, admission: profile }] : [];
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items, limit: 25, nextCursor: "" }) });
+        return;
+      }
+      if (role === "captain") {
+        const requestedState = params.get("state") ?? "review_required";
+        const visible = profile && (requestedState === "all" || requestedState === profile.state || (requestedState === "review_required" && profile.requiresProfileReview)) ? [profile] : [];
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: visible, limit: 25, nextCursor: "" }) });
+        return;
+      }
       if (role === "field" && params.get("scope") === "workbench") {
         const items = profile?.actorId
           ? [{ kind: "account", account: { actorId: profile.actorId, phoneE164: profile.contactPhoneE164, role: "field", enabled: true, activatedAt: undefined, securityEnabled: true, actorVersion: 1, roleVersion: 1, admission: profile } }]
@@ -809,6 +820,10 @@ test("legacy Captain profile review never offers role activation before review",
       await route.fulfill({ status: 204 });
       return;
     }
+    if (new URL(route.request().url()).searchParams.get("scope") === "candidates") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 25, nextCursor: "" }) });
+      return;
+    }
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_captain_legacy", phoneE164: "+96777000109", role: "captain", enabled, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "cap_adm_legacy", actorId: "act_captain_legacy", fullNameAr: null, requiresProfileReview: true, state: admissionState, availabilityState: "unavailable", version: 10, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
   });
   await page.goto("/captains");
@@ -859,6 +874,10 @@ test("Captain reenrollment goes through DSH eligibility and verifies the Identit
       await route.fulfill({ status: 204 });
       return;
     }
+    if (new URL(route.request().url()).searchParams.get("scope") === "candidates") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 25, nextCursor: "" }) });
+      return;
+    }
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_captain_reenroll", phoneE164: "+96777000111", role: "captain", enabled: true, securityEnabled: true, activatedAt: reauthorized ? null : "2026-09-20T08:00:00.000Z", actorVersion: 4, roleVersion: reauthorized ? 3 : 2, admission: { id: "cap_adm_reenroll", actorId: "act_captain_reenroll", state: "eligible", availabilityState: "unavailable", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
   });
   await page.goto("/captains");
@@ -884,6 +903,10 @@ test("Captain reenrollment reconciles a server error against the current Identit
     if (route.request().method() === "POST") {
       reenrollmentReachedCanonicalWriter = true;
       await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "DEPENDENCY_UNAVAILABLE" } }) });
+      return;
+    }
+    if (new URL(route.request().url()).searchParams.get("scope") === "candidates") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 25, nextCursor: "" }) });
       return;
     }
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_captain_unknown_result", phoneE164: "+96777000113", role: "captain", enabled: true, securityEnabled: true, activatedAt: reenrollmentReachedCanonicalWriter ? null : "2026-09-20T08:00:00.000Z", actorVersion: 4, roleVersion: reenrollmentReachedCanonicalWriter ? 3 : 2, admission: { id: "cap_adm_unknown_result", actorId: "act_captain_unknown_result", state: "eligible", availabilityState: "unavailable", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
@@ -933,6 +956,10 @@ test("captain center owns DSH eligibility and operational availability", async (
     if (route.request().method() === "POST") {
       mutationBody = route.request().postDataJSON() as Record<string, unknown>;
       await route.fulfill({ status: 204 });
+      return;
+    }
+    if (new URL(route.request().url()).searchParams.get("scope") === "candidates") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 25, nextCursor: "" }) });
       return;
     }
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_captain_admitted", phoneE164: "+96777000104", role: "captain", enabled: true, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 5, roleVersion: 6, admission: { id: "cap_adm_test", actorId: "act_captain_admitted", state: "eligible", availabilityState: "available", version: 7, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
@@ -1256,6 +1283,43 @@ test("operator creates a canonical commerce vertical before onboarding partners"
   await expect(page.getByRole("status")).toContainText("تم حفظ المجال التجاري: مطاعم.");
   await expect(page.getByRole("status")).not.toContainText("vertical_0123456789abcdef0123456789abcdef");
   expect(requestBody).toEqual({ nameAr: "مطاعم", nameEn: "Restaurants", catalogModel: "STORE_LOCAL_CATALOG", active: true, reason: "إنشاء فئة جديدة للاختبار" });
+});
+
+test("operator creates and reads back the reward policy for the selected commercial store type", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  let savedPolicy: { scopeType: string; scopeId: string; rewardMinor: number; roundingUnitMinor: number; expectedVersion: number; reason: string; version: number } | null = null;
+  let mutation: Record<string, unknown> | undefined;
+  await page.route("**/api/catalog/verticals**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "restaurants", nameAr: "مطاعم", nameEn: "Restaurants", catalogModel: "STORE_LOCAL_CATALOG", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
+  });
+  await page.route("**/api/catalog/commercial-store-types**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ storeTypes: [{ id: "grocery-market", verticalId: "restaurants", nameAr: "مطعم محلي", nameEn: "Local restaurant", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
+  });
+  await page.route("**/api/finance/field-acquisition-policy**", async (route) => {
+    if (route.request().method() === "GET") {
+      if (!savedPolicy) {
+        await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { code: "NOT_FOUND", message: "no policy" } }) });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ policy: savedPolicy }) });
+      return;
+    }
+    mutation = route.request().postDataJSON() as Record<string, unknown>;
+    savedPolicy = { ...(mutation as Omit<NonNullable<typeof savedPolicy>, "version">), version: 1 };
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ policy: savedPolicy }) });
+  });
+
+  await page.goto("/policies/field-acquisition");
+  await expect(page.locator("#field-acquisition-policy-title")).toBeVisible();
+  await page.getByLabel("المجال التجاري").selectOption("restaurants");
+  await page.getByLabel("نوع المتجر التجاري").selectOption("grocery-market");
+  await expect(page.getByText(/لا توجد سياسة مفعّلة/)).toBeVisible();
+  await page.getByLabel("مبلغ الاستحقاق لهذا النوع (ريال يمني)").fill("250");
+  await page.getByLabel("سبب إنشاء السياسة أو تغيير المبلغ").fill("سياسة اختبار نوع المطعم");
+  await page.getByRole("button", { name: "إنشاء سياسة لهذا النوع" }).click();
+  await expect(page.locator("output.success")).toContainText("تم حفظ السياسة ومطابقة مبلغها وإصدارها مع WLT.");
+  expect(mutation).toMatchObject({ scopeType: "STORE_TYPE", scopeId: "grocery-market", rewardMinor: 250, roundingUnitMinor: 50, expectedVersion: 0, reason: "سياسة اختبار نوع المطعم" });
+  await expect(page.getByText(/المبلغ الفعّال لنوع/)).toBeVisible();
 });
 
 test("operator creates a product category under its commerce vertical", async ({ page }) => {
@@ -1698,13 +1762,17 @@ test("security headers and cross-origin mutation guard are active", async ({ pag
   await expect(page.getByRole("heading", { name: /الدخول بمفتاح المرور|تعذر الوصول إلى الهوية/ })).toBeVisible();
   expect(cspMessages).toEqual([]);
 
-  const crossOriginResponse = await page.request.post("/api/auth/logout", {
+  const crossOriginResponse = await page.request.post("/api/catalog/verticals", {
     headers: { Origin: "https://evil.example", "Sec-Fetch-Site": "cross-site" },
   });
   expect(crossOriginResponse.status()).toBe(403);
 
-  const sameOriginBrowserResponse = await page.request.post("/api/auth/logout", { headers: { Referer: page.url() } });
-  expect(sameOriginBrowserResponse.status()).not.toBe(403);
+  const sameOriginBrowserStatus = await page.evaluate(async () => {
+    const response = await fetch("/api/catalog/verticals", { method: "POST" });
+    const body = await response.json() as { error?: { code?: string } };
+    return { status: response.status, code: body.error?.code };
+  });
+  expect(sameOriginBrowserStatus).toEqual({ status: 401, code: "UNAUTHENTICATED" });
 });
 
 test("rendered light and dark themes preserve RTL and keyboard focus", async ({ page }) => {

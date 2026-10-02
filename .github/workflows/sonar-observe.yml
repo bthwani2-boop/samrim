@@ -1,10 +1,6 @@
 name: Sonar Quality Gate
 
 on:
-  push:
-    branches:
-      - main
-
   pull_request:
     branches:
       - main
@@ -14,13 +10,11 @@ on:
       - reopened
       - ready_for_review
 
-  workflow_dispatch:
-
 permissions:
   contents: read
 
 concurrency:
-  group: sonar-quality-${{ github.event.pull_request.number || github.ref }}
+  group: sonar-quality-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
@@ -50,15 +44,12 @@ jobs:
       BTHWANI_EXPECTED_DATABASE_PORT: "5432"
       BTHWANI_EXPECTED_DATABASE_NAME: postgres
       BTHWANI_EXPECTED_DATABASE_USER: postgres
-      CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
 
     if: >
-      github.ref == 'refs/heads/main' ||
-      (
-        github.event_name == 'pull_request' &&
-        github.event.pull_request.base.ref == 'main' &&
-        github.event.pull_request.head.repo.full_name == github.repository
-      )
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository
 
     steps:
       - name: Checkout exact candidate
@@ -98,6 +89,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install Chromium for Control Panel behavioral coverage
+        run: pnpm --dir apps/control-panel exec playwright install --with-deps chromium
+
       - name: Generate Sonar coverage reports
         run: |
           mkdir -p coverage/sonar
@@ -121,6 +115,12 @@ jobs:
             tools/mobile/test-mobile-app-coverage-partner.test.mjs \
             tools/mobile/test-mobile-app-coverage-captain.test.mjs \
             tools/mobile/test-mobile-app-coverage-field.test.mjs
+
+      - name: Generate Control Panel browser coverage
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:4173
+          BTHWANI_SONAR_COVERAGE: "1"
+        run: pnpm --dir apps/control-panel exec playwright test --config playwright.sonar.config.ts
 
       - name: Rank current Go coverage debt
         run: |
@@ -148,7 +148,7 @@ jobs:
       - name: SonarQube Cloud scan
         uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
         with:
-          args: ${{ github.event_name == 'pull_request' && format('-Dsonar.pullrequest.key={0} -Dsonar.pullrequest.branch={1} -Dsonar.pullrequest.base={2}', github.event.pull_request.number, github.event.pull_request.head.ref, github.event.pull_request.base.ref) || format('-Dsonar.branch.name={0}', github.ref_name) }}
+          args: ${{ format('-Dsonar.pullrequest.key={0} -Dsonar.pullrequest.branch={1} -Dsonar.pullrequest.base={2}', github.event.pull_request.number, github.event.pull_request.head.ref, github.event.pull_request.base.ref) }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
@@ -208,13 +208,8 @@ jobs:
             exit 1
           fi
 
-          if [[ -n "${SONAR_PULL_REQUEST:-}" ]]; then
-            scope="pullRequest=${SONAR_PULL_REQUEST}"
-            issue_scope="$scope"
-          else
-            scope="branch=${GITHUB_REF_NAME}"
-            issue_scope="${scope}&inNewCodePeriod=true"
-          fi
+          scope="pullRequest=${SONAR_PULL_REQUEST:?PR number is required for Sonar Cloud PR analysis}"
+          issue_scope="$scope"
 
           evidence_dir="coverage/sonar/evidence"
           mkdir -p "$evidence_dir/scope-issue-pages" "$evidence_dir/main-issue-pages"

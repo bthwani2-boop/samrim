@@ -1,4 +1,4 @@
-import { isMediaProvenanceInputValid, type ActorLegalName, type CatalogAttributeDefinitionListResponse, type CatalogAttributeDefinitionResponse, type CatalogAttributeEnumOptionListResponse, type CatalogAttributeEnumOptionResponse, type CatalogAttributeRuleListResponse, type CatalogProduct, type CatalogProductRegistryResponse, type CreateCatalogAttributeDefinitionRequest, type CreateCatalogAttributeEnumOptionRequest, type CreateCustomerWithdrawalIntakeRequest, type CustomerWithdrawalDecisionRequest, type CustomerWithdrawalIntakeListResponse, type CustomerWithdrawalIntakeResponse, type ManagedCaptainAvailabilityRequest, type MediaProvenanceInput, type PartnerStoreListResponse, type SubmitActorLegalNameRequest, type UpsertCatalogAttributeRuleRequest, type VerifyActorLegalNameRequest, type BeneficiaryPayoutState, type BeneficiaryPayoutStateResponse, type CaptainAdmissionListResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CashCustodyRegistryResponse, type CatalogCategoryDetailResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateDeliveryFeePolicyRequest, type CreateJoiningCaseRequest, type CreatePartnerFinancialTermsPolicyRequest, type CreatePromotionRequest, type CreateServiceCityRequest, type DeliveryFeePolicyResponse, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentResponse, dshOperationPaths, type FieldAdmissionListResponse, type FieldAdmissionRequest, type FieldAdmissionResponse, type FieldAcquisitionRewardPolicy, type ManagedRoleReenrollmentRequest, type FinanceEvidenceDocument, type JoiningCaseListResponse, type JoiningCaseResponse, type ManagedRoleMutationRequest, type MarketingPublicationRequest, type NotificationListResponse, type NotificationReadResponse, type OfficialWalletDestination, type OperatorDiscoveryContentRegistryResponse, type OperatorOperationResponse, type OperatorOperationsResponse, type OperatorPromotionRegistryResponse, type OperatorStoreListResponse, type PartnerCommissionReceivableRegistryResponse, type PartnerCommissionRemittanceRequest, type PartnerCommissionRemittanceResponse, type PartnerFinancialSummaryResponse, type PartnerFinancialTermsPolicyResponse, type PartnerStoreCommissionPoliciesResponse, type PartnerStoreCommissionPolicyUpdateRequest, type PartnerStoreCommissionPolicyUpdateResponse, type PayoutRequest, type PromotionResponse, type PublicationAction, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type ReviewJoiningCaseRequest, type ServiceCityListResponse, type ServiceCityResponse, type SetStoreFulfillmentModesRequest, type SettlementBatch, type SettlementBatchExport, type StoreFulfillmentModesResponse, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogCategoryRequest, type UpdateCatalogProductRequest, type UpdateCommerceVerticalRequest, type UpdateServiceCityRequest, CommercialStoreTypeListResponse, CommercialStoreTypeResponse, CreateCommercialStoreTypeRequest, UpdateCommercialStoreTypeRequest, SetStoreCommercialTypeRequest, SetStoreCommercialTypeResponse } from "@bthwani/dsh";
+import { isMediaProvenanceInputValid, type ActorLegalName, type CatalogAttributeDefinitionListResponse, type CatalogAttributeDefinitionResponse, type CatalogAttributeEnumOptionListResponse, type CatalogAttributeEnumOptionResponse, type CatalogAttributeRuleListResponse, type CatalogProduct, type CatalogProductRegistryResponse, type CreateCatalogAttributeDefinitionRequest, type CreateCatalogAttributeEnumOptionRequest, type CreateCustomerWithdrawalIntakeRequest, type CustomerWithdrawalDecisionRequest, type CustomerWithdrawalIntakeListResponse, type CustomerWithdrawalIntakeResponse, type ManagedCaptainAvailabilityRequest, type MediaProvenanceInput, type PartnerStoreListResponse, type SubmitActorLegalNameRequest, type UpsertCatalogAttributeRuleRequest, type VerifyActorLegalNameRequest, type BeneficiaryPayoutState, type BeneficiaryPayoutStateResponse, type CaptainAdmissionListResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CashCustodyRegistryResponse, type CatalogCategoryDetailResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateDeliveryFeePolicyRequest, type CreateJoiningCaseRequest, type CreatePartnerFinancialTermsPolicyRequest, type CreatePromotionRequest, type CreateServiceCityRequest, type DeliveryFeePolicyResponse, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentResponse, dshOperationPaths, type FieldAdmissionListResponse, type FieldAdmissionRequest, type FieldAdmissionResponse, type FieldAcquisitionRewardPolicy, type ManagedRoleReenrollmentRequest, type FinanceEvidenceDocument, type JoiningCaseListResponse, type JoiningCaseResponse, type ManagedRoleMutationRequest, type MarketingPublicationRequest, type NotificationListResponse, type NotificationReadResponse, type OfficialWalletDestination, type OperatorDiscoveryContentRegistryResponse, type OperatorOperationResponse, type OperatorOperationsResponse, type OperatorPromotionRegistryResponse, type OperatorStoreListResponse, type PartnerCommissionReceivableRegistryResponse, type PartnerCommissionRemittanceRequest, type PartnerCommissionRemittanceResponse, type PartnerFinancialSummaryResponse, type PartnerFinancialTermsPolicyResponse, type PartnerStoreCommissionPoliciesResponse, type PartnerStoreCommissionPolicyUpdateRequest, type PartnerStoreCommissionPolicyUpdateResponse, type PayoutRequest, type PromotionResponse, type PublicationAction, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type ReviewJoiningCaseRequest, type ServiceCityListResponse, type ServiceCityResponse, type SetStoreFulfillmentModesRequest, type SettlementBatch, type SettlementBatchExport, type StoreFulfillmentModesResponse, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogCategoryRequest, type UpdateCatalogProductRequest, type UpdateCommerceVerticalRequest, type UpdateServiceCityRequest, type CommercialStoreTypeListResponse, type CommercialStoreTypeResponse, type CreateCommercialStoreTypeRequest, type UpdateCommercialStoreTypeRequest, type SetStoreCommercialTypeRequest, type SetStoreCommercialTypeResponse } from "@bthwani/dsh";
 import { validateServiceUrl } from "@bthwani/identity";
 
 type DshClientError =
@@ -24,9 +24,6 @@ export type StorePublicationMutationContext = DshVersionedMutationContext & Read
 export type DshOperatorReadContext = Readonly<{
   operatorActorId: string;
 }>;
-export type CatalogVerticalMutationContext = JoiningCaseMutationContext;
-export type CatalogCategoryMutationContext = JoiningCaseMutationContext;
-export type CommercialStoreTypeMutationContext = JoiningCaseMutationContext;
 
 export type CreateFieldAcquisitionRewardPolicyRequest = Readonly<{
   scopeType: "STORE_TYPE";
@@ -698,14 +695,14 @@ export async function listCatalogVerticals(context: DshOperatorReadContext, incl
   return (await requestDshJson<CommerceVerticalListResponse>(dshOperationPaths.listCatalogVerticals.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export async function createCatalogVertical(input: CreateCommerceVerticalRequest, context: CatalogVerticalMutationContext): Promise<Readonly<{ status: number; payload: CommerceVerticalResponse }>> {
+export async function createCatalogVertical(input: CreateCommerceVerticalRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: CommerceVerticalResponse }>> {
   if (!input.nameAr.trim() || !input.nameEn.trim() || (input.catalogModel !== "SHARED_CATALOG" && input.catalogModel !== "STORE_LOCAL_CATALOG") || input.reason.trim().length < 5 || input.reason.trim().length > 500) throw new Error("DSH_CATALOG_VERTICAL_INPUT_INVALID");
   validateAttributedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_CATALOG_VERTICAL_IDEMPOTENCY_INVALID");
   return requestDshJson<CommerceVerticalResponse>(dshOperationPaths.createCatalogVertical.method, dshOperationPaths.createCatalogVertical.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
-export async function updateCatalogVertical(verticalId: string, input: UpdateCommerceVerticalRequest, context: CatalogVerticalMutationContext): Promise<Readonly<{ status: number; payload: CommerceVerticalResponse }>> {
+export async function updateCatalogVertical(verticalId: string, input: UpdateCommerceVerticalRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: CommerceVerticalResponse }>> {
   const normalizedId = verticalId.trim();
   if (!normalizedId || !input.nameAr.trim() || !input.nameEn.trim() || (input.catalogModel !== "SHARED_CATALOG" && input.catalogModel !== "STORE_LOCAL_CATALOG") || !Number.isInteger(input.expectedVersion) || input.expectedVersion < 1 || input.reason.trim().length < 5 || input.reason.trim().length > 500) throw new Error("DSH_CATALOG_VERTICAL_UPDATE_INPUT_INVALID");
   validateAttributedMutationContext(context);
@@ -722,14 +719,14 @@ export async function listCommercialStoreTypes(context: DshOperatorReadContext, 
   return (await requestDshJson<CommercialStoreTypeListResponse>(dshOperationPaths.listCommercialStoreTypes.method, `${dshOperationPaths.listCommercialStoreTypes.path}?${query}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export async function createCommercialStoreType(input: CreateCommercialStoreTypeRequest, context: CommercialStoreTypeMutationContext): Promise<Readonly<{ status: number; payload: CommercialStoreTypeResponse }>> {
+export async function createCommercialStoreType(input: CreateCommercialStoreTypeRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: CommercialStoreTypeResponse }>> {
   if (!input.verticalId.trim() || !input.nameAr.trim() || !input.nameEn.trim() || input.reason.trim().length < 5 || input.reason.trim().length > 500) throw new Error("DSH_COMMERCIAL_STORE_TYPE_INPUT_INVALID");
   validateAttributedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_COMMERCIAL_STORE_TYPE_IDEMPOTENCY_INVALID");
   return requestDshJson<CommercialStoreTypeResponse>(dshOperationPaths.createCommercialStoreType.method, dshOperationPaths.createCommercialStoreType.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
-export async function updateCommercialStoreType(storeTypeId: string, input: UpdateCommercialStoreTypeRequest, context: CommercialStoreTypeMutationContext): Promise<Readonly<{ status: number; payload: CommercialStoreTypeResponse }>> {
+export async function updateCommercialStoreType(storeTypeId: string, input: UpdateCommercialStoreTypeRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: CommercialStoreTypeResponse }>> {
   const normalizedId = storeTypeId.trim();
   if (!normalizedId || !input.nameAr.trim() || !input.nameEn.trim() || !Number.isInteger(input.expectedVersion) || input.expectedVersion < 1 || input.reason.trim().length < 5 || input.reason.trim().length > 500) throw new Error("DSH_COMMERCIAL_STORE_TYPE_UPDATE_INPUT_INVALID");
   validateAttributedMutationContext(context);
@@ -738,14 +735,14 @@ export async function updateCommercialStoreType(storeTypeId: string, input: Upda
   return requestDshJson<CommercialStoreTypeResponse>(dshOperationPaths.updateCommercialStoreType.method, path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
-export async function createCatalogCategory(input: CreateCatalogCategoryRequest, context: CatalogCategoryMutationContext): Promise<Readonly<{ status: number; payload: CatalogCategoryResponse }>> {
+export async function createCatalogCategory(input: CreateCatalogCategoryRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: CatalogCategoryResponse }>> {
   if (!input.verticalId.trim() || !input.nameAr.trim() || !input.nameEn.trim() || input.reason.trim().length < 5 || input.reason.trim().length > 500) throw new Error("DSH_CATALOG_CATEGORY_INPUT_INVALID");
   validateAttributedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_CATALOG_CATEGORY_IDEMPOTENCY_INVALID");
   return requestDshJson<CatalogCategoryResponse>(dshOperationPaths.createCatalogCategory.method, dshOperationPaths.createCatalogCategory.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
-export async function updateCatalogCategory(categoryId: string, input: UpdateCatalogCategoryRequest, context: CatalogCategoryMutationContext): Promise<Readonly<{ status: number; payload: CatalogCategoryResponse }>> {
+export async function updateCatalogCategory(categoryId: string, input: UpdateCatalogCategoryRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: CatalogCategoryResponse }>> {
   const normalizedId = categoryId.trim();
   if (!normalizedId || !input.nameAr.trim() || !input.nameEn.trim() || !Number.isInteger(input.expectedVersion) || input.expectedVersion < 1 || input.reason.trim().length < 5 || input.reason.trim().length > 500) throw new Error("DSH_CATALOG_CATEGORY_UPDATE_INPUT_INVALID");
   validateAttributedMutationContext(context);
@@ -782,7 +779,7 @@ export async function listCatalogAttributeDefinitions(verticalId: string, includ
   return (await requestDshJson<CatalogAttributeDefinitionListResponse>(dshOperationPaths.listCatalogAttributeDefinitions.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export async function createCatalogAttributeDefinition(input: CreateCatalogAttributeDefinitionRequest, context: CatalogCategoryMutationContext): Promise<Readonly<{ status: number; payload: CatalogAttributeDefinitionResponse }>> {
+export async function createCatalogAttributeDefinition(input: CreateCatalogAttributeDefinitionRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: CatalogAttributeDefinitionResponse }>> {
   if (!input.id.trim() || !input.verticalId.trim() || !input.code.trim() || !input.nameAr.trim()) throw new Error("DSH_CATALOG_ATTRIBUTE_INPUT_INVALID");
   validateAttributedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_CATALOG_ATTRIBUTE_IDEMPOTENCY_INVALID");
@@ -795,7 +792,7 @@ export async function listCatalogAttributeEnumOptions(attributeId: string, conte
   return (await requestDshJson<CatalogAttributeEnumOptionListResponse>(dshOperationPaths.listCatalogAttributeEnumOptions.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export async function createCatalogAttributeEnumOption(attributeId: string, input: CreateCatalogAttributeEnumOptionRequest, context: CatalogCategoryMutationContext): Promise<Readonly<{ status: number; payload: CatalogAttributeEnumOptionResponse }>> {
+export async function createCatalogAttributeEnumOption(attributeId: string, input: CreateCatalogAttributeEnumOptionRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: CatalogAttributeEnumOptionResponse }>> {
   if (!attributeId.trim() || !input.optionValue.trim()) throw new Error("DSH_CATALOG_ATTRIBUTE_OPTION_INPUT_INVALID");
   validateAttributedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_CATALOG_ATTRIBUTE_OPTION_IDEMPOTENCY_INVALID");
@@ -809,7 +806,7 @@ export async function listCatalogCategoryAttributeRules(categoryId: string, cont
   return (await requestDshJson<CatalogAttributeRuleListResponse>(dshOperationPaths.listCatalogCategoryAttributeRules.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export async function upsertCatalogCategoryAttributeRule(categoryId: string, attributeId: string, input: UpsertCatalogAttributeRuleRequest, context: CatalogCategoryMutationContext): Promise<Readonly<{ status: number; payload: CatalogAttributeRuleListResponse }>> {
+export async function upsertCatalogCategoryAttributeRule(categoryId: string, attributeId: string, input: UpsertCatalogAttributeRuleRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: CatalogAttributeRuleListResponse }>> {
   if (!categoryId.trim() || !attributeId.trim()) throw new Error("DSH_CATALOG_ATTRIBUTE_RULE_INPUT_INVALID");
   validateAttributedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_CATALOG_ATTRIBUTE_RULE_IDEMPOTENCY_INVALID");

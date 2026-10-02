@@ -15,7 +15,7 @@ function fail(message){
 
 const supportedSurfaces=new Set(["app-client","app-partner","app-captain","app-field","control-panel"]);
 const requestedSurface=(process.argv[2]??"").trim();
-if(requestedSurface&&!supportedSurfaces.has(requestedSurface)){
+if(requestedSurface&&(!/^(?:app-client|app-partner|app-captain|app-field|control-panel)$/.test(requestedSurface)||!supportedSurfaces.has(requestedSurface))){
   fail("UNSUPPORTED_LOCAL_SURFACE");
 }
 const surfaceRoot=requestedSurface?path.join(appsRoot,requestedSurface):process.cwd();

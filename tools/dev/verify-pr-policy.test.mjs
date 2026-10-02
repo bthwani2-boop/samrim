@@ -37,10 +37,16 @@ test("Sonar contract rejects project-version drift", () => {
   assert.ok(findings.some((item) => item.code === "SONAR_PROJECT_VERSION_DRIFT"));
 });
 
-test("Sonar contract rejects a main issue query that expands back to all legacy debt", () => {
-  const widened = workflowText.replace('issue_scope="${scope}&inNewCodePeriod=true"', 'issue_scope="$scope"');
+test("Sonar contract rejects analysis that is widened beyond the exact pull request", () => {
+  const widened = workflowText.replace('scope="pullRequest=${SONAR_PULL_REQUEST:?PR number is required for Sonar Cloud PR analysis}"', 'scope="branch=main"');
   const findings = validateSonarContract({ packageJsonText, sonarPropertiesText, workflowText: widened });
-  assert.ok(findings.some((item) => item.code === "SONAR_MAIN_NEW_CODE_ISSUE_SCOPE_MISSING"));
+  assert.ok(findings.some((item) => item.code === "SONAR_PULL_REQUEST_SCOPE_MISSING"));
+});
+
+test("Sonar contract rejects push and manual-run analysis triggers", () => {
+  const widened = workflowText.replace("on:\n  pull_request:", "on:\n  push:\n    branches: [main]\n  pull_request:");
+  const findings = validateSonarContract({ packageJsonText, sonarPropertiesText, workflowText: widened });
+  assert.ok(findings.some((item) => item.code === "SONAR_WORKFLOW_NOT_PR_ONLY"));
 });
 
 test("Sonar contract rejects build identifiers masquerading as project versions", () => {

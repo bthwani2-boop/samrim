@@ -274,7 +274,7 @@ expectSQL(
   "DSH StoreOffer keyset paging index is missing",
 );
   expectSQL("SELECT to_regclass('dsh.joining_case_financial_profile_outbox') IS NOT NULL", "t", "DSH financial profile outbox is missing");
-  expectSQL("SELECT to_regclass('dsh.field_commission_publication_outbox') IS NOT NULL", "t", "DSH field commission publication outbox is missing");
+  expectSQL("SELECT to_regclass('dsh.field_acquisition_entitlement_outbox') IS NOT NULL", "t", "DSH field acquisition entitlement outbox is missing");
   expectSQL("SELECT to_regclass('dsh.commerce_financial_handoff_outbox') IS NOT NULL", "t", "DSH financial handoff outbox is missing");
   expectSQL("SELECT count(*) FROM pg_constraint WHERE conname IN ('commerce_financial_handoff_outbox_effect_chk','commerce_financial_handoff_outbox_shape_chk','commerce_financial_handoff_outbox_actor_chk')", "3", "DSH financial handoff constraints are incomplete");
   expectSQL("SELECT to_regclass('wlt.partner_financial_profiles') IS NOT NULL AND to_regclass('wlt.partner_financial_profile_events') IS NOT NULL", "t", "WLT partner financial profile relations are missing");
@@ -828,7 +828,7 @@ if (publishA.status !== 200 || publishB.status !== 200) {
     storeA: sql(`SELECT publication_state || ':' || version::text FROM dsh.stores WHERE id='${sqlLiteral(first.storeID)}'`),
     storeB: sql(`SELECT publication_state || ':' || version::text FROM dsh.stores WHERE id='${sqlLiteral(second.storeID)}'`),
     publicationRecords: sql(`SELECT (SELECT count(*) FROM dsh.store_publication_idempotency WHERE idempotency_key='store-a-publish-${sqlLiteral(suffix)}') || ':' || (SELECT count(*) FROM dsh.store_publication_audit WHERE idempotency_key='store-a-publish-${sqlLiteral(suffix)}') || '|' || (SELECT count(*) FROM dsh.store_publication_idempotency WHERE idempotency_key='store-b-publish-${sqlLiteral(suffix)}') || ':' || (SELECT count(*) FROM dsh.store_publication_audit WHERE idempotency_key='store-b-publish-${sqlLiteral(suffix)}')`),
-    fieldCommissionOutbox: sql(`SELECT count(*) FROM dsh.field_commission_publication_outbox WHERE store_id IN ('${sqlLiteral(first.storeID)}','${sqlLiteral(second.storeID)}')`),
+    fieldAcquisitionOutbox: sql(`SELECT count(*) FROM dsh.field_acquisition_entitlement_outbox WHERE store_id IN ('${sqlLiteral(first.storeID)}','${sqlLiteral(second.storeID)}')`),
   };
   fail("Store publication failed after catalog readiness", JSON.stringify({ publishA, publishB, publicationReadback }));
 }

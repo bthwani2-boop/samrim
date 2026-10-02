@@ -34,13 +34,18 @@ export function validateSonarContract({ packageJsonText, sonarPropertiesText, wo
   }
 
   const requiredWorkflowFragments = [
-    ['issue_scope="${scope}&inNewCodePeriod=true"', "SONAR_MAIN_NEW_CODE_ISSUE_SCOPE_MISSING"],
+    ['scope="pullRequest=${SONAR_PULL_REQUEST:?PR number is required for Sonar Cloud PR analysis}"', "SONAR_PULL_REQUEST_SCOPE_MISSING"],
+    ['issue_scope="$scope"', "SONAR_PR_ISSUE_SCOPE_MISSING"],
     ['fetch_issue_pages "$issue_scope" "$evidence_dir/scope-issue-pages"', "SONAR_SCOPE_ISSUE_FETCH_MISSING"],
     ['fetch_issue_pages "branch=main" "$evidence_dir/main-issue-pages"', "SONAR_MAIN_DEBT_INVENTORY_MISSING"],
     ["new_lines_to_cover,new_uncovered_lines", "SONAR_NEW_COVERAGE_EVIDENCE_MISSING"],
   ];
   for (const [fragment, code] of requiredWorkflowFragments) {
     if (!workflowText.includes(fragment)) report(code, fragment);
+  }
+
+  if (!/^  pull_request:\s*$/m.test(workflowText) || /^  (?:push|workflow_dispatch):\s*$/m.test(workflowText)) {
+    report("SONAR_WORKFLOW_NOT_PR_ONLY", "Sonar Cloud analysis must run only for pull requests");
   }
 
   if (/sonar\.projectVersion[^\n]*(?:CANDIDATE_SHA|github\.sha|run_number|run_id)/i.test(workflowText)) {

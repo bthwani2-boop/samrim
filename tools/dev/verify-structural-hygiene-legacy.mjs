@@ -290,7 +290,6 @@ for (const file of tracked) {
     classify(file, file === githubAgentRoutingAdapter ? "agent-routing-adapter" : "repository-platform");
     continue;
   }
-  if (top === ".nx") { classify(file, "nx-task-distribution-config"); continue; }
   if (top === "apps") {
     if (file === "apps/README.md") { classify(file, "apps-orientation"); continue; }
     if (apps.has(segments[1])) classify(file, "deployable-app:" + segments[1]);
