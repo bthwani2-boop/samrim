@@ -3,29 +3,16 @@
   "workspaces": {
     ".": {
       "entry": [
-        "tools/dev/js-deps.mjs",
-        "tools/dev/verify-dsh-location-runtime.mjs",
-        "tools/dev/build-ci-image.mjs",
-        "tools/dev/check-go-format.mjs",
-        "tools/dev/hash-control-panel-secret-input.mjs",
-        "tools/dev/run-ci-runtime-proof.mjs",
-        "tools/dev/runtime-proof/resolve.test.mjs",
-        "tools/dev/runtime-proof/trusted-executables.test.mjs",
-        "tools/dev/verify-agent-knowledge-contract.mjs",
-        "tools/dev/verify-cache-contracts.mjs",
-        "tools/dev/verify-documentation.mjs",
-        "tools/dev/verify-dsh-baseline.mjs",
-        "tools/dev/verify-dsh-runtime-core.mjs",
-        "tools/dev/verify-go-workspace-sync.mjs",
-        "tools/dev/verify-identity-migrations.mjs",
-        "tools/dev/verify-identity-runtime.mjs",
-        "tools/dev/verify-knowledge.mjs",
-        "tools/dev/verify-local-runtime-ownership.mjs",
-        "tools/dev/verify-nx-project-tags.mjs",
-        "tools/dev/verify-pr-policy.mjs",
-        "tools/dev/verify-repository-structure.mjs",
-        "tools/dev/verify-secret-safety.mjs",
-        "tools/dev/verify-workspace-dependencies.mjs",
+        "tools/go/format-check.mjs",
+        "tests/runtime/mailpit-challenge.mjs",
+        "tests/runtime/runtime-proof/canonical-dsh-migration-history.mjs",
+        "tests/runtime/runtime-proof/challenge-source.mjs",
+        "tests/runtime/runtime-proof/trusted-executables.mjs",
+        "tests/runtime/verify-dsh-baseline.mjs",
+        "tests/runtime/verify-dsh-location-runtime.mjs",
+        "tests/runtime/verify-dsh-runtime-core.mjs",
+        "tests/runtime/verify-identity-migrations.mjs",
+        "tests/runtime/verify-identity-runtime.mjs",
         "tools/mobile/export-mobile-smoke.mjs",
         "tools/mobile/hash-mobile-secret-input.mjs",
         "tools/mobile/test-mobile-app.mjs"
@@ -45,6 +32,7 @@
     },
     "apps/control-panel": {
       "entry": [
+        "hash-secret-input.mjs",
         "app/**/route.ts",
         "playwright.global-setup.ts",
         "tests/**/*.spec.ts"
@@ -61,10 +49,7 @@
     "services/dsh/tools/generate-types.mjs",
     "services/identity/tools/generate-types.mjs",
     "services/identity/tests/contract-guard.test.mjs",
-    "tools/dev/query-knowledge.mjs",
-    "tools/mobile/define-samrim-expo-app.d.cts",
-    "tools/mobile/with-android-development-client.d.cts",
-    "tools/dev/runtime-proof/trusted-executables.d.mts"
+    "tools/mobile/define-samrim-expo-app.d.cts"
   ],
   "ignoreBinaries": [
     "build",
