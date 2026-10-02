@@ -89,6 +89,7 @@ type customerPaymentAllocationRequest struct {
 	OrderID                    string `json:"orderId"`
 	StoreID                    string `json:"storeId"`
 	PartnerActorID             string `json:"partnerActorId"`
+	CommercialStoreTypeID      string `json:"commercialStoreTypeId"`
 	FulfillmentMode            string `json:"fulfillmentMode"`
 	Currency                   string `json:"currency"`
 	SubtotalMinor              int64  `json:"subtotalMinor"`
@@ -893,6 +894,7 @@ func (c *Client) CreateForOrderWithMethod(ctx context.Context, orderID, external
 			OrderID:                    allocation.OrderID,
 			StoreID:                    allocation.StoreID,
 			PartnerActorID:             allocation.PartnerActorID,
+			CommercialStoreTypeID:      allocation.CommercialStoreTypeID,
 			FulfillmentMode:            allocation.FulfillmentMode,
 			Currency:                   allocation.Currency,
 			SubtotalMinor:              allocation.SubtotalMinor,
