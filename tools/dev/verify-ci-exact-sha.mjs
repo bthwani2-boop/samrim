@@ -29,8 +29,8 @@ if (count(staticCi, "CANDIDATE_SHA: ${{ " + candidateExpression + " }}") !== 2) 
 if (count(staticCi, "ref: ${{ env.CANDIDATE_SHA }}") !== 2) {
   failures.push("CI Static must checkout the exact candidate SHA in both jobs");
 }
-if (count(staticCi, "Verify exact candidate checkout") !== 2) {
-  failures.push("CI Static must prove exact checkout in both jobs");
+if (count(staticCi, "Verify exact affected candidate") !== 2) {
+  failures.push("CI Static must verify exact candidate and affected SHAs in both jobs");
 }
 if (!staticCi.includes("node tools/dev/verify-ci-exact-sha.mjs")) failures.push("CI Static shared exact SHA guard missing");
 
@@ -38,7 +38,7 @@ if (!runtimeCi.includes("CANDIDATE_SHA: ${{ " + candidateExpression + " }}")) {
   failures.push("CI Runtime candidate SHA binding missing");
 }
 if (!runtimeCi.includes("ref: ${{ env.CANDIDATE_SHA }}")) failures.push("CI Runtime exact checkout missing");
-if (!runtimeCi.includes("Verify exact candidate checkout")) failures.push("CI Runtime exact checkout proof missing");
+if (!runtimeCi.includes("Verify exact affected candidate")) failures.push("CI Runtime exact affected SHA proof missing");
 if (!runtimeCi.includes("node tools/dev/verify-ci-exact-sha.mjs")) failures.push("CI Runtime shared exact SHA guard missing");
 
 for (const [name, workflow] of [["security", securityCi], ["policy", policyCi]]) {
@@ -46,14 +46,14 @@ for (const [name, workflow] of [["security", securityCi], ["policy", policyCi]])
   if (!workflow.includes("ref: ${{ env.CANDIDATE_SHA }}")) failures.push("CI " + name + " exact candidate checkout missing");
 }
 
-for (const [name, workflow, checkoutCount, affectedGuardCount] of [
-  ["static", staticCi, 2, 2],
-  ["runtime", runtimeCi, 1, 1],
-  ["security", securityCi, 1, 0],
-  ["policy", policyCi, 1, 0],
+for (const [name, workflow, guardCount] of [
+  ["static", staticCi, 2],
+  ["runtime", runtimeCi, 1],
+  ["security", securityCi, 1],
+  ["policy", policyCi, 1],
 ]) {
-  if (count(workflow, "node tools/dev/verify-ci-exact-sha.mjs") !== checkoutCount + affectedGuardCount) {
-    failures.push("CI " + name + " must use the canonical exact-SHA guard at checkout and after affected SHA resolution");
+  if (count(workflow, "node tools/dev/verify-ci-exact-sha.mjs") !== guardCount) {
+    failures.push("CI " + name + " exact-SHA guard count changed unexpectedly");
   }
 }
 for (const [name, workflow, jobCount] of [["static", staticCi, 2], ["runtime", runtimeCi, 1]]) {
