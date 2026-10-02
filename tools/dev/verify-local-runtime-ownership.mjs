@@ -50,8 +50,15 @@ for(const [name,dir] of Object.entries({client:"app-client",partner:"app-partner
   const surfacePkg=JSON.parse(read(`apps/${dir}/package.json`));
   check(surfacePkg.scripts?.dev==="node ../../tools/dev/start-surface.mjs",`${name} package must own direct dev startup`);
 }
-check(launcher.includes("const surfaceRoot=requestedSurface?path.join(appsRoot,requestedSurface):process.cwd()"),"root surface launch must resolve the selected app to its own package directory");
-check(launcher.includes("supportedSurfaces.has(requestedSurface)"),"surface launcher must validate explicit app identities before resolving a path");
+for(const surface of ["app-client","app-partner","app-captain","app-field","control-panel"]){
+  check(launcher.includes(`["${surface}",path.join(appsRoot,"${surface}")]`),`surface launcher must map ${surface} to its canonical package directory`);
+}
+const validateSurfaceAt=launcher.indexOf("if(requestedSurface&&!surfaceRoots.has(requestedSurface))");
+const resolveSurfaceAt=launcher.indexOf("const surfaceRoot=requestedSurface?surfaceRoots.get(requestedSurface):process.cwd()");
+check(validateSurfaceAt>=0&&resolveSurfaceAt>validateSurfaceAt,"surface launcher must validate explicit app identities before resolving a fixed path");
+check(!launcher.includes("path.join(appsRoot,requestedSurface)"),"surface launcher must not join an untrusted argument into a filesystem path");
+const invalidSurfaceProbe=spawnSync(process.execPath,["tools/dev/start-surface.mjs","../../outside"],{cwd:root,encoding:"utf8"});
+check(invalidSurfaceProbe.status===1&&invalidSurfaceProbe.stderr.includes("UNSUPPORTED_LOCAL_SURFACE"),"surface launcher must reject an unapproved path traversal identity before reading local configuration");
 check(!Object.keys(pkg.scripts??{}).some((name)=>name.startsWith("world:")),"persistent synthetic world commands must remain absent");
 check(pkg.scripts?.["runtime:verify-ownership"]===undefined,"runtime ownership verifier must remain internal to candidate verification");
 check(pkg.scripts?.["runtime:reset"]===undefined&&pkg.scripts?.["runtime:purge"]===undefined,"unproven destructive runtime command aliases must remain absent");

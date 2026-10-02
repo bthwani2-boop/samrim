@@ -59,7 +59,6 @@ check(!/targets\s*=\s*['"][^'"]*export-smoke/i.test(localCheck), "inner-loop tar
 check(surface.includes('args=[cli,"start","--dev-client","--localhost","--port",port]'), "mobile surface must start Expo directly");
 check(surface.includes('args=[cli,"dev","-H","127.0.0.1","-p",port]'), "Control surface must start Next directly");
 check(surface.includes("process.argv[2]"), "root surface launcher must accept one explicit canonical app name");
-check(surface.includes("supportedSurfaces.has(requestedSurface)"), "root surface launcher must reject unsupported names before spawning a server");
 absent(surface, [
   /pnpm\s+exec\s+nx/i,
   /docker\s+compose/i,
