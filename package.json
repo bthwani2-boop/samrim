@@ -19,8 +19,6 @@
     "check": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/check-local.ps1",
     "theme:generate": "pnpm --dir packages/design-system theme:generate",
     "theme:check": "pnpm --dir packages/design-system theme:check",
-    "verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/check-local.ps1 -Candidate",
-    "safe:push": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/safe-push.ps1",
     "mobile:prepare": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/prepare-local-development.ps1",
     "dev": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1",
     "client": "pnpm --dir apps/app-client dev",
