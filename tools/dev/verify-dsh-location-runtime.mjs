@@ -116,6 +116,28 @@ async function createPartnerSession(operatorID, phone, instance) {
   return { actorID, pair };
 }
 
+async function ensureCommissionPolicy(operatorID) {
+  const endpoint = "/dsh/operator/commercial-store-type-commission-policies";
+  const read = async () => request(dshBase, "GET", `${endpoint}?commercialStoreTypeId=${encodeURIComponent(commercialStoreTypeID)}`, { token: controlPanelToken, headers: { "X-Acting-Actor-ID": operatorID } });
+  const current = await read();
+  if (current.status !== 200 || current.body?.commercialStoreTypeId !== commercialStoreTypeID || !Array.isArray(current.body?.policies)) throw new Error(`commercial store type commission policy read failed: ${JSON.stringify(current)}`);
+  const existing = current.body.policies.find((policy) => policy.fulfillmentMode === "BTHWANI_CAPTAIN");
+  if (existing) {
+    if (existing.commercialStoreTypeId !== commercialStoreTypeID || existing.fulfillmentMode !== "BTHWANI_CAPTAIN" || existing.commissionRateBps !== 1500 || !Number.isInteger(existing.policyVersion) || existing.policyVersion < 1) throw new Error(`commercial store type commission policy is invalid: ${JSON.stringify(existing)}`);
+    return existing;
+  }
+
+  const created = await request(dshBase, "POST", endpoint, {
+    token: controlPanelToken,
+    headers: serviceHeaders(operatorID),
+    body: { commercialStoreTypeId: commercialStoreTypeID, fulfillmentMode: "BTHWANI_CAPTAIN", commissionRateBps: 1500, expectedVersion: 0, reason: "Location Core disposable runtime proof policy" },
+  });
+  const readback = await read();
+  const policy = readback.body?.policies?.find((item) => item.fulfillmentMode === "BTHWANI_CAPTAIN");
+  if (created.status !== 200 || created.body?.policy?.commercialStoreTypeId !== commercialStoreTypeID || created.body?.policy?.fulfillmentMode !== "BTHWANI_CAPTAIN" || created.body?.policy?.commissionRateBps !== 1500 || created.body?.policy?.policyVersion !== 1 || readback.status !== 200 || policy?.commercialStoreTypeId !== commercialStoreTypeID || policy?.fulfillmentMode !== "BTHWANI_CAPTAIN" || policy?.commissionRateBps !== 1500 || policy?.policyVersion !== 1) throw new Error(`canonical commercial store type commission policy setup/readback failed: ${JSON.stringify({ created, readback })}`);
+  return policy;
+}
+
 async function createApprovedPartner(operatorID, phone, name, serviceCityId) {
   const created = await expect(dshBase, "POST", "/dsh/joining-cases", 201, {
     token: controlPanelToken,
@@ -131,10 +153,13 @@ async function createApprovedPartner(operatorID, phone, name, serviceCityId) {
   if (submitted?.case?.state !== "submitted" || !submitted.case.partnerActorId) throw new Error("location joining case submit readback failed");
   const fixture = await createPartnerSession(operatorID, phone, `location-partner-${suffix}-${name.replace(/[^A-Za-z0-9._:-]/g, "-")}`);
   if (fixture.actorID !== String(submitted.case.partnerActorId)) throw new Error("location joining case actor binding drifted");
+  await ensureCommissionPolicy(operatorID);
+  const terms = await expect(dshBase, "GET", "/dsh/operator/partner-financial-terms-policy", 200, { token: controlPanelToken, headers: { "X-Acting-Actor-ID": operatorID } });
+  if (terms?.policy?.state !== "ACTIVE" || terms.policy.settlementPeriod !== "MONTHLY" || typeof terms.policy.policyVersion !== "string" || !terms.policy.policyVersion.startsWith("partner-financial-terms:v")) throw new Error(`active partner financial terms policy is invalid: ${JSON.stringify(terms)}`);
   const approved = await expect(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(caseID)}/review`, 200, {
     token: controlPanelToken,
     headers: { ...serviceHeaders(operatorID), "X-Expected-Version": "2" },
-    body: { decision: "approved", commissionRateBps: 1500, settlementPeriod: "MONTHLY" },
+    body: { decision: "approved", expectedTermsPolicyVersion: terms.policy.policyVersion },
   });
   if (approved?.case?.state !== "approved" || approved.case.financialProfileState !== "ACTIVE" || approved.case.commissionRateBps !== 1500 || approved.case.settlementPeriod !== "MONTHLY" || typeof approved.case.financialProfileId !== "string" || !approved.case.store?.id || approved.case.firstStoreCommercialTypeId !== commercialStoreTypeID || approved.case.store.commercialStoreTypeId !== commercialStoreTypeID || approved.case.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || approved.case.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || approved.case.store.deliveryOrigin?.latitude !== firstStoreOrigin.firstStoreLatitude || approved.case.store.deliveryOrigin?.longitude !== firstStoreOrigin.firstStoreLongitude) throw new Error("location joining case approval did not bind financial terms, commercial type, or store origin");
   return { ...fixture, caseID, storeID: String(approved.case.store.id) };
