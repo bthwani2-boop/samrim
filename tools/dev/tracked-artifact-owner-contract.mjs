@@ -3,6 +3,9 @@ function compareText(left, right) {
 }
 
 function ownerEvidence(file, trackedFiles) {
+  if ([".nx/ci-config.yaml", ".nx/workflows/agents.yaml"].includes(file)) {
+    return "NX_DISTRIBUTION_CONFIG";
+  }
   if (/^apps\/[^/]+\/(?:DESIGN|UX-CONTRACT)\.md$/.test(file)) {
     return "PROJECT_DOCUMENTATION_CONTRACT";
   }
