@@ -31,16 +31,22 @@ func newFieldFinanceValidationServer(t *testing.T) (*httptest.Server, *identityi
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/auth/session":
-			if r.Header.Get("Authorization") != "Bearer field-session" {
+			switch r.Header.Get("Authorization") {
+			case "Bearer field-session":
+				_ = json.NewEncoder(w).Encode(identityclient.ActorIdentity{Subject: "field-actor", Role: "field"})
+			case "Bearer partner-session":
+				_ = json.NewEncoder(w).Encode(identityclient.ActorIdentity{Subject: "partner-actor", Role: "partner"})
+			default:
 				http.Error(w, `{"error":{"code":"UNAUTHENTICATED"}}`, http.StatusUnauthorized)
-				return
 			}
-			_ = json.NewEncoder(w).Encode(identityclient.ActorIdentity{Subject: "field-actor", Role: "field"})
-		case r.Method == http.MethodGet && r.URL.Path == "/internal/actors/operator/roles/operator":
-			_ = json.NewEncoder(w).Encode(identityclient.ActorRoleView{ActorID: "operator", Role: "operator", Enabled: true, SecurityEnabled: true, ActivatedAt: &activatedAt})
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/internal/operators/operator/permissions/"):
-			permission := strings.TrimPrefix(r.URL.Path, "/internal/operators/operator/permissions/")
-			_ = json.NewEncoder(w).Encode(identityclient.OperatorPermissionAccess{ActorID: "operator", Permission: identityclient.OperatorPermission(permission), Enabled: true, Version: 1})
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/internal/actors/") && strings.HasSuffix(r.URL.Path, "/roles/operator"):
+			actorID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/internal/actors/"), "/roles/operator")
+			_ = json.NewEncoder(w).Encode(identityclient.ActorRoleView{ActorID: actorID, Role: "operator", Enabled: true, SecurityEnabled: true, ActivatedAt: &activatedAt})
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/internal/operators/") && strings.Contains(r.URL.Path, "/permissions/"):
+			parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/internal/operators/"), "/permissions/")
+			actorID := parts[0]
+			permission := parts[1]
+			_ = json.NewEncoder(w).Encode(identityclient.OperatorPermissionAccess{ActorID: actorID, Permission: identityclient.OperatorPermission(permission), Enabled: actorID != "restricted-operator", Version: 1})
 		default:
 			http.NotFound(w, r)
 		}
@@ -168,6 +174,41 @@ func TestFieldFinanceReadsCanonicalFieldAndOperatorSummaries(t *testing.T) {
 			}
 			if !strings.Contains(response.Body.String(), `"currency":"YER"`) || !strings.Contains(response.Body.String(), `"earnedMinor":1200`) {
 				t.Fatalf("summary did not preserve the canonical WLT values: %s", response.Body.String())
+			}
+		})
+	}
+}
+
+func TestFieldFinanceRequiresFieldSessionAndOperatorAuthority(t *testing.T) {
+	_, _, _, mux := newFieldFinanceValidationServer(t)
+	serviceToken := "Bearer " + strings.Repeat("s", 24)
+	cases := []struct {
+		name   string
+		path   string
+		auth   string
+		acting string
+		want   int
+	}{
+		{name: "field summary rejects missing session", path: "/dsh/fields/me/financial-summary", want: http.StatusUnauthorized},
+		{name: "field summary rejects another role", path: "/dsh/fields/me/financial-summary", auth: "Bearer partner-session", want: http.StatusForbidden},
+		{name: "operator summary rejects service unauthenticated", path: "/dsh/operator/fields/field-actor/financial-summary", auth: "Bearer invalid", acting: "operator", want: http.StatusUnauthorized},
+		{name: "operator summary requires actor", path: "/dsh/operator/fields/field-actor/financial-summary", auth: serviceToken, want: http.StatusBadRequest},
+		{name: "operator summary requires finance permission", path: "/dsh/operator/fields/field-actor/financial-summary", auth: serviceToken, acting: "restricted-operator", want: http.StatusForbidden},
+		{name: "policy lookup requires platform policy permission", path: "/dsh/operator/field-acquisition-reward-policies?scopeType=STORE_TYPE&scopeId=type-1", auth: serviceToken, acting: "restricted-operator", want: http.StatusForbidden},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			if tc.auth != "" {
+				request.Header.Set("Authorization", tc.auth)
+			}
+			if tc.acting != "" {
+				request.Header.Set("X-Acting-Actor-ID", tc.acting)
+			}
+			response := httptest.NewRecorder()
+			mux.ServeHTTP(response, request)
+			if response.Code != tc.want {
+				t.Fatalf("authority status: got %d, want %d; body=%s", response.Code, tc.want, response.Body.String())
 			}
 		})
 	}
