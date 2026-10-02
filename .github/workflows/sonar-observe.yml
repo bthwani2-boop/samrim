@@ -110,6 +110,8 @@ jobs:
             tools/dev/verify-pr-policy.test.mjs \
             services/identity/tests/contract-guard.test.mjs \
             tools/dev/execution-proof-system.mjs \
+            tools/dev/verify-local-speed-contract.mjs \
+            tools/dev/verify-local-speed-contract.test.mjs \
             tools/dev/verify-wlt-contract-conformance.mjs \
             tools/mobile/test-mobile-app-coverage.test.mjs \
             tools/mobile/test-mobile-app-coverage-partner.test.mjs \
