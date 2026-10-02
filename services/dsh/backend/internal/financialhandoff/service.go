@@ -28,16 +28,21 @@ func (s *Service) Reconcile(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	failures := make([]error, 0)
 	for _, item := range items {
 		if err := s.apply(ctx, item); err != nil {
 			if markErr := postgres.MarkFinancialHandoffFailure(ctx, s.db, item.ID, err.Error()); markErr != nil {
 				return markErr
 			}
+			failures = append(failures, fmt.Errorf("handoff %s: %w", item.ID, err))
 			continue
 		}
 		if err := postgres.MarkFinancialHandoffPosted(ctx, s.db, item); err != nil {
 			return err
 		}
+	}
+	if len(failures) > 0 {
+		return fmt.Errorf("financial handoff reconciliation failed for %d item(s): %w", len(failures), errors.Join(failures...))
 	}
 	return nil
 }
@@ -56,8 +61,8 @@ func (s *Service) apply(ctx context.Context, item postgres.FinancialHandoffOutbo
 		if err != nil {
 			return fmt.Errorf("collect COD: %w", err)
 		}
-		if intent.State != "COLLECTED" {
-			return errors.New("WLT collection did not reach COLLECTED")
+		if intent.State != "COLLECTED" || !collectionActorMatches(intent, item.CaptainActorID, cashAmount) {
+			return errors.New("WLT delivery collection does not match the allocated cash source")
 		}
 		if cashAmount > 0 {
 			if _, _, err := s.wlt.FinalizeCaptainCOD(ctx, item.OrderID, item.PaymentIntentID, item.CaptainActorID, wltintegration.DerivedIdempotencyKey("captain-cod-finalize", item.SourceRef), item.CorrelationID); err != nil {
@@ -150,7 +155,7 @@ func (s *Service) apply(ctx context.Context, item postgres.FinancialHandoffOutbo
 
 func collectionActorMatches(intent wltintegration.PaymentIntent, actorID string, cashAmountMinor int64) bool {
 	if cashAmountMinor == 0 {
-		return intent.CollectedByActorID == nil || strings.TrimSpace(*intent.CollectedByActorID) == ""
+		return intent.CollectedByActorID == nil
 	}
 	return intent.CollectedByActorID != nil && strings.TrimSpace(*intent.CollectedByActorID) == strings.TrimSpace(actorID)
 }
