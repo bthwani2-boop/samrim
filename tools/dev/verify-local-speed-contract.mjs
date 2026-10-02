@@ -44,14 +44,14 @@ export function verifyLocalSpeedContract(root = path.resolve(import.meta.dirname
   check(localCheck.includes("--files="), "inner-loop check must scope from exact working-tree files");
   check(localCheck.includes("--nxBail=true"), "inner-loop check must stop at the first material failure");
   check(localCheck.includes("--parallel=2"), "inner-loop check must keep bounded local parallelism");
+  check(localCheck.includes("powershell-syntax runtime-ownership agent-contract cache-contracts"), "inner-loop check must run affected local contracts");
   absent(localCheck, [
     /\bnx\s+run-many\b/i,
     /\bdocker(?:\.exe)?\b/i,
     /run-playwright/i,
     /\bsonar\b/i,
     /--skip-nx-cache/i,
-    /\bruntime:up\b/i,
-    /\bruntime:down\b/i,
+    /\bpnpm\s+(?:dev\s+(?:up|down|status)|scr)\b/i,
   ], "inner-loop check");
   check(!/targets\s*=\s*['"][^'"]*\bbuild\b/i.test(localCheck), "inner-loop targets must not include build");
   check(!/targets\s*=\s*['"][^'"]*export-smoke/i.test(localCheck), "inner-loop targets must not include export-smoke");
@@ -85,8 +85,12 @@ export function verifyLocalSpeedContract(root = path.resolve(import.meta.dirname
   ], "local runtime owner");
 
   check(finalVerify.includes("$env:NX_NO_CLOUD = 'true'"), "final local verification must not depend on Nx Cloud");
+  check(finalVerify.includes("powershell-syntax runtime-ownership agent-contract cache-contracts"), "final verification must run affected local contracts");
   check(!/NX_DAEMON\s*=\s*['"]false['"]/i.test(finalVerify), "final local verification must not disable the local Nx daemon");
   check(safePush.includes("verify-local-candidate.ps1"), "safe push must keep final verification at push closure");
+  const mainFetch = safePush.indexOf("Invoke-Git @('fetch','--no-tags','origin','main')");
+  const remoteBranchFallback = safePush.indexOf("} else {");
+  check(mainFetch > remoteBranchFallback, "safe push must fetch main only when the target branch is absent");
   check(!safePush.includes("pnpm verify"), "safe push must not duplicate final verification through a second wrapper");
   return { checks, failures: [...new Set(failures)].sort((left, right) => left.localeCompare(right, "en")) };
 }

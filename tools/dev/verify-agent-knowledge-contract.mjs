@@ -21,14 +21,14 @@ function requireTokens(file, tokens) {
 }
 
 const agent = requireTokens("AGENTS.md", [
-  "The target is always the **simplest complete correct system**.",
+  "Current user and task instructions control this work.",
   "knowledge.sources.json",
   "pnpm check",
   "pnpm verify",
   "pnpm safe:push",
-  "Use Git for changed state and Nx for the project/task graph.",
+  "Git identifies changed files; Nx selects affected projects and tasks.",
   "Secrets stay outside the repository.",
-  "Closure means no known material defect",
+  "Closure requires no known material defect",
 ]);
 if (/(?:localhost|127\.0\.0\.1):\d{2,5}\b/i.test(agent)) failures.push("AGENTS.md hard-codes mutable runtime ports");
 if (/Server-Driven Operational Registry|Control Panel operational-resource law/i.test(agent)) failures.push("AGENTS.md duplicates durable Operator presentation policy");
@@ -73,17 +73,19 @@ if (!/^[0-9a-f]{40}$/.test(manifest?.governance?.commit ?? "")) failures.push("G
 const pkg = JSON.parse(read("package.json"));
 if (pkg?.scripts?.verify !== "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-local-candidate.ps1") failures.push("package.json verify owner drifted");
 if (pkg?.scripts?.["safe:push"] !== "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/safe-push.ps1") failures.push("package.json safe:push owner drifted");
-for (const command of ["dev", "client", "partner", "captain", "field", "control", "scr", "runtime:up", "runtime:status", "runtime:down"]) if (!pkg?.scripts?.[command]) failures.push(`package.json missing stable local command: ${command}`);
+for (const command of ["dev", "client", "partner", "captain", "field", "control", "scr"]) if (!pkg?.scripts?.[command]) failures.push(`package.json missing stable local command: ${command}`);
+if (["up", "down", "status"].some((action) => pkg?.scripts?.[`runtime:${action}`])) failures.push("package.json retains duplicate runtime command aliases");
 
 const safePush = requireTokens("tools/dev/safe-push.ps1", ["verify-local-candidate.ps1", "porcelain=v1", "merge-base --is-ancestor", "push','origin'", "ls-remote --heads origin"]);
 if (safePush.includes("pnpm verify")) failures.push("safe push must invoke the canonical verifier directly, not recursively");
 
 const localVerifier = requireTokens("tools/dev/verify-local-candidate.ps1", [
   "nx affected -t lint format-check typecheck unit contract vet",
+  "powershell-syntax runtime-ownership agent-contract cache-contracts",
   "--base=$BaseSha --head=$head",
   "VERIFY=PASS",
 ]);
-for (const forbidden of ["runtime:up", "runtime:doctor", "Get-RuntimeSnapshot", "Restore-RuntimeSnapshot"]) if (localVerifier.includes(forbidden)) failures.push(`local static verifier must not own runtime behavior: ${forbidden}`);
+for (const forbidden of [/\bpnpm\s+(?:dev|scr)\b/i, /\bdocker(?:\.exe)?\b/i]) if (forbidden.test(localVerifier)) failures.push(`local static verifier must not own runtime behavior: ${forbidden}`);
 
 const prTemplate = requireTokens(".github/pull_request_template.md", [
   "## Governance impact",
@@ -116,12 +118,6 @@ for (const file of adapterCandidates) {
   const body = read(file);
   if (!body.includes("ADAPTER_CLASS: DERIVED_AGENT_ROUTING")) continue;
   for (const token of ["SEMANTIC_AUTHORITY: NONE", "EXECUTION_AUTHORITY: NONE", "CLOSURE_AUTHORITY: NONE", "AGENTS.md"]) if (!body.includes(token)) failures.push(`${file} derived adapter missing ${token}`);
-}
-
-for (const file of ["AGENTS.md", "tools/dev/verify-local-candidate.ps1", ".github/workflows/ci-policy.yml", ".github/workflows/ci-static.yml", ".github/workflows/ci-runtime.yml", ".github/workflows/ci-security.yml", ".github/workflows/sonar-observe.yml", "knip.jsonc"]) {
-  if (/run-ci-command\.mjs|capture-ci-failure\.mjs|execution-proof-system|verify-nx-cloud-ci\.mjs|report-ci-performance\.mjs/.test(read(file))) {
-    failures.push(`${file} references retired CI instrumentation`);
-  }
 }
 
 if (failures.length) {

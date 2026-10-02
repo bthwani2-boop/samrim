@@ -1,4 +1,3 @@
-import { resolveTrustedExecutable } from "./runtime-proof/trusted-executables.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -30,20 +29,12 @@ const regexMetaCharacters=new Set([".","*","+","?","^","$","{","}","(",")","|","
 const escapedAppsRoot=[...path.join(root,"apps")].map((character)=>regexMetaCharacters.has(character)?String.fromCodePoint(92)+character:character).join("");
 const ownedSurfaceMatches=(command)=>cleanupPatternSources.some((source)=>new RegExp(source.replace("$appsRoot",escapedAppsRoot),"i").test(command));
 
-const ps=spawnSync(resolveTrustedExecutable("pwsh"),["-NoProfile","-Command",
-  "$e=$null;$t=$null;[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'tools/dev/dev.ps1'),[ref]$t,[ref]$e)|Out-Null;if($e.Count){exit 1}"
-],{cwd:root,encoding:"utf8"});
-check(ps.status===0,"dev.ps1 PowerShell syntax must parse cleanly");
-const psScr=spawnSync(resolveTrustedExecutable("pwsh"),["-NoProfile","-Command","$e=$null;$t=$null;[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'tools/dev/scr.ps1'),[ref]$t,[ref]$e)|Out-Null;if($e.Count){exit 1}"],{cwd:root,encoding:"utf8"});
-check(psScr.status===0,"scr.ps1 PowerShell syntax must parse cleanly");
 for(const script of ["tools/dev/start-surface.mjs","tools/dev/run-playwright-live.mjs","tools/dev/verify-identity-runtime.mjs"]){
   check(spawnSync(process.execPath,["--check",script],{cwd:root}).status===0,`${script} syntax must parse cleanly`);
 }
 
 const run="pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1";
-for(const [name,target] of Object.entries({dev:"daily","runtime:up":"up","runtime:down":"down","runtime:status":"status"})){
-  check(pkg.scripts?.[name]===`${run} ${target}`,`${name} must route to infra/device owner`);
-}
+check(pkg.scripts?.dev===run,"dev must be the single backend start command");
 check(pkg.scripts?.scr==="pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/scr.ps1","scr must route directly to the dedicated device owner");
 for(const [name,dir] of Object.entries({client:"app-client",partner:"app-partner",captain:"app-captain",field:"app-field",control:"control-panel"})){
   check(pkg.scripts?.[name]===`pnpm --dir apps/${dir} dev`,`${name} must route through its owning app package`);
@@ -79,16 +70,16 @@ for(const retired of ["backend-input-state.json","Get-BackendInputState","Get-Pa
 }
 check(!/\badb(?:\.exe)?\b/i.test(dev)&&!dev.toLowerCase().includes("scrcpy"),"dev.ps1 must not retain device or scrcpy ownership");
 check(!dev.includes("Active-Ports")&&!dev.includes("GetActiveTcpListeners"),"backend reuse must not trust occupied host ports");
-check(hostCleanup.includes("app-(?:client|partner|captain|field)")&&hostCleanup.includes("control-panel")&&hostCleanup.includes("node_modules")&&hostCleanup.includes("expo")&&hostCleanup.includes("next"),"runtime:down must select only the canonical Expo and Next surface entrypoints");
-check(!hostCleanup.includes("$command.Contains($Root"),"runtime:down must not terminate every Node process belonging to the repository");
-check(hostCleanup.includes("taskkill.exe /PID $processId /T /F"),"runtime:down must stop each owned surface process tree without killing unrelated repository processes");
-check(cleanupPatternSources.length===2,"runtime:down must expose exactly the two canonical app-surface process patterns");
+check(hostCleanup.includes("app-(?:client|partner|captain|field)")&&hostCleanup.includes("control-panel")&&hostCleanup.includes("node_modules")&&hostCleanup.includes("expo")&&hostCleanup.includes("next"),"dev down must select only the canonical Expo and Next surface entrypoints");
+check(!hostCleanup.includes("$command.Contains($Root"),"dev down must not terminate every Node process belonging to the repository");
+check(hostCleanup.includes("taskkill.exe /PID $processId /T /F"),"dev down must stop each owned surface process tree without killing unrelated repository processes");
+check(cleanupPatternSources.length===2,"dev down must expose exactly the two canonical app-surface process patterns");
 for(const [name,command,expected] of [
   ["Expo",`node ${path.join(root,"apps/app-client/node_modules/expo/bin/cli")} start --dev-client --localhost`,true],
   ["Next",`node ${path.join(root,"apps/control-panel/node_modules/next/dist/bin/next")} dev -H 127.0.0.1`,true],
   ["Nx daemon",`node ${path.join(root,"node_modules/.pnpm/nx@23.2.0/node_modules/nx/dist/src/daemon/server/start.js")}`,false],
   ["repository verifier",`node ${path.join(root,"tools/dev/verify-cache-contracts.mjs")}`,false],
-]) check(ownedSurfaceMatches(command)===expected,`runtime:down process selection mismatch for ${name}`);
+]) check(ownedSurfaceMatches(command)===expected,`dev down process selection mismatch for ${name}`);
 check(scr.includes("$env:ADB=$Adb"),"scr.ps1 must pin scrcpy to the exact ADB executable used by the script");
 check(scr.includes("--select-usb")&&scr.includes("--serial"),"scr.ps1 must preserve explicit USB-first and TCP selectors");
 check(scr.includes("SCRCPY_FAILOVER")&&scr.includes("SCRCPY_FAILBACK"),"scr.ps1 must preserve automatic TCP failover and USB failback");

@@ -27,8 +27,6 @@ try {
     if ($status.Count -gt 0) { throw "Working tree must be clean.`n$($status -join [Environment]::NewLine)" }
 
     $head = ((Invoke-Git @('rev-parse','HEAD')) -join '').Trim()
-    Invoke-Git @('fetch','--no-tags','origin','main') | Out-Null
-
     $remote = @(& git -C $Repo ls-remote --heads origin "refs/heads/$branch")
     if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect remote branch.' }
 
@@ -38,6 +36,7 @@ try {
         & git -C $Repo merge-base --is-ancestor $base $head
         if ($LASTEXITCODE -ne 0) { throw 'Remote branch is not an ancestor of local HEAD; reconcile first.' }
     } else {
+        Invoke-Git @('fetch','--no-tags','origin','main') | Out-Null
         $base = ((Invoke-Git @('merge-base',$head,'refs/remotes/origin/main')) -join '').Trim()
     }
 

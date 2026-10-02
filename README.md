@@ -46,9 +46,8 @@ For an explicit real activation/authentication journey proof, start the affected
 Backend lifecycle remains explicit:
 
 ```text
-pnpm runtime:up
-pnpm runtime:status
-pnpm runtime:down
+pnpm dev status
+pnpm dev down
 ```
 
 From outside the repository, use pnpm --dir D:\samrim <command>. A child process cannot change the parent PowerShell working directory.

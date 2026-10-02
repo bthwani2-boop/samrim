@@ -31,7 +31,7 @@ tools/dev/start-surface.mjs     → shared env loader + direct Expo/Next exec
 
 The fastest path is package-local: run `pnpm dev` inside `apps/app-client`, `apps/app-partner`, `apps/app-captain`, `apps/app-field`, or `apps/control-panel`. Root `pnpm client|partner|captain|field|control` commands are convenience aliases that enter the matching package directory. No targeted surface command routes through `dev.ps1`, and `dev.ps1` no longer owns Metro/Next ports, process reuse, stale-process cleanup or foreground surface startup.
 
-Mobile Expo remains local/offline, app-scoped, IPv4-first and development-client based. Fast Refresh continues through the package-local Metro process. `pnpm scr` separately owns device transport and reverse mappings: USB is preferred, TCP/IP is fallback only, and no intentional concurrent USB+TCP host connection is retained. `runtime:down` remains the explicit complete-session cleanup boundary.
+Mobile Expo remains local/offline, app-scoped, IPv4-first and development-client based. Fast Refresh continues through the package-local Metro process. `pnpm scr` separately owns device transport and reverse mappings: USB is preferred, TCP/IP is fallback only, and no intentional concurrent USB+TCP host connection is retained. `pnpm dev down` is the backend and app-host cleanup command.
 
 ## Tool admission
 

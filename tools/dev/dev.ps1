@@ -1,8 +1,8 @@
 #Requires -Version 7.4
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('daily', 'up', 'down', 'status')]
-    [string]$Target = 'daily'
+    [ValidateSet('up', 'down', 'status')]
+    [string]$Target = 'up'
 )
 
 Set-StrictMode -Version Latest
