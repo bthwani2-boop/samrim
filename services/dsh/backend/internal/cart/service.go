@@ -401,7 +401,7 @@ func externalMutationOutcome(err error) error {
 }
 
 func (s *Service) quoteDeliveryFee(ctx context.Context, input postgres.DeliveryFeeQuoteInput) (postgres.DeliveryFeeQuote, error) {
-	quote, err := s.payment.QuoteDeliveryFee(ctx, wlt.DeliveryFeeQuoteInput{ServiceCityID: input.ServiceCityID, OriginLatitude: input.OriginLatitude, OriginLongitude: input.OriginLongitude, DestinationLatitude: input.DestinationLatitude, DestinationLongitude: input.AddressLongitude, OrderSizeBaseUnits: input.OrderSizeBaseUnits})
+	quote, err := s.payment.QuoteDeliveryFee(ctx, wlt.DeliveryFeeQuoteInput{ServiceCityID: input.ServiceCityID, OriginLatitude: input.OriginLatitude, OriginLongitude: input.OriginLongitude, DestinationLatitude: input.DestinationLatitude, DestinationLongitude: input.DestinationLongitude, OrderSizeBaseUnits: input.OrderSizeBaseUnits})
 	if err != nil {
 		return postgres.DeliveryFeeQuote{}, fmt.Errorf("%w: %w", postgres.ErrDeliveryFeeUnavailable, err)
 	}
