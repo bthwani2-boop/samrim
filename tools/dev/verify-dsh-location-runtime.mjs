@@ -276,8 +276,6 @@ try {
   }
   const pageIDs = new Set();
   let cursor = "";
-  pageIDs.clear();
-  cursor = "";
   for (let page = 0; page < 10; page += 1) {
     const pageResult = await expect(dshBase, "GET", `/dsh/addresses?limit=10${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`, 200, { token: client.accessToken });
     if (!Array.isArray(pageResult.addresses) || pageResult.addresses.length > 10) throw new Error(`bounded address page ${page} is invalid`);

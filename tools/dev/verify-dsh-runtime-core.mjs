@@ -5,6 +5,7 @@ import path from "node:path";
 import { captureMailpitMessageIds, readMailpitCode } from "./mailpit-challenge.mjs";
 import { resolveTrustedExecutable } from "./runtime-proof/trusted-executables.mjs";
 import { challengeSourceHeaders } from "./runtime-proof/challenge-source.mjs";
+import { assertCanonicalDshMigrationHistory, canonicalDshMigrationHistoryQuery, readCanonicalDshMigrationNames } from "./runtime-proof/canonical-dsh-migration-history.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const envArg = process.argv.find((arg) => arg.startsWith("--env-file="));
@@ -26,14 +27,7 @@ function readEnv(file) {
 }
 function required(values, name) { const value = values[name]?.trim(); if (!value) fail("required canonical runtime value missing", name); return value; }
 const dshMigrationDirectory = path.resolve(root, "services/dsh/database/migrations");
-const dshMigrationNames = fs.readdirSync(dshMigrationDirectory, { withFileTypes: true })
-  .filter((entry) => entry.isFile() && /^\d{3}_.+\.sql$/.test(entry.name))
-  .map((entry) => entry.name)
-  .sort();
-if (dshMigrationNames.length === 0) fail("canonical DSH migration set is empty");
-for (const [index, name] of dshMigrationNames.entries()) {
-  if (Number(name.slice(0, 3)) !== index + 1) fail("canonical DSH migration sequence is not contiguous", name);
-}
+const dshMigrationNames = readCanonicalDshMigrationNames(dshMigrationDirectory);
 
 const env = readEnv(envPath);
 const checkerFixturePath = process.env.DSH_RUNTIME_CHECKER_FIXTURE_PATH?.trim() || "";
@@ -258,17 +252,15 @@ console.log("DSH_CHECKER_OPERATOR_PERMISSIONS=PASS");
 
 for (const endpoint of ["/dsh/health", "/dsh/readiness"]) { const response = await request(dshBase, "GET", endpoint); if (response.status !== 200 || response.body?.status !== "ok") fail(`${endpoint} is not ready`, JSON.stringify(response.body)); }
 for (const endpoint of ["/dsh/managed-roles/provision", "/dsh/managed-roles/status", "/dsh/managed-roles/disable", "/dsh/managed-roles/enable", "/dsh/managed-roles/reenrollment"]) { const response = await request(dshBase, endpoint.endsWith("status") ? "GET" : "POST", endpoint, { token: dshToken }); if (response.status !== 404) fail("retired DSH managed-access endpoint remains reachable", JSON.stringify({ endpoint, response })); }
-const canonicalMigrationRows = dshMigrationNames.map((name, index) => `(${index + 1}, '${sqlLiteral(name)}')`).join(",");
-expectSQL(
-  `SELECT count(*) FROM (VALUES ${canonicalMigrationRows}) AS expected(version, name) LEFT JOIN dsh.schema_migrations actual USING (version) WHERE actual.name IS DISTINCT FROM expected.name`,
-  "0",
-  "DSH migration history does not match the canonical migration sources",
-);
-expectSQL(
-  "SELECT count(*) FROM dsh.schema_migrations",
-  String(dshMigrationNames.length),
-  `DSH migration history is incomplete through v${dshMigrationNames.length}`,
-);
+try {
+  assertCanonicalDshMigrationHistory(
+    dshMigrationNames,
+    sql("SELECT count(*) FROM dsh.schema_migrations"),
+    sql(canonicalDshMigrationHistoryQuery(dshMigrationNames)),
+  );
+} catch (error) {
+  fail("DSH migration history does not match the canonical migration sources", error instanceof Error ? error.message : String(error));
+}
 expectSQL(
   "SELECT to_regclass('dsh.catalog_store_offers_store_created_registry_idx') IS NOT NULL",
   "t",
