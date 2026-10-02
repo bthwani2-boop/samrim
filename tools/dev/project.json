@@ -3,12 +3,6 @@
   "root": "tools/dev",
   "projectType": "library",
   "namedInputs": {
-    "trackedRepositoryContent": [
-      { "runtime": "git ls-files -s" },
-      { "runtime": "git diff --binary HEAD --" },
-      { "runtime": "node --version" },
-      { "runtime": "pnpm --version" }
-    ],
     "repositoryStructure": [
       "{workspaceRoot}/REPOSITORY-STRUCTURE.md",
       "{workspaceRoot}/**/project.json",
@@ -160,8 +154,7 @@
     },
     "removed-domain-residue": {
       "executor": "nx:run-commands",
-      "cache": true,
-      "inputs": ["trackedRepositoryContent"],
+      "cache": false,
       "options": { "command": "node tools/dev/verify-removed-human-domain-residue.mjs" }
     },
     "docs-command-parity": {
@@ -242,8 +235,7 @@
     },
     "knip": {
       "executor": "nx:run-commands",
-      "cache": true,
-      "inputs": ["trackedRepositoryContent"],
+      "cache": false,
       "options": { "command": "pnpm exec knip --no-progress --reporter compact --no-config-hints" }
     },
     "go-workspace-sync": {

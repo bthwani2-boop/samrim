@@ -13,10 +13,6 @@ if (!nxIgnore.includes(".kilo/worktrees/")) failures.push("Nx must ignore local 
 
 const tooling = data("tools/dev/project.json");
 if (tooling.namedInputs?.repository) failures.push("workspace-tooling retains ambiguous repository-wide named input");
-const trackedRepositoryContent = JSON.stringify(tooling.namedInputs?.trackedRepositoryContent ?? []);
-if (!trackedRepositoryContent.includes("git ls-files -s")) failures.push("trackedRepositoryContent must use canonical Git index hashes");
-if (!trackedRepositoryContent.includes("git diff --binary HEAD --")) failures.push("trackedRepositoryContent must hash dirty tracked-file content");
-if (trackedRepositoryContent.includes("{workspaceRoot}/**/*")) failures.push("trackedRepositoryContent must not make Nx re-hash the whole workspace tree");
 const repositoryStructure = JSON.stringify(tooling.namedInputs?.repositoryStructure ?? []);
 for (const required of ["REPOSITORY-STRUCTURE.md", "**/project.json", "git ls-files"]) {
   if (!repositoryStructure.includes(required)) failures.push("repositoryStructure cache input missing " + required);
