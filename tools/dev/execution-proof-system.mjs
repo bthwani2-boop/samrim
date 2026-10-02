@@ -197,54 +197,62 @@ function sonarProperties() {
 
 function verifySonarQualityGate() {
   const workflow = read(".github/workflows/sonar-observe.yml");
-  requireTokens(workflow, "Sonar quality workflow", [
+  requireTokens(workflow, "Sonar workflow", [
     "name: Sonar Quality Gate",
     "name: SonarQube Cloud Quality Gate",
     "runs-on: ubuntu-24.04",
     "  pull_request:",
-    "github.event_name == 'pull_request'",
     "github.event.pull_request.base.ref == 'main'",
     "github.event.pull_request.head.repo.full_name == github.repository",
+    "ref: $" + "{{ github.event.pull_request.head.sha }}",
     "uses: SonarSource/sonarqube-scan-action@",
-    "services/identity/tests/contract-guard.test.mjs",
-    "Generate Control Panel browser coverage",
-    "test:e2e:sonar",
     "SONAR_TOKEN: $" + "{{ secrets.SONAR_TOKEN }}",
-    "image: postgis/postgis:16-3.4-alpine",
-    "POSTGRES_HOST_AUTH_METHOD: trust",
-    "DSH_DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable",
-    "IDENTITY_DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable",
-    "go -C services/dsh/backend test -coverprofile=",
-    "go -C services/identity/backend test -coverprofile=",
-    "go -C services/wlt/backend test -coverprofile=",
-    "node --experimental-test-coverage --test --test-concurrency=1",
-    "--test-reporter=spec --test-reporter-destination=stdout",
-    "--test-reporter=lcov --test-reporter-destination=coverage/sonar/tools-dev.lcov",
-    "Read back and enforce SonarQube Cloud evidence",
-    "gate_status=",
-    "if [[ \"$gate_status\" != \"OK\" ]]",
-    "SONAR_QUALITY_GATE=OK",
   ]);
-  forbidTokens(workflow, "Sonar quality workflow", ["push:", "workflow_dispatch:", "ubuntu-latest", "POSTGRES_PASSWORD:", "sonar-proof", "OBSERVE MODE", "Do not make this check required yet"]);
+  forbidTokens(workflow, "Sonar workflow", [
+    "push:",
+    "workflow_dispatch:",
+    "services:",
+    "Setup pnpm",
+    "Setup Node",
+    "Setup Go",
+    "Install dependencies",
+    "Generate Sonar coverage reports",
+    "Generate Control Panel browser coverage",
+    "Rank current Go coverage debt",
+    "Read back and enforce SonarQube Cloud evidence",
+    "Upload exact Sonar evidence",
+    "coverage/sonar",
+    "qualitygates/project_status",
+    "actions/upload-artifact@",
+    "test:e2e:sonar",
+    "postgis/postgis",
+    "go -C services/",
+    "node --experimental-test-coverage",
+  ]);
 
   for (const match of workflow.matchAll(/^[ \t]+uses:[ \t]+([^\t ]+)$/gm)) {
     const reference = match[1] ?? "";
     const separator = reference.lastIndexOf("@");
     const ref = separator >= 0 ? reference.slice(separator + 1) : "";
-    assert(/^[0-9a-f]{40}$/.test(ref), `Sonar quality action is not pinned to a full commit SHA: ${reference}`);
+    assert(/^[0-9a-f]{40}$/.test(ref), `Sonar workflow action is not pinned to a full commit SHA: ${reference}`);
   }
 
   const properties = sonarProperties();
-  for (const key of ["sonar.organization", "sonar.projectKey", "sonar.projectName", "sonar.sources", "sonar.tests", "sonar.test.inclusions", "sonar.go.coverage.reportPaths", "sonar.javascript.lcov.reportPaths"]) {
-    assert(Boolean(properties.get(key)), `Sonar quality configuration is missing ${key}`);
+  for (const key of ["sonar.organization", "sonar.projectKey", "sonar.projectName", "sonar.sources", "sonar.tests", "sonar.test.inclusions"]) {
+    assert(Boolean(properties.get(key)), `Sonar configuration is missing ${key}`);
   }
   assert(/^[A-Za-z0-9-]+$/.test(properties.get("sonar.organization") ?? ""), "Sonar organization key is malformed");
   assert(/^[A-Za-z0-9_.:-]+$/.test(properties.get("sonar.projectKey") ?? ""), "Sonar project key is malformed");
-  for (const pattern of ["**/*_test.go", "**/*.test.mjs", "**/tests/**/*.ts", "tools/dev/verify-dsh-runtime-core.mjs"]) {
+  assert(properties.get("sonar.sources") === "apps,packages,services", "Sonar analysis must stay limited to product code");
+  assert(properties.get("sonar.tests") === "apps,packages,services", "Sonar test roots must stay limited to product code");
+  for (const pattern of ["**/*_test.go", "**/*.test.*", "**/*.spec.*", "**/tests/**"]) {
     assert(properties.get("sonar.test.inclusions")?.split(",").includes(pattern), `Sonar test classification missing ${pattern}`);
     assert(properties.get("sonar.exclusions")?.split(",").includes(pattern), `Sonar source scope still includes test files matching ${pattern}`);
   }
-  assert(!properties.has("sonar.coverage.exclusions"), "Sonar coverage exclusions must not conceal uncovered source lines");
+  assert(properties.get("sonar.coverage.exclusions") === "**/*", "Sonar must not duplicate Nx/test coverage ownership");
+  assert(!properties.has("sonar.go.coverage.reportPaths"), "Sonar must not own Go coverage reports");
+  assert(!properties.has("sonar.javascript.lcov.reportPaths"), "Sonar must not own JavaScript coverage reports");
+  assert(!properties.has("sonar.projectVersion"), "Sonar projectVersion must not create a second new-code baseline authority");
 }
 
 const workflowNames = verifyCanonicalWorkflows();
@@ -261,4 +269,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log("EXECUTION_PROOF_SYSTEM=PASS workflows=4 quality_workflows=1 sonar_gate=authoritative runtime_router=nx affected_scope=claim-driven runtime_dag=decoupled diagnostics=agent-first-bounded-harvest cache_inputs=causal");
+console.log("EXECUTION_PROOF_SYSTEM=PASS workflows=4 quality_workflows=1 sonar=remote-pr-scan coverage_owner=nx-tests runtime_router=nx affected_scope=claim-driven runtime_dag=decoupled diagnostics=agent-first-bounded-harvest cache_inputs=causal");
