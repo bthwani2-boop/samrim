@@ -113,7 +113,17 @@ function verifyRuntimeRouting() {
   assert(routerProject.targets?.unit?.cache === true, "runtime router tests must be cache=true");
 
   const router = read("tools/dev/runtime-proof/resolve.mjs");
-  requireTokens(router, "runtime router", ['"nx", "show", "projects", "--affected"', "runtime-sensitive Nx projects lack runtime classification", "full-escalation:", "CI_RUNTIME_TARGETS=", "CI_RUNTIME_IMAGES=", "CI_RUNTIME_SERVICES="]);
+  requireTokens(router, "runtime router", [
+    'require.resolve("nx/bin/nx.js")',
+    "process.execPath",
+    '"show", "projects", "--affected"',
+    "NX_NO_CLOUD: \"true\"",
+    "runtime-sensitive Nx projects lack runtime classification",
+    "full-escalation:",
+    "CI_RUNTIME_TARGETS=",
+    "CI_RUNTIME_IMAGES=",
+    "CI_RUNTIME_SERVICES=",
+  ]);
   forbidTokens(router, "runtime router", ["git diff", "git status"]);
 
   const routerTests = read("tools/dev/runtime-proof/resolve.test.mjs");
