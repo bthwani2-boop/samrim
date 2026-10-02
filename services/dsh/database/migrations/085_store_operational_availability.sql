@@ -26,8 +26,6 @@ CREATE TABLE dsh.store_operational_availability (
         CHECK (preparation_minutes IS NULL OR preparation_minutes BETWEEN 1 AND 1440),
     CONSTRAINT store_operational_availability_modes_chk
         CHECK (unavailable_fulfillment_modes <@ ARRAY['BTHWANI_CAPTAIN','PARTNER_CAPTAIN','CUSTOMER_PICKUP']::text[]),
-    CONSTRAINT store_operational_availability_modes_unique_chk
-        CHECK (cardinality(unavailable_fulfillment_modes) = cardinality(ARRAY(SELECT DISTINCT unnest(unavailable_fulfillment_modes)))),
     CONSTRAINT store_operational_availability_version_chk CHECK (version > 0),
     CONSTRAINT store_operational_availability_actor_chk CHECK (length(btrim(updated_by_actor_id)) BETWEEN 1 AND 128)
 );
