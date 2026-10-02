@@ -144,6 +144,13 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 	if err != nil || store.PublicationState != "published" || strings.TrimSpace(store.PartnerActorID) == "" || !supportsFulfillmentMode(store.FulfillmentModes, fulfillmentMode) {
 		return CheckoutQuote{}, ErrFulfillmentModeUnavailable
 	}
+	orderability, err := postgres.EvaluateStoreOrderability(ctx, s.db, storeID, fulfillmentMode, time.Now().UTC())
+	if err != nil {
+		return CheckoutQuote{}, err
+	}
+	if orderability.State != postgres.StoreOrderabilityOpenForOrders {
+		return CheckoutQuote{}, ErrFulfillmentModeUnavailable
+	}
 	serviceCityID := store.ServiceCityID
 	var originLatitude, originLongitude, destinationLatitude, destinationLongitude float64
 	var deliveryPolicyVersion string
@@ -275,6 +282,13 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 	if err != nil || store.PublicationState != "published" || !supportsFulfillmentMode(store.FulfillmentModes, fulfillmentMode) {
 		return postgres.OrderRecord{}, false, ErrFulfillmentModeUnavailable
 	}
+	orderability, err := postgres.EvaluateStoreOrderability(ctx, s.db, storeID, fulfillmentMode, time.Now().UTC())
+	if err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	if orderability.State != postgres.StoreOrderabilityOpenForOrders {
+		return postgres.OrderRecord{}, false, ErrFulfillmentModeUnavailable
+	}
 	var evidence postgres.CheckoutEvidence
 	if fulfillmentMode == FulfillmentModeCustomerPickup {
 		evidence = postgres.CheckoutEvidence{ServiceCityID: store.ServiceCityID, StoreVersion: store.Version}
@@ -387,7 +401,7 @@ func externalMutationOutcome(err error) error {
 }
 
 func (s *Service) quoteDeliveryFee(ctx context.Context, input postgres.DeliveryFeeQuoteInput) (postgres.DeliveryFeeQuote, error) {
-	quote, err := s.payment.QuoteDeliveryFee(ctx, wlt.DeliveryFeeQuoteInput{ServiceCityID: input.ServiceCityID, OriginLatitude: input.OriginLatitude, OriginLongitude: input.OriginLongitude, DestinationLatitude: input.DestinationLatitude, DestinationLongitude: input.DestinationLongitude, OrderSizeBaseUnits: input.OrderSizeBaseUnits})
+	quote, err := s.payment.QuoteDeliveryFee(ctx, wlt.DeliveryFeeQuoteInput{ServiceCityID: input.ServiceCityID, OriginLatitude: input.OriginLatitude, OriginLongitude: input.OriginLongitude, DestinationLatitude: input.DestinationLatitude, DestinationLongitude: input.AddressLongitude, OrderSizeBaseUnits: input.OrderSizeBaseUnits})
 	if err != nil {
 		return postgres.DeliveryFeeQuote{}, fmt.Errorf("%w: %w", postgres.ErrDeliveryFeeUnavailable, err)
 	}
