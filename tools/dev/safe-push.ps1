@@ -7,24 +7,69 @@ $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Push-Location $repo
 try {
-    $branch = (git branch --show-current).Trim()
-    if ($LASTEXITCODE -ne 0 -or -not $branch -or $branch -in @('main', 'master')) { throw 'Push requires a non-main named branch.' }
-    if ($ExpectedBranch -and $branch -ne $ExpectedBranch) { throw "Expected branch $ExpectedBranch; found $branch." }
-    if (@(git status --porcelain=v1 --untracked-files=all).Count -gt 0) { throw 'Commit all candidate changes before safe push.' }
+    function Invoke-Git([string[]]$Arguments) {
+        $output = @(& git -C $repo @Arguments 2>&1)
+        if ($LASTEXITCODE -ne 0) { throw "SAFE_PUSH_INTERLOCK=FAIL git $($Arguments -join ' ') failed: $($output -join [Environment]::NewLine)" }
+        return $output
+    }
 
-    git fetch --no-tags origin "refs/heads/$branch`:refs/remotes/origin/$branch"
-    if ($LASTEXITCODE -ne 0) { throw 'Unable to fetch the remote branch.' }
-    $head = (git rev-parse HEAD).Trim()
-    $base = (git rev-parse "refs/remotes/origin/$branch").Trim()
-    git merge-base --is-ancestor $base $head
-    if ($LASTEXITCODE -ne 0) { throw 'Remote branch is not an ancestor of local HEAD; reconcile first.' }
+    function Test-ExpectedOrigin([string]$Url) {
+        $value = $Url.Trim()
+        return (
+            $value -match '^https://github\.com/bthwani2-boop/samrim(?:\.git)?$' -or
+            $value -match '^git@github\.com:bthwani2-boop/samrim(?:\.git)?$' -or
+            $value -match '^ssh://git@github\.com/bthwani2-boop/samrim(?:\.git)?$'
+        )
+    }
+
+    $branch = ((Invoke-Git @('branch', '--show-current')) -join '').Trim()
+    if (-not $branch -or $branch -in @('main', 'master')) { throw 'SAFE_PUSH_INTERLOCK=FAIL push requires a named non-protected branch.' }
+    if ($ExpectedBranch -and $branch -ne $ExpectedBranch) { throw "SAFE_PUSH_INTERLOCK=FAIL expected branch=$ExpectedBranch observed=$branch" }
+
+    $fetchOrigins = @(Invoke-Git @('remote', 'get-url', '--all', 'origin') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $pushOrigins = @(Invoke-Git @('remote', 'get-url', '--all', '--push', 'origin') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    if ($fetchOrigins.Count -eq 0 -or @($fetchOrigins | Where-Object { -not (Test-ExpectedOrigin $_) }).Count -gt 0) {
+        throw "SAFE_PUSH_INTERLOCK=FAIL origin fetch URL mismatch: observed=$($fetchOrigins -join ',') expected=bthwani2-boop/samrim"
+    }
+    if ($pushOrigins.Count -eq 0 -or @($pushOrigins | Where-Object { -not (Test-ExpectedOrigin $_) }).Count -gt 0) {
+        throw "SAFE_PUSH_INTERLOCK=FAIL origin push URL mismatch: observed=$($pushOrigins -join ',') expected=bthwani2-boop/samrim"
+    }
+
+    if (@(Invoke-Git @('status', '--porcelain=v1', '--untracked-files=all')).Count -gt 0) {
+        throw 'SAFE_PUSH_INTERLOCK=FAIL commit candidate changes before push.'
+    }
+    $head = ((Invoke-Git @('rev-parse', 'HEAD')) -join '').Trim()
+    $remoteRows = @(Invoke-Git @('ls-remote', '--heads', 'origin', "refs/heads/$branch"))
+    if ($remoteRows.Count -gt 0) {
+        $remoteSha = (($remoteRows[0] -split '\s+')[0]).Trim()
+        $remoteRef = "refs/remotes/origin/$branch"
+        $null = Invoke-Git @('fetch', '--no-tags', 'origin', "refs/heads/$branch`:$remoteRef")
+        $fetchedSha = ((Invoke-Git @('rev-parse', $remoteRef)) -join '').Trim()
+        if ($fetchedSha -ne $remoteSha) { throw "SAFE_PUSH_INTERLOCK=FAIL remote branch changed during fetch: observed=$remoteSha fetched=$fetchedSha" }
+        & git -C $repo merge-base --is-ancestor $fetchedSha $head
+        if ($LASTEXITCODE -ne 0) { throw 'SAFE_PUSH_INTERLOCK=FAIL remote branch is not an ancestor of local HEAD; reconcile instead of overwriting.' }
+        $base = $fetchedSha
+        Write-Host "VERIFY_BASE=REMOTE_BRANCH sha=$base"
+    }
+    else {
+        $null = Invoke-Git @('fetch', '--no-tags', 'origin', 'refs/heads/main:refs/remotes/origin/main')
+        $base = ((Invoke-Git @('merge-base', 'HEAD', 'refs/remotes/origin/main')) -join '').Trim()
+        Write-Host "REMOTE_BRANCH_STATE=ABSENT branch=$branch"
+        Write-Host "VERIFY_BASE=MAIN_MERGE_BASE sha=$base"
+    }
 
     & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'check-local.ps1') -Candidate -BaseSha $base
-    if ($LASTEXITCODE -ne 0) { throw 'Candidate verification failed.' }
-    git push origin "HEAD:refs/heads/$branch"
-    if ($LASTEXITCODE -ne 0) { throw 'Push failed.' }
-    $remote = (git ls-remote --heads origin "refs/heads/$branch").Split("`t")[0]
-    if ($LASTEXITCODE -ne 0 -or $remote -ne $head) { throw "Remote SHA confirmation failed: local=$head remote=$remote" }
+    if ($LASTEXITCODE -ne 0) { throw "SAFE_PUSH_INTERLOCK=FAIL candidate verification failed for sha=$head" }
+    $verifiedHead = ((Invoke-Git @('rev-parse', 'HEAD')) -join '').Trim()
+    if ($verifiedHead -ne $head) { throw "SAFE_PUSH_INTERLOCK=FAIL HEAD changed during verification: before=$head after=$verifiedHead" }
+
+    $pushOutput = @(& git -C $repo push --porcelain origin "HEAD:refs/heads/$branch" 2>&1)
+    if ($LASTEXITCODE -ne 0) { throw "SAFE_PUSH_INTERLOCK=FAIL push failed: $($pushOutput -join [Environment]::NewLine)" }
+    $confirmed = @(Invoke-Git @('ls-remote', '--heads', 'origin', "refs/heads/$branch"))
+    if ($confirmed.Count -ne 1) { throw 'SAFE_PUSH_INTERLOCK=FAIL unable to confirm exactly one remote branch SHA after push.' }
+    $remoteSha = (($confirmed[0] -split '\s+')[0]).Trim()
+    if ($remoteSha -ne $head) { throw "SAFE_PUSH_INTERLOCK=FAIL remote SHA mismatch: local=$head remote=$remoteSha" }
+    Write-Host "REMOTE_SHA_CONFIRMATION=PASS branch=$branch sha=$remoteSha"
     Write-Host "SAFE_PUSH=PASS branch=$branch sha=$head"
 }
 finally { Pop-Location }

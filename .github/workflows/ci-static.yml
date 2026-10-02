@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
+      actions: read
       contents: read
     env:
       NX_NO_CLOUD: "true"
@@ -100,6 +101,15 @@ jobs:
       - name: Verify affected static graph
         if: github.event_name != 'schedule'
         run: pnpm exec nx affected -t lint,format-check,typecheck,unit,contract,build,vet,export-smoke,compose-config --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=3 --nxBail=true
+
+      - name: Verify mobile consumers when shared tooling changes
+        if: github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --name-only "$NX_BASE" "$NX_HEAD" | grep -Eq '^(tools/mobile/|packages/design-system/tools/ts-resolver\.mjs$)'; then
+            pnpm exec nx run-many -t unit,export-smoke --projects=app-client,app-captain,app-field,app-partner --outputStyle=stream --parallel=2 --skip-nx-cache --nxBail=true
+          fi
 
       - name: Weekly full static regression
         if: github.event_name == 'schedule'

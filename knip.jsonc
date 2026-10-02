@@ -8,6 +8,7 @@
         "tests/runtime/runtime-proof/canonical-dsh-migration-history.mjs",
         "tests/runtime/runtime-proof/challenge-source.mjs",
         "tests/runtime/runtime-proof/trusted-executables.mjs",
+        "tests/runtime/runtime-proof/trusted-executables.d.mts",
         "tests/runtime/verify-dsh-baseline.mjs",
         "tests/runtime/verify-dsh-location-runtime.mjs",
         "tests/runtime/verify-dsh-runtime-core.mjs",

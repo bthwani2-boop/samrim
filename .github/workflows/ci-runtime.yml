@@ -10,6 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -72,6 +73,15 @@ jobs:
           browser=false
           checker=false
           control_proof=false
+          full_runtime=false
+          changed_files="$(git diff --name-only "$NX_BASE" "$NX_HEAD")"
+          if grep -Eq '^(tests/runtime/|infra/local/|\.github/workflows/ci-runtime\.yml$)' <<< "$changed_files"; then
+            full_runtime=true
+            run=true
+            browser=true
+            checker=true
+            control_proof=true
+          fi
           for target in migration-proof runtime-proof schema-proof financial-invariants baseline-proof location-proof; do
             projects="$(pnpm exec nx show projects --affected --with-target="$target" --base="$NX_BASE" --head="$NX_HEAD" --sep=, --no-cloud)"
             if [[ -n "$projects" ]]; then
@@ -94,6 +104,7 @@ jobs:
           echo "browser=$browser" >> "$GITHUB_OUTPUT"
           echo "checker=$checker" >> "$GITHUB_OUTPUT"
           echo "control_proof=$control_proof" >> "$GITHUB_OUTPUT"
+          echo "full_runtime=$full_runtime" >> "$GITHUB_OUTPUT"
 
       - name: Create private DSH checker fixture path
         if: steps.scope.outputs.checker == 'true'
@@ -181,11 +192,18 @@ jobs:
           pnpm exec nx run control-panel:dsh-runtime-checker-fixture --outputStyle=stream
 
       - name: Run affected backend runtime proofs
-        if: steps.scope.outputs.run == 'true' && github.event_name != 'schedule'
+        if: steps.scope.outputs.run == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
         env:
           CI: "true"
           BTHWANI_IDENTITY_PROOF_SCOPE: disposable-ci
         run: pnpm exec nx affected -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
+
+      - name: Run all backend runtime proofs for shared runtime changes
+        if: steps.scope.outputs.full_runtime == 'true' && github.event_name != 'schedule'
+        env:
+          CI: "true"
+          BTHWANI_IDENTITY_PROOF_SCOPE: disposable-ci
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
 
       - name: Run weekly backend runtime regression
         if: steps.scope.outputs.run == 'true' && github.event_name == 'schedule'
@@ -195,7 +213,7 @@ jobs:
         run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache
 
       - name: Run affected Control Panel proof
-        if: steps.scope.outputs.control_proof == 'true' && github.event_name != 'schedule'
+        if: steps.scope.outputs.control_proof == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
         shell: bash
         run: |
           set -euo pipefail
@@ -209,6 +227,22 @@ jobs:
           export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
           export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
           pnpm exec nx affected -t browser-live-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
+
+      - name: Run all Control Panel proofs for shared runtime changes
+        if: steps.scope.outputs.full_runtime == 'true' && github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run-many -t browser-live-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
 
       - name: Run weekly Control Panel regression
         if: steps.scope.outputs.control_proof == 'true' && github.event_name == 'schedule'
