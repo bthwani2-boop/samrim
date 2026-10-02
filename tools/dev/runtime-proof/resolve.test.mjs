@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { laneOrder, resolveFromAffected } from "./resolve.mjs";
+import { laneOrder, resolveChangedFileRuntime, resolveFromAffected } from "./resolve.mjs";
 
 function configs(entries) {
   return new Map(entries.map(([name, tags]) => [name, { name, tags }]));
@@ -53,6 +53,7 @@ test("Nx-expanded cross-service cone composes lanes once", () => {
     "control-panel:dsh-runtime-checker-fixture",
     "dsh-backend:baseline-proof",
     "dsh-backend:runtime-proof",
+    "dsh-backend:location-proof",
   ]);
   assert.equal(result.needsBrowser, true);
 });
@@ -66,6 +67,7 @@ test("DSH-only runtime scope prepares one disposable Passkey checker before back
     "control-panel:dsh-runtime-checker-fixture",
     "dsh-backend:baseline-proof",
     "dsh-backend:runtime-proof",
+    "dsh-backend:location-proof",
   ]);
   assert.equal(result.needsBrowser, true);
 });
@@ -82,6 +84,7 @@ test("combined Control and DSH scope creates the checker in the existing browser
     "control-panel:browser-live-proof",
     "dsh-backend:baseline-proof",
     "dsh-backend:runtime-proof",
+    "dsh-backend:location-proof",
   ]);
 });
 
@@ -101,6 +104,109 @@ test("runtime routing owner escalates its own implementation changes to full", (
   );
   assert.deepEqual(result.lanes, laneOrder);
   assert.match(result.reasons[0], /^full-escalation:/);
+});
+
+test("repository CI static-only change does not trigger runtime merely because repository-ci is affected", () => {
+  const result = resolveFromAffected(
+    ["repository-ci"],
+    configs([["repository-ci", ["scope:repository-ci", "type:tool"]]]),
+  );
+  assert.equal(result.run, false);
+  assert.deepEqual(result.lanes, []);
+});
+
+test("CI runtime workflow change escalates to full through changed-file routing", () => {
+  const routing = resolveChangedFileRuntime([".github/workflows/ci-runtime.yml"]);
+  const result = resolveFromAffected(
+    ["repository-ci"],
+    configs([["repository-ci", ["scope:repository-ci", "type:tool"]]]),
+    false,
+    routing,
+  );
+  assert.deepEqual(result.lanes, laneOrder);
+  assert.match(result.reasons[0], /^full-escalation:file:/);
+});
+
+test("repository CI runtime target semantic change escalates to full", () => {
+  const routing = resolveChangedFileRuntime([".github/project.json"], true);
+  const result = resolveFromAffected(
+    ["repository-ci"],
+    configs([["repository-ci", ["scope:repository-ci", "type:tool"]]]),
+    false,
+    routing,
+  );
+  assert.deepEqual(result.lanes, laneOrder);
+  assert.equal(result.reasons[0], "full-escalation:repository-ci:runtime-target-changed");
+});
+
+test("lane-specific runtime verifier change runs only its owning lane", () => {
+  const routing = resolveChangedFileRuntime(["tools/dev/verify-identity-runtime.mjs"]);
+  const result = resolveFromAffected(
+    ["workspace-tooling"],
+    configs([["workspace-tooling", ["scope:workspace-tooling", "type:tool"]]]),
+    false,
+    routing,
+  );
+  assert.deepEqual(result.lanes, ["identity"]);
+  assert.deepEqual(result.targets, ["identity-backend:migration-proof", "identity-backend:runtime-proof"]);
+});
+
+test("shared runtime runner change escalates to full", () => {
+  const routing = resolveChangedFileRuntime(["tools/dev/run-ci-runtime-proof.mjs"]);
+  assert.equal(routing.mode, "full");
+  assert.deepEqual(routing.lanes, laneOrder);
+});
+
+test("any change inside the runtime proof router escalates to full", () => {
+  const routing = resolveChangedFileRuntime(["tools/dev/runtime-proof/new-lane.mjs"]);
+  assert.equal(routing.mode, "full");
+  assert.deepEqual(routing.reasons, ["full-escalation:file:tools/dev/runtime-proof/new-lane.mjs"]);
+});
+
+test("changed verifier paths normalize Windows separators and combine their owner lanes", () => {
+  const routing = resolveChangedFileRuntime([
+    "tools\\dev\\verify-identity-runtime.mjs",
+    "tools/dev/verify-dsh-location-runtime.mjs",
+    "tools/dev/verify-identity-runtime.mjs",
+  ]);
+  assert.deepEqual(routing, {
+    mode: "lanes",
+    lanes: ["identity", "dsh"],
+    reasons: [
+      "file:tools/dev/verify-identity-runtime.mjs:identity",
+      "file:tools/dev/verify-dsh-location-runtime.mjs:dsh",
+      "file:tools/dev/verify-identity-runtime.mjs:identity",
+    ],
+  });
+});
+
+test("explicit full runtime tags dominate an otherwise lane-scoped project", () => {
+  const result = resolveFromAffected(
+    ["new-shared-service"],
+    configs([[
+      "new-shared-service",
+      ["scope:wlt-backend", "type:service", "runtime:full"],
+    ]]),
+  );
+  assert.deepEqual(result.lanes, laneOrder);
+  assert.equal(result.reasons[0], "full-escalation:new-shared-service");
+});
+
+test("unknown explicit runtime lane fails closed", () => {
+  assert.throws(
+    () => resolveFromAffected(
+      ["new-service"],
+      configs([["new-service", ["type:service", "runtime:unknown"]]]),
+    ),
+    /unknown runtime lane 'unknown'/,
+  );
+});
+
+test("affected project without canonical Nx metadata fails closed", () => {
+  assert.throws(
+    () => resolveFromAffected(["missing-project"], new Map()),
+    /missing project.json metadata: missing-project/,
+  );
 });
 
 test("static-only tooling can remain runtime-unaffected", () => {

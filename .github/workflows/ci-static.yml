@@ -27,6 +27,11 @@ jobs:
       NX_CLOUD_ACCESS_TOKEN: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && secrets.NX_CLOUD_RW_TOKEN || secrets.NX_CLOUD_RO_TOKEN }}
       NX_NO_CLOUD: ${{ github.event_name == 'pull_request' && secrets.NX_CLOUD_RO_TOKEN == '' && 'true' || 'false' }}
       CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT: maps-config-placeholder-0
+      GOOGLE_MAPS_IOS_API_KEY: maps-config-placeholder-1
+      GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
+      GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
+      GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -89,12 +94,6 @@ jobs:
 
       - name: Verify repository invariants through Nx
         shell: bash
-        env:
-          GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT: maps-config-placeholder-0
-          GOOGLE_MAPS_IOS_API_KEY: maps-config-placeholder-1
-          GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
-          GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
-          GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
         run: |
           set -euo pipefail
           node tools/dev/run-ci-command.mjs static-invariants -- \
@@ -112,12 +111,6 @@ jobs:
       - name: Verify affected static graph
         if: github.event_name != 'schedule'
         shell: bash
-        env:
-          GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT: maps-config-placeholder-0
-          GOOGLE_MAPS_IOS_API_KEY: maps-config-placeholder-1
-          GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
-          GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
-          GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
         run: node tools/dev/run-ci-command.mjs static-affected -- pnpm exec nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream
 
       - name: Verify full static graph

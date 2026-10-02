@@ -2,9 +2,8 @@ import { spawnSync } from "node:child_process";
 
 const proofScope = process.env.BTHWANI_IDENTITY_PROOF_SCOPE;
 const disposableCiProofAuthorized = process.env.CI === "true" && proofScope === "disposable-ci";
-const isolatedLocalActorsProofAuthorized = proofScope === "isolated-local-actors";
-if (!disposableCiProofAuthorized && !isolatedLocalActorsProofAuthorized) {
-  console.error(`IDENTITY_PROOF_REFUSED scope=${proofScope || "unspecified"} reason=isolated-actor-scope-required`);
+if (!disposableCiProofAuthorized) {
+  console.error(`IDENTITY_PROOF_REFUSED scope=${proofScope || "unspecified"} reason=disposable-ci-required`);
   process.exit(1);
 }
 

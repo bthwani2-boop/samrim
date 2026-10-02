@@ -41,6 +41,7 @@ func TestStoreProfileMediaReplayAndCleanupOwnership(t *testing.T) {
 			fieldActorID  = "act_field_media_cleanup"
 			serviceCityID = "field-media-cleanup-city"
 			verticalID    = "field-media-cleanup-food"
+			storeTypeID   = "field-media-cleanup-restaurant"
 		)
 		provenance := media.Provenance{Creator: "مالك المتجر", SourceDescription: "صورة مقدمة من مالك المتجر", RightsStatement: "يؤكد مالك المتجر حقه في استخدام الصورة على المنصة", RightsAttested: true}
 		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.service_cities(id,display_name_ar) VALUES($1,$2)", serviceCityID, "مدينة الوسائط"); err != nil {
@@ -49,7 +50,11 @@ func TestStoreProfileMediaReplayAndCleanupOwnership(t *testing.T) {
 		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commerce_verticals(id,name_ar,name_en) VALUES($1,$2,$3)", verticalID, "مطاعم الوسائط", "Media Restaurants"); err != nil {
 			t.Fatalf("insert Commerce Vertical fixture: %v", err)
 		}
-		created, err := postgres.CreateJoiningCaseForField(ctx, db, "idem-field-media-case", postgres.HashJoiningCaseRequest("+967700000198", "نشاط الوسائط", "متجر الوسائط", serviceCityID, verticalID, 15.369445, 44.191006, []string{postgres.FulfillmentModeBthwaniCaptain}), fieldActorID, "corr-field-media-case", "+967700000198", "نشاط الوسائط", "متجر الوسائط", serviceCityID, verticalID, 15.369445, 44.191006, []string{postgres.FulfillmentModeBthwaniCaptain})
+		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commercial_store_types(id,vertical_id,name_ar,name_en) VALUES($1,$2,$3,$4)", storeTypeID, verticalID, "مطعم الوسائط", "Media Restaurant"); err != nil {
+			t.Fatalf("insert commercial store type fixture: %v", err)
+		}
+		joiningRequest := postgres.JoiningCaseRequest{Phone: "+967700000198", BusinessName: "نشاط الوسائط", FirstStoreName: "متجر الوسائط", ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: storeTypeID, Latitude: 15.369445, Longitude: 44.191006, FulfillmentModes: []string{postgres.FulfillmentModeBthwaniCaptain}}
+		created, err := postgres.CreateJoiningCaseForField(ctx, db, postgres.CreateJoiningCaseInput{IdempotencyKey: "idem-field-media-case", RequestHash: postgres.HashJoiningCaseRequest(joiningRequest), ActingActorID: fieldActorID, CorrelationID: "corr-field-media-case", Request: joiningRequest})
 		if err != nil {
 			t.Fatalf("create Field joining case fixture: %v", err)
 		}

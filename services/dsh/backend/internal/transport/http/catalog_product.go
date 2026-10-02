@@ -53,6 +53,9 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/catalog/verticals", s.listVerticals)
 	mux.HandleFunc("POST /dsh/catalog/verticals", s.createVertical)
 	mux.HandleFunc("PATCH /dsh/catalog/verticals/{verticalId}", s.updateVertical)
+	mux.HandleFunc("GET /dsh/catalog/commercial-store-types", s.listCommercialStoreTypes)
+	mux.HandleFunc("POST /dsh/catalog/commercial-store-types", s.createCommercialStoreType)
+	mux.HandleFunc("PATCH /dsh/catalog/commercial-store-types/{storeTypeId}", s.updateCommercialStoreType)
 	mux.HandleFunc("GET /dsh/catalog/categories", s.listCategories)
 	mux.HandleFunc("GET /dsh/catalog/categories/{categoryId}", s.readCategory)
 	mux.HandleFunc("GET /dsh/public/catalog/categories/{categoryId}/attribute-rules", s.listPublicCategoryAttributeRules)
@@ -171,6 +174,82 @@ func (s *CatalogServer) updateVertical(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, contract.CommerceVerticalResponse{Vertical: toCommerceVertical(result.Vertical), IdempotentReplay: result.Replayed})
+}
+
+func (s *CatalogServer) listCommercialStoreTypes(w http.ResponseWriter, r *http.Request) {
+	verticalID := strings.TrimSpace(r.URL.Query().Get("verticalId"))
+	if verticalID == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "verticalId is required")
+		return
+	}
+	includeInactive := r.URL.Query().Get("includeInactive") == "true"
+	var items []postgres.CommercialStoreTypeRecord
+	var err error
+	if includeInactive {
+		if !s.auth.Authorized(r) {
+			writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+			return
+		}
+		acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+		if acting == "" {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+			return
+		}
+		items, err = s.service.ListCommercialStoreTypesForOperator(r.Context(), acting, verticalID, false)
+	} else {
+		items, err = s.service.ListCommercialStoreTypes(r.Context(), verticalID, true)
+	}
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	values := make([]contract.CommercialStoreType, 0, len(items))
+	for _, item := range items {
+		values = append(values, toCommercialStoreType(item))
+	}
+	writeJSON(w, http.StatusOK, contract.CommercialStoreTypeListResponse{StoreTypes: values})
+}
+
+func (s *CatalogServer) createCommercialStoreType(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting, correlation, idempotency, ok := requiredMutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input contract.CreateCommercialStoreTypeRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.service.CreateCommercialStoreType(r.Context(), acting, postgres.CommercialStoreTypeRecord{ID: input.ID, VerticalID: input.VerticalID, NameAr: input.NameAr, NameEn: input.NameEn, Active: input.Active}, idempotency, correlation, input.Reason)
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, responseStatus(result.Replayed), contract.CommercialStoreTypeResponse{StoreType: toCommercialStoreType(result.StoreType), IdempotentReplay: result.Replayed})
+}
+
+func (s *CatalogServer) updateCommercialStoreType(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting, correlation, idempotency, ok := requiredMutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input contract.UpdateCommercialStoreTypeRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.service.UpdateCommercialStoreType(r.Context(), acting, r.PathValue("storeTypeId"), postgres.UpdateCommercialStoreTypeInput{NameAr: input.NameAr, NameEn: input.NameEn, Active: input.Active, ExpectedVersion: input.ExpectedVersion}, idempotency, correlation, input.Reason)
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CommercialStoreTypeResponse{StoreType: toCommercialStoreType(result.StoreType), IdempotentReplay: result.Replayed})
 }
 
 func (s *CatalogServer) listCategories(w http.ResponseWriter, r *http.Request) {
@@ -745,6 +824,9 @@ func toCommerceVertical(item postgres.CommerceVerticalRecord) contract.CommerceV
 	model := contract.CatalogModel(item.CatalogModel)
 	return contract.CommerceVertical{ID: item.ID, NameAr: item.NameAr, NameEn: item.NameEn, CatalogModel: model, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
+func toCommercialStoreType(item postgres.CommercialStoreTypeRecord) contract.CommercialStoreType {
+	return contract.CommercialStoreType{ID: item.ID, VerticalID: item.VerticalID, NameAr: item.NameAr, NameEn: item.NameEn, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+}
 func toCatalogCategory(item postgres.CatalogCategoryRecord) contract.CatalogCategory {
 	return contract.CatalogCategory{ID: item.ID, VerticalID: item.VerticalID, ParentCategoryID: item.ParentCategoryID, NameAr: item.NameAr, NameEn: item.NameEn, ImageUri: item.ImageURI, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
@@ -810,12 +892,14 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog Category cursor, filters, or sort order are invalid")
 	case errors.Is(err, postgres.ErrCatalogOfferInvalidCursor):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "StoreOffer cursor or page size is invalid")
-	case errors.Is(err, postgres.ErrCatalogProductNotFound), errors.Is(err, postgres.ErrCatalogVariantNotFound), errors.Is(err, postgres.ErrCatalogOfferNotFound), errors.Is(err, postgres.ErrCatalogCategoryNotFound), errors.Is(err, postgres.ErrCatalogVerticalNotFound), errors.Is(err, postgres.ErrCatalogProposalNotFound):
+	case errors.Is(err, postgres.ErrCatalogProductNotFound), errors.Is(err, postgres.ErrCatalogVariantNotFound), errors.Is(err, postgres.ErrCatalogOfferNotFound), errors.Is(err, postgres.ErrCatalogCategoryNotFound), errors.Is(err, postgres.ErrCatalogVerticalNotFound), errors.Is(err, postgres.ErrCommercialStoreTypeNotFound), errors.Is(err, postgres.ErrCatalogProposalNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "catalog record was not found")
 	case errors.Is(err, postgres.ErrCatalogIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different catalog facts")
 	case errors.Is(err, postgres.ErrCatalogVersionConflict):
 		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "catalog version is stale")
+	case errors.Is(err, postgres.ErrCommercialStoreTypeInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "commercial store type facts are invalid")
 	case errors.Is(err, postgres.ErrCatalogVerticalModelLocked):
 		writeError(w, http.StatusConflict, "CATALOG_MODEL_LOCKED", "catalog model cannot change after products exist")
 	case errors.Is(err, postgres.ErrCatalogVerticalModelInUse):

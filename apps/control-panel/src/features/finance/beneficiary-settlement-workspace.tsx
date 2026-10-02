@@ -59,7 +59,7 @@ const financialTransactionLabels: Readonly<Record<string, string>> = {
   CUSTOMER_WALLET_TOPUP: "شحن محفظة العميل",
   CAPTAIN_TOPUP: "شحن محفظة الكابتن",
   CAPTAIN_CASH_REMITTED: "توريد النقد المحصل",
-  FIELD_COMMISSION_EARNING_POSTED: "استحقاق عمولة ميدانية",
+  FIELD_ACQUISITION_ENTITLEMENT_POSTED: "استحقاق ضم شريك للميداني",
   PARTNER_ORDER_EARNING_POSTED: "استحقاق طلب شريك",
   PAYOUT_COMPLETED: "إتمام الصرف",
 };

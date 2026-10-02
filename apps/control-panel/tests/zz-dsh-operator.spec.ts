@@ -2,12 +2,12 @@ import { randomInt } from "node:crypto";
 import { existsSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./coverage-fixtures";
 import {
   assertIdentityProofScope,
-  cleanupPreparedOperator,
   enableOperatorPermission,
   enableVirtualAuthenticator,
+  findInitialOperator,
   jsonRequest,
   type PreparedOperator,
   provisionIndependentOperator,
@@ -15,7 +15,6 @@ import {
   requiredEnv,
 } from "./live-identity-proof-helpers";
 
-let preparedOperatorForCleanup: PreparedOperator | undefined;
 let dshRuntimeFixturePath = "";
 
 function validateRuntimeFixturePath(value: string): string {
@@ -41,12 +40,6 @@ test.beforeAll(() => {
   if (fixturePath) dshRuntimeFixturePath = validateRuntimeFixturePath(fixturePath);
 });
 
-test.afterEach(() => {
-  const operator = preparedOperatorForCleanup;
-  preparedOperatorForCleanup = undefined;
-  if (operator?.createdByTest && !(dshRuntimeFixturePath && existsSync(dshRuntimeFixturePath))) cleanupPreparedOperator(operator);
-});
-
 function validatedRuntimeFixtureValue(value: unknown, field: string, pattern: RegExp): string {
   if (typeof value !== "string" || value.length > 128 || !pattern.test(value)) {
     throw new Error(`DSH checker fixture ${field} was not a canonical value`);
@@ -59,28 +52,11 @@ async function findOrBootstrapPrimaryOperator(
   controlToken: string,
   bootstrapToken: string,
 ): Promise<PreparedOperator> {
-  const response = await fetch(identityBase + "/internal/actor-roles/search?role=operator&limit=2", {
-    headers: { Accept: "application/json", Authorization: "Bearer " + controlToken },
-    signal: AbortSignal.timeout(5_000),
-  });
-  expect(response.status, "primary operator search must succeed for the DSH fixture").toBe(200);
-  const body = await response.json() as { items?: Array<{ actorId: string; phoneE164: string }> };
-  const operators = body.items ?? [];
-  if (operators.length > 1) {
-    throw new Error(`DSH checker fixture requires deterministic primary Operator selection; found ${operators.length}`);
-  }
-  const existing = operators[0];
+  const existing = await findInitialOperator(identityBase, controlToken);
   if (existing) {
     expect(existing.actorId).toMatch(/^act_/);
-    expect(existing.phoneE164).toMatch(/^\+9677/);
-    return {
-      actorId: String(existing.actorId),
-      phone: String(existing.phoneE164),
-      token: "",
-      profileId: "",
-      actorCreatedByTest: false,
-      createdByTest: false,
-    };
+    expect(existing.phone).toMatch(/^\+9677/);
+    return existing;
   }
 
   if (process.env.BTHWANI_IDENTITY_PROOF_SCOPE !== "disposable-ci" || process.env.CI !== "true") {
@@ -106,7 +82,6 @@ async function findOrBootstrapPrimaryOperator(
     token: enrollmentToken,
     profileId: "",
     actorCreatedByTest: false,
-    createdByTest: false,
   };
 }
 
@@ -123,9 +98,7 @@ test("@live provision and activate an independent operator for downstream DSH se
   const baseUrl = requiredEnv("PLAYWRIGHT_BASE_URL").replace(/\/+$/, "");
   const mailpitBase = requiredEnv("PLAYWRIGHT_MAILPIT_BASE_URL").replace(/\/+$/, "");
   const primaryOperator = await findOrBootstrapPrimaryOperator(identityBase, controlToken, bootstrapToken);
-  const independentOperator = await provisionIndependentOperator(identityBase, controlToken, primaryOperator.actorId, (operator) => {
-    preparedOperatorForCleanup = operator;
-  });
+  const independentOperator = await provisionIndependentOperator(identityBase, controlToken, primaryOperator.actorId);
   const fixturePath = dshRuntimeFixturePath;
   if (fixturePath) {
     await enableOperatorPermission(identityBase, controlToken, primaryOperator.actorId, independentOperator.actorId, "operations");

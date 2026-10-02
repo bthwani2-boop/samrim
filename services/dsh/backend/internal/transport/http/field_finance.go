@@ -2,12 +2,17 @@ package transporthttp
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
@@ -15,25 +20,116 @@ type FieldFinanceServer struct {
 	auth     *auth.ServiceToken
 	identity *identityintegration.Client
 	payment  *wlt.Client
+	db       *sql.DB
 }
 
-func NewFieldFinance(identity *identityintegration.Client, accessToken string, payment *wlt.Client) (*FieldFinanceServer, error) {
+type fieldAcquisitionEntitlementView struct {
+	wlt.FieldAcquisitionEntitlement
+	StoreName string `json:"storeName"`
+}
+
+type fieldAcquisitionEntitlementPageView struct {
+	Entitlements []fieldAcquisitionEntitlementView `json:"entitlements"`
+	NextCursor   string                            `json:"nextCursor,omitempty"`
+}
+
+func NewFieldFinance(identity *identityintegration.Client, accessToken string, payment *wlt.Client, db *sql.DB) (*FieldFinanceServer, error) {
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
 		return nil, err
 	}
-	if identity == nil || payment == nil {
+	if identity == nil || payment == nil || db == nil {
 		return nil, &identityclient.Error{Status: http.StatusInternalServerError, Code: "CONFIGURATION_ERROR", Message: "Field finance dependencies are required"}
 	}
-	return &FieldFinanceServer{auth: authorizer, identity: identity, payment: payment}, nil
+	return &FieldFinanceServer{auth: authorizer, identity: identity, payment: payment, db: db}, nil
 }
 
 func (s *FieldFinanceServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/fields/me/financial-summary", s.readOwnSummary)
+	mux.HandleFunc("GET /dsh/fields/me/acquisition-entitlements", s.listOwnAcquisitionEntitlements)
+	mux.HandleFunc("GET /dsh/operator/fields/{fieldActorId}/acquisition-cases", s.listOperatorAcquisitionCases)
 	mux.HandleFunc("GET /dsh/operator/fields/{fieldActorId}/financial-summary", s.readOperatorSummary)
-	mux.HandleFunc("POST /dsh/operator/field-commission-policies", s.createPolicy)
-	mux.HandleFunc("GET /dsh/operator/field-commission-policies", s.readPolicyByScope)
-	mux.HandleFunc("GET /dsh/operator/field-commission-policies/{policyId}", s.readPolicy)
+	mux.HandleFunc("POST /dsh/operator/field-acquisition-reward-policies", s.createPolicy)
+	mux.HandleFunc("GET /dsh/operator/field-acquisition-reward-policies", s.readPolicyByScope)
+}
+
+func (s *FieldFinanceServer) listOperatorAcquisitionCases(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeOperator(w, r) {
+		return
+	}
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if !s.requireOperator(w, r.Context(), acting) {
+		return
+	}
+	if !s.requirePermission(w, r.Context(), acting, "partners") {
+		return
+	}
+	fieldActorID := strings.TrimSpace(r.PathValue("fieldActorId"))
+	if fieldActorID == "" || len(fieldActorID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "fieldActorId is required")
+		return
+	}
+	limit := 25
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 50 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "limit must be between 1 and 50")
+			return
+		}
+		limit = parsed
+	}
+	cursor := r.URL.Query().Get("cursor")
+	if len(cursor) > 512 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "field acquisition case cursor is invalid")
+		return
+	}
+	page, err := postgres.ListJoiningCasesForField(r.Context(), s.db, fieldActorID, r.URL.Query().Get("q"), limit, cursor)
+	if err != nil {
+		if errors.Is(err, postgres.ErrJoiningCaseInvalidLimit) || errors.Is(err, postgres.ErrJoiningCaseInvalidSearch) || errors.Is(err, postgres.ErrJoiningCaseInvalidCursor) {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "field acquisition case query is invalid")
+		} else {
+			writeError(w, http.StatusBadGateway, "FIELD_ACQUISITION_READ_UNAVAILABLE", "field acquisition cases could not be read")
+		}
+		return
+	}
+	items := make([]contract.JoiningCaseSummary, 0, len(page.Cases))
+	for _, item := range page.Cases {
+		items = append(items, contract.JoiningCaseSummary{ID: item.ID, ContactPhoneE164: item.ContactPhoneE164, BusinessName: item.BusinessName, FirstStoreName: item.FirstStoreName, ServiceCityID: item.FirstStoreServiceCityID, FirstStoreVerticalID: item.FirstStoreVerticalID, FirstStoreCommercialTypeID: item.FirstStoreCommercialTypeID, FirstStoreLatitude: nullableFloatValue(item.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(item.FirstStoreLongitude), Origin: contract.JoiningCaseOrigin(item.Origin), PartnerActorID: item.PartnerActorID, State: contract.JoiningCaseState(item.State), CorrectionReason: item.CorrectionReason, ReviewedBy: item.ReviewedBy, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, contract.JoiningCaseListResponse{Cases: items, NextCursor: page.NextCursor})
+}
+
+func (s *FieldFinanceServer) listOwnAcquisitionEntitlements(w http.ResponseWriter, r *http.Request) {
+	identity, ok := s.requireFieldSession(w, r)
+	if !ok {
+		return
+	}
+	limit := 50
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 100 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "limit must be between 1 and 100")
+			return
+		}
+		limit = parsed
+	}
+	page, err := s.payment.ListFieldAcquisitionEntitlements(r.Context(), identity.Subject, r.URL.Query().Get("cursor"), limit)
+	if err != nil {
+		writeWLTFinanceError(w, err)
+		return
+	}
+	view := fieldAcquisitionEntitlementPageView{Entitlements: make([]fieldAcquisitionEntitlementView, 0, len(page.Entitlements)), NextCursor: page.NextCursor}
+	for _, item := range page.Entitlements {
+		var storeName string
+		if err := s.db.QueryRowContext(r.Context(), `SELECT name FROM dsh.stores WHERE id=$1`, item.StoreID).Scan(&storeName); err != nil {
+			writeError(w, http.StatusBadGateway, "FINANCIAL_SOURCE_UNAVAILABLE", "the store for a field acquisition entitlement could not be read")
+			return
+		}
+		view.Entitlements = append(view.Entitlements, fieldAcquisitionEntitlementView{FieldAcquisitionEntitlement: item, StoreName: storeName})
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, view)
 }
 
 func (s *FieldFinanceServer) readOwnSummary(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +191,14 @@ func (s *FieldFinanceServer) createPolicy(w http.ResponseWriter, r *http.Request
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	policy, replayed, err := s.payment.CreateFieldCommissionPolicy(r.Context(), input.ScopeType, input.ScopeID, input.RewardMinor, input.RoundingUnitMinor, input.ExpectedVersion, input.Reason, idempotency, correlation, acting)
+	if strings.TrimSpace(input.ScopeType) != "STORE_TYPE" || strings.TrimSpace(input.ScopeID) == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a commercial store type policy is required")
+		return
+	}
+	if !s.requireActiveCommercialStoreType(w, r, input.ScopeID) {
+		return
+	}
+	policy, replayed, err := s.payment.CreateFieldAcquisitionRewardPolicy(r.Context(), wlt.CreateFieldAcquisitionRewardPolicyInput{ScopeType: input.ScopeType, ScopeID: input.ScopeID, RewardMinor: input.RewardMinor, RoundingUnitMinor: input.RoundingUnitMinor, ExpectedVersion: input.ExpectedVersion, Reason: input.Reason, IdempotencyKey: idempotency, CorrelationID: correlation, ActingActorID: acting})
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return
@@ -118,7 +221,15 @@ func (s *FieldFinanceServer) readPolicyByScope(w http.ResponseWriter, r *http.Re
 	if !s.requirePermission(w, r.Context(), acting, "platform_policies") {
 		return
 	}
-	policy, err := s.payment.ReadFieldCommissionPolicyByScope(r.Context(), r.URL.Query().Get("scopeType"), r.URL.Query().Get("scopeId"))
+	scopeType, scopeID := strings.TrimSpace(r.URL.Query().Get("scopeType")), strings.TrimSpace(r.URL.Query().Get("scopeId"))
+	if scopeType != "STORE_TYPE" || scopeID == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a commercial store type policy is required")
+		return
+	}
+	if !s.requireActiveCommercialStoreType(w, r, scopeID) {
+		return
+	}
+	policy, err := s.payment.ReadFieldAcquisitionRewardPolicyByScope(r.Context(), scopeType, scopeID)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return
@@ -126,23 +237,26 @@ func (s *FieldFinanceServer) readPolicyByScope(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, map[string]any{"policy": policy})
 }
 
-func (s *FieldFinanceServer) readPolicy(w http.ResponseWriter, r *http.Request) {
-	if !s.authorizeOperator(w, r) {
-		return
+func (s *FieldFinanceServer) requireActiveCommercialStoreType(w http.ResponseWriter, r *http.Request, typeID string) bool {
+	item, err := postgres.ReadCommercialStoreType(r.Context(), s.db, typeID)
+	if errors.Is(err, postgres.ErrCommercialStoreTypeNotFound) {
+		writeError(w, http.StatusNotFound, "COMMERCIAL_STORE_TYPE_NOT_FOUND", "the commercial store type was not found")
+		return false
 	}
-	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if !s.requireOperator(w, r.Context(), acting) {
-		return
-	}
-	if !s.requirePermission(w, r.Context(), acting, "platform_policies") {
-		return
-	}
-	policy, err := s.payment.ReadFieldCommissionPolicy(r.Context(), r.PathValue("policyId"))
 	if err != nil {
-		writeWLTFinanceError(w, err)
-		return
+		writeError(w, http.StatusInternalServerError, "COMMERCIAL_STORE_TYPE_READ_FAILED", "the commercial store type could not be verified")
+		return false
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"policy": policy})
+	if !item.Active {
+		writeError(w, http.StatusBadRequest, "COMMERCIAL_STORE_TYPE_INACTIVE", "a reward policy can only be changed for an active commercial store type")
+		return false
+	}
+	vertical, err := postgres.ReadCommerceVertical(r.Context(), s.db, item.VerticalID)
+	if err != nil || !vertical.Active {
+		writeError(w, http.StatusBadRequest, "COMMERCIAL_STORE_TYPE_VERTICAL_INACTIVE", "a reward policy requires an active parent vertical")
+		return false
+	}
+	return true
 }
 
 func (s *FieldFinanceServer) authorizeOperator(w http.ResponseWriter, r *http.Request) bool {

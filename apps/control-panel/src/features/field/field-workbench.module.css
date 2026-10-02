@@ -1,0 +1,49 @@
+.root { min-width: 0; }
+
+:global(.field-workbench) { display: grid; gap: 22px; padding: clamp(18px, 2.2vw, 30px); }
+:global(.field-workbench-heading) { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+:global(.field-workbench-heading h2) { margin: 7px 0 5px; color: var(--color-primary); font-size: clamp(24px, 2.5vw, 32px); font-weight: 850; letter-spacing: -.035em; }
+:global(.field-workbench-heading p), :global(.field-list-heading p), :global(.field-create-content p) { margin: 0; line-height: 1.7; }
+:global(.field-workbench-pane) { display: grid; min-width: 0; gap: 14px; }
+:global(.field-create-disclosure) { flex: 0 0 auto; }
+:global(.field-create-disclosure > summary) { display: flex; min-height: 44px; align-items: center; justify-content: center; padding-inline: 16px; cursor: pointer; list-style: none; }
+:global(.field-create-disclosure > summary::-webkit-details-marker), :global(.field-row-disclosure > summary::-webkit-details-marker) { display: none; }
+:global(.field-create-disclosure > summary::before) { content: "+"; margin-inline-end: 8px; font-size: 18px; line-height: 1; }
+:global(.field-create-disclosure[open] > summary::before) { content: "−"; }
+:global(.field-create-content) { display: grid; gap: 12px; margin-top: 12px; padding: 16px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-muted); }
+:global(.field-create-content .access-card-heading) { margin: 0; }
+:global(.field-create-content h3), :global(.field-list-heading h3) { margin: 0 0 5px; color: var(--color-primary); font-size: 18px; font-weight: 800; }
+:global(.field-create-content .access-form) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; margin-top: 4px; }
+:global(.field-create-content .access-form .button) { min-width: 170px; min-height: 44px; }
+:global(.field-list-heading) { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
+:global(.field-workbench .workspace-toolbar) { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; padding: 14px; }
+:global(.field-workbench .workspace-toolbar .field-label) { min-width: 0; margin: 0; }
+:global(.field-workbench .workspace-toolbar .field-label input) { width: 100%; min-height: 44px; }
+:global(.field-workbench .workspace-toolbar .button) { min-height: 44px; }
+:global(.field-workbench .operations-table) { min-width: 780px; }
+:global(.field-workbench .operations-table th), :global(.field-workbench .operations-table td) { padding: 13px 14px; vertical-align: middle; }
+:global(.field-workbench .operations-table tbody th) { min-width: 210px; line-height: 1.7; }
+:global(.field-workbench .operations-table tbody td:nth-child(2)), :global(.field-workbench .operations-table tbody td:nth-child(3)) { min-width: 165px; line-height: 1.65; }
+:global(.field-workbench .field-row-disclosure) { min-width: 150px; }
+:global(.field-workbench .field-row-disclosure > summary) { display: flex; width: fit-content; min-height: 40px; align-items: center; justify-content: center; padding-inline: 13px; cursor: pointer; list-style: none; }
+:global(.field-workbench .field-row-disclosure[open] > summary) { margin-bottom: 10px; }
+:global(.field-workbench .field-row-actions) { display: grid; min-width: 190px; justify-items: stretch; gap: 9px; padding: 12px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-muted); }
+:global(.field-workbench .field-row-actions .field-label) { margin: 0; }
+:global(.field-workbench .field-row-actions .button) { min-width: 0; min-height: 40px; }
+:global(.field-workbench :focus-visible) { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
+
+@media (max-width: 900px) {
+  :global(.field-workbench-heading) { align-items: flex-start; }
+  :global(.field-create-content .access-form) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  :global(.field-create-content .access-form .button) { grid-column: 1 / -1; justify-self: start; }
+}
+
+@media (max-width: 560px) {
+  :global(.field-workbench) { gap: 17px; padding: 16px; }
+  :global(.field-workbench-heading) { flex-direction: column; align-items: stretch; gap: 13px; }
+  :global(.field-create-disclosure > summary) { width: 100%; }
+  :global(.field-create-content .access-form), :global(.field-workbench .workspace-toolbar) { grid-template-columns: minmax(0, 1fr); }
+  :global(.field-create-content .access-form .button) { grid-column: auto; width: 100%; }
+  :global(.field-workbench .workspace-toolbar .button) { width: 100%; }
+  :global(.field-workbench .operations-table) { min-width: 700px; }
+}

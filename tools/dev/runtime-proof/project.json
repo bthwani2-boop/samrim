@@ -19,7 +19,6 @@
       "cache": true,
       "inputs": [
         "{projectRoot}/**/*",
-        "{workspaceRoot}/**/project.json",
         {
           "runtime": "node --version"
         }

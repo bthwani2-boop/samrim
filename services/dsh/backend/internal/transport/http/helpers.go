@@ -111,7 +111,7 @@ func toStoreView(store postgres.StoreRecord, readiness storepublication.Publicat
 		deliveryOrigin = &contract.DeliveryOrigin{Latitude: *store.DeliveryOriginLatitude, Longitude: *store.DeliveryOriginLongitude}
 	}
 	return contract.StoreView{
-		ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, ServiceCityID: nullableString(store.ServiceCityID), PrimaryVerticalID: nullableString(store.PrimaryVerticalID), Version: store.Version,
+		ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, ServiceCityID: nullableString(store.ServiceCityID), PrimaryVerticalID: nullableString(store.PrimaryVerticalID), CommercialStoreTypeID: nullableString(store.CommercialStoreTypeID), Version: store.Version,
 		FulfillmentModes: toFulfillmentModes(store.FulfillmentModes),
 		PublicationState: contract.PublicationState(store.PublicationState), PublicationChangedAt: store.PublicationChangedAt,
 		DeliveryOrigin: deliveryOrigin,

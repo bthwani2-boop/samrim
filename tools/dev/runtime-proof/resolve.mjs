@@ -1,8 +1,13 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
+import { resolveTrustedExecutable } from "./trusted-executables.mjs";
 
 const root = path.resolve(import.meta.dirname, "../../..");
+const gitExecutable = resolveTrustedExecutable("git");
+const require = createRequire(import.meta.url);
+const nxExecutable = require.resolve("nx/bin/nx.js");
 
 export const laneOrder = ["control", "identity", "wlt", "dsh"];
 const compareStrings = (left, right) => String(left).localeCompare(String(right), "en");
@@ -11,7 +16,7 @@ export const laneTargets = {
   control: ["control-panel:browser-live-proof"],
   identity: ["identity-backend:migration-proof", "identity-backend:runtime-proof"],
   wlt: ["wlt-backend:financial-invariants"],
-  dsh: ["dsh-backend:baseline-proof", "dsh-backend:runtime-proof"],
+  dsh: ["dsh-backend:baseline-proof", "dsh-backend:runtime-proof", "dsh-backend:location-proof"],
 };
 
 const laneImages = {
@@ -27,6 +32,20 @@ const laneServices = {
   wlt: ["postgres", "wlt"],
   dsh: ["postgres", "mailpit", "identity", "dsh", "wlt"],
 };
+
+const fullRuntimeFiles = new Set([
+  ".github/workflows/ci-runtime.yml",
+  "tools/dev/build-ci-image.mjs",
+  "tools/dev/run-ci-runtime-proof.mjs",
+]);
+
+const laneRuntimeFiles = new Map([
+  ["tools/dev/verify-identity-migrations.mjs", "identity"],
+  ["tools/dev/verify-identity-runtime.mjs", "identity"],
+  ["tools/dev/verify-dsh-baseline.mjs", "dsh"],
+  ["tools/dev/verify-dsh-runtime-core.mjs", "dsh"],
+  ["tools/dev/verify-dsh-location-runtime.mjs", "dsh"],
+]);
 
 function unique(values) {
   return [...new Set(values)];
@@ -58,7 +77,7 @@ function implicitLane(tags) {
   if (scopes.some((tag) => tag === "scope:identity" || tag.startsWith("scope:identity-"))) return "identity";
   if (scopes.some((tag) => tag === "scope:wlt" || tag.startsWith("scope:wlt-"))) return "wlt";
   if (scopes.some((tag) => tag === "scope:dsh" || tag.startsWith("scope:dsh-"))) return "dsh";
-  const fullScopes = new Set(["scope:infra", "scope:repository-ci", "scope:runtime-proof-routing"]);
+  const fullScopes = new Set(["scope:infra", "scope:runtime-proof-routing"]);
   if (scopes.some((tag) => fullScopes.has(tag))) return "full";
   return null;
 }
@@ -92,11 +111,62 @@ function classifyRuntimeProject(name, project) {
   return isRuntimeSensitive(name, tags) ? { mode: "unclassified" } : { mode: "none" };
 }
 
-export function resolveFromAffected(affected, configs, fullRegression = false) {
-  if (fullRegression) return buildResolution(affected, laneOrder, ["explicit-full-regression"]);
+function stableJson(value) {
+  if (Array.isArray(value)) return value.map(stableJson);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value).sort(compareStrings).map((key) => [key, stableJson(value[key])]));
+}
+
+function readJsonAtRef(ref, file) {
+  try {
+    const body = execFileSync(gitExecutable, ["show", `${ref}:${file}`], { cwd: root, encoding: "utf8" });
+    return JSON.parse(body);
+  } catch {
+    return null;
+  }
+}
+
+function repositoryRuntimeTargetChanged(base, head, changedFiles) {
+  if (!changedFiles.includes(".github/project.json")) return false;
+  const before = readJsonAtRef(base, ".github/project.json");
+  const after = readJsonAtRef(head, ".github/project.json");
+  if (!before || !after) return true;
+  const beforeTarget = stableJson(before.targets?.["runtime-integration"] ?? null);
+  const afterTarget = stableJson(after.targets?.["runtime-integration"] ?? null);
+  return JSON.stringify(beforeTarget) !== JSON.stringify(afterTarget);
+}
+
+export function resolveChangedFileRuntime(changedFiles, repositoryCiRuntimeTargetChanged = false) {
+  if (repositoryCiRuntimeTargetChanged) {
+    return { mode: "full", lanes: laneOrder, reasons: ["full-escalation:repository-ci:runtime-target-changed"] };
+  }
 
   const lanes = new Set();
   const reasons = [];
+  for (const rawFile of changedFiles) {
+    const file = String(rawFile).replaceAll("\\", "/");
+    if (fullRuntimeFiles.has(file) || file.startsWith("tools/dev/runtime-proof/")) {
+      return { mode: "full", lanes: laneOrder, reasons: [`full-escalation:file:${file}`] };
+    }
+    const lane = laneRuntimeFiles.get(file);
+    if (lane) {
+      lanes.add(lane);
+      reasons.push(`file:${file}:${lane}`);
+    }
+  }
+
+  return { mode: lanes.size > 0 ? "lanes" : "none", lanes: laneOrder.filter((lane) => lanes.has(lane)), reasons };
+}
+
+const EMPTY_CHANGED_FILE_ROUTING = Object.freeze({ mode: "none", lanes: Object.freeze([]), reasons: Object.freeze([]) });
+
+export function resolveFromAffected(affected, configs, fullRegression = false, changedFileRouting = null) {
+  const routing = changedFileRouting ?? EMPTY_CHANGED_FILE_ROUTING;
+  if (fullRegression) return buildResolution(affected, laneOrder, ["explicit-full-regression"]);
+  if (routing.mode === "full") return buildResolution(affected, laneOrder, routing.reasons ?? ["full-escalation:changed-file"]);
+
+  const lanes = new Set(routing.lanes ?? []);
+  const reasons = [...(routing.reasons ?? [])];
   const unclassified = [];
 
   for (const name of affected) {
@@ -152,13 +222,18 @@ function parseArgs(argv) {
 
 function affectedProjects(base, head) {
   if (!base || !head) throw new Error("NX_BASE/NX_HEAD (or --base/--head) are required");
-  const executable = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
   const output = execFileSync(
-    executable,
-    ["exec", "nx", "show", "projects", "--affected", `--base=${base}`, `--head=${head}`, "--sep=,"],
-    { cwd: root, encoding: "utf8" },
+    process.execPath,
+    [nxExecutable, "show", "projects", "--affected", `--base=${base}`, `--head=${head}`, "--sep=,", "--no-cloud"],
+    { cwd: root, encoding: "utf8", env: { ...process.env, NX_NO_CLOUD: "true" } },
   ).trim();
   return output ? output.split(",").map((value) => value.trim()).filter(Boolean) : [];
+}
+
+function changedFiles(base, head) {
+  if (!base || !head) throw new Error("NX_BASE/NX_HEAD (or --base/--head) are required");
+  const output = execFileSync(gitExecutable, ["diff", "--name-only", "-z", base, head, "--"], { cwd: root, encoding: "utf8" });
+  return output.split("\0").map((value) => value.trim()).filter(Boolean);
 }
 
 function appendGithubOutput(resolution) {
@@ -180,7 +255,9 @@ if (process.argv[1]?.endsWith("resolve.mjs")) {
   try {
     const args = parseArgs(process.argv.slice(2));
     const affected = affectedProjects(args.base, args.head);
-    const resolution = resolveFromAffected(affected, loadProjectConfigs(), args.full);
+    const files = changedFiles(args.base, args.head);
+    const fileRouting = resolveChangedFileRuntime(files, repositoryRuntimeTargetChanged(args.base, args.head, files));
+    const resolution = resolveFromAffected(affected, loadProjectConfigs(), args.full, fileRouting);
     appendGithubOutput(resolution);
     let scope = "UNAFFECTED";
     if (resolution.run) scope = args.full ? "FULL_REGRESSION" : "AFFECTED";

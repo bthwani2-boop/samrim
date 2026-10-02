@@ -200,6 +200,7 @@ const rootFiles = new Set([
   ".gitattributes",
   ".gitignore",
   ".go-version",
+  ".nxignore",
   "biome.json",
   ".node-version",
   ".nvmrc",

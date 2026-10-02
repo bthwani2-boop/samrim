@@ -8,6 +8,8 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 const data = (relative) => JSON.parse(read(relative));
 
 const nx = data("nx.json");
+const nxIgnore = read(".nxignore").split(/\r?\n/).map((entry) => entry.trim());
+if (!nxIgnore.includes(".kilo/worktrees/")) failures.push("Nx must ignore local auxiliary worktrees");
 const ciProject = data(".github/project.json");
 const executionProofInputs = ciProject.targets?.["execution-proof-system"]?.inputs ?? [];
 if (executionProofInputs.includes("{workspaceRoot}/**/*")) failures.push("repository-ci:execution-proof-system must not hash the entire repository");
@@ -18,6 +20,7 @@ for (const required of [
   "{workspaceRoot}/**/project.json",
   "{workspaceRoot}/tools/dev/runtime-proof/**/*",
   "{workspaceRoot}/tools/dev/verify-dsh-runtime-core.mjs",
+  "{workspaceRoot}/tools/dev/verify-dsh-location-runtime.mjs",
 ]) {
   if (!executionProofInputs.includes(required)) failures.push("repository-ci:execution-proof-system missing causal input " + required);
 }
@@ -26,20 +29,57 @@ const tooling = data("tools/dev/project.json");
 if (tooling.namedInputs?.repository) failures.push("workspace-tooling retains ambiguous repository-wide named input");
 const trackedRepositoryContent = JSON.stringify(tooling.namedInputs?.trackedRepositoryContent ?? []);
 if (!trackedRepositoryContent.includes("git ls-files -s")) failures.push("trackedRepositoryContent must use canonical Git index hashes");
+if (!trackedRepositoryContent.includes("git diff --binary HEAD --")) failures.push("trackedRepositoryContent must hash dirty tracked-file content");
 if (trackedRepositoryContent.includes("{workspaceRoot}/**/*")) failures.push("trackedRepositoryContent must not make Nx re-hash the whole workspace tree");
 const repositoryStructure = JSON.stringify(tooling.namedInputs?.repositoryStructure ?? []);
 for (const required of ["REPOSITORY-STRUCTURE.md", "**/project.json", "git ls-files"]) {
   if (!repositoryStructure.includes(required)) failures.push("repositoryStructure cache input missing " + required);
 }
 const structuralHygiene = JSON.stringify(tooling.namedInputs?.structuralHygiene ?? []);
-for (const required of ["git ls-files -s", "git ls-files --eol", ".gitattributes", "**/package.json", "**/project.json"]) {
+for (const required of ["git ls-files -s", "git ls-files --eol", "git diff --binary HEAD --", ".gitattributes", "**/package.json", "**/project.json"]) {
   if (!structuralHygiene.includes(required)) failures.push("structuralHygiene cache input missing " + required);
+}
+const knowledgeInputs = tooling.namedInputs?.knowledge ?? [];
+if (!knowledgeInputs.includes("{workspaceRoot}/**/*.md")) failures.push("knowledge cache input must cover Markdown files scanned by knowledge verifiers");
+const runtimeOwnershipInputs = tooling.namedInputs?.runtimeOwnership ?? [];
+for (const required of [
+  "{workspaceRoot}/apps/control-panel/tests/00-live-identity.spec.ts",
+  "{workspaceRoot}/apps/control-panel/tests/finance-runtime.spec.ts",
+  "{workspaceRoot}/apps/control-panel/tests/live-identity-proof-helpers.ts",
+  "{workspaceRoot}/apps/control-panel/tests/zz-dsh-operator.spec.ts",
+  "{workspaceRoot}/.github/workflows/ci-runtime.yml",
+  "{workspaceRoot}/go.work",
+  "{workspaceRoot}/services/dsh/backend/project.json",
+  "{projectRoot}/scr.ps1",
+  "{projectRoot}/check-local.ps1",
+  "{projectRoot}/verify-local-candidate.ps1",
+  "{projectRoot}/safe-push.ps1",
+  "{projectRoot}/run-ci-runtime-proof.mjs",
+  "{projectRoot}/verify-dsh-runtime-core.mjs",
+  "{projectRoot}/verify-dsh-location-runtime.mjs",
+  "{projectRoot}/runtime-proof/trusted-executables.mjs",
+]) {
+  if (!runtimeOwnershipInputs.includes(required)) failures.push("runtimeOwnership cache input missing " + required);
+}
+if (!JSON.stringify(runtimeOwnershipInputs).includes("pwsh --version")) failures.push("runtimeOwnership cache input missing PowerShell tool version");
+const workspaceDependencyInputs = tooling.namedInputs?.workspaceDependencies ?? [];
+for (const required of [
+  "{workspaceRoot}/apps/**/*.{ts,tsx,js,jsx,mjs,cjs,go}",
+  "{workspaceRoot}/services/**/*.{ts,tsx,js,jsx,mjs,cjs,go}",
+  "{workspaceRoot}/packages/**/*.{ts,tsx,js,jsx,mjs,cjs,go}",
+  "{workspaceRoot}/apps/**/package.json",
+  "{workspaceRoot}/services/**/package.json",
+  "{workspaceRoot}/packages/**/package.json",
+  "{workspaceRoot}/contracts/package.json",
+  "{projectRoot}/verify-workspace-dependencies.mjs",
+]) {
+  if (!workspaceDependencyInputs.includes(required)) failures.push("workspaceDependencies cache input missing " + required);
 }
 
 const projects = [];
 function discoverProjects(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (["node_modules", ".git", ".nx", ".next", "dist", "build", "coverage", ".cache"].includes(entry.name)) continue;
+    if (["node_modules", ".git", ".nx", ".next", ".kilo", "dist", "build", "coverage", ".cache"].includes(entry.name)) continue;
     const absolute = path.join(dir, entry.name);
     if (entry.isDirectory()) discoverProjects(absolute);
     else if (entry.isFile() && entry.name === "project.json") projects.push(path.relative(root, absolute).replaceAll(path.sep, "/"));
@@ -53,6 +93,28 @@ function effectiveCache(targetName, target) {
   return typeof inherited === "boolean" ? inherited : false;
 }
 
+const generatedInputPath = /(?:^|\/)(?:\.nx|\.next|dist|build|coverage|\.cache|\.tmp)(?:\/|$)/;
+function collectDeclaredInputPaths(inputs, project, seen = new Set()) {
+  const paths = [];
+  for (const input of inputs ?? []) {
+    if (typeof input === "string") {
+      const projectNamed = project.namedInputs?.[input];
+      const workspaceNamed = nx.namedInputs?.[input];
+      const named = projectNamed ?? workspaceNamed;
+      if (named && !seen.has(input)) {
+        const nextSeen = new Set(seen);
+        nextSeen.add(input);
+        paths.push(...collectDeclaredInputPaths(named, project, nextSeen));
+      } else if (input.includes("{workspaceRoot}") || input.includes("{projectRoot}")) {
+        paths.push(input);
+      }
+      continue;
+    }
+    if (input && typeof input === "object" && typeof input.fileset === "string") paths.push(input.fileset);
+  }
+  return paths;
+}
+
 const runtimeCommand = /(playwright|next\s+dev|expo\s+(start|run)|docker\s+compose|verify-(?:identity|dsh)-runtime|verify-(?:identity-migrations|dsh-baseline)|build-ci-image)/i;
 for (const file of projects) {
   const project = data(file);
@@ -61,6 +123,16 @@ for (const file of projects) {
     const deterministicComposeRender = /docker\s+compose\b.*\bconfig\s+--quiet\b/i.test(command);
     if (runtimeCommand.test(command) && !deterministicComposeRender && effectiveCache(targetName, target)) {
       failures.push(file + ":" + targetName + " runtime/stateful command must be cache=false");
+    }
+
+    if (effectiveCache(targetName, target)) {
+      const declaredInputs = target?.inputs ?? nx.targetDefaults?.[targetName]?.inputs ?? [];
+      for (const inputPath of collectDeclaredInputPaths(declaredInputs, project)) {
+        const normalized = inputPath.replaceAll("\\", "/");
+        if (generatedInputPath.test(normalized)) {
+          failures.push(file + ":" + targetName + " cache input must not consume volatile/generated path " + inputPath);
+        }
+      }
     }
   }
 }
@@ -127,7 +199,6 @@ for (const [file, targetName] of [
   ["services/identity/backend/project.json", "ci-image"],
   ["services/dsh/backend/project.json", "baseline-proof"],
   ["services/dsh/backend/project.json", "runtime-proof"],
-  ["services/dsh/backend/project.json", "runtime-fixture-cleanup"],
   ["apps/control-panel/project.json", "dsh-runtime-checker-fixture"],
   ["services/dsh/backend/project.json", "ci-image"],
   ["services/wlt/backend/project.json", "schema-proof"],
@@ -149,4 +220,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log("NX_CACHE_CONTRACTS=PASS projects=" + projects.length + " runtime_cache=0 causal_repository_inputs=1 known_writers_declared=3 control_env_hashed=1");
+console.log("NX_CACHE_CONTRACTS=PASS projects=" + projects.length + " runtime_cache=0 causal_repository_inputs=1 volatile_generated_inputs=0 known_writers_declared=3 control_env_hashed=1");

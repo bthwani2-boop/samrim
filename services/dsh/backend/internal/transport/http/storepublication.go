@@ -22,6 +22,12 @@ import (
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
+const (
+	forbiddenActorIDHeader      = "X-Actor-ID"
+	forbiddenIfMatchHeader      = "If-Match"
+	forbiddenLegacyHeadersError = "X-Actor-ID and If-Match are forbidden"
+)
+
 type StorePublicationServer struct {
 	auth     *auth.ServiceToken
 	identity *identity.Client
@@ -47,6 +53,7 @@ func (s *StorePublicationServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/stores", s.listForOperator)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/publication", s.publish)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/fulfillment-modes", s.setFulfillmentModes)
+	mux.HandleFunc("POST /dsh/stores/{storeId}/commercial-type", s.setCommercialStoreType)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/publication", s.readForOperator)
 	mux.HandleFunc("GET /dsh/public/stores", s.listPublic)
 	mux.HandleFunc("GET /dsh/public/stores/{storeId}", s.readPublic)
@@ -76,7 +83,7 @@ func (s *StorePublicationServer) listForOperator(w http.ResponseWriter, r *http.
 	}
 	stores := make([]contract.OperatorStoreSummary, 0, len(page.Stores))
 	for _, store := range page.Stores {
-		stores = append(stores, contract.OperatorStoreSummary{ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, ServiceCityID: store.ServiceCityID, PrimaryVerticalID: store.PrimaryVerticalID, Version: store.Version, PublicationState: contract.PublicationState(store.PublicationState), FulfillmentModes: toStoreFulfillmentModes(store.FulfillmentModes), CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt})
+		stores = append(stores, contract.OperatorStoreSummary{ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, ServiceCityID: store.ServiceCityID, PrimaryVerticalID: store.PrimaryVerticalID, CommercialStoreTypeID: nullableString(store.CommercialStoreTypeID), Version: store.Version, PublicationState: contract.PublicationState(store.PublicationState), FulfillmentModes: toStoreFulfillmentModes(store.FulfillmentModes), CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt})
 	}
 	writeJSON(w, http.StatusOK, contract.OperatorStoreListResponse{Stores: stores, NextCursor: page.NextCursor})
 }
@@ -86,8 +93,8 @@ func (s *StorePublicationServer) publish(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
 		return
 	}
-	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("If-Match") != "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Actor-ID and If-Match are forbidden")
+	if r.Header.Get(forbiddenActorIDHeader) != "" || r.Header.Get(forbiddenIfMatchHeader) != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", forbiddenLegacyHeadersError)
 		return
 	}
 	acting, correlation, idempotency, expectedVersion, ok := requiredPublicationHeaders(w, r)
@@ -116,8 +123,8 @@ func (s *StorePublicationServer) setFulfillmentModes(w http.ResponseWriter, r *h
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
 		return
 	}
-	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("If-Match") != "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Actor-ID and If-Match are forbidden")
+	if r.Header.Get(forbiddenActorIDHeader) != "" || r.Header.Get(forbiddenIfMatchHeader) != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", forbiddenLegacyHeadersError)
 		return
 	}
 	acting, correlation, idempotency, expectedVersion, ok := requiredPublicationHeaders(w, r)
@@ -139,6 +146,35 @@ func (s *StorePublicationServer) setFulfillmentModes(w http.ResponseWriter, r *h
 		return
 	}
 	writeJSON(w, http.StatusOK, contract.StoreFulfillmentModesResponse{StoreID: result.StoreID, Version: result.Version, FulfillmentModes: toStoreFulfillmentModes(result.FulfillmentModes), IdempotentReplay: result.Replayed})
+}
+
+func (s *StorePublicationServer) setCommercialStoreType(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	if r.Header.Get(forbiddenActorIDHeader) != "" || r.Header.Get(forbiddenIfMatchHeader) != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", forbiddenLegacyHeadersError)
+		return
+	}
+	acting, correlation, idempotency, expectedVersion, ok := requiredPublicationHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input contract.SetStoreCommercialTypeRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.service.SetCommercialStoreType(r.Context(), storepublication.SetCommercialStoreTypeInput{StoreID: r.PathValue("storeId"), TypeID: input.CommercialStoreTypeID, Reason: input.Reason, ExpectedVersion: expectedVersion, IdempotencyKey: idempotency, ActingActorID: acting, CorrelationID: correlation})
+	if err != nil {
+		writeStorePublicationError(w, err)
+		return
+	}
+	status := http.StatusOK
+	if !result.Replayed {
+		status = http.StatusCreated
+	}
+	writeJSON(w, status, contract.SetStoreCommercialTypeResponse{StoreID: result.StoreID, CommercialStoreTypeID: result.CommercialStoreTypeID, Version: result.Version, IdempotentReplay: result.Replayed})
 }
 
 func (s *StorePublicationServer) readForOperator(w http.ResponseWriter, r *http.Request) {
@@ -437,6 +473,14 @@ func writeStorePublicationError(w http.ResponseWriter, err error) {
 	case errors.Is(err, postgres.ErrStoreFulfillmentModesIdempotency):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different fulfillment mode facts")
 	case errors.Is(err, postgres.ErrStoreFulfillmentModesVersion):
+		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "store version is stale")
+	case errors.Is(err, postgres.ErrStoreCommercialTypeAssignmentInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "commercial store type assignment facts are invalid")
+	case errors.Is(err, postgres.ErrCommercialStoreTypeNotFound):
+		writeError(w, http.StatusNotFound, "COMMERCIAL_STORE_TYPE_NOT_FOUND", "the commercial store type was not found in this store's vertical")
+	case errors.Is(err, postgres.ErrStoreCommercialTypeAssignmentConflict):
+		writeError(w, http.StatusConflict, "COMMERCIAL_STORE_TYPE_CONFLICT", "the store already has a commercial type or the type is inactive")
+	case errors.Is(err, postgres.ErrStoreCommercialTypeAssignmentVersion):
 		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "store version is stale")
 	default:
 		var identityErr *identityclient.Error

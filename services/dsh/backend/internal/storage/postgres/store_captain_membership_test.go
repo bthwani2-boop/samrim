@@ -19,9 +19,11 @@ func verifyStoreCaptainMembership(t *testing.T, ctx context.Context, db *sql.DB)
 		captainActorID = "act_captain_membership_v1"
 		otherPartnerID = "act_other_membership_v1"
 	)
-	if _, err := db.ExecContext(ctx, "INSERT INTO dsh.stores(id,partner_actor_id,name) VALUES($1,$2,$3)", storeID, partnerActorID, "متجر العضوية"); err != nil {
-		t.Fatalf("insert Store Captain membership fixture: %v", err)
-	}
+	insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{
+		ID:             storeID,
+		PartnerActorID: partnerActorID,
+		Name:           "متجر العضوية",
+	})
 
 	firstTokenHash := strings.Repeat("a", 64)
 	createHash := postgres.HashStoreCaptainInvitationCreate(storeID, partnerActorID)

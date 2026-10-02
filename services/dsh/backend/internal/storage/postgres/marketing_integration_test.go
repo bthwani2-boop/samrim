@@ -44,9 +44,12 @@ func TestPublicPromotionsAreStoreScopedAndBounded(t *testing.T) {
 			t.Fatalf("insert service city: %v", err)
 		}
 		for _, store := range []struct{ id, partner, name string }{{storeAID, partnerAID, "متجر أ"}, {storeBID, partnerBID, "متجر ب"}} {
-			if _, err := db.ExecContext(ctx, "INSERT INTO dsh.stores(id,partner_actor_id,name) VALUES($1,$2,$3)", store.id, store.partner, store.name); err != nil {
-				t.Fatalf("insert store %s: %v", store.id, err)
-			}
+			insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{
+				ID:             store.id,
+				PartnerActorID: store.partner,
+				Name:           store.name,
+				ServiceCityID:  cityID,
+			})
 		}
 
 		startsAt := time.Now().UTC().Add(-time.Hour)

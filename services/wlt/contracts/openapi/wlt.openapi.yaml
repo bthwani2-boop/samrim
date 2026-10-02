@@ -356,44 +356,26 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PartnerFinancialProfileResponse' }
-  /wlt/v1/partner-store-commission-policies/initialize:
-    post:
-      operationId: initializePartnerStoreCommissionPolicies
-      security: [{ serviceToken: [] }]
-      parameters:
-        - { $ref: '#/components/parameters/IdempotencyKey' }
-        - { $ref: '#/components/parameters/CorrelationId' }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/InitializePartnerStoreCommissionPoliciesRequest' }
-      responses:
-        '200':
-          description: Returns existing immutable per-mode policies or initializes all modes from the specified active profile; when profileId is omitted, the active profile is used only if no Store policy exists yet.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/InitializePartnerStoreCommissionPoliciesResponse' }
-  /wlt/v1/operator/partner-store-commission-policies:
+  /wlt/v1/operator/commercial-store-type-commission-policies:
     get:
-      operationId: readOperatorPartnerStoreCommissionPolicies
+      operationId: readOperatorCommercialStoreTypeCommissionPolicies
       security: [{ serviceToken: [] }]
       parameters:
         - { $ref: '#/components/parameters/ActingActorId' }
-        - name: storeId
+        - name: commercialStoreTypeId
           in: query
           required: true
           schema: { type: string, minLength: 1, maxLength: 128 }
       responses:
         '200':
-          description: Canonical current commission policy for each fulfillment mode at the Store.
+          description: Canonical current commission policy by fulfillment mode for a commercial store type.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/InitializePartnerStoreCommissionPoliciesResponse' }
+              schema: { $ref: '#/components/schemas/PartnerStoreCommissionPoliciesResponse' }
         '400': { $ref: '#/components/responses/InvalidInput' }
         '404': { $ref: '#/components/responses/NotFound' }
     post:
-      operationId: updateOperatorPartnerStoreCommissionPolicy
+      operationId: updateOperatorCommercialStoreTypeCommissionPolicy
       security: [{ serviceToken: [] }]
       parameters:
         - { $ref: '#/components/parameters/ActingActorId' }
@@ -532,81 +514,66 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PartnerCommissionRemittanceResponse' }
-  /wlt/v1/operator/field-commission-policies:
+  /wlt/v1/operator/field-acquisition-reward-policies:
     get:
-      operationId: readActiveFieldCommissionPolicyByScope
+      operationId: readActiveFieldAcquisitionRewardPolicyByScope
       security: [{ serviceToken: [] }]
       parameters:
         - name: scopeType
           in: query
           required: true
-          schema: { type: string, enum: [DEFAULT, VERTICAL, STORE] }
+          schema: { type: string, enum: [VERTICAL] }
         - name: scopeId
           in: query
-          required: false
-          schema: { type: string, maxLength: 128 }
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
       responses:
         '200':
           description: Active policy for the exact scope.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/FieldCommissionPolicyResponse' }
+              schema: { $ref: '#/components/schemas/FieldAcquisitionRewardPolicyResponse' }
         '404':
           description: No active policy exists for this exact scope.
     post:
-      operationId: createFieldCommissionPolicy
+      operationId: createFieldAcquisitionRewardPolicy
       security: [{ serviceToken: [] }]
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/CreateFieldCommissionPolicyRequest' }
+            schema: { $ref: '#/components/schemas/CreateFieldAcquisitionRewardPolicyRequest' }
       responses:
         '201':
-          description: Field commission policy created.
+          description: Field acquisition reward policy created.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/FieldCommissionPolicyResponse' }
+              schema: { $ref: '#/components/schemas/FieldAcquisitionRewardPolicyResponse' }
         '200':
           description: Idempotent replay.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/FieldCommissionPolicyResponse' }
-  /wlt/v1/field-commission-policies/{policyId}:
-    get:
-      operationId: readFieldCommissionPolicy
-      security: [{ serviceToken: [] }]
-      parameters:
-        - name: policyId
-          in: path
-          required: true
-          schema: { type: string, minLength: 1, maxLength: 128 }
-      responses:
-        '200':
-          description: Field commission policy.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/FieldCommissionPolicyResponse' }
-  /wlt/v1/field-commission-earnings/finalize:
+              schema: { $ref: '#/components/schemas/FieldAcquisitionRewardPolicyResponse' }
+  /wlt/v1/field-acquisition-entitlements/finalize:
     post:
-      operationId: finalizeFieldCommission
+      operationId: finalizeFieldAcquisitionEntitlement
       security: [{ serviceToken: [] }]
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/FinalizeFieldCommissionRequest' }
+            schema: { $ref: '#/components/schemas/FinalizeFieldAcquisitionEntitlementRequest' }
       responses:
         '201':
-          description: Field earning finalized.
+          description: Field acquisition entitlement finalized.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/FieldCommissionEarningResponse' }
+              schema: { $ref: '#/components/schemas/FieldAcquisitionEntitlementResponse' }
         '200':
           description: Idempotent replay.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/FieldCommissionEarningResponse' }
+              schema: { $ref: '#/components/schemas/FieldAcquisitionEntitlementResponse' }
   /wlt/v1/fields/{fieldActorId}/financial-summary:
     get:
       operationId: readFieldFinancialSummary
@@ -622,6 +589,27 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/FieldFinancialSummaryResponse' }
+  /wlt/v1/fields/{fieldActorId}/acquisition-entitlements:
+    get:
+      operationId: listFieldAcquisitionEntitlements
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: fieldActorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 512 }
+      responses:
+        '200':
+          description: Cursor-paged actor-owned Field acquisition entitlement history.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FieldAcquisitionEntitlementPage' }
   /wlt/v1/operator/official-wallet-destinations:
     post:
       operationId: createOfficialWalletDestination
@@ -1714,24 +1702,24 @@ components:
       required: [summary]
       properties:
         summary: { $ref: '#/components/schemas/PartnerFinancialSummary' }
-    CreateFieldCommissionPolicyRequest:
+    CreateFieldAcquisitionRewardPolicyRequest:
       type: object
       additionalProperties: false
-      required: [scopeType, rewardMinor, roundingUnitMinor, expectedVersion, reason]
+      required: [scopeType, scopeId, rewardMinor, roundingUnitMinor, expectedVersion, reason]
       properties:
-        scopeType: { type: string, enum: [DEFAULT, VERTICAL, STORE] }
-        scopeId: { type: string, maxLength: 128 }
+        scopeType: { type: string, enum: [STORE_TYPE] }
+        scopeId: { type: string, minLength: 1, maxLength: 128 }
         rewardMinor: { type: integer, minimum: 0 }
         roundingUnitMinor: { type: integer, minimum: 1 }
         expectedVersion: { type: integer, minimum: 0 }
         reason: { type: string, minLength: 5, maxLength: 500 }
-    FieldCommissionPolicy:
+    FieldAcquisitionRewardPolicy:
       type: object
       additionalProperties: false
       required: [id, scopeType, scopeId, rewardMinor, roundingUnitMinor, state, version, createdBy, createdAt]
       properties:
         id: { type: string }
-        scopeType: { type: string, enum: [DEFAULT, VERTICAL, STORE] }
+        scopeType: { type: string, enum: [STORE_TYPE] }
         scopeId: { type: string }
         rewardMinor: { type: integer, minimum: 0 }
         roundingUnitMinor: { type: integer, minimum: 1 }
@@ -1740,52 +1728,58 @@ components:
         createdBy: { type: string }
         createdAt: { type: string, format: date-time }
         retiredAt: { type: string, format: date-time, nullable: true }
-    FieldCommissionPolicyResponse:
+    FieldAcquisitionRewardPolicyResponse:
       type: object
       additionalProperties: false
       required: [policy]
       properties:
-        policy: { $ref: '#/components/schemas/FieldCommissionPolicy' }
+        policy: { $ref: '#/components/schemas/FieldAcquisitionRewardPolicy' }
         idempotentReplay: { type: boolean }
-    FinalizeFieldCommissionRequest:
+    FinalizeFieldAcquisitionEntitlementRequest:
       type: object
       additionalProperties: false
-      required: [storeId, fieldActorId, verticalId]
+      required: [joiningCaseId, storeId, partnerActorId, fieldActorId, verticalId, commercialStoreTypeId]
       properties:
+        joiningCaseId: { type: string, minLength: 1, maxLength: 128 }
         storeId: { type: string, minLength: 1, maxLength: 128 }
+        partnerActorId: { type: string, minLength: 1, maxLength: 128 }
         fieldActorId: { type: string, minLength: 1, maxLength: 128 }
         verticalId: { type: string, minLength: 1, maxLength: 128 }
-    FieldCommissionEarning:
+        commercialStoreTypeId: { type: string, minLength: 1, maxLength: 128 }
+    FieldAcquisitionEntitlement:
       type: object
       additionalProperties: false
-      required: [storeId, fieldActorId, verticalId, policyId, policyVersion, rewardMinor, currency, ledgerTransactionId, createdAt]
+      required: [joiningCaseId, storeId, partnerActorId, fieldActorId, verticalId, commercialStoreTypeId, policyId, policyVersion, rewardMinor, currency, ledgerTransactionId, createdAt]
       properties:
+        joiningCaseId: { type: string }
         storeId: { type: string }
+        partnerActorId: { type: string }
         fieldActorId: { type: string }
         verticalId: { type: string }
+        commercialStoreTypeId: { type: string }
         policyId: { type: string }
         policyVersion: { type: integer, minimum: 1 }
         rewardMinor: { type: integer, minimum: 0 }
         currency: { type: string, const: YER }
         ledgerTransactionId: { type: string }
         createdAt: { type: string, format: date-time }
-    FieldCommissionEarningResponse:
+    FieldAcquisitionEntitlementResponse:
       type: object
       additionalProperties: false
-      required: [earning, idempotentReplay]
+      required: [entitlement, idempotentReplay]
       properties:
-        earning: { $ref: '#/components/schemas/FieldCommissionEarning' }
+        entitlement: { $ref: '#/components/schemas/FieldAcquisitionEntitlement' }
         idempotentReplay: { type: boolean }
     FieldFinancialSummary:
       type: object
       additionalProperties: false
-      required: [fieldActorId, currency, earnedMinor, commissionMinor, storeCount]
+      required: [fieldActorId, currency, earnedMinor, entitlementMinor, partnerCount]
       properties:
         fieldActorId: { type: string }
         currency: { type: string, const: YER }
         earnedMinor: { type: integer }
-        commissionMinor: { type: integer }
-        storeCount: { type: integer, minimum: 0 }
+        entitlementMinor: { type: integer, minimum: 0 }
+        partnerCount: { type: integer, minimum: 0 }
         lastEarningAt: { type: string, format: date-time, nullable: true }
     FieldFinancialSummaryResponse:
       type: object
@@ -1793,6 +1787,32 @@ components:
       required: [summary]
       properties:
         summary: { $ref: '#/components/schemas/FieldFinancialSummary' }
+    FieldAcquisitionEntitlement:
+      type: object
+      additionalProperties: false
+      required: [joiningCaseId, storeId, partnerActorId, fieldActorId, verticalId, commercialStoreTypeId, policyId, policyVersion, rewardMinor, currency, ledgerTransactionId, createdAt]
+      properties:
+        joiningCaseId: { type: string }
+        storeId: { type: string }
+        partnerActorId: { type: string }
+        fieldActorId: { type: string }
+        verticalId: { type: string }
+        commercialStoreTypeId: { type: string }
+        policyId: { type: string }
+        policyVersion: { type: integer, minimum: 1 }
+        rewardMinor: { type: integer, minimum: 1 }
+        currency: { type: string, const: YER }
+        ledgerTransactionId: { type: string }
+        createdAt: { type: string, format: date-time }
+    FieldAcquisitionEntitlementPage:
+      type: object
+      additionalProperties: false
+      required: [entitlements]
+      properties:
+        entitlements:
+          type: array
+          items: { $ref: '#/components/schemas/FieldAcquisitionEntitlement' }
+        nextCursor: { type: string }
     CreateOfficialWalletDestinationRequest:
       type: object
       additionalProperties: false
@@ -2234,11 +2254,12 @@ components:
     CustomerPaymentAllocationInput:
       type: object
       additionalProperties: false
-      required: [orderId, storeId, partnerActorId, fulfillmentMode, currency, subtotalMinor, deliveryFeeMinor, discountMinor, internalBalanceAmountMinor, cashAmountMinor, customerPayableMinor, policyVersion]
+      required: [orderId, storeId, partnerActorId, commercialStoreTypeId, fulfillmentMode, currency, subtotalMinor, deliveryFeeMinor, discountMinor, internalBalanceAmountMinor, cashAmountMinor, customerPayableMinor, policyVersion]
       properties:
         orderId: { type: string, minLength: 1, maxLength: 128 }
         storeId: { type: string, minLength: 1, maxLength: 128 }
         partnerActorId: { type: string, minLength: 1, maxLength: 128 }
+        commercialStoreTypeId: { type: string, minLength: 1, maxLength: 128 }
         fulfillmentMode: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
         currency: { type: string, const: YER }
         subtotalMinor: { type: integer, minimum: 0 }
@@ -2253,6 +2274,7 @@ components:
       additionalProperties: false
       required: [id, orderId, paymentIntentId, currency, subtotalMinor, deliveryFeeMinor, discountMinor, internalBalanceAmountMinor, cashAmountMinor, customerPayableMinor, policyVersion, createdAt]
       properties:
+        commercialStoreTypeId: { type: string, minLength: 1, maxLength: 128, nullable: true }
         id: { type: string }
         orderId: { type: string }
         paymentIntentId: { type: string }
@@ -2274,57 +2296,44 @@ components:
       additionalProperties: false
       required: [rateBps, policyVersion, profileId, profileVersion, roundingUnitMinor, settlementPeriod]
       properties:
+        commercialStoreTypeId: { type: string, minLength: 1, maxLength: 128, nullable: true }
         rateBps: { type: integer, minimum: 0, maximum: 10000 }
         policyVersion: { type: integer, minimum: 1 }
         profileId: { type: string, minLength: 1, maxLength: 128 }
         profileVersion: { type: integer, minimum: 1 }
         roundingUnitMinor: { type: integer, const: 50 }
         settlementPeriod: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
-    InitializePartnerStoreCommissionPoliciesRequest:
-      type: object
-      additionalProperties: false
-      required: [storeId, partnerActorId]
-      properties:
-        storeId: { type: string, minLength: 1, maxLength: 128 }
-        partnerActorId: { type: string, minLength: 1, maxLength: 128 }
-        profileId: { type: string, minLength: 1, maxLength: 128 }
     PartnerStoreCommissionPolicy:
       type: object
       additionalProperties: false
-      required: [storeId, partnerActorId, fulfillmentMode, commissionRateBps, policyVersion, profileId, profileVersion, roundingUnitMinor, settlementPeriod, updatedAt]
+      required: [commercialStoreTypeId, fulfillmentMode, commissionRateBps, policyVersion, updatedAt]
       properties:
-        storeId: { type: string }
-        partnerActorId: { type: string }
+        commercialStoreTypeId: { type: string, minLength: 1, maxLength: 128 }
         fulfillmentMode: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
         commissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
         policyVersion: { type: integer, minimum: 1 }
-        profileId: { type: string }
-        profileVersion: { type: integer, minimum: 1 }
-        roundingUnitMinor: { type: integer, const: 50 }
-        settlementPeriod: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
         updatedAt: { type: string, format: date-time }
         changedByActorId: { type: string, minLength: 1, maxLength: 128 }
         changeReason: { type: string, minLength: 8, maxLength: 500 }
-    InitializePartnerStoreCommissionPoliciesResponse:
+    PartnerStoreCommissionPoliciesResponse:
       type: object
       additionalProperties: false
-      required: [storeId, policies]
+      required: [commercialStoreTypeId, policies]
       properties:
-        storeId: { type: string }
+        commercialStoreTypeId: { type: string, minLength: 1, maxLength: 128 }
         policies:
           type: array
-          minItems: 3
           maxItems: 3
           items: { $ref: '#/components/schemas/PartnerStoreCommissionPolicy' }
     UpdatePartnerStoreCommissionPolicyRequest:
       type: object
       additionalProperties: false
-      required: [storeId, fulfillmentMode, commissionRateBps, expectedVersion, reason]
+      required: [commercialStoreTypeId, fulfillmentMode, commissionRateBps, expectedVersion, reason]
       properties:
-        storeId: { type: string, minLength: 1, maxLength: 128 }
+        commercialStoreTypeId: { type: string, minLength: 1, maxLength: 128 }
         fulfillmentMode: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
         commissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
-        expectedVersion: { type: integer, minimum: 1 }
+        expectedVersion: { type: integer, minimum: 0 }
         reason: { type: string, minLength: 8, maxLength: 500 }
     PartnerStoreCommissionPolicyUpdateResponse:
       type: object
@@ -2459,24 +2468,22 @@ components:
     PreparePartnerFinancialProfileRequest:
       type: object
       additionalProperties: false
-      required: [joiningCaseId, partnerActorId, origin, commissionRateBps, settlementPeriod]
+      required: [joiningCaseId, partnerActorId, origin, settlementPeriod]
       properties:
         joiningCaseId: { type: string, minLength: 1, maxLength: 128 }
         partnerActorId: { type: string, minLength: 1, maxLength: 128 }
         origin: { type: string, enum: [field, control_panel] }
-        commissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
         settlementPeriod: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
         termsPolicyVersion: { type: string, maxLength: 128, nullable: true, pattern: '^partner-financial-terms:v[1-9][0-9]*$' }
     PartnerFinancialProfile:
       type: object
       additionalProperties: false
-      required: [id, joiningCaseId, partnerActorId, origin, commissionRateBps, settlementPeriod, roundingUnitMinor, state, version, createdAt, updatedAt]
+      required: [id, joiningCaseId, partnerActorId, origin, settlementPeriod, roundingUnitMinor, state, version, createdAt, updatedAt]
       properties:
         id: { type: string }
         joiningCaseId: { type: string }
         partnerActorId: { type: string }
         origin: { type: string, enum: [field, control_panel] }
-        commissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
         settlementPeriod: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
         termsPolicyVersion: { type: string, nullable: true }
         roundingUnitMinor: { type: integer, const: 50 }
@@ -2540,21 +2547,19 @@ components:
     CreatePartnerFinancialTermsPolicyRequest:
       type: object
       additionalProperties: false
-      required: [commissionRateBps, settlementPeriod, expectedVersion, reason]
+      required: [settlementPeriod, expectedVersion, reason]
       properties:
-        commissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
         settlementPeriod: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
         expectedVersion: { type: integer, minimum: 0 }
         reason: { type: string, minLength: 5, maxLength: 500 }
     PartnerFinancialTermsPolicy:
       type: object
       additionalProperties: false
-      required: [id, policyVersion, state, commissionRateBps, settlementPeriod, version, createdBy, createdAt, retiredAt]
+      required: [id, policyVersion, state, settlementPeriod, version, createdBy, createdAt, retiredAt]
       properties:
         id: { type: string }
         policyVersion: { type: string }
         state: { type: string, enum: [ACTIVE, RETIRED] }
-        commissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
         settlementPeriod: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
         version: { type: integer, minimum: 1 }
         createdBy: { type: string }

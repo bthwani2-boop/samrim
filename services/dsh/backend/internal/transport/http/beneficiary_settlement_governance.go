@@ -89,7 +89,7 @@ func (s *BeneficiaryFinanceServer) readOperatorFinancialStatement(w http.Respons
 		case "captain":
 			err = s.db.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM dsh.captain_assignments WHERE order_id=$1 AND captain_actor_id=$2)`, order.ID, actorID).Scan(&related)
 		case "field":
-			// Current field-commission sources are store-publication events, not orders.
+			// Current field-acquisition-reward sources are store-publication events, not orders.
 			continue
 		default:
 			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "financial statement beneficiary type is invalid")

@@ -55,7 +55,7 @@ func TestCreateUsesServiceContract(t *testing.T) {
 	}
 }
 
-func TestCreateForOrderUsesRequestOnlyAllocationFields(t *testing.T) {
+func TestCreateForOrderSendsRequiredAllocationContract(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		var body struct {
 			OrderID                   string `json:"orderId"`
@@ -68,6 +68,7 @@ func TestCreateForOrderUsesRequestOnlyAllocationFields(t *testing.T) {
 				OrderID                    string `json:"orderId"`
 				StoreID                    string `json:"storeId"`
 				PartnerActorID             string `json:"partnerActorId"`
+				CommercialStoreTypeID      string `json:"commercialStoreTypeId"`
 				FulfillmentMode            string `json:"fulfillmentMode"`
 				Currency                   string `json:"currency"`
 				SubtotalMinor              int64  `json:"subtotalMinor"`
@@ -85,7 +86,7 @@ func TestCreateForOrderUsesRequestOnlyAllocationFields(t *testing.T) {
 			t.Fatalf("request did not match WLT create contract: %v", err)
 		}
 		allocation := body.CustomerPaymentAllocation
-		if body.OrderID != "order-1" || body.AmountMinor != 1300 || body.Method != methodCashOnDelivery || allocation.OrderID != body.OrderID || allocation.StoreID != "store-1" || allocation.PartnerActorID != "partner-1" || allocation.SubtotalMinor != 1300 || allocation.CashAmountMinor != 1300 || allocation.CustomerPayableMinor != 1300 {
+		if body.OrderID != "order-1" || body.AmountMinor != 1300 || body.Method != methodCashOnDelivery || allocation.OrderID != body.OrderID || allocation.StoreID != "store-1" || allocation.PartnerActorID != "partner-1" || allocation.CommercialStoreTypeID != "commercial-type-1" || allocation.SubtotalMinor != 1300 || allocation.CashAmountMinor != 1300 || allocation.CustomerPayableMinor != 1300 {
 			t.Fatalf("unexpected create-for-order body: %#v", body)
 		}
 		response.Header().Set("Content-Type", "application/json")
@@ -97,7 +98,7 @@ func TestCreateForOrderUsesRequestOnlyAllocationFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	allocation := CustomerPaymentAllocation{ID: "allocation-response-only", OrderID: "order-1", StoreID: "store-1", PartnerActorID: "partner-1", FulfillmentMode: "BTHWANI_CAPTAIN", Currency: "YER", SubtotalMinor: 1300, CashAmountMinor: 1300, CustomerPayableMinor: 1300, PolicyVersion: "cod-current-v2", PaymentIntentID: "response-only", CreatedAt: "2026-09-28T00:00:00Z"}
+	allocation := CustomerPaymentAllocation{ID: "allocation-response-only", OrderID: "order-1", StoreID: "store-1", PartnerActorID: "partner-1", CommercialStoreTypeID: "commercial-type-1", FulfillmentMode: "BTHWANI_CAPTAIN", Currency: "YER", SubtotalMinor: 1300, CashAmountMinor: 1300, CustomerPayableMinor: 1300, PolicyVersion: "cod-current-v2", PaymentIntentID: "response-only", CreatedAt: "2026-09-28T00:00:00Z"}
 	if _, _, err := client.CreateForOrderWithMethod(t.Context(), "order-1", "external-1", "client-1", 1300, methodCashOnDelivery, allocation, "create-order-key", "create-order-correlation"); err != nil {
 		t.Fatalf("create order payment intent: %v", err)
 	}

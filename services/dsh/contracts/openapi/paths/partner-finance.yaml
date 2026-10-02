@@ -114,21 +114,21 @@ paths:
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
-  /dsh/operator/partner-store-commission-policies:
+  /dsh/operator/commercial-store-type-commission-policies:
     get:
-      operationId: readOperatorPartnerStoreCommissionPolicies
-      summary: Read the current Finance-controlled commission rate for each fulfillment mode at one Store
+      operationId: readOperatorCommercialStoreTypeCommissionPolicies
+      summary: Read the current Finance-controlled commission rates for a commercial store type
       security:
         - serviceBearer: []
       parameters:
         - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
-        - name: storeId
+        - name: commercialStoreTypeId
           in: query
           required: true
           schema: { type: string, minLength: 1, maxLength: 128 }
       responses:
         "200":
-          description: Current per-mode commission policies for the Store.
+          description: Current commission policies by fulfillment mode for this commercial store type.
           content:
             application/json:
               schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerStoreCommissionPoliciesResponse" }
@@ -138,8 +138,8 @@ paths:
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
     post:
-      operationId: updateOperatorPartnerStoreCommissionPolicy
-      summary: Change one Store and fulfillment-mode commission rate with optimistic versioning and an audit reason
+      operationId: updateOperatorCommercialStoreTypeCommissionPolicy
+      summary: Change one commercial store type and fulfillment-mode commission rate with optimistic versioning and an audit reason
       security:
         - serviceBearer: []
       parameters:

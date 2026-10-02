@@ -1,7 +1,7 @@
 "use client";
 
 import { toAsciiDigits } from "@bthwani/design-system";
-import type { CommerceVertical, JoiningCaseResponse, ServiceCity } from "@bthwani/dsh";
+import type { CommercialStoreType, CommerceVertical, JoiningCaseResponse, ServiceCity } from "@bthwani/dsh";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -16,6 +16,7 @@ type JoiningCaseCreateInput = Readonly<{
   firstStoreName: string;
   serviceCityId: string;
   firstStoreVerticalId: string;
+  firstStoreCommercialTypeId: string;
   firstStoreLatitude: number;
   firstStoreLongitude: number;
   firstStoreFulfillmentModes: ReadonlyArray<(typeof fulfillmentModeValues)[number]>;
@@ -25,6 +26,12 @@ type PendingJoiningCaseCreate = Readonly<{
   idempotencyKey: string;
   correlationId: string;
 }>;
+
+function commercialTypePrompt(verticalId: string, loading: boolean): string {
+  if (!verticalId) return "اختر الفئة الرئيسية أولاً";
+  if (loading) return "جارٍ تحميل الأنواع…";
+  return "اختر نوع المتجر";
+}
 
 function toggleFulfillmentMode(current: JoiningCaseCreateInput["firstStoreFulfillmentModes"], mode: JoiningCaseCreateInput["firstStoreFulfillmentModes"][number], checked: boolean) {
   if (checked) return current.includes(mode) ? current : [...current, mode];
@@ -42,7 +49,7 @@ function readPendingCreate(raw: string | null): PendingJoiningCaseCreate | null 
   try {
     const value = JSON.parse(raw) as Partial<PendingJoiningCaseCreate>;
     const input = value.input as Partial<JoiningCaseCreateInput> | undefined;
-    if (!input || typeof input.contactPhoneE164 !== "string" || typeof input.businessName !== "string" || typeof input.firstStoreName !== "string" || typeof input.serviceCityId !== "string" || typeof input.firstStoreVerticalId !== "string" || typeof input.firstStoreLatitude !== "number" || !Number.isFinite(input.firstStoreLatitude) || typeof input.firstStoreLongitude !== "number" || !Number.isFinite(input.firstStoreLongitude) || !Array.isArray(input.firstStoreFulfillmentModes) || input.firstStoreFulfillmentModes.length < 1 || input.firstStoreFulfillmentModes.some((mode) => typeof mode !== "string" || !fulfillmentModeValues.includes(mode as (typeof fulfillmentModeValues)[number])) || typeof value.idempotencyKey !== "string" || value.idempotencyKey.length < 8 || value.idempotencyKey.length > 128 || typeof value.correlationId !== "string" || value.correlationId.length < 8 || value.correlationId.length > 128) return null;
+    if (!input || typeof input.contactPhoneE164 !== "string" || typeof input.businessName !== "string" || typeof input.firstStoreName !== "string" || typeof input.serviceCityId !== "string" || typeof input.firstStoreVerticalId !== "string" || typeof input.firstStoreCommercialTypeId !== "string" || !input.firstStoreCommercialTypeId || typeof input.firstStoreLatitude !== "number" || !Number.isFinite(input.firstStoreLatitude) || typeof input.firstStoreLongitude !== "number" || !Number.isFinite(input.firstStoreLongitude) || !Array.isArray(input.firstStoreFulfillmentModes) || input.firstStoreFulfillmentModes.length < 1 || input.firstStoreFulfillmentModes.some((mode) => typeof mode !== "string" || !fulfillmentModeValues.includes(mode as (typeof fulfillmentModeValues)[number])) || typeof value.idempotencyKey !== "string" || value.idempotencyKey.length < 8 || value.idempotencyKey.length > 128 || typeof value.correlationId !== "string" || value.correlationId.length < 8 || value.correlationId.length > 128) return null;
     return {
       input: { ...input, firstStoreFulfillmentModes: input.firstStoreFulfillmentModes as JoiningCaseCreateInput["firstStoreFulfillmentModes"] } as JoiningCaseCreateInput,
       idempotencyKey: value.idempotencyKey,
@@ -71,11 +78,15 @@ export function JoiningCaseCreate() {
   const [storeName, setStoreName] = useState("");
   const [serviceCityId, setServiceCityId] = useState("");
   const [verticalId, setVerticalId] = useState("");
+  const [commercialTypeId, setCommercialTypeId] = useState("");
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
   const [fulfillmentModes, setFulfillmentModes] = useState<ReadonlyArray<"BTHWANI_CAPTAIN" | "PARTNER_CAPTAIN" | "CUSTOMER_PICKUP">>([]);
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
+  const [commercialTypes, setCommercialTypes] = useState<ReadonlyArray<CommercialStoreType>>([]);
+  const [commercialTypesBusy, setCommercialTypesBusy] = useState(false);
+  const [commercialTypesError, setCommercialTypesError] = useState("");
   const [optionsBusy, setOptionsBusy] = useState(true);
   const [optionsError, setOptionsError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -107,6 +118,7 @@ export function JoiningCaseCreate() {
       setStoreName(restored.input.firstStoreName);
       setServiceCityId(restored.input.serviceCityId);
       setVerticalId(restored.input.firstStoreVerticalId);
+      setCommercialTypeId(restored.input.firstStoreCommercialTypeId);
       setLatitude(String(restored.input.firstStoreLatitude));
       setLongitude(String(restored.input.firstStoreLongitude));
       setFulfillmentModes(restored.input.firstStoreFulfillmentModes);
@@ -140,28 +152,51 @@ export function JoiningCaseCreate() {
 
   useEffect(() => { void loadOptions(); }, [loadOptions]);
 
+  useEffect(() => {
+    setCommercialTypes([]);
+    setCommercialTypeId("");
+    setCommercialTypesError("");
+    if (!verticalId) return;
+    const controller = new AbortController();
+    setCommercialTypesBusy(true);
+    void fetch(`/api/catalog/commercial-store-types?verticalId=${encodeURIComponent(verticalId)}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("COMMERCIAL_STORE_TYPES_UNAVAILABLE");
+        const payload = await response.json() as { storeTypes?: ReadonlyArray<CommercialStoreType> };
+        setCommercialTypes(payload.storeTypes ?? []);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof Error && error.name === "AbortError") return;
+        setCommercialTypesError("تعذر تحميل أنواع المتاجر لهذه الفئة.");
+      })
+      .finally(() => setCommercialTypesBusy(false));
+    return () => controller.abort();
+  }, [verticalId]);
+
   async function createCase() {
-    const input: JoiningCaseCreateInput = {
+    const currentInput: JoiningCaseCreateInput = {
       contactPhoneE164: phone.replace(/\s+/g, ""),
       businessName: businessName.trim(),
       firstStoreName: storeName.trim(),
       serviceCityId,
       firstStoreVerticalId: verticalId,
+      firstStoreCommercialTypeId: commercialTypeId,
       firstStoreLatitude: Number(latitude),
       firstStoreLongitude: Number(longitude),
       firstStoreFulfillmentModes: fulfillmentModes,
     };
-    if (!phoneE164Pattern.test(input.contactPhoneE164) || input.businessName.length < 2 || input.firstStoreName.length < 2 || !input.serviceCityId || !input.firstStoreVerticalId || input.firstStoreFulfillmentModes.length === 0 || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180) {
-      setError("أدخل بيانات النشاط والمتجر والمدينة والفئة الرئيسية وإحداثيات موقع المتجر الثابت.");
+    const attempt = pendingAttempt ?? {
+      input: currentInput,
+      idempotencyKey: `partner_joining_case_create_${crypto.randomUUID()}`,
+      correlationId: `partner_joining_case_create_corr_${crypto.randomUUID()}`,
+    };
+    const input = attempt.input;
+    if (!phoneE164Pattern.test(input.contactPhoneE164) || input.businessName.length < 2 || input.firstStoreName.length < 2 || !input.serviceCityId || !input.firstStoreVerticalId || !input.firstStoreCommercialTypeId || input.firstStoreFulfillmentModes.length === 0 || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180) {
+      setError("أدخل بيانات النشاط والمتجر ومدينة الخدمة والفئة الرئيسية ونوع المتجر وإحداثيات الموقع.");
       return;
     }
     setBusy(true);
     setError("");
-    const attempt = pendingAttempt ?? {
-      input,
-      idempotencyKey: `partner_joining_case_create_${crypto.randomUUID()}`,
-      correlationId: `partner_joining_case_create_corr_${crypto.randomUUID()}`,
-    };
     if (!pendingAttempt) {
       setPendingAttempt(attempt);
       try {
@@ -205,6 +240,9 @@ export function JoiningCaseCreate() {
 
   const activeCities = cities.filter((city) => city.active);
   const activeVerticals = verticals.filter((vertical) => vertical.active);
+  const activeCommercialTypes = commercialTypes.filter((item) => item.active && item.verticalId === verticalId);
+  const commercialTypePlaceholder = commercialTypePrompt(verticalId, commercialTypesBusy);
+  const hasNoActiveCommercialTypes = Boolean(verticalId && !commercialTypesBusy && !commercialTypesError && activeCommercialTypes.length === 0);
   return (
     <section className="access-card" aria-labelledby="joining-case-create-title">
       <div className="access-card-heading">
@@ -223,6 +261,7 @@ export function JoiningCaseCreate() {
         <label className="field-label" htmlFor="joining-store">اسم المتجر الأول<input id="joining-store" disabled={busy || optionsBusy || Boolean(pendingAttempt) || !attemptReady} value={storeName} onChange={(event) => setStoreName(event.target.value)} /></label>
         <label className="field-label" htmlFor="joining-city">مدينة المتجر الأول<select id="joining-city" disabled={busy || optionsBusy || Boolean(optionsError) || Boolean(pendingAttempt) || !attemptReady} value={serviceCityId} onChange={(event) => setServiceCityId(event.target.value)}><option value="">اختر مدينة نشطة</option>{activeCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
         <label className="field-label" htmlFor="joining-vertical">الفئة الرئيسية<select id="joining-vertical" disabled={busy || optionsBusy || Boolean(optionsError) || Boolean(pendingAttempt) || !attemptReady} value={verticalId} onChange={(event) => setVerticalId(event.target.value)}><option value="">اختر الفئة الرئيسية</option>{activeVerticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}</option>)}</select></label>
+         <label className="field-label" htmlFor="joining-commercial-type">نوع المتجر التجاري<select id="joining-commercial-type" disabled={busy || optionsBusy || commercialTypesBusy || !verticalId || Boolean(commercialTypesError) || Boolean(pendingAttempt) || !attemptReady} value={commercialTypeId} onChange={(event) => setCommercialTypeId(event.target.value)}><option value="">{commercialTypePlaceholder}</option>{activeCommercialTypes.map((item) => <option key={item.id} value={item.id}>{item.nameAr}</option>)}</select>{commercialTypesError ? <span className="identity-error" role="alert">{commercialTypesError}</span> : null}{hasNoActiveCommercialTypes ? <span className="muted">لا توجد أنواع نشطة لهذه الفئة. أضف النوع من سجل أنواع المتاجر قبل إنشاء الحالة.</span> : null}</label>
         <label className="field-label" htmlFor="joining-latitude">خط عرض موقع المتجر<input id="joining-latitude" disabled={busy || optionsBusy || Boolean(pendingAttempt) || !attemptReady} inputMode="decimal" value={latitude} onChange={(event) => setLatitude(toAsciiDigits(event.target.value))} placeholder="مثال: 15.369445" /></label>
         <label className="field-label" htmlFor="joining-longitude">خط طول موقع المتجر<input id="joining-longitude" disabled={busy || optionsBusy || Boolean(pendingAttempt) || !attemptReady} inputMode="decimal" value={longitude} onChange={(event) => setLongitude(toAsciiDigits(event.target.value))} placeholder="مثال: 44.191006" /></label>
         <fieldset className="field-label" disabled={busy || optionsBusy || Boolean(pendingAttempt) || !attemptReady}>
@@ -232,7 +271,7 @@ export function JoiningCaseCreate() {
           <label><input type="checkbox" checked={fulfillmentModes.includes("CUSTOMER_PICKUP")} onChange={(event) => setFulfillmentModes((current) => toggleFulfillmentMode(current, "CUSTOMER_PICKUP", event.target.checked))} /> استلم بنفسك من المتجر</label>
           <span className="muted">تُثبت هذه الإتاحة عند الانضمام، وتظهر للعميل الخيارات المفعّلة فقط. تغييرها بعد إنشاء المتجر متاح للمشغّل في لوحة التحكم.</span>
         </fieldset>
-        <button type="button" className="button button-primary" disabled={busy || Boolean(createdCaseId) || !attemptReady || optionsBusy || Boolean(optionsError) || activeCities.length === 0 || activeVerticals.length === 0} onClick={() => void createCase()}>{createButtonLabel(busy, Boolean(pendingAttempt))}</button>
+        <button type="button" className="button button-primary" disabled={busy || Boolean(createdCaseId) || !attemptReady || optionsBusy || Boolean(optionsError) || commercialTypesBusy || Boolean(commercialTypesError) || activeCities.length === 0 || activeVerticals.length === 0 || activeCommercialTypes.length === 0} onClick={() => void createCase()}>{createButtonLabel(busy, Boolean(pendingAttempt))}</button>
       </div>
       {error ? <p className="identity-error" role="alert">{error}</p> : null}
       <Link className="button button-secondary" href="/partners">العودة إلى الطابور</Link>

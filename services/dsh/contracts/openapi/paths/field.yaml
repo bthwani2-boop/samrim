@@ -181,7 +181,7 @@ paths:
   /dsh/fields/me/financial-summary:
     get:
       operationId: readOwnFieldFinancialSummary
-      summary: Read the WLT-derived Field commission summary
+      summary: Read the WLT-derived Field acquisition reward summary
       security:
         - userBearer: []
       responses:
@@ -198,10 +198,35 @@ paths:
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 
+  /dsh/fields/me/acquisition-entitlements:
+    get:
+      operationId: listOwnFieldAcquisitionEntitlements
+      summary: Read the authenticated Field representative's WLT entitlement ledger entries
+      security:
+        - userBearer: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 512 }
+      responses:
+        "200":
+          description: Cursor-paged Field acquisition entitlements from WLT, enriched with canonical DSH store names.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/FieldAcquisitionEntitlementPage"
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/operator/fields/{fieldActorId}/financial-summary:
     get:
       operationId: readOperatorFieldFinancialSummary
-      summary: Read a WLT-derived Field commission summary for Finance
+      summary: Read a WLT-derived Field acquisition reward summary for Finance
       security:
         - serviceBearer: []
       parameters:
@@ -229,9 +254,42 @@ paths:
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 
-  /dsh/operator/field-commission-policies:
+  /dsh/operator/fields/{fieldActorId}/acquisition-cases:
     get:
-      operationId: readFieldCommissionPolicyByScope
+      operationId: listOperatorFieldAcquisitionCases
+      summary: List Partner joining journeys attributed to a Field representative
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: fieldActorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 100 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 25 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 512 }
+      responses:
+        "200":
+          description: Canonical DSH joining cases created by this Field representative.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseListResponse"
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/field-acquisition-reward-policies:
+    get:
+      operationId: readFieldAcquisitionRewardPolicyByScope
       summary: Read the active WLT-owned field reward policy for an exact scope
       security:
         - serviceBearer: []
@@ -242,7 +300,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [DEFAULT, VERTICAL, STORE]
+            enum: [STORE_TYPE]
         - name: scopeId
           in: query
           required: false
@@ -259,7 +317,7 @@ paths:
                 required: [policy]
                 properties:
                   policy:
-                    $ref: "../dsh.openapi.yaml#/components/schemas/FieldCommissionPolicy"
+                    $ref: "../dsh.openapi.yaml#/components/schemas/FieldAcquisitionRewardPolicy"
         "400":
           $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
         "401":
@@ -271,8 +329,8 @@ paths:
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
     post:
-      operationId: createFieldCommissionPolicy
-      summary: Create or replace one Finance-managed Field commission policy
+      operationId: createFieldAcquisitionRewardPolicy
+      summary: Create or replace one Finance-managed Field acquisition reward policy
       security:
         - serviceBearer: []
       parameters:
@@ -286,14 +344,15 @@ paths:
             schema:
               type: object
               additionalProperties: false
-               required: [scopeType, rewardMinor, roundingUnitMinor, expectedVersion, reason]
+              required: [scopeType, scopeId, rewardMinor, roundingUnitMinor, expectedVersion, reason]
               properties:
                 scopeType:
                   type: string
-                  enum: [DEFAULT, VERTICAL, STORE]
+                  enum: [STORE_TYPE]
                 scopeId:
                   type: string
-                  nullable: true
+                  minLength: 1
+                  maxLength: 128
                 rewardMinor:
                   type: integer
                   minimum: 50
@@ -309,7 +368,7 @@ paths:
                   maxLength: 500
       responses:
         "201":
-          description: Field commission policy created.
+          description: Field acquisition reward policy created.
           content:
             application/json:
               schema:
@@ -317,7 +376,7 @@ paths:
                 required: [policy, idempotentReplay]
                 properties:
                   policy:
-                    $ref: "../dsh.openapi.yaml#/components/schemas/FieldCommissionPolicy"
+                    $ref: "../dsh.openapi.yaml#/components/schemas/FieldAcquisitionRewardPolicy"
                   idempotentReplay:
                     type: boolean
         "200":
@@ -329,7 +388,7 @@ paths:
                 required: [policy, idempotentReplay]
                 properties:
                   policy:
-                    $ref: "../dsh.openapi.yaml#/components/schemas/FieldCommissionPolicy"
+                    $ref: "../dsh.openapi.yaml#/components/schemas/FieldAcquisitionRewardPolicy"
                   idempotentReplay:
                     type: boolean
         "400":
@@ -343,40 +402,6 @@ paths:
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 
-  /dsh/operator/field-commission-policies/{policyId}:
-    get:
-      operationId: readFieldCommissionPolicy
-      summary: Read a Finance-managed Field commission policy
-      security:
-        - serviceBearer: []
-      parameters:
-        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
-        - name: policyId
-          in: path
-          required: true
-          schema:
-            type: string
-            minLength: 1
-            maxLength: 128
-      responses:
-        "200":
-          description: Field commission policy.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [policy]
-                properties:
-                  policy:
-                    $ref: "../dsh.openapi.yaml#/components/schemas/FieldCommissionPolicy"
-        "400":
-          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
-        "401":
-          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
-        "403":
-          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
-        "404":
-          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 

@@ -4,10 +4,17 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { captureMailpitMessageIds, readMailpitCode } from "./mailpit-challenge.mjs";
+import { challengeSourceHeaders } from "./runtime-proof/challenge-source.mjs";
+import { assertCanonicalDshMigrationHistory, canonicalDshMigrationHistoryQuery, readCanonicalDshMigrationNames } from "./runtime-proof/canonical-dsh-migration-history.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
+const dshMigrationDirectory = path.resolve(root, "services/dsh/database/migrations");
+const dshMigrationNames = readCanonicalDshMigrationNames(dshMigrationDirectory);
 const envArg = process.argv.find((arg) => arg.startsWith("--env-file="));
 const envPath = envArg ? path.resolve(root, envArg.slice("--env-file=".length)) : path.resolve(root, "infra/local/.env");
+if (process.env.CI !== "true" || process.env.BTHWANI_IDENTITY_PROOF_SCOPE !== "disposable-ci") {
+  throw new Error("Location Core runtime proof requires disposable CI state because it creates persistent business records");
+}
 
 function readEnv(file) {
   if (!fs.existsSync(file)) throw new Error(`canonical runtime env file missing: ${file}`);
@@ -39,10 +46,9 @@ const foreignPartnerPhone = `+96777${crypto.randomInt(1_000_000, 9_999_999)}`;
 let partnerStoreID = "";
 let foreignStoreID = "";
 let serviceCityID = "";
-const actorIDs = new Set();
-const caseIDs = new Set();
 let clientActorID = "";
 let verticalID = "";
+let commercialStoreTypeID = "";
 const firstStoreOrigin = { firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006 };
 
 function sqlLiteral(value) {
@@ -50,8 +56,7 @@ function sqlLiteral(value) {
 }
 
 function sql(query) {
-  // Readback is allowed for schema/contract assertions. DELETE statements below
-  // are bounded cleanup of IDs captured by this run, never business fixture setup.
+  // SQL is limited to schema/readback assertions and claim-specific fault injection.
   return execFileSync(resolveTrustedExecutable("docker"), [...composeArgs, "exec", "-T", "postgres", "psql", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-Atc", query], { cwd: root, encoding: "utf8" }).trim();
 }
 
@@ -78,7 +83,7 @@ async function expect(base, method, pathname, status, options = {}) {
 
 async function issueChallenge(pathname, body, purpose) {
   const previousMessageIds = await captureMailpitMessageIds({ port: mailpitPort, phone: body.phone, purpose });
-  const challenge = await expect(identityBase, "POST", pathname, 201, { body });
+  const challenge = await expect(identityBase, "POST", pathname, 201, { body, headers: challengeSourceHeaders(body.phone) });
   if (typeof challenge?.challengeId !== "string") throw new Error(`${pathname}: challenge id missing`);
   return { ...challenge, code: await readMailpitCode({ port: mailpitPort, phone: body.phone, purpose, excludeMessageIds: previousMessageIds }) };
 }
@@ -95,7 +100,6 @@ async function createClientSession(phone, instance) {
   const challenge = await issueChallenge("/auth/client/registration/request", { phone }, "client_register");
   const pair = await expect(identityBase, "POST", "/auth/client/register", 201, { body: { phone, code: challenge.code, password: `Loca${crypto.randomBytes(2).toString("hex")}`, clientInstanceId: instance } });
   if (pair.identity?.role !== "client" || pair.identity?.surface !== "app-client") throw new Error("client fixture session identity is not app-client");
-  actorIDs.add(String(pair.identity.subject));
   clientActorID = String(pair.identity.subject);
   return pair;
 }
@@ -103,7 +107,6 @@ async function createClientSession(phone, instance) {
 async function createPartnerSession(operatorID, phone, instance) {
   const provisioned = await request(identityBase, "POST", "/internal/actor-roles/provision", { token: identityDshToken, headers: { "X-Acting-Actor-ID": operatorID, "X-Correlation-ID": crypto.randomUUID() }, body: { phoneE164: phone, role: "partner" } });
   const actorID = String(provisioned.body.actorId);
-  if (actorID && actorID !== "undefined") actorIDs.add(actorID);
   if (![200, 201].includes(provisioned.status) || !actorID || actorID === "undefined") throw new Error(`partner fixture provisioning failed: ${JSON.stringify(provisioned.body)}`);
   const challenge = await issueChallenge("/auth/managed/activation/request", { phone, role: "partner" }, "managed_activate");
   const pairResponse = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role: "partner", verificationCode: challenge.code, password: `Part${crypto.randomBytes(2).toString("hex")}`, clientInstanceId: instance } });
@@ -113,15 +116,36 @@ async function createPartnerSession(operatorID, phone, instance) {
   return { actorID, pair };
 }
 
+async function ensureCommissionPolicy(operatorID) {
+  const endpoint = "/dsh/operator/commercial-store-type-commission-policies";
+  const read = async () => request(dshBase, "GET", `${endpoint}?commercialStoreTypeId=${encodeURIComponent(commercialStoreTypeID)}`, { token: controlPanelToken, headers: { "X-Acting-Actor-ID": operatorID } });
+  const current = await read();
+  if (current.status !== 200 || current.body?.commercialStoreTypeId !== commercialStoreTypeID || !Array.isArray(current.body?.policies)) throw new Error(`commercial store type commission policy read failed: ${JSON.stringify(current)}`);
+  const existing = current.body.policies.find((policy) => policy.fulfillmentMode === "BTHWANI_CAPTAIN");
+  if (existing) {
+    if (existing.commercialStoreTypeId !== commercialStoreTypeID || existing.fulfillmentMode !== "BTHWANI_CAPTAIN" || existing.commissionRateBps !== 1500 || !Number.isInteger(existing.policyVersion) || existing.policyVersion < 1) throw new Error(`commercial store type commission policy is invalid: ${JSON.stringify(existing)}`);
+    return existing;
+  }
+
+  const created = await request(dshBase, "POST", endpoint, {
+    token: controlPanelToken,
+    headers: serviceHeaders(operatorID),
+    body: { commercialStoreTypeId: commercialStoreTypeID, fulfillmentMode: "BTHWANI_CAPTAIN", commissionRateBps: 1500, expectedVersion: 0, reason: "Location Core disposable runtime proof policy" },
+  });
+  const readback = await read();
+  const policy = readback.body?.policies?.find((item) => item.fulfillmentMode === "BTHWANI_CAPTAIN");
+  if (created.status !== 200 || created.body?.policy?.commercialStoreTypeId !== commercialStoreTypeID || created.body?.policy?.fulfillmentMode !== "BTHWANI_CAPTAIN" || created.body?.policy?.commissionRateBps !== 1500 || created.body?.policy?.policyVersion !== 1 || readback.status !== 200 || policy?.commercialStoreTypeId !== commercialStoreTypeID || policy?.fulfillmentMode !== "BTHWANI_CAPTAIN" || policy?.commissionRateBps !== 1500 || policy?.policyVersion !== 1) throw new Error(`canonical commercial store type commission policy setup/readback failed: ${JSON.stringify({ created, readback })}`);
+  return policy;
+}
+
 async function createApprovedPartner(operatorID, phone, name, serviceCityId) {
   const created = await expect(dshBase, "POST", "/dsh/joining-cases", 201, {
     token: controlPanelToken,
     headers: serviceHeaders(operatorID),
-    body: { contactPhoneE164: phone, businessName: `${name} business`, firstStoreName: `${name} store`, serviceCityId, firstStoreVerticalId: verticalID, ...firstStoreOrigin },
+    body: { contactPhoneE164: phone, businessName: `${name} business`, firstStoreName: `${name} store`, serviceCityId, firstStoreVerticalId: verticalID, firstStoreCommercialTypeId: commercialStoreTypeID, firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"], ...firstStoreOrigin },
   });
-  if (created?.case?.state !== "draft" || created.case.firstStoreVerticalId !== verticalID || created.case.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || created.case.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude) throw new Error("location joining case create readback failed");
+  if (created?.case?.state !== "draft" || created.case.firstStoreVerticalId !== verticalID || created.case.firstStoreCommercialTypeId !== commercialStoreTypeID || created.case.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || created.case.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude) throw new Error("location joining case create readback failed");
   const caseID = String(created.case.id);
-  caseIDs.add(caseID);
   const submitted = await expect(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(caseID)}/submit`, 200, {
     token: controlPanelToken,
     headers: { ...serviceHeaders(operatorID), "X-Expected-Version": "1" },
@@ -129,65 +153,22 @@ async function createApprovedPartner(operatorID, phone, name, serviceCityId) {
   if (submitted?.case?.state !== "submitted" || !submitted.case.partnerActorId) throw new Error("location joining case submit readback failed");
   const fixture = await createPartnerSession(operatorID, phone, `location-partner-${suffix}-${name.replace(/[^A-Za-z0-9._:-]/g, "-")}`);
   if (fixture.actorID !== String(submitted.case.partnerActorId)) throw new Error("location joining case actor binding drifted");
+  await ensureCommissionPolicy(operatorID);
+  const terms = await expect(dshBase, "GET", "/dsh/operator/partner-financial-terms-policy", 200, { token: controlPanelToken, headers: { "X-Acting-Actor-ID": operatorID } });
+  if (terms?.policy?.state !== "ACTIVE" || terms.policy.settlementPeriod !== "MONTHLY" || typeof terms.policy.policyVersion !== "string" || !terms.policy.policyVersion.startsWith("partner-financial-terms:v")) throw new Error(`active partner financial terms policy is invalid: ${JSON.stringify(terms)}`);
   const approved = await expect(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(caseID)}/review`, 200, {
     token: controlPanelToken,
     headers: { ...serviceHeaders(operatorID), "X-Expected-Version": "2" },
-    body: { decision: "approved", commissionRateBps: 1500, settlementPeriod: "MONTHLY" },
+    body: { decision: "approved", expectedTermsPolicyVersion: terms.policy.policyVersion },
   });
-  if (approved?.case?.state !== "approved" || approved.case.financialProfileState !== "ACTIVE" || approved.case.commissionRateBps !== 1500 || approved.case.settlementPeriod !== "MONTHLY" || typeof approved.case.financialProfileId !== "string" || !approved.case.store?.id || approved.case.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || approved.case.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || approved.case.store.deliveryOrigin?.latitude !== firstStoreOrigin.firstStoreLatitude || approved.case.store.deliveryOrigin?.longitude !== firstStoreOrigin.firstStoreLongitude) throw new Error("location joining case approval did not bind financial terms or preserve store origin");
+  if (approved?.case?.state !== "approved" || approved.case.financialProfileState !== "ACTIVE" || approved.case.settlementPeriod !== "MONTHLY" || typeof approved.case.financialProfileId !== "string" || !approved.case.store?.id || approved.case.firstStoreCommercialTypeId !== commercialStoreTypeID || approved.case.store.commercialStoreTypeId !== commercialStoreTypeID || approved.case.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || approved.case.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || approved.case.store.deliveryOrigin?.latitude !== firstStoreOrigin.firstStoreLatitude || approved.case.store.deliveryOrigin?.longitude !== firstStoreOrigin.firstStoreLongitude) throw new Error("location joining case approval did not bind financial terms, commercial type, or store origin");
   return { ...fixture, caseID, storeID: String(approved.case.store.id) };
-}
-
-function cleanup() {
-  // Cleanup is intentionally scoped to this verifier's freshly created actors,
-  // cases, stores, city and addresses; it must preserve the reusable local world.
-  try {
-    const locationSchemaExists = sql("SELECT to_regclass('dsh.delivery_addresses') IS NOT NULL");
-    if (locationSchemaExists === "t" && clientActorID) {
-      const actor = sqlLiteral(clientActorID);
-      sql(`DELETE FROM dsh.delivery_address_audit WHERE client_actor_id='${actor}'`);
-      sql(`DELETE FROM dsh.delivery_address_mutation_idempotency WHERE client_actor_id='${actor}'`);
-      sql(`DELETE FROM dsh.delivery_addresses WHERE client_actor_id='${actor}'`);
-    }
-    if (locationSchemaExists === "t") {
-      for (const caseID of caseIDs) {
-        const value = sqlLiteral(caseID);
-        sql(`DELETE FROM dsh.joining_case_financial_profile_outbox WHERE case_id='${value}'`);
-        sql(`DELETE FROM wlt.partner_financial_profile_events WHERE profile_id IN (SELECT id FROM wlt.partner_financial_profiles WHERE joining_case_id='${value}')`);
-        sql(`DELETE FROM wlt.partner_financial_profiles WHERE joining_case_id='${value}'`);
-        sql(`DELETE FROM dsh.joining_case_audit WHERE case_id='${value}'`);
-        sql(`DELETE FROM dsh.joining_case_mutation_idempotency WHERE case_id='${value}'`);
-        sql(`DELETE FROM dsh.joining_cases WHERE id='${value}'`);
-      }
-      const stores = `'${sqlLiteral(partnerStoreID)}','${sqlLiteral(foreignStoreID)}'`;
-      sql(`DELETE FROM dsh.store_origin_audit WHERE store_id IN (${stores})`);
-      sql(`DELETE FROM dsh.store_origin_mutation_idempotency WHERE store_id IN (${stores})`);
-      sql(`DELETE FROM dsh.store_publication_audit WHERE store_id IN (${stores})`);
-      sql(`DELETE FROM dsh.store_publication_idempotency WHERE store_id IN (${stores})`);
-      sql(`DELETE FROM dsh.stores WHERE id IN (${stores})`);
-    }
-    if (verticalID) {
-      const vertical = sqlLiteral(verticalID);
-      sql(`DELETE FROM dsh.catalog_registry_mutation_idempotency WHERE entity_id='${vertical}'`);
-      sql(`DELETE FROM dsh.commerce_verticals WHERE id='${vertical}'`);
-    }
-    if (locationSchemaExists === "t") {
-      const city = sqlLiteral(serviceCityID);
-      sql(`DELETE FROM dsh.service_city_audit WHERE city_id='${city}'`);
-      sql(`DELETE FROM dsh.service_city_mutation_idempotency WHERE city_id='${city}'`);
-      sql(`DELETE FROM dsh.service_cities WHERE id='${city}'`);
-    }
-    for (const actorID of actorIDs) sql(`DELETE FROM identity_actors WHERE id='${sqlLiteral(actorID)}'`);
-    console.log("LOCATION_CORE_RUNTIME_CLEANUP=PASS");
-  } catch (error) {
-    console.error(`LOCATION_CORE_RUNTIME_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`);
-  }
 }
 
 let exitCode = 1;
 try {
   const schema = sql("SELECT count(*) FROM dsh.schema_migrations");
-  if (schema !== "33") throw new Error(`DSH schema history is not v33: ${schema}`);
+  assertCanonicalDshMigrationHistory(dshMigrationNames, schema, sql(canonicalDshMigrationHistoryQuery(dshMigrationNames)));
   if (sql("SELECT name FROM dsh.schema_migrations WHERE version=10") !== "010_central_catalog_refoundation.sql") throw new Error("Catalog refoundation migration is not canonical");
   if (sql("SELECT name FROM dsh.schema_migrations WHERE version=20") !== "020_field_standing_admission_and_joining_scope.sql") throw new Error("Field standing admission migration is not canonical");
   if (sql("SELECT name FROM dsh.schema_migrations WHERE version=21") !== "021_joining_case_store_origin.sql") throw new Error("Joining-case store-origin migration is not canonical");
@@ -196,13 +177,15 @@ try {
     if (sql(`SELECT count(*) FROM information_schema.columns WHERE table_schema='dsh' AND table_name='${table}' AND column_name='${column}'`) !== "0") throw new Error(`Location Core precise/dead column remains: dsh.${table}.${column}`);
   }
 
-  let operatorID = sql("SELECT actor_id FROM identity_actor_roles WHERE role='operator' AND enabled AND activated_at IS NOT NULL ORDER BY activated_at DESC, actor_id LIMIT 1");
+  let operatorID = sql("SELECT r.actor_id FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id JOIN identity_operator_permissions p ON p.actor_id=r.actor_id AND p.permission='platform_policies' AND p.enabled JOIN identity_bootstrap_state b ON b.id=1 WHERE r.role='operator' AND r.enabled AND a.security_enabled AND r.activated_at IS NOT NULL ORDER BY (r.actor_id=b.initial_operator_actor_id) DESC, r.activated_at DESC, r.actor_id LIMIT 1");
   if (!operatorID) {
     const bootstrap = await request(identityBase, "POST", "/internal/bootstrap/operator", { token: bootstrapToken, body: { phoneE164: `+96775${crypto.randomInt(1_000_000, 9_999_999)}`, role: "operator" } });
     if (![201, 409].includes(bootstrap.status)) throw new Error(`operator bootstrap failed: ${JSON.stringify(bootstrap.body)}`);
     operatorID = sql("SELECT COALESCE(initial_operator_actor_id,'') FROM identity_bootstrap_state WHERE id=1");
   }
   if (!operatorID) throw new Error("Location Core runtime operator fixture is unavailable");
+  const platformPoliciesAccess = await request(identityBase, "GET", `/internal/operators/${encodeURIComponent(operatorID)}/permissions/platform_policies`, { token: identityDshToken });
+  if (platformPoliciesAccess.status !== 200 || platformPoliciesAccess.body?.actorId !== operatorID || platformPoliciesAccess.body?.permission !== "platform_policies" || platformPoliciesAccess.body?.enabled !== true) throw new Error("Location Core runtime operator lacks Platform Policies permission");
 
   const cityCreated = await expect(dshBase, "POST", "/dsh/service-cities", 201, {
     token: controlPanelToken,
@@ -215,10 +198,20 @@ try {
   const verticalCreated = await expect(dshBase, "POST", "/dsh/catalog/verticals", 201, {
     token: controlPanelToken,
     headers: serviceHeaders(operatorID),
-    body: { nameAr: `متاجر المواقع ${Date.now()}`, nameEn: `Location Stores ${suffix}`, active: true },
+    body: { nameAr: `متاجر المواقع ${Date.now()}`, nameEn: `Location Stores ${suffix}`, catalogModel: "SHARED_CATALOG", active: true, reason: "DSH Location Core runtime vertical" },
   });
   if (!verticalCreated?.vertical?.id) throw new Error("location vertical canonical create failed");
   verticalID = String(verticalCreated.vertical.id);
+
+  const commercialStoreTypeCreated = await expect(dshBase, "POST", "/dsh/catalog/commercial-store-types", 201, {
+    token: controlPanelToken,
+    headers: serviceHeaders(operatorID),
+    body: { verticalId: verticalID, nameAr: `نوع متجر المواقع ${suffix}`, nameEn: `Location Store Type ${suffix}`, active: true, reason: "DSH Location Core runtime joining case" },
+  });
+  if (!commercialStoreTypeCreated?.storeType?.id || commercialStoreTypeCreated.storeType.verticalId !== verticalID || !commercialStoreTypeCreated.storeType.active) throw new Error("location commercial store type canonical create failed");
+  commercialStoreTypeID = String(commercialStoreTypeCreated.storeType.id);
+  const commercialStoreTypeRead = await expect(dshBase, "GET", `/dsh/catalog/commercial-store-types?verticalId=${encodeURIComponent(verticalID)}`, 200, { token: controlPanelToken, headers: { "X-Acting-Actor-ID": operatorID } });
+  if (!commercialStoreTypeRead.storeTypes?.some((item) => item.id === commercialStoreTypeID && item.active)) throw new Error("location commercial store type readback failed");
 
   const client = await createClientSession(clientPhone, `location-client-${suffix}`);
   const partnerFixture = await createApprovedPartner(operatorID, partnerPhone, "Location Runtime", serviceCityID);
@@ -303,7 +296,7 @@ try {
   const addressCount = sql(`SELECT count(*) FROM dsh.delivery_address_audit WHERE client_actor_id='${sqlLiteral(clientActorID)}'`);
   const originCount = sql(`SELECT count(*) FROM dsh.store_origin_audit WHERE store_id='${sqlLiteral(partnerStoreID)}'`);
   if (addressCount !== "55" || originCount !== "0") throw new Error(`audit readback contains losing Store-origin writer residue: addresses=${addressCount} origins=${originCount}`);
-  console.log("DSH_SCHEMA_V33=PASS");
+  console.log(`DSH_SCHEMA_CANONICAL_HISTORY=PASS migrations=${dshMigrationNames.length}`);
   console.log("LOCATION_CORE_RUNTIME=PASS");
   console.log("LOCATION_CORE_CLIENT_API=PASS");
   console.log("LOCATION_CORE_PARTNER_API=PASS");
@@ -315,8 +308,6 @@ try {
   exitCode = 0;
 } catch (error) {
   console.error(`LOCATION_CORE_RUNTIME=FAIL ${error instanceof Error ? error.message : String(error)}`);
-} finally {
-  cleanup();
 }
 
 process.exit(exitCode);

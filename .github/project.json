@@ -27,6 +27,7 @@
         "{workspaceRoot}/.github/ci-performance-budgets.json",
         "{workspaceRoot}/tools/dev/runtime-proof/**/*",
         "{workspaceRoot}/tools/dev/verify-dsh-runtime-core.mjs",
+        "{workspaceRoot}/tools/dev/verify-dsh-location-runtime.mjs",
         "{workspaceRoot}/tools/dev/verify-local-candidate.ps1",
         "{workspaceRoot}/tools/dev/run-ci-runtime-proof.mjs",
         "{workspaceRoot}/tools/dev/verify-execution-proof-system.mjs",
@@ -46,7 +47,6 @@
         "{workspaceRoot}/tools/dev/verify-cache-contracts.mjs",
         "{workspaceRoot}/tools/dev/hash-control-panel-secret-input.mjs",
         "{workspaceRoot}/tools/mobile/hash-mobile-secret-input.mjs",
-        "{workspaceRoot}/.nx/**/*",
         {
           "runtime": "node --version"
         }

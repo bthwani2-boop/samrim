@@ -102,6 +102,7 @@ pnpm client|partner|captain|field    → run only that app's Expo development pr
 pnpm control                         → run only Control's Next development process
 pnpm scr                             → device transport/reverse/scrcpy
 pnpm runtime:down                    → stop local runtime
+pnpm check                           → dirty-tree affected static feedback; no runtime/cloud
 pnpm verify                          → exact clean-candidate affected static/workspace proof
 pnpm safe:push                       → exact-candidate verification, safe push and remote SHA confirmation
 

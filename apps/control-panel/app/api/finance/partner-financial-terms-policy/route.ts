@@ -39,9 +39,8 @@ export async function POST(request: Request) {
   const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() ?? "";
   if (idempotencyKey.length < 8 || idempotencyKey.length > 128) return errorResponse("INVALID_INPUT", "Idempotency-Key is required", 400);
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-  const allowed = ["commissionRateBps", "settlementPeriod", "expectedVersion", "reason"];
+  const allowed = ["settlementPeriod", "expectedVersion", "reason"];
   if (!body || Object.keys(body).some((key) => !allowed.includes(key)) ||
-    !Number.isInteger(body.commissionRateBps) || Number(body.commissionRateBps) < 0 || Number(body.commissionRateBps) > 10000 ||
     (body.settlementPeriod !== "DAILY" && body.settlementPeriod !== "WEEKLY" && body.settlementPeriod !== "MONTHLY") ||
     !Number.isInteger(body.expectedVersion) || Number(body.expectedVersion) < 0 ||
     typeof body.reason !== "string" || body.reason.trim().length < 5 || body.reason.trim().length > 500) {
@@ -49,7 +48,6 @@ export async function POST(request: Request) {
   }
   try {
     const result = await createOperatorPartnerFinancialTermsPolicy({
-      commissionRateBps: Number(body.commissionRateBps),
       settlementPeriod: body.settlementPeriod,
       expectedVersion: Number(body.expectedVersion),
       reason: body.reason.trim(),

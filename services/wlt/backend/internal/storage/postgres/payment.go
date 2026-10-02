@@ -78,7 +78,7 @@ func HashCreateRequest(input CreatePaymentIntentInput) string {
 	parts := []string{"create", input.ExternalReference, input.PayerActorID, input.OrderID, fmt.Sprintf("%d", input.AmountMinor), input.Currency, input.Method}
 	if input.CustomerPaymentAllocation != nil {
 		allocation := input.CustomerPaymentAllocation
-		parts = append(parts, allocation.OrderID, allocation.StoreID, allocation.PartnerActorID, allocation.FulfillmentMode, allocation.Currency, fmt.Sprintf("%d", allocation.SubtotalMinor), fmt.Sprintf("%d", allocation.DeliveryFeeMinor), fmt.Sprintf("%d", allocation.DiscountMinor), fmt.Sprintf("%d", allocation.InternalBalanceAmountMinor), fmt.Sprintf("%d", allocation.CashAmountMinor), fmt.Sprintf("%d", allocation.CustomerPayableMinor), allocation.PolicyVersion)
+		parts = append(parts, allocation.OrderID, allocation.StoreID, allocation.PartnerActorID, allocation.CommercialStoreTypeID, allocation.FulfillmentMode, allocation.Currency, fmt.Sprintf("%d", allocation.SubtotalMinor), fmt.Sprintf("%d", allocation.DeliveryFeeMinor), fmt.Sprintf("%d", allocation.DiscountMinor), fmt.Sprintf("%d", allocation.InternalBalanceAmountMinor), fmt.Sprintf("%d", allocation.CashAmountMinor), fmt.Sprintf("%d", allocation.CustomerPayableMinor), allocation.PolicyVersion)
 	}
 	return hashFacts(parts...)
 }
@@ -103,6 +103,7 @@ func CreatePaymentIntent(ctx context.Context, db *sql.DB, input CreatePaymentInt
 		input.CustomerPaymentAllocation.OrderID = strings.TrimSpace(input.CustomerPaymentAllocation.OrderID)
 		input.CustomerPaymentAllocation.StoreID = strings.TrimSpace(input.CustomerPaymentAllocation.StoreID)
 		input.CustomerPaymentAllocation.PartnerActorID = strings.TrimSpace(input.CustomerPaymentAllocation.PartnerActorID)
+		input.CustomerPaymentAllocation.CommercialStoreTypeID = strings.TrimSpace(input.CustomerPaymentAllocation.CommercialStoreTypeID)
 		input.CustomerPaymentAllocation.FulfillmentMode = strings.TrimSpace(input.CustomerPaymentAllocation.FulfillmentMode)
 		input.CustomerPaymentAllocation.Currency = strings.TrimSpace(input.CustomerPaymentAllocation.Currency)
 		input.CustomerPaymentAllocation.PolicyVersion = strings.TrimSpace(input.CustomerPaymentAllocation.PolicyVersion)

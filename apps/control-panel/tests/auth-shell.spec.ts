@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./coverage-fixtures";
 
 async function stubSession(page: Page, status: number) {
   await page.route("**/api/auth/session**", async (route) => {
@@ -25,17 +25,52 @@ async function stubAuthenticatedSession(page: Page, permissions = authenticatedO
   });
 }
 
+async function stubCommercialStoreTypes(page: Page) {
+  await page.route("**/api/catalog/commercial-store-types**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ storeTypes: [{ id: "grocery-market", verticalId: "grocery", nameAr: "بقالة عامة", nameEn: "Grocery Store", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }),
+    });
+  });
+}
+
 async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "field", initialName: string, reviewedName: string, phone: string) {
   const surface = role === "captain" ? "captains" : "fields";
   const actorID = `act_${role}_reviewed_candidate`;
   const admissionID = `${role === "captain" ? "cap" : "fld"}_adm_reviewed_candidate`;
-  let profile: { id: string; actorId?: string; fullNameAr: string; contactPhoneE164: string; state: string; version: number } | null = null;
+  const candidateNameSelector = role === "field" ? `#candidate-name-${admissionID}` : `#${role}-candidate-name-${admissionID}`;
+  let profile: { id: string; actorId?: string; fullNameAr: string; contactPhoneE164: string; serviceCityId?: string; state: string; requiresProfileReview?: boolean; version: number } | null = null;
   const mutations: Record<string, unknown>[] = [];
+
+  if (role === "field") {
+    await page.route("**/api/service-cities**", async (route) => {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cities: [{ id: "sanaa", displayNameAr: "صنعاء", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
+    });
+  }
 
   await page.route(`**/api/${surface}**`, async (route) => {
     const request = route.request();
     if (request.method() === "GET") {
       const params = new URL(request.url()).searchParams;
+      if (role === "captain" && params.get("scope") !== "candidates") {
+        const items = profile?.actorId ? [{ actorId: profile.actorId, phoneE164: profile.contactPhoneE164, role: "captain", enabled: true, admission: profile }] : [];
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items, limit: 25, nextCursor: "" }) });
+        return;
+      }
+      if (role === "captain") {
+        const requestedState = params.get("state") ?? "review_required";
+        const visible = profile && (requestedState === "all" || requestedState === profile.state || (requestedState === "review_required" && profile.requiresProfileReview)) ? [profile] : [];
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: visible, limit: 25, nextCursor: "" }) });
+        return;
+      }
+      if (role === "field" && params.get("scope") === "workbench") {
+        const items = profile?.actorId
+          ? [{ kind: "account", account: { actorId: profile.actorId, phoneE164: profile.contactPhoneE164, role: "field", enabled: true, activatedAt: undefined, securityEnabled: true, actorVersion: 1, roleVersion: 1, admission: profile } }]
+          : profile && (profile.state === "pending_review" || profile.state === "pending_identity") ? [{ kind: "candidate", admission: profile }] : [];
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items, limit: 25 }) });
+        return;
+      }
       if (params.get("scope") !== "candidates") {
         await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 25, nextCursor: "" }) });
         return;
@@ -50,7 +85,7 @@ async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "f
     mutations.push(body);
     const action = body.action;
     if (action === "admit") {
-      profile = { id: admissionID, fullNameAr: String(body.fullNameAr), contactPhoneE164: String(body.contactPhoneE164), state: "pending_review", version: 1 };
+      profile = { id: admissionID, fullNameAr: String(body.fullNameAr), contactPhoneE164: String(body.contactPhoneE164), ...(role === "field" ? { serviceCityId: String(body.serviceCityId) } : {}), state: "pending_review", version: 1 };
     } else if (action === "update-profile" && profile) {
       profile = { ...profile, fullNameAr: String(body.fullNameAr), state: "pending_review", version: profile.version + 1 };
     } else if (action === "approve" && profile) {
@@ -65,25 +100,35 @@ async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "f
   });
 
   await page.goto(`/${surface}`);
-  await expect(page.getByRole("heading", { name: role === "captain" ? "ملف كابتن جديد" : "ملف ميداني جديد" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: role === "captain" ? "ملف كابتن جديد" : "إدارة الميدانيين" })).toBeVisible();
+  if (role === "field") await page.getByText("إنشاء ملف ميداني").click();
   await page.locator(`#${role}-candidate-name`).fill(initialName);
   await page.locator(`#${role}-candidate-phone`).fill(phone);
-  await page.getByRole("button", { name: "حفظ الملف للمراجعة" }).click();
-  await expect(page.getByText(`أُنشئ ملف ${role === "captain" ? "الكابتن" : "الميداني"} بانتظار المراجعة. لم يُمنح دور التطبيق بعد.`)).toBeVisible();
-  await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(initialName);
+  if (role === "field") await page.locator("#field-candidate-city").selectOption("sanaa");
+  await page.getByRole("button", { name: role === "captain" ? "حفظ الملف للمراجعة" : "حفظ للمراجعة" }).click();
+  await expect(page.getByText(role === "captain" ? "أُنشئ ملف الكابتن بانتظار المراجعة. لم يُمنح دور التطبيق بعد." : "أُنشئ الملف وظهر في سجل الميدانيين بانتظار المراجعة.")).toBeVisible();
+  if (role === "field" && !(await page.locator(candidateNameSelector).isVisible())) await page.getByText("الخطوة التالية", { exact: true }).click();
+  await expect(page.locator(candidateNameSelector)).toHaveValue(initialName);
 
-  await page.locator(`#${role}-candidate-name-${admissionID}`).fill(reviewedName);
-  await page.getByRole("button", { name: "حفظ الملف", exact: true }).click();
-  await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(reviewedName);
+  if (role === "field" && !(await page.getByRole("button", { name: "اعتماد الملف", exact: true }).isVisible())) await page.getByText("الخطوة التالية", { exact: true }).click();
+  await page.locator(candidateNameSelector).fill(reviewedName);
+  await page.getByRole("button", { name: role === "field" ? "حفظ الاسم" : "حفظ الملف", exact: true }).click();
+  if (role === "field" && !(await page.locator(candidateNameSelector).isVisible())) await page.getByText("الخطوة التالية", { exact: true }).click();
+  await expect(page.locator(candidateNameSelector)).toHaveValue(reviewedName);
   await page.getByRole("button", { name: "اعتماد الملف", exact: true }).click();
-  await page.locator(`#${role}-candidate-state`).selectOption("pending_identity");
-  await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(reviewedName);
+  if (role === "field") {
+    await expect(page.getByText("اعتُمد الملف وأُعيدت قراءته؛ أصبح منح الدور خطوته التالية.")).toBeVisible();
+    if (!(await page.getByRole("button", { name: "منح دور الميداني" }).isVisible())) await page.getByText("الخطوة التالية", { exact: true }).click();
+  } else {
+    await page.locator(`#${role}-candidate-state`).selectOption("pending_identity");
+    await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(reviewedName);
+  }
   await page.getByRole("button", { name: `منح دور ${role === "captain" ? "الكابتن" : "الميداني"}` }).click();
-  await page.locator(`#${role}-candidate-state`).selectOption("eligible");
-  await expect(page.getByText(`اكتمل منح الدور؛ ينتظر تفعيل الحساب من ${role === "captain" ? "الكابتن" : "الميداني"}.`)).toBeVisible();
+  if (role === "captain") await page.locator(`#${role}-candidate-state`).selectOption("eligible");
+  await expect(page.getByText(role === "captain" ? "اكتمل منح الدور؛ ينتظر تفعيل الحساب من الكابتن." : "مُنح الدور وأُعيدت قراءة ربط Identity وDSH.")).toBeVisible();
   await expect(page.getByText(actorID)).toHaveCount(0);
   expect(mutations).toEqual([
-    { action: "admit", fullNameAr: initialName, contactPhoneE164: phone },
+    role === "field" ? { action: "admit", fullNameAr: initialName, contactPhoneE164: phone, serviceCityId: "sanaa" } : { action: "admit", fullNameAr: initialName, contactPhoneE164: phone },
     { action: "update-profile", admissionId: admissionID, fullNameAr: reviewedName, expectedVersion: 1 },
     { action: "approve", admissionId: admissionID, expectedVersion: 2 },
     { action: "provision", admissionId: admissionID },
@@ -108,6 +153,10 @@ async function exerciseLegacyDshProfileReview(page: Page, role: "captain" | "fie
     const request = route.request();
     if (request.method() === "GET") {
       const params = new URL(request.url()).searchParams;
+      if (role === "field" && params.get("scope") === "workbench") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: profile.actorId, phoneE164: "+96777000998", role: "field", enabled: false, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: profile } }] }) });
+        return;
+      }
       if (params.get("scope") !== "candidates") {
         await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 25, nextCursor: "" }) });
         return;
@@ -134,18 +183,31 @@ async function exerciseLegacyDshProfileReview(page: Page, role: "captain" | "fie
   });
 
   await page.goto(`/${surface}`);
-  await expect(page.getByRole("heading", { name: role === "captain" ? "ملفات الكباتن قبل منح الدور" : "ملفات الميدانيين قبل منح الدور" })).toBeVisible();
-  await expect(page.getByText("موقوف حتى استكمال الملف ومراجعته")).toBeVisible();
+  await expect(page.getByRole("heading", { name: role === "captain" ? "ملفات الكباتن قبل منح الدور" : "إدارة الميدانيين" })).toBeVisible();
+  await expect(page.getByText(role === "captain" ? "موقوف حتى استكمال الملف ومراجعته" : "الملف يحتاج استكمالًا ومراجعة")).toBeVisible();
   const name = "سامي ناصر محمد العريقي";
-  await page.locator(`#${role}-candidate-name-${admissionID}`).fill(name);
-  await page.getByRole("button", { name: "حفظ الملف", exact: true }).click();
-  await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(name);
-  await page.getByRole("button", { name: "اعتماد الملف بعد المراجعة" }).click();
-  await expect(page.getByRole("status")).toContainText("يبقى الدور موقوفًا حتى إعادة التفعيل");
-  await page.locator(`#${role}-candidate-state`).selectOption("suspended");
-  await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(name);
-  await expect(page.getByText("موقوف حتى استكمال الملف ومراجعته")).toHaveCount(0);
-  expect(mutations).toEqual([
+  if (role === "field") {
+    if (!(await page.getByRole("button", { name: "اعتماد مراجعة الملف" }).isVisible())) await page.getByText("الخطوة التالية", { exact: true }).click();
+    await page.locator(`#field-profile-name-act_field_legacy_review`).fill(name);
+    await page.getByRole("button", { name: "حفظ الاسم" }).click();
+    if (!(await page.getByRole("button", { name: "اعتماد مراجعة الملف" }).isVisible())) await page.getByText("الخطوة التالية", { exact: true }).click();
+    await expect(page.locator("#field-profile-name-act_field_legacy_review")).toHaveValue(name);
+    await page.getByRole("button", { name: "اعتماد مراجعة الملف" }).click();
+    await expect(page.getByRole("status")).toContainText("تم الإجراء وأُعيدت قراءة حالة الحساب وأهلية DSH");
+  } else {
+    await page.locator(`#${role}-candidate-name-${admissionID}`).fill(name);
+    await page.getByRole("button", { name: "حفظ الملف", exact: true }).click();
+    await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(name);
+    await page.getByRole("button", { name: "اعتماد الملف بعد المراجعة" }).click();
+    await expect(page.getByRole("status")).toContainText("يبقى الدور موقوفًا حتى إعادة التفعيل");
+    await page.locator(`#${role}-candidate-state`).selectOption("suspended");
+    await expect(page.locator(`#${role}-candidate-name-${admissionID}`)).toHaveValue(name);
+    await expect(page.getByText("موقوف حتى استكمال الملف ومراجعته")).toHaveCount(0);
+  }
+  expect(mutations).toEqual(role === "field" ? [
+    { action: "update-profile", actorId: profile.actorId, admissionId: admissionID, reason: "", fullNameAr: name, expectedVersion: 9 },
+    { action: "review-profile", actorId: profile.actorId, admissionId: admissionID, reason: "", fullNameAr: name, expectedVersion: 10 },
+  ] : [
     { action: "update-profile", admissionId: admissionID, fullNameAr: name, expectedVersion: 9 },
     { action: "review-profile", admissionId: admissionID, expectedVersion: 10 },
   ]);
@@ -714,13 +776,13 @@ test("Field center reads DSH eligibility and routes operational controls to the 
       await route.fulfill({ status: 204 });
       return;
     }
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_field_admitted", phoneE164: "+96777000103", role: "field", enabled, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_field_admitted", actorId: "act_field_admitted", state: "eligible", version: 4, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_admitted", phoneE164: "+96777000103", role: "field", enabled, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_field_admitted", actorId: "act_field_admitted", state: "eligible", version: 4, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
   });
   await page.goto("/fields");
-  await expect(page.getByRole("heading", { name: "قائمة الميدانيين وأهليتهم" })).toBeVisible();
-  await expect(page.getByText("مؤهل لإنشاء الملفات")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "إدارة الميدانيين" })).toBeVisible();
+  await page.getByText("الخطوة التالية", { exact: true }).click();
   await page.getByLabel("سبب الإجراء").fill("تجميد أهلية الميدان");
-  await page.getByRole("button", { name: "إيقاف التشغيل" }).click();
+  await page.getByRole("button", { name: "إيقاف الوصول" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_field_admitted", action: "disable", expectedVersion: 2, reason: "تجميد أهلية الميدان" });
 });
 
@@ -735,14 +797,15 @@ test("legacy Field role with a missing profile is suspended before Identity acce
       await route.fulfill({ status: 204 });
       return;
     }
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_field_legacy", phoneE164: "+96777000108", role: "field", enabled: false, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_legacy", actorId: "act_field_legacy", fullNameAr: null, requiresProfileReview: true, state: admissionState, version: 10, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_legacy", phoneE164: "+96777000108", role: "field", enabled: false, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_legacy", actorId: "act_field_legacy", fullNameAr: null, requiresProfileReview: true, state: admissionState, version: 10, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
   });
   await page.goto("/fields");
   await expect(page.getByText("الملف يحتاج استكمالًا ومراجعة")).toBeVisible();
+  await page.getByText("الخطوة التالية", { exact: true }).click();
   await page.getByLabel("سبب الإجراء").fill("إيقاف حتى مراجعة الملف");
-  await page.getByRole("button", { name: "إيقاف التشغيل" }).click();
+  await page.getByRole("button", { name: "إيقاف الوصول" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_field_legacy", action: "disable", expectedVersion: 2, reason: "إيقاف حتى مراجعة الملف" });
-  await expect(page.getByRole("status")).toContainText("الهوية موقوفة");
+  await expect(page.getByRole("status")).toContainText("تم الإجراء وأُعيدت قراءة حالة الحساب وأهلية DSH");
 });
 
 test("legacy Captain profile review never offers role activation before review", async ({ page }) => {
@@ -755,6 +818,10 @@ test("legacy Captain profile review never offers role activation before review",
       mutationBody = route.request().postDataJSON() as Record<string, unknown>;
       admissionState = "suspended";
       await route.fulfill({ status: 204 });
+      return;
+    }
+    if (new URL(route.request().url()).searchParams.get("scope") === "candidates") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 25, nextCursor: "" }) });
       return;
     }
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_captain_legacy", phoneE164: "+96777000109", role: "captain", enabled, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "cap_adm_legacy", actorId: "act_captain_legacy", fullNameAr: null, requiresProfileReview: true, state: admissionState, availabilityState: "unavailable", version: 10, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
@@ -779,12 +846,13 @@ test("Field reenrollment uses DSH eligibility and carries fresh actor, role, and
       await route.fulfill({ status: 204 });
       return;
     }
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_field_reenroll", phoneE164: "+96777000105", role: "field", enabled: true, securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_reenroll", actorId: "act_field_reenroll", state: "eligible", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_reenroll", phoneE164: "+96777000105", role: "field", enabled: true, securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_reenroll", actorId: "act_field_reenroll", state: "eligible", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
   });
   await page.goto("/fields");
+  await page.getByText("الخطوة التالية", { exact: true }).click();
   await page.getByLabel("سبب الإجراء").fill("استرداد جهاز الميدان");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
-  await expect(page.getByRole("status")).toContainText("تمت إجازة إعادة تسجيل الميداني بعد تحقق DSH");
+  await expect(page.getByRole("status")).toContainText("تم الإجراء وأُعيدت قراءة حالة الحساب وأهلية DSH");
   expect(reenrollmentBody).toMatchObject({
     actorId: "act_field_reenroll",
     action: "reenroll",
@@ -804,6 +872,10 @@ test("Captain reenrollment goes through DSH eligibility and verifies the Identit
       reenrollmentBody = route.request().postDataJSON() as Record<string, unknown>;
       reauthorized = true;
       await route.fulfill({ status: 204 });
+      return;
+    }
+    if (new URL(route.request().url()).searchParams.get("scope") === "candidates") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 25, nextCursor: "" }) });
       return;
     }
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_captain_reenroll", phoneE164: "+96777000111", role: "captain", enabled: true, securityEnabled: true, activatedAt: reauthorized ? null : "2026-09-20T08:00:00.000Z", actorVersion: 4, roleVersion: reauthorized ? 3 : 2, admission: { id: "cap_adm_reenroll", actorId: "act_captain_reenroll", state: "eligible", availabilityState: "unavailable", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
@@ -833,6 +905,10 @@ test("Captain reenrollment reconciles a server error against the current Identit
       await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "DEPENDENCY_UNAVAILABLE" } }) });
       return;
     }
+    if (new URL(route.request().url()).searchParams.get("scope") === "candidates") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 25, nextCursor: "" }) });
+      return;
+    }
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_captain_unknown_result", phoneE164: "+96777000113", role: "captain", enabled: true, securityEnabled: true, activatedAt: reenrollmentReachedCanonicalWriter ? null : "2026-09-20T08:00:00.000Z", actorVersion: 4, roleVersion: reenrollmentReachedCanonicalWriter ? 3 : 2, admission: { id: "cap_adm_unknown_result", actorId: "act_captain_unknown_result", state: "eligible", availabilityState: "unavailable", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
   });
   await page.goto("/captains");
@@ -852,22 +928,24 @@ test("Field reenrollment conflicts reload the canonical DSH-owned roster before 
       await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: { code: "CONFLICT", message: "the access versions changed" } }) });
       return;
     }
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_field_conflict", phoneE164: "+96777000106", role: "field", enabled: true, securityEnabled: true, actorVersion: 4, roleVersion: conflictStateApplied ? 3 : 2, admission: { id: "fld_adm_conflict", actorId: "act_field_conflict", state: "eligible", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_conflict", phoneE164: "+96777000106", role: "field", enabled: true, securityEnabled: true, actorVersion: 4, roleVersion: conflictStateApplied ? 3 : 2, admission: { id: "fld_adm_conflict", actorId: "act_field_conflict", state: "eligible", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
   });
   await page.goto("/fields");
+  await page.getByText("الخطوة التالية", { exact: true }).click();
   await page.getByLabel("سبب الإجراء").fill("استرداد جهاز الميدان");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
-  await expect(page.locator("p.identity-error")).toContainText("أُعيد تحميل الحالة الكانونية");
+  await expect(page.getByText(/^تغيرت حالة الحساب بالتزامن\. أُعيد تحميل الحالة الحالية/)).toBeVisible();
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toBeVisible();
 });
 
 test("Field reenrollment remains unavailable until DSH restores eligibility", async ({ page }) => {
   await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
   await page.route("**/api/fields**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_field_suspended", phoneE164: "+96777000107", role: "field", enabled: true, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_suspended", actorId: "act_field_suspended", state: "suspended", version: 9, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_suspended", phoneE164: "+96777000107", role: "field", enabled: true, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_suspended", actorId: "act_field_suspended", state: "suspended", version: 9, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
   });
   await page.goto("/fields");
-  await expect(page.getByRole("cell", { name: "موقوف" })).toBeVisible();
+  await expect(page.getByText("موقوف").first()).toBeVisible();
+  await page.getByText("الخطوة التالية", { exact: true }).click();
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
 });
 
@@ -878,6 +956,10 @@ test("captain center owns DSH eligibility and operational availability", async (
     if (route.request().method() === "POST") {
       mutationBody = route.request().postDataJSON() as Record<string, unknown>;
       await route.fulfill({ status: 204 });
+      return;
+    }
+    if (new URL(route.request().url()).searchParams.get("scope") === "candidates") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], limit: 25, nextCursor: "" }) });
       return;
     }
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ actorId: "act_captain_admitted", phoneE164: "+96777000104", role: "captain", enabled: true, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 5, roleVersion: 6, admission: { id: "cap_adm_test", actorId: "act_captain_admitted", state: "eligible", availabilityState: "available", version: 7, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } }] }) });
@@ -1006,6 +1088,7 @@ test("legacy Field profile completion and review leave access suspended", async 
 
 test("operator creates a DSH-owned joining case from prospective partner facts", async ({ page }) => {
   await stubAuthenticatedSession(page);
+  await stubCommercialStoreTypes(page);
   let requestBody: unknown;
   await page.route("**/api/service-cities**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cities: [{ id: "sanaa", displayNameAr: "صنعاء", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
@@ -1044,7 +1127,8 @@ test("operator creates a DSH-owned joining case from prospective partner facts",
   await page.getByLabel("الاسم القانوني للنشاط").fill("نشاط الاختبار");
   await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
   await page.getByLabel("مدينة المتجر الأول").selectOption("sanaa");
-  await page.getByLabel("الفئة الرئيسية").selectOption("grocery");
+  await page.locator("#joining-vertical").selectOption("grocery");
+  await page.locator("#joining-commercial-type").selectOption("grocery-market");
   await page.getByLabel("خط عرض موقع المتجر").fill("15.369445");
   await page.getByLabel("خط طول موقع المتجر").fill("44.191006");
   const fulfillmentModes = page.getByRole("group", { name: "أوضاع الطلب التي اختارها الشريك عند الانضمام" });
@@ -1053,14 +1137,15 @@ test("operator creates a DSH-owned joining case from prospective partner facts",
   await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();
 
   await expect(page.getByRole("status")).toContainText("الحالة: مسودة");
-  expect(requestBody).toEqual({ contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, firstStoreFulfillmentModes: ["CUSTOMER_PICKUP"] });
+  expect(requestBody).toEqual({ contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreCommercialTypeId: "grocery-market", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, firstStoreFulfillmentModes: ["CUSTOMER_PICKUP"] });
 });
 
 test("operator resumes an uncertain joining-case create with the same idempotency key after reload", async ({ page }) => {
   await stubAuthenticatedSession(page);
+  await stubCommercialStoreTypes(page);
   const attempts: Array<{ idempotencyKey: string; correlationId: string; body: unknown }> = [];
-  const expectedBody = { contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, firstStoreFulfillmentModes: ["CUSTOMER_PICKUP"] };
-  const createdCase = { id: "join_retry", contactPhoneE164: expectedBody.contactPhoneE164, businessName: expectedBody.businessName, firstStoreName: expectedBody.firstStoreName, serviceCityId: expectedBody.serviceCityId, firstStoreVerticalId: expectedBody.firstStoreVerticalId, firstStoreFulfillmentModes: expectedBody.firstStoreFulfillmentModes, firstStoreLatitude: expectedBody.firstStoreLatitude, firstStoreLongitude: expectedBody.firstStoreLongitude, state: "draft", version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" };
+  const expectedBody = { contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreCommercialTypeId: "grocery-market", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, firstStoreFulfillmentModes: ["CUSTOMER_PICKUP"] };
+  const createdCase = { id: "join_retry", contactPhoneE164: expectedBody.contactPhoneE164, businessName: expectedBody.businessName, firstStoreName: expectedBody.firstStoreName, serviceCityId: expectedBody.serviceCityId, firstStoreVerticalId: expectedBody.firstStoreVerticalId, firstStoreCommercialTypeId: expectedBody.firstStoreCommercialTypeId, firstStoreFulfillmentModes: expectedBody.firstStoreFulfillmentModes, firstStoreLatitude: expectedBody.firstStoreLatitude, firstStoreLongitude: expectedBody.firstStoreLongitude, state: "draft", version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" };
   await page.route("**/api/service-cities**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cities: [{ id: "sanaa", displayNameAr: "صنعاء", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
   });
@@ -1085,7 +1170,8 @@ test("operator resumes an uncertain joining-case create with the same idempotenc
   await page.getByLabel("الاسم القانوني للنشاط").fill("نشاط الاختبار");
   await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
   await page.getByLabel("مدينة المتجر الأول").selectOption("sanaa");
-  await page.getByLabel("الفئة الرئيسية").selectOption("grocery");
+  await page.locator("#joining-vertical").selectOption("grocery");
+  await page.locator("#joining-commercial-type").selectOption("grocery-market");
   await page.getByLabel("خط عرض موقع المتجر").fill("15.369445");
   await page.getByLabel("خط طول موقع المتجر").fill("44.191006");
   await page.getByRole("checkbox", { name: "استلم بنفسك من المتجر" }).check();
@@ -1199,6 +1285,43 @@ test("operator creates a canonical commerce vertical before onboarding partners"
   expect(requestBody).toEqual({ nameAr: "مطاعم", nameEn: "Restaurants", catalogModel: "STORE_LOCAL_CATALOG", active: true, reason: "إنشاء فئة جديدة للاختبار" });
 });
 
+test("operator creates and reads back the reward policy for the selected commercial store type", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  let savedPolicy: { scopeType: string; scopeId: string; rewardMinor: number; roundingUnitMinor: number; expectedVersion: number; reason: string; version: number } | null = null;
+  let mutation: Record<string, unknown> | undefined;
+  await page.route("**/api/catalog/verticals**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "restaurants", nameAr: "مطاعم", nameEn: "Restaurants", catalogModel: "STORE_LOCAL_CATALOG", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
+  });
+  await page.route("**/api/catalog/commercial-store-types**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ storeTypes: [{ id: "grocery-market", verticalId: "restaurants", nameAr: "مطعم محلي", nameEn: "Local restaurant", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
+  });
+  await page.route("**/api/finance/field-acquisition-policy**", async (route) => {
+    if (route.request().method() === "GET") {
+      if (!savedPolicy) {
+        await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { code: "NOT_FOUND", message: "no policy" } }) });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ policy: savedPolicy }) });
+      return;
+    }
+    mutation = route.request().postDataJSON() as Record<string, unknown>;
+    savedPolicy = { ...(mutation as Omit<NonNullable<typeof savedPolicy>, "version">), version: 1 };
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ policy: savedPolicy }) });
+  });
+
+  await page.goto("/policies/field-acquisition");
+  await expect(page.locator("#field-acquisition-policy-title")).toBeVisible();
+  await page.getByLabel("المجال التجاري").selectOption("restaurants");
+  await page.getByLabel("نوع المتجر التجاري").selectOption("grocery-market");
+  await expect(page.getByText(/لا توجد سياسة مفعّلة/)).toBeVisible();
+  await page.getByLabel("مبلغ الاستحقاق لهذا النوع (ريال يمني)").fill("250");
+  await page.getByLabel("سبب إنشاء السياسة أو تغيير المبلغ").fill("سياسة اختبار نوع المطعم");
+  await page.getByRole("button", { name: "إنشاء سياسة لهذا النوع" }).click();
+  await expect(page.locator("output.success")).toContainText("تم حفظ السياسة ومطابقة مبلغها وإصدارها مع WLT.");
+  expect(mutation).toMatchObject({ scopeType: "STORE_TYPE", scopeId: "grocery-market", rewardMinor: 250, roundingUnitMinor: 50, expectedVersion: 0, reason: "سياسة اختبار نوع المطعم" });
+  await expect(page.getByText(/المبلغ الفعّال لنوع/)).toBeVisible();
+});
+
 test("operator creates a product category under its commerce vertical", async ({ page }) => {
   await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "catalog"]);
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -1229,7 +1352,7 @@ test("operator creates a product category under its commerce vertical", async ({
   await expect(page.getByRole("region", { name: "إدارة الفئات" }).getByRole("heading", { name: "الفئات", exact: true })).toBeVisible();
   await expect(page.locator(".catalog-taxonomy-workspace")).toHaveCount(1);
   await expect(page.locator(".catalog-taxonomy-workspace > .catalog-taxonomy-workbench")).toHaveCount(1);
-  await expect(page.locator(".catalog-taxonomy-section")).toHaveCount(1);
+  await expect(page.locator(".catalog-taxonomy-section")).toHaveCount(2);
   await page.screenshot({ path: "test-results/catalog-taxonomy-workspace.png", fullPage: true });
   await expect(page.getByLabel("المعرف البرمجي للتصنيف", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "فئة رئيسية جديدة", exact: true }).click();
@@ -1429,7 +1552,7 @@ test("Partner reenrollment reconciles a server error against the current Identit
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
 });
 
-test("operator approves joining terms with commission and settlement cadence", async ({ page }) => {
+test("operator approves joining terms with the active settlement policy", async ({ page }) => {
   await stubAuthenticatedSession(page);
   let reviewBody: unknown;
   await page.route("**/api/service-cities**", async (route) => {
@@ -1442,16 +1565,16 @@ test("operator approves joining terms with commission and settlement cadence", a
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ case: { id: "join_financial", contactPhoneE164: "+96777000109", businessName: "نشاط مالي", firstStoreName: "متجر مالي", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"], firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, partnerActorId: "act_financial", origin: "field", state: "submitted", financialProfileState: "PENDING_BINDING", version: 2, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, idempotentReplay: false }) });
   });
   await page.route("**/api/finance/partner-financial-terms-policy", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ policy: { id: "partner_terms_test", policyVersion: "partner-terms-v3", state: "ACTIVE", commissionRateBps: 1250, settlementPeriod: "WEEKLY", version: 3, createdBy: "actor-operator", createdAt: "2026-09-12T00:00:00.000Z", retiredAt: null } }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ policy: { id: "partner_terms_test", policyVersion: "partner-terms-v3", state: "ACTIVE", settlementPeriod: "WEEKLY", version: 3, createdBy: "actor-operator", createdAt: "2026-09-12T00:00:00.000Z", retiredAt: null } }) });
   });
   await page.route("**/api/partners/joining-cases/join_financial/review", async (route) => {
     reviewBody = route.request().postDataJSON();
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ case: { id: "join_financial", contactPhoneE164: "+96777000109", businessName: "نشاط مالي", firstStoreName: "متجر مالي", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"], firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, partnerActorId: "act_financial", origin: "field", state: "approved", commissionRateBps: 1250, settlementPeriod: "WEEKLY", financialProfileId: "financial_profile_test", financialProfileState: "ACTIVE", version: 3, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, idempotentReplay: false }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ case: { id: "join_financial", contactPhoneE164: "+96777000109", businessName: "نشاط مالي", firstStoreName: "متجر مالي", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"], firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, partnerActorId: "act_financial", origin: "field", state: "approved", settlementPeriod: "WEEKLY", financialProfileId: "financial_profile_test", financialProfileState: "ACTIVE", version: 3, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, idempotentReplay: false }) });
   });
 
   await page.goto("/partners/join_financial");
   await expect(page.getByRole("heading", { name: "تفاصيل حالة انضمام الشريك" })).toBeVisible();
-  await expect(page.getByText(/سيُعتمد إصدار السياسة partner-terms-v3/)).toBeVisible();
+  await expect(page.getByText(/سيُعتمد إصدار شروط التسوية partner-terms-v3/)).toBeVisible();
   await page.getByRole("button", { name: "اعتماد الحالة وإنشاء المتجر بالشروط النشطة" }).click();
 
   await expect(page.getByRole("status").first()).toContainText("الحالة: تمت الموافقة");
@@ -1460,6 +1583,7 @@ test("operator approves joining terms with commission and settlement cadence", a
 
 test("partner Store publication exposes the canonical readiness block", async ({ page }) => {
   await stubAuthenticatedSession(page);
+  await stubCommercialStoreTypes(page);
   const publicationReasons = [
     { code: "PARTNER_IDENTITY_NOT_ELIGIBLE", label: "هوية الشريك أو صلاحية دوره غير جاهزة للنشر" },
     { code: "SERVICE_CITY_NOT_ELIGIBLE", label: "مدينة خدمة المتجر غير مؤهلة للنشر" },
@@ -1500,7 +1624,8 @@ test("partner Store publication exposes the canonical readiness block", async ({
   await page.getByLabel("الاسم القانوني للنشاط").fill("نشاط الاختبار");
   await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
   await page.getByLabel("مدينة المتجر الأول").selectOption("sanaa");
-  await page.getByLabel("الفئة الرئيسية").selectOption("grocery");
+  await page.locator("#joining-vertical").selectOption("grocery");
+  await page.locator("#joining-commercial-type").selectOption("grocery-market");
   await page.getByLabel("خط عرض موقع المتجر").fill("15.369445");
   await page.getByLabel("خط طول موقع المتجر").fill("44.191006");
   await page.getByRole("checkbox", { name: "توصيل بثواني · مسؤولية المنصة" }).check();
@@ -1637,13 +1762,17 @@ test("security headers and cross-origin mutation guard are active", async ({ pag
   await expect(page.getByRole("heading", { name: /الدخول بمفتاح المرور|تعذر الوصول إلى الهوية/ })).toBeVisible();
   expect(cspMessages).toEqual([]);
 
-  const crossOriginResponse = await page.request.post("/api/auth/logout", {
+  const crossOriginResponse = await page.request.post("/api/catalog/verticals", {
     headers: { Origin: "https://evil.example", "Sec-Fetch-Site": "cross-site" },
   });
   expect(crossOriginResponse.status()).toBe(403);
 
-  const sameOriginBrowserResponse = await page.request.post("/api/auth/logout", { headers: { Referer: page.url() } });
-  expect(sameOriginBrowserResponse.status()).not.toBe(403);
+  const sameOriginBrowserStatus = await page.evaluate(async () => {
+    const response = await fetch("/api/catalog/verticals", { method: "POST" });
+    const body = await response.json() as { error?: { code?: string } };
+    return { status: response.status, code: body.error?.code };
+  });
+  expect(sameOriginBrowserStatus).toEqual({ status: 401, code: "UNAUTHENTICATED" });
 });
 
 test("rendered light and dark themes preserve RTL and keyboard focus", async ({ page }) => {

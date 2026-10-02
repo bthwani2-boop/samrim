@@ -37,9 +37,7 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.service_cities(id,display_name_ar,active) VALUES($1,$2,true)", "sanaa_operator_ops", "صنعاء عمليات"); err != nil {
 			t.Fatalf("insert service city fixture: %v", err)
 		}
-		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.stores(id,partner_actor_id,name) VALUES($1,$2,$3)", "store_operator_ops", "partner_operator_ops", "متجر العمليات"); err != nil {
-			t.Fatalf("insert store fixture: %v", err)
-		}
+		insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{ID: "store_operator_ops", PartnerActorID: "partner_operator_ops", Name: "متجر العمليات"})
 
 		updatedAt := time.Date(2026, 9, 18, 6, 0, 0, 0, time.UTC)
 		for index := 1; index <= 3; index++ {

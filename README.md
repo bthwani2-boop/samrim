@@ -55,23 +55,17 @@ From outside the repository, use pnpm --dir D:\samrim <command>. A child process
 
 ## Verification
 
-Normal work is affected-based, not repository-wide by default.
-
-For fast dirty-tree feedback, run the nearest Nx target directly when the project is known:
+For fast feedback while files are uncommitted, run:
 
 ```text
-pnpm exec nx run <project>:<target>
+pnpm check
 ```
 
-When the change crosses projects or its cone is unclear, keep local feedback to the normal code/build targets:
-
-```text
-pnpm exec nx affected -t typecheck test build vet --base=HEAD --outputStyle=dynamic-legacy
-```
+It discovers changed and untracked files, then runs only their affected static targets. It does not start runtime services or contact Nx Cloud. Use `pnpm verify` only after the candidate is coherent and clean.
 
 Mobile export is a heavier bundling/deployability proof, so it is not part of the fast dirty-tree edit loop. The final exact-candidate verifier still runs export-smoke for affected Mobile projects after cheaper checks pass, preserving bundling/module-resolution proof without paying that cost on every intermediate edit.
 
-Use pnpm verify only after the candidate is coherent and clean. Coherent units may be committed locally while one authorized objective is in progress; do not safe-push every local commit by default. Do not run a separate final pnpm verify immediately before pnpm safe:push; one safe:push at objective closure owns the final verification of the complete unpushed delta and remote SHA confirmation. Runtime and user-facing behavior are proved separately only when the claim requires them. CI performs independent integration/promotion assurance.
+Coherent units may be committed locally while one authorized objective is in progress; do not safe-push every local commit by default. Do not run a separate final pnpm verify immediately before pnpm safe:push; one safe:push at objective closure owns the final verification of the complete unpushed delta and remote SHA confirmation. Runtime and user-facing behavior are proved separately only when the claim requires them. CI performs independent integration/promotion assurance.
 
 The verifier prints per-step and total timings so future optimization is based on measured cost rather than guesswork.
 

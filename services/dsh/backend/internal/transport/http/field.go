@@ -64,7 +64,7 @@ func (s *FieldServer) admit(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	admission, replayed, err := s.service.Admit(r.Context(), input.FullNameAr, input.ContactPhoneE164, idempotency, acting, correlation)
+	admission, replayed, err := s.service.Admit(r.Context(), input.FullNameAr, input.ContactPhoneE164, input.ServiceCityID, idempotency, acting, correlation)
 	if err != nil {
 		writeFieldError(w, err)
 		return
@@ -294,11 +294,7 @@ func (s *FieldServer) createJoiningCase(w http.ResponseWriter, r *http.Request) 
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	fulfillmentModes := make([]string, len(input.FirstStoreFulfillmentModes))
-	for index, mode := range input.FirstStoreFulfillmentModes {
-		fulfillmentModes[index] = string(mode)
-	}
-	result, err := s.service.CreateJoiningCase(r.Context(), bearerToken(r), idempotency, correlation, input.ContactPhoneE164, input.BusinessName, input.FirstStoreName, input.ServiceCityID, input.FirstStoreVerticalID, input.FirstStoreLatitude, input.FirstStoreLongitude, fulfillmentModes)
+	result, err := s.service.CreateJoiningCase(r.Context(), bearerToken(r), idempotency, correlation, input)
 	if err != nil {
 		writeFieldError(w, err)
 		return
@@ -326,7 +322,7 @@ func (s *FieldServer) listJoiningCases(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]contract.JoiningCaseSummary, 0, len(result.Cases))
 	for _, item := range result.Cases {
-		items = append(items, contract.JoiningCaseSummary{ID: item.ID, ContactPhoneE164: item.ContactPhoneE164, BusinessName: item.BusinessName, FirstStoreName: item.FirstStoreName, ServiceCityID: item.FirstStoreServiceCityID, FirstStoreVerticalID: item.FirstStoreVerticalID, FirstStoreLatitude: nullableFloatValue(item.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(item.FirstStoreLongitude), Origin: contract.JoiningCaseOrigin(item.Origin), State: contract.JoiningCaseState(item.State), CorrectionReason: item.CorrectionReason, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
+		items = append(items, contract.JoiningCaseSummary{ID: item.ID, ContactPhoneE164: item.ContactPhoneE164, BusinessName: item.BusinessName, FirstStoreName: item.FirstStoreName, ServiceCityID: item.FirstStoreServiceCityID, FirstStoreVerticalID: item.FirstStoreVerticalID, FirstStoreCommercialTypeID: item.FirstStoreCommercialTypeID, FirstStoreLatitude: nullableFloatValue(item.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(item.FirstStoreLongitude), Origin: contract.JoiningCaseOrigin(item.Origin), State: contract.JoiningCaseState(item.State), CorrectionReason: item.CorrectionReason, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
 	}
 	writeJSON(w, http.StatusOK, contract.JoiningCaseListResponse{Cases: items, NextCursor: result.NextCursor})
 }
@@ -376,7 +372,7 @@ func authorizedFieldSession(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func writeFieldCaseResult(w http.ResponseWriter, status int, result postgres.JoiningCaseResult) {
-	view := contract.JoiningCaseView{ID: result.Case.ID, ContactPhoneE164: result.Case.ContactPhoneE164, BusinessName: result.Case.BusinessName, FirstStoreName: result.Case.FirstStoreName, ServiceCityID: result.Case.FirstStoreServiceCityID, FirstStoreVerticalID: result.Case.FirstStoreVerticalID, FirstStoreLatitude: nullableFloatValue(result.Case.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(result.Case.FirstStoreLongitude), FirstStoreFulfillmentModes: toFulfillmentModes(result.Case.FirstStoreFulfillmentModes), Origin: contract.JoiningCaseOrigin(result.Case.Origin), State: contract.JoiningCaseState(result.Case.State), CorrectionReason: result.Case.CorrectionReason, Version: result.Case.Version, CreatedAt: result.Case.CreatedAt, UpdatedAt: result.Case.UpdatedAt}
+	view := contract.JoiningCaseView{ID: result.Case.ID, ContactPhoneE164: result.Case.ContactPhoneE164, BusinessName: result.Case.BusinessName, FirstStoreName: result.Case.FirstStoreName, ServiceCityID: result.Case.FirstStoreServiceCityID, FirstStoreVerticalID: result.Case.FirstStoreVerticalID, FirstStoreCommercialTypeID: result.Case.FirstStoreCommercialTypeID, FirstStoreLatitude: nullableFloatValue(result.Case.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(result.Case.FirstStoreLongitude), FirstStoreFulfillmentModes: toFulfillmentModes(result.Case.FirstStoreFulfillmentModes), Origin: contract.JoiningCaseOrigin(result.Case.Origin), State: contract.JoiningCaseState(result.Case.State), CorrectionReason: result.Case.CorrectionReason, Version: result.Case.Version, CreatedAt: result.Case.CreatedAt, UpdatedAt: result.Case.UpdatedAt}
 	view.PartnerActorID = result.Case.PartnerActorID
 	view.ReviewedBy = result.Case.ReviewedBy
 	view.StoreProfileImage = toStoreProfileImage(result.Case.StoreProfileImage)
@@ -394,7 +390,7 @@ func requiredFieldMutationHeaders(w http.ResponseWriter, r *http.Request) (strin
 }
 
 func toFieldAdmission(value postgres.FieldAdmission) contract.FieldAdmission {
-	return contract.FieldAdmission{ID: value.ID, ActorID: value.ActorID, FullNameAr: value.FullNameAr, ContactPhoneE164: value.PhoneE164, State: value.State, RequiresProfileReview: value.RequiresProfileReview, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
+	return contract.FieldAdmission{ID: value.ID, ActorID: value.ActorID, FullNameAr: value.FullNameAr, ContactPhoneE164: value.PhoneE164, ServiceCityID: value.ServiceCityID, State: value.State, RequiresProfileReview: value.RequiresProfileReview, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
 }
 
 func writeFieldError(w http.ResponseWriter, err error) {
@@ -405,6 +401,10 @@ func writeFieldError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the authenticated actor is not permitted for this Field operation")
 	case errors.Is(err, postgres.ErrFieldAdmissionNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "Field admission was not found")
+	case errors.Is(err, postgres.ErrServiceCityNotFound):
+		writeError(w, http.StatusNotFound, "SERVICE_CITY_NOT_FOUND", "the selected service city was not found")
+	case errors.Is(err, postgres.ErrServiceCityInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_SERVICE_CITY", "the selected service city is inactive or invalid")
 	case errors.Is(err, postgres.ErrFieldAdmissionExists), errors.Is(err, postgres.ErrFieldAdmissionConflict), errors.Is(err, postgres.ErrFieldAdmissionNotEligible), errors.Is(err, postgres.ErrFieldAdmissionRegistry), errors.Is(err, field.ErrManagedRoleNotEligible), errors.Is(err, postgres.ErrFieldOperationConflict), errors.Is(err, postgres.ErrFieldVersionConflict), errors.Is(err, postgres.ErrJoiningCaseVersion), errors.Is(err, postgres.ErrJoiningCaseState), errors.Is(err, postgres.ErrJoiningCaseActor), errors.Is(err, postgres.ErrJoiningCaseRebind):
 		writeError(w, http.StatusConflict, "VERSION_OR_STATE_CONFLICT", "Field or joining-case state is stale or not actionable")
 	case errors.Is(err, postgres.ErrJoiningCaseNotFound):

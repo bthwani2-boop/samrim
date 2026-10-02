@@ -102,11 +102,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	partnerFinanceServer, err := transporthttp.NewPartnerFinance(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), paymentClient)
+	partnerFinanceServer, err := transporthttp.NewPartnerFinance(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), paymentClient, database)
 	if err != nil {
 		log.Fatal(err)
 	}
-	fieldFinanceServer, err := transporthttp.NewFieldFinance(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), paymentClient)
+	fieldFinanceServer, err := transporthttp.NewFieldFinance(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), paymentClient, database)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -188,7 +188,7 @@ func main() {
 	}
 	if err := serviceruntime.RunWithRoutesAndReadinessAndWorker("dsh", "/dsh", "18080", register, readiness, func(ctx context.Context) {
 		go runFinancialProfileReconciliationLoop(ctx, time.Minute, joiningCaseServer.ReconcileFinancialProfiles)
-		go runFieldCommissionReconciliationLoop(ctx, time.Minute, storePublication.ReconcileFieldCommissions)
+		go runFieldAcquisitionRewardReconciliationLoop(ctx, time.Minute, storePublication.ReconcileFieldAcquisitionRewards)
 		go runFinancialHandoffReconciliationLoop(ctx, 5*time.Second, financialHandoff.Reconcile)
 		runMediaReconciliationLoop(ctx, time.Minute, reconcileMediaStorage)
 	}); err != nil {

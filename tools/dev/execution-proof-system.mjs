@@ -61,10 +61,17 @@ function verifyNxOwnership() {
     assert(tooling.targets?.[target]?.cache === true, `workspace-tooling:${target} must be cache=true`);
   }
   const trackedContent = JSON.stringify(tooling.namedInputs?.trackedRepositoryContent ?? []);
-  requireTokens(trackedContent, "tracked repository content", ["git ls-files -s"]);
+  requireTokens(trackedContent, "tracked repository content", ["git ls-files -s", "git diff --binary HEAD --"]);
   forbidTokens(trackedContent, "tracked repository content", ["{workspaceRoot}/**/*"]);
   requireTokens(JSON.stringify(tooling.namedInputs?.repositoryStructure ?? []), "repository structure input", ["REPOSITORY-STRUCTURE.md", "**/project.json", "git ls-files"]);
-  requireTokens(JSON.stringify(tooling.namedInputs?.structuralHygiene ?? []), "structural hygiene input", ["git ls-files -s", "git ls-files --eol", ".gitattributes", "**/package.json", "**/project.json"]);
+  requireTokens(JSON.stringify(tooling.namedInputs?.structuralHygiene ?? []), "structural hygiene input", ["git ls-files -s", "git ls-files --eol", "git diff --binary HEAD --", ".gitattributes", "**/package.json", "**/project.json"]);
+  requireTokens(JSON.stringify(tooling.namedInputs?.knowledge ?? []), "knowledge input", ["{workspaceRoot}/**/*.md"]);
+  requireTokens(JSON.stringify(tooling.namedInputs?.workspaceDependencies ?? []), "workspace dependency input", [
+    "{workspaceRoot}/apps/**/*.{ts,tsx,js,jsx,mjs,cjs,go}",
+    "{workspaceRoot}/services/**/*.{ts,tsx,js,jsx,mjs,cjs,go}",
+    "{workspaceRoot}/packages/**/*.{ts,tsx,js,jsx,mjs,cjs,go}",
+    "{projectRoot}/verify-workspace-dependencies.mjs",
+  ]);
   assert((tooling.targets?.["knowledge-materialize"]?.outputs ?? []).includes("{workspaceRoot}/.cache/bthwani-knowledge"), "knowledge materialization output drifted");
   for (const target of ["docs-command-parity", "docs-config-parity", "knowledge-system", "knowledge-references"]) {
     assert((tooling.targets?.[target]?.dependsOn ?? []).includes("knowledge-materialize"), `workspace-tooling:${target} must depend on knowledge-materialize`);
@@ -80,7 +87,7 @@ function verifyRuntimeOwnership() {
 
   const independent = [
     ["services/identity/backend/project.json", ["migration-proof", "runtime-proof"]],
-    ["services/dsh/backend/project.json", ["baseline-proof", "runtime-proof"]],
+    ["services/dsh/backend/project.json", ["baseline-proof", "runtime-proof", "location-proof"]],
     ["services/wlt/backend/project.json", ["schema-proof"]],
   ];
   for (const [file, targets] of independent) {
@@ -95,7 +102,7 @@ function verifyRuntimeOwnership() {
   assert(wlt.targets?.["financial-invariants"]?.cache === false, "wlt financial invariants must be cache=false");
   assert(JSON.stringify(wlt.targets?.["financial-invariants"]?.dependsOn ?? []) === JSON.stringify(["schema-proof"]), "wlt financial invariants must depend only on local schema-proof");
   const dsh = data("services/dsh/backend/project.json");
-  assert(dsh.targets?.["runtime-fixture-cleanup"]?.cache === false, "DSH checker fixture cleanup must be uncached");
+  assert(!dsh.targets?.["runtime-fixture-cleanup"], "DSH checker fixtures must be discarded with the disposable CI database");
   assert(control.targets?.["dsh-runtime-checker-fixture"]?.cache === false, "DSH checker fixture setup must be uncached");
 }
 
@@ -106,7 +113,17 @@ function verifyRuntimeRouting() {
   assert(routerProject.targets?.unit?.cache === true, "runtime router tests must be cache=true");
 
   const router = read("tools/dev/runtime-proof/resolve.mjs");
-  requireTokens(router, "runtime router", ['"nx", "show", "projects", "--affected"', "runtime-sensitive Nx projects lack runtime classification", "full-escalation:", "CI_RUNTIME_TARGETS=", "CI_RUNTIME_IMAGES=", "CI_RUNTIME_SERVICES="]);
+  requireTokens(router, "runtime router", [
+    'require.resolve("nx/bin/nx.js")',
+    "process.execPath",
+    '"show", "projects", "--affected"',
+    "NX_NO_CLOUD: \"true\"",
+    "runtime-sensitive Nx projects lack runtime classification",
+    "full-escalation:",
+    "CI_RUNTIME_TARGETS=",
+    "CI_RUNTIME_IMAGES=",
+    "CI_RUNTIME_SERVICES=",
+  ]);
   forbidTokens(router, "runtime router", ["git diff", "git status"]);
 
   const routerTests = read("tools/dev/runtime-proof/resolve.test.mjs");
@@ -141,7 +158,7 @@ function verifyCiWorkflowTopology() {
     requireTokens(body, `ci-static ${job} job`, ["    permissions:\n      actions: read\n      contents: read"]);
   }
   requireTokens(staticWorkflow, "static workflow", ["repository-ci:execution-proof-system", "nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet"]);
-  forbidTokens(staticWorkflow, "static workflow", ["--changed --since"]);
+  forbidTokens(staticWorkflow, "static workflow", ["--changed --since", "start-nx-agents", "NX_DTE_ENABLED", "enable_nx_agents", "--dte"]);
 
   const localVerifier = read("tools/dev/verify-local-candidate.ps1");
   requireTokens(localVerifier, "local verifier", ["nx','affected", "--nxBail=false", "capture-ci-failure.mjs"]);
@@ -157,7 +174,9 @@ function verifyPerformanceBudget(workflowNames) {
   assert(new Set(budgets.enforcedBudgets).size === budgets.enforcedBudgets.length, "CI enforced budget list contains duplicates");
   assert(budgets.enforcedBudgets.every((name) => knownBudgets.has(name)), "CI enforced budget references undefined budget");
   if (budgets.mode === "observe") {
-    for (const file of workflowNames) forbidTokens(read(`.github/workflows/${file}`), file, ["start-nx-agents"]);
+    for (const file of workflowNames) {
+      forbidTokens(read(`.github/workflows/${file}`), file, ["start-nx-agents"]);
+    }
   }
 }
 
@@ -178,52 +197,62 @@ function sonarProperties() {
 
 function verifySonarQualityGate() {
   const workflow = read(".github/workflows/sonar-observe.yml");
-  requireTokens(workflow, "Sonar quality workflow", [
+  requireTokens(workflow, "Sonar workflow", [
     "name: Sonar Quality Gate",
     "name: SonarQube Cloud Quality Gate",
     "runs-on: ubuntu-24.04",
-    "github.ref == 'refs/heads/main'",
-    "github.event_name == 'pull_request'",
+    "  pull_request:",
     "github.event.pull_request.base.ref == 'main'",
     "github.event.pull_request.head.repo.full_name == github.repository",
+    "ref: $" + "{{ github.event.pull_request.head.sha }}",
     "uses: SonarSource/sonarqube-scan-action@",
-    "services/identity/tests/contract-guard.test.mjs",
     "SONAR_TOKEN: $" + "{{ secrets.SONAR_TOKEN }}",
-    "image: postgis/postgis:16-3.4-alpine",
-    "POSTGRES_HOST_AUTH_METHOD: trust",
-    "DSH_DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable",
-    "IDENTITY_DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable",
-    "go -C services/dsh/backend test -coverprofile=",
-    "go -C services/identity/backend test -coverprofile=",
-    "go -C services/wlt/backend test -coverprofile=",
-    "node --experimental-test-coverage --test --test-concurrency=1",
-    "--test-reporter=spec --test-reporter-destination=stdout",
-    "--test-reporter=lcov --test-reporter-destination=coverage/sonar/tools-dev.lcov",
-    "Read back and enforce SonarQube Cloud evidence",
-    "gate_status=",
-    "if [[ \"$gate_status\" != \"OK\" ]]",
-    "SONAR_QUALITY_GATE=OK",
   ]);
-  forbidTokens(workflow, "Sonar quality workflow", ["ubuntu-latest", "POSTGRES_PASSWORD:", "sonar-proof", "OBSERVE MODE", "Do not make this check required yet"]);
+  forbidTokens(workflow, "Sonar workflow", [
+    "push:",
+    "workflow_dispatch:",
+    "services:",
+    "Setup pnpm",
+    "Setup Node",
+    "Setup Go",
+    "Install dependencies",
+    "Generate Sonar coverage reports",
+    "Generate Control Panel browser coverage",
+    "Rank current Go coverage debt",
+    "Read back and enforce SonarQube Cloud evidence",
+    "Upload exact Sonar evidence",
+    "coverage/sonar",
+    "qualitygates/project_status",
+    "actions/upload-artifact@",
+    "test:e2e:sonar",
+    "postgis/postgis",
+    "go -C services/",
+    "node --experimental-test-coverage",
+  ]);
 
   for (const match of workflow.matchAll(/^[ \t]+uses:[ \t]+([^\t ]+)$/gm)) {
     const reference = match[1] ?? "";
     const separator = reference.lastIndexOf("@");
     const ref = separator >= 0 ? reference.slice(separator + 1) : "";
-    assert(/^[0-9a-f]{40}$/.test(ref), `Sonar quality action is not pinned to a full commit SHA: ${reference}`);
+    assert(/^[0-9a-f]{40}$/.test(ref), `Sonar workflow action is not pinned to a full commit SHA: ${reference}`);
   }
 
   const properties = sonarProperties();
-  for (const key of ["sonar.organization", "sonar.projectKey", "sonar.projectName", "sonar.sources", "sonar.tests", "sonar.test.inclusions", "sonar.go.coverage.reportPaths", "sonar.javascript.lcov.reportPaths"]) {
-    assert(Boolean(properties.get(key)), `Sonar quality configuration is missing ${key}`);
+  for (const key of ["sonar.organization", "sonar.projectKey", "sonar.projectName", "sonar.sources", "sonar.tests", "sonar.test.inclusions"]) {
+    assert(Boolean(properties.get(key)), `Sonar configuration is missing ${key}`);
   }
   assert(/^[A-Za-z0-9-]+$/.test(properties.get("sonar.organization") ?? ""), "Sonar organization key is malformed");
   assert(/^[A-Za-z0-9_.:-]+$/.test(properties.get("sonar.projectKey") ?? ""), "Sonar project key is malformed");
-  for (const pattern of ["**/*_test.go", "**/*.test.mjs", "**/tests/**/*.ts", "tools/dev/verify-dsh-runtime-core.mjs"]) {
+  assert(properties.get("sonar.sources") === "apps,packages,services", "Sonar analysis must stay limited to product code");
+  assert(properties.get("sonar.tests") === "apps,packages,services", "Sonar test roots must stay limited to product code");
+  for (const pattern of ["**/*_test.go", "**/*.test.*", "**/*.spec.*", "**/tests/**"]) {
     assert(properties.get("sonar.test.inclusions")?.split(",").includes(pattern), `Sonar test classification missing ${pattern}`);
     assert(properties.get("sonar.exclusions")?.split(",").includes(pattern), `Sonar source scope still includes test files matching ${pattern}`);
   }
-  assert(!properties.has("sonar.coverage.exclusions"), "Sonar coverage exclusions must not conceal uncovered source lines");
+  assert(properties.get("sonar.coverage.exclusions") === "**/*", "Sonar must not duplicate Nx/test coverage ownership");
+  assert(!properties.has("sonar.go.coverage.reportPaths"), "Sonar must not own Go coverage reports");
+  assert(!properties.has("sonar.javascript.lcov.reportPaths"), "Sonar must not own JavaScript coverage reports");
+  assert(!properties.has("sonar.projectVersion"), "Sonar projectVersion must not create a second new-code baseline authority");
 }
 
 const workflowNames = verifyCanonicalWorkflows();
@@ -240,4 +269,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log("EXECUTION_PROOF_SYSTEM=PASS workflows=4 quality_workflows=1 sonar_gate=authoritative runtime_router=nx affected_scope=claim-driven runtime_dag=decoupled diagnostics=agent-first-bounded-harvest cache_inputs=causal");
+console.log("EXECUTION_PROOF_SYSTEM=PASS workflows=4 quality_workflows=1 sonar=remote-pr-scan coverage_owner=nx-tests runtime_router=nx affected_scope=claim-driven runtime_dag=decoupled diagnostics=agent-first-bounded-harvest cache_inputs=causal");

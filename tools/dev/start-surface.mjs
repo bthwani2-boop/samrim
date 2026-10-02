@@ -6,8 +6,6 @@ import { fileURLToPath } from "node:url";
 const toolDir=path.dirname(fileURLToPath(import.meta.url));
 const repoRoot=path.resolve(toolDir,"../..");
 const appsRoot=path.join(repoRoot,"apps");
-const surfaceRoot=process.cwd();
-const surface=path.basename(surfaceRoot);
 const envPath=path.join(repoRoot,"infra/local/.env");
 
 function fail(message){
@@ -15,7 +13,20 @@ function fail(message){
   process.exit(1);
 }
 
-if(path.dirname(surfaceRoot)!==appsRoot){
+const surfaceRoots=new Map([
+  ["app-client",path.join(appsRoot,"app-client")],
+  ["app-partner",path.join(appsRoot,"app-partner")],
+  ["app-captain",path.join(appsRoot,"app-captain")],
+  ["app-field",path.join(appsRoot,"app-field")],
+  ["control-panel",path.join(appsRoot,"control-panel")],
+]);
+const requestedSurface=(process.argv[2]??"").trim();
+if(requestedSurface&&!surfaceRoots.has(requestedSurface)){
+  fail("UNSUPPORTED_LOCAL_SURFACE");
+}
+const surfaceRoot=requestedSurface?surfaceRoots.get(requestedSurface):process.cwd();
+const surface=path.basename(surfaceRoot);
+if(path.dirname(surfaceRoot)!==appsRoot||!surfaceRoots.has(surface)){
   fail(`LOCAL_SURFACE_ROOT_REQUIRED cwd=${surfaceRoot} expected_parent=${appsRoot}`);
 }
 if(!fs.existsSync(envPath)){

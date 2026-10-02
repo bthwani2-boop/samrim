@@ -1,6 +1,6 @@
 "use client";
 
-import { publicationReadinessBlockedReasonLabel, publicationStateLabel, type StoreFulfillmentMode, type StoreFulfillmentModesResponse, type StorePublicationResponse } from "@bthwani/dsh";
+import { publicationReadinessBlockedReasonLabel, publicationStateLabel, type CommercialStoreType, type CommercialStoreTypeListResponse, type SetStoreCommercialTypeResponse, type StoreFulfillmentMode, type StoreFulfillmentModesResponse, type StorePublicationResponse } from "@bthwani/dsh";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { partnerErrorMessage } from "./partner-error-message";
@@ -13,9 +13,19 @@ const fulfillmentModeOptions: ReadonlyArray<Readonly<{ value: StoreFulfillmentMo
   { value: "CUSTOMER_PICKUP", label: "استلام من المتجر", description: "يستلم العميل طلبه مباشرة من المتجر." },
 ];
 
+async function readCommercialStoreTypes(verticalId?: string | null): Promise<ReadonlyArray<CommercialStoreType>> {
+  if (!verticalId) return [];
+  const response = await fetch(`/api/catalog/commercial-store-types?verticalId=${encodeURIComponent(verticalId)}`, { cache: "no-store" });
+  if (!response.ok) throw new Error(await partnerErrorMessage(response));
+  return (await response.json() as CommercialStoreTypeListResponse).storeTypes;
+}
+
 export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
   const [publication, setPublication] = useState<StorePublicationResponse | null>(null);
   const [selectedModes, setSelectedModes] = useState<ReadonlyArray<StoreFulfillmentMode>>([]);
+  const [commercialTypes, setCommercialTypes] = useState<ReadonlyArray<CommercialStoreType>>([]);
+  const [selectedCommercialTypeID, setSelectedCommercialTypeID] = useState("");
+  const [commercialTypeReason, setCommercialTypeReason] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -33,6 +43,10 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
       if (sequence !== requestSequence.current) return null;
       setPublication(next);
       setSelectedModes(next.store.fulfillmentModes);
+      setSelectedCommercialTypeID(next.store.commercialStoreTypeId ?? "");
+      const storeTypes = await readCommercialStoreTypes(next.store.primaryVerticalId);
+      if (sequence !== requestSequence.current) return null;
+      setCommercialTypes(storeTypes);
       return next;
     } catch (cause) {
       if (sequence !== requestSequence.current) return null;
@@ -118,6 +132,41 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
     }
   }
 
+  async function saveCommercialType() {
+    const current = publication?.store;
+    if (!current || !selectedCommercialTypeID || selectedCommercialTypeID === current.commercialStoreTypeId || commercialTypeReason.trim().length < 5) {
+      setError("اختر نوع متجر نشطًا واكتب سبب التغيير.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`/api/stores/${encodeURIComponent(current.id)}/commercial-type`, {
+        method: "POST",
+        headers: partnerMutationHeaders(),
+        body: JSON.stringify({ commercialStoreTypeId: selectedCommercialTypeID, reason: commercialTypeReason.trim(), expectedVersion: current.version }),
+      });
+      if (!response.ok) {
+        await reconcileFailure(response, "تعذر تعيين نوع المتجر التجاري.");
+        return;
+      }
+      const result = await response.json() as SetStoreCommercialTypeResponse;
+      const readback = await readStore(false);
+      if (readback?.store.commercialStoreTypeId !== result.commercialStoreTypeId) {
+        setError("تم إرسال التغيير لكن قراءة DSH لم تطابق النوع التجاري؛ راجع الحالة قبل إعادة المحاولة.");
+        return;
+      }
+      setCommercialTypeReason("");
+      setNotice("حُفظ نوع المتجر التجاري وأُكدت مطابقته في قراءة DSH.");
+    } catch {
+      await readStore(false);
+      setError("تعذر تأكيد تغيير نوع المتجر. أُعيدت قراءة DSH؛ راجع الحالة قبل إعادة المحاولة.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const store = publication?.store;
   return (
     <section className="workspace-page store-workspace" aria-labelledby="store-workspace-title">
@@ -128,9 +177,9 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
         <Link className="button button-secondary" href="/partners/stores">العودة إلى سجل المتاجر</Link>
       </div>
 
-      {loading ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة الملف الكانوني من DSH</strong></div> : null}
+      {loading ? <output className="collection-state"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة الملف الكانوني من DSH</strong></output> : null}
       {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر إكمال العملية</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readStore()}>إعادة قراءة المتجر</button></div> : null}
-      {notice ? <p className="managed-status managed-status-success" role="status">{notice}</p> : null}
+      {notice ? <output className="managed-status managed-status-success">{notice}</output> : null}
 
       {store ? <>
         <section className="store-detail-section" aria-labelledby="store-detail-context-title">
@@ -140,6 +189,7 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
               <div><dt>الشريك المالك</dt><dd><Link href={`/partners/actors/${encodeURIComponent(store.partnerActorId)}`}><bdi dir="ltr">{store.partnerActorId}</bdi></Link></dd></div>
               <div><dt>مدينة الخدمة</dt><dd>{store.serviceCityId ? <bdi dir="ltr">{store.serviceCityId}</bdi> : "غير محددة"}</dd></div>
               <div><dt>الفئة الرئيسية</dt><dd>{store.primaryVerticalId ? <bdi dir="ltr">{store.primaryVerticalId}</bdi> : "غير محددة"}</dd></div>
+              <div><dt>نوع المتجر التجاري</dt><dd>{commercialTypes.find((item) => item.id === store.commercialStoreTypeId)?.nameAr ?? store.commercialStoreTypeId ?? "غير محدد"}</dd></div>
               <div><dt>نسخة المتجر</dt><dd>v{store.version}</dd></div>
               <div><dt>تاريخ الإنشاء</dt><dd><time dateTime={store.createdAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium", timeStyle: "short" }).format(new Date(store.createdAt))}</time></dd></div>
               <div><dt>آخر تحديث</dt><dd><time dateTime={store.updatedAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium", timeStyle: "short" }).format(new Date(store.updatedAt))}</time></dd></div>
@@ -164,6 +214,22 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
             {fulfillmentModeOptions.map((option) => <label key={option.value} className="store-fulfillment-option"><input type="checkbox" checked={selectedModes.includes(option.value)} onChange={() => setSelectedModes((current) => current.includes(option.value) ? current.filter((mode) => mode !== option.value) : [...current, option.value])} /><span><strong>{option.label}</strong><small>{option.description}</small></span></label>)}
           </fieldset>
           <div className="button-row"><button type="button" className="button button-primary" disabled={busy || loading || selectedModes.length === 0 || selectedModes.length === store.fulfillmentModes.length && selectedModes.every((mode) => store.fulfillmentModes.includes(mode))} onClick={() => void saveFulfillmentModes()}>{busy ? "جارٍ الحفظ…" : "حفظ أوضاع التنفيذ"}</button><button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => { setSelectedModes(store.fulfillmentModes); setError(""); }}>إلغاء التغييرات</button></div>
+        </section>
+
+        <section className="store-detail-section" aria-labelledby="store-commercial-type-title">
+          <div className="store-detail-heading"><div><p className="eyebrow">الهوية التجارية والسياسات</p><h2 id="store-commercial-type-title">نوع المتجر التجاري</h2></div></div>
+          <p className="muted">هذا التصنيف التجاري يحدد سياسة عمولة المنصة لهذا المتجر. لا يغيّر فئة منتجات الكتالوج.</p>
+           {store.commercialStoreTypeId ? <output className="managed-status managed-status-info">{commercialTypes.find((item) => item.id === store.commercialStoreTypeId)?.nameAr ?? store.commercialStoreTypeId} · التعيين مثبت في DSH. تؤخذ العمولة من سياسة هذا النوع ووضع الطلب عند إنشاء المعاملة.</output> : <>
+            <label className="field-label" htmlFor="store-commercial-type"><span>اختر نوعًا تجاريًا نشطًا</span>
+              <select id="store-commercial-type" value={selectedCommercialTypeID} onChange={(event) => setSelectedCommercialTypeID(event.target.value)} disabled={busy || loading || !store.primaryVerticalId}>
+                <option value="">اختر نوع المتجر</option>
+                {commercialTypes.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.nameAr}</option>)}
+              </select>
+            </label>
+            <label className="field-label" htmlFor="store-commercial-type-reason">سبب التعيين<textarea id="store-commercial-type-reason" value={commercialTypeReason} onChange={(event) => setCommercialTypeReason(event.target.value)} minLength={5} maxLength={500} rows={2} disabled={busy || loading} /></label>
+            <div className="button-row"><button type="button" className="button button-primary" disabled={busy || loading || !selectedCommercialTypeID || commercialTypeReason.trim().length < 5} onClick={() => void saveCommercialType()}>{busy ? "جارٍ الحفظ…" : "تعيين نوع المتجر"}</button><button type="button" className="button button-secondary" disabled={busy || loading} onClick={() => { setSelectedCommercialTypeID(""); setCommercialTypeReason(""); }}>إلغاء التغييرات</button></div>
+             <output className="managed-status managed-status-warning">لا تُحتسب العمولة أو استحقاق الميداني لهذا المتجر قبل تثبيت نوعه التجاري وتفعيل السياسة المناسبة لهذا النوع.</output>
+          </>}
         </section>
 
         <section className="store-detail-section" aria-labelledby="store-catalog-title">

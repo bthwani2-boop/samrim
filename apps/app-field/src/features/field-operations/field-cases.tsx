@@ -302,7 +302,7 @@ export function FieldCases() {
 
   let emptyMessage: string;
   if (missingAdmission) {
-    emptyMessage = "لا يوجد حساب ميداني مؤهل لقراءة الملفات.";
+    emptyMessage = "لا يوجد سجل أهلية ميدانية لهذا الحساب في DSH.";
   } else if (appliedQuery) {
     emptyMessage = "لا توجد ملفات مطابقة للبحث.";
   } else {

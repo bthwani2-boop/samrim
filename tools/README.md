@@ -19,7 +19,7 @@ Do not add a repository-wide wrapper when a current owner or standard tool alrea
 
 ## Execution model
 
-`pnpm verify` is the exact local affected-candidate static/workspace entrypoint. `pnpm safe:push` owns final candidate verification and exact remote SHA confirmation.
+`pnpm check` is the dirty-tree inner-loop entrypoint: it runs affected static targets without runtime startup or Nx Cloud. `pnpm verify` proves a clean exact candidate; `pnpm safe:push` owns final candidate verification and exact remote SHA confirmation.
 
 Local runtime has deliberately split ownership:
 

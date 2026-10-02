@@ -76,15 +76,14 @@ func (s *DeliveryFeeServer) createPartnerFinancialTerms(w http.ResponseWriter, r
 		return
 	}
 	var input struct {
-		CommissionRateBps int    `json:"commissionRateBps"`
-		SettlementPeriod  string `json:"settlementPeriod"`
-		ExpectedVersion   int    `json:"expectedVersion"`
-		Reason            string `json:"reason"`
+		SettlementPeriod string `json:"settlementPeriod"`
+		ExpectedVersion  int    `json:"expectedVersion"`
+		Reason           string `json:"reason"`
 	}
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	policy, replayed, err := s.payment.CreatePartnerFinancialTermsPolicy(r.Context(), input.CommissionRateBps, input.SettlementPeriod, input.ExpectedVersion, input.Reason, idempotency, correlation, acting)
+	policy, replayed, err := s.payment.CreatePartnerFinancialTermsPolicy(r.Context(), input.SettlementPeriod, input.ExpectedVersion, input.Reason, idempotency, correlation, acting)
 	if err != nil {
 		s.writeWLTError(w, err)
 		return
