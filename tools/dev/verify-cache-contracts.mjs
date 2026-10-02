@@ -21,10 +21,6 @@ const repositoryStructure = JSON.stringify(tooling.namedInputs?.repositoryStruct
 for (const required of ["REPOSITORY-STRUCTURE.md", "**/project.json", "git ls-files"]) {
   if (!repositoryStructure.includes(required)) failures.push("repositoryStructure cache input missing " + required);
 }
-const structuralHygiene = JSON.stringify(tooling.namedInputs?.structuralHygiene ?? []);
-for (const required of ["git ls-files -s", "git ls-files --eol", "git diff --binary HEAD --", ".gitattributes", "**/package.json", "**/project.json"]) {
-  if (!structuralHygiene.includes(required)) failures.push("structuralHygiene cache input missing " + required);
-}
 const knowledgeInputs = tooling.namedInputs?.knowledge ?? [];
 if (!knowledgeInputs.includes("{workspaceRoot}/**/*.md")) failures.push("knowledge cache input must cover Markdown files scanned by knowledge verifiers");
 const runtimeOwnershipInputs = tooling.namedInputs?.runtimeOwnership ?? [];

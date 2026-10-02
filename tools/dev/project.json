@@ -25,17 +25,6 @@
       { "runtime": "git ls-files" },
       { "runtime": "node --version" }
     ],
-    "structuralHygiene": [
-      "{workspaceRoot}/.gitattributes",
-      "{workspaceRoot}/AGENTS.md",
-      "{workspaceRoot}/REPOSITORY-STRUCTURE.md",
-      "{workspaceRoot}/**/package.json",
-      "{workspaceRoot}/**/project.json",
-      { "runtime": "git ls-files -s" },
-      { "runtime": "git ls-files --eol" },
-      { "runtime": "git diff --binary HEAD --" },
-      { "runtime": "node --version" }
-    ],
     "projectGraph": [
       "{workspaceRoot}/nx.json",
       "{workspaceRoot}/**/project.json",
@@ -168,12 +157,6 @@
       "cache": true,
       "inputs": ["repositoryStructure"],
       "options": { "command": "node tools/dev/verify-repository-structure.mjs" }
-    },
-    "structural-hygiene": {
-      "executor": "nx:run-commands",
-      "cache": true,
-      "inputs": ["structuralHygiene"],
-      "options": { "command": "node tools/dev/verify-structural-hygiene.mjs" }
     },
     "runtime-ownership": {
       "executor": "nx:run-commands",

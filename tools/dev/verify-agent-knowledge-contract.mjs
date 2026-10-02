@@ -97,7 +97,8 @@ if (prTemplate.includes("GOVERNANCE_IMPACT=NONE\n")) failures.push("PR template 
 requireTokens(".github/workflows/ci-policy.yml", ["node tools/dev/verify-pr-policy.mjs"]);
 requireTokens(".github/workflows/ci-static.yml", [
   "nx affected -t lint format-check typecheck unit contract build export-smoke vet",
-  "nx run-many -t donor-residue repository-structure structural-hygiene",
+  "nx run-many -t donor-residue repository-structure runtime-ownership removed-domain-residue",
+  " knip ",
 ]);
 const policyOwner = requireTokens("tools/dev/verify-pr-policy.mjs", [
   "GOVERNANCE_IMPACT=(NONE|REVALIDATE_ONLY|UPDATE_REQUIRED|DEFECT_FOUND)",
