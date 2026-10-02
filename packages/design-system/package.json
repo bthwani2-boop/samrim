@@ -14,7 +14,9 @@
     "./theme.css": "./theme.css"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "theme:generate": "node --loader ./tools/ts-resolver.mjs tools/generate-theme-css.mjs",
+    "theme:check": "node --loader ./tools/ts-resolver.mjs tools/generate-theme-css.mjs --check"
   },
   "dependencies": {
     "@expo/material-symbols": "0.1.1",
