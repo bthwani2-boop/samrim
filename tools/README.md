@@ -1,40 +1,13 @@
-# Repository Tooling
+# Repository tooling
 
-DOCUMENT_CLASS: HUMAN_DEVELOPMENT_GUIDE
-EXECUTION_AUTHORITY: NONE
-PRODUCT_AUTHORITY: NONE
-CURRENT_COMMAND_AUTHORITY: LIVE_PACKAGE_SCRIPTS_AND_TOOL_SOURCE
+`tools/` contains only repository-wide utilities. Product and architecture authority live elsewhere.
 
-`tools/` contains cross-repository automation, inspection, generation and evidence. It is not Product or architecture authority.
+- `dev/` — local feedback, backend lifecycle, surface launch and device transport.
+- `go/` — Go workspace checks used by Nx.
+- `mobile/` — mobile build/configuration tooling shared by the apps.
+- `powershell/` — repository-wide PowerShell syntax check.
+- `security/` — repository secret-safety scan.
 
-## Placement
+Owner-specific tooling belongs with its app, service or package. Cross-owner runtime/integration proofs live under `tests/runtime/`.
 
-```text
-SERVICE-SPECIFIC TOOL → owning service
-APP-SPECIFIC TOOL     → owning app
-CROSS-REPOSITORY TOOL → tools/
-```
-
-Do not add a repository-wide wrapper when a current owner or standard tool already solves the problem.
-
-## Execution model
-
-`pnpm check` is the dirty-tree inner-loop entrypoint: it runs affected static targets without runtime startup or Nx Cloud. `pnpm verify` proves a clean exact candidate; `pnpm safe:push` owns final candidate verification and exact remote SHA confirmation.
-
-Local runtime has deliberately split ownership:
-
-```text
-tools/dev/dev.ps1              → backend lifecycle + ADB/scrcpy only
-apps/*/package.json scripts.dev → each surface's direct foreground development process
-tools/dev/start-surface.mjs     → shared env loader + direct Expo/Next exec
-```
-
-The fastest path is package-local: run `pnpm dev` inside `apps/app-client`, `apps/app-partner`, `apps/app-captain`, `apps/app-field`, or `apps/control-panel`. Root `pnpm client|partner|captain|field|control` commands are convenience aliases that enter the matching package directory. No targeted surface command routes through `dev.ps1`, and `dev.ps1` no longer owns Metro/Next ports, process reuse, stale-process cleanup or foreground surface startup.
-
-Mobile Expo remains local/offline, app-scoped, IPv4-first and development-client based. Fast Refresh continues through the package-local Metro process. `pnpm scr` separately owns device transport and reverse mappings: USB is preferred, TCP/IP is fallback only, and no intentional concurrent USB+TCP host connection is retained. `pnpm dev down` is the backend and app-host cleanup command.
-
-## Tool admission
-
-Before adding a tool, wrapper, registry, manifest, cache or guard: prove a current material problem, prefer an existing owner, keep one lifecycle owner, and delete the mechanism when its current benefit disappears.
-
-Pinned Governance/Docs materializes on demand through `tools/dev/knowledge-source.mjs`.
+Daily local commands are defined by the live root/app `package.json` files. Do not add a wrapper when a standard command or existing owner already solves the problem.
