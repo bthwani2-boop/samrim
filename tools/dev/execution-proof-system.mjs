@@ -198,7 +198,7 @@ function verifySonarQualityGate() {
     "uses: SonarSource/sonarqube-scan-action@",
     "services/identity/tests/contract-guard.test.mjs",
     "Generate Control Panel browser coverage",
-    "playwright.sonar.config.ts",
+    "test:e2e:sonar",
     "SONAR_TOKEN: $" + "{{ secrets.SONAR_TOKEN }}",
     "image: postgis/postgis:16-3.4-alpine",
     "POSTGRES_HOST_AUTH_METHOD: trust",
