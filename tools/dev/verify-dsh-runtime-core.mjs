@@ -445,7 +445,7 @@ async function createApprovedPartner(phone, name, serviceCityId, origin = "contr
   const approved = await request(dshBase, "POST", `/dsh/joining-cases/${caseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `approve-${crypto.randomUUID()}`, crypto.randomUUID(), Number(submitted.body?.case?.version)), body: { decision: "approved", expectedTermsPolicyVersion: partnerFinancialTermsPolicy.policyVersion } });
   const storeID = String(approved.body?.case?.store?.id || "");
   if (approved.status !== 200 || approved.body?.case?.state !== "approved" || approved.body?.case?.financialProfileState !== "ACTIVE" || approved.body?.case?.settlementPeriod !== "MONTHLY" || typeof approved.body?.case?.financialProfileId !== "string" || approved.body?.case?.firstStoreCommercialTypeId !== partnerCommercialStoreTypeID || approved.body?.case?.store?.primaryVerticalId !== partnerVerticalID || approved.body?.case?.store?.commercialStoreTypeId !== partnerCommercialStoreTypeID || approved.body?.case?.store?.deliveryOrigin?.latitude !== firstStoreOrigin.firstStoreLatitude || approved.body?.case?.store?.deliveryOrigin?.longitude !== firstStoreOrigin.firstStoreLongitude) fail("joining case approval did not bind financial terms and transfer the fixed store origin", JSON.stringify(approved));
-  await ensureCommissionPolicy(partnerCommercialStoreTypeID, "BTHWANI_CAPTAIN", 0);
+  await ensureCommissionPolicy(partnerCommercialStoreTypeID, "BTHWANI_CAPTAIN", 1500);
   return { accessToken, actorID, caseID, storeID };
 }
 
