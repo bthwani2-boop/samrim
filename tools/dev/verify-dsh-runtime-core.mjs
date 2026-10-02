@@ -445,7 +445,36 @@ async function createApprovedPartner(phone, name, serviceCityId, origin = "contr
   const approved = await request(dshBase, "POST", `/dsh/joining-cases/${caseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `approve-${crypto.randomUUID()}`, crypto.randomUUID(), Number(submitted.body?.case?.version)), body: { decision: "approved", expectedTermsPolicyVersion: partnerFinancialTermsPolicy.policyVersion } });
   const storeID = String(approved.body?.case?.store?.id || "");
   if (approved.status !== 200 || approved.body?.case?.state !== "approved" || approved.body?.case?.financialProfileState !== "ACTIVE" || approved.body?.case?.settlementPeriod !== "MONTHLY" || typeof approved.body?.case?.financialProfileId !== "string" || approved.body?.case?.firstStoreCommercialTypeId !== partnerCommercialStoreTypeID || approved.body?.case?.store?.primaryVerticalId !== partnerVerticalID || approved.body?.case?.store?.commercialStoreTypeId !== partnerCommercialStoreTypeID || approved.body?.case?.store?.deliveryOrigin?.latitude !== firstStoreOrigin.firstStoreLatitude || approved.body?.case?.store?.deliveryOrigin?.longitude !== firstStoreOrigin.firstStoreLongitude) fail("joining case approval did not bind financial terms and transfer the fixed store origin", JSON.stringify(approved));
+  await ensureBthwaniCommissionPolicy(partnerCommercialStoreTypeID);
   return { accessToken, actorID, caseID, storeID };
+}
+
+async function ensureBthwaniCommissionPolicy(commercialStoreTypeID) {
+  const path = "/dsh/operator/commercial-store-type-commission-policies";
+  const readPolicy = async () => request(dshBase, "GET", `${path}?commercialStoreTypeId=${encodeURIComponent(commercialStoreTypeID)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+  const current = await readPolicy();
+  if (current.status !== 200 || current.body?.commercialStoreTypeId !== commercialStoreTypeID || !Array.isArray(current.body?.policies)) {
+    fail("commercial store type commission policy read failed", JSON.stringify({ commercialStoreTypeID, current }));
+  }
+  const existing = current.body.policies.find((policy) => policy.fulfillmentMode === "BTHWANI_CAPTAIN");
+  if (existing) {
+    if (existing.commercialStoreTypeId !== commercialStoreTypeID || !Number.isInteger(existing.commissionRateBps) || existing.commissionRateBps < 0 || existing.commissionRateBps > 10000 || !Number.isInteger(existing.policyVersion) || existing.policyVersion < 1) {
+      fail("existing BTHWANI_CAPTAIN commission policy is invalid", JSON.stringify({ commercialStoreTypeID, existing }));
+    }
+    return existing;
+  }
+
+  const created = await request(dshBase, "POST", path, {
+    token: dshToken,
+    headers: serviceHeaders(actingOperatorID, `runtime-commission-${commercialStoreTypeID}-${suffix}`),
+    body: { commercialStoreTypeId: commercialStoreTypeID, fulfillmentMode: "BTHWANI_CAPTAIN", commissionRateBps: 0, expectedVersion: 0, reason: "Runtime checkout fixture policy" },
+  });
+  const readback = await readPolicy();
+  const policy = readback.body?.policies?.find((item) => item.fulfillmentMode === "BTHWANI_CAPTAIN");
+  if (created.status !== 200 || created.body?.policy?.commercialStoreTypeId !== commercialStoreTypeID || created.body?.policy?.fulfillmentMode !== "BTHWANI_CAPTAIN" || created.body?.policy?.commissionRateBps !== 0 || created.body?.policy?.policyVersion !== 1 || readback.status !== 200 || policy?.commercialStoreTypeId !== commercialStoreTypeID || policy?.fulfillmentMode !== "BTHWANI_CAPTAIN" || policy?.commissionRateBps !== 0 || policy?.policyVersion !== 1) {
+    fail("canonical BTHWANI_CAPTAIN commission policy setup/readback failed", JSON.stringify({ commercialStoreTypeID, created, readback }));
+  }
+  return policy;
 }
 const fieldPhone = `+96771${crypto.randomInt(1_000_000, 9_999_999)}`;
 const fieldCandidateLifecycle = await admitReviewedRoleCandidate("field", fieldPhone, "سامي ناصر", "سامي ناصر محمد العريقي", "field-admit");
