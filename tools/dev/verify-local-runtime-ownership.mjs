@@ -70,30 +70,13 @@ for(const removed of ["Start-MobileServer","Start-ControlServer","Stop-OwnedList
 }
 check(!dev.includes("--dev-client"),"dev.ps1 must not launch Expo");
 check(!dev.includes(String.raw`dist\bin\next`),"dev.ps1 must not launch Next");
-check(dev.includes("Read-BackendServiceStates"),"dev.ps1 must read canonical Compose service state");
-check(!dev.includes("Read-RunningBackendServices"),"dev.ps1 must not duplicate Compose state reads on the warm path");
-check(dev.includes("BACKEND_REUSE=PASS state=healthy inputs=unchanged images=verified"),"healthy unchanged runtime must have a no-build reuse path");
-check(dev.includes("Read-RunningBackendImages"),"runtime reuse must prove running backend image provenance");
-check(dev.includes("Test-BackendImageStateEqual"),"runtime reuse must reject stale container image provenance");
-check(/schema\s*= 3/.test(dev)&&/\$state\['schema'\] -ne 3/.test(dev)&&/compose\s*= \(Get-FileSha256 \$ComposePath\)/.test(dev)&&/env\s*= \(Get-FileSha256 \$EnvPath\)/.test(dev),"runtime state must distinguish Compose topology from runtime environment changes");
-check(dev.includes("$composeChanged")&&dev.includes("$composeChanged -or"),"Compose topology changes must force backend image reconciliation");
-check(dev.includes("Test-RuntimeBuildPath")&&dev.includes("git -C $Root ls-files -s"),"runtime fingerprint must use Git index material for backend image invalidation");
-check(dev.includes("Get-WorkingTreeMaterialRecords")&&dev.includes("git -C $Root diff --name-only HEAD"),"runtime fingerprint must overlay only changed working-tree runtime material");
-const buildPathProbe=spawnSync(resolveTrustedExecutable("pwsh"),["-NoProfile","-Command",[
-  "$errors=$null;$tokens=$null;$ast=[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'tools/dev/dev.ps1'),[ref]$tokens,[ref]$errors)",
-  "if($errors.Count){exit 2}",
-  "$function=$ast.Find({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Test-RuntimeBuildPath'},$true)",
-  "if(-not $function){exit 3}",
-  "Invoke-Expression $function.Extent.Text",
-  "$cases=@(@('services/dsh/backend/internal/x.go',$true),@('services/dsh/backend/internal/x_test.go',$false),@('services/dsh/backend/Dockerfile',$true),@('services/dsh/backend/schema.sql',$true),@('services/dsh/backend/readme.md',$false))",
-  "foreach($case in $cases){if((Test-RuntimeBuildPath $case[0]) -ne $case[1]){exit 1}}"
-].join(";")],{cwd:root,encoding:"utf8"});
-check(buildPathProbe.status===0,"runtime fingerprint must include build inputs and exclude Go test-only files");
-check(dev.includes("@('postgres', 'mailpit', 'media', 'identity', 'dsh', 'wlt')"),"backend readiness must include media dependency");
-check(dev.includes("Compose @('up','-d','--build','--wait','--wait-timeout','300','--remove-orphans')"),"cold backend readiness must retain canonical Compose build reconciliation");
-check(dev.includes("Compose @('up', '-d', '--no-build', '--wait', '--wait-timeout', '300', '--remove-orphans')"),"warm/selective backend reconciliation must not rebuild unchanged images");
-check(dev.includes("Compose (@('build') + $buildServices.ToArray())"),"changed backend source must rebuild only the affected backend image set");
-check(dev.includes("Compose @('ps', '-a', '--format', '{{.ID}}|{{.Service}}|{{.State}}|{{.Health}}')"),"backend readiness must use one canonical Compose state read per observation");
+check(dev.includes("docker compose --ansi never --project-name samrim-local"),"dev.ps1 must delegate backend state to the canonical Compose project");
+check(dev.includes("Compose @('up', '-d', '--build', '--wait', '--wait-timeout', '300', '--remove-orphans')"),"runtime startup must use Compose build cache and native health readiness");
+check(dev.includes("Compose @('down', '--remove-orphans')"),"runtime shutdown must delegate service ownership to Compose");
+check(dev.includes("'status' { Compose @('ps', '-a') }"),"runtime status must read the canonical Compose project");
+for(const retired of ["backend-input-state.json","Get-BackendInputState","Get-PathFingerprint","Read-RunningBackendImages","Test-BackendImageStateEqual","BACKEND_REUSE=PASS"]){
+  check(!dev.includes(retired),`dev.ps1 retains deleted runtime fingerprint machinery: ${retired}`);
+}
 check(!/\badb(?:\.exe)?\b/i.test(dev)&&!dev.toLowerCase().includes("scrcpy"),"dev.ps1 must not retain device or scrcpy ownership");
 check(!dev.includes("Active-Ports")&&!dev.includes("GetActiveTcpListeners"),"backend reuse must not trust occupied host ports");
 check(hostCleanup.includes("app-(?:client|partner|captain|field)")&&hostCleanup.includes("control-panel")&&hostCleanup.includes("node_modules")&&hostCleanup.includes("expo")&&hostCleanup.includes("next"),"runtime:down must select only the canonical Expo and Next surface entrypoints");

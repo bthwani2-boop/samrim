@@ -44,7 +44,7 @@ try {
     $env:NX_NO_CLOUD = 'true'
 
     Write-Host "VERIFY_SCOPE base=$BaseSha head=$head runtime=off cloud=off"
-    pnpm exec nx affected -t lint,format-check,typecheck,unit,contract,vet --base=$BaseSha --head=$head --outputStyle=static --parallel=2 --nxBail=true
+    pnpm exec nx affected -t lint format-check typecheck unit contract vet --base=$BaseSha --head=$head --outputStyle=static --parallel=2 --nxBail=true
     if ($LASTEXITCODE -ne 0) { throw "VERIFY=FAIL exit=$LASTEXITCODE" }
 
     $endHead = ((Invoke-Git @('rev-parse','HEAD')) -join '').Trim()

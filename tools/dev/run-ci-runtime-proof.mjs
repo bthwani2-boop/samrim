@@ -6,16 +6,14 @@ import { laneTargets } from "./runtime-proof/resolve.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const envPath = path.join(root, "infra/local/.env");
-const runnerTemp = fs.realpathSync(process.env.RUNNER_TEMP || os.tmpdir());
-const runtimeProofDirectory = fs.mkdtempSync(path.join(runnerTemp, "samrim-runtime-proof-"));
-fs.chmodSync(runtimeProofDirectory, 0o700);
-const runtimeFailurePath = path.join(runtimeProofDirectory, "runtime-failure.json");
-const dshCheckerFixturePath = process.env.CI_RUNTIME_TARGETS?.split(",").map((value) => value.trim()).includes("dsh-backend:runtime-proof")
-  ? path.join(runtimeProofDirectory, "dsh-checker-fixture.json")
-  : "";
-
-if (!process.env.GITHUB_ENV || /[\r\n]/.test(runtimeFailurePath)) fail("secure runtime failure path handoff is unavailable");
-fs.appendFileSync(process.env.GITHUB_ENV, `SAMRIM_RUNTIME_FAILURE_PATH=${runtimeFailurePath}\n`, { encoding: "utf8" });
+const needsCheckerFixture = process.env.CI_RUNTIME_TARGETS?.split(",").map((value) => value.trim()).includes("dsh-backend:runtime-proof");
+let dshCheckerFixturePath = "";
+if (needsCheckerFixture) {
+  const runnerTemp = fs.realpathSync(process.env.RUNNER_TEMP || os.tmpdir());
+  const runtimeProofDirectory = fs.mkdtempSync(path.join(runnerTemp, "samrim-runtime-proof-"));
+  fs.chmodSync(runtimeProofDirectory, 0o700);
+  dshCheckerFixturePath = path.join(runtimeProofDirectory, "dsh-checker-fixture.json");
+}
 
 function fail(message) {
   console.error("CI_RUNTIME_INTEGRATION=FAIL " + message);
@@ -73,41 +71,15 @@ const childEnv = {
 };
 
 const executable = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-let runtimeFailureRecorded = false;
-
-function writeRuntimeFailureOnce(failure) {
-  try {
-    fs.writeFileSync(runtimeFailurePath, JSON.stringify(failure, null, 2) + "\n", { encoding: "utf8", flag: "wx", mode: 0o600 });
-    runtimeFailureRecorded = true;
-    return true;
-  } catch (error) {
-    if (error?.code === "EEXIST" && runtimeFailureRecorded) return false;
-    throw error;
-  }
-}
-
 console.log("CI_RUNTIME_TASKS=" + requestedTargets.join(","));
 for (const target of requestedTargets) {
   console.log("CI_RUNTIME_TASK=START target=" + target);
-  try {
-    execFileSync(
-      executable,
-      ["exec", "nx", "run", target, "--outputStyle=stream"],
-      { cwd: root, env: childEnv, stdio: "inherit" },
-    );
-    console.log("CI_RUNTIME_TASK=PASS target=" + target);
-  } catch (error) {
-    const failure = {
-      target,
-      candidate: process.env.CANDIDATE_SHA || process.env.GITHUB_SHA || null,
-      progressionBlocked: true,
-      nextAction: "classify-highest-causal-root-before-new-material-work",
-      capturedAt: new Date().toISOString(),
-    };
-    writeRuntimeFailureOnce(failure);
-    console.error("CI_RUNTIME_TASK=FAIL target=" + target);
-    throw error;
-  }
+  execFileSync(
+    executable,
+    ["exec", "nx", "run", target, "--outputStyle=stream"],
+    { cwd: root, env: childEnv, stdio: "inherit" },
+  );
+  console.log("CI_RUNTIME_TASK=PASS target=" + target);
 }
 
 console.log("CI_RUNTIME_INTEGRATION=PASS targets=" + requestedTargets.join(","));
