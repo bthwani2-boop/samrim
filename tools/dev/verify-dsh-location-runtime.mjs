@@ -172,7 +172,7 @@ try {
   const verticalCreated = await expect(dshBase, "POST", "/dsh/catalog/verticals", 201, {
     token: controlPanelToken,
     headers: serviceHeaders(operatorID),
-    body: { nameAr: `متاجر المواقع ${Date.now()}`, nameEn: `Location Stores ${suffix}`, active: true },
+    body: { nameAr: `متاجر المواقع ${Date.now()}`, nameEn: `Location Stores ${suffix}`, catalogModel: "SHARED_CATALOG", active: true, reason: "DSH Location Core runtime vertical" },
   });
   if (!verticalCreated?.vertical?.id) throw new Error("location vertical canonical create failed");
   verticalID = String(verticalCreated.vertical.id);
