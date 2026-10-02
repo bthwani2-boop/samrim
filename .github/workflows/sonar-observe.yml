@@ -44,6 +44,7 @@ jobs:
       BTHWANI_EXPECTED_DATABASE_PORT: "5432"
       BTHWANI_EXPECTED_DATABASE_NAME: postgres
       BTHWANI_EXPECTED_DATABASE_USER: postgres
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
       CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
 
     if: >
@@ -98,10 +99,11 @@ jobs:
           go -C services/dsh/backend test -coverprofile="$GITHUB_WORKSPACE/coverage/sonar/dsh.out" -count=1 ./...
           go -C services/identity/backend test -coverprofile="$GITHUB_WORKSPACE/coverage/sonar/identity.out" -count=1 ./...
           go -C services/wlt/backend test -coverprofile="$GITHUB_WORKSPACE/coverage/sonar/wlt.out" -count=1 ./...
-          node --experimental-test-coverage --test --test-concurrency=1 \
+          NX_BASE="$BASE_SHA" NX_HEAD="$CANDIDATE_SHA" NX_NO_CLOUD=true node --experimental-test-coverage --test --test-concurrency=1 \
             --test-reporter=spec --test-reporter-destination=stdout \
             --test-reporter=lcov --test-reporter-destination=coverage/sonar/tools-dev.lcov \
             tools/dev/runtime-proof/resolve.test.mjs \
+            tools/dev/runtime-proof/resolve.mjs \
             tools/dev/runtime-proof/challenge-source.test.mjs \
             tools/dev/runtime-proof/canonical-dsh-migration-history.test.mjs \
             tools/dev/runtime-proof/trusted-executables.test.mjs \

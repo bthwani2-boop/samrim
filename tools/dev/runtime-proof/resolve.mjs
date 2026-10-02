@@ -1,10 +1,13 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { resolveTrustedExecutable } from "./trusted-executables.mjs";
 
 const root = path.resolve(import.meta.dirname, "../../..");
 const gitExecutable = resolveTrustedExecutable("git");
+const require = createRequire(import.meta.url);
+const nxExecutable = require.resolve("nx/bin/nx.js");
 
 export const laneOrder = ["control", "identity", "wlt", "dsh"];
 const compareStrings = (left, right) => String(left).localeCompare(String(right), "en");
@@ -219,10 +222,9 @@ function parseArgs(argv) {
 
 function affectedProjects(base, head) {
   if (!base || !head) throw new Error("NX_BASE/NX_HEAD (or --base/--head) are required");
-  const executable = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
   const output = execFileSync(
-    executable,
-    ["exec", "nx", "show", "projects", "--affected", `--base=${base}`, `--head=${head}`, "--sep=,", "--no-cloud"],
+    process.execPath,
+    [nxExecutable, "show", "projects", "--affected", `--base=${base}`, `--head=${head}`, "--sep=,", "--no-cloud"],
     { cwd: root, encoding: "utf8", env: { ...process.env, NX_NO_CLOUD: "true" } },
   ).trim();
   return output ? output.split(",").map((value) => value.trim()).filter(Boolean) : [];

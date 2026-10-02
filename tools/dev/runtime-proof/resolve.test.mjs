@@ -157,6 +157,58 @@ test("shared runtime runner change escalates to full", () => {
   assert.deepEqual(routing.lanes, laneOrder);
 });
 
+test("any change inside the runtime proof router escalates to full", () => {
+  const routing = resolveChangedFileRuntime(["tools/dev/runtime-proof/new-lane.mjs"]);
+  assert.equal(routing.mode, "full");
+  assert.deepEqual(routing.reasons, ["full-escalation:file:tools/dev/runtime-proof/new-lane.mjs"]);
+});
+
+test("changed verifier paths normalize Windows separators and combine their owner lanes", () => {
+  const routing = resolveChangedFileRuntime([
+    "tools\\dev\\verify-identity-runtime.mjs",
+    "tools/dev/verify-dsh-location-runtime.mjs",
+    "tools/dev/verify-identity-runtime.mjs",
+  ]);
+  assert.deepEqual(routing, {
+    mode: "lanes",
+    lanes: ["identity", "dsh"],
+    reasons: [
+      "file:tools/dev/verify-identity-runtime.mjs:identity",
+      "file:tools/dev/verify-dsh-location-runtime.mjs:dsh",
+      "file:tools/dev/verify-identity-runtime.mjs:identity",
+    ],
+  });
+});
+
+test("explicit full runtime tags dominate an otherwise lane-scoped project", () => {
+  const result = resolveFromAffected(
+    ["new-shared-service"],
+    configs([[
+      "new-shared-service",
+      ["scope:wlt-backend", "type:service", "runtime:full"],
+    ]]),
+  );
+  assert.deepEqual(result.lanes, laneOrder);
+  assert.equal(result.reasons[0], "full-escalation:new-shared-service");
+});
+
+test("unknown explicit runtime lane fails closed", () => {
+  assert.throws(
+    () => resolveFromAffected(
+      ["new-service"],
+      configs([["new-service", ["type:service", "runtime:unknown"]]]),
+    ),
+    /unknown runtime lane 'unknown'/,
+  );
+});
+
+test("affected project without canonical Nx metadata fails closed", () => {
+  assert.throws(
+    () => resolveFromAffected(["missing-project"], new Map()),
+    /missing project.json metadata: missing-project/,
+  );
+});
+
 test("static-only tooling can remain runtime-unaffected", () => {
   const result = resolveFromAffected(
     ["workspace-tooling"],
