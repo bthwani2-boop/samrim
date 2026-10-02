@@ -206,7 +206,7 @@ func main() {
 			WHERE o.state='POSTED' AND o.effect_type='DELIVERY_SETTLEMENT' AND (
 				d.id IS NULL OR d.payment_cash_amount_minor <> o.amount_minor OR p.id IS NULL OR p.state <> 'COLLECTED' OR p.collected_by_actor_id IS DISTINCT FROM o.captain_actor_id OR p.amount_minor <> d.total_amount_minor
 				OR e.order_id IS NULL OR e.payment_intent_id <> o.payment_intent_id OR e.partner_actor_id IS DISTINCT FROM o.partner_actor_id OR e.captain_actor_id IS DISTINCT FROM o.captain_actor_id
-				OR (o.amount_minor > 0 AND (c.order_id IS NULL OR c.payment_intent_id <> o.payment_intent_id OR c.captain_actor_id IS DISTINCT FROM o.captain_actor_id OR c.amount_minor <> o.amount_minor OR c.state <> 'FINALIZED'))
+				OR (o.amount_minor > 0 AND (c.order_id IS NULL OR c.payment_intent_id <> o.payment_intent_id OR c.captain_actor_id IS DISTINCT FROM o.captain_actor_id OR c.amount_minor <> o.amount_minor OR c.state NOT IN ('FINALIZED','REMITTED')))
 			)`,
 			diagnosticQuery: `SELECT COALESCE(jsonb_agg(jsonb_build_object(
 				'order_id',o.order_id,'outbox_payment_intent_id',o.payment_intent_id,'outbox_captain',o.captain_actor_id,'outbox_partner',o.partner_actor_id,'outbox_cash',o.amount_minor,
@@ -223,7 +223,7 @@ func main() {
 			WHERE o.state='POSTED' AND o.effect_type='DELIVERY_SETTLEMENT' AND (
 				d.id IS NULL OR d.payment_cash_amount_minor <> o.amount_minor OR p.id IS NULL OR p.state <> 'COLLECTED' OR p.collected_by_actor_id IS DISTINCT FROM o.captain_actor_id OR p.amount_minor <> d.total_amount_minor
 				OR e.order_id IS NULL OR e.payment_intent_id <> o.payment_intent_id OR e.partner_actor_id IS DISTINCT FROM o.partner_actor_id OR e.captain_actor_id IS DISTINCT FROM o.captain_actor_id
-				OR (o.amount_minor > 0 AND (c.order_id IS NULL OR c.payment_intent_id <> o.payment_intent_id OR c.captain_actor_id IS DISTINCT FROM o.captain_actor_id OR c.amount_minor <> o.amount_minor OR c.state <> 'FINALIZED'))
+				OR (o.amount_minor > 0 AND (c.order_id IS NULL OR c.payment_intent_id <> o.payment_intent_id OR c.captain_actor_id IS DISTINCT FROM o.captain_actor_id OR c.amount_minor <> o.amount_minor OR c.state NOT IN ('FINALIZED','REMITTED')))
 			) LIMIT 10`,
 		},
 		{
