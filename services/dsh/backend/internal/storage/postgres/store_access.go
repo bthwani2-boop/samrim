@@ -32,12 +32,12 @@ type StoreAccessGrant struct {
 }
 
 var (
-	ErrStoreAccessNotFound = errors.New("Store access grant was not found")
+	ErrStoreAccessNotFound  = errors.New("Store access grant was not found")
 	ErrStoreAccessForbidden = errors.New("actor is not authorized for this Store action")
-	ErrStoreAccessConflict = errors.New("Store access grant conflicts with current state")
-	ErrStoreAccessVersion = errors.New("Store access grant version is stale")
-	ErrStoreAccessIdem = errors.New("Store access grant idempotency key conflicts with previous facts")
-	ErrStoreAccessExpired = errors.New("Store access invitation has expired")
+	ErrStoreAccessConflict  = errors.New("Store access grant conflicts with current state")
+	ErrStoreAccessVersion   = errors.New("Store access grant version is stale")
+	ErrStoreAccessIdem      = errors.New("Store access grant idempotency key conflicts with previous facts")
+	ErrStoreAccessExpired   = errors.New("Store access invitation has expired")
 )
 
 func HashStoreAccessInvitationCreate(storeID, ownerActorID, delegateActorID string, permissions []string) string {
@@ -354,7 +354,7 @@ func verifyStoreOwnerTx(ctx context.Context, tx *sql.Tx, storeID, actorID string
 func recordStoreAccessMutationTx(ctx context.Context, tx *sql.Tx, grant StoreAccessGrant, operation, actingActorID, idempotencyKey, requestHash, correlationID, event string, fromState *string, toState string, expectedVersion, resultVersion int) error {
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.store_access_grant_idempotency
 		(idempotency_key,request_hash,operation,grant_id,acting_actor_id,result_state,result_version)
-		VALUES($1,$2,$3,$4,$5,$6,$7)`, idempotencyKey, requestHash, operation, grant.ID, actingActorID, resultState(toState), resultVersion); err != nil {
+		VALUES($1,$2,$3,$4,$5,$6,$7)`, idempotencyKey, requestHash, operation, grant.ID, actingActorID, toState, resultVersion); err != nil {
 		return fmt.Errorf("record Store access idempotency: %w", err)
 	}
 	var from any
