@@ -11,7 +11,7 @@
     "build": "next build",
     "typecheck": "next typegen && tsc --noEmit -p tsconfig.json",
     "test:e2e": "playwright test --config playwright.config.ts",
-    "test:e2e:live": "node ../../tools/dev/run-playwright-live.mjs"
+    "test:e2e:live": "node run-live-e2e.mjs"
   },
   "dependencies": {
     "@bthwani/design-system": "workspace:*",

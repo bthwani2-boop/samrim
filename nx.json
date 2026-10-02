@@ -149,7 +149,7 @@
         "env": "CONTROL_PANEL_PUBLIC_ORIGIN"
       },
       {
-        "runtime": "node tools/dev/hash-control-panel-secret-input.mjs"
+        "runtime": "node apps/control-panel/hash-secret-input.mjs"
       }
     ]
   }
