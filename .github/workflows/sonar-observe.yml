@@ -120,7 +120,7 @@ jobs:
         env:
           PLAYWRIGHT_BASE_URL: http://localhost:4173
           BTHWANI_SONAR_COVERAGE: "1"
-        run: pnpm --dir apps/control-panel exec playwright test --config playwright.sonar.config.ts
+        run: pnpm --dir apps/control-panel test:e2e:sonar
 
       - name: Rank current Go coverage debt
         run: |

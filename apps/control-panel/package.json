@@ -11,6 +11,7 @@
     "build": "next build",
     "typecheck": "next typegen && tsc --noEmit -p tsconfig.json",
     "test:e2e": "playwright test --config playwright.config.ts",
+    "test:e2e:sonar": "playwright test --config playwright.sonar.config.ts",
     "test:e2e:live": "node ../../tools/dev/run-playwright-live.mjs"
   },
   "dependencies": {
