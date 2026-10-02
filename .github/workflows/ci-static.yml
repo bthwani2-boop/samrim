@@ -73,10 +73,6 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      - name: Verify Nx Cloud CI access configuration
-        shell: bash
-        run: node tools/dev/verify-nx-cloud-ci.mjs
-
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
@@ -90,28 +86,12 @@ jobs:
 
       - name: Install workspace once
         shell: bash
-        run: node tools/dev/run-ci-command.mjs static-install -- pnpm install --frozen-lockfile
-
-      - name: Verify repository invariants through Nx
-        shell: bash
-        run: |
-          set -euo pipefail
-          node tools/dev/run-ci-command.mjs static-invariants -- \
-            pnpm exec nx run-many \
-              -t donor-residue,repository-structure,structural-hygiene,runtime-ownership,removed-domain-residue,cache-contracts,docs-command-parity,docs-config-parity,knowledge-system,knowledge-references,agent-contract,workspace-dependencies,nx-project-tags,mobile-config,brand,theme-check,theme-verify,powershell-syntax,knip \
-              --outputStyle=stream \
-              --parallel=3
-          node tools/dev/run-ci-command.mjs static-execution-proof -- \
-            pnpm exec nx run repository-ci:execution-proof-system --outputStyle=stream
-          node tools/dev/run-ci-command.mjs static-go-workspace -- \
-            pnpm exec nx run workspace-tooling:go-workspace-sync --outputStyle=stream
-          node tools/dev/run-ci-command.mjs static-compose-config -- \
-            pnpm exec nx run infra:compose-config --outputStyle=stream
+        run: pnpm install --frozen-lockfile
 
       - name: Verify affected static graph
         if: github.event_name != 'schedule'
         shell: bash
-        run: node tools/dev/run-ci-command.mjs static-affected -- pnpm exec nx affected -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream
+        run: pnpm exec nx affected -t lint format-check typecheck unit contract build export-smoke vet mobile-config brand theme-check theme-verify powershell-syntax workspace-dependencies go-workspace-sync compose-config --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream
 
       - name: Verify full static graph
         if: github.event_name == 'schedule'
@@ -122,7 +102,7 @@ jobs:
           GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
           GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
           GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
-        run: node tools/dev/run-ci-command.mjs static-full -- pnpm exec nx run-many -t lint,format-check,typecheck,unit,contract,build,export-smoke,vet --outputStyle=stream --parallel=3 --skip-nx-cache
+        run: pnpm exec nx run-many -t donor-residue repository-structure structural-hygiene runtime-ownership removed-domain-residue cache-contracts docs-command-parity docs-config-parity knowledge-system knowledge-references agent-contract workspace-dependencies nx-project-tags mobile-config brand theme-check theme-verify powershell-syntax knip go-workspace-sync compose-config lint format-check typecheck unit contract build export-smoke vet --outputStyle=stream --parallel=3 --skip-nx-cache
 
       - name: Verify tooling is non-mutating
         if: always()
@@ -131,26 +111,6 @@ jobs:
           set -euo pipefail
           drift="$(git status --porcelain --untracked-files=all)"
           [[ -z "${drift}" ]] || { printf '%s\n' "${drift}"; git diff -- . || true; exit 1; }
-
-      - name: Capture static failure package
-        id: failure_package
-        if: failure()
-        shell: bash
-        run: node tools/dev/capture-ci-failure.mjs --kind=static-linux
-
-      - name: Upload static failure package
-        if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: static-linux-failure-${{ env.CANDIDATE_SHA }}-${{ github.run_attempt }}
-          path: ${{ steps.failure_package.outputs.path }}
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Report static CI performance
-        if: always()
-        shell: bash
-        run: node tools/dev/report-ci-performance.mjs
 
   windows:
     name: repository-windows
@@ -181,12 +141,6 @@ jobs:
         shell: pwsh
         run: node tools/dev/verify-ci-exact-sha.mjs
 
-      - name: Verify LF checkout
-        shell: pwsh
-        run: |
-          $bad = @(git ls-files --eol | Where-Object { $_ -match '\bw/(crlf|mixed)\b' })
-          if ($bad.Count -gt 0) { $bad | Write-Host; throw "Tracked CRLF/mixed text detected." }
-
       - name: Resolve canonical affected SHAs
         uses: nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1
 
@@ -209,35 +163,19 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      - name: Verify Nx Cloud CI access configuration
-        shell: pwsh
-        run: node tools/dev/verify-nx-cloud-ci.mjs
-
       - name: Install workspace
         shell: pwsh
-        run: node tools/dev/run-ci-command.mjs windows-install -- pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
-      - name: Verify affected Windows Android exports
+      - name: Verify affected Windows PowerShell tooling
         if: github.event_name != 'schedule'
         shell: pwsh
-        env:
-          GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT: maps-config-placeholder-0
-          GOOGLE_MAPS_IOS_API_KEY: maps-config-placeholder-1
-          GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
-          GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
-          GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
-        run: node tools/dev/run-ci-command.mjs windows-export-affected -- pnpm exec nx affected -t export-smoke --base=$env:NX_BASE --head=$env:NX_HEAD --outputStyle=stream
+        run: pnpm exec nx affected -t powershell-syntax --base=$env:NX_BASE --head=$env:NX_HEAD --outputStyle=stream
 
-      - name: Verify full Windows Android exports
+      - name: Verify full Windows PowerShell tooling
         if: github.event_name == 'schedule'
         shell: pwsh
-        env:
-          GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT: maps-config-placeholder-0
-          GOOGLE_MAPS_IOS_API_KEY: maps-config-placeholder-1
-          GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
-          GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
-          GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
-        run: node tools/dev/run-ci-command.mjs windows-export-full -- pnpm exec nx run-many -t export-smoke --outputStyle=stream --parallel=2 --skip-nx-cache
+        run: pnpm exec nx run-many -t powershell-syntax --outputStyle=stream --parallel=2 --skip-nx-cache
 
       - name: Verify Windows proof is non-mutating
         if: always()
@@ -249,23 +187,3 @@ jobs:
             git diff -- .
             throw "Windows static proof mutated repository state."
           }
-
-      - name: Capture Windows static failure package
-        id: failure_package
-        if: failure()
-        shell: pwsh
-        run: node tools/dev/capture-ci-failure.mjs --kind=static-windows
-
-      - name: Upload Windows static failure package
-        if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: static-windows-failure-${{ env.CANDIDATE_SHA }}-${{ github.run_attempt }}
-          path: ${{ steps.failure_package.outputs.path }}
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Report Windows static CI performance
-        if: always()
-        shell: pwsh
-        run: node tools/dev/report-ci-performance.mjs

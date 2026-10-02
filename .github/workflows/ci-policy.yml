@@ -37,19 +37,4 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_DRAFT: ${{ github.event.pull_request.draft }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: node tools/dev/run-ci-command.mjs policy-validation -- node tools/dev/verify-pr-policy.mjs
-
-      - name: Capture policy failure package
-        id: failure_package
-        if: failure()
-        shell: bash
-        run: node tools/dev/capture-ci-failure.mjs --kind=policy
-
-      - name: Upload policy failure package
-        if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: policy-failure-${{ env.CANDIDATE_SHA }}-${{ github.run_attempt }}
-          path: ${{ steps.failure_package.outputs.path }}
-          if-no-files-found: error
-          retention-days: 14
+        run: node tools/dev/verify-pr-policy.mjs

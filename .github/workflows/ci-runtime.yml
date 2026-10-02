@@ -61,7 +61,7 @@ jobs:
 
       - name: Install workspace once
         shell: bash
-        run: node tools/dev/run-ci-command.mjs runtime-install -- pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Resolve affected runtime proof lanes through Nx
         id: scope
@@ -77,7 +77,7 @@ jobs:
       - name: Install Chromium runtime
         if: steps.scope.outputs.browser == 'true'
         shell: bash
-        run: node tools/dev/run-ci-command.mjs runtime-playwright-install -- pnpm --dir apps/control-panel exec playwright install --with-deps chromium
+        run: pnpm --dir apps/control-panel exec playwright install --with-deps chromium
 
       - name: Materialize isolated CI runtime environment
         if: steps.scope.outputs.run == 'true'
@@ -126,8 +126,7 @@ jobs:
           set -euo pipefail
           projects="${{ steps.scope.outputs.images }}"
           [[ -n "$projects" ]] || { echo "Runtime scope selected no images"; exit 1; }
-          node tools/dev/run-ci-command.mjs runtime-images -- \
-            pnpm exec nx run-many -t ci-image --projects="$projects" --outputStyle=stream
+          pnpm exec nx run-many -t ci-image --projects="$projects" --outputStyle=stream
 
       - name: Start affected backend services
         if: steps.scope.outputs.run == 'true'
@@ -137,8 +136,7 @@ jobs:
           services="${{ steps.scope.outputs.services }}"
           [[ -n "$services" ]] || { echo "Runtime scope selected no services"; exit 1; }
           service_args="${services//,/ }"
-          node tools/dev/run-ci-command.mjs runtime-start -- \
-            docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml \
+          docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml \
             up -d --no-build --wait --wait-timeout 300 $service_args
 
       - name: Start Control Panel host
@@ -165,34 +163,7 @@ jobs:
         env:
           CI: "true"
           CI_RUNTIME_TARGETS: ${{ steps.scope.outputs.targets }}
-        run: node tools/dev/run-ci-command.mjs runtime-integration -- pnpm exec nx run repository-ci:runtime-integration --outputStyle=stream
-
-      - name: Report WLT payout registry diagnostics
-        if: failure() && steps.scope.outputs.run == 'true'
-        shell: bash
-        run: |
-          docker compose \
-            --project-name samrim-local \
-            --env-file infra/local/.env \
-            -f infra/local/compose/compose.yaml \
-            logs --no-color --since=5m wlt 2>&1 | grep -F "WLT_PAYOUT_ERROR" || true
-
-      - name: Report DSH publication diagnostics
-        if: failure() && steps.scope.outputs.run == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ ! -f infra/local/.env ]]; then
-            echo "No isolated runtime environment is available."
-            exit 0
-          fi
-          if ! docker compose \
-            --project-name samrim-local \
-            --env-file infra/local/.env \
-            -f infra/local/compose/compose.yaml \
-            logs --no-color dsh 2>&1 | grep -E 'DSH_CATALOG_PRODUCT_|DSH_CATALOG_PROPOSAL_|store publication (persistence|internal) failure'; then
-            echo "No classified DSH runtime diagnostics were emitted."
-          fi
+        run: pnpm exec nx run repository-ci:runtime-integration --outputStyle=stream
 
       - name: Verify runtime proof is non-mutating
         if: always() && steps.scope.outputs.run == 'true'
@@ -201,26 +172,6 @@ jobs:
           set -euo pipefail
           drift="$(git status --porcelain --untracked-files=all)"
           [[ -z "${drift}" ]] || { printf '%s\n' "${drift}"; git diff -- . || true; exit 1; }
-
-      - name: Capture runtime failure package
-        id: failure_package
-        if: failure()
-        shell: bash
-        run: node tools/dev/capture-ci-failure.mjs --kind=runtime
-
-      - name: Upload runtime failure package
-        if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: runtime-failure-${{ env.CANDIDATE_SHA }}-${{ github.run_attempt }}
-          path: ${{ steps.failure_package.outputs.path }}
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Report runtime CI performance
-        if: always()
-        shell: bash
-        run: node tools/dev/report-ci-performance.mjs
 
       - name: Stop Control Panel host
         if: always()
@@ -235,6 +186,7 @@ jobs:
         shell: bash
         run: |
           set +e
+          cleanup_status=0
           if [[ -f infra/local/.env ]]; then
             docker compose \
               --project-name samrim-local \
@@ -247,4 +199,4 @@ jobs:
           else
             echo "CI_RUNTIME_CLEANUP status=skipped-no-env"
           fi
-          exit 0
+          exit "$cleanup_status"

@@ -10,20 +10,6 @@ const data = (relative) => JSON.parse(read(relative));
 const nx = data("nx.json");
 const nxIgnore = read(".nxignore").split(/\r?\n/).map((entry) => entry.trim());
 if (!nxIgnore.includes(".kilo/worktrees/")) failures.push("Nx must ignore local auxiliary worktrees");
-const ciProject = data(".github/project.json");
-const executionProofInputs = ciProject.targets?.["execution-proof-system"]?.inputs ?? [];
-if (executionProofInputs.includes("{workspaceRoot}/**/*")) failures.push("repository-ci:execution-proof-system must not hash the entire repository");
-for (const required of [
-  "{workspaceRoot}/AGENTS.md",
-  "{workspaceRoot}/REPOSITORY-STRUCTURE.md",
-  "{workspaceRoot}/knowledge.sources.json",
-  "{workspaceRoot}/**/project.json",
-  "{workspaceRoot}/tools/dev/runtime-proof/**/*",
-  "{workspaceRoot}/tools/dev/verify-dsh-runtime-core.mjs",
-  "{workspaceRoot}/tools/dev/verify-dsh-location-runtime.mjs",
-]) {
-  if (!executionProofInputs.includes(required)) failures.push("repository-ci:execution-proof-system missing causal input " + required);
-}
 
 const tooling = data("tools/dev/project.json");
 if (tooling.namedInputs?.repository) failures.push("workspace-tooling retains ambiguous repository-wide named input");
@@ -208,7 +194,7 @@ for (const [file, targetName] of [
 ]) {
   if (data(file).targets?.[targetName]?.cache !== false) failures.push(file + ":" + targetName + " must explicitly set cache=false");
 }
-if (ciProject.targets?.["runtime-images"]) failures.push("repository-ci must not own a blanket runtime-images target");
+if (data(".github/project.json").targets?.["runtime-images"]) failures.push("repository-ci must not own a blanket runtime-images target");
 
 if (!read("tools/mobile/export-mobile-smoke.mjs").includes("fs.rmSync(distDir")) {
   failures.push("mobile export smoke no longer proves cleanup of transient output");

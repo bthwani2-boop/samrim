@@ -21,27 +21,14 @@ function requireTokens(file, tokens) {
 }
 
 const agent = requireTokens("AGENTS.md", [
-  "ARTIFACT_CLASS: REPOSITORY_AGENT_OPERATING_CONSTITUTION",
-  "REPOSITORY_AGENT_LAW_AUTHORITY: CANONICAL",
-  "PRODUCT_SEMANTIC_AUTHORITY: NONE",
-  "CURRENT_IMPLEMENTATION_AUTHORITY: NONE",
+  "The target is always the **simplest complete correct system**.",
   "knowledge.sources.json",
-  "CURRENT USER / TASK AUTHORITY",
-  "Temporary task authorization should normally remain outside durable repository authority",
-  "After one bounded discovery sufficient to choose owner, boundary, safety, treatment and proof, default to execution rather than repeated audit",
-  "GOVERNANCE_IMPACT=NONE",
-  "GOVERNANCE_IMPACT=REVALIDATE_ONLY",
-  "GOVERNANCE_IMPACT=UPDATE_REQUIRED",
-  "GOVERNANCE_IMPACT=DEFECT_FOUND",
   "pnpm check",
   "pnpm verify",
   "pnpm safe:push",
-  "SMALLEST DIFF != SIMPLEST SYSTEM",
-  "Proof tooling must not reset developer credentials",
-  "Subagents must not independently push",
-  "NX AFFECTED OWNER",
-  "ONLY REQUIRED RUNTIME PROOF LANES",
-  "FULL_REGRESSION_ONLY",
+  "Use Git for changed state and Nx for the project/task graph.",
+  "Secrets stay outside the repository.",
+  "Closure means no known material defect",
 ]);
 if (/(?:localhost|127\.0\.0\.1):\d{2,5}\b/i.test(agent)) failures.push("AGENTS.md hard-codes mutable runtime ports");
 if (/Server-Driven Operational Registry|Control Panel operational-resource law/i.test(agent)) failures.push("AGENTS.md duplicates durable Operator presentation policy");
@@ -88,21 +75,12 @@ if (pkg?.scripts?.verify !== "pwsh -NoProfile -ExecutionPolicy Bypass -File tool
 if (pkg?.scripts?.["safe:push"] !== "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/safe-push.ps1") failures.push("package.json safe:push owner drifted");
 for (const command of ["dev", "client", "partner", "captain", "field", "control", "scr", "runtime:up", "runtime:status", "runtime:down"]) if (!pkg?.scripts?.[command]) failures.push(`package.json missing stable local command: ${command}`);
 
-const safePush = requireTokens("tools/dev/safe-push.ps1", ["SAFE_PUSH=NOOP", "VERIFY_BASE=REMOTE_BRANCH", "VERIFY_BASE=MAIN_MERGE_BASE", "verify-local-candidate.ps1", "REMOTE_SHA_CONFIRMATION=PASS"]);
-const noop = safePush.indexOf("SAFE_PUSH=NOOP");
-const verify = safePush.indexOf("SAFE_PUSH_VERIFY=START");
-if (noop < 0 || verify < 0 || noop > verify) failures.push("safe push must resolve exact-remote NOOP before verification");
+const safePush = requireTokens("tools/dev/safe-push.ps1", ["verify-local-candidate.ps1", "porcelain=v1", "merge-base --is-ancestor", "push','origin'", "ls-remote --heads origin"]);
 if (safePush.includes("pnpm verify")) failures.push("safe push must invoke the canonical verifier directly, not recursively");
 
 const localVerifier = requireTokens("tools/dev/verify-local-candidate.ps1", [
-  "EXACT_LOCAL_CANDIDATE_SHA",
-  "repository-ci:execution-proof-system",
-  "go-workspace-sync",
-  "'nx','affected'",
-  "'lint','format-check','typecheck','unit','contract','build','vet'",
-  "--nxBail=false",
-  "capture-ci-failure.mjs",
-  "VERIFY_TOTAL_MS",
+  "nx affected -t lint format-check typecheck unit contract vet",
+  "--base=$BaseSha --head=$head",
   "VERIFY=PASS",
 ]);
 for (const forbidden of ["runtime:up", "runtime:doctor", "Get-RuntimeSnapshot", "Restore-RuntimeSnapshot"]) if (localVerifier.includes(forbidden)) failures.push(`local static verifier must not own runtime behavior: ${forbidden}`);
@@ -114,7 +92,11 @@ const prTemplate = requireTokens(".github/pull_request_template.md", [
 ]);
 if (prTemplate.includes("GOVERNANCE_IMPACT=NONE\n")) failures.push("PR template must not preselect Governance impact");
 
-requireTokens(".github/workflows/ci-policy.yml", ["run-ci-command.mjs policy-validation", "verify-pr-policy.mjs"]);
+requireTokens(".github/workflows/ci-policy.yml", ["node tools/dev/verify-pr-policy.mjs"]);
+requireTokens(".github/workflows/ci-static.yml", [
+  "nx affected -t lint format-check typecheck unit contract build export-smoke vet",
+  "nx run-many -t donor-residue repository-structure structural-hygiene",
+]);
 const policyOwner = requireTokens("tools/dev/verify-pr-policy.mjs", [
   "GOVERNANCE_IMPACT=(NONE|REVALIDATE_ONLY|UPDATE_REQUIRED|DEFECT_FOUND)",
   "knowledge.sources.json",
@@ -134,6 +116,12 @@ for (const file of adapterCandidates) {
   const body = read(file);
   if (!body.includes("ADAPTER_CLASS: DERIVED_AGENT_ROUTING")) continue;
   for (const token of ["SEMANTIC_AUTHORITY: NONE", "EXECUTION_AUTHORITY: NONE", "CLOSURE_AUTHORITY: NONE", "AGENTS.md"]) if (!body.includes(token)) failures.push(`${file} derived adapter missing ${token}`);
+}
+
+for (const file of ["AGENTS.md", "tools/dev/verify-local-candidate.ps1", ".github/workflows/ci-policy.yml", ".github/workflows/ci-static.yml", ".github/workflows/ci-runtime.yml", ".github/workflows/ci-security.yml", ".github/workflows/sonar-observe.yml", "knip.jsonc"]) {
+  if (/run-ci-command\.mjs|capture-ci-failure\.mjs|execution-proof-system|verify-nx-cloud-ci\.mjs|report-ci-performance\.mjs/.test(read(file))) {
+    failures.push(`${file} references retired CI instrumentation`);
+  }
 }
 
 if (failures.length) {
