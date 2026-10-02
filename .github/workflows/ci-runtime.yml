@@ -78,6 +78,8 @@ jobs:
           full_runtime=false
           mobile_identity=false
           mobile_dsh=false
+          identity_backend_affected=false
+          dsh_backend_affected=false
           changed_files="$(git diff --name-only "$NX_BASE" "$NX_HEAD")"
           if grep -Eq '^(tests/runtime/|infra/local/|\.github/workflows/ci-runtime\.yml$)' <<< "$changed_files"; then
             full_runtime=true
@@ -126,6 +128,12 @@ jobs:
             if [[ -n "$projects" ]]; then
               echo "RUNTIME_TARGET $target -> $projects"
               run=true
+              if [[ ",$projects," == *,identity-backend,* ]]; then
+                identity_backend_affected=true
+              fi
+              if [[ ",$projects," == *,dsh-backend,* ]]; then
+                dsh_backend_affected=true
+              fi
               if [[ "$target" == "runtime-proof" && ",$projects," == *,dsh-backend,* ]]; then
                 browser=true
                 checker=true
@@ -146,6 +154,8 @@ jobs:
           echo "full_runtime=$full_runtime" >> "$GITHUB_OUTPUT"
           echo "mobile_identity=$mobile_identity" >> "$GITHUB_OUTPUT"
           echo "mobile_dsh=$mobile_dsh" >> "$GITHUB_OUTPUT"
+          echo "identity_backend_affected=$identity_backend_affected" >> "$GITHUB_OUTPUT"
+          echo "dsh_backend_affected=$dsh_backend_affected" >> "$GITHUB_OUTPUT"
 
       - name: Create private DSH checker fixture path
         if: steps.scope.outputs.checker == 'true'
@@ -234,11 +244,11 @@ jobs:
         run: pnpm exec nx affected -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
 
       - name: Run Identity proofs for tagged mobile changes
-        if: steps.scope.outputs.mobile_identity == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        if: steps.scope.outputs.mobile_identity == 'true' && steps.scope.outputs.identity_backend_affected != 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
         run: pnpm exec nx run-many -t migration-proof,runtime-proof --projects=identity-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
 
       - name: Run DSH proofs for tagged mobile changes
-        if: steps.scope.outputs.mobile_dsh == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        if: steps.scope.outputs.mobile_dsh == 'true' && steps.scope.outputs.dsh_backend_affected != 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
         run: pnpm exec nx run-many -t baseline-proof,runtime-proof,location-proof --projects=dsh-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
 
       - name: Run all backend runtime proofs for shared runtime changes
