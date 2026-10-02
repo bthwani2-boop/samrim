@@ -48,6 +48,7 @@ let foreignStoreID = "";
 let serviceCityID = "";
 let clientActorID = "";
 let verticalID = "";
+let commercialStoreTypeID = "";
 const firstStoreOrigin = { firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006 };
 
 function sqlLiteral(value) {
@@ -119,9 +120,9 @@ async function createApprovedPartner(operatorID, phone, name, serviceCityId) {
   const created = await expect(dshBase, "POST", "/dsh/joining-cases", 201, {
     token: controlPanelToken,
     headers: serviceHeaders(operatorID),
-    body: { contactPhoneE164: phone, businessName: `${name} business`, firstStoreName: `${name} store`, serviceCityId, firstStoreVerticalId: verticalID, ...firstStoreOrigin },
+    body: { contactPhoneE164: phone, businessName: `${name} business`, firstStoreName: `${name} store`, serviceCityId, firstStoreVerticalId: verticalID, firstStoreCommercialTypeId: commercialStoreTypeID, firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"], ...firstStoreOrigin },
   });
-  if (created?.case?.state !== "draft" || created.case.firstStoreVerticalId !== verticalID || created.case.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || created.case.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude) throw new Error("location joining case create readback failed");
+  if (created?.case?.state !== "draft" || created.case.firstStoreVerticalId !== verticalID || created.case.firstStoreCommercialTypeId !== commercialStoreTypeID || created.case.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || created.case.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude) throw new Error("location joining case create readback failed");
   const caseID = String(created.case.id);
   const submitted = await expect(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(caseID)}/submit`, 200, {
     token: controlPanelToken,
@@ -135,7 +136,7 @@ async function createApprovedPartner(operatorID, phone, name, serviceCityId) {
     headers: { ...serviceHeaders(operatorID), "X-Expected-Version": "2" },
     body: { decision: "approved", commissionRateBps: 1500, settlementPeriod: "MONTHLY" },
   });
-  if (approved?.case?.state !== "approved" || approved.case.financialProfileState !== "ACTIVE" || approved.case.commissionRateBps !== 1500 || approved.case.settlementPeriod !== "MONTHLY" || typeof approved.case.financialProfileId !== "string" || !approved.case.store?.id || approved.case.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || approved.case.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || approved.case.store.deliveryOrigin?.latitude !== firstStoreOrigin.firstStoreLatitude || approved.case.store.deliveryOrigin?.longitude !== firstStoreOrigin.firstStoreLongitude) throw new Error("location joining case approval did not bind financial terms or preserve store origin");
+  if (approved?.case?.state !== "approved" || approved.case.financialProfileState !== "ACTIVE" || approved.case.commissionRateBps !== 1500 || approved.case.settlementPeriod !== "MONTHLY" || typeof approved.case.financialProfileId !== "string" || !approved.case.store?.id || approved.case.firstStoreCommercialTypeId !== commercialStoreTypeID || approved.case.store.commercialStoreTypeId !== commercialStoreTypeID || approved.case.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || approved.case.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || approved.case.store.deliveryOrigin?.latitude !== firstStoreOrigin.firstStoreLatitude || approved.case.store.deliveryOrigin?.longitude !== firstStoreOrigin.firstStoreLongitude) throw new Error("location joining case approval did not bind financial terms, commercial type, or store origin");
   return { ...fixture, caseID, storeID: String(approved.case.store.id) };
 }
 
@@ -176,6 +177,16 @@ try {
   });
   if (!verticalCreated?.vertical?.id) throw new Error("location vertical canonical create failed");
   verticalID = String(verticalCreated.vertical.id);
+
+  const commercialStoreTypeCreated = await expect(dshBase, "POST", "/dsh/catalog/commercial-store-types", 201, {
+    token: controlPanelToken,
+    headers: serviceHeaders(operatorID),
+    body: { verticalId: verticalID, nameAr: `نوع متجر المواقع ${suffix}`, nameEn: `Location Store Type ${suffix}`, active: true, reason: "DSH Location Core runtime joining case" },
+  });
+  if (!commercialStoreTypeCreated?.storeType?.id || commercialStoreTypeCreated.storeType.verticalId !== verticalID || !commercialStoreTypeCreated.storeType.active) throw new Error("location commercial store type canonical create failed");
+  commercialStoreTypeID = String(commercialStoreTypeCreated.storeType.id);
+  const commercialStoreTypeRead = await expect(dshBase, "GET", `/dsh/catalog/commercial-store-types?verticalId=${encodeURIComponent(verticalID)}`, 200, { token: controlPanelToken, headers: { "X-Acting-Actor-ID": operatorID } });
+  if (!commercialStoreTypeRead.storeTypes?.some((item) => item.id === commercialStoreTypeID && item.active)) throw new Error("location commercial store type readback failed");
 
   const client = await createClientSession(clientPhone, `location-client-${suffix}`);
   const partnerFixture = await createApprovedPartner(operatorID, partnerPhone, "Location Runtime", serviceCityID);
