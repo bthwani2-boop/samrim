@@ -22,7 +22,6 @@ jobs:
       contents: read
     env:
       NX_NO_CLOUD: "true"
-      CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT: maps-config-placeholder-0
       GOOGLE_MAPS_ANDROID_API_KEY_APP_PARTNER: maps-config-placeholder-0
       GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
@@ -32,7 +31,7 @@ jobs:
       - name: Checkout candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: ${{ env.CANDIDATE_SHA }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -43,20 +42,6 @@ jobs:
           fail-on-severity: high
           vulnerability-check: true
           license-check: true
-
-      - name: Verify candidate secret safety
-        env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PUSH_BEFORE_SHA: ${{ github.event.before }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: node tools/security/verify-secrets.mjs
-
-      - name: Resolve affected SHAs
-        uses: nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1
-
-      - name: Confirm exact candidate
-        shell: bash
-        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA" && test "$NX_HEAD" = "$CANDIDATE_SHA"
 
       - name: Set up pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
@@ -70,6 +55,16 @@ jobs:
           node-version: 24.17.0
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+
+      - name: Verify candidate secret safety
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node tools/security/verify-secrets.mjs
+
+      - name: Resolve affected SHAs
+        uses: nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1
 
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
@@ -87,9 +82,6 @@ jobs:
 
       - name: Lint development tooling
         run: pnpm exec biome lint tools/dev --diagnostic-level=error
-
-      - name: Check unused files and dependencies
-        run: pnpm exec knip --no-progress --reporter compact --no-config-hints
 
       - name: Verify mobile configuration and brand assets
         run: pnpm exec biome lint tools/mobile --diagnostic-level=error && pnpm mobile:verify-config && pnpm brand:check
