@@ -24,6 +24,8 @@ jobs:
     timeout-minutes: 35
     env:
       NX_NO_CLOUD: "true"
+      CI: "true"
+      BTHWANI_IDENTITY_PROOF_SCOPE: disposable-ci
       CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout candidate
@@ -175,9 +177,6 @@ jobs:
       - name: Prepare isolated DSH checker operator
         if: steps.scope.outputs.checker == 'true'
         shell: bash
-        env:
-          CI: "true"
-          BTHWANI_IDENTITY_PROOF_SCOPE: disposable-ci
         run: |
           set -euo pipefail
           set -a
@@ -193,23 +192,14 @@ jobs:
 
       - name: Run affected backend runtime proofs
         if: steps.scope.outputs.run == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
-        env:
-          CI: "true"
-          BTHWANI_IDENTITY_PROOF_SCOPE: disposable-ci
         run: pnpm exec nx affected -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
 
       - name: Run all backend runtime proofs for shared runtime changes
         if: steps.scope.outputs.full_runtime == 'true' && github.event_name != 'schedule'
-        env:
-          CI: "true"
-          BTHWANI_IDENTITY_PROOF_SCOPE: disposable-ci
         run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
 
       - name: Run weekly backend runtime regression
         if: steps.scope.outputs.run == 'true' && github.event_name == 'schedule'
-        env:
-          CI: "true"
-          BTHWANI_IDENTITY_PROOF_SCOPE: disposable-ci
         run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache
 
       - name: Run affected Control Panel proof
