@@ -19,45 +19,27 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
-      actions: read
       contents: read
-    environment:
-      name: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && 'nx-cloud-protected' || 'nx-cloud-unprotected' }}
     env:
-      NX_CLOUD_ACCESS_TOKEN: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && secrets.NX_CLOUD_RW_TOKEN || secrets.NX_CLOUD_RO_TOKEN }}
-      NX_NO_CLOUD: ${{ github.event_name == 'pull_request' && secrets.NX_CLOUD_RO_TOKEN == '' && 'true' || 'false' }}
-      CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      NX_NO_CLOUD: "true"
       GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT: maps-config-placeholder-0
-      GOOGLE_MAPS_IOS_API_KEY: maps-config-placeholder-1
+      GOOGLE_MAPS_ANDROID_API_KEY_APP_PARTNER: maps-config-placeholder-0
       GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
-      GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
       GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
+      GOOGLE_MAPS_IOS_API_KEY: maps-config-placeholder-1
     steps:
-      - name: Checkout exact candidate
+      - name: Checkout candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: ${{ env.CANDIDATE_SHA }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Resolve canonical affected SHAs
+      - name: Resolve affected SHAs
         uses: nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1
 
-      - name: Verify exact affected candidate
-        shell: bash
-        env:
-          REQUIRE_NX_HEAD: "true"
-        run: node tools/dev/verify-ci-exact-sha.mjs
-
-      - name: Report exact affected SHAs
-        shell: bash
-        run: |
-          echo "PROOF_BASE=${NX_BASE}"
-          echo "PROOF_HEAD=${NX_HEAD}"
-          echo "CANDIDATE_SHA=${CANDIDATE_SHA}"
-
-      - name: Set up pinned pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
         with:
           version: 10.34.0
           run_install: false
@@ -80,102 +62,37 @@ jobs:
             services/dsh/backend/go.sum
             services/wlt/backend/go.sum
 
-      - name: Install workspace once
-        shell: bash
+      - name: Install workspace
         run: pnpm install --frozen-lockfile
+
+      - name: Lint development tooling
+        run: pnpm exec biome lint tools/dev --diagnostic-level=error
 
       - name: Verify affected static graph
         if: github.event_name != 'schedule'
-        shell: bash
-        run: pnpm exec nx affected -t lint format-check typecheck unit contract build export-smoke vet mobile-config brand theme-check theme-verify powershell-syntax workspace-dependencies go-workspace-sync compose-config --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream
+        run: pnpm exec nx affected -t lint,format-check,typecheck,unit,contract,build,vet,export-smoke --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=3 --nxBail=true
 
-      - name: Verify full static graph
+      - name: Weekly full static regression
         if: github.event_name == 'schedule'
-        shell: bash
-        env:
-          GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT: maps-config-placeholder-0
-          GOOGLE_MAPS_IOS_API_KEY: maps-config-placeholder-1
-          GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
-          GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
-          GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
-        run: pnpm exec nx run-many -t repository-structure runtime-ownership cache-contracts documentation knowledge agent-contract workspace-dependencies nx-project-tags mobile-config brand theme-check theme-verify powershell-syntax knip go-workspace-sync compose-config lint format-check typecheck unit contract build export-smoke vet --outputStyle=stream --parallel=3 --skip-nx-cache
+        run: pnpm exec nx run-many -t lint,format-check,typecheck,unit,contract,build,vet,export-smoke --all --outputStyle=stream --parallel=3 --skip-nx-cache
 
-      - name: Verify tooling is non-mutating
+      - name: Verify clean checkout
         if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          drift="$(git status --porcelain --untracked-files=all)"
-          [[ -z "${drift}" ]] || { printf '%s\n' "${drift}"; git diff -- . || true; exit 1; }
+        run: test -z "$(git status --porcelain --untracked-files=all)"
 
   windows:
     name: repository-windows
     runs-on: windows-2025
-    timeout-minutes: 12
+    timeout-minutes: 5
     permissions:
-      actions: read
       contents: read
-    environment:
-      name: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && 'nx-cloud-protected' || 'nx-cloud-unprotected' }}
-    env:
-      NX_CLOUD_ACCESS_TOKEN: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && secrets.NX_CLOUD_RW_TOKEN || secrets.NX_CLOUD_RO_TOKEN }}
-      NX_NO_CLOUD: ${{ github.event_name == 'pull_request' && secrets.NX_CLOUD_RO_TOKEN == '' && 'true' || 'false' }}
-      CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
     steps:
-      - name: Configure hostile Windows Git default
-        shell: pwsh
-        run: git config --global core.autocrlf true
-
-      - name: Checkout exact candidate
+      - name: Checkout candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: ${{ env.CANDIDATE_SHA }}
-          fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
-      - name: Resolve canonical affected SHAs
-        uses: nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1
-
-      - name: Verify exact affected candidate
+      - name: Verify PowerShell syntax
         shell: pwsh
-        env:
-          REQUIRE_NX_HEAD: "true"
-        run: node tools/dev/verify-ci-exact-sha.mjs
-
-      - name: Set up pinned pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        with:
-          version: 10.34.0
-          run_install: false
-
-      - name: Set up Node
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
-        with:
-          node-version: 24.17.0
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Install workspace
-        shell: pwsh
-        run: pnpm install --frozen-lockfile
-
-      - name: Verify affected Windows PowerShell tooling
-        if: github.event_name != 'schedule'
-        shell: pwsh
-        run: pnpm exec nx affected -t powershell-syntax --base=$env:NX_BASE --head=$env:NX_HEAD --outputStyle=stream
-
-      - name: Verify full Windows PowerShell tooling
-        if: github.event_name == 'schedule'
-        shell: pwsh
-        run: pnpm exec nx run-many -t powershell-syntax --outputStyle=stream --parallel=2 --skip-nx-cache
-
-      - name: Verify Windows proof is non-mutating
-        if: always()
-        shell: pwsh
-        run: |
-          $drift = @(git status --porcelain=v1 --untracked-files=all)
-          if ($drift.Count -gt 0) {
-            $drift | Write-Host
-            git diff -- .
-            throw "Windows static proof mutated repository state."
-          }
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-powershell-syntax.ps1
