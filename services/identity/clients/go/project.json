@@ -33,7 +33,7 @@
     "format-check": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "node tools/dev/check-go-format.mjs services/identity/clients/go"
+        "command": "node tools/go/format-check.mjs services/identity/clients/go"
       }
     }
   },
