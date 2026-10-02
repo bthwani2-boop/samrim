@@ -59,8 +59,23 @@ func verifyStoreCommercialTypeAssignment(t *testing.T, ctx context.Context, db *
 	t.Helper()
 	storeID := "store-type-assignment-" + suffix
 	insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{ID: storeID, PartnerActorID: "partner-type-assignment-" + suffix, Name: "Assignment fixture", PrimaryVerticalID: verticalID})
-	if _, err := db.ExecContext(ctx, "UPDATE dsh.stores SET commercial_store_type_id=NULL, version=1 WHERE id=$1", storeID); err != nil {
-		t.Fatalf("prepare store for commercial type assignment: %v", err)
+	legacyFixture, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin legacy store fixture transaction: %v", err)
+	}
+	defer func() { _ = legacyFixture.Rollback() }()
+	// Model a pre-migration store: migration 081 only guards future inserts and updates.
+	if _, err := legacyFixture.ExecContext(ctx, "ALTER TABLE dsh.stores DISABLE TRIGGER stores_require_commercial_type"); err != nil {
+		t.Fatalf("disable new-store guard while preparing legacy fixture: %v", err)
+	}
+	if _, err := legacyFixture.ExecContext(ctx, "UPDATE dsh.stores SET commercial_store_type_id=NULL, version=1 WHERE id=$1", storeID); err != nil {
+		t.Fatalf("prepare legacy store for commercial type assignment: %v", err)
+	}
+	if _, err := legacyFixture.ExecContext(ctx, "ALTER TABLE dsh.stores ENABLE TRIGGER stores_require_commercial_type"); err != nil {
+		t.Fatalf("restore new-store commercial type guard: %v", err)
+	}
+	if err := legacyFixture.Commit(); err != nil {
+		t.Fatalf("commit legacy store fixture: %v", err)
 	}
 	input := postgres.StoreCommercialTypeAssignmentInput{
 		StoreID: storeID, TypeID: item.ID, ActorID: testOperatorActorID,
