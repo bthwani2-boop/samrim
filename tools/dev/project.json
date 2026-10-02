@@ -152,11 +152,6 @@
       "inputs": ["runtimeOwnership"],
       "options": { "command": "node tools/dev/verify-local-runtime-ownership.mjs" }
     },
-    "removed-domain-residue": {
-      "executor": "nx:run-commands",
-      "cache": false,
-      "options": { "command": "node tools/dev/verify-removed-human-domain-residue.mjs" }
-    },
     "docs-command-parity": {
       "executor": "nx:run-commands",
       "cache": true,

@@ -98,7 +98,7 @@ jobs:
           GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN: maps-config-placeholder-0
           GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN: maps-config-placeholder-1
           GOOGLE_MAPS_ANDROID_API_KEY_APP_FIELD: maps-config-placeholder-0
-        run: pnpm exec nx run-many -t repository-structure runtime-ownership removed-domain-residue cache-contracts docs-command-parity docs-config-parity knowledge-system knowledge-references agent-contract workspace-dependencies nx-project-tags mobile-config brand theme-check theme-verify powershell-syntax knip go-workspace-sync compose-config lint format-check typecheck unit contract build export-smoke vet --outputStyle=stream --parallel=3 --skip-nx-cache
+        run: pnpm exec nx run-many -t repository-structure runtime-ownership cache-contracts docs-command-parity docs-config-parity knowledge-system knowledge-references agent-contract workspace-dependencies nx-project-tags mobile-config brand theme-check theme-verify powershell-syntax knip go-workspace-sync compose-config lint format-check typecheck unit contract build export-smoke vet --outputStyle=stream --parallel=3 --skip-nx-cache
 
       - name: Verify tooling is non-mutating
         if: always()

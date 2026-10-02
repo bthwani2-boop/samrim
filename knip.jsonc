@@ -26,7 +26,6 @@
         "tools/dev/verify-nx-project-tags.mjs",
         "tools/dev/verify-pr-policy.mjs",
         "tools/dev/verify-pr-policy.test.mjs",
-        "tools/dev/verify-removed-human-domain-residue.mjs",
         "tools/dev/verify-repository-structure.mjs",
         "tools/dev/verify-secret-safety.mjs",
         "tools/dev/verify-workspace-dependencies.mjs",
