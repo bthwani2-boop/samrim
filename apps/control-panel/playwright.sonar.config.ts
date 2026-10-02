@@ -45,6 +45,7 @@ export default defineConfig({
   },
   webServer: {
     command: "node node_modules/next/dist/bin/next dev --hostname localhost --port 4173",
+    cwd: appRoot,
     url: baseURL,
     reuseExistingServer: false,
     timeout: 180_000,
