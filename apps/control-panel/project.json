@@ -15,7 +15,9 @@
         "default",
         "^default",
         "nodeToolchain",
-        "controlPanelBuildEnvironment"
+        "controlPanelBuildEnvironment",
+        "{workspaceRoot}/tests/runtime/runtime-proof/trusted-executables.mjs",
+        "{workspaceRoot}/tests/runtime/runtime-proof/trusted-executables.d.mts"
       ]
     },
     "build": {

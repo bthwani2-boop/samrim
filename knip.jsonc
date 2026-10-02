@@ -4,6 +4,7 @@
     ".": {
       "entry": [
         "tools/go/format-check.mjs",
+        "tools/security/verify-secrets.mjs",
         "tests/runtime/mailpit-challenge.mjs",
         "tests/runtime/runtime-proof/canonical-dsh-migration-history.mjs",
         "tests/runtime/runtime-proof/challenge-source.mjs",
@@ -41,7 +42,7 @@
       "playwright": false
     },
     "packages/design-system": {
-      "entry": ["src/index.ts", "src/native/index.tsx"]
+      "entry": ["src/index.ts", "src/native/index.tsx", "tools/verify-theme-authority.mjs"]
     }
   },
   "ignore": [

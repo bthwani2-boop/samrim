@@ -102,6 +102,17 @@ jobs:
         if: github.event_name != 'schedule'
         run: pnpm exec nx affected -t lint,format-check,typecheck,unit,contract,build,vet,export-smoke,compose-config --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=3 --nxBail=true
 
+      - name: Verify consumers of trusted executable resolution changes
+        if: github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --name-only "$NX_BASE" "$NX_HEAD" | grep -Eq '^tests/runtime/runtime-proof/trusted-executables\.(mjs|d\.mts)$'; then
+            pnpm exec nx run identity:contract --outputStyle=stream --skip-nx-cache
+            pnpm exec nx run dsh:contract --outputStyle=stream --skip-nx-cache
+            pnpm exec nx run control-panel:typecheck --outputStyle=stream --skip-nx-cache
+          fi
+
       - name: Verify mobile consumers when shared tooling changes
         if: github.event_name != 'schedule'
         shell: bash

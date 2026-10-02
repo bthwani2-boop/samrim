@@ -149,7 +149,7 @@ func verifyDeliveryHandoffReadbacks(ctx context.Context, db *sql.DB) (int, error
 		LEFT JOIN LATERAL (
 			SELECT id,payment_intent_id,captain_actor_id,amount_minor,state
 			FROM wlt.captain_cod_reservations
-			WHERE order_id=o.order_id AND payment_intent_id=o.payment_intent_id AND captain_actor_id=o.captain_actor_id
+			WHERE order_id=o.order_id AND payment_intent_id=o.payment_intent_id AND captain_actor_id=o.captain_actor_id AND state IN ('FINALIZED','REMITTED')
 			ORDER BY created_at DESC,id DESC LIMIT 1
 		) c ON TRUE
 		WHERE o.state='POSTED' AND o.effect_type='DELIVERY_SETTLEMENT'`)
@@ -157,7 +157,7 @@ func verifyDeliveryHandoffReadbacks(ctx context.Context, db *sql.DB) (int, error
 		return 0, err
 	}
 	defer rows.Close()
-	var readbacks, violations int
+	var readbacks, violations, detailsLogged int
 	for rows.Next() {
 		readbacks++
 		var r deliveryHandoffReadback
@@ -170,13 +170,16 @@ func verifyDeliveryHandoffReadbacks(ctx context.Context, db *sql.DB) (int, error
 		}
 		if issues := r.violations(); len(issues) > 0 {
 			violations++
-			logReadbackFailure("posted-delivery-handoff-readback", r.OrderID, issues)
+			if detailsLogged < 10 {
+				logReadbackFailure("posted-delivery-handoff-readback", r.OrderID, issues)
+				detailsLogged++
+			}
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return violations, err
 	}
-	logReadbackResult("posted-delivery-handoff-readback", readbacks, violations)
+	logReadbackResult("posted-delivery-handoff-readback", readbacks, violations, detailsLogged)
 	return violations, nil
 }
 
@@ -194,7 +197,7 @@ func verifyStoreCashHandoffReadbacks(ctx context.Context, db *sql.DB) (int, erro
 		return 0, err
 	}
 	defer rows.Close()
-	var readbacks, violations int
+	var readbacks, violations, detailsLogged int
 	for rows.Next() {
 		readbacks++
 		var r storeCashHandoffReadback
@@ -206,13 +209,16 @@ func verifyStoreCashHandoffReadbacks(ctx context.Context, db *sql.DB) (int, erro
 		}
 		if issues := r.violations(); len(issues) > 0 {
 			violations++
-			logReadbackFailure("posted-store-cash-handoff-readback", r.OrderID, issues)
+			if detailsLogged < 10 {
+				logReadbackFailure("posted-store-cash-handoff-readback", r.OrderID, issues)
+				detailsLogged++
+			}
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return violations, err
 	}
-	logReadbackResult("posted-store-cash-handoff-readback", readbacks, violations)
+	logReadbackResult("posted-store-cash-handoff-readback", readbacks, violations, detailsLogged)
 	return violations, nil
 }
 
@@ -220,10 +226,10 @@ func logReadbackFailure(name, orderID string, issues []string) {
 	log.Printf("WLT_FINANCIAL_INVARIANT=%s ROW_FAIL order_id=%s reasons=%s", name, orderID, strings.Join(issues, ","))
 }
 
-func logReadbackResult(name string, readbacks, violations int) {
+func logReadbackResult(name string, readbacks, violations, detailsLogged int) {
 	if violations == 0 {
 		log.Printf("WLT_FINANCIAL_INVARIANT=%s PASS rows=%d", name, readbacks)
 		return
 	}
-	log.Printf("WLT_FINANCIAL_INVARIANT=%s FAIL violations=%d rows=%d", name, violations, readbacks)
+	log.Printf("WLT_FINANCIAL_INVARIANT=%s FAIL violations=%d rows=%d detail_rows=%d", name, violations, readbacks, detailsLogged)
 }

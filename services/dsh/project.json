@@ -11,6 +11,8 @@
       "inputs": [
         "default",
         "^default",
+        "{workspaceRoot}/tests/runtime/runtime-proof/trusted-executables.mjs",
+        "{workspaceRoot}/tests/runtime/runtime-proof/trusted-executables.d.mts",
         {
           "runtime": "node --version"
         },

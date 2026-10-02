@@ -76,6 +76,8 @@ jobs:
           checker=false
           control_proof=false
           full_runtime=false
+          mobile_identity=false
+          mobile_dsh=false
           changed_files="$(git diff --name-only "$NX_BASE" "$NX_HEAD")"
           if grep -Eq '^(tests/runtime/|infra/local/|\.github/workflows/ci-runtime\.yml$)' <<< "$changed_files"; then
             full_runtime=true
@@ -83,6 +85,41 @@ jobs:
             browser=true
             checker=true
             control_proof=true
+          fi
+          mobile_scope="$(node - "$changed_files" <<'NODE'
+          const fs = require("node:fs");
+          const files = process.argv[2].split(/\r?\n/);
+          const projects = new Set(files.map((file) => file.match(/^apps\/(app-(?:client|partner|captain|field))\//)?.[1]).filter(Boolean));
+          const lanes = new Set();
+          for (const project of projects) {
+            const config = JSON.parse(fs.readFileSync(`apps/${project}/project.json`, "utf8"));
+            const tags = (config.tags ?? []).filter((tag) => tag.startsWith("runtime:"));
+            if (tags.length === 0) throw new Error(`${project} has no runtime lane tags`);
+            for (const tag of tags) {
+              if (tag !== "runtime:identity" && tag !== "runtime:dsh") throw new Error(`${project} has unsupported runtime lane ${tag}`);
+              lanes.add(tag.slice("runtime:".length));
+            }
+          }
+          console.log([...projects].sort().join(","));
+          console.log([...lanes].sort().join(","));
+          NODE
+          )"
+          mobile_projects="${mobile_scope%%$'\n'*}"
+          mobile_lanes="${mobile_scope#*$'\n'}"
+          echo "MOBILE_RUNTIME_PROJECTS=$mobile_projects"
+          echo "MOBILE_RUNTIME_LANES=$mobile_lanes"
+          for lane in ${mobile_lanes//,/ }; do
+            case "$lane" in
+              identity) mobile_identity=true ;;
+              dsh) mobile_dsh=true ;;
+            esac
+          done
+          if [[ "$mobile_identity" == "true" || "$mobile_dsh" == "true" ]]; then
+            run=true
+          fi
+          if [[ "$mobile_dsh" == "true" ]]; then
+            browser=true
+            checker=true
           fi
           for target in migration-proof runtime-proof schema-proof financial-invariants baseline-proof location-proof; do
             projects="$(pnpm exec nx show projects --affected --with-target="$target" --base="$NX_BASE" --head="$NX_HEAD" --sep=, --no-cloud)"
@@ -107,6 +144,8 @@ jobs:
           echo "checker=$checker" >> "$GITHUB_OUTPUT"
           echo "control_proof=$control_proof" >> "$GITHUB_OUTPUT"
           echo "full_runtime=$full_runtime" >> "$GITHUB_OUTPUT"
+          echo "mobile_identity=$mobile_identity" >> "$GITHUB_OUTPUT"
+          echo "mobile_dsh=$mobile_dsh" >> "$GITHUB_OUTPUT"
 
       - name: Create private DSH checker fixture path
         if: steps.scope.outputs.checker == 'true'
@@ -193,6 +232,14 @@ jobs:
       - name: Run affected backend runtime proofs
         if: steps.scope.outputs.run == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
         run: pnpm exec nx affected -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
+
+      - name: Run Identity proofs for tagged mobile changes
+        if: steps.scope.outputs.mobile_identity == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof --projects=identity-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run DSH proofs for tagged mobile changes
+        if: steps.scope.outputs.mobile_dsh == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t baseline-proof,runtime-proof,location-proof --projects=dsh-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
 
       - name: Run all backend runtime proofs for shared runtime changes
         if: steps.scope.outputs.full_runtime == 'true' && github.event_name != 'schedule'
