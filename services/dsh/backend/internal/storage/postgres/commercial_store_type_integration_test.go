@@ -52,6 +52,45 @@ func runCommercialStoreTypeScenario(t *testing.T, ctx context.Context, db *sql.D
 	item := createCommercialTypeAndVerifyIdempotency(t, ctx, db, verticalID, suffix)
 	verifyCommercialTypeReads(t, ctx, db, item, verticalID, suffix)
 	updateCommercialType(t, ctx, db, item, verticalID, suffix)
+	verifyStoreCommercialTypeAssignment(t, ctx, db, item, verticalID, suffix)
+}
+
+func verifyStoreCommercialTypeAssignment(t *testing.T, ctx context.Context, db *sql.DB, item postgres.CommercialStoreTypeRecord, verticalID, suffix string) {
+	t.Helper()
+	storeID := "store-type-assignment-" + suffix
+	insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{ID: storeID, PartnerActorID: "partner-type-assignment-" + suffix, Name: "Assignment fixture", PrimaryVerticalID: verticalID})
+	if _, err := db.ExecContext(ctx, "UPDATE dsh.stores SET commercial_store_type_id=NULL, version=1 WHERE id=$1", storeID); err != nil {
+		t.Fatalf("prepare store for commercial type assignment: %v", err)
+	}
+	input := postgres.StoreCommercialTypeAssignmentInput{
+		StoreID: storeID, TypeID: item.ID, ActorID: testOperatorActorID,
+		Reason: "Assign commercial type", CorrelationID: "corr-store-type-assignment-" + suffix,
+		IdempotencyKey: "idem-store-type-assignment-" + suffix, ExpectedVersion: 1,
+	}
+	assigned, err := postgres.SetStoreCommercialType(ctx, db, input)
+	if err != nil || assigned.StoreID != storeID || assigned.CommercialStoreTypeID != item.ID || assigned.Version != 2 || assigned.Replayed {
+		t.Fatalf("assign commercial type = %+v, error=%v", assigned, err)
+	}
+	replayed, err := postgres.SetStoreCommercialType(ctx, db, input)
+	if err != nil || !replayed.Replayed || replayed.Version != assigned.Version || replayed.CommercialStoreTypeID != item.ID {
+		t.Fatalf("replay commercial type assignment = %+v, error=%v", replayed, err)
+	}
+	changed := input
+	changed.Reason = "Changed assignment reason"
+	if _, err := postgres.SetStoreCommercialType(ctx, db, changed); !errors.Is(err, postgres.ErrCatalogIdempotencyConflict) {
+		t.Fatalf("changed assignment replay error = %v", err)
+	}
+	stale := input
+	stale.IdempotencyKey += "-stale"
+	if _, err := postgres.SetStoreCommercialType(ctx, db, stale); !errors.Is(err, postgres.ErrStoreCommercialTypeAssignmentVersion) {
+		t.Fatalf("stale assignment version error = %v", err)
+	}
+	if _, err := postgres.SetStoreCommercialType(ctx, db, postgres.StoreCommercialTypeAssignmentInput{StoreID: "missing-store", TypeID: item.ID, ActorID: testOperatorActorID, Reason: input.Reason, CorrelationID: "corr-missing-store-" + suffix, IdempotencyKey: "idem-missing-store-" + suffix, ExpectedVersion: 1}); !errors.Is(err, postgres.ErrStoreCommercialTypeAssignmentConflict) {
+		t.Fatalf("missing store assignment error = %v", err)
+	}
+	if _, err := postgres.SetStoreCommercialType(ctx, nil, input); !errors.Is(err, postgres.ErrStoreCommercialTypeAssignmentInvalid) {
+		t.Fatalf("nil database assignment error = %v", err)
+	}
 }
 
 func createCommercialTypeVertical(t *testing.T, ctx context.Context, db *sql.DB, suffix string) string {
