@@ -12,6 +12,16 @@ mock.module(new URL("../../services/dsh/clients/index.ts", import.meta.url).href
       updateOperatorCommercialStoreTypeCommissionPolicy: { method: "POST", path: "/dsh/operator/commercial-store-type-commission-policies" },
       createFieldAcquisitionRewardPolicy: { method: "POST", path: "/dsh/operator/field-acquisition-reward-policies" },
       readFieldAcquisitionRewardPolicyByScope: { method: "GET", path: "/dsh/operator/field-acquisition-reward-policies" },
+      listOperatorFieldAcquisitionCases: { method: "GET", path: "/dsh/operator/fields/{fieldActorId}/acquisition-cases" },
+      admitField: { method: "POST", path: "/dsh/fields/admissions" },
+      listFieldAdmissions: { method: "GET", path: "/dsh/fields/admissions" },
+      approveFieldAdmission: { method: "POST", path: "/dsh/fields/admissions/{admissionId}/approve" },
+      provisionFieldAdmission: { method: "POST", path: "/dsh/fields/admissions/{admissionId}/provision" },
+      updateFieldAdmissionProfile: { method: "PATCH", path: "/dsh/fields/admissions/{admissionId}/profile" },
+      reviewFieldAdmissionProfile: { method: "POST", path: "/dsh/fields/admissions/{admissionId}/profile-review" },
+      readFieldAdmissionForOperatorActor: { method: "GET", path: "/dsh/fields/actors/{actorId}/admission" },
+      setFieldIdentityRoleEnabled: { method: "POST", path: "/dsh/fields/{actorId}/identity-role" },
+      authorizeFieldReenrollment: { method: "POST", path: "/dsh/fields/{actorId}/reenrollment" },
     },
   },
 });
@@ -28,12 +38,22 @@ mock.module(new URL("../../services/identity/clients/index.ts", import.meta.url)
 const {
   createCommercialStoreType,
   createOperatorFieldAcquisitionRewardPolicy,
+  admitField,
+  approveFieldAdmission,
+  authorizeDshFieldReenrollment,
   dshErrorPayload,
   dshHttpStatus,
   isDshClientError,
   listCommercialStoreTypes,
+  listFieldAdmissions,
+  listOperatorFieldAcquisitionCases,
+  provisionFieldAdmission,
   readOperatorFieldAcquisitionRewardPolicyByScope,
   readOperatorPartnerStoreCommissionPolicies,
+  readFieldAdmissionByActor,
+  reviewFieldAdmissionProfile,
+  setDshFieldRoleEnabled,
+  updateFieldAdmissionProfile,
   updateCommercialStoreType,
   updateOperatorPartnerStoreCommissionPolicy,
 } = await import("../../apps/control-panel/src/server/dsh/dsh-bff.ts");
@@ -156,4 +176,60 @@ test("DSH BFF maps HTTP, network, and service configuration failures", async (t)
 
   assert.deepEqual(dshErrorPayload(new Error("unexpected")), { code: "DSH_INTERNAL_ERROR", message: "dsh request failed" });
   assert.equal(dshHttpStatus(new Error("unexpected")), 502);
+});
+
+test("Field admissions and acquisition BFF preserve actor, cursor, mutation, and version contracts", async (t) => {
+  const requests = [];
+  configureDsh(t, async (input, init) => {
+    const url = new URL(input);
+    requests.push({ url, init, body: init.body ? JSON.parse(init.body) : undefined });
+    return jsonResponse({ admission: { id: "admission-1" }, cases: [], nextCursor: "next" }, init.method === "POST" ? 201 : 200);
+  });
+
+  const roleContext = { operatorActorId: " operator-1 ", correlationId: "field-correlation", idempotencyKey: "field-idempotency" };
+  await listOperatorFieldAcquisitionCases(" field/one ", " shop ", 10, " cursor-1 ", operator);
+  await admitField({ fullNameAr: " اسم ميداني ", contactPhoneE164: " +967700000000 ", serviceCityId: " sanaa " }, roleContext);
+  await listFieldAdmissions(" field ", "pending", "created_desc", 25, "cursor-2", operator);
+  await approveFieldAdmission(" admission/one ", 2, roleContext);
+  await provisionFieldAdmission(" admission/one ", roleContext);
+  await updateFieldAdmissionProfile(" admission/one ", " اسم محدث ", { ...mutation, expectedVersion: 3 });
+  await reviewFieldAdmissionProfile(" admission/one ", { ...mutation, expectedVersion: 3 });
+  await readFieldAdmissionByActor(" actor/one ", operator);
+  await setDshFieldRoleEnabled(" actor/one ", { enabled: false, reason: "Disable Field access" }, { ...mutation, expectedVersion: 4 });
+  await authorizeDshFieldReenrollment(" actor/one ", { expectedActorVersion: 4, expectedRoleVersion: 5, reason: "Re-enroll Field" }, { operatorActorId: operator.operatorActorId, correlationId: "reenroll-correlation", expectedAdmissionVersion: 3 });
+
+  assert.equal(requests.length, 10);
+  assert.equal(requests[0].url.pathname, "/dsh/operator/fields/field%2Fone/acquisition-cases");
+  assert.equal(requests[0].url.searchParams.get("q"), "shop");
+  assert.equal(requests[0].url.searchParams.get("cursor"), "cursor-1");
+  assert.equal(requests[0].init.headers["X-Acting-Actor-ID"], "operator-1");
+  assert.deepEqual(requests[1].body, { fullNameAr: "اسم ميداني", contactPhoneE164: "+967700000000", serviceCityId: "sanaa" });
+  assert.equal(requests[1].init.headers["Idempotency-Key"], "field-idempotency");
+  assert.equal(requests[2].url.searchParams.get("state"), "pending");
+  assert.equal(requests[2].url.searchParams.get("cursor"), "cursor-2");
+  assert.equal(requests[3].init.headers["X-Expected-Version"], "2");
+  assert.equal(requests[4].url.pathname, "/dsh/fields/admissions/admission%2Fone/provision");
+  assert.deepEqual(requests[5].body, { fullNameAr: "اسم محدث" });
+  assert.equal(requests[5].init.headers["X-Expected-Version"], "3");
+  assert.equal(requests[6].init.headers["X-Expected-Version"], "3");
+  assert.equal(requests[7].url.pathname, "/dsh/fields/actors/actor%2Fone/admission");
+  assert.deepEqual(requests[8].body, { enabled: false, reason: "Disable Field access" });
+  assert.equal(requests[8].init.headers["X-Expected-Version"], "4");
+  assert.deepEqual(requests[9].body, { expectedActorVersion: 4, expectedRoleVersion: 5, reason: "Re-enroll Field" });
+  assert.equal(requests[9].init.headers["X-Expected-Version"], "3");
+});
+
+test("Field admission BFF rejects incomplete canonical facts before transport", async (t) => {
+  let calls = 0;
+  configureDsh(t, async () => {
+    calls += 1;
+    return jsonResponse({ accepted: true });
+  });
+  await assert.rejects(admitField({ fullNameAr: " ", contactPhoneE164: "+967700000000", serviceCityId: "sanaa" }, mutation), /DSH_FIELD_NAME_INVALID/);
+  await assert.rejects(admitField({ fullNameAr: "اسم", contactPhoneE164: "invalid", serviceCityId: "sanaa" }, mutation), /DSH_FIELD_PHONE_INVALID/);
+  await assert.rejects(admitField({ fullNameAr: "اسم", contactPhoneE164: "+967700000000", serviceCityId: " " }, mutation), /DSH_FIELD_SERVICE_CITY_INVALID/);
+  await assert.rejects(listOperatorFieldAcquisitionCases(" ", "", 10, "", operator), /DSH_FIELD_ACQUISITION_QUERY_INVALID/);
+  await assert.rejects(readFieldAdmissionByActor(" ", operator), /DSH_FIELD_ADMISSION_READ_INPUT_INVALID/);
+  await assert.rejects(authorizeDshFieldReenrollment(" ", { expectedActorVersion: 1, expectedRoleVersion: 1, reason: "valid reason" }, { operatorActorId: "operator-1", correlationId: "valid-correlation", expectedAdmissionVersion: 1 }), /DSH_MANAGED_ROLE_REENROLLMENT_CONTEXT_INVALID/);
+  assert.equal(calls, 0);
 });

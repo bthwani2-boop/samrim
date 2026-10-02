@@ -115,6 +115,7 @@ jobs:
             tools/dev/verify-local-speed-contract.mjs \
             tools/dev/verify-local-speed-contract.test.mjs \
             tools/dev/dsh-bff-coverage.test.mjs \
+            tools/dev/control-panel-field-routes-coverage.test.mjs \
             tools/dev/verify-wlt-contract-conformance.mjs \
             tools/mobile/test-mobile-app-coverage.test.mjs \
             tools/mobile/test-mobile-app-coverage-partner.test.mjs \

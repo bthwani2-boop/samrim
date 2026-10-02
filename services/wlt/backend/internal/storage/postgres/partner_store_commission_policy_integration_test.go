@@ -10,106 +10,151 @@ import (
 )
 
 func TestPartnerStoreCommissionPolicyPostgresLifecycle(t *testing.T) {
-	scenario := newFieldAcquisitionScenario(t)
-	typeID := "commission-policy-test-" + scenario.suffix
-	actorID := "commission-actor-" + scenario.suffix
-	reason := "approved commission policy change"
-	correlation := "commission-correlation-" + scenario.suffix
-	t.Cleanup(func() {
-		if _, err := scenario.db.ExecContext(scenario.ctx, `DELETE FROM wlt.commercial_store_type_commission_policy_events WHERE commercial_store_type_id=$1`, typeID); err != nil {
-			t.Errorf("remove commission policy test events: %v", err)
-		}
-		if _, err := scenario.db.ExecContext(scenario.ctx, `DELETE FROM wlt.commercial_store_type_commission_policies WHERE commercial_store_type_id=$1`, typeID); err != nil {
-			t.Errorf("remove commission policy test rows: %v", err)
-		}
-	})
+	database := newFieldAcquisitionScenario(t)
+	scenario := newPartnerCommissionPolicyScenario(t, database)
+	t.Cleanup(scenario.deleteRows)
+	scenario.runLifecycle()
+}
 
-	policies, err := ReadPartnerStoreCommissionPolicies(scenario.ctx, scenario.db, typeID)
+type partnerCommissionPolicyScenario struct {
+	t        *testing.T
+	database *fieldAcquisitionScenario
+	typeID   string
+	actorID  string
+	reason   string
+	suffix   string
+}
+
+func newPartnerCommissionPolicyScenario(t *testing.T, database *fieldAcquisitionScenario) partnerCommissionPolicyScenario {
+	return partnerCommissionPolicyScenario{
+		t: t, database: database, suffix: database.suffix,
+		typeID:  "commission-policy-test-" + database.suffix,
+		actorID: "commission-actor-" + database.suffix,
+		reason:  "approved commission policy change",
+	}
+}
+
+func (s partnerCommissionPolicyScenario) runLifecycle() {
+	s.assertEmptyRead()
+	create := s.createInput()
+	created := s.createPolicy(create)
+	s.assertIdempotentReplay(create, created)
+	s.assertConflictingReplay(create)
+	s.assertRejectedVersionAndNoOp(create)
+	updated := s.updatePolicy(create)
+	s.createSecondMode(create)
+	s.assertReadback(updated)
+	s.assertEventCount(3)
+}
+
+func (s partnerCommissionPolicyScenario) createInput() PartnerStoreCommissionPolicyUpdate {
+	return PartnerStoreCommissionPolicyUpdate{
+		CommercialStoreTypeID: s.typeID, FulfillmentMode: "PARTNER_CAPTAIN", CommissionRateBps: 1250,
+		ChangedByActorID: s.actorID, Reason: s.reason,
+		IdempotencyKey: "commission-create-" + s.suffix, CorrelationID: "commission-correlation-" + s.suffix,
+	}
+}
+
+func (s partnerCommissionPolicyScenario) assertEmptyRead() {
+	policies, err := ReadPartnerStoreCommissionPolicies(s.database.ctx, s.database.db, s.typeID)
 	if err != nil || len(policies) != 0 {
-		t.Fatalf("initial commission policy read = (%+v, %v), want no policies", policies, err)
+		s.t.Fatalf("initial commission policy read = (%+v, %v), want no policies", policies, err)
 	}
+}
 
-	create := PartnerStoreCommissionPolicyUpdate{
-		CommercialStoreTypeID: typeID,
-		FulfillmentMode:       "PARTNER_CAPTAIN",
-		CommissionRateBps:     1250,
-		ChangedByActorID:      actorID,
-		Reason:                reason,
-		IdempotencyKey:        "commission-create-" + scenario.suffix,
-		CorrelationID:         correlation,
-	}
-	created, replayed, err := UpdatePartnerStoreCommissionPolicy(scenario.ctx, scenario.db, create)
+func (s partnerCommissionPolicyScenario) createPolicy(input PartnerStoreCommissionPolicyUpdate) PartnerStoreCommissionPolicyRecord {
+	created, replayed, err := UpdatePartnerStoreCommissionPolicy(s.database.ctx, s.database.db, input)
 	if err != nil || replayed || created.PolicyVersion != 1 || created.CommissionRateBps != 1250 {
-		t.Fatalf("create commission policy = (%+v, replayed=%t, %v), want version 1 at 1250 bps", created, replayed, err)
+		s.t.Fatalf("create commission policy = (%+v, replayed=%t, %v), want version 1 at 1250 bps", created, replayed, err)
 	}
+	return created
+}
 
-	createdReplay, replayed, err := UpdatePartnerStoreCommissionPolicy(scenario.ctx, scenario.db, create)
-	if err != nil || !replayed || createdReplay.CommercialStoreTypeID != created.CommercialStoreTypeID || createdReplay.FulfillmentMode != created.FulfillmentMode || createdReplay.CommissionRateBps != created.CommissionRateBps || createdReplay.PolicyVersion != created.PolicyVersion {
-		t.Fatalf("idempotent commission create = (%+v, replayed=%t, %v), want original row", createdReplay, replayed, err)
+func (s partnerCommissionPolicyScenario) assertIdempotentReplay(input PartnerStoreCommissionPolicyUpdate, created PartnerStoreCommissionPolicyRecord) {
+	replay, replayed, err := UpdatePartnerStoreCommissionPolicy(s.database.ctx, s.database.db, input)
+	if err != nil || !replayed || replay.CommercialStoreTypeID != created.CommercialStoreTypeID || replay.FulfillmentMode != created.FulfillmentMode || replay.CommissionRateBps != created.CommissionRateBps || replay.PolicyVersion != created.PolicyVersion {
+		s.t.Fatalf("idempotent commission create = (%+v, replayed=%t, %v), want original row", replay, replayed, err)
 	}
+}
 
-	conflictingReplay := create
-	conflictingReplay.CommissionRateBps = 1300
-	if _, replayed, err := UpdatePartnerStoreCommissionPolicy(scenario.ctx, scenario.db, conflictingReplay); !errors.Is(err, ErrIdempotencyConflict) || replayed {
-		t.Fatalf("conflicting idempotency replay = (replayed=%t, %v), want ErrIdempotencyConflict", replayed, err)
+func (s partnerCommissionPolicyScenario) assertConflictingReplay(input PartnerStoreCommissionPolicyUpdate) {
+	input.CommissionRateBps = 1300
+	if _, replayed, err := UpdatePartnerStoreCommissionPolicy(s.database.ctx, s.database.db, input); !errors.Is(err, ErrIdempotencyConflict) || replayed {
+		s.t.Fatalf("conflicting idempotency replay = (replayed=%t, %v), want ErrIdempotencyConflict", replayed, err)
 	}
+}
 
-	staleCreate := create
+func (s partnerCommissionPolicyScenario) assertRejectedVersionAndNoOp(input PartnerStoreCommissionPolicyUpdate) {
+	staleCreate := input
 	staleCreate.CommercialStoreTypeID += "-absent"
-	staleCreate.IdempotencyKey = "commission-stale-" + scenario.suffix
+	staleCreate.IdempotencyKey = "commission-stale-" + s.suffix
 	staleCreate.ExpectedVersion = 1
-	if _, _, err := UpdatePartnerStoreCommissionPolicy(scenario.ctx, scenario.db, staleCreate); !errors.Is(err, ErrPartnerStoreCommissionPolicyVersionConflict) {
-		t.Fatalf("create with nonzero expected version error = %v, want version conflict", err)
+	if _, _, err := UpdatePartnerStoreCommissionPolicy(s.database.ctx, s.database.db, staleCreate); !errors.Is(err, ErrPartnerStoreCommissionPolicyVersionConflict) {
+		s.t.Fatalf("create with nonzero expected version error = %v, want version conflict", err)
 	}
-
-	noOp := create
-	noOp.IdempotencyKey = "commission-noop-" + scenario.suffix
+	noOp := input
+	noOp.IdempotencyKey = "commission-noop-" + s.suffix
 	noOp.ExpectedVersion = 1
-	if _, _, err := UpdatePartnerStoreCommissionPolicy(scenario.ctx, scenario.db, noOp); !errors.Is(err, ErrPartnerStoreCommissionPolicyInvalidInput) {
-		t.Fatalf("no-op commission update error = %v, want invalid input", err)
+	if _, _, err := UpdatePartnerStoreCommissionPolicy(s.database.ctx, s.database.db, noOp); !errors.Is(err, ErrPartnerStoreCommissionPolicyInvalidInput) {
+		s.t.Fatalf("no-op commission update error = %v, want invalid input", err)
 	}
+}
 
-	update := create
-	update.CommissionRateBps = 1750
-	update.ExpectedVersion = 1
-	update.IdempotencyKey = "commission-update-" + scenario.suffix
-	updated, replayed, err := UpdatePartnerStoreCommissionPolicy(scenario.ctx, scenario.db, update)
-	if err != nil || replayed || updated.PolicyVersion != 2 || updated.CommissionRateBps != 1750 || updated.ChangedByActorID != actorID || updated.ChangeReason != reason {
-		t.Fatalf("update commission policy = (%+v, replayed=%t, %v), want audited version 2 at 1750 bps", updated, replayed, err)
+func (s partnerCommissionPolicyScenario) updatePolicy(input PartnerStoreCommissionPolicyUpdate) PartnerStoreCommissionPolicyRecord {
+	input.CommissionRateBps = 1750
+	input.ExpectedVersion = 1
+	input.IdempotencyKey = "commission-update-" + s.suffix
+	updated, replayed, err := UpdatePartnerStoreCommissionPolicy(s.database.ctx, s.database.db, input)
+	if err != nil || replayed || updated.PolicyVersion != 2 || updated.CommissionRateBps != 1750 || updated.ChangedByActorID != s.actorID || updated.ChangeReason != s.reason {
+		s.t.Fatalf("update commission policy = (%+v, replayed=%t, %v), want audited version 2 at 1750 bps", updated, replayed, err)
 	}
-
-	staleUpdate := update
+	staleUpdate := input
 	staleUpdate.CommissionRateBps = 1800
-	staleUpdate.IdempotencyKey = "commission-stale-update-" + scenario.suffix
-	if _, _, err := UpdatePartnerStoreCommissionPolicy(scenario.ctx, scenario.db, staleUpdate); !errors.Is(err, ErrPartnerStoreCommissionPolicyVersionConflict) {
-		t.Fatalf("stale commission update error = %v, want version conflict", err)
+	staleUpdate.IdempotencyKey = "commission-stale-update-" + s.suffix
+	if _, _, err := UpdatePartnerStoreCommissionPolicy(s.database.ctx, s.database.db, staleUpdate); !errors.Is(err, ErrPartnerStoreCommissionPolicyVersionConflict) {
+		s.t.Fatalf("stale commission update error = %v, want version conflict", err)
 	}
+	return updated
+}
 
-	secondMode := create
-	secondMode.FulfillmentMode = "CUSTOMER_PICKUP"
-	secondMode.CommissionRateBps = 500
-	secondMode.IdempotencyKey = "commission-pickup-" + scenario.suffix
-	if _, _, err := UpdatePartnerStoreCommissionPolicy(scenario.ctx, scenario.db, secondMode); err != nil {
-		t.Fatalf("create second fulfillment policy: %v", err)
+func (s partnerCommissionPolicyScenario) createSecondMode(input PartnerStoreCommissionPolicyUpdate) {
+	input.FulfillmentMode = "CUSTOMER_PICKUP"
+	input.CommissionRateBps = 500
+	input.IdempotencyKey = "commission-pickup-" + s.suffix
+	if _, _, err := UpdatePartnerStoreCommissionPolicy(s.database.ctx, s.database.db, input); err != nil {
+		s.t.Fatalf("create second fulfillment policy: %v", err)
 	}
+}
 
-	policies, err = ReadPartnerStoreCommissionPolicies(scenario.ctx, scenario.db, typeID)
+func (s partnerCommissionPolicyScenario) assertReadback(updated PartnerStoreCommissionPolicyRecord) {
+	policies, err := ReadPartnerStoreCommissionPolicies(s.database.ctx, s.database.db, s.typeID)
 	if err != nil {
-		t.Fatalf("read commission policies: %v", err)
+		s.t.Fatalf("read commission policies: %v", err)
 	}
 	if len(policies) != 2 || policies[0].FulfillmentMode != "CUSTOMER_PICKUP" || policies[1].FulfillmentMode != "PARTNER_CAPTAIN" {
-		t.Fatalf("commission policies = %+v, want two rows sorted by fulfillment mode", policies)
+		s.t.Fatalf("commission policies = %+v, want two rows sorted by fulfillment mode", policies)
 	}
-	if policies[1].PolicyVersion != 2 || policies[1].CommissionRateBps != 1750 || policies[1].ChangedByActorID != actorID || policies[1].ChangeReason != reason {
-		t.Fatalf("updated commission policy readback = %+v, want persisted update and audit metadata", policies[1])
+	if policies[1].CommercialStoreTypeID != updated.CommercialStoreTypeID || policies[1].FulfillmentMode != updated.FulfillmentMode || policies[1].CommissionRateBps != updated.CommissionRateBps || policies[1].PolicyVersion != updated.PolicyVersion || policies[1].ChangedByActorID != updated.ChangedByActorID || policies[1].ChangeReason != updated.ChangeReason {
+		s.t.Fatalf("updated commission policy readback = %+v, want persisted update %+v", policies[1], updated)
 	}
+}
 
+func (s partnerCommissionPolicyScenario) assertEventCount(want int) {
 	var eventCount int
-	if err := scenario.db.QueryRowContext(scenario.ctx, `SELECT count(*) FROM wlt.commercial_store_type_commission_policy_events WHERE commercial_store_type_id=$1`, typeID).Scan(&eventCount); err != nil {
-		t.Fatalf("read commission event count: %v", err)
+	if err := s.database.db.QueryRowContext(s.database.ctx, `SELECT count(*) FROM wlt.commercial_store_type_commission_policy_events WHERE commercial_store_type_id=$1`, s.typeID).Scan(&eventCount); err != nil {
+		s.t.Fatalf("read commission event count: %v", err)
 	}
-	if eventCount != 3 {
-		t.Fatalf("commission event count = %d, want 3 successful changes (replays and rejected updates must not write events)", eventCount)
+	if eventCount != want {
+		s.t.Fatalf("commission event count = %d, want %d successful changes (replays and rejected updates must not write events)", eventCount, want)
+	}
+}
+
+func (s partnerCommissionPolicyScenario) deleteRows() {
+	if _, err := s.database.db.ExecContext(s.database.ctx, `DELETE FROM wlt.commercial_store_type_commission_policy_events WHERE commercial_store_type_id=$1`, s.typeID); err != nil {
+		s.t.Errorf("remove commission policy test events: %v", err)
+	}
+	if _, err := s.database.db.ExecContext(s.database.ctx, `DELETE FROM wlt.commercial_store_type_commission_policies WHERE commercial_store_type_id=$1`, s.typeID); err != nil {
+		s.t.Errorf("remove commission policy test rows: %v", err)
 	}
 }
 

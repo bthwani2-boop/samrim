@@ -32,93 +32,60 @@ func TestFieldAcquisitionRewardPublicationOutboxLifecycle(t *testing.T) {
 	}
 
 	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
-		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
-			t.Fatalf("apply canonical DSH migrations: %v", err)
-		}
-		if err := postgres.VerifySchema(ctx, db, records); err != nil {
-			t.Fatalf("verify canonical DSH schema: %v", err)
-		}
-
-		const (
-			serviceCityID = "field-reward-outbox-city"
-			verticalID    = "field-reward-outbox-food"
-			storeTypeID   = "field-reward-outbox-restaurant"
-		)
-		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.service_cities(id,display_name_ar) VALUES($1,$2)", serviceCityID, "مدينة المكافآت"); err != nil {
-			t.Fatalf("insert Service City fixture: %v", err)
-		}
-		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commerce_verticals(id,name_ar,name_en) VALUES($1,$2,$3)", verticalID, "مطاعم المكافآت", "Reward Restaurants"); err != nil {
-			t.Fatalf("insert Commerce Vertical fixture: %v", err)
-		}
-		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commercial_store_types(id,vertical_id,name_ar,name_en) VALUES($1,$2,$3,$4)", storeTypeID, verticalID, "مطعم المكافآت", "Reward Restaurant"); err != nil {
-			t.Fatalf("insert commercial Store Type fixture: %v", err)
-		}
-
-		fieldStoreID := approveJoiningCaseForRewardOutbox(t, ctx, db, true, serviceCityID, verticalID, storeTypeID, "field")
-		publishStoreForRewardOutbox(t, ctx, db, fieldStoreID, "field")
-		controlStoreID := approveJoiningCaseForRewardOutbox(t, ctx, db, false, serviceCityID, verticalID, storeTypeID, "control")
-		publishStoreForRewardOutbox(t, ctx, db, controlStoreID, "control")
-
-		items, err := postgres.ListPendingFieldAcquisitionRewardPublications(ctx, db, 100)
-		if err != nil || len(items) != 1 {
-			t.Fatalf("pending publication list = %+v, error=%v; want only the Field-originated store", items, err)
-		}
-		item := items[0]
-		if item.StoreID != fieldStoreID || item.JoiningCaseID == "" || item.PartnerActorID == "" || item.FieldActorID == "" || item.VerticalID != verticalID || item.CommercialStoreTypeID != storeTypeID || item.IdempotencyKey == "" || item.RequestHash == "" || item.CorrelationID == "" || item.Attempts != 0 {
-			t.Fatalf("outbox did not preserve Field acquisition provenance: %+v", item)
-		}
-
-		if err := postgres.DeferFieldAcquisitionPublication(ctx, db, item.ID, false, true); err != nil {
-			t.Fatalf("defer publication until commercial classification exists: %v", err)
-		}
-		assertFieldRewardOutboxState(t, ctx, db, item.ID, "WAITING_CLASSIFICATION", "the acquired store has no canonical commercial type", 0)
-		if pending, err := postgres.ListPendingFieldAcquisitionRewardPublications(ctx, db, 100); err != nil || len(pending) != 0 {
-			t.Fatalf("classification-blocked publication remained claimable: %+v, error=%v", pending, err)
-		}
-
-		if err := postgres.DeferFieldAcquisitionPublication(ctx, db, item.ID, true, false); err != nil {
-			t.Fatalf("defer publication until reward policy exists: %v", err)
-		}
-		assertFieldRewardOutboxState(t, ctx, db, item.ID, "WAITING_POLICY", "no active reward policy for the store category", 0)
-		if _, err := db.ExecContext(ctx, "UPDATE dsh.field_acquisition_entitlement_outbox SET next_attempt_at=clock_timestamp() WHERE id=$1", item.ID); err != nil {
-			t.Fatalf("make policy-waiting publication eligible for its state readback: %v", err)
-		}
-		pending, err := postgres.ListPendingFieldAcquisitionRewardPublications(ctx, db, 100)
-		if err != nil || len(pending) != 1 || pending[0].ID != item.ID {
-			t.Fatalf("policy-waiting publication was not retryable: %+v, error=%v", pending, err)
-		}
-
-		if err := postgres.DeferFieldAcquisitionPublication(ctx, db, item.ID, false, false); err != nil {
-			t.Fatalf("defer publication while customer-visible facts are incomplete: %v", err)
-		}
-		assertFieldRewardOutboxState(t, ctx, db, item.ID, "PENDING", "customer-visible publication is not currently true", 0)
-		if err := postgres.MarkFieldAcquisitionRewardPublicationFailure(ctx, db, item.ID, "WLT temporarily unavailable"); err != nil {
-			t.Fatalf("record WLT publication failure: %v", err)
-		}
-		assertFieldRewardOutboxState(t, ctx, db, item.ID, "FAILED", "WLT temporarily unavailable", 1)
-		if _, err := db.ExecContext(ctx, "UPDATE dsh.field_acquisition_entitlement_outbox SET next_attempt_at=clock_timestamp() WHERE id=$1", item.ID); err != nil {
-			t.Fatalf("make failed publication available for retry: %v", err)
-		}
-		pending, err = postgres.ListPendingFieldAcquisitionRewardPublications(ctx, db, 100)
-		if err != nil || len(pending) != 1 || pending[0].ID != item.ID || pending[0].Attempts != 1 {
-			t.Fatalf("failed publication did not preserve retry attempt: %+v, error=%v", pending, err)
-		}
-		if err := postgres.MarkFieldAcquisitionRewardPublicationFailure(ctx, db, item.ID, ""); err != nil {
-			t.Fatalf("record a retry without an error message: %v", err)
-		}
-		assertFieldRewardOutboxState(t, ctx, db, item.ID, "FAILED", "", 2)
-		if err := postgres.MarkFieldAcquisitionRewardPublicationPosted(ctx, db, item.ID); err != nil {
-			t.Fatalf("mark published entitlement posted: %v", err)
-		}
-		assertFieldRewardOutboxState(t, ctx, db, item.ID, "POSTED", "", 3)
-		if pending, err := postgres.ListPendingFieldAcquisitionRewardPublications(ctx, db, 100); err != nil || len(pending) != 0 {
-			t.Fatalf("posted publication remained pending: %+v, error=%v", pending, err)
-		}
+		runFieldRewardPublicationOutboxScenario(t, ctx, db, records, migrationSQL)
 	})
 }
 
-func approveJoiningCaseForRewardOutbox(t *testing.T, ctx context.Context, db *sql.DB, fieldOrigin bool, serviceCityID, verticalID, storeTypeID, suffix string) string {
+type fieldRewardOutboxScenario struct {
+	t             *testing.T
+	ctx           context.Context
+	db            *sql.DB
+	serviceCityID string
+	verticalID    string
+	storeTypeID   string
+}
+
+func runFieldRewardPublicationOutboxScenario(t *testing.T, ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
 	t.Helper()
+	scenario := fieldRewardOutboxScenario{
+		t: t, ctx: ctx, db: db,
+		serviceCityID: "field-reward-outbox-city",
+		verticalID:    "field-reward-outbox-food",
+		storeTypeID:   "field-reward-outbox-restaurant",
+	}
+	scenario.prepareSchema(records, migrationSQL)
+	scenario.insertClassification()
+	fieldStoreID := scenario.approveJoiningCase(true, "field")
+	scenario.publishStore(fieldStoreID, "field")
+	controlStoreID := scenario.approveJoiningCase(false, "control")
+	scenario.publishStore(controlStoreID, "control")
+	item := scenario.readPendingFieldPublication(fieldStoreID)
+	scenario.verifyDeferrals(item.ID)
+	scenario.verifyRetryAndPostLifecycle(item.ID)
+}
+
+func (s fieldRewardOutboxScenario) prepareSchema(records []postgres.MigrationRecord, migrationSQL []string) {
+	if err := postgres.Migrate(s.ctx, s.db, records, migrationSQL, testDeliveryProofKeyring(s.t)); err != nil {
+		s.t.Fatalf("apply canonical DSH migrations: %v", err)
+	}
+	if err := postgres.VerifySchema(s.ctx, s.db, records); err != nil {
+		s.t.Fatalf("verify canonical DSH schema: %v", err)
+	}
+}
+
+func (s fieldRewardOutboxScenario) insertClassification() {
+	if _, err := s.db.ExecContext(s.ctx, "INSERT INTO dsh.service_cities(id,display_name_ar) VALUES($1,$2)", s.serviceCityID, "مدينة المكافآت"); err != nil {
+		s.t.Fatalf("insert Service City fixture: %v", err)
+	}
+	if _, err := s.db.ExecContext(s.ctx, "INSERT INTO dsh.commerce_verticals(id,name_ar,name_en) VALUES($1,$2,$3)", s.verticalID, "مطاعم المكافآت", "Reward Restaurants"); err != nil {
+		s.t.Fatalf("insert Commerce Vertical fixture: %v", err)
+	}
+	if _, err := s.db.ExecContext(s.ctx, "INSERT INTO dsh.commercial_store_types(id,vertical_id,name_ar,name_en) VALUES($1,$2,$3,$4)", s.storeTypeID, s.verticalID, "مطعم المكافآت", "Reward Restaurant"); err != nil {
+		s.t.Fatalf("insert commercial Store Type fixture: %v", err)
+	}
+}
+
+func (s fieldRewardOutboxScenario) approveJoiningCase(fieldOrigin bool, suffix string) string {
 	fieldActorID := "reward-field-" + suffix
 	partnerActorID := "reward-partner-" + suffix
 	phone := "+967700000192"
@@ -126,9 +93,8 @@ func approveJoiningCaseForRewardOutbox(t *testing.T, ctx context.Context, db *sq
 		phone = "+967700000191"
 	}
 	request := postgres.JoiningCaseRequest{
-		Phone:        phone,
-		BusinessName: "نشاط المكافأة " + suffix, FirstStoreName: "متجر المكافأة " + suffix,
-		ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: storeTypeID,
+		Phone: phone, BusinessName: "نشاط المكافأة " + suffix, FirstStoreName: "متجر المكافأة " + suffix,
+		ServiceCityID: s.serviceCityID, VerticalID: s.verticalID, CommercialTypeID: s.storeTypeID,
 		Latitude: 15.369445, Longitude: 44.191006, FulfillmentModes: []string{postgres.FulfillmentModeBthwaniCaptain},
 	}
 	input := postgres.CreateJoiningCaseInput{
@@ -138,41 +104,106 @@ func approveJoiningCaseForRewardOutbox(t *testing.T, ctx context.Context, db *sq
 	var created postgres.JoiningCaseResult
 	var err error
 	if fieldOrigin {
-		created, err = postgres.CreateJoiningCaseForField(ctx, db, postgres.CreateJoiningCaseInput{IdempotencyKey: input.IdempotencyKey, RequestHash: input.RequestHash, ActingActorID: fieldActorID, CorrelationID: input.CorrelationID, Request: input.Request})
+		input.ActingActorID = fieldActorID
+		created, err = postgres.CreateJoiningCaseForField(s.ctx, s.db, input)
 	} else {
-		created, err = postgres.CreateJoiningCase(ctx, db, input)
+		created, err = postgres.CreateJoiningCase(s.ctx, s.db, input)
 	}
 	if err != nil {
-		t.Fatalf("create %s-originated Joining Case: %v", suffix, err)
+		s.t.Fatalf("create %s-originated Joining Case: %v", suffix, err)
 	}
 	current := created
 	if fieldOrigin {
-		current, err = postgres.RequestFieldJoiningCaseAdmission(ctx, db, created.Case.ID, fieldActorID, created.Case.Version, "reward-admission-"+suffix, postgres.HashFieldJoiningCaseAdmission(created.Case.ID, fieldActorID, created.Case.Version), "reward-admission-correlation-"+suffix)
+		current, err = postgres.RequestFieldJoiningCaseAdmission(s.ctx, s.db, created.Case.ID, fieldActorID, created.Case.Version, "reward-admission-"+suffix, postgres.HashFieldJoiningCaseAdmission(created.Case.ID, fieldActorID, created.Case.Version), "reward-admission-correlation-"+suffix)
 		if err != nil || current.Case.State != "admission_requested" || current.Case.OriginatingFieldActorID != fieldActorID {
-			t.Fatalf("request Field admission before submission: case=%+v error=%v", current.Case, err)
+			s.t.Fatalf("request Field admission before submission: case=%+v error=%v", current.Case, err)
 		}
 	}
-	submitted, err := postgres.SubmitJoiningCase(ctx, db, created.Case.ID, partnerActorID, current.Case.Version, "reward-submit-"+suffix, postgres.HashJoiningCaseSubmit(created.Case.ID, partnerActorID, current.Case.Version), "reward-operator-"+suffix, "reward-submit-correlation-"+suffix)
+	submitted, err := postgres.SubmitJoiningCase(s.ctx, s.db, created.Case.ID, partnerActorID, current.Case.Version, "reward-submit-"+suffix, postgres.HashJoiningCaseSubmit(created.Case.ID, partnerActorID, current.Case.Version), "reward-operator-"+suffix, "reward-submit-correlation-"+suffix)
 	if err != nil || submitted.Case.State != "submitted" || submitted.Case.PartnerActorID != partnerActorID {
-		t.Fatalf("submit %s-originated Joining Case: case=%+v error=%v", suffix, submitted.Case, err)
+		s.t.Fatalf("submit %s-originated Joining Case: case=%+v error=%v", suffix, submitted.Case, err)
 	}
-	approved, err := postgres.ReviewJoiningCase(ctx, db, postgres.ReviewJoiningCaseInput{
+	approved, err := postgres.ReviewJoiningCase(s.ctx, s.db, postgres.ReviewJoiningCaseInput{
 		CaseID: created.Case.ID, Decision: "approved", SettlementPeriod: "WEEKLY", TermsPolicyVersion: "partner-financial-terms:v1",
 		ExpectedVersion: submitted.Case.Version, IdempotencyKey: "reward-review-" + suffix,
 		RequestHash:   postgres.HashJoiningCaseReviewWithFinancialTerms(created.Case.ID, "approved", "", submitted.Case.Version, "WEEKLY", "partner-financial-terms:v1"),
 		ActingActorID: "reward-reviewer-" + suffix, CorrelationID: "reward-review-correlation-" + suffix,
 	})
 	if err != nil || approved.Case.State != "approved" || approved.Case.StoreID == "" || approved.Case.Origin != created.Case.Origin {
-		t.Fatalf("approve %s-originated Joining Case: case=%+v error=%v", suffix, approved.Case, err)
+		s.t.Fatalf("approve %s-originated Joining Case: case=%+v error=%v", suffix, approved.Case, err)
 	}
 	return approved.Case.StoreID
 }
 
-func publishStoreForRewardOutbox(t *testing.T, ctx context.Context, db *sql.DB, storeID, suffix string) {
-	t.Helper()
-	result, err := postgres.SetStorePublication(ctx, db, storeID, "published", 1, "reward-publication-"+suffix, postgres.HashStorePublicationRequest(storeID, "published", 1), "reward-publisher-"+suffix, "reward-publication-correlation-"+suffix)
+func (s fieldRewardOutboxScenario) publishStore(storeID, suffix string) {
+	result, err := postgres.SetStorePublication(s.ctx, s.db, storeID, "published", 1, "reward-publication-"+suffix, postgres.HashStorePublicationRequest(storeID, "published", 1), "reward-publisher-"+suffix, "reward-publication-correlation-"+suffix)
 	if err != nil || result.Store.PublicationState != "published" || result.Store.Version != 2 {
-		t.Fatalf("publish canonical store %s: result=%+v error=%v", suffix, result, err)
+		s.t.Fatalf("publish canonical store %s: result=%+v error=%v", suffix, result, err)
+	}
+}
+
+func (s fieldRewardOutboxScenario) readPendingFieldPublication(fieldStoreID string) postgres.FieldAcquisitionEntitlementOutbox {
+	items, err := postgres.ListPendingFieldAcquisitionRewardPublications(s.ctx, s.db, 100)
+	if err != nil || len(items) != 1 {
+		s.t.Fatalf("pending publication list = %+v, error=%v; want only the Field-originated store", items, err)
+	}
+	item := items[0]
+	if item.StoreID != fieldStoreID || item.JoiningCaseID == "" || item.PartnerActorID == "" || item.FieldActorID == "" || item.VerticalID != s.verticalID || item.CommercialStoreTypeID != s.storeTypeID || item.IdempotencyKey == "" || item.RequestHash == "" || item.CorrelationID == "" || item.Attempts != 0 {
+		s.t.Fatalf("outbox did not preserve Field acquisition provenance: %+v", item)
+	}
+	return item
+}
+
+func (s fieldRewardOutboxScenario) verifyDeferrals(outboxID string) {
+	if err := postgres.DeferFieldAcquisitionPublication(s.ctx, s.db, outboxID, false, true); err != nil {
+		s.t.Fatalf("defer publication until commercial classification exists: %v", err)
+	}
+	assertFieldRewardOutboxState(s.t, s.ctx, s.db, outboxID, "WAITING_CLASSIFICATION", "the acquired store has no canonical commercial type", 0)
+	assertFieldRewardPublicationPending(s.t, s.ctx, s.db, outboxID, 0, 0)
+
+	if err := postgres.DeferFieldAcquisitionPublication(s.ctx, s.db, outboxID, true, false); err != nil {
+		s.t.Fatalf("defer publication until reward policy exists: %v", err)
+	}
+	assertFieldRewardOutboxState(s.t, s.ctx, s.db, outboxID, "WAITING_POLICY", "no active reward policy for the store category", 0)
+	if _, err := s.db.ExecContext(s.ctx, "UPDATE dsh.field_acquisition_entitlement_outbox SET next_attempt_at=clock_timestamp() WHERE id=$1", outboxID); err != nil {
+		s.t.Fatalf("make policy-waiting publication eligible for its state readback: %v", err)
+	}
+	assertFieldRewardPublicationPending(s.t, s.ctx, s.db, outboxID, 1, 0)
+
+	if err := postgres.DeferFieldAcquisitionPublication(s.ctx, s.db, outboxID, false, false); err != nil {
+		s.t.Fatalf("defer publication while customer-visible facts are incomplete: %v", err)
+	}
+	assertFieldRewardOutboxState(s.t, s.ctx, s.db, outboxID, "PENDING", "customer-visible publication is not currently true", 0)
+}
+
+func (s fieldRewardOutboxScenario) verifyRetryAndPostLifecycle(outboxID string) {
+	if err := postgres.MarkFieldAcquisitionRewardPublicationFailure(s.ctx, s.db, outboxID, "WLT temporarily unavailable"); err != nil {
+		s.t.Fatalf("record WLT publication failure: %v", err)
+	}
+	assertFieldRewardOutboxState(s.t, s.ctx, s.db, outboxID, "FAILED", "WLT temporarily unavailable", 1)
+	if _, err := s.db.ExecContext(s.ctx, "UPDATE dsh.field_acquisition_entitlement_outbox SET next_attempt_at=clock_timestamp() WHERE id=$1", outboxID); err != nil {
+		s.t.Fatalf("make failed publication available for retry: %v", err)
+	}
+	assertFieldRewardPublicationPending(s.t, s.ctx, s.db, outboxID, 1, 1)
+	if err := postgres.MarkFieldAcquisitionRewardPublicationFailure(s.ctx, s.db, outboxID, ""); err != nil {
+		s.t.Fatalf("record a retry without an error message: %v", err)
+	}
+	assertFieldRewardOutboxState(s.t, s.ctx, s.db, outboxID, "FAILED", "", 2)
+	if err := postgres.MarkFieldAcquisitionRewardPublicationPosted(s.ctx, s.db, outboxID); err != nil {
+		s.t.Fatalf("mark published entitlement posted: %v", err)
+	}
+	assertFieldRewardOutboxState(s.t, s.ctx, s.db, outboxID, "POSTED", "", 3)
+	assertFieldRewardPublicationPending(s.t, s.ctx, s.db, outboxID, 0, 0)
+}
+
+func assertFieldRewardPublicationPending(t *testing.T, ctx context.Context, db *sql.DB, outboxID string, wantCount, wantAttempts int) {
+	t.Helper()
+	pending, err := postgres.ListPendingFieldAcquisitionRewardPublications(ctx, db, 100)
+	if err != nil || len(pending) != wantCount {
+		t.Fatalf("pending publications = %+v, error=%v; want %d", pending, err, wantCount)
+	}
+	if wantCount == 1 && (pending[0].ID != outboxID || pending[0].Attempts != wantAttempts) {
+		t.Fatalf("pending publication = %+v; want id %q and attempts %d", pending[0], outboxID, wantAttempts)
 	}
 }
 
