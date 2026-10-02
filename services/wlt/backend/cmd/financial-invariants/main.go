@@ -200,7 +200,7 @@ func main() {
 			FROM dsh.commerce_financial_handoff_outbox o
 			LEFT JOIN wlt.payment_intents p ON p.id=o.payment_intent_id
 			LEFT JOIN wlt.partner_order_earnings e ON e.order_id=o.order_id
-			LEFT JOIN wlt.captain_cod_reservations c ON c.order_id=o.order_id
+			LEFT JOIN wlt.captain_cod_reservations c ON c.order_id=o.order_id AND c.payment_intent_id=o.payment_intent_id AND c.captain_actor_id=o.captain_actor_id
 			WHERE o.state='POSTED' AND o.effect_type='DELIVERY_SETTLEMENT' AND (
 				p.id IS NULL OR p.state <> 'COLLECTED' OR p.collected_by_actor_id IS DISTINCT FROM o.captain_actor_id OR p.amount_minor <> o.amount_minor
 				OR e.order_id IS NULL OR e.payment_intent_id <> o.payment_intent_id OR e.partner_actor_id IS DISTINCT FROM o.partner_actor_id OR e.captain_actor_id IS DISTINCT FROM o.captain_actor_id
