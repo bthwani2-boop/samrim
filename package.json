@@ -15,13 +15,11 @@
     "identity:blocklist:generate": "node services/identity/tools/generate-password-blocklist.mjs",
     "identity:blocklist:check": "node services/identity/tools/generate-password-blocklist.mjs --check",
     "dsh:import-catalog-products": "node services/dsh/tools/import-catalog-products.mjs",
-    "bootstrap": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/bootstrap.ps1",
+    "bootstrap": "pnpm install --frozen-lockfile && go work sync",
     "check": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/check-local.ps1",
-    "safe:push": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/safe-push.ps1",
     "theme:generate": "node --loader ./tools/dev/ts-resolver.mjs tools/dev/generate-theme-css.mjs",
     "theme:check": "node --loader ./tools/dev/ts-resolver.mjs tools/dev/generate-theme-css.mjs --check",
     "theme:verify": "node --loader ./tools/dev/ts-resolver.mjs tools/dev/verify-theme-authority.mjs",
-    "verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-local-candidate.ps1",
     "mobile:prepare": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/prepare-local-development.ps1",
     "dev": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1",
     "client": "pnpm --dir apps/app-client dev",
@@ -30,7 +28,6 @@
     "field": "pnpm --dir apps/app-field dev",
     "control": "pnpm --dir apps/control-panel dev",
     "scr": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/scr.ps1",
-    "test:check-go-format": "node --test tools/dev/check-go-format.test.mjs",
     "test:mobile-shared-coverage": "node --test tools/mobile/test-mobile-app-coverage.test.mjs tools/mobile/test-mobile-app-coverage-partner.test.mjs tools/mobile/test-mobile-app-coverage-captain.test.mjs tools/mobile/test-mobile-app-coverage-field.test.mjs"
   },
   "pnpm": {
