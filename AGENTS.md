@@ -77,13 +77,19 @@ External sources, donor/history and competitor observations are evidence only. R
 
 ## 3. Complexity and cutover
 
-EVERY EXISTING OR NEW COMPLEXITY MUST RE-EARN EXISTENCE.
+### SIMPLIFICATION LAW
 
-No proven current material benefit → delete.
-Same outcome with fewer states/commands/layers → choose the simpler model.
-Future possibility or "just in case" → not justification.
+Prefer the **simplest complete correct solution**. Complexity may exist only for a proven current material need; otherwise delete or simplify it.
 
-Preference: DELETE → DIRECT USE → EXTEND EXISTING OWNER → REFACTOR EXISTING OWNER → ONLY THEN ADD A NEW MECHANISM. SMALLEST DIFF != SIMPLEST SYSTEM.
+Default: DELETE → DIRECT USE → REUSE EXISTING OWNER / TOOL → SIMPLIFY / REFACTOR → NEW MECHANISM ONLY IF NECESSARY. SMALLEST DIFF != SIMPLEST SYSTEM.
+
+A small change must remain small. Discovery, implementation, proof and diagnostics must stay proportional to the proven affected cone. Do not add repository-wide checks, duplicate proof, extra wrappers/layers/states, diagnostic packages/graphs/profiling, or "just in case" machinery unless they can materially change a correctness, safety or repair decision.
+
+On failure, use the direct failing command and native evidence first. Broader diagnostics are allowed only when needed to choose the repair.
+
+Do not solve complexity by adding another abstraction. When two mechanisms provide the same required outcome, keep the simpler one and delete the other completely.
+
+Required Product behavior, correctness, security and data integrity remain protected.
 
 If no real data-preservation or compatibility obligation exists, refound the clean canonical truth and delete every superseded legacy artifact, migration, file or corrective path instead of accumulating patches and residue.
 
