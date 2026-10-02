@@ -128,6 +128,37 @@ type FieldAccountMutationActionsProps = Readonly<{
   onMutate: (field: FieldAccount, action: FieldAccountAction) => void;
 }>;
 
+type FieldLegacyReviewActionsProps = Readonly<Pick<FieldAccountMutationActionsProps, "field" | "name" | "busy" | "onNameChange" | "onMutate">>;
+
+function FieldLegacyReviewActions({ field, name, busy, onNameChange, onMutate }: FieldLegacyReviewActionsProps) {
+  const admission = field.admission;
+  if (!admission) return null;
+  const unchanged = name.trim() === (admission.fullNameAr ?? "");
+  const nameIsValid = Array.from(name.trim()).length >= 2;
+  return <>
+    <label className="field-label" htmlFor={`field-profile-name-${field.actorId}`}>استكمال اسم العرض<input id={`field-profile-name-${field.actorId}`} value={name} maxLength={120} disabled={Boolean(busy)} onChange={(event) => onNameChange(event.target.value)} /></label>
+    <button type="button" className="button button-secondary" disabled={Boolean(busy) || !nameIsValid || unchanged} onClick={() => onMutate(field, "update-profile")}>حفظ الاسم</button>
+    <button type="button" className="button button-primary" disabled={Boolean(busy) || !name.trim() || unchanged} onClick={() => onMutate(field, "review-profile")}>اعتماد مراجعة الملف</button>
+  </>;
+}
+
+type FieldAccountAccessActionsProps = Readonly<Pick<FieldAccountMutationActionsProps, "field" | "busy" | "reason" | "onMutate"> & Readonly<{
+  waitingForReenrollment: boolean;
+  shouldDisable: boolean;
+  requiresProfileReview: boolean;
+  mustDisable: boolean;
+  reasonIsValid: boolean;
+}>>;
+
+function FieldAccountAccessActions({ field, busy, reason, onMutate, waitingForReenrollment, shouldDisable, requiresProfileReview, mustDisable, reasonIsValid }: FieldAccountAccessActionsProps) {
+  const accessAction: FieldAccountAction = shouldDisable ? "disable" : "activate";
+  return <>
+    {waitingForReenrollment ? <button type="button" className="button button-primary" disabled={Boolean(busy) || !reasonIsValid} onClick={() => onMutate(field, "reenroll")}>{busy === field.actorId ? "جارٍ الإجازة…" : "إجازة إعادة التسجيل"}</button> : null}
+    {(field.activatedAt || shouldDisable) && (shouldDisable || !requiresProfileReview) ? <button type="button" className={shouldDisable ? "button button-secondary" : "button button-primary"} disabled={Boolean(busy) || !reasonIsValid} onClick={() => onMutate(field, accessAction)}>{accessActionButtonLabel(busy === field.actorId, shouldDisable)}</button> : null}
+    {requiresProfileReview && !mustDisable && !field.enabled ? <span className="muted">أكمل مراجعة الملف قبل إعادة التفعيل.</span> : null}
+  </>;
+}
+
 function FieldAccountMutationActions({ field, name, reason, busy, onNameChange, onReasonChange, onMutate }: FieldAccountMutationActionsProps) {
   const admission = field.admission;
   const requiresProfileReview = admission?.requiresProfileReview === true;
@@ -135,15 +166,12 @@ function FieldAccountMutationActions({ field, name, reason, busy, onNameChange, 
   const shouldDisable = field.enabled || mustDisable;
   const waitingForReenrollment = !requiresProfileReview && field.enabled && !field.activatedAt && admission?.state === "eligible";
   const legacyReview = requiresProfileReview && admission?.state === "suspended";
-  const accessAction: FieldAccountAction = shouldDisable ? "disable" : "activate";
   const reasonIsValid = Array.from(reason.trim()).length >= 5;
 
   return admission ? <details className="field-row-disclosure"><summary className="button button-secondary">الخطوة التالية</summary><div className="field-row-actions">
-    {legacyReview ? <><label className="field-label" htmlFor={`field-profile-name-${field.actorId}`}>استكمال اسم العرض<input id={`field-profile-name-${field.actorId}`} value={name} maxLength={120} disabled={Boolean(busy)} onChange={(event) => onNameChange(event.target.value)} /></label><button type="button" className="button button-secondary" disabled={Boolean(busy) || Array.from(name.trim()).length < 2 || name.trim() === (admission.fullNameAr ?? "")} onClick={() => onMutate(field, "update-profile")}>حفظ الاسم</button><button type="button" className="button button-primary" disabled={Boolean(busy) || !name.trim() || name.trim() !== (admission.fullNameAr ?? "")} onClick={() => onMutate(field, "review-profile")}>اعتماد مراجعة الملف</button></> : null}
+    {legacyReview ? <FieldLegacyReviewActions field={field} name={name} busy={busy} onNameChange={onNameChange} onMutate={onMutate} /> : null}
     <label className="field-label" htmlFor={`field-reason-${field.actorId}`}>سبب الإجراء<input id={`field-reason-${field.actorId}`} maxLength={500} value={reason} onChange={(event) => onReasonChange(event.target.value)} disabled={Boolean(busy)} /></label>
-    {waitingForReenrollment ? <button type="button" className="button button-primary" disabled={Boolean(busy) || !reasonIsValid} onClick={() => onMutate(field, "reenroll")}>{busy === field.actorId ? "جارٍ الإجازة…" : "إجازة إعادة التسجيل"}</button> : null}
-    {(field.activatedAt || shouldDisable) && (shouldDisable || !requiresProfileReview) ? <button type="button" className={shouldDisable ? "button button-secondary" : "button button-primary"} disabled={Boolean(busy) || !reasonIsValid} onClick={() => onMutate(field, accessAction)}>{accessActionButtonLabel(busy === field.actorId, shouldDisable)}</button> : null}
-    {requiresProfileReview && !mustDisable && !field.enabled ? <span className="muted">أكمل مراجعة الملف قبل إعادة التفعيل.</span> : null}
+    <FieldAccountAccessActions field={field} busy={busy} reason={reason} onMutate={onMutate} waitingForReenrollment={waitingForReenrollment} shouldDisable={shouldDisable} requiresProfileReview={requiresProfileReview} mustDisable={mustDisable} reasonIsValid={reasonIsValid} />
     <a className="button button-secondary" href={`/finance/beneficiary-settlement/field?search=${encodeURIComponent(field.actorId)}`}>كشف المحفظة والحركات المالية</a>
   </div></details> : <span className="muted">راجع الأهلية قبل إتاحة العمل الميداني.</span>;
 }

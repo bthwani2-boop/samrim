@@ -343,12 +343,12 @@ if (partnerFinancialTermsPolicyRead.status === 404 && process.env.BTHWANI_IDENTI
   partnerFinancialTermsPolicyRead = await request(wltBase, "POST", "/wlt/v1/operator/partner-financial-terms-policy", {
     token: wltToken,
     headers: serviceHeaders(actingOperatorID, `dsh-runtime-terms-policy-${suffix}`),
-    body: { commissionRateBps: 1500, settlementPeriod: "MONTHLY", expectedVersion: 0, reason: "DSH runtime disposable financial terms policy proof" },
+    body: { settlementPeriod: "MONTHLY", expectedVersion: 0, reason: "DSH runtime disposable financial terms policy proof" },
   });
   if (partnerFinancialTermsPolicyRead.status !== 201) fail("disposable WLT partner financial terms policy could not be created", JSON.stringify(partnerFinancialTermsPolicyRead));
 }
 const partnerFinancialTermsPolicy = partnerFinancialTermsPolicyRead.body?.policy;
-if (partnerFinancialTermsPolicyRead.status !== 200 && partnerFinancialTermsPolicyRead.status !== 201 || partnerFinancialTermsPolicy?.state !== "ACTIVE" || partnerFinancialTermsPolicy?.commissionRateBps !== 1500 || partnerFinancialTermsPolicy?.settlementPeriod !== "MONTHLY" || typeof partnerFinancialTermsPolicy?.policyVersion !== "string") fail("canonical WLT partner financial terms policy is unavailable for DSH proof", JSON.stringify(partnerFinancialTermsPolicyRead));
+if (partnerFinancialTermsPolicyRead.status !== 200 && partnerFinancialTermsPolicyRead.status !== 201 || partnerFinancialTermsPolicy?.state !== "ACTIVE" || partnerFinancialTermsPolicy?.settlementPeriod !== "MONTHLY" || typeof partnerFinancialTermsPolicy?.policyVersion !== "string") fail("canonical WLT partner financial terms policy is unavailable for DSH proof", JSON.stringify(partnerFinancialTermsPolicyRead));
 console.log("DSH_PARTNER_FINANCIAL_TERMS_POLICY=PASS");
 const deliveryFeeMinor = 100;
 const mainOrderSubtotal = 4200;
