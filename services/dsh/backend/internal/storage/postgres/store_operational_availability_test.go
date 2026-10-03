@@ -52,12 +52,33 @@ func TestValidateStoreOperationalAvailabilityInput(t *testing.T) {
 	}
 
 	cases := map[string]UpdateStoreOperationalAvailabilityInput{
-		"weekly requires window": func() UpdateStoreOperationalAvailabilityInput { value := valid; value.WeeklySchedule = nil; return value }(),
-		"always open forbids window": func() UpdateStoreOperationalAvailabilityInput { value := valid; value.ScheduleMode = "ALWAYS_OPEN"; return value }(),
-		"invalid fulfillment": func() UpdateStoreOperationalAvailabilityInput { value := valid; value.UnavailableFulfillmentModes = []string{"DRONE"}; return value }(),
-		"invalid authority": func() UpdateStoreOperationalAvailabilityInput { value := valid; value.AuthoritySource = "ROLE_ONLY"; return value }(),
+		"weekly requires window": func() UpdateStoreOperationalAvailabilityInput {
+			value := valid
+			value.WeeklySchedule = nil
+			return value
+		}(),
+		"always open forbids window": func() UpdateStoreOperationalAvailabilityInput {
+			value := valid
+			value.ScheduleMode = "ALWAYS_OPEN"
+			return value
+		}(),
+		"invalid fulfillment": func() UpdateStoreOperationalAvailabilityInput {
+			value := valid
+			value.UnavailableFulfillmentModes = []string{"DRONE"}
+			return value
+		}(),
+		"invalid authority": func() UpdateStoreOperationalAvailabilityInput {
+			value := valid
+			value.AuthoritySource = "ROLE_ONLY"
+			return value
+		}(),
 		"unpaused forbids pause facts": func() UpdateStoreOperationalAvailabilityInput { value := valid; value.Paused = false; return value }(),
-		"invalid preparation": func() UpdateStoreOperationalAvailabilityInput { value := valid; tooHigh := 1441; value.PreparationMinutes = &tooHigh; return value }(),
+		"invalid preparation": func() UpdateStoreOperationalAvailabilityInput {
+			value := valid
+			tooHigh := 1441
+			value.PreparationMinutes = &tooHigh
+			return value
+		}(),
 	}
 	for name, input := range cases {
 		t.Run(name, func(t *testing.T) {
