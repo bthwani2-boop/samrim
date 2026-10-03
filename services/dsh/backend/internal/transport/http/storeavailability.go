@@ -21,10 +21,10 @@ type StoreAvailabilityServer struct {
 }
 
 type storeAvailabilityMutationRequest struct {
-	ScheduleMode                string                         `json:"scheduleMode"`
+	ScheduleMode                string                          `json:"scheduleMode"`
 	WeeklySchedule              []postgres.StoreScheduleWindow `json:"weeklySchedule"`
-	Paused                      bool                           `json:"paused"`
-	PauseReason                 *string                        `json:"pauseReason,omitempty"`
+	Paused                      bool                            `json:"paused"`
+	PauseReason                 *string                         `json:"pauseReason,omitempty"`
 	PauseUntil                  *time.Time                      `json:"pauseUntil,omitempty"`
 	PreparationMinutes          *int                            `json:"preparationMinutes,omitempty"`
 	UnavailableFulfillmentModes []string                        `json:"unavailableFulfillmentModes"`
