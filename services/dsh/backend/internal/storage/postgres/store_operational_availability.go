@@ -44,13 +44,13 @@ type StoreOperationalAvailability struct {
 }
 
 type StoreOrderability struct {
-	StoreID            string  `json:"storeId"`
-	FulfillmentMode    string  `json:"fulfillmentMode"`
-	State              string  `json:"state"`
-	Reason              *string `json:"reason,omitempty"`
-	PreparationMinutes *int    `json:"preparationMinutes,omitempty"`
-	Version             int     `json:"version"`
-	EvaluatedAt         time.Time `json:"evaluatedAt"`
+	StoreID            string    `json:"storeId"`
+	FulfillmentMode    string    `json:"fulfillmentMode"`
+	State              string    `json:"state"`
+	Reason             *string   `json:"reason,omitempty"`
+	PreparationMinutes *int      `json:"preparationMinutes,omitempty"`
+	Version            int       `json:"version"`
+	EvaluatedAt        time.Time `json:"evaluatedAt"`
 }
 
 type UpdateStoreOperationalAvailabilityInput struct {
@@ -265,9 +265,9 @@ func ensureStoreOperationalAvailability(ctx context.Context, db *sql.DB, storeID
 	return nil
 }
 
-type rowScanner interface{ Scan(...any) error }
+type storeAvailabilityRowScanner interface{ Scan(...any) error }
 
-func readStoreOperationalAvailabilityRow(_ context.Context, row rowScanner) (StoreOperationalAvailability, error) {
+func readStoreOperationalAvailabilityRow(_ context.Context, row storeAvailabilityRowScanner) (StoreOperationalAvailability, error) {
 	var result StoreOperationalAvailability
 	var scheduleJSON []byte
 	if err := row.Scan(&result.StoreID, &result.ScheduleMode, &result.ScheduleTimezone, &scheduleJSON, &result.Paused, &result.PauseReason, &result.PauseUntil, &result.PreparationMinutes, pq.Array(&result.UnavailableFulfillmentModes), &result.Version, &result.UpdatedByActorID, &result.UpdatedAt); err != nil {
