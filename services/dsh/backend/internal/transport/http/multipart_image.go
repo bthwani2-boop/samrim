@@ -3,6 +3,7 @@ package transporthttp
 import (
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 )
@@ -32,5 +33,5 @@ func readMultipartImageUpload(w http.ResponseWriter, r *http.Request, invalidFor
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
 		return nil, "", false
 	}
-	return data, header.Header.Get("Content-Type"), true
+	return data, strings.TrimSpace(header.Header.Get("Content-Type")), true
 }

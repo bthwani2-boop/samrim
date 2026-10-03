@@ -2,12 +2,9 @@ package field
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"regexp"
-	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -15,7 +12,6 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/joiningcase"
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
@@ -324,21 +320,14 @@ func (s *Service) UploadJoiningCaseProofImage(ctx context.Context, accessToken, 
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
-	caseID = strings.TrimSpace(caseID)
-	contentType, _, _, validationErr := media.ValidateImageBytes(data)
-	if caseID == "" || expectedVersion < 1 || validationErr != nil || contentType != strings.TrimSpace(declaredContentType) {
-		return postgres.JoiningCaseResult{}, ErrInvalidInput
-	}
-	keyID, ciphertext, err := s.evidenceKeys.Encrypt(caseID, "proof-image", data)
+	result, err := joiningcase.UploadPrivateProofImage(ctx, s.db, s.evidenceKeys, caseID, identity.Subject, "field", "field-proof-image-upload", idempotencyKey, correlationID, expectedVersion, declaredContentType, data)
 	if err != nil {
+		if errors.Is(err, joiningcase.ErrInvalidInput) {
+			return postgres.JoiningCaseResult{}, ErrInvalidInput
+		}
 		return postgres.JoiningCaseResult{}, err
 	}
-	digest := sha256.Sum256(data)
-	requestHash, err := s.evidenceKeys.RequestHash("field-proof-image-upload", caseID, identity.Subject, hex.EncodeToString(digest[:]), strconv.Itoa(expectedVersion))
-	if err != nil {
-		return postgres.JoiningCaseResult{}, err
-	}
-	return postgres.UploadJoiningCaseProofImage(ctx, s.db, postgres.JoiningCaseProofImageInput{CaseID: caseID, ActorID: identity.Subject, AuthoritySource: "field", CorrelationID: strings.TrimSpace(correlationID), IdempotencyKey: strings.TrimSpace(idempotencyKey), RequestHash: requestHash, ExpectedVersion: expectedVersion, KeyID: keyID, Ciphertext: ciphertext, CiphertextSHA256: postgres.CiphertextSHA256(ciphertext), ContentType: contentType, ByteSize: int64(len(data))})
+	return result, nil
 }
 
 func (s *Service) ListJoiningCases(ctx context.Context, accessToken, queryText string, limit int, cursor string) (postgres.JoiningCaseListResult, error) {

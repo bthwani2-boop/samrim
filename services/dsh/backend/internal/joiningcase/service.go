@@ -2,9 +2,7 @@ package joiningcase
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log"
@@ -344,43 +342,15 @@ func (s *Service) UploadProofImageForPartner(ctx context.Context, accessToken, c
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
-	caseID = strings.TrimSpace(caseID)
-	contentType, _, _, validationErr := media.ValidateImageBytes(data)
-	if caseID == "" || expectedVersion < 1 || validationErr != nil || contentType != strings.TrimSpace(declaredContentType) {
-		return postgres.JoiningCaseResult{}, ErrInvalidInput
-	}
-	keyID, ciphertext, err := s.evidenceKeys.Encrypt(caseID, "proof-image", data)
-	if err != nil {
-		return postgres.JoiningCaseResult{}, err
-	}
-	digest := sha256.Sum256(data)
-	requestHash, err := s.evidenceKeys.RequestHash("partner-proof-image-upload", caseID, identity.Subject, hex.EncodeToString(digest[:]), strconv.Itoa(expectedVersion))
-	if err != nil {
-		return postgres.JoiningCaseResult{}, err
-	}
-	return postgres.UploadJoiningCaseProofImage(ctx, s.db, postgres.JoiningCaseProofImageInput{CaseID: caseID, ActorID: identity.Subject, AuthoritySource: "partner", CorrelationID: strings.TrimSpace(correlationID), IdempotencyKey: strings.TrimSpace(idempotencyKey), RequestHash: requestHash, ExpectedVersion: expectedVersion, KeyID: keyID, Ciphertext: ciphertext, CiphertextSHA256: postgres.CiphertextSHA256(ciphertext), ContentType: contentType, ByteSize: int64(len(data))})
+	return UploadPrivateProofImage(ctx, s.db, s.evidenceKeys, caseID, identity.Subject, "partner", "partner-proof-image-upload", idempotencyKey, correlationID, expectedVersion, declaredContentType, data)
 }
 
 func (s *Service) UploadProofImageForOperator(ctx context.Context, caseID, actingActorID, idempotencyKey, correlationID string, expectedVersion int, declaredContentType string, data []byte) (postgres.JoiningCaseResult, error) {
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
-	caseID = strings.TrimSpace(caseID)
 	actingActorID = strings.TrimSpace(actingActorID)
-	contentType, _, _, validationErr := media.ValidateImageBytes(data)
-	if caseID == "" || expectedVersion < 1 || validationErr != nil || contentType != strings.TrimSpace(declaredContentType) {
-		return postgres.JoiningCaseResult{}, ErrInvalidInput
-	}
-	keyID, ciphertext, err := s.evidenceKeys.Encrypt(caseID, "proof-image", data)
-	if err != nil {
-		return postgres.JoiningCaseResult{}, err
-	}
-	digest := sha256.Sum256(data)
-	requestHash, err := s.evidenceKeys.RequestHash("operator-proof-image-upload", caseID, actingActorID, hex.EncodeToString(digest[:]), strconv.Itoa(expectedVersion))
-	if err != nil {
-		return postgres.JoiningCaseResult{}, err
-	}
-	return postgres.UploadJoiningCaseProofImage(ctx, s.db, postgres.JoiningCaseProofImageInput{CaseID: caseID, ActorID: actingActorID, AuthoritySource: "operator", CorrelationID: strings.TrimSpace(correlationID), IdempotencyKey: strings.TrimSpace(idempotencyKey), RequestHash: requestHash, ExpectedVersion: expectedVersion, KeyID: keyID, Ciphertext: ciphertext, CiphertextSHA256: postgres.CiphertextSHA256(ciphertext), ContentType: contentType, ByteSize: int64(len(data))})
+	return UploadPrivateProofImage(ctx, s.db, s.evidenceKeys, caseID, actingActorID, "operator", "operator-proof-image-upload", idempotencyKey, correlationID, expectedVersion, declaredContentType, data)
 }
 
 func (s *Service) ReadProofDetailsForOperator(ctx context.Context, caseID, actingActorID, correlationID string) (postgres.JoiningCaseProofDetails, error) {

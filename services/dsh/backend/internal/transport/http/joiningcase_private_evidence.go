@@ -1,13 +1,11 @@
 package transporthttp
 
 import (
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 )
 
 func (s *JoiningCaseServer) uploadPartnerJoiningCaseProofImage(w http.ResponseWriter, r *http.Request) {
@@ -106,30 +104,7 @@ func (s *JoiningCaseServer) downloadJoiningCaseProofImage(w http.ResponseWriter,
 }
 
 func readJoiningCaseProofImageUpload(w http.ResponseWriter, r *http.Request) ([]byte, string, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, media.MaxUploadBytes+64*1024)
-	if err := r.ParseMultipartForm(media.MaxUploadBytes); err != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a valid private proof image upload is required")
-		return nil, "", false
-	}
-	if r.MultipartForm != nil {
-		defer r.MultipartForm.RemoveAll()
-	}
-	file, header, err := r.FormFile("file")
-	if err != nil || header == nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a file field is required")
-		return nil, "", false
-	}
-	defer file.Close()
-	if header.Size < 1 || header.Size > media.MaxUploadBytes {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
-		return nil, "", false
-	}
-	data, err := io.ReadAll(io.LimitReader(file, media.MaxUploadBytes+1))
-	if err != nil || int64(len(data)) > media.MaxUploadBytes {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
-		return nil, "", false
-	}
-	return data, strings.TrimSpace(header.Header.Get("Content-Type")), true
+	return readMultipartImageUpload(w, r, "a valid private proof image upload is required")
 }
 
 func nullableIntPointer(value int64) *int {

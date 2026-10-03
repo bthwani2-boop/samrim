@@ -16,20 +16,8 @@ func (s *JoiningCaseServer) uploadStoreProfileImage(w http.ResponseWriter, r *ht
 	if !ok {
 		return
 	}
-	data, contentType, ok := readMultipartImageUpload(w, r, "a valid image upload is required")
+	data, contentType, provenance, ok := readStoreProfileImageUpload(w, r)
 	if !ok {
-		return
-	}
-	provenance := media.Provenance{
-		Creator:           strings.TrimSpace(r.FormValue("creator")),
-		SourceDescription: strings.TrimSpace(r.FormValue("sourceDescription")),
-		SourceURI:         strings.TrimSpace(r.FormValue("sourceUri")),
-		RightsStatement:   strings.TrimSpace(r.FormValue("rightsStatement")),
-		RightsURI:         strings.TrimSpace(r.FormValue("rightsUri")),
-		RightsAttested:    strings.EqualFold(strings.TrimSpace(r.FormValue("rightsAttested")), "true"),
-	}
-	if provenance.Validate() != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "creator, source, usage rights and explicit confirmation are required")
 		return
 	}
 	result, err := s.service.UploadStoreProfileImage(r.Context(), bearerToken(r), r.PathValue("caseId"), idempotency, correlation, expected, contentType, data, provenance)
@@ -53,9 +41,22 @@ func (s *JoiningCaseServer) uploadOperatorStoreProfileImage(w http.ResponseWrite
 	if !ok {
 		return
 	}
-	data, contentType, ok := readMultipartImageUpload(w, r, "a valid image upload is required")
+	data, contentType, provenance, ok := readStoreProfileImageUpload(w, r)
 	if !ok {
 		return
+	}
+	result, err := s.service.UploadStoreProfileImageForOperator(r.Context(), r.PathValue("caseId"), acting, idempotency, correlation, expected, contentType, data, provenance)
+	if err != nil {
+		writeJoiningCaseError(w, err)
+		return
+	}
+	s.writeResult(w, r, responseStatus(result.Replayed), result)
+}
+
+func readStoreProfileImageUpload(w http.ResponseWriter, r *http.Request) ([]byte, string, media.Provenance, bool) {
+	data, contentType, ok := readMultipartImageUpload(w, r, "a valid image upload is required")
+	if !ok {
+		return nil, "", media.Provenance{}, false
 	}
 	provenance := media.Provenance{
 		Creator:           strings.TrimSpace(r.FormValue("creator")),
@@ -67,12 +68,7 @@ func (s *JoiningCaseServer) uploadOperatorStoreProfileImage(w http.ResponseWrite
 	}
 	if provenance.Validate() != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "creator, source, usage rights and explicit confirmation are required")
-		return
+		return nil, "", media.Provenance{}, false
 	}
-	result, err := s.service.UploadStoreProfileImageForOperator(r.Context(), r.PathValue("caseId"), acting, idempotency, correlation, expected, contentType, data, provenance)
-	if err != nil {
-		writeJoiningCaseError(w, err)
-		return
-	}
-	s.writeResult(w, r, responseStatus(result.Replayed), result)
+	return data, contentType, provenance, true
 }
