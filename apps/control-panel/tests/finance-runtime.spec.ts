@@ -15,7 +15,7 @@ test("@live operator reads the real bounded COD cash-custody journey", async ({ 
   await page.goto("/finance/cash-custody");
   await expect(page.getByRole("heading", { name: "حفظ النقد" })).toBeVisible();
   await expect(page.getByText("التزامات نقدية مفتوحة ضمن المرشحات الحالية")).toBeVisible();
-  await expect(page.getByText("البيانات من WLT، وتعرض فقط نقد COD الذي حصّله الكابتن ولم تسجل له حوالة.")).toBeVisible();
+  await expect(page.getByText("تظل العهدة مفتوحة بعد إرسال الكابتن للمرجع. يرفق موظف المالية إيصال التوريد المحفوظ والمشفّر ويطابقه هنا؛ عندها فقط يقيد WLT الاستلام ويحرر الحجز.")).toBeVisible();
 
   const cashCustodyRead = await page.evaluate(async () => {
     const response = await fetch("/api/finance/cash-custody", { cache: "no-store" });
