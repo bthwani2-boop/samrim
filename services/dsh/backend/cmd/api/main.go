@@ -82,6 +82,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	storeAvailabilityServer, err := transporthttp.NewStoreAvailability(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
+	if err != nil {
+		log.Fatal(err)
+	}
 	locationCoreServer, err := transporthttp.NewLocationCore(identityClient, database)
 	if err != nil {
 		log.Fatal(err)
@@ -164,6 +168,7 @@ func main() {
 		joiningCaseServer.Register(mux)
 		catalogServer.Register(mux)
 		storePublicationServer.Register(mux)
+		storeAvailabilityServer.Register(mux)
 		locationCoreServer.Register(mux)
 		serviceCityServer.Register(mux)
 		serviceabilityServer.Register(mux)
