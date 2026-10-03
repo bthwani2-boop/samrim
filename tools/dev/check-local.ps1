@@ -45,9 +45,11 @@ try {
     }
 
     $files = @(
-        git diff --name-only HEAD --
-        git ls-files --others --exclude-standard --
-    ) | ForEach-Object { ([string]$_).Trim().Replace('\','/') } | Where-Object { $_ } | Sort-Object -Unique
+        @(
+            git diff --name-only HEAD --
+            git ls-files --others --exclude-standard --
+        ) | ForEach-Object { ([string]$_).Trim().Replace('\','/') } | Where-Object { $_ } | Sort-Object -Unique
+    )
 
     if ($files.Count -eq 0) {
         Write-Host 'LOCAL_CHECK=PASS scope=no-working-tree-changes'
