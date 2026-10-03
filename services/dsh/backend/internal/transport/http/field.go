@@ -3,7 +3,6 @@ package transporthttp
 import (
 	"database/sql"
 	"errors"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,7 +12,6 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/field"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/joiningcase"
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
@@ -375,31 +373,11 @@ func (s *FieldServer) uploadJoiningCaseProofImage(w http.ResponseWriter, r *http
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Expected-Version must be a positive integer")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, media.MaxUploadBytes+64*1024)
-	parseErr := r.ParseMultipartForm(media.MaxUploadBytes)
-	if r.MultipartForm != nil {
-		defer r.MultipartForm.RemoveAll()
-	}
-	if parseErr != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a valid proof image upload is required")
+	data, contentType, ok := readMultipartImageUpload(w, r, "a valid proof image upload is required")
+	if !ok {
 		return
 	}
-	file, header, err := r.FormFile("file")
-	if err != nil || header == nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a file field is required")
-		return
-	}
-	defer file.Close()
-	if header.Size < 1 || header.Size > media.MaxUploadBytes {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
-		return
-	}
-	data, err := io.ReadAll(io.LimitReader(file, media.MaxUploadBytes+1))
-	if err != nil || int64(len(data)) > media.MaxUploadBytes {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
-		return
-	}
-	result, err := s.service.UploadJoiningCaseProofImage(r.Context(), bearerToken(r), r.PathValue("caseId"), idempotency, correlation, expectedVersion, header.Header.Get("Content-Type"), data)
+	result, err := s.service.UploadJoiningCaseProofImage(r.Context(), bearerToken(r), r.PathValue("caseId"), idempotency, correlation, expectedVersion, contentType, data)
 	if err != nil {
 		writeFieldError(w, err)
 		return

@@ -422,7 +422,25 @@ const correctedStoreOrigin = { firstStoreLatitude: 15.370001, firstStoreLongitud
 async function createApprovedPartner(phone, name, serviceCityId, origin = "control_panel", partnerVerticalID = verticalID, partnerCommercialStoreTypeID = commercialStoreTypeID) {
   const createKey = `joining-${crypto.randomUUID()}`;
   const fieldOrigin = origin === "field";
-  const created = await request(dshBase, "POST", fieldOrigin ? "/dsh/field/joining-cases" : "/dsh/joining-cases", { token: fieldOrigin ? fieldAccessToken : dshToken, headers: fieldOrigin ? partnerHeaders(createKey) : serviceHeaders(actingOperatorID, createKey), body: { contactPhoneE164: phone, businessName: `${name} business`, firstStoreName: `${name} store`, serviceCityId, firstStoreVerticalId: partnerVerticalID, firstStoreCommercialTypeId: partnerCommercialStoreTypeID, firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"], ...firstStoreOrigin } });
+  const created = await request(dshBase, "POST", fieldOrigin ? "/dsh/field/joining-cases" : "/dsh/joining-cases", {
+    token: fieldOrigin ? fieldAccessToken : dshToken,
+    headers: fieldOrigin ? partnerHeaders(createKey) : serviceHeaders(actingOperatorID, createKey),
+    body: {
+      contactPhoneE164: phone,
+      ownerFullName: `${name} owner`,
+      businessName: `${name} business`,
+      firstStoreName: `${name} store`,
+      firstStoreAddress: `${name} street, building 1`,
+      firstStoreWorkingHours: { intervals: [{ dayOfWeek: 1, opensAt: "08:00", closesAt: "16:00", closesNextDay: false }] },
+      firstStoreProofType: "COMMERCIAL_REGISTRATION",
+      firstStoreProofNumber: `CR-${suffix}-${phone.slice(-4)}`,
+      serviceCityId,
+      firstStoreVerticalId: partnerVerticalID,
+      firstStoreCommercialTypeId: partnerCommercialStoreTypeID,
+      firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"],
+      ...firstStoreOrigin,
+    },
+  });
   if (created.status !== 201 || created.body?.case?.state !== "draft" || created.body?.case?.origin !== origin || created.body?.case?.firstStoreVerticalId !== partnerVerticalID || created.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || created.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude) fail("joining case creation did not preserve source provenance or fixed store origin", JSON.stringify(created));
   const caseID = String(created.body.case.id);
   let submitted;

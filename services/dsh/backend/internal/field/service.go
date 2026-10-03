@@ -5,9 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
-	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -16,6 +14,7 @@ import (
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/joiningcase"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
@@ -306,49 +305,18 @@ func (s *Service) CreateJoiningCase(ctx context.Context, accessToken, idempotenc
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
-	phone := strings.TrimSpace(input.ContactPhoneE164)
-	ownerFullName := strings.TrimSpace(input.OwnerFullName)
-	businessName := strings.TrimSpace(input.BusinessName)
-	firstStoreName := strings.TrimSpace(input.FirstStoreName)
-	firstStoreAddress := strings.TrimSpace(input.FirstStoreAddress)
-	proofType := strings.TrimSpace(string(input.FirstStoreProofType))
-	proofNumber := strings.TrimSpace(input.FirstStoreProofNumber)
-	notes := strings.TrimSpace(input.FirstStoreNotes)
-	serviceCityID := strings.TrimSpace(input.ServiceCityID)
-	verticalID := strings.TrimSpace(input.FirstStoreVerticalID)
-	commercialTypeID := strings.TrimSpace(input.FirstStoreCommercialTypeID)
-	latitude := input.FirstStoreLatitude
-	longitude := input.FirstStoreLongitude
-	rawFulfillmentModes := make([]string, len(input.FirstStoreFulfillmentModes))
-	for index, mode := range input.FirstStoreFulfillmentModes {
-		rawFulfillmentModes[index] = string(mode)
-	}
-	workingHours, hoursErr := json.Marshal(input.FirstStoreWorkingHours)
-	if hoursErr != nil || !postgres.ValidateStoreWorkingHours(workingHours) {
+	request, err := joiningcase.NormalizeCreateRequest(input)
+	if err != nil {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
-	fulfillmentModes, modesErr := postgres.NormalizeStoreFulfillmentModes(rawFulfillmentModes)
-	if modesErr != nil {
+	if strings.TrimSpace(idempotencyKey) == "" || len(strings.TrimSpace(correlationID)) < 8 {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
-	if !phoneE164Pattern.MatchString(phone) || utf8.RuneCountInString(ownerFullName) < 2 || utf8.RuneCountInString(ownerFullName) > 160 || utf8.RuneCountInString(businessName) < 2 || utf8.RuneCountInString(businessName) > 160 || utf8.RuneCountInString(firstStoreName) < 2 || utf8.RuneCountInString(firstStoreName) > 160 || utf8.RuneCountInString(firstStoreAddress) < 4 || utf8.RuneCountInString(firstStoreAddress) > 500 || len(proofNumber) < 1 || len(proofNumber) > 128 || utf8.RuneCountInString(notes) > 1000 || !validJoiningCaseProofType(proofType) || serviceCityID == "" || verticalID == "" || commercialTypeID == "" || math.IsNaN(latitude) || math.IsInf(latitude, 0) || math.IsNaN(longitude) || math.IsInf(longitude, 0) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180 || strings.TrimSpace(idempotencyKey) == "" || len(strings.TrimSpace(correlationID)) < 8 {
-		return postgres.JoiningCaseResult{}, ErrInvalidInput
-	}
-	request := postgres.JoiningCaseRequest{Phone: phone, OwnerFullName: ownerFullName, BusinessName: businessName, FirstStoreName: firstStoreName, FirstStoreAddress: firstStoreAddress, FirstStoreWorkingHours: workingHours, FirstStoreProofType: proofType, FirstStoreProofNumber: proofNumber, FirstStoreNotes: notes, ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: commercialTypeID, Latitude: latitude, Longitude: longitude, FulfillmentModes: fulfillmentModes}
-	requestHash, err := s.evidenceKeys.RequestHash("field-joining-case-create", identity.Subject, phone, ownerFullName, businessName, firstStoreName, firstStoreAddress, string(workingHours), proofType, proofNumber, notes, serviceCityID, verticalID, commercialTypeID, strconv.FormatFloat(latitude, 'f', 6, 64), strconv.FormatFloat(longitude, 'f', 6, 64), strings.Join(fulfillmentModes, ","))
+	requestHash, err := joiningcase.HashCreateRequest(s.evidenceKeys, "field-joining-case-create", identity.Subject, request)
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
 	return postgres.CreateJoiningCaseForField(ctx, s.db, postgres.CreateJoiningCaseInput{IdempotencyKey: strings.TrimSpace(idempotencyKey), RequestHash: requestHash, ActingActorID: identity.Subject, CorrelationID: strings.TrimSpace(correlationID), EvidenceKeyring: s.evidenceKeys, Request: request})
-}
-
-func validJoiningCaseProofType(value string) bool {
-	switch value {
-	case "COMMERCIAL_REGISTRATION", "IDENTITY_DOCUMENT", "FREELANCE_WORK_DOCUMENT":
-		return true
-	default:
-		return false
-	}
 }
 
 func (s *Service) UploadJoiningCaseProofImage(ctx context.Context, accessToken, caseID, idempotencyKey, correlationID string, expectedVersion int, declaredContentType string, data []byte) (postgres.JoiningCaseResult, error) {
@@ -440,8 +408,4 @@ func (s *Service) requireOperator(ctx context.Context, actorID string) error {
 
 func validMutation(idempotencyKey, correlationID, actingActorID string) bool {
 	return len(strings.TrimSpace(idempotencyKey)) >= 8 && len(strings.TrimSpace(idempotencyKey)) <= 128 && len(strings.TrimSpace(correlationID)) >= 8 && len(strings.TrimSpace(correlationID)) <= 128 && strings.TrimSpace(actingActorID) != ""
-}
-
-func validCoordinates(latitude, longitude float64) bool {
-	return !math.IsNaN(latitude) && !math.IsInf(latitude, 0) && !math.IsNaN(longitude) && !math.IsInf(longitude, 0) && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180
 }

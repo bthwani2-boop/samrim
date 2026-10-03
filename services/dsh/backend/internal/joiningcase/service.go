@@ -47,37 +47,14 @@ func New(identity *identityintegration.Client, db *sql.DB, wltClient *wlt.Client
 }
 
 func (s *Service) Create(ctx context.Context, input contract.CreateJoiningCaseRequest, idempotencyKey, actingActorID, correlationID string) (postgres.JoiningCaseResult, error) {
-	phone := strings.TrimSpace(input.ContactPhoneE164)
-	ownerFullName := strings.TrimSpace(input.OwnerFullName)
-	businessName := strings.TrimSpace(input.BusinessName)
-	firstStoreName := strings.TrimSpace(input.FirstStoreName)
-	firstStoreAddress := strings.TrimSpace(input.FirstStoreAddress)
-	proofType := strings.TrimSpace(string(input.FirstStoreProofType))
-	proofNumber := strings.TrimSpace(input.FirstStoreProofNumber)
-	notes := strings.TrimSpace(input.FirstStoreNotes)
-	serviceCityID := strings.TrimSpace(input.ServiceCityID)
-	verticalID := strings.TrimSpace(input.FirstStoreVerticalID)
-	commercialTypeID := strings.TrimSpace(input.FirstStoreCommercialTypeID)
-	workingHours, hoursErr := json.Marshal(input.FirstStoreWorkingHours)
-	if hoursErr != nil || !postgres.ValidateStoreWorkingHours(workingHours) || len(input.FirstStoreFulfillmentModes) == 0 {
-		return postgres.JoiningCaseResult{}, ErrInvalidInput
-	}
-	rawModes := make([]string, len(input.FirstStoreFulfillmentModes))
-	for index, mode := range input.FirstStoreFulfillmentModes {
-		rawModes[index] = string(mode)
-	}
-	fulfillmentModes, modesErr := postgres.NormalizeStoreFulfillmentModes(rawModes)
-	if modesErr != nil {
-		return postgres.JoiningCaseResult{}, ErrInvalidInput
-	}
-	if !phoneE164Pattern.MatchString(phone) || len([]rune(ownerFullName)) < 2 || len([]rune(ownerFullName)) > 160 || len([]rune(businessName)) < 2 || len([]rune(businessName)) > 160 || len([]rune(firstStoreName)) < 2 || len([]rune(firstStoreName)) > 160 || len([]rune(firstStoreAddress)) < 4 || len([]rune(firstStoreAddress)) > 500 || len(proofNumber) < 1 || len(proofNumber) > 128 || len([]rune(notes)) > 1000 || !validJoiningCaseProofType(proofType) || serviceCityID == "" || verticalID == "" || commercialTypeID == "" || !validCoordinates(input.FirstStoreLatitude, input.FirstStoreLongitude) {
-		return postgres.JoiningCaseResult{}, ErrInvalidInput
+	request, err := NormalizeCreateRequest(input)
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
 	}
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
-	request := postgres.JoiningCaseRequest{Phone: phone, OwnerFullName: ownerFullName, BusinessName: businessName, FirstStoreName: firstStoreName, FirstStoreAddress: firstStoreAddress, FirstStoreWorkingHours: workingHours, FirstStoreProofType: proofType, FirstStoreProofNumber: proofNumber, FirstStoreNotes: notes, ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: commercialTypeID, Latitude: input.FirstStoreLatitude, Longitude: input.FirstStoreLongitude, FulfillmentModes: fulfillmentModes}
-	requestHash, err := s.evidenceKeys.RequestHash("control-panel-joining-case-create", strings.TrimSpace(actingActorID), phone, ownerFullName, businessName, firstStoreName, firstStoreAddress, string(workingHours), proofType, proofNumber, notes, serviceCityID, verticalID, commercialTypeID, strconv.FormatFloat(input.FirstStoreLatitude, 'f', 6, 64), strconv.FormatFloat(input.FirstStoreLongitude, 'f', 6, 64), strings.Join(fulfillmentModes, ","))
+	requestHash, err := HashCreateRequest(s.evidenceKeys, "control-panel-joining-case-create", actingActorID, request)
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}

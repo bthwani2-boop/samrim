@@ -1,7 +1,6 @@
 package transporthttp
 
 import (
-	"io"
 	"net/http"
 	"strings"
 
@@ -17,28 +16,8 @@ func (s *JoiningCaseServer) uploadStoreProfileImage(w http.ResponseWriter, r *ht
 	if !ok {
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, media.MaxUploadBytes+(64*1024))
-	parseErr := r.ParseMultipartForm(media.MaxUploadBytes)
-	if r.MultipartForm != nil {
-		defer r.MultipartForm.RemoveAll()
-	}
-	if parseErr != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a valid image upload is required")
-		return
-	}
-	file, header, err := r.FormFile("file")
-	if err != nil || header == nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a file field is required")
-		return
-	}
-	defer file.Close()
-	if header.Size < 1 || header.Size > media.MaxUploadBytes {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
-		return
-	}
-	data, err := io.ReadAll(io.LimitReader(file, media.MaxUploadBytes+1))
-	if err != nil || int64(len(data)) > media.MaxUploadBytes {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
+	data, contentType, ok := readMultipartImageUpload(w, r, "a valid image upload is required")
+	if !ok {
 		return
 	}
 	provenance := media.Provenance{
@@ -53,7 +32,7 @@ func (s *JoiningCaseServer) uploadStoreProfileImage(w http.ResponseWriter, r *ht
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "creator, source, usage rights and explicit confirmation are required")
 		return
 	}
-	result, err := s.service.UploadStoreProfileImage(r.Context(), bearerToken(r), r.PathValue("caseId"), idempotency, correlation, expected, header.Header.Get("Content-Type"), data, provenance)
+	result, err := s.service.UploadStoreProfileImage(r.Context(), bearerToken(r), r.PathValue("caseId"), idempotency, correlation, expected, contentType, data, provenance)
 	if err != nil {
 		writeJoiningCaseError(w, err)
 		return
@@ -74,27 +53,8 @@ func (s *JoiningCaseServer) uploadOperatorStoreProfileImage(w http.ResponseWrite
 	if !ok {
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, media.MaxUploadBytes+(64*1024))
-	if err := r.ParseMultipartForm(media.MaxUploadBytes); err != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a valid image upload is required")
-		return
-	}
-	if r.MultipartForm != nil {
-		defer r.MultipartForm.RemoveAll()
-	}
-	file, header, err := r.FormFile("file")
-	if err != nil || header == nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a file field is required")
-		return
-	}
-	defer file.Close()
-	if header.Size < 1 || header.Size > media.MaxUploadBytes {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
-		return
-	}
-	data, err := io.ReadAll(io.LimitReader(file, media.MaxUploadBytes+1))
-	if err != nil || int64(len(data)) > media.MaxUploadBytes {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
+	data, contentType, ok := readMultipartImageUpload(w, r, "a valid image upload is required")
+	if !ok {
 		return
 	}
 	provenance := media.Provenance{
@@ -109,7 +69,7 @@ func (s *JoiningCaseServer) uploadOperatorStoreProfileImage(w http.ResponseWrite
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "creator, source, usage rights and explicit confirmation are required")
 		return
 	}
-	result, err := s.service.UploadStoreProfileImageForOperator(r.Context(), r.PathValue("caseId"), acting, idempotency, correlation, expected, header.Header.Get("Content-Type"), data, provenance)
+	result, err := s.service.UploadStoreProfileImageForOperator(r.Context(), r.PathValue("caseId"), acting, idempotency, correlation, expected, contentType, data, provenance)
 	if err != nil {
 		writeJoiningCaseError(w, err)
 		return

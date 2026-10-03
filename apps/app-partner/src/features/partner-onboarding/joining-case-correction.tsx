@@ -90,7 +90,7 @@ function weeklyHoursFingerprint(value: StoreWeeklyWorkingHours | null | undefine
 }
 
 function sameValues(left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean {
-  return [...left].sort().join("|") === [...right].sort().join("|");
+  return [...left].sort((a, b) => a.localeCompare(b)).join("|") === [...right].sort((a, b) => a.localeCompare(b)).join("|");
 }
 
 export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: JoiningCaseResponse; cities: ReadonlyArray<ServiceCity>; onUpdated: (next: JoiningCaseResponse) => void }) {
