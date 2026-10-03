@@ -36,6 +36,30 @@ func optionalRequestString(value string) *string {
 	return &value
 }
 
+func toJoiningCaseView(record postgres.JoiningCaseRecord) contract.JoiningCaseView {
+	view := contract.JoiningCaseView{
+		ID: record.ID, ContactPhoneE164: record.ContactPhoneE164, OwnerFullName: record.OwnerFullName,
+		BusinessName: record.BusinessName, FirstStoreName: record.FirstStoreName, FirstStoreAddress: record.FirstStoreAddress,
+		ServiceCityID: record.FirstStoreServiceCityID, FirstStoreVerticalID: record.FirstStoreVerticalID,
+		FirstStoreCommercialTypeID: record.FirstStoreCommercialTypeID, FirstStoreLatitude: nullableFloatValue(record.FirstStoreLatitude),
+		FirstStoreLongitude: nullableFloatValue(record.FirstStoreLongitude), FirstStoreFulfillmentModes: toFulfillmentModes(record.FirstStoreFulfillmentModes),
+		FirstStoreProofImageUploaded: record.FirstStoreProofImageUploaded, FirstStoreNotes: record.FirstStoreNotes,
+		Origin: contract.JoiningCaseOrigin(record.Origin), State: contract.JoiningCaseState(record.State), CorrectionReason: record.CorrectionReason,
+		Version: record.Version, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt,
+	}
+	if strings.TrimSpace(record.FirstStoreProofType) != "" {
+		value := contract.JoiningCaseProofType(record.FirstStoreProofType)
+		view.FirstStoreProofType = &value
+	}
+	if len(record.FirstStoreWorkingHours) > 0 {
+		var workingHours contract.StoreWeeklyWorkingHours
+		if json.Unmarshal(record.FirstStoreWorkingHours, &workingHours) == nil {
+			view.FirstStoreWorkingHours = &workingHours
+		}
+	}
+	return view
+}
+
 func optionalProductValue(value *string) string {
 	if value == nil {
 		return ""

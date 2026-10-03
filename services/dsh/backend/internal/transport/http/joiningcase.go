@@ -28,12 +28,12 @@ type JoiningCaseServer struct {
 	db          *sql.DB
 }
 
-func NewJoiningCase(identityClient *identityintegration.Client, accessToken string, db *sql.DB, publication *storepublication.Service, wltClient *wlt.Client, mediaStore media.Store) (*JoiningCaseServer, error) {
+func NewJoiningCase(identityClient *identityintegration.Client, accessToken string, db *sql.DB, publication *storepublication.Service, wltClient *wlt.Client, mediaStore media.Store, evidenceKeys *postgres.JoiningCaseEvidenceKeyring) (*JoiningCaseServer, error) {
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
 		return nil, err
 	}
-	service, err := joiningcase.New(identityClient, db, wltClient, mediaStore)
+	service, err := joiningcase.New(identityClient, db, wltClient, mediaStore, evidenceKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -60,6 +60,11 @@ func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/joining-cases/{caseId}", s.readForOperator)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/submit", s.submit)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/store-image", s.uploadStoreProfileImage)
+	mux.HandleFunc("POST /dsh/operator/joining-cases/{caseId}/store-image", s.uploadOperatorStoreProfileImage)
+	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/proof-image", s.uploadPartnerJoiningCaseProofImage)
+	mux.HandleFunc("GET /dsh/joining-cases/{caseId}/proof-image", s.downloadJoiningCaseProofImage)
+	mux.HandleFunc("GET /dsh/joining-cases/{caseId}/proof-details", s.readJoiningCaseProofDetails)
+	mux.HandleFunc("POST /dsh/operator/joining-cases/{caseId}/proof-image", s.uploadOperatorJoiningCaseProofImage)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/correct-and-resubmit", s.correctAndResubmitForPartner)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/review", s.review)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/financial-terms", s.bindFinancialTerms)
@@ -116,11 +121,7 @@ func (s *JoiningCaseServer) create(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	fulfillmentModes := make([]string, len(input.FirstStoreFulfillmentModes))
-	for index, mode := range input.FirstStoreFulfillmentModes {
-		fulfillmentModes[index] = string(mode)
-	}
-	result, err := s.service.Create(r.Context(), postgres.JoiningCaseRecord{ContactPhoneE164: input.ContactPhoneE164, BusinessName: input.BusinessName, FirstStoreName: input.FirstStoreName, FirstStoreServiceCityID: input.ServiceCityID, FirstStoreVerticalID: input.FirstStoreVerticalID, FirstStoreCommercialTypeID: input.FirstStoreCommercialTypeID, FirstStoreLatitude: &input.FirstStoreLatitude, FirstStoreLongitude: &input.FirstStoreLongitude, FirstStoreFulfillmentModes: fulfillmentModes}, idempotency, acting, correlation)
+	result, err := s.service.Create(r.Context(), input, idempotency, acting, correlation)
 	if err != nil {
 		writeJoiningCaseError(w, err)
 		return
@@ -266,7 +267,7 @@ func (s *JoiningCaseServer) correctAndResubmitForPartner(w http.ResponseWriter, 
 }
 
 func (s *JoiningCaseServer) writeResult(w http.ResponseWriter, ctx *http.Request, status int, result postgres.JoiningCaseResult) {
-	view := contract.JoiningCaseView{ID: result.Case.ID, ContactPhoneE164: result.Case.ContactPhoneE164, BusinessName: result.Case.BusinessName, FirstStoreName: result.Case.FirstStoreName, ServiceCityID: result.Case.FirstStoreServiceCityID, FirstStoreVerticalID: result.Case.FirstStoreVerticalID, FirstStoreCommercialTypeID: result.Case.FirstStoreCommercialTypeID, FirstStoreLatitude: nullableFloatValue(result.Case.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(result.Case.FirstStoreLongitude), FirstStoreFulfillmentModes: toFulfillmentModes(result.Case.FirstStoreFulfillmentModes), Origin: contract.JoiningCaseOrigin(result.Case.Origin), State: contract.JoiningCaseState(result.Case.State), Version: result.Case.Version, CreatedAt: result.Case.CreatedAt, UpdatedAt: result.Case.UpdatedAt}
+	view := toJoiningCaseView(result.Case)
 	view.PartnerActorID = result.Case.PartnerActorID
 	view.SettlementPeriod = nullableStringPointer(result.Case.SettlementPeriod)
 	view.FinancialProfileID = nullableStringPointer(result.Case.FinancialProfileID)
@@ -341,6 +342,10 @@ func writeJoiningCaseError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, postgres.ErrJoiningCaseNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "joining case was not found")
+	case errors.Is(err, postgres.ErrJoiningCaseEvidenceUnavailable):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "joining case evidence was not found")
+	case errors.Is(err, postgres.ErrJoiningCaseProofImageRequired):
+		writeError(w, http.StatusConflict, "PROOF_IMAGE_REQUIRED", "a new private proof image must be uploaded for the current correction")
 	case errors.Is(err, postgres.ErrJoiningCaseIdempotency):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different joining case facts")
 	case errors.Is(err, postgres.ErrJoiningCaseVersion):

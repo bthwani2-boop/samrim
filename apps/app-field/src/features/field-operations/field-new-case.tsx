@@ -1,5 +1,5 @@
 import { BthwaniButton, BthwaniChip, BthwaniMap, useAppearanceTheme } from "@bthwani/design-system/native";
-import { fieldAdmissionStateLabel, isMediaProvenanceInputValid, type CommercialStoreType, type CommerceVertical, type CreateJoiningCaseRequest, type DshImageUploadInput, type JoiningCaseResponse, joiningCaseStateLabel, type MediaProvenanceInput, type ServiceCity } from "@bthwani/dsh";
+import { fieldAdmissionStateLabel, isMediaProvenanceInputValid, type CommercialStoreType, type CommerceVertical, type CreateJoiningCaseRequest, type DshImageUploadInput, type JoiningCaseProofType, type JoiningCaseResponse, joiningCaseStateLabel, type MediaProvenanceInput, type ServiceCity, type StoreWorkingHoursInterval } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import { type Href, Link } from "expo-router";
@@ -14,6 +14,60 @@ import { useOwnFieldAdmission } from "./use-field-admission";
 type PendingCreateAttempt = Readonly<{ request: CreateJoiningCaseRequest; idempotencyKey: string; correlationID: string }>;
 type StoreImageDraft = DshImageUploadInput & Readonly<{ provenance: MediaProvenanceInput }>;
 type PendingImageAttempt = Readonly<{ caseID: string; expectedVersion: number; image: StoreImageDraft; idempotencyKey: string; correlationID: string }>;
+type PendingProofImageAttempt = Readonly<{ caseID: string; expectedVersion: number; image: DshImageUploadInput; idempotencyKey: string; correlationID: string }>;
+type EditableWorkingHoursInterval = Readonly<{ id: string; opensAt: string; closesAt: string; closesNextDay: boolean }>;
+
+const weekdays = [
+  { day: 1, label: "الاثنين" },
+  { day: 2, label: "الثلاثاء" },
+  { day: 3, label: "الأربعاء" },
+  { day: 4, label: "الخميس" },
+  { day: 5, label: "الجمعة" },
+  { day: 6, label: "السبت" },
+  { day: 7, label: "الأحد" },
+] as const;
+
+const proofTypeOptions: ReadonlyArray<{ value: JoiningCaseProofType; label: string }> = [
+  { value: "COMMERCIAL_REGISTRATION", label: "سجل تجاري" },
+  { value: "IDENTITY_DOCUMENT", label: "هوية" },
+  { value: "FREELANCE_WORK_DOCUMENT", label: "وثيقة عمل حر" },
+];
+
+function initialJoiningCaseInput(): CreateJoiningCaseRequest {
+  return {
+    contactPhoneE164: "",
+    ownerFullName: "",
+    businessName: "",
+    firstStoreName: "",
+    firstStoreAddress: "",
+    serviceCityId: "",
+    firstStoreVerticalId: "",
+    firstStoreCommercialTypeId: "",
+    firstStoreLatitude: 0,
+    firstStoreLongitude: 0,
+    firstStoreWorkingHours: { intervals: [] },
+    firstStoreProofType: "COMMERCIAL_REGISTRATION",
+    firstStoreProofNumber: "",
+    firstStoreFulfillmentModes: [],
+  };
+}
+
+function isValidLocalTime(value: string): boolean {
+  return /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(value);
+}
+
+function toWorkingHoursIntervals(schedule: Readonly<Record<number, ReadonlyArray<EditableWorkingHoursInterval>>>): ReadonlyArray<StoreWorkingHoursInterval> {
+  return weekdays.flatMap(({ day }) => (schedule[day] ?? []).map((interval) => ({ dayOfWeek: day, opensAt: interval.opensAt, closesAt: interval.closesAt, closesNextDay: interval.closesNextDay })));
+}
+
+function isValidWorkingHours(schedule: Readonly<Record<number, ReadonlyArray<EditableWorkingHoursInterval>>>): boolean {
+  const intervals = toWorkingHoursIntervals(schedule);
+  return intervals.length > 0 && intervals.length <= 28 && intervals.every((interval) =>
+    isValidLocalTime(interval.opensAt)
+    && isValidLocalTime(interval.closesAt)
+    && (interval.closesNextDay || interval.opensAt !== interval.closesAt),
+  );
+}
 
 function isOutcomeUncertain(cause: unknown): boolean {
   if (!cause || typeof cause !== "object") return false;
@@ -31,7 +85,8 @@ export function FieldNewCase() {
 const theme = useAppearanceTheme();
   const styles = useMemo(() => createFieldOperationStyles(theme), [theme]);
   const { state: admissionState, refresh: refreshAdmission } = useOwnFieldAdmission();
-  const [input, setInput] = useState<CreateJoiningCaseRequest>({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "", firstStoreCommercialTypeId: "", firstStoreLatitude: 0, firstStoreLongitude: 0, firstStoreFulfillmentModes: [] });
+  const [input, setInput] = useState<CreateJoiningCaseRequest>(initialJoiningCaseInput);
+  const [workingHoursByDay, setWorkingHoursByDay] = useState<Record<number, ReadonlyArray<EditableWorkingHoursInterval>>>({});
   const [storeLatitude, setStoreLatitude] = useState("");
   const [storeLongitude, setStoreLongitude] = useState("");
   const parsedStoreLatitude = Number(storeLatitude);
@@ -48,9 +103,11 @@ const theme = useAppearanceTheme();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [storeImage, setStoreImage] = useState<StoreImageDraft | null>(null);
+  const [proofImage, setProofImage] = useState<DshImageUploadInput | null>(null);
   const [pendingCreateAttempt, setPendingCreateAttempt] = useState<PendingCreateAttempt | null>(null);
   const [pendingImageAttempt, setPendingImageAttempt] = useState<PendingImageAttempt | null>(null);
-  const formLocked = busy || Boolean(pendingCreateAttempt) || Boolean(pendingImageAttempt) || Boolean(createdCase && storeImage);
+  const [pendingProofImageAttempt, setPendingProofImageAttempt] = useState<PendingProofImageAttempt | null>(null);
+  const formLocked = busy || Boolean(pendingCreateAttempt) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt) || Boolean(createdCase && storeImage);
 
   const loadAdmission = useCallback(async () => {
     setError("");
@@ -65,7 +122,7 @@ const theme = useAppearanceTheme();
       setCities(nextCities);
       setVerticals(nextVerticals);
     } catch (cause) {
-      console.error("DSH Field canonical options read failed", cause);
+      console.warn("DSH Field canonical options read failed", cause);
       setOptionsError("تعذر قراءة المدن والأنشطة المتاحة. أعد المحاولة.");
     } finally {
       setOptionsLoading(false);
@@ -85,7 +142,7 @@ const theme = useAppearanceTheme();
     void fieldClient().listCommercialStoreTypes(verticalId)
       .then((items) => { if (active) setCommercialTypes(items.filter((item) => item.active)); })
       .catch((cause: unknown) => {
-        console.error("DSH Field commercial store type read failed", cause);
+        console.warn("DSH Field commercial store type read failed", cause);
         if (active) setCommercialTypesError("تعذر قراءة أنواع المتاجر لهذه الفئة.");
       })
       .finally(() => { if (active) setCommercialTypesLoading(false); });
@@ -102,17 +159,24 @@ const theme = useAppearanceTheme();
     if (pendingCreateAttempt) {
       attempt = pendingCreateAttempt;
     } else {
-      if (!input.contactPhoneE164.trim() || !input.businessName.trim() || !input.firstStoreName.trim() || !input.serviceCityId || !input.firstStoreVerticalId || !input.firstStoreCommercialTypeId || input.firstStoreFulfillmentModes.length === 0 || !selectedStoreOrigin) {
-        setError("أكمل بيانات المتجر ومدينة الخدمة والفئة ونوع المتجر وموقعه، واختر وضعًا واحدًا على الأقل.");
+      if (!input.contactPhoneE164.trim() || !input.ownerFullName.trim() || !input.businessName.trim() || !input.firstStoreName.trim() || !input.firstStoreAddress.trim() || !input.serviceCityId || !input.firstStoreVerticalId || !input.firstStoreCommercialTypeId || !input.firstStoreProofNumber.trim() || !isValidWorkingHours(workingHoursByDay) || input.firstStoreFulfillmentModes.length === 0 || !selectedStoreOrigin) {
+        setError("أكمل اسم المالك والنشاط والمتجر والعنوان والمدينة والتصنيف والإثبات وساعات العمل والموقع، واختر طريقة توصيل واحدة على الأقل.");
         return;
       }
+      const { firstStoreNotes, ...requiredInput } = input;
+      const normalizedNotes = firstStoreNotes?.trim();
       const request: CreateJoiningCaseRequest = {
-        ...input,
+        ...requiredInput,
         contactPhoneE164: input.contactPhoneE164.trim(),
+        ownerFullName: input.ownerFullName.trim(),
         businessName: input.businessName.trim(),
         firstStoreName: input.firstStoreName.trim(),
+        firstStoreAddress: input.firstStoreAddress.trim(),
         serviceCityId: input.serviceCityId.trim(),
         firstStoreVerticalId: input.firstStoreVerticalId.trim(),
+        firstStoreWorkingHours: { intervals: toWorkingHoursIntervals(workingHoursByDay) },
+        firstStoreProofNumber: input.firstStoreProofNumber.trim(),
+        ...(normalizedNotes ? { firstStoreNotes: normalizedNotes } : {}),
         firstStoreLatitude: selectedStoreOrigin.latitude,
         firstStoreLongitude: selectedStoreOrigin.longitude,
       };
@@ -131,10 +195,11 @@ const theme = useAppearanceTheme();
       }
       setStoreLatitude("");
       setStoreLongitude("");
-      setInput({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "", firstStoreCommercialTypeId: "", firstStoreLatitude: 0, firstStoreLongitude: 0, firstStoreFulfillmentModes: [] });
+      setInput(initialJoiningCaseInput());
+      setWorkingHoursByDay({});
       await loadAdmission();
     } catch (cause) {
-      console.error("DSH Field joining-case creation failed", cause);
+      console.warn("DSH Field joining-case creation failed", cause);
       if (isOutcomeUncertain(cause)) {
         setError("تعذر تأكيد نتيجة الحفظ. أعد المحاولة لإعادة قراءة النتيجة من DSH بالمفتاح نفسه.");
       } else {
@@ -174,8 +239,33 @@ const theme = useAppearanceTheme();
       setStoreImage({ uri: asset.uri, name: asset.fileName ?? "store-image.jpg", type: asset.mimeType ?? "image/jpeg", blob, provenance: { creator: "", sourceDescription: "", sourceUri: "", rightsStatement: "", rightsUri: "", rightsAttested: false } });
       setError("");
     } catch (cause) {
-      console.error("Field store image preparation failed", cause);
+      console.warn("Field store image preparation failed", cause);
       setError("تعذر تجهيز صورة المتجر. اختر الصورة مرة أخرى.");
+    }
+  }
+
+  async function pickProofImage() {
+    if (busy || pendingProofImageAttempt) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) { setError("يلزم السماح بالوصول إلى الصور لاختيار صورة الإثبات."); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 1 });
+    if (result.canceled || !result.assets[0]?.uri) return;
+    const asset = result.assets[0];
+    const mimeType = asset.mimeType ?? "image/jpeg";
+    if (mimeType !== "image/jpeg" && mimeType !== "image/png") {
+      setError("صيغة صورة الإثبات غير مدعومة. اختر صورة بصيغة JPG أو PNG.");
+      return;
+    }
+    try {
+      const response = await fetch(asset.uri);
+      if (!response.ok) throw new Error("PROOF_IMAGE_READ_FAILED");
+      const blob = await response.blob();
+      if (!blob.size || blob.size > 10 * 1024 * 1024) throw new Error("PROOF_IMAGE_SIZE_INVALID");
+      setProofImage({ uri: asset.uri, name: asset.fileName ?? "joining-case-proof.jpg", type: mimeType, blob });
+      setError("");
+    } catch (cause) {
+      console.warn("Field proof image preparation failed", cause);
+      setError(cause instanceof Error && cause.message === "PROOF_IMAGE_SIZE_INVALID" ? "يجب ألا يتجاوز حجم صورة الإثبات 10 ميغابايت." : "تعذر تجهيز صورة الإثبات. اختر الصورة مرة أخرى.");
     }
   }
 
@@ -200,7 +290,7 @@ const theme = useAppearanceTheme();
       setStoreImage(null);
       setPendingImageAttempt(null);
     } catch (cause) {
-      console.error("DSH Field store image upload failed", cause);
+      console.warn("DSH Field store image upload failed", cause);
       if (dshErrorCode(cause) === "MEDIA_STORAGE_UNAVAILABLE") {
         setPendingImageAttempt(null);
         setError("تعذر تخزين الصورة. أعد رفع الملف المختار أو اختر صورة أخرى.");
@@ -216,27 +306,69 @@ const theme = useAppearanceTheme();
         const latest = await fieldClient().readOwnFieldJoiningCase(token, attempt.caseID);
         setCreatedCase(latest);
       } catch (readError) {
-        console.error("DSH Field case reconciliation after image upload failed", readError);
+        console.warn("DSH Field case reconciliation after image upload failed", readError);
       }
       setError("تم حفظ الملف، لكن تعذر تأكيد رفع الصورة. تمت إعادة قراءة الحالة الكانونية؛ تحقق منها قبل المحاولة مجددًا.");
+    }
+  }
+
+  async function retryProofImage() {
+    if (!createdCase || !proofImage || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await uploadProofImage(createdCase, proofImage, pendingProofImageAttempt ?? undefined);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function uploadProofImage(current: JoiningCaseResponse, image: DshImageUploadInput, existingAttempt?: PendingProofImageAttempt) {
+    const attempt = existingAttempt ?? { caseID: current.case.id, expectedVersion: current.case.version, image, idempotencyKey: `field_proof_image_${Crypto.randomUUID()}`, correlationID: `field_proof_image_corr_${Crypto.randomUUID()}` };
+    setPendingProofImageAttempt(attempt);
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const uploaded = await fieldClient().uploadFieldJoiningCaseProofImage(token, attempt.caseID, attempt.image, attempt.expectedVersion, attempt.idempotencyKey, attempt.correlationID);
+      setCreatedCase(uploaded);
+      setProofImage(null);
+      setPendingProofImageAttempt(null);
+    } catch (cause) {
+      console.warn("DSH Field proof image upload failed", cause);
+      if (isOutcomeUncertain(cause)) {
+        setError("تعذر تأكيد رفع صورة الإثبات. أعد المحاولة بالمفتاح نفسه للتحقق من الحالة.");
+        return;
+      }
+      setPendingProofImageAttempt(null);
+      try {
+        const token = await getUsableIdentityAccessToken();
+        const latest = await fieldClient().readOwnFieldJoiningCase(token, attempt.caseID);
+        setCreatedCase(latest);
+      } catch (readError) {
+        console.warn("DSH Field case reconciliation after proof image upload failed", readError);
+      }
+      setError("تعذر تأكيد صورة الإثبات. أُعيدت قراءة الحالة الكانونية؛ تحقق منها قبل إعادة الرفع.");
     }
   }
 
   return (
     <View style={styles.container} accessibilityLabel="ملف انضمام جديد">
       <Text style={styles.title}>ملف انضمام جديد</Text>
-      <Text style={styles.muted}>اجمع بيانات النشاط والمتجر في ملف واحد، ثم أرسله للمراجعة عند اكتماله.</Text>
+      <Text style={styles.muted}>أدخل بيانات المالك والمتجر والإثبات. يُحفظ الملف كمسودة؛ يلزم رفع صورة واجهة المتجر وصورة الإثبات قبل إرساله للمراجعة.</Text>
       {admissionState.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ التحقق من الأهلية…</Text></View> : null}
       {admissionState.kind === "missing" ? <View style={styles.card}><Text style={styles.cardTitle}>لا يمكن إنشاء ملف الآن</Text><Text style={styles.muted}>لا يوجد سجل أهلية ميدانية لهذا الحساب في DSH. تواصل مع المشغّل لإكمال إجراءات التسجيل.</Text></View> : null}
       {admissionState.kind === "ready" && admissionState.admission.state !== "eligible" ? <View style={styles.card}><Text style={styles.cardTitle}>لا يمكن إنشاء ملف الآن</Text><Text style={styles.muted}>حالة الأهلية الحالية: {fieldAdmissionStateLabel(admissionState.admission.state)}. تابع الحالة أو تواصل مع المشغّل.</Text></View> : null}
       {admissionState.kind === "error" ? <View style={styles.card}><Text accessibilityRole="alert" style={styles.error}>تعذر التحقق من أهلية الميدان. لم نتمكن من قراءة حالتها؛ أعد المحاولة عند توفر الاتصال.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void loadAdmission()} variant="secondary" /></View> : null}
       {admissionState.kind === "ready" && admissionState.admission.state === "eligible" ? <View style={styles.card}>
-        <Text style={styles.label}>هاتف صاحب النشاط</Text>
-        <TextInput accessibilityLabel="هاتف صاحب النشاط" editable={!formLocked} autoCapitalize="none" keyboardType="phone-pad" placeholder="مثال: ‎+967…" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput]} value={input.contactPhoneE164} onChangeText={(value) => setInput((current) => ({ ...current, contactPhoneE164: value }))} />
-        <Text style={styles.label}>اسم النشاط</Text>
+        <Text style={styles.label}>اسم المالك الكامل</Text>
+        <TextInput accessibilityLabel="اسم المالك الكامل" editable={!formLocked} autoComplete="name" placeholder="الاسم كما يظهر في الإثبات" placeholderTextColor={theme.colorMuted} style={styles.input} value={input.ownerFullName} onChangeText={(value) => setInput((current) => ({ ...current, ownerFullName: value }))} />
+        <Text style={styles.label}>رقم جوال المالك</Text>
+        <TextInput accessibilityLabel="رقم جوال المالك" editable={!formLocked} autoCapitalize="none" keyboardType="phone-pad" placeholder="مثال: ‎+967…" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput]} value={input.contactPhoneE164} onChangeText={(value) => setInput((current) => ({ ...current, contactPhoneE164: value }))} />
+        <Text style={styles.label}>اسم النشاط أو المنشأة</Text>
         <TextInput accessibilityLabel="اسم النشاط" editable={!formLocked} placeholder="اسم النشاط" placeholderTextColor={theme.colorMuted} style={styles.input} value={input.businessName} onChangeText={(value) => setInput((current) => ({ ...current, businessName: value }))} />
-        <Text style={styles.label}>اسم أول متجر</Text>
+        <Text style={styles.label}>اسم المتجر</Text>
         <TextInput accessibilityLabel="اسم أول متجر" editable={!formLocked} placeholder="اسم أول متجر" placeholderTextColor={theme.colorMuted} style={styles.input} value={input.firstStoreName} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreName: value }))} />
+        <Text style={styles.label}>عنوان المتجر</Text>
+        <TextInput accessibilityLabel="عنوان المتجر" editable={!formLocked} multiline placeholder="الحي، الشارع، وأقرب معلم" placeholderTextColor={theme.colorMuted} style={[styles.input, { minHeight: 88, paddingTop: 12, textAlignVertical: "top" }]} value={input.firstStoreAddress} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreAddress: value }))} />
         <Text style={styles.label}>مدينة الخدمة</Text>
         {optionsLoading ? <Text style={styles.muted}>جارٍ قراءة المدن المتاحة…</Text> : null}
         {optionsError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{optionsError}</Text><BthwaniButton label="إعادة قراءة الخيارات" onPress={() => void loadOptions()} variant="secondary" /></View> : null}
@@ -251,6 +383,16 @@ const theme = useAppearanceTheme();
         {commercialTypesError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{commercialTypesError}</Text><BthwaniButton label="إعادة قراءة أنواع المتاجر" onPress={() => { const verticalId = input.firstStoreVerticalId; if (verticalId) { setCommercialTypesError(""); setCommercialTypesLoading(true); void fieldClient().listCommercialStoreTypes(verticalId).then((items) => setCommercialTypes(items.filter((item) => item.active))).catch(() => setCommercialTypesError("تعذر قراءة أنواع المتاجر لهذه الفئة.")).finally(() => setCommercialTypesLoading(false)); } }} variant="secondary" /></View> : null}
         {!commercialTypesLoading && !commercialTypesError && input.firstStoreVerticalId && commercialTypes.length === 0 ? <Text style={styles.muted}>لا توجد أنواع متاجر مفعّلة لهذه الفئة. اطلب من المشغّل إعداد النوع التجاري أولًا.</Text> : null}
         <View style={styles.optionList}>{commercialTypes.map((item) => <BthwaniChip key={item.id} disabled={formLocked} label={item.nameAr} onPress={() => setInput((current) => ({ ...current, firstStoreCommercialTypeId: item.id }))} selected={input.firstStoreCommercialTypeId === item.id} />)}</View>
+        <Text style={styles.label}>نوع الإثبات</Text>
+        <View style={styles.optionList}>{proofTypeOptions.map((option) => <BthwaniChip key={option.value} disabled={formLocked} label={option.label} onPress={() => setInput((current) => ({ ...current, firstStoreProofType: option.value }))} selected={input.firstStoreProofType === option.value} />)}</View>
+        <Text style={styles.label}>رقم الإثبات</Text>
+        <TextInput accessibilityLabel="رقم الإثبات" editable={!formLocked} autoCapitalize="characters" placeholder="أدخل رقم السجل أو الوثيقة" placeholderTextColor={theme.colorMuted} style={styles.input} value={input.firstStoreProofNumber} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreProofNumber: value }))} />
+        <View style={styles.card}>
+          <Text style={styles.label}>صورة الإثبات الخاصة · مطلوبة قبل الإرسال</Text>
+          <Text style={styles.muted}>تُخزّن مشفّرة في السجل الخاص ولا تظهر كصورة واجهة للمتجر. يُسمح بحفظ المسودة قبل الرفع، لكن الإرسال للمراجعة يتطلب تأكيد ربط الصورة.</Text>
+          {proofImage ? <Image accessibilityLabel="معاينة صورة الإثبات الخاصة" source={{ uri: proofImage.uri }} style={{ borderRadius: 12, height: 160, width: "100%" }} resizeMode="contain" /> : null}
+          <BthwaniButton disabled={formLocked} label={proofImage ? "تغيير صورة الإثبات" : "اختيار صورة الإثبات"} onPress={() => void pickProofImage()} variant="secondary" />
+        </View>
         <Text style={styles.label}>أوضاع الطلب التي اختارها الشريك عند الانضمام</Text>
         <Text style={styles.muted}>سجّل الأوضاع المتاحة في المتجر لأول مرة. بعد إنشاء المتجر لا يغيّرها الشريك من التطبيق؛ يديرها المشغّل من لوحة التحكم.</Text>
         <View style={styles.optionList}>
@@ -263,8 +405,36 @@ const theme = useAppearanceTheme();
         <BthwaniMap accessibilityLabel="تحديد موقع المتجر الثابت" selection={selectedStoreOrigin} selectionTitle="موقع المتجر" onSelectCoordinate={(coordinate) => { if (!formLocked) { setStoreLatitude(coordinate.latitude.toFixed(6)); setStoreLongitude(coordinate.longitude.toFixed(6)); setError(""); } }} />
         <TextInput accessibilityLabel="خط عرض موقع المتجر" editable={!formLocked} keyboardType="numbers-and-punctuation" placeholder="خط العرض، مثال: 15.369445" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput]} value={storeLatitude} onChangeText={setStoreLatitude} />
         <TextInput accessibilityLabel="خط طول موقع المتجر" editable={!formLocked} keyboardType="numbers-and-punctuation" placeholder="خط الطول، مثال: 44.191006" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput]} value={storeLongitude} onChangeText={setStoreLongitude} />
-        <Text style={styles.label}>صورة المتجر · اختياري</Text>
-        <Text style={styles.muted}>يمكنك إضافة صورة واضحة للواجهة أو الهوية البصرية؛ تحفظ مركزيًا وتظهر بعد اعتماد المتجر.</Text>
+        <Text style={styles.label}>ساعات العمل الأسبوعية</Text>
+        <Text style={styles.muted}>أيام الأسبوع التي تتركها مغلقة لا تُضاف إلى الجدول. افتح اليوم لإضافة فترة، ويمكن إضافة فترات متعددة أو تحديد أن الإغلاق في اليوم التالي.</Text>
+        {weekdays.map(({ day, label }) => {
+          const intervals = workingHoursByDay[day] ?? [];
+          const totalIntervals = toWorkingHoursIntervals(workingHoursByDay).length;
+          return <View key={day} style={styles.card}>
+            <View style={styles.orderHeader}>
+              <Text style={styles.label}>{label}</Text>
+              <BthwaniChip disabled={formLocked} label={intervals.length ? `مفتوح (${intervals.length}) · إغلاق اليوم` : "مغلق · فتح اليوم"} onPress={() => setWorkingHoursByDay((current) => ({ ...current, [day]: current[day]?.length ? [] : [{ id: Crypto.randomUUID(), opensAt: "09:00", closesAt: "17:00", closesNextDay: false }] }))} selected={intervals.length > 0} />
+            </View>
+            {intervals.map((interval, index) => <View key={interval.id} style={{ gap: 8 }}>
+              <Text style={styles.muted}>الفترة {index + 1} · الوقت المحلي للمدينة</Text>
+              <View style={styles.optionList}>
+                <TextInput accessibilityLabel={`${label} بداية الفترة ${index + 1}`} editable={!formLocked} keyboardType="numbers-and-punctuation" placeholder="من 09:00" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput, { flex: 1 }]} value={interval.opensAt} onChangeText={(opensAt) => setWorkingHoursByDay((current) => ({ ...current, [day]: (current[day] ?? []).map((item, itemIndex) => itemIndex === index ? { ...item, opensAt } : item) }))} />
+                <TextInput accessibilityLabel={`${label} نهاية الفترة ${index + 1}`} editable={!formLocked} keyboardType="numbers-and-punctuation" placeholder="إلى 17:00" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput, { flex: 1 }]} value={interval.closesAt} onChangeText={(closesAt) => setWorkingHoursByDay((current) => ({ ...current, [day]: (current[day] ?? []).map((item, itemIndex) => itemIndex === index ? { ...item, closesAt } : item) }))} />
+              </View>
+              <View style={styles.optionList}>
+                <Switch disabled={formLocked} value={interval.closesNextDay} onValueChange={(closesNextDay) => setWorkingHoursByDay((current) => ({ ...current, [day]: (current[day] ?? []).map((item, itemIndex) => itemIndex === index ? { ...item, closesNextDay } : item) }))} />
+                <Text style={styles.muted}>ينتهي في اليوم التالي</Text>
+                {intervals.length > 1 ? <BthwaniButton disabled={formLocked} label="حذف الفترة" onPress={() => setWorkingHoursByDay((current) => ({ ...current, [day]: (current[day] ?? []).filter((_, itemIndex) => itemIndex !== index) }))} variant="secondary" /> : null}
+              </View>
+            </View>)}
+            {intervals.length > 0 ? <BthwaniButton disabled={formLocked || totalIntervals >= 28} label="إضافة فترة أخرى لهذا اليوم" onPress={() => setWorkingHoursByDay((current) => ({ ...current, [day]: [...(current[day] ?? []), { id: Crypto.randomUUID(), opensAt: "13:00", closesAt: "17:00", closesNextDay: false }] }))} variant="secondary" /> : null}
+          </View>;
+        })}
+        {Object.values(workingHoursByDay).some((intervals) => intervals.some((interval) => !isValidLocalTime(interval.opensAt) || !isValidLocalTime(interval.closesAt) || (!interval.closesNextDay && interval.opensAt === interval.closesAt))) ? <Text accessibilityRole="alert" style={styles.error}>أدخل الوقت بصيغة 24 ساعة مثل 09:00، واجعل وقت الفتح والإغلاق مختلفين أو فعّل خيار الإغلاق في اليوم التالي.</Text> : null}
+        <Text style={styles.label}>ملاحظات · اختياري</Text>
+        <TextInput accessibilityLabel="ملاحظات اختيارية" editable={!formLocked} multiline maxLength={1000} placeholder="أي تفاصيل إضافية للمراجعة" placeholderTextColor={theme.colorMuted} style={[styles.input, { minHeight: 88, paddingTop: 12, textAlignVertical: "top" }]} value={input.firstStoreNotes ?? ""} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreNotes: value }))} />
+        <Text style={styles.label}>صورة واجهة المتجر · مطلوبة قبل الإرسال</Text>
+        <Text style={styles.muted}>اختر صورة واضحة للواجهة. تُرفع مركزيًا وتظهر بعد اعتماد المتجر؛ حفظ المسودة ممكن قبل رفعها، لكن لا تُرسل للمراجعة حتى تكتمل.</Text>
         {storeImage ? <Image accessibilityLabel="معاينة صورة المتجر" source={{ uri: storeImage.uri }} style={{ borderRadius: 12, height: 160, width: "100%" }} resizeMode="cover" /> : null}
         {storeImage ? <View style={styles.card}>
           <Text style={styles.label}>مصدر الصورة وحق استخدامها</Text>
@@ -277,12 +447,20 @@ const theme = useAppearanceTheme();
           <View style={styles.optionList}><Switch disabled={formLocked} value={storeImage.provenance.rightsAttested} onValueChange={(rightsAttested) => setStoreImage((current) => current ? { ...current, provenance: { ...current.provenance, rightsAttested } } : null)} /><Text style={styles.muted}>أؤكد أن بيانات المصدر وحق الاستخدام المدخلة صحيحة.</Text></View>
         </View> : null}
         <BthwaniButton disabled={formLocked} label={storeImage ? "تغيير صورة المتجر" : "اختيار صورة المتجر"} onPress={() => void pickStoreImage()} variant="secondary" />
-        <BthwaniButton busy={busy} disabled={busy || (!pendingCreateAttempt && (formLocked || optionsLoading || Boolean(optionsError)))} label={pendingCreateAttempt ? "إعادة التحقق من حفظ الملف" : "حفظ الملف"} onPress={() => void createCase()} />
+        <Text style={styles.muted}>زر الحفظ ينشئ مسودة فقط. أكمِل رفع صورة واجهة المتجر، ثم صورة الإثبات عبر المسار الآمن، قبل إرسال الملف للمراجعة.</Text>
+        <BthwaniButton busy={busy} disabled={busy || (!pendingCreateAttempt && (formLocked || optionsLoading || Boolean(optionsError)))} label={pendingCreateAttempt ? "إعادة التحقق من حفظ المسودة" : "حفظ المسودة والمتابعة إلى صورة الإثبات"} onPress={() => void createCase()} />
       </View> : null}
       {createdCase ? <View accessibilityLiveRegion="polite" style={styles.successCard}>
-        <Text style={styles.cardTitle}>تم حفظ ملف الانضمام</Text>
+        <Text style={styles.cardTitle}>تم حفظ مسودة ملف الانضمام</Text>
         <Text style={styles.muted}>{createdCase.case.businessName} · {createdCase.case.firstStoreName}</Text>
-        <Text style={styles.successText}>الحالة: {joiningCaseStateLabel(createdCase.case.state)}</Text>
+        <Text style={styles.successText}>الحالة: {joiningCaseStateLabel(createdCase.case.state)} · لم يُرسل للمراجعة</Text>
+        <Text style={createdCase.case.storeProfileImage ? styles.successText : styles.error}>{createdCase.case.storeProfileImage ? "صورة واجهة المتجر مرفوعة." : "مطلوب قبل الإرسال: اختيار صورة واجهة المتجر ورفعها."}</Text>
+        <Text style={createdCase.case.firstStoreProofImageUploaded ? styles.successText : styles.error}>{createdCase.case.firstStoreProofImageUploaded ? "صورة الإثبات الخاصة مسجلة." : "مطلوب قبل الإرسال: رفع صورة الإثبات الخاصة عبر المسار الآمن."}</Text>
+        {!createdCase.case.firstStoreProofImageUploaded ? <>
+          {proofImage ? <Image accessibilityLabel="معاينة صورة الإثبات المختارة" source={{ uri: proofImage.uri }} style={{ borderRadius: 12, height: 160, width: "100%" }} resizeMode="contain" /> : null}
+          <BthwaniButton disabled={busy || Boolean(pendingProofImageAttempt)} label={proofImage ? "تغيير صورة الإثبات" : "اختيار صورة الإثبات"} onPress={() => void pickProofImage()} variant="secondary" />
+          {proofImage ? <BthwaniButton busy={busy} disabled={busy} label={pendingProofImageAttempt ? "إعادة التحقق من رفع صورة الإثبات" : "رفع صورة الإثبات المشفّرة"} onPress={() => void retryProofImage()} variant="primary" /> : null}
+        </> : null}
         {storeImage ? <>
           <Image accessibilityLabel="معاينة صورة المتجر التي لم يكتمل رفعها" source={{ uri: storeImage.uri }} style={{ borderRadius: 12, height: 120, width: "100%" }} resizeMode="cover" />
           <BthwaniButton disabled={busy || Boolean(pendingImageAttempt)} label="اختيار صورة أخرى" onPress={() => void pickStoreImage()} variant="secondary" />

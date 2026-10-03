@@ -13,6 +13,7 @@ import {
   matchesCaptainFundingAttempt,
   matchesCaptainFundingRequest,
   parseCaptainFundingAttempt,
+  selectCaptainSimulatorIntent,
   type CaptainFundingAttempt,
 } from "./cash-in-recovery";
 
@@ -39,15 +40,17 @@ export function CaptainCashInPanel() {
       const token = await getUsableIdentityAccessToken();
       const client = captainClient();
       const walletResponse = await client.readOwnWallet(token);
+      const currentIdentity = currentIdentityState();
+      if (currentIdentity.kind !== "authenticated" || currentIdentity.identity.subject.trim() !== actorID) throw new Error("CAPTAIN_SESSION_CHANGED");
+      setWallet(walletResponse);
       if (!attempt?.fundingIntentID) {
-        setWallet(walletResponse);
         return;
       }
 
       const intent = (await client.readOwnFundingIntent(token, attempt.fundingIntentID)).intent;
       if (!matchesCaptainFundingAttempt(intent, attempt)) throw new Error("CASH_IN_RETRY_STATE_CONFLICT");
-      const currentIdentity = currentIdentityState();
-      if (currentIdentity.kind !== "authenticated" || currentIdentity.identity.subject.trim() !== actorID) throw new Error("CAPTAIN_SESSION_CHANGED");
+      const currentIdentityAfterIntentRead = currentIdentityState();
+      if (currentIdentityAfterIntentRead.kind !== "authenticated" || currentIdentityAfterIntentRead.identity.subject.trim() !== actorID) throw new Error("CAPTAIN_SESSION_CHANGED");
       const terminal = ["SETTLED", "FAILED"].includes(intent.state);
       const canonicalWallet = terminal ? await client.readOwnWallet(token) : walletResponse;
       setWallet({ ...canonicalWallet, fundingIntents: [intent, ...canonicalWallet.fundingIntents.filter((item) => item.id !== intent.id)] });
@@ -61,7 +64,7 @@ export function CaptainCashInPanel() {
       }
     } catch (cause) {
       console.error("DSH captain wallet readback failed", cause);
-      setError("تعذر قراءة رصيد الكابتن وحالة الشحن من الخادم.");
+      setError("تعذرت قراءة المحفظة أو استعادة طلب الشحن من الخادم.");
     } finally { setBusy(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -101,7 +104,8 @@ export function CaptainCashInPanel() {
   const simulate = async (intent: CashInFundingIntent, outcome: "SUCCESS" | "FAILURE" | "UNKNOWN" | "DELAYED") => {
     const identity = currentIdentityState();
     const actorID = identity.kind === "authenticated" ? identity.identity.subject.trim() : "";
-    if (!actorID || !wallet?.state.simulator || !isSimulatableCaptainFundingIntent(intent, actorID)) {
+    const activeAttempt = pending?.actorID === actorID ? pending : null;
+    if (!actorID || !wallet?.state.simulator || !isSimulatableCaptainFundingIntent(intent, actorID) || (activeAttempt && !matchesCaptainFundingAttempt(intent, activeAttempt))) {
       setError("تعذر التحقق من طلب المحاكاة. حدّث بيانات المحفظة.");
       return;
     }
@@ -129,8 +133,8 @@ export function CaptainCashInPanel() {
   const latest = wallet?.fundingIntents ?? [];
   const identity = currentIdentityState();
   const actorID = identity.kind === "authenticated" ? identity.identity.subject.trim() : "";
-  const simulatorIntents = state?.simulator && actorID ? latest.filter((intent) => isSimulatableCaptainFundingIntent(intent, actorID)) : [];
-  const simulatorIntent = (pending?.fundingIntentID ? simulatorIntents.find((intent) => intent.id === pending.fundingIntentID) : undefined) ?? simulatorIntents[0];
+  const activeAttempt = pending?.actorID === actorID ? pending : null;
+  const simulatorIntent = state?.simulator && actorID ? selectCaptainSimulatorIntent(latest, actorID, activeAttempt) : undefined;
   return <BthwaniSurface tone="base" style={styles.panel} accessibilityLabel="شحن رصيد الكابتن">
     <Text style={styles.title}>شحن رصيد الكابتن</Text><Text style={styles.muted}>يُستخدم الرصيد الداخلي لتغطية التعرضات المالية التي يعتمدها WLT. كابتن الشريك غير مشمول.</Text>
     {busy && !wallet ? <View style={styles.loading}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الرصيد…</Text></View> : null}

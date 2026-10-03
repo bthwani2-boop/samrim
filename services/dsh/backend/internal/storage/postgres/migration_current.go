@@ -14,7 +14,7 @@ import (
 )
 
 // CanonicalSchemaVersion is the exact DSH schema version owned by the current source tree.
-const CanonicalSchemaVersion = 91
+const CanonicalSchemaVersion = 92
 
 var canonicalMigrationTail = []string{
 	"085_store_operational_availability.sql",
@@ -24,6 +24,7 @@ var canonicalMigrationTail = []string{
 	"089_store_access_permission_updates.sql",
 	"090_order_store_orderability_snapshot.sql",
 	"091_order_adjustment_financial_handoff.sql",
+	"092_joining_case_store_intake_details.sql",
 }
 
 type schemaRelationExpectation struct {
@@ -97,6 +98,17 @@ var journeyRefoundationRelations = []schemaRelationExpectation{
 		columns:     []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "order_id", "adjustment_id", "from_state", "to_state", "expected_version", "result_version", "request_hash", "created_at"},
 		constraints: []string{"commerce_order_adjustment_audit_pkey", "commerce_order_adjustment_audit_idempotency_key_key", "commerce_order_adjustment_audit_idempotency_key_fkey", "commerce_order_adjustment_audit_order_id_fkey", "commerce_order_adjustment_audit_adjustment_id_fkey", "commerce_order_adjustment_audit_event_chk", "commerce_order_adjustment_audit_correlation_chk", "commerce_order_adjustment_audit_actor_chk", "commerce_order_adjustment_audit_state_chk", "commerce_order_adjustment_audit_version_chk", "commerce_order_adjustment_audit_hash_chk"},
 		indexes:     []string{"commerce_order_adjustment_audit_order_idx"},
+	},
+	{
+		name:        "dsh.joining_case_private_evidence",
+		columns:     []string{"joining_case_id", "proof_number_key_id", "proof_number_ciphertext", "proof_image_key_id", "proof_image_ciphertext", "proof_image_content_type", "proof_image_ciphertext_sha256", "proof_image_byte_size", "proof_image_uploaded_at", "created_at", "updated_at"},
+		constraints: []string{"joining_case_private_evidence_pkey", "joining_case_private_evidence_case_fk", "joining_case_private_evidence_key_id_chk", "joining_case_private_evidence_image_key_id_chk", "joining_case_private_evidence_image_content_type_chk", "joining_case_private_evidence_image_ciphertext_sha_chk", "joining_case_private_evidence_image_size_chk", "joining_case_private_evidence_image_pair_chk"},
+	},
+	{
+		name:        "dsh.joining_case_private_evidence_audit",
+		columns:     []string{"id", "joining_case_id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "authority_source", "expected_version", "result_version", "request_hash", "created_at"},
+		constraints: []string{"joining_case_private_evidence_audit_pkey", "joining_case_private_evidence_audit_case_fk", "joining_case_private_evidence_audit_event_chk", "joining_case_private_evidence_audit_authority_chk", "joining_case_private_evidence_audit_expected_version_chk", "joining_case_private_evidence_audit_result_version_chk", "joining_case_private_evidence_audit_idempotency_chk", "joining_case_private_evidence_audit_request_hash_chk", "joining_case_private_evidence_audit_correlation_chk", "joining_case_private_evidence_audit_actor_chk"},
+		indexes:     []string{"joining_case_private_evidence_upload_idempotency_uq", "joining_case_private_evidence_audit_case_idx"},
 	},
 }
 

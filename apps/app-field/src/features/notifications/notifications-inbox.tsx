@@ -47,7 +47,7 @@ export function NotificationsInbox() {
       setItems(response.notifications);
       setUnreadCount(response.unreadCount);
     } catch (cause) {
-      console.error("DSH field notifications readback failed", cause);
+      console.warn("DSH field notifications readback failed", cause);
       setError("تعذر قراءة الإشعارات. أعد المحاولة.");
     } finally {
       if (preserveCurrent) setRefreshing(false); else setLoading(false);
@@ -65,7 +65,7 @@ export function NotificationsInbox() {
       await dshClient().markNotificationRead(token, item.id);
       await load(true);
     } catch (cause) {
-      console.error("DSH field notification read-state write failed", cause);
+      console.warn("DSH field notification read-state write failed", cause);
       setError("تعذر تحديث حالة الإشعار.");
     } finally {
       setBusy("");

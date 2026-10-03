@@ -85,7 +85,7 @@ export function FieldCases() {
         setMissingAdmission(true);
         return;
       }
-      console.error("DSH Field cases readback failed", cause);
+      console.warn("DSH Field cases readback failed", cause);
       setError("تعذر قراءة ملفات الانضمام. أعد المحاولة.");
     } finally {
       if (pagination.current.sequence === sequence) setLoading(false);
@@ -119,7 +119,7 @@ export function FieldCases() {
       setNextCursor(pagination.current.cursor);
     } catch (cause) {
       if (pagination.current.sequence !== sequence) return;
-      console.error("DSH Field cases continuation readback failed", cause);
+      console.warn("DSH Field cases continuation readback failed", cause);
       setPaginationError("تعذر تحميل بقية الملفات. أعد المحاولة.");
     } finally {
       if (pagination.current.sequence === sequence) {
@@ -146,7 +146,7 @@ export function FieldCases() {
       await load();
       setNotice("وصل طلب الانضمام إلى طابور قبول المشغّل.");
     } catch (cause) {
-      console.error("DSH Field joining-case submission failed", cause);
+      console.warn("DSH Field joining-case submission failed", cause);
       try {
         const token = await getUsableIdentityAccessToken();
         const latest = await fieldClient().readOwnFieldJoiningCase(token, item.id);
@@ -154,7 +154,7 @@ export function FieldCases() {
         if (latest.case.state === "draft") setError("لم يتأكد الإرسال. أعد المحاولة؛ سيستخدم DSH هوية العملية نفسها لهذه النسخة.");
         else setNotice("وصل الطلب إلى DSH. الحالة الحالية: " + joiningCaseStateLabel(latest.case.state) + ".");
       } catch (readError) {
-        console.error("DSH Field joining-case submit recovery readback failed", readError);
+        console.warn("DSH Field joining-case submit recovery readback failed", readError);
         setError("تعذر تأكيد الإرسال وإعادة القراءة. أعد قراءة الملفات؛ إعادة المحاولة للنسخة نفسها تستخدم هوية العملية نفسها.");
       }
     } finally {
@@ -172,7 +172,7 @@ export function FieldCases() {
       setMediaCase(current);
       setStoreImage(null);
     } catch (cause) {
-      console.error("DSH Field joining-case media readback failed", cause);
+      console.warn("DSH Field joining-case media readback failed", cause);
       setError("تعذر قراءة صورة الملف من DSH. أعد المحاولة.");
     } finally {
       setBusy("");
@@ -192,7 +192,7 @@ export function FieldCases() {
       setStoreImage({ uri: asset.uri, name: asset.fileName ?? "store-image.jpg", type: asset.mimeType ?? "image/jpeg", blob: await response.blob(), provenance: { creator: "", sourceDescription: "", sourceUri: "", rightsStatement: "", rightsUri: "", rightsAttested: false } });
       setError("");
     } catch (cause) {
-      console.error("Field store image preparation failed", cause);
+      console.warn("Field store image preparation failed", cause);
       setError("تعذر تجهيز صورة المتجر. اختر الصورة مرة أخرى.");
     }
   }
@@ -215,7 +215,7 @@ export function FieldCases() {
       setPendingImageAttempt(null);
       await load();
     } catch (cause) {
-      console.error("DSH Field store image upload failed", cause);
+      console.warn("DSH Field store image upload failed", cause);
       if (dshErrorCode(cause) === "MEDIA_STORAGE_UNAVAILABLE") {
         setPendingImageAttempt(null);
         setError("تعذر تخزين الصورة. أعد رفع الملف المختار أو اختر صورة أخرى.");
@@ -227,7 +227,7 @@ export function FieldCases() {
           const token = await getUsableIdentityAccessToken();
           setMediaCase(await fieldClient().readOwnFieldJoiningCase(token, attempt.caseID));
         } catch (readError) {
-          console.error("DSH Field store image recovery readback failed", readError);
+          console.warn("DSH Field store image recovery readback failed", readError);
         }
         setError("لم تُعتمد الصورة بهذه النسخة. أُعيدت قراءة الحالة الكانونية؛ تحقق منها ثم أعد المحاولة.");
       }

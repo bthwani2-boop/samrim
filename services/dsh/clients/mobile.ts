@@ -209,6 +209,18 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
     }
   }
 
+  async function uploadPrivateJoiningCaseProofImage(accessToken: string, rawPath: string, method: string, caseID: string, input: DshImageUploadInput, expectedVersion: number, idempotencyKey?: string, correlationID?: string): Promise<JoiningCaseResponse> {
+    const normalized = caseID.trim();
+    const uri = input.uri.trim();
+    if (!normalized || !uri || expectedVersion < 1) throw new Error("DSH_JOINING_CASE_PROOF_IMAGE_INPUT_INVALID");
+    const fileName = input.name?.trim() || "joining-case-proof.jpg";
+    const mimeType = input.type?.trim() || "image/jpeg";
+    const form = input.nativeMultipartUpload ? undefined : new FormData();
+    if (form) form.append("file", input.blob ?? ({ uri, name: fileName, type: mimeType } as unknown as Blob));
+    const path = rawPath.replace("{caseId}", encodeURIComponent(normalized));
+    return userMultipartRequest(accessToken, path, method, form, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) }, input.nativeMultipartUpload, { fieldName: "file", fileName, mimeType, parameters: {} });
+  }
+
   return {
     async listCatalogVerticals(): Promise<CommerceVerticalListResponse["verticals"]> {
       return (await publicRequest<CommerceVerticalListResponse>(dshOperationPaths.listCatalogVerticals.path)).verticals;
@@ -824,6 +836,12 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       }
       const path = dshOperationPaths.uploadJoiningCaseStoreImage.path.replace("{caseId}", encodeURIComponent(normalized));
       return userMultipartRequest(accessToken, path, dshOperationPaths.uploadJoiningCaseStoreImage.method, form, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) }, input.nativeMultipartUpload, { fieldName: "file", fileName, mimeType, parameters: mediaProvenanceParameters(provenance) });
+    },
+    async uploadJoiningCaseProofImage(accessToken: string, caseID: string, input: DshImageUploadInput, expectedVersion: number, idempotencyKey?: string, correlationID?: string): Promise<JoiningCaseResponse> {
+      return uploadPrivateJoiningCaseProofImage(accessToken, dshOperationPaths.uploadJoiningCaseProofImage.path, dshOperationPaths.uploadJoiningCaseProofImage.method, caseID, input, expectedVersion, idempotencyKey, correlationID);
+    },
+    async uploadFieldJoiningCaseProofImage(accessToken: string, caseID: string, input: DshImageUploadInput, expectedVersion: number, idempotencyKey?: string, correlationID?: string): Promise<JoiningCaseResponse> {
+      return uploadPrivateJoiningCaseProofImage(accessToken, dshOperationPaths.uploadFieldJoiningCaseProofImage.path, dshOperationPaths.uploadFieldJoiningCaseProofImage.method, caseID, input, expectedVersion, idempotencyKey, correlationID);
     },
     async listOwnDeliveryAddresses(accessToken: string, limit = 50, cursor = ""): Promise<DeliveryAddressListResponse> {
       if (limit < 1 || limit > 50) throw new Error("DSH_ADDRESS_LIMIT_INVALID");

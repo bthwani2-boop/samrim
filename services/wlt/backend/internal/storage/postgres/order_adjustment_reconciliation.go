@@ -62,8 +62,16 @@ const (
 		(id,order_id,adjustment_id,payment_intent_id,adjustment_kind,requested_by_actor_id,customer_actor_id,state,reason_code,idempotency_key,request_hash,correlation_id)
 		VALUES($1,$2,$3,$4,$5,$6,$7,'RECONCILIATION_REQUIRED','ORDER_ADJUSTMENT_FINANCIAL_POLICY_REQUIRED',$8,$9,$10)
 		RETURNING id,order_id,adjustment_id,payment_intent_id,adjustment_kind,requested_by_actor_id,customer_actor_id,state,reason_code,idempotency_key,request_hash,correlation_id,created_at`
-	listOrderAdjustmentCasesByOrderSQL = `SELECT id,order_id,adjustment_id,payment_intent_id,adjustment_kind,requested_by_actor_id,customer_actor_id,state,reason_code,idempotency_key,request_hash,correlation_id,created_at
-		FROM wlt.order_adjustment_reconciliation_cases WHERE order_id=$1 ORDER BY created_at ASC,id`
+	listOrderAdjustmentCasesByOrderSQL = `SELECT reconciliation.id,reconciliation.order_id,reconciliation.adjustment_id,reconciliation.payment_intent_id,reconciliation.adjustment_kind,reconciliation.requested_by_actor_id,reconciliation.customer_actor_id,reconciliation.state,reconciliation.reason_code,reconciliation.idempotency_key,reconciliation.request_hash,reconciliation.correlation_id,reconciliation.created_at
+		FROM wlt.order_adjustment_reconciliation_cases reconciliation
+		JOIN wlt.customer_payment_allocations allocation
+			ON allocation.order_id=reconciliation.order_id
+			AND allocation.payment_intent_id=reconciliation.payment_intent_id
+		JOIN wlt.payment_intents intent
+			ON intent.id=allocation.payment_intent_id
+			AND intent.payer_actor_id=reconciliation.customer_actor_id
+		WHERE reconciliation.order_id=$1 AND intent.payer_actor_id=$2
+		ORDER BY reconciliation.created_at ASC,reconciliation.id`
 )
 
 func RecordOrderAdjustmentReconciliationCase(ctx context.Context, db *sql.DB, input OrderAdjustmentReconciliationCaseInput) (OrderAdjustmentReconciliationCase, bool, error) {
@@ -145,12 +153,13 @@ func RecordOrderAdjustmentReconciliationCase(ctx context.Context, db *sql.DB, in
 	return item, false, nil
 }
 
-func ListOrderAdjustmentReconciliationCases(ctx context.Context, db *sql.DB, orderID string) ([]OrderAdjustmentReconciliationCase, error) {
+func ListOrderAdjustmentReconciliationCases(ctx context.Context, db *sql.DB, orderID, actingActorID string) ([]OrderAdjustmentReconciliationCase, error) {
 	orderID = strings.TrimSpace(orderID)
-	if db == nil || orderID == "" || len(orderID) > 128 {
+	actingActorID = strings.TrimSpace(actingActorID)
+	if db == nil || orderID == "" || len(orderID) > 128 || actingActorID == "" || len(actingActorID) > 128 {
 		return nil, ErrOrderAdjustmentReconciliationInput
 	}
-	rows, err := db.QueryContext(ctx, listOrderAdjustmentCasesByOrderSQL, orderID)
+	rows, err := db.QueryContext(ctx, listOrderAdjustmentCasesByOrderSQL, orderID, actingActorID)
 	if err != nil {
 		return nil, err
 	}

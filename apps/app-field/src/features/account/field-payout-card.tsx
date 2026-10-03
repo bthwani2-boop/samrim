@@ -32,7 +32,7 @@ export function FieldPayoutCard() {
       }
       setState((await fieldClient().readOwnPayoutState(token)).state);
     } catch (cause) {
-      console.error("DSH field payout state readback failed", cause);
+      console.warn("DSH field payout state readback failed", cause);
       setError("تعذر قراءة حالة طلب التسوية.");
     } finally { setBusy(false); }
   }, [authenticated]);
@@ -61,7 +61,7 @@ export function FieldPayoutCard() {
       setAmount("");
       await load();
     } catch (cause) {
-      console.error("DSH field payout intent failed", cause);
+      console.warn("DSH field payout intent failed", cause);
       setError(pendingAttempt ? "لم نتأكد من نتيجة الطلب؛ أعد المحاولة بالمفتاح المحفوظ لمنع تكرار الحجز." : "تعذر تسجيل طلب التسوية. تأكد من توفر وجهة محفظة رسمية معتمدة ورصيد مستحق.");
       setBusy(false);
     }

@@ -52,7 +52,7 @@ const routePaths =
   app === "app-client" ? ["home.tsx", "orders.tsx", "orders/[orderId].tsx", "cart/[storeId].tsx", "wallet-cash-in.tsx", "account.tsx"] :
   app === "app-partner" ? ["store.tsx", "orders.tsx", "onboarding.tsx", "account.tsx"] :
   app === "app-captain" ? ["home.tsx", "offers.tsx", "deliveries.tsx", "account.tsx"] :
-  ["home.tsx", "cases.tsx", "new-case.tsx", "account.tsx"];
+  ["home.tsx", "cases.tsx", "wallet.tsx", "new-case.tsx", "account.tsx"];
 const appRouteDir = path.join(appDir, "app", "(app)");
 assert.ok(fs.existsSync(path.join(appRouteDir, "_layout.tsx")), `${app}: missing authenticated route layout`);
 assert.ok(fs.readFileSync(path.join(appRouteDir, "_layout.tsx"), "utf8").includes("AuthenticatedMobileBoundary"), `${app}: authenticated routes must be session guarded`);
@@ -80,7 +80,7 @@ const tabRoutes =
   app === "app-client" ? ["home", "orders", "account", "cart/[storeId]", "orders/[orderId]"] :
   app === "app-partner" ? ["store", "orders", "account", "onboarding"] :
   app === "app-captain" ? ["home", "offers", "deliveries", "account"] :
-  ["home", "cases", "account", "new-case"];
+  ["home", "cases", "wallet", "account", "new-case"];
  let previousTabRouteIndex = -1;
  for (const tabRoute of tabRoutes) {
    const tabRouteIndex = layoutContent.indexOf(`<Tabs.Screen name="${tabRoute}"`);
@@ -124,6 +124,7 @@ if (app === "app-captain") {
     matchesCaptainFundingAttempt,
     matchesCaptainFundingRequest,
     parseCaptainFundingAttempt,
+    selectCaptainSimulatorIntent,
   } = await import(pathToFileURL(path.join(appDir, "src/features/wallet/cash-in-recovery.ts")).href);
   const intent = {
     id: "funding-captain-1",
@@ -151,10 +152,16 @@ if (app === "app-captain") {
   const exactAttempt = { ...legacyAttempt, fundingIntentID: intent.id };
   assert.equal(matchesCaptainFundingAttempt(intent, exactAttempt), true);
   assert.equal(matchesCaptainFundingAttempt({ ...intent, id: "another-intent" }, exactAttempt), false, "same actor and amount do not identify the same funding intent");
+  const unrelatedIntent = { ...intent, id: "funding-captain-2", amountMinor: 3500 };
+  assert.equal(selectCaptainSimulatorIntent([unrelatedIntent, intent], "captain-1", null), unrelatedIntent, "app-captain: without a local retry, the newest canonical simulator intent remains recoverable");
+  assert.equal(selectCaptainSimulatorIntent([unrelatedIntent, intent], "captain-1", exactAttempt), intent, "app-captain: a recorded funding intent ID selects only that exact request");
+  assert.equal(selectCaptainSimulatorIntent([unrelatedIntent, intent], "captain-1", legacyAttempt), undefined, "app-captain: a legacy retry without an intent ID cannot settle an unrelated intent");
+  assert.equal(selectCaptainSimulatorIntent([unrelatedIntent, intent], "captain-1", { ...exactAttempt, fundingIntentID: "missing-intent" }), undefined, "app-captain: a missing bound intent cannot fall back to another simulator intent");
   assert.equal(isSameCaptainFundingIntent(intent, { ...intent, state: "SETTLED" }), true);
   assert.equal(isSameCaptainFundingIntent(intent, { ...intent, amountMinor: 2501 }), false);
 
   const panel = fs.readFileSync(path.join(appDir, "src", "features", "wallet", "cash-in-panel.tsx"), "utf8");
+  assert.ok(panel.indexOf("setWallet(walletResponse)") < panel.indexOf("readOwnFundingIntent(token, attempt.fundingIntentID)"), "app-captain: wallet state remains available when recovery of a stale saved intent fails");
   assert.ok(panel.includes("readOwnFundingIntent(token, attempt.fundingIntentID)"), "app-captain: stored retry intent must use canonical owner readback");
   assert.ok(panel.includes("isSimulatableCaptainFundingIntent(intent, actorID)"), "app-captain: simulation controls must be gated by canonical intent identity and state");
   assert.ok(panel.includes("matchesCaptainFundingAttempt(intent, storedAttempt)"), "app-captain: terminal simulation must clear only its exact local retry intent");

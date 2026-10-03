@@ -60,3 +60,59 @@ func (s *JoiningCaseServer) uploadStoreProfileImage(w http.ResponseWriter, r *ht
 	}
 	s.writeResult(w, r, responseStatus(result.Replayed), result)
 }
+
+func (s *JoiningCaseServer) uploadOperatorStoreProfileImage(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("If-Match") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "client actor authority headers are forbidden")
+		return
+	}
+	acting, correlation, idempotency, expected, ok := requiredVersionedCaseHeaders(w, r)
+	if !ok {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, media.MaxUploadBytes+(64*1024))
+	if err := r.ParseMultipartForm(media.MaxUploadBytes); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a valid image upload is required")
+		return
+	}
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil || header == nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a file field is required")
+		return
+	}
+	defer file.Close()
+	if header.Size < 1 || header.Size > media.MaxUploadBytes {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
+		return
+	}
+	data, err := io.ReadAll(io.LimitReader(file, media.MaxUploadBytes+1))
+	if err != nil || int64(len(data)) > media.MaxUploadBytes {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
+		return
+	}
+	provenance := media.Provenance{
+		Creator:           strings.TrimSpace(r.FormValue("creator")),
+		SourceDescription: strings.TrimSpace(r.FormValue("sourceDescription")),
+		SourceURI:         strings.TrimSpace(r.FormValue("sourceUri")),
+		RightsStatement:   strings.TrimSpace(r.FormValue("rightsStatement")),
+		RightsURI:         strings.TrimSpace(r.FormValue("rightsUri")),
+		RightsAttested:    strings.EqualFold(strings.TrimSpace(r.FormValue("rightsAttested")), "true"),
+	}
+	if provenance.Validate() != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "creator, source, usage rights and explicit confirmation are required")
+		return
+	}
+	result, err := s.service.UploadStoreProfileImageForOperator(r.Context(), r.PathValue("caseId"), acting, idempotency, correlation, expected, header.Header.Get("Content-Type"), data, provenance)
+	if err != nil {
+		writeJoiningCaseError(w, err)
+		return
+	}
+	s.writeResult(w, r, responseStatus(result.Replayed), result)
+}
