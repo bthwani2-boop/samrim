@@ -35,9 +35,9 @@ type StoreOperationalAvailability struct {
 	WeeklySchedule              []StoreScheduleWindow `json:"weeklySchedule"`
 	Paused                      bool                  `json:"paused"`
 	PauseReason                 *string               `json:"pauseReason,omitempty"`
-	PauseUntil                  *time.Time             `json:"pauseUntil,omitempty"`
-	PreparationMinutes          *int                   `json:"preparationMinutes,omitempty"`
-	UnavailableFulfillmentModes []string               `json:"unavailableFulfillmentModes"`
+	PauseUntil                  *time.Time            `json:"pauseUntil,omitempty"`
+	PreparationMinutes          *int                  `json:"preparationMinutes,omitempty"`
+	UnavailableFulfillmentModes []string              `json:"unavailableFulfillmentModes"`
 	Version                     int                   `json:"version"`
 	UpdatedByActorID            string                `json:"updatedByActorId"`
 	UpdatedAt                   time.Time             `json:"updatedAt"`
