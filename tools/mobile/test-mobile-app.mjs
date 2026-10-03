@@ -90,6 +90,11 @@ const tabRoutes =
  }
 const identityGatePath = path.join(appDir, "src", "features", "access", "identity-gate.tsx");
 const identityGateContent = fs.readFileSync(identityGatePath, "utf8");
+const notificationsRouteContent = fs.readFileSync(path.join(appDir, "app", "notifications.tsx"), "utf8");
+assert.ok(notificationsRouteContent.includes("AuthenticatedMobileBoundary"), `${app}: notifications route must wait for authenticated session restoration`);
+assert.ok(notificationsRouteContent.includes("restoreIdentitySession") && notificationsRouteContent.includes("subscribeIdentitySession"), `${app}: notifications route must restore and subscribe to identity state`);
+assert.ok(notificationsRouteContent.includes("/?returnTo=/notifications"), `${app}: notifications route must preserve its return destination after sign-in`);
+assert.ok(identityGateContent.includes("notifications"), `${app}: identity gate must allow the notifications return path`);
 if (app === "app-client") {
   assert.ok(!identityGateContent.includes("LocationCore"), `${app}: identity gate must not own the account workflow`);
   assert.ok(!identityGateContent.includes("ClientOrders"), `${app}: identity gate must not own the orders workflow`);
