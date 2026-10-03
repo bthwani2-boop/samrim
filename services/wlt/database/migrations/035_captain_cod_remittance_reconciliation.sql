@@ -11,7 +11,8 @@ ALTER TABLE wlt.cash_remittances
     DROP CONSTRAINT cash_remittances_state_chk;
 
 UPDATE wlt.cash_remittances
-SET state='SUBMITTED';
+SET state='SUBMITTED'
+WHERE state='REMITTED';
 
 ALTER TABLE wlt.cash_remittances
     ALTER COLUMN state SET DEFAULT 'SUBMITTED',

@@ -8,6 +8,26 @@
     ".": {
       "types": "./clients/index.ts",
       "default": "./clients/index.ts"
+    },
+    "./mobile/store-access-invitations": {
+      "types": "./clients/mobile-store-access-invitations.tsx",
+      "default": "./clients/mobile-store-access-invitations.tsx"
     }
+  },
+  "peerDependencies": {
+    "@bthwani/design-system": "workspace:*",
+    "react": "*",
+    "react-native": "*"
+  },
+  "peerDependenciesMeta": {
+    "@bthwani/design-system": { "optional": true },
+    "react": { "optional": true },
+    "react-native": { "optional": true }
+  },
+  "devDependencies": {
+    "@bthwani/design-system": "workspace:*",
+    "@types/react": "19.2.17",
+    "react": "19.2.3",
+    "react-native": "0.86.3"
   }
 }
