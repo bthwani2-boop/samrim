@@ -217,7 +217,7 @@ const theme = useAppearanceTheme();
     }
   }
 
-  async function useCurrentLocation() {
+  async function requestCurrentLocation() {
     if (formLocked || locationBusy) return;
     setLocationBusy(true);
     setLocationMessage("");
@@ -431,7 +431,7 @@ const theme = useAppearanceTheme();
         </View>
         <Text style={styles.label}>موقع المتجر الثابت</Text>
         <Text style={styles.muted}>حدد موقع المتجر على الخريطة أو استخدم موقعك الحالي كنقطة بداية، ثم اضبط المؤشر على المتجر.</Text>
-        <BthwaniButton busy={locationBusy} disabled={formLocked} label="استخدام موقعي الحالي" onPress={() => void useCurrentLocation()} variant="secondary" />
+        <BthwaniButton busy={locationBusy} disabled={formLocked} label="استخدام موقعي الحالي" onPress={() => void requestCurrentLocation()} variant="secondary" />
         {locationMessage ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{locationMessage}</Text> : null}
         {locationError ? <Text accessibilityRole="alert" style={styles.error}>{locationError}</Text> : null}
         <BthwaniMap accessibilityLabel="تحديد موقع المتجر على الخريطة" selection={selectedStoreOrigin} selectionTitle="موقع المتجر" onSelectCoordinate={(coordinate) => { if (!formLocked) { setSelectedStoreOrigin(coordinate); setLocationMessage(""); setLocationError(""); setError(""); } }} />
