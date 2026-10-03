@@ -112,6 +112,49 @@ if (app === "app-client") {
   assert.equal(normalizeDiscoveryTaxonomy(undefined, undefined).verticals.find((vertical) => vertical.id === "food"), undefined);
   console.log("MOBILE_DISCOVERY_TAXONOMY=PASS missing collections remain empty arrays");
 }
+if (app === "app-captain") {
+  const {
+    isSameCaptainFundingIntent,
+    isSimulatableCaptainFundingIntent,
+    matchesCaptainFundingAttempt,
+    matchesCaptainFundingRequest,
+    parseCaptainFundingAttempt,
+  } = await import(pathToFileURL(path.join(appDir, "src/features/wallet/cash-in-recovery.ts")).href);
+  const intent = {
+    id: "funding-captain-1",
+    actorType: "captain",
+    actorId: "captain-1",
+    fundingPurpose: "CAPTAIN_TOPUP",
+    providerKey: "DEVELOPMENT_SIMULATOR",
+    externalReference: "external-1",
+    amountMinor: 2500,
+    currency: "YER",
+    state: "PENDING_PROVIDER",
+    version: 1,
+    createdAt: "2026-10-03T00:00:00Z",
+    updatedAt: "2026-10-03T00:00:00Z",
+  };
+  const legacyAttempt = parseCaptainFundingAttempt(JSON.stringify({ version: 1, actorID: "captain-1", amountMinor: 2500, idempotencyKey: "captain_cashin_key", correlationID: "captain_cashin_corr" }), "captain-1");
+  assert.ok(legacyAttempt, "app-captain: legacy retries without an intent ID must remain recoverable");
+  assert.equal(parseCaptainFundingAttempt(null, "captain-1"), null, "app-captain: absent local retry state must not prevent canonical simulator recovery");
+  assert.equal(matchesCaptainFundingRequest(intent, "captain-1", 2500), true);
+  assert.equal(matchesCaptainFundingRequest({ ...intent, actorType: "customer", fundingPurpose: "CUSTOMER_TOPUP" }, "captain-1", 2500), false);
+  assert.equal(isSimulatableCaptainFundingIntent(intent, "captain-1"), true, "app-captain: canonical WLT simulator intents remain actionable without a local retry record");
+  assert.equal(isSimulatableCaptainFundingIntent(intent, "captain-2"), false, "app-captain: another actor's intent must never be simulated");
+  assert.equal(isSimulatableCaptainFundingIntent({ ...intent, providerKey: "provider" }, "captain-1"), false);
+  assert.equal(isSimulatableCaptainFundingIntent({ ...intent, state: "SETTLED" }, "captain-1"), false);
+  const exactAttempt = { ...legacyAttempt, fundingIntentID: intent.id };
+  assert.equal(matchesCaptainFundingAttempt(intent, exactAttempt), true);
+  assert.equal(matchesCaptainFundingAttempt({ ...intent, id: "another-intent" }, exactAttempt), false, "same actor and amount do not identify the same funding intent");
+  assert.equal(isSameCaptainFundingIntent(intent, { ...intent, state: "SETTLED" }), true);
+  assert.equal(isSameCaptainFundingIntent(intent, { ...intent, amountMinor: 2501 }), false);
+
+  const panel = fs.readFileSync(path.join(appDir, "src", "features", "wallet", "cash-in-panel.tsx"), "utf8");
+  assert.ok(panel.includes("readOwnFundingIntent(token, attempt.fundingIntentID)"), "app-captain: stored retry intent must use canonical owner readback");
+  assert.ok(panel.includes("isSimulatableCaptainFundingIntent(intent, actorID)"), "app-captain: simulation controls must be gated by canonical intent identity and state");
+  assert.ok(panel.includes("matchesCaptainFundingAttempt(intent, storedAttempt)"), "app-captain: terminal simulation must clear only its exact local retry intent");
+  console.log("MOBILE_CAPTAIN_CASH_IN_RECOVERY=PASS canonical intent, actor scope, retry identity, and terminal cleanup");
+}
 const { IdentitySessionManager } = await import(pathToFileURL(path.join(root, "services/identity/clients/session.ts")).href);
 const { identitySessionSignOutMessage } = await import(pathToFileURL(path.join(root, "services/identity/clients/errors.ts")).href);
 const {
