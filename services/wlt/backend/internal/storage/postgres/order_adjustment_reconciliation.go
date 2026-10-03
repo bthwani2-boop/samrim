@@ -53,7 +53,18 @@ func scanOrderAdjustmentReconciliationCase(row interface{ Scan(...any) error }) 
 	return item, err
 }
 
-const orderAdjustmentCaseColumns = `id,order_id,adjustment_id,payment_intent_id,adjustment_kind,requested_by_actor_id,customer_actor_id,state,reason_code,idempotency_key,request_hash,correlation_id,created_at`
+const (
+	readOrderAdjustmentCaseByIdempotencyKeySQL = `SELECT id,order_id,adjustment_id,payment_intent_id,adjustment_kind,requested_by_actor_id,customer_actor_id,state,reason_code,idempotency_key,request_hash,correlation_id,created_at
+		FROM wlt.order_adjustment_reconciliation_cases WHERE idempotency_key=$1 FOR UPDATE`
+	readOrderAdjustmentCaseByOrderAndAdjustmentSQL = `SELECT id,order_id,adjustment_id,payment_intent_id,adjustment_kind,requested_by_actor_id,customer_actor_id,state,reason_code,idempotency_key,request_hash,correlation_id,created_at
+		FROM wlt.order_adjustment_reconciliation_cases WHERE order_id=$1 AND adjustment_id=$2 FOR UPDATE`
+	insertOrderAdjustmentReconciliationCaseSQL = `INSERT INTO wlt.order_adjustment_reconciliation_cases
+		(id,order_id,adjustment_id,payment_intent_id,adjustment_kind,requested_by_actor_id,customer_actor_id,state,reason_code,idempotency_key,request_hash,correlation_id)
+		VALUES($1,$2,$3,$4,$5,$6,$7,'RECONCILIATION_REQUIRED','ORDER_ADJUSTMENT_FINANCIAL_POLICY_REQUIRED',$8,$9,$10)
+		RETURNING id,order_id,adjustment_id,payment_intent_id,adjustment_kind,requested_by_actor_id,customer_actor_id,state,reason_code,idempotency_key,request_hash,correlation_id,created_at`
+	listOrderAdjustmentCasesByOrderSQL = `SELECT id,order_id,adjustment_id,payment_intent_id,adjustment_kind,requested_by_actor_id,customer_actor_id,state,reason_code,idempotency_key,request_hash,correlation_id,created_at
+		FROM wlt.order_adjustment_reconciliation_cases WHERE order_id=$1 ORDER BY created_at ASC,id`
+)
 
 func RecordOrderAdjustmentReconciliationCase(ctx context.Context, db *sql.DB, input OrderAdjustmentReconciliationCaseInput) (OrderAdjustmentReconciliationCase, bool, error) {
 	input.OrderID = strings.TrimSpace(input.OrderID)
@@ -80,7 +91,7 @@ func RecordOrderAdjustmentReconciliationCase(ctx context.Context, db *sql.DB, in
 	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:order-adjustment-reconciliation:"+input.OrderID+":"+input.AdjustmentID); err != nil {
 		return OrderAdjustmentReconciliationCase{}, false, err
 	}
-	item, err := scanOrderAdjustmentReconciliationCase(tx.QueryRowContext(ctx, "SELECT "+orderAdjustmentCaseColumns+" FROM wlt.order_adjustment_reconciliation_cases WHERE idempotency_key=$1 FOR UPDATE", input.IdempotencyKey))
+	item, err := scanOrderAdjustmentReconciliationCase(tx.QueryRowContext(ctx, readOrderAdjustmentCaseByIdempotencyKeySQL, input.IdempotencyKey))
 	if err == nil {
 		if item.RequestHash != requestHash {
 			return OrderAdjustmentReconciliationCase{}, false, ErrOrderAdjustmentReconciliationConflict
@@ -93,7 +104,7 @@ func RecordOrderAdjustmentReconciliationCase(ctx context.Context, db *sql.DB, in
 	if !errors.Is(err, sql.ErrNoRows) {
 		return OrderAdjustmentReconciliationCase{}, false, err
 	}
-	item, err = scanOrderAdjustmentReconciliationCase(tx.QueryRowContext(ctx, "SELECT "+orderAdjustmentCaseColumns+" FROM wlt.order_adjustment_reconciliation_cases WHERE order_id=$1 AND adjustment_id=$2 FOR UPDATE", input.OrderID, input.AdjustmentID))
+	item, err = scanOrderAdjustmentReconciliationCase(tx.QueryRowContext(ctx, readOrderAdjustmentCaseByOrderAndAdjustmentSQL, input.OrderID, input.AdjustmentID))
 	if err == nil {
 		if item.RequestHash != requestHash {
 			return OrderAdjustmentReconciliationCase{}, false, ErrOrderAdjustmentReconciliationConflict
@@ -123,9 +134,7 @@ func RecordOrderAdjustmentReconciliationCase(ctx context.Context, db *sql.DB, in
 	if err != nil {
 		return OrderAdjustmentReconciliationCase{}, false, err
 	}
-	item, err = scanOrderAdjustmentReconciliationCase(tx.QueryRowContext(ctx, `INSERT INTO wlt.order_adjustment_reconciliation_cases
-		(id,order_id,adjustment_id,payment_intent_id,adjustment_kind,requested_by_actor_id,customer_actor_id,state,reason_code,idempotency_key,request_hash,correlation_id)
-		VALUES($1,$2,$3,$4,$5,$6,$7,'RECONCILIATION_REQUIRED','ORDER_ADJUSTMENT_FINANCIAL_POLICY_REQUIRED',$8,$9,$10) RETURNING `+orderAdjustmentCaseColumns,
+	item, err = scanOrderAdjustmentReconciliationCase(tx.QueryRowContext(ctx, insertOrderAdjustmentReconciliationCaseSQL,
 		id, input.OrderID, input.AdjustmentID, input.PaymentIntentID, input.AdjustmentKind, input.RequestedByActor, input.CustomerActorID, input.IdempotencyKey, requestHash, input.CorrelationID))
 	if err != nil {
 		return OrderAdjustmentReconciliationCase{}, false, fmt.Errorf("record WLT order adjustment reconciliation case: %w", err)
@@ -141,7 +150,7 @@ func ListOrderAdjustmentReconciliationCases(ctx context.Context, db *sql.DB, ord
 	if db == nil || orderID == "" || len(orderID) > 128 {
 		return nil, ErrOrderAdjustmentReconciliationInput
 	}
-	rows, err := db.QueryContext(ctx, "SELECT "+orderAdjustmentCaseColumns+" FROM wlt.order_adjustment_reconciliation_cases WHERE order_id=$1 ORDER BY created_at ASC,id", orderID)
+	rows, err := db.QueryContext(ctx, listOrderAdjustmentCasesByOrderSQL, orderID)
 	if err != nil {
 		return nil, err
 	}

@@ -84,10 +84,19 @@ func scanOrderAdjustment(row rowScanner) (OrderAdjustmentRecord, error) {
 	return item, err
 }
 
-const orderAdjustmentColumns = `id,order_id,order_line_id,kind,state,actual_quantity_base_units,customer_decision_required,requested_by_actor_id,requested_by_role,customer_actor_id,customer_decided_at,applied_at,version,created_at,updated_at`
+const (
+	listOrderAdjustmentsSQL = `SELECT id,order_id,order_line_id,kind,state,actual_quantity_base_units,customer_decision_required,requested_by_actor_id,requested_by_role,customer_actor_id,customer_decided_at,applied_at,version,created_at,updated_at
+		FROM dsh.commerce_order_adjustments WHERE order_id=$1 ORDER BY created_at ASC,id`
+	readOrderAdjustmentByOrderAndIDSQL = `SELECT id,order_id,order_line_id,kind,state,actual_quantity_base_units,customer_decision_required,requested_by_actor_id,requested_by_role,customer_actor_id,customer_decided_at,applied_at,version,created_at,updated_at
+		FROM dsh.commerce_order_adjustments WHERE order_id=$1 AND id=$2`
+	lockOrderAdjustmentByOrderAndIDSQL = `SELECT id,order_id,order_line_id,kind,state,actual_quantity_base_units,customer_decision_required,requested_by_actor_id,requested_by_role,customer_actor_id,customer_decided_at,applied_at,version,created_at,updated_at
+		FROM dsh.commerce_order_adjustments WHERE order_id=$1 AND id=$2 FOR UPDATE`
+	readOrderAdjustmentByIDSQL = `SELECT id,order_id,order_line_id,kind,state,actual_quantity_base_units,customer_decision_required,requested_by_actor_id,requested_by_role,customer_actor_id,customer_decided_at,applied_at,version,created_at,updated_at
+		FROM dsh.commerce_order_adjustments WHERE id=$1`
+)
 
 func listOrderAdjustments(ctx context.Context, source queryer, orderID string) ([]OrderAdjustmentRecord, error) {
-	rows, err := source.QueryContext(ctx, `SELECT `+orderAdjustmentColumns+` FROM dsh.commerce_order_adjustments WHERE order_id=$1 ORDER BY created_at ASC,id`, orderID)
+	rows, err := source.QueryContext(ctx, listOrderAdjustmentsSQL, orderID)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +120,7 @@ func ReadOrderAdjustment(ctx context.Context, db *sql.DB, orderID, adjustmentID 
 	if db == nil || orderID == "" || adjustmentID == "" {
 		return OrderAdjustmentRecord{}, "", "", ErrOrderAdjustmentInvalid
 	}
-	item, err := scanOrderAdjustment(db.QueryRowContext(ctx, `SELECT `+orderAdjustmentColumns+` FROM dsh.commerce_order_adjustments WHERE order_id=$1 AND id=$2`, orderID, adjustmentID))
+	item, err := scanOrderAdjustment(db.QueryRowContext(ctx, readOrderAdjustmentByOrderAndIDSQL, orderID, adjustmentID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return OrderAdjustmentRecord{}, "", "", ErrOrderAdjustmentNotFound
 	}
@@ -161,7 +170,7 @@ func ProposeOrderAdjustment(ctx context.Context, db *sql.DB, input ProposeOrderA
 		if err != nil {
 			return OrderRecord{}, OrderAdjustmentRecord{}, false, err
 		}
-		adjustment, err := scanOrderAdjustment(tx.QueryRowContext(ctx, `SELECT `+orderAdjustmentColumns+` FROM dsh.commerce_order_adjustments WHERE id=$1 AND order_id=$2`, adjustmentID, input.OrderID))
+		adjustment, err := scanOrderAdjustment(tx.QueryRowContext(ctx, readOrderAdjustmentByOrderAndIDSQL, input.OrderID, adjustmentID))
 		if err != nil {
 			return OrderRecord{}, OrderAdjustmentRecord{}, false, err
 		}
@@ -237,7 +246,7 @@ func ProposeOrderAdjustment(ctx context.Context, db *sql.DB, input ProposeOrderA
 	if err != nil {
 		return OrderRecord{}, OrderAdjustmentRecord{}, false, err
 	}
-	adjustment, err := scanOrderAdjustment(tx.QueryRowContext(ctx, `SELECT `+orderAdjustmentColumns+` FROM dsh.commerce_order_adjustments WHERE id=$1`, newAdjustmentID))
+	adjustment, err := scanOrderAdjustment(tx.QueryRowContext(ctx, readOrderAdjustmentByIDSQL, newAdjustmentID))
 	if err != nil {
 		return OrderRecord{}, OrderAdjustmentRecord{}, false, err
 	}
@@ -272,7 +281,7 @@ func DecideOrderAdjustment(ctx context.Context, db *sql.DB, orderID, adjustmentI
 		if err != nil {
 			return OrderRecord{}, OrderAdjustmentRecord{}, false, err
 		}
-		adjustment, err := scanOrderAdjustment(tx.QueryRowContext(ctx, `SELECT `+orderAdjustmentColumns+` FROM dsh.commerce_order_adjustments WHERE id=$1 AND order_id=$2`, adjustmentID, orderID))
+		adjustment, err := scanOrderAdjustment(tx.QueryRowContext(ctx, readOrderAdjustmentByOrderAndIDSQL, orderID, adjustmentID))
 		if err != nil {
 			return OrderRecord{}, OrderAdjustmentRecord{}, false, err
 		}
@@ -297,7 +306,7 @@ func DecideOrderAdjustment(ctx context.Context, db *sql.DB, orderID, adjustmentI
 	if current.Version != expectedOrderVersion || (current.State != "PARTNER_ACCEPTED" && current.State != "PREPARING") {
 		return OrderRecord{}, OrderAdjustmentRecord{}, false, ErrOrderAdjustmentConflict
 	}
-	adjustment, err := scanOrderAdjustment(tx.QueryRowContext(ctx, `SELECT `+orderAdjustmentColumns+` FROM dsh.commerce_order_adjustments WHERE id=$1 AND order_id=$2 FOR UPDATE`, adjustmentID, orderID))
+	adjustment, err := scanOrderAdjustment(tx.QueryRowContext(ctx, lockOrderAdjustmentByOrderAndIDSQL, orderID, adjustmentID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return OrderRecord{}, OrderAdjustmentRecord{}, false, ErrOrderAdjustmentNotFound
 	}
@@ -339,7 +348,7 @@ func DecideOrderAdjustment(ctx context.Context, db *sql.DB, orderID, adjustmentI
 	if err != nil {
 		return OrderRecord{}, OrderAdjustmentRecord{}, false, err
 	}
-	adjustment, err = scanOrderAdjustment(tx.QueryRowContext(ctx, `SELECT `+orderAdjustmentColumns+` FROM dsh.commerce_order_adjustments WHERE id=$1`, adjustmentID))
+	adjustment, err = scanOrderAdjustment(tx.QueryRowContext(ctx, readOrderAdjustmentByIDSQL, adjustmentID))
 	if err != nil {
 		return OrderRecord{}, OrderAdjustmentRecord{}, false, err
 	}
