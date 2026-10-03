@@ -15,6 +15,7 @@ import (
 var (
 	ErrInvalidInput            = errors.New("Store operational availability input is invalid")
 	ErrPartnerSessionForbidden = errors.New("an active app-partner session is required")
+	ErrClientSessionForbidden  = errors.New("an active app-client session is required")
 	ErrStoreAccessForbidden    = errors.New("Partner is not authorized to manage Store operations")
 	ErrOperatorNotActive       = errors.New("operator is not active")
 )
@@ -39,12 +40,48 @@ func (s *Service) Read(ctx context.Context, storeID string) (postgres.StoreOpera
 	return postgres.ReadStoreOperationalAvailability(ctx, s.db, storeID)
 }
 
+func (s *Service) ReadForPartner(ctx context.Context, accessToken, storeID string) (postgres.StoreOperationalAvailability, error) {
+	identity, err := s.requirePartner(ctx, accessToken)
+	if err != nil {
+		return postgres.StoreOperationalAvailability{}, err
+	}
+	storeID = strings.TrimSpace(storeID)
+	if storeID == "" {
+		return postgres.StoreOperationalAvailability{}, ErrInvalidInput
+	}
+	if _, _, err := postgres.AuthorizePartnerStoreAction(ctx, s.db, storeID, identity.Subject, "store_operations"); err != nil {
+		if errors.Is(err, postgres.ErrStoreAccessForbidden) || errors.Is(err, postgres.ErrStoreNotFound) {
+			return postgres.StoreOperationalAvailability{}, ErrStoreAccessForbidden
+		}
+		return postgres.StoreOperationalAvailability{}, err
+	}
+	return postgres.ReadStoreOperationalAvailability(ctx, s.db, storeID)
+}
+
+func (s *Service) ReadForOperator(ctx context.Context, actingActorID, storeID string) (postgres.StoreOperationalAvailability, error) {
+	actingActorID, storeID = strings.TrimSpace(actingActorID), strings.TrimSpace(storeID)
+	if actingActorID == "" || storeID == "" {
+		return postgres.StoreOperationalAvailability{}, ErrInvalidInput
+	}
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return postgres.StoreOperationalAvailability{}, err
+	}
+	return postgres.ReadStoreOperationalAvailability(ctx, s.db, storeID)
+}
+
 func (s *Service) Evaluate(ctx context.Context, storeID, fulfillmentMode string, at time.Time) (postgres.StoreOrderability, error) {
 	storeID, fulfillmentMode = strings.TrimSpace(storeID), strings.TrimSpace(fulfillmentMode)
 	if storeID == "" || fulfillmentMode == "" {
 		return postgres.StoreOrderability{}, ErrInvalidInput
 	}
 	return postgres.EvaluateStoreOrderability(ctx, s.db, storeID, fulfillmentMode, at)
+}
+
+func (s *Service) EvaluateForClient(ctx context.Context, accessToken, storeID, fulfillmentMode string, at time.Time) (postgres.StoreOrderability, error) {
+	if _, err := s.requireClient(ctx, accessToken); err != nil {
+		return postgres.StoreOrderability{}, err
+	}
+	return s.Evaluate(ctx, storeID, fulfillmentMode, at)
 }
 
 func (s *Service) UpdateForPartner(ctx context.Context, accessToken string, input postgres.UpdateStoreOperationalAvailabilityInput) (postgres.StoreOperationalAvailability, bool, error) {
@@ -91,6 +128,17 @@ func (s *Service) requirePartner(ctx context.Context, accessToken string) (ident
 	}
 	if identity.Role != "partner" || identity.Surface != "app-partner" || strings.TrimSpace(identity.Subject) == "" {
 		return identityclient.ActorIdentity{}, ErrPartnerSessionForbidden
+	}
+	return identity, nil
+}
+
+func (s *Service) requireClient(ctx context.Context, accessToken string) (identityclient.ActorIdentity, error) {
+	identity, err := s.identity.ReadSession(ctx, strings.TrimSpace(accessToken))
+	if err != nil {
+		return identityclient.ActorIdentity{}, err
+	}
+	if identity.Role != "client" || identity.Surface != "app-client" || strings.TrimSpace(identity.Subject) == "" {
+		return identityclient.ActorIdentity{}, ErrClientSessionForbidden
 	}
 	return identity, nil
 }
