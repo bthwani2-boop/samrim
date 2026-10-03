@@ -97,6 +97,11 @@ if (app === "app-client") {
   assert.ok(identityGateContent.includes("authenticatedContent={<Redirect"), `${app}: managed identity gate must redirect into the authenticated route tree`);
 }
 console.log(`MOBILE_ROUTE_TREE=PASS app=${app} routes=${routePaths.join(",")}`);
+if (app === "app-partner") {
+  const storeOfferContent = fs.readFileSync(path.join(appDir, "src", "features", "store-offer", "store-offer.tsx"), "utf8");
+  assert.ok(storeOfferContent.includes("label={category.pathAr}"), `${app}: shared catalog category choices must display their full hierarchy path`);
+  console.log("MOBILE_CATALOG_CATEGORY_PATH=PASS shared catalog proposals display the full category hierarchy");
+}
 
 import { register } from "node:module";
 import { pathToFileURL } from "node:url";
