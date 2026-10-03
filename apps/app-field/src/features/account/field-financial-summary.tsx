@@ -28,8 +28,8 @@ export function FieldFinancialSummaryCard() {
       token = await getUsableIdentityAccessToken();
     } catch (cause) {
       console.warn("Field financial identity token read failed", cause);
-      setSummaryError("تعذر التحقق من جلسة الميداني لقراءة الاستحقاقات.");
-      setLedgerError("تعذر التحقق من جلسة الميداني لقراءة الحركات.");
+      setSummaryError("تعذر التحقق من حسابك لقراءة المستحقات.");
+      setLedgerError("تعذر التحقق من حسابك لقراءة الحركات.");
       setSummaryLoading(false);
       setLedgerLoading(false);
       return;
@@ -44,13 +44,13 @@ export function FieldFinancialSummaryCard() {
       setSummary(financialResult.value.summary);
     } else {
       console.warn("DSH Field financial summary readback failed", financialResult.reason);
-      setSummaryError("تعذر قراءة ملخص استحقاقات الميدان الآن.");
+      setSummaryError("تعذر قراءة ملخص مستحقاتك الآن.");
     }
     if (ledgerResult.status === "fulfilled") {
       setLedger(ledgerResult.value);
     } else {
       console.warn("DSH Field acquisition entitlement readback failed", ledgerResult.reason);
-      setLedgerError("تعذر قراءة حركات استحقاق ضم الشريك الآن.");
+      setLedgerError("تعذر قراءة حركات مكافآت الشركاء الآن.");
     }
     setSummaryLoading(false);
     setLedgerLoading(false);
@@ -87,7 +87,6 @@ export function FieldFinancialSummaryCard() {
       <Text style={styles.label}>استحقاق ضم شريك · {entry.storeName}</Text>
       <Text style={styles.muted}>تحقق بنشر المتجر وظهوره للعميل · {new Date(entry.createdAt).toLocaleDateString("ar-YE")}</Text>
     </View>
-    <Text accessibilityLabel={`معرّف الحركة ${entry.ledgerTransactionId}`} style={styles.transactionID}>{entry.ledgerTransactionId}</Text>
   </View>);
 
   return <BthwaniSurface tone="base" style={styles.card}>
@@ -98,11 +97,11 @@ export function FieldFinancialSummaryCard() {
       <View><Text style={styles.label}>شركاء تحقق استحقاقهم</Text><Text style={styles.value}>{summary.partnerCount.toLocaleString("ar-YE")}</Text></View>
       <View><Text style={styles.label}>إجمالي الاستحقاقات</Text><Text style={styles.value}>{formatMoney(summary.entitlementMinor, summary.currency)}</Text></View>
     </View> : null}
-    {summaryLoading && !summary ? <Text style={styles.muted}>جارٍ قراءة ملخص الاستحقاقات من WLT…</Text> : null}
+    {summaryLoading && !summary ? <Text style={styles.muted}>جارٍ قراءة ملخص المستحقات…</Text> : null}
     {summaryError ? <Text accessibilityRole="alert" style={styles.error}>{summaryError}</Text> : null}
     <Text style={styles.muted}>يُثبت الاستحقاق بعد ظهور متجر الشريك للعميل؛ الرصيد المتاح والمحجوز يظهران في قسم التسوية.</Text>
     <Text style={styles.sectionTitle}>حركات استحقاق ضم الشريك</Text>
-    {ledgerLoading && !ledger ? <Text style={styles.muted}>جارٍ قراءة الحركات من WLT…</Text> : null}
+    {ledgerLoading && !ledger ? <Text style={styles.muted}>جارٍ قراءة سجل المكافآت…</Text> : null}
     {ledgerError ? <Text accessibilityRole="alert" style={styles.error}>{ledgerError}</Text> : null}
     {entitlementRows}
     {ledger && ledger.entitlements.length === 0 ? <Text style={styles.muted}>لا توجد حركات استحقاق مسجلة حتى الآن.</Text> : null}
@@ -120,7 +119,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     grid: { flexDirection: "row", gap: spacing[5] },
     entry: { borderColor: theme.borderColor, borderTopWidth: borders.hairline, flexDirection: "row", gap: spacing[3], justifyContent: "space-between", paddingVertical: spacing[3] },
     entryMain: { flex: 1, gap: spacing[1] },
-    transactionID: { ...typography.caption, color: theme.colorMuted, maxWidth: 110 },
     label: { ...typography.caption, color: theme.colorMuted },
     value: { ...typography.bodyStrong, color: theme.color, marginTop: spacing[1] },
     muted: { ...typography.bodySm, color: theme.colorMuted },

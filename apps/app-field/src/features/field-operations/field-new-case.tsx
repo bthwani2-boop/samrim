@@ -1,7 +1,8 @@
-import { BthwaniButton, BthwaniChip, BthwaniMap, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniChip, BthwaniMap, useAppearanceTheme, type BthwaniMapCoordinate } from "@bthwani/design-system/native";
 import { fieldAdmissionStateLabel, isMediaProvenanceInputValid, type CommercialStoreType, type CommerceVertical, type CreateJoiningCaseRequest, type DshImageUploadInput, type JoiningCaseProofType, type JoiningCaseResponse, joiningCaseStateLabel, type MediaProvenanceInput, type ServiceCity, type StoreWorkingHoursInterval } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
+import * as Location from "expo-location";
 import { type Href, Link } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, Switch, Text, TextInput, View } from "react-native";
@@ -87,11 +88,7 @@ const theme = useAppearanceTheme();
   const { state: admissionState, refresh: refreshAdmission } = useOwnFieldAdmission();
   const [input, setInput] = useState<CreateJoiningCaseRequest>(initialJoiningCaseInput);
   const [workingHoursByDay, setWorkingHoursByDay] = useState<Record<number, ReadonlyArray<EditableWorkingHoursInterval>>>({});
-  const [storeLatitude, setStoreLatitude] = useState("");
-  const [storeLongitude, setStoreLongitude] = useState("");
-  const parsedStoreLatitude = Number(storeLatitude);
-  const parsedStoreLongitude = Number(storeLongitude);
-  const selectedStoreOrigin = Number.isFinite(parsedStoreLatitude) && Number.isFinite(parsedStoreLongitude) && storeLatitude.trim() !== "" && storeLongitude.trim() !== "" && parsedStoreLatitude >= -90 && parsedStoreLatitude <= 90 && parsedStoreLongitude >= -180 && parsedStoreLongitude <= 180 ? { latitude: parsedStoreLatitude, longitude: parsedStoreLongitude } : null;
+  const [selectedStoreOrigin, setSelectedStoreOrigin] = useState<BthwaniMapCoordinate | null>(null);
   const [createdCase, setCreatedCase] = useState<JoiningCaseResponse | null>(null);
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
@@ -102,6 +99,9 @@ const theme = useAppearanceTheme();
   const [optionsError, setOptionsError] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [locationBusy, setLocationBusy] = useState(false);
+  const [locationMessage, setLocationMessage] = useState("");
+  const [locationError, setLocationError] = useState("");
   const [storeImage, setStoreImage] = useState<StoreImageDraft | null>(null);
   const [proofImage, setProofImage] = useState<DshImageUploadInput | null>(null);
   const [pendingCreateAttempt, setPendingCreateAttempt] = useState<PendingCreateAttempt | null>(null);
@@ -193,28 +193,57 @@ const theme = useAppearanceTheme();
       if (storeImage) {
         await uploadStoreImage(response, storeImage);
       }
-      setStoreLatitude("");
-      setStoreLongitude("");
+      setSelectedStoreOrigin(null);
       setInput(initialJoiningCaseInput());
       setWorkingHoursByDay({});
       await loadAdmission();
     } catch (cause) {
       console.warn("DSH Field joining-case creation failed", cause);
       if (isOutcomeUncertain(cause)) {
-        setError("تعذر تأكيد نتيجة الحفظ. أعد المحاولة لإعادة قراءة النتيجة من DSH بالمفتاح نفسه.");
+        setError("تعذر تأكيد الحفظ. أعد المحاولة للتحقق من النتيجة قبل إنشاء طلب جديد.");
       } else {
         setPendingCreateAttempt(null);
         const code = dshErrorCode(cause);
         setError(code === "JOINING_CASE_EXISTS"
-          ? "يوجد ملف نشط لهذا الهاتف. افتح ملفات الانضمام للتحقق من السجل قبل إنشاء ملف آخر."
+          ? "يوجد طلب نشط لهذا الهاتف. افتح قائمة الشركاء للتحقق منه قبل إنشاء طلب آخر."
           : code === "SERVICE_CITY_UNAVAILABLE"
             ? "مدينة الخدمة لم تعد نشطة. أعد قراءة المدن واختر مدينة أخرى."
             : code === "VERTICAL_UNAVAILABLE"
               ? "الفئة الرئيسية لم تعد نشطة. أعد قراءة الأنشطة واختر فئة أخرى."
-              : "تعذر حفظ الملف. تحقق من الهاتف والأسماء والاختيارات ثم أعد المحاولة.");
+              : "تعذر حفظ طلب الشريك. تحقق من الهاتف والأسماء والاختيارات ثم أعد المحاولة.");
       }
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function useCurrentLocation() {
+    if (formLocked || locationBusy) return;
+    setLocationBusy(true);
+    setLocationMessage("");
+    setLocationError("");
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== "granted") {
+        setLocationError("لم نتمكن من استخدام موقعك. اختر موقع المتجر يدويًا على الخريطة.");
+        return;
+      }
+      if (!(await Location.hasServicesEnabledAsync())) {
+        setLocationError("خدمة الموقع غير مفعّلة. فعّلها أو اختر موقع المتجر يدويًا على الخريطة.");
+        return;
+      }
+      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const coordinate = { latitude: position.coords.latitude, longitude: position.coords.longitude };
+      if (!Number.isFinite(coordinate.latitude) || !Number.isFinite(coordinate.longitude) || coordinate.latitude < -90 || coordinate.latitude > 90 || coordinate.longitude < -180 || coordinate.longitude > 180) {
+        setLocationError("تعذر تحديد موقع صالح. اختر موقع المتجر يدويًا على الخريطة.");
+        return;
+      }
+      setSelectedStoreOrigin(coordinate);
+      setLocationMessage("حددنا موقعك كنقطة بداية. اسحب المؤشر أو المس الخريطة لضبط موقع المتجر.");
+    } catch {
+      setLocationError("تعذر تحديد موقعك الآن. يمكنك اختيار موقع المتجر يدويًا على الخريطة.");
+    } finally {
+      setLocationBusy(false);
     }
   }
 
@@ -297,7 +326,7 @@ const theme = useAppearanceTheme();
         return;
       }
       if (isOutcomeUncertain(cause)) {
-        setError("تم حفظ الملف، لكن لم تتأكد نتيجة رفع الصورة. أعد المحاولة بالمفتاح نفسه.");
+        setError("حُفظت المسودة، لكن لم نتأكد من رفع الصورة بعد. أعد المحاولة للتحقق من حالتها.");
         return;
       }
       setPendingImageAttempt(null);
@@ -308,7 +337,7 @@ const theme = useAppearanceTheme();
       } catch (readError) {
         console.warn("DSH Field case reconciliation after image upload failed", readError);
       }
-      setError("تم حفظ الملف، لكن تعذر تأكيد رفع الصورة. تمت إعادة قراءة الحالة الكانونية؛ تحقق منها قبل المحاولة مجددًا.");
+      setError("حُفظ الطلب، لكن تعذر تأكيد رفع الصورة. حدّث الحالة قبل المحاولة مجددًا.");
     }
   }
 
@@ -335,7 +364,7 @@ const theme = useAppearanceTheme();
     } catch (cause) {
       console.warn("DSH Field proof image upload failed", cause);
       if (isOutcomeUncertain(cause)) {
-        setError("تعذر تأكيد رفع صورة الإثبات. أعد المحاولة بالمفتاح نفسه للتحقق من الحالة.");
+        setError("لم نتأكد من رفع صورة الإثبات بعد. أعد المحاولة للتحقق من حالتها.");
         return;
       }
       setPendingProofImageAttempt(null);
@@ -346,18 +375,18 @@ const theme = useAppearanceTheme();
       } catch (readError) {
         console.warn("DSH Field case reconciliation after proof image upload failed", readError);
       }
-      setError("تعذر تأكيد صورة الإثبات. أُعيدت قراءة الحالة الكانونية؛ تحقق منها قبل إعادة الرفع.");
+      setError("تعذر تأكيد صورة الإثبات. حدّث المسودة قبل إعادة الرفع.");
     }
   }
 
   return (
-    <View style={styles.container} accessibilityLabel="ملف انضمام جديد">
-      <Text style={styles.title}>ملف انضمام جديد</Text>
-      <Text style={styles.muted}>أدخل بيانات المالك والمتجر والإثبات. يُحفظ الملف كمسودة؛ يلزم رفع صورة واجهة المتجر وصورة الإثبات قبل إرساله للمراجعة.</Text>
-      {admissionState.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ التحقق من الأهلية…</Text></View> : null}
-      {admissionState.kind === "missing" ? <View style={styles.card}><Text style={styles.cardTitle}>لا يمكن إنشاء ملف الآن</Text><Text style={styles.muted}>لا يوجد سجل أهلية ميدانية لهذا الحساب في DSH. تواصل مع المشغّل لإكمال إجراءات التسجيل.</Text></View> : null}
-      {admissionState.kind === "ready" && admissionState.admission.state !== "eligible" ? <View style={styles.card}><Text style={styles.cardTitle}>لا يمكن إنشاء ملف الآن</Text><Text style={styles.muted}>حالة الأهلية الحالية: {fieldAdmissionStateLabel(admissionState.admission.state)}. تابع الحالة أو تواصل مع المشغّل.</Text></View> : null}
-      {admissionState.kind === "error" ? <View style={styles.card}><Text accessibilityRole="alert" style={styles.error}>تعذر التحقق من أهلية الميدان. لم نتمكن من قراءة حالتها؛ أعد المحاولة عند توفر الاتصال.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void loadAdmission()} variant="secondary" /></View> : null}
+    <View style={styles.container} accessibilityLabel="إضافة شريك">
+      <Text style={styles.title}>إضافة شريك</Text>
+      <Text style={styles.muted}>أدخل بيانات المالك والمتجر والإثبات. تُحفظ المسودة أولًا؛ ارفع صورة الواجهة والإثبات قبل إرسالها للمراجعة.</Text>
+      {admissionState.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة حالة التفعيل…</Text></View> : null}
+      {admissionState.kind === "missing" ? <View style={styles.card}><Text style={styles.cardTitle}>لم يكتمل تفعيل الحساب</Text><Text style={styles.muted}>تواصل مع فريق التشغيل لإكمال تسجيلك للميدان.</Text></View> : null}
+      {admissionState.kind === "ready" && admissionState.admission.state !== "eligible" ? <View style={styles.card}><Text style={styles.cardTitle}>لا يمكن إضافة شريك الآن</Text><Text style={styles.muted}>حالة التفعيل الحالية: {fieldAdmissionStateLabel(admissionState.admission.state)}. تابع الحالة أو تواصل مع فريق التشغيل.</Text></View> : null}
+      {admissionState.kind === "error" ? <View style={styles.card}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة حالة تفعيلك الآن. أعد المحاولة عند توفر الاتصال.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void loadAdmission()} variant="secondary" /></View> : null}
       {admissionState.kind === "ready" && admissionState.admission.state === "eligible" ? <View style={styles.card}>
         <Text style={styles.label}>اسم المالك الكامل</Text>
         <TextInput accessibilityLabel="اسم المالك الكامل" editable={!formLocked} autoComplete="name" placeholder="الاسم كما يظهر في الإثبات" placeholderTextColor={theme.colorMuted} style={styles.input} value={input.ownerFullName} onChangeText={(value) => setInput((current) => ({ ...current, ownerFullName: value }))} />
@@ -401,10 +430,11 @@ const theme = useAppearanceTheme();
           <BthwaniChip label="استلم بنفسك من المتجر" onPress={() => { if (!formLocked) toggleFulfillmentMode("CUSTOMER_PICKUP"); }} selected={input.firstStoreFulfillmentModes.includes("CUSTOMER_PICKUP")} />
         </View>
         <Text style={styles.label}>موقع المتجر الثابت</Text>
-        <Text style={styles.muted}>حدد نقطة المتجر على الخريطة أو أدخل الإحداثيات. تنتقل النقطة إلى المتجر عند الاعتماد ولا تُعدّل من شاشة إدارة المتجر.</Text>
-        <BthwaniMap accessibilityLabel="تحديد موقع المتجر الثابت" selection={selectedStoreOrigin} selectionTitle="موقع المتجر" onSelectCoordinate={(coordinate) => { if (!formLocked) { setStoreLatitude(coordinate.latitude.toFixed(6)); setStoreLongitude(coordinate.longitude.toFixed(6)); setError(""); } }} />
-        <TextInput accessibilityLabel="خط عرض موقع المتجر" editable={!formLocked} keyboardType="numbers-and-punctuation" placeholder="خط العرض، مثال: 15.369445" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput]} value={storeLatitude} onChangeText={setStoreLatitude} />
-        <TextInput accessibilityLabel="خط طول موقع المتجر" editable={!formLocked} keyboardType="numbers-and-punctuation" placeholder="خط الطول، مثال: 44.191006" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput]} value={storeLongitude} onChangeText={setStoreLongitude} />
+        <Text style={styles.muted}>حدد موقع المتجر على الخريطة أو استخدم موقعك الحالي كنقطة بداية، ثم اضبط المؤشر على المتجر.</Text>
+        <BthwaniButton busy={locationBusy} disabled={formLocked} label="استخدام موقعي الحالي" onPress={() => void useCurrentLocation()} variant="secondary" />
+        {locationMessage ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{locationMessage}</Text> : null}
+        {locationError ? <Text accessibilityRole="alert" style={styles.error}>{locationError}</Text> : null}
+        <BthwaniMap accessibilityLabel="تحديد موقع المتجر على الخريطة" selection={selectedStoreOrigin} selectionTitle="موقع المتجر" onSelectCoordinate={(coordinate) => { if (!formLocked) { setSelectedStoreOrigin(coordinate); setLocationMessage(""); setLocationError(""); setError(""); } }} />
         <Text style={styles.label}>ساعات العمل الأسبوعية</Text>
         <Text style={styles.muted}>أيام الأسبوع التي تتركها مغلقة لا تُضاف إلى الجدول. افتح اليوم لإضافة فترة، ويمكن إضافة فترات متعددة أو تحديد أن الإغلاق في اليوم التالي.</Text>
         {weekdays.map(({ day, label }) => {
@@ -447,11 +477,11 @@ const theme = useAppearanceTheme();
           <View style={styles.optionList}><Switch disabled={formLocked} value={storeImage.provenance.rightsAttested} onValueChange={(rightsAttested) => setStoreImage((current) => current ? { ...current, provenance: { ...current.provenance, rightsAttested } } : null)} /><Text style={styles.muted}>أؤكد أن بيانات المصدر وحق الاستخدام المدخلة صحيحة.</Text></View>
         </View> : null}
         <BthwaniButton disabled={formLocked} label={storeImage ? "تغيير صورة المتجر" : "اختيار صورة المتجر"} onPress={() => void pickStoreImage()} variant="secondary" />
-        <Text style={styles.muted}>زر الحفظ ينشئ مسودة فقط. أكمِل رفع صورة واجهة المتجر، ثم صورة الإثبات عبر المسار الآمن، قبل إرسال الملف للمراجعة.</Text>
-        <BthwaniButton busy={busy} disabled={busy || (!pendingCreateAttempt && (formLocked || optionsLoading || Boolean(optionsError)))} label={pendingCreateAttempt ? "إعادة التحقق من حفظ المسودة" : "حفظ المسودة والمتابعة إلى صورة الإثبات"} onPress={() => void createCase()} />
+        <Text style={styles.muted}>حفظ المسودة لا يرسلها للمراجعة. أكمِل صورتي الواجهة والإثبات أولًا.</Text>
+        <BthwaniButton busy={busy} disabled={busy || (!pendingCreateAttempt && (formLocked || optionsLoading || Boolean(optionsError)))} label={pendingCreateAttempt ? "التحقق من حفظ المسودة" : "حفظ المسودة"} onPress={() => void createCase()} />
       </View> : null}
       {createdCase ? <View accessibilityLiveRegion="polite" style={styles.successCard}>
-        <Text style={styles.cardTitle}>تم حفظ مسودة ملف الانضمام</Text>
+        <Text style={styles.cardTitle}>حُفظت مسودة الشريك</Text>
         <Text style={styles.muted}>{createdCase.case.businessName} · {createdCase.case.firstStoreName}</Text>
         <Text style={styles.successText}>الحالة: {joiningCaseStateLabel(createdCase.case.state)} · لم يُرسل للمراجعة</Text>
         <Text style={createdCase.case.storeProfileImage ? styles.successText : styles.error}>{createdCase.case.storeProfileImage ? "صورة واجهة المتجر مرفوعة." : "مطلوب قبل الإرسال: اختيار صورة واجهة المتجر ورفعها."}</Text>
@@ -466,10 +496,10 @@ const theme = useAppearanceTheme();
           <BthwaniButton disabled={busy || Boolean(pendingImageAttempt)} label="اختيار صورة أخرى" onPress={() => void pickStoreImage()} variant="secondary" />
           <BthwaniButton busy={busy} disabled={busy} label={pendingImageAttempt ? "إعادة التحقق من رفع الصورة" : "إعادة رفع صورة المتجر"} onPress={() => void retryStoreImage()} variant="secondary" />
         </> : null}
-        <Link href={"/cases" as Href} asChild><BthwaniButton label="فتح ملفات الانضمام" variant="secondary" /></Link>
+        <Link href={"/cases" as Href} asChild><BthwaniButton label="فتح قائمة الشركاء" variant="secondary" /></Link>
       </View> : null}
-      {error ? <View><Text accessibilityRole="alert" style={styles.error}>{error}</Text>{pendingCreateAttempt || error.startsWith("يوجد ملف نشط") ? <Link href={"/cases" as Href} asChild><BthwaniButton label="قراءة ملفات الانضمام المحفوظة" variant="secondary" /></Link> : null}</View> : null}
-      <BthwaniButton busy={busy} disabled={busy || admissionState.kind === "loading"} label="تحديث الأهلية" onPress={() => void loadAdmission()} variant="secondary" />
+      {error ? <View><Text accessibilityRole="alert" style={styles.error}>{error}</Text>{pendingCreateAttempt || error.startsWith("يوجد طلب نشط") ? <Link href={"/cases" as Href} asChild><BthwaniButton label="فتح قائمة الشركاء" variant="secondary" /></Link> : null}</View> : null}
+      <BthwaniButton busy={busy} disabled={busy || admissionState.kind === "loading"} label="تحديث حالة التفعيل" onPress={() => void loadAdmission()} variant="secondary" />
     </View>
   );
 }

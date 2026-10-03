@@ -177,8 +177,9 @@ const {
 const { createDshMobileClient } = await import(pathToFileURL(path.join(root, "services/dsh/clients/mobile.ts")).href);
 
 const { defineSamrimExpoApp } = await import(pathToFileURL(path.join(root, "tools/mobile/define-samrim-expo-app.cjs")).href);
-const expectsForegroundLocation = app === "app-client" || app === "app-captain";
+const expectsForegroundLocation = ["app-client", "app-captain", "app-field"].includes(app);
 const expectsMaps = ["app-client", "app-captain", "app-field"].includes(app);
+const expectsBarcodeCamera = ["app-field", "app-partner"].includes(app);
 const mapsKeyVars = {
   "app-client": ["GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT", "GOOGLE_MAPS_IOS_API_KEY"],
   "app-captain": ["GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN", "GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN"],
@@ -192,6 +193,7 @@ if (expectsMaps) {
   }
 }
 const expoConfig = defineSamrimExpoApp(app, {
+  ...(expectsBarcodeCamera ? { cameraMode: "barcode" } : {}),
   ...(expectsForegroundLocation ? { locationMode: "foreground" } : {}),
   ...(expectsMaps ? { maps: true } : {}),
 });
@@ -218,8 +220,25 @@ assert.deepEqual(localizationPlugin, [
   },
 ], `${app}: native localization config must be Arabic-only and statically RTL`);
 const locationPlugin = expoConfig.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-location");
+const cameraPlugin = expoConfig.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-camera");
+if (expectsBarcodeCamera) {
+  assert.equal(allDeps["expo-camera"], "~57.0.6", `${app}: barcode scanning requires the Expo camera module`);
+  assert.deepEqual(cameraPlugin, [
+    "expo-camera",
+    {
+      cameraPermission: "نحتاج الوصول إلى الكاميرا لمسح باركود المنتجات.",
+      microphonePermission: false,
+      recordAudioAndroid: false,
+      barcodeScannerEnabled: true,
+    },
+  ], `${app}: barcode scanning must declare its camera permission without microphone access`);
+} else {
+  assert.equal(allDeps["expo-camera"], undefined, `${app}: unadmitted camera must not be a direct dependency`);
+  assert.equal(cameraPlugin, undefined, `${app}: camera permission must not be inferred without an app-owned request`);
+}
 if (expectsForegroundLocation) {
-  assert.equal(allDeps["expo-location"], "~57.0.19", `${app}: foreground location requires the Expo location module`);
+  const expectedLocationVersion = app === "app-field" ? "~57.0.20" : "~57.0.19";
+  assert.equal(allDeps["expo-location"], expectedLocationVersion, `${app}: foreground location requires the Expo location module`);
   assert.ok(locationPlugin, `${app}: foreground location must be owned by expo-location`);
   assert.deepEqual(locationPlugin, [
     "expo-location",
