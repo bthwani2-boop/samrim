@@ -41,7 +41,19 @@ func TestCanonicalJourneyMigrationGraphEndsAt87(t *testing.T) {
 	if !strings.Contains(migrationByName["086_store_scoped_access_delegation.sql"], "CREATE TABLE dsh.store_access_grants") || !strings.Contains(migrationByName["086_store_scoped_access_delegation.sql"], "ARRAY['orders','catalog','store_operations']") {
 		t.Fatal("migration 086 is missing bounded Store access grants")
 	}
-	if !strings.Contains(migrationByName["087_order_recipient_and_adjustments.sql"], "ADD COLUMN recipient_mode") || !strings.Contains(migrationByName["087_order_recipient_and_adjustments.sql"], "CREATE TABLE dsh.order_adjustments") {
-		t.Fatal("migration 087 is missing recipient snapshot or OrderAdjustment history")
+	orderMigration := migrationByName["087_order_recipient_and_adjustments.sql"]
+	for _, required := range []string{
+		"ALTER TABLE dsh.commerce_orders",
+		"ADD COLUMN recipient_mode",
+		"CREATE TABLE dsh.commerce_order_adjustments",
+		"REFERENCES dsh.commerce_orders(id)",
+		"REFERENCES dsh.commerce_order_lines(id)",
+	} {
+		if !strings.Contains(orderMigration, required) {
+			t.Fatalf("migration 087 is missing canonical commerce-order adjustment step: %s", required)
+		}
+	}
+	if strings.Contains(orderMigration, "dsh.orders") || strings.Contains(orderMigration, "dsh.order_lines") || strings.Contains(orderMigration, "CREATE TABLE dsh.order_adjustments") {
+		t.Fatal("migration 087 retains a losing non-commerce order schema path")
 	}
 }
