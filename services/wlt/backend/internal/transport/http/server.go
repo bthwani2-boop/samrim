@@ -73,6 +73,8 @@ func cashInRailForConfig(cashInMode, environment string) (cashin.CashInRail, boo
 
 func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/payment-intents", s.create)
+	mux.HandleFunc("POST /wlt/v1/order-adjustment-reconciliation-cases", s.recordOrderAdjustmentReconciliationCase)
+	mux.HandleFunc("GET /wlt/v1/order-adjustment-reconciliation-cases", s.listOrderAdjustmentReconciliationCases)
 	mux.HandleFunc("GET /wlt/v1/payment-intents/by-external-reference", s.readByExternalReference)
 	mux.HandleFunc("GET /wlt/v1/payment-intents/{intentId}", s.read)
 	mux.HandleFunc("POST /wlt/v1/payment-intents/{intentId}/collect", s.collect)

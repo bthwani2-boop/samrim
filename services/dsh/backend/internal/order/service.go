@@ -152,6 +152,14 @@ func (s *Service) CancelForClient(ctx context.Context, accessToken, orderID stri
 	return postgres.TransitionOrderWithPaymentCancellation(ctx, s.db, orderID, "CANCELLED", expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, "CANCELLED", expectedVersion), identity, strings.TrimSpace(correlationID), "client_cancelled")
 }
 
+func (s *Service) DecideOrderAdjustmentForClient(ctx context.Context, accessToken, orderID, adjustmentID, decision string, expectedOrderVersion, expectedAdjustmentVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, postgres.OrderAdjustmentRecord, bool, error) {
+	identity, err := s.requireSession(ctx, accessToken, "client", "app-client")
+	if err != nil {
+		return postgres.OrderRecord{}, postgres.OrderAdjustmentRecord{}, false, err
+	}
+	return postgres.DecideOrderAdjustment(ctx, s.db, orderID, adjustmentID, identity, decision, expectedOrderVersion, expectedAdjustmentVersion, idempotencyKey, correlationID)
+}
+
 func (s *Service) ListForPartner(ctx context.Context, accessToken, storeID string, limit int) ([]postgres.OrderRecord, error) {
 	identity, err := s.requireSession(ctx, accessToken, "partner", "app-partner")
 	if err != nil {
@@ -217,6 +225,27 @@ func (s *Service) TransitionForPartner(ctx context.Context, accessToken, storeID
 		return postgres.TransitionOrderWithPaymentCancellation(ctx, s.db, orderID, "REJECTED", expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, state, expectedVersion), identity, strings.TrimSpace(correlationID), "partner_rejected")
 	}
 	return postgres.TransitionOrder(ctx, s.db, orderID, state, "", expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, state, expectedVersion), identity, strings.TrimSpace(correlationID))
+}
+
+func (s *Service) ProposeOrderAdjustmentForPartner(ctx context.Context, accessToken, storeID string, input postgres.ProposeOrderAdjustmentInput) (postgres.OrderRecord, postgres.OrderAdjustmentRecord, bool, error) {
+	identity, err := s.requireSession(ctx, accessToken, "partner", "app-partner")
+	if err != nil {
+		return postgres.OrderRecord{}, postgres.OrderAdjustmentRecord{}, false, err
+	}
+	storeID = strings.TrimSpace(storeID)
+	if err := s.requireOwnedStore(ctx, identity, storeID); err != nil {
+		return postgres.OrderRecord{}, postgres.OrderAdjustmentRecord{}, false, err
+	}
+	current, err := postgres.ReadOrder(ctx, s.db, input.OrderID)
+	if err != nil {
+		return postgres.OrderRecord{}, postgres.OrderAdjustmentRecord{}, false, err
+	}
+	if current.StoreID != storeID {
+		return postgres.OrderRecord{}, postgres.OrderAdjustmentRecord{}, false, ErrStoreOwnershipForbidden
+	}
+	input.RequestedByActorID = identity
+	input.RequestedByRole = "partner"
+	return postgres.ProposeOrderAdjustment(ctx, s.db, input)
 }
 
 func (s *Service) CompleteStorePickupForPartner(ctx context.Context, accessToken, storeID, orderID, code string, expectedVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {

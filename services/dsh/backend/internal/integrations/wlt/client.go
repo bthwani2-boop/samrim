@@ -27,6 +27,7 @@ const (
 	stateCollected                = "COLLECTED"
 	stateCancelled                = "CANCELLED"
 	customerWithdrawalIntakesPath = "/wlt/v1/operator/customer-withdrawal-intakes"
+	orderAdjustmentCasesPath      = "/wlt/v1/order-adjustment-reconciliation-cases"
 	payoutRequestsPath            = "/wlt/v1/operator/payout-requests"
 	settlementBatchesPath         = "/wlt/v1/operator/settlement-batches"
 )
@@ -83,6 +84,26 @@ type CustomerPaymentAllocation struct {
 	CustomerPayableMinor       int64  `json:"customerPayableMinor"`
 	PolicyVersion              string `json:"policyVersion"`
 	CreatedAt                  string `json:"createdAt"`
+}
+
+type OrderAdjustmentReconciliationCase struct {
+	ID               string `json:"id"`
+	OrderID          string `json:"orderId"`
+	AdjustmentID     string `json:"adjustmentId"`
+	PaymentIntentID  string `json:"paymentIntentId"`
+	AdjustmentKind   string `json:"adjustmentKind"`
+	RequestedByActor string `json:"requestedByActorId"`
+	CustomerActorID  string `json:"customerActorId"`
+	State            string `json:"state"`
+	ReasonCode       string `json:"reasonCode"`
+	IdempotencyKey   string `json:"idempotencyKey"`
+	RequestHash      string `json:"requestHash"`
+	CorrelationID    string `json:"correlationId"`
+	CreatedAt        string `json:"createdAt"`
+}
+
+type OrderAdjustmentReconciliationCases struct {
+	Cases []OrderAdjustmentReconciliationCase `json:"cases"`
 }
 
 type customerPaymentAllocationRequest struct {
@@ -1322,6 +1343,31 @@ func (c *Client) CreateCustomerWithdrawalIntake(ctx context.Context, customerAct
 	}
 	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: customerWithdrawalIntakesPath, body: body, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actingActorID, target: &response})
 	return response.Intake, response.IdempotentReplay, err
+}
+
+func (c *Client) RecordOrderAdjustmentReconciliationCase(ctx context.Context, item OrderAdjustmentReconciliationCase, idempotencyKey, correlationID, actingActorID string) (OrderAdjustmentReconciliationCase, bool, error) {
+	body := map[string]any{
+		"orderId": strings.TrimSpace(item.OrderID), "adjustmentId": strings.TrimSpace(item.AdjustmentID),
+		"paymentIntentId": strings.TrimSpace(item.PaymentIntentID), "adjustmentKind": strings.TrimSpace(item.AdjustmentKind),
+		"requestedByActorId": strings.TrimSpace(item.RequestedByActor), "customerActorId": strings.TrimSpace(item.CustomerActorID),
+	}
+	var response struct {
+		ReconciliationCase OrderAdjustmentReconciliationCase `json:"reconciliationCase"`
+		IdempotentReplay   bool                              `json:"idempotentReplay"`
+	}
+	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: orderAdjustmentCasesPath, body: body, idempotencyKey: idempotencyKey, correlationID: correlationID, actingActorID: actingActorID, target: &response})
+	return response.ReconciliationCase, response.IdempotentReplay, err
+}
+
+func (c *Client) ListOrderAdjustmentReconciliationCases(ctx context.Context, orderID, actingActorID string) (OrderAdjustmentReconciliationCases, error) {
+	orderID = strings.TrimSpace(orderID)
+	if orderID == "" || len(orderID) > 128 {
+		return OrderAdjustmentReconciliationCases{}, errors.New("invalid order adjustment reconciliation query")
+	}
+	query := url.Values{"orderId": {orderID}}
+	var response OrderAdjustmentReconciliationCases
+	err := c.requestWithActor(ctx, actorRequest{method: http.MethodGet, path: orderAdjustmentCasesPath + "?" + query.Encode(), actingActorID: actingActorID, target: &response})
+	return response, err
 }
 
 func (c *Client) ListCustomerWithdrawalIntakes(ctx context.Context, status, search, sort, cursor string, limit int, actingActorID string) (CustomerWithdrawalIntakeList, error) {

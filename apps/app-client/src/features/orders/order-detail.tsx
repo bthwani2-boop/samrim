@@ -28,6 +28,8 @@ export default function ClientOrderDetail() {
   const [refreshError, setRefreshError] = useState("");
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState("");
+  const [adjustmentBusy, setAdjustmentBusy] = useState("");
+  const [adjustmentError, setAdjustmentError] = useState("");
   const [tracking, setTracking] = useState<{ kind: "loading" } | { kind: "ready"; value: OrderTrackingResponse } | { kind: "error" }>({ kind: "loading" });
   const [deliveryProof, setDeliveryProof] = useState<{ kind: "loading" } | { kind: "ready"; value: DeliveryProofResponse } | { kind: "error" }>({ kind: "loading" });
   const [orderRating, setOrderRating] = useState<{ kind: "hidden" | "loading" } | { kind: "ready"; value: OrderRatingResponse } | { kind: "empty" } | { kind: "error" }>({ kind: "hidden" });
@@ -142,6 +144,36 @@ export default function ClientOrderDetail() {
     }
   }, [cancelling, refreshTracking, state]);
 
+  const decideAdjustment = useCallback(async (adjustmentId: string, decision: "ACCEPT" | "REJECT") => {
+    if (state.kind !== "ready" || adjustmentBusy) return;
+    setAdjustmentBusy(adjustmentId);
+    setAdjustmentError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const result = await client().decideClientOrderAdjustment(token, state.order.id, adjustmentId, { decision, expectedAdjustmentVersion: state.order.adjustments.find((item) => item.id === adjustmentId)?.version ?? 0 }, state.order.version);
+      setState({ kind: "ready", order: result.order });
+    } catch (error) {
+      console.error("DSH client order adjustment decision failed", error);
+      setAdjustmentError("تعذر حفظ قرارك. حدّث الطلب للتحقق من الحالة قبل إعادة المحاولة.");
+    } finally {
+      setAdjustmentBusy("");
+    }
+  }, [adjustmentBusy, state]);
+
+  function confirmAdjustmentDecision(adjustmentId: string, decision: "ACCEPT" | "REJECT") {
+    if (decision === "REJECT") {
+      Alert.alert("رفض التعديل", "سيبقى الطلب كما هو، وقد يحتاج المتجر إلى التواصل معك أو إلغاء الطلب إذا تعذر توفير الصنف.", [
+        { text: "رجوع", style: "cancel" },
+        { text: "رفض التعديل", style: "destructive", onPress: () => void decideAdjustment(adjustmentId, decision) },
+      ]);
+      return;
+    }
+    Alert.alert("الموافقة على التعديل", "تُسجل موافقتك على تغيير الصنف أو كميته فقط. يبقى إجمالي الطلب الأصلي محفوظًا ولا ينفذ النظام استردادًا أو تحصيلًا إضافيًا حتى تكتمل التسوية المالية.", [
+      { text: "مراجعة لاحقًا", style: "cancel" },
+      { text: "موافقة مع تعليق الطلب للتسوية", onPress: () => void decideAdjustment(adjustmentId, decision) },
+    ]);
+  }
+
   function requestCancel() {
     Alert.alert("إلغاء الطلب", "سيتم إلغاء الطلب وإلغاء التحصيل النقدي. هل تريد المتابعة؟", [
       { text: "متابعة الطلب", style: "cancel" },
@@ -199,6 +231,21 @@ export default function ClientOrderDetail() {
       <View style={styles.status}><View style={styles.statusCopy}><Text style={styles.statusTitle}>الحالة الحالية</Text><BthwaniStatusBadge icon={statusIcon} label={orderStateLabel(order.state)} tone={statusTone} /><Text style={styles.statusTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{paymentAmountCopy}</Text><Text style={styles.payment}>{paymentMethodLabel(order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)} · {paymentStateLabel(order.paymentState, order.paymentMethod, order.fulfillmentMode, order.cashAmountMinor)}</Text></View><View style={styles.actionStack}><BthwaniButton accessibilityLabel="تحديث حالة الطلب" busy={refreshing} label="تحديث الحالة" onPress={() => void load(true)} variant="secondary" />{order.state === "CREATED" ? <BthwaniButton accessibilityLabel="إلغاء الطلب" busy={cancelling} disabled={cancelling || refreshing} label="إلغاء الطلب" onPress={requestCancel} variant="danger" /> : null}</View></View>
       {refreshError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{refreshError}</Text> : null}
       {cancelError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{cancelError}</Text> : null}
+      {adjustmentError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{adjustmentError}</Text> : null}
+      {order.adjustments.length ? <>
+        <BthwaniSectionHeader title="تعديلات الطلب" subtitle="راجع التغيير المقترح قبل اتخاذ قرارك" />
+        <View style={styles.adjustments}>{order.adjustments.map((adjustment) => {
+          const line = order.lines.find((candidate) => candidate.id === adjustment.orderLineId);
+          const proposed = adjustment.state === "PROPOSED";
+          const stateLabel = adjustment.state === "PROPOSED" ? "بانتظار قرارك" : adjustment.state === "REJECTED" ? "رفضت التعديل" : "معلق حتى استكمال التسوية المالية";
+          return <BthwaniSurface key={adjustment.id} tone="base" style={styles.adjustment}>
+            <Text style={styles.lineTitle}>{adjustment.kind === "REMOVE_ITEM" ? "طلب إزالة صنف" : "تعديل الكمية المقاسة"}{line ? ` · ${line.productName}` : ""}</Text>
+            {line && adjustment.actualQuantityBaseUnits ? <Text style={styles.muted}>الكمية المقترحة: {formatQuantity(line.baseUnit, adjustment.actualQuantityBaseUnits)} · الكمية المطلوبة: {formatQuantity(line.baseUnit, line.requestedQuantityBaseUnits)}</Text> : null}
+            <BthwaniStatusBadge icon={proposed ? "warning" : adjustment.state === "REJECTED" ? "orders" : "warning"} label={stateLabel} tone={proposed || adjustment.state === "FINANCIAL_RECONCILIATION_REQUIRED" ? "warning" : "info"} />
+            {proposed ? <><Text style={styles.muted}>الموافقة تسجل التغيير التشغيلي فقط. المبلغ الأصلي يبقى كما هو، ولا يتم استرداد أو تحصيل مبلغ حتى تُحسم التسوية.</Text><View style={styles.adjustmentActions}><BthwaniButton busy={adjustmentBusy === adjustment.id} disabled={Boolean(adjustmentBusy) || refreshing} label="موافقة مع تعليق الطلب للتسوية" onPress={() => confirmAdjustmentDecision(adjustment.id, "ACCEPT")} /><BthwaniButton disabled={Boolean(adjustmentBusy) || refreshing} label="رفض التعديل" onPress={() => confirmAdjustmentDecision(adjustment.id, "REJECT")} variant="secondary" /></View></> : adjustment.state === "FINANCIAL_RECONCILIATION_REQUIRED" ? <Text style={styles.muted}>وافق العميل على التغيير. لا يتقدم الطلب ولا يتغير المبلغ قبل اكتمال التسوية المالية المعتمدة.</Text> : null}
+          </BthwaniSurface>;
+        })}</View>
+      </> : null}
       <OrderConversation orderId={order.id} />
       <BthwaniSectionHeader title={isStorePickup ? "رمز الاستلام الذاتي من المتجر" : "إثبات التسليم"} subtitle={isStorePickup ? "أظهر الرمز لموظف المتجر عند استلامك الطلب" : "يؤكّد العميل الرمز للكابتن عند استلام الطلب"} />
       <BthwaniSurface tone="base" style={styles.proofSurface}>
@@ -289,6 +336,9 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     pickupLocationSurface: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[4] },
     pickupLocationTitle: { ...typography.bodyStrong, color: theme.color },
     lines: { gap: spacing[3] },
+    adjustments: { gap: spacing[3] },
+    adjustment: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[4] },
+    adjustmentActions: { gap: spacing[2] },
     line: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[4] },
     lineTop: { alignItems: "flex-start", flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
     lineTitle: { ...typography.bodyStrong, color: theme.color, flex: 1 },

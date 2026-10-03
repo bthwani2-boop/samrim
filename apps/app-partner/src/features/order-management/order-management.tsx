@@ -1,6 +1,6 @@
-import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
+import { borders, radius, sizing, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type CaptainAssignment, type CaptainOffer, captainHandoffStateLabel, createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderTransitionRequest, orderStateLabel, paymentMethodLabel, paymentStateLabel, type StoreCaptainMembership } from "@bthwani/dsh";
+import { type CaptainAssignment, type CaptainOffer, captainHandoffStateLabel, createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderAdjustmentProposalRequest, type OrderTransitionRequest, orderStateLabel, paymentMethodLabel, paymentStateLabel, type StoreCaptainMembership } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -68,6 +68,7 @@ export function OrderManagement({ owned, storeId }: { owned: boolean; storeId: s
   const [sidecarError, setSidecarError] = useState("");
   const [filter, setFilter] = useState<QueueFilter>("ALL");
   const [pickupCodes, setPickupCodes] = useState<Readonly<Record<string, string>>>({});
+  const [adjustmentQuantities, setAdjustmentQuantities] = useState<Readonly<Record<string, string>>>({});
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -125,6 +126,28 @@ export function OrderManagement({ owned, storeId }: { owned: boolean; storeId: s
     try { const token = await getUsableIdentityAccessToken(); await client().transitionStoreOrder(token, storeId, order.id, { state: requestedState }, order.version); await load(); }
     catch (cause) { console.error("DSH order transition failed", cause); setError("تعذر تحديث حالة الطلب. أعد القراءة ثم حاول مرة أخرى."); }
     finally { setBusy(""); }
+  }
+
+  async function proposeAdjustment(order: Order, lineID: string, kind: OrderAdjustmentProposalRequest["kind"], actualQuantityBaseUnits?: number) {
+    if (busy || loading || !["PARTNER_ACCEPTED", "PREPARING"].includes(order.state)) return;
+    setBusy(order.id); setError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const input: OrderAdjustmentProposalRequest = { orderLineId: lineID, kind, ...(actualQuantityBaseUnits === undefined ? {} : { actualQuantityBaseUnits }) };
+      const result = await client().proposePartnerOrderAdjustment(token, storeId, order.id, input, order.version);
+      setOrders((current) => current.map((item) => item.id === order.id ? result.order : item));
+      setAdjustmentQuantities((current) => ({ ...current, [lineID]: "" }));
+    } catch (cause) {
+      console.error("DSH order adjustment proposal failed", cause);
+      setError("تعذر إرسال التعديل. حدّث الطلب وتحقق من حالته قبل إعادة المحاولة.");
+    } finally { setBusy(""); }
+  }
+
+  function confirmRemoveLine(order: Order, lineID: string) {
+    Alert.alert("إبلاغ العميل عن صنف غير متوفر", "سيُرسل طلب إزالة الصنف إلى العميل للموافقة. لا يتغير إجمالي الطلب ولا يُنفذ استرداد تلقائي؛ سيبقى الطلب متوقفًا حتى اكتمال التسوية المالية المعتمدة.", [
+      { text: "العودة", style: "cancel" },
+      { text: "إرسال للعميل", onPress: () => void proposeAdjustment(order, lineID, "REMOVE_ITEM") },
+    ]);
   }
 
   async function confirmStorePickup(order: Order) {
@@ -203,6 +226,8 @@ export function OrderManagement({ owned, storeId }: { owned: boolean; storeId: s
 
       {filteredOrders.map((order) => {
         const next = nextState(order);
+        const openAdjustments = order.adjustments.filter((adjustment) => adjustment.state === "PROPOSED" || adjustment.state === "FINANCIAL_RECONCILIATION_REQUIRED");
+        const hasOpenAdjustments = openAdjustments.length > 0;
         const assignment = assignments[order.id];
         const dispatchOffer = dispatchOffers[order.id];
         const actionDisabled = loading || Boolean(busy);
@@ -264,11 +289,31 @@ export function OrderManagement({ owned, storeId }: { owned: boolean; storeId: s
             <View style={styles.lines}>
               {order.lines.map((line) => <View key={line.id} style={styles.line}><Text style={styles.lineTitle}>{line.productName} · {line.variantTitle}</Text><Text style={styles.muted}>المطلوب: {formatQuantity(line.baseUnit, line.requestedQuantityBaseUnits)} · النهائي: {formatQuantity(line.baseUnit, line.finalQuantityBaseUnits)}</Text><Text style={styles.muted}>{pricingBasisLabel(line.pricingBasis)} · {formatMoney(line.lineAmountMinor, line.currency)}{line.modifierAmountMinor > 0 ? ` · الإضافات: ${formatMoney(line.modifierAmountMinor, line.currency)}` : ""}</Text>{line.modifierSnapshots.length ? <Text style={styles.muted}>الإضافات المحددة: {line.modifierSnapshots.map((modifier) => modifier.optionNameAr).join("، ")}</Text> : null}{line.attributeSnapshots.length ? <Text style={styles.muted}>تفاصيل المنتج: {line.attributeSnapshots.map((attribute) => `${attribute.code}: ${attributeSnapshotValue(attribute)}`).join("، ")}</Text> : null}</View>)}
             </View>
+            {(order.state === "PARTNER_ACCEPTED" || order.state === "PREPARING") ? <View style={styles.adjustmentActions} accessibilityLabel="تعديلات أصناف الطلب">
+              {order.lines.map((line) => {
+                const openForLine = order.adjustments.some((adjustment) => adjustment.orderLineId === line.id && (adjustment.state === "PROPOSED" || adjustment.state === "FINANCIAL_RECONCILIATION_REQUIRED"));
+                if (openForLine) return null;
+                return <View key={line.id} style={styles.adjustmentLine}>
+                  <Text style={styles.muted}>تعذّر توفير: {line.productName}</Text>
+                  <BthwaniButton disabled={actionDisabled} label="إبلاغ العميل عن عدم التوفر" onPress={() => confirmRemoveLine(order, line.id)} variant="secondary" />
+                  {line.measurementKind === "VARIABLE_MEASURE" ? <>
+                    <Text style={styles.muted}>الكمية المقبولة من {formatQuantity(line.baseUnit, line.quantityMinBaseUnits)} إلى {formatQuantity(line.baseUnit, line.quantityMaxBaseUnits)}، بخطوة {formatQuantity(line.baseUnit, line.quantityStepBaseUnits)}.</Text>
+                    <TextInput accessibilityLabel={`الكمية الفعلية للصنف ${line.productName} بوحدة ${line.baseUnit}`} editable={!actionDisabled} keyboardType="number-pad" onChangeText={(value) => setAdjustmentQuantities((current) => ({ ...current, [line.id]: toAsciiDigits(value).replace(/[^0-9]/g, "") }))} placeholder={line.baseUnit === "GRAM" ? "الكمية الفعلية بالغرام" : "الكمية الفعلية"} placeholderTextColor={theme.colorMuted} style={styles.adjustmentInput} value={adjustmentQuantities[line.id] ?? ""} />
+                    <BthwaniButton disabled={actionDisabled || !isValidAdjustmentQuantity(line, adjustmentQuantities[line.id] ?? "")} label="إرسال الكمية الفعلية للعميل" onPress={() => void proposeAdjustment(order, line.id, "SET_ACTUAL_QUANTITY", Number(adjustmentQuantities[line.id]))} variant="secondary" />
+                  </> : null}
+                </View>;
+              })}
+            </View> : null}
+            {order.adjustments.map((adjustment) => {
+              const line = order.lines.find((candidate) => candidate.id === adjustment.orderLineId);
+              const status = adjustment.state === "PROPOSED" ? "بانتظار قرار العميل" : adjustment.state === "REJECTED" ? "رفض العميل التعديل" : "وافق العميل؛ الطلب متوقف حتى حسم التسوية المالية";
+              return <View key={adjustment.id} style={styles.adjustmentNotice}><Text style={styles.lineTitle}>{adjustment.kind === "REMOVE_ITEM" ? "إزالة صنف" : "تعديل كمية"}{line ? ` · ${line.productName}` : ""}</Text><Text style={styles.muted}>{status}. المبلغ الأصلي محفوظ ولا يوجد استرداد أو تحصيل إضافي تلقائي.</Text></View>;
+            })}
             {owned && assignment ? <View style={styles.handoff}><BthwaniStatusBadge icon={assignment.handoff.state === "completed" ? "success" : "deliveries"} label={`تسليم المتجر: ${captainHandoffStateLabel(assignment.handoff.state)}`} tone={assignment.handoff.state === "completed" ? "success" : "warning"} />{assignment.handoff.state === "pending" ? <BthwaniButton busy={busy === order.id} disabled={actionDisabled} label="تأكيد جاهزية التسليم" onPress={() => void confirmHandoff(order, assignment)} /> : null}</View> : null}
             {owned && order.fulfillmentMode === "PARTNER_CAPTAIN" && order.state === "READY_FOR_DISPATCH" ? <View style={styles.handoff} accessibilityLabel="إسناد طلب التوصيل إلى كابتن المتجر"><Text style={styles.lineTitle}>إسناد الطلب إلى كابتن المتجر</Text>{dispatchOffer?.state === "offered" ? <Text style={styles.muted}>أُرسل الطلب إلى {dispatchOffer.captainActorId} وبانتظار قبوله.</Text> : <>{dispatchOffer ? <Text style={styles.muted}>{dispatchOffer.state === "rejected" ? "رفض الكابتن العرض. يمكنك إرساله إلى كابتن آخر." : "انتهت مهلة العرض. يمكنك إرساله إلى كابتن آخر."}</Text> : null}{storeCaptainActorIDs.length ? storeCaptainActorIDs.map((captainActorId) => <BthwaniButton key={captainActorId} busy={busy === order.id} disabled={actionDisabled} label={`إرسال الطلب إلى ${captainActorId}`} onPress={() => void dispatchToStoreCaptain(order, captainActorId)} variant="secondary" />) : <Text style={styles.muted}>لا يوجد كابتن نشط مرتبط بهذا المتجر. أرسل دعوة للكابتن واطلب منه قبولها في تطبيق الكابتن.</Text>}</>}</View> : null}
             {order.state === "READY_FOR_PICKUP" ? <View style={styles.pickupConfirmation}><TextInput accessibilityLabel="رمز الاستلام الذي قدمه العميل" editable={!actionDisabled} keyboardType="number-pad" maxLength={6} onChangeText={(value) => setPickupCodes((current) => ({ ...current, [order.id]: toAsciiDigits(value).replace(/[^0-9]/g, "").slice(0, 6) }))} placeholder="رمز الاستلام من العميل" placeholderTextColor={theme.colorMuted} style={styles.pickupCodeInput} textAlign="center" value={pickupCodes[order.id] ?? ""} /><BthwaniButton busy={busy === order.id} disabled={actionDisabled || toAsciiDigits(pickupCodes[order.id] ?? "").length !== 6} label="تأكيد استلام العميل" onPress={() => void confirmStorePickup(order)} />{order.fulfillmentMode === "CUSTOMER_PICKUP" && order.paymentMethod === "CASH_AT_STORE" && order.paymentState === "REQUIRES_COLLECTION" ? <BthwaniButton disabled={actionDisabled} label="العميل لم يحضر" onPress={() => markPickupNoShow(order)} variant="danger" /> : null}</View> : null}
             {owned && order.fulfillmentMode === "PARTNER_CAPTAIN" && order.state === "DELIVERED" ? <View style={styles.pickupConfirmation}><Text style={styles.lineTitle}>تسوية طلب توصيل المتجر</Text>{settlementContent}</View> : null}
-            {next ? <View style={styles.actionRow}><BthwaniButton busy={busy === order.id} disabled={actionDisabled} label={nextActionLabel} onPress={() => void transition(order)} style={styles.actionButton} />{next === "PARTNER_ACCEPTED" ? <BthwaniButton disabled={actionDisabled} label="رفض الطلب" onPress={() => void transition(order, "REJECTED")} style={styles.actionButton} variant="danger" /> : null}</View> : null}
+            {next ? <View style={styles.actionRow}>{hasOpenAdjustments && (next === "READY_FOR_DISPATCH" || next === "READY_FOR_PICKUP") ? <Text style={styles.error}>لا يمكن تجهيز الطلب للتسليم قبل حسم التعديل والتسوية المالية.</Text> : null}<BthwaniButton busy={busy === order.id} disabled={actionDisabled || (hasOpenAdjustments && (next === "READY_FOR_DISPATCH" || next === "READY_FOR_PICKUP"))} label={nextActionLabel} onPress={() => void transition(order)} style={styles.actionButton} />{next === "PARTNER_ACCEPTED" ? <BthwaniButton disabled={actionDisabled} label="رفض الطلب" onPress={() => void transition(order, "REJECTED")} style={styles.actionButton} variant="danger" /> : null}</View> : null}
             {owned ? <OrderConversation orderId={order.id} /> : null}
           </View>
         );
@@ -278,6 +323,17 @@ export function OrderManagement({ owned, storeId }: { owned: boolean; storeId: s
       <BthwaniButton busy={loading || Boolean(busy)} disabled={loading || Boolean(busy)} label="تحديث الطلبات" onPress={() => void load()} variant="secondary" />
     </View>
   );
+}
+
+function isValidAdjustmentQuantity(line: Order["lines"][number], value: string): boolean {
+  const actual = Number(value);
+  const step = line.quantityStepBaseUnits;
+  return Number.isSafeInteger(actual)
+    && step > 0
+    && actual < line.requestedQuantityBaseUnits
+    && actual >= line.quantityMinBaseUnits
+    && actual <= line.quantityMaxBaseUnits
+    && (actual - line.quantityMinBaseUnits) % step === 0;
 }
 
 function toAsciiDigits(value: string): string {
@@ -311,6 +367,10 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     payment: { ...typography.bodySm, color: theme.interactiveText },
     lines: { gap: spacing[2], marginTop: spacing[1] },
     line: { borderColor: theme.borderColor, borderTopWidth: borders.hairline, gap: spacing[1], paddingTop: spacing[2] },
+    adjustmentActions: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[2] },
+    adjustmentLine: { borderColor: theme.borderColor, borderTopWidth: borders.hairline, gap: spacing[2], paddingTop: spacing[2] },
+    adjustmentInput: { ...typography.body, backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.color, minHeight: sizing.controlMd, paddingHorizontal: spacing[3], textAlign: "right" },
+    adjustmentNotice: { backgroundColor: theme.actionSoft, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[3] },
     lineTitle: { ...typography.bodyStrong, color: theme.color },
     handoff: { borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], marginTop: spacing[1], padding: spacing[2] },
     pickupConfirmation: { backgroundColor: theme.actionSoft, borderRadius: radius.sm, gap: spacing[2], padding: spacing[2] },

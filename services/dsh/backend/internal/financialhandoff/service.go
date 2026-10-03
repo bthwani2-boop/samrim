@@ -164,6 +164,25 @@ func (s *Service) apply(ctx context.Context, item postgres.FinancialHandoffOutbo
 			return fmt.Errorf("cancel payment intent: %w", err)
 		}
 		return nil
+	case "ORDER_ADJUSTMENT_RECONCILIATION":
+		adjustment, customerActorID, paymentIntentID, err := postgres.ReadOrderAdjustment(ctx, s.db, item.OrderID, item.SourceRef)
+		if err != nil {
+			return fmt.Errorf("read DSH order adjustment: %w", err)
+		}
+		if adjustment.State != "FINANCIAL_RECONCILIATION_REQUIRED" || adjustment.CustomerActorID != customerActorID || customerActorID != item.ActingActorID || paymentIntentID != item.PaymentIntentID {
+			return errors.New("DSH order adjustment is not eligible for its WLT reconciliation handoff")
+		}
+		reconciliationCase, _, err := s.wlt.RecordOrderAdjustmentReconciliationCase(ctx, wltintegration.OrderAdjustmentReconciliationCase{
+			OrderID: item.OrderID, AdjustmentID: adjustment.ID, PaymentIntentID: item.PaymentIntentID,
+			AdjustmentKind: adjustment.Kind, RequestedByActor: adjustment.RequestedByActorID, CustomerActorID: customerActorID,
+		}, item.IdempotencyKey, item.CorrelationID, customerActorID)
+		if err != nil {
+			return fmt.Errorf("record WLT order adjustment reconciliation case: %w", err)
+		}
+		if reconciliationCase.OrderID != item.OrderID || reconciliationCase.AdjustmentID != adjustment.ID || reconciliationCase.PaymentIntentID != item.PaymentIntentID || reconciliationCase.State != "RECONCILIATION_REQUIRED" || reconciliationCase.ReasonCode != "ORDER_ADJUSTMENT_FINANCIAL_POLICY_REQUIRED" {
+			return errors.New("WLT order adjustment reconciliation readback does not match the DSH adjustment")
+		}
+		return nil
 	default:
 		return errors.New("unknown financial handoff effect")
 	}

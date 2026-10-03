@@ -321,6 +321,9 @@ paths:
   /dsh/orders/{orderId}:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}"
 
+  /dsh/orders/{orderId}/adjustments/{adjustmentId}/decision:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1adjustments~1{adjustmentId}~1decision"
+
   /dsh/orders/{orderId}/conversation:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1conversation"
 
@@ -485,6 +488,9 @@ paths:
 
   /dsh/stores/{storeId}/orders/{orderId}:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders~1{orderId}"
+
+  /dsh/stores/{storeId}/orders/{orderId}/adjustments:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders~1{orderId}~1adjustments"
 
   /dsh/stores/{storeId}/orders/{orderId}/transition:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders~1{orderId}~1transition"
@@ -6627,7 +6633,7 @@ components:
 
     Order:
       type: object
-      required: [id, clientActorId, storeId, storeName, pickupLocation, cartId, fulfillmentMode, addressId, addressVersion, addressText, addressLatitude, addressLongitude, serviceCityId, serviceabilityPolicyVersion, serviceabilityStatus, serviceabilityStoreVersion, serviceabilityAddressVersion, recipient, state, subtotalAmountMinor, discountMinor, totalAmountMinor, cashAmountMinor, currency, paymentMethod, paymentState, paymentIntentId, version, lines, createdAt, updatedAt]
+      required: [id, clientActorId, storeId, storeName, pickupLocation, cartId, fulfillmentMode, addressId, addressVersion, addressText, addressLatitude, addressLongitude, serviceCityId, serviceabilityPolicyVersion, serviceabilityStatus, serviceabilityStoreVersion, serviceabilityAddressVersion, recipient, state, subtotalAmountMinor, discountMinor, totalAmountMinor, cashAmountMinor, currency, paymentMethod, paymentState, paymentIntentId, version, lines, adjustments, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -6718,12 +6724,80 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/OrderLine"
+        adjustments:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderAdjustment"
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
+
+    OrderAdjustment:
+      type: object
+      required: [id, orderId, orderLineId, kind, state, requestedByActorId, requestedByRole, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        orderId:
+          type: string
+        orderLineId:
+          type: string
+        kind:
+          type: string
+          enum: [REMOVE_ITEM, SET_ACTUAL_QUANTITY]
+        state:
+          type: string
+          enum: [PROPOSED, REJECTED, FINANCIAL_RECONCILIATION_REQUIRED]
+        actualQuantityBaseUnits:
+          type: integer
+          minimum: 1
+        requestedByActorId:
+          type: string
+        requestedByRole:
+          type: string
+          enum: [partner, operator]
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    OrderAdjustmentProposalRequest:
+      type: object
+      required: [orderLineId, kind]
+      additionalProperties: false
+      properties:
+        orderLineId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        kind:
+          type: string
+          enum: [REMOVE_ITEM, SET_ACTUAL_QUANTITY]
+        actualQuantityBaseUnits:
+          type: integer
+          minimum: 1
+          nullable: true
+
+    OrderAdjustmentDecisionRequest:
+      type: object
+      required: [decision, expectedAdjustmentVersion]
+      additionalProperties: false
+      properties:
+        decision:
+          type: string
+          enum: [ACCEPT, REJECT]
+        expectedAdjustmentVersion:
+          type: integer
+          minimum: 1
 
     OrderRecipient:
       type: object

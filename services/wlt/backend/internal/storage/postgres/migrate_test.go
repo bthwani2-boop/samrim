@@ -117,3 +117,28 @@ func TestFinanceTransferReceiptClaimsAreGloballyUnique(t *testing.T) {
 		}
 	}
 }
+
+func TestOrderAdjustmentReconciliationCasesDoNotMoveMoneyWithoutPolicy(t *testing.T) {
+	directory := filepath.Join("..", "..", "..", "..", "database", "migrations")
+	data, err := os.ReadFile(filepath.Join(directory, "038_order_adjustment_reconciliation_cases.sql"))
+	if err != nil {
+		t.Fatalf("read order adjustment reconciliation migration: %v", err)
+	}
+	sql := string(data)
+	for _, required := range []string{
+		"CREATE TABLE wlt.order_adjustment_reconciliation_cases",
+		"payment_intent_id text NOT NULL REFERENCES wlt.payment_intents(id) ON DELETE RESTRICT",
+		"state text NOT NULL DEFAULT 'RECONCILIATION_REQUIRED'",
+		"reason_code text NOT NULL DEFAULT 'ORDER_ADJUSTMENT_FINANCIAL_POLICY_REQUIRED'",
+		"UNIQUE (order_id, adjustment_id)",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("order adjustment reconciliation migration is missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"amount_minor", "ledger_transaction", "refund_amount"} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("order adjustment reconciliation migration must not invent financial movement through %q", forbidden)
+		}
+	}
+}

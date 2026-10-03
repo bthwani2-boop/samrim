@@ -8,7 +8,7 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
 
-func TestCanonicalJourneyMigrationGraphEndsAt90(t *testing.T) {
+func TestCanonicalJourneyMigrationGraphEndsAt91(t *testing.T) {
 	migrationDirectory := filepath.Join("..", "..", "..", "..", "database", "migrations")
 	records, migrationSQL, err := postgres.LoadCanonicalMigrations(migrationDirectory)
 	if err != nil {
@@ -18,8 +18,8 @@ func TestCanonicalJourneyMigrationGraphEndsAt90(t *testing.T) {
 		t.Fatalf("canonical DSH migration graph size: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.CanonicalSchemaVersion)
 	}
 	last := records[len(records)-1]
-	if last.Version != postgres.CanonicalSchemaVersion || last.Name != "090_order_store_orderability_snapshot.sql" {
-		t.Fatalf("last canonical DSH migration = v%d %q; want v%d 090_order_store_orderability_snapshot.sql", last.Version, last.Name, postgres.CanonicalSchemaVersion)
+	if last.Version != postgres.CanonicalSchemaVersion || last.Name != "091_order_adjustment_financial_handoff.sql" {
+		t.Fatalf("last canonical DSH migration = v%d %q; want v%d 091_order_adjustment_financial_handoff.sql", last.Version, last.Name, postgres.CanonicalSchemaVersion)
 	}
 
 	migrationByName := make(map[string]string, len(records))
@@ -33,6 +33,7 @@ func TestCanonicalJourneyMigrationGraphEndsAt90(t *testing.T) {
 		"088_store_access_invitation_reuse.sql",
 		"089_store_access_permission_updates.sql",
 		"090_order_store_orderability_snapshot.sql",
+		"091_order_adjustment_financial_handoff.sql",
 	} {
 		if _, ok := migrationByName[required]; !ok {
 			t.Fatalf("canonical DSH migration missing: %s", required)
@@ -69,5 +70,11 @@ func TestCanonicalJourneyMigrationGraphEndsAt90(t *testing.T) {
 	}
 	if strings.Contains(orderMigration, "dsh.orders") || strings.Contains(orderMigration, "dsh.order_lines") || strings.Contains(orderMigration, "CREATE TABLE dsh.order_adjustments") {
 		t.Fatal("migration 087 retains a losing non-commerce order schema path")
+	}
+	financialHandoffMigration := migrationByName["091_order_adjustment_financial_handoff.sql"]
+	for _, required := range []string{"ORDER_ADJUSTMENT_RECONCILIATION", "amount_minor=0", "captain_actor_id IS NULL", "partner_actor_id IS NULL"} {
+		if !strings.Contains(financialHandoffMigration, required) {
+			t.Fatalf("migration 091 is missing zero-movement order adjustment handoff condition: %s", required)
+		}
 	}
 }

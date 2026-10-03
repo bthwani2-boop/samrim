@@ -210,6 +210,7 @@ type OrderRecord struct {
 	StoreCashHandoffState        string
 	Version                      int
 	Lines                        []OrderLineRecord
+	Adjustments                  []OrderAdjustmentRecord
 	CreatedAt                    time.Time
 	UpdatedAt                    time.Time
 }
@@ -611,6 +612,10 @@ func readOrder(ctx context.Context, source rowQueryer, where string, args ...any
 	if err != nil {
 		return OrderRecord{}, err
 	}
+	order.Adjustments, err = listOrderAdjustments(ctx, source, order.ID)
+	if err != nil {
+		return OrderRecord{}, err
+	}
 	return order, nil
 }
 
@@ -645,6 +650,10 @@ func listOrders(ctx context.Context, db *sql.DB, where string, args []any, state
 	}
 	for index := range items {
 		items[index].Lines, err = listOrderLines(ctx, db, items[index].ID)
+		if err != nil {
+			return nil, err
+		}
+		items[index].Adjustments, err = listOrderAdjustments(ctx, db, items[index].ID)
 		if err != nil {
 			return nil, err
 		}
@@ -1258,6 +1267,15 @@ func transitionOrder(ctx context.Context, db *sql.DB, orderID, requestedState st
 	}
 	if (current.FulfillmentMode == FulfillmentModeCustomerPickup && requestedState == "READY_FOR_DISPATCH") || (current.FulfillmentMode != FulfillmentModeCustomerPickup && requestedState == "READY_FOR_PICKUP") {
 		return OrderRecord{}, false, ErrOrderStateConflict
+	}
+	if requestedState == "READY_FOR_DISPATCH" || requestedState == "READY_FOR_PICKUP" {
+		var openAdjustments int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM dsh.commerce_order_adjustments WHERE order_id=$1 AND state IN ('PROPOSED','APPROVED','FINANCIAL_RECONCILIATION_REQUIRED')`, orderID).Scan(&openAdjustments); err != nil {
+			return OrderRecord{}, false, err
+		}
+		if openAdjustments > 0 {
+			return OrderRecord{}, false, ErrOrderAdjustmentFinancialRequired
+		}
 	}
 	if cancellationReason != "" {
 		if current.PaymentIntentID == nil || current.PaymentState != "REQUIRES_COLLECTION" {

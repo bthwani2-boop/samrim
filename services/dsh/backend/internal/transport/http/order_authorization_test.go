@@ -50,8 +50,8 @@ func TestOrderRegisteredRoutesRejectUnauthenticatedRequests(t *testing.T) {
 	server.Register(mux)
 
 	routes := orderRegisteredRoutes(t)
-	if len(routes) != 18 {
-		t.Fatalf("Order route census changed: got %d, want 18; review authentication for every new or removed route", len(routes))
+	if len(routes) != 20 {
+		t.Fatalf("Order route census changed: got %d, want 20; review authentication for every new or removed route", len(routes))
 	}
 	for _, route := range routes {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {
