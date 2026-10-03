@@ -29,6 +29,53 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PaymentIntentResponse' }
+  /wlt/v1/order-adjustment-reconciliation-cases:
+    post:
+      operationId: recordOrderAdjustmentReconciliationCase
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+        - { $ref: '#/components/parameters/ActingActorId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderAdjustmentReconciliationCaseRequest' }
+      responses:
+        '201':
+          description: Financial reconciliation case recorded without moving ledger value.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderAdjustmentReconciliationCaseResponse' }
+        '200':
+          description: Idempotent replay of the existing reconciliation case.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderAdjustmentReconciliationCaseResponse' }
+        '400': { description: Invalid case facts or request headers. }
+        '401': { description: WLT service authorization is required. }
+        '403': { description: Acting customer does not match the canonical order customer. }
+        '409': { description: Payment allocation or idempotent request conflicts with canonical facts. }
+        '502': { description: WLT persistence is unavailable. }
+    get:
+      operationId: listOrderAdjustmentReconciliationCases
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ActingActorId' }
+        - name: orderId
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: Financial reconciliation cases for the order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderAdjustmentReconciliationCasesResponse' }
+        '400': { description: Invalid query. }
+        '401': { description: WLT service authorization is required. }
+        '502': { description: WLT persistence is unavailable. }
   /wlt/v1/payment-intents/by-external-reference:
     get:
       operationId: readPaymentIntentByExternalReference
@@ -130,6 +177,33 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CashLiabilityRegistryResponse' }
+  /wlt/v1/operator/cash-remittances/{remittanceId}/reconcile:
+    post:
+      operationId: reconcileCaptainCashRemittance
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: remittanceId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+        - { $ref: '#/components/parameters/ActingActorId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReconcileCashRemittanceRequest' }
+      responses:
+        '200':
+          description: Finance receipt reconciled and WLT receivable/exposure closed atomically.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CashRemittanceResponse' }
+        '400': { description: Invalid input or missing/invalid receipt evidence. }
+        '403': { description: The Captain who submitted the cash cannot reconcile it. }
+        '404': { description: The submitted remittance was not found. }
+        '409': { description: The remittance is not awaiting reconciliation. }
   /wlt/v1/captains/{captainActorId}/wallet-state:
     get:
       operationId: readCaptainWalletState
@@ -1635,22 +1709,23 @@ components:
     RecordPartnerCommissionRemittanceRequest:
       type: object
       additionalProperties: false
-      required: [amountMinor, remittanceReference, evidenceReference]
+      required: [amountMinor, remittanceReference, evidenceDocumentId]
       properties:
         amountMinor: { type: integer, minimum: 1 }
         remittanceReference: { type: string, minLength: 1, maxLength: 128 }
-        evidenceReference: { type: string, minLength: 1, maxLength: 512 }
+        evidenceDocumentId: { type: string, minLength: 1, maxLength: 128 }
     PartnerCommissionRemittance:
       type: object
       additionalProperties: false
-      required: [id, partnerActorId, amountMinor, currency, remittanceReference, evidenceReference, verifiedBy, verifiedAt, ledgerTransactionId, createdAt]
+      required: [id, partnerActorId, amountMinor, currency, remittanceReference, verifiedBy, verifiedAt, ledgerTransactionId, createdAt]
       properties:
         id: { type: string }
         partnerActorId: { type: string }
         amountMinor: { type: integer, minimum: 1 }
         currency: { type: string, const: YER }
         remittanceReference: { type: string }
-        evidenceReference: { type: string }
+        evidenceReference: { type: string, description: Historical text-only evidence retained for legacy records. }
+        evidenceDocumentId: { type: string, minLength: 1, maxLength: 128, description: Stored transfer receipt used for new remittances. }
         verifiedBy: { type: string }
         verifiedAt: { type: string, format: date-time }
         ledgerTransactionId: { type: string }
@@ -2349,6 +2424,50 @@ components:
       properties:
         paymentIntent: { $ref: '#/components/schemas/PaymentIntent' }
         idempotentReplay: { type: boolean }
+    OrderAdjustmentReconciliationCaseRequest:
+      type: object
+      additionalProperties: false
+      required: [orderId, adjustmentId, paymentIntentId, adjustmentKind, requestedByActorId, customerActorId]
+      properties:
+        orderId: { type: string, minLength: 1, maxLength: 128 }
+        adjustmentId: { type: string, minLength: 1, maxLength: 128 }
+        paymentIntentId: { type: string, minLength: 1, maxLength: 128 }
+        adjustmentKind: { type: string, enum: [REMOVE_ITEM, SUBSTITUTE_ITEM, SET_ACTUAL_QUANTITY] }
+        requestedByActorId: { type: string, minLength: 1, maxLength: 128 }
+        customerActorId: { type: string, minLength: 1, maxLength: 128 }
+    OrderAdjustmentReconciliationCase:
+      type: object
+      additionalProperties: false
+      required: [id, orderId, adjustmentId, paymentIntentId, adjustmentKind, requestedByActorId, customerActorId, state, reasonCode, idempotencyKey, requestHash, correlationId, createdAt]
+      properties:
+        id: { type: string }
+        orderId: { type: string }
+        adjustmentId: { type: string }
+        paymentIntentId: { type: string }
+        adjustmentKind: { type: string, enum: [REMOVE_ITEM, SUBSTITUTE_ITEM, SET_ACTUAL_QUANTITY] }
+        requestedByActorId: { type: string }
+        customerActorId: { type: string }
+        state: { type: string, const: RECONCILIATION_REQUIRED }
+        reasonCode: { type: string, const: ORDER_ADJUSTMENT_FINANCIAL_POLICY_REQUIRED }
+        idempotencyKey: { type: string }
+        requestHash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        correlationId: { type: string }
+        createdAt: { type: string, format: date-time }
+    OrderAdjustmentReconciliationCaseResponse:
+      type: object
+      additionalProperties: false
+      required: [reconciliationCase, idempotentReplay]
+      properties:
+        reconciliationCase: { $ref: '#/components/schemas/OrderAdjustmentReconciliationCase' }
+        idempotentReplay: { type: boolean }
+    OrderAdjustmentReconciliationCasesResponse:
+      type: object
+      additionalProperties: false
+      required: [cases]
+      properties:
+        cases:
+          type: array
+          items: { $ref: '#/components/schemas/OrderAdjustmentReconciliationCase' }
     RemitCashRequest:
       type: object
       additionalProperties: false
@@ -2360,7 +2479,7 @@ components:
     CashLiabilityItem:
       type: object
       additionalProperties: false
-      required: [paymentIntentId, externalReference, captainActorId, amountMinor, currency, paymentVersion, collectedAt]
+      required: [paymentIntentId, externalReference, captainActorId, amountMinor, currency, paymentVersion, collectedAt, remittanceState]
       properties:
         paymentIntentId: { type: string }
         externalReference: { type: string }
@@ -2369,6 +2488,9 @@ components:
         currency: { type: string, const: YER }
         paymentVersion: { type: integer, minimum: 1 }
         collectedAt: { type: string, format: date-time }
+        remittanceState: { type: string, enum: [OPEN, SUBMITTED] }
+        remittanceReference: { type: string, maxLength: 128 }
+        remittanceId: { type: string, maxLength: 128 }
     CashLiabilityResponse:
       type: object
       additionalProperties: false
@@ -2401,8 +2523,17 @@ components:
         amountMinor: { type: integer, minimum: 1 }
         currency: { type: string, const: YER }
         remittanceReference: { type: string }
-        state: { type: string, const: REMITTED }
+        state: { type: string, enum: [SUBMITTED, REMITTED] }
         createdAt: { type: string, format: date-time }
+        reconciledBy: { type: string, maxLength: 128 }
+        reconciledAt: { type: string, format: date-time }
+        receiptDocumentId: { type: string, maxLength: 128 }
+    ReconcileCashRemittanceRequest:
+      type: object
+      additionalProperties: false
+      required: [evidenceDocumentId]
+      properties:
+        evidenceDocumentId: { type: string, minLength: 1, maxLength: 128 }
     CashRemittanceResponse:
       type: object
       additionalProperties: false

@@ -153,6 +153,14 @@ export function OrderOperationDetail({ orderId }: Readonly<{ orderId: string }>)
         <section className="order-detail-panel" aria-labelledby="order-items-title">
           <h2 id="order-items-title">عناصر الطلب</h2>
           {order.lines.length ? <ul className="order-detail-list">{order.lines.map((line) => <li key={line.id}><div><strong>{line.productName}</strong>{line.variantTitle ? <span>{line.variantTitle}</span> : null}</div><span>{new Intl.NumberFormat("ar-YE").format(line.finalQuantityBaseUnits)} {line.baseUnit}</span><strong>{formatMoney(line.lineAmountMinor, line.currency)}</strong></li>)}</ul> : <p className="muted">لا تتوفر عناصر لهذا الطلب.</p>}
+          {order.adjustments.length ? <div className="managed-status managed-status-warning" role="status">
+            <h3>تعديلات عناصر الطلب</h3>
+            <ul className="order-detail-list">{order.adjustments.map((adjustment) => {
+              const line = order.lines.find((candidate) => candidate.id === adjustment.orderLineId);
+              const stateLabel = adjustment.state === "PROPOSED" ? "بانتظار موافقة العميل" : adjustment.state === "REJECTED" ? "رفض العميل التعديل" : "معلق للتسوية المالية";
+              return <li key={adjustment.id}><div><strong>{adjustment.kind === "REMOVE_ITEM" ? "طلب إزالة صنف" : "تسجيل الكمية الفعلية"}{line ? ` · ${line.productName}` : ""}</strong><span>{stateLabel}</span>{adjustment.state === "FINANCIAL_RECONCILIATION_REQUIRED" ? <span>لا يتقدم الطلب ولا يتغير المبلغ حتى تُحسم التسوية المالية المعتمدة.</span> : null}</div>{adjustment.actualQuantityBaseUnits ? <span>{new Intl.NumberFormat("ar-YE").format(adjustment.actualQuantityBaseUnits)} {line?.baseUnit ?? ""}</span> : null}</li>;
+            })}</ul>
+          </div> : null}
         </section>
       ) : null}
 

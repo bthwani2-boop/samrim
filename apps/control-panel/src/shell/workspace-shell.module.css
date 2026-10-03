@@ -71,6 +71,10 @@
 :global(.catalog-taxonomy-main-action) { width: 100%; min-height: 76px; font-size: 17px; font-weight: 800; }
 :global(.catalog-taxonomy-controls) { display: flex; min-width: 0; align-items: end; justify-content: space-between; gap: 16px; padding: 14px 16px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-muted); }
 :global(.catalog-taxonomy-controls .field-label) { width: min(100%, 400px); }
+:global(.catalog-taxonomy-vertical-label) { width: min(100%, 420px); }
+:global(.catalog-taxonomy-vertical-note) { margin: -8px 0 0; color: var(--text-muted); font-size: var(--font-size-caption); line-height: 1.7; }
+:global(.catalog-taxonomy-vertical-root) { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--border-strong); border-radius: var(--radius-md) var(--radius-md) 0 0; background: var(--brand-structure-soft); color: var(--text-muted); font-size: var(--font-size-caption); }
+:global(.catalog-taxonomy-vertical-root strong) { color: var(--color-primary); font-size: 14px; }
 :global(.catalog-taxonomy-controls select), :global(.catalog-category-filters input), :global(.catalog-category-filters select), :global(.catalog-category-editor input:not([type="checkbox"])), :global(.catalog-category-editor select), :global(.catalog-category-editor textarea), :global(.catalog-attribute-compact input:not([type="checkbox"])), :global(.catalog-attribute-compact select), :global(.catalog-attribute-compact textarea) { width: 100%; min-width: 0; min-height: 44px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface-base); color: var(--color-primary); padding: 0 12px; }
 :global(.catalog-taxonomy-overview) { display: flex; align-items: center; gap: 14px; margin: 0; color: var(--text-muted); }
 :global(.catalog-taxonomy-overview div) { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
@@ -88,6 +92,11 @@
 :global(.catalog-taxonomy-record-heading span:not(:first-child)) { text-align: center; }
 :global(.catalog-taxonomy-tree), :global(.catalog-taxonomy-tree-children) { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
 :global(.catalog-taxonomy-tree-children) { margin-inline-start: 28px; padding-inline-start: 14px; border-inline-start: 1px solid var(--border-strong); }
+:global(.catalog-taxonomy-vertical-root + .catalog-taxonomy-tree) { border: 1px solid var(--border-subtle); border-top: 0; border-radius: 0 0 var(--radius-md) var(--radius-md); }
+:global(.catalog-taxonomy-detached) { margin-top: 16px; padding: 14px; border: 1px dashed var(--border-strong); border-radius: var(--radius-md); background: var(--surface-muted); }
+:global(.catalog-taxonomy-detached h5) { margin: 0; color: var(--color-primary); font-size: 14px; }
+:global(.catalog-taxonomy-detached > p) { margin: 6px 0 10px; color: var(--text-muted); font-size: var(--font-size-caption); line-height: 1.7; }
+:global(.catalog-taxonomy-detached .catalog-taxonomy-tree) { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-base); }
 :global(.catalog-taxonomy-tree-node + .catalog-taxonomy-tree-node) { border-top: 1px solid var(--border-subtle); }
 :global(.catalog-taxonomy-tree-row) { display: grid; grid-template-columns: 32px minmax(160px, 1fr) 90px 90px 210px; min-width: 0; min-height: 66px; align-items: center; gap: 10px; padding: 8px 14px; border-inline-start: 3px solid transparent; }
 :global(.catalog-taxonomy-tree-row:hover) { background: var(--surface-muted); }
@@ -99,6 +108,8 @@
 :global(.catalog-taxonomy-tree-meta) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text-muted); font-size: 11px; }
 :global(.catalog-taxonomy-tree-meta span) { color: var(--interactive-text); }
 :global(.catalog-taxonomy-child-count), :global(.catalog-taxonomy-tree-status) { color: var(--text-muted); font-size: var(--font-size-caption); text-align: center; }
+:global(.catalog-taxonomy-child-count) { display: grid; gap: 3px; }
+:global(.catalog-taxonomy-child-count small) { color: var(--text-muted); font-size: 10px; opacity: 0.8; }
 :global(.catalog-taxonomy-tree-status.is-active) { color: var(--success); }
 :global(.catalog-taxonomy-row-actions) { display: flex; justify-content: end; gap: 6px; }
 :global(.catalog-taxonomy-row-actions .catalog-row-action) { min-height: 34px; }

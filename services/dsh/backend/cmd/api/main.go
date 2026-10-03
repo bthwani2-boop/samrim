@@ -82,6 +82,14 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	storeAvailabilityServer, err := transporthttp.NewStoreAvailability(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
+	if err != nil {
+		log.Fatal(err)
+	}
+	storeAccessServer, err := transporthttp.NewStoreAccess(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
+	if err != nil {
+		log.Fatal(err)
+	}
 	locationCoreServer, err := transporthttp.NewLocationCore(identityClient, database)
 	if err != nil {
 		log.Fatal(err)
@@ -164,6 +172,8 @@ func main() {
 		joiningCaseServer.Register(mux)
 		catalogServer.Register(mux)
 		storePublicationServer.Register(mux)
+		storeAvailabilityServer.Register(mux)
+		storeAccessServer.Register(mux)
 		locationCoreServer.Register(mux)
 		serviceCityServer.Register(mux)
 		serviceabilityServer.Register(mux)
@@ -181,10 +191,7 @@ func main() {
 		marketingServer.Register(mux)
 	}
 	readiness := func(ctx context.Context) error {
-		if err := postgres.VerifySchema(ctx, database, records); err != nil {
-			return err
-		}
-		return nil
+		return postgres.VerifyCanonicalSchema(ctx, database, records)
 	}
 	if err := serviceruntime.RunWithRoutesAndReadinessAndWorker("dsh", "/dsh", "18080", register, readiness, func(ctx context.Context) {
 		go runFinancialProfileReconciliationLoop(ctx, time.Minute, joiningCaseServer.ReconcileFinancialProfiles)
@@ -204,6 +211,6 @@ func loadMigrations() ([]postgres.MigrationRecord, error) {
 			directory = "/app/migrations"
 		}
 	}
-	records, _, err := postgres.LoadMigrations(directory)
+	records, _, err := postgres.LoadCanonicalMigrations(directory)
 	return records, err
 }

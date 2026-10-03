@@ -62,7 +62,7 @@ func TestPartnerFinanceClientContracts(t *testing.T) {
 	if commission, replay, err := client.FinalizePartnerStoreCashCommission(ctx, " order-1 ", " payment-1 ", " partner-1 ", " PARTNER_CAPTAIN ", " commission-key ", " commission-correlation "); err != nil || !replay || commission.OrderID != "order-1" {
 		t.Fatalf("finalize partner cash commission = (%+v, replay=%t, %v)", commission, replay, err)
 	}
-	if remittance, replay, err := client.RecordPartnerCommissionRemittance(ctx, " partner-1 ", 1250, " transfer-1 ", " evidence-1 ", " remittance-key ", " remittance-correlation ", " operator-1 "); err != nil || !replay || remittance.ID != "remittance-1" {
+	if remittance, replay, err := client.RecordPartnerCommissionRemittance(ctx, " partner-1 ", 1250, " transfer-1 ", " receipt-document-1 ", " remittance-key ", " remittance-correlation ", " operator-1 "); err != nil || !replay || remittance.ID != "remittance-1" {
 		t.Fatalf("record partner commission remittance = (%+v, replay=%t, %v)", remittance, replay, err)
 	}
 	if _, err := client.ReadPartnerFinancialSummary(ctx, " partner-1 "); err != nil {
@@ -100,7 +100,7 @@ func TestPartnerFinanceClientContracts(t *testing.T) {
 	if !reflect.DeepEqual(requests[2].body, map[string]any{"orderId": "order-1", "paymentIntentId": "payment-1", "partnerActorId": "partner-1", "fulfillmentMode": "PARTNER_CAPTAIN"}) {
 		t.Errorf("partner commission request body = %#v", requests[2].body)
 	}
-	if requests[3].actor != "operator-1" || requests[3].key != "remittance-key" || requests[3].correlation != "remittance-correlation" || !reflect.DeepEqual(requests[3].body, map[string]any{"amountMinor": float64(1250), "remittanceReference": "transfer-1", "evidenceReference": "evidence-1"}) {
+	if requests[3].actor != "operator-1" || requests[3].key != "remittance-key" || requests[3].correlation != "remittance-correlation" || !reflect.DeepEqual(requests[3].body, map[string]any{"amountMinor": float64(1250), "remittanceReference": "transfer-1", "evidenceDocumentId": "receipt-document-1"}) {
 		t.Errorf("partner remittance request = %+v", requests[3])
 	}
 	if requests[5].actor != "operator-1" || requests[5].query != "cursor=cursor-1&limit=25&search=shop&sort=actor_asc" {

@@ -1,4 +1,18 @@
 paths:
+  /internal/actors/{actorId}:
+    get:
+      tags: [internal-actor-roles]
+      operationId: readCanonicalActor
+      security: [{ internalServiceToken: [] }]
+      description: DSH-only read of the canonical Actor ID and security eligibility for Store-access invitation resolution. Returns no phone or credential data and does not mutate Identity state.
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+      responses:
+        "200": { description: Canonical Actor resolution used before a Store-access invitation is recorded., content: { application/json: { schema: { $ref: "#/components/schemas/CanonicalActorResolution" } } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /internal/operator-profiles:
     get:
       tags: [internal-actor-roles]
@@ -137,6 +151,26 @@ paths:
         "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /internal/actors/{actorId}/roles/{role}/provision:
+    post:
+      tags: [internal-actor-roles]
+      operationId: provisionExistingActorRole
+      security: [{ internalServiceToken: [] }]
+      description: DSH may admit an already-resolved canonical Human Actor to the Partner role after its separately authorized Store-access eligibility transition. This operation never resolves phone or creates an Actor and does not admit other roles.
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/Role" }
+        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "#/components/parameters/ActingActorId" }
+      responses:
+        "200": { description: Existing exact Partner role readback., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } } }
+        "201": { description: Partner role admitted for the existing canonical actor., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
 
   /internal/actor-roles/search:

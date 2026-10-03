@@ -1,0 +1,112 @@
+ALTER TABLE dsh.commerce_orders
+    ADD COLUMN recipient_mode text NOT NULL DEFAULT 'SELF',
+    ADD COLUMN recipient_name text,
+    ADD COLUMN recipient_phone_e164 text,
+    ADD COLUMN recipient_instructions text;
+
+ALTER TABLE dsh.commerce_orders
+    ADD CONSTRAINT commerce_orders_recipient_mode_chk CHECK (recipient_mode IN ('SELF','OTHER')),
+    ADD CONSTRAINT commerce_orders_recipient_facts_chk CHECK (
+        (recipient_mode = 'SELF' AND recipient_name IS NULL AND recipient_phone_e164 IS NULL AND recipient_instructions IS NULL)
+        OR (
+            recipient_mode = 'OTHER'
+            AND fulfillment_mode IN ('BTHWANI_CAPTAIN','PARTNER_CAPTAIN')
+            AND recipient_name IS NOT NULL
+            AND length(btrim(recipient_name)) BETWEEN 2 AND 120
+            AND recipient_phone_e164 IS NOT NULL
+            AND recipient_phone_e164 ~ '^\+[1-9][0-9]{7,14}$'
+            AND (recipient_instructions IS NULL OR length(btrim(recipient_instructions)) BETWEEN 1 AND 500)
+        )
+    );
+
+CREATE TABLE dsh.commerce_order_adjustments (
+    id text PRIMARY KEY,
+    order_id text NOT NULL REFERENCES dsh.commerce_orders(id) ON DELETE RESTRICT,
+    order_line_id text NOT NULL REFERENCES dsh.commerce_order_lines(id) ON DELETE RESTRICT,
+    kind text NOT NULL,
+    state text NOT NULL,
+    replacement_store_offer_id text REFERENCES dsh.catalog_store_offers(id) ON DELETE RESTRICT,
+    replacement_variant_id text REFERENCES dsh.catalog_product_variants(id) ON DELETE RESTRICT,
+    actual_quantity_base_units bigint,
+    customer_decision_required boolean NOT NULL,
+    requested_by_actor_id text NOT NULL,
+    requested_by_role text NOT NULL,
+    customer_actor_id text,
+    customer_decided_at timestamptz,
+    applied_at timestamptz,
+    version integer NOT NULL DEFAULT 1,
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    CONSTRAINT commerce_order_adjustments_id_chk CHECK (length(btrim(id)) BETWEEN 1 AND 128),
+    CONSTRAINT commerce_order_adjustments_kind_chk CHECK (kind IN ('REMOVE_ITEM','SUBSTITUTE_ITEM','SET_ACTUAL_QUANTITY')),
+    CONSTRAINT commerce_order_adjustments_state_chk CHECK (state IN ('PROPOSED','APPROVED','REJECTED','APPLIED','FINANCIAL_RECONCILIATION_REQUIRED')),
+    CONSTRAINT commerce_order_adjustments_role_chk CHECK (requested_by_role IN ('partner','operator')),
+    CONSTRAINT commerce_order_adjustments_requester_chk CHECK (length(btrim(requested_by_actor_id)) BETWEEN 1 AND 128),
+    CONSTRAINT commerce_order_adjustments_customer_actor_chk CHECK (customer_actor_id IS NULL OR length(btrim(customer_actor_id)) BETWEEN 1 AND 128),
+    CONSTRAINT commerce_order_adjustments_version_chk CHECK (version > 0),
+    CONSTRAINT commerce_order_adjustments_kind_facts_chk CHECK (
+        (kind = 'REMOVE_ITEM' AND replacement_store_offer_id IS NULL AND replacement_variant_id IS NULL AND actual_quantity_base_units IS NULL)
+        OR (kind = 'SUBSTITUTE_ITEM' AND replacement_store_offer_id IS NOT NULL AND replacement_variant_id IS NOT NULL AND actual_quantity_base_units IS NULL)
+        OR (kind = 'SET_ACTUAL_QUANTITY' AND replacement_store_offer_id IS NULL AND replacement_variant_id IS NULL AND actual_quantity_base_units IS NOT NULL AND actual_quantity_base_units > 0)
+    ),
+    CONSTRAINT commerce_order_adjustments_decision_chk CHECK (
+        (customer_decision_required = false AND customer_actor_id IS NULL AND customer_decided_at IS NULL)
+        OR customer_decision_required = true
+    ),
+    CONSTRAINT commerce_order_adjustments_decision_evidence_chk CHECK (customer_decided_at IS NULL OR customer_actor_id IS NOT NULL),
+    CONSTRAINT commerce_order_adjustments_terminal_facts_chk CHECK (
+        (state NOT IN ('APPROVED','REJECTED','APPLIED') OR customer_decision_required = false OR customer_decided_at IS NOT NULL)
+        AND (state <> 'APPLIED' OR applied_at IS NOT NULL)
+    )
+);
+
+CREATE UNIQUE INDEX commerce_order_adjustments_open_line_uq
+    ON dsh.commerce_order_adjustments(order_line_id)
+    WHERE state IN ('PROPOSED','APPROVED','FINANCIAL_RECONCILIATION_REQUIRED');
+
+CREATE INDEX commerce_order_adjustments_order_idx
+    ON dsh.commerce_order_adjustments(order_id, created_at ASC, id);
+
+CREATE TABLE dsh.commerce_order_adjustment_idempotency (
+    idempotency_key text PRIMARY KEY,
+    request_hash text NOT NULL,
+    operation text NOT NULL,
+    adjustment_id text NOT NULL REFERENCES dsh.commerce_order_adjustments(id) ON DELETE RESTRICT,
+    acting_actor_id text NOT NULL,
+    result_state text NOT NULL,
+    result_version integer NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    CONSTRAINT commerce_order_adjustment_idem_key_chk CHECK (length(btrim(idempotency_key)) BETWEEN 8 AND 128),
+    CONSTRAINT commerce_order_adjustment_idem_hash_chk CHECK (request_hash ~ '^[a-f0-9]{64}$'),
+    CONSTRAINT commerce_order_adjustment_idem_operation_chk CHECK (operation IN ('adjustment_propose','adjustment_decide','adjustment_apply','adjustment_reconcile')),
+    CONSTRAINT commerce_order_adjustment_idem_state_chk CHECK (result_state IN ('PROPOSED','APPROVED','REJECTED','APPLIED','FINANCIAL_RECONCILIATION_REQUIRED')),
+    CONSTRAINT commerce_order_adjustment_idem_version_chk CHECK (result_version > 0)
+);
+
+CREATE TABLE dsh.commerce_order_adjustment_audit (
+    id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    event_type text NOT NULL,
+    idempotency_key text NOT NULL UNIQUE REFERENCES dsh.commerce_order_adjustment_idempotency(idempotency_key) ON DELETE RESTRICT,
+    correlation_id text NOT NULL,
+    acting_actor_id text NOT NULL,
+    order_id text NOT NULL REFERENCES dsh.commerce_orders(id) ON DELETE RESTRICT,
+    adjustment_id text NOT NULL REFERENCES dsh.commerce_order_adjustments(id) ON DELETE RESTRICT,
+    from_state text,
+    to_state text NOT NULL,
+    expected_version integer NOT NULL,
+    result_version integer NOT NULL,
+    request_hash text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    CONSTRAINT commerce_order_adjustment_audit_event_chk CHECK (event_type IN ('adjustment_proposed','adjustment_decided','adjustment_applied','adjustment_reconciliation_required','adjustment_reconciled')),
+    CONSTRAINT commerce_order_adjustment_audit_correlation_chk CHECK (length(btrim(correlation_id)) BETWEEN 8 AND 128),
+    CONSTRAINT commerce_order_adjustment_audit_actor_chk CHECK (length(btrim(acting_actor_id)) BETWEEN 1 AND 128),
+    CONSTRAINT commerce_order_adjustment_audit_state_chk CHECK (
+        to_state IN ('PROPOSED','APPROVED','REJECTED','APPLIED','FINANCIAL_RECONCILIATION_REQUIRED')
+        AND (from_state IS NULL OR from_state IN ('PROPOSED','APPROVED','REJECTED','APPLIED','FINANCIAL_RECONCILIATION_REQUIRED'))
+    ),
+    CONSTRAINT commerce_order_adjustment_audit_version_chk CHECK (expected_version >= 0 AND result_version >= expected_version AND result_version <= expected_version + 1),
+    CONSTRAINT commerce_order_adjustment_audit_hash_chk CHECK (request_hash ~ '^[a-f0-9]{64}$')
+);
+
+CREATE INDEX commerce_order_adjustment_audit_order_idx
+    ON dsh.commerce_order_adjustment_audit(order_id, created_at ASC);

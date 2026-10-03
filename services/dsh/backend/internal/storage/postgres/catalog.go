@@ -16,34 +16,36 @@ import (
 )
 
 var (
-	ErrCatalogProductNotFound       = errors.New("catalog Product was not found")
-	ErrCatalogVariantNotFound       = errors.New("catalog Product Variant was not found")
-	ErrCatalogOfferNotFound         = errors.New("catalog StoreOffer was not found")
-	ErrCatalogVerticalNotFound      = errors.New("commerce vertical was not found")
-	ErrCatalogVerticalModelInvalid  = errors.New("commerce vertical catalog model is invalid")
-	ErrCatalogVerticalModelLocked   = errors.New("commerce vertical catalog model is immutable after products exist")
-	ErrCatalogVerticalModelInUse    = errors.New("existing catalog records do not match the selected commerce vertical model")
-	ErrCatalogCategoryNotFound      = errors.New("catalog category was not found")
-	ErrCatalogCategoryInvalidCursor = errors.New("catalog category cursor is invalid")
-	ErrCatalogIdempotencyConflict   = errors.New("catalog idempotency key was already used with different facts")
-	ErrCatalogVersionConflict       = errors.New("catalog version is stale")
-	ErrCatalogAttributeRuleInvalid  = errors.New("catalog attribute rule is invalid")
-	ErrCatalogCategoryCycle         = errors.New("catalog category parent would create a cycle")
-	ErrCatalogDuplicateIdentifier   = errors.New("catalog identifier is already assigned")
-	ErrCatalogIdentifierInvalid     = errors.New("catalog identifier is invalid")
-	ErrCatalogOfferAlreadyExists    = errors.New("StoreOffer already exists for this Store and Variant")
-	ErrCatalogOfferInvalidState     = errors.New("StoreOffer publication state is invalid")
-	ErrCatalogOfferProductDisabled  = errors.New("disabled Product or Variant cannot be published")
-	ErrCatalogOfferQuantityInvalid  = errors.New("StoreOffer quantity policy is invalid")
-	ErrCatalogOfferStoreNotFound    = errors.New("catalog Store was not found")
-	ErrCatalogInventoryInvalid      = errors.New("catalog inventory facts are invalid")
-	ErrCatalogInventoryInsufficient = errors.New("catalog inventory is insufficient")
-	ErrCatalogInventoryReserved     = errors.New("catalog inventory has active reservations")
-	ErrCatalogProductScopeForbidden = errors.New("Partner cannot directly create or mutate a Shared Product")
-	ErrCatalogProductOwnership      = errors.New("Store-scoped Product ownership is invalid")
-	ErrCatalogProductModelMismatch  = errors.New("catalog Product ownership does not match its Commerce Vertical model")
-	ErrCatalogMediaInvalid          = errors.New("catalog Product media is invalid")
-	ErrCatalogProductInvalidCursor  = errors.New("catalog Product cursor is invalid")
+	ErrCatalogProductNotFound           = errors.New("catalog Product was not found")
+	ErrCatalogVariantNotFound           = errors.New("catalog Product Variant was not found")
+	ErrCatalogOfferNotFound             = errors.New("catalog StoreOffer was not found")
+	ErrCatalogVerticalNotFound          = errors.New("commerce vertical was not found")
+	ErrCatalogVerticalModelInvalid      = errors.New("commerce vertical catalog model is invalid")
+	ErrCatalogVerticalModelLocked       = errors.New("commerce vertical catalog model is immutable after products exist")
+	ErrCatalogVerticalModelInUse        = errors.New("existing catalog records do not match the selected commerce vertical model")
+	ErrCatalogCategoryNotFound          = errors.New("catalog category was not found")
+	ErrCatalogCategoryInvalidCursor     = errors.New("catalog category cursor is invalid")
+	ErrCatalogIdempotencyConflict       = errors.New("catalog idempotency key was already used with different facts")
+	ErrCatalogVersionConflict           = errors.New("catalog version is stale")
+	ErrCatalogAttributeRuleInvalid      = errors.New("catalog attribute rule is invalid")
+	ErrCatalogCategoryCycle             = errors.New("catalog category parent would create a cycle")
+	ErrCatalogCategoryHasActiveChildren = errors.New("active catalog categories cannot be detached from their active parent")
+	ErrCatalogCategoryParentInactive    = errors.New("an active catalog category requires an active parent path")
+	ErrCatalogDuplicateIdentifier       = errors.New("catalog identifier is already assigned")
+	ErrCatalogIdentifierInvalid         = errors.New("catalog identifier is invalid")
+	ErrCatalogOfferAlreadyExists        = errors.New("StoreOffer already exists for this Store and Variant")
+	ErrCatalogOfferInvalidState         = errors.New("StoreOffer publication state is invalid")
+	ErrCatalogOfferProductDisabled      = errors.New("disabled Product or Variant cannot be published")
+	ErrCatalogOfferQuantityInvalid      = errors.New("StoreOffer quantity policy is invalid")
+	ErrCatalogOfferStoreNotFound        = errors.New("catalog Store was not found")
+	ErrCatalogInventoryInvalid          = errors.New("catalog inventory facts are invalid")
+	ErrCatalogInventoryInsufficient     = errors.New("catalog inventory is insufficient")
+	ErrCatalogInventoryReserved         = errors.New("catalog inventory has active reservations")
+	ErrCatalogProductScopeForbidden     = errors.New("Partner cannot directly create or mutate a Shared Product")
+	ErrCatalogProductOwnership          = errors.New("Store-scoped Product ownership is invalid")
+	ErrCatalogProductModelMismatch      = errors.New("catalog Product ownership does not match its Commerce Vertical model")
+	ErrCatalogMediaInvalid              = errors.New("catalog Product media is invalid")
+	ErrCatalogProductInvalidCursor      = errors.New("catalog Product cursor is invalid")
 )
 
 type CommerceVerticalRecord struct {
@@ -421,6 +423,28 @@ func CreateCatalogCategory(ctx context.Context, db *sql.DB, item CatalogCategory
 	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:catalog-category-tree:"+item.VerticalID); err != nil {
 		return CatalogCategoryRecord{}, err
 	}
+	if item.Active && item.ParentCategoryID != "" {
+		var hasInactiveParentPath bool
+		err = tx.QueryRowContext(ctx, `WITH RECURSIVE parent_path(id,parent_category_id,active) AS (
+			SELECT id,parent_category_id,active FROM dsh.catalog_categories WHERE id=$1 AND vertical_id=$2
+			UNION
+			SELECT parent.id,parent.parent_category_id,parent.active
+			FROM dsh.catalog_categories parent JOIN parent_path child ON parent.id=child.parent_category_id AND parent.vertical_id=$2
+		) SELECT EXISTS(SELECT 1 FROM parent_path WHERE NOT active)`, item.ParentCategoryID, item.VerticalID).Scan(&hasInactiveParentPath)
+		if err != nil {
+			return CatalogCategoryRecord{}, err
+		}
+		var parentExists bool
+		if err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM dsh.catalog_categories WHERE id=$1 AND vertical_id=$2)", item.ParentCategoryID, item.VerticalID).Scan(&parentExists); err != nil {
+			return CatalogCategoryRecord{}, err
+		}
+		if !parentExists {
+			return CatalogCategoryRecord{}, ErrCatalogCategoryNotFound
+		}
+		if hasInactiveParentPath {
+			return CatalogCategoryRecord{}, ErrCatalogCategoryParentInactive
+		}
+	}
 	if item.ID == "" {
 		item.ID, err = newID("category")
 		if err != nil {
@@ -569,12 +593,9 @@ func UpdateCatalogCategory(ctx context.Context, db *sql.DB, categoryID string, i
 	if !errors.Is(err, sql.ErrNoRows) {
 		return CatalogCategoryRecord{}, false, err
 	}
-	before, err := readCatalogCategoryForUpdateTx(ctx, tx, categoryID)
+	before, err := readCatalogCategoryTx(ctx, tx, categoryID)
 	if err != nil {
 		return CatalogCategoryRecord{}, false, err
-	}
-	if before.Version != input.ExpectedVersion {
-		return CatalogCategoryRecord{}, false, ErrCatalogVersionConflict
 	}
 	var sharedCatalog bool
 	if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM dsh.commerce_verticals WHERE id=$1 AND active=true AND catalog_model='SHARED_CATALOG' FOR SHARE)`, before.VerticalID).Scan(&sharedCatalog); err != nil {
@@ -585,6 +606,13 @@ func UpdateCatalogCategory(ctx context.Context, db *sql.DB, categoryID string, i
 	}
 	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:catalog-category-tree:"+before.VerticalID); err != nil {
 		return CatalogCategoryRecord{}, false, err
+	}
+	before, err = readCatalogCategoryForUpdateTx(ctx, tx, categoryID)
+	if err != nil {
+		return CatalogCategoryRecord{}, false, err
+	}
+	if before.Version != input.ExpectedVersion {
+		return CatalogCategoryRecord{}, false, ErrCatalogVersionConflict
 	}
 	if input.ParentCategoryID != "" {
 		var parentVertical string
@@ -607,6 +635,35 @@ func UpdateCatalogCategory(ctx context.Context, db *sql.DB, categoryID string, i
 		}
 		if createsCycle {
 			return CatalogCategoryRecord{}, false, ErrCatalogCategoryCycle
+		}
+		if input.Active {
+			var hasInactiveParentPath bool
+			if err = tx.QueryRowContext(ctx, `WITH RECURSIVE parent_path(id,parent_category_id,active) AS (
+				SELECT id,parent_category_id,active FROM dsh.catalog_categories WHERE id=$1 AND vertical_id=$2
+				UNION
+				SELECT parent.id,parent.parent_category_id,parent.active
+				FROM dsh.catalog_categories parent JOIN parent_path child ON parent.id=child.parent_category_id AND parent.vertical_id=$2
+			) SELECT EXISTS(SELECT 1 FROM parent_path WHERE NOT active)`, input.ParentCategoryID, before.VerticalID).Scan(&hasInactiveParentPath); err != nil {
+				return CatalogCategoryRecord{}, false, err
+			}
+			if hasInactiveParentPath {
+				return CatalogCategoryRecord{}, false, ErrCatalogCategoryParentInactive
+			}
+		}
+	}
+	if !input.Active && before.Active {
+		var hasActiveDescendants bool
+		err = tx.QueryRowContext(ctx, `WITH RECURSIVE descendants(id,parent_category_id,active) AS (
+			SELECT id,parent_category_id,active FROM dsh.catalog_categories WHERE parent_category_id=$1 AND vertical_id=$2
+			UNION
+			SELECT child.id,child.parent_category_id,child.active
+			FROM dsh.catalog_categories child JOIN descendants parent ON child.parent_category_id=parent.id AND child.vertical_id=$2
+		) SELECT EXISTS(SELECT 1 FROM descendants WHERE active)`, categoryID, before.VerticalID).Scan(&hasActiveDescendants)
+		if err != nil {
+			return CatalogCategoryRecord{}, false, err
+		}
+		if hasActiveDescendants {
+			return CatalogCategoryRecord{}, false, ErrCatalogCategoryHasActiveChildren
 		}
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE dsh.catalog_categories SET parent_category_id=NULLIF($2,''),name_ar=$3,name_en=$4,active=$5,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$6`, categoryID, input.ParentCategoryID, input.NameAr, input.NameEn, input.Active, input.ExpectedVersion); err != nil {

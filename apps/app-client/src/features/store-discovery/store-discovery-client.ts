@@ -1,4 +1,4 @@
-import { type CartResponse, type CatalogStoreOffer, type ClientOpenCartListResponse, createDshMobileClient, type DiscoveryContentEventRequest, type DiscoveryContentListResponse, type DiscoveryContentTargetResolution, type MultiStoreCheckoutRequest, type MultiStoreCheckoutResponse, type PromotionListResponse, type PublicCatalogResponse, type PublicCatalogSearchResponse, type PublicStoreView, type PublishedStoreListResponse, type ServiceabilityResponse } from "@bthwani/dsh";
+import { type CartResponse, type CatalogStoreOffer, type ClientOpenCartListResponse, createDshMobileClient, type DiscoveryContentEventRequest, type DiscoveryContentListResponse, type DiscoveryContentTargetResolution, type MultiStoreCheckoutRequest, type MultiStoreCheckoutResponse, type PromotionListResponse, type PublicCatalogResponse, type PublicCatalogSearchResponse, type PublicStoreOrderabilityResponse, type PublicStoreView, type PublishedStoreListResponse, type ServiceabilityResponse } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { listOwnDeliveryAddresses } from "../location-core/delivery-address-client";
@@ -13,6 +13,7 @@ const client = () => createDshMobileClient(dshBaseUrl(), { cryptoRandomUUID: () 
 
 export async function listPublishedStores(serviceCityID: string, options: Readonly<{
   q?: string;
+  verticalId?: string;
   categoryId?: string;
   favoritesOnly?: boolean;
   sort?: "all" | "newest" | "nearest";
@@ -77,12 +78,16 @@ export async function readPublishedStore(storeID: string, serviceCityID: string)
   return client().readPublishedStore(storeID, serviceCityID);
 }
 
+export async function readPublicStoreOrderability(storeID: string, serviceCityID: string): Promise<PublicStoreOrderabilityResponse> {
+  return client().readPublicStoreOrderability(storeID, serviceCityID);
+}
+
 export async function readPublicStoreCatalog(storeID: string, serviceCityID: string, categoryID = "", query = "", limit = 20, cursor = "", productID = ""): Promise<PublicCatalogResponse> {
   return client().readPublicStoreCatalog(storeID, serviceCityID, categoryID, query, limit, cursor, productID);
 }
 
-export async function searchPublicCatalog(serviceCityID: string, query: string, categoryID = "", limit = 20, cursor = ""): Promise<PublicCatalogSearchResponse> {
-  return client().searchPublicCatalog(serviceCityID, query, categoryID, limit, cursor);
+export async function searchPublicCatalog(serviceCityID: string, query: string, categoryID = "", limit = 20, cursor = "", verticalID = ""): Promise<PublicCatalogSearchResponse> {
+  return client().searchPublicCatalog(serviceCityID, query, categoryID, limit, cursor, verticalID);
 }
 
 export async function evaluateStoreServiceability(storeID: string, addressID: string): Promise<ServiceabilityResponse> {

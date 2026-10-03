@@ -1,32 +1,40 @@
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
-import { publicationStateLabel } from "@bthwani/dsh";
-import { useMemo } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import type { PartnerAccessibleStore } from "@bthwani/dsh";
+import { useMemo, useState } from "react";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
+
 import { OrderManagement } from "../order-management/order-management";
-import { usePartnerStoreContext } from "./partner-store-context";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
+import { usePartnerAccessibleStoreScopes } from "./partner-accessible-store-scopes";
+
+function scopeSummary(store: PartnerAccessibleStore): string {
+  return `${store.owned ? "متجر تملكه" : "وصول مفوض"} · ${store.permissions.includes("orders") ? "إدارة الطلبات متاحة" : "بلا صلاحية للطلبات"}`;
+}
 
 export function PartnerOrders() {
-const theme = useAppearanceTheme();
+  const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
-  const { cities, citiesError, state, reload } = usePartnerStoreContext();
+  const { state, reload, loadMore } = usePartnerAccessibleStoreScopes();
+  const [selectedStoreID, setSelectedStoreID] = useState("");
+  const stores = state.kind === "ready" ? state.stores.filter((store) => store.permissions.includes("orders")) : [];
+  const selectedStore = stores.find((store) => store.id === selectedStoreID) ?? stores.find((store) => store.owned) ?? stores[0];
 
-  if (state.kind === "loading") return <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة بيانات طلبات المتجر" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة بيانات طلبات المتجر…</Text></View>;
-  if (state.kind === "empty") return <View style={styles.state}><Text style={styles.muted}>لم يُنشأ المتجر الأول للشريك بعد.</Text><BthwaniButton label="إعادة القراءة" onPress={() => void reload()} variant="secondary" /></View>;
-  if (state.kind === "error") return <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة بيانات الشريك من المنصة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void reload()} variant="secondary" /></View>;
-  const cityName = cities.find((city) => city.id === state.value.case.serviceCityId)?.displayNameAr || "مدينة غير محددة";
-  return (
-    <View style={styles.container}>
-      <Text style={styles.sectionTitle}>طلبات المتجر</Text>
-      <Text selectable style={styles.value}>{state.value.case.businessName}</Text>
-      <Text style={styles.muted}>مدينة المتجر الأول: {cityName}</Text>
-      {citiesError ? <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة مدن الخدمة، لذلك قد لا يظهر اسم المدينة.</Text><BthwaniButton label="إعادة قراءة المدن" onPress={() => void reload()} variant="secondary" /></View> : null}
-      {state.value.case.store ? <>
-        <Text selectable style={styles.muted}>المتجر الأول: {state.value.case.store.name}</Text>
-        <Text style={styles.muted}>حالة النشر: {publicationStateLabel(state.value.case.store.publicationState)}</Text>
-        <Text style={styles.muted}>جاهزية النشر: {state.value.case.store.publicationReadiness.ready ? "جاهز" : "يحتاج إلى استكمال البيانات"}</Text>
-        <OrderManagement storeId={state.value.case.store.id} />
-      </> : <Text style={styles.muted}>لم يُنشأ المتجر بعد. راجع دورة الانضمام لإكمال أي تصحيح مطلوب.</Text>}
-    </View>
-  );
+  if (state.kind === "loading") return <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة متاجر الشريك" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة المتاجر وصلاحيات الطلبات…</Text></View>;
+  if (state.kind === "error") return <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة نطاقات المتاجر.</Text><BthwaniButton label="إعادة القراءة" onPress={() => void reload()} variant="secondary" /></View>;
+
+  return <View style={styles.container}>
+    <Text style={styles.sectionTitle}>طلبات المتاجر</Text>
+    <Text style={styles.muted}>اختر المتجر المطلوب. يحدد DSH نطاق كل طلب وصلاحية حسابك عند قراءة العمليات وتنفيذها.</Text>
+    {stores.length === 0 ? <View style={styles.card}><Text style={styles.muted}>لا يوجد متجر لديك صلاحية «الطلبات» عليه في الصفحات المحملة.</Text>{state.nextCursor ? <BthwaniButton label="تحميل متاجر أخرى" onPress={() => void loadMore()} variant="secondary" /> : null}</View> : null}
+    {stores.map((store) => <Pressable accessibilityRole="button" accessibilityState={{ selected: selectedStore?.id === store.id }} key={store.id} onPress={() => setSelectedStoreID(store.id)} style={{ backgroundColor: selectedStore?.id === store.id ? theme.surfaceInset : theme.surface, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 4, padding: 12 }}>
+      <Text style={styles.value}>{store.name}</Text>
+      <Text style={styles.muted}>{scopeSummary(store)}</Text>
+    </Pressable>)}
+    {selectedStore ? <View style={styles.card}>
+      <Text style={styles.value}>{selectedStore.name}</Text>
+      <Text selectable style={styles.metaLabel}>معرّف المتجر: {selectedStore.id}</Text>
+      <OrderManagement key={selectedStore.id} owned={selectedStore.owned} storeId={selectedStore.id} />
+    </View> : null}
+    {state.nextCursor ? <BthwaniButton label="تحميل متاجر أخرى" onPress={() => void loadMore()} variant="secondary" /> : null}
+  </View>;
 }

@@ -1036,6 +1036,8 @@ func writeSettlementError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "STATE_CONFLICT", "the settlement state does not allow this operation")
 	case errors.Is(err, postgres.ErrIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different settlement facts")
+	case errors.Is(err, postgres.ErrFinanceTransferReceiptAlreadyClaimed):
+		writeError(w, http.StatusConflict, "FINANCE_EVIDENCE_ALREADY_LINKED", "the transfer receipt is already linked to another financial transfer")
 	case errors.Is(err, postgres.ErrSettlementBatchInput), errors.Is(err, postgres.ErrPayoutInvalidInput), errors.Is(err, postgres.ErrFinancialStatementInput), errors.Is(err, postgres.ErrPartnerCommissionRegistryInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "settlement input is invalid")
 	default:

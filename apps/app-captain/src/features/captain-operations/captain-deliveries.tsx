@@ -271,7 +271,7 @@ export function CaptainDeliveries() {
   async function remitCash(item: CashLiabilityItem) {
     const reference = cashRemittanceReferences[item.paymentIntentId]?.trim() ?? "";
     if (cashBusy || !reference) {
-      setError("أدخل مرجع توريد العهدة قبل التأكيد.");
+      setError("أدخل مرجع توريد العهدة لإرساله إلى المالية.");
       return;
     }
     setCashBusy(item.paymentIntentId);
@@ -281,8 +281,8 @@ export function CaptainDeliveries() {
       await captainClient().remitOwnCaptainCash(token, item.paymentIntentId, { amountMinor: item.amountMinor, remittanceReference: reference }, item.paymentVersion);
       await load();
     } catch (cause) {
-      console.error("WLT Captain cash remittance failed", cause);
-      setError("تعذر تسجيل توريد العهدة. أعد القراءة قبل المحاولة.");
+      console.error("WLT Captain cash remittance submission failed", cause);
+      setError("تعذر إرسال مرجع التوريد. أعد القراءة قبل المحاولة.");
     } finally {
       setCashBusy("");
     }
@@ -295,7 +295,20 @@ export function CaptainDeliveries() {
       {pendingCompletion ? <View style={styles.warningBox}><Text style={styles.warning}>توجد محاولة تسليم محفوظة للمهمة. أعد إرسال الحقائق والمفتاح نفسيهما حتى نثبت النتيجة.</Text><BthwaniButton busy={busy === pendingCompletion.assignmentID} disabled={Boolean(busy) || !completionStorageReady} label="التحقق من نتيجة التسليم" onPress={() => void retryPendingCompletion()} />{completionRejected ? <BthwaniButton busy={Boolean(busy)} disabled={Boolean(busy)} label="تحقق من المهمة لفتح تصحيح آمن" onPress={() => void replaceRejectedCompletionAfterReadback()} variant="secondary" /> : null}</View> : null}
       {completionStorageIssue ? <Text accessibilityRole="alert" style={styles.error}>تعذر قراءة المحاولة الآمنة السابقة. لا تؤكد تسليمًا جديدًا؛ أعد قراءة الحالة أو اطلب مراجعة المشغل.</Text> : null}
       {!completionStorageReady && !completionStorageIssue && !loading ? <Text accessibilityRole="alert" style={styles.warning}>تعذر التحقق من المحاولات المحفوظة؛ لن نرسل تأكيدًا حتى تنجح إعادة القراءة.</Text> : null}
-      {cashLiability ? <View style={styles.summaryCard} accessibilityLabel="العهدة النقدية"><Text style={styles.sectionTitle}>العهدة النقدية غير المورّدة</Text><Text style={styles.warning}>الإجمالي: {formatMoney(cashLiability.totalAmountMinor, "YER")}</Text>{cashLiability.items.length === 0 ? <Text style={styles.muted}>لا توجد مبالغ معلّقة.</Text> : cashLiability.items.map((item) => { const reference = cashRemittanceReferences[item.paymentIntentId] ?? ""; return <View key={item.paymentIntentId} style={styles.task}><Text style={styles.cardTitle}>طلب {item.externalReference}</Text><Text style={styles.muted}>المبلغ: {formatMoney(item.amountMinor, item.currency)}</Text><TextInput accessibilityLabel={`مرجع توريد العهدة ${item.externalReference}`} onChangeText={(value) => setCashRemittanceReferences((current) => ({ ...current, [item.paymentIntentId]: value }))} value={reference} style={styles.input} placeholder="مرجع الإيصال أو التوريد" /><BthwaniButton busy={cashBusy === item.paymentIntentId} disabled={Boolean(cashBusy) || !reference.trim()} label="تأكيد توريد العهدة" onPress={() => void remitCash(item)} /></View>; })}</View> : null}
+      {cashLiability ? <View style={styles.summaryCard} accessibilityLabel="العهدة النقدية">
+        <Text style={styles.sectionTitle}>العهدة النقدية غير المسوّاة</Text>
+        <Text style={styles.warning}>الإجمالي المفتوح: {formatMoney(cashLiability.totalAmountMinor, "YER")}</Text>
+        {cashLiability.items.length === 0 ? <Text style={styles.muted}>لا توجد مبالغ معلّقة.</Text> : cashLiability.items.map((item) => {
+          const reference = cashRemittanceReferences[item.paymentIntentId] ?? item.remittanceReference ?? "";
+          return <View key={item.paymentIntentId} style={styles.task}>
+            <Text style={styles.cardTitle}>طلب {item.externalReference}</Text>
+            <Text style={styles.muted}>المبلغ: {formatMoney(item.amountMinor, item.currency)}</Text>
+            {item.remittanceState === "SUBMITTED" ? <Text style={styles.warning}>أُرسل المرجع إلى المالية؛ تبقى العهدة مفتوحة حتى مطابقة الإيصال.</Text> : null}
+            <TextInput accessibilityLabel={`مرجع توريد العهدة ${item.externalReference}`} onChangeText={(value) => setCashRemittanceReferences((current) => ({ ...current, [item.paymentIntentId]: value }))} value={reference} style={styles.input} placeholder="مرجع التوريد" />
+            <BthwaniButton busy={cashBusy === item.paymentIntentId} disabled={Boolean(cashBusy) || !reference.trim()} label={item.remittanceState === "SUBMITTED" ? "تحديث مرجع التوريد" : "إرسال المرجع إلى المالية"} onPress={() => void remitCash(item)} />
+          </View>;
+        })}
+      </View> : null}
       {activeAssignmentID ? <Text accessibilityLiveRegion="polite" style={locationError ? styles.warning : styles.progress}>{locationError || (lastLocationUpdatedAt ? "الموقع المباشر مفعّل أثناء العهدة." : "جارٍ تفعيل الموقع المباشر أثناء العهدة…")}</Text> : null}
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View> : null}
       {!loading ? <Text style={styles.sectionTitle}>التكليفات ({assignments.length})</Text> : null}
@@ -339,6 +352,12 @@ export function CaptainDeliveries() {
                 {task.fulfillmentMode === "PARTNER_CAPTAIN" && task.amountDueMinor > 0 ? <Text style={styles.warning}>بعد استلام النقد من العميل، سلّمه إلى المتجر. سيؤكد الشريك الاستلام في التطبيق؛ هذا المبلغ لا يدخل في عهدة محفظة الكابتن لدى المنصة.</Text> : null}
                 <Text style={styles.muted}>المتجر: {task.storeName}</Text>
                 <Text style={styles.muted}>عنوان العميل: {task.customerAddressText}</Text>
+                {task.recipient.mode === "OTHER" ? <View style={styles.recipient}>
+                  <Text style={styles.sectionTitle}>المستلم</Text>
+                  <Text selectable style={styles.muted}>{task.recipient.name}</Text>
+                  <Text selectable style={styles.muted}>رقم التواصل: {task.recipient.phoneE164}</Text>
+                  {task.recipient.instructions ? <Text style={styles.muted}>تعليمات التوصيل: {task.recipient.instructions}</Text> : null}
+                </View> : <Text style={styles.muted}>المستلم: صاحب الطلب</Text>}
                 <Text style={styles.sectionTitle}>خريطة مهمة التوصيل</Text>
                 <BthwaniMap
                   accessibilityLabel={`خريطة مهمة التوصيل ${task.orderReference}`}

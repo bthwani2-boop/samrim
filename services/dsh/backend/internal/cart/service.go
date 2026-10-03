@@ -144,6 +144,13 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 	if err != nil || store.PublicationState != "published" || strings.TrimSpace(store.PartnerActorID) == "" || !supportsFulfillmentMode(store.FulfillmentModes, fulfillmentMode) {
 		return CheckoutQuote{}, ErrFulfillmentModeUnavailable
 	}
+	orderability, err := postgres.EvaluateStoreOrderability(ctx, s.db, storeID, fulfillmentMode, time.Now().UTC())
+	if err != nil {
+		return CheckoutQuote{}, err
+	}
+	if orderability.State != postgres.StoreOrderabilityOpenForOrders {
+		return CheckoutQuote{}, ErrFulfillmentModeUnavailable
+	}
 	serviceCityID := store.ServiceCityID
 	var originLatitude, originLongitude, destinationLatitude, destinationLongitude float64
 	var deliveryPolicyVersion string
@@ -228,7 +235,7 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 	}, nil
 }
 
-func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, addressID, fulfillmentMode, promotionCode string, internalBalanceAmountMinor int64, expectedCartVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
+func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, addressID, fulfillmentMode, promotionCode string, recipient postgres.DeliveryRecipientInput, internalBalanceAmountMinor int64, expectedCartVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
 	actorID, err := s.requireClient(ctx, accessToken)
 	if err != nil {
 		return postgres.OrderRecord{}, false, err
@@ -236,6 +243,10 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 	fulfillmentMode = strings.TrimSpace(fulfillmentMode)
 	cartID, storeID, addressID = strings.TrimSpace(cartID), strings.TrimSpace(storeID), strings.TrimSpace(addressID)
 	idempotencyKey, correlationID = strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID)
+	recipient, err = postgres.NormalizeDeliveryRecipient(recipient, fulfillmentMode)
+	if err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
 	if cartID == "" {
 		return postgres.OrderRecord{}, false, postgres.ErrCheckoutEvidenceStale
 	}
@@ -254,6 +265,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		ClientActorID: actorID, CartID: cartID, StoreID: storeID, AddressID: addressID,
 		FulfillmentMode: fulfillmentMode, InternalBalanceAmountMinor: internalBalanceAmountMinor, ExpectedCartVersion: expectedCartVersion,
 		IdempotencyKey: idempotencyKey, CorrelationID: correlationID,
+		Recipient:                recipient,
 		PaymentExternalReference: paymentExternalReference, PaymentCancellationKey: paymentCancellationKey,
 		PaymentMethod: paymentMethod, PromotionCode: strings.ToUpper(strings.TrimSpace(promotionCode)),
 		PaymentIntentRecoveryReader: paymentRecoveryReader, PaymentCanceller: paymentCanceller,
@@ -275,6 +287,13 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 	if err != nil || store.PublicationState != "published" || !supportsFulfillmentMode(store.FulfillmentModes, fulfillmentMode) {
 		return postgres.OrderRecord{}, false, ErrFulfillmentModeUnavailable
 	}
+	orderability, err := postgres.EvaluateStoreOrderability(ctx, s.db, storeID, fulfillmentMode, time.Now().UTC())
+	if err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	if orderability.State != postgres.StoreOrderabilityOpenForOrders {
+		return postgres.OrderRecord{}, false, ErrFulfillmentModeUnavailable
+	}
 	var evidence postgres.CheckoutEvidence
 	if fulfillmentMode == FulfillmentModeCustomerPickup {
 		evidence = postgres.CheckoutEvidence{ServiceCityID: store.ServiceCityID, StoreVersion: store.Version}
@@ -293,6 +312,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		ClientActorID: actorID, CartID: cartID, StoreID: storeID, AddressID: addressID, FulfillmentMode: fulfillmentMode, InternalBalanceAmountMinor: internalBalanceAmountMinor, ExpectedCartVersion: expectedCartVersion, PromotionCode: strings.ToUpper(strings.TrimSpace(promotionCode)), PaymentMethod: paymentMethod, DeliveryProofKeyring: s.proofKeys,
 		Evidence:       evidence,
 		IdempotencyKey: idempotencyKey, ActingActorID: actorID, CorrelationID: correlationID,
+		Recipient:                recipient,
 		PaymentExternalReference: paymentExternalReference,
 		PaymentIdempotencyKey:    wlt.DerivedIdempotencyKey("create", idempotencyKey),
 		PaymentCancellationKey:   paymentCancellationKey,

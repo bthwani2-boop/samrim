@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { recordPendingDiscoveryConversion } from "../store-discovery/discovery-analytics";
+import { checkoutRecipient, DeliveryRecipientForm, deliveryRecipientIsValid, type DeliveryRecipientInput } from "./delivery-recipient-form";
 
 type CartState = { kind: "loading" } | { kind: "empty" } | { kind: "ready"; cart: Cart } | { kind: "error" };
 type QuoteState = { kind: "idle" } | { kind: "loading" } | { kind: "ready"; quote: CheckoutQuote } | { kind: "error" };
@@ -76,6 +77,7 @@ function cartMutationErrorMessage(error: unknown): string {
   if (code === "STALE_CHECKOUT") return "تغيرت السلة أو بيانات المنتج. حدّثنا السلة؛ راجعها ثم أعد المحاولة.";
   if (code === "INVALID_INPUT") return "تعذر قبول الكمية أو الخيارات الحالية. حدّث السلة ثم أعد المحاولة.";
   if (code === "INVALID_PAYMENT_ALLOCATION") return "مبلغ الرصيد يجب ألا يتجاوز إجمالي الطلب.";
+  if (code === "INVALID_RECIPIENT") return "بيانات مستلم الطلب غير صالحة. راجع الاسم والرقم الدولي.";
   if (code === "INSUFFICIENT_CUSTOMER_BALANCE") return "الرصيد المتاح أقل من المبلغ المحدد. خفّض المبلغ أو حدّث رصيدك.";
   if (code === "OFFER_UNAVAILABLE") return "لم يعد أحد المنتجات متاحًا. حدّث السلة لمراجعة المنتجات الحالية.";
   if (code === "CART_CLOSED") return "أُغلقت السلة. افتح كتالوج المتجر لبدء سلة جديدة.";
@@ -100,6 +102,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
   const [order, setOrder] = useState<Order | null>(null);
   const [orders, setOrders] = useState<ReadonlyArray<Order>>([]);
   const [promotionCode, setPromotionCode] = useState("");
+  const [recipient, setRecipient] = useState<DeliveryRecipientInput>({ mode: "SELF" });
   const quoteRequestID = useRef(0);
   const loadRequestID = useRef(0);
   const walletRequestID = useRef(0);
@@ -298,6 +301,10 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
       setError(internalBalanceAmountMinor === null ? "أدخل مبلغًا صحيحًا بالأرقام الكاملة." : "مبلغ الرصيد يتجاوز الرصيد المتاح أو إجمالي الطلب.");
       return;
     }
+    if (!pickupMode && !deliveryRecipientIsValid(recipient)) {
+      setError("أدخل اسمًا ورقمًا دوليًا صحيحًا للمستلم قبل تأكيد الطلب.");
+      return;
+    }
     setError("");
     let token: string;
     let actorID: string;
@@ -310,7 +317,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
       setError("تعذر التحقق من جلسة العميل؛ لم يُرسل الطلب.");
       return;
     }
-    const request: CheckoutRequest = { cartId: state.cart.id, storeId, addressId: addressID, fulfillmentMode, internalBalanceAmountMinor, ...(promotionCode.trim() ? { promotionCode: promotionCode.trim().toUpperCase() } : {}) };
+    const request: CheckoutRequest = { cartId: state.cart.id, storeId, addressId: addressID, fulfillmentMode, internalBalanceAmountMinor, recipient: checkoutRecipient(recipient, !pickupMode), ...(promotionCode.trim() ? { promotionCode: promotionCode.trim().toUpperCase() } : {}) };
     const storageKey = pendingCartCheckoutKey(actorID, storeId);
     const attempt: PendingCartCheckoutAttempt = {
       version: 1, actorID, storeID: storeId, cartID: state.cart.id, expectedCartVersion: state.cart.version,
@@ -407,6 +414,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
           <Text style={styles.fulfillmentChoice}>{fulfillmentModeLabel(fulfillmentMode)}</Text>
           <Text style={styles.muted}>{checkoutFulfillmentInstructions[fulfillmentMode]}</Text>
         </View>
+        <DeliveryRecipientForm allowOther={!pickupMode} onChange={setRecipient} value={recipient} />
         <Text style={styles.payment}>{paymentMethodLabel(paymentMethod, fulfillmentMode)}</Text>
         {!pickupMode && serviceableAddressId && selectedAddress ? <Text style={styles.success}>العنوان مؤهل: {selectedAddress.addressText}</Text> : null}
         <BthwaniButton accessibilityLabel={pickupMode ? "إتمام الطلب للاستلام الذاتي من المتجر" : "إتمام الطلب"} busy={busy} disabled={mutationBusy || (!pickupMode && !serviceableAddressId) || quote.kind !== "ready" || quote.quote.cartVersion !== state.cart.version || quote.quote.addressId !== (pickupMode ? "" : serviceableAddressId) || selectedBalanceMinor === null || balanceNeedsRead || balanceExceedsAvailable || balanceExceedsPayable} label="إتمام الطلب" onPress={() => void checkout()} />

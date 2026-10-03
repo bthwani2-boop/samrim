@@ -10,7 +10,25 @@ import (
 	"time"
 )
 
-var ErrFinanceEvidenceNotFound = errors.New("finance evidence document was not found")
+var (
+	ErrFinanceEvidenceNotFound              = errors.New("finance evidence document was not found")
+	ErrFinanceTransferReceiptAlreadyClaimed = errors.New("finance transfer receipt is already linked to a transfer")
+)
+
+func claimFinanceTransferReceipt(ctx context.Context, tx *sql.Tx, evidenceDocumentID, transferType, transferID string) error {
+	result, err := tx.ExecContext(ctx, `INSERT INTO wlt.finance_transfer_receipt_claims(evidence_document_id,transfer_type,transfer_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, evidenceDocumentID, transferType, transferID)
+	if err != nil {
+		return err
+	}
+	claimed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if claimed != 1 {
+		return ErrFinanceTransferReceiptAlreadyClaimed
+	}
+	return nil
+}
 
 type FinanceEvidenceDocumentInput struct {
 	Purpose        string

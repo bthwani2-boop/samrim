@@ -1,5 +1,6 @@
 import { dshOperationPaths } from "./generated/dsh-operations";
-import type { AcceptStoreCaptainInvitationRequest, BeneficiaryFundingIntentResponse, BeneficiaryPayoutStateResponse, BeneficiaryWalletResponse, CaptainAdmissionResponse, CaptainAssignmentListResponse, CaptainAssignmentResponse, CaptainAvailabilityRequest, CaptainCashRemittanceRequest, CaptainCashRemittanceResponse, CaptainCompletionRequest, CaptainDeliveryTaskResponse, CaptainLocationResponse, CaptainOfferDecisionRequest, CaptainOfferListResponse, CaptainOfferResponse, CartResponse, CashInFundingIntent, CashLiabilityResponse, CatalogAttributeEnumOptionListResponse, CatalogAttributeRuleListResponse, CatalogCategoryListResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogStorefrontSectionResponse, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogVariantResponse, CheckoutQuoteResponse, CheckoutRequest, ClientOpenCartListResponse, CommerceVerticalListResponse, CommercialStoreTypeListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, CreateJoiningCaseRequest, CreateOrderConversationMessageRequest, CreateOrderRatingRequest, DeliveryAddressListResponse, DeliveryAddressResponse, DeliveryProofResponse, DiscoveryContentEventRequest, DiscoveryContentListResponse, DiscoveryContentTargetResolution, FavoriteStoreListResponse, FavoriteStoreOfferListResponse, FavoriteStoreOfferResponse, FavoriteStoreResponse, FieldAcquisitionEntitlementPage, FieldAdmissionResponse, FieldFinancialSummaryResponse, JoiningCaseListResponse, JoiningCaseResponse, MarkOrderConversationReadRequest, MediaProvenanceInput, MultiStoreCheckoutRequest, MultiStoreCheckoutResponse, NotificationListResponse, NotificationReadResponse, OrderConversationMessageResponse, OrderConversationReadResponse, OrderConversationResponse, OrderListResponse, OrderRatingResponse, OrderResponse, OrderTrackingResponse, OrderTransitionRequest, PartnerFinancialSummaryResponse, PayoutRequest, PromotionListResponse, PublicCatalogResponse, PublicCatalogSearchResponse, PublicStoreView, PublishedStoreListResponse, ReplaceCatalogProductMediaRequest, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, SetStoreFulfillmentModesRequest, StoreCaptainDispatchRequest, StoreCaptainInvitationResponse, StoreCaptainMembershipListResponse, StoreCaptainMembershipResponse, StoreCaptainMembershipTransitionRequest, StoreDeliveryOriginResponse, StoreFulfillmentModesResponse, UpdateCartLineRequest, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateDeliveryAddressRequest, UpsertCartLineRequest } from "./generated/dsh-types";
+import type { StoreAccessGrantActivationRequest, StoreAccessGrantPermissionsRequest } from "./generated/dsh-types";
+import type { AcceptStoreCaptainInvitationRequest, BeneficiaryFundingIntentResponse, BeneficiaryPayoutStateResponse, BeneficiaryWalletResponse, CaptainAdmissionResponse, CaptainAssignmentListResponse, CaptainAssignmentResponse, CaptainAvailabilityRequest, CaptainCashRemittanceRequest, CaptainCashRemittanceResponse, CaptainCompletionRequest, CaptainDeliveryTaskResponse, CaptainLocationResponse, CaptainOfferDecisionRequest, CaptainOfferListResponse, CaptainOfferResponse, CartResponse, CashInFundingIntent, CashLiabilityResponse, CatalogAttributeEnumOptionListResponse, CatalogAttributeRuleListResponse, CatalogCategoryListResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogStorefrontSectionResponse, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogVariantResponse, CheckoutQuoteResponse, CheckoutRequest, ClientOpenCartListResponse, CommerceVerticalListResponse, CommercialStoreTypeListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, CreateJoiningCaseRequest, CreateOrderConversationMessageRequest, CreateOrderRatingRequest, DeliveryAddressListResponse, DeliveryAddressResponse, DeliveryProofResponse, DiscoveryContentEventRequest, DiscoveryContentListResponse, DiscoveryContentTargetResolution, FavoriteStoreListResponse, FavoriteStoreOfferListResponse, FavoriteStoreOfferResponse, FavoriteStoreResponse, FieldAcquisitionEntitlementPage, FieldAdmissionResponse, FieldFinancialSummaryResponse, JoiningCaseListResponse, JoiningCaseResponse, MarkOrderConversationReadRequest, MediaProvenanceInput, MultiStoreCheckoutRequest, MultiStoreCheckoutResponse, NotificationListResponse, NotificationReadResponse, OrderAdjustmentDecisionRequest, OrderAdjustmentProposalRequest, OrderConversationMessageResponse, OrderConversationReadResponse, OrderConversationResponse, OrderListResponse, OrderRatingResponse, OrderResponse, OrderTrackingResponse, OrderTransitionRequest, PartnerAccessibleStorePage, PartnerFinancialSummaryResponse, PartnerStoreOperationalAvailabilityMutationResponse, PartnerStoreOperationalAvailabilityResponse, PayoutRequest, PromotionListResponse, PublicCatalogResponse, PublicCatalogSearchResponse, PublicStoreOrderabilityResponse, PublicStoreView, PublishedStoreListResponse, ReplaceCatalogProductMediaRequest, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, SetStoreFulfillmentModesRequest, StoreAccessGrantListResponse, StoreAccessGrantMutationResponse, StoreAccessGrantTransitionRequest, StoreAccessInvitationCreateRequest, StoreAccessInvitationDecisionRequest, StoreAccessPermission, StoreCaptainDispatchRequest, StoreCaptainInvitationResponse, StoreCaptainMembershipListResponse, StoreCaptainMembershipResponse, StoreCaptainMembershipTransitionRequest, StoreDeliveryOriginResponse, StoreFulfillmentModesResponse, StoreOperationalAvailabilityRequest, UpdateCartLineRequest, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateDeliveryAddressRequest, UpsertCartLineRequest } from "./generated/dsh-types";
 
 export type DshMobileClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -240,6 +241,68 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
     },
     async readOwnJoiningCase(accessToken: string): Promise<JoiningCaseResponse> {
       return userRequest<JoiningCaseResponse>(accessToken, dshOperationPaths.readOwnJoiningCase.path, dshOperationPaths.readOwnJoiningCase.method);
+    },
+    async listPartnerAccessibleStores(accessToken: string, limit = 25, cursor = ""): Promise<PartnerAccessibleStorePage> {
+      if (!Number.isInteger(limit) || limit < 1 || limit > 50 || cursor.trim().length > 128) throw new Error("DSH_PARTNER_ACCESSIBLE_STORES_INPUT_INVALID");
+      const query = new URLSearchParams({ limit: String(limit) });
+      if (cursor.trim()) query.set("cursor", cursor.trim());
+      return userRequest<PartnerAccessibleStorePage>(accessToken, `${dshOperationPaths.listPartnerAccessibleStores.path}?${query.toString()}`, dshOperationPaths.listPartnerAccessibleStores.method);
+    },
+    async listPartnerStoreAccessGrants(accessToken: string, storeID: string): Promise<StoreAccessGrantListResponse> {
+      const normalizedStore = storeID.trim();
+      if (!normalizedStore) throw new Error("DSH_STORE_ACCESS_STORE_REQUIRED");
+      const path = dshOperationPaths.listPartnerStoreAccessGrants.path.replace("{storeId}", encodeURIComponent(normalizedStore));
+      return userRequest<StoreAccessGrantListResponse>(accessToken, path, dshOperationPaths.listPartnerStoreAccessGrants.method);
+    },
+    async createPartnerStoreAccessInvitation(accessToken: string, storeID: string, input: StoreAccessInvitationCreateRequest, idempotencyKey: string, correlationID: string): Promise<StoreAccessGrantMutationResponse> {
+      const normalizedStore = storeID.trim();
+      const delegateActorID = input.delegateActorId.trim();
+      const allowedPermissions: ReadonlyArray<StoreAccessPermission> = ["orders", "catalog", "store_operations"];
+      if (!normalizedStore || !delegateActorID || input.permissions.length < 1 || input.permissions.length > 3 || new Set(input.permissions).size !== input.permissions.length || input.permissions.some((permission) => !allowedPermissions.includes(permission))) throw new Error("DSH_STORE_ACCESS_INVITATION_INPUT_INVALID");
+      const path = dshOperationPaths.createPartnerStoreAccessInvitation.path.replace("{storeId}", encodeURIComponent(normalizedStore));
+      return userRequest<StoreAccessGrantMutationResponse>(accessToken, path, dshOperationPaths.createPartnerStoreAccessInvitation.method, { delegateActorId: delegateActorID, permissions: Array.from(input.permissions) }, mutationHeaders(idempotencyKey, correlationID));
+    },
+    async transitionPartnerStoreAccessGrant(accessToken: string, storeID: string, grantID: string, input: StoreAccessGrantTransitionRequest, idempotencyKey: string, correlationID: string): Promise<StoreAccessGrantMutationResponse> {
+      const normalizedStore = storeID.trim();
+      const normalizedGrant = grantID.trim();
+      if (!normalizedStore || !normalizedGrant || !Number.isInteger(input.expectedVersion) || input.expectedVersion < 1 || !["active", "suspended", "revoked"].includes(input.state)) throw new Error("DSH_STORE_ACCESS_TRANSITION_INPUT_INVALID");
+      const path = dshOperationPaths.transitionPartnerStoreAccessGrant.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{grantId}", encodeURIComponent(normalizedGrant));
+      return userRequest<StoreAccessGrantMutationResponse>(accessToken, path, dshOperationPaths.transitionPartnerStoreAccessGrant.method, input, mutationHeaders(idempotencyKey, correlationID));
+    },
+    async updatePartnerStoreAccessPermissions(accessToken: string, storeID: string, grantID: string, input: StoreAccessGrantPermissionsRequest, idempotencyKey: string, correlationID: string): Promise<StoreAccessGrantMutationResponse> {
+      const normalizedStore = storeID.trim();
+      const normalizedGrant = grantID.trim();
+      const allowedPermissions: ReadonlyArray<StoreAccessPermission> = ["orders", "catalog", "store_operations"];
+      if (!normalizedStore || !normalizedGrant || !Number.isInteger(input.expectedVersion) || input.expectedVersion < 1 || input.permissions.length < 1 || input.permissions.length > 3 || new Set(input.permissions).size !== input.permissions.length || input.permissions.some((permission) => !allowedPermissions.includes(permission))) throw new Error("DSH_STORE_ACCESS_PERMISSIONS_INPUT_INVALID");
+      const path = dshOperationPaths.updatePartnerStoreAccessPermissions.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{grantId}", encodeURIComponent(normalizedGrant));
+      return userRequest<StoreAccessGrantMutationResponse>(accessToken, path, dshOperationPaths.updatePartnerStoreAccessPermissions.method, input, mutationHeaders(idempotencyKey, correlationID));
+    },
+    async listActorStoreAccessInvitations(accessToken: string): Promise<StoreAccessGrantListResponse> {
+      return userRequest<StoreAccessGrantListResponse>(accessToken, dshOperationPaths.listActorStoreAccessInvitations.path, dshOperationPaths.listActorStoreAccessInvitations.method);
+    },
+    async decideActorStoreAccessInvitation(accessToken: string, grantID: string, input: StoreAccessInvitationDecisionRequest, idempotencyKey: string, correlationID: string): Promise<StoreAccessGrantMutationResponse> {
+      const normalizedGrant = grantID.trim();
+      if (!normalizedGrant || !Number.isInteger(input.expectedVersion) || input.expectedVersion < 1 || (input.decision !== "accept" && input.decision !== "decline")) throw new Error("DSH_STORE_ACCESS_DECISION_INPUT_INVALID");
+      const path = dshOperationPaths.decideActorStoreAccessInvitation.path.replace("{grantId}", encodeURIComponent(normalizedGrant));
+      return userRequest<StoreAccessGrantMutationResponse>(accessToken, path, dshOperationPaths.decideActorStoreAccessInvitation.method, input, mutationHeaders(idempotencyKey, correlationID));
+    },
+    async activatePartnerStoreAccessInvitation(accessToken: string, grantID: string, input: StoreAccessGrantActivationRequest, idempotencyKey: string, correlationID: string): Promise<StoreAccessGrantMutationResponse> {
+      const normalizedGrant = grantID.trim();
+      if (!normalizedGrant || !Number.isInteger(input.expectedVersion) || input.expectedVersion < 1) throw new Error("DSH_STORE_ACCESS_ACTIVATION_INPUT_INVALID");
+      const path = dshOperationPaths.activatePartnerStoreAccessInvitation.path.replace("{grantId}", encodeURIComponent(normalizedGrant));
+      return userRequest<StoreAccessGrantMutationResponse>(accessToken, path, dshOperationPaths.activatePartnerStoreAccessInvitation.method, input, mutationHeaders(idempotencyKey, correlationID));
+    },
+    async readPartnerStoreOperationalAvailability(accessToken: string, storeID: string): Promise<PartnerStoreOperationalAvailabilityResponse> {
+      const normalizedStore = storeID.trim();
+      if (!normalizedStore) throw new Error("DSH_STORE_OPERATIONAL_AVAILABILITY_STORE_REQUIRED");
+      const path = dshOperationPaths.readPartnerStoreOperationalAvailability.path.replace("{storeId}", encodeURIComponent(normalizedStore));
+      return userRequest<PartnerStoreOperationalAvailabilityResponse>(accessToken, path, dshOperationPaths.readPartnerStoreOperationalAvailability.method);
+    },
+    async updatePartnerStoreOperationalAvailability(accessToken: string, storeID: string, input: StoreOperationalAvailabilityRequest, idempotencyKey: string, correlationID: string): Promise<PartnerStoreOperationalAvailabilityMutationResponse> {
+      const normalizedStore = storeID.trim();
+      if (!normalizedStore || !Number.isInteger(input.expectedVersion) || input.expectedVersion < 1 || !idempotencyKey.trim() || !correlationID.trim()) throw new Error("DSH_STORE_OPERATIONAL_AVAILABILITY_INPUT_INVALID");
+      const path = dshOperationPaths.updatePartnerStoreOperationalAvailability.path.replace("{storeId}", encodeURIComponent(normalizedStore));
+      return userRequest<PartnerStoreOperationalAvailabilityMutationResponse>(accessToken, path, dshOperationPaths.updatePartnerStoreOperationalAvailability.method, input, mutationHeaders(idempotencyKey, correlationID));
     },
     async readOwnPartnerFinancialSummary(accessToken: string): Promise<PartnerFinancialSummaryResponse> {
       return userRequest<PartnerFinancialSummaryResponse>(accessToken, dshOperationPaths.readOwnPartnerFinancialSummary.path, dshOperationPaths.readOwnPartnerFinancialSummary.method);
@@ -509,6 +572,13 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.readOrder.path.replace("{orderId}", encodeURIComponent(normalized));
       return userRequest<OrderResponse>(accessToken, path, dshOperationPaths.readOrder.method);
     },
+    async decideClientOrderAdjustment(accessToken: string, orderID: string, adjustmentID: string, input: OrderAdjustmentDecisionRequest, expectedOrderVersion: number): Promise<OrderResponse> {
+      const normalizedOrder = orderID.trim();
+      const normalizedAdjustment = adjustmentID.trim();
+      if (!normalizedOrder || !normalizedAdjustment || expectedOrderVersion < 1 || input.expectedAdjustmentVersion < 1 || (input.decision !== "ACCEPT" && input.decision !== "REJECT")) throw new Error("DSH_ORDER_ADJUSTMENT_DECISION_INVALID");
+      const path = dshOperationPaths.decideClientOrderAdjustment.path.replace("{orderId}", encodeURIComponent(normalizedOrder)).replace("{adjustmentId}", encodeURIComponent(normalizedAdjustment));
+      return userRequest<OrderResponse>(accessToken, path, dshOperationPaths.decideClientOrderAdjustment.method, input, { ...mutationHeaders(), "X-Expected-Version": String(expectedOrderVersion) });
+    },
     async readOrderConversation(accessToken: string, orderID: string, limit = 50): Promise<OrderConversationResponse> {
       const normalized = orderID.trim();
       if (!normalized || !Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("DSH_ORDER_CONVERSATION_INPUT_INVALID");
@@ -573,6 +643,14 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalizedStore || !normalizedOrder || expectedVersion < 1) throw new Error("DSH_ORDER_INPUT_INVALID");
       const path = dshOperationPaths.transitionStoreOrder.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{orderId}", encodeURIComponent(normalizedOrder));
       return userRequest<OrderResponse>(accessToken, path, dshOperationPaths.transitionStoreOrder.method, input, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+    },
+    async proposePartnerOrderAdjustment(accessToken: string, storeID: string, orderID: string, input: OrderAdjustmentProposalRequest, expectedOrderVersion: number): Promise<OrderResponse> {
+      const normalizedStore = storeID.trim();
+      const normalizedOrder = orderID.trim();
+      const normalizedLine = input.orderLineId.trim();
+      if (!normalizedStore || !normalizedOrder || !normalizedLine || expectedOrderVersion < 1 || (input.kind !== "REMOVE_ITEM" && input.kind !== "SET_ACTUAL_QUANTITY") || (input.kind === "REMOVE_ITEM" && input.actualQuantityBaseUnits !== undefined) || (input.kind === "SET_ACTUAL_QUANTITY" && (!Number.isSafeInteger(input.actualQuantityBaseUnits) || (input.actualQuantityBaseUnits ?? 0) < 1))) throw new Error("DSH_ORDER_ADJUSTMENT_PROPOSAL_INVALID");
+      const path = dshOperationPaths.proposePartnerOrderAdjustment.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{orderId}", encodeURIComponent(normalizedOrder));
+      return userRequest<OrderResponse>(accessToken, path, dshOperationPaths.proposePartnerOrderAdjustment.method, { ...input, orderLineId: normalizedLine }, { ...mutationHeaders(), "X-Expected-Version": String(expectedOrderVersion) });
     },
     async confirmPartnerCaptainCashHandoff(accessToken: string, storeID: string, orderID: string, expectedVersion: number): Promise<OrderResponse> {
       const normalizedStore = storeID.trim();
@@ -837,6 +915,7 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
     },
     async listPublishedStores(serviceCityID: string, options: Readonly<{
       q?: string;
+      verticalId?: string;
       categoryId?: string;
       favoritesOnly?: boolean;
       accessToken?: string;
@@ -851,10 +930,12 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error("DSH_PUBLIC_STORE_LIMIT_INVALID");
       const params = new URLSearchParams({ serviceCityId: normalizedCity, sort: options.sort ?? "all", limit: String(limit) });
       const query = options.q?.trim() ?? "";
+      const verticalID = options.verticalId?.trim() ?? "";
       const categoryID = options.categoryId?.trim() ?? "";
       const cursor = options.cursor?.trim() ?? "";
       const favoritesOnly = options.favoritesOnly === true;
       if (query) params.set("q", query);
+      if (verticalID) params.set("verticalId", verticalID);
       if (categoryID) params.set("categoryId", categoryID);
       if (favoritesOnly) params.set("favoritesOnly", "true");
       if (cursor) params.set("cursor", cursor);
@@ -903,6 +984,14 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = `${dshOperationPaths.readPublishedStore.path.replace("{storeId}", encodeURIComponent(normalized))}?${new URLSearchParams({ serviceCityId: normalizedCity }).toString()}`;
       return publicRequest<PublicStoreView>(path);
     },
+    async readPublicStoreOrderability(storeID: string, serviceCityID: string): Promise<PublicStoreOrderabilityResponse> {
+      const normalizedStore = storeID.trim();
+      const normalizedCity = serviceCityID.trim();
+      if (!normalizedStore || !normalizedCity) throw new Error("DSH_STORE_ORDERABILITY_SCOPE_REQUIRED");
+      const query = new URLSearchParams({ serviceCityId: normalizedCity });
+      const path = `${dshOperationPaths.readPublicStoreOrderability.path.replace("{storeId}", encodeURIComponent(normalizedStore))}?${query.toString()}`;
+      return publicRequest<PublicStoreOrderabilityResponse>(path);
+    },
     async readPublicStoreCatalog(storeID: string, serviceCityID: string, categoryID = "", query = "", limit = 100, cursor = "", productID = ""): Promise<PublicCatalogResponse> {
       const normalizedStore = storeID.trim();
       const normalizedCity = serviceCityID.trim();
@@ -919,13 +1008,14 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = `${dshOperationPaths.readPublicStoreCatalog.path.replace("{storeId}", encodeURIComponent(normalizedStore))}?${params.toString()}`;
       return publicRequest<PublicCatalogResponse>(path);
     },
-    async searchPublicCatalog(serviceCityID: string, query: string, categoryID = "", limit = 20, cursor = ""): Promise<PublicCatalogSearchResponse> {
+    async searchPublicCatalog(serviceCityID: string, query: string, categoryID = "", limit = 20, cursor = "", verticalID = ""): Promise<PublicCatalogSearchResponse> {
       const normalizedCity = serviceCityID.trim();
       const normalizedQuery = query.trim();
       if (!normalizedCity || !normalizedQuery) throw new Error("DSH_CATALOG_SEARCH_SCOPE_REQUIRED");
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) throw new Error("DSH_CATALOG_SEARCH_LIMIT_INVALID");
       const params = new URLSearchParams({ serviceCityId: normalizedCity, q: normalizedQuery });
       if (categoryID.trim()) params.set("categoryId", categoryID.trim());
+      if (verticalID.trim()) params.set("verticalId", verticalID.trim());
       params.set("limit", String(limit));
       if (cursor.trim()) params.set("cursor", cursor.trim());
       const path = `${dshOperationPaths.searchPublicCatalog.path}?${params.toString()}`;

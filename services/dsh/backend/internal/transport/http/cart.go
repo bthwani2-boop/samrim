@@ -174,7 +174,8 @@ func (s *CartServer) checkout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cartId, storeId, addressId and fulfillmentMode are required")
 		return
 	}
-	result, replayed, err := s.service.Checkout(r.Context(), bearerToken(r), input.CartID, input.StoreID, input.AddressID, string(input.FulfillmentMode), input.PromotionCode, int64(input.InternalBalanceAmountMinor), expected, idempotency, correlation)
+	recipient := postgres.DeliveryRecipientInput{Mode: input.Recipient.Mode, Name: input.Recipient.Name, PhoneE164: input.Recipient.PhoneE164, Instructions: input.Recipient.Instructions}
+	result, replayed, err := s.service.Checkout(r.Context(), bearerToken(r), input.CartID, input.StoreID, input.AddressID, string(input.FulfillmentMode), input.PromotionCode, recipient, int64(input.InternalBalanceAmountMinor), expected, idempotency, correlation)
 	if err != nil {
 		writeCartError(w, err)
 		return
@@ -271,6 +272,8 @@ func writeCartErrorWithCorrelation(w http.ResponseWriter, err error, correlation
 		writeError(w, http.StatusConflict, "PROMOTION_UNAVAILABLE", "promotion is not currently eligible")
 	case errors.Is(err, postgres.ErrCheckoutPaymentReconciled):
 		writeError(w, http.StatusConflict, "CHECKOUT_PAYMENT_RECONCILED", "the previous payment was safely cancelled; refresh the cart and start a new checkout")
+	case errors.Is(err, postgres.ErrCheckoutRecipientInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_RECIPIENT", "delivery recipient details are invalid for the selected fulfillment mode")
 	case errors.Is(err, cart.ErrInsufficientCustomerBalance):
 		writeError(w, http.StatusConflict, "INSUFFICIENT_CUSTOMER_BALANCE", "available customer balance does not cover the requested contribution; no order was created")
 	case errors.Is(err, cart.ErrCheckoutBalanceContribution):

@@ -37,6 +37,7 @@ const sourceGraphSha = crypto.createHash("sha256").update(sourceGraph).digest("h
 const schemaNames = [
   "StatusResponse",
   "ActorType",
+  "CanonicalActorResolution",
   "ManagedActorType",
   "ManagedActivationRole",
   "ControlPanelRole",

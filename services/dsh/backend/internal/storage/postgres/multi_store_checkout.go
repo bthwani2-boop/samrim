@@ -25,6 +25,7 @@ type MultiStoreCheckoutChildInput struct {
 	CartVersion     int
 	FulfillmentMode string
 	PromotionCode   string
+	Recipient       DeliveryRecipientInput
 }
 
 type MultiStoreCheckoutInput struct {
@@ -66,13 +67,29 @@ type MultiStoreCheckoutRecord struct {
 }
 
 func HashMultiStoreCheckoutRequest(input MultiStoreCheckoutInput) string {
+	type childIdentity struct {
+		CartID          string
+		StoreID         string
+		AddressID       string
+		CartVersion     int
+		FulfillmentMode string
+		PromotionCode   string
+	}
+	children := make([]childIdentity, 0, len(input.Children))
+	otherRecipients := make([]string, 0)
+	for index, child := range input.Children {
+		children = append(children, childIdentity{CartID: child.CartID, StoreID: child.StoreID, AddressID: child.AddressID, CartVersion: child.CartVersion, FulfillmentMode: child.FulfillmentMode, PromotionCode: child.PromotionCode})
+		if strings.EqualFold(strings.TrimSpace(child.Recipient.Mode), "OTHER") {
+			otherRecipients = append(otherRecipients, fmt.Sprint(index), strings.TrimSpace(child.Recipient.Name), strings.TrimSpace(child.Recipient.PhoneE164), strings.TrimSpace(child.Recipient.Instructions))
+		}
+	}
 	payload := struct {
-		ID            string                         `json:"id"`
-		ClientActorID string                         `json:"clientActorId"`
-		Children      []MultiStoreCheckoutChildInput `json:"children"`
-	}{ID: strings.TrimSpace(input.ID), ClientActorID: strings.TrimSpace(input.ClientActorID), Children: input.Children}
+		ID            string          `json:"id"`
+		ClientActorID string          `json:"clientActorId"`
+		Children      []childIdentity `json:"children"`
+	}{ID: strings.TrimSpace(input.ID), ClientActorID: strings.TrimSpace(input.ClientActorID), Children: children}
 	raw, _ := json.Marshal(payload)
-	return HashMarketingFacts(string(raw))
+	return HashMarketingFacts(append([]string{string(raw)}, otherRecipients...)...)
 }
 
 func HashMultiStoreCheckoutCancelRequest(checkoutID string, expectedVersion int) string {

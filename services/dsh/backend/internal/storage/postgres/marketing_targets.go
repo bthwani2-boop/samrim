@@ -115,6 +115,11 @@ func discoveryContentTargetEligibilityPredicate(contentAlias, serviceCityPlaceho
 			  AND (` + serviceCityPlaceholder + `='' OR store.service_city_id=` + serviceCityPlaceholder + `)
 			  AND store.publication_state='published'
 			  AND store.publication_changed_at IS NOT NULL
+			  AND EXISTS (
+				  SELECT 1 FROM dsh.catalog_store_offers offer
+				  WHERE offer.store_id=store.id
+				    AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=offer.id)
+			  )
 		))
 		OR (` + contentAlias + `.target_type='PROMOTION' AND EXISTS (
 			SELECT 1

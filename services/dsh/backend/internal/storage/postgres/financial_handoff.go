@@ -151,7 +151,7 @@ func MarkFinancialHandoffPosted(ctx context.Context, db *sql.DB, item FinancialH
 			ON CONFLICT (event_type,idempotency_key) DO NOTHING`, item.IdempotencyKey, item.CorrelationID, item.ActingActorID, item.OrderID, item.PaymentIntentID, item.AmountMinor); err != nil {
 			return err
 		}
-	case "CAPTAIN_COD_RELEASE":
+	case "CAPTAIN_COD_RELEASE", "ORDER_ADJUSTMENT_RECONCILIATION":
 	default:
 		return errors.New("unknown financial handoff effect")
 	}

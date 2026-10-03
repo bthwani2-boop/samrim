@@ -69,6 +69,9 @@ func New(endpoint identityclient.Endpoint, serviceToken string) (*Client, error)
 func (c *Client) ProvisionPartnerWithContext(ctx context.Context, input ActorInput, correlationID, operatorActorID string) (identityclient.ActorRoleView, error) {
 	return c.inner.ProvisionRoleWithContext(ctx, identityclient.ProvisionActorRoleRequest{PhoneE164: input.PhoneE164, Role: "partner"}, correlationID, operatorActorID)
 }
+func (c *Client) ProvisionExistingPartnerWithContext(ctx context.Context, actorID, correlationID, operatorActorID string) (identityclient.ActorRoleView, error) {
+	return c.inner.ProvisionExistingRoleWithContext(ctx, strings.TrimSpace(actorID), "partner", correlationID, operatorActorID)
+}
 
 func (c *Client) ProvisionCaptainWithContext(ctx context.Context, input ActorInput, correlationID, operatorActorID string) (identityclient.ActorRoleView, error) {
 	return c.inner.ProvisionRoleWithContext(ctx, identityclient.ProvisionActorRoleRequest{PhoneE164: input.PhoneE164, Role: "captain"}, correlationID, operatorActorID)
@@ -84,6 +87,10 @@ func (c *Client) SearchFieldRolesByPhoneE164(ctx context.Context, phone string) 
 
 func (c *Client) ReadActorRole(ctx context.Context, actorID, role string) (identityclient.ActorRoleView, error) {
 	return c.inner.ReadRole(ctx, actorID, role)
+}
+
+func (c *Client) ReadCanonicalActor(ctx context.Context, actorID string) (identityclient.CanonicalActorResolution, error) {
+	return c.inner.ReadCanonicalActor(ctx, strings.TrimSpace(actorID))
 }
 
 func (c *Client) ReadActorRoles(ctx context.Context, role string, actorIDs []string) (identityclient.ActorRoleReadBatchResponse, error) {

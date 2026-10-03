@@ -35,7 +35,7 @@ try {
         $env:NX_HEAD = $head
         $env:NX_NO_CLOUD = 'true'
         Write-Host "VERIFY_SCOPE base=$BaseSha head=$head runtime=off cloud=off"
-        pnpm exec nx affected -t lint,format-check,typecheck,unit,contract,build,vet,export-smoke --base=$BaseSha --head=$head --outputStyle=static --parallel=2 --nxBail=true
+        pnpm exec nx affected -t lint format-check typecheck unit contract build vet export-smoke --base=$BaseSha --head=$head --outputStyle=static --parallel=2 --nxBail=true
         if ($LASTEXITCODE -ne 0) { throw "VERIFY=FAIL exit=$LASTEXITCODE" }
         if ((git rev-parse HEAD).Trim() -ne $head -or @(git status --porcelain=v1 --untracked-files=all).Count -gt 0) {
             throw 'Candidate changed during verification.'
@@ -45,9 +45,11 @@ try {
     }
 
     $files = @(
-        git diff --name-only HEAD --
-        git ls-files --others --exclude-standard --
-    ) | ForEach-Object { ([string]$_).Trim().Replace('\','/') } | Where-Object { $_ } | Sort-Object -Unique
+        @(
+            git diff --name-only HEAD --
+            git ls-files --others --exclude-standard --
+        ) | ForEach-Object { ([string]$_).Trim().Replace('\','/') } | Where-Object { $_ } | Sort-Object -Unique
+    )
 
     if ($files.Count -eq 0) {
         Write-Host 'LOCAL_CHECK=PASS scope=no-working-tree-changes'
@@ -60,8 +62,15 @@ try {
     pwsh -NoProfile -ExecutionPolicy Bypass -File tools/powershell/verify-syntax.ps1
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-    $filesArg = '--files=' + ($files -join ',')
-    pnpm exec nx affected -t lint,format-check,typecheck,unit,contract,vet $filesArg --outputStyle=static --parallel=2 --nxBail=true
+    $affectedProjectJson = pnpm exec nx show projects --affected --base=HEAD --json
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    $affectedProjects = @($affectedProjectJson | ConvertFrom-Json)
+    if ($affectedProjects.Count -eq 0) {
+        Write-Host "LOCAL_CHECK=PASS files=$($files.Count) projects=0"
+        return
+    }
+    $projectsArg = $affectedProjects -join ','
+    pnpm exec nx run-many -t lint format-check typecheck unit contract vet --projects=$projectsArg --outputStyle=static --parallel=2 --nxBail=true
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     Write-Host "LOCAL_CHECK=PASS files=$($files.Count)"
 }

@@ -73,6 +73,57 @@ test("catalog import uses the existing CSV file adapter and closes the loop", as
   expect(readbackCount).toBeGreaterThan(0);
 });
 
+test("operator sees shared product categories as a hierarchy under their commerce vertical", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  const vertical = { id: "grocery", nameAr: "المقاضي", nameEn: "Groceries", catalogModel: "SHARED_CATALOG", active: true, version: 1, createdAt: "2026-09-18T00:00:00.000Z", updatedAt: "2026-09-18T00:00:00.000Z" };
+  const root = { id: "grocery-drinks", verticalId: "grocery", parentCategoryId: null, nameAr: "مشروبات", nameEn: "Beverages", pathAr: "المقاضي / مشروبات", pathEn: "Groceries / Beverages", active: true, version: 1, createdAt: vertical.createdAt, updatedAt: vertical.updatedAt };
+  const child = { id: "grocery-coffee", verticalId: "grocery", parentCategoryId: root.id, nameAr: "قهوة", nameEn: "Coffee", pathAr: "المقاضي / مشروبات / قهوة", pathEn: "Groceries / Beverages / Coffee", active: true, version: 1, createdAt: vertical.createdAt, updatedAt: vertical.updatedAt };
+  await page.route("**/api/catalog/verticals**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [vertical] }) });
+  });
+  await page.route("**/api/catalog/categories**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/attribute-rules")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ rules: [] }) });
+      return;
+    }
+    if (route.request().method() === "GET" && url.pathname.endsWith(`/${root.id}`)) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ category: root }) });
+      return;
+    }
+    if (route.request().method() === "GET" && url.pathname.endsWith(`/${child.id}`)) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ category: child }) });
+      return;
+    }
+    const categories = url.searchParams.get("query")?.toLowerCase().includes("coffee") ? [child] : [root, child];
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories, nextCursor: "" }) });
+  });
+  await page.route("**/api/catalog/attributes**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ definitions: [] }) });
+  });
+
+  await page.goto("/catalog/categories?verticalId=grocery");
+  const tree = page.getByRole("list", { name: "شجرة فئات المقاضي" });
+  const rootItem = tree.getByRole("listitem").first();
+  const childList = rootItem.getByRole("list");
+  const childItem = childList.getByRole("listitem").first();
+  await expect(page.getByLabel("المجال الرئيسي")).toHaveValue("grocery");
+  await expect(childItem.getByRole("button", { name: /قهوة Coffee/ })).toBeVisible();
+  await expect(rootItem).toContainText("جذر المجال");
+  await expect(childItem.locator(".catalog-taxonomy-child-count")).toContainText("ضمن مشروبات");
+  await rootItem.getByRole("button", { name: "طي فروع مشروبات" }).click();
+  await expect(childList).toHaveCount(0);
+  await rootItem.getByRole("button", { name: /مشروبات Beverages/ }).click();
+  await expect(page.getByRole("link", { name: "عرض المنتجات في هذه الفئة وفروعها" })).toHaveAttribute("href", /categoryId=grocery-drinks/);
+
+  const filters = page.locator("form.catalog-category-filters");
+  await filters.getByLabel("بحث").fill("Coffee");
+  await filters.getByRole("button", { name: "بحث", exact: true }).click();
+  const detachedTree = page.getByRole("list", { name: "فروع أبوها خارج النتائج الحالية" });
+  await expect(detachedTree.getByRole("listitem").first()).toContainText("المقاضي / مشروبات / قهوة");
+  await expect(page.getByRole("list", { name: "شجرة فئات المقاضي" })).toHaveCount(0);
+});
+
 test("catalog proposal review shows detail and re-reads after approval", async ({ page }) => {
   await stubAuthenticatedSession(page);
   let queueRead = 0;

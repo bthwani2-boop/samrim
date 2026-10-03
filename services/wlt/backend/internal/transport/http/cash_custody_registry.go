@@ -69,7 +69,7 @@ func (s *Server) operatorCashLiability(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]cashLiabilityItemJSON, 0, len(result.Items))
 	for _, item := range result.Items {
-		items = append(items, cashLiabilityItemJSON{PaymentIntentID: item.PaymentIntentID, ExternalReference: item.ExternalReference, CaptainActorID: item.CaptainActorID, AmountMinor: item.AmountMinor, Currency: item.Currency, PaymentVersion: item.PaymentVersion, CollectedAt: item.CollectedAt.UTC().Format(time.RFC3339Nano)})
+		items = append(items, cashLiabilityItemJSON{PaymentIntentID: item.PaymentIntentID, ExternalReference: item.ExternalReference, CaptainActorID: item.CaptainActorID, AmountMinor: item.AmountMinor, Currency: item.Currency, PaymentVersion: item.PaymentVersion, CollectedAt: item.CollectedAt.UTC().Format(time.RFC3339Nano), RemittanceState: item.RemittanceState, RemittanceReference: item.RemittanceReference, RemittanceID: item.RemittanceID})
 	}
 	response := cashLiabilityRegistryResponse{Items: items, TotalAmountMinor: result.TotalAmountMinor, TotalItems: result.TotalItems, Limit: limit}
 	if result.HasMore && len(result.Items) > 0 {

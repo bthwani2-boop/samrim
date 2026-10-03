@@ -25,7 +25,7 @@ type PartnerFinanceServer struct {
 type partnerCommissionRemittanceRequest struct {
 	AmountMinor         int64  `json:"amountMinor"`
 	RemittanceReference string `json:"remittanceReference"`
-	EvidenceReference   string `json:"evidenceReference"`
+	EvidenceDocumentID  string `json:"evidenceDocumentId"`
 }
 
 type partnerCommissionRemittanceResponse struct {
@@ -244,12 +244,12 @@ func (s *PartnerFinanceServer) recordCommissionRemittance(w http.ResponseWriter,
 		return
 	}
 	input.RemittanceReference = strings.TrimSpace(input.RemittanceReference)
-	input.EvidenceReference = strings.TrimSpace(input.EvidenceReference)
-	if input.AmountMinor <= 0 || len(input.RemittanceReference) < 1 || len(input.RemittanceReference) > 128 || len(input.EvidenceReference) < 1 || len(input.EvidenceReference) > 512 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "positive amount, remittance reference, and verification evidence are required")
+	input.EvidenceDocumentID = strings.TrimSpace(input.EvidenceDocumentID)
+	if input.AmountMinor <= 0 || len(input.RemittanceReference) < 1 || len(input.RemittanceReference) > 128 || len(input.EvidenceDocumentID) < 1 || len(input.EvidenceDocumentID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "positive amount, remittance reference, and stored transfer receipt are required")
 		return
 	}
-	result, replayed, err := s.payment.RecordPartnerCommissionRemittance(r.Context(), partnerActorID, input.AmountMinor, input.RemittanceReference, input.EvidenceReference, idempotencyKey, correlationID, acting)
+	result, replayed, err := s.payment.RecordPartnerCommissionRemittance(r.Context(), partnerActorID, input.AmountMinor, input.RemittanceReference, input.EvidenceDocumentID, idempotencyKey, correlationID, acting)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return

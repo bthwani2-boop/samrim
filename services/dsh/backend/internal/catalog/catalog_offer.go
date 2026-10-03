@@ -74,12 +74,11 @@ func (s *Service) requireStoreOwner(ctx context.Context, accessToken, storeID st
 	if identity.Role != "partner" || identity.Surface != "app-partner" || strings.TrimSpace(identity.Subject) == "" {
 		return "", ErrPartnerSessionForbidden
 	}
-	store, err := postgres.ReadStore(ctx, s.db, storeID)
-	if err != nil {
+	if _, _, err := postgres.AuthorizePartnerStoreAction(ctx, s.db, storeID, identity.Subject, "catalog"); err != nil {
+		if errors.Is(err, postgres.ErrStoreAccessForbidden) {
+			return "", ErrStoreOwnershipForbidden
+		}
 		return "", err
-	}
-	if store.PartnerActorID != identity.Subject {
-		return "", ErrStoreOwnershipForbidden
 	}
 	return identity.Subject, nil
 }

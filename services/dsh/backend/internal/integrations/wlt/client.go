@@ -27,6 +27,7 @@ const (
 	stateCollected                = "COLLECTED"
 	stateCancelled                = "CANCELLED"
 	customerWithdrawalIntakesPath = "/wlt/v1/operator/customer-withdrawal-intakes"
+	orderAdjustmentCasesPath      = "/wlt/v1/order-adjustment-reconciliation-cases"
 	payoutRequestsPath            = "/wlt/v1/operator/payout-requests"
 	settlementBatchesPath         = "/wlt/v1/operator/settlement-batches"
 )
@@ -85,6 +86,26 @@ type CustomerPaymentAllocation struct {
 	CreatedAt                  string `json:"createdAt"`
 }
 
+type OrderAdjustmentReconciliationCase struct {
+	ID               string `json:"id"`
+	OrderID          string `json:"orderId"`
+	AdjustmentID     string `json:"adjustmentId"`
+	PaymentIntentID  string `json:"paymentIntentId"`
+	AdjustmentKind   string `json:"adjustmentKind"`
+	RequestedByActor string `json:"requestedByActorId"`
+	CustomerActorID  string `json:"customerActorId"`
+	State            string `json:"state"`
+	ReasonCode       string `json:"reasonCode"`
+	IdempotencyKey   string `json:"idempotencyKey"`
+	RequestHash      string `json:"requestHash"`
+	CorrelationID    string `json:"correlationId"`
+	CreatedAt        string `json:"createdAt"`
+}
+
+type OrderAdjustmentReconciliationCases struct {
+	Cases []OrderAdjustmentReconciliationCase `json:"cases"`
+}
+
 type customerPaymentAllocationRequest struct {
 	OrderID                    string `json:"orderId"`
 	StoreID                    string `json:"storeId"`
@@ -107,13 +128,16 @@ type paymentIntentResponse struct {
 }
 
 type CashLiability struct {
-	PaymentIntentID   string `json:"paymentIntentId"`
-	ExternalReference string `json:"externalReference"`
-	CaptainActorID    string `json:"captainActorId"`
-	AmountMinor       int64  `json:"amountMinor"`
-	Currency          string `json:"currency"`
-	PaymentVersion    int    `json:"paymentVersion"`
-	CollectedAt       string `json:"collectedAt"`
+	PaymentIntentID     string `json:"paymentIntentId"`
+	ExternalReference   string `json:"externalReference"`
+	CaptainActorID      string `json:"captainActorId"`
+	AmountMinor         int64  `json:"amountMinor"`
+	Currency            string `json:"currency"`
+	PaymentVersion      int    `json:"paymentVersion"`
+	CollectedAt         string `json:"collectedAt"`
+	RemittanceState     string `json:"remittanceState"`
+	RemittanceReference string `json:"remittanceReference,omitempty"`
+	RemittanceID        string `json:"remittanceId,omitempty"`
 }
 
 type CashLiabilityResponse struct {
@@ -130,14 +154,17 @@ type CashLiabilityRegistryResponse struct {
 }
 
 type CashRemittance struct {
-	ID                  string `json:"id"`
-	PaymentIntentID     string `json:"paymentIntentId"`
-	CaptainActorID      string `json:"captainActorId"`
-	AmountMinor         int64  `json:"amountMinor"`
-	Currency            string `json:"currency"`
-	RemittanceReference string `json:"remittanceReference"`
-	State               string `json:"state"`
-	CreatedAt           string `json:"createdAt"`
+	ID                  string  `json:"id"`
+	PaymentIntentID     string  `json:"paymentIntentId"`
+	CaptainActorID      string  `json:"captainActorId"`
+	AmountMinor         int64   `json:"amountMinor"`
+	Currency            string  `json:"currency"`
+	RemittanceReference string  `json:"remittanceReference"`
+	State               string  `json:"state"`
+	CreatedAt           string  `json:"createdAt"`
+	ReconciledBy        *string `json:"reconciledBy,omitempty"`
+	ReconciledAt        *string `json:"reconciledAt,omitempty"`
+	ReceiptDocumentID   *string `json:"receiptDocumentId,omitempty"`
 }
 
 type CaptainWalletState struct {
@@ -932,7 +959,8 @@ type PartnerCommissionRemittance struct {
 	AmountMinor         int64  `json:"amountMinor"`
 	Currency            string `json:"currency"`
 	RemittanceReference string `json:"remittanceReference"`
-	EvidenceReference   string `json:"evidenceReference"`
+	EvidenceReference   string `json:"evidenceReference,omitempty"`
+	EvidenceDocumentID  string `json:"evidenceDocumentId,omitempty"`
 	VerifiedBy          string `json:"verifiedBy"`
 	VerifiedAt          string `json:"verifiedAt"`
 	LedgerTransactionID string `json:"ledgerTransactionId"`
@@ -1088,6 +1116,14 @@ func (c *Client) RemitCash(ctx context.Context, intentID, captainActorID string,
 	return response.CashRemittance, response.IdempotentReplay, err
 }
 
+func (c *Client) ReconcileCashRemittance(ctx context.Context, remittanceID, evidenceDocumentID, actorID, idempotencyKey, correlationID string) (CashRemittance, bool, error) {
+	body := map[string]any{"evidenceDocumentId": strings.TrimSpace(evidenceDocumentID)}
+	var response cashRemittanceResponse
+	path := "/wlt/v1/operator/cash-remittances/" + url.PathEscape(strings.TrimSpace(remittanceID)) + "/reconcile"
+	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: path, body: body, idempotencyKey: idempotencyKey, correlationID: correlationID, actingActorID: strings.TrimSpace(actorID), target: &response})
+	return response.CashRemittance, response.IdempotentReplay, err
+}
+
 func (c *Client) ReadCaptainWalletState(ctx context.Context, captainActorID string) (CaptainWalletState, error) {
 	var response struct {
 		State CaptainWalletState `json:"state"`
@@ -1214,8 +1250,8 @@ func (c *Client) FinalizePartnerStoreCashCommission(ctx context.Context, orderID
 	return response.Commission, response.IdempotentReplay, err
 }
 
-func (c *Client) RecordPartnerCommissionRemittance(ctx context.Context, partnerActorID string, amountMinor int64, remittanceReference, evidenceReference, idempotencyKey, correlationID, actingActorID string) (PartnerCommissionRemittance, bool, error) {
-	body := map[string]any{"amountMinor": amountMinor, "remittanceReference": strings.TrimSpace(remittanceReference), "evidenceReference": strings.TrimSpace(evidenceReference)}
+func (c *Client) RecordPartnerCommissionRemittance(ctx context.Context, partnerActorID string, amountMinor int64, remittanceReference, evidenceDocumentID, idempotencyKey, correlationID, actingActorID string) (PartnerCommissionRemittance, bool, error) {
+	body := map[string]any{"amountMinor": amountMinor, "remittanceReference": strings.TrimSpace(remittanceReference), "evidenceDocumentId": strings.TrimSpace(evidenceDocumentID)}
 	var response partnerCommissionRemittanceResponse
 	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: "/wlt/v1/operator/partners/" + url.PathEscape(strings.TrimSpace(partnerActorID)) + "/commission-remittances", body: body, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actingActorID, target: &response})
 	return response.Remittance, response.IdempotentReplay, err
@@ -1307,6 +1343,31 @@ func (c *Client) CreateCustomerWithdrawalIntake(ctx context.Context, customerAct
 	}
 	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: customerWithdrawalIntakesPath, body: body, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actingActorID, target: &response})
 	return response.Intake, response.IdempotentReplay, err
+}
+
+func (c *Client) RecordOrderAdjustmentReconciliationCase(ctx context.Context, item OrderAdjustmentReconciliationCase, idempotencyKey, correlationID, actingActorID string) (OrderAdjustmentReconciliationCase, bool, error) {
+	body := map[string]any{
+		"orderId": strings.TrimSpace(item.OrderID), "adjustmentId": strings.TrimSpace(item.AdjustmentID),
+		"paymentIntentId": strings.TrimSpace(item.PaymentIntentID), "adjustmentKind": strings.TrimSpace(item.AdjustmentKind),
+		"requestedByActorId": strings.TrimSpace(item.RequestedByActor), "customerActorId": strings.TrimSpace(item.CustomerActorID),
+	}
+	var response struct {
+		ReconciliationCase OrderAdjustmentReconciliationCase `json:"reconciliationCase"`
+		IdempotentReplay   bool                              `json:"idempotentReplay"`
+	}
+	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: orderAdjustmentCasesPath, body: body, idempotencyKey: idempotencyKey, correlationID: correlationID, actingActorID: actingActorID, target: &response})
+	return response.ReconciliationCase, response.IdempotentReplay, err
+}
+
+func (c *Client) ListOrderAdjustmentReconciliationCases(ctx context.Context, orderID, actingActorID string) (OrderAdjustmentReconciliationCases, error) {
+	orderID = strings.TrimSpace(orderID)
+	if orderID == "" || len(orderID) > 128 {
+		return OrderAdjustmentReconciliationCases{}, errors.New("invalid order adjustment reconciliation query")
+	}
+	query := url.Values{"orderId": {orderID}}
+	var response OrderAdjustmentReconciliationCases
+	err := c.requestWithActor(ctx, actorRequest{method: http.MethodGet, path: orderAdjustmentCasesPath + "?" + query.Encode(), actingActorID: actingActorID, target: &response})
+	return response, err
 }
 
 func (c *Client) ListCustomerWithdrawalIntakes(ctx context.Context, status, search, sort, cursor string, limit int, actingActorID string) (CustomerWithdrawalIntakeList, error) {

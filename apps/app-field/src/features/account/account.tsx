@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { logoutIdentity } from "../../bootstrap/identity";
 import { useOwnFieldAdmission } from "../field-operations/use-field-admission";
+import { StoreAccessInvitationInbox } from "./store-access-invitations";
 
 const actions: ReadonlyArray<Readonly<{
   description: string;
@@ -75,6 +76,8 @@ export default function FieldAccount() {
           <BthwaniNavigationRow key={action.label} description={action.description} icon={action.icon} title={action.label} onPress={() => router.push(action.route)} />
         ))}
       </View>
+
+      <StoreAccessInvitationInbox />
 
       <BthwaniSectionHeader title="مظهر التطبيق" subtitle="غيّر المظهر في أي وقت؛ ويُحفظ اختيارك على هذا الجهاز." />
       <BthwaniSurface tone="raised" style={styles.appearancePanel}>

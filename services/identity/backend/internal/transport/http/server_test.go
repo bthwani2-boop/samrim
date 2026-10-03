@@ -64,6 +64,7 @@ func TestWriteDomainErrorPreservesRefreshStaleContract(t *testing.T) {
 	}{
 		{name: "refresh stale", err: domain.ErrRefreshStale, statusCode: 401, code: "REFRESH_STALE"},
 		{name: "invalid refresh", err: domain.ErrInvalidRefresh, statusCode: 401, code: "UNAUTHENTICATED"},
+		{name: "actor security disabled", err: domain.ErrActorSecurityDisabled, statusCode: http.StatusConflict, code: "ACTOR_SECURITY_DISABLED"},
 	}
 
 	for _, test := range tests {
@@ -98,5 +99,36 @@ func TestDevelopmentSessionRouteIsRegisteredOnlyInDevelopment(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("development route status = %d, want 400 for invalid request proving route registration", response.Code)
+	}
+}
+
+func TestProvisionExistingRoleRequiresCorrelationID(t *testing.T) {
+	handler := New(nil, nil, nil, nil, nil, Config{InternalServiceTokens: map[string]string{"dsh": "identity-service-token"}})
+	request := httptest.NewRequest(http.MethodPost, "/internal/actors/actor-1/roles/partner/provision", nil)
+	request.Header.Set("Authorization", "Bearer identity-service-token")
+	request.Header.Set("X-Acting-Actor-ID", "operator-1")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("missing correlation ID status = %d, want %d", response.Code, http.StatusBadRequest)
+	}
+	if !strings.Contains(response.Body.String(), `"code":"INVALID_INPUT"`) {
+		t.Fatalf("missing correlation ID error = %q, want INVALID_INPUT", response.Body.String())
+	}
+}
+
+func TestCanonicalActorResolutionIsNotAvailableToControlPanel(t *testing.T) {
+	handler := New(nil, nil, nil, nil, nil, Config{InternalServiceTokens: map[string]string{"control-panel": "control-panel-service-token"}})
+	request := httptest.NewRequest(http.MethodGet, "/internal/actors/actor-1", nil)
+	request.Header.Set("Authorization", "Bearer control-panel-service-token")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("Control Panel canonical Actor read status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+	if !strings.Contains(response.Body.String(), `"code":"FORBIDDEN"`) {
+		t.Fatalf("Control Panel canonical Actor read error = %q, want FORBIDDEN", response.Body.String())
 	}
 }

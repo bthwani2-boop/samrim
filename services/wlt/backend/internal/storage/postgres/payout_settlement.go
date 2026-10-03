@@ -656,6 +656,9 @@ func RecordManualTransfer(ctx context.Context, db *sql.DB, input RecordTransferI
 	} else if receiptPurpose != "TRANSFER_RECEIPT" {
 		return ManualTransferExecutionRecord{}, ErrSettlementBatchInput
 	}
+	if err := claimFinanceTransferReceipt(ctx, tx, input.ReceiptDocumentID, "BENEFICIARY_PAYOUT_TRANSFER", transferID); err != nil {
+		return ManualTransferExecutionRecord{}, err
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.manual_transfer_executions(id,batch_id,payout_id,approved_snapshot_hash,executed_by,provider_key,external_transfer_reference,amount_minor,currency,destination_id,destination_version,legacy_evidence_reference,receipt_document_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'', $12)`, transferID, input.BatchID, input.PayoutID, snapshotHash, input.ActorID, providerKey, input.ExternalReference, amount, currency, destinationID, version, input.ReceiptDocumentID); err != nil {
 		return ManualTransferExecutionRecord{}, err
 	}

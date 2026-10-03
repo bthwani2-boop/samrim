@@ -1,0 +1,93 @@
+paths:
+  /dsh/partner/stores/{storeId}/operational-availability:
+    get:
+      operationId: readPartnerStoreOperationalAvailability
+      summary: Read canonical hours and current orderability for a Partner-authorized Store
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+      responses:
+        "200": { description: Canonical DSH schedule and current orderability by admitted fulfillment mode., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerStoreOperationalAvailabilityResponse" } } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+    patch:
+      operationId: updatePartnerStoreOperationalAvailability
+      summary: Update versioned Store hours, pause, preparation estimate, or unavailable modes
+      description: DSH independently validates the Partner session and authorizes owned or granted Store operations. It does not change publication, offers, or geographic serviceability.
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/StoreOperationalAvailabilityRequest"
+      responses:
+        "200": { description: Canonical updated availability and mode orderability readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerStoreOperationalAvailabilityMutationResponse" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operations/stores/{storeId}/operational-availability:
+    get:
+      operationId: readStoreOperationalAvailabilityForOperator
+      summary: Read canonical Store operating hours and mode orderability as an active Operator
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+      responses:
+        "200": { description: Canonical DSH schedule and current orderability by admitted fulfillment mode., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerStoreOperationalAvailabilityResponse" } } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+    patch:
+      operationId: updateStoreOperationalAvailabilityForOperator
+      summary: Update versioned operating hours, pause, prep estimate, or unavailable modes as an active Operator
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/StoreOperationalAvailabilityRequest"
+      responses:
+        "200": { description: Canonical updated availability and mode orderability readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerStoreOperationalAvailabilityMutationResponse" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/public/stores/{storeId}/orderability:
+    get:
+      operationId: readPublicStoreOrderability
+      summary: Read current orderability for each admitted fulfillment mode of one published Store
+      description: Results are scoped to the Store's active Service City. Checkout independently re-evaluates orderability before accepting an order.
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ServiceCityIdRequired"
+      responses:
+        "200": { description: Current canonical orderability by admitted fulfillment mode., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PublicStoreOrderabilityResponse" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }

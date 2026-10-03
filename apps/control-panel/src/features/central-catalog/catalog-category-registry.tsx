@@ -65,6 +65,19 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   const verticalSettingsRef = useRef<HTMLDivElement>(null);
 
   const categoryIndex = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
+  const categoryChildren = useMemo(() => {
+    const children = new Map<string, CatalogCategoryListItem[]>();
+    for (const category of categories) {
+      if (!category.parentCategoryId) continue;
+      const siblings = children.get(category.parentCategoryId) ?? [];
+      siblings.push(category);
+      children.set(category.parentCategoryId, siblings);
+    }
+    return children;
+  }, [categories]);
+  const rootCategories = categories.filter((category) => !category.parentCategoryId);
+  const detachedCategories = categories.filter((category) => category.parentCategoryId && !categoryIndex.has(category.parentCategoryId));
+  const [collapsedCategoryIDs, setCollapsedCategoryIDs] = useState<ReadonlySet<string>>(() => new Set());
   const selectedVertical = verticals.find((vertical) => vertical.id === verticalId);
   const focusedCategory = categoryIndex.get(categoryId) ?? categoryDetail;
   const verticalReady = Boolean(selectedVertical?.active && selectedVertical.catalogModel === "SHARED_CATALOG");
@@ -232,6 +245,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
 
   async function filterCategories(query = categoryQuery, status = categoryStatus, sort = categorySort) {
     setFiltering(true);
+    setCollapsedCategoryIDs(new Set());
     setError("");
     try {
       await onFilter(query.trim(), status, sort, "", false);
@@ -297,6 +311,38 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   let categoryImageActionLabel = focusedCategory?.imageUri ? "استبدال الصورة" : "إرفاق الصورة";
   if (busy) categoryImageActionLabel = "جارٍ الرفع…";
 
+  function renderCategoryNode(category: CatalogCategoryListItem): ReactNode {
+    const children = categoryChildren.get(category.id) ?? [];
+    const collapsed = collapsedCategoryIDs.has(category.id);
+    const parent = category.parentCategoryId ? categoryIndex.get(category.parentCategoryId) : undefined;
+    const locationLabel = !category.parentCategoryId
+      ? "جذر المجال"
+      : parent
+        ? `ضمن ${parent.nameAr}`
+        : "ضمن المسار المحفوظ · الأب خارج النتائج الحالية";
+    return <li key={category.id} className="catalog-taxonomy-tree-node">
+      <div className={"catalog-taxonomy-tree-row" + (category.id === categoryId ? " is-selected" : "")}>
+        {children.length ? <button type="button" className="catalog-taxonomy-tree-toggle" aria-label={`${collapsed ? "توسيع" : "طي"} فروع ${category.nameAr}`} aria-expanded={!collapsed} onClick={() => setCollapsedCategoryIDs((current) => {
+          const next = new Set(current);
+          if (next.has(category.id)) next.delete(category.id); else next.add(category.id);
+          return next;
+        })}>{collapsed ? "＋" : "−"}</button> : <span className="catalog-taxonomy-tree-spacer" aria-hidden="true" />}
+        <button type="button" className="catalog-taxonomy-tree-select" aria-pressed={category.id === categoryId} onClick={() => { onCategoryChange(category.id); setEditorOpen(false); setEditingCategory(null); setError(""); }}>
+          {category.imageUri ? <img className="catalog-taxonomy-tree-image" src={category.imageUri} alt="" loading="lazy" /> : <span className="catalog-taxonomy-tree-image-fallback" aria-hidden="true">{category.nameAr.slice(0, 1)}</span>}
+          <strong>{category.nameAr}</strong>
+          <span className="catalog-taxonomy-tree-meta"><bdi dir="ltr">{category.nameEn}</bdi><span>{category.pathAr}</span></span>
+        </button>
+        <span className="catalog-taxonomy-child-count"><span>{locationLabel}</span>{children.length ? <small>{children.length} فئات فرعية محمّلة</small> : null}</span>
+        <span className={"catalog-taxonomy-tree-status" + (category.active ? " is-active" : "")}>{category.active ? "نشطة" : "متوقفة"}</span>
+        <div className="catalog-taxonomy-row-actions">
+          <button type="button" className="catalog-row-action" disabled={!canEdit || busy || !category.active} onClick={() => openCreate(category.id)}>＋ فرعية</button>
+          <button type="button" className="catalog-row-action" disabled={!canEdit || busy} onClick={() => edit(category)}>تعديل</button>
+        </div>
+      </div>
+      {children.length > 0 && !collapsed ? <ul className="catalog-taxonomy-tree-children">{children.map(renderCategoryNode)}</ul> : null}
+    </li>;
+  }
+
   return <section className="access-card catalog-taxonomy-workbench" aria-labelledby="catalog-category-registry-title">
     <div className="catalog-taxonomy-workbench-heading">
       <div>
@@ -306,6 +352,13 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
       </div>
       <button type="button" className="button button-primary catalog-taxonomy-main-action" disabled={!canEdit || busy} onClick={() => { if (verticalReady) openCreate(); else if (selectedVertical || verticals.length === 0) { const settings = verticalSettingsRef.current; settings?.querySelector("summary")?.click(); settings?.scrollIntoView({ behavior: "smooth", block: "center" }); } else onVerticalChange(verticals.find((vertical) => vertical.active)?.id ?? ""); }}>{mainActionLabel}</button>
     </div>
+    <label className="field-label catalog-taxonomy-vertical-label" htmlFor="catalog-taxonomy-vertical">المجال الرئيسي
+      <select id="catalog-taxonomy-vertical" value={verticalId} disabled={loading || busy || verticals.length === 0} onChange={(event) => onVerticalChange(event.target.value)}>
+        {verticals.length === 0 ? <option value="">لا توجد مجالات تستخدم الفئات المشتركة</option> : null}
+        {verticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr} · {vertical.nameEn}</option>)}
+      </select>
+    </label>
+    <p className="catalog-taxonomy-vertical-note">تبدأ شجرة الفئات من المجال المحدد. أقسام قوائم المطاعم تُدار داخل المتجر ولا تختلط بفئات المنتجات المشتركة.</p>
     {error ? <p className="identity-error" role="alert">{error}</p> : null}
     {notice ? <p className="managed-status managed-status-success" role="status">{notice}</p> : null}
 
@@ -341,22 +394,19 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
         <div className="catalog-taxonomy-record-heading" aria-hidden="true"><span>الفئة ومسارها</span><span>الموقع</span><span>الحالة</span><span>الإجراء</span></div>
         {loading && categories.length === 0 ? <p className="catalog-taxonomy-feedback" role="status">جارٍ تحميل صفحة الفئات…</p> : null}
         {!loading && categories.length === 0 ? <div className="catalog-taxonomy-empty catalog-taxonomy-empty-inset"><strong>{categoryQuery ? "لا توجد فئات مطابقة" : "لا توجد فئات في هذا المجال"}</strong><p>{categoryQuery ? "غيّر نص البحث أو الحالة." : "أنشئ الفئة الرئيسية الأولى من الزر أعلى السجل، ثم أضف الفروع عند الحاجة."}</p></div> : null}
-        {categories.length > 0 ? <ul className="catalog-taxonomy-tree">{categories.map((category) => <li key={category.id} className="catalog-taxonomy-tree-node">
-          <div className={"catalog-taxonomy-tree-row" + (category.id === categoryId ? " is-selected" : "")}>
-            <span className="catalog-taxonomy-tree-spacer" aria-hidden="true" />
-            <button type="button" className="catalog-taxonomy-tree-select" aria-pressed={category.id === categoryId} onClick={() => { onCategoryChange(category.id); setEditorOpen(false); setEditingCategory(null); setError(""); }}>
-              {category.imageUri ? <img className="catalog-taxonomy-tree-image" src={category.imageUri} alt="" loading="lazy" /> : <span className="catalog-taxonomy-tree-image-fallback" aria-hidden="true">{category.nameAr.slice(0, 1)}</span>}
-              <strong>{category.nameAr}</strong>
-              <span className="catalog-taxonomy-tree-meta"><bdi dir="ltr">{category.nameEn}</bdi><span>{category.pathAr}</span></span>
-            </button>
-            <span className="catalog-taxonomy-child-count">{category.parentCategoryId ? "فئة فرعية" : "فئة رئيسية"}</span>
-            <span className={"catalog-taxonomy-tree-status" + (category.active ? " is-active" : "")}>{category.active ? "نشطة" : "متوقفة"}</span>
-            <div className="catalog-taxonomy-row-actions">
-              <button type="button" className="catalog-row-action" disabled={!canEdit || busy || !category.active} onClick={() => openCreate(category.id)}>＋ فرعية</button>
-              <button type="button" className="catalog-row-action" disabled={!canEdit || busy} onClick={() => edit(category)}>تعديل</button>
-            </div>
-          </div>
-        </li>)}</ul> : null}
+        {categories.length > 0 ? <>
+          <div className="catalog-taxonomy-vertical-root"><span>المجال التجاري الرئيسي</span><strong>{selectedVertical?.nameAr ?? "المجال المحدد"}</strong></div>
+          {rootCategories.length ? <ul aria-label={`شجرة فئات ${selectedVertical?.nameAr ?? "المجال المحدد"}`} className="catalog-taxonomy-tree">
+            {rootCategories.map(renderCategoryNode)}
+          </ul> : null}
+          {detachedCategories.length ? <section className="catalog-taxonomy-detached" aria-labelledby="catalog-taxonomy-detached-title">
+            <h5 id="catalog-taxonomy-detached-title">فروع لم يظهر أبوها في النتائج الحالية</h5>
+            <p>هذه الفئات ليست جذورًا للمجال. يعرضها البحث أو تقسيم الصفحات منفصلة عن الشجرة لأن الفئة الأعلى غير محمّلة؛ ويظل مسارها الكامل ظاهرًا مع كل فئة.</p>
+            <ul aria-label="فروع أبوها خارج النتائج الحالية" className="catalog-taxonomy-tree">
+              {detachedCategories.map(renderCategoryNode)}
+            </ul>
+          </section> : null}
+        </> : null}
       </div>
       {nextCursor ? <div className="catalog-category-editor-actions"><button type="button" className="button button-secondary" disabled={loading || filtering} onClick={() => void loadMoreCategories()}>{filtering ? "جارٍ التحميل…" : "تحميل الصفحة التالية"}</button></div> : null}
       {focusedCategory && !editorOpen ? <section className="catalog-category-detail" aria-labelledby="catalog-category-detail-title">
@@ -365,6 +415,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
           <div><span className="eyebrow">{focusedCategory.parentCategoryId ? "فئة فرعية" : "فئة رئيسية"}</span><h4 id="catalog-category-detail-title">{focusedCategory.nameAr}</h4><bdi dir="ltr">{focusedCategory.nameEn}</bdi></div>
         </div>
         <p className="catalog-category-breadcrumb">{focusedCategory.pathAr}</p>
+        <a className="button button-secondary" href={`/catalog/products?verticalId=${encodeURIComponent(verticalId)}&categoryId=${encodeURIComponent(focusedCategory.id)}`}>عرض المنتجات في هذه الفئة وفروعها</a>
         <span className={"catalog-state-pill " + (focusedCategory.active ? "is-active" : "is-inactive")}>{focusedCategory.active ? "نشطة" : "متوقفة"}</span>
         <div className="catalog-category-media-editor">
           <div className="catalog-category-media-preview">{focusedCategory.imageUri ? <img src={focusedCategory.imageUri} alt={`معاينة صورة ${focusedCategory.nameAr}`} /> : <span aria-hidden="true">صورة الفئة</span>}</div>

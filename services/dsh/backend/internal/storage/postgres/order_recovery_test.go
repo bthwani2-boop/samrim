@@ -98,6 +98,19 @@ func TestCheckoutOrderMatchesRequest(t *testing.T) {
 	}
 }
 
+func TestCheckoutReplayBindsDeliveryRecipient(t *testing.T) {
+	name, phone, instructions := "Ali", "+967712345678", "Gate 2"
+	input := CheckoutInput{ClientActorID: "client", CartID: "cart", StoreID: "store", AddressID: "address", FulfillmentMode: FulfillmentModeBthwaniCaptain, PaymentMethod: "CASH_ON_DELIVERY", Recipient: DeliveryRecipientInput{Mode: "OTHER", Name: name, PhoneE164: phone, Instructions: instructions}}
+	order := OrderRecord{ClientActorID: input.ClientActorID, CartID: input.CartID, StoreID: input.StoreID, AddressID: input.AddressID, FulfillmentMode: input.FulfillmentMode, PaymentMethod: input.PaymentMethod, Recipient: DeliveryRecipientRecord{Mode: "OTHER", Name: &name, PhoneE164: &phone, Instructions: &instructions}}
+	if !checkoutOrderMatchesRequest(order, input) {
+		t.Fatal("matching alternate recipient was rejected during checkout recovery")
+	}
+	input.Recipient.PhoneE164 = "+967700000000"
+	if checkoutOrderMatchesRequest(order, input) {
+		t.Fatal("changed recipient was accepted for the existing checkout idempotency key")
+	}
+}
+
 func TestCheckoutRequestHashPreservesCashOnlyReplayAndBindsBalanceContribution(t *testing.T) {
 	input := CheckoutInput{ClientActorID: "client-1", CartID: "cart-1", StoreID: "store-1", AddressID: "address-1", FulfillmentMode: FulfillmentModeBthwaniCaptain, PaymentMethod: "CASH_ON_DELIVERY", ExpectedCartVersion: 4, PromotionCode: "SAVE10"}
 	legacyCashOnlyHash := hashFacts(input.ClientActorID, input.CartID, input.StoreID, input.AddressID, input.FulfillmentMode, input.PaymentMethod, "4", "", "", "", "0", "0", "SAVE10")
@@ -107,6 +120,53 @@ func TestCheckoutRequestHashPreservesCashOnlyReplayAndBindsBalanceContribution(t
 	input.InternalBalanceAmountMinor = 100
 	if got := HashCheckoutRequest(input); got == legacyCashOnlyHash {
 		t.Fatal("balance contribution was not bound to checkout idempotency")
+	}
+}
+
+func TestCheckoutRecipientNormalizationAndIdempotency(t *testing.T) {
+	base := CheckoutInput{ClientActorID: "client", CartID: "cart", StoreID: "store", AddressID: "address", FulfillmentMode: FulfillmentModeBthwaniCaptain, PaymentMethod: "CASH_ON_DELIVERY", ExpectedCartVersion: 1}
+	legacyHash := HashCheckoutRequest(base)
+	self, err := NormalizeDeliveryRecipient(DeliveryRecipientInput{}, FulfillmentModeBthwaniCaptain)
+	if err != nil {
+		t.Fatalf("default recipient normalization failed: %v", err)
+	}
+	base.Recipient = self
+	if HashCheckoutRequest(base) != legacyHash {
+		t.Fatal("explicit SELF recipient changed the legacy checkout idempotency identity")
+	}
+	base.Recipient = DeliveryRecipientInput{Mode: "OTHER", Name: "  Ali  ", PhoneE164: " +967712345678 ", Instructions: "  Gate 2  "}
+	normalized, err := NormalizeDeliveryRecipient(base.Recipient, base.FulfillmentMode)
+	if err != nil {
+		t.Fatalf("valid alternate recipient was rejected: %v", err)
+	}
+	base.Recipient = normalized
+	otherHash := HashCheckoutRequest(base)
+	if otherHash == legacyHash {
+		t.Fatal("alternate recipient was not bound to checkout idempotency")
+	}
+	base.Recipient.Name = "Different recipient"
+	if HashCheckoutRequest(base) == otherHash {
+		t.Fatal("changed recipient facts retained the same checkout idempotency identity")
+	}
+}
+
+func TestNormalizeDeliveryRecipientRejectsInvalidOrPickupOther(t *testing.T) {
+	tests := []struct {
+		name string
+		mode string
+		data DeliveryRecipientInput
+	}{
+		{name: "self with unrelated personal data", mode: FulfillmentModeBthwaniCaptain, data: DeliveryRecipientInput{Mode: "SELF", Name: "Ali"}},
+		{name: "other without name", mode: FulfillmentModeBthwaniCaptain, data: DeliveryRecipientInput{Mode: "OTHER", PhoneE164: "+967712345678"}},
+		{name: "other with local phone", mode: FulfillmentModeBthwaniCaptain, data: DeliveryRecipientInput{Mode: "OTHER", Name: "Ali", PhoneE164: "771234567"}},
+		{name: "other for pickup", mode: FulfillmentModeCustomerPickup, data: DeliveryRecipientInput{Mode: "OTHER", Name: "Ali", PhoneE164: "+967712345678"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := NormalizeDeliveryRecipient(test.data, test.mode); !errors.Is(err, ErrCheckoutRecipientInvalid) {
+				t.Fatalf("NormalizeDeliveryRecipient() error = %v, want %v", err, ErrCheckoutRecipientInvalid)
+			}
+		})
 	}
 }
 

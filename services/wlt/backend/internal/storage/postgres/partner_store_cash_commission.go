@@ -12,12 +12,14 @@ import (
 )
 
 var (
-	ErrPartnerCashCommissionInvalid = errors.New("partner store cash commission input is invalid")
-	ErrPartnerCashCommissionExists  = errors.New("partner store cash commission already exists")
-	ErrPartnerCashCommissionState   = errors.New("store cash payment is not collected by this partner")
-	ErrPartnerCommissionReceivable  = errors.New("partner commission receivable is unavailable")
-	ErrPartnerRemittanceInvalid     = errors.New("partner commission remittance input is invalid")
-	ErrPartnerRemittanceOverpayment = errors.New("partner commission remittance exceeds the outstanding receivable")
+	ErrPartnerCashCommissionInvalid  = errors.New("partner store cash commission input is invalid")
+	ErrPartnerCashCommissionExists   = errors.New("partner store cash commission already exists")
+	ErrPartnerCashCommissionState    = errors.New("store cash payment is not collected by this partner")
+	ErrPartnerCommissionReceivable   = errors.New("partner commission receivable is unavailable")
+	ErrPartnerRemittanceInvalid      = errors.New("partner commission remittance input is invalid")
+	ErrPartnerRemittanceOverpayment  = errors.New("partner commission remittance exceeds the outstanding receivable")
+	ErrPartnerRemittanceEvidence     = errors.New("partner commission remittance evidence is invalid")
+	ErrPartnerRemittanceEvidenceUsed = errors.New("partner commission remittance evidence is already linked")
 )
 
 type PartnerStoreCashCommissionInput struct {
@@ -48,7 +50,7 @@ type PartnerCommissionRemittanceInput struct {
 	PartnerActorID      string
 	AmountMinor         int64
 	RemittanceReference string
-	EvidenceReference   string
+	EvidenceDocumentID  string
 	VerifiedBy          string
 	IdempotencyKey      string
 	CorrelationID       string
@@ -61,6 +63,7 @@ type PartnerCommissionRemittanceRecord struct {
 	Currency            string
 	RemittanceReference string
 	EvidenceReference   string
+	EvidenceDocumentID  string
 	VerifiedBy          string
 	VerifiedAt          time.Time
 	LedgerTransactionID string
@@ -236,17 +239,17 @@ func ReadPartnerCommissionReceivableBalance(ctx context.Context, source interfac
 }
 
 func HashPartnerCommissionRemittance(input PartnerCommissionRemittanceInput) string {
-	return hashFacts("partner-commission-remittance", strings.TrimSpace(input.PartnerActorID), fmt.Sprintf("%d", input.AmountMinor), strings.TrimSpace(input.RemittanceReference), strings.TrimSpace(input.EvidenceReference), strings.TrimSpace(input.VerifiedBy))
+	return hashFacts("partner-commission-remittance", strings.TrimSpace(input.PartnerActorID), fmt.Sprintf("%d", input.AmountMinor), strings.TrimSpace(input.RemittanceReference), strings.TrimSpace(input.EvidenceDocumentID), strings.TrimSpace(input.VerifiedBy))
 }
 
 func RecordPartnerCommissionRemittance(ctx context.Context, db *sql.DB, input PartnerCommissionRemittanceInput) (PartnerCommissionRemittanceRecord, bool, error) {
 	input.PartnerActorID = strings.TrimSpace(input.PartnerActorID)
 	input.RemittanceReference = strings.TrimSpace(input.RemittanceReference)
-	input.EvidenceReference = strings.TrimSpace(input.EvidenceReference)
+	input.EvidenceDocumentID = strings.TrimSpace(input.EvidenceDocumentID)
 	input.VerifiedBy = strings.TrimSpace(input.VerifiedBy)
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
 	input.CorrelationID = strings.TrimSpace(input.CorrelationID)
-	if db == nil || input.PartnerActorID == "" || input.AmountMinor <= 0 || len(input.RemittanceReference) == 0 || len(input.RemittanceReference) > 128 || len(input.EvidenceReference) == 0 || len(input.EvidenceReference) > 512 || input.VerifiedBy == "" || len(input.VerifiedBy) > 128 || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
+	if db == nil || input.PartnerActorID == "" || input.AmountMinor <= 0 || len(input.RemittanceReference) == 0 || len(input.RemittanceReference) > 128 || len(input.EvidenceDocumentID) == 0 || len(input.EvidenceDocumentID) > 128 || input.VerifiedBy == "" || len(input.VerifiedBy) > 128 || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
 		return PartnerCommissionRemittanceRecord{}, false, ErrPartnerRemittanceInvalid
 	}
 	requestHash := HashPartnerCommissionRemittance(input)
@@ -276,6 +279,14 @@ func RecordPartnerCommissionRemittance(ctx context.Context, db *sql.DB, input Pa
 	if !errors.Is(err, sql.ErrNoRows) {
 		return PartnerCommissionRemittanceRecord{}, false, err
 	}
+	var evidencePurpose, evidenceUploader string
+	err = tx.QueryRowContext(ctx, `SELECT purpose,uploaded_by FROM wlt.finance_evidence_documents WHERE id=$1 FOR UPDATE`, input.EvidenceDocumentID).Scan(&evidencePurpose, &evidenceUploader)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && (evidencePurpose != "TRANSFER_RECEIPT" || evidenceUploader != input.VerifiedBy)) {
+		return PartnerCommissionRemittanceRecord{}, false, ErrPartnerRemittanceEvidence
+	}
+	if err != nil {
+		return PartnerCommissionRemittanceRecord{}, false, err
+	}
 	balance, err := ReadPartnerCommissionReceivableBalance(ctx, tx, input.PartnerActorID)
 	if err != nil {
 		return PartnerCommissionRemittanceRecord{}, false, err
@@ -285,6 +296,11 @@ func RecordPartnerCommissionRemittance(ctx context.Context, db *sql.DB, input Pa
 	}
 	remittanceID, err := newID("partner_commission_remit")
 	if err != nil {
+		return PartnerCommissionRemittanceRecord{}, false, err
+	}
+	if err := claimFinanceTransferReceipt(ctx, tx, input.EvidenceDocumentID, "PARTNER_COMMISSION_REMITTANCE", remittanceID); errors.Is(err, ErrFinanceTransferReceiptAlreadyClaimed) {
+		return PartnerCommissionRemittanceRecord{}, false, ErrPartnerRemittanceEvidenceUsed
+	} else if err != nil {
 		return PartnerCommissionRemittanceRecord{}, false, err
 	}
 	transactionID, err := newID("ledger")
@@ -298,7 +314,7 @@ func RecordPartnerCommissionRemittance(ctx context.Context, db *sql.DB, input Pa
 	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_entries(transaction_id,line_sequence,account_class,account_code,actor_type,actor_id,direction,amount_minor,currency) VALUES($1,1,'asset','EXTERNAL_SETTLEMENT_CASH',NULL,NULL,'DEBIT',$2,'YER'),($1,2,'asset','PARTNER_COMMISSION_RECEIVABLE',$3,$4,'CREDIT',$2,'YER')`, transactionID, input.AmountMinor, partnerActorType, partnerActorID); err != nil {
 		return PartnerCommissionRemittanceRecord{}, false, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.partner_commission_remittances(id,partner_actor_id,amount_minor,remittance_reference,evidence_reference,verified_by,ledger_transaction_id,idempotency_key,request_hash,correlation_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, remittanceID, input.PartnerActorID, input.AmountMinor, input.RemittanceReference, input.EvidenceReference, input.VerifiedBy, transactionID, input.IdempotencyKey, requestHash, input.CorrelationID); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.partner_commission_remittances(id,partner_actor_id,amount_minor,remittance_reference,receipt_document_id,verified_by,ledger_transaction_id,idempotency_key,request_hash,correlation_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, remittanceID, input.PartnerActorID, input.AmountMinor, input.RemittanceReference, input.EvidenceDocumentID, input.VerifiedBy, transactionID, input.IdempotencyKey, requestHash, input.CorrelationID); err != nil {
 		return PartnerCommissionRemittanceRecord{}, false, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -319,7 +335,7 @@ func readPartnerCommissionRemittance(ctx context.Context, source interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, remittanceID string) (PartnerCommissionRemittanceRecord, error) {
 	var item PartnerCommissionRemittanceRecord
-	err := source.QueryRowContext(ctx, `SELECT id,partner_actor_id,amount_minor,currency,remittance_reference,evidence_reference,verified_by,verified_at,ledger_transaction_id,created_at FROM wlt.partner_commission_remittances WHERE id=$1`, remittanceID).Scan(&item.ID, &item.PartnerActorID, &item.AmountMinor, &item.Currency, &item.RemittanceReference, &item.EvidenceReference, &item.VerifiedBy, &item.VerifiedAt, &item.LedgerTransactionID, &item.CreatedAt)
+	err := source.QueryRowContext(ctx, `SELECT id,partner_actor_id,amount_minor,currency,remittance_reference,COALESCE(evidence_reference,''),COALESCE(receipt_document_id,''),verified_by,verified_at,ledger_transaction_id,created_at FROM wlt.partner_commission_remittances WHERE id=$1`, remittanceID).Scan(&item.ID, &item.PartnerActorID, &item.AmountMinor, &item.Currency, &item.RemittanceReference, &item.EvidenceReference, &item.EvidenceDocumentID, &item.VerifiedBy, &item.VerifiedAt, &item.LedgerTransactionID, &item.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PartnerCommissionRemittanceRecord{}, ErrPartnerRemittanceInvalid
 	}

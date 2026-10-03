@@ -83,6 +83,7 @@ test("operations lanes, order detail routes, and operator recovery follow URL st
               currency: "YER",
               paymentMethod: "CASH_ON_DELIVERY",
               paymentState: "REQUIRES_COLLECTION",
+              adjustments: [],
               lines: [{
                 id: "line-100",
                 productName: "قهوة مختارة",

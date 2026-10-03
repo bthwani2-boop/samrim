@@ -6,6 +6,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { getUsableIdentityAccessToken, logoutIdentity } from "../../bootstrap/identity";
 import { captainClient } from "../captain-operations/captain-client";
 import { StoreCaptainMemberships } from "../captain-operations/store-memberships";
+import { StoreAccessInvitationInbox } from "./store-access-invitations";
 
 const actions: ReadonlyArray<Readonly<{
   description: string;
@@ -82,6 +83,8 @@ export default function CaptainAccount() {
       </View>
 
       <StoreCaptainMemberships />
+
+      <StoreAccessInvitationInbox />
 
       <BthwaniSectionHeader title="مظهر التطبيق" subtitle="غيّر المظهر في أي وقت؛ ويُحفظ اختيارك على هذا الجهاز." />
       <BthwaniSurface tone="raised" style={styles.appearancePanel}>
