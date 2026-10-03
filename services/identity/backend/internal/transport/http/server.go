@@ -71,9 +71,11 @@ func New(actors *actor.Service, authenticationService *authentication.Service, c
 		mux.HandleFunc("POST /auth/development/session", s.developmentSession)
 	}
 	mux.HandleFunc("POST /internal/actor-roles/provision", s.internal(s.provisionRole))
+	mux.HandleFunc("POST /internal/actors/{actorId}/roles/{role}/provision", s.internal(s.provisionExistingRole))
 	mux.HandleFunc("POST /internal/bootstrap/operator", s.internal(s.bootstrapFirstOperator))
 	mux.HandleFunc("GET /internal/actor-roles/search", s.internal(s.searchRoles))
 	mux.HandleFunc("POST /internal/actor-roles/read", s.internal(s.readActorRoles))
+	mux.HandleFunc("GET /internal/actors/{actorId}", s.internal(s.readCanonicalActor))
 	mux.HandleFunc("GET /internal/operators/{actorId}/permissions/{permission}", s.internal(s.readOperatorPermission))
 	mux.HandleFunc("PUT /internal/operators/{actorId}/permissions/{permission}", s.internal(s.setOperatorPermission))
 	mux.HandleFunc("GET /internal/actors/{actorId}/roles/{role}", s.internal(s.getRole))
@@ -401,6 +403,37 @@ func (s *Server) provisionRole(w http.ResponseWriter, r *http.Request, caller st
 	}
 	writeJSON(w, status, view)
 }
+
+func (s *Server) provisionExistingRole(w http.ResponseWriter, r *http.Request, caller string) {
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
+		return
+	}
+	if caller != "dsh" || strings.ToLower(strings.TrimSpace(r.PathValue("role"))) != "partner" {
+		writeDomainError(w, domain.ErrForbidden)
+		return
+	}
+	actingActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if actingActorID == "" || len(actingActorID) > 128 {
+		writeDomainError(w, domain.ErrInvalidInput)
+		return
+	}
+	correlationID := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
+	if len(correlationID) < 8 || len(correlationID) > 128 {
+		writeDomainError(w, domain.ErrInvalidInput)
+		return
+	}
+	view, err := s.actors.ProvisionExistingTrustedWithContext(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"), actingActorID, correlationID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	status := http.StatusOK
+	if view.RoleCreated {
+		status = http.StatusCreated
+	}
+	writeJSON(w, status, view)
+}
 func (s *Server) bootstrapFirstOperator(w http.ResponseWriter, r *http.Request, caller string) {
 	if !domain.CanBootstrapFirstOperator(caller) {
 		writeDomainError(w, domain.ErrForbidden)
@@ -511,6 +544,19 @@ func (s *Server) readActorRoles(w http.ResponseWriter, r *http.Request, caller s
 		return
 	}
 	writeJSON(w, http.StatusOK, domain.ActorRoleReadBatchResponse{Items: items})
+}
+
+func (s *Server) readCanonicalActor(w http.ResponseWriter, r *http.Request, caller string) {
+	if caller != "dsh" {
+		writeDomainError(w, domain.ErrForbidden)
+		return
+	}
+	result, err := s.actors.ReadCanonicalActor(r.Context(), caller, r.PathValue("actorId"))
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 func (s *Server) disableRole(w http.ResponseWriter, r *http.Request, caller string) {
 	s.setRoleEnabled(w, r, caller, false)
@@ -773,6 +819,8 @@ func writeDomainError(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusUnauthorized, errorBody("UNAUTHENTICATED", "authentication failed"))
 	case errors.Is(err, domain.ErrForbidden), errors.Is(err, domain.ErrActorBlocked):
 		writeJSON(w, http.StatusForbidden, errorBody("FORBIDDEN", "operation is forbidden"))
+	case errors.Is(err, domain.ErrActorSecurityDisabled):
+		writeJSON(w, http.StatusConflict, errorBody("ACTOR_SECURITY_DISABLED", "the actor must enable account security before role admission"))
 	case errors.Is(err, domain.ErrNotFound):
 		writeJSON(w, http.StatusNotFound, errorBody("NOT_FOUND", "resource was not found"))
 	case errors.Is(err, domain.ErrConflict):

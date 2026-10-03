@@ -167,6 +167,10 @@ paths:
           in: query
           description: Return Stores with at least one currently customer-visible offer in this active category or one of its active descendants.
           schema: { type: string, maxLength: 128 }
+        - name: verticalId
+          in: query
+          description: Restrict discovery to this active Commerce Vertical in the selected Service City.
+          schema: { type: string, maxLength: 128 }
         - name: favoritesOnly
           in: query
           description: Restrict results to the authenticated app-client's favorite Stores.
@@ -215,6 +219,11 @@ paths:
         - name: categoryId
           in: query
           required: false
+          schema: { type: string, maxLength: 128 }
+        - name: verticalId
+          in: query
+          required: false
+          description: Restrict customer-visible product offers to Stores in this active Commerce Vertical.
           schema: { type: string, maxLength: 128 }
         - name: limit
           in: query

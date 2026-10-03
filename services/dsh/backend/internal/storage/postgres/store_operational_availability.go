@@ -116,6 +116,10 @@ func EvaluateStoreOrderability(ctx context.Context, db *sql.DB, storeID, fulfill
 	if err != nil {
 		return StoreOrderability{}, err
 	}
+	return evaluateStoreOrderability(availability, fulfillmentMode, at)
+}
+
+func evaluateStoreOrderability(availability StoreOperationalAvailability, fulfillmentMode string, at time.Time) (StoreOrderability, error) {
 	fulfillmentMode = strings.TrimSpace(fulfillmentMode)
 	if !validFulfillmentMode(fulfillmentMode) {
 		return StoreOrderability{}, ErrStoreOperationalAvailabilityInvalid
@@ -164,6 +168,9 @@ func UpdateStoreOperationalAvailability(ctx context.Context, db *sql.DB, input U
 		return StoreOperationalAvailability{}, false, fmt.Errorf("begin Store operational availability mutation: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := authorizeStoreAvailabilityMutationTx(ctx, tx, input); err != nil {
+		return StoreOperationalAvailability{}, false, err
+	}
 	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "store-operational-availability-idem:"+input.IdempotencyKey); err != nil {
 		return StoreOperationalAvailability{}, false, fmt.Errorf("lock Store operational availability idempotency: %w", err)
 	}
@@ -208,6 +215,21 @@ func UpdateStoreOperationalAvailability(ctx context.Context, db *sql.DB, input U
 	if current.Version != input.ExpectedVersion {
 		return StoreOperationalAvailability{}, false, ErrStoreOperationalAvailabilityVersion
 	}
+	var admittedModes []string
+	if err := tx.QueryRowContext(ctx, `SELECT fulfillment_modes FROM dsh.stores WHERE id=$1 FOR SHARE`, input.StoreID).Scan(pq.Array(&admittedModes)); errors.Is(err, sql.ErrNoRows) {
+		return StoreOperationalAvailability{}, false, ErrStoreOperationalAvailabilityNotFound
+	} else if err != nil {
+		return StoreOperationalAvailability{}, false, fmt.Errorf("read Store fulfillment modes for availability: %w", err)
+	}
+	admitted := make(map[string]struct{}, len(admittedModes))
+	for _, mode := range admittedModes {
+		admitted[mode] = struct{}{}
+	}
+	for _, mode := range input.UnavailableFulfillmentModes {
+		if _, ok := admitted[mode]; !ok {
+			return StoreOperationalAvailability{}, false, ErrStoreOperationalAvailabilityInvalid
+		}
+	}
 	scheduleJSON, _ := json.Marshal(input.WeeklySchedule)
 	var pauseReason any
 	if input.PauseReason != nil {
@@ -244,6 +266,61 @@ func UpdateStoreOperationalAvailability(ctx context.Context, db *sql.DB, input U
 		return StoreOperationalAvailability{}, false, fmt.Errorf("commit Store operational availability mutation: %w", err)
 	}
 	return updated, false, nil
+}
+
+func authorizeStoreAvailabilityMutationTx(ctx context.Context, tx *sql.Tx, input UpdateStoreOperationalAvailabilityInput) error {
+	switch input.AuthoritySource {
+	case "STORE_OWNER":
+		var ownerActorID string
+		err := tx.QueryRowContext(ctx, `SELECT partner_actor_id FROM dsh.stores WHERE id=$1 FOR SHARE`, input.StoreID).Scan(&ownerActorID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrStoreOperationalAvailabilityNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("read Store owner for availability authorization: %w", err)
+		}
+		if ownerActorID != input.ActingActorID {
+			return ErrStoreAccessForbidden
+		}
+	case "STORE_GRANT":
+		var active bool
+		err := tx.QueryRowContext(ctx, `SELECT state='active' AND 'store_operations'=ANY(permissions)
+			FROM dsh.store_access_grants WHERE store_id=$1 AND delegate_actor_id=$2 FOR SHARE`, input.StoreID, input.ActingActorID).Scan(&active)
+		if errors.Is(err, sql.ErrNoRows) || (err == nil && !active) {
+			return ErrStoreAccessForbidden
+		}
+		if err != nil {
+			return fmt.Errorf("lock Store grant for availability authorization: %w", err)
+		}
+	case "OPERATOR":
+		return nil
+	default:
+		return ErrStoreOperationalAvailabilityInvalid
+	}
+	return nil
+}
+
+func lockAndEvaluateStoreOrderability(ctx context.Context, tx *sql.Tx, storeID, fulfillmentMode string) (StoreOrderability, error) {
+	storeID = strings.TrimSpace(storeID)
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.store_operational_availability(store_id,schedule_mode,schedule_timezone,weekly_schedule,paused,unavailable_fulfillment_modes,version,updated_by_actor_id)
+		SELECT id,'ALWAYS_OPEN',$2,'[]'::jsonb,false,ARRAY[]::text[],1,'system:checkout-initialize' FROM dsh.stores WHERE id=$1
+		ON CONFLICT(store_id) DO NOTHING`, storeID, StoreScheduleTimezone); err != nil {
+		return StoreOrderability{}, fmt.Errorf("ensure Store orderability for checkout: %w", err)
+	}
+	availability, err := readStoreOperationalAvailabilityRow(ctx, tx.QueryRowContext(ctx, `SELECT store_id,schedule_mode,schedule_timezone,weekly_schedule,
+		paused,pause_reason,pause_until,preparation_minutes,unavailable_fulfillment_modes,version,updated_by_actor_id,updated_at
+		FROM dsh.store_operational_availability WHERE store_id=$1 FOR SHARE`, storeID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return StoreOrderability{}, ErrStoreOperationalAvailabilityNotFound
+	}
+	if err != nil {
+		return StoreOrderability{}, fmt.Errorf("lock Store orderability for checkout: %w", err)
+	}
+	var evaluatedAt time.Time
+	if err := tx.QueryRowContext(ctx, "SELECT clock_timestamp()").Scan(&evaluatedAt); err != nil {
+		return StoreOrderability{}, fmt.Errorf("read Store orderability evaluation time: %w", err)
+	}
+	return evaluateStoreOrderability(availability, fulfillmentMode, evaluatedAt)
 }
 
 func ensureStoreOperationalAvailability(ctx context.Context, db *sql.DB, storeID string) error {
@@ -297,6 +374,14 @@ func validateStoreOperationalAvailabilityInput(input UpdateStoreOperationalAvail
 	for _, window := range input.WeeklySchedule {
 		if window.DayOfWeek < 0 || window.DayOfWeek > 6 || window.OpensAtMinute < 0 || window.OpensAtMinute > 1439 || window.ClosesAtMinute < 1 || window.ClosesAtMinute > 1440 || window.ClosesAtMinute <= window.OpensAtMinute {
 			return ErrStoreOperationalAvailabilityInvalid
+		}
+	}
+	for index, window := range input.WeeklySchedule {
+		if index > 0 {
+			previous := input.WeeklySchedule[index-1]
+			if previous.DayOfWeek == window.DayOfWeek && window.OpensAtMinute < previous.ClosesAtMinute {
+				return ErrStoreOperationalAvailabilityInvalid
+			}
 		}
 	}
 	if input.Paused {

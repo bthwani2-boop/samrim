@@ -1,14 +1,15 @@
 package transporthttp
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
@@ -18,21 +19,24 @@ import (
 type StoreAvailabilityServer struct {
 	operatorAuth *auth.ServiceToken
 	service      *storeavailability.Service
+	db           *sql.DB
 }
 
 type storeAvailabilityMutationRequest struct {
-	ScheduleMode                string                          `json:"scheduleMode"`
+	ScheduleMode                string                         `json:"scheduleMode"`
 	WeeklySchedule              []postgres.StoreScheduleWindow `json:"weeklySchedule"`
-	Paused                      bool                            `json:"paused"`
-	PauseReason                 *string                         `json:"pauseReason,omitempty"`
-	PauseUntil                  *time.Time                      `json:"pauseUntil,omitempty"`
-	PreparationMinutes          *int                            `json:"preparationMinutes,omitempty"`
-	UnavailableFulfillmentModes []string                        `json:"unavailableFulfillmentModes"`
+	Paused                      bool                           `json:"paused"`
+	PauseReason                 *string                        `json:"pauseReason,omitempty"`
+	PauseUntil                  *time.Time                     `json:"pauseUntil,omitempty"`
+	PreparationMinutes          *int                           `json:"preparationMinutes,omitempty"`
+	UnavailableFulfillmentModes []string                       `json:"unavailableFulfillmentModes"`
+	ExpectedVersion             int                            `json:"expectedVersion"`
 }
 
 type storeAvailabilityMutationResponse struct {
-	Availability     postgres.StoreOperationalAvailability `json:"availability"`
-	IdempotentReplay bool                                  `json:"idempotentReplay"`
+	Availability       contract.StoreOperationalAvailability `json:"availability"`
+	OrderabilityByMode []contract.StoreOrderability          `json:"orderabilityByMode"`
+	IdempotentReplay   bool                                  `json:"idempotentReplay"`
 }
 
 func NewStoreAvailability(identityClient *identityintegration.Client, operatorServiceToken string, db *sql.DB) (*StoreAvailabilityServer, error) {
@@ -44,13 +48,12 @@ func NewStoreAvailability(identityClient *identityintegration.Client, operatorSe
 	if err != nil {
 		return nil, err
 	}
-	return &StoreAvailabilityServer{operatorAuth: authorizer, service: service}, nil
+	return &StoreAvailabilityServer{operatorAuth: authorizer, service: service, db: db}, nil
 }
 
 func (s *StoreAvailabilityServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/operational-availability", s.readForPartner)
 	mux.HandleFunc("PATCH /dsh/partner/stores/{storeId}/operational-availability", s.updateForPartner)
-	mux.HandleFunc("GET /dsh/client/stores/{storeId}/orderability", s.evaluateForClient)
 	mux.HandleFunc("GET /dsh/operations/stores/{storeId}/operational-availability", s.readForOperator)
 	mux.HandleFunc("PATCH /dsh/operations/stores/{storeId}/operational-availability", s.updateForOperator)
 }
@@ -66,7 +69,17 @@ func (s *StoreAvailabilityServer) readForPartner(w http.ResponseWriter, r *http.
 		writeStoreAvailabilityError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, availability)
+	store, err := postgres.ReadStore(r.Context(), s.db, availability.StoreID)
+	if err != nil {
+		writeStoreAvailabilityError(w, err)
+		return
+	}
+	orderability, err := evaluateStoreOrderabilityByMode(r.Context(), s.db, store.ID, store.FulfillmentModes)
+	if err != nil {
+		writeStoreAvailabilityError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.PartnerStoreOperationalAvailabilityResponse{Availability: toOperationalAvailabilityView(availability), OrderabilityByMode: orderability})
 }
 
 func (s *StoreAvailabilityServer) updateForPartner(w http.ResponseWriter, r *http.Request) {
@@ -75,11 +88,11 @@ func (s *StoreAvailabilityServer) updateForPartner(w http.ResponseWriter, r *htt
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "partner session is required")
 		return
 	}
-	correlationID, idempotencyKey, expectedVersion, ok := storeAvailabilityMutationHeaders(w, r)
+	correlationID, idempotencyKey, ok := storeAvailabilityMutationHeaders(w, r)
 	if !ok {
 		return
 	}
-	input, ok := decodeStoreAvailabilityMutation(w, r, r.PathValue("storeId"), correlationID, idempotencyKey, expectedVersion)
+	input, ok := decodeStoreAvailabilityMutation(w, r, r.PathValue("storeId"), correlationID, idempotencyKey)
 	if !ok {
 		return
 	}
@@ -88,21 +101,17 @@ func (s *StoreAvailabilityServer) updateForPartner(w http.ResponseWriter, r *htt
 		writeStoreAvailabilityError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, storeAvailabilityMutationResponse{Availability: availability, IdempotentReplay: replayed})
-}
-
-func (s *StoreAvailabilityServer) evaluateForClient(w http.ResponseWriter, r *http.Request) {
-	token := bearerToken(r)
-	if token == "" {
-		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "client session is required")
-		return
-	}
-	result, err := s.service.EvaluateForClient(r.Context(), token, r.PathValue("storeId"), r.URL.Query().Get("fulfillmentMode"), time.Now().UTC())
+	store, err := postgres.ReadStore(r.Context(), s.db, availability.StoreID)
 	if err != nil {
 		writeStoreAvailabilityError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, result)
+	orderability, err := evaluateStoreOrderabilityByMode(r.Context(), s.db, store.ID, store.FulfillmentModes)
+	if err != nil {
+		writeStoreAvailabilityError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, storeAvailabilityMutationResponse{Availability: toOperationalAvailabilityView(availability), OrderabilityByMode: orderability, IdempotentReplay: replayed})
 }
 
 func (s *StoreAvailabilityServer) readForOperator(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +129,17 @@ func (s *StoreAvailabilityServer) readForOperator(w http.ResponseWriter, r *http
 		writeStoreAvailabilityError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, availability)
+	store, err := postgres.ReadStore(r.Context(), s.db, availability.StoreID)
+	if err != nil {
+		writeStoreAvailabilityError(w, err)
+		return
+	}
+	orderability, err := evaluateStoreOrderabilityByMode(r.Context(), s.db, store.ID, store.FulfillmentModes)
+	if err != nil {
+		writeStoreAvailabilityError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.PartnerStoreOperationalAvailabilityResponse{Availability: toOperationalAvailabilityView(availability), OrderabilityByMode: orderability})
 }
 
 func (s *StoreAvailabilityServer) updateForOperator(w http.ResponseWriter, r *http.Request) {
@@ -133,11 +152,11 @@ func (s *StoreAvailabilityServer) updateForOperator(w http.ResponseWriter, r *ht
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
 		return
 	}
-	correlationID, idempotencyKey, expectedVersion, ok := storeAvailabilityMutationHeaders(w, r)
+	correlationID, idempotencyKey, ok := storeAvailabilityMutationHeaders(w, r)
 	if !ok {
 		return
 	}
-	input, ok := decodeStoreAvailabilityMutation(w, r, r.PathValue("storeId"), correlationID, idempotencyKey, expectedVersion)
+	input, ok := decodeStoreAvailabilityMutation(w, r, r.PathValue("storeId"), correlationID, idempotencyKey)
 	if !ok {
 		return
 	}
@@ -146,12 +165,26 @@ func (s *StoreAvailabilityServer) updateForOperator(w http.ResponseWriter, r *ht
 		writeStoreAvailabilityError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, storeAvailabilityMutationResponse{Availability: availability, IdempotentReplay: replayed})
+	store, err := postgres.ReadStore(r.Context(), s.db, availability.StoreID)
+	if err != nil {
+		writeStoreAvailabilityError(w, err)
+		return
+	}
+	orderability, err := evaluateStoreOrderabilityByMode(r.Context(), s.db, store.ID, store.FulfillmentModes)
+	if err != nil {
+		writeStoreAvailabilityError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, storeAvailabilityMutationResponse{Availability: toOperationalAvailabilityView(availability), OrderabilityByMode: orderability, IdempotentReplay: replayed})
 }
 
-func decodeStoreAvailabilityMutation(w http.ResponseWriter, r *http.Request, storeID, correlationID, idempotencyKey string, expectedVersion int) (postgres.UpdateStoreOperationalAvailabilityInput, bool) {
+func decodeStoreAvailabilityMutation(w http.ResponseWriter, r *http.Request, storeID, correlationID, idempotencyKey string) (postgres.UpdateStoreOperationalAvailabilityInput, bool) {
 	var request storeAvailabilityMutationRequest
 	if !decodeJSON(w, r, &request) {
+		return postgres.UpdateStoreOperationalAvailabilityInput{}, false
+	}
+	if request.ExpectedVersion < 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "expectedVersion must be a positive integer")
 		return postgres.UpdateStoreOperationalAvailabilityInput{}, false
 	}
 	return postgres.UpdateStoreOperationalAvailabilityInput{
@@ -163,29 +196,24 @@ func decodeStoreAvailabilityMutation(w http.ResponseWriter, r *http.Request, sto
 		PauseUntil:                  request.PauseUntil,
 		PreparationMinutes:          request.PreparationMinutes,
 		UnavailableFulfillmentModes: request.UnavailableFulfillmentModes,
-		ExpectedVersion:             expectedVersion,
+		ExpectedVersion:             request.ExpectedVersion,
 		IdempotencyKey:              idempotencyKey,
 		CorrelationID:               correlationID,
 	}, true
 }
 
-func storeAvailabilityMutationHeaders(w http.ResponseWriter, r *http.Request) (string, string, int, bool) {
-	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("If-Match") != "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Actor-ID and If-Match are forbidden")
-		return "", "", 0, false
+func storeAvailabilityMutationHeaders(w http.ResponseWriter, r *http.Request) (string, string, bool) {
+	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("If-Match") != "" || r.Header.Get("X-Expected-Version") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Actor-ID, If-Match, and X-Expected-Version are forbidden; expectedVersion belongs in the request body")
+		return "", "", false
 	}
 	correlationID := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
 	idempotencyKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 	if len(correlationID) < 8 || len(correlationID) > 128 || len(idempotencyKey) < 8 || len(idempotencyKey) > 128 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "bounded X-Correlation-ID and Idempotency-Key are required")
-		return "", "", 0, false
+		return "", "", false
 	}
-	expectedVersion, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Version")))
-	if err != nil || expectedVersion < 1 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Expected-Version must be a positive integer")
-		return "", "", 0, false
-	}
-	return correlationID, idempotencyKey, expectedVersion, true
+	return correlationID, idempotencyKey, true
 }
 
 func writeStoreAvailabilityError(w http.ResponseWriter, err error) {
@@ -194,8 +222,6 @@ func writeStoreAvailabilityError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Store operational availability facts are invalid")
 	case errors.Is(err, storeavailability.ErrPartnerSessionForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active app-partner session is required")
-	case errors.Is(err, storeavailability.ErrClientSessionForbidden):
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active app-client session is required")
 	case errors.Is(err, storeavailability.ErrStoreAccessForbidden), errors.Is(err, postgres.ErrStoreAccessForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "Store ownership or an active store_operations grant is required")
 	case errors.Is(err, storeavailability.ErrOperatorNotActive):
@@ -213,5 +239,59 @@ func writeStoreAvailabilityError(w http.ResponseWriter, err error) {
 			return
 		}
 		writeError(w, http.StatusBadGateway, "DSH_STORAGE_UNAVAILABLE", "DSH persistence or Identity is unavailable")
+	}
+}
+
+func evaluateStoreOrderabilityByMode(ctx context.Context, db *sql.DB, storeID string, modes []string) ([]contract.StoreOrderability, error) {
+	evaluatedAt := time.Now().UTC()
+	items := make([]contract.StoreOrderability, 0, len(modes))
+	for _, mode := range modes {
+		result, err := postgres.EvaluateStoreOrderability(ctx, db, storeID, mode, evaluatedAt)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, toStoreOrderabilityView(result))
+	}
+	return items, nil
+}
+
+func toOperationalAvailabilityView(value postgres.StoreOperationalAvailability) contract.StoreOperationalAvailability {
+	pauseReason := ""
+	if value.PauseReason != nil {
+		pauseReason = *value.PauseReason
+	}
+	preparationMinutes := 0
+	if value.PreparationMinutes != nil {
+		preparationMinutes = *value.PreparationMinutes
+	}
+	modes := make([]contract.StoreFulfillmentMode, 0, len(value.UnavailableFulfillmentModes))
+	for _, mode := range value.UnavailableFulfillmentModes {
+		modes = append(modes, contract.StoreFulfillmentMode(mode))
+	}
+	weeklySchedule := make([]contract.StoreScheduleWindow, 0, len(value.WeeklySchedule))
+	for _, window := range value.WeeklySchedule {
+		weeklySchedule = append(weeklySchedule, contract.StoreScheduleWindow{DayOfWeek: window.DayOfWeek, OpensAtMinute: window.OpensAtMinute, ClosesAtMinute: window.ClosesAtMinute})
+	}
+	return contract.StoreOperationalAvailability{
+		StoreID: value.StoreID, ScheduleMode: value.ScheduleMode, ScheduleTimezone: value.ScheduleTimezone,
+		WeeklySchedule: weeklySchedule, Paused: value.Paused, PauseReason: pauseReason,
+		PauseUntil: value.PauseUntil, PreparationMinutes: preparationMinutes,
+		UnavailableFulfillmentModes: modes, Version: value.Version, UpdatedByActorID: value.UpdatedByActorID, UpdatedAt: value.UpdatedAt,
+	}
+}
+
+func toStoreOrderabilityView(value postgres.StoreOrderability) contract.StoreOrderability {
+	reason := ""
+	if value.Reason != nil {
+		reason = *value.Reason
+	}
+	preparationMinutes := 0
+	if value.PreparationMinutes != nil {
+		preparationMinutes = *value.PreparationMinutes
+	}
+	return contract.StoreOrderability{
+		StoreID: value.StoreID, FulfillmentMode: contract.StoreFulfillmentMode(value.FulfillmentMode),
+		State: value.State, Reason: reason, PreparationMinutes: preparationMinutes,
+		Version: value.Version, EvaluatedAt: value.EvaluatedAt,
 	}
 }

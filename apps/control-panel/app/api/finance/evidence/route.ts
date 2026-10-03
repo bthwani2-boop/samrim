@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
+import { verifySameOrigin } from "../../../../src/server/security/csrf";
 import { dshErrorPayload, dshHttpStatus, isDshClientError, uploadOperatorFinanceEvidence, type FinanceEvidencePurpose } from "../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  if (!verifySameOrigin(request)) return NextResponse.json({ error: { code: "FORBIDDEN", message: "cross-site requests are forbidden" } }, { status: 403 });
   const identity = await readOperatorSession();
   if (!identity) return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "authentication is required" } }, { status: 401 });
   if (identity.role !== "operator" || !identity.permissions?.includes("finance")) return NextResponse.json({ error: { code: "FORBIDDEN", message: "Finance permission is required" } }, { status: 403 });

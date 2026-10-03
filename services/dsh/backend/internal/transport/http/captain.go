@@ -481,7 +481,7 @@ func (s *CaptainServer) readCashLiability(w http.ResponseWriter, r *http.Request
 			writeError(w, http.StatusBadGateway, "WLT_CASH_UNAVAILABLE", "cash liability timestamp is invalid")
 			return
 		}
-		items = append(items, contract.CashLiabilityItem{PaymentIntentID: item.PaymentIntentID, ExternalReference: item.ExternalReference, CaptainActorID: item.CaptainActorID, AmountMinor: int(item.AmountMinor), Currency: item.Currency, PaymentVersion: item.PaymentVersion, CollectedAt: collectedAt})
+		items = append(items, contract.CashLiabilityItem{PaymentIntentID: item.PaymentIntentID, ExternalReference: item.ExternalReference, CaptainActorID: item.CaptainActorID, AmountMinor: int(item.AmountMinor), Currency: item.Currency, PaymentVersion: item.PaymentVersion, CollectedAt: collectedAt, RemittanceState: item.RemittanceState, RemittanceReference: item.RemittanceReference, RemittanceID: item.RemittanceID})
 	}
 	writeJSON(w, http.StatusOK, contract.CashLiabilityResponse{Items: items, TotalAmountMinor: int(liability.TotalAmountMinor)})
 }
@@ -522,10 +522,20 @@ func (s *CaptainServer) readDeliveryTask(w http.ResponseWriter, r *http.Request)
 		writeCaptainError(w, err)
 		return
 	}
+	recipient := contract.OrderRecipient{Mode: task.Recipient.Mode}
+	if task.Recipient.Name != nil {
+		recipient.Name = *task.Recipient.Name
+	}
+	if task.Recipient.PhoneE164 != nil {
+		recipient.PhoneE164 = *task.Recipient.PhoneE164
+	}
+	if task.Recipient.Instructions != nil {
+		recipient.Instructions = *task.Recipient.Instructions
+	}
 	writeJSON(w, http.StatusOK, contract.CaptainDeliveryTaskResponse{Task: contract.CaptainDeliveryTask{
 		AssignmentID: task.AssignmentID, OrderReference: task.OrderReference, StoreID: task.StoreID, StoreName: task.StoreName, StoreProfileImage: toStoreProfileImageURI(task.StoreProfileImageURI),
 		PickupOrigin: contract.CaptainLocation{Latitude: task.PickupLatitude, Longitude: task.PickupLongitude}, CustomerAddressText: task.CustomerAddressText,
-		CustomerDestination: contract.CaptainLocation{Latitude: task.DestinationLatitude, Longitude: task.DestinationLongitude}, OrderState: contract.OrderState(task.OrderState),
+		CustomerDestination: contract.CaptainLocation{Latitude: task.DestinationLatitude, Longitude: task.DestinationLongitude}, Recipient: recipient, OrderState: contract.OrderState(task.OrderState),
 		HandoffState: task.HandoffState, DeliveryState: task.DeliveryState, FulfillmentMode: contract.FulfillmentMode(task.FulfillmentMode), PaymentMethod: contract.PaymentMethod(task.PaymentMethod), PaymentState: contract.PaymentState(task.PaymentState), AmountDueMinor: int(task.AmountDueMinor), Currency: task.Currency,
 	}})
 }

@@ -84,6 +84,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/captain-cod-reservations/{orderId}/finalize", s.finalizeCaptainCOD)
 	mux.HandleFunc("GET /wlt/v1/operator/cash-liability", s.operatorCashLiability)
 	mux.HandleFunc("POST /wlt/v1/payment-intents/{intentId}/remit", s.remitCash)
+	mux.HandleFunc("POST /wlt/v1/operator/cash-remittances/{remittanceId}/reconcile", s.reconcileCashRemittance)
 	mux.HandleFunc("POST /wlt/v1/delivery-quotes", s.deliveryQuote)
 	mux.HandleFunc("GET /wlt/v1/operator/delivery-fee-policies", s.readDeliveryFeePolicy)
 	mux.HandleFunc("POST /wlt/v1/operator/delivery-fee-policies", s.createDeliveryFeePolicy)
@@ -242,7 +243,7 @@ type finalizePartnerStoreCashCommissionRequest struct {
 type partnerCommissionRemittanceRequest struct {
 	AmountMinor         int64  `json:"amountMinor"`
 	RemittanceReference string `json:"remittanceReference"`
-	EvidenceReference   string `json:"evidenceReference"`
+	EvidenceDocumentID  string `json:"evidenceDocumentId"`
 }
 
 type createOfficialWalletDestinationRequest struct {
@@ -381,7 +382,8 @@ type partnerCommissionRemittanceJSON struct {
 	AmountMinor         int64  `json:"amountMinor"`
 	Currency            string `json:"currency"`
 	RemittanceReference string `json:"remittanceReference"`
-	EvidenceReference   string `json:"evidenceReference"`
+	EvidenceReference   string `json:"evidenceReference,omitempty"`
+	EvidenceDocumentID  string `json:"evidenceDocumentId,omitempty"`
 	VerifiedBy          string `json:"verifiedBy"`
 	VerifiedAt          string `json:"verifiedAt"`
 	LedgerTransactionID string `json:"ledgerTransactionId"`
@@ -551,13 +553,16 @@ type partnerStoreCommissionSnapshotJSON struct {
 }
 
 type cashLiabilityItemJSON struct {
-	PaymentIntentID   string `json:"paymentIntentId"`
-	ExternalReference string `json:"externalReference"`
-	CaptainActorID    string `json:"captainActorId"`
-	AmountMinor       int64  `json:"amountMinor"`
-	Currency          string `json:"currency"`
-	PaymentVersion    int    `json:"paymentVersion"`
-	CollectedAt       string `json:"collectedAt"`
+	PaymentIntentID     string `json:"paymentIntentId"`
+	ExternalReference   string `json:"externalReference"`
+	CaptainActorID      string `json:"captainActorId"`
+	AmountMinor         int64  `json:"amountMinor"`
+	Currency            string `json:"currency"`
+	PaymentVersion      int    `json:"paymentVersion"`
+	CollectedAt         string `json:"collectedAt"`
+	RemittanceState     string `json:"remittanceState"`
+	RemittanceReference string `json:"remittanceReference,omitempty"`
+	RemittanceID        string `json:"remittanceId,omitempty"`
 }
 
 type cashLiabilityResponse struct {
@@ -574,14 +579,21 @@ type cashLiabilityRegistryResponse struct {
 }
 
 type cashRemittanceJSON struct {
-	ID                  string `json:"id"`
-	PaymentIntentID     string `json:"paymentIntentId"`
-	CaptainActorID      string `json:"captainActorId"`
-	AmountMinor         int64  `json:"amountMinor"`
-	Currency            string `json:"currency"`
-	RemittanceReference string `json:"remittanceReference"`
-	State               string `json:"state"`
-	CreatedAt           string `json:"createdAt"`
+	ID                  string  `json:"id"`
+	PaymentIntentID     string  `json:"paymentIntentId"`
+	CaptainActorID      string  `json:"captainActorId"`
+	AmountMinor         int64   `json:"amountMinor"`
+	Currency            string  `json:"currency"`
+	RemittanceReference string  `json:"remittanceReference"`
+	State               string  `json:"state"`
+	CreatedAt           string  `json:"createdAt"`
+	ReconciledBy        *string `json:"reconciledBy,omitempty"`
+	ReconciledAt        *string `json:"reconciledAt,omitempty"`
+	ReceiptDocumentID   *string `json:"receiptDocumentId,omitempty"`
+}
+
+type reconcileCashRemittanceRequest struct {
+	EvidenceDocumentID string `json:"evidenceDocumentId"`
 }
 
 type cashRemittanceResponse struct {
@@ -782,7 +794,7 @@ func (s *Server) cashLiability(w http.ResponseWriter, r *http.Request) {
 func writeCashLiability(w http.ResponseWriter, result postgres.CashLiabilityList) {
 	items := make([]cashLiabilityItemJSON, 0, len(result.Items))
 	for _, item := range result.Items {
-		items = append(items, cashLiabilityItemJSON{PaymentIntentID: item.PaymentIntentID, ExternalReference: item.ExternalReference, CaptainActorID: item.CaptainActorID, AmountMinor: item.AmountMinor, Currency: item.Currency, PaymentVersion: item.PaymentVersion, CollectedAt: item.CollectedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")})
+		items = append(items, cashLiabilityItemJSON{PaymentIntentID: item.PaymentIntentID, ExternalReference: item.ExternalReference, CaptainActorID: item.CaptainActorID, AmountMinor: item.AmountMinor, Currency: item.Currency, PaymentVersion: item.PaymentVersion, CollectedAt: item.CollectedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00"), RemittanceState: item.RemittanceState, RemittanceReference: item.RemittanceReference, RemittanceID: item.RemittanceID})
 	}
 	writeJSON(w, http.StatusOK, cashLiabilityResponse{Items: items, TotalAmountMinor: result.TotalAmountMinor})
 }
@@ -800,6 +812,26 @@ func (s *Server) remitCash(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, replayed, err := postgres.RemitCash(r.Context(), s.db, postgres.RemitCashInput{PaymentIntentID: r.PathValue("intentId"), CaptainActorID: input.CaptainActorID, AmountMinor: input.AmountMinor, RemittanceReference: input.RemittanceReference, ExpectedPaymentVersion: expected, IdempotencyKey: idempotency, CorrelationID: correlation})
+	if err != nil {
+		writePaymentError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, cashRemittanceResponse{CashRemittance: toCashRemittance(result), IdempotentReplay: replayed})
+}
+
+func (s *Server) reconcileCashRemittance(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	actorID, correlation, idempotency, ok := operatorMutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input reconcileCashRemittanceRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, replayed, err := postgres.ReconcileCashRemittance(r.Context(), s.db, postgres.ReconcileCashRemittanceInput{RemittanceID: r.PathValue("remittanceId"), EvidenceDocumentID: input.EvidenceDocumentID, ActorID: actorID, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writePaymentError(w, err)
 		return
@@ -1127,7 +1159,7 @@ func (s *Server) recordPartnerCommissionRemittance(w http.ResponseWriter, r *htt
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, replayed, err := postgres.RecordPartnerCommissionRemittance(r.Context(), s.db, postgres.PartnerCommissionRemittanceInput{PartnerActorID: r.PathValue("partnerActorId"), AmountMinor: input.AmountMinor, RemittanceReference: input.RemittanceReference, EvidenceReference: input.EvidenceReference, VerifiedBy: acting, IdempotencyKey: idempotency, CorrelationID: correlation})
+	result, replayed, err := postgres.RecordPartnerCommissionRemittance(r.Context(), s.db, postgres.PartnerCommissionRemittanceInput{PartnerActorID: r.PathValue("partnerActorId"), AmountMinor: input.AmountMinor, RemittanceReference: input.RemittanceReference, EvidenceDocumentID: input.EvidenceDocumentID, VerifiedBy: acting, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writePartnerCashCommissionError(w, err)
 		return
@@ -1485,7 +1517,12 @@ func toPaymentIntent(item postgres.PaymentIntentRecord) paymentIntentJSON {
 }
 
 func toCashRemittance(item postgres.CashRemittanceRecord) cashRemittanceJSON {
-	return cashRemittanceJSON{ID: item.ID, PaymentIntentID: item.PaymentIntentID, CaptainActorID: item.CaptainActorID, AmountMinor: item.AmountMinor, Currency: item.Currency, RemittanceReference: item.RemittanceReference, State: item.State, CreatedAt: item.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
+	result := cashRemittanceJSON{ID: item.ID, PaymentIntentID: item.PaymentIntentID, CaptainActorID: item.CaptainActorID, AmountMinor: item.AmountMinor, Currency: item.Currency, RemittanceReference: item.RemittanceReference, State: item.State, CreatedAt: item.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00"), ReconciledBy: item.ReconciledBy, ReceiptDocumentID: item.ReceiptDocumentID}
+	if item.ReconciledAt != nil {
+		value := item.ReconciledAt.UTC().Format(time.RFC3339Nano)
+		result.ReconciledAt = &value
+	}
+	return result
 }
 
 func toDeliveryFeePolicy(item postgres.DeliveryFeePolicyRecord) deliveryFeePolicyJSON {
@@ -1603,6 +1640,14 @@ func writePaymentError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "AMOUNT_MISMATCH", "collected amount must equal the payment intent amount")
 	case errors.Is(err, postgres.ErrRemittanceExists):
 		writeError(w, http.StatusConflict, "CASH_ALREADY_REMITTED", "cash for this payment intent was already remitted")
+	case errors.Is(err, postgres.ErrRemittanceState):
+		writeError(w, http.StatusConflict, "CASH_REMITTANCE_STATE_CONFLICT", "cash remittance is not awaiting Finance reconciliation")
+	case errors.Is(err, postgres.ErrRemittanceSeparation):
+		writeError(w, http.StatusForbidden, "CASH_REMITTANCE_SEPARATION_REQUIRED", "the Captain who submitted cash cannot reconcile it")
+	case errors.Is(err, postgres.ErrRemittanceEvidence):
+		writeError(w, http.StatusBadRequest, "CASH_REMITTANCE_EVIDENCE_REQUIRED", "Finance receipt evidence is required")
+	case errors.Is(err, postgres.ErrRemittanceEvidenceUsed):
+		writeError(w, http.StatusConflict, "FINANCE_EVIDENCE_ALREADY_LINKED", "the transfer receipt is already linked to another financial transfer")
 	case errors.Is(err, postgres.ErrRemittanceIdempotency):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different cash remittance facts")
 	case errors.Is(err, postgres.ErrRemittanceInvalidInput):
@@ -1697,7 +1742,7 @@ func toPartnerStoreCashCommission(item postgres.PartnerStoreCashCommissionRecord
 }
 
 func toPartnerCommissionRemittance(item postgres.PartnerCommissionRemittanceRecord) partnerCommissionRemittanceJSON {
-	return partnerCommissionRemittanceJSON{ID: item.ID, PartnerActorID: item.PartnerActorID, AmountMinor: item.AmountMinor, Currency: item.Currency, RemittanceReference: item.RemittanceReference, EvidenceReference: item.EvidenceReference, VerifiedBy: item.VerifiedBy, VerifiedAt: item.VerifiedAt.UTC().Format(time.RFC3339Nano), LedgerTransactionID: item.LedgerTransactionID, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano)}
+	return partnerCommissionRemittanceJSON{ID: item.ID, PartnerActorID: item.PartnerActorID, AmountMinor: item.AmountMinor, Currency: item.Currency, RemittanceReference: item.RemittanceReference, EvidenceReference: item.EvidenceReference, EvidenceDocumentID: item.EvidenceDocumentID, VerifiedBy: item.VerifiedBy, VerifiedAt: item.VerifiedAt.UTC().Format(time.RFC3339Nano), LedgerTransactionID: item.LedgerTransactionID, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano)}
 }
 
 func writePartnerCashCommissionError(w http.ResponseWriter, err error) {
@@ -1712,6 +1757,10 @@ func writePartnerCashCommissionError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "COMMISSION_SNAPSHOT_MISSING", "this order has no immutable commission policy snapshot")
 	case errors.Is(err, postgres.ErrPartnerRemittanceOverpayment):
 		writeError(w, http.StatusConflict, "REMITTANCE_EXCEEDS_RECEIVABLE", "remittance exceeds the outstanding Partner commission receivable")
+	case errors.Is(err, postgres.ErrPartnerRemittanceEvidence):
+		writeError(w, http.StatusConflict, "REMITTANCE_EVIDENCE_INVALID", "a transfer receipt uploaded by the verifying Finance operator is required")
+	case errors.Is(err, postgres.ErrPartnerRemittanceEvidenceUsed):
+		writeError(w, http.StatusConflict, "FINANCE_EVIDENCE_ALREADY_LINKED", "the transfer receipt is already linked to another financial transfer")
 	case errors.Is(err, postgres.ErrPartnerEarningProfile):
 		writeError(w, http.StatusConflict, "PROFILE_NOT_ACTIVE", "an active Partner financial profile is required")
 	case errors.Is(err, postgres.ErrIdempotencyConflict):

@@ -84,10 +84,23 @@ func (c *Client) ProvisionRoleWithContext(ctx context.Context, input ProvisionAc
 	err := c.doWithContext(ctx, IdentityOperationProvisionActorRole.Method, IdentityOperationProvisionActorRole.Path, correlationID, "", operatorActorID, 0, input, &result)
 	return result, err
 }
+func (c *Client) ProvisionExistingRoleWithContext(ctx context.Context, actorID, role, correlationID, operatorActorID string) (ActorRoleView, error) {
+	var result ActorRoleView
+	pathname := identityRoute(IdentityOperationProvisionExistingActorRole.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "role", url.PathEscape(strings.TrimSpace(role)))
+	err := c.doWithContext(ctx, IdentityOperationProvisionExistingActorRole.Method, pathname, correlationID, "", strings.TrimSpace(operatorActorID), 0, nil, &result)
+	return result, err
+}
 func (c *Client) ReadRole(ctx context.Context, actorID, role string) (ActorRoleView, error) {
 	var result ActorRoleView
 	pathname := identityRoute(IdentityOperationReadActorRole.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "role", url.PathEscape(strings.TrimSpace(role)))
 	err := c.do(ctx, IdentityOperationReadActorRole.Method, pathname, "", nil, &result)
+	return result, err
+}
+
+func (c *Client) ReadCanonicalActor(ctx context.Context, actorID string) (CanonicalActorResolution, error) {
+	var result CanonicalActorResolution
+	pathname := identityRoute(IdentityOperationReadCanonicalActor.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)))
+	err := c.do(ctx, IdentityOperationReadCanonicalActor.Method, pathname, "", nil, &result)
 	return result, err
 }
 

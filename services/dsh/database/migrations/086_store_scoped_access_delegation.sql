@@ -18,12 +18,12 @@ CREATE TABLE dsh.store_access_grants (
         cardinality(permissions) BETWEEN 1 AND 3
         AND permissions <@ ARRAY['orders','catalog','store_operations']::text[]
     ),
-    CONSTRAINT store_access_grants_state_chk CHECK (state IN ('pending_role_admission','pending_acceptance','active','suspended','revoked','declined','expired')),
+    CONSTRAINT store_access_grants_state_chk CHECK (state IN ('pending_acceptance','pending_role_admission','pending_partner_activation','active','suspended','revoked','declined','expired')),
     CONSTRAINT store_access_grants_version_chk CHECK (version > 0),
     CONSTRAINT store_access_grants_time_chk CHECK (expires_at > created_at),
     CONSTRAINT store_access_grants_state_facts_chk CHECK (
-        (state IN ('pending_role_admission','pending_acceptance') AND accepted_at IS NULL AND declined_at IS NULL AND revoked_at IS NULL)
-        OR (state IN ('active','suspended') AND accepted_at IS NOT NULL AND declined_at IS NULL AND revoked_at IS NULL)
+        (state = 'pending_acceptance' AND accepted_at IS NULL AND declined_at IS NULL AND revoked_at IS NULL)
+        OR (state IN ('pending_role_admission','pending_partner_activation','active','suspended') AND accepted_at IS NOT NULL AND declined_at IS NULL AND revoked_at IS NULL)
         OR (state = 'revoked' AND revoked_at IS NOT NULL AND declined_at IS NULL)
         OR (state = 'declined' AND declined_at IS NOT NULL AND accepted_at IS NULL AND revoked_at IS NULL)
         OR (state = 'expired' AND revoked_at IS NULL AND declined_at IS NULL)
@@ -35,7 +35,7 @@ CREATE TABLE dsh.store_access_grants (
 
 CREATE UNIQUE INDEX store_access_grants_current_delegate_uq
     ON dsh.store_access_grants(store_id, delegate_actor_id)
-    WHERE state IN ('pending_role_admission','pending_acceptance','active','suspended');
+    WHERE state IN ('pending_acceptance','pending_role_admission','pending_partner_activation','active','suspended');
 
 CREATE INDEX store_access_grants_owner_idx
     ON dsh.store_access_grants(owner_partner_actor_id, store_id, created_at DESC);
@@ -54,8 +54,8 @@ CREATE TABLE dsh.store_access_grant_idempotency (
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     CONSTRAINT store_access_grant_idem_key_chk CHECK (length(btrim(idempotency_key)) BETWEEN 8 AND 128),
     CONSTRAINT store_access_grant_idem_hash_chk CHECK (request_hash ~ '^[a-f0-9]{64}$'),
-    CONSTRAINT store_access_grant_idem_operation_chk CHECK (operation IN ('invitation_create','role_admission_confirm','invitation_accept','invitation_decline','grant_transition')),
-    CONSTRAINT store_access_grant_idem_state_chk CHECK (result_state IN ('pending_role_admission','pending_acceptance','active','suspended','revoked','declined','expired')),
+    CONSTRAINT store_access_grant_idem_operation_chk CHECK (operation IN ('invitation_create','role_admission_confirm','invitation_accept','invitation_decline','grant_transition','partner_activation_confirm')),
+    CONSTRAINT store_access_grant_idem_state_chk CHECK (result_state IN ('pending_acceptance','pending_role_admission','pending_partner_activation','active','suspended','revoked','declined','expired')),
     CONSTRAINT store_access_grant_idem_version_chk CHECK (result_version > 0)
 );
 
@@ -75,11 +75,11 @@ CREATE TABLE dsh.store_access_grant_audit (
     result_version integer NOT NULL,
     request_hash text NOT NULL,
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
-    CONSTRAINT store_access_grant_audit_event_chk CHECK (event_type IN ('invitation_created','role_admission_confirmed','invitation_accepted','invitation_declined','grant_state_changed')),
+    CONSTRAINT store_access_grant_audit_event_chk CHECK (event_type IN ('invitation_created','role_admission_confirmed','invitation_accepted','invitation_declined','grant_state_changed','partner_activation_confirmed')),
     CONSTRAINT store_access_grant_audit_correlation_chk CHECK (length(btrim(correlation_id)) BETWEEN 8 AND 128),
     CONSTRAINT store_access_grant_audit_state_chk CHECK (
-        to_state IN ('pending_role_admission','pending_acceptance','active','suspended','revoked','declined','expired')
-        AND (from_state IS NULL OR from_state IN ('pending_role_admission','pending_acceptance','active','suspended','revoked','declined','expired'))
+        to_state IN ('pending_acceptance','pending_role_admission','pending_partner_activation','active','suspended','revoked','declined','expired')
+        AND (from_state IS NULL OR from_state IN ('pending_acceptance','pending_role_admission','pending_partner_activation','active','suspended','revoked','declined','expired'))
     ),
     CONSTRAINT store_access_grant_audit_version_chk CHECK (expected_version >= 0 AND result_version >= expected_version AND result_version <= expected_version + 1),
     CONSTRAINT store_access_grant_audit_hash_chk CHECK (request_hash ~ '^[a-f0-9]{64}$'),

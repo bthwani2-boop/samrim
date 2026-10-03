@@ -1,0 +1,209 @@
+paths:
+  /dsh/partner/stores:
+    get:
+      operationId: listPartnerAccessibleStores
+      summary: List owned and actively delegated Store scopes for the current Partner actor
+      security: [{ userBearer: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 25 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 128 }
+      responses:
+        "200": { description: Canonical owned and actively granted Store scopes with their exact permissions., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerAccessibleStorePage" } } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/partner/stores/{storeId}/access:
+    get:
+      operationId: listPartnerStoreAccessGrants
+      summary: Read Store-scoped invitations and grants for its owner
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+      responses:
+        "200": { description: Canonical Store access grants., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreAccessGrantListResponse" } } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/partner/stores/{storeId}/access/invitations:
+    post:
+      operationId: createPartnerStoreAccessInvitation
+      summary: Invite a canonical Human Actor to one Store with bounded permissions
+      description: Creates a pending invitation with bounded permissions. The invitee must accept it before any Partner-role admission or Store access can begin.
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreAccessInvitationCreateRequest" }
+      responses:
+        "201": { description: Canonical invitation created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreAccessGrantMutationResponse" } } } }
+        "200": { description: Idempotent invitation replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreAccessGrantMutationResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/partner/stores/{storeId}/access/{grantId}:
+    patch:
+      operationId: transitionPartnerStoreAccessGrant
+      summary: Suspend, restore or revoke a Store access grant
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - name: grantId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreAccessGrantTransitionRequest" }
+      responses:
+        "200": { description: Canonical updated grant., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreAccessGrantMutationResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/partner/stores/{storeId}/access/{grantId}/permissions:
+    put:
+      operationId: updatePartnerStoreAccessPermissions
+      summary: Replace an invitation or grant's bounded Store permissions as its owner
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - name: grantId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreAccessGrantPermissionsRequest" }
+      responses:
+        "200": { description: Canonical versioned grant permission readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreAccessGrantMutationResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/actor/store-access-invitations:
+    get:
+      operationId: listActorStoreAccessInvitations
+      summary: Read Store invitations addressed to the authenticated Human Actor
+      security: [{ userBearer: [] }]
+      responses:
+        "200": { description: Canonical invitations and grants addressed only to this authenticated actor., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreAccessGrantListResponse" } } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/actor/store-access-invitations/{grantId}/decision:
+    post:
+      operationId: decideActorStoreAccessInvitation
+      summary: Accept or decline a Store access invitation as its invited Human Actor
+      security: [{ userBearer: [] }]
+      parameters:
+        - name: grantId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreAccessInvitationDecisionRequest" }
+      responses:
+        "200": { description: Canonical decision readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreAccessGrantMutationResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/partner/store-access-invitations/{grantId}/activate:
+    post:
+      operationId: activatePartnerStoreAccessInvitation
+      summary: Activate an accepted Store grant from the delegate's Partner session
+      description: Requires the invited actor's active Partner session. This operation commits Store access only after invitation acceptance and Partner-role authentication.
+      security: [{ userBearer: [] }]
+      parameters:
+        - name: grantId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreAccessGrantActivationRequest" }
+      responses:
+        "200": { description: Canonical active Store grant readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreAccessGrantMutationResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operations/store-access-role-admissions:
+    get:
+      operationId: listStoreAccessRoleAdmissionsForOperator
+      summary: List pending Partner role admissions for an authorized Operator
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+      responses:
+        "200": { description: Pending admissions; requires an active Operator with Partners permission., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreAccessGrantListResponse" } } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operations/store-access-role-admissions/{grantId}/provision:
+    post:
+      operationId: provisionPartnerRoleForStoreAccessForOperator
+      summary: Admit the existing invited actor to the Partner role
+      description: Requires an active Operator with Partners permission and an accepted DSH invitation in pending_role_admission. Identity admits only the existing canonical actorId and never resolves a phone or creates an Actor.
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - name: grantId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+      responses:
+        "200": { description: Canonical DSH pending_partner_activation readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreAccessGrantMutationResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }

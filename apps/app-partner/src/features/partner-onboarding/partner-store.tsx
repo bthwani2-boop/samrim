@@ -8,6 +8,9 @@ import { StoreProfileImageEditor } from "./store-profile-image-editor";
 import { usePartnerStoreContext } from "./partner-store-context";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 import { StoreCaptainMembershipManagement } from "./store-captain-memberships";
+import { StoreOperationalAvailabilityManagement } from "./store-operational-availability";
+import { PartnerAccessibleStoreWorkspace } from "./partner-accessible-store-workspace";
+import { PartnerStoreAccess } from "./partner-store-access";
 
 export function PartnerStore() {
   const theme = useAppearanceTheme();
@@ -15,8 +18,8 @@ export function PartnerStore() {
   const { cities, citiesError, state, update, reload } = usePartnerStoreContext();
 
   if (state.kind === "loading") return <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة بيانات المتجر" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة بيانات المتجر…</Text></View>;
-  if (state.kind === "empty") return <View style={styles.state}><Text style={styles.muted}>لم يُنشأ المتجر الأول للشريك بعد.</Text><BthwaniButton label="إعادة القراءة" onPress={() => void reload()} variant="secondary" /></View>;
-  if (state.kind === "error") return <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة بيانات الشريك من المنصة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void reload()} variant="secondary" /></View>;
+  if (state.kind === "empty") return <View style={styles.container}><View style={styles.state}><Text style={styles.muted}>لا يوجد متجر انضمام مملوك لهذا الحساب. يمكنك مراجعة نطاقات المتاجر المفوضة والدعوات هنا.</Text><BthwaniButton label="إعادة قراءة الانضمام" onPress={() => void reload()} variant="secondary" /></View><PartnerAccessibleStoreWorkspace /><PartnerStoreAccess /></View>;
+  if (state.kind === "error") return <View style={styles.container}><View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة بيانات الانضمام للشريك.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void reload()} variant="secondary" /></View><PartnerAccessibleStoreWorkspace /><PartnerStoreAccess /></View>;
   const joiningCase = state.value;
   const cityName = cities.find((city) => city.id === joiningCase.case.serviceCityId)?.displayNameAr || "مدينة غير محددة";
   return (
@@ -29,11 +32,14 @@ export function PartnerStore() {
         <Text selectable style={styles.muted}>المتجر الأول: {joiningCase.case.store.name}</Text>
         <Text style={styles.muted}>حالة النشر: {publicationStateLabel(joiningCase.case.store.publicationState)}</Text>
         <Text style={styles.muted}>جاهزية النشر: {joiningCase.case.store.publicationReadiness.ready ? "جاهز" : "يحتاج إلى استكمال البيانات"}</Text>
-        <View style={styles.card}><Text style={styles.metaLabel}>أوضاع الطلب المتاحة</Text><Text style={styles.value}>{joiningCase.case.store.fulfillmentModes.map((mode) => mode === "BTHWANI_CAPTAIN" ? "توصيل بثواني" : mode === "PARTNER_CAPTAIN" ? "توصيل المتجر" : "استلم بنفسك من المتجر").join(" · ")}</Text><Text style={styles.muted}>تُدار هذه الأوضاع بعد إنشاء المتجر من قسم الشركاء في لوحة التحكم.</Text></View>
+        <StoreOperationalAvailabilityManagement storeID={joiningCase.case.store.id} fulfillmentModes={joiningCase.case.store.fulfillmentModes} />
         <View style={styles.card}><Text style={styles.metaLabel}>موقع المتجر الثابت</Text><Text selectable style={styles.value}>{joiningCase.case.store.deliveryOrigin ? `${joiningCase.case.store.deliveryOrigin.latitude.toFixed(6)}, ${joiningCase.case.store.deliveryOrigin.longitude.toFixed(6)}` : "لم يُثبت ضمن ملف الانضمام"}</Text><Text style={styles.muted}>يُقرأ من ملف الانضمام ولا يُعدّل من هذه الشاشة.</Text></View>
         <StoreCaptainMembershipManagement storeID={joiningCase.case.store.id} />
         <StoreOfferManagement storeId={joiningCase.case.store.id} verticalId={joiningCase.case.store.primaryVerticalId ?? ""} />
+        <PartnerStoreAccess storeID={joiningCase.case.store.id} />
+        <PartnerAccessibleStoreWorkspace excludeOwned />
       </> : <Text style={styles.muted}>لم يُنشأ المتجر بعد. راجع دورة الانضمام لإكمال أي تصحيح مطلوب.</Text>}
+      {!joiningCase.case.store ? <PartnerStoreAccess /> : null}
       {joiningCase.case.state === "needs_correction" ? <Link href={"/onboarding" as Href} asChild><BthwaniButton label="مراجعة التصحيح المطلوب" variant="secondary" /></Link> : null}
     </View>
   );

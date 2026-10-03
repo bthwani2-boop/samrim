@@ -130,6 +130,33 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CashLiabilityRegistryResponse' }
+  /wlt/v1/operator/cash-remittances/{remittanceId}/reconcile:
+    post:
+      operationId: reconcileCaptainCashRemittance
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: remittanceId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+        - { $ref: '#/components/parameters/ActingActorId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReconcileCashRemittanceRequest' }
+      responses:
+        '200':
+          description: Finance receipt reconciled and WLT receivable/exposure closed atomically.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CashRemittanceResponse' }
+        '400': { description: Invalid input or missing/invalid receipt evidence. }
+        '403': { description: The Captain who submitted the cash cannot reconcile it. }
+        '404': { description: The submitted remittance was not found. }
+        '409': { description: The remittance is not awaiting reconciliation. }
   /wlt/v1/captains/{captainActorId}/wallet-state:
     get:
       operationId: readCaptainWalletState
@@ -1635,22 +1662,23 @@ components:
     RecordPartnerCommissionRemittanceRequest:
       type: object
       additionalProperties: false
-      required: [amountMinor, remittanceReference, evidenceReference]
+      required: [amountMinor, remittanceReference, evidenceDocumentId]
       properties:
         amountMinor: { type: integer, minimum: 1 }
         remittanceReference: { type: string, minLength: 1, maxLength: 128 }
-        evidenceReference: { type: string, minLength: 1, maxLength: 512 }
+        evidenceDocumentId: { type: string, minLength: 1, maxLength: 128 }
     PartnerCommissionRemittance:
       type: object
       additionalProperties: false
-      required: [id, partnerActorId, amountMinor, currency, remittanceReference, evidenceReference, verifiedBy, verifiedAt, ledgerTransactionId, createdAt]
+      required: [id, partnerActorId, amountMinor, currency, remittanceReference, verifiedBy, verifiedAt, ledgerTransactionId, createdAt]
       properties:
         id: { type: string }
         partnerActorId: { type: string }
         amountMinor: { type: integer, minimum: 1 }
         currency: { type: string, const: YER }
         remittanceReference: { type: string }
-        evidenceReference: { type: string }
+        evidenceReference: { type: string, description: Historical text-only evidence retained for legacy records. }
+        evidenceDocumentId: { type: string, minLength: 1, maxLength: 128, description: Stored transfer receipt used for new remittances. }
         verifiedBy: { type: string }
         verifiedAt: { type: string, format: date-time }
         ledgerTransactionId: { type: string }
@@ -2360,7 +2388,7 @@ components:
     CashLiabilityItem:
       type: object
       additionalProperties: false
-      required: [paymentIntentId, externalReference, captainActorId, amountMinor, currency, paymentVersion, collectedAt]
+      required: [paymentIntentId, externalReference, captainActorId, amountMinor, currency, paymentVersion, collectedAt, remittanceState]
       properties:
         paymentIntentId: { type: string }
         externalReference: { type: string }
@@ -2369,6 +2397,9 @@ components:
         currency: { type: string, const: YER }
         paymentVersion: { type: integer, minimum: 1 }
         collectedAt: { type: string, format: date-time }
+        remittanceState: { type: string, enum: [OPEN, SUBMITTED] }
+        remittanceReference: { type: string, maxLength: 128 }
+        remittanceId: { type: string, maxLength: 128 }
     CashLiabilityResponse:
       type: object
       additionalProperties: false
@@ -2401,8 +2432,17 @@ components:
         amountMinor: { type: integer, minimum: 1 }
         currency: { type: string, const: YER }
         remittanceReference: { type: string }
-        state: { type: string, const: REMITTED }
+        state: { type: string, enum: [SUBMITTED, REMITTED] }
         createdAt: { type: string, format: date-time }
+        reconciledBy: { type: string, maxLength: 128 }
+        reconciledAt: { type: string, format: date-time }
+        receiptDocumentId: { type: string, maxLength: 128 }
+    ReconcileCashRemittanceRequest:
+      type: object
+      additionalProperties: false
+      required: [evidenceDocumentId]
+      properties:
+        evidenceDocumentId: { type: string, minLength: 1, maxLength: 128 }
     CashRemittanceResponse:
       type: object
       additionalProperties: false

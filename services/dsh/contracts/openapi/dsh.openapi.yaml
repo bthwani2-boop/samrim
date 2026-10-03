@@ -189,11 +189,41 @@ paths:
   /dsh/stores/{storeId}/commercial-type:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores~1{storeId}~1commercial-type"
 
+  /dsh/partner/stores/{storeId}/operational-availability:
+    $ref: "./paths/store-availability.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1operational-availability"
+
+  /dsh/operations/stores/{storeId}/operational-availability:
+    $ref: "./paths/store-availability.yaml#/paths/~1dsh~1operations~1stores~1{storeId}~1operational-availability"
+
+  /dsh/partner/stores/{storeId}/access:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1access"
+  /dsh/partner/stores:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores"
+  /dsh/partner/stores/{storeId}/access/invitations:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1access~1invitations"
+  /dsh/partner/stores/{storeId}/access/{grantId}:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1access~1{grantId}"
+  /dsh/partner/stores/{storeId}/access/{grantId}/permissions:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1access~1{grantId}~1permissions"
+  /dsh/actor/store-access-invitations:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1actor~1store-access-invitations"
+  /dsh/actor/store-access-invitations/{grantId}/decision:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1actor~1store-access-invitations~1{grantId}~1decision"
+  /dsh/partner/store-access-invitations/{grantId}/activate:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1store-access-invitations~1{grantId}~1activate"
+  /dsh/operations/store-access-role-admissions:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1operations~1store-access-role-admissions"
+  /dsh/operations/store-access-role-admissions/{grantId}/provision:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1operations~1store-access-role-admissions~1{grantId}~1provision"
+
   /dsh/public/stores:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1public~1stores"
 
   /dsh/public/stores/{storeId}:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1public~1stores~1{storeId}"
+
+  /dsh/public/stores/{storeId}/orderability:
+    $ref: "./paths/store-availability.yaml#/paths/~1dsh~1public~1stores~1{storeId}~1orderability"
 
   /dsh/public/promotions:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1promotions"
@@ -326,6 +356,9 @@ paths:
 
   /dsh/operator/cash-custody:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1cash-custody"
+
+  /dsh/operator/cash-remittances/{remittanceId}/reconcile:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1cash-remittances~1{remittanceId}~1reconcile"
 
   /dsh/operator/delivery-fee-policy:
     $ref: "./paths/delivery-fee.yaml#/paths/~1dsh~1operator~1delivery-fee-policy"
@@ -3531,18 +3564,203 @@ components:
           type: string
           format: date-time
 
+    StoreScheduleWindow:
+      type: object
+      required: [dayOfWeek, opensAtMinute, closesAtMinute]
+      additionalProperties: false
+      properties:
+        dayOfWeek:
+          type: integer
+          minimum: 0
+          maximum: 6
+        opensAtMinute:
+          type: integer
+          minimum: 0
+          maximum: 1439
+        closesAtMinute:
+          type: integer
+          minimum: 1
+          maximum: 1440
+
+    StoreOperationalAvailability:
+      type: object
+      required: [storeId, scheduleMode, scheduleTimezone, weeklySchedule, paused, unavailableFulfillmentModes, version, updatedByActorId, updatedAt]
+      additionalProperties: false
+      properties:
+        storeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        scheduleMode:
+          type: string
+          enum: [ALWAYS_OPEN, WEEKLY]
+        scheduleTimezone:
+          type: string
+          const: "Asia/Aden"
+        weeklySchedule:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoreScheduleWindow"
+        paused:
+          type: boolean
+        pauseReason:
+          type: string
+          minLength: 2
+          maxLength: 500
+          nullable: true
+        pauseUntil:
+          type: string
+          format: date-time
+          nullable: true
+        preparationMinutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+          nullable: true
+        unavailableFulfillmentModes:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/StoreFulfillmentMode"
+        version:
+          type: integer
+          minimum: 1
+        updatedByActorId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        updatedAt:
+          type: string
+          format: date-time
+
+    StoreOrderability:
+      type: object
+      required: [storeId, fulfillmentMode, state, version, evaluatedAt]
+      additionalProperties: false
+      properties:
+        storeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        fulfillmentMode:
+          $ref: "#/components/schemas/StoreFulfillmentMode"
+        state:
+          type: string
+          enum: [OPEN_FOR_ORDERS, CLOSED_BY_SCHEDULE, PAUSED, OPERATIONALLY_UNAVAILABLE]
+        reason:
+          type: string
+          maxLength: 128
+          nullable: true
+        preparationMinutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+          nullable: true
+        version:
+          type: integer
+          minimum: 1
+        evaluatedAt:
+          type: string
+          format: date-time
+
+    StoreOperationalAvailabilityRequest:
+      type: object
+      required: [scheduleMode, weeklySchedule, paused, unavailableFulfillmentModes, expectedVersion]
+      additionalProperties: false
+      properties:
+        scheduleMode:
+          type: string
+          enum: [ALWAYS_OPEN, WEEKLY]
+        weeklySchedule:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoreScheduleWindow"
+        paused:
+          type: boolean
+        pauseReason:
+          type: string
+          minLength: 2
+          maxLength: 500
+          nullable: true
+        pauseUntil:
+          type: string
+          format: date-time
+          nullable: true
+        preparationMinutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+          nullable: true
+        unavailableFulfillmentModes:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/StoreFulfillmentMode"
+        expectedVersion:
+          type: integer
+          minimum: 1
+
+    PartnerStoreOperationalAvailabilityResponse:
+      type: object
+      required: [availability, orderabilityByMode]
+      additionalProperties: false
+      properties:
+        availability:
+          $ref: "#/components/schemas/StoreOperationalAvailability"
+        orderabilityByMode:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoreOrderability"
+
+    PartnerStoreOperationalAvailabilityMutationResponse:
+      type: object
+      required: [availability, orderabilityByMode, idempotentReplay]
+      additionalProperties: false
+      properties:
+        availability:
+          $ref: "#/components/schemas/StoreOperationalAvailability"
+        orderabilityByMode:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoreOrderability"
+        idempotentReplay:
+          type: boolean
+
+    PublicStoreOrderabilityResponse:
+      type: object
+      required: [storeId, serviceCityId, orderabilityByMode]
+      additionalProperties: false
+      properties:
+        storeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        serviceCityId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        orderabilityByMode:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoreOrderability"
+
     PublishedStoreListResponse:
       type: object
-      required: [stores, categories, limit]
+      required: [stores, verticals, categories, limit]
       additionalProperties: false
       properties:
         stores:
           type: array
           items:
             $ref: "#/components/schemas/PublicStoreView"
+        verticals:
+          type: array
+          description: Active Commerce Verticals that have customer-visible published Stores in this Service City.
+          items:
+            $ref: "#/components/schemas/PublicCommerceVertical"
         categories:
           type: array
-          description: Active categories represented by customer-visible offers in this page of eligible published stores.
+          description: Active categories represented by customer-visible offers in eligible published Stores in this Service City.
           items:
             $ref: "#/components/schemas/CatalogCategory"
         limit:
@@ -3552,6 +3770,23 @@ components:
         nextCursor:
           type: string
           maxLength: 2048
+
+    PublicCommerceVertical:
+      type: object
+      required: [id, nameAr, nameEn]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          maxLength: 128
+        nameAr:
+          type: string
+          minLength: 2
+          maxLength: 160
+        nameEn:
+          type: string
+          minLength: 2
+          maxLength: 160
 
     ServiceCity:
       type: object
@@ -3656,7 +3891,7 @@ components:
           type: string
         addressVersion:
           type: integer
-          minimum: 1
+          minimum: 0
         storeServiceCityId:
           type: string
           nullable: true
@@ -3913,6 +4148,8 @@ components:
         promotionCode:
           type: string
           maxLength: 64
+        recipient:
+          $ref: "#/components/schemas/CheckoutRecipient"
 
     CheckoutQuote:
       type: object
@@ -3996,6 +4233,28 @@ components:
         promotionCode:
           type: string
           maxLength: 64
+        recipient:
+          $ref: "#/components/schemas/CheckoutRecipient"
+
+    CheckoutRecipient:
+      type: object
+      required: [mode]
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum: [SELF, OTHER]
+        name:
+          type: string
+          minLength: 2
+          maxLength: 120
+        phoneE164:
+          type: string
+          pattern: '^\+[1-9][0-9]{7,14}$'
+        instructions:
+          type: string
+          minLength: 1
+          maxLength: 500
 
     MultiStoreCheckoutRequest:
       type: object
@@ -4475,7 +4734,7 @@ components:
 
     CashLiabilityItem:
       type: object
-      required: [paymentIntentId, externalReference, captainActorId, amountMinor, currency, paymentVersion, collectedAt]
+      required: [paymentIntentId, externalReference, captainActorId, amountMinor, currency, paymentVersion, collectedAt, remittanceState]
       additionalProperties: false
       properties:
         paymentIntentId:
@@ -4497,6 +4756,15 @@ components:
         collectedAt:
           type: string
           format: date-time
+        remittanceState:
+          type: string
+          enum: [OPEN, SUBMITTED]
+        remittanceReference:
+          type: string
+          maxLength: 128
+        remittanceId:
+          type: string
+          maxLength: 128
 
     CashLiabilityResponse:
       type: object
@@ -4572,10 +4840,29 @@ components:
           type: string
         state:
           type: string
-          const: REMITTED
+          enum: [SUBMITTED, REMITTED]
         createdAt:
           type: string
           format: date-time
+        reconciledBy:
+          type: string
+          maxLength: 128
+        reconciledAt:
+          type: string
+          format: date-time
+        receiptDocumentId:
+          type: string
+          maxLength: 128
+
+    ReconcileCaptainCashRemittanceRequest:
+      type: object
+      required: [evidenceDocumentId]
+      additionalProperties: false
+      properties:
+        evidenceDocumentId:
+          type: string
+          minLength: 1
+          maxLength: 128
 
     CaptainCashRemittanceResponse:
       type: object
@@ -4823,7 +5110,7 @@ components:
 
     CaptainDeliveryTask:
       type: object
-      required: [assignmentId, orderReference, storeId, storeName, pickupOrigin, customerAddressText, customerDestination, orderState, handoffState, deliveryState, fulfillmentMode, paymentMethod, paymentState, amountDueMinor, currency]
+      required: [assignmentId, orderReference, storeId, storeName, pickupOrigin, customerAddressText, customerDestination, recipient, orderState, handoffState, deliveryState, fulfillmentMode, paymentMethod, paymentState, amountDueMinor, currency]
       additionalProperties: false
       properties:
         assignmentId:
@@ -4843,6 +5130,8 @@ components:
           type: string
         customerDestination:
           $ref: "#/components/schemas/CaptainLocation"
+        recipient:
+          $ref: "#/components/schemas/OrderRecipient"
         orderState:
           $ref: "#/components/schemas/OrderState"
         handoffState:
@@ -5310,7 +5599,7 @@ components:
     PartnerCommissionRemittance:
       type: object
       additionalProperties: false
-      required: [id, partnerActorId, amountMinor, currency, remittanceReference, evidenceReference, verifiedBy, verifiedAt, ledgerTransactionId, createdAt]
+      required: [id, partnerActorId, amountMinor, currency, remittanceReference, verifiedBy, verifiedAt, ledgerTransactionId, createdAt]
       properties:
         id:
           type: string
@@ -5332,8 +5621,11 @@ components:
           maxLength: 128
         evidenceReference:
           type: string
+          description: Historical text-only evidence retained for legacy records.
+        evidenceDocumentId:
+          type: string
           minLength: 1
-          maxLength: 512
+          maxLength: 128
         verifiedBy:
           type: string
           minLength: 1
@@ -5352,7 +5644,7 @@ components:
     PartnerCommissionRemittanceRequest:
       type: object
       additionalProperties: false
-      required: [amountMinor, remittanceReference, evidenceReference]
+      required: [amountMinor, remittanceReference, evidenceDocumentId]
       properties:
         amountMinor:
           type: integer
@@ -5361,10 +5653,10 @@ components:
           type: string
           minLength: 1
           maxLength: 128
-        evidenceReference:
+        evidenceDocumentId:
           type: string
           minLength: 1
-          maxLength: 512
+          maxLength: 128
 
     PartnerCommissionRemittanceResponse:
       type: object
@@ -6335,7 +6627,7 @@ components:
 
     Order:
       type: object
-      required: [id, clientActorId, storeId, storeName, pickupLocation, cartId, fulfillmentMode, addressId, addressVersion, addressText, addressLatitude, addressLongitude, serviceCityId, serviceabilityPolicyVersion, serviceabilityStatus, serviceabilityStoreVersion, serviceabilityAddressVersion, state, subtotalAmountMinor, discountMinor, totalAmountMinor, cashAmountMinor, currency, paymentMethod, paymentState, paymentIntentId, version, lines, createdAt, updatedAt]
+      required: [id, clientActorId, storeId, storeName, pickupLocation, cartId, fulfillmentMode, addressId, addressVersion, addressText, addressLatitude, addressLongitude, serviceCityId, serviceabilityPolicyVersion, serviceabilityStatus, serviceabilityStoreVersion, serviceabilityAddressVersion, recipient, state, subtotalAmountMinor, discountMinor, totalAmountMinor, cashAmountMinor, currency, paymentMethod, paymentState, paymentIntentId, version, lines, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -6357,7 +6649,7 @@ components:
           type: string
         addressVersion:
           type: integer
-          minimum: 1
+          minimum: 0
         addressText:
           type: string
         addressLatitude:
@@ -6372,16 +6664,18 @@ components:
           type: string
         serviceabilityPolicyVersion:
           type: string
-          const: CITY_SCOPE_V1
+          enum: ["", CITY_SCOPE_V1]
         serviceabilityStatus:
           type: string
-          const: SERVICEABLE
+          enum: ["", SERVICEABLE]
         serviceabilityStoreVersion:
           type: integer
           minimum: 1
         serviceabilityAddressVersion:
           type: integer
-          minimum: 1
+          minimum: 0
+        recipient:
+          $ref: "#/components/schemas/OrderRecipient"
         state:
           $ref: "#/components/schemas/OrderState"
         subtotalAmountMinor:
@@ -6430,6 +6724,21 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    OrderRecipient:
+      type: object
+      required: [mode, name, phoneE164, instructions]
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum: [SELF, OTHER]
+        name:
+          type: string
+        phoneE164:
+          type: string
+        instructions:
+          type: string
 
     OrderPickupLocation:
       type: object
@@ -7112,6 +7421,197 @@ components:
           type: string
           minLength: 40
           maxLength: 48
+
+    StoreAccessPermission:
+      type: string
+      enum: [orders, catalog, store_operations]
+
+    StoreAccessGrant:
+      type: object
+      additionalProperties: false
+      required: [id, storeId, storeName, ownerPartnerActorId, delegateActorId, permissions, state, version, expiresAt, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        storeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        storeName:
+          type: string
+          maxLength: 200
+        ownerPartnerActorId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        delegateActorId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        permissions:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/StoreAccessPermission"
+        state:
+          type: string
+          enum: [pending_acceptance, pending_role_admission, pending_partner_activation, active, suspended, revoked, declined, expired]
+        version:
+          type: integer
+          minimum: 1
+        expiresAt:
+          type: string
+          format: date-time
+        acceptedAt:
+          type: string
+          format: date-time
+          nullable: true
+        declinedAt:
+          type: string
+          format: date-time
+          nullable: true
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    StoreAccessGrantListResponse:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoreAccessGrant"
+
+    StoreAccessGrantMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [grant, idempotentReplay]
+      properties:
+        grant:
+          $ref: "#/components/schemas/StoreAccessGrant"
+        idempotentReplay:
+          type: boolean
+
+    PartnerAccessibleStore:
+      type: object
+      additionalProperties: false
+      required: [id, name, serviceCityId, primaryVerticalId, publicationState, fulfillmentModes, owned, permissions]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        name:
+          type: string
+          maxLength: 200
+        serviceCityId:
+          type: string
+          maxLength: 128
+        primaryVerticalId:
+          type: string
+          maxLength: 128
+        publicationState:
+          type: string
+        fulfillmentModes:
+          type: array
+          items:
+            type: string
+        owned:
+          type: boolean
+        permissions:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/StoreAccessPermission"
+
+    PartnerAccessibleStorePage:
+      type: object
+      additionalProperties: false
+      required: [stores, nextCursor]
+      properties:
+        stores:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartnerAccessibleStore"
+        nextCursor:
+          type: string
+
+    StoreAccessInvitationCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [delegateActorId, permissions]
+      properties:
+        delegateActorId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        permissions:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/StoreAccessPermission"
+
+    StoreAccessGrantTransitionRequest:
+      type: object
+      additionalProperties: false
+      required: [state, expectedVersion]
+      properties:
+        state:
+          type: string
+          enum: [active, suspended, revoked]
+        expectedVersion:
+          type: integer
+          minimum: 1
+
+    StoreAccessGrantPermissionsRequest:
+      type: object
+      additionalProperties: false
+      required: [permissions, expectedVersion]
+      properties:
+        permissions:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/StoreAccessPermission"
+        expectedVersion:
+          type: integer
+          minimum: 1
+
+    StoreAccessInvitationDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [decision, expectedVersion]
+      properties:
+        decision:
+          type: string
+          enum: [accept, decline]
+        expectedVersion:
+          type: integer
+          minimum: 1
+
+    StoreAccessGrantActivationRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion:
+          type: integer
+          minimum: 1
 
     ErrorResponse:
       type: object

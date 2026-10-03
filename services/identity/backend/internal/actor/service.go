@@ -424,6 +424,23 @@ func (s *Service) GetRole(ctx context.Context, caller, actorID, role string) (do
 	return view, err
 }
 
+func (s *Service) ReadCanonicalActor(ctx context.Context, caller, actorID string) (domain.CanonicalActorResolution, error) {
+	caller = strings.ToLower(strings.TrimSpace(caller))
+	actorID = strings.TrimSpace(actorID)
+	if caller != "dsh" {
+		return domain.CanonicalActorResolution{}, domain.ErrForbidden
+	}
+	if actorID == "" || len(actorID) > 128 {
+		return domain.CanonicalActorResolution{}, domain.ErrInvalidInput
+	}
+	var result domain.CanonicalActorResolution
+	err := s.db.QueryRowContext(ctx, `SELECT id,security_enabled,version FROM identity_actors WHERE id=$1`, actorID).Scan(&result.ActorID, &result.SecurityEnabled, &result.Version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.CanonicalActorResolution{}, domain.ErrNotFound
+	}
+	return result, err
+}
+
 func (s *Service) ReadRoles(ctx context.Context, caller, role string, actorIDs []string) ([]domain.ActorRoleView, error) {
 	caller = strings.ToLower(strings.TrimSpace(caller))
 	role = strings.ToLower(strings.TrimSpace(role))

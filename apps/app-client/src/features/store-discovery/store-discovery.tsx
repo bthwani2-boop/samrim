@@ -1,17 +1,18 @@
 import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { availableCustomerFulfillmentModes, type CatalogCategory, type CatalogStoreOffer, type DeliveryAddress, type PublicDiscoveryContentView, formatMoney, fulfillmentModeLabel, type PublicPromotionView, type PublicStoreView } from "@bthwani/dsh";
+import { availableCustomerFulfillmentModes, type CatalogCategory, type CatalogStoreOffer, type DeliveryAddress, type PublicCommerceVertical, type PublicDiscoveryContentView, formatMoney, fulfillmentModeLabel, type PublicPromotionView, type PublicStoreView } from "@bthwani/dsh";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, I18nManager, Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
+import { normalizeDiscoveryTaxonomy } from "./discovery-taxonomy";
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
 import { listFavoriteStoreIDs, listOwnDeliveryAddresses, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, searchPublicCatalog, setFavoriteStore } from "./store-discovery-client";
 import { PromotionCard } from "./promotion-card";
 
 type DiscoveryState =
   | { kind: "loading" }
-  | { kind: "ready"; stores: ReadonlyArray<PublicStoreView>; categories: ReadonlyArray<CatalogCategory>; favoriteStoreIDs: ReadonlyArray<string>; nextCursor: string }
+  | { kind: "ready"; stores: ReadonlyArray<PublicStoreView>; verticals: ReadonlyArray<PublicCommerceVertical>; categories: ReadonlyArray<CatalogCategory>; favoriteStoreIDs: ReadonlyArray<string>; nextCursor: string }
   | { kind: "empty" }
   | { kind: "error" };
 
@@ -46,6 +47,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<DiscoveryState>({ kind: "loading" });
   const [storeFilter, setStoreFilter] = useState<"all" | "newest" | "nearest" | "favorites">("all");
+  const [selectedVerticalID, setSelectedVerticalID] = useState("");
   const [selectedCategoryID, setSelectedCategoryID] = useState("");
   const [favoriteBusyStoreID, setFavoriteBusyStoreID] = useState("");
   const [favoriteError, setFavoriteError] = useState("");
@@ -66,7 +68,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const directoryQuery = directoryMode && searchIsActive ? query.trim() : "";
   const directorySort = storeFilter === "newest" || storeFilter === "nearest" ? storeFilter : "all";
   const directoryFavoritesOnly = directoryMode && storeFilter === "favorites";
-  const currentDirectoryKey = JSON.stringify([selectedCityID, directoryQuery, directoryMode ? selectedCategoryID : "", directorySort, directoryFavoritesOnly, directoryLocation?.latitude ?? null, directoryLocation?.longitude ?? null]);
+  const currentDirectoryKey = JSON.stringify([selectedCityID, directoryQuery, selectedVerticalID, directoryMode ? selectedCategoryID : "", directorySort, directoryFavoritesOnly, directoryLocation?.latitude ?? null, directoryLocation?.longitude ?? null]);
 
   const load = useCallback(async () => {
     const requestID = ++discoveryLoadRequestID.current;
@@ -89,6 +91,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         return;
       }
       const storeDirectory = await listPublishedStores(selectedCityID, { limit: 20 });
+      const { verticals, categories } = normalizeDiscoveryTaxonomy(storeDirectory.verticals, storeDirectory.categories);
       const marketingResults = await Promise.allSettled([listPublicDiscoveryContent(selectedCityID), listPublicPromotions(selectedCityID)]);
       const content = marketingResults[0].status === "fulfilled" ? marketingResults[0].value.items : [];
       const promotions = marketingResults[1].status === "fulfilled" ? marketingResults[1].value.promotions : [];
@@ -105,7 +108,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       directoryRequestKey.current = JSON.stringify([selectedCityID, "", "", "all", false, null, null]);
       setMarketing({ content, promotions, error: marketingResults.some((result) => result.status === "rejected") });
       if (favoriteLoadError) setFavoriteError(favoriteLoadError);
-      setState({ kind: "ready", stores: storeDirectory.stores, categories: storeDirectory.categories, favoriteStoreIDs, nextCursor: storeDirectory.nextCursor ?? "" });
+      setState({ kind: "ready", stores: storeDirectory.stores, verticals, categories, favoriteStoreIDs, nextCursor: storeDirectory.nextCursor ?? "" });
     } catch {
       if (requestID === discoveryLoadRequestID.current) setState({ kind: "error" });
     }
@@ -119,6 +122,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   useEffect(() => {
     nearbyAddressRequestID.current += 1;
     directoryRequestKey.current = selectedCityID ? JSON.stringify([selectedCityID, "", "", "all", false, null, null]) : "";
+    setSelectedVerticalID("");
+    setSelectedCategoryID("");
     setDirectoryLocation(undefined);
     setNearestAddress(null);
     setNearbyAddressState({ kind: "closed" });
@@ -136,6 +141,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       directoryRequestKey.current = currentDirectoryKey;
       void listPublishedStores(selectedCityID, {
         q: directoryQuery,
+        verticalId: selectedVerticalID,
         categoryId: directoryMode ? selectedCategoryID : "",
         favoritesOnly: directoryFavoritesOnly,
         sort: directorySort,
@@ -143,7 +149,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         location: directoryLocation,
       }).then((page) => {
         if (directoryRequestID.current !== requestID) return;
-        setState((current) => current.kind === "ready" ? { ...current, stores: page.stores, categories: page.categories, nextCursor: page.nextCursor ?? "" } : current);
+        setState((current) => current.kind === "ready" ? { ...current, stores: page.stores, verticals: Array.isArray(page.verticals) ? page.verticals : current.verticals, categories: Array.isArray(page.categories) ? page.categories : current.categories, nextCursor: page.nextCursor ?? "" } : current);
       }).catch(() => {
         if (directoryRequestID.current === requestID) setDirectoryError(true);
       }).finally(() => {
@@ -154,7 +160,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       clearTimeout(timer);
       directoryRequestID.current += 1;
     };
-  }, [currentDirectoryKey, directoryFavoritesOnly, directoryLocation, directoryMode, directoryQuery, directorySort, selectedCategoryID, selectedCityID, state.kind]);
+  }, [currentDirectoryKey, directoryFavoritesOnly, directoryLocation, directoryMode, directoryQuery, directorySort, selectedCategoryID, selectedCityID, selectedVerticalID, state.kind]);
 
   async function loadMoreStores() {
     if (state.kind !== "ready" || !state.nextCursor || loadingMoreStores || !selectedCityID) return;
@@ -165,6 +171,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     try {
       const page = await listPublishedStores(selectedCityID, {
         q: directoryQuery,
+        verticalId: selectedVerticalID,
         categoryId: directoryMode ? selectedCategoryID : "",
         favoritesOnly: directoryFavoritesOnly,
         sort: directorySort,
@@ -178,8 +185,10 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         const stores = new Map(current.stores.map((store) => [store.id, store]));
         for (const store of page.stores) stores.set(store.id, store);
         const categories = new Map(current.categories.map((category) => [category.id, category]));
-        for (const category of page.categories) categories.set(category.id, category);
-        return { ...current, stores: [...stores.values()], categories: [...categories.values()], nextCursor: page.nextCursor ?? "" };
+        for (const category of Array.isArray(page.categories) ? page.categories : []) categories.set(category.id, category);
+        const verticals = new Map(current.verticals.map((vertical) => [vertical.id, vertical]));
+        for (const vertical of Array.isArray(page.verticals) ? page.verticals : []) verticals.set(vertical.id, vertical);
+        return { ...current, stores: [...stores.values()], verticals: [...verticals.values()], categories: [...categories.values()], nextCursor: page.nextCursor ?? "" };
       });
     } catch {
       if (directoryRequestID.current === requestID) setLoadMoreStoresError(true);
@@ -206,10 +215,30 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
 
   const hasMarketingItems = marketing.content.length > 0 || marketing.promotions.length > 0;
 
-  const visibleCategories = useMemo(() => {
-    if (state.kind !== "ready") return [];
-    return state.categories.filter((category) => category.active);
-  }, [state]);
+  const taxonomy = useMemo(() => {
+    if (state.kind !== "ready") return { verticals: [], categories: [], trail: [], children: [] };
+    const normalized = normalizeDiscoveryTaxonomy(state.verticals, state.categories);
+    const verticals = normalized.verticals;
+    const categories = normalized.categories.filter((category) => category.active && category.verticalId === selectedVerticalID);
+    const byID = new Map(categories.map((category) => [category.id, category]));
+    const trail: CatalogCategory[] = [];
+    let current = selectedCategoryID ? byID.get(selectedCategoryID) : undefined;
+    const visited = new Set<string>();
+    while (current && !visited.has(current.id)) {
+      visited.add(current.id);
+      trail.unshift(current);
+      current = current.parentCategoryId ? byID.get(current.parentCategoryId) : undefined;
+    }
+    const parentID = trail.at(-1)?.id ?? "";
+    const children = categories.filter((category) => category.parentCategoryId === parentID);
+    return { verticals, categories, trail, children };
+  }, [selectedCategoryID, selectedVerticalID, state]);
+  const selectedVertical = taxonomy.verticals.find((vertical) => vertical.id === selectedVerticalID);
+
+  function selectVertical(verticalID: string) {
+    setSelectedVerticalID(verticalID);
+    setSelectedCategoryID("");
+  }
 
   const mediaContent = useMemo(() => marketing.content.filter((item) => Boolean(item.mediaUri) && (item.kind === "BANNER" || item.kind === "CAROUSEL")), [marketing.content]);
   const textContent = useMemo(() => marketing.content.filter((item) => !item.mediaUri || (item.kind !== "BANNER" && item.kind !== "CAROUSEL")), [marketing.content]);
@@ -331,19 +360,26 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         <BthwaniChip label="المنتجات" selected={searchScope === "products"} onPress={() => { if (onSearchScopeChange) onSearchScopeChange("products"); else router.setParams({ scope: "products" }); }} />
       </View> : null}
 
-      {visibleCategories.length ? <View style={styles.categoryShortcutBlock}>
-        <BthwaniSectionHeader title={searchScope === "products" && searchIsActive ? "تصفية المنتجات بالفئة" : "تسوق حسب الفئات"} />
-        <ScrollView accessibilityLabel="اختصارات فئات المنتجات المتاحة" contentContainerStyle={styles.categoryShortcutContent} horizontal showsHorizontalScrollIndicator={false}>
-          <BthwaniChip label="كل الفئات" selected={!selectedCategoryID} onPress={() => setSelectedCategoryID("")} />
-          {visibleCategories.map((category) => {
-            const parent = state.kind === "ready" ? state.categories.find((candidate) => candidate.id === category.parentCategoryId) : undefined;
-            return <Pressable key={category.id} accessibilityRole="button" accessibilityLabel={`${category.nameAr}${parent ? `، ضمن ${parent.nameAr}` : ""}`} accessibilityState={{ selected: selectedCategoryID === category.id }} onPress={() => setSelectedCategoryID(category.id)} style={[styles.categoryTile, selectedCategoryID === category.id && styles.categoryTileSelected]}>
-              {category.imageUri ? <Image source={{ uri: category.imageUri }} accessibilityLabel={`صورة ${category.nameAr}`} style={styles.categoryTileImage} resizeMode="cover" /> : <View style={styles.categoryTileFallback}><Text style={styles.categoryTileInitial}>{category.nameAr.slice(0, 1)}</Text></View>}
-              <Text numberOfLines={2} style={styles.categoryTileName}>{category.nameAr}</Text>
-              {parent ? <Text numberOfLines={1} style={styles.categoryTileParent}>{parent.nameAr}</Text> : null}
-            </Pressable>;
-          })}
+      {taxonomy.verticals.length ? <View style={styles.categoryShortcutBlock} accessibilityLabel="الأنشطة التجارية الرئيسية">
+        <BthwaniSectionHeader title="تصفح حسب النشاط" subtitle="اختر المجال أولًا، ثم انتقل داخل فئاته أو منتجاته" />
+        <ScrollView accessibilityLabel="الأنشطة التجارية" contentContainerStyle={styles.categoryShortcutContent} horizontal showsHorizontalScrollIndicator={false}>
+          <BthwaniChip label="كل الأنشطة" selected={!selectedVerticalID} onPress={() => selectVertical("")} />
+          {taxonomy.verticals.map((vertical) => <BthwaniChip key={vertical.id} label={vertical.nameAr} selected={selectedVerticalID === vertical.id} onPress={() => selectVertical(vertical.id)} />)}
         </ScrollView>
+      </View> : null}
+
+      {selectedVertical ? <View style={styles.categoryShortcutBlock} accessibilityLabel={`فئات ${selectedVertical.nameAr}`}>
+        <BthwaniSectionHeader title={`فئات ${selectedVertical.nameAr}`} subtitle="تظهر المنتجات بعد اختيار الفئة أو فتح المتجر" />
+        <ScrollView accessibilityLabel={`التدرج الهرمي لفئات ${selectedVertical.nameAr}`} contentContainerStyle={styles.categoryShortcutContent} horizontal showsHorizontalScrollIndicator={false}>
+          <BthwaniChip label="كل فئات النشاط" selected={!selectedCategoryID} onPress={() => setSelectedCategoryID("")} />
+          {taxonomy.trail.map((category, index) => <BthwaniChip key={category.id} label={category.nameAr} selected={index === taxonomy.trail.length - 1} onPress={() => setSelectedCategoryID(category.id)} />)}
+          {taxonomy.children.map((category) => <Pressable key={category.id} accessibilityRole="button" accessibilityLabel={`فتح فئة ${category.nameAr}`} accessibilityState={{ selected: selectedCategoryID === category.id }} onPress={() => setSelectedCategoryID(category.id)} style={[styles.categoryTile, selectedCategoryID === category.id && styles.categoryTileSelected]}>
+            {category.imageUri ? <Image source={{ uri: category.imageUri }} accessibilityLabel={`صورة ${category.nameAr}`} style={styles.categoryTileImage} resizeMode="cover" /> : <View style={styles.categoryTileFallback}><Text style={styles.categoryTileInitial}>{category.nameAr.slice(0, 1)}</Text></View>}
+            <Text numberOfLines={2} style={styles.categoryTileName}>{category.nameAr}</Text>
+            <Text numberOfLines={1} style={styles.categoryTileParent}>{taxonomy.trail[taxonomy.trail.length - 1]?.nameAr ?? selectedVertical.nameAr}</Text>
+          </Pressable>)}
+        </ScrollView>
+        {taxonomy.children.length === 0 ? <Text style={styles.categoryTreeEmpty}>{selectedCategoryID ? "وصلت إلى أدق فئة متاحة؛ المتاجر والمنتجات المطابقة معروضة أدناه." : "لا توجد فئات عامة متاحة لهذا النشاط الآن؛ افتح متجرًا لعرض منتجاته ومجموعاته."}</Text> : null}
       </View> : null}
 
       {!searchIsActive && hasMarketingItems ? <View accessibilityLabel="العروض ومحتوى الاكتشاف" style={styles.marketingBlock}>
@@ -378,6 +414,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           selectedCategoryID={selectedCategoryID}
           selectedCityID={selectedCityID}
           selectedCityName={selectedCityName}
+          selectedVerticalID={selectedVerticalID}
         />
       ) : null}
 
@@ -466,11 +503,12 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   );
 }
 
-function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selectedCityName, onClearCategory }: {
+function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selectedCityName, selectedVerticalID, onClearCategory }: {
   query: string;
   selectedCategoryID: string;
   selectedCityID: string | null;
   selectedCityName: string;
+  selectedVerticalID: string;
   onClearCategory: () => void;
 }) {
   const router = useRouter();
@@ -493,12 +531,12 @@ function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selec
     setLoadingMoreProducts(false);
     setLoadMoreProductsError(false);
     try {
-      const result = await searchPublicCatalog(selectedCityID, normalizedQuery, selectedCategoryID, 20);
+      const result = await searchPublicCatalog(selectedCityID, normalizedQuery, selectedCategoryID, 20, "", selectedVerticalID);
       if (productSearchRequestID.current === requestID) setProductSearch({ kind: "ready", offers: result.offers, nextCursor: result.nextCursor });
     } catch {
       if (productSearchRequestID.current === requestID) setProductSearch({ kind: "error" });
     }
-  }, [query, selectedCategoryID, selectedCityID]);
+  }, [query, selectedCategoryID, selectedCityID, selectedVerticalID]);
 
   useEffect(() => {
     if (!selectedCityID || !query.trim()) {
@@ -525,7 +563,7 @@ function ProductSearchResults({ query, selectedCategoryID, selectedCityID, selec
     setLoadingMoreProducts(true);
     setLoadMoreProductsError(false);
     try {
-      const result = await searchPublicCatalog(selectedCityID, query.trim(), selectedCategoryID, 20, cursor);
+      const result = await searchPublicCatalog(selectedCityID, query.trim(), selectedCategoryID, 20, cursor, selectedVerticalID);
       if (productSearchRequestID.current === requestID) {
         setProductSearch((current) => current.kind === "ready" ? { kind: "ready", offers: [...current.offers, ...result.offers], nextCursor: result.nextCursor } : current);
       }
@@ -650,6 +688,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     error: { ...typography.bodySm, color: theme.danger },
     categoryShortcutBlock: { gap: spacing[1] },
     categoryShortcutContent: { alignItems: "flex-start", gap: spacing[2], paddingHorizontal: spacing[1], paddingVertical: spacing[1] },
+    categoryTreeEmpty: { ...typography.caption, color: theme.colorMuted, paddingHorizontal: spacing[2], paddingVertical: spacing[1] },
     categoryTile: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[2], width: 112 },
     categoryTileSelected: { borderColor: theme.interactiveText, borderWidth: 2 },
     categoryTileImage: { backgroundColor: theme.surfaceInset, borderRadius: radius.md, height: 82, width: 82 },

@@ -101,6 +101,12 @@ console.log(`MOBILE_ROUTE_TREE=PASS app=${app} routes=${routePaths.join(",")}`);
 import { register } from "node:module";
 import { pathToFileURL } from "node:url";
 register(pathToFileURL(path.join(root, "packages/design-system/tools/ts-resolver.mjs")).href, import.meta.url);
+if (app === "app-client") {
+  const { normalizeDiscoveryTaxonomy } = await import(pathToFileURL(path.join(appDir, "src/features/store-discovery/discovery-taxonomy.ts")).href);
+  assert.deepEqual(normalizeDiscoveryTaxonomy(undefined, undefined), { verticals: [], categories: [] });
+  assert.equal(normalizeDiscoveryTaxonomy(undefined, undefined).verticals.find((vertical) => vertical.id === "food"), undefined);
+  console.log("MOBILE_DISCOVERY_TAXONOMY=PASS missing collections remain empty arrays");
+}
 const { IdentitySessionManager } = await import(pathToFileURL(path.join(root, "services/identity/clients/session.ts")).href);
 const { identitySessionSignOutMessage } = await import(pathToFileURL(path.join(root, "services/identity/clients/errors.ts")).href);
 const {

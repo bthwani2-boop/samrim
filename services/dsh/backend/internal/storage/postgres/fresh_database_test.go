@@ -13,6 +13,20 @@ import (
 )
 
 func withFreshDatabase(t *testing.T, rootDB *sql.DB, databaseURL string, test func(context.Context, *sql.DB, []postgres.MigrationRecord, []string)) {
+	withFreshDatabaseUsingMigrations(t, rootDB, databaseURL, postgres.LoadMigrations, test)
+}
+
+func withFreshCanonicalDatabase(t *testing.T, rootDB *sql.DB, databaseURL string, test func(context.Context, *sql.DB, []postgres.MigrationRecord, []string)) {
+	withFreshDatabaseUsingMigrations(t, rootDB, databaseURL, postgres.LoadCanonicalMigrations, test)
+}
+
+func withFreshDatabaseUsingMigrations(
+	t *testing.T,
+	rootDB *sql.DB,
+	databaseURL string,
+	loadMigrations func(string) ([]postgres.MigrationRecord, []string, error),
+	test func(context.Context, *sql.DB, []postgres.MigrationRecord, []string),
+) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -41,7 +55,7 @@ func withFreshDatabase(t *testing.T, rootDB *sql.DB, databaseURL string, test fu
 		t.Fatalf("isolated DSH database is not reachable: %v", err)
 	}
 	migrationDirectory := filepath.Join("..", "..", "..", "..", "database", "migrations")
-	records, migrationSQL, err := postgres.LoadMigrations(migrationDirectory)
+	records, migrationSQL, err := loadMigrations(migrationDirectory)
 	if err != nil {
 		t.Fatalf("load DSH canonical migrations from %s: %v", migrationDirectory, err)
 	}

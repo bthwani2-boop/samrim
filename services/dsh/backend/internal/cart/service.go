@@ -235,7 +235,7 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 	}, nil
 }
 
-func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, addressID, fulfillmentMode, promotionCode string, internalBalanceAmountMinor int64, expectedCartVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
+func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, addressID, fulfillmentMode, promotionCode string, recipient postgres.DeliveryRecipientInput, internalBalanceAmountMinor int64, expectedCartVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
 	actorID, err := s.requireClient(ctx, accessToken)
 	if err != nil {
 		return postgres.OrderRecord{}, false, err
@@ -243,6 +243,10 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 	fulfillmentMode = strings.TrimSpace(fulfillmentMode)
 	cartID, storeID, addressID = strings.TrimSpace(cartID), strings.TrimSpace(storeID), strings.TrimSpace(addressID)
 	idempotencyKey, correlationID = strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID)
+	recipient, err = postgres.NormalizeDeliveryRecipient(recipient, fulfillmentMode)
+	if err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
 	if cartID == "" {
 		return postgres.OrderRecord{}, false, postgres.ErrCheckoutEvidenceStale
 	}
@@ -261,6 +265,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		ClientActorID: actorID, CartID: cartID, StoreID: storeID, AddressID: addressID,
 		FulfillmentMode: fulfillmentMode, InternalBalanceAmountMinor: internalBalanceAmountMinor, ExpectedCartVersion: expectedCartVersion,
 		IdempotencyKey: idempotencyKey, CorrelationID: correlationID,
+		Recipient:                recipient,
 		PaymentExternalReference: paymentExternalReference, PaymentCancellationKey: paymentCancellationKey,
 		PaymentMethod: paymentMethod, PromotionCode: strings.ToUpper(strings.TrimSpace(promotionCode)),
 		PaymentIntentRecoveryReader: paymentRecoveryReader, PaymentCanceller: paymentCanceller,
@@ -307,6 +312,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		ClientActorID: actorID, CartID: cartID, StoreID: storeID, AddressID: addressID, FulfillmentMode: fulfillmentMode, InternalBalanceAmountMinor: internalBalanceAmountMinor, ExpectedCartVersion: expectedCartVersion, PromotionCode: strings.ToUpper(strings.TrimSpace(promotionCode)), PaymentMethod: paymentMethod, DeliveryProofKeyring: s.proofKeys,
 		Evidence:       evidence,
 		IdempotencyKey: idempotencyKey, ActingActorID: actorID, CorrelationID: correlationID,
+		Recipient:                recipient,
 		PaymentExternalReference: paymentExternalReference,
 		PaymentIdempotencyKey:    wlt.DerivedIdempotencyKey("create", idempotencyKey),
 		PaymentCancellationKey:   paymentCancellationKey,

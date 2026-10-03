@@ -140,6 +140,45 @@ func (s *catalogRefoundationScenario) createRegistryFixtures() {
 	if _, _, err := postgres.UpdateCatalogCategory(s.ctx, s.db, category.ID, cycleUpdate, "idem-category-cycle-v1", postgres.HashCatalogCategoryUpdateRequest(category.ID, cycleUpdate, cycleReason), cycleAudit); !errors.Is(err, postgres.ErrCatalogCategoryCycle) {
 		s.t.Fatalf("expected category cycle rejection, got %v", err)
 	}
+	rootDisable := postgres.UpdateCatalogCategoryInput{ParentCategoryID: "", NameAr: category.NameAr, NameEn: category.NameEn, Active: false, ExpectedVersion: category.Version}
+	if _, _, err := postgres.UpdateCatalogCategory(s.ctx, s.db, category.ID, rootDisable, "idem-category-root-disable-blocked-v1", postgres.HashCatalogCategoryUpdateRequest(category.ID, rootDisable, "Disable parent"), categoryAudit); !errors.Is(err, postgres.ErrCatalogCategoryHasActiveChildren) {
+		s.t.Fatalf("expected active descendant rejection, got %v", err)
+	}
+	childDisable := postgres.UpdateCatalogCategoryInput{ParentCategoryID: category.ID, NameAr: childCategory.NameAr, NameEn: childCategory.NameEn, Active: false, ExpectedVersion: createdChild.Version}
+	childDisabled, _, err := postgres.UpdateCatalogCategory(s.ctx, s.db, createdChild.ID, childDisable, "idem-category-child-disable-v1", postgres.HashCatalogCategoryUpdateRequest(createdChild.ID, childDisable, "Disable child"), childAudit)
+	if err != nil || childDisabled.Active || childDisabled.Version != createdChild.Version+1 {
+		s.t.Fatalf("disable child category: %+v err=%v", childDisabled, err)
+	}
+	rootDisabled, _, err := postgres.UpdateCatalogCategory(s.ctx, s.db, category.ID, rootDisable, "idem-category-root-disable-v1", postgres.HashCatalogCategoryUpdateRequest(category.ID, rootDisable, "Disable parent"), categoryAudit)
+	if err != nil || rootDisabled.Active || rootDisabled.Version != category.Version+1 {
+		s.t.Fatalf("disable parent after child: %+v err=%v", rootDisabled, err)
+	}
+	childReactivate := childDisable
+	childReactivate.Active = true
+	childReactivate.ExpectedVersion = childDisabled.Version
+	if _, _, err := postgres.UpdateCatalogCategory(s.ctx, s.db, createdChild.ID, childReactivate, "idem-category-child-reactivate-blocked-v1", postgres.HashCatalogCategoryUpdateRequest(createdChild.ID, childReactivate, "Reactivate child"), childAudit); !errors.Is(err, postgres.ErrCatalogCategoryParentInactive) {
+		s.t.Fatalf("expected inactive parent path rejection, got %v", err)
+	}
+	newActiveChild := postgres.CatalogCategoryRecord{VerticalID: vertical.ID, ParentCategoryID: category.ID, NameAr: "قهوة موسمية", NameEn: "Seasonal Coffee", Active: true}
+	if _, err := postgres.CreateCatalogCategory(s.ctx, s.db, newActiveChild, "idem-category-create-under-inactive-v1", postgres.HashCatalogCategoryCreateRequest(newActiveChild, "Create under inactive parent"), childAudit); !errors.Is(err, postgres.ErrCatalogCategoryParentInactive) {
+		s.t.Fatalf("expected active child creation under inactive parent to fail, got %v", err)
+	}
+	rootReactivate := rootDisable
+	rootReactivate.Active = true
+	rootReactivate.ExpectedVersion = rootDisabled.Version
+	category, _, err = postgres.UpdateCatalogCategory(s.ctx, s.db, category.ID, rootReactivate, "idem-category-root-reactivate-v1", postgres.HashCatalogCategoryUpdateRequest(category.ID, rootReactivate, "Reactivate parent"), categoryAudit)
+	if err != nil || !category.Active {
+		s.t.Fatalf("reactivate parent category: %+v err=%v", category, err)
+	}
+	childReactivate.ExpectedVersion = childDisabled.Version
+	createdChild, _, err = postgres.UpdateCatalogCategory(s.ctx, s.db, createdChild.ID, childReactivate, "idem-category-child-reactivate-v1", postgres.HashCatalogCategoryUpdateRequest(createdChild.ID, childReactivate, "Reactivate child"), childAudit)
+	if err != nil || !createdChild.Active {
+		s.t.Fatalf("reactivate child category: %+v err=%v", createdChild, err)
+	}
+	var activeTreeCategories int
+	if err := s.db.QueryRowContext(s.ctx, "SELECT count(*) FROM dsh.catalog_categories WHERE (id=$1 OR id=$2) AND active=true", category.ID, createdChild.ID).Scan(&activeTreeCategories); err != nil || activeTreeCategories != 2 {
+		s.t.Fatalf("category tree should be fully restored and active: count=%d err=%v", activeTreeCategories, err)
+	}
 	attributeInput := postgres.CatalogAttributeDefinitionInput{ID: "coffee_origin", VerticalID: vertical.ID, Code: "origin", NameAr: "بلد المنشأ", ValueKind: "TEXT", Active: true}
 	if _, _, err := postgres.CreateCatalogAttributeDefinition(s.ctx, s.db, attributeInput, "idem-attribute-origin-v1", postgres.HashCatalogAttributeDefinitionRequest(attributeInput)); err != nil {
 		s.t.Fatalf("create catalog attribute definition: %v", err)
@@ -157,7 +196,7 @@ func (s *catalogRefoundationScenario) createRegistryFixtures() {
 		s.t.Fatalf("expected stale category attribute rule rejection, got %v", err)
 	}
 	var auditCount int
-	if err := s.db.QueryRowContext(s.ctx, "SELECT count(*) FROM dsh.catalog_registry_audit_events WHERE entity_type IN ('vertical','category','attribute_rule') AND acting_actor_id=$1", testOperatorActorID).Scan(&auditCount); err != nil || auditCount != 4 {
+	if err := s.db.QueryRowContext(s.ctx, "SELECT count(*) FROM dsh.catalog_registry_audit_events WHERE entity_type IN ('vertical','category','attribute_rule') AND acting_actor_id=$1", testOperatorActorID).Scan(&auditCount); err != nil || auditCount != 8 {
 		s.t.Fatalf("catalog registry audit readback count=%d err=%v", auditCount, err)
 	}
 }
@@ -254,6 +293,7 @@ func (s *catalogRefoundationScenario) verifyStoreScopedProducts() {
 func (s *catalogRefoundationScenario) publishFirstStoreOffer() {
 	s.t.Helper()
 	insertCanonicalStoreFixture(s.t, s.ctx, s.db, canonicalStoreFixture{ID: "store_catalog_v1", PartnerActorID: testPartnerActorID, Name: "متجر القهوة", ServiceCityID: s.cityID, PrimaryVerticalID: s.verticalID, PublicationState: "published"})
+	s.createStoreTargetDiscoveryContent()
 	offerInput := postgres.CatalogOfferInput{StoreID: "store_catalog_v1", VariantID: s.variantID, PriceMinor: 1250, QuantityPolicy: "DISCRETE", QuantityMinBaseUnits: 1, QuantityMaxBaseUnits: 10, QuantityStepBaseUnits: 1, PricingBasis: "PER_UNIT", PricingUnitBaseUnits: 1}
 	offer, err := postgres.CreateCatalogOffer(s.ctx, s.db, offerInput, "idem-offer-v1", postgres.HashCatalogOfferCreateRequest(offerInput), testPartnerActorID, "corr-offer-v1")
 	if err != nil || offer.Offer.PublicationState != "draft" || offer.Offer.Version != 1 {
@@ -271,6 +311,14 @@ func (s *catalogRefoundationScenario) publishFirstStoreOffer() {
 	if err != nil || published.Offer.PublicationState != "published" || published.Offer.Version != 2 {
 		s.t.Fatalf("publish store offer: %+v err=%v", published, err)
 	}
+	target, err := postgres.ResolveDiscoveryContentTarget(s.ctx, s.db, "discovery_store_target_no_offer", s.cityID)
+	if err != nil || target.TargetType != "STORE" || target.StoreID != "store_catalog_v1" {
+		s.t.Fatalf("store-targeted discovery content should resolve after the store gains a visible offer: %+v err=%v", target, err)
+	}
+	feed, err := postgres.ListDiscoveryContent(s.ctx, s.db, true, s.cityID)
+	if err != nil || !hasDiscoveryContent(feed, "discovery_store_target_no_offer") {
+		s.t.Fatalf("store-targeted discovery content should enter the public feed with an openable store: feed=%+v err=%v", feed, err)
+	}
 	ready, err := postgres.HasPublishableCatalog(s.ctx, s.db, "store_catalog_v1")
 	if err != nil || !ready {
 		s.t.Fatalf("publishable catalog readback failed: ready=%v err=%v", ready, err)
@@ -284,6 +332,39 @@ func (s *catalogRefoundationScenario) publishFirstStoreOffer() {
 	) VALUES('joining_store_discovery_v1','+967770001234','مؤسسة القهوة','متجر القهوة',$1,$2,$3,'approved','store_catalog_v1','control_panel','ACTIVE')`, s.verticalID, "store_catalog_v1-type", testPartnerActorID); err != nil {
 		s.t.Fatalf("create published store discovery eligibility fixture: %v", err)
 	}
+}
+
+func (s *catalogRefoundationScenario) createStoreTargetDiscoveryContent() {
+	s.t.Helper()
+	const assetID = "discovery_store_target_asset"
+	if _, err := s.db.ExecContext(s.ctx, `INSERT INTO dsh.discovery_content_media_assets(
+		id,idempotency_key,request_hash,object_key,uri,content_sha256,content_type,byte_size,
+		state,creator,source_description,rights_statement,rights_attested_by_actor_id
+	) VALUES($1,$2,$3,$4,$5,$6,'image/jpeg',128,'active','Fixture Owner','Store discovery fixture image','Licensed for integration test','marketing-fixture-operator')`,
+		assetID, "idempotency-"+assetID, postgres.HashMarketingFacts(assetID), "fixture/"+assetID, "asset://"+assetID, strings.Repeat("a", 64)); err != nil {
+		s.t.Fatalf("insert store-targeted discovery media: %v", err)
+	}
+	if _, err := s.db.ExecContext(s.ctx, `INSERT INTO dsh.discovery_content(
+		id,kind,title_ar,media_asset_id,target_type,target_id,service_city_id,state,starts_at,created_by_actor_id
+	) VALUES('discovery_store_target_no_offer','BANNER','متجر تجريبي',$1,'STORE','store_catalog_v1',$2,'PUBLISHED',clock_timestamp()-interval '1 minute','marketing-fixture-operator')`, assetID, s.cityID); err != nil {
+		s.t.Fatalf("insert store-targeted discovery content: %v", err)
+	}
+	if _, err := postgres.ResolveDiscoveryContentTarget(s.ctx, s.db, "discovery_store_target_no_offer", s.cityID); !errors.Is(err, postgres.ErrDiscoveryContentNotFound) {
+		s.t.Fatalf("store-targeted content without a visible offer must not resolve to a dead store: err=%v", err)
+	}
+	feed, err := postgres.ListDiscoveryContent(s.ctx, s.db, true, s.cityID)
+	if err != nil || hasDiscoveryContent(feed, "discovery_store_target_no_offer") {
+		s.t.Fatalf("store-targeted content without a visible offer must not be published to the public feed: feed=%+v err=%v", feed, err)
+	}
+}
+
+func hasDiscoveryContent(items []postgres.DiscoveryContentRecord, id string) bool {
+	for _, item := range items {
+		if item.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *catalogRefoundationScenario) publishSecondStoreOffer() {
@@ -313,6 +394,14 @@ func (s *catalogRefoundationScenario) verifyPublicStoreDiscovery() {
 	if err != nil || len(publicStores.Stores) != 2 {
 		s.t.Fatalf("published store discovery query failed: %+v err=%v", publicStores, err)
 	}
+	verticalStores, err := postgres.ListPublishedStorePage(s.ctx, s.db, postgres.PublicStoreListQuery{ServiceCityID: s.cityID, VerticalID: s.verticalID, Sort: "newest", Limit: 10})
+	if err != nil || len(verticalStores.Stores) != 2 {
+		s.t.Fatalf("published store vertical filter failed: %+v err=%v", verticalStores, err)
+	}
+	missingVerticalStores, err := postgres.ListPublishedStorePage(s.ctx, s.db, postgres.PublicStoreListQuery{ServiceCityID: s.cityID, VerticalID: "unavailable-vertical", Sort: "newest", Limit: 10})
+	if err != nil || len(missingVerticalStores.Stores) != 0 {
+		s.t.Fatalf("published store filter leaked a different vertical: %+v err=%v", missingVerticalStores, err)
+	}
 	publishedStore, err := postgres.ReadPublishedStore(s.ctx, s.db, "store_catalog_v1", s.cityID)
 	if err != nil || publishedStore.ID != "store_catalog_v1" || len(publishedStore.CategoryIDs) != 1 || publishedStore.CategoryIDs[0] != s.categoryID {
 		s.t.Fatalf("published store canonical readback failed: %+v err=%v", publishedStore, err)
@@ -321,9 +410,24 @@ func (s *catalogRefoundationScenario) verifyPublicStoreDiscovery() {
 	if err != nil || len(discoveryCategories) != 1 || discoveryCategories[0].ID != s.categoryID {
 		s.t.Fatalf("public discovery categories failed: %+v err=%v", discoveryCategories, err)
 	}
-	publicSearch, err := postgres.SearchPublicCatalog(s.ctx, s.db, s.cityID, s.categoryID, "قهوة", 10, "")
+	discoveryVerticals, err := postgres.ListPublicDiscoveryVerticals(s.ctx, s.db, s.cityID)
+	if err != nil || len(discoveryVerticals) != 1 || discoveryVerticals[0].ID != s.verticalID || discoveryVerticals[0].CatalogModel != "" {
+		s.t.Fatalf("public discovery vertical projection leaked internal routing or missed the vertical: %+v err=%v", discoveryVerticals, err)
+	}
+	publicSearch, err := postgres.SearchPublicCatalog(s.ctx, s.db, s.cityID, s.verticalID, s.categoryID, "قهوة", 10, "")
 	if err != nil || len(publicSearch.Offers) != 2 || publicSearch.Offers[0].StoreID == publicSearch.Offers[1].StoreID {
 		s.t.Fatalf("public catalog search failed: %+v err=%v", publicSearch, err)
+	}
+	publicSearchPage, err := postgres.SearchPublicCatalog(s.ctx, s.db, s.cityID, s.verticalID, s.categoryID, "قهوة", 1, "")
+	if err != nil || len(publicSearchPage.Offers) != 1 || publicSearchPage.NextCursor == nil {
+		s.t.Fatalf("public catalog search cursor setup failed: %+v err=%v", publicSearchPage, err)
+	}
+	if _, err := postgres.SearchPublicCatalog(s.ctx, s.db, s.cityID, "unavailable-vertical", s.categoryID, "قهوة", 1, *publicSearchPage.NextCursor); err == nil {
+		s.t.Fatal("public catalog search cursor was reusable across vertical scopes")
+	}
+	wrongVerticalSearch, err := postgres.SearchPublicCatalog(s.ctx, s.db, s.cityID, "unavailable-vertical", s.categoryID, "قهوة", 10, "")
+	if err != nil || len(wrongVerticalSearch.Offers) != 0 {
+		s.t.Fatalf("public catalog search crossed its vertical scope: %+v err=%v", wrongVerticalSearch, err)
 	}
 }
 

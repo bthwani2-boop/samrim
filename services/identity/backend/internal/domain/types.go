@@ -14,6 +14,12 @@ type Actor struct {
 	Version         int
 }
 
+type CanonicalActorResolution struct {
+	ActorID         string `json:"actorId"`
+	SecurityEnabled bool   `json:"securityEnabled"`
+	Version         int    `json:"version"`
+}
+
 type ActorRole struct {
 	ActorID     string
 	Role        string
@@ -323,18 +329,19 @@ const (
 )
 
 var (
-	ErrInvalidInput      = errors.New("invalid input")
-	ErrUnauthenticated   = errors.New("unauthenticated")
-	ErrForbidden         = errors.New("forbidden")
-	ErrNotFound          = errors.New("not found")
-	ErrConflict          = errors.New("conflict")
-	ErrRateLimited       = errors.New("rate limited")
-	ErrUnavailable       = errors.New("unavailable")
-	ErrInvalidChallenge  = errors.New("invalid challenge")
-	ErrInvalidActivation = errors.New("invalid activation")
-	ErrInvalidRefresh    = errors.New("invalid refresh")
-	ErrRefreshStale      = errors.New("stale refresh")
-	ErrActorBlocked      = errors.New("actor blocked")
+	ErrInvalidInput          = errors.New("invalid input")
+	ErrUnauthenticated       = errors.New("unauthenticated")
+	ErrForbidden             = errors.New("forbidden")
+	ErrNotFound              = errors.New("not found")
+	ErrConflict              = errors.New("conflict")
+	ErrRateLimited           = errors.New("rate limited")
+	ErrUnavailable           = errors.New("unavailable")
+	ErrInvalidChallenge      = errors.New("invalid challenge")
+	ErrInvalidActivation     = errors.New("invalid activation")
+	ErrInvalidRefresh        = errors.New("invalid refresh")
+	ErrRefreshStale          = errors.New("stale refresh")
+	ErrActorBlocked          = errors.New("actor blocked")
+	ErrActorSecurityDisabled = errors.New("actor security is disabled")
 )
 
 var roleSurface = map[string]string{

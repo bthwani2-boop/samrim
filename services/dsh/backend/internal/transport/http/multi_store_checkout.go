@@ -47,7 +47,7 @@ func (s *MultiStoreCheckoutServer) create(w http.ResponseWriter, r *http.Request
 	}
 	children := make([]postgres.MultiStoreCheckoutChildInput, 0, len(input.Children))
 	for _, child := range input.Children {
-		children = append(children, postgres.MultiStoreCheckoutChildInput{CartID: strings.TrimSpace(child.CartID), StoreID: strings.TrimSpace(child.StoreID), AddressID: strings.TrimSpace(child.AddressID), CartVersion: child.CartVersion, FulfillmentMode: string(child.FulfillmentMode), PromotionCode: strings.TrimSpace(child.PromotionCode)})
+		children = append(children, postgres.MultiStoreCheckoutChildInput{CartID: strings.TrimSpace(child.CartID), StoreID: strings.TrimSpace(child.StoreID), AddressID: strings.TrimSpace(child.AddressID), CartVersion: child.CartVersion, FulfillmentMode: string(child.FulfillmentMode), PromotionCode: strings.TrimSpace(child.PromotionCode), Recipient: postgres.DeliveryRecipientInput{Mode: child.Recipient.Mode, Name: child.Recipient.Name, PhoneE164: child.Recipient.PhoneE164, Instructions: child.Recipient.Instructions}})
 	}
 	item, replayed, err := s.service.Checkout(r.Context(), bearerToken(r), postgres.MultiStoreCheckoutInput{ID: strings.TrimSpace(input.ID), Children: children}, idempotency, correlation)
 	if err != nil {
@@ -126,6 +126,8 @@ func writeMultiStoreCheckoutError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "multi-store checkout was not found")
 	case errors.Is(err, postgres.ErrMultiStoreCheckoutInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "multi-store checkout input is invalid")
+	case errors.Is(err, postgres.ErrCheckoutRecipientInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_RECIPIENT", "delivery recipient details are invalid for the selected fulfillment mode")
 	case errors.Is(err, postgres.ErrMultiStoreCheckoutIdempotencyConflict), errors.Is(err, postgres.ErrMultiStoreCheckoutVersionConflict), errors.Is(err, postgres.ErrMultiStoreCheckoutChildConflict):
 		writeError(w, http.StatusConflict, "CHECKOUT_CONFLICT", "the multi-store checkout facts or version are stale")
 	default:

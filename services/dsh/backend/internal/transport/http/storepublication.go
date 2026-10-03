@@ -57,6 +57,7 @@ func (s *StorePublicationServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/stores/{storeId}/publication", s.readForOperator)
 	mux.HandleFunc("GET /dsh/public/stores", s.listPublic)
 	mux.HandleFunc("GET /dsh/public/stores/{storeId}", s.readPublic)
+	mux.HandleFunc("GET /dsh/public/stores/{storeId}/orderability", s.readPublicOrderability)
 	mux.HandleFunc("GET /dsh/public/stores/{storeId}/catalog", s.readPublicCatalog)
 	mux.HandleFunc("GET /dsh/public/catalog/search", s.searchPublicCatalog)
 }
@@ -255,6 +256,7 @@ func (s *StorePublicationServer) listPublic(w http.ResponseWriter, r *http.Reque
 	page, err := s.service.ListPublished(r.Context(), postgres.PublicStoreListQuery{
 		ServiceCityID:         serviceCityID,
 		Query:                 r.URL.Query().Get("q"),
+		VerticalID:            r.URL.Query().Get("verticalId"),
 		CategoryID:            r.URL.Query().Get("categoryId"),
 		FavoriteClientActorID: favoriteClientActorID,
 		Sort:                  r.URL.Query().Get("sort"),
@@ -271,6 +273,15 @@ func (s *StorePublicationServer) listPublic(w http.ResponseWriter, r *http.Reque
 	for _, store := range page.Stores {
 		values = append(values, toPublicStoreView(store))
 	}
+	verticalRecords, err := postgres.ListPublicDiscoveryVerticals(r.Context(), s.db, serviceCityID)
+	if err != nil {
+		writeStorageError(w, err)
+		return
+	}
+	verticals := make([]contract.PublicCommerceVertical, 0, len(verticalRecords))
+	for _, vertical := range verticalRecords {
+		verticals = append(verticals, contract.PublicCommerceVertical{ID: vertical.ID, NameAr: vertical.NameAr, NameEn: vertical.NameEn})
+	}
 	categoryRecords, err := postgres.ListPublicDiscoveryCategories(r.Context(), s.db, serviceCityID)
 	if err != nil {
 		writeStorageError(w, err)
@@ -282,7 +293,7 @@ func (s *StorePublicationServer) listPublic(w http.ResponseWriter, r *http.Reque
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(contract.PublishedStoreListResponse{Stores: values, Categories: categories, Limit: page.Limit, NextCursor: page.NextCursor})
+	_ = json.NewEncoder(w).Encode(contract.PublishedStoreListResponse{Stores: values, Verticals: verticals, Categories: categories, Limit: page.Limit, NextCursor: page.NextCursor})
 }
 
 func (s *StorePublicationServer) readPublic(w http.ResponseWriter, r *http.Request) {
@@ -303,6 +314,30 @@ func (s *StorePublicationServer) readPublic(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(toPublicStoreView(store))
+}
+
+func (s *StorePublicationServer) readPublicOrderability(w http.ResponseWriter, r *http.Request) {
+	serviceCityID := strings.TrimSpace(r.URL.Query().Get("serviceCityId"))
+	if serviceCityID == "" || len(serviceCityID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "serviceCityId is required for scoped Store orderability")
+		return
+	}
+	storeID := strings.TrimSpace(r.PathValue("storeId"))
+	store, err := s.service.ReadPublished(r.Context(), storeID, serviceCityID)
+	if errors.Is(err, postgres.ErrStoreNotFound) {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "published Store was not found in this Service City")
+		return
+	}
+	if err != nil {
+		writeStorePublicationError(w, err)
+		return
+	}
+	orderability, err := evaluateStoreOrderabilityByMode(r.Context(), s.db, store.ID, store.FulfillmentModes)
+	if err != nil {
+		writeStoreAvailabilityError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.PublicStoreOrderabilityResponse{StoreID: store.ID, ServiceCityID: serviceCityID, OrderabilityByMode: orderability})
 }
 
 func (s *StorePublicationServer) readPublicCatalog(w http.ResponseWriter, r *http.Request) {
@@ -371,6 +406,7 @@ func toPublicCatalogResponse(result postgres.PublicCatalogRecord) contract.Publi
 func (s *StorePublicationServer) searchPublicCatalog(w http.ResponseWriter, r *http.Request) {
 	serviceCityID := strings.TrimSpace(r.URL.Query().Get("serviceCityId"))
 	categoryID := strings.TrimSpace(r.URL.Query().Get("categoryId"))
+	verticalID := strings.TrimSpace(r.URL.Query().Get("verticalId"))
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
 	limit := 20
@@ -382,11 +418,11 @@ func (s *StorePublicationServer) searchPublicCatalog(w http.ResponseWriter, r *h
 		}
 		limit = parsed
 	}
-	if serviceCityID == "" || len(categoryID) > 128 || query == "" || utf8.RuneCountInString(query) > 160 || len(cursor) > 1024 {
+	if serviceCityID == "" || len(verticalID) > 128 || len(categoryID) > 128 || query == "" || utf8.RuneCountInString(query) > 160 || len(cursor) > 1024 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog search scope or query is invalid")
 		return
 	}
-	result, err := postgres.SearchPublicCatalog(r.Context(), s.db, serviceCityID, categoryID, query, limit, cursor)
+	result, err := postgres.SearchPublicCatalog(r.Context(), s.db, serviceCityID, verticalID, categoryID, query, limit, cursor)
 	if err != nil {
 		writeStorageError(w, err)
 		return

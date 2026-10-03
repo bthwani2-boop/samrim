@@ -23,7 +23,9 @@ export type PartnerEarningsInitialQuery = Readonly<{
 type PendingRemittance = Readonly<{
   amountMinor: number;
   remittanceReference: string;
-  evidenceReference: string;
+  evidenceDocumentId: string;
+  evidenceUploadIdempotencyKey: string;
+  evidenceUploadCorrelationId: string;
   idempotencyKey: string;
   correlationId: string;
 }>;
@@ -43,6 +45,62 @@ function readError(body: unknown, fallback: string) {
     if (typeof message === "string") return message;
   }
   return fallback;
+}
+
+function isPartnerCommissionRemittanceResponse(value: unknown): value is PartnerCommissionRemittanceResponse {
+  if (!value || typeof value !== "object" || !("remittance" in value) || !("idempotentReplay" in value)) return false;
+  const response = value as Partial<PartnerCommissionRemittanceResponse>;
+  const remittance = response.remittance;
+  if (!remittance) return false;
+  return typeof response.idempotentReplay === "boolean"
+    && typeof remittance.id === "string"
+    && typeof remittance.partnerActorId === "string"
+    && Number.isSafeInteger(remittance.amountMinor)
+    && remittance.amountMinor > 0
+    && remittance.currency === "YER"
+    && typeof remittance.remittanceReference === "string"
+    && typeof remittance.evidenceDocumentId === "string"
+    && remittance.evidenceDocumentId.length > 0
+    && typeof remittance.verifiedBy === "string"
+    && typeof remittance.verifiedAt === "string"
+    && typeof remittance.ledgerTransactionId === "string"
+    && typeof remittance.createdAt === "string";
+}
+
+const partnerRemittanceRecoveryKey = "bthwani.finance.partner-remittance.recovery.v1";
+
+function readPartnerRemittanceRecovery(): Map<string, PendingRemittance> {
+  try {
+    const raw = window.sessionStorage.getItem(partnerRemittanceRecoveryKey);
+    if (!raw) return new Map();
+    const parsed = JSON.parse(raw) as { version?: unknown; pending?: unknown };
+    if (parsed.version !== 1 || !parsed.pending || typeof parsed.pending !== "object") return new Map();
+    const recovered = new Map<string, PendingRemittance>();
+    for (const [partnerActorId, value] of Object.entries(parsed.pending)) {
+      if (!partnerActorId || partnerActorId.length > 128 || !value || typeof value !== "object") continue;
+      const attempt = value as Record<string, unknown>;
+      const amountMinor = attempt.amountMinor;
+      const remittanceReference = attempt.remittanceReference;
+      const evidenceDocumentId = attempt.evidenceDocumentId;
+      const keys = [attempt.evidenceUploadIdempotencyKey, attempt.evidenceUploadCorrelationId, attempt.idempotencyKey, attempt.correlationId];
+      if (typeof amountMinor !== "number" || !Number.isSafeInteger(amountMinor) || amountMinor <= 0
+        || typeof remittanceReference !== "string" || !remittanceReference.trim() || remittanceReference.length > 128
+        || typeof evidenceDocumentId !== "string" || evidenceDocumentId.length > 128
+        || keys.some((key) => typeof key !== "string" || key.length < 8 || key.length > 128)) continue;
+      recovered.set(partnerActorId, {
+        amountMinor,
+        remittanceReference,
+        evidenceDocumentId,
+        evidenceUploadIdempotencyKey: keys[0] as string,
+        evidenceUploadCorrelationId: keys[1] as string,
+        idempotencyKey: keys[2] as string,
+        correlationId: keys[3] as string,
+      });
+    }
+    return recovered;
+  } catch {
+    return new Map();
+  }
 }
 
 export function PartnerEarningsWorkspace({ initialQuery }: Props) {
@@ -66,8 +124,28 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
   const [receipt, setReceipt] = useState<Readonly<{ partnerActorId: string; response: PartnerCommissionRemittanceResponse }> | null>(null);
   const [amount, setAmount] = useState("");
   const [reference, setReference] = useState("");
-  const [evidence, setEvidence] = useState("");
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [pending, setPending] = useState<PendingRemittance | null>(null);
+
+  function persistPendingRemittances() {
+    try {
+      window.sessionStorage.setItem(partnerRemittanceRecoveryKey, JSON.stringify({ version: 1, pending: Object.fromEntries(pendingByPartner.current) }));
+    } catch {
+      // WLT remains authoritative; storage failure only disables reload recovery.
+    }
+  }
+
+  function savePendingRemittance(partnerActorId: string, transaction: PendingRemittance) {
+    pendingByPartner.current.set(partnerActorId, transaction);
+    persistPendingRemittances();
+    if (activePartnerActorId.current === partnerActorId) setPending(transaction);
+  }
+
+  function clearPendingRemittance(partnerActorId: string) {
+    pendingByPartner.current.delete(partnerActorId);
+    persistPendingRemittances();
+    if (activePartnerActorId.current === partnerActorId) setPending(null);
+  }
 
   const navigate = useCallback((query: PartnerEarningsInitialQuery, replace = false) => {
     const href = buildHref(pathname, query);
@@ -141,12 +219,18 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
     setReceipt(null);
     setAmount("");
     setReference("");
-    setEvidence("");
+    setEvidenceFile(null);
     setPending(actorId ? pendingByPartner.current.get(actorId) ?? null : null);
     const controller = new AbortController();
     void loadSummary(actorId, controller.signal);
     return () => controller.abort();
   }, [initialQuery.partnerActorId, loadSummary]);
+
+  useEffect(() => {
+    pendingByPartner.current = readPartnerRemittanceRecovery();
+    const actorId = activePartnerActorId.current;
+    setPending(actorId ? pendingByPartner.current.get(actorId) ?? null : null);
+  }, []);
 
   const applyFilters = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -180,44 +264,69 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
     let transaction = pendingByPartner.current.get(actorId) ?? null;
     if (!transaction) {
       const amountMinor = Number(amount);
-      if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0 || amountMinor > selectedSummary.outstandingCommissionReceivableMinor || !reference.trim() || !evidence.trim()) {
-        setError("أدخل مبلغًا صحيحًا لا يتجاوز العمولة المستحقة، مع مرجع الحوالة ومرجع إثبات التحقق.");
+      if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0 || amountMinor > selectedSummary.outstandingCommissionReceivableMinor || !reference.trim() || !evidenceFile) {
+        setError("أدخل مبلغًا صحيحًا لا يتجاوز العمولة المستحقة ومرجع الحوالة، ثم أرفق إيصال الحوالة.");
         return;
       }
-      transaction = { amountMinor, remittanceReference: reference.trim(), evidenceReference: evidence.trim(), idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID() };
-      pendingByPartner.current.set(actorId, transaction);
-      setPending(transaction);
+      transaction = { amountMinor, remittanceReference: reference.trim(), evidenceDocumentId: "", evidenceUploadIdempotencyKey: crypto.randomUUID(), evidenceUploadCorrelationId: crypto.randomUUID(), idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID() };
+      savePendingRemittance(actorId, transaction);
+    }
+    if (!transaction.evidenceDocumentId && !evidenceFile) {
+      setError("أعد اختيار ملف الإيصال نفسه لإكمال محاولة الرفع المحفوظة.");
+      return;
     }
     setMutationBusy(true);
     setError("");
     setReceipt(null);
     try {
+      if (!transaction.evidenceDocumentId) {
+        const form = new FormData();
+        form.set("purpose", "TRANSFER_RECEIPT");
+        form.set("file", evidenceFile!, evidenceFile!.name);
+        const upload = await fetch("/api/finance/evidence", {
+          method: "POST",
+          headers: { "Idempotency-Key": transaction.evidenceUploadIdempotencyKey, "X-Correlation-ID": transaction.evidenceUploadCorrelationId },
+          body: form,
+        });
+        const uploaded = await upload.json().catch(() => null) as { document?: { id?: string }; error?: { message?: unknown } } | null;
+        if (!upload.ok) {
+          const message = readError(uploaded, "تعذر حفظ إيصال الحوالة");
+          if (upload.status < 500) clearPendingRemittance(actorId);
+          throw new Error(message);
+        }
+        const evidenceDocumentId = uploaded?.document?.id ?? "";
+        if (!evidenceDocumentId) throw new Error("لم يُرجع WLT معرّف إيصال محفوظًا.");
+        transaction = { ...transaction, evidenceDocumentId };
+        savePendingRemittance(actorId, transaction);
+      }
       const response = await fetch("/api/finance/partner-earnings", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Idempotency-Key": transaction.idempotencyKey, "X-Correlation-ID": transaction.correlationId },
-        body: JSON.stringify({ partnerActorId: actorId, amountMinor: transaction.amountMinor, remittanceReference: transaction.remittanceReference, evidenceReference: transaction.evidenceReference }),
+        body: JSON.stringify({ partnerActorId: actorId, amountMinor: transaction.amountMinor, remittanceReference: transaction.remittanceReference, evidenceDocumentId: transaction.evidenceDocumentId }),
       });
-      const body = await response.json().catch(() => null) as PartnerCommissionRemittanceResponse | { error?: { message?: string } } | null;
+      const body: unknown = await response.json().catch(() => null);
       if (!response.ok) {
         const message = readError(body, "تعذر تسجيل الحوالة");
         if (response.status < 500) {
-          pendingByPartner.current.delete(actorId);
-          if (activePartnerActorId.current === actorId) setPending(null);
+          clearPendingRemittance(actorId);
         }
         throw new Error(response.status >= 500 ? `${message}؛ أُبقيت بيانات المحاولة ومفتاحها لإعادة آمنة.` : message);
       }
-      const result = body as PartnerCommissionRemittanceResponse;
-      pendingByPartner.current.delete(actorId);
+      if (!isPartnerCommissionRemittanceResponse(body)) {
+        throw new Error("أعاد WLT استجابة غير مكتملة للحوالة؛ بقيت بيانات المحاولة ومفتاحها محفوظين لإعادة آمنة.");
+      }
+      const result = body;
+      clearPendingRemittance(actorId);
       if (activePartnerActorId.current === actorId) {
         setPending(null);
         setReceipt({ partnerActorId: actorId, response: result });
         setAmount("");
         setReference("");
-        setEvidence("");
+        setEvidenceFile(null);
         await loadSummary(actorId);
       }
     } catch (value) {
-      if (activePartnerActorId.current === actorId) setError(value instanceof Error ? value.message : "تعذر تسجيل الحوالة؛ أعد المحاولة بنفس العملية.");
+      if (activePartnerActorId.current === actorId) setError(value instanceof TypeError ? "انقطع الاتصال أثناء حفظ إيصال الحوالة أو تسجيلها؛ بقيت المحاولة محفوظة لإعادتها بأمان." : value instanceof Error ? value.message : "تعذر تسجيل الحوالة؛ أعد المحاولة بنفس العملية.");
     } finally {
       setMutationBusy(false);
     }
@@ -274,18 +383,19 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
             <div><dt>الطلبات المسلّمة</dt><dd>{selectedSummary.orderCount.toLocaleString("ar-YE")}</dd></div>
           </dl>
           <p className="muted">فترة التسوية: {settlementPeriodLabel(selectedSummary.settlementPeriod)} · الحالة المالية: {financialProfileStateLabel(selectedSummary.profileState)}</p>
-          {receipt?.partnerActorId === initialQuery.partnerActorId ? <p className="state-success" role="status">سُجلت الحوالة {receipt.response.remittance.remittanceReference} بمبلغ {formatMoney(receipt.response.remittance.amountMinor, receipt.response.remittance.currency)}، وأثبتها المشغّل {receipt.response.remittance.verifiedBy}.</p> : null}
-          {selectedSummary.outstandingCommissionReceivableMinor > 0 ? <section className={styles.remittance} aria-labelledby="partner-remittance-title">
-            <h4 id="partner-remittance-title">تسجيل حوالة عمولة الاستلام</h4>
-            <p className="muted">سجّل المبلغ بعد التحقق من وصوله فعلياً. هذه الحوالة تخص عمولة بثواني فقط ولا تسجل قيمة مبيعات المتجر.</p>
+          {receipt?.partnerActorId === initialQuery.partnerActorId ? <p className="state-success" role="status">سُجلت الحوالة {receipt.response.remittance.remittanceReference} بمبلغ {formatMoney(receipt.response.remittance.amountMinor, receipt.response.remittance.currency)}، وأثبتها المشغّل {receipt.response.remittance.verifiedBy}. {receipt.response.remittance.evidenceDocumentId ? <a href={`/api/finance/evidence/${encodeURIComponent(receipt.response.remittance.evidenceDocumentId)}`}>فتح إيصال الحوالة</a> : null}</p> : null}
+          {selectedSummary.outstandingCommissionReceivableMinor > 0 || pending ? <section className={styles.remittance} aria-labelledby="partner-remittance-title">
+            <h4 id="partner-remittance-title">{pending ? "استعادة محاولة حوالة عمولة الاستلام" : "تسجيل حوالة عمولة الاستلام"}</h4>
+            {selectedSummary.outstandingCommissionReceivableMinor > 0 ? <p className="muted">أرفق إيصال الحوالة الذي راجعته ثم سجّل المبلغ المتحقق منه. WLT يحفظ الدليل ويربطه بالقيد المالي. هذه الحوالة تخص عمولة بثواني فقط ولا تسجل قيمة مبيعات المتجر.</p> : <p className="muted">لا يوجد رصيد مفتوح حالياً، لكن توجد محاولة سابقة غير محسومة. أعد الطلب المحفوظ بنفس مفتاحه ليعيد WLT النتيجة المؤكدة دون إنشاء قيد مكرر.</p>}
             <div className={styles.formFields}>
               <label className="field-label" htmlFor="commission-remittance-amount">المبلغ بالريال اليمني<input id="commission-remittance-amount" inputMode="numeric" pattern="[0-9]*" value={pending?.amountMinor ?? amount} onChange={(event) => setAmount(event.target.value.replace(/[^0-9]/g, ""))} disabled={mutationBusy || Boolean(pending)} /></label>
               <label className="field-label" htmlFor="commission-remittance-reference">مرجع الحوالة<input id="commission-remittance-reference" value={pending?.remittanceReference ?? reference} onChange={(event) => setReference(event.target.value)} maxLength={128} disabled={mutationBusy || Boolean(pending)} /></label>
-              <label className="field-label" htmlFor="commission-remittance-evidence">مرجع إثبات التحقق<input id="commission-remittance-evidence" value={pending?.evidenceReference ?? evidence} onChange={(event) => setEvidence(event.target.value)} maxLength={512} disabled={mutationBusy || Boolean(pending)} /></label>
+              <label className="field-label" htmlFor="commission-remittance-evidence">إيصال الحوالة (PDF أو صورة أو CSV أو Excel، بحد أقصى 10 ميغابايت)<input id="commission-remittance-evidence" type="file" accept="application/pdf,image/jpeg,image/png,text/csv,.csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(event) => setEvidenceFile(event.target.files?.[0] ?? null)} disabled={mutationBusy || Boolean(pending?.evidenceDocumentId)} /></label>
             </div>
-            {pending ? <p className="muted">بقيت محاولة غير محسومة. إعادة الإرسال تستخدم المفتاح والبيانات نفسيهما.</p> : null}
+            {pending ? <p className="muted">بقيت محاولة غير محسومة. إعادة التسجيل تستخدم المفاتيح والبيانات نفسيهما{pending.evidenceDocumentId ? " دون إعادة رفع الإيصال" : "؛ أعد اختيار ملف الإيصال نفسه إذا كان الرفع قد انقطع"}.</p> : null}
+            {pending?.evidenceDocumentId ? <p className="muted">الإيصال المحفوظ: <a href={`/api/finance/evidence/${encodeURIComponent(pending.evidenceDocumentId)}`}>فتح الإيصال</a></p> : null}
             <button className="button button-primary" type="button" onClick={() => void submitRemittance()} disabled={mutationBusy}>{mutationBusy ? "جارٍ تسجيل الحوالة…" : pending ? "إعادة المحاولة بنفس العملية" : "تسجيل الحوالة بعد التحقق"}</button>
-          </section> : <p className="muted">لا يوجد رصيد عمولة مفتوح للتسجيل حالياً.</p>}
+          </section> : <p className="muted">لا يوجد رصيد عمولة مفتوح أو محاولة معلقة لهذا الشريك.</p>}
         </> : null}
       </section> : null}
     </section>

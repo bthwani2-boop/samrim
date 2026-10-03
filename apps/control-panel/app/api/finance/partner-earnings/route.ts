@@ -15,11 +15,11 @@ export async function POST(request: Request) {
   const correlationId = request.headers.get("X-Correlation-ID")?.trim() ?? "";
   if (idempotencyKey.length < 8 || idempotencyKey.length > 128 || correlationId.length < 8 || correlationId.length > 128) return errorResponse("INVALID_INPUT", "mutation identifiers are required", 400);
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-  const fields = ["partnerActorId", "amountMinor", "remittanceReference", "evidenceReference"];
+  const fields = ["partnerActorId", "amountMinor", "remittanceReference", "evidenceDocumentId"];
   if (!body || Object.keys(body).length !== fields.length || Object.keys(body).some((key) => !fields.includes(key))) return errorResponse("INVALID_INPUT", "partner and remittance evidence are required", 400);
-  if (typeof body.partnerActorId !== "string" || !body.partnerActorId.trim() || body.partnerActorId.trim().length > 128 || typeof body.amountMinor !== "number" || !Number.isSafeInteger(body.amountMinor) || body.amountMinor <= 0 || typeof body.remittanceReference !== "string" || !body.remittanceReference.trim() || body.remittanceReference.trim().length > 128 || typeof body.evidenceReference !== "string" || !body.evidenceReference.trim() || body.evidenceReference.trim().length > 512) return errorResponse("INVALID_INPUT", "remittance amount and references are invalid", 400);
+  if (typeof body.partnerActorId !== "string" || !body.partnerActorId.trim() || body.partnerActorId.trim().length > 128 || typeof body.amountMinor !== "number" || !Number.isSafeInteger(body.amountMinor) || body.amountMinor <= 0 || typeof body.remittanceReference !== "string" || !body.remittanceReference.trim() || body.remittanceReference.trim().length > 128 || typeof body.evidenceDocumentId !== "string" || !body.evidenceDocumentId.trim() || body.evidenceDocumentId.trim().length > 128) return errorResponse("INVALID_INPUT", "remittance amount, reference, and stored receipt are invalid", 400);
   try {
-    const result = await recordOperatorPartnerCommissionRemittance(body.partnerActorId.trim(), { amountMinor: body.amountMinor, remittanceReference: body.remittanceReference.trim(), evidenceReference: body.evidenceReference.trim() }, { operatorActorId: identity.subject, idempotencyKey, correlationId });
+    const result = await recordOperatorPartnerCommissionRemittance(body.partnerActorId.trim(), { amountMinor: body.amountMinor, remittanceReference: body.remittanceReference.trim(), evidenceDocumentId: body.evidenceDocumentId.trim() }, { operatorActorId: identity.subject, idempotencyKey, correlationId });
     return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (!isDshClientError(error)) return errorResponse("INTERNAL_ERROR", "commission remittance recording failed", 500);

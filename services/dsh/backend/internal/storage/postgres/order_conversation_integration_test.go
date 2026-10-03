@@ -30,9 +30,12 @@ func TestOrderConversationReturnsLatestBoundedHistoryAndReplaysAfterClosure(t *t
 		t.Fatalf("configured postgres is not reachable: %v", err)
 	}
 
-	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
-		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
+	withFreshCanonicalDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
+		if err := postgres.MigrateCanonical(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
 			t.Fatalf("apply DSH migrations: %v", err)
+		}
+		if err := postgres.VerifyCanonicalSchema(ctx, db, records); err != nil {
+			t.Fatalf("verify canonical DSH schema: %v", err)
 		}
 		const (
 			orderID  = "conversation-history-order"
@@ -48,9 +51,13 @@ func TestOrderConversationReturnsLatestBoundedHistoryAndReplaysAfterClosure(t *t
 		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commerce_carts(id,client_actor_id,store_id,state,version) VALUES($1,$2,$3,'checked_out',1)", cartID, clientID, storeID); err != nil {
 			t.Fatalf("insert cart: %v", err)
 		}
-		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,total_amount_minor,currency,version,payment_intent_id,payment_method,payment_state,fulfillment_mode,payment_cash_amount_minor)
-			VALUES($1,$2,$3,$4,$5,1,$6,15.3694457,44.1910064,$7,'CITY_SCOPE_V1','SERVICEABLE',1,1,'CREATED',1800,'YER',1,$8,'CASH_ON_DELIVERY','REQUIRES_COLLECTION','BTHWANI_CAPTAIN',1800)`, orderID, clientID, storeID, cartID, "conversation-history-address", "عنوان اختبار المحادثة", cityID, "conversation-history-payment"); err != nil {
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,total_amount_minor,currency,version,payment_intent_id,payment_method,payment_state,fulfillment_mode,payment_cash_amount_minor,recipient_mode,recipient_name,recipient_phone_e164,recipient_instructions)
+			VALUES($1,$2,$3,$4,$5,1,$6,15.3694457,44.1910064,$7,'CITY_SCOPE_V1','SERVICEABLE',1,1,'CREATED',1800,'YER',1,$8,'CASH_ON_DELIVERY','REQUIRES_COLLECTION','BTHWANI_CAPTAIN',1800,'OTHER','Ali Recipient','+967712345678','Gate 2')`, orderID, clientID, storeID, cartID, "conversation-history-address", "عنوان اختبار المحادثة", cityID, "conversation-history-payment"); err != nil {
 			t.Fatalf("insert order: %v", err)
+		}
+		order, err := postgres.ReadOrder(ctx, db, orderID)
+		if err != nil || order.Recipient.Mode != "OTHER" || order.Recipient.Name == nil || *order.Recipient.Name != "Ali Recipient" || order.Recipient.PhoneE164 == nil || *order.Recipient.PhoneE164 != "+967712345678" || order.Recipient.Instructions == nil || *order.Recipient.Instructions != "Gate 2" {
+			t.Fatalf("order readback lost the delivery-recipient snapshot: %+v err=%v", order.Recipient, err)
 		}
 
 		const messageCount = 105

@@ -119,6 +119,39 @@ func ListPublicDiscoveryCategories(ctx context.Context, db *sql.DB, serviceCityI
 	return ListPublicCatalogCategories(ctx, db, categoryIDs)
 }
 
+func ListPublicDiscoveryVerticals(ctx context.Context, db *sql.DB, serviceCityID string) ([]CommerceVerticalRecord, error) {
+	serviceCityID = strings.TrimSpace(serviceCityID)
+	if db == nil || serviceCityID == "" || len(serviceCityID) > 128 {
+		return nil, errors.New("public discovery vertical scope is invalid")
+	}
+	rows, err := db.QueryContext(ctx, `SELECT vertical.id,vertical.name_ar,vertical.name_en,true,vertical.version,vertical.created_at,vertical.updated_at,''
+		FROM dsh.commerce_verticals vertical
+		WHERE vertical.active=true AND EXISTS (
+			SELECT 1 FROM dsh.stores store
+			JOIN dsh.service_cities city ON city.id=store.service_city_id AND city.active=true
+			JOIN dsh.joining_cases joining ON joining.partner_actor_id=store.partner_actor_id AND joining.financial_profile_state='ACTIVE'
+			WHERE city.id=$1 AND store.primary_vertical_id=vertical.id AND store.publication_state='published' AND store.publication_changed_at IS NOT NULL
+			AND EXISTS (SELECT 1 FROM dsh.catalog_store_offers offer WHERE offer.store_id=store.id
+				AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=offer.id)))
+		ORDER BY lower(vertical.name_ar),vertical.id`, serviceCityID)
+	if err != nil {
+		return nil, fmt.Errorf("list public discovery verticals: %w", err)
+	}
+	defer rows.Close()
+	items := make([]CommerceVerticalRecord, 0)
+	for rows.Next() {
+		var item CommerceVerticalRecord
+		if err := rows.Scan(&item.ID, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt, &item.CatalogModel); err != nil {
+			return nil, fmt.Errorf("scan public discovery vertical: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read public discovery verticals: %w", err)
+	}
+	return items, nil
+}
+
 func listPublicStoreCatalogCategories(ctx context.Context, db *sql.DB, storeID, serviceCityID, verticalID string) ([]CatalogCategoryRecord, error) {
 	const query = `SELECT DISTINCT pc.category_id FROM dsh.catalog_store_offers o
 		JOIN dsh.catalog_product_variants v ON v.id=o.variant_id
@@ -259,32 +292,34 @@ func readPublicCatalog(ctx context.Context, db *sql.DB, storeID, serviceCityID, 
 			return PublicCatalogRecord{}, err
 		}
 	}
-	offers, nextCursor, err := listCustomerVisibleOffers(ctx, db, storeID, serviceCityID, categoryID, productID, query, favoriteActorID, limit, cursor)
+	offers, nextCursor, err := listCustomerVisibleOffers(ctx, db, storeID, serviceCityID, verticalID, categoryID, productID, query, favoriteActorID, limit, cursor)
 	if err != nil {
 		return PublicCatalogRecord{}, err
 	}
 	return PublicCatalogRecord{StoreID: storeID, VerticalID: verticalID, Categories: categories, Sections: sections, Offers: offers, NextCursor: nextCursor}, nil
 }
 
-func SearchPublicCatalog(ctx context.Context, db *sql.DB, serviceCityID, categoryID, query string, limit int, cursor string) (PublicCatalogSearchRecord, error) {
+func SearchPublicCatalog(ctx context.Context, db *sql.DB, serviceCityID, verticalID, categoryID, query string, limit int, cursor string) (PublicCatalogSearchRecord, error) {
 	serviceCityID = strings.TrimSpace(serviceCityID)
+	verticalID = strings.TrimSpace(verticalID)
 	categoryID = strings.TrimSpace(categoryID)
 	query = strings.TrimSpace(query)
-	if db == nil || serviceCityID == "" || query == "" || utf8.RuneCountInString(query) > 160 || len(categoryID) > 128 || len(cursor) > 1024 || limit < 1 || limit > 50 {
+	if db == nil || serviceCityID == "" || query == "" || utf8.RuneCountInString(query) > 160 || len(verticalID) > 128 || len(categoryID) > 128 || len(cursor) > 1024 || limit < 1 || limit > 50 {
 		return PublicCatalogSearchRecord{}, errors.New("public catalog search input is invalid")
 	}
-	offers, nextCursor, err := listCustomerVisibleOffers(ctx, db, "", serviceCityID, categoryID, "", query, "", limit, cursor)
+	offers, nextCursor, err := listCustomerVisibleOffers(ctx, db, "", serviceCityID, verticalID, categoryID, "", query, "", limit, cursor)
 	if err != nil {
 		return PublicCatalogSearchRecord{}, err
 	}
 	return PublicCatalogSearchRecord{Offers: offers, NextCursor: nextCursor}, nil
 }
 
-func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, serviceCityID, categoryID, productID, query, favoriteActorID string, limit int, cursor string) ([]CatalogStoreOfferRecord, *string, error) {
+func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, serviceCityID, verticalID, categoryID, productID, query, favoriteActorID string, limit int, cursor string) ([]CatalogStoreOfferRecord, *string, error) {
 	conditions := []string{"EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id)"}
 	args := make([]any, 0, 7)
 	storeID = strings.TrimSpace(storeID)
 	serviceCityID = strings.TrimSpace(serviceCityID)
+	verticalID = strings.TrimSpace(verticalID)
 	productID = strings.TrimSpace(productID)
 	favoriteActorID = strings.TrimSpace(favoriteActorID)
 	if storeID != "" {
@@ -298,6 +333,10 @@ func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, service
 	}
 	if storeID == "" && serviceCityID == "" {
 		return nil, nil, errors.New("public catalog scope is required")
+	}
+	if verticalID != "" {
+		args = append(args, verticalID)
+		conditions = append(conditions, fmt.Sprintf("s.primary_vertical_id=$%d", len(args)))
 	}
 	if productID != "" {
 		args = append(args, productID)
@@ -320,7 +359,7 @@ func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, service
 		conditions = append(conditions, fmt.Sprintf("EXISTS (SELECT 1 FROM dsh.client_favorite_store_offers f WHERE f.client_actor_id=$%d AND f.store_offer_id=o.id)", len(args)))
 	}
 	if cursor != "" {
-		position, decodeErr := decodeCatalogSearchCursor(cursor, storeID, serviceCityID, categoryID, query, productID, favoriteActorID)
+		position, decodeErr := decodeCatalogSearchCursor(cursor, storeID, serviceCityID, verticalID, categoryID, query, productID, favoriteActorID)
 		if decodeErr != nil {
 			return nil, nil, decodeErr
 		}
@@ -357,7 +396,7 @@ func listCustomerVisibleOffers(ctx context.Context, db *sql.DB, storeID, service
 	if len(items) > limit {
 		items = items[:limit]
 		last := items[len(items)-1]
-		value := encodeCatalogSearchCursor(last.Product.CanonicalName, last.ID, storeID, serviceCityID, categoryID, query, productID, favoriteActorID)
+		value := encodeCatalogSearchCursor(last.Product.CanonicalName, last.ID, storeID, serviceCityID, verticalID, categoryID, query, productID, favoriteActorID)
 		nextCursor = &value
 	}
 	return items, nextCursor, nil
@@ -368,18 +407,18 @@ type catalogSearchCursorPosition struct {
 	offerID       string
 }
 
-func encodeCatalogSearchCursor(canonicalName, offerID, storeID, serviceCityID, categoryID, query, productID, favoriteActorID string) string {
+func encodeCatalogSearchCursor(canonicalName, offerID, storeID, serviceCityID, verticalID, categoryID, query, productID, favoriteActorID string) string {
 	payload := make([]byte, 0, len(canonicalName)+len(offerID)+18)
 	payload = append(payload, canonicalName...)
 	payload = append(payload, 0)
 	payload = append(payload, offerID...)
 	payload = append(payload, 0)
-	fingerprint := catalogSearchCursorFingerprint(storeID, serviceCityID, categoryID, query, productID, favoriteActorID)
+	fingerprint := catalogSearchCursorFingerprint(storeID, serviceCityID, verticalID, categoryID, query, productID, favoriteActorID)
 	payload = append(payload, fingerprint[:]...)
 	return base64.RawURLEncoding.EncodeToString(payload)
 }
 
-func decodeCatalogSearchCursor(cursor, storeID, serviceCityID, categoryID, query, productID, favoriteActorID string) (catalogSearchCursorPosition, error) {
+func decodeCatalogSearchCursor(cursor, storeID, serviceCityID, verticalID, categoryID, query, productID, favoriteActorID string) (catalogSearchCursorPosition, error) {
 	decoded, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {
 		return catalogSearchCursorPosition{}, errors.New("catalog cursor is invalid")
@@ -396,7 +435,7 @@ func decodeCatalogSearchCursor(cursor, storeID, serviceCityID, categoryID, query
 	if len(decoded)-secondSeparator-1 != 16 {
 		return catalogSearchCursorPosition{}, errors.New("catalog cursor is invalid")
 	}
-	expected := catalogSearchCursorFingerprint(storeID, serviceCityID, categoryID, query, productID, favoriteActorID)
+	expected := catalogSearchCursorFingerprint(storeID, serviceCityID, verticalID, categoryID, query, productID, favoriteActorID)
 	actual := decoded[secondSeparator+1:]
 	for index := range expected {
 		if actual[index] != expected[index] {
@@ -406,9 +445,9 @@ func decodeCatalogSearchCursor(cursor, storeID, serviceCityID, categoryID, query
 	return catalogSearchCursorPosition{canonicalName: string(decoded[:firstSeparator]), offerID: string(decoded[firstSeparator+1 : secondSeparator])}, nil
 }
 
-func catalogSearchCursorFingerprint(storeID, serviceCityID, categoryID, query, productID, favoriteActorID string) [16]byte {
-	input := make([]byte, 0, len(storeID)+len(serviceCityID)+len(categoryID)+len(query)+len(productID)+len(favoriteActorID)+24)
-	for _, value := range []string{storeID, serviceCityID, categoryID, query, productID, favoriteActorID} {
+func catalogSearchCursorFingerprint(storeID, serviceCityID, verticalID, categoryID, query, productID, favoriteActorID string) [16]byte {
+	input := make([]byte, 0, len(storeID)+len(serviceCityID)+len(verticalID)+len(categoryID)+len(query)+len(productID)+len(favoriteActorID)+28)
+	for _, value := range []string{storeID, serviceCityID, verticalID, categoryID, query, productID, favoriteActorID} {
 		var length [4]byte
 		binary.BigEndian.PutUint32(length[:], uint32(len(value)))
 		input = append(input, length[:]...)

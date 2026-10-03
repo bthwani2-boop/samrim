@@ -251,6 +251,14 @@ export default function ClientOrderDetail() {
         <BthwaniSectionHeader title="عنوان التوصيل" />
         <BthwaniSurface tone="base" style={styles.address}><BthwaniIcon name="location" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.muted}>{order.addressText}</Text></BthwaniSurface>
       </>}
+      <BthwaniSectionHeader title="مستلم الطلب" />
+      <BthwaniSurface tone="base" style={styles.trackingSurface}>
+        {order.recipient.mode === "OTHER" ? <>
+          <Text style={styles.proofTitle}>{order.recipient.name}</Text>
+          <Text selectable style={styles.muted}>رقم التواصل: {order.recipient.phoneE164}</Text>
+          {order.recipient.instructions ? <Text style={styles.muted}>تعليمات التوصيل: {order.recipient.instructions}</Text> : null}
+        </> : <Text style={styles.muted}>صاحب الطلب</Text>}
+      </BthwaniSurface>
       <BthwaniSectionHeader title="المنتجات" subtitle={`${order.lines.length} ${order.lines.length === 1 ? "منتج" : "منتجات"}`} />
       <View style={styles.lines}>{order.lines.map((line) => <BthwaniSurface key={line.id} tone="base" style={styles.line}><View style={styles.lineTop}><Text style={styles.lineTitle} numberOfLines={2}>{line.productName}</Text><Text style={styles.linePrice}>{formatMoney(line.lineAmountMinor, line.currency)}</Text></View><Text style={styles.muted}>{formatQuantity(line.baseUnit, line.finalQuantityBaseUnits)}{line.modifierSnapshots.length ? ` · ${line.modifierSnapshots.map((modifier) => modifier.optionNameAr).join("، ")}` : ""}</Text></BthwaniSurface>)}</View>
       <Text style={styles.muted}>تُقرأ حالة الطلب الحالية من الخدمة عند كل فتح.</Text>

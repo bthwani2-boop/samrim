@@ -134,6 +134,7 @@ type CaptainDeliveryTask struct {
 	AmountDueMinor       int64
 	Currency             string
 	FulfillmentMode      string
+	Recipient            DeliveryRecipientRecord
 }
 
 type CaptainOperationResult struct {
@@ -2030,7 +2031,8 @@ func ReadCaptainDeliveryTask(ctx context.Context, db *sql.DB, assignmentID, capt
 	}
 	var task CaptainDeliveryTask
 	var pickupLatitude, pickupLongitude, destinationLatitude, destinationLongitude sql.NullFloat64
-	err = tx.QueryRowContext(ctx, `SELECT a.id,a.order_id,s.id,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' AND m.rights_attested_at IS NOT NULL LIMIT 1),''),s.delivery_origin_latitude,s.delivery_origin_longitude,o.address_text,o.address_latitude,o.address_longitude,o.state,h.state,a.state,o.payment_method,o.payment_state,o.payment_cash_amount_minor,o.currency,o.fulfillment_mode
+	var recipientName, recipientPhone, recipientInstructions sql.NullString
+	err = tx.QueryRowContext(ctx, `SELECT a.id,a.order_id,s.id,s.name,COALESCE((SELECT uri FROM dsh.store_profile_media_assets m WHERE m.store_id=s.id AND m.state='active' AND m.rights_attested_at IS NOT NULL LIMIT 1),''),s.delivery_origin_latitude,s.delivery_origin_longitude,o.address_text,o.address_latitude,o.address_longitude,o.state,h.state,a.state,o.payment_method,o.payment_state,o.payment_cash_amount_minor,o.currency,o.fulfillment_mode,o.recipient_mode,o.recipient_name,o.recipient_phone_e164,o.recipient_instructions
 		FROM dsh.captain_assignments a
 		JOIN dsh.captain_handoffs h ON h.assignment_id=a.id
 		JOIN dsh.commerce_orders o ON o.id=a.order_id
@@ -2038,7 +2040,8 @@ func ReadCaptainDeliveryTask(ctx context.Context, db *sql.DB, assignmentID, capt
 		WHERE a.id=$1 AND a.captain_actor_id=$2 AND a.state <> 'reassigned'`, strings.TrimSpace(assignmentID), strings.TrimSpace(captainActorID)).Scan(
 		&task.AssignmentID, &task.OrderReference, &task.StoreID, &task.StoreName, &task.StoreProfileImageURI, &pickupLatitude, &pickupLongitude,
 		&task.CustomerAddressText, &destinationLatitude, &destinationLongitude, &task.OrderState, &task.HandoffState, &task.DeliveryState,
-		&task.PaymentMethod, &task.PaymentState, &task.AmountDueMinor, &task.Currency, &task.FulfillmentMode)
+		&task.PaymentMethod, &task.PaymentState, &task.AmountDueMinor, &task.Currency, &task.FulfillmentMode,
+		&task.Recipient.Mode, &recipientName, &recipientPhone, &recipientInstructions)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CaptainDeliveryTask{}, ErrCaptainDeliveryTaskNotFound
 	}
@@ -2052,6 +2055,18 @@ func ReadCaptainDeliveryTask(ctx context.Context, db *sql.DB, assignmentID, capt
 	task.PickupLongitude = pickupLongitude.Float64
 	task.DestinationLatitude = destinationLatitude.Float64
 	task.DestinationLongitude = destinationLongitude.Float64
+	if recipientName.Valid {
+		value := recipientName.String
+		task.Recipient.Name = &value
+	}
+	if recipientPhone.Valid {
+		value := recipientPhone.String
+		task.Recipient.PhoneE164 = &value
+	}
+	if recipientInstructions.Valid {
+		value := recipientInstructions.String
+		task.Recipient.Instructions = &value
+	}
 	if err := tx.Commit(); err != nil {
 		return CaptainDeliveryTask{}, err
 	}

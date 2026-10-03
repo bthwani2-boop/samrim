@@ -1,12 +1,12 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { availableCustomerFulfillmentModes, type CustomerFulfillmentMode, formatMoney, fulfillmentModeLabel, type PublicCatalogResponse, type PublicPromotionView, type PublicStoreView } from "@bthwani/dsh";
+import { availableCustomerFulfillmentModes, type CustomerFulfillmentMode, formatMoney, fulfillmentModeLabel, type PublicCatalogResponse, type PublicPromotionView, type PublicStoreView, type StoreOrderability } from "@bthwani/dsh";
 import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState } from "../../bootstrap/identity";
 import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
-import { addCatalogOfferToCart, listFavoriteStoreIDs, listFavoriteStoreOfferIDs, listPublicPromotions, readFavoriteStoreCatalog, readPublicStoreCatalog, readPublishedStore, setFavoriteStore, setFavoriteStoreOffer } from "./store-discovery-client";
+import { addCatalogOfferToCart, listFavoriteStoreIDs, listFavoriteStoreOfferIDs, listPublicPromotions, readFavoriteStoreCatalog, readPublicStoreCatalog, readPublicStoreOrderability, readPublishedStore, setFavoriteStore, setFavoriteStoreOffer } from "./store-discovery-client";
 import { PromotionCard } from "./promotion-card";
 
 type DetailState =
@@ -58,6 +58,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
   const [favoritesView, setFavoritesView] = useState(false);
   const [expandedOfferIDs, setExpandedOfferIDs] = useState<ReadonlySet<string>>(new Set());
   const [selectedFulfillmentMode, setSelectedFulfillmentMode] = useState<CustomerFulfillmentMode | null>(null);
+  const [orderabilityByMode, setOrderabilityByMode] = useState<ReadonlyArray<StoreOrderability> | null>(null);
   const mutationBusy = Boolean(busyOfferId);
 
   const load = useCallback(async () => {
@@ -75,6 +76,7 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     setPromotionLoading(true);
     setPromotionError(false);
     setSelectedFulfillmentMode(null);
+    setOrderabilityByMode(null);
     setFavoritesView(false);
     setFavoriteLoadError(false);
     if (!storeId.trim() || !selectedCityID) {
@@ -84,6 +86,9 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
     }
     setState({ kind: "loading" });
     try {
+      const orderabilityRequest = readPublicStoreOrderability(storeId, selectedCityID)
+        .then((result) => result.orderabilityByMode)
+        .catch(() => null);
       const promotionRequest = listPublicPromotions(selectedCityID, storeId)
         .then((result) => {
           if (promotionID !== promotionRequestID.current) return;
@@ -118,6 +123,9 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       setFavoriteOfferIDs(new Set(favoriteOffers));
       setFavoriteLoadError(favoriteFailed);
       setState({ kind: "ready", store, catalog });
+      void orderabilityRequest.then((orderability) => {
+        if (requestID === catalogRequestID.current) setOrderabilityByMode(orderability);
+      });
       void promotionRequest;
     } catch {
       if (requestID !== catalogRequestID.current) return;
@@ -379,7 +387,10 @@ export default function ClientStoreDetail({ storeId, categoryId = "", productId 
       <BthwaniSectionHeader title="اختر طريقة الطلب" subtitle="تظهر لك الأوضاع التي فعّلها هذا المتجر فقط." />
       <BthwaniSurface tone="inset" style={styles.fulfillmentModes} accessibilityLabel="أوضاع الطلب المتاحة في المتجر">
         {availableCustomerFulfillmentModes(state.store.fulfillmentModes).map((mode) => <BthwaniChip key={mode} accessibilityHint={fulfillmentModeDescription(mode)} label={fulfillmentModeLabel(mode)} onPress={() => { setSelectedFulfillmentMode(mode); setError(""); }} selected={selectedFulfillmentMode === mode} />)}
-        {selectedFulfillmentMode ? <Text style={styles.muted}>{fulfillmentModeDescription(selectedFulfillmentMode)}</Text> : <Text style={styles.validationError}>اختر وضعًا قبل إضافة المنتجات وفتح السلة.</Text>}
+        {selectedFulfillmentMode ? <>
+          <Text style={styles.muted}>{fulfillmentModeDescription(selectedFulfillmentMode)}</Text>
+          {orderabilityByMode === null ? <Text style={styles.muted}>لم تصل قراءة الحالة التشغيلية بعد؛ سيُعاد التحقق عند تأكيد الطلب.</Text> : <Text style={styles.muted}>{orderabilitySummary(orderabilityByMode.find((item) => item.fulfillmentMode === selectedFulfillmentMode))}</Text>}
+        </> : <Text style={styles.validationError}>اختر وضعًا قبل إضافة المنتجات وفتح السلة.</Text>}
       </BthwaniSurface>
       {promotionLoading ? <Text style={styles.muted}>جارٍ التحقق من عروض هذا المتجر…</Text> : null}
       {promotionError ? <View style={styles.promotionNotice}><Text accessibilityRole="alert" style={styles.validationError}>تعذر قراءة عروض هذا المتجر؛ يمكنك متابعة الطلب من دونها.</Text><BthwaniButton label="إعادة قراءة العروض" onPress={() => void retryPromotions()} variant="secondary" /></View> : null}
@@ -445,6 +456,16 @@ function fulfillmentModeDescription(mode: CustomerFulfillmentMode): string {
   if (mode === "BTHWANI_CAPTAIN") return "المنصة تتولى إسناد التوصيل وإدارته.";
   if (mode === "PARTNER_CAPTAIN") return "المتجر يختار أحد كباتنه للتوصيل إلى عنوان مؤهل؛ تُراجع الرسوم والتغطية في السلة.";
   return "تذهب إلى المتجر وتستلم الطلب بنفسك، من دون توصيل أو عنوان توصيل.";
+}
+
+function orderabilitySummary(orderability: StoreOrderability | undefined): string {
+  if (!orderability) return "لا توجد قراءة متاحة لهذا الوضع؛ سيُعاد التحقق عند تأكيد الطلب.";
+  const label = orderability.state === "OPEN_FOR_ORDERS" ? "يستقبل الطلبات الآن"
+    : orderability.state === "CLOSED_BY_SCHEDULE" ? "المتجر خارج ساعات العمل الآن"
+      : orderability.state === "PAUSED" ? "أوقف المتجر استقبال الطلبات مؤقتًا"
+        : "هذا الوضع غير متاح مؤقتًا";
+  const preparation = orderability.preparationMinutes ? ` · مدة التجهيز ${orderability.preparationMinutes} دقيقة` : "";
+  return `${label}${preparation}. تتأكد المنصة من الحالة مرة أخرى عند تأكيد الطلب.`;
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {

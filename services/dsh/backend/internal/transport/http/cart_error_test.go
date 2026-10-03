@@ -74,6 +74,22 @@ func TestWriteCartErrorDoesNotLogKnownClientErrors(t *testing.T) {
 	}
 }
 
+func TestWriteCartErrorMapsInvalidRecipientWithoutInternalLogging(t *testing.T) {
+	previousOutput := log.Writer()
+	var output bytes.Buffer
+	log.SetOutput(&output)
+	t.Cleanup(func() { log.SetOutput(previousOutput) })
+
+	response := httptest.NewRecorder()
+	writeCartErrorWithCorrelation(response, postgres.ErrCheckoutRecipientInvalid, "recipient-correlation-123")
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":"INVALID_RECIPIENT"`) {
+		t.Fatalf("invalid recipient response = %d %s, want 400 INVALID_RECIPIENT", response.Code, response.Body.String())
+	}
+	if output.Len() != 0 {
+		t.Fatalf("known recipient validation error emitted internal diagnostics: %s", output.String())
+	}
+}
+
 func TestWriteCartErrorLogsSafeIdentityServerFailure(t *testing.T) {
 	previousOutput := log.Writer()
 	previousFlags := log.Flags()

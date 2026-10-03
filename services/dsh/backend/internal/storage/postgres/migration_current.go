@@ -14,12 +14,15 @@ import (
 )
 
 // CanonicalSchemaVersion is the exact DSH schema version owned by the current source tree.
-const CanonicalSchemaVersion = 87
+const CanonicalSchemaVersion = 90
 
 var canonicalMigrationTail = []string{
 	"085_store_operational_availability.sql",
 	"086_store_scoped_access_delegation.sql",
 	"087_order_recipient_and_adjustments.sql",
+	"088_store_access_invitation_reuse.sql",
+	"089_store_access_permission_updates.sql",
+	"090_order_store_orderability_snapshot.sql",
 }
 
 type schemaRelationExpectation struct {
@@ -51,7 +54,7 @@ var journeyRefoundationRelations = []schemaRelationExpectation{
 		name:        "dsh.store_access_grants",
 		columns:     []string{"id", "store_id", "owner_partner_actor_id", "delegate_actor_id", "permissions", "state", "version", "expires_at", "accepted_at", "declined_at", "revoked_at", "created_at", "updated_at"},
 		constraints: []string{"store_access_grants_pkey", "store_access_grants_id_chk", "store_access_grants_owner_delegate_chk", "store_access_grants_permissions_chk", "store_access_grants_state_chk", "store_access_grants_version_chk", "store_access_grants_time_chk", "store_access_grants_state_facts_chk", "store_access_grants_store_owner_fk"},
-		indexes:     []string{"store_access_grants_current_delegate_uq", "store_access_grants_owner_idx", "store_access_grants_delegate_idx"},
+		indexes:     []string{"store_access_grants_current_delegate_uq", "store_access_grants_owner_idx", "store_access_grants_delegate_idx", "store_access_grants_store_delegate_idx"},
 	},
 	{
 		name:        "dsh.store_access_grant_idempotency",
@@ -68,6 +71,11 @@ var journeyRefoundationRelations = []schemaRelationExpectation{
 		name:        "dsh.commerce_orders",
 		columns:     []string{"recipient_mode", "recipient_name", "recipient_phone_e164", "recipient_instructions"},
 		constraints: []string{"commerce_orders_recipient_mode_chk", "commerce_orders_recipient_facts_chk"},
+	},
+	{
+		name:        "dsh.commerce_order_store_orderability_snapshots",
+		columns:     []string{"order_id", "availability_version", "orderability_state", "evaluated_at"},
+		constraints: []string{"commerce_order_store_orderability_snapshots_pkey", "commerce_order_store_orderability_snapshots_order_id_fkey", "commerce_order_store_orderability_version_chk", "commerce_order_store_orderability_state_chk"},
 	},
 	{
 		name:    "dsh.commerce_order_adjustments",

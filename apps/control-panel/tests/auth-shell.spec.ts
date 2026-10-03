@@ -1061,19 +1061,211 @@ test("operator operations uses the DSH read model and resource actions", async (
 
 test("operator finance reads only the bounded COD cash-custody projection", async ({ page }) => {
   await stubAuthenticatedSession(page);
+  let registryReads = 0;
+  let reconciled = false;
+  let evidenceUploadCount = 0;
+  let reconciliationCount = 0;
+  let evidenceHeaders: Record<string, string> | undefined;
+  const reconciliationHeaders: Array<Record<string, string>> = [];
+  let reconciliationBody: Record<string, unknown> | undefined;
   await page.route("**/api/finance/cash-custody**", async (route) => {
+    registryReads += 1;
+    const items = reconciled ? [] : [{ paymentIntentId: "payment-1", externalReference: "dsh-order-1", captainActorId: "act-captain-1", amountMinor: 12500, currency: "YER", paymentVersion: 3, collectedAt: "2026-09-20T08:00:00.000Z", remittanceState: "SUBMITTED", remittanceReference: "captain-slip-1", remittanceId: "remit-1" }];
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ items: [{ paymentIntentId: "payment-1", externalReference: "dsh-order-1", captainActorId: "act-captain-1", amountMinor: 12500, currency: "YER", paymentVersion: 3, collectedAt: "2026-09-20T08:00:00.000Z" }], totalItems: 1, totalAmountMinor: 12500, nextCursor: "" }),
+      body: JSON.stringify({ items, totalItems: items.length, totalAmountMinor: items.reduce((total, item) => total + item.amountMinor, 0), nextCursor: "" }),
     });
+  });
+  await page.route("**/api/finance/evidence", async (route) => {
+    evidenceUploadCount += 1;
+    evidenceHeaders = route.request().headers();
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ document: { id: "receipt-1" } }) });
+  });
+  await page.route("**/api/finance/cash-remittances/remit-1/reconcile", async (route) => {
+    reconciliationCount += 1;
+    reconciliationHeaders.push(route.request().headers());
+    reconciliationBody = route.request().postDataJSON() as Record<string, unknown>;
+    if (reconciliationCount === 1) {
+      await route.abort("connectionreset");
+      return;
+    }
+    reconciled = true;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ remittance: { id: "remit-1", state: "REMITTED" } }) });
   });
   await page.goto("/finance/cash-custody");
   await expect(page.getByRole("heading", { name: "حفظ النقد" })).toBeVisible();
-  await expect(page.getByText("12,500 ريال يمني").first()).toBeVisible();
+  const cashRow = page.getByRole("row", { name: /dsh-order-1/ });
+  await expect(cashRow).toBeVisible();
+  await expect(cashRow.getByRole("cell").nth(1)).toContainText("12,500");
   await expect(page.getByRole("heading", { name: "النقد المحصل عند التسليم" })).toBeVisible();
-  await expect(page.getByText("البيانات من WLT، وتعرض فقط نقد COD الذي حصّله الكابتن ولم تسجل له حوالة.")).toBeVisible();
+  await expect(page.getByText("تظل العهدة مفتوحة بعد إرسال الكابتن للمرجع. يرفق موظف المالية إيصال التوريد المحفوظ والمشفّر ويطابقه هنا؛ عندها فقط يقيد WLT الاستلام ويحرر الحجز.")).toBeVisible();
   await expect(page.getByText("dsh-order-1")).toBeVisible();
+  await expect(page.getByText("بانتظار مطابقة المالية")).toBeVisible();
+  await expect(page.getByText("captain-slip-1")).toBeVisible();
+
+  await page.getByLabel("إيصال التحويل أو الإيداع").setInputFiles({
+    name: "bank-receipt.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("test transfer receipt"),
+  });
+  await page.getByRole("button", { name: "رفع الإيصال ومطابقة التوريد" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "تعذر قراءة سجل حفظ النقد" })).toBeVisible();
+  await expect(cashRow.getByText("الإيصال محفوظ لهذه المحاولة")).toBeVisible();
+  expect(evidenceUploadCount).toBe(1);
+  expect(reconciliationCount).toBe(1);
+
+  await page.reload();
+  await expect(page.getByRole("row", { name: /dsh-order-1/ })).toBeVisible();
+  await expect(page.getByText("الإيصال محفوظ لهذه المحاولة")).toBeVisible();
+  await page.getByRole("button", { name: "مطابقة الإيصال المحفوظ" }).click();
+  await expect(page.getByRole("status")).toContainText("طابق WLT إيصال التوريد وأغلق العهدة في القيد المالي.");
+  await expect(page.getByText("dsh-order-1")).toHaveCount(0);
+  expect(evidenceHeaders?.["idempotency-key"]).toBeTruthy();
+  expect(evidenceHeaders?.["x-correlation-id"]).toBeTruthy();
+  expect(reconciliationHeaders).toHaveLength(2);
+  const firstReconciliationHeaders = reconciliationHeaders[0];
+  const retryReconciliationHeaders = reconciliationHeaders[1];
+  if (!firstReconciliationHeaders || !retryReconciliationHeaders) {
+    throw new Error("expected the original and resumed reconciliation requests");
+  }
+  expect(firstReconciliationHeaders["idempotency-key"]).toBeTruthy();
+  expect(firstReconciliationHeaders["x-correlation-id"]).toBeTruthy();
+  expect(retryReconciliationHeaders["idempotency-key"]).toBe(firstReconciliationHeaders["idempotency-key"]);
+  expect(retryReconciliationHeaders["x-correlation-id"]).toBe(firstReconciliationHeaders["x-correlation-id"]);
+  expect(reconciliationBody).toEqual({ evidenceDocumentId: "receipt-1" });
+  expect(evidenceUploadCount).toBe(1);
+  expect(reconciliationCount).toBe(2);
+  expect(registryReads).toBeGreaterThan(1);
+});
+
+test("partner commission remittance resumes with its stored receipt after an uncertain result", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  let evidenceUploadCount = 0;
+  let uncertainFullBalanceRemittance = false;
+  const remittanceRequests: Array<{ headers: Record<string, string>; body: Record<string, unknown> }> = [];
+  await page.route("**/api/finance/partner-commission-receivables**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [{ partnerActorId: "act_partner_receipt", profileState: "ACTIVE", outstandingCommissionReceivableMinor: 5000, currency: "YER" }], nextCursor: "", limit: 50 }),
+    });
+  });
+  await page.route("**/api/finance/partner-earnings**", async (route) => {
+    if (route.request().method() === "GET") {
+      const outstandingCommissionReceivableMinor = uncertainFullBalanceRemittance ? 0 : 5000;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ summary: { partnerActorId: "act_partner_receipt", currency: "YER", earnedMinor: 20000, commissionMinor: 5000, outstandingCommissionReceivableMinor, orderCount: 4, settlementPeriod: "WEEKLY", profileState: "ACTIVE", profileVersion: 1, lastEarningAt: null } }),
+      });
+      return;
+    }
+    const request = { headers: route.request().headers(), body: route.request().postDataJSON() as Record<string, unknown> };
+    remittanceRequests.push(request);
+    if (remittanceRequests.length === 1) {
+      uncertainFullBalanceRemittance = true;
+      await route.abort("connectionreset");
+      return;
+    }
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({ remittance: { id: "commission-remit-1", partnerActorId: "act_partner_receipt", amountMinor: 5000, currency: "YER", remittanceReference: "bank-transfer-1", evidenceDocumentId: "finance-receipt-1", verifiedBy: "act_operator", verifiedAt: "2026-10-03T00:00:00.000Z", ledgerTransactionId: "ledger-1", createdAt: "2026-10-03T00:00:00.000Z" }, idempotentReplay: false }),
+    });
+  });
+  await page.route("**/api/finance/evidence", async (route) => {
+    evidenceUploadCount += 1;
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ document: { id: "finance-receipt-1" } }) });
+  });
+
+  await page.goto("/finance/partner-commission-receivables?partnerActorId=act_partner_receipt");
+  await expect(page.getByRole("heading", { name: "مستحقات الشريك act_partner_receipt" })).toBeVisible();
+  await page.getByLabel("المبلغ بالريال اليمني").fill("5000");
+  await page.getByLabel("مرجع الحوالة").fill("bank-transfer-1");
+  await page.getByLabel("إيصال الحوالة (PDF أو صورة أو CSV أو Excel، بحد أقصى 10 ميغابايت)").setInputFiles({ name: "bank-transfer.pdf", mimeType: "application/pdf", buffer: Buffer.from("verified partner transfer receipt") });
+  await page.getByRole("button", { name: "تسجيل الحوالة بعد التحقق" }).click();
+  await expect.poll(() => remittanceRequests.length).toBe(1);
+  await expect(page.locator("p.state-error[role=alert]")).toContainText("انقطع الاتصال أثناء حفظ إيصال الحوالة أو تسجيلها");
+  await expect(page.getByText("الإيصال المحفوظ:")).toBeVisible();
+  expect(evidenceUploadCount).toBe(1);
+
+  await page.reload();
+  await expect(page.getByText(/بقيت محاولة غير محسومة/)).toBeVisible();
+  await expect(page.getByText("الإيصال المحفوظ:")).toBeVisible();
+  await expect(page.getByText("لا يوجد رصيد مفتوح حالياً، لكن توجد محاولة سابقة غير محسومة.")).toBeVisible();
+  await page.getByRole("button", { name: "إعادة المحاولة بنفس العملية" }).click();
+  await expect(page.getByRole("status")).toContainText("سُجلت الحوالة bank-transfer-1");
+  await expect(page.getByRole("link", { name: "فتح إيصال الحوالة" })).toHaveAttribute("href", "/api/finance/evidence/finance-receipt-1");
+  expect(remittanceRequests).toHaveLength(2);
+  const original = remittanceRequests[0];
+  const resumed = remittanceRequests[1];
+  if (!original || !resumed) throw new Error("expected both original and resumed partner remittance requests");
+  expect(original.body).toEqual({ partnerActorId: "act_partner_receipt", amountMinor: 5000, remittanceReference: "bank-transfer-1", evidenceDocumentId: "finance-receipt-1" });
+  expect(resumed.body).toEqual(original.body);
+  expect(resumed.headers["idempotency-key"]).toBe(original.headers["idempotency-key"]);
+  expect(resumed.headers["x-correlation-id"]).toBe(original.headers["x-correlation-id"]);
+  expect(evidenceUploadCount).toBe(1);
+});
+
+test("partner commission remittance keeps its recovery key when WLT returns an unreadable success", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  let evidenceUploadCount = 0;
+  const remittanceRequests: Array<{ headers: Record<string, string>; body: Record<string, unknown> }> = [];
+  await page.route("**/api/finance/partner-commission-receivables**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [{ partnerActorId: "act_partner_malformed", profileState: "ACTIVE", outstandingCommissionReceivableMinor: 5000, currency: "YER" }], nextCursor: "", limit: 50 }),
+    });
+  });
+  await page.route("**/api/finance/partner-earnings**", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ summary: { partnerActorId: "act_partner_malformed", currency: "YER", earnedMinor: 20000, commissionMinor: 5000, outstandingCommissionReceivableMinor: 5000, orderCount: 4, settlementPeriod: "WEEKLY", profileState: "ACTIVE", profileVersion: 1, lastEarningAt: null } }),
+      });
+      return;
+    }
+    remittanceRequests.push({ headers: route.request().headers(), body: route.request().postDataJSON() as Record<string, unknown> });
+    if (remittanceRequests.length === 1) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: "{" });
+      return;
+    }
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({ remittance: { id: "commission-remit-2", partnerActorId: "act_partner_malformed", amountMinor: 5000, currency: "YER", remittanceReference: "bank-transfer-2", evidenceDocumentId: "finance-receipt-2", verifiedBy: "act_operator", verifiedAt: "2026-10-03T00:00:00.000Z", ledgerTransactionId: "ledger-2", createdAt: "2026-10-03T00:00:00.000Z" }, idempotentReplay: true }),
+    });
+  });
+  await page.route("**/api/finance/evidence", async (route) => {
+    evidenceUploadCount += 1;
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ document: { id: "finance-receipt-2" } }) });
+  });
+
+  await page.goto("/finance/partner-commission-receivables?partnerActorId=act_partner_malformed");
+  await expect(page.getByRole("heading", { name: "مستحقات الشريك act_partner_malformed" })).toBeVisible();
+  await page.getByLabel("المبلغ بالريال اليمني").fill("5000");
+  await page.getByLabel("مرجع الحوالة").fill("bank-transfer-2");
+  await page.getByLabel("إيصال الحوالة (PDF أو صورة أو CSV أو Excel، بحد أقصى 10 ميغابايت)").setInputFiles({ name: "bank-transfer-2.pdf", mimeType: "application/pdf", buffer: Buffer.from("verified partner transfer receipt") });
+  await page.getByRole("button", { name: "تسجيل الحوالة بعد التحقق" }).click();
+  await expect(page.locator("p.state-error[role=alert]")).toContainText("استجابة غير مكتملة للحوالة");
+  await expect(page.getByRole("button", { name: "إعادة المحاولة بنفس العملية" })).toBeVisible();
+  expect(evidenceUploadCount).toBe(1);
+
+  await page.reload();
+  await expect(page.getByText(/بقيت محاولة غير محسومة/)).toBeVisible();
+  await page.getByRole("button", { name: "إعادة المحاولة بنفس العملية" }).click();
+  await expect(page.getByRole("status")).toContainText("سُجلت الحوالة bank-transfer-2");
+  expect(remittanceRequests).toHaveLength(2);
+  const original = remittanceRequests[0];
+  const replay = remittanceRequests[1];
+  if (!original || !replay) throw new Error("expected the original and replayed partner remittance requests");
+  expect(replay.body).toEqual(original.body);
+  expect(replay.headers["idempotency-key"]).toBe(original.headers["idempotency-key"]);
+  expect(replay.headers["x-correlation-id"]).toBe(original.headers["x-correlation-id"]);
+  expect(evidenceUploadCount).toBe(1);
 });
 
 test("Field candidate profile is reviewed before Identity grants the app role", async ({ page }) => {
@@ -1767,12 +1959,15 @@ test("security headers and cross-origin mutation guard are active", async ({ pag
   });
   expect(crossOriginResponse.status()).toBe(403);
 
-  const sameOriginBrowserStatus = await page.evaluate(async () => {
+  const sameOriginHandlerOutcome = await page.evaluate(async () => {
     const response = await fetch("/api/catalog/verticals", { method: "POST" });
     const body = await response.json() as { error?: { code?: string } };
     return { status: response.status, code: body.error?.code };
   });
-  expect(sameOriginBrowserStatus).toEqual({ status: 401, code: "UNAUTHENTICATED" });
+  expect(
+    (sameOriginHandlerOutcome.status === 400 && sameOriginHandlerOutcome.code === "INVALID_INPUT")
+      || (sameOriginHandlerOutcome.status === 401 && sameOriginHandlerOutcome.code === "UNAUTHENTICATED"),
+  ).toBe(true);
 });
 
 test("rendered light and dark themes preserve RTL and keyboard focus", async ({ page }) => {

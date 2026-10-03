@@ -1,4 +1,4 @@
-import { type CommercialStoreType, type CommerceVertical, createDshMobileClient, type DshImageUploadInput, type JoiningCaseResponse, type MediaProvenanceInput, type ServiceCity, type StoreCaptainInvitationResponse, type StoreCaptainMembershipListResponse, type StoreCaptainMembershipResponse, type StoreCaptainMembershipTransitionRequest } from "@bthwani/dsh";
+import { type CommercialStoreType, type CommerceVertical, createDshMobileClient, type DshImageUploadInput, type JoiningCaseResponse, type MediaProvenanceInput, type PartnerAccessibleStorePage, type PartnerStoreOperationalAvailabilityMutationResponse, type PartnerStoreOperationalAvailabilityResponse, type ServiceCity, type StoreAccessGrantListResponse, type StoreAccessGrantMutationResponse, type StoreAccessGrantPermissionsRequest, type StoreAccessGrantTransitionRequest, type StoreAccessInvitationCreateRequest, type StoreAccessInvitationDecisionRequest, type StoreAccessPermission, type StoreCaptainInvitationResponse, type StoreCaptainMembershipListResponse, type StoreCaptainMembershipResponse, type StoreCaptainMembershipTransitionRequest, type StoreOperationalAvailabilityRequest } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
@@ -30,6 +30,47 @@ export async function readOwnJoiningCase(): Promise<JoiningCaseResponse> {
   return accessToken().then((token) => dshClient().readOwnJoiningCase(token));
 }
 
+export async function listPartnerAccessibleStores(cursor = ""): Promise<PartnerAccessibleStorePage> {
+  const token = await accessToken();
+  return dshClient().listPartnerAccessibleStores(token, 50, cursor);
+}
+
+export async function listOwnStoreAccessGrants(storeID: string): Promise<StoreAccessGrantListResponse> {
+  const token = await accessToken();
+  return dshClient().listPartnerStoreAccessGrants(token, storeID);
+}
+
+export async function createOwnStoreAccessInvitation(storeID: string, input: StoreAccessInvitationCreateRequest, idempotencyKey: string, correlationID: string): Promise<StoreAccessGrantMutationResponse> {
+  const token = await accessToken();
+  return dshClient().createPartnerStoreAccessInvitation(token, storeID, input, idempotencyKey, correlationID);
+}
+
+export async function transitionOwnStoreAccessGrant(storeID: string, grantID: string, input: StoreAccessGrantTransitionRequest, idempotencyKey: string, correlationID: string): Promise<StoreAccessGrantMutationResponse> {
+  const token = await accessToken();
+  return dshClient().transitionPartnerStoreAccessGrant(token, storeID, grantID, input, idempotencyKey, correlationID);
+}
+
+export async function updateOwnStoreAccessPermissions(storeID: string, grantID: string, permissions: ReadonlyArray<StoreAccessPermission>, expectedVersion: number, idempotencyKey: string, correlationID: string): Promise<StoreAccessGrantMutationResponse> {
+  const token = await accessToken();
+  const input: StoreAccessGrantPermissionsRequest = { permissions: [...permissions], expectedVersion };
+  return dshClient().updatePartnerStoreAccessPermissions(token, storeID, grantID, input, idempotencyKey, correlationID);
+}
+
+export async function listOwnStoreAccessInvitations(): Promise<StoreAccessGrantListResponse> {
+  const token = await accessToken();
+  return dshClient().listActorStoreAccessInvitations(token);
+}
+
+export async function decideOwnStoreAccessInvitation(grantID: string, input: StoreAccessInvitationDecisionRequest, idempotencyKey: string, correlationID: string): Promise<StoreAccessGrantMutationResponse> {
+  const token = await accessToken();
+  return dshClient().decideActorStoreAccessInvitation(token, grantID, input, idempotencyKey, correlationID);
+}
+
+export async function activateOwnStoreAccessInvitation(grantID: string, expectedVersion: number, idempotencyKey: string, correlationID: string): Promise<StoreAccessGrantMutationResponse> {
+  const token = await accessToken();
+  return dshClient().activatePartnerStoreAccessInvitation(token, grantID, { expectedVersion }, idempotencyKey, correlationID);
+}
+
 export async function correctAndResubmitOwnJoiningCase({ caseID, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreCommercialTypeId, firstStoreLatitude, firstStoreLongitude, expectedVersion }: OwnJoiningCaseCorrection): Promise<JoiningCaseResponse> {
 	const identity = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, [caseID.trim(), businessName.trim(), firstStoreName.trim(), serviceCityId.trim(), firstStoreVerticalId.trim(), firstStoreCommercialTypeId.trim(), String(firstStoreLatitude), String(firstStoreLongitude), String(expectedVersion)].join("\u0000"));
 	const token = await accessToken();
@@ -54,6 +95,21 @@ export async function createOwnStoreCaptainInvitation(storeID: string): Promise<
 export async function transitionOwnStoreCaptainMembership(storeID: string, membershipID: string, state: StoreCaptainMembershipTransitionRequest["state"], expectedVersion: number): Promise<StoreCaptainMembershipResponse> {
   const token = await accessToken();
   return dshClient().transitionPartnerStoreCaptainMembership(token, storeID, membershipID, { state }, expectedVersion);
+}
+
+export async function readOwnStoreOperationalAvailability(storeID: string): Promise<PartnerStoreOperationalAvailabilityResponse> {
+  const token = await accessToken();
+  return dshClient().readPartnerStoreOperationalAvailability(token, storeID);
+}
+
+export async function updateOwnStoreOperationalAvailability(
+  storeID: string,
+  input: StoreOperationalAvailabilityRequest,
+  idempotencyKey: string,
+  correlationID: string,
+): Promise<PartnerStoreOperationalAvailabilityMutationResponse> {
+  const token = await accessToken();
+  return dshClient().updatePartnerStoreOperationalAvailability(token, storeID, input, idempotencyKey, correlationID);
 }
 
 export function listActiveServiceCities(): Promise<ReadonlyArray<ServiceCity>> {

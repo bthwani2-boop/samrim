@@ -67,10 +67,14 @@ paths:
     $ref: "./paths/session.yaml#/paths/~1auth~1development~1session"
   /internal/actor-roles/provision:
     $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1actor-roles~1provision"
+  /internal/actors/{actorId}/roles/{role}/provision:
+    $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1actors~1{actorId}~1roles~1{role}~1provision"
   /internal/actor-roles/search:
     $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1actor-roles~1search"
   /internal/actor-roles/read:
     $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1actor-roles~1read"
+  /internal/actors/{actorId}:
+    $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1actors~1{actorId}"
   /internal/operators/{actorId}/permissions/{permission}:
     $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1operators~1{actorId}~1permissions~1{permission}"
   /internal/actors/{actorId}/roles/{role}:
@@ -136,6 +140,21 @@ components:
     ActorType:
       type: string
       enum: [client, partner, captain, field, operator]
+
+    CanonicalActorResolution:
+      type: object
+      additionalProperties: false
+      required: [actorId, securityEnabled, version]
+      properties:
+        actorId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        securityEnabled:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
 
     ManagedActorType:
       type: string

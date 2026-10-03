@@ -51,6 +51,7 @@ func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/operator/operations", s.listOperatorOperations)
 	mux.HandleFunc("GET /dsh/operator/operations/{orderId}", s.readOperatorOperation)
 	mux.HandleFunc("GET /dsh/operator/cash-custody", s.listOperatorCashCustody)
+	mux.HandleFunc("POST /dsh/operator/cash-remittances/{remittanceId}/reconcile", s.reconcileOperatorCashRemittance)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders", s.listStore)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders/{orderId}", s.readStore)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/orders/{orderId}/transition", s.transition)
@@ -174,9 +175,64 @@ func (s *OrderServer) listOperatorCashCustody(w http.ResponseWriter, r *http.Req
 			writeError(w, http.StatusBadGateway, "WLT_CASH_UNAVAILABLE", "cash liability timestamp is invalid")
 			return
 		}
-		items = append(items, contract.CashLiabilityItem{PaymentIntentID: item.PaymentIntentID, ExternalReference: item.ExternalReference, CaptainActorID: item.CaptainActorID, AmountMinor: int(item.AmountMinor), Currency: item.Currency, PaymentVersion: item.PaymentVersion, CollectedAt: collectedAt})
+		items = append(items, contract.CashLiabilityItem{PaymentIntentID: item.PaymentIntentID, ExternalReference: item.ExternalReference, CaptainActorID: item.CaptainActorID, AmountMinor: int(item.AmountMinor), Currency: item.Currency, PaymentVersion: item.PaymentVersion, CollectedAt: collectedAt, RemittanceState: item.RemittanceState, RemittanceReference: item.RemittanceReference, RemittanceID: item.RemittanceID})
 	}
 	writeJSON(w, http.StatusOK, contract.CashCustodyRegistryResponse{Items: items, TotalAmountMinor: int(result.TotalAmountMinor), TotalItems: result.TotalItems, Limit: result.Limit, NextCursor: result.NextCursor})
+}
+
+func (s *OrderServer) reconcileOperatorCashRemittance(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "client actor authority headers are forbidden")
+		return
+	}
+	actingActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	correlationID := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
+	idempotencyKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if actingActorID == "" || len(actingActorID) > 128 || len(correlationID) < 8 || len(correlationID) > 128 || len(idempotencyKey) < 8 || len(idempotencyKey) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Finance actor, X-Correlation-ID and Idempotency-Key are required")
+		return
+	}
+	var input struct {
+		EvidenceDocumentID string `json:"evidenceDocumentId"`
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	remittance, replayed, err := s.service.ReconcileCashRemittance(r.Context(), actingActorID, r.PathValue("remittanceId"), input.EvidenceDocumentID, idempotencyKey, correlationID)
+	if err != nil {
+		var wltErr *wlt.Error
+		if errors.As(err, &wltErr) {
+			writeError(w, wltErr.Status, wltErr.Code, wltErr.Message)
+			return
+		}
+		writeOrderError(w, err)
+		return
+	}
+	createdAt, err := time.Parse(time.RFC3339Nano, remittance.CreatedAt)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "WLT_CASH_UNAVAILABLE", "cash remittance timestamp is invalid")
+		return
+	}
+	response := contract.CaptainCashRemittance{ID: remittance.ID, PaymentIntentID: remittance.PaymentIntentID, CaptainActorID: remittance.CaptainActorID, AmountMinor: int(remittance.AmountMinor), Currency: remittance.Currency, RemittanceReference: remittance.RemittanceReference, State: remittance.State, CreatedAt: createdAt}
+	if remittance.ReconciledBy != nil {
+		response.ReconciledBy = *remittance.ReconciledBy
+	}
+	if remittance.ReconciledAt != nil {
+		value, parseErr := time.Parse(time.RFC3339Nano, *remittance.ReconciledAt)
+		if parseErr != nil {
+			writeError(w, http.StatusBadGateway, "WLT_CASH_UNAVAILABLE", "cash reconciliation timestamp is invalid")
+			return
+		}
+		response.ReconciledAt = &value
+	}
+	if remittance.ReceiptDocumentID != nil {
+		response.ReceiptDocumentID = *remittance.ReceiptDocumentID
+	}
+	writeJSON(w, http.StatusOK, contract.CaptainCashRemittanceResponse{CashRemittance: response, IdempotentReplay: replayed})
 }
 
 func toOperatorOperation(operation postgres.OperatorOperationRecord) contract.OperatorOperation {
@@ -599,7 +655,17 @@ func toOrder(item postgres.OrderRecord) contract.Order {
 	if item.PickupLocation != nil {
 		pickupLocation = &contract.OrderPickupLocation{Latitude: item.PickupLocation.Latitude, Longitude: item.PickupLocation.Longitude}
 	}
-	return contract.Order{ID: item.ID, ClientActorID: item.ClientActorID, StoreID: item.StoreID, StoreName: item.StoreName, PickupLocation: pickupLocation, CartID: item.CartID, FulfillmentMode: contract.FulfillmentMode(item.FulfillmentMode), AddressID: item.AddressID, AddressVersion: item.AddressVersion, AddressText: item.AddressText, AddressLatitude: item.AddressLatitude, AddressLongitude: item.AddressLongitude, ServiceCityID: item.ServiceCityID, ServiceabilityPolicyVersion: item.ServiceabilityPolicyVersion, ServiceabilityStatus: item.ServiceabilityStatus, ServiceabilityStoreVersion: item.ServiceabilityStoreVersion, State: contract.OrderState(item.State), SubtotalAmountMinor: int(item.SubtotalAmountMinor), DiscountMinor: int(item.DiscountMinor), PromotionID: item.PromotionID, PromotionCode: item.PromotionCode, TotalAmountMinor: int(item.TotalAmountMinor), CashAmountMinor: int(item.PaymentCashAmountMinor), Currency: item.Currency, PaymentMethod: contract.PaymentMethod(item.PaymentMethod), PaymentState: contract.PaymentState(item.PaymentState), PaymentIntentID: paymentIntentID, StoreCashHandoffState: item.StoreCashHandoffState, Version: item.Version, Lines: lines, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	recipient := contract.OrderRecipient{Mode: item.Recipient.Mode}
+	if item.Recipient.Name != nil {
+		recipient.Name = *item.Recipient.Name
+	}
+	if item.Recipient.PhoneE164 != nil {
+		recipient.PhoneE164 = *item.Recipient.PhoneE164
+	}
+	if item.Recipient.Instructions != nil {
+		recipient.Instructions = *item.Recipient.Instructions
+	}
+	return contract.Order{ID: item.ID, ClientActorID: item.ClientActorID, StoreID: item.StoreID, StoreName: item.StoreName, PickupLocation: pickupLocation, CartID: item.CartID, FulfillmentMode: contract.FulfillmentMode(item.FulfillmentMode), AddressID: item.AddressID, AddressVersion: item.AddressVersion, AddressText: item.AddressText, AddressLatitude: item.AddressLatitude, AddressLongitude: item.AddressLongitude, ServiceCityID: item.ServiceCityID, ServiceabilityPolicyVersion: item.ServiceabilityPolicyVersion, ServiceabilityStatus: item.ServiceabilityStatus, ServiceabilityStoreVersion: item.ServiceabilityStoreVersion, ServiceabilityAddressVersion: item.ServiceabilityAddressVersion, Recipient: recipient, State: contract.OrderState(item.State), SubtotalAmountMinor: int(item.SubtotalAmountMinor), DiscountMinor: int(item.DiscountMinor), PromotionID: item.PromotionID, PromotionCode: item.PromotionCode, TotalAmountMinor: int(item.TotalAmountMinor), CashAmountMinor: int(item.PaymentCashAmountMinor), Currency: item.Currency, PaymentMethod: contract.PaymentMethod(item.PaymentMethod), PaymentState: contract.PaymentState(item.PaymentState), PaymentIntentID: paymentIntentID, StoreCashHandoffState: item.StoreCashHandoffState, Version: item.Version, Lines: lines, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func toOrderRating(item postgres.OrderRatingRecord) contract.OrderRating {
@@ -645,6 +711,8 @@ func writeOrderError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "order rating was not found")
 	case errors.Is(err, postgres.ErrOrderRatingInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "order rating input is invalid")
+	case errors.Is(err, orderdomain.ErrCashRemittanceInputInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cash remittance reconciliation input is invalid")
 	case errors.Is(err, postgres.ErrOrderRatingNotEligible):
 		writeError(w, http.StatusConflict, "ORDER_RATING_NOT_ELIGIBLE", "an order can be rated only after delivery")
 	case errors.Is(err, postgres.ErrOrderRatingAlreadyExists):

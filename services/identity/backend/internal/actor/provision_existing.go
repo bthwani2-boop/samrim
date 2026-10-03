@@ -13,13 +13,17 @@ import (
 // ProvisionExistingTrustedWithContext admits a managed role for one already-known
 // canonical actor. Unlike phone-based provisioning, this path never creates or
 // re-resolves a Human Actor.
-func (s *Service) ProvisionExistingTrustedWithContext(ctx context.Context, caller, actorID, role, actingActorID string) (domain.ActorRoleView, error) {
+func (s *Service) ProvisionExistingTrustedWithContext(ctx context.Context, caller, actorID, role, actingActorID, correlationID string) (domain.ActorRoleView, error) {
 	caller = strings.ToLower(strings.TrimSpace(caller))
 	actorID = strings.TrimSpace(actorID)
 	actingActorID = strings.TrimSpace(actingActorID)
+	correlationID = strings.TrimSpace(correlationID)
 	role = strings.ToLower(strings.TrimSpace(role))
 	if actorID == "" || !domain.CanProvisionRole(caller, role) {
 		return domain.ActorRoleView{}, domain.ErrForbidden
+	}
+	if len(correlationID) < 8 || len(correlationID) > 128 {
+		return domain.ActorRoleView{}, domain.ErrInvalidInput
 	}
 	if (caller == "control-panel" || caller == "dsh") && actingActorID == "" {
 		return domain.ActorRoleView{}, domain.ErrInvalidInput
@@ -41,6 +45,9 @@ func (s *Service) ProvisionExistingTrustedWithContext(ctx context.Context, calle
 	} else if err != nil {
 		return domain.ActorRoleView{}, err
 	}
+	if !actor.SecurityEnabled {
+		return domain.ActorRoleView{}, domain.ErrActorSecurityDisabled
+	}
 
 	var enabled bool
 	var activatedAt sql.NullTime
@@ -55,7 +62,7 @@ func (s *Service) ProvisionExistingTrustedWithContext(ctx context.Context, calle
 		}
 		enabled, roleVersion, roleCreated = true, 1, true
 		principal := caller + ":" + actingActorID
-		if err := auditTx(ctx, tx, "actor_role.provisioned", actor.ID, principal, "success", "", map[string]any{
+		if err := auditTx(ctx, tx, "actor_role.provisioned", actor.ID, principal, "success", correlationID, map[string]any{
 			"role": role, "workload": caller, "actingActorId": actingActorID, "actorLocator": "actor_id",
 		}); err != nil {
 			return domain.ActorRoleView{}, err

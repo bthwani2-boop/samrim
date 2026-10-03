@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, logoutIdentity, subscribeIdentitySession } from "../../bootstrap/identity";
 import { serviceCityDisplayName, useServiceCityScope } from "../service-city/service-city-scope";
+import { StoreAccessInvitationInbox } from "./store-access-invitations";
 
 export default function ClientAccount() {
   const router = useRouter();
@@ -77,6 +78,8 @@ export default function ClientAccount() {
         <BthwaniNavigationRow description="أضف عناوين التوصيل أو حدّثها" icon="location" title="عناوين التوصيل" onPress={() => router.push("/addresses" as Href)} />
         <BthwaniNavigationRow description={changingCity ? "جارٍ فتح قائمة المدن" : `المدينة الحالية: ${cityName}`} disabled={changingCity} icon="location" title="تغيير المدينة" onPress={() => void changeCity()} />
       </View>
+
+      {isAuthenticated ? <StoreAccessInvitationInbox /> : null}
 
       <BthwaniSectionHeader title="مظهر التطبيق" subtitle="غيّر المظهر في أي وقت؛ ويُحفظ اختيارك على هذا الجهاز." />
       <BthwaniSurface tone="raised" style={styles.appearancePanel}>

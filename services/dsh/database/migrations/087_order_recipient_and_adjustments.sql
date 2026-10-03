@@ -13,6 +13,7 @@ ALTER TABLE dsh.commerce_orders
             AND fulfillment_mode IN ('BTHWANI_CAPTAIN','PARTNER_CAPTAIN')
             AND recipient_name IS NOT NULL
             AND length(btrim(recipient_name)) BETWEEN 2 AND 120
+            AND recipient_phone_e164 IS NOT NULL
             AND recipient_phone_e164 ~ '^\+[1-9][0-9]{7,14}$'
             AND (recipient_instructions IS NULL OR length(btrim(recipient_instructions)) BETWEEN 1 AND 500)
         )
@@ -46,7 +47,7 @@ CREATE TABLE dsh.commerce_order_adjustments (
     CONSTRAINT commerce_order_adjustments_kind_facts_chk CHECK (
         (kind = 'REMOVE_ITEM' AND replacement_store_offer_id IS NULL AND replacement_variant_id IS NULL AND actual_quantity_base_units IS NULL)
         OR (kind = 'SUBSTITUTE_ITEM' AND replacement_store_offer_id IS NOT NULL AND replacement_variant_id IS NOT NULL AND actual_quantity_base_units IS NULL)
-        OR (kind = 'SET_ACTUAL_QUANTITY' AND replacement_store_offer_id IS NULL AND replacement_variant_id IS NULL AND actual_quantity_base_units > 0)
+        OR (kind = 'SET_ACTUAL_QUANTITY' AND replacement_store_offer_id IS NULL AND replacement_variant_id IS NULL AND actual_quantity_base_units IS NOT NULL AND actual_quantity_base_units > 0)
     ),
     CONSTRAINT commerce_order_adjustments_decision_chk CHECK (
         (customer_decision_required = false AND customer_actor_id IS NULL AND customer_decided_at IS NULL)

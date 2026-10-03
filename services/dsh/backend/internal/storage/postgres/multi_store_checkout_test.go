@@ -1,6 +1,9 @@
 package postgres
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestValidateMultiStoreCheckoutChildrenSupportsCustomerFulfillmentModes(t *testing.T) {
 	for _, fulfillmentMode := range []string{"BTHWANI_CAPTAIN", "PARTNER_CAPTAIN"} {
@@ -20,6 +23,43 @@ func TestValidateMultiStoreCheckoutChildrenSupportsCustomerFulfillmentModes(t *t
 	}
 	if err := validateMultiStoreCheckoutChildren(children); err != nil {
 		t.Fatalf("valid pickup fulfillment mode rejected: %v", err)
+	}
+}
+
+func TestMultiStoreCheckoutRecipientHashPreservesLegacySelfReplay(t *testing.T) {
+	type legacyChild struct {
+		CartID          string
+		StoreID         string
+		AddressID       string
+		CartVersion     int
+		FulfillmentMode string
+		PromotionCode   string
+	}
+	legacyPayload := struct {
+		ID            string        `json:"id"`
+		ClientActorID string        `json:"clientActorId"`
+		Children      []legacyChild `json:"children"`
+	}{ID: "multi-1", ClientActorID: "client-1", Children: []legacyChild{{CartID: "cart-a", StoreID: "store-a", AddressID: "address-a", CartVersion: 1, FulfillmentMode: "BTHWANI_CAPTAIN"}, {CartID: "cart-b", StoreID: "store-b", AddressID: "address-b", CartVersion: 2, FulfillmentMode: "PARTNER_CAPTAIN"}}}
+	legacyJSON, err := json.Marshal(legacyPayload)
+	if err != nil {
+		t.Fatalf("marshal legacy multi-store identity: %v", err)
+	}
+	legacyHash := HashMarketingFacts(string(legacyJSON))
+	input := MultiStoreCheckoutInput{ID: "multi-1", ClientActorID: "client-1", Children: []MultiStoreCheckoutChildInput{
+		{CartID: "cart-a", StoreID: "store-a", AddressID: "address-a", CartVersion: 1, FulfillmentMode: "BTHWANI_CAPTAIN", Recipient: DeliveryRecipientInput{Mode: "SELF"}},
+		{CartID: "cart-b", StoreID: "store-b", AddressID: "address-b", CartVersion: 2, FulfillmentMode: "PARTNER_CAPTAIN", Recipient: DeliveryRecipientInput{Mode: "SELF"}},
+	}}
+	if got := HashMultiStoreCheckoutRequest(input); got != legacyHash {
+		t.Fatal("SELF recipient changed the legacy multi-store idempotency identity")
+	}
+	input.Children[0].Recipient = DeliveryRecipientInput{Mode: "OTHER", Name: "Ali", PhoneE164: "+967712345678"}
+	otherHash := HashMultiStoreCheckoutRequest(input)
+	if otherHash == legacyHash {
+		t.Fatal("alternate recipient was not bound to the multi-store idempotency identity")
+	}
+	input.Children[0].Recipient.Name = "Different recipient"
+	if HashMultiStoreCheckoutRequest(input) == otherHash {
+		t.Fatal("changed alternate recipient retained the same multi-store idempotency identity")
 	}
 }
 

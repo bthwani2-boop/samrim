@@ -908,6 +908,10 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a catalog model must be assigned to the commerce vertical")
 	case errors.Is(err, postgres.ErrCatalogCategoryCycle):
 		writeError(w, http.StatusConflict, "CATEGORY_CYCLE", "a category cannot be placed under its own descendant")
+	case errors.Is(err, postgres.ErrCatalogCategoryHasActiveChildren):
+		writeError(w, http.StatusConflict, "CATEGORY_HAS_ACTIVE_CHILDREN", "active child categories must be disabled before this category")
+	case errors.Is(err, postgres.ErrCatalogCategoryParentInactive):
+		writeError(w, http.StatusConflict, "CATEGORY_PARENT_INACTIVE", "an active category requires every parent category to be active")
 	case errors.Is(err, postgres.ErrCatalogProposalConflict):
 		writeError(w, http.StatusConflict, "STATE_OR_VERSION_CONFLICT", "catalog Product proposal state or version is stale")
 	case errors.Is(err, postgres.ErrCatalogDuplicateIdentifier):

@@ -60,3 +60,10 @@ func TestStoreAccessDecisionHashesBindDelegateAndDecision(t *testing.T) {
 		t.Fatal("Store access decision hash must bind expected version")
 	}
 }
+
+func TestStoreAccessPartnerActivationHashBindsDelegateAndVersion(t *testing.T) {
+	base := HashStoreAccessPartnerActivation(" grant-1 ", " delegate-1 ", 3)
+	if base == HashStoreAccessPartnerActivation("grant-1", "delegate-2", 3) || base == HashStoreAccessPartnerActivation("grant-1", "delegate-1", 4) {
+		t.Fatal("Partner activation hash must bind the delegate and expected grant version")
+	}
+}

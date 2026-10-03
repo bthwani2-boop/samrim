@@ -45,6 +45,11 @@ func (s *Service) Checkout(ctx context.Context, accessToken string, input postgr
 		input.Children[index].AddressID = strings.TrimSpace(input.Children[index].AddressID)
 		input.Children[index].FulfillmentMode = strings.TrimSpace(input.Children[index].FulfillmentMode)
 		input.Children[index].PromotionCode = strings.ToUpper(strings.TrimSpace(input.Children[index].PromotionCode))
+		recipient, recipientErr := postgres.NormalizeDeliveryRecipient(input.Children[index].Recipient, input.Children[index].FulfillmentMode)
+		if recipientErr != nil {
+			return postgres.MultiStoreCheckoutRecord{}, false, recipientErr
+		}
+		input.Children[index].Recipient = recipient
 	}
 	requestHash := postgres.HashMultiStoreCheckoutRequest(input)
 	checkout, replayed, err := postgres.CreateMultiStoreCheckout(ctx, s.db, input, strings.TrimSpace(idempotencyKey), requestHash)
@@ -59,9 +64,13 @@ func (s *Service) Checkout(ctx context.Context, accessToken string, input postgr
 			continue
 		}
 		childInput := inputForChild(child)
+		if child.ChildIndex < 0 || child.ChildIndex >= len(input.Children) {
+			return postgres.MultiStoreCheckoutRecord{}, false, postgres.ErrMultiStoreCheckoutInvalid
+		}
+		childInput.Recipient = input.Children[child.ChildIndex].Recipient
 		childKey := postgres.HashMarketingFacts("multi-store-child-checkout", checkout.ID, child.ID)
 		childCorrelation := postgres.HashMarketingFacts("multi-store-child-correlation", strings.TrimSpace(correlationID), checkout.ID, child.ID)
-		order, _, checkoutErr := s.cart.Checkout(ctx, accessToken, childInput.CartID, childInput.StoreID, childInput.AddressID, childInput.FulfillmentMode, childInput.PromotionCode, 0, childInput.CartVersion, childKey, childCorrelation)
+		order, _, checkoutErr := s.cart.Checkout(ctx, accessToken, childInput.CartID, childInput.StoreID, childInput.AddressID, childInput.FulfillmentMode, childInput.PromotionCode, childInput.Recipient, 0, childInput.CartVersion, childKey, childCorrelation)
 		if checkoutErr != nil {
 			if !isDefinitiveChildCheckoutError(checkoutErr) {
 				return postgres.MultiStoreCheckoutRecord{}, false, ErrCheckoutInProgress
