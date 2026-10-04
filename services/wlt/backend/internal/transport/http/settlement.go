@@ -75,12 +75,19 @@ func (s *Server) listFieldAcquisitionEntitlements(w http.ResponseWriter, r *http
 }
 
 type payoutActionRequest struct {
-	Reason            string `json:"reason"`
-	EvidenceReference string `json:"evidenceReference"`
+	Reason                     string                   `json:"reason"`
+	EvidenceReference          string                   `json:"evidenceReference"`
+	IdentityFacts              postgres.IdentityFacts   `json:"identityFacts"`
+	IdentityFactsByBeneficiary []postgres.IdentityFacts `json:"identityFactsByBeneficiary"`
 }
 
 type settlementBatchCreateRequest struct {
-	PayoutIDs []string `json:"payoutIds"`
+	PayoutIDs                  []string                 `json:"payoutIds"`
+	IdentityFactsByBeneficiary []postgres.IdentityFacts `json:"identityFactsByBeneficiary"`
+}
+
+type settlementBatchIdentityFactsRequest struct {
+	IdentityFactsByBeneficiary []postgres.IdentityFacts `json:"identityFactsByBeneficiary"`
 }
 
 type transferRecordRequest struct {
@@ -290,7 +297,7 @@ func (s *Server) preparePayout(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	item, err := postgres.PreparePayout(r.Context(), s.db, postgres.PreparePayoutInput{PayoutID: r.PathValue("payoutId"), ActorID: actorID, Reason: input.Reason, Evidence: input.EvidenceReference, IdempotencyKey: idempotency, CorrelationID: correlation})
+	item, err := postgres.PreparePayout(r.Context(), s.db, s.destinationEncryptionKey, postgres.PreparePayoutInput{PayoutID: r.PathValue("payoutId"), ActorID: actorID, Reason: input.Reason, Evidence: input.EvidenceReference, IdentityFacts: input.IdentityFacts, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writeSettlementError(w, err)
 		return
@@ -310,7 +317,7 @@ func (s *Server) approvePayout(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	item, err := postgres.ApprovePayout(r.Context(), s.db, postgres.ApprovePayoutInput{PayoutID: r.PathValue("payoutId"), ActorID: actorID, Reason: input.Reason, IdempotencyKey: idempotency, CorrelationID: correlation})
+	item, err := postgres.ApprovePayout(r.Context(), s.db, s.destinationEncryptionKey, postgres.ApprovePayoutInput{PayoutID: r.PathValue("payoutId"), ActorID: actorID, Reason: input.Reason, IdentityFacts: input.IdentityFacts, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writeSettlementError(w, err)
 		return
@@ -350,7 +357,7 @@ func (s *Server) createSettlementBatch(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	item, err := postgres.CreateSettlementBatch(r.Context(), s.db, postgres.CreateSettlementBatchInput{PayoutIDs: input.PayoutIDs, ActorID: actorID, IdempotencyKey: idempotency, CorrelationID: correlation})
+	item, err := postgres.CreateSettlementBatch(r.Context(), s.db, postgres.CreateSettlementBatchInput{PayoutIDs: input.PayoutIDs, ActorID: actorID, IdentityFactsByBeneficiary: input.IdentityFactsByBeneficiary, DestinationCipher: s.destinationEncryptionKey, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writeSettlementError(w, err)
 		return
@@ -537,7 +544,11 @@ func (s *Server) exportSettlementBatch(w http.ResponseWriter, r *http.Request) {
 	if !ok || !s.requireOperatorID(w, actorID) {
 		return
 	}
-	item, err := postgres.ExportSettlementBatch(r.Context(), s.db, s.financeEvidenceCipher, postgres.ExportSettlementBatchInput{BatchID: r.PathValue("batchId"), ActorID: actorID, IdempotencyKey: idempotency, CorrelationID: correlation})
+	var input settlementBatchIdentityFactsRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	item, err := postgres.ExportSettlementBatch(r.Context(), s.db, s.financeEvidenceCipher, postgres.ExportSettlementBatchInput{BatchID: r.PathValue("batchId"), ActorID: actorID, IdentityFactsByBeneficiary: input.IdentityFactsByBeneficiary, DestinationCipher: s.destinationEncryptionKey, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writeSettlementError(w, err)
 		return
@@ -557,7 +568,7 @@ func (s *Server) approveSettlementBatch(w http.ResponseWriter, r *http.Request) 
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	item, err := postgres.ApproveSettlementBatch(r.Context(), s.db, postgres.BatchActionInput{BatchID: r.PathValue("batchId"), ActorID: actorID, Reason: input.Reason, IdempotencyKey: idempotency, CorrelationID: correlation})
+	item, err := postgres.ApproveSettlementBatch(r.Context(), s.db, postgres.BatchActionInput{BatchID: r.PathValue("batchId"), ActorID: actorID, Reason: input.Reason, IdentityFactsByBeneficiary: input.IdentityFactsByBeneficiary, DestinationCipher: s.destinationEncryptionKey, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writeSettlementError(w, err)
 		return
@@ -577,7 +588,7 @@ func (s *Server) freezeSettlementBatch(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	item, err := postgres.FreezeSettlementBatch(r.Context(), s.db, postgres.BatchActionInput{BatchID: r.PathValue("batchId"), ActorID: actorID, Reason: input.Reason, IdempotencyKey: idempotency, CorrelationID: correlation})
+	item, err := postgres.FreezeSettlementBatch(r.Context(), s.db, postgres.BatchActionInput{BatchID: r.PathValue("batchId"), ActorID: actorID, Reason: input.Reason, IdentityFactsByBeneficiary: input.IdentityFactsByBeneficiary, DestinationCipher: s.destinationEncryptionKey, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writeSettlementError(w, err)
 		return
@@ -680,18 +691,16 @@ func (s *Server) createCustomerWithdrawalIntake(w http.ResponseWriter, r *http.R
 		return
 	}
 	var input struct {
-		CustomerActorID            string `json:"customerActorId"`
-		ProviderKey                string `json:"providerKey"`
-		WalletIdentifier           string `json:"walletIdentifier"`
-		BeneficiaryName            string `json:"beneficiaryName"`
-		BeneficiaryIdentityVersion int    `json:"beneficiaryIdentityVersion"`
-		RequestReason              string `json:"requestReason"`
-		RequestEvidenceDocumentID  string `json:"requestEvidenceDocumentId"`
+		CustomerActorID           string                 `json:"customerActorId"`
+		ProviderKey               string                 `json:"providerKey"`
+		IdentityFacts             postgres.IdentityFacts `json:"identityFacts"`
+		RequestReason             string                 `json:"requestReason"`
+		RequestEvidenceDocumentID string                 `json:"requestEvidenceDocumentId"`
 	}
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	item, replayed, err := postgres.CreateCustomerWithdrawalIntake(r.Context(), s.db, s.destinationEncryptionKey, postgres.CustomerWithdrawalIntakeInput{CustomerActorID: input.CustomerActorID, ProviderKey: input.ProviderKey, WalletIdentifier: input.WalletIdentifier, BeneficiaryName: input.BeneficiaryName, BeneficiaryIdentityVersion: input.BeneficiaryIdentityVersion, RequestReason: input.RequestReason, RequestEvidenceDocumentID: input.RequestEvidenceDocumentID, RequestedBy: strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")), IdempotencyKey: idempotency, CorrelationID: correlation})
+	item, replayed, err := postgres.CreateCustomerWithdrawalIntake(r.Context(), s.db, s.destinationEncryptionKey, postgres.CustomerWithdrawalIntakeInput{CustomerActorID: input.CustomerActorID, ProviderKey: input.ProviderKey, IdentityFacts: input.IdentityFacts, RequestReason: input.RequestReason, RequestEvidenceDocumentID: input.RequestEvidenceDocumentID, RequestedBy: strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")), IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writePayoutError(w, err)
 		return
@@ -784,12 +793,13 @@ func (s *Server) prepareCustomerWithdrawalDestination(w http.ResponseWriter, r *
 		return
 	}
 	var input struct {
-		Reason string `json:"reason"`
+		Reason        string                 `json:"reason"`
+		IdentityFacts postgres.IdentityFacts `json:"identityFacts"`
 	}
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	destination, err := postgres.PrepareCustomerWithdrawalDestination(r.Context(), s.db, s.destinationEncryptionKey, r.PathValue("intakeId"), strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")), input.Reason, idempotency, correlation)
+	destination, err := postgres.PrepareCustomerWithdrawalDestination(r.Context(), s.db, s.destinationEncryptionKey, r.PathValue("intakeId"), strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")), input.Reason, input.IdentityFacts, idempotency, correlation)
 	if err != nil {
 		writeDestinationError(w, err)
 		return
@@ -807,12 +817,13 @@ func (s *Server) acceptCustomerWithdrawal(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var input struct {
-		Reason string `json:"reason"`
+		Reason        string                 `json:"reason"`
+		IdentityFacts postgres.IdentityFacts `json:"identityFacts"`
 	}
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	payout, err := postgres.AcceptCustomerWithdrawal(r.Context(), s.db, postgres.CustomerWithdrawalAcceptInput{IntakeID: r.PathValue("intakeId"), ActorID: strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")), Reason: input.Reason, IdempotencyKey: idempotency, CorrelationID: correlation})
+	payout, err := postgres.AcceptCustomerWithdrawal(r.Context(), s.db, s.destinationEncryptionKey, postgres.CustomerWithdrawalAcceptInput{IntakeID: r.PathValue("intakeId"), ActorID: strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")), Reason: input.Reason, IdentityFacts: input.IdentityFacts, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writePayoutError(w, err)
 		return
@@ -1026,6 +1037,8 @@ func toSettlementStatementRow(item postgres.SettlementStatementRowRecord) settle
 
 func writeSettlementError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, postgres.ErrReverificationRequired):
+		writeError(w, http.StatusConflict, "REVERIFICATION_REQUIRED", "current verified Identity facts do not match every payout beneficiary in the settlement batch")
 	case errors.Is(err, postgres.ErrPayoutNotFound), errors.Is(err, postgres.ErrSettlementBatchNotFound), errors.Is(err, postgres.ErrTransferNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "the requested settlement record was not found")
 	case errors.Is(err, postgres.ErrFinanceEvidenceNotFound):

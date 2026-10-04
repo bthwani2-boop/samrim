@@ -3,8 +3,11 @@ package transporthttp
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"net/http"
+	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
@@ -12,6 +15,8 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
+
+var officialWalletPhoneE164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
 
 // BeneficiaryFinanceServer owns the one role-scoped payout surface. The actor
 // role selects the authenticated identity; WLT remains the sole amount,
@@ -46,6 +51,7 @@ func (s *BeneficiaryFinanceServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/me/payout-intents", s.createOwnPayoutIntent)
 	mux.HandleFunc("GET /dsh/operator/{actorType}/{actorId}/payout-state", s.readOperatorPayoutState)
 	mux.HandleFunc("GET /dsh/operator/{actorType}/{actorId}/official-wallet-destination", s.readOperatorDestination)
+	mux.HandleFunc("GET /dsh/operator/{actorType}/{actorId}/wallet-provider-intent", s.readOperatorWalletProviderIntent)
 	mux.HandleFunc("POST /dsh/operator/{actorType}/{actorId}/official-wallet-destination", s.createOperatorDestination)
 	mux.HandleFunc("POST /dsh/operator/{actorType}/{actorId}/official-wallet-destination/{destinationId}/verify", s.verifyOperatorDestination)
 	mux.HandleFunc("POST /dsh/operator/{actorType}/{actorId}/official-wallet-destination/{destinationId}/activate", s.activateOperatorDestination)
@@ -186,7 +192,12 @@ func (s *BeneficiaryFinanceServer) createOwnPayoutIntent(w http.ResponseWriter, 
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	payout, replayed, err := s.payment.CreatePayoutIntent(r.Context(), identity.Role, identity.Subject, input.AmountMode, input.AmountMinor, idempotency, correlation)
+	identityFacts, err := s.readCurrentOfficialWalletIdentityFacts(r.Context(), identity.Role, identity.Subject, identity.Subject)
+	if err != nil {
+		writeOfficialWalletIdentityReadError(w, err)
+		return
+	}
+	payout, replayed, err := s.payment.CreatePayoutIntent(r.Context(), identity.Role, identity.Subject, input.AmountMode, input.AmountMinor, identityFacts, idempotency, correlation)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return
@@ -242,6 +253,34 @@ func (s *BeneficiaryFinanceServer) readOperatorDestination(w http.ResponseWriter
 	writeJSON(w, http.StatusOK, map[string]any{"destination": destination})
 }
 
+func (s *BeneficiaryFinanceServer) readOperatorWalletProviderIntent(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeAndRequireOperator(w, r) {
+		return
+	}
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if !s.requirePermission(w, r.Context(), acting, "finance") {
+		return
+	}
+	actorType := strings.ToLower(strings.TrimSpace(r.PathValue("actorType")))
+	actorID := strings.TrimSpace(r.PathValue("actorId"))
+	if actorType != "partner" && actorType != "captain" && actorType != "field" || actorID == "" || len(actorID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a valid actorType and actorId are required")
+		return
+	}
+	intent, err := postgres.ReadWalletProviderIntent(r.Context(), s.db, actorType, actorID)
+	if err != nil {
+		writeWalletProviderIntentError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"intent": map[string]string{
+		"actorType":   intent.ActorType,
+		"actorId":     intent.ActorID,
+		"providerKey": intent.ProviderKey,
+		"sourceId":    intent.SourceID,
+	}})
+}
+
 func (s *BeneficiaryFinanceServer) createOperatorDestination(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
@@ -258,8 +297,6 @@ func (s *BeneficiaryFinanceServer) createOperatorDestination(w http.ResponseWrit
 		return
 	}
 	var input struct {
-		ProviderKey                   string `json:"providerKey"`
-		WalletIdentifier              string `json:"walletIdentifier"`
 		ChangeReason                  string `json:"changeReason"`
 		VerificationEvidenceReference string `json:"verificationEvidenceReference"`
 		ChangeEvidenceReference       string `json:"changeEvidenceReference"`
@@ -267,13 +304,21 @@ func (s *BeneficiaryFinanceServer) createOperatorDestination(w http.ResponseWrit
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	legalName, err := s.identity.ReadVerifiedActorLegalName(r.Context(), actorID, acting)
+	identityFacts, err := s.readCurrentOfficialWalletIdentityFacts(r.Context(), actorType, actorID, acting)
+	if errors.Is(err, errOfficialWalletIdentityNotVerified) {
+		writeError(w, http.StatusConflict, "BENEFICIARY_IDENTITY_NOT_READY", "an active Identity role, verified phone, and verified canonical name are required")
+		return
+	}
 	if err != nil {
 		writeIdentityError(w, err)
 		return
 	}
-	beneficiaryName := strings.Join([]string{legalName.GivenName, legalName.SecondName, legalName.ThirdName, legalName.FamilyName}, " ")
-	destination, replayed, err := s.payment.CreateOfficialWalletDestination(r.Context(), wlt.OfficialWalletDestination{ActorType: actorType, ActorID: actorID, ProviderKey: input.ProviderKey, BeneficiaryName: beneficiaryName, BeneficiaryIdentityVersion: legalName.Version}, input.WalletIdentifier, input.ChangeReason, input.VerificationEvidenceReference, input.ChangeEvidenceReference, idempotency, correlation, acting)
+	intent, err := postgres.ReadWalletProviderIntent(r.Context(), s.db, actorType, actorID)
+	if err != nil {
+		writeWalletProviderIntentError(w, err)
+		return
+	}
+	destination, replayed, err := s.payment.CreateOfficialWalletDestination(r.Context(), wlt.OfficialWalletDestination{ActorType: actorType, ActorID: actorID, ProviderKey: intent.ProviderKey}, identityFacts, input.ChangeReason, input.VerificationEvidenceReference, input.ChangeEvidenceReference, idempotency, correlation, acting)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return
@@ -283,6 +328,40 @@ func (s *BeneficiaryFinanceServer) createOperatorDestination(w http.ResponseWrit
 		status = http.StatusOK
 	}
 	writeJSON(w, status, map[string]any{"destination": destination, "idempotentReplay": replayed})
+}
+
+func writeWalletProviderIntentError(w http.ResponseWriter, err error) {
+	if errors.Is(err, postgres.ErrWalletProviderIntentNotFound) {
+		writeError(w, http.StatusConflict, "WALLET_PROVIDER_INTENT_UNAVAILABLE", "an active beneficiary with a recorded wallet provider intent is required")
+		return
+	}
+	writeStorageError(w, err)
+}
+
+func canonicalOfficialWalletPhone(actorType, actorID string, role identityclient.ActorRoleView) (string, bool) {
+	phone := strings.TrimSpace(role.PhoneE164)
+	if role.ActorID != actorID || role.Role != identityclient.ActorType(actorType) || role.ActorVersion < 1 || role.RoleVersion < 1 || !role.Enabled || !role.SecurityEnabled || role.ActivatedAt == nil || !officialWalletPhoneE164Pattern.MatchString(phone) {
+		return "", false
+	}
+	return phone, true
+}
+
+func canonicalOfficialWalletName(actorID string, legalName identityclient.ActorLegalName) (string, int, bool) {
+	if legalName.ActorID != actorID || legalName.Status != "VERIFIED" || legalName.Version < 1 {
+		return "", 0, false
+	}
+	parts := []string{legalName.GivenName, legalName.SecondName, legalName.ThirdName, legalName.FamilyName}
+	for index := range parts {
+		parts[index] = strings.TrimSpace(parts[index])
+		if parts[index] == "" {
+			return "", 0, false
+		}
+	}
+	name := strings.Join(parts, " ")
+	if utf8.RuneCountInString(name) > 320 {
+		return "", 0, false
+	}
+	return name, legalName.Version, true
 }
 
 func (s *BeneficiaryFinanceServer) verifyOperatorDestination(w http.ResponseWriter, r *http.Request) {
@@ -306,7 +385,12 @@ func (s *BeneficiaryFinanceServer) verifyOperatorDestination(w http.ResponseWrit
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	destination, err := s.payment.VerifyOfficialWalletDestination(r.Context(), r.PathValue("destinationId"), input.EvidenceReference, idempotency, correlation, acting)
+	identityFacts, err := s.readCurrentOfficialWalletIdentityFacts(r.Context(), actorType, actorID, acting)
+	if err != nil {
+		writeOfficialWalletIdentityReadError(w, err)
+		return
+	}
+	destination, err := s.payment.VerifyOfficialWalletDestination(r.Context(), r.PathValue("destinationId"), input.EvidenceReference, identityFacts, idempotency, correlation, acting)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return
@@ -333,7 +417,12 @@ func (s *BeneficiaryFinanceServer) activateOperatorDestination(w http.ResponseWr
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	destination, err := s.payment.ActivateOfficialWalletDestination(r.Context(), r.PathValue("destinationId"), idempotency, correlation, acting)
+	identityFacts, err := s.readCurrentOfficialWalletIdentityFacts(r.Context(), actorType, actorID, acting)
+	if err != nil {
+		writeOfficialWalletIdentityReadError(w, err)
+		return
+	}
+	destination, err := s.payment.ActivateOfficialWalletDestination(r.Context(), r.PathValue("destinationId"), identityFacts, idempotency, correlation, acting)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return

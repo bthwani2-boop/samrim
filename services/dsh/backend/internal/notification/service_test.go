@@ -42,3 +42,21 @@ func TestStorePickupNotificationCopyIsSpecificToEachActor(t *testing.T) {
 		})
 	}
 }
+
+func TestStoreGoLiveNotificationCopyIsSpecificToEachRecipient(t *testing.T) {
+	tests := []struct {
+		eventType string
+		role      string
+		kind      string
+		title     string
+	}{
+		{"store_published_handoff", "partner", "STORE_PUBLISHED", "اكتمل تسليم المتجر"},
+		{"field_mission_completed", "field", "FIELD_MISSION_COMPLETED", "اكتملت مهمة المتابعة"},
+	}
+	for _, test := range tests {
+		kind, title, body := message(test.eventType, test.role, "")
+		if kind != test.kind || title != test.title || body == "" {
+			t.Fatalf("message(%q, %q) = (%q, %q, %q)", test.eventType, test.role, kind, title, body)
+		}
+	}
+}

@@ -15,6 +15,80 @@ func (s *Service) ListOffersForPartner(ctx context.Context, accessToken, storeID
 	return postgres.ListCatalogOfferPage(ctx, s.db, strings.TrimSpace(storeID), limit, cursor)
 }
 
+func (s *Service) ListQuickPricesForPartner(ctx context.Context, accessToken, storeID string, filters postgres.CatalogQuickPriceFilters, limit int, cursor string) (postgres.CatalogStoreOfferPage, error) {
+	if _, err := s.requireStoreOwner(ctx, accessToken, storeID); err != nil {
+		return postgres.CatalogStoreOfferPage{}, err
+	}
+	return postgres.ListCatalogQuickPriceOffers(ctx, s.db, strings.TrimSpace(storeID), filters, limit, cursor)
+}
+
+func (s *Service) UpdateQuickPricesForPartner(ctx context.Context, accessToken, storeID string, changes []postgres.CatalogQuickPriceUpdateInput, idempotencyKey, correlationID string) ([]postgres.CatalogQuickPriceUpdateResult, error) {
+	actorID, err := s.requireStoreOwner(ctx, accessToken, storeID)
+	if err != nil {
+		return nil, err
+	}
+	storeID = strings.TrimSpace(storeID)
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
+	correlationID = strings.TrimSpace(correlationID)
+	if storeID == "" || idempotencyKey == "" || correlationID == "" || len(changes) < 1 || len(changes) > 100 {
+		return nil, postgres.ErrCatalogQuickPriceInvalidFilter
+	}
+	seen := make(map[string]struct{}, len(changes))
+	results := make([]postgres.CatalogQuickPriceUpdateResult, 0, len(changes))
+	for _, change := range changes {
+		offerID := strings.TrimSpace(change.OfferID)
+		if offerID == "" || change.ExpectedVersion < 1 || change.PriceMinor < 1 {
+			return nil, postgres.ErrCatalogQuickPriceInvalidFilter
+		}
+		if _, exists := seen[offerID]; exists {
+			return nil, postgres.ErrCatalogQuickPriceInvalidFilter
+		}
+		seen[offerID] = struct{}{}
+	}
+	for _, change := range changes {
+		offerID := strings.TrimSpace(change.OfferID)
+		current, readErr := postgres.ReadCatalogOffer(ctx, s.db, offerID)
+		if readErr != nil {
+			return nil, readErr
+		}
+		if current.StoreID != storeID {
+			return nil, ErrStoreOwnershipForbidden
+		}
+		if current.Version != change.ExpectedVersion {
+			results = append(results, postgres.CatalogQuickPriceUpdateResult{OfferID: offerID, Outcome: "VERSION_CONFLICT", Offer: &current})
+			continue
+		}
+		update := postgres.CatalogOfferUpdateInput{PriceMinor: change.PriceMinor, Availability: current.Availability, PublicationState: current.PublicationState, QuantityPolicy: current.QuantityPolicy, QuantityMinBaseUnits: quickPriceQuantity(current.QuantityMinBaseUnits), QuantityMaxBaseUnits: quickPriceQuantity(current.QuantityMaxBaseUnits), QuantityStepBaseUnits: quickPriceQuantity(current.QuantityStepBaseUnits), PricingBasis: current.PricingBasis, PricingUnitBaseUnits: current.PricingUnitBaseUnits, InventoryPolicy: current.InventoryPolicy, InventoryOnHandBaseUnits: current.InventoryOnHandBaseUnits}
+		itemKey := "quick-price-" + postgres.HashCatalogQuickPriceItemKey(idempotencyKey, storeID, offerID)[:48]
+		updated, updateErr := postgres.UpdateCatalogOfferWithProvenance(ctx, s.db, offerID, update, change.ExpectedVersion, itemKey, postgres.HashCatalogOfferUpdateRequest(offerID, update, change.ExpectedVersion), actorID, correlationID, "QUICK_PRICES")
+		if errors.Is(updateErr, postgres.ErrCatalogVersionConflict) {
+			current, readErr = postgres.ReadCatalogOffer(ctx, s.db, offerID)
+			if readErr != nil {
+				return nil, readErr
+			}
+			results = append(results, postgres.CatalogQuickPriceUpdateResult{OfferID: offerID, Outcome: "VERSION_CONFLICT", Offer: &current})
+			continue
+		}
+		if updateErr != nil {
+			return nil, updateErr
+		}
+		outcome := "UPDATED"
+		if updated.Replayed {
+			outcome = "REPLAYED"
+		}
+		offer := updated.Offer
+		results = append(results, postgres.CatalogQuickPriceUpdateResult{OfferID: offerID, Outcome: outcome, Offer: &offer})
+	}
+	return results, nil
+}
+
+func quickPriceQuantity(value *int64) int64 {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
 func (s *Service) ReadOfferForPartner(ctx context.Context, accessToken, storeID, offerID string) (postgres.CatalogStoreOfferRecord, error) {
 	if _, err := s.requireStoreOwner(ctx, accessToken, storeID); err != nil {
 		return postgres.CatalogStoreOfferRecord{}, err

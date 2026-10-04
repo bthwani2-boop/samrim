@@ -1,6 +1,7 @@
 package transporthttp
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -103,7 +104,6 @@ func (s *BeneficiaryFinanceServer) createCustomerWithdrawalIntake(w http.Respons
 	var input struct {
 		CustomerActorID           string `json:"customerActorId"`
 		ProviderKey               string `json:"providerKey"`
-		WalletIdentifier          string `json:"walletIdentifier"`
 		RequestReason             string `json:"requestReason"`
 		RequestEvidenceDocumentID string `json:"requestEvidenceDocumentId"`
 	}
@@ -111,22 +111,16 @@ func (s *BeneficiaryFinanceServer) createCustomerWithdrawalIntake(w http.Respons
 		return
 	}
 	input.CustomerActorID = strings.TrimSpace(input.CustomerActorID)
-	role, err := s.identity.ReadActorRole(r.Context(), input.CustomerActorID, "client")
+	identityFacts, err := s.readCurrentOfficialWalletIdentityFacts(r.Context(), "customer", input.CustomerActorID, acting)
 	if err != nil {
+		if errors.Is(err, errOfficialWalletIdentityNotVerified) {
+			writeError(w, http.StatusConflict, "OFFICIAL_WALLET_IDENTITY_REQUIRED", "a current verified Customer phone and legal name are required")
+			return
+		}
 		writeIdentityError(w, err)
 		return
 	}
-	if role.Role != "client" || !role.Enabled || !role.SecurityEnabled {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active Customer Identity is required for an Operations withdrawal request")
-		return
-	}
-	legalName, err := s.identity.ReadVerifiedActorLegalName(r.Context(), input.CustomerActorID, acting)
-	if err != nil {
-		writeIdentityError(w, err)
-		return
-	}
-	beneficiaryName := strings.Join([]string{legalName.GivenName, legalName.SecondName, legalName.ThirdName, legalName.FamilyName}, " ")
-	item, replayed, err := s.payment.CreateCustomerWithdrawalIntake(r.Context(), input.CustomerActorID, input.ProviderKey, input.WalletIdentifier, beneficiaryName, legalName.Version, input.RequestReason, input.RequestEvidenceDocumentID, idempotency, correlation, acting)
+	item, replayed, err := s.payment.CreateCustomerWithdrawalIntake(r.Context(), input.CustomerActorID, input.ProviderKey, identityFacts, input.RequestReason, input.RequestEvidenceDocumentID, idempotency, correlation, acting)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return
@@ -234,7 +228,17 @@ func (s *BeneficiaryFinanceServer) prepareCustomerWithdrawalDestination(w http.R
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	destination, err := s.payment.PrepareCustomerWithdrawalDestination(r.Context(), r.PathValue("intakeId"), input.Reason, idempotency, correlation, acting)
+	intake, err := s.payment.ReadCustomerWithdrawalIntake(r.Context(), r.PathValue("intakeId"), acting)
+	if err != nil {
+		writeWLTFinanceError(w, err)
+		return
+	}
+	identityFacts, err := s.readCurrentOfficialWalletIdentityFacts(r.Context(), "customer", intake.CustomerActorID, acting)
+	if err != nil {
+		writeOfficialWalletIdentityReadError(w, err)
+		return
+	}
+	destination, err := s.payment.PrepareCustomerWithdrawalDestination(r.Context(), r.PathValue("intakeId"), identityFacts, input.Reason, idempotency, correlation, acting)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return
@@ -263,7 +267,12 @@ func (s *BeneficiaryFinanceServer) verifyCustomerWithdrawalDestination(w http.Re
 		writeError(w, http.StatusConflict, "DESTINATION_UNAVAILABLE", "the Finance-prepared wallet destination is missing")
 		return
 	}
-	destination, err := s.payment.VerifyOfficialWalletDestination(r.Context(), *intake.DestinationID, input.EvidenceReference, idempotency, correlation, acting)
+	identityFacts, err := s.readCurrentOfficialWalletIdentityFacts(r.Context(), "customer", intake.CustomerActorID, acting)
+	if err != nil {
+		writeOfficialWalletIdentityReadError(w, err)
+		return
+	}
+	destination, err := s.payment.VerifyOfficialWalletDestination(r.Context(), *intake.DestinationID, input.EvidenceReference, identityFacts, idempotency, correlation, acting)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return
@@ -286,7 +295,12 @@ func (s *BeneficiaryFinanceServer) activateCustomerWithdrawalDestination(w http.
 		writeError(w, http.StatusConflict, "DESTINATION_UNAVAILABLE", "the Finance-prepared wallet destination is missing")
 		return
 	}
-	destination, err := s.payment.ActivateOfficialWalletDestination(r.Context(), *intake.DestinationID, idempotency, correlation, acting)
+	identityFacts, err := s.readCurrentOfficialWalletIdentityFacts(r.Context(), "customer", intake.CustomerActorID, acting)
+	if err != nil {
+		writeOfficialWalletIdentityReadError(w, err)
+		return
+	}
+	destination, err := s.payment.ActivateOfficialWalletDestination(r.Context(), *intake.DestinationID, identityFacts, idempotency, correlation, acting)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return
@@ -306,7 +320,17 @@ func (s *BeneficiaryFinanceServer) acceptCustomerWithdrawal(w http.ResponseWrite
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	payout, err := s.payment.AcceptCustomerWithdrawal(r.Context(), r.PathValue("intakeId"), input.Reason, idempotency, correlation, acting)
+	intake, err := s.payment.ReadCustomerWithdrawalIntake(r.Context(), r.PathValue("intakeId"), acting)
+	if err != nil {
+		writeWLTFinanceError(w, err)
+		return
+	}
+	identityFacts, err := s.readCurrentOfficialWalletIdentityFacts(r.Context(), "customer", intake.CustomerActorID, acting)
+	if err != nil {
+		writeOfficialWalletIdentityReadError(w, err)
+		return
+	}
+	payout, err := s.payment.AcceptCustomerWithdrawal(r.Context(), r.PathValue("intakeId"), identityFacts, input.Reason, idempotency, correlation, acting)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return

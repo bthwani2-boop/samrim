@@ -92,14 +92,14 @@ func TestPayoutMutationInputsRejectBeforeDatabase(t *testing.T) {
 		{
 			name: "prepare missing payout id",
 			call: func() error {
-				_, err := PreparePayout(ctx, zeroDB, PreparePayoutInput{ActorID: "operator", Reason: "reviewed", Evidence: "evidence", IdempotencyKey: validKey, CorrelationID: validCorrelation})
+				_, err := PreparePayout(ctx, zeroDB, nil, PreparePayoutInput{ActorID: "operator", Reason: "reviewed", Evidence: "evidence", IdempotencyKey: validKey, CorrelationID: validCorrelation})
 				return err
 			},
 		},
 		{
 			name: "approve missing reason",
 			call: func() error {
-				_, err := ApprovePayout(ctx, zeroDB, ApprovePayoutInput{PayoutID: "payout-1", ActorID: "operator", IdempotencyKey: validKey, CorrelationID: validCorrelation})
+				_, err := ApprovePayout(ctx, zeroDB, nil, ApprovePayoutInput{PayoutID: "payout-1", ActorID: "operator", IdempotencyKey: validKey, CorrelationID: validCorrelation})
 				return err
 			},
 		},

@@ -18,8 +18,8 @@ func TestCanonicalJourneyMigrationGraphIncludesJoiningCaseIntakeDetails(t *testi
 		t.Fatalf("canonical DSH migration graph size: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.CanonicalSchemaVersion)
 	}
 	last := records[len(records)-1]
-	if last.Version != postgres.CanonicalSchemaVersion || last.Name != "092_joining_case_store_intake_details.sql" {
-		t.Fatalf("last canonical DSH migration = v%d %q; want v%d 092_joining_case_store_intake_details.sql", last.Version, last.Name, postgres.CanonicalSchemaVersion)
+	if last.Version != postgres.CanonicalSchemaVersion || last.Name != "095_wallet_provider_intent.sql" {
+		t.Fatalf("last canonical DSH migration = v%d %q; want v%d 095_wallet_provider_intent.sql", last.Version, last.Name, postgres.CanonicalSchemaVersion)
 	}
 
 	migrationByName := make(map[string]string, len(records))
@@ -35,9 +35,24 @@ func TestCanonicalJourneyMigrationGraphIncludesJoiningCaseIntakeDetails(t *testi
 		"090_order_store_orderability_snapshot.sql",
 		"091_order_adjustment_financial_handoff.sql",
 		"092_joining_case_store_intake_details.sql",
+		"093_catalog_mixed_scope_and_store_skus.sql",
+		"094_store_go_live_notifications.sql",
+		"095_wallet_provider_intent.sql",
 	} {
 		if _, ok := migrationByName[required]; !ok {
 			t.Fatalf("canonical DSH migration missing: %s", required)
+		}
+	}
+	goLiveMigration := migrationByName["094_store_go_live_notifications.sql"]
+	for _, required := range []string{"CREATE TABLE dsh.store_go_live_notifications", "store_published_handoff", "field_mission_completed", "field_acquisition_reward_posted", "store_go_live_notifications_actor_idx", "order|captain|field|store"} {
+		if !strings.Contains(goLiveMigration, required) {
+			t.Fatalf("migration 094 is missing store go-live notification requirement: %s", required)
+		}
+	}
+	providerIntentMigration := migrationByName["095_wallet_provider_intent.sql"]
+	for _, required := range []string{"joining_cases_wallet_provider_key_chk", "field_admissions_wallet_provider_key_chk", "captain_admissions_wallet_provider_key_chk", "wallet_provider_key text"} {
+		if !strings.Contains(providerIntentMigration, required) {
+			t.Fatalf("migration 095 is missing wallet provider intent requirement: %s", required)
 		}
 	}
 	if !strings.Contains(migrationByName["085_store_operational_availability.sql"], "CREATE TABLE dsh.store_operational_availability") || !strings.Contains(migrationByName["085_store_operational_availability.sql"], "schedule_timezone text NOT NULL DEFAULT 'Asia/Aden'") {
@@ -71,6 +86,21 @@ func TestCanonicalJourneyMigrationGraphIncludesJoiningCaseIntakeDetails(t *testi
 	}
 	if strings.Contains(orderMigration, "dsh.orders") || strings.Contains(orderMigration, "dsh.order_lines") || strings.Contains(orderMigration, "CREATE TABLE dsh.order_adjustments") {
 		t.Fatal("migration 087 retains a losing non-commerce order schema path")
+	}
+	catalogMigration := migrationByName["093_catalog_mixed_scope_and_store_skus.sql"]
+	for _, required := range []string{
+		"DROP COLUMN catalog_model",
+		"identifier_type IN ('GTIN','EAN','UPC','LEGACY_BARCODE')",
+		"CREATE UNIQUE INDEX catalog_variant_identifiers_store_sku_uq",
+		"p.scope='SHARED' AND p.store_id IS NULL",
+		"p.scope='STORE_SCOPED' AND p.store_id=o.store_id",
+		"old_price_minor",
+		"new_price_minor",
+		"provenance",
+	} {
+		if !strings.Contains(catalogMigration, required) {
+			t.Fatalf("migration 093 is missing mixed-catalog requirement: %s", required)
+		}
 	}
 	financialHandoffMigration := migrationByName["091_order_adjustment_financial_handoff.sql"]
 	for _, required := range []string{"ORDER_ADJUSTMENT_RECONCILIATION", "amount_minor=0", "captain_actor_id IS NULL", "partner_actor_id IS NULL"} {

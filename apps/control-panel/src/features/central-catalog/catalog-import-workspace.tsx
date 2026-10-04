@@ -1,10 +1,13 @@
 "use client";
 
 import type { CatalogImportItem, CatalogImportPreviewResponse, CatalogImportRow, CatalogImportRunResponse } from "@bthwani/dsh";
+import * as XLSX from "xlsx";
 import { useState } from "react";
 
 type ImportResult = CatalogImportPreviewResponse | CatalogImportRunResponse;
 type ParsedSource = { rows: ReadonlyArray<CatalogImportRow>; errors: ReadonlyArray<string> };
+const MAX_IMPORT_ROWS = 5000;
+const MAX_IMPORT_BYTES = 20 * 1024 * 1024;
 
 const classificationLabels: Record<CatalogImportItem["classification"], string> = {
   READY: "جاهز",
@@ -134,7 +137,7 @@ function parseSource(text: string, fileName: string): ParsedSource {
     if (records.length < 2) return { rows, errors: ["ملف CSV يحتاج صف عناوين وصفًا واحدًا على الأقل."] };
     const firstRecord = records[0];
     if (!firstRecord) return { rows, errors: ["ملف CSV يحتاج صف عناوين وصفًا واحدًا على الأقل."] };
-    const header = firstRecord.values.map((value) => value.trim());
+    const header = firstRecord.values.map((value) => value.trim().replace(/^\uFEFF/, ""));
     for (const record of records.slice(1)) {
       try {
         rows.push(normalizeRow(Object.fromEntries(header.map((key, index) => [key, record.values[index] ?? ""])), record.line));
@@ -159,6 +162,31 @@ function parseSource(text: string, fileName: string): ParsedSource {
   return { rows, errors };
 }
 
+function parseWorkbook(buffer: ArrayBuffer): ParsedSource {
+  const workbook = XLSX.read(buffer, { type: "array", cellDates: false, sheetRows: MAX_IMPORT_ROWS + 1 });
+  const sheetName = workbook.SheetNames[0];
+  const sheet = sheetName ? workbook.Sheets[sheetName] : undefined;
+  if (!sheet) return { rows: [], errors: ["ملف Excel لا يحتوي ورقة بيانات."] };
+  const reference = sheet["!fullref"] ?? sheet["!ref"];
+  if (!reference) return { rows: [], errors: ["ورقة Excel فارغة."] };
+  const range = XLSX.utils.decode_range(reference);
+  if (range.e.r - range.s.r > MAX_IMPORT_ROWS) return { rows: [], errors: [`الحد الأقصى للاستيراد ${MAX_IMPORT_ROWS} صف بيانات بالإضافة إلى صف العناوين.`] };
+  const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", raw: false, blankrows: false });
+  if (matrix.length < 2) return { rows: [], errors: ["ورقة Excel تحتاج صف عناوين وصفًا واحدًا على الأقل."] };
+  const headers = (matrix[0] ?? []).map((value) => String(value).trim());
+  const rows: CatalogImportRow[] = [];
+  const errors: string[] = [];
+  for (const [index, values] of matrix.slice(1).entries()) {
+    if (!values.some((value) => String(value).trim())) continue;
+    try {
+      rows.push(normalizeRow(Object.fromEntries(headers.map((key, column) => [key, values[column] ?? ""])), index + 2));
+    } catch (cause) {
+      errors.push(cause instanceof Error ? cause.message : `السطر ${index + 2}: تعذر قراءة الصف.`);
+    }
+  }
+  return { rows, errors };
+}
+
 async function sha256(file: File): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
   return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -177,6 +205,7 @@ export function CatalogImportWorkspace() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [sourceHash, setSourceHash] = useState("");
+  const [commitAttempt, setCommitAttempt] = useState<Readonly<{ runId: string; idempotencyKey: string }> | null>(null);
 
   async function selectFile(file: File | undefined) {
     setSourceFile(file ?? null);
@@ -186,13 +215,25 @@ export function CatalogImportWorkspace() {
     setParseErrors([]);
     setRows([]);
     setSourceHash("");
+    setCommitAttempt(null);
     if (!file) return;
+    if (file.size > MAX_IMPORT_BYTES) {
+      setError("حجم الملف يتجاوز 20 ميغابايت.");
+      return;
+    }
     try {
-      const [text, hash] = await Promise.all([file.text(), sha256(file)]);
-      const parsed = parseSource(text, file.name);
+      const [buffer, hash] = await Promise.all([file.arrayBuffer(), sha256(file)]);
+      const extension = file.name.toLowerCase().split(".").pop();
+      const parsed = extension === "xlsx"
+        ? parseWorkbook(buffer)
+        : parseSource(new TextDecoder().decode(buffer), file.name);
       setRows(parsed.rows);
       setParseErrors(parsed.errors);
       setSourceHash(hash);
+      if (parsed.rows.length + parsed.errors.length > MAX_IMPORT_ROWS) {
+        setRows([]);
+        setParseErrors([`الحد الأقصى للاستيراد ${MAX_IMPORT_ROWS} صفًا. لم تُقتطع الصفوف.`]);
+      }
       if (!parsed.rows.length) setError("لم ينتج الملف أي صف صالح للمعاينة.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "تعذر قراءة الملف.");
@@ -201,8 +242,8 @@ export function CatalogImportWorkspace() {
 
   async function preview() {
     if (!sourceFile || !rows.length || busy) return;
-    if (rows.length > 1000) {
-      setError("الحد الأقصى للمعاينة هو 1000 صف.");
+    if (rows.length > MAX_IMPORT_ROWS) {
+      setError(`الحد الأقصى للمعاينة هو ${MAX_IMPORT_ROWS} صفًا.`);
       return;
     }
     setBusy("preview");
@@ -236,17 +277,20 @@ export function CatalogImportWorkspace() {
   }
 
   async function commit() {
-    if (!result || result.run.state !== "previewed" || busy) return;
+    if (!result || (result.run.state !== "previewed" && result.run.state !== "rejected") || busy) return;
+    const attempt = commitAttempt?.runId === result.run.id ? commitAttempt : { runId: result.run.id, idempotencyKey: crypto.randomUUID() };
+    setCommitAttempt(attempt);
     setBusy("commit");
     setError("");
     setNotice("");
     try {
       const response = await fetch(`/api/catalog/imports/${encodeURIComponent(result.run.id)}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+        headers: { "Content-Type": "application/json", "Idempotency-Key": attempt.idempotencyKey },
       });
       const committed = await readJson<ImportResult>(response);
       setResult(committed);
+      if (committed.run.state === "committed") setCommitAttempt(null);
       setNotice("تم الالتزام الصريح، ثم ستُعاد قراءة النتيجة القانونية من المصدر.");
       await readRun(committed.run.id);
     } catch (cause) {
@@ -260,12 +304,12 @@ export function CatalogImportWorkspace() {
     <section className="access-card" aria-labelledby="catalog-import-title" data-testid="catalog-import-workspace">
       <div className="access-card-heading">
         <span className="step-chip">مصدر ملف</span>
-        <p className="eyebrow">CSV أو JSONL</p>
+        <p className="eyebrow">CSV أو XLSX أو JSONL</p>
         <h2 id="catalog-import-title">استيراد آمن: معاينة ثم التزام</h2>
         <p className="muted">استخدم نفس مصدر الملف المدعوم بأداة الاستيراد الحالية. لا تُقبل نصوص JSON ملصقة؛ تُقرأ الصفوف من ملف، وتُصنّف قبل أي كتابة.</p>
       </div>
-      <label className="field-label" htmlFor="catalog-import-file">ملف المنتجات<input id="catalog-import-file" type="file" accept=".csv,.jsonl,.ndjson,text/csv,application/jsonl" disabled={Boolean(busy)} onChange={(event) => void selectFile(event.target.files?.[0])} /></label>
-      <p className="muted">CSV يحتاج عناوين الحقول القانونية، وJSONL يحتاج كائنًا واحدًا في كل سطر. الحقول المستخدمة هي نفسها في أداة `import-catalog-products`.</p>
+      <label className="field-label" htmlFor="catalog-import-file">ملف المنتجات<input id="catalog-import-file" type="file" accept=".csv,.xlsx,.jsonl,.ndjson,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/jsonl" disabled={Boolean(busy)} onChange={(event) => void selectFile(event.target.files?.[0])} /></label>
+      <p className="muted">CSV وXLSX يحتاجان عناوين الحقول القانونية، وJSONL يحتاج كائنًا واحدًا في كل سطر. الحد 5000 صف و20 ميغابايت؛ تبقى التعارضات في النتيجة وتُلتزم الصفوف الجاهزة فقط.</p>
       {sourceFile ? <div className="managed-status managed-status-info"><strong>{sourceFile.name}</strong><p>الصفوف الصالحة: {rows.length} · الصفوف المرفوضة محليًا: {parseErrors.length}</p><code dir="ltr">SHA-256: {sourceHash}</code></div> : null}
       {parseErrors.length ? <div className="managed-status managed-status-warning" role="alert"><strong>صفوف تحتاج تصحيحًا قبل المعاينة</strong><ul>{parseErrors.map((message) => <li key={message}>{message}</li>)}</ul></div> : null}
       <button type="button" className="button button-primary" disabled={Boolean(busy) || !rows.length} onClick={() => void preview()}>{busy === "preview" ? "جارٍ إنشاء المعاينة…" : "معاينة الملف"}</button>
@@ -278,7 +322,7 @@ export function CatalogImportWorkspace() {
             <thead><tr><th scope="col">السطر</th><th scope="col">الفئة</th><th scope="col">الحالة</th></tr></thead>
             <tbody>{result.items.map((item) => <tr key={`${item.rowNumber}-${item.stableKey}`}><td>{item.rowNumber}</td><td>{classificationLabel(item)}</td><td>{item.errorMessage || (item.committed ? "تمت الكتابة" : "بانتظار الالتزام")}</td></tr>)}</tbody>
           </table>
-          {result.run.state === "previewed" ? <button type="button" className="button button-secondary" disabled={Boolean(busy) || result.run.conflictCount > 0} onClick={() => void commit()}>{busy === "commit" ? "جارٍ الالتزام…" : "الالتزام بعد المراجعة"}</button> : null}
+          {result.run.state === "previewed" || result.run.state === "rejected" ? <button type="button" className="button button-secondary" disabled={Boolean(busy) || result.run.acceptedCount < 1} onClick={() => void commit()}>{busy === "commit" ? "جارٍ الالتزام…" : result.run.state === "rejected" ? "إعادة محاولة الصفوف المتعثرة" : "الالتزام بالصفوف الجاهزة"}</button> : null}
           {result.run.state === "committed" ? <button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={() => void readRun(result.run.id)}>{busy === "read" ? "جارٍ إعادة القراءة…" : "إعادة قراءة النتيجة"}</button> : null}
         </div>
       ) : null}

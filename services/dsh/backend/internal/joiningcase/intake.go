@@ -22,6 +22,7 @@ func NormalizeCreateRequest(input contract.CreateJoiningCaseRequest) (postgres.J
 	serviceCityID := strings.TrimSpace(input.ServiceCityID)
 	verticalID := strings.TrimSpace(input.FirstStoreVerticalID)
 	commercialTypeID := strings.TrimSpace(input.FirstStoreCommercialTypeID)
+	walletProviderKey, providerKeyValid := postgres.NormalizeWalletProviderKey(input.WalletProviderKey)
 	workingHours, hoursErr := json.Marshal(input.FirstStoreWorkingHours)
 	if hoursErr != nil || !postgres.ValidateStoreWorkingHours(workingHours) || len(input.FirstStoreFulfillmentModes) == 0 {
 		return postgres.JoiningCaseRequest{}, ErrInvalidInput
@@ -34,7 +35,7 @@ func NormalizeCreateRequest(input contract.CreateJoiningCaseRequest) (postgres.J
 	if modesErr != nil {
 		return postgres.JoiningCaseRequest{}, ErrInvalidInput
 	}
-	if !phoneE164Pattern.MatchString(phone) || utf8.RuneCountInString(ownerFullName) < 2 || utf8.RuneCountInString(ownerFullName) > 160 || utf8.RuneCountInString(businessName) < 2 || utf8.RuneCountInString(businessName) > 160 || utf8.RuneCountInString(firstStoreName) < 2 || utf8.RuneCountInString(firstStoreName) > 160 || utf8.RuneCountInString(firstStoreAddress) < 4 || utf8.RuneCountInString(firstStoreAddress) > 500 || !validJoiningCaseProofNumber(proofNumber) || utf8.RuneCountInString(notes) > 1000 || !validJoiningCaseProofType(proofType) || serviceCityID == "" || verticalID == "" || commercialTypeID == "" || !validCoordinates(input.FirstStoreLatitude, input.FirstStoreLongitude) {
+	if !phoneE164Pattern.MatchString(phone) || utf8.RuneCountInString(ownerFullName) < 2 || utf8.RuneCountInString(ownerFullName) > 160 || utf8.RuneCountInString(businessName) < 2 || utf8.RuneCountInString(businessName) > 160 || utf8.RuneCountInString(firstStoreName) < 2 || utf8.RuneCountInString(firstStoreName) > 160 || utf8.RuneCountInString(firstStoreAddress) < 4 || utf8.RuneCountInString(firstStoreAddress) > 500 || !validJoiningCaseProofNumber(proofNumber) || utf8.RuneCountInString(notes) > 1000 || !validJoiningCaseProofType(proofType) || serviceCityID == "" || verticalID == "" || commercialTypeID == "" || !providerKeyValid || !validCoordinates(input.FirstStoreLatitude, input.FirstStoreLongitude) {
 		return postgres.JoiningCaseRequest{}, ErrInvalidInput
 	}
 	return postgres.JoiningCaseRequest{
@@ -42,6 +43,7 @@ func NormalizeCreateRequest(input contract.CreateJoiningCaseRequest) (postgres.J
 		OwnerFullName:          ownerFullName,
 		BusinessName:           businessName,
 		FirstStoreName:         firstStoreName,
+		WalletProviderKey:      walletProviderKey,
 		FirstStoreAddress:      firstStoreAddress,
 		FirstStoreWorkingHours: workingHours,
 		FirstStoreProofType:    proofType,
@@ -62,5 +64,5 @@ func validJoiningCaseProofNumber(value string) bool {
 }
 
 func HashCreateRequest(keyring *postgres.JoiningCaseEvidenceKeyring, scope, actorID string, request postgres.JoiningCaseRequest) (string, error) {
-	return keyring.RequestHash(scope, strings.TrimSpace(actorID), request.Phone, request.OwnerFullName, request.BusinessName, request.FirstStoreName, request.FirstStoreAddress, string(request.FirstStoreWorkingHours), request.FirstStoreProofType, request.FirstStoreProofNumber, request.FirstStoreNotes, request.ServiceCityID, request.VerticalID, request.CommercialTypeID, strconv.FormatFloat(request.Latitude, 'f', 6, 64), strconv.FormatFloat(request.Longitude, 'f', 6, 64), strings.Join(request.FulfillmentModes, ","))
+	return keyring.RequestHash(scope, strings.TrimSpace(actorID), request.Phone, request.OwnerFullName, request.BusinessName, request.FirstStoreName, request.WalletProviderKey, request.FirstStoreAddress, string(request.FirstStoreWorkingHours), request.FirstStoreProofType, request.FirstStoreProofNumber, request.FirstStoreNotes, request.ServiceCityID, request.VerticalID, request.CommercialTypeID, strconv.FormatFloat(request.Latitude, 'f', 6, 64), strconv.FormatFloat(request.Longitude, 'f', 6, 64), strings.Join(request.FulfillmentModes, ","))
 }

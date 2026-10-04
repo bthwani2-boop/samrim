@@ -52,8 +52,8 @@ export async function GET(request: Request) {
     } else if (targetType === "CATEGORY") {
       if (!verticalId) return errorResponse("INVALID_INPUT", "choose a commerce vertical to select a Category", 400);
       if (query.length < 2) return NextResponse.json({ options, nextCursor }, { headers: { "Cache-Control": "no-store" } });
-      const vertical = (await listCatalogVerticals(context)).verticals.find((item) => item.id === verticalId && item.active && item.catalogModel === "SHARED_CATALOG");
-      if (!vertical) return errorResponse("INVALID_INPUT", "choose an active shared-catalog vertical", 400);
+      const vertical = (await listCatalogVerticals(context)).verticals.find((item) => item.id === verticalId && item.active);
+      if (!vertical) return errorResponse("INVALID_INPUT", "choose an active commerce vertical", 400);
       const result = await listCatalogCategories(vertical.id, query, "active", "name_asc", 25, cursor, context);
       options = result.categories.map((category) => targetOption(category.id, category.pathAr, category.pathEn));
       nextCursor = result.nextCursor ?? "";

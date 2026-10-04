@@ -69,6 +69,7 @@ export function JoiningCaseCreate() {
   const pendingStorageKey = useMemo(() => operatorActorId ? `bthwani.control.partner.joining-case-create.v1.${encodeURIComponent(operatorActorId)}` : "", [operatorActorId]);
   const [phone, setPhone] = useState("");
   const [ownerFullName, setOwnerFullName] = useState("");
+  const [walletProviderKey, setWalletProviderKey] = useState("");
   const [businessName, setBusinessName] = useState("");
   const [storeName, setStoreName] = useState("");
   const [storeAddress, setStoreAddress] = useState("");
@@ -171,6 +172,7 @@ export function JoiningCaseCreate() {
     const currentInput: JoiningCaseCreateInput = {
       contactPhoneE164: phone.replace(/\s+/g, ""),
       ownerFullName: ownerFullName.trim(),
+      walletProviderKey: walletProviderKey.trim(),
       businessName: businessName.trim(),
       firstStoreName: storeName.trim(),
       firstStoreAddress: storeAddress.trim(),
@@ -192,8 +194,8 @@ export function JoiningCaseCreate() {
     const input = pendingAttempt?.input ?? currentInput;
     const isResumedAttempt = pendingAttempt !== null && pendingAttempt.input === null;
     const attempt: PendingJoiningCaseCreate = { ...metadata, input };
-    if (!phoneE164Pattern.test(input.contactPhoneE164) || input.ownerFullName.trim().length < 2 || input.businessName.length < 2 || input.firstStoreName.length < 2 || input.firstStoreAddress.trim().length < 4 || !input.serviceCityId || !input.firstStoreVerticalId || !input.firstStoreCommercialTypeId || input.firstStoreProofNumber.length < 1 || !isValidStoreWorkingHours(input.firstStoreWorkingHours.intervals) || input.firstStoreFulfillmentModes.length === 0 || !latitude.trim() || !longitude.trim() || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180) {
-      setError("أكمل اسم المالك ورقم جواله واسم المتجر ونوعه ومدينة الخدمة وعنوانه وموقعه وساعات العمل والإثبات وطريقة التوصيل.");
+    if (!phoneE164Pattern.test(input.contactPhoneE164) || input.ownerFullName.trim().length < 2 || Array.from(input.walletProviderKey.trim()).length < 1 || Array.from(input.walletProviderKey.trim()).length > 64 || /\p{Cc}/u.test(input.walletProviderKey) || input.businessName.length < 2 || input.firstStoreName.length < 2 || input.firstStoreAddress.trim().length < 4 || !input.serviceCityId || !input.firstStoreVerticalId || !input.firstStoreCommercialTypeId || input.firstStoreProofNumber.length < 1 || !isValidStoreWorkingHours(input.firstStoreWorkingHours.intervals) || input.firstStoreFulfillmentModes.length === 0 || !latitude.trim() || !longitude.trim() || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180) {
+      setError("أكمل مزوّد المحفظة الذي حدده المالك، واسمه ورقم جواله وبيانات المتجر والموقع وساعات العمل والإثبات وطريقة التوصيل.");
       return;
     }
     setBusy(true);
@@ -236,7 +238,7 @@ export function JoiningCaseCreate() {
         return;
       }
       const payload = await response.json() as JoiningCaseResponse;
-      if (typeof payload?.case?.id !== "string" || !payload.case.id.trim()) throw new Error("JOINING_CASE_READBACK_REQUIRED");
+      if (typeof payload?.case?.id !== "string" || !payload.case.id.trim() || payload.case.walletProviderKey !== input.walletProviderKey) throw new Error("JOINING_CASE_READBACK_REQUIRED");
       clearPendingJoiningCaseMetadata(pendingStorageKey);
       setCreatedCaseId(payload.case.id);
       setPendingAttempt(null);

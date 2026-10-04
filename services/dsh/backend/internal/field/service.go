@@ -40,21 +40,22 @@ func New(identity *identityintegration.Client, db *sql.DB, evidenceKeys *postgre
 	return &Service{identity: identity, db: db, evidenceKeys: evidenceKeys}, nil
 }
 
-func (s *Service) Admit(ctx context.Context, fullNameAr, phone, serviceCityID, idempotencyKey, actingActorID, correlationID string) (postgres.FieldAdmission, bool, error) {
+func (s *Service) Admit(ctx context.Context, fullNameAr, phone, serviceCityID, walletProviderKey, idempotencyKey, actingActorID, correlationID string) (postgres.FieldAdmission, bool, error) {
 	fullNameAr = strings.TrimSpace(fullNameAr)
 	phone = normalizePhoneE164(phone)
 	serviceCityID = strings.TrimSpace(serviceCityID)
+	walletProviderKey, providerKeyValid := postgres.NormalizeWalletProviderKey(walletProviderKey)
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	actingActorID = strings.TrimSpace(actingActorID)
 	correlationID = strings.TrimSpace(correlationID)
-	if len([]rune(fullNameAr)) < 2 || len([]rune(fullNameAr)) > 120 || !phoneE164Pattern.MatchString(phone) || serviceCityID == "" || !validMutation(idempotencyKey, correlationID, actingActorID) {
+	if len([]rune(fullNameAr)) < 2 || len([]rune(fullNameAr)) > 120 || !phoneE164Pattern.MatchString(phone) || serviceCityID == "" || !providerKeyValid || !validMutation(idempotencyKey, correlationID, actingActorID) {
 		return postgres.FieldAdmission{}, false, ErrInvalidInput
 	}
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.FieldAdmission{}, false, err
 	}
-	hash := postgres.HashFieldAdmissionRequest(fullNameAr, phone, serviceCityID)
-	admission, _, replayed, err := postgres.CreateFieldAdmissionCandidate(ctx, s.db, postgres.FieldAdmissionCandidateInput{FullNameAr: fullNameAr, Phone: phone, ServiceCityID: serviceCityID, IdempotencyKey: idempotencyKey, RequestHash: hash, ActingActorID: actingActorID, CorrelationID: correlationID})
+	hash := postgres.HashFieldAdmissionRequest(fullNameAr, phone, serviceCityID, walletProviderKey)
+	admission, _, replayed, err := postgres.CreateFieldAdmissionCandidate(ctx, s.db, postgres.FieldAdmissionCandidateInput{FullNameAr: fullNameAr, Phone: phone, ServiceCityID: serviceCityID, WalletProviderKey: walletProviderKey, IdempotencyKey: idempotencyKey, RequestHash: hash, ActingActorID: actingActorID, CorrelationID: correlationID})
 	if err != nil {
 		return postgres.FieldAdmission{}, false, err
 	}

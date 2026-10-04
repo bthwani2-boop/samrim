@@ -132,8 +132,7 @@ func CreateCatalogProductProposal(ctx context.Context, db *sql.DB, input Catalog
 		return CatalogProductProposalResult{}, err
 	}
 	var verticalActive bool
-	var catalogModel string
-	if err = tx.QueryRowContext(ctx, "SELECT active,COALESCE(catalog_model,'') FROM dsh.commerce_verticals WHERE id=$1 FOR SHARE", input.VerticalID).Scan(&verticalActive, &catalogModel); errors.Is(err, sql.ErrNoRows) || !verticalActive || catalogModel != "SHARED_CATALOG" {
+	if err = tx.QueryRowContext(ctx, "SELECT active FROM dsh.commerce_verticals WHERE id=$1 FOR SHARE", input.VerticalID).Scan(&verticalActive); errors.Is(err, sql.ErrNoRows) || !verticalActive {
 		return CatalogProductProposalResult{}, ErrCatalogProposalInvalid
 	} else if err != nil {
 		return CatalogProductProposalResult{}, err
@@ -243,8 +242,7 @@ func UpdateCatalogProductProposal(ctx context.Context, db *sql.DB, proposalID st
 		return CatalogProductProposalResult{}, ErrCatalogProposalConflict
 	}
 	var verticalActive bool
-	var catalogModel string
-	if err = tx.QueryRowContext(ctx, "SELECT active,COALESCE(catalog_model,'') FROM dsh.commerce_verticals WHERE id=$1 FOR SHARE", input.VerticalID).Scan(&verticalActive, &catalogModel); errors.Is(err, sql.ErrNoRows) || !verticalActive || catalogModel != "SHARED_CATALOG" {
+	if err = tx.QueryRowContext(ctx, "SELECT active FROM dsh.commerce_verticals WHERE id=$1 FOR SHARE", input.VerticalID).Scan(&verticalActive); errors.Is(err, sql.ErrNoRows) || !verticalActive {
 		return CatalogProductProposalResult{}, ErrCatalogProposalInvalid
 	} else if err != nil {
 		return CatalogProductProposalResult{}, err

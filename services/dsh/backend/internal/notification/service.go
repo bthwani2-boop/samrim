@@ -129,6 +129,10 @@ func present(event postgres.NotificationEvent, role string) View {
 func message(eventType, role, orderID string) (string, string, string) {
 	if role == "field" || (role == "operator" && strings.HasPrefix(eventType, "joining_case_")) {
 		switch eventType {
+		case "field_mission_completed":
+			return "FIELD_MISSION_COMPLETED", "اكتملت مهمة المتابعة", "أصبح المتجر الذي تابعته منشورًا وجاهزًا لاستقبال طلبات العملاء."
+		case "field_acquisition_reward_posted":
+			return "FIELD_REWARD_CONFIRMED", "تم تأكيد استحقاق المتابعة", "تأكد تسجيل استحقاق متابعة المتجر في محفظتك."
 		case "joining_case_created":
 			return "FIELD_CASE_CREATED", "تم إنشاء ملف الانضمام", "تم إنشاء ملف انضمام جديد لمتابعته ميدانيًا."
 		case "joining_case_submitted":
@@ -140,6 +144,9 @@ func message(eventType, role, orderID string) (string, string, string) {
 		default:
 			return "FIELD_CASE_STATUS", "تحديث على ملف الانضمام", "يوجد تحديث جديد على ملف انضمام تتابعه."
 		}
+	}
+	if role == "partner" && eventType == "store_published_handoff" {
+		return "STORE_PUBLISHED", "اكتمل تسليم المتجر", "تم نشر متجرك وأصبح جاهزًا لمتابعة الطلبات الواردة."
 	}
 	orderRef := strings.TrimSpace(orderID)
 	if orderRef == "" {

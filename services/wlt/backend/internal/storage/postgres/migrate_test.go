@@ -142,3 +142,25 @@ func TestOrderAdjustmentReconciliationCasesDoNotMoveMoneyWithoutPolicy(t *testin
 		}
 	}
 }
+
+func TestStoreAgreementFinanceDecisionMigrationBackfillsAndFreezesCanonicalFacts(t *testing.T) {
+	directory := filepath.Join("..", "..", "..", "..", "database", "migrations")
+	data, err := os.ReadFile(filepath.Join(directory, "040_store_agreement_finance_decision_facts.sql"))
+	if err != nil {
+		t.Fatalf("read Store agreement Finance decision migration: %v", err)
+	}
+	sql := string(data)
+	for _, required := range []string{
+		"ADD COLUMN finance_decision_by_actor_id text",
+		"ADD COLUMN finance_decision_at timestamptz",
+		"event.event_type = CASE WHEN agreement.status = 'FINANCE_REJECTED' THEN 'FINANCE_REJECTED' ELSE 'FINANCE_APPROVED' END",
+		"cannot backfill canonical Finance decision facts for every decided Store agreement",
+		"store_commercial_agreements_finance_decision_chk",
+		"store commercial agreement Finance decision facts are immutable",
+		"finance_approved_at = NEW.finance_decision_at",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("Store agreement Finance decision migration is missing %q", required)
+		}
+	}
+}

@@ -339,6 +339,23 @@ type FieldAcquisitionEntitlement struct {
 	CreatedAt             string `json:"createdAt"`
 }
 
+type FieldAcquisitionEntitlementReadback struct {
+	JoiningCaseID         string `json:"joiningCaseId"`
+	StoreID               string `json:"storeId"`
+	PartnerActorID        string `json:"partnerActorId"`
+	FieldActorID          string `json:"fieldActorId"`
+	VerticalID            string `json:"verticalId"`
+	CommercialStoreTypeID string `json:"commercialStoreTypeId"`
+	PolicyID              string `json:"policyId"`
+	PolicyVersion         int    `json:"policyVersion"`
+	RewardMinor           int64  `json:"rewardMinor"`
+	Currency              string `json:"currency"`
+	LedgerTransactionID   string `json:"ledgerTransactionId"`
+	Status                string `json:"status"`
+	CreatedAt             string `json:"createdAt"`
+	EffectiveAt           string `json:"effectiveAt"`
+}
+
 type FieldFinancialSummary struct {
 	FieldActorID     string  `json:"fieldActorId"`
 	Currency         string  `json:"currency"`
@@ -791,6 +808,10 @@ type fieldAcquisitionRewardPolicyResponse struct {
 type fieldAcquisitionEntitlementResponse struct {
 	Entitlement      FieldAcquisitionEntitlement `json:"entitlement"`
 	IdempotentReplay bool                        `json:"idempotentReplay"`
+}
+
+type fieldAcquisitionEntitlementReadbackResponse struct {
+	Entitlement FieldAcquisitionEntitlementReadback `json:"entitlement"`
 }
 
 type fieldFinancialSummaryResponse struct {
@@ -1305,6 +1326,12 @@ func (c *Client) FinalizeFieldAcquisitionReward(ctx context.Context, input Final
 	return response.Entitlement, response.IdempotentReplay, err
 }
 
+func (c *Client) ReadFieldAcquisitionEntitlementByJoiningCase(ctx context.Context, joiningCaseID string) (FieldAcquisitionEntitlementReadback, error) {
+	var response fieldAcquisitionEntitlementReadbackResponse
+	err := c.request(ctx, http.MethodGet, "/wlt/v1/field-acquisition-entitlements/"+url.PathEscape(strings.TrimSpace(joiningCaseID)), nil, "", "", 0, &response)
+	return response.Entitlement, err
+}
+
 func (c *Client) ReadFieldFinancialSummary(ctx context.Context, fieldActorID string) (FieldFinancialSummary, error) {
 	var response fieldFinancialSummaryResponse
 	err := c.request(ctx, http.MethodGet, "/wlt/v1/fields/"+url.PathEscape(strings.TrimSpace(fieldActorID))+"/financial-summary", nil, "", "", 0, &response)
@@ -1328,15 +1355,29 @@ func (c *Client) ListFieldAcquisitionEntitlements(ctx context.Context, fieldActo
 	return response, err
 }
 
-func (c *Client) CreateOfficialWalletDestination(ctx context.Context, destination OfficialWalletDestination, walletIdentifier, changeReason, verificationEvidenceReference, changeEvidenceReference, idempotencyKey, correlationID, actingActorID string) (OfficialWalletDestination, bool, error) {
-	body := map[string]any{"actorType": strings.TrimSpace(destination.ActorType), "actorId": strings.TrimSpace(destination.ActorID), "providerKey": strings.TrimSpace(destination.ProviderKey), "walletIdentifier": strings.TrimSpace(walletIdentifier), "beneficiaryName": strings.TrimSpace(destination.BeneficiaryName), "beneficiaryIdentityVersion": destination.BeneficiaryIdentityVersion, "changeReason": strings.TrimSpace(changeReason), "verificationEvidenceReference": strings.TrimSpace(verificationEvidenceReference), "changeEvidenceReference": strings.TrimSpace(changeEvidenceReference)}
+func (c *Client) CreateOfficialWalletDestination(ctx context.Context, destination OfficialWalletDestination, identityFacts IdentityFacts, changeReason, verificationEvidenceReference, changeEvidenceReference, idempotencyKey, correlationID, actingActorID string) (OfficialWalletDestination, bool, error) {
+	body := map[string]any{
+		"actorType":                     strings.TrimSpace(destination.ActorType),
+		"actorId":                       strings.TrimSpace(destination.ActorID),
+		"providerKey":                   strings.TrimSpace(destination.ProviderKey),
+		"identityFacts":                 identityFacts,
+		"changeReason":                  strings.TrimSpace(changeReason),
+		"verificationEvidenceReference": strings.TrimSpace(verificationEvidenceReference),
+		"changeEvidenceReference":       strings.TrimSpace(changeEvidenceReference),
+	}
 	var response officialWalletDestinationResponse
 	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: "/wlt/v1/operator/official-wallet-destinations", body: body, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actingActorID, target: &response})
 	return response.Destination, response.IdempotentReplay, err
 }
 
-func (c *Client) CreateCustomerWithdrawalIntake(ctx context.Context, customerActorID, providerKey, walletIdentifier, beneficiaryName string, identityVersion int, reason, evidenceDocumentID, idempotencyKey, correlationID, actingActorID string) (CustomerWithdrawalIntake, bool, error) {
-	body := map[string]any{"customerActorId": strings.TrimSpace(customerActorID), "providerKey": strings.TrimSpace(providerKey), "walletIdentifier": strings.TrimSpace(walletIdentifier), "beneficiaryName": strings.TrimSpace(beneficiaryName), "beneficiaryIdentityVersion": identityVersion, "requestReason": strings.TrimSpace(reason), "requestEvidenceDocumentId": strings.TrimSpace(evidenceDocumentID)}
+func (c *Client) CreateCustomerWithdrawalIntake(ctx context.Context, customerActorID, providerKey string, identityFacts IdentityFacts, reason, evidenceDocumentID, idempotencyKey, correlationID, actingActorID string) (CustomerWithdrawalIntake, bool, error) {
+	body := map[string]any{
+		"customerActorId":           strings.TrimSpace(customerActorID),
+		"providerKey":               strings.TrimSpace(providerKey),
+		"identityFacts":             identityFacts,
+		"requestReason":             strings.TrimSpace(reason),
+		"requestEvidenceDocumentId": strings.TrimSpace(evidenceDocumentID),
+	}
 	var response struct {
 		Intake           CustomerWithdrawalIntake `json:"intake"`
 		IdempotentReplay bool                     `json:"idempotentReplay"`
@@ -1395,15 +1436,17 @@ func (c *Client) ReadCustomerWithdrawalIntake(ctx context.Context, intakeID, act
 	return response.Intake, err
 }
 
-func (c *Client) PrepareCustomerWithdrawalDestination(ctx context.Context, intakeID, reason, idempotencyKey, correlationID, actingActorID string) (OfficialWalletDestination, error) {
+func (c *Client) PrepareCustomerWithdrawalDestination(ctx context.Context, intakeID string, identityFacts IdentityFacts, reason, idempotencyKey, correlationID, actingActorID string) (OfficialWalletDestination, error) {
 	var response officialWalletDestinationResponse
-	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: customerWithdrawalIntakesPath + "/" + url.PathEscape(strings.TrimSpace(intakeID)) + "/prepare-destination", body: map[string]any{"reason": strings.TrimSpace(reason)}, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actingActorID, target: &response})
+	body := map[string]any{"reason": strings.TrimSpace(reason), "identityFacts": identityFacts}
+	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: customerWithdrawalIntakesPath + "/" + url.PathEscape(strings.TrimSpace(intakeID)) + "/prepare-destination", body: body, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actingActorID, target: &response})
 	return response.Destination, err
 }
 
-func (c *Client) AcceptCustomerWithdrawal(ctx context.Context, intakeID, reason, idempotencyKey, correlationID, actingActorID string) (PayoutRequest, error) {
+func (c *Client) AcceptCustomerWithdrawal(ctx context.Context, intakeID string, identityFacts IdentityFacts, reason, idempotencyKey, correlationID, actingActorID string) (PayoutRequest, error) {
 	var response payoutRequestResponse
-	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: customerWithdrawalIntakesPath + "/" + url.PathEscape(strings.TrimSpace(intakeID)) + "/accept", body: map[string]any{"reason": strings.TrimSpace(reason)}, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actingActorID, target: &response})
+	body := map[string]any{"reason": strings.TrimSpace(reason), "identityFacts": identityFacts}
+	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: customerWithdrawalIntakesPath + "/" + url.PathEscape(strings.TrimSpace(intakeID)) + "/accept", body: body, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actingActorID, target: &response})
 	return response.Payout, err
 }
 
@@ -1413,16 +1456,17 @@ func (c *Client) RejectCustomerWithdrawal(ctx context.Context, intakeID, reason,
 	return response.Intake, err
 }
 
-func (c *Client) VerifyOfficialWalletDestination(ctx context.Context, destinationID, evidenceReference, idempotencyKey, correlationID, actingActorID string) (OfficialWalletDestination, error) {
+func (c *Client) VerifyOfficialWalletDestination(ctx context.Context, destinationID, evidenceReference string, identityFacts IdentityFacts, idempotencyKey, correlationID, actingActorID string) (OfficialWalletDestination, error) {
 	var response officialWalletDestinationResponse
-	body := map[string]any{"evidenceReference": strings.TrimSpace(evidenceReference)}
+	body := map[string]any{"evidenceReference": strings.TrimSpace(evidenceReference), "identityFacts": identityFacts}
 	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: "/wlt/v1/operator/official-wallet-destinations/" + url.PathEscape(strings.TrimSpace(destinationID)) + "/verify", body: body, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actingActorID, target: &response})
 	return response.Destination, err
 }
 
-func (c *Client) ActivateOfficialWalletDestination(ctx context.Context, destinationID, idempotencyKey, correlationID, actingActorID string) (OfficialWalletDestination, error) {
+func (c *Client) ActivateOfficialWalletDestination(ctx context.Context, destinationID string, identityFacts IdentityFacts, idempotencyKey, correlationID, actingActorID string) (OfficialWalletDestination, error) {
 	var response officialWalletDestinationResponse
-	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: "/wlt/v1/operator/official-wallet-destinations/" + url.PathEscape(strings.TrimSpace(destinationID)) + "/activate", body: map[string]any{}, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actingActorID, target: &response})
+	body := map[string]any{"identityFacts": identityFacts}
+	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: "/wlt/v1/operator/official-wallet-destinations/" + url.PathEscape(strings.TrimSpace(destinationID)) + "/activate", body: body, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actingActorID, target: &response})
 	return response.Destination, err
 }
 
@@ -1438,8 +1482,8 @@ func (c *Client) ReadOfficialWalletDestinationByID(ctx context.Context, destinat
 	return response.Destination, err
 }
 
-func (c *Client) CreatePayoutIntent(ctx context.Context, actorType, actorID, amountMode string, amountMinor *int64, idempotencyKey, correlationID string) (PayoutRequest, bool, error) {
-	body := map[string]any{"actorType": strings.TrimSpace(actorType), "actorId": strings.TrimSpace(actorID), "amountMode": strings.TrimSpace(amountMode)}
+func (c *Client) CreatePayoutIntent(ctx context.Context, actorType, actorID, amountMode string, amountMinor *int64, identityFacts IdentityFacts, idempotencyKey, correlationID string) (PayoutRequest, bool, error) {
+	body := map[string]any{"actorType": strings.TrimSpace(actorType), "actorId": strings.TrimSpace(actorID), "amountMode": strings.TrimSpace(amountMode), "identityFacts": identityFacts}
 	if amountMinor != nil {
 		body["amountMinor"] = *amountMinor
 	}
@@ -1529,15 +1573,15 @@ func (c *Client) ReadOperatorPayoutRequest(ctx context.Context, payoutID, acting
 	return response.Payout, err
 }
 
-func (c *Client) PreparePayout(ctx context.Context, payoutID, reason, evidenceReference, idempotencyKey, correlationID, actingActorID string) (PayoutRequest, error) {
-	body := map[string]any{"reason": strings.TrimSpace(reason), "evidenceReference": strings.TrimSpace(evidenceReference)}
+func (c *Client) PreparePayout(ctx context.Context, payoutID string, identityFacts IdentityFacts, reason, evidenceReference, idempotencyKey, correlationID, actingActorID string) (PayoutRequest, error) {
+	body := map[string]any{"identityFacts": identityFacts, "reason": strings.TrimSpace(reason), "evidenceReference": strings.TrimSpace(evidenceReference)}
 	var response payoutRequestResponse
 	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: payoutRequestsPath + "/" + url.PathEscape(strings.TrimSpace(payoutID)) + "/prepare", body: body, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actingActorID, target: &response})
 	return response.Payout, err
 }
 
-func (c *Client) ApprovePayout(ctx context.Context, payoutID, reason, idempotencyKey, correlationID, actingActorID string) (PayoutRequest, error) {
-	body := map[string]any{"reason": strings.TrimSpace(reason)}
+func (c *Client) ApprovePayout(ctx context.Context, payoutID string, identityFacts IdentityFacts, reason, idempotencyKey, correlationID, actingActorID string) (PayoutRequest, error) {
+	body := map[string]any{"identityFacts": identityFacts, "reason": strings.TrimSpace(reason)}
 	var response payoutRequestResponse
 	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: payoutRequestsPath + "/" + url.PathEscape(strings.TrimSpace(payoutID)) + "/approve", body: body, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actingActorID, target: &response})
 	return response.Payout, err
@@ -1550,8 +1594,8 @@ func (c *Client) CancelPayout(ctx context.Context, payoutID, reason, idempotency
 	return response.Payout, err
 }
 
-func (c *Client) CreateSettlementBatch(ctx context.Context, payoutIDs []string, idempotencyKey, correlationID, actingActorID string) (SettlementBatch, error) {
-	body := map[string]any{"payoutIds": payoutIDs}
+func (c *Client) CreateSettlementBatch(ctx context.Context, payoutIDs []string, identityFactsByBeneficiary []IdentityFacts, idempotencyKey, correlationID, actingActorID string) (SettlementBatch, error) {
+	body := map[string]any{"payoutIds": payoutIDs, "identityFactsByBeneficiary": identityFactsByBeneficiary}
 	var response settlementBatchResponse
 	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: settlementBatchesPath, body: body, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actingActorID, target: &response})
 	return response.Batch, err
@@ -1583,22 +1627,25 @@ func (c *Client) ReadSettlementBatch(ctx context.Context, batchID, actingActorID
 	return response.Batch, err
 }
 
-func (c *Client) ExportSettlementBatch(ctx context.Context, batchID, idempotencyKey, correlationID, actingActorID string) (SettlementBatchExport, error) {
+func (c *Client) ExportSettlementBatch(ctx context.Context, batchID string, identityFactsByBeneficiary []IdentityFacts, idempotencyKey, correlationID, actingActorID string) (SettlementBatchExport, error) {
 	var response settlementBatchExportResponse
 	path := settlementBatchesPath + "/" + url.PathEscape(strings.TrimSpace(batchID)) + "/export"
-	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: path, body: map[string]any{}, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actingActorID, target: &response})
+	body := map[string]any{"identityFactsByBeneficiary": identityFactsByBeneficiary}
+	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: path, body: body, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actingActorID, target: &response})
 	return response.Export, err
 }
 
-func (c *Client) ApproveSettlementBatch(ctx context.Context, batchID, reason, idempotencyKey, correlationID, actingActorID string) (SettlementBatch, error) {
+func (c *Client) ApproveSettlementBatch(ctx context.Context, batchID string, identityFactsByBeneficiary []IdentityFacts, reason, idempotencyKey, correlationID, actingActorID string) (SettlementBatch, error) {
 	var response settlementBatchResponse
-	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: settlementBatchesPath + "/" + url.PathEscape(strings.TrimSpace(batchID)) + "/approve", body: map[string]any{"reason": strings.TrimSpace(reason)}, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actingActorID, target: &response})
+	body := map[string]any{"identityFactsByBeneficiary": identityFactsByBeneficiary, "reason": strings.TrimSpace(reason)}
+	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: settlementBatchesPath + "/" + url.PathEscape(strings.TrimSpace(batchID)) + "/approve", body: body, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actingActorID, target: &response})
 	return response.Batch, err
 }
 
-func (c *Client) FreezeSettlementBatch(ctx context.Context, batchID, reason, idempotencyKey, correlationID, actingActorID string) (SettlementBatch, error) {
+func (c *Client) FreezeSettlementBatch(ctx context.Context, batchID string, identityFactsByBeneficiary []IdentityFacts, reason, idempotencyKey, correlationID, actingActorID string) (SettlementBatch, error) {
 	var response settlementBatchResponse
-	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: settlementBatchesPath + "/" + url.PathEscape(strings.TrimSpace(batchID)) + "/freeze", body: map[string]any{"reason": strings.TrimSpace(reason)}, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actingActorID, target: &response})
+	body := map[string]any{"identityFactsByBeneficiary": identityFactsByBeneficiary, "reason": strings.TrimSpace(reason)}
+	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: settlementBatchesPath + "/" + url.PathEscape(strings.TrimSpace(batchID)) + "/freeze", body: body, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actingActorID, target: &response})
 	return response.Batch, err
 }
 

@@ -1,11 +1,15 @@
 package transporthttp
 
 import (
+	"encoding/json"
+	"errors"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/catalog"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
@@ -112,7 +116,11 @@ func (s *CatalogServer) previewCatalogImport(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	var input contract.CatalogImportPreviewRequest
-	if !decodeJSON(w, r, &input) {
+	if !decodeCatalogImportJSON(w, r, &input) {
+		return
+	}
+	if !catalog.CatalogImportRowCountAllowed(len(input.Rows)) {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog import is limited to 5000 rows")
 		return
 	}
 	result, err := s.service.PreviewCatalogImport(r.Context(), acting, input, idempotency, correlation)
@@ -121,6 +129,22 @@ func (s *CatalogServer) previewCatalogImport(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, responseStatus(result.Replayed), contract.CatalogImportPreviewResponse{Run: toCatalogImportRun(result.Run), Items: toCatalogImportItems(result.Items), IdempotentReplay: result.Replayed})
+}
+
+func decodeCatalogImportJSON(w http.ResponseWriter, r *http.Request, target any) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, 25*1024*1024)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog import request body is invalid or exceeds 25 MiB")
+		return false
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog import request body must contain exactly one JSON value")
+		return false
+	}
+	return true
 }
 
 func (s *CatalogServer) readCatalogImportRun(w http.ResponseWriter, r *http.Request) {

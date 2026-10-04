@@ -1,4 +1,5 @@
 import { randomInt } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { existsSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -17,19 +18,55 @@ import {
 
 let dshRuntimeFixturePath = "";
 
+function isPrivateWindowsFixtureDirectory(directory: string): boolean {
+  const currentUser = `${process.env.USERDOMAIN ?? ""}\\${process.env.USERNAME ?? ""}`.toLowerCase();
+  if (!currentUser || !process.env.SystemRoot) return false;
+
+  let output: string;
+  try {
+    const icacls = path.join(process.env.SystemRoot, "System32", "icacls.exe");
+    output = execFileSync(icacls, [directory], { encoding: "utf8", windowsHide: true });
+  } catch (error) {
+    const code = typeof error === "object" && error !== null && "code" in error
+      ? String((error as { code?: unknown }).code ?? "unknown")
+      : "unknown";
+    throw new Error(`Windows fixture ACL inspection failed (${code})`);
+  }
+
+  const entries = output.split(/\r?\n/).flatMap((line) => {
+    const separator = line.indexOf(":");
+    if (separator < 1) return [];
+    const permissions = line.slice(separator + 1).trim();
+    return permissions.startsWith("(")
+      ? [{ principal: line.slice(0, separator).trim().toLowerCase(), permissions }]
+      : [];
+  });
+  const allowedPrincipals = new Set([currentUser, "nt authority\\system", "builtin\\administrators"]);
+  const hasUser = entries.some((entry) => entry.principal === currentUser);
+  const hasSystem = entries.some((entry) => entry.principal === "nt authority\\system");
+  const hasAdministrators = entries.some((entry) => entry.principal === "builtin\\administrators");
+  const allAllowed = entries.every((entry) => allowedPrincipals.has(entry.principal));
+  const fullControl = entries.every((entry) => entry.permissions.includes("(F)"));
+  const explicit = entries.every((entry) => !entry.permissions.includes("(I)"));
+  if (entries.length < 2 || entries.length > allowedPrincipals.size || !hasUser || !hasAdministrators || !allAllowed || !fullControl || !explicit) {
+    throw new Error(`Windows fixture ACL is not private (entries=${entries.length}, user=${hasUser}, system=${hasSystem}, administrators=${hasAdministrators}, allowed=${allAllowed}, fullControl=${fullControl}, explicit=${explicit})`);
+  }
+  return true;
+}
+
 function validateRuntimeFixturePath(value: string): string {
   const runnerTemp = realpathSync(process.env.RUNNER_TEMP || os.tmpdir());
   const fixtureDirectory = realpathSync(path.dirname(value));
   const relativeDirectory = path.relative(runnerTemp, fixtureDirectory);
   const directoryMode = statSync(fixtureDirectory).mode & 0o777;
-  if (
-    path.basename(value) !== "dsh-checker-fixture.json" ||
-    !path.basename(fixtureDirectory).startsWith("samrim-runtime-proof-") ||
-    relativeDirectory.startsWith("..") ||
-    path.isAbsolute(relativeDirectory) ||
-    directoryMode !== 0o700
-  ) {
-    throw new Error("DSH checker fixture path must be inside the private runner-owned directory");
+  const privateDirectory = process.platform === "win32"
+    ? isPrivateWindowsFixtureDirectory(fixtureDirectory)
+    : directoryMode === 0o700;
+  const expectedFileName = path.basename(value) === "dsh-checker-fixture.json";
+  const expectedDirectoryName = path.basename(fixtureDirectory).startsWith("samrim-runtime-proof-");
+  const isRunnerTemporaryDirectory = !relativeDirectory.startsWith("..") && !path.isAbsolute(relativeDirectory);
+  if (!expectedFileName || !expectedDirectoryName || !isRunnerTemporaryDirectory || !privateDirectory) {
+    throw new Error(`DSH checker fixture path must be private and runner-owned (file=${expectedFileName}, directory=${expectedDirectoryName}, runnerTemp=${isRunnerTemporaryDirectory}, private=${privateDirectory}, platform=${process.platform}, mode=${directoryMode.toString(8)})`);
   }
   return value;
 }

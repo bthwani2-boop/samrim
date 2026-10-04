@@ -9,9 +9,10 @@ export async function POST(request: Request) {
   if (!identity) return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "authentication is required" } }, { status: 401 });
   if (identity.role !== "operator" || !identity.permissions?.includes("operations")) return NextResponse.json({ error: { code: "FORBIDDEN", message: "صلاحية العمليات مطلوبة" } }, { status: 403 });
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-  if (!body || typeof body.customerActorId !== "string" || typeof body.providerKey !== "string" || typeof body.walletIdentifier !== "string" || typeof body.requestReason !== "string" || typeof body.requestEvidenceDocumentId !== "string") return NextResponse.json({ error: { code: "INVALID_INPUT", message: "أكمل بيانات طلب السحب ومرفق التفويض" } }, { status: 400 });
+  const allowedKeys = new Set(["customerActorId", "providerKey", "requestReason", "requestEvidenceDocumentId"]);
+  if (!body || Object.keys(body).some((key) => !allowedKeys.has(key)) || typeof body.customerActorId !== "string" || typeof body.providerKey !== "string" || typeof body.requestReason !== "string" || typeof body.requestEvidenceDocumentId !== "string") return NextResponse.json({ error: { code: "INVALID_INPUT", message: "أكمل بيانات طلب السحب ومرفق التفويض" } }, { status: 400 });
   try {
-    const result = await createOperatorCustomerWithdrawalIntake({ customerActorId: body.customerActorId, providerKey: body.providerKey, walletIdentifier: body.walletIdentifier, requestReason: body.requestReason, requestEvidenceDocumentId: body.requestEvidenceDocumentId }, { operatorActorId: identity.subject, correlationId: request.headers.get("X-Correlation-ID")?.trim() || randomUUID(), idempotencyKey: request.headers.get("Idempotency-Key")?.trim() || randomUUID() });
+    const result = await createOperatorCustomerWithdrawalIntake({ customerActorId: body.customerActorId, providerKey: body.providerKey, requestReason: body.requestReason, requestEvidenceDocumentId: body.requestEvidenceDocumentId }, { operatorActorId: identity.subject, correlationId: request.headers.get("X-Correlation-ID")?.trim() || randomUUID(), idempotencyKey: request.headers.get("Idempotency-Key")?.trim() || randomUUID() });
     return NextResponse.json(result, { status: result.idempotentReplay ? 200 : 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (!isDshClientError(error)) return NextResponse.json({ error: { code: "INTERNAL_ERROR", message: "تعذر تسجيل طلب سحب العميل" } }, { status: 500 });

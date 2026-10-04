@@ -14,6 +14,7 @@ func newFieldFinanceClient(t *testing.T) *Client {
 	mux.HandleFunc("POST /wlt/v1/operator/field-acquisition-reward-policies", createRewardPolicyResponse)
 	mux.HandleFunc("GET /wlt/v1/operator/field-acquisition-reward-policies", readRewardPolicyResponse)
 	mux.HandleFunc("POST /wlt/v1/field-acquisition-entitlements/finalize", finalizeRewardResponse)
+	mux.HandleFunc("GET /wlt/v1/field-acquisition-entitlements/{joiningCaseId}", readFieldEntitlementResponse)
 	mux.HandleFunc("GET /wlt/v1/fields/field-1/financial-summary", fieldSummaryResponse)
 	mux.HandleFunc("GET /wlt/v1/fields/field-1/acquisition-entitlements", fieldEntitlementsResponse)
 	mux.HandleFunc("GET /wlt/v1/operator/partner-financial-terms-policy", readPartnerTermsResponse)
@@ -54,6 +55,14 @@ func readRewardPolicyResponse(w http.ResponseWriter, r *http.Request) {
 
 func finalizeRewardResponse(w http.ResponseWriter, _ *http.Request) {
 	writeFieldFinanceJSON(w, `{"entitlement":{"id":"entitlement-1","joiningCaseId":"case-1","storeId":"store-1","partnerActorId":"partner-1","fieldActorId":"field-1","verticalId":"vertical-1","commercialStoreTypeId":"type-1","policyId":"policy-1","policyVersion":1,"rewardMinor":250,"currency":"YER","ledgerTransactionId":"ledger-1"},"idempotentReplay":false}`)
+}
+
+func readFieldEntitlementResponse(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Authorization") != "Bearer test-token" || r.PathValue("joiningCaseId") != "case-1" {
+		http.Error(w, "entitlement readback request changed", http.StatusBadRequest)
+		return
+	}
+	writeFieldFinanceJSON(w, `{"entitlement":{"joiningCaseId":"case-1","storeId":"store-1","partnerActorId":"partner-1","fieldActorId":"field-1","verticalId":"vertical-1","commercialStoreTypeId":"type-1","policyId":"policy-1","policyVersion":1,"rewardMinor":250,"currency":"YER","ledgerTransactionId":"ledger-1","status":"POSTED","createdAt":"2026-10-04T01:02:03Z","effectiveAt":"2026-10-04T01:02:03Z"}}`)
 }
 
 func fieldSummaryResponse(w http.ResponseWriter, _ *http.Request) {
@@ -109,6 +118,13 @@ func TestFinalizeFieldAcquisitionRewardContract(t *testing.T) {
 	entitlement, replay, err := newFieldFinanceClient(t).FinalizeFieldAcquisitionReward(context.Background(), FinalizeFieldAcquisitionRewardInput{JoiningCaseID: "case-1", StoreID: "store-1", PartnerActorID: "partner-1", FieldActorID: "field-1", VerticalID: "vertical-1", CommercialStoreTypeID: "type-1", IdempotencyKey: "entitlement-key", CorrelationID: "entitlement-correlation"})
 	if err != nil || replay || entitlement.LedgerTransactionID != "ledger-1" || entitlement.CommercialStoreTypeID != "type-1" {
 		t.Fatalf("finalize entitlement result: entitlement=%#v replay=%v err=%v", entitlement, replay, err)
+	}
+}
+
+func TestReadFieldAcquisitionEntitlementByJoiningCaseContract(t *testing.T) {
+	item, err := newFieldFinanceClient(t).ReadFieldAcquisitionEntitlementByJoiningCase(context.Background(), " case-1 ")
+	if err != nil || item.JoiningCaseID != "case-1" || item.Status != "POSTED" || item.PolicyVersion != 1 || item.EffectiveAt != item.CreatedAt || item.LedgerTransactionID != "ledger-1" {
+		t.Fatalf("read entitlement result: item=%#v err=%v", item, err)
 	}
 }
 

@@ -21,6 +21,7 @@ type PayoutIntentInput struct {
 	ActorID        string
 	AmountMode     string
 	AmountMinor    *int64
+	IdentityFacts  IdentityFacts
 	IdempotencyKey string
 	CorrelationID  string
 }
@@ -56,16 +57,20 @@ func HashPayoutIntent(input PayoutIntentInput) string {
 	if input.AmountMinor != nil {
 		amount = formatInt64(*input.AmountMinor)
 	}
-	return hashFacts("payout-intent", strings.TrimSpace(input.ActorType), strings.TrimSpace(input.ActorID), strings.TrimSpace(input.AmountMode), amount)
+	return hashFacts("payout-intent-v2", strings.TrimSpace(input.ActorType), strings.TrimSpace(input.ActorID), strings.TrimSpace(input.AmountMode), amount, input.IdentityFacts.fingerprint())
 }
 
-func CreatePayoutIntent(ctx context.Context, db *sql.DB, input PayoutIntentInput) (PayoutRequestRecord, bool, error) {
+func CreatePayoutIntent(ctx context.Context, db *sql.DB, cipher *DestinationCipher, input PayoutIntentInput) (PayoutRequestRecord, bool, error) {
 	input.ActorType = strings.ToLower(strings.TrimSpace(input.ActorType))
 	input.ActorID = strings.TrimSpace(input.ActorID)
+	input.IdentityFacts = input.IdentityFacts.normalized()
 	input.AmountMode = strings.ToUpper(strings.TrimSpace(input.AmountMode))
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
 	input.CorrelationID = strings.TrimSpace(input.CorrelationID)
-	if db == nil || !validDestinationActor(input.ActorType) || boundedText(input.ActorID, 1, 128) == "" || (input.AmountMode != "FULL_AVAILABLE" && input.AmountMode != "SPECIFIED") || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
+	if !input.IdentityFacts.validFor(input.ActorType, input.ActorID) {
+		return PayoutRequestRecord{}, false, ErrReverificationRequired
+	}
+	if db == nil || cipher == nil || !validDestinationActor(input.ActorType) || boundedText(input.ActorID, 1, 128) == "" || (input.AmountMode != "FULL_AVAILABLE" && input.AmountMode != "SPECIFIED") || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
 		return PayoutRequestRecord{}, false, ErrPayoutInvalidInput
 	}
 	if input.AmountMode == "SPECIFIED" && (input.AmountMinor == nil || *input.AmountMinor <= 0) {
@@ -91,6 +96,16 @@ func CreatePayoutIntent(ctx context.Context, db *sql.DB, input PayoutIntentInput
 	} else if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:payout:"+input.ActorType+":"+input.ActorID); err != nil {
 		return PayoutRequestRecord{}, false, err
 	}
+	var destinationID string
+	var destinationVersion int
+	if err := tx.QueryRowContext(ctx, "SELECT id,version FROM wlt.official_wallet_destinations WHERE actor_type=$1 AND actor_id=$2 AND verification_status='VERIFIED' AND status='ACTIVE_FOR_PAYOUT' FOR SHARE", input.ActorType, input.ActorID).Scan(&destinationID, &destinationVersion); errors.Is(err, sql.ErrNoRows) {
+		return PayoutRequestRecord{}, false, ErrReverificationRequired
+	} else if err != nil {
+		return PayoutRequestRecord{}, false, err
+	}
+	if err := input.IdentityFacts.matchesStoredDestination(ctx, tx, cipher, destinationID, input.ActorType, input.ActorID, true); err != nil {
+		return PayoutRequestRecord{}, false, ErrReverificationRequired
+	}
 	var existingID, existingHash string
 	err = tx.QueryRowContext(ctx, "SELECT id,request_hash FROM wlt.payout_requests WHERE idempotency_key=$1 FOR UPDATE", input.IdempotencyKey).Scan(&existingID, &existingHash)
 	if err == nil {
@@ -101,19 +116,15 @@ func CreatePayoutIntent(ctx context.Context, db *sql.DB, input PayoutIntentInput
 		if readErr != nil {
 			return PayoutRequestRecord{}, false, readErr
 		}
+		if item.DestinationID != destinationID || item.DestinationVersion != destinationVersion {
+			return PayoutRequestRecord{}, false, ErrIdempotencyConflict
+		}
 		if err := tx.Commit(); err != nil {
 			return PayoutRequestRecord{}, false, err
 		}
 		return item, true, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		return PayoutRequestRecord{}, false, err
-	}
-	var destinationID string
-	var destinationVersion int
-	if err := tx.QueryRowContext(ctx, "SELECT id,version FROM wlt.official_wallet_destinations WHERE actor_type=$1 AND actor_id=$2 AND verification_status='VERIFIED' AND status='ACTIVE_FOR_PAYOUT' FOR SHARE", input.ActorType, input.ActorID).Scan(&destinationID, &destinationVersion); errors.Is(err, sql.ErrNoRows) {
-		return PayoutRequestRecord{}, false, ErrPayoutDestination
-	} else if err != nil {
 		return PayoutRequestRecord{}, false, err
 	}
 	var eligible int64

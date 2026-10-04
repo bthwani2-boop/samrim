@@ -14,10 +14,12 @@ import (
 )
 
 type ExportSettlementBatchInput struct {
-	BatchID        string
-	ActorID        string
-	IdempotencyKey string
-	CorrelationID  string
+	BatchID                    string
+	ActorID                    string
+	IdentityFactsByBeneficiary []IdentityFacts
+	DestinationCipher          *DestinationCipher
+	IdempotencyKey             string
+	CorrelationID              string
 }
 
 type SettlementBatchExportRecord struct {
@@ -43,7 +45,7 @@ func ExportSettlementBatch(ctx context.Context, db *sql.DB, cipher *DestinationC
 	input.ActorID = strings.TrimSpace(input.ActorID)
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
 	input.CorrelationID = strings.TrimSpace(input.CorrelationID)
-	if db == nil || cipher == nil || boundedText(input.BatchID, 1, 128) == "" || boundedText(input.ActorID, 1, 128) == "" || !validMutationContext(input.IdempotencyKey, input.CorrelationID) {
+	if db == nil || cipher == nil || input.DestinationCipher == nil || boundedText(input.BatchID, 1, 128) == "" || boundedText(input.ActorID, 1, 128) == "" || !validMutationContext(input.IdempotencyKey, input.CorrelationID) {
 		return SettlementBatchExportRecord{}, ErrSettlementBatchInput
 	}
 
@@ -59,7 +61,25 @@ func ExportSettlementBatch(ctx context.Context, db *sql.DB, cipher *DestinationC
 	} else if err != nil {
 		return SettlementBatchExportRecord{}, err
 	}
-	requestHash := hashFacts("settlement-batch-export", input.BatchID, input.ActorID, batchHash)
+	batch, err := readSettlementBatch(ctx, tx, input.BatchID)
+	if err != nil {
+		return SettlementBatchExportRecord{}, err
+	}
+	if batch.Status != "FROZEN" && batch.Status != "EXECUTION_IN_PROGRESS" && batch.Status != "AWAITING_VERIFICATION" && batch.Status != "AWAITING_RECONCILIATION" && batch.Status != "COMPLETED" {
+		return SettlementBatchExportRecord{}, ErrSettlementBatchExportState
+	}
+	if len(batch.Items) == 0 || batch.RowCount != len(batch.Items) || batch.TotalAmountMinor <= 0 || batch.Currency != "YER" || strings.TrimSpace(batch.BatchHash) == "" {
+		return SettlementBatchExportRecord{}, ErrSettlementBatchInput
+	}
+	snapshots, err := readSettlementBatchSnapshots(ctx, tx, input.BatchID)
+	if err != nil {
+		return SettlementBatchExportRecord{}, err
+	}
+	factHashes, err := requireIdentityFactsForSnapshots(ctx, tx, input.DestinationCipher, input.IdentityFactsByBeneficiary, snapshots)
+	if err != nil {
+		return SettlementBatchExportRecord{}, err
+	}
+	requestHash := hashFacts(append([]string{"settlement-batch-export", input.BatchID, input.ActorID, batchHash}, factHashes...)...)
 	var priorID string
 	err = tx.QueryRowContext(ctx, "SELECT id FROM wlt.settlement_batch_exports WHERE idempotency_key=$1 FOR UPDATE", input.IdempotencyKey).Scan(&priorID)
 	if err == nil {
@@ -89,17 +109,6 @@ func ExportSettlementBatch(ctx context.Context, db *sql.DB, cipher *DestinationC
 		return SettlementBatchExportRecord{}, err
 	}
 
-	batch, err := readSettlementBatch(ctx, tx, input.BatchID)
-	if err != nil {
-		return SettlementBatchExportRecord{}, err
-	}
-	if batch.Status != "FROZEN" && batch.Status != "EXECUTION_IN_PROGRESS" && batch.Status != "AWAITING_VERIFICATION" && batch.Status != "AWAITING_RECONCILIATION" && batch.Status != "COMPLETED" {
-		return SettlementBatchExportRecord{}, ErrSettlementBatchExportState
-	}
-	if len(batch.Items) == 0 || batch.RowCount != len(batch.Items) || batch.TotalAmountMinor <= 0 || batch.Currency != "YER" || strings.TrimSpace(batch.BatchHash) == "" {
-		return SettlementBatchExportRecord{}, ErrSettlementBatchInput
-	}
-
 	rows := make([][]string, 0, len(batch.Items)+1)
 	rows = append(rows, []string{"row_sequence", "batch_id", "payout_id", "beneficiary", "actor_type", "provider", "wallet_identifier", "amount_minor", "currency", "approved_snapshot_hash"})
 	for index, item := range batch.Items {
@@ -112,7 +121,7 @@ func ExportSettlementBatch(ctx context.Context, db *sql.DB, cipher *DestinationC
 		if err := tx.QueryRowContext(ctx, `SELECT wallet_identifier_ciphertext FROM wlt.official_wallet_destinations WHERE id=$1 AND version=$2 AND actor_type=$3 AND actor_id=$4`, destinationID, destinationVersion, item.ActorType, item.ActorID).Scan(&encrypted); err != nil {
 			return SettlementBatchExportRecord{}, err
 		}
-		walletIdentifier, err := cipher.decrypt(encrypted)
+		walletIdentifier, err := input.DestinationCipher.decrypt(encrypted)
 		if err != nil {
 			return SettlementBatchExportRecord{}, err
 		}

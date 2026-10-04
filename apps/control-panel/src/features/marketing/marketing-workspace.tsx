@@ -522,7 +522,7 @@ export function MarketingContentWorkspace() {
       .then(async (response) => {
         const body = await response.json().catch(() => null) as { verticals?: ReadonlyArray<CommerceVertical> } | null;
         if (!response.ok) throw new Error("تعذر قراءة المجالات التجارية.");
-        if (!controller.signal.aborted) setCategoryVerticals((body?.verticals ?? []).filter((item) => item.active && item.catalogModel === "SHARED_CATALOG"));
+        if (!controller.signal.aborted) setCategoryVerticals((body?.verticals ?? []).filter((item) => item.active));
       })
       .catch((error) => { if (!controller.signal.aborted) setTargetMessage(error instanceof Error ? error.message : "تعذر قراءة المجالات التجارية."); });
     return () => controller.abort();

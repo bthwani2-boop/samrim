@@ -2,7 +2,7 @@ import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/
 import { isMediaProvenanceInputValid, resolveJoiningCaseImageContentType, type DshImageUploadInput, type JoiningCaseResponse, type JoiningCaseSummary, joiningCaseStateLabel, type MediaProvenanceInput } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
-import { useLocalSearchParams } from "expo-router";
+import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Image, Switch, Text, TextInput, View } from "react-native";
 
@@ -36,6 +36,7 @@ async function fieldCaseSubmitIdentity(caseID: string, expectedVersion: number) 
 
 export function FieldCases() {
   const theme = useAppearanceTheme();
+  const router = useRouter();
   const styles = useMemo(() => createFieldOperationStyles(theme), [theme]);
   const { q: rawQuery } = useLocalSearchParams<{ q?: string | string[] }>();
   const routeQuery = (Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "").slice(0, 128);
@@ -341,6 +342,7 @@ export function FieldCases() {
       <View style={styles.orderHeader}><Text style={styles.cardTitle}>{item.businessName} · {item.firstStoreName}</Text><BthwaniStatusBadge icon={badgeIcon} label={joiningCaseStateLabel(item.state)} tone={badgeTone} /></View>
       {item.correctionReason ? <Text style={styles.error}>التصحيح المطلوب: {item.correctionReason}</Text> : null}
       <Text style={styles.muted}>{nextStepText}</Text>
+      {item.state === "approved" ? <BthwaniButton disabled={Boolean(busy)} label="إعداد كتالوج المتجر الأولي" onPress={() => router.push(`/(app)/catalog/${encodeURIComponent(item.id)}` as Href)} variant="secondary" /> : null}
       {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt)} label="استكمال صور المسودة" onPress={() => void openStoreImage(item)} variant="secondary" /> : null}
       {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt) || (Boolean(storeImage) && mediaCase?.case.id !== item.id)} label="إرسال للمراجعة" onPress={() => void submitCase(item)} /> : null}
       {mediaCase?.case.id === item.id ? <View style={styles.card}>

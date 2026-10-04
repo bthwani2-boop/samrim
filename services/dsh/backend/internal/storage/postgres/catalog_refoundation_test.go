@@ -43,7 +43,7 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 		t.Fatalf("configured postgres is not reachable: %v", err)
 	}
 
-	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
+	withFreshCanonicalDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
 		scenario := catalogRefoundationScenario{t: t, ctx: ctx, db: db}
 		scenario.verifyFreshSchema(records, migrationSQL)
 		scenario.createRegistryFixtures()
@@ -60,21 +60,22 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 
 func (s *catalogRefoundationScenario) verifyFreshSchema(records []postgres.MigrationRecord, migrationSQL []string) {
 	s.t.Helper()
-	if len(records) != postgres.SchemaVersion || len(migrationSQL) != postgres.SchemaVersion {
+	if len(records) != postgres.CanonicalSchemaVersion || len(migrationSQL) != postgres.CanonicalSchemaVersion {
 		s.t.Fatalf("unexpected DSH migration graph size: records=%d sql=%d", len(records), len(migrationSQL))
 	}
 	assertRequiredMigrationOrder(s.t, records,
 		"018_remove_unjustified_captain_terminated_state.sql",
 		"019_captain_delivery_recovery.sql",
 		"020_field_standing_admission_and_joining_scope.sql",
+		"093_catalog_mixed_scope_and_store_skus.sql",
 	)
-	if err := postgres.Migrate(s.ctx, s.db, records, migrationSQL, testDeliveryProofKeyring(s.t)); err != nil {
+	if err := postgres.MigrateCanonical(s.ctx, s.db, records, migrationSQL, testDeliveryProofKeyring(s.t)); err != nil {
 		s.t.Fatalf("apply fresh DSH migrations: %v", err)
 	}
-	if err := postgres.VerifySchema(s.ctx, s.db, records); err != nil {
+	if err := postgres.VerifyCanonicalSchema(s.ctx, s.db, records); err != nil {
 		s.t.Fatalf("verify fresh DSH schema: %v", err)
 	}
-	if err := postgres.Migrate(s.ctx, s.db, records, migrationSQL, testDeliveryProofKeyring(s.t)); err != nil {
+	if err := postgres.MigrateCanonical(s.ctx, s.db, records, migrationSQL, testDeliveryProofKeyring(s.t)); err != nil {
 		s.t.Fatalf("rerun DSH migrations with matching checksums: %v", err)
 	}
 	var visibilityViews int
@@ -85,10 +86,13 @@ func (s *catalogRefoundationScenario) verifyFreshSchema(records []postgres.Migra
 	if err := s.db.QueryRowContext(s.ctx, `SELECT pg_get_viewdef('dsh.catalog_publishable_offers'::regclass,true)`).Scan(&publishableViewDefinition); err != nil {
 		s.t.Fatalf("read canonical catalog publishable-offer view: %v", err)
 	}
-	for _, required := range []string{"availability = true", "price_minor > 0", "quantity_policy <> 'VARIABLE_MEASURE'", "inventory_policy", "catalog_model", "catalog_category_attribute_rules", "catalog_store_offer_modifier_groups"} {
+	for _, required := range []string{"availability = true", "price_minor > 0", "quantity_policy <> 'VARIABLE_MEASURE'", "inventory_policy", "catalog_category_attribute_rules", "catalog_store_offer_modifier_groups"} {
 		if !strings.Contains(publishableViewDefinition, required) {
 			s.t.Fatalf("canonical catalog publishable-offer view omits required condition %q", required)
 		}
+	}
+	if strings.Contains(publishableViewDefinition, "catalog_model") {
+		s.t.Fatal("canonical catalog publishable-offer view still depends on the removed vertical catalog model")
 	}
 	if err := s.db.QueryRowContext(s.ctx, `SELECT pg_get_viewdef('dsh.catalog_customer_visible_offers'::regclass,true)`).Scan(&customerVisibleViewDefinition); err != nil {
 		s.t.Fatalf("read canonical customer-visible-offer view: %v", err)
@@ -111,7 +115,7 @@ func (s *catalogRefoundationScenario) createRegistryFixtures() {
 		s.t.Fatalf("create service city: %v", err)
 	}
 	s.cityID = createdCity.City.ID
-	vertical := postgres.CommerceVerticalRecord{NameAr: "بقالة", NameEn: "Grocery", CatalogModel: "SHARED_CATALOG", Active: true}
+	vertical := postgres.CommerceVerticalRecord{NameAr: "بقالة", NameEn: "Grocery", Active: true}
 	verticalAudit := postgres.CatalogRegistryAuditInput{ActingActorID: testOperatorActorID, CorrelationID: "corr-vertical-v1", Reason: "Initial catalog vertical"}
 	createdVertical, err := postgres.CreateCommerceVertical(s.ctx, s.db, vertical, "idem-vertical-v1", postgres.HashCatalogVerticalCreateRequest(vertical, verticalAudit.Reason), verticalAudit)
 	if err != nil || !strings.HasPrefix(createdVertical.Vertical.ID, "vertical_") || createdVertical.Vertical.Version != 1 {
@@ -249,7 +253,7 @@ func (s *catalogRefoundationScenario) verifySharedProductPagination() {
 
 func (s *catalogRefoundationScenario) verifyStoreScopedProducts() {
 	s.t.Helper()
-	localVertical := postgres.CommerceVerticalRecord{NameAr: "مخبوزات محلية", NameEn: "Local Bakery", CatalogModel: "STORE_LOCAL_CATALOG", Active: true}
+	localVertical := postgres.CommerceVerticalRecord{NameAr: "مخبوزات محلية", NameEn: "Local Bakery", Active: true}
 	localVerticalAudit := postgres.CatalogRegistryAuditInput{ActingActorID: testOperatorActorID, CorrelationID: "corr-local-vertical-v1", Reason: "Initial local catalog vertical"}
 	createdLocalVertical, err := postgres.CreateCommerceVertical(s.ctx, s.db, localVertical, "idem-local-vertical-v1", postgres.HashCatalogVerticalCreateRequest(localVertical, localVerticalAudit.Reason), localVerticalAudit)
 	if err != nil || createdLocalVertical.Vertical.ID == "" {
@@ -411,7 +415,7 @@ func (s *catalogRefoundationScenario) verifyPublicStoreDiscovery() {
 		s.t.Fatalf("public discovery categories failed: %+v err=%v", discoveryCategories, err)
 	}
 	discoveryVerticals, err := postgres.ListPublicDiscoveryVerticals(s.ctx, s.db, s.cityID)
-	if err != nil || len(discoveryVerticals) != 1 || discoveryVerticals[0].ID != s.verticalID || discoveryVerticals[0].CatalogModel != "" {
+	if err != nil || len(discoveryVerticals) != 1 || discoveryVerticals[0].ID != s.verticalID {
 		s.t.Fatalf("public discovery vertical projection leaked internal routing or missed the vertical: %+v err=%v", discoveryVerticals, err)
 	}
 	publicSearch, err := postgres.SearchPublicCatalog(s.ctx, s.db, s.cityID, s.verticalID, s.categoryID, "قهوة", 10, "")

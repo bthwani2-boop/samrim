@@ -46,17 +46,18 @@ func New(identity *identityintegration.Client, db *sql.DB, payment *wlt.Client, 
 	return &Service{identity: identity, db: db, payment: payment, proofKeys: proofKeys}, nil
 }
 
-func (s *Service) Admit(ctx context.Context, fullNameAr, phone, idempotencyKey, actingActorID, correlationID string) (postgres.CaptainAdmission, bool, error) {
+func (s *Service) Admit(ctx context.Context, fullNameAr, phone, walletProviderKey, idempotencyKey, actingActorID, correlationID string) (postgres.CaptainAdmission, bool, error) {
 	fullNameAr = strings.TrimSpace(fullNameAr)
 	phone = strings.TrimSpace(phone)
-	if len([]rune(fullNameAr)) < 2 || len([]rune(fullNameAr)) > 120 || !phoneE164Pattern.MatchString(phone) || !validMutation(idempotencyKey, correlationID, actingActorID) {
+	walletProviderKey, providerKeyValid := postgres.NormalizeWalletProviderKey(walletProviderKey)
+	if len([]rune(fullNameAr)) < 2 || len([]rune(fullNameAr)) > 120 || !phoneE164Pattern.MatchString(phone) || !providerKeyValid || !validMutation(idempotencyKey, correlationID, actingActorID) {
 		return postgres.CaptainAdmission{}, false, ErrInvalidInput
 	}
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.CaptainAdmission{}, false, err
 	}
-	hash := postgres.HashCaptainAdmissionRequest(fullNameAr, phone)
-	admission, replayed, err := postgres.CreateCaptainAdmissionCandidate(ctx, s.db, fullNameAr, phone, strings.TrimSpace(idempotencyKey), hash, strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
+	hash := postgres.HashCaptainAdmissionRequest(fullNameAr, phone, walletProviderKey)
+	admission, replayed, err := postgres.CreateCaptainAdmissionCandidate(ctx, s.db, fullNameAr, phone, walletProviderKey, strings.TrimSpace(idempotencyKey), hash, strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
 	if err != nil {
 		return postgres.CaptainAdmission{}, false, err
 	}

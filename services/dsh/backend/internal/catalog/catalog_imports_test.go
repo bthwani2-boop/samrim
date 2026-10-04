@@ -24,3 +24,16 @@ func TestCatalogImportAttributeInputsPreserveValues(t *testing.T) {
 		t.Fatalf("integer attribute was not converted: %#v", values[1])
 	}
 }
+
+func TestCatalogImportRowLimitIsFiveThousand(t *testing.T) {
+	for _, count := range []int{1, MaxCatalogImportRows} {
+		if !CatalogImportRowCountAllowed(count) {
+			t.Errorf("catalog import with %d rows should be allowed", count)
+		}
+	}
+	for _, count := range []int{0, MaxCatalogImportRows + 1} {
+		if CatalogImportRowCountAllowed(count) {
+			t.Errorf("catalog import with %d rows should be rejected", count)
+		}
+	}
+}

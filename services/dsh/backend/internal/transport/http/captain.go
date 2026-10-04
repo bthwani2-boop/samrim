@@ -86,7 +86,7 @@ func (s *CaptainServer) admit(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	admission, replayed, err := s.service.Admit(r.Context(), input.FullNameAr, input.ContactPhoneE164, idempotency, acting, correlation)
+	admission, replayed, err := s.service.Admit(r.Context(), input.FullNameAr, input.ContactPhoneE164, input.WalletProviderKey, idempotency, acting, correlation)
 	if err != nil {
 		writeCaptainError(w, err)
 		return
@@ -834,7 +834,7 @@ func captainLimit(w http.ResponseWriter, r *http.Request) (int, bool) {
 }
 
 func toCaptainAdmission(value postgres.CaptainAdmission) contract.CaptainAdmission {
-	return contract.CaptainAdmission{ID: value.ID, ActorID: value.ActorID, FullNameAr: value.FullNameAr, ContactPhoneE164: value.PhoneE164, State: value.State, AvailabilityState: value.AvailabilityState, RequiresProfileReview: value.RequiresProfileReview, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
+	return contract.CaptainAdmission{ID: value.ID, ActorID: value.ActorID, FullNameAr: value.FullNameAr, ContactPhoneE164: value.PhoneE164, WalletProviderKey: value.WalletProviderKey, State: value.State, AvailabilityState: value.AvailabilityState, RequiresProfileReview: value.RequiresProfileReview, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
 }
 
 func toStoreCaptainMembership(value postgres.StoreCaptainMembership) contract.StoreCaptainMembership {

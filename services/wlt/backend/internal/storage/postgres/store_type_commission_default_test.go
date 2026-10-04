@@ -15,8 +15,8 @@ func TestPartnerStoreCommissionModeIsBoundedToGovernedModes(t *testing.T) {
 		{mode: "", want: false},
 	} {
 		t.Run(test.mode, func(t *testing.T) {
-			if got := isPartnerStoreCommissionMode(test.mode); got != test.want {
-				t.Fatalf("isPartnerStoreCommissionMode(%q) = %t, want %t", test.mode, got, test.want)
+			if got := isStoreTypeCommissionMode(test.mode); got != test.want {
+				t.Fatalf("isStoreTypeCommissionMode(%q) = %t, want %t", test.mode, got, test.want)
 			}
 		})
 	}

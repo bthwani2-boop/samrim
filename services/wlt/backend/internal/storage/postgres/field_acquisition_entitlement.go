@@ -15,6 +15,7 @@ var (
 	ErrFieldAcquisitionRewardPolicyNotFound     = errors.New("field acquisition reward policy was not found")
 	ErrFieldAcquisitionRewardPolicyExists       = errors.New("field acquisition reward policy already exists")
 	ErrFieldAcquisitionEntitlementInvalid       = errors.New("field acquisition entitlement input is invalid")
+	ErrFieldAcquisitionEntitlementNotFound      = errors.New("field acquisition entitlement was not found")
 	ErrFieldAcquisitionEntitlementExists        = errors.New("field acquisition entitlement already exists")
 )
 
@@ -67,6 +68,8 @@ type FieldAcquisitionEntitlementRecord struct {
 	Currency              string
 	LedgerTransactionID   string
 	CreatedAt             time.Time
+	EffectiveAt           time.Time
+	Status                string
 }
 
 type FieldFinancialSummaryRecord struct {
@@ -313,6 +316,10 @@ func readFieldAcquisitionEntitlement(ctx context.Context, source interface {
 	if errors.Is(err, sql.ErrNoRows) {
 		return FieldAcquisitionEntitlementRecord{}, ErrFieldAcquisitionEntitlementInvalid
 	}
+	if err == nil {
+		item.Status = "POSTED"
+		item.EffectiveAt = item.CreatedAt
+	}
 	return item, err
 }
 
@@ -330,7 +337,11 @@ func readFieldAcquisitionEntitlementByJoiningCase(ctx context.Context, source in
 	var item FieldAcquisitionEntitlementRecord
 	err := source.QueryRowContext(ctx, `SELECT joining_case_id,store_id,partner_actor_id,field_actor_id,vertical_id,COALESCE(commercial_store_type_id,''),policy_id,policy_version,reward_minor,currency,ledger_transaction_id,created_at FROM wlt.field_acquisition_entitlements WHERE joining_case_id=$1`, joiningCaseID).Scan(&item.JoiningCaseID, &item.StoreID, &item.PartnerActorID, &item.FieldActorID, &item.VerticalID, &item.CommercialStoreTypeID, &item.PolicyID, &item.PolicyVersion, &item.RewardMinor, &item.Currency, &item.LedgerTransactionID, &item.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return FieldAcquisitionEntitlementRecord{}, ErrFieldAcquisitionEntitlementInvalid
+		return FieldAcquisitionEntitlementRecord{}, ErrFieldAcquisitionEntitlementNotFound
+	}
+	if err == nil {
+		item.Status = "POSTED"
+		item.EffectiveAt = item.CreatedAt
 	}
 	return item, err
 }
@@ -367,6 +378,8 @@ func ListFieldAcquisitionEntitlements(ctx context.Context, db *sql.DB, fieldActo
 		if err := rows.Scan(&item.JoiningCaseID, &item.StoreID, &item.PartnerActorID, &item.FieldActorID, &item.VerticalID, &item.CommercialStoreTypeID, &item.PolicyID, &item.PolicyVersion, &item.RewardMinor, &item.Currency, &item.LedgerTransactionID, &item.CreatedAt); err != nil {
 			return FieldAcquisitionEntitlementPage{}, err
 		}
+		item.Status = "POSTED"
+		item.EffectiveAt = item.CreatedAt
 		page.Entitlements = append(page.Entitlements, item)
 	}
 	if err := rows.Err(); err != nil {

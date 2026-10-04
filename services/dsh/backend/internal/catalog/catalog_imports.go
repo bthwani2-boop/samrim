@@ -11,11 +11,17 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
 
+const MaxCatalogImportRows = 5000
+
+func CatalogImportRowCountAllowed(count int) bool {
+	return count > 0 && count <= MaxCatalogImportRows
+}
+
 func (s *Service) PreviewCatalogImport(ctx context.Context, actingActorID string, input contract.CatalogImportPreviewRequest, idempotencyKey, correlationID string) (postgres.CatalogImportPreviewResult, error) {
 	if err := s.requireOperatorPermission(ctx, actingActorID, "catalog"); err != nil {
 		return postgres.CatalogImportPreviewResult{}, err
 	}
-	if strings.TrimSpace(input.RunID) == "" || strings.TrimSpace(input.SourceSha256) == "" || len(input.Rows) == 0 {
+	if strings.TrimSpace(input.RunID) == "" || strings.TrimSpace(input.SourceSha256) == "" || !CatalogImportRowCountAllowed(len(input.Rows)) {
 		return postgres.CatalogImportPreviewResult{}, postgres.ErrCatalogImportInvalid
 	}
 	items := make([]postgres.CatalogImportItemRecord, 0, len(input.Rows))

@@ -4,13 +4,14 @@ import { type Href, Link } from "expo-router";
 import { useMemo } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { StoreOfferManagement } from "../store-offer/store-offer";
-import { StoreProfileImageEditor } from "./store-profile-image-editor";
+import { PartnerAccessibleStoreWorkspace } from "./partner-accessible-store-workspace";
+import { PartnerStoreAccess } from "./partner-store-access";
 import { usePartnerStoreContext } from "./partner-store-context";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 import { StoreCaptainMembershipManagement } from "./store-captain-memberships";
+import { StoreCommercialAgreements } from "./store-commercial-agreements";
 import { StoreOperationalAvailabilityManagement } from "./store-operational-availability";
-import { PartnerAccessibleStoreWorkspace } from "./partner-accessible-store-workspace";
-import { PartnerStoreAccess } from "./partner-store-access";
+import { StoreProfileImageEditor } from "./store-profile-image-editor";
 
 export function PartnerStore() {
   const theme = useAppearanceTheme();
@@ -28,6 +29,7 @@ export function PartnerStore() {
       <View style={styles.card}><View style={styles.metaGrid}><View style={styles.metaItem}><Text style={styles.metaLabel}>مدينة الخدمة</Text><Text style={styles.value}>{cityName}</Text></View><View style={styles.metaItem}><Text style={styles.metaLabel}>حالة الملف</Text><Text style={styles.value}>{joiningCase.case.state === "needs_correction" ? "يحتاج تصحيحًا" : "قيد المتابعة"}</Text></View></View></View>
       {citiesError ? <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة مدن الخدمة، لذلك قد لا يظهر اسم المدينة.</Text><BthwaniButton label="إعادة قراءة المدن" onPress={() => void reload()} variant="secondary" /></View> : null}
       {joiningCase.case.store ? <>
+        <StoreCommercialAgreements />
         <StoreProfileImageEditor value={joiningCase} onUpdated={update} />
         <Text selectable style={styles.muted}>المتجر الأول: {joiningCase.case.store.name}</Text>
         <Text style={styles.muted}>حالة النشر: {publicationStateLabel(joiningCase.case.store.publicationState)}</Text>

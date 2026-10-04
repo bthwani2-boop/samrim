@@ -80,12 +80,12 @@ func CreateCatalogAttributeDefinition(ctx context.Context, db *sql.DB, input Cat
 		return CatalogAttributeDefinitionRecord{}, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var sharedCatalog bool
-	if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM dsh.commerce_verticals WHERE id=$1 AND active=true AND catalog_model='SHARED_CATALOG' FOR SHARE)`, input.VerticalID).Scan(&sharedCatalog); err != nil {
+	var activeVertical bool
+	if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM dsh.commerce_verticals WHERE id=$1 AND active=true FOR SHARE)`, input.VerticalID).Scan(&activeVertical); err != nil {
 		return CatalogAttributeDefinitionRecord{}, false, err
 	}
-	if !sharedCatalog {
-		return CatalogAttributeDefinitionRecord{}, false, ErrCatalogProductModelMismatch
+	if !activeVertical {
+		return CatalogAttributeDefinitionRecord{}, false, ErrCatalogVerticalNotFound
 	}
 	var storedHash, storedID, operation string
 	err = tx.QueryRowContext(ctx, "SELECT request_hash,attribute_id,operation FROM dsh.catalog_attribute_mutation_idempotency WHERE idempotency_key=$1 FOR UPDATE", idempotencyKey).Scan(&storedHash, &storedID, &operation)
@@ -131,14 +131,11 @@ func readCatalogAttributeDefinitionTx(ctx context.Context, tx *sql.Tx, id string
 }
 
 func ListCatalogAttributeDefinitions(ctx context.Context, db *sql.DB, verticalID string, activeOnly bool) ([]CatalogAttributeDefinitionRecord, error) {
-	var catalogModel string
-	if err := db.QueryRowContext(ctx, "SELECT COALESCE(catalog_model,'') FROM dsh.commerce_verticals WHERE id=$1", strings.TrimSpace(verticalID)).Scan(&catalogModel); errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrCatalogVerticalNotFound
-	} else if err != nil {
+	var verticalExists bool
+	if err := db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM dsh.commerce_verticals WHERE id=$1)", strings.TrimSpace(verticalID)).Scan(&verticalExists); err != nil {
 		return nil, err
-	}
-	if catalogModel != "SHARED_CATALOG" {
-		return []CatalogAttributeDefinitionRecord{}, nil
+	} else if !verticalExists {
+		return nil, ErrCatalogVerticalNotFound
 	}
 	where := []string{"vertical_id=$1"}
 	args := []any{strings.TrimSpace(verticalID)}
@@ -271,26 +268,26 @@ func validateAttributeValue(ctx context.Context, db rowQueryer, ownerColumn, own
 		}
 	}
 	variantAxis := ownerColumn == "variant_id"
-	var productID, ownerVertical, ownerScope, catalogModel string
+	var productID, ownerVertical, ownerScope string
 	if variantAxis {
-		err := db.QueryRowContext(ctx, `SELECT p.id,p.vertical_id,p.scope,vx.catalog_model
+		err := db.QueryRowContext(ctx, `SELECT p.id,p.vertical_id,p.scope
 			FROM dsh.catalog_product_variants v
 			JOIN dsh.catalog_products p ON p.id=v.product_id
 			JOIN dsh.commerce_verticals vx ON vx.id=p.vertical_id WHERE v.id=$1`, ownerID).
-			Scan(&productID, &ownerVertical, &ownerScope, &catalogModel)
+			Scan(&productID, &ownerVertical, &ownerScope)
 		if err != nil {
 			return err
 		}
 	} else {
-		err := db.QueryRowContext(ctx, `SELECT p.id,p.vertical_id,p.scope,vx.catalog_model
+		err := db.QueryRowContext(ctx, `SELECT p.id,p.vertical_id,p.scope
 			FROM dsh.catalog_products p
 			JOIN dsh.commerce_verticals vx ON vx.id=p.vertical_id WHERE p.id=$1`, ownerID).
-			Scan(&productID, &ownerVertical, &ownerScope, &catalogModel)
+			Scan(&productID, &ownerVertical, &ownerScope)
 		if err != nil {
 			return err
 		}
 	}
-	if ownerVertical != verticalID || ownerScope != "SHARED" || catalogModel != "SHARED_CATALOG" {
+	if ownerVertical != verticalID || ownerScope != "SHARED" {
 		return ErrCatalogCategoryNotFound
 	}
 	var configured bool
@@ -464,12 +461,9 @@ func UpsertCatalogCategoryAttributeRule(ctx context.Context, db *sql.DB, rule Ca
 	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:catalog-attribute-rule:"+entityID); err != nil {
 		return err
 	}
-	var categoryVertical, attributeVertical, catalogModel string
-	if err = tx.QueryRowContext(ctx, `SELECT c.vertical_id,COALESCE(cv.catalog_model,'') FROM dsh.catalog_categories c JOIN dsh.commerce_verticals cv ON cv.id=c.vertical_id WHERE c.id=$1 AND c.active=true FOR SHARE OF cv`, rule.CategoryID).Scan(&categoryVertical, &catalogModel); err != nil {
+	var categoryVertical, attributeVertical string
+	if err = tx.QueryRowContext(ctx, `SELECT c.vertical_id FROM dsh.catalog_categories c JOIN dsh.commerce_verticals cv ON cv.id=c.vertical_id WHERE c.id=$1 AND c.active=true AND cv.active=true FOR SHARE OF cv`, rule.CategoryID).Scan(&categoryVertical); err != nil {
 		return err
-	}
-	if catalogModel != "SHARED_CATALOG" {
-		return ErrCatalogProductModelMismatch
 	}
 	if err = tx.QueryRowContext(ctx, "SELECT vertical_id FROM dsh.catalog_attribute_definitions WHERE id=$1 AND active=true", rule.AttributeID).Scan(&attributeVertical); err != nil {
 		return err
@@ -531,7 +525,7 @@ func CreateCatalogModifierGroup(ctx context.Context, db *sql.DB, input CatalogMo
 	result, err := db.ExecContext(ctx, `INSERT INTO dsh.catalog_modifier_groups(id,store_id,name_ar,required,min_selections,max_selections,active)
 		SELECT $1,$2,$3,$4,$5,$6,$7 WHERE EXISTS (
 			SELECT 1 FROM dsh.stores s JOIN dsh.commerce_verticals cv ON cv.id=s.primary_vertical_id
-			WHERE s.id=$2 AND cv.active=true AND cv.catalog_model='STORE_LOCAL_CATALOG'
+			WHERE s.id=$2 AND cv.active=true
 		)`, input.ID, input.StoreID, input.NameAr, input.Required, input.MinSelections, input.MaxSelections, input.Active)
 	if err != nil {
 		return CatalogModifierGroupRecord{}, err
@@ -540,7 +534,7 @@ func CreateCatalogModifierGroup(ctx context.Context, db *sql.DB, input CatalogMo
 		if err != nil {
 			return CatalogModifierGroupRecord{}, err
 		}
-		return CatalogModifierGroupRecord{}, ErrCatalogProductModelMismatch
+		return CatalogModifierGroupRecord{}, ErrCatalogProductScopeMismatch
 	}
 	items, err := listModifierGroupsByID(ctx, db, input.ID)
 	if err != nil {
@@ -579,15 +573,15 @@ func AttachCatalogModifierGroup(ctx context.Context, db *sql.DB, offerID, groupI
 	if offerStore != groupStore {
 		return ErrCatalogProductOwnership
 	}
-	var localCatalog bool
+	var activeStore bool
 	if err := db.QueryRowContext(ctx, `SELECT EXISTS (
 		SELECT 1 FROM dsh.stores s JOIN dsh.commerce_verticals cv ON cv.id=s.primary_vertical_id
-		WHERE s.id=$1 AND cv.active=true AND cv.catalog_model='STORE_LOCAL_CATALOG'
-	)`, offerStore).Scan(&localCatalog); err != nil {
+		WHERE s.id=$1 AND cv.active=true
+	)`, offerStore).Scan(&activeStore); err != nil {
 		return err
 	}
-	if !localCatalog {
-		return ErrCatalogProductModelMismatch
+	if !activeStore {
+		return ErrCatalogProductScopeMismatch
 	}
 	_, err := db.ExecContext(ctx, "INSERT INTO dsh.catalog_store_offer_modifier_groups(offer_id,group_id,ordinal) VALUES($1,$2,$3) ON CONFLICT(offer_id,group_id) DO UPDATE SET ordinal=EXCLUDED.ordinal", offerID, groupID, ordinal)
 	return err
@@ -599,14 +593,11 @@ func CreateCatalogStorefrontSection(ctx context.Context, db *sql.DB, input Catal
 		return CatalogStorefrontSectionRecord{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var catalogModel string
-	if err = tx.QueryRowContext(ctx, `SELECT COALESCE(cv.catalog_model,'') FROM dsh.stores s JOIN dsh.commerce_verticals cv ON cv.id=s.primary_vertical_id WHERE s.id=$1 FOR SHARE OF cv`, input.StoreID).Scan(&catalogModel); errors.Is(err, sql.ErrNoRows) {
+	var activeStore bool
+	if err = tx.QueryRowContext(ctx, `SELECT cv.active FROM dsh.stores s JOIN dsh.commerce_verticals cv ON cv.id=s.primary_vertical_id WHERE s.id=$1 FOR SHARE OF cv`, input.StoreID).Scan(&activeStore); errors.Is(err, sql.ErrNoRows) || !activeStore {
 		return CatalogStorefrontSectionRecord{}, ErrCatalogOfferStoreNotFound
 	} else if err != nil {
 		return CatalogStorefrontSectionRecord{}, err
-	}
-	if catalogModel != "STORE_LOCAL_CATALOG" {
-		return CatalogStorefrontSectionRecord{}, ErrCatalogProductModelMismatch
 	}
 	if input.ID == "" {
 		input.ID, err = newID("section")
@@ -638,14 +629,14 @@ func AttachOfferToCatalogStorefrontSection(ctx context.Context, db *sql.DB, sect
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var sectionStore, catalogModel, offerStore, productScope string
-	if err := tx.QueryRowContext(ctx, `SELECT ss.store_id,COALESCE(cv.catalog_model,'') FROM dsh.catalog_storefront_sections ss JOIN dsh.stores s ON s.id=ss.store_id JOIN dsh.commerce_verticals cv ON cv.id=s.primary_vertical_id WHERE ss.id=$1 FOR SHARE OF cv`, sectionID).Scan(&sectionStore, &catalogModel); err != nil {
+	var sectionStore, offerStore string
+	if err := tx.QueryRowContext(ctx, `SELECT ss.store_id FROM dsh.catalog_storefront_sections ss JOIN dsh.stores s ON s.id=ss.store_id JOIN dsh.commerce_verticals cv ON cv.id=s.primary_vertical_id WHERE ss.id=$1 AND cv.active=true FOR SHARE OF cv`, sectionID).Scan(&sectionStore); err != nil {
 		return err
 	}
-	if err := tx.QueryRowContext(ctx, "SELECT o.store_id,p.scope FROM dsh.catalog_store_offers o JOIN dsh.catalog_product_variants v ON v.id=o.variant_id JOIN dsh.catalog_products p ON p.id=v.product_id WHERE o.id=$1", offerID).Scan(&offerStore, &productScope); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT store_id FROM dsh.catalog_store_offers WHERE id=$1", offerID).Scan(&offerStore); err != nil {
 		return err
 	}
-	if catalogModel != "STORE_LOCAL_CATALOG" || sectionStore != offerStore || productScope != "STORE_SCOPED" {
+	if sectionStore != offerStore {
 		return ErrCatalogProductOwnership
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_storefront_section_offers(section_id,offer_id,ordinal) VALUES($1,$2,$3) ON CONFLICT(section_id,offer_id) DO UPDATE SET ordinal=EXCLUDED.ordinal", sectionID, offerID, ordinal); err != nil {

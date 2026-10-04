@@ -15,13 +15,14 @@ import (
 )
 
 var (
-	ErrOperatorNotActive             = errors.New("operator actor is not active")
-	ErrPublicationReadinessBlocked   = errors.New("store publication readiness is blocked")
-	ErrPartnerIdentityUnavailable    = errors.New("partner Identity eligibility is unavailable")
-	PartnerIdentityNotEligibleReason = "PARTNER_IDENTITY_NOT_ELIGIBLE"
-	FinancialProfileNotReadyReason   = "FINANCIAL_PROFILE_NOT_READY"
-	ServiceCityNotEligibleReason     = "SERVICE_CITY_NOT_ELIGIBLE"
-	CatalogNotReadyReason            = "CATALOG_NOT_READY"
+	ErrOperatorNotActive              = errors.New("operator actor is not active")
+	ErrPublicationReadinessBlocked    = errors.New("store publication readiness is blocked")
+	ErrPartnerIdentityUnavailable     = errors.New("partner Identity eligibility is unavailable")
+	PartnerIdentityNotEligibleReason  = "PARTNER_IDENTITY_NOT_ELIGIBLE"
+	FinancialProfileNotReadyReason    = "FINANCIAL_PROFILE_NOT_READY"
+	ServiceCityNotEligibleReason      = "SERVICE_CITY_NOT_ELIGIBLE"
+	CatalogNotReadyReason             = "CATALOG_NOT_READY"
+	CommercialAgreementNotReadyReason = "COMMERCIAL_AGREEMENT_NOT_READY"
 )
 
 type PublicationReadiness struct {
@@ -82,7 +83,8 @@ func (s *Service) ReconcileFieldAcquisitionRewards(ctx context.Context) error {
 			}
 			continue
 		}
-		if _, _, finalizeErr := s.wlt.FinalizeFieldAcquisitionReward(ctx, wltintegration.FinalizeFieldAcquisitionRewardInput{JoiningCaseID: item.JoiningCaseID, StoreID: item.StoreID, PartnerActorID: item.PartnerActorID, FieldActorID: item.FieldActorID, VerticalID: item.VerticalID, CommercialStoreTypeID: item.CommercialStoreTypeID, IdempotencyKey: item.IdempotencyKey, CorrelationID: item.CorrelationID}); finalizeErr != nil {
+		finalized, _, finalizeErr := s.wlt.FinalizeFieldAcquisitionReward(ctx, wltintegration.FinalizeFieldAcquisitionRewardInput{JoiningCaseID: item.JoiningCaseID, StoreID: item.StoreID, PartnerActorID: item.PartnerActorID, FieldActorID: item.FieldActorID, VerticalID: item.VerticalID, CommercialStoreTypeID: item.CommercialStoreTypeID, IdempotencyKey: item.IdempotencyKey, CorrelationID: item.CorrelationID})
+		if finalizeErr != nil {
 			var wltErr *wltintegration.Error
 			if errors.As(finalizeErr, &wltErr) && wltErr.Code == "FIELD_ACQUISITION_POLICY_NOT_FOUND" {
 				if deferErr := postgres.DeferFieldAcquisitionPublication(ctx, s.db, item.ID, true, false); deferErr != nil {
@@ -91,6 +93,19 @@ func (s *Service) ReconcileFieldAcquisitionRewards(ctx context.Context) error {
 				continue
 			}
 			if markErr := postgres.MarkFieldAcquisitionRewardPublicationFailure(ctx, s.db, item.ID, finalizeErr.Error()); markErr != nil {
+				return markErr
+			}
+			continue
+		}
+		readback, readErr := s.wlt.ReadFieldAcquisitionEntitlementByJoiningCase(ctx, item.JoiningCaseID)
+		if readErr != nil {
+			if markErr := postgres.MarkFieldAcquisitionRewardPublicationFailure(ctx, s.db, item.ID, readErr.Error()); markErr != nil {
+				return markErr
+			}
+			continue
+		}
+		if !fieldAcquisitionReadbackMatches(item, finalized, readback) {
+			if markErr := postgres.MarkFieldAcquisitionRewardPublicationFailure(ctx, s.db, item.ID, "WLT entitlement readback does not match the immutable Field acquisition publication"); markErr != nil {
 				return markErr
 			}
 			continue
@@ -267,7 +282,14 @@ func (s *Service) ListPublished(ctx context.Context, input postgres.PublicStoreL
 	visible := make([]postgres.PublicStoreRecord, 0, len(page.Stores))
 	for _, store := range page.Stores {
 		role, exists := eligibleRoles[store.PartnerActorID]
-		if exists && evaluatePartnerReadiness(role).Ready {
+		if !exists || !evaluatePartnerReadiness(role).Ready {
+			continue
+		}
+		agreementReady, agreementErr := s.activeCommercialAgreementForStore(ctx, store.ID)
+		if agreementErr != nil {
+			return postgres.PublicStorePage{}, agreementErr
+		}
+		if agreementReady {
 			visible = append(visible, store)
 		}
 	}
@@ -285,6 +307,13 @@ func (s *Service) ReadPublished(ctx context.Context, storeID, serviceCityID stri
 		return postgres.PublicStoreRecord{}, err
 	}
 	if !readiness.Ready {
+		return postgres.PublicStoreRecord{}, postgres.ErrStoreNotFound
+	}
+	agreementReady, err := s.activeCommercialAgreementForStore(ctx, store.ID)
+	if err != nil {
+		return postgres.PublicStoreRecord{}, err
+	}
+	if !agreementReady {
 		return postgres.PublicStoreRecord{}, postgres.ErrStoreNotFound
 	}
 	return store, nil
@@ -311,7 +340,30 @@ func (s *Service) ReadinessForStore(ctx context.Context, store postgres.StoreRec
 	if !catalogReady {
 		return blockedReadiness(CatalogNotReadyReason), nil
 	}
-	return s.ReadinessForPartner(ctx, store.PartnerActorID)
+	partnerReadiness, err := s.ReadinessForPartner(ctx, store.PartnerActorID)
+	if err != nil || !partnerReadiness.Ready {
+		return partnerReadiness, err
+	}
+	agreementReady, err := s.activeCommercialAgreementForStore(ctx, store.ID)
+	if err != nil {
+		return PublicationReadiness{}, err
+	}
+	if !agreementReady {
+		return blockedReadiness(CommercialAgreementNotReadyReason), nil
+	}
+	return partnerReadiness, nil
+}
+
+func (s *Service) activeCommercialAgreementForStore(ctx context.Context, storeID string) (bool, error) {
+	store, err := postgres.ReadStore(ctx, s.db, strings.TrimSpace(storeID))
+	if err != nil {
+		return false, fmt.Errorf("read store commercial agreement facts: %w", err)
+	}
+	agreements, err := s.wlt.ReadStoreCommercialAgreements(ctx, store.ID)
+	if err != nil {
+		return false, fmt.Errorf("read store commercial agreement readiness: %w", err)
+	}
+	return activeStoreAgreementMatches(store, agreements), nil
 }
 
 func (s *Service) ReadinessForPartner(ctx context.Context, partnerActorID string) (PublicationReadiness, error) {

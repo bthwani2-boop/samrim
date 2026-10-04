@@ -16,16 +16,14 @@ var (
 )
 
 type CustomerWithdrawalIntakeInput struct {
-	CustomerActorID            string
-	ProviderKey                string
-	WalletIdentifier           string
-	BeneficiaryName            string
-	BeneficiaryIdentityVersion int
-	RequestReason              string
-	RequestEvidenceDocumentID  string
-	RequestedBy                string
-	IdempotencyKey             string
-	CorrelationID              string
+	CustomerActorID           string
+	ProviderKey               string
+	IdentityFacts             IdentityFacts
+	RequestReason             string
+	RequestEvidenceDocumentID string
+	RequestedBy               string
+	IdempotencyKey            string
+	CorrelationID             string
 }
 
 type CustomerWithdrawalIntakeRecord struct {
@@ -71,6 +69,7 @@ type CustomerWithdrawalAcceptInput struct {
 	IntakeID       string
 	ActorID        string
 	Reason         string
+	IdentityFacts  IdentityFacts
 	IdempotencyKey string
 	CorrelationID  string
 }
@@ -78,15 +77,17 @@ type CustomerWithdrawalAcceptInput struct {
 func CreateCustomerWithdrawalIntake(ctx context.Context, db *sql.DB, cipher *DestinationCipher, input CustomerWithdrawalIntakeInput) (CustomerWithdrawalIntakeRecord, bool, error) {
 	input.CustomerActorID = strings.TrimSpace(input.CustomerActorID)
 	input.ProviderKey = strings.TrimSpace(input.ProviderKey)
-	input.WalletIdentifier = strings.TrimSpace(input.WalletIdentifier)
-	input.BeneficiaryName = strings.TrimSpace(input.BeneficiaryName)
+	input.IdentityFacts = input.IdentityFacts.normalized()
 	input.RequestReason = strings.TrimSpace(input.RequestReason)
 	input.RequestEvidenceDocumentID = strings.TrimSpace(input.RequestEvidenceDocumentID)
 	input.RequestedBy = strings.TrimSpace(input.RequestedBy)
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
 	input.CorrelationID = strings.TrimSpace(input.CorrelationID)
-	if db == nil || cipher == nil || boundedText(input.CustomerActorID, 1, 128) == "" || boundedText(input.ProviderKey, 1, 64) == "" || !officialWalletPhoneE164Pattern.MatchString(input.WalletIdentifier) || boundedText(input.BeneficiaryName, 1, 320) == "" || input.BeneficiaryIdentityVersion < 1 || boundedText(input.RequestReason, 1, 512) == "" || boundedText(input.RequestEvidenceDocumentID, 1, 128) == "" || boundedText(input.RequestedBy, 1, 128) == "" || !validMutationContext(input.IdempotencyKey, input.CorrelationID) {
+	if db == nil || cipher == nil || boundedText(input.CustomerActorID, 1, 128) == "" || boundedText(input.ProviderKey, 1, 64) == "" || boundedText(input.RequestReason, 1, 512) == "" || boundedText(input.RequestEvidenceDocumentID, 1, 128) == "" || boundedText(input.RequestedBy, 1, 128) == "" || !validMutationContext(input.IdempotencyKey, input.CorrelationID) {
 		return CustomerWithdrawalIntakeRecord{}, false, ErrPayoutInvalidInput
+	}
+	if !input.IdentityFacts.validFor("customer", input.CustomerActorID) {
+		return CustomerWithdrawalIntakeRecord{}, false, ErrReverificationRequired
 	}
 	var evidencePurpose string
 	if err := db.QueryRowContext(ctx, "SELECT purpose FROM wlt.finance_evidence_documents WHERE id=$1", input.RequestEvidenceDocumentID).Scan(&evidencePurpose); err != nil {
@@ -98,11 +99,11 @@ func CreateCustomerWithdrawalIntake(ctx context.Context, db *sql.DB, cipher *Des
 	if evidencePurpose != "CUSTOMER_WITHDRAWAL_REQUEST" {
 		return CustomerWithdrawalIntakeRecord{}, false, ErrPayoutInvalidInput
 	}
-	ciphertext, err := cipher.encrypt(input.WalletIdentifier)
+	ciphertext, err := cipher.encrypt(input.IdentityFacts.PhoneE164)
 	if err != nil {
 		return CustomerWithdrawalIntakeRecord{}, false, err
 	}
-	requestHash := hashFacts("customer-manual-withdrawal-intake", input.CustomerActorID, input.ProviderKey, input.WalletIdentifier, input.BeneficiaryName, formatInt(input.BeneficiaryIdentityVersion), input.RequestReason, input.RequestEvidenceDocumentID, input.RequestedBy)
+	requestHash := hashFacts("customer-manual-withdrawal-intake-v2", input.CustomerActorID, input.ProviderKey, input.IdentityFacts.fingerprint(), input.RequestReason, input.RequestEvidenceDocumentID, input.RequestedBy)
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return CustomerWithdrawalIntakeRecord{}, false, err
@@ -130,8 +131,8 @@ func CreateCustomerWithdrawalIntake(ctx context.Context, db *sql.DB, cipher *Des
 	if err != nil {
 		return CustomerWithdrawalIntakeRecord{}, false, err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO wlt.customer_manual_withdrawal_intakes(id,customer_actor_id,provider_key,wallet_identifier_ciphertext,wallet_identifier_masked,beneficiary_name,beneficiary_identity_version,request_reason,request_evidence_document_id,requested_by,idempotency_key,request_hash,correlation_id)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, id, input.CustomerActorID, input.ProviderKey, ciphertext, maskWalletIdentifier(input.WalletIdentifier), input.BeneficiaryName, input.BeneficiaryIdentityVersion, input.RequestReason, input.RequestEvidenceDocumentID, input.RequestedBy, input.IdempotencyKey, requestHash, input.CorrelationID)
+	_, err = tx.ExecContext(ctx, `INSERT INTO wlt.customer_manual_withdrawal_intakes(id,customer_actor_id,provider_key,wallet_identifier_ciphertext,wallet_identifier_masked,beneficiary_name,beneficiary_identity_version,request_reason,request_evidence_document_id,requested_by,idempotency_key,request_hash,correlation_id,identity_actor_version,identity_role_version,role_enabled,security_enabled,official_name_status)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`, id, input.CustomerActorID, input.ProviderKey, ciphertext, maskWalletIdentifier(input.IdentityFacts.PhoneE164), input.IdentityFacts.OfficialName, input.IdentityFacts.OfficialNameVersion, input.RequestReason, input.RequestEvidenceDocumentID, input.RequestedBy, input.IdempotencyKey, requestHash, input.CorrelationID, input.IdentityFacts.ActorVersion, input.IdentityFacts.RoleVersion, input.IdentityFacts.RoleEnabled, input.IdentityFacts.SecurityEnabled, input.IdentityFacts.OfficialNameStatus)
 	if err != nil {
 		return CustomerWithdrawalIntakeRecord{}, false, err
 	}
@@ -257,8 +258,9 @@ func ReadCustomerWithdrawalIntake(ctx context.Context, db *sql.DB, intakeID stri
 	return readCustomerWithdrawalIntake(ctx, db, strings.TrimSpace(intakeID))
 }
 
-func PrepareCustomerWithdrawalDestination(ctx context.Context, db *sql.DB, cipher *DestinationCipher, intakeID, actorID, reason, idempotencyKey, correlationID string) (OfficialWalletDestinationRecord, error) {
+func PrepareCustomerWithdrawalDestination(ctx context.Context, db *sql.DB, cipher *DestinationCipher, intakeID, actorID, reason string, facts IdentityFacts, idempotencyKey, correlationID string) (OfficialWalletDestinationRecord, error) {
 	intakeID, actorID, reason = strings.TrimSpace(intakeID), strings.TrimSpace(actorID), strings.TrimSpace(reason)
+	facts = facts.normalized()
 	idempotencyKey, correlationID = strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID)
 	if db == nil || cipher == nil || boundedText(intakeID, 1, 128) == "" || boundedText(actorID, 1, 128) == "" || boundedText(reason, 1, 512) == "" || !validMutationContext(idempotencyKey, correlationID) {
 		return OfficialWalletDestinationRecord{}, ErrDestinationInvalidInput
@@ -268,21 +270,28 @@ func PrepareCustomerWithdrawalDestination(ctx context.Context, db *sql.DB, ciphe
 		return OfficialWalletDestinationRecord{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var actor, provider, walletCipher, masked, name, requestReason, requestEvidence, status string
-	var nameVersion int
+	var actor, provider, walletCipher, masked, name, requestReason, requestEvidence, status, nameStatus string
+	var nameVersion, actorVersion, roleVersion int
+	var roleEnabled, securityEnabled bool
 	var existingDestination sql.NullString
-	err = tx.QueryRowContext(ctx, `SELECT customer_actor_id,provider_key,wallet_identifier_ciphertext,wallet_identifier_masked,beneficiary_name,beneficiary_identity_version,request_reason,request_evidence_document_id,status,destination_id FROM wlt.customer_manual_withdrawal_intakes WHERE id=$1 FOR UPDATE`, intakeID).Scan(&actor, &provider, &walletCipher, &masked, &name, &nameVersion, &requestReason, &requestEvidence, &status, &existingDestination)
+	err = tx.QueryRowContext(ctx, `SELECT customer_actor_id,provider_key,wallet_identifier_ciphertext,wallet_identifier_masked,beneficiary_name,beneficiary_identity_version,request_reason,request_evidence_document_id,status,destination_id,identity_actor_version,identity_role_version,role_enabled,security_enabled,official_name_status FROM wlt.customer_manual_withdrawal_intakes WHERE id=$1 FOR UPDATE`, intakeID).Scan(&actor, &provider, &walletCipher, &masked, &name, &nameVersion, &requestReason, &requestEvidence, &status, &existingDestination, &actorVersion, &roleVersion, &roleEnabled, &securityEnabled, &nameStatus)
 	if errors.Is(err, sql.ErrNoRows) {
 		return OfficialWalletDestinationRecord{}, ErrCustomerWithdrawalNotFound
 	}
 	if err != nil {
 		return OfficialWalletDestinationRecord{}, err
 	}
+	if !facts.validFor("customer", actor) {
+		return OfficialWalletDestinationRecord{}, ErrReverificationRequired
+	}
 	wallet, err := cipher.decrypt(walletCipher)
 	if err != nil {
 		return OfficialWalletDestinationRecord{}, err
 	}
-	requestHash := hashFacts("customer-withdrawal-destination", intakeID, actor, provider, wallet, name, formatInt(nameVersion), reason, requestEvidence, actorID)
+	if !facts.matchesSnapshot(wallet, name, nameVersion, actorVersion, roleVersion, roleEnabled, securityEnabled, nameStatus) {
+		return OfficialWalletDestinationRecord{}, ErrReverificationRequired
+	}
+	requestHash := hashFacts("customer-withdrawal-destination-v2", intakeID, actor, provider, facts.fingerprint(), reason, requestEvidence, actorID)
 	var existingID, existingHash string
 	err = tx.QueryRowContext(ctx, "SELECT id,request_hash FROM wlt.official_wallet_destinations WHERE idempotency_key=$1 FOR UPDATE", idempotencyKey).Scan(&existingID, &existingHash)
 	if err == nil {
@@ -315,8 +324,8 @@ func PrepareCustomerWithdrawalDestination(ctx context.Context, db *sql.DB, ciphe
 	if err != nil {
 		return OfficialWalletDestinationRecord{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.official_wallet_destinations(id,actor_type,actor_id,provider_key,wallet_identifier_ciphertext,wallet_identifier_masked,beneficiary_name,beneficiary_identity_version,version,change_reason,submitted_by,verification_evidence_reference,change_evidence_reference,idempotency_key,request_hash)
-		VALUES($1,'customer',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, destinationID, actor, provider, walletCipher, masked, name, nameVersion, version, reason, actorID, requestEvidence, requestEvidence, idempotencyKey, requestHash); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.official_wallet_destinations(id,actor_type,actor_id,provider_key,wallet_identifier_ciphertext,wallet_identifier_masked,beneficiary_name,beneficiary_identity_version,version,change_reason,submitted_by,verification_evidence_reference,change_evidence_reference,idempotency_key,request_hash,identity_actor_version,identity_role_version,role_enabled,security_enabled,official_name_status)
+		VALUES($1,'customer',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`, destinationID, actor, provider, walletCipher, masked, name, nameVersion, version, reason, actorID, requestEvidence, requestEvidence, idempotencyKey, requestHash, facts.ActorVersion, facts.RoleVersion, facts.RoleEnabled, facts.SecurityEnabled, facts.OfficialNameStatus); err != nil {
 		return OfficialWalletDestinationRecord{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE wlt.customer_manual_withdrawal_intakes SET status='DESTINATION_PENDING',destination_id=$2,finance_actor_id=$3,resolved_at=clock_timestamp(),resolution_reason=$4 WHERE id=$1`, intakeID, destinationID, actorID, reason); err != nil {
@@ -335,29 +344,56 @@ func PrepareCustomerWithdrawalDestination(ctx context.Context, db *sql.DB, ciphe
 	return item, nil
 }
 
-func AcceptCustomerWithdrawal(ctx context.Context, db *sql.DB, input CustomerWithdrawalAcceptInput) (PayoutRequestRecord, error) {
+func AcceptCustomerWithdrawal(ctx context.Context, db *sql.DB, cipher *DestinationCipher, input CustomerWithdrawalAcceptInput) (PayoutRequestRecord, error) {
 	input.IntakeID, input.ActorID, input.Reason = strings.TrimSpace(input.IntakeID), strings.TrimSpace(input.ActorID), strings.TrimSpace(input.Reason)
+	input.IdentityFacts = input.IdentityFacts.normalized()
 	input.IdempotencyKey, input.CorrelationID = strings.TrimSpace(input.IdempotencyKey), strings.TrimSpace(input.CorrelationID)
-	if db == nil || boundedText(input.IntakeID, 1, 128) == "" || boundedText(input.ActorID, 1, 128) == "" || boundedText(input.Reason, 1, 512) == "" || !validMutationContext(input.IdempotencyKey, input.CorrelationID) {
+	if db == nil || cipher == nil || boundedText(input.IntakeID, 1, 128) == "" || boundedText(input.ActorID, 1, 128) == "" || boundedText(input.Reason, 1, 512) == "" || !validMutationContext(input.IdempotencyKey, input.CorrelationID) {
 		return PayoutRequestRecord{}, ErrPayoutInvalidInput
+	}
+	if !input.IdentityFacts.validFor("customer", input.IdentityFacts.ActorID) {
+		return PayoutRequestRecord{}, ErrReverificationRequired
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return PayoutRequestRecord{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var customerID, destinationID, status string
-	err = tx.QueryRowContext(ctx, `SELECT customer_actor_id,destination_id,status FROM wlt.customer_manual_withdrawal_intakes WHERE id=$1 FOR UPDATE`, input.IntakeID).Scan(&customerID, &destinationID, &status)
+	var customerID, status, intakeProvider, phoneCipher, beneficiaryName string
+	var nameStatus sql.NullString
+	var destinationID sql.NullString
+	var nameVersion, actorVersion, roleVersion sql.NullInt64
+	var roleEnabled, securityEnabled sql.NullBool
+	err = tx.QueryRowContext(ctx, `SELECT customer_actor_id,provider_key,destination_id,status,wallet_identifier_ciphertext,beneficiary_name,beneficiary_identity_version,identity_actor_version,identity_role_version,role_enabled,security_enabled,official_name_status FROM wlt.customer_manual_withdrawal_intakes WHERE id=$1 FOR UPDATE`, input.IntakeID).Scan(&customerID, &intakeProvider, &destinationID, &status, &phoneCipher, &beneficiaryName, &nameVersion, &actorVersion, &roleVersion, &roleEnabled, &securityEnabled, &nameStatus)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PayoutRequestRecord{}, ErrCustomerWithdrawalNotFound
 	}
 	if err != nil {
 		return PayoutRequestRecord{}, err
 	}
-	var priorActor, priorReason, priorPayoutID string
-	priorErr := tx.QueryRowContext(ctx, `SELECT acting_actor_id,reason,payout_id FROM wlt.customer_manual_withdrawal_events WHERE intake_id=$1 AND idempotency_key=$2`, input.IntakeID, input.IdempotencyKey).Scan(&priorActor, &priorReason, &priorPayoutID)
+	if !input.IdentityFacts.validFor("customer", customerID) || !destinationID.Valid || !nameVersion.Valid || !actorVersion.Valid || !roleVersion.Valid || !roleEnabled.Valid || !securityEnabled.Valid || !nameStatus.Valid {
+		return PayoutRequestRecord{}, ErrReverificationRequired
+	}
+	phone, err := cipher.decrypt(phoneCipher)
+	if err != nil {
+		return PayoutRequestRecord{}, err
+	}
+	if !input.IdentityFacts.matchesSnapshot(phone, beneficiaryName, int(nameVersion.Int64), int(actorVersion.Int64), int(roleVersion.Int64), roleEnabled.Bool, securityEnabled.Bool, nameStatus.String) {
+		return PayoutRequestRecord{}, ErrReverificationRequired
+	}
+	var destinationVersion, destinationIdentityVersion int
+	var providerKey, verificationStatus, destinationStatus string
+	if err := tx.QueryRowContext(ctx, `SELECT version,beneficiary_identity_version,provider_key,verification_status,status FROM wlt.official_wallet_destinations WHERE id=$1 AND actor_type='customer' AND actor_id=$2 FOR SHARE`, destinationID.String, customerID).Scan(&destinationVersion, &destinationIdentityVersion, &providerKey, &verificationStatus, &destinationStatus); err != nil {
+		return PayoutRequestRecord{}, ErrReverificationRequired
+	}
+	if providerKey != intakeProvider || verificationStatus != "VERIFIED" || destinationStatus != "ACTIVE_FOR_PAYOUT" || destinationIdentityVersion < 1 || input.IdentityFacts.matchesStoredDestination(ctx, tx, cipher, destinationID.String, "customer", customerID, true) != nil {
+		return PayoutRequestRecord{}, ErrReverificationRequired
+	}
+	requestHash := hashFacts("ops-customer-manual-withdrawal-v2", input.IntakeID, customerID, destinationID.String, formatInt(destinationVersion), input.ActorID, input.Reason, input.IdentityFacts.fingerprint())
+	var priorActor, priorReason, priorPayoutID, priorHash string
+	priorErr := tx.QueryRowContext(ctx, `SELECT acting_actor_id,reason,payout_id,request_hash FROM wlt.customer_manual_withdrawal_events WHERE intake_id=$1 AND idempotency_key=$2`, input.IntakeID, input.IdempotencyKey).Scan(&priorActor, &priorReason, &priorPayoutID, &priorHash)
 	if priorErr == nil {
-		if priorActor != input.ActorID || priorReason != input.Reason || priorPayoutID == "" {
+		if priorActor != input.ActorID || priorReason != input.Reason || priorPayoutID == "" || priorHash != requestHash {
 			return PayoutRequestRecord{}, ErrIdempotencyConflict
 		}
 		item, readErr := readPayoutRequest(ctx, tx, priorPayoutID)
@@ -381,14 +417,6 @@ func AcceptCustomerWithdrawal(ctx context.Context, db *sql.DB, input CustomerWit
 	if err := lockCustomerWalletBalance(ctx, tx, customerID); err != nil {
 		return PayoutRequestRecord{}, err
 	}
-	var destinationVersion, identityVersion int
-	var providerKey, verificationStatus, destinationStatus string
-	if err := tx.QueryRowContext(ctx, `SELECT version,beneficiary_identity_version,provider_key,verification_status,status FROM wlt.official_wallet_destinations WHERE id=$1 AND actor_type='customer' AND actor_id=$2 FOR SHARE`, destinationID, customerID).Scan(&destinationVersion, &identityVersion, &providerKey, &verificationStatus, &destinationStatus); err != nil {
-		return PayoutRequestRecord{}, err
-	}
-	if verificationStatus != "VERIFIED" || destinationStatus != "ACTIVE_FOR_PAYOUT" || identityVersion < 1 {
-		return PayoutRequestRecord{}, ErrPayoutDestination
-	}
 	wallet, err := readCustomerWalletState(ctx, tx, customerID)
 	if err != nil {
 		return PayoutRequestRecord{}, err
@@ -405,9 +433,8 @@ func AcceptCustomerWithdrawal(ctx context.Context, db *sql.DB, input CustomerWit
 	if err != nil {
 		return PayoutRequestRecord{}, err
 	}
-	requestHash := hashFacts("ops-customer-manual-withdrawal", input.IntakeID, customerID, formatInt64(available), destinationID, formatInt(destinationVersion), input.ActorID, input.Reason)
 	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.payout_requests(id,actor_type,actor_id,amount_mode,requested_amount_minor,resolved_amount_minor,destination_id,destination_version,status,policy_version,idempotency_key,request_hash)
-		VALUES($1,'customer',$2,'FULL_AVAILABLE',NULL,$3,$4,$5,'HELD',$6,$7,$8)`, payoutID, customerID, available, destinationID, destinationVersion, "customer-manual-withdrawal-v1;identity-version="+formatInt(identityVersion), input.IdempotencyKey, requestHash); err != nil {
+		VALUES($1,'customer',$2,'FULL_AVAILABLE',NULL,$3,$4,$5,'HELD',$6,$7,$8)`, payoutID, customerID, available, destinationID.String, destinationVersion, "customer-manual-withdrawal-v2;identity-version="+formatInt(destinationIdentityVersion), input.IdempotencyKey, requestHash); err != nil {
 		return PayoutRequestRecord{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.payout_holds(id,payout_id,actor_type,actor_id,amount_minor) VALUES($1,$2,'customer',$3,$4)`, holdID, payoutID, customerID, available); err != nil {

@@ -84,13 +84,6 @@ func (s *Service) requireSharedProduct(ctx context.Context, productID string) er
 	if product.Scope != "SHARED" || product.StoreID != "" {
 		return postgres.ErrCatalogProductOwnership
 	}
-	vertical, err := postgres.ReadCommerceVertical(ctx, s.db, product.VerticalID)
-	if err != nil {
-		return err
-	}
-	if vertical.CatalogModel != "SHARED_CATALOG" {
-		return postgres.ErrCatalogProductModelMismatch
-	}
 	return nil
 }
 
@@ -121,7 +114,7 @@ func (s *Service) CreateVertical(ctx context.Context, actingActorID string, item
 	item.NameAr = strings.Join(strings.Fields(strings.TrimSpace(item.NameAr)), " ")
 	item.NameEn = strings.Join(strings.Fields(strings.TrimSpace(item.NameEn)), " ")
 	reason = strings.Join(strings.Fields(strings.TrimSpace(reason)), " ")
-	if (item.ID != "" && !verticalIDPattern.MatchString(item.ID)) || !validRegistryName(item.NameAr) || !validRegistryName(item.NameEn) || (item.CatalogModel != "SHARED_CATALOG" && item.CatalogModel != "STORE_LOCAL_CATALOG") || len(reason) < 5 || len(reason) > 500 || strings.TrimSpace(correlationID) == "" {
+	if (item.ID != "" && !verticalIDPattern.MatchString(item.ID)) || !validRegistryName(item.NameAr) || !validRegistryName(item.NameEn) || len(reason) < 5 || len(reason) > 500 || strings.TrimSpace(correlationID) == "" {
 		return postgres.CommerceVerticalResult{}, ErrCatalogVerticalInvalid
 	}
 	audit := postgres.CatalogRegistryAuditInput{ActingActorID: strings.TrimSpace(actingActorID), CorrelationID: strings.TrimSpace(correlationID), Reason: reason}
@@ -136,7 +129,7 @@ func (s *Service) UpdateVertical(ctx context.Context, actingActorID, verticalID 
 	input.NameAr = strings.Join(strings.Fields(strings.TrimSpace(input.NameAr)), " ")
 	input.NameEn = strings.Join(strings.Fields(strings.TrimSpace(input.NameEn)), " ")
 	reason = strings.Join(strings.Fields(strings.TrimSpace(reason)), " ")
-	if !verticalIDPattern.MatchString(verticalID) || !validRegistryName(input.NameAr) || !validRegistryName(input.NameEn) || (input.CatalogModel != "SHARED_CATALOG" && input.CatalogModel != "STORE_LOCAL_CATALOG") || input.ExpectedVersion < 1 || len(reason) < 5 || len(reason) > 500 || strings.TrimSpace(correlationID) == "" {
+	if !verticalIDPattern.MatchString(verticalID) || !validRegistryName(input.NameAr) || !validRegistryName(input.NameEn) || input.ExpectedVersion < 1 || len(reason) < 5 || len(reason) > 500 || strings.TrimSpace(correlationID) == "" {
 		return postgres.CommerceVerticalResult{}, ErrCatalogVerticalInvalid
 	}
 	audit := postgres.CatalogRegistryAuditInput{ActingActorID: strings.TrimSpace(actingActorID), CorrelationID: strings.TrimSpace(correlationID), Reason: reason}
@@ -400,13 +393,6 @@ func (s *Service) ReadSharedCatalogProduct(ctx context.Context, actingActorID, p
 	}
 	if product.Scope != "SHARED" || product.StoreID != "" {
 		return postgres.CatalogProductRecord{}, postgres.ErrCatalogProductOwnership
-	}
-	vertical, err := postgres.ReadCommerceVertical(ctx, s.db, product.VerticalID)
-	if err != nil {
-		return postgres.CatalogProductRecord{}, err
-	}
-	if vertical.CatalogModel != "SHARED_CATALOG" {
-		return postgres.CatalogProductRecord{}, postgres.ErrCatalogProductModelMismatch
 	}
 	return product, nil
 }

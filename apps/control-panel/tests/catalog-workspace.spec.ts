@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import * as XLSX from "xlsx";
 
 const operatorSession = {
   subject: "actor-operator",
@@ -68,9 +69,47 @@ test("catalog import uses the existing CSV file adapter and closes the loop", as
   await page.getByRole("button", { name: "معاينة الملف" }).click();
   await expect(page.getByText("حالة التشغيل: معاينة جاهزة")).toBeVisible();
   expect(previewBody?.rows).toEqual([expect.objectContaining({ rowNumber: 2, verticalId: "grocery", scope: "SHARED", canonicalName: "قهوة", categoryIds: ["coffee"] })]);
-  await page.getByRole("button", { name: "الالتزام بعد المراجعة" }).click();
+  await page.getByRole("button", { name: "الالتزام بالصفوف الجاهزة" }).click();
   await expect(page.getByText("حالة التشغيل: تم الالتزام")).toBeVisible();
   expect(readbackCount).toBeGreaterThan(0);
+});
+
+test("catalog XLSX import commits ready rows while preserving conflicts", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  const ready = { rowNumber: 2, stableKey: "identifier:EAN:6281000000001", classification: "READY", committed: false };
+  const conflict = { rowNumber: 3, stableKey: "identifier:EAN:6281000000002", classification: "CONFLICT_EXISTING", errorMessage: "identifier belongs to another product", committed: false };
+  let commitCount = 0;
+  await page.route("**/api/catalog/imports/preview", async (route) => {
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ run: { id: "run-xlsx", sourceSha256: "b".repeat(64), mode: "preview", state: "previewed", acceptedCount: 1, conflictCount: 1, createdAt: "2026-10-04T00:00:00.000Z" }, items: [ready, conflict], idempotentReplay: false }) });
+  });
+  await page.route("**/api/catalog/imports/run-xlsx", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ run: { id: "run-xlsx", sourceSha256: "b".repeat(64), mode: "commit", state: "committed", acceptedCount: 1, conflictCount: 1, createdAt: "2026-10-04T00:00:00.000Z" }, items: [{ ...ready, classification: "IMPORTED", committed: true }, conflict] }) });
+      return;
+    }
+    commitCount += 1;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ run: { id: "run-xlsx", sourceSha256: "b".repeat(64), mode: "commit", state: "committed", acceptedCount: 1, conflictCount: 1, createdAt: "2026-10-04T00:00:00.000Z" }, items: [{ ...ready, classification: "IMPORTED", committed: true }, conflict], idempotentReplay: false }) });
+  });
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ["verticalId", "scope", "canonicalName", "variantTitle", "measurementKind", "baseUnit", "categoryIds", "identifierType", "identifierValue"],
+    ["grocery", "SHARED", "قهوة", "عبوة", "DISCRETE", "COUNT", "coffee", "EAN", "6281000000001"],
+    ["grocery", "SHARED", "شاي", "عبوة", "DISCRETE", "COUNT", "tea", "EAN", "6281000000002"],
+  ]), "Products");
+  const fileBuffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
+
+  await page.goto("/catalog/import");
+  await page.locator("#catalog-import-file").setInputFiles({ name: "products.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: fileBuffer });
+  await expect(page.getByText("الصفوف الصالحة: 2 · الصفوف المرفوضة محليًا: 0")).toBeVisible();
+  await page.getByRole("button", { name: "معاينة الملف" }).click();
+  await expect(page.getByText("المقبول: 1 · التعارضات: 1 · العناصر المصنفة: 2")).toBeVisible();
+  const commitButton = page.getByRole("button", { name: "الالتزام بالصفوف الجاهزة" });
+  await expect(commitButton).toBeEnabled();
+  await commitButton.click();
+  await expect(page.getByText("حالة التشغيل: تم الالتزام")).toBeVisible();
+  await expect(page.getByText("identifier belongs to another product")).toBeVisible();
+  expect(commitCount).toBe(1);
 });
 
 test("operator sees shared product categories as a hierarchy under their commerce vertical", async ({ page }) => {

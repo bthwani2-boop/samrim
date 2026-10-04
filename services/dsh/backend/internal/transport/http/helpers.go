@@ -40,7 +40,8 @@ func toJoiningCaseView(record postgres.JoiningCaseRecord) contract.JoiningCaseVi
 	view := contract.JoiningCaseView{
 		ID: record.ID, ContactPhoneE164: record.ContactPhoneE164, OwnerFullName: record.OwnerFullName,
 		BusinessName: record.BusinessName, FirstStoreName: record.FirstStoreName, FirstStoreAddress: record.FirstStoreAddress,
-		ServiceCityID: record.FirstStoreServiceCityID, FirstStoreVerticalID: record.FirstStoreVerticalID,
+		WalletProviderKey: record.WalletProviderKey,
+		ServiceCityID:     record.FirstStoreServiceCityID, FirstStoreVerticalID: record.FirstStoreVerticalID,
 		FirstStoreCommercialTypeID: record.FirstStoreCommercialTypeID, FirstStoreLatitude: nullableFloatValue(record.FirstStoreLatitude),
 		FirstStoreLongitude: nullableFloatValue(record.FirstStoreLongitude), FirstStoreFulfillmentModes: toFulfillmentModes(record.FirstStoreFulfillmentModes),
 		FirstStoreProofImageUploaded: record.FirstStoreProofImageUploaded, FirstStoreNotes: record.FirstStoreNotes,

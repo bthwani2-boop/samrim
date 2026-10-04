@@ -105,7 +105,7 @@ func MarkNotificationRead(ctx context.Context, db *sql.DB, actorID, role, notifi
 
 func validNotificationID(notificationID string) bool {
 	parts := strings.SplitN(notificationID, ":", 2)
-	if len(parts) != 2 || (parts[0] != "order" && parts[0] != "captain" && parts[0] != "field") {
+	if len(parts) != 2 || (parts[0] != "order" && parts[0] != "captain" && parts[0] != "field" && parts[0] != "store") {
 		return false
 	}
 	value, err := strconv.ParseInt(parts[1], 10, 64)
@@ -153,15 +153,20 @@ func visibleNotificationEvents(role string) string {
 		       audit.to_state, audit.created_at
 		FROM dsh.joining_case_audit audit
 		WHERE audit.case_id IS NOT NULL`
+	const storeGoLive = `
+		SELECT 'store:' || notification.id::text AS notification_id, notification.event_type, ''::text AS order_id,
+		       'published'::text AS to_state, notification.created_at
+		FROM dsh.store_go_live_notifications notification
+		WHERE notification.actor_id=$1 AND notification.actor_role=`
 	switch role {
 	case "client":
 		return fmt.Sprintf(clientOrPartner, "WHERE orders.client_actor_id = $1", "WHERE orders.client_actor_id = $1")
 	case "partner":
-		return fmt.Sprintf(clientOrPartner, "JOIN dsh.stores stores ON stores.id = orders.store_id WHERE stores.partner_actor_id = $1", "JOIN dsh.stores stores ON stores.id = orders.store_id WHERE stores.partner_actor_id = $1")
+		return fmt.Sprintf(clientOrPartner, "JOIN dsh.stores stores ON stores.id = orders.store_id WHERE stores.partner_actor_id = $1", "JOIN dsh.stores stores ON stores.id = orders.store_id WHERE stores.partner_actor_id = $1") + ` UNION ALL ` + storeGoLive + `'partner'`
 	case "captain":
 		return captain
 	case "field":
-		return field
+		return field + ` UNION ALL ` + storeGoLive + `'field'`
 	case "operator":
 		return operator
 	default:

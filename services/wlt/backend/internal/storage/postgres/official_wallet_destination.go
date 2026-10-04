@@ -23,6 +23,7 @@ var (
 	ErrDestinationState            = errors.New("official wallet destination state does not allow this operation")
 	ErrDestinationSeparation       = errors.New("official wallet destination transition requires an independent operator")
 	ErrDestinationUnverified       = errors.New("official wallet destination is not active for payout")
+	ErrReverificationRequired      = errors.New("current canonical identity must be reverified before this operation")
 )
 
 type DestinationCipher struct {
@@ -109,9 +110,7 @@ type CreateOfficialWalletDestinationInput struct {
 	ActorType                     string
 	ActorID                       string
 	ProviderKey                   string
-	WalletIdentifier              string
-	BeneficiaryName               string
-	BeneficiaryIdentityVersion    int
+	IdentityFacts                 IdentityFacts
 	ChangeReason                  string
 	VerificationEvidenceReference string
 	ChangeEvidenceReference       string
@@ -145,25 +144,28 @@ type OfficialWalletDestinationRecord struct {
 }
 
 func HashCreateOfficialWalletDestination(input CreateOfficialWalletDestinationInput) string {
-	return hashFacts("official-wallet-destination", strings.TrimSpace(input.ActorType), strings.TrimSpace(input.ActorID), strings.TrimSpace(input.ProviderKey), strings.TrimSpace(input.WalletIdentifier), strings.TrimSpace(input.BeneficiaryName), formatInt(input.BeneficiaryIdentityVersion), strings.TrimSpace(input.ChangeReason), strings.TrimSpace(input.VerificationEvidenceReference), strings.TrimSpace(input.ChangeEvidenceReference), strings.TrimSpace(input.SubmittedBy))
+	facts := input.IdentityFacts.normalized()
+	return hashFacts("official-wallet-destination-v2", strings.TrimSpace(input.ActorType), strings.TrimSpace(input.ActorID), strings.TrimSpace(input.ProviderKey), facts.fingerprint(), strings.TrimSpace(input.ChangeReason), strings.TrimSpace(input.VerificationEvidenceReference), strings.TrimSpace(input.ChangeEvidenceReference), strings.TrimSpace(input.SubmittedBy))
 }
 
 func CreateOfficialWalletDestination(ctx context.Context, db *sql.DB, cipher *DestinationCipher, input CreateOfficialWalletDestinationInput) (OfficialWalletDestinationRecord, bool, error) {
 	input.ActorType = strings.ToLower(strings.TrimSpace(input.ActorType))
 	input.ActorID = strings.TrimSpace(input.ActorID)
 	input.ProviderKey = strings.TrimSpace(input.ProviderKey)
-	input.WalletIdentifier = strings.TrimSpace(input.WalletIdentifier)
-	input.BeneficiaryName = strings.TrimSpace(input.BeneficiaryName)
+	input.IdentityFacts = input.IdentityFacts.normalized()
 	input.ChangeReason = strings.TrimSpace(input.ChangeReason)
 	input.VerificationEvidenceReference = strings.TrimSpace(input.VerificationEvidenceReference)
 	input.ChangeEvidenceReference = strings.TrimSpace(input.ChangeEvidenceReference)
 	input.SubmittedBy = strings.TrimSpace(input.SubmittedBy)
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
 	input.CorrelationID = strings.TrimSpace(input.CorrelationID)
-	if db == nil || cipher == nil || !validDestinationActor(input.ActorType) || boundedText(input.ActorID, 1, 128) == "" || boundedText(input.ProviderKey, 1, 64) == "" || !officialWalletPhoneE164Pattern.MatchString(input.WalletIdentifier) || boundedText(input.BeneficiaryName, 1, 320) == "" || input.BeneficiaryIdentityVersion < 1 || boundedText(input.ChangeReason, 1, 512) == "" || boundedText(input.VerificationEvidenceReference, 1, 512) == "" || boundedText(input.ChangeEvidenceReference, 1, 512) == "" || boundedText(input.SubmittedBy, 1, 128) == "" || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
+	if !input.IdentityFacts.validFor(input.ActorType, input.ActorID) {
+		return OfficialWalletDestinationRecord{}, false, ErrReverificationRequired
+	}
+	if db == nil || cipher == nil || !validDestinationActor(input.ActorType) || boundedText(input.ActorID, 1, 128) == "" || boundedText(input.ProviderKey, 1, 64) == "" || boundedText(input.ChangeReason, 1, 512) == "" || boundedText(input.VerificationEvidenceReference, 1, 512) == "" || boundedText(input.ChangeEvidenceReference, 1, 512) == "" || boundedText(input.SubmittedBy, 1, 128) == "" || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
 		return OfficialWalletDestinationRecord{}, false, ErrDestinationInvalidInput
 	}
-	ciphertext, err := cipher.encrypt(input.WalletIdentifier)
+	ciphertext, err := cipher.encrypt(input.IdentityFacts.PhoneE164)
 	if err != nil {
 		return OfficialWalletDestinationRecord{}, false, err
 	}
@@ -202,8 +204,9 @@ func CreateOfficialWalletDestination(ctx context.Context, db *sql.DB, cipher *De
 	if err != nil {
 		return OfficialWalletDestinationRecord{}, false, err
 	}
-	masked := maskWalletIdentifier(input.WalletIdentifier)
-	_, err = tx.ExecContext(ctx, `INSERT INTO wlt.official_wallet_destinations(id,actor_type,actor_id,provider_key,wallet_identifier_ciphertext,wallet_identifier_masked,beneficiary_name,beneficiary_identity_version,version,change_reason,submitted_by,verification_evidence_reference,change_evidence_reference,idempotency_key,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`, id, input.ActorType, input.ActorID, input.ProviderKey, ciphertext, masked, input.BeneficiaryName, input.BeneficiaryIdentityVersion, version, input.ChangeReason, input.SubmittedBy, input.VerificationEvidenceReference, input.ChangeEvidenceReference, input.IdempotencyKey, requestHash)
+	masked := maskWalletIdentifier(input.IdentityFacts.PhoneE164)
+	_, err = tx.ExecContext(ctx, `INSERT INTO wlt.official_wallet_destinations(id,actor_type,actor_id,provider_key,wallet_identifier_ciphertext,wallet_identifier_masked,beneficiary_name,beneficiary_identity_version,identity_actor_version,identity_role_version,role_enabled,security_enabled,official_name_status,version,change_reason,submitted_by,verification_evidence_reference,change_evidence_reference,idempotency_key,request_hash)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`, id, input.ActorType, input.ActorID, input.ProviderKey, ciphertext, masked, input.IdentityFacts.OfficialName, input.IdentityFacts.OfficialNameVersion, input.IdentityFacts.ActorVersion, input.IdentityFacts.RoleVersion, input.IdentityFacts.RoleEnabled, input.IdentityFacts.SecurityEnabled, input.IdentityFacts.OfficialNameStatus, version, input.ChangeReason, input.SubmittedBy, input.VerificationEvidenceReference, input.ChangeEvidenceReference, input.IdempotencyKey, requestHash)
 	if err != nil {
 		return OfficialWalletDestinationRecord{}, false, err
 	}
@@ -214,17 +217,18 @@ func CreateOfficialWalletDestination(ctx context.Context, db *sql.DB, cipher *De
 	return item, false, err
 }
 
-func VerifyOfficialWalletDestination(ctx context.Context, db *sql.DB, destinationID, actorID, evidenceReference, idempotencyKey, correlationID string) (OfficialWalletDestinationRecord, error) {
-	return transitionOfficialWalletDestination(ctx, db, destinationID, actorID, "VERIFY", strings.TrimSpace(evidenceReference), strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID))
+func VerifyOfficialWalletDestination(ctx context.Context, db *sql.DB, cipher *DestinationCipher, destinationID, actorID, evidenceReference string, facts IdentityFacts, idempotencyKey, correlationID string) (OfficialWalletDestinationRecord, error) {
+	return transitionOfficialWalletDestination(ctx, db, cipher, destinationID, actorID, "VERIFY", strings.TrimSpace(evidenceReference), facts, strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID))
 }
 
-func ActivateOfficialWalletDestination(ctx context.Context, db *sql.DB, destinationID, actorID, idempotencyKey, correlationID string) (OfficialWalletDestinationRecord, error) {
-	return transitionOfficialWalletDestination(ctx, db, destinationID, actorID, "ACTIVATE", "", strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID))
+func ActivateOfficialWalletDestination(ctx context.Context, db *sql.DB, cipher *DestinationCipher, destinationID, actorID string, facts IdentityFacts, idempotencyKey, correlationID string) (OfficialWalletDestinationRecord, error) {
+	return transitionOfficialWalletDestination(ctx, db, cipher, destinationID, actorID, "ACTIVATE", "", facts, strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID))
 }
 
-func transitionOfficialWalletDestination(ctx context.Context, db *sql.DB, destinationID, actorID, operation, evidenceReference, idempotencyKey, correlationID string) (OfficialWalletDestinationRecord, error) {
+func transitionOfficialWalletDestination(ctx context.Context, db *sql.DB, cipher *DestinationCipher, destinationID, actorID, operation, evidenceReference string, facts IdentityFacts, idempotencyKey, correlationID string) (OfficialWalletDestinationRecord, error) {
 	destinationID, actorID, idempotencyKey, correlationID = strings.TrimSpace(destinationID), strings.TrimSpace(actorID), strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID)
-	if db == nil || boundedText(destinationID, 1, 128) == "" || boundedText(actorID, 1, 128) == "" || len(idempotencyKey) < 8 || len(idempotencyKey) > 128 || len(correlationID) < 8 || len(correlationID) > 128 {
+	facts = facts.normalized()
+	if db == nil || cipher == nil || boundedText(destinationID, 1, 128) == "" || boundedText(actorID, 1, 128) == "" || !validMutationContext(idempotencyKey, correlationID) {
 		return OfficialWalletDestinationRecord{}, ErrDestinationInvalidInput
 	}
 	tx, err := db.BeginTx(ctx, nil)
@@ -232,9 +236,19 @@ func transitionOfficialWalletDestination(ctx context.Context, db *sql.DB, destin
 		return OfficialWalletDestinationRecord{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	requestHash := hashFacts("official-wallet-destination-transition", destinationID, actorID, operation, evidenceReference)
+	requestHash := hashFacts("official-wallet-destination-transition-v2", destinationID, actorID, operation, evidenceReference, facts.fingerprint())
 	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:destination-transition:"+idempotencyKey); err != nil {
 		return OfficialWalletDestinationRecord{}, err
+	}
+	var actorType, beneficiaryActorID, status, verificationStatus, currentEvidence, submittedBy string
+	var verifiedBy sql.NullString
+	if err := tx.QueryRowContext(ctx, "SELECT actor_type,actor_id,status,verification_status,change_evidence_reference,submitted_by,verified_by FROM wlt.official_wallet_destinations WHERE id=$1 FOR UPDATE", destinationID).Scan(&actorType, &beneficiaryActorID, &status, &verificationStatus, &currentEvidence, &submittedBy, &verifiedBy); errors.Is(err, sql.ErrNoRows) {
+		return OfficialWalletDestinationRecord{}, ErrDestinationNotFound
+	} else if err != nil {
+		return OfficialWalletDestinationRecord{}, err
+	}
+	if err := facts.matchesStoredDestination(ctx, tx, cipher, destinationID, actorType, beneficiaryActorID, false); err != nil {
+		return OfficialWalletDestinationRecord{}, ErrReverificationRequired
 	}
 	var existingHash, existingDestinationID string
 	err = tx.QueryRowContext(ctx, "SELECT destination_id,request_hash FROM wlt.official_wallet_destination_transitions WHERE idempotency_key=$1", idempotencyKey).Scan(&existingDestinationID, &existingHash)
@@ -252,13 +266,6 @@ func transitionOfficialWalletDestination(ctx context.Context, db *sql.DB, destin
 		return item, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		return OfficialWalletDestinationRecord{}, err
-	}
-	var actorType, status, verificationStatus, currentEvidence, submittedBy string
-	var verifiedBy sql.NullString
-	if err := tx.QueryRowContext(ctx, "SELECT actor_type,status,verification_status,change_evidence_reference,submitted_by,verified_by FROM wlt.official_wallet_destinations WHERE id=$1 FOR UPDATE", destinationID).Scan(&actorType, &status, &verificationStatus, &currentEvidence, &submittedBy, &verifiedBy); errors.Is(err, sql.ErrNoRows) {
-		return OfficialWalletDestinationRecord{}, ErrDestinationNotFound
-	} else if err != nil {
 		return OfficialWalletDestinationRecord{}, err
 	}
 	if operation == "VERIFY" {

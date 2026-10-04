@@ -11,6 +11,7 @@ type CandidatePage = Readonly<{ items: ReadonlyArray<CaptainAdmission>; nextCurs
 export function CaptainCandidatePanel() {
   const [fullNameAr, setFullNameAr] = useState("");
   const [phone, setPhone] = useState("");
+  const [walletProviderKey, setWalletProviderKey] = useState("");
   const [query, setQuery] = useState("");
   const [state, setState] = useState("review_required");
   const [sort, setSort] = useState<"created_asc" | "created_desc">("created_desc");
@@ -50,18 +51,24 @@ export function CaptainCandidatePanel() {
   async function createProfile() {
     const name = fullNameAr.trim();
     const contactPhoneE164 = toAsciiDigits(phone).replace(/\s+/g, "");
-    if (Array.from(name).length < 2 || Array.from(name).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(contactPhoneE164)) {
-      setError("أدخل الاسم الكامل ورقم الهاتف بصيغة دولية صحيحة قبل حفظ الملف.");
+    const providerKey = walletProviderKey.trim();
+    if (Array.from(name).length < 2 || Array.from(name).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(contactPhoneE164) || Array.from(providerKey).length < 1 || Array.from(providerKey).length > 64) {
+      setError("أدخل الاسم ورقم الهاتف الدولي ومزوّد المحفظة الذي حدده الكابتن.");
       return;
     }
     setBusy("create");
     setError("");
     setNotice("");
     try {
-      const response = await identityFetch("/api/captains", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "admit", fullNameAr: name, contactPhoneE164 }) });
+      const response = await identityFetch("/api/captains", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "admit", fullNameAr: name, contactPhoneE164, walletProviderKey: providerKey }) });
       if (!response.ok) { setError(await responseMessage(response)); await load(); return; }
+      const created = (await response.json() as { admission?: CaptainAdmission }).admission;
+      if (!created?.id || created.state !== "pending_review" || created.fullNameAr !== name || created.contactPhoneE164 !== contactPhoneE164 || created.walletProviderKey !== providerKey) {
+        setError("استجاب DSH لكن سجل المزوّد أو بيانات الملف المرجعة لا تطابق الطلب. أعد قراءة السجل قبل المتابعة."); await load(); return;
+      }
       setFullNameAr("");
       setPhone("");
+      setWalletProviderKey("");
       setState("pending_review");
       setNotice("أُنشئ ملف الكابتن بانتظار المراجعة. لم يُمنح دور التطبيق بعد.");
     } catch (cause) {
@@ -121,7 +128,8 @@ export function CaptainCandidatePanel() {
       <div className="access-form">
         <label className="field-label" htmlFor="captain-candidate-name">اسم العرض الكامل بالعربية<input id="captain-candidate-name" autoComplete="name" maxLength={120} value={fullNameAr} onChange={(event) => setFullNameAr(event.target.value)} disabled={Boolean(busy)} placeholder="مثال: مروان أحمد صالح الحضرمي" /></label>
         <label className="field-label" htmlFor="captain-candidate-phone">رقم الهاتف<input id="captain-candidate-phone" autoComplete="tel" inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} disabled={Boolean(busy)} placeholder="+96777000100" /></label>
-        <button type="button" className="button button-primary" disabled={Boolean(busy) || !fullNameAr.trim() || !phone.trim()} onClick={() => void createProfile()}>{busy === "create" ? "جارٍ حفظ الملف…" : "حفظ الملف للمراجعة"}</button>
+        <label className="field-label" htmlFor="captain-candidate-wallet-provider">مزوّد المحفظة الرسمية الذي حدده الكابتن<input id="captain-candidate-wallet-provider" autoComplete="off" maxLength={64} value={walletProviderKey} onChange={(event) => setWalletProviderKey(event.target.value)} disabled={Boolean(busy)} /><small>سجّل اسم المزوّد فقط. لا تدخل رقم المحفظة أو الاسم القانوني هنا.</small></label>
+        <button type="button" className="button button-primary" disabled={Boolean(busy) || !fullNameAr.trim() || !phone.trim() || !walletProviderKey.trim()} onClick={() => void createProfile()}>{busy === "create" ? "جارٍ حفظ الملف…" : "حفظ الملف للمراجعة"}</button>
       </div>
     </section>
     <section className="access-card" aria-labelledby="captain-candidate-registry-title">

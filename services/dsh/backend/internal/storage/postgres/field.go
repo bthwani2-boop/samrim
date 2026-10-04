@@ -41,6 +41,7 @@ type FieldAdmission struct {
 	ActorID               string
 	FullNameAr            string
 	PhoneE164             string
+	WalletProviderKey     string
 	ServiceCityID         string
 	State                 string
 	RequiresProfileReview bool
@@ -49,8 +50,8 @@ type FieldAdmission struct {
 	UpdatedAt             time.Time
 }
 
-func HashFieldAdmissionRequest(fullNameAr, phone, serviceCityID string) string {
-	return hashFacts("field-admission", strings.TrimSpace(fullNameAr), strings.TrimSpace(phone), strings.TrimSpace(serviceCityID))
+func HashFieldAdmissionRequest(fullNameAr, phone, serviceCityID, walletProviderKey string) string {
+	return hashFacts("field-admission", strings.TrimSpace(fullNameAr), strings.TrimSpace(phone), strings.TrimSpace(serviceCityID), strings.TrimSpace(walletProviderKey))
 }
 
 func HashFieldAdmissionTransition(operation, admissionID string) string {
@@ -78,20 +79,21 @@ func HashJoiningCaseFieldRequest(fieldActorID string, input JoiningCaseRequest) 
 }
 
 type FieldAdmissionCandidateInput struct {
-	FullNameAr, Phone, ServiceCityID string
-	IdempotencyKey, RequestHash      string
-	ActingActorID, CorrelationID     string
+	FullNameAr, Phone, ServiceCityID, WalletProviderKey string
+	IdempotencyKey, RequestHash                         string
+	ActingActorID, CorrelationID                        string
 }
 
 func CreateFieldAdmissionCandidate(ctx context.Context, db *sql.DB, input FieldAdmissionCandidateInput) (FieldAdmission, string, bool, error) {
 	fullNameAr := strings.TrimSpace(input.FullNameAr)
 	phone := strings.TrimSpace(input.Phone)
 	serviceCityID := strings.TrimSpace(input.ServiceCityID)
+	walletProviderKey := strings.TrimSpace(input.WalletProviderKey)
 	idempotencyKey := strings.TrimSpace(input.IdempotencyKey)
 	requestHash := input.RequestHash
 	actingActorID := input.ActingActorID
 	correlationID := input.CorrelationID
-	if db == nil || len([]rune(fullNameAr)) < 2 || len([]rune(fullNameAr)) > 120 || phone == "" || serviceCityID == "" || idempotencyKey == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
+	if db == nil || len([]rune(fullNameAr)) < 2 || len([]rune(fullNameAr)) > 120 || phone == "" || serviceCityID == "" || len([]rune(walletProviderKey)) < 1 || len([]rune(walletProviderKey)) > 64 || idempotencyKey == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
 		return FieldAdmission{}, "", false, ErrFieldAdmissionConflict
 	}
 	tx, err := db.BeginTx(ctx, nil)
@@ -155,7 +157,7 @@ func CreateFieldAdmissionCandidate(ctx context.Context, db *sql.DB, input FieldA
 	if err != nil {
 		return FieldAdmission{}, "", false, err
 	}
-	if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.field_admissions(id,full_name_ar,contact_phone_e164,service_city_id,state,version) VALUES($1,$2,$3,$4,'pending_review',1)", admissionID, fullNameAr, phone, serviceCityID); err != nil {
+	if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.field_admissions(id,full_name_ar,contact_phone_e164,service_city_id,wallet_provider_key,state,version) VALUES($1,$2,$3,$4,$5,'pending_review',1)", admissionID, fullNameAr, phone, serviceCityID, walletProviderKey); err != nil {
 		return FieldAdmission{}, "", false, err
 	}
 	if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.field_admission_idempotency(idempotency_key,request_hash,admission_id,operation,result_version,result_state) VALUES($1,$2,$3,'create',1,'pending_review')", idempotencyKey, requestHash, admissionID); err != nil {
@@ -566,7 +568,7 @@ func readFieldAdmissionTx(ctx context.Context, source interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, where string, args ...any) (FieldAdmission, error) {
 	var item FieldAdmission
-	err := source.QueryRowContext(ctx, `SELECT id,COALESCE(actor_id,''),COALESCE(full_name_ar,''),COALESCE(contact_phone_e164,''),COALESCE(service_city_id,''),state,requires_profile_review,version,created_at,updated_at FROM dsh.field_admissions WHERE `+where, args...).Scan(&item.ID, &item.ActorID, &item.FullNameAr, &item.PhoneE164, &item.ServiceCityID, &item.State, &item.RequiresProfileReview, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+	err := source.QueryRowContext(ctx, `SELECT id,COALESCE(actor_id,''),COALESCE(full_name_ar,''),COALESCE(contact_phone_e164,''),COALESCE(service_city_id,''),COALESCE(wallet_provider_key,''),state,requires_profile_review,version,created_at,updated_at FROM dsh.field_admissions WHERE `+where, args...).Scan(&item.ID, &item.ActorID, &item.FullNameAr, &item.PhoneE164, &item.ServiceCityID, &item.WalletProviderKey, &item.State, &item.RequiresProfileReview, &item.Version, &item.CreatedAt, &item.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return FieldAdmission{}, ErrFieldAdmissionNotFound
 	}
