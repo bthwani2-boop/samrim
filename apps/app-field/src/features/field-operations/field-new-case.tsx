@@ -1,5 +1,5 @@
 import { BthwaniButton, BthwaniChip, BthwaniMap, useAppearanceTheme, type BthwaniMapCoordinate } from "@bthwani/design-system/native";
-import { fieldAdmissionStateLabel, isMediaProvenanceInputValid, type CommercialStoreType, type CommerceVertical, type CreateJoiningCaseRequest, type DshImageUploadInput, type JoiningCaseProofType, type JoiningCaseResponse, joiningCaseStateLabel, type MediaProvenanceInput, type ServiceCity, type StoreWorkingHoursInterval } from "@bthwani/dsh";
+import { fieldAdmissionStateLabel, isMediaProvenanceInputValid, isValidStoreWorkingHours, resolveJoiningCaseImageContentType, type CommercialStoreType, type CommerceVertical, type CreateJoiningCaseRequest, type DshImageUploadInput, type JoiningCaseProofType, type JoiningCaseResponse, joiningCaseStateLabel, type MediaProvenanceInput, type ServiceCity, type StoreWorkingHoursInterval } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
@@ -40,6 +40,7 @@ function initialJoiningCaseInput(): CreateJoiningCaseRequest {
     ownerFullName: "",
     businessName: "",
     firstStoreName: "",
+    walletProviderKey: "",
     firstStoreAddress: "",
     serviceCityId: "",
     firstStoreVerticalId: "",
@@ -63,11 +64,7 @@ function toWorkingHoursIntervals(schedule: Readonly<Record<number, ReadonlyArray
 
 function isValidWorkingHours(schedule: Readonly<Record<number, ReadonlyArray<EditableWorkingHoursInterval>>>): boolean {
   const intervals = toWorkingHoursIntervals(schedule);
-  return intervals.length > 0 && intervals.length <= 28 && intervals.every((interval) =>
-    isValidLocalTime(interval.opensAt)
-    && isValidLocalTime(interval.closesAt)
-    && (interval.closesNextDay || interval.opensAt !== interval.closesAt),
-  );
+  return isValidStoreWorkingHours(intervals);
 }
 
 function isOutcomeUncertain(cause: unknown): boolean {
@@ -159,8 +156,9 @@ const theme = useAppearanceTheme();
     if (pendingCreateAttempt) {
       attempt = pendingCreateAttempt;
     } else {
-      if (!input.contactPhoneE164.trim() || !input.ownerFullName.trim() || !input.businessName.trim() || !input.firstStoreName.trim() || !input.firstStoreAddress.trim() || !input.serviceCityId || !input.firstStoreVerticalId || !input.firstStoreCommercialTypeId || !input.firstStoreProofNumber.trim() || !isValidWorkingHours(workingHoursByDay) || input.firstStoreFulfillmentModes.length === 0 || !selectedStoreOrigin) {
-        setError("أكمل اسم المالك والنشاط والمتجر والعنوان والمدينة والتصنيف والإثبات وساعات العمل والموقع، واختر طريقة توصيل واحدة على الأقل.");
+      const walletProviderKey = input.walletProviderKey.trim();
+      if (!input.contactPhoneE164.trim() || !input.ownerFullName.trim() || !input.businessName.trim() || !input.firstStoreName.trim() || !walletProviderKey || Array.from(walletProviderKey).length > 64 || !input.firstStoreAddress.trim() || !input.serviceCityId || !input.firstStoreVerticalId || !input.firstStoreCommercialTypeId || !input.firstStoreProofNumber.trim() || !isValidWorkingHours(workingHoursByDay) || input.firstStoreFulfillmentModes.length === 0 || !selectedStoreOrigin) {
+        setError("أكمل اسم مزوّد المحفظة (حتى 64 حرفًا) واسم المالك والنشاط والمتجر والعنوان والمدينة والتصنيف والإثبات وساعات العمل والموقع، واختر طريقة توصيل واحدة على الأقل.");
         return;
       }
       const { firstStoreNotes, ...requiredInput } = input;
@@ -171,6 +169,7 @@ const theme = useAppearanceTheme();
         ownerFullName: input.ownerFullName.trim(),
         businessName: input.businessName.trim(),
         firstStoreName: input.firstStoreName.trim(),
+        walletProviderKey,
         firstStoreAddress: input.firstStoreAddress.trim(),
         serviceCityId: input.serviceCityId.trim(),
         firstStoreVerticalId: input.firstStoreVerticalId.trim(),
@@ -265,7 +264,9 @@ const theme = useAppearanceTheme();
       const response = await fetch(asset.uri);
       if (!response.ok) throw new Error("STORE_IMAGE_READ_FAILED");
       const blob = await response.blob();
-      setStoreImage({ uri: asset.uri, name: asset.fileName ?? "store-image.jpg", type: asset.mimeType ?? "image/jpeg", blob, provenance: { creator: "", sourceDescription: "", sourceUri: "", rightsStatement: "", rightsUri: "", rightsAttested: false } });
+      const type = resolveJoiningCaseImageContentType(asset.mimeType, blob.type, asset.fileName, asset.uri);
+      if (!type) throw new Error("STORE_IMAGE_TYPE_INVALID");
+      setStoreImage({ uri: asset.uri, name: asset.fileName ?? (type === "image/png" ? "store-image.png" : "store-image.jpg"), type, blob, provenance: { creator: "", sourceDescription: "", sourceUri: "", rightsStatement: "", rightsUri: "", rightsAttested: false } });
       setError("");
     } catch (cause) {
       console.warn("Field store image preparation failed", cause);
@@ -280,21 +281,18 @@ const theme = useAppearanceTheme();
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 1 });
     if (result.canceled || !result.assets[0]?.uri) return;
     const asset = result.assets[0];
-    const mimeType = asset.mimeType ?? "image/jpeg";
-    if (mimeType !== "image/jpeg" && mimeType !== "image/png") {
-      setError("صيغة صورة الإثبات غير مدعومة. اختر صورة بصيغة JPG أو PNG.");
-      return;
-    }
     try {
       const response = await fetch(asset.uri);
       if (!response.ok) throw new Error("PROOF_IMAGE_READ_FAILED");
       const blob = await response.blob();
       if (!blob.size || blob.size > 10 * 1024 * 1024) throw new Error("PROOF_IMAGE_SIZE_INVALID");
-      setProofImage({ uri: asset.uri, name: asset.fileName ?? "joining-case-proof.jpg", type: mimeType, blob });
+      const type = resolveJoiningCaseImageContentType(asset.mimeType, blob.type, asset.fileName, asset.uri);
+      if (!type) throw new Error("PROOF_IMAGE_TYPE_INVALID");
+      setProofImage({ uri: asset.uri, name: asset.fileName ?? (type === "image/png" ? "joining-case-proof.png" : "joining-case-proof.jpg"), type, blob });
       setError("");
     } catch (cause) {
       console.warn("Field proof image preparation failed", cause);
-      setError(cause instanceof Error && cause.message === "PROOF_IMAGE_SIZE_INVALID" ? "يجب ألا يتجاوز حجم صورة الإثبات 10 ميغابايت." : "تعذر تجهيز صورة الإثبات. اختر الصورة مرة أخرى.");
+      setError(cause instanceof Error && cause.message === "PROOF_IMAGE_SIZE_INVALID" ? "يجب ألا يتجاوز حجم صورة الإثبات 10 ميغابايت." : cause instanceof Error && cause.message === "PROOF_IMAGE_TYPE_INVALID" ? "صيغة صورة الإثبات غير مدعومة. اختر صورة بصيغة JPG أو PNG." : "تعذر تجهيز صورة الإثبات. اختر الصورة مرة أخرى.");
     }
   }
 
@@ -390,6 +388,9 @@ const theme = useAppearanceTheme();
       {admissionState.kind === "ready" && admissionState.admission.state === "eligible" ? <View style={styles.card}>
         <Text style={styles.label}>اسم المالك الكامل</Text>
         <TextInput accessibilityLabel="اسم المالك الكامل" editable={!formLocked} autoComplete="name" placeholder="الاسم كما يظهر في الإثبات" placeholderTextColor={theme.colorMuted} style={styles.input} value={input.ownerFullName} onChangeText={(value) => setInput((current) => ({ ...current, ownerFullName: value }))} />
+        <Text style={styles.label}>اسم مزوّد المحفظة</Text>
+        <Text style={styles.muted}>اكتب اسم مزوّد المحفظة الذي يختاره المالك فقط، بحد أقصى 64 حرفًا. لا تُدخل رقم المحفظة أو الاسم القانوني هنا.</Text>
+        <TextInput accessibilityLabel="اسم مزوّد المحفظة" editable={!formLocked} autoCapitalize="words" maxLength={64} placeholder="اسم مزوّد المحفظة" placeholderTextColor={theme.colorMuted} style={styles.input} value={input.walletProviderKey} onChangeText={(value) => setInput((current) => ({ ...current, walletProviderKey: value }))} />
         <Text style={styles.label}>رقم جوال المالك</Text>
         <TextInput accessibilityLabel="رقم جوال المالك" editable={!formLocked} autoCapitalize="none" keyboardType="phone-pad" placeholder="مثال: ‎+967…" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput]} value={input.contactPhoneE164} onChangeText={(value) => setInput((current) => ({ ...current, contactPhoneE164: value }))} />
         <Text style={styles.label}>اسم النشاط أو المنشأة</Text>

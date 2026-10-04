@@ -57,8 +57,10 @@ export function readCanonicalRuntime(): { envFile: string; repoRoot: string; pos
 
 function readCanonicalInitialOperator(): { actorId: string; phone: string } | null {
   const { envFile, repoRoot, postgresUser, postgresDatabase } = readCanonicalRuntime();
+  const composeProject = process.env.SAMRIM_RUNTIME_COMPOSE_PROJECT?.trim() || "samrim-local";
+  if (!/^[a-z0-9][a-z0-9_-]*$/i.test(composeProject)) throw new Error("runtime Compose project name is invalid");
   const output = execFileSync(resolveTrustedExecutable("docker"), [
-    "compose", "--project-name", "samrim-local", "--env-file", envFile,
+    "compose", "--project-name", composeProject, "--env-file", envFile,
     "-f", path.join(repoRoot, "infra/local/compose/compose.yaml"), "exec", "-T", "postgres",
     "psql", "-U", postgresUser, "-d", postgresDatabase, "-Atc",
     "SELECT a.id || '|' || a.phone_e164 FROM identity_bootstrap_state b JOIN identity_actors a ON a.id=b.initial_operator_actor_id WHERE b.id=1",

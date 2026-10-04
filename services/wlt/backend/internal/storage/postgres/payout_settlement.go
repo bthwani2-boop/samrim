@@ -41,6 +41,12 @@ type PayoutSnapshotRecord struct {
 	PreparedAt                 time.Time
 	ApprovedBy                 *string
 	ApprovedAt                 *time.Time
+	IdentityActorVersion       int
+	IdentityRoleVersion        int
+	RoleEnabled                bool
+	SecurityEnabled            bool
+	OfficialNameStatus         string
+	IdentitySnapshotKnown      bool
 }
 
 type SettlementBatchRecord struct {
@@ -97,6 +103,7 @@ type PreparePayoutInput struct {
 	ActorID        string
 	Reason         string
 	Evidence       string
+	IdentityFacts  IdentityFacts
 	IdempotencyKey string
 	CorrelationID  string
 }
@@ -105,6 +112,7 @@ type ApprovePayoutInput struct {
 	PayoutID       string
 	ActorID        string
 	Reason         string
+	IdentityFacts  IdentityFacts
 	IdempotencyKey string
 	CorrelationID  string
 }
@@ -118,18 +126,22 @@ type CancelPayoutInput struct {
 }
 
 type CreateSettlementBatchInput struct {
-	PayoutIDs      []string
-	ActorID        string
-	IdempotencyKey string
-	CorrelationID  string
+	PayoutIDs                  []string
+	ActorID                    string
+	IdentityFactsByBeneficiary []IdentityFacts
+	DestinationCipher          *DestinationCipher
+	IdempotencyKey             string
+	CorrelationID              string
 }
 
 type BatchActionInput struct {
-	BatchID        string
-	ActorID        string
-	Reason         string
-	IdempotencyKey string
-	CorrelationID  string
+	BatchID                    string
+	ActorID                    string
+	Reason                     string
+	IdentityFactsByBeneficiary []IdentityFacts
+	DestinationCipher          *DestinationCipher
+	IdempotencyKey             string
+	CorrelationID              string
 }
 
 type RecordTransferInput struct {
@@ -247,19 +259,44 @@ func ListPayoutRequests(ctx context.Context, db *sql.DB, status string, limit in
 	return result, rows.Err()
 }
 
-func PreparePayout(ctx context.Context, db *sql.DB, input PreparePayoutInput) (PayoutRequestRecord, error) {
+func PreparePayout(ctx context.Context, db *sql.DB, cipher *DestinationCipher, input PreparePayoutInput) (PayoutRequestRecord, error) {
 	input.PayoutID, input.ActorID = strings.TrimSpace(input.PayoutID), strings.TrimSpace(input.ActorID)
 	input.Reason, input.Evidence = strings.TrimSpace(input.Reason), strings.TrimSpace(input.Evidence)
+	input.IdentityFacts = input.IdentityFacts.normalized()
 	input.IdempotencyKey, input.CorrelationID = strings.TrimSpace(input.IdempotencyKey), strings.TrimSpace(input.CorrelationID)
-	if db == nil || boundedText(input.PayoutID, 1, 128) == "" || boundedText(input.ActorID, 1, 128) == "" || boundedText(input.Reason, 1, 512) == "" || boundedText(input.Evidence, 1, 512) == "" || !validMutationContext(input.IdempotencyKey, input.CorrelationID) {
+	if db == nil || cipher == nil || boundedText(input.PayoutID, 1, 128) == "" || boundedText(input.ActorID, 1, 128) == "" || boundedText(input.Reason, 1, 512) == "" || boundedText(input.Evidence, 1, 512) == "" || !validMutationContext(input.IdempotencyKey, input.CorrelationID) {
 		return PayoutRequestRecord{}, ErrPayoutInvalidInput
+	}
+	if !input.IdentityFacts.validFor(input.IdentityFacts.ActorType, input.IdentityFacts.ActorID) {
+		return PayoutRequestRecord{}, ErrReverificationRequired
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return PayoutRequestRecord{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	hash := hashFacts("payout-prepare", input.PayoutID, input.ActorID, input.Reason, input.Evidence)
+	hash := hashFacts("payout-prepare-v2", input.PayoutID, input.ActorID, input.Reason, input.Evidence, input.IdentityFacts.fingerprint())
+	payout, err := readPayoutForUpdate(ctx, tx, input.PayoutID)
+	if err != nil {
+		return PayoutRequestRecord{}, err
+	}
+	if !input.IdentityFacts.validFor(payout.ActorType, payout.ActorID) {
+		return PayoutRequestRecord{}, ErrReverificationRequired
+	}
+	var currentDestinationID string
+	var currentDestinationVersion int
+	if err := tx.QueryRowContext(ctx, "SELECT id,version FROM wlt.official_wallet_destinations WHERE actor_type=$1 AND actor_id=$2 AND verification_status='VERIFIED' AND status='ACTIVE_FOR_PAYOUT' FOR UPDATE", payout.ActorType, payout.ActorID).Scan(&currentDestinationID, &currentDestinationVersion); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return PayoutRequestRecord{}, ErrReverificationRequired
+		}
+		return PayoutRequestRecord{}, err
+	}
+	if currentDestinationID != payout.DestinationID || currentDestinationVersion != payout.DestinationVersion {
+		return PayoutRequestRecord{}, ErrReverificationRequired
+	}
+	if err := input.IdentityFacts.matchesStoredDestination(ctx, tx, cipher, currentDestinationID, payout.ActorType, payout.ActorID, true); err != nil {
+		return PayoutRequestRecord{}, commitIdentityStaleness(tx, err)
+	}
 	if found, payoutID, _, err := existingPayoutAudit(ctx, tx, "PAYOUT_PREPARED", input.IdempotencyKey, hash); err != nil {
 		return PayoutRequestRecord{}, err
 	} else if found {
@@ -272,25 +309,18 @@ func PreparePayout(ctx context.Context, db *sql.DB, input PreparePayoutInput) (P
 		}
 		return item, nil
 	}
-	var actorType, actorID, destinationID, status string
-	var destinationVersion int
-	if err := tx.QueryRowContext(ctx, "SELECT actor_type,actor_id,destination_id,destination_version,status FROM wlt.payout_requests WHERE id=$1 FOR UPDATE", input.PayoutID).Scan(&actorType, &actorID, &destinationID, &destinationVersion, &status); errors.Is(err, sql.ErrNoRows) {
-		return PayoutRequestRecord{}, ErrPayoutNotFound
-	} else if err != nil {
-		return PayoutRequestRecord{}, err
-	}
-	if status != "HELD" {
+	if payout.Status != "HELD" {
 		return PayoutRequestRecord{}, ErrPayoutState
 	}
-	destination, err := readOfficialWalletDestination(ctx, tx, destinationID)
+	destination, err := readOfficialWalletDestination(ctx, tx, payout.DestinationID)
 	if err != nil {
 		return PayoutRequestRecord{}, err
 	}
 	if destination.BeneficiaryIdentityVersion < 1 {
-		return PayoutRequestRecord{}, ErrPayoutDestination
+		return PayoutRequestRecord{}, ErrReverificationRequired
 	}
-	snapshotHash := hashFacts("approved-payout-snapshot", input.PayoutID, actorType, actorID, destination.BeneficiaryName, formatInt(destination.BeneficiaryIdentityVersion), destination.ProviderKey, destination.WalletIdentifierMasked, destination.ID, formatInt(destinationVersion), status)
-	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.approved_payout_snapshots(payout_id,actor_type,actor_id,beneficiary_name,beneficiary_identity_version,provider_key,masked_destination,destination_id,destination_version,amount_mode,resolved_amount_minor,currency,policy_version,snapshot_hash,prepared_by) SELECT id,actor_type,actor_id,$2,$3,$4,$5,destination_id,destination_version,amount_mode,resolved_amount_minor,currency,policy_version,$6,$7 FROM wlt.payout_requests WHERE id=$1`, input.PayoutID, destination.BeneficiaryName, destination.BeneficiaryIdentityVersion, destination.ProviderKey, destination.WalletIdentifierMasked, snapshotHash, input.ActorID); err != nil {
+	snapshotHash := hashFacts("approved-payout-snapshot-v2", input.PayoutID, payout.ActorType, payout.ActorID, destination.BeneficiaryName, formatInt(destination.BeneficiaryIdentityVersion), destination.ProviderKey, destination.WalletIdentifierMasked, destination.ID, formatInt(payout.DestinationVersion), input.IdentityFacts.fingerprint(), payout.Status)
+	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.approved_payout_snapshots(payout_id,actor_type,actor_id,beneficiary_name,beneficiary_identity_version,provider_key,masked_destination,destination_id,destination_version,amount_mode,resolved_amount_minor,currency,policy_version,snapshot_hash,prepared_by,identity_actor_version_snapshot,identity_role_version_snapshot,role_enabled_snapshot,security_enabled_snapshot,official_name_status_snapshot) SELECT id,actor_type,actor_id,$2,$3,$4,$5,destination_id,destination_version,amount_mode,resolved_amount_minor,currency,policy_version,$6,$7,$8,$9,$10,$11,$12 FROM wlt.payout_requests WHERE id=$1`, input.PayoutID, destination.BeneficiaryName, destination.BeneficiaryIdentityVersion, destination.ProviderKey, destination.WalletIdentifierMasked, snapshotHash, input.ActorID, input.IdentityFacts.ActorVersion, input.IdentityFacts.RoleVersion, input.IdentityFacts.RoleEnabled, input.IdentityFacts.SecurityEnabled, input.IdentityFacts.OfficialNameStatus); err != nil {
 		return PayoutRequestRecord{}, err
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE wlt.payout_requests SET status='PREPARED',updated_at=clock_timestamp() WHERE id=$1", input.PayoutID); err != nil {
@@ -309,13 +339,14 @@ func PreparePayout(ctx context.Context, db *sql.DB, input PreparePayoutInput) (P
 	return item, nil
 }
 
-func ApprovePayout(ctx context.Context, db *sql.DB, input ApprovePayoutInput) (PayoutRequestRecord, error) {
+func ApprovePayout(ctx context.Context, db *sql.DB, cipher *DestinationCipher, input ApprovePayoutInput) (PayoutRequestRecord, error) {
 	input.PayoutID, input.ActorID = strings.TrimSpace(input.PayoutID), strings.TrimSpace(input.ActorID)
 	input.Reason, input.IdempotencyKey, input.CorrelationID = strings.TrimSpace(input.Reason), strings.TrimSpace(input.IdempotencyKey), strings.TrimSpace(input.CorrelationID)
-	if db == nil || boundedText(input.PayoutID, 1, 128) == "" || boundedText(input.ActorID, 1, 128) == "" || boundedText(input.Reason, 1, 512) == "" || !validMutationContext(input.IdempotencyKey, input.CorrelationID) {
+	input.IdentityFacts = input.IdentityFacts.normalized()
+	if db == nil || cipher == nil || boundedText(input.PayoutID, 1, 128) == "" || boundedText(input.ActorID, 1, 128) == "" || boundedText(input.Reason, 1, 512) == "" || !validMutationContext(input.IdempotencyKey, input.CorrelationID) {
 		return PayoutRequestRecord{}, ErrPayoutInvalidInput
 	}
-	return transitionPayout(ctx, db, "PAYOUT_APPROVED", input.PayoutID, input.ActorID, input.Reason, "", input.IdempotencyKey, input.CorrelationID, func(tx *sql.Tx, payout PayoutRequestRecord) error {
+	return transitionPayout(ctx, db, cipher, "PAYOUT_APPROVED", input.PayoutID, input.ActorID, input.Reason, "", &input.IdentityFacts, input.IdempotencyKey, input.CorrelationID, func(tx *sql.Tx, payout PayoutRequestRecord) error {
 		if payout.Status != "PREPARED" {
 			return ErrPayoutState
 		}
@@ -340,7 +371,7 @@ func CancelPayout(ctx context.Context, db *sql.DB, input CancelPayoutInput) (Pay
 	if db == nil || boundedText(input.PayoutID, 1, 128) == "" || boundedText(input.ActorID, 1, 128) == "" || boundedText(input.Reason, 1, 512) == "" || !validMutationContext(input.IdempotencyKey, input.CorrelationID) {
 		return PayoutRequestRecord{}, ErrPayoutInvalidInput
 	}
-	return transitionPayout(ctx, db, "PAYOUT_CANCELLED", input.PayoutID, input.ActorID, input.Reason, "", input.IdempotencyKey, input.CorrelationID, func(tx *sql.Tx, payout PayoutRequestRecord) error {
+	return transitionPayout(ctx, db, nil, "PAYOUT_CANCELLED", input.PayoutID, input.ActorID, input.Reason, "", nil, input.IdempotencyKey, input.CorrelationID, func(tx *sql.Tx, payout PayoutRequestRecord) error {
 		if payout.Status != "HELD" && payout.Status != "PREPARED" {
 			return ErrPayoutState
 		}
@@ -352,25 +383,18 @@ func CancelPayout(ctx context.Context, db *sql.DB, input CancelPayoutInput) (Pay
 	})
 }
 
-func transitionPayout(ctx context.Context, db *sql.DB, eventType, payoutID, actorID, reason, evidence, idempotencyKey, correlationID string, apply func(*sql.Tx, PayoutRequestRecord) error) (PayoutRequestRecord, error) {
+func transitionPayout(ctx context.Context, db *sql.DB, cipher *DestinationCipher, eventType, payoutID, actorID, reason, evidence string, facts *IdentityFacts, idempotencyKey, correlationID string, apply func(*sql.Tx, PayoutRequestRecord) error) (PayoutRequestRecord, error) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return PayoutRequestRecord{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	hash := hashFacts(strings.ToLower(eventType), payoutID, actorID, reason, evidence)
-	if found, existingID, _, err := existingPayoutAudit(ctx, tx, eventType, idempotencyKey, hash); err != nil {
-		return PayoutRequestRecord{}, err
-	} else if found {
-		item, err := readPayoutRequest(ctx, tx, existingID)
-		if err != nil {
-			return PayoutRequestRecord{}, err
-		}
-		if err := tx.Commit(); err != nil {
-			return PayoutRequestRecord{}, err
-		}
-		return item, nil
+	hashParts := []string{strings.ToLower(eventType), payoutID, actorID, reason, evidence}
+	if facts != nil {
+		*facts = facts.normalized()
+		hashParts = append(hashParts, facts.fingerprint())
 	}
+	hash := hashFacts(hashParts...)
 	actorType, payoutActorID, err := payoutActor(ctx, tx, payoutID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PayoutRequestRecord{}, ErrPayoutNotFound
@@ -389,6 +413,45 @@ func transitionPayout(ctx context.Context, db *sql.DB, eventType, payoutID, acto
 	}
 	if payout.ActorType != actorType || payout.ActorID != payoutActorID {
 		return PayoutRequestRecord{}, ErrPayoutState
+	}
+	if facts != nil {
+		if cipher == nil || !facts.validFor(payout.ActorType, payout.ActorID) {
+			return PayoutRequestRecord{}, ErrReverificationRequired
+		}
+		var currentDestinationID string
+		var currentDestinationVersion int
+		if err := tx.QueryRowContext(ctx, "SELECT id,version FROM wlt.official_wallet_destinations WHERE actor_type=$1 AND actor_id=$2 AND verification_status='VERIFIED' AND status='ACTIVE_FOR_PAYOUT' FOR UPDATE", payout.ActorType, payout.ActorID).Scan(&currentDestinationID, &currentDestinationVersion); err != nil {
+			return PayoutRequestRecord{}, ErrReverificationRequired
+		}
+		if currentDestinationID != payout.DestinationID || currentDestinationVersion != payout.DestinationVersion {
+			return PayoutRequestRecord{}, ErrReverificationRequired
+		}
+		if err := facts.matchesStoredDestination(ctx, tx, cipher, currentDestinationID, payout.ActorType, payout.ActorID, true); err != nil {
+			return PayoutRequestRecord{}, commitIdentityStaleness(tx, err)
+		}
+		var snapshot PayoutSnapshotRecord
+		if err := scanPayoutSnapshot(ctx, tx, payoutID, &snapshot); err != nil {
+			return PayoutRequestRecord{}, err
+		}
+		destination, err := readOfficialWalletDestination(ctx, tx, currentDestinationID)
+		if err != nil {
+			return PayoutRequestRecord{}, err
+		}
+		if !snapshot.matchesIdentityFacts(*facts) || !snapshot.matchesDestination(destination) {
+			return PayoutRequestRecord{}, ErrReverificationRequired
+		}
+	}
+	if found, existingID, _, err := existingPayoutAudit(ctx, tx, eventType, idempotencyKey, hash); err != nil {
+		return PayoutRequestRecord{}, err
+	} else if found {
+		item, err := readPayoutRequest(ctx, tx, existingID)
+		if err != nil {
+			return PayoutRequestRecord{}, err
+		}
+		if err := tx.Commit(); err != nil {
+			return PayoutRequestRecord{}, err
+		}
+		return item, nil
 	}
 	if err := apply(tx, payout); err != nil {
 		return PayoutRequestRecord{}, err
@@ -421,28 +484,14 @@ func CreateSettlementBatch(ctx context.Context, db *sql.DB, input CreateSettleme
 	if db == nil || boundedText(input.ActorID, 1, 128) == "" || len(ids) == 0 || len(ids) > 100 || !validMutationContext(input.IdempotencyKey, input.CorrelationID) {
 		return SettlementBatchRecord{}, ErrSettlementBatchInput
 	}
-	hashParts := []string{"settlement-batch"}
-	hashParts = append(hashParts, ids...)
-	hash := hashFacts(hashParts...)
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return SettlementBatchRecord{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if found, _, batchID, err := existingPayoutAudit(ctx, tx, "BATCH_CREATED", input.IdempotencyKey, hash); err != nil {
-		return SettlementBatchRecord{}, err
-	} else if found {
-		item, err := readSettlementBatch(ctx, tx, batchID)
-		if err != nil {
-			return SettlementBatchRecord{}, err
-		}
-		if err := tx.Commit(); err != nil {
-			return SettlementBatchRecord{}, err
-		}
-		return item, nil
-	}
 	var provider, currency string
 	var total int64
+	snapshots := make([]PayoutSnapshotRecord, 0, len(ids))
 	for index, payoutID := range ids {
 		payout, err := readPayoutForUpdate(ctx, tx, payoutID)
 		if err != nil {
@@ -455,16 +504,36 @@ func CreateSettlementBatch(ctx context.Context, db *sql.DB, input CreateSettleme
 		if err := scanPayoutSnapshot(ctx, tx, payoutID, &snapshot); err != nil {
 			return SettlementBatchRecord{}, err
 		}
+		snapshots = append(snapshots, snapshot)
 		if index == 0 {
 			provider, currency = snapshot.ProviderKey, snapshot.Currency
 		} else if snapshot.ProviderKey != provider || snapshot.Currency != currency {
 			return SettlementBatchRecord{}, ErrSettlementBatchInput
 		}
 		total += snapshot.ResolvedAmountMinor
-		if index == 0 {
-			hashParts = append(hashParts, provider, currency)
-		}
+	}
+	factHashes, err := requireIdentityFactsForSnapshots(ctx, tx, input.DestinationCipher, input.IdentityFactsByBeneficiary, snapshots)
+	if err != nil {
+		return SettlementBatchRecord{}, commitIdentityStaleness(tx, err)
+	}
+	hashParts := []string{"settlement-batch", provider, currency}
+	hashParts = append(hashParts, ids...)
+	for _, snapshot := range snapshots {
 		hashParts = append(hashParts, snapshot.SnapshotHash, formatInt64(snapshot.ResolvedAmountMinor))
+	}
+	hashParts = append(hashParts, factHashes...)
+	hash := hashFacts(hashParts...)
+	if found, _, batchID, err := existingPayoutAudit(ctx, tx, "BATCH_CREATED", input.IdempotencyKey, hash); err != nil {
+		return SettlementBatchRecord{}, err
+	} else if found {
+		item, err := readSettlementBatch(ctx, tx, batchID)
+		if err != nil {
+			return SettlementBatchRecord{}, err
+		}
+		if err := tx.Commit(); err != nil {
+			return SettlementBatchRecord{}, err
+		}
+		return item, nil
 	}
 	batchID, err := newID("settlement_batch")
 	if err != nil {
@@ -555,7 +624,23 @@ func transitionBatch(ctx context.Context, db *sql.DB, eventType string, input Ba
 		return SettlementBatchRecord{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	hash := hashFacts(strings.ToLower(eventType), input.BatchID, input.ActorID, input.Reason)
+	var batch SettlementBatchRecord
+	if err := scanSettlementBatch(ctx, tx, input.BatchID, true, &batch); errors.Is(err, sql.ErrNoRows) {
+		return SettlementBatchRecord{}, ErrSettlementBatchNotFound
+	} else if err != nil {
+		return SettlementBatchRecord{}, err
+	}
+	snapshots, err := readSettlementBatchSnapshots(ctx, tx, input.BatchID)
+	if err != nil {
+		return SettlementBatchRecord{}, err
+	}
+	factHashes, err := requireIdentityFactsForSnapshots(ctx, tx, input.DestinationCipher, input.IdentityFactsByBeneficiary, snapshots)
+	if err != nil {
+		return SettlementBatchRecord{}, commitIdentityStaleness(tx, err)
+	}
+	hashParts := []string{strings.ToLower(eventType), input.BatchID, input.ActorID, input.Reason}
+	hashParts = append(hashParts, factHashes...)
+	hash := hashFacts(hashParts...)
 	if found, _, batchID, err := existingPayoutAudit(ctx, tx, eventType, input.IdempotencyKey, hash); err != nil {
 		return SettlementBatchRecord{}, err
 	} else if found {
@@ -567,12 +652,6 @@ func transitionBatch(ctx context.Context, db *sql.DB, eventType string, input Ba
 			return SettlementBatchRecord{}, err
 		}
 		return item, nil
-	}
-	var batch SettlementBatchRecord
-	if err := scanSettlementBatch(ctx, tx, input.BatchID, true, &batch); errors.Is(err, sql.ErrNoRows) {
-		return SettlementBatchRecord{}, ErrSettlementBatchNotFound
-	} else if err != nil {
-		return SettlementBatchRecord{}, err
 	}
 	if batch.Status != requiredStatus {
 		return SettlementBatchRecord{}, ErrSettlementBatchState
@@ -591,6 +670,110 @@ func transitionBatch(ctx context.Context, db *sql.DB, eventType string, input Ba
 		return SettlementBatchRecord{}, err
 	}
 	return item, nil
+}
+
+func readSettlementBatchSnapshots(ctx context.Context, source interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, batchID string) ([]PayoutSnapshotRecord, error) {
+	rows, err := source.QueryContext(ctx, `SELECT payout_id FROM wlt.settlement_batch_items WHERE batch_id=$1 ORDER BY row_sequence`, batchID)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	snapshots := make([]PayoutSnapshotRecord, 0, len(ids))
+	for _, id := range ids {
+		var snapshot PayoutSnapshotRecord
+		if err := scanPayoutSnapshot(ctx, source, id, &snapshot); err != nil {
+			return nil, err
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	return snapshots, nil
+}
+
+func requireIdentityFactsForSnapshots(ctx context.Context, source interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}, cipher *DestinationCipher, factsList []IdentityFacts, snapshots []PayoutSnapshotRecord) ([]string, error) {
+	if cipher == nil || len(snapshots) == 0 || len(factsList) == 0 {
+		return nil, ErrReverificationRequired
+	}
+	type beneficiaryKey struct{ actorType, actorID string }
+	required := make(map[beneficiaryKey][]PayoutSnapshotRecord)
+	for _, snapshot := range snapshots {
+		key := beneficiaryKey{actorType: strings.ToLower(strings.TrimSpace(snapshot.ActorType)), actorID: strings.TrimSpace(snapshot.ActorID)}
+		if key.actorType == "" || key.actorID == "" {
+			return nil, ErrReverificationRequired
+		}
+		for _, prior := range required[key] {
+			if prior.DestinationID != snapshot.DestinationID || prior.DestinationVersion != snapshot.DestinationVersion ||
+				prior.BeneficiaryName != snapshot.BeneficiaryName || prior.BeneficiaryIdentityVersion != snapshot.BeneficiaryIdentityVersion {
+				return nil, ErrReverificationRequired
+			}
+		}
+		required[key] = append(required[key], snapshot)
+	}
+	orderedKeys := make([]beneficiaryKey, 0, len(required))
+	for key := range required {
+		orderedKeys = append(orderedKeys, key)
+	}
+	sort.Slice(orderedKeys, func(i, j int) bool {
+		if orderedKeys[i].actorType == orderedKeys[j].actorType {
+			return orderedKeys[i].actorID < orderedKeys[j].actorID
+		}
+		return orderedKeys[i].actorType < orderedKeys[j].actorType
+	})
+	if len(factsList) != len(orderedKeys) {
+		return nil, ErrReverificationRequired
+	}
+	hashes := make([]string, 0, len(factsList))
+	for index, facts := range factsList {
+		facts = facts.normalized()
+		key := beneficiaryKey{actorType: facts.ActorType, actorID: facts.ActorID}
+		if key != orderedKeys[index] || !facts.validFor(key.actorType, key.actorID) {
+			return nil, ErrReverificationRequired
+		}
+		beneficiarySnapshots := required[key]
+		firstSnapshot := beneficiarySnapshots[0]
+		var destinationID string
+		var destinationVersion int
+		if err := source.QueryRowContext(ctx, `SELECT id,version FROM wlt.official_wallet_destinations WHERE actor_type=$1 AND actor_id=$2 AND verification_status='VERIFIED' AND status='ACTIVE_FOR_PAYOUT' FOR UPDATE`, key.actorType, key.actorID).Scan(&destinationID, &destinationVersion); err != nil {
+			return nil, ErrReverificationRequired
+		}
+		if destinationID != firstSnapshot.DestinationID || destinationVersion != firstSnapshot.DestinationVersion {
+			return nil, ErrReverificationRequired
+		}
+		if err := facts.matchesStoredDestination(ctx, source, cipher, destinationID, key.actorType, key.actorID, true); err != nil {
+			return nil, err
+		}
+		destination, err := readOfficialWalletDestination(ctx, source, destinationID)
+		if err != nil {
+			return nil, err
+		}
+		for _, snapshot := range beneficiarySnapshots {
+			if !snapshot.matchesIdentityFacts(facts) || !snapshot.matchesDestination(destination) {
+				return nil, ErrReverificationRequired
+			}
+		}
+		hashes = append(hashes, facts.fingerprint())
+	}
+	return hashes, nil
 }
 
 func RecordManualTransfer(ctx context.Context, db *sql.DB, input RecordTransferInput) (ManualTransferExecutionRecord, error) {
@@ -1093,7 +1276,15 @@ func scanPayoutSnapshot(ctx context.Context, source interface {
 }, payoutID string, item *PayoutSnapshotRecord) error {
 	var approvedBy sql.NullString
 	var approvedAt sql.NullTime
-	err := source.QueryRowContext(ctx, `SELECT payout_id,actor_type,actor_id,beneficiary_name,beneficiary_identity_version,provider_key,masked_destination,destination_id,destination_version,amount_mode,resolved_amount_minor,currency,policy_version,snapshot_hash,prepared_by,prepared_at,approved_by,approved_at FROM wlt.approved_payout_snapshots WHERE payout_id=$1`, payoutID).Scan(&item.PayoutID, &item.ActorType, &item.ActorID, &item.BeneficiaryName, &item.BeneficiaryIdentityVersion, &item.ProviderKey, &item.MaskedDestination, &item.DestinationID, &item.DestinationVersion, &item.AmountMode, &item.ResolvedAmountMinor, &item.Currency, &item.PolicyVersion, &item.SnapshotHash, &item.PreparedBy, &item.PreparedAt, &approvedBy, &approvedAt)
+	var identityActorVersion, identityRoleVersion sql.NullInt64
+	var roleEnabled, securityEnabled sql.NullBool
+	var officialNameStatus sql.NullString
+	err := source.QueryRowContext(ctx, `SELECT payout_id,actor_type,actor_id,beneficiary_name,beneficiary_identity_version,provider_key,masked_destination,destination_id,destination_version,amount_mode,resolved_amount_minor,currency,policy_version,snapshot_hash,prepared_by,prepared_at,approved_by,approved_at,identity_actor_version_snapshot,identity_role_version_snapshot,role_enabled_snapshot,security_enabled_snapshot,official_name_status_snapshot FROM wlt.approved_payout_snapshots WHERE payout_id=$1`, payoutID).Scan(&item.PayoutID, &item.ActorType, &item.ActorID, &item.BeneficiaryName, &item.BeneficiaryIdentityVersion, &item.ProviderKey, &item.MaskedDestination, &item.DestinationID, &item.DestinationVersion, &item.AmountMode, &item.ResolvedAmountMinor, &item.Currency, &item.PolicyVersion, &item.SnapshotHash, &item.PreparedBy, &item.PreparedAt, &approvedBy, &approvedAt, &identityActorVersion, &identityRoleVersion, &roleEnabled, &securityEnabled, &officialNameStatus)
+	if identityActorVersion.Valid && identityRoleVersion.Valid && roleEnabled.Valid && securityEnabled.Valid && officialNameStatus.Valid {
+		item.IdentityActorVersion, item.IdentityRoleVersion = int(identityActorVersion.Int64), int(identityRoleVersion.Int64)
+		item.RoleEnabled, item.SecurityEnabled, item.OfficialNameStatus = roleEnabled.Bool, securityEnabled.Bool, officialNameStatus.String
+		item.IdentitySnapshotKnown = true
+	}
 	if approvedBy.Valid {
 		item.ApprovedBy = &approvedBy.String
 	}
@@ -1101,6 +1292,27 @@ func scanPayoutSnapshot(ctx context.Context, source interface {
 		item.ApprovedAt = &approvedAt.Time
 	}
 	return err
+}
+
+func (snapshot PayoutSnapshotRecord) matchesIdentityFacts(facts IdentityFacts) bool {
+	facts = facts.normalized()
+	if !snapshot.IdentitySnapshotKnown {
+		return facts.validFor(snapshot.ActorType, snapshot.ActorID) && snapshot.BeneficiaryName == facts.OfficialName &&
+			snapshot.BeneficiaryIdentityVersion == facts.OfficialNameVersion
+	}
+	return snapshot.IdentitySnapshotKnown && snapshot.ActorType == facts.ActorType && snapshot.ActorID == facts.ActorID &&
+		snapshot.BeneficiaryName == facts.OfficialName && snapshot.BeneficiaryIdentityVersion == facts.OfficialNameVersion &&
+		snapshot.IdentityActorVersion == facts.ActorVersion && snapshot.IdentityRoleVersion == facts.RoleVersion &&
+		snapshot.RoleEnabled == facts.RoleEnabled && snapshot.SecurityEnabled == facts.SecurityEnabled &&
+		snapshot.OfficialNameStatus == facts.OfficialNameStatus
+}
+
+func (snapshot PayoutSnapshotRecord) matchesDestination(destination OfficialWalletDestinationRecord) bool {
+	return snapshot.ActorType == destination.ActorType && snapshot.ActorID == destination.ActorID &&
+		snapshot.BeneficiaryName == destination.BeneficiaryName && snapshot.BeneficiaryIdentityVersion == destination.BeneficiaryIdentityVersion &&
+		snapshot.ProviderKey == destination.ProviderKey && snapshot.MaskedDestination == destination.WalletIdentifierMasked &&
+		snapshot.DestinationID == destination.ID && snapshot.DestinationVersion == destination.Version &&
+		destination.VerificationStatus == "VERIFIED" && destination.Status == "ACTIVE_FOR_PAYOUT"
 }
 
 func scanSettlementBatch(ctx context.Context, source interface {

@@ -94,8 +94,30 @@ func MarkFieldAcquisitionRewardPublicationPosted(ctx context.Context, db *sql.DB
 	if db == nil || strings.TrimSpace(outboxID) == "" {
 		return errors.New("Field acquisition reward outbox input is invalid")
 	}
-	_, err := db.ExecContext(ctx, `UPDATE dsh.field_acquisition_entitlement_outbox SET state='POSTED',attempts=attempts+1,last_error=NULL,next_attempt_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1`, strings.TrimSpace(outboxID))
-	return err
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin Field acquisition reward publication completion: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var fieldActorID, storeID string
+	if err := tx.QueryRowContext(ctx, `UPDATE dsh.field_acquisition_entitlement_outbox
+		SET state='POSTED',attempts=attempts+1,last_error=NULL,next_attempt_at=clock_timestamp(),updated_at=clock_timestamp()
+		WHERE id=$1 AND state <> 'POSTED'
+		RETURNING field_actor_id,store_id`, strings.TrimSpace(outboxID)).Scan(&fieldActorID, &storeID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("Field acquisition reward publication is not pending: %w", err)
+		}
+		return fmt.Errorf("mark Field acquisition reward publication posted: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.store_go_live_notifications(actor_id,actor_role,store_id,event_type)
+		VALUES($1,'field',$2,'field_acquisition_reward_posted')
+		ON CONFLICT (store_id,actor_id,actor_role,event_type) DO NOTHING`, fieldActorID, storeID); err != nil {
+		return fmt.Errorf("enqueue Field acquisition reward notification: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit Field acquisition reward publication completion: %w", err)
+	}
+	return nil
 }
 
 func MarkFieldAcquisitionRewardPublicationFailure(ctx context.Context, db *sql.DB, outboxID, message string) error {

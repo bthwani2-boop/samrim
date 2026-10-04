@@ -45,6 +45,7 @@ type JoiningCaseRecord struct {
 	OwnerFullName                string
 	BusinessName                 string
 	FirstStoreName               string
+	WalletProviderKey            string
 	FirstStoreAddress            string
 	FirstStoreWorkingHours       json.RawMessage
 	FirstStoreProofType          string
@@ -106,6 +107,7 @@ type JoiningCaseRequest struct {
 	FirstStoreWorkingHours                      json.RawMessage
 	FirstStoreProofType, FirstStoreProofNumber  string
 	FirstStoreNotes                             string
+	WalletProviderKey                           string
 	ServiceCityID, VerticalID, CommercialTypeID string
 	Latitude, Longitude                         float64
 	FulfillmentModes                            []string
@@ -146,7 +148,7 @@ type BindJoiningCaseFinancialTermsInput struct {
 }
 
 func HashJoiningCaseRequest(input JoiningCaseRequest) string {
-	return hashFacts(input.Phone, input.OwnerFullName, input.BusinessName, input.FirstStoreName, input.FirstStoreAddress, string(input.FirstStoreWorkingHours), input.FirstStoreProofType, input.FirstStoreProofNumber, input.FirstStoreNotes, input.ServiceCityID, input.VerticalID, input.CommercialTypeID, formatCoordinate(input.Latitude), formatCoordinate(input.Longitude), strings.Join(input.FulfillmentModes, ","))
+	return hashFacts(input.Phone, input.OwnerFullName, input.BusinessName, input.FirstStoreName, input.WalletProviderKey, input.FirstStoreAddress, string(input.FirstStoreWorkingHours), input.FirstStoreProofType, input.FirstStoreProofNumber, input.FirstStoreNotes, input.ServiceCityID, input.VerticalID, input.CommercialTypeID, formatCoordinate(input.Latitude), formatCoordinate(input.Longitude), strings.Join(input.FulfillmentModes, ","))
 }
 
 func HashJoiningCaseSubmit(caseID, actorID string, expectedVersion int) string {
@@ -327,7 +329,7 @@ func createJoiningCase(ctx context.Context, db *sql.DB, input CreateJoiningCaseI
 	if strings.TrimSpace(input.Request.FirstStoreProofNumber) != "" && input.EvidenceKeyring == nil {
 		return JoiningCaseResult{}, errors.New("DSH joining-case evidence keyring is required")
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.joining_cases(id,contact_phone_e164,owner_full_name,business_name,first_store_name,first_store_address,first_store_working_hours,first_store_proof_type,first_store_notes,first_store_service_city_id,first_store_vertical_id,first_store_commercial_type_id,first_store_latitude,first_store_longitude,first_store_fulfillment_modes,originating_field_actor_id,origin) VALUES($1,$2,NULLIF($3,''),$4,$5,NULLIF($6,''),NULLIF($7,'')::jsonb,NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),$12,$13,$14,$15,NULLIF($16,''),$17)`, caseID, phone, input.Request.OwnerFullName, businessName, firstStoreName, input.Request.FirstStoreAddress, string(input.Request.FirstStoreWorkingHours), input.Request.FirstStoreProofType, input.Request.FirstStoreNotes, serviceCityID, verticalID, commercialTypeID, latitude, longitude, pq.Array(fulfillmentModes), originatingFieldActorID, origin); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.joining_cases(id,contact_phone_e164,owner_full_name,business_name,first_store_name,first_store_address,first_store_working_hours,first_store_proof_type,first_store_notes,first_store_service_city_id,first_store_vertical_id,first_store_commercial_type_id,first_store_latitude,first_store_longitude,first_store_fulfillment_modes,originating_field_actor_id,origin,wallet_provider_key) VALUES($1,$2,NULLIF($3,''),$4,$5,NULLIF($6,''),NULLIF($7,'')::jsonb,NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),$12,$13,$14,$15,NULLIF($16,''),$17,$18)`, caseID, phone, input.Request.OwnerFullName, businessName, firstStoreName, input.Request.FirstStoreAddress, string(input.Request.FirstStoreWorkingHours), input.Request.FirstStoreProofType, input.Request.FirstStoreNotes, serviceCityID, verticalID, commercialTypeID, latitude, longitude, pq.Array(fulfillmentModes), originatingFieldActorID, origin, input.Request.WalletProviderKey); err != nil {
 		return JoiningCaseResult{}, fmt.Errorf("create joining case: %w", err)
 	}
 	if strings.TrimSpace(input.Request.FirstStoreProofNumber) != "" {
@@ -383,15 +385,8 @@ func SubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, actorID string, 
 	if err != nil {
 		return JoiningCaseResult{}, err
 	}
-	if current.Case.Version != expectedVersion {
-		return JoiningCaseResult{}, ErrJoiningCaseVersion
-	}
-	canSubmit := (current.Case.Origin == "control_panel" && current.Case.State == "draft") || (current.Case.Origin == "field" && current.Case.State == "admission_requested")
-	if !canSubmit {
-		return JoiningCaseResult{}, ErrJoiningCaseState
-	}
-	if strings.TrimSpace(current.Case.OwnerFullName) == "" || strings.TrimSpace(current.Case.FirstStoreAddress) == "" || len(current.Case.FirstStoreWorkingHours) == 0 || strings.TrimSpace(current.Case.FirstStoreProofType) == "" || !current.Case.FirstStoreProofNumberPresent || !current.Case.FirstStoreProofImageUploaded || current.Case.StoreProfileImage == nil {
-		return JoiningCaseResult{}, ErrJoiningCaseState
+	if err := ValidateJoiningCaseSubmissionReadiness(current.Case, expectedVersion); err != nil {
+		return JoiningCaseResult{}, err
 	}
 	if current.Case.PartnerActorID != "" && current.Case.PartnerActorID != actorID {
 		return JoiningCaseResult{}, ErrJoiningCaseRebind
@@ -421,6 +416,45 @@ func SubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, actorID string, 
 	result, err = ReadJoiningCase(ctx, db, caseID)
 	result.Replayed = false
 	return result, err
+}
+
+func ValidateJoiningCaseSubmissionReadiness(current JoiningCaseRecord, expectedVersion int) error {
+	if current.Version != expectedVersion {
+		return ErrJoiningCaseVersion
+	}
+	canSubmit := (current.Origin == "control_panel" && current.State == "draft") || (current.Origin == "field" && current.State == "admission_requested")
+	if !canSubmit {
+		return ErrJoiningCaseState
+	}
+	return ValidateJoiningCaseIntakeReadiness(current)
+}
+
+func ValidateJoiningCaseIntakeReadiness(current JoiningCaseRecord) error {
+	if strings.TrimSpace(current.OwnerFullName) == "" || strings.TrimSpace(current.BusinessName) == "" || strings.TrimSpace(current.FirstStoreName) == "" || strings.TrimSpace(current.FirstStoreAddress) == "" || !ValidateStoreWorkingHours(current.FirstStoreWorkingHours) || strings.TrimSpace(current.FirstStoreProofType) == "" || !current.FirstStoreProofNumberPresent || !current.FirstStoreProofImageUploaded || current.StoreProfileImage == nil {
+		return ErrJoiningCaseState
+	}
+	if strings.TrimSpace(current.FirstStoreServiceCityID) == "" {
+		return ErrJoiningCaseServiceCity
+	}
+	if strings.TrimSpace(current.FirstStoreVerticalID) == "" {
+		return ErrCatalogVerticalNotFound
+	}
+	if strings.TrimSpace(current.FirstStoreCommercialTypeID) == "" {
+		return ErrCommercialStoreTypeNotFound
+	}
+	if current.FirstStoreLatitude == nil || current.FirstStoreLongitude == nil {
+		return ErrJoiningCaseStoreOrigin
+	}
+	if _, _, err := normalizeLocation(*current.FirstStoreLatitude, *current.FirstStoreLongitude); err != nil {
+		return ErrJoiningCaseStoreOrigin
+	}
+	if len(current.FirstStoreFulfillmentModes) == 0 {
+		return ErrJoiningCaseState
+	}
+	if _, err := NormalizeStoreFulfillmentModes(current.FirstStoreFulfillmentModes); err != nil {
+		return ErrJoiningCaseState
+	}
+	return nil
 }
 
 func RequestFieldJoiningCaseAdmission(ctx context.Context, db *sql.DB, caseID, fieldActorID string, expectedVersion int, idempotencyKey, requestHash, correlationID string) (JoiningCaseResult, error) {
@@ -465,8 +499,8 @@ func RequestFieldJoiningCaseAdmission(ctx context.Context, db *sql.DB, caseID, f
 	if current.Case.State != "draft" {
 		return JoiningCaseResult{}, ErrJoiningCaseState
 	}
-	if strings.TrimSpace(current.Case.OwnerFullName) == "" || strings.TrimSpace(current.Case.FirstStoreAddress) == "" || len(current.Case.FirstStoreWorkingHours) == 0 || strings.TrimSpace(current.Case.FirstStoreProofType) == "" || !current.Case.FirstStoreProofNumberPresent || !current.Case.FirstStoreProofImageUploaded || current.Case.StoreProfileImage == nil {
-		return JoiningCaseResult{}, ErrJoiningCaseState
+	if err := ValidateJoiningCaseIntakeReadiness(current.Case); err != nil {
+		return JoiningCaseResult{}, err
 	}
 	updated, err := updateJoiningCaseStateTx(ctx, tx, current.Case, "admission_requested", "", "", "", "", expectedVersion)
 	if err != nil {
@@ -705,7 +739,7 @@ func ListJoiningCases(ctx context.Context, db *sql.DB, state, queryText, sort st
 		return JoiningCaseListResult{}, err
 	}
 
-	query := `SELECT c.id,c.contact_phone_e164,c.business_name,c.first_store_name,c.partner_actor_id,c.originating_field_actor_id,c.origin,c.state,c.correction_reason,c.reviewed_by,c.version,c.created_at,c.updated_at,c.first_store_service_city_id,c.first_store_vertical_id,c.first_store_commercial_type_id,c.first_store_latitude,c.first_store_longitude FROM dsh.joining_cases c WHERE 1=1`
+	query := `SELECT c.id,c.contact_phone_e164,c.business_name,c.first_store_name,c.partner_actor_id,c.originating_field_actor_id,c.origin,c.state,c.correction_reason,c.reviewed_by,c.version,c.created_at,c.updated_at,c.first_store_service_city_id,c.first_store_vertical_id,c.first_store_commercial_type_id,c.first_store_latitude,c.first_store_longitude,COALESCE(c.wallet_provider_key,'') FROM dsh.joining_cases c WHERE 1=1`
 	args := make([]any, 0, 5)
 	if state != "" {
 		args = append(args, state)
@@ -714,7 +748,7 @@ func ListJoiningCases(ctx context.Context, db *sql.DB, state, queryText, sort st
 	if queryText != "" {
 		args = append(args, queryText)
 		searchArg := len(args)
-		query += fmt.Sprintf(" AND (position($%d in lower(c.id::text))>0 OR position($%d in lower(c.contact_phone_e164))>0 OR position($%d in lower(c.business_name))>0 OR position($%d in lower(c.first_store_name))>0)", searchArg, searchArg, searchArg, searchArg)
+		query += fmt.Sprintf(" AND (position($%d in lower(c.id::text))>0 OR position($%d in lower(c.contact_phone_e164))>0 OR position($%d in lower(c.owner_full_name))>0 OR position($%d in lower(c.business_name))>0 OR position($%d in lower(c.first_store_name))>0)", searchArg, searchArg, searchArg, searchArg, searchArg)
 	}
 	if decoded != nil {
 		args = append(args, decoded.CreatedAt, decoded.ID)
@@ -740,7 +774,7 @@ func ListJoiningCases(ctx context.Context, db *sql.DB, state, queryText, sort st
 		var record JoiningCaseRecord
 		var actorID, originActorID, origin, correctionReason, reviewedBy, cityID, verticalID, commercialTypeID sql.NullString
 		var latitude, longitude sql.NullFloat64
-		if err := rows.Scan(&record.ID, &record.ContactPhoneE164, &record.BusinessName, &record.FirstStoreName, &actorID, &originActorID, &origin, &record.State, &correctionReason, &reviewedBy, &record.Version, &record.CreatedAt, &record.UpdatedAt, &cityID, &verticalID, &commercialTypeID, &latitude, &longitude); err != nil {
+		if err := rows.Scan(&record.ID, &record.ContactPhoneE164, &record.BusinessName, &record.FirstStoreName, &actorID, &originActorID, &origin, &record.State, &correctionReason, &reviewedBy, &record.Version, &record.CreatedAt, &record.UpdatedAt, &cityID, &verticalID, &commercialTypeID, &latitude, &longitude, &record.WalletProviderKey); err != nil {
 			return JoiningCaseListResult{}, fmt.Errorf("scan joining case queue: %w", err)
 		}
 		if actorID.Valid {
@@ -1072,12 +1106,12 @@ func ListJoiningCasesForField(ctx context.Context, db *sql.DB, fieldActorID, que
 	if err != nil {
 		return JoiningCaseListResult{}, err
 	}
-	query := `SELECT c.id,c.contact_phone_e164,c.business_name,c.first_store_name,c.partner_actor_id,c.originating_field_actor_id,c.origin,c.state,c.correction_reason,c.reviewed_by,c.version,c.created_at,c.updated_at,c.first_store_service_city_id,c.first_store_vertical_id,c.first_store_commercial_type_id,c.first_store_latitude,c.first_store_longitude FROM dsh.joining_cases c WHERE c.originating_field_actor_id=$1`
+	query := `SELECT c.id,c.contact_phone_e164,c.business_name,c.first_store_name,c.partner_actor_id,c.originating_field_actor_id,c.origin,c.state,c.correction_reason,c.reviewed_by,c.version,c.created_at,c.updated_at,c.first_store_service_city_id,c.first_store_vertical_id,c.first_store_commercial_type_id,c.first_store_latitude,c.first_store_longitude,COALESCE(c.wallet_provider_key,'') FROM dsh.joining_cases c WHERE c.originating_field_actor_id=$1`
 	args := []any{fieldActorID}
 	if queryText != "" {
 		args = append(args, queryText)
 		searchArg := len(args)
-		query += fmt.Sprintf(" AND (position($%d in lower(c.id::text))>0 OR position($%d in lower(c.contact_phone_e164))>0 OR position($%d in lower(c.business_name))>0 OR position($%d in lower(c.first_store_name))>0)", searchArg, searchArg, searchArg, searchArg)
+		query += fmt.Sprintf(" AND (position($%d in lower(c.id::text))>0 OR position($%d in lower(c.contact_phone_e164))>0 OR position($%d in lower(c.owner_full_name))>0 OR position($%d in lower(c.business_name))>0 OR position($%d in lower(c.first_store_name))>0)", searchArg, searchArg, searchArg, searchArg, searchArg)
 	}
 	if decoded != nil {
 		args = append(args, decoded.CreatedAt, decoded.ID)
@@ -1095,7 +1129,7 @@ func ListJoiningCasesForField(ctx context.Context, db *sql.DB, fieldActorID, que
 		var record JoiningCaseRecord
 		var actorID, originActorID, origin, correctionReason, reviewedBy, cityID, verticalID, commercialTypeID sql.NullString
 		var latitude, longitude sql.NullFloat64
-		if err := rows.Scan(&record.ID, &record.ContactPhoneE164, &record.BusinessName, &record.FirstStoreName, &actorID, &originActorID, &origin, &record.State, &correctionReason, &reviewedBy, &record.Version, &record.CreatedAt, &record.UpdatedAt, &cityID, &verticalID, &commercialTypeID, &latitude, &longitude); err != nil {
+		if err := rows.Scan(&record.ID, &record.ContactPhoneE164, &record.BusinessName, &record.FirstStoreName, &actorID, &originActorID, &origin, &record.State, &correctionReason, &reviewedBy, &record.Version, &record.CreatedAt, &record.UpdatedAt, &cityID, &verticalID, &commercialTypeID, &latitude, &longitude, &record.WalletProviderKey); err != nil {
 			return JoiningCaseListResult{}, fmt.Errorf("scan Field joining case queue: %w", err)
 		}
 		if actorID.Valid {
@@ -1144,7 +1178,7 @@ func ListJoiningCasesForField(ctx context.Context, db *sql.DB, fieldActorID, que
 const joiningCaseSelect = `SELECT c.id,c.contact_phone_e164,c.owner_full_name,c.business_name,c.first_store_name,c.first_store_address,c.first_store_working_hours,c.first_store_proof_type,c.first_store_notes,
 	EXISTS(SELECT 1 FROM dsh.joining_case_private_evidence e WHERE e.joining_case_id=c.id AND e.proof_number_ciphertext IS NOT NULL),
 	EXISTS(SELECT 1 FROM dsh.joining_case_private_evidence e WHERE e.joining_case_id=c.id AND e.proof_image_ciphertext IS NOT NULL),
-	c.partner_actor_id,c.originating_field_actor_id,c.origin,c.state,c.settlement_period,c.financial_profile_id,c.financial_profile_state,c.correction_reason,c.reviewed_by,c.store_id,c.version,c.created_at,c.updated_at,c.first_store_service_city_id,c.first_store_vertical_id,c.first_store_commercial_type_id,c.first_store_latitude,c.first_store_longitude,c.first_store_fulfillment_modes,c.terms_policy_version,
+	c.partner_actor_id,c.originating_field_actor_id,c.origin,c.state,c.settlement_period,c.financial_profile_id,c.financial_profile_state,c.correction_reason,c.reviewed_by,c.store_id,c.version,c.created_at,c.updated_at,c.first_store_service_city_id,c.first_store_vertical_id,c.first_store_commercial_type_id,c.first_store_latitude,c.first_store_longitude,c.first_store_fulfillment_modes,c.terms_policy_version,COALESCE(c.wallet_provider_key,''),
 	 s.id,s.partner_actor_id,s.name,s.service_city_id,s.primary_vertical_id,s.commercial_store_type_id,s.version,s.publication_state,s.publication_changed_at,s.created_at,s.updated_at,s.delivery_origin_latitude,s.delivery_origin_longitude,s.delivery_origin_version,s.delivery_origin_updated_at,s.fulfillment_modes FROM dsh.joining_cases c LEFT JOIN dsh.stores s ON s.id=c.store_id`
 
 func readJoiningCaseTx(ctx context.Context, tx *sql.Tx, caseID string) (JoiningCaseResult, error) {
@@ -1180,7 +1214,7 @@ func readJoiningCaseRow(ctx context.Context, row rowScanner, _ bool) (JoiningCas
 	var storeChanged, storeCreated, storeUpdated, storeOriginUpdated sql.NullTime
 	var storeOriginLatitude, storeOriginLongitude sql.NullFloat64
 	var storeOriginVersion sql.NullInt64
-	err := row.Scan(&record.ID, &record.ContactPhoneE164, &ownerFullName, &record.BusinessName, &record.FirstStoreName, &firstStoreAddress, &workingHours, &firstStoreProofType, &firstStoreNotes, &proofNumberPresent, &proofImageUploaded, &actorID, &originatingFieldActorID, &origin, &record.State, &settlementPeriod, &financialProfileID, &financialProfileState, &correctionReason, &reviewedBy, &storeID, &record.Version, &record.CreatedAt, &record.UpdatedAt, &cityID, &verticalID, &commercialTypeID, &latitude, &longitude, pq.Array(&record.FirstStoreFulfillmentModes), &termsPolicyVersion,
+	err := row.Scan(&record.ID, &record.ContactPhoneE164, &ownerFullName, &record.BusinessName, &record.FirstStoreName, &firstStoreAddress, &workingHours, &firstStoreProofType, &firstStoreNotes, &proofNumberPresent, &proofImageUploaded, &actorID, &originatingFieldActorID, &origin, &record.State, &settlementPeriod, &financialProfileID, &financialProfileState, &correctionReason, &reviewedBy, &storeID, &record.Version, &record.CreatedAt, &record.UpdatedAt, &cityID, &verticalID, &commercialTypeID, &latitude, &longitude, pq.Array(&record.FirstStoreFulfillmentModes), &termsPolicyVersion, &record.WalletProviderKey,
 		&storeIDValue, &storePartner, &storeName, &storeCityID, &storeVerticalID, &storeCommercialTypeID, &storeVersion, &storeState, &storeChanged, &storeCreated, &storeUpdated, &storeOriginLatitude, &storeOriginLongitude, &storeOriginVersion, &storeOriginUpdated, pq.Array(&store.FulfillmentModes))
 	if err != nil {
 		return JoiningCaseRecord{}, err

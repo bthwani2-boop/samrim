@@ -124,7 +124,7 @@ func ListPublicDiscoveryVerticals(ctx context.Context, db *sql.DB, serviceCityID
 	if db == nil || serviceCityID == "" || len(serviceCityID) > 128 {
 		return nil, errors.New("public discovery vertical scope is invalid")
 	}
-	rows, err := db.QueryContext(ctx, `SELECT vertical.id,vertical.name_ar,vertical.name_en,true,vertical.version,vertical.created_at,vertical.updated_at,''
+	rows, err := db.QueryContext(ctx, `SELECT vertical.id,vertical.name_ar,vertical.name_en,true,vertical.version,vertical.created_at,vertical.updated_at
 		FROM dsh.commerce_verticals vertical
 		WHERE vertical.active=true AND EXISTS (
 			SELECT 1 FROM dsh.stores store
@@ -141,7 +141,7 @@ func ListPublicDiscoveryVerticals(ctx context.Context, db *sql.DB, serviceCityID
 	items := make([]CommerceVerticalRecord, 0)
 	for rows.Next() {
 		var item CommerceVerticalRecord
-		if err := rows.Scan(&item.ID, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt, &item.CatalogModel); err != nil {
+		if err := rows.Scan(&item.ID, &item.NameAr, &item.NameEn, &item.Active, &item.Version, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan public discovery vertical: %w", err)
 		}
 		items = append(items, item)
@@ -464,7 +464,7 @@ func escapeCatalogSearchPrefix(query string) string {
 }
 
 func listStorefrontSections(ctx context.Context, db queryer, storeID string) ([]CatalogStorefrontSectionRecord, error) {
-	rows, err := db.QueryContext(ctx, `SELECT ss.id,ss.store_id,ss.name_ar,ss.name_en,ss.ordinal,ss.active,ss.version,ss.created_at,ss.updated_at FROM dsh.catalog_storefront_sections ss JOIN dsh.stores s ON s.id=ss.store_id JOIN dsh.commerce_verticals cv ON cv.id=s.primary_vertical_id WHERE ss.store_id=$1 AND ss.active=true AND cv.catalog_model='STORE_LOCAL_CATALOG' ORDER BY ss.ordinal,ss.id`, storeID)
+	rows, err := db.QueryContext(ctx, `SELECT ss.id,ss.store_id,ss.name_ar,ss.name_en,ss.ordinal,ss.active,ss.version,ss.created_at,ss.updated_at FROM dsh.catalog_storefront_sections ss JOIN dsh.stores s ON s.id=ss.store_id JOIN dsh.commerce_verticals cv ON cv.id=s.primary_vertical_id WHERE ss.store_id=$1 AND ss.active=true AND cv.active=true ORDER BY ss.ordinal,ss.id`, storeID)
 	if err != nil {
 		return nil, err
 	}

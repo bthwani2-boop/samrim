@@ -12,6 +12,10 @@
     "./mobile/store-access-invitations": {
       "types": "./clients/mobile-store-access-invitations.tsx",
       "default": "./clients/mobile-store-access-invitations.tsx"
+    },
+    "./mobile/store-catalog-import": {
+      "types": "./clients/mobile-store-catalog-import.tsx",
+      "default": "./clients/mobile-store-catalog-import.tsx"
     }
   },
   "peerDependencies": {

@@ -11,7 +11,12 @@ const root = path.resolve(import.meta.dirname, "../..");
 const envArg = process.argv.find((arg) => arg.startsWith("--env-file="));
 const envPath = envArg ? path.resolve(root, envArg.slice("--env-file=".length)) : path.resolve(root, "infra/local/.env");
 
-function fail(message, detail = "") { console.error(`DSH_RUNTIME=FAIL ${message}${detail ? ` detail=${detail}` : ""}`); process.exit(1); }
+function safeDiagnostic(value) {
+  return String(value)
+    .replace(/("(?:[^"]*(?:accessToken|refreshToken|token|code|password|secret|authorization|phone|walletIdentifier)[^"]*)"\s*:\s*)"(?:\\.|[^"\\])*"/gi, '$1"[REDACTED]"')
+    .replace(/\b(?:\+?\d[\d\s().-]{8,}\d)\b/g, "[PHONE REDACTED]");
+}
+function fail(message, detail = "") { console.error(safeDiagnostic(`DSH_RUNTIME=FAIL ${message}${detail ? ` detail=${detail}` : ""}`)); process.exit(1); }
 if (process.env.CI !== "true" || process.env.BTHWANI_IDENTITY_PROOF_SCOPE !== "disposable-ci") fail("runtime proof requires disposable CI state because it creates persistent business records");
 function readEnv(file) {
   if (!fs.existsSync(file)) fail("canonical env file missing", file);
@@ -42,22 +47,29 @@ function readCheckerFixture() {
   return { actorID: String(fixture.actorId), profileID: String(fixture.profileId), phone: String(fixture.phone) };
 }
 const checkerFixture = readCheckerFixture();
-const dshBase = required(env, "DSH_API_BASE_URL").replace(/\/+$/, "");
-const identityBase = required(env, "IDENTITY_API_BASE_URL").replace(/\/+$/, "");
+const dshBase = (process.env.DSH_API_BASE_URL?.trim() || required(env, "DSH_API_BASE_URL")).replace(/\/+$/, "");
+const identityBase = (process.env.IDENTITY_API_BASE_URL?.trim() || required(env, "IDENTITY_API_BASE_URL")).replace(/\/+$/, "");
 const dshToken = required(env, "CONTROL_PANEL_SERVICE_TOKEN");
 const identityDshToken = required(env, "IDENTITY_DSH_SERVICE_TOKEN");
 const bootstrapToken = required(env, "OPERATOR_BOOTSTRAP_SECRET");
-const mailpitPort = required(env, "SAMRIM_MAILPIT_WEB_PORT");
-const wltBase = `http://127.0.0.1:${required(env, "SAMRIM_WLT_PORT")}`;
+const mailpitPort = process.env.SAMRIM_MAILPIT_WEB_PORT?.trim() || required(env, "SAMRIM_MAILPIT_WEB_PORT");
+const wltPort = process.env.SAMRIM_WLT_PORT?.trim() || required(env, "SAMRIM_WLT_PORT");
+const wltBase = `http://127.0.0.1:${wltPort}`;
 const wltToken = required(env, "WLT_DSH_SERVICE_TOKEN");
 if (dshToken.length < 24 || identityDshToken.length < 24 || bootstrapToken.length < 24) fail("canonical internal secrets are too weak");
-const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", path.join(root, "infra/local/compose/compose.yaml")];
+const composeProject = process.env.SAMRIM_RUNTIME_COMPOSE_PROJECT?.trim() || "samrim-local";
+if (!/^[a-z0-9][a-z0-9_-]*$/i.test(composeProject)) fail("runtime compose project name is invalid");
+const composeArgs = ["compose", "--project-name", composeProject, "--env-file", envPath, "-f", path.join(root, "infra/local/compose/compose.yaml")];
 const suffix = `${Date.now().toString(36)}-${crypto.randomBytes(6).toString("hex")}`;
+function runtimeGTIN(prefix) {
+  const body = `${prefix}${String(crypto.randomInt(0, 1_000_000)).padStart(6, "0")}`;
+  const weightedSum = [...body].reduce((sum, digit, index) => sum + Number(digit) * (index % 2 === 0 ? 1 : 3), 0);
+  return `${body}${(10 - (weightedSum % 10)) % 10}`;
+}
 const citySuffix = String(Date.now());
 let cityA = "";
 let cityB = "";
 let verticalID = "";
-let storeLocalVerticalID = "";
 let categoryID = "";
 let childCategoryID = "";
 const enumAttributeID = `roast-${suffix}`;
@@ -118,7 +130,7 @@ async function admitReviewedRoleCandidate(role, phone, candidateName, reviewedNa
   if (role !== "field" && role !== "captain") fail("unsupported role candidate proof", role);
   const plural = role === "field" ? "fields" : "captains";
   const root = `/dsh/${plural}/admissions`;
-  const candidateBody = { fullNameAr: candidateName, contactPhoneE164: phone, ...(role === "field" ? { serviceCityId: cityA } : {}) };
+  const candidateBody = { fullNameAr: candidateName, contactPhoneE164: phone, walletProviderKey: "provider-yemen", ...(role === "field" ? { serviceCityId: cityA } : {}) };
   const createHeaders = serviceHeaders(actingOperatorID, `${label}-profile-${suffix}`);
   const created = await request(dshBase, "POST", root, { token: dshToken, headers: createHeaders, body: candidateBody });
   const replay = await request(dshBase, "POST", root, { token: dshToken, headers: createHeaders, body: candidateBody });
@@ -204,6 +216,11 @@ async function activateField(phone, password) {
   if (activation.status !== 200 || typeof activation.body?.accessToken !== "string" || activation.body?.identity?.role !== "field" || activation.body?.identity?.surface !== "app-field") fail("Field activation failed", JSON.stringify(activation));
   return String(activation.body.accessToken);
 }
+async function loginField(phone, password) {
+  const login = await request(identityBase, "POST", "/auth/managed/login", { body: { phone, role: "field", password, clientInstanceId: `dsh-field-${suffix}` } });
+  if (login.status !== 200 || typeof login.body?.accessToken !== "string" || login.body?.identity?.role !== "field" || login.body?.identity?.surface !== "app-field") fail("Field login after role restoration failed", JSON.stringify(login));
+  return String(login.body.accessToken);
+}
 async function createClientSession(phone) {
   const previousMessageIds = await captureMailpitMessageIds({ port: mailpitPort, phone, purpose: "client_register" });
   const challenge = await request(identityBase, "POST", "/auth/client/registration/request", { body: { phone }, headers: challengeSourceHeaders(phone) });
@@ -224,8 +241,8 @@ if (!actingOperatorID) console.log(`DSH_OPERATOR_CANDIDATES=${sql("SELECT COALES
 if (!actingOperatorID) actingOperatorID = sql("SELECT b.initial_operator_actor_id FROM identity_bootstrap_state b JOIN identity_actor_roles r ON r.actor_id=b.initial_operator_actor_id AND r.role='operator' JOIN identity_actors a ON a.id=r.actor_id WHERE b.id=1 AND r.enabled AND a.security_enabled AND r.activated_at IS NOT NULL");
 if (!actingOperatorID) {
   const bootstrapped = await request(identityBase, "POST", "/internal/bootstrap/operator", { token: bootstrapToken, body: { phoneE164: `+9677${crypto.randomInt(10_000_000, 99_999_999)}`, role: "operator" } });
-  if (bootstrapped.status !== 201 || !bootstrapped.body?.actorId) fail("operator bootstrap failed", JSON.stringify(bootstrapped));
-  actingOperatorID = String(bootstrapped.body.actorId);
+  if (bootstrapped.status !== 201 || !bootstrapped.body?.role?.actorId) fail("operator bootstrap failed", JSON.stringify(bootstrapped));
+  actingOperatorID = String(bootstrapped.body.role.actorId);
 }
 if (!actingOperatorID.startsWith("act_")) fail("acting operator identity is invalid", actingOperatorID);
 const platformPoliciesAccess = await request(identityBase, "GET", `/internal/operators/${encodeURIComponent(actingOperatorID)}/permissions/platform_policies`, { token: identityDshToken });
@@ -349,7 +366,7 @@ const mainOrderTotal = mainOrderSubtotal + deliveryFeeMinor;
 const singleOrderSubtotal = 2100;
 const singleOrderTotal = singleOrderSubtotal + deliveryFeeMinor;
 
-const verticalCreate = await request(dshBase, "POST", "/dsh/catalog/verticals", { token: dshToken, headers: serviceHeaders(actingOperatorID, `vertical-${suffix}`), body: { nameAr: `بقالة ${suffix}`, nameEn: `Grocery ${suffix}`, catalogModel: "SHARED_CATALOG", active: true, reason: "DSH runtime catalog vertical proof" } });
+const verticalCreate = await request(dshBase, "POST", "/dsh/catalog/verticals", { token: dshToken, headers: serviceHeaders(actingOperatorID, `vertical-${suffix}`), body: { nameAr: `بقالة ${suffix}`, nameEn: `Grocery ${suffix}`, active: true, reason: "DSH runtime catalog vertical proof" } });
 if (verticalCreate.status !== 201 || !String(verticalCreate.body?.vertical?.id || "").startsWith("vertical_")) fail("commerce vertical creation failed", JSON.stringify(verticalCreate));
 verticalID = String(verticalCreate.body.vertical.id);
 const commercialStoreTypeCreate = await request(dshBase, "POST", "/dsh/catalog/commercial-store-types", { token: dshToken, headers: serviceHeaders(actingOperatorID, `commercial-store-type-${suffix}`), body: { verticalId: verticalID, nameAr: `بقالة محلية ${suffix}`, nameEn: `Local Grocery ${suffix}`, active: true, reason: "DSH runtime joining-case commercial store type proof" } });
@@ -357,13 +374,10 @@ if (commercialStoreTypeCreate.status !== 201 || !commercialStoreTypeCreate.body?
 const commercialStoreTypeID = String(commercialStoreTypeCreate.body.storeType.id);
 const commercialStoreTypeRead = await request(dshBase, "GET", `/dsh/catalog/commercial-store-types?verticalId=${encodeURIComponent(verticalID)}`);
 if (commercialStoreTypeRead.status !== 200 || !commercialStoreTypeRead.body?.storeTypes?.some((item) => item.id === commercialStoreTypeID && item.active)) fail("commercial store type readback did not return the active vertical-scoped type", JSON.stringify(commercialStoreTypeRead));
-const storeLocalVerticalCreate = await request(dshBase, "POST", "/dsh/catalog/verticals", { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-local-vertical-${suffix}`), body: { nameAr: `متجر محلي ${suffix}`, nameEn: `Local Store ${suffix}`, catalogModel: "STORE_LOCAL_CATALOG", active: true, reason: "DSH runtime store-local catalog proof" } });
-if (storeLocalVerticalCreate.status !== 201 || !String(storeLocalVerticalCreate.body?.vertical?.id || "").startsWith("vertical_")) fail("store-local commerce vertical creation failed", JSON.stringify(storeLocalVerticalCreate));
-storeLocalVerticalID = String(storeLocalVerticalCreate.body.vertical.id);
-const storeLocalCommercialTypeCreate = await request(dshBase, "POST", "/dsh/catalog/commercial-store-types", { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-local-commercial-store-type-${suffix}`), body: { verticalId: storeLocalVerticalID, nameAr: `متجر محلي ${suffix}`, nameEn: `Local Store ${suffix}`, active: true, reason: "DSH runtime store-local joining-case commercial store type proof" } });
-if (storeLocalCommercialTypeCreate.status !== 201 || !storeLocalCommercialTypeCreate.body?.storeType?.id || storeLocalCommercialTypeCreate.body.storeType.verticalId !== storeLocalVerticalID || !storeLocalCommercialTypeCreate.body.storeType.active) fail("canonical store-local commercial store type creation failed", JSON.stringify(storeLocalCommercialTypeCreate));
+const storeLocalCommercialTypeCreate = await request(dshBase, "POST", "/dsh/catalog/commercial-store-types", { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-local-commercial-store-type-${suffix}`), body: { verticalId: verticalID, nameAr: `متجر محلي ${suffix}`, nameEn: `Local Store ${suffix}`, active: true, reason: "DSH runtime store-local joining-case commercial store type proof" } });
+if (storeLocalCommercialTypeCreate.status !== 201 || !storeLocalCommercialTypeCreate.body?.storeType?.id || storeLocalCommercialTypeCreate.body.storeType.verticalId !== verticalID || !storeLocalCommercialTypeCreate.body.storeType.active) fail("canonical store-local commercial store type creation failed", JSON.stringify(storeLocalCommercialTypeCreate));
 const storeLocalCommercialStoreTypeID = String(storeLocalCommercialTypeCreate.body.storeType.id);
-const storeLocalCommercialTypeRead = await request(dshBase, "GET", `/dsh/catalog/commercial-store-types?verticalId=${encodeURIComponent(storeLocalVerticalID)}`);
+const storeLocalCommercialTypeRead = await request(dshBase, "GET", `/dsh/catalog/commercial-store-types?verticalId=${encodeURIComponent(verticalID)}`);
 if (storeLocalCommercialTypeRead.status !== 200 || !storeLocalCommercialTypeRead.body?.storeTypes?.some((item) => item.id === storeLocalCommercialStoreTypeID && item.active)) fail("store-local commercial store type readback did not return the active vertical-scoped type", JSON.stringify(storeLocalCommercialTypeRead));
 const verticalList = await request(dshBase, "GET", "/dsh/catalog/verticals", { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 if (verticalList.status !== 200 || !verticalList.body?.verticals?.some((item) => item.id === verticalID)) fail("commerce vertical registry readback failed", JSON.stringify(verticalList));
@@ -420,11 +434,12 @@ const firstStoreOrigin = { firstStoreLatitude: 15.369445, firstStoreLongitude: 4
 const correctedStoreOrigin = { firstStoreLatitude: 15.370001, firstStoreLongitude: 44.192002 };
 const runtimePNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 
-function joiningCaseDetails(businessName, firstStoreName, serviceCityId, vertical = verticalID, commercialType = commercialStoreTypeID, storeOrigin = firstStoreOrigin) {
+function joiningCaseDetails(businessName, firstStoreName, serviceCityId, vertical = verticalID, commercialType = commercialStoreTypeID, storeOrigin = firstStoreOrigin, fulfillmentModes = ["BTHWANI_CAPTAIN"]) {
   return {
     ownerFullName: `${firstStoreName} owner`,
     businessName,
     firstStoreName,
+    walletProviderKey: "provider-yemen",
     firstStoreAddress: `${firstStoreName} street, building 1`,
     firstStoreWorkingHours: { intervals: [{ dayOfWeek: 1, opensAt: "08:00", closesAt: "16:00", closesNextDay: false }] },
     firstStoreProofType: "COMMERCIAL_REGISTRATION",
@@ -432,13 +447,19 @@ function joiningCaseDetails(businessName, firstStoreName, serviceCityId, vertica
     serviceCityId,
     firstStoreVerticalId: vertical,
     firstStoreCommercialTypeId: commercialType,
-    firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"],
+    firstStoreFulfillmentModes: fulfillmentModes,
     ...storeOrigin,
   };
 }
 
-function joiningCaseCreateBody(phone, businessName, firstStoreName, serviceCityId, vertical = verticalID, commercialType = commercialStoreTypeID, storeOrigin = firstStoreOrigin) {
-  return { contactPhoneE164: phone, ...joiningCaseDetails(businessName, firstStoreName, serviceCityId, vertical, commercialType, storeOrigin) };
+function joiningCaseCreateBody(phone, businessName, firstStoreName, serviceCityId, vertical = verticalID, commercialType = commercialStoreTypeID, storeOrigin = firstStoreOrigin, fulfillmentModes = ["BTHWANI_CAPTAIN"]) {
+  return { contactPhoneE164: phone, ...joiningCaseDetails(businessName, firstStoreName, serviceCityId, vertical, commercialType, storeOrigin, fulfillmentModes) };
+}
+
+function joiningCaseCorrectionBody(businessName, firstStoreName, serviceCityId, vertical = verticalID, commercialType = commercialStoreTypeID, storeOrigin = firstStoreOrigin, fulfillmentModes = ["BTHWANI_CAPTAIN"]) {
+  const body = joiningCaseDetails(businessName, firstStoreName, serviceCityId, vertical, commercialType, storeOrigin, fulfillmentModes);
+  delete body.walletProviderKey;
+  return body;
 }
 
 async function uploadPartnerProofImage(caseID, partnerToken, name, expectedVersion) {
@@ -495,13 +516,13 @@ async function uploadRequiredJoiningCaseMedia(caseID, origin, name, initialVersi
   return readback.body.case.version;
 }
 
-async function createApprovedPartner(phone, name, serviceCityId, origin = "control_panel", partnerVerticalID = verticalID, partnerCommercialStoreTypeID = commercialStoreTypeID) {
+async function createApprovedPartner(phone, name, serviceCityId, origin = "control_panel", partnerVerticalID = verticalID, partnerCommercialStoreTypeID = commercialStoreTypeID, fulfillmentModes = ["BTHWANI_CAPTAIN"]) {
   const createKey = `joining-${crypto.randomUUID()}`;
   const fieldOrigin = origin === "field";
   const created = await request(dshBase, "POST", fieldOrigin ? "/dsh/field/joining-cases" : "/dsh/joining-cases", {
     token: fieldOrigin ? fieldAccessToken : dshToken,
     headers: fieldOrigin ? partnerHeaders(createKey) : serviceHeaders(actingOperatorID, createKey),
-    body: joiningCaseCreateBody(phone, `${name} business`, `${name} store`, serviceCityId, partnerVerticalID, partnerCommercialStoreTypeID),
+    body: joiningCaseCreateBody(phone, `${name} business`, `${name} store`, serviceCityId, partnerVerticalID, partnerCommercialStoreTypeID, firstStoreOrigin, fulfillmentModes),
   });
   if (created.status !== 201 || created.body?.case?.state !== "draft" || created.body?.case?.origin !== origin || created.body?.case?.firstStoreVerticalId !== partnerVerticalID || created.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || created.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude) fail("joining case creation did not preserve source provenance or fixed store origin", JSON.stringify(created));
   const caseID = String(created.body.case.id);
@@ -518,36 +539,119 @@ async function createApprovedPartner(phone, name, serviceCityId, origin = "contr
   const approved = await request(dshBase, "POST", `/dsh/joining-cases/${caseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `approve-${crypto.randomUUID()}`, crypto.randomUUID(), Number(submitted.body?.case?.version)), body: { decision: "approved", expectedTermsPolicyVersion: partnerFinancialTermsPolicy.policyVersion } });
   const storeID = String(approved.body?.case?.store?.id || "");
   if (approved.status !== 200 || approved.body?.case?.state !== "approved" || approved.body?.case?.financialProfileState !== "ACTIVE" || approved.body?.case?.settlementPeriod !== "MONTHLY" || typeof approved.body?.case?.financialProfileId !== "string" || approved.body?.case?.firstStoreCommercialTypeId !== partnerCommercialStoreTypeID || approved.body?.case?.store?.primaryVerticalId !== partnerVerticalID || approved.body?.case?.store?.commercialStoreTypeId !== partnerCommercialStoreTypeID || approved.body?.case?.store?.deliveryOrigin?.latitude !== firstStoreOrigin.firstStoreLatitude || approved.body?.case?.store?.deliveryOrigin?.longitude !== firstStoreOrigin.firstStoreLongitude) fail("joining case approval did not bind financial terms and transfer the fixed store origin", JSON.stringify(approved));
-  await ensureCommissionPolicy(partnerCommercialStoreTypeID, "BTHWANI_CAPTAIN", 1500);
-  return { accessToken, actorID, caseID, storeID };
+  let activeAgreement = null;
+  if (fieldOrigin) {
+    activeAgreement = await activateStoreCommercialAgreement(caseID, storeID, actorID, accessToken, fieldActorID, fieldAccessToken, approved.body?.case?.store?.fulfillmentModes ?? fulfillmentModes, partnerCommercialStoreTypeID);
+  }
+  return { accessToken, actorID, caseID, storeID, activeAgreement };
 }
 
-async function ensureCommissionPolicy(commercialStoreTypeID, fulfillmentMode, commissionRateBps) {
-  const path = "/dsh/operator/commercial-store-type-commission-policies";
-  const readPolicy = async () => request(dshBase, "GET", `${path}?commercialStoreTypeId=${encodeURIComponent(commercialStoreTypeID)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
-  const current = await readPolicy();
-  if (current.status !== 200 || current.body?.commercialStoreTypeId !== commercialStoreTypeID || !Array.isArray(current.body?.policies)) {
-    fail("commercial store type commission policy read failed", JSON.stringify({ commercialStoreTypeID, current }));
+async function ensureCommissionDefault(commercialStoreTypeID, fulfillmentMode, suggestedCommissionRateBps) {
+  const path = "/wlt/v1/operator/commercial-store-type-commission-defaults";
+  const readDefaults = () => request(wltBase, "GET", `${path}?commercialStoreTypeId=${encodeURIComponent(commercialStoreTypeID)}`, { token: wltToken });
+  const current = await readDefaults();
+  if (current.status !== 200 || current.body?.commercialStoreTypeId !== commercialStoreTypeID || !Array.isArray(current.body?.defaults)) {
+    fail("canonical WLT store-type commission defaults read failed", JSON.stringify({ commercialStoreTypeID, current }));
   }
-  const existing = current.body.policies.find((policy) => policy.fulfillmentMode === fulfillmentMode);
+  const existing = current.body.defaults.find((item) => item.fulfillmentMode === fulfillmentMode);
   if (existing) {
-    if (existing.commercialStoreTypeId !== commercialStoreTypeID || existing.fulfillmentMode !== fulfillmentMode || !Number.isInteger(existing.commissionRateBps) || existing.commissionRateBps < 0 || existing.commissionRateBps > 10000 || !Number.isInteger(existing.policyVersion) || existing.policyVersion < 1) {
-      fail("existing fulfillment commission policy is invalid", JSON.stringify({ commercialStoreTypeID, fulfillmentMode, existing }));
+    if (existing.commercialStoreTypeId !== commercialStoreTypeID || existing.fulfillmentMode !== fulfillmentMode || existing.suggestedCommissionRateBps !== suggestedCommissionRateBps || !Number.isInteger(existing.defaultVersion) || existing.defaultVersion < 1) {
+      fail("existing WLT commission default did not match the disposable agreement fixture", JSON.stringify({ commercialStoreTypeID, fulfillmentMode, existing }));
     }
     return existing;
   }
 
-  const created = await request(dshBase, "POST", path, {
-    token: dshToken,
-    headers: serviceHeaders(actingOperatorID, `runtime-commission-${commercialStoreTypeID}-${fulfillmentMode}-${suffix}`),
-    body: { commercialStoreTypeId: commercialStoreTypeID, fulfillmentMode, commissionRateBps, expectedVersion: 0, reason: "Runtime checkout fixture policy" },
+  const created = await request(wltBase, "POST", path, {
+    token: wltToken,
+    headers: serviceHeaders(actingOperatorID, `runtime-commission-default-${commercialStoreTypeID}-${fulfillmentMode}-${suffix}`),
+    body: { commercialStoreTypeId: commercialStoreTypeID, fulfillmentMode, suggestedCommissionRateBps, expectedDefaultVersion: 0, reason: "Runtime disposable Store agreement default" },
   });
-  const readback = await readPolicy();
-  const policy = readback.body?.policies?.find((item) => item.fulfillmentMode === fulfillmentMode);
-  if (created.status !== 200 || created.body?.policy?.commercialStoreTypeId !== commercialStoreTypeID || created.body?.policy?.fulfillmentMode !== fulfillmentMode || created.body?.policy?.commissionRateBps !== commissionRateBps || created.body?.policy?.policyVersion !== 1 || readback.status !== 200 || policy?.commercialStoreTypeId !== commercialStoreTypeID || policy?.fulfillmentMode !== fulfillmentMode || policy?.commissionRateBps !== commissionRateBps || policy?.policyVersion !== 1) {
-    fail("canonical fulfillment commission policy setup/readback failed", JSON.stringify({ commercialStoreTypeID, fulfillmentMode, commissionRateBps, created, readback }));
+  const readback = await readDefaults();
+  const defaultRecord = created.body?.default;
+  const defaultReadback = readback.body?.defaults?.find((item) => item.fulfillmentMode === fulfillmentMode);
+  if (created.status !== 200 || defaultRecord?.commercialStoreTypeId !== commercialStoreTypeID || defaultRecord?.fulfillmentMode !== fulfillmentMode || defaultRecord?.suggestedCommissionRateBps !== suggestedCommissionRateBps || defaultRecord?.defaultVersion !== 1 || readback.status !== 200 || defaultReadback?.commercialStoreTypeId !== commercialStoreTypeID || defaultReadback?.fulfillmentMode !== fulfillmentMode || defaultReadback?.suggestedCommissionRateBps !== suggestedCommissionRateBps || defaultReadback?.defaultVersion !== 1) {
+    fail("WLT commission default setup or canonical readback failed", JSON.stringify({ commercialStoreTypeID, fulfillmentMode, created, readback }));
   }
-  return policy;
+  return defaultRecord;
+}
+
+async function activateStoreCommercialAgreement(caseID, storeID, partnerActorID, partnerAccessToken, fieldActorID, fieldAccessToken, fulfillmentModes, commercialStoreTypeID) {
+  for (const mode of fulfillmentModes) await ensureCommissionDefault(commercialStoreTypeID, mode, 1500);
+  const wltAgreementsPath = "/wlt/v1/store-commercial-agreements";
+  const wltRead = await request(wltBase, "GET", `${wltAgreementsPath}?storeId=${encodeURIComponent(storeID)}`, { token: wltToken });
+  if (wltRead.status !== 200 || !Array.isArray(wltRead.body?.agreements)) fail("WLT Store agreement history read failed before proposal", JSON.stringify(wltRead));
+  const expectedCurrentVersion = wltRead.body.agreements.reduce((version, item) => Math.max(version, Number(item.agreementVersion) || 0), 0);
+
+  const fieldDefaults = await request(dshBase, "GET", `/dsh/field/joining-cases/${encodeURIComponent(caseID)}/commercial-agreement-defaults`, { token: fieldAccessToken });
+  const rates = fulfillmentModes.map((mode) => {
+    const item = fieldDefaults.body?.defaults?.find((candidate) => candidate.fulfillmentMode === mode);
+    return item ? { fulfillmentMode: mode, commissionRateBps: item.suggestedCommissionRateBps } : null;
+  });
+  if (fieldDefaults.status !== 200 || fieldDefaults.body?.commercialStoreTypeId !== commercialStoreTypeID || rates.some((item) => item === null)) fail("Field did not read WLT defaults for every enabled Store fulfillment mode", JSON.stringify({ fieldDefaults, fulfillmentModes }));
+
+  const proposalHeaders = partnerHeaders(`runtime-agreement-propose-${caseID}-${expectedCurrentVersion + 1}`);
+  const proposalBody = { rates, expectedCurrentVersion, reason: "Field initial Store commercial terms proposal" };
+  const proposed = await request(dshBase, "POST", `/dsh/field/joining-cases/${encodeURIComponent(caseID)}/commercial-agreements`, { token: fieldAccessToken, headers: proposalHeaders, body: proposalBody });
+  const proposalReplay = await request(dshBase, "POST", `/dsh/field/joining-cases/${encodeURIComponent(caseID)}/commercial-agreements`, { token: fieldAccessToken, headers: proposalHeaders, body: proposalBody });
+  const fieldReadback = await request(dshBase, "GET", `/dsh/field/joining-cases/${encodeURIComponent(caseID)}/commercial-agreements`, { token: fieldAccessToken });
+  const agreementID = String(proposed.body?.agreement?.agreementId || "");
+  if (proposed.status !== 201 || proposed.body?.agreement?.storeId !== storeID || proposed.body?.agreement?.partnerActorId !== partnerActorID || proposed.body?.agreement?.proposedByActorId !== fieldActorID || proposed.body?.agreement?.agreementVersion !== expectedCurrentVersion + 1 || proposed.body?.agreement?.status !== "PROPOSED" || proposalReplay.status !== 200 || proposalReplay.body?.idempotentReplay !== true || proposalReplay.body?.agreement?.agreementId !== agreementID || fieldReadback.status !== 200 || !fieldReadback.body?.agreements?.some((item) => item.agreementId === agreementID && item.status === "PROPOSED")) {
+    fail("Field Store agreement proposal, idempotent replay, or DSH readback failed", JSON.stringify({ proposed, proposalReplay, fieldReadback }));
+  }
+
+  const partnerRead = await request(dshBase, "GET", "/dsh/joining-cases/self/commercial-agreements", { token: partnerAccessToken });
+  const acceptHeaders = partnerHeaders(`runtime-agreement-accept-${agreementID}`);
+  const acceptBody = { expectedAgreementVersion: expectedCurrentVersion + 1, reason: "Partner accepts the Store-specific commercial terms" };
+  const accepted = await request(dshBase, "POST", `/dsh/joining-cases/self/commercial-agreements/${encodeURIComponent(agreementID)}/accept`, { token: partnerAccessToken, headers: acceptHeaders, body: acceptBody });
+  const acceptedReplay = await request(dshBase, "POST", `/dsh/joining-cases/self/commercial-agreements/${encodeURIComponent(agreementID)}/accept`, { token: partnerAccessToken, headers: acceptHeaders, body: acceptBody });
+  const partnerReadback = await request(dshBase, "GET", "/dsh/joining-cases/self/commercial-agreements", { token: partnerAccessToken });
+  if (partnerRead.status !== 200 || !partnerRead.body?.agreements?.some((item) => item.agreementId === agreementID && item.status === "PROPOSED") || accepted.status !== 200 || accepted.body?.agreement?.status !== "PARTNER_ACCEPTED" || accepted.body?.agreement?.partnerAcceptedByActorId !== partnerActorID || acceptedReplay.status !== 200 || acceptedReplay.body?.idempotentReplay !== true || partnerReadback.status !== 200 || !partnerReadback.body?.agreements?.some((item) => item.agreementId === agreementID && item.status === "PARTNER_ACCEPTED")) {
+    fail("Partner Store agreement acceptance, replay, or readback failed", JSON.stringify({ partnerRead, accepted, acceptedReplay, partnerReadback }));
+  }
+
+  const financeRead = await request(dshBase, "GET", `/dsh/operator/stores/${encodeURIComponent(storeID)}/commercial-agreements`, { token: dshToken, headers: { "X-Acting-Actor-ID": checkerOperatorID } });
+  const financeQueue = await request(dshBase, "GET", "/dsh/operator/store-commercial-agreements?status=PARTNER_ACCEPTED&limit=50", { token: dshToken, headers: { "X-Acting-Actor-ID": checkerOperatorID } });
+  const queued = financeQueue.body?.agreements?.find((item) => item.agreementId === agreementID);
+  if (financeRead.status !== 200 || !financeRead.body?.agreements?.some((item) => item.agreementId === agreementID && item.status === "PARTNER_ACCEPTED") || financeQueue.status !== 200 || !queued || queued.matchesCurrentFulfillmentModes !== true || queued.currentStoreOwnerActorId !== partnerActorID) fail("Finance did not receive the accepted Store agreement with current owner and fulfillment scope", JSON.stringify({ financeRead, financeQueue }));
+
+  const decisionHeaders = serviceHeaders(checkerOperatorID, `runtime-agreement-finance-${agreementID}`);
+  const decisionBody = { expectedAgreementVersion: expectedCurrentVersion + 1, decision: "APPROVE", reason: "Finance approves the Partner-accepted Store terms" };
+  const approved = await request(dshBase, "POST", `/dsh/operator/stores/${encodeURIComponent(storeID)}/commercial-agreements/${encodeURIComponent(agreementID)}/decision`, { token: dshToken, headers: decisionHeaders, body: decisionBody });
+  const approvalReplay = await request(dshBase, "POST", `/dsh/operator/stores/${encodeURIComponent(storeID)}/commercial-agreements/${encodeURIComponent(agreementID)}/decision`, { token: dshToken, headers: decisionHeaders, body: decisionBody });
+  const financeReadback = await request(dshBase, "GET", `/dsh/operator/stores/${encodeURIComponent(storeID)}/commercial-agreements`, { token: dshToken, headers: { "X-Acting-Actor-ID": checkerOperatorID } });
+  const wltReadback = await request(wltBase, "GET", `${wltAgreementsPath}?storeId=${encodeURIComponent(storeID)}`, { token: wltToken });
+  const active = financeReadback.body?.agreements?.find((item) => item.agreementId === agreementID);
+  const canonical = wltReadback.body?.agreements?.find((item) => item.agreementId === agreementID);
+  if (approved.status !== 200 || approved.body?.agreement?.status !== "ACTIVE" || approved.body?.agreement?.financeApprovedByActorId !== checkerOperatorID || !approved.body?.agreement?.effectiveAt || approvalReplay.status !== 200 || approvalReplay.body?.idempotentReplay !== true || financeReadback.status !== 200 || active?.status !== "ACTIVE" || active?.partnerAcceptedByActorId !== partnerActorID || active?.financeApprovedByActorId !== checkerOperatorID || !active?.effectiveAt || wltReadback.status !== 200 || canonical?.status !== "ACTIVE" || canonical?.agreementVersion !== expectedCurrentVersion + 1) {
+    fail("Finance approval did not activate and canonically read back the accepted Store agreement", JSON.stringify({ approved, approvalReplay, financeReadback, wltReadback }));
+  }
+  console.log(`DSH_STORE_COMMERCIAL_AGREEMENT=PASS version=${active.agreementVersion} modes=${fulfillmentModes.join(",")}`);
+  return active;
+}
+async function createOfficialWalletDestination(actorType, actorID, expectedPhone, expectedName, label) {
+  const root = `/dsh/operator/${actorType}/${encodeURIComponent(actorID)}`;
+  const intentRead = await request(dshBase, "GET", `${root}/wallet-provider-intent`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+  if (intentRead.status !== 200 || intentRead.body?.intent?.actorType !== actorType || intentRead.body?.intent?.actorId !== actorID || intentRead.body?.intent?.providerKey !== "provider-yemen" || !intentRead.body?.intent?.sourceId) {
+    fail(`${label} wallet provider intent did not read back from the approved joining record`, JSON.stringify(intentRead));
+  }
+  const created = await request(dshBase, "POST", `${root}/official-wallet-destination`, {
+    token: dshToken,
+    headers: serviceHeaders(actingOperatorID, `${label}-destination-${suffix}`),
+    body: { changeReason: `runtime proof ${label} destination`, verificationEvidenceReference: `${label}-identity-proof-${suffix}`, changeEvidenceReference: `${label}-change-proof-${suffix}` },
+  });
+  const destinationID = String(created.body?.destination?.id || "");
+  const verifyKey = `${label}-destination-verify-${suffix}`;
+  const verified = destinationID ? await request(dshBase, "POST", `${root}/official-wallet-destination/${encodeURIComponent(destinationID)}/verify`, { token: dshToken, headers: serviceHeaders(checkerOperatorID, verifyKey), body: { evidenceReference: `${label}-independent-verification-${suffix}` } }) : null;
+  const verifyReplay = destinationID ? await request(dshBase, "POST", `${root}/official-wallet-destination/${encodeURIComponent(destinationID)}/verify`, { token: dshToken, headers: serviceHeaders(checkerOperatorID, verifyKey), body: { evidenceReference: `${label}-independent-verification-${suffix}` } }) : null;
+  const activateKey = `${label}-destination-activate-${suffix}`;
+  const activated = destinationID ? await request(dshBase, "POST", `${root}/official-wallet-destination/${encodeURIComponent(destinationID)}/activate`, { token: dshToken, headers: serviceHeaders(actingOperatorID, activateKey), body: {} }) : null;
+  const activateReplay = destinationID ? await request(dshBase, "POST", `${root}/official-wallet-destination/${encodeURIComponent(destinationID)}/activate`, { token: dshToken, headers: serviceHeaders(actingOperatorID, activateKey), body: {} }) : null;
+  const readback = await request(dshBase, "GET", `${root}/official-wallet-destination`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+  const canonical = readback.body?.destination;
+  if (created.status !== 201 || canonical?.id !== destinationID || canonical?.actorType !== actorType || canonical?.actorId !== actorID || canonical?.providerKey !== intentRead.body.intent.providerKey || canonical?.walletIdentifierMasked === expectedPhone || canonical?.beneficiaryName !== expectedName || verified?.status !== 200 || verified.body?.destination?.verificationStatus !== "VERIFIED" || verified.body?.destination?.status !== "PENDING_APPROVAL" || verifyReplay?.status !== 200 || verifyReplay.body?.destination?.status !== "PENDING_APPROVAL" || activated?.status !== 200 || activated.body?.destination?.status !== "ACTIVE_FOR_PAYOUT" || activateReplay?.status !== 200 || activateReplay.body?.destination?.status !== "ACTIVE_FOR_PAYOUT" || readback.status !== 200 || canonical?.verificationStatus !== "VERIFIED" || canonical?.status !== "ACTIVE_FOR_PAYOUT") {
+    fail(`${label} official-wallet identity, independent verification, activation, or WLT readback failed`, JSON.stringify({ intentRead, created, verified, verifyReplay, activated, activateReplay, readback }));
+  }
+  return { intentRead, created, verified, verifyReplay, activated, activateReplay, readback, destinationID };
 }
 const fieldPhone = `+96771${crypto.randomInt(1_000_000, 9_999_999)}`;
 const fieldCandidateLifecycle = await admitReviewedRoleCandidate("field", fieldPhone, "سامي ناصر", "سامي ناصر محمد العريقي", "field-admit");
@@ -579,9 +683,10 @@ if (fieldRoleBeforeReenrollment.status !== 200 || directFieldReenrollment.status
 fieldAccessToken = await activateField(fieldPhone, fieldPassword);
 const fieldReactivatedSession = await request(dshBase, "GET", "/dsh/fields/me", { token: fieldAccessToken });
 if (fieldReactivatedSession.status !== 200 || fieldReactivatedSession.body?.admission?.actorId !== fieldActorID) fail("Field reenrollment could not activate the existing DSH-bound actor", JSON.stringify(fieldReactivatedSession));
-const first = await createApprovedPartner(`+96772${crypto.randomInt(1_000_000, 9_999_999)}`, "Catalog Runtime A", cityA);
+const firstPartnerPhone = `+96772${crypto.randomInt(1_000_000, 9_999_999)}`;
+const first = await createApprovedPartner(firstPartnerPhone, "Catalog Runtime A", cityA, "field");
 const second = await createApprovedPartner(`+96774${crypto.randomInt(1_000_000, 9_999_999)}`, "Catalog Runtime B", cityB, "field");
-const storeLocal = await createApprovedPartner(`+96775${crypto.randomInt(1_000_000, 9_999_999)}`, "Store Local Runtime", cityA, "control_panel", storeLocalVerticalID, storeLocalCommercialStoreTypeID);
+const storeLocal = await createApprovedPartner(`+96775${crypto.randomInt(1_000_000, 9_999_999)}`, "Store Local Runtime", cityA, "field", verticalID, storeLocalCommercialStoreTypeID);
 const secondFieldPhone = `+96773${crypto.randomInt(1_000_000, 9_999_999)}`;
 const secondFieldFlow = await admitReviewedRoleCandidate("field", secondFieldPhone, "فهد أحمد", "فهد أحمد صالح القيسي", "field-admit-second");
 const secondFieldAdmission = secondFieldFlow.provision;
@@ -640,6 +745,9 @@ const fieldRoleAfterDisable = await request(identityBase, "GET", `/internal/acto
 const fieldEnabled = await request(dshBase, "POST", `/dsh/fields/${encodeURIComponent(fieldActorID)}/identity-role`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-enable-${suffix}`, crypto.randomUUID(), fieldRoleAfterDisable.body?.roleVersion), body: { enabled: true, reason: "إعادة Field إلى الأهلية التشغيلية" } });
 const fieldAdmissionRestored = await request(dshBase, "GET", `/dsh/fields/actors/${encodeURIComponent(fieldActorID)}/admission`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 if (fieldRoleBeforeDisable.status !== 200 || fieldDisabled.status !== 204 || fieldAdmissionSuspended.status !== 200 || fieldAdmissionSuspended.body?.admission?.state !== "suspended" || fieldDisabled.status !== 204 || fieldRoleAfterDisable.body?.enabled !== false || revokedFieldSession.status !== 401 || fieldEnabled.status !== 204 || fieldAdmissionRestored.status !== 200 || fieldAdmissionRestored.body?.admission?.state !== "eligible") fail("Field DSH/Identity suspend/restore lifecycle was not fail-closed and versioned", JSON.stringify({ fieldRoleBeforeDisable, fieldDisabled, fieldAdmissionSuspended, revokedFieldSession, fieldRoleAfterDisable, fieldEnabled, fieldAdmissionRestored }));
+fieldAccessToken = await loginField(fieldPhone, fieldPassword);
+const fieldRestoredSession = await request(dshBase, "GET", "/dsh/fields/me", { token: fieldAccessToken });
+if (fieldRestoredSession.status !== 200 || fieldRestoredSession.body?.admission?.actorId !== fieldActorID) fail("Field role restoration did not permit the existing Field actor to establish a fresh session", JSON.stringify(fieldRestoredSession));
 console.log("DSH_FIELD_ADMISSION_AND_SCOPED_JOINING=PASS");
 const correctionPhone = `+96776${crypto.randomInt(1_000_000, 9_999_999)}`;
 const correctionCreateBody = joiningCaseCreateBody(correctionPhone, "Correction business", "Correction store", cityA);
@@ -654,7 +762,7 @@ const correctionAccessToken = await activatePartner(correctionPhone, `Corr${suff
 const needsCorrection = await request(dshBase, "POST", `/dsh/joining-cases/${correctionCaseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `needs-correction-${suffix}`, crypto.randomUUID(), Number(correctionSubmitted.body.case.version)), body: { decision: "needs_correction", correctionReason: "صحح اسم المتجر قبل الاعتماد" } });
 if (needsCorrection.status !== 200 || needsCorrection.body?.case?.state !== "needs_correction" || needsCorrection.body.case.version !== correctionSubmitted.body.case.version + 1) fail("joining case correction review failed", JSON.stringify(needsCorrection));
 const correctionProofVersion = await uploadPartnerProofImage(correctionCaseID, correctionAccessToken, `control-panel-correction-${suffix}`, Number(needsCorrection.body.case.version));
-const correctionBody = joiningCaseDetails("Correction business fixed", "Correction store fixed", cityA, verticalID, commercialStoreTypeID, correctedStoreOrigin);
+const correctionBody = joiningCaseCorrectionBody("Correction business fixed", "Correction store fixed", cityA, verticalID, commercialStoreTypeID, correctedStoreOrigin);
 const corrected = await request(dshBase, "POST", `/dsh/joining-cases/${correctionCaseID}/correct-and-resubmit`, { token: correctionAccessToken, headers: partnerHeaders(`correct-and-resubmit-${suffix}`, correctionProofVersion), body: correctionBody });
 if (corrected.status !== 200 || corrected.body?.case?.state !== "submitted" || corrected.body.case.version !== correctionProofVersion + 1 || corrected.body.case.firstStoreVerticalId !== verticalID || corrected.body.case.firstStoreLatitude !== correctedStoreOrigin.firstStoreLatitude || corrected.body.case.firstStoreLongitude !== correctedStoreOrigin.firstStoreLongitude) fail("joining case correct-and-resubmit did not preserve the corrected store origin", JSON.stringify(corrected));
 const correctionRoleBeforeDisable = await request(identityBase, "GET", `/internal/actors/${encodeURIComponent(correctionActorID)}/roles/partner`, { token: identityDshToken });
@@ -674,7 +782,7 @@ const fieldCorrectionEvidenceVersion = await uploadRequiredJoiningCaseMedia(fiel
 const fieldCorrectionFlow = await requestFieldPartnerAdmission(fieldCorrectionCaseID, secondFieldAccessToken, fieldCorrectionEvidenceVersion, "field-correction-" + suffix);
 const fieldCorrectionSubmitted = fieldCorrectionFlow.operatorSubmitted;
 const fieldNeedsCorrection = await request(dshBase, "POST", `/dsh/joining-cases/${fieldCorrectionCaseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-needs-correction-${suffix}`, crypto.randomUUID(), Number(fieldCorrectionSubmitted.body.case.version)), body: { decision: "needs_correction", correctionReason: "أكمل بيانات ملف الميداني" } });
-const fieldCorrectionBody = joiningCaseDetails("Field correction business fixed", "Field correction store fixed", cityA, verticalID, commercialStoreTypeID, correctedStoreOrigin);
+const fieldCorrectionBody = joiningCaseCorrectionBody("Field correction business fixed", "Field correction store fixed", cityA, verticalID, commercialStoreTypeID, correctedStoreOrigin);
 const fieldCorrectionAsField = await request(dshBase, "POST", `/dsh/joining-cases/${fieldCorrectionCaseID}/correct-and-resubmit`, { token: secondFieldAccessToken, headers: partnerHeaders(`field-correction-as-field-${suffix}`, Number(fieldNeedsCorrection.body?.case?.version)), body: fieldCorrectionBody });
 const fieldCorrectionPartnerAccessToken = await activatePartner(fieldCorrectionPhone, "FCor" + suffix.slice(0, 4));
 const fieldCorrectionProofVersion = await uploadPartnerProofImage(fieldCorrectionCaseID, fieldCorrectionPartnerAccessToken, `field-correction-${suffix}`, Number(fieldNeedsCorrection.body.case.version));
@@ -688,7 +796,7 @@ console.log("DSH_JOINING_CASE_VERTICAL=PASS");
 console.log("DSH_JOINING_CASE_CORRECTION=PASS");
 
 const runtimeCoffeeName = `Runtime Coffee ${suffix}`;
-const productInput = { canonicalName: runtimeCoffeeName, verticalId: verticalID, scope: "SHARED", variantTitle: "عبوة 250 غ", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], identifierType: "GTIN", identifierValue: `628100${suffix.replaceAll("-", "").slice(-7)}` };
+const productInput = { canonicalName: runtimeCoffeeName, verticalId: verticalID, scope: "SHARED", variantTitle: "عبوة 250 غ", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], identifierType: "GTIN", identifierValue: runtimeGTIN("628100") };
 const productCategoryRead = await request(dshBase, "GET", `/dsh/catalog/categories?verticalId=${encodeURIComponent(verticalID)}&limit=50`, { token: dshToken });
 if (productCategoryRead.status !== 200 || !productCategoryRead.body?.categories?.some((category) => category.id === childCategoryID && category.verticalId === verticalID && category.active)) fail("catalog Product category was not active in its vertical at canonical readback", JSON.stringify({ verticalID, childCategoryID, productCategoryRead }));
 const productCategorySQL = sql(`SELECT COALESCE((SELECT vertical_id || ':' || active::text FROM dsh.catalog_categories WHERE id='${sqlLiteral(childCategoryID)}'), 'missing')`);
@@ -744,14 +852,15 @@ const productExpiry = await request(dshBase, "PUT", `/dsh/catalog/products/${pro
 const typedProductRead = await request(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&limit=50`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 if (productMeasurement.status !== 200 || productExpiry.status !== 200 || !typedProductRead.body?.products?.[0]?.attributes?.some((item) => item.attributeId === measurementAttributeID && item.valueKind === "MEASUREMENT" && item.measurementUnit === "kg") || !typedProductRead.body?.products?.[0]?.attributes?.some((item) => item.attributeId === dateAttributeID && item.valueKind === "DATE" && item.dateValue === "2026-12-31")) fail("Product typed Attribute values were not read back canonically", JSON.stringify({ productMeasurement, productExpiry, typedProductRead }));
 const secondVariantID = `variant-secondary-${suffix}`;
-const secondVariantInput = { id: secondVariantID, title: "عبوة 500 غ", measurementKind: "DISCRETE", baseUnit: "COUNT", active: true, identifierType: "SKU", identifierValue: `SKU-${suffix}` };
+const secondaryVariantGTIN = runtimeGTIN("628101");
+const secondVariantInput = { id: secondVariantID, title: "عبوة 500 غ", measurementKind: "DISCRETE", baseUnit: "COUNT", active: true, identifierType: "GTIN", identifierValue: secondaryVariantGTIN };
 const secondVariant = await request(dshBase, "POST", `/dsh/catalog/products/${productID}/variants`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `variant-secondary-${suffix}`), body: secondVariantInput });
 const secondVariantReplay = await request(dshBase, "POST", `/dsh/catalog/products/${productID}/variants`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `variant-secondary-${suffix}`), body: secondVariantInput });
 const secondVariantUpdate = await request(dshBase, "PATCH", `/dsh/catalog/variants/${secondVariantID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `variant-secondary-update-${suffix}`, crypto.randomUUID(), 1), body: { title: "عبوة 500 غ محدثة", measurementKind: "DISCRETE", baseUnit: "COUNT", active: true } });
 const secondVariantStale = await request(dshBase, "PATCH", `/dsh/catalog/variants/${secondVariantID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `variant-secondary-stale-${suffix}`, crypto.randomUUID(), 1), body: { title: "نسخة متقادمة", measurementKind: "DISCRETE", baseUnit: "COUNT", active: true } });
 const duplicateVariant = await request(dshBase, "POST", `/dsh/catalog/products/${productID}/variants`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `variant-duplicate-${suffix}`), body: { id: `variant-duplicate-${suffix}`, title: "معرّف مكرر", measurementKind: "DISCRETE", baseUnit: "COUNT", active: true, identifierType: "GTIN", identifierValue: productInput.identifierValue } });
 if (secondVariant.status !== 201 || secondVariant.body?.variant?.id !== secondVariantID || secondVariantReplay.status !== 200 || secondVariantReplay.body?.idempotentReplay !== true || secondVariantUpdate.status !== 200 || secondVariantUpdate.body?.variant?.version !== 2 || secondVariantStale.status !== 409 || duplicateVariant.status !== 409 || duplicateVariant.body?.error?.code !== "DUPLICATE_IDENTIFIER") fail("Variant lifecycle, version, or identifier guard failed", JSON.stringify({ secondVariant, secondVariantReplay, secondVariantUpdate, secondVariantStale, duplicateVariant }));
-const storeProductInput = { verticalId: storeLocalVerticalID, scope: "STORE_SCOPED", storeId: storeLocal.storeID, canonicalName: `Store Only ${suffix}`, variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", identifierType: "SKU", identifierValue: `STORE-${suffix}` };
+const storeProductInput = { verticalId: verticalID, scope: "STORE_SCOPED", storeId: storeLocal.storeID, canonicalName: `Store Only ${suffix}`, variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", identifierType: "SKU", identifierValue: `STORE-${suffix}` };
 const storeProduct = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/products`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-product-${suffix}`), body: storeProductInput });
 if (storeProduct.status !== 201 || storeProduct.body?.product?.scope !== "STORE_SCOPED" || storeProduct.body.product.storeId !== storeLocal.storeID || storeProduct.body.product.media?.length !== 0) fail("Store-scoped Product creation did not preserve owner scope or start without unbacked media", JSON.stringify(storeProduct));
 const storeProductID = String(storeProduct.body.product.id);
@@ -761,8 +870,8 @@ const storeVariant = await request(dshBase, "POST", `/dsh/stores/${storeLocal.st
 const storeLocalOffer = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/offers`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-local-offer-${suffix}`), body: discreteCreateOffer(storeVariantID, 1000) });
 if (storeVariant.status !== 201 || storeVariant.body?.variant?.productId !== storeProductID || storeLocalOffer.status !== 201 || storeLocalOffer.body?.offer?.publicationState !== "draft") fail("store-local Product Variant or StoreOffer creation failed", JSON.stringify({ storeVariant, storeLocalOffer }));
 const storeLocalOfferID = String(storeLocalOffer.body.offer.offerId);
-const storeProductUpdate = await request(dshBase, "PATCH", `/dsh/stores/${storeLocal.storeID}/products/${storeProductID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-product-update-${suffix}`, 1), body: { verticalId: storeLocalVerticalID, scope: "STORE_SCOPED", canonicalName: `Store Only Updated ${suffix}`, active: true } });
-const storeProductStale = await request(dshBase, "PATCH", `/dsh/stores/${storeLocal.storeID}/products/${storeProductID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-product-stale-${suffix}`, 1), body: { verticalId: storeLocalVerticalID, scope: "STORE_SCOPED", canonicalName: `Store Only Stale ${suffix}`, active: true } });
+const storeProductUpdate = await request(dshBase, "PATCH", `/dsh/stores/${storeLocal.storeID}/products/${storeProductID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-product-update-${suffix}`, 1), body: { verticalId: verticalID, scope: "STORE_SCOPED", canonicalName: `Store Only Updated ${suffix}`, active: true } });
+const storeProductStale = await request(dshBase, "PATCH", `/dsh/stores/${storeLocal.storeID}/products/${storeProductID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-product-stale-${suffix}`, 1), body: { verticalId: verticalID, scope: "STORE_SCOPED", canonicalName: `Store Only Stale ${suffix}`, active: true } });
 const storeVariantUpdate = await request(dshBase, "PATCH", `/dsh/stores/${storeLocal.storeID}/variants/${storeVariantID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-variant-update-${suffix}`, 1), body: { title: "عبوة المتجر محدثة", measurementKind: "DISCRETE", baseUnit: "COUNT", active: true } });
 if (crossStoreProduct.status !== 403 || storeVariant.status !== 201 || storeVariant.body?.variant?.productId !== storeProductID || storeProductUpdate.status !== 200 || storeProductUpdate.body?.product?.version !== 2 || storeProductStale.status !== 409 || storeVariantUpdate.status !== 200 || storeVariantUpdate.body?.variant?.version !== 2) fail("Store-scoped Product/Variant ownership or version boundary failed", JSON.stringify({ crossStoreProduct, storeVariant, storeProductUpdate, storeProductStale, storeVariantUpdate }));
 const partnerMediaUploadForm = () => {
@@ -802,7 +911,7 @@ const partnerLookup = await request(dshBase, "GET", `/dsh/catalog/products?verti
 if (partnerLookup.status !== 200 || !partnerLookup.body?.products?.some((item) => item.id === productID && item.variants?.some((variant) => variant.id === variantID))) fail("partner Product/Variant lookup failed", JSON.stringify(partnerLookup));
 console.log("DSH_PRODUCT_VARIANT=PASS");
 
-const variableProductInput = { canonicalName: `Variable Coffee ${suffix}`, verticalId: verticalID, scope: "SHARED", variantTitle: "وزن متغير", measurementKind: "VARIABLE_MEASURE", baseUnit: "GRAM", categoryIds: [childCategoryID], variantAttributeValues: [{ attributeId: enumAttributeID, valueKind: "ENUM", enumValue: "Dark" }], identifierType: "SKU", identifierValue: `VARIABLE-${suffix}` };
+const variableProductInput = { canonicalName: `Variable Coffee ${suffix}`, verticalId: verticalID, scope: "SHARED", variantTitle: "وزن متغير", measurementKind: "VARIABLE_MEASURE", baseUnit: "GRAM", categoryIds: [childCategoryID], variantAttributeValues: [{ attributeId: enumAttributeID, valueKind: "ENUM", enumValue: "Dark" }], identifierType: "GTIN", identifierValue: runtimeGTIN("628102") };
 const variableProduct = await request(dshBase, "POST", "/dsh/catalog/products", { token: dshToken, headers: serviceHeaders(actingOperatorID, `variable-product-${suffix}`), body: variableProductInput });
 if (variableProduct.status !== 201 || variableProduct.body?.product?.variants?.[0]?.measurementKind !== "VARIABLE_MEASURE") fail("VARIABLE_MEASURE Product creation failed", JSON.stringify(variableProduct));
 const variableProductID = String(variableProduct.body.product.id);
@@ -884,7 +993,7 @@ const sectionID = String(sectionCreate.body.section.id);
 const sectionAttach = await request(dshBase, "PUT", `/dsh/stores/${storeLocal.storeID}/sections/${sectionID}/offers/${storeLocalOfferID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`section-attach-${suffix}`), body: { ordinal: 0 } });
 if (sectionAttach.status !== 200 || !sectionAttach.body?.section?.offerIds?.includes(storeLocalOfferID)) fail("Storefront section offer attachment failed", JSON.stringify(sectionAttach));
 const proposalID = `proposal-${suffix}`;
-const proposalBody = { id: proposalID, verticalId: verticalID, categoryId: childCategoryID, proposedName: `Runtime Proposal ${suffix}`, proposedBrand: "Samrim", proposedVariantTitle: "الافتراضي", proposedMeasurementKind: "DISCRETE", proposedBaseUnit: "COUNT", proposedIdentifierType: "SKU", proposedIdentifierValue: `PROPOSAL-${suffix}` };
+const proposalBody = { id: proposalID, verticalId: verticalID, categoryId: childCategoryID, proposedName: `Runtime Proposal ${suffix}`, proposedBrand: "Samrim", proposedVariantTitle: "الافتراضي", proposedMeasurementKind: "DISCRETE", proposedBaseUnit: "COUNT", proposedIdentifierType: "GTIN", proposedIdentifierValue: runtimeGTIN("628103") };
 const proposalCreate = await request(dshBase, "POST", "/dsh/catalog/product-proposals", { token: first.accessToken, headers: partnerHeaders(`proposal-create-${suffix}`), body: proposalBody });
 if (proposalCreate.status !== 201 || proposalCreate.body?.proposal?.state !== "draft" || proposalCreate.body.proposal.version !== 1 || Object.hasOwn(proposalCreate.body.proposal, "proposedImageUri")) fail("Product proposal creation failed or exposed a raw image URL", JSON.stringify(proposalCreate));
 
@@ -905,9 +1014,9 @@ const importedName = `Runtime Imported ${suffix}`;
 const importSourceSha256 = crypto.createHash("sha256").update(importRunID).digest("hex");
 const importVariantAttributeValues = [{ attributeId: enumAttributeID, valueKind: "ENUM", enumValue: "Dark" }];
 const importRows = [
-  { rowNumber: 1, stableKey: `import-ready-${suffix}`, verticalId: verticalID, scope: "SHARED", canonicalName: importedName, variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], variantAttributeValues: importVariantAttributeValues, identifierType: "SKU", identifierValue: `IMPORTED-${suffix}` },
+  { rowNumber: 1, stableKey: `import-ready-${suffix}`, verticalId: verticalID, scope: "SHARED", canonicalName: importedName, variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], variantAttributeValues: importVariantAttributeValues, identifierType: "GTIN", identifierValue: runtimeGTIN("628104") },
   { rowNumber: 2, stableKey: `import-conflict-${suffix}`, verticalId: verticalID, scope: "SHARED", canonicalName: `Conflicting ${suffix}`, variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], variantAttributeValues: importVariantAttributeValues, identifierType: "GTIN", identifierValue: productInput.identifierValue },
-  { rowNumber: 3, stableKey: `import-ready-${suffix}`, verticalId: verticalID, scope: "SHARED", canonicalName: `Duplicate ${suffix}`, variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], variantAttributeValues: importVariantAttributeValues, identifierType: "SKU", identifierValue: `IMPORTED-DUP-${suffix}` },
+  { rowNumber: 3, stableKey: `import-ready-${suffix}`, verticalId: verticalID, scope: "SHARED", canonicalName: `Duplicate ${suffix}`, variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], variantAttributeValues: importVariantAttributeValues, identifierType: "GTIN", identifierValue: runtimeGTIN("628105") },
 ];
 const importPreview = await request(dshBase, "POST", "/dsh/catalog/imports/preview", { token: dshToken, headers: serviceHeaders(actingOperatorID, `import-preview-${suffix}`), body: { runId: importRunID, sourceSha256: importSourceSha256, rows: importRows } });
 
@@ -925,7 +1034,7 @@ const retryCategoryID = `import-retry-category-${suffix}`;
 const retryRunID = `import-retry-${suffix}`;
 
 const retrySourceSha256 = crypto.createHash("sha256").update(retryRunID).digest("hex");
-const retryRow = { rowNumber: 1, stableKey: `import-retry-row-${suffix}`, verticalId: verticalID, scope: "SHARED", canonicalName: `Runtime Retry ${suffix}`, variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [retryCategoryID], identifierType: "SKU", identifierValue: `RETRY-${suffix}` };
+const retryRow = { rowNumber: 1, stableKey: `import-retry-row-${suffix}`, verticalId: verticalID, scope: "SHARED", canonicalName: `Runtime Retry ${suffix}`, variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [retryCategoryID], identifierType: "GTIN", identifierValue: runtimeGTIN("628106") };
 const retryPreview = await request(dshBase, "POST", "/dsh/catalog/imports/preview", { token: dshToken, headers: serviceHeaders(actingOperatorID, `import-retry-preview-${suffix}`), body: { runId: retryRunID, sourceSha256: retrySourceSha256, rows: [retryRow] } });
 const retryCommitFailed = await request(dshBase, "POST", `/dsh/catalog/imports/${retryRunID}/commit`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `import-retry-commit-${suffix}`), body: undefined });
 const retryCategoryCreate = await request(dshBase, "POST", "/dsh/catalog/categories", { token: dshToken, headers: serviceHeaders(actingOperatorID, `import-retry-category-${suffix}`), body: { id: retryCategoryID, verticalId: verticalID, nameAr: `استرداد ${suffix}`, nameEn: `Recovery ${suffix}`, active: true, reason: "DSH runtime import recovery proof" } });
@@ -933,6 +1042,42 @@ const retryCommitRecovered = await request(dshBase, "POST", `/dsh/catalog/import
 const retryItem = retryCommitRecovered.body?.items?.find((item) => item.rowNumber === 1);
 if (retryPreview.status !== 201 || retryCommitFailed.status !== 200 || retryCommitFailed.body?.run?.state !== "rejected" || retryCommitFailed.body?.items?.[0]?.classification !== "FAILED" || retryCategoryCreate.status !== 201 || retryCommitRecovered.status !== 200 || retryCommitRecovered.body?.run?.state !== "committed" || retryItem?.classification !== "IMPORTED") fail("catalog import rejected-run recovery retry failed", JSON.stringify({ retryPreview, retryCommitFailed, retryCategoryCreate, retryCommitRecovered }));
 console.log("DSH_CATALOG_IMPORT=PASS");
+
+const fieldCatalogUnbarcodedInput = { canonicalName: `Field Shared No Barcode ${suffix}`, verticalId: verticalID, scope: "SHARED", variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [childCategoryID], variantAttributeValues: [{ attributeId: enumAttributeID, valueKind: "ENUM", enumValue: "Dark" }] };
+const fieldCatalogUnbarcodedCreate = await request(dshBase, "POST", "/dsh/catalog/products", { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-shared-no-barcode-${suffix}`), body: fieldCatalogUnbarcodedInput });
+const fieldCatalogUnbarcodedID = String(fieldCatalogUnbarcodedCreate.body?.product?.id || "");
+const fieldCatalogPartnerPhone = `+96776${crypto.randomInt(1_000_000, 9_999_999)}`;
+const fieldCatalogPartner = await createApprovedPartner(fieldCatalogPartnerPhone, "Field Catalog Runtime", cityA, "field");
+const fieldCatalogPath = `/dsh/field/joining-cases/${encodeURIComponent(fieldCatalogPartner.caseID)}/catalog`;
+const fieldCatalogInitialRead = await request(dshBase, "GET", `${fieldCatalogPath}?limit=100`, { token: fieldAccessToken });
+const fieldCatalogListedShared = fieldCatalogInitialRead.body?.products?.find((item) => item.id === productID);
+const fieldCatalogListedUnbarcoded = fieldCatalogInitialRead.body?.products?.find((item) => item.id === fieldCatalogUnbarcodedID);
+const fieldCatalogBarcodeResolve = await request(dshBase, "POST", "/dsh/field/catalog/identifiers/resolve", { token: fieldAccessToken, body: { joiningCaseId: fieldCatalogPartner.caseID, identifierValue: productInput.identifierValue } });
+const fieldCatalogNoBarcodeSearch = await request(dshBase, "GET", `${fieldCatalogPath}?limit=100&q=${encodeURIComponent(fieldCatalogUnbarcodedInput.canonicalName)}`, { token: fieldAccessToken });
+const fieldCatalogUnbarcodedVariantID = String(fieldCatalogUnbarcodedCreate.body?.product?.variants?.[0]?.id || "");
+const fieldCatalogSharedOfferKey = `field-shared-offer-${suffix}`;
+const fieldCatalogSharedOfferBody = discreteCreateOffer(variantID, 777);
+const fieldCatalogSharedOffer = await request(dshBase, "POST", `${fieldCatalogPath}/offers`, { token: fieldAccessToken, headers: partnerHeaders(fieldCatalogSharedOfferKey), body: fieldCatalogSharedOfferBody });
+const fieldCatalogSharedOfferReplay = await request(dshBase, "POST", `${fieldCatalogPath}/offers`, { token: fieldAccessToken, headers: partnerHeaders(fieldCatalogSharedOfferKey), body: fieldCatalogSharedOfferBody });
+const fieldCatalogNoBarcodeOffer = await request(dshBase, "POST", `${fieldCatalogPath}/offers`, { token: fieldAccessToken, headers: partnerHeaders(`field-no-barcode-offer-${suffix}`), body: discreteCreateOffer(fieldCatalogUnbarcodedVariantID, 888) });
+const fieldLocalIdentifier = `FIELD-${suffix}`;
+const fieldLocalIdentifierResolve = await request(dshBase, "POST", "/dsh/field/catalog/identifiers/resolve", { token: fieldAccessToken, body: { joiningCaseId: fieldCatalogPartner.caseID, identifierValue: fieldLocalIdentifier } });
+const fieldLocalProductBody = { canonicalName: `Field Local Product ${suffix}`, description: "Disposable runtime Field initial-catalog fixture", variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", identifierType: "SKU", identifierValue: fieldLocalIdentifier };
+const fieldLocalProductKey = `field-local-product-${suffix}`;
+const fieldLocalProduct = await request(dshBase, "POST", `${fieldCatalogPath}/products`, { token: fieldAccessToken, headers: partnerHeaders(fieldLocalProductKey), body: fieldLocalProductBody });
+const fieldLocalProductReplay = await request(dshBase, "POST", `${fieldCatalogPath}/products`, { token: fieldAccessToken, headers: partnerHeaders(fieldLocalProductKey), body: fieldLocalProductBody });
+const fieldLocalProductID = String(fieldLocalProduct.body?.product?.id || "");
+const fieldLocalVariantID = String(fieldLocalProduct.body?.product?.variants?.[0]?.id || "");
+const fieldLocalIdentifierRead = await request(dshBase, "POST", "/dsh/field/catalog/identifiers/resolve", { token: fieldAccessToken, body: { joiningCaseId: fieldCatalogPartner.caseID, identifierValue: fieldLocalIdentifier } });
+const fieldCatalogLocalOfferKey = `field-local-offer-${suffix}`;
+const fieldCatalogLocalOfferBody = discreteCreateOffer(fieldLocalVariantID, 999);
+const fieldCatalogLocalOffer = await request(dshBase, "POST", `${fieldCatalogPath}/offers`, { token: fieldAccessToken, headers: partnerHeaders(fieldCatalogLocalOfferKey), body: fieldCatalogLocalOfferBody });
+const fieldCatalogLocalOfferReplay = await request(dshBase, "POST", `${fieldCatalogPath}/offers`, { token: fieldAccessToken, headers: partnerHeaders(fieldCatalogLocalOfferKey), body: fieldCatalogLocalOfferBody });
+const fieldCatalogFinalRead = await request(dshBase, "GET", `${fieldCatalogPath}?limit=100`, { token: fieldAccessToken });
+if (fieldCatalogUnbarcodedCreate.status !== 201 || !fieldCatalogUnbarcodedID || !fieldCatalogUnbarcodedVariantID || fieldCatalogPartner.activeAgreement?.status !== "ACTIVE" || fieldCatalogInitialRead.status !== 200 || fieldCatalogInitialRead.body?.joiningCaseId !== fieldCatalogPartner.caseID || fieldCatalogInitialRead.body?.storeId !== fieldCatalogPartner.storeID || fieldCatalogListedShared?.scope !== "SHARED" || !fieldCatalogListedShared?.variants?.some((variant) => variant.identifiers?.some((identifier) => identifier.value === productInput.identifierValue)) || fieldCatalogListedUnbarcoded?.scope !== "SHARED" || (fieldCatalogListedUnbarcoded?.variants?.[0]?.identifiers?.length ?? -1) !== 0 || fieldCatalogBarcodeResolve.status !== 200 || fieldCatalogBarcodeResolve.body?.resolution?.outcome !== "SHARED_PRODUCT_MATCH" || fieldCatalogBarcodeResolve.body.resolution.productId !== productID || fieldCatalogNoBarcodeSearch.status !== 200 || !fieldCatalogNoBarcodeSearch.body?.products?.some((item) => item.id === fieldCatalogUnbarcodedID && item.scope === "SHARED") || fieldCatalogSharedOffer.status !== 201 || fieldCatalogSharedOffer.body?.offer?.priceMinor !== 777 || fieldCatalogSharedOfferReplay.status !== 200 || fieldCatalogSharedOfferReplay.body?.idempotentReplay !== true || fieldCatalogNoBarcodeOffer.status !== 201 || fieldCatalogNoBarcodeOffer.body?.offer?.priceMinor !== 888 || fieldLocalIdentifierResolve.status !== 200 || fieldLocalIdentifierResolve.body?.resolution?.outcome !== "UNKNOWN_IDENTIFIER" || fieldLocalProduct.status !== 201 || fieldLocalProduct.body?.product?.scope !== "STORE_SCOPED" || fieldLocalProduct.body.product.storeId !== fieldCatalogPartner.storeID || fieldLocalProductReplay.status !== 200 || fieldLocalProductReplay.body?.idempotentReplay !== true || fieldLocalIdentifierRead.status !== 200 || fieldLocalIdentifierRead.body?.resolution?.outcome !== "STORE_LOCAL_PRODUCT_MATCH" || fieldLocalIdentifierRead.body.resolution.productId !== fieldLocalProductID || fieldCatalogLocalOffer.status !== 201 || fieldCatalogLocalOffer.body?.offer?.priceMinor !== 999 || fieldCatalogLocalOfferReplay.status !== 200 || fieldCatalogLocalOfferReplay.body?.idempotentReplay !== true || fieldCatalogFinalRead.status !== 200 || ![fieldCatalogSharedOffer.body?.offer?.offerId, fieldCatalogNoBarcodeOffer.body?.offer?.offerId, fieldCatalogLocalOffer.body?.offer?.offerId].every((id) => fieldCatalogFinalRead.body?.offers?.some((item) => item.offerId === id && item.publicationState === "draft"))) {
+  fail("Field initial catalog shared/barcode/local/quick-price journey or owner-scoped readback failed", JSON.stringify({ fieldCatalogUnbarcodedCreate, fieldCatalogPartner: { caseID: fieldCatalogPartner.caseID, storeID: fieldCatalogPartner.storeID, activeAgreement: fieldCatalogPartner.activeAgreement }, fieldCatalogInitialRead, fieldCatalogBarcodeResolve, fieldCatalogNoBarcodeSearch, fieldCatalogSharedOffer, fieldCatalogSharedOfferReplay, fieldCatalogNoBarcodeOffer, fieldLocalIdentifierResolve, fieldLocalProduct, fieldLocalProductReplay, fieldLocalIdentifierRead, fieldCatalogLocalOffer, fieldCatalogLocalOfferReplay, fieldCatalogFinalRead }));
+}
+console.log("DSH_FIELD_INITIAL_CATALOG=PASS");
 console.log("DSH_STORE_OFFER=PASS");
 console.log("DSH_PROPOSAL_LIFECYCLE=PASS");
 
@@ -941,6 +1086,9 @@ const fieldAcquisitionRewardPolicy = await request(dshBase, "POST", "/dsh/operat
 if (fieldAcquisitionRewardPolicy.status !== 201 || fieldAcquisitionRewardPolicy.body?.policy?.scopeType !== "STORE_TYPE" || fieldAcquisitionRewardPolicy.body?.policy?.scopeId !== commercialStoreTypeID || fieldAcquisitionRewardPolicy.body?.policy?.rewardMinor !== fieldAcquisitionRewardMinor || fieldAcquisitionRewardPolicy.body?.policy?.roundingUnitMinor !== 50 || fieldAcquisitionRewardPolicy.body?.policy?.state !== "ACTIVE") fail("Field acquisition reward policy activation did not preserve Finance-owned store-type scope and rounding", JSON.stringify(fieldAcquisitionRewardPolicy));
 const fieldAcquisitionRewardPolicyRead = await request(dshBase, "GET", `/dsh/operator/field-acquisition-reward-policies?scopeType=STORE_TYPE&scopeId=${encodeURIComponent(commercialStoreTypeID)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 if (fieldAcquisitionRewardPolicyRead.status !== 200 || fieldAcquisitionRewardPolicyRead.body?.policy?.id !== fieldAcquisitionRewardPolicy.body.policy.id || fieldAcquisitionRewardPolicyRead.body.policy?.state !== "ACTIVE" || fieldAcquisitionRewardPolicyRead.body.policy?.scopeId !== commercialStoreTypeID) fail("Field acquisition reward policy readback did not return the active store-type policy", JSON.stringify({ fieldAcquisitionRewardPolicy, fieldAcquisitionRewardPolicyRead }));
+const storeLocalFieldRewardPolicy = await request(dshBase, "POST", "/dsh/operator/field-acquisition-reward-policies", { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-acquisition-local-type-policy-${suffix}`), body: { scopeType: "STORE_TYPE", scopeId: storeLocalCommercialStoreTypeID, rewardMinor: fieldAcquisitionRewardMinor, roundingUnitMinor: 50, expectedVersion: 0, reason: "DSH runtime Store-local Field acquisition reward proof" } });
+const storeLocalFieldRewardPolicyRead = await request(dshBase, "GET", `/dsh/operator/field-acquisition-reward-policies?scopeType=STORE_TYPE&scopeId=${encodeURIComponent(storeLocalCommercialStoreTypeID)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+if (storeLocalFieldRewardPolicy.status !== 201 || storeLocalFieldRewardPolicy.body?.policy?.scopeId !== storeLocalCommercialStoreTypeID || storeLocalFieldRewardPolicy.body?.policy?.state !== "ACTIVE" || storeLocalFieldRewardPolicyRead.status !== 200 || storeLocalFieldRewardPolicyRead.body?.policy?.id !== storeLocalFieldRewardPolicy.body?.policy?.id || storeLocalFieldRewardPolicyRead.body?.policy?.state !== "ACTIVE") fail("Field acquisition reward policy did not activate and read back for the Store-local commercial type", JSON.stringify({ storeLocalFieldRewardPolicy, storeLocalFieldRewardPolicyRead }));
 console.log("DSH_FIELD_ACQUISITION_REWARD_POLICY=PASS");
 const publishA = await request(dshBase, "POST", `/dsh/stores/${first.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-a-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
 const publishB = await request(dshBase, "POST", `/dsh/stores/${second.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-b-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
@@ -961,30 +1109,33 @@ console.log("DSH_PRODUCT_REGISTRY_PROJECTION=PASS");
 const secondPickupModesKey = "store-b-fulfillment-modes-" + suffix;
 const secondPickupModesPath = "/dsh/stores/" + encodeURIComponent(second.storeID) + "/fulfillment-modes";
 const secondPickupModesBody = { fulfillmentModes: ["BTHWANI_CAPTAIN", "CUSTOMER_PICKUP"] };
-await ensureCommissionPolicy(commercialStoreTypeID, "CUSTOMER_PICKUP", 1500);
+await ensureCommissionDefault(commercialStoreTypeID, "CUSTOMER_PICKUP", 1500);
 const secondPickupModesHeaders = serviceHeaders(actingOperatorID, secondPickupModesKey, crypto.randomUUID(), publishB.body.store.version);
 const secondPickupModes = await request(dshBase, "POST", secondPickupModesPath, { token: dshToken, headers: secondPickupModesHeaders, body: secondPickupModesBody });
 const secondPickupModesReplay = await request(dshBase, "POST", secondPickupModesPath, { token: dshToken, headers: secondPickupModesHeaders, body: secondPickupModesBody });
 if (secondPickupModes.status !== 200 || secondPickupModes.body?.storeId !== second.storeID || secondPickupModes.body?.fulfillmentModes?.join(",") !== "BTHWANI_CAPTAIN,CUSTOMER_PICKUP" || secondPickupModes.body?.version !== publishB.body.store.version + 1 || secondPickupModesReplay.status !== 200 || secondPickupModesReplay.body?.idempotentReplay !== true || secondPickupModesReplay.body?.version !== secondPickupModes.body.version) fail("second store fulfillment modes did not enable pickup with a stable idempotent version", JSON.stringify({ secondPickupModes, secondPickupModesReplay, publishB }));
+const secondPickupAgreement = await activateStoreCommercialAgreement(second.caseID, second.storeID, second.actorID, second.accessToken, fieldActorID, fieldAccessToken, secondPickupModes.body.fulfillmentModes, commercialStoreTypeID);
+if (secondPickupAgreement.agreementVersion !== 2 || secondPickupAgreement.rates?.length !== 2 || !secondPickupAgreement.rates.some((rate) => rate.fulfillmentMode === "CUSTOMER_PICKUP")) fail("updated Store modes did not receive a new active Partner and Finance agreement version", JSON.stringify(secondPickupAgreement));
+const expectedFieldEntitlementMinor = fieldAcquisitionRewardMinor * 2;
 const fieldSummaryDeadline = Date.now() + 95_000;
 let fieldFinancialSummary = null;
 while (Date.now() < fieldSummaryDeadline) {
   const response = await request(dshBase, "GET", `/dsh/operator/fields/${encodeURIComponent(fieldActorID)}/financial-summary`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
   fieldFinancialSummary = response;
   const summary = response.body?.summary;
-  if (response.status === 200 && summary?.fieldActorId === fieldActorID && summary?.currency === "YER" && summary?.earnedMinor === fieldAcquisitionRewardMinor && summary?.entitlementMinor === fieldAcquisitionRewardMinor && summary?.partnerCount === 1) {
+  if (response.status === 200 && summary?.fieldActorId === fieldActorID && summary?.currency === "YER" && summary?.earnedMinor === expectedFieldEntitlementMinor && summary?.entitlementMinor === expectedFieldEntitlementMinor && summary?.partnerCount === 2) {
     break;
   }
   await new Promise((resolve) => setTimeout(resolve, 2_000));
 }
-const fieldEarningCount = sql(`SELECT count(*) FROM wlt.field_acquisition_entitlements WHERE field_actor_id='${sqlLiteral(fieldActorID)}' AND store_id='${sqlLiteral(second.storeID)}'`);
-if (!fieldFinancialSummary || fieldEarningCount !== "1") fail("Field commission was not posted exactly once after customer-visible publication", JSON.stringify({ fieldFinancialSummary, fieldEarningCount, publishB }));
+const fieldEarningCount = sql(`SELECT count(*) || ':' || count(DISTINCT store_id) FROM wlt.field_acquisition_entitlements WHERE field_actor_id='${sqlLiteral(fieldActorID)}' AND store_id IN ('${sqlLiteral(first.storeID)}','${sqlLiteral(second.storeID)}')`);
+if (!fieldFinancialSummary || fieldEarningCount !== "2:2") fail("Field commission was not posted exactly once for each customer-visible Field-origin Store", JSON.stringify({ fieldFinancialSummary, fieldEarningCount, publishB }));
 const fieldHidden = await request(dshBase, "POST", `/dsh/stores/${second.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-b-hide-${suffix}`, crypto.randomUUID(), secondPickupModes.body.version), body: { state: "hidden" } });
 const fieldPublicAfterHide = await request(dshBase, "GET", `/dsh/public/stores/${second.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}`);
 const fieldRepublished = await request(dshBase, "POST", `/dsh/stores/${second.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-b-republish-${suffix}`, crypto.randomUUID(), fieldHidden.body.store.version), body: { state: "published" } });
 const fieldSummaryAfterRepublish = await request(dshBase, "GET", `/dsh/operator/fields/${encodeURIComponent(fieldActorID)}/financial-summary`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
-const fieldEarningCountAfterRepublish = sql(`SELECT count(*) FROM wlt.field_acquisition_entitlements WHERE field_actor_id='${sqlLiteral(fieldActorID)}' AND store_id='${sqlLiteral(second.storeID)}'`);
-if (fieldHidden.status !== 200 || fieldPublicAfterHide.status !== 404 || fieldRepublished.status !== 200 || fieldSummaryAfterRepublish.status !== 200 || fieldSummaryAfterRepublish.body?.summary?.earnedMinor !== fieldAcquisitionRewardMinor || fieldSummaryAfterRepublish.body?.summary?.entitlementMinor !== fieldAcquisitionRewardMinor || fieldSummaryAfterRepublish.body?.summary?.partnerCount !== 1 || fieldEarningCountAfterRepublish !== "1") fail("Field commission was reversed or duplicated across hide and republish", JSON.stringify({ fieldHidden, fieldPublicAfterHide, fieldRepublished, fieldSummaryAfterRepublish, fieldEarningCountAfterRepublish }));
+const fieldEarningCountAfterRepublish = sql(`SELECT count(*) || ':' || count(DISTINCT store_id) FROM wlt.field_acquisition_entitlements WHERE field_actor_id='${sqlLiteral(fieldActorID)}' AND store_id IN ('${sqlLiteral(first.storeID)}','${sqlLiteral(second.storeID)}')`);
+if (fieldHidden.status !== 200 || fieldPublicAfterHide.status !== 404 || fieldRepublished.status !== 200 || fieldSummaryAfterRepublish.status !== 200 || fieldSummaryAfterRepublish.body?.summary?.earnedMinor !== expectedFieldEntitlementMinor || fieldSummaryAfterRepublish.body?.summary?.entitlementMinor !== expectedFieldEntitlementMinor || fieldSummaryAfterRepublish.body?.summary?.partnerCount !== 2 || fieldEarningCountAfterRepublish !== "2:2") fail("Field commission was reversed or duplicated across hide and republish", JSON.stringify({ fieldHidden, fieldPublicAfterHide, fieldRepublished, fieldSummaryAfterRepublish, fieldEarningCountAfterRepublish }));
 console.log("DSH_FIELD_ACQUISITION_ENTITLEMENT_PUBLICATION=PASS");
 const publicCatalog = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}&categoryId=${encodeURIComponent(childCategoryID)}&q=${encodeURIComponent(productInput.canonicalName)}`);
 const publicParentCategory = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}&categoryId=${encodeURIComponent(categoryID)}`);
@@ -1036,7 +1187,8 @@ const wrongRole = await request(dshBase, "POST", "/dsh/serviceability", { token:
 if (wrongRole.status !== 403) fail("serviceability accepted partner role", JSON.stringify(wrongRole));
 console.log("DSH_SERVICEABILITY=PASS");
 
-const renameBody = { canonicalName: "Runtime Coffee Renamed", verticalId: verticalID, scope: "SHARED", active: true };
+const renameVariantAttributes = [{ attributeId: enumAttributeID, valueKind: "ENUM", enumValue: "Dark" }];
+const renameBody = { canonicalName: "Runtime Coffee Renamed", verticalId: verticalID, scope: "SHARED", active: true, categoryIds: [categoryID, childCategoryID], attributeValues: [{ attributeId: measurementAttributeID, valueKind: "MEASUREMENT", decimalValue: "0.25", measurementUnit: "kg" }, { attributeId: dateAttributeID, valueKind: "DATE", dateValue: "2026-12-31" }], variantAttributeValues: [{ variantId: variantID, values: renameVariantAttributes }, { variantId: secondVariantID, values: renameVariantAttributes }] };
 const renameSource = await request(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&limit=50`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 const renameProduct = renameSource.body?.products?.find((item) => item.id === productID);
 const renameExpectedVersion = Number(renameProduct?.version);
@@ -1047,13 +1199,13 @@ const renameDBReadback = sql(`SELECT jsonb_build_object(
   'scope', p.scope,
   'storeId', p.store_id,
   'active', p.active,
-  'vertical', CASE WHEN cv.id IS NULL THEN NULL ELSE jsonb_build_object('id', cv.id, 'active', cv.active, 'catalogModel', cv.catalog_model) END,
+  'vertical', CASE WHEN cv.id IS NULL THEN NULL ELSE jsonb_build_object('id', cv.id, 'active', cv.active) END,
   'categories', COALESCE((SELECT jsonb_agg(jsonb_build_object('id', c.id, 'verticalId', c.vertical_id, 'active', c.active) ORDER BY c.id)
     FROM dsh.catalog_product_categories pc LEFT JOIN dsh.catalog_categories c ON c.id=pc.category_id WHERE pc.product_id=p.id), '[]'::jsonb)
 )::text FROM dsh.catalog_products p LEFT JOIN dsh.commerce_verticals cv ON cv.id=p.vertical_id WHERE p.id='${sqlLiteral(productID)}'`);
 const renameDatabaseProduct = renameDBReadback ? JSON.parse(renameDBReadback) : null;
 const renameDatabaseCategories = Array.isArray(renameDatabaseProduct?.categories) ? renameDatabaseProduct.categories : [];
-const renamePreconditionsOK = renameSource.status === 200 && Number.isInteger(renameExpectedVersion) && renameExpectedVersion >= 1 && renameDatabaseProduct?.productId === productID && renameDatabaseProduct.version === renameExpectedVersion && renameDatabaseProduct.verticalId === verticalID && renameDatabaseProduct.scope === "SHARED" && renameDatabaseProduct.storeId == null && renameDatabaseProduct.active === true && renameDatabaseProduct.vertical?.id === verticalID && renameDatabaseProduct.vertical.active === true && renameDatabaseProduct.vertical.catalogModel === "SHARED_CATALOG" && renameDatabaseCategories.length === 2 && renameDatabaseCategories.every((item) => item.id && item.verticalId === verticalID && item.active === true) && [categoryID, childCategoryID].every((id) => renameProduct.categoryIds?.includes(id));
+const renamePreconditionsOK = renameSource.status === 200 && Number.isInteger(renameExpectedVersion) && renameExpectedVersion >= 1 && renameDatabaseProduct?.productId === productID && renameDatabaseProduct.version === renameExpectedVersion && renameDatabaseProduct.verticalId === verticalID && renameDatabaseProduct.scope === "SHARED" && renameDatabaseProduct.storeId == null && renameDatabaseProduct.active === true && renameDatabaseProduct.vertical?.id === verticalID && renameDatabaseProduct.vertical.active === true && renameDatabaseCategories.length === 2 && renameDatabaseCategories.every((item) => item.id && item.verticalId === verticalID && item.active === true) && [categoryID, childCategoryID].every((id) => renameProduct.categoryIds?.includes(id));
 if (!renamePreconditionsOK) fail("catalog Product update preconditions diverged from canonical API or database readback", JSON.stringify({ renameSource, renameDBReadback, productMediaCleanup }));
 const renameResultVersion = renameExpectedVersion + 1;
 const renamed = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `rename-${suffix}`, crypto.randomUUID(), renameExpectedVersion), body: renameBody });
@@ -1098,6 +1250,10 @@ if (modifierOptionCreate.status !== 201 || !modifierOptionCreate.body?.option?.i
 const modifierOptionID = String(modifierOptionCreate.body.option.id);
 const storeLocalOfferPublished = await request(dshBase, "PATCH", `/dsh/stores/${storeLocal.storeID}/offers/${storeLocalOfferID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`store-local-offer-publish-${suffix}`, 1), body: discreteOffer(1000, "published") });
 const storeLocalPublished = await request(dshBase, "POST", `/dsh/stores/${storeLocal.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-local-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
+const storeLocalFieldEntitlementQuery = `SELECT count(*) || ':' || count(DISTINCT store_id) FROM wlt.field_acquisition_entitlements WHERE field_actor_id='${sqlLiteral(fieldActorID)}' AND store_id IN ('${sqlLiteral(first.storeID)}','${sqlLiteral(second.storeID)}','${sqlLiteral(storeLocal.storeID)}')`;
+await waitForSQL(storeLocalFieldEntitlementQuery, "3:3", "Field acquisition entitlement did not post once for the newly published Field-origin store", 120_000);
+const storeLocalFieldSummary = await request(dshBase, "GET", `/dsh/operator/fields/${encodeURIComponent(fieldActorID)}/financial-summary`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+if (storeLocalFieldSummary.status !== 200 || storeLocalFieldSummary.body?.summary?.earnedMinor !== expectedFieldEntitlementMinor + fieldAcquisitionRewardMinor || storeLocalFieldSummary.body?.summary?.entitlementMinor !== expectedFieldEntitlementMinor + fieldAcquisitionRewardMinor || storeLocalFieldSummary.body?.summary?.partnerCount !== 3) fail("Field-origin Store publication did not add exactly one canonical acquisition entitlement", JSON.stringify({ storeLocalFieldSummary, storeLocalFieldEntitlementCount: sql(storeLocalFieldEntitlementQuery) }));
 const storeLocalCartCreate = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`store-local-cart-${suffix}`, 0), body: { storeId: storeLocal.storeID, storeOfferId: storeLocalOfferID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
 const storeLocalCartID = String(storeLocalCartCreate.body?.cart?.id || "");
 const modifierAttach = await request(dshBase, "PUT", `/dsh/stores/${storeLocal.storeID}/offers/${storeLocalOfferID}/modifier-groups/${modifierGroupID}`, { token: storeLocal.accessToken, headers: partnerHeaders(`modifier-attach-${suffix}`), body: { ordinal: 0 } });
@@ -1234,7 +1390,8 @@ if (!pickupPaymentIntentID) fail("pickup checkout did not link a WLT payment int
 const pickupCheckoutReplay = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: pickupCheckoutHeaders, body: pickupCheckoutBody });
 const pickupPaymentBeforeCollection = await request(wltBase, "GET", "/wlt/v1/payment-intents/" + encodeURIComponent(pickupPaymentIntentID), { token: wltToken });
 const pickupInitialAllocation = pickupPaymentBeforeCollection.body?.paymentIntent?.customerPaymentAllocation;
-if (pickupOrder.fulfillmentMode !== "CUSTOMER_PICKUP" || pickupOrder.paymentMethod !== "CASH_AT_STORE" || pickupOrder.paymentState !== "REQUIRES_COLLECTION" || pickupOrder.subtotalAmountMinor !== 1500 || pickupOrder.totalAmountMinor !== 1500 || pickupOrder.addressId || pickupOrder.addressText || pickupOrder.pickupLocation?.latitude !== pickupStoreOrigin.body.origin.latitude || pickupOrder.pickupLocation?.longitude !== pickupStoreOrigin.body.origin.longitude || pickupCheckoutReplay.status !== 200 || pickupCheckoutReplay.body?.idempotentReplay !== true || pickupCheckoutReplay.body?.order?.id !== pickupOrderID || pickupPaymentBeforeCollection.status !== 200 || pickupPaymentBeforeCollection.body?.paymentIntent?.state !== "REQUIRES_COLLECTION" || pickupPaymentBeforeCollection.body.paymentIntent.method !== "CASH_AT_STORE" || pickupPaymentBeforeCollection.body.paymentIntent.amountMinor !== 1500 || pickupInitialAllocation?.orderId !== pickupOrderID || pickupInitialAllocation?.currency !== "YER" || pickupInitialAllocation?.subtotalMinor !== 1500 || pickupInitialAllocation?.deliveryFeeMinor !== 0 || pickupInitialAllocation?.discountMinor !== 0 || pickupInitialAllocation?.internalBalanceAmountMinor !== 0 || pickupInitialAllocation?.cashAmountMinor !== 1500 || pickupInitialAllocation?.customerPayableMinor !== 1500 || pickupInitialAllocation?.policyVersion !== "cash-at-store-v1") fail("pickup checkout did not preserve no-address, zero-fee, cash-at-store WLT allocation semantics", JSON.stringify({ pickupCheckout, pickupCheckoutReplay, pickupPaymentBeforeCollection, pickupStoreOrigin }));
+const pickupAllocationSnapshot = sql(`SELECT count(*) FROM wlt.customer_payment_allocations WHERE order_id='${sqlLiteral(pickupOrderID)}' AND payment_intent_id='${sqlLiteral(pickupPaymentIntentID)}' AND policy_version='cash-at-store-v1' AND fulfillment_mode='CUSTOMER_PICKUP' AND commission_snapshot_source='STORE_AGREEMENT' AND commission_agreement_id_snapshot='${sqlLiteral(secondPickupAgreement.agreementId)}' AND commission_agreement_version_snapshot=${secondPickupAgreement.agreementVersion} AND commission_rate_bps_snapshot=1500 AND commission_calculation_basis_snapshot='SUBTOTAL_MINUS_DISCOUNT'`);
+if (pickupOrder.fulfillmentMode !== "CUSTOMER_PICKUP" || pickupOrder.paymentMethod !== "CASH_AT_STORE" || pickupOrder.paymentState !== "REQUIRES_COLLECTION" || pickupOrder.subtotalAmountMinor !== 1500 || pickupOrder.totalAmountMinor !== 1500 || pickupOrder.addressId || pickupOrder.addressText || pickupOrder.pickupLocation?.latitude !== pickupStoreOrigin.body.origin.latitude || pickupOrder.pickupLocation?.longitude !== pickupStoreOrigin.body.origin.longitude || pickupCheckoutReplay.status !== 200 || pickupCheckoutReplay.body?.idempotentReplay !== true || pickupCheckoutReplay.body?.order?.id !== pickupOrderID || pickupPaymentBeforeCollection.status !== 200 || pickupPaymentBeforeCollection.body?.paymentIntent?.state !== "REQUIRES_COLLECTION" || pickupPaymentBeforeCollection.body.paymentIntent.method !== "CASH_AT_STORE" || pickupPaymentBeforeCollection.body.paymentIntent.amountMinor !== 1500 || pickupInitialAllocation?.orderId !== pickupOrderID || pickupInitialAllocation?.currency !== "YER" || pickupInitialAllocation?.subtotalMinor !== 1500 || pickupInitialAllocation?.deliveryFeeMinor !== 0 || pickupInitialAllocation?.discountMinor !== 0 || pickupInitialAllocation?.internalBalanceAmountMinor !== 0 || pickupInitialAllocation?.cashAmountMinor !== 1500 || pickupInitialAllocation?.customerPayableMinor !== 1500 || pickupInitialAllocation?.policyVersion !== "cash-at-store-v1" || pickupAllocationSnapshot !== "1") fail("pickup checkout did not preserve the cash-at-store payment policy and separate active Store agreement snapshot", JSON.stringify({ pickupCheckout, pickupCheckoutReplay, pickupPaymentBeforeCollection, pickupAllocationSnapshot, pickupStoreOrigin }));
 const pickupProofBeforeReady = await request(dshBase, "GET", "/dsh/orders/" + encodeURIComponent(pickupOrderID) + "/delivery-proof", { token: client.accessToken });
 const partnerPickupProof = await request(dshBase, "GET", "/dsh/orders/" + encodeURIComponent(pickupOrderID) + "/delivery-proof", { token: second.accessToken });
 if (pickupProofBeforeReady.status !== 200 || pickupProofBeforeReady.body?.orderId !== pickupOrderID || pickupProofBeforeReady.body?.proofType !== "STORE_PICKUP" || pickupProofBeforeReady.body?.state !== "PENDING" || pickupProofBeforeReady.body?.code != null || partnerPickupProof.status !== 403) fail("store pickup proof was disclosed before readiness or crossed the customer role boundary", JSON.stringify({ pickupProofStatus: pickupProofBeforeReady.status, proofType: pickupProofBeforeReady.body?.proofType, proofState: pickupProofBeforeReady.body?.state, codeDisclosed: pickupProofBeforeReady.body?.code != null, partnerStatus: partnerPickupProof.status }));
@@ -1276,8 +1433,8 @@ const pickupCommissionMinor = Number(pickupCommission.commissionMinor);
 const pickupReceivableBeforeRemittance = sql("SELECT COALESCE(SUM(CASE WHEN direction='DEBIT' THEN amount_minor ELSE -amount_minor END),0)::text FROM wlt.ledger_entries WHERE account_code='PARTNER_COMMISSION_RECEIVABLE' AND actor_type='partner' AND actor_id='" + sqlLiteral(second.actorID) + "'");
 const pickupCommissionLedgerCount = sql("SELECT count(*) FROM wlt.ledger_entries e JOIN wlt.ledger_transactions t ON t.id=e.transaction_id WHERE t.source_type='PARTNER_STORE_CASH_COMMISSION' AND t.source_id='" + sqlLiteral(pickupOrderID) + "' AND ((e.account_code='PARTNER_COMMISSION_RECEIVABLE' AND e.actor_type='partner' AND e.actor_id='" + sqlLiteral(second.actorID) + "' AND e.direction='DEBIT' AND e.amount_minor=" + pickupCommissionMinor + ") OR (e.account_code='PLATFORM_COMMISSION_INCOME' AND e.direction='CREDIT' AND e.amount_minor=" + pickupCommissionMinor + "))");
 const pickupCommissionPolicyVersion = String(pickupCommission.policyVersion || "");
-const expectedPickupCommissionPolicyPrefix = `commercial-store-type-commission-v1;type=${commercialStoreTypeID};store=${second.storeID};mode=CUSTOMER_PICKUP;policy=`;
-if (pickupCommission.fulfillmentMode !== "CUSTOMER_PICKUP" || pickupCommission.partnerActorId !== second.actorID || pickupCommission.paymentIntentId !== pickupPaymentIntentID || pickupCommission.currency !== "YER" || pickupCommission.grossProductMinor !== 1500 || !pickupCommission.profileId || pickupCommission.profileVersion < 1 || !pickupCommissionPolicyVersion.startsWith(expectedPickupCommissionPolicyPrefix) || !/;policy=\d+;rate-bps=\d+;profile=.+:\d+;settlement=(DAILY|WEEKLY|MONTHLY)$/.test(pickupCommissionPolicyVersion) || !pickupCommission.ledgerTransactionId || pickupCommissionMinor <= 0 || pickupReceivableBeforeRemittance !== String(pickupCommissionMinor) || pickupCommissionLedgerCount !== "2") fail("WLT pickup commission did not preserve the commercial type policy snapshot or create one balanced partner receivable while the store retained gross cash", JSON.stringify({ pickupCommission, pickupReceivableBeforeRemittance, pickupCommissionLedgerCount }));
+const expectedPickupCommissionPolicyPrefix = `store-agreement-v1;agreement=${secondPickupAgreement.agreementId}:${secondPickupAgreement.agreementVersion};mode=CUSTOMER_PICKUP;rate-bps=1500;basis=SUBTOTAL_MINUS_DISCOUNT;`;
+if (pickupCommission.fulfillmentMode !== "CUSTOMER_PICKUP" || pickupCommission.partnerActorId !== second.actorID || pickupCommission.paymentIntentId !== pickupPaymentIntentID || pickupCommission.currency !== "YER" || pickupCommission.grossProductMinor !== 1500 || !pickupCommission.profileId || pickupCommission.profileVersion < 1 || !pickupCommissionPolicyVersion.startsWith(expectedPickupCommissionPolicyPrefix) || !/;profile=.+:\d+;rounding=\d+;settlement=(DAILY|WEEKLY|MONTHLY)$/.test(pickupCommissionPolicyVersion) || !pickupCommission.ledgerTransactionId || pickupCommissionMinor <= 0 || pickupReceivableBeforeRemittance !== String(pickupCommissionMinor) || pickupCommissionLedgerCount !== "2") fail("WLT pickup commission did not preserve the active Store agreement snapshot or create one balanced partner receivable while the store retained gross cash", JSON.stringify({ pickupCommission, pickupReceivableBeforeRemittance, pickupCommissionLedgerCount }));
 const pickupRemittanceReceiptPDF = Buffer.from(`%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Count 0/Kids[]>>endobj\n% pickup-commission-${suffix}\ntrailer<</Root 1 0 R>>\n%%EOF\n`);
 const pickupRemittanceReceiptUpload = await request(dshBase, "POST", "/dsh/operator/finance-evidence-documents", { token: dshToken, headers: serviceHeaders(actingOperatorID, `pickup-commission-receipt-${suffix}`), rawBody: financeEvidenceForm("TRANSFER_RECEIPT", pickupRemittanceReceiptPDF, "application/pdf", `pickup-commission-receipt-${suffix}.pdf`) });
 if (pickupRemittanceReceiptUpload.status !== 201 || pickupRemittanceReceiptUpload.body?.document?.purpose !== "TRANSFER_RECEIPT" || !pickupRemittanceReceiptUpload.body?.document?.id) fail("canonical Partner commission transfer receipt evidence upload failed", JSON.stringify(pickupRemittanceReceiptUpload));
@@ -1306,9 +1463,10 @@ const paymentIntentID = String(checkout.body.order.paymentIntentId);
 const linkedPaymentRead = await request(wltBase, "GET", `/wlt/v1/payment-intents/${encodeURIComponent(paymentIntentID)}`, { token: wltToken });
 const linkedPaymentAuditCount = sql(`SELECT count(*) FROM dsh.commerce_order_payment_audit WHERE order_id='${sqlLiteral(orderID)}' AND event_type='payment_intent_linked' AND payment_intent_id='${sqlLiteral(paymentIntentID)}' AND amount_minor=${mainOrderTotal}`);
 const linkedAllocation = linkedPaymentRead.body?.paymentIntent?.customerPaymentAllocation;
-const linkedAllocationDBCount = sql(`SELECT count(*) FROM wlt.customer_payment_allocations WHERE order_id='${sqlLiteral(orderID)}' AND payment_intent_id='${sqlLiteral(paymentIntentID)}' AND currency='YER' AND subtotal_minor=${mainOrderSubtotal} AND delivery_fee_minor=${deliveryFeeMinor} AND discount_minor=0 AND internal_balance_amount_minor=0 AND cash_amount_minor=${mainOrderTotal} AND customer_payable_minor=${mainOrderTotal} AND policy_version LIKE 'cod-current-v2;delivery=%'`);
+const expectedLinkedAllocationPolicyVersion = `cod-current-v2;delivery=${deliveryFeePolicyCreate.body.policy.policyVersion}`;
+const linkedAllocationDBCount = sql(`SELECT count(*) FROM wlt.customer_payment_allocations WHERE order_id='${sqlLiteral(orderID)}' AND payment_intent_id='${sqlLiteral(paymentIntentID)}' AND store_id='${sqlLiteral(first.storeID)}' AND partner_actor_id_snapshot='${sqlLiteral(first.actorID)}' AND commercial_store_type_id='${sqlLiteral(commercialStoreTypeID)}' AND fulfillment_mode='BTHWANI_CAPTAIN' AND currency='YER' AND subtotal_minor=${mainOrderSubtotal} AND delivery_fee_minor=${deliveryFeeMinor} AND discount_minor=0 AND internal_balance_amount_minor=0 AND cash_amount_minor=${mainOrderTotal} AND customer_payable_minor=${mainOrderTotal} AND policy_version='${sqlLiteral(expectedLinkedAllocationPolicyVersion)}' AND commission_snapshot_source='STORE_AGREEMENT' AND commission_agreement_id_snapshot='${sqlLiteral(first.activeAgreement.agreementId)}' AND commission_agreement_version_snapshot=${first.activeAgreement.agreementVersion} AND commission_rate_bps_snapshot=1500 AND commission_calculation_basis_snapshot='SUBTOTAL_MINUS_DISCOUNT'`);
 const linkedAllocationEventCount = sql(`SELECT count(*) FROM wlt.customer_payment_allocation_events WHERE payment_intent_id='${sqlLiteral(paymentIntentID)}' AND event_type='CUSTOMER_PAYMENT_ALLOCATION_CREATED'`);
-if (linkedPaymentRead.status !== 200 || linkedPaymentRead.body?.paymentIntent?.state !== "REQUIRES_COLLECTION" || linkedPaymentRead.body.paymentIntent.amountMinor !== mainOrderTotal || linkedPaymentRead.body.paymentIntent.currency !== "YER" || linkedPaymentRead.body.paymentIntent.method !== "CASH_ON_DELIVERY" || linkedPaymentAuditCount !== "1" || linkedAllocation?.orderId !== orderID || linkedAllocation?.paymentIntentId !== paymentIntentID || linkedAllocation?.currency !== "YER" || linkedAllocation?.subtotalMinor !== mainOrderSubtotal || linkedAllocation?.deliveryFeeMinor !== deliveryFeeMinor || linkedAllocation?.discountMinor !== 0 || linkedAllocation?.internalBalanceAmountMinor !== 0 || linkedAllocation?.cashAmountMinor !== mainOrderTotal || linkedAllocation?.customerPayableMinor !== mainOrderTotal || !String(linkedAllocation?.policyVersion || "").startsWith("cod-current-v2;delivery=") || linkedAllocationDBCount !== "1" || linkedAllocationEventCount !== "1") fail("checkout did not link a canonical WLT customer payment allocation", JSON.stringify({ checkout, linkedPaymentRead, linkedPaymentAuditCount, linkedAllocationDBCount, linkedAllocationEventCount }));
+if (linkedPaymentRead.status !== 200 || linkedPaymentRead.body?.paymentIntent?.state !== "REQUIRES_COLLECTION" || linkedPaymentRead.body.paymentIntent.amountMinor !== mainOrderTotal || linkedPaymentRead.body.paymentIntent.currency !== "YER" || linkedPaymentRead.body.paymentIntent.method !== "CASH_ON_DELIVERY" || linkedPaymentAuditCount !== "1" || linkedAllocation?.orderId !== orderID || linkedAllocation?.paymentIntentId !== paymentIntentID || linkedAllocation?.currency !== "YER" || linkedAllocation?.subtotalMinor !== mainOrderSubtotal || linkedAllocation?.deliveryFeeMinor !== deliveryFeeMinor || linkedAllocation?.discountMinor !== 0 || linkedAllocation?.internalBalanceAmountMinor !== 0 || linkedAllocation?.cashAmountMinor !== mainOrderTotal || linkedAllocation?.customerPayableMinor !== mainOrderTotal || linkedAllocation?.policyVersion !== expectedLinkedAllocationPolicyVersion || linkedAllocationDBCount !== "1" || linkedAllocationEventCount !== "1") fail("checkout did not preserve the delivery payment policy beside the exact active Store agreement snapshot", JSON.stringify({ checkout, linkedPaymentRead, linkedPaymentAuditCount, linkedAllocationDBCount, linkedAllocationEventCount }));
 console.log("DSH_PAYMENT_ALLOCATION=PASS");
 expectSQL(`SELECT count(*) FROM dsh.commerce_order_line_modifier_snapshots WHERE order_line_id='${sqlLiteral(checkoutLineID)}'`, "0", "shared-catalog Order unexpectedly carries store-local modifier snapshots");
 expectSQL(`SELECT count(*) FROM dsh.commerce_order_line_modifier_snapshots WHERE order_line_id='${sqlLiteral(storeLocalCheckoutLineID)}' AND option_id='${sqlLiteral(modifierOptionID)}' AND option_name_ar='حليب ${sqlLiteral(suffix)}'`, "1", "store-local Order modifier snapshot readback is not immutable canonical evidence");
@@ -1589,13 +1747,14 @@ const partnerLegalNameVerified = partnerLegalNameSubmitted.body?.legalName?.vers
   : null;
 if (partnerLegalNameSubmitted.status !== 201 || partnerLegalNameSubmitted.body?.legalName?.actorId !== first.actorID || partnerLegalNameSubmitted.body.legalName.status !== "PENDING_VERIFICATION" || partnerLegalNamePending.status !== 200 || partnerLegalNamePending.body?.legalName?.version !== partnerLegalNameSubmitted.body.legalName.version || partnerLegalNamePending.body.legalName.evidenceReference !== partnerLegalNameInput.evidenceReference || partnerLegalNameSelfVerification?.status !== 409 || partnerLegalNameVerified?.status !== 200 || partnerLegalNameVerified.body?.legalName?.actorId !== first.actorID || partnerLegalNameVerified.body.legalName.status !== "VERIFIED" || partnerLegalNameVerified.body.legalName.verifiedByActorId !== checkerOperatorID) fail("Partner beneficiary identity was not recorded and independently verified through Identity", JSON.stringify({ partnerLegalNameSubmitted, partnerLegalNamePending, partnerLegalNameSelfVerification, partnerLegalNameVerified }));
 console.log("DSH_PARTNER_LEGAL_NAME=PASS");
-const destinationWalletIdentifier = `+96777000${crypto.randomInt(1000, 9999)}`;
-const destinationCreate = await request(dshBase, "POST", `/dsh/operator/partner/${encodeURIComponent(first.actorID)}/official-wallet-destination`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-destination-${suffix}`), body: { providerKey: "official_wallet", walletIdentifier: destinationWalletIdentifier, changeReason: "runtime proof destination", verificationEvidenceReference: `destination-proof-${suffix}`, changeEvidenceReference: `destination-proof-${suffix}` } });
-const destinationID = String(destinationCreate.body?.destination?.id || "");
-const destinationVerify = await request(dshBase, "POST", `/dsh/operator/partner/${encodeURIComponent(first.actorID)}/official-wallet-destination/${encodeURIComponent(destinationID)}/verify`, { token: dshToken, headers: serviceHeaders(checkerOperatorID, `partner-destination-verify-${suffix}`), body: { evidenceReference: `destination-proof-verified-${suffix}` } });
-const destinationVerifyReplay = await request(dshBase, "POST", `/dsh/operator/partner/${encodeURIComponent(first.actorID)}/official-wallet-destination/${encodeURIComponent(destinationID)}/verify`, { token: dshToken, headers: serviceHeaders(checkerOperatorID, `partner-destination-verify-${suffix}`), body: { evidenceReference: `destination-proof-verified-${suffix}` } });
-const destinationActivate = await request(dshBase, "POST", `/dsh/operator/partner/${encodeURIComponent(first.actorID)}/official-wallet-destination/${encodeURIComponent(destinationID)}/activate`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-destination-activate-${suffix}`), body: {} });
-const destinationActivateReplay = await request(dshBase, "POST", `/dsh/operator/partner/${encodeURIComponent(first.actorID)}/official-wallet-destination/${encodeURIComponent(destinationID)}/activate`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-destination-activate-${suffix}`), body: {} });
+const destinationWalletIdentifier = firstPartnerPhone;
+const partnerDestinationFlow = await createOfficialWalletDestination("partner", first.actorID, firstPartnerPhone, "محمد علي صالح الحديدة", "partner");
+const destinationCreate = partnerDestinationFlow.created;
+const destinationID = partnerDestinationFlow.destinationID;
+const destinationVerify = partnerDestinationFlow.verified;
+const destinationVerifyReplay = partnerDestinationFlow.verifyReplay;
+const destinationActivate = partnerDestinationFlow.activated;
+const destinationActivateReplay = partnerDestinationFlow.activateReplay;
 const ownPayoutStateBefore = await request(dshBase, "GET", "/dsh/me/payout-state", { token: first.accessToken });
 const payoutOversized = await request(dshBase, "POST", "/dsh/me/payout-intents", { token: first.accessToken, headers: partnerHeaders(`partner-payout-over-${suffix}`), body: { amountMode: "SPECIFIED", amountMinor: 4000 } });
 const payoutSpecifiedKey = `partner-payout-specified-${suffix}`;
@@ -1644,7 +1803,7 @@ const settlementStatementEvidenceUploaded = await request(dshBase, "POST", "/dsh
 if (settlementStatementEvidenceUploaded.status !== 201 || settlementStatementEvidenceUploaded.body?.document?.purpose !== "SETTLEMENT_STATEMENT") fail("canonical settlement statement evidence upload failed", JSON.stringify(settlementStatementEvidenceUploaded));
 const settlementStatementEvidenceDocumentID = String(settlementStatementEvidenceUploaded.body?.document?.id || "");
 const settlementPeriodDate = transferTransactionAt.slice(0, 10);
-const settlementStatementRegistered = await request(dshBase, "POST", "/dsh/operator/settlement-statements", { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-settlement-statement-${suffix}`), body: { batchId: settlementBatchID, providerKey: "official_wallet", currency: "YER", periodStart: settlementPeriodDate, periodEnd: settlementPeriodDate, evidenceDocumentId: settlementStatementEvidenceDocumentID } });
+const settlementStatementRegistered = await request(dshBase, "POST", "/dsh/operator/settlement-statements", { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-settlement-statement-${suffix}`), body: { batchId: settlementBatchID, providerKey: partnerDestinationFlow.intentRead.body.intent.providerKey, currency: "YER", periodStart: settlementPeriodDate, periodEnd: settlementPeriodDate, evidenceDocumentId: settlementStatementEvidenceDocumentID } });
 if (settlementStatementRegistered.status !== 201 || settlementStatementRegistered.body?.statement?.batchId !== settlementBatchID || !settlementStatementRegistered.body?.statement?.id) fail("canonical settlement statement registration failed", JSON.stringify(settlementStatementRegistered));
 const settlementStatementID = String(settlementStatementRegistered.body?.statement?.id || "");
 const settlementStatementRowRecorded = await request(dshBase, "POST", `/dsh/operator/settlement-statements/${encodeURIComponent(settlementStatementID)}/rows`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-settlement-statement-row-${suffix}`), body: { rowSequence: 1, externalTransferReference, walletIdentifier: destinationWalletIdentifier, amountMinor: 2550, currency: "YER", transactionAt: transferTransactionAt } });
@@ -1673,6 +1832,17 @@ const fieldPayoutApproved = await request(dshBase, "POST", `/dsh/joining-cases/$
 const fieldPayoutStoreID = String(fieldPayoutApproved.body?.case?.store?.id || "");
 const fieldPayoutPartnerActorID = String(fieldPayoutApproved.body?.case?.partnerActorId || "");
 const fieldPayoutPartnerAccessToken = await activatePartner(fieldPayoutPhone, `FPay${suffix.slice(0, 4)}`);
+const fieldPayoutAgreement = await activateStoreCommercialAgreement(
+  fieldPayoutCaseID,
+  fieldPayoutStoreID,
+  fieldPayoutPartnerActorID,
+  fieldPayoutPartnerAccessToken,
+  secondFieldActorID,
+  secondFieldAccessToken,
+  fieldPayoutApproved.body?.case?.store?.fulfillmentModes ?? ["BTHWANI_CAPTAIN"],
+  String(fieldPayoutApproved.body?.case?.store?.commercialStoreTypeId || ""),
+);
+if (fieldPayoutAgreement.status !== "ACTIVE" || fieldPayoutAgreement.rates?.length !== 1 || fieldPayoutAgreement.rates[0]?.fulfillmentMode !== "BTHWANI_CAPTAIN") fail("Field payout fixture did not activate the required Store-specific agreement before Go-Live", JSON.stringify(fieldPayoutAgreement));
 const fieldPayoutOffer = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(fieldPayoutStoreID)}/offers`, { token: fieldPayoutPartnerAccessToken, headers: partnerHeaders(`field-payout-offer-${suffix}`), body: discreteCreateOffer(variantID, 1250) });
 const fieldPayoutOfferID = String(fieldPayoutOffer.body?.offer?.offerId || "");
 const fieldPayoutOfferPublished = await request(dshBase, "PATCH", `/dsh/stores/${encodeURIComponent(fieldPayoutStoreID)}/offers/${encodeURIComponent(fieldPayoutOfferID)}`, { token: fieldPayoutPartnerAccessToken, headers: partnerHeaders(`field-payout-offer-publish-${suffix}`, 1), body: discreteOffer(1250, "published") });
@@ -1699,15 +1869,11 @@ async function verifyPayoutBeneficiaryName(actorID, role) {
   if (verified.status !== 200 || verified.body?.legalName?.actorId !== actorID || verified.body.legalName.status !== "VERIFIED" || verified.body.legalName.verifiedByActorId !== checkerOperatorID) fail(`${role} beneficiary legal name verification failed`, JSON.stringify(verified));
 }
 await verifyPayoutBeneficiaryName(secondFieldActorID, "field");
-const fieldDestinationWalletIdentifier = `+96777100${crypto.randomInt(1000, 9999)}`;
-const fieldDestinationCreate = await request(dshBase, "POST", `/dsh/operator/field/${encodeURIComponent(secondFieldActorID)}/official-wallet-destination`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-destination-${suffix}`), body: { providerKey: "official_wallet", walletIdentifier: fieldDestinationWalletIdentifier, changeReason: "runtime proof field destination", verificationEvidenceReference: `field-destination-proof-${suffix}`, changeEvidenceReference: `field-destination-proof-${suffix}` } });
-const fieldDestinationID = String(fieldDestinationCreate.body?.destination?.id || "");
-if (fieldDestinationCreate.status !== 201 || !fieldDestinationID) fail("Field official wallet destination creation failed", JSON.stringify(fieldDestinationCreate));
-
-const fieldDestinationVerify = await request(dshBase, "POST", `/dsh/operator/field/${encodeURIComponent(secondFieldActorID)}/official-wallet-destination/${encodeURIComponent(fieldDestinationID)}/verify`, { token: dshToken, headers: serviceHeaders(checkerOperatorID, `field-destination-verify-${suffix}`), body: { evidenceReference: `field-destination-verified-${suffix}` } });
-if (fieldDestinationVerify.status !== 200) fail("Field official wallet destination verification failed", JSON.stringify(fieldDestinationVerify));
-const fieldDestinationActivate = await request(dshBase, "POST", `/dsh/operator/field/${encodeURIComponent(secondFieldActorID)}/official-wallet-destination/${encodeURIComponent(fieldDestinationID)}/activate`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-destination-activate-${suffix}`), body: {} });
-if (fieldDestinationActivate.status !== 200) fail("Field official wallet destination activation failed", JSON.stringify(fieldDestinationActivate));
+const fieldDestinationWalletIdentifier = secondFieldPhone;
+const fieldDestinationFlow = await createOfficialWalletDestination("field", secondFieldActorID, secondFieldPhone, "محمد علي صالح الحديدة", "field");
+const fieldDestinationCreate = fieldDestinationFlow.created;
+const fieldDestinationVerify = fieldDestinationFlow.verified;
+const fieldDestinationActivate = fieldDestinationFlow.activated;
 const fieldOwnPayoutState = await request(dshBase, "GET", "/dsh/me/payout-state", { token: secondFieldAccessToken });
 const fieldPayoutKey = `field-payout-${suffix}`;
 const fieldPayout = await request(dshBase, "POST", "/dsh/me/payout-intents", { token: secondFieldAccessToken, headers: partnerHeaders(fieldPayoutKey), body: { amountMode: "FULL_AVAILABLE" } });
@@ -1716,15 +1882,11 @@ const fieldPayoutReplay = await request(dshBase, "POST", "/dsh/me/payout-intents
 const fieldOwnPayoutAfter = await request(dshBase, "GET", "/dsh/me/payout-state", { token: secondFieldAccessToken });
 const fieldOperatorPayoutState = await request(dshBase, "GET", `/dsh/operator/field/${encodeURIComponent(secondFieldActorID)}/payout-state`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 await verifyPayoutBeneficiaryName(activeCaptainActorID, "captain");
-const captainDestinationWalletIdentifier = `+96777200${crypto.randomInt(1000, 9999)}`;
-const captainDestinationCreate = await request(dshBase, "POST", `/dsh/operator/captain/${encodeURIComponent(activeCaptainActorID)}/official-wallet-destination`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `captain-destination-${suffix}`), body: { providerKey: "official_wallet", walletIdentifier: captainDestinationWalletIdentifier, changeReason: "runtime proof captain destination", verificationEvidenceReference: `captain-destination-proof-${suffix}`, changeEvidenceReference: `captain-destination-proof-${suffix}` } });
-const captainDestinationID = String(captainDestinationCreate.body?.destination?.id || "");
-if (captainDestinationCreate.status !== 201 || !captainDestinationID) fail("Captain official wallet destination creation failed", JSON.stringify(captainDestinationCreate));
-
-const captainDestinationVerify = await request(dshBase, "POST", `/dsh/operator/captain/${encodeURIComponent(activeCaptainActorID)}/official-wallet-destination/${encodeURIComponent(captainDestinationID)}/verify`, { token: dshToken, headers: serviceHeaders(checkerOperatorID, `captain-destination-verify-${suffix}`), body: { evidenceReference: `captain-destination-verified-${suffix}` } });
-if (captainDestinationVerify.status !== 200) fail("Captain official wallet destination verification failed", JSON.stringify(captainDestinationVerify));
-const captainDestinationActivate = await request(dshBase, "POST", `/dsh/operator/captain/${encodeURIComponent(activeCaptainActorID)}/official-wallet-destination/${encodeURIComponent(captainDestinationID)}/activate`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `captain-destination-activate-${suffix}`), body: {} });
-if (captainDestinationActivate.status !== 200) fail("Captain official wallet destination activation failed", JSON.stringify(captainDestinationActivate));
+const captainDestinationWalletIdentifier = secondCaptainPhone;
+const captainDestinationFlow = await createOfficialWalletDestination("captain", activeCaptainActorID, secondCaptainPhone, "محمد علي صالح الحديدة", "captain");
+const captainDestinationCreate = captainDestinationFlow.created;
+const captainDestinationVerify = captainDestinationFlow.verified;
+const captainDestinationActivate = captainDestinationFlow.activated;
 const captainOwnPayoutState = await request(dshBase, "GET", "/dsh/me/payout-state", { token: activeCaptainAccessToken });
 const captainPayout = await request(dshBase, "POST", "/dsh/me/payout-intents", { token: activeCaptainAccessToken, headers: partnerHeaders(`captain-payout-${suffix}`), body: { amountMode: "FULL_AVAILABLE" } });
 const captainPayoutID = String(captainPayout.body?.payout?.id || "");

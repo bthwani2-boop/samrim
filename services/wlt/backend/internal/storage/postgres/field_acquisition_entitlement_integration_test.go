@@ -298,8 +298,8 @@ func (s *fieldAcquisitionScenario) verifyReadbacks(t *testing.T) {
 	if _, err := ReadFieldAcquisitionEntitlement(s.ctx, s.db, "missing-store-"+s.suffix); !errors.Is(err, ErrFieldAcquisitionEntitlementInvalid) {
 		t.Fatalf("missing store entitlement error = %v", err)
 	}
-	if _, err := ReadFieldAcquisitionEntitlementByJoiningCase(s.ctx, s.db, "missing-case-"+s.suffix); !errors.Is(err, ErrFieldAcquisitionEntitlementInvalid) {
-		t.Fatalf("missing joining case entitlement error = %v", err)
+	if _, err := ReadFieldAcquisitionEntitlementByJoiningCase(s.ctx, s.db, "missing-case-"+s.suffix); !errors.Is(err, ErrFieldAcquisitionEntitlementNotFound) {
+		t.Fatalf("missing joining case entitlement error = %v, want not found", err)
 	}
 }
 

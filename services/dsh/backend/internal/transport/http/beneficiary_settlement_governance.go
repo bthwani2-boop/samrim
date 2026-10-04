@@ -254,7 +254,18 @@ func (s *BeneficiaryFinanceServer) prepareOperatorPayout(w http.ResponseWriter, 
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	item, err := s.payment.PreparePayout(r.Context(), r.PathValue("payoutId"), input.Reason, input.EvidenceReference, idempotency, correlation, acting)
+	payoutID := r.PathValue("payoutId")
+	payout, err := s.payment.ReadOperatorPayoutRequest(r.Context(), payoutID, acting)
+	if err != nil {
+		writeWLTFinanceError(w, err)
+		return
+	}
+	identityFacts, err := s.currentFactsForPayout(r.Context(), payout, acting)
+	if err != nil {
+		writeOfficialWalletIdentityReadError(w, err)
+		return
+	}
+	item, err := s.payment.PreparePayout(r.Context(), payoutID, identityFacts, input.Reason, input.EvidenceReference, idempotency, correlation, acting)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return
@@ -271,7 +282,18 @@ func (s *BeneficiaryFinanceServer) approveOperatorPayout(w http.ResponseWriter, 
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	item, err := s.payment.ApprovePayout(r.Context(), r.PathValue("payoutId"), input.Reason, idempotency, correlation, acting)
+	payoutID := r.PathValue("payoutId")
+	payout, err := s.payment.ReadOperatorPayoutRequest(r.Context(), payoutID, acting)
+	if err != nil {
+		writeWLTFinanceError(w, err)
+		return
+	}
+	identityFacts, err := s.currentFactsForPayout(r.Context(), payout, acting)
+	if err != nil {
+		writeOfficialWalletIdentityReadError(w, err)
+		return
+	}
+	item, err := s.payment.ApprovePayout(r.Context(), payoutID, identityFacts, input.Reason, idempotency, correlation, acting)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return
@@ -305,7 +327,25 @@ func (s *BeneficiaryFinanceServer) createOperatorSettlementBatch(w http.Response
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	item, err := s.payment.CreateSettlementBatch(r.Context(), input.PayoutIDs, idempotency, correlation, acting)
+	payouts := make([]wlt.PayoutRequest, 0, len(input.PayoutIDs))
+	for _, payoutID := range input.PayoutIDs {
+		payout, err := s.payment.ReadOperatorPayoutRequest(r.Context(), payoutID, acting)
+		if err != nil {
+			writeWLTFinanceError(w, err)
+			return
+		}
+		payouts = append(payouts, payout)
+	}
+	batchItems := make([]wlt.SettlementBatchItem, 0, len(payouts))
+	for _, payout := range payouts {
+		batchItems = append(batchItems, wlt.SettlementBatchItem{ActorType: payout.ActorType, ActorID: payout.ActorID})
+	}
+	identityFactsByBeneficiary, err := s.currentFactsForBatch(r.Context(), batchItems, acting)
+	if err != nil {
+		writeOfficialWalletIdentityReadError(w, err)
+		return
+	}
+	item, err := s.payment.CreateSettlementBatch(r.Context(), input.PayoutIDs, identityFactsByBeneficiary, idempotency, correlation, acting)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return
@@ -334,7 +374,18 @@ func (s *BeneficiaryFinanceServer) exportOperatorSettlementBatch(w http.Response
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	item, err := s.payment.ExportSettlementBatch(r.Context(), r.PathValue("batchId"), idempotency, correlation, acting)
+	batchID := r.PathValue("batchId")
+	batch, err := s.payment.ReadSettlementBatch(r.Context(), batchID, acting)
+	if err != nil {
+		writeWLTFinanceError(w, err)
+		return
+	}
+	identityFactsByBeneficiary, err := s.currentFactsForBatch(r.Context(), batch.Items, acting)
+	if err != nil {
+		writeOfficialWalletIdentityReadError(w, err)
+		return
+	}
+	item, err := s.payment.ExportSettlementBatch(r.Context(), batchID, identityFactsByBeneficiary, idempotency, correlation, acting)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return
@@ -351,7 +402,18 @@ func (s *BeneficiaryFinanceServer) approveOperatorSettlementBatch(w http.Respons
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	item, err := s.payment.ApproveSettlementBatch(r.Context(), r.PathValue("batchId"), input.Reason, idempotency, correlation, acting)
+	batchID := r.PathValue("batchId")
+	batch, err := s.payment.ReadSettlementBatch(r.Context(), batchID, acting)
+	if err != nil {
+		writeWLTFinanceError(w, err)
+		return
+	}
+	identityFactsByBeneficiary, err := s.currentFactsForBatch(r.Context(), batch.Items, acting)
+	if err != nil {
+		writeOfficialWalletIdentityReadError(w, err)
+		return
+	}
+	item, err := s.payment.ApproveSettlementBatch(r.Context(), batchID, identityFactsByBeneficiary, input.Reason, idempotency, correlation, acting)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return
@@ -368,7 +430,18 @@ func (s *BeneficiaryFinanceServer) freezeOperatorSettlementBatch(w http.Response
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	item, err := s.payment.FreezeSettlementBatch(r.Context(), r.PathValue("batchId"), input.Reason, idempotency, correlation, acting)
+	batchID := r.PathValue("batchId")
+	batch, err := s.payment.ReadSettlementBatch(r.Context(), batchID, acting)
+	if err != nil {
+		writeWLTFinanceError(w, err)
+		return
+	}
+	identityFactsByBeneficiary, err := s.currentFactsForBatch(r.Context(), batch.Items, acting)
+	if err != nil {
+		writeOfficialWalletIdentityReadError(w, err)
+		return
+	}
+	item, err := s.payment.FreezeSettlementBatch(r.Context(), batchID, identityFactsByBeneficiary, input.Reason, idempotency, correlation, acting)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return

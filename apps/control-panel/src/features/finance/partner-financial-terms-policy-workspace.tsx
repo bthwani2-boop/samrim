@@ -84,7 +84,7 @@ export function PartnerFinancialTermsPolicyWorkspace() {
       <div><p className="eyebrow">مركز السياسات · WLT · يتطلب Finance</p><h2 id="partner-financial-terms-title">فترة تسوية الشريك</h2></div>
       <button className="button button-secondary" type="button" onClick={() => void read()} disabled={busy || readState === "loading"}>إعادة القراءة</button>
     </div>
-    <p className="muted">تحدد هذه السياسة فترة تسوية ملف الشريك عند اعتماده. أما عمولة المنصة فتُدار بصورة مستقلة حسب نوع المتجر ووضع التنفيذ.</p>
+    <p className="muted">تحدد هذه السياسة فترة تسوية ملف الشريك عند اعتماده. أما عمولة كل متجر فتحسمها اتفاقيته الخاصة بعد تفاوض المالك وموافقة Finance.</p>
     {readState === "loading" ? <p role="status">جارٍ قراءة الشروط المعتمدة من WLT…</p> : null}
     {readState === "missing" ? <p className="managed-status managed-status-warning" role="status">لا توجد سياسة مالية نشطة. أدخل القيم المعتمدة هنا قبل اعتماد أو استكمال ربط أي ملف شريك.</p> : null}
     {readState === "error" ? <p className="validation-error" role="alert">{error || "تعذرت القراءة؛ التعديل متوقف حتى نجاح القراءة."}</p> : null}

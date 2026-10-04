@@ -43,7 +43,7 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 		t.Fatalf("configured postgres is not reachable: %v", err)
 	}
 
-	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
+	withFreshCanonicalDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
 		scenario := catalogRefoundationScenario{t: t, ctx: ctx, db: db}
 		scenario.verifyFreshSchema(records, migrationSQL)
 		scenario.createRegistryFixtures()
@@ -60,21 +60,25 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 
 func (s *catalogRefoundationScenario) verifyFreshSchema(records []postgres.MigrationRecord, migrationSQL []string) {
 	s.t.Helper()
-	if len(records) != postgres.SchemaVersion || len(migrationSQL) != postgres.SchemaVersion {
+	if len(records) != postgres.CanonicalSchemaVersion || len(migrationSQL) != postgres.CanonicalSchemaVersion {
 		s.t.Fatalf("unexpected DSH migration graph size: records=%d sql=%d", len(records), len(migrationSQL))
 	}
 	assertRequiredMigrationOrder(s.t, records,
 		"018_remove_unjustified_captain_terminated_state.sql",
 		"019_captain_delivery_recovery.sql",
 		"020_field_standing_admission_and_joining_scope.sql",
+		"093_catalog_mixed_scope_and_store_skus.sql",
+		"095_wallet_provider_intent.sql",
+		"096_catalog_product_proposal_field_ownership.sql",
+		"097_store_catalog_import_scope.sql",
 	)
-	if err := postgres.Migrate(s.ctx, s.db, records, migrationSQL, testDeliveryProofKeyring(s.t)); err != nil {
+	if err := postgres.MigrateCanonical(s.ctx, s.db, records, migrationSQL, testDeliveryProofKeyring(s.t)); err != nil {
 		s.t.Fatalf("apply fresh DSH migrations: %v", err)
 	}
-	if err := postgres.VerifySchema(s.ctx, s.db, records); err != nil {
+	if err := postgres.VerifyCanonicalSchema(s.ctx, s.db, records); err != nil {
 		s.t.Fatalf("verify fresh DSH schema: %v", err)
 	}
-	if err := postgres.Migrate(s.ctx, s.db, records, migrationSQL, testDeliveryProofKeyring(s.t)); err != nil {
+	if err := postgres.MigrateCanonical(s.ctx, s.db, records, migrationSQL, testDeliveryProofKeyring(s.t)); err != nil {
 		s.t.Fatalf("rerun DSH migrations with matching checksums: %v", err)
 	}
 	var visibilityViews int
@@ -85,10 +89,13 @@ func (s *catalogRefoundationScenario) verifyFreshSchema(records []postgres.Migra
 	if err := s.db.QueryRowContext(s.ctx, `SELECT pg_get_viewdef('dsh.catalog_publishable_offers'::regclass,true)`).Scan(&publishableViewDefinition); err != nil {
 		s.t.Fatalf("read canonical catalog publishable-offer view: %v", err)
 	}
-	for _, required := range []string{"availability = true", "price_minor > 0", "quantity_policy <> 'VARIABLE_MEASURE'", "inventory_policy", "catalog_model", "catalog_category_attribute_rules", "catalog_store_offer_modifier_groups"} {
+	for _, required := range []string{"availability = true", "price_minor > 0", "quantity_policy <> 'VARIABLE_MEASURE'", "inventory_policy", "catalog_category_attribute_rules", "catalog_store_offer_modifier_groups"} {
 		if !strings.Contains(publishableViewDefinition, required) {
 			s.t.Fatalf("canonical catalog publishable-offer view omits required condition %q", required)
 		}
+	}
+	if strings.Contains(publishableViewDefinition, "catalog_model") {
+		s.t.Fatal("canonical catalog publishable-offer view still depends on the removed vertical catalog model")
 	}
 	if err := s.db.QueryRowContext(s.ctx, `SELECT pg_get_viewdef('dsh.catalog_customer_visible_offers'::regclass,true)`).Scan(&customerVisibleViewDefinition); err != nil {
 		s.t.Fatalf("read canonical customer-visible-offer view: %v", err)
@@ -111,7 +118,7 @@ func (s *catalogRefoundationScenario) createRegistryFixtures() {
 		s.t.Fatalf("create service city: %v", err)
 	}
 	s.cityID = createdCity.City.ID
-	vertical := postgres.CommerceVerticalRecord{NameAr: "بقالة", NameEn: "Grocery", CatalogModel: "SHARED_CATALOG", Active: true}
+	vertical := postgres.CommerceVerticalRecord{NameAr: "بقالة", NameEn: "Grocery", Active: true}
 	verticalAudit := postgres.CatalogRegistryAuditInput{ActingActorID: testOperatorActorID, CorrelationID: "corr-vertical-v1", Reason: "Initial catalog vertical"}
 	createdVertical, err := postgres.CreateCommerceVertical(s.ctx, s.db, vertical, "idem-vertical-v1", postgres.HashCatalogVerticalCreateRequest(vertical, verticalAudit.Reason), verticalAudit)
 	if err != nil || !strings.HasPrefix(createdVertical.Vertical.ID, "vertical_") || createdVertical.Vertical.Version != 1 {
@@ -216,6 +223,44 @@ func (s *catalogRefoundationScenario) verifySharedProducts() {
 	if err != nil || secondProduct.Product.ID == "" || secondProduct.Product.ID == s.productID {
 		s.t.Fatalf("create second catalog product for keyset proof: %+v err=%v", secondProduct, err)
 	}
+	secondProductRecord, err := postgres.ReadCatalogProduct(s.ctx, s.db, secondProduct.Product.ID)
+	if err != nil || len(secondProductRecord.Variants) != 1 {
+		s.t.Fatalf("read second catalog product for inactive identifier proof: %+v err=%v", secondProductRecord, err)
+	}
+	insertCanonicalStoreFixture(s.t, s.ctx, s.db, canonicalStoreFixture{
+		ID: "store_catalog_inactive_identifier", PartnerActorID: testPartnerActorID, Name: "متجر اختبار حل المعرّف",
+		ServiceCityID: s.cityID, PrimaryVerticalID: s.verticalID,
+	})
+	variant := secondProductRecord.Variants[0]
+	inactiveVariantInput := postgres.CatalogVariantInput{ID: variant.ID, ProductID: variant.ProductID, Title: variant.Title, MeasurementKind: variant.MeasurementKind, BaseUnit: variant.BaseUnit, Active: false}
+	inactiveVariant, err := postgres.UpdateCatalogVariant(s.ctx, s.db, variant.ID, inactiveVariantInput, variant.Version, "idem-inactive-variant-v1", postgres.HashCatalogVariantUpdateRequest(variant.ID, inactiveVariantInput, variant.Version), testOperatorActorID, "corr-inactive-variant-v1")
+	if err != nil || inactiveVariant.Variant.Active {
+		s.t.Fatalf("deactivate catalog variant for identifier proof: %+v err=%v", inactiveVariant, err)
+	}
+	inactiveVariantResolution, err := postgres.ResolveCatalogIdentifier(s.ctx, s.db, "store_catalog_inactive_identifier", secondProductInput.IdentifierValue)
+	if err != nil || inactiveVariantResolution.Outcome != "UNKNOWN_IDENTIFIER" {
+		s.t.Fatalf("inactive variant remained resolvable: %+v err=%v", inactiveVariantResolution, err)
+	}
+	activeVariantInput := inactiveVariantInput
+	activeVariantInput.Active = true
+	activeVariant, err := postgres.UpdateCatalogVariant(s.ctx, s.db, variant.ID, activeVariantInput, inactiveVariant.Variant.Version, "idem-reactivate-variant-v1", postgres.HashCatalogVariantUpdateRequest(variant.ID, activeVariantInput, inactiveVariant.Variant.Version), testOperatorActorID, "corr-reactivate-variant-v1")
+	if err != nil || !activeVariant.Variant.Active {
+		s.t.Fatalf("reactivate catalog variant for product proof: %+v err=%v", activeVariant, err)
+	}
+	inactiveProductInput := postgres.CatalogProductUpdateInput{
+		VerticalID: secondProductRecord.VerticalID, Scope: secondProductRecord.Scope, StoreID: secondProductRecord.StoreID,
+		CanonicalName: secondProductRecord.CanonicalName, Description: secondProductRecord.Description, Brand: secondProductRecord.Brand, Active: false,
+		CategoryIDs: secondProductRecord.CategoryIDs, AttributeValues: []postgres.CatalogAttributeValueInput{},
+		VariantAttributeValues: []postgres.CatalogVariantAttributeValueSet{{VariantID: variant.ID, Values: []postgres.CatalogAttributeValueInput{}}},
+	}
+	inactiveProduct, err := postgres.UpdateCatalogProduct(s.ctx, s.db, secondProductRecord.ID, inactiveProductInput, secondProductRecord.Version, "idem-inactive-product-v1", postgres.HashCatalogProductUpdateRequest(secondProductRecord.ID, inactiveProductInput, secondProductRecord.Version), testOperatorActorID, "corr-inactive-product-v1")
+	if err != nil || inactiveProduct.Product.Active {
+		s.t.Fatalf("deactivate catalog product for identifier proof: %+v err=%v", inactiveProduct, err)
+	}
+	inactiveProductResolution, err := postgres.ResolveCatalogIdentifier(s.ctx, s.db, "store_catalog_inactive_identifier", secondProductInput.IdentifierValue)
+	if err != nil || inactiveProductResolution.Outcome != "UNKNOWN_IDENTIFIER" {
+		s.t.Fatalf("inactive product remained resolvable: %+v err=%v", inactiveProductResolution, err)
+	}
 	s.verifySharedProductPagination()
 }
 
@@ -249,7 +294,7 @@ func (s *catalogRefoundationScenario) verifySharedProductPagination() {
 
 func (s *catalogRefoundationScenario) verifyStoreScopedProducts() {
 	s.t.Helper()
-	localVertical := postgres.CommerceVerticalRecord{NameAr: "مخبوزات محلية", NameEn: "Local Bakery", CatalogModel: "STORE_LOCAL_CATALOG", Active: true}
+	localVertical := postgres.CommerceVerticalRecord{NameAr: "مخبوزات محلية", NameEn: "Local Bakery", Active: true}
 	localVerticalAudit := postgres.CatalogRegistryAuditInput{ActingActorID: testOperatorActorID, CorrelationID: "corr-local-vertical-v1", Reason: "Initial local catalog vertical"}
 	createdLocalVertical, err := postgres.CreateCommerceVertical(s.ctx, s.db, localVertical, "idem-local-vertical-v1", postgres.HashCatalogVerticalCreateRequest(localVertical, localVerticalAudit.Reason), localVerticalAudit)
 	if err != nil || createdLocalVertical.Vertical.ID == "" {
@@ -257,6 +302,10 @@ func (s *catalogRefoundationScenario) verifyStoreScopedProducts() {
 	}
 	localStoreID := "store_catalog_local_v1"
 	insertCanonicalStoreFixture(s.t, s.ctx, s.db, canonicalStoreFixture{ID: localStoreID, PartnerActorID: testPartnerActorID, Name: "متجر المخبوزات", ServiceCityID: s.cityID, PrimaryVerticalID: createdLocalVertical.Vertical.ID, PublicationState: "published"})
+	foreignVerticalMatch, err := postgres.ResolveCatalogIdentifier(s.ctx, s.db, localStoreID, s.productInput.IdentifierValue)
+	if err != nil || foreignVerticalMatch.Outcome != "UNKNOWN_IDENTIFIER" {
+		s.t.Fatalf("Field identifier lookup matched a shared product from another vertical: %+v err=%v", foreignVerticalMatch, err)
+	}
 	localProductInput := postgres.CatalogProductInput{VerticalID: createdLocalVertical.Vertical.ID, Scope: "STORE_SCOPED", StoreID: localStoreID, CanonicalName: "خبز محلي", MeasurementKind: "DISCRETE", BaseUnit: "COUNT", VariantTitle: "رغيف"}
 	localProduct, err := postgres.CreateCatalogProduct(s.ctx, s.db, localProductInput, "idem-local-product-v1", postgres.HashCatalogProductCreateRequest(localProductInput), testOperatorActorID, "corr-local-product-v1")
 	if err != nil || localProduct.Product.ID == "" {
@@ -307,9 +356,20 @@ func (s *catalogRefoundationScenario) publishFirstStoreOffer() {
 	if _, err := postgres.UpdateCatalogOffer(s.ctx, s.db, s.offerID, offerUpdate, 9, "idem-offer-stale-v1", postgres.HashCatalogOfferUpdateRequest(s.offerID, offerUpdate, 9), testPartnerActorID, "corr-offer-stale-v1"); !errors.Is(err, postgres.ErrCatalogVersionConflict) {
 		s.t.Fatalf("expected stale offer version rejection, got %v", err)
 	}
-	published, err := postgres.UpdateCatalogOffer(s.ctx, s.db, s.offerID, offerUpdate, 1, "idem-offer-publish-v1", postgres.HashCatalogOfferUpdateRequest(s.offerID, offerUpdate, 1), testPartnerActorID, "corr-offer-publish-v1")
-	if err != nil || published.Offer.PublicationState != "published" || published.Offer.Version != 2 {
+	quickPriceUpdate := postgres.CatalogOfferUpdateInput{PriceMinor: 1350, Availability: false, PublicationState: "draft", QuantityPolicy: "DISCRETE", QuantityMinBaseUnits: 1, QuantityMaxBaseUnits: 10, QuantityStepBaseUnits: 1, PricingBasis: "PER_UNIT", PricingUnitBaseUnits: 1, InventoryPolicy: "AVAILABILITY_ONLY"}
+	quickPriceHash := postgres.HashCatalogQuickPriceUpdateRequest(s.offerID, quickPriceUpdate.PriceMinor, 1)
+	quickPriceMutation, err := postgres.UpdateCatalogOfferWithProvenance(s.ctx, s.db, s.offerID, quickPriceUpdate, 1, "idem-offer-quick-price-v1", quickPriceHash, testPartnerActorID, "corr-offer-quick-price-v1", "QUICK_PRICES")
+	if err != nil || quickPriceMutation.Offer.Version != 2 || quickPriceMutation.Offer.PriceMinor != quickPriceUpdate.PriceMinor {
+		s.t.Fatalf("quick-price update: %+v err=%v", quickPriceMutation, err)
+	}
+	offerUpdate.PriceMinor = quickPriceUpdate.PriceMinor
+	published, err := postgres.UpdateCatalogOffer(s.ctx, s.db, s.offerID, offerUpdate, 2, "idem-offer-publish-v1", postgres.HashCatalogOfferUpdateRequest(s.offerID, offerUpdate, 2), testPartnerActorID, "corr-offer-publish-v1")
+	if err != nil || published.Offer.PublicationState != "published" || published.Offer.Version != 3 {
 		s.t.Fatalf("publish store offer: %+v err=%v", published, err)
+	}
+	quickPriceReplay, err := postgres.UpdateCatalogOfferWithProvenance(s.ctx, s.db, s.offerID, quickPriceUpdate, 1, "idem-offer-quick-price-v1", quickPriceHash, testPartnerActorID, "corr-offer-quick-price-replay-v1", "QUICK_PRICES")
+	if err != nil || !quickPriceReplay.Replayed || quickPriceReplay.Offer.Version != published.Offer.Version {
+		s.t.Fatalf("quick-price same-key replay after later offer update: %+v err=%v", quickPriceReplay, err)
 	}
 	target, err := postgres.ResolveDiscoveryContentTarget(s.ctx, s.db, "discovery_store_target_no_offer", s.cityID)
 	if err != nil || target.TargetType != "STORE" || target.StoreID != "store_catalog_v1" {
@@ -411,7 +471,7 @@ func (s *catalogRefoundationScenario) verifyPublicStoreDiscovery() {
 		s.t.Fatalf("public discovery categories failed: %+v err=%v", discoveryCategories, err)
 	}
 	discoveryVerticals, err := postgres.ListPublicDiscoveryVerticals(s.ctx, s.db, s.cityID)
-	if err != nil || len(discoveryVerticals) != 1 || discoveryVerticals[0].ID != s.verticalID || discoveryVerticals[0].CatalogModel != "" {
+	if err != nil || len(discoveryVerticals) != 1 || discoveryVerticals[0].ID != s.verticalID {
 		s.t.Fatalf("public discovery vertical projection leaked internal routing or missed the vertical: %+v err=%v", discoveryVerticals, err)
 	}
 	publicSearch, err := postgres.SearchPublicCatalog(s.ctx, s.db, s.cityID, s.verticalID, s.categoryID, "قهوة", 10, "")
@@ -472,8 +532,8 @@ func (s *catalogRefoundationScenario) verifyFavorites() {
 func (s *catalogRefoundationScenario) verifyProposalPagination() {
 	s.t.Helper()
 	for index, suffix := range []string{"first", "second"} {
-		if _, err := s.db.ExecContext(s.ctx, `INSERT INTO dsh.catalog_product_proposals(id,partner_actor_id,vertical_id,category_id,proposed_name,proposed_base_unit,created_at)
-			VALUES($1,$2,$3,$4,$5,'COUNT',clock_timestamp()+($6::int * interval '1 second'))`, "proposal_"+suffix, testPartnerActorID, s.verticalID, s.categoryID, "اقتراح "+suffix, index); err != nil {
+		if _, err := s.db.ExecContext(s.ctx, `INSERT INTO dsh.catalog_product_proposals(id,partner_actor_id,submitter_role,submitter_actor_id,vertical_id,category_id,proposed_name,proposed_base_unit,created_at)
+			VALUES($1,$2,'PARTNER',$2,$3,$4,$5,'COUNT',clock_timestamp()+($6::int * interval '1 second'))`, "proposal_"+suffix, testPartnerActorID, s.verticalID, s.categoryID, "اقتراح "+suffix, index); err != nil {
 			s.t.Fatalf("insert catalog proposal fixture %s: %v", suffix, err)
 		}
 	}
@@ -484,6 +544,25 @@ func (s *catalogRefoundationScenario) verifyProposalPagination() {
 	proposalNext, err := postgres.ListCatalogProductProposalsForPartner(s.ctx, s.db, testPartnerActorID, "", 1, proposalPage.NextCursor)
 	if err != nil || len(proposalNext.Proposals) != 1 || proposalNext.NextCursor != "" || proposalNext.Proposals[0].ID == proposalPage.Proposals[0].ID {
 		s.t.Fatalf("catalog proposal cursor failed: first=%+v second=%+v err=%v", proposalPage, proposalNext, err)
+	}
+	fieldProposalInput := postgres.CatalogProductProposalInput{
+		ID: "proposal_field_null_owner_review", SubmitterRole: "FIELD", SubmitterActorID: "field-proposal-reviewer",
+		JoiningCaseID: "joining_store_discovery_v1", VerticalID: s.verticalID, CategoryID: s.categoryID,
+		ProposedName: "منتج مقترح من الميدان", ProposedVariantTitle: "عبوة واحدة", ProposedMeasurementKind: "DISCRETE", ProposedBaseUnit: "COUNT",
+		AttributeValues: []postgres.CatalogAttributeValueInput{}, VariantAttributeValues: []postgres.CatalogAttributeValueInput{},
+	}
+	fieldProposal, err := postgres.CreateCatalogProductProposal(s.ctx, s.db, fieldProposalInput, "idem-field-proposal-v1", postgres.HashCatalogProductProposalCreateRequest(fieldProposalInput), testOperatorActorID, "corr-field-proposal-v1")
+	if err != nil || fieldProposal.Proposal.PartnerActorID != "" || fieldProposal.Proposal.State != "draft" {
+		s.t.Fatalf("create Field proposal with no Partner owner: %+v err=%v", fieldProposal, err)
+	}
+	submittedFieldProposal, err := postgres.SubmitCatalogProductProposal(s.ctx, s.db, fieldProposal.Proposal.ID, fieldProposal.Proposal.Version, "idem-field-proposal-submit-v1", postgres.HashCatalogProductProposalTransitionRequest(fieldProposal.Proposal.ID, fieldProposal.Proposal.Version), testOperatorActorID, "corr-field-proposal-submit-v1")
+	if err != nil || submittedFieldProposal.Proposal.State != "submitted" {
+		s.t.Fatalf("submit Field proposal with no Partner owner: %+v err=%v", submittedFieldProposal, err)
+	}
+	const reviewReason = "Catalog review rejected the Field proposal"
+	reviewedFieldProposal, err := postgres.ReviewCatalogProductProposal(s.ctx, s.db, submittedFieldProposal.Proposal.ID, "rejected", reviewReason, submittedFieldProposal.Proposal.Version, "idem-field-proposal-review-v1", postgres.HashCatalogProductProposalReviewRequest(submittedFieldProposal.Proposal.ID, "rejected", reviewReason, submittedFieldProposal.Proposal.Version), testOperatorActorID, "corr-field-proposal-review-v1")
+	if err != nil || reviewedFieldProposal.Proposal.State != "rejected" || reviewedFieldProposal.Proposal.PartnerActorID != "" {
+		s.t.Fatalf("review Field proposal with nullable Partner owner: %+v err=%v", reviewedFieldProposal, err)
 	}
 }
 

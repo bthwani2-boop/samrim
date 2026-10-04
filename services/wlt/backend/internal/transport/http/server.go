@@ -95,8 +95,13 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/partner-financial-profiles", s.preparePartnerFinancialProfile)
 	mux.HandleFunc("GET /wlt/v1/partner-financial-profiles/{profileId}", s.readPartnerFinancialProfile)
 	mux.HandleFunc("POST /wlt/v1/partner-financial-profiles/{profileId}/activate", s.activatePartnerFinancialProfile)
-	mux.HandleFunc("GET /wlt/v1/operator/commercial-store-type-commission-policies", s.readPartnerStoreCommissionPolicies)
-	mux.HandleFunc("POST /wlt/v1/operator/commercial-store-type-commission-policies", s.updatePartnerStoreCommissionPolicy)
+	mux.HandleFunc("GET /wlt/v1/operator/commercial-store-type-commission-defaults", s.readStoreTypeCommissionDefaults)
+	mux.HandleFunc("POST /wlt/v1/operator/commercial-store-type-commission-defaults", s.updateStoreTypeCommissionDefault)
+	mux.HandleFunc("GET /wlt/v1/store-commercial-agreements", s.readStoreCommercialAgreements)
+	mux.HandleFunc("GET /wlt/v1/operator/store-commercial-agreements", s.listStoreCommercialAgreementsForFinance)
+	mux.HandleFunc("POST /wlt/v1/store-commercial-agreements", s.proposeStoreCommercialAgreement)
+	mux.HandleFunc("POST /wlt/v1/store-commercial-agreements/{agreementId}/accept", s.acceptStoreCommercialAgreement)
+	mux.HandleFunc("POST /wlt/v1/operator/store-commercial-agreements/{agreementId}/decision", s.decideStoreCommercialAgreement)
 	mux.HandleFunc("POST /wlt/v1/partner-order-earnings/finalize", s.finalizePartnerOrderEarning)
 	mux.HandleFunc("POST /wlt/v1/partner-store-cash-commissions/finalize", s.finalizePartnerStoreCashCommission)
 	mux.HandleFunc("POST /wlt/v1/operator/partners/{partnerActorId}/commission-remittances", s.recordPartnerCommissionRemittance)
@@ -105,6 +110,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/operator/field-acquisition-reward-policies", s.createFieldAcquisitionRewardPolicy)
 	mux.HandleFunc("GET /wlt/v1/operator/field-acquisition-reward-policies", s.readOperatorFieldAcquisitionRewardPolicy)
 	mux.HandleFunc("POST /wlt/v1/field-acquisition-entitlements/finalize", s.finalizeFieldAcquisitionEntitlement)
+	mux.HandleFunc("GET /wlt/v1/field-acquisition-entitlements/{joiningCaseId}", s.readFieldAcquisitionEntitlementByJoiningCase)
 	mux.HandleFunc("GET /wlt/v1/fields/{fieldActorId}/financial-summary", s.readFieldFinancialSummary)
 	mux.HandleFunc("GET /wlt/v1/fields/{fieldActorId}/acquisition-entitlements", s.listFieldAcquisitionEntitlements)
 	mux.HandleFunc("POST /wlt/v1/operator/official-wallet-destinations", s.createOfficialWalletDestination)
@@ -176,11 +182,11 @@ type customerPaymentAllocationRequest struct {
 	PolicyVersion              string `json:"policyVersion"`
 }
 
-type updatePartnerStoreCommissionPolicyRequest struct {
+type updateStoreTypeCommissionDefaultRequest struct {
 	CommercialStoreTypeID string `json:"commercialStoreTypeId"`
 	FulfillmentMode       string `json:"fulfillmentMode"`
-	CommissionRateBps     int    `json:"commissionRateBps"`
-	ExpectedVersion       int    `json:"expectedVersion"`
+	CommissionRateBps     int    `json:"suggestedCommissionRateBps"`
+	ExpectedVersion       int    `json:"expectedDefaultVersion"`
 	Reason                string `json:"reason"`
 }
 
@@ -249,26 +255,26 @@ type partnerCommissionRemittanceRequest struct {
 }
 
 type createOfficialWalletDestinationRequest struct {
-	ActorType                     string `json:"actorType"`
-	ActorID                       string `json:"actorId"`
-	ProviderKey                   string `json:"providerKey"`
-	WalletIdentifier              string `json:"walletIdentifier"`
-	BeneficiaryName               string `json:"beneficiaryName"`
-	BeneficiaryIdentityVersion    int    `json:"beneficiaryIdentityVersion"`
-	ChangeReason                  string `json:"changeReason"`
-	VerificationEvidenceReference string `json:"verificationEvidenceReference"`
-	ChangeEvidenceReference       string `json:"changeEvidenceReference"`
+	ActorType                     string                 `json:"actorType"`
+	ActorID                       string                 `json:"actorId"`
+	ProviderKey                   string                 `json:"providerKey"`
+	IdentityFacts                 postgres.IdentityFacts `json:"identityFacts"`
+	ChangeReason                  string                 `json:"changeReason"`
+	VerificationEvidenceReference string                 `json:"verificationEvidenceReference"`
+	ChangeEvidenceReference       string                 `json:"changeEvidenceReference"`
 }
 
 type transitionOfficialWalletDestinationRequest struct {
-	EvidenceReference string `json:"evidenceReference"`
+	EvidenceReference string                 `json:"evidenceReference"`
+	IdentityFacts     postgres.IdentityFacts `json:"identityFacts"`
 }
 
 type payoutIntentRequest struct {
-	ActorType   string `json:"actorType"`
-	ActorID     string `json:"actorId"`
-	AmountMode  string `json:"amountMode"`
-	AmountMinor *int64 `json:"amountMinor"`
+	ActorType     string                 `json:"actorType"`
+	ActorID       string                 `json:"actorId"`
+	AmountMode    string                 `json:"amountMode"`
+	AmountMinor   *int64                 `json:"amountMinor"`
+	IdentityFacts postgres.IdentityFacts `json:"identityFacts"`
 }
 
 type officialWalletDestinationResponse struct {
@@ -450,6 +456,8 @@ type fieldAcquisitionEntitlementJSON struct {
 	Currency              string `json:"currency"`
 	LedgerTransactionID   string `json:"ledgerTransactionId"`
 	CreatedAt             string `json:"createdAt"`
+	EffectiveAt           string `json:"effectiveAt"`
+	Status                string `json:"status"`
 }
 
 type fieldFinancialSummaryResponse struct {
@@ -1034,7 +1042,7 @@ func (s *Server) activatePartnerFinancialProfile(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, partnerFinancialProfileResponse{Profile: toPartnerFinancialProfile(result), IdempotentReplay: replayed})
 }
 
-func (s *Server) readPartnerStoreCommissionPolicies(w http.ResponseWriter, r *http.Request) {
+func (s *Server) readStoreTypeCommissionDefaults(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
 	}
@@ -1043,15 +1051,15 @@ func (s *Server) readPartnerStoreCommissionPolicies(w http.ResponseWriter, r *ht
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "commercialStoreTypeId is required")
 		return
 	}
-	policies, err := postgres.ReadPartnerStoreCommissionPolicies(r.Context(), s.db, typeID)
+	defaults, err := postgres.ReadStoreTypeCommissionDefaults(r.Context(), s.db, typeID)
 	if err != nil {
-		writePartnerStoreCommissionPolicyError(w, err)
+		writeStoreTypeCommissionDefaultError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"commercialStoreTypeId": typeID, "policies": policies})
+	writeJSON(w, http.StatusOK, map[string]any{"commercialStoreTypeId": typeID, "defaults": defaults})
 }
 
-func (s *Server) updatePartnerStoreCommissionPolicy(w http.ResponseWriter, r *http.Request) {
+func (s *Server) updateStoreTypeCommissionDefault(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
 	}
@@ -1064,35 +1072,35 @@ func (s *Server) updatePartnerStoreCommissionPolicy(w http.ResponseWriter, r *ht
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
 		return
 	}
-	var input updatePartnerStoreCommissionPolicyRequest
+	var input updateStoreTypeCommissionDefaultRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	policy, replayed, err := postgres.UpdatePartnerStoreCommissionPolicy(r.Context(), s.db, postgres.PartnerStoreCommissionPolicyUpdate{
+	storeTypeDefault, replayed, err := postgres.UpdateStoreTypeCommissionDefault(r.Context(), s.db, postgres.StoreTypeCommissionDefaultUpdate{
 		CommercialStoreTypeID: input.CommercialStoreTypeID, FulfillmentMode: input.FulfillmentMode, CommissionRateBps: input.CommissionRateBps,
 		ExpectedVersion: input.ExpectedVersion, ChangedByActorID: actingActorID, Reason: input.Reason,
 		IdempotencyKey: idempotency, CorrelationID: correlation,
 	})
 	if err != nil {
-		writePartnerStoreCommissionPolicyError(w, err)
+		writeStoreTypeCommissionDefaultError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"policy": policy, "idempotentReplay": replayed})
+	writeJSON(w, http.StatusOK, map[string]any{"default": storeTypeDefault, "idempotentReplay": replayed})
 }
 
-func writePartnerStoreCommissionPolicyError(w http.ResponseWriter, err error) {
+func writeStoreTypeCommissionDefaultError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, postgres.ErrPartnerStoreCommissionPolicyUnavailable):
-		writeError(w, http.StatusNotFound, "COMMISSION_POLICY_NOT_FOUND", "commission policies are not initialized for this Store")
-	case errors.Is(err, postgres.ErrPartnerStoreCommissionPolicyVersionConflict):
-		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "commission policy changed; reload before saving")
+	case errors.Is(err, postgres.ErrStoreTypeCommissionDefaultUnavailable):
+		writeError(w, http.StatusNotFound, "COMMISSION_DEFAULT_NOT_FOUND", "commission defaults are not initialized for this Store Type")
+	case errors.Is(err, postgres.ErrStoreTypeCommissionDefaultVersionConflict):
+		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "commission default changed; reload before saving")
 	case errors.Is(err, postgres.ErrIdempotencyConflict):
-		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different commission policy facts")
-	case errors.Is(err, postgres.ErrPartnerStoreCommissionPolicyInvalidInput):
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "commission policy fields are invalid")
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different commission default facts")
+	case errors.Is(err, postgres.ErrStoreTypeCommissionDefaultInvalidInput):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "commission default fields are invalid")
 	default:
-		log.Printf("WLT partner store commission policy persistence error: %T %v", err, err)
-		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT commission policy persistence is unavailable")
+		log.Printf("WLT commercial Store Type commission default persistence error: %T %v", err, err)
+		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT commission default persistence is unavailable")
 	}
 }
 
@@ -1250,6 +1258,24 @@ func (s *Server) finalizeFieldAcquisitionEntitlement(w http.ResponseWriter, r *h
 	writeJSON(w, status, fieldAcquisitionEntitlementResponse{Entitlement: toFieldAcquisitionEntitlement(result), IdempotentReplay: replayed})
 }
 
+func (s *Server) readFieldAcquisitionEntitlementByJoiningCase(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	joiningCaseID := strings.TrimSpace(r.PathValue("joiningCaseId"))
+	if bounded := len(joiningCaseID); bounded < 1 || bounded > 128 {
+		writeFieldAcquisitionRewardError(w, postgres.ErrFieldAcquisitionEntitlementInvalid)
+		return
+	}
+	result, err := postgres.ReadFieldAcquisitionEntitlementByJoiningCase(r.Context(), s.db, joiningCaseID)
+	if err != nil {
+		writeFieldAcquisitionRewardError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, fieldAcquisitionEntitlementResponse{Entitlement: toFieldAcquisitionEntitlement(result)})
+}
+
 func (s *Server) readFieldFinancialSummary(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
@@ -1279,7 +1305,7 @@ func (s *Server) createOfficialWalletDestination(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
 		return
 	}
-	result, replayed, err := postgres.CreateOfficialWalletDestination(r.Context(), s.db, s.destinationEncryptionKey, postgres.CreateOfficialWalletDestinationInput{ActorType: input.ActorType, ActorID: input.ActorID, ProviderKey: input.ProviderKey, WalletIdentifier: input.WalletIdentifier, BeneficiaryName: input.BeneficiaryName, BeneficiaryIdentityVersion: input.BeneficiaryIdentityVersion, ChangeReason: input.ChangeReason, VerificationEvidenceReference: input.VerificationEvidenceReference, ChangeEvidenceReference: input.ChangeEvidenceReference, SubmittedBy: actor, IdempotencyKey: idempotency, CorrelationID: correlation})
+	result, replayed, err := postgres.CreateOfficialWalletDestination(r.Context(), s.db, s.destinationEncryptionKey, postgres.CreateOfficialWalletDestinationInput{ActorType: input.ActorType, ActorID: input.ActorID, ProviderKey: input.ProviderKey, IdentityFacts: input.IdentityFacts, ChangeReason: input.ChangeReason, VerificationEvidenceReference: input.VerificationEvidenceReference, ChangeEvidenceReference: input.ChangeEvidenceReference, SubmittedBy: actor, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writeDestinationError(w, err)
 		return
@@ -1308,7 +1334,7 @@ func (s *Server) verifyOfficialWalletDestination(w http.ResponseWriter, r *http.
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := postgres.VerifyOfficialWalletDestination(r.Context(), s.db, r.PathValue("destinationId"), actor, input.EvidenceReference, idempotency, correlation)
+	result, err := postgres.VerifyOfficialWalletDestination(r.Context(), s.db, s.destinationEncryptionKey, r.PathValue("destinationId"), actor, input.EvidenceReference, input.IdentityFacts, idempotency, correlation)
 	if err != nil {
 		writeDestinationError(w, err)
 		return
@@ -1329,7 +1355,11 @@ func (s *Server) activateOfficialWalletDestination(w http.ResponseWriter, r *htt
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
 		return
 	}
-	result, err := postgres.ActivateOfficialWalletDestination(r.Context(), s.db, r.PathValue("destinationId"), actor, idempotency, correlation)
+	var input transitionOfficialWalletDestinationRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := postgres.ActivateOfficialWalletDestination(r.Context(), s.db, s.destinationEncryptionKey, r.PathValue("destinationId"), actor, input.IdentityFacts, idempotency, correlation)
 	if err != nil {
 		writeDestinationError(w, err)
 		return
@@ -1377,7 +1407,7 @@ func (s *Server) createPayoutIntent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "customer withdrawals require a linked Operations intake and cannot use the general payout-intent route")
 		return
 	}
-	result, replayed, err := postgres.CreatePayoutIntent(r.Context(), s.db, postgres.PayoutIntentInput{ActorType: input.ActorType, ActorID: input.ActorID, AmountMode: input.AmountMode, AmountMinor: input.AmountMinor, IdempotencyKey: idempotency, CorrelationID: correlation})
+	result, replayed, err := postgres.CreatePayoutIntent(r.Context(), s.db, s.destinationEncryptionKey, postgres.PayoutIntentInput{ActorType: input.ActorType, ActorID: input.ActorID, AmountMode: input.AmountMode, AmountMinor: input.AmountMinor, IdentityFacts: input.IdentityFacts, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writePayoutError(w, err)
 		return
@@ -1582,6 +1612,8 @@ func formatNullableTime(value *time.Time) *string {
 
 func writeDestinationError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, postgres.ErrReverificationRequired):
+		writeError(w, http.StatusConflict, "REVERIFICATION_REQUIRED", "current verified Identity facts do not match the wallet destination")
 	case errors.Is(err, postgres.ErrDestinationNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "official wallet destination was not found")
 	case errors.Is(err, postgres.ErrDestinationState):
@@ -1597,6 +1629,8 @@ func writeDestinationError(w http.ResponseWriter, err error) {
 
 func writePayoutError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, postgres.ErrReverificationRequired):
+		writeError(w, http.StatusConflict, "REVERIFICATION_REQUIRED", "current verified Identity facts do not match the active wallet destination")
 	case errors.Is(err, postgres.ErrPayoutInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "payout intent input is invalid")
 	case errors.Is(err, postgres.ErrCustomerWithdrawalNotFound):
@@ -1660,8 +1694,8 @@ func writePaymentError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_PAYMENT_ALLOCATION", "payment allocation is invalid")
 	case errors.Is(err, postgres.ErrInsufficientCustomerBalance):
 		writeError(w, http.StatusConflict, "INSUFFICIENT_CUSTOMER_BALANCE", "available customer balance does not cover the requested contribution")
-	case errors.Is(err, postgres.ErrPartnerStoreCommissionPolicyUnavailable):
-		writeError(w, http.StatusConflict, "COMMISSION_POLICY_UNAVAILABLE", "the Store does not have an initialized commission policy for this fulfillment mode")
+	case errors.Is(err, postgres.ErrStoreCommercialAgreementUnavailable):
+		writeError(w, http.StatusConflict, "STORE_COMMERCIAL_AGREEMENT_REQUIRED", "an active Store-specific agreement is required for this fulfillment mode")
 	default:
 		log.Printf("WLT partner financial profile persistence error: %T %v", err, err)
 		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT persistence is unavailable")
@@ -1719,8 +1753,8 @@ func writeFinancialProfileError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "STATE_CONFLICT", "financial profile state does not allow this operation")
 	case errors.Is(err, postgres.ErrFinancialProfileInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "financial profile input is invalid")
-	case errors.Is(err, postgres.ErrPartnerStoreCommissionPolicyUnavailable):
-		writeError(w, http.StatusConflict, "COMMISSION_POLICY_UNAVAILABLE", "no commission policy is configured for this commercial store type and fulfillment mode")
+	case errors.Is(err, postgres.ErrStoreCommercialAgreementUnavailable):
+		writeError(w, http.StatusConflict, "STORE_COMMERCIAL_AGREEMENT_REQUIRED", "an active Store-specific agreement is required for this fulfillment mode")
 	default:
 		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT persistence is unavailable")
 	}
@@ -1756,7 +1790,7 @@ func writePartnerCashCommissionError(w http.ResponseWriter, err error) {
 	case errors.Is(err, postgres.ErrPartnerCashCommissionExists):
 		writeError(w, http.StatusConflict, "COMMISSION_EXISTS", "the store cash commission is already recorded")
 	case errors.Is(err, postgres.ErrPartnerCommissionSnapshotMissing):
-		writeError(w, http.StatusConflict, "COMMISSION_SNAPSHOT_MISSING", "this order has no immutable commission policy snapshot")
+		writeError(w, http.StatusConflict, "COMMISSION_SNAPSHOT_MISSING", "this order has no immutable commission snapshot")
 	case errors.Is(err, postgres.ErrPartnerRemittanceOverpayment):
 		writeError(w, http.StatusConflict, "REMITTANCE_EXCEEDS_RECEIVABLE", "remittance exceeds the outstanding Partner commission receivable")
 	case errors.Is(err, postgres.ErrPartnerRemittanceEvidence):
@@ -1785,7 +1819,7 @@ func toFieldAcquisitionRewardPolicy(item postgres.FieldAcquisitionRewardPolicyRe
 }
 
 func toFieldAcquisitionEntitlement(item postgres.FieldAcquisitionEntitlementRecord) fieldAcquisitionEntitlementJSON {
-	return fieldAcquisitionEntitlementJSON{JoiningCaseID: item.JoiningCaseID, StoreID: item.StoreID, PartnerActorID: item.PartnerActorID, FieldActorID: item.FieldActorID, VerticalID: item.VerticalID, CommercialStoreTypeID: item.CommercialStoreTypeID, PolicyID: item.PolicyID, PolicyVersion: item.PolicyVersion, RewardMinor: item.RewardMinor, Currency: item.Currency, LedgerTransactionID: item.LedgerTransactionID, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano)}
+	return fieldAcquisitionEntitlementJSON{JoiningCaseID: item.JoiningCaseID, StoreID: item.StoreID, PartnerActorID: item.PartnerActorID, FieldActorID: item.FieldActorID, VerticalID: item.VerticalID, CommercialStoreTypeID: item.CommercialStoreTypeID, PolicyID: item.PolicyID, PolicyVersion: item.PolicyVersion, RewardMinor: item.RewardMinor, Currency: item.Currency, LedgerTransactionID: item.LedgerTransactionID, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano), EffectiveAt: item.EffectiveAt.UTC().Format(time.RFC3339Nano), Status: item.Status}
 }
 
 func toFieldFinancialSummary(item postgres.FieldFinancialSummaryRecord) fieldFinancialSummaryJSON {
@@ -1799,6 +1833,8 @@ func toFieldFinancialSummary(item postgres.FieldFinancialSummaryRecord) fieldFin
 
 func writeFieldAcquisitionRewardError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, postgres.ErrFieldAcquisitionEntitlementNotFound):
+		writeError(w, http.StatusNotFound, "FIELD_ACQUISITION_ENTITLEMENT_NOT_FOUND", "no posted Field acquisition entitlement exists for this joining case")
 	case errors.Is(err, postgres.ErrFieldAcquisitionRewardPolicyNotFound):
 		writeError(w, http.StatusNotFound, "FIELD_ACQUISITION_POLICY_NOT_FOUND", "no active Field acquisition reward policy is available for this scope")
 	case errors.Is(err, postgres.ErrFieldAcquisitionRewardPolicyInvalidInput), errors.Is(err, postgres.ErrFieldAcquisitionEntitlementInvalid):
@@ -1826,7 +1862,7 @@ func writePartnerEarningError(w http.ResponseWriter, err error) {
 	case errors.Is(err, postgres.ErrPartnerEarningProfile):
 		writeError(w, http.StatusConflict, "PROFILE_NOT_ACTIVE", "an active partner financial profile is required")
 	case errors.Is(err, postgres.ErrPartnerCommissionSnapshotMissing):
-		writeError(w, http.StatusConflict, "COMMISSION_SNAPSHOT_MISSING", "this order has no immutable commission policy snapshot")
+		writeError(w, http.StatusConflict, "COMMISSION_SNAPSHOT_MISSING", "this order has no immutable commission snapshot")
 	case errors.Is(err, postgres.ErrPartnerEarningExists):
 		writeError(w, http.StatusConflict, "EARNING_EXISTS", "the order earning is already finalized")
 	case errors.Is(err, postgres.ErrLedgerUnbalanced):

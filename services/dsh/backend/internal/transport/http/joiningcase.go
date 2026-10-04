@@ -68,6 +68,7 @@ func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/correct-and-resubmit", s.correctAndResubmitForPartner)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/review", s.review)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/financial-terms", s.bindFinancialTerms)
+	s.RegisterStoreCommercialAgreementRoutes(mux)
 }
 
 func (s *JoiningCaseServer) listForOperator(w http.ResponseWriter, r *http.Request) {
@@ -96,7 +97,7 @@ func (s *JoiningCaseServer) listForOperator(w http.ResponseWriter, r *http.Reque
 	}
 	items := make([]contract.JoiningCaseSummary, 0, len(result.Cases))
 	for _, item := range result.Cases {
-		items = append(items, contract.JoiningCaseSummary{ID: item.ID, ContactPhoneE164: item.ContactPhoneE164, BusinessName: item.BusinessName, FirstStoreName: item.FirstStoreName, ServiceCityID: item.FirstStoreServiceCityID, FirstStoreVerticalID: item.FirstStoreVerticalID, FirstStoreCommercialTypeID: item.FirstStoreCommercialTypeID, PartnerActorID: item.PartnerActorID, Origin: contract.JoiningCaseOrigin(item.Origin), State: contract.JoiningCaseState(item.State), CorrectionReason: item.CorrectionReason, ReviewedBy: item.ReviewedBy, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
+		items = append(items, contract.JoiningCaseSummary{ID: item.ID, ContactPhoneE164: item.ContactPhoneE164, BusinessName: item.BusinessName, FirstStoreName: item.FirstStoreName, WalletProviderKey: item.WalletProviderKey, ServiceCityID: item.FirstStoreServiceCityID, FirstStoreVerticalID: item.FirstStoreVerticalID, FirstStoreCommercialTypeID: item.FirstStoreCommercialTypeID, PartnerActorID: item.PartnerActorID, Origin: contract.JoiningCaseOrigin(item.Origin), State: contract.JoiningCaseState(item.State), CorrectionReason: item.CorrectionReason, ReviewedBy: item.ReviewedBy, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

@@ -304,7 +304,7 @@ paths:
               schema: { $ref: '#/components/schemas/DeliveryFeeQuoteResponse' }
   /wlt/v1/operator/delivery-fee-policies:
     get:
-       operationId: readDeliveryFeePolicy
+      operationId: readDeliveryFeePolicy
       security: [{ serviceToken: [] }]
       parameters:
         - name: serviceCityId
@@ -430,26 +430,25 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PartnerFinancialProfileResponse' }
-  /wlt/v1/operator/commercial-store-type-commission-policies:
+  /wlt/v1/operator/commercial-store-type-commission-defaults:
     get:
-      operationId: readOperatorCommercialStoreTypeCommissionPolicies
+      operationId: readOperatorCommercialStoreTypeCommissionDefaults
       security: [{ serviceToken: [] }]
       parameters:
-        - { $ref: '#/components/parameters/ActingActorId' }
         - name: commercialStoreTypeId
           in: query
           required: true
           schema: { type: string, minLength: 1, maxLength: 128 }
       responses:
         '200':
-          description: Canonical current commission policy by fulfillment mode for a commercial store type.
+          description: Suggested commission defaults by fulfillment mode for a commercial store type.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/PartnerStoreCommissionPoliciesResponse' }
+              schema: { $ref: '#/components/schemas/StoreTypeCommissionDefaultsResponse' }
         '400': { $ref: '#/components/responses/InvalidInput' }
         '404': { $ref: '#/components/responses/NotFound' }
     post:
-      operationId: updateOperatorCommercialStoreTypeCommissionPolicy
+      operationId: updateOperatorCommercialStoreTypeCommissionDefault
       security: [{ serviceToken: [] }]
       parameters:
         - { $ref: '#/components/parameters/ActingActorId' }
@@ -459,16 +458,132 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/UpdatePartnerStoreCommissionPolicyRequest' }
+            schema: { $ref: '#/components/schemas/UpdateStoreTypeCommissionDefaultRequest' }
       responses:
         '200':
-          description: Changed policy or idempotent replay.
+          description: Changed default or idempotent replay.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/PartnerStoreCommissionPolicyUpdateResponse' }
+              schema: { $ref: '#/components/schemas/StoreTypeCommissionDefaultUpdateResponse' }
         '400': { $ref: '#/components/responses/InvalidInput' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /wlt/v1/store-commercial-agreements:
+    get:
+      operationId: readStoreCommercialAgreements
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: storeId
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: Commercial agreement history for a store.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StoreCommercialAgreementListResponse' }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '502': { $ref: '#/components/responses/DependencyUnavailable' }
+    post:
+      operationId: proposeStoreCommercialAgreement
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ActingActorId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProposeStoreCommercialAgreementRequest' }
+      responses:
+        '201':
+          description: Store commercial agreement proposed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StoreCommercialAgreementResponse' }
+        '200':
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StoreCommercialAgreementResponse' }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '502': { $ref: '#/components/responses/DependencyUnavailable' }
+  /wlt/v1/operator/store-commercial-agreements:
+    get:
+      operationId: listStoreCommercialAgreementsForFinance
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, default: PARTNER_ACCEPTED }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 50 }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 512 }
+      responses:
+        '200':
+          description: Cursor-paged store commercial agreements for finance review.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StoreCommercialAgreementPageResponse' }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '502': { $ref: '#/components/responses/DependencyUnavailable' }
+  /wlt/v1/store-commercial-agreements/{agreementId}/accept:
+    post:
+      operationId: acceptStoreCommercialAgreement
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: agreementId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { $ref: '#/components/parameters/ActingActorId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StoreCommercialAgreementAcceptanceRequest' }
+      responses:
+        '200':
+          description: Partner acceptance recorded or replayed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StoreCommercialAgreementResponse' }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '502': { $ref: '#/components/responses/DependencyUnavailable' }
+  /wlt/v1/operator/store-commercial-agreements/{agreementId}/decision:
+    post:
+      operationId: decideStoreCommercialAgreement
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { name: agreementId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { $ref: '#/components/parameters/ActingActorId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - { $ref: '#/components/parameters/CorrelationId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StoreCommercialAgreementDecisionRequest' }
+      responses:
+        '200':
+          description: Finance decision recorded or replayed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StoreCommercialAgreementResponse' }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '502': { $ref: '#/components/responses/DependencyUnavailable' }
   /wlt/v1/partner-order-earnings/finalize:
     post:
       operationId: finalizePartnerOrderEarning
@@ -648,6 +763,24 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/FieldAcquisitionEntitlementResponse' }
+  /wlt/v1/field-acquisition-entitlements/{joiningCaseId}:
+    get:
+      operationId: readFieldAcquisitionEntitlementByJoiningCase
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: joiningCaseId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: Field acquisition entitlement readback for the joining case.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FieldAcquisitionEntitlementResponse' }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502': { $ref: '#/components/responses/DependencyUnavailable' }
   /wlt/v1/fields/{fieldActorId}/financial-summary:
     get:
       operationId: readFieldFinancialSummary
@@ -737,10 +870,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              properties: {}
+            schema: { $ref: '#/components/schemas/ActivateOfficialWalletDestinationRequest' }
       responses:
         '200':
           description: Destination activated for payout.
@@ -1022,7 +1152,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/PayoutActionRequest' }
+            schema: { $ref: '#/components/schemas/PayoutIdentityActionRequest' }
       responses:
         '200':
           description: Payout prepared.
@@ -1042,7 +1172,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/PayoutActionRequest' }
+            schema: { $ref: '#/components/schemas/PayoutIdentityActionRequest' }
       responses:
         '200':
           description: Payout independently approved.
@@ -1142,7 +1272,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { type: object, additionalProperties: false }
+            schema: { $ref: '#/components/schemas/SettlementBatchIdentityFactsRequest' }
       responses:
         '201':
           description: Immutable XLSX generated from a frozen batch and stored encrypted.
@@ -1169,7 +1299,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/PayoutActionRequest' }
+            schema: { $ref: '#/components/schemas/SettlementBatchActionRequest' }
       responses:
         '200':
           description: Settlement batch approved.
@@ -1189,7 +1319,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/PayoutActionRequest' }
+            schema: { $ref: '#/components/schemas/SettlementBatchActionRequest' }
       responses:
         '200':
           description: Settlement batch frozen for execution.
@@ -1388,7 +1518,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/PayoutActionRequest' }
+            schema: { $ref: '#/components/schemas/PayoutIdentityActionRequest' }
       responses:
         '201':
           description: Finance-created destination candidate for the exceptional withdrawal.
@@ -1405,7 +1535,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/PayoutActionRequest' }
+            schema: { $ref: '#/components/schemas/PayoutIdentityActionRequest' }
       responses:
         '201':
           description: Finance acceptance resolved current customer wallet availability and created a linked hold-backed payout.
@@ -1824,7 +1954,7 @@ components:
     FieldAcquisitionEntitlement:
       type: object
       additionalProperties: false
-      required: [joiningCaseId, storeId, partnerActorId, fieldActorId, verticalId, commercialStoreTypeId, policyId, policyVersion, rewardMinor, currency, ledgerTransactionId, createdAt]
+      required: [joiningCaseId, storeId, partnerActorId, fieldActorId, verticalId, commercialStoreTypeId, policyId, policyVersion, rewardMinor, currency, ledgerTransactionId, createdAt, effectiveAt, status]
       properties:
         joiningCaseId: { type: string }
         storeId: { type: string }
@@ -1838,6 +1968,8 @@ components:
         currency: { type: string, const: YER }
         ledgerTransactionId: { type: string }
         createdAt: { type: string, format: date-time }
+        effectiveAt: { type: string, format: date-time }
+        status: { type: string }
     FieldAcquisitionEntitlementResponse:
       type: object
       additionalProperties: false
@@ -1862,23 +1994,6 @@ components:
       required: [summary]
       properties:
         summary: { $ref: '#/components/schemas/FieldFinancialSummary' }
-    FieldAcquisitionEntitlement:
-      type: object
-      additionalProperties: false
-      required: [joiningCaseId, storeId, partnerActorId, fieldActorId, verticalId, commercialStoreTypeId, policyId, policyVersion, rewardMinor, currency, ledgerTransactionId, createdAt]
-      properties:
-        joiningCaseId: { type: string }
-        storeId: { type: string }
-        partnerActorId: { type: string }
-        fieldActorId: { type: string }
-        verticalId: { type: string }
-        commercialStoreTypeId: { type: string }
-        policyId: { type: string }
-        policyVersion: { type: integer, minimum: 1 }
-        rewardMinor: { type: integer, minimum: 1 }
-        currency: { type: string, const: YER }
-        ledgerTransactionId: { type: string }
-        createdAt: { type: string, format: date-time }
     FieldAcquisitionEntitlementPage:
       type: object
       additionalProperties: false
@@ -1888,26 +2003,46 @@ components:
           type: array
           items: { $ref: '#/components/schemas/FieldAcquisitionEntitlement' }
         nextCursor: { type: string }
+    IdentityFacts:
+      type: object
+      additionalProperties: false
+      required: [actorType, actorId, phoneE164, actorVersion, roleVersion, roleEnabled, securityEnabled, officialName, officialNameVersion, officialNameStatus]
+      properties:
+        actorType: { type: string, enum: [customer, partner, captain, field] }
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        phoneE164: { type: string, pattern: '^\+[1-9][0-9]{7,14}$' }
+        actorVersion: { type: integer, minimum: 1 }
+        roleVersion: { type: integer, minimum: 1 }
+        roleEnabled: { type: boolean, const: true }
+        securityEnabled: { type: boolean, const: true }
+        officialName: { type: string, minLength: 1, maxLength: 320 }
+        officialNameVersion: { type: integer, minimum: 1 }
+        officialNameStatus: { type: string, const: VERIFIED }
     CreateOfficialWalletDestinationRequest:
       type: object
       additionalProperties: false
-      required: [actorType, actorId, providerKey, walletIdentifier, beneficiaryName, beneficiaryIdentityVersion, changeReason, verificationEvidenceReference, changeEvidenceReference]
+      required: [actorType, actorId, providerKey, identityFacts, changeReason, verificationEvidenceReference, changeEvidenceReference]
       properties:
         actorType: { type: string, enum: [partner, captain, field] }
         actorId: { type: string, minLength: 1, maxLength: 128 }
         providerKey: { type: string, minLength: 1, maxLength: 128 }
-        walletIdentifier: { type: string, minLength: 9, maxLength: 16, pattern: '^\+[1-9][0-9]{7,14}$', description: 'Official-wallet phone number in canonical E.164 format; distinct from the actor ID and login phone.' }
-        beneficiaryName: { type: string, minLength: 1, maxLength: 320 }
-        beneficiaryIdentityVersion: { type: integer, minimum: 1 }
+        identityFacts: { $ref: '#/components/schemas/IdentityFacts' }
         changeReason: { type: string, minLength: 1, maxLength: 512 }
         verificationEvidenceReference: { type: string, maxLength: 512 }
         changeEvidenceReference: { type: string, maxLength: 512 }
     TransitionOfficialWalletDestinationRequest:
       type: object
       additionalProperties: false
-      required: [evidenceReference]
+      required: [evidenceReference, identityFacts]
       properties:
         evidenceReference: { type: string, minLength: 1, maxLength: 512 }
+        identityFacts: { $ref: '#/components/schemas/IdentityFacts' }
+    ActivateOfficialWalletDestinationRequest:
+      type: object
+      additionalProperties: false
+      required: [identityFacts]
+      properties:
+        identityFacts: { $ref: '#/components/schemas/IdentityFacts' }
     OfficialWalletDestination:
       type: object
       additionalProperties: false
@@ -1920,8 +2055,8 @@ components:
         walletIdentifierMasked: { type: string }
         beneficiaryName: { type: string }
         beneficiaryIdentityVersion: { type: integer, minimum: 1 }
-        verificationStatus: { type: string }
-        status: { type: string }
+        verificationStatus: { type: string, enum: [PENDING_VERIFICATION, VERIFIED, REJECTED, STALE] }
+        status: { type: string, enum: [CANDIDATE, PENDING_APPROVAL, ACTIVE_FOR_PAYOUT, SUSPENDED, RETIRED] }
         version: { type: integer, minimum: 1 }
         changeReason: { type: string }
         submittedBy: { type: string }
@@ -1944,12 +2079,13 @@ components:
     PayoutIntentRequest:
       type: object
       additionalProperties: false
-      required: [actorType, actorId, amountMode]
+      required: [actorType, actorId, amountMode, identityFacts]
       properties:
         actorType: { type: string, enum: [partner, captain, field] }
         actorId: { type: string, minLength: 1, maxLength: 128 }
         amountMode: { type: string, enum: [FULL_AVAILABLE, SPECIFIED] }
         amountMinor: { type: integer, minimum: 1, nullable: true }
+        identityFacts: { $ref: '#/components/schemas/IdentityFacts' }
     PayoutRequest:
       type: object
       additionalProperties: false
@@ -2014,15 +2150,46 @@ components:
       properties:
         reason: { type: string, minLength: 1, maxLength: 512 }
         evidenceReference: { type: string, maxLength: 512 }
+    PayoutIdentityActionRequest:
+      type: object
+      additionalProperties: false
+      required: [reason, identityFacts]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 512 }
+        evidenceReference: { type: string, maxLength: 512 }
+        identityFacts: { $ref: '#/components/schemas/IdentityFacts' }
     SettlementBatchCreateRequest:
       type: object
       additionalProperties: false
-      required: [payoutIds]
+      required: [payoutIds, identityFactsByBeneficiary]
       properties:
         payoutIds:
           type: array
           minItems: 1
           items: { type: string, minLength: 1, maxLength: 128 }
+        identityFactsByBeneficiary:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/IdentityFacts' }
+    SettlementBatchIdentityFactsRequest:
+      type: object
+      additionalProperties: false
+      required: [identityFactsByBeneficiary]
+      properties:
+        identityFactsByBeneficiary:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/IdentityFacts' }
+    SettlementBatchActionRequest:
+      type: object
+      additionalProperties: false
+      required: [reason, identityFactsByBeneficiary]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 512 }
+        identityFactsByBeneficiary:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/IdentityFacts' }
     SettlementBatch:
       type: object
       additionalProperties: false
@@ -2206,13 +2373,11 @@ components:
     CustomerWithdrawalIntakeRequest:
       type: object
       additionalProperties: false
-      required: [customerActorId, providerKey, walletIdentifier, beneficiaryName, beneficiaryIdentityVersion, requestReason, requestEvidenceDocumentId]
+      required: [customerActorId, providerKey, identityFacts, requestReason, requestEvidenceDocumentId]
       properties:
         customerActorId: { type: string, minLength: 1, maxLength: 128 }
         providerKey: { type: string, minLength: 1, maxLength: 64 }
-        walletIdentifier: { type: string, pattern: '^\+[1-9][0-9]{7,14}$' }
-        beneficiaryName: { type: string, minLength: 1, maxLength: 320, readOnly: true }
-        beneficiaryIdentityVersion: { type: integer, minimum: 1, readOnly: true }
+        identityFacts: { $ref: '#/components/schemas/IdentityFacts' }
         requestReason: { type: string, minLength: 1, maxLength: 512 }
         requestEvidenceDocumentId: { type: string, minLength: 1, maxLength: 128 }
     CustomerWithdrawalIntake:
@@ -2267,7 +2432,7 @@ components:
         status: { type: string, enum: [REQUESTED, DESTINATION_PENDING, PAYOUT_HELD, REJECTED, COMPLETED] }
         destinationId: { type: string, nullable: true }
         destinationStatus: { type: string, nullable: true, enum: [CANDIDATE, PENDING_APPROVAL, ACTIVE_FOR_PAYOUT, SUSPENDED, RETIRED] }
-        destinationVerificationStatus: { type: string, nullable: true, enum: [PENDING_VERIFICATION, VERIFIED, REJECTED] }
+        destinationVerificationStatus: { type: string, nullable: true, enum: [PENDING_VERIFICATION, VERIFIED, REJECTED, STALE] }
         payoutId: { type: string, nullable: true }
         payoutStatus: { type: string, nullable: true, enum: [HELD, PREPARED, APPROVED, FROZEN, EXECUTED, COMPLETED, EXCEPTION, CANCELLED] }
         payoutAmountMinor: { type: integer, minimum: 0, nullable: true }
@@ -2378,44 +2543,139 @@ components:
         profileVersion: { type: integer, minimum: 1 }
         roundingUnitMinor: { type: integer, const: 50 }
         settlementPeriod: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
-    PartnerStoreCommissionPolicy:
+    StoreTypeCommissionDefault:
       type: object
       additionalProperties: false
-      required: [commercialStoreTypeId, fulfillmentMode, commissionRateBps, policyVersion, updatedAt]
+      required: [commercialStoreTypeId, fulfillmentMode, suggestedCommissionRateBps, defaultVersion, updatedAt]
       properties:
         commercialStoreTypeId: { type: string, minLength: 1, maxLength: 128 }
         fulfillmentMode: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
-        commissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
-        policyVersion: { type: integer, minimum: 1 }
+        suggestedCommissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
+        defaultVersion: { type: integer, minimum: 1 }
         updatedAt: { type: string, format: date-time }
         changedByActorId: { type: string, minLength: 1, maxLength: 128 }
         changeReason: { type: string, minLength: 8, maxLength: 500 }
-    PartnerStoreCommissionPoliciesResponse:
+    StoreTypeCommissionDefaultsResponse:
       type: object
       additionalProperties: false
-      required: [commercialStoreTypeId, policies]
+      required: [commercialStoreTypeId, defaults]
       properties:
         commercialStoreTypeId: { type: string, minLength: 1, maxLength: 128 }
-        policies:
+        defaults:
           type: array
           maxItems: 3
-          items: { $ref: '#/components/schemas/PartnerStoreCommissionPolicy' }
-    UpdatePartnerStoreCommissionPolicyRequest:
+          items: { $ref: '#/components/schemas/StoreTypeCommissionDefault' }
+    UpdateStoreTypeCommissionDefaultRequest:
       type: object
       additionalProperties: false
-      required: [commercialStoreTypeId, fulfillmentMode, commissionRateBps, expectedVersion, reason]
+      required: [commercialStoreTypeId, fulfillmentMode, suggestedCommissionRateBps, expectedDefaultVersion, reason]
       properties:
         commercialStoreTypeId: { type: string, minLength: 1, maxLength: 128 }
         fulfillmentMode: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
-        commissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
-        expectedVersion: { type: integer, minimum: 0 }
+        suggestedCommissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
+        expectedDefaultVersion: { type: integer, minimum: 0 }
         reason: { type: string, minLength: 8, maxLength: 500 }
-    PartnerStoreCommissionPolicyUpdateResponse:
+    StoreTypeCommissionDefaultUpdateResponse:
       type: object
       additionalProperties: false
-      required: [policy, idempotentReplay]
+      required: [default, idempotentReplay]
       properties:
-        policy: { $ref: '#/components/schemas/PartnerStoreCommissionPolicy' }
+        default: { $ref: '#/components/schemas/StoreTypeCommissionDefault' }
+        idempotentReplay: { type: boolean }
+    StoreCommercialAgreementRate:
+      type: object
+      additionalProperties: false
+      required: [fulfillmentMode, commissionRateBps]
+      properties:
+        fulfillmentMode: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
+        commissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
+    StoreCommercialAgreement:
+      type: object
+      additionalProperties: false
+      required: [agreementId, storeId, partnerActorId, agreementVersion, status, createdAt, rates, proposedByActorId, proposedAt, partnerAcceptedByActorId, partnerAcceptedAt, financeApprovedByActorId, financeApprovedAt, financeDecisionByActorId, financeDecisionAt, effectiveAt, supersededAt, reason, financeDecisionReason]
+      properties:
+        agreementId: { type: string }
+        storeId: { type: string }
+        partnerActorId: { type: string }
+        agreementVersion: { type: integer, minimum: 1 }
+        status: { type: string, enum: [PROPOSED, PARTNER_ACCEPTED, ACTIVE, FINANCE_REJECTED, SUPERSEDED] }
+        createdAt: { type: string, format: date-time }
+        rates:
+          type: array
+          maxItems: 3
+          items: { $ref: '#/components/schemas/StoreCommercialAgreementRate' }
+        proposedByActorId: { type: string }
+        proposedAt: { type: string, format: date-time }
+        partnerAcceptedByActorId: { type: string, nullable: true }
+        partnerAcceptedAt: { type: string, format: date-time, nullable: true }
+        financeApprovedByActorId: { type: string, nullable: true }
+        financeApprovedAt: { type: string, format: date-time, nullable: true }
+        financeDecisionByActorId: { type: string, nullable: true }
+        financeDecisionAt: { type: string, format: date-time, nullable: true }
+        effectiveAt: { type: string, format: date-time, nullable: true }
+        supersededAt: { type: string, format: date-time, nullable: true }
+        reason: { type: string }
+        financeDecisionReason: { type: string, nullable: true }
+    StoreCommercialAgreementListResponse:
+      type: object
+      additionalProperties: false
+      required: [agreements]
+      properties:
+        agreements:
+          type: array
+          items: { $ref: '#/components/schemas/StoreCommercialAgreement' }
+    StoreCommercialAgreementPageResponse:
+      type: object
+      additionalProperties: false
+      required: [agreements]
+      properties:
+        agreements:
+          type: array
+          items: { $ref: '#/components/schemas/StoreCommercialAgreement' }
+        nextCursor: { type: string }
+    ProposeStoreCommercialAgreementRequest:
+      type: object
+      additionalProperties: false
+      required: [storeId, partnerActorId, rates, expectedCurrentVersion, reason]
+      properties:
+        storeId: { type: string, minLength: 1, maxLength: 128 }
+        partnerActorId: { type: string, minLength: 1, maxLength: 128 }
+        rates:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items: { $ref: '#/components/schemas/StoreCommercialAgreementRate' }
+        expectedCurrentVersion: { type: integer, minimum: 0 }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+    StoreCommercialAgreementAcceptanceRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedAgreementVersion, reason]
+      properties:
+        expectedAgreementVersion: { type: integer, minimum: 1 }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+    StoreCommercialAgreementDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedAgreementVersion, decision, reason]
+      properties:
+        expectedAgreementVersion: { type: integer, minimum: 1 }
+        decision: { type: string, enum: [APPROVE, REJECT] }
+        reason: { type: string, minLength: 8, maxLength: 500 }
+        currentStorePartnerActorId: { type: string, minLength: 1, maxLength: 128, description: Required for APPROVE; supplied by DSH from the current canonical Store owner. }
+        currentFulfillmentModes:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
+          description: Required for APPROVE; supplied by DSH from the current canonical Store modes.
+    StoreCommercialAgreementResponse:
+      type: object
+      additionalProperties: false
+      required: [agreement, idempotentReplay]
+      properties:
+        agreement: { $ref: '#/components/schemas/StoreCommercialAgreement' }
         idempotentReplay: { type: boolean }
     PaymentIntentResponse:
       type: object
@@ -2730,3 +2990,44 @@ components:
       properties:
         policy: { $ref: '#/components/schemas/DeliveryFeePolicy' }
         idempotentReplay: { type: boolean }
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+  responses:
+    InvalidInput:
+      description: Invalid input or request body.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Unauthenticated:
+      description: The WLT service authentication token is missing or invalid.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Forbidden:
+      description: The authenticated actor is not permitted to perform this operation.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Conflict:
+      description: The request conflicts with canonical state or idempotency.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: The requested canonical record was not found.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    DependencyUnavailable:
+      description: A required WLT dependency is unavailable.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }

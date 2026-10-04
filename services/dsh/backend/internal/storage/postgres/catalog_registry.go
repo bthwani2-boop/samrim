@@ -76,7 +76,7 @@ func ListCatalogProductRegistry(ctx context.Context, db *sql.DB, query, vertical
 		(SELECT COUNT(DISTINCT o.store_id) FROM dsh.catalog_store_offers o JOIN dsh.catalog_product_variants v ON v.id=o.variant_id WHERE v.product_id=product.id AND EXISTS (SELECT 1 FROM dsh.catalog_customer_visible_offers visible WHERE visible.offer_id=o.id)),
 		product.created_at,product.updated_at
 		FROM dsh.catalog_products product JOIN dsh.commerce_verticals cv ON cv.id=product.vertical_id LEFT JOIN dsh.catalog_product_variants variant ON variant.product_id=product.id
-		WHERE product.scope='SHARED' AND cv.catalog_model='SHARED_CATALOG'
+		WHERE product.scope='SHARED' AND cv.active=true
 		AND ($1='' OR product.canonical_name ILIKE '%'||$1||'%' OR COALESCE(product.brand,'') ILIKE '%'||$1||'%')
 		AND ($2='' OR product.vertical_id=$2)
 		AND ($3='' OR EXISTS (WITH RECURSIVE category_subtree(id) AS (

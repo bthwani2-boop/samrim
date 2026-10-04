@@ -119,7 +119,7 @@ func createCommercialTypeVertical(t *testing.T, ctx context.Context, db *sql.DB,
 	t.Helper()
 	vertical := postgres.CommerceVerticalRecord{
 		ID: "storetype-vertical-" + suffix, NameAr: "تصنيف اختبار", NameEn: "Test Vertical",
-		CatalogModel: "SHARED_CATALOG", Active: true,
+		Active: true,
 	}
 	reason := "Create commercial type test vertical"
 	audit := postgres.CatalogRegistryAuditInput{

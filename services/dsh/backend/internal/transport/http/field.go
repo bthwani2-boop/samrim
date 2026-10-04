@@ -65,7 +65,7 @@ func (s *FieldServer) admit(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	admission, replayed, err := s.service.Admit(r.Context(), input.FullNameAr, input.ContactPhoneE164, input.ServiceCityID, idempotency, acting, correlation)
+	admission, replayed, err := s.service.Admit(r.Context(), input.FullNameAr, input.ContactPhoneE164, input.ServiceCityID, input.WalletProviderKey, idempotency, acting, correlation)
 	if err != nil {
 		writeFieldError(w, err)
 		return
@@ -323,7 +323,7 @@ func (s *FieldServer) listJoiningCases(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]contract.JoiningCaseSummary, 0, len(result.Cases))
 	for _, item := range result.Cases {
-		items = append(items, contract.JoiningCaseSummary{ID: item.ID, ContactPhoneE164: item.ContactPhoneE164, BusinessName: item.BusinessName, FirstStoreName: item.FirstStoreName, ServiceCityID: item.FirstStoreServiceCityID, FirstStoreVerticalID: item.FirstStoreVerticalID, FirstStoreCommercialTypeID: item.FirstStoreCommercialTypeID, FirstStoreLatitude: nullableFloatValue(item.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(item.FirstStoreLongitude), Origin: contract.JoiningCaseOrigin(item.Origin), State: contract.JoiningCaseState(item.State), CorrectionReason: item.CorrectionReason, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
+		items = append(items, contract.JoiningCaseSummary{ID: item.ID, ContactPhoneE164: item.ContactPhoneE164, BusinessName: item.BusinessName, FirstStoreName: item.FirstStoreName, WalletProviderKey: item.WalletProviderKey, ServiceCityID: item.FirstStoreServiceCityID, FirstStoreVerticalID: item.FirstStoreVerticalID, FirstStoreCommercialTypeID: item.FirstStoreCommercialTypeID, FirstStoreLatitude: nullableFloatValue(item.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(item.FirstStoreLongitude), Origin: contract.JoiningCaseOrigin(item.Origin), State: contract.JoiningCaseState(item.State), CorrectionReason: item.CorrectionReason, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
 	}
 	writeJSON(w, http.StatusOK, contract.JoiningCaseListResponse{Cases: items, NextCursor: result.NextCursor})
 }
@@ -420,7 +420,7 @@ func requiredFieldMutationHeaders(w http.ResponseWriter, r *http.Request) (strin
 }
 
 func toFieldAdmission(value postgres.FieldAdmission) contract.FieldAdmission {
-	return contract.FieldAdmission{ID: value.ID, ActorID: value.ActorID, FullNameAr: value.FullNameAr, ContactPhoneE164: value.PhoneE164, ServiceCityID: value.ServiceCityID, State: value.State, RequiresProfileReview: value.RequiresProfileReview, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
+	return contract.FieldAdmission{ID: value.ID, ActorID: value.ActorID, FullNameAr: value.FullNameAr, ContactPhoneE164: value.PhoneE164, ServiceCityID: value.ServiceCityID, WalletProviderKey: value.WalletProviderKey, State: value.State, RequiresProfileReview: value.RequiresProfileReview, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
 }
 
 func writeFieldError(w http.ResponseWriter, err error) {

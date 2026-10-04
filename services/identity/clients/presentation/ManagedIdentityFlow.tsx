@@ -69,7 +69,7 @@ function BrandHeader({ styles }: { styles: ReturnType<typeof createStyles> }) {
 export function AuthenticatedMobileBoundary({ binding, onUnauthenticated, children }: AuthenticatedMobileBoundaryProps) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [state, setState] = useState<IdentitySessionState>({ kind: "restoring" });
+  const [state, setState] = useState<IdentitySessionState>(() => binding.currentIdentityState());
   const [busy, setBusy] = useState(false);
 
   const restoreSession = useCallback(async () => {
@@ -84,14 +84,12 @@ export function AuthenticatedMobileBoundary({ binding, onUnauthenticated, childr
   }, [binding]);
 
   useEffect(() => {
-    void restoreSession();
-  }, [restoreSession]);
-
-  useEffect(() => {
     const unsubscribe = binding.subscribe(setState);
-    setState(binding.currentIdentityState());
+    const current = binding.currentIdentityState();
+    setState(current);
+    if (current.kind !== "authenticated") void restoreSession();
     return unsubscribe;
-  }, [binding]);
+  }, [binding, restoreSession]);
 
   useEffect(() => {
     if (state.kind === "signed_out") onUnauthenticated();

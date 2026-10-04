@@ -128,7 +128,7 @@ export function CentralCatalog() {
   const detailRequestSequence = useRef(0);
   const categoryRequestSequence = useRef(0);
   const filterCategoryRequestSequence = useRef(0);
-  const sharedVerticals = verticals.filter((vertical) => vertical.catalogModel === "SHARED_CATALOG");
+  const sharedVerticals = verticals.filter((vertical) => vertical.active);
   const selectedCategoryIdsKey = form.categoryIds.join("\u001f");
 
   const loadVerticals = useCallback(async () => {

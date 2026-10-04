@@ -134,7 +134,7 @@ func TestCatalogProductViewsPreserveCanonicalCatalogFacts(t *testing.T) {
 		t.Fatalf("absent typed attribute values were populated: %#v", gotEmpty)
 	}
 
-	vertical := toCommerceVertical(postgres.CommerceVerticalRecord{ID: "vertical-1", CatalogModel: "CATEGORIZED", Active: true, Version: 4})
+	vertical := toCommerceVertical(postgres.CommerceVerticalRecord{ID: "vertical-1", Active: true, Version: 4})
 	storeType := toCommercialStoreType(postgres.CommercialStoreTypeRecord{ID: "type-1", VerticalID: "vertical-1", Active: true, Version: 5})
 	category := toCatalogCategory(postgres.CatalogCategoryRecord{ID: "category-1", VerticalID: "vertical-1", ParentCategoryID: "parent-1", ImageURI: "https://media.invalid/category", Active: true, Version: 6})
 	categoryRow := toCatalogCategoryListItem(postgres.CatalogCategoryListItem{CatalogCategoryRecord: postgres.CatalogCategoryRecord{ID: "category-2", ImageURI: "image"}, PathAr: "مسار", PathEn: "Path"})

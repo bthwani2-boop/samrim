@@ -86,8 +86,8 @@ func (s *Service) Submit(ctx context.Context, caseID string, expectedVersion int
 		}
 		return postgres.SubmitJoiningCase(ctx, s.db, caseID, current.Case.PartnerActorID, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseSubmit(caseID, current.Case.PartnerActorID, expectedVersion), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
 	}
-	if current.Case.Version != expectedVersion {
-		return postgres.JoiningCaseResult{}, postgres.ErrJoiningCaseVersion
+	if err := postgres.ValidateJoiningCaseSubmissionReadiness(current.Case, expectedVersion); err != nil {
+		return postgres.JoiningCaseResult{}, err
 	}
 	actorRole, err := s.identity.ProvisionPartnerWithContext(ctx, identityintegration.ActorInput{PhoneE164: current.Case.ContactPhoneE164}, correlationID, actingActorID)
 	if err != nil {
@@ -317,7 +317,7 @@ func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken,
 	latitude := input.FirstStoreLatitude
 	longitude := input.FirstStoreLongitude
 	workingHours, hoursErr := json.Marshal(input.FirstStoreWorkingHours)
-	if caseID == "" || hoursErr != nil || !postgres.ValidateStoreWorkingHours(workingHours) || len([]rune(ownerFullName)) < 2 || len([]rune(ownerFullName)) > 160 || len([]rune(businessName)) < 2 || len([]rune(businessName)) > 160 || len([]rune(firstStoreName)) < 2 || len([]rune(firstStoreName)) > 160 || len([]rune(firstStoreAddress)) < 4 || len([]rune(firstStoreAddress)) > 500 || len(proofNumber) < 1 || len(proofNumber) > 128 || len([]rune(notes)) > 1000 || !validJoiningCaseProofType(proofType) || serviceCityID == "" || verticalID == "" || commercialTypeID == "" || expectedVersion < 1 || !validCoordinates(latitude, longitude) {
+	if caseID == "" || hoursErr != nil || !postgres.ValidateStoreWorkingHours(workingHours) || len([]rune(ownerFullName)) < 2 || len([]rune(ownerFullName)) > 160 || len([]rune(businessName)) < 2 || len([]rune(businessName)) > 160 || len([]rune(firstStoreName)) < 2 || len([]rune(firstStoreName)) > 160 || len([]rune(firstStoreAddress)) < 4 || len([]rune(firstStoreAddress)) > 500 || !validJoiningCaseProofNumber(proofNumber) || len([]rune(notes)) > 1000 || !validJoiningCaseProofType(proofType) || serviceCityID == "" || verticalID == "" || commercialTypeID == "" || expectedVersion < 1 || !validCoordinates(latitude, longitude) || len(input.FirstStoreFulfillmentModes) == 0 {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
 	rawModes := make([]string, len(input.FirstStoreFulfillmentModes))

@@ -38,6 +38,7 @@ async function stubCommercialStoreTypes(page: Page) {
 const operatorJoiningCaseDraft = {
   ownerFullName: "سامي ناصر محمد العريقي",
   contactPhoneE164: "+96777000100",
+  walletProviderKey: "الكريمي",
   businessName: "نشاط الاختبار",
   firstStoreName: "متجر الاختبار",
   firstStoreAddress: "شارع الزبيري، صنعاء",
@@ -54,6 +55,7 @@ const operatorJoiningCaseDraft = {
 async function fillOperatorJoiningCaseForm(page: Page) {
   await page.getByLabel("اسم المالك الكامل").fill(operatorJoiningCaseDraft.ownerFullName);
   await page.getByLabel("رقم جوال المالك (E.164)").fill("+967 77000100");
+  await page.getByLabel("مزوّد المحفظة الذي حدده المالك").fill(operatorJoiningCaseDraft.walletProviderKey);
   await page.getByLabel("الاسم القانوني للنشاط").fill(operatorJoiningCaseDraft.businessName);
   await page.getByLabel("اسم المتجر الأول").fill(operatorJoiningCaseDraft.firstStoreName);
   await page.getByLabel("عنوان المتجر").fill(operatorJoiningCaseDraft.firstStoreAddress);
@@ -71,7 +73,7 @@ async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "f
   const actorID = `act_${role}_reviewed_candidate`;
   const admissionID = `${role === "captain" ? "cap" : "fld"}_adm_reviewed_candidate`;
   const candidateNameSelector = role === "field" ? `#candidate-name-${admissionID}` : `#${role}-candidate-name-${admissionID}`;
-  let profile: { id: string; actorId?: string; fullNameAr: string; contactPhoneE164: string; serviceCityId?: string; state: string; requiresProfileReview?: boolean; version: number } | null = null;
+  let profile: { id: string; actorId?: string; fullNameAr: string; contactPhoneE164: string; walletProviderKey: string; serviceCityId?: string; state: string; requiresProfileReview?: boolean; version: number } | null = null;
   const mutations: Record<string, unknown>[] = [];
 
   if (role === "field") {
@@ -116,7 +118,7 @@ async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "f
     mutations.push(body);
     const action = body.action;
     if (action === "admit") {
-      profile = { id: admissionID, fullNameAr: String(body.fullNameAr), contactPhoneE164: String(body.contactPhoneE164), ...(role === "field" ? { serviceCityId: String(body.serviceCityId) } : {}), state: "pending_review", version: 1 };
+      profile = { id: admissionID, fullNameAr: String(body.fullNameAr), contactPhoneE164: String(body.contactPhoneE164), walletProviderKey: String(body.walletProviderKey), ...(role === "field" ? { serviceCityId: String(body.serviceCityId) } : {}), state: "pending_review", version: 1 };
     } else if (action === "update-profile" && profile) {
       profile = { ...profile, fullNameAr: String(body.fullNameAr), state: "pending_review", version: profile.version + 1 };
     } else if (action === "approve" && profile) {
@@ -135,6 +137,7 @@ async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "f
   if (role === "field") await page.getByText("إنشاء ملف ميداني").click();
   await page.locator(`#${role}-candidate-name`).fill(initialName);
   await page.locator(`#${role}-candidate-phone`).fill(phone);
+  await page.locator(role === "field" ? "#field-candidate-wallet-provider" : "#captain-candidate-wallet-provider").fill("الكريمي");
   if (role === "field") await page.locator("#field-candidate-city").selectOption("sanaa");
   await page.getByRole("button", { name: role === "captain" ? "حفظ الملف للمراجعة" : "حفظ للمراجعة" }).click();
   await expect(page.getByText(role === "captain" ? "أُنشئ ملف الكابتن بانتظار المراجعة. لم يُمنح دور التطبيق بعد." : "أُنشئ الملف وظهر في سجل الميدانيين بانتظار المراجعة.")).toBeVisible();
@@ -159,7 +162,7 @@ async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "f
   await expect(page.getByText(role === "captain" ? "اكتمل منح الدور؛ ينتظر تفعيل الحساب من الكابتن." : "مُنح دور الدخول وربط بأهلية DSH. الخطوة التالية للميداني: يفتح التطبيق، ويدخل رقم الهاتف المسجل، ثم يختار تفعيل الجهاز لإثبات الهاتف وإنشاء كلمة المرور.")).toBeVisible();
   await expect(page.getByText(actorID)).toHaveCount(0);
   expect(mutations).toEqual([
-    role === "field" ? { action: "admit", fullNameAr: initialName, contactPhoneE164: phone, serviceCityId: "sanaa" } : { action: "admit", fullNameAr: initialName, contactPhoneE164: phone },
+    role === "field" ? { action: "admit", fullNameAr: initialName, contactPhoneE164: phone, serviceCityId: "sanaa", walletProviderKey: "الكريمي" } : { action: "admit", fullNameAr: initialName, contactPhoneE164: phone, walletProviderKey: "الكريمي" },
     { action: "update-profile", admissionId: admissionID, fullNameAr: reviewedName, expectedVersion: 1 },
     { action: "approve", admissionId: admissionID, expectedVersion: 2 },
     { action: "provision", admissionId: admissionID },
@@ -471,7 +474,7 @@ test("finance and marketing centers expose only real independent resource routes
   await page.goto("/finance");
   await expect(page.getByRole("heading", { name: "المالية", exact: true })).toBeVisible();
   await expect(navigation.getByRole("link", { name: "حفظ النقد", exact: true })).toHaveAttribute("href", "/finance/cash-custody");
-  await expect(navigation.getByRole("link", { name: "عمولات المتاجر", exact: true })).toHaveAttribute("href", "/finance/partner-store-commissions");
+  await expect(navigation.getByRole("link", { name: "اتفاقات المتاجر", exact: true })).toHaveAttribute("href", "/finance/partner-store-commissions");
 
   await page.goto("/finance/cash-custody");
   await expect(page.getByRole("heading", { name: "حفظ النقد", exact: true })).toBeVisible();
@@ -997,6 +1000,7 @@ test("Field admission form explains and enforces the international phone before 
   await page.goto("/fields");
   await page.getByText("إنشاء ملف ميداني", { exact: true }).click();
   await page.getByLabel("الاسم الكامل بالعربية").fill("سالم علي");
+  await page.locator("#field-candidate-wallet-provider").fill("الكريمي");
   await page.getByLabel("رقم الهاتف الدولي").fill("777765432");
   await page.getByLabel("مدينة الخدمة").selectOption("sanaa");
   await expect(page.getByText("الرقم المحلي وحده لا يُقبل")).toBeVisible();
@@ -1360,7 +1364,7 @@ test("operator creates a DSH-owned joining case from prospective partner facts",
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        case: { id: "join_test", contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN", "CUSTOMER_PICKUP"], firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, state: "draft", version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
+        case: { id: "join_test", contactPhoneE164: "+96777000100", walletProviderKey: operatorJoiningCaseDraft.walletProviderKey, businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN", "CUSTOMER_PICKUP"], firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, state: "draft", version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
         idempotentReplay: false,
       }),
     });
@@ -1371,7 +1375,7 @@ test("operator creates a DSH-owned joining case from prospective partner facts",
       status: 201,
       contentType: "application/json",
       body: JSON.stringify({
-        case: { id: "join_test", contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN", "CUSTOMER_PICKUP"], firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, state: "draft", version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
+        case: { id: "join_test", contactPhoneE164: "+96777000100", walletProviderKey: operatorJoiningCaseDraft.walletProviderKey, businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN", "CUSTOMER_PICKUP"], firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, state: "draft", version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
         idempotentReplay: false,
       }),
     });
@@ -1396,7 +1400,7 @@ test("operator resumes an uncertain joining-case create with the same idempotenc
   await stubCommercialStoreTypes(page);
   const attempts: Array<{ idempotencyKey: string; correlationId: string; body: unknown }> = [];
   const expectedBody = { ...operatorJoiningCaseDraft, firstStoreFulfillmentModes: ["CUSTOMER_PICKUP"] };
-  const createdCase = { id: "join_retry", contactPhoneE164: expectedBody.contactPhoneE164, businessName: expectedBody.businessName, firstStoreName: expectedBody.firstStoreName, serviceCityId: expectedBody.serviceCityId, firstStoreVerticalId: expectedBody.firstStoreVerticalId, firstStoreCommercialTypeId: expectedBody.firstStoreCommercialTypeId, firstStoreFulfillmentModes: expectedBody.firstStoreFulfillmentModes, firstStoreLatitude: expectedBody.firstStoreLatitude, firstStoreLongitude: expectedBody.firstStoreLongitude, state: "draft", version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" };
+  const createdCase = { id: "join_retry", contactPhoneE164: expectedBody.contactPhoneE164, walletProviderKey: expectedBody.walletProviderKey, businessName: expectedBody.businessName, firstStoreName: expectedBody.firstStoreName, serviceCityId: expectedBody.serviceCityId, firstStoreVerticalId: expectedBody.firstStoreVerticalId, firstStoreCommercialTypeId: expectedBody.firstStoreCommercialTypeId, firstStoreFulfillmentModes: expectedBody.firstStoreFulfillmentModes, firstStoreLatitude: expectedBody.firstStoreLatitude, firstStoreLongitude: expectedBody.firstStoreLongitude, state: "draft", version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" };
   await page.route("**/api/service-cities**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cities: [{ id: "sanaa", displayNameAr: "صنعاء", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
   });
@@ -1520,20 +1524,25 @@ test("operator city creation rejects non-Arabic names before mutation", async ({
 test("operator creates a canonical commerce vertical before onboarding partners", async ({ page }) => {
   await stubAuthenticatedSession(page, [...authenticatedOperator.permissions, "catalog"]);
   let requestBody: unknown;
+  let createdVertical: Record<string, unknown> | null = null;
   await page.route("**/api/catalog/verticals**", async (route) => {
     if (route.request().method() === "GET") {
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [] }) });
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: createdVertical ? [createdVertical] : [] }) });
       return;
     }
     requestBody = route.request().postDataJSON();
+    createdVertical = { id: "vertical_0123456789abcdef0123456789abcdef", nameAr: "مطاعم", nameEn: "Restaurants", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" };
     await route.fulfill({
       status: 201,
       contentType: "application/json",
-      body: JSON.stringify({ vertical: { id: "vertical_0123456789abcdef0123456789abcdef", nameAr: "مطاعم", nameEn: "Restaurants", catalogModel: "STORE_LOCAL_CATALOG", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, idempotentReplay: false }),
+      body: JSON.stringify({ vertical: createdVertical, idempotentReplay: false }),
     });
   });
   await page.route("**/api/catalog/products**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [] }) });
+  });
+  await page.route("**/api/catalog/categories**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories: [], nextCursor: "" }) });
   });
   await page.goto("/catalog/categories");
   await expect(page.getByLabel("المعرف البرمجي", { exact: true })).toHaveCount(0);
@@ -1541,12 +1550,11 @@ test("operator creates a canonical commerce vertical before onboarding partners"
   await page.getByRole("button", { name: "إضافة مجال تجاري" }).click();
   await page.locator("#catalog-vertical-name-ar").fill("مطاعم");
   await page.locator("#catalog-vertical-name-en").fill("Restaurants");
-  await page.locator("#catalog-vertical-model").selectOption("STORE_LOCAL_CATALOG");
+
   await page.locator("#catalog-vertical-reason").fill("إنشاء فئة جديدة للاختبار");
   await page.getByRole("button", { name: "إضافة مجال تجاري" }).click();
-  await expect(page.getByRole("status")).toContainText("تم حفظ المجال التجاري: مطاعم.");
-  await expect(page.getByRole("status")).not.toContainText("vertical_0123456789abcdef0123456789abcdef");
-  expect(requestBody).toEqual({ nameAr: "مطاعم", nameEn: "Restaurants", catalogModel: "STORE_LOCAL_CATALOG", active: true, reason: "إنشاء فئة جديدة للاختبار" });
+  await expect(page.getByLabel("المجال الرئيسي")).toHaveValue("vertical_0123456789abcdef0123456789abcdef");
+  expect(requestBody).toEqual({ nameAr: "مطاعم", nameEn: "Restaurants", active: true, reason: "إنشاء فئة جديدة للاختبار" });
 });
 
 test("operator creates and reads back the reward policy for the selected commercial store type", async ({ page }) => {
@@ -1865,7 +1873,7 @@ test("partner Store publication exposes the canonical readiness block", async ({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-         case: { id: "join_test", contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"], firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, partnerActorId: "act_generated", state: "approved", version: 5, store: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", serviceCityId: "sanaa", primaryVerticalId: "grocery", fulfillmentModes: ["BTHWANI_CAPTAIN"], deliveryOrigin: { latitude: 15.369445, longitude: 44.191006 }, version: 1, publicationState: "unpublished", publicationReadiness: { ready: false, blockedReason: "PARTNER_IDENTITY_NOT_ELIGIBLE" }, offers: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
+         case: { id: "join_test", contactPhoneE164: "+96777000100", walletProviderKey: operatorJoiningCaseDraft.walletProviderKey, businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"], firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, partnerActorId: "act_generated", state: "approved", version: 5, store: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", serviceCityId: "sanaa", primaryVerticalId: "grocery", fulfillmentModes: ["BTHWANI_CAPTAIN"], deliveryOrigin: { latitude: 15.369445, longitude: 44.191006 }, version: 1, publicationState: "unpublished", publicationReadiness: { ready: false, blockedReason: "PARTNER_IDENTITY_NOT_ELIGIBLE" }, offers: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
         idempotentReplay: false,
       }),
     });
@@ -1875,7 +1883,7 @@ test("partner Store publication exposes the canonical readiness block", async ({
       status: 201,
       contentType: "application/json",
       body: JSON.stringify({
-         case: { id: "join_test", contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"], firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, partnerActorId: "act_generated", state: "approved", version: 5, store: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", serviceCityId: "sanaa", primaryVerticalId: "grocery", fulfillmentModes: ["BTHWANI_CAPTAIN"], deliveryOrigin: { latitude: 15.369445, longitude: 44.191006 }, version: 1, publicationState: "unpublished", publicationReadiness: { ready: false, blockedReason: "PARTNER_IDENTITY_NOT_ELIGIBLE" }, offers: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
+         case: { id: "join_test", contactPhoneE164: "+96777000100", walletProviderKey: operatorJoiningCaseDraft.walletProviderKey, businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreFulfillmentModes: ["BTHWANI_CAPTAIN"], firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, partnerActorId: "act_generated", state: "approved", version: 5, store: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", serviceCityId: "sanaa", primaryVerticalId: "grocery", fulfillmentModes: ["BTHWANI_CAPTAIN"], deliveryOrigin: { latitude: 15.369445, longitude: 44.191006 }, version: 1, publicationState: "unpublished", publicationReadiness: { ready: false, blockedReason: "PARTNER_IDENTITY_NOT_ELIGIBLE" }, offers: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
         idempotentReplay: false,
       }),
     });

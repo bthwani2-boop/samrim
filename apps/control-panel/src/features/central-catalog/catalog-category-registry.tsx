@@ -80,7 +80,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
   const [collapsedCategoryIDs, setCollapsedCategoryIDs] = useState<ReadonlySet<string>>(() => new Set());
   const selectedVertical = verticals.find((vertical) => vertical.id === verticalId);
   const focusedCategory = categoryIndex.get(categoryId) ?? categoryDetail;
-  const verticalReady = Boolean(selectedVertical?.active && selectedVertical.catalogModel === "SHARED_CATALOG");
+  const verticalReady = Boolean(selectedVertical?.active);
   let mainActionLabel: string;
   if (verticalReady) {
     mainActionLabel = "فئة رئيسية جديدة";
@@ -195,8 +195,8 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
     const normalizedNameAr = nameAr.trim();
     const normalizedNameEn = nameEn.trim();
     const normalizedReason = reason.trim();
-    if (!verticalId || !selectedVertical?.active || selectedVertical.catalogModel !== "SHARED_CATALOG") {
-      setError("اختر مجالًا نشطًا يستخدم كتالوج المنتجات المشتركة.");
+    if (!verticalId || !selectedVertical?.active) {
+      setError("اختر مجالًا تجاريًا نشطًا.");
       return;
     }
     if (normalizedNameAr.length < 2 || normalizedNameAr.length > 160 || normalizedNameEn.length < 2 || normalizedNameEn.length > 160) {
@@ -382,7 +382,7 @@ export function CatalogCategoryRegistry({ verticals, verticalId, onVerticalChang
       <div className="catalog-category-editor-actions"><button type="button" className="button button-primary" disabled={busy || !canEdit || reason.trim().length < 5} onClick={() => void saveCategory()}>{categoryEditorActionLabel}</button><button type="button" className="button button-secondary" disabled={busy} onClick={closeEditor}>إلغاء</button></div>
     </div> : null}
 
-    {verticalId && selectedVertical?.active && selectedVertical.catalogModel === "SHARED_CATALOG" ? <>
+    {verticalId && selectedVertical?.active ? <>
       <form className="catalog-category-filters" noValidate onSubmit={(event) => { event.preventDefault(); void filterCategories(); }}>
         <div className="catalog-category-search-field"><label className="field-label" htmlFor="catalog-category-search">بحث<input id="catalog-category-search" type="search" maxLength={160} value={categoryQuery} disabled={loading || filtering} onChange={(event) => setCategoryQuery(event.target.value)} placeholder="اسم الفئة بالعربية أو الإنجليزية" /></label>{categoryQuery ? <button type="button" className="button button-quiet catalog-category-clear" aria-label="مسح بحث الفئات" disabled={filtering} onClick={() => { setCategoryQuery(""); setCategoryStatus("all"); setCategorySort("name_asc"); void filterCategories("", "all", "name_asc"); }}>مسح</button> : null}</div>
         <label className="field-label" htmlFor="catalog-category-status">الحالة<select id="catalog-category-status" value={categoryStatus} disabled={loading || filtering} onChange={(event) => setCategoryStatus(event.target.value as CategoryStatus)}><option value="all">كل الحالات</option><option value="active">نشطة</option><option value="inactive">متوقفة</option></select></label>

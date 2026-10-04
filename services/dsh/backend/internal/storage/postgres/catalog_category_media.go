@@ -219,11 +219,11 @@ func readCatalogCategoryMediaAssetByIdempotencyTx(ctx context.Context, tx *sql.T
 
 func requireSharedActiveCategoryVerticalTx(ctx context.Context, tx *sql.Tx, categoryID string) error {
 	var shared bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM dsh.catalog_categories c JOIN dsh.commerce_verticals v ON v.id=c.vertical_id WHERE c.id=$1 AND c.active=true AND v.active=true AND v.catalog_model='SHARED_CATALOG')`, categoryID).Scan(&shared); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM dsh.catalog_categories c JOIN dsh.commerce_verticals v ON v.id=c.vertical_id WHERE c.id=$1 AND c.active=true AND v.active=true)`, categoryID).Scan(&shared); err != nil {
 		return err
 	}
 	if !shared {
-		return ErrCatalogProductModelMismatch
+		return ErrCatalogProductScopeMismatch
 	}
 	return nil
 }

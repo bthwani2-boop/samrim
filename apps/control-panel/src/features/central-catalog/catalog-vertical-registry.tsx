@@ -18,17 +18,8 @@ async function parseResponse<T>(response: Response): Promise<T> {
   return payload as T;
 }
 
-function verticalCatalogModelLabel(model: CommerceVertical["catalogModel"]): string {
-  if (model === "SHARED_CATALOG") return "منتجات مشتركة";
-  if (model === "STORE_LOCAL_CATALOG") return "قائمة المتجر";
-  return "يحتاج تحديد المسار";
-}
-
-function verticalSelectionActionLabel(isSelected: boolean, model: CommerceVertical["catalogModel"]): string {
-  if (isSelected) return "المحدد";
-  if (model === "SHARED_CATALOG") return "اختيار المجال";
-  if (model === "STORE_LOCAL_CATALOG") return "قائمة المتجر";
-  return "حدد المسار أولًا";
+function verticalSelectionActionLabel(isSelected: boolean): string {
+  return isSelected ? "المحدد" : "اختيار المجال";
 }
 
 function verticalSaveLabel(busy: boolean, isEditing: boolean): string {
@@ -43,7 +34,6 @@ export function CatalogVerticalRegistry({ verticals, rootCategoryImages, selecte
   const [selected, setSelected] = useState<CommerceVertical | null>(null);
   const [nameAr, setNameAr] = useState("");
   const [nameEn, setNameEn] = useState("");
-  const [catalogModel, setCatalogModel] = useState<"SHARED_CATALOG" | "STORE_LOCAL_CATALOG" | "">("");
   const [reason, setReason] = useState("");
   const [active, setActive] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -60,7 +50,6 @@ export function CatalogVerticalRegistry({ verticals, rootCategoryImages, selecte
       setError("يجب أن يتراوح الاسم العربي والإنجليزي بين حرفين و160 حرفًا.");
       return;
     }
-    if (!catalogModel) { setError("حدد مسار إدخال المنتجات لهذا المجال قبل الحفظ."); return; }
     if (normalizedReason.length < 5 || normalizedReason.length > 500) { setError("أدخل سببًا من 5 إلى 500 حرف لتوثيق الإضافة."); return; }
     setBusy(true);
     setError("");
@@ -69,16 +58,15 @@ export function CatalogVerticalRegistry({ verticals, rootCategoryImages, selecte
       const response = await fetch(selected ? `/api/catalog/verticals/${encodeURIComponent(selected.id)}` : "/api/catalog/verticals", {
         method: selected ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
-        body: JSON.stringify({ nameAr: normalizedNameAr, nameEn: normalizedNameEn, catalogModel, active, reason: normalizedReason, ...(selected ? { expectedVersion: selected.version } : {}) }),
+        body: JSON.stringify({ nameAr: normalizedNameAr, nameEn: normalizedNameEn, active, reason: normalizedReason, ...(selected ? { expectedVersion: selected.version } : {}) }),
       });
       const payload = await parseResponse<{ vertical: CommerceVertical }>(response);
       setNotice(selected ? `تم تحديث المجال التجاري: ${payload.vertical.nameAr}.` : `تم حفظ المجال التجاري: ${payload.vertical.nameAr}.`);
-      if (payload.vertical.catalogModel === "SHARED_CATALOG") onSelectVertical(payload.vertical.id);
+      if (payload.vertical.active) onSelectVertical(payload.vertical.id);
       setSelected(null);
       setEditorOpen(false);
       setNameAr("");
       setNameEn("");
-      setCatalogModel("");
       setReason("");
       await onSaved();
     } catch (nextError) {
@@ -93,7 +81,6 @@ export function CatalogVerticalRegistry({ verticals, rootCategoryImages, selecte
     setEditorOpen(true);
     setNameAr(vertical.nameAr);
     setNameEn(vertical.nameEn);
-    setCatalogModel(vertical.catalogModel ?? "");
     setActive(vertical.active);
     setReason("");
     setError("");
@@ -105,7 +92,6 @@ export function CatalogVerticalRegistry({ verticals, rootCategoryImages, selecte
     setEditorOpen(false);
     setNameAr("");
     setNameEn("");
-    setCatalogModel("");
     setActive(true);
     setReason("");
   }
@@ -115,14 +101,12 @@ export function CatalogVerticalRegistry({ verticals, rootCategoryImages, selecte
       <div className="access-card-heading">
         <span className="step-chip">قاموس التجارة</span>
         <h3 id="catalog-vertical-registry-title">المجالات التجارية</h3>
-        <p className="muted">اختر مجالًا لإنشاء شجرة فئاته المشتركة، أو عدّل بيانات المجال ومسار الكتالوج.</p>
-        {!editorOpen ? <button type="button" className="button button-primary" disabled={!canEdit} onClick={() => { setSelected(null); setNameAr(""); setNameEn(""); setCatalogModel(""); setActive(true); setReason(""); setEditorOpen(true); }}>إضافة مجال تجاري</button> : null}
+        <p className="muted">تُدار المنتجات المشتركة ومنتجات المتاجر معًا داخل كل مجال تجاري.</p>
+        {!editorOpen ? <button type="button" className="button button-primary" disabled={!canEdit} onClick={() => { setSelected(null); setNameAr(""); setNameEn(""); setActive(true); setReason(""); setEditorOpen(true); }}>إضافة مجال تجاري</button> : null}
       </div>
       {editorOpen ? <div className="access-form">
         <label className="field-label" htmlFor="catalog-vertical-name-ar">الاسم العربي<input id="catalog-vertical-name-ar" disabled={busy || !canEdit} value={nameAr} onChange={(event) => setNameAr(event.target.value)} placeholder="مطاعم" /></label>
         <label className="field-label" htmlFor="catalog-vertical-name-en">الاسم الإنجليزي<input id="catalog-vertical-name-en" disabled={busy || !canEdit} value={nameEn} onChange={(event) => setNameEn(event.target.value)} placeholder="Restaurants" /></label>
-        <label className="field-label" htmlFor="catalog-vertical-model">مسار إدخال المنتجات<select id="catalog-vertical-model" disabled={busy || !canEdit} value={catalogModel} onChange={(event) => setCatalogModel(event.target.value as typeof catalogModel)}><option value="">حدد المسار</option><option value="SHARED_CATALOG">منتجات مشتركة موحّدة</option><option value="STORE_LOCAL_CATALOG">قائمة منتجات يملكها المتجر</option></select></label>
-        <p className="muted">استخدم المنتجات المشتركة للتصنيفات العامة مثل البقالة. قوائم المطاعم ومنيوهاتها تخص كل متجر وتدار عبر قائمة المتجر.</p>
         <label className="field-label" htmlFor="catalog-vertical-active"><input id="catalog-vertical-active" type="checkbox" disabled={busy || !canEdit} checked={active} onChange={(event) => setActive(event.target.checked)} /> نشط عند الإنشاء</label>
         <label className="field-label" htmlFor="catalog-vertical-reason">سبب الإضافة<textarea id="catalog-vertical-reason" className="resize-none" disabled={busy || !canEdit} minLength={5} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
         <small className="muted">سبب الإضافة مطلوب لتفعيل الحفظ (5–500 حرف). {reason.trim().length}/500</small>
@@ -133,7 +117,7 @@ export function CatalogVerticalRegistry({ verticals, rootCategoryImages, selecte
       {error ? <p className="identity-error" role="alert">{error} <button type="button" className="button button-secondary" onClick={() => void onSaved()}>إعادة المحاولة</button></p> : null}
       <div className="catalog-taxonomy-inline">
         <strong>سجل المجالات</strong>
-        {verticals.length === 0 ? <p>لا توجد مجالات تجارية بعد. أضف مجالًا قبل بناء شجرة الفئات.</p> : <div className="catalog-registry-table-wrap"><table className="catalog-registry-table"><thead><tr><th>المجال التجاري</th><th>الصورة الرئيسية</th><th>الاسم الدولي</th><th>مسار الكتالوج</th><th>الحالة</th><th>الإصدار</th><th>الإجراء</th></tr></thead><tbody>{verticals.map((vertical) => <tr key={vertical.id} className={selectedVerticalId === vertical.id ? "is-selected" : undefined}><td><strong>{vertical.nameAr}</strong></td><td>{rootCategoryImages[vertical.id] ? <img className="catalog-vertical-image" src={rootCategoryImages[vertical.id]} alt={`صورة المجال ${vertical.nameAr}`} /> : <span className="catalog-vertical-image-empty">لا توجد صورة جذر</span>}</td><td><bdi dir="ltr">{vertical.nameEn}</bdi></td><td>{verticalCatalogModelLabel(vertical.catalogModel)}</td><td>{vertical.active ? "نشط" : "متوقف"}</td><td>v{vertical.version}</td><td><div className="catalog-registry-actions"><button type="button" className="catalog-row-action" aria-pressed={selectedVerticalId === vertical.id} disabled={vertical.catalogModel !== "SHARED_CATALOG"} onClick={() => onSelectVertical(vertical.id)}>{verticalSelectionActionLabel(selectedVerticalId === vertical.id, vertical.catalogModel)}</button><button type="button" className="catalog-row-action" disabled={busy || !canEdit} onClick={() => edit(vertical)}>تعديل</button></div></td></tr>)}</tbody></table></div>}
+        {verticals.length === 0 ? <p>لا توجد مجالات تجارية بعد. أضف مجالًا قبل بناء شجرة الفئات.</p> : <div className="catalog-registry-table-wrap"><table className="catalog-registry-table"><thead><tr><th>المجال التجاري</th><th>الصورة الرئيسية</th><th>الاسم الدولي</th><th>الحالة</th><th>الإصدار</th><th>الإجراء</th></tr></thead><tbody>{verticals.map((vertical) => <tr key={vertical.id} className={selectedVerticalId === vertical.id ? "is-selected" : undefined}><td><strong>{vertical.nameAr}</strong></td><td>{rootCategoryImages[vertical.id] ? <img className="catalog-vertical-image" src={rootCategoryImages[vertical.id]} alt={`صورة المجال ${vertical.nameAr}`} /> : <span className="catalog-vertical-image-empty">لا توجد صورة جذر</span>}</td><td><bdi dir="ltr">{vertical.nameEn}</bdi></td><td>{vertical.active ? "نشط" : "متوقف"}</td><td>v{vertical.version}</td><td><div className="catalog-registry-actions"><button type="button" className="catalog-row-action" aria-pressed={selectedVerticalId === vertical.id} disabled={!vertical.active} onClick={() => onSelectVertical(vertical.id)}>{verticalSelectionActionLabel(selectedVerticalId === vertical.id)}</button><button type="button" className="catalog-row-action" disabled={busy || !canEdit} onClick={() => edit(vertical)}>تعديل</button></div></td></tr>)}</tbody></table></div>}
       </div>
     </section>
   );

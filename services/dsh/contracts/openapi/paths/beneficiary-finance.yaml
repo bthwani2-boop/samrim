@@ -669,10 +669,8 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [providerKey, walletIdentifier, changeReason, verificationEvidenceReference, changeEvidenceReference]
+              required: [changeReason, verificationEvidenceReference, changeEvidenceReference]
               properties:
-                providerKey: { type: string, minLength: 1, maxLength: 64 }
-                walletIdentifier: { type: string, minLength: 9, maxLength: 16, pattern: '^\+[1-9][0-9]{7,14}$', writeOnly: true, description: 'Official-wallet phone number in canonical E.164 format.' }
                 changeReason: { type: string, minLength: 1, maxLength: 512 }
                 verificationEvidenceReference: { type: string, minLength: 1, maxLength: 512 }
                 changeEvidenceReference: { type: string, minLength: 1, maxLength: 512 }
@@ -697,6 +695,45 @@ paths:
                 properties:
                   destination: { $ref: "../dsh.openapi.yaml#/components/schemas/OfficialWalletDestination" }
                   idempotentReplay: { type: boolean }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/{actorType}/{actorId}/wallet-provider-intent:
+    get:
+      operationId: readOperatorWalletProviderIntent
+      summary: Read provider intent recorded at beneficiary admission
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: actorType
+          in: path
+          required: true
+          schema: { type: string, enum: [partner, captain, field] }
+        - name: actorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200":
+          description: Finance-visible provider intent. No wallet number or beneficiary name is included.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [intent]
+                properties:
+                  intent:
+                    type: object
+                    required: [actorType, actorId, providerKey, sourceId]
+                    properties:
+                      actorType: { type: string, enum: [partner, captain, field] }
+                      actorId: { type: string }
+                      providerKey: { type: string, maxLength: 64 }
+                      sourceId: { type: string }
         "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }

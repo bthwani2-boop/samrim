@@ -91,18 +91,27 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/catalog/imports/preview", s.previewCatalogImport)
 	mux.HandleFunc("GET /dsh/catalog/imports/{runId}", s.readCatalogImportRun)
 	mux.HandleFunc("POST /dsh/catalog/imports/{runId}/commit", s.commitCatalogImport)
+	mux.HandleFunc("POST /dsh/catalog/store-imports/preview", s.previewOperatorStoreCatalogImport)
+	mux.HandleFunc("GET /dsh/catalog/store-imports/{runId}", s.readOperatorStoreCatalogImport)
+	mux.HandleFunc("POST /dsh/catalog/store-imports/{runId}/commit", s.commitOperatorStoreCatalogImport)
 	mux.HandleFunc("GET /dsh/catalog/attributes/{attributeId}/enum-options", s.listAttributeEnumOptions)
 	mux.HandleFunc("POST /dsh/catalog/attributes/{attributeId}/enum-options", s.createAttributeEnumOption)
 	mux.HandleFunc("GET /dsh/catalog/product-proposals/review-queue", s.listProductProposalReviewQueue)
 	mux.HandleFunc("POST /dsh/catalog/product-proposals/{proposalId}/review", s.reviewProductProposal)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/offers", s.listOffers)
+	mux.HandleFunc("POST /dsh/stores/{storeId}/catalog/imports/preview", s.previewPartnerStoreCatalogImport)
+	mux.HandleFunc("GET /dsh/stores/{storeId}/catalog/imports/{runId}", s.readPartnerStoreCatalogImport)
+	mux.HandleFunc("POST /dsh/stores/{storeId}/catalog/imports/{runId}/commit", s.commitPartnerStoreCatalogImport)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/offers", s.createOffer)
 	mux.HandleFunc("PATCH /dsh/stores/{storeId}/offers/{offerId}", s.updateOffer)
+	mux.HandleFunc("GET /dsh/stores/{storeId}/catalog/quick-prices", s.listQuickPrices)
+	mux.HandleFunc("POST /dsh/stores/{storeId}/catalog/quick-prices/commit", s.commitQuickPrices)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/modifier-groups", s.createModifierGroup)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/modifier-groups/{groupId}/options", s.createModifierOption)
 	mux.HandleFunc("PUT /dsh/stores/{storeId}/offers/{offerId}/modifier-groups/{groupId}", s.attachModifierGroup)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/sections", s.createStorefrontSection)
 	mux.HandleFunc("PUT /dsh/stores/{storeId}/sections/{sectionId}/offers/{offerId}", s.attachOfferToSection)
+	s.registerFieldCatalog(mux)
 }
 
 func (s *CatalogServer) listVerticals(w http.ResponseWriter, r *http.Request) {
@@ -147,7 +156,7 @@ func (s *CatalogServer) createVertical(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.CreateVertical(r.Context(), acting, postgres.CommerceVerticalRecord{ID: input.ID, NameAr: input.NameAr, NameEn: input.NameEn, CatalogModel: string(input.CatalogModel), Active: input.Active}, idempotency, correlation, input.Reason)
+	result, err := s.service.CreateVertical(r.Context(), acting, postgres.CommerceVerticalRecord{ID: input.ID, NameAr: input.NameAr, NameEn: input.NameEn, Active: input.Active}, idempotency, correlation, input.Reason)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -168,7 +177,7 @@ func (s *CatalogServer) updateVertical(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.UpdateVertical(r.Context(), acting, r.PathValue("verticalId"), postgres.UpdateCommerceVerticalInput{NameAr: input.NameAr, NameEn: input.NameEn, CatalogModel: string(input.CatalogModel), Active: input.Active, ExpectedVersion: input.ExpectedVersion}, idempotency, correlation, input.Reason)
+	result, err := s.service.UpdateVertical(r.Context(), acting, r.PathValue("verticalId"), postgres.UpdateCommerceVerticalInput{NameAr: input.NameAr, NameEn: input.NameEn, Active: input.Active, ExpectedVersion: input.ExpectedVersion}, idempotency, correlation, input.Reason)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -804,6 +813,58 @@ func (s *CatalogServer) updateOffer(w http.ResponseWriter, r *http.Request) {
 	writeOffer(w, http.StatusOK, result)
 }
 
+func (s *CatalogServer) listQuickPrices(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "partner session is required")
+		return
+	}
+	limit := 50
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 100 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "limit must be between 1 and 100")
+			return
+		}
+		limit = parsed
+	}
+	filters := postgres.CatalogQuickPriceFilters{Query: r.URL.Query().Get("q"), CategoryID: r.URL.Query().Get("categoryId"), Availability: r.URL.Query().Get("availability"), PublicationState: r.URL.Query().Get("publicationState")}
+	page, err := s.service.ListQuickPricesForPartner(r.Context(), bearerToken(r), r.PathValue("storeId"), filters, limit, r.URL.Query().Get("cursor"))
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeOffers(w, http.StatusOK, page)
+}
+
+func (s *CatalogServer) commitQuickPrices(w http.ResponseWriter, r *http.Request) {
+	correlation, idempotency, _, ok := requiredPartnerOfferHeaders(w, r, false)
+	if !ok {
+		return
+	}
+	var input contract.CatalogQuickPriceCommitRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	changes := make([]postgres.CatalogQuickPriceUpdateInput, len(input.Items))
+	for index, item := range input.Items {
+		changes[index] = postgres.CatalogQuickPriceUpdateInput{OfferID: item.OfferID, ExpectedVersion: item.ExpectedVersion, PriceMinor: int64(item.PriceMinor)}
+	}
+	results, err := s.service.UpdateQuickPricesForPartner(r.Context(), bearerToken(r), r.PathValue("storeId"), changes, idempotency, correlation)
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	items := make([]contract.CatalogQuickPriceUpdateResult, len(results))
+	for index, item := range results {
+		result := contract.CatalogQuickPriceUpdateResult{OfferID: item.OfferID, Outcome: item.Outcome}
+		if item.Offer != nil {
+			result.Offer = toStoreOffer(*item.Offer)
+		}
+		items[index] = result
+	}
+	writeJSON(w, http.StatusOK, contract.CatalogQuickPriceCommitResponse{Items: items})
+}
+
 func catalogLimit(w http.ResponseWriter, r *http.Request) (int, bool) {
 	limit := 100
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
@@ -821,8 +882,7 @@ func catalogLimit(w http.ResponseWriter, r *http.Request) (int, bool) {
 	return limit, true
 }
 func toCommerceVertical(item postgres.CommerceVerticalRecord) contract.CommerceVertical {
-	model := contract.CatalogModel(item.CatalogModel)
-	return contract.CommerceVertical{ID: item.ID, NameAr: item.NameAr, NameEn: item.NameEn, CatalogModel: model, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return contract.CommerceVertical{ID: item.ID, NameAr: item.NameAr, NameEn: item.NameEn, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 func toCommercialStoreType(item postgres.CommercialStoreTypeRecord) contract.CommercialStoreType {
 	return contract.CommercialStoreType{ID: item.ID, VerticalID: item.VerticalID, NameAr: item.NameAr, NameEn: item.NameEn, Active: item.Active, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
@@ -892,6 +952,8 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog Category cursor, filters, or sort order are invalid")
 	case errors.Is(err, postgres.ErrCatalogOfferInvalidCursor):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "StoreOffer cursor or page size is invalid")
+	case errors.Is(err, postgres.ErrCatalogQuickPriceInvalidFilter):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Quick Prices filters or update facts are invalid")
 	case errors.Is(err, postgres.ErrCatalogProductNotFound), errors.Is(err, postgres.ErrCatalogVariantNotFound), errors.Is(err, postgres.ErrCatalogOfferNotFound), errors.Is(err, postgres.ErrCatalogCategoryNotFound), errors.Is(err, postgres.ErrCatalogVerticalNotFound), errors.Is(err, postgres.ErrCommercialStoreTypeNotFound), errors.Is(err, postgres.ErrCatalogProposalNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "catalog record was not found")
 	case errors.Is(err, postgres.ErrCatalogIdempotencyConflict):
@@ -900,12 +962,6 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "catalog version is stale")
 	case errors.Is(err, postgres.ErrCommercialStoreTypeInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "commercial store type facts are invalid")
-	case errors.Is(err, postgres.ErrCatalogVerticalModelLocked):
-		writeError(w, http.StatusConflict, "CATALOG_MODEL_LOCKED", "catalog model cannot change after products exist")
-	case errors.Is(err, postgres.ErrCatalogVerticalModelInUse):
-		writeError(w, http.StatusConflict, "CATALOG_MODEL_IN_USE", "existing products or proposals must match the selected catalog model")
-	case errors.Is(err, postgres.ErrCatalogVerticalModelInvalid):
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a catalog model must be assigned to the commerce vertical")
 	case errors.Is(err, postgres.ErrCatalogCategoryCycle):
 		writeError(w, http.StatusConflict, "CATEGORY_CYCLE", "a category cannot be placed under its own descendant")
 	case errors.Is(err, postgres.ErrCatalogCategoryHasActiveChildren):
@@ -930,8 +986,8 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "OFFER_EXISTS", "StoreOffer already exists for this Variant")
 	case errors.Is(err, postgres.ErrCatalogOfferProductDisabled):
 		writeError(w, http.StatusConflict, "PRODUCT_NOT_ELIGIBLE", "Product/Variant/vertical is not eligible for this StoreOffer")
-	case errors.Is(err, postgres.ErrCatalogProductModelMismatch):
-		writeError(w, http.StatusConflict, "CATALOG_MODEL_MISMATCH", "product entry does not match the configured catalog for this Commerce Vertical")
+	case errors.Is(err, postgres.ErrCatalogProductScopeMismatch):
+		writeError(w, http.StatusConflict, "CATALOG_SCOPE_MISMATCH", "Product scope, category, or Store ownership is invalid")
 	case errors.Is(err, postgres.ErrCatalogOfferQuantityInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog quantity or measurement policy is invalid")
 	case errors.Is(err, postgres.ErrCatalogInventoryInvalid):
@@ -944,6 +1000,8 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog Product proposal facts or decision are invalid")
 	case errors.Is(err, postgres.ErrCatalogImportInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog import facts are invalid")
+	case errors.Is(err, catalog.ErrStoreCatalogImportFile):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog import file must be a valid CSV or XLSX with barcode and positive whole YER price columns, with no more than 5000 data rows")
 	case errors.Is(err, postgres.ErrCatalogOfferInvalidState):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "StoreOffer publication state is invalid")
 	case errors.Is(err, catalog.ErrCatalogVerticalInvalid):
@@ -962,6 +1020,10 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active app-partner session is required")
 	case errors.Is(err, catalog.ErrStoreOwnershipForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "partner Store ownership is required")
+	case errors.Is(err, catalog.ErrFieldCatalogSessionForbidden):
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "an active Field app session is required")
+	case errors.Is(err, postgres.ErrFieldCatalogAuthority):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "Field catalog authority is limited to the assigned unpublished Store")
 	default:
 		var identityErr *identityclient.Error
 		if errors.As(err, &identityErr) {

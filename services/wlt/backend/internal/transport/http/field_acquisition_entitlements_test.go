@@ -73,6 +73,59 @@ func TestListFieldAcquisitionEntitlementsReadsPageAndBuildsCursor(t *testing.T) 
 	}
 }
 
+func TestReadFieldAcquisitionEntitlementByJoiningCaseIsServiceAuthenticatedAndReturnsCanonicalRecord(t *testing.T) {
+	createdAt := time.Date(2026, time.October, 2, 0, 0, 0, 0, time.UTC)
+	rows := &fieldEntitlementRows{values: [][]driver.Value{{
+		"case-1", "store-1", "partner-1", "field-1", "vertical-1", "type-1", "policy-1", int64(2), int64(250), "YER", "ledger-1", createdAt,
+	}}}
+	db := sql.OpenDB(fieldEntitlementConnector{rows: rows})
+	defer db.Close()
+	server := &Server{db: db, serviceToken: "service-token"}
+
+	unauthorized := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/wlt/v1/field-acquisition-entitlements/case-1", nil)
+	request.SetPathValue("joiningCaseId", "case-1")
+	server.readFieldAcquisitionEntitlementByJoiningCase(unauthorized, request)
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized read response = %d %s, want 401", unauthorized.Code, unauthorized.Body.String())
+	}
+
+	response := httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodGet, "/wlt/v1/field-acquisition-entitlements/case-1", nil)
+	request.SetPathValue("joiningCaseId", "case-1")
+	request.Header.Set("Authorization", "Bearer service-token")
+	server.readFieldAcquisitionEntitlementByJoiningCase(response, request)
+	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("authorized read response = %d headers=%v body=%s, want no-store 200", response.Code, response.Header(), response.Body.String())
+	}
+	var body struct {
+		Entitlement fieldAcquisitionEntitlementJSON `json:"entitlement"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	item := body.Entitlement
+	if item.JoiningCaseID != "case-1" || item.StoreID != "store-1" || item.PartnerActorID != "partner-1" || item.FieldActorID != "field-1" ||
+		item.VerticalID != "vertical-1" || item.CommercialStoreTypeID != "type-1" || item.PolicyID != "policy-1" || item.PolicyVersion != 2 ||
+		item.RewardMinor != 250 || item.Currency != "YER" || item.LedgerTransactionID != "ledger-1" || item.Status != "POSTED" ||
+		item.CreatedAt != createdAt.Format(time.RFC3339Nano) || item.EffectiveAt != createdAt.Format(time.RFC3339Nano) {
+		t.Fatalf("entitlement readback = %+v, want complete immutable posted record", item)
+	}
+}
+
+func TestReadFieldAcquisitionEntitlementByJoiningCaseReturnsNotFound(t *testing.T) {
+	db := sql.OpenDB(fieldEntitlementConnector{rows: &fieldEntitlementRows{}})
+	defer db.Close()
+	request := httptest.NewRequest(http.MethodGet, "/wlt/v1/field-acquisition-entitlements/missing-case", nil)
+	request.SetPathValue("joiningCaseId", "missing-case")
+	request.Header.Set("Authorization", "Bearer service-token")
+	response := httptest.NewRecorder()
+	(&Server{db: db, serviceToken: "service-token"}).readFieldAcquisitionEntitlementByJoiningCase(response, request)
+	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), "FIELD_ACQUISITION_ENTITLEMENT_NOT_FOUND") {
+		t.Fatalf("missing entitlement response = %d %s, want canonical 404", response.Code, response.Body.String())
+	}
+}
+
 type fieldEntitlementConnector struct {
 	rows *fieldEntitlementRows
 }

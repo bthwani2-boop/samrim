@@ -31,7 +31,7 @@ export function CatalogTaxonomyWorkspace() {
       const response = await fetch("/api/catalog/verticals?includeInactive=true", { cache: "no-store" });
       const body = await readResponse<{ verticals: ReadonlyArray<CommerceVertical> }>(response);
       setVerticals(body.verticals);
-      const shared = body.verticals.filter((item) => item.catalogModel === "SHARED_CATALOG");
+      const shared = body.verticals.filter((item) => item.active);
       const requestedVerticalId = new URL(window.location.href).searchParams.get("verticalId") ?? "";
       const requestedCategoryId = new URL(window.location.href).searchParams.get("categoryId") ?? "";
       setCategoryId((current) => current || requestedCategoryId);
@@ -74,7 +74,7 @@ export function CatalogTaxonomyWorkspace() {
   }, []);
 
   const loadRootCategoryImages = useCallback(async (items: ReadonlyArray<CommerceVertical>) => {
-    const shared = items.filter((item) => item.active && item.catalogModel === "SHARED_CATALOG");
+    const shared = items.filter((item) => item.active);
     const images = await Promise.all(shared.map(async (vertical) => {
       const params = new URLSearchParams({ verticalId: vertical.id, status: "all", sort: "name_asc", limit: "100" });
       const response = await fetch(`/api/catalog/categories?${params.toString()}`, { cache: "no-store" });
@@ -89,7 +89,7 @@ export function CatalogTaxonomyWorkspace() {
   useEffect(() => { if (verticals.length) void loadRootCategoryImages(verticals).catch((error_) => setError(error_ instanceof Error ? error_.message : "تعذر تحميل صور المجالات.")); }, [verticals, loadRootCategoryImages]);
   useEffect(() => { void loadCategories(verticalId); }, [verticalId, loadCategories]);
 
-  const sharedVerticals = verticals.filter((item) => item.catalogModel === "SHARED_CATALOG");
+  const sharedVerticals = verticals.filter((item) => item.active);
   const chooseVertical = useCallback((nextVerticalId: string) => {
     categoryLoadSequence.current += 1;
     setVerticalId(nextVerticalId);

@@ -721,6 +721,334 @@ paths:
       responses:
         "200": { description: Canonical import commit readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportCommitResponse" } } } }
 
+  /dsh/catalog/store-imports/preview:
+    post:
+      operationId: previewOperatorStoreCatalogImport
+      summary: Preview barcode and price rows for one Operator-authorized Store
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [storeId, file]
+              properties:
+                storeId: { type: string, minLength: 1, maxLength: 128 }
+                file: { type: string, format: binary, description: CSV or XLSX with barcode and positive whole YER price columns }
+      responses:
+        "201": { description: Store offer import preview., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportPreviewResponse" } } } }
+        "200": { description: Idempotent preview replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportPreviewResponse" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
+  /dsh/catalog/store-imports/{runId}:
+    get:
+      operationId: readOperatorStoreCatalogImport
+      summary: Read an Operator-owned Store catalog import preview
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ImportRunId"
+      responses:
+        "200": { description: Store catalog import readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportRunResponse" } } } }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
+  /dsh/catalog/store-imports/{runId}/commit:
+    post:
+      operationId: commitOperatorStoreCatalogImport
+      summary: Commit valid offers from an Operator-owned Store catalog import
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ImportRunId"
+      responses:
+        "200": { description: Store offer import commit readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportCommitResponse" } } } }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
+  /dsh/catalog/identifiers/resolve:
+    post:
+      operationId: resolveCatalogIdentifier
+      summary: Resolve a barcode or identifier in a Partner-owned Store catalog
+      security:
+        - userBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogIdentifierResolveRequest" } }
+      responses:
+        "200": { description: Canonical Store-scoped identifier resolution., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogIdentifierResolveResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
+  /dsh/field/catalog/identifiers/resolve:
+    post:
+      operationId: resolveFieldCatalogIdentifier
+      summary: Resolve an identifier only within the Field actor's assigned pre-Go-Live Store
+      security:
+        - userBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/FieldCatalogIdentifierResolveRequest" } }
+      responses:
+        "200": { description: Canonical identifier resolution under assigned Field catalog authority., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogIdentifierResolveResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
+  /dsh/field/joining-cases/{caseId}/catalog:
+    get:
+      operationId: readFieldJoiningCaseCatalog
+      summary: Read Shared and Store-local products plus StoreOffers for an assigned unpublished Store
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/JoiningCaseId"
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 2048 } }
+      responses:
+        "200": { description: Pre-Go-Live Field catalog readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/FieldCatalogReadResponse" } } } }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
+  /dsh/field/joining-cases/{caseId}/catalog/products:
+    post:
+      operationId: createFieldInitialCatalogProduct
+      summary: Create an initial Store-local Product for the Field actor's assigned unpublished Store
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/JoiningCaseId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateFieldCatalogProductRequest" } }
+      responses:
+        "201": { description: Initial Store-local Product and Variant readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductResponse" } } } }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
+  /dsh/field/joining-cases/{caseId}/catalog/offers:
+    post:
+      operationId: createFieldInitialCatalogOffer
+      summary: Set an initial price for a Shared or Store-local Variant in the assigned unpublished Store
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/JoiningCaseId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateStoreOfferRequest" } }
+      responses:
+        "201": { description: Field-attributed initial StoreOffer readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogStoreOfferResponse" } } } }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
+  /dsh/field/joining-cases/{caseId}/catalog/offers/{offerId}:
+    patch:
+      operationId: updateFieldInitialCatalogOffer
+      summary: Correct an initial offer only while the assigned Store remains unpublished
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/JoiningCaseId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/OfferId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UpdateStoreOfferRequest" } }
+      responses:
+        "200": { description: Corrected Field-attributed initial StoreOffer readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogStoreOfferResponse" } } } }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
+  /dsh/field/joining-cases/{caseId}/catalog/imports/preview:
+    post:
+      operationId: previewFieldStoreCatalogImport
+      summary: Preview barcode and price rows for the assigned unpublished Store
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/JoiningCaseId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary, description: CSV or XLSX with barcode and positive whole YER price columns }
+      responses:
+        "201": { description: Field-attributed initial Store offer import preview., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportPreviewResponse" } } } }
+        "200": { description: Idempotent preview replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportPreviewResponse" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
+  /dsh/field/joining-cases/{caseId}/catalog/imports/{runId}:
+    get:
+      operationId: readFieldStoreCatalogImport
+      summary: Read an initial Store catalog import while the assigned Field authority remains active
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/JoiningCaseId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ImportRunId"
+      responses:
+        "200": { description: Field-scoped Store import readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportRunResponse" } } } }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
+  /dsh/field/joining-cases/{caseId}/catalog/imports/{runId}/commit:
+    post:
+      operationId: commitFieldStoreCatalogImport
+      summary: Commit valid initial Store offers only before Go-Live
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/JoiningCaseId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ImportRunId"
+      responses:
+        "200": { description: Field-attributed initial Store offer import commit readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportCommitResponse" } } } }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
+  /dsh/field/joining-cases/{caseId}/catalog/product-proposals:
+    get:
+      operationId: listFieldCatalogProductProposals
+      summary: Read Product proposals submitted from this assigned Field joining case
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/JoiningCaseId"
+        - { name: state, in: query, required: false, schema: { type: string, enum: [draft, submitted, needs_correction, approved, rejected] } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 2048 } }
+      responses:
+        "200": { description: Bounded Product proposals for the assigned case., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductProposalListResponse" } } } }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+    post:
+      operationId: createFieldCatalogProductProposal
+      summary: Create a Shared Product proposal for review from an assigned pre-Go-Live case
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/JoiningCaseId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateCatalogProductProposalRequest" } }
+      responses:
+        "201": { description: Field-owned Product proposal created for operator review., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductProposalResponse" } } } }
+        "200": { description: Idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductProposalResponse" } } } }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
+  /dsh/field/joining-cases/{caseId}/catalog/product-proposals/{proposalId}/submit:
+    post:
+      operationId: submitFieldCatalogProductProposal
+      summary: Submit a Field-owned Product proposal for operator review
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/JoiningCaseId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ProposalId"
+      responses:
+        "200": { description: Submitted Field-owned Product proposal., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductProposalResponse" } } } }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
+  /dsh/field/joining-cases/{caseId}/catalog/product-proposals/{proposalId}:
+    patch:
+      operationId: updateFieldCatalogProductProposal
+      summary: Correct a Field-owned Product proposal for the assigned joining case
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/JoiningCaseId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ProposalId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UpdateCatalogProductProposalRequest" } }
+      responses:
+        "200": { description: Corrected Field-owned Product proposal., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductProposalResponse" } } }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
+  /dsh/stores/{storeId}/catalog/imports/preview:
+    post:
+      operationId: previewPartnerStoreCatalogImport
+      summary: Preview barcode and price rows for the Partner-owned Store
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary, description: CSV or XLSX with barcode and positive whole YER price columns }
+      responses:
+        "201": { description: Store offer import preview., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportPreviewResponse" } } } }
+        "200": { description: Idempotent preview replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportPreviewResponse" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
+  /dsh/stores/{storeId}/catalog/imports/{runId}:
+    get:
+      operationId: readPartnerStoreCatalogImport
+      summary: Read an import preview for the Partner-owned Store
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ImportRunId"
+      responses:
+        "200": { description: Store-scoped catalog import readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportRunResponse" } } } }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
+  /dsh/stores/{storeId}/catalog/imports/{runId}/commit:
+    post:
+      operationId: commitPartnerStoreCatalogImport
+      summary: Commit valid Store offers from the Partner-owned import preview
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ImportRunId"
+      responses:
+        "200": { description: Store offer import commit readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportCommitResponse" } } } }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
   /dsh/stores/{storeId}/offers:
     get:
       operationId: readOwnStoreOffers
@@ -775,6 +1103,44 @@ paths:
           application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UpdateStoreOfferRequest" } }
       responses:
         "200": { description: StoreOffer update readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogStoreOfferResponse" } } } }
+
+  /dsh/stores/{storeId}/catalog/quick-prices:
+    get:
+      operationId: listOwnStoreQuickPrices
+      summary: Filter Store offers for bulk price maintenance
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - { name: q, in: query, required: false, schema: { type: string, maxLength: 160 } }
+        - { name: categoryId, in: query, required: false, schema: { type: string, maxLength: 128 } }
+        - { name: availability, in: query, required: false, schema: { type: string, enum: [all, available, unavailable], default: all } }
+        - { name: publicationState, in: query, required: false, schema: { type: string, enum: [all, draft, published, hidden], default: all } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 2048 } }
+      responses:
+        "200": { description: Filtered Store offers in stable order., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogStoreOfferListResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
+  /dsh/stores/{storeId}/catalog/quick-prices/commit:
+    post:
+      operationId: commitOwnStoreQuickPrices
+      summary: Apply versioned bulk price changes with per-offer audit
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogQuickPriceCommitRequest" } }
+      responses:
+        "200": { description: Each update reports applied, replayed, or stale-version conflict status., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogQuickPriceCommitResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
 
   /dsh/stores/{storeId}/modifier-groups:
     post:

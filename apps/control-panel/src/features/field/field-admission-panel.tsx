@@ -310,6 +310,7 @@ export function FieldAdmissionPanel() {
   const [nextCursor, setNextCursor] = useState("");
   const [fullNameAr, setFullNameAr] = useState("");
   const [phone, setPhone] = useState("");
+  const [walletProviderKey, setWalletProviderKey] = useState("");
   const [serviceCityId, setServiceCityId] = useState("");
   const [serviceCities, setServiceCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [serviceCitiesLoading, setServiceCitiesLoading] = useState(true);
@@ -407,6 +408,7 @@ export function FieldAdmissionPanel() {
   async function createProfile() {
     const name = fullNameAr.trim();
     const contactPhoneE164 = fieldPhoneE164(phone);
+    const providerKey = walletProviderKey.trim();
     const activeCity = serviceCities.find((city) => city.id === serviceCityId && city.active);
     if (Array.from(name).length < 2 || Array.from(name).length > 120) {
       setError("أدخل الاسم الكامل بالعربية قبل حفظ الملف.");
@@ -420,19 +422,23 @@ export function FieldAdmissionPanel() {
       setError("اختر مدينة خدمة نشطة قبل حفظ الملف.");
       return;
     }
+    if (Array.from(providerKey).length < 1 || Array.from(providerKey).length > 64 || /\p{Cc}/u.test(providerKey)) {
+      setError("أدخل اسم مزوّد المحفظة الذي حدده الميداني، من دون رقم محفظة أو اسم قانوني.");
+      return;
+    }
     setBusy("create"); setError(""); setNotice("");
     try {
-      const response = await identityFetch("/api/fields", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "admit", fullNameAr: name, contactPhoneE164, serviceCityId: activeCity.id }) });
+      const response = await identityFetch("/api/fields", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "admit", fullNameAr: name, contactPhoneE164, serviceCityId: activeCity.id, walletProviderKey: providerKey }) });
       if (!response.ok) { setError(await responseMessage(response)); await load(); return; }
       const created = (await response.json() as AdmissionMutationResponse).admission;
-      if (!created?.id || created.state !== "pending_review" || created.contactPhoneE164 !== contactPhoneE164 || created.fullNameAr !== name || created.serviceCityId !== activeCity.id) {
+      if (!created?.id || created.state !== "pending_review" || created.contactPhoneE164 !== contactPhoneE164 || created.fullNameAr !== name || created.serviceCityId !== activeCity.id || created.walletProviderKey !== providerKey) {
         setError("استجاب DSH للحفظ لكن سجل العملية لا يطابق الملف المطلوب. أعد القراءة قبل أي إجراء آخر."); await load(); return;
       }
       const page = await readWorkbench(contactPhoneE164);
-      if (!page.items.some((item) => item.kind === "candidate" && item.admission.id === created.id && item.admission.state === "pending_review" && item.admission.fullNameAr === name && item.admission.serviceCityId === activeCity.id)) {
+      if (!page.items.some((item) => item.kind === "candidate" && item.admission.id === created.id && item.admission.state === "pending_review" && item.admission.fullNameAr === name && item.admission.serviceCityId === activeCity.id && item.admission.walletProviderKey === providerKey)) {
         setError("حُفظ الملف لكن إعادة قراءة السجل الموحّد لا تطابق الملف المنشأ."); await load(); return;
       }
-      setFullNameAr(""); setPhone(""); setServiceCityId(""); updateQuery(contactPhoneE164);
+      setFullNameAr(""); setPhone(""); setServiceCityId(""); setWalletProviderKey(""); updateQuery(contactPhoneE164);
       setNotice("أُنشئ الملف وظهر في سجل الميدانيين بانتظار المراجعة.");
       await load();
     } catch (cause) {
@@ -494,12 +500,13 @@ export function FieldAdmissionPanel() {
   const normalizedCandidatePhone = fieldPhoneE164(phone);
   const candidatePhoneValid = isFieldPhoneE164(normalizedCandidatePhone);
   const candidateNameValid = Array.from(fullNameAr.trim()).length >= 2 && Array.from(fullNameAr.trim()).length <= 120;
+  const candidateProviderValid = Array.from(walletProviderKey.trim()).length >= 1 && Array.from(walletProviderKey.trim()).length <= 64 && !/\p{Cc}/u.test(walletProviderKey);
   const candidateCityValid = serviceCities.some((city) => city.id === serviceCityId && city.active);
 
   return <section className={`access-card field-workbench ${styles.root}`} aria-labelledby="field-workbench-title">
     <header className="field-workbench-heading">
       <div><span className="step-chip">مساحة الشركاء</span><h2 id="field-workbench-title">إدارة الميدانيين</h2><p className="muted">قائمة واحدة تجمع ملفات الأهلية والحسابات. DSH يملك الأهلية وIdentity يملك دور الدخول.</p></div>
-      <details className="field-create-disclosure"><summary className="button button-primary">إنشاء ملف ميداني</summary><div className="field-create-content"><div className="access-card-heading"><h3>ملف ميداني جديد</h3><p className="muted">إنشاء الملف يحفظ أهلية DSH للمراجعة فقط؛ لا ينشئ حساب الدخول ولا يرسل رمز التفعيل.</p></div><form className="access-form" onSubmit={(event) => { event.preventDefault(); void createProfile(); }}><label className="field-label" htmlFor="field-candidate-name">الاسم الكامل بالعربية<input id="field-candidate-name" autoComplete="name" maxLength={120} value={fullNameAr} onChange={(event) => setFullNameAr(event.target.value)} disabled={Boolean(busy)} /></label><label className="field-label" htmlFor="field-candidate-phone">رقم الهاتف الدولي<input id="field-candidate-phone" autoComplete="tel" inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} disabled={Boolean(busy)} placeholder="+967 777 765 432" aria-invalid={Boolean(phone.trim()) && !candidatePhoneValid} aria-describedby="field-candidate-phone-help" /><span id="field-candidate-phone-help" className={phone.trim() && !candidatePhoneValid ? "identity-error" : "muted"}>{phone.trim() && !candidatePhoneValid ? "أدخل الرقم مع + ورمز البلد؛ الرقم المحلي وحده لا يُقبل. مثال: +967 777 765 432." : "يُستخدم هذا الرقم لإثبات الهاتف وتفعيل الدخول، ثم لتسجيل الدخول اليومي."}</span></label><label className="field-label" htmlFor="field-candidate-city">مدينة الخدمة<select id="field-candidate-city" value={serviceCityId} onChange={(event) => setServiceCityId(event.target.value)} disabled={Boolean(busy) || serviceCitiesLoading || Boolean(serviceCitiesError)}><option value="">{serviceCitiesLoading ? "جارٍ تحميل المدن…" : "اختر مدينة نشطة"}</option>{serviceCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>{serviceCitiesError ? <p className="identity-error" role="alert">{serviceCitiesError}</p> : null}<button type="submit" className="button button-primary" disabled={Boolean(busy) || serviceCitiesLoading || Boolean(serviceCitiesError) || !candidateNameValid || !candidatePhoneValid || !candidateCityValid}>{busy === "create" ? "جارٍ الحفظ…" : "حفظ للمراجعة"}</button></form></div></details>
+      <details className="field-create-disclosure"><summary className="button button-primary">إنشاء ملف ميداني</summary><div className="field-create-content"><div className="access-card-heading"><h3>ملف ميداني جديد</h3><p className="muted">إنشاء الملف يحفظ أهلية DSH للمراجعة فقط؛ لا ينشئ حساب الدخول ولا يرسل رمز التفعيل.</p></div><form className="access-form" onSubmit={(event) => { event.preventDefault(); void createProfile(); }}><label className="field-label" htmlFor="field-candidate-name">الاسم الكامل بالعربية<input id="field-candidate-name" autoComplete="name" maxLength={120} value={fullNameAr} onChange={(event) => setFullNameAr(event.target.value)} disabled={Boolean(busy)} /></label><label className="field-label" htmlFor="field-candidate-phone">رقم الهاتف الدولي<input id="field-candidate-phone" autoComplete="tel" inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} disabled={Boolean(busy)} placeholder="+967 777 765 432" aria-invalid={Boolean(phone.trim()) && !candidatePhoneValid} aria-describedby="field-candidate-phone-help" /><span id="field-candidate-phone-help" className={phone.trim() && !candidatePhoneValid ? "identity-error" : "muted"}>{phone.trim() && !candidatePhoneValid ? "أدخل الرقم مع + ورمز البلد؛ الرقم المحلي وحده لا يُقبل. مثال: +967 777 765 432." : "يُستخدم هذا الرقم لإثبات الهاتف وتفعيل الدخول، ثم لتسجيل الدخول اليومي."}</span></label><label className="field-label" htmlFor="field-candidate-wallet-provider">مزوّد المحفظة الذي حدده الميداني<input id="field-candidate-wallet-provider" autoComplete="off" maxLength={64} value={walletProviderKey} onChange={(event) => setWalletProviderKey(event.target.value)} disabled={Boolean(busy)} /><small>المزوّد فقط؛ لا تدخل رقم محفظة أو اسمًا قانونيًا.</small></label><label className="field-label" htmlFor="field-candidate-city">مدينة الخدمة<select id="field-candidate-city" value={serviceCityId} onChange={(event) => setServiceCityId(event.target.value)} disabled={Boolean(busy) || serviceCitiesLoading || Boolean(serviceCitiesError)}><option value="">{serviceCitiesLoading ? "جارٍ تحميل المدن…" : "اختر مدينة نشطة"}</option>{serviceCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>{serviceCitiesError ? <p className="identity-error" role="alert">{serviceCitiesError}</p> : null}<button type="submit" className="button button-primary" disabled={Boolean(busy) || serviceCitiesLoading || Boolean(serviceCitiesError) || !candidateNameValid || !candidatePhoneValid || !candidateProviderValid || !candidateCityValid}>{busy === "create" ? "جارٍ الحفظ…" : "حفظ للمراجعة"}</button></form></div></details>
     </header>
     <section className={styles.lifecycleGuide} aria-labelledby="field-lifecycle-title">
       <h3 id="field-lifecycle-title">مسار إنشاء حساب الميداني وتفعيله</h3>

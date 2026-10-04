@@ -57,6 +57,7 @@ type CaptainAdmission struct {
 	ActorID               string
 	FullNameAr            string
 	PhoneE164             string
+	WalletProviderKey     string
 	State                 string
 	AvailabilityState     string
 	RequiresProfileReview bool
@@ -142,8 +143,8 @@ type CaptainOperationResult struct {
 	Replayed   bool
 }
 
-func HashCaptainAdmissionRequest(fullNameAr, phone string) string {
-	return hashFacts("captain-admission", strings.TrimSpace(fullNameAr), strings.TrimSpace(phone))
+func HashCaptainAdmissionRequest(fullNameAr, phone, walletProviderKey string) string {
+	return hashFacts("captain-admission", strings.TrimSpace(fullNameAr), strings.TrimSpace(phone), strings.TrimSpace(walletProviderKey))
 }
 
 func HashCaptainAdmissionTransition(operation, admissionID string) string {
@@ -233,9 +234,10 @@ func HashCaptainAccessRequest(actorID, role string, enabled bool, expectedVersio
 	return hashFacts("captain-access", strings.TrimSpace(actorID), strings.TrimSpace(role), strconv.FormatBool(enabled), strconv.Itoa(expectedVersion))
 }
 
-func CreateCaptainAdmissionCandidate(ctx context.Context, db *sql.DB, fullNameAr, phone, idempotencyKey, requestHash, actingActorID, correlationID string) (CaptainAdmission, bool, error) {
+func CreateCaptainAdmissionCandidate(ctx context.Context, db *sql.DB, fullNameAr, phone, walletProviderKey, idempotencyKey, requestHash, actingActorID, correlationID string) (CaptainAdmission, bool, error) {
 	fullNameAr = strings.TrimSpace(fullNameAr)
-	if db == nil || len([]rune(fullNameAr)) < 2 || len([]rune(fullNameAr)) > 120 || strings.TrimSpace(phone) == "" || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
+	walletProviderKey = strings.TrimSpace(walletProviderKey)
+	if db == nil || len([]rune(fullNameAr)) < 2 || len([]rune(fullNameAr)) > 120 || strings.TrimSpace(phone) == "" || len([]rune(walletProviderKey)) < 1 || len([]rune(walletProviderKey)) > 64 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
 		return CaptainAdmission{}, false, ErrCaptainAdmissionConflict
 	}
 	tx, err := db.BeginTx(ctx, nil)
@@ -274,7 +276,7 @@ func CreateCaptainAdmissionCandidate(ctx context.Context, db *sql.DB, fullNameAr
 	if err != nil {
 		return CaptainAdmission{}, false, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_admissions(id,full_name_ar,contact_phone_e164,state,availability_state,version) VALUES($1,$2,$3,'pending_review','unavailable',1)`, admissionID, fullNameAr, strings.TrimSpace(phone)); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_admissions(id,full_name_ar,contact_phone_e164,wallet_provider_key,state,availability_state,version) VALUES($1,$2,$3,$4,'pending_review','unavailable',1)`, admissionID, fullNameAr, strings.TrimSpace(phone), walletProviderKey); err != nil {
 		return CaptainAdmission{}, false, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_admission_idempotency(idempotency_key,request_hash,admission_id,operation,result_version,result_state) VALUES($1,$2,$3,'create',1,'pending_review')`, idempotencyKey, requestHash, admissionID); err != nil {
@@ -2312,7 +2314,7 @@ func readCaptainAdmissionTx(ctx context.Context, source interface {
 }, where string, args ...any) (CaptainAdmission, error) {
 	var item CaptainAdmission
 	var actorID string
-	err := source.QueryRowContext(ctx, `SELECT id,COALESCE(actor_id,''),COALESCE(full_name_ar,''),COALESCE(contact_phone_e164,''),state,availability_state,requires_profile_review,version,created_at,updated_at FROM dsh.captain_admissions WHERE `+where, args...).Scan(&item.ID, &actorID, &item.FullNameAr, &item.PhoneE164, &item.State, &item.AvailabilityState, &item.RequiresProfileReview, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+	err := source.QueryRowContext(ctx, `SELECT id,COALESCE(actor_id,''),COALESCE(full_name_ar,''),COALESCE(contact_phone_e164,''),COALESCE(wallet_provider_key,''),state,availability_state,requires_profile_review,version,created_at,updated_at FROM dsh.captain_admissions WHERE `+where, args...).Scan(&item.ID, &actorID, &item.FullNameAr, &item.PhoneE164, &item.WalletProviderKey, &item.State, &item.AvailabilityState, &item.RequiresProfileReview, &item.Version, &item.CreatedAt, &item.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CaptainAdmission{}, ErrCaptainAdmissionNotFound
 	}

@@ -31,8 +31,8 @@ const storeType = {
   updatedAt: "2026-10-02T00:00:00.000Z",
 };
 
-test("partner store commission policy creates, reads back, and rejects stale no-op changes", async ({ page }) => {
-  let policy: Record<string, unknown> | undefined;
+test("store type commission defaults remain suggestions, read back, and reject stale changes", async ({ page }) => {
+  let defaultRate: Record<string, unknown> | undefined;
   const writes: Array<Record<string, unknown>> = [];
 
   await page.route("**/api/auth/session**", async (route) => {
@@ -44,63 +44,67 @@ test("partner store commission policy creates, reads back, and rejects stale no-
   await page.route("**/api/notifications**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ notifications: [], unreadCount: 0 }) });
   });
+  await page.route("**/api/finance/store-commercial-agreements?**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ agreements: [], nextCursor: "" }) });
+  });
   await page.route("**/api/catalog/verticals", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [vertical] }) });
   });
   await page.route("**/api/catalog/commercial-store-types?**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ storeTypes: [storeType] }) });
   });
-  await page.route("**/api/finance/commercial-store-type-commission-policies**", async (route) => {
+  await page.route("**/api/finance/commercial-store-type-commission-defaults**", async (route) => {
     if (route.request().method() === "GET") {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ commercialStoreTypeId: storeType.id, policies: policy ? [policy] : [] }),
+        body: JSON.stringify({ commercialStoreTypeId: storeType.id, defaults: defaultRate ? [defaultRate] : [] }),
       });
       return;
     }
     writes.push(route.request().postDataJSON() as Record<string, unknown>);
     if (writes.length === 1) {
-      policy = {
+      defaultRate = {
         commercialStoreTypeId: storeType.id,
         fulfillmentMode: "BTHWANI_CAPTAIN",
-        commissionRateBps: 850,
-        policyVersion: 1,
+        suggestedCommissionRateBps: 850,
+        defaultVersion: 1,
         updatedAt: "2026-10-02T00:00:00.000Z",
         changedByActorId: operatorSession.subject,
-        changeReason: "إنشاء سياسة المطعم",
+        changeReason: "اقتراح افتتاح المطعم",
       };
-      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ policy, idempotentReplay: false }) });
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ default: defaultRate, idempotentReplay: false }) });
       return;
     }
-    await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: { message: "تغير إصدار السياسة" } }) });
+    await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: { message: "تغير إصدار الاقتراح" } }) });
   });
 
   await page.goto("/finance/partner-store-commissions");
-  await expect(page.getByRole("heading", { name: "عمولة المنصة حسب نوع المتجر" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "نسب مقترحة حسب نوع المتجر" })).toBeVisible();
+  await expect(page.getByText("هذه النسب تساعد على بدء التفاوض فقط.", { exact: false })).toBeVisible();
   const storeTypeSelect = page.getByLabel("نوع المتجر التجاري");
   await expect(storeTypeSelect).toBeEnabled();
   await storeTypeSelect.selectOption(storeType.id);
-  await page.getByRole("button", { name: "قراءة السياسة" }).click();
-  await expect(page.getByText("تمت قراءة السياسات المركزية لهذا النوع من WLT.")).toBeVisible();
-  await expect(page.getByText("لا توجد سياسة بعد").first()).toBeVisible();
+  await page.getByRole("button", { name: "قراءة النسب المقترحة" }).click();
+  await expect(page.getByText("تمت قراءة النسب المقترحة من WLT.", { exact: false })).toBeVisible();
+  await expect(page.getByText("لا يوجد اقتراح محفوظ بعد").first()).toBeVisible();
 
-  await page.locator("#commission-rate-BTHWANI_CAPTAIN").fill("8.50");
-  await page.getByLabel("سبب التغيير (إلزامي، 8 إلى 500 حرف)").fill("سياسة افتتاح المطعم");
-  await page.getByRole("button", { name: "إنشاء سياسة توصيل بثواني" }).click();
-  await expect(page.getByText("تم حفظ السياسة مع سجل التدقيق.", { exact: false })).toBeVisible();
-  expect(writes[0]).toMatchObject({ commercialStoreTypeId: storeType.id, fulfillmentMode: "BTHWANI_CAPTAIN", commissionRateBps: 850, expectedVersion: 0, reason: "سياسة افتتاح المطعم" });
+  await page.locator("#commission-default-rate-BTHWANI_CAPTAIN").fill("8.50");
+  await page.getByLabel("سبب التغيير (إلزامي، 8 إلى 500 حرف)").fill("اقتراح افتتاح المطعم");
+  await page.getByRole("button", { name: "حفظ اقتراح توصيل بثواني" }).click();
+  await expect(page.getByText("تم حفظ النسبة المقترحة مع سجل التدقيق.", { exact: false })).toBeVisible();
+  expect(writes[0]).toMatchObject({ commercialStoreTypeId: storeType.id, fulfillmentMode: "BTHWANI_CAPTAIN", suggestedCommissionRateBps: 850, expectedDefaultVersion: 0, reason: "اقتراح افتتاح المطعم" });
   await expect(page.getByText("الإصدار 1")).toBeVisible();
   await expect(page.getByText("8.50%", { exact: true })).toBeVisible();
 
   await page.getByLabel("سبب التغيير (إلزامي، 8 إلى 500 حرف)").fill("محاولة مكررة");
-  await page.getByRole("button", { name: "حفظ نسبة توصيل بثواني" }).click();
-  await expect(page.locator(".validation-error[role=alert]")).toContainText("مطابقة للنسبة الحالية");
+  await page.getByRole("button", { name: "حفظ النسبة المقترحة · توصيل بثواني" }).click();
+  await expect(page.locator(".validation-error[role=alert]")).toContainText("مطابقة للاقتراح الحالي");
   expect(writes).toHaveLength(1);
 
-  await page.locator("#commission-rate-BTHWANI_CAPTAIN").fill("8.75");
-  await page.getByRole("button", { name: "حفظ نسبة توصيل بثواني" }).click();
-  await expect(page.locator(".validation-error[role=alert]")).toContainText("تغير إصدار السياسة");
+  await page.locator("#commission-default-rate-BTHWANI_CAPTAIN").fill("8.75");
+  await page.getByRole("button", { name: "حفظ النسبة المقترحة · توصيل بثواني" }).click();
+  await expect(page.getByText("تغير إصدار الاقتراح", { exact: false })).toBeVisible();
   expect(writes).toHaveLength(2);
 });
 

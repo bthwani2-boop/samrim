@@ -38,11 +38,12 @@ export async function POST(request: Request) {
   if (identity.role !== "operator") return jsonError("FORBIDDEN", "operator access is required", 403);
   const permissionDenied = operatorWorkspacePermissionDenied(identity, "operations");
   if (permissionDenied) return permissionDenied;
-  const body = (await request.json().catch(() => null)) as { action?: unknown; fullNameAr?: unknown; admissionId?: unknown; contactPhoneE164?: unknown; orderId?: unknown; assignmentId?: unknown; actorId?: unknown; available?: unknown; reason?: unknown; expectedVersion?: unknown; expectedActorVersion?: unknown; expectedRoleVersion?: unknown; expectedAdmissionVersion?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as { action?: unknown; fullNameAr?: unknown; admissionId?: unknown; contactPhoneE164?: unknown; walletProviderKey?: unknown; orderId?: unknown; assignmentId?: unknown; actorId?: unknown; available?: unknown; reason?: unknown; expectedVersion?: unknown; expectedActorVersion?: unknown; expectedRoleVersion?: unknown; expectedAdmissionVersion?: unknown } | null;
   const action = typeof body?.action === "string" ? body.action.trim() : "";
   const admissionId = typeof body?.admissionId === "string" ? body.admissionId.trim() : "";
   const fullNameAr = typeof body?.fullNameAr === "string" ? body.fullNameAr.trim() : "";
   const contactPhoneE164 = typeof body?.contactPhoneE164 === "string" ? body.contactPhoneE164.trim() : "";
+  const walletProviderKey = typeof body?.walletProviderKey === "string" ? body.walletProviderKey.trim() : "";
   const orderId = typeof body?.orderId === "string" ? body.orderId.trim() : "";
   const assignmentId = typeof body?.assignmentId === "string" ? body.assignmentId.trim() : "";
   const actorId = typeof body?.actorId === "string" ? body.actorId.trim() : "";
@@ -87,7 +88,12 @@ export async function POST(request: Request) {
 			const result = await setDshCaptainAvailability(actorId, { available, reason }, { ...context, expectedVersion });
 			return NextResponse.json(boundedResult(action, result.payload), { status: result.status, headers: { "Cache-Control": "no-store" } });
 		}
-		if (action === "admit") { if (Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(contactPhoneE164)) return jsonError("INVALID_INPUT", "a full Arabic name and valid E.164 phone are required", 400); const result = await admitCaptain({ fullNameAr, contactPhoneE164 }, context); return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } }); }
+		if (action === "admit") {
+			if (!body || Object.keys(body).some((key) => !["action", "fullNameAr", "contactPhoneE164", "walletProviderKey"].includes(key))) return jsonError("INVALID_INPUT", "Captain admission accepts only the name, verified contact phone, and owner-selected wallet provider", 400);
+			if (Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(contactPhoneE164) || Array.from(walletProviderKey).length < 1 || Array.from(walletProviderKey).length > 64 || /\p{Cc}/u.test(walletProviderKey)) return jsonError("INVALID_INPUT", "a full Arabic name, valid E.164 phone, and owner-selected wallet provider are required", 400);
+			const result = await admitCaptain({ fullNameAr, contactPhoneE164, walletProviderKey }, context);
+			return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
+		}
 		if (action === "dispatch") { const result = await dispatchCaptainOffer(orderId, context); return NextResponse.json(boundedResult(action, result.payload), { status: result.status, headers: { "Cache-Control": "no-store" } }); }
 		if (action === "reassign") { const result = await reassignCaptainOffer(orderId, context); return NextResponse.json(boundedResult(action, result.payload), { status: result.status, headers: { "Cache-Control": "no-store" } }); }
 		if (action === "recover") { const result = await recoverCaptainDelivery(assignmentId, { ...context, expectedVersion }); return NextResponse.json(boundedResult(action, result.payload), { status: result.status, headers: { "Cache-Control": "no-store" } }); }
