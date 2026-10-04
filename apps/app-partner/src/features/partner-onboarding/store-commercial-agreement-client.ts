@@ -2,7 +2,7 @@ import * as Crypto from "expo-crypto";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
-export type StoreCommercialAgreementRate = Readonly<{
+type StoreCommercialAgreementRate = Readonly<{
   fulfillmentMode: string;
   commissionRateBps: number;
 }>;
@@ -27,7 +27,7 @@ type DshErrorPayload = Readonly<{
   error?: Readonly<{ code?: unknown; message?: unknown }>;
 }>;
 
-export class StoreCommercialAgreementRequestError extends Error {
+class StoreCommercialAgreementRequestError extends Error {
   readonly status: number;
   readonly code: string;
 

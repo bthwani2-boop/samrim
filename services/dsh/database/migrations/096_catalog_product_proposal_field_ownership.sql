@@ -5,7 +5,8 @@ ALTER TABLE dsh.catalog_product_proposals
     ADD COLUMN joining_case_id text;
 
 UPDATE dsh.catalog_product_proposals
-SET submitter_actor_id=partner_actor_id;
+SET submitter_actor_id=partner_actor_id
+WHERE partner_actor_id IS NOT NULL;
 
 ALTER TABLE dsh.catalog_product_proposals
     ALTER COLUMN submitter_actor_id SET NOT NULL,

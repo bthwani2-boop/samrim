@@ -4,9 +4,9 @@ export const storeCommercialAgreementModes = [
   { key: "CUSTOMER_PICKUP", label: "استلام من المتجر" },
 ] as const;
 
-export type StoreCommercialAgreementMode = (typeof storeCommercialAgreementModes)[number]["key"];
+type StoreCommercialAgreementMode = (typeof storeCommercialAgreementModes)[number]["key"];
 
-export type StoreCommercialAgreementRate = Readonly<{
+type StoreCommercialAgreementRate = Readonly<{
   fulfillmentMode: StoreCommercialAgreementMode;
   commissionRateBps: number;
 }>;
@@ -52,7 +52,7 @@ export type StoreCommercialAgreementDecisionResponse = Readonly<{
   idempotentReplay: boolean;
 }>;
 
-export type StoreTypeCommissionDefault = Readonly<{
+type StoreTypeCommissionDefault = Readonly<{
   commercialStoreTypeId: string;
   fulfillmentMode: StoreCommercialAgreementMode;
   suggestedCommissionRateBps: number;
