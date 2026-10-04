@@ -418,6 +418,47 @@ for (const attributeID of [measurementAttributeID, dateAttributeID]) {
 
 const firstStoreOrigin = { firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006 };
 const correctedStoreOrigin = { firstStoreLatitude: 15.370001, firstStoreLongitude: 44.192002 };
+const runtimePNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+
+async function uploadRequiredJoiningCaseMedia(caseID, origin, name, initialVersion) {
+  const fieldOrigin = origin === "field";
+  const token = fieldOrigin ? fieldAccessToken : dshToken;
+  const casePath = `/dsh/${fieldOrigin ? "field/" : "operator/"}joining-cases/${encodeURIComponent(caseID)}`;
+  const requestUpload = async (path, key, expectedVersion, form) => request(dshBase, "POST", path, {
+    token,
+    headers: fieldOrigin ? partnerHeaders(key, expectedVersion) : serviceHeaders(actingOperatorID, key, crypto.randomUUID(), expectedVersion),
+    rawBody: form,
+  });
+  const proofForm = new FormData();
+  proofForm.set("file", new Blob([runtimePNG], { type: "image/png" }), "runtime-proof.png");
+  const proofUpload = await requestUpload(`${casePath}/proof-image`, `runtime-proof-${suffix}-${name}`, initialVersion, proofForm);
+  if (proofUpload.status !== 201 || proofUpload.body?.case?.version !== initialVersion + 1) {
+    fail(`${origin} joining-case proof image upload failed`, JSON.stringify(proofUpload));
+  }
+
+  const storeImageForm = new FormData();
+  storeImageForm.set("creator", "DSH runtime proof fixture generator");
+  storeImageForm.set("sourceDescription", "One-pixel PNG generated for the isolated DSH runtime proof");
+  storeImageForm.set("rightsStatement", "Generated solely for this disposable runtime proof and permitted for its test");
+  storeImageForm.set("rightsAttested", "true");
+  storeImageForm.set("file", new Blob([runtimePNG], { type: "image/png" }), "runtime-store.png");
+  const storeImagePath = fieldOrigin
+    ? `/dsh/joining-cases/${encodeURIComponent(caseID)}/store-image`
+    : `${casePath}/store-image`;
+  const storeImageUpload = await requestUpload(storeImagePath, `runtime-store-image-${suffix}-${name}`, proofUpload.body.case.version, storeImageForm);
+  if (storeImageUpload.status !== 201 || storeImageUpload.body?.case?.version !== proofUpload.body.case.version + 1) {
+    fail(`${origin} joining-case store image upload failed`, JSON.stringify(storeImageUpload));
+  }
+
+  const readback = await request(dshBase, "GET", `/dsh/joining-cases/${encodeURIComponent(caseID)}`, {
+    token: dshToken,
+    headers: { "X-Acting-Actor-ID": actingOperatorID },
+  });
+  if (readback.status !== 200 || readback.body?.case?.version !== storeImageUpload.body.case.version || readback.body?.case?.firstStoreProofImageUploaded !== true || !readback.body?.case?.storeProfileImage) {
+    fail(`${origin} joining-case evidence readback failed`, JSON.stringify(readback));
+  }
+  return readback.body.case.version;
+}
 
 async function createApprovedPartner(phone, name, serviceCityId, origin = "control_panel", partnerVerticalID = verticalID, partnerCommercialStoreTypeID = commercialStoreTypeID) {
   const createKey = `joining-${crypto.randomUUID()}`;
@@ -443,13 +484,14 @@ async function createApprovedPartner(phone, name, serviceCityId, origin = "contr
   });
   if (created.status !== 201 || created.body?.case?.state !== "draft" || created.body?.case?.origin !== origin || created.body?.case?.firstStoreVerticalId !== partnerVerticalID || created.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || created.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude) fail("joining case creation did not preserve source provenance or fixed store origin", JSON.stringify(created));
   const caseID = String(created.body.case.id);
+  const evidenceVersion = await uploadRequiredJoiningCaseMedia(caseID, origin, name.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-"), Number(created.body.case.version));
   let submitted;
   if (fieldOrigin) {
-    submitted = (await requestFieldPartnerAdmission(caseID, fieldAccessToken, 1, "catalog-runtime-" + name)).operatorSubmitted;
+    submitted = (await requestFieldPartnerAdmission(caseID, fieldAccessToken, evidenceVersion, "catalog-runtime-" + name)).operatorSubmitted;
   } else {
-    submitted = await request(dshBase, "POST", "/dsh/joining-cases/" + encodeURIComponent(caseID) + "/submit", { token: dshToken, headers: serviceHeaders(actingOperatorID, "submit-" + crypto.randomUUID(), crypto.randomUUID(), 1) });
+    submitted = await request(dshBase, "POST", "/dsh/joining-cases/" + encodeURIComponent(caseID) + "/submit", { token: dshToken, headers: serviceHeaders(actingOperatorID, "submit-" + crypto.randomUUID(), crypto.randomUUID(), evidenceVersion) });
   }
-  if (submitted.status !== 200 || submitted.body?.case?.state !== "submitted" || !submitted.body?.case?.partnerActorId) fail("joining case submission failed", JSON.stringify(submitted));
+  if (submitted.status !== 200 || submitted.body?.case?.state !== "submitted" || !submitted.body?.case?.partnerActorId) fail(`${origin} joining case submission failed for ${name}`, JSON.stringify(submitted));
   const actorID = String(submitted.body.case.partnerActorId);
   const accessToken = await activatePartner(phone, name.slice(0, 4).padEnd(4, "x") + suffix.slice(0, 4));
   const approved = await request(dshBase, "POST", `/dsh/joining-cases/${caseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `approve-${crypto.randomUUID()}`, crypto.randomUUID(), Number(submitted.body?.case?.version)), body: { decision: "approved", expectedTermsPolicyVersion: partnerFinancialTermsPolicy.policyVersion } });
@@ -633,7 +675,6 @@ const replacementMedia = { media: [{ uri: "https://example.com/runtime-coffee-up
 const mediaKey = `product-media-${suffix}`;
 const rawMediaReplacement = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/media`, { token: dshToken, headers: serviceHeaders(actingOperatorID, mediaKey, crypto.randomUUID(), 1), body: replacementMedia });
 if (rawMediaReplacement.status !== 400 || rawMediaReplacement.body?.error?.code !== "INVALID_INPUT") fail("catalog media accepted a URL without a canonical uploaded asset", JSON.stringify(rawMediaReplacement));
-const runtimePNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 function mediaUploadForm() {
   const form = new FormData();
   form.set("role", "primary");
