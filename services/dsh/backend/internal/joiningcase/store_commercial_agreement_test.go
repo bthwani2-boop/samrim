@@ -64,22 +64,14 @@ func TestNormalizeStoreAgreementRatesRequiresExactEnabledModeSet(t *testing.T) {
 	}
 }
 
-func TestFieldAgreementProposalCanRecoverPublishedStoreOnlyWithoutAgreementHistory(t *testing.T) {
-	if !fieldMayProposeStoreAgreement("unpublished", []wltintegration.StoreCommercialAgreement{{AgreementID: "existing"}}) {
+func TestFieldAgreementProposalCanAdvancePublishedStoreTerms(t *testing.T) {
+	if !fieldMayProposeStoreAgreement("unpublished") {
 		t.Fatal("initial proposal for an unpublished store was rejected")
 	}
-	if !fieldMayProposeStoreAgreement("published", nil) {
-		t.Fatal("published legacy store with no WLT agreement history has no safe re-contract path")
+	if !fieldMayProposeStoreAgreement("published") {
+		t.Fatal("published Store could not start a WLT-versioned agreement proposal")
 	}
-	for _, status := range []string{"PROPOSED", "PARTNER_ACCEPTED", "ACTIVE", "FINANCE_REJECTED", "SUPERSEDED"} {
-		t.Run(status, func(t *testing.T) {
-			history := []wltintegration.StoreCommercialAgreement{{AgreementID: "history", Status: status}}
-			if fieldMayProposeStoreAgreement("published", history) {
-				t.Fatalf("published store with agreement history %s may not start a cutover proposal", status)
-			}
-		})
-	}
-	if fieldMayProposeStoreAgreement("hidden", nil) {
+	if fieldMayProposeStoreAgreement("hidden") {
 		t.Fatal("hidden store unexpectedly retained Field proposal authority")
 	}
 }
