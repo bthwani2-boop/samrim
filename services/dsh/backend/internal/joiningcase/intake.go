@@ -34,7 +34,7 @@ func NormalizeCreateRequest(input contract.CreateJoiningCaseRequest) (postgres.J
 	if modesErr != nil {
 		return postgres.JoiningCaseRequest{}, ErrInvalidInput
 	}
-	if !phoneE164Pattern.MatchString(phone) || utf8.RuneCountInString(ownerFullName) < 2 || utf8.RuneCountInString(ownerFullName) > 160 || utf8.RuneCountInString(businessName) < 2 || utf8.RuneCountInString(businessName) > 160 || utf8.RuneCountInString(firstStoreName) < 2 || utf8.RuneCountInString(firstStoreName) > 160 || utf8.RuneCountInString(firstStoreAddress) < 4 || utf8.RuneCountInString(firstStoreAddress) > 500 || len(proofNumber) < 1 || len(proofNumber) > 128 || utf8.RuneCountInString(notes) > 1000 || !validJoiningCaseProofType(proofType) || serviceCityID == "" || verticalID == "" || commercialTypeID == "" || !validCoordinates(input.FirstStoreLatitude, input.FirstStoreLongitude) {
+	if !phoneE164Pattern.MatchString(phone) || utf8.RuneCountInString(ownerFullName) < 2 || utf8.RuneCountInString(ownerFullName) > 160 || utf8.RuneCountInString(businessName) < 2 || utf8.RuneCountInString(businessName) > 160 || utf8.RuneCountInString(firstStoreName) < 2 || utf8.RuneCountInString(firstStoreName) > 160 || utf8.RuneCountInString(firstStoreAddress) < 4 || utf8.RuneCountInString(firstStoreAddress) > 500 || !validJoiningCaseProofNumber(proofNumber) || utf8.RuneCountInString(notes) > 1000 || !validJoiningCaseProofType(proofType) || serviceCityID == "" || verticalID == "" || commercialTypeID == "" || !validCoordinates(input.FirstStoreLatitude, input.FirstStoreLongitude) {
 		return postgres.JoiningCaseRequest{}, ErrInvalidInput
 	}
 	return postgres.JoiningCaseRequest{
@@ -54,6 +54,11 @@ func NormalizeCreateRequest(input contract.CreateJoiningCaseRequest) (postgres.J
 		Longitude:              input.FirstStoreLongitude,
 		FulfillmentModes:       fulfillmentModes,
 	}, nil
+}
+
+func validJoiningCaseProofNumber(value string) bool {
+	runeCount := utf8.RuneCountInString(value)
+	return runeCount >= 1 && runeCount <= 128
 }
 
 func HashCreateRequest(keyring *postgres.JoiningCaseEvidenceKeyring, scope, actorID string, request postgres.JoiningCaseRequest) (string, error) {

@@ -61,6 +61,10 @@ func main() {
 		proofKeyCancel()
 		log.Fatal(err)
 	}
+	if err := postgres.VerifyJoiningCaseEvidenceKeyring(proofKeyContext, database, joiningCaseEvidenceKeys); err != nil {
+		proofKeyCancel()
+		log.Fatal(err)
+	}
 	proofKeyCancel()
 	financialHandoff, err := financialhandoff.New(database, paymentClient)
 	if err != nil {

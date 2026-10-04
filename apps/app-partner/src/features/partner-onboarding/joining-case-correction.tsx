@@ -1,6 +1,6 @@
 import { borders, radius, toAsciiDigits, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
-import type { CommercialStoreType, CommerceVertical, DshImageUploadInput, JoiningCaseProofType, JoiningCaseResponse, ServiceCity, StoreFulfillmentMode, StoreWeeklyWorkingHours, StoreWorkingHoursInterval } from "@bthwani/dsh";
+import { resolveJoiningCaseImageContentType, type CommercialStoreType, type CommerceVertical, type DshImageUploadInput, type JoiningCaseProofType, type JoiningCaseResponse, type ServiceCity, type StoreFulfillmentMode, type StoreWeeklyWorkingHours, type StoreWorkingHoursInterval } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -41,12 +41,19 @@ function dshErrorCode(error: unknown): string {
 }
 
 function parseClock(value: string): number | null {
-  const match = /^(\\d{2}):(\\d{2})$/.exec(toAsciiDigits(value.trim()));
+  const match = /^([0-2][0-9]):([0-5][0-9])$/.exec(toAsciiDigits(value.trim()));
   if (!match) return null;
   const hour = Number(match[1]);
   const minute = Number(match[2]);
   if (hour > 23 || minute > 59) return null;
   return hour * 60 + minute;
+}
+
+function parseCoordinate(value: string): number | null {
+  const normalized = toAsciiDigits(value.trim());
+  if (!normalized) return null;
+  const coordinate = Number(normalized);
+  return Number.isFinite(coordinate) ? coordinate : null;
 }
 
 function workingHoursIssue(intervals: ReadonlyArray<StoreWorkingHoursInterval>): string {
@@ -104,8 +111,8 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
   const [serviceCityId, setServiceCityId] = useState(current.serviceCityId || "");
   const [verticalId, setVerticalId] = useState(current.firstStoreVerticalId || "");
   const [commercialTypeId, setCommercialTypeId] = useState(current.firstStoreCommercialTypeId || "");
-  const [latitude, setLatitude] = useState<number | null>(current.firstStoreLatitude);
-  const [longitude, setLongitude] = useState<number | null>(current.firstStoreLongitude);
+  const [latitude, setLatitude] = useState(current.firstStoreLatitude === null ? "" : String(current.firstStoreLatitude));
+  const [longitude, setLongitude] = useState(current.firstStoreLongitude === null ? "" : String(current.firstStoreLongitude));
   const [workingIntervals, setWorkingIntervals] = useState<ReadonlyArray<WorkingIntervalDraft>>(() => workingIntervalDrafts(current.firstStoreWorkingHours?.intervals ?? []));
   const [proofType, setProofType] = useState<JoiningCaseProofType | "">(current.firstStoreProofType ?? "");
   const [proofNumber, setProofNumber] = useState("");
@@ -137,8 +144,8 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
     setServiceCityId(current.serviceCityId || "");
     setVerticalId(current.firstStoreVerticalId || "");
     setCommercialTypeId(current.firstStoreCommercialTypeId || "");
-    setLatitude(current.firstStoreLatitude);
-    setLongitude(current.firstStoreLongitude);
+    setLatitude(current.firstStoreLatitude === null ? "" : String(current.firstStoreLatitude));
+    setLongitude(current.firstStoreLongitude === null ? "" : String(current.firstStoreLongitude));
     setWorkingIntervals(workingIntervalDrafts(current.firstStoreWorkingHours?.intervals ?? []));
     setProofType(current.firstStoreProofType ?? "");
     setProofNumber("");
@@ -184,6 +191,10 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
   }, [current.firstStoreVerticalId, current.state, verticalId]);
 
   if (current.state !== "needs_correction") return null;
+  const latitudeValue = parseCoordinate(latitude);
+  const longitudeValue = parseCoordinate(longitude);
+  const invalidLatitude = latitude.trim() !== "" && (latitudeValue === null || latitudeValue < -90 || latitudeValue > 90);
+  const invalidLongitude = longitude.trim() !== "" && (longitudeValue === null || longitudeValue < -180 || longitudeValue > 180);
 
   function updateInterval(draftKey: string, patch: Partial<StoreWorkingHoursInterval>) {
     setWorkingIntervals((items) => items.map((item) => item.draftKey === draftKey ? { ...item, ...patch } : item));
@@ -231,11 +242,11 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
       if (!response.ok) throw new Error("JOINING_CASE_PROOF_IMAGE_READ_FAILED");
       const blob = await response.blob();
       if (!blob.size || blob.size > 10 * 1024 * 1024) throw new Error("JOINING_CASE_PROOF_IMAGE_SIZE_INVALID");
-      const mimeType = asset.mimeType ?? "image/jpeg";
-      if (mimeType !== "image/jpeg" && mimeType !== "image/png") throw new Error("JOINING_CASE_PROOF_IMAGE_TYPE_INVALID");
+      const mimeType = resolveJoiningCaseImageContentType(asset.mimeType, blob.type, asset.fileName, asset.uri);
+      if (!mimeType) throw new Error("JOINING_CASE_PROOF_IMAGE_TYPE_INVALID");
       const digest = new Uint8Array(await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, await blob.arrayBuffer()));
       const contentSha256 = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
-      setProofImage({ contentSha256, image: { uri: asset.uri, name: asset.fileName ?? "joining-case-proof.jpg", type: mimeType, blob } });
+      setProofImage({ contentSha256, image: { uri: asset.uri, name: asset.fileName ?? (mimeType === "image/png" ? "joining-case-proof.png" : "joining-case-proof.jpg"), type: mimeType, blob } });
       setUploadedProofFingerprint("");
       setError("");
     } catch (cause) {
@@ -267,13 +278,6 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
         const latest = await readOwnJoiningCase();
         if (latest.case.id === current.id && latest.case.state === "needs_correction") preserveCorrectionDraftAtVersion.current = latest.case.version;
         onUpdated(latest);
-        if (latest.case.id === current.id && latest.case.firstStoreProofImageUploaded) {
-          preserveCorrectionDraftAtVersion.current = latest.case.version;
-          setUploadedProofFingerprint(fingerprint);
-          setProofImage(null);
-          setError("");
-          return;
-        }
       } catch (readError) {
         console.warn("DSH Partner joining-case proof image readback failed", readError);
       }
@@ -289,10 +293,13 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
     const nextStoreName = firstStoreName.trim();
     const nextAddress = firstStoreAddress.trim();
     const nextProofNumber = toAsciiDigits(proofNumber.trim());
+    const proofNumberLength = Array.from(nextProofNumber).length;
     const nextNotes = notes.trim();
+    const nextLatitude = parseCoordinate(latitude);
+    const nextLongitude = parseCoordinate(longitude);
     const nextWorkingHours = storeWorkingHours(workingIntervals);
     const hoursError = workingHoursIssue(nextWorkingHours.intervals);
-    if (nextOwnerName.length < 2 || nextOwnerName.length > 160 || nextBusinessName.length < 2 || nextBusinessName.length > 160 || nextStoreName.length < 2 || nextStoreName.length > 160 || nextAddress.length < 4 || nextAddress.length > 500 || nextProofNumber.length < 1 || nextProofNumber.length > 128 || nextNotes.length > 1000 || !proofType || !serviceCityId || !verticalId || !commercialTypeId || latitude === null || longitude === null || fulfillmentModes.length === 0 || hoursError) {
+    if (nextOwnerName.length < 2 || nextOwnerName.length > 160 || nextBusinessName.length < 2 || nextBusinessName.length > 160 || nextStoreName.length < 2 || nextStoreName.length > 160 || nextAddress.length < 4 || nextAddress.length > 500 || proofNumberLength < 1 || proofNumberLength > 128 || nextNotes.length > 1000 || !proofType || !serviceCityId || !verticalId || !commercialTypeId || nextLatitude === null || nextLongitude === null || nextLatitude < -90 || nextLatitude > 90 || nextLongitude < -180 || nextLongitude > 180 || fulfillmentModes.length === 0 || hoursError) {
       setError(hoursError || "أكمل اسم المالك والمتجر والنشاط والعنوان والمدينة والتصنيف والإثبات وطريقة توصيل واحدة على الأقل ضمن الحدود الموضحة.");
       return;
     }
@@ -314,8 +321,8 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
           serviceCityId,
           firstStoreVerticalId: verticalId,
           firstStoreCommercialTypeId: commercialTypeId,
-          firstStoreLatitude: latitude,
-          firstStoreLongitude: longitude,
+          firstStoreLatitude: nextLatitude,
+          firstStoreLongitude: nextLongitude,
           firstStoreWorkingHours: nextWorkingHours,
           firstStoreProofType: proofType,
           firstStoreProofNumber: nextProofNumber,
@@ -339,8 +346,8 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
           && latestCase.serviceCityId === serviceCityId
           && latestCase.firstStoreVerticalId === verticalId
           && latestCase.firstStoreCommercialTypeId === commercialTypeId
-          && latestCase.firstStoreLatitude === latitude
-          && latestCase.firstStoreLongitude === longitude
+          && latestCase.firstStoreLatitude === nextLatitude
+          && latestCase.firstStoreLongitude === nextLongitude
           && weeklyHoursFingerprint(latestCase.firstStoreWorkingHours) === weeklyHoursFingerprint(nextWorkingHours)
           && latestCase.firstStoreProofType === proofType
           && (latestCase.firstStoreNotes ?? "") === nextNotes
@@ -397,7 +404,13 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
         </> : null}
         <BthwaniButton busy={evidenceLoading} disabled={busy} label="إعادة قراءة حالة الإثبات" onPress={() => void refreshEvidenceStatus()} variant="secondary" />
       </View>
-      <View style={styles.locationBox}><Text style={styles.label}>موقع المتجر الثابت</Text><Text selectable style={styles.muted}>{latitude !== null && longitude !== null ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` : "لم يُسجل الموقع ضمن ملف الانضمام"}</Text><Text style={styles.muted}>يُجمع الموقع مع ملف الانضمام ولا يُعدّل من شاشة إدارة المتجر.</Text></View>
+      <View style={styles.locationBox}>
+        <Text style={styles.label}>موقع المتجر الثابت</Text>
+        <Text style={styles.muted}>صحّح إحداثيات المتجر إذا طلب فريق التشغيل ذلك. احفظ نقطة المتجر نفسها، لا موقع الهاتف.</Text>
+        <TextInput accessibilityLabel="خط عرض موقع المتجر" editable={!busy} keyboardType="numbers-and-punctuation" onChangeText={setLatitude} placeholder="خط العرض، مثال 15.369445" value={latitude} style={styles.input} />
+        <TextInput accessibilityLabel="خط طول موقع المتجر" editable={!busy} keyboardType="numbers-and-punctuation" onChangeText={setLongitude} placeholder="خط الطول، مثال 44.191006" value={longitude} style={styles.input} />
+        {invalidLatitude || invalidLongitude ? <Text accessibilityRole="alert" style={styles.error}>أدخل خط عرض بين -90 و90 وخط طول بين -180 و180.</Text> : null}
+      </View>
       <Text style={styles.label}>اسم المالك</Text>
       <TextInput accessibilityLabel="اسم المالك" editable={!busy} maxLength={160} onChangeText={setOwnerFullName} placeholder="الاسم الكامل للمالك" value={ownerFullName} style={styles.input} />
       <Text style={styles.label}>اسم النشاط</Text>

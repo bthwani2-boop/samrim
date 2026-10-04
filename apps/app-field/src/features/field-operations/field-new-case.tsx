@@ -1,5 +1,5 @@
 import { BthwaniButton, BthwaniChip, BthwaniMap, useAppearanceTheme, type BthwaniMapCoordinate } from "@bthwani/design-system/native";
-import { fieldAdmissionStateLabel, isMediaProvenanceInputValid, type CommercialStoreType, type CommerceVertical, type CreateJoiningCaseRequest, type DshImageUploadInput, type JoiningCaseProofType, type JoiningCaseResponse, joiningCaseStateLabel, type MediaProvenanceInput, type ServiceCity, type StoreWorkingHoursInterval } from "@bthwani/dsh";
+import { fieldAdmissionStateLabel, isMediaProvenanceInputValid, isValidStoreWorkingHours, resolveJoiningCaseImageContentType, type CommercialStoreType, type CommerceVertical, type CreateJoiningCaseRequest, type DshImageUploadInput, type JoiningCaseProofType, type JoiningCaseResponse, joiningCaseStateLabel, type MediaProvenanceInput, type ServiceCity, type StoreWorkingHoursInterval } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
@@ -63,11 +63,7 @@ function toWorkingHoursIntervals(schedule: Readonly<Record<number, ReadonlyArray
 
 function isValidWorkingHours(schedule: Readonly<Record<number, ReadonlyArray<EditableWorkingHoursInterval>>>): boolean {
   const intervals = toWorkingHoursIntervals(schedule);
-  return intervals.length > 0 && intervals.length <= 28 && intervals.every((interval) =>
-    isValidLocalTime(interval.opensAt)
-    && isValidLocalTime(interval.closesAt)
-    && (interval.closesNextDay || interval.opensAt !== interval.closesAt),
-  );
+  return isValidStoreWorkingHours(intervals);
 }
 
 function isOutcomeUncertain(cause: unknown): boolean {
@@ -265,7 +261,9 @@ const theme = useAppearanceTheme();
       const response = await fetch(asset.uri);
       if (!response.ok) throw new Error("STORE_IMAGE_READ_FAILED");
       const blob = await response.blob();
-      setStoreImage({ uri: asset.uri, name: asset.fileName ?? "store-image.jpg", type: asset.mimeType ?? "image/jpeg", blob, provenance: { creator: "", sourceDescription: "", sourceUri: "", rightsStatement: "", rightsUri: "", rightsAttested: false } });
+      const type = resolveJoiningCaseImageContentType(asset.mimeType, blob.type, asset.fileName, asset.uri);
+      if (!type) throw new Error("STORE_IMAGE_TYPE_INVALID");
+      setStoreImage({ uri: asset.uri, name: asset.fileName ?? (type === "image/png" ? "store-image.png" : "store-image.jpg"), type, blob, provenance: { creator: "", sourceDescription: "", sourceUri: "", rightsStatement: "", rightsUri: "", rightsAttested: false } });
       setError("");
     } catch (cause) {
       console.warn("Field store image preparation failed", cause);
@@ -280,21 +278,18 @@ const theme = useAppearanceTheme();
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 1 });
     if (result.canceled || !result.assets[0]?.uri) return;
     const asset = result.assets[0];
-    const mimeType = asset.mimeType ?? "image/jpeg";
-    if (mimeType !== "image/jpeg" && mimeType !== "image/png") {
-      setError("صيغة صورة الإثبات غير مدعومة. اختر صورة بصيغة JPG أو PNG.");
-      return;
-    }
     try {
       const response = await fetch(asset.uri);
       if (!response.ok) throw new Error("PROOF_IMAGE_READ_FAILED");
       const blob = await response.blob();
       if (!blob.size || blob.size > 10 * 1024 * 1024) throw new Error("PROOF_IMAGE_SIZE_INVALID");
-      setProofImage({ uri: asset.uri, name: asset.fileName ?? "joining-case-proof.jpg", type: mimeType, blob });
+      const type = resolveJoiningCaseImageContentType(asset.mimeType, blob.type, asset.fileName, asset.uri);
+      if (!type) throw new Error("PROOF_IMAGE_TYPE_INVALID");
+      setProofImage({ uri: asset.uri, name: asset.fileName ?? (type === "image/png" ? "joining-case-proof.png" : "joining-case-proof.jpg"), type, blob });
       setError("");
     } catch (cause) {
       console.warn("Field proof image preparation failed", cause);
-      setError(cause instanceof Error && cause.message === "PROOF_IMAGE_SIZE_INVALID" ? "يجب ألا يتجاوز حجم صورة الإثبات 10 ميغابايت." : "تعذر تجهيز صورة الإثبات. اختر الصورة مرة أخرى.");
+      setError(cause instanceof Error && cause.message === "PROOF_IMAGE_SIZE_INVALID" ? "يجب ألا يتجاوز حجم صورة الإثبات 10 ميغابايت." : cause instanceof Error && cause.message === "PROOF_IMAGE_TYPE_INVALID" ? "صيغة صورة الإثبات غير مدعومة. اختر صورة بصيغة JPG أو PNG." : "تعذر تجهيز صورة الإثبات. اختر الصورة مرة أخرى.");
     }
   }
 

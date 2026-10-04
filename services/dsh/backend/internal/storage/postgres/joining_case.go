@@ -383,15 +383,8 @@ func SubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, actorID string, 
 	if err != nil {
 		return JoiningCaseResult{}, err
 	}
-	if current.Case.Version != expectedVersion {
-		return JoiningCaseResult{}, ErrJoiningCaseVersion
-	}
-	canSubmit := (current.Case.Origin == "control_panel" && current.Case.State == "draft") || (current.Case.Origin == "field" && current.Case.State == "admission_requested")
-	if !canSubmit {
-		return JoiningCaseResult{}, ErrJoiningCaseState
-	}
-	if strings.TrimSpace(current.Case.OwnerFullName) == "" || strings.TrimSpace(current.Case.FirstStoreAddress) == "" || len(current.Case.FirstStoreWorkingHours) == 0 || strings.TrimSpace(current.Case.FirstStoreProofType) == "" || !current.Case.FirstStoreProofNumberPresent || !current.Case.FirstStoreProofImageUploaded || current.Case.StoreProfileImage == nil {
-		return JoiningCaseResult{}, ErrJoiningCaseState
+	if err := ValidateJoiningCaseSubmissionReadiness(current.Case, expectedVersion); err != nil {
+		return JoiningCaseResult{}, err
 	}
 	if current.Case.PartnerActorID != "" && current.Case.PartnerActorID != actorID {
 		return JoiningCaseResult{}, ErrJoiningCaseRebind
@@ -421,6 +414,45 @@ func SubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, actorID string, 
 	result, err = ReadJoiningCase(ctx, db, caseID)
 	result.Replayed = false
 	return result, err
+}
+
+func ValidateJoiningCaseSubmissionReadiness(current JoiningCaseRecord, expectedVersion int) error {
+	if current.Version != expectedVersion {
+		return ErrJoiningCaseVersion
+	}
+	canSubmit := (current.Origin == "control_panel" && current.State == "draft") || (current.Origin == "field" && current.State == "admission_requested")
+	if !canSubmit {
+		return ErrJoiningCaseState
+	}
+	return ValidateJoiningCaseIntakeReadiness(current)
+}
+
+func ValidateJoiningCaseIntakeReadiness(current JoiningCaseRecord) error {
+	if strings.TrimSpace(current.OwnerFullName) == "" || strings.TrimSpace(current.BusinessName) == "" || strings.TrimSpace(current.FirstStoreName) == "" || strings.TrimSpace(current.FirstStoreAddress) == "" || !ValidateStoreWorkingHours(current.FirstStoreWorkingHours) || strings.TrimSpace(current.FirstStoreProofType) == "" || !current.FirstStoreProofNumberPresent || !current.FirstStoreProofImageUploaded || current.StoreProfileImage == nil {
+		return ErrJoiningCaseState
+	}
+	if strings.TrimSpace(current.FirstStoreServiceCityID) == "" {
+		return ErrJoiningCaseServiceCity
+	}
+	if strings.TrimSpace(current.FirstStoreVerticalID) == "" {
+		return ErrCatalogVerticalNotFound
+	}
+	if strings.TrimSpace(current.FirstStoreCommercialTypeID) == "" {
+		return ErrCommercialStoreTypeNotFound
+	}
+	if current.FirstStoreLatitude == nil || current.FirstStoreLongitude == nil {
+		return ErrJoiningCaseStoreOrigin
+	}
+	if _, _, err := normalizeLocation(*current.FirstStoreLatitude, *current.FirstStoreLongitude); err != nil {
+		return ErrJoiningCaseStoreOrigin
+	}
+	if len(current.FirstStoreFulfillmentModes) == 0 {
+		return ErrJoiningCaseState
+	}
+	if _, err := NormalizeStoreFulfillmentModes(current.FirstStoreFulfillmentModes); err != nil {
+		return ErrJoiningCaseState
+	}
+	return nil
 }
 
 func RequestFieldJoiningCaseAdmission(ctx context.Context, db *sql.DB, caseID, fieldActorID string, expectedVersion int, idempotencyKey, requestHash, correlationID string) (JoiningCaseResult, error) {
@@ -465,8 +497,8 @@ func RequestFieldJoiningCaseAdmission(ctx context.Context, db *sql.DB, caseID, f
 	if current.Case.State != "draft" {
 		return JoiningCaseResult{}, ErrJoiningCaseState
 	}
-	if strings.TrimSpace(current.Case.OwnerFullName) == "" || strings.TrimSpace(current.Case.FirstStoreAddress) == "" || len(current.Case.FirstStoreWorkingHours) == 0 || strings.TrimSpace(current.Case.FirstStoreProofType) == "" || !current.Case.FirstStoreProofNumberPresent || !current.Case.FirstStoreProofImageUploaded || current.Case.StoreProfileImage == nil {
-		return JoiningCaseResult{}, ErrJoiningCaseState
+	if err := ValidateJoiningCaseIntakeReadiness(current.Case); err != nil {
+		return JoiningCaseResult{}, err
 	}
 	updated, err := updateJoiningCaseStateTx(ctx, tx, current.Case, "admission_requested", "", "", "", "", expectedVersion)
 	if err != nil {
@@ -714,7 +746,7 @@ func ListJoiningCases(ctx context.Context, db *sql.DB, state, queryText, sort st
 	if queryText != "" {
 		args = append(args, queryText)
 		searchArg := len(args)
-		query += fmt.Sprintf(" AND (position($%d in lower(c.id::text))>0 OR position($%d in lower(c.contact_phone_e164))>0 OR position($%d in lower(c.business_name))>0 OR position($%d in lower(c.first_store_name))>0)", searchArg, searchArg, searchArg, searchArg)
+		query += fmt.Sprintf(" AND (position($%d in lower(c.id::text))>0 OR position($%d in lower(c.contact_phone_e164))>0 OR position($%d in lower(c.owner_full_name))>0 OR position($%d in lower(c.business_name))>0 OR position($%d in lower(c.first_store_name))>0)", searchArg, searchArg, searchArg, searchArg, searchArg)
 	}
 	if decoded != nil {
 		args = append(args, decoded.CreatedAt, decoded.ID)
@@ -1077,7 +1109,7 @@ func ListJoiningCasesForField(ctx context.Context, db *sql.DB, fieldActorID, que
 	if queryText != "" {
 		args = append(args, queryText)
 		searchArg := len(args)
-		query += fmt.Sprintf(" AND (position($%d in lower(c.id::text))>0 OR position($%d in lower(c.contact_phone_e164))>0 OR position($%d in lower(c.business_name))>0 OR position($%d in lower(c.first_store_name))>0)", searchArg, searchArg, searchArg, searchArg)
+		query += fmt.Sprintf(" AND (position($%d in lower(c.id::text))>0 OR position($%d in lower(c.contact_phone_e164))>0 OR position($%d in lower(c.owner_full_name))>0 OR position($%d in lower(c.business_name))>0 OR position($%d in lower(c.first_store_name))>0)", searchArg, searchArg, searchArg, searchArg, searchArg)
 	}
 	if decoded != nil {
 		args = append(args, decoded.CreatedAt, decoded.ID)

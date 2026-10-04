@@ -35,6 +35,43 @@ func TestValidateJoiningCaseReviewRequiresSubmittedCanonicalCase(t *testing.T) {
 	}
 }
 
+func TestValidateJoiningCaseSubmissionReadinessRequiresCompleteIntakeBeforeAdmission(t *testing.T) {
+	base := validReviewJoiningCase()
+	base.Origin = "control_panel"
+	base.State = "draft"
+	base.BusinessName = "Business"
+	base.FirstStoreName = "Store"
+	base.FirstStoreCommercialTypeID = "type-1"
+	base.FirstStoreFulfillmentModes = []string{FulfillmentModeBthwaniCaptain}
+	base.FirstStoreWorkingHours = []byte(`{"intervals":[{"dayOfWeek":1,"opensAt":"09:00","closesAt":"17:00","closesNextDay":false}]}`)
+	valid := base
+	tests := []struct {
+		name    string
+		current JoiningCaseRecord
+		version int
+		want    error
+	}{
+		{name: "complete intake", current: valid, version: valid.Version},
+		{name: "stale version", current: valid, version: valid.Version - 1, want: ErrJoiningCaseVersion},
+		{name: "not an admission state", current: changeReviewCase(valid, func(c *JoiningCaseRecord) { c.State = "needs_correction" }), version: valid.Version, want: ErrJoiningCaseState},
+		{name: "missing owner", current: changeReviewCase(valid, func(c *JoiningCaseRecord) { c.OwnerFullName = " " }), version: valid.Version, want: ErrJoiningCaseState},
+		{name: "missing proof number", current: changeReviewCase(valid, func(c *JoiningCaseRecord) { c.FirstStoreProofNumberPresent = false }), version: valid.Version, want: ErrJoiningCaseState},
+		{name: "missing proof image", current: changeReviewCase(valid, func(c *JoiningCaseRecord) { c.FirstStoreProofImageUploaded = false }), version: valid.Version, want: ErrJoiningCaseState},
+		{name: "missing storefront image", current: changeReviewCase(valid, func(c *JoiningCaseRecord) { c.StoreProfileImage = nil }), version: valid.Version, want: ErrJoiningCaseState},
+		{name: "missing location", current: changeReviewCase(valid, func(c *JoiningCaseRecord) { c.FirstStoreLongitude = nil }), version: valid.Version, want: ErrJoiningCaseStoreOrigin},
+		{name: "missing fulfillment mode", current: changeReviewCase(valid, func(c *JoiningCaseRecord) { c.FirstStoreFulfillmentModes = nil }), version: valid.Version, want: ErrJoiningCaseState},
+		{name: "invalid schedule", current: changeReviewCase(valid, func(c *JoiningCaseRecord) { c.FirstStoreWorkingHours = []byte(`{"intervals":[]}`) }), version: valid.Version, want: ErrJoiningCaseState},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := ValidateJoiningCaseSubmissionReadiness(test.current, test.version)
+			if !errors.Is(err, test.want) {
+				t.Fatalf("submission readiness error = %v, want %v", err, test.want)
+			}
+		})
+	}
+}
+
 func TestValidateJoiningCaseReviewNormalizesCorrectionAndFinancialTerms(t *testing.T) {
 	current := validReviewJoiningCase()
 	tests := []struct {

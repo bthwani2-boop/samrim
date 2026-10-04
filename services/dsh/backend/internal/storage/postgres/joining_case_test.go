@@ -1,14 +1,18 @@
 package postgres_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	joiningcaseservice "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/joiningcase"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
 
@@ -57,20 +61,51 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 		}
 
 		initialModes := []string{postgres.FulfillmentModeBthwaniCaptain}
-		createRequest := postgres.JoiningCaseRequest{Phone: "+967700000101", BusinessName: "نشاط التصحيح", FirstStoreName: "متجر التصحيح", ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: storeTypeID, Latitude: 15.369445, Longitude: 44.191006, FulfillmentModes: initialModes}
+		workHours := []byte(`{"intervals":[{"dayOfWeek":1,"opensAt":"09:00","closesAt":"17:00","closesNextDay":false}]}`)
+		evidenceKeys := testJoiningCaseEvidenceKeyring(t)
+		createRequest := postgres.JoiningCaseRequest{Phone: "+967700000101", OwnerFullName: "مالك بحث مميز", BusinessName: "نشاط التصحيح", FirstStoreName: "متجر التصحيح", FirstStoreAddress: "الشارع الرئيسي", FirstStoreWorkingHours: workHours, FirstStoreProofType: "COMMERCIAL_REGISTRATION", FirstStoreProofNumber: "123456789", ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: storeTypeID, Latitude: 15.369445, Longitude: 44.191006, FulfillmentModes: initialModes}
 		createHash := postgres.HashJoiningCaseRequest(createRequest)
-		created, err := postgres.CreateJoiningCaseForField(ctx, db, postgres.CreateJoiningCaseInput{IdempotencyKey: "idem-join-field-create", RequestHash: createHash, ActingActorID: fieldActorID, CorrelationID: "corr-join-field-create", Request: createRequest})
+		created, err := postgres.CreateJoiningCaseForField(ctx, db, postgres.CreateJoiningCaseInput{IdempotencyKey: "idem-join-field-create", RequestHash: createHash, ActingActorID: fieldActorID, CorrelationID: "corr-join-field-create", EvidenceKeyring: evidenceKeys, Request: createRequest})
 		if err != nil || created.Case.Origin != "field" || created.Case.PartnerActorID != "" {
 			t.Fatalf("create Field-originated joining case failed: %+v err=%v", created, err)
 		}
-		admissionHash := postgres.HashFieldJoiningCaseAdmission(created.Case.ID, fieldActorID, created.Case.Version)
-		admission, err := postgres.RequestFieldJoiningCaseAdmission(ctx, db, created.Case.ID, fieldActorID, created.Case.Version, "idem-join-field-request", admissionHash, "corr-join-field-request")
-		if err != nil || admission.Replayed || admission.Case.State != "admission_requested" || admission.Case.PartnerActorID != "" || admission.Case.Version != created.Case.Version+1 {
+		provenance := media.Provenance{Creator: "مالك المتجر", SourceDescription: "صورة من المالك", RightsStatement: "إذن الاستخدام للمتجر", RightsAttested: true}
+		mediaDigest := strings.Repeat("a", 64)
+		mediaInput := postgres.StoreProfileMediaAssetInput{ID: "join-case-profile-image", JoiningCaseID: created.Case.ID, IdempotencyKey: "idem-join-case-profile", RequestHash: postgres.HashStoreProfileMediaUploadRequest(created.Case.ID, mediaDigest, created.Case.Version, provenance), ExpectedCaseVersion: created.Case.Version, ObjectKey: "store-profile-media/join-case-profile-image.png", URI: "https://media.example/join-case-profile-image.png", ContentSHA256: mediaDigest, ContentType: "image/png", ByteSize: 1, ActingActorID: fieldActorID, CorrelationID: "corr-join-case-profile", Provenance: provenance}
+		if _, replayed, err := postgres.RegisterStoreProfileMediaAssetPending(ctx, db, mediaInput); err != nil || replayed {
+			t.Fatalf("register initial store-profile image failed: replayed=%t err=%v", replayed, err)
+		}
+		if version, err := postgres.ActivateStoreProfileMediaAsset(ctx, db, mediaInput.ID, created.Case.ID, created.Case.Version, mediaInput.IdempotencyKey, mediaInput.RequestHash, fieldActorID, mediaInput.CorrelationID); err != nil || version != created.Case.Version+1 {
+			t.Fatalf("activate initial store-profile image: version=%d err=%v", version, err)
+		}
+		created, err = postgres.ReadJoiningCase(ctx, db, created.Case.ID)
+		if err != nil {
+			t.Fatalf("read joining case after store-profile image: %v", err)
+		}
+		fieldProofImage, err := joiningcaseservice.UploadPrivateProofImage(ctx, db, evidenceKeys, created.Case.ID, fieldActorID, "field", "field-proof-image-upload", "idem-field-proof-image", "corr-field-proof-image", created.Case.Version, "image/png", []byte("field proof image"))
+		if err != nil || !fieldProofImage.Case.FirstStoreProofImageUploaded {
+			t.Fatalf("upload private Field proof image failed: %+v err=%v", fieldProofImage, err)
+		}
+		if err := postgres.VerifyJoiningCaseEvidenceKeyring(ctx, db, evidenceKeys); err != nil {
+			t.Fatalf("configured evidence keyring cannot read retained proof evidence: %v", err)
+		}
+		fieldProofCase := fieldProofImage.Case
+		admissionHash := postgres.HashFieldJoiningCaseAdmission(fieldProofCase.ID, fieldActorID, fieldProofCase.Version)
+		admission, err := postgres.RequestFieldJoiningCaseAdmission(ctx, db, fieldProofCase.ID, fieldActorID, fieldProofCase.Version, "idem-join-field-request", admissionHash, "corr-join-field-request")
+		if err != nil || admission.Replayed || admission.Case.State != "admission_requested" || admission.Case.PartnerActorID != "" || admission.Case.Version != fieldProofCase.Version+1 {
 			t.Fatalf("Field admission request failed or provisioned identity: %+v err=%v", admission, err)
 		}
-		admissionReplay, err := postgres.RequestFieldJoiningCaseAdmission(ctx, db, created.Case.ID, fieldActorID, admission.Case.Version, "idem-join-field-request", admissionHash, "corr-join-field-request-replay")
+		admissionReplay, err := postgres.RequestFieldJoiningCaseAdmission(ctx, db, fieldProofCase.ID, fieldActorID, admission.Case.Version, "idem-join-field-request", admissionHash, "corr-join-field-request-replay")
 		if err != nil || !admissionReplay.Replayed || admissionReplay.Case.State != "admission_requested" || admissionReplay.Case.Version != admission.Case.Version {
 			t.Fatalf("Field admission request did not recover its canonical result: %+v err=%v", admissionReplay, err)
+		}
+		fieldSearch, err := postgres.ListJoiningCasesForField(ctx, db, fieldActorID, "مالك بحث مميز", 50, "")
+		if err != nil || len(fieldSearch.Cases) != 1 || fieldSearch.Cases[0].ID != created.Case.ID {
+			t.Fatalf("Field owner-name search did not return its own joining case: %+v err=%v", fieldSearch, err)
+		}
+		operatorSearch, err := postgres.ListJoiningCases(ctx, db, "admission_requested", "مالك بحث مميز", "created_desc", 50, "")
+		if err != nil || len(operatorSearch.Cases) != 1 || operatorSearch.Cases[0].ID != created.Case.ID {
+			t.Fatalf("operator owner-name search did not return the joining case: %+v err=%v", operatorSearch, err)
 		}
 		submittedHash := postgres.HashJoiningCaseSubmit(created.Case.ID, partnerActor, admission.Case.Version)
 		submitted, err := postgres.SubmitJoiningCase(ctx, db, created.Case.ID, partnerActor, admission.Case.Version, "idem-join-field-submit", submittedHash, operatorActor, "corr-join-field-submit")
@@ -91,8 +126,12 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 		if _, err := db.ExecContext(ctx, "UPDATE dsh.service_cities SET active=true WHERE id=$1", serviceCityID); err != nil {
 			t.Fatalf("reactivate Service City before Partner correction: %v", err)
 		}
+		partnerProofImage, err := joiningcaseservice.UploadPrivateProofImage(ctx, db, evidenceKeys, created.Case.ID, partnerActor, "partner", "partner-proof-image-upload", "idem-partner-proof-image", "corr-partner-proof-image", returned.Case.Version, "image/png", []byte("replacement proof image"))
+		if err != nil || !partnerProofImage.Case.FirstStoreProofImageUploaded {
+			t.Fatalf("upload fresh Partner proof image failed: %+v err=%v", partnerProofImage, err)
+		}
 
-		correction := postgres.CorrectJoiningCaseInput{CaseID: created.Case.ID, ActorID: partnerActor, BusinessName: "نشاط مصحح", FirstStoreName: "متجر مصحح", ExpectedVersion: returned.Case.Version, ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: storeTypeID, Latitude: 15.4, Longitude: 44.2}
+		correction := postgres.CorrectJoiningCaseInput{CaseID: created.Case.ID, ActorID: partnerActor, OwnerFullName: "مالك مصحح", BusinessName: "نشاط مصحح", FirstStoreName: "متجر مصحح", FirstStoreAddress: "الشارع الرئيسي المصحح", FirstStoreWorkingHours: workHours, FirstStoreProofType: "COMMERCIAL_REGISTRATION", FirstStoreProofNumber: "987654321", ExpectedVersion: partnerProofImage.Case.Version, ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: storeTypeID, Latitude: 15.4, Longitude: 44.2, FulfillmentModes: initialModes}
 		requestHash := postgres.HashJoiningCaseCorrectAndResubmit(correction)
 		for _, actorID := range []string{fieldActorID, otherPartner} {
 			unauthorized := correction
@@ -133,7 +172,7 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 		if _, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, conflictingCorrection); !errors.Is(err, postgres.ErrJoiningCaseIdempotency) {
 			t.Fatalf("changed correction facts did not affect correction idempotency: %v", err)
 		}
-		createReplay, err := postgres.CreateJoiningCaseForField(ctx, db, postgres.CreateJoiningCaseInput{IdempotencyKey: "idem-join-field-create", RequestHash: createHash, ActingActorID: fieldActorID, CorrelationID: "corr-join-field-create-replay", Request: createRequest})
+		createReplay, err := postgres.CreateJoiningCaseForField(ctx, db, postgres.CreateJoiningCaseInput{IdempotencyKey: "idem-join-field-create", RequestHash: createHash, ActingActorID: fieldActorID, CorrelationID: "corr-join-field-create-replay", EvidenceKeyring: evidenceKeys, Request: createRequest})
 		if err != nil || !createReplay.Replayed || createReplay.Case.ID != created.Case.ID {
 			t.Fatalf("Field create replay did not return its canonical case after option deactivation: %+v err=%v", createReplay, err)
 		}
@@ -177,4 +216,14 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 			t.Fatalf("approval with inactive Service City error = %v, want inactive city", err)
 		}
 	})
+}
+
+func testJoiningCaseEvidenceKeyring(t *testing.T) *postgres.JoiningCaseEvidenceKeyring {
+	t.Helper()
+	encoded := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32))
+	keyring, err := postgres.NewJoiningCaseEvidenceKeyring("test-v1", map[string]string{"test-v1": encoded})
+	if err != nil {
+		t.Fatalf("create joining-case evidence keyring: %v", err)
+	}
+	return keyring
 }

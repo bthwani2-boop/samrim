@@ -1,12 +1,14 @@
 package postgres
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -136,4 +138,40 @@ func (k *JoiningCaseEvidenceKeyring) VerifyRequestHash(stored, purpose string, f
 	_, _ = io.WriteString(mac, strings.Join(values, "\x00"))
 	expected := "v1." + parts[1] + "." + hex.EncodeToString(mac.Sum(nil))
 	return len(stored) == len(expected) && subtle.ConstantTimeCompare([]byte(stored), []byte(expected)) == 1
+}
+
+func (k *JoiningCaseEvidenceKeyring) HasKey(keyID string) bool {
+	if k == nil {
+		return false
+	}
+	_, ok := k.keys[keyID]
+	return ok
+}
+
+func VerifyJoiningCaseEvidenceKeyring(ctx context.Context, db *sql.DB, keys *JoiningCaseEvidenceKeyring) error {
+	if db == nil || keys == nil {
+		return errors.New("DSH joining-case evidence keyring is unavailable")
+	}
+	rows, err := db.QueryContext(ctx, `SELECT DISTINCT key_id FROM (
+		SELECT proof_number_key_id AS key_id FROM dsh.joining_case_private_evidence WHERE proof_number_ciphertext IS NOT NULL
+		UNION ALL
+		SELECT proof_image_key_id AS key_id FROM dsh.joining_case_private_evidence WHERE proof_image_ciphertext IS NOT NULL
+	) AS referenced_keys WHERE key_id IS NOT NULL`)
+	if err != nil {
+		return fmt.Errorf("read DSH joining-case evidence key references: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var keyID string
+		if err := rows.Scan(&keyID); err != nil {
+			return fmt.Errorf("scan DSH joining-case evidence key reference: %w", err)
+		}
+		if !keys.HasKey(keyID) {
+			return fmt.Errorf("DSH joining-case evidence keyring is missing referenced key %q", keyID)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("read DSH joining-case evidence key references: %w", err)
+	}
+	return nil
 }
