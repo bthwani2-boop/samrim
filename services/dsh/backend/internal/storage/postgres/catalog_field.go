@@ -44,6 +44,7 @@ func AuthorizeFieldCatalogCase(ctx context.Context, db *sql.DB, joiningCaseID, f
 		  AND jc.originating_field_actor_id=$2
 		  AND jc.state='approved'
 		  AND admission.state='eligible'
+		  AND admission.requires_profile_review=false
 		  AND s.publication_state='unpublished'
 		  AND s.primary_vertical_id=jc.first_store_vertical_id`, strings.TrimSpace(joiningCaseID), strings.TrimSpace(fieldActorID)).Scan(&scope.JoiningCaseID, &scope.StoreID, &scope.VerticalID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -114,7 +115,7 @@ func ResolveCatalogIdentifier(ctx context.Context, db *sql.DB, storeID, identifi
 		LEFT JOIN dsh.catalog_store_offers offer ON offer.store_id=$1 AND offer.variant_id=variant.id
 		WHERE lower(btrim(identifier.identifier_value))=lower(btrim($2))
 		  AND (identifier.identifier_type<>'SKU' OR identifier.store_id=$1)
-		  AND (identifier.identifier_type IN ('GTIN','EAN','UPC','LEGACY_BARCODE') OR product.vertical_id=$3)
+		  AND product.vertical_id=$3
 		ORDER BY product.id,variant.id
 		LIMIT 3`, storeID, identifierValue, verticalID)
 	if err != nil {

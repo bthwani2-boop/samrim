@@ -264,6 +264,10 @@ func (s *catalogRefoundationScenario) verifyStoreScopedProducts() {
 	}
 	localStoreID := "store_catalog_local_v1"
 	insertCanonicalStoreFixture(s.t, s.ctx, s.db, canonicalStoreFixture{ID: localStoreID, PartnerActorID: testPartnerActorID, Name: "متجر المخبوزات", ServiceCityID: s.cityID, PrimaryVerticalID: createdLocalVertical.Vertical.ID, PublicationState: "published"})
+	foreignVerticalMatch, err := postgres.ResolveCatalogIdentifier(s.ctx, s.db, localStoreID, s.productInput.IdentifierValue)
+	if err != nil || foreignVerticalMatch.Outcome != "UNKNOWN_IDENTIFIER" {
+		s.t.Fatalf("Field identifier lookup matched a shared product from another vertical: %+v err=%v", foreignVerticalMatch, err)
+	}
 	localProductInput := postgres.CatalogProductInput{VerticalID: createdLocalVertical.Vertical.ID, Scope: "STORE_SCOPED", StoreID: localStoreID, CanonicalName: "خبز محلي", MeasurementKind: "DISCRETE", BaseUnit: "COUNT", VariantTitle: "رغيف"}
 	localProduct, err := postgres.CreateCatalogProduct(s.ctx, s.db, localProductInput, "idem-local-product-v1", postgres.HashCatalogProductCreateRequest(localProductInput), testOperatorActorID, "corr-local-product-v1")
 	if err != nil || localProduct.Product.ID == "" {

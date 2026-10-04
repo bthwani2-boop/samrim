@@ -122,6 +122,9 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [snapshot, setSnapshot] = useState<CatalogSnapshot | null>(null);
+  const [offersNextCursor, setOffersNextCursor] = useState("");
+  const [offersLoadingMore, setOffersLoadingMore] = useState(false);
+  const [offersPageError, setOffersPageError] = useState("");
   const [proposals, setProposals] = useState<ReadonlyArray<CatalogProductProposal>>([]);
   const [activeProposal, setActiveProposal] = useState<CatalogProductProposal | null>(null);
   const [proposalCategories, setProposalCategories] = useState<ReadonlyArray<{ id: string; nameAr: string; pathAr: string; active: boolean }>>([]);
@@ -174,6 +177,8 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
         fieldClient().listCatalogCategories(result.verticalId, "", 100),
       ]);
       setSnapshot(result);
+      setOffersNextCursor(result.nextCursor ?? "");
+      setOffersPageError("");
       setProposals(proposalPage.proposals);
       setActiveProposal((currentProposal) => currentProposal ? proposalPage.proposals.find((item) => item.id === currentProposal.id) ?? null : null);
       setProposalCategories(categoryPage.categories.filter((category) => category.active));
@@ -187,6 +192,36 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
       setLoading(false);
     }
   }, [caseId]);
+
+  async function loadMoreOffers() {
+    if (!snapshot || !offersNextCursor || offersLoadingMore || busy || loading) return;
+    setOffersLoadingMore(true);
+    setOffersPageError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const page = await fieldClient().readFieldJoiningCaseCatalog(token, caseId, 100, "", offersNextCursor);
+      setSnapshot((current) => {
+        if (!current) return current;
+        const existingIDs = new Set(current.offers.map((offer) => offer.offerId));
+        return { ...current, offers: [...current.offers, ...page.offers.filter((offer) => !existingIDs.has(offer.offerId))] };
+      });
+      setOffersNextCursor(page.nextCursor ?? "");
+    } catch (cause) {
+      console.warn("DSH Field catalog offer page read failed", cause);
+      setOffersPageError("تعذر قراءة بقية عروض المتجر. أعد المحاولة.");
+    } finally {
+      setOffersLoadingMore(false);
+    }
+  }
+
+  function openExistingOffer(offer: CatalogStoreOffer) {
+    setExistingOffer(offer);
+    setSelectedProduct(snapshot?.products.find((item) => item.id === offer.productId) ?? null);
+    setSelectedVariant(snapshot?.products.flatMap((item) => item.variants).find((item) => item.id === offer.variantId) ?? null);
+    setOfferDraft({ priceMinor: String(offer.priceMinor), available: offer.availability, min: String(offer.quantityMinBaseUnits), max: String(offer.quantityMaxBaseUnits), step: String(offer.quantityStepBaseUnits), pricingUnit: String(offer.pricingUnitBaseUnits), inventoryOnHand: String(offer.inventoryOnHandBaseUnits) });
+    setAvailabilityOnly(offer.inventoryPolicy === "AVAILABILITY_ONLY");
+    setNotice("العرض موجود مسبقًا. راجع السعر والتوافر قبل أي تعديل.");
+  }
 
   useEffect(() => { void load(""); }, [load]);
 
@@ -281,15 +316,9 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
       } else if (match.outcome === "EXISTING_STORE_OFFER") {
         const offer = snapshot?.offers.find((item) => item.offerId === match.storeOfferId);
         if (offer) {
-          setExistingOffer(offer);
-          setSelectedProduct(snapshot?.products.find((item) => item.id === offer.productId) ?? null);
-          setSelectedVariant(snapshot?.products.flatMap((item) => item.variants).find((item) => item.id === offer.variantId) ?? null);
-          setOfferDraft({ priceMinor: String(offer.priceMinor), available: offer.availability, min: String(offer.quantityMinBaseUnits), max: String(offer.quantityMaxBaseUnits), step: String(offer.quantityStepBaseUnits), pricingUnit: String(offer.pricingUnitBaseUnits), inventoryOnHand: String(offer.inventoryOnHandBaseUnits) });
-          setAvailabilityOnly(offer.inventoryPolicy === "AVAILABILITY_ONLY");
-          setNotice("العرض موجود مسبقًا. راجع السعر والتوافر قبل أي تعديل.");
+          openExistingOffer(offer);
         } else {
-          await load(query);
-          setNotice("العرض موجود لهذا المتجر. حدّث القائمة لعرض حالته.");
+          setNotice("العرض موجود لهذا المتجر. حمّل صفحات العروض الإضافية لفتحه وتعديله.");
         }
       } else if (match.outcome === "VARIABLE_MEASURE_IDENTIFIER") {
         setNotice("هذا معرّف لمنتج بكمية متغيرة، ولا يمكن إنشاء عرض قابل للطلب حتى يكتمل مسار الكمية الفعلية.");
@@ -355,23 +384,26 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
   }
 
   async function saveInitialOffer() {
-    if (busy || !selectedVariant || !selectedProduct || !snapshot) return;
+    if (busy || !snapshot || (!existingOffer && (!selectedVariant || !selectedProduct))) return;
+    const measurementKind = existingOffer?.measurementKind ?? selectedVariant?.measurementKind;
+    const variantID = existingOffer?.variantId ?? selectedVariant?.id;
+    if (!measurementKind || !variantID) return;
     const priceMinor = Number(offerDraft.priceMinor);
     const min = Number(offerDraft.min);
     const max = Number(offerDraft.max);
     const step = Number(offerDraft.step);
     const pricingUnit = Number(offerDraft.pricingUnit);
     const inventory = Number(offerDraft.inventoryOnHand);
-    if (selectedVariant.measurementKind === "VARIABLE_MEASURE") { setError("الكمية المتغيرة غير متاحة في كتالوج الإعداد الأولي."); return; }
+    if (measurementKind === "VARIABLE_MEASURE") { setError("الكمية المتغيرة غير متاحة في كتالوج الإعداد الأولي."); return; }
     if (![priceMinor, min, max, step, pricingUnit, inventory].every(Number.isSafeInteger) || priceMinor < 1 || min < 1 || max < min || step < 1 || pricingUnit < 1 || inventory < 0 || (availabilityOnly && inventory !== 0)) {
       setError("أكمل سعرًا صحيحًا وحدود كمية ومخزونًا صالحًا قبل الحفظ.");
       return;
     }
-    const quantityPolicy = selectedVariant.measurementKind;
+    const quantityPolicy = measurementKind;
     const pricingBasis: CreateStoreOfferRequest["pricingBasis"] = quantityPolicy === "DISCRETE" ? "PER_UNIT" : "PER_MEASURE";
     const inventoryPolicy: CreateStoreOfferRequest["inventoryPolicy"] = availabilityOnly ? "AVAILABILITY_ONLY" : "QUANTITY_ON_HAND";
     const productFacts: CreateStoreOfferRequest = {
-      variantId: selectedVariant.id, priceMinor, quantityPolicy, quantityMinBaseUnits: min,
+      variantId: variantID, priceMinor, quantityPolicy, quantityMinBaseUnits: min,
       quantityMaxBaseUnits: max, quantityStepBaseUnits: step, pricingBasis,
       pricingUnitBaseUnits: pricingUnit, inventoryPolicy, inventoryOnHandBaseUnits: inventory,
     };
@@ -574,6 +606,16 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
     <Text style={styles.title}>الكتالوج الأولي</Text>
     <Text style={styles.muted}>يظهر هذا المسار للحالة المعتمدة فقط. يتحقق DSH في كل قراءة وكتابة من الإسناد والارتباط بالمتجر وعدم إتمام Go-Live.</Text>
     {snapshot ? <View style={styles.card}><Text style={styles.heading}>المتجر المعتمد</Text><Text style={styles.body}>المتجر: {snapshot.storeId}</Text><Text style={styles.body}>المجال: {snapshot.verticalId}</Text></View> : null}
+    {snapshot ? <View style={styles.card}>
+      <Text style={styles.heading}>عروض المتجر الأولية · {snapshot.offers.length}</Text>
+      <Text style={styles.muted}>تعرض هذه القائمة صفحات عروض المتجر كلها؛ اختر أي عرض لمراجعة سعره وتوافره وتعديله.</Text>
+      {snapshot.offers.map((offer) => <View key={offer.offerId} style={styles.row}>
+        <Text style={[styles.body, { flex: 1 }]}>{offer.productName} · {offer.variantTitle} · {offer.priceMinor} ريال</Text>
+        <BthwaniButton disabled={busy || offersLoadingMore} label="تعديل" onPress={() => openExistingOffer(offer)} variant="secondary" />
+      </View>)}
+      {offersPageError ? <Text accessibilityRole="alert" style={styles.error}>{offersPageError}</Text> : null}
+      {offersNextCursor ? <BthwaniButton busy={offersLoadingMore} disabled={busy || loading || offersLoadingMore} label="تحميل المزيد من العروض" onPress={() => void loadMoreOffers()} variant="secondary" /> : null}
+    </View> : null}
     {snapshot ? <MobileStoreCatalogImportWorkspace
       client={fieldClient()}
       scope={{ kind: "FIELD", joiningCaseID: caseId }}
@@ -680,14 +722,14 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
       <View style={styles.row}>{(measurementKind === "DISCRETE" ? ["COUNT"] as const : ["GRAM", "MILLILITER"] as const).map((value) => <BthwaniChip key={value} disabled={busy} label={baseUnitLabel(value)} onPress={() => setBaseUnit(value)} selected={baseUnit === value} />)}</View>
       <BthwaniButton busy={busy} disabled={busy || !productName.trim() || !variantTitle.trim()} label="إنشاء منتج المتجر" onPress={() => void createLocalProduct()} />
     </View> : null}
-    {selectedVariant && selectedProduct ? <View style={styles.card}>
+    {existingOffer || (selectedVariant && selectedProduct) ? <View style={styles.card}>
       <Text style={styles.heading}>{existingOffer ? "تعديل عرض ما قبل Go-Live" : "إضافة العرض الأولي"}</Text>
-      <Text style={styles.muted}>{selectedProduct.canonicalName} · {selectedVariant.title} · {wasCreatedLocally ? "منتج خاص بالمتجر" : selectedProduct.scope === "SHARED" ? "منتج مشترك" : "منتج محلي"}</Text>
+      <Text style={styles.muted}>{selectedProduct?.canonicalName ?? existingOffer?.productName} · {selectedVariant?.title ?? existingOffer?.variantTitle} · {wasCreatedLocally ? "منتج خاص بالمتجر" : selectedProduct?.scope === "SHARED" ? "منتج مشترك" : "عرض قائم"}</Text>
       <TextInput accessibilityLabel="سعر العرض الأولي" editable={!busy} keyboardType="number-pad" onChangeText={(priceMinor) => setOfferDraft((current) => ({ ...current, priceMinor: priceMinor.replace(/[^0-9]/g, "") }))} placeholder="السعر بالريال اليمني" value={offerDraft.priceMinor} style={[styles.input, styles.number]} />
       <Text style={styles.muted}>التوافر: {offerDraft.available ? "متاح للطلب" : "غير متاح مؤقتًا"}</Text>
       <View style={styles.row}><BthwaniChip disabled={busy} label="متاح" onPress={() => setOfferDraft((current) => ({ ...current, available: true }))} selected={offerDraft.available} /><BthwaniChip disabled={busy} label="غير متاح" onPress={() => setOfferDraft((current) => ({ ...current, available: false }))} selected={!offerDraft.available} /></View>
-      {selectedVariant.measurementKind === "VARIABLE_MEASURE" ? <Text style={styles.error}>الكمية المتغيرة غير مدعومة في الإعداد الأولي قبل اكتمال القياس الفعلي.</Text> : <>
-        {selectedVariant.measurementKind !== "DISCRETE" ? <TextInput accessibilityLabel="وحدة التسعير الأساسية بالجرام أو الملليلتر" editable={!busy} keyboardType="number-pad" onChangeText={(pricingUnit) => setOfferDraft((current) => ({ ...current, pricingUnit: pricingUnit.replace(/[^0-9]/g, "") }))} placeholder="وحدة التسعير الأساسية" value={offerDraft.pricingUnit} style={[styles.input, styles.number]} /> : null}
+      {(existingOffer?.measurementKind ?? selectedVariant?.measurementKind) === "VARIABLE_MEASURE" ? <Text style={styles.error}>الكمية المتغيرة غير مدعومة في الإعداد الأولي قبل اكتمال القياس الفعلي.</Text> : <>
+        {(existingOffer?.measurementKind ?? selectedVariant?.measurementKind) !== "DISCRETE" ? <TextInput accessibilityLabel="وحدة التسعير الأساسية بالجرام أو الملليلتر" editable={!busy} keyboardType="number-pad" onChangeText={(pricingUnit) => setOfferDraft((current) => ({ ...current, pricingUnit: pricingUnit.replace(/[^0-9]/g, "") }))} placeholder="وحدة التسعير الأساسية" value={offerDraft.pricingUnit} style={[styles.input, styles.number]} /> : null}
         <View style={styles.row}><BthwaniChip disabled={busy} label="التوافر فقط" onPress={() => { setAvailabilityOnly(true); setOfferDraft((current) => ({ ...current, inventoryOnHand: "0" })); }} selected={availabilityOnly} /><BthwaniChip disabled={busy} label="إدارة مخزون فعلي" onPress={() => setAvailabilityOnly(false)} selected={!availabilityOnly} /></View>
         {!availabilityOnly ? <TextInput accessibilityLabel="المخزون الأولي" editable={!busy} keyboardType="number-pad" onChangeText={(inventoryOnHand) => setOfferDraft((current) => ({ ...current, inventoryOnHand: inventoryOnHand.replace(/[^0-9]/g, "") }))} placeholder="المخزون الأولي" value={offerDraft.inventoryOnHand} style={[styles.input, styles.number]} /> : null}
         <BthwaniButton busy={busy} disabled={busy || !offerDraft.priceMinor.trim()} label={existingOffer ? "حفظ التعديل الأولي" : "إضافة العرض إلى المتجر"} onPress={() => void saveInitialOffer()} />

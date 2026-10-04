@@ -76,7 +76,6 @@ test("@live operator sees the WLT-managed Field acquisition reward store-type po
       body: JSON.stringify({
         nameAr: "مطاعم الاختبار الحي",
         nameEn: `Live restaurants ${suffix.slice(0, 8)}`,
-        catalogModel: "STORE_LOCAL_CATALOG",
         active: true,
         reason: "إعداد بيانات سياسة استحقاق الميدان للاختبار الحي",
       }),

@@ -47,8 +47,7 @@ func (s *Service) previewStoreCatalogImport(ctx context.Context, actorID, actorR
 	}
 	sourceDigest := sha256.Sum256(data)
 	sourceSHA := hex.EncodeToString(sourceDigest[:])
-	runScope := sha256.Sum256([]byte("store-offers\x00" + storeID + "\x00" + joiningCaseID + "\x00" + sourceSHA))
-	runID := "store_catalog_import_" + hex.EncodeToString(runScope[:16])
+	runID := storeCatalogImportRunID(storeID, joiningCaseID, sourceSHA, idempotencyKey)
 
 	items := make([]postgres.CatalogImportItemRecord, 0, len(rows))
 	hashInputs := make([]postgres.CatalogImportItemInput, 0, len(rows))
@@ -110,6 +109,11 @@ func (s *Service) previewStoreCatalogImport(ctx context.Context, actorID, actorR
 	}
 	run := postgres.CatalogImportRunRecord{ID: runID, ActingActorID: actorID, SourceSHA256: sourceSHA, Purpose: "STORE_OFFERS", ActorRole: actorRole, StoreID: storeID, JoiningCaseID: strings.TrimSpace(joiningCaseID)}
 	return postgres.CreateCatalogImportPreview(ctx, s.db, run, items, idempotencyKey, postgres.HashCatalogImportPreviewRequest(run.ID, run.SourceSHA256, hashInputs), correlationID)
+}
+
+func storeCatalogImportRunID(storeID, joiningCaseID, sourceSHA, idempotencyKey string) string {
+	runScope := sha256.Sum256([]byte("store-offers\x00" + storeID + "\x00" + joiningCaseID + "\x00" + sourceSHA + "\x00" + idempotencyKey))
+	return "store_catalog_import_" + hex.EncodeToString(runScope[:16])
 }
 
 func defaultImportedOffer(storeID, variantID string, priceMinor int64, measurementKind string) postgres.CatalogOfferInput {
@@ -226,12 +230,12 @@ func (s *Service) commitStoreCatalogImport(ctx context.Context, actorID, actorRo
 	if preview.Run.Purpose != "STORE_OFFERS" || preview.Run.ActorRole != actorRole || preview.Run.ActingActorID != strings.TrimSpace(actorID) || preview.Run.StoreID != strings.TrimSpace(storeID) || (preview.Run.Mode == "preview" && preview.Run.State != "previewed") {
 		return postgres.CatalogImportCommitResult{}, postgres.ErrCatalogImportInvalid
 	}
-	if !((preview.Run.Mode == "preview" && preview.Run.State == "previewed") || (preview.Run.Mode == "commit" && preview.Run.State == "rejected")) {
+	if preview.Run.Mode != "preview" || preview.Run.State != "previewed" {
 		return postgres.CatalogImportCommitResult{}, postgres.ErrCatalogImportInvalid
 	}
 	provenance := map[string]string{"FIELD": "FIELD_INITIAL_CATALOG", "PARTNER": "PARTNER", "OPERATOR": "CONTROL_PANEL"}[actorRole]
 	for _, item := range preview.Items {
-		if item.Classification != "READY" && item.Classification != "FAILED" {
+		if item.Classification != "READY" {
 			continue
 		}
 		if item.StoreOfferInput == nil {

@@ -35,7 +35,7 @@ function classificationLabel(item: CatalogImportItem): string {
 }
 
 function isCommitAllowed(result: StoreCatalogImportResult): boolean {
-  return (result.run.state === "previewed" || result.run.state === "rejected") && result.run.acceptedCount > 0;
+  return result.run.state === "previewed" && result.run.acceptedCount > 0;
 }
 
 export function MobileStoreCatalogImportWorkspace({ client, scope, getAccessToken, pickFile, createUUID, onCommitted }: MobileStoreCatalogImportWorkspaceProps) {
@@ -76,14 +76,19 @@ export function MobileStoreCatalogImportWorkspace({ client, scope, getAccessToke
 
   async function preview() {
     if (!file || !attempt || busy) return;
+    const currentAttempt = result?.run.state === "rejected"
+      ? { previewKey: createUUID(), previewCorrelation: createUUID(), commitKey: createUUID(), commitCorrelation: createUUID() }
+      : attempt;
+    if (currentAttempt !== attempt) setAttempt(currentAttempt);
+    setResult(null);
     setBusy("preview");
     setError("");
     setNotice("");
     try {
       const token = await getAccessToken();
       const previewResult = scope.kind === "FIELD"
-        ? await client.previewFieldStoreCatalogImport(token, scope.joiningCaseID, file, attempt.previewKey, attempt.previewCorrelation)
-        : await client.previewPartnerStoreCatalogImport(token, scope.storeID, file, attempt.previewKey, attempt.previewCorrelation);
+        ? await client.previewFieldStoreCatalogImport(token, scope.joiningCaseID, file, currentAttempt.previewKey, currentAttempt.previewCorrelation)
+        : await client.previewPartnerStoreCatalogImport(token, scope.storeID, file, currentAttempt.previewKey, currentAttempt.previewCorrelation);
       setResult(previewResult);
       setNotice("أُنشئت المعاينة من الملف. الصفوف المجهولة محفوظة للمراجعة ولن تنشئ منتجات تلقائيًا.");
     } catch {
@@ -97,16 +102,19 @@ export function MobileStoreCatalogImportWorkspace({ client, scope, getAccessToke
     setBusy("read");
     setError("");
     try {
-      const token = await getAccessToken();
-      const current = scope.kind === "FIELD"
-        ? await client.readFieldStoreCatalogImport(token, scope.joiningCaseID, runID)
-        : await client.readPartnerStoreCatalogImport(token, scope.storeID, runID);
-      setResult(current);
+      setResult(await readCurrentRun(runID));
     } catch {
       setError("تعذرت إعادة قراءة حالة الاستيراد من DSH.");
     } finally {
       setBusy("");
     }
+  }
+
+  async function readCurrentRun(runID: string) {
+    const token = await getAccessToken();
+    return scope.kind === "FIELD"
+      ? await client.readFieldStoreCatalogImport(token, scope.joiningCaseID, runID)
+      : await client.readPartnerStoreCatalogImport(token, scope.storeID, runID);
   }
 
   async function commit() {
@@ -120,10 +128,21 @@ export function MobileStoreCatalogImportWorkspace({ client, scope, getAccessToke
         ? await client.commitFieldStoreCatalogImport(token, scope.joiningCaseID, result.run.id, attempt.commitKey, attempt.commitCorrelation)
         : await client.commitPartnerStoreCatalogImport(token, scope.storeID, result.run.id, attempt.commitKey, attempt.commitCorrelation);
       setResult(committed);
-      await onCommitted?.();
-      setNotice("اعتمد DSH الصفوف الصالحة وأعاد نتيجة الكتابة. الصفوف التي تحتاج مراجعة باقية دون تغيير.");
+      if (committed.run.state === "committed") {
+        await onCommitted?.();
+        setNotice("اعتمد DSH الصفوف الصالحة وأعاد نتيجة الكتابة. الصفوف التي تحتاج مراجعة باقية دون تغيير.");
+      } else {
+        setNotice("لم يعتمد DSH هذه المعاينة. أعد قراءة الحالة ثم أنشئ معاينة جديدة قبل أي محاولة أخرى.");
+      }
     } catch {
-      setError("تعذر اعتماد الصفوف. أعد المحاولة؛ سيعاد استخدام مفتاح العملية نفسه.");
+      try {
+        const current = await readCurrentRun(result.run.id);
+        setResult(current);
+        if (current.run.state === "committed") await onCommitted?.();
+      } catch {
+        // Keep the original commit error; the existing result remains available for a manual read.
+      }
+      setError("تعذر تأكيد الاعتماد. أُعيدت قراءة الحالة الممكنة؛ كرر الاعتماد إذا بقيت المعاينة جاهزة أو أعد معاينة الملف عند ظهور تعارض.");
     } finally {
       setBusy("");
     }
@@ -143,6 +162,10 @@ export function MobileStoreCatalogImportWorkspace({ client, scope, getAccessToke
         {item.errorMessage ? <Text style={styles.muted}>{item.errorMessage}</Text> : null}
       </View>)}
       {isCommitAllowed(result) ? <BthwaniButton busy={busy === "commit"} disabled={Boolean(busy)} label="اعتماد الصفوف الصالحة" onPress={() => void commit()} /> : null}
+      {result.run.state === "rejected" ? <>
+        <Text style={styles.muted}>تعارضت هذه المعاينة مع إصدارات حالية. أعد معاينة الملف نفسه قبل اعتماد الصفوف مجددًا.</Text>
+        <BthwaniButton busy={busy === "preview"} disabled={Boolean(busy)} label="إعادة معاينة الأسعار" onPress={() => void preview()} />
+      </> : null}
       {result.run.state === "committed" ? <BthwaniButton busy={busy === "read"} disabled={Boolean(busy)} label="إعادة قراءة النتيجة" onPress={() => void readBack(result.run.id)} variant="secondary" /> : null}
     </View> : null}
     {busy && busy !== "pick" ? <ActivityIndicator color={theme.actionBackground} /> : null}

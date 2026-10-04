@@ -63,14 +63,28 @@ export function StoreCatalogImportWorkspace() {
     setCommitAttempt(null);
   }
 
+  function selectStore(nextStoreID: string) {
+    if (nextStoreID === storeID) return;
+    setStoreID(nextStoreID);
+    setResult(null);
+    setError("");
+    setNotice("");
+    setPreviewAttempt(null);
+    setCommitAttempt(null);
+  }
+
   async function preview() {
     if (!file || !storeID.trim() || busy) return;
     if (file.size < 1 || file.size > 20 * 1024 * 1024 || !/\.(csv|xlsx)$/i.test(file.name)) {
       setError("בחר CSV أو XLSX صالحًا بحجم لا يتجاوز 20 ميغابايت.");
       return;
     }
-    const attempt = previewAttempt ?? { runId: crypto.randomUUID(), idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID() };
+    const attempt = result?.run.state === "rejected" || !previewAttempt
+      ? { runId: crypto.randomUUID(), idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID() }
+      : previewAttempt;
     setPreviewAttempt(attempt);
+    setCommitAttempt(null);
+    setResult(null);
     setBusy("preview");
     setError("");
     setNotice("");
@@ -105,7 +119,7 @@ export function StoreCatalogImportWorkspace() {
   }
 
   async function commit() {
-    if (!result || !previewAttempt || busy || result.run.acceptedCount < 1 || (result.run.state !== "previewed" && result.run.state !== "rejected")) return;
+    if (!result || !previewAttempt || busy || result.run.acceptedCount < 1 || result.run.state !== "previewed") return;
     const attempt = commitAttempt?.runId === result.run.id ? commitAttempt : { runId: result.run.id, idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID() };
     setCommitAttempt(attempt);
     setBusy("commit");
@@ -119,7 +133,9 @@ export function StoreCatalogImportWorkspace() {
       const committed = await readJson<ImportResult>(response);
       setResult(committed);
       if (committed.run.state === "committed") setCommitAttempt(null);
-      setNotice("اعتمد DSH الصفوف الصالحة، وتم حفظ الصفوف غير المعروفة للمراجعة دون إنشاء منتجات.");
+      setNotice(committed.run.state === "committed"
+        ? "اعتمد DSH الصفوف الصالحة، وتم حفظ الصفوف غير المعروفة للمراجعة دون إنشاء منتجات."
+        : "لم يعتمد DSH هذه المعاينة. أعد قراءة الحالة ثم أنشئ معاينة جديدة قبل أي محاولة أخرى.");
       await readRun(committed.run.id);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "تعذر اعتماد الأسعار.");
@@ -135,7 +151,8 @@ export function StoreCatalogImportWorkspace() {
       <h2 id="store-catalog-import-title">استيراد كتالوج المتجر</h2>
       <p className="muted">يستخدم هذا المسار محرك المعاينة والاعتماد نفسه الموجود في تطبيق الشريك والميدان. الملفات مقيدة بـ CSV أو XLSX و5000 صف و20 ميغابايت.</p>
     </div>
-    {stores.length ? <label className="field-label" htmlFor="store-catalog-import-store">المتجر<select id="store-catalog-import-store" value={storeID} onChange={(event) => setStoreID(event.target.value)} disabled={Boolean(busy)}><option value="">اختر متجرًا</option>{stores.map((store) => <option key={store.id} value={store.id}>{store.name} · {store.id}</option>)}</select></label> : <label className="field-label" htmlFor="store-catalog-import-store">معرّف المتجر<input id="store-catalog-import-store" autoComplete="off" dir="ltr" value={storeID} onChange={(event) => setStoreID(event.target.value)} disabled={Boolean(busy)} placeholder="store_…" /></label>}
+    {stores.length ? <label className="field-label" htmlFor="store-catalog-import-store-select">المتجر من القائمة<select id="store-catalog-import-store-select" value={stores.some((store) => store.id === storeID) ? storeID : ""} onChange={(event) => selectStore(event.target.value)} disabled={Boolean(busy)}><option value="">اختر متجرًا من أول 50 متجرًا</option>{stores.map((store) => <option key={store.id} value={store.id}>{store.name} · {store.id}</option>)}</select></label> : null}
+    <label className="field-label" htmlFor="store-catalog-import-store">معرّف المتجر<input id="store-catalog-import-store" autoComplete="off" dir="ltr" value={storeID} onChange={(event) => selectStore(event.target.value)} disabled={Boolean(busy)} placeholder="store_…" /></label>
     <label className="field-label" htmlFor="store-catalog-import-file">ملف الباركود والأسعار<input id="store-catalog-import-file" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={Boolean(busy)} onChange={(event) => selectFile(event.target.files?.[0] ?? null)} /></label>
     {file ? <p className="muted">{file.name} · {(file.size / (1024 * 1024)).toFixed(2)} ميغابايت</p> : null}
     <button type="button" className="button button-primary" disabled={Boolean(busy) || !file || !storeID.trim()} onClick={() => void preview()}>{busy === "preview" ? "جارٍ إنشاء المعاينة…" : "معاينة الملف"}</button>
@@ -143,7 +160,8 @@ export function StoreCatalogImportWorkspace() {
       <strong>الحالة: {result.run.state} · الجاهز: {result.run.acceptedCount} · المراجعة أو التعارض: {result.run.conflictCount}</strong>
       <p>يُحل كل باركود على الكتالوج المشترك ومحلي المتجر. الباركود غير المعروف لا ينشئ منتجًا تلقائيًا.</p>
       <ol>{result.items.map((item) => <li key={`${item.rowNumber}-${item.stableKey}`}>السطر {item.rowNumber} · {classificationLabel(item)}{item.errorMessage ? ` · ${item.errorMessage}` : item.committed ? " · كُتب في DSH" : ""}</li>)}</ol>
-      {(result.run.state === "previewed" || result.run.state === "rejected") && result.run.acceptedCount > 0 ? <button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={() => void commit()}>{busy === "commit" ? "جارٍ الاعتماد…" : "اعتماد الصفوف الصالحة"}</button> : null}
+      {result.run.state === "previewed" && result.run.acceptedCount > 0 ? <button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={() => void commit()}>{busy === "commit" ? "جارٍ الاعتماد…" : "اعتماد الصفوف الصالحة"}</button> : null}
+      {result.run.state === "rejected" ? <p className="muted">انتهت هذه المعاينة بعد تعارض أثناء الاعتماد. أعد معاينة الملف لقراءة الإصدارات الحالية قبل اعتماد الصفوف مجددًا.</p> : null}
       {result.run.state === "committed" ? <button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={() => void readRun(result.run.id)}>{busy === "read" ? "جارٍ إعادة القراءة…" : "إعادة قراءة النتيجة"}</button> : null}
     </div> : null}
     {notice ? <p className="success-inline" role="status">{notice}</p> : null}

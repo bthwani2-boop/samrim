@@ -6,8 +6,44 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
+
+func TestLegacyWalletProviderIntentRequiresMatchingStaleDestination(t *testing.T) {
+	valid := wlt.OfficialWalletDestination{
+		ID: "destination-legacy", ActorType: "field", ActorID: "field-actor",
+		ProviderKey: " provider-jib ", VerificationStatus: "STALE", Status: "SUSPENDED",
+	}
+	intent, ok := legacyWalletProviderIntentFromStaleDestination("field", "field-actor", valid)
+	if !ok || intent.ProviderKey != "provider-jib" || intent.SourceID != "legacy_official_wallet_destination:destination-legacy" {
+		t.Fatalf("legacy stale destination intent = %+v, %t; want the normalized historical provider and explicit provenance", intent, ok)
+	}
+
+	for _, test := range []struct {
+		name        string
+		actorType   string
+		actorID     string
+		destination wlt.OfficialWalletDestination
+	}{
+		{name: "wrong actor", actorType: "field", actorID: "field-other", destination: valid},
+		{name: "wrong role", actorType: "captain", actorID: "field-actor", destination: valid},
+		{name: "active destination is not a migration fallback", actorType: "field", actorID: "field-actor", destination: func() wlt.OfficialWalletDestination {
+			item := valid
+			item.VerificationStatus = "VERIFIED"
+			item.Status = "ACTIVE_FOR_PAYOUT"
+			return item
+		}()},
+		{name: "suspended but not identity-stale", actorType: "field", actorID: "field-actor", destination: func() wlt.OfficialWalletDestination { item := valid; item.VerificationStatus = "VERIFIED"; return item }()},
+		{name: "missing provider", actorType: "field", actorID: "field-actor", destination: func() wlt.OfficialWalletDestination { item := valid; item.ProviderKey = " "; return item }()},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if intent, ok := legacyWalletProviderIntentFromStaleDestination(test.actorType, test.actorID, test.destination); ok || intent.ProviderKey != "" {
+				t.Fatalf("legacy intent unexpectedly accepted: %+v, %t", intent, ok)
+			}
+		})
+	}
+}
 
 func TestCanonicalOfficialWalletPhoneRequiresActiveVerifiedIdentityRole(t *testing.T) {
 	activatedAt := time.Date(2026, time.October, 4, 12, 0, 0, 0, time.UTC)

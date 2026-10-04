@@ -62,10 +62,25 @@ func (s *Service) ProposeStoreCommercialAgreementForField(ctx context.Context, a
 	if current.Origin != "field" || current.OriginatingFieldActorID != fieldIdentity.Subject || current.State != "approved" || current.Store == nil || current.Store.ID == "" || current.PartnerActorID == "" || current.Store.PartnerActorID != current.PartnerActorID {
 		return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementState
 	}
+	if current.Store.PublicationState == "published" {
+		history, historyErr := s.wlt.ReadStoreCommercialAgreements(ctx, current.Store.ID)
+		if historyErr != nil {
+			return wltintegration.StoreCommercialAgreement{}, false, historyErr
+		}
+		if !fieldMayProposeStoreAgreement(current.Store.PublicationState, history) {
+			return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementState
+		}
+	} else if !fieldMayProposeStoreAgreement(current.Store.PublicationState, nil) {
+		return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementState
+	}
+	rates, err := normalizeStoreAgreementRates(current.Store.FulfillmentModes, input.Rates)
+	if err != nil {
+		return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementInvalidInput
+	}
 	// WLT owns agreement version checks and idempotent replay. A DSH history
 	// read here would reject a valid retry after the first proposal advanced it.
 	agreement, replayed, err := s.wlt.ProposeStoreCommercialAgreement(ctx, wltintegration.ProposeStoreCommercialAgreementInput{
-		StoreID: current.Store.ID, PartnerActorID: current.PartnerActorID, Rates: input.Rates,
+		StoreID: current.Store.ID, PartnerActorID: current.PartnerActorID, Rates: rates,
 		ExpectedCurrentVersion: input.ExpectedCurrentVersion, Reason: input.Reason,
 	}, strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID), fieldIdentity.Subject)
 	if err != nil {
@@ -75,6 +90,13 @@ func (s *Service) ProposeStoreCommercialAgreementForField(ctx context.Context, a
 		return wltintegration.StoreCommercialAgreement{}, false, errors.New("WLT agreement proposal readback did not match the assigned joining case")
 	}
 	return agreement, replayed, nil
+}
+
+func fieldMayProposeStoreAgreement(publicationState string, history []wltintegration.StoreCommercialAgreement) bool {
+	if publicationState == "unpublished" {
+		return true
+	}
+	return publicationState == "published" && len(history) == 0
 }
 
 func (s *Service) ReadStoreTypeCommissionDefaultsForField(ctx context.Context, accessToken, caseID string) (wltintegration.StoreTypeCommissionDefaultsResponse, error) {

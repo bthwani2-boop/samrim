@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
@@ -267,7 +268,7 @@ func (s *BeneficiaryFinanceServer) readOperatorWalletProviderIntent(w http.Respo
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a valid actorType and actorId are required")
 		return
 	}
-	intent, err := postgres.ReadWalletProviderIntent(r.Context(), s.db, actorType, actorID)
+	intent, err := s.readWalletProviderIntent(r.Context(), actorType, actorID)
 	if err != nil {
 		writeWalletProviderIntentError(w, err)
 		return
@@ -313,7 +314,7 @@ func (s *BeneficiaryFinanceServer) createOperatorDestination(w http.ResponseWrit
 		writeIdentityError(w, err)
 		return
 	}
-	intent, err := postgres.ReadWalletProviderIntent(r.Context(), s.db, actorType, actorID)
+	intent, err := s.readWalletProviderIntent(r.Context(), actorType, actorID)
 	if err != nil {
 		writeWalletProviderIntentError(w, err)
 		return
@@ -328,6 +329,37 @@ func (s *BeneficiaryFinanceServer) createOperatorDestination(w http.ResponseWrit
 		status = http.StatusOK
 	}
 	writeJSON(w, status, map[string]any{"destination": destination, "idempotentReplay": replayed})
+}
+
+func (s *BeneficiaryFinanceServer) readWalletProviderIntent(ctx context.Context, actorType, actorID string) (postgres.WalletProviderIntent, error) {
+	intent, err := postgres.ReadWalletProviderIntent(ctx, s.db, actorType, actorID)
+	if err == nil || !errors.Is(err, postgres.ErrWalletProviderIntentNotFound) {
+		return intent, err
+	}
+	legacyDestination, legacyErr := s.payment.ReadOfficialWalletDestination(ctx, actorType, actorID)
+	if legacyErr != nil {
+		var wltErr *wlt.Error
+		if errors.As(legacyErr, &wltErr) && wltErr.Status == http.StatusNotFound {
+			return postgres.WalletProviderIntent{}, err
+		}
+		return postgres.WalletProviderIntent{}, fmt.Errorf("read legacy official wallet provider during Finance reverification: %w", legacyErr)
+	}
+	if intent, ok := legacyWalletProviderIntentFromStaleDestination(actorType, actorID, legacyDestination); ok {
+		return intent, nil
+	}
+	return postgres.WalletProviderIntent{}, err
+}
+
+func legacyWalletProviderIntentFromStaleDestination(actorType, actorID string, destination wlt.OfficialWalletDestination) (postgres.WalletProviderIntent, bool) {
+	actorType, actorID = strings.ToLower(strings.TrimSpace(actorType)), strings.TrimSpace(actorID)
+	provider, validProvider := postgres.NormalizeWalletProviderKey(destination.ProviderKey)
+	if !validProvider || actorType == "" || actorID == "" || destination.ActorType != actorType || destination.ActorID != actorID || destination.VerificationStatus != "STALE" || destination.Status != "SUSPENDED" || strings.TrimSpace(destination.ID) == "" {
+		return postgres.WalletProviderIntent{}, false
+	}
+	return postgres.WalletProviderIntent{
+		ActorType: actorType, ActorID: actorID, ProviderKey: provider,
+		SourceID: "legacy_official_wallet_destination:" + strings.TrimSpace(destination.ID),
+	}, true
 }
 
 func writeWalletProviderIntentError(w http.ResponseWriter, err error) {
