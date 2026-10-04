@@ -66,7 +66,7 @@ test("catalog import uses the existing CSV file adapter and closes the loop", as
     buffer: Buffer.from("verticalId,scope,canonicalName,variantTitle,measurementKind,baseUnit,categoryIds\ngrocery,SHARED,قهوة,الافتراضي,DISCRETE,COUNT,coffee\n"),
   });
   await expect(page.getByText("الصفوف الصالحة: 1")).toBeVisible();
-  await page.getByRole("button", { name: "معاينة الملف" }).click();
+  await page.getByTestId("catalog-import-workspace").getByRole("button", { name: "معاينة الملف" }).click();
   await expect(page.getByText("حالة التشغيل: معاينة جاهزة")).toBeVisible();
   expect(previewBody?.rows).toEqual([expect.objectContaining({ rowNumber: 2, verticalId: "grocery", scope: "SHARED", canonicalName: "قهوة", categoryIds: ["coffee"] })]);
   await page.getByRole("button", { name: "الالتزام بالصفوف الجاهزة" }).click();
@@ -102,7 +102,7 @@ test("catalog XLSX import commits ready rows while preserving conflicts", async 
   await page.goto("/catalog/import");
   await page.locator("#catalog-import-file").setInputFiles({ name: "products.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: fileBuffer });
   await expect(page.getByText("الصفوف الصالحة: 2 · الصفوف المرفوضة محليًا: 0")).toBeVisible();
-  await page.getByRole("button", { name: "معاينة الملف" }).click();
+  await page.getByTestId("catalog-import-workspace").getByRole("button", { name: "معاينة الملف" }).click();
   await expect(page.getByText("المقبول: 1 · التعارضات: 1 · العناصر المصنفة: 2")).toBeVisible();
   const commitButton = page.getByRole("button", { name: "الالتزام بالصفوف الجاهزة" });
   await expect(commitButton).toBeEnabled();
