@@ -227,6 +227,10 @@ func (s *catalogRefoundationScenario) verifySharedProducts() {
 	if err != nil || len(secondProductRecord.Variants) != 1 {
 		s.t.Fatalf("read second catalog product for inactive identifier proof: %+v err=%v", secondProductRecord, err)
 	}
+	insertCanonicalStoreFixture(s.t, s.ctx, s.db, canonicalStoreFixture{
+		ID: "store_catalog_inactive_identifier", PartnerActorID: testPartnerActorID, Name: "متجر اختبار حل المعرّف",
+		ServiceCityID: s.cityID, PrimaryVerticalID: s.verticalID,
+	})
 	variant := secondProductRecord.Variants[0]
 	inactiveVariantInput := postgres.CatalogVariantInput{ID: variant.ID, ProductID: variant.ProductID, Title: variant.Title, MeasurementKind: variant.MeasurementKind, BaseUnit: variant.BaseUnit, Active: false}
 	inactiveVariant, err := postgres.UpdateCatalogVariant(s.ctx, s.db, variant.ID, inactiveVariantInput, variant.Version, "idem-inactive-variant-v1", postgres.HashCatalogVariantUpdateRequest(variant.ID, inactiveVariantInput, variant.Version), testOperatorActorID, "corr-inactive-variant-v1")
@@ -243,7 +247,12 @@ func (s *catalogRefoundationScenario) verifySharedProducts() {
 	if err != nil || !activeVariant.Variant.Active {
 		s.t.Fatalf("reactivate catalog variant for product proof: %+v err=%v", activeVariant, err)
 	}
-	inactiveProductInput := postgres.CatalogProductUpdateInput{VerticalID: secondProductRecord.VerticalID, Scope: secondProductRecord.Scope, StoreID: secondProductRecord.StoreID, CanonicalName: secondProductRecord.CanonicalName, Description: secondProductRecord.Description, Brand: secondProductRecord.Brand, Active: false}
+	inactiveProductInput := postgres.CatalogProductUpdateInput{
+		VerticalID: secondProductRecord.VerticalID, Scope: secondProductRecord.Scope, StoreID: secondProductRecord.StoreID,
+		CanonicalName: secondProductRecord.CanonicalName, Description: secondProductRecord.Description, Brand: secondProductRecord.Brand, Active: false,
+		CategoryIDs: secondProductRecord.CategoryIDs, AttributeValues: []postgres.CatalogAttributeValueInput{},
+		VariantAttributeValues: []postgres.CatalogVariantAttributeValueSet{{VariantID: variant.ID, Values: []postgres.CatalogAttributeValueInput{}}},
+	}
 	inactiveProduct, err := postgres.UpdateCatalogProduct(s.ctx, s.db, secondProductRecord.ID, inactiveProductInput, secondProductRecord.Version, "idem-inactive-product-v1", postgres.HashCatalogProductUpdateRequest(secondProductRecord.ID, inactiveProductInput, secondProductRecord.Version), testOperatorActorID, "corr-inactive-product-v1")
 	if err != nil || inactiveProduct.Product.Active {
 		s.t.Fatalf("deactivate catalog product for identifier proof: %+v err=%v", inactiveProduct, err)
@@ -540,6 +549,7 @@ func (s *catalogRefoundationScenario) verifyProposalPagination() {
 		ID: "proposal_field_null_owner_review", SubmitterRole: "FIELD", SubmitterActorID: "field-proposal-reviewer",
 		JoiningCaseID: "joining_store_discovery_v1", VerticalID: s.verticalID, CategoryID: s.categoryID,
 		ProposedName: "منتج مقترح من الميدان", ProposedVariantTitle: "عبوة واحدة", ProposedMeasurementKind: "DISCRETE", ProposedBaseUnit: "COUNT",
+		AttributeValues: []postgres.CatalogAttributeValueInput{}, VariantAttributeValues: []postgres.CatalogAttributeValueInput{},
 	}
 	fieldProposal, err := postgres.CreateCatalogProductProposal(s.ctx, s.db, fieldProposalInput, "idem-field-proposal-v1", postgres.HashCatalogProductProposalCreateRequest(fieldProposalInput), testOperatorActorID, "corr-field-proposal-v1")
 	if err != nil || fieldProposal.Proposal.PartnerActorID != "" || fieldProposal.Proposal.State != "draft" {
