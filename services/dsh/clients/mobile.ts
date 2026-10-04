@@ -1,9 +1,10 @@
 import { dshOperationPaths } from "./generated/dsh-operations";
 import type { StoreAccessGrantActivationRequest, StoreAccessGrantPermissionsRequest } from "./generated/dsh-types";
 import type { CatalogQuickPriceCommitRequest, CatalogQuickPriceCommitResponse } from "./generated/dsh-types";
+import type { CatalogImportCommitResponse, CatalogImportPreviewResponse, CatalogImportRunResponse } from "./generated/dsh-types";
 import type { StoreCommercialAgreementAcceptanceRequest, StoreCommercialAgreementListResponse, StoreCommercialAgreementMutationResponse, StoreCommercialAgreementProposalRequest, StoreTypeCommissionDefaultsResponse } from "./generated/dsh-types";
 import type { CatalogIdentifierResolveResponse, CatalogProductResponse, CreateFieldCatalogProductRequest, CreateStoreOfferRequest, FieldCatalogReadResponse, UpdateStoreOfferRequest } from "./generated/dsh-types";
-import type { AcceptStoreCaptainInvitationRequest, BeneficiaryFundingIntentResponse, BeneficiaryPayoutStateResponse, BeneficiaryWalletResponse, CaptainAdmissionResponse, CaptainAssignmentListResponse, CaptainAssignmentResponse, CaptainAvailabilityRequest, CaptainCashRemittanceRequest, CaptainCashRemittanceResponse, CaptainCompletionRequest, CaptainDeliveryTaskResponse, CaptainLocationResponse, CaptainOfferDecisionRequest, CaptainOfferListResponse, CaptainOfferResponse, CartResponse, CashInFundingIntent, CashLiabilityResponse, CatalogAttributeEnumOptionListResponse, CatalogAttributeRuleListResponse, CatalogCategoryListResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogStorefrontSectionResponse, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogVariantResponse, CheckoutQuoteResponse, CheckoutRequest, ClientOpenCartListResponse, CommerceVerticalListResponse, CommercialStoreTypeListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, CreateJoiningCaseRequest, CreateOrderConversationMessageRequest, CreateOrderRatingRequest, DeliveryAddressListResponse, DeliveryAddressResponse, DeliveryProofResponse, DiscoveryContentEventRequest, DiscoveryContentListResponse, DiscoveryContentTargetResolution, FavoriteStoreListResponse, FavoriteStoreOfferListResponse, FavoriteStoreOfferResponse, FavoriteStoreResponse, FieldAcquisitionEntitlementPage, FieldAdmissionResponse, FieldFinancialSummaryResponse, JoiningCaseListResponse, JoiningCaseResponse, MarkOrderConversationReadRequest, MediaProvenanceInput, MultiStoreCheckoutRequest, MultiStoreCheckoutResponse, NotificationListResponse, NotificationReadResponse, OrderAdjustmentDecisionRequest, OrderAdjustmentProposalRequest, OrderConversationMessageResponse, OrderConversationReadResponse, OrderConversationResponse, OrderListResponse, OrderRatingResponse, OrderResponse, OrderTrackingResponse, OrderTransitionRequest, PartnerAccessibleStorePage, PartnerFinancialSummaryResponse, PartnerStoreOperationalAvailabilityMutationResponse, PartnerStoreOperationalAvailabilityResponse, PayoutRequest, PromotionListResponse, PublicCatalogResponse, PublicCatalogSearchResponse, PublicStoreOrderabilityResponse, PublicStoreView, PublishedStoreListResponse, ReplaceCatalogProductMediaRequest, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, SetStoreFulfillmentModesRequest, StoreAccessGrantListResponse, StoreAccessGrantMutationResponse, StoreAccessGrantTransitionRequest, StoreAccessInvitationCreateRequest, StoreAccessInvitationDecisionRequest, StoreAccessPermission, StoreCaptainDispatchRequest, StoreCaptainInvitationResponse, StoreCaptainMembershipListResponse, StoreCaptainMembershipResponse, StoreCaptainMembershipTransitionRequest, StoreDeliveryOriginResponse, StoreFulfillmentModesResponse, StoreOperationalAvailabilityRequest, UpdateCartLineRequest, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateDeliveryAddressRequest, UpsertCartLineRequest } from "./generated/dsh-types";
+import type { AcceptStoreCaptainInvitationRequest, BeneficiaryFundingIntentResponse, BeneficiaryPayoutStateResponse, BeneficiaryWalletResponse, CaptainAdmissionResponse, CaptainAssignmentListResponse, CaptainAssignmentResponse, CaptainAvailabilityRequest, CaptainCashRemittanceRequest, CaptainCashRemittanceResponse, CaptainCompletionRequest, CaptainDeliveryTaskResponse, CaptainLocationResponse, CaptainOfferDecisionRequest, CaptainOfferListResponse, CaptainOfferResponse, CartResponse, CashInFundingIntent, CashLiabilityResponse, CatalogAttributeEnumOptionListResponse, CatalogAttributeRuleListResponse, CatalogCategoryListResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposal, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogStorefrontSectionResponse, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogVariantResponse, CheckoutQuoteResponse, CheckoutRequest, ClientOpenCartListResponse, CommerceVerticalListResponse, CommercialStoreTypeListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, CreateJoiningCaseRequest, CreateOrderConversationMessageRequest, CreateOrderRatingRequest, DeliveryAddressListResponse, DeliveryAddressResponse, DeliveryProofResponse, DiscoveryContentEventRequest, DiscoveryContentListResponse, DiscoveryContentTargetResolution, FavoriteStoreListResponse, FavoriteStoreOfferListResponse, FavoriteStoreOfferResponse, FavoriteStoreResponse, FieldAcquisitionEntitlementPage, FieldAdmissionResponse, FieldFinancialSummaryResponse, JoiningCaseListResponse, JoiningCaseResponse, MarkOrderConversationReadRequest, MediaProvenanceInput, MultiStoreCheckoutRequest, MultiStoreCheckoutResponse, NotificationListResponse, NotificationReadResponse, OrderAdjustmentDecisionRequest, OrderAdjustmentProposalRequest, OrderConversationMessageResponse, OrderConversationReadResponse, OrderConversationResponse, OrderListResponse, OrderRatingResponse, OrderResponse, OrderTrackingResponse, OrderTransitionRequest, PartnerAccessibleStorePage, PartnerFinancialSummaryResponse, PartnerStoreOperationalAvailabilityMutationResponse, PartnerStoreOperationalAvailabilityResponse, PayoutRequest, PromotionListResponse, PublicCatalogResponse, PublicCatalogSearchResponse, PublicStoreOrderabilityResponse, PublicStoreView, PublishedStoreListResponse, ReplaceCatalogProductMediaRequest, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, SetStoreFulfillmentModesRequest, StoreAccessGrantListResponse, StoreAccessGrantMutationResponse, StoreAccessGrantTransitionRequest, StoreAccessInvitationCreateRequest, StoreAccessInvitationDecisionRequest, StoreAccessPermission, StoreCaptainDispatchRequest, StoreCaptainInvitationResponse, StoreCaptainMembershipListResponse, StoreCaptainMembershipResponse, StoreCaptainMembershipTransitionRequest, StoreDeliveryOriginResponse, StoreFulfillmentModesResponse, StoreOperationalAvailabilityRequest, UpdateCartLineRequest, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateDeliveryAddressRequest, UpsertCartLineRequest } from "./generated/dsh-types";
 
 export type DshMobileClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -34,6 +35,14 @@ export type DshNativeMultipartUpload = (request: Readonly<{
 export type DshImageUploadInput = Readonly<{
   uri: string;
   name?: string;
+  type?: string;
+  blob?: Blob;
+  nativeMultipartUpload?: DshNativeMultipartUpload;
+}>;
+
+export type DshCatalogImportFileInput = Readonly<{
+  uri: string;
+  name: string;
   type?: string;
   blob?: Blob;
   nativeMultipartUpload?: DshNativeMultipartUpload;
@@ -497,6 +506,29 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = `${dshOperationPaths.readOwnStoreOffers.path.replace("{storeId}", encodeURIComponent(normalized))}?${params.toString()}`;
       return userRequest<CatalogStoreOfferListResponse>(accessToken, path, dshOperationPaths.readOwnStoreOffers.method);
     },
+    async previewPartnerStoreCatalogImport(accessToken: string, storeID: string, input: DshCatalogImportFileInput, idempotencyKey?: string, correlationID?: string): Promise<CatalogImportPreviewResponse> {
+      const normalizedStore = storeID.trim();
+      if (!normalizedStore || !input.uri.trim() || !validStoreCatalogImportName(input.name)) throw new Error("DSH_STORE_CATALOG_IMPORT_FILE_INVALID");
+      const path = dshOperationPaths.previewPartnerStoreCatalogImport.path.replace("{storeId}", encodeURIComponent(normalizedStore));
+      const type = input.type?.trim() || storeCatalogImportMimeType(input.name);
+      const form = input.nativeMultipartUpload ? undefined : new FormData();
+      if (form) form.append("file", input.blob ?? ({ uri: input.uri.trim(), name: input.name.trim(), type } as unknown as Blob));
+      return userMultipartRequest(accessToken, path, dshOperationPaths.previewPartnerStoreCatalogImport.method, form, mutationHeaders(idempotencyKey, correlationID), input.nativeMultipartUpload, { fieldName: "file", fileName: input.name.trim(), mimeType: type, parameters: {} });
+    },
+    async readPartnerStoreCatalogImport(accessToken: string, storeID: string, runID: string): Promise<CatalogImportRunResponse> {
+      const store = storeID.trim();
+      const run = runID.trim();
+      if (!store || !run) throw new Error("DSH_STORE_CATALOG_IMPORT_SCOPE_INVALID");
+      const path = dshOperationPaths.readPartnerStoreCatalogImport.path.replace("{storeId}", encodeURIComponent(store)).replace("{runId}", encodeURIComponent(run));
+      return userRequest<CatalogImportRunResponse>(accessToken, path, dshOperationPaths.readPartnerStoreCatalogImport.method);
+    },
+    async commitPartnerStoreCatalogImport(accessToken: string, storeID: string, runID: string, idempotencyKey?: string, correlationID?: string): Promise<CatalogImportCommitResponse> {
+      const store = storeID.trim();
+      const run = runID.trim();
+      if (!store || !run) throw new Error("DSH_STORE_CATALOG_IMPORT_SCOPE_INVALID");
+      const path = dshOperationPaths.commitPartnerStoreCatalogImport.path.replace("{storeId}", encodeURIComponent(store)).replace("{runId}", encodeURIComponent(run));
+      return userRequest<CatalogImportCommitResponse>(accessToken, path, dshOperationPaths.commitPartnerStoreCatalogImport.method, undefined, mutationHeaders(idempotencyKey, correlationID));
+    },
     async readFieldStoreCommercialAgreements(accessToken: string, caseID: string): Promise<StoreCommercialAgreementListResponse> {
       const normalized = caseID.trim();
       if (!normalized) throw new Error("DSH_JOINING_CASE_ID_REQUIRED");
@@ -864,6 +896,63 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = `${dshOperationPaths.readFieldJoiningCaseCatalog.path.replace("{caseId}", encodeURIComponent(normalized))}?${params.toString()}`;
       return userRequest<FieldCatalogReadResponse>(accessToken, path, dshOperationPaths.readFieldJoiningCaseCatalog.method);
     },
+    async listFieldCatalogProductProposals(accessToken: string, caseID: string, state: "" | CatalogProductProposal["state"] = "", limit = 50, cursor = ""): Promise<CatalogProductProposalListResponse> {
+      const joiningCase = caseID.trim();
+      const normalizedCursor = cursor.trim();
+      if (!joiningCase || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 || normalizedCursor.length > 2048) throw new Error("DSH_FIELD_CATALOG_PROPOSAL_PAGE_INVALID");
+      const params = new URLSearchParams({ limit: String(limit) });
+      if (state) params.set("state", state);
+      if (normalizedCursor) params.set("cursor", normalizedCursor);
+      const path = `${dshOperationPaths.listFieldCatalogProductProposals.path.replace("{caseId}", encodeURIComponent(joiningCase))}?${params.toString()}`;
+      return userRequest<CatalogProductProposalListResponse>(accessToken, path, dshOperationPaths.listFieldCatalogProductProposals.method);
+    },
+    async createFieldCatalogProductProposal(accessToken: string, caseID: string, input: CreateCatalogProductProposalRequest, idempotencyKey?: string, correlationID?: string): Promise<CatalogProductProposalResponse> {
+      const joiningCase = caseID.trim();
+      const identifierType = input.proposedIdentifierType ?? "";
+      const identifierValue = input.proposedIdentifierValue?.trim() ?? "";
+      if (!joiningCase || !input.id.trim() || !input.verticalId.trim() || !input.categoryId.trim() || !input.proposedName.trim() || !input.proposedVariantTitle.trim() || identifierType === "SKU" || (identifierValue !== "" && !identifierType)) throw new Error("DSH_FIELD_CATALOG_PROPOSAL_INPUT_INVALID");
+      const path = dshOperationPaths.createFieldCatalogProductProposal.path.replace("{caseId}", encodeURIComponent(joiningCase));
+      return userRequest<CatalogProductProposalResponse>(accessToken, path, dshOperationPaths.createFieldCatalogProductProposal.method, input, mutationHeaders(idempotencyKey, correlationID));
+    },
+    async updateFieldCatalogProductProposal(accessToken: string, caseID: string, proposalID: string, input: UpdateCatalogProductProposalRequest, expectedVersion: number, idempotencyKey?: string, correlationID?: string): Promise<CatalogProductProposalResponse> {
+      const joiningCase = caseID.trim();
+      const proposal = proposalID.trim();
+      const identifierType = input.proposedIdentifierType ?? "";
+      const identifierValue = input.proposedIdentifierValue?.trim() ?? "";
+      if (!joiningCase || !proposal || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1 || !input.verticalId.trim() || !input.categoryId.trim() || !input.proposedName.trim() || !input.proposedVariantTitle.trim() || identifierType === "SKU" || (identifierValue !== "" && !identifierType)) throw new Error("DSH_FIELD_CATALOG_PROPOSAL_INPUT_INVALID");
+      const path = dshOperationPaths.updateFieldCatalogProductProposal.path.replace("{caseId}", encodeURIComponent(joiningCase)).replace("{proposalId}", encodeURIComponent(proposal));
+      return userRequest<CatalogProductProposalResponse>(accessToken, path, dshOperationPaths.updateFieldCatalogProductProposal.method, input, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) });
+    },
+    async submitFieldCatalogProductProposal(accessToken: string, caseID: string, proposalID: string, expectedVersion: number, idempotencyKey?: string, correlationID?: string): Promise<CatalogProductProposalResponse> {
+      const joiningCase = caseID.trim();
+      const proposal = proposalID.trim();
+      if (!joiningCase || !proposal || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1) throw new Error("DSH_FIELD_CATALOG_PROPOSAL_INPUT_INVALID");
+      const path = dshOperationPaths.submitFieldCatalogProductProposal.path.replace("{caseId}", encodeURIComponent(joiningCase)).replace("{proposalId}", encodeURIComponent(proposal));
+      return userRequest<CatalogProductProposalResponse>(accessToken, path, dshOperationPaths.submitFieldCatalogProductProposal.method, undefined, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) });
+    },
+    async previewFieldStoreCatalogImport(accessToken: string, caseID: string, input: DshCatalogImportFileInput, idempotencyKey?: string, correlationID?: string): Promise<CatalogImportPreviewResponse> {
+      const normalizedCase = caseID.trim();
+      if (!normalizedCase || !input.uri.trim() || !validStoreCatalogImportName(input.name)) throw new Error("DSH_FIELD_CATALOG_IMPORT_FILE_INVALID");
+      const path = dshOperationPaths.previewFieldStoreCatalogImport.path.replace("{caseId}", encodeURIComponent(normalizedCase));
+      const type = input.type?.trim() || storeCatalogImportMimeType(input.name);
+      const form = input.nativeMultipartUpload ? undefined : new FormData();
+      if (form) form.append("file", input.blob ?? ({ uri: input.uri.trim(), name: input.name.trim(), type } as unknown as Blob));
+      return userMultipartRequest(accessToken, path, dshOperationPaths.previewFieldStoreCatalogImport.method, form, mutationHeaders(idempotencyKey, correlationID), input.nativeMultipartUpload, { fieldName: "file", fileName: input.name.trim(), mimeType: type, parameters: {} });
+    },
+    async readFieldStoreCatalogImport(accessToken: string, caseID: string, runID: string): Promise<CatalogImportRunResponse> {
+      const joiningCase = caseID.trim();
+      const run = runID.trim();
+      if (!joiningCase || !run) throw new Error("DSH_FIELD_CATALOG_IMPORT_SCOPE_INVALID");
+      const path = dshOperationPaths.readFieldStoreCatalogImport.path.replace("{caseId}", encodeURIComponent(joiningCase)).replace("{runId}", encodeURIComponent(run));
+      return userRequest<CatalogImportRunResponse>(accessToken, path, dshOperationPaths.readFieldStoreCatalogImport.method);
+    },
+    async commitFieldStoreCatalogImport(accessToken: string, caseID: string, runID: string, idempotencyKey?: string, correlationID?: string): Promise<CatalogImportCommitResponse> {
+      const joiningCase = caseID.trim();
+      const run = runID.trim();
+      if (!joiningCase || !run) throw new Error("DSH_FIELD_CATALOG_IMPORT_SCOPE_INVALID");
+      const path = dshOperationPaths.commitFieldStoreCatalogImport.path.replace("{caseId}", encodeURIComponent(joiningCase)).replace("{runId}", encodeURIComponent(run));
+      return userRequest<CatalogImportCommitResponse>(accessToken, path, dshOperationPaths.commitFieldStoreCatalogImport.method, undefined, mutationHeaders(idempotencyKey, correlationID));
+    },
     async resolveFieldCatalogIdentifier(accessToken: string, caseID: string, identifierValue: string): Promise<CatalogIdentifierResolveResponse> {
       const normalizedCase = caseID.trim();
       const normalizedIdentifier = identifierValue.trim();
@@ -1138,4 +1227,13 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       return userRequest<ServiceabilityResponse>(accessToken, dshOperationPaths.evaluateServiceability.path, dshOperationPaths.evaluateServiceability.method, { storeId: normalizedStore, addressId: normalizedAddress });
     },
   };
+}
+
+function validStoreCatalogImportName(filename: string): boolean {
+  const normalized = filename.trim().toLowerCase();
+  return normalized.length > 0 && normalized.length <= 255 && (normalized.endsWith(".csv") || normalized.endsWith(".xlsx"));
+}
+
+function storeCatalogImportMimeType(filename: string): string {
+  return filename.trim().toLowerCase().endsWith(".xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "text/csv";
 }

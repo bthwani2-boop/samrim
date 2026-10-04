@@ -174,7 +174,7 @@ export function StoreCommercialAgreementWorkspace() {
       if (!response.ok || body.commercialStoreTypeId !== agreement.commercialStoreTypeId || !Array.isArray(body.defaults)) throw new Error(errorMessage(body));
       setDefaults(body as StoreTypeCommissionDefaultsResponse);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "تعذر تحميل قيم العمولة المرجعية.");
+      setError(cause instanceof Error ? cause.message : "تعذر تحميل النسب المقترحة للمقارنة.");
     } finally {
       setBusy(null);
     }
@@ -364,7 +364,7 @@ export function StoreCommercialAgreementWorkspace() {
         <p className="muted">هذه قيم WLT المقترحة للنوع {defaults.commercialStoreTypeId} وإصداراتها، للمرجع فقط.</p>
         <ul>{storeCommercialAgreementModes.map(({ key, label }) => {
           const item = defaults.defaults.find((entry) => entry.fulfillmentMode === key);
-          return <li key={key}>{label}: {item ? `${formatPercent(item.suggestedCommissionRateBps)} (${item.suggestedCommissionRateBps} نقطة أساس) · الإصدار ${item.defaultVersion}` : "لا توجد قيمة افتراضية"}</li>;
+          return <li key={key}>{label}: {item ? `مقترح ${formatPercent(item.suggestedCommissionRateBps)} (${item.suggestedCommissionRateBps} نقطة أساس) · الإصدار ${item.defaultVersion}` : "لا يوجد مقترح لهذا الوضع"}</li>;
         })}</ul>
         {defaults.defaults.filter((item) => item.changedByActorId || item.changeReason).map((item) => <p className="muted" key={item.fulfillmentMode}>{modeLabel(item.fulfillmentMode)} · عدلها {item.changedByActorId || "غير معروف"}{item.changeReason ? ` · ${item.changeReason}` : ""}</p>)}
       </> : null}

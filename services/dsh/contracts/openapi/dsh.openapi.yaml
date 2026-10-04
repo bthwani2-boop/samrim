@@ -156,6 +156,9 @@ paths:
   /dsh/catalog/imports/preview:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1imports~1preview"
 
+  /dsh/catalog/store-imports/preview:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1store-imports~1preview"
+
   /dsh/catalog/identifiers/resolve:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1identifiers~1resolve"
 
@@ -174,14 +177,47 @@ paths:
   /dsh/field/joining-cases/{caseId}/catalog/offers/{offerId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1catalog~1offers~1{offerId}"
 
+  /dsh/field/joining-cases/{caseId}/catalog/imports/preview:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1catalog~1imports~1preview"
+
+  /dsh/field/joining-cases/{caseId}/catalog/product-proposals:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1catalog~1product-proposals"
+
+  /dsh/field/joining-cases/{caseId}/catalog/product-proposals/{proposalId}/submit:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1catalog~1product-proposals~1{proposalId}~1submit"
+
+  /dsh/field/joining-cases/{caseId}/catalog/product-proposals/{proposalId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1catalog~1product-proposals~1{proposalId}"
+
   /dsh/catalog/imports/{runId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1imports~1{runId}"
 
   /dsh/catalog/imports/{runId}/commit:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1imports~1{runId}~1commit"
 
+  /dsh/catalog/store-imports/{runId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1store-imports~1{runId}"
+
+  /dsh/catalog/store-imports/{runId}/commit:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1store-imports~1{runId}~1commit"
+
+  /dsh/field/joining-cases/{caseId}/catalog/imports/{runId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1catalog~1imports~1{runId}"
+
+  /dsh/field/joining-cases/{caseId}/catalog/imports/{runId}/commit:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1catalog~1imports~1{runId}~1commit"
+
   /dsh/stores/{storeId}/offers:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1offers"
+
+  /dsh/stores/{storeId}/catalog/imports/preview:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1catalog~1imports~1preview"
+
+  /dsh/stores/{storeId}/catalog/imports/{runId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1catalog~1imports~1{runId}"
+
+  /dsh/stores/{storeId}/catalog/imports/{runId}/commit:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1catalog~1imports~1{runId}~1commit"
 
   /dsh/stores/{storeId}/offers/{offerId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1offers~1{offerId}"
@@ -434,9 +470,6 @@ paths:
 
   /dsh/operator/partners/{partnerActorId}/commission-remittances:
     $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1commission-remittances"
-
-  /dsh/operator/commercial-store-type-commission-policies:
-    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1commercial-store-type-commission-policies"
 
   /dsh/me/payout-state:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1me~1payout-state"
@@ -1159,7 +1192,6 @@ components:
         firstStoreCommercialTypeId:
           type: string
           nullable: true
-          nullable: true
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
         firstStoreLatitude:
           type: number
@@ -1379,7 +1411,6 @@ components:
         firstStoreCommercialTypeId:
           type: string
           nullable: true
-          nullable: true
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
         firstStoreLatitude:
           type: number
@@ -1454,7 +1485,6 @@ components:
           type: string
         firstStoreCommercialTypeId:
           type: string
-          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
         firstStoreLatitude:
           type: number
@@ -2755,7 +2785,7 @@ components:
           type: string
         classification:
           type: string
-          enum: [READY, DUPLICATE_INPUT, DUPLICATE_EXISTING, CONFLICT_EXISTING, INVALID_INPUT, IMPORTED, REPLAYED, FAILED]
+          enum: [READY, NEEDS_REVIEW, DUPLICATE_INPUT, DUPLICATE_EXISTING, CONFLICT_EXISTING, INVALID_INPUT, IMPORTED, REPLAYED, FAILED]
         productId:
           type: string
           nullable: true
@@ -2881,7 +2911,7 @@ components:
 
     StoreCommercialAgreement:
       type: object
-      required: [agreementId, storeId, partnerActorId, agreementVersion, status, rates, proposedByActorId, proposedAt, partnerAcceptedByActorId, partnerAcceptedAt, financeApprovedByActorId, financeApprovedAt, effectiveAt, supersededAt, reason]
+      required: [agreementId, storeId, partnerActorId, agreementVersion, status, rates, proposedByActorId, proposedAt, partnerAcceptedByActorId, partnerAcceptedAt, financeApprovedByActorId, financeApprovedAt, financeDecisionByActorId, financeDecisionAt, financeDecisionReason, effectiveAt, supersededAt, reason]
       additionalProperties: false
       properties:
         agreementId:
@@ -2929,6 +2959,16 @@ components:
           nullable: true
         reason:
           type: string
+        financeDecisionByActorId:
+          type: string
+          nullable: true
+        financeDecisionAt:
+          type: string
+          format: date-time
+          nullable: true
+        financeDecisionReason:
+          type: string
+          nullable: true
 
     StoreCommercialAgreementListResponse:
       type: object
@@ -3000,7 +3040,7 @@ components:
 
     FinanceStoreCommercialAgreement:
       type: object
-      required: [agreementId, storeId, partnerActorId, agreementVersion, status, rates, proposedByActorId, proposedAt, partnerAcceptedByActorId, partnerAcceptedAt, financeApprovedByActorId, financeApprovedAt, effectiveAt, supersededAt, reason, storeName, commercialStoreTypeId, fulfillmentModes, currentStoreOwnerActorId, matchesCurrentFulfillmentModes]
+      required: [agreementId, storeId, partnerActorId, agreementVersion, status, rates, proposedByActorId, proposedAt, partnerAcceptedByActorId, partnerAcceptedAt, financeApprovedByActorId, financeApprovedAt, financeDecisionByActorId, financeDecisionAt, financeDecisionReason, effectiveAt, supersededAt, reason, storeName, commercialStoreTypeId, fulfillmentModes, currentStoreOwnerActorId, matchesCurrentFulfillmentModes]
       additionalProperties: false
       properties:
         agreementId:
@@ -3061,6 +3101,16 @@ components:
           type: string
         matchesCurrentFulfillmentModes:
           type: boolean
+        financeDecisionByActorId:
+          type: string
+          nullable: true
+        financeDecisionAt:
+          type: string
+          format: date-time
+          nullable: true
+        financeDecisionReason:
+          type: string
+          nullable: true
 
     FinanceStoreCommercialAgreementQueueResponse:
       type: object
@@ -3076,7 +3126,7 @@ components:
 
     StoreTypeCommissionDefault:
       type: object
-      required: [commercialStoreTypeId, fulfillmentMode, suggestedCommissionRateBps, defaultVersion]
+      required: [commercialStoreTypeId, fulfillmentMode, suggestedCommissionRateBps, defaultVersion, updatedAt]
       additionalProperties: false
       properties:
         commercialStoreTypeId:
@@ -3091,6 +3141,9 @@ components:
         defaultVersion:
           type: integer
           minimum: 1
+        updatedAt:
+          type: string
+          format: date-time
         changedByActorId:
           type: string
         changeReason:
@@ -3107,6 +3160,36 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/StoreTypeCommissionDefault"
+
+    UpdateStoreTypeCommissionDefaultRequest:
+      type: object
+      required: [fulfillmentMode, suggestedCommissionRateBps, expectedDefaultVersion, reason]
+      additionalProperties: false
+      properties:
+        fulfillmentMode:
+          type: string
+          enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP]
+        suggestedCommissionRateBps:
+          type: integer
+          minimum: 0
+          maximum: 10000
+        expectedDefaultVersion:
+          type: integer
+          minimum: 0
+        reason:
+          type: string
+          minLength: 8
+          maxLength: 500
+
+    StoreTypeCommissionDefaultUpdateResponse:
+      type: object
+      required: [default, idempotentReplay]
+      additionalProperties: false
+      properties:
+        default:
+          $ref: "#/components/schemas/StoreTypeCommissionDefault"
+        idempotentReplay:
+          type: boolean
 
     CatalogImportPreviewResponse:
       type: object
@@ -3277,13 +3360,22 @@ components:
 
     CatalogProductProposal:
       type: object
-      required: [id, partnerActorId, verticalId, categoryId, proposedName, proposedVariantTitle, proposedMeasurementKind, proposedBaseUnit, state, version, createdAt, updatedAt]
+      required: [id, submitterRole, submitterActorId, verticalId, categoryId, proposedName, proposedVariantTitle, proposedMeasurementKind, proposedBaseUnit, state, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
           type: string
         partnerActorId:
           type: string
+          nullable: true
+        submitterRole:
+          type: string
+          enum: [PARTNER, FIELD]
+        submitterActorId:
+          type: string
+        joiningCaseId:
+          type: string
+          nullable: true
         verticalId:
           type: string
         categoryId:
@@ -6293,86 +6385,6 @@ components:
       properties:
         remittance:
           $ref: "#/components/schemas/PartnerCommissionRemittance"
-        idempotentReplay:
-          type: boolean
-
-    PartnerStoreCommissionPolicy:
-      type: object
-      additionalProperties: false
-      required: [commercialStoreTypeId, fulfillmentMode, commissionRateBps, policyVersion, updatedAt]
-      properties:
-        commercialStoreTypeId:
-          type: string
-          minLength: 1
-          maxLength: 128
-        fulfillmentMode:
-          type: string
-          enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP]
-        commissionRateBps:
-          type: integer
-          minimum: 0
-          maximum: 10000
-        policyVersion:
-          type: integer
-          minimum: 1
-        updatedAt:
-          type: string
-          format: date-time
-        changedByActorId:
-          type: string
-          minLength: 1
-          maxLength: 128
-        changeReason:
-          type: string
-          minLength: 8
-          maxLength: 500
-
-    PartnerStoreCommissionPoliciesResponse:
-      type: object
-      additionalProperties: false
-      required: [commercialStoreTypeId, policies]
-      properties:
-        commercialStoreTypeId:
-          type: string
-          minLength: 1
-          maxLength: 128
-        policies:
-          type: array
-          maxItems: 3
-          items:
-            $ref: "#/components/schemas/PartnerStoreCommissionPolicy"
-
-    PartnerStoreCommissionPolicyUpdateRequest:
-      type: object
-      additionalProperties: false
-      required: [commercialStoreTypeId, fulfillmentMode, commissionRateBps, expectedVersion, reason]
-      properties:
-        commercialStoreTypeId:
-          type: string
-          minLength: 1
-          maxLength: 128
-        fulfillmentMode:
-          type: string
-          enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP]
-        commissionRateBps:
-          type: integer
-          minimum: 0
-          maximum: 10000
-        expectedVersion:
-          type: integer
-          minimum: 0
-        reason:
-          type: string
-          minLength: 8
-          maxLength: 500
-
-    PartnerStoreCommissionPolicyUpdateResponse:
-      type: object
-      additionalProperties: false
-      required: [policy, idempotentReplay]
-      properties:
-        policy:
-          $ref: "#/components/schemas/PartnerStoreCommissionPolicy"
         idempotentReplay:
           type: boolean
 

@@ -42,7 +42,7 @@ func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
 	}
 	last := records[len(records)-1]
 	if last.Version != postgres.SchemaVersion || last.Name != "084_store_type_commission_owns_rate.sql" {
-		t.Fatalf("last DSH migration = v%d %q; want v%d 084_store_type_commission_owns_rate.sql", last.Version, last.Name, postgres.SchemaVersion)
+		t.Fatalf("last legacy DSH migration = v%d %q; want v%d 084_store_type_commission_owns_rate.sql", last.Version, last.Name, postgres.SchemaVersion)
 	}
 	migrationByName := make(map[string]string, len(records))
 	for index, record := range records {

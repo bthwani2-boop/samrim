@@ -471,7 +471,7 @@ test("finance and marketing centers expose only real independent resource routes
   await page.goto("/finance");
   await expect(page.getByRole("heading", { name: "المالية", exact: true })).toBeVisible();
   await expect(navigation.getByRole("link", { name: "حفظ النقد", exact: true })).toHaveAttribute("href", "/finance/cash-custody");
-  await expect(navigation.getByRole("link", { name: "عمولات المتاجر", exact: true })).toHaveAttribute("href", "/finance/partner-store-commissions");
+  await expect(navigation.getByRole("link", { name: "اتفاقات المتاجر", exact: true })).toHaveAttribute("href", "/finance/partner-store-commissions");
 
   await page.goto("/finance/cash-custody");
   await expect(page.getByRole("heading", { name: "حفظ النقد", exact: true })).toBeVisible();

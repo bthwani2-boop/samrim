@@ -16,6 +16,13 @@ func (s *CatalogServer) registerFieldCatalog(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/catalog/products", s.createFieldInitialCatalogProduct)
 	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/catalog/offers", s.createFieldInitialCatalogOffer)
 	mux.HandleFunc("PATCH /dsh/field/joining-cases/{caseId}/catalog/offers/{offerId}", s.updateFieldInitialCatalogOffer)
+	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/catalog/imports/preview", s.previewFieldStoreCatalogImport)
+	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}/catalog/imports/{runId}", s.readFieldStoreCatalogImport)
+	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/catalog/imports/{runId}/commit", s.commitFieldStoreCatalogImport)
+	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}/catalog/product-proposals", s.listFieldProductProposals)
+	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/catalog/product-proposals", s.createFieldProductProposal)
+	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/catalog/product-proposals/{proposalId}/submit", s.submitFieldProductProposal)
+	mux.HandleFunc("PATCH /dsh/field/joining-cases/{caseId}/catalog/product-proposals/{proposalId}", s.updateFieldProductProposal)
 }
 
 func (s *CatalogServer) resolvePartnerCatalogIdentifier(w http.ResponseWriter, r *http.Request) {

@@ -164,3 +164,16 @@ func TestStoreAgreementFinanceDecisionMigrationBackfillsAndFreezesCanonicalFacts
 		}
 	}
 }
+
+func TestOfficialWalletIdentityStaleTransitionMigrationAllowsCanonicalSuspensionAudit(t *testing.T) {
+	directory := filepath.Join("..", "..", "..", "..", "database", "migrations")
+	data, err := os.ReadFile(filepath.Join(directory, "041_official_wallet_identity_stale_transition.sql"))
+	if err != nil {
+		t.Fatalf("read official wallet stale transition migration: %v", err)
+	}
+	sql := string(data)
+	if !strings.Contains(sql, "DROP CONSTRAINT official_wallet_destination_transitions_operation_chk") ||
+		!strings.Contains(sql, "CHECK (operation IN ('VERIFY', 'ACTIVATE', 'IDENTITY_STALE'))") {
+		t.Fatal("official wallet stale transition migration must retain existing operations and permit the system stale audit event")
+	}
+}

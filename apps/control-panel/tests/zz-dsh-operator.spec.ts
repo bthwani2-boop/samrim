@@ -33,7 +33,11 @@ function isPrivateWindowsFixtureDirectory(directory: string): boolean {
     throw new Error(`Windows fixture ACL inspection failed (${code})`);
   }
 
-  const entries = output.split(/\r?\n/).flatMap((line) => {
+  const entries = output.split(/\r?\n/).flatMap((rawLine) => {
+    const directoryOffset = rawLine.toLowerCase().indexOf(directory.toLowerCase());
+    const line = directoryOffset < 0
+      ? rawLine
+      : rawLine.slice(directoryOffset + directory.length).trim();
     const separator = line.indexOf(":");
     if (separator < 1) return [];
     const permissions = line.slice(separator + 1).trim();

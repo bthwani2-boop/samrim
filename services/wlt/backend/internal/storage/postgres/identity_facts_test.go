@@ -79,6 +79,29 @@ func TestIdentityFactsFingerprintBindsCanonicalIdentityAndVersions(t *testing.T)
 	}
 }
 
+func TestDestinationIdentitySnapshotStateAllowsOnlyExplicitLifecycleGate(t *testing.T) {
+	cases := []struct {
+		name               string
+		status             string
+		verificationStatus string
+		requireActive      bool
+		want               bool
+	}{
+		{name: "pending candidate can be independently verified", status: "CANDIDATE", verificationStatus: "PENDING_VERIFICATION", want: true},
+		{name: "verified destination can be approved", status: "PENDING_APPROVAL", verificationStatus: "VERIFIED", want: true},
+		{name: "active destination is eligible for payout", status: "ACTIVE_FOR_PAYOUT", verificationStatus: "VERIFIED", requireActive: true, want: true},
+		{name: "pending destination is not eligible for payout", status: "PENDING_APPROVAL", verificationStatus: "VERIFIED", requireActive: true},
+		{name: "candidate is not eligible for payout", status: "CANDIDATE", verificationStatus: "PENDING_VERIFICATION", requireActive: true},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			if got := destinationStateMatchesIdentitySnapshot(test.status, test.verificationStatus, test.requireActive); got != test.want {
+				t.Fatalf("destinationStateMatchesIdentitySnapshot(%q, %q, %t) = %t, want %t", test.status, test.verificationStatus, test.requireActive, got, test.want)
+			}
+		})
+	}
+}
+
 func TestIdentityFactsMustMatchEveryImmutablePayoutSnapshotField(t *testing.T) {
 	facts := validIdentityFactsFixture()
 	snapshot := PayoutSnapshotRecord{

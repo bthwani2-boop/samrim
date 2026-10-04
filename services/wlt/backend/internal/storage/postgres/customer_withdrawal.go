@@ -374,19 +374,25 @@ func AcceptCustomerWithdrawal(ctx context.Context, db *sql.DB, cipher *Destinati
 	if !input.IdentityFacts.validFor("customer", customerID) || !destinationID.Valid || !nameVersion.Valid || !actorVersion.Valid || !roleVersion.Valid || !roleEnabled.Valid || !securityEnabled.Valid || !nameStatus.Valid {
 		return PayoutRequestRecord{}, ErrReverificationRequired
 	}
+	var destinationVersion, destinationIdentityVersion int
+	var providerKey, verificationStatus, destinationStatus string
+	if err := tx.QueryRowContext(ctx, `SELECT version,beneficiary_identity_version,provider_key,verification_status,status FROM wlt.official_wallet_destinations WHERE id=$1 AND actor_type='customer' AND actor_id=$2 FOR UPDATE`, destinationID.String, customerID).Scan(&destinationVersion, &destinationIdentityVersion, &providerKey, &verificationStatus, &destinationStatus); err != nil {
+		return PayoutRequestRecord{}, ErrReverificationRequired
+	}
+	if providerKey != intakeProvider || destinationIdentityVersion < 1 {
+		return PayoutRequestRecord{}, ErrReverificationRequired
+	}
+	if err := input.IdentityFacts.matchesStoredDestination(ctx, tx, cipher, destinationID.String, "customer", customerID, true); err != nil {
+		return PayoutRequestRecord{}, commitIdentityStaleness(tx, err)
+	}
+	if verificationStatus != "VERIFIED" || destinationStatus != "ACTIVE_FOR_PAYOUT" {
+		return PayoutRequestRecord{}, ErrReverificationRequired
+	}
 	phone, err := cipher.decrypt(phoneCipher)
 	if err != nil {
 		return PayoutRequestRecord{}, err
 	}
 	if !input.IdentityFacts.matchesSnapshot(phone, beneficiaryName, int(nameVersion.Int64), int(actorVersion.Int64), int(roleVersion.Int64), roleEnabled.Bool, securityEnabled.Bool, nameStatus.String) {
-		return PayoutRequestRecord{}, ErrReverificationRequired
-	}
-	var destinationVersion, destinationIdentityVersion int
-	var providerKey, verificationStatus, destinationStatus string
-	if err := tx.QueryRowContext(ctx, `SELECT version,beneficiary_identity_version,provider_key,verification_status,status FROM wlt.official_wallet_destinations WHERE id=$1 AND actor_type='customer' AND actor_id=$2 FOR SHARE`, destinationID.String, customerID).Scan(&destinationVersion, &destinationIdentityVersion, &providerKey, &verificationStatus, &destinationStatus); err != nil {
-		return PayoutRequestRecord{}, ErrReverificationRequired
-	}
-	if providerKey != intakeProvider || verificationStatus != "VERIFIED" || destinationStatus != "ACTIVE_FOR_PAYOUT" || destinationIdentityVersion < 1 || input.IdentityFacts.matchesStoredDestination(ctx, tx, cipher, destinationID.String, "customer", customerID, true) != nil {
 		return PayoutRequestRecord{}, ErrReverificationRequired
 	}
 	requestHash := hashFacts("ops-customer-manual-withdrawal-v2", input.IntakeID, customerID, destinationID.String, formatInt(destinationVersion), input.ActorID, input.Reason, input.IdentityFacts.fingerprint())

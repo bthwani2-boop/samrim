@@ -285,7 +285,7 @@ func PreparePayout(ctx context.Context, db *sql.DB, cipher *DestinationCipher, i
 	}
 	var currentDestinationID string
 	var currentDestinationVersion int
-	if err := tx.QueryRowContext(ctx, "SELECT id,version FROM wlt.official_wallet_destinations WHERE actor_type=$1 AND actor_id=$2 AND verification_status='VERIFIED' AND status='ACTIVE_FOR_PAYOUT' FOR SHARE", payout.ActorType, payout.ActorID).Scan(&currentDestinationID, &currentDestinationVersion); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT id,version FROM wlt.official_wallet_destinations WHERE actor_type=$1 AND actor_id=$2 AND verification_status='VERIFIED' AND status='ACTIVE_FOR_PAYOUT' FOR UPDATE", payout.ActorType, payout.ActorID).Scan(&currentDestinationID, &currentDestinationVersion); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return PayoutRequestRecord{}, ErrReverificationRequired
 		}
@@ -295,7 +295,7 @@ func PreparePayout(ctx context.Context, db *sql.DB, cipher *DestinationCipher, i
 		return PayoutRequestRecord{}, ErrReverificationRequired
 	}
 	if err := input.IdentityFacts.matchesStoredDestination(ctx, tx, cipher, currentDestinationID, payout.ActorType, payout.ActorID, true); err != nil {
-		return PayoutRequestRecord{}, ErrReverificationRequired
+		return PayoutRequestRecord{}, commitIdentityStaleness(tx, err)
 	}
 	if found, payoutID, _, err := existingPayoutAudit(ctx, tx, "PAYOUT_PREPARED", input.IdempotencyKey, hash); err != nil {
 		return PayoutRequestRecord{}, err
@@ -420,11 +420,14 @@ func transitionPayout(ctx context.Context, db *sql.DB, cipher *DestinationCipher
 		}
 		var currentDestinationID string
 		var currentDestinationVersion int
-		if err := tx.QueryRowContext(ctx, "SELECT id,version FROM wlt.official_wallet_destinations WHERE actor_type=$1 AND actor_id=$2 AND verification_status='VERIFIED' AND status='ACTIVE_FOR_PAYOUT' FOR SHARE", payout.ActorType, payout.ActorID).Scan(&currentDestinationID, &currentDestinationVersion); err != nil {
+		if err := tx.QueryRowContext(ctx, "SELECT id,version FROM wlt.official_wallet_destinations WHERE actor_type=$1 AND actor_id=$2 AND verification_status='VERIFIED' AND status='ACTIVE_FOR_PAYOUT' FOR UPDATE", payout.ActorType, payout.ActorID).Scan(&currentDestinationID, &currentDestinationVersion); err != nil {
 			return PayoutRequestRecord{}, ErrReverificationRequired
 		}
-		if currentDestinationID != payout.DestinationID || currentDestinationVersion != payout.DestinationVersion || facts.matchesStoredDestination(ctx, tx, cipher, currentDestinationID, payout.ActorType, payout.ActorID, true) != nil {
+		if currentDestinationID != payout.DestinationID || currentDestinationVersion != payout.DestinationVersion {
 			return PayoutRequestRecord{}, ErrReverificationRequired
+		}
+		if err := facts.matchesStoredDestination(ctx, tx, cipher, currentDestinationID, payout.ActorType, payout.ActorID, true); err != nil {
+			return PayoutRequestRecord{}, commitIdentityStaleness(tx, err)
 		}
 		var snapshot PayoutSnapshotRecord
 		if err := scanPayoutSnapshot(ctx, tx, payoutID, &snapshot); err != nil {
@@ -507,7 +510,7 @@ func CreateSettlementBatch(ctx context.Context, db *sql.DB, input CreateSettleme
 	}
 	factHashes, err := requireIdentityFactsForSnapshots(ctx, tx, input.DestinationCipher, input.IdentityFactsByBeneficiary, snapshots)
 	if err != nil {
-		return SettlementBatchRecord{}, err
+		return SettlementBatchRecord{}, commitIdentityStaleness(tx, err)
 	}
 	hashParts := []string{"settlement-batch", provider, currency}
 	hashParts = append(hashParts, ids...)
@@ -629,7 +632,7 @@ func transitionBatch(ctx context.Context, db *sql.DB, eventType string, input Ba
 	}
 	factHashes, err := requireIdentityFactsForSnapshots(ctx, tx, input.DestinationCipher, input.IdentityFactsByBeneficiary, snapshots)
 	if err != nil {
-		return SettlementBatchRecord{}, err
+		return SettlementBatchRecord{}, commitIdentityStaleness(tx, err)
 	}
 	hashParts := []string{strings.ToLower(eventType), input.BatchID, input.ActorID, input.Reason}
 	hashParts = append(hashParts, factHashes...)
@@ -702,6 +705,7 @@ func readSettlementBatchSnapshots(ctx context.Context, source interface {
 
 func requireIdentityFactsForSnapshots(ctx context.Context, source interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }, cipher *DestinationCipher, factsList []IdentityFacts, snapshots []PayoutSnapshotRecord) ([]string, error) {
 	if cipher == nil || len(snapshots) == 0 || len(factsList) == 0 {
 		return nil, ErrReverificationRequired
@@ -742,15 +746,18 @@ func requireIdentityFactsForSnapshots(ctx context.Context, source interface {
 			return nil, ErrReverificationRequired
 		}
 		snapshot := required[key]
-		if !snapshot.matchesIdentityFacts(facts) {
-			return nil, ErrReverificationRequired
-		}
 		var destinationID string
 		var destinationVersion int
-		if err := source.QueryRowContext(ctx, `SELECT id,version FROM wlt.official_wallet_destinations WHERE actor_type=$1 AND actor_id=$2 AND verification_status='VERIFIED' AND status='ACTIVE_FOR_PAYOUT' FOR SHARE`, key.actorType, key.actorID).Scan(&destinationID, &destinationVersion); err != nil {
+		if err := source.QueryRowContext(ctx, `SELECT id,version FROM wlt.official_wallet_destinations WHERE actor_type=$1 AND actor_id=$2 AND verification_status='VERIFIED' AND status='ACTIVE_FOR_PAYOUT' FOR UPDATE`, key.actorType, key.actorID).Scan(&destinationID, &destinationVersion); err != nil {
 			return nil, ErrReverificationRequired
 		}
-		if destinationID != snapshot.DestinationID || destinationVersion != snapshot.DestinationVersion || facts.matchesStoredDestination(ctx, source, cipher, destinationID, key.actorType, key.actorID, true) != nil {
+		if destinationID != snapshot.DestinationID || destinationVersion != snapshot.DestinationVersion {
+			return nil, ErrReverificationRequired
+		}
+		if err := facts.matchesStoredDestination(ctx, source, cipher, destinationID, key.actorType, key.actorID, true); err != nil {
+			return nil, err
+		}
+		if !snapshot.matchesIdentityFacts(facts) {
 			return nil, ErrReverificationRequired
 		}
 		hashes = append(hashes, facts.fingerprint())

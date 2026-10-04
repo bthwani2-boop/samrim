@@ -31,6 +31,7 @@ function createSamrimMetroConfig(projectRoot) {
   );
   const { FileStore } = require(fileStorePath);
   const config = getDefaultConfig(absolute);
+  config.resolver.unstable_enablePackageExports = true;
   config.cacheStores = [new FileStore({ root: getSamrimMetroCacheRoot(absolute) })];
   return config;
 }

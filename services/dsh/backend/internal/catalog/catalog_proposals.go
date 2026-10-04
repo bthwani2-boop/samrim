@@ -17,6 +17,8 @@ func (s *Service) CreateProductProposal(ctx context.Context, accessToken string,
 		return postgres.CatalogProductProposalResult{}, err
 	}
 	normalized.PartnerActorID = identity.Subject
+	normalized.SubmitterRole = "PARTNER"
+	normalized.SubmitterActorID = identity.Subject
 	return postgres.CreateCatalogProductProposal(ctx, s.db, normalized, strings.TrimSpace(idempotencyKey), postgres.HashCatalogProductProposalCreateRequest(normalized), identity.Subject, strings.TrimSpace(correlationID))
 }
 
@@ -44,7 +46,7 @@ func (s *Service) SubmitProductProposal(ctx context.Context, accessToken, propos
 	if err != nil {
 		return postgres.CatalogProductProposalResult{}, err
 	}
-	if proposal.PartnerActorID != identity.Subject {
+	if proposal.SubmitterRole != "PARTNER" || proposal.SubmitterActorID != identity.Subject {
 		return postgres.CatalogProductProposalResult{}, ErrStoreOwnershipForbidden
 	}
 	requestHash := postgres.HashCatalogProductProposalTransitionRequest(proposalID, expectedVersion)
@@ -60,7 +62,7 @@ func (s *Service) UpdateProductProposal(ctx context.Context, accessToken, propos
 	if err != nil {
 		return postgres.CatalogProductProposalResult{}, err
 	}
-	if proposal.PartnerActorID != identity.Subject {
+	if proposal.SubmitterRole != "PARTNER" || proposal.SubmitterActorID != identity.Subject {
 		return postgres.CatalogProductProposalResult{}, ErrStoreOwnershipForbidden
 	}
 	input.ID = proposal.ID
@@ -69,8 +71,75 @@ func (s *Service) UpdateProductProposal(ctx context.Context, accessToken, propos
 		return postgres.CatalogProductProposalResult{}, err
 	}
 	normalized.PartnerActorID = identity.Subject
+	normalized.SubmitterRole = "PARTNER"
+	normalized.SubmitterActorID = identity.Subject
 	requestHash := postgres.HashCatalogProductProposalUpdateRequest(proposal.ID, normalized, expectedVersion)
 	return postgres.UpdateCatalogProductProposal(ctx, s.db, proposal.ID, normalized, expectedVersion, strings.TrimSpace(idempotencyKey), requestHash, identity.Subject, strings.TrimSpace(correlationID))
+}
+
+func (s *Service) CreateFieldProductProposal(ctx context.Context, accessToken, joiningCaseID string, input postgres.CatalogProductProposalInput, idempotencyKey, correlationID string) (postgres.CatalogProductProposalResult, error) {
+	identity, scope, err := s.requireFieldCatalog(ctx, accessToken, joiningCaseID)
+	if err != nil {
+		return postgres.CatalogProductProposalResult{}, err
+	}
+	input.VerticalID = scope.VerticalID
+	normalized, err := normalizeProductProposalInput(input)
+	if err != nil {
+		return postgres.CatalogProductProposalResult{}, err
+	}
+	normalized.SubmitterRole = "FIELD"
+	normalized.SubmitterActorID = identity
+	normalized.JoiningCaseID = scope.JoiningCaseID
+	return postgres.CreateCatalogProductProposal(ctx, s.db, normalized, strings.TrimSpace(idempotencyKey), postgres.HashCatalogProductProposalCreateRequest(normalized), identity, strings.TrimSpace(correlationID))
+}
+
+func (s *Service) ListFieldProductProposals(ctx context.Context, accessToken, joiningCaseID, state string, limit int, cursor string) (postgres.CatalogProductProposalPage, error) {
+	identity, scope, err := s.requireFieldCatalog(ctx, accessToken, joiningCaseID)
+	if err != nil {
+		return postgres.CatalogProductProposalPage{}, err
+	}
+	return postgres.ListCatalogProductProposalsForField(ctx, s.db, identity, scope.JoiningCaseID, strings.TrimSpace(state), limit, strings.TrimSpace(cursor))
+}
+
+func (s *Service) SubmitFieldProductProposal(ctx context.Context, accessToken, joiningCaseID, proposalID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.CatalogProductProposalResult, error) {
+	identity, scope, err := s.requireFieldCatalog(ctx, accessToken, joiningCaseID)
+	if err != nil {
+		return postgres.CatalogProductProposalResult{}, err
+	}
+	proposal, err := postgres.ReadCatalogProductProposal(ctx, s.db, proposalID)
+	if err != nil {
+		return postgres.CatalogProductProposalResult{}, err
+	}
+	if proposal.SubmitterRole != "FIELD" || proposal.SubmitterActorID != identity || proposal.JoiningCaseID != scope.JoiningCaseID {
+		return postgres.CatalogProductProposalResult{}, ErrStoreOwnershipForbidden
+	}
+	requestHash := postgres.HashCatalogProductProposalTransitionRequest(proposalID, expectedVersion)
+	return postgres.SubmitCatalogProductProposal(ctx, s.db, strings.TrimSpace(proposalID), expectedVersion, strings.TrimSpace(idempotencyKey), requestHash, identity, strings.TrimSpace(correlationID))
+}
+
+func (s *Service) UpdateFieldProductProposal(ctx context.Context, accessToken, joiningCaseID, proposalID string, input postgres.CatalogProductProposalInput, expectedVersion int, idempotencyKey, correlationID string) (postgres.CatalogProductProposalResult, error) {
+	identity, scope, err := s.requireFieldCatalog(ctx, accessToken, joiningCaseID)
+	if err != nil {
+		return postgres.CatalogProductProposalResult{}, err
+	}
+	proposal, err := postgres.ReadCatalogProductProposal(ctx, s.db, proposalID)
+	if err != nil {
+		return postgres.CatalogProductProposalResult{}, err
+	}
+	if proposal.SubmitterRole != "FIELD" || proposal.SubmitterActorID != identity || proposal.JoiningCaseID != scope.JoiningCaseID {
+		return postgres.CatalogProductProposalResult{}, ErrStoreOwnershipForbidden
+	}
+	input.ID = proposal.ID
+	input.VerticalID = scope.VerticalID
+	normalized, err := normalizeProductProposalInput(input)
+	if err != nil {
+		return postgres.CatalogProductProposalResult{}, err
+	}
+	normalized.SubmitterRole = "FIELD"
+	normalized.SubmitterActorID = identity
+	normalized.JoiningCaseID = scope.JoiningCaseID
+	requestHash := postgres.HashCatalogProductProposalUpdateRequest(proposal.ID, normalized, expectedVersion)
+	return postgres.UpdateCatalogProductProposal(ctx, s.db, proposal.ID, normalized, expectedVersion, strings.TrimSpace(idempotencyKey), requestHash, identity, strings.TrimSpace(correlationID))
 }
 
 func (s *Service) ReviewProductProposal(ctx context.Context, actingActorID, proposalID, state, reason string, expectedVersion int, idempotencyKey, correlationID string) (postgres.CatalogProductProposalResult, error) {

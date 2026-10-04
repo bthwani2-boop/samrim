@@ -22,6 +22,7 @@ func (s *JoiningCaseServer) RegisterStoreCommercialAgreementRoutes(mux *http.Ser
 	mux.HandleFunc("GET /dsh/operator/store-commercial-agreements", s.listFinanceStoreCommercialAgreements)
 	mux.HandleFunc("POST /dsh/operator/stores/{storeId}/commercial-agreements/{agreementId}/decision", s.decideFinanceStoreCommercialAgreement)
 	mux.HandleFunc("GET /dsh/operator/commercial-store-types/{commercialStoreTypeId}/commission-defaults", s.readFinanceStoreCommissionDefaults)
+	mux.HandleFunc("POST /dsh/operator/commercial-store-types/{commercialStoreTypeId}/commission-defaults", s.updateFinanceStoreCommissionDefault)
 }
 
 func (s *JoiningCaseServer) readFieldStoreCommissionDefaults(w http.ResponseWriter, r *http.Request) {
@@ -189,6 +190,33 @@ func (s *JoiningCaseServer) readFinanceStoreCommissionDefaults(w http.ResponseWr
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, defaults)
+}
+
+func (s *JoiningCaseServer) updateFinanceStoreCommissionDefault(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting, correlation, idempotency, ok := requiredMutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input struct {
+		FulfillmentMode            string `json:"fulfillmentMode"`
+		SuggestedCommissionRateBps int    `json:"suggestedCommissionRateBps"`
+		ExpectedDefaultVersion     int    `json:"expectedDefaultVersion"`
+		Reason                     string `json:"reason"`
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.service.UpdateStoreTypeCommissionDefaultForFinance(r.Context(), r.PathValue("commercialStoreTypeId"), acting, input.FulfillmentMode, input.SuggestedCommissionRateBps, input.ExpectedDefaultVersion, input.Reason, idempotency, correlation)
+	if err != nil {
+		writeStoreCommercialAgreementError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *JoiningCaseServer) decideFinanceStoreCommercialAgreement(w http.ResponseWriter, r *http.Request) {

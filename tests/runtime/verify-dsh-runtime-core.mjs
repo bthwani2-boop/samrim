@@ -241,8 +241,8 @@ if (!actingOperatorID) console.log(`DSH_OPERATOR_CANDIDATES=${sql("SELECT COALES
 if (!actingOperatorID) actingOperatorID = sql("SELECT b.initial_operator_actor_id FROM identity_bootstrap_state b JOIN identity_actor_roles r ON r.actor_id=b.initial_operator_actor_id AND r.role='operator' JOIN identity_actors a ON a.id=r.actor_id WHERE b.id=1 AND r.enabled AND a.security_enabled AND r.activated_at IS NOT NULL");
 if (!actingOperatorID) {
   const bootstrapped = await request(identityBase, "POST", "/internal/bootstrap/operator", { token: bootstrapToken, body: { phoneE164: `+9677${crypto.randomInt(10_000_000, 99_999_999)}`, role: "operator" } });
-  if (bootstrapped.status !== 201 || !bootstrapped.body?.actorId) fail("operator bootstrap failed", JSON.stringify(bootstrapped));
-  actingOperatorID = String(bootstrapped.body.actorId);
+  if (bootstrapped.status !== 201 || !bootstrapped.body?.role?.actorId) fail("operator bootstrap failed", JSON.stringify(bootstrapped));
+  actingOperatorID = String(bootstrapped.body.role.actorId);
 }
 if (!actingOperatorID.startsWith("act_")) fail("acting operator identity is invalid", actingOperatorID);
 const platformPoliciesAccess = await request(identityBase, "GET", `/internal/operators/${encodeURIComponent(actingOperatorID)}/permissions/platform_policies`, { token: identityDshToken });
@@ -541,7 +541,7 @@ async function createApprovedPartner(phone, name, serviceCityId, origin = "contr
   if (approved.status !== 200 || approved.body?.case?.state !== "approved" || approved.body?.case?.financialProfileState !== "ACTIVE" || approved.body?.case?.settlementPeriod !== "MONTHLY" || typeof approved.body?.case?.financialProfileId !== "string" || approved.body?.case?.firstStoreCommercialTypeId !== partnerCommercialStoreTypeID || approved.body?.case?.store?.primaryVerticalId !== partnerVerticalID || approved.body?.case?.store?.commercialStoreTypeId !== partnerCommercialStoreTypeID || approved.body?.case?.store?.deliveryOrigin?.latitude !== firstStoreOrigin.firstStoreLatitude || approved.body?.case?.store?.deliveryOrigin?.longitude !== firstStoreOrigin.firstStoreLongitude) fail("joining case approval did not bind financial terms and transfer the fixed store origin", JSON.stringify(approved));
   let activeAgreement = null;
   if (fieldOrigin) {
-    activeAgreement = await activateStoreCommercialAgreement(caseID, storeID, actorID, accessToken, approved.body?.case?.store?.fulfillmentModes ?? fulfillmentModes, partnerCommercialStoreTypeID);
+    activeAgreement = await activateStoreCommercialAgreement(caseID, storeID, actorID, accessToken, fieldActorID, fieldAccessToken, approved.body?.case?.store?.fulfillmentModes ?? fulfillmentModes, partnerCommercialStoreTypeID);
   }
   return { accessToken, actorID, caseID, storeID, activeAgreement };
 }
@@ -575,7 +575,7 @@ async function ensureCommissionDefault(commercialStoreTypeID, fulfillmentMode, s
   return defaultRecord;
 }
 
-async function activateStoreCommercialAgreement(caseID, storeID, partnerActorID, partnerAccessToken, fulfillmentModes, commercialStoreTypeID) {
+async function activateStoreCommercialAgreement(caseID, storeID, partnerActorID, partnerAccessToken, fieldActorID, fieldAccessToken, fulfillmentModes, commercialStoreTypeID) {
   for (const mode of fulfillmentModes) await ensureCommissionDefault(commercialStoreTypeID, mode, 1500);
   const wltAgreementsPath = "/wlt/v1/store-commercial-agreements";
   const wltRead = await request(wltBase, "GET", `${wltAgreementsPath}?storeId=${encodeURIComponent(storeID)}`, { token: wltToken });
@@ -1114,7 +1114,7 @@ const secondPickupModesHeaders = serviceHeaders(actingOperatorID, secondPickupMo
 const secondPickupModes = await request(dshBase, "POST", secondPickupModesPath, { token: dshToken, headers: secondPickupModesHeaders, body: secondPickupModesBody });
 const secondPickupModesReplay = await request(dshBase, "POST", secondPickupModesPath, { token: dshToken, headers: secondPickupModesHeaders, body: secondPickupModesBody });
 if (secondPickupModes.status !== 200 || secondPickupModes.body?.storeId !== second.storeID || secondPickupModes.body?.fulfillmentModes?.join(",") !== "BTHWANI_CAPTAIN,CUSTOMER_PICKUP" || secondPickupModes.body?.version !== publishB.body.store.version + 1 || secondPickupModesReplay.status !== 200 || secondPickupModesReplay.body?.idempotentReplay !== true || secondPickupModesReplay.body?.version !== secondPickupModes.body.version) fail("second store fulfillment modes did not enable pickup with a stable idempotent version", JSON.stringify({ secondPickupModes, secondPickupModesReplay, publishB }));
-const secondPickupAgreement = await activateStoreCommercialAgreement(second.caseID, second.storeID, second.actorID, second.accessToken, secondPickupModes.body.fulfillmentModes, commercialStoreTypeID);
+const secondPickupAgreement = await activateStoreCommercialAgreement(second.caseID, second.storeID, second.actorID, second.accessToken, fieldActorID, fieldAccessToken, secondPickupModes.body.fulfillmentModes, commercialStoreTypeID);
 if (secondPickupAgreement.agreementVersion !== 2 || secondPickupAgreement.rates?.length !== 2 || !secondPickupAgreement.rates.some((rate) => rate.fulfillmentMode === "CUSTOMER_PICKUP")) fail("updated Store modes did not receive a new active Partner and Finance agreement version", JSON.stringify(secondPickupAgreement));
 const expectedFieldEntitlementMinor = fieldAcquisitionRewardMinor * 2;
 const fieldSummaryDeadline = Date.now() + 95_000;
@@ -1831,6 +1831,17 @@ const fieldPayoutApproved = await request(dshBase, "POST", `/dsh/joining-cases/$
 const fieldPayoutStoreID = String(fieldPayoutApproved.body?.case?.store?.id || "");
 const fieldPayoutPartnerActorID = String(fieldPayoutApproved.body?.case?.partnerActorId || "");
 const fieldPayoutPartnerAccessToken = await activatePartner(fieldPayoutPhone, `FPay${suffix.slice(0, 4)}`);
+const fieldPayoutAgreement = await activateStoreCommercialAgreement(
+  fieldPayoutCaseID,
+  fieldPayoutStoreID,
+  fieldPayoutPartnerActorID,
+  fieldPayoutPartnerAccessToken,
+  secondFieldActorID,
+  secondFieldAccessToken,
+  fieldPayoutApproved.body?.case?.store?.fulfillmentModes ?? ["BTHWANI_CAPTAIN"],
+  String(fieldPayoutApproved.body?.case?.store?.commercialStoreTypeId || ""),
+);
+if (fieldPayoutAgreement.status !== "ACTIVE" || fieldPayoutAgreement.rates?.length !== 1 || fieldPayoutAgreement.rates[0]?.fulfillmentMode !== "BTHWANI_CAPTAIN") fail("Field payout fixture did not activate the required Store-specific agreement before Go-Live", JSON.stringify(fieldPayoutAgreement));
 const fieldPayoutOffer = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(fieldPayoutStoreID)}/offers`, { token: fieldPayoutPartnerAccessToken, headers: partnerHeaders(`field-payout-offer-${suffix}`), body: discreteCreateOffer(variantID, 1250) });
 const fieldPayoutOfferID = String(fieldPayoutOffer.body?.offer?.offerId || "");
 const fieldPayoutOfferPublished = await request(dshBase, "PATCH", `/dsh/stores/${encodeURIComponent(fieldPayoutStoreID)}/offers/${encodeURIComponent(fieldPayoutOfferID)}`, { token: fieldPayoutPartnerAccessToken, headers: partnerHeaders(`field-payout-offer-publish-${suffix}`, 1), body: discreteOffer(1250, "published") });

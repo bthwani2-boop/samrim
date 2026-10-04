@@ -1790,7 +1790,7 @@ func writePartnerCashCommissionError(w http.ResponseWriter, err error) {
 	case errors.Is(err, postgres.ErrPartnerCashCommissionExists):
 		writeError(w, http.StatusConflict, "COMMISSION_EXISTS", "the store cash commission is already recorded")
 	case errors.Is(err, postgres.ErrPartnerCommissionSnapshotMissing):
-		writeError(w, http.StatusConflict, "COMMISSION_SNAPSHOT_MISSING", "this order has no immutable commission policy snapshot")
+		writeError(w, http.StatusConflict, "COMMISSION_SNAPSHOT_MISSING", "this order has no immutable commission snapshot")
 	case errors.Is(err, postgres.ErrPartnerRemittanceOverpayment):
 		writeError(w, http.StatusConflict, "REMITTANCE_EXCEEDS_RECEIVABLE", "remittance exceeds the outstanding Partner commission receivable")
 	case errors.Is(err, postgres.ErrPartnerRemittanceEvidence):
@@ -1862,7 +1862,7 @@ func writePartnerEarningError(w http.ResponseWriter, err error) {
 	case errors.Is(err, postgres.ErrPartnerEarningProfile):
 		writeError(w, http.StatusConflict, "PROFILE_NOT_ACTIVE", "an active partner financial profile is required")
 	case errors.Is(err, postgres.ErrPartnerCommissionSnapshotMissing):
-		writeError(w, http.StatusConflict, "COMMISSION_SNAPSHOT_MISSING", "this order has no immutable commission policy snapshot")
+		writeError(w, http.StatusConflict, "COMMISSION_SNAPSHOT_MISSING", "this order has no immutable commission snapshot")
 	case errors.Is(err, postgres.ErrPartnerEarningExists):
 		writeError(w, http.StatusConflict, "EARNING_EXISTS", "the order earning is already finalized")
 	case errors.Is(err, postgres.ErrLedgerUnbalanced):

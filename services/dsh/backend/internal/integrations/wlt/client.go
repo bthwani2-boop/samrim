@@ -337,6 +337,8 @@ type FieldAcquisitionEntitlement struct {
 	Currency              string `json:"currency"`
 	LedgerTransactionID   string `json:"ledgerTransactionId"`
 	CreatedAt             string `json:"createdAt"`
+	EffectiveAt           string `json:"effectiveAt"`
+	Status                string `json:"status"`
 }
 
 type FieldAcquisitionEntitlementReadback struct {
@@ -728,37 +730,6 @@ type PartnerFinancialTermsPolicy struct {
 	CreatedBy        string  `json:"createdBy"`
 	CreatedAt        string  `json:"createdAt"`
 	RetiredAt        *string `json:"retiredAt"`
-}
-
-type PartnerStoreCommissionPolicy struct {
-	CommercialStoreTypeID string `json:"commercialStoreTypeId"`
-	FulfillmentMode       string `json:"fulfillmentMode"`
-	CommissionRateBps     int    `json:"commissionRateBps"`
-	PolicyVersion         int    `json:"policyVersion"`
-	UpdatedAt             string `json:"updatedAt"`
-	ChangedByActorID      string `json:"changedByActorId,omitempty"`
-	ChangeReason          string `json:"changeReason,omitempty"`
-}
-
-type PartnerStoreCommissionPoliciesResponse struct {
-	CommercialStoreTypeID string                         `json:"commercialStoreTypeId"`
-	Policies              []PartnerStoreCommissionPolicy `json:"policies"`
-}
-
-type PartnerStoreCommissionPolicyResponse struct {
-	Policy           PartnerStoreCommissionPolicy `json:"policy"`
-	IdempotentReplay bool                         `json:"idempotentReplay"`
-}
-
-type PartnerStoreCommissionPolicyUpdate struct {
-	CommercialStoreTypeID string
-	FulfillmentMode       string
-	CommissionRateBps     int
-	ExpectedVersion       int
-	Reason                string
-	IdempotencyKey        string
-	CorrelationID         string
-	ActingActorID         string
 }
 
 type DeliveryFeeQuote struct {
@@ -1785,23 +1756,6 @@ func (c *Client) CreatePartnerFinancialTermsPolicy(ctx context.Context, settleme
 	var response partnerFinancialTermsPolicyResponse
 	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: "/wlt/v1/operator/partner-financial-terms-policy", body: body, idempotencyKey: idempotencyKey, correlationID: correlationID, expectedVersion: 0, actingActorID: actingActorID, target: &response})
 	return response.Policy, response.IdempotentReplay, err
-}
-
-func (c *Client) ReadPartnerStoreCommissionPolicies(ctx context.Context, commercialStoreTypeID string) (PartnerStoreCommissionPoliciesResponse, error) {
-	var response PartnerStoreCommissionPoliciesResponse
-	path := "/wlt/v1/operator/commercial-store-type-commission-policies?commercialStoreTypeId=" + url.QueryEscape(strings.TrimSpace(commercialStoreTypeID))
-	err := c.request(ctx, http.MethodGet, path, nil, "", "", 0, &response)
-	return response, err
-}
-
-func (c *Client) UpdatePartnerStoreCommissionPolicy(ctx context.Context, input PartnerStoreCommissionPolicyUpdate) (PartnerStoreCommissionPolicyResponse, error) {
-	body := map[string]any{
-		"commercialStoreTypeId": strings.TrimSpace(input.CommercialStoreTypeID), "fulfillmentMode": strings.TrimSpace(input.FulfillmentMode),
-		"commissionRateBps": input.CommissionRateBps, "expectedVersion": input.ExpectedVersion, "reason": strings.TrimSpace(input.Reason),
-	}
-	var response PartnerStoreCommissionPolicyResponse
-	err := c.requestWithActor(ctx, actorRequest{method: http.MethodPost, path: "/wlt/v1/operator/commercial-store-type-commission-policies", body: body, idempotencyKey: input.IdempotencyKey, correlationID: input.CorrelationID, expectedVersion: 0, actingActorID: input.ActingActorID, target: &response})
-	return response, err
 }
 
 func (c *Client) CreateDeliveryFeePolicy(ctx context.Context, policy DeliveryFeePolicy, expectedVersion int, reason, idempotencyKey, correlationID, actingActorID string) (DeliveryFeePolicy, bool, error) {

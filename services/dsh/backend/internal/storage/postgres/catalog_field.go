@@ -25,6 +25,7 @@ type CatalogIdentifierResolution struct {
 	ProductName      string
 	VariantTitle     string
 	MeasurementKind  string
+	BaseUnit         string
 	PublicationState string
 }
 
@@ -106,7 +107,7 @@ func ResolveCatalogIdentifier(ctx context.Context, db *sql.DB, storeID, identifi
 	}
 	rows, err := db.QueryContext(ctx, `
 		SELECT identifier.identifier_type,product.id,variant.id,product.scope,product.store_id,product.canonical_name,variant.title,
-		       variant.measurement_kind,offer.id,COALESCE(offer.publication_state,'')
+	       variant.measurement_kind,variant.base_unit,offer.id,COALESCE(offer.publication_state,'')
 		FROM dsh.catalog_variant_identifiers identifier
 		JOIN dsh.catalog_product_variants variant ON variant.id=identifier.variant_id
 		JOIN dsh.catalog_products product ON product.id=variant.product_id
@@ -126,7 +127,7 @@ func ResolveCatalogIdentifier(ctx context.Context, db *sql.DB, storeID, identifi
 		var identifierType string
 		var productStoreID sql.NullString
 		var offerID, publicationState sql.NullString
-		if err = rows.Scan(&identifierType, &item.ProductID, &item.VariantID, &item.Scope, &productStoreID, &item.ProductName, &item.VariantTitle, &item.MeasurementKind, &offerID, &publicationState); err != nil {
+		if err = rows.Scan(&identifierType, &item.ProductID, &item.VariantID, &item.Scope, &productStoreID, &item.ProductName, &item.VariantTitle, &item.MeasurementKind, &item.BaseUnit, &offerID, &publicationState); err != nil {
 			return CatalogIdentifierResolution{}, err
 		}
 		item.StoreID = storeID

@@ -20,25 +20,27 @@ var (
 )
 
 type CatalogProductProposalRecord struct {
-	ID, PartnerActorID, VerticalID, CategoryID      string
-	ProposedName, ProposedVariantTitle              string
-	ProposedBrand                                   *string
-	ProposedMeasurementKind, ProposedBaseUnit       string
-	ProposedIdentifierType, ProposedIdentifierValue *string
-	AttributeValues, VariantAttributeValues         []CatalogAttributeValueInput
-	State                                           string
-	CorrectionReason, ReviewedBy                    *string
-	Version                                         int
-	CreatedAt, UpdatedAt                            time.Time
+	ID, PartnerActorID, SubmitterRole, SubmitterActorID, JoiningCaseID string
+	VerticalID, CategoryID                                             string
+	ProposedName, ProposedVariantTitle                                 string
+	ProposedBrand                                                      *string
+	ProposedMeasurementKind, ProposedBaseUnit                          string
+	ProposedIdentifierType, ProposedIdentifierValue                    *string
+	AttributeValues, VariantAttributeValues                            []CatalogAttributeValueInput
+	State                                                              string
+	CorrectionReason, ReviewedBy                                       *string
+	Version                                                            int
+	CreatedAt, UpdatedAt                                               time.Time
 }
 
 type CatalogProductProposalInput struct {
-	ID, PartnerActorID, VerticalID, CategoryID      string
-	ProposedName, ProposedVariantTitle              string
-	ProposedBrand                                   *string
-	ProposedMeasurementKind, ProposedBaseUnit       string
-	ProposedIdentifierType, ProposedIdentifierValue *string
-	AttributeValues, VariantAttributeValues         []CatalogAttributeValueInput
+	ID, PartnerActorID, SubmitterRole, SubmitterActorID, JoiningCaseID string
+	VerticalID, CategoryID                                             string
+	ProposedName, ProposedVariantTitle                                 string
+	ProposedBrand                                                      *string
+	ProposedMeasurementKind, ProposedBaseUnit                          string
+	ProposedIdentifierType, ProposedIdentifierValue                    *string
+	AttributeValues, VariantAttributeValues                            []CatalogAttributeValueInput
 }
 
 type CatalogProductProposalResult struct {
@@ -58,6 +60,20 @@ type catalogProductProposalCursor struct {
 	PartnerActorID string    `json:"partnerActorId,omitempty"`
 	CreatedAt      time.Time `json:"createdAt"`
 	ProposalID     string    `json:"proposalId"`
+}
+
+func validCatalogProductProposalOwner(input CatalogProductProposalInput) bool {
+	role := strings.ToUpper(strings.TrimSpace(input.SubmitterRole))
+	actorID := strings.TrimSpace(input.SubmitterActorID)
+	partnerActorID := strings.TrimSpace(input.PartnerActorID)
+	joiningCaseID := strings.TrimSpace(input.JoiningCaseID)
+	if actorID == "" {
+		return false
+	}
+	if role == "PARTNER" {
+		return partnerActorID == actorID && joiningCaseID == ""
+	}
+	return role == "FIELD" && partnerActorID == "" && joiningCaseID != ""
 }
 
 func encodeCatalogProductProposalCursor(cursor catalogProductProposalCursor) (string, error) {
@@ -85,7 +101,7 @@ func decodeCatalogProductProposalCursor(raw, scope, state, partnerActorID string
 
 func HashCatalogProductProposalCreateRequest(input CatalogProductProposalInput) string {
 	attributeFacts, _ := json.Marshal(struct{ Product, Variant []CatalogAttributeValueInput }{input.AttributeValues, input.VariantAttributeValues})
-	return hashFacts("proposal-create", input.ID, input.PartnerActorID, input.VerticalID, input.CategoryID, input.ProposedName, input.ProposedVariantTitle, optionalProductFact(input.ProposedBrand), input.ProposedMeasurementKind, input.ProposedBaseUnit, optionalProductFact(input.ProposedIdentifierType), optionalProductFact(input.ProposedIdentifierValue), string(attributeFacts))
+	return hashFacts("proposal-create", input.ID, strings.ToUpper(strings.TrimSpace(input.SubmitterRole)), strings.TrimSpace(input.SubmitterActorID), strings.TrimSpace(input.JoiningCaseID), input.VerticalID, input.CategoryID, input.ProposedName, input.ProposedVariantTitle, optionalProductFact(input.ProposedBrand), input.ProposedMeasurementKind, input.ProposedBaseUnit, optionalProductFact(input.ProposedIdentifierType), optionalProductFact(input.ProposedIdentifierValue), string(attributeFacts))
 }
 
 func HashCatalogProductProposalTransitionRequest(proposalID string, expectedVersion int) string {
@@ -94,7 +110,7 @@ func HashCatalogProductProposalTransitionRequest(proposalID string, expectedVers
 
 func HashCatalogProductProposalUpdateRequest(proposalID string, input CatalogProductProposalInput, expectedVersion int) string {
 	attributeFacts, _ := json.Marshal(struct{ Product, Variant []CatalogAttributeValueInput }{input.AttributeValues, input.VariantAttributeValues})
-	return hashFacts("proposal-update", proposalID, input.PartnerActorID, input.VerticalID, input.CategoryID, input.ProposedName, input.ProposedVariantTitle, optionalProductFact(input.ProposedBrand), input.ProposedMeasurementKind, input.ProposedBaseUnit, optionalProductFact(input.ProposedIdentifierType), optionalProductFact(input.ProposedIdentifierValue), string(attributeFacts), strconv.Itoa(expectedVersion))
+	return hashFacts("proposal-update", proposalID, strings.ToUpper(strings.TrimSpace(input.SubmitterRole)), strings.TrimSpace(input.SubmitterActorID), strings.TrimSpace(input.JoiningCaseID), input.VerticalID, input.CategoryID, input.ProposedName, input.ProposedVariantTitle, optionalProductFact(input.ProposedBrand), input.ProposedMeasurementKind, input.ProposedBaseUnit, optionalProductFact(input.ProposedIdentifierType), optionalProductFact(input.ProposedIdentifierValue), string(attributeFacts), strconv.Itoa(expectedVersion))
 }
 
 func HashCatalogProductProposalReviewRequest(proposalID, state, reason string, expectedVersion int) string {
@@ -102,9 +118,13 @@ func HashCatalogProductProposalReviewRequest(proposalID, state, reason string, e
 }
 
 func CreateCatalogProductProposal(ctx context.Context, db *sql.DB, input CatalogProductProposalInput, idempotencyKey, requestHash, actingActorID, correlationID string) (CatalogProductProposalResult, error) {
-	if strings.TrimSpace(input.ID) == "" || strings.TrimSpace(input.PartnerActorID) == "" || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
+	if strings.TrimSpace(input.ID) == "" || !validCatalogProductProposalOwner(input) || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
 		return CatalogProductProposalResult{}, ErrCatalogProposalInvalid
 	}
+	input.SubmitterRole = strings.ToUpper(strings.TrimSpace(input.SubmitterRole))
+	input.SubmitterActorID = strings.TrimSpace(input.SubmitterActorID)
+	input.JoiningCaseID = strings.TrimSpace(input.JoiningCaseID)
+	input.PartnerActorID = strings.TrimSpace(input.PartnerActorID)
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return CatalogProductProposalResult{}, err
@@ -151,7 +171,8 @@ func CreateCatalogProductProposal(ctx context.Context, db *sql.DB, input Catalog
 	if err != nil {
 		return CatalogProductProposalResult{}, err
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO dsh.catalog_product_proposals(id,partner_actor_id,vertical_id,category_id,proposed_name,proposed_brand,proposed_variant_title,proposed_measurement_kind,proposed_base_unit,proposed_identifier_type,proposed_identifier_value,proposed_attribute_values,proposed_variant_attribute_values) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, input.ID, input.PartnerActorID, input.VerticalID, input.CategoryID, input.ProposedName, input.ProposedBrand, input.ProposedVariantTitle, input.ProposedMeasurementKind, input.ProposedBaseUnit, input.ProposedIdentifierType, input.ProposedIdentifierValue, productAttributeValues, variantAttributeValues); err != nil {
+	if _, err = tx.ExecContext(ctx, `INSERT INTO dsh.catalog_product_proposals(id,partner_actor_id,submitter_role,submitter_actor_id,joining_case_id,vertical_id,category_id,proposed_name,proposed_brand,proposed_variant_title,proposed_measurement_kind,proposed_base_unit,proposed_identifier_type,proposed_identifier_value,proposed_attribute_values,proposed_variant_attribute_values)
+		VALUES($1,NULLIF($2,''),$3,$4,NULLIF($5,''),$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`, input.ID, input.PartnerActorID, input.SubmitterRole, input.SubmitterActorID, input.JoiningCaseID, input.VerticalID, input.CategoryID, input.ProposedName, input.ProposedBrand, input.ProposedVariantTitle, input.ProposedMeasurementKind, input.ProposedBaseUnit, input.ProposedIdentifierType, input.ProposedIdentifierValue, productAttributeValues, variantAttributeValues); err != nil {
 		return CatalogProductProposalResult{}, err
 	}
 	proposal, err := readCatalogProductProposalTx(ctx, tx, input.ID)
@@ -171,15 +192,26 @@ func CreateCatalogProductProposal(ctx context.Context, db *sql.DB, input Catalog
 }
 
 func readCatalogProductProposalTx(ctx context.Context, source rowQueryer, proposalID string) (CatalogProductProposalRecord, error) {
+	return scanCatalogProductProposal(source.QueryRowContext(ctx, `SELECT id,partner_actor_id,submitter_role,submitter_actor_id,joining_case_id,vertical_id,category_id,proposed_name,proposed_brand,proposed_variant_title,proposed_measurement_kind,proposed_base_unit,proposed_identifier_type,proposed_identifier_value,proposed_attribute_values,proposed_variant_attribute_values,state,correction_reason,reviewed_by,version,created_at,updated_at FROM dsh.catalog_product_proposals WHERE id=$1`, proposalID))
+}
+
+func scanCatalogProductProposal(row rowScanner) (CatalogProductProposalRecord, error) {
 	var item CatalogProductProposalRecord
 	var brand, identifierType, identifierValue, correction, reviewed sql.NullString
+	var partnerActorID, joiningCaseID sql.NullString
 	var productAttributeValues, variantAttributeValues []byte
-	err := source.QueryRowContext(ctx, `SELECT id,partner_actor_id,vertical_id,category_id,proposed_name,proposed_brand,proposed_variant_title,proposed_measurement_kind,proposed_base_unit,proposed_identifier_type,proposed_identifier_value,proposed_attribute_values,proposed_variant_attribute_values,state,correction_reason,reviewed_by,version,created_at,updated_at FROM dsh.catalog_product_proposals WHERE id=$1`, proposalID).Scan(&item.ID, &item.PartnerActorID, &item.VerticalID, &item.CategoryID, &item.ProposedName, &brand, &item.ProposedVariantTitle, &item.ProposedMeasurementKind, &item.ProposedBaseUnit, &identifierType, &identifierValue, &productAttributeValues, &variantAttributeValues, &item.State, &correction, &reviewed, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+	err := row.Scan(&item.ID, &partnerActorID, &item.SubmitterRole, &item.SubmitterActorID, &joiningCaseID, &item.VerticalID, &item.CategoryID, &item.ProposedName, &brand, &item.ProposedVariantTitle, &item.ProposedMeasurementKind, &item.ProposedBaseUnit, &identifierType, &identifierValue, &productAttributeValues, &variantAttributeValues, &item.State, &correction, &reviewed, &item.Version, &item.CreatedAt, &item.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CatalogProductProposalRecord{}, ErrCatalogProposalNotFound
 	}
 	if err != nil {
 		return CatalogProductProposalRecord{}, err
+	}
+	if partnerActorID.Valid {
+		item.PartnerActorID = partnerActorID.String
+	}
+	if joiningCaseID.Valid {
+		item.JoiningCaseID = joiningCaseID.String
 	}
 	item.ProposedBrand = nullableString(brand)
 	item.ProposedIdentifierType = nullableString(identifierType)
@@ -201,7 +233,7 @@ func ReadCatalogProductProposal(ctx context.Context, db *sql.DB, proposalID stri
 
 func UpdateCatalogProductProposal(ctx context.Context, db *sql.DB, proposalID string, input CatalogProductProposalInput, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string) (CatalogProductProposalResult, error) {
 	proposalID = strings.TrimSpace(proposalID)
-	if proposalID == "" || strings.TrimSpace(input.PartnerActorID) == "" || expectedVersion < 1 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
+	if proposalID == "" || !validCatalogProductProposalOwner(input) || expectedVersion < 1 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
 		return CatalogProductProposalResult{}, ErrCatalogProposalInvalid
 	}
 	tx, err := db.BeginTx(ctx, nil)
@@ -232,13 +264,13 @@ func UpdateCatalogProductProposal(ctx context.Context, db *sql.DB, proposalID st
 	}
 	var currentState string
 	var currentVersion int
-	var currentPartner string
-	if err = tx.QueryRowContext(ctx, "SELECT state,version,partner_actor_id FROM dsh.catalog_product_proposals WHERE id=$1 FOR UPDATE", proposalID).Scan(&currentState, &currentVersion, &currentPartner); errors.Is(err, sql.ErrNoRows) {
+	var currentRole, currentActor, currentCase string
+	if err = tx.QueryRowContext(ctx, "SELECT state,version,submitter_role,submitter_actor_id,COALESCE(joining_case_id,'') FROM dsh.catalog_product_proposals WHERE id=$1 FOR UPDATE", proposalID).Scan(&currentState, &currentVersion, &currentRole, &currentActor, &currentCase); errors.Is(err, sql.ErrNoRows) {
 		return CatalogProductProposalResult{}, ErrCatalogProposalNotFound
 	} else if err != nil {
 		return CatalogProductProposalResult{}, err
 	}
-	if currentPartner != input.PartnerActorID || currentVersion != expectedVersion || (currentState != "draft" && currentState != "needs_correction") {
+	if currentRole != strings.ToUpper(strings.TrimSpace(input.SubmitterRole)) || currentActor != strings.TrimSpace(input.SubmitterActorID) || currentCase != strings.TrimSpace(input.JoiningCaseID) || currentVersion != expectedVersion || (currentState != "draft" && currentState != "needs_correction") {
 		return CatalogProductProposalResult{}, ErrCatalogProposalConflict
 	}
 	var verticalActive bool
@@ -285,19 +317,27 @@ func ListCatalogProductProposalsForPartner(ctx context.Context, db *sql.DB, part
 	if partnerActorID == "" {
 		return CatalogProductProposalPage{}, ErrCatalogProposalInvalid
 	}
-	return listCatalogProductProposals(ctx, db, partnerActorID, state, limit, rawCursor, "partner", partnerActorID)
+	return listCatalogProductProposals(ctx, db, "PARTNER", partnerActorID, "", state, limit, rawCursor, "partner", partnerActorID)
+}
+
+func ListCatalogProductProposalsForField(ctx context.Context, db *sql.DB, fieldActorID, joiningCaseID, state string, limit int, rawCursor string) (CatalogProductProposalPage, error) {
+	fieldActorID, joiningCaseID = strings.TrimSpace(fieldActorID), strings.TrimSpace(joiningCaseID)
+	if fieldActorID == "" || joiningCaseID == "" {
+		return CatalogProductProposalPage{}, ErrCatalogProposalInvalid
+	}
+	return listCatalogProductProposals(ctx, db, "FIELD", fieldActorID, joiningCaseID, state, limit, rawCursor, "field:"+joiningCaseID, fieldActorID)
 }
 
 func ListCatalogProductProposalsForReview(ctx context.Context, db *sql.DB, state string, limit int, rawCursor string) (CatalogProductProposalPage, error) {
-	return listCatalogProductProposals(ctx, db, "", state, limit, rawCursor, "review", "")
+	return listCatalogProductProposals(ctx, db, "", "", "", state, limit, rawCursor, "review", "")
 }
 
-func listCatalogProductProposals(ctx context.Context, db *sql.DB, partnerActorID, state string, limit int, rawCursor, scope, cursorPartnerActorID string) (CatalogProductProposalPage, error) {
+func listCatalogProductProposals(ctx context.Context, db *sql.DB, submitterRole, submitterActorID, joiningCaseID, state string, limit int, rawCursor, scope, cursorActorID string) (CatalogProductProposalPage, error) {
 	if limit < 1 || limit > 100 {
 		return CatalogProductProposalPage{}, ErrCatalogProposalInvalid
 	}
 	state = strings.TrimSpace(state)
-	cursor, err := decodeCatalogProductProposalCursor(rawCursor, scope, state, cursorPartnerActorID)
+	cursor, err := decodeCatalogProductProposalCursor(rawCursor, scope, state, cursorActorID)
 	if err != nil {
 		return CatalogProductProposalPage{}, err
 	}
@@ -307,29 +347,19 @@ func listCatalogProductProposals(ctx context.Context, db *sql.DB, partnerActorID
 		cursorCreatedAt = cursor.CreatedAt
 		cursorProposalID = cursor.ProposalID
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id,partner_actor_id,vertical_id,category_id,proposed_name,proposed_brand,proposed_variant_title,proposed_measurement_kind,proposed_base_unit,proposed_identifier_type,proposed_identifier_value,proposed_attribute_values,proposed_variant_attribute_values,state,correction_reason,reviewed_by,version,created_at,updated_at
+	rows, err := db.QueryContext(ctx, `SELECT id,partner_actor_id,submitter_role,submitter_actor_id,joining_case_id,vertical_id,category_id,proposed_name,proposed_brand,proposed_variant_title,proposed_measurement_kind,proposed_base_unit,proposed_identifier_type,proposed_identifier_value,proposed_attribute_values,proposed_variant_attribute_values,state,correction_reason,reviewed_by,version,created_at,updated_at
 		FROM dsh.catalog_product_proposals
-		WHERE ($1='' OR partner_actor_id=$1) AND ($2='' OR state=$2)
-		AND (NOT $5::boolean OR (created_at,id)<($3::timestamptz,$4))
-		ORDER BY created_at DESC,id DESC LIMIT $6`, partnerActorID, state, cursorCreatedAt, cursorProposalID, cursor != nil, limit+1)
+		WHERE ($1='' OR submitter_role=$1) AND ($2='' OR submitter_actor_id=$2) AND ($3='' OR joining_case_id=$3) AND ($4='' OR state=$4)
+		AND (NOT $7::boolean OR (created_at,id)<($5::timestamptz,$6))
+		ORDER BY created_at DESC,id DESC LIMIT $8`, submitterRole, submitterActorID, joiningCaseID, state, cursorCreatedAt, cursorProposalID, cursor != nil, limit+1)
 	if err != nil {
 		return CatalogProductProposalPage{}, err
 	}
 	defer rows.Close()
 	items := make([]CatalogProductProposalRecord, 0)
 	for rows.Next() {
-		var item CatalogProductProposalRecord
-		var brand, identifierType, identifierValue, correction, reviewed sql.NullString
-		var productAttributeValues, variantAttributeValues []byte
-		if err := rows.Scan(&item.ID, &item.PartnerActorID, &item.VerticalID, &item.CategoryID, &item.ProposedName, &brand, &item.ProposedVariantTitle, &item.ProposedMeasurementKind, &item.ProposedBaseUnit, &identifierType, &identifierValue, &productAttributeValues, &variantAttributeValues, &item.State, &correction, &reviewed, &item.Version, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			return CatalogProductProposalPage{}, err
-		}
-		item.ProposedBrand, item.ProposedIdentifierType, item.ProposedIdentifierValue = nullableString(brand), nullableString(identifierType), nullableString(identifierValue)
-		item.CorrectionReason, item.ReviewedBy = nullableString(correction), nullableString(reviewed)
-		if err := json.Unmarshal(productAttributeValues, &item.AttributeValues); err != nil {
-			return CatalogProductProposalPage{}, err
-		}
-		if err := json.Unmarshal(variantAttributeValues, &item.VariantAttributeValues); err != nil {
+		item, err := scanCatalogProductProposal(rows)
+		if err != nil {
 			return CatalogProductProposalPage{}, err
 		}
 		items = append(items, item)
@@ -341,7 +371,7 @@ func listCatalogProductProposals(ctx context.Context, db *sql.DB, partnerActorID
 	if len(items) > limit {
 		page.Proposals = items[:limit]
 		last := page.Proposals[len(page.Proposals)-1]
-		page.NextCursor, err = encodeCatalogProductProposalCursor(catalogProductProposalCursor{Version: 1, Scope: scope, State: state, PartnerActorID: partnerActorID, CreatedAt: last.CreatedAt, ProposalID: last.ID})
+		page.NextCursor, err = encodeCatalogProductProposalCursor(catalogProductProposalCursor{Version: 1, Scope: scope, State: state, PartnerActorID: cursorActorID, CreatedAt: last.CreatedAt, ProposalID: last.ID})
 		if err != nil {
 			return CatalogProductProposalPage{}, err
 		}

@@ -11,7 +11,6 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
@@ -33,14 +32,6 @@ type partnerCommissionRemittanceResponse struct {
 	IdempotentReplay bool                            `json:"idempotentReplay"`
 }
 
-type partnerStoreCommissionPolicyUpdateRequest struct {
-	CommercialStoreTypeID string `json:"commercialStoreTypeId"`
-	FulfillmentMode       string `json:"fulfillmentMode"`
-	CommissionRateBps     int    `json:"commissionRateBps"`
-	ExpectedVersion       int    `json:"expectedVersion"`
-	Reason                string `json:"reason"`
-}
-
 func NewPartnerFinance(identity *identityintegration.Client, accessToken string, payment *wlt.Client, db *sql.DB) (*PartnerFinanceServer, error) {
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
@@ -57,78 +48,6 @@ func (s *PartnerFinanceServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/operator/partner-commission-receivables", s.listOperatorCommissionReceivables)
 	mux.HandleFunc("GET /dsh/operator/partners/{partnerActorId}/financial-summary", s.readOperatorSummary)
 	mux.HandleFunc("POST /dsh/operator/partners/{partnerActorId}/commission-remittances", s.recordCommissionRemittance)
-	mux.HandleFunc("GET /dsh/operator/commercial-store-type-commission-policies", s.readStoreCommissionPolicies)
-	mux.HandleFunc("POST /dsh/operator/commercial-store-type-commission-policies", s.updateStoreCommissionPolicy)
-}
-
-func (s *PartnerFinanceServer) readStoreCommissionPolicies(w http.ResponseWriter, r *http.Request) {
-	if !s.authorizeOperator(w, r) {
-		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
-		return
-	}
-	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if !s.requireOperator(w, r.Context(), acting) {
-		return
-	}
-	if !s.requirePermission(w, r.Context(), acting, "finance") {
-		return
-	}
-	typeID := strings.TrimSpace(r.URL.Query().Get("commercialStoreTypeId"))
-	if _, err := postgres.ReadCommercialStoreType(r.Context(), s.db, typeID); err != nil {
-		writeError(w, http.StatusNotFound, "COMMERCIAL_STORE_TYPE_NOT_FOUND", "commercial store type was not found")
-		return
-	}
-	result, err := s.payment.ReadPartnerStoreCommissionPolicies(r.Context(), typeID)
-	if err != nil {
-		writeWLTFinanceError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
-}
-
-func (s *PartnerFinanceServer) updateStoreCommissionPolicy(w http.ResponseWriter, r *http.Request) {
-	if !s.authorizeOperator(w, r) {
-		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
-		return
-	}
-	acting, correlationID, idempotencyKey, ok := requiredMutationHeaders(w, r)
-	if !ok || !s.requireOperator(w, r.Context(), acting) {
-		return
-	}
-	if !s.requirePermission(w, r.Context(), acting, "finance") {
-		return
-	}
-	var input partnerStoreCommissionPolicyUpdateRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	input.CommercialStoreTypeID = strings.TrimSpace(input.CommercialStoreTypeID)
-	input.FulfillmentMode = strings.TrimSpace(input.FulfillmentMode)
-	input.Reason = strings.TrimSpace(input.Reason)
-	validMode := input.FulfillmentMode == "BTHWANI_CAPTAIN" || input.FulfillmentMode == "PARTNER_CAPTAIN" || input.FulfillmentMode == "CUSTOMER_PICKUP"
-	if _, err := postgres.ReadActiveCommercialStoreType(r.Context(), s.db, input.CommercialStoreTypeID); err != nil {
-		writeError(w, http.StatusNotFound, "COMMERCIAL_STORE_TYPE_NOT_ACTIVE", "active commercial store type is required for policy changes")
-		return
-	}
-	if input.CommercialStoreTypeID == "" || len(input.CommercialStoreTypeID) > 128 || !validMode || input.CommissionRateBps < 0 || input.CommissionRateBps > 10000 || input.ExpectedVersion < 0 || utf8.RuneCountInString(input.Reason) < 8 || utf8.RuneCountInString(input.Reason) > 500 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "commercial store type commission policy fields are invalid")
-		return
-	}
-	result, err := s.payment.UpdatePartnerStoreCommissionPolicy(r.Context(), wlt.PartnerStoreCommissionPolicyUpdate{
-		CommercialStoreTypeID: input.CommercialStoreTypeID,
-		FulfillmentMode:       input.FulfillmentMode,
-		CommissionRateBps:     input.CommissionRateBps,
-		ExpectedVersion:       input.ExpectedVersion,
-		Reason:                input.Reason,
-		IdempotencyKey:        idempotencyKey,
-		CorrelationID:         correlationID,
-		ActingActorID:         acting,
-	})
-	if err != nil {
-		writeWLTFinanceError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *PartnerFinanceServer) readOwnSummary(w http.ResponseWriter, r *http.Request) {

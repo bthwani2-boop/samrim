@@ -2,6 +2,8 @@ import { borders, radius, type resolveTheme, sizing, spacing, toAsciiDigits, typ
 import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type BaseUnit, baseUnitLabel, type CatalogAttributeRule, type CatalogAttributeValueInput, type CatalogCategoryListResponse, type CatalogMedia, type CatalogProduct, type CatalogProductProposal, type CatalogStoreOffer, type CatalogVariant, type CommerceVertical, catalogProductProposalStateLabel, createDshMobileClient, type DshImageUploadInput, isMediaProvenanceInputValid, type MediaProvenanceInput, formatMoney, type MeasurementKind, measurementKindLabel as sharedMeasurementKindLabel, pricingBasisLabel as sharedPricingBasisLabel, quantityPolicyLabel as sharedQuantityPolicyLabel, storeOfferPublicationStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
+import * as DocumentPicker from "expo-document-picker";
+import { MobileStoreCatalogImportWorkspace } from "@bthwani/dsh/mobile/store-catalog-import";
 import * as ImagePicker from "expo-image-picker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, StyleSheet, Switch, Text, TextInput, View } from "react-native";
@@ -571,6 +573,24 @@ const theme = useAppearanceTheme();
       <Text style={styles.title}>كتالوج المتجر وعروضه</Text><Text style={styles.muted}>أدر منتجات هذا المتجر وعروضه.</Text>
       {!catalogReady ? <Text accessibilityRole="alert" style={styles.warning}>قائمة المتجر غير جاهزة للإدارة بعد. تعذرت إضافة المنتجات أو نشر العروض حاليًا؛ تواصل مع الدعم لاستكمال التجهيز.</Text> : null}
       {catalogReady ? <QuickPricesManagement storeId={storeId} verticalId={verticalId} /> : null}
+      {catalogReady ? <MobileStoreCatalogImportWorkspace
+        client={dshClient()}
+        scope={{ kind: "PARTNER", storeID: storeId }}
+        getAccessToken={getUsableIdentityAccessToken}
+        createUUID={() => Crypto.randomUUID()}
+        onCommitted={() => load()}
+        pickFile={async () => {
+          const selected = await DocumentPicker.getDocumentAsync({
+            type: ["text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+            copyToCacheDirectory: true,
+            multiple: false,
+          });
+          if (selected.canceled || !selected.assets[0]) return null;
+          const asset = selected.assets[0];
+          if (asset.size !== undefined && asset.size > 20 * 1024 * 1024) throw new Error("STORE_CATALOG_IMPORT_FILE_TOO_LARGE");
+          return { uri: asset.uri, name: asset.name, ...(asset.mimeType ? { type: asset.mimeType } : {}) };
+        }}
+      /> : null}
        {catalogReady ? <View style={styles.searchRow}><TextInput accessibilityLabel="البحث في الكتالوج" editable={!busy} onChangeText={setQuery} onSubmitEditing={() => void searchProducts()} placeholder="ابحث باسم المنتج" returnKeyType="search" value={query} style={[styles.input, busy && styles.disabledInput]} />{query ? <BthwaniButton accessibilityLabel="مسح البحث" disabled={busy} label="مسح" onPress={() => { ++searchSequence.current; setQuery(""); setProducts([]); setProductNextCursor(""); setSearchSubmitted(false); setError(""); }} style={styles.clearSearch} variant="quiet" /> : null}<BthwaniButton busy={busy} disabled={busy} label="بحث" onPress={() => void searchProducts()} variant="secondary" /></View> : null}
       {searchSubmitted && !products.length && !error ? <Text style={styles.muted}>لا توجد نتائج مطابقة. جرّب اسمًا آخر أو امسح البحث.</Text> : null}
        {catalogReady && products.length ? <><View style={styles.productList}>{products.map((product) => { const primaryMedia = getPrimaryMedia(product.media); return <View key={product.id} style={styles.product}><View style={styles.productHeader}>{primaryMedia ? <Image accessibilityLabel={`صورة ${product.canonicalName}`} source={{ uri: primaryMedia.uri }} resizeMode="cover" style={styles.productImage} /> : <View accessibilityLabel={`لا توجد صورة لـ ${product.canonicalName}`} style={styles.productImagePlaceholder}><Text style={styles.imagePlaceholderText}>لا توجد صورة</Text></View>}<View style={styles.productCopy}><Text style={styles.itemTitle}>{product.canonicalName}</Text><Text style={styles.muted}>{product.variants.length} نسخة متاحة للاختيار</Text></View></View>{product.variants.map((variant) => <BthwaniChip key={variant.id} label={`${variant.title} · ${measurementKindLabel(variant.measurementKind, variant.baseUnit)}`} onPress={() => selectProduct(product, variant)} selected={selectedVariant?.id === variant.id} />)}</View>; })}</View>{productNextCursor ? <BthwaniButton busy={busy} disabled={busy} label="تحميل المزيد من المنتجات" onPress={() => void searchProducts(productNextCursor, true)} variant="secondary" /> : null}</> : null}

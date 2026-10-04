@@ -68,6 +68,9 @@ func (s *catalogRefoundationScenario) verifyFreshSchema(records []postgres.Migra
 		"019_captain_delivery_recovery.sql",
 		"020_field_standing_admission_and_joining_scope.sql",
 		"093_catalog_mixed_scope_and_store_skus.sql",
+		"095_wallet_provider_intent.sql",
+		"096_catalog_product_proposal_field_ownership.sql",
+		"097_store_catalog_import_scope.sql",
 	)
 	if err := postgres.MigrateCanonical(s.ctx, s.db, records, migrationSQL, testDeliveryProofKeyring(s.t)); err != nil {
 		s.t.Fatalf("apply fresh DSH migrations: %v", err)
@@ -476,8 +479,8 @@ func (s *catalogRefoundationScenario) verifyFavorites() {
 func (s *catalogRefoundationScenario) verifyProposalPagination() {
 	s.t.Helper()
 	for index, suffix := range []string{"first", "second"} {
-		if _, err := s.db.ExecContext(s.ctx, `INSERT INTO dsh.catalog_product_proposals(id,partner_actor_id,vertical_id,category_id,proposed_name,proposed_base_unit,created_at)
-			VALUES($1,$2,$3,$4,$5,'COUNT',clock_timestamp()+($6::int * interval '1 second'))`, "proposal_"+suffix, testPartnerActorID, s.verticalID, s.categoryID, "اقتراح "+suffix, index); err != nil {
+		if _, err := s.db.ExecContext(s.ctx, `INSERT INTO dsh.catalog_product_proposals(id,partner_actor_id,submitter_role,submitter_actor_id,vertical_id,category_id,proposed_name,proposed_base_unit,created_at)
+			VALUES($1,$2,'PARTNER',$2,$3,$4,$5,'COUNT',clock_timestamp()+($6::int * interval '1 second'))`, "proposal_"+suffix, testPartnerActorID, s.verticalID, s.categoryID, "اقتراح "+suffix, index); err != nil {
 			s.t.Fatalf("insert catalog proposal fixture %s: %v", suffix, err)
 		}
 	}

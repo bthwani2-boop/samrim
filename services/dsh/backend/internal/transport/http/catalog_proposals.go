@@ -110,6 +110,89 @@ func (s *CatalogServer) updateProductProposal(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, contract.CatalogProductProposalResponse{Proposal: toProductProposal(proposal.Proposal), IdempotentReplay: proposal.Replayed})
 }
 
+func (s *CatalogServer) listFieldProductProposals(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Field session is required")
+		return
+	}
+	limit, ok := proposalLimit(w, r)
+	if !ok {
+		return
+	}
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	if len(cursor) > 2048 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cursor is too long")
+		return
+	}
+	page, err := s.service.ListFieldProductProposals(r.Context(), bearerToken(r), r.PathValue("caseId"), r.URL.Query().Get("state"), limit, cursor)
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CatalogProductProposalListResponse{Proposals: toProductProposals(page.Proposals), NextCursor: page.NextCursor})
+}
+
+func (s *CatalogServer) createFieldProductProposal(w http.ResponseWriter, r *http.Request) {
+	correlation, idempotency, _, ok := requiredPartnerOfferHeaders(w, r, false)
+	if !ok {
+		return
+	}
+	var input catalogProductProposalCreateRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	request := input.CreateCatalogProductProposalRequest
+	proposal, err := s.service.CreateFieldProductProposal(r.Context(), bearerToken(r), r.PathValue("caseId"), postgres.CatalogProductProposalInput{
+		ID: request.ID, VerticalID: request.VerticalID, CategoryID: request.CategoryID, ProposedName: request.ProposedName,
+		ProposedBrand: optionalRequestString(request.ProposedBrand), ProposedVariantTitle: request.ProposedVariantTitle,
+		ProposedMeasurementKind: string(request.ProposedMeasurementKind), ProposedBaseUnit: string(request.ProposedBaseUnit),
+		ProposedIdentifierType: optionalRequestString(request.ProposedIdentifierType), ProposedIdentifierValue: optionalRequestString(request.ProposedIdentifierValue),
+		AttributeValues: catalogAttributeInputs(input.AttributeValues), VariantAttributeValues: catalogAttributeInputs(input.VariantAttributeValues),
+	}, idempotency, correlation)
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, responseStatus(proposal.Replayed), contract.CatalogProductProposalResponse{Proposal: toProductProposal(proposal.Proposal), IdempotentReplay: proposal.Replayed})
+}
+
+func (s *CatalogServer) submitFieldProductProposal(w http.ResponseWriter, r *http.Request) {
+	correlation, idempotency, expected, ok := requiredPartnerOfferHeaders(w, r, true)
+	if !ok {
+		return
+	}
+	proposal, err := s.service.SubmitFieldProductProposal(r.Context(), bearerToken(r), r.PathValue("caseId"), r.PathValue("proposalId"), expected, idempotency, correlation)
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CatalogProductProposalResponse{Proposal: toProductProposal(proposal.Proposal), IdempotentReplay: proposal.Replayed})
+}
+
+func (s *CatalogServer) updateFieldProductProposal(w http.ResponseWriter, r *http.Request) {
+	correlation, idempotency, expected, ok := requiredPartnerOfferHeaders(w, r, true)
+	if !ok {
+		return
+	}
+	var input catalogProductProposalUpdateRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	request := input.UpdateCatalogProductProposalRequest
+	proposal, err := s.service.UpdateFieldProductProposal(r.Context(), bearerToken(r), r.PathValue("caseId"), r.PathValue("proposalId"), postgres.CatalogProductProposalInput{
+		VerticalID: request.VerticalID, CategoryID: request.CategoryID, ProposedName: request.ProposedName,
+		ProposedBrand: optionalRequestString(request.ProposedBrand), ProposedVariantTitle: request.ProposedVariantTitle,
+		ProposedMeasurementKind: string(request.ProposedMeasurementKind), ProposedBaseUnit: string(request.ProposedBaseUnit),
+		ProposedIdentifierType: optionalRequestString(request.ProposedIdentifierType), ProposedIdentifierValue: optionalRequestString(request.ProposedIdentifierValue),
+		AttributeValues: catalogAttributeInputs(input.AttributeValues), VariantAttributeValues: catalogAttributeInputs(input.VariantAttributeValues),
+	}, expected, idempotency, correlation)
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CatalogProductProposalResponse{Proposal: toProductProposal(proposal.Proposal), IdempotentReplay: proposal.Replayed})
+}
+
 func (s *CatalogServer) previewCatalogImport(w http.ResponseWriter, r *http.Request) {
 	acting, correlation, idempotency, ok := requiredMutationHeaders(w, r)
 	if !ok {
@@ -262,7 +345,7 @@ func toProductProposals(items []postgres.CatalogProductProposalRecord) []contrac
 func toProductProposal(item postgres.CatalogProductProposalRecord) contract.CatalogProductProposal {
 	attributes := toCatalogAttributeValueInputs(item.AttributeValues)
 	variantAttributes := toCatalogAttributeValueInputs(item.VariantAttributeValues)
-	return contract.CatalogProductProposal{ID: item.ID, PartnerActorID: item.PartnerActorID, VerticalID: item.VerticalID, CategoryID: item.CategoryID, ProposedName: item.ProposedName, ProposedBrand: optionalProductValue(item.ProposedBrand), ProposedVariantTitle: item.ProposedVariantTitle, ProposedMeasurementKind: contract.MeasurementKind(item.ProposedMeasurementKind), ProposedBaseUnit: contract.BaseUnit(item.ProposedBaseUnit), ProposedIdentifierType: optionalProductValue(item.ProposedIdentifierType), ProposedIdentifierValue: optionalProductValue(item.ProposedIdentifierValue), AttributeValues: attributes, VariantAttributeValues: variantAttributes, State: item.State, CorrectionReason: optionalProductValue(item.CorrectionReason), ReviewedBy: optionalProductValue(item.ReviewedBy), Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return contract.CatalogProductProposal{ID: item.ID, PartnerActorID: item.PartnerActorID, SubmitterRole: item.SubmitterRole, SubmitterActorID: item.SubmitterActorID, JoiningCaseID: item.JoiningCaseID, VerticalID: item.VerticalID, CategoryID: item.CategoryID, ProposedName: item.ProposedName, ProposedBrand: optionalProductValue(item.ProposedBrand), ProposedVariantTitle: item.ProposedVariantTitle, ProposedMeasurementKind: contract.MeasurementKind(item.ProposedMeasurementKind), ProposedBaseUnit: contract.BaseUnit(item.ProposedBaseUnit), ProposedIdentifierType: optionalProductValue(item.ProposedIdentifierType), ProposedIdentifierValue: optionalProductValue(item.ProposedIdentifierValue), AttributeValues: attributes, VariantAttributeValues: variantAttributes, State: item.State, CorrectionReason: optionalProductValue(item.CorrectionReason), ReviewedBy: optionalProductValue(item.ReviewedBy), Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func toCatalogAttributeValueInputs(values []postgres.CatalogAttributeValueInput) []contract.CatalogAttributeValueInput {

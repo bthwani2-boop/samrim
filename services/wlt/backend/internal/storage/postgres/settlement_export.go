@@ -77,7 +77,7 @@ func ExportSettlementBatch(ctx context.Context, db *sql.DB, cipher *DestinationC
 	}
 	factHashes, err := requireIdentityFactsForSnapshots(ctx, tx, input.DestinationCipher, input.IdentityFactsByBeneficiary, snapshots)
 	if err != nil {
-		return SettlementBatchExportRecord{}, err
+		return SettlementBatchExportRecord{}, commitIdentityStaleness(tx, err)
 	}
 	requestHash := hashFacts(append([]string{"settlement-batch-export", input.BatchID, input.ActorID, batchHash}, factHashes...)...)
 	var priorID string

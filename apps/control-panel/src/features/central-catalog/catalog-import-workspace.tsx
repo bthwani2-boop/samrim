@@ -11,6 +11,7 @@ const MAX_IMPORT_BYTES = 20 * 1024 * 1024;
 
 const classificationLabels: Record<CatalogImportItem["classification"], string> = {
   READY: "جاهز",
+  NEEDS_REVIEW: "بحاجة إلى مراجعة",
   DUPLICATE_INPUT: "مكرر في الملف",
   DUPLICATE_EXISTING: "مكرر في السجل",
   CONFLICT_EXISTING: "تعارض مع السجل",

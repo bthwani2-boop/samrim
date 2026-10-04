@@ -91,11 +91,17 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/catalog/imports/preview", s.previewCatalogImport)
 	mux.HandleFunc("GET /dsh/catalog/imports/{runId}", s.readCatalogImportRun)
 	mux.HandleFunc("POST /dsh/catalog/imports/{runId}/commit", s.commitCatalogImport)
+	mux.HandleFunc("POST /dsh/catalog/store-imports/preview", s.previewOperatorStoreCatalogImport)
+	mux.HandleFunc("GET /dsh/catalog/store-imports/{runId}", s.readOperatorStoreCatalogImport)
+	mux.HandleFunc("POST /dsh/catalog/store-imports/{runId}/commit", s.commitOperatorStoreCatalogImport)
 	mux.HandleFunc("GET /dsh/catalog/attributes/{attributeId}/enum-options", s.listAttributeEnumOptions)
 	mux.HandleFunc("POST /dsh/catalog/attributes/{attributeId}/enum-options", s.createAttributeEnumOption)
 	mux.HandleFunc("GET /dsh/catalog/product-proposals/review-queue", s.listProductProposalReviewQueue)
 	mux.HandleFunc("POST /dsh/catalog/product-proposals/{proposalId}/review", s.reviewProductProposal)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/offers", s.listOffers)
+	mux.HandleFunc("POST /dsh/stores/{storeId}/catalog/imports/preview", s.previewPartnerStoreCatalogImport)
+	mux.HandleFunc("GET /dsh/stores/{storeId}/catalog/imports/{runId}", s.readPartnerStoreCatalogImport)
+	mux.HandleFunc("POST /dsh/stores/{storeId}/catalog/imports/{runId}/commit", s.commitPartnerStoreCatalogImport)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/offers", s.createOffer)
 	mux.HandleFunc("PATCH /dsh/stores/{storeId}/offers/{offerId}", s.updateOffer)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/catalog/quick-prices", s.listQuickPrices)
@@ -994,6 +1000,8 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog Product proposal facts or decision are invalid")
 	case errors.Is(err, postgres.ErrCatalogImportInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog import facts are invalid")
+	case errors.Is(err, catalog.ErrStoreCatalogImportFile):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog import file must be a valid CSV or XLSX with barcode and positive whole YER price columns, with no more than 5000 data rows")
 	case errors.Is(err, postgres.ErrCatalogOfferInvalidState):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "StoreOffer publication state is invalid")
 	case errors.Is(err, catalog.ErrCatalogVerticalInvalid):

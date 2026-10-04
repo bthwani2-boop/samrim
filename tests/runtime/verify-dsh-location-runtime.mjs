@@ -32,13 +32,15 @@ function required(env, name) {
 }
 
 const env = readEnv(envPath);
-const dshBase = required(env, "DSH_API_BASE_URL").replace(/\/+$/, "");
-const identityBase = required(env, "IDENTITY_API_BASE_URL").replace(/\/+$/, "");
+const dshBase = (process.env.DSH_API_BASE_URL?.trim() || required(env, "DSH_API_BASE_URL")).replace(/\/+$/, "");
+const identityBase = (process.env.IDENTITY_API_BASE_URL?.trim() || required(env, "IDENTITY_API_BASE_URL")).replace(/\/+$/, "");
 const identityDshToken = required(env, "IDENTITY_DSH_SERVICE_TOKEN");
 const controlPanelToken = required(env, "CONTROL_PANEL_SERVICE_TOKEN");
 const bootstrapToken = required(env, "OPERATOR_BOOTSTRAP_SECRET");
-const mailpitPort = required(env, "SAMRIM_MAILPIT_WEB_PORT");
-const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", path.join(root, "infra/local/compose/compose.yaml")];
+const mailpitPort = process.env.SAMRIM_MAILPIT_WEB_PORT?.trim() || required(env, "SAMRIM_MAILPIT_WEB_PORT");
+const composeProject = process.env.SAMRIM_RUNTIME_COMPOSE_PROJECT?.trim() || "samrim-local";
+if (!/^[a-z0-9][a-z0-9_-]*$/i.test(composeProject)) throw new Error("runtime compose project name is invalid");
+const composeArgs = ["compose", "--project-name", composeProject, "--env-file", envPath, "-f", path.join(root, "infra/local/compose/compose.yaml")];
 const suffix = `${Date.now().toString(36)}-${crypto.randomBytes(6).toString("hex")}`;
 const clientPhone = `+96778${crypto.randomInt(1_000_000, 9_999_999)}`;
 const partnerPhone = `+96776${crypto.randomInt(1_000_000, 9_999_999)}`;
@@ -117,26 +119,26 @@ async function createPartnerSession(operatorID, phone, instance) {
   return { actorID, pair };
 }
 
-async function ensureCommissionPolicy(operatorID) {
-  const endpoint = "/dsh/operator/commercial-store-type-commission-policies";
-  const read = async () => request(dshBase, "GET", `${endpoint}?commercialStoreTypeId=${encodeURIComponent(commercialStoreTypeID)}`, { token: controlPanelToken, headers: { "X-Acting-Actor-ID": operatorID } });
+async function ensureCommissionDefault(operatorID) {
+  const endpoint = `/dsh/operator/commercial-store-types/${encodeURIComponent(commercialStoreTypeID)}/commission-defaults`;
+  const read = async () => request(dshBase, "GET", endpoint, { token: controlPanelToken, headers: { "X-Acting-Actor-ID": operatorID } });
   const current = await read();
-  if (current.status !== 200 || current.body?.commercialStoreTypeId !== commercialStoreTypeID || !Array.isArray(current.body?.policies)) throw new Error(`commercial store type commission policy read failed: ${JSON.stringify(current)}`);
-  const existing = current.body.policies.find((policy) => policy.fulfillmentMode === "BTHWANI_CAPTAIN");
+  if (current.status !== 200 || current.body?.commercialStoreTypeId !== commercialStoreTypeID || !Array.isArray(current.body?.defaults)) throw new Error(`commercial store type commission default read failed: ${JSON.stringify(current)}`);
+  const existing = current.body.defaults.find((item) => item.fulfillmentMode === "BTHWANI_CAPTAIN");
   if (existing) {
-    if (existing.commercialStoreTypeId !== commercialStoreTypeID || existing.fulfillmentMode !== "BTHWANI_CAPTAIN" || existing.commissionRateBps !== 1500 || !Number.isInteger(existing.policyVersion) || existing.policyVersion < 1) throw new Error(`commercial store type commission policy is invalid: ${JSON.stringify(existing)}`);
+    if (existing.commercialStoreTypeId !== commercialStoreTypeID || existing.fulfillmentMode !== "BTHWANI_CAPTAIN" || existing.suggestedCommissionRateBps !== 1500 || !Number.isInteger(existing.defaultVersion) || existing.defaultVersion < 1) throw new Error(`commercial store type commission suggestion is invalid: ${JSON.stringify(existing)}`);
     return existing;
   }
 
   const created = await request(dshBase, "POST", endpoint, {
     token: controlPanelToken,
     headers: serviceHeaders(operatorID),
-    body: { commercialStoreTypeId: commercialStoreTypeID, fulfillmentMode: "BTHWANI_CAPTAIN", commissionRateBps: 1500, expectedVersion: 0, reason: "Location Core disposable runtime proof policy" },
+    body: { fulfillmentMode: "BTHWANI_CAPTAIN", suggestedCommissionRateBps: 1500, expectedDefaultVersion: 0, reason: "Location Core disposable runtime proof negotiation suggestion" },
   });
   const readback = await read();
-  const policy = readback.body?.policies?.find((item) => item.fulfillmentMode === "BTHWANI_CAPTAIN");
-  if (created.status !== 200 || created.body?.policy?.commercialStoreTypeId !== commercialStoreTypeID || created.body?.policy?.fulfillmentMode !== "BTHWANI_CAPTAIN" || created.body?.policy?.commissionRateBps !== 1500 || created.body?.policy?.policyVersion !== 1 || readback.status !== 200 || policy?.commercialStoreTypeId !== commercialStoreTypeID || policy?.fulfillmentMode !== "BTHWANI_CAPTAIN" || policy?.commissionRateBps !== 1500 || policy?.policyVersion !== 1) throw new Error(`canonical commercial store type commission policy setup/readback failed: ${JSON.stringify({ created, readback })}`);
-  return policy;
+  const suggestedDefault = readback.body?.defaults?.find((item) => item.fulfillmentMode === "BTHWANI_CAPTAIN");
+  if (created.status !== 200 || created.body?.default?.commercialStoreTypeId !== commercialStoreTypeID || created.body?.default?.fulfillmentMode !== "BTHWANI_CAPTAIN" || created.body?.default?.suggestedCommissionRateBps !== 1500 || created.body?.default?.defaultVersion !== 1 || readback.status !== 200 || suggestedDefault?.commercialStoreTypeId !== commercialStoreTypeID || suggestedDefault?.fulfillmentMode !== "BTHWANI_CAPTAIN" || suggestedDefault?.suggestedCommissionRateBps !== 1500 || suggestedDefault?.defaultVersion !== 1) throw new Error(`canonical Store Type commission suggestion setup/readback failed: ${JSON.stringify({ created, readback })}`);
+  return suggestedDefault;
 }
 
 async function createApprovedPartner(operatorID, phone, name, serviceCityId) {
@@ -148,6 +150,7 @@ async function createApprovedPartner(operatorID, phone, name, serviceCityId) {
       ownerFullName: `${name} owner`,
       businessName: `${name} business`,
       firstStoreName: `${name} store`,
+      walletProviderKey: "provider-yemen",
       firstStoreAddress: `${name} street, building 1`,
       firstStoreWorkingHours: { intervals: [{ dayOfWeek: 1, opensAt: "08:00", closesAt: "16:00", closesNextDay: false }] },
       firstStoreProofType: "COMMERCIAL_REGISTRATION",
@@ -190,7 +193,7 @@ async function createApprovedPartner(operatorID, phone, name, serviceCityId) {
   if (submitted?.case?.state !== "submitted" || !submitted.case.partnerActorId) throw new Error("location joining case submit readback failed");
   const fixture = await createPartnerSession(operatorID, phone, `location-partner-${suffix}-${name.replace(/[^A-Za-z0-9._:-]/g, "-")}`);
   if (fixture.actorID !== String(submitted.case.partnerActorId)) throw new Error("location joining case actor binding drifted");
-  await ensureCommissionPolicy(operatorID);
+  await ensureCommissionDefault(operatorID);
   const terms = await expect(dshBase, "GET", "/dsh/operator/partner-financial-terms-policy", 200, { token: controlPanelToken, headers: { "X-Acting-Actor-ID": operatorID } });
   if (terms?.policy?.state !== "ACTIVE" || terms.policy.settlementPeriod !== "MONTHLY" || typeof terms.policy.policyVersion !== "string" || !terms.policy.policyVersion.startsWith("partner-financial-terms:v")) throw new Error(`active partner financial terms policy is invalid: ${JSON.stringify(terms)}`);
   const approved = await expect(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(caseID)}/review`, 200, {
@@ -235,7 +238,7 @@ try {
   const verticalCreated = await expect(dshBase, "POST", "/dsh/catalog/verticals", 201, {
     token: controlPanelToken,
     headers: serviceHeaders(operatorID),
-    body: { nameAr: `متاجر المواقع ${Date.now()}`, nameEn: `Location Stores ${suffix}`, catalogModel: "SHARED_CATALOG", active: true, reason: "DSH Location Core runtime vertical" },
+    body: { nameAr: `متاجر المواقع ${Date.now()}`, nameEn: `Location Stores ${suffix}`, active: true, reason: "DSH Location Core runtime vertical" },
   });
   if (!verticalCreated?.vertical?.id) throw new Error("location vertical canonical create failed");
   verticalID = String(verticalCreated.vertical.id);

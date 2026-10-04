@@ -14,14 +14,24 @@ var ErrCatalogImportInvalid = errors.New("catalog import facts are invalid")
 
 type CatalogImportRunRecord struct {
 	ID, ActingActorID, SourceSHA256, Mode, State string
+	Purpose, ActorRole, StoreID, JoiningCaseID   string
 	AcceptedCount, ConflictCount                 int
 	CreatedAt                                    time.Time
 }
 
+type StoreCatalogImportItemInput struct {
+	VariantID, StoreOfferID string
+	PriceMinor              int64
+	ExpectedVersion         int
+	Create                  CatalogOfferInput
+	Update                  CatalogOfferUpdateInput
+}
+
 type CatalogImportItemInput struct {
-	RowNumber int
-	StableKey string
-	Input     CatalogProductInput
+	RowNumber       int
+	StableKey       string
+	Input           CatalogProductInput
+	StoreOfferInput *StoreCatalogImportItemInput `json:",omitempty"`
 }
 
 type CatalogImportItemRecord struct {
@@ -31,6 +41,7 @@ type CatalogImportItemRecord struct {
 	ErrorCode, ErrorMessage   *string
 	Committed                 bool
 	Input                     CatalogProductInput
+	StoreOfferInput           *StoreCatalogImportItemInput
 }
 
 type CatalogImportPreviewResult struct {
@@ -104,7 +115,16 @@ func productVariantByID(product CatalogProductRecord, variantID string) CatalogV
 }
 
 func CreateCatalogImportPreview(ctx context.Context, db *sql.DB, run CatalogImportRunRecord, items []CatalogImportItemRecord, idempotencyKey, requestHash, correlationID string) (CatalogImportPreviewResult, error) {
+	if run.Purpose == "" {
+		run.Purpose = "PRODUCTS"
+	}
+	if run.ActorRole == "" {
+		run.ActorRole = "OPERATOR"
+	}
 	if strings.TrimSpace(run.ID) == "" || strings.TrimSpace(run.ActingActorID) == "" || len(run.SourceSHA256) != 64 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(correlationID) == "" || len(items) == 0 {
+		return CatalogImportPreviewResult{}, ErrCatalogImportInvalid
+	}
+	if run.Purpose == "PRODUCTS" && (run.ActorRole != "OPERATOR" || run.StoreID != "" || run.JoiningCaseID != "") || run.Purpose == "STORE_OFFERS" && (run.StoreID == "" || (run.ActorRole == "FIELD") != (run.JoiningCaseID != "")) {
 		return CatalogImportPreviewResult{}, ErrCatalogImportInvalid
 	}
 	tx, err := db.BeginTx(ctx, nil)
@@ -113,6 +133,9 @@ func CreateCatalogImportPreview(ctx context.Context, db *sql.DB, run CatalogImpo
 	}
 	defer func() { _ = tx.Rollback() }()
 	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:catalog-import:idempotency:"+idempotencyKey); err != nil {
+		return CatalogImportPreviewResult{}, err
+	}
+	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:catalog-import:source:"+run.Purpose+":"+run.StoreID+":"+run.SourceSHA256); err != nil {
 		return CatalogImportPreviewResult{}, err
 	}
 	var storedHash, storedRun, operation string
@@ -133,9 +156,26 @@ func CreateCatalogImportPreview(ctx context.Context, db *sql.DB, run CatalogImpo
 	if !errors.Is(err, sql.ErrNoRows) {
 		return CatalogImportPreviewResult{}, err
 	}
-	var existingRun string
-	if err = tx.QueryRowContext(ctx, "SELECT id FROM dsh.catalog_import_runs WHERE source_sha256=$1 AND mode='preview'", run.SourceSHA256).Scan(&existingRun); err == nil {
-		return CatalogImportPreviewResult{}, ErrCatalogIdempotencyConflict
+	var existingRun CatalogImportRunRecord
+	var existingStoreID, existingJoiningCaseID sql.NullString
+	if err = tx.QueryRowContext(ctx, "SELECT id,acting_actor_id,purpose,actor_role,store_id,joining_case_id FROM dsh.catalog_import_runs WHERE source_sha256=$1 AND mode='preview' AND purpose=$2 AND COALESCE(store_id,'')=COALESCE(NULLIF($3,''),'')", run.SourceSHA256, run.Purpose, run.StoreID).Scan(&existingRun.ID, &existingRun.ActingActorID, &existingRun.Purpose, &existingRun.ActorRole, &existingStoreID, &existingJoiningCaseID); err == nil {
+		if existingStoreID.Valid {
+			existingRun.StoreID = existingStoreID.String
+		}
+		if existingJoiningCaseID.Valid {
+			existingRun.JoiningCaseID = existingJoiningCaseID.String
+		}
+		if existingRun.ID != run.ID || existingRun.ActingActorID != run.ActingActorID || existingRun.Purpose != run.Purpose || existingRun.ActorRole != run.ActorRole || existingRun.StoreID != run.StoreID || existingRun.JoiningCaseID != run.JoiningCaseID {
+			return CatalogImportPreviewResult{}, ErrCatalogIdempotencyConflict
+		}
+		readRun, readItems, readErr := readCatalogImportRunTx(ctx, tx, run.ID)
+		if readErr != nil {
+			return CatalogImportPreviewResult{}, readErr
+		}
+		if err = tx.Commit(); err != nil {
+			return CatalogImportPreviewResult{}, err
+		}
+		return CatalogImportPreviewResult{Run: readRun, Items: readItems, Replayed: true}, nil
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return CatalogImportPreviewResult{}, err
 	}
@@ -150,11 +190,20 @@ func CreateCatalogImportPreview(ctx context.Context, db *sql.DB, run CatalogImpo
 			run.ConflictCount++
 		}
 	}
-	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_import_runs(id,acting_actor_id,source_sha256,mode,state,accepted_count,conflict_count) VALUES($1,$2,$3,$4,$5,$6,$7)", run.ID, run.ActingActorID, run.SourceSHA256, run.Mode, run.State, run.AcceptedCount, run.ConflictCount); err != nil {
+	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_import_runs(id,acting_actor_id,source_sha256,mode,state,accepted_count,conflict_count,purpose,actor_role,store_id,joining_case_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,''),NULLIF($11,''))", run.ID, run.ActingActorID, run.SourceSHA256, run.Mode, run.State, run.AcceptedCount, run.ConflictCount, run.Purpose, run.ActorRole, run.StoreID, run.JoiningCaseID); err != nil {
 		return CatalogImportPreviewResult{}, err
 	}
 	for _, item := range items {
-		payload, marshalErr := json.Marshal(item.Input)
+		var payload []byte
+		var marshalErr error
+		if run.Purpose == "STORE_OFFERS" {
+			if item.StoreOfferInput == nil {
+				return CatalogImportPreviewResult{}, ErrCatalogImportInvalid
+			}
+			payload, marshalErr = json.Marshal(item.StoreOfferInput)
+		} else {
+			payload, marshalErr = json.Marshal(item.Input)
+		}
 		if marshalErr != nil {
 			return CatalogImportPreviewResult{}, marshalErr
 		}
@@ -187,12 +236,19 @@ func ReadCatalogImportRun(ctx context.Context, db *sql.DB, runID string) (Catalo
 
 func readCatalogImportRunTx(ctx context.Context, source rowQueryer, runID string) (CatalogImportRunRecord, []CatalogImportItemRecord, error) {
 	var run CatalogImportRunRecord
-	err := source.QueryRowContext(ctx, "SELECT id,acting_actor_id,source_sha256,mode,state,accepted_count,conflict_count,created_at FROM dsh.catalog_import_runs WHERE id=$1", runID).Scan(&run.ID, &run.ActingActorID, &run.SourceSHA256, &run.Mode, &run.State, &run.AcceptedCount, &run.ConflictCount, &run.CreatedAt)
+	var storeID, joiningCaseID sql.NullString
+	err := source.QueryRowContext(ctx, "SELECT id,acting_actor_id,source_sha256,mode,state,accepted_count,conflict_count,created_at,purpose,actor_role,store_id,joining_case_id FROM dsh.catalog_import_runs WHERE id=$1", runID).Scan(&run.ID, &run.ActingActorID, &run.SourceSHA256, &run.Mode, &run.State, &run.AcceptedCount, &run.ConflictCount, &run.CreatedAt, &run.Purpose, &run.ActorRole, &storeID, &joiningCaseID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CatalogImportRunRecord{}, nil, ErrCatalogImportInvalid
 	}
 	if err != nil {
 		return CatalogImportRunRecord{}, nil, err
+	}
+	if storeID.Valid {
+		run.StoreID = storeID.String
+	}
+	if joiningCaseID.Valid {
+		run.JoiningCaseID = joiningCaseID.String
 	}
 	rows, err := source.QueryContext(ctx, `SELECT row_number,stable_key,payload,classification,product_id,variant_id,error_code,error_message,committed FROM dsh.catalog_import_run_items WHERE run_id=$1 ORDER BY row_number`, runID)
 	if err != nil {
@@ -207,7 +263,13 @@ func readCatalogImportRunTx(ctx context.Context, source rowQueryer, runID string
 		if err = rows.Scan(&item.RowNumber, &item.StableKey, &payload, &item.Classification, &productID, &variantID, &errorCode, &errorMessage, &item.Committed); err != nil {
 			return CatalogImportRunRecord{}, nil, err
 		}
-		if err = json.Unmarshal(payload, &item.Input); err != nil {
+		if run.Purpose == "STORE_OFFERS" {
+			item.StoreOfferInput = &StoreCatalogImportItemInput{}
+			err = json.Unmarshal(payload, item.StoreOfferInput)
+		} else {
+			err = json.Unmarshal(payload, &item.Input)
+		}
+		if err != nil {
 			return CatalogImportRunRecord{}, nil, fmt.Errorf("read import item %d: %w", item.RowNumber, err)
 		}
 		item.ProductID, item.VariantID = nullableString(productID), nullableString(variantID)

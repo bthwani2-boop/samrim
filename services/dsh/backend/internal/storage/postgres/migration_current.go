@@ -14,7 +14,7 @@ import (
 )
 
 // CanonicalSchemaVersion is the exact DSH schema version owned by the current source tree.
-const CanonicalSchemaVersion = 95
+const CanonicalSchemaVersion = 97
 
 var canonicalMigrationTail = []string{
 	"085_store_operational_availability.sql",
@@ -28,6 +28,8 @@ var canonicalMigrationTail = []string{
 	"093_catalog_mixed_scope_and_store_skus.sql",
 	"094_store_go_live_notifications.sql",
 	"095_wallet_provider_intent.sql",
+	"096_catalog_product_proposal_field_ownership.sql",
+	"097_store_catalog_import_scope.sql",
 }
 
 type schemaRelationExpectation struct {
@@ -39,6 +41,18 @@ type schemaRelationExpectation struct {
 }
 
 var journeyRefoundationRelations = []schemaRelationExpectation{
+	{
+		name:        "dsh.catalog_product_proposals",
+		columns:     []string{"submitter_role", "submitter_actor_id", "joining_case_id"},
+		constraints: []string{"catalog_product_proposals_submitter_role_chk", "catalog_product_proposals_submitter_facts_chk", "catalog_product_proposals_joining_case_fk"},
+		indexes:     []string{"catalog_product_proposals_submitter_idx"},
+	},
+	{
+		name:        "dsh.catalog_import_runs",
+		columns:     []string{"purpose", "actor_role", "store_id", "joining_case_id"},
+		constraints: []string{"catalog_import_runs_purpose_chk", "catalog_import_runs_actor_role_chk", "catalog_import_runs_scope_chk", "catalog_import_runs_store_fk", "catalog_import_runs_joining_case_fk"},
+		indexes:     []string{"catalog_import_runs_source_mode_uq"},
+	},
 	{
 		name:        "dsh.stores",
 		columns:     []string{"address_text", "business_working_hours"},

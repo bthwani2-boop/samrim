@@ -18,8 +18,8 @@ func TestCanonicalJourneyMigrationGraphIncludesJoiningCaseIntakeDetails(t *testi
 		t.Fatalf("canonical DSH migration graph size: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.CanonicalSchemaVersion)
 	}
 	last := records[len(records)-1]
-	if last.Version != postgres.CanonicalSchemaVersion || last.Name != "095_wallet_provider_intent.sql" {
-		t.Fatalf("last canonical DSH migration = v%d %q; want v%d 095_wallet_provider_intent.sql", last.Version, last.Name, postgres.CanonicalSchemaVersion)
+	if last.Version != postgres.CanonicalSchemaVersion || last.Name != "097_store_catalog_import_scope.sql" {
+		t.Fatalf("last canonical DSH migration = v%d %q; want v%d 097_store_catalog_import_scope.sql", last.Version, last.Name, postgres.CanonicalSchemaVersion)
 	}
 
 	migrationByName := make(map[string]string, len(records))
@@ -38,6 +38,8 @@ func TestCanonicalJourneyMigrationGraphIncludesJoiningCaseIntakeDetails(t *testi
 		"093_catalog_mixed_scope_and_store_skus.sql",
 		"094_store_go_live_notifications.sql",
 		"095_wallet_provider_intent.sql",
+		"096_catalog_product_proposal_field_ownership.sql",
+		"097_store_catalog_import_scope.sql",
 	} {
 		if _, ok := migrationByName[required]; !ok {
 			t.Fatalf("canonical DSH migration missing: %s", required)
@@ -53,6 +55,31 @@ func TestCanonicalJourneyMigrationGraphIncludesJoiningCaseIntakeDetails(t *testi
 	for _, required := range []string{"joining_cases_wallet_provider_key_chk", "field_admissions_wallet_provider_key_chk", "captain_admissions_wallet_provider_key_chk", "wallet_provider_key text"} {
 		if !strings.Contains(providerIntentMigration, required) {
 			t.Fatalf("migration 095 is missing wallet provider intent requirement: %s", required)
+		}
+	}
+	fieldProposalMigration := migrationByName["096_catalog_product_proposal_field_ownership.sql"]
+	for _, required := range []string{
+		"submitter_role text NOT NULL DEFAULT 'PARTNER'",
+		"SET submitter_actor_id=partner_actor_id",
+		"submitter_role='PARTNER' AND partner_actor_id=submitter_actor_id AND joining_case_id IS NULL",
+		"submitter_role='FIELD' AND partner_actor_id IS NULL AND joining_case_id IS NOT NULL",
+		"FOREIGN KEY (joining_case_id) REFERENCES dsh.joining_cases(id) ON DELETE RESTRICT",
+	} {
+		if !strings.Contains(fieldProposalMigration, required) {
+			t.Fatalf("migration 096 is missing Field proposal ownership requirement: %s", required)
+		}
+	}
+	storeCatalogImportMigration := migrationByName["097_store_catalog_import_scope.sql"]
+	for _, required := range []string{
+		"purpose IN ('PRODUCTS','STORE_OFFERS')",
+		"actor_role IN ('OPERATOR','PARTNER','FIELD')",
+		"joining_case_id IS NOT NULL",
+		"FOREIGN KEY (store_id) REFERENCES dsh.stores(id) ON DELETE RESTRICT",
+		"source_sha256,mode,purpose,COALESCE(store_id,'')",
+		"NEEDS_REVIEW",
+	} {
+		if !strings.Contains(storeCatalogImportMigration, required) {
+			t.Fatalf("migration 097 is missing scoped store-catalog import requirement: %s", required)
 		}
 	}
 	if !strings.Contains(migrationByName["085_store_operational_availability.sql"], "CREATE TABLE dsh.store_operational_availability") || !strings.Contains(migrationByName["085_store_operational_availability.sql"], "schedule_timezone text NOT NULL DEFAULT 'Asia/Aden'") {

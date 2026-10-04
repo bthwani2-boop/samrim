@@ -40,7 +40,7 @@ const policyChildren: readonly WorkspaceChild[] = workspacePolicyResources.slice
 export const workspaceFinanceResources = [
   { key: "overview", href: "/finance", label: "نظرة عامة", description: "اختر مورد المالية المطلوب." },
   { key: "cash-custody", href: "/finance/cash-custody", label: "حفظ النقد", description: "قراءة الالتزامات النقدية المحصلة عند الاستلام." },
-  { key: "partner-store-commissions", href: "/finance/partner-store-commissions", label: "عمولات المتاجر", description: "إدارة نسبة المنصة حسب نوع المتجر ووضع الطلب بإصدار وسبب موثقين." },
+  { key: "partner-store-commissions", href: "/finance/partner-store-commissions", label: "اتفاقات المتاجر", description: "إدارة اتفاقية كل متجر ومراجعة النسب المقترحة للتفاوض حسب نوع المتجر." },
   { key: "beneficiary-settlement-partners", href: "/finance/beneficiary-settlement/partners", label: "مستحقات الشركاء", description: "سجل الشركاء وطلبات الصرف وتنفيذ الدفعات ومطابقتها." },
   { key: "beneficiary-settlement-captains", href: "/finance/beneficiary-settlement/captains", label: "مستحقات الكباتن", description: "سجل كباتن بثواني وطلبات الصرف وتنفيذ الدفعات ومطابقتها." },
   { key: "beneficiary-settlement-field", href: "/finance/beneficiary-settlement/field", label: "مستحقات الميدان", description: "سجل الميدان وطلبات الصرف وتنفيذ الدفعات ومطابقتها." },

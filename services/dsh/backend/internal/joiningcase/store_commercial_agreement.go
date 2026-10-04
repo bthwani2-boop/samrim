@@ -110,6 +110,25 @@ func (s *Service) ReadStoreTypeCommissionDefaultsForFinance(ctx context.Context,
 	return s.wlt.ReadStoreTypeCommissionDefaults(ctx, commercialStoreTypeID)
 }
 
+func (s *Service) UpdateStoreTypeCommissionDefaultForFinance(ctx context.Context, commercialStoreTypeID, actingActorID, fulfillmentMode string, suggestedCommissionRateBps, expectedDefaultVersion int, reason, idempotencyKey, correlationID string) (wltintegration.StoreTypeCommissionDefaultUpdateResponse, error) {
+	if err := s.requireFinance(ctx, actingActorID); err != nil {
+		return wltintegration.StoreTypeCommissionDefaultUpdateResponse{}, err
+	}
+	commercialStoreTypeID = strings.TrimSpace(commercialStoreTypeID)
+	if commercialStoreTypeID == "" || len(commercialStoreTypeID) > 128 {
+		return wltintegration.StoreTypeCommissionDefaultUpdateResponse{}, ErrStoreAgreementInvalidInput
+	}
+	if _, err := postgres.ReadActiveCommercialStoreType(ctx, s.db, commercialStoreTypeID); err != nil {
+		return wltintegration.StoreTypeCommissionDefaultUpdateResponse{}, err
+	}
+	return s.wlt.UpdateStoreTypeCommissionDefault(ctx, wltintegration.StoreTypeCommissionDefaultUpdateInput{
+		CommercialStoreTypeID: commercialStoreTypeID,
+		FulfillmentMode:       fulfillmentMode, SuggestedCommissionRateBps: suggestedCommissionRateBps,
+		ExpectedDefaultVersion: expectedDefaultVersion, Reason: reason,
+		IdempotencyKey: idempotencyKey, CorrelationID: correlationID, ActingActorID: actingActorID,
+	})
+}
+
 func (s *Service) ReadStoreCommercialAgreementsForPartner(ctx context.Context, accessToken string) ([]wltintegration.StoreCommercialAgreement, error) {
 	partner, err := s.requirePartner(ctx, accessToken)
 	if err != nil {

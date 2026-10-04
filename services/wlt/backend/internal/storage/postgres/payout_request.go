@@ -98,13 +98,13 @@ func CreatePayoutIntent(ctx context.Context, db *sql.DB, cipher *DestinationCiph
 	}
 	var destinationID string
 	var destinationVersion int
-	if err := tx.QueryRowContext(ctx, "SELECT id,version FROM wlt.official_wallet_destinations WHERE actor_type=$1 AND actor_id=$2 AND verification_status='VERIFIED' AND status='ACTIVE_FOR_PAYOUT' FOR SHARE", input.ActorType, input.ActorID).Scan(&destinationID, &destinationVersion); errors.Is(err, sql.ErrNoRows) {
+	if err := tx.QueryRowContext(ctx, "SELECT id,version FROM wlt.official_wallet_destinations WHERE actor_type=$1 AND actor_id=$2 AND verification_status='VERIFIED' AND status='ACTIVE_FOR_PAYOUT' FOR UPDATE", input.ActorType, input.ActorID).Scan(&destinationID, &destinationVersion); errors.Is(err, sql.ErrNoRows) {
 		return PayoutRequestRecord{}, false, ErrReverificationRequired
 	} else if err != nil {
 		return PayoutRequestRecord{}, false, err
 	}
 	if err := input.IdentityFacts.matchesStoredDestination(ctx, tx, cipher, destinationID, input.ActorType, input.ActorID, true); err != nil {
-		return PayoutRequestRecord{}, false, ErrReverificationRequired
+		return PayoutRequestRecord{}, false, commitIdentityStaleness(tx, err)
 	}
 	var existingID, existingHash string
 	err = tx.QueryRowContext(ctx, "SELECT id,request_hash FROM wlt.payout_requests WHERE idempotency_key=$1 FOR UPDATE", input.IdempotencyKey).Scan(&existingID, &existingHash)

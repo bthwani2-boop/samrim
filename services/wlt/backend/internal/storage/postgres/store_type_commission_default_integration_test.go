@@ -11,12 +11,12 @@ import (
 
 func TestStoreTypeCommissionDefaultPostgresLifecycle(t *testing.T) {
 	database := newFieldAcquisitionScenario(t)
-	scenario := newPartnerCommissionPolicyScenario(t, database)
+	scenario := newStoreTypeCommissionDefaultScenario(t, database)
 	t.Cleanup(scenario.deleteRows)
 	scenario.runLifecycle()
 }
 
-type partnerCommissionPolicyScenario struct {
+type storeTypeCommissionDefaultScenario struct {
 	t        *testing.T
 	database *fieldAcquisitionScenario
 	typeID   string
@@ -25,121 +25,121 @@ type partnerCommissionPolicyScenario struct {
 	suffix   string
 }
 
-func newPartnerCommissionPolicyScenario(t *testing.T, database *fieldAcquisitionScenario) partnerCommissionPolicyScenario {
-	return partnerCommissionPolicyScenario{
+func newStoreTypeCommissionDefaultScenario(t *testing.T, database *fieldAcquisitionScenario) storeTypeCommissionDefaultScenario {
+	return storeTypeCommissionDefaultScenario{
 		t: t, database: database, suffix: database.suffix,
-		typeID:  "commission-policy-test-" + database.suffix,
+		typeID:  "commission-default-test-" + database.suffix,
 		actorID: "commission-actor-" + database.suffix,
-		reason:  "approved commission policy change",
+		reason:  "approved Store Type default change",
 	}
 }
 
-func (s partnerCommissionPolicyScenario) runLifecycle() {
+func (s storeTypeCommissionDefaultScenario) runLifecycle() {
 	s.assertEmptyRead()
 	create := s.createInput()
-	created := s.createPolicy(create)
+	created := s.createDefault(create)
 	s.assertIdempotentReplay(create, created)
 	s.assertConflictingReplay(create)
 	s.assertRejectedVersionAndNoOp(create)
-	updated := s.updatePolicy(create)
+	updated := s.updateDefault(create)
 	s.createSecondMode(create)
 	s.assertReadback(updated)
 	s.assertEventCount(3)
 }
 
-func (s partnerCommissionPolicyScenario) createInput() StoreTypeCommissionDefaultUpdate {
+func (s storeTypeCommissionDefaultScenario) createInput() StoreTypeCommissionDefaultUpdate {
 	return StoreTypeCommissionDefaultUpdate{
 		CommercialStoreTypeID: s.typeID, FulfillmentMode: "PARTNER_CAPTAIN", CommissionRateBps: 1250,
 		ChangedByActorID: s.actorID, Reason: s.reason,
-		IdempotencyKey: "commission-create-" + s.suffix, CorrelationID: "commission-correlation-" + s.suffix,
+		IdempotencyKey: "default-create-" + s.suffix, CorrelationID: "default-correlation-" + s.suffix,
 	}
 }
 
-func (s partnerCommissionPolicyScenario) assertEmptyRead() {
-	policies, err := ReadStoreTypeCommissionDefaults(s.database.ctx, s.database.db, s.typeID)
-	if err != nil || len(policies) != 0 {
-		s.t.Fatalf("initial commission policy read = (%+v, %v), want no policies", policies, err)
+func (s storeTypeCommissionDefaultScenario) assertEmptyRead() {
+	defaults, err := ReadStoreTypeCommissionDefaults(s.database.ctx, s.database.db, s.typeID)
+	if err != nil || len(defaults) != 0 {
+		s.t.Fatalf("initial commission default read = (%+v, %v), want no defaults", defaults, err)
 	}
 }
 
-func (s partnerCommissionPolicyScenario) createPolicy(input StoreTypeCommissionDefaultUpdate) StoreTypeCommissionDefaultRecord {
+func (s storeTypeCommissionDefaultScenario) createDefault(input StoreTypeCommissionDefaultUpdate) StoreTypeCommissionDefaultRecord {
 	created, replayed, err := UpdateStoreTypeCommissionDefault(s.database.ctx, s.database.db, input)
 	if err != nil || replayed || created.PolicyVersion != 1 || created.CommissionRateBps != 1250 {
-		s.t.Fatalf("create commission policy = (%+v, replayed=%t, %v), want version 1 at 1250 bps", created, replayed, err)
+		s.t.Fatalf("create commission default = (%+v, replayed=%t, %v), want version 1 at 1250 bps", created, replayed, err)
 	}
 	return created
 }
 
-func (s partnerCommissionPolicyScenario) assertIdempotentReplay(input StoreTypeCommissionDefaultUpdate, created StoreTypeCommissionDefaultRecord) {
+func (s storeTypeCommissionDefaultScenario) assertIdempotentReplay(input StoreTypeCommissionDefaultUpdate, created StoreTypeCommissionDefaultRecord) {
 	replay, replayed, err := UpdateStoreTypeCommissionDefault(s.database.ctx, s.database.db, input)
 	if err != nil || !replayed || replay.CommercialStoreTypeID != created.CommercialStoreTypeID || replay.FulfillmentMode != created.FulfillmentMode || replay.CommissionRateBps != created.CommissionRateBps || replay.PolicyVersion != created.PolicyVersion {
-		s.t.Fatalf("idempotent commission create = (%+v, replayed=%t, %v), want original row", replay, replayed, err)
+		s.t.Fatalf("idempotent default create = (%+v, replayed=%t, %v), want original row", replay, replayed, err)
 	}
 }
 
-func (s partnerCommissionPolicyScenario) assertConflictingReplay(input StoreTypeCommissionDefaultUpdate) {
+func (s storeTypeCommissionDefaultScenario) assertConflictingReplay(input StoreTypeCommissionDefaultUpdate) {
 	input.CommissionRateBps = 1300
 	if _, replayed, err := UpdateStoreTypeCommissionDefault(s.database.ctx, s.database.db, input); !errors.Is(err, ErrIdempotencyConflict) || replayed {
 		s.t.Fatalf("conflicting idempotency replay = (replayed=%t, %v), want ErrIdempotencyConflict", replayed, err)
 	}
 }
 
-func (s partnerCommissionPolicyScenario) assertRejectedVersionAndNoOp(input StoreTypeCommissionDefaultUpdate) {
+func (s storeTypeCommissionDefaultScenario) assertRejectedVersionAndNoOp(input StoreTypeCommissionDefaultUpdate) {
 	staleCreate := input
 	staleCreate.CommercialStoreTypeID += "-absent"
-	staleCreate.IdempotencyKey = "commission-stale-" + s.suffix
+	staleCreate.IdempotencyKey = "default-stale-" + s.suffix
 	staleCreate.ExpectedVersion = 1
 	if _, _, err := UpdateStoreTypeCommissionDefault(s.database.ctx, s.database.db, staleCreate); !errors.Is(err, ErrStoreTypeCommissionDefaultVersionConflict) {
 		s.t.Fatalf("create with nonzero expected version error = %v, want version conflict", err)
 	}
 	noOp := input
-	noOp.IdempotencyKey = "commission-noop-" + s.suffix
+	noOp.IdempotencyKey = "default-noop-" + s.suffix
 	noOp.ExpectedVersion = 1
 	if _, _, err := UpdateStoreTypeCommissionDefault(s.database.ctx, s.database.db, noOp); !errors.Is(err, ErrStoreTypeCommissionDefaultInvalidInput) {
 		s.t.Fatalf("no-op commission update error = %v, want invalid input", err)
 	}
 }
 
-func (s partnerCommissionPolicyScenario) updatePolicy(input StoreTypeCommissionDefaultUpdate) StoreTypeCommissionDefaultRecord {
+func (s storeTypeCommissionDefaultScenario) updateDefault(input StoreTypeCommissionDefaultUpdate) StoreTypeCommissionDefaultRecord {
 	input.CommissionRateBps = 1750
 	input.ExpectedVersion = 1
-	input.IdempotencyKey = "commission-update-" + s.suffix
+	input.IdempotencyKey = "default-update-" + s.suffix
 	updated, replayed, err := UpdateStoreTypeCommissionDefault(s.database.ctx, s.database.db, input)
 	if err != nil || replayed || updated.PolicyVersion != 2 || updated.CommissionRateBps != 1750 || updated.ChangedByActorID != s.actorID || updated.ChangeReason != s.reason {
-		s.t.Fatalf("update commission policy = (%+v, replayed=%t, %v), want audited version 2 at 1750 bps", updated, replayed, err)
+		s.t.Fatalf("update commission default = (%+v, replayed=%t, %v), want audited version 2 at 1750 bps", updated, replayed, err)
 	}
 	staleUpdate := input
 	staleUpdate.CommissionRateBps = 1800
-	staleUpdate.IdempotencyKey = "commission-stale-update-" + s.suffix
+	staleUpdate.IdempotencyKey = "default-stale-update-" + s.suffix
 	if _, _, err := UpdateStoreTypeCommissionDefault(s.database.ctx, s.database.db, staleUpdate); !errors.Is(err, ErrStoreTypeCommissionDefaultVersionConflict) {
-		s.t.Fatalf("stale commission update error = %v, want version conflict", err)
+		s.t.Fatalf("stale default update error = %v, want version conflict", err)
 	}
 	return updated
 }
 
-func (s partnerCommissionPolicyScenario) createSecondMode(input StoreTypeCommissionDefaultUpdate) {
+func (s storeTypeCommissionDefaultScenario) createSecondMode(input StoreTypeCommissionDefaultUpdate) {
 	input.FulfillmentMode = "CUSTOMER_PICKUP"
 	input.CommissionRateBps = 500
-	input.IdempotencyKey = "commission-pickup-" + s.suffix
+	input.IdempotencyKey = "default-pickup-" + s.suffix
 	if _, _, err := UpdateStoreTypeCommissionDefault(s.database.ctx, s.database.db, input); err != nil {
-		s.t.Fatalf("create second fulfillment policy: %v", err)
+		s.t.Fatalf("create second fulfillment default: %v", err)
 	}
 }
 
-func (s partnerCommissionPolicyScenario) assertReadback(updated StoreTypeCommissionDefaultRecord) {
-	policies, err := ReadStoreTypeCommissionDefaults(s.database.ctx, s.database.db, s.typeID)
+func (s storeTypeCommissionDefaultScenario) assertReadback(updated StoreTypeCommissionDefaultRecord) {
+	defaults, err := ReadStoreTypeCommissionDefaults(s.database.ctx, s.database.db, s.typeID)
 	if err != nil {
-		s.t.Fatalf("read commission policies: %v", err)
+		s.t.Fatalf("read commission defaults: %v", err)
 	}
-	if len(policies) != 2 || policies[0].FulfillmentMode != "CUSTOMER_PICKUP" || policies[1].FulfillmentMode != "PARTNER_CAPTAIN" {
-		s.t.Fatalf("commission policies = %+v, want two rows sorted by fulfillment mode", policies)
+	if len(defaults) != 2 || defaults[0].FulfillmentMode != "CUSTOMER_PICKUP" || defaults[1].FulfillmentMode != "PARTNER_CAPTAIN" {
+		s.t.Fatalf("commission defaults = %+v, want two rows sorted by fulfillment mode", defaults)
 	}
-	if policies[1].CommercialStoreTypeID != updated.CommercialStoreTypeID || policies[1].FulfillmentMode != updated.FulfillmentMode || policies[1].CommissionRateBps != updated.CommissionRateBps || policies[1].PolicyVersion != updated.PolicyVersion || policies[1].ChangedByActorID != updated.ChangedByActorID || policies[1].ChangeReason != updated.ChangeReason {
-		s.t.Fatalf("updated commission policy readback = %+v, want persisted update %+v", policies[1], updated)
+	if defaults[1].CommercialStoreTypeID != updated.CommercialStoreTypeID || defaults[1].FulfillmentMode != updated.FulfillmentMode || defaults[1].CommissionRateBps != updated.CommissionRateBps || defaults[1].PolicyVersion != updated.PolicyVersion || defaults[1].ChangedByActorID != updated.ChangedByActorID || defaults[1].ChangeReason != updated.ChangeReason {
+		s.t.Fatalf("updated commission default readback = %+v, want persisted update %+v", defaults[1], updated)
 	}
 }
 
-func (s partnerCommissionPolicyScenario) assertEventCount(want int) {
+func (s storeTypeCommissionDefaultScenario) assertEventCount(want int) {
 	var eventCount int
 	if err := s.database.db.QueryRowContext(s.database.ctx, `SELECT count(*) FROM wlt.commercial_store_type_commission_default_events WHERE commercial_store_type_id=$1`, s.typeID).Scan(&eventCount); err != nil {
 		s.t.Fatalf("read commission event count: %v", err)
@@ -149,12 +149,12 @@ func (s partnerCommissionPolicyScenario) assertEventCount(want int) {
 	}
 }
 
-func (s partnerCommissionPolicyScenario) deleteRows() {
+func (s storeTypeCommissionDefaultScenario) deleteRows() {
 	if _, err := s.database.db.ExecContext(s.database.ctx, `DELETE FROM wlt.commercial_store_type_commission_default_events WHERE commercial_store_type_id=$1`, s.typeID); err != nil {
-		s.t.Errorf("remove commission policy test events: %v", err)
+		s.t.Errorf("remove commission default test events: %v", err)
 	}
 	if _, err := s.database.db.ExecContext(s.database.ctx, `DELETE FROM wlt.commercial_store_type_commission_defaults WHERE commercial_store_type_id=$1`, s.typeID); err != nil {
-		s.t.Errorf("remove commission policy test rows: %v", err)
+		s.t.Errorf("remove commission default test rows: %v", err)
 	}
 }
 
@@ -184,7 +184,7 @@ func TestStoreTypeCommissionDefaultRejectsInvalidReadAndUpdateInputs(t *testing.
 			}
 			_, err := ReadStoreTypeCommissionDefaults(context.Background(), db, test.id)
 			if !errors.Is(err, ErrStoreTypeCommissionDefaultInvalidInput) {
-				t.Fatalf("read invalid commission policies error = %v, want ErrStoreTypeCommissionDefaultInvalidInput", err)
+				t.Fatalf("read invalid commission defaults error = %v, want ErrStoreTypeCommissionDefaultInvalidInput", err)
 			}
 		})
 	}
@@ -195,7 +195,7 @@ func TestStoreTypeCommissionDefaultRejectsInvalidReadAndUpdateInputs(t *testing.
 		CommissionRateBps:     1000,
 		ExpectedVersion:       0,
 		ChangedByActorID:      "operator-1",
-		Reason:                "approved policy change",
+		Reason:                "approved default change",
 		IdempotencyKey:        "commission-key-1",
 		CorrelationID:         "commission-correlation-1",
 	}
@@ -231,7 +231,7 @@ func TestStoreTypeCommissionDefaultRejectsInvalidReadAndUpdateInputs(t *testing.
 			}
 			test.change(&input)
 			if _, _, err := UpdateStoreTypeCommissionDefault(context.Background(), db, input); !errors.Is(err, ErrStoreTypeCommissionDefaultInvalidInput) {
-				t.Fatalf("update invalid commission policy error = %v, want ErrStoreTypeCommissionDefaultInvalidInput", err)
+				t.Fatalf("update invalid commission default error = %v, want ErrStoreTypeCommissionDefaultInvalidInput", err)
 			}
 		})
 	}
