@@ -63,7 +63,7 @@ func (s *Server) listOrderAdjustmentReconciliationCases(w http.ResponseWriter, r
 		return
 	}
 	orderID := strings.TrimSpace(r.URL.Query().Get("orderId"))
-	items, err := postgres.ListOrderAdjustmentReconciliationCases(r.Context(), s.db, orderID)
+	items, err := postgres.ListOrderAdjustmentReconciliationCases(r.Context(), s.db, orderID, actingActorID)
 	if err != nil {
 		writeOrderAdjustmentReconciliationError(w, err)
 		return

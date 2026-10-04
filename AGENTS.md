@@ -69,6 +69,8 @@ Executable configuration is the authority for mutable runtime details. Do not du
 
 Sonar is Cloud-only for this repository. Do not introduce a local Sonar server or parallel local Sonar truth unless the task explicitly changes that policy.
 
+Database migrations: while a local feature is still unadopted, migrations not merged to `main` and not applied to any durable database state that must be preserved may be rewritten, merged or deleted to keep a clean canonical baseline. Once a migration is merged to `main` or applied to a database whose state must be preserved or shared, treat it as immutable; every later schema change requires a new migration. Rebaseline/squash only at an explicit safe boundary where affected databases can be recreated or reconciled, preferably after a domain stabilizes and before Stage/Production. Before accepting migration changes, prove both fresh bootstrap and upgrade from the prior baseline with required data preserved.
+
 ## 5. Development and proof
 
 Default small-change loop:

@@ -35,6 +35,37 @@ async function stubCommercialStoreTypes(page: Page) {
   });
 }
 
+const operatorJoiningCaseDraft = {
+  ownerFullName: "سامي ناصر محمد العريقي",
+  contactPhoneE164: "+96777000100",
+  businessName: "نشاط الاختبار",
+  firstStoreName: "متجر الاختبار",
+  firstStoreAddress: "شارع الزبيري، صنعاء",
+  serviceCityId: "sanaa",
+  firstStoreVerticalId: "grocery",
+  firstStoreCommercialTypeId: "grocery-market",
+  firstStoreLatitude: 15.369445,
+  firstStoreLongitude: 44.191006,
+  firstStoreWorkingHours: { intervals: [{ dayOfWeek: 1, opensAt: "09:00", closesAt: "17:00", closesNextDay: false }] },
+  firstStoreProofType: "COMMERCIAL_REGISTRATION",
+  firstStoreProofNumber: "CR-100",
+} as const;
+
+async function fillOperatorJoiningCaseForm(page: Page) {
+  await page.getByLabel("اسم المالك الكامل").fill(operatorJoiningCaseDraft.ownerFullName);
+  await page.getByLabel("رقم جوال المالك (E.164)").fill("+967 77000100");
+  await page.getByLabel("الاسم القانوني للنشاط").fill(operatorJoiningCaseDraft.businessName);
+  await page.getByLabel("اسم المتجر الأول").fill(operatorJoiningCaseDraft.firstStoreName);
+  await page.getByLabel("عنوان المتجر").fill(operatorJoiningCaseDraft.firstStoreAddress);
+  await page.getByLabel("مدينة المتجر الأول").selectOption(operatorJoiningCaseDraft.serviceCityId);
+  await page.locator("#joining-vertical").selectOption(operatorJoiningCaseDraft.firstStoreVerticalId);
+  await page.locator("#joining-commercial-type").selectOption(operatorJoiningCaseDraft.firstStoreCommercialTypeId);
+  await page.getByRole("group", { name: "ساعات العمل الأسبوعية · توقيت المدينة" }).getByRole("checkbox").first().check();
+  await page.getByLabel("رقم الإثبات").fill(operatorJoiningCaseDraft.firstStoreProofNumber);
+  await page.getByLabel("خط عرض موقع المتجر").fill(String(operatorJoiningCaseDraft.firstStoreLatitude));
+  await page.getByLabel("خط طول موقع المتجر").fill(String(operatorJoiningCaseDraft.firstStoreLongitude));
+}
+
 async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "field", initialName: string, reviewedName: string, phone: string) {
   const surface = role === "captain" ? "captains" : "fields";
   const actorID = `act_${role}_reviewed_candidate`;
@@ -125,7 +156,7 @@ async function exerciseReviewedDshCandidateFlow(page: Page, role: "captain" | "f
   }
   await page.getByRole("button", { name: `منح دور ${role === "captain" ? "الكابتن" : "الميداني"}` }).click();
   if (role === "captain") await page.locator(`#${role}-candidate-state`).selectOption("eligible");
-  await expect(page.getByText(role === "captain" ? "اكتمل منح الدور؛ ينتظر تفعيل الحساب من الكابتن." : "مُنح الدور وأُعيدت قراءة ربط Identity وDSH.")).toBeVisible();
+  await expect(page.getByText(role === "captain" ? "اكتمل منح الدور؛ ينتظر تفعيل الحساب من الكابتن." : "مُنح دور الدخول وربط بأهلية DSH. الخطوة التالية للميداني: يفتح التطبيق، ويدخل رقم الهاتف المسجل، ثم يختار تفعيل الجهاز لإثبات الهاتف وإنشاء كلمة المرور.")).toBeVisible();
   await expect(page.getByText(actorID)).toHaveCount(0);
   expect(mutations).toEqual([
     role === "field" ? { action: "admit", fullNameAr: initialName, contactPhoneE164: phone, serviceCityId: "sanaa" } : { action: "admit", fullNameAr: initialName, contactPhoneE164: phone },
@@ -193,7 +224,7 @@ async function exerciseLegacyDshProfileReview(page: Page, role: "captain" | "fie
     if (!(await page.getByRole("button", { name: "اعتماد مراجعة الملف" }).isVisible())) await page.getByText("الخطوة التالية", { exact: true }).click();
     await expect(page.locator("#field-profile-name-act_field_legacy_review")).toHaveValue(name);
     await page.getByRole("button", { name: "اعتماد مراجعة الملف" }).click();
-    await expect(page.getByRole("status")).toContainText("تم الإجراء وأُعيدت قراءة حالة الحساب وأهلية DSH");
+    await expect(page.getByRole("status")).toContainText("اعتُمدت مراجعة الملف وأُعيدت قراءة حالته.");
   } else {
     await page.locator(`#${role}-candidate-name-${admissionID}`).fill(name);
     await page.getByRole("button", { name: "حفظ الملف", exact: true }).click();
@@ -805,7 +836,7 @@ test("legacy Field role with a missing profile is suspended before Identity acce
   await page.getByLabel("سبب الإجراء").fill("إيقاف حتى مراجعة الملف");
   await page.getByRole("button", { name: "إيقاف الوصول" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_field_legacy", action: "disable", expectedVersion: 2, reason: "إيقاف حتى مراجعة الملف" });
-  await expect(page.getByRole("status")).toContainText("تم الإجراء وأُعيدت قراءة حالة الحساب وأهلية DSH");
+  await expect(page.getByRole("status")).toContainText("أُوقف دور الدخول وأُعيدت قراءة حالة الحساب وأهلية DSH.");
 });
 
 test("legacy Captain profile review never offers role activation before review", async ({ page }) => {
@@ -839,20 +870,23 @@ test("legacy Captain profile review never offers role activation before review",
 
 test("Field reenrollment uses DSH eligibility and carries fresh actor, role, and admission versions", async ({ page }) => {
   await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
+  let reenrolled = false;
   let reenrollmentBody: Record<string, unknown> | undefined;
   await page.route("**/api/fields**", async (route) => {
     if (route.request().method() === "POST") {
       reenrollmentBody = route.request().postDataJSON() as Record<string, unknown>;
+      reenrolled = true;
       await route.fulfill({ status: 204 });
       return;
     }
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_reenroll", phoneE164: "+96777000105", role: "field", enabled: true, securityEnabled: true, actorVersion: 4, roleVersion: 2, admission: { id: "fld_adm_reenroll", actorId: "act_field_reenroll", state: "eligible", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_reenroll", phoneE164: "+96777000105", role: "field", enabled: true, securityEnabled: true, activatedAt: reenrolled ? undefined : "2026-09-20T08:00:00.000Z", actorVersion: 4, roleVersion: reenrolled ? 3 : 2, admission: { id: "fld_adm_reenroll", actorId: "act_field_reenroll", state: "eligible", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
   });
   await page.goto("/fields");
   await page.getByText("الخطوة التالية", { exact: true }).click();
   await page.getByLabel("سبب الإجراء").fill("استرداد جهاز الميدان");
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
-  await expect(page.getByRole("status")).toContainText("تم الإجراء وأُعيدت قراءة حالة الحساب وأهلية DSH");
+  await expect(page.locator("output.success-inline")).toContainText("أُجيزت إعادة تسجيل دور سبق تفعيله");
+  await expect(page.getByText("الدور جاهز. الخطوة التالية للميداني: يفتح تطبيق الميدان", { exact: false })).toContainText("يختار «تفعيل الجهاز» لإثبات الهاتف وإنشاء كلمة المرور");
   expect(reenrollmentBody).toMatchObject({
     actorId: "act_field_reenroll",
     action: "reenroll",
@@ -861,6 +895,7 @@ test("Field reenrollment uses DSH eligibility and carries fresh actor, role, and
     expectedAdmissionVersion: 8,
     reason: "استرداد جهاز الميدان",
   });
+  await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
 });
 
 test("Captain reenrollment goes through DSH eligibility and verifies the Identity readback", async ({ page }) => {
@@ -928,7 +963,7 @@ test("Field reenrollment conflicts reload the canonical DSH-owned roster before 
       await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: { code: "CONFLICT", message: "the access versions changed" } }) });
       return;
     }
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_conflict", phoneE164: "+96777000106", role: "field", enabled: true, securityEnabled: true, actorVersion: 4, roleVersion: conflictStateApplied ? 3 : 2, admission: { id: "fld_adm_conflict", actorId: "act_field_conflict", state: "eligible", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_conflict", phoneE164: "+96777000106", role: "field", enabled: true, activatedAt: "2026-09-20T08:00:00.000Z", securityEnabled: true, actorVersion: 4, roleVersion: conflictStateApplied ? 3 : 2, admission: { id: "fld_adm_conflict", actorId: "act_field_conflict", state: "eligible", version: 8, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
   });
   await page.goto("/fields");
   await page.getByText("الخطوة التالية", { exact: true }).click();
@@ -936,6 +971,38 @@ test("Field reenrollment conflicts reload the canonical DSH-owned roster before 
   await page.getByRole("button", { name: "إجازة إعادة التسجيل" }).click();
   await expect(page.getByText(/^تغيرت حالة الحساب بالتزامن\. أُعيد تحميل الحالة الحالية/)).toBeVisible();
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toBeVisible();
+});
+
+test("Field first activation is distinct from reenrollment and explains the next app step", async ({ page }) => {
+  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
+  await page.route("**/api/fields**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ kind: "account", account: { actorId: "act_field_first_activation", phoneE164: "+96777000118", role: "field", enabled: true, securityEnabled: true, actorVersion: 1, roleVersion: 1, admission: { id: "fld_adm_first_activation", actorId: "act_field_first_activation", fullNameAr: "سالم علي", state: "eligible", version: 1, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" } } }] }) });
+  });
+  await page.goto("/fields");
+  await expect(page.getByText("الدور جاهز؛ بانتظار تفعيل الجهاز")).toBeVisible();
+  await page.getByText("الخطوة التالية", { exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("يدخل رقم الهاتف المسجل");
+  await expect(page.getByRole("status")).toContainText("تفعيل الجهاز");
+  await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
+});
+
+test("Field admission form explains and enforces the international phone before save", async ({ page }) => {
+  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
+  await page.route("**/api/service-cities**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cities: [{ id: "sanaa", displayNameAr: "صنعاء", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
+  });
+  await page.route("**/api/fields**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [] }) });
+  });
+  await page.goto("/fields");
+  await page.getByText("إنشاء ملف ميداني", { exact: true }).click();
+  await page.getByLabel("الاسم الكامل بالعربية").fill("سالم علي");
+  await page.getByLabel("رقم الهاتف الدولي").fill("777765432");
+  await page.getByLabel("مدينة الخدمة").selectOption("sanaa");
+  await expect(page.getByText("الرقم المحلي وحده لا يُقبل")).toBeVisible();
+  await expect(page.getByRole("button", { name: "حفظ للمراجعة" })).toBeDisabled();
+  await page.getByLabel("رقم الهاتف الدولي").fill("+967 777 765 432");
+  await expect(page.getByRole("button", { name: "حفظ للمراجعة" })).toBeEnabled();
 });
 
 test("Field reenrollment remains unavailable until DSH restores eligibility", async ({ page }) => {
@@ -1313,30 +1380,22 @@ test("operator creates a DSH-owned joining case from prospective partner facts",
   await page.goto("/partners/new");
   await expect(page.getByRole("heading", { name: "إنشاء حالة انضمام جديدة", exact: true })).toBeVisible();
   await expect(page.getByLabel("معرّف Actor الشريك")).toHaveCount(0);
-  await expect(page.getByLabel("رقم هاتف الشريك")).toBeVisible();
-
-  await page.getByLabel("رقم هاتف الشريك").fill("+967 77000100");
-  await page.getByLabel("الاسم القانوني للنشاط").fill("نشاط الاختبار");
-  await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
-  await page.getByLabel("مدينة المتجر الأول").selectOption("sanaa");
-  await page.locator("#joining-vertical").selectOption("grocery");
-  await page.locator("#joining-commercial-type").selectOption("grocery-market");
-  await page.getByLabel("خط عرض موقع المتجر").fill("15.369445");
-  await page.getByLabel("خط طول موقع المتجر").fill("44.191006");
+  await expect(page.getByLabel("رقم جوال المالك (E.164)")).toBeVisible();
+  await fillOperatorJoiningCaseForm(page);
   const fulfillmentModes = page.getByRole("group", { name: "أوضاع الطلب التي اختارها الشريك عند الانضمام" });
   await expect(fulfillmentModes.getByRole("checkbox")).toHaveCount(3);
   await fulfillmentModes.getByRole("checkbox", { name: "استلم بنفسك من المتجر" }).check();
   await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();
 
   await expect(page.getByRole("status")).toContainText("الحالة: مسودة");
-  expect(requestBody).toEqual({ contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreCommercialTypeId: "grocery-market", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, firstStoreFulfillmentModes: ["CUSTOMER_PICKUP"] });
+  expect(requestBody).toEqual({ ...operatorJoiningCaseDraft, firstStoreFulfillmentModes: ["CUSTOMER_PICKUP"] });
 });
 
 test("operator resumes an uncertain joining-case create with the same idempotency key after reload", async ({ page }) => {
   await stubAuthenticatedSession(page);
   await stubCommercialStoreTypes(page);
   const attempts: Array<{ idempotencyKey: string; correlationId: string; body: unknown }> = [];
-  const expectedBody = { contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreCommercialTypeId: "grocery-market", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, firstStoreFulfillmentModes: ["CUSTOMER_PICKUP"] };
+  const expectedBody = { ...operatorJoiningCaseDraft, firstStoreFulfillmentModes: ["CUSTOMER_PICKUP"] };
   const createdCase = { id: "join_retry", contactPhoneE164: expectedBody.contactPhoneE164, businessName: expectedBody.businessName, firstStoreName: expectedBody.firstStoreName, serviceCityId: expectedBody.serviceCityId, firstStoreVerticalId: expectedBody.firstStoreVerticalId, firstStoreCommercialTypeId: expectedBody.firstStoreCommercialTypeId, firstStoreFulfillmentModes: expectedBody.firstStoreFulfillmentModes, firstStoreLatitude: expectedBody.firstStoreLatitude, firstStoreLongitude: expectedBody.firstStoreLongitude, state: "draft", version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" };
   await page.route("**/api/service-cities**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cities: [{ id: "sanaa", displayNameAr: "صنعاء", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
@@ -1346,9 +1405,14 @@ test("operator resumes an uncertain joining-case create with the same idempotenc
   });
   await page.route("**/api/partners/joining-cases", async (route) => {
     const request = route.request();
-    attempts.push({ idempotencyKey: request.headers()["idempotency-key"] ?? "", correlationId: request.headers()["x-correlation-id"] ?? "", body: request.postDataJSON() });
+    const body = request.postDataJSON() as Record<string, unknown>;
+    attempts.push({ idempotencyKey: request.headers()["idempotency-key"] ?? "", correlationId: request.headers()["x-correlation-id"] ?? "", body });
     if (attempts.length === 1) {
       await route.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ error: { code: "DSH_UNAVAILABLE" } }) });
+      return;
+    }
+    if (body.firstStoreProofNumber !== expectedBody.firstStoreProofNumber) {
+      await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: { code: "IDEMPOTENCY_CONFLICT" } }) });
       return;
     }
     await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ case: createdCase, idempotentReplay: true }) });
@@ -1358,30 +1422,38 @@ test("operator resumes an uncertain joining-case create with the same idempotenc
   });
 
   await page.goto("/partners/new");
-  await page.getByLabel("رقم هاتف الشريك").fill("+967 77000100");
-  await page.getByLabel("الاسم القانوني للنشاط").fill("نشاط الاختبار");
-  await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
-  await page.getByLabel("مدينة المتجر الأول").selectOption("sanaa");
-  await page.locator("#joining-vertical").selectOption("grocery");
-  await page.locator("#joining-commercial-type").selectOption("grocery-market");
-  await page.getByLabel("خط عرض موقع المتجر").fill("15.369445");
-  await page.getByLabel("خط طول موقع المتجر").fill("44.191006");
+  await fillOperatorJoiningCaseForm(page);
   await page.getByRole("checkbox", { name: "استلم بنفسك من المتجر" }).check();
   await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();
   await expect(page.getByText(/أعد المحاولة بالبيانات نفسها للتحقق بالمفتاح المحفوظ/)).toBeVisible();
-  await expect(page.getByLabel("رقم هاتف الشريك")).toBeDisabled();
+  await expect(page.getByLabel("رقم جوال المالك (E.164)")).toBeDisabled();
+  const storedMetadataRaw = await page.evaluate(() => window.sessionStorage.getItem("bthwani.control.partner.joining-case-create.v1.actor-operator"));
+  expect(storedMetadataRaw).not.toBeNull();
+  const storedMetadata = JSON.parse(storedMetadataRaw ?? "null") as Record<string, unknown>;
+  expect(Object.keys(storedMetadata).sort()).toEqual(["correlationId", "idempotencyKey"]);
+  expect(storedMetadataRaw).not.toContain("CR-100");
 
   await page.reload();
-  await expect(page.getByLabel("رقم هاتف الشريك")).toHaveValue("+96777000100");
+  await expect(page.getByRole("status")).toContainText("يحفظ المتصفح مفتاح المتابعة فقط");
+  await expect(page.getByLabel("رقم جوال المالك (E.164)")).toHaveValue("");
+  await fillOperatorJoiningCaseForm(page);
+  await page.getByRole("checkbox", { name: "استلم بنفسك من المتجر" }).check();
+  await page.getByLabel("رقم الإثبات").fill("CR-WRONG");
   await expect(page.getByRole("button", { name: "إعادة محاولة إنشاء الحالة" })).toBeEnabled();
+  await page.getByRole("button", { name: "إعادة محاولة إنشاء الحالة" }).click();
+  await expect(page.getByText(/لم تطابق البيانات مفتاح المحاولة المحفوظ/)).toBeVisible();
+  await expect(page.getByLabel("رقم جوال المالك (E.164)")).toBeEnabled();
+  await page.getByLabel("رقم الإثبات").fill(operatorJoiningCaseDraft.firstStoreProofNumber);
   await page.getByRole("button", { name: "إعادة محاولة إنشاء الحالة" }).click();
   await expect(page).toHaveURL(/\/partners\/join_retry$/);
 
-  expect(attempts).toHaveLength(2);
-  expect(attempts[0]!.idempotencyKey).toMatch(/^partner_joining_case_create_/);
-  expect(attempts[1]!.idempotencyKey).toBe(attempts[0]!.idempotencyKey);
-  expect(attempts[1]!.correlationId).toBe(attempts[0]!.correlationId);
-  expect(attempts.map((attempt) => attempt.body)).toEqual([expectedBody, expectedBody]);
+  expect(attempts).toHaveLength(3);
+  const idempotencyKey = attempts[0]?.idempotencyKey ?? "";
+  const correlationId = attempts[0]?.correlationId ?? "";
+  expect(idempotencyKey).toMatch(/^partner_joining_case_create_/);
+  expect(attempts.every((attempt) => attempt.idempotencyKey === idempotencyKey)).toBe(true);
+  expect(attempts.every((attempt) => attempt.correlationId === correlationId)).toBe(true);
+  expect(attempts.map((attempt) => attempt.body)).toEqual([expectedBody, { ...expectedBody, firstStoreProofNumber: "CR-WRONG" }, expectedBody]);
 });
 
 test("operator gets an actionable empty state when no active commerce vertical exists", async ({ page }) => {
@@ -1812,14 +1884,7 @@ test("partner Store publication exposes the canonical readiness block", async ({
      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ store: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", serviceCityId: "sanaa", primaryVerticalId: "grocery", fulfillmentModes: ["BTHWANI_CAPTAIN"], version: 1, publicationState: "unpublished", publicationReadiness: { ready: false, blockedReason }, offers: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, idempotentReplay: false }) });
   });
   await page.goto("/partners/new");
-  await page.getByLabel("رقم هاتف الشريك").fill("+96777000100");
-  await page.getByLabel("الاسم القانوني للنشاط").fill("نشاط الاختبار");
-  await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
-  await page.getByLabel("مدينة المتجر الأول").selectOption("sanaa");
-  await page.locator("#joining-vertical").selectOption("grocery");
-  await page.locator("#joining-commercial-type").selectOption("grocery-market");
-  await page.getByLabel("خط عرض موقع المتجر").fill("15.369445");
-  await page.getByLabel("خط طول موقع المتجر").fill("44.191006");
+  await fillOperatorJoiningCaseForm(page);
   await page.getByRole("checkbox", { name: "توصيل بثواني · مسؤولية المنصة" }).check();
   await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();
   await page.getByRole("link", { name: "فتح ملف المتجر" }).click();

@@ -21,12 +21,12 @@ type FieldServer struct {
 	service *field.Service
 }
 
-func NewField(identityClient *identityintegration.Client, accessToken string, db *sql.DB) (*FieldServer, error) {
+func NewField(identityClient *identityintegration.Client, accessToken string, db *sql.DB, evidenceKeys *postgres.JoiningCaseEvidenceKeyring) (*FieldServer, error) {
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
 		return nil, err
 	}
-	service, err := field.New(identityClient, db)
+	service, err := field.New(identityClient, db, evidenceKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -49,6 +49,7 @@ func (s *FieldServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/field/joining-cases", s.listJoiningCases)
 	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}", s.readJoiningCase)
 	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/submit", s.submitJoiningCase)
+	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/proof-image", s.uploadJoiningCaseProofImage)
 }
 
 func (s *FieldServer) admit(w http.ResponseWriter, r *http.Request) {
@@ -355,6 +356,35 @@ func (s *FieldServer) submitJoiningCase(w http.ResponseWriter, r *http.Request) 
 	writeFieldCaseResult(w, http.StatusOK, result)
 }
 
+func (s *FieldServer) uploadJoiningCaseProofImage(w http.ResponseWriter, r *http.Request) {
+	if !authorizedFieldSession(w, r) {
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" || r.Header.Get("If-Match") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "client actor authority headers are forbidden")
+		return
+	}
+	correlation, idempotency, ok := requiredFieldMutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	expectedVersion, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Version")))
+	if err != nil || expectedVersion < 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Expected-Version must be a positive integer")
+		return
+	}
+	data, contentType, ok := readMultipartImageUpload(w, r, "a valid proof image upload is required")
+	if !ok {
+		return
+	}
+	result, err := s.service.UploadJoiningCaseProofImage(r.Context(), bearerToken(r), r.PathValue("caseId"), idempotency, correlation, expectedVersion, contentType, data)
+	if err != nil {
+		writeFieldError(w, err)
+		return
+	}
+	writeFieldCaseResult(w, responseStatus(result.Replayed), result)
+}
+
 func (s *FieldServer) authorizedService(w http.ResponseWriter, r *http.Request) bool {
 	if s.auth.Authorized(r) {
 		return true
@@ -372,7 +402,7 @@ func authorizedFieldSession(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func writeFieldCaseResult(w http.ResponseWriter, status int, result postgres.JoiningCaseResult) {
-	view := contract.JoiningCaseView{ID: result.Case.ID, ContactPhoneE164: result.Case.ContactPhoneE164, BusinessName: result.Case.BusinessName, FirstStoreName: result.Case.FirstStoreName, ServiceCityID: result.Case.FirstStoreServiceCityID, FirstStoreVerticalID: result.Case.FirstStoreVerticalID, FirstStoreCommercialTypeID: result.Case.FirstStoreCommercialTypeID, FirstStoreLatitude: nullableFloatValue(result.Case.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(result.Case.FirstStoreLongitude), FirstStoreFulfillmentModes: toFulfillmentModes(result.Case.FirstStoreFulfillmentModes), Origin: contract.JoiningCaseOrigin(result.Case.Origin), State: contract.JoiningCaseState(result.Case.State), CorrectionReason: result.Case.CorrectionReason, Version: result.Case.Version, CreatedAt: result.Case.CreatedAt, UpdatedAt: result.Case.UpdatedAt}
+	view := toJoiningCaseView(result.Case)
 	view.PartnerActorID = result.Case.PartnerActorID
 	view.ReviewedBy = result.Case.ReviewedBy
 	view.StoreProfileImage = toStoreProfileImage(result.Case.StoreProfileImage)

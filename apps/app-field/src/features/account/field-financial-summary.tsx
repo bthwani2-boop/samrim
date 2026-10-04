@@ -11,35 +11,84 @@ export function FieldFinancialSummaryCard() {
   const styles = createStyles(theme);
   const [summary, setSummary] = useState<FieldFinancialSummary | null>(null);
   const [ledger, setLedger] = useState<FieldAcquisitionEntitlementPage | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [ledgerLoading, setLedgerLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState("");
-  const load = useCallback(async (cursor = "", append = false) => {
-    if (append) setLoadingMore(true);
+  const [summaryError, setSummaryError] = useState("");
+  const [ledgerError, setLedgerError] = useState("");
+
+  const load = useCallback(async () => {
+    setSummaryLoading(true);
+    setLedgerLoading(true);
+    setSummaryError("");
+    setLedgerError("");
+
+    let token: string;
+    try {
+      token = await getUsableIdentityAccessToken();
+    } catch (cause) {
+      console.warn("Field financial identity token read failed", cause);
+      setSummaryError("تعذر التحقق من حسابك لقراءة المستحقات.");
+      setLedgerError("تعذر التحقق من حسابك لقراءة الحركات.");
+      setSummaryLoading(false);
+      setLedgerLoading(false);
+      return;
+    }
+
+    const [financialResult, ledgerResult] = await Promise.allSettled([
+      fieldClient().readOwnFieldFinancialSummary(token),
+      fieldClient().listOwnFieldAcquisitionEntitlements(token, 50),
+    ]);
+
+    if (financialResult.status === "fulfilled") {
+      setSummary(financialResult.value.summary);
+    } else {
+      console.warn("DSH Field financial summary readback failed", financialResult.reason);
+      setSummaryError("تعذر قراءة ملخص مستحقاتك الآن.");
+    }
+    if (ledgerResult.status === "fulfilled") {
+      setLedger(ledgerResult.value);
+    } else {
+      console.warn("DSH Field acquisition entitlement readback failed", ledgerResult.reason);
+      setLedgerError("تعذر قراءة حركات مكافآت الشركاء الآن.");
+    }
+    setSummaryLoading(false);
+    setLedgerLoading(false);
+  }, []);
+
+  const loadMore = useCallback(async () => {
+    if (!ledger?.nextCursor || loadingMore || ledgerLoading) return;
+    setLoadingMore(true);
+    setLedgerError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const [financial, entries] = await Promise.all([
-        fieldClient().readOwnFieldFinancialSummary(token),
-        fieldClient().listOwnFieldAcquisitionEntitlements(token, 50, cursor),
-      ]);
-      setSummary(financial.summary);
-      setLedger((current) => append && current ? { entitlements: [...current.entitlements, ...entries.entitlements], ...(entries.nextCursor ? { nextCursor: entries.nextCursor } : {}) } : entries);
-      setError("");
+      const nextPage = await fieldClient().listOwnFieldAcquisitionEntitlements(token, 50, ledger.nextCursor);
+      setLedger((current) => {
+        if (!current) return nextPage;
+        const knownIDs = new Set(current.entitlements.map((entry) => entry.ledgerTransactionId));
+        return {
+          entitlements: [...current.entitlements, ...nextPage.entitlements.filter((entry) => !knownIDs.has(entry.ledgerTransactionId))],
+          ...(nextPage.nextCursor ? { nextCursor: nextPage.nextCursor } : {}),
+        };
+      });
     } catch (cause) {
-      console.error("DSH Field financial summary readback failed", cause);
-      setError("تعذر قراءة محفظة الميداني الآن.");
+      console.warn("DSH Field acquisition entitlement continuation readback failed", cause);
+      setLedgerError("تعذر تحميل الحركات الأقدم. أعد المحاولة.");
     } finally {
       setLoadingMore(false);
     }
-  }, []);
+  }, [ledger?.nextCursor, ledgerLoading, loadingMore]);
+
   useEffect(() => { void load(); }, [load]);
+
   const entitlementRows = ledger?.entitlements.map((entry) => <View key={entry.ledgerTransactionId} style={styles.entry}>
     <View style={styles.entryMain}>
       <Text style={styles.value}>+{formatMoney(entry.rewardMinor, entry.currency)}</Text>
       <Text style={styles.label}>استحقاق ضم شريك · {entry.storeName}</Text>
       <Text style={styles.muted}>تحقق بنشر المتجر وظهوره للعميل · {new Date(entry.createdAt).toLocaleDateString("ar-YE")}</Text>
     </View>
-    <Text accessibilityLabel={`معرّف الحركة ${entry.ledgerTransactionId}`} style={styles.transactionID}>{entry.ledgerTransactionId}</Text>
   </View>);
+
   return <BthwaniSurface tone="base" style={styles.card}>
     <Text style={styles.eyebrow}>المحفظة والاستحقاقات</Text>
     <Text style={styles.title}>استحقاق ضم الشريك</Text>
@@ -48,14 +97,16 @@ export function FieldFinancialSummaryCard() {
       <View><Text style={styles.label}>شركاء تحقق استحقاقهم</Text><Text style={styles.value}>{summary.partnerCount.toLocaleString("ar-YE")}</Text></View>
       <View><Text style={styles.label}>إجمالي الاستحقاقات</Text><Text style={styles.value}>{formatMoney(summary.entitlementMinor, summary.currency)}</Text></View>
     </View> : null}
-    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    {!summary || !ledger ? <Text style={styles.muted}>جارٍ قراءة سجل المحفظة من WLT…</Text> : null}
+    {summaryLoading && !summary ? <Text style={styles.muted}>جارٍ قراءة ملخص المستحقات…</Text> : null}
+    {summaryError ? <Text accessibilityRole="alert" style={styles.error}>{summaryError}</Text> : null}
     <Text style={styles.muted}>يُثبت الاستحقاق بعد ظهور متجر الشريك للعميل؛ الرصيد المتاح والمحجوز يظهران في قسم التسوية.</Text>
     <Text style={styles.sectionTitle}>حركات استحقاق ضم الشريك</Text>
+    {ledgerLoading && !ledger ? <Text style={styles.muted}>جارٍ قراءة سجل المكافآت…</Text> : null}
+    {ledgerError ? <Text accessibilityRole="alert" style={styles.error}>{ledgerError}</Text> : null}
     {entitlementRows}
-    {ledger?.entitlements.length === 0 ? <Text style={styles.muted}>لا توجد حركات استحقاق مسجلة حتى الآن.</Text> : null}
-    {ledger?.nextCursor ? <BthwaniButton busy={loadingMore} label="عرض الحركات الأقدم" onPress={() => void load(ledger.nextCursor, true)} variant="secondary" /> : null}
-    <BthwaniButton busy={loadingMore} label="تحديث السجل" onPress={() => void load()} variant="secondary" />
+    {ledger && ledger.entitlements.length === 0 ? <Text style={styles.muted}>لا توجد حركات استحقاق مسجلة حتى الآن.</Text> : null}
+    {ledger?.nextCursor ? <BthwaniButton busy={loadingMore} label="عرض الحركات الأقدم" onPress={() => void loadMore()} variant="secondary" /> : null}
+    <BthwaniButton busy={summaryLoading || ledgerLoading} label="تحديث السجل" onPress={() => void load()} variant="secondary" />
   </BthwaniSurface>;
 }
 
@@ -68,7 +119,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     grid: { flexDirection: "row", gap: spacing[5] },
     entry: { borderColor: theme.borderColor, borderTopWidth: borders.hairline, flexDirection: "row", gap: spacing[3], justifyContent: "space-between", paddingVertical: spacing[3] },
     entryMain: { flex: 1, gap: spacing[1] },
-    transactionID: { ...typography.caption, color: theme.colorMuted, maxWidth: 110 },
     label: { ...typography.caption, color: theme.colorMuted },
     value: { ...typography.bodyStrong, color: theme.color, marginTop: spacing[1] },
     muted: { ...typography.bodySm, color: theme.colorMuted },

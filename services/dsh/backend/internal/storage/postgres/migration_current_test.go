@@ -8,7 +8,7 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
 
-func TestCanonicalJourneyMigrationGraphEndsAt91(t *testing.T) {
+func TestCanonicalJourneyMigrationGraphIncludesJoiningCaseIntakeDetails(t *testing.T) {
 	migrationDirectory := filepath.Join("..", "..", "..", "..", "database", "migrations")
 	records, migrationSQL, err := postgres.LoadCanonicalMigrations(migrationDirectory)
 	if err != nil {
@@ -18,8 +18,8 @@ func TestCanonicalJourneyMigrationGraphEndsAt91(t *testing.T) {
 		t.Fatalf("canonical DSH migration graph size: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.CanonicalSchemaVersion)
 	}
 	last := records[len(records)-1]
-	if last.Version != postgres.CanonicalSchemaVersion || last.Name != "091_order_adjustment_financial_handoff.sql" {
-		t.Fatalf("last canonical DSH migration = v%d %q; want v%d 091_order_adjustment_financial_handoff.sql", last.Version, last.Name, postgres.CanonicalSchemaVersion)
+	if last.Version != postgres.CanonicalSchemaVersion || last.Name != "092_joining_case_store_intake_details.sql" {
+		t.Fatalf("last canonical DSH migration = v%d %q; want v%d 092_joining_case_store_intake_details.sql", last.Version, last.Name, postgres.CanonicalSchemaVersion)
 	}
 
 	migrationByName := make(map[string]string, len(records))
@@ -34,6 +34,7 @@ func TestCanonicalJourneyMigrationGraphEndsAt91(t *testing.T) {
 		"089_store_access_permission_updates.sql",
 		"090_order_store_orderability_snapshot.sql",
 		"091_order_adjustment_financial_handoff.sql",
+		"092_joining_case_store_intake_details.sql",
 	} {
 		if _, ok := migrationByName[required]; !ok {
 			t.Fatalf("canonical DSH migration missing: %s", required)

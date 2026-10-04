@@ -14,8 +14,8 @@ const actions: ReadonlyArray<Readonly<{
   label: string;
   route: Href;
 }>> = [
-  { description: "تابع الملفات التي قدمتها", icon: "cases", label: "ملفات الانضمام", route: "/cases" },
-  { description: "أنشئ ملف انضمام لمتجر جديد", icon: "store", label: "طلب انضمام متجر", route: "/new-case" },
+  { description: "تابع الشركاء الذين تعمل على ضمهم", icon: "cases", label: "الشركاء", route: "/cases" },
+  { description: "أضف متجرًا لشريك جديد", icon: "store", label: "إضافة شريك", route: "/new-case" },
   { description: "راجع مكافآت الميدان", icon: "wallet", label: "محفظة الميداني", route: "/wallet" as Href },
 ];
 
@@ -23,7 +23,7 @@ type OwnAdmissionState = ReturnType<typeof useOwnFieldAdmission>["state"];
 
 function profileDescription(state: OwnAdmissionState, phone?: string | null): string {
   if (state.kind === "loading") return "جارٍ قراءة الملف…";
-  if (state.kind === "missing") return "لا يوجد سجل أهلية ميدانية لهذا الحساب في DSH. تواصل مع المشغّل لإكمال إجراءات التسجيل.";
+  if (state.kind === "missing") return "لم يكتمل تفعيل حسابك للميدان بعد. تواصل مع فريق التشغيل.";
   if (state.kind === "error") return "تعذر قراءة الملف الآن؛ أعد المحاولة عند توفر الاتصال.";
   return phone || "رقم الهاتف غير متاح";
 }
@@ -55,7 +55,7 @@ export default function FieldAccount() {
       <View style={styles.heading}>
         <Text style={styles.eyebrow}>مساحة الميدان</Text>
         <Text style={styles.title}>إدارة حساب الميداني</Text>
-        <Text style={styles.description}>إعدادات الحساب وروابط ملفات الانضمام ومكافآت الميدان.</Text>
+        <Text style={styles.description}>إعدادات الحساب وروابط الشركاء ومكافآت الميدان.</Text>
       </View>
 
       <BthwaniSurface tone="raised" style={styles.profileCard}>
@@ -65,10 +65,10 @@ export default function FieldAccount() {
         <View style={styles.profileCopy}>
           <Text style={styles.profileTitle}>{profile?.fullNameAr || "ملف الميداني"}</Text>
           <Text style={styles.profileDescription}>{profileDescription(profileState, profile?.contactPhoneE164)}</Text>
-          {profileState.kind === "ready" && profile ? <Text style={styles.profileDescription}>حالة الأهلية: {fieldAdmissionStateLabel(profile.state)}</Text> : null}
+          {profileState.kind === "ready" && profile ? <Text style={styles.profileDescription}>حالة التفعيل: {fieldAdmissionStateLabel(profile.state)}</Text> : null}
         </View>
       </BthwaniSurface>
-      {profileState.kind === "missing" || profileState.kind === "error" ? <BthwaniButton label="تحديث حالة الأهلية" onPress={() => void refreshProfile()} variant="secondary" /> : null}
+      {profileState.kind === "missing" || profileState.kind === "error" ? <BthwaniButton label="تحديث حالة التفعيل" onPress={() => void refreshProfile()} variant="secondary" /> : null}
 
       <BthwaniSectionHeader title="مساحات العمل" subtitle="افتح الخدمة التي تحتاجها مباشرة." />
       <View style={styles.actions}>

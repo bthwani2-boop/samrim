@@ -85,8 +85,8 @@ export function FieldCases() {
         setMissingAdmission(true);
         return;
       }
-      console.error("DSH Field cases readback failed", cause);
-      setError("تعذر قراءة ملفات الانضمام. أعد المحاولة.");
+      console.warn("DSH Field cases readback failed", cause);
+      setError("تعذر قراءة قائمة الشركاء. أعد المحاولة.");
     } finally {
       if (pagination.current.sequence === sequence) setLoading(false);
     }
@@ -119,8 +119,8 @@ export function FieldCases() {
       setNextCursor(pagination.current.cursor);
     } catch (cause) {
       if (pagination.current.sequence !== sequence) return;
-      console.error("DSH Field cases continuation readback failed", cause);
-      setPaginationError("تعذر تحميل بقية الملفات. أعد المحاولة.");
+      console.warn("DSH Field cases continuation readback failed", cause);
+      setPaginationError("تعذر تحميل بقية الشركاء. أعد المحاولة.");
     } finally {
       if (pagination.current.sequence === sequence) {
         pagination.current.loadingMore = false;
@@ -138,7 +138,7 @@ export function FieldCases() {
       const current = await fieldClient().readOwnFieldJoiningCase(token, item.id);
       if (current.case.state !== "draft") {
         await load();
-        setNotice("أُعيدت قراءة الحالة الكانونية: " + joiningCaseStateLabel(current.case.state) + ".");
+        setNotice("الحالة الحالية للشريك: " + joiningCaseStateLabel(current.case.state) + ".");
         return;
       }
       const identity = await fieldCaseSubmitIdentity(item.id, current.case.version);
@@ -146,16 +146,16 @@ export function FieldCases() {
       await load();
       setNotice("وصل طلب الانضمام إلى طابور قبول المشغّل.");
     } catch (cause) {
-      console.error("DSH Field joining-case submission failed", cause);
+      console.warn("DSH Field joining-case submission failed", cause);
       try {
         const token = await getUsableIdentityAccessToken();
         const latest = await fieldClient().readOwnFieldJoiningCase(token, item.id);
         await load();
-        if (latest.case.state === "draft") setError("لم يتأكد الإرسال. أعد المحاولة؛ سيستخدم DSH هوية العملية نفسها لهذه النسخة.");
-        else setNotice("وصل الطلب إلى DSH. الحالة الحالية: " + joiningCaseStateLabel(latest.case.state) + ".");
+        if (latest.case.state === "draft") setError("لم يتأكد الإرسال. أعد المحاولة؛ سنحدّث الحالة قبل الإرسال.");
+        else setNotice("أُرسل الطلب للمراجعة. الحالة الحالية: " + joiningCaseStateLabel(latest.case.state) + ".");
       } catch (readError) {
-        console.error("DSH Field joining-case submit recovery readback failed", readError);
-        setError("تعذر تأكيد الإرسال وإعادة القراءة. أعد قراءة الملفات؛ إعادة المحاولة للنسخة نفسها تستخدم هوية العملية نفسها.");
+        console.warn("DSH Field joining-case submit recovery readback failed", readError);
+        setError("تعذر تأكيد الإرسال. حدّث قائمة الشركاء قبل المحاولة مجددًا.");
       }
     } finally {
       setBusy("");
@@ -172,8 +172,8 @@ export function FieldCases() {
       setMediaCase(current);
       setStoreImage(null);
     } catch (cause) {
-      console.error("DSH Field joining-case media readback failed", cause);
-      setError("تعذر قراءة صورة الملف من DSH. أعد المحاولة.");
+      console.warn("DSH Field joining-case media readback failed", cause);
+      setError("تعذر قراءة صورة المتجر الآن. أعد المحاولة.");
     } finally {
       setBusy("");
     }
@@ -192,7 +192,7 @@ export function FieldCases() {
       setStoreImage({ uri: asset.uri, name: asset.fileName ?? "store-image.jpg", type: asset.mimeType ?? "image/jpeg", blob: await response.blob(), provenance: { creator: "", sourceDescription: "", sourceUri: "", rightsStatement: "", rightsUri: "", rightsAttested: false } });
       setError("");
     } catch (cause) {
-      console.error("Field store image preparation failed", cause);
+      console.warn("Field store image preparation failed", cause);
       setError("تعذر تجهيز صورة المتجر. اختر الصورة مرة أخرى.");
     }
   }
@@ -215,21 +215,21 @@ export function FieldCases() {
       setPendingImageAttempt(null);
       await load();
     } catch (cause) {
-      console.error("DSH Field store image upload failed", cause);
+      console.warn("DSH Field store image upload failed", cause);
       if (dshErrorCode(cause) === "MEDIA_STORAGE_UNAVAILABLE") {
         setPendingImageAttempt(null);
         setError("تعذر تخزين الصورة. أعد رفع الملف المختار أو اختر صورة أخرى.");
       } else if (isOutcomeUncertain(cause)) {
-        setError("لم تتأكد نتيجة رفع الصورة. أعد المحاولة بالمفتاح نفسه لإعادة قراءتها من DSH.");
+        setError("لم نتأكد من رفع الصورة بعد. أعد المحاولة للتحقق من حالتها.");
       } else {
         setPendingImageAttempt(null);
         try {
           const token = await getUsableIdentityAccessToken();
           setMediaCase(await fieldClient().readOwnFieldJoiningCase(token, attempt.caseID));
         } catch (readError) {
-          console.error("DSH Field store image recovery readback failed", readError);
+          console.warn("DSH Field store image recovery readback failed", readError);
         }
-        setError("لم تُعتمد الصورة بهذه النسخة. أُعيدت قراءة الحالة الكانونية؛ تحقق منها ثم أعد المحاولة.");
+        setError("لم تُحفظ الصورة. حدّث بيانات الشريك ثم أعد المحاولة.");
       }
     } finally {
       setBusy("");
@@ -252,15 +252,15 @@ export function FieldCases() {
 
     let nextStepText: string;
     if (item.state === "draft") {
-      nextStepText = "الخطوة التالية: راجع البيانات ثم أرسل الملف للمراجعة.";
+      nextStepText = "الخطوة التالية: راجع بيانات الشريك وأرسل الطلب للمراجعة.";
     } else if (item.state === "admission_requested") {
-      nextStepText = "وصل الملف إلى طابور المشغّل لإنشاء دور الشريك بعد القبول.";
+      nextStepText = "استلم فريق التشغيل الطلب؛ سيظهر للشريك بعد مراجعة الانضمام.";
     } else if (item.state === "submitted") {
-      nextStepText = "قُبلت الإحالة؛ أصبحت الحالة لدى الشريك والمشغّل للمراجعة.";
+      nextStepText = "أُرسل طلب الانضمام إلى الشريك وفريق التشغيل للمراجعة.";
     } else if (item.state === "needs_correction") {
       nextStepText = "الخطوة التالية: يصحح الشريك المرتبط البيانات ويعيد الإرسال.";
     } else {
-      nextStepText = "اعتمد المشغّل الحالة؛ يظهر المتجر للعميل بعد اكتمال النشر والكتالوج.";
+      nextStepText = "اعتمد فريق التشغيل الطلب؛ يتابع المتجر التفعيل قبل ظهوره للعملاء.";
     }
 
     let storeImageButtonLabel: string;
@@ -280,8 +280,8 @@ export function FieldCases() {
       {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt)} label="قراءة صورة المتجر أو استكمالها" onPress={() => void openStoreImage(item)} variant="secondary" /> : null}
       {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(pendingImageAttempt) || (Boolean(storeImage) && mediaCase?.case.id !== item.id)} label="إرسال للمراجعة" onPress={() => void submitCase(item)} /> : null}
       {mediaCase?.case.id === item.id ? <View style={styles.card}>
-        <Text style={styles.cardTitle}>الصورة الكانونية للمتجر</Text>
-        {mediaCase.case.storeProfileImage ? <Image accessibilityLabel="صورة المتجر المحفوظة في DSH" source={{ uri: mediaCase.case.storeProfileImage.uri }} style={{ borderRadius: 12, height: 150, width: "100%" }} resizeMode="cover" /> : <Text style={styles.muted}>لا توجد صورة محفوظة للملف بعد.</Text>}
+        <Text style={styles.cardTitle}>صورة واجهة المتجر</Text>
+        {mediaCase.case.storeProfileImage ? <Image accessibilityLabel="صورة المتجر المحفوظة" source={{ uri: mediaCase.case.storeProfileImage.uri }} style={{ borderRadius: 12, height: 150, width: "100%" }} resizeMode="cover" /> : <Text style={styles.muted}>لا توجد صورة محفوظة للشريك بعد.</Text>}
         {storeImage ? <Image accessibilityLabel="معاينة صورة المتجر الجديدة" source={{ uri: storeImage.uri }} style={{ borderRadius: 12, height: 120, width: "100%" }} resizeMode="cover" /> : null}
         {storeImage ? <View style={styles.card}>
           <Text style={styles.cardTitle}>مصدر الصورة وحق استخدامها</Text>
@@ -302,26 +302,26 @@ export function FieldCases() {
 
   let emptyMessage: string;
   if (missingAdmission) {
-    emptyMessage = "لا يوجد سجل أهلية ميدانية لهذا الحساب في DSH.";
+    emptyMessage = "لم يكتمل تفعيل حسابك للميدان بعد. تواصل مع فريق التشغيل.";
   } else if (appliedQuery) {
-    emptyMessage = "لا توجد ملفات مطابقة للبحث.";
+    emptyMessage = "لا توجد نتائج مطابقة للبحث.";
   } else {
-    emptyMessage = "لا توجد ملفات انضمام من هذا الميدان بعد.";
+    emptyMessage = "لم تضف شركاء بعد.";
   }
 
   let paginationFooter = null;
   if (loadingMore) {
-    paginationFooter = <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ تحميل بقية الملفات…</Text></View>;
+    paginationFooter = <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ تحميل بقية الشركاء…</Text></View>;
   } else if (paginationError) {
-    paginationFooter = <View style={styles.caseListFooter}><Text accessibilityRole="alert" style={styles.error}>{paginationError}</Text><BthwaniButton disabled={Boolean(busy)} label="إعادة تحميل بقية الملفات" onPress={() => void loadMore()} variant="secondary" /></View>;
+    paginationFooter = <View style={styles.caseListFooter}><Text accessibilityRole="alert" style={styles.error}>{paginationError}</Text><BthwaniButton disabled={Boolean(busy)} label="تحميل بقية الشركاء مجددًا" onPress={() => void loadMore()} variant="secondary" /></View>;
   } else if (nextCursor) {
-    paginationFooter = <View style={styles.caseListFooter}><BthwaniButton disabled={Boolean(busy) || loading} label="تحميل المزيد من الملفات" onPress={() => void loadMore()} variant="secondary" /></View>;
+    paginationFooter = <View style={styles.caseListFooter}><BthwaniButton disabled={Boolean(busy) || loading} label="تحميل المزيد من الشركاء" onPress={() => void loadMore()} variant="secondary" /></View>;
   } else if (cases.length > 0) {
-    paginationFooter = <View style={styles.caseListFooter}><Text style={styles.muted}>تم تحميل كل الملفات المطابقة.</Text></View>;
+    paginationFooter = <View style={styles.caseListFooter}><Text style={styles.muted}>عُرضت كل النتائج المطابقة.</Text></View>;
   }
 
   return <FlatList
-    accessibilityLabel="ملفات الانضمام"
+    accessibilityLabel="الشركاء"
     data={cases}
     keyExtractor={(item) => item.id}
     keyboardDismissMode="on-drag"
@@ -332,12 +332,12 @@ export function FieldCases() {
     ListFooterComponent={paginationFooter}
     ListFooterComponentStyle={styles.caseListFooter}
     ListHeaderComponent={<View style={styles.container}>
-      <Text style={styles.title}>ملفات الانضمام</Text>
-      <Text style={styles.muted}>تابع حالة ملفات الانضمام وأرسل الملف للمراجعة عندما تكتمل بياناته.</Text>
-      {cases.length > 0 ? <Text style={styles.sectionTitle}>ملفات محمّلة: {cases.length}{nextCursor ? " · توجد ملفات أخرى" : ""}</Text> : null}
+      <Text style={styles.title}>الشركاء</Text>
+      <Text style={styles.muted}>تابع الشركاء الذين تعمل على ضمهم، وأرسل بياناتهم للمراجعة عند اكتمالها.</Text>
+      {cases.length > 0 ? <Text style={styles.sectionTitle}>عدد الشركاء: {cases.length}{nextCursor ? " · توجد نتائج أخرى" : ""}</Text> : null}
       {error && cases.length > 0 ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {notice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}
-      {cases.length > 0 ? <BthwaniButton disabled={Boolean(busy) || loading} label="تحديث الملفات" onPress={() => void load()} variant="secondary" /> : null}
+      {cases.length > 0 ? <BthwaniButton disabled={Boolean(busy) || loading} label="تحديث القائمة" onPress={() => void load()} variant="secondary" /> : null}
     </View>}
     onRefresh={() => void load()}
     refreshing={loading && cases.length > 0}

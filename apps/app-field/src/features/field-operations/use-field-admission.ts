@@ -27,7 +27,7 @@ export function useOwnFieldAdmission() {
         if (requestSequence.current === sequence) setState({ kind: "missing" });
         return;
       }
-      console.error("DSH Field admission readback failed", cause);
+      console.warn("DSH Field admission readback failed", cause);
       if (requestSequence.current === sequence) setState({ kind: "error" });
     }
   }, []);

@@ -32,7 +32,7 @@ export function FieldPayoutCard() {
       }
       setState((await fieldClient().readOwnPayoutState(token)).state);
     } catch (cause) {
-      console.error("DSH field payout state readback failed", cause);
+      console.warn("DSH field payout state readback failed", cause);
       setError("تعذر قراءة حالة طلب التسوية.");
     } finally { setBusy(false); }
   }, [authenticated]);
@@ -61,7 +61,7 @@ export function FieldPayoutCard() {
       setAmount("");
       await load();
     } catch (cause) {
-      console.error("DSH field payout intent failed", cause);
+      console.warn("DSH field payout intent failed", cause);
       setError(pendingAttempt ? "لم نتأكد من نتيجة الطلب؛ أعد المحاولة بالمفتاح المحفوظ لمنع تكرار الحجز." : "تعذر تسجيل طلب التسوية. تأكد من توفر وجهة محفظة رسمية معتمدة ورصيد مستحق.");
       setBusy(false);
     }
@@ -69,7 +69,7 @@ export function FieldPayoutCard() {
   const destinationReady = state?.destination?.status === "ACTIVE_FOR_PAYOUT" && state.destination.verificationStatus === "VERIFIED";
   let payoutActions: ReactNode = null;
   if (pendingAttempt) {
-    payoutActions = <><Text style={styles.muted}>طلب سابق قيد التحقق؛ أعده بالمفتاح نفسه قبل إنشاء طلب جديد.</Text><BthwaniButton busy={busy} label="التحقق من الطلب المحفوظ" onPress={() => void request(pendingAttempt.mode)} /></>;
+    payoutActions = <><Text style={styles.muted}>هناك طلب سابق لم تُحسم حالته بعد. تحقّق منه قبل طلب تسوية أخرى.</Text><BthwaniButton busy={busy} label="التحقق من الطلب المحفوظ" onPress={() => void request(pendingAttempt.mode)} /></>;
   } else if (destinationReady && state && state.eligibleAvailableMinor > 0) {
     payoutActions = <><BthwaniButton busy={busy} label="طلب تسوية كامل المتاح" onPress={() => void request("FULL_AVAILABLE")} variant="secondary" /><TextInput accessibilityLabel="مبلغ تسوية الميداني المحدد" keyboardType="number-pad" value={amount} onChangeText={(value) => setAmount(toAsciiDigits(value).replace(/\D/g, ""))} placeholder="مبلغ محدد عند الحاجة" placeholderTextColor={theme.colorMuted} style={styles.input} /><BthwaniButton busy={busy} label="طلب المبلغ المحدد" onPress={() => void request("SPECIFIED")} variant="secondary" /></>;
   }

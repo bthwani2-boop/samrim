@@ -6,12 +6,7 @@ import (
 )
 
 func TestValidateJoiningCaseReviewRequiresSubmittedCanonicalCase(t *testing.T) {
-	latitude, longitude := 15.3, 44.2
-	base := JoiningCaseRecord{
-		PartnerActorID: "partner-1", State: "submitted", FirstStoreServiceCityID: "city-1",
-		FirstStoreVerticalID: "vertical-1", FirstStoreLatitude: &latitude, FirstStoreLongitude: &longitude,
-		Version: 4,
-	}
+	base := validReviewJoiningCase()
 	valid := ReviewJoiningCaseInput{Decision: "needs_correction", ExpectedVersion: 4, ActingActorID: "operator-1"}
 	tests := []struct {
 		name    string
@@ -25,6 +20,7 @@ func TestValidateJoiningCaseReviewRequiresSubmittedCanonicalCase(t *testing.T) {
 		{name: "service city missing", current: changeReviewCase(base, func(c *JoiningCaseRecord) { c.FirstStoreServiceCityID = "" }), input: valid, want: ErrJoiningCaseServiceCity},
 		{name: "vertical missing", current: changeReviewCase(base, func(c *JoiningCaseRecord) { c.FirstStoreVerticalID = "" }), input: valid, want: ErrCatalogVerticalNotFound},
 		{name: "store origin incomplete", current: changeReviewCase(base, func(c *JoiningCaseRecord) { c.FirstStoreLatitude = nil }), input: valid, want: ErrJoiningCaseStoreOrigin},
+		{name: "required intake evidence missing", current: changeReviewCase(base, func(c *JoiningCaseRecord) { c.FirstStoreProofImageUploaded = false }), input: valid, want: ErrJoiningCaseState},
 		{name: "partner cannot review own case", current: base, input: changeReviewInput(valid, func(i *ReviewJoiningCaseInput) { i.ActingActorID = "partner-1" }), want: ErrJoiningCaseSelfReview},
 		{name: "unsupported decision", current: base, input: changeReviewInput(valid, func(i *ReviewJoiningCaseInput) { i.Decision = "approve" }), want: ErrJoiningCaseInvalidDecision},
 		{name: "approval requires bound financial terms", current: base, input: changeReviewInput(valid, func(i *ReviewJoiningCaseInput) { i.Decision = "approved" }), want: ErrJoiningCaseState},
@@ -40,8 +36,7 @@ func TestValidateJoiningCaseReviewRequiresSubmittedCanonicalCase(t *testing.T) {
 }
 
 func TestValidateJoiningCaseReviewNormalizesCorrectionAndFinancialTerms(t *testing.T) {
-	latitude, longitude := 15.3, 44.2
-	current := JoiningCaseRecord{PartnerActorID: "partner-1", State: "submitted", FirstStoreServiceCityID: "city-1", FirstStoreVerticalID: "vertical-1", FirstStoreLatitude: &latitude, FirstStoreLongitude: &longitude, Version: 4}
+	current := validReviewJoiningCase()
 	tests := []struct {
 		name  string
 		input ReviewJoiningCaseInput
@@ -68,6 +63,19 @@ func TestValidateJoiningCaseReviewNormalizesCorrectionAndFinancialTerms(t *testi
 				t.Fatalf("review normalization = %#v, want %#v", got, tc.want)
 			}
 		})
+	}
+}
+
+func validReviewJoiningCase() JoiningCaseRecord {
+	latitude, longitude := 15.3, 44.2
+	return JoiningCaseRecord{
+		OwnerFullName: "Store owner", FirstStoreAddress: "Main street",
+		FirstStoreWorkingHours: []byte(`{"sunday":[{"opensAt":"09:00","closesAt":"18:00"}]}`),
+		FirstStoreProofType:    "commercial_register", FirstStoreProofNumberPresent: true,
+		FirstStoreProofImageUploaded: true, StoreProfileImage: &StoreProfileMediaRecord{ID: "profile-image-1"},
+		PartnerActorID: "partner-1", State: "submitted", FirstStoreServiceCityID: "city-1",
+		FirstStoreVerticalID: "vertical-1", FirstStoreLatitude: &latitude, FirstStoreLongitude: &longitude,
+		Version: 4,
 	}
 }
 
