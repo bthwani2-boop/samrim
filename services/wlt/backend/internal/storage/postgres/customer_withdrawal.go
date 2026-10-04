@@ -270,9 +270,11 @@ func PrepareCustomerWithdrawalDestination(ctx context.Context, db *sql.DB, ciphe
 		return OfficialWalletDestinationRecord{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var actor, provider, walletCipher, masked, name, requestReason, requestEvidence, status, nameStatus string
-	var nameVersion, actorVersion, roleVersion int
-	var roleEnabled, securityEnabled bool
+	var actor, provider, walletCipher, masked, name, requestReason, requestEvidence, status string
+	var nameVersion int
+	var actorVersion, roleVersion sql.NullInt64
+	var roleEnabled, securityEnabled sql.NullBool
+	var nameStatus sql.NullString
 	var existingDestination sql.NullString
 	err = tx.QueryRowContext(ctx, `SELECT customer_actor_id,provider_key,wallet_identifier_ciphertext,wallet_identifier_masked,beneficiary_name,beneficiary_identity_version,request_reason,request_evidence_document_id,status,destination_id,identity_actor_version,identity_role_version,role_enabled,security_enabled,official_name_status FROM wlt.customer_manual_withdrawal_intakes WHERE id=$1 FOR UPDATE`, intakeID).Scan(&actor, &provider, &walletCipher, &masked, &name, &nameVersion, &requestReason, &requestEvidence, &status, &existingDestination, &actorVersion, &roleVersion, &roleEnabled, &securityEnabled, &nameStatus)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -281,14 +283,36 @@ func PrepareCustomerWithdrawalDestination(ctx context.Context, db *sql.DB, ciphe
 	if err != nil {
 		return OfficialWalletDestinationRecord{}, err
 	}
-	if !facts.validFor("customer", actor) {
-		return OfficialWalletDestinationRecord{}, ErrReverificationRequired
-	}
 	wallet, err := cipher.decrypt(walletCipher)
 	if err != nil {
 		return OfficialWalletDestinationRecord{}, err
 	}
-	if !facts.matchesSnapshot(wallet, name, nameVersion, actorVersion, roleVersion, roleEnabled, securityEnabled, nameStatus) {
+	if !actorVersion.Valid && !roleVersion.Valid && !roleEnabled.Valid && !securityEnabled.Valid && !nameStatus.Valid {
+		if status != "REQUESTED" || !facts.matchesLegacyCustomerWithdrawalSnapshot(actor, wallet, name, nameVersion) {
+			return OfficialWalletDestinationRecord{}, ErrReverificationRequired
+		}
+		updated, updateErr := tx.ExecContext(ctx, `UPDATE wlt.customer_manual_withdrawal_intakes
+			SET identity_actor_version=$2,identity_role_version=$3,role_enabled=$4,security_enabled=$5,official_name_status=$6
+			WHERE id=$1 AND status='REQUESTED' AND identity_actor_version IS NULL AND identity_role_version IS NULL
+			  AND role_enabled IS NULL AND security_enabled IS NULL AND official_name_status IS NULL`,
+			intakeID, facts.ActorVersion, facts.RoleVersion, facts.RoleEnabled, facts.SecurityEnabled, facts.OfficialNameStatus)
+		if updateErr != nil {
+			return OfficialWalletDestinationRecord{}, updateErr
+		}
+		rowsUpdated, updateErr := updated.RowsAffected()
+		if updateErr != nil {
+			return OfficialWalletDestinationRecord{}, updateErr
+		}
+		if rowsUpdated != 1 {
+			return OfficialWalletDestinationRecord{}, ErrReverificationRequired
+		}
+		actorVersion = sql.NullInt64{Int64: int64(facts.ActorVersion), Valid: true}
+		roleVersion = sql.NullInt64{Int64: int64(facts.RoleVersion), Valid: true}
+		roleEnabled = sql.NullBool{Bool: facts.RoleEnabled, Valid: true}
+		securityEnabled = sql.NullBool{Bool: facts.SecurityEnabled, Valid: true}
+		nameStatus = sql.NullString{String: facts.OfficialNameStatus, Valid: true}
+	}
+	if !actorVersion.Valid || !roleVersion.Valid || !roleEnabled.Valid || !securityEnabled.Valid || !nameStatus.Valid || !facts.validFor("customer", actor) || !facts.matchesSnapshot(wallet, name, nameVersion, int(actorVersion.Int64), int(roleVersion.Int64), roleEnabled.Bool, securityEnabled.Bool, nameStatus.String) {
 		return OfficialWalletDestinationRecord{}, ErrReverificationRequired
 	}
 	requestHash := hashFacts("customer-withdrawal-destination-v2", intakeID, actor, provider, facts.fingerprint(), reason, requestEvidence, actorID)

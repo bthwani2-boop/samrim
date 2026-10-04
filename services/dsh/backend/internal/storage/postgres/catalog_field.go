@@ -107,7 +107,7 @@ func ResolveCatalogIdentifier(ctx context.Context, db *sql.DB, storeID, identifi
 		return CatalogIdentifierResolution{}, err
 	}
 	rows, err := db.QueryContext(ctx, `
-		SELECT identifier.identifier_type,product.id,variant.id,product.scope,product.store_id,product.canonical_name,variant.title,
+		SELECT DISTINCT ON (variant.id) identifier.identifier_type,product.id,variant.id,product.scope,product.store_id,product.canonical_name,variant.title,
 	       variant.measurement_kind,variant.base_unit,offer.id,COALESCE(offer.publication_state,'')
 		FROM dsh.catalog_variant_identifiers identifier
 		JOIN dsh.catalog_product_variants variant ON variant.id=identifier.variant_id
@@ -116,8 +116,7 @@ func ResolveCatalogIdentifier(ctx context.Context, db *sql.DB, storeID, identifi
 		WHERE lower(btrim(identifier.identifier_value))=lower(btrim($2))
 		  AND (identifier.identifier_type<>'SKU' OR identifier.store_id=$1)
 		  AND product.vertical_id=$3
-		ORDER BY product.id,variant.id
-		LIMIT 3`, storeID, identifierValue, verticalID)
+		ORDER BY variant.id,identifier.identifier_type`, storeID, identifierValue, verticalID)
 	if err != nil {
 		return CatalogIdentifierResolution{}, err
 	}

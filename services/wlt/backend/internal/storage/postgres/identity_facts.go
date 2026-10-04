@@ -60,6 +60,12 @@ func (f IdentityFacts) matchesSnapshot(phone, officialName string, officialNameV
 		f.OfficialNameStatus == strings.ToUpper(strings.TrimSpace(officialNameStatus))
 }
 
+func (f IdentityFacts) matchesLegacyCustomerWithdrawalSnapshot(actorID, phone, officialName string, officialNameVersion int) bool {
+	f = f.normalized()
+	return f.validFor("customer", actorID) &&
+		f.matchesSnapshot(phone, officialName, officialNameVersion, f.ActorVersion, f.RoleVersion, f.RoleEnabled, f.SecurityEnabled, f.OfficialNameStatus)
+}
+
 func destinationStateMatchesIdentitySnapshot(status, verificationStatus string, requireActive bool) bool {
 	return !requireActive || status == "ACTIVE_FOR_PAYOUT" && verificationStatus == "VERIFIED"
 }

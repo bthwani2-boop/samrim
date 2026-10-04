@@ -44,6 +44,28 @@ func TestIdentityFactsRequireMatchingCanonicalActorAndCurrentVerifiedState(t *te
 	}
 }
 
+func TestLegacyCustomerWithdrawalSnapshotRequiresCurrentMatchingIdentity(t *testing.T) {
+	facts := validIdentityFactsFixture()
+	facts.ActorType = "customer"
+	facts.ActorID = "customer-legacy-withdrawal"
+	if !facts.matchesLegacyCustomerWithdrawalSnapshot(facts.ActorID, facts.PhoneE164, facts.OfficialName, facts.OfficialNameVersion) {
+		t.Fatal("current verified facts matching the preserved legacy request were rejected")
+	}
+	changedPhone := facts
+	changedPhone.PhoneE164 = "+967777000009"
+	if changedPhone.matchesLegacyCustomerWithdrawalSnapshot(facts.ActorID, facts.PhoneE164, facts.OfficialName, facts.OfficialNameVersion) {
+		t.Fatal("legacy request accepted a changed verified phone")
+	}
+	changedName := facts
+	changedName.OfficialNameVersion++
+	if changedName.matchesLegacyCustomerWithdrawalSnapshot(facts.ActorID, facts.PhoneE164, facts.OfficialName, facts.OfficialNameVersion) {
+		t.Fatal("legacy request accepted a newer official name version")
+	}
+	if facts.matchesLegacyCustomerWithdrawalSnapshot("another-customer", facts.PhoneE164, facts.OfficialName, facts.OfficialNameVersion) {
+		t.Fatal("legacy request accepted a different customer actor")
+	}
+}
+
 func TestIdentityFactsFingerprintBindsCanonicalIdentityAndVersions(t *testing.T) {
 	base := validIdentityFactsFixture()
 	normalized := base

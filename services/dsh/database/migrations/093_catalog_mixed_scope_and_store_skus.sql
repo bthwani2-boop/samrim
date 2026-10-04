@@ -1,16 +1,3 @@
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1
-        FROM dsh.catalog_variant_identifiers identifier
-        JOIN dsh.catalog_product_variants variant ON variant.id=identifier.variant_id
-        JOIN dsh.catalog_products product ON product.id=variant.product_id
-        WHERE identifier.identifier_type='SKU' AND product.scope<>'STORE_SCOPED'
-    ) THEN
-        RAISE EXCEPTION 'catalog migration 093 cannot assign legacy SKU identifiers attached to shared Products to a Store';
-    END IF;
-END $$;
-
 CREATE OR REPLACE VIEW dsh.catalog_publishable_offers AS
 SELECT o.id AS offer_id
 FROM dsh.catalog_store_offers o
@@ -48,6 +35,8 @@ ALTER TABLE dsh.commerce_verticals
 ALTER TABLE dsh.catalog_variant_identifiers
     ADD COLUMN store_id text;
 
+DROP INDEX dsh.catalog_variant_identifiers_value_uq;
+
 UPDATE dsh.catalog_variant_identifiers identifier
 SET store_id=product.store_id
 FROM dsh.catalog_product_variants variant
@@ -56,36 +45,81 @@ WHERE identifier.variant_id=variant.id
   AND identifier.identifier_type='SKU'
   AND product.scope='STORE_SCOPED';
 
+-- A SKU on a shared Product predates store-scoped SKU ownership. Preserve its
+-- matchable value as a global legacy barcode while new writers admit SKU only
+-- for Store-scoped Products.
+UPDATE dsh.catalog_variant_identifiers identifier
+SET identifier_type='LEGACY_BARCODE'
+FROM dsh.catalog_product_variants variant
+JOIN dsh.catalog_products product ON product.id=variant.product_id
+WHERE identifier.variant_id=variant.id
+  AND identifier.identifier_type='SKU'
+  AND product.scope='SHARED';
+
 ALTER TABLE dsh.catalog_variant_identifiers
     ADD CONSTRAINT catalog_variant_identifiers_store_fk FOREIGN KEY (store_id) REFERENCES dsh.stores(id) ON DELETE RESTRICT,
+    ADD COLUMN legacy_conflict boolean NOT NULL DEFAULT false,
     ADD CONSTRAINT catalog_variant_identifiers_scope_chk CHECK (
         (identifier_type='SKU' AND store_id IS NOT NULL) OR
         (identifier_type<>'SKU' AND store_id IS NULL)
     );
 
-DROP INDEX dsh.catalog_variant_identifiers_value_uq;
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT lower(btrim(identifier_value))
-        FROM dsh.catalog_variant_identifiers
-        WHERE identifier_type IN ('GTIN','EAN','UPC','LEGACY_BARCODE')
-        GROUP BY lower(btrim(identifier_value))
-        HAVING count(*) > 1
-    ) THEN
-        RAISE EXCEPTION 'catalog migration 093 requires globally unique GTIN/EAN/UPC/barcode values before identifier scope cutover';
-    END IF;
-END $$;
+WITH duplicate_values AS (
+    SELECT lower(btrim(identifier_value)) AS normalized_value
+    FROM dsh.catalog_variant_identifiers
+    WHERE identifier_type IN ('GTIN','EAN','UPC','LEGACY_BARCODE')
+    GROUP BY lower(btrim(identifier_value))
+    HAVING count(*) > 1
+)
+UPDATE dsh.catalog_variant_identifiers identifier
+SET legacy_conflict=true
+FROM duplicate_values duplicate
+WHERE identifier.identifier_type IN ('GTIN','EAN','UPC','LEGACY_BARCODE')
+  AND lower(btrim(identifier.identifier_value))=duplicate.normalized_value;
 
 CREATE UNIQUE INDEX catalog_variant_identifiers_global_value_uq
     ON dsh.catalog_variant_identifiers(lower(btrim(identifier_value)))
-    WHERE identifier_type IN ('GTIN','EAN','UPC','LEGACY_BARCODE');
+    WHERE identifier_type IN ('GTIN','EAN','UPC','LEGACY_BARCODE')
+      AND legacy_conflict=false;
 CREATE UNIQUE INDEX catalog_variant_identifiers_store_sku_uq
     ON dsh.catalog_variant_identifiers(store_id, lower(btrim(identifier_value)))
     WHERE identifier_type='SKU';
 CREATE INDEX catalog_variant_identifiers_store_idx
     ON dsh.catalog_variant_identifiers(store_id, lower(btrim(identifier_value)))
     WHERE store_id IS NOT NULL;
+
+CREATE FUNCTION dsh.enforce_catalog_variant_identifier_global_value() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+    normalized_value text := lower(btrim(NEW.identifier_value));
+BEGIN
+    IF TG_OP='UPDATE'
+       AND OLD.identifier_type=NEW.identifier_type
+       AND lower(btrim(OLD.identifier_value))=normalized_value THEN
+        RETURN NEW;
+    END IF;
+    IF NEW.identifier_type IN ('GTIN','EAN','UPC','LEGACY_BARCODE') THEN
+        PERFORM pg_advisory_xact_lock(hashtextextended('dsh:catalog-identifier:' || normalized_value,0));
+        IF EXISTS (
+            SELECT 1
+            FROM dsh.catalog_variant_identifiers existing
+            WHERE existing.identifier_type IN ('GTIN','EAN','UPC','LEGACY_BARCODE')
+              AND lower(btrim(existing.identifier_value))=normalized_value
+              AND existing.id IS DISTINCT FROM NEW.id
+        ) THEN
+            RAISE EXCEPTION 'catalog variant identifier already exists across barcode types'
+                USING ERRCODE='23505', CONSTRAINT='catalog_variant_identifiers_global_value_uq';
+        END IF;
+    END IF;
+    NEW.legacy_conflict=false;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER catalog_variant_identifiers_global_value_trg
+    BEFORE INSERT OR UPDATE OF identifier_type,identifier_value,store_id
+    ON dsh.catalog_variant_identifiers
+    FOR EACH ROW EXECUTE FUNCTION dsh.enforce_catalog_variant_identifier_global_value();
 
 ALTER TABLE dsh.catalog_product_proposals
     DROP CONSTRAINT catalog_product_proposals_identifier_type_chk,
