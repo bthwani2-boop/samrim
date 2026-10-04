@@ -433,7 +433,11 @@ func transitionPayout(ctx context.Context, db *sql.DB, cipher *DestinationCipher
 		if err := scanPayoutSnapshot(ctx, tx, payoutID, &snapshot); err != nil {
 			return PayoutRequestRecord{}, err
 		}
-		if !snapshot.matchesIdentityFacts(*facts) {
+		destination, err := readOfficialWalletDestination(ctx, tx, currentDestinationID)
+		if err != nil {
+			return PayoutRequestRecord{}, err
+		}
+		if !snapshot.matchesIdentityFacts(*facts) || !snapshot.matchesDestination(destination) {
 			return PayoutRequestRecord{}, ErrReverificationRequired
 		}
 	}
@@ -711,19 +715,19 @@ func requireIdentityFactsForSnapshots(ctx context.Context, source interface {
 		return nil, ErrReverificationRequired
 	}
 	type beneficiaryKey struct{ actorType, actorID string }
-	required := make(map[beneficiaryKey]PayoutSnapshotRecord)
+	required := make(map[beneficiaryKey][]PayoutSnapshotRecord)
 	for _, snapshot := range snapshots {
 		key := beneficiaryKey{actorType: strings.ToLower(strings.TrimSpace(snapshot.ActorType)), actorID: strings.TrimSpace(snapshot.ActorID)}
-		if key.actorType == "" || key.actorID == "" || !snapshot.IdentitySnapshotKnown {
+		if key.actorType == "" || key.actorID == "" {
 			return nil, ErrReverificationRequired
 		}
-		if prior, ok := required[key]; ok && (prior.DestinationID != snapshot.DestinationID || prior.DestinationVersion != snapshot.DestinationVersion ||
-			prior.BeneficiaryName != snapshot.BeneficiaryName || prior.BeneficiaryIdentityVersion != snapshot.BeneficiaryIdentityVersion ||
-			prior.IdentityActorVersion != snapshot.IdentityActorVersion || prior.IdentityRoleVersion != snapshot.IdentityRoleVersion ||
-			prior.RoleEnabled != snapshot.RoleEnabled || prior.SecurityEnabled != snapshot.SecurityEnabled || prior.OfficialNameStatus != snapshot.OfficialNameStatus) {
-			return nil, ErrReverificationRequired
+		for _, prior := range required[key] {
+			if prior.DestinationID != snapshot.DestinationID || prior.DestinationVersion != snapshot.DestinationVersion ||
+				prior.BeneficiaryName != snapshot.BeneficiaryName || prior.BeneficiaryIdentityVersion != snapshot.BeneficiaryIdentityVersion {
+				return nil, ErrReverificationRequired
+			}
 		}
-		required[key] = snapshot
+		required[key] = append(required[key], snapshot)
 	}
 	orderedKeys := make([]beneficiaryKey, 0, len(required))
 	for key := range required {
@@ -745,20 +749,27 @@ func requireIdentityFactsForSnapshots(ctx context.Context, source interface {
 		if key != orderedKeys[index] || !facts.validFor(key.actorType, key.actorID) {
 			return nil, ErrReverificationRequired
 		}
-		snapshot := required[key]
+		beneficiarySnapshots := required[key]
+		firstSnapshot := beneficiarySnapshots[0]
 		var destinationID string
 		var destinationVersion int
 		if err := source.QueryRowContext(ctx, `SELECT id,version FROM wlt.official_wallet_destinations WHERE actor_type=$1 AND actor_id=$2 AND verification_status='VERIFIED' AND status='ACTIVE_FOR_PAYOUT' FOR UPDATE`, key.actorType, key.actorID).Scan(&destinationID, &destinationVersion); err != nil {
 			return nil, ErrReverificationRequired
 		}
-		if destinationID != snapshot.DestinationID || destinationVersion != snapshot.DestinationVersion {
+		if destinationID != firstSnapshot.DestinationID || destinationVersion != firstSnapshot.DestinationVersion {
 			return nil, ErrReverificationRequired
 		}
 		if err := facts.matchesStoredDestination(ctx, source, cipher, destinationID, key.actorType, key.actorID, true); err != nil {
 			return nil, err
 		}
-		if !snapshot.matchesIdentityFacts(facts) {
-			return nil, ErrReverificationRequired
+		destination, err := readOfficialWalletDestination(ctx, source, destinationID)
+		if err != nil {
+			return nil, err
+		}
+		for _, snapshot := range beneficiarySnapshots {
+			if !snapshot.matchesIdentityFacts(facts) || !snapshot.matchesDestination(destination) {
+				return nil, ErrReverificationRequired
+			}
 		}
 		hashes = append(hashes, facts.fingerprint())
 	}
@@ -1285,11 +1296,23 @@ func scanPayoutSnapshot(ctx context.Context, source interface {
 
 func (snapshot PayoutSnapshotRecord) matchesIdentityFacts(facts IdentityFacts) bool {
 	facts = facts.normalized()
+	if !snapshot.IdentitySnapshotKnown {
+		return facts.validFor(snapshot.ActorType, snapshot.ActorID) && snapshot.BeneficiaryName == facts.OfficialName &&
+			snapshot.BeneficiaryIdentityVersion == facts.OfficialNameVersion
+	}
 	return snapshot.IdentitySnapshotKnown && snapshot.ActorType == facts.ActorType && snapshot.ActorID == facts.ActorID &&
 		snapshot.BeneficiaryName == facts.OfficialName && snapshot.BeneficiaryIdentityVersion == facts.OfficialNameVersion &&
 		snapshot.IdentityActorVersion == facts.ActorVersion && snapshot.IdentityRoleVersion == facts.RoleVersion &&
 		snapshot.RoleEnabled == facts.RoleEnabled && snapshot.SecurityEnabled == facts.SecurityEnabled &&
 		snapshot.OfficialNameStatus == facts.OfficialNameStatus
+}
+
+func (snapshot PayoutSnapshotRecord) matchesDestination(destination OfficialWalletDestinationRecord) bool {
+	return snapshot.ActorType == destination.ActorType && snapshot.ActorID == destination.ActorID &&
+		snapshot.BeneficiaryName == destination.BeneficiaryName && snapshot.BeneficiaryIdentityVersion == destination.BeneficiaryIdentityVersion &&
+		snapshot.ProviderKey == destination.ProviderKey && snapshot.MaskedDestination == destination.WalletIdentifierMasked &&
+		snapshot.DestinationID == destination.ID && snapshot.DestinationVersion == destination.Version &&
+		destination.VerificationStatus == "VERIFIED" && destination.Status == "ACTIVE_FOR_PAYOUT"
 }
 
 func scanSettlementBatch(ctx context.Context, source interface {

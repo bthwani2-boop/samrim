@@ -247,7 +247,12 @@ func transitionOfficialWalletDestination(ctx context.Context, db *sql.DB, cipher
 	} else if err != nil {
 		return OfficialWalletDestinationRecord{}, err
 	}
-	if err := facts.matchesStoredDestination(ctx, tx, cipher, destinationID, actorType, beneficiaryActorID, false); err != nil {
+	legacyStaleReverification := operation == "VERIFY" && status == "SUSPENDED" && verificationStatus == "STALE"
+	if legacyStaleReverification {
+		if err := facts.matchesLegacyStaleDestination(ctx, tx, cipher, destinationID, actorType, beneficiaryActorID); err != nil {
+			return OfficialWalletDestinationRecord{}, err
+		}
+	} else if err := facts.matchesStoredDestination(ctx, tx, cipher, destinationID, actorType, beneficiaryActorID, false); err != nil {
 		return OfficialWalletDestinationRecord{}, ErrReverificationRequired
 	}
 	var existingHash, existingDestinationID string
@@ -269,14 +274,23 @@ func transitionOfficialWalletDestination(ctx context.Context, db *sql.DB, cipher
 		return OfficialWalletDestinationRecord{}, err
 	}
 	if operation == "VERIFY" {
-		if status != "CANDIDATE" || verificationStatus != "PENDING_VERIFICATION" || boundedText(evidenceReference, 1, 512) == "" {
+		if (!legacyStaleReverification && (status != "CANDIDATE" || verificationStatus != "PENDING_VERIFICATION")) || boundedText(evidenceReference, 1, 512) == "" {
 			return OfficialWalletDestinationRecord{}, ErrDestinationState
 		}
 		if submittedBy == actorID {
 			return OfficialWalletDestinationRecord{}, ErrDestinationSeparation
 		}
-		if _, err := tx.ExecContext(ctx, "UPDATE wlt.official_wallet_destinations SET verification_status='VERIFIED',status='PENDING_APPROVAL',verified_by=$2,verified_at=clock_timestamp(),verification_evidence_reference=$3,updated_at=clock_timestamp() WHERE id=$1", destinationID, actorID, evidenceReference); err != nil {
-			return OfficialWalletDestinationRecord{}, err
+		var updateErr error
+		if legacyStaleReverification {
+			_, updateErr = tx.ExecContext(ctx, `UPDATE wlt.official_wallet_destinations SET verification_status='VERIFIED',status='PENDING_APPROVAL',
+				identity_actor_version=$4,identity_role_version=$5,role_enabled=$6,security_enabled=$7,official_name_status=$8,
+				verified_by=$2,verified_at=clock_timestamp(),verification_evidence_reference=$3,updated_at=clock_timestamp() WHERE id=$1`,
+				destinationID, actorID, evidenceReference, facts.ActorVersion, facts.RoleVersion, facts.RoleEnabled, facts.SecurityEnabled, facts.OfficialNameStatus)
+		} else {
+			_, updateErr = tx.ExecContext(ctx, "UPDATE wlt.official_wallet_destinations SET verification_status='VERIFIED',status='PENDING_APPROVAL',verified_by=$2,verified_at=clock_timestamp(),verification_evidence_reference=$3,updated_at=clock_timestamp() WHERE id=$1", destinationID, actorID, evidenceReference)
+		}
+		if updateErr != nil {
+			return OfficialWalletDestinationRecord{}, updateErr
 		}
 	} else if operation == "ACTIVATE" {
 		if status != "PENDING_APPROVAL" || verificationStatus != "VERIFIED" || currentEvidence == "" {

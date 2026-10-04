@@ -75,3 +75,26 @@ func TestFieldAgreementProposalCanAdvancePublishedStoreTerms(t *testing.T) {
 		t.Fatal("hidden store unexpectedly retained Field proposal authority")
 	}
 }
+
+func TestPartnerAgreementAcceptanceReadbackAllowsOnlyConfirmedLaterStatesOnReplay(t *testing.T) {
+	tests := []struct {
+		status   string
+		replayed bool
+		want     bool
+	}{
+		{status: "PARTNER_ACCEPTED", want: true},
+		{status: "PARTNER_ACCEPTED", replayed: true, want: true},
+		{status: "ACTIVE", replayed: true, want: true},
+		{status: "FINANCE_REJECTED", replayed: true, want: true},
+		{status: "SUPERSEDED", replayed: true, want: true},
+		{status: "ACTIVE"},
+		{status: "PROPOSED", replayed: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.status+"/replayed="+map[bool]string{true: "true", false: "false"}[tt.replayed], func(t *testing.T) {
+			if got := partnerAgreementAcceptanceStatusConfirmed(tt.status, tt.replayed); got != tt.want {
+				t.Fatalf("partnerAgreementAcceptanceStatusConfirmed(%q, %t) = %t, want %t", tt.status, tt.replayed, got, tt.want)
+			}
+		})
+	}
+}

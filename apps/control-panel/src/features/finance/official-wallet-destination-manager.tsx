@@ -35,6 +35,7 @@ const verificationStatusLabels: Readonly<Record<OfficialWalletDestination["verif
   PENDING_VERIFICATION: "لم يكتمل التحقق",
   VERIFIED: "تم التحقق",
   REJECTED: "مرفوضة",
+  STALE: "تحتاج إعادة التحقق",
 };
 
 function errorMessage(body: unknown, fallback: string) {
@@ -133,13 +134,30 @@ export function OfficialWalletDestinationManager({ actorType, actorId }: Readonl
     setPendingAttempt(attempt);
   }
 
-  async function runAttempt(existingAttempt?: DestinationAttempt) {
+  async function runAttempt(existingAttempt?: DestinationAttempt, actionOverride?: DestinationAction) {
     if (busy || !intent || !operatorActorId) return;
-    const attempt = existingAttempt ?? (destination && destination.status !== "ACTIVE_FOR_PAYOUT" && destination.status !== "RETIRED" && destination.status !== "SUSPENDED"
-      ? destination.verificationStatus === "VERIFIED"
-        ? { action: "activate" as const, actorType, actorId, operatorActorId, destinationId: destination.id, idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID() }
-        : { action: "verify" as const, actorType, actorId, operatorActorId, destinationId: destination.id, evidenceReference: independentEvidenceReference.trim(), idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID() }
-      : { action: "create" as const, actorType, actorId, operatorActorId, providerKey: intent.providerKey, changeReason: changeReason.trim(), verificationEvidenceReference: verificationEvidenceReference.trim(), changeEvidenceReference: changeEvidenceReference.trim(), idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID() });
+    let attempt: DestinationAttempt;
+    if (existingAttempt) {
+      attempt = existingAttempt;
+    } else if (actionOverride === "verify" || (destination?.verificationStatus === "STALE" && destination.status === "SUSPENDED")) {
+      if (!destination) {
+        setError("أعد قراءة سجل WLT قبل إعادة التحقق من الوجهة.");
+        return;
+      }
+      attempt = { action: "verify", actorType, actorId, operatorActorId, providerKey: intent.providerKey, destinationId: destination.id, evidenceReference: independentEvidenceReference.trim(), idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID() };
+    } else if (actionOverride === "activate") {
+      if (!destination) {
+        setError("أعد قراءة سجل WLT قبل اعتماد الوجهة.");
+        return;
+      }
+      attempt = { action: "activate", actorType, actorId, operatorActorId, providerKey: intent.providerKey, destinationId: destination.id, idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID() };
+    } else if (actionOverride === "create" || !destination || destination.status === "ACTIVE_FOR_PAYOUT" || destination.status === "RETIRED" || destination.status === "SUSPENDED") {
+      attempt = { action: "create", actorType, actorId, operatorActorId, providerKey: intent.providerKey, changeReason: changeReason.trim(), verificationEvidenceReference: verificationEvidenceReference.trim(), changeEvidenceReference: changeEvidenceReference.trim(), idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID() };
+    } else if (destination.verificationStatus === "VERIFIED") {
+      attempt = { action: "activate", actorType, actorId, operatorActorId, providerKey: intent.providerKey, destinationId: destination.id, idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID() };
+    } else {
+      attempt = { action: "verify", actorType, actorId, operatorActorId, providerKey: intent.providerKey, destinationId: destination.id, evidenceReference: independentEvidenceReference.trim(), idempotencyKey: crypto.randomUUID(), correlationId: crypto.randomUUID() };
+    }
     const boundAttempt = { ...attempt, providerKey: "providerKey" in attempt ? attempt.providerKey : intent.providerKey };
     if (boundAttempt.action === "create" && (!boundAttempt.changeReason?.trim() || !boundAttempt.verificationEvidenceReference?.trim() || !boundAttempt.changeEvidenceReference?.trim())) {
       setError("أدخل سبب تغيير الوجهة ومرجعي دليل التغيير والتحقق.");
@@ -198,9 +216,10 @@ export function OfficialWalletDestinationManager({ actorType, actorId }: Readonl
     }
   }
 
-  const createAllowed = !destination || destination.status === "ACTIVE_FOR_PAYOUT" || destination.status === "RETIRED" || destination.status === "SUSPENDED";
-  const nextAction: DestinationAction | null = !destination || createAllowed ? "create" : destination.verificationStatus === "VERIFIED" ? "activate" : "verify";
-  const nextActionLabel = nextAction === "create" ? "إنشاء مرشح من هوية ومزوّد مسجلين" : nextAction === "verify" ? "تحقق مستقل من الوجهة" : "اعتماد مستقل وتفعيل الوجهة";
+  const legacyStaleDestination = destination?.status === "SUSPENDED" && destination.verificationStatus === "STALE";
+  const createAllowed = !destination || destination.status === "ACTIVE_FOR_PAYOUT" || destination.status === "RETIRED" || (destination.status === "SUSPENDED" && !legacyStaleDestination);
+  const nextAction: DestinationAction | null = legacyStaleDestination ? "verify" : !destination || createAllowed ? "create" : destination.verificationStatus === "VERIFIED" ? "activate" : "verify";
+  const nextActionLabel = nextAction === "create" ? "إنشاء مرشح من هوية ومزوّد مسجلين" : nextAction === "verify" ? legacyStaleDestination ? "إعادة التحقق من الوجهة نفسها" : "تحقق مستقل من الوجهة" : "اعتماد مستقل وتفعيل الوجهة";
 
   return <details className="settlement-resource">
     <summary className="button button-quiet">إدارة وجهة المحفظة الرسمية</summary>
@@ -211,9 +230,11 @@ export function OfficialWalletDestinationManager({ actorType, actorId }: Readonl
       {notice ? <p className="managed-status managed-status-info" role="status">{notice}</p> : null}
       {intent ? <p>المزوّد المسجل: <bdi>{intent.providerKey}</bdi> · مصدره: <bdi>{intent.sourceId}</bdi></p> : <p className="muted">اقرأ السجل قبل تنفيذ أي إجراء.</p>}
       {destination ? <div className="managed-status managed-status-info"><strong>{destinationStatusLabels[destination.status]}</strong><p>{verificationStatusLabels[destination.verificationStatus]} · <bdi>{destination.providerKey}</bdi> · <bdi>{destination.walletIdentifierMasked}</bdi></p><p>{destination.beneficiaryName}</p><small>الوجهة <bdi>{destination.id}</bdi> · الإصدار {destination.version} · هوية {destination.beneficiaryIdentityVersion}</small></div> : intent ? <p className="muted">لا توجد وجهة WLT مسجلة لهذا المستفيد.</p> : null}
+      {legacyStaleDestination ? <p className="managed-status managed-status-warning">يمكن استعادة اللقطات المالية القديمة فقط إذا طابقت الوجهة الحالية رقم المحفظة والاسم المحفوظين فيها. تغيير الهوية أو الرقم يتطلب إنشاء وجهة جديدة، ولا يغيّر الوجهة المحفوظة في أي لقطة معتمدة.</p> : null}
       {pendingAttempt ? <div className="managed-status managed-status-warning"><p>محاولة محفوظة للإجراء «{pendingAttempt.action}» بالمفتاح نفسه؛ لم تُرسل تلقائيًا بعد إعادة التحميل.</p><button className="button button-primary" type="button" onClick={() => void runAttempt(pendingAttempt)} disabled={busy}>{busy ? "جارٍ إعادة المحاولة…" : "إعادة إرسال المحاولة المحفوظة"}</button></div> : null}
       {!pendingAttempt && intent && nextAction === "create" ? <div className="space-y-2"><label className="field-label">سبب إنشاء أو تغيير الوجهة<input value={changeReason} onChange={(event) => setChangeReason(event.target.value)} maxLength={512} disabled={busy} /></label><label className="field-label">مرجع دليل التحقق المتوقع<input value={verificationEvidenceReference} onChange={(event) => setVerificationEvidenceReference(event.target.value)} maxLength={512} disabled={busy} /></label><label className="field-label">مرجع دليل طلب تغيير الوجهة<input value={changeEvidenceReference} onChange={(event) => setChangeEvidenceReference(event.target.value)} maxLength={512} disabled={busy} /></label><button className="button button-primary" type="button" onClick={() => void runAttempt()} disabled={busy}>{nextActionLabel}</button></div> : null}
       {!pendingAttempt && intent && nextAction === "verify" ? <div className="space-y-2"><label className="field-label">مرجع دليل التحقق المستقل<input value={independentEvidenceReference} onChange={(event) => setIndependentEvidenceReference(event.target.value)} maxLength={512} disabled={busy} /></label><button className="button button-primary" type="button" onClick={() => void runAttempt()} disabled={busy || destination?.submittedBy === operatorActorId}>{destination?.submittedBy === operatorActorId ? "يتطلب تحقق موظف Finance آخر" : nextActionLabel}</button></div> : null}
+      {!pendingAttempt && intent && legacyStaleDestination ? <div className="space-y-2"><label className="field-label">مرجع دليل التحقق للوجهة البديلة<input value={verificationEvidenceReference} onChange={(event) => setVerificationEvidenceReference(event.target.value)} maxLength={512} disabled={busy} /></label><label className="field-label">سبب إنشاء الوجهة البديلة<input value={changeReason} onChange={(event) => setChangeReason(event.target.value)} maxLength={512} disabled={busy} /></label><label className="field-label">مرجع دليل طلب تغيير الوجهة<input value={changeEvidenceReference} onChange={(event) => setChangeEvidenceReference(event.target.value)} maxLength={512} disabled={busy} /></label><button className="button button-secondary" type="button" onClick={() => void runAttempt(undefined, "create")} disabled={busy || !changeReason.trim() || !verificationEvidenceReference.trim() || !changeEvidenceReference.trim()}>إنشاء وجهة بديلة بعد تغير رقم الهوية</button></div> : null}
       {!pendingAttempt && intent && nextAction === "activate" ? <button className="button button-primary" type="button" onClick={() => void runAttempt()} disabled={busy || destination?.verifiedBy === operatorActorId}>{destination?.verifiedBy === operatorActorId ? "يتطلب اعتماد موظف Finance آخر" : nextActionLabel}</button> : null}
     </div>
   </details>;

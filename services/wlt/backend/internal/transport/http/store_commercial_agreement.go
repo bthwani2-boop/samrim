@@ -34,9 +34,11 @@ type proposeStoreCommercialAgreementRequest struct {
 }
 
 type storeCommercialAgreementDecisionRequest struct {
-	ExpectedAgreementVersion int    `json:"expectedAgreementVersion"`
-	Decision                 string `json:"decision"`
-	Reason                   string `json:"reason"`
+	ExpectedAgreementVersion   int      `json:"expectedAgreementVersion"`
+	Decision                   string   `json:"decision"`
+	Reason                     string   `json:"reason"`
+	CurrentStorePartnerActorID string   `json:"currentStorePartnerActorId,omitempty"`
+	CurrentFulfillmentModes    []string `json:"currentFulfillmentModes,omitempty"`
 }
 
 func (s *Server) readStoreCommercialAgreements(w http.ResponseWriter, r *http.Request) {
@@ -164,6 +166,7 @@ func (s *Server) decideStoreCommercialAgreement(w http.ResponseWriter, r *http.R
 	agreement, replayed, err := postgres.DecideStoreCommercialAgreement(r.Context(), s.db, postgres.StoreCommercialAgreementDecisionInput{
 		AgreementID: r.PathValue("agreementId"), ExpectedVersion: input.ExpectedAgreementVersion,
 		Decision: input.Decision, ActorID: actorID, Reason: input.Reason,
+		CurrentStorePartnerActorID: input.CurrentStorePartnerActorID, CurrentFulfillmentModes: input.CurrentFulfillmentModes,
 		IdempotencyKey: idempotencyKey, CorrelationID: correlationID,
 	})
 	if err != nil {

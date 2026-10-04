@@ -48,9 +48,11 @@ type ProposeStoreCommercialAgreementInput struct {
 }
 
 type StoreCommercialAgreementDecision struct {
-	AgreementVersion int
-	Decision         string
-	Reason           string
+	AgreementVersion           int
+	Decision                   string
+	Reason                     string
+	CurrentStorePartnerActorID string
+	CurrentFulfillmentModes    []string
 }
 
 type storeCommercialAgreementResponse struct {
@@ -129,6 +131,10 @@ func (c *Client) DecideStoreCommercialAgreement(ctx context.Context, agreementID
 		"expectedAgreementVersion": input.AgreementVersion,
 		"decision":                 strings.ToUpper(strings.TrimSpace(input.Decision)),
 		"reason":                   strings.TrimSpace(input.Reason),
+	}
+	if strings.TrimSpace(input.CurrentStorePartnerActorID) != "" || len(input.CurrentFulfillmentModes) > 0 {
+		body["currentStorePartnerActorId"] = strings.TrimSpace(input.CurrentStorePartnerActorID)
+		body["currentFulfillmentModes"] = input.CurrentFulfillmentModes
 	}
 	var response storeCommercialAgreementResponse
 	path := "/wlt/v1/operator/store-commercial-agreements/" + url.PathEscape(strings.TrimSpace(agreementID)) + "/decision"

@@ -223,6 +223,35 @@ func (s *catalogRefoundationScenario) verifySharedProducts() {
 	if err != nil || secondProduct.Product.ID == "" || secondProduct.Product.ID == s.productID {
 		s.t.Fatalf("create second catalog product for keyset proof: %+v err=%v", secondProduct, err)
 	}
+	secondProductRecord, err := postgres.ReadCatalogProduct(s.ctx, s.db, secondProduct.Product.ID)
+	if err != nil || len(secondProductRecord.Variants) != 1 {
+		s.t.Fatalf("read second catalog product for inactive identifier proof: %+v err=%v", secondProductRecord, err)
+	}
+	variant := secondProductRecord.Variants[0]
+	inactiveVariantInput := postgres.CatalogVariantInput{ID: variant.ID, ProductID: variant.ProductID, Title: variant.Title, MeasurementKind: variant.MeasurementKind, BaseUnit: variant.BaseUnit, Active: false}
+	inactiveVariant, err := postgres.UpdateCatalogVariant(s.ctx, s.db, variant.ID, inactiveVariantInput, variant.Version, "idem-inactive-variant-v1", postgres.HashCatalogVariantUpdateRequest(variant.ID, inactiveVariantInput, variant.Version), testOperatorActorID, "corr-inactive-variant-v1")
+	if err != nil || inactiveVariant.Variant.Active {
+		s.t.Fatalf("deactivate catalog variant for identifier proof: %+v err=%v", inactiveVariant, err)
+	}
+	inactiveVariantResolution, err := postgres.ResolveCatalogIdentifier(s.ctx, s.db, "store_catalog_inactive_identifier", secondProductInput.IdentifierValue)
+	if err != nil || inactiveVariantResolution.Outcome != "UNKNOWN_IDENTIFIER" {
+		s.t.Fatalf("inactive variant remained resolvable: %+v err=%v", inactiveVariantResolution, err)
+	}
+	activeVariantInput := inactiveVariantInput
+	activeVariantInput.Active = true
+	activeVariant, err := postgres.UpdateCatalogVariant(s.ctx, s.db, variant.ID, activeVariantInput, inactiveVariant.Variant.Version, "idem-reactivate-variant-v1", postgres.HashCatalogVariantUpdateRequest(variant.ID, activeVariantInput, inactiveVariant.Variant.Version), testOperatorActorID, "corr-reactivate-variant-v1")
+	if err != nil || !activeVariant.Variant.Active {
+		s.t.Fatalf("reactivate catalog variant for product proof: %+v err=%v", activeVariant, err)
+	}
+	inactiveProductInput := postgres.CatalogProductUpdateInput{VerticalID: secondProductRecord.VerticalID, Scope: secondProductRecord.Scope, StoreID: secondProductRecord.StoreID, CanonicalName: secondProductRecord.CanonicalName, Description: secondProductRecord.Description, Brand: secondProductRecord.Brand, Active: false}
+	inactiveProduct, err := postgres.UpdateCatalogProduct(s.ctx, s.db, secondProductRecord.ID, inactiveProductInput, secondProductRecord.Version, "idem-inactive-product-v1", postgres.HashCatalogProductUpdateRequest(secondProductRecord.ID, inactiveProductInput, secondProductRecord.Version), testOperatorActorID, "corr-inactive-product-v1")
+	if err != nil || inactiveProduct.Product.Active {
+		s.t.Fatalf("deactivate catalog product for identifier proof: %+v err=%v", inactiveProduct, err)
+	}
+	inactiveProductResolution, err := postgres.ResolveCatalogIdentifier(s.ctx, s.db, "store_catalog_inactive_identifier", secondProductInput.IdentifierValue)
+	if err != nil || inactiveProductResolution.Outcome != "UNKNOWN_IDENTIFIER" {
+		s.t.Fatalf("inactive product remained resolvable: %+v err=%v", inactiveProductResolution, err)
+	}
 	s.verifySharedProductPagination()
 }
 
@@ -318,9 +347,20 @@ func (s *catalogRefoundationScenario) publishFirstStoreOffer() {
 	if _, err := postgres.UpdateCatalogOffer(s.ctx, s.db, s.offerID, offerUpdate, 9, "idem-offer-stale-v1", postgres.HashCatalogOfferUpdateRequest(s.offerID, offerUpdate, 9), testPartnerActorID, "corr-offer-stale-v1"); !errors.Is(err, postgres.ErrCatalogVersionConflict) {
 		s.t.Fatalf("expected stale offer version rejection, got %v", err)
 	}
-	published, err := postgres.UpdateCatalogOffer(s.ctx, s.db, s.offerID, offerUpdate, 1, "idem-offer-publish-v1", postgres.HashCatalogOfferUpdateRequest(s.offerID, offerUpdate, 1), testPartnerActorID, "corr-offer-publish-v1")
-	if err != nil || published.Offer.PublicationState != "published" || published.Offer.Version != 2 {
+	quickPriceUpdate := postgres.CatalogOfferUpdateInput{PriceMinor: 1350, Availability: false, PublicationState: "draft", QuantityPolicy: "DISCRETE", QuantityMinBaseUnits: 1, QuantityMaxBaseUnits: 10, QuantityStepBaseUnits: 1, PricingBasis: "PER_UNIT", PricingUnitBaseUnits: 1, InventoryPolicy: "AVAILABILITY_ONLY"}
+	quickPriceHash := postgres.HashCatalogQuickPriceUpdateRequest(s.offerID, quickPriceUpdate.PriceMinor, 1)
+	quickPriceMutation, err := postgres.UpdateCatalogOfferWithProvenance(s.ctx, s.db, s.offerID, quickPriceUpdate, 1, "idem-offer-quick-price-v1", quickPriceHash, testPartnerActorID, "corr-offer-quick-price-v1", "QUICK_PRICES")
+	if err != nil || quickPriceMutation.Offer.Version != 2 || quickPriceMutation.Offer.PriceMinor != quickPriceUpdate.PriceMinor {
+		s.t.Fatalf("quick-price update: %+v err=%v", quickPriceMutation, err)
+	}
+	offerUpdate.PriceMinor = quickPriceUpdate.PriceMinor
+	published, err := postgres.UpdateCatalogOffer(s.ctx, s.db, s.offerID, offerUpdate, 2, "idem-offer-publish-v1", postgres.HashCatalogOfferUpdateRequest(s.offerID, offerUpdate, 2), testPartnerActorID, "corr-offer-publish-v1")
+	if err != nil || published.Offer.PublicationState != "published" || published.Offer.Version != 3 {
 		s.t.Fatalf("publish store offer: %+v err=%v", published, err)
+	}
+	quickPriceReplay, err := postgres.UpdateCatalogOfferWithProvenance(s.ctx, s.db, s.offerID, quickPriceUpdate, 1, "idem-offer-quick-price-v1", quickPriceHash, testPartnerActorID, "corr-offer-quick-price-replay-v1", "QUICK_PRICES")
+	if err != nil || !quickPriceReplay.Replayed || quickPriceReplay.Offer.Version != published.Offer.Version {
+		s.t.Fatalf("quick-price same-key replay after later offer update: %+v err=%v", quickPriceReplay, err)
 	}
 	target, err := postgres.ResolveDiscoveryContentTarget(s.ctx, s.db, "discovery_store_target_no_offer", s.cityID)
 	if err != nil || target.TargetType != "STORE" || target.StoreID != "store_catalog_v1" {
@@ -495,6 +535,24 @@ func (s *catalogRefoundationScenario) verifyProposalPagination() {
 	proposalNext, err := postgres.ListCatalogProductProposalsForPartner(s.ctx, s.db, testPartnerActorID, "", 1, proposalPage.NextCursor)
 	if err != nil || len(proposalNext.Proposals) != 1 || proposalNext.NextCursor != "" || proposalNext.Proposals[0].ID == proposalPage.Proposals[0].ID {
 		s.t.Fatalf("catalog proposal cursor failed: first=%+v second=%+v err=%v", proposalPage, proposalNext, err)
+	}
+	fieldProposalInput := postgres.CatalogProductProposalInput{
+		ID: "proposal_field_null_owner_review", SubmitterRole: "FIELD", SubmitterActorID: "field-proposal-reviewer",
+		JoiningCaseID: "joining_store_discovery_v1", VerticalID: s.verticalID, CategoryID: s.categoryID,
+		ProposedName: "منتج مقترح من الميدان", ProposedVariantTitle: "عبوة واحدة", ProposedMeasurementKind: "DISCRETE", ProposedBaseUnit: "COUNT",
+	}
+	fieldProposal, err := postgres.CreateCatalogProductProposal(s.ctx, s.db, fieldProposalInput, "idem-field-proposal-v1", postgres.HashCatalogProductProposalCreateRequest(fieldProposalInput), testOperatorActorID, "corr-field-proposal-v1")
+	if err != nil || fieldProposal.Proposal.PartnerActorID != "" || fieldProposal.Proposal.State != "draft" {
+		s.t.Fatalf("create Field proposal with no Partner owner: %+v err=%v", fieldProposal, err)
+	}
+	submittedFieldProposal, err := postgres.SubmitCatalogProductProposal(s.ctx, s.db, fieldProposal.Proposal.ID, fieldProposal.Proposal.Version, "idem-field-proposal-submit-v1", postgres.HashCatalogProductProposalTransitionRequest(fieldProposal.Proposal.ID, fieldProposal.Proposal.Version), testOperatorActorID, "corr-field-proposal-submit-v1")
+	if err != nil || submittedFieldProposal.Proposal.State != "submitted" {
+		s.t.Fatalf("submit Field proposal with no Partner owner: %+v err=%v", submittedFieldProposal, err)
+	}
+	const reviewReason = "Catalog review rejected the Field proposal"
+	reviewedFieldProposal, err := postgres.ReviewCatalogProductProposal(s.ctx, s.db, submittedFieldProposal.Proposal.ID, "rejected", reviewReason, submittedFieldProposal.Proposal.Version, "idem-field-proposal-review-v1", postgres.HashCatalogProductProposalReviewRequest(submittedFieldProposal.Proposal.ID, "rejected", reviewReason, submittedFieldProposal.Proposal.Version), testOperatorActorID, "corr-field-proposal-review-v1")
+	if err != nil || reviewedFieldProposal.Proposal.State != "rejected" || reviewedFieldProposal.Proposal.PartnerActorID != "" {
+		s.t.Fatalf("review Field proposal with nullable Partner owner: %+v err=%v", reviewedFieldProposal, err)
 	}
 }
 

@@ -319,6 +319,9 @@ func HashCatalogOfferCreateRequest(input CatalogOfferInput) string {
 func HashCatalogOfferUpdateRequest(offerID string, input CatalogOfferUpdateInput, expectedVersion int) string {
 	return hashFacts(offerID, strconv.FormatInt(input.PriceMinor, 10), strconv.FormatBool(input.Availability), input.PublicationState, input.QuantityPolicy, strconv.FormatInt(input.QuantityMinBaseUnits, 10), strconv.FormatInt(input.QuantityMaxBaseUnits, 10), strconv.FormatInt(input.QuantityStepBaseUnits, 10), input.PricingBasis, strconv.FormatInt(input.PricingUnitBaseUnits, 10), input.InventoryPolicy, strconv.FormatInt(input.InventoryOnHandBaseUnits, 10), strconv.Itoa(expectedVersion))
 }
+func HashCatalogQuickPriceUpdateRequest(offerID string, priceMinor int64, expectedVersion int) string {
+	return hashFacts("quick-price-update", strings.TrimSpace(offerID), strconv.FormatInt(priceMinor, 10), strconv.Itoa(expectedVersion))
+}
 
 func CreateCommerceVertical(ctx context.Context, db *sql.DB, item CommerceVerticalRecord, idempotencyKey, requestHash string, audit CatalogRegistryAuditInput) (CommerceVerticalResult, error) {
 	tx, err := db.BeginTx(ctx, nil)

@@ -474,10 +474,10 @@ func ReviewCatalogProductProposal(ctx context.Context, db *sql.DB, proposalID, t
 	}
 	var currentState string
 	var currentVersion int
-	var verticalID, categoryID, name, variantTitle, measurementKind, baseUnit, partnerID string
+	var verticalID, categoryID, name, variantTitle, measurementKind, baseUnit string
 	var brand, identifierType, identifierValue sql.NullString
 	var productAttributeJSON, variantAttributeJSON []byte
-	err = tx.QueryRowContext(ctx, `SELECT state,version,vertical_id,category_id,proposed_name,proposed_brand,proposed_variant_title,proposed_measurement_kind,proposed_base_unit,proposed_identifier_type,proposed_identifier_value,proposed_attribute_values,proposed_variant_attribute_values,partner_actor_id FROM dsh.catalog_product_proposals WHERE id=$1 FOR UPDATE`, proposalID).Scan(&currentState, &currentVersion, &verticalID, &categoryID, &name, &brand, &variantTitle, &measurementKind, &baseUnit, &identifierType, &identifierValue, &productAttributeJSON, &variantAttributeJSON, &partnerID)
+	err = tx.QueryRowContext(ctx, `SELECT state,version,vertical_id,category_id,proposed_name,proposed_brand,proposed_variant_title,proposed_measurement_kind,proposed_base_unit,proposed_identifier_type,proposed_identifier_value,proposed_attribute_values,proposed_variant_attribute_values FROM dsh.catalog_product_proposals WHERE id=$1 FOR UPDATE`, proposalID).Scan(&currentState, &currentVersion, &verticalID, &categoryID, &name, &brand, &variantTitle, &measurementKind, &baseUnit, &identifierType, &identifierValue, &productAttributeJSON, &variantAttributeJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CatalogProductProposalResult{}, ErrCatalogProposalNotFound
 	}

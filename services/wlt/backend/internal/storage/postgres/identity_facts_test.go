@@ -162,3 +162,63 @@ func TestIdentityFactsMustMatchEveryImmutablePayoutSnapshotField(t *testing.T) {
 		})
 	}
 }
+
+func TestLegacyPayoutSnapshotCanContinueOnlyForItsOriginalIdentityAndDestination(t *testing.T) {
+	facts := validIdentityFactsFixture()
+	snapshot := PayoutSnapshotRecord{
+		ActorType: "partner", ActorID: "partner-1", BeneficiaryName: facts.OfficialName,
+		BeneficiaryIdentityVersion: facts.OfficialNameVersion, ProviderKey: "YEMEN_MOBILE_WALLET",
+		MaskedDestination: "••••1234", DestinationID: "destination-1", DestinationVersion: 3,
+	}
+	if snapshot.IdentitySnapshotKnown || !snapshot.matchesIdentityFacts(facts) {
+		t.Fatal("legacy payout snapshot with unchanged canonical beneficiary facts was not preserved")
+	}
+	destination := OfficialWalletDestinationRecord{
+		ID: snapshot.DestinationID, ActorType: snapshot.ActorType, ActorID: snapshot.ActorID,
+		ProviderKey: snapshot.ProviderKey, WalletIdentifierMasked: snapshot.MaskedDestination,
+		BeneficiaryName: snapshot.BeneficiaryName, BeneficiaryIdentityVersion: snapshot.BeneficiaryIdentityVersion,
+		Version: snapshot.DestinationVersion, VerificationStatus: "VERIFIED", Status: "ACTIVE_FOR_PAYOUT",
+	}
+	if !snapshot.matchesDestination(destination) {
+		t.Fatal("legacy payout snapshot no longer matches its reverified original destination")
+	}
+	cases := []struct {
+		name   string
+		mutate func(*OfficialWalletDestinationRecord)
+	}{
+		{name: "destination identity", mutate: func(destination *OfficialWalletDestinationRecord) { destination.ActorID = "partner-2" }},
+		{name: "beneficiary name", mutate: func(destination *OfficialWalletDestinationRecord) { destination.BeneficiaryName = "Changed Name" }},
+		{name: "provider", mutate: func(destination *OfficialWalletDestinationRecord) { destination.ProviderKey = "OTHER_PROVIDER" }},
+		{name: "wallet number mask", mutate: func(destination *OfficialWalletDestinationRecord) {
+			destination.WalletIdentifierMasked = "••••5678"
+		}},
+		{name: "destination id", mutate: func(destination *OfficialWalletDestinationRecord) { destination.ID = "destination-2" }},
+		{name: "destination version", mutate: func(destination *OfficialWalletDestinationRecord) { destination.Version++ }},
+		{name: "not verified", mutate: func(destination *OfficialWalletDestinationRecord) { destination.VerificationStatus = "STALE" }},
+		{name: "not active", mutate: func(destination *OfficialWalletDestinationRecord) { destination.Status = "SUSPENDED" }},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			changed := destination
+			test.mutate(&changed)
+			if snapshot.matchesDestination(changed) {
+				t.Fatal("changed current destination matched immutable legacy payout snapshot")
+			}
+		})
+	}
+	for _, test := range []struct {
+		name   string
+		mutate func(*IdentityFacts)
+	}{
+		{name: "official name", mutate: func(facts *IdentityFacts) { facts.OfficialName = "Changed Name" }},
+		{name: "official name version", mutate: func(facts *IdentityFacts) { facts.OfficialNameVersion++ }},
+	} {
+		t.Run("identity facts "+test.name, func(t *testing.T) {
+			changed := facts
+			test.mutate(&changed)
+			if snapshot.matchesIdentityFacts(changed) {
+				t.Fatal("changed current Identity facts matched immutable legacy payout snapshot")
+			}
+		})
+	}
+}

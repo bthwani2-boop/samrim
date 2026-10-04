@@ -193,10 +193,21 @@ func (s *Service) AcceptStoreCommercialAgreementForPartner(ctx context.Context, 
 	if err != nil {
 		return wltintegration.StoreCommercialAgreement{}, false, err
 	}
-	if agreement.AgreementID != selected.AgreementID || agreement.StoreID != joiningCase.Case.StoreID || agreement.PartnerActorID != partner.Subject || agreement.PartnerAcceptedByActorID == nil || *agreement.PartnerAcceptedByActorID != partner.Subject || agreement.Status != "PARTNER_ACCEPTED" {
+	if agreement.AgreementID != selected.AgreementID || agreement.StoreID != joiningCase.Case.StoreID || agreement.PartnerActorID != partner.Subject || agreement.PartnerAcceptedByActorID == nil || *agreement.PartnerAcceptedByActorID != partner.Subject || !partnerAgreementAcceptanceStatusConfirmed(agreement.Status, replayed) {
 		return wltintegration.StoreCommercialAgreement{}, false, errors.New("WLT agreement acceptance readback did not match the Partner owner")
 	}
 	return agreement, replayed, nil
+}
+
+func partnerAgreementAcceptanceStatusConfirmed(status string, replayed bool) bool {
+	switch status {
+	case "PARTNER_ACCEPTED":
+		return true
+	case "ACTIVE", "FINANCE_REJECTED", "SUPERSEDED":
+		return replayed
+	default:
+		return false
+	}
 }
 
 func (s *Service) ReadStoreCommercialAgreementsForFinance(ctx context.Context, storeID, actingActorID string) ([]wltintegration.StoreCommercialAgreement, error) {
@@ -245,8 +256,17 @@ func (s *Service) DecideStoreCommercialAgreementForFinance(ctx context.Context, 
 	if actingActorID == selected.PartnerActorID || actingActorID == selected.ProposedByActorID {
 		return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementForbidden
 	}
+	if input.Decision == "APPROVE" {
+		currentStore, storeErr := postgres.ReadStore(ctx, s.db, storeID)
+		if storeErr == nil {
+			input.CurrentStorePartnerActorID = currentStore.PartnerActorID
+			input.CurrentFulfillmentModes = currentStore.FulfillmentModes
+		} else if !errors.Is(storeErr, postgres.ErrStoreNotFound) {
+			return wltintegration.StoreCommercialAgreement{}, false, storeErr
+		}
+	}
 	// Agreement status/version is checked by WLT after its idempotency lookup;
-	// local transition checks would reject a successful finance retry.
+	// WLT checks current Store ownership/modes after replay and before a new approval.
 	agreement, replayed, err := s.wlt.DecideStoreCommercialAgreement(ctx, agreementID, input, strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID), strings.TrimSpace(actingActorID))
 	if err != nil {
 		return wltintegration.StoreCommercialAgreement{}, false, err

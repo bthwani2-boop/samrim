@@ -2055,8 +2055,8 @@ components:
         walletIdentifierMasked: { type: string }
         beneficiaryName: { type: string }
         beneficiaryIdentityVersion: { type: integer, minimum: 1 }
-        verificationStatus: { type: string }
-        status: { type: string }
+        verificationStatus: { type: string, enum: [PENDING_VERIFICATION, VERIFIED, REJECTED, STALE] }
+        status: { type: string, enum: [CANDIDATE, PENDING_APPROVAL, ACTIVE_FOR_PAYOUT, SUSPENDED, RETIRED] }
         version: { type: integer, minimum: 1 }
         changeReason: { type: string }
         submittedBy: { type: string }
@@ -2432,7 +2432,7 @@ components:
         status: { type: string, enum: [REQUESTED, DESTINATION_PENDING, PAYOUT_HELD, REJECTED, COMPLETED] }
         destinationId: { type: string, nullable: true }
         destinationStatus: { type: string, nullable: true, enum: [CANDIDATE, PENDING_APPROVAL, ACTIVE_FOR_PAYOUT, SUSPENDED, RETIRED] }
-        destinationVerificationStatus: { type: string, nullable: true, enum: [PENDING_VERIFICATION, VERIFIED, REJECTED] }
+        destinationVerificationStatus: { type: string, nullable: true, enum: [PENDING_VERIFICATION, VERIFIED, REJECTED, STALE] }
         payoutId: { type: string, nullable: true }
         payoutStatus: { type: string, nullable: true, enum: [HELD, PREPARED, APPROVED, FROZEN, EXECUTED, COMPLETED, EXCEPTION, CANCELLED] }
         payoutAmountMinor: { type: integer, minimum: 0, nullable: true }
@@ -2662,6 +2662,14 @@ components:
         expectedAgreementVersion: { type: integer, minimum: 1 }
         decision: { type: string, enum: [APPROVE, REJECT] }
         reason: { type: string, minLength: 8, maxLength: 500 }
+        currentStorePartnerActorId: { type: string, minLength: 1, maxLength: 128, description: Required for APPROVE; supplied by DSH from the current canonical Store owner. }
+        currentFulfillmentModes:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
+          description: Required for APPROVE; supplied by DSH from the current canonical Store modes.
     StoreCommercialAgreementResponse:
       type: object
       additionalProperties: false

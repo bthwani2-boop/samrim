@@ -64,6 +64,7 @@ func TestStoreCommercialAgreementLifecycleAndOrderSnapshots(t *testing.T) {
 	decide := func(item StoreCommercialAgreementRecord, decision, key string) StoreCommercialAgreementRecord {
 		decided, replayed, err := DecideStoreCommercialAgreement(scenario.ctx, scenario.db, StoreCommercialAgreementDecisionInput{
 			AgreementID: item.AgreementID, ExpectedVersion: item.AgreementVersion, Decision: decision, ActorID: financeID,
+			CurrentStorePartnerActorID: partnerID, CurrentFulfillmentModes: []string{"PARTNER_CAPTAIN"},
 			Reason: "Finance reviewed Store terms", IdempotencyKey: key + "-" + suffix, CorrelationID: key + "-correlation-" + suffix,
 		})
 		if err != nil || replayed {
@@ -77,7 +78,21 @@ func TestStoreCommercialAgreementLifecycleAndOrderSnapshots(t *testing.T) {
 		t.Fatalf("wrong Partner acceptance error = %v, want state conflict", err)
 	}
 	first = accept(first, partnerID, "agreement-v1-accept")
+	if _, _, err := DecideStoreCommercialAgreement(scenario.ctx, scenario.db, StoreCommercialAgreementDecisionInput{
+		AgreementID: first.AgreementID, ExpectedVersion: first.AgreementVersion, Decision: "APPROVE", ActorID: financeID,
+		CurrentStorePartnerActorID: partnerID, CurrentFulfillmentModes: []string{"CUSTOMER_PICKUP"},
+		Reason: "Finance reviewed Store terms", IdempotencyKey: "stale-modes-" + suffix, CorrelationID: "stale-modes-correlation-" + suffix,
+	}); !errors.Is(err, ErrStoreCommercialAgreementState) {
+		t.Fatalf("Finance approval with stale Store modes error = %v, want state conflict", err)
+	}
 	first = decide(first, "APPROVE", "agreement-v1-finance")
+	if replayedAgreement, replayed, err := DecideStoreCommercialAgreement(scenario.ctx, scenario.db, StoreCommercialAgreementDecisionInput{
+		AgreementID: first.AgreementID, ExpectedVersion: first.AgreementVersion, Decision: "APPROVE", ActorID: financeID,
+		CurrentStorePartnerActorID: partnerID, CurrentFulfillmentModes: []string{"CUSTOMER_PICKUP"},
+		Reason: "Finance reviewed Store terms", IdempotencyKey: "agreement-v1-finance-" + suffix, CorrelationID: "agreement-v1-finance-correlation-" + suffix,
+	}); err != nil || !replayed || replayedAgreement.Status != "ACTIVE" {
+		t.Fatalf("Finance approval replay after Store modes changed = %+v replayed=%t err=%v", replayedAgreement, replayed, err)
+	}
 	if first.Status != "ACTIVE" || first.FinanceApprovedByActorID == nil || *first.FinanceApprovedByActorID != financeID ||
 		first.FinanceDecisionByActorID == nil || *first.FinanceDecisionByActorID != financeID || first.FinanceDecisionAt == nil ||
 		first.FinanceDecisionReason == nil || *first.FinanceDecisionReason != "Finance reviewed Store terms" {
@@ -108,8 +123,8 @@ func TestStoreCommercialAgreementLifecycleAndOrderSnapshots(t *testing.T) {
 		return created
 	}
 	oldOrder := allocation("agreement-order-old-"+suffix, "agreement-reference-old-"+suffix, "agreement-payment-old")
-	if snapshot := oldOrder.CustomerPaymentAllocation.CommissionSnapshot; snapshot == nil || snapshot.Source != "STORE_AGREEMENT" || snapshot.AgreementID != first.AgreementID || snapshot.AgreementVersion != 1 || snapshot.RateBps != 1500 || snapshot.CalculationBasis != "SUBTOTAL_MINUS_DISCOUNT" || oldOrder.CustomerPaymentAllocation.CommissionSnapshot.PolicyVersion != 0 {
-		t.Fatalf("first order commission snapshot = %+v, want Store agreement v1 at 1500 bps, not Store Type suggestion 900", snapshot)
+	if allocation := oldOrder.CustomerPaymentAllocation; allocation.PolicyVersion != "store-type-default-is-suggestion-only" || allocation.CommissionSnapshot == nil || allocation.CommissionSnapshot.Source != "STORE_AGREEMENT" || allocation.CommissionSnapshot.AgreementID != first.AgreementID || allocation.CommissionSnapshot.AgreementVersion != 1 || allocation.CommissionSnapshot.RateBps != 1500 || allocation.CommissionSnapshot.CalculationBasis != "SUBTOTAL_MINUS_DISCOUNT" || allocation.CommissionSnapshot.PolicyVersion != 0 {
+		t.Fatalf("first order allocation = %+v, want delivery policy preserved and Store agreement v1 at 1500 bps", allocation)
 	}
 
 	second := propose(1, 2200, "agreement-v2")
@@ -188,5 +203,35 @@ func TestStoreCommercialAgreementLifecycleAndOrderSnapshots(t *testing.T) {
 	}
 	if eventCount != 10 { // v1 and v2 each have propose/accept/approve; v2 activation supersedes v1; v3 is rejected.
 		t.Fatalf("agreement lifecycle event count = %d, want 10", eventCount)
+	}
+}
+
+func TestStoreAgreementMatchesCurrentFulfillmentModes(t *testing.T) {
+	agreement := StoreCommercialAgreementRecord{
+		PartnerActorID: "partner-1",
+		Rates: []StoreCommercialAgreementRate{
+			{FulfillmentMode: "BTHWANI_CAPTAIN", CommissionRateBps: 500},
+			{FulfillmentMode: "CUSTOMER_PICKUP", CommissionRateBps: 700},
+		},
+	}
+	tests := []struct {
+		name      string
+		partnerID string
+		modes     []string
+		want      bool
+	}{
+		{name: "all current modes independent of order", partnerID: "partner-1", modes: []string{"CUSTOMER_PICKUP", "BTHWANI_CAPTAIN"}, want: true},
+		{name: "owner changed", partnerID: "partner-2", modes: []string{"BTHWANI_CAPTAIN", "CUSTOMER_PICKUP"}},
+		{name: "mode added", partnerID: "partner-1", modes: []string{"BTHWANI_CAPTAIN", "CUSTOMER_PICKUP", "PARTNER_CAPTAIN"}},
+		{name: "mode removed", partnerID: "partner-1", modes: []string{"BTHWANI_CAPTAIN"}},
+		{name: "duplicate mode", partnerID: "partner-1", modes: []string{"BTHWANI_CAPTAIN", "BTHWANI_CAPTAIN"}},
+		{name: "unknown mode", partnerID: "partner-1", modes: []string{"BTHWANI_CAPTAIN", "UNKNOWN"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := storeAgreementMatchesCurrentFulfillmentModes(agreement, tt.partnerID, tt.modes); got != tt.want {
+				t.Fatalf("storeAgreementMatchesCurrentFulfillmentModes() = %t, want %t", got, tt.want)
+			}
+		})
 	}
 }

@@ -31,6 +31,7 @@ const officialWalletVerificationLabels: Record<OfficialWalletDestination["verifi
   PENDING_VERIFICATION: "بانتظار التحقق",
   VERIFIED: "تم التحقق",
   REJECTED: "مرفوضة",
+  STALE: "تحتاج إعادة التحقق",
 };
 
 const officialWalletDestinationLabels: Record<OfficialWalletDestination["status"], string> = {

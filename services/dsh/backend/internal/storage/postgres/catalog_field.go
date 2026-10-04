@@ -116,6 +116,8 @@ func ResolveCatalogIdentifier(ctx context.Context, db *sql.DB, storeID, identifi
 		WHERE lower(btrim(identifier.identifier_value))=lower(btrim($2))
 		  AND (identifier.identifier_type<>'SKU' OR identifier.store_id=$1)
 		  AND product.vertical_id=$3
+		  AND product.active=true
+		  AND variant.active=true
 		ORDER BY variant.id,identifier.identifier_type`, storeID, identifierValue, verticalID)
 	if err != nil {
 		return CatalogIdentifierResolution{}, err

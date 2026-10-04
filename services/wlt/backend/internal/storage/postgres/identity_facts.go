@@ -108,6 +108,42 @@ func (f IdentityFacts) matchesStoredDestination(ctx context.Context, source inte
 	return nil
 }
 
+// matchesLegacyStaleDestination permits Finance to reverify an unchanged legacy
+// destination after the identity-facts cutover. It never accepts a changed
+// phone, official name, or official-name version, and it only accepts the
+// explicit migration state whose new identity facts are all absent.
+func (f IdentityFacts) matchesLegacyStaleDestination(ctx context.Context, source interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, cipher *DestinationCipher, destinationID, actorType, actorID string) error {
+	f = f.normalized()
+	if cipher == nil || !f.validFor(actorType, actorID) {
+		return ErrReverificationRequired
+	}
+	var storedType, storedActor, status, verificationStatus, encryptedPhone, name string
+	var nameVersion int
+	var actorVersion, roleVersion sql.NullInt64
+	var roleEnabled, securityEnabled sql.NullBool
+	var nameStatus sql.NullString
+	err := source.QueryRowContext(ctx, `SELECT actor_type,actor_id,status,verification_status,wallet_identifier_ciphertext,
+		beneficiary_name,beneficiary_identity_version,identity_actor_version,identity_role_version,role_enabled,security_enabled,official_name_status
+	FROM wlt.official_wallet_destinations WHERE id=$1 FOR UPDATE`, strings.TrimSpace(destinationID)).Scan(
+		&storedType, &storedActor, &status, &verificationStatus, &encryptedPhone, &name, &nameVersion,
+		&actorVersion, &roleVersion, &roleEnabled, &securityEnabled, &nameStatus)
+	if err != nil {
+		return err
+	}
+	phone, err := cipher.decrypt(encryptedPhone)
+	if err != nil {
+		return err
+	}
+	if storedType != f.ActorType || storedActor != f.ActorID || status != "SUSPENDED" || verificationStatus != "STALE" ||
+		actorVersion.Valid || roleVersion.Valid || roleEnabled.Valid || securityEnabled.Valid || nameStatus.Valid ||
+		phone != f.PhoneE164 || name != f.OfficialName || nameVersion != f.OfficialNameVersion {
+		return ErrReverificationRequired
+	}
+	return nil
+}
+
 func markOfficialWalletDestinationStale(ctx context.Context, source interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }, destinationID string, facts IdentityFacts) error {

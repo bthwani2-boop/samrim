@@ -54,13 +54,9 @@ func (s *Service) UpdateQuickPricesForPartner(ctx context.Context, accessToken, 
 		if current.StoreID != storeID {
 			return nil, ErrStoreOwnershipForbidden
 		}
-		if current.Version != change.ExpectedVersion {
-			results = append(results, postgres.CatalogQuickPriceUpdateResult{OfferID: offerID, Outcome: "VERSION_CONFLICT", Offer: &current})
-			continue
-		}
 		update := postgres.CatalogOfferUpdateInput{PriceMinor: change.PriceMinor, Availability: current.Availability, PublicationState: current.PublicationState, QuantityPolicy: current.QuantityPolicy, QuantityMinBaseUnits: quickPriceQuantity(current.QuantityMinBaseUnits), QuantityMaxBaseUnits: quickPriceQuantity(current.QuantityMaxBaseUnits), QuantityStepBaseUnits: quickPriceQuantity(current.QuantityStepBaseUnits), PricingBasis: current.PricingBasis, PricingUnitBaseUnits: current.PricingUnitBaseUnits, InventoryPolicy: current.InventoryPolicy, InventoryOnHandBaseUnits: current.InventoryOnHandBaseUnits}
 		itemKey := "quick-price-" + postgres.HashCatalogQuickPriceItemKey(idempotencyKey, storeID, offerID)[:48]
-		updated, updateErr := postgres.UpdateCatalogOfferWithProvenance(ctx, s.db, offerID, update, change.ExpectedVersion, itemKey, postgres.HashCatalogOfferUpdateRequest(offerID, update, change.ExpectedVersion), actorID, correlationID, "QUICK_PRICES")
+		updated, updateErr := postgres.UpdateCatalogOfferWithProvenance(ctx, s.db, offerID, update, change.ExpectedVersion, itemKey, postgres.HashCatalogQuickPriceUpdateRequest(offerID, change.PriceMinor, change.ExpectedVersion), actorID, correlationID, "QUICK_PRICES")
 		if errors.Is(updateErr, postgres.ErrCatalogVersionConflict) {
 			current, readErr = postgres.ReadCatalogOffer(ctx, s.db, offerID)
 			if readErr != nil {

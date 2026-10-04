@@ -62,13 +62,15 @@ type ProposeStoreCommercialAgreementInput struct {
 }
 
 type StoreCommercialAgreementDecisionInput struct {
-	AgreementID     string
-	ExpectedVersion int
-	Decision        string
-	ActorID         string
-	Reason          string
-	IdempotencyKey  string
-	CorrelationID   string
+	AgreementID                string
+	ExpectedVersion            int
+	Decision                   string
+	ActorID                    string
+	Reason                     string
+	CurrentStorePartnerActorID string
+	CurrentFulfillmentModes    []string
+	IdempotencyKey             string
+	CorrelationID              string
 }
 
 func ReadStoreCommercialAgreements(ctx context.Context, db *sql.DB, storeID string) ([]StoreCommercialAgreementRecord, error) {
@@ -311,6 +313,9 @@ func DecideStoreCommercialAgreement(ctx context.Context, db *sql.DB, input Store
 	if err != nil {
 		return StoreCommercialAgreementRecord{}, false, err
 	}
+	if input.Decision == "APPROVE" && !storeAgreementMatchesCurrentFulfillmentModes(item, input.CurrentStorePartnerActorID, input.CurrentFulfillmentModes) {
+		return StoreCommercialAgreementRecord{}, false, ErrStoreCommercialAgreementState
+	}
 	if item.Status != "PARTNER_ACCEPTED" || item.AgreementVersion != input.ExpectedVersion || item.PartnerAcceptedByActorID == nil ||
 		input.ActorID == item.ProposedByActorID || input.ActorID == *item.PartnerAcceptedByActorID {
 		if item.AgreementVersion != input.ExpectedVersion {
@@ -364,6 +369,34 @@ func DecideStoreCommercialAgreement(ctx context.Context, db *sql.DB, input Store
 		return StoreCommercialAgreementRecord{}, false, err
 	}
 	return item, false, nil
+}
+
+func storeAgreementMatchesCurrentFulfillmentModes(agreement StoreCommercialAgreementRecord, currentPartnerActorID string, currentModes []string) bool {
+	currentPartnerActorID = strings.TrimSpace(currentPartnerActorID)
+	if currentPartnerActorID == "" || currentPartnerActorID != agreement.PartnerActorID || len(currentModes) == 0 || len(currentModes) != len(agreement.Rates) {
+		return false
+	}
+	rates := normalizeAgreementRates(agreement.Rates)
+	if !validStoreCommercialAgreementRates(rates) {
+		return false
+	}
+	enabledModes := make(map[string]struct{}, len(currentModes))
+	for _, rawMode := range currentModes {
+		mode := strings.ToUpper(strings.TrimSpace(rawMode))
+		if !isStoreTypeCommissionMode(mode) {
+			return false
+		}
+		if _, exists := enabledModes[mode]; exists {
+			return false
+		}
+		enabledModes[mode] = struct{}{}
+	}
+	for _, rate := range rates {
+		if _, exists := enabledModes[rate.FulfillmentMode]; !exists {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeAgreementRates(rates []StoreCommercialAgreementRate) []StoreCommercialAgreementRate {
