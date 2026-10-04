@@ -37,6 +37,16 @@ type schemaRelationExpectation struct {
 
 var journeyRefoundationRelations = []schemaRelationExpectation{
 	{
+		name:        "dsh.stores",
+		columns:     []string{"address_text", "business_working_hours"},
+		constraints: []string{"stores_address_text_chk", "stores_business_working_hours_chk"},
+	},
+	{
+		name:        "dsh.joining_cases",
+		columns:     []string{"owner_full_name", "first_store_address", "first_store_working_hours", "first_store_proof_type", "first_store_notes"},
+		constraints: []string{"joining_cases_owner_full_name_chk", "joining_cases_first_store_address_chk", "joining_cases_first_store_working_hours_chk", "joining_cases_first_store_proof_type_chk", "joining_cases_first_store_notes_chk"},
+	},
+	{
 		name:        "dsh.store_operational_availability",
 		columns:     []string{"store_id", "schedule_mode", "schedule_timezone", "weekly_schedule", "paused", "pause_reason", "pause_until", "preparation_minutes", "unavailable_fulfillment_modes", "version", "updated_by_actor_id", "updated_at"},
 		constraints: []string{"store_operational_availability_pkey", "store_operational_availability_store_id_fkey", "store_operational_availability_schedule_mode_chk", "store_operational_availability_timezone_chk", "store_operational_availability_schedule_chk", "store_operational_availability_pause_chk", "store_operational_availability_preparation_chk", "store_operational_availability_modes_chk", "store_operational_availability_version_chk", "store_operational_availability_actor_chk"},
