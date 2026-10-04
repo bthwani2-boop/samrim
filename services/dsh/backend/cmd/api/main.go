@@ -25,6 +25,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	joiningCaseEvidenceKeys, err := postgres.NewJoiningCaseEvidenceKeyringFromEnv(os.Getenv("DSH_JOINING_CASE_EVIDENCE_ACTIVE_KEY_ID"), os.Getenv("DSH_JOINING_CASE_EVIDENCE_KEYRING"))
+	if err != nil {
+		log.Fatal(err)
+	}
 	identityEndpoint, err := identityintegration.ResolveBaseURL(os.Getenv("DSH_IDENTITY_API_BASE_URL"), os.Getenv("BTHWANI_ENV"), os.Getenv("DSH_IDENTITY_API_ALLOWED_HOSTS"))
 	if err != nil {
 		log.Fatal(err)
@@ -70,7 +74,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	joiningCaseServer, err := transporthttp.NewJoiningCase(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, storePublication, paymentClient, mediaStore)
+	joiningCaseServer, err := transporthttp.NewJoiningCase(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, storePublication, paymentClient, mediaStore, joiningCaseEvidenceKeys)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -142,7 +146,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fieldServer, err := transporthttp.NewField(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
+	fieldServer, err := transporthttp.NewField(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, joiningCaseEvidenceKeys)
 	if err != nil {
 		log.Fatal(err)
 	}

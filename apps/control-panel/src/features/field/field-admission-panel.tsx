@@ -22,11 +22,20 @@ function fieldRequestError(cause: unknown, fallback: string): string {
   return fallback;
 }
 
+function fieldPhoneE164(value: string): string {
+  return toAsciiDigits(value).replace(/\s+/g, "");
+}
+
+function isFieldPhoneE164(value: string): boolean {
+  return /^\+[1-9]\d{7,14}$/.test(value);
+}
+
 function identityStatusLabel(field: FieldAccount): string {
   if (!field.securityEnabled) return "الهوية موقوفة أمنيًا";
-  if (field.activatedAt && field.enabled) return "نشط";
-  if (field.activatedAt) return "الدور موقوف";
-  return "بانتظار التفعيل";
+  if (field.activatedAt && field.enabled) return "الدور مُفعّل";
+  if (field.activatedAt) return "الدور موقوف بعد التفعيل";
+  if (field.enabled) return "الدور جاهز؛ بانتظار تفعيل الجهاز";
+  return "الدور موقوف قبل تفعيل الجهاز";
 }
 
 function admissionStatusLabel(admission: FieldAdmission | null): string {
@@ -54,8 +63,17 @@ function expectedCandidateState(action: FieldCandidateAction, currentState: Fiel
 
 function candidateMutationNotice(action: FieldCandidateAction): string {
   if (action === "approve") return "اعتُمد الملف وأُعيدت قراءته؛ أصبح منح الدور خطوته التالية.";
-  if (action === "provision") return "مُنح الدور وأُعيدت قراءة ربط Identity وDSH.";
+  if (action === "provision") return "مُنح دور الدخول وربط بأهلية DSH. الخطوة التالية للميداني: يفتح التطبيق، ويدخل رقم الهاتف المسجل، ثم يختار تفعيل الجهاز لإثبات الهاتف وإنشاء كلمة المرور.";
   return "حُفظ الاسم وأُعيدت قراءة الملف من DSH.";
+}
+
+function accountMutationNotice(action: FieldAccountAction): string {
+  if (action === "reenroll") return "أُجيزت إعادة تسجيل دور سبق تفعيله بعد التحقق من أهلية DSH. الخطوة التالية للميداني: تفعيل الجهاز من التطبيق برمز الهاتف.";
+  if (action === "activate") return "أُعيد تفعيل دور الدخول وأُعيدت قراءة حساب الميداني وأهليته.";
+  if (action === "disable") return "أُوقف دور الدخول وأُعيدت قراءة حالة الحساب وأهلية DSH.";
+  if (action === "review-profile") return "اعتُمدت مراجعة الملف وأُعيدت قراءة حالته.";
+  if (action === "update-profile") return "حُفظ الاسم وأُعيدت قراءة الملف من DSH.";
+  return "تم الإجراء وأُعيدت قراءة حالة الحساب وأهلية DSH.";
 }
 
 function accessActionButtonLabel(busy: boolean, shouldDisable: boolean): string {
@@ -70,7 +88,7 @@ function accountMutationValidation(field: FieldAccount, action: FieldAccountActi
   if (needsReason && (Array.from(reason).length < 5 || Array.from(reason).length > 500)) return "اكتب سببًا من 5 إلى 500 حرف قبل تنفيذ الإجراء.";
   if ((action === "update-profile" || action === "review-profile") && (admission?.state !== "suspended" || !admission.requiresProfileReview)) return "هذا الملف لا يحتاج مراجعة حاليًا.";
   if (action === "update-profile" && (Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120)) return "أدخل اسم العرض الكامل قبل الحفظ.";
-  if (action === "reenroll" && (admission?.state !== "eligible" || !field.enabled || field.activatedAt)) return "إعادة التسجيل تتطلب دورًا مفعّلًا وأهلية DSH سارية قبل التفعيل.";
+  if (action === "reenroll" && (admission?.state !== "eligible" || !field.enabled || !field.securityEnabled || !field.activatedAt)) return "إعادة التسجيل تتطلب دورًا مفعّلًا سبق تفعيله وأهلية DSH سارية.";
   return undefined;
 }
 
@@ -143,6 +161,7 @@ function FieldLegacyReviewActions({ field, name, busy, onNameChange, onMutate }:
 }
 
 type FieldAccountAccessActionsProps = Readonly<Pick<FieldAccountMutationActionsProps, "field" | "busy" | "reason" | "onMutate"> & Readonly<{
+  waitingForFirstActivation: boolean;
   waitingForReenrollment: boolean;
   shouldDisable: boolean;
   requiresProfileReview: boolean;
@@ -150,11 +169,14 @@ type FieldAccountAccessActionsProps = Readonly<Pick<FieldAccountMutationActionsP
   reasonIsValid: boolean;
 }>>;
 
-function FieldAccountAccessActions({ field, busy, reason, onMutate, waitingForReenrollment, shouldDisable, requiresProfileReview, mustDisable, reasonIsValid }: FieldAccountAccessActionsProps) {
+function FieldAccountAccessActions({ field, busy, reason, onMutate, waitingForFirstActivation, waitingForReenrollment, shouldDisable, requiresProfileReview, mustDisable, reasonIsValid }: FieldAccountAccessActionsProps) {
   const accessAction: FieldAccountAction = shouldDisable ? "disable" : "activate";
+  const canDisable = shouldDisable;
+  const canReactivate = !field.enabled && !requiresProfileReview && field.securityEnabled && field.admission?.state === "eligible";
   return <>
+    {waitingForFirstActivation ? <p className="muted" role="status">الدور جاهز. الخطوة التالية للميداني: يفتح تطبيق الميدان، يدخل رقم الهاتف المسجل، ثم يختار «تفعيل الجهاز» لإثبات الهاتف وإنشاء كلمة المرور.</p> : null}
     {waitingForReenrollment ? <button type="button" className="button button-primary" disabled={Boolean(busy) || !reasonIsValid} onClick={() => onMutate(field, "reenroll")}>{busy === field.actorId ? "جارٍ الإجازة…" : "إجازة إعادة التسجيل"}</button> : null}
-    {(field.activatedAt || shouldDisable) && (shouldDisable || !requiresProfileReview) ? <button type="button" className={shouldDisable ? "button button-secondary" : "button button-primary"} disabled={Boolean(busy) || !reasonIsValid} onClick={() => onMutate(field, accessAction)}>{accessActionButtonLabel(busy === field.actorId, shouldDisable)}</button> : null}
+    {canDisable || canReactivate ? <button type="button" className={shouldDisable ? "button button-secondary" : "button button-primary"} disabled={Boolean(busy) || !reasonIsValid} onClick={() => onMutate(field, accessAction)}>{accessActionButtonLabel(busy === field.actorId, shouldDisable)}</button> : null}
     {requiresProfileReview && !mustDisable && !field.enabled ? <span className="muted">أكمل مراجعة الملف قبل إعادة التفعيل.</span> : null}
   </>;
 }
@@ -164,14 +186,15 @@ function FieldAccountMutationActions({ field, name, reason, busy, onNameChange, 
   const requiresProfileReview = admission?.requiresProfileReview === true;
   const mustDisable = requiresProfileReview && admission?.state === "eligible";
   const shouldDisable = field.enabled || mustDisable;
-  const waitingForReenrollment = !requiresProfileReview && field.enabled && !field.activatedAt && admission?.state === "eligible";
+  const waitingForFirstActivation = !requiresProfileReview && field.securityEnabled && field.enabled && !field.activatedAt && admission?.state === "eligible";
+  const waitingForReenrollment = !requiresProfileReview && field.securityEnabled && field.enabled && Boolean(field.activatedAt) && admission?.state === "eligible";
   const legacyReview = requiresProfileReview && admission?.state === "suspended";
   const reasonIsValid = Array.from(reason.trim()).length >= 5;
 
   return admission ? <details className="field-row-disclosure"><summary className="button button-secondary">الخطوة التالية</summary><div className="field-row-actions">
     {legacyReview ? <FieldLegacyReviewActions field={field} name={name} busy={busy} onNameChange={onNameChange} onMutate={onMutate} /> : null}
     <label className="field-label" htmlFor={`field-reason-${field.actorId}`}>سبب الإجراء<input id={`field-reason-${field.actorId}`} maxLength={500} value={reason} onChange={(event) => onReasonChange(event.target.value)} disabled={Boolean(busy)} /></label>
-    <FieldAccountAccessActions field={field} busy={busy} reason={reason} onMutate={onMutate} waitingForReenrollment={waitingForReenrollment} shouldDisable={shouldDisable} requiresProfileReview={requiresProfileReview} mustDisable={mustDisable} reasonIsValid={reasonIsValid} />
+    <FieldAccountAccessActions field={field} busy={busy} reason={reason} onMutate={onMutate} waitingForFirstActivation={waitingForFirstActivation} waitingForReenrollment={waitingForReenrollment} shouldDisable={shouldDisable} requiresProfileReview={requiresProfileReview} mustDisable={mustDisable} reasonIsValid={reasonIsValid} />
     <a className="button button-secondary" href={`/finance/beneficiary-settlement/field?search=${encodeURIComponent(field.actorId)}`}>كشف المحفظة والحركات المالية</a>
   </div></details> : <span className="muted">راجع الأهلية قبل إتاحة العمل الميداني.</span>;
 }
@@ -383,10 +406,18 @@ export function FieldAdmissionPanel() {
 
   async function createProfile() {
     const name = fullNameAr.trim();
-    const contactPhoneE164 = toAsciiDigits(phone).replace(/\s+/g, "");
+    const contactPhoneE164 = fieldPhoneE164(phone);
     const activeCity = serviceCities.find((city) => city.id === serviceCityId && city.active);
-    if (Array.from(name).length < 2 || Array.from(name).length > 120 || !/^\+[1-9]\d{7,14}$/.test(contactPhoneE164) || !activeCity) {
-      setError("أدخل الاسم الكامل والهاتف الدولي واختر مدينة خدمة نشطة قبل حفظ الملف.");
+    if (Array.from(name).length < 2 || Array.from(name).length > 120) {
+      setError("أدخل الاسم الكامل بالعربية قبل حفظ الملف.");
+      return;
+    }
+    if (!isFieldPhoneE164(contactPhoneE164)) {
+      setError("اكتب رقم الهاتف بصيغته الدولية مع + ورمز البلد؛ مثال: +967 777 765 432.");
+      return;
+    }
+    if (!activeCity) {
+      setError("اختر مدينة خدمة نشطة قبل حفظ الملف.");
       return;
     }
     setBusy("create"); setError(""); setNotice("");
@@ -454,17 +485,32 @@ export function FieldAdmissionPanel() {
       }
       setReasons((current) => ({ ...current, [field.actorId]: "" }));
       setProfileEdits((current) => { const next = { ...current }; delete next[field.actorId]; return next; });
-      setNotice("تم الإجراء وأُعيدت قراءة حالة الحساب وأهلية DSH.");
+      setNotice(accountMutationNotice(action));
       await load();
     } catch (cause) { setError(fieldRequestError(cause, "تعذر إكمال الإجراء؛ أعد قراءة الحالة.")); await load(); }
     finally { setBusy(""); }
   }
 
+  const normalizedCandidatePhone = fieldPhoneE164(phone);
+  const candidatePhoneValid = isFieldPhoneE164(normalizedCandidatePhone);
+  const candidateNameValid = Array.from(fullNameAr.trim()).length >= 2 && Array.from(fullNameAr.trim()).length <= 120;
+  const candidateCityValid = serviceCities.some((city) => city.id === serviceCityId && city.active);
+
   return <section className={`access-card field-workbench ${styles.root}`} aria-labelledby="field-workbench-title">
     <header className="field-workbench-heading">
       <div><span className="step-chip">مساحة الشركاء</span><h2 id="field-workbench-title">إدارة الميدانيين</h2><p className="muted">قائمة واحدة تجمع ملفات الأهلية والحسابات. DSH يملك الأهلية وIdentity يملك دور الدخول.</p></div>
-      <details className="field-create-disclosure"><summary className="button button-primary">إنشاء ملف ميداني</summary><div className="field-create-content"><div className="access-card-heading"><h3>ملف ميداني جديد</h3><p className="muted">يبدأ الملف بالمراجعة؛ إنشاء الملف لا يمنح دور الدخول.</p></div><form className="access-form" onSubmit={(event) => { event.preventDefault(); void createProfile(); }}><label className="field-label" htmlFor="field-candidate-name">الاسم الكامل بالعربية<input id="field-candidate-name" autoComplete="name" maxLength={120} value={fullNameAr} onChange={(event) => setFullNameAr(event.target.value)} disabled={Boolean(busy)} /></label><label className="field-label" htmlFor="field-candidate-phone">رقم الهاتف<input id="field-candidate-phone" autoComplete="tel" inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} disabled={Boolean(busy)} placeholder="+967…" /></label><label className="field-label" htmlFor="field-candidate-city">مدينة الخدمة<select id="field-candidate-city" value={serviceCityId} onChange={(event) => setServiceCityId(event.target.value)} disabled={Boolean(busy) || serviceCitiesLoading || Boolean(serviceCitiesError)}><option value="">{serviceCitiesLoading ? "جارٍ تحميل المدن…" : "اختر مدينة نشطة"}</option>{serviceCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>{serviceCitiesError ? <p className="identity-error" role="alert">{serviceCitiesError}</p> : null}<button type="submit" className="button button-primary" disabled={Boolean(busy) || serviceCitiesLoading || !fullNameAr.trim() || !phone.trim() || !serviceCityId}>{busy === "create" ? "جارٍ الحفظ…" : "حفظ للمراجعة"}</button></form></div></details>
+      <details className="field-create-disclosure"><summary className="button button-primary">إنشاء ملف ميداني</summary><div className="field-create-content"><div className="access-card-heading"><h3>ملف ميداني جديد</h3><p className="muted">إنشاء الملف يحفظ أهلية DSH للمراجعة فقط؛ لا ينشئ حساب الدخول ولا يرسل رمز التفعيل.</p></div><form className="access-form" onSubmit={(event) => { event.preventDefault(); void createProfile(); }}><label className="field-label" htmlFor="field-candidate-name">الاسم الكامل بالعربية<input id="field-candidate-name" autoComplete="name" maxLength={120} value={fullNameAr} onChange={(event) => setFullNameAr(event.target.value)} disabled={Boolean(busy)} /></label><label className="field-label" htmlFor="field-candidate-phone">رقم الهاتف الدولي<input id="field-candidate-phone" autoComplete="tel" inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} disabled={Boolean(busy)} placeholder="+967 777 765 432" aria-invalid={Boolean(phone.trim()) && !candidatePhoneValid} aria-describedby="field-candidate-phone-help" /><span id="field-candidate-phone-help" className={phone.trim() && !candidatePhoneValid ? "identity-error" : "muted"}>{phone.trim() && !candidatePhoneValid ? "أدخل الرقم مع + ورمز البلد؛ الرقم المحلي وحده لا يُقبل. مثال: +967 777 765 432." : "يُستخدم هذا الرقم لإثبات الهاتف وتفعيل الدخول، ثم لتسجيل الدخول اليومي."}</span></label><label className="field-label" htmlFor="field-candidate-city">مدينة الخدمة<select id="field-candidate-city" value={serviceCityId} onChange={(event) => setServiceCityId(event.target.value)} disabled={Boolean(busy) || serviceCitiesLoading || Boolean(serviceCitiesError)}><option value="">{serviceCitiesLoading ? "جارٍ تحميل المدن…" : "اختر مدينة نشطة"}</option>{serviceCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>{serviceCitiesError ? <p className="identity-error" role="alert">{serviceCitiesError}</p> : null}<button type="submit" className="button button-primary" disabled={Boolean(busy) || serviceCitiesLoading || Boolean(serviceCitiesError) || !candidateNameValid || !candidatePhoneValid || !candidateCityValid}>{busy === "create" ? "جارٍ الحفظ…" : "حفظ للمراجعة"}</button></form></div></details>
     </header>
+    <section className={styles.lifecycleGuide} aria-labelledby="field-lifecycle-title">
+      <h3 id="field-lifecycle-title">مسار إنشاء حساب الميداني وتفعيله</h3>
+      <ol className={styles.lifecycleSteps}>
+        <li><strong>١. إنشاء ملف DSH</strong><span>يحفظ للمراجعة ولا يمنح الدخول.</span></li>
+        <li><strong>٢. مراجعة واعتماد الملف</strong><span>بعد الاعتماد تصبح خطوة منح الدور متاحة.</span></li>
+        <li><strong>٣. منح دور الميداني</strong><span>يربط المشغّل الأهلية بدور الدخول في Identity.</span></li>
+        <li><strong>٤. تفعيل الجهاز</strong><span>الميداني يثبت الهاتف المسجل بالرمز وينشئ كلمة المرور.</span></li>
+      </ol>
+      <p className={styles.lifecycleNote}>بعد التفعيل: الدخول بالهاتف وكلمة المرور. إعادة التسجيل لا تظهر إلا لدور سبق تفعيله، وبعد إجازة المشغّل.</p>
+    </section>
     <FieldAdmissionRoster items={items} query={query} notice={notice} error={error} loading={loading} loadingMore={loadingMore} nextCursor={nextCursor} busy={busy} serviceCities={serviceCities} candidateEdits={candidateEdits} profileEdits={profileEdits} reasons={reasons} acquisitionCases={acquisitionCases} acquisitionCaseErrors={acquisitionCaseErrors} acquisitionCaseBusy={acquisitionCaseBusy} onQueryChange={updateQuery} onRefresh={() => { void load(); }} onLoadMore={() => { void load(nextCursor, true); }} onCandidateNameChange={(id, value) => setCandidateEdits((current) => ({ ...current, [id]: value }))} onCandidateMutate={mutateCandidate} onProfileNameChange={(id, value) => setProfileEdits((current) => ({ ...current, [id]: value }))} onReasonChange={(id, value) => setReasons((current) => ({ ...current, [id]: value }))} onAccountMutate={mutateAccount} onLoadAcquisitionCases={loadAcquisitionCases} />
   </section>;
 }

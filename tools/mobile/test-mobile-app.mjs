@@ -52,7 +52,7 @@ const routePaths =
   app === "app-client" ? ["home.tsx", "orders.tsx", "orders/[orderId].tsx", "cart/[storeId].tsx", "wallet-cash-in.tsx", "account.tsx"] :
   app === "app-partner" ? ["store.tsx", "orders.tsx", "onboarding.tsx", "account.tsx"] :
   app === "app-captain" ? ["home.tsx", "offers.tsx", "deliveries.tsx", "account.tsx"] :
-  ["home.tsx", "cases.tsx", "new-case.tsx", "account.tsx"];
+  ["home.tsx", "cases.tsx", "wallet.tsx", "new-case.tsx", "account.tsx"];
 const appRouteDir = path.join(appDir, "app", "(app)");
 assert.ok(fs.existsSync(path.join(appRouteDir, "_layout.tsx")), `${app}: missing authenticated route layout`);
 assert.ok(fs.readFileSync(path.join(appRouteDir, "_layout.tsx"), "utf8").includes("AuthenticatedMobileBoundary"), `${app}: authenticated routes must be session guarded`);
@@ -80,7 +80,7 @@ const tabRoutes =
   app === "app-client" ? ["home", "orders", "account", "cart/[storeId]", "orders/[orderId]"] :
   app === "app-partner" ? ["store", "orders", "account", "onboarding"] :
   app === "app-captain" ? ["home", "offers", "deliveries", "account"] :
-  ["home", "cases", "account", "new-case"];
+  ["home", "cases", "wallet", "account", "new-case"];
  let previousTabRouteIndex = -1;
  for (const tabRoute of tabRoutes) {
    const tabRouteIndex = layoutContent.indexOf(`<Tabs.Screen name="${tabRoute}"`);
@@ -90,6 +90,11 @@ const tabRoutes =
  }
 const identityGatePath = path.join(appDir, "src", "features", "access", "identity-gate.tsx");
 const identityGateContent = fs.readFileSync(identityGatePath, "utf8");
+const notificationsRouteContent = fs.readFileSync(path.join(appDir, "app", "notifications.tsx"), "utf8");
+assert.ok(notificationsRouteContent.includes("AuthenticatedMobileBoundary"), `${app}: notifications route must wait for authenticated session restoration`);
+assert.ok(notificationsRouteContent.includes("restoreIdentitySession") && notificationsRouteContent.includes("subscribeIdentitySession"), `${app}: notifications route must restore and subscribe to identity state`);
+assert.ok(notificationsRouteContent.includes("/?returnTo=/notifications"), `${app}: notifications route must preserve its return destination after sign-in`);
+assert.ok(identityGateContent.includes("notifications"), `${app}: identity gate must allow the notifications return path`);
 if (app === "app-client") {
   assert.ok(!identityGateContent.includes("LocationCore"), `${app}: identity gate must not own the account workflow`);
   assert.ok(!identityGateContent.includes("ClientOrders"), `${app}: identity gate must not own the orders workflow`);
@@ -112,6 +117,56 @@ if (app === "app-client") {
   assert.equal(normalizeDiscoveryTaxonomy(undefined, undefined).verticals.find((vertical) => vertical.id === "food"), undefined);
   console.log("MOBILE_DISCOVERY_TAXONOMY=PASS missing collections remain empty arrays");
 }
+if (app === "app-captain") {
+  const {
+    isSameCaptainFundingIntent,
+    isSimulatableCaptainFundingIntent,
+    matchesCaptainFundingAttempt,
+    matchesCaptainFundingRequest,
+    parseCaptainFundingAttempt,
+    selectCaptainSimulatorIntent,
+  } = await import(pathToFileURL(path.join(appDir, "src/features/wallet/cash-in-recovery.ts")).href);
+  const intent = {
+    id: "funding-captain-1",
+    actorType: "captain",
+    actorId: "captain-1",
+    fundingPurpose: "CAPTAIN_TOPUP",
+    providerKey: "DEVELOPMENT_SIMULATOR",
+    externalReference: "external-1",
+    amountMinor: 2500,
+    currency: "YER",
+    state: "PENDING_PROVIDER",
+    version: 1,
+    createdAt: "2026-10-03T00:00:00Z",
+    updatedAt: "2026-10-03T00:00:00Z",
+  };
+  const legacyAttempt = parseCaptainFundingAttempt(JSON.stringify({ version: 1, actorID: "captain-1", amountMinor: 2500, idempotencyKey: "captain_cashin_key", correlationID: "captain_cashin_corr" }), "captain-1");
+  assert.ok(legacyAttempt, "app-captain: legacy retries without an intent ID must remain recoverable");
+  assert.equal(parseCaptainFundingAttempt(null, "captain-1"), null, "app-captain: absent local retry state must not prevent canonical simulator recovery");
+  assert.equal(matchesCaptainFundingRequest(intent, "captain-1", 2500), true);
+  assert.equal(matchesCaptainFundingRequest({ ...intent, actorType: "customer", fundingPurpose: "CUSTOMER_TOPUP" }, "captain-1", 2500), false);
+  assert.equal(isSimulatableCaptainFundingIntent(intent, "captain-1"), true, "app-captain: canonical WLT simulator intents remain actionable without a local retry record");
+  assert.equal(isSimulatableCaptainFundingIntent(intent, "captain-2"), false, "app-captain: another actor's intent must never be simulated");
+  assert.equal(isSimulatableCaptainFundingIntent({ ...intent, providerKey: "provider" }, "captain-1"), false);
+  assert.equal(isSimulatableCaptainFundingIntent({ ...intent, state: "SETTLED" }, "captain-1"), false);
+  const exactAttempt = { ...legacyAttempt, fundingIntentID: intent.id };
+  assert.equal(matchesCaptainFundingAttempt(intent, exactAttempt), true);
+  assert.equal(matchesCaptainFundingAttempt({ ...intent, id: "another-intent" }, exactAttempt), false, "same actor and amount do not identify the same funding intent");
+  const unrelatedIntent = { ...intent, id: "funding-captain-2", amountMinor: 3500 };
+  assert.equal(selectCaptainSimulatorIntent([unrelatedIntent, intent], "captain-1", null), unrelatedIntent, "app-captain: without a local retry, the newest canonical simulator intent remains recoverable");
+  assert.equal(selectCaptainSimulatorIntent([unrelatedIntent, intent], "captain-1", exactAttempt), intent, "app-captain: a recorded funding intent ID selects only that exact request");
+  assert.equal(selectCaptainSimulatorIntent([unrelatedIntent, intent], "captain-1", legacyAttempt), undefined, "app-captain: a legacy retry without an intent ID cannot settle an unrelated intent");
+  assert.equal(selectCaptainSimulatorIntent([unrelatedIntent, intent], "captain-1", { ...exactAttempt, fundingIntentID: "missing-intent" }), undefined, "app-captain: a missing bound intent cannot fall back to another simulator intent");
+  assert.equal(isSameCaptainFundingIntent(intent, { ...intent, state: "SETTLED" }), true);
+  assert.equal(isSameCaptainFundingIntent(intent, { ...intent, amountMinor: 2501 }), false);
+
+  const panel = fs.readFileSync(path.join(appDir, "src", "features", "wallet", "cash-in-panel.tsx"), "utf8");
+  assert.ok(panel.indexOf("setWallet(walletResponse)") < panel.indexOf("readOwnFundingIntent(token, attempt.fundingIntentID)"), "app-captain: wallet state remains available when recovery of a stale saved intent fails");
+  assert.ok(panel.includes("readOwnFundingIntent(token, attempt.fundingIntentID)"), "app-captain: stored retry intent must use canonical owner readback");
+  assert.ok(panel.includes("isSimulatableCaptainFundingIntent(intent, actorID)"), "app-captain: simulation controls must be gated by canonical intent identity and state");
+  assert.ok(panel.includes("matchesCaptainFundingAttempt(intent, storedAttempt)"), "app-captain: terminal simulation must clear only its exact local retry intent");
+  console.log("MOBILE_CAPTAIN_CASH_IN_RECOVERY=PASS canonical intent, actor scope, retry identity, and terminal cleanup");
+}
 const { IdentitySessionManager } = await import(pathToFileURL(path.join(root, "services/identity/clients/session.ts")).href);
 const { identitySessionSignOutMessage } = await import(pathToFileURL(path.join(root, "services/identity/clients/errors.ts")).href);
 const {
@@ -122,8 +177,9 @@ const {
 const { createDshMobileClient } = await import(pathToFileURL(path.join(root, "services/dsh/clients/mobile.ts")).href);
 
 const { defineSamrimExpoApp } = await import(pathToFileURL(path.join(root, "tools/mobile/define-samrim-expo-app.cjs")).href);
-const expectsForegroundLocation = app === "app-client" || app === "app-captain";
+const expectsForegroundLocation = ["app-client", "app-captain", "app-field"].includes(app);
 const expectsMaps = ["app-client", "app-captain", "app-field"].includes(app);
+const expectsBarcodeCamera = ["app-field", "app-partner"].includes(app);
 const mapsKeyVars = {
   "app-client": ["GOOGLE_MAPS_ANDROID_API_KEY_APP_CLIENT", "GOOGLE_MAPS_IOS_API_KEY"],
   "app-captain": ["GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN", "GOOGLE_MAPS_IOS_API_KEY_APP_CAPTAIN"],
@@ -137,6 +193,7 @@ if (expectsMaps) {
   }
 }
 const expoConfig = defineSamrimExpoApp(app, {
+  ...(expectsBarcodeCamera ? { cameraMode: "barcode" } : {}),
   ...(expectsForegroundLocation ? { locationMode: "foreground" } : {}),
   ...(expectsMaps ? { maps: true } : {}),
 });
@@ -163,8 +220,25 @@ assert.deepEqual(localizationPlugin, [
   },
 ], `${app}: native localization config must be Arabic-only and statically RTL`);
 const locationPlugin = expoConfig.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-location");
+const cameraPlugin = expoConfig.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-camera");
+if (expectsBarcodeCamera) {
+  assert.equal(allDeps["expo-camera"], "~57.0.6", `${app}: barcode scanning requires the Expo camera module`);
+  assert.deepEqual(cameraPlugin, [
+    "expo-camera",
+    {
+      cameraPermission: "نحتاج الوصول إلى الكاميرا لمسح باركود المنتجات.",
+      microphonePermission: false,
+      recordAudioAndroid: false,
+      barcodeScannerEnabled: true,
+    },
+  ], `${app}: barcode scanning must declare its camera permission without microphone access`);
+} else {
+  assert.equal(allDeps["expo-camera"], undefined, `${app}: unadmitted camera must not be a direct dependency`);
+  assert.equal(cameraPlugin, undefined, `${app}: camera permission must not be inferred without an app-owned request`);
+}
 if (expectsForegroundLocation) {
-  assert.equal(allDeps["expo-location"], "~57.0.19", `${app}: foreground location requires the Expo location module`);
+  const expectedLocationVersion = app === "app-field" ? "~57.0.20" : "~57.0.19";
+  assert.equal(allDeps["expo-location"], expectedLocationVersion, `${app}: foreground location requires the Expo location module`);
   assert.ok(locationPlugin, `${app}: foreground location must be owned by expo-location`);
   assert.deepEqual(locationPlugin, [
     "expo-location",

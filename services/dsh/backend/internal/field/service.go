@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"math"
 	"regexp"
 	"strings"
 	"unicode"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/joiningcase"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
@@ -28,15 +28,16 @@ var (
 var phoneE164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
 
 type Service struct {
-	identity *identityintegration.Client
-	db       *sql.DB
+	identity     *identityintegration.Client
+	db           *sql.DB
+	evidenceKeys *postgres.JoiningCaseEvidenceKeyring
 }
 
-func New(identity *identityintegration.Client, db *sql.DB) (*Service, error) {
-	if identity == nil || db == nil {
+func New(identity *identityintegration.Client, db *sql.DB, evidenceKeys *postgres.JoiningCaseEvidenceKeyring) (*Service, error) {
+	if identity == nil || db == nil || evidenceKeys == nil {
 		return nil, errors.New("Field configuration is invalid")
 	}
-	return &Service{identity: identity, db: db}, nil
+	return &Service{identity: identity, db: db, evidenceKeys: evidenceKeys}, nil
 }
 
 func (s *Service) Admit(ctx context.Context, fullNameAr, phone, serviceCityID, idempotencyKey, actingActorID, correlationID string) (postgres.FieldAdmission, bool, error) {
@@ -300,27 +301,33 @@ func (s *Service) CreateJoiningCase(ctx context.Context, accessToken, idempotenc
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
-	phone := strings.TrimSpace(input.ContactPhoneE164)
-	businessName := strings.TrimSpace(input.BusinessName)
-	firstStoreName := strings.TrimSpace(input.FirstStoreName)
-	serviceCityID := strings.TrimSpace(input.ServiceCityID)
-	verticalID := strings.TrimSpace(input.FirstStoreVerticalID)
-	commercialTypeID := strings.TrimSpace(input.FirstStoreCommercialTypeID)
-	latitude := input.FirstStoreLatitude
-	longitude := input.FirstStoreLongitude
-	rawFulfillmentModes := make([]string, len(input.FirstStoreFulfillmentModes))
-	for index, mode := range input.FirstStoreFulfillmentModes {
-		rawFulfillmentModes[index] = string(mode)
-	}
-	fulfillmentModes, modesErr := postgres.NormalizeStoreFulfillmentModes(rawFulfillmentModes)
-	if modesErr != nil {
+	request, err := joiningcase.NormalizeCreateRequest(input)
+	if err != nil {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
-	if !phoneE164Pattern.MatchString(phone) || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || serviceCityID == "" || verticalID == "" || commercialTypeID == "" || math.IsNaN(latitude) || math.IsInf(latitude, 0) || math.IsNaN(longitude) || math.IsInf(longitude, 0) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180 || strings.TrimSpace(idempotencyKey) == "" || len(strings.TrimSpace(correlationID)) < 8 {
+	if strings.TrimSpace(idempotencyKey) == "" || len(strings.TrimSpace(correlationID)) < 8 {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
-	request := postgres.JoiningCaseRequest{Phone: phone, BusinessName: businessName, FirstStoreName: firstStoreName, ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: commercialTypeID, Latitude: latitude, Longitude: longitude, FulfillmentModes: fulfillmentModes}
-	return postgres.CreateJoiningCaseForField(ctx, s.db, postgres.CreateJoiningCaseInput{IdempotencyKey: strings.TrimSpace(idempotencyKey), RequestHash: postgres.HashJoiningCaseFieldRequest(identity.Subject, request), ActingActorID: identity.Subject, CorrelationID: strings.TrimSpace(correlationID), Request: request})
+	requestHash, err := joiningcase.HashCreateRequest(s.evidenceKeys, "field-joining-case-create", identity.Subject, request)
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	return postgres.CreateJoiningCaseForField(ctx, s.db, postgres.CreateJoiningCaseInput{IdempotencyKey: strings.TrimSpace(idempotencyKey), RequestHash: requestHash, ActingActorID: identity.Subject, CorrelationID: strings.TrimSpace(correlationID), EvidenceKeyring: s.evidenceKeys, Request: request})
+}
+
+func (s *Service) UploadJoiningCaseProofImage(ctx context.Context, accessToken, caseID, idempotencyKey, correlationID string, expectedVersion int, declaredContentType string, data []byte) (postgres.JoiningCaseResult, error) {
+	identity, err := s.requireEligibleField(ctx, accessToken)
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	result, err := joiningcase.UploadPrivateProofImage(ctx, s.db, s.evidenceKeys, caseID, identity.Subject, "field", "field-proof-image-upload", idempotencyKey, correlationID, expectedVersion, declaredContentType, data)
+	if err != nil {
+		if errors.Is(err, joiningcase.ErrInvalidInput) {
+			return postgres.JoiningCaseResult{}, ErrInvalidInput
+		}
+		return postgres.JoiningCaseResult{}, err
+	}
+	return result, nil
 }
 
 func (s *Service) ListJoiningCases(ctx context.Context, accessToken, queryText string, limit int, cursor string) (postgres.JoiningCaseListResult, error) {
@@ -390,8 +397,4 @@ func (s *Service) requireOperator(ctx context.Context, actorID string) error {
 
 func validMutation(idempotencyKey, correlationID, actingActorID string) bool {
 	return len(strings.TrimSpace(idempotencyKey)) >= 8 && len(strings.TrimSpace(idempotencyKey)) <= 128 && len(strings.TrimSpace(correlationID)) >= 8 && len(strings.TrimSpace(correlationID)) <= 128 && strings.TrimSpace(actingActorID) != ""
-}
-
-func validCoordinates(latitude, longitude float64) bool {
-	return !math.IsNaN(latitude) && !math.IsInf(latitude, 0) && !math.IsNaN(longitude) && !math.IsInf(longitude, 0) && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180
 }

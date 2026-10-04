@@ -1,6 +1,7 @@
 import { isMediaProvenanceInputValid, type ActorLegalName, type CatalogAttributeDefinitionListResponse, type CatalogAttributeDefinitionResponse, type CatalogAttributeEnumOptionListResponse, type CatalogAttributeEnumOptionResponse, type CatalogAttributeRuleListResponse, type CatalogProduct, type CatalogProductRegistryResponse, type CreateCatalogAttributeDefinitionRequest, type CreateCatalogAttributeEnumOptionRequest, type CreateCustomerWithdrawalIntakeRequest, type CustomerWithdrawalDecisionRequest, type CustomerWithdrawalIntakeListResponse, type CustomerWithdrawalIntakeResponse, type ManagedCaptainAvailabilityRequest, type MediaProvenanceInput, type PartnerStoreListResponse, type SubmitActorLegalNameRequest, type UpsertCatalogAttributeRuleRequest, type VerifyActorLegalNameRequest, type BeneficiaryPayoutState, type BeneficiaryPayoutStateResponse, type CaptainAdmissionListResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CashCustodyRegistryResponse, type CatalogCategoryDetailResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateDeliveryFeePolicyRequest, type CreateJoiningCaseRequest, type CreatePartnerFinancialTermsPolicyRequest, type CreatePromotionRequest, type CreateServiceCityRequest, type DeliveryFeePolicyResponse, type DiscoveryContentAnalyticsListResponse, type DiscoveryContentResponse, dshOperationPaths, type FieldAdmissionListResponse, type FieldAdmissionRequest, type FieldAdmissionResponse, type FieldAcquisitionRewardPolicy, type ManagedRoleReenrollmentRequest, type FinanceEvidenceDocument, type JoiningCaseListResponse, type JoiningCaseResponse, type ManagedRoleMutationRequest, type MarketingPublicationRequest, type NotificationListResponse, type NotificationReadResponse, type OfficialWalletDestination, type OperatorDiscoveryContentRegistryResponse, type OperatorOperationResponse, type OperatorOperationsResponse, type OperatorPromotionRegistryResponse, type OperatorStoreListResponse, type PartnerCommissionReceivableRegistryResponse, type PartnerCommissionRemittanceRequest, type PartnerCommissionRemittanceResponse, type PartnerFinancialSummaryResponse, type PartnerFinancialTermsPolicyResponse, type PartnerStoreCommissionPoliciesResponse, type PartnerStoreCommissionPolicyUpdateRequest, type PartnerStoreCommissionPolicyUpdateResponse, type PayoutRequest, type PromotionResponse, type PublicationAction, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type ReviewJoiningCaseRequest, type ServiceCityListResponse, type ServiceCityResponse, type SetStoreFulfillmentModesRequest, type SettlementBatch, type SettlementBatchExport, type StoreFulfillmentModesResponse, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogCategoryRequest, type UpdateCatalogProductRequest, type UpdateCommerceVerticalRequest, type UpdateServiceCityRequest, type CommercialStoreTypeListResponse, type CommercialStoreTypeResponse, type CreateCommercialStoreTypeRequest, type UpdateCommercialStoreTypeRequest, type SetStoreCommercialTypeRequest, type SetStoreCommercialTypeResponse } from "@bthwani/dsh";
 import { validateServiceUrl } from "@bthwani/identity";
 import type { StoreAccessGrantListResponse, StoreAccessGrantMutationResponse } from "@bthwani/dsh";
+import type { JoiningCaseProofDetailsResponse } from "@bthwani/dsh";
 
 type DshClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -708,6 +709,41 @@ export async function createJoiningCase(input: CreateJoiningCaseRequest, context
   validateAttributedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_JOINING_CASE_IDEMPOTENCY_INVALID");
   return requestDshJson<JoiningCaseResponse>(dshOperationPaths.createJoiningCase.method, dshOperationPaths.createJoiningCase.path, { ...input, contactPhoneE164: input.contactPhoneE164.replace(/\s+/g, "") }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function uploadOperatorJoiningCaseProofImage(caseId: string, file: File, context: StorePublicationMutationContext): Promise<Readonly<{ status: number; payload: JoiningCaseResponse }>> {
+  const normalizedCaseId = caseId.trim();
+  if (!normalizedCaseId || file.size < 1 || file.size > 10 * 1024 * 1024 || !["image/jpeg", "image/png"].includes(file.type)) throw new Error("DSH_JOINING_CASE_PROOF_IMAGE_INPUT_INVALID");
+  validateVersionedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_JOINING_CASE_PROOF_IMAGE_IDEMPOTENCY_INVALID");
+  const form = new FormData();
+  form.append("file", file, file.name || "joining-case-proof");
+  const path = dshOperationPaths.uploadOperatorJoiningCaseProofImage.path.replace("{caseId}", encodeURIComponent(normalizedCaseId));
+  return requestDshMultipart<JoiningCaseResponse>(dshOperationPaths.uploadOperatorJoiningCaseProofImage.method, path, form, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function uploadOperatorJoiningCaseStoreImage(caseId: string, file: File, provenance: MediaProvenanceInput, context: StorePublicationMutationContext): Promise<Readonly<{ status: number; payload: JoiningCaseResponse }>> {
+  const normalizedCaseId = caseId.trim();
+  if (!normalizedCaseId || file.size < 1 || file.size > 10 * 1024 * 1024 || !["image/jpeg", "image/png"].includes(file.type) || !isMediaProvenanceInputValid(provenance)) throw new Error("DSH_JOINING_CASE_STORE_IMAGE_INPUT_INVALID");
+  validateVersionedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_JOINING_CASE_STORE_IMAGE_IDEMPOTENCY_INVALID");
+  const form = new FormData();
+  form.append("file", file, file.name || "storefront-image");
+  appendMediaProvenance(form, provenance);
+  const path = dshOperationPaths.uploadOperatorJoiningCaseStoreImage.path.replace("{caseId}", encodeURIComponent(normalizedCaseId));
+  return requestDshMultipart<JoiningCaseResponse>(dshOperationPaths.uploadOperatorJoiningCaseStoreImage.method, path, form, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function readJoiningCaseProofDetails(caseId: string, context: DshOperatorReadContext): Promise<JoiningCaseProofDetailsResponse> {
+  if (!caseId.trim() || !context.operatorActorId.trim()) throw new Error("DSH_JOINING_CASE_PROOF_READ_INPUT_INVALID");
+  const path = dshOperationPaths.readJoiningCaseProofDetails.path.replace("{caseId}", encodeURIComponent(caseId.trim()));
+  return (await requestDshJson<JoiningCaseProofDetailsResponse>(dshOperationPaths.readJoiningCaseProofDetails.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": `cp_proof_details_${crypto.randomUUID()}` })).payload;
+}
+
+export async function downloadJoiningCaseProofImage(caseId: string, context: DshOperatorReadContext): Promise<Readonly<{ content: Uint8Array; contentType: string; contentDisposition: string }>> {
+  if (!caseId.trim() || !context.operatorActorId.trim()) throw new Error("DSH_JOINING_CASE_PROOF_READ_INPUT_INVALID");
+  const path = dshOperationPaths.downloadJoiningCaseProofImage.path.replace("{caseId}", encodeURIComponent(caseId.trim()));
+  return requestDshFile(path, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": `cp_proof_image_${crypto.randomUUID()}` });
 }
 
 export async function listCatalogVerticals(context: DshOperatorReadContext, includeInactive = false): Promise<CommerceVerticalListResponse> {

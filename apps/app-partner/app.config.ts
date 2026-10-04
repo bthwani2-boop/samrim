@@ -1,3 +1,3 @@
 import { defineSamrimExpoApp } from "../../tools/mobile/define-samrim-expo-app.cjs";
 
-export default defineSamrimExpoApp("app-partner");
+export default defineSamrimExpoApp("app-partner", { cameraMode: "barcode" });

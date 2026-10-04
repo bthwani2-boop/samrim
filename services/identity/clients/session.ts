@@ -236,6 +236,7 @@ export class IdentitySessionManager {
     if (this.stateValue.kind === "signed_out" && (this.stateValue.reason === "explicit_logout" || this.stateValue.reason === "recovery")) {
       return this.stateValue;
     }
+    if (this.stateValue.kind === "authenticated") return this.stateValue;
     if (this.restoreInFlight) return this.restoreInFlight;
 
     const restoreOperation = Promise.resolve().then(() => this.restoreFromStorage());

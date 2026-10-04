@@ -69,7 +69,7 @@ paths:
           schema: { type: string, minLength: 1, maxLength: 128 }
       responses:
         '200':
-          description: Financial reconciliation cases for the order.
+          description: Financial reconciliation cases for the order. Only cases whose canonical payment payer matches X-Acting-Actor-ID are returned; a mismatch returns an empty list.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OrderAdjustmentReconciliationCasesResponse' }

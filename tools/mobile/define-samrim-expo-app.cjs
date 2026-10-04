@@ -76,7 +76,7 @@ function readDesignSystemSurfaceColors() {
 
 const designSystemSurfaceColors = readDesignSystemSurfaceColors();
 
-function buildPlugins(appKey, { locationMode }) {
+function buildPlugins(appKey, { cameraMode, locationMode }) {
   const plugins = ["expo-router", "expo-updates", "expo-system-ui"];
 
   const splashIcon = appAsset(appKey, "splash-icon.png");
@@ -102,6 +102,15 @@ function buildPlugins(appKey, { locationMode }) {
     plugins.push(["expo-location", locationOptions]);
   }
 
+  if (cameraMode === "barcode") {
+    plugins.push(["expo-camera", {
+      cameraPermission: "نحتاج الوصول إلى الكاميرا لمسح باركود المنتجات.",
+      microphonePermission: false,
+      recordAudioAndroid: false,
+      barcodeScannerEnabled: true,
+    }]);
+  }
+
   plugins.push("expo-secure-store");
   plugins.push([
     "expo-localization",
@@ -117,13 +126,17 @@ function buildPlugins(appKey, { locationMode }) {
 
 /**
  * @param {string} appKey
- * @param {{ locationMode?: "foreground", maps?: boolean }} options
+ * @param {{ cameraMode?: "barcode", locationMode?: "foreground", maps?: boolean }} options
  */
 function defineSamrimExpoApp(appKey, options = {}) {
   const app = readMobileConfig(appKey);
   const locationMode = options.locationMode;
+  const cameraMode = options.cameraMode;
   if (locationMode !== undefined && locationMode !== "foreground") {
     throw new Error("Invalid locationMode for " + appKey + ": " + locationMode);
+  }
+  if (cameraMode !== undefined && cameraMode !== "barcode") {
+    throw new Error("Invalid cameraMode for " + appKey + ": " + cameraMode);
   }
   const adaptiveIcon = appAsset(appKey, "adaptive-icon.png");
   const androidMapsApiKey = options.maps ? mobileMapsApiKey(appKey, "android") : undefined;
@@ -156,7 +169,7 @@ function defineSamrimExpoApp(appKey, options = {}) {
     android,
     ios: { bundleIdentifier: app.iosBundleIdentifier, supportsTablet: false },
     plugins: [
-      ...buildPlugins(appKey, { locationMode }),
+      ...buildPlugins(appKey, { cameraMode, locationMode }),
       ...(options.maps ? [["react-native-maps", { androidGoogleMapsApiKey: androidMapsApiKey, iosGoogleMapsApiKey: iosMapsApiKey }]] : []),
     ],
     experiments: { typedRoutes: true },

@@ -23,32 +23,53 @@ func (s *Service) UploadStoreProfileImage(ctx context.Context, accessToken, case
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
+	scope := ""
+	switch {
+	case identity.Role == "field" && identity.Surface == "app-field" && strings.TrimSpace(identity.Subject) != "":
+		scope = "field"
+	case identity.Role == "partner" && identity.Surface == "app-partner" && strings.TrimSpace(identity.Subject) != "":
+		scope = "partner"
+	default:
+		return postgres.JoiningCaseResult{}, ErrStoreProfileMediaSessionForbidden
+	}
+	return s.uploadStoreProfileImage(ctx, scope, identity.Subject, caseID, idempotencyKey, correlationID, expectedVersion, contentType, data, provenance)
+}
+
+func (s *Service) UploadStoreProfileImageForOperator(ctx context.Context, caseID, actingActorID, idempotencyKey, correlationID string, expectedVersion int, contentType string, data []byte, provenance media.Provenance) (postgres.JoiningCaseResult, error) {
+	actingActorID = strings.TrimSpace(actingActorID)
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	return s.uploadStoreProfileImage(ctx, "operator", actingActorID, caseID, idempotencyKey, correlationID, expectedVersion, contentType, data, provenance)
+}
+
+func (s *Service) uploadStoreProfileImage(ctx context.Context, scope, actorID, caseID, idempotencyKey, correlationID string, expectedVersion int, contentType string, data []byte, provenance media.Provenance) (postgres.JoiningCaseResult, error) {
 	caseID = strings.TrimSpace(caseID)
-	if caseID == "" || expectedVersion < 1 || !validStoreProfileMutation(idempotencyKey, correlationID, identity.Subject) {
+	actorID = strings.TrimSpace(actorID)
+	if caseID == "" || expectedVersion < 1 || !validStoreProfileMutation(idempotencyKey, correlationID, actorID) {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
 
 	var current postgres.JoiningCaseResult
-	scope := ""
-	switch {
-	case identity.Role == "field" && identity.Surface == "app-field" && strings.TrimSpace(identity.Subject) != "":
-		admission, err := postgres.ReadFieldAdmissionForActor(ctx, s.db, identity.Subject)
+	var err error
+	switch scope {
+	case "field":
+		admission, err := postgres.ReadFieldAdmissionForActor(ctx, s.db, actorID)
 		if err != nil {
 			return postgres.JoiningCaseResult{}, err
 		}
 		if admission.State != "eligible" || admission.RequiresProfileReview || strings.TrimSpace(admission.FullNameAr) == "" {
 			return postgres.JoiningCaseResult{}, ErrFieldSessionForbidden
 		}
-		current, err = postgres.ReadJoiningCaseForField(ctx, s.db, identity.Subject, caseID)
+		current, err = postgres.ReadJoiningCaseForField(ctx, s.db, actorID, caseID)
 		if err != nil {
 			return postgres.JoiningCaseResult{}, err
 		}
 		if current.Case.State != "draft" {
 			return postgres.JoiningCaseResult{}, postgres.ErrStoreProfileMediaState
 		}
-		scope = "field"
-	case identity.Role == "partner" && identity.Surface == "app-partner" && strings.TrimSpace(identity.Subject) != "":
-		current, err = postgres.ReadJoiningCaseForPartner(ctx, s.db, identity.Subject)
+	case "partner":
+		current, err = postgres.ReadJoiningCaseForPartner(ctx, s.db, actorID)
 		if errors.Is(err, postgres.ErrJoiningCaseNotFound) || (err == nil && current.Case.ID != caseID) {
 			return postgres.JoiningCaseResult{}, postgres.ErrJoiningCaseNotFound
 		}
@@ -58,7 +79,14 @@ func (s *Service) UploadStoreProfileImage(ctx context.Context, accessToken, case
 		if current.Case.State != "needs_correction" && !(current.Case.State == "approved" && current.Case.StoreID != "") {
 			return postgres.JoiningCaseResult{}, postgres.ErrStoreProfileMediaState
 		}
-		scope = "partner"
+	case "operator":
+		current, err = postgres.ReadJoiningCase(ctx, s.db, caseID)
+		if err != nil {
+			return postgres.JoiningCaseResult{}, err
+		}
+		if current.Case.State != "draft" {
+			return postgres.JoiningCaseResult{}, postgres.ErrStoreProfileMediaState
+		}
 	default:
 		return postgres.JoiningCaseResult{}, ErrStoreProfileMediaSessionForbidden
 	}
@@ -80,14 +108,14 @@ func (s *Service) UploadStoreProfileImage(ctx context.Context, accessToken, case
 	if uri == "" {
 		return postgres.JoiningCaseResult{}, errors.New("store profile media storage is unavailable")
 	}
-	asset, replayed, err := postgres.RegisterStoreProfileMediaAssetPending(ctx, s.db, postgres.StoreProfileMediaAssetInput{ID: assetID, JoiningCaseID: caseID, IdempotencyKey: strings.TrimSpace(idempotencyKey), RequestHash: requestHash, ExpectedCaseVersion: expectedVersion, ObjectKey: objectKey, URI: uri, ContentSHA256: contentSHA, ContentType: actualType, ByteSize: int64(len(data)), ActingActorID: identity.Subject, CorrelationID: strings.TrimSpace(correlationID), Provenance: provenance})
+	asset, replayed, err := postgres.RegisterStoreProfileMediaAssetPending(ctx, s.db, postgres.StoreProfileMediaAssetInput{ID: assetID, JoiningCaseID: caseID, IdempotencyKey: strings.TrimSpace(idempotencyKey), RequestHash: requestHash, ExpectedCaseVersion: expectedVersion, ObjectKey: objectKey, URI: uri, ContentSHA256: contentSHA, ContentType: actualType, ByteSize: int64(len(data)), ActingActorID: actorID, CorrelationID: strings.TrimSpace(correlationID), Provenance: provenance})
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
 	if replayed {
 		switch asset.State {
 		case "active", "retired":
-			return s.readStoreProfileImageCase(ctx, scope, identity.Subject, caseID, true)
+			return s.readStoreProfileImageCase(ctx, scope, actorID, caseID, true)
 		case "failed":
 			return postgres.JoiningCaseResult{}, postgres.ErrStoreProfileMediaFailed
 		case "pending":
@@ -104,10 +132,10 @@ func (s *Service) UploadStoreProfileImage(ctx context.Context, accessToken, case
 		_ = postgres.MarkStoreProfileMediaAssetFailed(ctx, s.db, asset.ID, err.Error())
 		return postgres.JoiningCaseResult{}, postgres.ErrStoreProfileMediaFailed
 	}
-	if _, err := postgres.ActivateStoreProfileMediaAsset(ctx, s.db, asset.ID, caseID, expectedVersion, strings.TrimSpace(idempotencyKey), requestHash, identity.Subject, strings.TrimSpace(correlationID)); err != nil {
+	if _, err := postgres.ActivateStoreProfileMediaAsset(ctx, s.db, asset.ID, caseID, expectedVersion, strings.TrimSpace(idempotencyKey), requestHash, actorID, strings.TrimSpace(correlationID)); err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
-	return s.readStoreProfileImageCase(ctx, scope, identity.Subject, caseID, replayed)
+	return s.readStoreProfileImageCase(ctx, scope, actorID, caseID, replayed)
 }
 
 func (s *Service) readStoreProfileImageCase(ctx context.Context, scope, actorID, caseID string, replayed bool) (postgres.JoiningCaseResult, error) {
@@ -121,6 +149,8 @@ func (s *Service) readStoreProfileImageCase(ctx context.Context, scope, actorID,
 		if err == nil && result.Case.ID != caseID {
 			return postgres.JoiningCaseResult{}, postgres.ErrJoiningCaseNotFound
 		}
+	case "operator":
+		result, err = postgres.ReadJoiningCase(ctx, s.db, caseID)
 	default:
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}

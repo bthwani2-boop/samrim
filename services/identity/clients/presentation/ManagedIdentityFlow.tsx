@@ -300,7 +300,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
       <>
         <Text style={styles.eyebrow}>دخول موحّد</Text>
         <Text style={styles.title}>تسجيل الدخول</Text>
-        <Text style={styles.description}>أدخل رقم الهاتف وكلمة المرور الخاصة بدور {roleLabel}.</Text>
+        <Text style={styles.description}>أدخل رقم الهاتف الدولي وكلمة المرور الخاصة بدور {roleLabel}.</Text>
         {state.kind === "signed_out" ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.notice}>{identitySessionSignOutMessage(state.reason)}</Text> : null}
         <Text style={styles.fieldLabel}>رقم الهاتف</Text>
         <TextInput
@@ -311,7 +311,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
             setPhone(toAsciiDigits(value));
             setError("");
           }}
-          placeholder="مثال: 967 77 000 101"
+          placeholder="+967 77 000 101"
           placeholderTextColor={theme.colorMuted}
           style={[styles.input, styles.numericInput]}
           textAlign="center"
@@ -347,21 +347,21 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
         </Pressable>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="التفعيل لأول مرة"
+          accessibilityLabel="تفعيل الجهاز"
           accessibilityState={{ busy, disabled: busy || !phoneReady }}
           disabled={busy || !phoneReady}
           onPress={startActivation}
           style={({ pressed }: { pressed: boolean }) => [styles.secondaryButton, pressed && styles.secondaryButtonPressed, (busy || !phoneReady) && styles.disabledButton]}
         >
-          <Text style={[styles.secondaryButtonText, (busy || !phoneReady) && styles.disabledButtonText]}>التفعيل لأول مرة</Text>
+          <Text style={[styles.secondaryButtonText, (busy || !phoneReady) && styles.disabledButtonText]}>تفعيل الجهاز</Text>
         </Pressable>
-        <Text style={styles.helper}>إذا لم يسبق تفعيل الجهاز، استخدم خيار التفعيل بعد إدخال رقم الهاتف.</Text>
+        <Text style={styles.helper}>التفعيل متاح بعد اعتماد الملف ومنح دور التطبيق، أو بعد إجازة إعادة التسجيل. أدخل الرقم الدولي المسجل ثم أثبت الهاتف وأنشئ كلمة مرورك. بعد التفعيل، استخدم الهاتف وكلمة المرور للدخول.</Text>
       </>
     ) : (
       <>
-        <Text style={styles.eyebrow}>تفعيل أول مرة</Text>
+        <Text style={styles.eyebrow}>تفعيل الجهاز</Text>
         <Text style={styles.title}>تفعيل جهاز {roleLabel}</Text>
-        <Text style={styles.description}>أثبت رقم الهاتف المرتبط بالدور ثم أنشئ كلمة المرور.</Text>
+        <Text style={styles.description}>بعد منح دور {roleLabel} أو إجازة إعادة التسجيل، أثبت الهاتف المسجل برمز التحقق ثم أنشئ كلمة المرور.</Text>
         <Text style={styles.summaryPhone}>{phone}</Text>
         <Pressable
           accessibilityRole="button"

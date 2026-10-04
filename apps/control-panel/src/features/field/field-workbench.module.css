@@ -4,6 +4,13 @@
 :global(.field-workbench-heading) { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 :global(.field-workbench-heading h2) { margin: 7px 0 5px; color: var(--color-primary); font-size: clamp(24px, 2.5vw, 32px); font-weight: 850; letter-spacing: -.035em; }
 :global(.field-workbench-heading p), :global(.field-list-heading p), :global(.field-create-content p) { margin: 0; line-height: 1.7; }
+:global(.field-workbench) .lifecycleGuide { display: grid; gap: 12px; padding: 18px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-muted); }
+:global(.field-workbench) .lifecycleGuide h3 { margin: 0; color: var(--color-primary); font-size: 18px; font-weight: 800; }
+:global(.field-workbench) .lifecycleSteps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
+:global(.field-workbench) .lifecycleSteps li { display: grid; align-content: start; gap: 6px; min-width: 0; padding: 12px; border: 1px solid var(--border-subtle); border-inline-start: 3px solid var(--color-primary); border-radius: var(--radius-md); background: var(--surface-base); }
+:global(.field-workbench) .lifecycleSteps strong { color: var(--color-primary); line-height: 1.55; }
+:global(.field-workbench) .lifecycleSteps span, :global(.field-workbench) .lifecycleNote { color: var(--text-muted); line-height: 1.7; }
+:global(.field-workbench) .lifecycleNote { margin: 0; }
 :global(.field-workbench-pane) { display: grid; min-width: 0; gap: 14px; }
 :global(.field-create-disclosure) { flex: 0 0 auto; }
 :global(.field-create-disclosure > summary) { display: flex; min-height: 44px; align-items: center; justify-content: center; padding-inline: 16px; cursor: pointer; list-style: none; }
@@ -36,6 +43,7 @@
   :global(.field-workbench-heading) { align-items: flex-start; }
   :global(.field-create-content .access-form) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   :global(.field-create-content .access-form .button) { grid-column: 1 / -1; justify-self: start; }
+  :global(.field-workbench) .lifecycleSteps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 560px) {
@@ -45,5 +53,6 @@
   :global(.field-create-content .access-form), :global(.field-workbench .workspace-toolbar) { grid-template-columns: minmax(0, 1fr); }
   :global(.field-create-content .access-form .button) { grid-column: auto; width: 100%; }
   :global(.field-workbench .workspace-toolbar .button) { width: 100%; }
+  :global(.field-workbench) .lifecycleSteps { grid-template-columns: minmax(0, 1fr); }
   :global(.field-workbench .operations-table) { min-width: 700px; }
 }

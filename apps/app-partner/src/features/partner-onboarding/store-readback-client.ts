@@ -1,4 +1,4 @@
-import { type CommercialStoreType, type CommerceVertical, createDshMobileClient, type DshImageUploadInput, type JoiningCaseResponse, type MediaProvenanceInput, type PartnerAccessibleStorePage, type PartnerStoreOperationalAvailabilityMutationResponse, type PartnerStoreOperationalAvailabilityResponse, type ServiceCity, type StoreAccessGrantListResponse, type StoreAccessGrantMutationResponse, type StoreAccessGrantPermissionsRequest, type StoreAccessGrantTransitionRequest, type StoreAccessInvitationCreateRequest, type StoreAccessInvitationDecisionRequest, type StoreAccessPermission, type StoreCaptainInvitationResponse, type StoreCaptainMembershipListResponse, type StoreCaptainMembershipResponse, type StoreCaptainMembershipTransitionRequest, type StoreOperationalAvailabilityRequest } from "@bthwani/dsh";
+import { type CommercialStoreType, type CommerceVertical, createDshMobileClient, type CorrectJoiningCaseRequest, type DshImageUploadInput, type JoiningCaseResponse, type MediaProvenanceInput, type PartnerAccessibleStorePage, type PartnerStoreOperationalAvailabilityMutationResponse, type PartnerStoreOperationalAvailabilityResponse, type ServiceCity, type StoreAccessGrantListResponse, type StoreAccessGrantMutationResponse, type StoreAccessGrantPermissionsRequest, type StoreAccessGrantTransitionRequest, type StoreAccessInvitationCreateRequest, type StoreAccessInvitationDecisionRequest, type StoreAccessPermission, type StoreCaptainInvitationResponse, type StoreCaptainMembershipListResponse, type StoreCaptainMembershipResponse, type StoreCaptainMembershipTransitionRequest, type StoreOperationalAvailabilityRequest } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
@@ -16,13 +16,7 @@ const accessToken = getUsableIdentityAccessToken;
 
 type OwnJoiningCaseCorrection = Readonly<{
   caseID: string;
-  businessName: string;
-  firstStoreName: string;
-  serviceCityId: string;
-  firstStoreVerticalId: string;
-  firstStoreCommercialTypeId: string;
-  firstStoreLatitude: number;
-  firstStoreLongitude: number;
+  input: CorrectJoiningCaseRequest;
   expectedVersion: number;
 }>;
 
@@ -71,10 +65,14 @@ export async function activateOwnStoreAccessInvitation(grantID: string, expected
   return dshClient().activatePartnerStoreAccessInvitation(token, grantID, { expectedVersion }, idempotencyKey, correlationID);
 }
 
-export async function correctAndResubmitOwnJoiningCase({ caseID, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreCommercialTypeId, firstStoreLatitude, firstStoreLongitude, expectedVersion }: OwnJoiningCaseCorrection): Promise<JoiningCaseResponse> {
-	const identity = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, [caseID.trim(), businessName.trim(), firstStoreName.trim(), serviceCityId.trim(), firstStoreVerticalId.trim(), firstStoreCommercialTypeId.trim(), String(firstStoreLatitude), String(firstStoreLongitude), String(expectedVersion)].join("\u0000"));
+export async function correctAndResubmitOwnJoiningCase({ caseID, input, expectedVersion }: OwnJoiningCaseCorrection): Promise<JoiningCaseResponse> {
 	const token = await accessToken();
-	return dshClient().correctAndResubmitJoiningCase(token, caseID, { businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreCommercialTypeId, firstStoreLatitude, firstStoreLongitude }, expectedVersion, `partner_case_correction_${identity}`, `partner_case_correction_corr_${identity}`);
+	return dshClient().correctAndResubmitJoiningCase(token, caseID, input, expectedVersion, `partner_case_correction_${Crypto.randomUUID()}`, `partner_case_correction_corr_${Crypto.randomUUID()}`);
+}
+
+export async function uploadOwnJoiningCaseProofImage(caseID: string, image: DshImageUploadInput, expectedVersion: number, idempotencyKey: string, correlationID: string): Promise<JoiningCaseResponse> {
+  const token = await accessToken();
+  return dshClient().uploadJoiningCaseProofImage(token, caseID, image, expectedVersion, idempotencyKey, correlationID);
 }
 
 export async function uploadOwnJoiningCaseStoreImage(caseID: string, image: DshImageUploadInput, provenance: MediaProvenanceInput, expectedVersion: number, idempotencyKey: string, correlationID: string): Promise<JoiningCaseResponse> {

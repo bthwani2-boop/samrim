@@ -10,11 +10,11 @@ import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootst
 const copy = {
   accessibilityLabel: "إشعارات الميدان",
   eyebrow: "مركز تنبيهات الميدان",
-  description: "تابع حالات ملفات الانضمام وتحديثاتها في قائمة واضحة ومنظمة.",
+  description: "تابع أخبار الشركاء وتحديثاتهم في قائمة واضحة ومنظمة.",
   unauthenticatedTitle: "سجّل الدخول لقراءة إشعارات الميدان",
-  unauthenticatedDescription: "ستظهر هنا تحديثات ملفات الانضمام بعد تسجيل الدخول.",
-  unreadDescription: "ابدأ بالأحدث لتبقى على اطلاع بحالة ملفاتك.",
-  readDescription: "أنت على اطلاع بكل تحديثات ملفاتك.",
+  unauthenticatedDescription: "ستظهر هنا تحديثات الشركاء بعد تسجيل الدخول.",
+  unreadDescription: "ابدأ بالأحدث لتبقى على اطلاع بحالة الشركاء.",
+  readDescription: "أنت على اطلاع بكل تحديثات الشركاء.",
 };
 
 function dshClient() {
@@ -47,7 +47,7 @@ export function NotificationsInbox() {
       setItems(response.notifications);
       setUnreadCount(response.unreadCount);
     } catch (cause) {
-      console.error("DSH field notifications readback failed", cause);
+      console.warn("DSH field notifications readback failed", cause);
       setError("تعذر قراءة الإشعارات. أعد المحاولة.");
     } finally {
       if (preserveCurrent) setRefreshing(false); else setLoading(false);
@@ -65,7 +65,7 @@ export function NotificationsInbox() {
       await dshClient().markNotificationRead(token, item.id);
       await load(true);
     } catch (cause) {
-      console.error("DSH field notification read-state write failed", cause);
+      console.warn("DSH field notification read-state write failed", cause);
       setError("تعذر تحديث حالة الإشعار.");
     } finally {
       setBusy("");
@@ -139,7 +139,7 @@ export function NotificationsInbox() {
           </BthwaniSurface>
           {unreadItems.length ? <View style={styles.group}><View style={styles.groupHeader}><Text style={styles.groupTitle}>الجديدة</Text><Text style={styles.groupCount}>{unreadItems.length}</Text></View><View style={styles.list}>{unreadItems.map(renderItem)}</View></View> : null}
           {readItems.length ? <View style={styles.group}><View style={styles.groupHeader}><Text style={styles.groupTitle}>المقروءة</Text><Text style={styles.groupCount}>{readItems.length}</Text></View><View style={styles.list}>{readItems.map(renderItem)}</View></View> : null}
-          {!items.length ? <BthwaniSurface tone="inset" style={styles.state}><View style={styles.stateIcon}><BthwaniIcon name="notifications" color={theme.colorMuted} size={sizing.iconXl} /></View><Text style={styles.cardTitle}>لا توجد إشعارات حالياً</Text><Text style={styles.muted}>ستظهر تحديثات ملفات الانضمام هنا عند توفرها.</Text></BthwaniSurface> : null}
+          {!items.length ? <BthwaniSurface tone="inset" style={styles.state}><View style={styles.stateIcon}><BthwaniIcon name="notifications" color={theme.colorMuted} size={sizing.iconXl} /></View><Text style={styles.cardTitle}>لا توجد إشعارات حالياً</Text><Text style={styles.muted}>ستظهر تحديثات الشركاء هنا عند توفرها.</Text></BthwaniSurface> : null}
           {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
           <BthwaniButton busy={refreshing} disabled={Boolean(busy)} label="تحديث الإشعارات" onPress={() => void load(true)} variant="secondary" />
         </>

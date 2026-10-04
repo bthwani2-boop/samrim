@@ -36,6 +36,18 @@ paths:
   /dsh/joining-cases/{caseId}/store-image:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1store-image"
 
+  /dsh/joining-cases/{caseId}/proof-image:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1proof-image"
+
+  /dsh/joining-cases/{caseId}/proof-details:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1proof-details"
+
+  /dsh/operator/joining-cases/{caseId}/proof-image:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1operator~1joining-cases~1{caseId}~1proof-image"
+
+  /dsh/operator/joining-cases/{caseId}/store-image:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1operator~1joining-cases~1{caseId}~1store-image"
+
   /dsh/joining-cases/{caseId}/correct-and-resubmit:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1correct-and-resubmit"
 
@@ -619,6 +631,9 @@ paths:
   /dsh/field/joining-cases/{caseId}/submit:
     $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1submit"
 
+  /dsh/field/joining-cases/{caseId}/proof-image:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1proof-image"
+
   /dsh/fields/me/financial-summary:
     $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me~1financial-summary"
 
@@ -878,12 +893,16 @@ components:
 
     CreateJoiningCaseRequest:
       type: object
-      required: [contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreCommercialTypeId, firstStoreLatitude, firstStoreLongitude, firstStoreFulfillmentModes]
+      required: [contactPhoneE164, ownerFullName, businessName, firstStoreName, firstStoreAddress, serviceCityId, firstStoreVerticalId, firstStoreCommercialTypeId, firstStoreLatitude, firstStoreLongitude, firstStoreWorkingHours, firstStoreProofType, firstStoreProofNumber, firstStoreFulfillmentModes]
       additionalProperties: false
       properties:
         contactPhoneE164:
           type: string
           pattern: '^\+[1-9][0-9]{7,14}$'
+        ownerFullName:
+          type: string
+          minLength: 2
+          maxLength: 160
         businessName:
           type: string
           minLength: 2
@@ -892,6 +911,10 @@ components:
           type: string
           minLength: 2
           maxLength: 160
+        firstStoreAddress:
+          type: string
+          minLength: 4
+          maxLength: 500
         serviceCityId:
           type: string
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
@@ -909,12 +932,59 @@ components:
           type: number
           minimum: -180
           maximum: 180
+        firstStoreWorkingHours:
+          $ref: "#/components/schemas/StoreWeeklyWorkingHours"
+        firstStoreProofType:
+          $ref: "#/components/schemas/JoiningCaseProofType"
+        firstStoreProofNumber:
+          type: string
+          minLength: 1
+          maxLength: 128
+        firstStoreNotes:
+          type: string
+          maxLength: 1000
         firstStoreFulfillmentModes:
           type: array
           minItems: 1
           uniqueItems: true
           items:
             $ref: "#/components/schemas/StoreFulfillmentMode"
+
+    JoiningCaseProofType:
+      type: string
+      enum: [COMMERCIAL_REGISTRATION, IDENTITY_DOCUMENT, FREELANCE_WORK_DOCUMENT]
+
+    StoreWeeklyWorkingHours:
+      type: object
+      required: [intervals]
+      additionalProperties: false
+      properties:
+        intervals:
+          type: array
+          minItems: 1
+          maxItems: 28
+          description: Local Service City weekly schedule. Days without intervals are closed; supports split and overnight periods.
+          items:
+            $ref: "#/components/schemas/StoreWorkingHoursInterval"
+
+    StoreWorkingHoursInterval:
+      type: object
+      required: [dayOfWeek, opensAt, closesAt, closesNextDay]
+      additionalProperties: false
+      properties:
+        dayOfWeek:
+          type: integer
+          minimum: 1
+          maximum: 7
+          description: ISO weekday (Monday=1 through Sunday=7).
+        opensAt:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+        closesAt:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+        closesNextDay:
+          type: boolean
 
     JoiningCaseState:
       type: string
@@ -1003,17 +1073,23 @@ components:
 
     JoiningCaseView:
       type: object
-      required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, firstStoreFulfillmentModes, origin, state, financialProfileState, termsPolicyVersion, version, createdAt, updatedAt]
+      required: [id, contactPhoneE164, ownerFullName, businessName, firstStoreName, firstStoreAddress, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, firstStoreWorkingHours, firstStoreProofType, firstStoreProofImageUploaded, firstStoreFulfillmentModes, origin, state, financialProfileState, termsPolicyVersion, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
           type: string
         contactPhoneE164:
           type: string
+        ownerFullName:
+          type: string
+          nullable: true
         businessName:
           type: string
         firstStoreName:
           type: string
+        firstStoreAddress:
+          type: string
+          nullable: true
         serviceCityId:
           type: string
           nullable: true
@@ -1041,6 +1117,17 @@ components:
           uniqueItems: true
           items:
             $ref: "#/components/schemas/StoreFulfillmentMode"
+        firstStoreWorkingHours:
+          $ref: "#/components/schemas/StoreWeeklyWorkingHours"
+          nullable: true
+        firstStoreProofType:
+          $ref: "#/components/schemas/JoiningCaseProofType"
+          nullable: true
+        firstStoreProofImageUploaded:
+          type: boolean
+        firstStoreNotes:
+          type: string
+          nullable: true
         origin:
           $ref: "#/components/schemas/JoiningCaseOrigin"
         partnerActorId:
@@ -1086,6 +1173,27 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    JoiningCaseProofDetailsResponse:
+      type: object
+      required: [joiningCaseId, proofType, proofNumber, proofImageUploaded]
+      additionalProperties: false
+      properties:
+        joiningCaseId:
+          type: string
+        proofType:
+          $ref: "#/components/schemas/JoiningCaseProofType"
+        proofNumber:
+          type: string
+        proofImageUploaded:
+          type: boolean
+        proofImageContentType:
+          type: string
+          nullable: true
+        proofImageByteSize:
+          type: integer
+          nullable: true
+          x-go-pointer: true
 
     JoiningCaseResponse:
       type: object
@@ -1257,9 +1365,13 @@ components:
 
     CorrectJoiningCaseRequest:
       type: object
-      required: [businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreCommercialTypeId, firstStoreLatitude, firstStoreLongitude]
+      required: [ownerFullName, businessName, firstStoreName, firstStoreAddress, serviceCityId, firstStoreVerticalId, firstStoreCommercialTypeId, firstStoreLatitude, firstStoreLongitude, firstStoreWorkingHours, firstStoreProofType, firstStoreProofNumber, firstStoreFulfillmentModes]
       additionalProperties: false
       properties:
+        ownerFullName:
+          type: string
+          minLength: 2
+          maxLength: 160
         businessName:
           type: string
           minLength: 2
@@ -1268,6 +1380,10 @@ components:
           type: string
           minLength: 2
           maxLength: 160
+        firstStoreAddress:
+          type: string
+          minLength: 4
+          maxLength: 500
         serviceCityId:
           type: string
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
@@ -1285,6 +1401,23 @@ components:
           type: number
           minimum: -180
           maximum: 180
+        firstStoreWorkingHours:
+          $ref: "#/components/schemas/StoreWeeklyWorkingHours"
+        firstStoreProofType:
+          $ref: "#/components/schemas/JoiningCaseProofType"
+        firstStoreProofNumber:
+          type: string
+          minLength: 1
+          maxLength: 128
+        firstStoreNotes:
+          type: string
+          maxLength: 1000
+        firstStoreFulfillmentModes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/StoreFulfillmentMode"
     ReviewJoiningCaseRequest:
       type: object
       required: [decision]

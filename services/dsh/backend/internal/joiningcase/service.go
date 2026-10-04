@@ -3,10 +3,12 @@ package joiningcase
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"log"
 	"math"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
@@ -28,41 +30,42 @@ var (
 var phoneE164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
 
 type Service struct {
-	identity *identityintegration.Client
-	db       *sql.DB
-	wlt      *wlt.Client
-	media    media.Store
+	identity     *identityintegration.Client
+	db           *sql.DB
+	wlt          *wlt.Client
+	media        media.Store
+	evidenceKeys *postgres.JoiningCaseEvidenceKeyring
 }
 
-func New(identity *identityintegration.Client, db *sql.DB, wltClient *wlt.Client, mediaStore media.Store) (*Service, error) {
-	if identity == nil || db == nil || wltClient == nil || mediaStore == nil {
+func New(identity *identityintegration.Client, db *sql.DB, wltClient *wlt.Client, mediaStore media.Store, evidenceKeys *postgres.JoiningCaseEvidenceKeyring) (*Service, error) {
+	if identity == nil || db == nil || wltClient == nil || mediaStore == nil || evidenceKeys == nil {
 		return nil, errors.New("joining case configuration is invalid")
 	}
-	return &Service{identity: identity, db: db, wlt: wltClient, media: mediaStore}, nil
+	return &Service{identity: identity, db: db, wlt: wltClient, media: mediaStore, evidenceKeys: evidenceKeys}, nil
 }
 
-func (s *Service) Create(ctx context.Context, input postgres.JoiningCaseRecord, idempotencyKey, actingActorID, correlationID string) (postgres.JoiningCaseResult, error) {
-	phone := strings.TrimSpace(input.ContactPhoneE164)
-	businessName := strings.TrimSpace(input.BusinessName)
-	firstStoreName := strings.TrimSpace(input.FirstStoreName)
-	serviceCityID := strings.TrimSpace(input.FirstStoreServiceCityID)
-	verticalID := strings.TrimSpace(input.FirstStoreVerticalID)
-	commercialTypeID := strings.TrimSpace(input.FirstStoreCommercialTypeID)
-	if len(input.FirstStoreFulfillmentModes) == 0 {
-		return postgres.JoiningCaseResult{}, ErrInvalidInput
-	}
-	fulfillmentModes, modesErr := postgres.NormalizeStoreFulfillmentModes(input.FirstStoreFulfillmentModes)
-	if modesErr != nil {
-		return postgres.JoiningCaseResult{}, ErrInvalidInput
-	}
-	if !phoneE164Pattern.MatchString(phone) || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || serviceCityID == "" || verticalID == "" || commercialTypeID == "" || input.FirstStoreLatitude == nil || input.FirstStoreLongitude == nil || !validCoordinates(*input.FirstStoreLatitude, *input.FirstStoreLongitude) {
-		return postgres.JoiningCaseResult{}, ErrInvalidInput
+func (s *Service) Create(ctx context.Context, input contract.CreateJoiningCaseRequest, idempotencyKey, actingActorID, correlationID string) (postgres.JoiningCaseResult, error) {
+	request, err := NormalizeCreateRequest(input)
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
 	}
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
-	request := postgres.JoiningCaseRequest{Phone: phone, BusinessName: businessName, FirstStoreName: firstStoreName, ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: commercialTypeID, Latitude: *input.FirstStoreLatitude, Longitude: *input.FirstStoreLongitude, FulfillmentModes: fulfillmentModes}
-	return postgres.CreateJoiningCase(ctx, s.db, postgres.CreateJoiningCaseInput{IdempotencyKey: strings.TrimSpace(idempotencyKey), RequestHash: postgres.HashJoiningCaseRequest(request), ActingActorID: strings.TrimSpace(actingActorID), CorrelationID: strings.TrimSpace(correlationID), Request: request})
+	requestHash, err := HashCreateRequest(s.evidenceKeys, "control-panel-joining-case-create", actingActorID, request)
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	return postgres.CreateJoiningCase(ctx, s.db, postgres.CreateJoiningCaseInput{IdempotencyKey: strings.TrimSpace(idempotencyKey), RequestHash: requestHash, ActingActorID: strings.TrimSpace(actingActorID), CorrelationID: strings.TrimSpace(correlationID), EvidenceKeyring: s.evidenceKeys, Request: request})
+}
+
+func validJoiningCaseProofType(value string) bool {
+	switch value {
+	case "COMMERCIAL_REGISTRATION", "IDENTITY_DOCUMENT", "FREELANCE_WORK_DOCUMENT":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Service) Submit(ctx context.Context, caseID string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.JoiningCaseResult, error) {
@@ -301,19 +304,67 @@ func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken,
 		return postgres.JoiningCaseResult{}, err
 	}
 	caseID = strings.TrimSpace(caseID)
+	ownerFullName := strings.TrimSpace(input.OwnerFullName)
 	businessName := strings.TrimSpace(input.BusinessName)
 	firstStoreName := strings.TrimSpace(input.FirstStoreName)
+	firstStoreAddress := strings.TrimSpace(input.FirstStoreAddress)
+	proofType := strings.TrimSpace(string(input.FirstStoreProofType))
+	proofNumber := strings.TrimSpace(input.FirstStoreProofNumber)
+	notes := strings.TrimSpace(input.FirstStoreNotes)
 	serviceCityID := strings.TrimSpace(input.ServiceCityID)
 	verticalID := strings.TrimSpace(input.FirstStoreVerticalID)
 	commercialTypeID := strings.TrimSpace(input.FirstStoreCommercialTypeID)
 	latitude := input.FirstStoreLatitude
 	longitude := input.FirstStoreLongitude
-	if caseID == "" || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || serviceCityID == "" || verticalID == "" || commercialTypeID == "" || expectedVersion < 1 || !validCoordinates(latitude, longitude) {
+	workingHours, hoursErr := json.Marshal(input.FirstStoreWorkingHours)
+	if caseID == "" || hoursErr != nil || !postgres.ValidateStoreWorkingHours(workingHours) || len([]rune(ownerFullName)) < 2 || len([]rune(ownerFullName)) > 160 || len([]rune(businessName)) < 2 || len([]rune(businessName)) > 160 || len([]rune(firstStoreName)) < 2 || len([]rune(firstStoreName)) > 160 || len([]rune(firstStoreAddress)) < 4 || len([]rune(firstStoreAddress)) > 500 || len(proofNumber) < 1 || len(proofNumber) > 128 || len([]rune(notes)) > 1000 || !validJoiningCaseProofType(proofType) || serviceCityID == "" || verticalID == "" || commercialTypeID == "" || expectedVersion < 1 || !validCoordinates(latitude, longitude) {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
-	mutation := postgres.CorrectJoiningCaseInput{CaseID: caseID, ActorID: identity.Subject, BusinessName: businessName, FirstStoreName: firstStoreName, ExpectedVersion: expectedVersion, IdempotencyKey: strings.TrimSpace(idempotencyKey), CorrelationID: strings.TrimSpace(correlationID), ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: commercialTypeID, Latitude: latitude, Longitude: longitude}
-	mutation.RequestHash = postgres.HashJoiningCaseCorrectAndResubmit(mutation)
+	rawModes := make([]string, len(input.FirstStoreFulfillmentModes))
+	for index, mode := range input.FirstStoreFulfillmentModes {
+		rawModes[index] = string(mode)
+	}
+	fulfillmentModes, modesErr := postgres.NormalizeStoreFulfillmentModes(rawModes)
+	if modesErr != nil {
+		return postgres.JoiningCaseResult{}, ErrInvalidInput
+	}
+	mutation := postgres.CorrectJoiningCaseInput{CaseID: caseID, ActorID: identity.Subject, OwnerFullName: ownerFullName, BusinessName: businessName, FirstStoreName: firstStoreName, FirstStoreAddress: firstStoreAddress, FirstStoreWorkingHours: workingHours, FirstStoreProofType: proofType, FirstStoreProofNumber: proofNumber, FirstStoreNotes: notes, EvidenceKeyring: s.evidenceKeys, ExpectedVersion: expectedVersion, IdempotencyKey: strings.TrimSpace(idempotencyKey), CorrelationID: strings.TrimSpace(correlationID), ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: commercialTypeID, Latitude: latitude, Longitude: longitude, FulfillmentModes: fulfillmentModes}
+	requestHash, err := s.evidenceKeys.RequestHash("partner-correct-and-resubmit", caseID, identity.Subject, ownerFullName, businessName, firstStoreName, firstStoreAddress, string(workingHours), proofType, proofNumber, notes, serviceCityID, verticalID, commercialTypeID, strconv.FormatFloat(latitude, 'f', 6, 64), strconv.FormatFloat(longitude, 'f', 6, 64), strings.Join(fulfillmentModes, ","), strconv.Itoa(expectedVersion))
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	mutation.RequestHash = requestHash
 	return postgres.CorrectAndResubmitJoiningCase(ctx, s.db, mutation)
+}
+
+func (s *Service) UploadProofImageForPartner(ctx context.Context, accessToken, caseID, idempotencyKey, correlationID string, expectedVersion int, declaredContentType string, data []byte) (postgres.JoiningCaseResult, error) {
+	identity, err := s.requirePartner(ctx, accessToken)
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	return UploadPrivateProofImage(ctx, s.db, s.evidenceKeys, caseID, identity.Subject, "partner", "partner-proof-image-upload", idempotencyKey, correlationID, expectedVersion, declaredContentType, data)
+}
+
+func (s *Service) UploadProofImageForOperator(ctx context.Context, caseID, actingActorID, idempotencyKey, correlationID string, expectedVersion int, declaredContentType string, data []byte) (postgres.JoiningCaseResult, error) {
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	actingActorID = strings.TrimSpace(actingActorID)
+	return UploadPrivateProofImage(ctx, s.db, s.evidenceKeys, caseID, actingActorID, "operator", "operator-proof-image-upload", idempotencyKey, correlationID, expectedVersion, declaredContentType, data)
+}
+
+func (s *Service) ReadProofDetailsForOperator(ctx context.Context, caseID, actingActorID, correlationID string) (postgres.JoiningCaseProofDetails, error) {
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return postgres.JoiningCaseProofDetails{}, err
+	}
+	return postgres.ReadJoiningCaseProofDetailsForOperator(ctx, s.db, caseID, actingActorID, correlationID, s.evidenceKeys)
+}
+
+func (s *Service) DownloadProofImageForOperator(ctx context.Context, caseID, actingActorID, correlationID string) (postgres.JoiningCaseProofImage, error) {
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return postgres.JoiningCaseProofImage{}, err
+	}
+	return postgres.ReadJoiningCaseProofImageForOperator(ctx, s.db, caseID, actingActorID, correlationID, s.evidenceKeys)
 }
 
 func validCoordinates(latitude, longitude float64) bool {
