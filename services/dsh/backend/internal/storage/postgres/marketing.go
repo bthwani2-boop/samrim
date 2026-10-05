@@ -187,6 +187,17 @@ func scanPromotion(row rowScanner) (PromotionRecord, error) {
 
 const promotionSelect = `id,code,name_ar,description_ar,kind,value_minor,max_discount_minor,funding_source,funding_share_partner_percent,store_id,service_city_id,state,starts_at,ends_at,redemption_limit,redeemed_count,version,created_by_actor_id,created_at,updated_at`
 
+// listPublicPromotionsQuery must stay character-identical to promotionSelect for
+// its column list; TestPublicPromotionsListingKeepsCanonicalColumns fails when
+// the two drift apart.
+const listPublicPromotionsQuery = `SELECT id,code,name_ar,description_ar,kind,value_minor,max_discount_minor,funding_source,funding_share_partner_percent,store_id,service_city_id,state,starts_at,ends_at,redemption_limit,redeemed_count,version,created_by_actor_id,created_at,updated_at
+	FROM dsh.commerce_promotions
+	WHERE (NOT $1 OR (state='PUBLISHED' AND starts_at <= clock_timestamp() AND (ends_at IS NULL OR ends_at > clock_timestamp())))
+	AND (NOT $1 OR service_city_id IS NULL OR service_city_id=$2)
+	AND (NOT $1 OR store_id IS NULL OR ($3<>'' AND store_id=$3))
+	ORDER BY starts_at DESC,id DESC
+	LIMIT CASE WHEN $1 THEN 4 ELSE NULL END`
+
 // ListStorePromotions returns every promotion scoped to one Store across its whole
 // lifecycle (draft, published, paused, ended) for the owner's workspace views.
 func ListStorePromotions(ctx context.Context, db *sql.DB, storeID string, limit int) ([]PromotionRecord, error) {
@@ -226,12 +237,7 @@ func ListPromotions(ctx context.Context, db *sql.DB, public bool, serviceCityID,
 			return nil, ErrPromotionInvalid
 		}
 	}
-	rows, err := db.QueryContext(ctx, "SELECT "+promotionSelect+" FROM dsh.commerce_promotions "+
-		"WHERE (NOT $1 OR (state='PUBLISHED' AND starts_at <= clock_timestamp() AND (ends_at IS NULL OR ends_at > clock_timestamp()))) "+
-		"AND (NOT $1 OR service_city_id IS NULL OR service_city_id=$2) "+
-		"AND (NOT $1 OR store_id IS NULL OR ($3<>'' AND store_id=$3)) "+
-		"ORDER BY starts_at DESC,id DESC "+
-		"LIMIT CASE WHEN $1 THEN 4 ELSE NULL END", public, serviceCityID, storeID)
+	rows, err := db.QueryContext(ctx, listPublicPromotionsQuery, public, serviceCityID, storeID)
 	if err != nil {
 		return nil, err
 	}
