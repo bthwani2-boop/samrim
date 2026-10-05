@@ -46,7 +46,7 @@ export function PartnerStore() {
         />
       </View>
 
-      {selectedStore.owned ? <StoreCommercialAgreements storeID={selectedStore.id} /> : null}
+      {selectedStore.owned ? <StoreCommercialAgreements /> : null}
       {selectedStore.owned && selectedIsFirstJoiningStore && firstStoreCase ? <StoreProfileImageEditor value={firstStoreCase} onUpdated={onboarding.update} /> : null}
 
       {canOperate ? <StoreOperationalAvailabilityManagement storeID={selectedStore.id} fulfillmentModes={selectedStore.fulfillmentModes} /> : null}
