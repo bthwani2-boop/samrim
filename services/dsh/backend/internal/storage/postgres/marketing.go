@@ -226,7 +226,7 @@ func ListPromotions(ctx context.Context, db *sql.DB, public bool, serviceCityID,
 			return nil, ErrPromotionInvalid
 		}
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id,code,name_ar,description_ar,kind,value_minor,max_discount_minor,funding_source,store_id,service_city_id,state,starts_at,ends_at,redemption_limit,redeemed_count,version,created_by_actor_id,created_at,updated_at
+	rows, err := db.QueryContext(ctx, `SELECT `+promotionSelect+`
 		FROM dsh.commerce_promotions
 		WHERE (NOT $1 OR (state='PUBLISHED' AND starts_at <= clock_timestamp() AND (ends_at IS NULL OR ends_at > clock_timestamp())))
 		AND (NOT $1 OR service_city_id IS NULL OR service_city_id=$2)
