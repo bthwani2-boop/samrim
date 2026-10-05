@@ -226,13 +226,12 @@ func ListPromotions(ctx context.Context, db *sql.DB, public bool, serviceCityID,
 			return nil, ErrPromotionInvalid
 		}
 	}
-	rows, err := db.QueryContext(ctx, `SELECT `+promotionSelect+`
-		FROM dsh.commerce_promotions
-		WHERE (NOT $1 OR (state='PUBLISHED' AND starts_at <= clock_timestamp() AND (ends_at IS NULL OR ends_at > clock_timestamp())))
-		AND (NOT $1 OR service_city_id IS NULL OR service_city_id=$2)
-		AND (NOT $1 OR store_id IS NULL OR ($3<>'' AND store_id=$3))
-		ORDER BY starts_at DESC,id DESC
-		LIMIT CASE WHEN $1 THEN 4 ELSE NULL END`, public, serviceCityID, storeID)
+	rows, err := db.QueryContext(ctx, "SELECT "+promotionSelect+" FROM dsh.commerce_promotions "+
+		"WHERE (NOT $1 OR (state='PUBLISHED' AND starts_at <= clock_timestamp() AND (ends_at IS NULL OR ends_at > clock_timestamp()))) "+
+		"AND (NOT $1 OR service_city_id IS NULL OR service_city_id=$2) "+
+		"AND (NOT $1 OR store_id IS NULL OR ($3<>'' AND store_id=$3)) "+
+		"ORDER BY starts_at DESC,id DESC "+
+		"LIMIT CASE WHEN $1 THEN 4 ELSE NULL END", public, serviceCityID, storeID)
 	if err != nil {
 		return nil, err
 	}
