@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { QuickPricesManagement } from "./quick-prices-management";
+import { StoreCatalogExportCard } from "./store-catalog-export";
 
 type OfferState = { kind: "loading" } | { kind: "ready"; offers: ReadonlyArray<CatalogStoreOffer>; proposals: ReadonlyArray<CatalogProductProposal> } | { kind: "error" };
 type QuantityPolicy = "DISCRETE" | "MEASURED" | "VARIABLE_MEASURE";
@@ -622,6 +623,7 @@ const theme = useAppearanceTheme();
       <Text style={styles.title}>كتالوج المتجر وعروضه</Text><Text style={styles.muted}>أدر منتجات هذا المتجر وعروضه.</Text>
       {!catalogReady ? <Text accessibilityRole="alert" style={styles.warning}>قائمة المتجر غير جاهزة للإدارة بعد. تعذرت إضافة المنتجات أو نشر العروض حاليًا؛ تواصل مع الدعم لاستكمال التجهيز.</Text> : null}
       {catalogReady ? <QuickPricesManagement storeId={storeId} verticalId={verticalId} /> : null}
+      {catalogReady ? <StoreCatalogExportCard storeId={storeId} /> : null}
       {catalogReady ? <MobileStoreCatalogImportWorkspace
         client={dshClient()}
         scope={{ kind: "PARTNER", storeID: storeId }}
