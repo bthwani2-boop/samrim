@@ -34,6 +34,7 @@ type PartnerOrderEarningRecord struct {
 	PaymentIntentID                 string
 	PartnerActorID                  string
 	CaptainActorID                  string
+	StoreID                         string
 	Currency                        string
 	GrossProductMinor               int64
 	DeliveryFeeMinor                int64
@@ -206,7 +207,7 @@ func FinalizePartnerOrderEarning(ctx context.Context, db *sql.DB, input Finalize
 	if debitTotal != creditTotal || debitTotal != allocation.CustomerPayableMinor {
 		return PartnerOrderEarningRecord{}, false, ErrLedgerUnbalanced
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.partner_order_earnings(order_id,payment_intent_id,partner_actor_id,captain_actor_id,currency,gross_product_minor,delivery_fee_minor,commission_minor,partner_net_minor,commission_receivable_offset_minor,profile_id,profile_version,policy_version,ledger_transaction_id,idempotency_key,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`, input.OrderID, input.PaymentIntentID, input.PartnerActorID, input.CaptainActorID, allocation.Currency, chargeableProduct, allocation.DeliveryFeeMinor, commission, partnerNet, receivableOffset, snapshot.ProfileID, snapshot.ProfileVersion, storeAgreementSnapshotPolicyVersion(*snapshot), transactionID, input.IdempotencyKey, requestHash); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.partner_order_earnings(order_id,payment_intent_id,partner_actor_id,captain_actor_id,store_id,currency,gross_product_minor,delivery_fee_minor,commission_minor,partner_net_minor,commission_receivable_offset_minor,profile_id,profile_version,policy_version,ledger_transaction_id,idempotency_key,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`, input.OrderID, input.PaymentIntentID, input.PartnerActorID, input.CaptainActorID, allocation.StoreID, allocation.Currency, chargeableProduct, allocation.DeliveryFeeMinor, commission, partnerNet, receivableOffset, snapshot.ProfileID, snapshot.ProfileVersion, storeAgreementSnapshotPolicyVersion(*snapshot), transactionID, input.IdempotencyKey, requestHash); err != nil {
 		return PartnerOrderEarningRecord{}, false, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -262,7 +263,7 @@ func readPartnerOrderEarning(ctx context.Context, source interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, orderID string) (PartnerOrderEarningRecord, error) {
 	var item PartnerOrderEarningRecord
-	err := source.QueryRowContext(ctx, `SELECT order_id,payment_intent_id,partner_actor_id,captain_actor_id,currency,gross_product_minor,delivery_fee_minor,commission_minor,partner_net_minor,commission_receivable_offset_minor,profile_id,profile_version,policy_version,ledger_transaction_id,created_at FROM wlt.partner_order_earnings WHERE order_id=$1`, orderID).Scan(&item.OrderID, &item.PaymentIntentID, &item.PartnerActorID, &item.CaptainActorID, &item.Currency, &item.GrossProductMinor, &item.DeliveryFeeMinor, &item.CommissionMinor, &item.PartnerNetMinor, &item.CommissionReceivableOffsetMinor, &item.ProfileID, &item.ProfileVersion, &item.PolicyVersion, &item.LedgerTransactionID, &item.CreatedAt)
+	err := source.QueryRowContext(ctx, `SELECT order_id,payment_intent_id,partner_actor_id,captain_actor_id,store_id,currency,gross_product_minor,delivery_fee_minor,commission_minor,partner_net_minor,commission_receivable_offset_minor,profile_id,profile_version,policy_version,ledger_transaction_id,created_at FROM wlt.partner_order_earnings WHERE order_id=$1`, orderID).Scan(&item.OrderID, &item.PaymentIntentID, &item.PartnerActorID, &item.CaptainActorID, &item.StoreID, &item.Currency, &item.GrossProductMinor, &item.DeliveryFeeMinor, &item.CommissionMinor, &item.PartnerNetMinor, &item.CommissionReceivableOffsetMinor, &item.ProfileID, &item.ProfileVersion, &item.PolicyVersion, &item.LedgerTransactionID, &item.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PartnerOrderEarningRecord{}, ErrPartnerEarningNotFound
 	}
