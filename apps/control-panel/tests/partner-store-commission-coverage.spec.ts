@@ -13,7 +13,6 @@ const vertical = {
   id: "food",
   nameAr: "الأغذية",
   nameEn: "Food",
-  catalogModel: "SHARED_CATALOG",
   active: true,
   version: 1,
   createdAt: "2026-10-02T00:00:00.000Z",

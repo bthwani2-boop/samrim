@@ -148,7 +148,7 @@ export function CatalogProposalReview() {
     <div className="central-catalog-grid" data-testid="catalog-proposal-review">
       <section className="access-card central-catalog-list" aria-labelledby="catalog-proposals-title">
         <div className="access-card-heading">
-          <span className="step-chip">المقترحات</span>
+          <span className="step-chip">المراجعة</span>
           <p className="eyebrow">طابور المراجعة</p>
           <h2 id="catalog-proposals-title">المقترحات المقدمة</h2>
           <p className="muted">اختر مقترحًا لقراءة حقائقه كاملة قبل اعتماد القرار.</p>

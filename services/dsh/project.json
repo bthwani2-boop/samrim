@@ -26,6 +26,12 @@
       "options": {
         "command": "pnpm exec biome lint services/dsh --diagnostic-level=error"
       }
+    },
+    "unit": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --test services/dsh/clients/joining-case-media.test.ts"
+      }
     }
   },
   "tags": [
