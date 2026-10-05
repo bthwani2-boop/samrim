@@ -429,20 +429,20 @@ export function FieldAdmissionPanel() {
     setBusy("create"); setError(""); setNotice("");
     try {
       const response = await identityFetch("/api/fields", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "admit", fullNameAr: name, contactPhoneE164, serviceCityId: activeCity.id, walletProviderKey: providerKey }) });
-      if (!response.ok) { setError(await responseMessage(response)); await load(); return; }
+      if (!response.ok) { const message = await responseMessage(response); await load(); setError(message); return; }
       const created = (await response.json() as AdmissionMutationResponse).admission;
       if (!created?.id || created.state !== "pending_review" || created.contactPhoneE164 !== contactPhoneE164 || created.fullNameAr !== name || created.serviceCityId !== activeCity.id || created.walletProviderKey !== providerKey) {
-        setError("استجاب DSH للحفظ لكن سجل العملية لا يطابق الملف المطلوب. أعد القراءة قبل أي إجراء آخر."); await load(); return;
+        await load(); setError("استجاب DSH للحفظ لكن سجل العملية لا يطابق الملف المطلوب. أعد القراءة قبل أي إجراء آخر."); return;
       }
       const page = await readWorkbench(contactPhoneE164);
       if (!page.items.some((item) => item.kind === "candidate" && item.admission.id === created.id && item.admission.state === "pending_review" && item.admission.fullNameAr === name && item.admission.serviceCityId === activeCity.id && item.admission.walletProviderKey === providerKey)) {
-        setError("حُفظ الملف لكن إعادة قراءة السجل الموحّد لا تطابق الملف المنشأ."); await load(); return;
+        await load(); setError("حُفظ الملف لكن إعادة قراءة السجل الموحّد لا تطابق الملف المنشأ."); return;
       }
       setFullNameAr(""); setPhone(""); setServiceCityId(""); setWalletProviderKey(""); updateQuery(contactPhoneE164);
       setNotice("أُنشئ الملف وظهر في سجل الميدانيين بانتظار المراجعة.");
       await load();
     } catch (cause) {
-      setError(fieldRequestError(cause, "تعذر حفظ ملف الميداني.")); await load();
+      await load(); setError(fieldRequestError(cause, "تعذر حفظ ملف الميداني."));
     } finally { setBusy(""); }
   }
 
