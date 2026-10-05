@@ -18,6 +18,7 @@ var (
 	ErrOperatorNotActive              = errors.New("operator actor is not active")
 	ErrPublicationReadinessBlocked    = errors.New("store publication readiness is blocked")
 	ErrPartnerIdentityUnavailable     = errors.New("partner Identity eligibility is unavailable")
+	ErrStoreFulfillmentAgreementRequired = errors.New("published store fulfillment modes require a matching active store commercial agreement")
 	PartnerIdentityNotEligibleReason  = "PARTNER_IDENTITY_NOT_ELIGIBLE"
 	FinancialProfileNotReadyReason    = "FINANCIAL_PROFILE_NOT_READY"
 	ServiceCityNotEligibleReason      = "SERVICE_CITY_NOT_ELIGIBLE"
@@ -165,6 +166,21 @@ func (s *Service) SetFulfillmentModes(ctx context.Context, storeID string, modes
 	}
 	if err := s.identity.RequireOperatorPermission(ctx, actingActorID, "partners"); err != nil {
 		return postgres.StoreFulfillmentModesResult{}, err
+	}
+	store, err := postgres.ReadStore(ctx, s.db, storeID)
+	if err != nil {
+		return postgres.StoreFulfillmentModesResult{}, err
+	}
+	if strings.TrimSpace(store.PublicationState) == "published" {
+		candidate := store
+		candidate.FulfillmentModes = modes
+		agreements, err := s.wlt.ReadStoreCommercialAgreements(ctx, store.ID)
+		if err != nil {
+			return postgres.StoreFulfillmentModesResult{}, err
+		}
+		if !activeStoreAgreementMatches(candidate, agreements) {
+			return postgres.StoreFulfillmentModesResult{}, ErrStoreFulfillmentAgreementRequired
+		}
 	}
 	return postgres.SetStoreFulfillmentModes(ctx, s.db, storeID, actingActorID, modes, expectedVersion, idempotencyKey, correlationID)
 }
