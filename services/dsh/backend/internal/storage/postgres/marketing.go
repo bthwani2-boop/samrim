@@ -322,9 +322,10 @@ func SetPromotionState(ctx context.Context, db *sql.DB, id, state, idempotencyKe
 	return item, false, nil
 }
 
-func EvaluatePromotion(ctx context.Context, source rowQueryer, code, storeID, clientActorID string, subtotalMinor int64, lock bool) (PromotionRecord, int64, error) {
+func EvaluatePromotion(ctx context.Context, source rowQueryer, code, storeID, storeServiceCityID, clientActorID string, subtotalMinor int64, lock bool) (PromotionRecord, int64, error) {
 	code = strings.ToUpper(strings.TrimSpace(code))
 	storeID = strings.TrimSpace(storeID)
+	storeServiceCityID = strings.TrimSpace(storeServiceCityID)
 	clientActorID = strings.TrimSpace(clientActorID)
 	if code == "" || storeID == "" || clientActorID == "" || subtotalMinor <= 0 {
 		return PromotionRecord{}, 0, ErrPromotionUnavailable
@@ -341,7 +342,7 @@ func EvaluatePromotion(ctx context.Context, source rowQueryer, code, storeID, cl
 		return PromotionRecord{}, 0, err
 	}
 	now := time.Now().UTC()
-	if item.State != "PUBLISHED" || now.Before(item.StartsAt) || item.EndsAt != nil && !now.Before(*item.EndsAt) || item.StoreID != "" && item.StoreID != storeID {
+	if item.State != "PUBLISHED" || now.Before(item.StartsAt) || item.EndsAt != nil && !now.Before(*item.EndsAt) || item.StoreID != "" && item.StoreID != storeID || item.ServiceCityID != "" && item.ServiceCityID != storeServiceCityID {
 		return PromotionRecord{}, 0, ErrPromotionUnavailable
 	}
 	if item.RedemptionLimit != nil && item.RedeemedCount >= *item.RedemptionLimit {
@@ -394,6 +395,17 @@ func RedeemPromotion(ctx context.Context, tx *sql.Tx, promotion PromotionRecord,
 		return err
 	}
 	return nil
+}
+
+func releaseOrderPromotionRedemptionTx(ctx context.Context, tx *sql.Tx, orderID, promotionID string) error {
+	if strings.TrimSpace(orderID) == "" || strings.TrimSpace(promotionID) == "" {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM dsh.commerce_promotion_redemptions WHERE order_id=$1 AND promotion_id=$2", orderID, promotionID); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, "UPDATE dsh.commerce_promotions SET redeemed_count=redeemed_count-1,updated_at=clock_timestamp() WHERE id=$1 AND redeemed_count>0", promotionID)
+	return err
 }
 
 func scanDiscoveryContent(row rowScanner) (DiscoveryContentRecord, error) {

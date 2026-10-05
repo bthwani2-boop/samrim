@@ -1077,7 +1077,7 @@ WHERE s.id=$1 AND s.publication_state='published' AND ($4='CUSTOMER_PICKUP' OR a
 	var promotion PromotionRecord
 	var discountMinor int64
 	if promotionCode != "" {
-		promotion, discountMinor, err = EvaluatePromotion(ctx, tx, promotionCode, input.StoreID, input.ClientActorID, total, true)
+		promotion, discountMinor, err = EvaluatePromotion(ctx, tx, promotionCode, input.StoreID, input.Evidence.ServiceCityID, input.ClientActorID, total, true)
 		if err != nil {
 			return OrderRecord{}, false, err
 		}
@@ -1287,6 +1287,9 @@ func transitionOrder(ctx context.Context, db *sql.DB, orderID, requestedState st
 	}
 	if requestedState == "REJECTED" || requestedState == "CANCELLED" {
 		if err := releaseOrderInventoryTx(ctx, tx, orderID); err != nil {
+			return OrderRecord{}, false, err
+		}
+		if err := releaseOrderPromotionRedemptionTx(ctx, tx, orderID, current.PromotionID); err != nil {
 			return OrderRecord{}, false, err
 		}
 	}
