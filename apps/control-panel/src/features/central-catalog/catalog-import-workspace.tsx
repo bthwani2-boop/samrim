@@ -90,7 +90,6 @@ function normalizeRow(record: Record<string, unknown>, line: number): CatalogImp
   const measurementKind = field(record, "measurementKind").toUpperCase();
   const baseUnit = field(record, "baseUnit").toUpperCase();
   const variantTitle = field(record, "variantTitle") || "الافتراضي";
-  const storeId = field(record, "storeId");
   const brand = field(record, "brand");
   const identifierType = field(record, "identifierType").toUpperCase();
   const identifierValue = field(record, "identifierValue") || field(record, "barcode");
@@ -99,14 +98,13 @@ function normalizeRow(record: Record<string, unknown>, line: number): CatalogImp
 
   if (!canonicalName || [...canonicalName].length > 160) throw new Error(`السطر ${line}: الاسم القانوني مطلوب وبحد أقصى 160 حرفًا.`);
   if (!/^[a-z0-9][a-z0-9_-]{1,127}$/.test(verticalId)) throw new Error(`السطر ${line}: verticalId يجب أن يكون معرّفًا قانونيًا.`);
-  if (!(scope === "SHARED" || scope === "STORE_SCOPED")) throw new Error(`السطر ${line}: scope غير صالح.`);
+  if (scope !== "SHARED") throw new Error(`السطر ${line}: استيراد السجل المركزي يقبل المنتجات المشتركة فقط؛ منتجات المتجر تُنشأ من مسار كتالوج المتجر.`);
+  if (field(record, "storeId")) throw new Error(`السطر ${line}: storeId غير مسموح في استيراد السجل المركزي المشترك.`);
   if (!(measurementKind === "DISCRETE" || measurementKind === "MEASURED" || measurementKind === "VARIABLE_MEASURE")) throw new Error(`السطر ${line}: measurementKind غير صالح.`);
   if ((measurementKind === "DISCRETE" && baseUnit !== "COUNT") || (measurementKind !== "DISCRETE" && !(baseUnit === "GRAM" || baseUnit === "MILLILITER"))) throw new Error(`السطر ${line}: الوحدة لا تتوافق مع سياسة القياس.`);
   if (!variantTitle || [...variantTitle].length > 160) throw new Error(`السطر ${line}: اسم النسخة مطلوب وبحد أقصى 160 حرفًا.`);
   if (brand && [...brand].length > 160) throw new Error(`السطر ${line}: العلامة تتجاوز 160 حرفًا.`);
   if (!categoryIds.length) throw new Error(`السطر ${line}: categoryIds مطلوب.`);
-  if (scope === "STORE_SCOPED" && !storeId) throw new Error(`السطر ${line}: storeId مطلوب للمنتج الخاص بالمتجر.`);
-  if (scope === "SHARED" && storeId) throw new Error(`السطر ${line}: storeId غير مسموح للمنتج المشترك.`);
   if (identifierValue && !["GTIN", "EAN", "UPC", "SKU"].includes(identifierType)) throw new Error(`السطر ${line}: identifierType مطلوب عند وجود معرّف.`);
   if (identifierValue && !/^[A-Za-z0-9._-]{1,128}$/.test(identifierValue)) throw new Error(`السطر ${line}: قيمة المعرّف غير صالحة.`);
   if (field(record, "imageUri") || field(record, "canonicalImageUrl")) throw new Error(`السطر ${line}: الصور لا تُستورد كرابط. أكمل استيراد المنتج ثم ارفع ملف الصورة إلى الوسائط المركزية.`);
@@ -119,7 +117,6 @@ function normalizeRow(record: Record<string, unknown>, line: number): CatalogImp
     stableKey,
     verticalId,
     scope: scope as CatalogImportRow["scope"],
-    ...(storeId ? { storeId } : {}),
     canonicalName,
     ...(brand ? { brand } : {}),
     variantTitle,

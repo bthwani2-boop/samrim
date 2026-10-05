@@ -22,7 +22,6 @@ function normalizeRow(row, line) {
   const measurementKind = value("measurementKind").toUpperCase();
   const baseUnit = value("baseUnit").toUpperCase();
   const variantTitle = value("variantTitle") || "الافتراضي";
-  const storeId = value("storeId");
   const brand = value("brand");
   const identifierType = value("identifierType").toUpperCase();
   const identifierValue = value("identifierValue") || value("barcode");
@@ -31,17 +30,16 @@ function normalizeRow(row, line) {
   const categoryIds = [...new Set(rawCategories.map((item) => String(item).trim()).filter(Boolean))];
   if (!canonicalName || [...canonicalName].length > 160) throw new Error(`line ${line}: canonicalName must contain 1..160 characters`);
   if (!/^[a-z0-9][a-z0-9_-]{1,127}$/.test(verticalId)) throw new Error(`line ${line}: verticalId is required and must be a canonical registry ID`);
-  if (!["SHARED", "STORE_SCOPED"].includes(scope)) throw new Error(`line ${line}: scope must be SHARED or STORE_SCOPED`);
+  if (scope !== "SHARED") throw new Error(`line ${line}: the central registry import admits SHARED rows only; Store-scoped products are created through their Store catalog owners`);
+  if (value("storeId")) throw new Error(`line ${line}: storeId is forbidden for the SHARED registry import`);
   if (!["DISCRETE", "MEASURED", "VARIABLE_MEASURE"].includes(measurementKind)) throw new Error(`line ${line}: measurementKind must be DISCRETE, MEASURED, or VARIABLE_MEASURE`);
   if ((measurementKind === "DISCRETE" && baseUnit !== "COUNT") || (measurementKind !== "DISCRETE" && !["GRAM", "MILLILITER"].includes(baseUnit))) throw new Error(`line ${line}: baseUnit is inconsistent with measurementKind`);
   if (!variantTitle || [...variantTitle].length > 160) throw new Error(`line ${line}: variantTitle must contain 1..160 characters`);
   if (brand && [...brand].length > 160) throw new Error(`line ${line}: brand is too long`);
   if (!categoryIds.length) throw new Error(`line ${line}: categoryIds must contain at least one explicit category`);
-  if (scope === "STORE_SCOPED" && !storeId) throw new Error(`line ${line}: storeId is required for STORE_SCOPED imports`);
-  if (scope === "SHARED" && storeId) throw new Error(`line ${line}: storeId is forbidden for SHARED imports`);
   if (identifierValue && !["GTIN", "EAN", "UPC", "SKU"].includes(identifierType)) throw new Error(`line ${line}: identifierType is required for a typed identifier`);
   if (identifierValue && !/^[A-Za-z0-9._-]{1,128}$/.test(identifierValue)) throw new Error(`line ${line}: identifierValue is invalid`);
-  return { verticalId, scope, ...(storeId ? { storeId } : {}), canonicalName, ...(brand ? { brand } : {}), variantTitle, measurementKind, baseUnit, categoryIds, ...(identifierValue ? { identifierType, identifierValue } : {}) };
+  return { verticalId, scope, canonicalName, ...(brand ? { brand } : {}), variantTitle, measurementKind, baseUnit, categoryIds, ...(identifierValue ? { identifierType, identifierValue } : {}) };
 }
 
 function parseCsvRecords(text) {

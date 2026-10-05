@@ -57,6 +57,10 @@ func (s *Service) applyQuickPrices(ctx context.Context, actorID, storeID string,
 		if current.StoreID != storeID {
 			return nil, ErrStoreOwnershipForbidden
 		}
+		if change.PriceMinor == current.PriceMinor {
+			results = append(results, postgres.CatalogQuickPriceUpdateResult{OfferID: offerID, Outcome: "UNCHANGED", Offer: &current})
+			continue
+		}
 		update := postgres.CatalogOfferUpdateInput{PriceMinor: change.PriceMinor, Availability: current.Availability, PublicationState: current.PublicationState, QuantityPolicy: current.QuantityPolicy, QuantityMinBaseUnits: quickPriceQuantity(current.QuantityMinBaseUnits), QuantityMaxBaseUnits: quickPriceQuantity(current.QuantityMaxBaseUnits), QuantityStepBaseUnits: quickPriceQuantity(current.QuantityStepBaseUnits), PricingBasis: current.PricingBasis, PricingUnitBaseUnits: current.PricingUnitBaseUnits, InventoryPolicy: current.InventoryPolicy, InventoryOnHandBaseUnits: current.InventoryOnHandBaseUnits}
 		itemKey := "quick-price-" + postgres.HashCatalogQuickPriceItemKey(idempotencyKey, storeID, offerID)[:48]
 		updated, updateErr := postgres.UpdateCatalogOfferWithProvenance(ctx, s.db, offerID, update, change.ExpectedVersion, itemKey, postgres.HashCatalogQuickPriceUpdateRequest(offerID, change.PriceMinor, change.ExpectedVersion), actorID, correlationID, "QUICK_PRICES")

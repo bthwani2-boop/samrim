@@ -114,13 +114,17 @@ export function QuickPricesManagement({ storeId, verticalId }: { storeId: string
         return updated ? updated.offer : offer;
       }));
       const conflicts = result.items.filter((item) => item.outcome === "VERSION_CONFLICT");
+      const unchanged = result.items.filter((item) => item.outcome === "UNCHANGED");
+      const saved = result.items.length - conflicts.length - unchanged.length;
       setSelected(new Set());
       for (const item of result.items) {
         if (item.outcome !== "VERSION_CONFLICT") setDraftPrices((current) => ({ ...current, [item.offerId]: String(item.offer.priceMinor) }));
       }
-      setNotice(conflicts.length
-        ? `${result.items.length - conflicts.length} سعرًا حُفظ. ${conflicts.length} صفًا تغيّر بإصدار أحدث؛ راجع السعر المحدّث ثم حدده مرة أخرى إذا رغبت.`
-        : `تم حفظ ${result.items.length} سعرًا مع إعادة القراءة من المصدر.`);
+      setNotice([
+        conflicts.length ? `${conflicts.length} صفًا تغيّر بإصدار أحدث؛ راجع السعر المحدّث ثم حدده مرة أخرى إذا رغبت.` : "",
+        unchanged.length ? `${unchanged.length} صفًا لم يتغيّر سعره فلم يُعدّل.` : "",
+        saved ? `تم حفظ ${saved} سعرًا مع إعادة القراءة من المصدر.` : "",
+      ].filter(Boolean).join(" "));
     } catch (cause) {
       console.warn("DSH Quick Prices commit failed", cause);
       setError("تعذر حفظ الدفعة. أعد قراءة الأسعار قبل إعادة المحاولة.");

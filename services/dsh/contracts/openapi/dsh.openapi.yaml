@@ -2738,10 +2738,7 @@ components:
           type: string
         scope:
           type: string
-          enum: [SHARED, STORE_SCOPED]
-        storeId:
-          type: string
-          nullable: true
+          enum: [SHARED]
         canonicalName:
           type: string
           minLength: 1
@@ -2888,7 +2885,7 @@ components:
           type: string
         outcome:
           type: string
-          enum: [UPDATED, REPLAYED, VERSION_CONFLICT]
+          enum: [UPDATED, REPLAYED, VERSION_CONFLICT, UNCHANGED]
         offer:
           $ref: "#/components/schemas/CatalogStoreOffer"
 
