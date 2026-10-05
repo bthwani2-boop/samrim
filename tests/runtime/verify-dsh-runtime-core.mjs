@@ -1139,7 +1139,7 @@ while (Date.now() < fieldSummaryDeadline) {
 }
 const fieldEarningCount = sql(`SELECT count(*) || ':' || count(DISTINCT store_id) FROM wlt.field_acquisition_entitlements WHERE field_actor_id='${sqlLiteral(fieldActorID)}' AND store_id IN ('${sqlLiteral(first.storeID)}','${sqlLiteral(second.storeID)}')`);
 if (!fieldFinancialSummary || fieldEarningCount !== "2:2") fail("Field commission was not posted exactly once for each customer-visible Field-origin Store", JSON.stringify({ fieldFinancialSummary, fieldEarningCount, publishB }));
-const fieldHidden = await request(dshBase, "POST", `/dsh/stores/${second.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-b-hide-${suffix}`, crypto.randomUUID(), secondPickupModes.body.version), body: { state: "hidden" } });
+const fieldHidden = await request(dshBase, "POST", `/dsh/stores/${second.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-b-hide-${suffix}`, crypto.randomUUID(), republishB.body.store.version), body: { state: "hidden" } });
 const fieldPublicAfterHide = await request(dshBase, "GET", `/dsh/public/stores/${second.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}`);
 const fieldRepublished = await request(dshBase, "POST", `/dsh/stores/${second.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-b-republish-${suffix}`, crypto.randomUUID(), fieldHidden.body.store.version), body: { state: "published" } });
 const fieldSummaryAfterRepublish = await request(dshBase, "GET", `/dsh/operator/fields/${encodeURIComponent(fieldActorID)}/financial-summary`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
