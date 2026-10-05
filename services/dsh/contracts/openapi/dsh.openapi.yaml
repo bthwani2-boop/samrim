@@ -298,6 +298,12 @@ paths:
     $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1access~1{grantId}"
   /dsh/partner/stores/{storeId}/access/{grantId}/permissions:
     $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1access~1{grantId}~1permissions"
+  /dsh/partner/store-payout-recipients:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1store-payout-recipients"
+  /dsh/partner/stores/{storeId}/payout-recipient:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1payout-recipient"
+  /dsh/partner/stores/{storeId}/payout-recipient/revert:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1payout-recipient~1revert"
   /dsh/actor/store-access-invitations:
     $ref: "./paths/store-access.yaml#/paths/~1dsh~1actor~1store-access-invitations"
   /dsh/actor/store-access-invitations/{grantId}/decision:
@@ -8212,6 +8218,146 @@ components:
       properties:
         grant:
           $ref: "#/components/schemas/StoreAccessGrant"
+        idempotentReplay:
+          type: boolean
+
+    StorePayoutRecipientState:
+      type: string
+      enum: [DEFAULT_OWNER, SELECTED_VERIFIED_STAFF, RECIPIENT_REVIEW_REQUIRED]
+
+    StorePayoutRecipientRecord:
+      type: object
+      additionalProperties: false
+      required: [storeId, state, orderCount, partnerNetMinor]
+      properties:
+        storeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        state:
+          $ref: "#/components/schemas/StorePayoutRecipientState"
+        beneficiaryActorId:
+          type: string
+          maxLength: 128
+        version:
+          type: integer
+          minimum: 1
+        effectiveAt:
+          type: string
+          format: date-time
+        orderCount:
+          type: integer
+          minimum: 0
+        partnerNetMinor:
+          type: integer
+          minimum: 0
+        lastEarningAt:
+          type: string
+          format: date-time
+
+    StorePayoutRecipientReadback:
+      type: object
+      additionalProperties: false
+      required: [partnerActorId, currency, recipients, reviewStores]
+      properties:
+        partnerActorId:
+          type: string
+          maxLength: 128
+        currency:
+          type: string
+        recipients:
+          type: array
+          items:
+            $ref: "#/components/schemas/StorePayoutRecipientRecord"
+        reviewStores:
+          type: array
+          items:
+            type: string
+
+    StorePayoutRecipientListResponse:
+      type: object
+      additionalProperties: false
+      required: [readback, storeNames, beneficiaryPhones]
+      properties:
+        readback:
+          $ref: "#/components/schemas/StorePayoutRecipientReadback"
+        storeNames:
+          type: object
+          additionalProperties: { type: string }
+        beneficiaryPhones:
+          type: object
+          additionalProperties: { type: string }
+
+    StorePayoutRecipientSelectRequest:
+      type: object
+      additionalProperties: false
+      required: [grantId, reason]
+      properties:
+        grantId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+    StorePayoutRecipientRevertRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+    StorePayoutRecipientAssignment:
+      type: object
+      additionalProperties: false
+      required: [id, storeId, partnerActorId, beneficiaryActorId, state, version, effectiveAt, reason]
+      properties:
+        id:
+          type: string
+          maxLength: 128
+        storeId:
+          type: string
+          maxLength: 128
+        partnerActorId:
+          type: string
+          maxLength: 128
+        beneficiaryActorId:
+          type: string
+          maxLength: 128
+        state:
+          $ref: "#/components/schemas/StorePayoutRecipientState"
+        version:
+          type: integer
+          minimum: 1
+        effectiveAt:
+          type: string
+          format: date-time
+        reason:
+          type: string
+          maxLength: 500
+
+    StorePayoutRecipientMutationResponse:
+      type: object
+      additionalProperties: false
+      required: [assignment, idempotentReplay]
+      properties:
+        assignment:
+          $ref: "#/components/schemas/StorePayoutRecipientAssignment"
+        idempotentReplay:
+          type: boolean
+
+    StorePayoutRecipientRevertResponse:
+      type: object
+      additionalProperties: false
+      required: [state, idempotentReplay]
+      properties:
+        state:
+          $ref: "#/components/schemas/StorePayoutRecipientState"
         idempotentReplay:
           type: boolean
 

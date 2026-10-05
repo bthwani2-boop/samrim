@@ -6,18 +6,17 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/walletfacts"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
-var officialWalletPhoneE164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
+var officialWalletPhoneE164Pattern = walletfacts.PhoneE164Pattern
 
 // BeneficiaryFinanceServer owns the one role-scoped payout surface. The actor
 // role selects the authenticated identity; WLT remains the sole amount,
@@ -371,29 +370,11 @@ func writeWalletProviderIntentError(w http.ResponseWriter, err error) {
 }
 
 func canonicalOfficialWalletPhone(actorType, actorID string, role identityclient.ActorRoleView) (string, bool) {
-	phone := strings.TrimSpace(role.PhoneE164)
-	if role.ActorID != actorID || role.Role != identityclient.ActorType(actorType) || role.ActorVersion < 1 || role.RoleVersion < 1 || !role.Enabled || !role.SecurityEnabled || role.ActivatedAt == nil || !officialWalletPhoneE164Pattern.MatchString(phone) {
-		return "", false
-	}
-	return phone, true
+	return walletfacts.CanonicalPhone(actorType, actorID, role)
 }
 
 func canonicalOfficialWalletName(actorID string, legalName identityclient.ActorLegalName) (string, int, bool) {
-	if legalName.ActorID != actorID || legalName.Status != "VERIFIED" || legalName.Version < 1 {
-		return "", 0, false
-	}
-	parts := []string{legalName.GivenName, legalName.SecondName, legalName.ThirdName, legalName.FamilyName}
-	for index := range parts {
-		parts[index] = strings.TrimSpace(parts[index])
-		if parts[index] == "" {
-			return "", 0, false
-		}
-	}
-	name := strings.Join(parts, " ")
-	if utf8.RuneCountInString(name) > 320 {
-		return "", 0, false
-	}
-	return name, legalName.Version, true
+	return walletfacts.CanonicalName(actorID, legalName)
 }
 
 func (s *BeneficiaryFinanceServer) verifyOperatorDestination(w http.ResponseWriter, r *http.Request) {

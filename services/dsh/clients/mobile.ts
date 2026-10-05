@@ -1,5 +1,6 @@
 import { dshOperationPaths } from "./generated/dsh-operations";
 import type { StoreAccessGrantActivationRequest, StoreAccessGrantPermissionsRequest } from "./generated/dsh-types";
+import type { StorePayoutRecipientListResponse, StorePayoutRecipientMutationResponse, StorePayoutRecipientRevertRequest, StorePayoutRecipientRevertResponse, StorePayoutRecipientSelectRequest } from "./generated/dsh-types";
 import type { CatalogQuickPriceCommitRequest, CatalogQuickPriceCommitResponse } from "./generated/dsh-types";
 import type { CatalogImportCommitResponse, CatalogImportPreviewResponse, CatalogImportRunResponse } from "./generated/dsh-types";
 import type { StoreCommercialAgreementListResponse, StoreCommercialAgreementMutationResponse, StoreCommercialAgreementProposalRequest, StoreTypeCommissionDefaultsResponse } from "./generated/dsh-types";
@@ -315,6 +316,24 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalizedGrant || !Number.isInteger(input.expectedVersion) || input.expectedVersion < 1) throw new Error("DSH_STORE_ACCESS_ACTIVATION_INPUT_INVALID");
       const path = dshOperationPaths.activatePartnerStoreAccessInvitation.path.replace("{grantId}", encodeURIComponent(normalizedGrant));
       return userRequest<StoreAccessGrantMutationResponse>(accessToken, path, dshOperationPaths.activatePartnerStoreAccessInvitation.method, input, mutationHeaders(idempotencyKey, correlationID));
+    },
+    async listPartnerStorePayoutRecipients(accessToken: string): Promise<StorePayoutRecipientListResponse> {
+      return userRequest<StorePayoutRecipientListResponse>(accessToken, dshOperationPaths.listPartnerStorePayoutRecipients.path, dshOperationPaths.listPartnerStorePayoutRecipients.method);
+    },
+    async selectPartnerStorePayoutRecipient(accessToken: string, storeID: string, input: StorePayoutRecipientSelectRequest, idempotencyKey: string, correlationID: string): Promise<StorePayoutRecipientMutationResponse> {
+      const normalizedStore = storeID.trim();
+      const normalizedGrant = input.grantId.trim();
+      const normalizedReason = input.reason.trim();
+      if (!normalizedStore || !normalizedGrant || normalizedReason.length < 1 || normalizedReason.length > 500) throw new Error("DSH_STORE_PAYOUT_RECIPIENT_SELECT_INPUT_INVALID");
+      const path = dshOperationPaths.selectPartnerStorePayoutRecipient.path.replace("{storeId}", encodeURIComponent(normalizedStore));
+      return userRequest<StorePayoutRecipientMutationResponse>(accessToken, path, dshOperationPaths.selectPartnerStorePayoutRecipient.method, { grantId: normalizedGrant, reason: normalizedReason }, mutationHeaders(idempotencyKey, correlationID));
+    },
+    async revertPartnerStorePayoutRecipient(accessToken: string, storeID: string, input: StorePayoutRecipientRevertRequest, idempotencyKey: string, correlationID: string): Promise<StorePayoutRecipientRevertResponse> {
+      const normalizedStore = storeID.trim();
+      const normalizedReason = input.reason.trim();
+      if (!normalizedStore || normalizedReason.length < 1 || normalizedReason.length > 500) throw new Error("DSH_STORE_PAYOUT_RECIPIENT_REVERT_INPUT_INVALID");
+      const path = dshOperationPaths.revertPartnerStorePayoutRecipient.path.replace("{storeId}", encodeURIComponent(normalizedStore));
+      return userRequest<StorePayoutRecipientRevertResponse>(accessToken, path, dshOperationPaths.revertPartnerStorePayoutRecipient.method, { reason: normalizedReason }, mutationHeaders(idempotencyKey, correlationID));
     },
     async readPartnerStoreOperationalAvailability(accessToken: string, storeID: string): Promise<PartnerStoreOperationalAvailabilityResponse> {
       const normalizedStore = storeID.trim();

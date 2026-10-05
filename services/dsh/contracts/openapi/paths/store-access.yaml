@@ -108,6 +108,66 @@ paths:
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
+  /dsh/partner/store-payout-recipients:
+    get:
+      operationId: listPartnerStorePayoutRecipients
+      summary: Read the effective payout recipient per Store for the current Partner owner
+      security: [{ userBearer: [] }]
+      responses:
+        "200": { description: WLT-owned payout-recipient readback with Store names and masked beneficiary phones., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StorePayoutRecipientListResponse" } } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/partner/stores/{storeId}/payout-recipient:
+    put:
+      operationId: selectPartnerStorePayoutRecipient
+      summary: Select a verified team member as the Store's future payout recipient
+      description: Owner-only. References an active Store access grant; DSH resolves the canonical actor and forwards verified Identity facts to WLT, which owns the assignment, its version, audit and readiness. Never accepts wallet numbers, beneficiary names or destinations.
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StorePayoutRecipientSelectRequest" }
+      responses:
+        "201": { description: Canonical assignment recorded., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StorePayoutRecipientMutationResponse" } } } }
+        "200": { description: Idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StorePayoutRecipientMutationResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/partner/stores/{storeId}/payout-recipient/revert:
+    post:
+      operationId: revertPartnerStorePayoutRecipient
+      summary: Revert the Store's payout recipient to the Partner owner
+      description: Owner-only. Deletes the explicit assignment so future unpinned payout intents route to the owner; the immutable WLT event ledger preserves history.
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StorePayoutRecipientRevertRequest" }
+      responses:
+        "200": { description: Canonical DEFAULT_OWNER readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StorePayoutRecipientRevertResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/actor/store-access-invitations:
     get:
       operationId: listActorStoreAccessInvitations
