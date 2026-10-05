@@ -2,11 +2,12 @@ import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/
 import { publicationStateLabel } from "@bthwani/dsh";
 import { type Href, Link } from "expo-router";
 import { useMemo } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { StoreOfferManagement } from "../store-offer/store-offer";
-import { PartnerAccessibleStoreWorkspace } from "./partner-accessible-store-workspace";
 import { PartnerStoreAccess } from "./partner-store-access";
 import { usePartnerStoreContext } from "./partner-store-context";
+import { usePartnerStoreScope } from "./partner-store-scope-context";
+import { PartnerStoreScopeSelector } from "./partner-store-scope-selector";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 import { StoreCaptainMembershipManagement } from "./store-captain-memberships";
 import { StoreCommercialAgreements } from "./store-commercial-agreements";
@@ -16,33 +17,53 @@ import { StoreProfileImageEditor } from "./store-profile-image-editor";
 export function PartnerStore() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
-  const { cities, citiesError, state, update, reload } = usePartnerStoreContext();
+  const { state: scopeState, selectedStore } = usePartnerStoreScope();
+  const onboarding = usePartnerStoreContext();
+  const firstStoreCase = onboarding.state.kind === "ready" ? onboarding.state.value : null;
+  const selectedIsFirstJoiningStore = Boolean(firstStoreCase?.case.store?.id && firstStoreCase.case.store.id === selectedStore?.id);
+  const canCatalog = Boolean(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("catalog")));
+  const canOperate = Boolean(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("store_operations")));
 
-  if (state.kind === "loading") return <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة بيانات المتجر" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة بيانات المتجر…</Text></View>;
-  if (state.kind === "empty") return <View style={styles.container}><View style={styles.state}><Text style={styles.muted}>لا يوجد متجر انضمام مملوك لهذا الحساب. يمكنك مراجعة نطاقات المتاجر المفوضة والدعوات هنا.</Text><BthwaniButton label="إعادة قراءة الانضمام" onPress={() => void reload()} variant="secondary" /></View><PartnerAccessibleStoreWorkspace /><PartnerStoreAccess /></View>;
-  if (state.kind === "error") return <View style={styles.container}><View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة بيانات الانضمام للشريك.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void reload()} variant="secondary" /></View><PartnerAccessibleStoreWorkspace /><PartnerStoreAccess /></View>;
-  const joiningCase = state.value;
-  const cityName = cities.find((city) => city.id === joiningCase.case.serviceCityId)?.displayNameAr || "مدينة غير محددة";
-  return (
-    <View style={styles.container}>
-      <View style={styles.headerRow}><View style={styles.headerCopy}><Text style={styles.sectionTitle}>إدارة المتجر</Text><Text selectable style={styles.value}>{joiningCase.case.businessName}</Text></View><BthwaniStatusBadge icon={joiningCase.case.store?.publicationState === "published" ? "success" : "warning"} label={joiningCase.case.store?.publicationState === "published" ? "منشور" : "يحتاج إجراء"} tone={joiningCase.case.store?.publicationState === "published" ? "success" : "warning"} /></View>
-      <View style={styles.card}><View style={styles.metaGrid}><View style={styles.metaItem}><Text style={styles.metaLabel}>مدينة الخدمة</Text><Text style={styles.value}>{cityName}</Text></View><View style={styles.metaItem}><Text style={styles.metaLabel}>حالة الملف</Text><Text style={styles.value}>{joiningCase.case.state === "needs_correction" ? "يحتاج تصحيحًا" : "قيد المتابعة"}</Text></View></View></View>
-      {citiesError ? <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة مدن الخدمة، لذلك قد لا يظهر اسم المدينة.</Text><BthwaniButton label="إعادة قراءة المدن" onPress={() => void reload()} variant="secondary" /></View> : null}
-      {joiningCase.case.store ? <>
-        <StoreCommercialAgreements />
-        <StoreProfileImageEditor value={joiningCase} onUpdated={update} />
-        <Text selectable style={styles.muted}>المتجر الأول: {joiningCase.case.store.name}</Text>
-        <Text style={styles.muted}>حالة النشر: {publicationStateLabel(joiningCase.case.store.publicationState)}</Text>
-        <Text style={styles.muted}>جاهزية النشر: {joiningCase.case.store.publicationReadiness.ready ? "جاهز" : "يحتاج إلى استكمال البيانات"}</Text>
-        <StoreOperationalAvailabilityManagement storeID={joiningCase.case.store.id} fulfillmentModes={joiningCase.case.store.fulfillmentModes} />
-        <View style={styles.card}><Text style={styles.metaLabel}>موقع المتجر الثابت</Text><Text selectable style={styles.value}>{joiningCase.case.store.deliveryOrigin ? `${joiningCase.case.store.deliveryOrigin.latitude.toFixed(6)}, ${joiningCase.case.store.deliveryOrigin.longitude.toFixed(6)}` : "لم يُثبت ضمن ملف الانضمام"}</Text><Text style={styles.muted}>يُقرأ من ملف الانضمام ولا يُعدّل من هذه الشاشة.</Text></View>
-        <StoreCaptainMembershipManagement storeID={joiningCase.case.store.id} />
-        <StoreOfferManagement storeId={joiningCase.case.store.id} verticalId={joiningCase.case.store.primaryVerticalId ?? ""} />
-        <PartnerStoreAccess storeID={joiningCase.case.store.id} />
-        <PartnerAccessibleStoreWorkspace excludeOwned />
-      </> : <Text style={styles.muted}>لم يُنشأ المتجر بعد. راجع دورة الانضمام لإكمال أي تصحيح مطلوب.</Text>}
-      {!joiningCase.case.store ? <PartnerStoreAccess /> : null}
-      {joiningCase.case.state === "needs_correction" ? <Link href={"/onboarding" as Href} asChild><BthwaniButton label="مراجعة التصحيح المطلوب" variant="secondary" /></Link> : null}
-    </View>
-  );
+  return <View style={styles.container}>
+    <Text style={styles.sectionTitle}>المتجر</Text>
+    <PartnerStoreScopeSelector />
+
+    {scopeState.kind === "ready" && !selectedStore ? <View style={styles.card}>
+      <Text style={styles.muted}>لا يوجد متجر مملوك أو مفوض لهذا الحساب حاليًا.</Text>
+      <PartnerStoreAccess />
+    </View> : null}
+
+    {selectedStore ? <>
+      <View style={styles.headerRow}>
+        <View style={styles.headerCopy}>
+          <Text style={styles.metaLabel}>{selectedStore.owned ? "متجر تملكه" : "وصول مفوض"}</Text>
+          <Text selectable style={styles.value}>{selectedStore.name}</Text>
+        </View>
+        <BthwaniStatusBadge
+          icon={selectedStore.publicationState === "published" ? "success" : "warning"}
+          label={selectedStore.publicationState === "published" ? "منشور" : publicationStateLabel(selectedStore.publicationState)}
+          tone={selectedStore.publicationState === "published" ? "success" : "warning"}
+        />
+      </View>
+
+      {selectedStore.owned ? <StoreCommercialAgreements storeID={selectedStore.id} /> : null}
+      {selectedStore.owned && selectedIsFirstJoiningStore && firstStoreCase ? <StoreProfileImageEditor value={firstStoreCase} onUpdated={onboarding.update} /> : null}
+
+      {canOperate ? <StoreOperationalAvailabilityManagement storeID={selectedStore.id} fulfillmentModes={selectedStore.fulfillmentModes} /> : null}
+      {canCatalog && selectedStore.primaryVerticalId ? <StoreOfferManagement storeId={selectedStore.id} verticalId={selectedStore.primaryVerticalId} /> : null}
+      {canCatalog && !selectedStore.primaryVerticalId ? <View style={styles.card}><Text style={styles.muted}>تعذر فتح إدارة المنتجات لأن تصنيف نشاط المتجر غير متاح في القراءة الحالية.</Text></View> : null}
+
+      {selectedStore.owned && selectedIsFirstJoiningStore && firstStoreCase?.case.store ? <View style={styles.card}>
+        <Text style={styles.metaLabel}>موقع المتجر الثابت</Text>
+        <Text style={styles.value}>{firstStoreCase.case.store.deliveryOrigin ? "محدد ضمن بيانات المتجر" : "لم يُثبت ضمن ملف الانضمام"}</Text>
+        <Text style={styles.muted}>يبقى تعديل بيانات الانضمام من مسار التصحيح عندما يكون مطلوبًا.</Text>
+      </View> : null}
+
+      {selectedStore.owned ? <StoreCaptainMembershipManagement storeID={selectedStore.id} /> : null}
+      {selectedStore.owned ? <PartnerStoreAccess storeID={selectedStore.id} /> : <PartnerStoreAccess />}
+    </> : null}
+
+    {onboarding.state.kind === "ready" && onboarding.state.value.case.state === "needs_correction" ? <Link href={"/onboarding" as Href} asChild><BthwaniButton label="مراجعة التصحيح المطلوب في ملف الانضمام" variant="secondary" /></Link> : null}
+    {onboarding.state.kind === "error" ? <View style={styles.card}><Text style={styles.muted}>تعذر قراءة سجل الانضمام. إدارة المتاجر الحالية ما زالت تعتمد على نطاق المتاجر المعتمد أعلاه.</Text><BthwaniButton label="إعادة قراءة سجل الانضمام" onPress={() => void onboarding.reload()} variant="secondary" /></View> : null}
+  </View>;
 }
