@@ -1115,8 +1115,8 @@ await ensureCommissionDefault(commercialStoreTypeID, "CUSTOMER_PICKUP", 1500);
 // activate a fresh Partner + Finance agreement version covering them, republish.
 const gatedModesAttempt = await request(dshBase, "POST", secondPickupModesPath, { token: dshToken, headers: serviceHeaders(actingOperatorID, secondPickupModesKey + "-gated", crypto.randomUUID(), publishB.body.store.version), body: secondPickupModesBody });
 if (gatedModesAttempt.status !== 409 || gatedModesAttempt.body?.error?.code !== "STORE_AGREEMENT_MODES_REQUIRED") fail("published Store mode change did not fail closed without an owner-accepted agreement", JSON.stringify(gatedModesAttempt));
-const unpublishB = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(second.storeID)}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-b-unpublish-${suffix}`, crypto.randomUUID(), publishB.body.store.version), body: { state: "unpublished" } });
-if (unpublishB.status !== 200 || unpublishB.body?.store?.publicationState !== "unpublished") fail("Store B unpublication for the governed mode change failed", JSON.stringify(unpublishB));
+const unpublishB = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(second.storeID)}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-b-unpublish-${suffix}`, crypto.randomUUID(), publishB.body.store.version), body: { state: "hidden" } });
+if (unpublishB.status !== 200 || unpublishB.body?.store?.publicationState !== "hidden") fail("Store B unpublication for the governed mode change failed", JSON.stringify(unpublishB));
 const secondPickupModesHeaders = serviceHeaders(actingOperatorID, secondPickupModesKey, crypto.randomUUID(), unpublishB.body.store.version);
 const secondPickupModes = await request(dshBase, "POST", secondPickupModesPath, { token: dshToken, headers: secondPickupModesHeaders, body: secondPickupModesBody });
 const secondPickupModesReplay = await request(dshBase, "POST", secondPickupModesPath, { token: dshToken, headers: secondPickupModesHeaders, body: secondPickupModesBody });
