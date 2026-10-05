@@ -112,7 +112,7 @@ func (s *JoiningCaseServer) acceptPartnerStoreCommercialAgreement(w http.Respons
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	agreement, replayed, err := s.service.AcceptStoreCommercialAgreementForPartner(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("agreementId"), input.ExpectedAgreementVersion, input.Reason, idempotency, correlation)
+	agreement, replayed, err := s.service.AcceptStoreCommercialAgreementForPartner(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("agreementId"), joiningcase.StoreCommercialAgreementAcceptanceInput{ExpectedAgreementVersion: input.ExpectedAgreementVersion, Reason: input.Reason, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writeStoreCommercialAgreementError(w, err)
 		return

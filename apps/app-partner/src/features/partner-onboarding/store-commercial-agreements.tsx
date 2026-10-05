@@ -66,7 +66,7 @@ function acceptanceErrorMessage(cause: unknown, hasSavedAttempt: boolean): strin
     : "تعذر تأكيد قبول الاتفاقية. أعد المحاولة بعد مراجعة التفاصيل.";
 }
 
-export function StoreCommercialAgreements({ storeID }: { storeID: string }) {
+export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: string }>) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const identity = currentIdentityState();

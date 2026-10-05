@@ -1,7 +1,9 @@
-import type { PartnerAccessibleStore, StoreAccessPermission } from "@bthwani/dsh";
+import { type PartnerAccessibleStore, type StoreAccessPermission } from "@bthwani/dsh";
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
 
 import { usePartnerAccessibleStoreScopes } from "./partner-accessible-store-scopes";
+
+export type { PartnerAccessibleStore };
 
 type PartnerStoreScopeContextValue = Readonly<{
   state: ReturnType<typeof usePartnerAccessibleStoreScopes>["state"];
@@ -16,7 +18,7 @@ type PartnerStoreScopeContextValue = Readonly<{
 
 const PartnerStoreScopeContext = createContext<PartnerStoreScopeContextValue | null>(null);
 
-export function PartnerStoreScopeProvider({ children }: { children: ReactNode }) {
+export function PartnerStoreScopeProvider({ children }: Readonly<{ children: ReactNode }>) {
   const scopes = usePartnerAccessibleStoreScopes();
   const [selectedStoreID, setSelectedStoreID] = useState("");
   const stores = scopes.state.kind === "ready" ? scopes.state.stores : [];

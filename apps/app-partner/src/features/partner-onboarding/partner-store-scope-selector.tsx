@@ -20,7 +20,7 @@ function permissionLabels(store: PartnerAccessibleStore): string {
   return store.permissions.map((permission) => labels[permission] ?? permission).join("، ");
 }
 
-export function PartnerStoreScopeSelector({ requiredPermission }: { requiredPermission?: StoreAccessPermission }) {
+export function PartnerStoreScopeSelector({ requiredPermission }: Readonly<{ requiredPermission?: StoreAccessPermission }>) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const { state, stores, selectedStore, selectStore, reload, loadMore } = usePartnerStoreScope();

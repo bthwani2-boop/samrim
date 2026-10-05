@@ -4,12 +4,12 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Crypto from "expo-crypto";
 import * as DocumentPicker from "expo-document-picker";
 import { MobileStoreCatalogImportWorkspace } from "@bthwani/dsh/mobile/store-catalog-import";
+import { MobileStoreQuickPricesWorkspace } from "@bthwani/dsh/mobile/store-quick-prices";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
-import { FieldQuickPrices } from "./field-quick-prices";
 
 type CatalogSnapshot = Awaited<ReturnType<ReturnType<typeof fieldClient>["readFieldJoiningCaseCatalog"]>>;
 type OfferDraft = Readonly<{ priceMinor: string; available: boolean; min: string; max: string; step: string; pricingUnit: string; inventoryOnHand: string }>;
@@ -635,7 +635,14 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
         return { uri: asset.uri, name: asset.name, ...(asset.mimeType ? { type: asset.mimeType } : {}) };
       }}
     /> : null}
-    {snapshot ? <FieldQuickPrices caseId={caseId} verticalId={snapshot.verticalId} onPricesCommitted={() => load(query)} /> : null}
+    {snapshot ? <MobileStoreQuickPricesWorkspace
+      client={fieldClient()}
+      scope={{ kind: "FIELD", joiningCaseID: caseId }}
+      verticalId={snapshot.verticalId}
+      getAccessToken={getUsableIdentityAccessToken}
+      createUUID={() => Crypto.randomUUID()}
+      onPricesCommitted={() => load(query)}
+    /> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     {notice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}
     <View style={styles.card}>

@@ -1,18 +1,20 @@
 import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
-import { publicationStateLabel, type PublicationState, type StoreFulfillmentMode } from "@bthwani/dsh";
+import { type JoiningCaseResponse, publicationStateLabel, type PublicationState, type StoreFulfillmentMode } from "@bthwani/dsh";
 import { type Href, Link } from "expo-router";
 import { useMemo } from "react";
 import { Text, View } from "react-native";
 import { StoreOfferManagement } from "../store-offer/store-offer";
 import { PartnerStoreAccess } from "./partner-store-access";
 import { usePartnerStoreContext } from "./partner-store-context";
-import { usePartnerStoreScope } from "./partner-store-scope-context";
+import { type PartnerAccessibleStore, usePartnerStoreScope } from "./partner-store-scope-context";
 import { PartnerStoreScopeSelector } from "./partner-store-scope-selector";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 import { StoreCaptainMembershipManagement } from "./store-captain-memberships";
 import { StoreCommercialAgreements } from "./store-commercial-agreements";
 import { StoreOperationalAvailabilityManagement } from "./store-operational-availability";
 import { StoreProfileImageEditor } from "./store-profile-image-editor";
+
+type SurfaceStyles = ReturnType<typeof createPartnerSurfaceStyles>;
 
 function publicationLabel(state: string): string {
   return state === "published" || state === "unpublished" || state === "hidden"
@@ -24,13 +26,46 @@ function isStoreFulfillmentMode(value: string): value is StoreFulfillmentMode {
   return value === "BTHWANI_CAPTAIN" || value === "PARTNER_CAPTAIN" || value === "CUSTOMER_PICKUP";
 }
 
+function StoreHeaderRow({ styles, store }: { styles: SurfaceStyles; store: PartnerAccessibleStore }) {
+  const published = store.publicationState === "published";
+  return <View style={styles.headerRow}>
+    <View style={styles.headerCopy}>
+      <Text style={styles.metaLabel}>{store.owned ? "متجر تملكه" : "وصول مفوض"}</Text>
+      <Text selectable style={styles.value}>{store.name}</Text>
+    </View>
+    <BthwaniStatusBadge icon={published ? "success" : "warning"} label={published ? "منشور" : publicationLabel(store.publicationState)} tone={published ? "success" : "warning"} />
+  </View>;
+}
+
+function FirstJoiningStoreFacts({ styles, store }: { styles: SurfaceStyles; store: NonNullable<JoiningCaseResponse["case"]["store"]> }) {
+  return <View style={styles.card}>
+    <Text style={styles.metaLabel}>موقع المتجر الثابت</Text>
+    <Text style={styles.value}>{store.deliveryOrigin ? "محدد ضمن بيانات المتجر" : "لم يُثبت ضمن ملف الانضمام"}</Text>
+    <Text style={styles.muted}>يبقى تعديل بيانات الانضمام من مسار التصحيح عندما يكون مطلوبًا.</Text>
+  </View>;
+}
+
+function StoreManagementSurfaces({ styles, store, canCatalog, canOperate, firstStoreCase, onProfileImageUpdated }: { styles: SurfaceStyles; store: PartnerAccessibleStore; canCatalog: boolean; canOperate: boolean; firstStoreCase: JoiningCaseResponse | null; onProfileImageUpdated: (next: JoiningCaseResponse) => void }) {
+  const firstJoiningStore = firstStoreCase?.case.store;
+  const isSameFirstJoiningStore = Boolean(store.owned && firstJoiningStore && firstJoiningStore.id === store.id);
+  return <>
+    {store.owned ? <StoreCommercialAgreements key={store.id} storeID={store.id} /> : null}
+    {isSameFirstJoiningStore && firstStoreCase ? <StoreProfileImageEditor value={firstStoreCase} onUpdated={onProfileImageUpdated} /> : null}
+    {canOperate ? <StoreOperationalAvailabilityManagement storeID={store.id} fulfillmentModes={store.fulfillmentModes.filter(isStoreFulfillmentMode)} /> : null}
+    {canCatalog && store.primaryVerticalId ? <StoreOfferManagement storeId={store.id} verticalId={store.primaryVerticalId} /> : null}
+    {canCatalog && !store.primaryVerticalId ? <View style={styles.card}><Text style={styles.muted}>تعذر فتح إدارة المنتجات لأن تصنيف نشاط المتجر غير متاح في القراءة الحالية.</Text></View> : null}
+    {isSameFirstJoiningStore && firstJoiningStore ? <FirstJoiningStoreFacts styles={styles} store={firstJoiningStore} /> : null}
+    {store.owned ? <StoreCaptainMembershipManagement storeID={store.id} /> : null}
+    <PartnerStoreAccess storeID={store.owned ? store.id : undefined} />
+  </>;
+}
+
 export function PartnerStore() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const { state: scopeState, selectedStore } = usePartnerStoreScope();
   const onboarding = usePartnerStoreContext();
   const firstStoreCase = onboarding.state.kind === "ready" ? onboarding.state.value : null;
-  const selectedIsFirstJoiningStore = Boolean(firstStoreCase?.case.store?.id && firstStoreCase.case.store.id === selectedStore?.id);
   const canCatalog = Boolean(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("catalog")));
   const canOperate = Boolean(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("store_operations")));
 
@@ -44,33 +79,8 @@ export function PartnerStore() {
     </View> : null}
 
     {selectedStore ? <>
-      <View style={styles.headerRow}>
-        <View style={styles.headerCopy}>
-          <Text style={styles.metaLabel}>{selectedStore.owned ? "متجر تملكه" : "وصول مفوض"}</Text>
-          <Text selectable style={styles.value}>{selectedStore.name}</Text>
-        </View>
-        <BthwaniStatusBadge
-          icon={selectedStore.publicationState === "published" ? "success" : "warning"}
-          label={selectedStore.publicationState === "published" ? "منشور" : publicationLabel(selectedStore.publicationState)}
-          tone={selectedStore.publicationState === "published" ? "success" : "warning"}
-        />
-      </View>
-
-      {selectedStore.owned ? <StoreCommercialAgreements key={selectedStore.id} storeID={selectedStore.id} /> : null}
-      {selectedStore.owned && selectedIsFirstJoiningStore && firstStoreCase ? <StoreProfileImageEditor value={firstStoreCase} onUpdated={onboarding.update} /> : null}
-
-      {canOperate ? <StoreOperationalAvailabilityManagement storeID={selectedStore.id} fulfillmentModes={selectedStore.fulfillmentModes.filter(isStoreFulfillmentMode)} /> : null}
-      {canCatalog && selectedStore.primaryVerticalId ? <StoreOfferManagement storeId={selectedStore.id} verticalId={selectedStore.primaryVerticalId} /> : null}
-      {canCatalog && !selectedStore.primaryVerticalId ? <View style={styles.card}><Text style={styles.muted}>تعذر فتح إدارة المنتجات لأن تصنيف نشاط المتجر غير متاح في القراءة الحالية.</Text></View> : null}
-
-      {selectedStore.owned && selectedIsFirstJoiningStore && firstStoreCase?.case.store ? <View style={styles.card}>
-        <Text style={styles.metaLabel}>موقع المتجر الثابت</Text>
-        <Text style={styles.value}>{firstStoreCase.case.store.deliveryOrigin ? "محدد ضمن بيانات المتجر" : "لم يُثبت ضمن ملف الانضمام"}</Text>
-        <Text style={styles.muted}>يبقى تعديل بيانات الانضمام من مسار التصحيح عندما يكون مطلوبًا.</Text>
-      </View> : null}
-
-      {selectedStore.owned ? <StoreCaptainMembershipManagement storeID={selectedStore.id} /> : null}
-      {selectedStore.owned ? <PartnerStoreAccess storeID={selectedStore.id} /> : <PartnerStoreAccess />}
+      <StoreHeaderRow styles={styles} store={selectedStore} />
+      <StoreManagementSurfaces canCatalog={canCatalog} canOperate={canOperate} firstStoreCase={firstStoreCase} onProfileImageUpdated={onboarding.update} store={selectedStore} styles={styles} />
     </> : null}
 
     {onboarding.state.kind === "ready" && onboarding.state.value.case.state === "needs_correction" ? <Link href={"/onboarding" as Href} asChild><BthwaniButton label="مراجعة التصحيح المطلوب في ملف الانضمام" variant="secondary" /></Link> : null}

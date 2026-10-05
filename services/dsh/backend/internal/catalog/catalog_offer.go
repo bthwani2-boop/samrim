@@ -33,56 +33,69 @@ func (s *Service) UpdateQuickPricesForPartner(ctx context.Context, accessToken, 
 func (s *Service) applyQuickPrices(ctx context.Context, actorID, storeID string, changes []postgres.CatalogQuickPriceUpdateInput, idempotencyKey, correlationID string) ([]postgres.CatalogQuickPriceUpdateResult, error) {
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	correlationID = strings.TrimSpace(correlationID)
+	if err := validateQuickPriceRequest(storeID, idempotencyKey, correlationID, changes); err != nil {
+		return nil, err
+	}
+	results := make([]postgres.CatalogQuickPriceUpdateResult, 0, len(changes))
+	for _, change := range changes {
+		result, err := s.applyQuickPriceChange(ctx, actorID, storeID, change, idempotencyKey, correlationID)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, result)
+	}
+	return results, nil
+}
+
+func validateQuickPriceRequest(storeID, idempotencyKey, correlationID string, changes []postgres.CatalogQuickPriceUpdateInput) error {
 	if storeID == "" || idempotencyKey == "" || correlationID == "" || len(changes) < 1 || len(changes) > 100 {
-		return nil, postgres.ErrCatalogQuickPriceInvalidFilter
+		return postgres.ErrCatalogQuickPriceInvalidFilter
 	}
 	seen := make(map[string]struct{}, len(changes))
-	results := make([]postgres.CatalogQuickPriceUpdateResult, 0, len(changes))
 	for _, change := range changes {
 		offerID := strings.TrimSpace(change.OfferID)
 		if offerID == "" || change.ExpectedVersion < 1 || change.PriceMinor < 1 {
-			return nil, postgres.ErrCatalogQuickPriceInvalidFilter
+			return postgres.ErrCatalogQuickPriceInvalidFilter
 		}
 		if _, exists := seen[offerID]; exists {
-			return nil, postgres.ErrCatalogQuickPriceInvalidFilter
+			return postgres.ErrCatalogQuickPriceInvalidFilter
 		}
 		seen[offerID] = struct{}{}
 	}
-	for _, change := range changes {
-		offerID := strings.TrimSpace(change.OfferID)
-		current, readErr := postgres.ReadCatalogOffer(ctx, s.db, offerID)
-		if readErr != nil {
-			return nil, readErr
-		}
-		if current.StoreID != storeID {
-			return nil, ErrStoreOwnershipForbidden
-		}
-		if change.PriceMinor == current.PriceMinor {
-			results = append(results, postgres.CatalogQuickPriceUpdateResult{OfferID: offerID, Outcome: "UNCHANGED", Offer: &current})
-			continue
-		}
-		update := postgres.CatalogOfferUpdateInput{PriceMinor: change.PriceMinor, Availability: current.Availability, PublicationState: current.PublicationState, QuantityPolicy: current.QuantityPolicy, QuantityMinBaseUnits: quickPriceQuantity(current.QuantityMinBaseUnits), QuantityMaxBaseUnits: quickPriceQuantity(current.QuantityMaxBaseUnits), QuantityStepBaseUnits: quickPriceQuantity(current.QuantityStepBaseUnits), PricingBasis: current.PricingBasis, PricingUnitBaseUnits: current.PricingUnitBaseUnits, InventoryPolicy: current.InventoryPolicy, InventoryOnHandBaseUnits: current.InventoryOnHandBaseUnits}
-		itemKey := "quick-price-" + postgres.HashCatalogQuickPriceItemKey(idempotencyKey, storeID, offerID)[:48]
-		updated, updateErr := postgres.UpdateCatalogOfferWithProvenance(ctx, s.db, offerID, update, change.ExpectedVersion, itemKey, postgres.HashCatalogQuickPriceUpdateRequest(offerID, change.PriceMinor, change.ExpectedVersion), actorID, correlationID, "QUICK_PRICES")
-		if errors.Is(updateErr, postgres.ErrCatalogVersionConflict) {
-			current, readErr = postgres.ReadCatalogOffer(ctx, s.db, offerID)
-			if readErr != nil {
-				return nil, readErr
-			}
-			results = append(results, postgres.CatalogQuickPriceUpdateResult{OfferID: offerID, Outcome: "VERSION_CONFLICT", Offer: &current})
-			continue
-		}
-		if updateErr != nil {
-			return nil, updateErr
-		}
-		outcome := "UPDATED"
-		if updated.Replayed {
-			outcome = "REPLAYED"
-		}
-		offer := updated.Offer
-		results = append(results, postgres.CatalogQuickPriceUpdateResult{OfferID: offerID, Outcome: outcome, Offer: &offer})
+	return nil
+}
+
+func (s *Service) applyQuickPriceChange(ctx context.Context, actorID, storeID string, change postgres.CatalogQuickPriceUpdateInput, idempotencyKey, correlationID string) (postgres.CatalogQuickPriceUpdateResult, error) {
+	offerID := strings.TrimSpace(change.OfferID)
+	current, readErr := postgres.ReadCatalogOffer(ctx, s.db, offerID)
+	if readErr != nil {
+		return postgres.CatalogQuickPriceUpdateResult{}, readErr
 	}
-	return results, nil
+	if current.StoreID != storeID {
+		return postgres.CatalogQuickPriceUpdateResult{}, ErrStoreOwnershipForbidden
+	}
+	if change.PriceMinor == current.PriceMinor {
+		return postgres.CatalogQuickPriceUpdateResult{OfferID: offerID, Outcome: "UNCHANGED", Offer: &current}, nil
+	}
+	update := postgres.CatalogOfferUpdateInput{PriceMinor: change.PriceMinor, Availability: current.Availability, PublicationState: current.PublicationState, QuantityPolicy: current.QuantityPolicy, QuantityMinBaseUnits: quickPriceQuantity(current.QuantityMinBaseUnits), QuantityMaxBaseUnits: quickPriceQuantity(current.QuantityMaxBaseUnits), QuantityStepBaseUnits: quickPriceQuantity(current.QuantityStepBaseUnits), PricingBasis: current.PricingBasis, PricingUnitBaseUnits: current.PricingUnitBaseUnits, InventoryPolicy: current.InventoryPolicy, InventoryOnHandBaseUnits: current.InventoryOnHandBaseUnits}
+	itemKey := "quick-price-" + postgres.HashCatalogQuickPriceItemKey(idempotencyKey, storeID, offerID)[:48]
+	updated, updateErr := postgres.UpdateCatalogOfferWithProvenance(ctx, s.db, offerID, update, change.ExpectedVersion, itemKey, postgres.HashCatalogQuickPriceUpdateRequest(offerID, change.PriceMinor, change.ExpectedVersion), actorID, correlationID, "QUICK_PRICES")
+	if errors.Is(updateErr, postgres.ErrCatalogVersionConflict) {
+		current, readErr = postgres.ReadCatalogOffer(ctx, s.db, offerID)
+		if readErr != nil {
+			return postgres.CatalogQuickPriceUpdateResult{}, readErr
+		}
+		return postgres.CatalogQuickPriceUpdateResult{OfferID: offerID, Outcome: "VERSION_CONFLICT", Offer: &current}, nil
+	}
+	if updateErr != nil {
+		return postgres.CatalogQuickPriceUpdateResult{}, updateErr
+	}
+	outcome := "UPDATED"
+	if updated.Replayed {
+		outcome = "REPLAYED"
+	}
+	offer := updated.Offer
+	return postgres.CatalogQuickPriceUpdateResult{OfferID: offerID, Outcome: outcome, Offer: &offer}, nil
 }
 
 func quickPriceQuantity(value *int64) int64 {

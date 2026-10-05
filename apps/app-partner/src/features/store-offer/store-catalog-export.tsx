@@ -16,8 +16,24 @@ function client() {
 }
 
 function csvCell(value: string): string {
-  if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  if (/[",\n\r]/.test(value)) return `"${value.replaceAll('"', '""')}"`;
   return value;
+}
+
+function publicationCell(state: CatalogStoreOffer["publicationState"]): string {
+  switch (state) {
+    case "published": return "منشور";
+    case "hidden": return "مخفي";
+    default: return "مسودة";
+  }
+}
+
+function measurementCell(kind: CatalogStoreOffer["measurementKind"]): string {
+  switch (kind) {
+    case "DISCRETE": return "عدد";
+    case "MEASURED": return "قياس";
+    default: return "كمية متغيرة";
+  }
 }
 
 function composeOffersCsv(offers: ReadonlyArray<CatalogStoreOffer>): string {
@@ -28,14 +44,14 @@ function composeOffersCsv(offers: ReadonlyArray<CatalogStoreOffer>): string {
     offer.brand ?? "",
     String(offer.priceMinor),
     offer.availability ? "متاح" : "غير متاح",
-    offer.publicationState === "published" ? "منشور" : offer.publicationState === "hidden" ? "مخفي" : "مسودة",
-    offer.measurementKind === "DISCRETE" ? "عدد" : offer.measurementKind === "MEASURED" ? "قياس" : "كمية متغيرة",
+    publicationCell(offer.publicationState),
+    measurementCell(offer.measurementKind),
     offer.baseUnit,
   ].map(csvCell).join(","));
   return `\uFEFF${[header, ...rows].join("\r\n")}`;
 }
 
-export function StoreCatalogExportCard({ storeId, storeName }: { storeId: string; storeName?: string }) {
+export function StoreCatalogExportCard({ storeId, storeName }: Readonly<{ storeId: string; storeName?: string }>) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => StyleSheet.create({
     block: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 10, padding: 14, width: "100%" },

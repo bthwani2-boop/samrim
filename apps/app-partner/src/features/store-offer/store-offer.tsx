@@ -1,15 +1,15 @@
 import { borders, radius, type resolveTheme, sizing, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type BaseUnit, baseUnitLabel, type CatalogAttributeRule, type CatalogAttributeValueInput, type CatalogCategoryListResponse, type CatalogMedia, type CatalogProduct, type CatalogProductProposal, type CatalogStoreOffer, type CatalogVariant, type CommerceVertical, catalogProductProposalStateLabel, createDshMobileClient, type DshImageUploadInput, isMediaProvenanceInputValid, type MediaProvenanceInput, formatMoney, type MeasurementKind, measurementKindLabel as sharedMeasurementKindLabel, pricingBasisLabel as sharedPricingBasisLabel, quantityPolicyLabel as sharedQuantityPolicyLabel, storeOfferPublicationStateLabel } from "@bthwani/dsh";
+import { type BaseUnit, baseUnitLabel, type CatalogAttributeRule, type CatalogAttributeValueInput, type CatalogCategoryListResponse, type CatalogIdentifierResolution, type CatalogMedia, type CatalogProduct, type CatalogProductProposal, type CatalogStoreOffer, type CatalogVariant, type CommerceVertical, catalogProductProposalStateLabel, createDshMobileClient, type DshImageUploadInput, isMediaProvenanceInputValid, type MediaProvenanceInput, formatMoney, type MeasurementKind, measurementKindLabel as sharedMeasurementKindLabel, pricingBasisLabel as sharedPricingBasisLabel, quantityPolicyLabel as sharedQuantityPolicyLabel, storeOfferPublicationStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as DocumentPicker from "expo-document-picker";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { MobileStoreCatalogImportWorkspace } from "@bthwani/dsh/mobile/store-catalog-import";
+import { MobileStoreQuickPricesWorkspace } from "@bthwani/dsh/mobile/store-quick-prices";
 import * as ImagePicker from "expo-image-picker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
-import { QuickPricesManagement } from "./quick-prices-management";
 import { StoreCatalogExportCard } from "./store-catalog-export";
 
 type OfferState = { kind: "loading" } | { kind: "ready"; offers: ReadonlyArray<CatalogStoreOffer>; proposals: ReadonlyArray<CatalogProductProposal> } | { kind: "error" };
@@ -99,6 +99,27 @@ function errorText(error: unknown): string {
 }
 
 function reportError(error: unknown): void { console.error("DSH StoreOffer request failed", error); }
+
+function identifierResolutionNotice(match: CatalogIdentifierResolution): string {
+  switch (match.outcome) {
+    case "EXISTING_STORE_OFFER":
+      return match.productName ? `هذا المنتج له عرض قائم في متجرك: ${match.productName}. عدّله من قائمة العروض أدناه.` : "هذا المنتج له عرض قائم في متجرك. عدّله من قائمة العروض أدناه.";
+    case "UNKNOWN_IDENTIFIER":
+      return "لم يُعثر على المعرّف. أنشئ منتجًا خاصًا بهذا المتجر من قسم منتجات المتجر، أو أرسل مقترحًا للمراجعة.";
+    case "VARIABLE_MEASURE_IDENTIFIER":
+      return "هذا معرّف لمنتج بكمية متغيرة، ولا يمكن إنشاء عرض قابل للطلب حتى يكتمل مسار الكمية الفعلية.";
+    case "UNAVAILABLE_IN_STORE":
+      return "هذا المعرّف مرتبط بمنتج خاص بمتجر آخر، ولا يمكن استخدامه في هذا المتجر.";
+    default:
+      return "المعرّف يطابق أكثر من نتيجة. أوقف استخدامه واطلب مراجعة هوية المنتج.";
+  }
+}
+
+type ResolvedProductMatch = CatalogIdentifierResolution & { readonly outcome: "SHARED_PRODUCT_MATCH" | "STORE_LOCAL_PRODUCT_MATCH" };
+
+function isResolvedProductMatch(match: CatalogIdentifierResolution): match is ResolvedProductMatch {
+  return match.outcome === "SHARED_PRODUCT_MATCH" || match.outcome === "STORE_LOCAL_PRODUCT_MATCH";
+}
 
 export function StoreOfferManagement({ storeId, verticalId }: { storeId: string; verticalId: string }) {
 const theme = useAppearanceTheme();
@@ -262,35 +283,36 @@ const theme = useAppearanceTheme();
     try {
       const token = await getUsableIdentityAccessToken();
       const response = await dshClient().resolveOwnStoreCatalogIdentifier(token, storeId, normalized);
-      const match = response.resolution;
-      if (match.outcome === "SHARED_PRODUCT_MATCH" || match.outcome === "STORE_LOCAL_PRODUCT_MATCH") {
-        const productsPage = await dshClient().listCatalogProducts(token, match.productName ?? "", verticalId, 100);
-        const product = productsPage.products.find((item) => item.id === match.productId);
-        const variant = product?.variants.find((item) => item.id === match.variantId);
-        if (!product || !variant) {
-          setScanNotice("عُثر على المنتج. ابحث باسمه في الكتالوج ثم اختر النسخة لإضافة عرضها.");
-        } else {
-          ++searchSequence.current;
-          setQuery(match.productName ?? product.canonicalName);
-          setProducts(productsPage.products);
-          setProductNextCursor(productsPage.nextCursor ?? "");
-          setSearchSubmitted(true);
-          selectProduct(product, variant);
-          setScanNotice(`${match.outcome === "SHARED_PRODUCT_MATCH" ? "منتج مشترك" : "منتج خاص بمتجرك"}: ${match.productName ?? product.canonicalName}. أكمل بيانات العرض ثم أضفه.`);
-        }
-      } else if (match.outcome === "EXISTING_STORE_OFFER") {
-        setScanNotice(`هذا المنتج له عرض قائم في متجرك${match.productName ? `: ${match.productName}` : ""}. عدّله من قائمة العروض أدناه.`);
-      } else if (match.outcome === "UNKNOWN_IDENTIFIER") {
-        setScanNotice("لم يُعثر على المعرّف. أنشئ منتجًا خاصًا بهذا المتجر من قسم منتجات المتجر، أو أرسل مقترحًا للمراجعة.");
-      } else if (match.outcome === "VARIABLE_MEASURE_IDENTIFIER") {
-        setScanNotice("هذا معرّف لمنتج بكمية متغيرة، ولا يمكن إنشاء عرض قابل للطلب حتى يكتمل مسار الكمية الفعلية.");
-      } else if (match.outcome === "UNAVAILABLE_IN_STORE") {
-        setScanNotice("هذا المعرّف مرتبط بمنتج خاص بمتجر آخر، ولا يمكن استخدامه في هذا المتجر.");
-      } else {
-        setScanNotice("المعرّف يطابق أكثر من نتيجة. أوقف استخدامه واطلب مراجعة هوية المنتج.");
-      }
+      await applyIdentifierResolution(response.resolution);
     } catch (nextError) { reportError(nextError); setError(errorText(nextError)); }
     finally { setBusy(false); setCameraOpen(false); }
+  }
+
+  async function applyIdentifierResolution(match: CatalogIdentifierResolution) {
+    if (isResolvedProductMatch(match)) {
+      await selectResolvedProduct(match);
+      return;
+    }
+    setScanNotice(identifierResolutionNotice(match));
+  }
+
+  async function selectResolvedProduct(match: ResolvedProductMatch) {
+    const token = await getUsableIdentityAccessToken();
+    const productsPage = await dshClient().listCatalogProducts(token, match.productName ?? "", verticalId, 100);
+    const product = productsPage.products.find((item) => item.id === match.productId);
+    const variant = product?.variants.find((item) => item.id === match.variantId);
+    if (!product || !variant) {
+      setScanNotice("عُثر على المنتج. ابحث باسمه في الكتالوج ثم اختر النسخة لإضافة عرضها.");
+      return;
+    }
+    ++searchSequence.current;
+    setQuery(match.productName ?? product.canonicalName);
+    setProducts(productsPage.products);
+    setProductNextCursor(productsPage.nextCursor ?? "");
+    setSearchSubmitted(true);
+    selectProduct(product, variant);
+    const kindLabel = match.outcome === "SHARED_PRODUCT_MATCH" ? "منتج مشترك" : "منتج خاص بمتجرك";
+    setScanNotice(`${kindLabel}: ${match.productName ?? product.canonicalName}. أكمل بيانات العرض ثم أضفه.`);
   }
 
   async function onBarcode(data: string) {
@@ -622,7 +644,14 @@ const theme = useAppearanceTheme();
     <View style={styles.container} accessibilityLabel="إدارة عروض المتجر">
       <Text style={styles.title}>كتالوج المتجر وعروضه</Text><Text style={styles.muted}>أدر منتجات هذا المتجر وعروضه.</Text>
       {!catalogReady ? <Text accessibilityRole="alert" style={styles.warning}>قائمة المتجر غير جاهزة للإدارة بعد. تعذرت إضافة المنتجات أو نشر العروض حاليًا؛ تواصل مع الدعم لاستكمال التجهيز.</Text> : null}
-      {catalogReady ? <QuickPricesManagement storeId={storeId} verticalId={verticalId} /> : null}
+      {catalogReady ? <MobileStoreQuickPricesWorkspace
+        client={dshClient()}
+        scope={{ kind: "PARTNER", storeID: storeId }}
+        verticalId={verticalId}
+        getAccessToken={getUsableIdentityAccessToken}
+        createUUID={() => Crypto.randomUUID()}
+        onPricesCommitted={() => void load()}
+      /> : null}
       {catalogReady ? <StoreCatalogExportCard storeId={storeId} /> : null}
       {catalogReady ? <MobileStoreCatalogImportWorkspace
         client={dshClient()}

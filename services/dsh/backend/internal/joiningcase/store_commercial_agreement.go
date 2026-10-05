@@ -24,6 +24,13 @@ type StoreCommercialAgreementProposalInput struct {
 	Reason                 string
 }
 
+type StoreCommercialAgreementAcceptanceInput struct {
+	ExpectedAgreementVersion int
+	Reason                   string
+	IdempotencyKey           string
+	CorrelationID            string
+}
+
 func (s *Service) ReadStoreCommercialAgreementsForField(ctx context.Context, accessToken, caseID string) ([]wltintegration.StoreCommercialAgreement, error) {
 	fieldIdentity, err := s.requireField(ctx, accessToken)
 	if err != nil {
@@ -155,13 +162,13 @@ func (s *Service) ReadStoreCommercialAgreementsForPartner(ctx context.Context, a
 	return matchingPartnerStoreAgreements(agreements, store.ID, partner.Subject), nil
 }
 
-func (s *Service) AcceptStoreCommercialAgreementForPartner(ctx context.Context, accessToken, storeID, agreementID string, expectedAgreementVersion int, reason, idempotencyKey, correlationID string) (wltintegration.StoreCommercialAgreement, bool, error) {
+func (s *Service) AcceptStoreCommercialAgreementForPartner(ctx context.Context, accessToken, storeID, agreementID string, input StoreCommercialAgreementAcceptanceInput) (wltintegration.StoreCommercialAgreement, bool, error) {
 	partner, err := s.requirePartner(ctx, accessToken)
 	if err != nil {
 		return wltintegration.StoreCommercialAgreement{}, false, err
 	}
 	storeID, agreementID = strings.TrimSpace(storeID), strings.TrimSpace(agreementID)
-	if storeID == "" || len(storeID) > 128 || agreementID == "" || expectedAgreementVersion < 1 || !validStoreAgreementMutationHeaders(idempotencyKey, correlationID) || !validStoreAgreementReason(reason) {
+	if storeID == "" || len(storeID) > 128 || agreementID == "" || input.ExpectedAgreementVersion < 1 || !validStoreAgreementMutationHeaders(input.IdempotencyKey, input.CorrelationID) || !validStoreAgreementReason(input.Reason) {
 		return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementInvalidInput
 	}
 	store, err := postgres.ReadStoreOwnedByPartner(ctx, s.db, storeID, partner.Subject)
@@ -184,7 +191,7 @@ func (s *Service) AcceptStoreCommercialAgreementForPartner(ctx context.Context, 
 		return wltintegration.StoreCommercialAgreement{}, false, postgres.ErrJoiningCaseNotFound
 	}
 	// WLT checks the transition and recognizes retries before checking status.
-	agreement, replayed, err := s.wlt.AcceptStoreCommercialAgreement(ctx, selected.AgreementID, expectedAgreementVersion, reason, strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID), partner.Subject)
+	agreement, replayed, err := s.wlt.AcceptStoreCommercialAgreement(ctx, selected.AgreementID, input.ExpectedAgreementVersion, input.Reason, strings.TrimSpace(input.IdempotencyKey), strings.TrimSpace(input.CorrelationID), partner.Subject)
 	if err != nil {
 		return wltintegration.StoreCommercialAgreement{}, false, err
 	}

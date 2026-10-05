@@ -563,11 +563,11 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = `${dshOperationPaths.listOwnStoreQuickPrices.path.replace("{storeId}", encodeURIComponent(normalized))}?${params.toString()}`;
       return userRequest<CatalogStoreOfferListResponse>(accessToken, path, dshOperationPaths.listOwnStoreQuickPrices.method);
     },
-    async commitOwnStoreQuickPrices(accessToken: string, storeID: string, input: CatalogQuickPriceCommitRequest): Promise<CatalogQuickPriceCommitResponse> {
+    async commitOwnStoreQuickPrices(accessToken: string, storeID: string, input: CatalogQuickPriceCommitRequest, idempotencyKey?: string, correlationID?: string): Promise<CatalogQuickPriceCommitResponse> {
       const normalized = storeID.trim();
       if (!normalized || input.items.length < 1 || input.items.length > 100 || input.items.some((item) => !item.offerId.trim() || !Number.isSafeInteger(item.expectedVersion) || item.expectedVersion < 1 || !Number.isSafeInteger(item.priceMinor) || item.priceMinor < 1)) throw new Error("DSH_QUICK_PRICE_UPDATE_INVALID");
       const path = dshOperationPaths.commitOwnStoreQuickPrices.path.replace("{storeId}", encodeURIComponent(normalized));
-      return userRequest<CatalogQuickPriceCommitResponse>(accessToken, path, dshOperationPaths.commitOwnStoreQuickPrices.method, input, mutationHeaders());
+      return userRequest<CatalogQuickPriceCommitResponse>(accessToken, path, dshOperationPaths.commitOwnStoreQuickPrices.method, input, mutationHeaders(idempotencyKey, correlationID));
     },
     async createStoreOffer(accessToken: string, storeID: string, variantID: string, priceMinor: number, quantityPolicy: "DISCRETE" | "MEASURED" | "VARIABLE_MEASURE", pricingBasis: "PER_UNIT" | "PER_MEASURE", quantityMinBaseUnits: number, quantityMaxBaseUnits: number, quantityStepBaseUnits: number, pricingUnitBaseUnits: number, inventoryPolicy: "AVAILABILITY_ONLY" | "QUANTITY_ON_HAND", inventoryOnHandBaseUnits: number): Promise<CatalogStoreOfferResponse> {
       const normalized = storeID.trim();
