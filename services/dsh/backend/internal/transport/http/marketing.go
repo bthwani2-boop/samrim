@@ -23,7 +23,7 @@ import (
 
 var (
 	errPartnerPromotionSession        = errors.New("an active app-partner session is required")
-	errPartnerPromotionStoreOwnership = errors.New("only the Store owner may manage its promotions")
+	errPartnerPromotionStoreAuthority = errors.New("promotions authority is required for this Store")
 )
 
 type MarketingServer struct {
@@ -77,23 +77,24 @@ func (s *MarketingServer) partnerSessionActorID(ctx context.Context, accessToken
 	return actorID, nil
 }
 
-func (s *MarketingServer) requirePartnerStoreOwner(ctx context.Context, accessToken, storeID string) (string, error) {
+// requirePartnerStorePromotionAuthority authorizes promotion management for the
+// Store owner or a delegate holding an active Store-scoped `promotions` grant.
+func (s *MarketingServer) requirePartnerStorePromotionAuthority(ctx context.Context, accessToken, storeID string) (string, error) {
 	actorID, err := s.partnerSessionActorID(ctx, accessToken)
 	if err != nil {
 		return "", err
 	}
-	store, err := postgres.ReadStore(ctx, s.db, storeID)
-	if err != nil {
+	if _, _, err := postgres.AuthorizePartnerStoreAction(ctx, s.db, storeID, actorID, "promotions"); err != nil {
+		if errors.Is(err, postgres.ErrStoreAccessForbidden) || errors.Is(err, postgres.ErrStoreNotFound) {
+			return "", errPartnerPromotionStoreAuthority
+		}
 		return "", err
-	}
-	if store.PartnerActorID != actorID {
-		return "", errPartnerPromotionStoreOwnership
 	}
 	return actorID, nil
 }
 
 func (s *MarketingServer) listPartnerStorePromotions(w http.ResponseWriter, r *http.Request) {
-	if _, err := s.requirePartnerStoreOwner(r.Context(), bearerToken(r), r.PathValue("storeId")); err != nil {
+	if _, err := s.requirePartnerStorePromotionAuthority(r.Context(), bearerToken(r), r.PathValue("storeId")); err != nil {
 		writeMarketingError(w, err)
 		return
 	}
@@ -114,7 +115,7 @@ func (s *MarketingServer) createPartnerStorePromotion(w http.ResponseWriter, r *
 	if !ok {
 		return
 	}
-	actorID, err := s.requirePartnerStoreOwner(r.Context(), bearerToken(r), r.PathValue("storeId"))
+	actorID, err := s.requirePartnerStorePromotionAuthority(r.Context(), bearerToken(r), r.PathValue("storeId"))
 	if err != nil {
 		writeMarketingError(w, err)
 		return
@@ -160,7 +161,7 @@ func (s *MarketingServer) setPartnerStorePromotionState(w http.ResponseWriter, r
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a positive X-Expected-Version is required")
 		return
 	}
-	if _, err := s.requirePartnerStoreOwner(r.Context(), bearerToken(r), r.PathValue("storeId")); err != nil {
+	if _, err := s.requirePartnerStorePromotionAuthority(r.Context(), bearerToken(r), r.PathValue("storeId")); err != nil {
 		writeMarketingError(w, err)
 		return
 	}

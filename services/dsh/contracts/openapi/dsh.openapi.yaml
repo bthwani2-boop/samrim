@@ -8150,7 +8150,7 @@ components:
 
     StoreAccessPermission:
       type: string
-      enum: [orders, catalog, store_operations]
+      enum: [orders, catalog, store_operations, promotions, finance_read, payout_request, fulfillment]
 
     StoreAccessGrant:
       type: object

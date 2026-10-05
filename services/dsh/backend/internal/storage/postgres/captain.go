@@ -988,7 +988,7 @@ func CreateStoreCaptainDispatchOffer(ctx context.Context, db *sql.DB, storeID, o
 	if err != nil {
 		return CaptainOffer{}, false, err
 	}
-	if ownerActorID != partnerActorID || orderStoreID != storeID {
+	if orderStoreID != storeID || (ownerActorID != partnerActorID && !storeGrantHoldsPermissionTx(ctx, tx, storeID, partnerActorID, "fulfillment")) {
 		return CaptainOffer{}, false, ErrOrderNotFound
 	}
 	if fulfillmentMode != FulfillmentModePartnerCaptain || orderState != "READY_FOR_DISPATCH" {

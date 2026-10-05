@@ -288,7 +288,7 @@ func ListPartnerAccessibleStores(ctx context.Context, db *sql.DB, actorID string
 	}
 	rows, err := db.QueryContext(ctx, `SELECT s.id,s.name,COALESCE(s.service_city_id,''),s.primary_vertical_id,s.publication_state,s.fulfillment_modes,
 		s.partner_actor_id=$1,
-		CASE WHEN s.partner_actor_id=$1 THEN ARRAY['orders','catalog','store_operations']::text[] ELSE g.permissions END
+		CASE WHEN s.partner_actor_id=$1 THEN ARRAY['orders','catalog','store_operations','promotions','finance_read','payout_request','fulfillment']::text[] ELSE g.permissions END
 		FROM dsh.stores s
 		LEFT JOIN LATERAL (
 			SELECT permissions FROM dsh.store_access_grants
@@ -700,6 +700,38 @@ func equalStorePermissions(left, right []string) bool {
 	return true
 }
 
+// storeAccessPermissionAllowlist is the bounded canonical permission vocabulary.
+// Payout-recipient routing is intentionally absent: it is owner-only authority and
+// never a delegable grant. finance_read does not imply payout_request, and
+// payout_request never routes a payout recipient.
+var storeAccessPermissionAllowlist = map[string]struct{}{
+	"orders":           {},
+	"catalog":          {},
+	"store_operations": {},
+	"promotions":       {},
+	"finance_read":     {},
+	"payout_request":   {},
+	"fulfillment":      {},
+}
+
 func validStorePermission(permission string) bool {
-	return permission == "orders" || permission == "catalog" || permission == "store_operations"
+	_, ok := storeAccessPermissionAllowlist[permission]
+	return ok
+}
+
+// storeGrantHoldsPermissionTx reports whether an active Store grant for the actor
+// carries the permission. It runs on the caller's transaction so mutation-time
+// authorization observes the same grant truth as the surrounding write.
+func storeGrantHoldsPermissionTx(ctx context.Context, tx *sql.Tx, storeID, actorID, permission string) bool {
+	if tx == nil || storeID == "" || actorID == "" || !validStorePermission(permission) {
+		return false
+	}
+	var authorized bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(
+		SELECT 1 FROM dsh.store_access_grants
+		WHERE store_id=$1 AND delegate_actor_id=$2 AND state='active' AND $3=ANY(permissions)
+	)`, storeID, actorID, permission).Scan(&authorized); err != nil {
+		return false
+	}
+	return authorized
 }

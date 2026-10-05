@@ -44,7 +44,7 @@ func TestPublicPromotionProjectionOmitsOperatorAndEligibilityInternals(t *testin
 	endsAt := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	payload, err := json.Marshal(toPublicPromotionView(postgres.PromotionRecord{
 		ID: "promotion-public-1", Code: "SAVE10", NameAr: "خصم للعملاء", DescriptionAr: "وصف العرض",
-		Kind: "PERCENTAGE", ValueMinor: 10, FundingSource: "MERCHANT", StoreID: "store-private-1",
+		Kind: "PERCENTAGE", ValueMinor: 10, FundingSource: "PARTNER", StoreID: "store-private-1",
 		ServiceCityID: "city-private-1", State: "PUBLISHED", StartsAt: endsAt.Add(-time.Hour), EndsAt: &endsAt,
 		RedemptionLimit: int64Pointer(50), RedeemedCount: 3, Version: 7, CreatedByActorID: "operator-private-1",
 		CreatedAt: endsAt.Add(-2 * time.Hour), UpdatedAt: endsAt.Add(-time.Hour),

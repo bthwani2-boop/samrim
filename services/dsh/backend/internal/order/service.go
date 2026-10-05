@@ -271,7 +271,10 @@ func (s *Service) ConfirmStoreCaptainCashHandoff(ctx context.Context, accessToke
 	if err != nil {
 		return postgres.OrderRecord{}, false, err
 	}
-	if err := s.requireStoreOwner(ctx, identity, storeID); err != nil {
+	if _, _, err := postgres.AuthorizePartnerStoreAction(ctx, s.db, strings.TrimSpace(storeID), identity, "fulfillment"); err != nil {
+		if errors.Is(err, postgres.ErrStoreAccessForbidden) || errors.Is(err, postgres.ErrStoreNotFound) {
+			return postgres.OrderRecord{}, false, ErrStoreOwnershipForbidden
+		}
 		return postgres.OrderRecord{}, false, err
 	}
 	return postgres.ConfirmStoreCaptainCashHandoff(ctx, s.db, strings.TrimSpace(storeID), strings.TrimSpace(orderID), identity, expectedVersion, strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID))

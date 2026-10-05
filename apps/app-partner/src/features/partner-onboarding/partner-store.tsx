@@ -46,7 +46,7 @@ function FirstJoiningStoreFacts({ styles, store }: { styles: SurfaceStyles; stor
   </View>;
 }
 
-function StoreManagementSurfaces({ styles, store, canCatalog, canOperate, firstStoreCase, onProfileImageUpdated }: { styles: SurfaceStyles; store: PartnerAccessibleStore; canCatalog: boolean; canOperate: boolean; firstStoreCase: JoiningCaseResponse | null; onProfileImageUpdated: (next: JoiningCaseResponse) => void }) {
+function StoreManagementSurfaces({ styles, store, canCatalog, canOperate, canPromote, firstStoreCase, onProfileImageUpdated }: { styles: SurfaceStyles; store: PartnerAccessibleStore; canCatalog: boolean; canOperate: boolean; canPromote: boolean; firstStoreCase: JoiningCaseResponse | null; onProfileImageUpdated: (next: JoiningCaseResponse) => void }) {
   const firstJoiningStore = firstStoreCase?.case.store;
   const isSameFirstJoiningStore = Boolean(store.owned && firstJoiningStore && firstJoiningStore.id === store.id);
   return <>
@@ -55,7 +55,7 @@ function StoreManagementSurfaces({ styles, store, canCatalog, canOperate, firstS
     {canOperate ? <StoreOperationalAvailabilityManagement storeID={store.id} fulfillmentModes={store.fulfillmentModes.filter(isStoreFulfillmentMode)} /> : null}
     {canCatalog && store.primaryVerticalId ? <StoreOfferManagement storeId={store.id} verticalId={store.primaryVerticalId} /> : null}
     {canCatalog && !store.primaryVerticalId ? <View style={styles.card}><Text style={styles.muted}>تعذر فتح إدارة المنتجات لأن تصنيف نشاط المتجر غير متاح في القراءة الحالية.</Text></View> : null}
-    {store.owned ? <StorePromotionsCard storeID={store.id} owned /> : null}
+    {canPromote ? <StorePromotionsCard storeID={store.id} /> : null}
     {isSameFirstJoiningStore && firstJoiningStore ? <FirstJoiningStoreFacts styles={styles} store={firstJoiningStore} /> : null}
     {store.owned ? <StoreCaptainMembershipManagement storeID={store.id} /> : null}
     <PartnerStoreAccess storeID={store.owned ? store.id : undefined} />
@@ -70,6 +70,7 @@ export function PartnerStore() {
   const firstStoreCase = onboarding.state.kind === "ready" ? onboarding.state.value : null;
   const canCatalog = Boolean(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("catalog")));
   const canOperate = Boolean(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("store_operations")));
+  const canPromote = Boolean(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("promotions")));
 
   return <View style={styles.container}>
     <Text style={styles.sectionTitle}>المتجر</Text>
@@ -82,7 +83,7 @@ export function PartnerStore() {
 
     {selectedStore ? <>
       <StoreHeaderRow styles={styles} store={selectedStore} />
-      <StoreManagementSurfaces canCatalog={canCatalog} canOperate={canOperate} firstStoreCase={firstStoreCase} onProfileImageUpdated={onboarding.update} store={selectedStore} styles={styles} />
+      <StoreManagementSurfaces canCatalog={canCatalog} canOperate={canOperate} canPromote={canPromote} firstStoreCase={firstStoreCase} onProfileImageUpdated={onboarding.update} store={selectedStore} styles={styles} />
     </> : null}
 
     {onboarding.state.kind === "ready" && onboarding.state.value.case.state === "needs_correction" ? <Link href={"/onboarding" as Href} asChild><BthwaniButton label="مراجعة التصحيح المطلوب في ملف الانضمام" variant="secondary" /></Link> : null}

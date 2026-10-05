@@ -10,8 +10,12 @@ function permissionLabels(store: PartnerAccessibleStore): string {
   if (store.owned) return "مالك المتجر";
   const labels: Record<string, string> = {
     orders: "الطلبات",
-    catalog: "المنتجات والأسعار",
-    store_operations: "تشغيل المتجر",
+    catalog: "الكتالوج",
+    store_operations: "إتاحة المتجر وساعاته",
+    promotions: "العروض والتخفيضات",
+    finance_read: "قراءة المالية",
+    payout_request: "طلب صرف المستحقات",
+    fulfillment: "التوصيل والاستلام",
   };
   return store.permissions.map((permission) => labels[permission] ?? permission).join("، ");
 }
