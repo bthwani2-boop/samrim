@@ -59,3 +59,6 @@ tools/dev-app-credentials.csv
 
 # Local-only BThwani materialization
 .bthwani-local/
+
+# Local security-scan hook state
+.mimosa/
