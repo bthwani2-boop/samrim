@@ -9,6 +9,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
+import { FieldQuickPrices } from "./field-quick-prices";
 
 type CatalogSnapshot = Awaited<ReturnType<ReturnType<typeof fieldClient>["readFieldJoiningCaseCatalog"]>>;
 type OfferDraft = Readonly<{ priceMinor: string; available: boolean; min: string; max: string; step: string; pricingUnit: string; inventoryOnHand: string }>;
@@ -634,6 +635,7 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
         return { uri: asset.uri, name: asset.name, ...(asset.mimeType ? { type: asset.mimeType } : {}) };
       }}
     /> : null}
+    {snapshot ? <FieldQuickPrices caseId={caseId} verticalId={snapshot.verticalId} onPricesCommitted={() => load(query)} /> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     {notice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}
     <View style={styles.card}>

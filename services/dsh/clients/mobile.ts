@@ -959,6 +959,27 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalizedCase || !normalizedIdentifier || normalizedIdentifier.length > 128) throw new Error("DSH_FIELD_CATALOG_IDENTIFIER_INVALID");
       return userRequest<CatalogIdentifierResolveResponse>(accessToken, dshOperationPaths.resolveFieldCatalogIdentifier.path, dshOperationPaths.resolveFieldCatalogIdentifier.method, { joiningCaseId: normalizedCase, identifierValue: normalizedIdentifier });
     },
+    async listFieldQuickPrices(accessToken: string, caseID: string, filters: Readonly<{ q?: string; categoryId?: string; availability?: "all" | "available" | "unavailable"; publicationState?: "all" | "draft" | "published" | "hidden"; limit?: number; cursor?: string }> = {}): Promise<CatalogStoreOfferListResponse> {
+      const normalized = caseID.trim();
+      if (!normalized) throw new Error("DSH_JOINING_CASE_ID_REQUIRED");
+      const limit = filters.limit ?? 50;
+      const cursor = filters.cursor?.trim() ?? "";
+      if (Number.isSafeInteger(limit) === false || limit < 1 || limit > 100 || cursor.length > 2048 || (filters.q?.trim().length ?? 0) > 160 || (filters.categoryId?.trim().length ?? 0) > 128) throw new Error("DSH_QUICK_PRICE_FILTER_INVALID");
+      const params = new URLSearchParams({ limit: String(limit) });
+      if (filters.q?.trim()) params.set("q", filters.q.trim());
+      if (filters.categoryId) params.set("categoryId", filters.categoryId.trim());
+      if (filters.availability) params.set("availability", filters.availability);
+      if (filters.publicationState) params.set("publicationState", filters.publicationState);
+      if (cursor) params.set("cursor", cursor);
+      const path = `${dshOperationPaths.listFieldQuickPrices.path.replace("{caseId}", encodeURIComponent(normalized))}?${params.toString()}`;
+      return userRequest<CatalogStoreOfferListResponse>(accessToken, path, dshOperationPaths.listFieldQuickPrices.method);
+    },
+    async commitFieldQuickPrices(accessToken: string, caseID: string, input: CatalogQuickPriceCommitRequest, idempotencyKey?: string, correlationID?: string): Promise<CatalogQuickPriceCommitResponse> {
+      const normalized = caseID.trim();
+      if (!normalized || input.items.length < 1 || input.items.length > 100 || input.items.some((item) => !item.offerId.trim() || !Number.isSafeInteger(item.expectedVersion) || item.expectedVersion < 1 || !Number.isSafeInteger(item.priceMinor) || item.priceMinor < 1)) throw new Error("DSH_QUICK_PRICE_UPDATE_INVALID");
+      const path = dshOperationPaths.commitFieldQuickPrices.path.replace("{caseId}", encodeURIComponent(normalized));
+      return userRequest<CatalogQuickPriceCommitResponse>(accessToken, path, dshOperationPaths.commitFieldQuickPrices.method, input, mutationHeaders(idempotencyKey, correlationID));
+    },
     async resolveOwnStoreCatalogIdentifier(accessToken: string, storeID: string, identifierValue: string): Promise<CatalogIdentifierResolveResponse> {
       const normalizedStore = storeID.trim();
       const normalizedIdentifier = identifierValue.trim();

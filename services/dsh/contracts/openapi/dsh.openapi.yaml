@@ -177,6 +177,12 @@ paths:
   /dsh/field/joining-cases/{caseId}/catalog/offers/{offerId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1catalog~1offers~1{offerId}"
 
+  /dsh/field/joining-cases/{caseId}/catalog/quick-prices:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1catalog~1quick-prices"
+
+  /dsh/field/joining-cases/{caseId}/catalog/quick-prices/commit:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1catalog~1quick-prices~1commit"
+
   /dsh/field/joining-cases/{caseId}/catalog/imports/preview:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1catalog~1imports~1preview"
 

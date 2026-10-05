@@ -27,7 +27,10 @@ func (s *Service) UpdateQuickPricesForPartner(ctx context.Context, accessToken, 
 	if err != nil {
 		return nil, err
 	}
-	storeID = strings.TrimSpace(storeID)
+	return s.applyQuickPrices(ctx, actorID, strings.TrimSpace(storeID), changes, idempotencyKey, correlationID)
+}
+
+func (s *Service) applyQuickPrices(ctx context.Context, actorID, storeID string, changes []postgres.CatalogQuickPriceUpdateInput, idempotencyKey, correlationID string) ([]postgres.CatalogQuickPriceUpdateResult, error) {
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	correlationID = strings.TrimSpace(correlationID)
 	if storeID == "" || idempotencyKey == "" || correlationID == "" || len(changes) < 1 || len(changes) > 100 {
