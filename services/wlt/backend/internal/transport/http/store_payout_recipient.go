@@ -38,10 +38,10 @@ type storePayoutRecipientAssignmentView struct {
 }
 
 type storePayoutRecipientReadbackResponse struct {
-	PartnerActorID string                            `json:"partnerActorId"`
-	Currency       string                            `json:"currency"`
-	Recipients     []storePayoutRecipientRecordView  `json:"recipients"`
-	ReviewStores   []string                          `json:"reviewStores"`
+	PartnerActorID string                           `json:"partnerActorId"`
+	Currency       string                           `json:"currency"`
+	Recipients     []storePayoutRecipientRecordView `json:"recipients"`
+	ReviewStores   []string                         `json:"reviewStores"`
 }
 
 type storePayoutRecipientRecordView struct {

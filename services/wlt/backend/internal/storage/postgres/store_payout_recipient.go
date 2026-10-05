@@ -10,35 +10,35 @@ import (
 )
 
 var (
-	ErrStorePayoutRecipientInvalidInput    = errors.New("store payout recipient input is invalid")
-	ErrStorePayoutRecipientNotFound        = errors.New("store payout recipient assignment was not found")
-	ErrStorePayoutRecipientConflict        = errors.New("store payout recipient assignment conflict")
-	ErrRecipientDestinationNotReady        = errors.New("payout recipient has no verified active official wallet destination")
-	ErrPayoutRecipientReviewRequired       = errors.New("payout recipient review required for partner stores")
-	ErrPayoutRecipientRoutingPending       = errors.New("partner store payout routing selected; partitioned settlement required")
-	ErrStorePayoutRecipientOwnership       = errors.New("only the Store owner may change the payout recipient")
+	ErrStorePayoutRecipientInvalidInput = errors.New("store payout recipient input is invalid")
+	ErrStorePayoutRecipientNotFound     = errors.New("store payout recipient assignment was not found")
+	ErrStorePayoutRecipientConflict     = errors.New("store payout recipient assignment conflict")
+	ErrRecipientDestinationNotReady     = errors.New("payout recipient has no verified active official wallet destination")
+	ErrPayoutRecipientReviewRequired    = errors.New("payout recipient review required for partner stores")
+	ErrPayoutRecipientRoutingPending    = errors.New("partner store payout routing selected; partitioned settlement required")
+	ErrStorePayoutRecipientOwnership    = errors.New("only the Store owner may change the payout recipient")
 )
 
 const (
-	StorePayoutRecipientStateDefaultOwner    = "DEFAULT_OWNER"
-	StorePayoutRecipientStateSelectedStaff   = "SELECTED_VERIFIED_STAFF"
-	StorePayoutRecipientStateReviewRequired  = "RECIPIENT_REVIEW_REQUIRED"
-	storePayoutRecipientFailClosedIdemKey    = "WLT_SYSTEM_FAIL_CLOSED"
+	StorePayoutRecipientStateDefaultOwner     = "DEFAULT_OWNER"
+	StorePayoutRecipientStateSelectedStaff    = "SELECTED_VERIFIED_STAFF"
+	StorePayoutRecipientStateReviewRequired   = "RECIPIENT_REVIEW_REQUIRED"
+	storePayoutRecipientFailClosedIdemKey     = "WLT_SYSTEM_FAIL_CLOSED"
 	storePayoutRecipientFailClosedRequestHash = "0000000000000000000000000000000000000000000000000000000000000000"
 )
 
 type StorePayoutRecipientAssignmentRecord struct {
-	ID                   string
-	StoreID              string
-	PartnerActorID       string
-	BeneficiaryActorID   string
-	State                string
-	Version              int
-	EffectiveAt          time.Time
-	AssignedByActorID    string
-	Reason               string
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	ID                 string
+	StoreID            string
+	PartnerActorID     string
+	BeneficiaryActorID string
+	State              string
+	Version            int
+	EffectiveAt        time.Time
+	AssignedByActorID  string
+	Reason             string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 type StorePayoutRecipientRecord struct {
@@ -60,13 +60,13 @@ type StorePayoutRecipientReadback struct {
 }
 
 type SelectStorePayoutRecipientInput struct {
-	StoreID           string
-	PartnerActorID    string
+	StoreID            string
+	PartnerActorID     string
 	BeneficiaryActorID string
-	BeneficiaryFacts  IdentityFacts
-	Reason            string
-	IdempotencyKey    string
-	CorrelationID     string
+	BeneficiaryFacts   IdentityFacts
+	Reason             string
+	IdempotencyKey     string
+	CorrelationID      string
 }
 
 type RevertStorePayoutRecipientInput struct {
