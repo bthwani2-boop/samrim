@@ -9,5 +9,5 @@ import { createPartnerSurfaceStyles } from "../partner-onboarding/partner-surfac
 export default function PartnerWallet() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
-  return <View style={[styles.container, { gap: spacing[4] }]} accessibilityLabel="محفظة الشريك"><View style={styles.headerRow}><View style={styles.headerCopy}><Text style={styles.sectionTitle}>المحفظة</Text><Text style={styles.muted}>المال المستحق للشريك كما يقرأه WLT.</Text></View><BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[6]} /></View><PartnerFinancialSummaryCard /><PartnerPayoutCard /></View>;
+  return <View style={[styles.container, { gap: spacing[4] }]} accessibilityLabel="محفظة الشريك"><View style={styles.headerRow}><View style={styles.headerCopy}><Text style={styles.sectionTitle}>المحفظة</Text><Text style={styles.muted}>المال المستحق للشريك وفق السجلات المالية المعتمدة.</Text></View><BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[6]} /></View><PartnerFinancialSummaryCard /><PartnerPayoutCard /></View>;
 }

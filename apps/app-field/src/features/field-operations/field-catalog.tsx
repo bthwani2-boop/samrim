@@ -430,7 +430,7 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
       setSnapshot((current) => current ? { ...current, offers: [offer, ...current.offers.filter((item) => item.offerId !== offer.offerId)] } : current);
       setExistingOffer(offer);
       setOfferDraft((current) => ({ ...current, priceMinor: String(offer.priceMinor), available: offer.availability }));
-      setNotice("حُفظ عرض الإعداد الأولي وسُجلت قرارات السعر والتوافر في DSH.");
+      setNotice("حُفظ عرض الإعداد الأولي وسُجلت قرارات السعر والتوافر.");
     } catch (cause) {
       console.warn("DSH Field initial StoreOffer save failed", cause);
       setError(messageFromError(cause) + " أعد قراءة الكتالوج للتأكد من الحالة قبل إعادة المحاولة.");
@@ -604,7 +604,7 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
   const proposalFormLocked = busy || Boolean(proposalMutationAttempt) || proposalReadOnly;
   return <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
     <Text style={styles.title}>الكتالوج الأولي</Text>
-    <Text style={styles.muted}>يظهر هذا المسار للحالة المعتمدة فقط. يتحقق DSH في كل قراءة وكتابة من الإسناد والارتباط بالمتجر وعدم إتمام Go-Live.</Text>
+    <Text style={styles.muted}>يظهر هذا المسار للحالة المعتمدة فقط. يتحقق النظام في كل قراءة وكتابة من الإسناد والارتباط بالمتجر وعدم إتمام إطلاق المتجر.</Text>
     {snapshot ? <View style={styles.card}><Text style={styles.heading}>المتجر المعتمد</Text><Text style={styles.body}>المتجر: {snapshot.storeId}</Text><Text style={styles.body}>المجال: {snapshot.verticalId}</Text></View> : null}
     {snapshot ? <View style={styles.card}>
       <Text style={styles.heading}>عروض المتجر الأولية · {snapshot.offers.length}</Text>
@@ -713,7 +713,7 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
     </View> : null}
     {resolution?.outcome === "UNKNOWN_IDENTIFIER" ? <View style={styles.card}>
       <Text style={styles.heading}>تسجيل منتج محلي</Text>
-      <Text style={styles.muted}>ينشئ DSH منتجًا Store-scoped ونسخة جديدة داخل المتجر المرتبط بهذه الحالة. المعرّف العالمي يبقى فريدًا عبر النظام.</Text>
+      <Text style={styles.muted}>ينشئ النظام منتجًا خاصًا بالمتجر ونسخة جديدة داخل المتجر المرتبط بهذه الحالة. المعرّف العالمي يبقى فريدًا عبر النظام.</Text>
       <TextInput accessibilityLabel="اسم المنتج المحلي" editable={!busy} onChangeText={setProductName} placeholder="اسم المنتج" value={productName} style={styles.input} />
       <TextInput accessibilityLabel="وصف المنتج المحلي" editable={!busy} maxLength={4000} multiline onChangeText={setDescription} placeholder="وصف اختياري" value={description} style={styles.input} />
       <TextInput accessibilityLabel="علامة المنتج المحلية" editable={!busy} onChangeText={setBrand} placeholder="العلامة التجارية (اختياري)" value={brand} style={styles.input} />
@@ -723,7 +723,7 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
       <BthwaniButton busy={busy} disabled={busy || !productName.trim() || !variantTitle.trim()} label="إنشاء منتج المتجر" onPress={() => void createLocalProduct()} />
     </View> : null}
     {existingOffer || (selectedVariant && selectedProduct) ? <View style={styles.card}>
-      <Text style={styles.heading}>{existingOffer ? "تعديل عرض ما قبل Go-Live" : "إضافة العرض الأولي"}</Text>
+      <Text style={styles.heading}>{existingOffer ? "تعديل عرض ما قبل الإطلاق" : "إضافة العرض الأولي"}</Text>
       <Text style={styles.muted}>{selectedProduct?.canonicalName ?? existingOffer?.productName} · {selectedVariant?.title ?? existingOffer?.variantTitle} · {wasCreatedLocally ? "منتج خاص بالمتجر" : selectedProduct?.scope === "SHARED" ? "منتج مشترك" : "عرض قائم"}</Text>
       <TextInput accessibilityLabel="سعر العرض الأولي" editable={!busy} keyboardType="number-pad" onChangeText={(priceMinor) => setOfferDraft((current) => ({ ...current, priceMinor: priceMinor.replace(/[^0-9]/g, "") }))} placeholder="السعر بالريال اليمني" value={offerDraft.priceMinor} style={[styles.input, styles.number]} />
       <Text style={styles.muted}>التوافر: {offerDraft.available ? "متاح للطلب" : "غير متاح مؤقتًا"}</Text>

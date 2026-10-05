@@ -153,9 +153,9 @@ export function FieldCommercialAgreement({ caseID }: { caseID: string }) {
   if (loading) return <View style={styles.card}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الاتفاقية التجارية…</Text></View>;
   return <View style={styles.card}>
     <Text style={styles.heading}>اتفاقية عمولة المتجر</Text>
-    <Text style={styles.muted}>المتجر: {storeName || "—"}. يملك WLT النسخة المالية؛ اقتراح الميدان لا يعني قبول الشريك أو اعتماد المالية.</Text>
+    <Text style={styles.muted}>المتجر: {storeName || "—"}. تُسجَّل الشروط المالية النهائية بعد قبول الشريك واعتماد المالية؛ اقتراح الميدان لا يعني القبول أو الاعتماد.</Text>
     {agreements.map((agreement) => <View key={agreement.agreementId} style={styles.row}>
-      <Text style={styles.body}>{statusLabels[agreement.status]} · الإصدار {agreement.agreementVersion}</Text>
+      <Text style={styles.body}>{statusLabels[agreement.status]}</Text>
       <Text style={styles.muted}>{agreement.rates.map((rate) => `${modeLabels[rate.fulfillmentMode]}: ${rate.commissionRateBps} نقطة أساس`).join(" · ")}</Text>
       <Text style={styles.muted}>السبب: {agreement.reason}</Text>
     </View>)}
@@ -164,7 +164,7 @@ export function FieldCommercialAgreement({ caseID }: { caseID: string }) {
     {legacyPublishedStore ? <Text style={styles.error}>تتطلب بيانات المتجر المنشورة القديمة اتفاقية صريحة. سيظل المتجر محجوبًا عن العميل حتى قبول الشريك واعتماد المالية.</Text> : null}
     {publicationState === "hidden" || (publicationState === "published" && !legacyPublishedStore) ? <Text style={styles.muted}>انتهت صلاحية اقتراح الميدان بعد انتقال المتجر إلى ما بعد الإطلاق.</Text> : null}
     {canPropose ? <>
-      <Text style={styles.muted}>ابدأ من قيم Store Type المقترحة عند توفرها، ثم أدخل النسب المتفاوض عليها لكل طريقة تشغيل. القيم المقترحة لا تصبح شروطًا مالية.</Text>
+      <Text style={styles.muted}>ابدأ من النسب المقترحة لنوع المتجر عند توفرها، ثم أدخل النسب المتفاوض عليها لكل طريقة تشغيل. النسب المقترحة لا تصبح شروطًا مالية.</Text>
       {defaultsUnavailable ? <Text style={styles.muted}>تعذر تحميل القيم المقترحة؛ أدخل النسبة المتفاوض عليها يدويًا لكل طريقة تشغيل.</Text> : null}
       {modes.map((mode) => <View key={mode} style={styles.row}>
         <Text style={styles.body}>{modeLabels[mode]}</Text>

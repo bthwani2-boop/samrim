@@ -122,7 +122,7 @@ export function StoreCommercialAgreements({ storeID }: { storeID: string }) {
     } catch (cause) {
       setError(cause instanceof Error && cause.message === "DSH_BASE_URL_REQUIRED"
         ? "تعذر الاتصال بخدمة الاتفاقيات."
-        : "تعذر قراءة اتفاقيات المتجر من DSH.");
+        : "تعذر قراءة اتفاقيات المتجر. أعد المحاولة.");
     } finally {
       setLoading(false);
     }

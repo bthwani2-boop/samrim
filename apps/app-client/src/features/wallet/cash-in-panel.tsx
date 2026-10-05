@@ -38,7 +38,7 @@ function isTerminalFundingIntent(intent: Pick<CashInFundingIntent, "state">): bo
 }
 
 function simulationResultNotice(state: CashInFundingIntent["state"]): string {
-  if (state === "SETTLED") return "نجح الاختبار المحلي وأكد WLT إضافة الرصيد التجريبي.";
+  if (state === "SETTLED") return "نجح الاختبار المحلي وأُضيف الرصيد التجريبي بنجاح.";
   if (state === "FAILED") return "رُفض طلب الشحن التجريبي ولم يُضف الرصيد.";
   return "لم يصل تأكيد نهائي؛ بقي الطلب محفوظًا ويمكن متابعة الاختبار.";
 }
