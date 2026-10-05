@@ -342,6 +342,11 @@ paths:
   /dsh/operator/promotions/{promotionId}/publication:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1promotions~1{promotionId}~1publication"
 
+  /dsh/partner/stores/{storeId}/promotions:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1promotions"
+  /dsh/partner/stores/{storeId}/promotions/{promotionId}/state:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1promotions~1{promotionId}~1state"
+
   /dsh/operator/discovery-content:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1discovery-content"
 
@@ -7579,7 +7584,11 @@ components:
 
     PromotionState:
       type: string
-      enum: [DRAFT, PUBLISHED, PAUSED]
+      enum: [DRAFT, PUBLISHED, PAUSED, ENDED]
+
+    PromotionFundingSource:
+      type: string
+      enum: [PARTNER, BTHWANI, SHARED]
 
     PromotionView:
       type: object
@@ -7604,8 +7613,12 @@ components:
           minimum: 1
           nullable: true
         fundingSource:
-          type: string
-          const: MERCHANT
+          $ref: "#/components/schemas/PromotionFundingSource"
+        fundingSharePartnerPercent:
+          type: integer
+          minimum: 1
+          maximum: 99
+          nullable: true
         storeId:
           type: string
           nullable: true
@@ -7734,8 +7747,7 @@ components:
           minimum: 1
           nullable: true
         fundingSource:
-          type: string
-          const: MERCHANT
+          $ref: "#/components/schemas/PromotionFundingSource"
         storeId:
           type: string
           maxLength: 128
@@ -7761,7 +7773,7 @@ components:
       properties:
         state:
           type: string
-          enum: [PUBLISHED, PAUSED]
+          enum: [PUBLISHED, PAUSED, ENDED]
 
     DiscoveryContentKind:
       type: string

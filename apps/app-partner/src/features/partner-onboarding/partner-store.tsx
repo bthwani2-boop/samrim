@@ -4,6 +4,7 @@ import { type Href, Link } from "expo-router";
 import { useMemo } from "react";
 import { Text, View } from "react-native";
 import { StoreOfferManagement } from "../store-offer/store-offer";
+import { StorePromotionsCard } from "../store-offer/store-promotions";
 import { PartnerStoreAccess } from "./partner-store-access";
 import { usePartnerStoreContext } from "./partner-store-context";
 import { type PartnerAccessibleStore, usePartnerStoreScope } from "./partner-store-scope-context";
@@ -54,6 +55,7 @@ function StoreManagementSurfaces({ styles, store, canCatalog, canOperate, firstS
     {canOperate ? <StoreOperationalAvailabilityManagement storeID={store.id} fulfillmentModes={store.fulfillmentModes.filter(isStoreFulfillmentMode)} /> : null}
     {canCatalog && store.primaryVerticalId ? <StoreOfferManagement storeId={store.id} verticalId={store.primaryVerticalId} /> : null}
     {canCatalog && !store.primaryVerticalId ? <View style={styles.card}><Text style={styles.muted}>تعذر فتح إدارة المنتجات لأن تصنيف نشاط المتجر غير متاح في القراءة الحالية.</Text></View> : null}
+    {store.owned ? <StorePromotionsCard storeID={store.id} owned /> : null}
     {isSameFirstJoiningStore && firstJoiningStore ? <FirstJoiningStoreFacts styles={styles} store={firstJoiningStore} /> : null}
     {store.owned ? <StoreCaptainMembershipManagement storeID={store.id} /> : null}
     <PartnerStoreAccess storeID={store.owned ? store.id : undefined} />
