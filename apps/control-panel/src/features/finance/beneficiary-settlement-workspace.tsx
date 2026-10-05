@@ -70,7 +70,7 @@ const financialSourceLabels: Readonly<Record<string, string>> = {
   CAPTAIN_OPENING_FUNDING: "تمويل افتتاحي",
   FUNDING_INTENT: "عملية شحن",
   CASH_REMITTANCE: "توريد نقدي",
-  STORE_CLIENT_VISIBLE: "استحقاق متجر",
+  PARTNER_STORE_CLIENT_VISIBLE: "استحقاق متجر",
   ORDER_DELIVERED: "طلب مستلم",
   MANUAL_EXTERNAL_TRANSFER: "تحويل خارجي يدوي",
 };

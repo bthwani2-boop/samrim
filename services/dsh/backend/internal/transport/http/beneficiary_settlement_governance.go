@@ -56,7 +56,7 @@ func (s *BeneficiaryFinanceServer) readOperatorFinancialStatement(w http.Respons
 	}
 	for i := range statement.Entries {
 		entry := &statement.Entries[i]
-		if actorType == "field" && entry.SourceType == "STORE_CLIENT_VISIBLE" {
+		if actorType == "field" && entry.SourceType == "PARTNER_STORE_CLIENT_VISIBLE" {
 			var store wlt.FinancialStatementStore
 			err = s.db.QueryRowContext(r.Context(), `SELECT id,name,publication_state FROM dsh.stores WHERE id=$1`, entry.SourceID).Scan(&store.StoreID, &store.Name, &store.PublicationState)
 			if errors.Is(err, sql.ErrNoRows) {
