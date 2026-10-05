@@ -230,10 +230,10 @@ paths:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1commercial-agreements"
   /dsh/field/joining-cases/{caseId}/commercial-agreement-defaults:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1commercial-agreement-defaults"
-  /dsh/joining-cases/self/commercial-agreements:
-    $ref: "./paths/commerce.yaml#/paths/~1dsh~1joining-cases~1self~1commercial-agreements"
-  /dsh/joining-cases/self/commercial-agreements/{agreementId}/accept:
-    $ref: "./paths/commerce.yaml#/paths/~1dsh~1joining-cases~1self~1commercial-agreements~1{agreementId}~1accept"
+  /dsh/partner/stores/{storeId}/commercial-agreements:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1commercial-agreements"
+  /dsh/partner/stores/{storeId}/commercial-agreements/{agreementId}/accept:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1commercial-agreements~1{agreementId}~1accept"
   /dsh/operator/store-commercial-agreements:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1store-commercial-agreements"
   /dsh/operator/stores/{storeId}/commercial-agreements:
@@ -8155,6 +8155,10 @@ components:
           type: string
           minLength: 1
           maxLength: 128
+        delegatePhoneMasked:
+          type: string
+          maxLength: 24
+          description: Current verified Identity phone with digits masked for Store-owner team readback.
         permissions:
           type: array
           uniqueItems: true
@@ -8255,12 +8259,13 @@ components:
     StoreAccessInvitationCreateRequest:
       type: object
       additionalProperties: false
-      required: [delegateActorId, permissions]
+      required: [delegatePhoneE164, permissions]
       properties:
-        delegateActorId:
+        delegatePhoneE164:
           type: string
-          minLength: 1
-          maxLength: 128
+          minLength: 8
+          maxLength: 24
+          description: Verified Human Actor phone number; DSH resolves the canonical Actor through Identity.
         permissions:
           type: array
           minItems: 1

@@ -1,11 +1,23 @@
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { StoreAccessGrant, StoreAccessPermission } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
 
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 import { activateOwnStoreAccessInvitation, createOwnStoreAccessInvitation, decideOwnStoreAccessInvitation, listOwnStoreAccessGrants, listOwnStoreAccessInvitations, transitionOwnStoreAccessGrant, updateOwnStoreAccessPermissions } from "./store-readback-client";
+import { usePartnerStoreScope } from "./partner-store-scope-context";
+
+const rolePresets = [
+  { value: "STORE_MANAGER", label: "مدير متجر", permissions: ["orders", "catalog", "store_operations"] as const },
+  { value: "ORDER_STAFF", label: "موظف طلبات", permissions: ["orders"] as const },
+  { value: "CATALOG_STAFF", label: "موظف كتالوج", permissions: ["catalog"] as const },
+] as const;
+
+type InviteAttempt = Readonly<{
+  identity: string;
+  headersByStore: Readonly<Record<string, ReturnType<typeof attemptHeaders>>>;
+}>;
 
 const permissions: ReadonlyArray<{ value: StoreAccessPermission; label: string }> = [
   { value: "orders", label: "الطلبات" },
@@ -42,8 +54,19 @@ export function PartnerStoreAccess({ storeID }: { storeID?: string }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [actorID, setActorID] = useState("");
+  const [notice, setNotice] = useState("");
+  const [phone, setPhone] = useState("");
+  const [storeSearch, setStoreSearch] = useState("");
+  const [selectedStoreIDs, setSelectedStoreIDs] = useState<ReadonlyArray<string>>([]);
   const [selectedPermissions, setSelectedPermissions] = useState<ReadonlyArray<StoreAccessPermission>>(["orders"]);
+  const inviteAttempt = useRef<InviteAttempt | null>(null);
+  const storeScope = usePartnerStoreScope();
+  const ownedStores = useMemo(() => storeScope.stores.filter((store) => store.owned), [storeScope.stores]);
+  const filteredOwnedStores = useMemo(() => ownedStores.filter((store) => store.name.toLocaleLowerCase().includes(storeSearch.trim().toLocaleLowerCase())), [ownedStores, storeSearch]);
+
+  useEffect(() => {
+    setSelectedStoreIDs(storeID ? [storeID] : []);
+  }, [storeID]);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -62,21 +85,51 @@ export function PartnerStoreAccess({ storeID }: { storeID?: string }) {
 
   function togglePermission(permission: StoreAccessPermission) {
     setSelectedPermissions((current) => current.includes(permission) ? current.filter((item) => item !== permission) : [...current, permission]);
+    inviteAttempt.current = null;
+  }
+
+  function choosePreset(preset: typeof rolePresets[number]) {
+    setSelectedPermissions(preset.permissions);
+    inviteAttempt.current = null;
+  }
+
+  function toggleTargetStore(targetStoreID: string) {
+    setSelectedStoreIDs((current) => current.includes(targetStoreID) ? current.filter((item) => item !== targetStoreID) : [...current, targetStoreID]);
+    inviteAttempt.current = null;
   }
 
   async function invite() {
-    if (!storeID || busy || !actorID.trim() || selectedPermissions.length === 0) return;
+    if (!storeID || busy || !phone.trim() || selectedPermissions.length === 0 || selectedStoreIDs.length === 0) return;
     setBusy(true);
     setError("");
+    setNotice("");
     try {
-      const headers = attemptHeaders("store_access_invite");
-      await createOwnStoreAccessInvitation(storeID, { delegateActorId: actorID.trim(), permissions: [...selectedPermissions] }, headers.idempotencyKey, headers.correlationID);
-      setActorID("");
-      setSelectedPermissions(["orders"]);
+      const identity = `${phone.trim()}|${[...selectedStoreIDs].sort().join(",")}|${[...selectedPermissions].sort().join(",")}`;
+      if (inviteAttempt.current?.identity !== identity) {
+        inviteAttempt.current = {
+          identity,
+          headersByStore: Object.fromEntries(selectedStoreIDs.map((targetStoreID) => [targetStoreID, attemptHeaders("store_access_invite")])),
+        };
+      }
+      const results = await Promise.allSettled(selectedStoreIDs.map((targetStoreID) => {
+        const headers = inviteAttempt.current?.headersByStore[targetStoreID];
+        if (!headers) throw new Error("STORE_ACCESS_INVITE_ATTEMPT_MISSING");
+        return createOwnStoreAccessInvitation(targetStoreID, { delegatePhoneE164: phone.trim(), permissions: [...selectedPermissions] }, headers.idempotencyKey, headers.correlationID);
+      }));
+      const createdCount = results.filter((result) => result.status === "fulfilled").length;
+      const failedCount = results.length - createdCount;
+      setNotice(`أُكدت الدعوة على ${createdCount} من ${results.length} متاجر مختارة.`);
+      if (failedCount > 0) setError(`تعذر تأكيد ${failedCount} دعوات. أعد المحاولة بنفس البيانات لإعادة قراءة المحاولات المحفوظة بأمان.`);
+      else {
+        inviteAttempt.current = null;
+        setPhone("");
+        setSelectedPermissions(["orders"]);
+        setSelectedStoreIDs(storeID ? [storeID] : []);
+      }
       await reload();
     } catch {
       await reload();
-      setError("تعذر إنشاء الدعوة. استخدم معرّف Actor قائمًا في Identity، ثم أعد قراءة القائمة قبل المحاولة مجددًا.");
+      setError("تعذر إنشاء الدعوة. تحقّق من رقم الهاتف وأن صاحبه فعّل حسابه في Identity، ثم أعد قراءة القائمة.");
     } finally {
       setBusy(false);
     }
@@ -149,14 +202,24 @@ export function PartnerStoreAccess({ storeID }: { storeID?: string }) {
   return <View style={styles.container}>
     {storeID ? <View style={styles.card}>
       <Text style={styles.value}>تفويض وصول لمتجر محدد</Text>
-      <Text style={styles.muted}>أدخل معرّف حساب Actor الموجود في Identity. يقبل المدعو الدعوة أولًا؛ ثم يعتمد المشغّل دور الشريك عند الحاجة؛ وبعدها يسجل المدعو بدور الشريك لتفعيل صلاحيات المتجر.</Text>
-      <TextInput accessibilityLabel="معرّف Actor في Identity" autoCapitalize="none" autoCorrect={false} editable={!busy} onChangeText={setActorID} placeholder="معرّف Actor في Identity" placeholderTextColor={theme.colorMuted} style={{ borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, color: theme.color, padding: 12, textAlign: "left" }} value={actorID} />
+      <Text style={styles.muted}>أرسل الدعوة برقم الهاتف المرتبط بحساب موثّق. تتحقق DSH من Identity وتربط الدعوة بالـ Actor canonical داخليًا. يقبل الموظف الدعوة ثم يكمل اعتماد دور الشريك عند الحاجة. كل متجر يحصل على منحة مستقلة.</Text>
+      <TextInput accessibilityLabel="رقم هاتف الموظف" autoCapitalize="none" autoCorrect={false} editable={!busy} keyboardType="phone-pad" onChangeText={(value) => { setPhone(value); inviteAttempt.current = null; }} placeholder="رقم الهاتف مع مفتاح الدولة" placeholderTextColor={theme.colorMuted} style={{ borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, color: theme.color, padding: 12, textAlign: "left" }} value={phone} />
+      <Text style={styles.metaLabel}>متاجر الفريق المملوكة</Text>
+      <TextInput accessibilityLabel="بحث المتاجر المملوكة" autoCapitalize="none" autoCorrect={false} editable={!busy} onChangeText={setStoreSearch} placeholder="ابحث باسم المتجر" placeholderTextColor={theme.colorMuted} style={{ borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, color: theme.color, padding: 12 }} value={storeSearch} />
+      <View style={{ gap: 8 }}>{filteredOwnedStores.map((store) => {
+        const selected = selectedStoreIDs.includes(store.id);
+        return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected, disabled: busy }} disabled={busy} key={store.id} onPress={() => toggleTargetStore(store.id)} style={{ backgroundColor: selected ? theme.actionBackground : theme.surfaceInset, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, padding: 12 }}><Text style={{ color: selected ? theme.onAction : theme.color }}>{store.name}</Text></Pressable>;
+      })}</View>
+      {storeScope.state.kind === "ready" && storeScope.state.nextCursor ? <BthwaniButton disabled={busy} label="تحميل متاجر أخرى" onPress={() => void storeScope.loadMore()} variant="secondary" /> : null}
+      <Text style={styles.metaLabel}>قوالب الدور</Text>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>{rolePresets.map((preset) => <Pressable accessibilityRole="button" disabled={busy} key={preset.value} onPress={() => choosePreset(preset)} style={{ backgroundColor: theme.surfaceInset, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 }}><Text style={{ color: theme.color }}>{preset.label}</Text></Pressable>)}</View>
       <Text style={styles.metaLabel}>حدد أقل صلاحيات لازمة لهذا المتجر فقط</Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>{permissions.map((permission) => {
         const selected = selectedPermissions.includes(permission.value);
         return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected, disabled: busy }} disabled={busy} key={permission.value} onPress={() => togglePermission(permission.value)} style={{ backgroundColor: selected ? theme.actionBackground : theme.surfaceInset, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 }}><Text style={{ color: selected ? theme.onAction : theme.color }}>{permission.label}</Text></Pressable>;
       })}</View>
-      <BthwaniButton busy={busy} disabled={busy || !actorID.trim() || selectedPermissions.length === 0} label="إرسال دعوة المتجر" onPress={() => void invite()} />
+      <BthwaniButton busy={busy} disabled={busy || !phone.trim() || selectedPermissions.length === 0 || selectedStoreIDs.length === 0} label="إرسال دعوة الموظف" onPress={() => void invite()} />
+      {notice ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}
     </View> : null}
 
     {storeID ? <View style={styles.card}>
@@ -189,7 +252,7 @@ function StoreAccessGrantCard({ grant, busy, onTransition, onPermissions }: { gr
   const selected = permissions.filter((permission) => grant.permissions.includes(permission.value)).map((permission) => permission.value);
   const nextPermissions = (permission: StoreAccessPermission) => selected.includes(permission) ? selected.filter((item) => item !== permission) : [...selected, permission];
   return <View style={{ borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 8, padding: 12 }}>
-    <Text style={styles.value}><Text selectable>{grant.delegateActorId}</Text></Text>
+    <Text style={styles.value}>{grant.delegatePhoneMasked ?? "عضو فريق"}</Text>
     <Text style={styles.muted}>{grantStateLabel(grant.state)} · الصلاحيات الحالية: {permissionNames(grant.permissions)}</Text>
     {grant.state === "active" || grant.state === "suspended" || grant.state === "pending_role_admission" || grant.state === "pending_partner_activation" || grant.state === "pending_acceptance" ? <>
       <Text style={styles.metaLabel}>الصلاحيات المفوضة</Text>

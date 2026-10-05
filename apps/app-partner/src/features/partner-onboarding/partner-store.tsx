@@ -1,5 +1,5 @@
 import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
-import { publicationStateLabel } from "@bthwani/dsh";
+import { publicationStateLabel, type PublicationState, type StoreFulfillmentMode } from "@bthwani/dsh";
 import { type Href, Link } from "expo-router";
 import { useMemo } from "react";
 import { Text, View } from "react-native";
@@ -13,6 +13,16 @@ import { StoreCaptainMembershipManagement } from "./store-captain-memberships";
 import { StoreCommercialAgreements } from "./store-commercial-agreements";
 import { StoreOperationalAvailabilityManagement } from "./store-operational-availability";
 import { StoreProfileImageEditor } from "./store-profile-image-editor";
+
+function publicationLabel(state: string): string {
+  return state === "published" || state === "unpublished" || state === "hidden"
+    ? publicationStateLabel(state as PublicationState)
+    : "حالة النشر غير متاحة";
+}
+
+function isStoreFulfillmentMode(value: string): value is StoreFulfillmentMode {
+  return value === "BTHWANI_CAPTAIN" || value === "PARTNER_CAPTAIN" || value === "CUSTOMER_PICKUP";
+}
 
 export function PartnerStore() {
   const theme = useAppearanceTheme();
@@ -41,15 +51,15 @@ export function PartnerStore() {
         </View>
         <BthwaniStatusBadge
           icon={selectedStore.publicationState === "published" ? "success" : "warning"}
-          label={selectedStore.publicationState === "published" ? "منشور" : publicationStateLabel(selectedStore.publicationState)}
+          label={selectedStore.publicationState === "published" ? "منشور" : publicationLabel(selectedStore.publicationState)}
           tone={selectedStore.publicationState === "published" ? "success" : "warning"}
         />
       </View>
 
-      {selectedStore.owned && selectedIsFirstJoiningStore ? <StoreCommercialAgreements /> : null}
+      {selectedStore.owned ? <StoreCommercialAgreements key={selectedStore.id} storeID={selectedStore.id} /> : null}
       {selectedStore.owned && selectedIsFirstJoiningStore && firstStoreCase ? <StoreProfileImageEditor value={firstStoreCase} onUpdated={onboarding.update} /> : null}
 
-      {canOperate ? <StoreOperationalAvailabilityManagement storeID={selectedStore.id} fulfillmentModes={selectedStore.fulfillmentModes} /> : null}
+      {canOperate ? <StoreOperationalAvailabilityManagement storeID={selectedStore.id} fulfillmentModes={selectedStore.fulfillmentModes.filter(isStoreFulfillmentMode)} /> : null}
       {canCatalog && selectedStore.primaryVerticalId ? <StoreOfferManagement storeId={selectedStore.id} verticalId={selectedStore.primaryVerticalId} /> : null}
       {canCatalog && !selectedStore.primaryVerticalId ? <View style={styles.card}><Text style={styles.muted}>تعذر فتح إدارة المنتجات لأن تصنيف نشاط المتجر غير متاح في القراءة الحالية.</Text></View> : null}
 

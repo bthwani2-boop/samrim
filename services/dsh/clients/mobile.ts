@@ -280,11 +280,11 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
     },
     async createPartnerStoreAccessInvitation(accessToken: string, storeID: string, input: StoreAccessInvitationCreateRequest, idempotencyKey: string, correlationID: string): Promise<StoreAccessGrantMutationResponse> {
       const normalizedStore = storeID.trim();
-      const delegateActorID = input.delegateActorId.trim();
+      const delegatePhoneE164 = input.delegatePhoneE164.trim();
       const allowedPermissions: ReadonlyArray<StoreAccessPermission> = ["orders", "catalog", "store_operations"];
-      if (!normalizedStore || !delegateActorID || input.permissions.length < 1 || input.permissions.length > 3 || new Set(input.permissions).size !== input.permissions.length || input.permissions.some((permission) => !allowedPermissions.includes(permission))) throw new Error("DSH_STORE_ACCESS_INVITATION_INPUT_INVALID");
+      if (!normalizedStore || delegatePhoneE164.length < 8 || delegatePhoneE164.length > 24 || input.permissions.length < 1 || input.permissions.length > 3 || new Set(input.permissions).size !== input.permissions.length || input.permissions.some((permission) => !allowedPermissions.includes(permission))) throw new Error("DSH_STORE_ACCESS_INVITATION_INPUT_INVALID");
       const path = dshOperationPaths.createPartnerStoreAccessInvitation.path.replace("{storeId}", encodeURIComponent(normalizedStore));
-      return userRequest<StoreAccessGrantMutationResponse>(accessToken, path, dshOperationPaths.createPartnerStoreAccessInvitation.method, { delegateActorId: delegateActorID, permissions: Array.from(input.permissions) }, mutationHeaders(idempotencyKey, correlationID));
+      return userRequest<StoreAccessGrantMutationResponse>(accessToken, path, dshOperationPaths.createPartnerStoreAccessInvitation.method, { delegatePhoneE164, permissions: Array.from(input.permissions) }, mutationHeaders(idempotencyKey, correlationID));
     },
     async transitionPartnerStoreAccessGrant(accessToken: string, storeID: string, grantID: string, input: StoreAccessGrantTransitionRequest, idempotencyKey: string, correlationID: string): Promise<StoreAccessGrantMutationResponse> {
       const normalizedStore = storeID.trim();

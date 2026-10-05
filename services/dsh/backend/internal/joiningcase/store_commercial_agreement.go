@@ -139,41 +139,36 @@ func (s *Service) UpdateStoreTypeCommissionDefaultForFinance(ctx context.Context
 	})
 }
 
-func (s *Service) ReadStoreCommercialAgreementsForPartner(ctx context.Context, accessToken string) ([]wltintegration.StoreCommercialAgreement, error) {
+func (s *Service) ReadStoreCommercialAgreementsForPartner(ctx context.Context, accessToken, storeID string) ([]wltintegration.StoreCommercialAgreement, error) {
 	partner, err := s.requirePartner(ctx, accessToken)
 	if err != nil {
 		return nil, err
 	}
-	joiningCase, err := postgres.ReadJoiningCaseForPartner(ctx, s.db, partner.Subject)
+	store, err := postgres.ReadStoreOwnedByPartner(ctx, s.db, storeID, partner.Subject)
 	if err != nil {
 		return nil, err
 	}
-	if joiningCase.Case.StoreID == "" {
-		return []wltintegration.StoreCommercialAgreement{}, nil
-	}
-	agreements, err := s.wlt.ReadStoreCommercialAgreements(ctx, joiningCase.Case.StoreID)
+	agreements, err := s.wlt.ReadStoreCommercialAgreements(ctx, store.ID)
 	if err != nil {
 		return nil, err
 	}
-	return matchingPartnerStoreAgreements(agreements, joiningCase.Case.StoreID, partner.Subject), nil
+	return matchingPartnerStoreAgreements(agreements, store.ID, partner.Subject), nil
 }
 
-func (s *Service) AcceptStoreCommercialAgreementForPartner(ctx context.Context, accessToken, agreementID string, expectedAgreementVersion int, reason, idempotencyKey, correlationID string) (wltintegration.StoreCommercialAgreement, bool, error) {
+func (s *Service) AcceptStoreCommercialAgreementForPartner(ctx context.Context, accessToken, storeID, agreementID string, expectedAgreementVersion int, reason, idempotencyKey, correlationID string) (wltintegration.StoreCommercialAgreement, bool, error) {
 	partner, err := s.requirePartner(ctx, accessToken)
 	if err != nil {
 		return wltintegration.StoreCommercialAgreement{}, false, err
 	}
-	if strings.TrimSpace(agreementID) == "" || expectedAgreementVersion < 1 || !validStoreAgreementMutationHeaders(idempotencyKey, correlationID) || !validStoreAgreementReason(reason) {
+	storeID, agreementID = strings.TrimSpace(storeID), strings.TrimSpace(agreementID)
+	if storeID == "" || len(storeID) > 128 || agreementID == "" || expectedAgreementVersion < 1 || !validStoreAgreementMutationHeaders(idempotencyKey, correlationID) || !validStoreAgreementReason(reason) {
 		return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementInvalidInput
 	}
-	joiningCase, err := postgres.ReadJoiningCaseForPartner(ctx, s.db, partner.Subject)
+	store, err := postgres.ReadStoreOwnedByPartner(ctx, s.db, storeID, partner.Subject)
 	if err != nil {
 		return wltintegration.StoreCommercialAgreement{}, false, err
 	}
-	if joiningCase.Case.State != "approved" || joiningCase.Case.StoreID == "" || joiningCase.Case.PartnerActorID != partner.Subject {
-		return wltintegration.StoreCommercialAgreement{}, false, ErrStoreAgreementState
-	}
-	agreements, err := s.wlt.ReadStoreCommercialAgreements(ctx, joiningCase.Case.StoreID)
+	agreements, err := s.wlt.ReadStoreCommercialAgreements(ctx, store.ID)
 	if err != nil {
 		return wltintegration.StoreCommercialAgreement{}, false, err
 	}
@@ -185,7 +180,7 @@ func (s *Service) AcceptStoreCommercialAgreementForPartner(ctx context.Context, 
 			break
 		}
 	}
-	if selected == nil || selected.StoreID != joiningCase.Case.StoreID || selected.PartnerActorID != partner.Subject {
+	if selected == nil || selected.StoreID != store.ID || selected.PartnerActorID != partner.Subject {
 		return wltintegration.StoreCommercialAgreement{}, false, postgres.ErrJoiningCaseNotFound
 	}
 	// WLT checks the transition and recognizes retries before checking status.
@@ -193,7 +188,7 @@ func (s *Service) AcceptStoreCommercialAgreementForPartner(ctx context.Context, 
 	if err != nil {
 		return wltintegration.StoreCommercialAgreement{}, false, err
 	}
-	if agreement.AgreementID != selected.AgreementID || agreement.StoreID != joiningCase.Case.StoreID || agreement.PartnerActorID != partner.Subject || agreement.PartnerAcceptedByActorID == nil || *agreement.PartnerAcceptedByActorID != partner.Subject || !partnerAgreementAcceptanceStatusConfirmed(agreement.Status, replayed) {
+	if agreement.AgreementID != selected.AgreementID || agreement.StoreID != store.ID || agreement.PartnerActorID != partner.Subject || agreement.PartnerAcceptedByActorID == nil || *agreement.PartnerAcceptedByActorID != partner.Subject || !partnerAgreementAcceptanceStatusConfirmed(agreement.Status, replayed) {
 		return wltintegration.StoreCommercialAgreement{}, false, errors.New("WLT agreement acceptance readback did not match the Partner owner")
 	}
 	return agreement, replayed, nil

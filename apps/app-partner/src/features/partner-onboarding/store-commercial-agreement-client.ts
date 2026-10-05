@@ -84,28 +84,39 @@ async function request<T>(path: string, method: "GET" | "POST", body?: unknown, 
   return payload as T;
 }
 
-export async function readOwnStoreCommercialAgreements(): Promise<ReadonlyArray<StoreCommercialAgreement>> {
-  const payload = await request<{ agreements?: unknown }>("/dsh/joining-cases/self/commercial-agreements", "GET");
+export async function readOwnStoreCommercialAgreements(storeID: string): Promise<ReadonlyArray<StoreCommercialAgreement>> {
+  const normalizedStoreID = storeID.trim();
+  if (!normalizedStoreID) throw new StoreCommercialAgreementRequestError(400, "INVALID_INPUT", "Store is required");
+  const payload = await request<{ agreements?: unknown }>(`/dsh/partner/stores/${encodeURIComponent(normalizedStoreID)}/commercial-agreements`, "GET");
   if (!Array.isArray(payload?.agreements) || !payload.agreements.every(isAgreement)) {
     throw new StoreCommercialAgreementRequestError(502, "INVALID_RESPONSE", "DSH returned an invalid Store commercial agreement list");
+  }
+  if (payload.agreements.some((agreement) => agreement.storeId !== normalizedStoreID)) {
+    throw new StoreCommercialAgreementRequestError(502, "STORE_SCOPE_MISMATCH", "DSH returned an agreement for another Store");
   }
   return payload.agreements;
 }
 
 export async function acceptOwnStoreCommercialAgreement(
+  storeID: string,
   agreementId: string,
   input: StoreCommercialAgreementAcceptance,
   idempotencyKey: string,
   correlationID: string,
 ): Promise<StoreCommercialAgreement> {
+  const normalizedStoreID = storeID.trim();
+  if (!normalizedStoreID) throw new StoreCommercialAgreementRequestError(400, "INVALID_INPUT", "Store is required");
   const payload = await request<{ agreement?: unknown }>(
-    `/dsh/joining-cases/self/commercial-agreements/${encodeURIComponent(agreementId)}/accept`,
+    `/dsh/partner/stores/${encodeURIComponent(normalizedStoreID)}/commercial-agreements/${encodeURIComponent(agreementId)}/accept`,
     "POST",
     input,
     { idempotencyKey, correlationID },
   );
   if (!isAgreement(payload?.agreement)) {
     throw new StoreCommercialAgreementRequestError(502, "INVALID_RESPONSE", "DSH returned an invalid Store commercial agreement acceptance");
+  }
+  if (payload.agreement.storeId !== normalizedStoreID) {
+    throw new StoreCommercialAgreementRequestError(502, "STORE_SCOPE_MISMATCH", "DSH returned an agreement for another Store");
   }
   return payload.agreement;
 }

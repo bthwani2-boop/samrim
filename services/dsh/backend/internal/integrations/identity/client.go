@@ -4,12 +4,18 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"regexp"
 	"strings"
 
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
 type ActorInput struct{ PhoneE164 string }
+
+var (
+	ErrInvitePhoneInvalid = errors.New("Store access invite phone is invalid")
+	ErrInviteActorMissing = errors.New("no Identity actor matches the Store access invite phone")
+)
 
 type Client struct{ inner *identityclient.Client }
 
@@ -83,6 +89,54 @@ func (c *Client) ProvisionFieldWithContext(ctx context.Context, input ActorInput
 
 func (c *Client) SearchFieldRolesByPhoneE164(ctx context.Context, phone string) (identityclient.ActorRoleSearchPage, error) {
 	return c.inner.SearchRolesAnyStatus(ctx, "field", strings.TrimSpace(phone))
+}
+
+func (c *Client) ResolvePartnerInviteByPhone(ctx context.Context, rawPhone string) (identityclient.ActorRoleView, error) {
+	phone, err := normalizeInvitePhoneE164(rawPhone)
+	if err != nil {
+		return identityclient.ActorRoleView{}, err
+	}
+	page, err := c.inner.SearchRolesAnyStatus(ctx, "client", phone)
+	if err != nil {
+		return identityclient.ActorRoleView{}, err
+	}
+	for _, role := range page.Items {
+		if role.PhoneE164 == phone && role.Role == "client" && role.ActorID != "" && role.SecurityEnabled {
+			return role, nil
+		}
+	}
+	return identityclient.ActorRoleView{}, ErrInviteActorMissing
+}
+
+var invitePhonePattern = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
+
+func normalizeInvitePhoneE164(raw string) (string, error) {
+	phone := strings.Map(func(r rune) rune {
+		switch {
+		case r >= '0' && r <= '9', r == '+':
+			return r
+		case r >= '\u0660' && r <= '\u0669':
+			return '0' + (r - '\u0660')
+		case r >= '\u06f0' && r <= '\u06f9':
+			return '0' + (r - '\u06f0')
+		case r == ' ' || r == '-' || r == '(' || r == ')':
+			return -1
+		default:
+			return r
+		}
+	}, strings.TrimSpace(raw))
+	switch {
+	case strings.HasPrefix(phone, "00"):
+		phone = "+" + strings.TrimPrefix(phone, "00")
+	case strings.HasPrefix(phone, "967"):
+		phone = "+" + phone
+	case strings.HasPrefix(phone, "7"):
+		phone = "+967" + phone
+	}
+	if !invitePhonePattern.MatchString(phone) {
+		return "", ErrInvitePhoneInvalid
+	}
+	return phone, nil
 }
 
 func (c *Client) ReadActorRole(ctx context.Context, actorID, role string) (identityclient.ActorRoleView, error) {

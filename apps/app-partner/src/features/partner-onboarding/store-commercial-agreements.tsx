@@ -66,12 +66,12 @@ function acceptanceErrorMessage(cause: unknown, hasSavedAttempt: boolean): strin
     : "تعذر تأكيد قبول الاتفاقية. أعد المحاولة بعد مراجعة التفاصيل.";
 }
 
-export function StoreCommercialAgreements() {
+export function StoreCommercialAgreements({ storeID }: { storeID: string }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const identity = currentIdentityState();
   const actorID = identity.kind === "authenticated" ? identity.identity.subject.trim() : "";
-  const storageKey = actorID ? `bthwani.partner.store-agreement.accept.pending.v1.${encodeURIComponent(actorID)}` : "";
+  const storageKey = actorID && storeID ? `bthwani.partner.store-agreement.accept.pending.v1.${encodeURIComponent(actorID)}.${encodeURIComponent(storeID)}` : "";
   const [agreements, setAgreements] = useState<ReadonlyArray<StoreCommercialAgreement> | null>(null);
   const [reasonByAgreement, setReasonByAgreement] = useState<Record<string, string>>({});
   const [pendingAttempt, setPendingAttempt] = useState<AcceptanceAttempt | null>(null);
@@ -104,7 +104,7 @@ export function StoreCommercialAgreements() {
         setPendingStorageReady(false);
         setError("تعذر قراءة متابعة القبول المحفوظة بأمان؛ أعد المحاولة قبل قبول أي اتفاقية.");
       }
-      const currentAgreements = await readOwnStoreCommercialAgreements();
+      const currentAgreements = await readOwnStoreCommercialAgreements(storeID);
       setAgreements(currentAgreements);
       if (savedAttempt) {
         const current = currentAgreements.find((item) => item.agreementId === savedAttempt?.agreementId);
@@ -126,7 +126,7 @@ export function StoreCommercialAgreements() {
     } finally {
       setLoading(false);
     }
-  }, [storageKey]);
+  }, [storageKey, storeID]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -160,11 +160,11 @@ export function StoreCommercialAgreements() {
         attemptSaved = true;
         setPendingAttempt(attempt);
       }
-      const accepted = await acceptOwnStoreCommercialAgreement(attempt.agreementId, {
+      const accepted = await acceptOwnStoreCommercialAgreement(storeID, attempt.agreementId, {
         expectedAgreementVersion: attempt.expectedAgreementVersion,
         reason: attempt.reason,
       }, attempt.idempotencyKey, attempt.correlationID);
-      if (accepted.agreementId !== attempt.agreementId || accepted.partnerActorId !== actorID ||
+      if (accepted.storeId !== storeID || accepted.agreementId !== attempt.agreementId || accepted.partnerActorId !== actorID ||
         accepted.agreementVersion < attempt.expectedAgreementVersion ||
         (accepted.status !== "PARTNER_ACCEPTED" && accepted.status !== "ACTIVE") ||
         !accepted.partnerAcceptedByActorId || accepted.partnerAcceptedByActorId !== actorID) {

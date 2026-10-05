@@ -1441,15 +1441,20 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
 
-  /dsh/joining-cases/self/commercial-agreements:
+  /dsh/partner/stores/{storeId}/commercial-agreements:
     get:
       operationId: readPartnerStoreCommercialAgreements
-      summary: Read Store-specific agreements for the authenticated Partner's own joining case
+      summary: Read Store-specific agreements for an owned Store
       security:
         - userBearer: []
+      parameters:
+        - name: storeId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
       responses:
         "200":
-          description: Agreement history for the Partner-owned Store.
+          description: Agreement history for the requested Partner-owned Store.
           content:
             application/json:
               schema:
@@ -1458,13 +1463,17 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
 
-  /dsh/joining-cases/self/commercial-agreements/{agreementId}/accept:
+  /dsh/partner/stores/{storeId}/commercial-agreements/{agreementId}/accept:
     post:
       operationId: acceptPartnerStoreCommercialAgreement
       summary: Accept one exact Store agreement version as the current Partner owner
       security:
         - userBearer: []
       parameters:
+        - name: storeId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
         - name: agreementId
           in: path
           required: true

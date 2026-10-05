@@ -8,6 +8,64 @@ import (
 	"testing"
 )
 
+func TestResolvePartnerInviteByPhoneUsesIdentityAndRequiresExactVerifiedActor(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/internal/actor-roles/search" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.URL.Query().Get("role"); got != "client" {
+			t.Fatalf("role query=%q", got)
+		}
+		if got := r.URL.Query().Get("q"); got != "+967777000002" {
+			t.Fatalf("phone query=%q", got)
+		}
+		if got := r.URL.Query().Get("limit"); got != "2" {
+			t.Fatalf("search limit=%q", got)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"items": []any{map[string]any{
+			"actorId": "act_employee", "phoneE164": "+967777000002", "role": "client", "enabled": true,
+			"securityEnabled": true, "actorVersion": 1, "roleVersion": 1,
+		}}})
+	}))
+	defer server.Close()
+	endpoint, err := ResolveBaseURL(server.URL, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := New(endpoint, "dsh-service-token-1234567890")
+	if err != nil {
+		t.Fatal(err)
+	}
+	actor, err := client.ResolvePartnerInviteByPhone(context.Background(), "00967 (777) 000-002")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actor.ActorID != "act_employee" || actor.PhoneE164 != "+967777000002" || !actor.SecurityEnabled {
+		t.Fatalf("resolved actor=%+v", actor)
+	}
+}
+
+func TestNormalizeInvitePhoneE164(t *testing.T) {
+	for _, test := range []struct{ input, want string }{
+		{"+967777000002", "+967777000002"},
+		{"00967 777 000 002", "+967777000002"},
+		{"967777000002", "+967777000002"},
+		{"777000002", "+967777000002"},
+		{"+٩٦٧٧٧٧٠٠٠٠٠٢", "+967777000002"},
+	} {
+		got, err := normalizeInvitePhoneE164(test.input)
+		if err != nil || got != test.want {
+			t.Errorf("normalizeInvitePhoneE164(%q)=(%q,%v), want %q", test.input, got, err, test.want)
+		}
+	}
+	for _, input := range []string{"", "abc", "+00000000", "+123"} {
+		if _, err := normalizeInvitePhoneE164(input); err == nil {
+			t.Errorf("normalizeInvitePhoneE164(%q) accepted invalid phone", input)
+		}
+	}
+}
+
 func TestDSHIdentityBoundaryPinsRoleAndUsesCredentialAsCallerIdentity(t *testing.T) {
 	t.Parallel()
 

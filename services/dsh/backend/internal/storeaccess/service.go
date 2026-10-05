@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"regexp"
 	"strings"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
@@ -31,7 +32,7 @@ func New(identity *identityintegration.Client, db *sql.DB) (*Service, error) {
 	return &Service{identity: identity, db: db}, nil
 }
 
-func (s *Service) CreateForPartner(ctx context.Context, accessToken, storeID, delegateActorID string, permissions []string, idempotencyKey, correlationID string) (postgres.StoreAccessGrant, bool, error) {
+func (s *Service) CreateForPartner(ctx context.Context, accessToken, storeID, delegatePhone string, permissions []string, idempotencyKey, correlationID string) (postgres.StoreAccessGrant, bool, error) {
 	actorID, err := s.partnerActor(ctx, accessToken)
 	if err != nil {
 		return postgres.StoreAccessGrant{}, false, err
@@ -39,21 +40,22 @@ func (s *Service) CreateForPartner(ctx context.Context, accessToken, storeID, de
 	if !validMutation(idempotencyKey, correlationID) {
 		return postgres.StoreAccessGrant{}, false, ErrInvalidInput
 	}
-	delegateActorID = strings.TrimSpace(delegateActorID)
-	if delegateActorID == "" || len(delegateActorID) > 128 {
-		return postgres.StoreAccessGrant{}, false, ErrInvalidInput
-	}
-	resolvedActor, err := s.identity.ReadCanonicalActor(ctx, delegateActorID)
+	resolvedActor, err := s.identity.ResolvePartnerInviteByPhone(ctx, delegatePhone)
 	if err != nil {
+		if errors.Is(err, identityintegration.ErrInvitePhoneInvalid) || errors.Is(err, identityintegration.ErrInviteActorMissing) {
+			return postgres.StoreAccessGrant{}, false, ErrInvalidInput
+		}
 		return postgres.StoreAccessGrant{}, false, err
-	}
-	if resolvedActor.ActorID != delegateActorID {
-		return postgres.StoreAccessGrant{}, false, postgres.ErrStoreAccessForbidden
 	}
 	if !resolvedActor.SecurityEnabled {
 		return postgres.StoreAccessGrant{}, false, ErrActorSecurityDisabled
 	}
-	return postgres.CreateStoreAccessInvitation(ctx, s.db, storeID, actorID, delegateActorID, permissions, idempotencyKey, correlationID)
+	grant, replayed, err := postgres.CreateStoreAccessInvitation(ctx, s.db, storeID, actorID, resolvedActor.ActorID, permissions, idempotencyKey, correlationID)
+	if err != nil {
+		return postgres.StoreAccessGrant{}, false, err
+	}
+	grant.DelegatePhoneMasked = maskStoreAccessPhone(resolvedActor.PhoneE164)
+	return grant, replayed, nil
 }
 
 func (s *Service) ListForOwner(ctx context.Context, accessToken, storeID string) ([]postgres.StoreAccessGrant, error) {
@@ -61,7 +63,11 @@ func (s *Service) ListForOwner(ctx context.Context, accessToken, storeID string)
 	if err != nil {
 		return nil, err
 	}
-	return postgres.ListStoreAccessGrants(ctx, s.db, storeID, actorID)
+	grants, err := postgres.ListStoreAccessGrants(ctx, s.db, storeID, actorID)
+	if err != nil {
+		return nil, err
+	}
+	return s.addMaskedDelegatePhones(ctx, grants)
 }
 
 func (s *Service) ListForDelegate(ctx context.Context, accessToken string) ([]postgres.StoreAccessGrant, error) {
@@ -320,4 +326,48 @@ func validMutation(idempotencyKey, correlationID string) bool {
 func identityNotFound(err error) bool {
 	var identityErr *identityclient.Error
 	return errors.As(err, &identityErr) && identityErr.Status == 404
+}
+
+var storeAccessPhoneE164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
+
+func (s *Service) addMaskedDelegatePhones(ctx context.Context, grants []postgres.StoreAccessGrant) ([]postgres.StoreAccessGrant, error) {
+	actorIDs := make([]string, 0, len(grants))
+	seen := make(map[string]struct{}, len(grants))
+	for _, grant := range grants {
+		if grant.DelegateActorID == "" {
+			continue
+		}
+		if _, exists := seen[grant.DelegateActorID]; exists {
+			continue
+		}
+		seen[grant.DelegateActorID] = struct{}{}
+		actorIDs = append(actorIDs, grant.DelegateActorID)
+	}
+	phones := make(map[string]string, len(actorIDs))
+	for start := 0; start < len(actorIDs); start += 100 {
+		end := start + 100
+		if end > len(actorIDs) {
+			end = len(actorIDs)
+		}
+		roles, err := s.identity.ReadActorRoles(ctx, "client", actorIDs[start:end])
+		if err != nil {
+			return nil, err
+		}
+		for _, role := range roles.Items {
+			if role.Role == "client" && role.ActorID != "" && storeAccessPhoneE164Pattern.MatchString(role.PhoneE164) {
+				phones[role.ActorID] = maskStoreAccessPhone(role.PhoneE164)
+			}
+		}
+	}
+	for index := range grants {
+		grants[index].DelegatePhoneMasked = phones[grants[index].DelegateActorID]
+	}
+	return grants, nil
+}
+
+func maskStoreAccessPhone(phone string) string {
+	if len(phone) <= 6 {
+		return "***"
+	}
+	return phone[:4] + strings.Repeat("*", len(phone)-7) + phone[len(phone)-3:]
 }

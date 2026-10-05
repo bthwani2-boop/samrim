@@ -27,7 +27,8 @@ export function PartnerStoreScopeProvider({ children }: { children: ReactNode })
       return;
     }
     if (selectedStoreID && stores.some((store) => store.id === selectedStoreID)) return;
-    setSelectedStoreID((stores.find((store) => store.owned) ?? stores[0]).id);
+    const defaultStore = stores.find((store) => store.owned) ?? stores[0];
+    if (defaultStore) setSelectedStoreID(defaultStore.id);
   }, [selectedStoreID, stores]);
 
   const value = useMemo<PartnerStoreScopeContextValue>(() => ({
