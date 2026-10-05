@@ -20,8 +20,8 @@ type StoreAccessServer struct {
 }
 
 type storeAccessCreateRequest struct {
-	DelegateActorID string   `json:"delegateActorId"`
-	Permissions     []string `json:"permissions"`
+	DelegatePhoneE164 string   `json:"delegatePhoneE164"`
+	Permissions       []string `json:"permissions"`
 }
 
 type storeAccessTransitionRequest struct {
@@ -109,7 +109,7 @@ func (s *StoreAccessServer) createForOwner(w http.ResponseWriter, r *http.Reques
 	if !decodeJSON(w, r, &request) {
 		return
 	}
-	grant, replayed, err := s.service.CreateForPartner(r.Context(), bearerToken(r), r.PathValue("storeId"), request.DelegateActorID, request.Permissions, idempotencyKey, correlationID)
+	grant, replayed, err := s.service.CreateForPartner(r.Context(), bearerToken(r), r.PathValue("storeId"), request.DelegatePhoneE164, request.Permissions, idempotencyKey, correlationID)
 	if err != nil {
 		writeStoreAccessError(w, err)
 		return

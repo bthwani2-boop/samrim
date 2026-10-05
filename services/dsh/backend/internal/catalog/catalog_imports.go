@@ -29,12 +29,16 @@ func (s *Service) PreviewCatalogImport(ctx context.Context, actingActorID string
 	seen := make(map[string]struct{}, len(input.Rows))
 	for _, row := range input.Rows {
 		item := postgres.CatalogImportItemRecord{RowNumber: row.RowNumber, StableKey: strings.TrimSpace(row.StableKey), Classification: "READY"}
-		item.Input = postgres.CatalogProductInput{VerticalID: row.VerticalID, Scope: row.Scope, StoreID: row.StoreID, CanonicalName: row.CanonicalName, Brand: optionalImportPointer(row.Brand), VariantTitle: row.VariantTitle, MeasurementKind: string(row.MeasurementKind), BaseUnit: string(row.BaseUnit), CategoryIDs: row.CategoryIds, AttributeValues: catalogImportAttributeInputs(row.AttributeValues), VariantAttributeValues: catalogImportAttributeInputs(row.VariantAttributeValues), IdentifierType: row.IdentifierType, IdentifierValue: row.IdentifierValue}
+		item.Input = postgres.CatalogProductInput{VerticalID: row.VerticalID, Scope: row.Scope, CanonicalName: row.CanonicalName, Brand: optionalImportPointer(row.Brand), VariantTitle: row.VariantTitle, MeasurementKind: string(row.MeasurementKind), BaseUnit: string(row.BaseUnit), CategoryIDs: row.CategoryIds, AttributeValues: catalogImportAttributeInputs(row.AttributeValues), VariantAttributeValues: catalogImportAttributeInputs(row.VariantAttributeValues), IdentifierType: row.IdentifierType, IdentifierValue: row.IdentifierValue}
 		normalized, err := normalizeCatalogProductInput(item.Input)
 		if err != nil || item.RowNumber < 1 || item.StableKey == "" {
 			item.Classification = "INVALID_INPUT"
 			item.ErrorCode = stringPtr("INVALID_INPUT")
 			item.ErrorMessage = stringPtr(importErrorMessage(err))
+		} else if normalized.Scope != "SHARED" {
+			item.Classification = "INVALID_INPUT"
+			item.ErrorCode = stringPtr("OWNERSHIP_INVALID")
+			item.ErrorMessage = stringPtr("the central registry import admits SHARED rows only; Store-scoped products are created through their Store catalog owners")
 		} else {
 			item.Input = normalized
 			if _, duplicate := seen[item.StableKey]; duplicate {

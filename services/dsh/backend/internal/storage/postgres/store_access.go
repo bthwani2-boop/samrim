@@ -20,6 +20,7 @@ type StoreAccessGrant struct {
 	StoreName           string     `json:"storeName"`
 	OwnerPartnerActorID string     `json:"ownerPartnerActorId"`
 	DelegateActorID     string     `json:"delegateActorId"`
+	DelegatePhoneMasked string     `json:"delegatePhoneMasked,omitempty"`
 	Permissions         []string   `json:"permissions"`
 	State               string     `json:"state"`
 	Version             int        `json:"version"`

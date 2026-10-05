@@ -16,8 +16,8 @@ func (s *JoiningCaseServer) RegisterStoreCommercialAgreementRoutes(mux *http.Ser
 	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}/commercial-agreements", s.readFieldStoreCommercialAgreements)
 	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}/commercial-agreement-defaults", s.readFieldStoreCommissionDefaults)
 	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/commercial-agreements", s.proposeFieldStoreCommercialAgreement)
-	mux.HandleFunc("GET /dsh/joining-cases/self/commercial-agreements", s.readPartnerStoreCommercialAgreements)
-	mux.HandleFunc("POST /dsh/joining-cases/self/commercial-agreements/{agreementId}/accept", s.acceptPartnerStoreCommercialAgreement)
+	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/commercial-agreements", s.readPartnerStoreCommercialAgreements)
+	mux.HandleFunc("POST /dsh/partner/stores/{storeId}/commercial-agreements/{agreementId}/accept", s.acceptPartnerStoreCommercialAgreement)
 	mux.HandleFunc("GET /dsh/operator/stores/{storeId}/commercial-agreements", s.readFinanceStoreCommercialAgreements)
 	mux.HandleFunc("GET /dsh/operator/store-commercial-agreements", s.listFinanceStoreCommercialAgreements)
 	mux.HandleFunc("POST /dsh/operator/stores/{storeId}/commercial-agreements/{agreementId}/decision", s.decideFinanceStoreCommercialAgreement)
@@ -85,7 +85,7 @@ func (s *JoiningCaseServer) proposeFieldStoreCommercialAgreement(w http.Response
 }
 
 func (s *JoiningCaseServer) readPartnerStoreCommercialAgreements(w http.ResponseWriter, r *http.Request) {
-	agreements, err := s.service.ReadStoreCommercialAgreementsForPartner(r.Context(), bearerToken(r))
+	agreements, err := s.service.ReadStoreCommercialAgreementsForPartner(r.Context(), bearerToken(r), r.PathValue("storeId"))
 	if err != nil {
 		writeStoreCommercialAgreementError(w, err)
 		return
@@ -112,7 +112,7 @@ func (s *JoiningCaseServer) acceptPartnerStoreCommercialAgreement(w http.Respons
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	agreement, replayed, err := s.service.AcceptStoreCommercialAgreementForPartner(r.Context(), bearerToken(r), r.PathValue("agreementId"), input.ExpectedAgreementVersion, input.Reason, idempotency, correlation)
+	agreement, replayed, err := s.service.AcceptStoreCommercialAgreementForPartner(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("agreementId"), joiningcase.StoreCommercialAgreementAcceptanceInput{ExpectedAgreementVersion: input.ExpectedAgreementVersion, Reason: input.Reason, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writeStoreCommercialAgreementError(w, err)
 		return

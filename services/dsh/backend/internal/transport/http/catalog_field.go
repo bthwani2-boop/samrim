@@ -16,6 +16,8 @@ func (s *CatalogServer) registerFieldCatalog(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/catalog/products", s.createFieldInitialCatalogProduct)
 	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/catalog/offers", s.createFieldInitialCatalogOffer)
 	mux.HandleFunc("PATCH /dsh/field/joining-cases/{caseId}/catalog/offers/{offerId}", s.updateFieldInitialCatalogOffer)
+	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}/catalog/quick-prices", s.listFieldQuickPrices)
+	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/catalog/quick-prices/commit", s.commitFieldQuickPrices)
 	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/catalog/imports/preview", s.previewFieldStoreCatalogImport)
 	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}/catalog/imports/{runId}", s.readFieldStoreCatalogImport)
 	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/catalog/imports/{runId}/commit", s.commitFieldStoreCatalogImport)
@@ -174,4 +176,56 @@ func (s *CatalogServer) updateFieldInitialCatalogOffer(w http.ResponseWriter, r 
 		return
 	}
 	writeOffer(w, http.StatusOK, result)
+}
+
+func (s *CatalogServer) listFieldQuickPrices(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "field session is required")
+		return
+	}
+	limit := 50
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 100 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "limit must be between 1 and 100")
+			return
+		}
+		limit = parsed
+	}
+	filters := postgres.CatalogQuickPriceFilters{Query: r.URL.Query().Get("q"), CategoryID: r.URL.Query().Get("categoryId"), Availability: r.URL.Query().Get("availability"), PublicationState: r.URL.Query().Get("publicationState")}
+	page, err := s.service.ListQuickPricesForField(r.Context(), bearerToken(r), r.PathValue("caseId"), filters, limit, r.URL.Query().Get("cursor"))
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeOffers(w, http.StatusOK, page)
+}
+
+func (s *CatalogServer) commitFieldQuickPrices(w http.ResponseWriter, r *http.Request) {
+	correlation, idempotency, _, ok := requiredPartnerOfferHeaders(w, r, false)
+	if !ok {
+		return
+	}
+	var input contract.CatalogQuickPriceCommitRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	changes := make([]postgres.CatalogQuickPriceUpdateInput, len(input.Items))
+	for index, item := range input.Items {
+		changes[index] = postgres.CatalogQuickPriceUpdateInput{OfferID: item.OfferID, ExpectedVersion: item.ExpectedVersion, PriceMinor: int64(item.PriceMinor)}
+	}
+	results, err := s.service.UpdateQuickPricesForField(r.Context(), bearerToken(r), r.PathValue("caseId"), changes, idempotency, correlation)
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	items := make([]contract.CatalogQuickPriceUpdateResult, len(results))
+	for index, item := range results {
+		result := contract.CatalogQuickPriceUpdateResult{OfferID: item.OfferID, Outcome: item.Outcome}
+		if item.Offer != nil {
+			result.Offer = toStoreOffer(*item.Offer)
+		}
+		items[index] = result
+	}
+	writeJSON(w, http.StatusOK, contract.CatalogQuickPriceCommitResponse{Items: items})
 }

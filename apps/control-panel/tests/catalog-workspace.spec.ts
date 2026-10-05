@@ -24,7 +24,7 @@ test("catalog center opens its product registry and exposes resource tabs", asyn
   await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "الكتالوج", exact: true })).toHaveAttribute("aria-current", "location");
   const sideNavigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
   const catalogTabs = page.getByRole("navigation", { name: "مسارات الكتالوج" });
-  for (const [label, href] of [["المنتجات", "/catalog/products"], ["الفئات", "/catalog/categories"], ["المقترحات", "/catalog/proposals"], ["الاستيراد", "/catalog/import"]] as const) {
+  for (const [label, href] of [["المنتجات", "/catalog/products"], ["الفئات", "/catalog/categories"], ["المراجعة", "/catalog/proposals"], ["الاستيراد", "/catalog/import"]] as const) {
     await expect(catalogTabs.getByRole("link", { name: label, exact: true })).toHaveAttribute("href", href);
     await expect(sideNavigation.getByRole("link", { name: label, exact: true })).toHaveCount(0);
   }
@@ -114,7 +114,7 @@ test("catalog XLSX import commits ready rows while preserving conflicts", async 
 
 test("operator sees shared product categories as a hierarchy under their commerce vertical", async ({ page }) => {
   await stubAuthenticatedSession(page);
-  const vertical = { id: "grocery", nameAr: "المقاضي", nameEn: "Groceries", catalogModel: "SHARED_CATALOG", active: true, version: 1, createdAt: "2026-09-18T00:00:00.000Z", updatedAt: "2026-09-18T00:00:00.000Z" };
+  const vertical = { id: "grocery", nameAr: "المقاضي", nameEn: "Groceries", active: true, version: 1, createdAt: "2026-09-18T00:00:00.000Z", updatedAt: "2026-09-18T00:00:00.000Z" };
   const root = { id: "grocery-drinks", verticalId: "grocery", parentCategoryId: null, nameAr: "مشروبات", nameEn: "Beverages", pathAr: "المقاضي / مشروبات", pathEn: "Groceries / Beverages", active: true, version: 1, createdAt: vertical.createdAt, updatedAt: vertical.updatedAt };
   const child = { id: "grocery-coffee", verticalId: "grocery", parentCategoryId: root.id, nameAr: "قهوة", nameEn: "Coffee", pathAr: "المقاضي / مشروبات / قهوة", pathEn: "Groceries / Beverages / Coffee", active: true, version: 1, createdAt: vertical.createdAt, updatedAt: vertical.updatedAt };
   await page.route("**/api/catalog/verticals**", async (route) => {
@@ -173,7 +173,7 @@ test("catalog proposal review shows detail and re-reads after approval", async (
      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ proposals: queueRead < 3 ? [proposal] : [] }) });
   });
   await page.route("**/api/catalog/verticals", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", catalogModel: "SHARED_CATALOG", active: true, version: 1, createdAt: "2026-09-18T00:00:00.000Z", updatedAt: "2026-09-18T00:00:00.000Z" }] }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", active: true, version: 1, createdAt: "2026-09-18T00:00:00.000Z", updatedAt: "2026-09-18T00:00:00.000Z" }] }) });
   });
   await page.route("**/api/catalog/categories/coffee", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ category: { id: "coffee", verticalId: "grocery", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", pathAr: "قهوة", pathEn: "Coffee", active: true, version: 1, createdAt: "2026-09-18T00:00:00.000Z", updatedAt: "2026-09-18T00:00:00.000Z" } }) });

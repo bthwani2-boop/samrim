@@ -33,8 +33,8 @@ paths:
   /dsh/partner/stores/{storeId}/access/invitations:
     post:
       operationId: createPartnerStoreAccessInvitation
-      summary: Invite a canonical Human Actor to one Store with bounded permissions
-      description: Creates a pending invitation with bounded permissions. The invitee must accept it before any Partner-role admission or Store access can begin.
+      summary: Invite a verified Human Actor by phone to one Store with bounded permissions
+      description: DSH resolves the submitted phone through Identity and stores the canonical Actor internally. The invitee must accept before any Partner-role admission or Store access can begin.
       security: [{ userBearer: [] }]
       parameters:
         - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"

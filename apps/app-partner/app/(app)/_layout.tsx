@@ -3,6 +3,7 @@ import { AuthenticatedMobileBoundary } from "@bthwani/identity/presentation";
 import { type Href, Tabs, usePathname, useRouter } from "expo-router";
 import { useCallback, useMemo } from "react";
 import { currentIdentityState, restoreIdentitySession, subscribeIdentitySession } from "../../src/bootstrap/identity";
+import { PartnerStoreScopeProvider } from "../../src/features/partner-onboarding/partner-store-scope-context";
 import { createPartnerTabOptions } from "../../src/shell/partner-shell";
 
 const identity = { restoreIdentitySession, currentIdentityState, subscribe: subscribeIdentitySession };
@@ -16,5 +17,5 @@ export default function PartnerAppLayout() {
     router.replace(pathname === "/" ? "/" : `/?returnTo=${encodeURIComponent(pathname)}` as Href);
   }, [pathname, router]);
   const tabs = <Tabs screenOptions={tabOptions}><Tabs.Screen name="store" options={{ title: "المتجر", tabBarAccessibilityLabel: "إدارة المتجر" }} /><Tabs.Screen name="orders" options={{ title: "الطلبات", tabBarAccessibilityLabel: "طلبات المتجر" }} /><Tabs.Screen name="wallet" options={{ title: "المحفظة", tabBarAccessibilityLabel: "محفظة الشريك" }} /><Tabs.Screen name="account" options={{ title: "الحساب", tabBarAccessibilityLabel: "حساب الشريك" }} /><Tabs.Screen name="onboarding" options={{ href: null }} /></Tabs>;
-  return <AuthenticatedMobileBoundary binding={identity} onUnauthenticated={onUnauthenticated}>{tabs}</AuthenticatedMobileBoundary>;
+  return <AuthenticatedMobileBoundary binding={identity} onUnauthenticated={onUnauthenticated}><PartnerStoreScopeProvider>{tabs}</PartnerStoreScopeProvider></AuthenticatedMobileBoundary>;
 }

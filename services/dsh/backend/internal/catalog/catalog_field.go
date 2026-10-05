@@ -32,6 +32,22 @@ func (s *Service) ListFieldCatalog(ctx context.Context, accessToken, joiningCase
 	return FieldCatalogReadback{Scope: scope, Products: products, Offers: offers}, nil
 }
 
+func (s *Service) ListQuickPricesForField(ctx context.Context, accessToken, joiningCaseID string, filters postgres.CatalogQuickPriceFilters, limit int, cursor string) (postgres.CatalogStoreOfferPage, error) {
+	_, scope, err := s.requireFieldCatalog(ctx, accessToken, joiningCaseID)
+	if err != nil {
+		return postgres.CatalogStoreOfferPage{}, err
+	}
+	return postgres.ListCatalogQuickPriceOffers(ctx, s.db, scope.StoreID, filters, limit, cursor)
+}
+
+func (s *Service) UpdateQuickPricesForField(ctx context.Context, accessToken, joiningCaseID string, changes []postgres.CatalogQuickPriceUpdateInput, idempotencyKey, correlationID string) ([]postgres.CatalogQuickPriceUpdateResult, error) {
+	identity, scope, err := s.requireFieldCatalog(ctx, accessToken, joiningCaseID)
+	if err != nil {
+		return nil, err
+	}
+	return s.applyQuickPrices(ctx, identity, scope.StoreID, changes, idempotencyKey, correlationID)
+}
+
 func (s *Service) ResolveCatalogIdentifierForPartner(ctx context.Context, accessToken, storeID, identifierValue string) (postgres.CatalogIdentifierResolution, error) {
 	if _, err := s.requireStoreOwner(ctx, accessToken, storeID); err != nil {
 		return postgres.CatalogIdentifierResolution{}, err

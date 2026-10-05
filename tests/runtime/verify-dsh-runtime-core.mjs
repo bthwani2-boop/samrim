@@ -599,12 +599,12 @@ async function activateStoreCommercialAgreement(caseID, storeID, partnerActorID,
     fail("Field Store agreement proposal, idempotent replay, or DSH readback failed", JSON.stringify({ proposed, proposalReplay, fieldReadback }));
   }
 
-  const partnerRead = await request(dshBase, "GET", "/dsh/joining-cases/self/commercial-agreements", { token: partnerAccessToken });
+  const partnerRead = await request(dshBase, "GET", `/dsh/partner/stores/${encodeURIComponent(storeID)}/commercial-agreements`, { token: partnerAccessToken });
   const acceptHeaders = partnerHeaders(`runtime-agreement-accept-${agreementID}`);
   const acceptBody = { expectedAgreementVersion: expectedCurrentVersion + 1, reason: "Partner accepts the Store-specific commercial terms" };
-  const accepted = await request(dshBase, "POST", `/dsh/joining-cases/self/commercial-agreements/${encodeURIComponent(agreementID)}/accept`, { token: partnerAccessToken, headers: acceptHeaders, body: acceptBody });
-  const acceptedReplay = await request(dshBase, "POST", `/dsh/joining-cases/self/commercial-agreements/${encodeURIComponent(agreementID)}/accept`, { token: partnerAccessToken, headers: acceptHeaders, body: acceptBody });
-  const partnerReadback = await request(dshBase, "GET", "/dsh/joining-cases/self/commercial-agreements", { token: partnerAccessToken });
+  const accepted = await request(dshBase, "POST", `/dsh/partner/stores/${encodeURIComponent(storeID)}/commercial-agreements/${encodeURIComponent(agreementID)}/accept`, { token: partnerAccessToken, headers: acceptHeaders, body: acceptBody });
+  const acceptedReplay = await request(dshBase, "POST", `/dsh/partner/stores/${encodeURIComponent(storeID)}/commercial-agreements/${encodeURIComponent(agreementID)}/accept`, { token: partnerAccessToken, headers: acceptHeaders, body: acceptBody });
+  const partnerReadback = await request(dshBase, "GET", `/dsh/partner/stores/${encodeURIComponent(storeID)}/commercial-agreements`, { token: partnerAccessToken });
   if (partnerRead.status !== 200 || !partnerRead.body?.agreements?.some((item) => item.agreementId === agreementID && item.status === "PROPOSED") || accepted.status !== 200 || accepted.body?.agreement?.status !== "PARTNER_ACCEPTED" || accepted.body?.agreement?.partnerAcceptedByActorId !== partnerActorID || acceptedReplay.status !== 200 || acceptedReplay.body?.idempotentReplay !== true || partnerReadback.status !== 200 || !partnerReadback.body?.agreements?.some((item) => item.agreementId === agreementID && item.status === "PARTNER_ACCEPTED")) {
     fail("Partner Store agreement acceptance, replay, or readback failed", JSON.stringify({ partnerRead, accepted, acceptedReplay, partnerReadback }));
   }

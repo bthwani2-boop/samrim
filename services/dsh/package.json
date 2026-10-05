@@ -13,6 +13,10 @@
       "types": "./clients/mobile-store-access-invitations.tsx",
       "default": "./clients/mobile-store-access-invitations.tsx"
     },
+    "./mobile/store-quick-prices": {
+      "types": "./clients/mobile-store-quick-prices.tsx",
+      "default": "./clients/mobile-store-quick-prices.tsx"
+    },
     "./mobile/store-catalog-import": {
       "types": "./clients/mobile-store-catalog-import.tsx",
       "default": "./clients/mobile-store-catalog-import.tsx"

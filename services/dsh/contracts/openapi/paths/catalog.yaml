@@ -875,6 +875,44 @@ paths:
         "200": { description: Corrected Field-attributed initial StoreOffer readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogStoreOfferResponse" } } } }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
 
+  /dsh/field/joining-cases/{caseId}/catalog/quick-prices:
+    get:
+      operationId: listFieldQuickPrices
+      summary: Filter initial Store offers for Field bulk price maintenance before publication
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/JoiningCaseId"
+        - { name: q, in: query, required: false, schema: { type: string, maxLength: 160 } }
+        - { name: categoryId, in: query, required: false, schema: { type: string, maxLength: 128 } }
+        - { name: availability, in: query, required: false, schema: { type: string, enum: [all, available, unavailable], default: all } }
+        - { name: publicationState, in: query, required: false, schema: { type: string, enum: [all, draft, published, hidden], default: all } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 2048 } }
+      responses:
+        "200": { description: Filtered initial Store offers in stable order., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogStoreOfferListResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
+  /dsh/field/joining-cases/{caseId}/catalog/quick-prices/commit:
+    post:
+      operationId: commitFieldQuickPrices
+      summary: Apply versioned initial bulk price changes through the canonical StoreOffer mutation
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/JoiningCaseId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogQuickPriceCommitRequest" } }
+      responses:
+        "200": { description: Each update reports applied, replayed, or stale-version conflict status., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogQuickPriceCommitResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
   /dsh/field/joining-cases/{caseId}/catalog/imports/preview:
     post:
       operationId: previewFieldStoreCatalogImport
