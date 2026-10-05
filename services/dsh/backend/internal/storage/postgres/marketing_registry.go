@@ -46,7 +46,7 @@ func ListOperatorPromotionRegistry(ctx context.Context, db *sql.DB, query Operat
 	query.ServiceCityID = strings.TrimSpace(query.ServiceCityID)
 	query.Sort = strings.ToLower(strings.TrimSpace(query.Sort))
 	query.AfterID = strings.TrimSpace(query.AfterID)
-	validState := query.State == "" || query.State == "DRAFT" || query.State == "PUBLISHED" || query.State == "PAUSED"
+	validState := query.State == "" || query.State == "DRAFT" || query.State == "PUBLISHED" || query.State == "PAUSED" || query.State == "ENDED"
 	validSort := query.Sort == "starts_desc" || query.Sort == "starts_asc"
 	if db == nil || len(query.Search) > 512 || len(query.ServiceCityID) > 128 || !validState || !validSort || query.Limit < 1 || query.Limit > 100 || (query.AfterStartsAt == nil) != (query.AfterID == "") || len(query.AfterID) > 128 {
 		return OperatorPromotionRegistryPage{}, ErrPromotionInvalid
@@ -119,7 +119,7 @@ func ListOperatorDiscoveryContentRegistry(ctx context.Context, db *sql.DB, query
 	query.Kind = strings.ToUpper(strings.TrimSpace(query.Kind))
 	query.Sort = strings.ToLower(strings.TrimSpace(query.Sort))
 	query.AfterID = strings.TrimSpace(query.AfterID)
-	validState := query.State == "" || query.State == "DRAFT" || query.State == "PUBLISHED" || query.State == "PAUSED"
+	validState := query.State == "" || query.State == "DRAFT" || query.State == "PUBLISHED" || query.State == "PAUSED" || query.State == "ENDED"
 	validKind := query.Kind == "" || query.Kind == "BANNER" || query.Kind == "CAROUSEL" || query.Kind == "SHORT_FORM"
 	validSort := query.Sort == "priority" || query.Sort == "created_desc"
 	priorityCursorValid := (query.AfterOrdinal != nil && query.AfterStartsAt != nil && query.AfterCreatedAt == nil && query.AfterID != "") || (query.AfterOrdinal == nil && query.AfterStartsAt == nil && query.AfterCreatedAt == nil && query.AfterID == "")

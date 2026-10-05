@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +19,11 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
+)
+
+var (
+	errPartnerPromotionSession        = errors.New("an active app-partner session is required")
+	errPartnerPromotionStoreOwnership = errors.New("only the Store owner may manage its promotions")
 )
 
 type MarketingServer struct {
@@ -54,6 +60,130 @@ func (s *MarketingServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/operator/discovery-content/analytics", s.listOperatorDiscoveryContentAnalytics)
 	mux.HandleFunc("POST /dsh/operator/discovery-content", s.createOperatorDiscoveryContent)
 	mux.HandleFunc("POST /dsh/operator/discovery-content/{contentId}/publication", s.setOperatorDiscoveryContentPublication)
+	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/promotions", s.listPartnerStorePromotions)
+	mux.HandleFunc("POST /dsh/partner/stores/{storeId}/promotions", s.createPartnerStorePromotion)
+	mux.HandleFunc("POST /dsh/partner/stores/{storeId}/promotions/{promotionId}/state", s.setPartnerStorePromotionState)
+}
+
+func (s *MarketingServer) partnerSessionActorID(ctx context.Context, accessToken string) (string, error) {
+	identity, err := s.identity.ReadSession(ctx, strings.TrimSpace(accessToken))
+	if err != nil {
+		return "", errPartnerPromotionSession
+	}
+	actorID := strings.TrimSpace(identity.Subject)
+	if identity.Role != "partner" || identity.Surface != "app-partner" || actorID == "" {
+		return "", errPartnerPromotionSession
+	}
+	return actorID, nil
+}
+
+func (s *MarketingServer) requirePartnerStoreOwner(ctx context.Context, accessToken, storeID string) (string, error) {
+	actorID, err := s.partnerSessionActorID(ctx, accessToken)
+	if err != nil {
+		return "", err
+	}
+	store, err := postgres.ReadStore(ctx, s.db, storeID)
+	if err != nil {
+		return "", err
+	}
+	if store.PartnerActorID != actorID {
+		return "", errPartnerPromotionStoreOwnership
+	}
+	return actorID, nil
+}
+
+func (s *MarketingServer) listPartnerStorePromotions(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requirePartnerStoreOwner(r.Context(), bearerToken(r), r.PathValue("storeId")); err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	items, err := postgres.ListStorePromotions(r.Context(), s.db, r.PathValue("storeId"), 100)
+	if err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	values := make([]contract.PromotionView, 0, len(items))
+	for _, item := range items {
+		values = append(values, toPromotionView(item))
+	}
+	writeJSON(w, http.StatusOK, contract.OperatorPromotionRegistryResponse{Promotions: values, Limit: len(values)})
+}
+
+func (s *MarketingServer) createPartnerStorePromotion(w http.ResponseWriter, r *http.Request) {
+	correlationID, idempotencyKey, ok := storeAccessMutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	actorID, err := s.requirePartnerStoreOwner(r.Context(), bearerToken(r), r.PathValue("storeId"))
+	if err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	var input contract.CreatePromotionRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	var maxDiscount *int64
+	if input.MaxDiscountMinor > 0 {
+		value := int64(input.MaxDiscountMinor)
+		maxDiscount = &value
+	}
+	var limit *int64
+	if input.RedemptionLimit > 0 {
+		value := int64(input.RedemptionLimit)
+		limit = &value
+	}
+	startsAt := input.StartsAt
+	if startsAt.IsZero() {
+		startsAt = time.Now().UTC()
+	}
+	// Partner-authored Store promotions are partner-borne by definition; DSH binds
+	// the Store scope to the owned path Store and owns the funding source.
+	item, replayed, err := postgres.CreatePromotion(r.Context(), s.db, postgres.PromotionInput{
+		ID: input.ID, Code: input.Code, NameAr: input.NameAr, DescriptionAr: input.DescriptionAr, Kind: string(input.Kind), ValueMinor: int64(input.ValueMinor), MaxDiscountMinor: maxDiscount,
+		FundingSource: "PARTNER", StoreID: r.PathValue("storeId"), StartsAt: startsAt, EndsAt: input.EndsAt, RedemptionLimit: limit, CreatedByActorID: actorID,
+	}, idempotencyKey, postgres.HashMarketingFacts("promotion-create", input.ID, input.Code, input.NameAr, input.DescriptionAr, string(input.Kind), fmt.Sprint(input.ValueMinor), "PARTNER", r.PathValue("storeId"), "", startsAt.UTC().Format(time.RFC3339Nano), optionalTimeString(input.EndsAt), fmt.Sprint(input.RedemptionLimit), correlationID))
+	if err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	writeJSON(w, responseStatus(replayed), contract.PromotionResponse{Promotion: toPromotionView(item), IdempotentReplay: replayed})
+}
+
+func (s *MarketingServer) setPartnerStorePromotionState(w http.ResponseWriter, r *http.Request) {
+	correlationID, idempotencyKey, ok := storeAccessMutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	expected, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Version")))
+	if err != nil || expected < 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a positive X-Expected-Version is required")
+		return
+	}
+	if _, err := s.requirePartnerStoreOwner(r.Context(), bearerToken(r), r.PathValue("storeId")); err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	var input contract.MarketingPublicationRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	item, err := postgres.ReadPromotion(r.Context(), s.db, r.PathValue("promotionId"))
+	if err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	if item.StoreID != r.PathValue("storeId") {
+		writeMarketingError(w, postgres.ErrPromotionNotFound)
+		return
+	}
+	updated, replayed, err := postgres.SetPromotionState(r.Context(), s.db, item.ID, input.State, idempotencyKey, postgres.HashMarketingFacts("promotion-state", item.ID, input.State, fmt.Sprint(expected)), expected)
+	if err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	writeJSON(w, responseStatus(replayed), contract.PromotionResponse{Promotion: toPromotionView(updated), IdempotentReplay: replayed})
+	_ = correlationID
 }
 
 func (s *MarketingServer) listPublicPromotions(w http.ResponseWriter, r *http.Request) {
@@ -176,8 +306,10 @@ func (s *MarketingServer) createOperatorPromotion(w http.ResponseWriter, r *http
 	}
 	item, replayed, err := postgres.CreatePromotion(r.Context(), s.db, postgres.PromotionInput{
 		ID: input.ID, Code: input.Code, NameAr: input.NameAr, DescriptionAr: input.DescriptionAr, Kind: string(input.Kind), ValueMinor: int64(input.ValueMinor), MaxDiscountMinor: maxDiscount,
-		FundingSource: input.FundingSource, StoreID: input.StoreID, ServiceCityID: input.ServiceCityID, StartsAt: input.StartsAt, EndsAt: input.EndsAt, RedemptionLimit: limit, CreatedByActorID: acting,
-	}, idempotency, postgres.HashMarketingFacts("promotion-create", input.ID, input.Code, input.NameAr, input.DescriptionAr, string(input.Kind), fmt.Sprint(input.ValueMinor), input.FundingSource, input.StoreID, input.ServiceCityID, input.StartsAt.UTC().Format(time.RFC3339Nano), optionalTimeString(input.EndsAt), fmt.Sprint(input.RedemptionLimit), correlation))
+		// Store promotions are partner-borne by definition; the funding source is
+		// server-owned and clients cannot choose it.
+		FundingSource: "PARTNER", StoreID: input.StoreID, ServiceCityID: input.ServiceCityID, StartsAt: input.StartsAt, EndsAt: input.EndsAt, RedemptionLimit: limit, CreatedByActorID: acting,
+	}, idempotency, postgres.HashMarketingFacts("promotion-create", input.ID, input.Code, input.NameAr, input.DescriptionAr, string(input.Kind), fmt.Sprint(input.ValueMinor), "PARTNER", input.StoreID, input.ServiceCityID, input.StartsAt.UTC().Format(time.RFC3339Nano), optionalTimeString(input.EndsAt), fmt.Sprint(input.RedemptionLimit), correlation))
 	if err != nil {
 		writeMarketingError(w, err)
 		return
@@ -484,7 +616,7 @@ func (s *MarketingServer) ReconcileMediaStorage(ctx context.Context) error {
 }
 
 func toPromotionView(item postgres.PromotionRecord) contract.PromotionView {
-	return contract.PromotionView{ID: item.ID, Code: item.Code, NameAr: item.NameAr, DescriptionAr: item.DescriptionAr, Kind: contract.PromotionKind(item.Kind), ValueMinor: int(item.ValueMinor), MaxDiscountMinor: intValue(item.MaxDiscountMinor), FundingSource: item.FundingSource, StoreID: item.StoreID, ServiceCityID: item.ServiceCityID, State: contract.PromotionState(item.State), StartsAt: item.StartsAt, EndsAt: item.EndsAt, RedemptionLimit: intValue(item.RedemptionLimit), RedeemedCount: int(item.RedeemedCount), Version: item.Version, CreatedByActorID: item.CreatedByActorID, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	return contract.PromotionView{ID: item.ID, Code: item.Code, NameAr: item.NameAr, DescriptionAr: item.DescriptionAr, Kind: contract.PromotionKind(item.Kind), ValueMinor: int(item.ValueMinor), MaxDiscountMinor: intValue(item.MaxDiscountMinor), FundingSource: contract.PromotionFundingSource(item.FundingSource), FundingSharePartnerPercent: intPointer(item.FundingSharePartnerPercent), StoreID: item.StoreID, ServiceCityID: item.ServiceCityID, State: contract.PromotionState(item.State), StartsAt: item.StartsAt, EndsAt: item.EndsAt, RedemptionLimit: intValue(item.RedemptionLimit), RedeemedCount: int(item.RedeemedCount), Version: item.Version, CreatedByActorID: item.CreatedByActorID, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func toPublicPromotionView(item postgres.PromotionRecord) contract.PublicPromotionView {
@@ -506,6 +638,13 @@ func intValue(value *int64) int {
 	return int(*value)
 }
 
+func intPointer(value *int) int {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
 func optionalTimeString(value *time.Time) string {
 	if value == nil {
 		return ""
@@ -521,6 +660,8 @@ func writeMarketingError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "marketing record was not found")
 	case errors.Is(err, postgres.ErrPromotionCodeConflict):
 		writeError(w, http.StatusConflict, "PROMOTION_CODE_EXISTS", "promotion code already exists")
+	case errors.Is(err, postgres.ErrPromotionFundingNotSettleable):
+		writeError(w, http.StatusConflict, "PROMOTION_FUNDING_NOT_SETTLEABLE", "only partner-funded promotions are settleable until the WLT funding split is live")
 	case errors.Is(err, postgres.ErrPromotionIdempotencyConflict), errors.Is(err, postgres.ErrDiscoveryContentIdempotency):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "marketing mutation idempotency key conflicts with a prior request")
 	case errors.Is(err, postgres.ErrPromotionVersionConflict), errors.Is(err, postgres.ErrDiscoveryContentVersion):

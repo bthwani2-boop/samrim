@@ -47,14 +47,14 @@ export async function POST(request: Request) {
   const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() ?? "";
   if (idempotencyKey.length < 8 || idempotencyKey.length > 128) return errorResponse("INVALID_INPUT", "Idempotency-Key is required", 400);
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-  if (!body || typeof body.id !== "string" || !body.id.trim() || typeof body.code !== "string" || !body.code.trim() || typeof body.nameAr !== "string" || !body.nameAr.trim() || !["PERCENTAGE", "FIXED"].includes(String(body.kind)) || !Number.isSafeInteger(body.valueMinor) || Number(body.valueMinor) <= 0 || body.fundingSource !== "MERCHANT" || typeof body.startsAt !== "string" || !body.startsAt.trim()) return errorResponse("INVALID_INPUT", "promotion id, code, name, kind, value, fundingSource and startsAt are required", 400);
+  if (!body || typeof body.id !== "string" || !body.id.trim() || typeof body.code !== "string" || !body.code.trim() || typeof body.nameAr !== "string" || !body.nameAr.trim() || !["PERCENTAGE", "FIXED"].includes(String(body.kind)) || !Number.isSafeInteger(body.valueMinor) || Number(body.valueMinor) <= 0 || typeof body.startsAt !== "string" || !body.startsAt.trim()) return errorResponse("INVALID_INPUT", "promotion id, code, name, kind, value and startsAt are required", 400);
   const input: CreatePromotionRequest = {
     id: body.id.trim(),
     code: body.code.trim().toUpperCase(),
     nameAr: body.nameAr.trim(),
     kind: body.kind as CreatePromotionRequest["kind"],
     valueMinor: Number(body.valueMinor),
-    fundingSource: "MERCHANT",
+    fundingSource: "PARTNER",
     startsAt: body.startsAt.trim(),
     ...(typeof body.descriptionAr === "string" && body.descriptionAr.trim() ? { descriptionAr: body.descriptionAr.trim() } : {}),
     ...(Number.isSafeInteger(body.maxDiscountMinor) && Number(body.maxDiscountMinor) > 0 ? { maxDiscountMinor: Number(body.maxDiscountMinor) } : {}),
