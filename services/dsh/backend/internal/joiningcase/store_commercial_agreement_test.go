@@ -71,8 +71,10 @@ func TestFieldAgreementProposalCanAdvancePublishedStoreTerms(t *testing.T) {
 	if !fieldMayProposeStoreAgreement("published") {
 		t.Fatal("published Store could not start a WLT-versioned agreement proposal")
 	}
-	if fieldMayProposeStoreAgreement("hidden") {
-		t.Fatal("hidden store unexpectedly retained Field proposal authority")
+	// The durable mode path (unpublish, commit modes, fresh agreement version,
+	// republish) requires Field to propose while the Store is temporarily hidden.
+	if !fieldMayProposeStoreAgreement("hidden") {
+		t.Fatal("hidden Store lost Field proposal authority for the governed mode-change window")
 	}
 }
 
