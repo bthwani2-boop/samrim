@@ -3,6 +3,7 @@ import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-
 import { type BaseUnit, baseUnitLabel, type CatalogAttributeRule, type CatalogAttributeValueInput, type CatalogCategoryListResponse, type CatalogMedia, type CatalogProduct, type CatalogProductProposal, type CatalogStoreOffer, type CatalogVariant, type CommerceVertical, catalogProductProposalStateLabel, createDshMobileClient, type DshImageUploadInput, isMediaProvenanceInputValid, type MediaProvenanceInput, formatMoney, type MeasurementKind, measurementKindLabel as sharedMeasurementKindLabel, pricingBasisLabel as sharedPricingBasisLabel, quantityPolicyLabel as sharedQuantityPolicyLabel, storeOfferPublicationStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as DocumentPicker from "expo-document-picker";
+import { CameraView, useCameraPermissions } from "expo-camera";
 import { MobileStoreCatalogImportWorkspace } from "@bthwani/dsh/mobile/store-catalog-import";
 import * as ImagePicker from "expo-image-picker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -112,6 +113,10 @@ const theme = useAppearanceTheme();
   const [proposalNextCursor, setProposalNextCursor] = useState("");
   const [query, setQuery] = useState("");
   const [searchSubmitted, setSearchSubmitted] = useState(false);
+  const [identifier, setIdentifier] = useState("");
+  const [scanNotice, setScanNotice] = useState("");
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const searchSequence = useRef(0);
   const [selectedProduct, setSelectedProduct] = useState<CatalogProduct | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<CatalogVariant | null>(null);
@@ -247,6 +252,50 @@ const theme = useAppearanceTheme();
     setError("");
     try { const token = await getUsableIdentityAccessToken(); const result = await dshClient().listCatalogProducts(token, query, verticalId, 100, cursor); if (requestSequence === searchSequence.current) { setProducts((current) => append ? [...current, ...result.products] : result.products); setProductNextCursor(result.nextCursor ?? ""); } }
     catch (nextError) { if (requestSequence === searchSequence.current) { reportError(nextError); setError(errorText(nextError)); } }
+  }
+
+  async function resolveIdentifier(value = identifier) {
+    const normalized = value.trim();
+    if (busy || !normalized) return;
+    setBusy(true); setError(""); setScanNotice("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const response = await dshClient().resolveOwnStoreCatalogIdentifier(token, storeId, normalized);
+      const match = response.resolution;
+      if (match.outcome === "SHARED_PRODUCT_MATCH" || match.outcome === "STORE_LOCAL_PRODUCT_MATCH") {
+        const productsPage = await dshClient().listCatalogProducts(token, match.productName ?? "", verticalId, 100);
+        const product = productsPage.products.find((item) => item.id === match.productId);
+        const variant = product?.variants.find((item) => item.id === match.variantId);
+        if (!product || !variant) {
+          setScanNotice("عُثر على المنتج. ابحث باسمه في الكتالوج ثم اختر النسخة لإضافة عرضها.");
+        } else {
+          ++searchSequence.current;
+          setQuery(match.productName ?? product.canonicalName);
+          setProducts(productsPage.products);
+          setProductNextCursor(productsPage.nextCursor ?? "");
+          setSearchSubmitted(true);
+          selectProduct(product, variant);
+          setScanNotice(`${match.outcome === "SHARED_PRODUCT_MATCH" ? "منتج مشترك" : "منتج خاص بمتجرك"}: ${match.productName ?? product.canonicalName}. أكمل بيانات العرض ثم أضفه.`);
+        }
+      } else if (match.outcome === "EXISTING_STORE_OFFER") {
+        setScanNotice(`هذا المنتج له عرض قائم في متجرك${match.productName ? `: ${match.productName}` : ""}. عدّله من قائمة العروض أدناه.`);
+      } else if (match.outcome === "UNKNOWN_IDENTIFIER") {
+        setScanNotice("لم يُعثر على المعرّف. أنشئ منتجًا خاصًا بهذا المتجر من قسم منتجات المتجر، أو أرسل مقترحًا للمراجعة.");
+      } else if (match.outcome === "VARIABLE_MEASURE_IDENTIFIER") {
+        setScanNotice("هذا معرّف لمنتج بكمية متغيرة، ولا يمكن إنشاء عرض قابل للطلب حتى يكتمل مسار الكمية الفعلية.");
+      } else if (match.outcome === "UNAVAILABLE_IN_STORE") {
+        setScanNotice("هذا المعرّف مرتبط بمنتج خاص بمتجر آخر، ولا يمكن استخدامه في هذا المتجر.");
+      } else {
+        setScanNotice("المعرّف يطابق أكثر من نتيجة. أوقف استخدامه واطلب مراجعة هوية المنتج.");
+      }
+    } catch (nextError) { reportError(nextError); setError(errorText(nextError)); }
+    finally { setBusy(false); setCameraOpen(false); }
+  }
+
+  async function onBarcode(data: string) {
+    if (busy || !data.trim()) return;
+    setIdentifier(data.trim());
+    await resolveIdentifier(data.trim());
   }
 
   async function loadMoreProposals() {
@@ -591,6 +640,9 @@ const theme = useAppearanceTheme();
           return { uri: asset.uri, name: asset.name, ...(asset.mimeType ? { type: asset.mimeType } : {}) };
         }}
       /> : null}
+      {catalogReady ? <View style={styles.searchRow}><TextInput accessibilityLabel="الباركود أو SKU" autoCapitalize="characters" editable={!busy} onChangeText={(value) => { setIdentifier(value); setScanNotice(""); }} onSubmitEditing={() => void resolveIdentifier()} placeholder="امسح أو أدخل المعرّف" returnKeyType="search" value={identifier} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={busy || !identifier.trim()} label="حلّ المعرّف" onPress={() => void resolveIdentifier()} variant="secondary" /><BthwaniButton disabled={busy} label={cameraOpen ? "إغلاق الكاميرا" : "مسح بالكاميرا"} onPress={async () => { if (cameraOpen) { setCameraOpen(false); return; } if (!cameraPermission?.granted) { const permission = await requestCameraPermission(); if (!permission.granted) { setError("يلزم السماح للكاميرا لمسح الباركود."); return; } } setCameraOpen(true); }} variant="secondary" /></View> : null}
+      {cameraOpen ? <CameraView style={styles.camera} facing="back" barcodeScannerSettings={{ barcodeTypes: ["ean13", "ean8", "upc_a", "upc_e", "code128"] }} onBarcodeScanned={({ data }) => { setCameraOpen(false); void onBarcode(data); }} /> : null}
+      {scanNotice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.muted}>{scanNotice}</Text> : null}
        {catalogReady ? <View style={styles.searchRow}><TextInput accessibilityLabel="البحث في الكتالوج" editable={!busy} onChangeText={setQuery} onSubmitEditing={() => void searchProducts()} placeholder="ابحث باسم المنتج" returnKeyType="search" value={query} style={[styles.input, busy && styles.disabledInput]} />{query ? <BthwaniButton accessibilityLabel="مسح البحث" disabled={busy} label="مسح" onPress={() => { ++searchSequence.current; setQuery(""); setProducts([]); setProductNextCursor(""); setSearchSubmitted(false); setError(""); }} style={styles.clearSearch} variant="quiet" /> : null}<BthwaniButton busy={busy} disabled={busy} label="بحث" onPress={() => void searchProducts()} variant="secondary" /></View> : null}
       {searchSubmitted && !products.length && !error ? <Text style={styles.muted}>لا توجد نتائج مطابقة. جرّب اسمًا آخر أو امسح البحث.</Text> : null}
        {catalogReady && products.length ? <><View style={styles.productList}>{products.map((product) => { const primaryMedia = getPrimaryMedia(product.media); return <View key={product.id} style={styles.product}><View style={styles.productHeader}>{primaryMedia ? <Image accessibilityLabel={`صورة ${product.canonicalName}`} source={{ uri: primaryMedia.uri }} resizeMode="cover" style={styles.productImage} /> : <View accessibilityLabel={`لا توجد صورة لـ ${product.canonicalName}`} style={styles.productImagePlaceholder}><Text style={styles.imagePlaceholderText}>لا توجد صورة</Text></View>}<View style={styles.productCopy}><Text style={styles.itemTitle}>{product.canonicalName}</Text><Text style={styles.muted}>{product.variants.length} نسخة متاحة للاختيار</Text></View></View>{product.variants.map((variant) => <BthwaniChip key={variant.id} label={`${variant.title} · ${measurementKindLabel(variant.measurementKind, variant.baseUnit)}`} onPress={() => selectProduct(product, variant)} selected={selectedVariant?.id === variant.id} />)}</View>; })}</View>{productNextCursor ? <BthwaniButton busy={busy} disabled={busy} label="تحميل المزيد من المنتجات" onPress={() => void searchProducts(productNextCursor, true)} variant="secondary" /> : null}</> : null}
@@ -618,6 +670,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     muted: { ...typography.bodySm, color: theme.colorMuted },
     selected: { ...typography.bodySm, color: theme.color },
     searchRow: { flexDirection: "row", gap: spacing[2] },
+    camera: { borderRadius: radius.md, height: 230, overflow: "hidden", width: "100%" },
     clearSearch: { alignItems: "center", justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[1] },
     form: { gap: spacing[2] },
     fieldLabel: { ...typography.label, color: theme.color },

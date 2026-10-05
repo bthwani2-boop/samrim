@@ -959,6 +959,12 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalizedCase || !normalizedIdentifier || normalizedIdentifier.length > 128) throw new Error("DSH_FIELD_CATALOG_IDENTIFIER_INVALID");
       return userRequest<CatalogIdentifierResolveResponse>(accessToken, dshOperationPaths.resolveFieldCatalogIdentifier.path, dshOperationPaths.resolveFieldCatalogIdentifier.method, { joiningCaseId: normalizedCase, identifierValue: normalizedIdentifier });
     },
+    async resolveOwnStoreCatalogIdentifier(accessToken: string, storeID: string, identifierValue: string): Promise<CatalogIdentifierResolveResponse> {
+      const normalizedStore = storeID.trim();
+      const normalizedIdentifier = identifierValue.trim();
+      if (!normalizedStore || !normalizedIdentifier || normalizedIdentifier.length > 128) throw new Error("DSH_STORE_CATALOG_IDENTIFIER_INVALID");
+      return userRequest<CatalogIdentifierResolveResponse>(accessToken, dshOperationPaths.resolveCatalogIdentifier.path, dshOperationPaths.resolveCatalogIdentifier.method, { storeId: normalizedStore, identifierValue: normalizedIdentifier });
+    },
     async createFieldCatalogProduct(accessToken: string, caseID: string, input: CreateFieldCatalogProductRequest, idempotencyKey?: string, correlationID?: string): Promise<CatalogProductResponse> {
       const normalizedCase = caseID.trim();
       const canonicalName = input.canonicalName.trim();
