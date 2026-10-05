@@ -119,6 +119,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /wlt/v1/official-wallet-destinations/{actorType}/{actorId}", s.readOfficialWalletDestination)
 	mux.HandleFunc("GET /wlt/v1/official-wallet-destinations/by-id/{destinationId}", s.readOfficialWalletDestinationByID)
 	mux.HandleFunc("POST /wlt/v1/payout-intents", s.createPayoutIntent)
+	s.registerStorePayoutRecipientRoutes(mux)
 	mux.HandleFunc("GET /wlt/v1/payout-state/{actorType}/{actorId}", s.readPayoutState)
 	mux.HandleFunc("GET /wlt/v1/operator/payout-requests", s.listPayoutRequests)
 	mux.HandleFunc("GET /wlt/v1/operator/beneficiaries", s.listBeneficiaryPayoutStates)

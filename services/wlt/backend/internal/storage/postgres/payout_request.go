@@ -141,6 +141,11 @@ func CreatePayoutIntent(ctx context.Context, db *sql.DB, cipher *DestinationCiph
 		}
 		eligible = state.AvailableMinor
 	} else {
+		if input.ActorType == "partner" {
+			if err := enforcePartnerPayoutRecipientReadiness(ctx, tx, input.ActorID); err != nil {
+				return PayoutRequestRecord{}, false, err
+			}
+		}
 		accountCode := walletAccountCode(input.ActorType)
 		var grossAvailable, held int64
 		if err := tx.QueryRowContext(ctx, "SELECT COALESCE(SUM(CASE WHEN direction='CREDIT' THEN amount_minor ELSE -amount_minor END),0) FROM wlt.ledger_entries WHERE account_code=$1 AND actor_id=$2", accountCode, input.ActorID).Scan(&grossAvailable); err != nil {

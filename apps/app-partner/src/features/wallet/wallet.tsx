@@ -4,10 +4,11 @@ import { useMemo } from "react";
 import { Text, View } from "react-native";
 import { PartnerFinancialSummaryCard } from "../account/partner-financial-summary";
 import { PartnerPayoutCard } from "../account/partner-payout-card";
+import { StorePayoutRecipientsCard } from "./store-payout-recipients-card";
 import { createPartnerSurfaceStyles } from "../partner-onboarding/partner-surface-styles";
 
 export default function PartnerWallet() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
-  return <View style={[styles.container, { gap: spacing[4] }]} accessibilityLabel="محفظة الشريك"><View style={styles.headerRow}><View style={styles.headerCopy}><Text style={styles.sectionTitle}>المحفظة</Text><Text style={styles.muted}>المال المستحق للشريك وفق السجلات المالية المعتمدة.</Text></View><BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[6]} /></View><PartnerFinancialSummaryCard /><PartnerPayoutCard /></View>;
+  return <View style={[styles.container, { gap: spacing[4] }]} accessibilityLabel="محفظة الشريك"><View style={styles.headerRow}><View style={styles.headerCopy}><Text style={styles.sectionTitle}>المحفظة</Text><Text style={styles.muted}>المال المستحق للشريك وفق السجلات المالية المعتمدة.</Text></View><BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[6]} /></View><PartnerFinancialSummaryCard /><PartnerPayoutCard /><StorePayoutRecipientsCard /></View>;
 }

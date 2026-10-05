@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
+	wltintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/walletfacts"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
@@ -18,18 +20,21 @@ var (
 	ErrInvitationActorSession = errors.New("an active eligible Human Actor session is required")
 	ErrOperatorPermission     = errors.New("an active Operator with Partners permission is required")
 	ErrActorSecurityDisabled  = errors.New("the invited Actor must have account security enabled")
+	ErrStoreOwnership         = errors.New("only the Store owner may manage store payout recipients")
+	ErrGrantNotActive         = errors.New("the selected team member does not have an active grant on this Store")
 )
 
 type Service struct {
 	identity *identityintegration.Client
 	db       *sql.DB
+	wlt      *wltintegration.Client
 }
 
-func New(identity *identityintegration.Client, db *sql.DB) (*Service, error) {
-	if identity == nil || db == nil {
+func New(identity *identityintegration.Client, db *sql.DB, wlt *wltintegration.Client) (*Service, error) {
+	if identity == nil || db == nil || wlt == nil {
 		return nil, errors.New("Store access configuration is invalid")
 	}
-	return &Service{identity: identity, db: db}, nil
+	return &Service{identity: identity, db: db, wlt: wlt}, nil
 }
 
 func (s *Service) CreateForPartner(ctx context.Context, accessToken, storeID, delegatePhone string, permissions []string, idempotencyKey, correlationID string) (postgres.StoreAccessGrant, bool, error) {
@@ -142,7 +147,20 @@ func (s *Service) TransitionForOwner(ctx context.Context, accessToken, storeID, 
 	if !validMutation(idempotencyKey, correlationID) || expectedVersion < 1 {
 		return postgres.StoreAccessGrant{}, false, ErrInvalidInput
 	}
-	return postgres.TransitionStoreAccessGrant(ctx, s.db, storeID, actorID, grantID, targetState, expectedVersion, idempotencyKey, correlationID)
+	grant, replayed, err := postgres.TransitionStoreAccessGrant(ctx, s.db, storeID, actorID, grantID, targetState, expectedVersion, idempotencyKey, correlationID)
+	if err != nil {
+		return postgres.StoreAccessGrant{}, false, err
+	}
+	if !replayed && (targetState == "revoked" || targetState == "suspended") {
+		// Fail-closed financial gate: if the affected delegate is the Store's recorded
+		// payout recipient, future payout readiness must stop pending owner action.
+		// The call is idempotent; a WLT outage surfaces as an explicit failure so the
+		// client retries until the gate is marked.
+		if err := s.markPayoutRecipientReviewIfNeeded(ctx, storeID, actorID, grant.DelegateActorID, targetState, correlationID); err != nil {
+			return grant, replayed, err
+		}
+	}
+	return grant, replayed, nil
 }
 
 func (s *Service) UpdatePermissionsForOwner(ctx context.Context, accessToken, storeID, grantID string, permissions []string, expectedVersion int, idempotencyKey, correlationID string) (postgres.StoreAccessGrant, bool, error) {
@@ -160,7 +178,11 @@ func (s *Service) ListRoleAdmissionsForOperator(ctx context.Context, actingActor
 	if err := s.requirePartnerAdmissionOperator(ctx, actingActorID); err != nil {
 		return nil, err
 	}
-	return postgres.ListPendingStoreAccessRoleAdmissions(ctx, s.db)
+	grants, err := postgres.ListPendingStoreAccessRoleAdmissions(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	return s.addMaskedDelegatePhones(ctx, grants)
 }
 
 func (s *Service) AdmitPartnerRoleForOperator(ctx context.Context, grantID, actingActorID, idempotencyKey, correlationID string) (postgres.StoreAccessGrant, bool, error) {
@@ -370,4 +392,166 @@ func maskStoreAccessPhone(phone string) string {
 		return "***"
 	}
 	return phone[:4] + strings.Repeat("*", len(phone)-7) + phone[len(phone)-3:]
+}
+
+// ListStorePayoutRecipients returns the effective payout recipient per Store for the
+// session's Partner actor, enriched with Store names and masked beneficiary phones.
+// WLT owns the assignment truth; DSH only adds human-readable identity.
+func (s *Service) ListStorePayoutRecipients(ctx context.Context, accessToken string) (wltintegration.StorePayoutRecipientReadback, map[string]string, map[string]string, error) {
+	actorID, err := s.partnerActor(ctx, accessToken)
+	if err != nil {
+		return wltintegration.StorePayoutRecipientReadback{}, nil, nil, err
+	}
+	readback, err := s.wlt.ListPartnerStorePayoutRecipients(ctx, actorID)
+	if err != nil {
+		return wltintegration.StorePayoutRecipientReadback{}, nil, nil, err
+	}
+	storeIDs := make([]string, 0, len(readback.Recipients))
+	for _, record := range readback.Recipients {
+		storeIDs = append(storeIDs, record.StoreID)
+	}
+	names, err := s.storeNames(ctx, storeIDs)
+	if err != nil {
+		return wltintegration.StorePayoutRecipientReadback{}, nil, nil, err
+	}
+	beneficiaryIDs := make([]string, 0, 2)
+	seen := make(map[string]struct{}, 2)
+	for _, record := range readback.Recipients {
+		if record.BeneficiaryActorID == "" {
+			continue
+		}
+		if _, exists := seen[record.BeneficiaryActorID]; exists {
+			continue
+		}
+		seen[record.BeneficiaryActorID] = struct{}{}
+		beneficiaryIDs = append(beneficiaryIDs, record.BeneficiaryActorID)
+	}
+	beneficiaryPhones, err := s.maskedPartnerPhones(ctx, beneficiaryIDs)
+	if err != nil {
+		return wltintegration.StorePayoutRecipientReadback{}, nil, nil, err
+	}
+	return readback, names, beneficiaryPhones, nil
+}
+
+// PrepareStorePayoutRecipientSelection verifies, from the owner session, that the
+// referenced team grant is an active grant on that Store owned by the acting owner,
+// and returns the canonical delegate actor behind the boundary. The user-facing
+// reference is the grant, never a raw Actor ID.
+func (s *Service) PrepareStorePayoutRecipientSelection(ctx context.Context, accessToken, storeID, grantID string) (string, string, error) {
+	actorID, err := s.partnerActor(ctx, accessToken)
+	if err != nil {
+		return "", "", err
+	}
+	grants, err := postgres.ListStoreAccessGrants(ctx, s.db, storeID, actorID)
+	if err != nil {
+		return "", "", err
+	}
+	for _, grant := range grants {
+		if grant.ID != grantID {
+			continue
+		}
+		if grant.OwnerPartnerActorID != actorID || grant.StoreID != storeID {
+			return "", "", ErrStoreOwnership
+		}
+		if grant.State != "active" {
+			return "", "", ErrGrantNotActive
+		}
+		return actorID, grant.DelegateActorID, nil
+	}
+	return "", "", ErrStoreOwnership
+}
+
+// VerifyStoreOwnerForPayoutRecipient confirms the session actor owns the Store
+// before a payout-recipient mutation is forwarded to WLT.
+func (s *Service) VerifyStoreOwnerForPayoutRecipient(ctx context.Context, accessToken, storeID string) (string, error) {
+	actorID, err := s.partnerActor(ctx, accessToken)
+	if err != nil {
+		return "", err
+	}
+	store, err := postgres.ReadStore(ctx, s.db, storeID)
+	if err != nil {
+		return "", err
+	}
+	if store.PartnerActorID != actorID {
+		return "", ErrStoreOwnership
+	}
+	return actorID, nil
+}
+
+func (s *Service) markPayoutRecipientReviewIfNeeded(ctx context.Context, storeID, ownerActorID, delegateActorID, targetState, correlationID string) error {
+	if strings.TrimSpace(delegateActorID) == "" {
+		return nil
+	}
+	record, err := s.wlt.ReadStorePayoutRecipient(ctx, ownerActorID, storeID)
+	if err != nil {
+		// No assignment facts is the normal case for stores without a selected
+		// recipient; WLT answers NOT_FOUND for those.
+		return nil
+	}
+	if record.State != wltintegration.StorePayoutRecipientStateSelectedStaff || record.BeneficiaryActorID != delegateActorID {
+		return nil
+	}
+	return s.wlt.MarkStorePayoutRecipientReviewRequired(ctx, storeID, ownerActorID, "STORE_ACCESS_GRANT_"+strings.ToUpper(targetState), correlationID)
+}
+
+// SelectStorePayoutRecipientForOwner records the owner's verified-staff payout
+// recipient for one Store. DSH verifies ownership and the active team grant, then
+// forwards the canonical beneficiary facts to WLT, which owns the assignment and its
+// readiness. Payout-recipient routing is owner-only and is never implied by any
+// delegated permission.
+func (s *Service) SelectStorePayoutRecipientForOwner(ctx context.Context, accessToken, storeID, grantID, reason, idempotencyKey, correlationID string) (wltintegration.StorePayoutRecipientAssignment, bool, error) {
+	if !validMutation(idempotencyKey, correlationID) {
+		return wltintegration.StorePayoutRecipientAssignment{}, false, ErrInvalidInput
+	}
+	partnerActorID, delegateActorID, err := s.PrepareStorePayoutRecipientSelection(ctx, accessToken, storeID, grantID)
+	if err != nil {
+		return wltintegration.StorePayoutRecipientAssignment{}, false, err
+	}
+	facts, err := walletfacts.CurrentFacts(ctx, s.identity, "partner", delegateActorID, "")
+	if err != nil {
+		return wltintegration.StorePayoutRecipientAssignment{}, false, err
+	}
+	return s.wlt.SelectStorePayoutRecipient(ctx, storeID, partnerActorID, delegateActorID, facts, reason, idempotencyKey, correlationID)
+}
+
+// RevertStorePayoutRecipientForOwner deletes the Store's explicit assignment so
+// future unpinned payout intents route to the Partner owner again.
+func (s *Service) RevertStorePayoutRecipientForOwner(ctx context.Context, accessToken, storeID, reason, idempotencyKey, correlationID string) (bool, error) {
+	if !validMutation(idempotencyKey, correlationID) {
+		return false, ErrInvalidInput
+	}
+	partnerActorID, err := s.VerifyStoreOwnerForPayoutRecipient(ctx, accessToken, storeID)
+	if err != nil {
+		return false, err
+	}
+	return s.wlt.RevertStorePayoutRecipient(ctx, storeID, partnerActorID, reason, idempotencyKey, correlationID)
+}
+
+func (s *Service) storeNames(ctx context.Context, storeIDs []string) (map[string]string, error) {
+	names := make(map[string]string, len(storeIDs))
+	for _, storeID := range storeIDs {
+		store, err := postgres.ReadStore(ctx, s.db, storeID)
+		if err != nil {
+			continue
+		}
+		names[store.ID] = store.Name
+	}
+	return names, nil
+}
+
+func (s *Service) maskedPartnerPhones(ctx context.Context, actorIDs []string) (map[string]string, error) {
+	if len(actorIDs) == 0 {
+		return map[string]string{}, nil
+	}
+	roles, err := s.identity.ReadActorRoles(ctx, "partner", actorIDs)
+	if err != nil {
+		return nil, err
+	}
+	masked := make(map[string]string, len(actorIDs))
+	for _, role := range roles.Items {
+		if role.Role == "partner" && role.ActorID != "" && storeAccessPhoneE164Pattern.MatchString(role.PhoneE164) {
+			masked[role.ActorID] = maskStoreAccessPhone(role.PhoneE164)
+		}
+	}
+	return masked, nil
 }

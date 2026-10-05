@@ -456,6 +456,7 @@ func logStorePublicationFailure(correlationID string, err error) {
 	switch {
 	case errors.Is(err, storepublication.ErrOperatorNotActive),
 		errors.Is(err, storepublication.ErrPublicationReadinessBlocked),
+		errors.Is(err, storepublication.ErrStoreFulfillmentAgreementRequired),
 		errors.Is(err, storepublication.ErrPartnerIdentityUnavailable),
 		errors.Is(err, postgres.ErrStoreNotFound),
 		errors.Is(err, postgres.ErrServiceCityNotFound),
@@ -486,6 +487,8 @@ func writeStorePublicationError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active control operator session is required")
 	case errors.Is(err, storepublication.ErrPublicationReadinessBlocked):
 		writeError(w, http.StatusConflict, "READINESS_BLOCKED", "store publication readiness gates are not satisfied")
+	case errors.Is(err, storepublication.ErrStoreFulfillmentAgreementRequired):
+		writeError(w, http.StatusConflict, "STORE_AGREEMENT_MODES_REQUIRED", "published store fulfillment modes require a matching active store commercial agreement version")
 	case errors.Is(err, storepublication.ErrPartnerIdentityUnavailable):
 		writeError(w, http.StatusBadGateway, "IDENTITY_UNAVAILABLE", "partner publication eligibility is unavailable")
 	case errors.Is(err, postgres.ErrStoreNotFound):

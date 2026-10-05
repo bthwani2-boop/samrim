@@ -14,7 +14,7 @@ import (
 )
 
 // CanonicalSchemaVersion is the exact DSH schema version owned by the current source tree.
-const CanonicalSchemaVersion = 97
+const CanonicalSchemaVersion = 98
 
 var canonicalMigrationTail = []string{
 	"085_store_operational_availability.sql",
@@ -30,6 +30,7 @@ var canonicalMigrationTail = []string{
 	"095_wallet_provider_intent.sql",
 	"096_catalog_product_proposal_field_ownership.sql",
 	"097_store_catalog_import_scope.sql",
+	"098_promotion_funding_vocabulary_and_order_snapshot.sql",
 }
 
 type schemaRelationExpectation struct {

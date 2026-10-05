@@ -12,10 +12,6 @@ function permissionLabels(store: PartnerAccessibleStore): string {
     orders: "الطلبات",
     catalog: "المنتجات والأسعار",
     store_operations: "تشغيل المتجر",
-    promotions: "العروض",
-    fulfillment: "التوصيل والاستلام",
-    finance_read: "المالية",
-    payout_request: "طلب الصرف",
   };
   return store.permissions.map((permission) => labels[permission] ?? permission).join("، ");
 }

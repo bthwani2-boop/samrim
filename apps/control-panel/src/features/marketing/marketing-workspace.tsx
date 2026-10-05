@@ -72,7 +72,7 @@ function readPendingPromotionCreate(raw: string | null): PendingPromotionCreate 
     const value: unknown = JSON.parse(raw);
     if (!isRecord(value) || typeof value.id !== "string" || value.id.length < 8 || value.id.length > 128 || typeof value.idempotencyKey !== "string" || value.idempotencyKey.length < 8 || value.idempotencyKey.length > 128 || typeof value.correlationId !== "string" || value.correlationId.length < 8 || value.correlationId.length > 128 || typeof value.body !== "string" || value.body.length > 8192) return null;
     const body: unknown = JSON.parse(value.body);
-    if (!isRecord(body) || body.id !== value.id || typeof body.code !== "string" || typeof body.nameAr !== "string" || !["PERCENTAGE", "FIXED"].includes(String(body.kind)) || !Number.isSafeInteger(body.valueMinor) || body.fundingSource !== "MERCHANT" || typeof body.startsAt !== "string") return null;
+    if (!isRecord(body) || body.id !== value.id || typeof body.code !== "string" || typeof body.nameAr !== "string" || !["PERCENTAGE", "FIXED"].includes(String(body.kind)) || !Number.isSafeInteger(body.valueMinor) || body.fundingSource !== "PARTNER" || typeof body.startsAt !== "string") return null;
     return { id: value.id, idempotencyKey: value.idempotencyKey, correlationId: value.correlationId, body: value.body };
   } catch {
     return null;
@@ -353,7 +353,7 @@ export function MarketingPromotionsWorkspace() {
           descriptionAr: promotionForm.descriptionAr,
           kind: promotionForm.kind,
           valueMinor: Number(promotionForm.valueMinor),
-          fundingSource: "MERCHANT",
+          fundingSource: "PARTNER",
           startsAt: starts.toISOString(),
           ...(promotionForm.maxDiscountMinor ? { maxDiscountMinor: Number(promotionForm.maxDiscountMinor) } : {}),
           ...(promotionForm.redemptionLimit ? { redemptionLimit: Number(promotionForm.redemptionLimit) } : {}),

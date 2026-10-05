@@ -18,8 +18,8 @@ func TestCanonicalJourneyMigrationGraphIncludesJoiningCaseIntakeDetails(t *testi
 		t.Fatalf("canonical DSH migration graph size: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.CanonicalSchemaVersion)
 	}
 	last := records[len(records)-1]
-	if last.Version != postgres.CanonicalSchemaVersion || last.Name != "097_store_catalog_import_scope.sql" {
-		t.Fatalf("last canonical DSH migration = v%d %q; want v%d 097_store_catalog_import_scope.sql", last.Version, last.Name, postgres.CanonicalSchemaVersion)
+	if last.Version != postgres.CanonicalSchemaVersion || last.Name != "098_promotion_funding_vocabulary_and_order_snapshot.sql" {
+		t.Fatalf("last canonical DSH migration = v%d %q; want v%d 098_promotion_funding_vocabulary_and_order_snapshot.sql", last.Version, last.Name, postgres.CanonicalSchemaVersion)
 	}
 
 	migrationByName := make(map[string]string, len(records))
@@ -40,6 +40,7 @@ func TestCanonicalJourneyMigrationGraphIncludesJoiningCaseIntakeDetails(t *testi
 		"095_wallet_provider_intent.sql",
 		"096_catalog_product_proposal_field_ownership.sql",
 		"097_store_catalog_import_scope.sql",
+		"098_promotion_funding_vocabulary_and_order_snapshot.sql",
 	} {
 		if _, ok := migrationByName[required]; !ok {
 			t.Fatalf("canonical DSH migration missing: %s", required)
@@ -80,6 +81,20 @@ func TestCanonicalJourneyMigrationGraphIncludesJoiningCaseIntakeDetails(t *testi
 	} {
 		if !strings.Contains(storeCatalogImportMigration, required) {
 			t.Fatalf("migration 097 is missing scoped store-catalog import requirement: %s", required)
+		}
+	}
+	promotionFundingMigration := migrationByName["098_promotion_funding_vocabulary_and_order_snapshot.sql"]
+	for _, required := range []string{
+		"SET funding_source = 'PARTNER' WHERE funding_source = 'MERCHANT'",
+		"CHECK (funding_source IN ('PARTNER', 'BTHWANI', 'SHARED'))",
+		"funding_share_partner_percent IS NOT NULL AND funding_share_partner_percent BETWEEN 1 AND 99",
+		"ADD COLUMN promotion_version integer",
+		"ADD COLUMN promotion_funding_source text",
+		"promotion_version IS NOT NULL AND promotion_version >= 1",
+		"promotion_funding_source IS NOT NULL AND promotion_funding_source IN ('PARTNER', 'BTHWANI', 'SHARED')",
+	} {
+		if !strings.Contains(promotionFundingMigration, required) {
+			t.Fatalf("migration 098 is missing promotion funding vocabulary or order snapshot requirement: %s", required)
 		}
 	}
 	if !strings.Contains(migrationByName["085_store_operational_availability.sql"], "CREATE TABLE dsh.store_operational_availability") || !strings.Contains(migrationByName["085_store_operational_availability.sql"], "schedule_timezone text NOT NULL DEFAULT 'Asia/Aden'") {

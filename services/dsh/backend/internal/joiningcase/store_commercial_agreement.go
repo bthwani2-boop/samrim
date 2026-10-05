@@ -91,7 +91,9 @@ func (s *Service) ProposeStoreCommercialAgreementForField(ctx context.Context, a
 }
 
 func fieldMayProposeStoreAgreement(publicationState string) bool {
-	return publicationState == "unpublished" || publicationState == "published"
+	// "hidden" is the state the publication endpoint writes when a Store leaves the
+	// storefront; "unpublished" is accepted for legacy rows.
+	return publicationState == "hidden" || publicationState == "unpublished" || publicationState == "published"
 }
 
 func (s *Service) ReadStoreTypeCommissionDefaultsForField(ctx context.Context, accessToken, caseID string) (wltintegration.StoreTypeCommissionDefaultsResponse, error) {

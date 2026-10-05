@@ -16,6 +16,7 @@ var (
 	ErrPromotionIdempotencyConflict  = errors.New("promotion idempotency key was already used with different facts")
 	ErrPromotionVersionConflict      = errors.New("promotion version is stale")
 	ErrPromotionInvalid              = errors.New("promotion input is invalid")
+	ErrPromotionFundingNotSettleable = errors.New("only partner-funded promotions are settleable until the WLT funding split is live")
 	ErrPromotionUnavailable          = errors.New("promotion is not currently eligible")
 	ErrPromotionAlreadyRedeemed      = errors.New("promotion was already redeemed by this client")
 	ErrPromotionLimitReached         = errors.New("promotion redemption limit has been reached")
@@ -31,25 +32,26 @@ func HashMarketingFacts(values ...string) string {
 }
 
 type PromotionRecord struct {
-	ID               string
-	Code             string
-	NameAr           string
-	DescriptionAr    string
-	Kind             string
-	ValueMinor       int64
-	MaxDiscountMinor *int64
-	FundingSource    string
-	StoreID          string
-	ServiceCityID    string
-	State            string
-	StartsAt         time.Time
-	EndsAt           *time.Time
-	RedemptionLimit  *int64
-	RedeemedCount    int64
-	Version          int
-	CreatedByActorID string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                         string
+	Code                       string
+	NameAr                     string
+	DescriptionAr              string
+	Kind                       string
+	ValueMinor                 int64
+	MaxDiscountMinor           *int64
+	FundingSource              string
+	FundingSharePartnerPercent *int
+	StoreID                    string
+	ServiceCityID              string
+	State                      string
+	StartsAt                   time.Time
+	EndsAt                     *time.Time
+	RedemptionLimit            *int64
+	RedeemedCount              int64
+	Version                    int
+	CreatedByActorID           string
+	CreatedAt                  time.Time
+	UpdatedAt                  time.Time
 }
 
 type DiscoveryContentRecord struct {
@@ -72,20 +74,21 @@ type DiscoveryContentRecord struct {
 }
 
 type PromotionInput struct {
-	ID               string
-	Code             string
-	NameAr           string
-	DescriptionAr    string
-	Kind             string
-	ValueMinor       int64
-	MaxDiscountMinor *int64
-	FundingSource    string
-	StoreID          string
-	ServiceCityID    string
-	StartsAt         time.Time
-	EndsAt           *time.Time
-	RedemptionLimit  *int64
-	CreatedByActorID string
+	ID                         string
+	Code                       string
+	NameAr                     string
+	DescriptionAr              string
+	Kind                       string
+	ValueMinor                 int64
+	MaxDiscountMinor           *int64
+	FundingSource              string
+	FundingSharePartnerPercent *int
+	StoreID                    string
+	ServiceCityID              string
+	StartsAt                   time.Time
+	EndsAt                     *time.Time
+	RedemptionLimit            *int64
+	CreatedByActorID           string
 }
 
 type DiscoveryContentInput struct {
@@ -118,7 +121,16 @@ func normalizePromotionInput(input PromotionInput) PromotionInput {
 
 func validatePromotionInput(input PromotionInput) error {
 	input = normalizePromotionInput(input)
-	if input.ID == "" || input.Code == "" || len(input.Code) < 3 || len(input.Code) > 64 || input.NameAr == "" || len(input.NameAr) > 160 || input.StartsAt.IsZero() || input.ValueMinor <= 0 || input.FundingSource != "MERCHANT" {
+	if input.ID == "" || input.Code == "" || len(input.Code) < 3 || len(input.Code) > 64 || input.NameAr == "" || len(input.NameAr) > 160 || input.StartsAt.IsZero() || input.ValueMinor <= 0 {
+		return ErrPromotionInvalid
+	}
+	if input.FundingSource != "PARTNER" && input.FundingSource != "BTHWANI" && input.FundingSource != "SHARED" {
+		return ErrPromotionInvalid
+	}
+	if input.FundingSource == "SHARED" && (input.FundingSharePartnerPercent == nil || *input.FundingSharePartnerPercent < 1 || *input.FundingSharePartnerPercent > 99) {
+		return ErrPromotionInvalid
+	}
+	if input.FundingSource != "SHARED" && input.FundingSharePartnerPercent != nil {
 		return ErrPromotionInvalid
 	}
 	if input.Kind != "PERCENTAGE" && input.Kind != "FIXED" {
@@ -141,16 +153,20 @@ func validatePromotionInput(input PromotionInput) error {
 
 func scanPromotion(row rowScanner) (PromotionRecord, error) {
 	var item PromotionRecord
-	var maxDiscount, redemptionLimit sql.NullInt64
+	var maxDiscount, redemptionLimit, fundingShare sql.NullInt64
 	var storeValue, cityValue sql.NullString
 	var endValue sql.NullTime
-	err := row.Scan(&item.ID, &item.Code, &item.NameAr, &item.DescriptionAr, &item.Kind, &item.ValueMinor, &maxDiscount, &item.FundingSource, &storeValue, &cityValue, &item.State, &item.StartsAt, &endValue, &redemptionLimit, &item.RedeemedCount, &item.Version, &item.CreatedByActorID, &item.CreatedAt, &item.UpdatedAt)
+	err := row.Scan(&item.ID, &item.Code, &item.NameAr, &item.DescriptionAr, &item.Kind, &item.ValueMinor, &maxDiscount, &item.FundingSource, &fundingShare, &storeValue, &cityValue, &item.State, &item.StartsAt, &endValue, &redemptionLimit, &item.RedeemedCount, &item.Version, &item.CreatedByActorID, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
 		return PromotionRecord{}, err
 	}
 	if maxDiscount.Valid {
 		value := maxDiscount.Int64
 		item.MaxDiscountMinor = &value
+	}
+	if fundingShare.Valid {
+		share := int(fundingShare.Int64)
+		item.FundingSharePartnerPercent = &share
 	}
 	if storeValue.Valid {
 		item.StoreID = storeValue.String
@@ -169,7 +185,41 @@ func scanPromotion(row rowScanner) (PromotionRecord, error) {
 	return item, nil
 }
 
-const promotionSelect = `id,code,name_ar,description_ar,kind,value_minor,max_discount_minor,funding_source,store_id,service_city_id,state,starts_at,ends_at,redemption_limit,redeemed_count,version,created_by_actor_id,created_at,updated_at`
+const promotionSelect = `id,code,name_ar,description_ar,kind,value_minor,max_discount_minor,funding_source,funding_share_partner_percent,store_id,service_city_id,state,starts_at,ends_at,redemption_limit,redeemed_count,version,created_by_actor_id,created_at,updated_at`
+
+// listPublicPromotionsQuery must stay character-identical to promotionSelect for
+// its column list; TestPublicPromotionsListingKeepsCanonicalColumns fails when
+// the two drift apart.
+const listPublicPromotionsQuery = `SELECT id,code,name_ar,description_ar,kind,value_minor,max_discount_minor,funding_source,funding_share_partner_percent,store_id,service_city_id,state,starts_at,ends_at,redemption_limit,redeemed_count,version,created_by_actor_id,created_at,updated_at
+	FROM dsh.commerce_promotions
+	WHERE (NOT $1 OR (state='PUBLISHED' AND starts_at <= clock_timestamp() AND (ends_at IS NULL OR ends_at > clock_timestamp())))
+	AND (NOT $1 OR service_city_id IS NULL OR service_city_id=$2)
+	AND (NOT $1 OR store_id IS NULL OR ($3<>'' AND store_id=$3))
+	ORDER BY starts_at DESC,id DESC
+	LIMIT CASE WHEN $1 THEN 4 ELSE NULL END`
+
+// ListStorePromotions returns every promotion scoped to one Store across its whole
+// lifecycle (draft, published, paused, ended) for the owner's workspace views.
+func ListStorePromotions(ctx context.Context, db *sql.DB, storeID string, limit int) ([]PromotionRecord, error) {
+	storeID = strings.TrimSpace(storeID)
+	if db == nil || storeID == "" || len(storeID) > 128 || limit < 1 || limit > 100 {
+		return nil, ErrPromotionInvalid
+	}
+	rows, err := db.QueryContext(ctx, "SELECT "+promotionSelect+" FROM dsh.commerce_promotions WHERE store_id=$1 ORDER BY starts_at DESC, id DESC LIMIT $2", storeID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]PromotionRecord, 0)
+	for rows.Next() {
+		item, scanErr := scanPromotion(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
 
 func ReadPromotion(ctx context.Context, db *sql.DB, id string) (PromotionRecord, error) {
 	item, err := scanPromotion(db.QueryRowContext(ctx, "SELECT "+promotionSelect+" FROM dsh.commerce_promotions WHERE id=$1", strings.TrimSpace(id)))
@@ -187,13 +237,7 @@ func ListPromotions(ctx context.Context, db *sql.DB, public bool, serviceCityID,
 			return nil, ErrPromotionInvalid
 		}
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id,code,name_ar,description_ar,kind,value_minor,max_discount_minor,funding_source,store_id,service_city_id,state,starts_at,ends_at,redemption_limit,redeemed_count,version,created_by_actor_id,created_at,updated_at
-		FROM dsh.commerce_promotions
-		WHERE (NOT $1 OR (state='PUBLISHED' AND starts_at <= clock_timestamp() AND (ends_at IS NULL OR ends_at > clock_timestamp())))
-		AND (NOT $1 OR service_city_id IS NULL OR service_city_id=$2)
-		AND (NOT $1 OR store_id IS NULL OR ($3<>'' AND store_id=$3))
-		ORDER BY starts_at DESC,id DESC
-		LIMIT CASE WHEN $1 THEN 4 ELSE NULL END`, public, serviceCityID, storeID)
+	rows, err := db.QueryContext(ctx, listPublicPromotionsQuery, public, serviceCityID, storeID)
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +287,12 @@ func CreatePromotion(ctx context.Context, db *sql.DB, input PromotionInput, idem
 	if !errors.Is(err, sql.ErrNoRows) {
 		return PromotionRecord{}, false, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_promotions(id,code,name_ar,description_ar,kind,value_minor,max_discount_minor,funding_source,store_id,service_city_id,starts_at,ends_at,redemption_limit,created_by_actor_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,''),NULLIF($10,''),$11,$12,$13,$14)`, input.ID, input.Code, input.NameAr, input.DescriptionAr, input.Kind, input.ValueMinor, input.MaxDiscountMinor, input.FundingSource, input.StoreID, input.ServiceCityID, input.StartsAt, input.EndsAt, input.RedemptionLimit, input.CreatedByActorID); err != nil {
+	// Until the WLT platform-funding split is live, only PARTNER-funded promotions
+	// may be created: the whole discount is borne by the Store's chargeable base.
+	if input.FundingSource != "PARTNER" {
+		return PromotionRecord{}, false, ErrPromotionFundingNotSettleable
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_promotions(id,code,name_ar,description_ar,kind,value_minor,max_discount_minor,funding_source,funding_share_partner_percent,store_id,service_city_id,starts_at,ends_at,redemption_limit,created_by_actor_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,''),NULLIF($11,''),$12,$13,$14,$15)`, input.ID, input.Code, input.NameAr, input.DescriptionAr, input.Kind, input.ValueMinor, input.MaxDiscountMinor, input.FundingSource, input.FundingSharePartnerPercent, input.StoreID, input.ServiceCityID, input.StartsAt, input.EndsAt, input.RedemptionLimit, input.CreatedByActorID); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "commerce_promotions_code_uq") {
 			return PromotionRecord{}, false, ErrPromotionCodeConflict
 		}
@@ -264,7 +313,7 @@ func CreatePromotion(ctx context.Context, db *sql.DB, input PromotionInput, idem
 
 func SetPromotionState(ctx context.Context, db *sql.DB, id, state, idempotencyKey, requestHash string, expectedVersion int) (PromotionRecord, bool, error) {
 	state = strings.ToUpper(strings.TrimSpace(state))
-	if state != "PUBLISHED" && state != "PAUSED" || strings.TrimSpace(id) == "" || expectedVersion < 1 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" {
+	if state != "PUBLISHED" && state != "PAUSED" && state != "ENDED" || strings.TrimSpace(id) == "" || expectedVersion < 1 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" {
 		return PromotionRecord{}, false, ErrPromotionInvalid
 	}
 	tx, err := db.BeginTx(ctx, nil)
@@ -295,7 +344,20 @@ func SetPromotionState(ctx context.Context, db *sql.DB, id, state, idempotencyKe
 	}
 	if state == "PUBLISHED" {
 		var startsAt time.Time
-		if err := tx.QueryRowContext(ctx, "SELECT starts_at FROM dsh.commerce_promotions WHERE id=$1 AND state IN ('DRAFT','PAUSED')", id).Scan(&startsAt); errors.Is(err, sql.ErrNoRows) {
+		var fundingSource string
+		if err := tx.QueryRowContext(ctx, "SELECT starts_at,funding_source FROM dsh.commerce_promotions WHERE id=$1 AND state IN ('DRAFT','PAUSED')", id).Scan(&startsAt, &fundingSource); errors.Is(err, sql.ErrNoRows) {
+			return PromotionRecord{}, false, ErrPromotionNotFound
+		} else if err != nil {
+			return PromotionRecord{}, false, err
+		}
+		// Fail-closed: platform-funded promotions stay unpublished until the WLT
+		// funding split settles their monetary consequence.
+		if fundingSource != "PARTNER" {
+			return PromotionRecord{}, false, ErrPromotionFundingNotSettleable
+		}
+	}
+	if state == "ENDED" {
+		if err := tx.QueryRowContext(ctx, "SELECT 1 FROM dsh.commerce_promotions WHERE id=$1 AND state IN ('PUBLISHED','PAUSED','DRAFT')", id).Scan(nil); errors.Is(err, sql.ErrNoRows) {
 			return PromotionRecord{}, false, ErrPromotionNotFound
 		} else if err != nil {
 			return PromotionRecord{}, false, err
@@ -322,9 +384,10 @@ func SetPromotionState(ctx context.Context, db *sql.DB, id, state, idempotencyKe
 	return item, false, nil
 }
 
-func EvaluatePromotion(ctx context.Context, source rowQueryer, code, storeID, clientActorID string, subtotalMinor int64, lock bool) (PromotionRecord, int64, error) {
+func EvaluatePromotion(ctx context.Context, source rowQueryer, code, storeID, storeServiceCityID, clientActorID string, subtotalMinor int64, lock bool) (PromotionRecord, int64, error) {
 	code = strings.ToUpper(strings.TrimSpace(code))
 	storeID = strings.TrimSpace(storeID)
+	storeServiceCityID = strings.TrimSpace(storeServiceCityID)
 	clientActorID = strings.TrimSpace(clientActorID)
 	if code == "" || storeID == "" || clientActorID == "" || subtotalMinor <= 0 {
 		return PromotionRecord{}, 0, ErrPromotionUnavailable
@@ -341,7 +404,7 @@ func EvaluatePromotion(ctx context.Context, source rowQueryer, code, storeID, cl
 		return PromotionRecord{}, 0, err
 	}
 	now := time.Now().UTC()
-	if item.State != "PUBLISHED" || now.Before(item.StartsAt) || item.EndsAt != nil && !now.Before(*item.EndsAt) || item.StoreID != "" && item.StoreID != storeID {
+	if item.State != "PUBLISHED" || now.Before(item.StartsAt) || item.EndsAt != nil && !now.Before(*item.EndsAt) || item.StoreID != "" && item.StoreID != storeID || item.ServiceCityID != "" && item.ServiceCityID != storeServiceCityID {
 		return PromotionRecord{}, 0, ErrPromotionUnavailable
 	}
 	if item.RedemptionLimit != nil && item.RedeemedCount >= *item.RedemptionLimit {
@@ -394,6 +457,17 @@ func RedeemPromotion(ctx context.Context, tx *sql.Tx, promotion PromotionRecord,
 		return err
 	}
 	return nil
+}
+
+func releaseOrderPromotionRedemptionTx(ctx context.Context, tx *sql.Tx, orderID, promotionID string) error {
+	if strings.TrimSpace(orderID) == "" || strings.TrimSpace(promotionID) == "" {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM dsh.commerce_promotion_redemptions WHERE order_id=$1 AND promotion_id=$2", orderID, promotionID); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, "UPDATE dsh.commerce_promotions SET redeemed_count=redeemed_count-1,updated_at=clock_timestamp() WHERE id=$1 AND redeemed_count>0", promotionID)
+	return err
 }
 
 func scanDiscoveryContent(row rowScanner) (DiscoveryContentRecord, error) {

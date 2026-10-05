@@ -15,14 +15,15 @@ import (
 )
 
 var (
-	ErrOperatorNotActive              = errors.New("operator actor is not active")
-	ErrPublicationReadinessBlocked    = errors.New("store publication readiness is blocked")
-	ErrPartnerIdentityUnavailable     = errors.New("partner Identity eligibility is unavailable")
-	PartnerIdentityNotEligibleReason  = "PARTNER_IDENTITY_NOT_ELIGIBLE"
-	FinancialProfileNotReadyReason    = "FINANCIAL_PROFILE_NOT_READY"
-	ServiceCityNotEligibleReason      = "SERVICE_CITY_NOT_ELIGIBLE"
-	CatalogNotReadyReason             = "CATALOG_NOT_READY"
-	CommercialAgreementNotReadyReason = "COMMERCIAL_AGREEMENT_NOT_READY"
+	ErrOperatorNotActive                 = errors.New("operator actor is not active")
+	ErrPublicationReadinessBlocked       = errors.New("store publication readiness is blocked")
+	ErrPartnerIdentityUnavailable        = errors.New("partner Identity eligibility is unavailable")
+	ErrStoreFulfillmentAgreementRequired = errors.New("published store fulfillment modes require a matching active store commercial agreement")
+	PartnerIdentityNotEligibleReason     = "PARTNER_IDENTITY_NOT_ELIGIBLE"
+	FinancialProfileNotReadyReason       = "FINANCIAL_PROFILE_NOT_READY"
+	ServiceCityNotEligibleReason         = "SERVICE_CITY_NOT_ELIGIBLE"
+	CatalogNotReadyReason                = "CATALOG_NOT_READY"
+	CommercialAgreementNotReadyReason    = "COMMERCIAL_AGREEMENT_NOT_READY"
 )
 
 type PublicationReadiness struct {
@@ -165,6 +166,25 @@ func (s *Service) SetFulfillmentModes(ctx context.Context, storeID string, modes
 	}
 	if err := s.identity.RequireOperatorPermission(ctx, actingActorID, "partners"); err != nil {
 		return postgres.StoreFulfillmentModesResult{}, err
+	}
+	store, err := postgres.ReadStore(ctx, s.db, storeID)
+	if err != nil {
+		return postgres.StoreFulfillmentModesResult{}, err
+	}
+	if strings.TrimSpace(store.PublicationState) == "published" {
+		candidate := store
+		candidate.FulfillmentModes = modes
+		agreements, err := s.wlt.ReadStoreCommercialAgreements(ctx, store.ID)
+		if err != nil {
+			return postgres.StoreFulfillmentModesResult{}, err
+		}
+		// Durable mode law: a published Store's committed modes may only change when
+		// the Partner owner has already accepted commercial terms covering exactly
+		// the requested modes (an ACTIVE agreement, or a PARTNER_ACCEPTED version
+		// awaiting Finance approval, which requires the committed modes to match).
+		if !storeAgreementModesAccepted(candidate, agreements) {
+			return postgres.StoreFulfillmentModesResult{}, ErrStoreFulfillmentAgreementRequired
+		}
 	}
 	return postgres.SetStoreFulfillmentModes(ctx, s.db, storeID, actingActorID, modes, expectedVersion, idempotencyKey, correlationID)
 }

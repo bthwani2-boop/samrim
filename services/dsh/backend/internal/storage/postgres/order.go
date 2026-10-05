@@ -201,6 +201,9 @@ type OrderRecord struct {
 	DiscountMinor                int64
 	PromotionID                  string
 	PromotionCode                string
+	PromotionVersion             int
+	PromotionFundingSource       string
+	PromotionFundingSharePercent int
 	TotalAmountMinor             int64
 	PaymentCashAmountMinor       int64
 	Currency                     string
@@ -525,7 +528,7 @@ func escapeOperatorOperationSearch(value string) string {
 	return strings.ReplaceAll(value, "_", "!_")
 }
 
-const orderSelectColumns = `o.id,o.client_actor_id,o.store_id,o.cart_id,o.fulfillment_mode,COALESCE(o.address_id,''),COALESCE(o.address_version,0),COALESCE(o.address_text,''),COALESCE(o.address_latitude,0),COALESCE(o.address_longitude,0),o.service_city_id,COALESCE(o.serviceability_policy_version,''),COALESCE(o.serviceability_status,''),o.serviceability_store_version,COALESCE(o.serviceability_address_version,0),COALESCE((SELECT a.orderability_state FROM dsh.commerce_order_store_orderability_snapshots a WHERE a.order_id=o.id),''),COALESCE((SELECT a.availability_version FROM dsh.commerce_order_store_orderability_snapshots a WHERE a.order_id=o.id),0),(SELECT a.evaluated_at FROM dsh.commerce_order_store_orderability_snapshots a WHERE a.order_id=o.id),o.state,o.subtotal_amount_minor,o.discount_minor,o.promotion_id,o.promotion_code,o.total_amount_minor,o.payment_cash_amount_minor,o.currency,o.payment_intent_id,o.payment_method,o.payment_state,o.version,o.created_at,o.updated_at,COALESCE((SELECT h.state FROM dsh.commerce_order_store_cash_handoffs h WHERE h.order_id=o.id),''),o.recipient_mode,o.recipient_name,o.recipient_phone_e164,o.recipient_instructions`
+const orderSelectColumns = `o.id,o.client_actor_id,o.store_id,o.cart_id,o.fulfillment_mode,COALESCE(o.address_id,''),COALESCE(o.address_version,0),COALESCE(o.address_text,''),COALESCE(o.address_latitude,0),COALESCE(o.address_longitude,0),o.service_city_id,COALESCE(o.serviceability_policy_version,''),COALESCE(o.serviceability_status,''),o.serviceability_store_version,COALESCE(o.serviceability_address_version,0),COALESCE((SELECT a.orderability_state FROM dsh.commerce_order_store_orderability_snapshots a WHERE a.order_id=o.id),''),COALESCE((SELECT a.availability_version FROM dsh.commerce_order_store_orderability_snapshots a WHERE a.order_id=o.id),0),(SELECT a.evaluated_at FROM dsh.commerce_order_store_orderability_snapshots a WHERE a.order_id=o.id),o.state,o.subtotal_amount_minor,o.discount_minor,o.promotion_id,o.promotion_code,COALESCE(o.promotion_version,0),COALESCE(o.promotion_funding_source,''),COALESCE(o.promotion_funding_share_partner_percent,0),o.total_amount_minor,o.payment_cash_amount_minor,o.currency,o.payment_intent_id,o.payment_method,o.payment_state,o.version,o.created_at,o.updated_at,COALESCE((SELECT h.state FROM dsh.commerce_order_store_cash_handoffs h WHERE h.order_id=o.id),''),o.recipient_mode,o.recipient_name,o.recipient_phone_e164,o.recipient_instructions`
 const orderSelectColumnsWithStore = orderSelectColumns + `,s.name,CASE WHEN o.fulfillment_mode='CUSTOMER_PICKUP' THEN s.delivery_origin_latitude END,CASE WHEN o.fulfillment_mode='CUSTOMER_PICKUP' THEN s.delivery_origin_longitude END`
 
 func scanOrder(row rowScanner) (OrderRecord, error) {
@@ -547,7 +550,7 @@ func scanOrderColumns(row rowScanner, includeStore bool) (OrderRecord, error) {
 	destinations := []any{
 		&order.ID, &order.ClientActorID, &order.StoreID, &order.CartID, &order.FulfillmentMode, &order.AddressID, &order.AddressVersion, &order.AddressText,
 		&order.AddressLatitude, &order.AddressLongitude, &order.ServiceCityID, &order.ServiceabilityPolicyVersion, &order.ServiceabilityStatus,
-		&order.ServiceabilityStoreVersion, &order.ServiceabilityAddressVersion, &orderabilityState, &orderabilityVersion, &orderabilityEvaluatedAt, &order.State, &order.SubtotalAmountMinor, &order.DiscountMinor, &promotionID, &promotionCode, &order.TotalAmountMinor, &order.PaymentCashAmountMinor, &order.Currency,
+		&order.ServiceabilityStoreVersion, &order.ServiceabilityAddressVersion, &orderabilityState, &orderabilityVersion, &orderabilityEvaluatedAt, &order.State, &order.SubtotalAmountMinor, &order.DiscountMinor, &promotionID, &promotionCode, &order.PromotionVersion, &order.PromotionFundingSource, &order.PromotionFundingSharePercent, &order.TotalAmountMinor, &order.PaymentCashAmountMinor, &order.Currency,
 		&paymentIntentID, &order.PaymentMethod, &order.PaymentState, &order.Version, &order.CreatedAt, &order.UpdatedAt, &order.StoreCashHandoffState,
 		&order.Recipient.Mode, &recipientName, &recipientPhone, &recipientInstructions,
 	}
@@ -1077,7 +1080,7 @@ WHERE s.id=$1 AND s.publication_state='published' AND ($4='CUSTOMER_PICKUP' OR a
 	var promotion PromotionRecord
 	var discountMinor int64
 	if promotionCode != "" {
-		promotion, discountMinor, err = EvaluatePromotion(ctx, tx, promotionCode, input.StoreID, input.ClientActorID, total, true)
+		promotion, discountMinor, err = EvaluatePromotion(ctx, tx, promotionCode, input.StoreID, input.Evidence.ServiceCityID, input.ClientActorID, total, true)
 		if err != nil {
 			return OrderRecord{}, false, err
 		}
@@ -1136,7 +1139,7 @@ WHERE s.id=$1 AND s.publication_state='published' AND ($4='CUSTOMER_PICKUP' OR a
 	if payment.CashAmountMinor < 0 || payment.CashAmountMinor > totalWithDelivery || payment.CashAmountMinor != totalWithDelivery-input.InternalBalanceAmountMinor {
 		return OrderRecord{}, false, ErrPaymentProvisioning
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,fulfillment_mode,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,subtotal_amount_minor,discount_minor,promotion_id,promotion_code,total_amount_minor,payment_cash_amount_minor,payment_intent_id,payment_method,payment_state,recipient_mode,recipient_name,recipient_phone_e164,recipient_instructions) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'CREATED',$16,$17,NULLIF($18,''),NULLIF($19,''),$20,$21,$22,$23,$24,$25,NULLIF($26,''),NULLIF($27,''),NULLIF($28,''))`, newOrderID, input.ClientActorID, input.StoreID, input.CartID, input.FulfillmentMode, orderAddressID, orderAddressVersion, orderAddressText, orderAddressLatitude, orderAddressLongitude, input.Evidence.ServiceCityID, serviceabilityPolicy, serviceabilityStatus, storeVersion, serviceabilityAddressVersion, total, discountMinor, promotion.ID, promotion.Code, totalWithDelivery, payment.CashAmountMinor, payment.IntentID, input.PaymentMethod, payment.State, input.Recipient.Mode, input.Recipient.Name, input.Recipient.PhoneE164, input.Recipient.Instructions); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,fulfillment_mode,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,subtotal_amount_minor,discount_minor,promotion_id,promotion_code,promotion_version,promotion_funding_source,promotion_funding_share_partner_percent,total_amount_minor,payment_cash_amount_minor,payment_intent_id,payment_method,payment_state,recipient_mode,recipient_name,recipient_phone_e164,recipient_instructions) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'CREATED',$16,$17,NULLIF($18,''),NULLIF($19,''),NULLIF($20,0),NULLIF($21,''),$22,$23,$24,$25,$26,$27,$28,NULLIF($29,''),NULLIF($30,''),NULLIF($31,''))`, newOrderID, input.ClientActorID, input.StoreID, input.CartID, input.FulfillmentMode, orderAddressID, orderAddressVersion, orderAddressText, orderAddressLatitude, orderAddressLongitude, input.Evidence.ServiceCityID, serviceabilityPolicy, serviceabilityStatus, storeVersion, serviceabilityAddressVersion, total, discountMinor, promotion.ID, promotion.Code, promotion.Version, promotion.FundingSource, promotion.FundingSharePartnerPercent, totalWithDelivery, payment.CashAmountMinor, payment.IntentID, input.PaymentMethod, payment.State, input.Recipient.Mode, input.Recipient.Name, input.Recipient.PhoneE164, input.Recipient.Instructions); err != nil {
 		return OrderRecord{}, false, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_store_orderability_snapshots(order_id,availability_version,orderability_state,evaluated_at) VALUES($1,$2,$3,$4)`, newOrderID, orderability.Version, orderability.State, orderability.EvaluatedAt); err != nil {
@@ -1287,6 +1290,9 @@ func transitionOrder(ctx context.Context, db *sql.DB, orderID, requestedState st
 	}
 	if requestedState == "REJECTED" || requestedState == "CANCELLED" {
 		if err := releaseOrderInventoryTx(ctx, tx, orderID); err != nil {
+			return OrderRecord{}, false, err
+		}
+		if err := releaseOrderPromotionRedemptionTx(ctx, tx, orderID, current.PromotionID); err != nil {
 			return OrderRecord{}, false, err
 		}
 	}

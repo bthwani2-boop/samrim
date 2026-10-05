@@ -237,3 +237,77 @@ paths:
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/partner/stores/{storeId}/promotions:
+    get:
+      operationId: listPartnerStorePromotions
+      summary: Read every promotion of one owned Store across its lifecycle
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+      responses:
+        "200":
+          description: Owner-scoped promotion lifecycle readback.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/OperatorPromotionRegistryResponse" } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+    post:
+      operationId: createPartnerStorePromotion
+      summary: Author a partner-funded promotion bound to the owned Store
+      description: Owner-only. DSH binds the Store scope to the owned path Store and owns the funding source (PARTNER); clients never choose funding.
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreatePromotionRequest" }
+      responses:
+        "201":
+          description: Canonical promotion draft readback.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PromotionResponse" } } }
+        "200":
+          description: Idempotent replay.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PromotionResponse" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/partner/stores/{storeId}/promotions/{promotionId}/state:
+    post:
+      operationId: setPartnerStorePromotionState
+      summary: Publish, pause or end an owned Store promotion
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - name: promotionId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - name: X-Expected-Version
+          in: header
+          required: true
+          schema: { type: integer, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/MarketingPublicationRequest" }
+      responses:
+        "200":
+          description: Canonical promotion state readback.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PromotionResponse" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }

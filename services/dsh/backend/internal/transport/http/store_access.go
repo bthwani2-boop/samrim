@@ -9,6 +9,7 @@ import (
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeaccess"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
@@ -48,12 +49,12 @@ type storeAccessMutationResponse struct {
 	IdempotentReplay bool                      `json:"idempotentReplay"`
 }
 
-func NewStoreAccess(identity *identityintegration.Client, operatorServiceToken string, db *sql.DB) (*StoreAccessServer, error) {
+func NewStoreAccess(identity *identityintegration.Client, operatorServiceToken string, db *sql.DB, wltClient *wlt.Client) (*StoreAccessServer, error) {
 	operatorAuth, err := auth.NewServiceToken(strings.TrimSpace(operatorServiceToken))
 	if err != nil {
 		return nil, err
 	}
-	service, err := storeaccess.New(identity, db)
+	service, err := storeaccess.New(identity, db, wltClient)
 	if err != nil {
 		return nil, err
 	}
@@ -66,6 +67,9 @@ func (s *StoreAccessServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/partner/stores/{storeId}/access/invitations", s.createForOwner)
 	mux.HandleFunc("PATCH /dsh/partner/stores/{storeId}/access/{grantId}", s.transitionForOwner)
 	mux.HandleFunc("PUT /dsh/partner/stores/{storeId}/access/{grantId}/permissions", s.updatePermissionsForOwner)
+	mux.HandleFunc("GET /dsh/partner/store-payout-recipients", s.listStorePayoutRecipients)
+	mux.HandleFunc("PUT /dsh/partner/stores/{storeId}/payout-recipient", s.selectStorePayoutRecipient)
+	mux.HandleFunc("POST /dsh/partner/stores/{storeId}/payout-recipient/revert", s.revertStorePayoutRecipient)
 	mux.HandleFunc("GET /dsh/actor/store-access-invitations", s.listForDelegate)
 	mux.HandleFunc("POST /dsh/actor/store-access-invitations/{grantId}/decision", s.decideForDelegate)
 	mux.HandleFunc("POST /dsh/partner/store-access-invitations/{grantId}/activate", s.activateForDelegate)
@@ -281,6 +285,10 @@ func writeStoreAccessError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "Store access changed; read canonical state and retry")
 	case errors.Is(err, postgres.ErrStoreAccessIdem):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different Store access facts")
+	case errors.Is(err, storeaccess.ErrStoreOwnership):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "only the Store owner may manage the payout recipient")
+	case errors.Is(err, storeaccess.ErrGrantNotActive):
+		writeError(w, http.StatusConflict, "GRANT_NOT_ACTIVE", "the selected team member does not have an active grant on this Store")
 	default:
 		var identityErr *identityclient.Error
 		if errors.As(err, &identityErr) {
@@ -289,4 +297,60 @@ func writeStoreAccessError(w http.ResponseWriter, err error) {
 		}
 		writeError(w, http.StatusBadGateway, "DSH_STORAGE_UNAVAILABLE", "DSH persistence or Identity is unavailable")
 	}
+}
+
+type storePayoutRecipientSelectBody struct {
+	GrantID string `json:"grantId"`
+	Reason  string `json:"reason"`
+}
+
+type storePayoutRecipientRevertBody struct {
+	Reason string `json:"reason"`
+}
+
+func (s *StoreAccessServer) listStorePayoutRecipients(w http.ResponseWriter, r *http.Request) {
+	readback, storeNames, beneficiaryPhones, err := s.service.ListStorePayoutRecipients(r.Context(), bearerToken(r))
+	if err != nil {
+		writeStoreAccessError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"readback": readback, "storeNames": storeNames, "beneficiaryPhones": beneficiaryPhones})
+}
+
+func (s *StoreAccessServer) selectStorePayoutRecipient(w http.ResponseWriter, r *http.Request) {
+	correlationID, idempotencyKey, ok := storeAccessMutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	var request storePayoutRecipientSelectBody
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	assignment, replayed, err := s.service.SelectStorePayoutRecipientForOwner(r.Context(), bearerToken(r), r.PathValue("storeId"), request.GrantID, request.Reason, idempotencyKey, correlationID)
+	if err != nil {
+		writeStoreAccessError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if replayed {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, map[string]any{"assignment": assignment, "idempotentReplay": replayed})
+}
+
+func (s *StoreAccessServer) revertStorePayoutRecipient(w http.ResponseWriter, r *http.Request) {
+	correlationID, idempotencyKey, ok := storeAccessMutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	var request storePayoutRecipientRevertBody
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	reverted, err := s.service.RevertStorePayoutRecipientForOwner(r.Context(), bearerToken(r), r.PathValue("storeId"), request.Reason, idempotencyKey, correlationID)
+	if err != nil {
+		writeStoreAccessError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"state": "DEFAULT_OWNER", "idempotentReplay": reverted})
 }

@@ -1,5 +1,7 @@
 import { dshOperationPaths } from "./generated/dsh-operations";
 import type { StoreAccessGrantActivationRequest, StoreAccessGrantPermissionsRequest } from "./generated/dsh-types";
+import type { StorePayoutRecipientListResponse, StorePayoutRecipientMutationResponse, StorePayoutRecipientRevertRequest, StorePayoutRecipientRevertResponse, StorePayoutRecipientSelectRequest } from "./generated/dsh-types";
+import type { CreatePromotionRequest, MarketingPublicationRequest, OperatorPromotionRegistryResponse, PromotionResponse } from "./generated/dsh-types";
 import type { CatalogQuickPriceCommitRequest, CatalogQuickPriceCommitResponse } from "./generated/dsh-types";
 import type { CatalogImportCommitResponse, CatalogImportPreviewResponse, CatalogImportRunResponse } from "./generated/dsh-types";
 import type { StoreCommercialAgreementListResponse, StoreCommercialAgreementMutationResponse, StoreCommercialAgreementProposalRequest, StoreTypeCommissionDefaultsResponse } from "./generated/dsh-types";
@@ -315,6 +317,45 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalizedGrant || !Number.isInteger(input.expectedVersion) || input.expectedVersion < 1) throw new Error("DSH_STORE_ACCESS_ACTIVATION_INPUT_INVALID");
       const path = dshOperationPaths.activatePartnerStoreAccessInvitation.path.replace("{grantId}", encodeURIComponent(normalizedGrant));
       return userRequest<StoreAccessGrantMutationResponse>(accessToken, path, dshOperationPaths.activatePartnerStoreAccessInvitation.method, input, mutationHeaders(idempotencyKey, correlationID));
+    },
+    async listPartnerStorePayoutRecipients(accessToken: string): Promise<StorePayoutRecipientListResponse> {
+      return userRequest<StorePayoutRecipientListResponse>(accessToken, dshOperationPaths.listPartnerStorePayoutRecipients.path, dshOperationPaths.listPartnerStorePayoutRecipients.method);
+    },
+    async selectPartnerStorePayoutRecipient(accessToken: string, storeID: string, input: StorePayoutRecipientSelectRequest, idempotencyKey: string, correlationID: string): Promise<StorePayoutRecipientMutationResponse> {
+      const normalizedStore = storeID.trim();
+      const normalizedGrant = input.grantId.trim();
+      const normalizedReason = input.reason.trim();
+      if (!normalizedStore || !normalizedGrant || normalizedReason.length < 1 || normalizedReason.length > 500) throw new Error("DSH_STORE_PAYOUT_RECIPIENT_SELECT_INPUT_INVALID");
+      const path = dshOperationPaths.selectPartnerStorePayoutRecipient.path.replace("{storeId}", encodeURIComponent(normalizedStore));
+      return userRequest<StorePayoutRecipientMutationResponse>(accessToken, path, dshOperationPaths.selectPartnerStorePayoutRecipient.method, { grantId: normalizedGrant, reason: normalizedReason }, mutationHeaders(idempotencyKey, correlationID));
+    },
+    async revertPartnerStorePayoutRecipient(accessToken: string, storeID: string, input: StorePayoutRecipientRevertRequest, idempotencyKey: string, correlationID: string): Promise<StorePayoutRecipientRevertResponse> {
+      const normalizedStore = storeID.trim();
+      const normalizedReason = input.reason.trim();
+      if (!normalizedStore || normalizedReason.length < 1 || normalizedReason.length > 500) throw new Error("DSH_STORE_PAYOUT_RECIPIENT_REVERT_INPUT_INVALID");
+      const path = dshOperationPaths.revertPartnerStorePayoutRecipient.path.replace("{storeId}", encodeURIComponent(normalizedStore));
+      return userRequest<StorePayoutRecipientRevertResponse>(accessToken, path, dshOperationPaths.revertPartnerStorePayoutRecipient.method, { reason: normalizedReason }, mutationHeaders(idempotencyKey, correlationID));
+    },
+    async listPartnerStorePromotions(accessToken: string, storeID: string): Promise<OperatorPromotionRegistryResponse> {
+      const normalizedStore = storeID.trim();
+      if (!normalizedStore) throw new Error("DSH_PARTNER_PROMOTIONS_STORE_REQUIRED");
+      const path = dshOperationPaths.listPartnerStorePromotions.path.replace("{storeId}", encodeURIComponent(normalizedStore));
+      return userRequest<OperatorPromotionRegistryResponse>(accessToken, path, dshOperationPaths.listPartnerStorePromotions.method);
+    },
+    async createPartnerStorePromotion(accessToken: string, storeID: string, input: CreatePromotionRequest, idempotencyKey: string, correlationID: string): Promise<PromotionResponse> {
+      const normalizedStore = storeID.trim();
+      const normalizedCode = input.code.trim().toUpperCase();
+      const normalizedName = input.nameAr.trim();
+      if (!normalizedStore || normalizedCode.length < 3 || normalizedCode.length > 64 || normalizedName.length < 2 || !Number.isSafeInteger(input.valueMinor) || input.valueMinor <= 0 || (input.kind !== "PERCENTAGE" && input.kind !== "FIXED")) throw new Error("DSH_PARTNER_PROMOTION_CREATE_INPUT_INVALID");
+      const path = dshOperationPaths.createPartnerStorePromotion.path.replace("{storeId}", encodeURIComponent(normalizedStore));
+      return userRequest<PromotionResponse>(accessToken, path, dshOperationPaths.createPartnerStorePromotion.method, { ...input, code: normalizedCode, nameAr: normalizedName, fundingSource: "PARTNER" }, mutationHeaders(idempotencyKey, correlationID));
+    },
+    async setPartnerStorePromotionState(accessToken: string, storeID: string, promotionID: string, input: MarketingPublicationRequest, expectedVersion: number, idempotencyKey: string, correlationID: string): Promise<PromotionResponse> {
+      const normalizedStore = storeID.trim();
+      const normalizedPromotion = promotionID.trim();
+      if (!normalizedStore || !normalizedPromotion || !Number.isInteger(expectedVersion) || expectedVersion < 1 || !["PUBLISHED", "PAUSED", "ENDED"].includes(input.state)) throw new Error("DSH_PARTNER_PROMOTION_STATE_INPUT_INVALID");
+      const path = dshOperationPaths.setPartnerStorePromotionState.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{promotionId}", encodeURIComponent(normalizedPromotion));
+      return userRequest<PromotionResponse>(accessToken, path, dshOperationPaths.setPartnerStorePromotionState.method, input, { ...mutationHeaders(idempotencyKey, correlationID), "X-Expected-Version": String(expectedVersion) });
     },
     async readPartnerStoreOperationalAvailability(accessToken: string, storeID: string): Promise<PartnerStoreOperationalAvailabilityResponse> {
       const normalizedStore = storeID.trim();

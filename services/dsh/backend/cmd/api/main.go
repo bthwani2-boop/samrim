@@ -94,7 +94,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	storeAccessServer, err := transporthttp.NewStoreAccess(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
+	storeAccessServer, err := transporthttp.NewStoreAccess(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, paymentClient)
 	if err != nil {
 		log.Fatal(err)
 	}
