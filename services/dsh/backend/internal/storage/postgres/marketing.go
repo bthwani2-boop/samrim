@@ -16,7 +16,6 @@ var (
 	ErrPromotionIdempotencyConflict  = errors.New("promotion idempotency key was already used with different facts")
 	ErrPromotionVersionConflict      = errors.New("promotion version is stale")
 	ErrPromotionInvalid              = errors.New("promotion input is invalid")
-	ErrPromotionFundingNotSettleable = errors.New("only partner-funded promotions are settleable until the WLT funding split is live")
 	ErrPromotionUnavailable          = errors.New("promotion is not currently eligible")
 	ErrPromotionAlreadyRedeemed      = errors.New("promotion was already redeemed by this client")
 	ErrPromotionLimitReached         = errors.New("promotion redemption limit has been reached")
@@ -967,6 +966,10 @@ func SetPartnerCampaignOptIn(ctx context.Context, db *sql.DB, promotionID, store
 		record.EndsAt = &value
 	}
 	record.StoreOptInState = optInState.String
+	if err := tx.QueryRowContext(ctx, "SELECT version FROM dsh.commerce_promotion_store_opt_ins WHERE promotion_id=	record.StoreOptInState = optInState.String
+ AND store_id=	if err := tx.Commit(); err != nil {", promotionID, storeID).Scan(&record.StoreOptInVersion); err != nil {
+		return PartnerCampaignRecord{}, false, err
+	}
 	if err := tx.Commit(); err != nil {
 		return PartnerCampaignRecord{}, false, err
 	}
