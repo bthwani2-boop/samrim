@@ -261,14 +261,14 @@ func writeStorePayoutRecipientError(w http.ResponseWriter, err error) {
 }
 
 type partnerPayoutStoreAmountRequest struct {
-	StoreID    string `json:"storeId"`
-	AmountMinor int64 `json:"amountMinor"`
+	StoreID     string `json:"storeId"`
+	AmountMinor int64  `json:"amountMinor"`
 }
 
 type partnerPayoutRequestInput struct {
-	ScopeMode              string                            `json:"scopeMode"`
-	RequestedStoreIDs      []string                          `json:"storeIds"`
-	StoreAmounts           []partnerPayoutStoreAmountRequest `json:"storeAmounts"`
+	ScopeMode                string                            `json:"scopeMode"`
+	RequestedStoreIDs        []string                          `json:"storeIds"`
+	StoreAmounts             []partnerPayoutStoreAmountRequest `json:"storeAmounts"`
 	BeneficiaryIdentityFacts map[string]postgres.IdentityFacts `json:"beneficiaryIdentityFacts"`
 }
 
@@ -281,19 +281,19 @@ type partnerPayoutAllocationView struct {
 }
 
 type partnerPayoutRequestResponse struct {
-	Request partnerPayoutRequestView `json:"request"`
-	Replayed bool                    `json:"idempotentReplay"`
+	Request  partnerPayoutRequestView `json:"request"`
+	Replayed bool                     `json:"idempotentReplay"`
 }
 
 type partnerPayoutRequestView struct {
-	ID               string                        `json:"id"`
-	Status           string                        `json:"status"`
-	ScopeMode        string                        `json:"scopeMode"`
-	TotalAmountMinor int64                         `json:"totalAmountMinor"`
-	Currency         string                        `json:"currency"`
-	Stores           []partnerPayoutAllocationView `json:"stores"`
+	ID               string                         `json:"id"`
+	Status           string                         `json:"status"`
+	ScopeMode        string                         `json:"scopeMode"`
+	TotalAmountMinor int64                          `json:"totalAmountMinor"`
+	Currency         string                         `json:"currency"`
+	Stores           []partnerPayoutAllocationView  `json:"stores"`
 	Payouts          []postgres.PayoutRequestRecord `json:"payouts"`
-	CreatedAt        string                        `json:"createdAt"`
+	CreatedAt        string                         `json:"createdAt"`
 }
 
 func (s *Server) createPartnerPayoutRequest(w http.ResponseWriter, r *http.Request) {

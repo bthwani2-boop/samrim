@@ -27,7 +27,7 @@ const (
 )
 
 type PartnerPayoutStoreAmount struct {
-	StoreID    string
+	StoreID     string
 	AmountMinor int64
 }
 
