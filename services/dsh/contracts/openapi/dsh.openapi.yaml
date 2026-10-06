@@ -7646,7 +7646,7 @@ components:
 
     PromotionView:
       type: object
-      required: [id, code, nameAr, descriptionAr, kind, valueMinor, fundingSource, state, startsAt, redeemedCount, version, createdByActorId, createdAt, updatedAt]
+      required: [id, code, nameAr, descriptionAr, kind, valueMinor, fundingSource, requiresPartnerOptIn, state, startsAt, redeemedCount, version, createdByActorId, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -7672,6 +7672,12 @@ components:
           type: integer
           minimum: 1
           maximum: 99
+          nullable: true
+        requiresPartnerOptIn:
+          type: boolean
+        minOrderSubtotalMinor:
+          type: integer
+          minimum: 1
           nullable: true
         storeId:
           type: string
