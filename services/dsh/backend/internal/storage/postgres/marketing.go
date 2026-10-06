@@ -99,8 +99,9 @@ type PromotionInput struct {
 // PromotionTargetInput scopes a promotion to specific products or categories;
 // empty means the promotion applies store-wide.
 type PromotionTargetInput struct {
-	Kind string
-	Ref  string
+	Kind    string
+	Ref     string
+	LabelAr string
 }
 
 type promotionTargetQuerier interface {
@@ -108,7 +109,19 @@ type promotionTargetQuerier interface {
 }
 
 func readPromotionTargets(ctx context.Context, source promotionTargetQuerier, promotionID string) ([]PromotionTargetInput, error) {
-	rows, err := source.QueryContext(ctx, "SELECT target_kind,target_ref FROM dsh.commerce_promotion_targets WHERE promotion_id=$1 ORDER BY target_kind,target_ref", strings.TrimSpace(promotionID))
+	rows, err := source.QueryContext(ctx, `
+		SELECT t.target_kind,t.target_ref,
+			CASE
+				WHEN t.target_kind='PRODUCT' THEN COALESCE(p.canonical_name,'')
+				WHEN t.target_kind='CATEGORY' THEN COALESCE(c.name_ar,'')
+				ELSE ''
+			END AS target_label_ar
+		FROM dsh.commerce_promotion_targets t
+		LEFT JOIN dsh.catalog_products p ON t.target_kind='PRODUCT' AND p.id=t.target_ref
+		LEFT JOIN dsh.catalog_categories c ON t.target_kind='CATEGORY' AND c.id=t.target_ref
+		WHERE t.promotion_id=$1
+		ORDER BY t.target_kind,t.target_ref
+	`, strings.TrimSpace(promotionID))
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +129,7 @@ func readPromotionTargets(ctx context.Context, source promotionTargetQuerier, pr
 	targets := make([]PromotionTargetInput, 0, 2)
 	for rows.Next() {
 		var target PromotionTargetInput
-		if err := rows.Scan(&target.Kind, &target.Ref); err != nil {
+		if err := rows.Scan(&target.Kind, &target.Ref, &target.LabelAr); err != nil {
 			return nil, err
 		}
 		targets = append(targets, target)

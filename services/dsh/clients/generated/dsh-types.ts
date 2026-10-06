@@ -2623,6 +2623,7 @@ export type CreatePromotionRequest = {
 export type PromotionTarget = {
   readonly targetKind: "PRODUCT" | "CATEGORY";
   readonly targetRef: string;
+  readonly targetLabelAr?: string;
 };
 
 export type PartnerCampaignView = {

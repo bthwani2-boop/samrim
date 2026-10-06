@@ -7869,6 +7869,11 @@ components:
           type: string
           minLength: 1
           maxLength: 128
+        targetLabelAr:
+          type: string
+          maxLength: 320
+          readOnly: true
+          description: Canonical Arabic-facing product or category label resolved by DSH for presentation.
 
     PartnerCampaignView:
       type: object

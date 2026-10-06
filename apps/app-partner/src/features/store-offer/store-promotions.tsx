@@ -59,6 +59,15 @@ function minOrderSubtotalMinor(promotion: PromotionView): number {
   return typeof value === "number" ? value : 0;
 }
 
+function promotionScopeLabel(promotion: PromotionView): string {
+  const targets = promotion.targets ?? [];
+  if (targets.length === 0) return "النطاق: كل المتجر";
+  return "النطاق: " + targets.map((target) => {
+    const kind = target.targetKind === "PRODUCT" ? "منتج" : "فئة";
+    return `${kind}: ${target.targetLabelAr?.trim() || "هدف كتالوج"}`;
+  }).join("، ");
+}
+
 function campaignDecisionLabel(campaign: PartnerCampaignView): string {
   if (!requiresPartnerOptIn(campaign.promotion)) return "لا تحتاج موافقة المتجر";
   if (campaign.storeOptInState === "OPTED_IN") return "المتجر مشارك";
@@ -238,6 +247,7 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
         <Text style={styles.bucketTitle}>{bucket === "active" ? "نشطة" : bucket === "scheduled" ? "مجدولة أو موقوفة" : "منتهية"}</Text>
         {buckets[bucket].map((promotion) => { const threshold = minOrderSubtotalMinor(promotion); return <View key={promotion.id} style={styles.row}><View style={styles.rowCopy}>
           <Text style={styles.promoName}>{promotion.nameAr} · {promotion.code}</Text><Text style={styles.muted}>{benefitLabel(promotion)} · {fundingLabel(promotion)}</Text>
+          <Text style={styles.muted}>{promotionScopeLabel(promotion)}</Text>
           {threshold ? <Text style={styles.muted}>حد الطلب: {(threshold / 100).toLocaleString("ar")} ريال</Text> : null}
           <Text style={styles.muted}>من {new Date(promotion.startsAt).toLocaleString("ar-YE")}{promotion.endsAt ? " إلى " + new Date(promotion.endsAt).toLocaleString("ar-YE") : ""}</Text>
         </View><View style={styles.actions}>
@@ -253,6 +263,7 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
       {campaigns && campaigns.campaigns.length === 0 ? <Text style={styles.muted}>لا توجد حملات منصة مؤهلة لهذا المتجر الآن.</Text> : null}
       {(campaigns?.campaigns ?? []).map((campaign) => { const threshold = minOrderSubtotalMinor(campaign.promotion); return <View key={campaign.promotion.id} style={styles.row}><View style={styles.rowCopy}>
         <Text style={styles.promoName}>{campaign.promotion.nameAr}</Text><Text style={styles.muted}>{benefitLabel(campaign.promotion)} · {fundingLabel(campaign.promotion)}</Text>
+        <Text style={styles.muted}>{promotionScopeLabel(campaign.promotion)}</Text>
         {threshold ? <Text style={styles.muted}>حد الطلب: {(threshold / 100).toLocaleString("ar")} ريال</Text> : null}
         <Text style={campaign.storeOptInState === "OPTED_IN" ? styles.notice : styles.muted}>{campaignDecisionLabel(campaign)}</Text>
       </View>{requiresPartnerOptIn(campaign.promotion) ? <View style={styles.actions}>

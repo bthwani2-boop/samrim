@@ -2621,8 +2621,9 @@ type CreatePromotionRequest struct {
 }
 
 type PromotionTarget struct {
-	TargetKind string `json:"targetKind"`
-	TargetRef  string `json:"targetRef"`
+	TargetKind    string `json:"targetKind"`
+	TargetRef     string `json:"targetRef"`
+	TargetLabelAr string `json:"targetLabelAr,omitempty"`
 }
 
 type PartnerCampaignView struct {
