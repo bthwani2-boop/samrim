@@ -1,2 +1,4 @@
 import { FieldCases } from "../../src/features/field-operations/field-cases";
-export default function FieldCasesRoute() { return <FieldCases />; }
+import { FieldAdmissionGate } from "../../src/shell/field-admission-gate";
+
+export default function FieldCasesRoute() { return <FieldAdmissionGate><FieldCases /></FieldAdmissionGate>; }
