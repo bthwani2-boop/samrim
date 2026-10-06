@@ -93,7 +93,7 @@ export function BthwaniConfirmDialog({ visible, title, description, confirmLabel
   return (
     <Modal animationType="fade" onRequestClose={close} statusBarTranslucent transparent visible={visible}>
       <View style={styles.dialogBackdrop}>
-        <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: theme.color, opacity: 0.36 }]} />
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: theme.color, opacity: 0.36 }]} />
         <View accessibilityViewIsModal style={styles.dialogCard}>
           <Text accessibilityRole="header" style={styles.dialogTitle}>{title}</Text>
           <Text style={styles.dialogDescription}>{description}</Text>
