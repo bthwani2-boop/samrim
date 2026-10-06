@@ -1289,7 +1289,11 @@ WHERE s.id=$1 AND s.publication_state='published' AND ($4='CUSTOMER_PICKUP' OR a
 	var promotion PromotionRecord
 	var discountMinor int64
 	if promotionCode != "" {
-		promotion, discountMinor, err = EvaluatePromotion(ctx, tx, promotionCode, input.StoreID, input.Evidence.ServiceCityID, input.ClientActorID, total, true)
+		evalLines := make([]PromotionEvalLine, 0, len(lines))
+		for _, line := range lines {
+			evalLines = append(evalLines, PromotionEvalLine{ProductID: line.offer.Product.ID, AmountMinor: line.amount})
+		}
+		promotion, discountMinor, err = EvaluatePromotion(ctx, tx, promotionCode, input.StoreID, input.Evidence.ServiceCityID, input.ClientActorID, total, evalLines, true)
 		if err != nil {
 			return OrderRecord{}, false, err
 		}

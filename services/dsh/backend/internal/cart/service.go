@@ -196,7 +196,11 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 	var promotionID, normalizedPromotionCode string
 	normalizedPromotionCode = strings.ToUpper(strings.TrimSpace(promotionCode))
 	if normalizedPromotionCode != "" {
-		promotion, discount, promotionErr := postgres.EvaluatePromotion(ctx, s.db, normalizedPromotionCode, storeID, serviceCityID, actorID, subtotal.Int64(), false)
+		evalLines := make([]postgres.PromotionEvalLine, 0, len(cart.Lines))
+		for _, line := range cart.Lines {
+			evalLines = append(evalLines, postgres.PromotionEvalLine{ProductID: line.ProductID, AmountMinor: line.LineAmountMinor})
+		}
+		promotion, discount, promotionErr := postgres.EvaluatePromotion(ctx, s.db, normalizedPromotionCode, storeID, serviceCityID, actorID, subtotal.Int64(), evalLines, false)
 		if promotionErr != nil {
 			return CheckoutQuote{}, promotionErr
 		}

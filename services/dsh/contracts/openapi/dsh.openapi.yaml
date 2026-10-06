@@ -350,6 +350,10 @@ paths:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1promotions"
   /dsh/partner/stores/{storeId}/promotions/{promotionId}/state:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1promotions~1{promotionId}~1state"
+  /dsh/partner/stores/{storeId}/campaigns:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1campaigns"
+  /dsh/partner/stores/{storeId}/campaigns/{promotionId}/opt-in:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1campaigns~1{promotionId}~1opt-in"
 
   /dsh/operator/discovery-content:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1discovery-content"
@@ -7796,6 +7800,17 @@ components:
           minimum: 1
           maximum: 99
           nullable: true
+        requiresPartnerOptIn:
+          type: boolean
+        minOrderSubtotalMinor:
+          type: integer
+          minimum: 1
+          nullable: true
+        targets:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/PromotionTarget"
         storeId:
           type: string
           maxLength: 128
@@ -7813,6 +7828,62 @@ components:
           type: integer
           minimum: 1
           nullable: true
+
+    PromotionTarget:
+      type: object
+      additionalProperties: false
+      required: [targetKind, targetRef]
+      properties:
+        targetKind:
+          type: string
+          enum: [PRODUCT, CATEGORY]
+        targetRef:
+          type: string
+          minLength: 1
+          maxLength: 128
+
+    PartnerCampaignView:
+      type: object
+      additionalProperties: false
+      required: [promotion, storeOptInState]
+      properties:
+        promotion:
+          $ref: "#/components/schemas/PromotionView"
+        storeOptInState:
+          type: string
+          enum: [OPTED_IN, DECLINED, ""]
+        storeOptInVersion:
+          type: integer
+          minimum: 0
+
+    PartnerCampaignListResponse:
+      type: object
+      additionalProperties: false
+      required: [campaigns]
+      properties:
+        campaigns:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartnerCampaignView"
+
+    CampaignOptInRequest:
+      type: object
+      additionalProperties: false
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [OPTED_IN, DECLINED]
+
+    PartnerCampaignOptInResponse:
+      type: object
+      additionalProperties: false
+      required: [campaign]
+      properties:
+        campaign:
+          $ref: "#/components/schemas/PartnerCampaignView"
+        idempotentReplay:
+          type: boolean
 
     MarketingPublicationRequest:
       type: object

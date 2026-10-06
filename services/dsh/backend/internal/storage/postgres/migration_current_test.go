@@ -16,8 +16,8 @@ func TestCanonicalJourneyMigrationGraphIncludesJoiningCaseIntakeDetails(t *testi
 		t.Fatalf("canonical DSH migration graph size: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.CanonicalSchemaVersion)
 	}
 	last := records[len(records)-1]
-	if last.Version != postgres.CanonicalSchemaVersion || last.Name != "099_store_access_permission_expansion.sql" {
-		t.Fatalf("last canonical DSH migration = v%d %q; want v%d 099_store_access_permission_expansion.sql", last.Version, last.Name, postgres.CanonicalSchemaVersion)
+	if last.Version != postgres.CanonicalSchemaVersion || last.Name != "100_promotion_targeting_and_campaigns.sql" {
+		t.Fatalf("last canonical DSH migration = v%d %q; want v%d 100_promotion_targeting_and_campaigns.sql", last.Version, last.Name, postgres.CanonicalSchemaVersion)
 	}
 
 	migrationByName := make(map[string]string, len(records))
