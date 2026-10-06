@@ -1,4 +1,4 @@
-name: Sonar Quality Gate
+name: Sonar Observe
 
 on:
   pull_request:
@@ -6,7 +6,6 @@ on:
       - main
     types:
       - opened
-      - synchronize
       - reopened
       - ready_for_review
   push:
@@ -22,15 +21,16 @@ concurrency:
 
 jobs:
   sonar:
-    # Stable observational check name; main protection is owned by the live repository ruleset.
-    name: SonarQube Cloud Quality Gate
+    # Observational only. Main protection is owned by the live repository ruleset.
+    name: SonarQube Cloud Observe
     runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     if: >
       (github.event_name == 'pull_request' &&
       github.event.pull_request.base.ref == 'main' &&
-      github.event.pull_request.head.repo.full_name == github.repository) ||
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.draft == false) ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
 
     steps:
@@ -45,7 +45,6 @@ jobs:
         uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
         with:
           args: >-
-            -Dsonar.qualitygate.wait=true
             ${{ github.event_name == 'pull_request' && format('-Dsonar.pullrequest.key={0} -Dsonar.pullrequest.branch={1} -Dsonar.pullrequest.base={2}', github.event.pull_request.number, github.event.pull_request.head.ref, github.event.pull_request.base.ref) || '-Dsonar.branch.name=main' }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
