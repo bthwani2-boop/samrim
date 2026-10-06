@@ -189,7 +189,7 @@ func (s *Service) ListRoleAdmissionsForOperator(ctx context.Context, actingActor
 	if err != nil {
 		return nil, err
 	}
-	return s.addMaskedDelegatePhones(ctx, grants)
+	return s.addDelegatePresentation(ctx, grants)
 }
 
 func (s *Service) AdmitPartnerRoleForOperator(ctx context.Context, grantID, actingActorID, idempotencyKey, correlationID string) (postgres.StoreAccessGrant, bool, error) {
