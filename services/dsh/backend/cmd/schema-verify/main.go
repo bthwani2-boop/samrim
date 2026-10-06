@@ -34,14 +34,14 @@ func main() {
 		log.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
-	records, _, err := postgres.LoadCanonicalMigrations()
+	records, _, err := postgres.LoadMigrations()
 	if err != nil {
 		log.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := postgres.VerifyCanonicalSchema(ctx, db, records); err != nil {
+	if err := postgres.VerifySchema(ctx, db, records); err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("DSH_SCHEMA_EXACT=PASS schema v%d", postgres.CanonicalSchemaVersion)
+	log.Printf("DSH_SCHEMA_EXACT=PASS schema v%d", postgres.SchemaVersion)
 }

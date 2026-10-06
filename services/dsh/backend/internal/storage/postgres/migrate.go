@@ -9,13 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"strconv"
 	"strings"
 	"time"
 
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 84
+const SchemaVersion = 100
 
 type MigrationRecord struct {
 	Version int
@@ -23,13 +24,7 @@ type MigrationRecord struct {
 	SHA256  string
 }
 
-var requiredTables = []struct {
-	name             string
-	columns          []string
-	forbiddenColumns []string
-	constraints      []string
-	indexes          []string
-}{
+var requiredTables = []schemaRelationExpectation{
 	{name: "dsh.schema_migrations", columns: []string{"version", "name", "sha256", "applied_at"}, constraints: []string{"schema_migrations_pkey"}},
 	{name: "dsh.stores", columns: []string{"id", "partner_actor_id", "name", "version", "created_at", "updated_at", "publication_state", "publication_changed_at", "delivery_origin_latitude", "delivery_origin_longitude", "delivery_origin_version", "delivery_origin_updated_at", "service_city_id", "primary_vertical_id", "fulfillment_modes", "commercial_store_type_id"}, constraints: []string{"stores_pkey", "stores_id_partner_actor_uq", "stores_name_length_chk", "stores_version_positive_chk", "stores_publication_state_chk", "stores_delivery_origin_pair_chk", "stores_delivery_origin_latitude_chk", "stores_delivery_origin_longitude_chk", "stores_delivery_origin_version_chk", "stores_delivery_origin_updated_at_chk", "stores_service_city_fk", "stores_primary_vertical_fk", "stores_fulfillment_modes_chk", "stores_commercial_type_vertical_fk"}, indexes: []string{"stores_partner_actor_idx", "stores_publication_state_idx", "stores_service_city_idx", "stores_primary_vertical_idx", "stores_commercial_type_idx", "stores_operator_updated_idx", "stores_published_city_name_registry_idx", "stores_published_city_name_prefix_registry_idx", "stores_published_city_created_registry_idx", "stores_published_city_name_search_idx"}},
 	{name: "dsh.joining_cases", columns: []string{"id", "contact_phone_e164", "business_name", "first_store_name", "partner_actor_id", "originating_field_actor_id", "origin", "state", "correction_reason", "reviewed_by", "store_id", "version", "created_at", "updated_at", "first_store_service_city_id", "first_store_vertical_id", "first_store_fulfillment_modes", "first_store_latitude", "first_store_longitude", "settlement_period", "financial_profile_id", "financial_profile_state", "terms_policy_version", "first_store_commercial_type_id", "wallet_provider_key"}, constraints: []string{"joining_cases_pkey", "joining_cases_phone_length_chk", "joining_cases_business_name_chk", "joining_cases_store_name_chk", "joining_cases_state_chk", "joining_cases_version_positive_chk", "joining_cases_store_fk", "joining_cases_service_city_fk", "joining_cases_first_store_vertical_fk", "joining_cases_first_store_commercial_type_fk", "joining_cases_origin_chk", "joining_cases_field_actor_chk", "joining_cases_store_origin_pair_chk", "joining_cases_store_origin_latitude_chk", "joining_cases_store_origin_longitude_chk", "joining_cases_settlement_period_chk", "joining_cases_financial_profile_state_chk", "joining_cases_first_store_fulfillment_modes_chk", "joining_cases_terms_policy_version_chk", "joining_cases_wallet_provider_key_chk"}, indexes: []string{"joining_cases_active_phone_uq", "joining_cases_partner_actor_uq", "joining_cases_state_idx", "joining_cases_service_city_idx", "joining_cases_first_store_vertical_idx", "joining_cases_field_actor_idx", "joining_cases_financial_profile_id_uq", "joining_cases_financial_profile_state_idx"}},
@@ -168,11 +163,24 @@ func Open(databaseURL string) (*sql.DB, error) {
 var embeddedMigrations embed.FS
 
 func LoadMigrations() ([]MigrationRecord, []string, error) {
-	names := []string{"001_partner_store_baseline.sql", "002_store_publication.sql", "003_joining_cases_and_catalog.sql", "004_central_product_store_assortment_cutover.sql", "005_joining_case_partner_correction.sql", "006_joining_case_correct_and_resubmit.sql", "007_location_core.sql", "008_location_core_corrective_boundaries.sql", "009_service_city_scope.sql", "010_central_catalog_refoundation.sql", "011_cart_checkout_order.sql", "012_catalog_semantic_correction.sql", "013_catalog_variant_mutations.sql", "014_catalog_proposal_import_closure.sql", "015_captain_dispatch_and_identity_boundary.sql", "016_captain_phone_constraint_correction.sql", "017_captain_access_and_timeout_canonicalization.sql", "018_remove_unjustified_captain_terminated_state.sql", "019_captain_delivery_recovery.sql", "020_field_standing_admission_and_joining_scope.sql", "021_joining_case_store_origin.sql", "022_order_payment_intents.sql", "023_catalog_media_management.sql", "024_catalog_media_assets.sql", "025_order_client_cancellation.sql", "026_captain_live_location.sql", "027_notification_read_state.sql", "028_client_favorite_stores.sql", "029_order_delivery_proof.sql", "030_order_ratings.sql", "031_field_joining_writer_cutover.sql", "032_catalog_quantity_inventory.sql", "033_partner_financial_terms_binding.sql", "034_field_commission_publication_outbox.sql", "035_order_fulfillment_mode.sql", "036_commerce_financial_handoff_outbox.sql", "037_financial_handoff_actor_provenance.sql", "038_order_conversation.sql", "039_promotions_discovery_content.sql", "040_multi_store_checkout.sql", "041_store_profile_media.sql", "042_field_notifications.sql", "043_discovery_content_analytics.sql", "044_store_pickup_financial_handoff.sql", "045_customer_pickup_fulfillment.sql", "046_store_fulfillment_modes_management.sql", "047_store_captain_membership.sql", "048_customer_pickup_cash_at_store_payment.sql", "049_customer_pickup_order_audit_events.sql", "050_delivery_proof_encryption.sql", "051_store_captain_dispatch_offers.sql", "052_partner_captain_fulfillment_mode.sql", "053_operator_store_fulfillment_modes.sql", "054_partner_captain_store_cash_handoff.sql", "055_catalog_registry_change_audit.sql", "056_catalog_attribute_rule_change_control.sql", "057_catalog_proposal_attribute_values.sql", "058_captain_operator_availability_reason.sql", "059_commerce_vertical_catalog_model.sql", "060_catalog_product_description.sql", "061_operator_store_registry.sql", "062_client_favorite_store_offers.sql", "063_partner_financial_terms_policy_provenance.sql", "064_partner_captain_cash_at_store_payment.sql", "065_marketing_operational_registries.sql", "066_catalog_category_media.sql", "067_store_profile_media_cleanup.sql", "068_field_operator_partner_admission.sql"}
-	names = append(names, "069_catalog_store_offer_paging.sql", "070_public_store_discovery_pagination.sql", "071_field_captain_profiles_and_review.sql", "072_store_profile_media_provenance.sql", "073_catalog_media_asset_references.sql", "074_catalog_media_provenance.sql", "075_discovery_content_media_assets.sql", "076_payment_cash_amount_snapshot.sql", "077_balance_only_financial_handoffs.sql", "078_catalog_offer_visibility_views.sql", "079_field_admission_service_city.sql", "080_field_acquisition_entitlement_handoff.sql", "081_commercial_store_types.sql", "082_field_acquisition_commercial_type.sql", "083_store_commercial_type_assignment.sql", "084_store_type_commission_owns_rate.sql")
-	records := make([]MigrationRecord, 0, len(names))
-	sqls := make([]string, 0, len(names))
-	for version, name := range names {
+	entries, err := fs.ReadDir(embeddedMigrations, "migrations")
+	if err != nil {
+		return nil, nil, fmt.Errorf("read DSH migration directory: %w", err)
+	}
+	records := make([]MigrationRecord, 0, len(entries))
+	sqls := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			return nil, nil, fmt.Errorf("unexpected DSH migration directory: %s", entry.Name())
+		}
+		name := entry.Name()
+		if len(name) < 9 || name[3] != '_' || !strings.HasSuffix(name, ".sql") {
+			return nil, nil, fmt.Errorf("invalid DSH migration filename: %s", name)
+		}
+		version, err := strconv.Atoi(name[:3])
+		if err != nil || version != len(records)+1 {
+			return nil, nil, fmt.Errorf("non-contiguous DSH migration sequence at %s", name)
+		}
 		raw, err := fs.ReadFile(embeddedMigrations, "migrations/"+name)
 		if err != nil {
 			return nil, nil, fmt.Errorf("read DSH migration %s: %w", name, err)
@@ -181,12 +189,14 @@ func LoadMigrations() ([]MigrationRecord, []string, error) {
 			return nil, nil, fmt.Errorf("DSH migration %s is empty", name)
 		}
 		digest := sha256.Sum256(raw)
-		records = append(records, MigrationRecord{Version: version + 1, Name: name, SHA256: hex.EncodeToString(digest[:])})
+		records = append(records, MigrationRecord{Version: version, Name: name, SHA256: hex.EncodeToString(digest[:])})
 		sqls = append(sqls, string(raw))
+	}
+	if len(records) != SchemaVersion {
+		return nil, nil, fmt.Errorf("DSH migration graph size is %d; want %d", len(records), SchemaVersion)
 	}
 	return records, sqls, nil
 }
-
 func Migrate(ctx context.Context, db *sql.DB, records []MigrationRecord, migrationSQL []string, proofKeys *DeliveryProofKeyring) error {
 	if db == nil || len(records) != SchemaVersion || len(migrationSQL) != len(records) {
 		return errors.New("invalid DSH migration input")
@@ -276,62 +286,14 @@ func VerifySchema(ctx context.Context, db *sql.DB, records []MigrationRecord) er
 			return fmt.Errorf("DSH migration history does not match canonical v%d", record.Version)
 		}
 	}
-	for _, table := range requiredTables {
-		var exists bool
-		if err := db.QueryRowContext(ctx, "SELECT to_regclass($1) IS NOT NULL", table.name).Scan(&exists); err != nil {
-			return fmt.Errorf("DSH relation check %s: %w", table.name, err)
+	for _, relation := range requiredTables {
+		if err := verifySchemaRelation(ctx, db, relation.name, relation.columns, relation.forbiddenColumns, relation.constraints, relation.indexes); err != nil {
+			return err
 		}
-		if !exists {
-			return fmt.Errorf("DSH required relation missing: %s", table.name)
-		}
-		parts := strings.SplitN(table.name, ".", 2)
-		rows, err := db.QueryContext(ctx, "SELECT column_name FROM information_schema.columns WHERE table_schema=$1 AND table_name=$2", parts[0], parts[1])
-		if err != nil {
-			return fmt.Errorf("DSH columns %s: %w", table.name, err)
-		}
-		found := map[string]bool{}
-		for rows.Next() {
-			var column string
-			if err := rows.Scan(&column); err != nil {
-				_ = rows.Close()
-				return fmt.Errorf("DSH column scan %s: %w", table.name, err)
-			}
-			found[column] = true
-		}
-		if err := rows.Err(); err != nil {
-			_ = rows.Close()
-			return fmt.Errorf("DSH column rows %s: %w", table.name, err)
-		}
-		if err := rows.Close(); err != nil {
-			return fmt.Errorf("DSH column close %s: %w", table.name, err)
-		}
-		for _, column := range table.columns {
-			if !found[column] {
-				return fmt.Errorf("DSH required column missing: %s.%s", table.name, column)
-			}
-		}
-		for _, column := range table.forbiddenColumns {
-			if found[column] {
-				return fmt.Errorf("DSH forbidden legacy column remains: %s.%s", table.name, column)
-			}
-		}
-		for _, constraint := range table.constraints {
-			var present bool
-			if err := db.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid=$1::regclass AND conname=$2)", table.name, constraint).Scan(&present); err != nil {
-				return fmt.Errorf("DSH constraint check %s.%s: %w", table.name, constraint, err)
-			}
-			if !present {
-				return fmt.Errorf("DSH required constraint missing: %s.%s", table.name, constraint)
-			}
-		}
-		for _, index := range table.indexes {
-			var present bool
-			if err := db.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname=$1 AND tablename=$2 AND indexname=$3)", parts[0], parts[1], index).Scan(&present); err != nil {
-				return fmt.Errorf("DSH index check %s.%s: %w", table.name, index, err)
-			}
-			if !present {
-				return fmt.Errorf("DSH required index missing: %s.%s", table.name, index)
-			}
+	}
+	for _, relation := range journeyRefoundationRelations {
+		if err := verifySchemaRelation(ctx, db, relation.name, relation.columns, relation.forbiddenColumns, relation.constraints, relation.indexes); err != nil {
+			return err
 		}
 	}
 	var databaseNow time.Time

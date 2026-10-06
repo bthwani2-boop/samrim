@@ -1,9 +1,0 @@
-{
-  "name": "identity-database",
-  "root": "services/identity/database",
-  "projectType": "library",
-  "tags": [
-    "scope:identity-database",
-    "type:service"
-  ]
-}
