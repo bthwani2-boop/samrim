@@ -68,20 +68,20 @@ type PaymentIntent struct {
 }
 
 type CustomerPaymentAllocation struct {
-	ID                         string                   `json:"id,omitempty"`
-	OrderID                    string                   `json:"orderId"`
-	StoreID                    string                   `json:"storeId"`
-	PartnerActorID             string                   `json:"partnerActorId"`
-	CommercialStoreTypeID      string                   `json:"commercialStoreTypeId"`
-	FulfillmentMode            string                   `json:"fulfillmentMode"`
-	PaymentIntentID            string                   `json:"paymentIntentId,omitempty"`
-	Currency                   string                   `json:"currency"`
-	SubtotalMinor              int64                    `json:"subtotalMinor"`
-	DeliveryFeeMinor           int64                    `json:"deliveryFeeMinor"`
-	DiscountMinor              int64                    `json:"discountMinor"`
-	InternalBalanceAmountMinor int64                    `json:"internalBalanceAmountMinor"`
-	CashAmountMinor            int64                    `json:"cashAmountMinor"`
-	CustomerPayableMinor       int64                    `json:"customerPayableMinor"`
+	ID                         string `json:"id,omitempty"`
+	OrderID                    string `json:"orderId"`
+	StoreID                    string `json:"storeId"`
+	PartnerActorID             string `json:"partnerActorId"`
+	CommercialStoreTypeID      string `json:"commercialStoreTypeId"`
+	FulfillmentMode            string `json:"fulfillmentMode"`
+	PaymentIntentID            string `json:"paymentIntentId,omitempty"`
+	Currency                   string `json:"currency"`
+	SubtotalMinor              int64  `json:"subtotalMinor"`
+	DeliveryFeeMinor           int64  `json:"deliveryFeeMinor"`
+	DiscountMinor              int64  `json:"discountMinor"`
+	InternalBalanceAmountMinor int64  `json:"internalBalanceAmountMinor"`
+	CashAmountMinor            int64  `json:"cashAmountMinor"`
+	CustomerPayableMinor       int64  `json:"customerPayableMinor"`
 	PolicyVersion              string `json:"policyVersion"`
 	CreatedAt                  string `json:"createdAt"`
 }
