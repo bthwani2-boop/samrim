@@ -1,4 +1,4 @@
-import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniConfirmDialog, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import { isMediaProvenanceInputValid, resolveJoiningCaseImageContentType, type DshImageUploadInput, type JoiningCaseResponse, type JoiningCaseSummary, joiningCaseStateLabel, type MediaProvenanceInput } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
@@ -56,6 +56,7 @@ export function FieldCases() {
   const [pendingImageAttempt, setPendingImageAttempt] = useState<PendingStoreImageAttempt | null>(null);
   const [proofImage, setProofImage] = useState<DshImageUploadInput | null>(null);
   const [pendingProofImageAttempt, setPendingProofImageAttempt] = useState<PendingProofImageAttempt | null>(null);
+  const [caseToSubmit, setCaseToSubmit] = useState<JoiningCaseSummary | null>(null);
   const pagination = useRef<FieldCasePagination>({ sequence: 0, query: routeQuery.trim(), cursor: "", loadingMore: false });
 
   useEffect(() => {
@@ -353,7 +354,7 @@ export function FieldCases() {
         <BthwaniButton disabled={Boolean(busy)} label="إعداد كتالوج المتجر الأولي" onPress={() => router.push(`/(app)/catalog/${encodeURIComponent(item.id)}` as Href)} variant="secondary" />
       </> : null}
       {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt)} label="استكمال صور المسودة" onPress={() => void openStoreImage(item)} variant="secondary" /> : null}
-      {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt) || (Boolean(storeImage) && mediaCase?.case.id !== item.id)} label="إرسال للمراجعة" onPress={() => void submitCase(item)} /> : null}
+      {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt) || (Boolean(storeImage) && mediaCase?.case.id !== item.id)} label="إرسال للمراجعة" onPress={() => setCaseToSubmit(item)} /> : null}
       {mediaCase?.case.id === item.id ? <View style={styles.card}>
         <Text style={styles.cardTitle}>صورة واجهة المتجر</Text>
         {mediaCase.case.storeProfileImage ? <Image accessibilityLabel="صورة المتجر المحفوظة" source={{ uri: mediaCase.case.storeProfileImage.uri }} style={{ borderRadius: 12, height: 150, width: "100%" }} resizeMode="cover" /> : <Text style={styles.muted}>لا توجد صورة محفوظة للشريك بعد.</Text>}
@@ -404,7 +405,7 @@ export function FieldCases() {
     paginationFooter = <View style={styles.caseListFooter}><Text style={styles.muted}>عُرضت كل النتائج المطابقة.</Text></View>;
   }
 
-  return <FlatList
+  return <><FlatList
     accessibilityLabel="الشركاء"
     data={cases}
     keyExtractor={(item) => item.id}
@@ -429,5 +430,18 @@ export function FieldCases() {
     showsVerticalScrollIndicator={false}
     style={styles.caseList}
     contentContainerStyle={styles.caseListContent}
-  />;
+  />
+  <BthwaniConfirmDialog
+    busy={Boolean(caseToSubmit && busy === caseToSubmit.id)}
+    confirmLabel="إرسال للمراجعة"
+    description={caseToSubmit ? `سيُغلق تحرير مسودة «${caseToSubmit.businessName} · ${caseToSubmit.firstStoreName}» لدى الميدان ويُنقل الطلب إلى مراجعة التشغيل والشريك. تأكد من اكتمال البيانات والصور قبل الإرسال.` : ""}
+    onCancel={() => setCaseToSubmit(null)}
+    onConfirm={() => {
+      const item = caseToSubmit;
+      setCaseToSubmit(null);
+      if (item) void submitCase(item);
+    }}
+    title="مراجعة إرسال طلب الانضمام"
+    visible={Boolean(caseToSubmit)}
+  /></>;
 }
