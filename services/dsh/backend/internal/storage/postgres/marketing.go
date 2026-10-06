@@ -966,8 +966,7 @@ func SetPartnerCampaignOptIn(ctx context.Context, db *sql.DB, promotionID, store
 		record.EndsAt = &value
 	}
 	record.StoreOptInState = optInState.String
-	if err := tx.QueryRowContext(ctx, "SELECT version FROM dsh.commerce_promotion_store_opt_ins WHERE promotion_id=	record.StoreOptInState = optInState.String
- AND store_id=	if err := tx.Commit(); err != nil {", promotionID, storeID).Scan(&record.StoreOptInVersion); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT version FROM dsh.commerce_promotion_store_opt_ins WHERE promotion_id=$1 AND store_id=$2", promotionID, storeID).Scan(&record.StoreOptInVersion); err != nil {
 		return PartnerCampaignRecord{}, false, err
 	}
 	if err := tx.Commit(); err != nil {
