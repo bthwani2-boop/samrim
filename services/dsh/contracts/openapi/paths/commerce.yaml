@@ -1198,6 +1198,28 @@ paths:
             type: integer
             minimum: 1
             maximum: 100
+        - name: state
+          in: query
+          required: false
+          description: Comma-separated canonical order states (at most 6).
+          schema:
+            type: string
+            maxLength: 160
+            example: "CREATED,PREPARING"
+        - name: q
+          in: query
+          required: false
+          description: Server-side search over order id and Store name.
+          schema:
+            type: string
+            maxLength: 128
+        - name: cursor
+          in: query
+          required: false
+          description: Keyset continuation cursor from a previous page.
+          schema:
+            type: string
+            maxLength: 1024
       responses:
         "200":
           description: Bounded partner Order list.
@@ -1205,6 +1227,63 @@ paths:
             application/json:
               schema:
                 $ref: "../dsh.openapi.yaml#/components/schemas/OrderListResponse"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/partner/orders:
+    get:
+      operationId: listPartnerOrders
+      summary: List Orders across the authenticated partner's server-authorized Store scope
+      security:
+        - userBearer: []
+      parameters:
+        - name: storeIds
+          in: query
+          required: false
+          description: Optional comma-separated narrowing filter; every requested Store must be server-authorized.
+          schema:
+            type: string
+            maxLength: 4096
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: state
+          in: query
+          required: false
+          description: Comma-separated canonical order states (at most 6).
+          schema:
+            type: string
+            maxLength: 160
+            example: "CREATED,PREPARING"
+        - name: q
+          in: query
+          required: false
+          description: Server-side search over order id and Store name.
+          schema:
+            type: string
+            maxLength: 128
+        - name: cursor
+          in: query
+          required: false
+          description: Keyset continuation cursor from a previous page.
+          schema:
+            type: string
+            maxLength: 1024
+      responses:
+        "200":
+          description: Bounded aggregate Partner Order page with unfiltered attention counts.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/PartnerOrdersResponse"
         "401":
           $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
         "403":

@@ -590,6 +590,9 @@ paths:
   /dsh/stores/{storeId}/orders:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders"
 
+  /dsh/partner/orders:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1partner~1orders"
+
   /dsh/stores/{storeId}/orders/{orderId}:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders~1{orderId}"
 
@@ -7492,6 +7495,42 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Order"
+        nextCursor:
+          type: string
+          maxLength: 1024
+
+    PartnerOrderAttentionCounts:
+      type: object
+      required: [newOrders, awaitingDispatch, deliveryRecovery]
+      additionalProperties: false
+      properties:
+        newOrders:
+          type: integer
+          format: int64
+          minimum: 0
+        awaitingDispatch:
+          type: integer
+          format: int64
+          minimum: 0
+        deliveryRecovery:
+          type: integer
+          format: int64
+          minimum: 0
+
+    PartnerOrdersResponse:
+      type: object
+      required: [orders, attention]
+      additionalProperties: false
+      properties:
+        orders:
+          type: array
+          items:
+            $ref: "#/components/schemas/Order"
+        nextCursor:
+          type: string
+          maxLength: 1024
+        attention:
+          $ref: "#/components/schemas/PartnerOrderAttentionCounts"
 
     OperatorAssignmentSummary:
       type: object

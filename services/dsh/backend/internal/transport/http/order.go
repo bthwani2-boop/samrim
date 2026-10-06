@@ -54,6 +54,7 @@ func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/operator/cash-custody", s.listOperatorCashCustody)
 	mux.HandleFunc("POST /dsh/operator/cash-remittances/{remittanceId}/reconcile", s.reconcileOperatorCashRemittance)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders", s.listStore)
+	mux.HandleFunc("GET /dsh/partner/orders", s.listPartnerOrders)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders/{orderId}", s.readStore)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/orders/{orderId}/adjustments", s.proposePartnerOrderAdjustment)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/orders/{orderId}/transition", s.transition)
@@ -509,12 +510,109 @@ func (s *OrderServer) listStore(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	items, err := s.service.ListForPartner(r.Context(), bearerToken(r), storeID, limit)
+	state, ok := orderStateFilter(w, r)
+	if !ok {
+		return
+	}
+	query, ok := orderSearchQuery(w, r)
+	if !ok {
+		return
+	}
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	if len(cursor) > 1024 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cursor is invalid")
+		return
+	}
+	page, err := s.service.ListForPartner(r.Context(), bearerToken(r), storeID, orderStateValues(state), query, limit, cursor)
 	if err != nil {
 		writeOrderError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, contract.OrderListResponse{Orders: toOrders(items)})
+	writeJSON(w, http.StatusOK, contract.OrderListResponse{Orders: toOrders(page.Orders), NextCursor: page.NextCursor})
+}
+
+// listPartnerOrders serves the aggregate Partner order read across the
+// actor's server-authorized Store scope; requested storeIds only narrow that
+// server-resolved scope.
+func (s *OrderServer) listPartnerOrders(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "partner session is required")
+		return
+	}
+	limit, ok := orderLimit(w, r)
+	if !ok {
+		return
+	}
+	state, ok := orderStateFilter(w, r)
+	if !ok {
+		return
+	}
+	query, ok := orderSearchQuery(w, r)
+	if !ok {
+		return
+	}
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	if len(cursor) > 1024 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cursor is invalid")
+		return
+	}
+	var requestedStoreIDs []string
+	if raw := strings.TrimSpace(r.URL.Query().Get("storeIds")); raw != "" {
+		requestedStoreIDs = strings.Split(raw, ",")
+		if len(requestedStoreIDs) > 200 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "storeIds is invalid")
+			return
+		}
+	}
+	page, attention, err := s.service.ListForAuthorizedPartnerStores(r.Context(), bearerToken(r), requestedStoreIDs, orderStateValues(state), query, limit, cursor)
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.PartnerOrdersResponse{
+		Orders:     toOrders(page.Orders),
+		NextCursor: page.NextCursor,
+		Attention: contract.PartnerOrderAttentionCounts{
+			NewOrders:        int(attention.NewOrders),
+			AwaitingDispatch: int(attention.AwaitingDispatch),
+			DeliveryRecovery: int(attention.DeliveryRecovery),
+		},
+	})
+}
+
+func orderStateFilter(w http.ResponseWriter, r *http.Request) (string, bool) {
+	state := strings.TrimSpace(r.URL.Query().Get("state"))
+	if state == "" {
+		return "", true
+	}
+	values := orderStateValues(state)
+	if len(values) == 0 || len(values) > 6 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "state filter is not a canonical order state list")
+		return "", false
+	}
+	for _, value := range values {
+		if !validOperatorOrderState(value) {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "state filter is not a canonical order state")
+			return "", false
+		}
+	}
+	return state, true
+}
+
+func orderStateValues(state string) []string {
+	if strings.TrimSpace(state) == "" {
+		return nil
+	}
+	return strings.Split(state, ",")
+}
+
+func orderSearchQuery(w http.ResponseWriter, r *http.Request) (string, bool) {
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if len([]rune(query)) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "search query must be at most 128 characters")
+		return "", false
+	}
+	return query, true
 }
 
 func (s *OrderServer) readStore(w http.ResponseWriter, r *http.Request) {
@@ -709,8 +807,10 @@ func snapshotBoolValue(value *bool) bool {
 
 func writeOrderError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, postgres.ErrOperatorOperationInvalidCursor), errors.Is(err, postgres.ErrOperatorOperationInvalidLimit):
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "operator operations pagination is invalid")
+	case errors.Is(err, postgres.ErrPartnerOrdersScopeInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partner orders Store scope is invalid")
+	case errors.Is(err, postgres.ErrPartnerOrdersInvalidState), errors.Is(err, postgres.ErrPartnerOrdersInvalidQuery), errors.Is(err, postgres.ErrPartnerOrdersInvalidCursor), errors.Is(err, postgres.ErrOperatorOperationInvalidCursor), errors.Is(err, postgres.ErrOperatorOperationInvalidLimit):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partner or operator orders pagination, state, or search is invalid")
 	case errors.Is(err, orderdomain.ErrClientSessionForbidden), errors.Is(err, orderdomain.ErrPartnerSessionForbidden), errors.Is(err, orderdomain.ErrStoreOwnershipForbidden), errors.Is(err, orderdomain.ErrOperatorNotActive):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the authenticated session is not permitted for this Order")
 	case errors.Is(err, postgres.ErrOrderNotFound):

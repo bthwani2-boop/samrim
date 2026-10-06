@@ -160,15 +160,65 @@ func (s *Service) DecideOrderAdjustmentForClient(ctx context.Context, accessToke
 	return postgres.DecideOrderAdjustment(ctx, s.db, orderID, adjustmentID, identity, decision, expectedOrderVersion, expectedAdjustmentVersion, idempotencyKey, correlationID)
 }
 
-func (s *Service) ListForPartner(ctx context.Context, accessToken, storeID string, limit int) ([]postgres.OrderRecord, error) {
+func (s *Service) ListForPartner(ctx context.Context, accessToken, storeID string, states []string, query string, limit int, cursor string) (postgres.PartnerOrdersPage, error) {
 	identity, err := s.requireSession(ctx, accessToken, "partner", "app-partner")
 	if err != nil {
-		return nil, err
+		return postgres.PartnerOrdersPage{}, err
 	}
 	if err := s.requireOwnedStore(ctx, identity, storeID); err != nil {
-		return nil, err
+		return postgres.PartnerOrdersPage{}, err
 	}
-	return postgres.ListOrdersForStore(ctx, s.db, strings.TrimSpace(storeID), "", limit)
+	return postgres.ListOrdersForPartnerStores(ctx, s.db, []string{strings.TrimSpace(storeID)}, states, query, limit, cursor)
+}
+
+// ListForAuthorizedPartnerStores lists orders across the actor's server-resolved
+// authorized Store scope. Client-supplied store IDs are only a narrowing filter:
+// every requested Store must be in the authorized scope or the request fails closed.
+func (s *Service) ListForAuthorizedPartnerStores(ctx context.Context, accessToken string, requestedStoreIDs []string, states []string, query string, limit int, cursor string) (postgres.PartnerOrdersPage, postgres.PartnerOrderAttentionCounts, error) {
+	identity, err := s.requireSession(ctx, accessToken, "partner", "app-partner")
+	if err != nil {
+		return postgres.PartnerOrdersPage{}, postgres.PartnerOrderAttentionCounts{}, err
+	}
+	authorized, err := postgres.ListPartnerOrdersAuthorizedStoreIDs(ctx, s.db, identity)
+	if err != nil {
+		return postgres.PartnerOrdersPage{}, postgres.PartnerOrderAttentionCounts{}, err
+	}
+	if len(authorized) == 0 {
+		return postgres.PartnerOrdersPage{}, postgres.PartnerOrderAttentionCounts{}, ErrStoreOwnershipForbidden
+	}
+	scope := authorized
+	if len(requestedStoreIDs) > 0 {
+		scope = make([]string, 0, len(requestedStoreIDs))
+		for _, requested := range requestedStoreIDs {
+			requested = strings.TrimSpace(requested)
+			if requested == "" {
+				continue
+			}
+			authorizedStore := false
+			for _, storeID := range authorized {
+				if storeID == requested {
+					authorizedStore = true
+					break
+				}
+			}
+			if !authorizedStore {
+				return postgres.PartnerOrdersPage{}, postgres.PartnerOrderAttentionCounts{}, ErrStoreOwnershipForbidden
+			}
+			scope = append(scope, requested)
+		}
+		if len(scope) == 0 {
+			scope = authorized
+		}
+	}
+	counts, err := postgres.CountPartnerOrderAttention(ctx, s.db, scope)
+	if err != nil {
+		return postgres.PartnerOrdersPage{}, postgres.PartnerOrderAttentionCounts{}, err
+	}
+	page, err := postgres.ListOrdersForPartnerStores(ctx, s.db, scope, states, query, limit, cursor)
+	if err != nil {
+		return postgres.PartnerOrdersPage{}, postgres.PartnerOrderAttentionCounts{}, err
+	}
+	return page, counts, nil
 }
 
 func (s *Service) ListForOperator(ctx context.Context, state, query, sort, actingActorID string, actionableOnly bool, limit int, cursor string) (postgres.OperatorOperationsResult, error) {

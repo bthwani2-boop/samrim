@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -34,6 +35,10 @@ var (
 	ErrDeliveryFeeUnavailable      = errors.New("delivery fee could not be resolved")
 	ErrPaymentStateConflict        = errors.New("order payment state is stale or invalid")
 	ErrCheckoutRecipientInvalid    = errors.New("checkout delivery recipient is invalid")
+	ErrPartnerOrdersScopeInvalid   = errors.New("partner orders Store scope is invalid")
+	ErrPartnerOrdersInvalidState   = errors.New("partner orders state filter is invalid")
+	ErrPartnerOrdersInvalidQuery   = errors.New("partner orders search query is invalid")
+	ErrPartnerOrdersInvalidCursor  = errors.New("partner orders cursor is invalid")
 )
 
 const CancellationReasonPickupCustomerNoShow = "pickup_customer_no_show"
@@ -379,6 +384,200 @@ func ListOrdersForClientByCart(ctx context.Context, db *sql.DB, clientActorID, c
 
 func ListOrdersForStore(ctx context.Context, db *sql.DB, storeID, state string, limit int) ([]OrderRecord, error) {
 	return listOrders(ctx, db, "o.store_id=$1", []any{strings.TrimSpace(storeID)}, state, limit)
+}
+
+// PartnerOrdersPage is one bounded, server-authorized page of Partner orders
+// with a keyset continuation cursor.
+type PartnerOrdersPage struct {
+	Orders     []OrderRecord
+	NextCursor string
+}
+
+// PartnerOrderAttentionCounts are unfiltered counts over the authorized Store
+// scope so badges stay stable while the partner filters the visible list.
+type PartnerOrderAttentionCounts struct {
+	NewOrders        int64
+	AwaitingDispatch int64
+	DeliveryRecovery int64
+}
+
+type partnerOrdersCursor struct {
+	CreatedAt time.Time `json:"createdAt"`
+	ID        string    `json:"id"`
+	State     string    `json:"state"`
+	Query     string    `json:"query"`
+}
+
+func encodePartnerOrdersCursor(cursor partnerOrdersCursor) string {
+	raw, _ := json.Marshal(cursor)
+	return base64.RawURLEncoding.EncodeToString(raw)
+}
+
+func decodePartnerOrdersCursor(raw, state, query string) (partnerOrdersCursor, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
+	if err != nil {
+		return partnerOrdersCursor{}, ErrPartnerOrdersInvalidCursor
+	}
+	var cursor partnerOrdersCursor
+	if err := json.Unmarshal(decoded, &cursor); err != nil {
+		return partnerOrdersCursor{}, ErrPartnerOrdersInvalidCursor
+	}
+	if cursor.State != state || cursor.Query != query || cursor.ID == "" || cursor.CreatedAt.IsZero() {
+		return partnerOrdersCursor{}, ErrPartnerOrdersInvalidCursor
+	}
+	return cursor, nil
+}
+
+// ListPartnerOrdersAuthorizedStoreIDs resolves the server-owned authorized
+// scope for Partner order reads: owned Stores plus active Store grants carrying
+// the orders permission. Client-provided scope is never trusted.
+func ListPartnerOrdersAuthorizedStoreIDs(ctx context.Context, db *sql.DB, actorID string) ([]string, error) {
+	actorID = strings.TrimSpace(actorID)
+	if db == nil || actorID == "" || len(actorID) > 128 {
+		return nil, ErrPartnerOrdersScopeInvalid
+	}
+	rows, err := db.QueryContext(ctx, `SELECT id FROM dsh.stores WHERE partner_actor_id=$1
+		UNION SELECT store_id FROM dsh.store_access_grants WHERE delegate_actor_id=$1 AND state='active' AND 'orders'=ANY(permissions)`, actorID, actorID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve partner orders scope: %w", err)
+	}
+	defer rows.Close()
+	storeIDs := make([]string, 0, 4)
+	for rows.Next() {
+		var storeID string
+		if err := rows.Scan(&storeID); err != nil {
+			return nil, err
+		}
+		storeIDs = append(storeIDs, storeID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return storeIDs, nil
+}
+
+// ListOrdersForPartnerStores returns one keyset page of orders across the given
+// server-authorized Store scope, filtered by canonical states and a bounded
+// search over order id and Store name.
+func ListOrdersForPartnerStores(ctx context.Context, db *sql.DB, storeIDs []string, states []string, query string, limit int, cursor string) (PartnerOrdersPage, error) {
+	if db == nil || limit < 1 || limit > 100 || len(storeIDs) == 0 || len(storeIDs) > 200 {
+		return PartnerOrdersPage{}, ErrPartnerOrdersScopeInvalid
+	}
+	states, err := canonicalOrderStates(states)
+	if err != nil {
+		return PartnerOrdersPage{}, err
+	}
+	query = strings.TrimSpace(query)
+	if utf8.RuneCountInString(query) > 128 {
+		return PartnerOrdersPage{}, ErrPartnerOrdersInvalidQuery
+	}
+	statesKey := strings.Join(states, ",")
+	args := []any{storeIDs}
+	where := "o.store_id = ANY($1)"
+	if len(states) > 0 {
+		args = append(args, states)
+		where += " AND o.state = ANY($" + strconv.Itoa(len(args)) + ")"
+	}
+	if query != "" {
+		args = append(args, "%"+escapeOperatorOperationSearch(query)+"%")
+		where += " AND (o.id ILIKE $" + strconv.Itoa(len(args)) + " ESCAPE '!' OR s.name ILIKE $" + strconv.Itoa(len(args)) + " ESCAPE '!')"
+	}
+	if strings.TrimSpace(cursor) != "" {
+		decoded, err := decodePartnerOrdersCursor(cursor, statesKey, query)
+		if err != nil {
+			return PartnerOrdersPage{}, err
+		}
+		args = append(args, decoded.CreatedAt, decoded.ID)
+		where += " AND (o.created_at,o.id) < ($" + strconv.Itoa(len(args)-1) + ",$" + strconv.Itoa(len(args)) + ")"
+	}
+	args = append(args, limit+1)
+	rows, err := db.QueryContext(ctx, "SELECT "+orderSelectColumnsWithStore+" FROM dsh.commerce_orders o JOIN dsh.stores s ON s.id=o.store_id WHERE "+where+" ORDER BY o.created_at DESC,o.id DESC LIMIT $"+strconv.Itoa(len(args)), args...)
+	if err != nil {
+		return PartnerOrdersPage{}, err
+	}
+	defer rows.Close()
+	items := make([]OrderRecord, 0, limit+1)
+	for rows.Next() {
+		order, scanErr := scanOrderWithStore(rows)
+		if scanErr != nil {
+			return PartnerOrdersPage{}, scanErr
+		}
+		items = append(items, order)
+	}
+	if err := rows.Err(); err != nil {
+		return PartnerOrdersPage{}, err
+	}
+	rows.Close()
+	page := PartnerOrdersPage{Orders: items}
+	if len(items) > limit {
+		last := items[limit-1]
+		page.Orders = items[:limit]
+		page.NextCursor = encodePartnerOrdersCursor(partnerOrdersCursor{CreatedAt: last.CreatedAt, ID: last.ID, State: statesKey, Query: query})
+	}
+	var lineErr error
+	for index := range page.Orders {
+		page.Orders[index].Lines, lineErr = listOrderLines(ctx, db, page.Orders[index].ID)
+		if lineErr != nil {
+			return PartnerOrdersPage{}, lineErr
+		}
+		page.Orders[index].Adjustments, lineErr = listOrderAdjustments(ctx, db, page.Orders[index].ID)
+		if lineErr != nil {
+			return PartnerOrdersPage{}, lineErr
+		}
+	}
+	return page, nil
+}
+
+// canonicalOrderStates validates a bounded order-state filter: every entry must
+// be a canonical state and at most six states may be combined.
+func canonicalOrderStates(states []string) ([]string, error) {
+	if len(states) > 6 {
+		return nil, ErrPartnerOrdersInvalidState
+	}
+	canonical := make([]string, 0, len(states))
+	seen := map[string]struct{}{}
+	for _, state := range states {
+		state = strings.TrimSpace(state)
+		if state == "" {
+			continue
+		}
+		if !validOrderState(state) {
+			return nil, ErrPartnerOrdersInvalidState
+		}
+		if _, duplicate := seen[state]; duplicate {
+			continue
+		}
+		seen[state] = struct{}{}
+		canonical = append(canonical, state)
+	}
+	sort.Strings(canonical)
+	return canonical, nil
+}
+
+// CountPartnerOrderAttention computes unfiltered attention counts over the
+// authorized Store scope.
+func CountPartnerOrderAttention(ctx context.Context, db *sql.DB, storeIDs []string) (PartnerOrderAttentionCounts, error) {
+	if db == nil || len(storeIDs) == 0 || len(storeIDs) > 200 {
+		return PartnerOrderAttentionCounts{}, ErrPartnerOrdersScopeInvalid
+	}
+	var counts PartnerOrderAttentionCounts
+	err := db.QueryRowContext(ctx, `SELECT
+			count(*) FILTER (WHERE o.state='CREATED'),
+			count(*) FILTER (WHERE o.state='READY_FOR_DISPATCH'),
+			count(*) FILTER (WHERE o.state='DELIVERY_FAILED')
+		FROM dsh.commerce_orders o WHERE o.store_id = ANY($1)`, storeIDs).Scan(&counts.NewOrders, &counts.AwaitingDispatch, &counts.DeliveryRecovery)
+	if err != nil {
+		return PartnerOrderAttentionCounts{}, fmt.Errorf("count partner order attention: %w", err)
+	}
+	return counts, nil
+}
+
+func validOrderState(state string) bool {
+	switch state {
+	case "CREATED", "PARTNER_ACCEPTED", "PREPARING", "READY_FOR_DISPATCH", "READY_FOR_PICKUP", "PICKED_UP", "CAPTAIN_ASSIGNED", "IN_CUSTODY", "DELIVERED", "DELIVERY_FAILED", "REJECTED", "CANCELLED":
+		return true
+	}
+	return false
 }
 
 var (
