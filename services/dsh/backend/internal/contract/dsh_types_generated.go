@@ -2393,6 +2393,8 @@ type BeneficiaryFundingIntentResponse struct {
 type BeneficiaryPayoutState struct {
 	ActorType              string                     `json:"actorType"`
 	ActorID                string                     `json:"actorId"`
+	DisplayName            string                     `json:"displayName,omitempty"`
+	PhoneMasked            string                     `json:"phoneMasked,omitempty"`
 	Currency               string                     `json:"currency"`
 	EligibleAvailableMinor int                        `json:"eligibleAvailableMinor"`
 	HeldMinor              int                        `json:"heldMinor"`

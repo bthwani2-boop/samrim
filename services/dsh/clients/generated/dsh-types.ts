@@ -2393,6 +2393,8 @@ export type BeneficiaryFundingIntentResponse = {
 export type BeneficiaryPayoutState = {
   readonly actorType: "customer" | "partner" | "captain" | "field";
   readonly actorId: string;
+  readonly displayName?: string;
+  readonly phoneMasked?: string;
   readonly currency: "YER";
   readonly eligibleAvailableMinor: number;
   readonly heldMinor: number;

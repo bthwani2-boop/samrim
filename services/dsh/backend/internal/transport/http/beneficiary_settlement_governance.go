@@ -229,6 +229,48 @@ func (s *BeneficiaryFinanceServer) listOperatorBeneficiaryPayoutStates(w http.Re
 		writeWLTFinanceError(w, err)
 		return
 	}
+	actorIDsByType := map[string][]string{"partner": {}, "captain": {}, "field": {}}
+	for _, item := range result.Beneficiaries {
+		if _, supported := actorIDsByType[item.ActorType]; supported && strings.TrimSpace(item.ActorID) != "" {
+			actorIDsByType[item.ActorType] = append(actorIDsByType[item.ActorType], item.ActorID)
+		}
+	}
+	displayNames := make(map[string]string)
+	phones := make(map[string]string)
+	for actorType, actorIDs := range actorIDsByType {
+		if len(actorIDs) == 0 {
+			continue
+		}
+		names, nameErr := postgres.ReadBeneficiaryFinanceDisplayNames(r.Context(), s.db, actorType, actorIDs)
+		if nameErr != nil {
+			writeError(w, http.StatusBadGateway, "DSH_STORAGE_UNAVAILABLE", "beneficiary presentation is unavailable")
+			return
+		}
+		for actorID, displayName := range names {
+			displayNames[actorType+"\x00"+actorID] = displayName
+		}
+		for start := 0; start < len(actorIDs); start += 100 {
+			end := start + 100
+			if end > len(actorIDs) {
+				end = len(actorIDs)
+			}
+			roles, roleErr := s.identity.ReadActorRoles(r.Context(), actorType, actorIDs[start:end])
+			if roleErr != nil {
+				writeIdentityError(w, roleErr)
+				return
+			}
+			for _, role := range roles.Items {
+				if role.Role == actorType && role.ActorID != "" {
+					phones[actorType+"\x00"+role.ActorID] = maskPartnerFinancePhone(role.PhoneE164)
+				}
+			}
+		}
+	}
+	for index := range result.Beneficiaries {
+		key := result.Beneficiaries[index].ActorType + "\x00" + result.Beneficiaries[index].ActorID
+		result.Beneficiaries[index].DisplayName = displayNames[key]
+		result.Beneficiaries[index].PhoneMasked = phones[key]
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, result)
 }

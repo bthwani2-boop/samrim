@@ -723,6 +723,8 @@ type settlementStatementRowResponse struct {
 type PayoutState struct {
 	ActorType              string                     `json:"actorType"`
 	ActorID                string                     `json:"actorId"`
+	DisplayName            string                     `json:"displayName,omitempty"`
+	PhoneMasked            string                     `json:"phoneMasked,omitempty"`
 	Currency               string                     `json:"currency"`
 	EligibleAvailableMinor int64                      `json:"eligibleAvailableMinor"`
 	HeldMinor              int64                      `json:"heldMinor"`

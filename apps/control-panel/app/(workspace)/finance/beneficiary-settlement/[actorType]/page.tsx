@@ -30,7 +30,7 @@ export default async function FinanceBeneficiarySettlementRegistryPage({
   const initialQuery: BeneficiarySettlementInitialQuery = {
     status: ["", "NO_REQUEST", "HELD", "PREPARED", "APPROVED", "FROZEN", "EXECUTED", "COMPLETED", "EXCEPTION", "CANCELLED"].includes(rawStatus) ? rawStatus as BeneficiarySettlementInitialQuery["status"] : "",
     search: first("search").trim().slice(0, 128),
-    sort: ["actor_asc", "actor_desc", "available_asc", "available_desc", "held_asc", "held_desc", "payout_amount_asc", "payout_amount_desc"].includes(rawSort) ? rawSort as BeneficiarySettlementInitialQuery["sort"] : "actor_asc",
+    sort: ["actor_asc", "actor_desc", "available_asc", "available_desc", "held_asc", "held_desc", "payout_amount_asc", "payout_amount_desc"].includes(rawSort) ? rawSort as BeneficiarySettlementInitialQuery["sort"] : "available_desc",
     cursor: first("cursor").slice(0, 1024),
     view: ["beneficiaries", "batches", "reconciliation"].includes(rawView) ? rawView as BeneficiarySettlementInitialQuery["view"] : "beneficiaries",
     batchId: first("batchId").trim().slice(0, 128),
