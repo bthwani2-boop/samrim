@@ -102,8 +102,8 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
   const [targetLoading, setTargetLoading] = useState(false);
   const [endingPromotion, setEndingPromotion] = useState<PromotionView | null>(null);
 
-  const load = useCallback(async () => {
-    if (!authenticated || !storeID) return;
+  const load = useCallback(async (): Promise<Readonly<{ promotions: OperatorPromotionRegistryResponse; campaigns: PartnerCampaignListResponse }> | null> => {
+    if (!authenticated || !storeID) return null;
     try {
       const token = await getUsableIdentityAccessToken();
       const [next, nextCampaigns] = await Promise.all([
@@ -113,9 +113,11 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
       setState(next);
       setCampaigns(nextCampaigns);
       setError("");
+      return { promotions: next, campaigns: nextCampaigns };
     } catch (cause) {
       console.error("DSH store promotions readback failed", cause);
       setError("تعذر قراءة عروض المتجر وحملات المنصة.");
+      return null;
     }
   }, [authenticated, storeID]);
   useEffect(() => { void load(); }, [load]);
@@ -160,7 +162,7 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
       const threshold = optionalPositiveInt(minOrderSubtotal);
       if (!start || !code.trim() || code.trim().length < 3 || !nameAr.trim() || nameAr.trim().length < 2 || !Number.isSafeInteger(parsedValue) || parsedValue <= 0 || (kind === "PERCENTAGE" && parsedValue > 100) || (end && end.getTime() <= start.getTime()) || (targetKind !== "NONE" && !selectedTarget)) throw new Error("INVALID_FORM");
       const targets: PromotionTarget[] = selectedTarget && targetKind !== "NONE" ? [{ targetKind, targetRef: selectedTarget.id }] : [];
-      await client().createPartnerStorePromotion(token, storeID, {
+      const created = await client().createPartnerStorePromotion(token, storeID, {
         id: "promotion-" + Crypto.randomUUID(), code, nameAr,
         ...(descriptionAr.trim() ? { descriptionAr: descriptionAr.trim() } : {}),
         kind, valueMinor: parsedValue, fundingSource: "PARTNER", startsAt: start.toISOString(),
@@ -170,8 +172,14 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
         ...(threshold ? { minOrderSubtotalMinor: threshold } : {}),
         ...(targets.length ? { targets } : {}),
       }, "promotion_create_" + Crypto.randomUUID(), "promotion_create_corr_" + Crypto.randomUUID());
-      setNotice("أُنشئ العرض كمسودة؛ راجع نطاقه وجدوله ثم انشره.");
-      setFormOpen(false); resetForm(); await load();
+      const readback = await load();
+      const canonical = readback?.promotions.promotions.find((promotion) => promotion.id === created.promotion.id);
+      if (!canonical || canonical.state !== "DRAFT") {
+        setError("تم إرسال إنشاء العرض لكن تعذّر إثبات المسودة من القراءة المعتمدة. أعد القراءة قبل أي إجراء آخر.");
+        return;
+      }
+      setNotice("أُنشئ العرض كمسودة وتم تأكيده من القراءة المعتمدة؛ راجع نطاقه وجدوله ثم انشره.");
+      setFormOpen(false); resetForm();
     } catch (cause) {
       console.error("DSH promotion create failed", cause);
       setError(cause instanceof Error && cause.message === "INVALID_FORM" ? "راجع رمز العرض والاسم والقيمة والفترة وحد الطلب والهدف المختار." : "تعذر إنشاء العرض؛ راجع البيانات وأعد المحاولة.");
@@ -183,7 +191,13 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
     try {
       const token = await getUsableIdentityAccessToken();
       await client().setPartnerStorePromotionState(token, storeID, promotion.id, { state: target }, promotion.version, "promotion_state_" + Crypto.randomUUID(), "promotion_state_corr_" + Crypto.randomUUID());
-      setNotice("حدّثت حالة العرض."); await load();
+      const readback = await load();
+      const canonical = readback?.promotions.promotions.find((item) => item.id === promotion.id);
+      if (!canonical || canonical.state !== target) {
+        setError("تم إرسال تغيير الحالة لكن تعذّر إثبات النتيجة من القراءة المعتمدة. اعتمد الحالة المعروضة بعد إعادة القراءة.");
+        return;
+      }
+      setNotice(target === "ENDED" ? "أُنهي العرض وتم تأكيد حالته من القراءة المعتمدة." : target === "PAUSED" ? "أُوقف العرض وتم تأكيد حالته من القراءة المعتمدة." : "نُشر العرض وتم تأكيد حالته من القراءة المعتمدة.");
     } catch (cause) {
       console.error("DSH promotion state change failed", cause);
       setError("تعذر تحديث حالة العرض؛ أعد القراءة ثم حاول مجددًا."); await load();
@@ -195,8 +209,13 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
     try {
       const token = await getUsableIdentityAccessToken();
       await client().optInPartnerStoreCampaign(token, storeID, campaign.promotion.id, { decision }, Math.max(1, campaign.storeOptInVersion ?? 0));
-      setNotice(decision === "OPTED_IN" ? "سُجّلت مشاركة المتجر في الحملة." : "سُجّل رفض مشاركة المتجر في الحملة.");
-      await load();
+      const readback = await load();
+      const canonical = readback?.campaigns.campaigns.find((item) => item.promotion.id === campaign.promotion.id);
+      if (!canonical || canonical.storeOptInState !== decision) {
+        setError("تم إرسال قرار الحملة لكن تعذّر إثباته من القراءة المعتمدة. أعد القراءة قبل اتخاذ قرار آخر.");
+        return;
+      }
+      setNotice(decision === "OPTED_IN" ? "سُجّلت مشاركة المتجر وتم تأكيدها من القراءة المعتمدة." : "سُجّل رفض المشاركة وتم تأكيده من القراءة المعتمدة.");
     } catch (cause) {
       console.error("DSH campaign opt-in failed", cause);
       setError("تعذر تحديث قرار الحملة؛ أعد قراءة الحملات ثم حاول مجددًا."); await load();
