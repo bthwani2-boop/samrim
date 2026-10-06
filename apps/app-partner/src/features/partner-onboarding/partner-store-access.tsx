@@ -241,7 +241,7 @@ function StoreAccessGrantCard({ grant, busy, onTransition, onPermissions }: { gr
   const selected = permissions.filter((permission) => grant.permissions.includes(permission.value)).map((permission) => permission.value);
   const nextPermissions = (permission: StoreAccessPermission) => selected.includes(permission) ? selected.filter((item) => item !== permission) : [...selected, permission];
   return <View style={{ borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 8, padding: 12 }}>
-    <Text style={styles.value}>{grant.delegatePhoneMasked ?? "عضو فريق"}</Text>
+    <Text style={styles.value}>{[grant.delegateBeneficiaryName?.trim() || "عضو فريق", grant.delegatePhoneMasked?.trim()].filter(Boolean).join(" · ")}</Text>
     <Text style={styles.muted}>{grantStateLabel(grant.state)} · الصلاحيات الحالية: {permissionNames(grant.permissions)}</Text>
     {grant.state === "active" || grant.state === "suspended" || grant.state === "pending_role_admission" || grant.state === "pending_partner_activation" || grant.state === "pending_acceptance" ? <>
       <Text style={styles.metaLabel}>الصلاحيات المفوضة</Text>
