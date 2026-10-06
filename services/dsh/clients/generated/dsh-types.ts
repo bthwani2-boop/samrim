@@ -2556,6 +2556,8 @@ export type PromotionView = {
   readonly maxDiscountMinor?: number | null;
   readonly fundingSource: PromotionFundingSource;
   readonly fundingSharePartnerPercent?: number | null;
+  readonly requiresPartnerOptIn: boolean;
+  readonly minOrderSubtotalMinor?: number | null;
   readonly storeId?: string | null;
   readonly serviceCityId?: string | null;
   readonly state: PromotionState;
