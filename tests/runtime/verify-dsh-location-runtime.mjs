@@ -8,7 +8,7 @@ import { challengeSourceHeaders } from "./runtime-proof/challenge-source.mjs";
 import { assertCanonicalDshMigrationHistory, canonicalDshMigrationHistoryQuery, readCanonicalDshMigrationNames } from "./runtime-proof/canonical-dsh-migration-history.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const dshMigrationDirectory = path.resolve(root, "services/dsh/database/migrations");
+const dshMigrationDirectory = path.resolve(root, "services/dsh/backend/internal/storage/postgres/migrations");
 const dshMigrationNames = readCanonicalDshMigrationNames(dshMigrationDirectory);
 const envArg = process.argv.find((arg) => arg.startsWith("--env-file="));
 const envPath = envArg ? path.resolve(root, envArg.slice("--env-file=".length)) : path.resolve(root, "infra/local/.env");

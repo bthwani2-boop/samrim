@@ -151,7 +151,15 @@ func RecordPartnerStoreCashCommission(ctx context.Context, db *sql.DB, input Par
 	if allocation.CommissionSnapshot == nil {
 		return PartnerStoreCashCommissionRecord{}, false, ErrPartnerCommissionSnapshotMissing
 	}
-	chargeableProduct := allocation.SubtotalMinor - allocation.DiscountMinor
+	funding, hasFunding, err := readOrderPromotionFunding(ctx, tx, input.OrderID)
+	if err != nil {
+		return PartnerStoreCashCommissionRecord{}, false, err
+	}
+	var fundingTruth *OrderPromotionFundingRecord
+	if hasFunding {
+		fundingTruth = &funding
+	}
+	chargeableProduct := allocation.SubtotalMinor - partnerChargedDiscount(fundingTruth, allocation.DiscountMinor)
 	if chargeableProduct < 0 {
 		return PartnerStoreCashCommissionRecord{}, false, ErrPartnerCashCommissionInvalid
 	}

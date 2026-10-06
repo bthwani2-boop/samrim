@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -34,19 +33,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	directory := strings.TrimSpace(os.Getenv("DSH_MIGRATION_DIR"))
-	if directory == "" {
-		directory = filepath.Clean("../database/migrations")
-		if _, err := os.Stat(directory); err != nil {
-			directory = "/app/migrations"
-		}
-	}
 	db, err := postgres.Open(databaseURL)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
-	records, migrationSQL, err := postgres.LoadCanonicalMigrations(directory)
+	records, migrationSQL, err := postgres.LoadCanonicalMigrations()
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -1,7 +1,6 @@
 package postgres_test
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -32,8 +31,7 @@ func assertRequiredMigrationOrder(t *testing.T, records []postgres.MigrationReco
 }
 
 func TestCanonicalMigrationGraphMatchesSchemaVersion(t *testing.T) {
-	migrationDirectory := filepath.Join("..", "..", "..", "..", "database", "migrations")
-	records, migrationSQL, err := postgres.LoadMigrations(migrationDirectory)
+	records, migrationSQL, err := postgres.LoadMigrations()
 	if err != nil {
 		t.Fatalf("load DSH canonical migrations: %v", err)
 	}

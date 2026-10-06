@@ -1,7 +1,6 @@
 package postgres_test
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -9,8 +8,7 @@ import (
 )
 
 func TestCanonicalJourneyMigrationGraphIncludesJoiningCaseIntakeDetails(t *testing.T) {
-	migrationDirectory := filepath.Join("..", "..", "..", "..", "database", "migrations")
-	records, migrationSQL, err := postgres.LoadCanonicalMigrations(migrationDirectory)
+	records, migrationSQL, err := postgres.LoadCanonicalMigrations()
 	if err != nil {
 		t.Fatalf("load canonical DSH migrations: %v", err)
 	}

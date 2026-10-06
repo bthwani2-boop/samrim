@@ -5,8 +5,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	financialhandoff "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/financialhandoff"
@@ -212,13 +210,6 @@ func main() {
 }
 
 func loadMigrations() ([]postgres.MigrationRecord, error) {
-	directory := strings.TrimSpace(os.Getenv("DSH_MIGRATION_DIR"))
-	if directory == "" {
-		directory = filepath.Clean("../database/migrations")
-		if _, err := os.Stat(directory); err != nil {
-			directory = "/app/migrations"
-		}
-	}
-	records, _, err := postgres.LoadCanonicalMigrations(directory)
+	records, _, err := postgres.LoadCanonicalMigrations()
 	return records, err
 }

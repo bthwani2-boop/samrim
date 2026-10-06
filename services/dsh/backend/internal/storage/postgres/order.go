@@ -77,7 +77,17 @@ type DeliveryFeeQuote struct {
 
 type DeliveryFeeResolver func(ctx context.Context, input DeliveryFeeQuoteInput) (DeliveryFeeQuote, error)
 
-type PaymentIntentProvisioner func(ctx context.Context, orderID, externalReference, payerActorID string, subtotalMinor, discountMinor, deliveryFeeMinor int64, deliveryPolicyVersion string, amountMinor int64, idempotencyKey, correlationID string) (ProvisionedPayment, error)
+// PromotionFunding carries the checkout-frozen promotion funding vocabulary to
+// the payment provisioner so WLT can freeze the exact monetary split.
+type PromotionFunding struct {
+	PromotionID         string
+	PromotionVersion    int
+	PromotionCode       string
+	FundingSource       string
+	PartnerSharePercent *int
+}
+
+type PaymentIntentProvisioner func(ctx context.Context, orderID, externalReference, payerActorID string, subtotalMinor, discountMinor, deliveryFeeMinor int64, deliveryPolicyVersion string, amountMinor int64, promotion PromotionFunding, idempotencyKey, correlationID string) (ProvisionedPayment, error)
 
 type PaymentIntentCanceller func(ctx context.Context, intentID, reason, idempotencyKey, correlationID string) error
 
@@ -1324,7 +1334,11 @@ WHERE s.id=$1 AND s.publication_state='published' AND ($4='CUSTOMER_PICKUP' OR a
 	if orderability.State != StoreOrderabilityOpenForOrders || orderability.Version < 1 {
 		return OrderRecord{}, false, ErrCheckoutEvidenceStale
 	}
-	payment, err := input.PaymentProvisioner(ctx, newOrderID, input.PaymentExternalReference, input.ClientActorID, total, discountMinor, feeQuote.FeeMinor, feeQuote.PolicyVersion, totalWithDelivery, input.PaymentIdempotencyKey, input.CorrelationID)
+	promotionFunding := PromotionFunding{}
+	if promotion.ID != "" {
+		promotionFunding = PromotionFunding{PromotionID: promotion.ID, PromotionVersion: promotion.Version, PromotionCode: promotion.Code, FundingSource: promotion.FundingSource, PartnerSharePercent: promotion.FundingSharePartnerPercent}
+	}
+	payment, err := input.PaymentProvisioner(ctx, newOrderID, input.PaymentExternalReference, input.ClientActorID, total, discountMinor, feeQuote.FeeMinor, feeQuote.PolicyVersion, totalWithDelivery, promotionFunding, input.PaymentIdempotencyKey, input.CorrelationID)
 	if err != nil {
 		return OrderRecord{}, false, fmt.Errorf("%w: %w", ErrPaymentProvisioning, err)
 	}

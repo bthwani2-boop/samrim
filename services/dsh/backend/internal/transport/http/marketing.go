@@ -305,12 +305,17 @@ func (s *MarketingServer) createOperatorPromotion(w http.ResponseWriter, r *http
 		value := int64(input.RedemptionLimit)
 		limit = &value
 	}
+	var fundingShare *int
+	if input.FundingSharePartnerPercent > 0 {
+		value := input.FundingSharePartnerPercent
+		fundingShare = &value
+	}
 	item, replayed, err := postgres.CreatePromotion(r.Context(), s.db, postgres.PromotionInput{
 		ID: input.ID, Code: input.Code, NameAr: input.NameAr, DescriptionAr: input.DescriptionAr, Kind: string(input.Kind), ValueMinor: int64(input.ValueMinor), MaxDiscountMinor: maxDiscount,
-		// Store promotions are partner-borne by definition; the funding source is
-		// server-owned and clients cannot choose it.
-		FundingSource: "PARTNER", StoreID: input.StoreID, ServiceCityID: input.ServiceCityID, StartsAt: input.StartsAt, EndsAt: input.EndsAt, RedemptionLimit: limit, CreatedByActorID: acting,
-	}, idempotency, postgres.HashMarketingFacts("promotion-create", input.ID, input.Code, input.NameAr, input.DescriptionAr, string(input.Kind), fmt.Sprint(input.ValueMinor), "PARTNER", input.StoreID, input.ServiceCityID, input.StartsAt.UTC().Format(time.RFC3339Nano), optionalTimeString(input.EndsAt), fmt.Sprint(input.RedemptionLimit), correlation))
+		// The operator owns the funding source and allocation for platform-authored
+		// promotions; partner-authored Store promotions stay partner-borne.
+		FundingSource: string(input.FundingSource), FundingSharePartnerPercent: fundingShare, StoreID: input.StoreID, ServiceCityID: input.ServiceCityID, StartsAt: input.StartsAt, EndsAt: input.EndsAt, RedemptionLimit: limit, CreatedByActorID: acting,
+	}, idempotency, postgres.HashMarketingFacts("promotion-create", input.ID, input.Code, input.NameAr, input.DescriptionAr, string(input.Kind), fmt.Sprint(input.ValueMinor), string(input.FundingSource), input.StoreID, input.ServiceCityID, input.StartsAt.UTC().Format(time.RFC3339Nano), optionalTimeString(input.EndsAt), fmt.Sprint(input.RedemptionLimit), correlation))
 	if err != nil {
 		writeMarketingError(w, err)
 		return

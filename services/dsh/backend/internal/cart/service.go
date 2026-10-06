@@ -318,7 +318,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		PaymentCancellationKey:   paymentCancellationKey,
 	}
 	input.DeliveryFeeResolver = s.quoteDeliveryFee
-	input.PaymentProvisioner = func(provisionContext context.Context, orderID, externalReference, payerActorID string, subtotalMinor, discountMinor, deliveryFeeMinor int64, deliveryPolicyVersion string, amountMinor int64, paymentIdempotencyKey, paymentCorrelationID string) (postgres.ProvisionedPayment, error) {
+	input.PaymentProvisioner = func(provisionContext context.Context, orderID, externalReference, payerActorID string, subtotalMinor, discountMinor, deliveryFeeMinor int64, deliveryPolicyVersion string, amountMinor int64, promotion postgres.PromotionFunding, paymentIdempotencyKey, paymentCorrelationID string) (postgres.ProvisionedPayment, error) {
 		if internalBalanceAmountMinor > amountMinor {
 			return postgres.ProvisionedPayment{}, ErrCheckoutBalanceContribution
 		}
@@ -330,6 +330,9 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		}
 		cashAmountMinor := amountMinor - internalBalanceAmountMinor
 		allocation := wlt.CustomerPaymentAllocation{OrderID: orderID, StoreID: store.ID, PartnerActorID: store.PartnerActorID, CommercialStoreTypeID: store.CommercialStoreTypeID, FulfillmentMode: fulfillmentMode, Currency: "YER", SubtotalMinor: subtotalMinor, DeliveryFeeMinor: deliveryFeeMinor, DiscountMinor: discountMinor, InternalBalanceAmountMinor: internalBalanceAmountMinor, CashAmountMinor: cashAmountMinor, CustomerPayableMinor: amountMinor, PolicyVersion: allocationPolicy}
+		if promotion.PromotionID != "" {
+			allocation.PromotionFunding = &wlt.PromotionFundingRequest{PromotionID: promotion.PromotionID, PromotionVersion: promotion.PromotionVersion, PromotionCode: promotion.PromotionCode, FundingSource: promotion.FundingSource, PartnerSharePercent: promotion.PartnerSharePercent}
+		}
 		intent, _, provisionErr := s.payment.CreateForOrderWithMethod(provisionContext, orderID, externalReference, payerActorID, cashAmountMinor, paymentMethod, allocation, paymentIdempotencyKey, paymentCorrelationID)
 		if provisionErr != nil {
 			logWLTCheckoutProvisioningFailure(provisionContext, "create_payment_intent", provisionErr)

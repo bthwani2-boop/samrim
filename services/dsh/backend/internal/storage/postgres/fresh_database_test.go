@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -24,7 +23,7 @@ func withFreshDatabaseUsingMigrations(
 	t *testing.T,
 	rootDB *sql.DB,
 	databaseURL string,
-	loadMigrations func(string) ([]postgres.MigrationRecord, []string, error),
+	loadMigrations func() ([]postgres.MigrationRecord, []string, error),
 	test func(context.Context, *sql.DB, []postgres.MigrationRecord, []string),
 ) {
 	t.Helper()
@@ -54,10 +53,9 @@ func withFreshDatabaseUsingMigrations(
 	if err := testDB.PingContext(ctx); err != nil {
 		t.Fatalf("isolated DSH database is not reachable: %v", err)
 	}
-	migrationDirectory := filepath.Join("..", "..", "..", "..", "database", "migrations")
-	records, migrationSQL, err := loadMigrations(migrationDirectory)
+	records, migrationSQL, err := loadMigrations()
 	if err != nil {
-		t.Fatalf("load DSH canonical migrations from %s: %v", migrationDirectory, err)
+		t.Fatalf("load DSH canonical migrations: %v", err)
 	}
 	test(ctx, testDB, records, migrationSQL)
 }

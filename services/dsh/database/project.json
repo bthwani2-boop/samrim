@@ -1,9 +1,0 @@
-{
-  "name": "dsh-database",
-  "root": "services/dsh/database",
-  "projectType": "library",
-  "tags": [
-    "scope:dsh-database",
-    "type:service"
-  ]
-}

@@ -149,7 +149,18 @@ func FinalizePartnerOrderEarning(ctx context.Context, db *sql.DB, input Finalize
 	}
 	snapshot := allocation.CommissionSnapshot
 
-	chargeableProduct := allocation.SubtotalMinor - allocation.DiscountMinor
+	funding, hasFunding, err := readOrderPromotionFunding(ctx, tx, input.OrderID)
+	if err != nil {
+		return PartnerOrderEarningRecord{}, false, err
+	}
+	var fundingTruth *OrderPromotionFundingRecord
+	if hasFunding {
+		fundingTruth = &funding
+	}
+	// The Partner economically absorbs only the Partner-funded share of the
+	// discount; the BTHWANI-funded share is platform-subsidized via an explicit
+	// expense entry so conservation still holds.
+	chargeableProduct := allocation.SubtotalMinor - partnerChargedDiscount(fundingTruth, allocation.DiscountMinor)
 	if chargeableProduct < 0 {
 		return PartnerOrderEarningRecord{}, false, ErrPartnerEarningInvalidInput
 	}
@@ -160,6 +171,10 @@ func FinalizePartnerOrderEarning(ctx context.Context, db *sql.DB, input Finalize
 	partnerNet := chargeableProduct - commission
 	if partnerNet < 0 {
 		return PartnerOrderEarningRecord{}, false, ErrPartnerEarningInvalidInput
+	}
+	bthwaniSubsidy := int64(0)
+	if hasFunding {
+		bthwaniSubsidy = funding.BthwaniFundedMinor
 	}
 	receivableBalance, err := ReadPartnerCommissionReceivableBalance(ctx, tx, input.PartnerActorID)
 	if err != nil {
@@ -177,7 +192,7 @@ func FinalizePartnerOrderEarning(ctx context.Context, db *sql.DB, input Finalize
 	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_transactions(id,transaction_type,source_type,source_id,currency,idempotency_key,request_hash,correlation_id) VALUES($1,'PARTNER_ORDER_EARNING_POSTED','ORDER_DELIVERED',$2,$3,$4,$5,$6)`, transactionID, input.OrderID, allocation.Currency, input.IdempotencyKey, requestHash, input.CorrelationID); err != nil {
 		return PartnerOrderEarningRecord{}, false, err
 	}
-	entries := []ledgerEntryInput{{"asset", "CAPTAIN_CASH_RECEIVABLE", "DEBIT", allocation.CashAmountMinor}, {"liability", "CUSTOMER_WALLET", "DEBIT", allocation.InternalBalanceAmountMinor}, {"liability", "PARTNER_WALLET", "CREDIT", partnerNet - receivableOffset}, {"asset", "PARTNER_COMMISSION_RECEIVABLE", "CREDIT", receivableOffset}, {"income", "PLATFORM_COMMISSION_INCOME", "CREDIT", commission}, {"liability", "CAPTAIN_WALLET", "CREDIT", allocation.DeliveryFeeMinor}}
+	entries := []ledgerEntryInput{{"asset", "CAPTAIN_CASH_RECEIVABLE", "DEBIT", allocation.CashAmountMinor}, {"liability", "CUSTOMER_WALLET", "DEBIT", allocation.InternalBalanceAmountMinor}, {"liability", "PARTNER_WALLET", "CREDIT", partnerNet - receivableOffset}, {"asset", "PARTNER_COMMISSION_RECEIVABLE", "CREDIT", receivableOffset}, {"income", "PLATFORM_COMMISSION_INCOME", "CREDIT", commission}, {"liability", "CAPTAIN_WALLET", "CREDIT", allocation.DeliveryFeeMinor}, {"expense", "BTHWANI_PROMOTION_EXPENSE", "DEBIT", bthwaniSubsidy}}
 	debitTotal, creditTotal := int64(0), int64(0)
 	sequence := 1
 	for _, entry := range entries {
@@ -204,7 +219,7 @@ func FinalizePartnerOrderEarning(ctx context.Context, db *sql.DB, input Finalize
 		}
 		sequence++
 	}
-	if debitTotal != creditTotal || debitTotal != allocation.CustomerPayableMinor {
+	if debitTotal != creditTotal || debitTotal != allocation.CustomerPayableMinor+bthwaniSubsidy {
 		return PartnerOrderEarningRecord{}, false, ErrLedgerUnbalanced
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.partner_order_earnings(order_id,payment_intent_id,partner_actor_id,captain_actor_id,store_id,currency,gross_product_minor,delivery_fee_minor,commission_minor,partner_net_minor,commission_receivable_offset_minor,profile_id,profile_version,policy_version,ledger_transaction_id,idempotency_key,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`, input.OrderID, input.PaymentIntentID, input.PartnerActorID, input.CaptainActorID, allocation.StoreID, allocation.Currency, chargeableProduct, allocation.DeliveryFeeMinor, commission, partnerNet, receivableOffset, snapshot.ProfileID, snapshot.ProfileVersion, storeAgreementSnapshotPolicyVersion(*snapshot), transactionID, input.IdempotencyKey, requestHash); err != nil {

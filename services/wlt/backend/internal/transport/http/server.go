@@ -174,19 +174,28 @@ type createRequest struct {
 }
 
 type customerPaymentAllocationRequest struct {
-	OrderID                    string `json:"orderId"`
-	StoreID                    string `json:"storeId"`
-	PartnerActorID             string `json:"partnerActorId"`
-	CommercialStoreTypeID      string `json:"commercialStoreTypeId"`
-	FulfillmentMode            string `json:"fulfillmentMode"`
-	Currency                   string `json:"currency"`
-	SubtotalMinor              int64  `json:"subtotalMinor"`
-	DeliveryFeeMinor           int64  `json:"deliveryFeeMinor"`
-	DiscountMinor              int64  `json:"discountMinor"`
-	InternalBalanceAmountMinor int64  `json:"internalBalanceAmountMinor"`
-	CashAmountMinor            int64  `json:"cashAmountMinor"`
-	CustomerPayableMinor       int64  `json:"customerPayableMinor"`
-	PolicyVersion              string `json:"policyVersion"`
+	OrderID                    string                            `json:"orderId"`
+	StoreID                    string                            `json:"storeId"`
+	PartnerActorID             string                            `json:"partnerActorId"`
+	CommercialStoreTypeID      string                            `json:"commercialStoreTypeId"`
+	FulfillmentMode            string                            `json:"fulfillmentMode"`
+	Currency                   string                            `json:"currency"`
+	SubtotalMinor              int64                             `json:"subtotalMinor"`
+	DeliveryFeeMinor           int64                             `json:"deliveryFeeMinor"`
+	DiscountMinor              int64                             `json:"discountMinor"`
+	InternalBalanceAmountMinor int64                             `json:"internalBalanceAmountMinor"`
+	CashAmountMinor            int64                             `json:"cashAmountMinor"`
+	CustomerPayableMinor       int64                             `json:"customerPayableMinor"`
+	PolicyVersion              string                            `json:"policyVersion"`
+	PromotionFunding           *promotionFundingRequest          `json:"promotionFunding"`
+}
+
+type promotionFundingRequest struct {
+	PromotionID         string `json:"promotionId"`
+	PromotionVersion    int    `json:"promotionVersion"`
+	PromotionCode       string `json:"promotionCode"`
+	FundingSource       string `json:"fundingSource"`
+	PartnerSharePercent *int   `json:"partnerSharePercent"`
 }
 
 type updateStoreTypeCommissionDefaultRequest struct {
@@ -713,6 +722,10 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 	var allocation *postgres.CustomerPaymentAllocationInput
 	if input.CustomerPaymentAllocation != nil {
 		value := postgres.CustomerPaymentAllocationInput{OrderID: input.CustomerPaymentAllocation.OrderID, StoreID: input.CustomerPaymentAllocation.StoreID, PartnerActorID: input.CustomerPaymentAllocation.PartnerActorID, CommercialStoreTypeID: input.CustomerPaymentAllocation.CommercialStoreTypeID, FulfillmentMode: input.CustomerPaymentAllocation.FulfillmentMode, Currency: input.CustomerPaymentAllocation.Currency, SubtotalMinor: input.CustomerPaymentAllocation.SubtotalMinor, DeliveryFeeMinor: input.CustomerPaymentAllocation.DeliveryFeeMinor, DiscountMinor: input.CustomerPaymentAllocation.DiscountMinor, InternalBalanceAmountMinor: input.CustomerPaymentAllocation.InternalBalanceAmountMinor, CashAmountMinor: input.CustomerPaymentAllocation.CashAmountMinor, CustomerPayableMinor: input.CustomerPaymentAllocation.CustomerPayableMinor, PolicyVersion: input.CustomerPaymentAllocation.PolicyVersion}
+		if input.CustomerPaymentAllocation.PromotionFunding != nil && input.CustomerPaymentAllocation.PromotionFunding.PromotionID != "" {
+			funding := input.CustomerPaymentAllocation.PromotionFunding
+			value.PromotionFunding = &postgres.PromotionFundingInput{PromotionID: funding.PromotionID, PromotionVersion: funding.PromotionVersion, PromotionCode: funding.PromotionCode, StoreID: input.CustomerPaymentAllocation.StoreID, FundingSource: funding.FundingSource, PartnerSharePercent: funding.PartnerSharePercent, DiscountMinor: input.CustomerPaymentAllocation.DiscountMinor}
+		}
 		allocation = &value
 	}
 	result, replayed, err := postgres.CreatePaymentIntent(r.Context(), s.db, postgres.CreatePaymentIntentInput{ExternalReference: input.ExternalReference, PayerActorID: input.PayerActorID, OrderID: input.OrderID, AmountMinor: input.AmountMinor, Currency: input.Currency, Method: input.Method, CustomerPaymentAllocation: allocation, IdempotencyKey: idempotency, CorrelationID: correlation})

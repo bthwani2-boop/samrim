@@ -7,8 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
+	"io/fs"
 	"strings"
 	"time"
 )
@@ -141,8 +140,10 @@ var journeyRefoundationRelations = []schemaRelationExpectation{
 	},
 }
 
-func LoadCanonicalMigrations(directory string) ([]MigrationRecord, []string, error) {
-	baseRecords, baseSQL, err := LoadMigrations(directory)
+// LoadCanonicalMigrations returns the full canonical migration graph from the
+// binary-embedded SQL, so runtime entry points never read a filesystem path.
+func LoadCanonicalMigrations() ([]MigrationRecord, []string, error) {
+	baseRecords, baseSQL, err := LoadMigrations()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -152,7 +153,7 @@ func LoadCanonicalMigrations(directory string) ([]MigrationRecord, []string, err
 	records := append([]MigrationRecord(nil), baseRecords...)
 	sqls := append([]string(nil), baseSQL...)
 	for offset, name := range canonicalMigrationTail {
-		raw, err := os.ReadFile(filepath.Join(directory, name))
+		raw, err := fs.ReadFile(embeddedMigrations, "migrations/"+name)
 		if err != nil {
 			return nil, nil, fmt.Errorf("read DSH migration %s: %w", name, err)
 		}

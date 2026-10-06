@@ -287,11 +287,6 @@ func CreatePromotion(ctx context.Context, db *sql.DB, input PromotionInput, idem
 	if !errors.Is(err, sql.ErrNoRows) {
 		return PromotionRecord{}, false, err
 	}
-	// Until the WLT platform-funding split is live, only PARTNER-funded promotions
-	// may be created: the whole discount is borne by the Store's chargeable base.
-	if input.FundingSource != "PARTNER" {
-		return PromotionRecord{}, false, ErrPromotionFundingNotSettleable
-	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_promotions(id,code,name_ar,description_ar,kind,value_minor,max_discount_minor,funding_source,funding_share_partner_percent,store_id,service_city_id,starts_at,ends_at,redemption_limit,created_by_actor_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,''),NULLIF($11,''),$12,$13,$14,$15)`, input.ID, input.Code, input.NameAr, input.DescriptionAr, input.Kind, input.ValueMinor, input.MaxDiscountMinor, input.FundingSource, input.FundingSharePartnerPercent, input.StoreID, input.ServiceCityID, input.StartsAt, input.EndsAt, input.RedemptionLimit, input.CreatedByActorID); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "commerce_promotions_code_uq") {
 			return PromotionRecord{}, false, ErrPromotionCodeConflict
@@ -343,17 +338,10 @@ func SetPromotionState(ctx context.Context, db *sql.DB, id, state, idempotencyKe
 		return PromotionRecord{}, false, err
 	}
 	if state == "PUBLISHED" {
-		var startsAt time.Time
-		var fundingSource string
-		if err := tx.QueryRowContext(ctx, "SELECT starts_at,funding_source FROM dsh.commerce_promotions WHERE id=$1 AND state IN ('DRAFT','PAUSED')", id).Scan(&startsAt, &fundingSource); errors.Is(err, sql.ErrNoRows) {
+		if err := tx.QueryRowContext(ctx, "SELECT 1 FROM dsh.commerce_promotions WHERE id=$1 AND state IN ('DRAFT','PAUSED')", id).Scan(nil); errors.Is(err, sql.ErrNoRows) {
 			return PromotionRecord{}, false, ErrPromotionNotFound
 		} else if err != nil {
 			return PromotionRecord{}, false, err
-		}
-		// Fail-closed: platform-funded promotions stay unpublished until the WLT
-		// funding split settles their monetary consequence.
-		if fundingSource != "PARTNER" {
-			return PromotionRecord{}, false, ErrPromotionFundingNotSettleable
 		}
 	}
 	if state == "ENDED" {

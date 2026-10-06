@@ -31,7 +31,7 @@ function readEnv(file) {
   return values;
 }
 function required(values, name) { const value = values[name]?.trim(); if (!value) fail("required canonical runtime value missing", name); return value; }
-const dshMigrationDirectory = path.resolve(root, "services/dsh/database/migrations");
+const dshMigrationDirectory = path.resolve(root, "services/dsh/backend/internal/storage/postgres/migrations");
 const dshMigrationNames = readCanonicalDshMigrationNames(dshMigrationDirectory);
 
 const env = readEnv(envPath);

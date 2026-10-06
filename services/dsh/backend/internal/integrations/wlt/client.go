@@ -83,7 +83,18 @@ type CustomerPaymentAllocation struct {
 	CashAmountMinor            int64  `json:"cashAmountMinor"`
 	CustomerPayableMinor       int64  `json:"customerPayableMinor"`
 	PolicyVersion              string `json:"policyVersion"`
+	PromotionFunding           *PromotionFundingRequest `json:"promotionFunding,omitempty"`
 	CreatedAt                  string `json:"createdAt"`
+}
+
+// PromotionFundingRequest carries the checkout-frozen promotion funding facts
+// to WLT; the monetary split is derived server-side by WLT.
+type PromotionFundingRequest struct {
+	PromotionID         string `json:"promotionId"`
+	PromotionVersion    int    `json:"promotionVersion"`
+	PromotionCode       string `json:"promotionCode"`
+	FundingSource       string `json:"fundingSource"`
+	PartnerSharePercent *int   `json:"partnerSharePercent"`
 }
 
 type OrderAdjustmentReconciliationCase struct {
@@ -120,6 +131,7 @@ type customerPaymentAllocationRequest struct {
 	CashAmountMinor            int64  `json:"cashAmountMinor"`
 	CustomerPayableMinor       int64  `json:"customerPayableMinor"`
 	PolicyVersion              string `json:"policyVersion"`
+	PromotionFunding           *PromotionFundingRequest `json:"promotionFunding,omitempty"`
 }
 
 type paymentIntentResponse struct {
@@ -923,6 +935,7 @@ func (c *Client) CreateForOrderWithMethod(ctx context.Context, orderID, external
 			CashAmountMinor:            allocation.CashAmountMinor,
 			CustomerPayableMinor:       allocation.CustomerPayableMinor,
 			PolicyVersion:              allocation.PolicyVersion,
+			PromotionFunding:           allocation.PromotionFunding,
 		},
 	}
 	var response paymentIntentResponse
