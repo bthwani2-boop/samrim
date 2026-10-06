@@ -2024,6 +2024,8 @@ export type PartnerFinancialSummary = {
 
 export type PartnerCommissionReceivableRegistryItem = {
   readonly partnerActorId: string;
+  readonly businessName?: string;
+  readonly partnerPhoneMasked?: string;
   readonly currency: "YER";
   readonly outstandingCommissionReceivableMinor: number;
   readonly profileState: string;

@@ -96,6 +96,17 @@ func (s *PartnerFinanceServer) readOwnSummary(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, map[string]any{"summary": summary})
 }
 
+func maskPartnerFinancePhone(phone string) string {
+	phone = strings.TrimSpace(phone)
+	if len(phone) <= 6 {
+		if phone == "" {
+			return ""
+		}
+		return "***"
+	}
+	return phone[:4] + strings.Repeat("*", len(phone)-7) + phone[len(phone)-3:]
+}
+
 func (s *PartnerFinanceServer) listOperatorCommissionReceivables(w http.ResponseWriter, r *http.Request) {
 	if !s.authorizeOperator(w, r) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
@@ -130,7 +141,45 @@ func (s *PartnerFinanceServer) listOperatorCommissionReceivables(w http.Response
 		writeWLTFinanceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, result)
+	actorIDs := make([]string, 0, len(result.Items))
+	for _, item := range result.Items {
+		actorIDs = append(actorIDs, item.PartnerActorID)
+	}
+	presentations, err := postgres.ReadPartnerFinancePresentations(r.Context(), s.db, actorIDs)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "DSH_STORAGE_UNAVAILABLE", "Partner presentation is unavailable")
+		return
+	}
+	phones := make(map[string]string, len(actorIDs))
+	if len(actorIDs) > 0 {
+		roles, roleErr := s.identity.ReadActorRoles(r.Context(), "partner", actorIDs)
+		if roleErr != nil {
+			writeIdentityError(w, roleErr)
+			return
+		}
+		for _, role := range roles.Items {
+			if role.Role == "partner" && role.ActorID != "" {
+				phones[role.ActorID] = maskPartnerFinancePhone(role.PhoneE164)
+			}
+		}
+	}
+	items := make([]map[string]any, 0, len(result.Items))
+	for _, item := range result.Items {
+		presentation := presentations[item.PartnerActorID]
+		items = append(items, map[string]any{
+			"partnerActorId": item.PartnerActorID,
+			"businessName": strings.TrimSpace(presentation.BusinessName),
+			"partnerPhoneMasked": phones[item.PartnerActorID],
+			"currency": item.Currency,
+			"outstandingCommissionReceivableMinor": item.OutstandingCommissionReceivableMinor,
+			"profileState": item.ProfileState,
+		})
+	}
+	response := map[string]any{"items": items, "limit": result.Limit}
+	if result.NextCursor != "" {
+		response["nextCursor"] = result.NextCursor
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *PartnerFinanceServer) readOperatorSummary(w http.ResponseWriter, r *http.Request) {

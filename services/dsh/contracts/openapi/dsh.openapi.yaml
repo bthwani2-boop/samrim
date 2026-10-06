@@ -6314,6 +6314,14 @@ components:
           type: string
           minLength: 1
           maxLength: 128
+        businessName:
+          type: string
+          maxLength: 200
+          description: DSH-owned Partner business name for operator-facing identification.
+        partnerPhoneMasked:
+          type: string
+          maxLength: 24
+          description: Current Identity phone masked for operator-facing identification.
         currency:
           type: string
           const: YER

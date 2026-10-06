@@ -12,14 +12,11 @@ import {
   type StorePayoutRecipientRecord,
 } from "@bthwani/dsh";
 import { usePathname, useRouter } from "next/navigation";
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import styles from "./partner-earnings.module.css";
 
-type Sort = "actor_asc" | "actor_desc";
 export type PartnerEarningsInitialQuery = Readonly<{
-  search: string;
-  sort: Sort;
   cursor: string;
   partnerActorId: string;
 }>;
@@ -35,11 +32,11 @@ type PendingRemittance = Readonly<{
 type Props = Readonly<{ initialQuery: PartnerEarningsInitialQuery }>;
 
 function buildHref(pathname: string, query: PartnerEarningsInitialQuery) {
-  const params = new URLSearchParams({ sort: query.sort });
-  if (query.search) params.set("search", query.search);
+  const params = new URLSearchParams();
   if (query.cursor) params.set("cursor", query.cursor);
   if (query.partnerActorId) params.set("partnerActorId", query.partnerActorId);
-  return `${pathname}?${params.toString()}`;
+  const suffix = params.toString();
+  return suffix ? `${pathname}?${suffix}` : pathname;
 }
 
 function payoutProviderLabel(providerKey: string): string {
@@ -125,8 +122,6 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
   const requestedCursor = useRef<string | null>(null);
   const pendingByPartner = useRef(new Map<string, PendingRemittance>());
   const activePartnerActorId = useRef(initialQuery.partnerActorId);
-  const [search, setSearch] = useState(initialQuery.search);
-  const [sort, setSort] = useState<Sort>(initialQuery.sort);
   const [items, setItems] = useState<PartnerCommissionReceivableRegistryResponse["items"]>([]);
   const [nextCursor, setNextCursor] = useState("");
   const [registryLoading, setRegistryLoading] = useState(true);
@@ -223,8 +218,6 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
   }, []);
 
   useEffect(() => {
-    setSearch(initialQuery.search);
-    setSort(initialQuery.sort);
     if (requestedCursor.current === initialQuery.cursor) {
       requestedCursor.current = null;
     } else if (currentCursor.current !== initialQuery.cursor) {
@@ -238,8 +231,7 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
     const controller = new AbortController();
     setRegistryLoading(true);
     setError("");
-    const params = new URLSearchParams({ limit: "50", sort: initialQuery.sort });
-    if (initialQuery.search) params.set("search", initialQuery.search);
+    const params = new URLSearchParams({ limit: "50", sort: "actor_asc" });
     if (initialQuery.cursor) params.set("cursor", initialQuery.cursor);
     void (async () => {
       try {
@@ -255,7 +247,7 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
       }
     })();
     return () => controller.abort();
-  }, [initialQuery.cursor, initialQuery.search, initialQuery.sort]);
+  }, [initialQuery.cursor]);
 
   useEffect(() => {
     const actorId = initialQuery.partnerActorId;
@@ -277,21 +269,12 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
     setPending(actorId ? pendingByPartner.current.get(actorId) ?? null : null);
   }, []);
 
-  const applyFilters = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    cursorHistory.current = [];
-    currentCursor.current = "";
-    requestedCursor.current = "";
-    setError("");
-    navigate({ search: search.trim().slice(0, 128), sort, cursor: "", partnerActorId: "" });
-  };
-
   const nextPage = () => {
     if (!nextCursor) return;
     cursorHistory.current = [...cursorHistory.current, currentCursor.current];
     currentCursor.current = nextCursor;
     requestedCursor.current = nextCursor;
-    navigate({ ...initialQuery, cursor: nextCursor, partnerActorId: "" });
+    navigate({ cursor: nextCursor, partnerActorId: "" });
   };
 
   const previousPage = () => {
@@ -299,7 +282,7 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
     if (previous === undefined) return;
     currentCursor.current = previous;
     requestedCursor.current = previous;
-    navigate({ ...initialQuery, cursor: previous, partnerActorId: "" });
+    navigate({ cursor: previous, partnerActorId: "" });
   };
 
   const submitRemittance = async () => {
@@ -384,14 +367,8 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
     <section className={styles.workspace} aria-labelledby="partner-receivables-title">
       <header className={styles.heading}>
         <div><p className="eyebrow">المالية · سجل تشغيلي</p><h2 id="partner-receivables-title">مستحقات الشركاء</h2></div>
-        <p className="muted">يعرض السجل أرصدة عمولات الاستلام المستحقة المفتوحة من WLT. افتح الشريك لقراءة ملخصه أو تسجيل حوالة تم التحقق منها.</p>
+        <p className="muted">يعرض السجل أرصدة عمولات الاستلام المفتوحة من WLT، مع اسم النشاط والهاتف المقنّع من DSH وIdentity. الترتيب التقني داخلي ولا يُستخدم كهوية للمشغّل.</p>
       </header>
-
-      <form className={styles.filters} onSubmit={applyFilters}>
-        <label className="field-label" htmlFor="partner-receivables-search">البحث بمعرّف الشريك<input id="partner-receivables-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} maxLength={128} /></label>
-        <label className="field-label" htmlFor="partner-receivables-sort">ترتيب السجل<select id="partner-receivables-sort" value={sort} onChange={(event) => setSort(event.target.value as Sort)}><option value="actor_asc">المعرّف تصاعدياً</option><option value="actor_desc">المعرّف تنازلياً</option></select></label>
-        <button className="button button-secondary" type="submit" disabled={registryLoading}>تطبيق البحث</button>
-      </form>
 
       {error ? <p className="state-error" role="alert">{error}</p> : null}
       <p className="muted" aria-live="polite">سجلات الصفحة الحالية: {items.length.toLocaleString("ar-YE")}{registryLoading ? " · جارٍ التحديث" : ""}</p>
@@ -399,13 +376,17 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
       <div className={styles.tableWrap}>
         <table className={styles.table}>
           <caption className="sr-only">سجل أرصدة عمولات الشركاء المفتوحة</caption>
-          <thead><tr><th scope="col">معرّف الشريك</th><th scope="col">حالة الملف المالي</th><th scope="col">المبلغ المستحق</th><th scope="col">التفاصيل</th></tr></thead>
-          <tbody>{items.map((item) => <tr key={item.partnerActorId}>
-            <td><bdi>{item.partnerActorId}</bdi></td>
-            <td>{financialProfileStateLabel(item.profileState as PartnerFinancialSummary["profileState"])}</td>
-            <td>{formatMoney(item.outstandingCommissionReceivableMinor, item.currency)}</td>
-            <td><button className="button button-quiet" type="button" onClick={() => navigate({ ...initialQuery, partnerActorId: item.partnerActorId })} aria-label={`فتح مستحقات الشريك ${item.partnerActorId}`}>فتح التفاصيل</button></td>
-          </tr>)}</tbody>
+          <thead><tr><th scope="col">الشريك</th><th scope="col">حالة الملف المالي</th><th scope="col">المبلغ المستحق</th><th scope="col">التفاصيل</th></tr></thead>
+          <tbody>{items.map((item) => {
+            const displayName = item.businessName?.trim() || "شريك بثواني";
+            const accessibleName = [displayName, item.partnerPhoneMasked?.trim()].filter(Boolean).join("، ");
+            return <tr key={item.partnerActorId}>
+              <th scope="row"><span className={styles.partnerIdentity}><strong>{displayName}</strong>{item.partnerPhoneMasked ? <bdi dir="ltr">{item.partnerPhoneMasked}</bdi> : <span className="muted">الهاتف غير متاح</span>}</span></th>
+              <td>{financialProfileStateLabel(item.profileState as PartnerFinancialSummary["profileState"])}</td>
+              <td>{formatMoney(item.outstandingCommissionReceivableMinor, item.currency)}</td>
+              <td><button className="button button-quiet" type="button" onClick={() => navigate({ cursor: initialQuery.cursor, partnerActorId: item.partnerActorId })} aria-label={`فتح مستحقات ${accessibleName}`}>فتح التفاصيل</button></td>
+            </tr>;
+          })}</tbody>
         </table>
         {!registryLoading && items.length === 0 ? <p className={styles.empty}>لا توجد مستحقات مفتوحة مطابقة لهذا البحث.</p> : null}
       </div>
@@ -417,8 +398,8 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
 
       {initialQuery.partnerActorId ? <section className={styles.detail} aria-labelledby="partner-receivable-detail-title">
         <div className={styles.detailHeading}>
-          <div><p className="eyebrow">تفاصيل عند الطلب</p><h3 id="partner-receivable-detail-title">مستحقات الشريك <bdi>{initialQuery.partnerActorId}</bdi></h3></div>
-          <button className="button button-quiet" type="button" onClick={() => navigate({ ...initialQuery, partnerActorId: "" })}>إغلاق التفاصيل</button>
+          <div><p className="eyebrow">تفاصيل عند الطلب</p><h3 id="partner-receivable-detail-title">{(() => { const selected = items.find((item) => item.partnerActorId === initialQuery.partnerActorId); return selected?.businessName?.trim() ? `مستحقات ${selected.businessName.trim()}` : "تفاصيل مستحقات الشريك"; })()}</h3></div>
+          <button className="button button-quiet" type="button" onClick={() => navigate({ cursor: initialQuery.cursor, partnerActorId: "" })}>إغلاق التفاصيل</button>
         </div>
         {detailLoading ? <p className="muted" role="status">جارٍ قراءة الملخص المالي من WLT…</p> : null}
         {selectedSummary ? <>

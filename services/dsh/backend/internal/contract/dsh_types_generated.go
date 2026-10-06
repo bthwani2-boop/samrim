@@ -2024,6 +2024,8 @@ type PartnerFinancialSummary struct {
 
 type PartnerCommissionReceivableRegistryItem struct {
 	PartnerActorID                       string `json:"partnerActorId"`
+	BusinessName                         string `json:"businessName,omitempty"`
+	PartnerPhoneMasked                   string `json:"partnerPhoneMasked,omitempty"`
 	Currency                             string `json:"currency"`
 	OutstandingCommissionReceivableMinor int    `json:"outstandingCommissionReceivableMinor"`
 	ProfileState                         string `json:"profileState"`

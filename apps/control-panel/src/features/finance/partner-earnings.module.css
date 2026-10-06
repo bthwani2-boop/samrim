@@ -63,8 +63,20 @@
   font-weight: 650;
 }
 
-.table tbody tr:last-child td {
+.table tbody tr:last-child td,
+.table tbody tr:last-child th {
   border-bottom: 0;
+}
+
+.partnerIdentity {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.partnerIdentity strong,
+.partnerIdentity bdi {
+  overflow-wrap: anywhere;
 }
 
 .pagination {
