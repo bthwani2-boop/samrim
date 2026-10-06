@@ -78,8 +78,13 @@ jobs:
           full_runtime=false
           mobile_identity=false
           mobile_dsh=false
+          direct_identity_migration=false
+          direct_identity_runtime=false
+          direct_dsh_baseline=false
+          direct_dsh_runtime=false
+          direct_dsh_location=false
           changed_files="$(git diff --name-only "$NX_BASE" "$NX_HEAD")"
-          if grep -Eq '^(tests/runtime/|infra/local/|\.github/workflows/ci-runtime\.yml$)' <<< "$changed_files"; then
+          if grep -Eq '^(infra/local/|\.github/workflows/ci-runtime\.yml$)' <<< "$changed_files"; then
             full_runtime=true
             run=true
             browser=true
@@ -121,8 +126,22 @@ jobs:
             browser=true
             checker=true
           fi
+          migration_projects=""
+          runtime_projects=""
+          schema_projects=""
+          financial_projects=""
+          baseline_projects=""
+          location_projects=""
           for target in migration-proof runtime-proof schema-proof financial-invariants baseline-proof location-proof; do
             projects="$(pnpm exec nx show projects --affected --with-target="$target" --base="$NX_BASE" --head="$NX_HEAD" --sep=, --no-cloud)"
+            case "$target" in
+              migration-proof) migration_projects="$projects" ;;
+              runtime-proof) runtime_projects="$projects" ;;
+              schema-proof) schema_projects="$projects" ;;
+              financial-invariants) financial_projects="$projects" ;;
+              baseline-proof) baseline_projects="$projects" ;;
+              location-proof) location_projects="$projects" ;;
+            esac
             if [[ -n "$projects" ]]; then
               echo "RUNTIME_TARGET $target -> $projects"
               run=true
@@ -132,6 +151,1679 @@ jobs:
               fi
             fi
           done
+
+          project_in_list() {
+            [[ ",$1," == *",$2,"* ]]
+          }
+
+          runtime_test_files="$(grep -E '^tests/runtime/' <<< "$changed_files" || true)"
+          unknown_runtime_test_files="$(grep -Ev '^(tests/runtime/(mailpit-challenge\.mjs|verify-dsh-baseline\.mjs|verify-dsh-location-runtime\.mjs|verify-dsh-runtime-core\.mjs|verify-identity-migrations\.mjs|verify-identity-runtime\.mjs|runtime-proof/(canonical-dsh-migration-history\.mjs|challenge-source\.mjs|trusted-executables\.mjs|trusted-executables\.d\.mts)))          browser_projects="$(pnpm exec nx show projects --affected --with-target=browser-live-proof --base="$NX_BASE" --head="$NX_HEAD" --sep=, --no-cloud)"
+          if [[ -n "$browser_projects" ]]; then
+            echo "RUNTIME_TARGET browser-live-proof -> $browser_projects"
+            run=true
+            browser=true
+            control_proof=true
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "browser=$browser" >> "$GITHUB_OUTPUT"
+          echo "checker=$checker" >> "$GITHUB_OUTPUT"
+          echo "control_proof=$control_proof" >> "$GITHUB_OUTPUT"
+          echo "full_runtime=$full_runtime" >> "$GITHUB_OUTPUT"
+          echo "mobile_identity=$mobile_identity" >> "$GITHUB_OUTPUT"
+          echo "mobile_dsh=$mobile_dsh" >> "$GITHUB_OUTPUT"
+          echo "direct_identity_migration=$direct_identity_migration" >> "$GITHUB_OUTPUT"
+          echo "direct_identity_runtime=$direct_identity_runtime" >> "$GITHUB_OUTPUT"
+          echo "direct_dsh_baseline=$direct_dsh_baseline" >> "$GITHUB_OUTPUT"
+          echo "direct_dsh_runtime=$direct_dsh_runtime" >> "$GITHUB_OUTPUT"
+          echo "direct_dsh_location=$direct_dsh_location" >> "$GITHUB_OUTPUT"
+
+      - name: Create private DSH checker fixture path
+        if: steps.scope.outputs.checker == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture_dir="$(mktemp -d "$RUNNER_TEMP/samrim-runtime-proof-XXXXXX")"
+          chmod 700 "$fixture_dir"
+          printf 'DSH_RUNTIME_CHECKER_FIXTURE_PATH=%s/dsh-checker-fixture.json\n' "$fixture_dir" >> "$GITHUB_ENV"
+
+      - name: Create isolated runtime environment
+        if: steps.scope.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const crypto = require("node:crypto");
+          const fs = require("node:fs");
+          const path = "infra/local/.env";
+          const example = fs.readFileSync("infra/local/.env.example", "utf8");
+          const names = [
+            "SAMRIM_POSTGRES_PASSWORD",
+            "IDENTITY_CHALLENGE_HMAC_SECRET",
+            "IDENTITY_DSH_SERVICE_TOKEN",
+            "CONTROL_PANEL_SERVICE_TOKEN",
+            "WLT_DSH_SERVICE_TOKEN",
+            "IDENTITY_ABUSE_HMAC_SECRET",
+            "OPERATOR_BOOTSTRAP_SECRET"
+          ];
+          const values = new Map(names.map((name) => [name, crypto.randomBytes(32).toString("hex")]));
+          values.set("DSH_DELIVERY_PROOF_KEYRING", JSON.stringify({ "local-v1": crypto.randomBytes(32).toString("base64") }));
+          values.set("DSH_JOINING_CASE_EVIDENCE_ACTIVE_KEY_ID", "local-v1");
+          values.set("DSH_JOINING_CASE_EVIDENCE_KEYRING", JSON.stringify({ "local-v1": crypto.randomBytes(32).toString("base64") }));
+          const output = example.split(/\r?\n/).map((line) => {
+            const separator = line.indexOf("=");
+            if (separator < 1) return line;
+            const name = line.slice(0, separator).trim();
+            return values.has(name) ? `${name}=${values.get(name)}` : line;
+          }).join("\n");
+          fs.writeFileSync(path, output.endsWith("\n") ? output : `${output}\n`, { mode: 0o600 });
+          NODE
+
+      - name: Start backend runtime
+        if: steps.scope.outputs.run == 'true'
+        shell: bash
+        run: docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml up -d --build --wait --wait-timeout 300 --remove-orphans postgres mailpit media identity dsh wlt
+
+      - name: Install Chromium
+        if: steps.scope.outputs.browser == 'true'
+        run: pnpm --dir apps/control-panel exec playwright install --with-deps chromium
+
+      - name: Start Control Panel
+        if: steps.scope.outputs.browser == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export NODE_ENV=development NEXT_TELEMETRY_DISABLED=1
+          pnpm --dir apps/control-panel exec next dev -H 127.0.0.1 -p "$SAMRIM_CONTROL_PORT" > "$RUNNER_TEMP/control-panel.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/control-panel.pid"
+          for attempt in {1..120}; do
+            if curl --fail --silent --output /dev/null "http://127.0.0.1:$SAMRIM_CONTROL_PORT/"; then exit 0; fi
+            sleep 0.5
+          done
+          cat "$RUNNER_TEMP/control-panel.log"
+          exit 1
+
+      - name: Prepare isolated DSH checker operator
+        if: steps.scope.outputs.checker == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run control-panel:dsh-runtime-checker-fixture --outputStyle=stream
+
+      - name: Run affected backend runtime proofs
+        if: steps.scope.outputs.run == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx affected -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
+
+      - name: Run directly changed Identity migration proof
+        if: steps.scope.outputs.direct_identity_migration == 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run identity-backend:migration-proof --outputStyle=stream --skip-nx-cache
+
+      - name: Run directly changed Identity runtime proof
+        if: steps.scope.outputs.direct_identity_runtime == 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run identity-backend:runtime-proof --outputStyle=stream --skip-nx-cache
+
+      - name: Run directly changed DSH baseline proof
+        if: steps.scope.outputs.direct_dsh_baseline == 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run dsh-backend:baseline-proof --outputStyle=stream --skip-nx-cache
+
+      - name: Run directly changed DSH runtime proof
+        if: steps.scope.outputs.direct_dsh_runtime == 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run dsh-backend:runtime-proof --outputStyle=stream --skip-nx-cache
+
+      - name: Run directly changed DSH location proof
+        if: steps.scope.outputs.direct_dsh_location == 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run dsh-backend:location-proof --outputStyle=stream --skip-nx-cache
+
+      - name: Run Identity proofs for tagged mobile changes
+        if: steps.scope.outputs.mobile_identity == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof --projects=identity-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run DSH proofs for tagged mobile changes
+        if: steps.scope.outputs.mobile_dsh == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t baseline-proof,runtime-proof,location-proof --projects=dsh-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run all backend runtime proofs for shared runtime changes
+        if: steps.scope.outputs.full_runtime == 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run weekly backend runtime regression
+        if: steps.scope.outputs.run == 'true' && github.event_name == 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache
+
+      - name: Run affected Control Panel proof
+        if: steps.scope.outputs.control_proof == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx affected -t browser-live-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
+
+      - name: Run all Control Panel proofs for shared runtime changes
+        if: steps.scope.outputs.full_runtime == 'true' && github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run-many -t browser-live-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run weekly Control Panel regression
+        if: steps.scope.outputs.control_proof == 'true' && github.event_name == 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run-many -t browser-live-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache
+
+      - name: Stop runtime
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f "$RUNNER_TEMP/control-panel.pid" ]]; then kill "$(cat "$RUNNER_TEMP/control-panel.pid")" 2>/dev/null || true; fi
+          if [[ -f infra/local/.env ]]; then
+            docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml down --volumes --remove-orphans || true
+            rm -f infra/local/.env
+          fi
+ <<< "$runtime_test_files" || true)"
+          if [[ -n "$unknown_runtime_test_files" ]]; then
+            echo "::error::Runtime proof files require explicit proof ownership before CI can route them:"
+            printf '%s\n' "$unknown_runtime_test_files"
+            exit 1
+          fi
+
+          identity_migration_proof_changed=false
+          identity_runtime_proof_changed=false
+          dsh_baseline_proof_changed=false
+          dsh_runtime_proof_changed=false
+          dsh_location_proof_changed=false
+
+          if grep -Eq '^tests/runtime/verify-identity-migrations\.mjs          browser_projects="$(pnpm exec nx show projects --affected --with-target=browser-live-proof --base="$NX_BASE" --head="$NX_HEAD" --sep=, --no-cloud)"
+          if [[ -n "$browser_projects" ]]; then
+            echo "RUNTIME_TARGET browser-live-proof -> $browser_projects"
+            run=true
+            browser=true
+            control_proof=true
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "browser=$browser" >> "$GITHUB_OUTPUT"
+          echo "checker=$checker" >> "$GITHUB_OUTPUT"
+          echo "control_proof=$control_proof" >> "$GITHUB_OUTPUT"
+          echo "full_runtime=$full_runtime" >> "$GITHUB_OUTPUT"
+          echo "mobile_identity=$mobile_identity" >> "$GITHUB_OUTPUT"
+          echo "mobile_dsh=$mobile_dsh" >> "$GITHUB_OUTPUT"
+
+      - name: Create private DSH checker fixture path
+        if: steps.scope.outputs.checker == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture_dir="$(mktemp -d "$RUNNER_TEMP/samrim-runtime-proof-XXXXXX")"
+          chmod 700 "$fixture_dir"
+          printf 'DSH_RUNTIME_CHECKER_FIXTURE_PATH=%s/dsh-checker-fixture.json\n' "$fixture_dir" >> "$GITHUB_ENV"
+
+      - name: Create isolated runtime environment
+        if: steps.scope.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const crypto = require("node:crypto");
+          const fs = require("node:fs");
+          const path = "infra/local/.env";
+          const example = fs.readFileSync("infra/local/.env.example", "utf8");
+          const names = [
+            "SAMRIM_POSTGRES_PASSWORD",
+            "IDENTITY_CHALLENGE_HMAC_SECRET",
+            "IDENTITY_DSH_SERVICE_TOKEN",
+            "CONTROL_PANEL_SERVICE_TOKEN",
+            "WLT_DSH_SERVICE_TOKEN",
+            "IDENTITY_ABUSE_HMAC_SECRET",
+            "OPERATOR_BOOTSTRAP_SECRET"
+          ];
+          const values = new Map(names.map((name) => [name, crypto.randomBytes(32).toString("hex")]));
+          values.set("DSH_DELIVERY_PROOF_KEYRING", JSON.stringify({ "local-v1": crypto.randomBytes(32).toString("base64") }));
+          values.set("DSH_JOINING_CASE_EVIDENCE_ACTIVE_KEY_ID", "local-v1");
+          values.set("DSH_JOINING_CASE_EVIDENCE_KEYRING", JSON.stringify({ "local-v1": crypto.randomBytes(32).toString("base64") }));
+          const output = example.split(/\r?\n/).map((line) => {
+            const separator = line.indexOf("=");
+            if (separator < 1) return line;
+            const name = line.slice(0, separator).trim();
+            return values.has(name) ? `${name}=${values.get(name)}` : line;
+          }).join("\n");
+          fs.writeFileSync(path, output.endsWith("\n") ? output : `${output}\n`, { mode: 0o600 });
+          NODE
+
+      - name: Start backend runtime
+        if: steps.scope.outputs.run == 'true'
+        shell: bash
+        run: docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml up -d --build --wait --wait-timeout 300 --remove-orphans postgres mailpit media identity dsh wlt
+
+      - name: Install Chromium
+        if: steps.scope.outputs.browser == 'true'
+        run: pnpm --dir apps/control-panel exec playwright install --with-deps chromium
+
+      - name: Start Control Panel
+        if: steps.scope.outputs.browser == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export NODE_ENV=development NEXT_TELEMETRY_DISABLED=1
+          pnpm --dir apps/control-panel exec next dev -H 127.0.0.1 -p "$SAMRIM_CONTROL_PORT" > "$RUNNER_TEMP/control-panel.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/control-panel.pid"
+          for attempt in {1..120}; do
+            if curl --fail --silent --output /dev/null "http://127.0.0.1:$SAMRIM_CONTROL_PORT/"; then exit 0; fi
+            sleep 0.5
+          done
+          cat "$RUNNER_TEMP/control-panel.log"
+          exit 1
+
+      - name: Prepare isolated DSH checker operator
+        if: steps.scope.outputs.checker == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run control-panel:dsh-runtime-checker-fixture --outputStyle=stream
+
+      - name: Run affected backend runtime proofs
+        if: steps.scope.outputs.run == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx affected -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
+
+      - name: Run Identity proofs for tagged mobile changes
+        if: steps.scope.outputs.mobile_identity == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof --projects=identity-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run DSH proofs for tagged mobile changes
+        if: steps.scope.outputs.mobile_dsh == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t baseline-proof,runtime-proof,location-proof --projects=dsh-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run all backend runtime proofs for shared runtime changes
+        if: steps.scope.outputs.full_runtime == 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run weekly backend runtime regression
+        if: steps.scope.outputs.run == 'true' && github.event_name == 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache
+
+      - name: Run affected Control Panel proof
+        if: steps.scope.outputs.control_proof == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx affected -t browser-live-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
+
+      - name: Run all Control Panel proofs for shared runtime changes
+        if: steps.scope.outputs.full_runtime == 'true' && github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run-many -t browser-live-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run weekly Control Panel regression
+        if: steps.scope.outputs.control_proof == 'true' && github.event_name == 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run-many -t browser-live-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache
+
+      - name: Stop runtime
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f "$RUNNER_TEMP/control-panel.pid" ]]; then kill "$(cat "$RUNNER_TEMP/control-panel.pid")" 2>/dev/null || true; fi
+          if [[ -f infra/local/.env ]]; then
+            docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml down --volumes --remove-orphans || true
+            rm -f infra/local/.env
+          fi
+ <<< "$changed_files"; then identity_migration_proof_changed=true; fi
+          if grep -Eq '^tests/runtime/verify-identity-runtime\.mjs          browser_projects="$(pnpm exec nx show projects --affected --with-target=browser-live-proof --base="$NX_BASE" --head="$NX_HEAD" --sep=, --no-cloud)"
+          if [[ -n "$browser_projects" ]]; then
+            echo "RUNTIME_TARGET browser-live-proof -> $browser_projects"
+            run=true
+            browser=true
+            control_proof=true
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "browser=$browser" >> "$GITHUB_OUTPUT"
+          echo "checker=$checker" >> "$GITHUB_OUTPUT"
+          echo "control_proof=$control_proof" >> "$GITHUB_OUTPUT"
+          echo "full_runtime=$full_runtime" >> "$GITHUB_OUTPUT"
+          echo "mobile_identity=$mobile_identity" >> "$GITHUB_OUTPUT"
+          echo "mobile_dsh=$mobile_dsh" >> "$GITHUB_OUTPUT"
+
+      - name: Create private DSH checker fixture path
+        if: steps.scope.outputs.checker == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture_dir="$(mktemp -d "$RUNNER_TEMP/samrim-runtime-proof-XXXXXX")"
+          chmod 700 "$fixture_dir"
+          printf 'DSH_RUNTIME_CHECKER_FIXTURE_PATH=%s/dsh-checker-fixture.json\n' "$fixture_dir" >> "$GITHUB_ENV"
+
+      - name: Create isolated runtime environment
+        if: steps.scope.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const crypto = require("node:crypto");
+          const fs = require("node:fs");
+          const path = "infra/local/.env";
+          const example = fs.readFileSync("infra/local/.env.example", "utf8");
+          const names = [
+            "SAMRIM_POSTGRES_PASSWORD",
+            "IDENTITY_CHALLENGE_HMAC_SECRET",
+            "IDENTITY_DSH_SERVICE_TOKEN",
+            "CONTROL_PANEL_SERVICE_TOKEN",
+            "WLT_DSH_SERVICE_TOKEN",
+            "IDENTITY_ABUSE_HMAC_SECRET",
+            "OPERATOR_BOOTSTRAP_SECRET"
+          ];
+          const values = new Map(names.map((name) => [name, crypto.randomBytes(32).toString("hex")]));
+          values.set("DSH_DELIVERY_PROOF_KEYRING", JSON.stringify({ "local-v1": crypto.randomBytes(32).toString("base64") }));
+          values.set("DSH_JOINING_CASE_EVIDENCE_ACTIVE_KEY_ID", "local-v1");
+          values.set("DSH_JOINING_CASE_EVIDENCE_KEYRING", JSON.stringify({ "local-v1": crypto.randomBytes(32).toString("base64") }));
+          const output = example.split(/\r?\n/).map((line) => {
+            const separator = line.indexOf("=");
+            if (separator < 1) return line;
+            const name = line.slice(0, separator).trim();
+            return values.has(name) ? `${name}=${values.get(name)}` : line;
+          }).join("\n");
+          fs.writeFileSync(path, output.endsWith("\n") ? output : `${output}\n`, { mode: 0o600 });
+          NODE
+
+      - name: Start backend runtime
+        if: steps.scope.outputs.run == 'true'
+        shell: bash
+        run: docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml up -d --build --wait --wait-timeout 300 --remove-orphans postgres mailpit media identity dsh wlt
+
+      - name: Install Chromium
+        if: steps.scope.outputs.browser == 'true'
+        run: pnpm --dir apps/control-panel exec playwright install --with-deps chromium
+
+      - name: Start Control Panel
+        if: steps.scope.outputs.browser == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export NODE_ENV=development NEXT_TELEMETRY_DISABLED=1
+          pnpm --dir apps/control-panel exec next dev -H 127.0.0.1 -p "$SAMRIM_CONTROL_PORT" > "$RUNNER_TEMP/control-panel.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/control-panel.pid"
+          for attempt in {1..120}; do
+            if curl --fail --silent --output /dev/null "http://127.0.0.1:$SAMRIM_CONTROL_PORT/"; then exit 0; fi
+            sleep 0.5
+          done
+          cat "$RUNNER_TEMP/control-panel.log"
+          exit 1
+
+      - name: Prepare isolated DSH checker operator
+        if: steps.scope.outputs.checker == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run control-panel:dsh-runtime-checker-fixture --outputStyle=stream
+
+      - name: Run affected backend runtime proofs
+        if: steps.scope.outputs.run == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx affected -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
+
+      - name: Run Identity proofs for tagged mobile changes
+        if: steps.scope.outputs.mobile_identity == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof --projects=identity-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run DSH proofs for tagged mobile changes
+        if: steps.scope.outputs.mobile_dsh == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t baseline-proof,runtime-proof,location-proof --projects=dsh-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run all backend runtime proofs for shared runtime changes
+        if: steps.scope.outputs.full_runtime == 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run weekly backend runtime regression
+        if: steps.scope.outputs.run == 'true' && github.event_name == 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache
+
+      - name: Run affected Control Panel proof
+        if: steps.scope.outputs.control_proof == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx affected -t browser-live-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
+
+      - name: Run all Control Panel proofs for shared runtime changes
+        if: steps.scope.outputs.full_runtime == 'true' && github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run-many -t browser-live-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run weekly Control Panel regression
+        if: steps.scope.outputs.control_proof == 'true' && github.event_name == 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run-many -t browser-live-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache
+
+      - name: Stop runtime
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f "$RUNNER_TEMP/control-panel.pid" ]]; then kill "$(cat "$RUNNER_TEMP/control-panel.pid")" 2>/dev/null || true; fi
+          if [[ -f infra/local/.env ]]; then
+            docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml down --volumes --remove-orphans || true
+            rm -f infra/local/.env
+          fi
+ <<< "$changed_files"; then identity_runtime_proof_changed=true; fi
+          if grep -Eq '^tests/runtime/verify-dsh-baseline\.mjs          browser_projects="$(pnpm exec nx show projects --affected --with-target=browser-live-proof --base="$NX_BASE" --head="$NX_HEAD" --sep=, --no-cloud)"
+          if [[ -n "$browser_projects" ]]; then
+            echo "RUNTIME_TARGET browser-live-proof -> $browser_projects"
+            run=true
+            browser=true
+            control_proof=true
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "browser=$browser" >> "$GITHUB_OUTPUT"
+          echo "checker=$checker" >> "$GITHUB_OUTPUT"
+          echo "control_proof=$control_proof" >> "$GITHUB_OUTPUT"
+          echo "full_runtime=$full_runtime" >> "$GITHUB_OUTPUT"
+          echo "mobile_identity=$mobile_identity" >> "$GITHUB_OUTPUT"
+          echo "mobile_dsh=$mobile_dsh" >> "$GITHUB_OUTPUT"
+
+      - name: Create private DSH checker fixture path
+        if: steps.scope.outputs.checker == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture_dir="$(mktemp -d "$RUNNER_TEMP/samrim-runtime-proof-XXXXXX")"
+          chmod 700 "$fixture_dir"
+          printf 'DSH_RUNTIME_CHECKER_FIXTURE_PATH=%s/dsh-checker-fixture.json\n' "$fixture_dir" >> "$GITHUB_ENV"
+
+      - name: Create isolated runtime environment
+        if: steps.scope.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const crypto = require("node:crypto");
+          const fs = require("node:fs");
+          const path = "infra/local/.env";
+          const example = fs.readFileSync("infra/local/.env.example", "utf8");
+          const names = [
+            "SAMRIM_POSTGRES_PASSWORD",
+            "IDENTITY_CHALLENGE_HMAC_SECRET",
+            "IDENTITY_DSH_SERVICE_TOKEN",
+            "CONTROL_PANEL_SERVICE_TOKEN",
+            "WLT_DSH_SERVICE_TOKEN",
+            "IDENTITY_ABUSE_HMAC_SECRET",
+            "OPERATOR_BOOTSTRAP_SECRET"
+          ];
+          const values = new Map(names.map((name) => [name, crypto.randomBytes(32).toString("hex")]));
+          values.set("DSH_DELIVERY_PROOF_KEYRING", JSON.stringify({ "local-v1": crypto.randomBytes(32).toString("base64") }));
+          values.set("DSH_JOINING_CASE_EVIDENCE_ACTIVE_KEY_ID", "local-v1");
+          values.set("DSH_JOINING_CASE_EVIDENCE_KEYRING", JSON.stringify({ "local-v1": crypto.randomBytes(32).toString("base64") }));
+          const output = example.split(/\r?\n/).map((line) => {
+            const separator = line.indexOf("=");
+            if (separator < 1) return line;
+            const name = line.slice(0, separator).trim();
+            return values.has(name) ? `${name}=${values.get(name)}` : line;
+          }).join("\n");
+          fs.writeFileSync(path, output.endsWith("\n") ? output : `${output}\n`, { mode: 0o600 });
+          NODE
+
+      - name: Start backend runtime
+        if: steps.scope.outputs.run == 'true'
+        shell: bash
+        run: docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml up -d --build --wait --wait-timeout 300 --remove-orphans postgres mailpit media identity dsh wlt
+
+      - name: Install Chromium
+        if: steps.scope.outputs.browser == 'true'
+        run: pnpm --dir apps/control-panel exec playwright install --with-deps chromium
+
+      - name: Start Control Panel
+        if: steps.scope.outputs.browser == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export NODE_ENV=development NEXT_TELEMETRY_DISABLED=1
+          pnpm --dir apps/control-panel exec next dev -H 127.0.0.1 -p "$SAMRIM_CONTROL_PORT" > "$RUNNER_TEMP/control-panel.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/control-panel.pid"
+          for attempt in {1..120}; do
+            if curl --fail --silent --output /dev/null "http://127.0.0.1:$SAMRIM_CONTROL_PORT/"; then exit 0; fi
+            sleep 0.5
+          done
+          cat "$RUNNER_TEMP/control-panel.log"
+          exit 1
+
+      - name: Prepare isolated DSH checker operator
+        if: steps.scope.outputs.checker == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run control-panel:dsh-runtime-checker-fixture --outputStyle=stream
+
+      - name: Run affected backend runtime proofs
+        if: steps.scope.outputs.run == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx affected -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
+
+      - name: Run Identity proofs for tagged mobile changes
+        if: steps.scope.outputs.mobile_identity == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof --projects=identity-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run DSH proofs for tagged mobile changes
+        if: steps.scope.outputs.mobile_dsh == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t baseline-proof,runtime-proof,location-proof --projects=dsh-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run all backend runtime proofs for shared runtime changes
+        if: steps.scope.outputs.full_runtime == 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run weekly backend runtime regression
+        if: steps.scope.outputs.run == 'true' && github.event_name == 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache
+
+      - name: Run affected Control Panel proof
+        if: steps.scope.outputs.control_proof == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx affected -t browser-live-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
+
+      - name: Run all Control Panel proofs for shared runtime changes
+        if: steps.scope.outputs.full_runtime == 'true' && github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run-many -t browser-live-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run weekly Control Panel regression
+        if: steps.scope.outputs.control_proof == 'true' && github.event_name == 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run-many -t browser-live-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache
+
+      - name: Stop runtime
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f "$RUNNER_TEMP/control-panel.pid" ]]; then kill "$(cat "$RUNNER_TEMP/control-panel.pid")" 2>/dev/null || true; fi
+          if [[ -f infra/local/.env ]]; then
+            docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml down --volumes --remove-orphans || true
+            rm -f infra/local/.env
+          fi
+ <<< "$changed_files"; then dsh_baseline_proof_changed=true; fi
+          if grep -Eq '^tests/runtime/verify-dsh-runtime-core\.mjs          browser_projects="$(pnpm exec nx show projects --affected --with-target=browser-live-proof --base="$NX_BASE" --head="$NX_HEAD" --sep=, --no-cloud)"
+          if [[ -n "$browser_projects" ]]; then
+            echo "RUNTIME_TARGET browser-live-proof -> $browser_projects"
+            run=true
+            browser=true
+            control_proof=true
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "browser=$browser" >> "$GITHUB_OUTPUT"
+          echo "checker=$checker" >> "$GITHUB_OUTPUT"
+          echo "control_proof=$control_proof" >> "$GITHUB_OUTPUT"
+          echo "full_runtime=$full_runtime" >> "$GITHUB_OUTPUT"
+          echo "mobile_identity=$mobile_identity" >> "$GITHUB_OUTPUT"
+          echo "mobile_dsh=$mobile_dsh" >> "$GITHUB_OUTPUT"
+
+      - name: Create private DSH checker fixture path
+        if: steps.scope.outputs.checker == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture_dir="$(mktemp -d "$RUNNER_TEMP/samrim-runtime-proof-XXXXXX")"
+          chmod 700 "$fixture_dir"
+          printf 'DSH_RUNTIME_CHECKER_FIXTURE_PATH=%s/dsh-checker-fixture.json\n' "$fixture_dir" >> "$GITHUB_ENV"
+
+      - name: Create isolated runtime environment
+        if: steps.scope.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const crypto = require("node:crypto");
+          const fs = require("node:fs");
+          const path = "infra/local/.env";
+          const example = fs.readFileSync("infra/local/.env.example", "utf8");
+          const names = [
+            "SAMRIM_POSTGRES_PASSWORD",
+            "IDENTITY_CHALLENGE_HMAC_SECRET",
+            "IDENTITY_DSH_SERVICE_TOKEN",
+            "CONTROL_PANEL_SERVICE_TOKEN",
+            "WLT_DSH_SERVICE_TOKEN",
+            "IDENTITY_ABUSE_HMAC_SECRET",
+            "OPERATOR_BOOTSTRAP_SECRET"
+          ];
+          const values = new Map(names.map((name) => [name, crypto.randomBytes(32).toString("hex")]));
+          values.set("DSH_DELIVERY_PROOF_KEYRING", JSON.stringify({ "local-v1": crypto.randomBytes(32).toString("base64") }));
+          values.set("DSH_JOINING_CASE_EVIDENCE_ACTIVE_KEY_ID", "local-v1");
+          values.set("DSH_JOINING_CASE_EVIDENCE_KEYRING", JSON.stringify({ "local-v1": crypto.randomBytes(32).toString("base64") }));
+          const output = example.split(/\r?\n/).map((line) => {
+            const separator = line.indexOf("=");
+            if (separator < 1) return line;
+            const name = line.slice(0, separator).trim();
+            return values.has(name) ? `${name}=${values.get(name)}` : line;
+          }).join("\n");
+          fs.writeFileSync(path, output.endsWith("\n") ? output : `${output}\n`, { mode: 0o600 });
+          NODE
+
+      - name: Start backend runtime
+        if: steps.scope.outputs.run == 'true'
+        shell: bash
+        run: docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml up -d --build --wait --wait-timeout 300 --remove-orphans postgres mailpit media identity dsh wlt
+
+      - name: Install Chromium
+        if: steps.scope.outputs.browser == 'true'
+        run: pnpm --dir apps/control-panel exec playwright install --with-deps chromium
+
+      - name: Start Control Panel
+        if: steps.scope.outputs.browser == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export NODE_ENV=development NEXT_TELEMETRY_DISABLED=1
+          pnpm --dir apps/control-panel exec next dev -H 127.0.0.1 -p "$SAMRIM_CONTROL_PORT" > "$RUNNER_TEMP/control-panel.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/control-panel.pid"
+          for attempt in {1..120}; do
+            if curl --fail --silent --output /dev/null "http://127.0.0.1:$SAMRIM_CONTROL_PORT/"; then exit 0; fi
+            sleep 0.5
+          done
+          cat "$RUNNER_TEMP/control-panel.log"
+          exit 1
+
+      - name: Prepare isolated DSH checker operator
+        if: steps.scope.outputs.checker == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run control-panel:dsh-runtime-checker-fixture --outputStyle=stream
+
+      - name: Run affected backend runtime proofs
+        if: steps.scope.outputs.run == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx affected -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
+
+      - name: Run Identity proofs for tagged mobile changes
+        if: steps.scope.outputs.mobile_identity == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof --projects=identity-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run DSH proofs for tagged mobile changes
+        if: steps.scope.outputs.mobile_dsh == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t baseline-proof,runtime-proof,location-proof --projects=dsh-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run all backend runtime proofs for shared runtime changes
+        if: steps.scope.outputs.full_runtime == 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run weekly backend runtime regression
+        if: steps.scope.outputs.run == 'true' && github.event_name == 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache
+
+      - name: Run affected Control Panel proof
+        if: steps.scope.outputs.control_proof == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx affected -t browser-live-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
+
+      - name: Run all Control Panel proofs for shared runtime changes
+        if: steps.scope.outputs.full_runtime == 'true' && github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run-many -t browser-live-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run weekly Control Panel regression
+        if: steps.scope.outputs.control_proof == 'true' && github.event_name == 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run-many -t browser-live-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache
+
+      - name: Stop runtime
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f "$RUNNER_TEMP/control-panel.pid" ]]; then kill "$(cat "$RUNNER_TEMP/control-panel.pid")" 2>/dev/null || true; fi
+          if [[ -f infra/local/.env ]]; then
+            docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml down --volumes --remove-orphans || true
+            rm -f infra/local/.env
+          fi
+ <<< "$changed_files"; then dsh_runtime_proof_changed=true; fi
+          if grep -Eq '^tests/runtime/verify-dsh-location-runtime\.mjs          browser_projects="$(pnpm exec nx show projects --affected --with-target=browser-live-proof --base="$NX_BASE" --head="$NX_HEAD" --sep=, --no-cloud)"
+          if [[ -n "$browser_projects" ]]; then
+            echo "RUNTIME_TARGET browser-live-proof -> $browser_projects"
+            run=true
+            browser=true
+            control_proof=true
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "browser=$browser" >> "$GITHUB_OUTPUT"
+          echo "checker=$checker" >> "$GITHUB_OUTPUT"
+          echo "control_proof=$control_proof" >> "$GITHUB_OUTPUT"
+          echo "full_runtime=$full_runtime" >> "$GITHUB_OUTPUT"
+          echo "mobile_identity=$mobile_identity" >> "$GITHUB_OUTPUT"
+          echo "mobile_dsh=$mobile_dsh" >> "$GITHUB_OUTPUT"
+
+      - name: Create private DSH checker fixture path
+        if: steps.scope.outputs.checker == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture_dir="$(mktemp -d "$RUNNER_TEMP/samrim-runtime-proof-XXXXXX")"
+          chmod 700 "$fixture_dir"
+          printf 'DSH_RUNTIME_CHECKER_FIXTURE_PATH=%s/dsh-checker-fixture.json\n' "$fixture_dir" >> "$GITHUB_ENV"
+
+      - name: Create isolated runtime environment
+        if: steps.scope.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const crypto = require("node:crypto");
+          const fs = require("node:fs");
+          const path = "infra/local/.env";
+          const example = fs.readFileSync("infra/local/.env.example", "utf8");
+          const names = [
+            "SAMRIM_POSTGRES_PASSWORD",
+            "IDENTITY_CHALLENGE_HMAC_SECRET",
+            "IDENTITY_DSH_SERVICE_TOKEN",
+            "CONTROL_PANEL_SERVICE_TOKEN",
+            "WLT_DSH_SERVICE_TOKEN",
+            "IDENTITY_ABUSE_HMAC_SECRET",
+            "OPERATOR_BOOTSTRAP_SECRET"
+          ];
+          const values = new Map(names.map((name) => [name, crypto.randomBytes(32).toString("hex")]));
+          values.set("DSH_DELIVERY_PROOF_KEYRING", JSON.stringify({ "local-v1": crypto.randomBytes(32).toString("base64") }));
+          values.set("DSH_JOINING_CASE_EVIDENCE_ACTIVE_KEY_ID", "local-v1");
+          values.set("DSH_JOINING_CASE_EVIDENCE_KEYRING", JSON.stringify({ "local-v1": crypto.randomBytes(32).toString("base64") }));
+          const output = example.split(/\r?\n/).map((line) => {
+            const separator = line.indexOf("=");
+            if (separator < 1) return line;
+            const name = line.slice(0, separator).trim();
+            return values.has(name) ? `${name}=${values.get(name)}` : line;
+          }).join("\n");
+          fs.writeFileSync(path, output.endsWith("\n") ? output : `${output}\n`, { mode: 0o600 });
+          NODE
+
+      - name: Start backend runtime
+        if: steps.scope.outputs.run == 'true'
+        shell: bash
+        run: docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml up -d --build --wait --wait-timeout 300 --remove-orphans postgres mailpit media identity dsh wlt
+
+      - name: Install Chromium
+        if: steps.scope.outputs.browser == 'true'
+        run: pnpm --dir apps/control-panel exec playwright install --with-deps chromium
+
+      - name: Start Control Panel
+        if: steps.scope.outputs.browser == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export NODE_ENV=development NEXT_TELEMETRY_DISABLED=1
+          pnpm --dir apps/control-panel exec next dev -H 127.0.0.1 -p "$SAMRIM_CONTROL_PORT" > "$RUNNER_TEMP/control-panel.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/control-panel.pid"
+          for attempt in {1..120}; do
+            if curl --fail --silent --output /dev/null "http://127.0.0.1:$SAMRIM_CONTROL_PORT/"; then exit 0; fi
+            sleep 0.5
+          done
+          cat "$RUNNER_TEMP/control-panel.log"
+          exit 1
+
+      - name: Prepare isolated DSH checker operator
+        if: steps.scope.outputs.checker == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run control-panel:dsh-runtime-checker-fixture --outputStyle=stream
+
+      - name: Run affected backend runtime proofs
+        if: steps.scope.outputs.run == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx affected -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
+
+      - name: Run Identity proofs for tagged mobile changes
+        if: steps.scope.outputs.mobile_identity == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof --projects=identity-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run DSH proofs for tagged mobile changes
+        if: steps.scope.outputs.mobile_dsh == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t baseline-proof,runtime-proof,location-proof --projects=dsh-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run all backend runtime proofs for shared runtime changes
+        if: steps.scope.outputs.full_runtime == 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run weekly backend runtime regression
+        if: steps.scope.outputs.run == 'true' && github.event_name == 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache
+
+      - name: Run affected Control Panel proof
+        if: steps.scope.outputs.control_proof == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx affected -t browser-live-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
+
+      - name: Run all Control Panel proofs for shared runtime changes
+        if: steps.scope.outputs.full_runtime == 'true' && github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run-many -t browser-live-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run weekly Control Panel regression
+        if: steps.scope.outputs.control_proof == 'true' && github.event_name == 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run-many -t browser-live-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache
+
+      - name: Stop runtime
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f "$RUNNER_TEMP/control-panel.pid" ]]; then kill "$(cat "$RUNNER_TEMP/control-panel.pid")" 2>/dev/null || true; fi
+          if [[ -f infra/local/.env ]]; then
+            docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml down --volumes --remove-orphans || true
+            rm -f infra/local/.env
+          fi
+ <<< "$changed_files"; then dsh_location_proof_changed=true; fi
+
+          if grep -Eq '^tests/runtime/(mailpit-challenge\.mjs|runtime-proof/challenge-source\.mjs)          browser_projects="$(pnpm exec nx show projects --affected --with-target=browser-live-proof --base="$NX_BASE" --head="$NX_HEAD" --sep=, --no-cloud)"
+          if [[ -n "$browser_projects" ]]; then
+            echo "RUNTIME_TARGET browser-live-proof -> $browser_projects"
+            run=true
+            browser=true
+            control_proof=true
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "browser=$browser" >> "$GITHUB_OUTPUT"
+          echo "checker=$checker" >> "$GITHUB_OUTPUT"
+          echo "control_proof=$control_proof" >> "$GITHUB_OUTPUT"
+          echo "full_runtime=$full_runtime" >> "$GITHUB_OUTPUT"
+          echo "mobile_identity=$mobile_identity" >> "$GITHUB_OUTPUT"
+          echo "mobile_dsh=$mobile_dsh" >> "$GITHUB_OUTPUT"
+
+      - name: Create private DSH checker fixture path
+        if: steps.scope.outputs.checker == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture_dir="$(mktemp -d "$RUNNER_TEMP/samrim-runtime-proof-XXXXXX")"
+          chmod 700 "$fixture_dir"
+          printf 'DSH_RUNTIME_CHECKER_FIXTURE_PATH=%s/dsh-checker-fixture.json\n' "$fixture_dir" >> "$GITHUB_ENV"
+
+      - name: Create isolated runtime environment
+        if: steps.scope.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const crypto = require("node:crypto");
+          const fs = require("node:fs");
+          const path = "infra/local/.env";
+          const example = fs.readFileSync("infra/local/.env.example", "utf8");
+          const names = [
+            "SAMRIM_POSTGRES_PASSWORD",
+            "IDENTITY_CHALLENGE_HMAC_SECRET",
+            "IDENTITY_DSH_SERVICE_TOKEN",
+            "CONTROL_PANEL_SERVICE_TOKEN",
+            "WLT_DSH_SERVICE_TOKEN",
+            "IDENTITY_ABUSE_HMAC_SECRET",
+            "OPERATOR_BOOTSTRAP_SECRET"
+          ];
+          const values = new Map(names.map((name) => [name, crypto.randomBytes(32).toString("hex")]));
+          values.set("DSH_DELIVERY_PROOF_KEYRING", JSON.stringify({ "local-v1": crypto.randomBytes(32).toString("base64") }));
+          values.set("DSH_JOINING_CASE_EVIDENCE_ACTIVE_KEY_ID", "local-v1");
+          values.set("DSH_JOINING_CASE_EVIDENCE_KEYRING", JSON.stringify({ "local-v1": crypto.randomBytes(32).toString("base64") }));
+          const output = example.split(/\r?\n/).map((line) => {
+            const separator = line.indexOf("=");
+            if (separator < 1) return line;
+            const name = line.slice(0, separator).trim();
+            return values.has(name) ? `${name}=${values.get(name)}` : line;
+          }).join("\n");
+          fs.writeFileSync(path, output.endsWith("\n") ? output : `${output}\n`, { mode: 0o600 });
+          NODE
+
+      - name: Start backend runtime
+        if: steps.scope.outputs.run == 'true'
+        shell: bash
+        run: docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml up -d --build --wait --wait-timeout 300 --remove-orphans postgres mailpit media identity dsh wlt
+
+      - name: Install Chromium
+        if: steps.scope.outputs.browser == 'true'
+        run: pnpm --dir apps/control-panel exec playwright install --with-deps chromium
+
+      - name: Start Control Panel
+        if: steps.scope.outputs.browser == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export NODE_ENV=development NEXT_TELEMETRY_DISABLED=1
+          pnpm --dir apps/control-panel exec next dev -H 127.0.0.1 -p "$SAMRIM_CONTROL_PORT" > "$RUNNER_TEMP/control-panel.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/control-panel.pid"
+          for attempt in {1..120}; do
+            if curl --fail --silent --output /dev/null "http://127.0.0.1:$SAMRIM_CONTROL_PORT/"; then exit 0; fi
+            sleep 0.5
+          done
+          cat "$RUNNER_TEMP/control-panel.log"
+          exit 1
+
+      - name: Prepare isolated DSH checker operator
+        if: steps.scope.outputs.checker == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run control-panel:dsh-runtime-checker-fixture --outputStyle=stream
+
+      - name: Run affected backend runtime proofs
+        if: steps.scope.outputs.run == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx affected -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
+
+      - name: Run Identity proofs for tagged mobile changes
+        if: steps.scope.outputs.mobile_identity == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof --projects=identity-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run DSH proofs for tagged mobile changes
+        if: steps.scope.outputs.mobile_dsh == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t baseline-proof,runtime-proof,location-proof --projects=dsh-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run all backend runtime proofs for shared runtime changes
+        if: steps.scope.outputs.full_runtime == 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run weekly backend runtime regression
+        if: steps.scope.outputs.run == 'true' && github.event_name == 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache
+
+      - name: Run affected Control Panel proof
+        if: steps.scope.outputs.control_proof == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx affected -t browser-live-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
+
+      - name: Run all Control Panel proofs for shared runtime changes
+        if: steps.scope.outputs.full_runtime == 'true' && github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run-many -t browser-live-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run weekly Control Panel regression
+        if: steps.scope.outputs.control_proof == 'true' && github.event_name == 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run-many -t browser-live-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache
+
+      - name: Stop runtime
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f "$RUNNER_TEMP/control-panel.pid" ]]; then kill "$(cat "$RUNNER_TEMP/control-panel.pid")" 2>/dev/null || true; fi
+          if [[ -f infra/local/.env ]]; then
+            docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml down --volumes --remove-orphans || true
+            rm -f infra/local/.env
+          fi
+ <<< "$changed_files"; then
+            identity_runtime_proof_changed=true
+            dsh_runtime_proof_changed=true
+            dsh_location_proof_changed=true
+          fi
+          if grep -Eq '^tests/runtime/runtime-proof/canonical-dsh-migration-history\.mjs          browser_projects="$(pnpm exec nx show projects --affected --with-target=browser-live-proof --base="$NX_BASE" --head="$NX_HEAD" --sep=, --no-cloud)"
+          if [[ -n "$browser_projects" ]]; then
+            echo "RUNTIME_TARGET browser-live-proof -> $browser_projects"
+            run=true
+            browser=true
+            control_proof=true
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "browser=$browser" >> "$GITHUB_OUTPUT"
+          echo "checker=$checker" >> "$GITHUB_OUTPUT"
+          echo "control_proof=$control_proof" >> "$GITHUB_OUTPUT"
+          echo "full_runtime=$full_runtime" >> "$GITHUB_OUTPUT"
+          echo "mobile_identity=$mobile_identity" >> "$GITHUB_OUTPUT"
+          echo "mobile_dsh=$mobile_dsh" >> "$GITHUB_OUTPUT"
+
+      - name: Create private DSH checker fixture path
+        if: steps.scope.outputs.checker == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture_dir="$(mktemp -d "$RUNNER_TEMP/samrim-runtime-proof-XXXXXX")"
+          chmod 700 "$fixture_dir"
+          printf 'DSH_RUNTIME_CHECKER_FIXTURE_PATH=%s/dsh-checker-fixture.json\n' "$fixture_dir" >> "$GITHUB_ENV"
+
+      - name: Create isolated runtime environment
+        if: steps.scope.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const crypto = require("node:crypto");
+          const fs = require("node:fs");
+          const path = "infra/local/.env";
+          const example = fs.readFileSync("infra/local/.env.example", "utf8");
+          const names = [
+            "SAMRIM_POSTGRES_PASSWORD",
+            "IDENTITY_CHALLENGE_HMAC_SECRET",
+            "IDENTITY_DSH_SERVICE_TOKEN",
+            "CONTROL_PANEL_SERVICE_TOKEN",
+            "WLT_DSH_SERVICE_TOKEN",
+            "IDENTITY_ABUSE_HMAC_SECRET",
+            "OPERATOR_BOOTSTRAP_SECRET"
+          ];
+          const values = new Map(names.map((name) => [name, crypto.randomBytes(32).toString("hex")]));
+          values.set("DSH_DELIVERY_PROOF_KEYRING", JSON.stringify({ "local-v1": crypto.randomBytes(32).toString("base64") }));
+          values.set("DSH_JOINING_CASE_EVIDENCE_ACTIVE_KEY_ID", "local-v1");
+          values.set("DSH_JOINING_CASE_EVIDENCE_KEYRING", JSON.stringify({ "local-v1": crypto.randomBytes(32).toString("base64") }));
+          const output = example.split(/\r?\n/).map((line) => {
+            const separator = line.indexOf("=");
+            if (separator < 1) return line;
+            const name = line.slice(0, separator).trim();
+            return values.has(name) ? `${name}=${values.get(name)}` : line;
+          }).join("\n");
+          fs.writeFileSync(path, output.endsWith("\n") ? output : `${output}\n`, { mode: 0o600 });
+          NODE
+
+      - name: Start backend runtime
+        if: steps.scope.outputs.run == 'true'
+        shell: bash
+        run: docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml up -d --build --wait --wait-timeout 300 --remove-orphans postgres mailpit media identity dsh wlt
+
+      - name: Install Chromium
+        if: steps.scope.outputs.browser == 'true'
+        run: pnpm --dir apps/control-panel exec playwright install --with-deps chromium
+
+      - name: Start Control Panel
+        if: steps.scope.outputs.browser == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export NODE_ENV=development NEXT_TELEMETRY_DISABLED=1
+          pnpm --dir apps/control-panel exec next dev -H 127.0.0.1 -p "$SAMRIM_CONTROL_PORT" > "$RUNNER_TEMP/control-panel.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/control-panel.pid"
+          for attempt in {1..120}; do
+            if curl --fail --silent --output /dev/null "http://127.0.0.1:$SAMRIM_CONTROL_PORT/"; then exit 0; fi
+            sleep 0.5
+          done
+          cat "$RUNNER_TEMP/control-panel.log"
+          exit 1
+
+      - name: Prepare isolated DSH checker operator
+        if: steps.scope.outputs.checker == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run control-panel:dsh-runtime-checker-fixture --outputStyle=stream
+
+      - name: Run affected backend runtime proofs
+        if: steps.scope.outputs.run == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx affected -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
+
+      - name: Run Identity proofs for tagged mobile changes
+        if: steps.scope.outputs.mobile_identity == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof --projects=identity-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run DSH proofs for tagged mobile changes
+        if: steps.scope.outputs.mobile_dsh == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t baseline-proof,runtime-proof,location-proof --projects=dsh-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run all backend runtime proofs for shared runtime changes
+        if: steps.scope.outputs.full_runtime == 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run weekly backend runtime regression
+        if: steps.scope.outputs.run == 'true' && github.event_name == 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache
+
+      - name: Run affected Control Panel proof
+        if: steps.scope.outputs.control_proof == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx affected -t browser-live-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
+
+      - name: Run all Control Panel proofs for shared runtime changes
+        if: steps.scope.outputs.full_runtime == 'true' && github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run-many -t browser-live-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run weekly Control Panel regression
+        if: steps.scope.outputs.control_proof == 'true' && github.event_name == 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run-many -t browser-live-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache
+
+      - name: Stop runtime
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f "$RUNNER_TEMP/control-panel.pid" ]]; then kill "$(cat "$RUNNER_TEMP/control-panel.pid")" 2>/dev/null || true; fi
+          if [[ -f infra/local/.env ]]; then
+            docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml down --volumes --remove-orphans || true
+            rm -f infra/local/.env
+          fi
+ <<< "$changed_files"; then
+            dsh_runtime_proof_changed=true
+            dsh_location_proof_changed=true
+          fi
+          if grep -Eq '^tests/runtime/runtime-proof/trusted-executables\.(mjs|d\.mts)          browser_projects="$(pnpm exec nx show projects --affected --with-target=browser-live-proof --base="$NX_BASE" --head="$NX_HEAD" --sep=, --no-cloud)"
+          if [[ -n "$browser_projects" ]]; then
+            echo "RUNTIME_TARGET browser-live-proof -> $browser_projects"
+            run=true
+            browser=true
+            control_proof=true
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "browser=$browser" >> "$GITHUB_OUTPUT"
+          echo "checker=$checker" >> "$GITHUB_OUTPUT"
+          echo "control_proof=$control_proof" >> "$GITHUB_OUTPUT"
+          echo "full_runtime=$full_runtime" >> "$GITHUB_OUTPUT"
+          echo "mobile_identity=$mobile_identity" >> "$GITHUB_OUTPUT"
+          echo "mobile_dsh=$mobile_dsh" >> "$GITHUB_OUTPUT"
+
+      - name: Create private DSH checker fixture path
+        if: steps.scope.outputs.checker == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture_dir="$(mktemp -d "$RUNNER_TEMP/samrim-runtime-proof-XXXXXX")"
+          chmod 700 "$fixture_dir"
+          printf 'DSH_RUNTIME_CHECKER_FIXTURE_PATH=%s/dsh-checker-fixture.json\n' "$fixture_dir" >> "$GITHUB_ENV"
+
+      - name: Create isolated runtime environment
+        if: steps.scope.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const crypto = require("node:crypto");
+          const fs = require("node:fs");
+          const path = "infra/local/.env";
+          const example = fs.readFileSync("infra/local/.env.example", "utf8");
+          const names = [
+            "SAMRIM_POSTGRES_PASSWORD",
+            "IDENTITY_CHALLENGE_HMAC_SECRET",
+            "IDENTITY_DSH_SERVICE_TOKEN",
+            "CONTROL_PANEL_SERVICE_TOKEN",
+            "WLT_DSH_SERVICE_TOKEN",
+            "IDENTITY_ABUSE_HMAC_SECRET",
+            "OPERATOR_BOOTSTRAP_SECRET"
+          ];
+          const values = new Map(names.map((name) => [name, crypto.randomBytes(32).toString("hex")]));
+          values.set("DSH_DELIVERY_PROOF_KEYRING", JSON.stringify({ "local-v1": crypto.randomBytes(32).toString("base64") }));
+          values.set("DSH_JOINING_CASE_EVIDENCE_ACTIVE_KEY_ID", "local-v1");
+          values.set("DSH_JOINING_CASE_EVIDENCE_KEYRING", JSON.stringify({ "local-v1": crypto.randomBytes(32).toString("base64") }));
+          const output = example.split(/\r?\n/).map((line) => {
+            const separator = line.indexOf("=");
+            if (separator < 1) return line;
+            const name = line.slice(0, separator).trim();
+            return values.has(name) ? `${name}=${values.get(name)}` : line;
+          }).join("\n");
+          fs.writeFileSync(path, output.endsWith("\n") ? output : `${output}\n`, { mode: 0o600 });
+          NODE
+
+      - name: Start backend runtime
+        if: steps.scope.outputs.run == 'true'
+        shell: bash
+        run: docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml up -d --build --wait --wait-timeout 300 --remove-orphans postgres mailpit media identity dsh wlt
+
+      - name: Install Chromium
+        if: steps.scope.outputs.browser == 'true'
+        run: pnpm --dir apps/control-panel exec playwright install --with-deps chromium
+
+      - name: Start Control Panel
+        if: steps.scope.outputs.browser == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export NODE_ENV=development NEXT_TELEMETRY_DISABLED=1
+          pnpm --dir apps/control-panel exec next dev -H 127.0.0.1 -p "$SAMRIM_CONTROL_PORT" > "$RUNNER_TEMP/control-panel.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/control-panel.pid"
+          for attempt in {1..120}; do
+            if curl --fail --silent --output /dev/null "http://127.0.0.1:$SAMRIM_CONTROL_PORT/"; then exit 0; fi
+            sleep 0.5
+          done
+          cat "$RUNNER_TEMP/control-panel.log"
+          exit 1
+
+      - name: Prepare isolated DSH checker operator
+        if: steps.scope.outputs.checker == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run control-panel:dsh-runtime-checker-fixture --outputStyle=stream
+
+      - name: Run affected backend runtime proofs
+        if: steps.scope.outputs.run == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx affected -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
+
+      - name: Run Identity proofs for tagged mobile changes
+        if: steps.scope.outputs.mobile_identity == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof --projects=identity-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run DSH proofs for tagged mobile changes
+        if: steps.scope.outputs.mobile_dsh == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t baseline-proof,runtime-proof,location-proof --projects=dsh-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run all backend runtime proofs for shared runtime changes
+        if: steps.scope.outputs.full_runtime == 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run weekly backend runtime regression
+        if: steps.scope.outputs.run == 'true' && github.event_name == 'schedule'
+        run: pnpm exec nx run-many -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache
+
+      - name: Run affected Control Panel proof
+        if: steps.scope.outputs.control_proof == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx affected -t browser-live-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
+
+      - name: Run all Control Panel proofs for shared runtime changes
+        if: steps.scope.outputs.full_runtime == 'true' && github.event_name != 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run-many -t browser-live-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+
+      - name: Run weekly Control Panel regression
+        if: steps.scope.outputs.control_proof == 'true' && github.event_name == 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:$SAMRIM_MAILPIT_WEB_PORT"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm exec nx run-many -t browser-live-proof --all --outputStyle=stream --parallel=1 --skip-nx-cache
+
+      - name: Stop runtime
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f "$RUNNER_TEMP/control-panel.pid" ]]; then kill "$(cat "$RUNNER_TEMP/control-panel.pid")" 2>/dev/null || true; fi
+          if [[ -f infra/local/.env ]]; then
+            docker compose --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml down --volumes --remove-orphans || true
+            rm -f infra/local/.env
+          fi
+ <<< "$changed_files"; then
+            identity_migration_proof_changed=true
+            identity_runtime_proof_changed=true
+            dsh_baseline_proof_changed=true
+            dsh_runtime_proof_changed=true
+            dsh_location_proof_changed=true
+          fi
+
+          if [[ "$full_runtime" != "true" && "$identity_migration_proof_changed" == "true" && "$mobile_identity" != "true" ]] && ! project_in_list "$migration_projects" "identity-backend"; then
+            direct_identity_migration=true
+            run=true
+          fi
+          if [[ "$full_runtime" != "true" && "$identity_runtime_proof_changed" == "true" && "$mobile_identity" != "true" ]] && ! project_in_list "$runtime_projects" "identity-backend"; then
+            direct_identity_runtime=true
+            run=true
+          fi
+          if [[ "$full_runtime" != "true" && "$dsh_baseline_proof_changed" == "true" && "$mobile_dsh" != "true" ]] && ! project_in_list "$baseline_projects" "dsh-backend"; then
+            direct_dsh_baseline=true
+            run=true
+          fi
+          if [[ "$full_runtime" != "true" && "$dsh_runtime_proof_changed" == "true" && "$mobile_dsh" != "true" ]] && ! project_in_list "$runtime_projects" "dsh-backend"; then
+            direct_dsh_runtime=true
+            run=true
+            browser=true
+            checker=true
+          fi
+          if [[ "$full_runtime" != "true" && "$dsh_location_proof_changed" == "true" && "$mobile_dsh" != "true" ]] && ! project_in_list "$location_projects" "dsh-backend"; then
+            direct_dsh_location=true
+            run=true
+          fi
           browser_projects="$(pnpm exec nx show projects --affected --with-target=browser-live-proof --base="$NX_BASE" --head="$NX_HEAD" --sep=, --no-cloud)"
           if [[ -n "$browser_projects" ]]; then
             echo "RUNTIME_TARGET browser-live-proof -> $browser_projects"

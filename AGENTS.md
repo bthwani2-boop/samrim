@@ -93,6 +93,16 @@ Repair a proven failure at its causal owner. Do not add exception paths solely t
 
 CI and GitHub rulesets provide final integration/merge assurance. They do not replace direct local proof for a claim that can and should be checked before push.
 
+Model context is a scarce working set, not an archive. Reduce context without reducing correctness, material scope, safety or required proof.
+
+- Search or navigate to the owning symbol/path before broad reading. Prefer the smallest relevant range; read an entire large file only when the claim materially requires it.
+- Do not carry raw logs, unchanged source, giant diffs or already-proven evidence across material closure cells. Retain only evidence that can still change the repair decision.
+- At a material cell boundary retain a compact checkpoint: exact HEAD, material decisions, affected owners/paths, still-valid proof, remaining dependencies and blockers. Discard superseded execution noise.
+- Keep the objective dependency map, but use a fresh bounded execution context for the next material cell instead of accumulating prior cell transcripts.
+- Local commits may be development checkpoints. Push, pull-request creation, remote CI and remote AI review are integration events, not routine iterative-development checkpoints; unless earlier remote integration is materially required, defer them until feature freeze.
+- Candidate-wide proof should normally run once after feature freeze. Rerun only proof invalidated by a later affected change.
+
+
 ## 6. Consequential action safety
 
 Do not force-push or rewrite shared history unless the user explicitly authorizes that exact destructive action.
@@ -134,5 +144,7 @@ Closure requires all of the following:
 - no known material defect, gap, partial cutover, stale owner, unjustified complexity or unproven material claim remains.
 
 Report the exact final HEAD and any material unproven claim. Do not claim closure when evidence is stale or incomplete.
+
+Fixed-point closure is bounded to the authorized objective and its proven affected cone. It does not authorize a platform-wide census of unrelated journeys, surfaces, history or debt.
 
 When the assigned objective is complete, stop. Do not invent additional scope or ask for another task as a condition of closure.
