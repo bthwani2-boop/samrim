@@ -255,6 +255,7 @@ export const dshOperationPaths = {
   readOwnPartnerFinancialSummary: { method: "GET", path: "/dsh/partners/me/financial-summary" },
   listOperatorPartnerCommissionReceivables: { method: "GET", path: "/dsh/operator/partner-commission-receivables" },
   readOperatorPartnerFinancialSummary: { method: "GET", path: "/dsh/operator/partners/{partnerActorId}/financial-summary" },
+  readOperatorPartnerStorePayoutRecipients: { method: "GET", path: "/dsh/operator/partners/{partnerActorId}/store-payout-recipients" },
   recordPartnerCommissionRemittance: { method: "POST", path: "/dsh/operator/partners/{partnerActorId}/commission-remittances" },
   readOwnPartnerPayoutSummary: { method: "GET", path: "/dsh/partners/me/payout-summary" },
   readOperatorPendingActorLegalName: { method: "GET", path: "/dsh/operator/actors/{actorId}/legal-name/pending" },

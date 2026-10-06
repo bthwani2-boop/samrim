@@ -7,6 +7,9 @@ import {
   type PartnerCommissionReceivableRegistryResponse,
   type PartnerCommissionRemittanceResponse,
   type PartnerFinancialSummary,
+  type StorePayoutBeneficiaryProfile,
+  type StorePayoutRecipientListResponse,
+  type StorePayoutRecipientRecord,
 } from "@bthwani/dsh";
 import { usePathname, useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -37,6 +40,17 @@ function buildHref(pathname: string, query: PartnerEarningsInitialQuery) {
   if (query.cursor) params.set("cursor", query.cursor);
   if (query.partnerActorId) params.set("partnerActorId", query.partnerActorId);
   return `${pathname}?${params.toString()}`;
+}
+
+function payoutProviderLabel(providerKey: string): string {
+  return providerKey.trim().replaceAll("_", " ");
+}
+
+function payoutRecipientSummary(record: StorePayoutRecipientRecord, profiles: Readonly<Record<string, StorePayoutBeneficiaryProfile>>): string {
+  const profile = profiles[record.beneficiaryActorId ?? ""];
+  if (record.state === "RECIPIENT_REVIEW_REQUIRED") return profile?.beneficiaryName ? `يحتاج مراجعة · ${profile.beneficiaryName}` : "يحتاج مراجعة";
+  if (record.state === "SELECTED_VERIFIED_STAFF") return [profile?.beneficiaryName?.trim() || "موظف موثّق", profile?.phoneMasked?.trim()].filter(Boolean).join(" · ");
+  return profile?.beneficiaryName ? `المالك · ${profile.beneficiaryName}` : "المالك";
 }
 
 function readError(body: unknown, fallback: string) {
@@ -118,6 +132,10 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
   const [registryLoading, setRegistryLoading] = useState(true);
   const [summary, setSummary] = useState<PartnerFinancialSummary | null>(null);
   const [summaryActorId, setSummaryActorId] = useState("");
+  const [payoutRecipients, setPayoutRecipients] = useState<StorePayoutRecipientListResponse | null>(null);
+  const [payoutRecipientsActorId, setPayoutRecipientsActorId] = useState("");
+  const [payoutRecipientsLoading, setPayoutRecipientsLoading] = useState(false);
+  const [payoutRecipientsError, setPayoutRecipientsError] = useState("");
   const [detailLoading, setDetailLoading] = useState(false);
   const [mutationBusy, setMutationBusy] = useState(false);
   const [error, setError] = useState("");
@@ -178,6 +196,32 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
     }
   }, []);
 
+  const loadPayoutRecipients = useCallback(async (actorId: string, signal?: AbortSignal) => {
+    if (!actorId) {
+      setPayoutRecipients(null);
+      setPayoutRecipientsActorId("");
+      setPayoutRecipientsLoading(false);
+      setPayoutRecipientsError("");
+      return;
+    }
+    setPayoutRecipients(null);
+    setPayoutRecipientsActorId("");
+    setPayoutRecipientsLoading(true);
+    setPayoutRecipientsError("");
+    try {
+      const response = await fetch(`/api/finance/partner-payout-recipients?partnerActorId=${encodeURIComponent(actorId)}`, { cache: "no-store", ...(signal ? { signal } : {}) });
+      const body = await response.json().catch(() => null) as StorePayoutRecipientListResponse | { error?: { message?: string } } | null;
+      if (!response.ok || !body || !("readback" in body)) throw new Error(readError(body, "تعذر قراءة مستلمي صرف المتاجر"));
+      if (signal?.aborted) return;
+      setPayoutRecipients(body);
+      setPayoutRecipientsActorId(actorId);
+    } catch (value) {
+      if (!signal?.aborted) setPayoutRecipientsError(value instanceof Error ? value.message : "تعذر قراءة مستلمي صرف المتاجر");
+    } finally {
+      if (!signal?.aborted) setPayoutRecipientsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     setSearch(initialQuery.search);
     setSort(initialQuery.sort);
@@ -223,8 +267,9 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
     setPending(actorId ? pendingByPartner.current.get(actorId) ?? null : null);
     const controller = new AbortController();
     void loadSummary(actorId, controller.signal);
+    void loadPayoutRecipients(actorId, controller.signal);
     return () => controller.abort();
-  }, [initialQuery.partnerActorId, loadSummary]);
+  }, [initialQuery.partnerActorId, loadPayoutRecipients, loadSummary]);
 
   useEffect(() => {
     pendingByPartner.current = readPartnerRemittanceRecovery();
@@ -333,6 +378,7 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
   };
 
   const selectedSummary = initialQuery.partnerActorId === summaryActorId ? summary : null;
+  const selectedPayoutRecipients = initialQuery.partnerActorId === payoutRecipientsActorId ? payoutRecipients : null;
 
   return (
     <section className={styles.workspace} aria-labelledby="partner-receivables-title">
@@ -383,6 +429,20 @@ export function PartnerEarningsWorkspace({ initialQuery }: Props) {
             <div><dt>الطلبات المسلّمة</dt><dd>{selectedSummary.orderCount.toLocaleString("ar-YE")}</dd></div>
           </dl>
           <p className="muted">فترة التسوية: {settlementPeriodLabel(selectedSummary.settlementPeriod)} · الحالة المالية: {financialProfileStateLabel(selectedSummary.profileState)}</p>
+          <section className={styles.recipientReadback} aria-labelledby="partner-payout-recipients-title">
+            <div className={styles.subheading}>
+              <div><h4 id="partner-payout-recipients-title">مستلمو صرف المتاجر</h4><p className="muted">قراءة تشغيلية من WLT مع هوية المستلم وجهة المحفظة المقنّعة؛ لا تعتمد الواجهة على معرّفات Actors للتعرّف على الأشخاص.</p></div>
+              <button className="button button-quiet" type="button" disabled={payoutRecipientsLoading} onClick={() => void loadPayoutRecipients(initialQuery.partnerActorId)}>{payoutRecipientsLoading ? "جارٍ القراءة…" : "إعادة القراءة"}</button>
+            </div>
+            {payoutRecipientsError ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذرت قراءة مستلمي الصرف</strong><p>{payoutRecipientsError}</p></div> : null}
+            {payoutRecipientsLoading && !selectedPayoutRecipients ? <p className="muted" role="status">جارٍ قراءة مستلمي الصرف من WLT…</p> : null}
+            {selectedPayoutRecipients?.readback.recipients.length ? <div className={styles.tableWrap}><table className={styles.table}><caption className="sr-only">مستلمو صرف متاجر الشريك</caption><thead><tr><th scope="col">المتجر</th><th scope="col">المستلم</th><th scope="col">جهة المحفظة</th><th scope="col">الحالة</th><th scope="col">المستحقات المسندة</th></tr></thead><tbody>{selectedPayoutRecipients.readback.recipients.map((record) => {
+              const profile = selectedPayoutRecipients.beneficiaryProfiles[record.beneficiaryActorId ?? ""];
+              const stateLabel = record.state === "SELECTED_VERIFIED_STAFF" ? "موظف مختار" : record.state === "RECIPIENT_REVIEW_REQUIRED" ? "تحتاج مراجعة المالك" : "المالك الافتراضي";
+              return <tr key={record.storeId}><th scope="row">{selectedPayoutRecipients.storeNames[record.storeId] ?? "متجر"}</th><td>{payoutRecipientSummary(record, selectedPayoutRecipients.beneficiaryProfiles)}</td><td>{profile?.providerKey ? <>{payoutProviderLabel(profile.providerKey)}{profile.walletIdentifierMasked ? <> · <bdi dir="ltr">{profile.walletIdentifierMasked}</bdi></> : null}</> : "غير جاهزة"}</td><td>{stateLabel}</td><td>{formatMoney(record.partnerNetMinor, selectedPayoutRecipients.readback.currency)}</td></tr>;
+            })}</tbody></table></div> : null}
+            {selectedPayoutRecipients && selectedPayoutRecipients.readback.recipients.length === 0 ? <p className={styles.empty}>لا توجد متاجر مرتبطة بهذا الشريك في قراءة الصرف الحالية.</p> : null}
+          </section>
           {receipt?.partnerActorId === initialQuery.partnerActorId ? <p className="state-success" role="status">سُجلت الحوالة {receipt.response.remittance.remittanceReference} بمبلغ {formatMoney(receipt.response.remittance.amountMinor, receipt.response.remittance.currency)}، وأثبتها المشغّل {receipt.response.remittance.verifiedBy}. {receipt.response.remittance.evidenceDocumentId ? <a href={`/api/finance/evidence/${encodeURIComponent(receipt.response.remittance.evidenceDocumentId)}`}>فتح إيصال الحوالة</a> : null}</p> : null}
           {selectedSummary.outstandingCommissionReceivableMinor > 0 || pending ? <section className={styles.remittance} aria-labelledby="partner-remittance-title">
             <h4 id="partner-remittance-title">{pending ? "استعادة محاولة حوالة عمولة الاستلام" : "تسجيل حوالة عمولة الاستلام"}</h4>

@@ -117,6 +117,25 @@
   overflow-wrap: anywhere;
 }
 
+.recipientReadback {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.subheading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.subheading h4,
+.subheading p {
+  margin: 0;
+}
+
 .remittance {
   display: grid;
   gap: 10px;
@@ -137,7 +156,8 @@
 
 @media (max-width: 760px) {
   .heading,
-  .detailHeading {
+  .detailHeading,
+  .subheading {
     flex-direction: column;
   }
 

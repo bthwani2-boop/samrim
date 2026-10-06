@@ -421,6 +421,17 @@ func (s *Service) ListStorePayoutRecipients(ctx context.Context, accessToken str
 	if err != nil {
 		return wltintegration.StorePayoutRecipientReadback{}, nil, nil, err
 	}
+	return s.ReadStorePayoutRecipientsForPartner(ctx, actorID)
+}
+
+// ReadStorePayoutRecipientsForPartner returns the same canonical WLT-owned payout
+// recipient truth for an already-authorized Partner actor. Calling surfaces own
+// authorization; this function owns only readback and human-safe enrichment.
+func (s *Service) ReadStorePayoutRecipientsForPartner(ctx context.Context, partnerActorID string) (wltintegration.StorePayoutRecipientReadback, map[string]string, map[string]StorePayoutBeneficiaryProfile, error) {
+	actorID := strings.TrimSpace(partnerActorID)
+	if actorID == "" || len(actorID) > 128 {
+		return wltintegration.StorePayoutRecipientReadback{}, nil, nil, ErrInvalidInput
+	}
 	readback, err := s.wlt.ListPartnerStorePayoutRecipients(ctx, actorID)
 	if err != nil {
 		return wltintegration.StorePayoutRecipientReadback{}, nil, nil, err
@@ -468,7 +479,6 @@ func (s *Service) ListStorePayoutRecipients(ctx context.Context, accessToken str
 	}
 	return readback, names, profiles, nil
 }
-
 // PrepareStorePayoutRecipientSelection verifies, from the owner session, that the
 // referenced team grant is an active grant on that Store owned by the acting owner,
 // and returns the canonical delegate actor behind the boundary. The user-facing

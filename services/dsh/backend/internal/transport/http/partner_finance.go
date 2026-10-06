@@ -3,6 +3,7 @@ package transporthttp
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,14 +13,16 @@ import (
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeaccess"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
 type PartnerFinanceServer struct {
-	auth     *auth.ServiceToken
-	identity *identityintegration.Client
-	payment  *wlt.Client
-	db       *sql.DB
+	auth        *auth.ServiceToken
+	identity    *identityintegration.Client
+	payment     *wlt.Client
+	db          *sql.DB
+	storeAccess *storeaccess.Service
 }
 
 type partnerCommissionRemittanceRequest struct {
@@ -41,13 +44,18 @@ func NewPartnerFinance(identity *identityintegration.Client, accessToken string,
 	if identity == nil || payment == nil || db == nil {
 		return nil, &identityclient.Error{Status: http.StatusInternalServerError, Code: "CONFIGURATION_ERROR", Message: "partner finance dependencies are required"}
 	}
-	return &PartnerFinanceServer{auth: authorizer, identity: identity, payment: payment, db: db}, nil
+	storeAccessService, err := storeaccess.New(identity, db, payment)
+	if err != nil {
+		return nil, err
+	}
+	return &PartnerFinanceServer{auth: authorizer, identity: identity, payment: payment, db: db, storeAccess: storeAccessService}, nil
 }
 
 func (s *PartnerFinanceServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/partners/me/financial-summary", s.readOwnSummary)
 	mux.HandleFunc("GET /dsh/operator/partner-commission-receivables", s.listOperatorCommissionReceivables)
 	mux.HandleFunc("GET /dsh/operator/partners/{partnerActorId}/financial-summary", s.readOperatorSummary)
+	mux.HandleFunc("GET /dsh/operator/partners/{partnerActorId}/store-payout-recipients", s.readOperatorStorePayoutRecipients)
 	mux.HandleFunc("POST /dsh/operator/partners/{partnerActorId}/commission-remittances", s.recordCommissionRemittance)
 }
 
@@ -148,6 +156,37 @@ func (s *PartnerFinanceServer) readOperatorSummary(w http.ResponseWriter, r *htt
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"summary": summary})
+}
+
+func (s *PartnerFinanceServer) readOperatorStorePayoutRecipients(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeOperator(w, r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if !s.requireOperator(w, r.Context(), acting) || !s.requirePermission(w, r.Context(), acting, "finance") {
+		return
+	}
+	partnerActorID := strings.TrimSpace(r.PathValue("partnerActorId"))
+	if partnerActorID == "" || len(partnerActorID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partnerActorId is required")
+		return
+	}
+	readback, storeNames, beneficiaryProfiles, err := s.storeAccess.ReadStorePayoutRecipientsForPartner(r.Context(), partnerActorID)
+	if err != nil {
+		if errors.Is(err, storeaccess.ErrInvalidInput) {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partnerActorId is invalid")
+			return
+		}
+		var identityErr *identityclient.Error
+		if errors.As(err, &identityErr) {
+			writeIdentityError(w, err)
+			return
+		}
+		writeWLTFinanceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"readback": readback, "storeNames": storeNames, "beneficiaryProfiles": beneficiaryProfiles})
 }
 
 func (s *PartnerFinanceServer) recordCommissionRemittance(w http.ResponseWriter, r *http.Request) {
