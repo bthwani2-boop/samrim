@@ -106,6 +106,14 @@ if (app === "app-partner") {
   const storeOfferContent = fs.readFileSync(path.join(appDir, "src", "features", "store-offer", "store-offer.tsx"), "utf8");
   assert.ok(storeOfferContent.includes("label={category.pathAr}"), `${app}: shared catalog category choices must display their full hierarchy path`);
   console.log("MOBILE_CATALOG_CATEGORY_PATH=PASS shared catalog proposals display the full category hierarchy");
+  for (const route of ["store", "orders", "wallet"]) {
+    const routeContent = fs.readFileSync(path.join(appRouteDir, `${route}.tsx`), "utf8");
+    assert.ok(routeContent.includes(`PartnerSurfaceGate surface="${route}"`), `${app}: the ${route} route must be guarded by the authority surface gate`);
+  }
+  assert.ok(layoutContent.includes('authority.canUse("store")') && layoutContent.includes('authority.canUse("orders")') && layoutContent.includes('authority.canUse("wallet")'), `${app}: tab visibility must derive from the live authority projection`);
+  assert.equal(layoutContent.split("{ href: null }").length, 5, `${app}: exactly the three authority-gated tabs plus onboarding may be hidden from navigation`);
+  assert.ok(shellContent.includes("canSearchOrders"), `${app}: the header search entry must be gated by orders authority`);
+  assert.ok(shellContent.includes('navigate("orders", { focus: "search" })'), `${app}: the authorized search entry must keep targeting the orders surface`);
 }
 
 import { register } from "node:module";
