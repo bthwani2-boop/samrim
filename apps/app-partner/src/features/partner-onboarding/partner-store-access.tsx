@@ -88,7 +88,14 @@ export function PartnerStoreAccess({ storeID }: { storeID: string }) {
   useEffect(() => { void reload(); }, [reload]);
 
   function togglePermission(permission: StoreAccessPermission) {
-    setSelectedPermissions((current) => current.includes(permission) ? current.filter((item) => item !== permission) : [...current, permission]);
+    setSelectedPermissions((current) => {
+      if (current.includes(permission)) {
+        if (permission === "orders") return current.filter((item) => item !== "orders" && item !== "fulfillment");
+        return current.filter((item) => item !== permission);
+      }
+      if (permission === "fulfillment") return [...new Set([...current, "orders", "fulfillment"])];
+      return [...current, permission];
+    });
     inviteAttempt.current = null;
   }
 
@@ -209,6 +216,7 @@ function TeamInvitationCard({ styles, busy, phone, onPhoneChange, storeSearch, o
     <Text style={styles.metaLabel}>قوالب الدور</Text>
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>{rolePresets.map((preset) => <Pressable accessibilityRole="button" disabled={busy} key={preset.value} onPress={() => choosePreset(preset)} style={{ backgroundColor: theme.surfaceInset, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 }}><Text style={{ color: theme.color }}>{preset.label}</Text></Pressable>)}</View>
     <Text style={styles.metaLabel}>حدد أقل صلاحيات لازمة لهذا المتجر فقط</Text>
+    <Text style={styles.muted}>صلاحية التوصيل تعتمد على قراءة الطلب، لذلك تضيف «الطلبات» معها تلقائيًا ولا يمكن إبقاء التوصيل منفردًا.</Text>
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>{permissions.map((permission) => {
       const selected = selectedPermissions.includes(permission.value);
       return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected, disabled: busy }} disabled={busy} key={permission.value} onPress={() => onPermissionToggle(permission.value)} style={{ backgroundColor: selected ? theme.actionBackground : theme.surfaceInset, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 }}><Text style={{ color: selected ? theme.onAction : theme.color }}>{permission.label}</Text></Pressable>;
@@ -240,13 +248,21 @@ function StoreAccessGrantCard({ grant, busy, onTransition, onPermissions }: { gr
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const [confirmRevoke, setConfirmRevoke] = useState(false);
   const selected = permissions.filter((permission) => grant.permissions.includes(permission.value)).map((permission) => permission.value);
-  const nextPermissions = (permission: StoreAccessPermission) => selected.includes(permission) ? selected.filter((item) => item !== permission) : [...selected, permission];
+  const nextPermissions = (permission: StoreAccessPermission) => {
+    if (selected.includes(permission)) {
+      if (permission === "orders") return selected.filter((item) => item !== "orders" && item !== "fulfillment");
+      return selected.filter((item) => item !== permission);
+    }
+    if (permission === "fulfillment") return [...new Set([...selected, "orders", "fulfillment"])];
+    return [...selected, permission];
+  };
   return <View style={{ borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 8, padding: 12 }}>
     <Text style={styles.value}>{[grant.delegateBeneficiaryName?.trim() || "عضو فريق", grant.delegatePhoneMasked?.trim()].filter(Boolean).join(" · ")}</Text>
     <Text style={styles.muted}>{grantStateLabel(grant.state)} · الصلاحيات الحالية: {permissionNames(grant.permissions)}</Text>
     {grant.state === "active" || grant.state === "suspended" || grant.state === "pending_role_admission" || grant.state === "pending_partner_activation" || grant.state === "pending_acceptance" ? <>
       <Text style={styles.metaLabel}>الصلاحيات المفوضة</Text>
       <Text style={styles.metaLabel}>يحفظ تغيير كل صلاحية مباشرة بعد تأكيد DSH.</Text>
+      <Text style={styles.muted}>التوصيل يعتمد على الطلبات؛ إضافة التوصيل تضيف «الطلبات» تلقائيًا، وإزالة «الطلبات» تزيل التوصيل معها.</Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>{permissions.map((permission) => {
         const checked = selected.includes(permission.value);
         return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked, disabled: busy || (checked && selected.length <= 1) }} disabled={busy || (checked && selected.length <= 1)} key={permission.value} onPress={() => onPermissions(nextPermissions(permission.value))} style={{ backgroundColor: checked ? theme.actionBackground : theme.surfaceInset, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 }}><Text style={{ color: checked ? theme.onAction : theme.color }}>{permission.label}</Text></Pressable>;

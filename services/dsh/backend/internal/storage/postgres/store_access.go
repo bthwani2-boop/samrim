@@ -116,10 +116,8 @@ func CreateStoreAccessInvitation(ctx context.Context, db *sql.DB, storeID, owner
 	if db == nil || storeID == "" || ownerActorID == "" || delegateActorID == "" || ownerActorID == delegateActorID || len(permissions) == 0 || len(idempotencyKey) < 8 || len(correlationID) < 8 {
 		return StoreAccessGrant{}, false, ErrStoreAccessConflict
 	}
-	for _, permission := range permissions {
-		if !validStorePermission(permission) {
-			return StoreAccessGrant{}, false, ErrStoreAccessConflict
-		}
+	if !validStorePermissionSet(permissions) {
+		return StoreAccessGrant{}, false, ErrStoreAccessConflict
 	}
 	requestHash := HashStoreAccessInvitationCreate(storeID, ownerActorID, delegateActorID, permissions)
 	tx, err := db.BeginTx(ctx, nil)
@@ -469,10 +467,8 @@ func UpdateStoreAccessGrantPermissions(ctx context.Context, db *sql.DB, storeID,
 	if db == nil || storeID == "" || ownerActorID == "" || grantID == "" || expectedVersion < 1 || len(permissions) == 0 || len(idempotencyKey) < 8 || len(correlationID) < 8 {
 		return StoreAccessGrant{}, false, ErrStoreAccessConflict
 	}
-	for _, permission := range permissions {
-		if !validStorePermission(permission) {
-			return StoreAccessGrant{}, false, ErrStoreAccessConflict
-		}
+	if !validStorePermissionSet(permissions) {
+		return StoreAccessGrant{}, false, ErrStoreAccessConflict
 	}
 	requestHash := HashStoreAccessPermissionsUpdate(storeID, grantID, ownerActorID, permissions, expectedVersion)
 	tx, err := db.BeginTx(ctx, nil)
@@ -779,6 +775,26 @@ var storeAccessPermissionAllowlist = map[string]struct{}{
 func validStorePermission(permission string) bool {
 	_, ok := storeAccessPermissionAllowlist[permission]
 	return ok
+}
+
+func validStorePermissionSet(permissions []string) bool {
+	if len(permissions) == 0 {
+		return false
+	}
+	hasOrders := false
+	hasFulfillment := false
+	for _, permission := range permissions {
+		if !validStorePermission(permission) {
+			return false
+		}
+		if permission == "orders" {
+			hasOrders = true
+		}
+		if permission == "fulfillment" {
+			hasFulfillment = true
+		}
+	}
+	return !hasFulfillment || hasOrders
 }
 
 // storeGrantHoldsPermissionTx reports whether an active Store grant for the actor

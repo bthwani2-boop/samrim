@@ -8306,6 +8306,7 @@ components:
 
     StoreAccessPermission:
       type: string
+      description: Store-scoped permission. fulfillment is valid only when orders is granted in the same permission set because fulfillment actions require the Store order workflow.
       enum: [orders, catalog, store_operations, promotions, finance_read, payout_request, fulfillment]
 
     StoreAccessGrant:
