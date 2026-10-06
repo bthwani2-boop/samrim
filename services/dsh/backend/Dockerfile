@@ -19,8 +19,6 @@ WORKDIR /app
 COPY --from=build /out/api /api
 COPY --from=build /out/migrate /migrate
 COPY --from=build /out/schema-verify /schema-verify
-COPY services/dsh/database/migrations /app/migrations
-ENV DSH_MIGRATION_DIR=/app/migrations
 USER dsh
 EXPOSE 8080
 ENTRYPOINT ["/api"]

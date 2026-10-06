@@ -43,7 +43,7 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 		t.Fatalf("configured postgres is not reachable: %v", err)
 	}
 
-	withFreshCanonicalDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
+	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
 		scenario := catalogRefoundationScenario{t: t, ctx: ctx, db: db}
 		scenario.verifyFreshSchema(records, migrationSQL)
 		scenario.createRegistryFixtures()
@@ -60,7 +60,7 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 
 func (s *catalogRefoundationScenario) verifyFreshSchema(records []postgres.MigrationRecord, migrationSQL []string) {
 	s.t.Helper()
-	if len(records) != postgres.CanonicalSchemaVersion || len(migrationSQL) != postgres.CanonicalSchemaVersion {
+	if len(records) != postgres.SchemaVersion || len(migrationSQL) != postgres.SchemaVersion {
 		s.t.Fatalf("unexpected DSH migration graph size: records=%d sql=%d", len(records), len(migrationSQL))
 	}
 	assertRequiredMigrationOrder(s.t, records,
@@ -72,13 +72,13 @@ func (s *catalogRefoundationScenario) verifyFreshSchema(records []postgres.Migra
 		"096_catalog_product_proposal_field_ownership.sql",
 		"097_store_catalog_import_scope.sql",
 	)
-	if err := postgres.MigrateCanonical(s.ctx, s.db, records, migrationSQL, testDeliveryProofKeyring(s.t)); err != nil {
+	if err := postgres.Migrate(s.ctx, s.db, records, migrationSQL, testDeliveryProofKeyring(s.t)); err != nil {
 		s.t.Fatalf("apply fresh DSH migrations: %v", err)
 	}
-	if err := postgres.VerifyCanonicalSchema(s.ctx, s.db, records); err != nil {
+	if err := postgres.VerifySchema(s.ctx, s.db, records); err != nil {
 		s.t.Fatalf("verify fresh DSH schema: %v", err)
 	}
-	if err := postgres.MigrateCanonical(s.ctx, s.db, records, migrationSQL, testDeliveryProofKeyring(s.t)); err != nil {
+	if err := postgres.Migrate(s.ctx, s.db, records, migrationSQL, testDeliveryProofKeyring(s.t)); err != nil {
 		s.t.Fatalf("rerun DSH migrations with matching checksums: %v", err)
 	}
 	var visibilityViews int

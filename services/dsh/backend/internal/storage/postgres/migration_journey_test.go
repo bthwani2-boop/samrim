@@ -1,7 +1,6 @@
 package postgres_test
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -9,19 +8,10 @@ import (
 )
 
 func TestCanonicalJourneyMigrationGraphIncludesJoiningCaseIntakeDetails(t *testing.T) {
-	migrationDirectory := filepath.Join("..", "..", "..", "..", "database", "migrations")
-	records, migrationSQL, err := postgres.LoadCanonicalMigrations(migrationDirectory)
+	records, migrationSQL, err := postgres.LoadMigrations()
 	if err != nil {
 		t.Fatalf("load canonical DSH migrations: %v", err)
 	}
-	if len(records) != postgres.CanonicalSchemaVersion || len(migrationSQL) != postgres.CanonicalSchemaVersion {
-		t.Fatalf("canonical DSH migration graph size: records=%d sql=%d schema=%d", len(records), len(migrationSQL), postgres.CanonicalSchemaVersion)
-	}
-	last := records[len(records)-1]
-	if last.Version != postgres.CanonicalSchemaVersion || last.Name != "098_promotion_funding_vocabulary_and_order_snapshot.sql" {
-		t.Fatalf("last canonical DSH migration = v%d %q; want v%d 098_promotion_funding_vocabulary_and_order_snapshot.sql", last.Version, last.Name, postgres.CanonicalSchemaVersion)
-	}
-
 	migrationByName := make(map[string]string, len(records))
 	for index, record := range records {
 		migrationByName[record.Name] = migrationSQL[index]

@@ -23,7 +23,7 @@ import (
 
 var (
 	errPartnerPromotionSession        = errors.New("an active app-partner session is required")
-	errPartnerPromotionStoreOwnership = errors.New("only the Store owner may manage its promotions")
+	errPartnerPromotionStoreAuthority = errors.New("promotions authority is required for this Store")
 )
 
 type MarketingServer struct {
@@ -63,6 +63,74 @@ func (s *MarketingServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/promotions", s.listPartnerStorePromotions)
 	mux.HandleFunc("POST /dsh/partner/stores/{storeId}/promotions", s.createPartnerStorePromotion)
 	mux.HandleFunc("POST /dsh/partner/stores/{storeId}/promotions/{promotionId}/state", s.setPartnerStorePromotionState)
+	mux.HandleFunc("GET /dsh/partner/stores/{storeId}/campaigns", s.listPartnerStoreCampaigns)
+	mux.HandleFunc("POST /dsh/partner/stores/{storeId}/campaigns/{promotionId}/opt-in", s.optInPartnerStoreCampaign)
+}
+
+// promotionTargets converts the contract targeting facts into storage inputs.
+func promotionTargets(values []contract.PromotionTarget) []postgres.PromotionTargetInput {
+	targets := make([]postgres.PromotionTargetInput, 0, len(values))
+	for _, value := range values {
+		targets = append(targets, postgres.PromotionTargetInput{Kind: strings.ToUpper(strings.TrimSpace(string(value.TargetKind))), Ref: strings.TrimSpace(value.TargetRef)})
+	}
+	return targets
+}
+
+func promotionThreshold(value int64) *int64 {
+	if value <= 0 {
+		return nil
+	}
+	return &value
+}
+
+func (s *MarketingServer) listPartnerStoreCampaigns(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.requirePartnerStorePromotionAuthority(r.Context(), bearerToken(r), r.PathValue("storeId")); err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	items, err := postgres.ListPartnerEligibleCampaigns(r.Context(), s.db, r.PathValue("storeId"))
+	if err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	response := contract.PartnerCampaignListResponse{Campaigns: make([]contract.PartnerCampaignView, 0, len(items))}
+	for _, item := range items {
+		view := contract.PartnerCampaignView{Promotion: toPromotionView(item.PromotionRecord), StoreOptInState: item.StoreOptInState, StoreOptInVersion: item.StoreOptInVersion}
+		response.Campaigns = append(response.Campaigns, view)
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *MarketingServer) optInPartnerStoreCampaign(w http.ResponseWriter, r *http.Request) {
+	correlationID, idempotencyKey, ok := storeAccessMutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	actorID, err := s.requirePartnerStorePromotionAuthority(r.Context(), bearerToken(r), r.PathValue("storeId"))
+	if err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	expected, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Version")))
+	if err != nil || expected < 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a positive X-Expected-Version is required")
+		return
+	}
+	var input contract.CampaignOptInRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	state := strings.ToUpper(strings.TrimSpace(input.Decision))
+	if state != "OPTED_IN" && state != "DECLINED" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "decision must be OPTED_IN or DECLINED")
+		return
+	}
+	record, replayed, err := postgres.SetPartnerCampaignOptIn(r.Context(), s.db, r.PathValue("promotionId"), r.PathValue("storeId"), actorID, state, expected, idempotencyKey, correlationID)
+	if err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	writeJSON(w, responseStatus(replayed), contract.PartnerCampaignOptInResponse{Campaign: contract.PartnerCampaignView{Promotion: toPromotionView(record.PromotionRecord), StoreOptInState: record.StoreOptInState, StoreOptInVersion: record.StoreOptInVersion}, IdempotentReplay: replayed})
 }
 
 func (s *MarketingServer) partnerSessionActorID(ctx context.Context, accessToken string) (string, error) {
@@ -77,23 +145,24 @@ func (s *MarketingServer) partnerSessionActorID(ctx context.Context, accessToken
 	return actorID, nil
 }
 
-func (s *MarketingServer) requirePartnerStoreOwner(ctx context.Context, accessToken, storeID string) (string, error) {
+// requirePartnerStorePromotionAuthority authorizes promotion management for the
+// Store owner or a delegate holding an active Store-scoped `promotions` grant.
+func (s *MarketingServer) requirePartnerStorePromotionAuthority(ctx context.Context, accessToken, storeID string) (string, error) {
 	actorID, err := s.partnerSessionActorID(ctx, accessToken)
 	if err != nil {
 		return "", err
 	}
-	store, err := postgres.ReadStore(ctx, s.db, storeID)
-	if err != nil {
+	if _, _, err := postgres.AuthorizePartnerStoreAction(ctx, s.db, storeID, actorID, "promotions"); err != nil {
+		if errors.Is(err, postgres.ErrStoreAccessForbidden) || errors.Is(err, postgres.ErrStoreNotFound) {
+			return "", errPartnerPromotionStoreAuthority
+		}
 		return "", err
-	}
-	if store.PartnerActorID != actorID {
-		return "", errPartnerPromotionStoreOwnership
 	}
 	return actorID, nil
 }
 
 func (s *MarketingServer) listPartnerStorePromotions(w http.ResponseWriter, r *http.Request) {
-	if _, err := s.requirePartnerStoreOwner(r.Context(), bearerToken(r), r.PathValue("storeId")); err != nil {
+	if _, err := s.requirePartnerStorePromotionAuthority(r.Context(), bearerToken(r), r.PathValue("storeId")); err != nil {
 		writeMarketingError(w, err)
 		return
 	}
@@ -114,7 +183,7 @@ func (s *MarketingServer) createPartnerStorePromotion(w http.ResponseWriter, r *
 	if !ok {
 		return
 	}
-	actorID, err := s.requirePartnerStoreOwner(r.Context(), bearerToken(r), r.PathValue("storeId"))
+	actorID, err := s.requirePartnerStorePromotionAuthority(r.Context(), bearerToken(r), r.PathValue("storeId"))
 	if err != nil {
 		writeMarketingError(w, err)
 		return
@@ -133,6 +202,7 @@ func (s *MarketingServer) createPartnerStorePromotion(w http.ResponseWriter, r *
 		value := int64(input.RedemptionLimit)
 		limit = &value
 	}
+	threshold := promotionThreshold(int64(input.MinOrderSubtotalMinor))
 	startsAt := input.StartsAt
 	if startsAt.IsZero() {
 		startsAt = time.Now().UTC()
@@ -141,7 +211,7 @@ func (s *MarketingServer) createPartnerStorePromotion(w http.ResponseWriter, r *
 	// the Store scope to the owned path Store and owns the funding source.
 	item, replayed, err := postgres.CreatePromotion(r.Context(), s.db, postgres.PromotionInput{
 		ID: input.ID, Code: input.Code, NameAr: input.NameAr, DescriptionAr: input.DescriptionAr, Kind: string(input.Kind), ValueMinor: int64(input.ValueMinor), MaxDiscountMinor: maxDiscount,
-		FundingSource: "PARTNER", StoreID: r.PathValue("storeId"), StartsAt: startsAt, EndsAt: input.EndsAt, RedemptionLimit: limit, CreatedByActorID: actorID,
+		FundingSource: "PARTNER", StoreID: r.PathValue("storeId"), StartsAt: startsAt, EndsAt: input.EndsAt, MinOrderSubtotalMinor: threshold, Targets: promotionTargets(input.Targets), RedemptionLimit: limit, CreatedByActorID: actorID,
 	}, idempotencyKey, postgres.HashMarketingFacts("promotion-create", input.ID, input.Code, input.NameAr, input.DescriptionAr, string(input.Kind), fmt.Sprint(input.ValueMinor), "PARTNER", r.PathValue("storeId"), "", startsAt.UTC().Format(time.RFC3339Nano), optionalTimeString(input.EndsAt), fmt.Sprint(input.RedemptionLimit), correlationID))
 	if err != nil {
 		writeMarketingError(w, err)
@@ -160,7 +230,7 @@ func (s *MarketingServer) setPartnerStorePromotionState(w http.ResponseWriter, r
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a positive X-Expected-Version is required")
 		return
 	}
-	if _, err := s.requirePartnerStoreOwner(r.Context(), bearerToken(r), r.PathValue("storeId")); err != nil {
+	if _, err := s.requirePartnerStorePromotionAuthority(r.Context(), bearerToken(r), r.PathValue("storeId")); err != nil {
 		writeMarketingError(w, err)
 		return
 	}
@@ -304,12 +374,18 @@ func (s *MarketingServer) createOperatorPromotion(w http.ResponseWriter, r *http
 		value := int64(input.RedemptionLimit)
 		limit = &value
 	}
+	var fundingShare *int
+	if input.FundingSharePartnerPercent > 0 {
+		value := input.FundingSharePartnerPercent
+		fundingShare = &value
+	}
+	threshold := promotionThreshold(int64(input.MinOrderSubtotalMinor))
 	item, replayed, err := postgres.CreatePromotion(r.Context(), s.db, postgres.PromotionInput{
 		ID: input.ID, Code: input.Code, NameAr: input.NameAr, DescriptionAr: input.DescriptionAr, Kind: string(input.Kind), ValueMinor: int64(input.ValueMinor), MaxDiscountMinor: maxDiscount,
-		// Store promotions are partner-borne by definition; the funding source is
-		// server-owned and clients cannot choose it.
-		FundingSource: "PARTNER", StoreID: input.StoreID, ServiceCityID: input.ServiceCityID, StartsAt: input.StartsAt, EndsAt: input.EndsAt, RedemptionLimit: limit, CreatedByActorID: acting,
-	}, idempotency, postgres.HashMarketingFacts("promotion-create", input.ID, input.Code, input.NameAr, input.DescriptionAr, string(input.Kind), fmt.Sprint(input.ValueMinor), "PARTNER", input.StoreID, input.ServiceCityID, input.StartsAt.UTC().Format(time.RFC3339Nano), optionalTimeString(input.EndsAt), fmt.Sprint(input.RedemptionLimit), correlation))
+		// The operator owns the funding source and allocation for platform-authored
+		// promotions; partner-authored Store promotions stay partner-borne.
+		FundingSource: string(input.FundingSource), FundingSharePartnerPercent: fundingShare, StoreID: input.StoreID, ServiceCityID: input.ServiceCityID, StartsAt: input.StartsAt, EndsAt: input.EndsAt, RequiresPartnerOptIn: input.RequiresPartnerOptIn, MinOrderSubtotalMinor: threshold, Targets: promotionTargets(input.Targets), RedemptionLimit: limit, CreatedByActorID: acting,
+	}, idempotency, postgres.HashMarketingFacts("promotion-create", input.ID, input.Code, input.NameAr, input.DescriptionAr, string(input.Kind), fmt.Sprint(input.ValueMinor), string(input.FundingSource), input.StoreID, input.ServiceCityID, input.StartsAt.UTC().Format(time.RFC3339Nano), optionalTimeString(input.EndsAt), fmt.Sprint(input.RedemptionLimit), correlation))
 	if err != nil {
 		writeMarketingError(w, err)
 		return

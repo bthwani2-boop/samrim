@@ -27,7 +27,7 @@ function benefitLabel(promotion: PromotionView): string {
   return promotion.kind === "PERCENTAGE" ? `خصم ${promotion.valueMinor}%` : `خصم ${(promotion.valueMinor / 100).toLocaleString("ar")} ريال`;
 }
 
-export function StorePromotionsCard({ storeID, owned }: Readonly<{ storeID: string; owned: boolean }>) {
+export function StorePromotionsCard({ storeID }: Readonly<{ storeID: string }>) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const authenticated = currentIdentityState().kind === "authenticated";
@@ -97,7 +97,7 @@ export function StorePromotionsCard({ storeID, owned }: Readonly<{ storeID: stri
     } finally { setBusy(false); }
   };
 
-  if (!authenticated || !owned) return null;
+  if (!authenticated) return null;
   const now = Date.now();
   const buckets: Record<"active" | "scheduled" | "ended", PromotionView[]> = { active: [], scheduled: [], ended: [] };
   for (const promotion of state?.promotions ?? []) buckets[lifecycleBucket(promotion, now)].push(promotion);

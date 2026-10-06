@@ -171,15 +171,24 @@ func (s *Service) ReadForCaptain(ctx context.Context, accessToken string) (postg
 	return admission, nil
 }
 
+// authorizePartnerStoreFulfillment admits the Store owner or a delegate holding an
+// active Store-scoped `fulfillment` grant to Store-captain fulfillment operations.
+func (s *Service) authorizePartnerStoreFulfillment(ctx context.Context, storeID, actorID string) error {
+	if _, _, err := postgres.AuthorizePartnerStoreAction(ctx, s.db, strings.TrimSpace(storeID), strings.TrimSpace(actorID), "fulfillment"); err != nil {
+		if errors.Is(err, postgres.ErrStoreAccessForbidden) || errors.Is(err, postgres.ErrStoreNotFound) {
+			return ErrPartnerSessionForbidden
+		}
+		return err
+	}
+	return nil
+}
+
 func (s *Service) ReadForPartner(ctx context.Context, accessToken, storeID, orderID string) (postgres.CaptainAssignment, error) {
 	identity, err := s.requirePartner(ctx, accessToken)
 	if err != nil {
 		return postgres.CaptainAssignment{}, err
 	}
-	if _, err := postgres.ReadStoreOwnedByPartner(ctx, s.db, strings.TrimSpace(storeID), identity.Subject); err != nil {
-		if errors.Is(err, postgres.ErrStoreNotFound) {
-			return postgres.CaptainAssignment{}, ErrPartnerSessionForbidden
-		}
+	if err := s.authorizePartnerStoreFulfillment(ctx, storeID, identity.Subject); err != nil {
 		return postgres.CaptainAssignment{}, err
 	}
 	assignment, err := postgres.ReadCaptainAssignmentForOrder(ctx, s.db, strings.TrimSpace(orderID))
@@ -406,6 +415,9 @@ func (s *Service) DispatchForPartner(ctx context.Context, accessToken, storeID, 
 	if expectedOrderVersion < 1 || strings.TrimSpace(storeID) == "" || strings.TrimSpace(orderID) == "" || strings.TrimSpace(captainActorID) == "" || !validMutation(idempotencyKey, correlationID, identity.Subject) {
 		return postgres.CaptainOffer{}, false, ErrInvalidInput
 	}
+	if err := s.authorizePartnerStoreFulfillment(ctx, storeID, identity.Subject); err != nil {
+		return postgres.CaptainOffer{}, false, err
+	}
 	requestHash := postgres.HashStoreCaptainDispatchRequest(storeID, orderID, captainActorID, expectedOrderVersion)
 	return postgres.CreateStoreCaptainDispatchOffer(ctx, s.db, strings.TrimSpace(storeID), strings.TrimSpace(orderID), strings.TrimSpace(captainActorID), identity.Subject, expectedOrderVersion, strings.TrimSpace(idempotencyKey), requestHash, strings.TrimSpace(correlationID))
 }
@@ -415,10 +427,7 @@ func (s *Service) ReadStoreDispatchForPartner(ctx context.Context, accessToken, 
 	if err != nil {
 		return postgres.CaptainOffer{}, err
 	}
-	if _, err := postgres.ReadStoreOwnedByPartner(ctx, s.db, strings.TrimSpace(storeID), identity.Subject); err != nil {
-		if errors.Is(err, postgres.ErrStoreNotFound) {
-			return postgres.CaptainOffer{}, ErrPartnerSessionForbidden
-		}
+	if err := s.authorizePartnerStoreFulfillment(ctx, storeID, identity.Subject); err != nil {
 		return postgres.CaptainOffer{}, err
 	}
 	return postgres.ReadStoreCaptainDispatchOffer(ctx, s.db, strings.TrimSpace(storeID), strings.TrimSpace(orderID), identity.Subject)
@@ -442,10 +451,7 @@ func (s *Service) ConfirmStoreHandoff(ctx context.Context, accessToken, orderID,
 	if expectedVersion < 1 || !validMutation(idempotencyKey, correlationID, identity.Subject) {
 		return postgres.CaptainAssignment{}, false, ErrInvalidInput
 	}
-	if _, err := postgres.ReadStoreOwnedByPartner(ctx, s.db, strings.TrimSpace(storeID), identity.Subject); err != nil {
-		if errors.Is(err, postgres.ErrStoreNotFound) {
-			return postgres.CaptainAssignment{}, false, ErrPartnerSessionForbidden
-		}
+	if err := s.authorizePartnerStoreFulfillment(ctx, storeID, identity.Subject); err != nil {
 		return postgres.CaptainAssignment{}, false, err
 	}
 	return postgres.ConfirmStoreHandoff(ctx, s.db, strings.TrimSpace(orderID), strings.TrimSpace(storeID), strings.TrimSpace(assignmentID), expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCaptainHandoffRequest(assignmentID, storeID, expectedVersion), identity.Subject, strings.TrimSpace(correlationID))

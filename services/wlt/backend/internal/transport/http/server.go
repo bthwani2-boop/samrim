@@ -119,7 +119,13 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /wlt/v1/official-wallet-destinations/{actorType}/{actorId}", s.readOfficialWalletDestination)
 	mux.HandleFunc("GET /wlt/v1/official-wallet-destinations/by-id/{destinationId}", s.readOfficialWalletDestinationByID)
 	mux.HandleFunc("POST /wlt/v1/payout-intents", s.createPayoutIntent)
-	s.registerStorePayoutRecipientRoutes(mux)
+	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/store-payout-recipients", s.readPartnerStorePayoutRecipients)
+	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/store-payout-recipients/{storeId}", s.readStorePayoutRecipientByStore)
+	mux.HandleFunc("PUT /wlt/v1/store-payout-recipients/{storeId}", s.selectStorePayoutRecipient)
+	mux.HandleFunc("POST /wlt/v1/store-payout-recipients/{storeId}/revert", s.revertStorePayoutRecipient)
+	mux.HandleFunc("POST /wlt/v1/store-payout-recipients/{storeId}/review-required", s.markStorePayoutRecipientReviewRequired)
+	mux.HandleFunc("POST /wlt/v1/partners/{partnerActorId}/payout-requests", s.createPartnerPayoutRequest)
+	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/payout-requests/{requestId}", s.readPartnerPayoutRequest)
 	mux.HandleFunc("GET /wlt/v1/payout-state/{actorType}/{actorId}", s.readPayoutState)
 	mux.HandleFunc("GET /wlt/v1/operator/payout-requests", s.listPayoutRequests)
 	mux.HandleFunc("GET /wlt/v1/operator/beneficiaries", s.listBeneficiaryPayoutStates)
@@ -168,19 +174,28 @@ type createRequest struct {
 }
 
 type customerPaymentAllocationRequest struct {
-	OrderID                    string `json:"orderId"`
-	StoreID                    string `json:"storeId"`
-	PartnerActorID             string `json:"partnerActorId"`
-	CommercialStoreTypeID      string `json:"commercialStoreTypeId"`
-	FulfillmentMode            string `json:"fulfillmentMode"`
-	Currency                   string `json:"currency"`
-	SubtotalMinor              int64  `json:"subtotalMinor"`
-	DeliveryFeeMinor           int64  `json:"deliveryFeeMinor"`
-	DiscountMinor              int64  `json:"discountMinor"`
-	InternalBalanceAmountMinor int64  `json:"internalBalanceAmountMinor"`
-	CashAmountMinor            int64  `json:"cashAmountMinor"`
-	CustomerPayableMinor       int64  `json:"customerPayableMinor"`
-	PolicyVersion              string `json:"policyVersion"`
+	OrderID                    string                   `json:"orderId"`
+	StoreID                    string                   `json:"storeId"`
+	PartnerActorID             string                   `json:"partnerActorId"`
+	CommercialStoreTypeID      string                   `json:"commercialStoreTypeId"`
+	FulfillmentMode            string                   `json:"fulfillmentMode"`
+	Currency                   string                   `json:"currency"`
+	SubtotalMinor              int64                    `json:"subtotalMinor"`
+	DeliveryFeeMinor           int64                    `json:"deliveryFeeMinor"`
+	DiscountMinor              int64                    `json:"discountMinor"`
+	InternalBalanceAmountMinor int64                    `json:"internalBalanceAmountMinor"`
+	CashAmountMinor            int64                    `json:"cashAmountMinor"`
+	CustomerPayableMinor       int64                    `json:"customerPayableMinor"`
+	PolicyVersion              string                   `json:"policyVersion"`
+	PromotionFunding           *promotionFundingRequest `json:"promotionFunding"`
+}
+
+type promotionFundingRequest struct {
+	PromotionID         string `json:"promotionId"`
+	PromotionVersion    int    `json:"promotionVersion"`
+	PromotionCode       string `json:"promotionCode"`
+	FundingSource       string `json:"fundingSource"`
+	PartnerSharePercent *int   `json:"partnerSharePercent"`
 }
 
 type updateStoreTypeCommissionDefaultRequest struct {
@@ -707,6 +722,10 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 	var allocation *postgres.CustomerPaymentAllocationInput
 	if input.CustomerPaymentAllocation != nil {
 		value := postgres.CustomerPaymentAllocationInput{OrderID: input.CustomerPaymentAllocation.OrderID, StoreID: input.CustomerPaymentAllocation.StoreID, PartnerActorID: input.CustomerPaymentAllocation.PartnerActorID, CommercialStoreTypeID: input.CustomerPaymentAllocation.CommercialStoreTypeID, FulfillmentMode: input.CustomerPaymentAllocation.FulfillmentMode, Currency: input.CustomerPaymentAllocation.Currency, SubtotalMinor: input.CustomerPaymentAllocation.SubtotalMinor, DeliveryFeeMinor: input.CustomerPaymentAllocation.DeliveryFeeMinor, DiscountMinor: input.CustomerPaymentAllocation.DiscountMinor, InternalBalanceAmountMinor: input.CustomerPaymentAllocation.InternalBalanceAmountMinor, CashAmountMinor: input.CustomerPaymentAllocation.CashAmountMinor, CustomerPayableMinor: input.CustomerPaymentAllocation.CustomerPayableMinor, PolicyVersion: input.CustomerPaymentAllocation.PolicyVersion}
+		if input.CustomerPaymentAllocation.PromotionFunding != nil && input.CustomerPaymentAllocation.PromotionFunding.PromotionID != "" {
+			funding := input.CustomerPaymentAllocation.PromotionFunding
+			value.PromotionFunding = &postgres.PromotionFundingInput{PromotionID: funding.PromotionID, PromotionVersion: funding.PromotionVersion, PromotionCode: funding.PromotionCode, StoreID: input.CustomerPaymentAllocation.StoreID, FundingSource: funding.FundingSource, PartnerSharePercent: funding.PartnerSharePercent, DiscountMinor: input.CustomerPaymentAllocation.DiscountMinor}
+		}
 		allocation = &value
 	}
 	result, replayed, err := postgres.CreatePaymentIntent(r.Context(), s.db, postgres.CreatePaymentIntentInput{ExternalReference: input.ExternalReference, PayerActorID: input.PayerActorID, OrderID: input.OrderID, AmountMinor: input.AmountMinor, Currency: input.Currency, Method: input.Method, CustomerPaymentAllocation: allocation, IdempotencyKey: idempotency, CorrelationID: correlation})

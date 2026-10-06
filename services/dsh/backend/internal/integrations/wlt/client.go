@@ -86,6 +86,16 @@ type CustomerPaymentAllocation struct {
 	CreatedAt                  string `json:"createdAt"`
 }
 
+// PromotionFundingRequest carries the checkout-frozen promotion funding facts
+// to WLT; the monetary split is derived server-side by WLT.
+type PromotionFundingRequest struct {
+	PromotionID         string `json:"promotionId"`
+	PromotionVersion    int    `json:"promotionVersion"`
+	PromotionCode       string `json:"promotionCode"`
+	FundingSource       string `json:"fundingSource"`
+	PartnerSharePercent *int   `json:"partnerSharePercent"`
+}
+
 type OrderAdjustmentReconciliationCase struct {
 	ID               string `json:"id"`
 	OrderID          string `json:"orderId"`
@@ -106,20 +116,21 @@ type OrderAdjustmentReconciliationCases struct {
 	Cases []OrderAdjustmentReconciliationCase `json:"cases"`
 }
 
-type customerPaymentAllocationRequest struct {
-	OrderID                    string `json:"orderId"`
-	StoreID                    string `json:"storeId"`
-	PartnerActorID             string `json:"partnerActorId"`
-	CommercialStoreTypeID      string `json:"commercialStoreTypeId"`
-	FulfillmentMode            string `json:"fulfillmentMode"`
-	Currency                   string `json:"currency"`
-	SubtotalMinor              int64  `json:"subtotalMinor"`
-	DeliveryFeeMinor           int64  `json:"deliveryFeeMinor"`
-	DiscountMinor              int64  `json:"discountMinor"`
-	InternalBalanceAmountMinor int64  `json:"internalBalanceAmountMinor"`
-	CashAmountMinor            int64  `json:"cashAmountMinor"`
-	CustomerPayableMinor       int64  `json:"customerPayableMinor"`
-	PolicyVersion              string `json:"policyVersion"`
+type CustomerPaymentAllocationInput struct {
+	OrderID                    string                   `json:"orderId"`
+	StoreID                    string                   `json:"storeId"`
+	PartnerActorID             string                   `json:"partnerActorId"`
+	CommercialStoreTypeID      string                   `json:"commercialStoreTypeId"`
+	FulfillmentMode            string                   `json:"fulfillmentMode"`
+	Currency                   string                   `json:"currency"`
+	SubtotalMinor              int64                    `json:"subtotalMinor"`
+	DeliveryFeeMinor           int64                    `json:"deliveryFeeMinor"`
+	DiscountMinor              int64                    `json:"discountMinor"`
+	InternalBalanceAmountMinor int64                    `json:"internalBalanceAmountMinor"`
+	CashAmountMinor            int64                    `json:"cashAmountMinor"`
+	CustomerPayableMinor       int64                    `json:"customerPayableMinor"`
+	PolicyVersion              string                   `json:"policyVersion"`
+	PromotionFunding           *PromotionFundingRequest `json:"promotionFunding,omitempty"`
 }
 
 type paymentIntentResponse struct {
@@ -897,33 +908,19 @@ func (c *Client) Create(ctx context.Context, externalReference, payerActorID str
 	return response.PaymentIntent, response.IdempotentReplay, err
 }
 
-func (c *Client) CreateForOrder(ctx context.Context, orderID, externalReference, payerActorID string, amountMinor int64, allocation CustomerPaymentAllocation, idempotencyKey, correlationID string) (PaymentIntent, bool, error) {
+func (c *Client) CreateForOrder(ctx context.Context, orderID, externalReference, payerActorID string, amountMinor int64, allocation CustomerPaymentAllocationInput, idempotencyKey, correlationID string) (PaymentIntent, bool, error) {
 	return c.CreateForOrderWithMethod(ctx, orderID, externalReference, payerActorID, amountMinor, methodCashOnDelivery, allocation, idempotencyKey, correlationID)
 }
 
-func (c *Client) CreateForOrderWithMethod(ctx context.Context, orderID, externalReference, payerActorID string, amountMinor int64, method string, allocation CustomerPaymentAllocation, idempotencyKey, correlationID string) (PaymentIntent, bool, error) {
+func (c *Client) CreateForOrderWithMethod(ctx context.Context, orderID, externalReference, payerActorID string, amountMinor int64, method string, allocation CustomerPaymentAllocationInput, idempotencyKey, correlationID string) (PaymentIntent, bool, error) {
 	body := map[string]any{
-		"orderId":           strings.TrimSpace(orderID),
-		"externalReference": strings.TrimSpace(externalReference),
-		"payerActorId":      strings.TrimSpace(payerActorID),
-		"amountMinor":       amountMinor,
-		"currency":          "YER",
-		"method":            strings.TrimSpace(method),
-		"customerPaymentAllocation": customerPaymentAllocationRequest{
-			OrderID:                    allocation.OrderID,
-			StoreID:                    allocation.StoreID,
-			PartnerActorID:             allocation.PartnerActorID,
-			CommercialStoreTypeID:      allocation.CommercialStoreTypeID,
-			FulfillmentMode:            allocation.FulfillmentMode,
-			Currency:                   allocation.Currency,
-			SubtotalMinor:              allocation.SubtotalMinor,
-			DeliveryFeeMinor:           allocation.DeliveryFeeMinor,
-			DiscountMinor:              allocation.DiscountMinor,
-			InternalBalanceAmountMinor: allocation.InternalBalanceAmountMinor,
-			CashAmountMinor:            allocation.CashAmountMinor,
-			CustomerPayableMinor:       allocation.CustomerPayableMinor,
-			PolicyVersion:              allocation.PolicyVersion,
-		},
+		"orderId":                   strings.TrimSpace(orderID),
+		"externalReference":         strings.TrimSpace(externalReference),
+		"payerActorId":              strings.TrimSpace(payerActorID),
+		"amountMinor":               amountMinor,
+		"currency":                  "YER",
+		"method":                    strings.TrimSpace(method),
+		"customerPaymentAllocation": allocation,
 	}
 	var response paymentIntentResponse
 	err := c.request(ctx, http.MethodPost, "/wlt/v1/payment-intents", body, idempotencyKey, correlationID, 0, &response)

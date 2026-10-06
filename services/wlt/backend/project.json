@@ -3,8 +3,7 @@
   "root": "services/wlt/backend",
   "projectType": "application",
   "implicitDependencies": [
-    "wlt",
-    "wlt-database"
+    "wlt"
   ],
   "targets": {
     "build": {

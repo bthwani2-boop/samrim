@@ -9,9 +9,11 @@ import { activateOwnStoreAccessInvitation, createOwnStoreAccessInvitation, decid
 import { usePartnerStoreScope } from "./partner-store-scope-context";
 
 const rolePresets = [
-  { value: "STORE_MANAGER", label: "مدير متجر", permissions: ["orders", "catalog", "store_operations"] as const },
+  { value: "STORE_MANAGER", label: "مدير متجر", permissions: ["orders", "catalog", "store_operations", "promotions", "fulfillment"] as const },
   { value: "ORDER_STAFF", label: "موظف طلبات", permissions: ["orders"] as const },
   { value: "CATALOG_STAFF", label: "موظف كتالوج", permissions: ["catalog"] as const },
+  { value: "ACCOUNTANT", label: "محاسب", permissions: ["finance_read"] as const },
+  { value: "DELIVERY_STAFF", label: "موظف توصيل", permissions: ["fulfillment", "orders"] as const },
 ] as const;
 
 type InviteAttempt = Readonly<{
@@ -21,8 +23,12 @@ type InviteAttempt = Readonly<{
 
 const permissions: ReadonlyArray<{ value: StoreAccessPermission; label: string }> = [
   { value: "orders", label: "الطلبات" },
-  { value: "catalog", label: "الكتالوج والعروض" },
+  { value: "catalog", label: "الكتالوج" },
   { value: "store_operations", label: "ساعات وإتاحة المتجر" },
+  { value: "promotions", label: "العروض والتخفيضات" },
+  { value: "finance_read", label: "قراءة المالية" },
+  { value: "payout_request", label: "طلب صرف المستحقات" },
+  { value: "fulfillment", label: "التوصيل والاستلام" },
 ];
 
 function grantStateLabel(state: StoreAccessGrant["state"]): string {

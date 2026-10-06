@@ -1,6 +1,6 @@
 import { borders, radius, resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, type StoreAccessGrant, type StorePayoutRecipientListResponse, type StorePayoutRecipientRecord } from "@bthwani/dsh";
+import { createDshMobileClient, formatMoney, type StoreAccessGrant, type StorePayoutRecipientListResponse, type StorePayoutRecipientRecord } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
@@ -113,6 +113,7 @@ export function StorePayoutRecipientsCard() {
           <View style={styles.rowCopy}>
             <Text style={styles.storeName}>{storeNames[record.storeId] ?? record.storeId}</Text>
             <Text style={[styles.muted, record.state === "RECIPIENT_REVIEW_REQUIRED" ? styles.attention : null]}>{recipientStateLabel(record, phones)}</Text>
+            <Text style={styles.muted}>مستحقات مسندة: {formatMoney(record.partnerNetMinor, "YER")} · {record.orderCount.toLocaleString("ar-YE")} طلب</Text>
           </View>
           <View style={styles.actions}>
             {record.state === "DEFAULT_OWNER" ? <BthwaniButton busy={busyStoreId === record.storeId} label="تعيين موظف" onPress={() => void openPicker(record.storeId)} variant="secondary" /> : <BthwaniButton busy={busyStoreId === record.storeId} label="إعادة إلى المالك" onPress={() => void revert(record.storeId)} variant="secondary" />}

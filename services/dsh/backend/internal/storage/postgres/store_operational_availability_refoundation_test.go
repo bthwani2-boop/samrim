@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -55,15 +54,14 @@ func TestFreshStoreOperationalAvailabilityJourney(t *testing.T) {
 	if err := db.PingContext(ctx); err != nil {
 		t.Fatalf("isolated DSH database is not reachable: %v", err)
 	}
-	migrationDirectory := filepath.Join("..", "..", "..", "..", "database", "migrations")
-	records, migrations, err := postgres.LoadCanonicalMigrations(migrationDirectory)
+	records, migrations, err := postgres.LoadMigrations()
 	if err != nil {
 		t.Fatalf("load canonical DSH migration graph: %v", err)
 	}
-	if err := postgres.MigrateCanonical(ctx, db, records, migrations, testDeliveryProofKeyring(t)); err != nil {
+	if err := postgres.Migrate(ctx, db, records, migrations, testDeliveryProofKeyring(t)); err != nil {
 		t.Fatalf("apply canonical DSH migrations: %v", err)
 	}
-	if err := postgres.VerifyCanonicalSchema(ctx, db, records); err != nil {
+	if err := postgres.VerifySchema(ctx, db, records); err != nil {
 		t.Fatalf("verify canonical DSH schema: %v", err)
 	}
 

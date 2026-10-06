@@ -103,3 +103,66 @@ func (c *Client) MarkStorePayoutRecipientReviewRequired(ctx context.Context, sto
 func formatRecipientClock(t time.Time) string {
 	return strings.ReplaceAll(t.UTC().Format("150405.000000000"), ".", "")
 }
+
+// PartnerPayoutStoreAmount carries one explicit per-Store amount for a
+// SPECIFIED partitioned payout request.
+type PartnerPayoutStoreAmount struct {
+	StoreID     string `json:"storeId"`
+	AmountMinor int64  `json:"amountMinor"`
+}
+
+// PartnerPayoutRequestInput is the Store-scoped payout request sent to WLT.
+// BeneficiaryIdentityFacts carries current verified wallet facts per effective
+// beneficiary actor; WLT re-verifies each group destination against them.
+type PartnerPayoutRequestInput struct {
+	ScopeMode                string                     `json:"scopeMode"`
+	StoreIDs                 []string                   `json:"storeIds,omitempty"`
+	StoreAmounts             []PartnerPayoutStoreAmount `json:"storeAmounts,omitempty"`
+	BeneficiaryIdentityFacts map[string]IdentityFacts   `json:"beneficiaryIdentityFacts,omitempty"`
+}
+
+// PartnerPayoutStoreAllocation is the immutable per-Store allocation line on a
+// partitioned payout.
+type PartnerPayoutStoreAllocation struct {
+	StoreID                    string `json:"storeId"`
+	AmountMinor                int64  `json:"amountMinor"`
+	BeneficiaryActorID         string `json:"beneficiaryActorId"`
+	RecipientAssignmentVersion int64  `json:"recipientAssignmentVersion"`
+	Currency                   string `json:"currency"`
+}
+
+// PartnerPayoutRequest is the canonical readback of one partitioned request.
+type PartnerPayoutRequest struct {
+	ID               string                         `json:"id"`
+	Status           string                         `json:"status"`
+	ScopeMode        string                         `json:"scopeMode"`
+	TotalAmountMinor int64                          `json:"totalAmountMinor"`
+	Currency         string                         `json:"currency"`
+	Stores           []PartnerPayoutStoreAllocation `json:"stores"`
+	Payouts          []PayoutRequest                `json:"payouts"`
+	CreatedAt        string                         `json:"createdAt"`
+}
+
+// CreatePartnerPayoutRequest creates a Store-scoped partitioned payout request;
+// WLT groups the selected Stores by effective beneficiary and verified
+// destination and never mixes two beneficiaries in one transfer.
+func (c *Client) CreatePartnerPayoutRequest(ctx context.Context, partnerActorID string, input PartnerPayoutRequestInput, idempotencyKey, correlationID string) (PartnerPayoutRequest, bool, error) {
+	var response struct {
+		Request          PartnerPayoutRequest `json:"request"`
+		IdempotentReplay bool                 `json:"idempotentReplay"`
+	}
+	path := "/wlt/v1/partners/" + url.PathEscape(strings.TrimSpace(partnerActorID)) + "/payout-requests"
+	err := c.request(ctx, http.MethodPost, path, input, idempotencyKey, correlationID, 0, &response)
+	return response.Request, response.IdempotentReplay, err
+}
+
+// ReadPartnerPayoutRequest returns the canonical partitioned payout request
+// readback with immutable per-Store allocations.
+func (c *Client) ReadPartnerPayoutRequest(ctx context.Context, partnerActorID, requestID string) (PartnerPayoutRequest, error) {
+	var response struct {
+		Request PartnerPayoutRequest `json:"request"`
+	}
+	path := "/wlt/v1/partners/" + url.PathEscape(strings.TrimSpace(partnerActorID)) + "/payout-requests/" + url.PathEscape(strings.TrimSpace(requestID))
+	err := c.request(ctx, http.MethodGet, path, nil, "", "", 0, &response)
+	return response.Request, err
+}

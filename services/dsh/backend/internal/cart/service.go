@@ -196,7 +196,11 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 	var promotionID, normalizedPromotionCode string
 	normalizedPromotionCode = strings.ToUpper(strings.TrimSpace(promotionCode))
 	if normalizedPromotionCode != "" {
-		promotion, discount, promotionErr := postgres.EvaluatePromotion(ctx, s.db, normalizedPromotionCode, storeID, serviceCityID, actorID, subtotal.Int64(), false)
+		evalLines := make([]postgres.PromotionEvalLine, 0, len(cart.Lines))
+		for _, line := range cart.Lines {
+			evalLines = append(evalLines, postgres.PromotionEvalLine{ProductID: line.ProductID, AmountMinor: line.LineAmountMinor})
+		}
+		promotion, discount, promotionErr := postgres.EvaluatePromotion(ctx, s.db, normalizedPromotionCode, storeID, serviceCityID, actorID, subtotal.Int64(), evalLines, false)
 		if promotionErr != nil {
 			return CheckoutQuote{}, promotionErr
 		}
@@ -318,7 +322,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		PaymentCancellationKey:   paymentCancellationKey,
 	}
 	input.DeliveryFeeResolver = s.quoteDeliveryFee
-	input.PaymentProvisioner = func(provisionContext context.Context, orderID, externalReference, payerActorID string, subtotalMinor, discountMinor, deliveryFeeMinor int64, deliveryPolicyVersion string, amountMinor int64, paymentIdempotencyKey, paymentCorrelationID string) (postgres.ProvisionedPayment, error) {
+	input.PaymentProvisioner = func(provisionContext context.Context, orderID, externalReference, payerActorID string, subtotalMinor, discountMinor, deliveryFeeMinor int64, deliveryPolicyVersion string, amountMinor int64, promotion postgres.PromotionFunding, paymentIdempotencyKey, paymentCorrelationID string) (postgres.ProvisionedPayment, error) {
 		if internalBalanceAmountMinor > amountMinor {
 			return postgres.ProvisionedPayment{}, ErrCheckoutBalanceContribution
 		}
@@ -329,7 +333,10 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 			allocationPolicy = "store-captain-cash-v1"
 		}
 		cashAmountMinor := amountMinor - internalBalanceAmountMinor
-		allocation := wlt.CustomerPaymentAllocation{OrderID: orderID, StoreID: store.ID, PartnerActorID: store.PartnerActorID, CommercialStoreTypeID: store.CommercialStoreTypeID, FulfillmentMode: fulfillmentMode, Currency: "YER", SubtotalMinor: subtotalMinor, DeliveryFeeMinor: deliveryFeeMinor, DiscountMinor: discountMinor, InternalBalanceAmountMinor: internalBalanceAmountMinor, CashAmountMinor: cashAmountMinor, CustomerPayableMinor: amountMinor, PolicyVersion: allocationPolicy}
+		allocation := wlt.CustomerPaymentAllocationInput{OrderID: orderID, StoreID: store.ID, PartnerActorID: store.PartnerActorID, CommercialStoreTypeID: store.CommercialStoreTypeID, FulfillmentMode: fulfillmentMode, Currency: "YER", SubtotalMinor: subtotalMinor, DeliveryFeeMinor: deliveryFeeMinor, DiscountMinor: discountMinor, InternalBalanceAmountMinor: internalBalanceAmountMinor, CashAmountMinor: cashAmountMinor, CustomerPayableMinor: amountMinor, PolicyVersion: allocationPolicy}
+		if promotion.PromotionID != "" {
+			allocation.PromotionFunding = &wlt.PromotionFundingRequest{PromotionID: promotion.PromotionID, PromotionVersion: promotion.PromotionVersion, PromotionCode: promotion.PromotionCode, FundingSource: promotion.FundingSource, PartnerSharePercent: promotion.PartnerSharePercent}
+		}
 		intent, _, provisionErr := s.payment.CreateForOrderWithMethod(provisionContext, orderID, externalReference, payerActorID, cashAmountMinor, paymentMethod, allocation, paymentIdempotencyKey, paymentCorrelationID)
 		if provisionErr != nil {
 			logWLTCheckoutProvisioningFailure(provisionContext, "create_payment_intent", provisionErr)

@@ -29,11 +29,11 @@ func TestFreshStoreAccessDelegationJourney(t *testing.T) {
 		t.Fatalf("configured postgres is not reachable: %v", err)
 	}
 
-	withFreshCanonicalDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
-		if err := postgres.MigrateCanonical(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
+	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
+		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
 			t.Fatalf("apply fresh DSH migrations: %v", err)
 		}
-		if err := postgres.VerifyCanonicalSchema(ctx, db, records); err != nil {
+		if err := postgres.VerifySchema(ctx, db, records); err != nil {
 			t.Fatalf("verify fresh DSH schema: %v", err)
 		}
 
@@ -116,4 +116,87 @@ func TestFreshStoreAccessDelegationJourney(t *testing.T) {
 			t.Fatalf("Store access lifecycle audit is incomplete: events=%d err=%v", auditEvents, err)
 		}
 	})
+}
+
+func TestStoreAccessExpandedPermissionAllowlist(t *testing.T) {
+	databaseURL := strings.TrimSpace(os.Getenv("DSH_DATABASE_URL"))
+	if databaseURL == "" {
+		t.Skip("DSH_DATABASE_URL is required for the expanded permission allowlist proof")
+	}
+	rootDB, err := sql.Open("postgres", databaseURL)
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	t.Cleanup(func() { _ = rootDB.Close() })
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := rootDB.PingContext(ctx); err != nil {
+		t.Fatalf("configured postgres is not reachable: %v", err)
+	}
+
+	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
+		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
+			t.Fatalf("apply fresh DSH migrations: %v", err)
+		}
+		if err := postgres.VerifySchema(ctx, db, records); err != nil {
+			t.Fatalf("verify fresh DSH schema: %v", err)
+		}
+
+		const storeID = "store_access_expanded"
+		const ownerActorID = "partner_expanded_owner"
+		const promoteActorID = "partner_expanded_promoter"
+		const payoutActorID = "partner_expanded_payout"
+		insertCanonicalStoreFixture(t, ctx, db, canonicalStoreFixture{ID: storeID, PartnerActorID: ownerActorID, Name: "متجر الصلاحيات الموسعة"})
+
+		promoteGrant, replayed, err := postgres.CreateStoreAccessInvitation(ctx, db, storeID, ownerActorID, promoteActorID, []string{"promotions", "catalog"}, "idem-expanded-promote-v1", "corr-expanded-promote-v1")
+		if err != nil || replayed {
+			t.Fatalf("promotions invitation create failed: replayed=%t err=%v", replayed, err)
+		}
+		activateGrantDirectly(t, ctx, db, promoteGrant, ownerActorID)
+		payoutGrant, replayed, err := postgres.CreateStoreAccessInvitation(ctx, db, storeID, ownerActorID, payoutActorID, []string{"payout_request", "finance_read"}, "idem-expanded-payout-v1", "corr-expanded-payout-v1")
+		if err != nil || replayed {
+			t.Fatalf("payout invitation create failed: replayed=%t err=%v", replayed, err)
+		}
+		activateGrantDirectly(t, ctx, db, payoutGrant, ownerActorID)
+
+		if _, _, err := postgres.AuthorizePartnerStoreAction(ctx, db, storeID, promoteActorID, "promotions"); err != nil {
+			t.Fatalf("promotions delegate denied promotion management: err=%v", err)
+		}
+		if _, _, err := postgres.AuthorizePartnerStoreAction(ctx, db, storeID, promoteActorID, "finance_read"); !errors.Is(err, postgres.ErrStoreAccessForbidden) {
+			t.Fatalf("promotions grant leaked financial read: err=%v", err)
+		}
+		if _, _, err := postgres.AuthorizePartnerStoreAction(ctx, db, storeID, payoutActorID, "payout_request"); err != nil {
+			t.Fatalf("payout-request delegate denied payout intent: err=%v", err)
+		}
+		if _, _, err := postgres.AuthorizePartnerStoreAction(ctx, db, storeID, payoutActorID, "promotions"); !errors.Is(err, postgres.ErrStoreAccessForbidden) {
+			t.Fatalf("payout-request grant leaked promotion management: err=%v", err)
+		}
+		if _, _, err := postgres.AuthorizePartnerStoreAction(ctx, db, storeID, payoutActorID, "fulfillment"); !errors.Is(err, postgres.ErrStoreAccessForbidden) {
+			t.Fatalf("payout-request grant leaked fulfillment: err=%v", err)
+		}
+		if _, _, err := postgres.AuthorizePartnerStoreAction(ctx, db, storeID, promoteActorID, "payout_recipient_routing"); !errors.Is(err, postgres.ErrStoreAccessForbidden) {
+			t.Fatalf("unknown permission vocabulary accepted by authorization: err=%v", err)
+		}
+	})
+}
+
+// activateGrantDirectly fast-forwards an invitation to an active grant the same way
+// the governed lifecycle does, without repeating the full journey proof above.
+func activateGrantDirectly(t *testing.T, ctx context.Context, db *sql.DB, grant postgres.StoreAccessGrant, ownerActorID string) {
+	t.Helper()
+	grant, replayed, err := postgres.DecideStoreAccessInvitation(ctx, db, grant.ID, grant.DelegateActorID, "accept", "pending_role_admission", grant.Version, "idem-"+grant.ID+"-accept", "corr-"+grant.ID+"-accept")
+	if err != nil || replayed {
+		t.Fatalf("delegate acceptance failed for %s: replayed=%t err=%v", grant.ID, replayed, err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE dsh.store_access_grants SET created_at=clock_timestamp()-interval '3 days',expires_at=clock_timestamp()-interval '1 day' WHERE id=$1`, grant.ID); err != nil {
+		t.Fatalf("age invitation for admission: %v", err)
+	}
+	grant, replayed, err = postgres.ConfirmStoreAccessRoleAdmission(ctx, db, grant.ID, ownerActorID, grant.Version, "idem-"+grant.ID+"-admit", "corr-"+grant.ID+"-admit")
+	if err != nil || replayed {
+		t.Fatalf("role admission failed for %s: replayed=%t err=%v", grant.ID, replayed, err)
+	}
+	grant, replayed, err = postgres.ConfirmStoreAccessPartnerActivation(ctx, db, grant.ID, grant.DelegateActorID, grant.Version, "idem-"+grant.ID+"-activate", "corr-"+grant.ID+"-activate")
+	if err != nil || replayed || grant.State != "active" {
+		t.Fatalf("activation failed for %s: state=%s replayed=%t err=%v", grant.ID, grant.State, replayed, err)
+	}
 }

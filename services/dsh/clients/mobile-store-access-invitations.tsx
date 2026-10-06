@@ -25,8 +25,12 @@ function grantStateLabel(state: StoreAccessGrant["state"]): string {
 
 const permissionLabels: Readonly<Record<string, string>> = {
   orders: "الطلبات",
-  catalog: "الكتالوج والعروض",
+  catalog: "الكتالوج",
   store_operations: "إتاحة المتجر وساعاته",
+  promotions: "العروض والتخفيضات",
+  finance_read: "قراءة المالية",
+  payout_request: "طلب صرف المستحقات",
+  fulfillment: "التوصيل والاستلام",
 };
 
 export function StoreAccessInvitationInbox({ baseURL, cryptoRandomUUID, getAccessToken }: StoreAccessInvitationInboxProps) {

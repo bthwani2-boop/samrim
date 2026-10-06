@@ -78,8 +78,13 @@ jobs:
           full_runtime=false
           mobile_identity=false
           mobile_dsh=false
+          direct_identity_migration=false
+          direct_identity_runtime=false
+          direct_dsh_baseline=false
+          direct_dsh_runtime=false
+          direct_dsh_location=false
           changed_files="$(git diff --name-only "$NX_BASE" "$NX_HEAD")"
-          if grep -Eq '^(tests/runtime/|infra/local/|\.github/workflows/ci-runtime\.yml$)' <<< "$changed_files"; then
+          if grep -Eq '^(infra/local/|\.github/workflows/ci-runtime\.yml$)' <<< "$changed_files"; then
             full_runtime=true
             run=true
             browser=true
@@ -121,8 +126,22 @@ jobs:
             browser=true
             checker=true
           fi
+          migration_projects=""
+          runtime_projects=""
+          schema_projects=""
+          financial_projects=""
+          baseline_projects=""
+          location_projects=""
           for target in migration-proof runtime-proof schema-proof financial-invariants baseline-proof location-proof; do
             projects="$(pnpm exec nx show projects --affected --with-target="$target" --base="$NX_BASE" --head="$NX_HEAD" --sep=, --no-cloud)"
+            case "$target" in
+              migration-proof) migration_projects="$projects" ;;
+              runtime-proof) runtime_projects="$projects" ;;
+              schema-proof) schema_projects="$projects" ;;
+              financial-invariants) financial_projects="$projects" ;;
+              baseline-proof) baseline_projects="$projects" ;;
+              location-proof) location_projects="$projects" ;;
+            esac
             if [[ -n "$projects" ]]; then
               echo "RUNTIME_TARGET $target -> $projects"
               run=true
@@ -132,6 +151,70 @@ jobs:
               fi
             fi
           done
+
+          project_in_list() {
+            [[ ",$1," == *",$2,"* ]]
+          }
+
+          runtime_test_files="$(grep -E '^tests/runtime/' <<< "$changed_files" || true)"
+          unknown_runtime_test_files="$(grep -Ev '^(tests/runtime/(mailpit-challenge\.mjs|verify-dsh-baseline\.mjs|verify-dsh-location-runtime\.mjs|verify-dsh-runtime-core\.mjs|verify-identity-migrations\.mjs|verify-identity-runtime\.mjs|runtime-proof/(canonical-dsh-migration-history\.mjs|challenge-source\.mjs|trusted-executables\.mjs|trusted-executables\.d\.mts)))$' <<< "$runtime_test_files" || true)"
+          if [[ -n "$unknown_runtime_test_files" ]]; then
+            echo "::error::Runtime proof files require explicit proof ownership before CI can route them:"
+            printf '%s\n' "$unknown_runtime_test_files"
+            exit 1
+          fi
+
+          identity_migration_proof_changed=false
+          identity_runtime_proof_changed=false
+          dsh_baseline_proof_changed=false
+          dsh_runtime_proof_changed=false
+          dsh_location_proof_changed=false
+
+          if grep -Eq '^tests/runtime/verify-identity-migrations\.mjs$' <<< "$changed_files"; then identity_migration_proof_changed=true; fi
+          if grep -Eq '^tests/runtime/verify-identity-runtime\.mjs$' <<< "$changed_files"; then identity_runtime_proof_changed=true; fi
+          if grep -Eq '^tests/runtime/verify-dsh-baseline\.mjs$' <<< "$changed_files"; then dsh_baseline_proof_changed=true; fi
+          if grep -Eq '^tests/runtime/verify-dsh-runtime-core\.mjs$' <<< "$changed_files"; then dsh_runtime_proof_changed=true; fi
+          if grep -Eq '^tests/runtime/verify-dsh-location-runtime\.mjs$' <<< "$changed_files"; then dsh_location_proof_changed=true; fi
+
+          if grep -Eq '^tests/runtime/(mailpit-challenge\.mjs|runtime-proof/challenge-source\.mjs)$' <<< "$changed_files"; then
+            identity_runtime_proof_changed=true
+            dsh_runtime_proof_changed=true
+            dsh_location_proof_changed=true
+          fi
+          if grep -Eq '^tests/runtime/runtime-proof/canonical-dsh-migration-history\.mjs$' <<< "$changed_files"; then
+            dsh_runtime_proof_changed=true
+            dsh_location_proof_changed=true
+          fi
+          if grep -Eq '^tests/runtime/runtime-proof/trusted-executables\.(mjs|d\.mts)$' <<< "$changed_files"; then
+            identity_migration_proof_changed=true
+            identity_runtime_proof_changed=true
+            dsh_baseline_proof_changed=true
+            dsh_runtime_proof_changed=true
+            dsh_location_proof_changed=true
+          fi
+
+          if [[ "$full_runtime" != "true" && "$identity_migration_proof_changed" == "true" && "$mobile_identity" != "true" ]] && ! project_in_list "$migration_projects" "identity-backend"; then
+            direct_identity_migration=true
+            run=true
+          fi
+          if [[ "$full_runtime" != "true" && "$identity_runtime_proof_changed" == "true" && "$mobile_identity" != "true" ]] && ! project_in_list "$runtime_projects" "identity-backend"; then
+            direct_identity_runtime=true
+            run=true
+          fi
+          if [[ "$full_runtime" != "true" && "$dsh_baseline_proof_changed" == "true" && "$mobile_dsh" != "true" ]] && ! project_in_list "$baseline_projects" "dsh-backend"; then
+            direct_dsh_baseline=true
+            run=true
+          fi
+          if [[ "$full_runtime" != "true" && "$dsh_runtime_proof_changed" == "true" && "$mobile_dsh" != "true" ]] && ! project_in_list "$runtime_projects" "dsh-backend"; then
+            direct_dsh_runtime=true
+            run=true
+            browser=true
+            checker=true
+          fi
+          if [[ "$full_runtime" != "true" && "$dsh_location_proof_changed" == "true" && "$mobile_dsh" != "true" ]] && ! project_in_list "$location_projects" "dsh-backend"; then
+            direct_dsh_location=true
+            run=true
+          fi
           browser_projects="$(pnpm exec nx show projects --affected --with-target=browser-live-proof --base="$NX_BASE" --head="$NX_HEAD" --sep=, --no-cloud)"
           if [[ -n "$browser_projects" ]]; then
             echo "RUNTIME_TARGET browser-live-proof -> $browser_projects"
@@ -146,6 +229,11 @@ jobs:
           echo "full_runtime=$full_runtime" >> "$GITHUB_OUTPUT"
           echo "mobile_identity=$mobile_identity" >> "$GITHUB_OUTPUT"
           echo "mobile_dsh=$mobile_dsh" >> "$GITHUB_OUTPUT"
+          echo "direct_identity_migration=$direct_identity_migration" >> "$GITHUB_OUTPUT"
+          echo "direct_identity_runtime=$direct_identity_runtime" >> "$GITHUB_OUTPUT"
+          echo "direct_dsh_baseline=$direct_dsh_baseline" >> "$GITHUB_OUTPUT"
+          echo "direct_dsh_runtime=$direct_dsh_runtime" >> "$GITHUB_OUTPUT"
+          echo "direct_dsh_location=$direct_dsh_location" >> "$GITHUB_OUTPUT"
 
       - name: Create private DSH checker fixture path
         if: steps.scope.outputs.checker == 'true'
@@ -234,6 +322,26 @@ jobs:
       - name: Run affected backend runtime proofs
         if: steps.scope.outputs.run == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
         run: pnpm exec nx affected -t migration-proof,runtime-proof,schema-proof,financial-invariants,baseline-proof,location-proof --base=$NX_BASE --head=$NX_HEAD --outputStyle=stream --parallel=1 --nxBail=true
+
+      - name: Run directly changed Identity migration proof
+        if: steps.scope.outputs.direct_identity_migration == 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run identity-backend:migration-proof --outputStyle=stream --skip-nx-cache
+
+      - name: Run directly changed Identity runtime proof
+        if: steps.scope.outputs.direct_identity_runtime == 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run identity-backend:runtime-proof --outputStyle=stream --skip-nx-cache
+
+      - name: Run directly changed DSH baseline proof
+        if: steps.scope.outputs.direct_dsh_baseline == 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run dsh-backend:baseline-proof --outputStyle=stream --skip-nx-cache
+
+      - name: Run directly changed DSH runtime proof
+        if: steps.scope.outputs.direct_dsh_runtime == 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run dsh-backend:runtime-proof --outputStyle=stream --skip-nx-cache
+
+      - name: Run directly changed DSH location proof
+        if: steps.scope.outputs.direct_dsh_location == 'true' && github.event_name != 'schedule'
+        run: pnpm exec nx run dsh-backend:location-proof --outputStyle=stream --skip-nx-cache
 
       - name: Run Identity proofs for tagged mobile changes
         if: steps.scope.outputs.mobile_identity == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'

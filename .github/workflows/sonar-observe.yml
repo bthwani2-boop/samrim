@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   sonar:
-    # Keep this check name while the repository ruleset still references it.
+    # Stable observational check name; main protection is owned by the live repository ruleset.
     name: SonarQube Cloud Quality Gate
     runs-on: ubuntu-24.04
     timeout-minutes: 10

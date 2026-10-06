@@ -31,7 +31,7 @@ function readEnv(file) {
   return values;
 }
 function required(values, name) { const value = values[name]?.trim(); if (!value) fail("required canonical runtime value missing", name); return value; }
-const dshMigrationDirectory = path.resolve(root, "services/dsh/database/migrations");
+const dshMigrationDirectory = path.resolve(root, "services/dsh/backend/internal/storage/postgres/migrations");
 const dshMigrationNames = readCanonicalDshMigrationNames(dshMigrationDirectory);
 
 const env = readEnv(envPath);
@@ -1301,7 +1301,7 @@ const checkoutLineID = String(checkout.body.order.lines?.[0]?.id || "");
 const orderID = String(checkout.body.order.id);
 
 const promotionCode = `SAVE${suffix.replace(/[^A-Za-z0-9]/g, "").slice(-12).toUpperCase()}`;
-const promotionCreate = await request(dshBase, "POST", "/dsh/operator/promotions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `marketing-promotion-create-${suffix}`), body: { id: `promotion-${suffix}`, code: promotionCode, nameAr: `خصم تجريبي ${suffix}`, descriptionAr: "خصم على الطلب التجريبي", kind: "FIXED", valueMinor: 300, fundingSource: "MERCHANT", storeId: first.storeID, serviceCityId: cityA, startsAt: new Date(Date.now() - 60_000).toISOString() } });
+const promotionCreate = await request(dshBase, "POST", "/dsh/operator/promotions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `marketing-promotion-create-${suffix}`), body: { id: `promotion-${suffix}`, code: promotionCode, nameAr: `خصم تجريبي ${suffix}`, descriptionAr: "خصم على الطلب التجريبي", kind: "FIXED", valueMinor: 300, fundingSource: "PARTNER", storeId: first.storeID, serviceCityId: cityA, startsAt: new Date(Date.now() - 60_000).toISOString() } });
 if (promotionCreate.status !== 201 || promotionCreate.body?.promotion?.state !== "DRAFT" || promotionCreate.body.promotion.code !== promotionCode) fail("promotion draft creation failed", JSON.stringify(promotionCreate));
 const promotionID = String(promotionCreate.body.promotion.id);
 const promotionPublish = await request(dshBase, "POST", `/dsh/operator/promotions/${encodeURIComponent(promotionID)}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `marketing-promotion-publish-${suffix}`, crypto.randomUUID(), promotionCreate.body.promotion.version), body: { state: "PUBLISHED" } });

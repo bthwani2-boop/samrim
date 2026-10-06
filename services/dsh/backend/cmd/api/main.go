@@ -5,8 +5,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	financialhandoff "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/financialhandoff"
@@ -70,7 +68,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	records, err := loadMigrations()
+	records, _, err := postgres.LoadMigrations()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -199,7 +197,7 @@ func main() {
 		marketingServer.Register(mux)
 	}
 	readiness := func(ctx context.Context) error {
-		return postgres.VerifyCanonicalSchema(ctx, database, records)
+		return postgres.VerifySchema(ctx, database, records)
 	}
 	if err := serviceruntime.RunWithRoutesAndReadinessAndWorker("dsh", "/dsh", "18080", register, readiness, func(ctx context.Context) {
 		go runFinancialProfileReconciliationLoop(ctx, time.Minute, joiningCaseServer.ReconcileFinancialProfiles)
@@ -209,16 +207,4 @@ func main() {
 	}); err != nil {
 		log.Fatal(err)
 	}
-}
-
-func loadMigrations() ([]postgres.MigrationRecord, error) {
-	directory := strings.TrimSpace(os.Getenv("DSH_MIGRATION_DIR"))
-	if directory == "" {
-		directory = filepath.Clean("../database/migrations")
-		if _, err := os.Stat(directory); err != nil {
-			directory = "/app/migrations"
-		}
-	}
-	records, _, err := postgres.LoadCanonicalMigrations(directory)
-	return records, err
 }

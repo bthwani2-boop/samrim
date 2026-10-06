@@ -53,7 +53,7 @@ func TestStoreProfileMediaReplayAndCleanupOwnership(t *testing.T) {
 		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.commercial_store_types(id,vertical_id,name_ar,name_en) VALUES($1,$2,$3,$4)", storeTypeID, verticalID, "مطعم الوسائط", "Media Restaurant"); err != nil {
 			t.Fatalf("insert commercial store type fixture: %v", err)
 		}
-		joiningRequest := postgres.JoiningCaseRequest{Phone: "+967700000198", BusinessName: "نشاط الوسائط", FirstStoreName: "متجر الوسائط", ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: storeTypeID, Latitude: 15.369445, Longitude: 44.191006, FulfillmentModes: []string{postgres.FulfillmentModeBthwaniCaptain}}
+		joiningRequest := postgres.JoiningCaseRequest{Phone: "+967700000198", BusinessName: "نشاط الوسائط", FirstStoreName: "متجر الوسائط", WalletProviderKey: "provider-test", ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: storeTypeID, Latitude: 15.369445, Longitude: 44.191006, FulfillmentModes: []string{postgres.FulfillmentModeBthwaniCaptain}}
 		created, err := postgres.CreateJoiningCaseForField(ctx, db, postgres.CreateJoiningCaseInput{IdempotencyKey: "idem-field-media-case", RequestHash: postgres.HashJoiningCaseRequest(joiningRequest), ActingActorID: fieldActorID, CorrelationID: "corr-field-media-case", Request: joiningRequest})
 		if err != nil {
 			t.Fatalf("create Field joining case fixture: %v", err)

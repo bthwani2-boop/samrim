@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	joiningcaseservice "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/joiningcase"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
 
@@ -85,6 +87,8 @@ func (s fieldRewardOutboxScenario) insertClassification() {
 	}
 }
 
+var fieldRewardTinyPNG = []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0B, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xF8, 0x0F, 0x04, 0x00, 0x09, 0xFB, 0x03, 0xFD, 0xFB, 0x5E, 0x6B, 0x2B, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82}
+
 func (s fieldRewardOutboxScenario) approveJoiningCase(fieldOrigin bool, suffix string) string {
 	fieldActorID := "reward-field-" + suffix
 	partnerActorID := "reward-partner-" + suffix
@@ -93,13 +97,16 @@ func (s fieldRewardOutboxScenario) approveJoiningCase(fieldOrigin bool, suffix s
 		phone = "+967700000191"
 	}
 	request := postgres.JoiningCaseRequest{
-		Phone: phone, BusinessName: "نشاط المكافأة " + suffix, FirstStoreName: "متجر المكافأة " + suffix,
+		Phone: phone, OwnerFullName: "مالك المكافأة " + suffix, BusinessName: "نشاط المكافأة " + suffix, FirstStoreName: "متجر المكافأة " + suffix,
+		FirstStoreAddress: "شارع المكافآت", FirstStoreWorkingHours: []byte(`{"intervals":[{"dayOfWeek":1,"opensAt":"09:00","closesAt":"17:00","closesNextDay":false}]}`),
+		FirstStoreProofType: "COMMERCIAL_REGISTRATION", FirstStoreProofNumber: "12345678" + suffixDigits(suffix), WalletProviderKey: "provider-test",
 		ServiceCityID: s.serviceCityID, VerticalID: s.verticalID, CommercialTypeID: s.storeTypeID,
 		Latitude: 15.369445, Longitude: 44.191006, FulfillmentModes: []string{postgres.FulfillmentModeBthwaniCaptain},
 	}
+	evidenceKeys := testJoiningCaseEvidenceKeyring(s.t)
 	input := postgres.CreateJoiningCaseInput{
 		IdempotencyKey: "reward-case-create-" + suffix, RequestHash: postgres.HashJoiningCaseRequest(request),
-		ActingActorID: "reward-creator-" + suffix, CorrelationID: "reward-case-correlation-" + suffix, Request: request,
+		ActingActorID: "reward-creator-" + suffix, CorrelationID: "reward-case-correlation-" + suffix, EvidenceKeyring: evidenceKeys, Request: request,
 	}
 	var created postgres.JoiningCaseResult
 	var err error
@@ -113,8 +120,30 @@ func (s fieldRewardOutboxScenario) approveJoiningCase(fieldOrigin bool, suffix s
 		s.t.Fatalf("create %s-originated Joining Case: %v", suffix, err)
 	}
 	current := created
+	profileProvenance := media.Provenance{Creator: "مالك المكافأة", SourceDescription: "صورة من المالك", RightsStatement: "إذن الاستخدام للمتجر", RightsAttested: true}
+	profileDigest := strings.Repeat("a", 64)
+	mediaInput := postgres.StoreProfileMediaAssetInput{ID: "reward-profile-image-" + suffix, JoiningCaseID: created.Case.ID, IdempotencyKey: "reward-profile-media-" + suffix, RequestHash: postgres.HashStoreProfileMediaUploadRequest(created.Case.ID, profileDigest, created.Case.Version, profileProvenance), ExpectedCaseVersion: created.Case.Version, ObjectKey: "store-profile-media/reward-profile-image-" + suffix + ".png", URI: "https://media.example/reward-profile-image-" + suffix + ".png", ContentSHA256: profileDigest, ContentType: "image/png", ByteSize: int64(len(fieldRewardTinyPNG)), ActingActorID: fieldActorID, CorrelationID: "reward-profile-correlation-" + suffix, Provenance: profileProvenance}
+	if _, replayed, err := postgres.RegisterStoreProfileMediaAssetPending(s.ctx, s.db, mediaInput); err != nil || replayed {
+		s.t.Fatalf("register %s store-profile image: replayed=%t error=%v", suffix, replayed, err)
+	}
+	if _, err := postgres.ActivateStoreProfileMediaAsset(s.ctx, s.db, mediaInput.ID, created.Case.ID, created.Case.Version, mediaInput.IdempotencyKey, mediaInput.RequestHash, fieldActorID, mediaInput.CorrelationID); err != nil {
+		s.t.Fatalf("activate %s store-profile image: %v", suffix, err)
+	}
+	current, err = postgres.ReadJoiningCase(s.ctx, s.db, created.Case.ID)
+	if err != nil {
+		s.t.Fatalf("read %s joining case after store-profile image: %v", suffix, err)
+	}
+	proofAuthorityActor, proofAuthoritySource := fieldActorID, "field"
+	if !fieldOrigin {
+		proofAuthorityActor, proofAuthoritySource = "reward-operator-"+suffix, "operator"
+	}
+	proofImage, err := joiningcaseservice.UploadPrivateProofImage(s.ctx, s.db, evidenceKeys, created.Case.ID, proofAuthorityActor, proofAuthoritySource, "reward-proof-image-upload", "reward-proof-image-"+suffix, "reward-proof-correlation-"+suffix, current.Case.Version, "image/png", fieldRewardTinyPNG)
+	if err != nil || !proofImage.Case.FirstStoreProofImageUploaded {
+		s.t.Fatalf("upload %s private proof image: case=%+v error=%v", suffix, proofImage.Case, err)
+	}
+	current = proofImage
 	if fieldOrigin {
-		current, err = postgres.RequestFieldJoiningCaseAdmission(s.ctx, s.db, created.Case.ID, fieldActorID, created.Case.Version, "reward-admission-"+suffix, postgres.HashFieldJoiningCaseAdmission(created.Case.ID, fieldActorID, created.Case.Version), "reward-admission-correlation-"+suffix)
+		current, err = postgres.RequestFieldJoiningCaseAdmission(s.ctx, s.db, created.Case.ID, fieldActorID, current.Case.Version, "reward-admission-"+suffix, postgres.HashFieldJoiningCaseAdmission(created.Case.ID, fieldActorID, current.Case.Version), "reward-admission-correlation-"+suffix)
 		if err != nil || current.Case.State != "admission_requested" || current.Case.OriginatingFieldActorID != fieldActorID {
 			s.t.Fatalf("request Field admission before submission: case=%+v error=%v", current.Case, err)
 		}
@@ -258,4 +287,14 @@ func TestFieldAcquisitionRewardOutboxRejectsInvalidInputs(t *testing.T) {
 	if err := postgres.MarkFieldAcquisitionRewardPublicationFailure(ctx, nil, "outbox", "failed"); err == nil {
 		t.Fatal("failed transition accepted a nil database")
 	}
+}
+
+func suffixDigits(suffix string) string {
+	digits := "01"
+	for _, r := range suffix {
+		if r >= '0' && r <= '9' {
+			digits = digits[1:] + string(r)
+		}
+	}
+	return digits[:2]
 }

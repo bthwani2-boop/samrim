@@ -98,7 +98,7 @@ func TestCreateForOrderSendsRequiredAllocationContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	allocation := CustomerPaymentAllocation{ID: "allocation-response-only", OrderID: "order-1", StoreID: "store-1", PartnerActorID: "partner-1", CommercialStoreTypeID: "commercial-type-1", FulfillmentMode: "BTHWANI_CAPTAIN", Currency: "YER", SubtotalMinor: 1300, CashAmountMinor: 1300, CustomerPayableMinor: 1300, PolicyVersion: "cod-current-v2", PaymentIntentID: "response-only", CreatedAt: "2026-09-28T00:00:00Z"}
+	allocation := CustomerPaymentAllocationInput{OrderID: "order-1", StoreID: "store-1", PartnerActorID: "partner-1", CommercialStoreTypeID: "commercial-type-1", FulfillmentMode: "BTHWANI_CAPTAIN", Currency: "YER", SubtotalMinor: 1300, CashAmountMinor: 1300, CustomerPayableMinor: 1300, PolicyVersion: "cod-current-v2"}
 	if _, _, err := client.CreateForOrderWithMethod(t.Context(), "order-1", "external-1", "client-1", 1300, methodCashOnDelivery, allocation, "create-order-key", "create-order-correlation"); err != nil {
 		t.Fatalf("create order payment intent: %v", err)
 	}

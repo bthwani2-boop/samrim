@@ -119,6 +119,50 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
+  /dsh/partner/payout-requests:
+    post:
+      operationId: createPartnerPayoutRequest
+      summary: Create a Store-scoped Partner payout request that WLT partitions by effective recipient and destination
+      description: The requested scope must sit inside the actor's payout_request authority. WLT resolves each Store's effective recipient, groups Stores by beneficiary and verified destination, and never mixes two beneficiaries in one external transfer. Identity facts are resolved server-side from canonical Identity.
+      security: [{ userBearer: [] }]
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerPayoutRequestCreateRequest" }
+      responses:
+        "201": { description: Partitioned payout request recorded with immutable per-Store allocations., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerPayoutRequestResponse" } } } }
+        "200": { description: Idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerPayoutRequestResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/partner/payout-requests/{partnerActorId}/{requestId}:
+    get:
+      operationId: readPartnerPayoutRequest
+      summary: Read one partitioned Partner payout request with its Store allocations
+      security: [{ userBearer: [] }]
+      parameters:
+        - name: partnerActorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: requestId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200": { description: Canonical partitioned payout request readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerPayoutRequestResponse" } } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/partner/stores/{storeId}/payout-recipient:
     put:
       operationId: selectPartnerStorePayoutRecipient

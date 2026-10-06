@@ -3,8 +3,7 @@
   "root": "services/identity/backend",
   "projectType": "application",
   "implicitDependencies": [
-    "identity",
-    "identity-database"
+    "identity"
   ],
   "targets": {
     "build": {

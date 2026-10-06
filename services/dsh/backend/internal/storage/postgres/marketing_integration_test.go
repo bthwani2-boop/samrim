@@ -150,7 +150,7 @@ func createPublishedPromotion(t *testing.T, ctx context.Context, db *sql.DB, id,
 	t.Helper()
 	_, replayed, err := postgres.CreatePromotion(ctx, db, postgres.PromotionInput{
 		ID: id, Code: code, NameAr: "عرض تجريبي", Kind: "FIXED", ValueMinor: 100,
-		FundingSource: "MERCHANT", StoreID: storeID, ServiceCityID: cityID, StartsAt: startsAt,
+		FundingSource: "PARTNER", StoreID: storeID, ServiceCityID: cityID, StartsAt: startsAt,
 		CreatedByActorID: "marketing-test-operator",
 	}, "create-"+id, postgres.HashMarketingFacts("create", id, code))
 	if err != nil || replayed {

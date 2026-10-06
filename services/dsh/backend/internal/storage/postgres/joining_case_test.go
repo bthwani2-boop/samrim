@@ -16,6 +16,8 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
 
+var tinyPNG = []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0B, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xF8, 0x0F, 0x04, 0x00, 0x09, 0xFB, 0x03, 0xFD, 0xFB, 0x5E, 0x6B, 0x2B, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82}
+
 func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("DSH_DATABASE_URL"))
 	if databaseURL == "" {
@@ -63,7 +65,7 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 		initialModes := []string{postgres.FulfillmentModeBthwaniCaptain}
 		workHours := []byte(`{"intervals":[{"dayOfWeek":1,"opensAt":"09:00","closesAt":"17:00","closesNextDay":false}]}`)
 		evidenceKeys := testJoiningCaseEvidenceKeyring(t)
-		createRequest := postgres.JoiningCaseRequest{Phone: "+967700000101", OwnerFullName: "مالك بحث مميز", BusinessName: "نشاط التصحيح", FirstStoreName: "متجر التصحيح", FirstStoreAddress: "الشارع الرئيسي", FirstStoreWorkingHours: workHours, FirstStoreProofType: "COMMERCIAL_REGISTRATION", FirstStoreProofNumber: "123456789", ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: storeTypeID, Latitude: 15.369445, Longitude: 44.191006, FulfillmentModes: initialModes}
+		createRequest := postgres.JoiningCaseRequest{Phone: "+967700000101", WalletProviderKey: "provider-test", OwnerFullName: "مالك بحث مميز", BusinessName: "نشاط التصحيح", FirstStoreName: "متجر التصحيح", FirstStoreAddress: "الشارع الرئيسي", FirstStoreWorkingHours: workHours, FirstStoreProofType: "COMMERCIAL_REGISTRATION", FirstStoreProofNumber: "123456789", ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: storeTypeID, Latitude: 15.369445, Longitude: 44.191006, FulfillmentModes: initialModes}
 		createHash := postgres.HashJoiningCaseRequest(createRequest)
 		created, err := postgres.CreateJoiningCaseForField(ctx, db, postgres.CreateJoiningCaseInput{IdempotencyKey: "idem-join-field-create", RequestHash: createHash, ActingActorID: fieldActorID, CorrelationID: "corr-join-field-create", EvidenceKeyring: evidenceKeys, Request: createRequest})
 		if err != nil || created.Case.Origin != "field" || created.Case.PartnerActorID != "" {
@@ -82,7 +84,7 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read joining case after store-profile image: %v", err)
 		}
-		fieldProofImage, err := joiningcaseservice.UploadPrivateProofImage(ctx, db, evidenceKeys, created.Case.ID, fieldActorID, "field", "field-proof-image-upload", "idem-field-proof-image", "corr-field-proof-image", created.Case.Version, "image/png", []byte("field proof image"))
+		fieldProofImage, err := joiningcaseservice.UploadPrivateProofImage(ctx, db, evidenceKeys, created.Case.ID, fieldActorID, "field", "field-proof-image-upload", "idem-field-proof-image", "corr-field-proof-image", created.Case.Version, "image/png", tinyPNG)
 		if err != nil || !fieldProofImage.Case.FirstStoreProofImageUploaded {
 			t.Fatalf("upload private Field proof image failed: %+v err=%v", fieldProofImage, err)
 		}
@@ -126,12 +128,12 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 		if _, err := db.ExecContext(ctx, "UPDATE dsh.service_cities SET active=true WHERE id=$1", serviceCityID); err != nil {
 			t.Fatalf("reactivate Service City before Partner correction: %v", err)
 		}
-		partnerProofImage, err := joiningcaseservice.UploadPrivateProofImage(ctx, db, evidenceKeys, created.Case.ID, partnerActor, "partner", "partner-proof-image-upload", "idem-partner-proof-image", "corr-partner-proof-image", returned.Case.Version, "image/png", []byte("replacement proof image"))
+		partnerProofImage, err := joiningcaseservice.UploadPrivateProofImage(ctx, db, evidenceKeys, created.Case.ID, partnerActor, "partner", "partner-proof-image-upload", "idem-partner-proof-image", "corr-partner-proof-image", returned.Case.Version, "image/png", tinyPNG)
 		if err != nil || !partnerProofImage.Case.FirstStoreProofImageUploaded {
 			t.Fatalf("upload fresh Partner proof image failed: %+v err=%v", partnerProofImage, err)
 		}
 
-		correction := postgres.CorrectJoiningCaseInput{CaseID: created.Case.ID, ActorID: partnerActor, OwnerFullName: "مالك مصحح", BusinessName: "نشاط مصحح", FirstStoreName: "متجر مصحح", FirstStoreAddress: "الشارع الرئيسي المصحح", FirstStoreWorkingHours: workHours, FirstStoreProofType: "COMMERCIAL_REGISTRATION", FirstStoreProofNumber: "987654321", ExpectedVersion: partnerProofImage.Case.Version, ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: storeTypeID, Latitude: 15.4, Longitude: 44.2, FulfillmentModes: initialModes}
+		correction := postgres.CorrectJoiningCaseInput{CaseID: created.Case.ID, ActorID: partnerActor, OwnerFullName: "مالك مصحح", BusinessName: "نشاط مصحح", FirstStoreName: "متجر مصحح", FirstStoreAddress: "الشارع الرئيسي المصحح", FirstStoreWorkingHours: workHours, FirstStoreProofType: "COMMERCIAL_REGISTRATION", FirstStoreProofNumber: "987654321", EvidenceKeyring: evidenceKeys, ExpectedVersion: partnerProofImage.Case.Version, ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: storeTypeID, Latitude: 15.4, Longitude: 44.2, FulfillmentModes: initialModes}
 		requestHash := postgres.HashJoiningCaseCorrectAndResubmit(correction)
 		for _, actorID := range []string{fieldActorID, otherPartner} {
 			unauthorized := correction
@@ -149,7 +151,7 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 		correction.RequestHash = requestHash
 		correction.CorrelationID = "corr-join-partner-correct"
 		corrected, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, correction)
-		if err != nil || corrected.Replayed || corrected.Case.State != "submitted" || corrected.Case.Version != returned.Case.Version+1 || corrected.Case.Origin != "field" || corrected.Case.PartnerActorID != partnerActor || corrected.Case.BusinessName != "نشاط مصحح" || corrected.Case.FirstStoreName != "متجر مصحح" || corrected.Case.FirstStoreLatitude == nil || *corrected.Case.FirstStoreLatitude != 15.4 || corrected.Case.FirstStoreLongitude == nil || *corrected.Case.FirstStoreLongitude != 44.2 || !equalStoreFulfillmentModes(corrected.Case.FirstStoreFulfillmentModes, initialModes) {
+		if err != nil || corrected.Replayed || corrected.Case.State != "submitted" || corrected.Case.Version != partnerProofImage.Case.Version+1 || corrected.Case.Origin != "field" || corrected.Case.PartnerActorID != partnerActor || corrected.Case.BusinessName != "نشاط مصحح" || corrected.Case.FirstStoreName != "متجر مصحح" || corrected.Case.FirstStoreLatitude == nil || *corrected.Case.FirstStoreLatitude != 15.4 || corrected.Case.FirstStoreLongitude == nil || *corrected.Case.FirstStoreLongitude != 44.2 || !equalStoreFulfillmentModes(corrected.Case.FirstStoreFulfillmentModes, initialModes) {
 			t.Fatalf("bound Partner did not atomically correct Field-originated case: %+v err=%v", corrected, err)
 		}
 		if _, err := db.ExecContext(ctx, "UPDATE dsh.service_cities SET active=false WHERE id=$1", serviceCityID); err != nil {
@@ -180,7 +182,7 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 		if _, err := db.ExecContext(ctx, "UPDATE dsh.service_cities SET active=true WHERE id=$1", serviceCityID); err != nil {
 			t.Fatalf("reactivate Service City for validation proof: %v", err)
 		}
-		verticalRequest := postgres.JoiningCaseRequest{Phone: "+967700000102", BusinessName: "نشاط غير نشط", FirstStoreName: "متجر غير نشط", ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: storeTypeID, Latitude: 15.369445, Longitude: 44.191006, FulfillmentModes: initialModes}
+		verticalRequest := postgres.JoiningCaseRequest{Phone: "+967700000102", WalletProviderKey: "provider-test", BusinessName: "نشاط غير نشط", FirstStoreName: "متجر غير نشط", ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: storeTypeID, Latitude: 15.369445, Longitude: 44.191006, FulfillmentModes: initialModes}
 		verticalHash := postgres.HashJoiningCaseRequest(verticalRequest)
 		if _, err := postgres.CreateJoiningCase(ctx, db, postgres.CreateJoiningCaseInput{IdempotencyKey: "idem-join-inactive-vertical", RequestHash: verticalHash, ActingActorID: operatorActor, CorrelationID: "corr-join-inactive-vertical", Request: verticalRequest}); !errors.Is(err, postgres.ErrCatalogVerticalNotFound) {
 			t.Fatalf("new joining case with inactive vertical error = %v, want inactive vertical", err)
@@ -191,7 +193,7 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 		if _, err := db.ExecContext(ctx, "UPDATE dsh.service_cities SET active=false WHERE id=$1", serviceCityID); err != nil {
 			t.Fatalf("deactivate Service City for validation proof: %v", err)
 		}
-		cityRequest := postgres.JoiningCaseRequest{Phone: "+967700000103", BusinessName: "مدينة غير نشطة", FirstStoreName: "متجر غير نشط", ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: storeTypeID, Latitude: 15.369445, Longitude: 44.191006, FulfillmentModes: initialModes}
+		cityRequest := postgres.JoiningCaseRequest{Phone: "+967700000103", WalletProviderKey: "provider-test", BusinessName: "مدينة غير نشطة", FirstStoreName: "متجر غير نشط", ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: storeTypeID, Latitude: 15.369445, Longitude: 44.191006, FulfillmentModes: initialModes}
 		cityHash := postgres.HashJoiningCaseRequest(cityRequest)
 		if _, err := postgres.CreateJoiningCase(ctx, db, postgres.CreateJoiningCaseInput{IdempotencyKey: "idem-join-inactive-city", RequestHash: cityHash, ActingActorID: operatorActor, CorrelationID: "corr-join-inactive-city", Request: cityRequest}); !errors.Is(err, postgres.ErrJoiningCaseServiceCity) {
 			t.Fatalf("new joining case with inactive service city error = %v, want inactive city", err)
@@ -199,12 +201,28 @@ func TestPartnerCorrectionForFieldOriginatedJoiningCase(t *testing.T) {
 		if _, err := db.ExecContext(ctx, "UPDATE dsh.service_cities SET active=true WHERE id=$1", serviceCityID); err != nil {
 			t.Fatalf("reactivate Service City for approval gate proof: %v", err)
 		}
-		approvalRequest := postgres.JoiningCaseRequest{Phone: "+967700000104", BusinessName: "نشاط المدينة الموقوفة", FirstStoreName: "متجر المدينة الموقوفة", ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: storeTypeID, Latitude: 15.369445, Longitude: 44.191006, FulfillmentModes: initialModes}
-		approvalCase, err := postgres.CreateJoiningCase(ctx, db, postgres.CreateJoiningCaseInput{IdempotencyKey: "idem-join-approval-city-create", RequestHash: postgres.HashJoiningCaseRequest(approvalRequest), ActingActorID: operatorActor, CorrelationID: "corr-join-approval-city-create", Request: approvalRequest})
+		approvalRequest := postgres.JoiningCaseRequest{Phone: "+967700000104", WalletProviderKey: "provider-test", OwnerFullName: "مالك بوابة الاعتماد", BusinessName: "نشاط المدينة الموقوفة", FirstStoreName: "متجر المدينة الموقوفة", FirstStoreAddress: "شارع بوابة الاعتماد", FirstStoreWorkingHours: workHours, FirstStoreProofType: "COMMERCIAL_REGISTRATION", FirstStoreProofNumber: "456123789", ServiceCityID: serviceCityID, VerticalID: verticalID, CommercialTypeID: storeTypeID, Latitude: 15.369445, Longitude: 44.191006, FulfillmentModes: initialModes}
+		approvalCase, err := postgres.CreateJoiningCase(ctx, db, postgres.CreateJoiningCaseInput{IdempotencyKey: "idem-join-approval-city-create", RequestHash: postgres.HashJoiningCaseRequest(approvalRequest), ActingActorID: operatorActor, CorrelationID: "corr-join-approval-city-create", EvidenceKeyring: evidenceKeys, Request: approvalRequest})
 		if err != nil {
 			t.Fatalf("create approval-gate joining case: %v", err)
 		}
-		approvalSubmitted, err := postgres.SubmitJoiningCase(ctx, db, approvalCase.Case.ID, "act_partner_inactive_city_approval", approvalCase.Case.Version, "idem-join-approval-city-submit", postgres.HashJoiningCaseSubmit(approvalCase.Case.ID, "act_partner_inactive_city_approval", approvalCase.Case.Version), operatorActor, "corr-join-approval-city-submit")
+		approvalMediaDigest := strings.Repeat("b", 64)
+		approvalMedia := postgres.StoreProfileMediaAssetInput{ID: "approval-gate-profile-image", JoiningCaseID: approvalCase.Case.ID, IdempotencyKey: "idem-approval-gate-profile", RequestHash: postgres.HashStoreProfileMediaUploadRequest(approvalCase.Case.ID, approvalMediaDigest, approvalCase.Case.Version, provenance), ExpectedCaseVersion: approvalCase.Case.Version, ObjectKey: "store-profile-media/approval-gate-profile-image.png", URI: "https://media.example/approval-gate-profile-image.png", ContentSHA256: approvalMediaDigest, ContentType: "image/png", ByteSize: int64(len(tinyPNG)), ActingActorID: operatorActor, CorrelationID: "corr-approval-gate-profile", Provenance: provenance}
+		if _, replayed, err := postgres.RegisterStoreProfileMediaAssetPending(ctx, db, approvalMedia); err != nil || replayed {
+			t.Fatalf("register approval-gate store-profile image: replayed=%t error=%v", replayed, err)
+		}
+		if _, err := postgres.ActivateStoreProfileMediaAsset(ctx, db, approvalMedia.ID, approvalCase.Case.ID, approvalCase.Case.Version, approvalMedia.IdempotencyKey, approvalMedia.RequestHash, operatorActor, approvalMedia.CorrelationID); err != nil {
+			t.Fatalf("activate approval-gate store-profile image: %v", err)
+		}
+		approvalCurrent, err := postgres.ReadJoiningCase(ctx, db, approvalCase.Case.ID)
+		if err != nil {
+			t.Fatalf("read approval-gate joining case after store-profile image: %v", err)
+		}
+		approvalProof, err := joiningcaseservice.UploadPrivateProofImage(ctx, db, evidenceKeys, approvalCase.Case.ID, operatorActor, "operator", "approval-gate-proof-image-upload", "idem-approval-gate-proof-image", "corr-approval-gate-proof-image", approvalCurrent.Case.Version, "image/png", tinyPNG)
+		if err != nil || !approvalProof.Case.FirstStoreProofImageUploaded {
+			t.Fatalf("upload approval-gate proof image failed: %+v err=%v", approvalProof, err)
+		}
+		approvalSubmitted, err := postgres.SubmitJoiningCase(ctx, db, approvalCase.Case.ID, "act_partner_inactive_city_approval", approvalProof.Case.Version, "idem-join-approval-city-submit", postgres.HashJoiningCaseSubmit(approvalCase.Case.ID, "act_partner_inactive_city_approval", approvalProof.Case.Version), operatorActor, "corr-join-approval-city-submit")
 		if err != nil {
 			t.Fatalf("submit approval-gate joining case: %v", err)
 		}

@@ -19,6 +19,9 @@ type CustomerPaymentAllocationInput struct {
 	OrderID, StoreID, PartnerActorID, CommercialStoreTypeID, FulfillmentMode, Currency                                string
 	SubtotalMinor, DeliveryFeeMinor, DiscountMinor, InternalBalanceAmountMinor, CashAmountMinor, CustomerPayableMinor int64
 	PolicyVersion                                                                                                     string
+	// PromotionFunding freezes the exact monetary promotion split on the
+	// WLT-owned funding row when the checkout order carried a promotion.
+	PromotionFunding *PromotionFundingInput
 }
 
 type PartnerStoreCommissionSnapshot struct {
@@ -167,6 +170,11 @@ func insertCustomerPaymentAllocationTx(ctx context.Context, tx *sql.Tx, i Custom
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO wlt.customer_payment_allocation_events(allocation_id,event_type,order_id,payment_intent_id,request_hash,idempotency_key,correlation_id) VALUES($1,'CUSTOMER_PAYMENT_ALLOCATION_CREATED',$2,$3,$4,$5,$6)`, id, i.OrderID, pid, hash, key, corr); err != nil {
 		return CustomerPaymentAllocationRecord{}, err
+	}
+	if i.PromotionFunding != nil && i.DiscountMinor > 0 {
+		if err := freezeOrderPromotionFundingTx(ctx, tx, i.OrderID, pid, *i.PromotionFunding); err != nil {
+			return CustomerPaymentAllocationRecord{}, err
+		}
 	}
 	return CustomerPaymentAllocationRecord{ID: id, OrderID: i.OrderID, PaymentIntentID: pid, StoreID: i.StoreID, PartnerActorID: i.PartnerActorID, CommercialStoreTypeID: i.CommercialStoreTypeID, FulfillmentMode: i.FulfillmentMode, Currency: i.Currency, SubtotalMinor: i.SubtotalMinor, DeliveryFeeMinor: i.DeliveryFeeMinor, DiscountMinor: i.DiscountMinor, InternalBalanceAmountMinor: i.InternalBalanceAmountMinor, CashAmountMinor: i.CashAmountMinor, CustomerPayableMinor: i.CustomerPayableMinor, PolicyVersion: i.PolicyVersion, CommissionSnapshot: &snapshot}, nil
 }
