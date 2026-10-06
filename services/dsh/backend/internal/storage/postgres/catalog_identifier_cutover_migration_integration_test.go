@@ -29,7 +29,7 @@ func TestCatalogIdentifierV93UpgradePreservesLegacyMatchesAndConflicts(t *testin
 		t.Fatalf("configured postgres is not reachable: %v", err)
 	}
 
-	withFreshCanonicalDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
+	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
 		cutoverIndex := -1
 		for index, record := range records {
 			if record.Name == "093_catalog_mixed_scope_and_store_skus.sql" {
@@ -87,10 +87,10 @@ func TestCatalogIdentifierV93UpgradePreservesLegacyMatchesAndConflicts(t *testin
 			}
 		}
 
-		if err := postgres.MigrateCanonical(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
+		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
 			t.Fatalf("upgrade prior-baseline catalog data through migration 093: %v", err)
 		}
-		if err := postgres.VerifyCanonicalSchema(ctx, db, records); err != nil {
+		if err := postgres.VerifySchema(ctx, db, records); err != nil {
 			t.Fatalf("verify canonical schema after identifier upgrade: %v", err)
 		}
 

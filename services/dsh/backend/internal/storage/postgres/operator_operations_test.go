@@ -30,11 +30,11 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		t.Fatalf("configured postgres is not reachable: %v", err)
 	}
 
-	withFreshCanonicalDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
-		if err := postgres.MigrateCanonical(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
+	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
+		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
 			t.Fatalf("apply DSH migrations: %v", err)
 		}
-		if err := postgres.VerifyCanonicalSchema(ctx, db, records); err != nil {
+		if err := postgres.VerifySchema(ctx, db, records); err != nil {
 			t.Fatalf("verify canonical DSH schema: %v", err)
 		}
 		if _, err := db.ExecContext(ctx, "INSERT INTO dsh.service_cities(id,display_name_ar,active) VALUES($1,$2,true)", "sanaa_operator_ops", "صنعاء عمليات"); err != nil {
