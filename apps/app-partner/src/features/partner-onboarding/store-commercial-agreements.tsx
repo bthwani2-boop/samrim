@@ -81,11 +81,11 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
   const [agreementToConfirm, setAgreementToConfirm] = useState<StoreCommercialAgreement | null>(null);
   const acceptanceBusy = useRef(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<ReadonlyArray<StoreCommercialAgreement> | null> => {
     if (!storageKey) {
       setLoading(false);
       setError("يلزم تسجيل دخول الشريك لقراءة اتفاقية المتجر.");
-      return;
+      return null;
     }
     setLoading(true);
     setError("");
@@ -118,10 +118,12 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
       } else {
         setPendingAttempt(null);
       }
+      return currentAgreements;
     } catch (cause) {
       setError(cause instanceof Error && cause.message === "DSH_BASE_URL_REQUIRED"
         ? "تعذر الاتصال بخدمة الاتفاقيات."
         : "تعذر قراءة اتفاقيات المتجر. أعد المحاولة.");
+      return null;
     } finally {
       setLoading(false);
     }
@@ -180,10 +182,17 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
         !accepted.partnerAcceptedByActorId || accepted.partnerAcceptedByActorId !== actorID) {
         throw new Error("PARTNER_ACCEPTANCE_READBACK_MISMATCH");
       }
+      const canonicalReadback = await load();
+      const canonical = canonicalReadback?.find((item) => item.agreementId === attempt.agreementId);
+      if (!canonical ||
+        canonical.agreementVersion < attempt.expectedAgreementVersion ||
+        (canonical.status !== "PARTNER_ACCEPTED" && canonical.status !== "ACTIVE") ||
+        canonical.partnerAcceptedByActorId !== actorID) {
+        throw new Error("PARTNER_ACCEPTANCE_CANONICAL_READBACK_MISMATCH");
+      }
       await SecureStore.deleteItemAsync(storageKey);
       setPendingAttempt(null);
-      setNotice("سُجل قبولك؛ أُعيدت قراءة حالة الاتفاقية من DSH.");
-      await load();
+      setNotice("سُجل قبولك وتم تأكيد حالة الاتفاقية من القراءة المعتمدة في DSH.");
     } catch (cause) {
       setError(acceptanceErrorMessage(cause, attemptSaved));
     } finally {
