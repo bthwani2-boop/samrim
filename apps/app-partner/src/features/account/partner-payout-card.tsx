@@ -185,8 +185,8 @@ export function PartnerPayoutCard() {
     </> : null}
     {lastRequest ? <View style={styles.requestBox}>
       <Text style={styles.lineTitle}>الطلب المعتمد: {formatMoney(lastRequest.totalAmountMinor, lastRequest.currency)}</Text>
-      {lastRequest.stores.map((allocation) => <Text key={allocation.storeId} style={styles.muted}>{storeNames[allocation.storeId] ?? "متجر ضمن الطلب"}: {formatMoney(allocation.amountMinor, allocation.currency)} · نسخة المستلم المحفوظة: {allocation.recipientAssignmentVersion}</Text>)}
-      <Text style={styles.muted}>الحوالات: {lastRequest.payouts.length} · الحالة: {lastRequest.status}</Text>
+      {lastRequest.stores.map((allocation) => <Text key={allocation.storeId} style={styles.muted}>{storeNames[allocation.storeId] ?? "متجر ضمن الطلب"}: {formatMoney(allocation.amountMinor, allocation.currency)} · تم تثبيت مستلم الصرف عند إنشاء الطلب</Text>)}
+      <Text style={styles.muted}>تم تقسيم الطلب إلى {lastRequest.payouts.length.toLocaleString("ar-YE")} حوالة وفق مستلمي المتاجر المعتمدين.</Text>
     </View> : null}
     {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
