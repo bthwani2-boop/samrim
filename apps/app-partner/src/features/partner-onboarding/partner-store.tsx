@@ -3,8 +3,10 @@ import { type JoiningCaseResponse, publicationStateLabel, type PublicationState,
 import { type Href, Link } from "expo-router";
 import { useMemo } from "react";
 import { Text, View } from "react-native";
+import { STORE_SURFACE_PERMISSIONS } from "../../shell/partner-authority";
 import { StoreOfferManagement } from "../store-offer/store-offer";
 import { StorePromotionsCard } from "../store-offer/store-promotions";
+import { PartnerAccessInvitationsCard } from "./partner-access-invitations";
 import { PartnerStoreAccess } from "./partner-store-access";
 import { usePartnerStoreContext } from "./partner-store-context";
 import { type PartnerAccessibleStore, usePartnerStoreScope } from "./partner-store-scope-context";
@@ -58,7 +60,8 @@ function StoreManagementSurfaces({ styles, store, canCatalog, canOperate, canPro
     {canPromote ? <StorePromotionsCard storeID={store.id} /> : null}
     {isSameFirstJoiningStore && firstJoiningStore ? <FirstJoiningStoreFacts styles={styles} store={firstJoiningStore} /> : null}
     {store.owned ? <StoreCaptainMembershipManagement storeID={store.id} /> : null}
-    <PartnerStoreAccess storeID={store.owned ? store.id : undefined} />
+    {store.owned ? <PartnerStoreAccess storeID={store.id} /> : null}
+    <PartnerAccessInvitationsCard />
   </>;
 }
 
@@ -74,11 +77,11 @@ export function PartnerStore() {
 
   return <View style={styles.container}>
     <Text style={styles.sectionTitle}>المتجر</Text>
-    <PartnerStoreScopeSelector />
+    <PartnerStoreScopeSelector requiredPermissions={STORE_SURFACE_PERMISSIONS} />
 
     {scopeState.kind === "ready" && !selectedStore ? <View style={styles.card}>
       <Text style={styles.muted}>لا يوجد متجر مملوك أو مفوض لهذا الحساب حاليًا.</Text>
-      <PartnerStoreAccess />
+      <PartnerAccessInvitationsCard />
     </View> : null}
 
     {selectedStore ? <>

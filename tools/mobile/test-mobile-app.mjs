@@ -114,6 +114,16 @@ if (app === "app-partner") {
   assert.equal(layoutContent.split("{ href: null }").length, 5, `${app}: exactly the three authority-gated tabs plus onboarding may be hidden from navigation`);
   assert.ok(shellContent.includes("canSearchOrders"), `${app}: the header search entry must be gated by orders authority`);
   assert.ok(shellContent.includes('navigate("orders", { focus: "search" })'), `${app}: the authorized search entry must keep targeting the orders surface`);
+  const accountContent = fs.readFileSync(path.join(appDir, "src", "features", "account", "account.tsx"), "utf8");
+  assert.ok(accountContent.includes("usePartnerStoreScope") && accountContent.includes("authority.canUse"), `${app}: account workspace entry points must derive from live authority`);
+  assert.ok(accountContent.includes("PartnerAccessInvitationsCard"), `${app}: the account surface must keep identity-directed access invitations reachable`);
+  const partnerStoreContent = fs.readFileSync(path.join(appDir, "src", "features", "partner-onboarding", "partner-store.tsx"), "utf8");
+  assert.ok(partnerStoreContent.includes("STORE_SURFACE_PERMISSIONS"), `${app}: the Store surface selector must list only stores with material store functions`);
+  const partnerOrdersContent = fs.readFileSync(path.join(appDir, "src", "features", "partner-onboarding", "partner-orders.tsx"), "utf8");
+  assert.ok(partnerOrdersContent.includes('requiredPermissions={["orders"]}'), `${app}: the orders selector must stay scoped to stores granting orders`);
+  const storeAccessContent = fs.readFileSync(path.join(appDir, "src", "features", "partner-onboarding", "partner-store-access.tsx"), "utf8");
+  assert.ok(!storeAccessContent.includes("listOwnStoreAccessInvitations"), `${app}: owner-side store access must not duplicate the actor-directed invitations readback owner`);
+  assert.ok(storeAccessContent.includes("storeID: string"), `${app}: owner-side store access must require an owned store`);
 }
 
 import { register } from "node:module";

@@ -20,7 +20,7 @@ export function PartnerOrders() {
 
   return <View style={styles.container}>
     <Text style={styles.sectionTitle}>الطلبات</Text>
-    {aggregateMode ? null : <PartnerStoreScopeSelector requiredPermission="orders" />}
+    {aggregateMode ? null : <PartnerStoreScopeSelector requiredPermissions={["orders"]} />}
     <View style={styles.card}>
       <Text style={styles.metaLabel}>نطاق عرض الطلبات</Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>

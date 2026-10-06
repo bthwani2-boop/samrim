@@ -17,7 +17,7 @@ const PARTNER_SURFACE_PATHS: Record<PartnerSurface, PartnerSurfacePath> = { stor
  * surfaces and are reachable through the `orders` grant, so it must not widen
  * Store visibility until a material fulfillment function exists inside Store.
  */
-const STORE_SURFACE_PERMISSIONS: ReadonlyArray<StoreAccessPermission> = ["catalog", "store_operations", "promotions"];
+export const STORE_SURFACE_PERMISSIONS: ReadonlyArray<StoreAccessPermission> = ["catalog", "store_operations", "promotions"];
 
 /**
  * Delegated permissions that unlock the Wallet surface. Store-level guards

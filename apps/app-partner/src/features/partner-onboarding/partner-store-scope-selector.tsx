@@ -20,12 +20,12 @@ function permissionLabels(store: PartnerAccessibleStore): string {
   return store.permissions.map((permission) => labels[permission] ?? permission).join("، ");
 }
 
-export function PartnerStoreScopeSelector({ requiredPermission }: Readonly<{ requiredPermission?: StoreAccessPermission }>) {
+export function PartnerStoreScopeSelector({ requiredPermissions }: Readonly<{ requiredPermissions?: ReadonlyArray<StoreAccessPermission> }>) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const { state, stores, selectedStore, selectStore, reload, loadMore } = usePartnerStoreScope();
-  const visibleStores = requiredPermission
-    ? stores.filter((store) => store.owned || store.permissions.includes(requiredPermission))
+  const visibleStores = requiredPermissions
+    ? stores.filter((store) => store.owned || requiredPermissions.some((permission) => store.permissions.includes(permission)))
     : stores;
 
   if (state.kind === "loading") return <View style={styles.card}><ActivityIndicator accessibilityLabel="جارٍ قراءة المتاجر المتاحة" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة المتاجر المتاحة لحسابك…</Text></View>;

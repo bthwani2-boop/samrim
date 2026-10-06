@@ -4,24 +4,26 @@ import { type Href, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { logoutIdentity } from "../../bootstrap/identity";
+import { PARTNER_SURFACE_ORDER, type PartnerSurface, partnerSurfacePath } from "../../shell/partner-authority";
+import { PartnerAccessInvitationsCard } from "../partner-onboarding/partner-access-invitations";
+import { usePartnerStoreScope } from "../partner-onboarding/partner-store-scope-context";
 
-const actions: ReadonlyArray<Readonly<{
-  description: string;
-  icon: "store" | "orders" | "wallet";
-  label: string;
-  route: Href;
-}>> = [
-  { description: "حدّث بيانات المتجر وإعداده", icon: "store", label: "إدارة المتجر", route: "/store" },
-  { description: "راجع الطلبات وحالتها", icon: "orders", label: "طلبات المتجر", route: "/orders" },
-  { description: "راجع الرصيد وطلبات التسوية", icon: "wallet", label: "محفظة الشريك", route: "/wallet" as Href },
-];
+type WorkspaceSurface = Exclude<PartnerSurface, "account">;
+
+const workspaceActions: Readonly<Record<WorkspaceSurface, Readonly<{ description: string; icon: "store" | "orders" | "wallet"; label: string; route: ReturnType<typeof partnerSurfacePath> }>>> = {
+  store: { description: "حدّث بيانات المتجر وإعداده", icon: "store", label: "إدارة المتجر", route: "/store" },
+  orders: { description: "راجع الطلبات وحالتها", icon: "orders", label: "طلبات المتجر", route: "/orders" },
+  wallet: { description: "راجع الرصيد وطلبات التسوية", icon: "wallet", label: "محفظة الشريك", route: "/wallet" },
+};
 
 export default function PartnerAccount() {
   const router = useRouter();
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { authority } = usePartnerStoreScope();
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const actions = PARTNER_SURFACE_ORDER.filter((surface): surface is WorkspaceSurface => surface !== "account" && authority.canUse(surface)).map((surface) => workspaceActions[surface]);
 
   async function logout() {
     if (busy) return;
@@ -41,7 +43,7 @@ export default function PartnerAccount() {
       <View style={styles.heading}>
         <Text style={styles.eyebrow}>مساحة الشريك</Text>
         <Text style={styles.title}>إدارة حساب الشريك</Text>
-        <Text style={styles.description}>إعدادات الحساب وروابط تشغيل المتجر في مكان واحد.</Text>
+        <Text style={styles.description}>إعدادات حسابك ومساحات عملك المتاحة في مكان واحد.</Text>
       </View>
 
       <BthwaniSurface tone="raised" style={styles.profileCard}>
@@ -50,16 +52,21 @@ export default function PartnerAccount() {
         </View>
         <View style={styles.profileCopy}>
           <Text style={styles.profileTitle}>حساب الشريك</Text>
-          <Text style={styles.profileDescription}>انتقل إلى المتجر والطلبات والمحفظة لإدارة أعمالك اليومية.</Text>
+          <Text style={styles.profileDescription}>افتح مساحات عملك المتاحة لإدارة مهامك اليومية.</Text>
         </View>
       </BthwaniSurface>
 
-      <BthwaniSectionHeader title="مساحات العمل" subtitle="افتح الخدمة التي تحتاجها مباشرة." />
-      <View style={styles.actions}>
-        {actions.map((action) => (
-          <BthwaniNavigationRow key={action.label} description={action.description} icon={action.icon} title={action.label} onPress={() => router.push(action.route)} />
-        ))}
-      </View>
+      {actions.length > 0 ? <>
+        <BthwaniSectionHeader title="مساحات العمل" subtitle="افتح الخدمة التي تحتاجها مباشرة." />
+        <View style={styles.actions}>
+          {actions.map((action) => (
+            <BthwaniNavigationRow key={action.label} description={action.description} icon={action.icon} title={action.label} onPress={() => router.push(action.route as Href)} />
+          ))}
+        </View>
+      </> : null}
+
+      <BthwaniSectionHeader title="دعوات الوصول" subtitle="الدعوات الموجهة إلى حسابك من مالكي المتاجر." />
+      <PartnerAccessInvitationsCard />
 
       <BthwaniSectionHeader title="مظهر التطبيق" subtitle="غيّر المظهر في أي وقت؛ ويُحفظ اختيارك على هذا الجهاز." />
       <BthwaniSurface tone="raised" style={styles.appearancePanel}>
@@ -72,7 +79,7 @@ export default function PartnerAccount() {
             <Text style={styles.appearanceHelper}>فاتح، داكن، أو حسب إعدادات النظام.</Text>
           </View>
         </View>
-        <AppearancePicker title="مظهر التطبيق" helper="يُطبَّق التغيير مباشرة على كل شاشات التطبيق." />
+        <AppearancePicker title="مظهر التطبيق" helper="يُطبَّق التغيير مباشرة على كل شاشات التطبيق." />
       </BthwaniSurface>
 
       <BthwaniButton busy={busy} disabled={busy} label={busy ? "جارٍ تسجيل الخروج…" : "تسجيل الخروج"} onPress={() => void logout()} variant="secondary" />
