@@ -143,7 +143,7 @@ func (s *BeneficiaryFinanceServer) listOperatorFinancialStatementSummaries(w htt
 			actorIDs = append(actorIDs, item.ActorID)
 		}
 	}
-	if len(actorIDs) > 0 {
+	if len(actorIDs) > 0 && (actorType == "partner" || actorType == "captain" || actorType == "field") {
 		displayNames, nameErr := postgres.ReadBeneficiaryFinanceDisplayNames(r.Context(), s.db, actorType, actorIDs)
 		if nameErr != nil {
 			writeError(w, http.StatusBadGateway, "BENEFICIARY_PRESENTATION_UNAVAILABLE", "beneficiary presentation is unavailable")
