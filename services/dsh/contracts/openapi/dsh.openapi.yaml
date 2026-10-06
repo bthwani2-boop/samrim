@@ -3370,15 +3370,23 @@ components:
 
     FieldCatalogReadResponse:
       type: object
-      required: [joiningCaseId, storeId, verticalId, products, offers]
+      required: [joiningCaseId, storeId, storeName, verticalId, verticalNameAr, products, offers]
       additionalProperties: false
       properties:
         joiningCaseId:
           type: string
         storeId:
           type: string
+        storeName:
+          type: string
+          minLength: 2
+          maxLength: 160
         verticalId:
           type: string
+        verticalNameAr:
+          type: string
+          minLength: 2
+          maxLength: 160
         products:
           type: array
           items:

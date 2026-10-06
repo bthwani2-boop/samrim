@@ -10,9 +10,11 @@ import (
 var ErrFieldCatalogAuthority = errors.New("Field catalog authority is not active for this joining case")
 
 type FieldCatalogScope struct {
-	JoiningCaseID string
-	StoreID       string
-	VerticalID    string
+	JoiningCaseID  string
+	StoreID        string
+	StoreName      string
+	VerticalID     string
+	VerticalNameAr string
 }
 
 type CatalogIdentifierResolution struct {
@@ -35,9 +37,10 @@ func AuthorizeFieldCatalogCase(ctx context.Context, db *sql.DB, joiningCaseID, f
 	}
 	var scope FieldCatalogScope
 	err := db.QueryRowContext(ctx, `
-		SELECT jc.id,s.id,s.primary_vertical_id
+		SELECT jc.id,s.id,s.name,s.primary_vertical_id,vertical.name_ar
 		FROM dsh.joining_cases jc
 		JOIN dsh.stores s ON s.id=jc.store_id
+		JOIN dsh.commerce_verticals vertical ON vertical.id=s.primary_vertical_id AND vertical.active=true
 		JOIN dsh.field_admissions admission ON admission.actor_id=jc.originating_field_actor_id
 		WHERE jc.id=$1
 		  AND jc.origin='field'
@@ -46,7 +49,7 @@ func AuthorizeFieldCatalogCase(ctx context.Context, db *sql.DB, joiningCaseID, f
 		  AND admission.state='eligible'
 		  AND admission.requires_profile_review=false
 		  AND s.publication_state='unpublished'
-		  AND s.primary_vertical_id=jc.first_store_vertical_id`, strings.TrimSpace(joiningCaseID), strings.TrimSpace(fieldActorID)).Scan(&scope.JoiningCaseID, &scope.StoreID, &scope.VerticalID)
+		  AND s.primary_vertical_id=jc.first_store_vertical_id`, strings.TrimSpace(joiningCaseID), strings.TrimSpace(fieldActorID)).Scan(&scope.JoiningCaseID, &scope.StoreID, &scope.StoreName, &scope.VerticalID, &scope.VerticalNameAr)
 	if errors.Is(err, sql.ErrNoRows) {
 		return FieldCatalogScope{}, ErrFieldCatalogAuthority
 	}

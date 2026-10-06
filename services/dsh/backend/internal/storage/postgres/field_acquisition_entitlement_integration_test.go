@@ -168,8 +168,8 @@ func (s fieldRewardOutboxScenario) approveJoiningCase(fieldOrigin bool, suffix s
 			s.t.Fatalf("create eligible Field admission for catalog authorization proof: %v", err)
 		}
 		scope, authErr := postgres.AuthorizeFieldCatalogCase(s.ctx, s.db, approved.Case.ID, fieldActorID)
-		if authErr != nil || scope.StoreID != approved.Case.StoreID || scope.VerticalID != s.verticalID {
-			s.t.Fatalf("eligible Field case lost its unpublished catalog authority: scope=%+v error=%v", scope, authErr)
+		if authErr != nil || scope.StoreID != approved.Case.StoreID || scope.StoreName == "" || scope.VerticalID != s.verticalID || scope.VerticalNameAr == "" {
+			s.t.Fatalf("eligible Field case lost its human-readable unpublished catalog authority: scope=%+v error=%v", scope, authErr)
 		}
 		if _, err := s.db.ExecContext(s.ctx, "UPDATE dsh.field_admissions SET requires_profile_review=true WHERE id=$1", admissionID); err != nil {
 			s.t.Fatalf("mark the fixture admission as requiring profile review: %v", err)

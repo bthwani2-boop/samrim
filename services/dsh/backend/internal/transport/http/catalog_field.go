@@ -108,7 +108,7 @@ func (s *CatalogServer) readFieldJoiningCaseCatalog(w http.ResponseWriter, r *ht
 	for _, offer := range result.Offers.Offers {
 		offers = append(offers, toStoreOffer(offer))
 	}
-	writeJSON(w, http.StatusOK, contract.FieldCatalogReadResponse{JoiningCaseID: result.Scope.JoiningCaseID, StoreID: result.Scope.StoreID, VerticalID: result.Scope.VerticalID, Products: products, Offers: offers, NextCursor: result.Offers.NextCursor})
+	writeJSON(w, http.StatusOK, contract.FieldCatalogReadResponse{JoiningCaseID: result.Scope.JoiningCaseID, StoreID: result.Scope.StoreID, StoreName: result.Scope.StoreName, VerticalID: result.Scope.VerticalID, VerticalNameAr: result.Scope.VerticalNameAr, Products: products, Offers: offers, NextCursor: result.Offers.NextCursor})
 }
 
 func (s *CatalogServer) createFieldInitialCatalogProduct(w http.ResponseWriter, r *http.Request) {
