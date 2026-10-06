@@ -156,6 +156,13 @@ jobs:
             [[ ",$1," == *",$2,"* ]]
           }
 
+          mobile_dsh_targets=""
+          if [[ "$mobile_dsh" == "true" ]]; then
+            if ! project_in_list "$baseline_projects" "dsh-backend"; then mobile_dsh_targets="baseline-proof"; fi
+            if ! project_in_list "$runtime_projects" "dsh-backend"; then mobile_dsh_targets="${mobile_dsh_targets:+$mobile_dsh_targets,}runtime-proof"; fi
+            if ! project_in_list "$location_projects" "dsh-backend"; then mobile_dsh_targets="${mobile_dsh_targets:+$mobile_dsh_targets,}location-proof"; fi
+          fi
+
           runtime_test_files="$(grep -E '^tests/runtime/' <<< "$changed_files" || true)"
           unknown_runtime_test_files="$(grep -Ev '^(tests/runtime/(mailpit-challenge\.mjs|verify-dsh-baseline\.mjs|verify-dsh-location-runtime\.mjs|verify-dsh-runtime-core\.mjs|verify-identity-migrations\.mjs|verify-identity-runtime\.mjs|runtime-proof/(canonical-dsh-migration-history\.mjs|challenge-source\.mjs|trusted-executables\.mjs|trusted-executables\.d\.mts)))$' <<< "$runtime_test_files" || true)"
           if [[ -n "$unknown_runtime_test_files" ]]; then
@@ -229,6 +236,7 @@ jobs:
           echo "full_runtime=$full_runtime" >> "$GITHUB_OUTPUT"
           echo "mobile_identity=$mobile_identity" >> "$GITHUB_OUTPUT"
           echo "mobile_dsh=$mobile_dsh" >> "$GITHUB_OUTPUT"
+          echo "mobile_dsh_targets=$mobile_dsh_targets" >> "$GITHUB_OUTPUT"
           echo "direct_identity_migration=$direct_identity_migration" >> "$GITHUB_OUTPUT"
           echo "direct_identity_runtime=$direct_identity_runtime" >> "$GITHUB_OUTPUT"
           echo "direct_dsh_baseline=$direct_dsh_baseline" >> "$GITHUB_OUTPUT"
@@ -348,8 +356,10 @@ jobs:
         run: pnpm exec nx run-many -t migration-proof,runtime-proof --projects=identity-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
 
       - name: Run DSH proofs for tagged mobile changes
-        if: steps.scope.outputs.mobile_dsh == 'true' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
-        run: pnpm exec nx run-many -t baseline-proof,runtime-proof,location-proof --projects=dsh-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
+        if: steps.scope.outputs.mobile_dsh_targets != '' && steps.scope.outputs.full_runtime != 'true' && github.event_name != 'schedule'
+        env:
+          MOBILE_DSH_TARGETS: ${{ steps.scope.outputs.mobile_dsh_targets }}
+        run: pnpm exec nx run-many -t "$MOBILE_DSH_TARGETS" --projects=dsh-backend --outputStyle=stream --parallel=1 --skip-nx-cache --nxBail=true
 
       - name: Run all backend runtime proofs for shared runtime changes
         if: steps.scope.outputs.full_runtime == 'true' && github.event_name != 'schedule'
