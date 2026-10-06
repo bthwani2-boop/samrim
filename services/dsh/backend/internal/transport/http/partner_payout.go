@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"strings"
 
+	integrationwlt "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/walletfacts"
-	integrationwlt "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 )
 
 // Partner payout requests carry an explicit Store scope and are partitioned by

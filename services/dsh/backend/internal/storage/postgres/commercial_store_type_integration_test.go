@@ -33,17 +33,17 @@ func TestCommercialStoreTypeRegistryLifecycle(t *testing.T) {
 		t.Fatalf("connect DSH test PostgreSQL: %v", err)
 	}
 
-	withFreshCanonicalDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
+	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
 		runCommercialStoreTypeScenario(t, ctx, db, records, migrationSQL)
 	})
 }
 
 func runCommercialStoreTypeScenario(t *testing.T, ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
 	t.Helper()
-	if err := postgres.MigrateCanonical(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
+	if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
 		t.Fatalf("apply canonical DSH migrations: %v", err)
 	}
-	if err := postgres.VerifyCanonicalSchema(ctx, db, records); err != nil {
+	if err := postgres.VerifySchema(ctx, db, records); err != nil {
 		t.Fatalf("verify canonical DSH schema: %v", err)
 	}
 

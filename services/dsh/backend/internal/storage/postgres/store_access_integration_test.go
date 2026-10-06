@@ -29,11 +29,11 @@ func TestFreshStoreAccessDelegationJourney(t *testing.T) {
 		t.Fatalf("configured postgres is not reachable: %v", err)
 	}
 
-	withFreshCanonicalDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
-		if err := postgres.MigrateCanonical(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
+	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
+		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
 			t.Fatalf("apply fresh DSH migrations: %v", err)
 		}
-		if err := postgres.VerifyCanonicalSchema(ctx, db, records); err != nil {
+		if err := postgres.VerifySchema(ctx, db, records); err != nil {
 			t.Fatalf("verify fresh DSH schema: %v", err)
 		}
 
@@ -134,11 +134,11 @@ func TestStoreAccessExpandedPermissionAllowlist(t *testing.T) {
 		t.Fatalf("configured postgres is not reachable: %v", err)
 	}
 
-	withFreshCanonicalDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
-		if err := postgres.MigrateCanonical(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
+	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
+		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
 			t.Fatalf("apply fresh DSH migrations: %v", err)
 		}
-		if err := postgres.VerifyCanonicalSchema(ctx, db, records); err != nil {
+		if err := postgres.VerifySchema(ctx, db, records); err != nil {
 			t.Fatalf("verify fresh DSH schema: %v", err)
 		}
 

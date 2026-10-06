@@ -68,7 +68,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	records, err := loadMigrations()
+	records, _, err := postgres.LoadMigrations()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func main() {
 		marketingServer.Register(mux)
 	}
 	readiness := func(ctx context.Context) error {
-		return postgres.VerifyCanonicalSchema(ctx, database, records)
+		return postgres.VerifySchema(ctx, database, records)
 	}
 	if err := serviceruntime.RunWithRoutesAndReadinessAndWorker("dsh", "/dsh", "18080", register, readiness, func(ctx context.Context) {
 		go runFinancialProfileReconciliationLoop(ctx, time.Minute, joiningCaseServer.ReconcileFinancialProfiles)
@@ -207,9 +207,4 @@ func main() {
 	}); err != nil {
 		log.Fatal(err)
 	}
-}
-
-func loadMigrations() ([]postgres.MigrationRecord, error) {
-	records, _, err := postgres.LoadCanonicalMigrations()
-	return records, err
 }

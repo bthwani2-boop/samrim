@@ -12,20 +12,6 @@ import (
 )
 
 func withFreshDatabase(t *testing.T, rootDB *sql.DB, databaseURL string, test func(context.Context, *sql.DB, []postgres.MigrationRecord, []string)) {
-	withFreshDatabaseUsingMigrations(t, rootDB, databaseURL, postgres.LoadMigrations, test)
-}
-
-func withFreshCanonicalDatabase(t *testing.T, rootDB *sql.DB, databaseURL string, test func(context.Context, *sql.DB, []postgres.MigrationRecord, []string)) {
-	withFreshDatabaseUsingMigrations(t, rootDB, databaseURL, postgres.LoadCanonicalMigrations, test)
-}
-
-func withFreshDatabaseUsingMigrations(
-	t *testing.T,
-	rootDB *sql.DB,
-	databaseURL string,
-	loadMigrations func() ([]postgres.MigrationRecord, []string, error),
-	test func(context.Context, *sql.DB, []postgres.MigrationRecord, []string),
-) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -53,9 +39,9 @@ func withFreshDatabaseUsingMigrations(
 	if err := testDB.PingContext(ctx); err != nil {
 		t.Fatalf("isolated DSH database is not reachable: %v", err)
 	}
-	records, migrationSQL, err := loadMigrations()
+	records, migrationSQL, err := postgres.LoadMigrations()
 	if err != nil {
-		t.Fatalf("load DSH canonical migrations: %v", err)
+		t.Fatalf("load DSH migrations: %v", err)
 	}
 	test(ctx, testDB, records, migrationSQL)
 }

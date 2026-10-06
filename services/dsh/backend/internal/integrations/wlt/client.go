@@ -68,23 +68,23 @@ type PaymentIntent struct {
 }
 
 type CustomerPaymentAllocation struct {
-	ID                         string `json:"id,omitempty"`
-	OrderID                    string `json:"orderId"`
-	StoreID                    string `json:"storeId"`
-	PartnerActorID             string `json:"partnerActorId"`
-	CommercialStoreTypeID      string `json:"commercialStoreTypeId"`
-	FulfillmentMode            string `json:"fulfillmentMode"`
-	PaymentIntentID            string `json:"paymentIntentId,omitempty"`
-	Currency                   string `json:"currency"`
-	SubtotalMinor              int64  `json:"subtotalMinor"`
-	DeliveryFeeMinor           int64  `json:"deliveryFeeMinor"`
-	DiscountMinor              int64  `json:"discountMinor"`
-	InternalBalanceAmountMinor int64  `json:"internalBalanceAmountMinor"`
-	CashAmountMinor            int64  `json:"cashAmountMinor"`
-	CustomerPayableMinor       int64  `json:"customerPayableMinor"`
-	PolicyVersion              string `json:"policyVersion"`
-	PromotionFunding           *PromotionFundingRequest `json:"promotionFunding,omitempty"`
-	CreatedAt                  string `json:"createdAt"`
+	ID			 string			  `json:"id,omitempty"`
+	OrderID			 string			  `json:"orderId"`
+	StoreID			 string			  `json:"storeId"`
+	PartnerActorID		 string			  `json:"partnerActorId"`
+	CommercialStoreTypeID	 string			  `json:"commercialStoreTypeId"`
+	FulfillmentMode		 string			  `json:"fulfillmentMode"`
+	PaymentIntentID		 string			  `json:"paymentIntentId,omitempty"`
+	Currency		 string			  `json:"currency"`
+	SubtotalMinor		 int64			  `json:"subtotalMinor"`
+	DeliveryFeeMinor		 int64			  `json:"deliveryFeeMinor"`
+	DiscountMinor		 int64			  `json:"discountMinor"`
+	InternalBalanceAmountMinor int64			  `json:"internalBalanceAmountMinor"`
+	CashAmountMinor		 int64			  `json:"cashAmountMinor"`
+	CustomerPayableMinor	 int64			  `json:"customerPayableMinor"`
+	PolicyVersion		 string			  `json:"policyVersion"`
+	PromotionFunding	 *PromotionFundingRequest `json:"promotionFunding,omitempty"`
+	CreatedAt		 string			  `json:"createdAt"`
 }
 
 // PromotionFundingRequest carries the checkout-frozen promotion funding facts
@@ -118,20 +118,20 @@ type OrderAdjustmentReconciliationCases struct {
 }
 
 type customerPaymentAllocationRequest struct {
-	OrderID                    string `json:"orderId"`
-	StoreID                    string `json:"storeId"`
-	PartnerActorID             string `json:"partnerActorId"`
-	CommercialStoreTypeID      string `json:"commercialStoreTypeId"`
-	FulfillmentMode            string `json:"fulfillmentMode"`
-	Currency                   string `json:"currency"`
-	SubtotalMinor              int64  `json:"subtotalMinor"`
-	DeliveryFeeMinor           int64  `json:"deliveryFeeMinor"`
-	DiscountMinor              int64  `json:"discountMinor"`
-	InternalBalanceAmountMinor int64  `json:"internalBalanceAmountMinor"`
-	CashAmountMinor            int64  `json:"cashAmountMinor"`
-	CustomerPayableMinor       int64  `json:"customerPayableMinor"`
-	PolicyVersion              string `json:"policyVersion"`
-	PromotionFunding           *PromotionFundingRequest `json:"promotionFunding,omitempty"`
+	OrderID			 string			  `json:"orderId"`
+	StoreID			 string			  `json:"storeId"`
+	PartnerActorID		 string			  `json:"partnerActorId"`
+	CommercialStoreTypeID	 string			  `json:"commercialStoreTypeId"`
+	FulfillmentMode		 string			  `json:"fulfillmentMode"`
+	Currency		 string			  `json:"currency"`
+	SubtotalMinor		 int64			  `json:"subtotalMinor"`
+	DeliveryFeeMinor		 int64			  `json:"deliveryFeeMinor"`
+	DiscountMinor		 int64			  `json:"discountMinor"`
+	InternalBalanceAmountMinor int64			  `json:"internalBalanceAmountMinor"`
+	CashAmountMinor		 int64			  `json:"cashAmountMinor"`
+	CustomerPayableMinor	 int64			  `json:"customerPayableMinor"`
+	PolicyVersion		 string			  `json:"policyVersion"`
+	PromotionFunding	 *PromotionFundingRequest `json:"promotionFunding,omitempty"`
 }
 
 type paymentIntentResponse struct {

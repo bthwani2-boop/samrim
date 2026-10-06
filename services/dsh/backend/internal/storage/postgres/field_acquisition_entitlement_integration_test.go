@@ -33,7 +33,7 @@ func TestFieldAcquisitionRewardPublicationOutboxLifecycle(t *testing.T) {
 		t.Fatalf("connect DSH test PostgreSQL: %v", err)
 	}
 
-	withFreshCanonicalDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
+	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
 		runFieldRewardPublicationOutboxScenario(t, ctx, db, records, migrationSQL)
 	})
 }
@@ -67,10 +67,10 @@ func runFieldRewardPublicationOutboxScenario(t *testing.T, ctx context.Context, 
 }
 
 func (s fieldRewardOutboxScenario) prepareSchema(records []postgres.MigrationRecord, migrationSQL []string) {
-	if err := postgres.MigrateCanonical(s.ctx, s.db, records, migrationSQL, testDeliveryProofKeyring(s.t)); err != nil {
+	if err := postgres.Migrate(s.ctx, s.db, records, migrationSQL, testDeliveryProofKeyring(s.t)); err != nil {
 		s.t.Fatalf("apply canonical DSH migrations: %v", err)
 	}
-	if err := postgres.VerifyCanonicalSchema(s.ctx, s.db, records); err != nil {
+	if err := postgres.VerifySchema(s.ctx, s.db, records); err != nil {
 		s.t.Fatalf("verify canonical DSH schema: %v", err)
 	}
 }

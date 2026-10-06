@@ -115,10 +115,10 @@ type PartnerPayoutStoreAmount struct {
 // BeneficiaryIdentityFacts carries current verified wallet facts per effective
 // beneficiary actor; WLT re-verifies each group destination against them.
 type PartnerPayoutRequestInput struct {
-	ScopeMode                string                            `json:"scopeMode"`
-	StoreIDs                 []string                          `json:"storeIds,omitempty"`
-	StoreAmounts             []PartnerPayoutStoreAmount        `json:"storeAmounts,omitempty"`
-	BeneficiaryIdentityFacts map[string]IdentityFacts          `json:"beneficiaryIdentityFacts,omitempty"`
+	ScopeMode			string			 `json:"scopeMode"`
+	StoreIDs			[]string		 `json:"storeIds,omitempty"`
+	StoreAmounts			[]PartnerPayoutStoreAmount `json:"storeAmounts,omitempty"`
+	BeneficiaryIdentityFacts	map[string]IdentityFacts	 `json:"beneficiaryIdentityFacts,omitempty"`
 }
 
 // PartnerPayoutStoreAllocation is the immutable per-Store allocation line on a
@@ -133,14 +133,14 @@ type PartnerPayoutStoreAllocation struct {
 
 // PartnerPayoutRequest is the canonical readback of one partitioned request.
 type PartnerPayoutRequest struct {
-	ID               string                        `json:"id"`
-	Status           string                        `json:"status"`
-	ScopeMode        string                        `json:"scopeMode"`
-	TotalAmountMinor int64                         `json:"totalAmountMinor"`
-	Currency         string                        `json:"currency"`
-	Stores           []PartnerPayoutStoreAllocation `json:"stores"`
-	Payouts          []PayoutRequest                `json:"payouts"`
-	CreatedAt        string                        `json:"createdAt"`
+	ID		 string				`json:"id"`
+	Status		 string				`json:"status"`
+	ScopeMode	 string				`json:"scopeMode"`
+	TotalAmountMinor int64				`json:"totalAmountMinor"`
+	Currency	 string				`json:"currency"`
+	Stores		 []PartnerPayoutStoreAllocation	`json:"stores"`
+	Payouts		 []PayoutRequest			`json:"payouts"`
+	CreatedAt	 string				`json:"createdAt"`
 }
 
 // CreatePartnerPayoutRequest creates a Store-scoped partitioned payout request;

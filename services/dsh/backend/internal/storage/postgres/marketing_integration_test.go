@@ -29,8 +29,8 @@ func TestPublicPromotionsAreStoreScopedAndBounded(t *testing.T) {
 		t.Fatalf("configured postgres is not reachable: %v", err)
 	}
 
-	withFreshCanonicalDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
-		if err := postgres.MigrateCanonical(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
+	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
+		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
 			t.Fatalf("apply DSH migrations: %v", err)
 		}
 		const (
@@ -105,8 +105,8 @@ func TestOperatorPromotionRegistryFiltersCityBeforePageLimit(t *testing.T) {
 		t.Fatalf("configured postgres is not reachable: %v", err)
 	}
 
-	withFreshCanonicalDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
-		if err := postgres.MigrateCanonical(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
+	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
+		if err := postgres.Migrate(ctx, db, records, migrationSQL, testDeliveryProofKeyring(t)); err != nil {
 			t.Fatalf("apply DSH migrations: %v", err)
 		}
 		const cityA = "promotion-registry-city-a"
