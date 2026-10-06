@@ -133,7 +133,7 @@ function statementEntryDetails(entry: FinancialStatement["entries"][number]): Re
     </details>;
   }
   if (entry.store) {
-    return <details><summary>استحقاق مرتبط بمتجر {entry.store.name}</summary><p>{publicationStateLabel(entry.store.publicationState as Parameters<typeof publicationStateLabel>[0])} · <bdi>{entry.store.storeId}</bdi></p></details>;
+    return <details><summary>استحقاق مرتبط بمتجر {entry.store.name}</summary><p>{publicationStateLabel(entry.store.publicationState as Parameters<typeof publicationStateLabel>[0])}</p></details>;
   }
   return "لا توجد لقطة طلب أو متجر مرتبطة بهذا القيد";
 }

@@ -35,7 +35,8 @@ export type StoreCommercialAgreementRecord = Readonly<{
 export type FinanceStoreCommercialAgreement = StoreCommercialAgreementRecord & Readonly<{
   storeName: string;
   currentStoreOwnerActorId: string;
-  commercialStoreTypeId: string | null;
+  commercialStoreTypeId: string;
+  commercialStoreTypeNameAr: string;
   fulfillmentModes: readonly StoreCommercialAgreementMode[];
   matchesCurrentFulfillmentModes: boolean;
 }>;

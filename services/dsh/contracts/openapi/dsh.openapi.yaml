@@ -3073,7 +3073,7 @@ components:
 
     FinanceStoreCommercialAgreement:
       type: object
-      required: [agreementId, storeId, partnerActorId, agreementVersion, status, rates, proposedByActorId, proposedAt, partnerAcceptedByActorId, partnerAcceptedAt, financeApprovedByActorId, financeApprovedAt, financeDecisionByActorId, financeDecisionAt, financeDecisionReason, effectiveAt, supersededAt, reason, storeName, commercialStoreTypeId, fulfillmentModes, currentStoreOwnerActorId, matchesCurrentFulfillmentModes]
+      required: [agreementId, storeId, partnerActorId, agreementVersion, status, rates, proposedByActorId, proposedAt, partnerAcceptedByActorId, partnerAcceptedAt, financeApprovedByActorId, financeApprovedAt, financeDecisionByActorId, financeDecisionAt, financeDecisionReason, effectiveAt, supersededAt, reason, storeName, commercialStoreTypeId, commercialStoreTypeNameAr, fulfillmentModes, currentStoreOwnerActorId, matchesCurrentFulfillmentModes]
       additionalProperties: false
       properties:
         agreementId:
@@ -3125,6 +3125,10 @@ components:
           type: string
         commercialStoreTypeId:
           type: string
+        commercialStoreTypeNameAr:
+          type: string
+          minLength: 2
+          maxLength: 160
         fulfillmentModes:
           type: array
           items:

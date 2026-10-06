@@ -12,6 +12,7 @@ type FinanceStoreCommercialAgreement struct {
 	wltintegration.StoreCommercialAgreement
 	StoreName                      string   `json:"storeName"`
 	CommercialStoreTypeID          string   `json:"commercialStoreTypeId"`
+	CommercialStoreTypeNameAr      string   `json:"commercialStoreTypeNameAr"`
 	FulfillmentModes               []string `json:"fulfillmentModes"`
 	CurrentStoreOwnerActorID       string   `json:"currentStoreOwnerActorId"`
 	MatchesCurrentFulfillmentModes bool     `json:"matchesCurrentFulfillmentModes"`
@@ -46,10 +47,14 @@ func (s *Service) ListPartnerAcceptedStoreCommercialAgreementsForFinance(ctx con
 		if store.ID != agreement.StoreID {
 			return FinanceStoreCommercialAgreementPage{}, postgres.ErrStoreNotFound
 		}
+		storeType, err := postgres.ReadCommercialStoreType(ctx, s.db, store.CommercialStoreTypeID)
+		if err != nil {
+			return FinanceStoreCommercialAgreementPage{}, err
+		}
 		_, modeErr := normalizeStoreAgreementRates(store.FulfillmentModes, agreement.Rates)
 		result.Agreements = append(result.Agreements, FinanceStoreCommercialAgreement{
 			StoreCommercialAgreement: agreement,
-			StoreName:                store.Name, CommercialStoreTypeID: store.CommercialStoreTypeID,
+			StoreName:                store.Name, CommercialStoreTypeID: store.CommercialStoreTypeID, CommercialStoreTypeNameAr: storeType.NameAr,
 			FulfillmentModes: append([]string(nil), store.FulfillmentModes...), CurrentStoreOwnerActorID: store.PartnerActorID,
 			MatchesCurrentFulfillmentModes: modeErr == nil && store.PartnerActorID == agreement.PartnerActorID,
 		})
