@@ -133,14 +133,14 @@ export function StorePayoutRecipientsCard() {
     <Text style={styles.muted}>افتراضيًا يُصرف استحقاق كل متجر إلى مالكه. يمكن للمالك تسجيل موظف موثّق كمستلم لصرف متجر بعينه، وتظل جهة المحفظة الرسمية موثّقة من المالية.</Text>
     {notice ? <Text style={styles.notice}>{notice}</Text> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    {reviewStores.size > 0 ? <View style={styles.reviewBanner}><Text style={styles.reviewText}>متاجر تحتاج إجراء المالك قبل أي صرف: {Array.from(reviewStores).map((storeId) => storeNames[storeId] ?? storeId).join("، ")}</Text></View> : null}
+    {reviewStores.size > 0 ? <View style={styles.reviewBanner}><Text style={styles.reviewText}>متاجر تحتاج إجراء المالك قبل أي صرف: {Array.from(reviewStores).map((storeId) => storeNames[storeId] ?? "متجر").join("، ")}</Text></View> : null}
     {!state ? <BthwaniButton label="إعادة القراءة" onPress={() => void load()} variant="secondary" /> : null}
     {state && recipients.length === 0 ? <Text style={styles.muted}>لا توجد متاجر مرتبطة بحسابك بعد.</Text> : null}
     <View style={styles.list}>
       {(state?.readback.recipients ?? []).map((record) => <View key={record.storeId}>
         <View style={styles.row}>
           <View style={styles.rowCopy}>
-            <Text style={styles.storeName}>{storeNames[record.storeId] ?? record.storeId}</Text>
+            <Text style={styles.storeName}>{storeNames[record.storeId] ?? "متجر"}</Text>
             <Text style={[styles.muted, record.state === "RECIPIENT_REVIEW_REQUIRED" ? styles.attention : null]}>{recipientStateLabel(record, profiles)}</Text>
             <Text style={styles.muted}>مستحقات مسندة: {formatMoney(record.partnerNetMinor, "YER")} · {record.orderCount.toLocaleString("ar-YE")} طلب</Text>
           </View>
