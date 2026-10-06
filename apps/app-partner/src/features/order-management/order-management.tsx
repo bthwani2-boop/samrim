@@ -34,6 +34,12 @@ const queueFilters = [
 ] as const;
 
 type QueueFilter = (typeof queueFilters)[number]["key"];
+type StoreCaptainChoice = Readonly<{ actorId: string; label: string }>;
+
+function storeCaptainChoiceLabel(membership: StoreCaptainMembership): string {
+  const parts = [membership.captainNameAr?.trim(), membership.captainPhoneMasked?.trim()].filter((value): value is string => Boolean(value));
+  return parts.join(" · ") || "كابتن المتجر";
+}
 
 export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const theme = useAppearanceTheme();
@@ -45,7 +51,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const canFulfillOrder = useCallback((orderStoreID: string) => fulfillableStoreIDs.has(orderStoreID), [fulfillableStoreIDs]);
   const [orders, setOrders] = useState<ReadonlyArray<Order>>([]);
   const [assignments, setAssignments] = useState<Readonly<Record<string, CaptainAssignment>>>({});
-  const [storeCaptainActorIDsByStore, setStoreCaptainActorIDsByStore] = useState<Readonly<Record<string, ReadonlyArray<string>>>>({});
+  const [storeCaptainsByStore, setStoreCaptainsByStore] = useState<Readonly<Record<string, ReadonlyArray<StoreCaptainChoice>>>>({});
   const [dispatchOffers, setDispatchOffers] = useState<Readonly<Record<string, CaptainOffer>>>({});
   const [attention, setAttention] = useState<{ newOrders: number; awaitingDispatch: number; deliveryRecovery: number } | null>(null);
   const [cursor, setCursor] = useState("");
@@ -83,7 +89,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
       const offerOrders = nextOrders.filter((order) => canFulfillOrder(order.storeId) && order.fulfillmentMode === "PARTNER_CAPTAIN" && order.state === "READY_FOR_DISPATCH");
       if (assignmentOrders.length === 0 && offerOrders.length === 0) {
         setAssignments({});
-        setStoreCaptainActorIDsByStore({});
+        setStoreCaptainsByStore({});
         setDispatchOffers({});
         return;
       }
@@ -105,10 +111,10 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
         }
         })),
       ]);
-      const captainEntries = membershipResults.flatMap((entry): ReadonlyArray<readonly [string, ReadonlyArray<string>]> => entry.status === "fulfilled"
-        ? [[entry.value[0], entry.value[1].flatMap((membership: StoreCaptainMembership) => membership.state === "active" && membership.captainActorId ? [membership.captainActorId] : [])]]
+      const captainEntries = membershipResults.flatMap((entry): ReadonlyArray<readonly [string, ReadonlyArray<StoreCaptainChoice>]> => entry.status === "fulfilled"
+        ? [[entry.value[0], entry.value[1].flatMap((membership: StoreCaptainMembership) => membership.state === "active" && membership.captainActorId ? [{ actorId: membership.captainActorId, label: storeCaptainChoiceLabel(membership) }] : [])]]
         : []);
-      setStoreCaptainActorIDsByStore(Object.fromEntries(captainEntries));
+      setStoreCaptainsByStore(Object.fromEntries(captainEntries));
       setAssignments(Object.fromEntries(assignmentResults.flatMap((entry) => entry.status === "fulfilled" && entry.value ? [entry.value] : [])));
       setDispatchOffers(Object.fromEntries(offerResults.flatMap((entry) => entry.status === "fulfilled" && entry.value ? [entry.value] : [])));
       if (membershipResults.some((entry) => entry.status === "rejected") || assignmentResults.some((entry) => entry.status === "rejected") || offerResults.some((entry) => entry.status === "rejected")) {
@@ -258,6 +264,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
           settlementContent = <Text style={styles.muted}>تم تأكيد التحصيل من المتجر وتسوية عمولة المنصة.</Text>;
         }
 
+        const captainChoices = storeCaptainsByStore[order.storeId] ?? [];
         let nextActionLabel = "جاهز للتسليم";
         if (next === "PARTNER_ACCEPTED") {
           nextActionLabel = "قبول الطلب";
@@ -309,7 +316,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
               return <View key={adjustment.id} style={styles.adjustmentNotice}><Text style={styles.lineTitle}>{adjustment.kind === "REMOVE_ITEM" ? "إزالة صنف" : "تعديل كمية"}{line ? ` · ${line.productName}` : ""}</Text><Text style={styles.muted}>{status}. المبلغ الأصلي محفوظ ولا يوجد استرداد أو تحصيل إضافي تلقائي.</Text></View>;
             })}
             {canFulfillOrder(order.storeId) && assignment ? <View style={styles.handoff}><BthwaniStatusBadge icon={assignment.handoff.state === "completed" ? "success" : "deliveries"} label={`تسليم المتجر: ${captainHandoffStateLabel(assignment.handoff.state)}`} tone={assignment.handoff.state === "completed" ? "success" : "warning"} />{assignment.handoff.state === "pending" ? <BthwaniButton busy={busy === order.id} disabled={actionDisabled} label="تأكيد جاهزية التسليم" onPress={() => void confirmHandoff(order, assignment)} /> : null}</View> : null}
-            {canFulfillOrder(order.storeId) && order.fulfillmentMode === "PARTNER_CAPTAIN" && order.state === "READY_FOR_DISPATCH" ? <View style={styles.handoff} accessibilityLabel="إسناد طلب التوصيل إلى كابتن المتجر"><Text style={styles.lineTitle}>إسناد الطلب إلى كابتن المتجر</Text>{dispatchOffer?.state === "offered" ? <Text style={styles.muted}>أُرسل الطلب إلى {dispatchOffer.captainActorId} وبانتظار قبوله.</Text> : <>{dispatchOffer ? <Text style={styles.muted}>{dispatchOffer.state === "rejected" ? "رفض الكابتن العرض. يمكنك إرساله إلى كابتن آخر." : "انتهت مهلة العرض. يمكنك إرساله إلى كابتن آخر."}</Text> : null}{(storeCaptainActorIDsByStore[order.storeId] ?? []).length ? (storeCaptainActorIDsByStore[order.storeId] ?? []).map((captainActorId) => <BthwaniButton key={captainActorId} busy={busy === order.id} disabled={actionDisabled} label={`إرسال الطلب إلى ${captainActorId}`} onPress={() => void dispatchToStoreCaptain(order, captainActorId)} variant="secondary" />) : <Text style={styles.muted}>لا يوجد كابتن نشط مرتبط بهذا المتجر. أرسل دعوة للكابتن واطلب منه قبولها في تطبيق الكابتن.</Text>}</>}</View> : null}
+            {canFulfillOrder(order.storeId) && order.fulfillmentMode === "PARTNER_CAPTAIN" && order.state === "READY_FOR_DISPATCH" ? <View style={styles.handoff} accessibilityLabel="إسناد طلب التوصيل إلى كابتن المتجر"><Text style={styles.lineTitle}>إسناد الطلب إلى كابتن المتجر</Text>{dispatchOffer?.state === "offered" ? <Text style={styles.muted}>أُرسل الطلب إلى {captainChoices.find((captain) => captain.actorId === dispatchOffer.captainActorId)?.label ?? "كابتن المتجر"} وبانتظار قبوله.</Text> : <>{dispatchOffer ? <Text style={styles.muted}>{dispatchOffer.state === "rejected" ? "رفض الكابتن العرض. يمكنك إرساله إلى كابتن آخر." : "انتهت مهلة العرض. يمكنك إرساله إلى كابتن آخر."}</Text> : null}{captainChoices.length ? captainChoices.map((captain) => <BthwaniButton key={captain.actorId} busy={busy === order.id} disabled={actionDisabled} label={`إرسال الطلب إلى ${captain.label}`} onPress={() => void dispatchToStoreCaptain(order, captain.actorId)} variant="secondary" />) : <Text style={styles.muted}>لا يوجد كابتن نشط مرتبط بهذا المتجر. أرسل دعوة للكابتن واطلب منه قبولها في تطبيق الكابتن.</Text>}</>}</View> : null}
             {order.state === "READY_FOR_PICKUP" ? <View style={styles.pickupConfirmation}><TextInput accessibilityLabel="رمز الاستلام الذي قدمه العميل" editable={!actionDisabled} keyboardType="number-pad" maxLength={6} onChangeText={(value) => setPickupCodes((current) => ({ ...current, [order.id]: toAsciiDigits(value).replace(/[^0-9]/g, "").slice(0, 6) }))} placeholder="رمز الاستلام من العميل" placeholderTextColor={theme.colorMuted} style={styles.pickupCodeInput} textAlign="center" value={pickupCodes[order.id] ?? ""} /><BthwaniButton busy={busy === order.id} disabled={actionDisabled || toAsciiDigits(pickupCodes[order.id] ?? "").length !== 6} label="تأكيد استلام العميل" onPress={() => void confirmStorePickup(order)} />{order.fulfillmentMode === "CUSTOMER_PICKUP" && order.paymentMethod === "CASH_AT_STORE" && order.paymentState === "REQUIRES_COLLECTION" ? <BthwaniButton disabled={actionDisabled} label="العميل لم يحضر" onPress={() => markPickupNoShow(order)} variant="danger" /> : null}</View> : null}
             {canFulfillOrder(order.storeId) && order.fulfillmentMode === "PARTNER_CAPTAIN" && order.state === "DELIVERED" ? <View style={styles.pickupConfirmation}><Text style={styles.lineTitle}>تسوية طلب توصيل المتجر</Text>{settlementContent}</View> : null}
             {next ? <View style={styles.actionRow}>{hasOpenAdjustments && (next === "READY_FOR_DISPATCH" || next === "READY_FOR_PICKUP") ? <Text style={styles.error}>لا يمكن تجهيز الطلب للتسليم قبل حسم التعديل والتسوية المالية.</Text> : null}<BthwaniButton busy={busy === order.id} disabled={actionDisabled || (hasOpenAdjustments && (next === "READY_FOR_DISPATCH" || next === "READY_FOR_PICKUP"))} label={nextActionLabel} onPress={() => void transition(order)} style={styles.actionButton} />{next === "PARTNER_ACCEPTED" ? <BthwaniButton disabled={actionDisabled} label="رفض الطلب" onPress={() => void transition(order, "REJECTED")} style={styles.actionButton} variant="danger" /> : null}</View> : null}

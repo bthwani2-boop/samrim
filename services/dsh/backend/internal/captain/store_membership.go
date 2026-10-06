@@ -14,6 +14,17 @@ import (
 
 const storeCaptainInvitationLifetime = 7 * 24 * time.Hour
 
+func maskStoreCaptainPhone(value string) string {
+	phone := []rune(strings.TrimSpace(value))
+	if len(phone) == 0 {
+		return ""
+	}
+	if len(phone) <= 4 {
+		return "••••"
+	}
+	return "•••• " + string(phone[len(phone)-4:])
+}
+
 type StoreCaptainInvitation struct {
 	Membership     postgres.StoreCaptainMembership
 	InvitationCode string
@@ -56,7 +67,45 @@ func (s *Service) ListStoreCaptainMemberships(ctx context.Context, accessToken, 
 	if storeID == "" {
 		return nil, ErrInvalidInput
 	}
-	return postgres.ListStoreCaptainMemberships(ctx, s.db, storeID, identity.Subject)
+	memberships, err := postgres.ListStoreCaptainMemberships(ctx, s.db, storeID, identity.Subject)
+	if err != nil {
+		return nil, err
+	}
+	actorIDs := make([]string, 0, len(memberships))
+	seen := map[string]struct{}{}
+	for _, membership := range memberships {
+		if membership.CaptainActorID == nil || strings.TrimSpace(*membership.CaptainActorID) == "" {
+			continue
+		}
+		actorID := strings.TrimSpace(*membership.CaptainActorID)
+		if _, exists := seen[actorID]; exists {
+			continue
+		}
+		seen[actorID] = struct{}{}
+		actorIDs = append(actorIDs, actorID)
+	}
+	phones := map[string]string{}
+	if len(actorIDs) > 0 {
+		if roles, roleErr := s.identity.ReadActorRoles(ctx, "captain", actorIDs); roleErr == nil {
+			for _, role := range roles.Items {
+				phones[strings.TrimSpace(role.ActorID)] = maskStoreCaptainPhone(role.PhoneE164)
+			}
+		}
+	}
+	for index := range memberships {
+		if memberships[index].CaptainActorID == nil {
+			continue
+		}
+		actorID := strings.TrimSpace(*memberships[index].CaptainActorID)
+		if actorID == "" {
+			continue
+		}
+		if admission, admissionErr := postgres.ReadCaptainAdmissionForActor(ctx, s.db, actorID); admissionErr == nil {
+			memberships[index].CaptainNameAr = strings.TrimSpace(admission.FullNameAr)
+		}
+		memberships[index].CaptainPhoneMasked = phones[actorID]
+	}
+	return memberships, nil
 }
 
 func (s *Service) ListCaptainStoreMemberships(ctx context.Context, accessToken string) ([]postgres.StoreCaptainMembership, error) {

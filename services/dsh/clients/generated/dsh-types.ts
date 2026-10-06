@@ -2761,6 +2761,8 @@ export type StoreCaptainMembership = {
   readonly storeName: string;
   readonly partnerActorId: string;
   readonly captainActorId?: string | null;
+  readonly captainNameAr?: string;
+  readonly captainPhoneMasked?: string;
   readonly state: "pending" | "active" | "suspended" | "revoked" | "expired";
   readonly version: number;
   readonly expiresAt: string;

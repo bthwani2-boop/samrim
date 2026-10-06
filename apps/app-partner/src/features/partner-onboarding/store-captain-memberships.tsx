@@ -96,7 +96,7 @@ export function StoreCaptainMembershipManagement({ storeID }: { storeID: string 
         const statusLabel = storeCaptainMembershipStatusLabel(membership.state);
         const expiryLabel = storeCaptainMembershipExpiryLabel(membership);
         return <View key={membership.id} style={{ borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 8, padding: 12 }}>
-          <Text style={styles.value}>{membership.captainActorId ? "ارتبط بحساب كابتن" : "لم تُقبل الدعوة بعد"}</Text>
+          <Text style={styles.value}>{membership.captainActorId ? [membership.captainNameAr?.trim() || "كابتن المتجر", membership.captainPhoneMasked?.trim()].filter(Boolean).join(" · ") : "لم تُقبل الدعوة بعد"}</Text>
           <Text style={styles.muted}>{statusLabel}{expiryLabel}</Text>
           {membership.state === "active" ? <>
             <BthwaniButton disabled={busy} label="إيقاف العضوية" onPress={() => void transition(membership, "suspended")} variant="secondary" />

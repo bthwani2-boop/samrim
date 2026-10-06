@@ -14,8 +14,10 @@ type StoreCaptainMembership struct {
 	StoreID        string
 	StoreName      string
 	PartnerActorID string
-	CaptainActorID *string
-	State          string
+	CaptainActorID     *string
+	CaptainNameAr       string
+	CaptainPhoneMasked  string
+	State              string
 	Version        int
 	ExpiresAt      time.Time
 	AcceptedAt     *time.Time

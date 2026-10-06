@@ -8205,6 +8205,10 @@ components:
         captainActorId:
           type: string
           nullable: true
+        captainNameAr:
+          type: string
+        captainPhoneMasked:
+          type: string
         state:
           type: string
           enum: [pending, active, suspended, revoked, expired]

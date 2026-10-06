@@ -2760,8 +2760,10 @@ type StoreCaptainMembership struct {
 	StoreID        string     `json:"storeId"`
 	StoreName      string     `json:"storeName"`
 	PartnerActorID string     `json:"partnerActorId"`
-	CaptainActorID string     `json:"captainActorId,omitempty"`
-	State          string     `json:"state"`
+	CaptainActorID    string     `json:"captainActorId,omitempty"`
+	CaptainNameAr      string     `json:"captainNameAr,omitempty"`
+	CaptainPhoneMasked string     `json:"captainPhoneMasked,omitempty"`
+	State             string     `json:"state"`
 	Version        int        `json:"version"`
 	ExpiresAt      time.Time  `json:"expiresAt"`
 	AcceptedAt     *time.Time `json:"acceptedAt,omitempty"`
