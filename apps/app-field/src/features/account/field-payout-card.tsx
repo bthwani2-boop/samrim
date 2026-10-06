@@ -42,8 +42,8 @@ export function FieldPayoutCard() {
     if (pendingAttempt) mode = pendingAttempt.mode;
     const normalizedAmount = toAsciiDigits(amount.trim()).replace(/\D/g, "");
     const parsed = pendingAttempt?.amountMinor ?? (mode === "SPECIFIED" ? Number(normalizedAmount) : undefined);
-    if (mode === "SPECIFIED" && (!Number.isSafeInteger(parsed) || (parsed ?? 0) <= 0)) {
-      setError("أدخل مبلغ تسوية صحيحًا أكبر من صفر.");
+    if (!pendingAttempt && mode === "SPECIFIED" && (!Number.isSafeInteger(parsed) || (parsed ?? 0) <= 0 || (state && (parsed ?? 0) > state.eligibleAvailableMinor)) {
+      setError(state && (parsed ?? 0) > state.eligibleAvailableMinor ? "المبلغ المحدد يتجاوز المتاح للتسوية." : "أدخل مبلغ تسوية صحيحًا أكبر من صفر.");
       return;
     }
     setBusy(true); setError(""); setNotice("");
@@ -72,6 +72,7 @@ export function FieldPayoutCard() {
     } catch (cause) {
       console.warn("DSH field payout intent failed", cause);
       setError(pendingAttempt ? "لم نتأكد من نتيجة الطلب؛ أعد المحاولة بالمفتاح المحفوظ لمنع تكرار الحجز." : "تعذر تسجيل طلب التسوية. تأكد من توفر وجهة محفظة رسمية معتمدة ورصيد مستحق.");
+    } finally {
       setBusy(false);
     }
   };
@@ -80,10 +81,11 @@ export function FieldPayoutCard() {
   if (pendingAttempt) {
     payoutActions = <><Text style={styles.muted}>هناك طلب سابق لم تُحسم حالته بعد. تحقّق منه قبل طلب تسوية أخرى.</Text><BthwaniButton busy={busy} label="التحقق من الطلب المحفوظ" onPress={() => void request(pendingAttempt.mode)} /></>;
   } else if (destinationReady && state && state.eligibleAvailableMinor > 0) {
-    payoutActions = <><BthwaniButton busy={busy} label="طلب تسوية كامل المتاح" onPress={() => setConfirmMode("FULL_AVAILABLE")} variant="secondary" /><TextInput accessibilityLabel="مبلغ تسوية الميداني المحدد بالريال اليمني" keyboardType="number-pad" value={amount} onChangeText={(value) => setAmount(toAsciiDigits(value).replace(/\D/g, ""))} placeholder="المبلغ بالريال اليمني" placeholderTextColor={theme.colorMuted} style={styles.input} /><BthwaniButton busy={busy} label="طلب المبلغ المحدد" onPress={() => setConfirmMode("SPECIFIED")} variant="secondary" /></>;
+    payoutActions = <><BthwaniButton busy={busy} label="طلب تسوية كامل المتاح" onPress={() => setConfirmMode("FULL_AVAILABLE")} variant="secondary" /><TextInput accessibilityLabel="مبلغ تسوية الميداني المحدد بالريال اليمني" keyboardType="number-pad" value={amount} onChangeText={(value) => setAmount(toAsciiDigits(value).replace(/\D/g, ""))} placeholder="المبلغ بالريال اليمني" placeholderTextColor={theme.colorMuted} style={styles.input} /><BthwaniButton busy={busy} disabled={!specifiedAmountReady} label="طلب المبلغ المحدد" onPress={() => setConfirmMode("SPECIFIED")} variant="secondary" /></>;
   }
   const parsedConfirmAmount = Number(toAsciiDigits(amount.trim()).replace(/\D/g, ""));
   const confirmAmount = confirmMode === "FULL_AVAILABLE" ? state?.eligibleAvailableMinor ?? 0 : Number.isSafeInteger(parsedConfirmAmount) ? parsedConfirmAmount : 0;
+  const specifiedAmountReady = Number.isSafeInteger(parsedConfirmAmount) && parsedConfirmAmount > 0 && Boolean(state) && parsedConfirmAmount <= (state?.eligibleAvailableMinor ?? 0);
   return <BthwaniSurface tone="base" style={styles.card} accessibilityLabel="طلب تسوية الميداني"><Text style={styles.eyebrow}>التسوية المالية</Text><Text style={styles.title}>تسوية مستحقات الميداني</Text>{busy && !state ? <View style={styles.loading}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة حالة التسوية…</Text></View> : null}{state ? <><Text style={styles.muted}>{destinationReady ? `الوجهة المعتمدة: ${state.destination?.walletIdentifierMasked}` : "لا توجد وجهة محفظة رسمية معتمدة بعد؛ تتم إدارتها من لوحة التحكم."}</Text><View style={styles.metrics}><Text style={styles.metric}>المتاح للتسوية: {formatMoney(state.eligibleAvailableMinor, state.currency)}</Text><Text style={styles.metric}>المحجوز: {formatMoney(state.heldMinor, state.currency)}</Text></View>{payoutActions}</> : null}{notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}{authenticated ? <BthwaniButton busy={busy} label="تحديث حالة التسوية" onPress={() => void load()} variant="secondary" /> : null}<BthwaniConfirmDialog busy={busy} confirmLabel="تأكيد طلب التسوية" description={confirmMode && state ? `سيُنشأ طلب تسوية بمبلغ ${formatMoney(confirmAmount, state.currency)} إلى وجهة المحفظة الرسمية المعتمدة، وسيُحجز المبلغ للمراجعة.` : ""} onCancel={() => setConfirmMode(null)} onConfirm={() => { const mode = confirmMode; setConfirmMode(null); if (mode) void request(mode); }} title="مراجعة طلب التسوية" visible={Boolean(confirmMode)} /></BthwaniSurface>;
 }
 
