@@ -87,9 +87,10 @@ export function PartnerPayoutCard() {
         if (!walletOwnerActorId || owners.length !== 1 || (legacyKey?.walletOwnerActorId && walletOwnerActorId !== legacyKey.walletOwnerActorId)) throw new Error("ORIGINAL_PAYOUT_WALLET_REQUIRED");
         const amounts = selected.flatMap((storeId) => {
           const amountMinor = Number(toAsciiDigits(storeAmounts[storeId] ?? ""));
-          return Number.isSafeInteger(amountMinor) && amountMinor > 0 ? [{ storeId, amountMinor }] : [];
+          const store = selectedSummary!.stores.find((item) => item.storeId === storeId);
+          return Number.isSafeInteger(amountMinor) && amountMinor > 0 && store && amountMinor <= store.eligibleAvailableMinor ? [{ storeId, amountMinor }] : [];
         });
-        if (mode === "SPECIFIED" && !amounts.length) throw new Error("STORE_AMOUNTS_REQUIRED");
+        if (mode === "SPECIFIED" && amounts.length !== selected.length) throw new Error("STORE_AMOUNTS_REQUIRED");
         attempt = {
           walletOwnerActorId,
           body: mode === "SPECIFIED" ? { scopeMode: mode, storeIds: amounts.map((store) => store.storeId), storeAmounts: amounts } : { scopeMode: mode, storeIds: [...selected] },
@@ -173,8 +174,13 @@ export function PartnerPayoutCard() {
     const value = Number(toAsciiDigits(storeAmounts[storeId] ?? ""));
     return Number.isSafeInteger(value) && value > 0 ? total + value : total;
   }, 0);
+  const specifiedAmountsReady = Boolean(selectedSummary) && selected.length > 0 && selected.every((storeId) => {
+    const store = selectedSummary?.stores.find((item) => item.storeId === storeId);
+    const value = Number(toAsciiDigits(storeAmounts[storeId] ?? ""));
+    return Boolean(store) && Number.isSafeInteger(value) && value > 0 && value <= (store?.eligibleAvailableMinor ?? 0);
+  });
   const requestPreviewMinor = mode === "FULL_AVAILABLE" ? selectedSummary?.eligibleAvailableMinor ?? 0 : specifiedTotalMinor;
-  const requestReady = Boolean(selectedSummary && singleWallet && selectedSummary.eligibleAvailableMinor > 0 && selectedSummary.attributionComplete && (mode === "FULL_AVAILABLE" || specifiedTotalMinor > 0));
+  const requestReady = Boolean(selectedSummary && singleWallet && selectedSummary.eligibleAvailableMinor > 0 && selectedSummary.attributionComplete && (mode === "FULL_AVAILABLE" || specifiedAmountsReady));
   return <BthwaniSurface tone="base" style={styles.card} accessibilityLabel="طلب صرف الشريك">
     <Text style={styles.title}>طلب صرف مستحقات المتاجر</Text>
     <Text style={styles.muted}>هذه المساحة تستخدم صلاحية طلب الصرف لكل متجر. قراءة التقارير المالية وتغيير المستلم صلاحيتان مستقلتان.</Text>
@@ -191,7 +197,11 @@ export function PartnerPayoutCard() {
           <BthwaniChip disabled={busy} label="كامل المتاح للمتاجر المختارة" selected={mode === "FULL_AVAILABLE"} onPress={() => setMode("FULL_AVAILABLE")} />
           <BthwaniChip disabled={busy} label="مبالغ محددة لكل متجر" selected={mode === "SPECIFIED"} onPress={() => setMode("SPECIFIED")} />
         </View>
-        {mode === "SPECIFIED" ? state.stores.filter((store) => selected.includes(store.storeId)).map((store) => <TextInput key={store.storeId} accessibilityLabel={`مبلغ الصرف للمتجر ${store.storeName}`} editable={!busy} keyboardType="number-pad" value={storeAmounts[store.storeId] ?? ""} onChangeText={(value) => setStoreAmounts((current) => ({ ...current, [store.storeId]: toAsciiDigits(value).replace(/[^0-9]/g, "") }))} placeholder={`مبلغ ${store.storeName} بالريال اليمني`} placeholderTextColor={theme.colorMuted} style={styles.input} />) : null}
+        {mode === "SPECIFIED" ? state.stores.filter((store) => selected.includes(store.storeId)).map((store) => {
+          const value = Number(toAsciiDigits(storeAmounts[store.storeId] ?? ""));
+          const invalid = Boolean(storeAmounts[store.storeId]) && (!Number.isSafeInteger(value) || value <= 0 || value > store.eligibleAvailableMinor);
+          return <View key={store.storeId} style={styles.amountRow}><TextInput accessibilityLabel={`مبلغ الصرف للمتجر ${store.storeName}`} editable={!busy} keyboardType="number-pad" value={storeAmounts[store.storeId] ?? ""} onChangeText={(nextValue) => setStoreAmounts((current) => ({ ...current, [store.storeId]: toAsciiDigits(nextValue).replace(/[^0-9]/g, "") }))} placeholder={`مبلغ ${store.storeName} بالريال اليمني`} placeholderTextColor={theme.colorMuted} style={styles.input} />{invalid ? <Text style={styles.error}>المبلغ يجب أن يكون أكبر من صفر وألا يتجاوز {formatMoney(store.eligibleAvailableMinor, store.currency)}.</Text> : null}</View>;
+        }) : null}
         {selectedSummary ? <Text style={styles.metric}>المتاح للمتاجر المختارة: {formatMoney(selectedSummary.eligibleAvailableMinor, selectedSummary.currency)}</Text> : null}
         {selected.length && selectedSummary && !singleWallet ? <Text style={styles.error}>اختر متاجر مالك واحد لكل طلب صرف.</Text> : null}
         <BthwaniButton busy={busy} disabled={!requestReady} label="مراجعة طلب الصرف" onPress={() => setConfirmRequest(true)} variant="secondary" />
