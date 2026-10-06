@@ -580,7 +580,12 @@ export function MarketingPromotionsWorkspace() {
       const response = await fetch(`/api/marketing/promotions/${encodeURIComponent(item.id)}/publication`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID(), "X-Expected-Version": String(item.version) }, body: JSON.stringify({ state: nextState }) });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(apiMessage(body));
+      const canonical = await readPromotionById(item.id);
+      if (!canonical || canonical.state !== nextState) {
+        throw new Error("تم إرسال تغيير حالة العرض لكن لم تثبت القراءة الكانونية النتيجة المطلوبة. أعد قراءة السجل قبل أي إجراء آخر.");
+      }
       await load();
+      setMessage(nextState === "PUBLISHED" ? "نُشر العرض وأُكدت حالته من سجل DSH." : "أُوقف العرض وأُكدت حالته من سجل DSH.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "تعذر تحديث نشر العرض.");
     } finally {
