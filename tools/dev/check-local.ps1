@@ -57,10 +57,31 @@ try {
     }
 
     $env:NX_NO_CLOUD = 'true'
-    pnpm exec biome lint tools/dev --diagnostic-level=error
+
+    if (@($files | Where-Object { $_ -match '^(tools/dev/|biome\.jsonc?$)' }).Count -gt 0) {
+        pnpm exec biome lint tools/dev --diagnostic-level=error
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
+
+    if (@($files | Where-Object { $_ -match '\.(ps1|psm1|psd1)
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    pwsh -NoProfile -ExecutionPolicy Bypass -File tools/powershell/verify-syntax.ps1
+    $affectedProjects = @($affectedProjectJson | ConvertFrom-Json)
+    if ($affectedProjects.Count -eq 0) {
+        Write-Host "LOCAL_CHECK=PASS files=$($files.Count) projects=0"
+        return
+    }
+    $projectsArg = $affectedProjects -join ','
+    pnpm exec nx run-many -t lint format-check typecheck unit contract vet --projects=$projectsArg --outputStyle=static --parallel=2 --nxBail=true
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    Write-Host "LOCAL_CHECK=PASS files=$($files.Count)"
+}
+finally {
+    Pop-Location
+}
+ }).Count -gt 0) {
+        pwsh -NoProfile -ExecutionPolicy Bypass -File tools/powershell/verify-syntax.ps1
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
 
     $affectedProjectJson = pnpm exec nx show projects --affected --base=HEAD --json
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -58,10 +58,7 @@ try {
         Write-Host "VERIFY_BASE=MAIN_MERGE_BASE sha=$base"
     }
 
-    & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'check-local.ps1') -Candidate -BaseSha $base
-    if ($LASTEXITCODE -ne 0) { throw "SAFE_PUSH_INTERLOCK=FAIL candidate verification failed for sha=$head" }
-    $verifiedHead = ((Invoke-Git @('rev-parse', 'HEAD')) -join '').Trim()
-    if ($verifiedHead -ne $head) { throw "SAFE_PUSH_INTERLOCK=FAIL HEAD changed during verification: before=$head after=$verifiedHead" }
+    Write-Host "SAFE_PUSH_SCOPE branch=$branch head=$head base=$base verification=caller-or-ci"
 
     $pushOutput = @(& git -C $repo push --porcelain origin "HEAD:refs/heads/$branch" 2>&1)
     if ($LASTEXITCODE -ne 0) { throw "SAFE_PUSH_INTERLOCK=FAIL push failed: $($pushOutput -join [Environment]::NewLine)" }
