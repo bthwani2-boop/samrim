@@ -148,8 +148,13 @@ export function FieldCases() {
       }
       const identity = await fieldCaseSubmitIdentity(item.id, current.case.version);
       await fieldClient().submitFieldJoiningCase(token, item.id, current.case.version, identity.idempotencyKey, identity.correlationID);
+      const canonical = await fieldClient().readOwnFieldJoiningCase(token, item.id);
       await load();
-      setNotice("وصل طلب الانضمام إلى طابور قبول المشغّل.");
+      if (canonical.case.state === "draft") {
+        setError("تم إرسال الطلب لكن القراءة المعتمدة ما تزال مسودة. أعد القراءة قبل المحاولة مجددًا.");
+        return;
+      }
+      setNotice("وصل طلب الانضمام إلى طابور قبول المشغّل وتم تأكيد حالته من القراءة المعتمدة.");
     } catch (cause) {
       console.warn("DSH Field joining-case submission failed", cause);
       try {
