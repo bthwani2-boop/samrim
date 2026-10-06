@@ -6,7 +6,6 @@ import { type PartnerAuthority, derivePartnerAuthority, RESOLVING_PARTNER_AUTHOR
 
 export type { PartnerAccessibleStore };
 
-export type { PartnerAuthority };
 
 type PartnerStoreScopeContextValue = Readonly<{
   state: ReturnType<typeof usePartnerAccessibleStoreScopes>["state"];

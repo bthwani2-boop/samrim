@@ -15,7 +15,7 @@ type PartnerFinancePresentation struct {
 
 func ReadPartnerFinancePresentations(ctx context.Context, db *sql.DB, actorIDs []string) (map[string]PartnerFinancePresentation, error) {
 	if db == nil {
-		return nil, ErrJoiningCaseInvalid
+		return nil, errFinancePresentationDatabaseRequired
 	}
 	unique := make([]string, 0, len(actorIDs))
 	seen := make(map[string]struct{}, len(actorIDs))

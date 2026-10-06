@@ -3,14 +3,17 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strings"
 
 	"github.com/lib/pq"
 )
 
+var errFinancePresentationDatabaseRequired = errors.New("finance presentation database is required")
+
 func ReadBeneficiaryFinanceDisplayNames(ctx context.Context, db *sql.DB, actorType string, actorIDs []string) (map[string]string, error) {
 	if db == nil {
-		return nil, ErrJoiningCaseInvalid
+		return nil, errFinancePresentationDatabaseRequired
 	}
 	actorType = strings.ToLower(strings.TrimSpace(actorType))
 	unique := make([]string, 0, len(actorIDs))
