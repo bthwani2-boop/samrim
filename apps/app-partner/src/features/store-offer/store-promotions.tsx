@@ -1,6 +1,6 @@
 import { borders, radius, resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, type CatalogCategoryListItem, type CatalogProduct, type OperatorPromotionRegistryResponse, type PartnerCampaignListResponse, type PartnerCampaignView, type PromotionTarget, type PromotionView } from "@bthwani/dsh";
+import { createDshMobileClient, formatMoney, type CatalogCategoryListItem, type CatalogProduct, type OperatorPromotionRegistryResponse, type PartnerCampaignListResponse, type PartnerCampaignView, type PromotionTarget, type PromotionView } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
@@ -26,7 +26,7 @@ function lifecycleBucket(promotion: PromotionView, now: number): "active" | "sch
 }
 
 function benefitLabel(promotion: PromotionView): string {
-  return promotion.kind === "PERCENTAGE" ? "خصم " + promotion.valueMinor + "%" : "خصم " + (promotion.valueMinor / 100).toLocaleString("ar") + " ريال";
+  return promotion.kind === "PERCENTAGE" ? "خصم " + promotion.valueMinor + "%" : "خصم " + formatMoney(promotion.valueMinor, "YER");
 }
 
 function fundingLabel(promotion: PromotionView): string {
@@ -220,9 +220,9 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
       <TextInput accessibilityLabel="اسم العرض" placeholder="اسم العرض" placeholderTextColor={theme.colorMuted} style={styles.input} value={nameAr} onChangeText={setNameAr} />
       <TextInput accessibilityLabel="وصف العرض" multiline placeholder="وصف مختصر (اختياري)" placeholderTextColor={theme.colorMuted} style={styles.input} value={descriptionAr} onChangeText={setDescriptionAr} />
       <View style={styles.kindRow}><BthwaniChip label="نسبة %" onPress={() => setKind("PERCENTAGE")} selected={kind === "PERCENTAGE"} /><BthwaniChip label="مبلغ ثابت" onPress={() => setKind("FIXED")} selected={kind === "FIXED"} /></View>
-      <TextInput accessibilityLabel="قيمة الخصم" keyboardType="number-pad" placeholder={kind === "PERCENTAGE" ? "نسبة الخصم (1-100)" : "قيمة الخصم بالهللات"} placeholderTextColor={theme.colorMuted} style={styles.input} value={value} onChangeText={setValue} />
-      {kind === "PERCENTAGE" ? <TextInput accessibilityLabel="أقصى خصم" keyboardType="number-pad" placeholder="أقصى خصم بالهللات (اختياري)" placeholderTextColor={theme.colorMuted} style={styles.input} value={maxDiscount} onChangeText={setMaxDiscount} /> : null}
-      <TextInput accessibilityLabel="حد الطلب الأدنى" keyboardType="number-pad" placeholder="حد الطلب الأدنى بالهللات (اختياري)" placeholderTextColor={theme.colorMuted} style={styles.input} value={minOrderSubtotal} onChangeText={setMinOrderSubtotal} />
+      <TextInput accessibilityLabel="قيمة الخصم" keyboardType="number-pad" placeholder={kind === "PERCENTAGE" ? "نسبة الخصم (1-100)" : "قيمة الخصم بالريال اليمني"} placeholderTextColor={theme.colorMuted} style={styles.input} value={value} onChangeText={setValue} />
+      {kind === "PERCENTAGE" ? <TextInput accessibilityLabel="أقصى خصم" keyboardType="number-pad" placeholder="أقصى خصم بالريال اليمني (اختياري)" placeholderTextColor={theme.colorMuted} style={styles.input} value={maxDiscount} onChangeText={setMaxDiscount} /> : null}
+      <TextInput accessibilityLabel="حد الطلب الأدنى" keyboardType="number-pad" placeholder="حد الطلب الأدنى بالريال اليمني (اختياري)" placeholderTextColor={theme.colorMuted} style={styles.input} value={minOrderSubtotal} onChangeText={setMinOrderSubtotal} />
       <TextInput accessibilityLabel="حد الاستخدام" keyboardType="number-pad" placeholder="حد الاستخدام الكلي (اختياري)" placeholderTextColor={theme.colorMuted} style={styles.input} value={redemptionLimit} onChangeText={setRedemptionLimit} />
       <TextInput accessibilityLabel="بداية العرض" autoCapitalize="none" placeholder="البداية ISO، فارغ = الآن" placeholderTextColor={theme.colorMuted} style={styles.input} value={startsAt} onChangeText={setStartsAt} />
       <TextInput accessibilityLabel="نهاية العرض" autoCapitalize="none" placeholder="النهاية ISO (اختياري)" placeholderTextColor={theme.colorMuted} style={styles.input} value={endsAt} onChangeText={setEndsAt} />
@@ -248,7 +248,7 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
         {buckets[bucket].map((promotion) => { const threshold = minOrderSubtotalMinor(promotion); return <View key={promotion.id} style={styles.row}><View style={styles.rowCopy}>
           <Text style={styles.promoName}>{promotion.nameAr} · {promotion.code}</Text><Text style={styles.muted}>{benefitLabel(promotion)} · {fundingLabel(promotion)}</Text>
           <Text style={styles.muted}>{promotionScopeLabel(promotion)}</Text>
-          {threshold ? <Text style={styles.muted}>حد الطلب: {(threshold / 100).toLocaleString("ar")} ريال</Text> : null}
+          {threshold ? <Text style={styles.muted}>حد الطلب: {formatMoney(threshold, "YER")}</Text> : null}
           <Text style={styles.muted}>من {new Date(promotion.startsAt).toLocaleString("ar-YE")}{promotion.endsAt ? " إلى " + new Date(promotion.endsAt).toLocaleString("ar-YE") : ""}</Text>
         </View><View style={styles.actions}>
           {promotion.state === "DRAFT" ? <BthwaniButton busy={busy} label="نشر" onPress={() => void transition(promotion, "PUBLISHED")} variant="secondary" /> : null}
@@ -264,7 +264,7 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
       {(campaigns?.campaigns ?? []).map((campaign) => { const threshold = minOrderSubtotalMinor(campaign.promotion); return <View key={campaign.promotion.id} style={styles.row}><View style={styles.rowCopy}>
         <Text style={styles.promoName}>{campaign.promotion.nameAr}</Text><Text style={styles.muted}>{benefitLabel(campaign.promotion)} · {fundingLabel(campaign.promotion)}</Text>
         <Text style={styles.muted}>{promotionScopeLabel(campaign.promotion)}</Text>
-        {threshold ? <Text style={styles.muted}>حد الطلب: {(threshold / 100).toLocaleString("ar")} ريال</Text> : null}
+        {threshold ? <Text style={styles.muted}>حد الطلب: {formatMoney(threshold, "YER")}</Text> : null}
         <Text style={campaign.storeOptInState === "OPTED_IN" ? styles.notice : styles.muted}>{campaignDecisionLabel(campaign)}</Text>
       </View>{requiresPartnerOptIn(campaign.promotion) ? <View style={styles.actions}>
         <BthwaniButton busy={busy} disabled={campaign.storeOptInState === "OPTED_IN"} label="مشاركة" onPress={() => void decideCampaign(campaign, "OPTED_IN")} variant="secondary" />
