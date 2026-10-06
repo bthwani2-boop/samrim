@@ -82,8 +82,8 @@ type CustomerPaymentAllocation struct {
 	InternalBalanceAmountMinor int64  `json:"internalBalanceAmountMinor"`
 	CashAmountMinor            int64  `json:"cashAmountMinor"`
 	CustomerPayableMinor       int64  `json:"customerPayableMinor"`
-	PolicyVersion              string                   `json:"policyVersion"`
-	CreatedAt                  string                   `json:"createdAt"`
+	PolicyVersion              string `json:"policyVersion"`
+	CreatedAt                  string `json:"createdAt"`
 }
 
 // PromotionFundingRequest carries the checkout-frozen promotion funding facts
