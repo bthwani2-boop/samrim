@@ -2,11 +2,15 @@ import { type PartnerAccessibleStore, type StoreAccessPermission } from "@bthwan
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
 
 import { usePartnerAccessibleStoreScopes } from "./partner-accessible-store-scopes";
+import { type PartnerAuthority, derivePartnerAuthority, RESOLVING_PARTNER_AUTHORITY } from "../../shell/partner-authority";
 
 export type { PartnerAccessibleStore };
 
+export type { PartnerAuthority };
+
 type PartnerStoreScopeContextValue = Readonly<{
   state: ReturnType<typeof usePartnerAccessibleStoreScopes>["state"];
+  authority: PartnerAuthority;
   selectedStore: PartnerAccessibleStore | undefined;
   selectedStoreID: string;
   selectStore: (storeID: string) => void;
@@ -22,6 +26,7 @@ export function PartnerStoreScopeProvider({ children }: Readonly<{ children: Rea
   const scopes = usePartnerAccessibleStoreScopes();
   const [selectedStoreID, setSelectedStoreID] = useState("");
   const stores = scopes.state.kind === "ready" ? scopes.state.stores : [];
+  const authority = useMemo(() => (scopes.state.kind === "ready" ? derivePartnerAuthority(scopes.state.stores) : RESOLVING_PARTNER_AUTHORITY), [scopes.state]);
 
   useEffect(() => {
     if (stores.length === 0) {
@@ -35,6 +40,7 @@ export function PartnerStoreScopeProvider({ children }: Readonly<{ children: Rea
 
   const value = useMemo<PartnerStoreScopeContextValue>(() => ({
     state: scopes.state,
+    authority,
     stores,
     selectedStoreID,
     selectedStore: stores.find((store) => store.id === selectedStoreID) ?? stores.find((store) => store.owned) ?? stores[0],
@@ -42,7 +48,7 @@ export function PartnerStoreScopeProvider({ children }: Readonly<{ children: Rea
     reload: scopes.reload,
     loadMore: scopes.loadMore,
     storesWithPermission: (permission) => stores.filter((store) => store.owned || store.permissions.includes(permission)),
-  }), [scopes.state, scopes.reload, scopes.loadMore, selectedStoreID, stores]);
+  }), [scopes.state, authority, scopes.reload, scopes.loadMore, selectedStoreID, stores]);
 
   return <PartnerStoreScopeContext.Provider value={value}>{children}</PartnerStoreScopeContext.Provider>;
 }

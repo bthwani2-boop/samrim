@@ -167,6 +167,37 @@ if (app === "app-captain") {
   assert.ok(panel.includes("matchesCaptainFundingAttempt(intent, storedAttempt)"), "app-captain: terminal simulation must clear only its exact local retry intent");
   console.log("MOBILE_CAPTAIN_CASH_IN_RECOVERY=PASS canonical intent, actor scope, retry identity, and terminal cleanup");
 }
+if (app === "app-partner") {
+  const { canonicalPartnerSurfacePath, derivePartnerAuthority, RESOLVING_PARTNER_AUTHORITY } = await import(pathToFileURL(path.join(appDir, "src/shell/partner-authority.ts")).href);
+  const accessibleStore = (id, owned, permissions) => ({ id, name: `متجر ${id}`, serviceCityId: "city", primaryVerticalId: "vertical", publicationState: "published", fulfillmentModes: [], owned, permissions });
+  const surfacesOf = (stores) => derivePartnerAuthority(stores).surfaces;
+
+  assert.deepEqual(surfacesOf([accessibleStore("owned", true, [])]), ["store", "orders", "wallet", "account"], "app-partner: owner must keep the four current surfaces");
+  assert.deepEqual(surfacesOf([accessibleStore("orders-staff", false, ["orders"])]), ["orders", "account"], "app-partner: ORDER_STAFF must not see Store management or Wallet");
+  assert.deepEqual(surfacesOf([accessibleStore("catalog-staff", false, ["catalog"])]), ["store", "account"], "app-partner: CATALOG_STAFF must not see Orders or Wallet without a grant");
+  assert.deepEqual(surfacesOf([accessibleStore("operations-staff", false, ["store_operations"])]), ["store", "account"], "app-partner: store_operations must unlock only the Store surface");
+  assert.deepEqual(surfacesOf([accessibleStore("promotions-staff", false, ["promotions"])]), ["store", "account"], "app-partner: promotions must unlock only the Store surface");
+  assert.deepEqual(surfacesOf([accessibleStore("accountant", false, ["finance_read"])]), ["wallet", "account"], "app-partner: ACCOUNTANT with finance_read must see Wallet and nothing more");
+  assert.deepEqual(surfacesOf([accessibleStore("accountant", false, ["finance_read", "payout_request"])]), ["wallet", "account"], "app-partner: payout_request must keep the Wallet surface without adding other surfaces");
+  assert.deepEqual(surfacesOf([accessibleStore("delivery-staff", false, ["fulfillment", "orders"])]), ["orders", "account"], "app-partner: DELIVERY_STAFF must see only the surfaces its orders/fulfillment grants require");
+  assert.deepEqual(surfacesOf([accessibleStore("fulfillment-only", false, ["fulfillment"])]), ["account"], "app-partner: fulfillment without orders must not open a Store surface without a material function inside it");
+  assert.deepEqual(surfacesOf([accessibleStore("multi-a", false, ["orders"]), accessibleStore("multi-b", false, ["catalog"])]), ["store", "orders", "account"], "app-partner: multi-store actors must see the union of authorized surfaces");
+  assert.equal(derivePartnerAuthority([accessibleStore("multi-a", false, ["orders"]), accessibleStore("multi-b", false, ["catalog"])]).canUse("wallet"), false, "app-partner: one store's permissions must never leak another surface from another store's grant");
+  assert.equal(derivePartnerAuthority([accessibleStore("multi-a", false, ["orders"]), accessibleStore("multi-b", false, ["finance_read"])]).canUse("wallet"), true, "app-partner: wallet authority must come only from a store that actually grants it");
+  assert.deepEqual(surfacesOf([]), ["store", "account"], "app-partner: zero accessible stores must keep the identity-scoped Store empty state reachable");
+  assert.deepEqual(RESOLVING_PARTNER_AUTHORITY.surfaces, ["account"], "app-partner: resolving authority must fail safe to the Account surface only");
+  assert.equal(canonicalPartnerSurfacePath(derivePartnerAuthority([accessibleStore("owned", true, [])])), "/store", "app-partner: owner canonical landing must stay Store");
+  assert.equal(canonicalPartnerSurfacePath(derivePartnerAuthority([accessibleStore("orders-staff", false, ["orders"])])), "/orders", "app-partner: ORDER_STAFF canonical landing must be Orders");
+  assert.equal(canonicalPartnerSurfacePath(derivePartnerAuthority([accessibleStore("accountant", false, ["finance_read"])])), "/wallet", "app-partner: ACCOUNTANT canonical landing must be Wallet");
+  assert.equal(canonicalPartnerSurfacePath(RESOLVING_PARTNER_AUTHORITY), "/account", "app-partner: resolving canonical landing must be Account");
+
+  const scopeContextContent = fs.readFileSync(path.join(appDir, "src", "features", "partner-onboarding", "partner-store-scope-context.tsx"), "utf8");
+  assert.ok(scopeContextContent.includes("derivePartnerAuthority"), "app-partner: the accessible-store scope must own the authority derivation");
+  const walletContent = fs.readFileSync(path.join(appDir, "src", "features", "wallet", "wallet.tsx"), "utf8");
+  assert.ok(walletContent.includes('permissions.includes("finance_read")'), "app-partner: finance readback must stay gated by finance_read");
+  assert.ok(walletContent.includes('permissions.includes("payout_request")'), "app-partner: the payout action must stay gated by payout_request");
+  console.log("MOBILE_PARTNER_AUTHORITY=PASS adaptive surfaces, per-store unions, fail-safe resolution, and canonical redirects");
+}
 const { IdentitySessionManager } = await import(pathToFileURL(path.join(root, "services/identity/clients/session.ts")).href);
 const { identitySessionSignOutMessage } = await import(pathToFileURL(path.join(root, "services/identity/clients/errors.ts")).href);
 const {
