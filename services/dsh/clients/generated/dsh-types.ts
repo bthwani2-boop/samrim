@@ -2861,7 +2861,6 @@ export type StorePayoutBeneficiaryProfile = {
 export type StorePayoutRecipientListResponse = {
   readonly readback: StorePayoutRecipientReadback;
   readonly storeNames: Readonly<Record<string, string>>;
-  readonly beneficiaryPhones: Readonly<Record<string, string>>;
   readonly beneficiaryProfiles: Readonly<Record<string, StorePayoutBeneficiaryProfile>>;
 };
 

@@ -114,7 +114,7 @@ paths:
       summary: Read the effective payout recipient per Store for the current Partner owner
       security: [{ userBearer: [] }]
       responses:
-        "200": { description: WLT-owned payout-recipient readback with Store names and masked beneficiary phones., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StorePayoutRecipientListResponse" } } } }
+        "200": { description: WLT-owned payout-recipient readback enriched with Store names and canonical masked beneficiary wallet profiles., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StorePayoutRecipientListResponse" } } } }
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }

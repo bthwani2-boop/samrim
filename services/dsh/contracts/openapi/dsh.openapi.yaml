@@ -8458,14 +8458,11 @@ components:
     StorePayoutRecipientListResponse:
       type: object
       additionalProperties: false
-      required: [readback, storeNames, beneficiaryPhones, beneficiaryProfiles]
+      required: [readback, storeNames, beneficiaryProfiles]
       properties:
         readback:
           $ref: "#/components/schemas/StorePayoutRecipientReadback"
         storeNames:
-          type: object
-          additionalProperties: { type: string }
-        beneficiaryPhones:
           type: object
           additionalProperties: { type: string }
         beneficiaryProfiles:

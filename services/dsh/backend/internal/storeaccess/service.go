@@ -414,16 +414,16 @@ func maskStoreAccessPhone(phone string) string {
 }
 
 // ListStorePayoutRecipients returns the effective payout recipient per Store for the
-// session's Partner actor, enriched with Store names and masked beneficiary phones.
-// WLT owns the assignment truth; DSH only adds human-readable identity.
-func (s *Service) ListStorePayoutRecipients(ctx context.Context, accessToken string) (wltintegration.StorePayoutRecipientReadback, map[string]string, map[string]string, map[string]StorePayoutBeneficiaryProfile, error) {
+// session's Partner actor, enriched with Store names and one canonical human-readable
+// beneficiary profile per effective recipient. WLT owns the assignment truth.
+func (s *Service) ListStorePayoutRecipients(ctx context.Context, accessToken string) (wltintegration.StorePayoutRecipientReadback, map[string]string, map[string]StorePayoutBeneficiaryProfile, error) {
 	actorID, err := s.partnerActor(ctx, accessToken)
 	if err != nil {
-		return wltintegration.StorePayoutRecipientReadback{}, nil, nil, nil, err
+		return wltintegration.StorePayoutRecipientReadback{}, nil, nil, err
 	}
 	readback, err := s.wlt.ListPartnerStorePayoutRecipients(ctx, actorID)
 	if err != nil {
-		return wltintegration.StorePayoutRecipientReadback{}, nil, nil, nil, err
+		return wltintegration.StorePayoutRecipientReadback{}, nil, nil, err
 	}
 	storeIDs := make([]string, 0, len(readback.Recipients))
 	for _, record := range readback.Recipients {
@@ -431,7 +431,7 @@ func (s *Service) ListStorePayoutRecipients(ctx context.Context, accessToken str
 	}
 	names, err := s.storeNames(ctx, storeIDs)
 	if err != nil {
-		return wltintegration.StorePayoutRecipientReadback{}, nil, nil, nil, err
+		return wltintegration.StorePayoutRecipientReadback{}, nil, nil, err
 	}
 	beneficiaryIDs := make([]string, 0, 2)
 	seen := make(map[string]struct{}, 2)
@@ -447,7 +447,7 @@ func (s *Service) ListStorePayoutRecipients(ctx context.Context, accessToken str
 	}
 	beneficiaryPhones, err := s.maskedPartnerPhones(ctx, beneficiaryIDs)
 	if err != nil {
-		return wltintegration.StorePayoutRecipientReadback{}, nil, nil, nil, err
+		return wltintegration.StorePayoutRecipientReadback{}, nil, nil, err
 	}
 	profiles := make(map[string]StorePayoutBeneficiaryProfile, len(beneficiaryIDs))
 	for _, beneficiaryID := range beneficiaryIDs {
@@ -459,14 +459,14 @@ func (s *Service) ListStorePayoutRecipients(ctx context.Context, accessToken str
 				profiles[beneficiaryID] = profile
 				continue
 			}
-			return wltintegration.StorePayoutRecipientReadback{}, nil, nil, nil, destinationErr
+			return wltintegration.StorePayoutRecipientReadback{}, nil, nil, destinationErr
 		}
 		profile.BeneficiaryName = strings.TrimSpace(destination.BeneficiaryName)
 		profile.ProviderKey = strings.TrimSpace(destination.ProviderKey)
 		profile.WalletIdentifierMasked = strings.TrimSpace(destination.WalletIdentifierMasked)
 		profiles[beneficiaryID] = profile
 	}
-	return readback, names, beneficiaryPhones, profiles, nil
+	return readback, names, profiles, nil
 }
 
 // PrepareStorePayoutRecipientSelection verifies, from the owner session, that the

@@ -2861,7 +2861,6 @@ type StorePayoutBeneficiaryProfile struct {
 type StorePayoutRecipientListResponse struct {
 	Readback            StorePayoutRecipientReadback             `json:"readback"`
 	StoreNames          map[string]string                        `json:"storeNames"`
-	BeneficiaryPhones   map[string]string                        `json:"beneficiaryPhones"`
 	BeneficiaryProfiles map[string]StorePayoutBeneficiaryProfile `json:"beneficiaryProfiles"`
 }
 
