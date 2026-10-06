@@ -2558,6 +2558,7 @@ type PromotionView struct {
 	FundingSharePartnerPercent int                    `json:"fundingSharePartnerPercent,omitempty"`
 	RequiresPartnerOptIn       bool                   `json:"requiresPartnerOptIn"`
 	MinOrderSubtotalMinor      int                    `json:"minOrderSubtotalMinor,omitempty"`
+	Targets                    []PromotionTarget      `json:"targets"`
 	StoreID                    string                 `json:"storeId,omitempty"`
 	ServiceCityID              string                 `json:"serviceCityId,omitempty"`
 	State                      PromotionState         `json:"state"`

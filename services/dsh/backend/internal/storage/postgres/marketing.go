@@ -47,6 +47,7 @@ type PromotionRecord struct {
 	EndsAt                     *time.Time
 	RequiresPartnerOptIn       bool
 	MinOrderSubtotalMinor      *int64
+	Targets                    []PromotionTargetInput
 	RedemptionLimit            *int64
 	RedeemedCount              int64
 	Version                    int
@@ -100,6 +101,39 @@ type PromotionInput struct {
 type PromotionTargetInput struct {
 	Kind string
 	Ref  string
+}
+
+type promotionTargetQuerier interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func readPromotionTargets(ctx context.Context, source promotionTargetQuerier, promotionID string) ([]PromotionTargetInput, error) {
+	rows, err := source.QueryContext(ctx, "SELECT target_kind,target_ref FROM dsh.commerce_promotion_targets WHERE promotion_id=$1 ORDER BY target_kind,target_ref", strings.TrimSpace(promotionID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	targets := make([]PromotionTargetInput, 0, 2)
+	for rows.Next() {
+		var target PromotionTargetInput
+		if err := rows.Scan(&target.Kind, &target.Ref); err != nil {
+			return nil, err
+		}
+		targets = append(targets, target)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return targets, nil
+}
+
+func attachPromotionTargets(ctx context.Context, source promotionTargetQuerier, item *PromotionRecord) error {
+	targets, err := readPromotionTargets(ctx, source, item.ID)
+	if err != nil {
+		return err
+	}
+	item.Targets = targets
+	return nil
 }
 
 type DiscoveryContentInput struct {
@@ -256,7 +290,16 @@ func ListStorePromotions(ctx context.Context, db *sql.DB, storeID string, limit 
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	_ = rows.Close()
+	for index := range items {
+		if err := attachPromotionTargets(ctx, db, &items[index]); err != nil {
+			return nil, err
+		}
+	}
+	return items, nil
 }
 
 func ReadPromotion(ctx context.Context, db *sql.DB, id string) (PromotionRecord, error) {
@@ -264,7 +307,13 @@ func ReadPromotion(ctx context.Context, db *sql.DB, id string) (PromotionRecord,
 	if errors.Is(err, sql.ErrNoRows) {
 		return PromotionRecord{}, ErrPromotionNotFound
 	}
-	return item, err
+	if err != nil {
+		return PromotionRecord{}, err
+	}
+	if err := attachPromotionTargets(ctx, db, &item); err != nil {
+		return PromotionRecord{}, err
+	}
+	return item, nil
 }
 
 func ListPromotions(ctx context.Context, db *sql.DB, public bool, serviceCityID, storeID string) ([]PromotionRecord, error) {
@@ -317,6 +366,9 @@ func CreatePromotion(ctx context.Context, db *sql.DB, input PromotionInput, idem
 		if readErr != nil {
 			return PromotionRecord{}, false, readErr
 		}
+		if readErr := attachPromotionTargets(ctx, tx, &item); readErr != nil {
+			return PromotionRecord{}, false, readErr
+		}
 		if commitErr := tx.Commit(); commitErr != nil {
 			return PromotionRecord{}, false, commitErr
 		}
@@ -347,6 +399,9 @@ func CreatePromotion(ctx context.Context, db *sql.DB, input PromotionInput, idem
 	if err != nil {
 		return PromotionRecord{}, false, err
 	}
+	if err := attachPromotionTargets(ctx, tx, &item); err != nil {
+		return PromotionRecord{}, false, err
+	}
 	if err := tx.Commit(); err != nil {
 		return PromotionRecord{}, false, err
 	}
@@ -374,6 +429,9 @@ func SetPromotionState(ctx context.Context, db *sql.DB, id, state, idempotencyKe
 		}
 		item, readErr := scanPromotion(tx.QueryRowContext(ctx, "SELECT "+promotionSelect+" FROM dsh.commerce_promotions WHERE id=$1", id))
 		if readErr != nil {
+			return PromotionRecord{}, false, readErr
+		}
+		if readErr := attachPromotionTargets(ctx, tx, &item); readErr != nil {
 			return PromotionRecord{}, false, readErr
 		}
 		if commitErr := tx.Commit(); commitErr != nil {
@@ -412,6 +470,9 @@ func SetPromotionState(ctx context.Context, db *sql.DB, id, state, idempotencyKe
 	}
 	item, err := scanPromotion(tx.QueryRowContext(ctx, "SELECT "+promotionSelect+" FROM dsh.commerce_promotions WHERE id=$1", id))
 	if err != nil {
+		return PromotionRecord{}, false, err
+	}
+	if err := attachPromotionTargets(ctx, tx, &item); err != nil {
 		return PromotionRecord{}, false, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -900,6 +961,12 @@ func ListPartnerEligibleCampaigns(ctx context.Context, db *sql.DB, storeID strin
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	_ = rows.Close()
+	for index := range items {
+		if err := attachPromotionTargets(ctx, db, &items[index].PromotionRecord); err != nil {
+			return nil, err
+		}
+	}
 	return items, nil
 }
 
@@ -967,6 +1034,9 @@ func SetPartnerCampaignOptIn(ctx context.Context, db *sql.DB, promotionID, store
 	}
 	record.StoreOptInState = optInState.String
 	if err := tx.QueryRowContext(ctx, "SELECT version FROM dsh.commerce_promotion_store_opt_ins WHERE promotion_id=$1 AND store_id=$2", promotionID, storeID).Scan(&record.StoreOptInVersion); err != nil {
+		return PartnerCampaignRecord{}, false, err
+	}
+	if err := attachPromotionTargets(ctx, tx, &record.PromotionRecord); err != nil {
 		return PartnerCampaignRecord{}, false, err
 	}
 	if err := tx.Commit(); err != nil {

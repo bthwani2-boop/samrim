@@ -2558,6 +2558,7 @@ export type PromotionView = {
   readonly fundingSharePartnerPercent?: number | null;
   readonly requiresPartnerOptIn: boolean;
   readonly minOrderSubtotalMinor?: number | null;
+  readonly targets: ReadonlyArray<PromotionTarget>;
   readonly storeId?: string | null;
   readonly serviceCityId?: string | null;
   readonly state: PromotionState;

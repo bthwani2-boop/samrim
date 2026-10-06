@@ -7646,7 +7646,7 @@ components:
 
     PromotionView:
       type: object
-      required: [id, code, nameAr, descriptionAr, kind, valueMinor, fundingSource, requiresPartnerOptIn, state, startsAt, redeemedCount, version, createdByActorId, createdAt, updatedAt]
+      required: [id, code, nameAr, descriptionAr, kind, valueMinor, fundingSource, requiresPartnerOptIn, targets, state, startsAt, redeemedCount, version, createdByActorId, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -7679,6 +7679,10 @@ components:
           type: integer
           minimum: 1
           nullable: true
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/PromotionTarget"
         storeId:
           type: string
           nullable: true

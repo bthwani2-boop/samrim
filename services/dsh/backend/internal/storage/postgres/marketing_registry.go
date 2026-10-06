@@ -106,9 +106,15 @@ func ListOperatorPromotionRegistry(ctx context.Context, db *sql.DB, query Operat
 	if err := rows.Err(); err != nil {
 		return OperatorPromotionRegistryPage{}, err
 	}
+	_ = rows.Close()
 	hasMore := len(items) > query.Limit
 	if hasMore {
 		items = items[:query.Limit]
+	}
+	for index := range items {
+		if err := attachPromotionTargets(ctx, db, &items[index]); err != nil {
+			return OperatorPromotionRegistryPage{}, err
+		}
 	}
 	return OperatorPromotionRegistryPage{Promotions: items, HasMore: hasMore}, nil
 }
