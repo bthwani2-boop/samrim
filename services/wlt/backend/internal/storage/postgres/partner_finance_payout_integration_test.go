@@ -60,8 +60,13 @@ func TestPartnerStoreFinanceAndRecipientSettlementLifecycle(t *testing.T) {
 	if err != nil || approved.Status != "APPROVED" || approved.ActorID != owner || approved.BeneficiaryActorID != staff {
 		t.Fatalf("wallet owner and beneficiary separation: %+v %v", approved, err)
 	}
-	if _, err := MarkStorePayoutRecipientReviewRequired(s.ctx, s.db, b, owner, "staff relationship revoked", b+"-review-correlation"); err != nil {
-		t.Fatal(err)
+	applied, err := MarkStorePayoutRecipientReviewRequired(s.ctx, s.db, b, owner, "staff relationship revoked", b+"-review-correlation")
+	if err != nil || !applied {
+		t.Fatalf("first review-required transition: applied=%v err=%v", applied, err)
+	}
+	replayed, err := MarkStorePayoutRecipientReviewRequired(s.ctx, s.db, b, owner, "staff relationship revoked", b+"-review-correlation-retry")
+	if err != nil || replayed {
+		t.Fatalf("idempotent review-required transition: applied=%v err=%v", replayed, err)
 	}
 	full := PartnerPayoutRequestInput{PartnerActorID: owner, ScopeMode: PartnerPayoutScopeFullAvailable, RequestedStoreIDs: []string{a, b, c}, BeneficiaryFacts: map[string]IdentityFacts{owner: facts, staff: staffFacts}, IdempotencyKey: "full-review-" + s.suffix, CorrelationID: "full-review-correlation-" + s.suffix}
 	if _, _, err := CreatePartitionedPartnerPayoutRequest(s.ctx, s.db, cipher, full); !errors.Is(err, ErrPayoutRecipientReviewRequired) {

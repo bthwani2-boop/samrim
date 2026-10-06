@@ -142,21 +142,20 @@ func (s *Server) markStorePayoutRecipientReviewRequired(w http.ResponseWriter, r
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	marked, err := postgres.MarkStorePayoutRecipientReviewRequired(r.Context(), s.db, r.PathValue("storeId"), input.PartnerActorID, input.Reason, correlation)
+	applied, err := postgres.MarkStorePayoutRecipientReviewRequired(r.Context(), s.db, r.PathValue("storeId"), input.PartnerActorID, input.Reason, correlation)
 	if err != nil {
 		writeStorePayoutRecipientError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"state": "RECIPIENT_REVIEW_REQUIRED", "applied": !marked})
+	writeJSON(w, http.StatusOK, map[string]any{"state": "RECIPIENT_REVIEW_REQUIRED", "applied": applied})
 }
 
 func (s *Server) readStorePayoutRecipientByStore(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
 	}
-	// Single-store readback derives from the partner readback; the partner actor is
-	// resolved from the assignment facts owned by WLT.
-	partnerActorID := strings.TrimSpace(r.URL.Query().Get("partnerActorId"))
+	// The canonical route already scopes the read by Partner and Store.
+	partnerActorID := strings.TrimSpace(r.PathValue("partnerActorId"))
 	if partnerActorID == "" {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partnerActorId is required")
 		return

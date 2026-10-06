@@ -288,7 +288,7 @@ func MarkStorePayoutRecipientReviewRequired(ctx context.Context, db *sql.DB, sto
 		return false, ErrStorePayoutRecipientOwnership
 	}
 	if existing.State == StorePayoutRecipientStateReviewRequired {
-		return true, nil
+		return false, nil
 	}
 	eventID, err := newID("store-recipient-event")
 	if err != nil {
@@ -303,7 +303,7 @@ func MarkStorePayoutRecipientReviewRequired(ctx context.Context, db *sql.DB, sto
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
-	return false, nil
+	return true, nil
 }
 
 func readStorePayoutRecipientAssignment(ctx context.Context, source interface {
