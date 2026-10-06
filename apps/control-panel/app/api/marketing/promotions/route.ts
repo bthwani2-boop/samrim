@@ -10,7 +10,7 @@ function errorResponse(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status, headers: { "Cache-Control": "no-store" } });
 }
 
-const states = ["DRAFT", "PUBLISHED", "PAUSED"] as const;
+const states = ["DRAFT", "PUBLISHED", "PAUSED", "ENDED"] as const;
 const sorts = ["starts_desc", "starts_asc"] as const;
 
 export async function GET(request: Request) {
