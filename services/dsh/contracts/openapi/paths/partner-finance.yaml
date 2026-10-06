@@ -2,16 +2,24 @@ paths:
   /dsh/partners/me/financial-summary:
     get:
       operationId: readOwnPartnerFinancialSummary
-      summary: Read the authenticated partner's WLT-derived earning summary
+      summary: Read financial data for every Store granting finance_read
+      description: Ownership includes all owned Stores. Delegated reads include only active finance_read grants; payout_request is independent. Store amounts derive from WLT earnings, ledger and immutable payout allocations.
       security:
         - userBearer: []
+      parameters:
+        - name: storeId
+          in: query
+          required: false
+          schema: { type: array, items: { type: string } }
+          style: form
+          explode: true
       responses:
         "200":
           description: Partner financial summary.
           content:
             application/json:
               schema:
-                $ref: "../dsh.openapi.yaml#/components/schemas/PartnerFinancialSummaryResponse"
+                $ref: "../dsh.openapi.yaml#/components/schemas/PartnerScopedFinancialSummaryResponse"
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
@@ -113,3 +121,23 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/partners/me/payout-summary:
+    get:
+      operationId: readOwnPartnerPayoutSummary
+      summary: Read canonical available allocations for the actor's payout_request Store scope.
+      security: [{ userBearer: [] }]
+      parameters:
+        - name: storeId
+          in: query
+          required: false
+          schema: { type: array, items: { type: string } }
+          style: form
+          explode: true
+      responses:
+        "200":
+          description: Authorized per-Store payout availability and readiness.
+          content:
+            application/json:
+              schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerPayoutSummaryResponse" }
+        "403": { description: payout_request is not granted for every included Store. }

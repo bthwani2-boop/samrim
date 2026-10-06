@@ -166,3 +166,12 @@ func (c *Client) ReadPartnerPayoutRequest(ctx context.Context, partnerActorID, r
 	err := c.request(ctx, http.MethodGet, path, nil, "", "", 0, &response)
 	return response.Request, err
 }
+
+func (c *Client) ReadPartnerPayoutRequestByKey(ctx context.Context, partnerActorID, idempotencyKey string) (PartnerPayoutRequest, error) {
+	var response struct {
+		Request PartnerPayoutRequest `json:"request"`
+	}
+	path := "/wlt/v1/partners/" + url.PathEscape(strings.TrimSpace(partnerActorID)) + "/payout-requests?idempotencyKey=" + url.QueryEscape(strings.TrimSpace(idempotencyKey))
+	err := c.request(ctx, http.MethodGet, path, nil, "", "", 0, &response)
+	return response.Request, err
+}

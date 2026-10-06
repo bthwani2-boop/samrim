@@ -11,6 +11,7 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
@@ -61,11 +62,25 @@ func (s *PartnerFinanceServer) readOwnSummary(w http.ResponseWriter, r *http.Req
 		writeIdentityError(w, err)
 		return
 	}
-	if identity.Role != "partner" || strings.TrimSpace(identity.Subject) == "" {
+	if identity.Role != "partner" || identity.Surface != "app-partner" || strings.TrimSpace(identity.Subject) == "" {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active app-partner session is required")
 		return
 	}
-	summary, err := s.payment.ReadPartnerFinancialSummary(r.Context(), identity.Subject)
+	stores, err := postgres.ListPartnerFinanceStores(r.Context(), s.db, identity.Subject, "finance_read")
+	if err != nil {
+		writeError(w, 500, "STORAGE_UNAVAILABLE", "finance scope is unavailable")
+		return
+	}
+	stores, err = selectPartnerFinanceScope(stores, r.URL.Query()["storeId"])
+	if err != nil {
+		writeError(w, 403, "FORBIDDEN", "finance_read authority is required for every included Store")
+		return
+	}
+	fullOwner := ""
+	if len(r.URL.Query()["storeId"]) == 0 {
+		fullOwner = identity.Subject
+	}
+	summary, err := readPartnerScopedFinance(r.Context(), s.payment, stores, fullOwner)
 	if err != nil {
 		writeWLTFinanceError(w, err)
 		return

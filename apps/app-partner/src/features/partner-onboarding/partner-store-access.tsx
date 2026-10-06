@@ -172,13 +172,13 @@ export function PartnerStoreAccess({ storeID }: { storeID: string }) {
   }
 
   return <View style={styles.container}>
-    <TeamInvitationCard busy={busy} choosePreset={choosePreset} filteredOwnedStores={filteredOwnedStores} hasMoreStores={storeScope.state.kind === "ready" && Boolean(storeScope.state.nextCursor)} loadMoreStores={() => void storeScope.loadMore()} notice={notice} onInvite={() => void invite()} onPhoneChange={(value) => { setPhone(value); inviteAttempt.current = null; }} onPermissionToggle={togglePermission} onStoreSearchChange={setStoreSearch} onTargetStoreToggle={toggleTargetStore} phone={phone} selectedPermissions={selectedPermissions} selectedStoreIDs={selectedStoreIDs} storeSearch={storeSearch} styles={styles} />
+    <TeamInvitationCard busy={busy} choosePreset={choosePreset} filteredOwnedStores={filteredOwnedStores} notice={notice} onInvite={() => void invite()} onPhoneChange={(value) => { setPhone(value); inviteAttempt.current = null; }} onPermissionToggle={togglePermission} onStoreSearchChange={setStoreSearch} onTargetStoreToggle={toggleTargetStore} phone={phone} selectedPermissions={selectedPermissions} selectedStoreIDs={selectedStoreIDs} storeSearch={storeSearch} styles={styles} />
 
     <StoreGrantsCard busy={busy} grants={grants} loading={loading} onPermissions={(grant, next) => void updatePermissions(grant, next)} onTransition={(grant, next) => void transition(grant, next)} styles={styles} />
   </View>;
 }
 
-function TeamInvitationCard({ styles, busy, phone, onPhoneChange, storeSearch, onStoreSearchChange, filteredOwnedStores, hasMoreStores, loadMoreStores, selectedStoreIDs, onTargetStoreToggle, selectedPermissions, onPermissionToggle, choosePreset, onInvite, notice }: Readonly<{
+function TeamInvitationCard({ styles, busy, phone, onPhoneChange, storeSearch, onStoreSearchChange, filteredOwnedStores, selectedStoreIDs, onTargetStoreToggle, selectedPermissions, onPermissionToggle, choosePreset, onInvite, notice }: Readonly<{
   styles: ReturnType<typeof createPartnerSurfaceStyles>;
   busy: boolean;
   phone: string;
@@ -186,8 +186,6 @@ function TeamInvitationCard({ styles, busy, phone, onPhoneChange, storeSearch, o
   storeSearch: string;
   onStoreSearchChange: (value: string) => void;
   filteredOwnedStores: ReadonlyArray<{ id: string; name: string }>;
-  hasMoreStores: boolean;
-  loadMoreStores: () => void;
   selectedStoreIDs: ReadonlyArray<string>;
   onTargetStoreToggle: (targetStoreID: string) => void;
   selectedPermissions: ReadonlyArray<StoreAccessPermission>;
@@ -208,7 +206,6 @@ function TeamInvitationCard({ styles, busy, phone, onPhoneChange, storeSearch, o
       const selected = selectedStoreIDs.includes(store.id);
       return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected, disabled: busy }} disabled={busy} key={store.id} onPress={() => onTargetStoreToggle(store.id)} style={{ backgroundColor: selected ? theme.actionBackground : theme.surfaceInset, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, padding: 12 }}><Text style={{ color: selected ? theme.onAction : theme.color }}>{store.name}</Text></Pressable>;
     })}</View>
-    {hasMoreStores ? <BthwaniButton disabled={busy} label="تحميل متاجر أخرى" onPress={loadMoreStores} variant="secondary" /> : null}
     <Text style={styles.metaLabel}>قوالب الدور</Text>
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>{rolePresets.map((preset) => <Pressable accessibilityRole="button" disabled={busy} key={preset.value} onPress={() => choosePreset(preset)} style={{ backgroundColor: theme.surfaceInset, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 }}><Text style={{ color: theme.color }}>{preset.label}</Text></Pressable>)}</View>
     <Text style={styles.metaLabel}>حدد أقل صلاحيات لازمة لهذا المتجر فقط</Text>

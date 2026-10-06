@@ -16,7 +16,6 @@ type PartnerStoreScopeContextValue = Readonly<{
   selectStore: (storeID: string) => void;
   stores: ReadonlyArray<PartnerAccessibleStore>;
   reload: () => Promise<void>;
-  loadMore: () => Promise<void>;
   storesWithPermission: (permission: StoreAccessPermission) => ReadonlyArray<PartnerAccessibleStore>;
 }>;
 
@@ -46,9 +45,8 @@ export function PartnerStoreScopeProvider({ children }: Readonly<{ children: Rea
     selectedStore: stores.find((store) => store.id === selectedStoreID) ?? stores.find((store) => store.owned) ?? stores[0],
     selectStore: setSelectedStoreID,
     reload: scopes.reload,
-    loadMore: scopes.loadMore,
     storesWithPermission: (permission) => stores.filter((store) => store.owned || store.permissions.includes(permission)),
-  }), [scopes.state, authority, scopes.reload, scopes.loadMore, selectedStoreID, stores]);
+  }), [scopes.state, authority, scopes.reload, selectedStoreID, stores]);
 
   return <PartnerStoreScopeContext.Provider value={value}>{children}</PartnerStoreScopeContext.Provider>;
 }

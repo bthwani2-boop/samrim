@@ -126,6 +126,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/store-payout-recipients/{storeId}/review-required", s.markStorePayoutRecipientReviewRequired)
 	mux.HandleFunc("POST /wlt/v1/partners/{partnerActorId}/payout-requests", s.createPartnerPayoutRequest)
 	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/payout-requests/{requestId}", s.readPartnerPayoutRequest)
+	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/payout-requests", s.readPartnerPayoutRequest)
 	mux.HandleFunc("GET /wlt/v1/payout-state/{actorType}/{actorId}", s.readPayoutState)
 	mux.HandleFunc("GET /wlt/v1/operator/payout-requests", s.listPayoutRequests)
 	mux.HandleFunc("GET /wlt/v1/operator/beneficiaries", s.listBeneficiaryPayoutStates)
@@ -328,6 +329,7 @@ type payoutRequestResponse struct {
 }
 
 type payoutRequestJSON struct {
+	BeneficiaryActorID   string `json:"beneficiaryActorId"`
 	ID                   string `json:"id"`
 	ActorType            string `json:"actorType"`
 	ActorID              string `json:"actorId"`
@@ -490,16 +492,20 @@ type fieldFinancialSummaryJSON struct {
 }
 
 type partnerFinancialSummaryJSON struct {
-	PartnerActorID                       string  `json:"partnerActorId"`
-	Currency                             string  `json:"currency"`
-	EarnedMinor                          int64   `json:"earnedMinor"`
-	CommissionMinor                      int64   `json:"commissionMinor"`
-	OutstandingCommissionReceivableMinor int64   `json:"outstandingCommissionReceivableMinor"`
-	OrderCount                           int64   `json:"orderCount"`
-	SettlementPeriod                     string  `json:"settlementPeriod"`
-	ProfileState                         string  `json:"profileState"`
-	ProfileVersion                       int     `json:"profileVersion"`
-	LastEarningAt                        *string `json:"lastEarningAt"`
+	SettledMinor                         int64                                `json:"settledMinor"`
+	EligibleAvailableMinor               int64                                `json:"eligibleAvailableMinor"`
+	HeldMinor                            int64                                `json:"heldMinor"`
+	Stores                               []postgres.PartnerStoreFinanceRecord `json:"stores"`
+	PartnerActorID                       string                               `json:"partnerActorId"`
+	Currency                             string                               `json:"currency"`
+	EarnedMinor                          int64                                `json:"earnedMinor"`
+	CommissionMinor                      int64                                `json:"commissionMinor"`
+	OutstandingCommissionReceivableMinor int64                                `json:"outstandingCommissionReceivableMinor"`
+	OrderCount                           int64                                `json:"orderCount"`
+	SettlementPeriod                     string                               `json:"settlementPeriod"`
+	ProfileState                         string                               `json:"profileState"`
+	ProfileVersion                       int                                  `json:"profileVersion"`
+	LastEarningAt                        *string                              `json:"lastEarningAt"`
 }
 
 type deliveryFeeQuoteRequest struct {
@@ -1205,12 +1211,14 @@ func (s *Server) readPartnerFinancialSummary(w http.ResponseWriter, r *http.Requ
 	if !s.authorize(w, r) {
 		return
 	}
-	result, err := postgres.ReadPartnerFinancialSummary(r.Context(), s.db, r.PathValue("partnerActorId"))
+	result, err := postgres.ReadPartnerFinancialSummaryForStores(r.Context(), s.db, r.PathValue("partnerActorId"), r.URL.Query()["storeId"])
 	if err != nil {
 		writePartnerEarningError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, partnerFinancialSummaryResponse{Summary: toPartnerFinancialSummary(result)})
+	view := toPartnerFinancialSummary(result)
+	view.Stores = result.Stores
+	writeJSON(w, http.StatusOK, partnerFinancialSummaryResponse{Summary: view})
 }
 
 func (s *Server) createFieldAcquisitionRewardPolicy(w http.ResponseWriter, r *http.Request) {
@@ -1535,7 +1543,11 @@ func versionedMutationHeaders(w http.ResponseWriter, r *http.Request) (string, s
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, 32*1024)
+	return decodeJSONWithLimit(w, r, target, 32*1024)
+}
+
+func decodeJSONWithLimit(w http.ResponseWriter, r *http.Request, target any, limit int64) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
@@ -1606,7 +1618,7 @@ func toOfficialWalletDestination(item postgres.OfficialWalletDestinationRecord) 
 }
 
 func toPayoutRequest(item postgres.PayoutRequestRecord) payoutRequestJSON {
-	return payoutRequestJSON{ID: item.ID, ActorType: item.ActorType, ActorID: item.ActorID, AmountMode: item.AmountMode, RequestedAmountMinor: item.RequestedAmountMinor, ResolvedAmountMinor: item.ResolvedAmountMinor, Currency: item.Currency, DestinationID: item.DestinationID, DestinationVersion: item.DestinationVersion, Status: item.Status, PolicyVersion: item.PolicyVersion, LedgerTransactionID: item.LedgerTransactionID, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano)}
+	return payoutRequestJSON{BeneficiaryActorID: item.BeneficiaryActorID, ID: item.ID, ActorType: item.ActorType, ActorID: item.ActorID, AmountMode: item.AmountMode, RequestedAmountMinor: item.RequestedAmountMinor, ResolvedAmountMinor: item.ResolvedAmountMinor, Currency: item.Currency, DestinationID: item.DestinationID, DestinationVersion: item.DestinationVersion, Status: item.Status, PolicyVersion: item.PolicyVersion, LedgerTransactionID: item.LedgerTransactionID, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano)}
 }
 
 func toPayoutState(item postgres.PayoutStateRecord) payoutStateJSON {
@@ -1649,6 +1661,8 @@ func writeDestinationError(w http.ResponseWriter, err error) {
 
 func writePayoutError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, postgres.ErrPartnerPayoutScopeRequired):
+		writeError(w, http.StatusForbidden, "PARTNER_STORE_SCOPE_REQUIRED", "Partner payouts require Store-scoped payout requests")
 	case errors.Is(err, postgres.ErrReverificationRequired):
 		writeError(w, http.StatusConflict, "REVERIFICATION_REQUIRED", "current verified Identity facts do not match the active wallet destination")
 	case errors.Is(err, postgres.ErrPayoutInvalidInput):
@@ -1785,7 +1799,7 @@ func toPartnerOrderEarning(item postgres.PartnerOrderEarningRecord) partnerOrder
 }
 
 func toPartnerFinancialSummary(item postgres.PartnerFinancialSummaryRecord) partnerFinancialSummaryJSON {
-	result := partnerFinancialSummaryJSON{PartnerActorID: item.PartnerActorID, Currency: item.Currency, EarnedMinor: item.EarnedMinor, CommissionMinor: item.CommissionMinor, OutstandingCommissionReceivableMinor: item.OutstandingCommissionReceivableMinor, OrderCount: item.OrderCount, SettlementPeriod: item.SettlementPeriod, ProfileState: item.ProfileState, ProfileVersion: item.ProfileVersion}
+	result := partnerFinancialSummaryJSON{SettledMinor: item.SettledMinor, EligibleAvailableMinor: item.EligibleAvailableMinor, HeldMinor: item.HeldMinor, PartnerActorID: item.PartnerActorID, Currency: item.Currency, EarnedMinor: item.EarnedMinor, CommissionMinor: item.CommissionMinor, OutstandingCommissionReceivableMinor: item.OutstandingCommissionReceivableMinor, OrderCount: item.OrderCount, SettlementPeriod: item.SettlementPeriod, ProfileState: item.ProfileState, ProfileVersion: item.ProfileVersion}
 	if item.LastEarningAt != nil {
 		value := item.LastEarningAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")
 		result.LastEarningAt = &value

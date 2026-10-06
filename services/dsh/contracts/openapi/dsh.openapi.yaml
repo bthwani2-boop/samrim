@@ -302,6 +302,8 @@ paths:
     $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1store-payout-recipients"
   /dsh/partner/payout-requests:
     $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1payout-requests"
+  /dsh/partner/payout-requests/{partnerActorId}:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1payout-requests~1{partnerActorId}"
   /dsh/partner/payout-requests/{partnerActorId}/{requestId}:
     $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1payout-requests~1{partnerActorId}~1{requestId}"
   /dsh/partner/stores/{storeId}/payout-recipient:
@@ -483,6 +485,9 @@ paths:
 
   /dsh/joining-cases/{caseId}/financial-terms:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1financial-terms"
+
+  /dsh/partners/me/payout-summary:
+    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1partners~1me~1payout-summary"
 
   /dsh/partners/me/financial-summary:
     $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1partners~1me~1financial-summary"
@@ -6710,6 +6715,8 @@ components:
       additionalProperties: false
       required: [id, actorType, actorId, amountMode, requestedAmountMinor, resolvedAmountMinor, currency, destinationId, destinationVersion, status, policyVersion, createdAt]
       properties:
+        beneficiaryActorId:
+          type: string
         id:
           type: string
         actorType:
@@ -8441,13 +8448,11 @@ components:
           enum: [FULL_AVAILABLE, SPECIFIED]
         storeIds:
           type: array
-          maxItems: 200
           items:
             type: string
             maxLength: 128
         storeAmounts:
           type: array
-          maxItems: 200
           items:
             $ref: "#/components/schemas/PartnerPayoutStoreAmount"
 
@@ -8496,44 +8501,11 @@ components:
         payouts:
           type: array
           items:
-            $ref: "#/components/schemas/PartnerPayoutChildPayout"
+            $ref: "#/components/schemas/PayoutRequest"
         createdAt:
           type: string
           format: date-time
 
-    PartnerPayoutChildPayout:
-      type: object
-      additionalProperties: false
-      required: [id, amountMode, resolvedAmountMinor, currency, destinationId, destinationVersion, status, createdAt]
-      properties:
-        id:
-          type: string
-        amountMode:
-          type: string
-          const: SPECIFIED
-        requestedAmountMinor:
-          type: integer
-          minimum: 1
-        resolvedAmountMinor:
-          type: integer
-          minimum: 1
-        currency:
-          type: string
-          const: YER
-        destinationId:
-          type: string
-        destinationVersion:
-          type: integer
-          minimum: 1
-        status:
-          type: string
-        policyVersion:
-          type: string
-        ledgerTransactionId:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
 
     PartnerPayoutRequestResponse:
       type: object
@@ -8742,6 +8714,135 @@ components:
               type: string
             message:
               type: string
+
+    PartnerScopedFinanceStore:
+      type: object
+      additionalProperties: false
+      required: [attributionComplete, storeId, partnerActorId, currency, earnedMinor, commissionMinor, orderCount, eligibleAvailableMinor, heldMinor, settledMinor, recipientState, beneficiaryActorId, recipientAssignmentVersion, payoutReady, storeName, settlementPeriod]
+      properties:
+        attributionComplete:
+          type: boolean
+        storeId:
+          type: string
+        partnerActorId:
+          type: string
+        currency:
+          type: string
+          const: YER
+        earnedMinor:
+          type: integer
+        commissionMinor:
+          type: integer
+        orderCount:
+          type: integer
+        eligibleAvailableMinor:
+          type: integer
+        heldMinor:
+          type: integer
+        settledMinor:
+          type: integer
+        recipientState:
+          type: string
+        beneficiaryActorId:
+          type: string
+        recipientAssignmentVersion:
+          type: integer
+        payoutReady:
+          type: boolean
+        storeName:
+          type: string
+        settlementPeriod:
+          type: string
+          enum: [DAILY, WEEKLY, MONTHLY]
+
+    PartnerScopedFinancialSummary:
+      type: object
+      additionalProperties: false
+      required: [attributionComplete, currency, earnedMinor, commissionMinor, orderCount, eligibleAvailableMinor, heldMinor, settledMinor, stores]
+      properties:
+        ownerCommissionReceivableMinor:
+          type: integer
+          minimum: 0
+          description: Canonical commission debt of the acting owner wallet, included only on its complete owned-Store read. Never includes another owner wallet debt.
+        attributionComplete:
+          type: boolean
+        currency:
+          type: string
+          const: YER
+        earnedMinor:
+          type: integer
+        commissionMinor:
+          type: integer
+        orderCount:
+          type: integer
+        eligibleAvailableMinor:
+          type: integer
+        heldMinor:
+          type: integer
+        settledMinor:
+          type: integer
+        stores:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartnerScopedFinanceStore"
+
+    PartnerScopedFinancialSummaryResponse:
+      type: object
+      additionalProperties: false
+      required: [summary]
+      properties:
+        summary:
+          $ref: "#/components/schemas/PartnerScopedFinancialSummary"
+
+    PartnerPayoutScopeStore:
+      type: object
+      additionalProperties: false
+      required: [attributionComplete, storeId, storeName, partnerActorId, currency, eligibleAvailableMinor, heldMinor, payoutReady]
+      properties:
+        attributionComplete:
+          type: boolean
+        storeId:
+          type: string
+        storeName:
+          type: string
+        partnerActorId:
+          type: string
+        currency:
+          type: string
+          const: YER
+        eligibleAvailableMinor:
+          type: integer
+        heldMinor:
+          type: integer
+        payoutReady:
+          type: boolean
+
+    PartnerPayoutSummary:
+      type: object
+      additionalProperties: false
+      required: [attributionComplete, currency, eligibleAvailableMinor, heldMinor, stores]
+      properties:
+        attributionComplete:
+          type: boolean
+        currency:
+          type: string
+          const: YER
+        eligibleAvailableMinor:
+          type: integer
+        heldMinor:
+          type: integer
+        stores:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartnerPayoutScopeStore"
+
+    PartnerPayoutSummaryResponse:
+      type: object
+      additionalProperties: false
+      required: [summary]
+      properties:
+        summary:
+          $ref: "#/components/schemas/PartnerPayoutSummary"
 
   responses:
     InvalidInput:

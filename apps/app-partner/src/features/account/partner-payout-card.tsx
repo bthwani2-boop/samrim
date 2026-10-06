@@ -1,12 +1,11 @@
 import { borders, radius, resolveTheme, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, type PartnerPayoutRequestCreateRequest, type PartnerPayoutRequestView, type PartnerPayoutStoreAmount, type BeneficiaryPayoutState } from "@bthwani/dsh";
+import { createDshMobileClient, formatMoney, type PartnerPayoutRequestCreateRequest, type PartnerPayoutRequestView, type PartnerPayoutSummary, isDefinitiveDshMobileClientRejection } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
-import { usePartnerStoreScope } from "../partner-onboarding/partner-store-scope-context";
 
 function client() {
   const baseUrl = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -14,16 +13,24 @@ function client() {
   return createDshMobileClient(baseUrl, { cryptoRandomUUID: () => Crypto.randomUUID() });
 }
 
-type PayoutMode = "FULL_AVAILABLE" | "SPECIFIED";
+function storageKey() {
+    const actor = currentIdentityState();
+    if (actor.kind !== "authenticated") throw new Error("PARTNER_SESSION_REQUIRED");
+    return `bthwani.partner.payout.pending.v2.${encodeURIComponent(actor.identity.subject)}`;
+}
 
-type PayoutAttempt = Readonly<{ mode: PayoutMode; storeAmounts?: ReadonlyArray<{ storeId: string; amountMinor: number }>; idempotencyKey: string; correlationID: string }>;
+type PayoutMode = "FULL_AVAILABLE" | "SPECIFIED";
+type LegacyAttempt = Readonly<{ mode: PayoutMode; storeAmounts?: ReadonlyArray<{ storeId: string; amountMinor: number }>; idempotencyKey: string; correlationID: string; walletOwnerActorId?: string; reviewRequired?: boolean }>;
+
+type PayoutAttempt = Readonly<{ walletOwnerActorId: string; body: PartnerPayoutRequestCreateRequest; idempotencyKey: string; correlationID: string }>;
 
 export function PartnerPayoutCard() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const authenticated = currentIdentityState().kind === "authenticated";
-  const storeScope = usePartnerStoreScope();
-  const [state, setState] = useState<BeneficiaryPayoutState | null>(null);
+  const [state, setState] = useState<PartnerPayoutSummary | null>(null);
+  const [selected, setSelected] = useState<readonly string[]>([]);
+  const [selectedSummary, setSelectedSummary] = useState<PartnerPayoutSummary | null>(null);
   const [mode, setMode] = useState<PayoutMode>("FULL_AVAILABLE");
   const [storeAmounts, setStoreAmounts] = useState<Readonly<Record<string, string>>>({});
   const [lastRequest, setLastRequest] = useState<PartnerPayoutRequestView | null>(null);
@@ -31,118 +38,159 @@ export function PartnerPayoutCard() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [pendingAttempt, setPendingAttempt] = useState<PayoutAttempt | null>(null);
-
-  // The request scope is the actor's payout_request authority: owned Stores plus
-  // active payout_request grants. Server-side authorization re-verifies every Store.
-  const payoutStores = useMemo(() => storeScope.stores.filter((store) => store.owned || store.permissions.includes("payout_request")), [storeScope.stores]);
-  const storeNames = useMemo(() => Object.fromEntries(storeScope.stores.map((store) => [store.id, store.name])), [storeScope.stores]);
-  const ownsEveryPayoutStore = payoutStores.length > 0 && payoutStores.every((store) => store.owned);
+  const [legacyPending, setLegacyPending] = useState<LegacyAttempt | null>(null);
+  const [legacyKey, setLegacyKey] = useState<LegacyAttempt | null>(null);
 
   const load = useCallback(async () => {
     if (!authenticated) return;
-    setBusy(true); setError("");
+    setBusy(true);
     try {
       const token = await getUsableIdentityAccessToken();
-      const actor = currentIdentityState();
-      if (actor.kind === "authenticated") {
-        const raw = await SecureStore.getItemAsync(`bthwani.partner.payout.pending.v2.${encodeURIComponent(actor.identity.subject)}`);
-        if (raw) setPendingAttempt(JSON.parse(raw) as PayoutAttempt);
+      const raw = await SecureStore.getItemAsync(storageKey());
+      if (raw) {
+        const saved = JSON.parse(raw) as Partial<PayoutAttempt>;
+        if (saved.body && saved.walletOwnerActorId && saved.idempotencyKey && saved.correlationID) setPendingAttempt(saved as PayoutAttempt);
+        else if (!saved.body && saved.idempotencyKey && saved.correlationID) {
+          const legacy = saved as LegacyAttempt;
+          if (legacy.reviewRequired && legacy.walletOwnerActorId) setLegacyKey(legacy); else setLegacyPending(legacy);
+        }
+        else throw new Error("INVALID_SAVED_PAYOUT");
       }
-      setState((await client().readOwnPayoutState(token)).state);
-    } catch (cause) {
-      console.error("DSH partner payout state readback failed", cause);
-      setError("تعذر قراءة حالة طلب التسوية.");
-    } finally { setBusy(false); }
+      const summary = (await client().readOwnPartnerPayoutSummary(token)).summary;
+      setState(summary);
+      setSelected((current) => current.length ? current.filter((id) => summary.stores.some((store) => store.storeId === id)) : summary.stores.map((store) => store.storeId));
+    } catch { setState(null); setSelectedSummary(null); setError("تعذر قراءة نطاق طلب الصرف المصرح به."); }
+    finally { setBusy(false); }
   }, [authenticated]);
   useEffect(() => { void load(); }, [load]);
-
-  const request = async (requestMode?: PayoutMode) => {
-    const effectiveMode = pendingAttempt?.mode ?? requestMode ?? mode;
-    const amounts: Array<{ storeId: string; amountMinor: number }> = pendingAttempt?.storeAmounts
-      ? [...pendingAttempt.storeAmounts]
-      : payoutStores.flatMap((store) => {
-          const raw = toAsciiDigits(storeAmounts[store.id] ?? "").replace(/[^0-9]/g, "");
-          const parsed = Number(raw);
-          if (effectiveMode !== "SPECIFIED" || !Number.isSafeInteger(parsed) || parsed <= 0) return [];
-          return [{ storeId: store.id, amountMinor: parsed }];
-        });
-    if (effectiveMode === "SPECIFIED" && amounts.length === 0) {
-      setError("أدخل مبلغًا صحيحًا لمتجر واحد على الأقل.");
-      return;
+  useEffect(() => {
+    let active = true;
+    setSelectedSummary(null);
+    if (selected.length && state) {
+      void getUsableIdentityAccessToken().then((token) => client().readOwnPartnerPayoutSummary(token, selected)).then((response) => {
+        if (active) setSelectedSummary(response.summary);
+      }).catch(() => { if (active) setError("تعذر تحديث المستحقات للمتاجر المختارة."); });
     }
+    return () => { active = false; };
+  }, [selected, state]);
+
+  const request = async () => {
+    if (!pendingAttempt && (!selectedSummary || !selected.length || legacyPending)) return;
+    const attemptStorageKey = storageKey();
     setBusy(true); setError(""); setNotice("");
     try {
+      let attempt = pendingAttempt;
+      if (!attempt) {
+        const owners = [...new Set(selectedSummary!.stores.map((store) => store.partnerActorId))];
+        const walletOwnerActorId = owners[0];
+        if (!walletOwnerActorId || owners.length !== 1 || (legacyKey?.walletOwnerActorId && walletOwnerActorId !== legacyKey.walletOwnerActorId)) throw new Error("ORIGINAL_PAYOUT_WALLET_REQUIRED");
+        const amounts = selected.flatMap((storeId) => {
+          const amountMinor = Number(toAsciiDigits(storeAmounts[storeId] ?? ""));
+          return Number.isSafeInteger(amountMinor) && amountMinor > 0 ? [{ storeId, amountMinor }] : [];
+        });
+        if (mode === "SPECIFIED" && !amounts.length) throw new Error("STORE_AMOUNTS_REQUIRED");
+        attempt = {
+          walletOwnerActorId,
+          body: mode === "SPECIFIED" ? { scopeMode: mode, storeIds: amounts.map((store) => store.storeId), storeAmounts: amounts } : { scopeMode: mode, storeIds: [...selected] },
+          idempotencyKey: legacyKey?.idempotencyKey ?? `partner_payout_${Crypto.randomUUID()}`,
+          correlationID: legacyKey?.correlationID ?? `partner_payout_corr_${Crypto.randomUUID()}`,
+        };
+        await SecureStore.setItemAsync(attemptStorageKey, JSON.stringify(attempt));
+        setPendingAttempt(attempt);
+      }
       const token = await getUsableIdentityAccessToken();
-      const actor = currentIdentityState();
-      if (actor.kind !== "authenticated" || !actor.identity.subject.trim()) throw new Error("PARTNER_SESSION_REQUIRED");
-      const storageKey = `bthwani.partner.payout.pending.v2.${encodeURIComponent(actor.identity.subject)}`;
-      const attempt = pendingAttempt ?? {
-        mode: effectiveMode,
-        ...(effectiveMode === "SPECIFIED" ? { storeAmounts: amounts } : {}),
-        idempotencyKey: `partner_payout_${Crypto.randomUUID()}`,
-        correlationID: `partner_payout_corr_${Crypto.randomUUID()}`,
-      };
-      await SecureStore.setItemAsync(storageKey, JSON.stringify(attempt));
-      setPendingAttempt(attempt);
-      const body: PartnerPayoutRequestCreateRequest = {
-        scopeMode: attempt.mode,
-        ...(ownsEveryPayoutStore && attempt.mode === "FULL_AVAILABLE" ? {} : { storeIds: payoutStores.map((store) => store.id) }),
-        ...(attempt.storeAmounts ? { storeAmounts: attempt.storeAmounts.map((store) => ({ storeId: store.storeId, amountMinor: store.amountMinor })) } : {}),
-      };
-      const response = await client().createPartnerPayoutRequest(token, body, attempt.idempotencyKey, attempt.correlationID);
-      await SecureStore.deleteItemAsync(storageKey);
-      setPendingAttempt(null);
-      setLastRequest(response.request);
-      setNotice(`سُجّل طلب التسوية وقُسّم إلى ${response.request.payouts.length} حوالة وفق مستلمي المتاجر؛ المبلغ الآن في الحجز للمراجعة.`);
-      setStoreAmounts({});
+      const response = await client().createPartnerPayoutRequest(token, attempt.body, attempt.idempotencyKey, attempt.correlationID);
+      await SecureStore.deleteItemAsync(attemptStorageKey);
+      setPendingAttempt(null); setLegacyKey(null); setLastRequest(response.request); setStoreAmounts({});
+      setNotice(`سُجل طلب الصرف: ${formatMoney(response.request.totalAmountMinor, response.request.currency)} · ${response.request.payouts.length} حوالة وفق مستلمي المتاجر.`);
       await load();
     } catch (cause) {
-      console.error("DSH partner payout request failed", cause);
-      setError(pendingAttempt ? "لم نتأكد من نتيجة الطلب؛ أعد الإرسال بالمفتاح المحفوظ قبل إنشاء طلب جديد." : "تعذر تسجيل طلب التسوية. تأكد من توفر وجهة محفظة رسمية معتمدة لكل مستلم ورصيد مستحق.");
-      setBusy(false);
-    }
+      if (isDefinitiveDshMobileClientRejection(cause)) {
+        await load();
+        setError("رُفض الإرسال وفق الحالة الحالية. احتُفظ بمفتاح الطلب؛ استرجع نتيجته قبل مراجعة المتاجر والمبالغ وجاهزية المستلمين.");
+      } else {
+        setError(cause instanceof Error && cause.message === "STORE_AMOUNTS_REQUIRED" ? "أدخل مبلغًا صحيحًا لمتجر واحد على الأقل." : "لم نتأكد من نتيجة الطلب؛ تحقق منه بنفس المفتاح والنطاق المحفوظين قبل إنشاء طلب جديد.");
+      }
+    } finally { setBusy(false); }
   };
 
-  const destinationReady = state?.destination?.status === "ACTIVE_FOR_PAYOUT" && state.destination.verificationStatus === "VERIFIED";
-  return <BthwaniSurface tone="base" style={styles.card} accessibilityLabel="طلب تسوية الشريك">
-    <Text style={styles.eyebrow}>التسوية المالية</Text>
-    <Text style={styles.title}>التسوية إلى المحافظ الرسمية</Text>
-    {busy && !state ? <View style={styles.loading}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة حالة التسوية…</Text></View> : null}
+  const recover = async () => {
+    const saved = legacyPending ?? pendingAttempt;
+    if (!saved || !state) return;
+    const attemptStorageKey = storageKey();
+    setBusy(true); setError("");
+    try {
+      const actor = currentIdentityState();
+      if (actor.kind !== "authenticated") throw new Error("PARTNER_SESSION_REQUIRED");
+      const token = await getUsableIdentityAccessToken();
+      const owners = pendingAttempt ? [pendingAttempt.walletOwnerActorId] : [...new Set(state.stores.map((store) => store.partnerActorId))];
+      for (const owner of owners) {
+        try {
+          const response = await client().readPartnerPayoutRequestByKey(token, owner, saved.idempotencyKey);
+          await SecureStore.deleteItemAsync(attemptStorageKey);
+          setLastRequest(response.request); setPendingAttempt(null); setLegacyPending(null); setLegacyKey(null);
+          setNotice("تم استرجاع طلب الصرف المعتمد دون إنشاء طلب جديد.");
+          await load(); return;
+        } catch (cause) {
+          if (!isDefinitiveDshMobileClientRejection(cause) || cause.status !== 404) throw cause;
+        }
+      }
+      // Old attempts do not identify their original wallet. Absence under
+      // currently accessible wallets cannot prove absence under a lost grant.
+      if (!pendingAttempt) throw new Error("ORIGINAL_PAYOUT_WALLET_UNKNOWN");
+      // Keep the original key even after a negative readback. A delayed old
+      // request then conflicts instead of creating a second payout.
+      const review: LegacyAttempt = legacyPending ?? {
+        mode: pendingAttempt!.body.scopeMode,
+        ...(pendingAttempt!.body.storeAmounts ? {storeAmounts:pendingAttempt!.body.storeAmounts} : {}),
+        idempotencyKey: saved.idempotencyKey, correlationID: saved.correlationID, walletOwnerActorId: pendingAttempt.walletOwnerActorId,
+      };
+      await SecureStore.setItemAsync(attemptStorageKey, JSON.stringify({ ...review, reviewRequired: true }));
+      setLegacyKey(review); setLegacyPending(null); setPendingAttempt(null);
+      setMode(review.mode);
+      if (review.mode === "SPECIFIED") {
+        setSelected((review.storeAmounts ?? []).map((store) => store.storeId));
+        setStoreAmounts(Object.fromEntries((review.storeAmounts ?? []).map((store) => [store.storeId, String(store.amountMinor)])));
+      }
+      await load();
+      setNotice("لم يظهر طلب معتمد. راجع المتاجر الحالية ثم أرسل بنفس المفتاح السابق؛ اختر متاجر المحفظة الأصلية؛ سيمنع تكرار أي طلب متأخر.");
+    } catch { setError("تعذر التحقق من الطلب المحفوظ ضمن صلاحياتك الحالية. احتُفظ بمفتاحه لمنع التكرار."); }
+    finally { setBusy(false); }
+  };
+
+  const storeNames = Object.fromEntries((state?.stores ?? []).map((store) => [store.storeId, store.storeName]));
+  const selectedOwners = [...new Set((selectedSummary?.stores ?? []).map((store) => store.partnerActorId))];
+  const singleWallet = selectedOwners.length === 1 && (!legacyKey?.walletOwnerActorId || selectedOwners[0] === legacyKey.walletOwnerActorId);
+  return <BthwaniSurface tone="base" style={styles.card} accessibilityLabel="طلب صرف الشريك">
+    <Text style={styles.title}>طلب صرف مستحقات المتاجر</Text>
+    <Text style={styles.muted}>هذه المساحة تستخدم صلاحية طلب الصرف لكل متجر. قراءة التقارير المالية وتغيير المستلم صلاحيتان مستقلتان.</Text>
+    {busy && !state ? <ActivityIndicator color={theme.actionBackground} /> : null}
     {state ? <>
-      <Text style={styles.muted}>{destinationReady ? `وجهتك المعتمدة: ${state.destination?.walletIdentifierMasked}` : "لا توجد وجهة محفظة رسمية معتمدة بعد؛ تتم إدارتها من لوحة التحكم. لكل مستلم موظف وجهته الموثقة الخاصة."}</Text>
-      <View style={styles.metrics}>
-        <Text style={styles.metric}>المتاح للتسوية: {formatMoney(state.eligibleAvailableMinor, state.currency)}</Text>
-        <Text style={styles.metric}>المحجوز: {formatMoney(state.heldMinor, state.currency)}</Text>
-      </View>
-      {pendingAttempt ? <View style={styles.pendingBox}>
-        <Text style={styles.muted}>طلب سابق قيد التحقق؛ أعد الإرسال بنفس المفتاح لمنع تكرار الحجز.</Text>
-        <BthwaniButton busy={busy} label="التحقق من الطلب المحفوظ" onPress={() => void request()} />
-      </View> : destinationReady && state.eligibleAvailableMinor > 0 && payoutStores.length > 0 ? <>
+      {!state.attributionComplete ? <Text style={styles.error}>تحتاج عمليات الصرف القديمة مطابقة مالية قبل طلب صرف جديد.</Text> : null}
+      <Text style={styles.metric}>المتاح المصرح بطلبه: {formatMoney(state.eligibleAvailableMinor, state.currency)}</Text>
+      {state.stores.map((store) => <View key={store.storeId} style={styles.amountRow}>
+        <BthwaniChip disabled={busy || !!pendingAttempt || !!legacyPending} label={store.storeName} selected={selected.includes(store.storeId)} onPress={() => setSelected((current) => current.includes(store.storeId) ? current.filter((id) => id !== store.storeId) : [...current, store.storeId])} />
+        <Text style={styles.muted}>المتاح: {formatMoney(store.eligibleAvailableMinor, store.currency)} · المحجوز: {formatMoney(store.heldMinor, store.currency)} · {store.payoutReady ? "المستلم جاهز للصرف" : "المستلم يحتاج إجراء المالية أو المالك"}</Text>
+      </View>)}
+      {pendingAttempt ? <View style={styles.pendingBox}><Text style={styles.muted}>طلب محفوظ قيد التحقق؛ سيُرسل بنفس المبالغ والمتاجر والمفتاح.</Text><BthwaniButton busy={busy} label="استرجاع نتيجة الطلب" onPress={() => void recover()} /><BthwaniButton busy={busy} label="إعادة الإرسال بنفس المفتاح" onPress={() => void request()} /></View> : legacyPending ? <View style={styles.pendingBox}><Text style={styles.muted}>طلب سابق يحتاج استرجاع نتيجته قبل تحديد نطاق الصرف الحالي.</Text><BthwaniButton busy={busy} label="استرجاع الطلب السابق" onPress={() => void recover()} /></View> : <>
         <View style={styles.modeRow}>
-          <BthwaniChip disabled={busy} label="كل المتاح المصرح به" onPress={() => setMode("FULL_AVAILABLE")} selected={mode === "FULL_AVAILABLE"} />
-          <BthwaniChip disabled={busy} label="مبالغ محددة لكل متجر" onPress={() => setMode("SPECIFIED")} selected={mode === "SPECIFIED"} />
+          <BthwaniChip disabled={busy} label="كامل المتاح للمتاجر المختارة" selected={mode === "FULL_AVAILABLE"} onPress={() => setMode("FULL_AVAILABLE")} />
+          <BthwaniChip disabled={busy} label="مبالغ محددة لكل متجر" selected={mode === "SPECIFIED"} onPress={() => setMode("SPECIFIED")} />
         </View>
-        {mode === "SPECIFIED" ? <View style={styles.amounts}>
-          {payoutStores.map((store) => <View key={store.id} style={styles.amountRow}>
-            <Text style={styles.amountStore}>{store.name}</Text>
-            <TextInput accessibilityLabel={`مبلغ التسوية للمتجر ${store.name}`} keyboardType="number-pad" value={storeAmounts[store.id] ?? ""} onChangeText={(value) => setStoreAmounts((current) => ({ ...current, [store.id]: toAsciiDigits(value).replace(/[^0-9]/g, "") }))} placeholder="المبلغ بالهللات" placeholderTextColor={theme.colorMuted} style={styles.input} />
-          </View>)}
-          <Text style={styles.muted}>لكل متجر مستلمه الفعلي؛ يقسّم النظام المبالغ إلى حوالات منفصلة عند اختلاف المستلمين أو الوجهات، ولا يجمع مستفيدين مختلفين في حوالة واحدة.</Text>
-          <BthwaniButton busy={busy} label="طلب المبالغ المحددة" onPress={() => void request("SPECIFIED")} variant="secondary" />
-        </View> : <>
-          <Text style={styles.muted}>يغطي الطلب كامل المتاح في نطاق متاجرك المصرح بها، ويقسمه تلقائيًا حسب مستلم كل متجر مع الحفاظ على سطر تخصيص لكل متجر.</Text>
-          <BthwaniButton busy={busy} label="طلب تسوية كامل المتاح المصرح به" onPress={() => void request("FULL_AVAILABLE")} variant="secondary" />
-        </>}
-      </> : null}
-      {lastRequest ? <View style={styles.requestBox}>
-        <Text style={styles.lineTitle}>آخر طلب مقسّم: {formatMoney(lastRequest.totalAmountMinor, lastRequest.currency)}</Text>
-        {lastRequest.stores.map((allocation) => <Text key={allocation.storeId} style={styles.muted}>{storeNames[allocation.storeId] ?? allocation.storeId}: {formatMoney(allocation.amountMinor, allocation.currency)}</Text>)}
-        <Text style={styles.muted}>الحوالات: {lastRequest.payouts.length} · الحالة: قيد المعالجة المالية المعتمدة.</Text>
-      </View> : null}
+        {mode === "SPECIFIED" ? state.stores.filter((store) => selected.includes(store.storeId)).map((store) => <TextInput key={store.storeId} accessibilityLabel={`مبلغ الصرف للمتجر ${store.storeName}`} editable={!busy} keyboardType="number-pad" value={storeAmounts[store.storeId] ?? ""} onChangeText={(value) => setStoreAmounts((current) => ({ ...current, [store.storeId]: toAsciiDigits(value).replace(/[^0-9]/g, "") }))} placeholder={`مبلغ ${store.storeName} بالوحدة الصغرى`} placeholderTextColor={theme.colorMuted} style={styles.input} />) : null}
+        {selectedSummary ? <Text style={styles.metric}>المتاح للمتاجر المختارة: {formatMoney(selectedSummary.eligibleAvailableMinor, selectedSummary.currency)}</Text> : null}
+        {selected.length && selectedSummary && !singleWallet ? <Text style={styles.error}>اختر متاجر مالك واحد لكل طلب صرف.</Text> : null}
+        <BthwaniButton busy={busy} disabled={!selectedSummary || !singleWallet || selectedSummary.eligibleAvailableMinor <= 0 || !selectedSummary.attributionComplete} label="طلب الصرف للمتاجر المختارة" onPress={() => void request()} variant="secondary" />
+      </>}
     </> : null}
+    {lastRequest ? <View style={styles.requestBox}>
+      <Text style={styles.lineTitle}>الطلب المعتمد: {formatMoney(lastRequest.totalAmountMinor, lastRequest.currency)}</Text>
+      {lastRequest.stores.map((allocation) => <Text key={allocation.storeId} style={styles.muted}>{storeNames[allocation.storeId] ?? "متجر ضمن الطلب"}: {formatMoney(allocation.amountMinor, allocation.currency)} · نسخة المستلم المحفوظة: {allocation.recipientAssignmentVersion}</Text>)}
+      <Text style={styles.muted}>الحوالات: {lastRequest.payouts.length} · الحالة: {lastRequest.status}</Text>
+    </View> : null}
     {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    {authenticated ? <BthwaniButton busy={busy} label="تحديث حالة التسوية" onPress={() => void load()} variant="secondary" /> : null}
+    {authenticated ? <BthwaniButton busy={busy} label="تحديث حالة الصرف" onPress={() => void load()} variant="secondary" /> : null}
   </BthwaniSurface>;
 }
 

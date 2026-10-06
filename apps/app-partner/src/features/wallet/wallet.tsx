@@ -12,6 +12,9 @@ export default function PartnerWallet() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const storeScope = usePartnerStoreScope();
+  const financeScopeKey = storeScope.storesWithPermission("finance_read").map((store) => `${store.id}:${store.owned}`).join(",");
+  const payoutScopeKey = storeScope.storesWithPermission("payout_request").map((store) => `${store.id}:${store.owned}`).join(",");
+  const ownerScopeKey = storeScope.stores.filter((store) => store.owned).map((store) => store.id).join(",");
   const canReadFinance = storeScope.stores.some((store) => store.owned || store.permissions.includes("finance_read"));
   const canRequestPayout = storeScope.stores.some((store) => store.owned || store.permissions.includes("payout_request"));
   const ownsAnyStore = storeScope.stores.some((store) => store.owned);
@@ -23,8 +26,8 @@ export default function PartnerWallet() {
       </View>
       <BthwaniIcon name="wallet" color={theme.interactiveText} size={spacing[6]} />
     </View>
-    {canReadFinance ? <PartnerFinancialSummaryCard /> : <View style={styles.card}><Text style={styles.muted}>قراءة المالية غير ممنوحة لحسابك على أي متجر.</Text></View>}
-    {canRequestPayout ? <PartnerPayoutCard /> : null}
-    {ownsAnyStore ? <StorePayoutRecipientsCard /> : null}
+    {canReadFinance ? <PartnerFinancialSummaryCard key={financeScopeKey} /> : <View style={styles.card}><Text style={styles.muted}>قراءة المالية غير ممنوحة لحسابك على أي متجر.</Text></View>}
+    {canRequestPayout ? <PartnerPayoutCard key={payoutScopeKey} /> : null}
+    {ownsAnyStore ? <StorePayoutRecipientsCard key={ownerScopeKey} /> : null}
   </View>;
 }

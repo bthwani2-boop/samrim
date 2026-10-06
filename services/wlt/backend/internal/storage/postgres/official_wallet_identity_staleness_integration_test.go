@@ -89,6 +89,7 @@ func TestLegacyRequestedCustomerWithdrawalReverifiesAndCapturesCurrentIdentity(t
 func TestOfficialWalletDestinationIsSuspendedWhenCurrentIdentityChanges(t *testing.T) {
 	scenario := newFieldAcquisitionScenario(t)
 	facts := validIdentityFactsFixture()
+	facts.ActorType = "field"
 	facts.ActorID = "identity-stale-test-" + scenario.suffix
 	actorID := facts.ActorID
 	cipher, err := NewDestinationCipher("MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
@@ -96,7 +97,7 @@ func TestOfficialWalletDestinationIsSuspendedWhenCurrentIdentityChanges(t *testi
 		t.Fatalf("create destination cipher: %v", err)
 	}
 	destination, replayed, err := CreateOfficialWalletDestination(scenario.ctx, scenario.db, cipher, CreateOfficialWalletDestinationInput{
-		ActorType: "partner", ActorID: actorID, ProviderKey: "YEMEN_MOBILE_WALLET", IdentityFacts: facts,
+		ActorType: "field", ActorID: actorID, ProviderKey: "YEMEN_MOBILE_WALLET", IdentityFacts: facts,
 		ChangeReason: "initial official destination", VerificationEvidenceReference: "identity-stale-verification-" + scenario.suffix,
 		ChangeEvidenceReference: "identity-stale-change-" + scenario.suffix, SubmittedBy: "partner-operator",
 		IdempotencyKey: "identity-stale-create-" + scenario.suffix, CorrelationID: "identity-stale-create-correlation-" + scenario.suffix,
@@ -126,7 +127,7 @@ func TestOfficialWalletDestinationIsSuspendedWhenCurrentIdentityChanges(t *testi
 	changedFacts.PhoneE164 = "+967777000002"
 	changedFacts.ActorVersion++
 	if _, _, err := CreatePayoutIntent(scenario.ctx, scenario.db, cipher, PayoutIntentInput{
-		ActorType: "partner", ActorID: actorID, AmountMode: "FULL_AVAILABLE", IdentityFacts: changedFacts,
+		ActorType: "field", ActorID: actorID, AmountMode: "FULL_AVAILABLE", IdentityFacts: changedFacts,
 		IdempotencyKey: "identity-stale-payout-" + scenario.suffix, CorrelationID: "identity-stale-payout-correlation-" + scenario.suffix,
 	}); !errors.Is(err, ErrReverificationRequired) {
 		t.Fatalf("payout with changed official wallet identity error = %v, want reverification required", err)

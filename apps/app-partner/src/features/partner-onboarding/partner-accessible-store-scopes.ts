@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { PartnerAccessibleStore } from "@bthwani/dsh";
 import { listPartnerAccessibleStores } from "./store-readback-client";
 
-type StoreScopesState = { kind: "loading" } | { kind: "ready"; stores: ReadonlyArray<PartnerAccessibleStore>; nextCursor: string } | { kind: "error" };
+type StoreScopesState = { kind: "loading" } | { kind: "ready"; stores: ReadonlyArray<PartnerAccessibleStore> } | { kind: "error" };
 
 export function usePartnerAccessibleStoreScopes() {
   const [state, setState] = useState<StoreScopesState>({ kind: "loading" });
@@ -13,8 +13,15 @@ export function usePartnerAccessibleStoreScopes() {
     const current = ++sequence.current;
     setState({ kind: "loading" });
     try {
-      const page = await listPartnerAccessibleStores();
-      if (sequence.current === current) setState({ kind: "ready", stores: page.stores, nextCursor: page.nextCursor });
+      const stores: PartnerAccessibleStore[] = [];
+      let cursor = "";
+      do {
+        const page = await listPartnerAccessibleStores(cursor);
+        if (sequence.current !== current) return;
+        stores.push(...page.stores);
+        cursor = page.nextCursor;
+      } while (cursor);
+      setState({ kind: "ready", stores });
     } catch {
       if (sequence.current === current) setState({ kind: "error" });
     }
@@ -25,17 +32,5 @@ export function usePartnerAccessibleStoreScopes() {
     return () => { sequence.current += 1; };
   }, [reload]);
 
-  const loadMore = useCallback(async () => {
-    if (state.kind !== "ready" || !state.nextCursor) return;
-    const current = ++sequence.current;
-    const previous = state;
-    try {
-      const page = await listPartnerAccessibleStores(previous.nextCursor);
-      if (sequence.current === current) setState({ kind: "ready", stores: [...previous.stores, ...page.stores], nextCursor: page.nextCursor });
-    } catch {
-      if (sequence.current === current) setState(previous);
-    }
-  }, [state]);
-
-  return { state, reload, loadMore };
+  return { state, reload };
 }

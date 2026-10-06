@@ -23,7 +23,7 @@ function permissionLabels(store: PartnerAccessibleStore): string {
 export function PartnerStoreScopeSelector({ requiredPermissions }: Readonly<{ requiredPermissions?: ReadonlyArray<StoreAccessPermission> }>) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
-  const { state, stores, selectedStore, selectStore, reload, loadMore } = usePartnerStoreScope();
+  const { state, stores, selectedStore, selectStore, reload } = usePartnerStoreScope();
   const visibleStores = requiredPermissions
     ? stores.filter((store) => store.owned || requiredPermissions.some((permission) => store.permissions.includes(permission)))
     : stores;
@@ -39,6 +39,5 @@ export function PartnerStoreScopeSelector({ requiredPermissions }: Readonly<{ re
       <Text style={styles.value}>{store.name}</Text>
       <Text style={styles.muted}>{permissionLabels(store)}</Text>
     </Pressable>)}
-    {state.kind === "ready" && state.nextCursor ? <BthwaniButton label="تحميل متاجر أخرى" onPress={() => void loadMore()} variant="secondary" /> : null}
   </View>;
 }

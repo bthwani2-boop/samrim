@@ -163,6 +163,27 @@ paths:
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
+  /dsh/partner/payout-requests/{partnerActorId}:
+    get:
+      operationId: readPartnerPayoutRequestByKey
+      summary: Recover a committed request by its saved idempotency key
+      security: [{ userBearer: [] }]
+      parameters:
+        - name: partnerActorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: idempotencyKey
+          in: query
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 128 }
+      responses:
+        "200": { description: Canonical partitioned payout request readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerPayoutRequestResponse" } } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
   /dsh/partner/stores/{storeId}/payout-recipient:
     put:
       operationId: selectPartnerStorePayoutRecipient

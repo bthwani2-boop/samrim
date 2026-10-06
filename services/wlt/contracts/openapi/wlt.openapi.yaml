@@ -646,6 +646,12 @@ paths:
           in: path
           required: true
           schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: storeId
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema: { type: array, items: { type: string, minLength: 1, maxLength: 128 } }
       responses:
         '200':
           description: Partner financial summary.
@@ -1026,6 +1032,26 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PartnerPayoutRequestResponse' }
+    get:
+      operationId: readPartnerPayoutRequestByKey
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: partnerActorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: idempotencyKey
+          in: query
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 128 }
+      responses:
+        '200':
+          description: Canonical partitioned payout request readback.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerPayoutRequestResponse' }
+        '404':
+          description: No such payout request.
   /wlt/v1/partners/{partnerActorId}/payout-requests/{requestId}:
     get:
       operationId: readPartnerPayoutRequest
@@ -1986,6 +2012,12 @@ components:
       additionalProperties: false
       required: [partnerActorId, currency, earnedMinor, commissionMinor, outstandingCommissionReceivableMinor, orderCount, settlementPeriod, profileState, profileVersion]
       properties:
+        eligibleAvailableMinor: { type: integer }
+        heldMinor: { type: integer }
+        settledMinor: { type: integer }
+        stores:
+          type: array
+          items: { $ref: "#/components/schemas/PartnerStoreFinance" }
         partnerActorId: { type: string }
         currency: { type: string, const: YER }
         earnedMinor: { type: integer }
@@ -2215,11 +2247,9 @@ components:
         scopeMode: { type: string, enum: [FULL_AVAILABLE, SPECIFIED] }
         storeIds:
           type: array
-          maxItems: 200
           items: { type: string, maxLength: 128 }
         storeAmounts:
           type: array
-          maxItems: 200
           items: { $ref: '#/components/schemas/PartnerPayoutStoreAmount' }
         beneficiaryIdentityFacts:
           type: object
@@ -2263,6 +2293,8 @@ components:
       additionalProperties: false
       required: [id, actorType, actorId, amountMode, resolvedAmountMinor, currency, destinationId, destinationVersion, status, policyVersion, createdAt]
       properties:
+        beneficiaryActorId:
+          type: string
         id: { type: string }
         actorType: { type: string, enum: [customer, partner, captain, field] }
         actorId: { type: string }
@@ -3187,6 +3219,41 @@ components:
           properties:
             code: { type: string }
             message: { type: string }
+    PartnerStoreFinance:
+      type: object
+      additionalProperties: false
+      required: [attributionComplete, storeId, partnerActorId, currency, earnedMinor, commissionMinor, orderCount, eligibleAvailableMinor, heldMinor, settledMinor, recipientState, beneficiaryActorId, recipientAssignmentVersion, payoutReady]
+      properties:
+        attributionComplete:
+          type: boolean
+        storeId:
+          type: string
+        partnerActorId:
+          type: string
+        currency:
+          type: string
+          const: YER
+        earnedMinor:
+          type: integer
+        commissionMinor:
+          type: integer
+        orderCount:
+          type: integer
+        eligibleAvailableMinor:
+          type: integer
+        heldMinor:
+          type: integer
+        settledMinor:
+          type: integer
+        recipientState:
+          type: string
+        beneficiaryActorId:
+          type: string
+        recipientAssignmentVersion:
+          type: integer
+        payoutReady:
+          type: boolean
+
   responses:
     InvalidInput:
       description: Invalid input or request body.
