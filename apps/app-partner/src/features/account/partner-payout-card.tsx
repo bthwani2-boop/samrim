@@ -1,5 +1,5 @@
 import { borders, radius, resolveTheme, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniChip, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniChip, BthwaniConfirmDialog, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { createDshMobileClient, formatMoney, type PartnerPayoutRequestCreateRequest, type PartnerPayoutRequestView, type PartnerPayoutSummary, isDefinitiveDshMobileClientRejection } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
@@ -40,6 +40,7 @@ export function PartnerPayoutCard() {
   const [pendingAttempt, setPendingAttempt] = useState<PayoutAttempt | null>(null);
   const [legacyPending, setLegacyPending] = useState<LegacyAttempt | null>(null);
   const [legacyKey, setLegacyKey] = useState<LegacyAttempt | null>(null);
+  const [confirmRequest, setConfirmRequest] = useState(false);
 
   const load = useCallback(async () => {
     if (!authenticated) return;
@@ -100,9 +101,16 @@ export function PartnerPayoutCard() {
       }
       const token = await getUsableIdentityAccessToken();
       const response = await client().createPartnerPayoutRequest(token, attempt.body, attempt.idempotencyKey, attempt.correlationID);
+      const canonical = await client().readPartnerPayoutRequestByKey(token, attempt.walletOwnerActorId, attempt.idempotencyKey);
+      if (canonical.request.id !== response.request.id ||
+        canonical.request.totalAmountMinor !== response.request.totalAmountMinor ||
+        canonical.request.currency !== response.request.currency ||
+        canonical.request.payouts.length !== response.request.payouts.length) {
+        throw new Error("PARTNER_PAYOUT_CANONICAL_READBACK_MISMATCH");
+      }
       await SecureStore.deleteItemAsync(attemptStorageKey);
-      setPendingAttempt(null); setLegacyKey(null); setLastRequest(response.request); setStoreAmounts({});
-      setNotice(`سُجل طلب الصرف: ${formatMoney(response.request.totalAmountMinor, response.request.currency)} · ${response.request.payouts.length} حوالة وفق مستلمي المتاجر.`);
+      setPendingAttempt(null); setLegacyKey(null); setLastRequest(canonical.request); setStoreAmounts({});
+      setNotice(`سُجل طلب الصرف وتم تأكيده: ${formatMoney(canonical.request.totalAmountMinor, canonical.request.currency)} · ${canonical.request.payouts.length} حوالة وفق مستلمي المتاجر.`);
       await load();
     } catch (cause) {
       if (isDefinitiveDshMobileClientRejection(cause)) {
@@ -161,6 +169,12 @@ export function PartnerPayoutCard() {
   const storeNames = Object.fromEntries((state?.stores ?? []).map((store) => [store.storeId, store.storeName]));
   const selectedOwners = [...new Set((selectedSummary?.stores ?? []).map((store) => store.partnerActorId))];
   const singleWallet = selectedOwners.length === 1 && (!legacyKey?.walletOwnerActorId || selectedOwners[0] === legacyKey.walletOwnerActorId);
+  const specifiedTotalMinor = selected.reduce((total, storeId) => {
+    const value = Number(toAsciiDigits(storeAmounts[storeId] ?? ""));
+    return Number.isSafeInteger(value) && value > 0 ? total + value : total;
+  }, 0);
+  const requestPreviewMinor = mode === "FULL_AVAILABLE" ? selectedSummary?.eligibleAvailableMinor ?? 0 : specifiedTotalMinor;
+  const requestReady = Boolean(selectedSummary && singleWallet && selectedSummary.eligibleAvailableMinor > 0 && selectedSummary.attributionComplete && (mode === "FULL_AVAILABLE" || specifiedTotalMinor > 0));
   return <BthwaniSurface tone="base" style={styles.card} accessibilityLabel="طلب صرف الشريك">
     <Text style={styles.title}>طلب صرف مستحقات المتاجر</Text>
     <Text style={styles.muted}>هذه المساحة تستخدم صلاحية طلب الصرف لكل متجر. قراءة التقارير المالية وتغيير المستلم صلاحيتان مستقلتان.</Text>
@@ -180,7 +194,7 @@ export function PartnerPayoutCard() {
         {mode === "SPECIFIED" ? state.stores.filter((store) => selected.includes(store.storeId)).map((store) => <TextInput key={store.storeId} accessibilityLabel={`مبلغ الصرف للمتجر ${store.storeName}`} editable={!busy} keyboardType="number-pad" value={storeAmounts[store.storeId] ?? ""} onChangeText={(value) => setStoreAmounts((current) => ({ ...current, [store.storeId]: toAsciiDigits(value).replace(/[^0-9]/g, "") }))} placeholder={`مبلغ ${store.storeName} بالريال اليمني`} placeholderTextColor={theme.colorMuted} style={styles.input} />) : null}
         {selectedSummary ? <Text style={styles.metric}>المتاح للمتاجر المختارة: {formatMoney(selectedSummary.eligibleAvailableMinor, selectedSummary.currency)}</Text> : null}
         {selected.length && selectedSummary && !singleWallet ? <Text style={styles.error}>اختر متاجر مالك واحد لكل طلب صرف.</Text> : null}
-        <BthwaniButton busy={busy} disabled={!selectedSummary || !singleWallet || selectedSummary.eligibleAvailableMinor <= 0 || !selectedSummary.attributionComplete} label="طلب الصرف للمتاجر المختارة" onPress={() => void request()} variant="secondary" />
+        <BthwaniButton busy={busy} disabled={!requestReady} label="مراجعة طلب الصرف" onPress={() => setConfirmRequest(true)} variant="secondary" />
       </>}
     </> : null}
     {lastRequest ? <View style={styles.requestBox}>
@@ -191,6 +205,15 @@ export function PartnerPayoutCard() {
     {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     {authenticated ? <BthwaniButton busy={busy} label="تحديث حالة الصرف" onPress={() => void load()} variant="secondary" /> : null}
+    <BthwaniConfirmDialog
+      busy={busy}
+      confirmLabel="تأكيد طلب الصرف"
+      description={selectedSummary ? `سيُنشأ طلب صرف بمبلغ ${formatMoney(requestPreviewMinor, selectedSummary.currency)} للمتاجر المختارة، وسيُقسم إلى حوالات وفق مستلم الصرف المعتمد لكل متجر.` : ""}
+      onCancel={() => setConfirmRequest(false)}
+      onConfirm={() => { setConfirmRequest(false); void request(); }}
+      title="مراجعة طلب الصرف"
+      visible={confirmRequest}
+    />
   </BthwaniSurface>;
 }
 
