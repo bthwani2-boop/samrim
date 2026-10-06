@@ -79,7 +79,7 @@ func (s *Service) ListForOwner(ctx context.Context, accessToken, storeID string)
 	if err != nil {
 		return nil, err
 	}
-	return s.addDelegatePresentation(ctx, grants)
+	return s.addMaskedDelegatePhones(ctx, grants)
 }
 
 func (s *Service) ListForDelegate(ctx context.Context, accessToken string) ([]postgres.StoreAccessGrant, error) {
@@ -359,7 +359,7 @@ func identityNotFound(err error) bool {
 
 var storeAccessPhoneE164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
 
-func (s *Service) addDelegatePresentation(ctx context.Context, grants []postgres.StoreAccessGrant) ([]postgres.StoreAccessGrant, error) {
+func (s *Service) addMaskedDelegatePhones(ctx context.Context, grants []postgres.StoreAccessGrant) ([]postgres.StoreAccessGrant, error) {
 	actorIDs := make([]string, 0, len(grants))
 	seen := make(map[string]struct{}, len(grants))
 	for _, grant := range grants {
@@ -389,8 +389,18 @@ func (s *Service) addDelegatePresentation(ctx context.Context, grants []postgres
 		}
 	}
 	for index := range grants {
+		grants[index].DelegatePhoneMasked = phones[grants[index].DelegateActorID]
+	}
+	return grants, nil
+}
+
+func (s *Service) addDelegatePresentation(ctx context.Context, grants []postgres.StoreAccessGrant) ([]postgres.StoreAccessGrant, error) {
+	grants, err := s.addMaskedDelegatePhones(ctx, grants)
+	if err != nil {
+		return nil, err
+	}
+	for index := range grants {
 		actorID := grants[index].DelegateActorID
-		grants[index].DelegatePhoneMasked = phones[actorID]
 		destination, destinationErr := s.wlt.ReadOfficialWalletDestination(ctx, "partner", actorID)
 		if destinationErr != nil {
 			var wltErr *wltintegration.Error
