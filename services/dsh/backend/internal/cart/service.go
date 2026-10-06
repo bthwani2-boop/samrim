@@ -333,7 +333,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 			allocationPolicy = "store-captain-cash-v1"
 		}
 		cashAmountMinor := amountMinor - internalBalanceAmountMinor
-		allocation := wlt.CustomerPaymentAllocation{OrderID: orderID, StoreID: store.ID, PartnerActorID: store.PartnerActorID, CommercialStoreTypeID: store.CommercialStoreTypeID, FulfillmentMode: fulfillmentMode, Currency: "YER", SubtotalMinor: subtotalMinor, DeliveryFeeMinor: deliveryFeeMinor, DiscountMinor: discountMinor, InternalBalanceAmountMinor: internalBalanceAmountMinor, CashAmountMinor: cashAmountMinor, CustomerPayableMinor: amountMinor, PolicyVersion: allocationPolicy}
+		allocation := wlt.CustomerPaymentAllocationInput{OrderID: orderID, StoreID: store.ID, PartnerActorID: store.PartnerActorID, CommercialStoreTypeID: store.CommercialStoreTypeID, FulfillmentMode: fulfillmentMode, Currency: "YER", SubtotalMinor: subtotalMinor, DeliveryFeeMinor: deliveryFeeMinor, DiscountMinor: discountMinor, InternalBalanceAmountMinor: internalBalanceAmountMinor, CashAmountMinor: cashAmountMinor, CustomerPayableMinor: amountMinor, PolicyVersion: allocationPolicy}
 		if promotion.PromotionID != "" {
 			allocation.PromotionFunding = &wlt.PromotionFundingRequest{PromotionID: promotion.PromotionID, PromotionVersion: promotion.PromotionVersion, PromotionCode: promotion.PromotionCode, FundingSource: promotion.FundingSource, PartnerSharePercent: promotion.PartnerSharePercent}
 		}

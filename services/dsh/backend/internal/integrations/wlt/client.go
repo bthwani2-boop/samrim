@@ -82,9 +82,8 @@ type CustomerPaymentAllocation struct {
 	InternalBalanceAmountMinor int64                    `json:"internalBalanceAmountMinor"`
 	CashAmountMinor            int64                    `json:"cashAmountMinor"`
 	CustomerPayableMinor       int64                    `json:"customerPayableMinor"`
-	PolicyVersion              string                   `json:"policyVersion"`
-	PromotionFunding           *PromotionFundingRequest `json:"promotionFunding,omitempty"`
-	CreatedAt                  string                   `json:"createdAt"`
+	PolicyVersion              string `json:"policyVersion"`
+	CreatedAt                  string `json:"createdAt"`
 }
 
 // PromotionFundingRequest carries the checkout-frozen promotion funding facts
@@ -117,7 +116,7 @@ type OrderAdjustmentReconciliationCases struct {
 	Cases []OrderAdjustmentReconciliationCase `json:"cases"`
 }
 
-type customerPaymentAllocationRequest struct {
+type CustomerPaymentAllocationInput struct {
 	OrderID                    string                   `json:"orderId"`
 	StoreID                    string                   `json:"storeId"`
 	PartnerActorID             string                   `json:"partnerActorId"`
@@ -909,11 +908,11 @@ func (c *Client) Create(ctx context.Context, externalReference, payerActorID str
 	return response.PaymentIntent, response.IdempotentReplay, err
 }
 
-func (c *Client) CreateForOrder(ctx context.Context, orderID, externalReference, payerActorID string, amountMinor int64, allocation CustomerPaymentAllocation, idempotencyKey, correlationID string) (PaymentIntent, bool, error) {
+func (c *Client) CreateForOrder(ctx context.Context, orderID, externalReference, payerActorID string, amountMinor int64, allocation CustomerPaymentAllocationInput, idempotencyKey, correlationID string) (PaymentIntent, bool, error) {
 	return c.CreateForOrderWithMethod(ctx, orderID, externalReference, payerActorID, amountMinor, methodCashOnDelivery, allocation, idempotencyKey, correlationID)
 }
 
-func (c *Client) CreateForOrderWithMethod(ctx context.Context, orderID, externalReference, payerActorID string, amountMinor int64, method string, allocation CustomerPaymentAllocation, idempotencyKey, correlationID string) (PaymentIntent, bool, error) {
+func (c *Client) CreateForOrderWithMethod(ctx context.Context, orderID, externalReference, payerActorID string, amountMinor int64, method string, allocation CustomerPaymentAllocationInput, idempotencyKey, correlationID string) (PaymentIntent, bool, error) {
 	body := map[string]any{
 		"orderId":           strings.TrimSpace(orderID),
 		"externalReference": strings.TrimSpace(externalReference),
@@ -921,22 +920,7 @@ func (c *Client) CreateForOrderWithMethod(ctx context.Context, orderID, external
 		"amountMinor":       amountMinor,
 		"currency":          "YER",
 		"method":            strings.TrimSpace(method),
-		"customerPaymentAllocation": customerPaymentAllocationRequest{
-			OrderID:                    allocation.OrderID,
-			StoreID:                    allocation.StoreID,
-			PartnerActorID:             allocation.PartnerActorID,
-			CommercialStoreTypeID:      allocation.CommercialStoreTypeID,
-			FulfillmentMode:            allocation.FulfillmentMode,
-			Currency:                   allocation.Currency,
-			SubtotalMinor:              allocation.SubtotalMinor,
-			DeliveryFeeMinor:           allocation.DeliveryFeeMinor,
-			DiscountMinor:              allocation.DiscountMinor,
-			InternalBalanceAmountMinor: allocation.InternalBalanceAmountMinor,
-			CashAmountMinor:            allocation.CashAmountMinor,
-			CustomerPayableMinor:       allocation.CustomerPayableMinor,
-			PolicyVersion:              allocation.PolicyVersion,
-			PromotionFunding:           allocation.PromotionFunding,
-		},
+		"customerPaymentAllocation": allocation,
 	}
 	var response paymentIntentResponse
 	err := c.request(ctx, http.MethodPost, "/wlt/v1/payment-intents", body, idempotencyKey, correlationID, 0, &response)
