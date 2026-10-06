@@ -4,7 +4,6 @@
   "projectType": "application",
   "implicitDependencies": [
     "dsh",
-    "dsh-database",
     "identity-go-client",
     "wlt"
   ],
