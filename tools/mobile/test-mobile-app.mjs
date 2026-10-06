@@ -119,6 +119,7 @@ if (app === "app-partner") {
   assert.ok(accountContent.includes("PartnerAccessInvitationsCard"), `${app}: the account surface must keep identity-directed access invitations reachable`);
   const partnerStoreContent = fs.readFileSync(path.join(appDir, "src", "features", "partner-onboarding", "partner-store.tsx"), "utf8");
   assert.ok(partnerStoreContent.includes("STORE_SURFACE_PERMISSIONS"), `${app}: the Store surface selector must list only stores with material store functions`);
+  assert.ok(partnerStoreContent.includes("isStoreSurfaceEligible"), `${app}: the Store surface must land on a store with material store functions`);
   const partnerOrdersContent = fs.readFileSync(path.join(appDir, "src", "features", "partner-onboarding", "partner-orders.tsx"), "utf8");
   assert.ok(partnerOrdersContent.includes('requiredPermissions={["orders"]}'), `${app}: the orders selector must stay scoped to stores granting orders`);
   const storeAccessContent = fs.readFileSync(path.join(appDir, "src", "features", "partner-onboarding", "partner-store-access.tsx"), "utf8");

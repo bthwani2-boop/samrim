@@ -1,7 +1,7 @@
 import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type JoiningCaseResponse, publicationStateLabel, type PublicationState, type StoreFulfillmentMode } from "@bthwani/dsh";
 import { type Href, Link } from "expo-router";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Text, View } from "react-native";
 import { STORE_SURFACE_PERMISSIONS } from "../../shell/partner-authority";
 import { StoreOfferManagement } from "../store-offer/store-offer";
@@ -27,6 +27,10 @@ function publicationLabel(state: string): string {
 
 function isStoreFulfillmentMode(value: string): value is StoreFulfillmentMode {
   return value === "BTHWANI_CAPTAIN" || value === "PARTNER_CAPTAIN" || value === "CUSTOMER_PICKUP";
+}
+
+function isStoreSurfaceEligible(store: PartnerAccessibleStore): boolean {
+  return store.owned || STORE_SURFACE_PERMISSIONS.some((permission) => store.permissions.includes(permission));
 }
 
 function StoreHeaderRow({ styles, store }: { styles: SurfaceStyles; store: PartnerAccessibleStore }) {
@@ -68,12 +72,21 @@ function StoreManagementSurfaces({ styles, store, canCatalog, canOperate, canPro
 export function PartnerStore() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
-  const { state: scopeState, selectedStore } = usePartnerStoreScope();
+  const { state: scopeState, selectedStore, stores, selectStore } = usePartnerStoreScope();
   const onboarding = usePartnerStoreContext();
   const firstStoreCase = onboarding.state.kind === "ready" ? onboarding.state.value : null;
   const canCatalog = Boolean(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("catalog")));
   const canOperate = Boolean(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("store_operations")));
   const canPromote = Boolean(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("promotions")));
+
+  // Landing on المتجر must present a store this actor holds a material store
+  // function on; a selection carried over from another surface never leaves
+  // the Store surface on a functionless store.
+  useEffect(() => {
+    if (scopeState.kind !== "ready" || !selectedStore || isStoreSurfaceEligible(selectedStore)) return;
+    const firstEligible = stores.find(isStoreSurfaceEligible);
+    if (firstEligible) selectStore(firstEligible.id);
+  }, [scopeState.kind, selectedStore, stores, selectStore]);
 
   return <View style={styles.container}>
     <Text style={styles.sectionTitle}>المتجر</Text>
