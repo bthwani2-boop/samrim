@@ -7232,16 +7232,6 @@ components:
           enum: [customer, captain]
         actorId:
           type: string
-        displayName:
-          type: string
-          maxLength: 200
-          readOnly: true
-          description: DSH-owned human-facing business or role profile name for Finance presentation.
-        phoneMasked:
-          type: string
-          maxLength: 24
-          readOnly: true
-          description: Current Identity phone masked for Finance presentation.
         currency:
           type: string
           const: YER
@@ -7293,6 +7283,16 @@ components:
           enum: [customer, partner, captain, field]
         actorId:
           type: string
+        displayName:
+          type: string
+          maxLength: 200
+          readOnly: true
+          description: DSH-owned human-facing business or role profile name for Finance presentation.
+        phoneMasked:
+          type: string
+          maxLength: 24
+          readOnly: true
+          description: Current Identity phone masked for Finance presentation.
         currency:
           type: string
           const: YER
@@ -8466,6 +8466,7 @@ components:
           maxLength: 128
         currency:
           type: string
+          const: YER
         recipients:
           type: array
           items:

@@ -15,24 +15,24 @@ import (
 const storeAccessInvitationLifetime = 7 * 24 * time.Hour
 
 type StoreAccessGrant struct {
-	ID                  string     `json:"id"`
-	StoreID             string     `json:"storeId"`
-	StoreName           string     `json:"storeName"`
-	OwnerPartnerActorID string     `json:"ownerPartnerActorId"`
+	ID                             string     `json:"id"`
+	StoreID                        string     `json:"storeId"`
+	StoreName                      string     `json:"storeName"`
+	OwnerPartnerActorID            string     `json:"ownerPartnerActorId"`
 	DelegateActorID                string     `json:"delegateActorId"`
 	DelegatePhoneMasked            string     `json:"delegatePhoneMasked,omitempty"`
 	DelegateBeneficiaryName        string     `json:"delegateBeneficiaryName,omitempty"`
 	DelegateWalletProviderKey      string     `json:"delegateWalletProviderKey,omitempty"`
 	DelegateWalletIdentifierMasked string     `json:"delegateWalletIdentifierMasked,omitempty"`
-	Permissions         []string   `json:"permissions"`
-	State               string     `json:"state"`
-	Version             int        `json:"version"`
-	ExpiresAt           time.Time  `json:"expiresAt"`
-	AcceptedAt          *time.Time `json:"acceptedAt,omitempty"`
-	DeclinedAt          *time.Time `json:"declinedAt,omitempty"`
-	RevokedAt           *time.Time `json:"revokedAt,omitempty"`
-	CreatedAt           time.Time  `json:"createdAt"`
-	UpdatedAt           time.Time  `json:"updatedAt"`
+	Permissions                    []string   `json:"permissions"`
+	State                          string     `json:"state"`
+	Version                        int        `json:"version"`
+	ExpiresAt                      time.Time  `json:"expiresAt"`
+	AcceptedAt                     *time.Time `json:"acceptedAt,omitempty"`
+	DeclinedAt                     *time.Time `json:"declinedAt,omitempty"`
+	RevokedAt                      *time.Time `json:"revokedAt,omitempty"`
+	CreatedAt                      time.Time  `json:"createdAt"`
+	UpdatedAt                      time.Time  `json:"updatedAt"`
 }
 
 type PartnerAccessibleStore struct {

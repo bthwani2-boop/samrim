@@ -143,13 +143,17 @@ func (s *BeneficiaryFinanceServer) listOperatorFinancialStatementSummaries(w htt
 			actorIDs = append(actorIDs, item.ActorID)
 		}
 	}
+	displayNames := make(map[string]string, len(actorIDs))
+	phones := make(map[string]string, len(actorIDs))
 	if len(actorIDs) > 0 && (actorType == "partner" || actorType == "captain" || actorType == "field") {
-		displayNames, nameErr := postgres.ReadBeneficiaryFinanceDisplayNames(r.Context(), s.db, actorType, actorIDs)
+		names, nameErr := postgres.ReadBeneficiaryFinanceDisplayNames(r.Context(), s.db, actorType, actorIDs)
 		if nameErr != nil {
 			writeError(w, http.StatusBadGateway, "BENEFICIARY_PRESENTATION_UNAVAILABLE", "beneficiary presentation is unavailable")
 			return
 		}
-		phones := make(map[string]string, len(actorIDs))
+		for actorID, displayName := range names {
+			displayNames[actorID] = displayName
+		}
 		for start := 0; start < len(actorIDs); start += 100 {
 			end := start + 100
 			if end > len(actorIDs) {
@@ -166,13 +170,25 @@ func (s *BeneficiaryFinanceServer) listOperatorFinancialStatementSummaries(w htt
 				}
 			}
 		}
-		for index := range result.Summaries {
-			result.Summaries[index].DisplayName = displayNames[result.Summaries[index].ActorID]
-			result.Summaries[index].PhoneMasked = phones[result.Summaries[index].ActorID]
+	}
+	summaries := make([]beneficiaryFinancialStatementSummaryPresentation, len(result.Summaries))
+	for index, item := range result.Summaries {
+		summaries[index] = beneficiaryFinancialStatementSummaryPresentation{
+			FinancialStatementSummary: item,
+			DisplayName:               displayNames[item.ActorID],
+			PhoneMasked:               phones[item.ActorID],
 		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, beneficiaryFinancialStatementSummaryRegistryPresentation{
+		ActorType:   result.ActorType,
+		PeriodStart: result.PeriodStart,
+		PeriodEnd:   result.PeriodEnd,
+		Summaries:   summaries,
+		Totals:      result.Totals,
+		NextCursor:  result.NextCursor,
+		Limit:       result.Limit,
+	})
 }
 
 type payoutGovernanceActionInput struct {
@@ -210,6 +226,45 @@ type settlementStatementRowInput struct {
 	AmountMinor               int64  `json:"amountMinor"`
 	Currency                  string `json:"currency"`
 	TransactionAt             string `json:"transactionAt"`
+}
+
+type beneficiaryFinancialStatementSummaryPresentation struct {
+	wlt.FinancialStatementSummary
+	DisplayName string `json:"displayName,omitempty"`
+	PhoneMasked string `json:"phoneMasked,omitempty"`
+}
+
+type beneficiaryFinancialStatementSummaryRegistryPresentation struct {
+	ActorType   string                                             `json:"actorType"`
+	PeriodStart string                                             `json:"periodStart"`
+	PeriodEnd   string                                             `json:"periodEnd"`
+	Summaries   []beneficiaryFinancialStatementSummaryPresentation `json:"summaries"`
+	Totals      wlt.FinancialStatementSummaryTotals                `json:"totals"`
+	NextCursor  string                                             `json:"nextCursor,omitempty"`
+	Limit       int                                                `json:"limit"`
+}
+
+type beneficiaryPayoutStatePresentation struct {
+	wlt.PayoutState
+	DisplayName string `json:"displayName,omitempty"`
+	PhoneMasked string `json:"phoneMasked,omitempty"`
+}
+
+type beneficiaryPayoutStateRegistryPresentation struct {
+	Beneficiaries []beneficiaryPayoutStatePresentation `json:"beneficiaries"`
+	NextCursor    string                               `json:"nextCursor,omitempty"`
+	Limit         int                                  `json:"limit"`
+}
+
+type settlementBatchItemPresentation struct {
+	wlt.SettlementBatchItem
+	DisplayName string `json:"displayName,omitempty"`
+	PhoneMasked string `json:"phoneMasked,omitempty"`
+}
+
+type settlementBatchPresentation struct {
+	wlt.SettlementBatch
+	Items []settlementBatchItemPresentation `json:"items"`
 }
 
 func (s *BeneficiaryFinanceServer) listOperatorPayoutRequests(w http.ResponseWriter, r *http.Request) {
@@ -301,13 +356,21 @@ func (s *BeneficiaryFinanceServer) listOperatorBeneficiaryPayoutStates(w http.Re
 			}
 		}
 	}
-	for index := range result.Beneficiaries {
-		key := result.Beneficiaries[index].ActorType + "\x00" + result.Beneficiaries[index].ActorID
-		result.Beneficiaries[index].DisplayName = displayNames[key]
-		result.Beneficiaries[index].PhoneMasked = phones[key]
+	beneficiaries := make([]beneficiaryPayoutStatePresentation, len(result.Beneficiaries))
+	for index, item := range result.Beneficiaries {
+		key := item.ActorType + "\x00" + item.ActorID
+		beneficiaries[index] = beneficiaryPayoutStatePresentation{
+			PayoutState: item,
+			DisplayName: displayNames[key],
+			PhoneMasked: phones[key],
+		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, beneficiaryPayoutStateRegistryPresentation{
+		Beneficiaries: beneficiaries,
+		NextCursor:    result.NextCursor,
+		Limit:         result.Limit,
+	})
 }
 
 func (s *BeneficiaryFinanceServer) readOperatorPayoutRequest(w http.ResponseWriter, r *http.Request) {
@@ -430,9 +493,13 @@ func (s *BeneficiaryFinanceServer) createOperatorSettlementBatch(w http.Response
 	writeJSON(w, http.StatusCreated, map[string]any{"batch": item})
 }
 
-func (s *BeneficiaryFinanceServer) enrichSettlementBatchPresentation(ctx context.Context, batch *wlt.SettlementBatch) error {
-	if batch == nil || len(batch.Items) == 0 {
-		return nil
+func (s *BeneficiaryFinanceServer) buildSettlementBatchPresentation(ctx context.Context, batch wlt.SettlementBatch) (settlementBatchPresentation, error) {
+	presentation := settlementBatchPresentation{
+		SettlementBatch: batch,
+		Items:           make([]settlementBatchItemPresentation, len(batch.Items)),
+	}
+	if len(batch.Items) == 0 {
+		return presentation, nil
 	}
 	actorIDsByType := map[string][]string{"partner": {}, "captain": {}, "field": {}}
 	for _, item := range batch.Items {
@@ -448,7 +515,7 @@ func (s *BeneficiaryFinanceServer) enrichSettlementBatchPresentation(ctx context
 		}
 		names, err := postgres.ReadBeneficiaryFinanceDisplayNames(ctx, s.db, actorType, actorIDs)
 		if err != nil {
-			return err
+			return settlementBatchPresentation{}, err
 		}
 		for actorID, displayName := range names {
 			displayNames[actorType+"\x00"+actorID] = displayName
@@ -460,7 +527,7 @@ func (s *BeneficiaryFinanceServer) enrichSettlementBatchPresentation(ctx context
 			}
 			roles, err := s.identity.ReadActorRoles(ctx, actorType, actorIDs[start:end])
 			if err != nil {
-				return err
+				return settlementBatchPresentation{}, err
 			}
 			for _, role := range roles.Items {
 				if role.Role == actorType && role.ActorID != "" {
@@ -469,12 +536,15 @@ func (s *BeneficiaryFinanceServer) enrichSettlementBatchPresentation(ctx context
 			}
 		}
 	}
-	for index := range batch.Items {
-		key := batch.Items[index].ActorType + "\x00" + batch.Items[index].ActorID
-		batch.Items[index].DisplayName = displayNames[key]
-		batch.Items[index].PhoneMasked = phones[key]
+	for index, item := range batch.Items {
+		key := item.ActorType + "\x00" + item.ActorID
+		presentation.Items[index] = settlementBatchItemPresentation{
+			SettlementBatchItem: item,
+			DisplayName:         displayNames[key],
+			PhoneMasked:         phones[key],
+		}
 	}
-	return nil
+	return presentation, nil
 }
 
 func (s *BeneficiaryFinanceServer) readOperatorSettlementBatch(w http.ResponseWriter, r *http.Request) {
@@ -486,11 +556,12 @@ func (s *BeneficiaryFinanceServer) readOperatorSettlementBatch(w http.ResponseWr
 		writeWLTFinanceError(w, err)
 		return
 	}
-	if err := s.enrichSettlementBatchPresentation(r.Context(), &item); err != nil {
+	presentation, err := s.buildSettlementBatchPresentation(r.Context(), item)
+	if err != nil {
 		writeError(w, http.StatusBadGateway, "BENEFICIARY_PRESENTATION_UNAVAILABLE", "beneficiary presentation is unavailable")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"batch": item})
+	writeJSON(w, http.StatusOK, map[string]any{"batch": presentation})
 }
 
 func (s *BeneficiaryFinanceServer) exportOperatorSettlementBatch(w http.ResponseWriter, r *http.Request) {

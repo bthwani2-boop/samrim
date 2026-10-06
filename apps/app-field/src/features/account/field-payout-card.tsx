@@ -42,7 +42,7 @@ export function FieldPayoutCard() {
     if (pendingAttempt) mode = pendingAttempt.mode;
     const normalizedAmount = toAsciiDigits(amount.trim()).replace(/\D/g, "");
     const parsed = pendingAttempt?.amountMinor ?? (mode === "SPECIFIED" ? Number(normalizedAmount) : undefined);
-    if (!pendingAttempt && mode === "SPECIFIED" && (!Number.isSafeInteger(parsed) || (parsed ?? 0) <= 0 || (state && (parsed ?? 0) > state.eligibleAvailableMinor)) {
+    if (!pendingAttempt && mode === "SPECIFIED" && (!Number.isSafeInteger(parsed) || (parsed ?? 0) <= 0 || (state && (parsed ?? 0) > state.eligibleAvailableMinor))) {
       setError(state && (parsed ?? 0) > state.eligibleAvailableMinor ? "المبلغ المحدد يتجاوز المتاح للتسوية." : "أدخل مبلغ تسوية صحيحًا أكبر من صفر.");
       return;
     }

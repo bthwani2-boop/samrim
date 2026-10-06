@@ -93,7 +93,7 @@ export function PartnerStoreAccess({ storeID }: { storeID: string }) {
         if (permission === "orders") return current.filter((item) => item !== "orders" && item !== "fulfillment");
         return current.filter((item) => item !== permission);
       }
-      if (permission === "fulfillment") return [...new Set([...current, "orders", "fulfillment"])];
+      if (permission === "fulfillment") return [...new Set<StoreAccessPermission>([...current, "orders", "fulfillment"])];
       return [...current, permission];
     });
     inviteAttempt.current = null;
@@ -253,7 +253,7 @@ function StoreAccessGrantCard({ grant, busy, onTransition, onPermissions }: { gr
       if (permission === "orders") return selected.filter((item) => item !== "orders" && item !== "fulfillment");
       return selected.filter((item) => item !== permission);
     }
-    if (permission === "fulfillment") return [...new Set([...selected, "orders", "fulfillment"])];
+    if (permission === "fulfillment") return [...new Set<StoreAccessPermission>([...selected, "orders", "fulfillment"])];
     return [...selected, permission];
   };
   return <View style={{ borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 8, padding: 12 }}>

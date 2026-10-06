@@ -465,8 +465,6 @@ type FinancialStatement struct {
 type FinancialStatementSummary struct {
 	ActorType              string `json:"actorType"`
 	ActorID                string `json:"actorId"`
-	DisplayName            string `json:"displayName,omitempty"`
-	PhoneMasked            string `json:"phoneMasked,omitempty"`
 	BeneficiaryName        string `json:"beneficiaryName"`
 	WalletIdentifierMasked string `json:"walletIdentifierMasked"`
 	Currency               string `json:"currency"`
@@ -586,8 +584,6 @@ type SettlementBatchItem struct {
 	PayoutID     string                   `json:"payoutId"`
 	ActorType    string                   `json:"actorType"`
 	ActorID      string                   `json:"actorId"`
-	DisplayName  string                   `json:"displayName,omitempty"`
-	PhoneMasked  string                   `json:"phoneMasked,omitempty"`
 	AmountMinor  int64                    `json:"amountMinor"`
 	Currency     string                   `json:"currency"`
 	PayoutStatus string                   `json:"payoutStatus"`
@@ -727,8 +723,6 @@ type settlementStatementRowResponse struct {
 type PayoutState struct {
 	ActorType              string                     `json:"actorType"`
 	ActorID                string                     `json:"actorId"`
-	DisplayName            string                     `json:"displayName,omitempty"`
-	PhoneMasked            string                     `json:"phoneMasked,omitempty"`
 	Currency               string                     `json:"currency"`
 	EligibleAvailableMinor int64                      `json:"eligibleAvailableMinor"`
 	HeldMinor              int64                      `json:"heldMinor"`

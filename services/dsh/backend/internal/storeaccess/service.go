@@ -489,6 +489,7 @@ func (s *Service) ReadStorePayoutRecipientsForPartner(ctx context.Context, partn
 	}
 	return readback, names, profiles, nil
 }
+
 // PrepareStorePayoutRecipientSelection verifies, from the owner session, that the
 // referenced team grant is an active grant on that Store owned by the acting owner,
 // and returns the canonical delegate actor behind the boundary. The user-facing

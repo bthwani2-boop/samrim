@@ -238,9 +238,13 @@ function propertyType(lines, context) {
             }
             const additionalIndex = lines.findIndex((line) => line.includes("additionalProperties:"));
             if (additionalIndex >= 0) {
+              const additionalLine = lines[additionalIndex].trim();
+              const inlineAdditionalType = additionalLine.match(/^additionalProperties:\s*\{\s*type:\s*(string|boolean|integer|number)\s*\}$/)?.[1] ?? null;
               const valueLines = lines.slice(additionalIndex + 1);
-              const valueType = valueAfter(valueLines, "type:", 12);
-              if (valueType === "string") rendered = "Readonly<Record<string, string>>";
+              const valueRef = valueAfter(valueLines, "$ref:", 12);
+              const valueType = inlineAdditionalType ?? valueAfter(valueLines, "type:", 12);
+              if (valueRef) rendered = "Readonly<Record<string, " + refType(valueRef) + ">>";
+              else if (valueType === "string") rendered = "Readonly<Record<string, string>>";
               else if (valueType === "boolean") rendered = "Readonly<Record<string, boolean>>";
               else if (valueType === "integer" || valueType === "number") rendered = "Readonly<Record<string, number>>";
               else rendered = "Readonly<Record<string, unknown>>";
@@ -340,7 +344,25 @@ function goPropertyType(lines, optional, context) {
   if (type === "integer") return pointerType ? "*int" : "int";
   if (type === "number") return pointerType ? "*float64" : "float64";
   if (type === "boolean") return pointerType ? "*bool" : "bool";
-  if (type === "object") return pointerType ? "*map[string]any" : "map[string]any";
+  if (type === "object") {
+    const additionalIndex = lines.findIndex((line) => line.includes("additionalProperties:"));
+    if (additionalIndex >= 0) {
+      const additionalLine = lines[additionalIndex].trim();
+      const inlineAdditionalType = additionalLine.match(/^additionalProperties:\s*\{\s*type:\s*(string|boolean|integer|number)\s*\}$/)?.[1] ?? null;
+      const valueLines = lines.slice(additionalIndex + 1);
+      const valueRef = valueAfter(valueLines, "$ref:", 12);
+      const valueType = inlineAdditionalType ?? valueAfter(valueLines, "type:", 12);
+      let mapValueType = "any";
+      if (valueRef) mapValueType = refType(valueRef);
+      else if (valueType === "string") mapValueType = "string";
+      else if (valueType === "boolean") mapValueType = "bool";
+      else if (valueType === "integer") mapValueType = "int";
+      else if (valueType === "number") mapValueType = "float64";
+      const mapType = "map[string]" + mapValueType;
+      return pointerType ? "*" + mapType : mapType;
+    }
+    return pointerType ? "*map[string]any" : "map[string]any";
+  }
   if (type === "array") {
     const itemsIndex = lines.findIndex((line) => line === "          items:");
     if (itemsIndex < 0) throw new Error(context + " array is missing items");

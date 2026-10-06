@@ -167,12 +167,12 @@ func (s *PartnerFinanceServer) listOperatorCommissionReceivables(w http.Response
 	for _, item := range result.Items {
 		presentation := presentations[item.PartnerActorID]
 		items = append(items, map[string]any{
-			"partnerActorId": item.PartnerActorID,
-			"businessName": strings.TrimSpace(presentation.BusinessName),
-			"partnerPhoneMasked": phones[item.PartnerActorID],
-			"currency": item.Currency,
+			"partnerActorId":                       item.PartnerActorID,
+			"businessName":                         strings.TrimSpace(presentation.BusinessName),
+			"partnerPhoneMasked":                   phones[item.PartnerActorID],
+			"currency":                             item.Currency,
 			"outstandingCommissionReceivableMinor": item.OutstandingCommissionReceivableMinor,
-			"profileState": item.ProfileState,
+			"profileState":                         item.ProfileState,
 		})
 	}
 	response := map[string]any{"items": items, "limit": result.Limit}
