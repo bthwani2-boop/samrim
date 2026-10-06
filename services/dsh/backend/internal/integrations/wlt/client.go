@@ -82,8 +82,8 @@ type CustomerPaymentAllocation struct {
 	InternalBalanceAmountMinor int64  `json:"internalBalanceAmountMinor"`
 	CashAmountMinor            int64  `json:"cashAmountMinor"`
 	CustomerPayableMinor       int64  `json:"customerPayableMinor"`
-	PolicyVersion              string `json:"policyVersion"`
-	CreatedAt                  string `json:"createdAt"`
+	PolicyVersion              string                   `json:"policyVersion"`
+	CreatedAt                  string                   `json:"createdAt"`
 }
 
 // PromotionFundingRequest carries the checkout-frozen promotion funding facts
@@ -914,12 +914,12 @@ func (c *Client) CreateForOrder(ctx context.Context, orderID, externalReference,
 
 func (c *Client) CreateForOrderWithMethod(ctx context.Context, orderID, externalReference, payerActorID string, amountMinor int64, method string, allocation CustomerPaymentAllocationInput, idempotencyKey, correlationID string) (PaymentIntent, bool, error) {
 	body := map[string]any{
-		"orderId":           strings.TrimSpace(orderID),
-		"externalReference": strings.TrimSpace(externalReference),
-		"payerActorId":      strings.TrimSpace(payerActorID),
-		"amountMinor":       amountMinor,
-		"currency":          "YER",
-		"method":            strings.TrimSpace(method),
+		"orderId":                   strings.TrimSpace(orderID),
+		"externalReference":         strings.TrimSpace(externalReference),
+		"payerActorId":              strings.TrimSpace(payerActorID),
+		"amountMinor":               amountMinor,
+		"currency":                  "YER",
+		"method":                    strings.TrimSpace(method),
 		"customerPaymentAllocation": allocation,
 	}
 	var response paymentIntentResponse
