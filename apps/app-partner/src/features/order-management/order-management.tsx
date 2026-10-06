@@ -1,12 +1,12 @@
 import { borders, radius, sizing, type resolveTheme, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniChip, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniChip, BthwaniConfirmDialog, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type CaptainAssignment, type CaptainOffer, captainHandoffStateLabel, createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderAdjustmentProposalRequest, type OrderTransitionRequest, orderStateLabel, paymentMethodLabel, paymentStateLabel, type StoreCaptainMembership } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useLocalSearchParams } from "expo-router";
 
 import { usePartnerStoreScope } from "../partner-onboarding/partner-store-scope-context";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { OrderConversation } from "./order-conversation";
 
@@ -35,6 +35,10 @@ const queueFilters = [
 
 type QueueFilter = (typeof queueFilters)[number]["key"];
 type StoreCaptainChoice = Readonly<{ actorId: string; label: string }>;
+type OrderConfirmation =
+  | Readonly<{ kind: "remove_line"; order: Order; lineID: string }>
+  | Readonly<{ kind: "pickup_no_show"; order: Order }>
+  | null;
 
 function storeCaptainChoiceLabel(membership: StoreCaptainMembership): string {
   const parts = [membership.captainNameAr?.trim(), membership.captainPhoneMasked?.trim()].filter((value): value is string => Boolean(value));
@@ -64,6 +68,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   const [filter, setFilter] = useState<QueueFilter>("ALL");
   const [pickupCodes, setPickupCodes] = useState<Readonly<Record<string, string>>>({});
   const [adjustmentQuantities, setAdjustmentQuantities] = useState<Readonly<Record<string, string>>>({});
+  const [confirmation, setConfirmation] = useState<OrderConfirmation>(null);
   const normalizedSearch = searchQuery.trim();
 
   const load = useCallback(async (options: { append?: boolean; cursor?: string } = {}) => {
@@ -150,10 +155,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
   }
 
   function confirmRemoveLine(order: Order, lineID: string) {
-    Alert.alert("إبلاغ العميل عن صنف غير متوفر", "سيُرسل طلب إزالة الصنف إلى العميل للموافقة. لا يتغير إجمالي الطلب ولا يُنفذ استرداد تلقائي؛ سيبقى الطلب متوقفًا حتى اكتمال التسوية المالية المعتمدة.", [
-      { text: "العودة", style: "cancel" },
-      { text: "إرسال للعميل", onPress: () => void proposeAdjustment(order, lineID, "REMOVE_ITEM") },
-    ]);
+    setConfirmation({ kind: "remove_line", order, lineID });
   }
 
   async function confirmStorePickup(order: Order) {
@@ -182,10 +184,7 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
 
   function markPickupNoShow(order: Order) {
     if (busy || loading || order.state !== "READY_FOR_PICKUP" || order.fulfillmentMode !== "CUSTOMER_PICKUP" || order.paymentMethod !== "CASH_AT_STORE" || order.paymentState !== "REQUIRES_COLLECTION") return;
-    Alert.alert("تسجيل عدم حضور العميل", "سيُلغى الطلب غير المستلم، ويُحرر المخزون المحجوز، ويُلغى التحصيل غير المدفوع. لا تسجل ذلك إذا كان العميل قد استلم الطلب.", [
-      { text: "العودة", style: "cancel" },
-      { text: "تأكيد عدم الحضور", style: "destructive", onPress: () => void transition(order, "CANCELLED") },
-    ]);
+    setConfirmation({ kind: "pickup_no_show", order });
   }
 
   async function confirmHandoff(order: Order, assignment: CaptainAssignment) {
@@ -328,6 +327,25 @@ export function OrderManagement({ storeId }: { storeId?: string | undefined }) {
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {hasMore ? <BthwaniButton busy={loadingMore} disabled={loading || loadingMore || Boolean(busy)} label="تحميل طلبات أكثر" onPress={() => void load({ append: true, cursor })} variant="secondary" /> : null}
       <BthwaniButton busy={loading || Boolean(busy)} disabled={loading || Boolean(busy)} label="تحديث الطلبات" onPress={() => void load()} variant="secondary" />
+      <BthwaniConfirmDialog
+        busy={Boolean(confirmation && busy === confirmation.order.id)}
+        confirmLabel={confirmation?.kind === "pickup_no_show" ? "تأكيد عدم الحضور" : "إرسال للعميل"}
+        description={confirmation?.kind === "pickup_no_show"
+          ? "سيُلغى الطلب غير المستلم، ويُحرر المخزون المحجوز، ويُلغى التحصيل غير المدفوع. لا تسجل ذلك إذا كان العميل قد استلم الطلب."
+          : confirmation?.kind === "remove_line"
+            ? "سيُرسل طلب إزالة الصنف إلى العميل للموافقة. لا يتغير إجمالي الطلب ولا يُنفذ استرداد تلقائي؛ سيبقى الطلب متوقفًا حتى اكتمال التسوية المالية المعتمدة."
+            : ""}
+        intent={confirmation?.kind === "pickup_no_show" ? "danger" : "primary"}
+        onCancel={() => setConfirmation(null)}
+        onConfirm={() => {
+          const pending = confirmation;
+          setConfirmation(null);
+          if (pending?.kind === "pickup_no_show") void transition(pending.order, "CANCELLED");
+          else if (pending?.kind === "remove_line") void proposeAdjustment(pending.order, pending.lineID, "REMOVE_ITEM");
+        }}
+        title={confirmation?.kind === "pickup_no_show" ? "تسجيل عدم حضور العميل" : "إبلاغ العميل عن صنف غير متوفر"}
+        visible={Boolean(confirmation)}
+      />
     </View>
   );
 }
