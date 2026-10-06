@@ -229,13 +229,13 @@ const promotionSelect = `id,code,name_ar,description_ar,kind,value_minor,max_dis
 // its column list; TestPublicPromotionsListingKeepsCanonicalColumns fails when
 // the two drift apart.
 const listPublicPromotionsQuery = `SELECT id,code,name_ar,description_ar,kind,value_minor,max_discount_minor,funding_source,funding_share_partner_percent,store_id,service_city_id,state,starts_at,ends_at,requires_partner_opt_in,min_order_subtotal_minor,redemption_limit,redeemed_count,version,created_by_actor_id,created_at,updated_at
-	FROM dsh.commerce_promotions
-	WHERE (NOT $1 OR (state='PUBLISHED' AND starts_at <= clock_timestamp() AND (ends_at IS NULL OR ends_at > clock_timestamp())))
-	AND (NOT $1 OR service_city_id IS NULL OR service_city_id=$2)
-	AND (NOT $1 OR store_id IS NULL OR ($3<>'' AND store_id=$3))
-	AND (NOT $1 OR requires_partner_opt_in = false OR EXISTS (SELECT 1 FROM dsh.commerce_promotion_store_opt_ins o WHERE o.promotion_id=dsh.commerce_promotions.id AND o.store_id=$3 AND o.state='OPTED_IN'))
-	ORDER BY starts_at DESC,id DESC
-	LIMIT CASE WHEN $1 THEN 4 ELSE NULL END`
+        FROM dsh.commerce_promotions
+        WHERE (NOT $1 OR (state='PUBLISHED' AND starts_at <= clock_timestamp() AND (ends_at IS NULL OR ends_at > clock_timestamp())))
+        AND (NOT $1 OR service_city_id IS NULL OR service_city_id=$2)
+        AND (NOT $1 OR store_id IS NULL OR ($3<>'' AND store_id=$3))
+        AND (NOT $1 OR requires_partner_opt_in = false OR EXISTS (SELECT 1 FROM dsh.commerce_promotion_store_opt_ins o WHERE o.promotion_id=dsh.commerce_promotions.id AND o.store_id=$3 AND o.state='OPTED_IN'))
+        ORDER BY starts_at DESC,id DESC
+        LIMIT CASE WHEN $1 THEN 4 ELSE NULL END`
 
 // ListStorePromotions returns every promotion scoped to one Store across its whole
 // lifecycle (draft, published, paused, ended) for the owner's workspace views.
@@ -385,15 +385,16 @@ func SetPromotionState(ctx context.Context, db *sql.DB, id, state, idempotencyKe
 	if !errors.Is(err, sql.ErrNoRows) {
 		return PromotionRecord{}, false, err
 	}
+	var stateGuard int
 	if state == "PUBLISHED" {
-		if err := tx.QueryRowContext(ctx, "SELECT 1 FROM dsh.commerce_promotions WHERE id=$1 AND state IN ('DRAFT','PAUSED')", id).Scan(nil); errors.Is(err, sql.ErrNoRows) {
+		if err := tx.QueryRowContext(ctx, "SELECT 1 FROM dsh.commerce_promotions WHERE id=$1 AND state IN ('DRAFT','PAUSED')", id).Scan(&stateGuard); errors.Is(err, sql.ErrNoRows) {
 			return PromotionRecord{}, false, ErrPromotionNotFound
 		} else if err != nil {
 			return PromotionRecord{}, false, err
 		}
 	}
 	if state == "ENDED" {
-		if err := tx.QueryRowContext(ctx, "SELECT 1 FROM dsh.commerce_promotions WHERE id=$1 AND state IN ('PUBLISHED','PAUSED','DRAFT')", id).Scan(nil); errors.Is(err, sql.ErrNoRows) {
+		if err := tx.QueryRowContext(ctx, "SELECT 1 FROM dsh.commerce_promotions WHERE id=$1 AND state IN ('PUBLISHED','PAUSED','DRAFT')", id).Scan(&stateGuard); errors.Is(err, sql.ErrNoRows) {
 			return PromotionRecord{}, false, ErrPromotionNotFound
 		} else if err != nil {
 			return PromotionRecord{}, false, err
@@ -715,25 +716,25 @@ func ListDiscoveryContent(ctx context.Context, db *sql.DB, public bool, serviceC
 		}
 		args = append(args, serviceCityID)
 		query = `WITH eligible AS (
-			SELECT content.id,
-			       content.kind IN ('BANNER','CAROUSEL') AS media_group,
-			       row_number() OVER (
-				       PARTITION BY content.kind IN ('BANNER','CAROUSEL')
-				       ORDER BY content.ordinal ASC,content.starts_at DESC,content.id DESC
-			       ) AS priority_rank
-			FROM dsh.discovery_content content
-			WHERE content.state='PUBLISHED'
-			  AND content.starts_at <= statement_timestamp()
-			  AND (content.ends_at IS NULL OR content.ends_at > statement_timestamp())
-			  AND (content.service_city_id IS NULL OR content.service_city_id=$1)
-			  AND ` + discoveryContentTargetEligibilityPredicate("content", "$1", "statement_timestamp()") + `
-		)
-		SELECT ` + discoveryContentSelect + `
-		FROM dsh.discovery_content content
-		JOIN eligible ON eligible.id=content.id
-		WHERE (eligible.media_group AND eligible.priority_rank<=8)
-		   OR (NOT eligible.media_group AND eligible.priority_rank<=4)
-		ORDER BY content.ordinal ASC,content.starts_at DESC,content.id DESC`
+                        SELECT content.id,
+                               content.kind IN ('BANNER','CAROUSEL') AS media_group,
+                               row_number() OVER (
+                                       PARTITION BY content.kind IN ('BANNER','CAROUSEL')
+                                       ORDER BY content.ordinal ASC,content.starts_at DESC,content.id DESC
+                               ) AS priority_rank
+                        FROM dsh.discovery_content content
+                        WHERE content.state='PUBLISHED'
+                          AND content.starts_at <= statement_timestamp()
+                          AND (content.ends_at IS NULL OR content.ends_at > statement_timestamp())
+                          AND (content.service_city_id IS NULL OR content.service_city_id=$1)
+                          AND ` + discoveryContentTargetEligibilityPredicate("content", "$1", "statement_timestamp()") + `
+                )
+                SELECT ` + discoveryContentSelect + `
+                FROM dsh.discovery_content content
+                JOIN eligible ON eligible.id=content.id
+                WHERE (eligible.media_group AND eligible.priority_rank<=8)
+                   OR (NOT eligible.media_group AND eligible.priority_rank<=4)
+                ORDER BY content.ordinal ASC,content.starts_at DESC,content.id DESC`
 	}
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -835,7 +836,6 @@ func itoa(value int) string {
 	return strconv.Itoa(value)
 }
 
-
 // PartnerCampaignRecord is a platform campaign with the opt-in state of one
 // Partner Store, for the eligible-campaign partner readback.
 type PartnerCampaignRecord struct {
@@ -859,12 +859,12 @@ func ListPartnerEligibleCampaigns(ctx context.Context, db *sql.DB, storeID strin
 		return nil, err
 	}
 	rows, err := db.QueryContext(ctx, `SELECT `+promotionSelect+`,
-		COALESCE((SELECT state FROM dsh.commerce_promotion_store_opt_ins o WHERE o.promotion_id=p.id AND o.store_id=$1), ''),
-		COALESCE((SELECT version FROM dsh.commerce_promotion_store_opt_ins o WHERE o.promotion_id=p.id AND o.store_id=$1), 0)
-		FROM dsh.commerce_promotions p
-		WHERE p.state='PUBLISHED' AND p.store_id IS NULL AND p.starts_at <= clock_timestamp() AND (p.ends_at IS NULL OR p.ends_at > clock_timestamp())
-		AND (p.service_city_id IS NULL OR p.service_city_id=$2)
-		ORDER BY p.starts_at DESC, p.id DESC`, storeID, storeCityID)
+                COALESCE((SELECT state FROM dsh.commerce_promotion_store_opt_ins o WHERE o.promotion_id=p.id AND o.store_id=$1), ''),
+                COALESCE((SELECT version FROM dsh.commerce_promotion_store_opt_ins o WHERE o.promotion_id=p.id AND o.store_id=$1), 0)
+                FROM dsh.commerce_promotions p
+                WHERE p.state='PUBLISHED' AND p.store_id IS NULL AND p.starts_at <= clock_timestamp() AND (p.ends_at IS NULL OR p.ends_at > clock_timestamp())
+                AND (p.service_city_id IS NULL OR p.service_city_id=$2)
+                ORDER BY p.starts_at DESC, p.id DESC`, storeID, storeCityID)
 	if err != nil {
 		return nil, err
 	}
@@ -946,8 +946,8 @@ func SetPartnerCampaignOptIn(ctx context.Context, db *sql.DB, promotionID, store
 	var endValue sql.NullTime
 	var fundingShare sql.NullInt64
 	if err := tx.QueryRowContext(ctx, `SELECT `+promotionSelect+`,
-		COALESCE((SELECT o.state FROM dsh.commerce_promotion_store_opt_ins o WHERE o.promotion_id=p.id AND o.store_id=$2), '')
-		FROM dsh.commerce_promotions p WHERE p.id=$1 AND p.store_id IS NULL AND p.state='PUBLISHED'`, promotionID, storeID).Scan(
+                COALESCE((SELECT o.state FROM dsh.commerce_promotion_store_opt_ins o WHERE o.promotion_id=p.id AND o.store_id=$2), '')
+                FROM dsh.commerce_promotions p WHERE p.id=$1 AND p.store_id IS NULL AND p.state='PUBLISHED'`, promotionID, storeID).Scan(
 		&record.ID, &record.Code, &record.NameAr, &record.DescriptionAr, &record.Kind, &record.ValueMinor, &maxDiscount, &record.FundingSource, &fundingShare, &storeValue, &cityValue, &record.State, &record.StartsAt, &endValue, &record.RequiresPartnerOptIn, &threshold, &record.RedemptionLimit, &record.RedeemedCount, &record.Version, &record.CreatedByActorID, &record.CreatedAt, &record.UpdatedAt, &optInState); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return PartnerCampaignRecord{}, false, ErrPromotionNotFound
