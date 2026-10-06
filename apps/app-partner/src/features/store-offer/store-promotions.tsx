@@ -1,5 +1,5 @@
 import { borders, radius, resolveTheme, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniChip, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniChip, BthwaniConfirmDialog, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { createDshMobileClient, formatMoney, type CatalogCategoryListItem, type CatalogProduct, type OperatorPromotionRegistryResponse, type PartnerCampaignListResponse, type PartnerCampaignView, type PromotionTarget, type PromotionView } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -100,6 +100,7 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
   const [targetOptions, setTargetOptions] = useState<ReadonlyArray<TargetOption>>([]);
   const [selectedTarget, setSelectedTarget] = useState<TargetOption | null>(null);
   const [targetLoading, setTargetLoading] = useState(false);
+  const [endingPromotion, setEndingPromotion] = useState<PromotionView | null>(null);
 
   const load = useCallback(async () => {
     if (!authenticated || !storeID) return;
@@ -254,7 +255,7 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
           {promotion.state === "DRAFT" ? <BthwaniButton busy={busy} label="نشر" onPress={() => void transition(promotion, "PUBLISHED")} variant="secondary" /> : null}
           {promotion.state === "PUBLISHED" ? <BthwaniButton busy={busy} label="إيقاف" onPress={() => void transition(promotion, "PAUSED")} variant="secondary" /> : null}
           {promotion.state === "PAUSED" ? <BthwaniButton busy={busy} label="استئناف" onPress={() => void transition(promotion, "PUBLISHED")} variant="secondary" /> : null}
-          {promotion.state !== "ENDED" ? <BthwaniButton busy={busy} label="إنهاء" onPress={() => void transition(promotion, "ENDED")} variant="secondary" /> : null}
+          {promotion.state !== "ENDED" ? <BthwaniButton busy={busy} label="إنهاء" onPress={() => setEndingPromotion(promotion)} variant="secondary" /> : null}
         </View></View>; })}
       </View>)}</ScrollView>
     </View>
@@ -271,6 +272,20 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
         <BthwaniButton busy={busy} disabled={campaign.storeOptInState === "DECLINED"} label="رفض" onPress={() => void decideCampaign(campaign, "DECLINED")} variant="secondary" />
       </View> : null}</View>; })}
     </View>
+    <BthwaniConfirmDialog
+      busy={busy}
+      confirmLabel="إنهاء العرض"
+      description={endingPromotion ? `سيُنهي هذا العرض «${endingPromotion.nameAr}» نهائيًا. لا يمكن استئنافه بعد انتقاله إلى الحالة المنتهية.` : ""}
+      intent="danger"
+      onCancel={() => setEndingPromotion(null)}
+      onConfirm={() => {
+        const promotion = endingPromotion;
+        setEndingPromotion(null);
+        if (promotion) void transition(promotion, "ENDED");
+      }}
+      title="تأكيد إنهاء العرض"
+      visible={Boolean(endingPromotion)}
+    />
   </BthwaniSurface>;
 }
 

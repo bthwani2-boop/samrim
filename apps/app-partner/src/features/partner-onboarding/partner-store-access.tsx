@@ -1,4 +1,4 @@
-import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniConfirmDialog, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { StoreAccessGrant, StoreAccessPermission } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -238,6 +238,7 @@ function StoreGrantsCard({ styles, busy, grants, loading, onTransition, onPermis
 function StoreAccessGrantCard({ grant, busy, onTransition, onPermissions }: { grant: StoreAccessGrant; busy: boolean; onTransition: (state: "active" | "suspended" | "revoked") => void; onPermissions: (permissions: ReadonlyArray<StoreAccessPermission>) => void }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
+  const [confirmRevoke, setConfirmRevoke] = useState(false);
   const selected = permissions.filter((permission) => grant.permissions.includes(permission.value)).map((permission) => permission.value);
   const nextPermissions = (permission: StoreAccessPermission) => selected.includes(permission) ? selected.filter((item) => item !== permission) : [...selected, permission];
   return <View style={{ borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 8, padding: 12 }}>
@@ -252,8 +253,20 @@ function StoreAccessGrantCard({ grant, busy, onTransition, onPermissions }: { gr
       })}</View>
       {grant.state === "active" ? <BthwaniButton disabled={busy} label="إيقاف الوصول مؤقتًا" onPress={() => onTransition("suspended")} variant="secondary" /> : null}
       {grant.state === "suspended" ? <BthwaniButton disabled={busy} label="إعادة تفعيل الوصول" onPress={() => onTransition("active")} /> : null}
-      {grant.state === "active" || grant.state === "suspended" ? <BthwaniButton disabled={busy} label="إلغاء الوصول نهائيًا" onPress={() => onTransition("revoked")} variant="secondary" /> : null}
+      {grant.state === "active" || grant.state === "suspended" ? <BthwaniButton disabled={busy} label="إلغاء الوصول نهائيًا" onPress={() => setConfirmRevoke(true)} variant="secondary" /> : null}
     </> : null}
-    {grant.state === "pending_role_admission" || grant.state === "pending_partner_activation" || grant.state === "pending_acceptance" ? <BthwaniButton disabled={busy} label="إلغاء الدعوة" onPress={() => onTransition("revoked")} variant="secondary" /> : null}
+    {grant.state === "pending_role_admission" || grant.state === "pending_partner_activation" || grant.state === "pending_acceptance" ? <BthwaniButton disabled={busy} label="إلغاء الدعوة" onPress={() => setConfirmRevoke(true)} variant="secondary" /> : null}
+    <BthwaniConfirmDialog
+      busy={busy}
+      confirmLabel={grant.state === "active" || grant.state === "suspended" ? "إلغاء الوصول نهائيًا" : "إلغاء الدعوة"}
+      description={grant.state === "active" || grant.state === "suspended"
+        ? `سيُلغى وصول ${grant.delegateBeneficiaryName?.trim() || grant.delegatePhoneMasked || "عضو الفريق"} إلى ${grant.storeName || "هذا المتجر"} نهائيًا، وسيلزم تفويض جديد لإعادته لاحقًا.`
+        : `ستُلغى دعوة الوصول إلى ${grant.storeName || "هذا المتجر"} ولن يستطيع المدعو إكمالها بعد ذلك.`}
+      intent="danger"
+      onCancel={() => setConfirmRevoke(false)}
+      onConfirm={() => { setConfirmRevoke(false); onTransition("revoked"); }}
+      title={grant.state === "active" || grant.state === "suspended" ? "تأكيد إلغاء الوصول" : "تأكيد إلغاء الدعوة"}
+      visible={confirmRevoke}
+    />
   </View>;
 }

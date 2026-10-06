@@ -1,4 +1,4 @@
-import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniConfirmDialog, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { StoreCaptainMembership } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
@@ -32,6 +32,7 @@ export function StoreCaptainMembershipManagement({ storeID }: { storeID: string 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [invitationCode, setInvitationCode] = useState("");
+  const [pendingRevoke, setPendingRevoke] = useState<StoreCaptainMembership | null>(null);
 
   const reload = useCallback(async () => {
     setState({ kind: "loading" });
@@ -100,17 +101,35 @@ export function StoreCaptainMembershipManagement({ storeID }: { storeID: string 
           <Text style={styles.muted}>{statusLabel}{expiryLabel}</Text>
           {membership.state === "active" ? <>
             <BthwaniButton disabled={busy} label="إيقاف العضوية" onPress={() => void transition(membership, "suspended")} variant="secondary" />
-            <BthwaniButton disabled={busy} label="إلغاء العضوية" onPress={() => void transition(membership, "revoked")} variant="secondary" />
+            <BthwaniButton disabled={busy} label="إلغاء العضوية" onPress={() => setPendingRevoke(membership)} variant="secondary" />
           </> : null}
           {membership.state === "suspended" ? <>
             <BthwaniButton disabled={busy} label="إعادة تفعيل العضوية" onPress={() => void transition(membership, "active")} />
-            <BthwaniButton disabled={busy} label="إلغاء العضوية" onPress={() => void transition(membership, "revoked")} variant="secondary" />
+            <BthwaniButton disabled={busy} label="إلغاء العضوية" onPress={() => setPendingRevoke(membership)} variant="secondary" />
           </> : null}
-          {membership.state === "pending" || membership.state === "expired" ? <BthwaniButton disabled={busy} label="إلغاء الدعوة" onPress={() => void transition(membership, "revoked")} variant="secondary" /> : null}
+          {membership.state === "pending" || membership.state === "expired" ? <BthwaniButton disabled={busy} label="إلغاء الدعوة" onPress={() => setPendingRevoke(membership)} variant="secondary" /> : null}
         </View>;
       }) : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       <BthwaniButton disabled={busy} label="تحديث القائمة" onPress={() => void reload()} variant="secondary" />
+      <BthwaniConfirmDialog
+        busy={busy}
+        confirmLabel={pendingRevoke?.state === "pending" || pendingRevoke?.state === "expired" ? "إلغاء الدعوة" : "إلغاء العضوية"}
+        description={pendingRevoke
+          ? pendingRevoke.state === "pending" || pendingRevoke.state === "expired"
+            ? "ستُلغى دعوة كابتن المتجر ولن يمكن قبول هذا الرمز بعد ذلك."
+            : `ستُلغى عضوية ${pendingRevoke.captainNameAr?.trim() || pendingRevoke.captainPhoneMasked?.trim() || "كابتن المتجر"} نهائيًا من هذا المتجر، وسيلزم إنشاء دعوة جديدة لإعادته.`
+          : ""}
+        intent="danger"
+        onCancel={() => setPendingRevoke(null)}
+        onConfirm={() => {
+          const membership = pendingRevoke;
+          setPendingRevoke(null);
+          if (membership) void transition(membership, "revoked");
+        }}
+        title={pendingRevoke?.state === "pending" || pendingRevoke?.state === "expired" ? "تأكيد إلغاء الدعوة" : "تأكيد إلغاء العضوية"}
+        visible={Boolean(pendingRevoke)}
+      />
     </View>
   );
 }
