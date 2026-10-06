@@ -187,10 +187,18 @@ const theme = useAppearanceTheme();
     try {
       const token = await getUsableIdentityAccessToken();
       const response = await fieldClient().createFieldJoiningCase(token, attempt.request, attempt.idempotencyKey, attempt.correlationID);
-      setCreatedCase(response);
+      const canonical = await fieldClient().readOwnFieldJoiningCase(token, response.case.id);
+      if (canonical.case.id !== response.case.id ||
+        canonical.case.businessName !== attempt.request.businessName ||
+        canonical.case.firstStoreName !== attempt.request.firstStoreName ||
+        canonical.case.contactPhoneE164 !== attempt.request.contactPhoneE164 ||
+        canonical.case.version < response.case.version) {
+        throw new Error("FIELD_JOINING_CASE_CANONICAL_READBACK_MISMATCH");
+      }
+      setCreatedCase(canonical);
       setPendingCreateAttempt(null);
       if (storeImage) {
-        await uploadStoreImage(response, storeImage);
+        await uploadStoreImage(canonical, storeImage);
       }
       setSelectedStoreOrigin(null);
       setInput(initialJoiningCaseInput());
