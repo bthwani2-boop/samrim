@@ -1,4 +1,5 @@
-import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
+import { toAsciiDigits } from "@bthwani/design-system";
+import { BthwaniButton, BthwaniConfirmDialog, useAppearanceTheme } from "@bthwani/design-system/native";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
@@ -11,7 +12,7 @@ type AgreementAttempt = Readonly<{ input: StoreCommercialAgreementProposalReques
 type RateDraft = Partial<Record<StoreFulfillmentMode, string>>;
 
 const modeLabels: Readonly<Record<StoreFulfillmentMode, string>> = {
-  BTHWANI_CAPTAIN: "توصيل مندوب بتهواني",
+  BTHWANI_CAPTAIN: "توصيل بثواني",
   PARTNER_CAPTAIN: "توصيل مندوب الشريك",
   CUSTOMER_PICKUP: "استلام من المتجر",
 };
@@ -28,6 +29,19 @@ function isUncertain(cause: unknown): boolean {
   if (!cause || typeof cause !== "object") return false;
   const error = cause as { kind?: unknown; status?: unknown };
   return error.kind === "network" || (error.kind === "http" && typeof error.status === "number" && error.status >= 500);
+}
+
+function percentTextFromBps(commissionRateBps: number): string {
+  const value = commissionRateBps / 100;
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, "").replace(/.$/, "");
+}
+
+function parsePercentToBps(value: string): number | null {
+  const normalized = toAsciiDigits(value.trim()).replace(",", ".");
+  if (!/^(?:\d{1,2}(?:\.\d{1,2})?|100(?:\.0{1,2})?)$/.test(normalized)) return null;
+  const percent = Number(normalized);
+  if (!Number.isFinite(percent) || percent < 0 || percent > 100) return null;
+  return Math.round(percent * 100);
 }
 
 function sameAgreementRates(left: StoreCommercialAgreement["rates"], right: StoreCommercialAgreement["rates"]): boolean {
@@ -62,6 +76,7 @@ export function FieldCommercialAgreement({ caseID }: { caseID: string }) {
   const [reason, setReason] = useState("");
   const [defaultsUnavailable, setDefaultsUnavailable] = useState(false);
   const [attempt, setAttempt] = useState<AgreementAttempt | null>(null);
+  const [confirmProposal, setConfirmProposal] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -80,7 +95,7 @@ export function FieldCommercialAgreement({ caseID }: { caseID: string }) {
       const nextRates: RateDraft = {};
       for (const mode of currentModes) {
         const suggested = defaultsResponse?.defaults.find((item) => item.fulfillmentMode === mode)?.suggestedCommissionRateBps;
-        if (suggested !== undefined) nextRates[mode] = String(suggested);
+        if (suggested !== undefined) nextRates[mode] = percentTextFromBps(suggested);
       }
       setStoreName(joiningCase.store.name);
       setPublicationState(joiningCase.store.publicationState);
@@ -110,13 +125,14 @@ export function FieldCommercialAgreement({ caseID }: { caseID: string }) {
     let currentAttempt = attempt;
     if (!attempt) {
       const normalizedReason = reason.trim();
-      const proposalRates = modes.map((fulfillmentMode) => ({ fulfillmentMode, commissionRateBps: Number(rates[fulfillmentMode]) }));
-      if (normalizedReason.length < 8 || normalizedReason.length > 500 || proposalRates.some((item) => !Number.isSafeInteger(item.commissionRateBps) || item.commissionRateBps < 0 || item.commissionRateBps > 10000)) {
-        setError("أدخل سببًا من 8 إلى 500 حرف ونسبة صحيحة لكل طريقة تشغيل بين 0 و10000 نقطة أساس.");
+      const proposalRates = modes.map((fulfillmentMode) => ({ fulfillmentMode, commissionRateBps: parsePercentToBps(rates[fulfillmentMode] ?? "") }));
+      if (normalizedReason.length < 8 || normalizedReason.length > 500 || proposalRates.some((item) => item.commissionRateBps === null)) {
+        setError("أدخل سببًا من 8 إلى 500 حرف ونسبة صحيحة لكل طريقة تشغيل بين 0% و100% وبحد أقصى منزلتين عشريتين.");
         return;
       }
+      const canonicalRates = proposalRates.map((item) => ({ fulfillmentMode: item.fulfillmentMode, commissionRateBps: item.commissionRateBps as number }));
       currentAttempt = {
-        input: { rates: proposalRates, expectedCurrentVersion: currentVersion, reason: normalizedReason },
+        input: { rates: canonicalRates, expectedCurrentVersion: currentVersion, reason: normalizedReason },
         idempotencyKey: `field_store_agreement_${Crypto.randomUUID()}`,
         correlationID: `field_store_agreement_corr_${Crypto.randomUUID()}`,
       };
@@ -151,12 +167,15 @@ export function FieldCommercialAgreement({ caseID }: { caseID: string }) {
   }
 
   if (loading) return <View style={styles.card}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الاتفاقية التجارية…</Text></View>;
+  const previewRates = modes.map((fulfillmentMode) => ({ fulfillmentMode, commissionRateBps: parsePercentToBps(rates[fulfillmentMode] ?? "") }));
+  const proposalReady = reason.trim().length >= 8 && reason.trim().length <= 500 && previewRates.every((item) => item.commissionRateBps !== null);
+  const proposalSummary = previewRates.map((item) => `${modeLabels[item.fulfillmentMode]}: ${item.commissionRateBps === null ? "غير صالح" : percentTextFromBps(item.commissionRateBps)}%`).join("، ");
   return <View style={styles.card}>
     <Text style={styles.heading}>اتفاقية عمولة المتجر</Text>
     <Text style={styles.muted}>المتجر: {storeName || "—"}. تُسجَّل الشروط المالية النهائية بعد قبول الشريك واعتماد المالية؛ اقتراح الميدان لا يعني القبول أو الاعتماد.</Text>
     {agreements.map((agreement) => <View key={agreement.agreementId} style={styles.row}>
       <Text style={styles.body}>{statusLabels[agreement.status]}</Text>
-      <Text style={styles.muted}>{agreement.rates.map((rate) => `${modeLabels[rate.fulfillmentMode]}: ${rate.commissionRateBps} نقطة أساس`).join(" · ")}</Text>
+      <Text style={styles.muted}>{agreement.rates.map((rate) => `${modeLabels[rate.fulfillmentMode]}: ${percentTextFromBps(rate.commissionRateBps)}%`).join(" · ")}</Text>
       <Text style={styles.muted}>السبب: {agreement.reason}</Text>
     </View>)}
     {pending ? <Text style={styles.muted}>اكتمل الإرسال؛ الخطوة التالية للشريك قبول الأسعار نفسها، ثم قرار المالية.</Text> : null}
@@ -168,15 +187,24 @@ export function FieldCommercialAgreement({ caseID }: { caseID: string }) {
       {defaultsUnavailable ? <Text style={styles.muted}>تعذر تحميل القيم المقترحة؛ أدخل النسبة المتفاوض عليها يدويًا لكل طريقة تشغيل.</Text> : null}
       {modes.map((mode) => <View key={mode} style={styles.row}>
         <Text style={styles.body}>{modeLabels[mode]}</Text>
-        <TextInput accessibilityLabel={`نسبة ${modeLabels[mode]} بنقاط الأساس`} editable={!busy && !attempt} keyboardType="number-pad" maxLength={5} onChangeText={(value) => setRates((current) => ({ ...current, [mode]: value.replace(/[^0-9]/g, "") }))} placeholder="نسبة العمولة بنقاط الأساس" value={rates[mode] ?? ""} style={styles.input} />
+        <TextInput accessibilityLabel={`نسبة عمولة ${modeLabels[mode]} بالمئة`} editable={!busy && !attempt} keyboardType="decimal-pad" maxLength={6} onChangeText={(value) => setRates((current) => ({ ...current, [mode]: toAsciiDigits(value).replace(",", ".").replace(/[^0-9.]/g, "").slice(0, 6) }))} placeholder="النسبة من 0% إلى 100%" value={rates[mode] ?? ""} style={styles.input} />
       </View>)}
       <TextInput accessibilityLabel="سبب اقتراح اتفاقية عمولة المتجر" editable={!busy && !attempt} maxLength={500} multiline onChangeText={setReason} placeholder="سبب التفاوض على هذه النسب" value={reason} style={styles.input} />
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      <BthwaniButton busy={busy} disabled={busy || (!attempt && (!reason.trim() || modes.some((mode) => rates[mode] === undefined || rates[mode] === "")))} label={attempt ? "إعادة التحقق من إرسال المقترح" : "إرسال المقترح إلى الشريك"} onPress={() => void propose()} />
+      <BthwaniButton busy={busy} disabled={busy || (!attempt && !proposalReady)} label={attempt ? "إعادة التحقق من إرسال المقترح" : "مراجعة المقترح قبل الإرسال"} onPress={() => { if (attempt) void propose(); else setConfirmProposal(true); }} />
     </> : null}
     {error && !canPropose ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     {notice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}
     {agreementHistoryReady && !canPropose && !pending && !active && publicationState === "unpublished" && modes.length === 0 ? <Text style={styles.error}>لا توجد طرق تشغيل معتمدة؛ راجع بيانات المتجر قبل اقتراح الاتفاقية.</Text> : null}
     <BthwaniButton disabled={busy} label="تحديث الاتفاقية" onPress={() => void load()} variant="secondary" />
+    <BthwaniConfirmDialog
+      busy={busy}
+      confirmLabel="إرسال المقترح"
+      description={`سيُرسل للشريك مقترح عمولة مستقل للمراجعة: ${proposalSummary}. لا تصبح هذه النسب سارية إلا بعد قبول الشريك واعتماد المالية.`}
+      onCancel={() => setConfirmProposal(false)}
+      onConfirm={() => { setConfirmProposal(false); void propose(); }}
+      title="مراجعة نسب العمولة"
+      visible={confirmProposal}
+    />
   </View>;
 }
