@@ -1,6 +1,7 @@
 package transporthttp
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"io"
@@ -395,6 +396,53 @@ func (s *BeneficiaryFinanceServer) createOperatorSettlementBatch(w http.Response
 	writeJSON(w, http.StatusCreated, map[string]any{"batch": item})
 }
 
+func (s *BeneficiaryFinanceServer) enrichSettlementBatchPresentation(ctx context.Context, batch *wlt.SettlementBatch) error {
+	if batch == nil || len(batch.Items) == 0 {
+		return nil
+	}
+	actorIDsByType := map[string][]string{"partner": {}, "captain": {}, "field": {}}
+	for _, item := range batch.Items {
+		if _, supported := actorIDsByType[item.ActorType]; supported && strings.TrimSpace(item.ActorID) != "" {
+			actorIDsByType[item.ActorType] = append(actorIDsByType[item.ActorType], item.ActorID)
+		}
+	}
+	displayNames := make(map[string]string)
+	phones := make(map[string]string)
+	for actorType, actorIDs := range actorIDsByType {
+		if len(actorIDs) == 0 {
+			continue
+		}
+		names, err := postgres.ReadBeneficiaryFinanceDisplayNames(ctx, s.db, actorType, actorIDs)
+		if err != nil {
+			return err
+		}
+		for actorID, displayName := range names {
+			displayNames[actorType+"\x00"+actorID] = displayName
+		}
+		for start := 0; start < len(actorIDs); start += 100 {
+			end := start + 100
+			if end > len(actorIDs) {
+				end = len(actorIDs)
+			}
+			roles, err := s.identity.ReadActorRoles(ctx, actorType, actorIDs[start:end])
+			if err != nil {
+				return err
+			}
+			for _, role := range roles.Items {
+				if role.Role == actorType && role.ActorID != "" {
+					phones[actorType+"\x00"+role.ActorID] = maskPartnerFinancePhone(role.PhoneE164)
+				}
+			}
+		}
+	}
+	for index := range batch.Items {
+		key := batch.Items[index].ActorType + "\x00" + batch.Items[index].ActorID
+		batch.Items[index].DisplayName = displayNames[key]
+		batch.Items[index].PhoneMasked = phones[key]
+	}
+	return nil
+}
+
 func (s *BeneficiaryFinanceServer) readOperatorSettlementBatch(w http.ResponseWriter, r *http.Request) {
 	if !s.authorizeAndRequireOperator(w, r) {
 		return
@@ -402,6 +450,10 @@ func (s *BeneficiaryFinanceServer) readOperatorSettlementBatch(w http.ResponseWr
 	item, err := s.payment.ReadSettlementBatch(r.Context(), r.PathValue("batchId"), strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")))
 	if err != nil {
 		writeWLTFinanceError(w, err)
+		return
+	}
+	if err := s.enrichSettlementBatchPresentation(r.Context(), &item); err != nil {
+		writeError(w, http.StatusBadGateway, "BENEFICIARY_PRESENTATION_UNAVAILABLE", "beneficiary presentation is unavailable")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"batch": item})

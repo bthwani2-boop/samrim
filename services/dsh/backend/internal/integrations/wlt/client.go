@@ -584,6 +584,8 @@ type SettlementBatchItem struct {
 	PayoutID     string                   `json:"payoutId"`
 	ActorType    string                   `json:"actorType"`
 	ActorID      string                   `json:"actorId"`
+	DisplayName  string                   `json:"displayName,omitempty"`
+	PhoneMasked  string                   `json:"phoneMasked,omitempty"`
 	AmountMinor  int64                    `json:"amountMinor"`
 	Currency     string                   `json:"currency"`
 	PayoutStatus string                   `json:"payoutStatus"`

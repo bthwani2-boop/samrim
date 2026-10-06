@@ -2233,6 +2233,8 @@ export type SettlementBatchItem = {
   readonly payoutId: string;
   readonly actorType: "partner" | "captain" | "field";
   readonly actorId: string;
+  readonly displayName?: string;
+  readonly phoneMasked?: string;
   readonly amountMinor: number;
   readonly currency: "YER";
   readonly payoutStatus: "HELD" | "CANCELLED" | "PREPARED" | "APPROVED" | "FROZEN" | "EXECUTED" | "COMPLETED" | "EXCEPTION";
