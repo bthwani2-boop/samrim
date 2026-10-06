@@ -2806,8 +2806,11 @@ type StoreAccessGrant struct {
 	StoreID             string                  `json:"storeId"`
 	StoreName           string                  `json:"storeName"`
 	OwnerPartnerActorID string                  `json:"ownerPartnerActorId"`
-	DelegateActorID     string                  `json:"delegateActorId"`
-	DelegatePhoneMasked string                  `json:"delegatePhoneMasked,omitempty"`
+	DelegateActorID                string                  `json:"delegateActorId"`
+	DelegatePhoneMasked            string                  `json:"delegatePhoneMasked,omitempty"`
+	DelegateBeneficiaryName        string                  `json:"delegateBeneficiaryName,omitempty"`
+	DelegateWalletProviderKey      string                  `json:"delegateWalletProviderKey,omitempty"`
+	DelegateWalletIdentifierMasked string                  `json:"delegateWalletIdentifierMasked,omitempty"`
 	Permissions         []StoreAccessPermission `json:"permissions"`
 	State               string                  `json:"state"`
 	Version             int                     `json:"version"`
@@ -2848,10 +2851,18 @@ type StorePayoutRecipientReadback struct {
 	ReviewStores   []string                     `json:"reviewStores"`
 }
 
+type StorePayoutBeneficiaryProfile struct {
+	BeneficiaryName        string `json:"beneficiaryName,omitempty"`
+	PhoneMasked            string `json:"phoneMasked,omitempty"`
+	ProviderKey            string `json:"providerKey,omitempty"`
+	WalletIdentifierMasked string `json:"walletIdentifierMasked,omitempty"`
+}
+
 type StorePayoutRecipientListResponse struct {
-	Readback          StorePayoutRecipientReadback `json:"readback"`
-	StoreNames        map[string]any               `json:"storeNames"`
-	BeneficiaryPhones map[string]any               `json:"beneficiaryPhones"`
+	Readback            StorePayoutRecipientReadback             `json:"readback"`
+	StoreNames          map[string]string                        `json:"storeNames"`
+	BeneficiaryPhones   map[string]string                        `json:"beneficiaryPhones"`
+	BeneficiaryProfiles map[string]StorePayoutBeneficiaryProfile `json:"beneficiaryProfiles"`
 }
 
 type PartnerPayoutStoreAmount struct {

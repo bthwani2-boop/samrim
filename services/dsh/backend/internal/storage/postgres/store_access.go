@@ -19,8 +19,11 @@ type StoreAccessGrant struct {
 	StoreID             string     `json:"storeId"`
 	StoreName           string     `json:"storeName"`
 	OwnerPartnerActorID string     `json:"ownerPartnerActorId"`
-	DelegateActorID     string     `json:"delegateActorId"`
-	DelegatePhoneMasked string     `json:"delegatePhoneMasked,omitempty"`
+	DelegateActorID                string     `json:"delegateActorId"`
+	DelegatePhoneMasked            string     `json:"delegatePhoneMasked,omitempty"`
+	DelegateBeneficiaryName        string     `json:"delegateBeneficiaryName,omitempty"`
+	DelegateWalletProviderKey      string     `json:"delegateWalletProviderKey,omitempty"`
+	DelegateWalletIdentifierMasked string     `json:"delegateWalletIdentifierMasked,omitempty"`
 	Permissions         []string   `json:"permissions"`
 	State               string     `json:"state"`
 	Version             int        `json:"version"`

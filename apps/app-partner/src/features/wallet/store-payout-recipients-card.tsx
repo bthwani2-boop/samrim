@@ -1,6 +1,6 @@
-import { borders, radius, resolveTheme, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, type StoreAccessGrant, type StorePayoutRecipientListResponse, type StorePayoutRecipientRecord } from "@bthwani/dsh";
+import { borders, opacity, radius, resolveTheme, spacing, typography } from "@bthwani/design-system";
+import { BthwaniButton, BthwaniConfirmDialog, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { createDshMobileClient, formatMoney, type StoreAccessGrant, type StorePayoutBeneficiaryProfile, type StorePayoutRecipientListResponse, type StorePayoutRecipientRecord } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
@@ -12,14 +12,30 @@ function client() {
   return createDshMobileClient(baseUrl, { cryptoRandomUUID: () => Crypto.randomUUID() });
 }
 
-function recipientStateLabel(record: StorePayoutRecipientRecord, phones: Record<string, string>): string {
+type RecipientConfirmation =
+  | Readonly<{ kind: "select"; storeId: string; grantId: string; storeName: string; beneficiaryName: string; phoneMasked: string; providerKey: string; walletIdentifierMasked: string }>
+  | Readonly<{ kind: "revert"; storeId: string; storeName: string }>
+  | null;
+
+function providerLabel(providerKey: string): string {
+  return providerKey.trim().replaceAll("_", " ");
+}
+
+function profileSummary(profile?: StorePayoutBeneficiaryProfile): string {
+  if (!profile) return "بيانات المستلم المالية غير متاحة";
+  const identity = [profile.beneficiaryName?.trim(), profile.phoneMasked?.trim()].filter((value): value is string => Boolean(value)).join(" · ");
+  const wallet = profile.providerKey ? `جهة المحفظة: ${providerLabel(profile.providerKey)}${profile.walletIdentifierMasked ? ` · ${profile.walletIdentifierMasked}` : ""}` : "جهة المحفظة الرسمية غير جاهزة";
+  return [identity || "المستلم الموثّق", wallet].join(" · ");
+}
+
+function recipientStateLabel(record: StorePayoutRecipientRecord, profiles: Readonly<Record<string, StorePayoutBeneficiaryProfile>>): string {
   switch (record.state) {
     case "SELECTED_VERIFIED_STAFF":
-      return `المستلم المسجّل: ${phones[record.beneficiaryActorId ?? ""] ?? "عضو فريق"}`;
+      return `المستلم المسجّل: ${profileSummary(profiles[record.beneficiaryActorId ?? ""])}`;
     case "RECIPIENT_REVIEW_REQUIRED":
-      return "بانتظار إجراء المالك: المستلم المسجّل لم يعد مؤهلاً";
+      return `بانتظار إجراء المالك: المستلم المسجّل لم يعد مؤهلاً · ${profileSummary(profiles[record.beneficiaryActorId ?? ""])}`;
     default:
-      return "المالك (الافتراضي)";
+      return `المالك (الافتراضي) · ${profileSummary(profiles[record.beneficiaryActorId ?? ""])}`;
   }
 }
 
@@ -33,6 +49,7 @@ export function StorePayoutRecipientsCard() {
   const [grants, setGrants] = useState<StoreAccessGrant[]>([]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [confirmation, setConfirmation] = useState<RecipientConfirmation>(null);
 
   const load = useCallback(async () => {
     if (!authenticated) return;
@@ -63,31 +80,43 @@ export function StorePayoutRecipientsCard() {
     } finally { setBusyStoreId(""); }
   };
 
-  const select = async (storeId: string, grantId: string) => {
-    setBusyStoreId(storeId); setError(""); setNotice("");
+  const select = async (choice: Extract<RecipientConfirmation, { kind: "select" }>) => {
+    setBusyStoreId(choice.storeId); setError(""); setNotice("");
     try {
       const token = await getUsableIdentityAccessToken();
-      await client().selectPartnerStorePayoutRecipient(token, storeId, { grantId, reason: "اختيار مستلم صرف المتجر من قِبل المالك" }, `recipient_select_${Crypto.randomUUID()}`, `recipient_select_corr_${Crypto.randomUUID()}`);
-      setNotice("سُجّل مستلم الصرف وفق الحالة المعتمدة في المحفظة.");
+      const mutation = await client().selectPartnerStorePayoutRecipient(token, choice.storeId, { grantId: choice.grantId, reason: "اختيار مستلم صرف المتجر من قِبل المالك بعد تأكيد بيانات المستلم والمحفظة" }, `recipient_select_${Crypto.randomUUID()}`, `recipient_select_corr_${Crypto.randomUUID()}`);
+      const next = await client().listPartnerStorePayoutRecipients(token);
+      const readback = next.readback.recipients.find((record) => record.storeId === choice.storeId);
+      if (!readback || readback.state !== "SELECTED_VERIFIED_STAFF" || readback.beneficiaryActorId !== mutation.assignment.beneficiaryActorId) {
+        throw new Error("RECIPIENT_READBACK_MISMATCH");
+      }
+      setState(next);
+      setNotice(`تم تعيين ${choice.beneficiaryName} مستلمًا لصرف ${choice.storeName} وجرى تأكيد النتيجة من سجل المحفظة.`);
       setPickerStoreId("");
-      await load();
+      setConfirmation(null);
     } catch (cause) {
       console.error("DSH payout recipient select failed", cause);
-      setError("تعذر تسجيل المستلم؛ تحقق من جهة المحفظة الرسمية للموظف ثم أعد المحاولة.");
+      setConfirmation(null);
+      setError("تعذر تأكيد مستلم الصرف من سجل المحفظة. لم تُعرض العملية كناجحة؛ أعد القراءة قبل المحاولة مجددًا.");
     } finally { setBusyStoreId(""); }
   };
 
-  const revert = async (storeId: string) => {
-    setBusyStoreId(storeId); setError(""); setNotice("");
+  const revert = async (choice: Extract<RecipientConfirmation, { kind: "revert" }>) => {
+    setBusyStoreId(choice.storeId); setError(""); setNotice("");
     try {
       const token = await getUsableIdentityAccessToken();
-      await client().revertPartnerStorePayoutRecipient(token, storeId, { reason: "إعادة مستلم الصرف إلى مالك المتجر" }, `recipient_revert_${Crypto.randomUUID()}`, `recipient_revert_corr_${Crypto.randomUUID()}`);
-      setNotice("أُعيد مستلم الصرف إلى المالك.");
+      await client().revertPartnerStorePayoutRecipient(token, choice.storeId, { reason: "إعادة مستلم الصرف إلى مالك المتجر بعد تأكيد المالك" }, `recipient_revert_${Crypto.randomUUID()}`, `recipient_revert_corr_${Crypto.randomUUID()}`);
+      const next = await client().listPartnerStorePayoutRecipients(token);
+      const readback = next.readback.recipients.find((record) => record.storeId === choice.storeId);
+      if (!readback || readback.state !== "DEFAULT_OWNER") throw new Error("RECIPIENT_REVERT_READBACK_MISMATCH");
+      setState(next);
+      setNotice(`أُعيد مستلم صرف ${choice.storeName} إلى المالك وجرى تأكيد النتيجة من سجل المحفظة.`);
       setPickerStoreId("");
-      await load();
+      setConfirmation(null);
     } catch (cause) {
       console.error("DSH payout recipient revert failed", cause);
-      setError("تعذر إعادة مستلم الصرف؛ أعد المحاولة.");
+      setConfirmation(null);
+      setError("تعذر تأكيد إعادة مستلم الصرف إلى المالك من سجل المحفظة. أعد القراءة قبل المحاولة مجددًا.");
     } finally { setBusyStoreId(""); }
   };
 
@@ -97,7 +126,7 @@ export function StorePayoutRecipientsCard() {
   }
   const recipients = state?.readback.recipients ?? [];
   const storeNames = (state?.storeNames ?? {}) as Record<string, string>;
-  const phones = (state?.beneficiaryPhones ?? {}) as Record<string, string>;
+  const profiles = state?.beneficiaryProfiles ?? {};
   const reviewStores = new Set(state?.readback.reviewStores ?? []);
   return <BthwaniSurface style={styles.card}>
     <Text style={styles.title}>مستلمو صرف المتاجر</Text>
@@ -112,21 +141,48 @@ export function StorePayoutRecipientsCard() {
         <View style={styles.row}>
           <View style={styles.rowCopy}>
             <Text style={styles.storeName}>{storeNames[record.storeId] ?? record.storeId}</Text>
-            <Text style={[styles.muted, record.state === "RECIPIENT_REVIEW_REQUIRED" ? styles.attention : null]}>{recipientStateLabel(record, phones)}</Text>
+            <Text style={[styles.muted, record.state === "RECIPIENT_REVIEW_REQUIRED" ? styles.attention : null]}>{recipientStateLabel(record, profiles)}</Text>
             <Text style={styles.muted}>مستحقات مسندة: {formatMoney(record.partnerNetMinor, "YER")} · {record.orderCount.toLocaleString("ar-YE")} طلب</Text>
           </View>
           <View style={styles.actions}>
-            {record.state === "DEFAULT_OWNER" ? <BthwaniButton busy={busyStoreId === record.storeId} label="تعيين موظف" onPress={() => void openPicker(record.storeId)} variant="secondary" /> : <BthwaniButton busy={busyStoreId === record.storeId} label="إعادة إلى المالك" onPress={() => void revert(record.storeId)} variant="secondary" />}
+            {record.state === "DEFAULT_OWNER" ? <BthwaniButton busy={busyStoreId === record.storeId} label="تعيين موظف" onPress={() => void openPicker(record.storeId)} variant="secondary" /> : <BthwaniButton busy={busyStoreId === record.storeId} label="إعادة إلى المالك" onPress={() => setConfirmation({ kind: "revert", storeId: record.storeId, storeName: storeNames[record.storeId] ?? "المتجر" })} variant="secondary" />}
           </View>
         </View>
         {pickerStoreId === record.storeId ? <View style={styles.picker}>
-          {grants.length === 0 ? <Text style={styles.muted}>لا يوجد موظف نشط قابل للاختيار.</Text> : grants.map((grant) => <Pressable accessibilityRole="button" key={grant.id} onPress={() => void select(record.storeId, grant.id)} style={styles.pickRow}>
-            <Text style={styles.pickText}>{grant.delegatePhoneMasked ?? "عضو فريق"}</Text>
-            <Text style={styles.muted}>اختيار كمستلم</Text>
-          </Pressable>)}
+          {grants.length === 0 ? <Text style={styles.muted}>لا يوجد موظف نشط قابل للاختيار.</Text> : grants.map((grant) => {
+            const ready = Boolean(grant.delegateBeneficiaryName && grant.delegateWalletProviderKey);
+            const beneficiaryName = grant.delegateBeneficiaryName?.trim() || "عضو فريق";
+            const phoneMasked = grant.delegatePhoneMasked?.trim() || "";
+            const providerKey = grant.delegateWalletProviderKey?.trim() || "";
+            const walletIdentifierMasked = grant.delegateWalletIdentifierMasked?.trim() || "";
+            return <Pressable accessibilityRole="button" accessibilityState={{ disabled: !ready }} disabled={!ready || Boolean(busyStoreId)} key={grant.id} onPress={() => setConfirmation({ kind: "select", storeId: record.storeId, grantId: grant.id, storeName: storeNames[record.storeId] ?? "المتجر", beneficiaryName, phoneMasked, providerKey, walletIdentifierMasked })} style={[styles.pickRow, !ready && styles.pickRowDisabled]}>
+              <View style={styles.pickCopy}>
+                <Text style={styles.pickText}>{[beneficiaryName, phoneMasked].filter(Boolean).join(" · ")}</Text>
+                <Text style={styles.muted}>{ready ? `جهة المحفظة: ${providerLabel(providerKey)}${walletIdentifierMasked ? ` · ${walletIdentifierMasked}` : ""}` : "لا يمكن اختياره حتى تجهز جهة المحفظة الرسمية"}</Text>
+              </View>
+              <Text style={styles.muted}>{ready ? "مراجعة وتأكيد" : "غير جاهز"}</Text>
+            </Pressable>;
+          })}
         </View> : null}
       </View>)}
     </View>
+    <BthwaniConfirmDialog
+      busy={Boolean(confirmation && busyStoreId === confirmation.storeId)}
+      confirmLabel={confirmation?.kind === "revert" ? "إعادة الصرف إلى المالك" : "تأكيد مستلم الصرف"}
+      description={confirmation?.kind === "select"
+        ? `سيتم توجيه الصرف المستقبلي لمتجر ${confirmation.storeName} إلى ${confirmation.beneficiaryName}${confirmation.phoneMasked ? ` · ${confirmation.phoneMasked}` : ""}. جهة المحفظة: ${providerLabel(confirmation.providerKey)}${confirmation.walletIdentifierMasked ? ` · ${confirmation.walletIdentifierMasked}` : ""}. هذا تغيير مالي ويطبق على الصرف المستقبلي للمتجر.`
+        : confirmation?.kind === "revert"
+          ? `سيعود الصرف المستقبلي لمتجر ${confirmation.storeName} إلى مالك المتجر بدل الموظف المسجّل حاليًا.`
+          : ""}
+      intent={confirmation?.kind === "revert" ? "danger" : "primary"}
+      onCancel={() => setConfirmation(null)}
+      onConfirm={() => {
+        if (confirmation?.kind === "select") void select(confirmation);
+        else if (confirmation?.kind === "revert") void revert(confirmation);
+      }}
+      title={confirmation?.kind === "revert" ? "تأكيد إعادة مستلم الصرف" : "تأكيد مستلم الصرف"}
+      visible={Boolean(confirmation)}
+    />
   </BthwaniSurface>;
 }
 
@@ -144,7 +200,9 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     storeName: { ...typography.titleSm, color: theme.color },
     actions: { alignItems: "flex-end" },
     picker: { borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[2], marginTop: spacing[2], padding: spacing[3] },
-    pickRow: { borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[3], justifyContent: "space-between", padding: spacing[3] },
+    pickRow: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[3], justifyContent: "space-between", padding: spacing[3] },
+    pickRowDisabled: { opacity: opacity.disabled },
+    pickCopy: { flex: 1, gap: spacing[1] },
     pickText: { ...typography.bodySm, color: theme.color },
     reviewBanner: { backgroundColor: theme.surfaceInset, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, padding: spacing[3] },
     reviewText: { ...typography.bodySm, color: theme.color },

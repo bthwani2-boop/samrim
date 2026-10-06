@@ -8320,6 +8320,18 @@ components:
           type: string
           maxLength: 24
           description: Current verified Identity phone with digits masked for Store-owner team readback.
+        delegateBeneficiaryName:
+          type: string
+          maxLength: 320
+          description: Canonical verified beneficiary name from the official WLT destination when available.
+        delegateWalletProviderKey:
+          type: string
+          maxLength: 64
+          description: Official wallet provider currently recorded by WLT for this delegate.
+        delegateWalletIdentifierMasked:
+          type: string
+          maxLength: 128
+          description: Masked official wallet identifier safe for owner confirmation.
         permissions:
           type: array
           uniqueItems: true
@@ -8426,10 +8438,27 @@ components:
           items:
             type: string
 
+    StorePayoutBeneficiaryProfile:
+      type: object
+      additionalProperties: false
+      properties:
+        beneficiaryName:
+          type: string
+          maxLength: 320
+        phoneMasked:
+          type: string
+          maxLength: 24
+        providerKey:
+          type: string
+          maxLength: 64
+        walletIdentifierMasked:
+          type: string
+          maxLength: 128
+
     StorePayoutRecipientListResponse:
       type: object
       additionalProperties: false
-      required: [readback, storeNames, beneficiaryPhones]
+      required: [readback, storeNames, beneficiaryPhones, beneficiaryProfiles]
       properties:
         readback:
           $ref: "#/components/schemas/StorePayoutRecipientReadback"
@@ -8438,6 +8467,11 @@ components:
           additionalProperties: { type: string }
         beneficiaryPhones:
           type: object
+          additionalProperties: { type: string }
+        beneficiaryProfiles:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/StorePayoutBeneficiaryProfile"
 
     PartnerPayoutStoreAmount:
       type: object

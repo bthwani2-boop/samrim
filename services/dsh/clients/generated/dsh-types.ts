@@ -2808,6 +2808,9 @@ export type StoreAccessGrant = {
   readonly ownerPartnerActorId: string;
   readonly delegateActorId: string;
   readonly delegatePhoneMasked?: string;
+  readonly delegateBeneficiaryName?: string;
+  readonly delegateWalletProviderKey?: string;
+  readonly delegateWalletIdentifierMasked?: string;
   readonly permissions: ReadonlyArray<StoreAccessPermission>;
   readonly state: "pending_acceptance" | "pending_role_admission" | "pending_partner_activation" | "active" | "suspended" | "revoked" | "declined" | "expired";
   readonly version: number;
@@ -2848,10 +2851,18 @@ export type StorePayoutRecipientReadback = {
   readonly reviewStores: ReadonlyArray<string>;
 };
 
+export type StorePayoutBeneficiaryProfile = {
+  readonly beneficiaryName?: string;
+  readonly phoneMasked?: string;
+  readonly providerKey?: string;
+  readonly walletIdentifierMasked?: string;
+};
+
 export type StorePayoutRecipientListResponse = {
   readonly readback: StorePayoutRecipientReadback;
-  readonly storeNames: Readonly<Record<string, unknown>>;
-  readonly beneficiaryPhones: Readonly<Record<string, unknown>>;
+  readonly storeNames: Readonly<Record<string, string>>;
+  readonly beneficiaryPhones: Readonly<Record<string, string>>;
+  readonly beneficiaryProfiles: Readonly<Record<string, StorePayoutBeneficiaryProfile>>;
 };
 
 export type PartnerPayoutStoreAmount = {

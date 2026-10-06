@@ -309,12 +309,12 @@ type storePayoutRecipientRevertBody struct {
 }
 
 func (s *StoreAccessServer) listStorePayoutRecipients(w http.ResponseWriter, r *http.Request) {
-	readback, storeNames, beneficiaryPhones, err := s.service.ListStorePayoutRecipients(r.Context(), bearerToken(r))
+	readback, storeNames, beneficiaryPhones, beneficiaryProfiles, err := s.service.ListStorePayoutRecipients(r.Context(), bearerToken(r))
 	if err != nil {
 		writeStoreAccessError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"readback": readback, "storeNames": storeNames, "beneficiaryPhones": beneficiaryPhones})
+	writeJSON(w, http.StatusOK, map[string]any{"readback": readback, "storeNames": storeNames, "beneficiaryPhones": beneficiaryPhones, "beneficiaryProfiles": beneficiaryProfiles})
 }
 
 func (s *StoreAccessServer) selectStorePayoutRecipient(w http.ResponseWriter, r *http.Request) {

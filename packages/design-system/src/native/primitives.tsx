@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ActivityIndicator, Pressable, type PressableProps, type PressableStateCallbackType, type StyleProp, StyleSheet, Text, TextInput, type TextInputProps, View, type ViewProps, type ViewStyle } from "react-native";
+import { ActivityIndicator, Modal, Pressable, type PressableProps, type PressableStateCallbackType, type StyleProp, StyleSheet, Text, TextInput, type TextInputProps, View, type ViewProps, type ViewStyle } from "react-native";
 
 import { borders, elevation, opacity, radius, sizing, spacing, type ThemeColors, typography } from "../tokens/index";
 import { useAppearanceTheme } from "./appearance";
@@ -83,6 +83,28 @@ export function BthwaniNavigationRow({ description, icon, onPress, style, title,
       </View>
       <BthwaniIcon name="back" color={theme.colorMuted} size={sizing.iconMd} />
     </Pressable>
+  );
+}
+
+export function BthwaniConfirmDialog({ visible, title, description, confirmLabel, cancelLabel = "إلغاء", busy = false, intent = "primary", onConfirm, onCancel, children }: Readonly<{ visible: boolean; title: string; description: string; confirmLabel: string; cancelLabel?: string; busy?: boolean; intent?: "primary" | "danger"; onConfirm: () => void; onCancel: () => void; children?: React.ReactNode }>) {
+  const theme = useAppearanceTheme();
+  const styles = React.useMemo(() => createPrimitiveStyles(theme), [theme]);
+  const close = busy ? () => undefined : onCancel;
+  return (
+    <Modal animationType="fade" onRequestClose={close} statusBarTranslucent transparent visible={visible}>
+      <View style={styles.dialogBackdrop}>
+        <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: theme.color, opacity: 0.36 }]} />
+        <View accessibilityViewIsModal style={styles.dialogCard}>
+          <Text accessibilityRole="header" style={styles.dialogTitle}>{title}</Text>
+          <Text style={styles.dialogDescription}>{description}</Text>
+          {children}
+          <View style={styles.dialogActions}>
+            <BthwaniButton disabled={busy} label={cancelLabel} onPress={onCancel} style={styles.dialogAction} variant="secondary" />
+            <BthwaniButton busy={busy} label={confirmLabel} onPress={onConfirm} style={styles.dialogAction} variant={intent === "danger" ? "danger" : "primary"} />
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -204,6 +226,12 @@ function createPrimitiveStyles(theme: ThemeColors) {
     iconButtonSurface: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: borders.hairline },
     iconButtonSoft: { backgroundColor: theme.actionSoft },
     iconButtonPrimary: { backgroundColor: theme.actionBackground },
+    dialogBackdrop: { alignItems: "center", flex: 1, justifyContent: "center", padding: spacing[4] },
+    dialogCard: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], maxWidth: 520, padding: spacing[4], width: "100%", ...elevation.raised },
+    dialogTitle: { ...typography.titleSm, color: theme.color, textAlign: "right" },
+    dialogDescription: { ...typography.body, color: theme.colorMuted, textAlign: "right" },
+    dialogActions: { flexDirection: "row", gap: spacing[2], justifyContent: "flex-end" },
+    dialogAction: { flex: 1 },
     chip: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.round, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[1], minHeight: sizing.controlSm, paddingHorizontal: spacing[3] },
     chipSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
     chipDisabled: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground },
