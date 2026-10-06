@@ -498,6 +498,9 @@ paths:
   /dsh/operator/partners/{partnerActorId}/financial-summary:
     $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1financial-summary"
 
+  /dsh/operator/partners/{partnerActorId}/store-payout-recipients:
+    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1store-payout-recipients"
+
   /dsh/operator/partners/{partnerActorId}/commission-remittances:
     $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1commission-remittances"
 
