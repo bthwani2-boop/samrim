@@ -61,7 +61,7 @@ function StoreManagementSurfaces({ styles, store, canCatalog, canOperate, canPro
     {canOperate ? <StoreOperationalAvailabilityManagement storeID={store.id} fulfillmentModes={store.fulfillmentModes.filter(isStoreFulfillmentMode)} /> : null}
     {canCatalog && store.primaryVerticalId ? <StoreOfferManagement storeId={store.id} verticalId={store.primaryVerticalId} /> : null}
     {canCatalog && !store.primaryVerticalId ? <View style={styles.card}><Text style={styles.muted}>تعذر فتح إدارة المنتجات لأن تصنيف نشاط المتجر غير متاح في القراءة الحالية.</Text></View> : null}
-    {canPromote ? <StorePromotionsCard storeID={store.id} /> : null}
+    {canPromote ? <StorePromotionsCard storeID={store.id} verticalID={store.primaryVerticalId} /> : null}
     {isSameFirstJoiningStore && firstJoiningStore ? <FirstJoiningStoreFacts styles={styles} store={firstJoiningStore} /> : null}
     {store.owned ? <StoreCaptainMembershipManagement storeID={store.id} /> : null}
     {store.owned ? <PartnerStoreAccess storeID={store.id} /> : null}
