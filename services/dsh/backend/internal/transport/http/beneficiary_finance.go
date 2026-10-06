@@ -49,6 +49,8 @@ func (s *BeneficiaryFinanceServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/me/funding-intents/{fundingIntentId}/simulate", s.simulateOwnFundingIntent)
 	mux.HandleFunc("GET /dsh/me/payout-state", s.readOwnPayoutState)
 	mux.HandleFunc("POST /dsh/me/payout-intents", s.createOwnPayoutIntent)
+	mux.HandleFunc("POST /dsh/partner/payout-requests", s.createPartnerPayoutRequest)
+	mux.HandleFunc("GET /dsh/partner/payout-requests/{partnerActorId}/{requestId}", s.readPartnerPayoutRequest)
 	mux.HandleFunc("GET /dsh/operator/{actorType}/{actorId}/payout-state", s.readOperatorPayoutState)
 	mux.HandleFunc("GET /dsh/operator/{actorType}/{actorId}/official-wallet-destination", s.readOperatorDestination)
 	mux.HandleFunc("GET /dsh/operator/{actorType}/{actorId}/wallet-provider-intent", s.readOperatorWalletProviderIntent)

@@ -183,14 +183,6 @@ func (s *Server) readStorePayoutRecipientByStore(w http.ResponseWriter, r *http.
 	writeError(w, http.StatusNotFound, "NOT_FOUND", "no payout recipient facts exist for this store")
 }
 
-func (s *Server) registerStorePayoutRecipientRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/store-payout-recipients", s.readPartnerStorePayoutRecipients)
-	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/store-payout-recipients/{storeId}", s.readStorePayoutRecipientByStore)
-	mux.HandleFunc("PUT /wlt/v1/store-payout-recipients/{storeId}", s.selectStorePayoutRecipient)
-	mux.HandleFunc("POST /wlt/v1/store-payout-recipients/{storeId}/revert", s.revertStorePayoutRecipient)
-	mux.HandleFunc("POST /wlt/v1/store-payout-recipients/{storeId}/review-required", s.markStorePayoutRecipientReviewRequired)
-}
-
 func mutationHeadersForSystemAction(w http.ResponseWriter, r *http.Request) (string, string, bool) {
 	correlation := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
 	idempotency := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
@@ -265,5 +257,144 @@ func writeStorePayoutRecipientError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different facts")
 	default:
 		writeError(w, http.StatusBadGateway, "WLT_STORE_RECIPIENT_UNAVAILABLE", "store payout recipient mutation failed")
+	}
+}
+
+type partnerPayoutStoreAmountRequest struct {
+	StoreID    string `json:"storeId"`
+	AmountMinor int64 `json:"amountMinor"`
+}
+
+type partnerPayoutRequestInput struct {
+	ScopeMode              string                            `json:"scopeMode"`
+	RequestedStoreIDs      []string                          `json:"storeIds"`
+	StoreAmounts           []partnerPayoutStoreAmountRequest `json:"storeAmounts"`
+	BeneficiaryIdentityFacts map[string]postgres.IdentityFacts `json:"beneficiaryIdentityFacts"`
+}
+
+type partnerPayoutAllocationView struct {
+	StoreID                    string `json:"storeId"`
+	AmountMinor                int64  `json:"amountMinor"`
+	BeneficiaryActorID         string `json:"beneficiaryActorId"`
+	RecipientAssignmentVersion int64  `json:"recipientAssignmentVersion"`
+	Currency                   string `json:"currency"`
+}
+
+type partnerPayoutRequestResponse struct {
+	Request partnerPayoutRequestView `json:"request"`
+	Replayed bool                    `json:"idempotentReplay"`
+}
+
+type partnerPayoutRequestView struct {
+	ID               string                        `json:"id"`
+	Status           string                        `json:"status"`
+	ScopeMode        string                        `json:"scopeMode"`
+	TotalAmountMinor int64                         `json:"totalAmountMinor"`
+	Currency         string                        `json:"currency"`
+	Stores           []partnerPayoutAllocationView `json:"stores"`
+	Payouts          []postgres.PayoutRequestRecord `json:"payouts"`
+	CreatedAt        string                        `json:"createdAt"`
+}
+
+func (s *Server) createPartnerPayoutRequest(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	correlation, idempotency, ok := mutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	partnerActorID := strings.TrimSpace(r.PathValue("partnerActorId"))
+	if partnerActorID == "" || len(partnerActorID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partnerActorId is required")
+		return
+	}
+	var input partnerPayoutRequestInput
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	storeAmounts := make([]postgres.PartnerPayoutStoreAmount, 0, len(input.StoreAmounts))
+	for _, store := range input.StoreAmounts {
+		storeAmounts = append(storeAmounts, postgres.PartnerPayoutStoreAmount{StoreID: store.StoreID, AmountMinor: store.AmountMinor})
+	}
+	request, replayed, err := postgres.CreatePartitionedPartnerPayoutRequest(r.Context(), s.db, s.destinationEncryptionKey, postgres.PartnerPayoutRequestInput{
+		PartnerActorID:    partnerActorID,
+		ScopeMode:         input.ScopeMode,
+		RequestedStoreIDs: input.RequestedStoreIDs,
+		StoreAmounts:      storeAmounts,
+		BeneficiaryFacts:  input.BeneficiaryIdentityFacts,
+		IdempotencyKey:    idempotency,
+		CorrelationID:     correlation,
+	})
+	if err != nil {
+		writePartnerPayoutRequestError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if replayed {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, partnerPayoutRequestResponse{Request: toPartnerPayoutRequestView(request), Replayed: replayed})
+}
+
+func (s *Server) readPartnerPayoutRequest(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	request, err := postgres.ReadPartnerPayoutRequest(r.Context(), s.db, r.PathValue("requestId"))
+	if err != nil {
+		writePartnerPayoutRequestError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, partnerPayoutRequestResponse{Request: toPartnerPayoutRequestView(request)})
+}
+
+func toPartnerPayoutRequestView(request postgres.PartnerPayoutRequestRecord) partnerPayoutRequestView {
+	view := partnerPayoutRequestView{
+		ID:               request.ID,
+		Status:           request.Status,
+		ScopeMode:        request.ScopeMode,
+		TotalAmountMinor: request.TotalAmountMinor,
+		Currency:         request.Currency,
+		Stores:           make([]partnerPayoutAllocationView, 0, len(request.Stores)),
+		Payouts:          request.Payouts,
+		CreatedAt:        formatStoreRecipientTime(request.CreatedAt),
+	}
+	for _, allocation := range request.Stores {
+		view.Stores = append(view.Stores, partnerPayoutAllocationView{
+			StoreID:                    allocation.StoreID,
+			AmountMinor:                allocation.AmountMinor,
+			BeneficiaryActorID:         allocation.BeneficiaryActorID,
+			RecipientAssignmentVersion: allocation.RecipientAssignmentVersion,
+			Currency:                   allocation.Currency,
+		})
+	}
+	return view
+}
+
+func writePartnerPayoutRequestError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, postgres.ErrPartnerPayoutInvalidInput):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partner payout request input is invalid")
+	case errors.Is(err, postgres.ErrPartnerPayoutStoreUnknown):
+		writeError(w, http.StatusForbidden, "STORE_NOT_AUTHORIZED", "the requested Store is not known to WLT as owned by this Partner")
+	case errors.Is(err, postgres.ErrPartnerPayoutAmountExceeded):
+		writeError(w, http.StatusConflict, "STORE_AMOUNT_EXCEEDED", "a requested Store amount exceeds that Store's attributed available allocation")
+	case errors.Is(err, postgres.ErrPartnerPayoutAttributionGap):
+		writeError(w, http.StatusConflict, "STORE_ATTRIBUTION_INCOMPLETE", "store attribution cannot cover the requested payout; request explicit Store amounts instead")
+	case errors.Is(err, postgres.ErrPayoutNoFunds):
+		writeError(w, http.StatusConflict, "NO_ELIGIBLE_FUNDS", "no eligible payout funds are available for the selected Store scope")
+	case errors.Is(err, postgres.ErrRecipientDestinationNotReady):
+		writeError(w, http.StatusConflict, "RECIPIENT_DESTINATION_NOT_READY", "an effective payout recipient has no Finance-approved verified active official wallet destination")
+	case errors.Is(err, postgres.ErrPayoutRecipientReviewRequired):
+		writeError(w, http.StatusConflict, "RECIPIENT_REVIEW_REQUIRED", "payout recipient review is required before future payouts")
+	case errors.Is(err, postgres.ErrReverificationRequired):
+		writeError(w, http.StatusConflict, "REVERIFICATION_REQUIRED", "current verified Identity facts do not match the effective payout destination")
+	case errors.Is(err, postgres.ErrOfficialWalletDestinationStale):
+		writeError(w, http.StatusConflict, "DESTINATION_STALE", "the effective payout destination is stale and requires Finance reverification")
+	case errors.Is(err, postgres.ErrIdempotencyConflict):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different facts")
+	default:
+		writeError(w, http.StatusBadGateway, "WLT_PARTNER_PAYOUT_UNAVAILABLE", "partner payout request failed")
 	}
 }

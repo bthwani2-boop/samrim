@@ -300,6 +300,10 @@ paths:
     $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1access~1{grantId}~1permissions"
   /dsh/partner/store-payout-recipients:
     $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1store-payout-recipients"
+  /dsh/partner/payout-requests:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1payout-requests"
+  /dsh/partner/payout-requests/{partnerActorId}/{requestId}:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1payout-requests~1{partnerActorId}~1{requestId}"
   /dsh/partner/stores/{storeId}/payout-recipient:
     $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1stores~1{storeId}~1payout-recipient"
   /dsh/partner/stores/{storeId}/payout-recipient/revert:
@@ -8337,6 +8341,133 @@ components:
           additionalProperties: { type: string }
         beneficiaryPhones:
           type: object
+
+    PartnerPayoutStoreAmount:
+      type: object
+      additionalProperties: false
+      required: [storeId, amountMinor]
+      properties:
+        storeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        amountMinor:
+          type: integer
+          minimum: 1
+
+    PartnerPayoutRequestCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [scopeMode]
+      properties:
+        scopeMode:
+          type: string
+          enum: [FULL_AVAILABLE, SPECIFIED]
+        storeIds:
+          type: array
+          maxItems: 200
+          items:
+            type: string
+            maxLength: 128
+        storeAmounts:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/PartnerPayoutStoreAmount"
+
+    PartnerPayoutAllocation:
+      type: object
+      additionalProperties: false
+      required: [storeId, amountMinor, beneficiaryActorId, currency]
+      properties:
+        storeId:
+          type: string
+        amountMinor:
+          type: integer
+          minimum: 1
+        beneficiaryActorId:
+          type: string
+        recipientAssignmentVersion:
+          type: integer
+          minimum: 0
+        currency:
+          type: string
+          const: YER
+
+    PartnerPayoutRequestView:
+      type: object
+      additionalProperties: false
+      required: [id, status, scopeMode, totalAmountMinor, currency, stores, payouts, createdAt]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          const: PARTITIONED
+        scopeMode:
+          type: string
+          enum: [FULL_AVAILABLE, SPECIFIED]
+        totalAmountMinor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        stores:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartnerPayoutAllocation"
+        payouts:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartnerPayoutChildPayout"
+        createdAt:
+          type: string
+          format: date-time
+
+    PartnerPayoutChildPayout:
+      type: object
+      additionalProperties: false
+      required: [id, amountMode, resolvedAmountMinor, currency, destinationId, destinationVersion, status, createdAt]
+      properties:
+        id:
+          type: string
+        amountMode:
+          type: string
+          const: SPECIFIED
+        requestedAmountMinor:
+          type: integer
+          minimum: 1
+        resolvedAmountMinor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        destinationId:
+          type: string
+        destinationVersion:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+        policyVersion:
+          type: string
+        ledgerTransactionId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    PartnerPayoutRequestResponse:
+      type: object
+      additionalProperties: false
+      required: [request]
+      properties:
+        request:
+          $ref: "#/components/schemas/PartnerPayoutRequestView"
+        idempotentReplay:
+          type: boolean
           additionalProperties: { type: string }
 
     StorePayoutRecipientSelectRequest:
