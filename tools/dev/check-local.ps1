@@ -57,10 +57,16 @@ try {
     }
 
     $env:NX_NO_CLOUD = 'true'
-    pnpm exec biome lint tools/dev --diagnostic-level=error
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    pwsh -NoProfile -ExecutionPolicy Bypass -File tools/powershell/verify-syntax.ps1
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    if (@($files | Where-Object { $_ -match '^(tools/dev/|biome\.jsonc?$)' }).Count -gt 0) {
+        pnpm exec biome lint tools/dev --diagnostic-level=error
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
+
+    if (@($files | Where-Object { $_ -match '\.(ps1|psm1|psd1)$' }).Count -gt 0) {
+        pwsh -NoProfile -ExecutionPolicy Bypass -File tools/powershell/verify-syntax.ps1
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
 
     $affectedProjectJson = pnpm exec nx show projects --affected --base=HEAD --json
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

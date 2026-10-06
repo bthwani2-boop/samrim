@@ -77,7 +77,13 @@ Default small-change loop:
 
 `SMALL CHANGE -> AFFECTED CHECK -> IMPLEMENT -> DIRECT PROOF -> DONE`
 
-Use Git to identify changes and Nx to select affected project work when applicable. `pnpm check` is the normal local feedback command for uncommitted work; use narrower direct commands when they are sufficient.
+Use Git to identify changes and Nx to select affected project work when applicable. `pnpm check` is the normal local feedback command for uncommitted work; use narrower direct commands when they are sufficient. `pnpm verify` is explicit candidate-wide local proof, not a default step and not an implicit prerequisite to push.
+
+Default integration flow:
+
+`DISCOVER -> CHANGE -> AFFECTED PROOF -> LOCAL COMMIT(S) -> FEATURE FREEZE -> SAFE PUSH -> PR/CI ONCE`
+
+`pnpm safe:push` is a Git transport/safety interlock only. It must not duplicate candidate-wide proof already owned by explicit `pnpm verify` or final CI.
 
 Proof is claim-driven and static-first. Use runtime, browser or real-device proof only when the claim cannot be falsified adequately by static evidence.
 
