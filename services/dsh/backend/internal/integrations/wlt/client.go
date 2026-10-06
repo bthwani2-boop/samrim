@@ -465,6 +465,8 @@ type FinancialStatement struct {
 type FinancialStatementSummary struct {
 	ActorType              string `json:"actorType"`
 	ActorID                string `json:"actorId"`
+	DisplayName            string `json:"displayName,omitempty"`
+	PhoneMasked            string `json:"phoneMasked,omitempty"`
 	BeneficiaryName        string `json:"beneficiaryName"`
 	WalletIdentifierMasked string `json:"walletIdentifierMasked"`
 	Currency               string `json:"currency"`

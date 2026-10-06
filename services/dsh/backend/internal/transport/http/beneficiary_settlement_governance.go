@@ -137,6 +137,40 @@ func (s *BeneficiaryFinanceServer) listOperatorFinancialStatementSummaries(w htt
 		writeWLTFinanceError(w, err)
 		return
 	}
+	actorIDs := make([]string, 0, len(result.Summaries))
+	for _, item := range result.Summaries {
+		if strings.TrimSpace(item.ActorID) != "" {
+			actorIDs = append(actorIDs, item.ActorID)
+		}
+	}
+	if len(actorIDs) > 0 {
+		displayNames, nameErr := postgres.ReadBeneficiaryFinanceDisplayNames(r.Context(), s.db, actorType, actorIDs)
+		if nameErr != nil {
+			writeError(w, http.StatusBadGateway, "BENEFICIARY_PRESENTATION_UNAVAILABLE", "beneficiary presentation is unavailable")
+			return
+		}
+		phones := make(map[string]string, len(actorIDs))
+		for start := 0; start < len(actorIDs); start += 100 {
+			end := start + 100
+			if end > len(actorIDs) {
+				end = len(actorIDs)
+			}
+			roles, roleErr := s.identity.ReadActorRoles(r.Context(), actorType, actorIDs[start:end])
+			if roleErr != nil {
+				writeIdentityError(w, roleErr)
+				return
+			}
+			for _, role := range roles.Items {
+				if role.Role == actorType && role.ActorID != "" {
+					phones[role.ActorID] = maskPartnerFinancePhone(role.PhoneE164)
+				}
+			}
+		}
+		for index := range result.Summaries {
+			result.Summaries[index].DisplayName = displayNames[result.Summaries[index].ActorID]
+			result.Summaries[index].PhoneMasked = phones[result.Summaries[index].ActorID]
+		}
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, result)
 }

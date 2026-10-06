@@ -554,7 +554,7 @@ export type OperatorFinancialStatementSummaryRegistry = Readonly<{
   actorType: "customer" | "partner" | "captain" | "field";
   periodStart: string;
   periodEnd: string;
-  summaries: ReadonlyArray<Readonly<{ actorType: string; actorId: string; currency: "YER"; openingBalanceMinor: number; creditsMinor: number; debitsMinor: number; closingBalanceMinor: number; currentBalanceMinor: number; heldMinor: number; availableMinor: number }>>;
+  summaries: ReadonlyArray<Readonly<{ actorType: string; actorId: string; displayName?: string; phoneMasked?: string; beneficiaryName?: string; walletIdentifierMasked?: string; currency: "YER"; openingBalanceMinor: number; creditsMinor: number; debitsMinor: number; closingBalanceMinor: number; currentBalanceMinor: number; heldMinor: number; availableMinor: number }>>;
   nextCursor?: string;
   limit: number;
 }>;
