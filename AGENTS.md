@@ -51,6 +51,8 @@ Do not solve complexity by adding another layer around it.
 
 Give each mutable fact one canonical owner/writer. During replacement, migrate callers, configuration, contracts, tests and required documentation; cut over; then delete the losing path and stale references.
 
+When replacing or refounding a canonical path, migrate every materially affected producer, consumer, contract, durable state/persistence path, runtime/configuration dependency and required proof before deleting the losing path. A cutover is incomplete while any material writer, reader, state owner, runtime dependency or contract still relies on the losing path.
+
 Preserve required Product behavior, security, authorization, privacy, data integrity, contract integrity and operational safety throughout simplification.
 
 ## 4. Local development state
@@ -94,6 +96,10 @@ Default integration flow:
 `pnpm safe:push` is a Git transport/safety interlock only. It must not duplicate candidate-wide proof already owned by explicit `pnpm verify` or final CI.
 
 Proof is claim-driven and static-first. Use runtime, browser or real-device proof only when the claim cannot be falsified adequately by static evidence.
+
+For a material cross-surface or cross-service journey, a passing screen, API, typecheck, unit test or isolated service proof is not journey closure. Prove every materially participating handoff through its canonical owners until the required canonical readback is reached.
+
+Proof must exercise the material failure modes of the affected claim, not only its happy path. Add negative, authorization, isolation, validation, recovery, idempotency or concurrency proof only when that risk is materially present in the affected cone.
 
 Use the native failing command and native failure output first. Broaden diagnostics only when broader evidence can change the repair decision.
 
