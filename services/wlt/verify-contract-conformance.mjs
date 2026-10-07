@@ -4,9 +4,12 @@ import path from "node:path";
 const root = path.resolve(import.meta.dirname, "../..");
 const compareStrings = (left, right) => String(left).localeCompare(String(right), "en");
 const openApiPath = path.join(root, "services/wlt/contracts/openapi/wlt.openapi.yaml");
-const clientPath = path.join(root, "services/dsh/backend/internal/integrations/wlt/client.go");
+const clientPaths = [
+  path.join(root, "services/dsh/backend/internal/integrations/wlt/client.go"),
+  path.join(root, "services/dsh/backend/internal/integrations/wlt/store_payout_recipient.go"),
+];
 const openApi = fs.readFileSync(openApiPath, "utf8");
-const client = fs.readFileSync(clientPath, "utf8");
+const client = clientPaths.map((clientPath) => fs.readFileSync(clientPath, "utf8")).join("\n");
 const failures = [];
 
 function replaceBracePlaceholders(value) {

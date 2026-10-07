@@ -844,7 +844,7 @@ func toStoreCaptainMembership(value postgres.StoreCaptainMembership) contract.St
 	}
 	return contract.StoreCaptainMembership{
 		ID: value.ID, StoreID: value.StoreID, StoreName: value.StoreName, PartnerActorID: value.PartnerActorID,
-		CaptainActorID: captainActorID, State: value.State, Version: value.Version, ExpiresAt: value.ExpiresAt,
+		CaptainActorID: captainActorID, CaptainNameAr: value.CaptainNameAr, CaptainPhoneMasked: value.CaptainPhoneMasked, State: value.State, Version: value.Version, ExpiresAt: value.ExpiresAt,
 		AcceptedAt: value.AcceptedAt, RevokedAt: value.RevokedAt, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,
 	}
 }

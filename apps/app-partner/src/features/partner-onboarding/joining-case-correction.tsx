@@ -1,5 +1,5 @@
 import { borders, radius, toAsciiDigits, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniChip, BthwaniConfirmDialog, useAppearanceTheme } from "@bthwani/design-system/native";
 import { resolveJoiningCaseImageContentType, type CommercialStoreType, type CommerceVertical, type DshImageUploadInput, type JoiningCaseProofType, type JoiningCaseResponse, type ServiceCity, type StoreFulfillmentMode, type StoreWeeklyWorkingHours, type StoreWorkingHoursInterval } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
@@ -130,6 +130,7 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
   const [proofUploadBusy, setProofUploadBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [confirmResubmit, setConfirmResubmit] = useState(false);
   const preserveCorrectionDraftAtVersion = useRef<number | null>(null);
 
   useEffect(() => {
@@ -470,7 +471,16 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
       <Text style={styles.label}>ملاحظات (اختياري)</Text>
       <TextInput accessibilityLabel="ملاحظات طلب الانضمام" editable={!busy} maxLength={1000} multiline onChangeText={setNotes} placeholder="أي تفاصيل إضافية تساعد في مراجعة الطلب" value={notes} style={[styles.input, styles.multiline]} />
       <View style={styles.locationBox}><Text style={styles.label}>أوضاع الطلب المثبتة عند الانضمام</Text><Text style={styles.muted}>{current.firstStoreFulfillmentModes.map(fulfillmentModeLabel).join(" · ") || "لم تُحدد طريقة توصيل بعد"}</Text><Text style={styles.muted}>اختيارك أعلاه سيُحفظ مع التصحيح ذريًا. بعد إنشاء المتجر يديره المشغّل من لوحة التحكم.</Text></View>
-      <BthwaniButton busy={busy} disabled={optionsLoading || evidenceLoading || proofUploadBusy || !proofReadyForThisCorrection} label="حفظ التصحيح وإعادة الإرسال" onPress={() => void correctAndResubmit()} />
+      <BthwaniButton busy={busy} disabled={optionsLoading || evidenceLoading || proofUploadBusy || !proofReadyForThisCorrection} label="مراجعة التصحيح وإعادة الإرسال" onPress={() => setConfirmResubmit(true)} />
+      <BthwaniConfirmDialog
+        busy={busy}
+        confirmLabel="حفظ وإعادة الإرسال"
+        description={`سيُحفظ التصحيح للمتجر «${firstStoreName.trim() || current.firstStoreName}» ويُعاد الطلب إلى مراجعة التشغيل. بعد الإرسال لن يبقى في حالة التصحيح الحالية، لذلك راجع البيانات وساعات العمل والإثبات قبل المتابعة.`}
+        onCancel={() => setConfirmResubmit(false)}
+        onConfirm={() => { setConfirmResubmit(false); void correctAndResubmit(); }}
+        title="تأكيد إعادة إرسال التصحيح"
+        visible={confirmResubmit}
+      />
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     </View>
   );

@@ -31,10 +31,14 @@ The current challenge contract is six decimal digits, enforced by the Identity s
 
 Superseded schemas were never integrated as production truth. Migration 001
 intentionally fails if losing actor-global credential/context columns are
-detected. For stale local/non-production data, reset the development
-PostgreSQL volume and apply the canonical schema cleanly. Never apply
-destructive reset instructions to production data without a separately proven
-migration plan.
+detected. Reset is an option only for an explicitly disposable local target,
+after accounting for its actors, sessions and dependent business records under
+[the repository's local-state rules](../../../AGENTS.md#4-local-development-state).
+The local Compose PostgreSQL volume contains Identity, DSH and WLT state;
+removing it resets all three owners, not just Identity. A legacy-schema error
+or a non-production environment name does not authorize that wider reset.
+When affected state must be preserved or is shared, use a separately proven
+migration/reconciliation plan rather than a destructive reset.
 
 
 Migration 002 adds `identity_challenge_deliveries` as durable provider-execution provenance with `suppressed | pending | sending | sent | unknown | expired` states. It is a forward migration; migration 001 remains immutable. Ordered migration application rejects missing, duplicate or non-contiguous versions.

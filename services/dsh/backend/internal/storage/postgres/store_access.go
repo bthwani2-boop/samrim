@@ -15,21 +15,24 @@ import (
 const storeAccessInvitationLifetime = 7 * 24 * time.Hour
 
 type StoreAccessGrant struct {
-	ID                  string     `json:"id"`
-	StoreID             string     `json:"storeId"`
-	StoreName           string     `json:"storeName"`
-	OwnerPartnerActorID string     `json:"ownerPartnerActorId"`
-	DelegateActorID     string     `json:"delegateActorId"`
-	DelegatePhoneMasked string     `json:"delegatePhoneMasked,omitempty"`
-	Permissions         []string   `json:"permissions"`
-	State               string     `json:"state"`
-	Version             int        `json:"version"`
-	ExpiresAt           time.Time  `json:"expiresAt"`
-	AcceptedAt          *time.Time `json:"acceptedAt,omitempty"`
-	DeclinedAt          *time.Time `json:"declinedAt,omitempty"`
-	RevokedAt           *time.Time `json:"revokedAt,omitempty"`
-	CreatedAt           time.Time  `json:"createdAt"`
-	UpdatedAt           time.Time  `json:"updatedAt"`
+	ID                             string     `json:"id"`
+	StoreID                        string     `json:"storeId"`
+	StoreName                      string     `json:"storeName"`
+	OwnerPartnerActorID            string     `json:"ownerPartnerActorId"`
+	DelegateActorID                string     `json:"delegateActorId"`
+	DelegatePhoneMasked            string     `json:"delegatePhoneMasked,omitempty"`
+	DelegateBeneficiaryName        string     `json:"delegateBeneficiaryName,omitempty"`
+	DelegateWalletProviderKey      string     `json:"delegateWalletProviderKey,omitempty"`
+	DelegateWalletIdentifierMasked string     `json:"delegateWalletIdentifierMasked,omitempty"`
+	Permissions                    []string   `json:"permissions"`
+	State                          string     `json:"state"`
+	Version                        int        `json:"version"`
+	ExpiresAt                      time.Time  `json:"expiresAt"`
+	AcceptedAt                     *time.Time `json:"acceptedAt,omitempty"`
+	DeclinedAt                     *time.Time `json:"declinedAt,omitempty"`
+	RevokedAt                      *time.Time `json:"revokedAt,omitempty"`
+	CreatedAt                      time.Time  `json:"createdAt"`
+	UpdatedAt                      time.Time  `json:"updatedAt"`
 }
 
 type PartnerAccessibleStore struct {
@@ -113,10 +116,8 @@ func CreateStoreAccessInvitation(ctx context.Context, db *sql.DB, storeID, owner
 	if db == nil || storeID == "" || ownerActorID == "" || delegateActorID == "" || ownerActorID == delegateActorID || len(permissions) == 0 || len(idempotencyKey) < 8 || len(correlationID) < 8 {
 		return StoreAccessGrant{}, false, ErrStoreAccessConflict
 	}
-	for _, permission := range permissions {
-		if !validStorePermission(permission) {
-			return StoreAccessGrant{}, false, ErrStoreAccessConflict
-		}
+	if !validStorePermissionSet(permissions) {
+		return StoreAccessGrant{}, false, ErrStoreAccessConflict
 	}
 	requestHash := HashStoreAccessInvitationCreate(storeID, ownerActorID, delegateActorID, permissions)
 	tx, err := db.BeginTx(ctx, nil)
@@ -320,6 +321,65 @@ func ListPartnerAccessibleStores(ctx context.Context, db *sql.DB, actorID string
 	return page, nil
 }
 
+type PartnerFinanceStore struct {
+	ID             string
+	Name           string
+	PartnerActorID string
+}
+
+// Hold the exact ownership/grant facts through the WLT mutation. Revocation,
+// suspension and permission changes cannot race a previously resolved scope.
+func LockPartnerPayoutStores(ctx context.Context, tx *sql.Tx, actorID string, stores []PartnerFinanceStore) error {
+	for _, store := range stores {
+		var owner string
+		if err := tx.QueryRowContext(ctx, "SELECT partner_actor_id FROM dsh.stores WHERE id=$1 FOR SHARE", store.ID).Scan(&owner); err != nil {
+			return err
+		}
+		if owner != store.PartnerActorID {
+			return ErrStoreAccessForbidden
+		}
+		if owner == actorID {
+			continue
+		}
+		var grantID string
+		err := tx.QueryRowContext(ctx, `SELECT id FROM dsh.store_access_grants WHERE store_id=$1 AND delegate_actor_id=$2
+			AND state='active' AND 'payout_request'=ANY(permissions) ORDER BY id LIMIT 1 FOR SHARE`, store.ID, actorID).Scan(&grantID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrStoreAccessForbidden
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Financial scopes use the same current ownership and active Store grants as
+// object authorization. Read and request permissions remain independent.
+func ListPartnerFinanceStores(ctx context.Context, db *sql.DB, actorID, permission string) ([]PartnerFinanceStore, error) {
+	actorID = strings.TrimSpace(actorID)
+	if db == nil || actorID == "" || len(actorID) > 128 || (permission != "finance_read" && permission != "payout_request") {
+		return nil, ErrStoreAccessForbidden
+	}
+	rows, err := db.QueryContext(ctx, `SELECT s.id,s.name,s.partner_actor_id FROM dsh.stores s
+		WHERE s.partner_actor_id=$1 OR EXISTS (
+			SELECT 1 FROM dsh.store_access_grants g WHERE g.store_id=s.id AND g.delegate_actor_id=$1
+			AND g.state='active' AND $2=ANY(g.permissions)) ORDER BY s.id`, actorID, permission)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]PartnerFinanceStore, 0)
+	for rows.Next() {
+		var store PartnerFinanceStore
+		if err := rows.Scan(&store.ID, &store.Name, &store.PartnerActorID); err != nil {
+			return nil, err
+		}
+		result = append(result, store)
+	}
+	return result, rows.Err()
+}
+
 func DecideStoreAccessInvitation(ctx context.Context, db *sql.DB, grantID, delegateActorID, decision, acceptedState string, expectedVersion int, idempotencyKey, correlationID string) (StoreAccessGrant, bool, error) {
 	grantID, delegateActorID, decision, acceptedState = strings.TrimSpace(grantID), strings.TrimSpace(delegateActorID), strings.TrimSpace(decision), strings.TrimSpace(acceptedState)
 	idempotencyKey, correlationID = strings.TrimSpace(idempotencyKey), strings.TrimSpace(correlationID)
@@ -407,10 +467,8 @@ func UpdateStoreAccessGrantPermissions(ctx context.Context, db *sql.DB, storeID,
 	if db == nil || storeID == "" || ownerActorID == "" || grantID == "" || expectedVersion < 1 || len(permissions) == 0 || len(idempotencyKey) < 8 || len(correlationID) < 8 {
 		return StoreAccessGrant{}, false, ErrStoreAccessConflict
 	}
-	for _, permission := range permissions {
-		if !validStorePermission(permission) {
-			return StoreAccessGrant{}, false, ErrStoreAccessConflict
-		}
+	if !validStorePermissionSet(permissions) {
+		return StoreAccessGrant{}, false, ErrStoreAccessConflict
 	}
 	requestHash := HashStoreAccessPermissionsUpdate(storeID, grantID, ownerActorID, permissions, expectedVersion)
 	tx, err := db.BeginTx(ctx, nil)
@@ -717,6 +775,26 @@ var storeAccessPermissionAllowlist = map[string]struct{}{
 func validStorePermission(permission string) bool {
 	_, ok := storeAccessPermissionAllowlist[permission]
 	return ok
+}
+
+func validStorePermissionSet(permissions []string) bool {
+	if len(permissions) == 0 {
+		return false
+	}
+	hasOrders := false
+	hasFulfillment := false
+	for _, permission := range permissions {
+		if !validStorePermission(permission) {
+			return false
+		}
+		if permission == "orders" {
+			hasOrders = true
+		}
+		if permission == "fulfillment" {
+			hasFulfillment = true
+		}
+	}
+	return !hasFulfillment || hasOrders
 }
 
 // storeGrantHoldsPermissionTx reports whether an active Store grant for the actor

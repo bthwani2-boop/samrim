@@ -15,7 +15,7 @@ type payoutBeneficiary struct {
 }
 
 func (s *BeneficiaryFinanceServer) currentFactsForPayout(ctx context.Context, payout wlt.PayoutRequest, actingOperatorID string) (wlt.IdentityFacts, error) {
-	return s.readCurrentOfficialWalletIdentityFacts(ctx, payout.ActorType, payout.ActorID, actingOperatorID)
+	return s.readCurrentOfficialWalletIdentityFacts(ctx, payout.ActorType, payout.BeneficiaryActorID, actingOperatorID)
 }
 
 func (s *BeneficiaryFinanceServer) currentFactsForBatch(ctx context.Context, items []wlt.SettlementBatchItem, actingOperatorID string) ([]wlt.IdentityFacts, error) {

@@ -606,7 +606,7 @@ export function FieldCatalog({ caseId }: { caseId: string }) {
   return <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
     <Text style={styles.title}>الكتالوج الأولي</Text>
     <Text style={styles.muted}>يظهر هذا المسار للحالة المعتمدة فقط. يتحقق النظام في كل قراءة وكتابة من الإسناد والارتباط بالمتجر وعدم إتمام إطلاق المتجر.</Text>
-    {snapshot ? <View style={styles.card}><Text style={styles.heading}>المتجر المعتمد</Text><Text style={styles.body}>المتجر: {snapshot.storeId}</Text><Text style={styles.body}>المجال: {snapshot.verticalId}</Text></View> : null}
+    {snapshot ? <View style={styles.card}><Text style={styles.heading}>المتجر المعتمد</Text><Text style={styles.body}>المتجر: {snapshot.storeName}</Text><Text style={styles.body}>المجال: {snapshot.verticalNameAr}</Text></View> : null}
     {snapshot ? <View style={styles.card}>
       <Text style={styles.heading}>عروض المتجر الأولية · {snapshot.offers.length}</Text>
       <Text style={styles.muted}>تعرض هذه القائمة صفحات عروض المتجر كلها؛ اختر أي عرض لمراجعة سعره وتوافره وتعديله.</Text>

@@ -113,7 +113,7 @@ func SelectStorePayoutRecipient(ctx context.Context, db *sql.DB, cipher *Destina
 		return StorePayoutRecipientAssignmentRecord{}, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:store-payout-recipient:"+input.StoreID); err != nil {
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:partner-payout:"+input.PartnerActorID); err != nil {
 		return StorePayoutRecipientAssignmentRecord{}, false, err
 	}
 	var eventState string
@@ -219,7 +219,7 @@ func RevertStorePayoutRecipientToOwner(ctx context.Context, db *sql.DB, input Re
 		return false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:store-payout-recipient:"+input.StoreID); err != nil {
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:partner-payout:"+input.PartnerActorID); err != nil {
 		return false, err
 	}
 	var eventState string
@@ -274,7 +274,7 @@ func MarkStorePayoutRecipientReviewRequired(ctx context.Context, db *sql.DB, sto
 		return false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:store-payout-recipient:"+storeID); err != nil {
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:partner-payout:"+partnerActorID); err != nil {
 		return false, err
 	}
 	existing, err := readStorePayoutRecipientAssignment(ctx, tx, storeID)
@@ -288,7 +288,7 @@ func MarkStorePayoutRecipientReviewRequired(ctx context.Context, db *sql.DB, sto
 		return false, ErrStorePayoutRecipientOwnership
 	}
 	if existing.State == StorePayoutRecipientStateReviewRequired {
-		return true, nil
+		return false, nil
 	}
 	eventID, err := newID("store-recipient-event")
 	if err != nil {
@@ -303,7 +303,7 @@ func MarkStorePayoutRecipientReviewRequired(ctx context.Context, db *sql.DB, sto
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
-	return false, nil
+	return true, nil
 }
 
 func readStorePayoutRecipientAssignment(ctx context.Context, source interface {

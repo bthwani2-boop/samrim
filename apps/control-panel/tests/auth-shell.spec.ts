@@ -609,7 +609,7 @@ test("marketing create recovery reconciles promotions and resumes content with t
   });
 
   await page.goto("/marketing/promotions");
-  await page.getByText("إنشاء عرض جديد", { exact: true }).click();
+  await page.getByText("إنشاء عرض أو حملة", { exact: true }).click();
   await page.getByLabel("رمز العرض", { exact: true }).fill("RESTORE10");
   await page.getByLabel("اسم العرض").fill("عرض الاستعادة");
   await page.getByRole("button", { name: "إنشاء مسودة العرض" }).click();
@@ -1219,7 +1219,7 @@ test("partner commission remittance resumes with its stored receipt after an unc
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ items: [{ partnerActorId: "act_partner_receipt", profileState: "ACTIVE", outstandingCommissionReceivableMinor: 5000, currency: "YER" }], nextCursor: "", limit: 50 }),
+      body: JSON.stringify({ items: [{ partnerActorId: "act_partner_receipt", businessName: "متجر الإيصال", partnerPhoneMasked: "+967••••1234", profileState: "ACTIVE", outstandingCommissionReceivableMinor: 5000, currency: "YER" }], nextCursor: "", limit: 50 }),
     });
   });
   await page.route("**/api/finance/partner-earnings**", async (route) => {
@@ -1251,7 +1251,7 @@ test("partner commission remittance resumes with its stored receipt after an unc
   });
 
   await page.goto("/finance/partner-commission-receivables?partnerActorId=act_partner_receipt");
-  await expect(page.getByRole("heading", { name: "مستحقات الشريك act_partner_receipt" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "مستحقات متجر الإيصال" })).toBeVisible();
   await page.getByLabel("المبلغ بالريال اليمني").fill("5000");
   await page.getByLabel("مرجع الحوالة").fill("bank-transfer-1");
   await page.getByLabel("إيصال الحوالة (PDF أو صورة أو CSV أو Excel، بحد أقصى 10 ميغابايت)").setInputFiles({ name: "bank-transfer.pdf", mimeType: "application/pdf", buffer: Buffer.from("verified partner transfer receipt") });
@@ -1287,7 +1287,7 @@ test("partner commission remittance keeps its recovery key when WLT returns an u
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ items: [{ partnerActorId: "act_partner_malformed", profileState: "ACTIVE", outstandingCommissionReceivableMinor: 5000, currency: "YER" }], nextCursor: "", limit: 50 }),
+      body: JSON.stringify({ items: [{ partnerActorId: "act_partner_malformed", businessName: "متجر الاستجابة", partnerPhoneMasked: "+967••••5678", profileState: "ACTIVE", outstandingCommissionReceivableMinor: 5000, currency: "YER" }], nextCursor: "", limit: 50 }),
     });
   });
   await page.route("**/api/finance/partner-earnings**", async (route) => {
@@ -1316,7 +1316,7 @@ test("partner commission remittance keeps its recovery key when WLT returns an u
   });
 
   await page.goto("/finance/partner-commission-receivables?partnerActorId=act_partner_malformed");
-  await expect(page.getByRole("heading", { name: "مستحقات الشريك act_partner_malformed" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "مستحقات متجر الاستجابة" })).toBeVisible();
   await page.getByLabel("المبلغ بالريال اليمني").fill("5000");
   await page.getByLabel("مرجع الحوالة").fill("bank-transfer-2");
   await page.getByLabel("إيصال الحوالة (PDF أو صورة أو CSV أو Excel، بحد أقصى 10 ميغابايت)").setInputFiles({ name: "bank-transfer-2.pdf", mimeType: "application/pdf", buffer: Buffer.from("verified partner transfer receipt") });

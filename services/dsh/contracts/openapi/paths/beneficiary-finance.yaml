@@ -588,6 +588,8 @@ paths:
                       properties:
                         actorType: { type: string }
                         actorId: { type: string }
+                        displayName: { type: string, description: "DSH-owned human-readable beneficiary name for operator presentation." }
+                        phoneMasked: { type: string, description: "Current Identity phone masked for operator presentation." }
                         beneficiaryName: { type: string }
                         walletIdentifierMasked: { type: string }
                         currency: { type: string, const: YER }

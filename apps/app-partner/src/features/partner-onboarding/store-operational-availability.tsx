@@ -254,11 +254,11 @@ export function StoreOperationalAvailabilityManagement({ storeID, fulfillmentMod
         </View>;
       })}</View></> : null}
     </View>
-    <View style={styles.settingRow}><View style={styles.settingCopy}><Text style={styles.label}>إيقاف استقبال الطلبات مؤقتًا</Text><Text style={styles.muted}>{draft.paused ? "يبقى الإيقاف حتى تلغيه يدويًا." : "يمكن إيقاف الطلبات دون إلغاء نشر المتجر."}</Text></View><Switch accessibilityLabel="إيقاف استقبال الطلبات مؤقتًا" disabled={disabled} onValueChange={(paused) => setDraft((value) => value ? { ...value, paused, pauseReason: paused ? value.pauseReason : "", pauseUntil: paused ? value.pauseUntil : null } : value)} value={draft.paused} /></View>
+    <View style={styles.settingRow}><View style={styles.settingCopy}><Text style={styles.label}>إيقاف استقبال الطلبات مؤقتًا</Text><Text style={styles.muted}>{draft.paused ? draft.pauseUntil ? `يستمر الإيقاف حتى ${draft.pauseUntil} بتوقيت اليمن ما لم تستأنف الطلبات قبل ذلك.` : "يبقى الإيقاف حتى تستأنف الطلبات يدويًا." : "يمكن إيقاف الطلبات دون إلغاء نشر المتجر."}</Text></View><Switch accessibilityLabel="إيقاف استقبال الطلبات مؤقتًا" disabled={disabled} onValueChange={(paused) => setDraft((value) => value ? { ...value, paused, pauseReason: paused ? value.pauseReason : "", pauseUntil: paused ? value.pauseUntil : null } : value)} value={draft.paused} /></View>
     {draft.paused ? <>
       <TextInput accessibilityLabel="سبب إيقاف استقبال الطلبات" editable={!disabled} maxLength={500} onChangeText={(pauseReason) => setDraft((value) => value ? { ...value, pauseReason } : value)} placeholder="سبب الإيقاف" value={draft.pauseReason} style={styles.input} />
       <TextInput accessibilityLabel="موعد انتهاء الإيقاف بتوقيت اليمن" editable={!disabled} maxLength={16} onChangeText={(pauseUntil) => setDraft((value) => value ? { ...value, pauseUntil: toAsciiDigits(pauseUntil) || null } : value)} placeholder="YYYY-MM-DD HH:mm" value={draft.pauseUntil ?? ""} style={styles.input} />
-      <Text style={styles.muted}>أدخل موعدًا مستقبليًا بتوقيت اليمن، مثل 2026-10-03 18:30. اتركه فارغًا إذا كان الإيقاف حتى الاستئناف اليدوي.</Text>
+      <Text style={styles.muted}>أدخل موعدًا مستقبليًا بتوقيت اليمن بصيغة YYYY-MM-DD HH:mm، أو اتركه فارغًا إذا كان الإيقاف حتى الاستئناف اليدوي.</Text>
     </> : null}
     <View style={styles.block}>
       <Text style={styles.label}>مدة التجهيز</Text>

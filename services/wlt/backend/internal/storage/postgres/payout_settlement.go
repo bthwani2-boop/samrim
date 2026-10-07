@@ -280,12 +280,12 @@ func PreparePayout(ctx context.Context, db *sql.DB, cipher *DestinationCipher, i
 	if err != nil {
 		return PayoutRequestRecord{}, err
 	}
-	if !input.IdentityFacts.validFor(payout.ActorType, payout.ActorID) {
+	if !input.IdentityFacts.validFor(payout.ActorType, payout.BeneficiaryActorID) {
 		return PayoutRequestRecord{}, ErrReverificationRequired
 	}
 	var currentDestinationID string
 	var currentDestinationVersion int
-	if err := tx.QueryRowContext(ctx, "SELECT id,version FROM wlt.official_wallet_destinations WHERE actor_type=$1 AND actor_id=$2 AND verification_status='VERIFIED' AND status='ACTIVE_FOR_PAYOUT' FOR UPDATE", payout.ActorType, payout.ActorID).Scan(&currentDestinationID, &currentDestinationVersion); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT id,version FROM wlt.official_wallet_destinations WHERE actor_type=$1 AND actor_id=$2 AND verification_status='VERIFIED' AND status='ACTIVE_FOR_PAYOUT' FOR UPDATE", payout.ActorType, payout.BeneficiaryActorID).Scan(&currentDestinationID, &currentDestinationVersion); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return PayoutRequestRecord{}, ErrReverificationRequired
 		}
@@ -294,7 +294,7 @@ func PreparePayout(ctx context.Context, db *sql.DB, cipher *DestinationCipher, i
 	if currentDestinationID != payout.DestinationID || currentDestinationVersion != payout.DestinationVersion {
 		return PayoutRequestRecord{}, ErrReverificationRequired
 	}
-	if err := input.IdentityFacts.matchesStoredDestination(ctx, tx, cipher, currentDestinationID, payout.ActorType, payout.ActorID, true); err != nil {
+	if err := input.IdentityFacts.matchesStoredDestination(ctx, tx, cipher, currentDestinationID, payout.ActorType, payout.BeneficiaryActorID, true); err != nil {
 		return PayoutRequestRecord{}, commitIdentityStaleness(tx, err)
 	}
 	if found, payoutID, _, err := existingPayoutAudit(ctx, tx, "PAYOUT_PREPARED", input.IdempotencyKey, hash); err != nil {
@@ -319,8 +319,8 @@ func PreparePayout(ctx context.Context, db *sql.DB, cipher *DestinationCipher, i
 	if destination.BeneficiaryIdentityVersion < 1 {
 		return PayoutRequestRecord{}, ErrReverificationRequired
 	}
-	snapshotHash := hashFacts("approved-payout-snapshot-v2", input.PayoutID, payout.ActorType, payout.ActorID, destination.BeneficiaryName, formatInt(destination.BeneficiaryIdentityVersion), destination.ProviderKey, destination.WalletIdentifierMasked, destination.ID, formatInt(payout.DestinationVersion), input.IdentityFacts.fingerprint(), payout.Status)
-	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.approved_payout_snapshots(payout_id,actor_type,actor_id,beneficiary_name,beneficiary_identity_version,provider_key,masked_destination,destination_id,destination_version,amount_mode,resolved_amount_minor,currency,policy_version,snapshot_hash,prepared_by,identity_actor_version_snapshot,identity_role_version_snapshot,role_enabled_snapshot,security_enabled_snapshot,official_name_status_snapshot) SELECT id,actor_type,actor_id,$2,$3,$4,$5,destination_id,destination_version,amount_mode,resolved_amount_minor,currency,policy_version,$6,$7,$8,$9,$10,$11,$12 FROM wlt.payout_requests WHERE id=$1`, input.PayoutID, destination.BeneficiaryName, destination.BeneficiaryIdentityVersion, destination.ProviderKey, destination.WalletIdentifierMasked, snapshotHash, input.ActorID, input.IdentityFacts.ActorVersion, input.IdentityFacts.RoleVersion, input.IdentityFacts.RoleEnabled, input.IdentityFacts.SecurityEnabled, input.IdentityFacts.OfficialNameStatus); err != nil {
+	snapshotHash := hashFacts("approved-payout-snapshot-v2", input.PayoutID, payout.ActorType, payout.BeneficiaryActorID, destination.BeneficiaryName, formatInt(destination.BeneficiaryIdentityVersion), destination.ProviderKey, destination.WalletIdentifierMasked, destination.ID, formatInt(payout.DestinationVersion), input.IdentityFacts.fingerprint(), payout.Status)
+	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.approved_payout_snapshots(payout_id,actor_type,actor_id,beneficiary_name,beneficiary_identity_version,provider_key,masked_destination,destination_id,destination_version,amount_mode,resolved_amount_minor,currency,policy_version,snapshot_hash,prepared_by,identity_actor_version_snapshot,identity_role_version_snapshot,role_enabled_snapshot,security_enabled_snapshot,official_name_status_snapshot) SELECT id,actor_type,$13,$2,$3,$4,$5,destination_id,destination_version,amount_mode,resolved_amount_minor,currency,policy_version,$6,$7,$8,$9,$10,$11,$12 FROM wlt.payout_requests WHERE id=$1`, input.PayoutID, destination.BeneficiaryName, destination.BeneficiaryIdentityVersion, destination.ProviderKey, destination.WalletIdentifierMasked, snapshotHash, input.ActorID, input.IdentityFacts.ActorVersion, input.IdentityFacts.RoleVersion, input.IdentityFacts.RoleEnabled, input.IdentityFacts.SecurityEnabled, input.IdentityFacts.OfficialNameStatus, payout.BeneficiaryActorID); err != nil {
 		return PayoutRequestRecord{}, err
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE wlt.payout_requests SET status='PREPARED',updated_at=clock_timestamp() WHERE id=$1", input.PayoutID); err != nil {
@@ -415,18 +415,18 @@ func transitionPayout(ctx context.Context, db *sql.DB, cipher *DestinationCipher
 		return PayoutRequestRecord{}, ErrPayoutState
 	}
 	if facts != nil {
-		if cipher == nil || !facts.validFor(payout.ActorType, payout.ActorID) {
+		if cipher == nil || !facts.validFor(payout.ActorType, payout.BeneficiaryActorID) {
 			return PayoutRequestRecord{}, ErrReverificationRequired
 		}
 		var currentDestinationID string
 		var currentDestinationVersion int
-		if err := tx.QueryRowContext(ctx, "SELECT id,version FROM wlt.official_wallet_destinations WHERE actor_type=$1 AND actor_id=$2 AND verification_status='VERIFIED' AND status='ACTIVE_FOR_PAYOUT' FOR UPDATE", payout.ActorType, payout.ActorID).Scan(&currentDestinationID, &currentDestinationVersion); err != nil {
+		if err := tx.QueryRowContext(ctx, "SELECT id,version FROM wlt.official_wallet_destinations WHERE actor_type=$1 AND actor_id=$2 AND verification_status='VERIFIED' AND status='ACTIVE_FOR_PAYOUT' FOR UPDATE", payout.ActorType, payout.BeneficiaryActorID).Scan(&currentDestinationID, &currentDestinationVersion); err != nil {
 			return PayoutRequestRecord{}, ErrReverificationRequired
 		}
 		if currentDestinationID != payout.DestinationID || currentDestinationVersion != payout.DestinationVersion {
 			return PayoutRequestRecord{}, ErrReverificationRequired
 		}
-		if err := facts.matchesStoredDestination(ctx, tx, cipher, currentDestinationID, payout.ActorType, payout.ActorID, true); err != nil {
+		if err := facts.matchesStoredDestination(ctx, tx, cipher, currentDestinationID, payout.ActorType, payout.BeneficiaryActorID, true); err != nil {
 			return PayoutRequestRecord{}, commitIdentityStaleness(tx, err)
 		}
 		var snapshot PayoutSnapshotRecord

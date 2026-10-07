@@ -302,6 +302,8 @@ paths:
     $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1store-payout-recipients"
   /dsh/partner/payout-requests:
     $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1payout-requests"
+  /dsh/partner/payout-requests/{partnerActorId}:
+    $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1payout-requests~1{partnerActorId}"
   /dsh/partner/payout-requests/{partnerActorId}/{requestId}:
     $ref: "./paths/store-access.yaml#/paths/~1dsh~1partner~1payout-requests~1{partnerActorId}~1{requestId}"
   /dsh/partner/stores/{storeId}/payout-recipient:
@@ -484,6 +486,9 @@ paths:
   /dsh/joining-cases/{caseId}/financial-terms:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1financial-terms"
 
+  /dsh/partners/me/payout-summary:
+    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1partners~1me~1payout-summary"
+
   /dsh/partners/me/financial-summary:
     $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1partners~1me~1financial-summary"
 
@@ -492,6 +497,9 @@ paths:
 
   /dsh/operator/partners/{partnerActorId}/financial-summary:
     $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1financial-summary"
+
+  /dsh/operator/partners/{partnerActorId}/store-payout-recipients:
+    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1store-payout-recipients"
 
   /dsh/operator/partners/{partnerActorId}/commission-remittances:
     $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1commission-remittances"
@@ -3065,7 +3073,7 @@ components:
 
     FinanceStoreCommercialAgreement:
       type: object
-      required: [agreementId, storeId, partnerActorId, agreementVersion, status, rates, proposedByActorId, proposedAt, partnerAcceptedByActorId, partnerAcceptedAt, financeApprovedByActorId, financeApprovedAt, financeDecisionByActorId, financeDecisionAt, financeDecisionReason, effectiveAt, supersededAt, reason, storeName, commercialStoreTypeId, fulfillmentModes, currentStoreOwnerActorId, matchesCurrentFulfillmentModes]
+      required: [agreementId, storeId, partnerActorId, agreementVersion, status, rates, proposedByActorId, proposedAt, partnerAcceptedByActorId, partnerAcceptedAt, financeApprovedByActorId, financeApprovedAt, financeDecisionByActorId, financeDecisionAt, financeDecisionReason, effectiveAt, supersededAt, reason, storeName, commercialStoreTypeId, commercialStoreTypeNameAr, fulfillmentModes, currentStoreOwnerActorId, matchesCurrentFulfillmentModes]
       additionalProperties: false
       properties:
         agreementId:
@@ -3117,6 +3125,10 @@ components:
           type: string
         commercialStoreTypeId:
           type: string
+        commercialStoreTypeNameAr:
+          type: string
+          minLength: 2
+          maxLength: 160
         fulfillmentModes:
           type: array
           items:
@@ -3362,15 +3374,23 @@ components:
 
     FieldCatalogReadResponse:
       type: object
-      required: [joiningCaseId, storeId, verticalId, products, offers]
+      required: [joiningCaseId, storeId, storeName, verticalId, verticalNameAr, products, offers]
       additionalProperties: false
       properties:
         joiningCaseId:
           type: string
         storeId:
           type: string
+        storeName:
+          type: string
+          minLength: 2
+          maxLength: 160
         verticalId:
           type: string
+        verticalNameAr:
+          type: string
+          minLength: 2
+          maxLength: 160
         products:
           type: array
           items:
@@ -6306,6 +6326,14 @@ components:
           type: string
           minLength: 1
           maxLength: 128
+        businessName:
+          type: string
+          maxLength: 200
+          description: DSH-owned Partner business name for operator-facing identification.
+        partnerPhoneMasked:
+          type: string
+          maxLength: 24
+          description: Current Identity phone masked for operator-facing identification.
         currency:
           type: string
           const: YER
@@ -6710,6 +6738,8 @@ components:
       additionalProperties: false
       required: [id, actorType, actorId, amountMode, requestedAmountMinor, resolvedAmountMinor, currency, destinationId, destinationVersion, status, policyVersion, createdAt]
       properties:
+        beneficiaryActorId:
+          type: string
         id:
           type: string
         actorType:
@@ -6844,6 +6874,16 @@ components:
           enum: [partner, captain, field]
         actorId:
           type: string
+        displayName:
+          type: string
+          maxLength: 200
+          readOnly: true
+          description: DSH-owned human-facing business or role profile name for Finance presentation.
+        phoneMasked:
+          type: string
+          maxLength: 24
+          readOnly: true
+          description: Current Identity phone masked for Finance presentation.
         amountMinor:
           type: integer
           minimum: 1
@@ -7255,6 +7295,16 @@ components:
           enum: [customer, partner, captain, field]
         actorId:
           type: string
+        displayName:
+          type: string
+          maxLength: 200
+          readOnly: true
+          description: DSH-owned human-facing business or role profile name for Finance presentation.
+        phoneMasked:
+          type: string
+          maxLength: 24
+          readOnly: true
+          description: Current Identity phone masked for Finance presentation.
         currency:
           type: string
           const: YER
@@ -7639,7 +7689,7 @@ components:
 
     PromotionView:
       type: object
-      required: [id, code, nameAr, descriptionAr, kind, valueMinor, fundingSource, state, startsAt, redeemedCount, version, createdByActorId, createdAt, updatedAt]
+      required: [id, code, nameAr, descriptionAr, kind, valueMinor, fundingSource, requiresPartnerOptIn, targets, state, startsAt, redeemedCount, version, createdByActorId, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -7666,6 +7716,16 @@ components:
           minimum: 1
           maximum: 99
           nullable: true
+        requiresPartnerOptIn:
+          type: boolean
+        minOrderSubtotalMinor:
+          type: integer
+          minimum: 1
+          nullable: true
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/PromotionTarget"
         storeId:
           type: string
           nullable: true
@@ -7841,6 +7901,11 @@ components:
           type: string
           minLength: 1
           maxLength: 128
+        targetLabelAr:
+          type: string
+          maxLength: 320
+          readOnly: true
+          description: Canonical Arabic-facing product or category label resolved by DSH for presentation.
 
     PartnerCampaignView:
       type: object
@@ -8188,6 +8253,10 @@ components:
         captainActorId:
           type: string
           nullable: true
+        captainNameAr:
+          type: string
+        captainPhoneMasked:
+          type: string
         state:
           type: string
           enum: [pending, active, suspended, revoked, expired]
@@ -8269,6 +8338,7 @@ components:
 
     StoreAccessPermission:
       type: string
+      description: Store-scoped permission. fulfillment is valid only when orders is granted in the same permission set because fulfillment actions require the Store order workflow.
       enum: [orders, catalog, store_operations, promotions, finance_read, payout_request, fulfillment]
 
     StoreAccessGrant:
@@ -8299,6 +8369,18 @@ components:
           type: string
           maxLength: 24
           description: Current verified Identity phone with digits masked for Store-owner team readback.
+        delegateBeneficiaryName:
+          type: string
+          maxLength: 320
+          description: Canonical verified beneficiary name from the official WLT destination when available.
+        delegateWalletProviderKey:
+          type: string
+          maxLength: 64
+          description: Official wallet provider currently recorded by WLT for this delegate.
+        delegateWalletIdentifierMasked:
+          type: string
+          maxLength: 128
+          description: Masked official wallet identifier safe for owner confirmation.
         permissions:
           type: array
           uniqueItems: true
@@ -8396,6 +8478,7 @@ components:
           maxLength: 128
         currency:
           type: string
+          const: YER
         recipients:
           type: array
           items:
@@ -8405,18 +8488,37 @@ components:
           items:
             type: string
 
+    StorePayoutBeneficiaryProfile:
+      type: object
+      additionalProperties: false
+      properties:
+        beneficiaryName:
+          type: string
+          maxLength: 320
+        phoneMasked:
+          type: string
+          maxLength: 24
+        providerKey:
+          type: string
+          maxLength: 64
+        walletIdentifierMasked:
+          type: string
+          maxLength: 128
+
     StorePayoutRecipientListResponse:
       type: object
       additionalProperties: false
-      required: [readback, storeNames, beneficiaryPhones]
+      required: [readback, storeNames, beneficiaryProfiles]
       properties:
         readback:
           $ref: "#/components/schemas/StorePayoutRecipientReadback"
         storeNames:
           type: object
           additionalProperties: { type: string }
-        beneficiaryPhones:
+        beneficiaryProfiles:
           type: object
+          additionalProperties:
+            $ref: "#/components/schemas/StorePayoutBeneficiaryProfile"
 
     PartnerPayoutStoreAmount:
       type: object
@@ -8441,13 +8543,11 @@ components:
           enum: [FULL_AVAILABLE, SPECIFIED]
         storeIds:
           type: array
-          maxItems: 200
           items:
             type: string
             maxLength: 128
         storeAmounts:
           type: array
-          maxItems: 200
           items:
             $ref: "#/components/schemas/PartnerPayoutStoreAmount"
 
@@ -8496,44 +8596,11 @@ components:
         payouts:
           type: array
           items:
-            $ref: "#/components/schemas/PartnerPayoutChildPayout"
+            $ref: "#/components/schemas/PayoutRequest"
         createdAt:
           type: string
           format: date-time
 
-    PartnerPayoutChildPayout:
-      type: object
-      additionalProperties: false
-      required: [id, amountMode, resolvedAmountMinor, currency, destinationId, destinationVersion, status, createdAt]
-      properties:
-        id:
-          type: string
-        amountMode:
-          type: string
-          const: SPECIFIED
-        requestedAmountMinor:
-          type: integer
-          minimum: 1
-        resolvedAmountMinor:
-          type: integer
-          minimum: 1
-        currency:
-          type: string
-          const: YER
-        destinationId:
-          type: string
-        destinationVersion:
-          type: integer
-          minimum: 1
-        status:
-          type: string
-        policyVersion:
-          type: string
-        ledgerTransactionId:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
 
     PartnerPayoutRequestResponse:
       type: object
@@ -8742,6 +8809,135 @@ components:
               type: string
             message:
               type: string
+
+    PartnerScopedFinanceStore:
+      type: object
+      additionalProperties: false
+      required: [attributionComplete, storeId, partnerActorId, currency, earnedMinor, commissionMinor, orderCount, eligibleAvailableMinor, heldMinor, settledMinor, recipientState, beneficiaryActorId, recipientAssignmentVersion, payoutReady, storeName, settlementPeriod]
+      properties:
+        attributionComplete:
+          type: boolean
+        storeId:
+          type: string
+        partnerActorId:
+          type: string
+        currency:
+          type: string
+          const: YER
+        earnedMinor:
+          type: integer
+        commissionMinor:
+          type: integer
+        orderCount:
+          type: integer
+        eligibleAvailableMinor:
+          type: integer
+        heldMinor:
+          type: integer
+        settledMinor:
+          type: integer
+        recipientState:
+          type: string
+        beneficiaryActorId:
+          type: string
+        recipientAssignmentVersion:
+          type: integer
+        payoutReady:
+          type: boolean
+        storeName:
+          type: string
+        settlementPeriod:
+          type: string
+          enum: [DAILY, WEEKLY, MONTHLY]
+
+    PartnerScopedFinancialSummary:
+      type: object
+      additionalProperties: false
+      required: [attributionComplete, currency, earnedMinor, commissionMinor, orderCount, eligibleAvailableMinor, heldMinor, settledMinor, stores]
+      properties:
+        ownerCommissionReceivableMinor:
+          type: integer
+          minimum: 0
+          description: Canonical commission debt of the acting owner wallet, included only on its complete owned-Store read. Never includes another owner wallet debt.
+        attributionComplete:
+          type: boolean
+        currency:
+          type: string
+          const: YER
+        earnedMinor:
+          type: integer
+        commissionMinor:
+          type: integer
+        orderCount:
+          type: integer
+        eligibleAvailableMinor:
+          type: integer
+        heldMinor:
+          type: integer
+        settledMinor:
+          type: integer
+        stores:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartnerScopedFinanceStore"
+
+    PartnerScopedFinancialSummaryResponse:
+      type: object
+      additionalProperties: false
+      required: [summary]
+      properties:
+        summary:
+          $ref: "#/components/schemas/PartnerScopedFinancialSummary"
+
+    PartnerPayoutScopeStore:
+      type: object
+      additionalProperties: false
+      required: [attributionComplete, storeId, storeName, partnerActorId, currency, eligibleAvailableMinor, heldMinor, payoutReady]
+      properties:
+        attributionComplete:
+          type: boolean
+        storeId:
+          type: string
+        storeName:
+          type: string
+        partnerActorId:
+          type: string
+        currency:
+          type: string
+          const: YER
+        eligibleAvailableMinor:
+          type: integer
+        heldMinor:
+          type: integer
+        payoutReady:
+          type: boolean
+
+    PartnerPayoutSummary:
+      type: object
+      additionalProperties: false
+      required: [attributionComplete, currency, eligibleAvailableMinor, heldMinor, stores]
+      properties:
+        attributionComplete:
+          type: boolean
+        currency:
+          type: string
+          const: YER
+        eligibleAvailableMinor:
+          type: integer
+        heldMinor:
+          type: integer
+        stores:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartnerPayoutScopeStore"
+
+    PartnerPayoutSummaryResponse:
+      type: object
+      additionalProperties: false
+      required: [summary]
+      properties:
+        summary:
+          $ref: "#/components/schemas/PartnerPayoutSummary"
 
   responses:
     InvalidInput:

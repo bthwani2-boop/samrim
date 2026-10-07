@@ -49,7 +49,11 @@ type PartnerOrderEarningRecord struct {
 }
 
 type PartnerFinancialSummaryRecord struct {
+	SettledMinor                         int64
+	Stores                               []PartnerStoreFinanceRecord
 	PartnerActorID                       string
+	EligibleAvailableMinor               int64
+	HeldMinor                            int64
 	Currency                             string
 	EarnedMinor                          int64
 	CommissionMinor                      int64
@@ -286,26 +290,51 @@ func readPartnerOrderEarning(ctx context.Context, source interface {
 }
 
 func ReadPartnerFinancialSummary(ctx context.Context, db *sql.DB, partnerActorID string) (PartnerFinancialSummaryRecord, error) {
+	return ReadPartnerFinancialSummaryForStores(ctx, db, partnerActorID, nil)
+}
+
+func ReadPartnerFinancialSummaryForStores(ctx context.Context, db *sql.DB, partnerActorID string, storeIDs []string) (PartnerFinancialSummaryRecord, error) {
 	partnerActorID = strings.TrimSpace(partnerActorID)
 	if db == nil || partnerActorID == "" {
 		return PartnerFinancialSummaryRecord{}, ErrPartnerEarningInvalidInput
 	}
-	var result PartnerFinancialSummaryRecord
-	result.PartnerActorID, result.Currency = partnerActorID, "YER"
-	err := db.QueryRowContext(ctx, `SELECT COALESCE(SUM(e.amount_minor) FILTER (WHERE e.direction='CREDIT'),0),COALESCE((SELECT SUM(commission_minor) FROM wlt.partner_order_earnings WHERE partner_actor_id=$1),0)+COALESCE((SELECT SUM(commission_minor) FROM wlt.partner_store_cash_commissions WHERE partner_actor_id=$1),0),COUNT(DISTINCT t.source_id),MAX(e.created_at) FROM wlt.ledger_entries e JOIN wlt.ledger_transactions t ON t.id=e.transaction_id WHERE e.account_code='PARTNER_WALLET' AND e.actor_id=$1`, partnerActorID).Scan(&result.EarnedMinor, &result.CommissionMinor, &result.OrderCount, &result.LastEarningAt)
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	if err != nil {
 		return PartnerFinancialSummaryRecord{}, err
 	}
-	result.OutstandingCommissionReceivableMinor, err = ReadPartnerCommissionReceivableBalance(ctx, db, partnerActorID)
+	defer func() { _ = tx.Rollback() }()
+	var result PartnerFinancialSummaryRecord
+	result.PartnerActorID, result.Currency = partnerActorID, "YER"
+	err = tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(e.amount_minor) FILTER (WHERE e.direction='CREDIT'),0),COALESCE((SELECT SUM(commission_minor) FROM wlt.partner_order_earnings WHERE partner_actor_id=$1),0)+COALESCE((SELECT SUM(commission_minor) FROM wlt.partner_store_cash_commissions WHERE partner_actor_id=$1),0),(SELECT COUNT(*) FROM wlt.partner_order_earnings WHERE partner_actor_id=$1)+(SELECT COUNT(*) FROM wlt.partner_store_cash_commissions WHERE partner_actor_id=$1),MAX(e.created_at) FILTER (WHERE e.direction='CREDIT') FROM wlt.ledger_entries e WHERE e.account_code='PARTNER_WALLET' AND e.actor_id=$1`, partnerActorID).Scan(&result.EarnedMinor, &result.CommissionMinor, &result.OrderCount, &result.LastEarningAt)
+	if err != nil {
+		return PartnerFinancialSummaryRecord{}, err
+	}
+	result.OutstandingCommissionReceivableMinor, err = ReadPartnerCommissionReceivableBalance(ctx, tx, partnerActorID)
 	if err != nil {
 		return PartnerFinancialSummaryRecord{}, err
 	}
 	var profileState string
-	err = db.QueryRowContext(ctx, `SELECT settlement_period,state,version FROM wlt.partner_financial_profiles WHERE partner_actor_id=$1`, partnerActorID).Scan(&result.SettlementPeriod, &profileState, &result.ProfileVersion)
+	err = tx.QueryRowContext(ctx, `SELECT settlement_period,state,version FROM wlt.partner_financial_profiles WHERE partner_actor_id=$1`, partnerActorID).Scan(&result.SettlementPeriod, &profileState, &result.ProfileVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PartnerFinancialSummaryRecord{}, ErrFinancialProfileNotFound
 	}
 	if err != nil {
+		return PartnerFinancialSummaryRecord{}, err
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT
+		COALESCE((SELECT SUM(CASE WHEN direction='CREDIT' THEN amount_minor ELSE -amount_minor END) FROM wlt.ledger_entries WHERE account_code='PARTNER_WALLET' AND actor_id=$1),0)
+		-COALESCE((SELECT SUM(amount_minor) FROM wlt.payout_holds WHERE actor_type='partner' AND actor_id=$1 AND status='ACTIVE'),0),
+		COALESCE((SELECT SUM(amount_minor) FROM wlt.payout_holds WHERE actor_type='partner' AND actor_id=$1 AND status='ACTIVE'),0)`, partnerActorID).Scan(&result.EligibleAvailableMinor, &result.HeldMinor); err != nil {
+		return PartnerFinancialSummaryRecord{}, err
+	}
+	if err = tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(resolved_amount_minor),0) FROM wlt.payout_requests WHERE actor_type='partner' AND actor_id=$1 AND status='COMPLETED'`, partnerActorID).Scan(&result.SettledMinor); err != nil {
+		return PartnerFinancialSummaryRecord{}, err
+	}
+	result.Stores, err = readPartnerStoreFinance(ctx, tx, partnerActorID, storeIDs)
+	if err != nil {
+		return PartnerFinancialSummaryRecord{}, err
+	}
+	if err = tx.Commit(); err != nil {
 		return PartnerFinancialSummaryRecord{}, err
 	}
 	result.ProfileState = profileState

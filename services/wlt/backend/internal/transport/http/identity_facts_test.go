@@ -52,7 +52,7 @@ func TestOfficialWalletDestinationCreationRejectsMissingOrMismatchedIdentityFact
 }
 
 func TestPayoutIntentCreationRequiresMatchingCurrentIdentityFactsBeforePersistence(t *testing.T) {
-	request := httptest.NewRequest(http.MethodPost, "/wlt/v1/payout-intents", strings.NewReader(`{"actorType":"partner","actorId":"partner-1","amountMode":"FULL_AVAILABLE"}`))
+	request := httptest.NewRequest(http.MethodPost, "/wlt/v1/payout-intents", strings.NewReader(`{"actorType":"field","actorId":"field-1","amountMode":"FULL_AVAILABLE"}`))
 	request.Header.Set("Authorization", "Bearer service-token")
 	request.Header.Set("X-Correlation-ID", "correlation-123")
 	request.Header.Set("Idempotency-Key", "payout-identity-123")

@@ -646,6 +646,12 @@ paths:
           in: path
           required: true
           schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: storeId
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema: { type: array, items: { type: string, minLength: 1, maxLength: 128 } }
       responses:
         '200':
           description: Partner financial summary.
@@ -945,6 +951,9 @@ paths:
       responses:
         '200':
           description: Per-Store payout recipient readback with attributed economics.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StorePayoutRecipientReadback' }
   /wlt/v1/partners/{partnerActorId}/store-payout-recipients/{storeId}:
     get:
       operationId: readStorePayoutRecipient
@@ -961,6 +970,9 @@ paths:
       responses:
         '200':
           description: Single-Store payout recipient readback.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StorePayoutRecipientRecord' }
         '404':
           description: No payout recipient facts exist for this store.
   /wlt/v1/store-payout-recipients/{storeId}:
@@ -972,11 +984,22 @@ paths:
           in: path
           required: true
           schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StorePayoutRecipientSelectRequest' }
       responses:
         '200':
           description: Idempotent replay of the recipient selection.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StorePayoutRecipientAssignmentResponse' }
         '201':
           description: Owner-selected verified staff recipient recorded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StorePayoutRecipientAssignmentResponse' }
   /wlt/v1/store-payout-recipients/{storeId}/revert:
     post:
       operationId: revertStorePayoutRecipient
@@ -986,9 +1009,17 @@ paths:
           in: path
           required: true
           schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StorePayoutRecipientActionRequest' }
       responses:
         '200':
           description: Recipient reverted to the Store owner.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StorePayoutRecipientRevertResponse' }
   /wlt/v1/store-payout-recipients/{storeId}/review-required:
     post:
       operationId: markStorePayoutRecipientReviewRequired
@@ -998,9 +1029,17 @@ paths:
           in: path
           required: true
           schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StorePayoutRecipientActionRequest' }
       responses:
         '200':
           description: Recipient review gate applied (fail-closed future readiness).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StorePayoutRecipientReviewResponse' }
   /wlt/v1/partners/{partnerActorId}/payout-requests:
     post:
       operationId: createPartnerPayoutRequest
@@ -1026,6 +1065,26 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PartnerPayoutRequestResponse' }
+    get:
+      operationId: readPartnerPayoutRequestByKey
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: partnerActorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: idempotencyKey
+          in: query
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 128 }
+      responses:
+        '200':
+          description: Canonical partitioned payout request readback.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerPayoutRequestResponse' }
+        '404':
+          description: No such payout request.
   /wlt/v1/partners/{partnerActorId}/payout-requests/{requestId}:
     get:
       operationId: readPartnerPayoutRequest
@@ -1986,6 +2045,12 @@ components:
       additionalProperties: false
       required: [partnerActorId, currency, earnedMinor, commissionMinor, outstandingCommissionReceivableMinor, orderCount, settlementPeriod, profileState, profileVersion]
       properties:
+        eligibleAvailableMinor: { type: integer }
+        heldMinor: { type: integer }
+        settledMinor: { type: integer }
+        stores:
+          type: array
+          items: { $ref: "#/components/schemas/PartnerStoreFinance" }
         partnerActorId: { type: string }
         currency: { type: string, const: YER }
         earnedMinor: { type: integer }
@@ -2200,6 +2265,83 @@ components:
         amountMode: { type: string, enum: [FULL_AVAILABLE, SPECIFIED] }
         amountMinor: { type: integer, minimum: 1, nullable: true }
         identityFacts: { $ref: '#/components/schemas/IdentityFacts' }
+    StorePayoutRecipientRecord:
+      type: object
+      additionalProperties: false
+      required: [storeId, state, beneficiaryActorId, version, orderCount, partnerNetMinor]
+      properties:
+        storeId: { type: string, minLength: 1, maxLength: 128 }
+        state: { type: string, enum: [DEFAULT_OWNER, SELECTED_VERIFIED_STAFF, RECIPIENT_REVIEW_REQUIRED] }
+        beneficiaryActorId: { type: string, maxLength: 128, description: "Empty only for DEFAULT_OWNER; the Partner owner is implicit in that state." }
+        version: { type: integer, minimum: 0 }
+        effectiveAt: { type: string, format: date-time }
+        orderCount: { type: integer, minimum: 0 }
+        partnerNetMinor: { type: integer, minimum: 0 }
+        lastEarningAt: { type: string, format: date-time }
+    StorePayoutRecipientReadback:
+      type: object
+      additionalProperties: false
+      required: [partnerActorId, currency, recipients, reviewStores]
+      properties:
+        partnerActorId: { type: string, minLength: 1, maxLength: 128 }
+        currency: { type: string, const: YER }
+        recipients:
+          type: array
+          items: { $ref: '#/components/schemas/StorePayoutRecipientRecord' }
+        reviewStores:
+          type: array
+          items: { type: string, minLength: 1, maxLength: 128 }
+    StorePayoutRecipientSelectRequest:
+      type: object
+      additionalProperties: false
+      required: [partnerActorId, beneficiaryActorId, beneficiaryFacts, reason]
+      properties:
+        partnerActorId: { type: string, minLength: 1, maxLength: 128 }
+        beneficiaryActorId: { type: string, minLength: 1, maxLength: 128 }
+        beneficiaryFacts: { $ref: '#/components/schemas/IdentityFacts' }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+    StorePayoutRecipientActionRequest:
+      type: object
+      additionalProperties: false
+      required: [partnerActorId, reason]
+      properties:
+        partnerActorId: { type: string, minLength: 1, maxLength: 128 }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+    StorePayoutRecipientAssignment:
+      type: object
+      additionalProperties: false
+      required: [id, storeId, partnerActorId, beneficiaryActorId, state, version, effectiveAt, reason]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 128 }
+        storeId: { type: string, minLength: 1, maxLength: 128 }
+        partnerActorId: { type: string, minLength: 1, maxLength: 128 }
+        beneficiaryActorId: { type: string, minLength: 1, maxLength: 128 }
+        state: { type: string, enum: [SELECTED_VERIFIED_STAFF, RECIPIENT_REVIEW_REQUIRED] }
+        version: { type: integer, minimum: 1 }
+        effectiveAt: { type: string, format: date-time }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+    StorePayoutRecipientAssignmentResponse:
+      type: object
+      additionalProperties: false
+      required: [assignment, idempotentReplay]
+      properties:
+        assignment: { $ref: '#/components/schemas/StorePayoutRecipientAssignment' }
+        idempotentReplay: { type: boolean }
+    StorePayoutRecipientRevertResponse:
+      type: object
+      additionalProperties: false
+      required: [state, idempotentReplay]
+      properties:
+        state: { type: string, const: DEFAULT_OWNER }
+        idempotentReplay: { type: boolean }
+    StorePayoutRecipientReviewResponse:
+      type: object
+      additionalProperties: false
+      required: [state, applied]
+      properties:
+        state: { type: string, const: RECIPIENT_REVIEW_REQUIRED }
+        applied: { type: boolean }
+
     PartnerPayoutStoreAmount:
       type: object
       additionalProperties: false
@@ -2215,11 +2357,9 @@ components:
         scopeMode: { type: string, enum: [FULL_AVAILABLE, SPECIFIED] }
         storeIds:
           type: array
-          maxItems: 200
           items: { type: string, maxLength: 128 }
         storeAmounts:
           type: array
-          maxItems: 200
           items: { $ref: '#/components/schemas/PartnerPayoutStoreAmount' }
         beneficiaryIdentityFacts:
           type: object
@@ -2263,6 +2403,8 @@ components:
       additionalProperties: false
       required: [id, actorType, actorId, amountMode, resolvedAmountMinor, currency, destinationId, destinationVersion, status, policyVersion, createdAt]
       properties:
+        beneficiaryActorId:
+          type: string
         id: { type: string }
         actorType: { type: string, enum: [customer, partner, captain, field] }
         actorId: { type: string }
@@ -3187,6 +3329,41 @@ components:
           properties:
             code: { type: string }
             message: { type: string }
+    PartnerStoreFinance:
+      type: object
+      additionalProperties: false
+      required: [attributionComplete, storeId, partnerActorId, currency, earnedMinor, commissionMinor, orderCount, eligibleAvailableMinor, heldMinor, settledMinor, recipientState, beneficiaryActorId, recipientAssignmentVersion, payoutReady]
+      properties:
+        attributionComplete:
+          type: boolean
+        storeId:
+          type: string
+        partnerActorId:
+          type: string
+        currency:
+          type: string
+          const: YER
+        earnedMinor:
+          type: integer
+        commissionMinor:
+          type: integer
+        orderCount:
+          type: integer
+        eligibleAvailableMinor:
+          type: integer
+        heldMinor:
+          type: integer
+        settledMinor:
+          type: integer
+        recipientState:
+          type: string
+        beneficiaryActorId:
+          type: string
+        recipientAssignmentVersion:
+          type: integer
+        payoutReady:
+          type: boolean
+
   responses:
     InvalidInput:
       description: Invalid input or request body.

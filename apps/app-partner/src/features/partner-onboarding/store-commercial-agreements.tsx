@@ -1,5 +1,5 @@
 import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniConfirmDialog, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
@@ -52,9 +52,7 @@ function statusLabel(status: string): string {
 }
 
 function rateValue(commissionRateBps: number): string {
-  const wholePercent = Math.floor(commissionRateBps / 100);
-  const fractionalPercent = String(commissionRateBps % 100).padStart(2, "0");
-  return `${commissionRateBps.toLocaleString("en-US")} نقطة أساس · ${wholePercent}.${fractionalPercent}%`;
+  return new Intl.NumberFormat("ar-YE-u-nu-latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(commissionRateBps / 100) + "%";
 }
 
 function acceptanceErrorMessage(cause: unknown, hasSavedAttempt: boolean): string {
@@ -80,13 +78,14 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
   const [busyAgreementID, setBusyAgreementID] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [agreementToConfirm, setAgreementToConfirm] = useState<StoreCommercialAgreement | null>(null);
   const acceptanceBusy = useRef(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<ReadonlyArray<StoreCommercialAgreement> | null> => {
     if (!storageKey) {
       setLoading(false);
       setError("يلزم تسجيل دخول الشريك لقراءة اتفاقية المتجر.");
-      return;
+      return null;
     }
     setLoading(true);
     setError("");
@@ -119,16 +118,29 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
       } else {
         setPendingAttempt(null);
       }
+      return currentAgreements;
     } catch (cause) {
       setError(cause instanceof Error && cause.message === "DSH_BASE_URL_REQUIRED"
         ? "تعذر الاتصال بخدمة الاتفاقيات."
         : "تعذر قراءة اتفاقيات المتجر. أعد المحاولة.");
+      return null;
     } finally {
       setLoading(false);
     }
   }, [storageKey, storeID]);
 
   useEffect(() => { void load(); }, [load]);
+
+  function requestAcceptanceConfirmation(agreement: StoreCommercialAgreement) {
+    const savedAttempt = pendingAttempt?.agreementId === agreement.agreementId ? pendingAttempt : null;
+    const reason = savedAttempt?.reason ?? (reasonByAgreement[agreement.agreementId] ?? "").trim();
+    if (Array.from(reason.trim()).length < 8 || Array.from(reason.trim()).length > 500) {
+      setError("اكتب سبب قبول من 8 إلى 500 حرف قبل التأكيد.");
+      return;
+    }
+    setError("");
+    setAgreementToConfirm(agreement);
+  }
 
   async function accept(agreement: StoreCommercialAgreement) {
     if (acceptanceBusy.current || busyAgreementID || agreement.status !== "PROPOSED" || !storageKey || !pendingStorageReady) return;
@@ -170,10 +182,17 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
         !accepted.partnerAcceptedByActorId || accepted.partnerAcceptedByActorId !== actorID) {
         throw new Error("PARTNER_ACCEPTANCE_READBACK_MISMATCH");
       }
+      const canonicalReadback = await load();
+      const canonical = canonicalReadback?.find((item) => item.agreementId === attempt.agreementId);
+      if (!canonical ||
+        canonical.agreementVersion < attempt.expectedAgreementVersion ||
+        (canonical.status !== "PARTNER_ACCEPTED" && canonical.status !== "ACTIVE") ||
+        canonical.partnerAcceptedByActorId !== actorID) {
+        throw new Error("PARTNER_ACCEPTANCE_CANONICAL_READBACK_MISMATCH");
+      }
       await SecureStore.deleteItemAsync(storageKey);
       setPendingAttempt(null);
-      setNotice("سُجل قبولك؛ أُعيدت قراءة حالة الاتفاقية من DSH.");
-      await load();
+      setNotice("سُجل قبولك وتم تأكيد حالة الاتفاقية من القراءة المعتمدة في DSH.");
     } catch (cause) {
       setError(acceptanceErrorMessage(cause, attemptSaved));
     } finally {
@@ -226,14 +245,29 @@ export function StoreCommercialAgreements({ storeID }: Readonly<{ storeID: strin
               <BthwaniButton
                 busy={busyAgreementID === agreement.agreementId}
                 disabled={!canAccept || (!savedAttempt && Array.from(reason.trim()).length < 8)}
-                label={savedAttempt ? "إعادة محاولة القبول" : "أوافق على الاتفاقية"}
-                onPress={() => void accept(agreement)}
+                label={savedAttempt ? "إعادة محاولة القبول" : "مراجعة وتأكيد القبول"}
+                onPress={() => requestAcceptanceConfirmation(agreement)}
               />
             </View> : null}
           </View>
         );
       })}
       <BthwaniButton busy={loading} disabled={Boolean(busyAgreementID)} label="إعادة قراءة الاتفاقيات" onPress={() => void load()} variant="secondary" />
+      <BthwaniConfirmDialog
+        busy={Boolean(agreementToConfirm && busyAgreementID === agreementToConfirm.agreementId)}
+        confirmLabel="تأكيد قبول الاتفاقية"
+        description={agreementToConfirm
+          ? `ستوافق على إصدار الاتفاقية ${agreementToConfirm.agreementVersion}. النسب: ${agreementToConfirm.rates.map((rate) => `${modeLabel(rate.fulfillmentMode)}: ${rateValue(rate.commissionRateBps)}`).join("، ")}. بعد قبولك تنتقل الاتفاقية إلى اعتماد المالية قبل أن تصبح سارية.`
+          : ""}
+        onCancel={() => setAgreementToConfirm(null)}
+        onConfirm={() => {
+          const agreement = agreementToConfirm;
+          setAgreementToConfirm(null);
+          if (agreement) void accept(agreement);
+        }}
+        title="تأكيد الشروط التجارية"
+        visible={Boolean(agreementToConfirm)}
+      />
     </BthwaniSurface>
   );
 }

@@ -142,21 +142,20 @@ func (s *Server) markStorePayoutRecipientReviewRequired(w http.ResponseWriter, r
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	marked, err := postgres.MarkStorePayoutRecipientReviewRequired(r.Context(), s.db, r.PathValue("storeId"), input.PartnerActorID, input.Reason, correlation)
+	applied, err := postgres.MarkStorePayoutRecipientReviewRequired(r.Context(), s.db, r.PathValue("storeId"), input.PartnerActorID, input.Reason, correlation)
 	if err != nil {
 		writeStorePayoutRecipientError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"state": "RECIPIENT_REVIEW_REQUIRED", "applied": !marked})
+	writeJSON(w, http.StatusOK, map[string]any{"state": "RECIPIENT_REVIEW_REQUIRED", "applied": applied})
 }
 
 func (s *Server) readStorePayoutRecipientByStore(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
 	}
-	// Single-store readback derives from the partner readback; the partner actor is
-	// resolved from the assignment facts owned by WLT.
-	partnerActorID := strings.TrimSpace(r.URL.Query().Get("partnerActorId"))
+	// The canonical route already scopes the read by Partner and Store.
+	partnerActorID := strings.TrimSpace(r.PathValue("partnerActorId"))
 	if partnerActorID == "" {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partnerActorId is required")
 		return
@@ -286,14 +285,14 @@ type partnerPayoutRequestResponse struct {
 }
 
 type partnerPayoutRequestView struct {
-	ID               string                         `json:"id"`
-	Status           string                         `json:"status"`
-	ScopeMode        string                         `json:"scopeMode"`
-	TotalAmountMinor int64                          `json:"totalAmountMinor"`
-	Currency         string                         `json:"currency"`
-	Stores           []partnerPayoutAllocationView  `json:"stores"`
-	Payouts          []postgres.PayoutRequestRecord `json:"payouts"`
-	CreatedAt        string                         `json:"createdAt"`
+	ID               string                        `json:"id"`
+	Status           string                        `json:"status"`
+	ScopeMode        string                        `json:"scopeMode"`
+	TotalAmountMinor int64                         `json:"totalAmountMinor"`
+	Currency         string                        `json:"currency"`
+	Stores           []partnerPayoutAllocationView `json:"stores"`
+	Payouts          []payoutRequestJSON           `json:"payouts"`
+	CreatedAt        string                        `json:"createdAt"`
 }
 
 func (s *Server) createPartnerPayoutRequest(w http.ResponseWriter, r *http.Request) {
@@ -310,7 +309,7 @@ func (s *Server) createPartnerPayoutRequest(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var input partnerPayoutRequestInput
-	if !decodeJSON(w, r, &input) {
+	if !decodeJSONWithLimit(w, r, &input, 1024*1024) {
 		return
 	}
 	storeAmounts := make([]postgres.PartnerPayoutStoreAmount, 0, len(input.StoreAmounts))
@@ -341,9 +340,19 @@ func (s *Server) readPartnerPayoutRequest(w http.ResponseWriter, r *http.Request
 	if !s.authorize(w, r) {
 		return
 	}
-	request, err := postgres.ReadPartnerPayoutRequest(r.Context(), s.db, r.PathValue("requestId"))
+	var request postgres.PartnerPayoutRequestRecord
+	var err error
+	if r.PathValue("requestId") == "" {
+		request, err = postgres.ReadPartnerPayoutRequestByKey(r.Context(), s.db, r.PathValue("partnerActorId"), r.URL.Query().Get("idempotencyKey"))
+	} else {
+		request, err = postgres.ReadPartnerPayoutRequest(r.Context(), s.db, r.PathValue("requestId"))
+	}
 	if err != nil {
 		writePartnerPayoutRequestError(w, err)
+		return
+	}
+	if request.PartnerActorID != strings.TrimSpace(r.PathValue("partnerActorId")) {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "payout request belongs to another Partner")
 		return
 	}
 	writeJSON(w, http.StatusOK, partnerPayoutRequestResponse{Request: toPartnerPayoutRequestView(request)})
@@ -357,7 +366,7 @@ func toPartnerPayoutRequestView(request postgres.PartnerPayoutRequestRecord) par
 		TotalAmountMinor: request.TotalAmountMinor,
 		Currency:         request.Currency,
 		Stores:           make([]partnerPayoutAllocationView, 0, len(request.Stores)),
-		Payouts:          request.Payouts,
+		Payouts:          make([]payoutRequestJSON, 0, len(request.Payouts)),
 		CreatedAt:        formatStoreRecipientTime(request.CreatedAt),
 	}
 	for _, allocation := range request.Stores {
@@ -369,11 +378,16 @@ func toPartnerPayoutRequestView(request postgres.PartnerPayoutRequestRecord) par
 			Currency:                   allocation.Currency,
 		})
 	}
+	for _, payout := range request.Payouts {
+		view.Payouts = append(view.Payouts, toPayoutRequest(payout))
+	}
 	return view
 }
 
 func writePartnerPayoutRequestError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, postgres.ErrPayoutNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "no committed Partner payout request matches this readback")
 	case errors.Is(err, postgres.ErrPartnerPayoutInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partner payout request input is invalid")
 	case errors.Is(err, postgres.ErrPartnerPayoutStoreUnknown):
@@ -381,7 +395,7 @@ func writePartnerPayoutRequestError(w http.ResponseWriter, err error) {
 	case errors.Is(err, postgres.ErrPartnerPayoutAmountExceeded):
 		writeError(w, http.StatusConflict, "STORE_AMOUNT_EXCEEDED", "a requested Store amount exceeds that Store's attributed available allocation")
 	case errors.Is(err, postgres.ErrPartnerPayoutAttributionGap):
-		writeError(w, http.StatusConflict, "STORE_ATTRIBUTION_INCOMPLETE", "store attribution cannot cover the requested payout; request explicit Store amounts instead")
+		writeError(w, http.StatusConflict, "STORE_ATTRIBUTION_INCOMPLETE", "canonical wallet history requires Store attribution reconciliation before a new payout")
 	case errors.Is(err, postgres.ErrPayoutNoFunds):
 		writeError(w, http.StatusConflict, "NO_ELIGIBLE_FUNDS", "no eligible payout funds are available for the selected Store scope")
 	case errors.Is(err, postgres.ErrRecipientDestinationNotReady):

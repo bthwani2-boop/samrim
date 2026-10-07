@@ -10,10 +10,11 @@ import (
 )
 
 var (
-	ErrPayoutInvalidInput   = errors.New("payout intent input is invalid")
-	ErrPayoutNoFunds        = errors.New("eligible payout funds are unavailable")
-	ErrPayoutDestination    = errors.New("verified active payout destination is required")
-	ErrPayoutAmountExceeded = errors.New("requested payout exceeds eligible funds")
+	ErrPartnerPayoutScopeRequired = errors.New("Partner payouts require an explicit Store-scoped request")
+	ErrPayoutInvalidInput         = errors.New("payout intent input is invalid")
+	ErrPayoutNoFunds              = errors.New("eligible payout funds are unavailable")
+	ErrPayoutDestination          = errors.New("verified active payout destination is required")
+	ErrPayoutAmountExceeded       = errors.New("requested payout exceeds eligible funds")
 )
 
 type PayoutIntentInput struct {
@@ -27,6 +28,7 @@ type PayoutIntentInput struct {
 }
 
 type PayoutRequestRecord struct {
+	BeneficiaryActorID   string
 	ID                   string
 	ActorType            string
 	ActorID              string
@@ -63,6 +65,9 @@ func HashPayoutIntent(input PayoutIntentInput) string {
 func CreatePayoutIntent(ctx context.Context, db *sql.DB, cipher *DestinationCipher, input PayoutIntentInput) (PayoutRequestRecord, bool, error) {
 	input.ActorType = strings.ToLower(strings.TrimSpace(input.ActorType))
 	input.ActorID = strings.TrimSpace(input.ActorID)
+	if input.ActorType == "partner" {
+		return PayoutRequestRecord{}, false, ErrPartnerPayoutScopeRequired
+	}
 	input.IdentityFacts = input.IdentityFacts.normalized()
 	input.AmountMode = strings.ToUpper(strings.TrimSpace(input.AmountMode))
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
@@ -257,7 +262,7 @@ func readPayoutRequest(ctx context.Context, source interface {
 	var item PayoutRequestRecord
 	var requested sql.NullInt64
 	var ledgerTransactionID sql.NullString
-	err := source.QueryRowContext(ctx, "SELECT id,actor_type,actor_id,amount_mode,requested_amount_minor,resolved_amount_minor,currency,destination_id,destination_version,status,policy_version,ledger_transaction_id,created_at FROM wlt.payout_requests WHERE id=$1", payoutID).Scan(&item.ID, &item.ActorType, &item.ActorID, &item.AmountMode, &requested, &item.ResolvedAmountMinor, &item.Currency, &item.DestinationID, &item.DestinationVersion, &item.Status, &item.PolicyVersion, &ledgerTransactionID, &item.CreatedAt)
+	err := source.QueryRowContext(ctx, "SELECT id,actor_type,actor_id,COALESCE((SELECT actor_id FROM wlt.official_wallet_destinations d WHERE d.id=wlt.payout_requests.destination_id),actor_id),amount_mode,requested_amount_minor,resolved_amount_minor,currency,destination_id,destination_version,status,policy_version,ledger_transaction_id,created_at FROM wlt.payout_requests WHERE id=$1", payoutID).Scan(&item.ID, &item.ActorType, &item.ActorID, &item.BeneficiaryActorID, &item.AmountMode, &requested, &item.ResolvedAmountMinor, &item.Currency, &item.DestinationID, &item.DestinationVersion, &item.Status, &item.PolicyVersion, &ledgerTransactionID, &item.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PayoutRequestRecord{}, ErrPayoutInvalidInput
 	}

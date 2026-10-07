@@ -296,17 +296,38 @@ type PartnerOrderEarning struct {
 	CreatedAt                       string `json:"createdAt"`
 }
 
+type PartnerStoreFinance struct {
+	AttributionComplete        bool   `json:"attributionComplete"`
+	StoreID                    string `json:"storeId"`
+	PartnerActorID             string `json:"partnerActorId"`
+	Currency                   string `json:"currency"`
+	EarnedMinor                int64  `json:"earnedMinor"`
+	CommissionMinor            int64  `json:"commissionMinor"`
+	OrderCount                 int64  `json:"orderCount"`
+	EligibleAvailableMinor     int64  `json:"eligibleAvailableMinor"`
+	HeldMinor                  int64  `json:"heldMinor"`
+	SettledMinor               int64  `json:"settledMinor"`
+	RecipientState             string `json:"recipientState"`
+	BeneficiaryActorID         string `json:"beneficiaryActorId"`
+	RecipientAssignmentVersion int64  `json:"recipientAssignmentVersion"`
+	PayoutReady                bool   `json:"payoutReady"`
+}
+
 type PartnerFinancialSummary struct {
-	PartnerActorID                       string  `json:"partnerActorId"`
-	Currency                             string  `json:"currency"`
-	EarnedMinor                          int64   `json:"earnedMinor"`
-	CommissionMinor                      int64   `json:"commissionMinor"`
-	OutstandingCommissionReceivableMinor int64   `json:"outstandingCommissionReceivableMinor"`
-	OrderCount                           int64   `json:"orderCount"`
-	SettlementPeriod                     string  `json:"settlementPeriod"`
-	ProfileState                         string  `json:"profileState"`
-	ProfileVersion                       int     `json:"profileVersion"`
-	LastEarningAt                        *string `json:"lastEarningAt"`
+	SettledMinor                         int64                 `json:"settledMinor"`
+	EligibleAvailableMinor               int64                 `json:"eligibleAvailableMinor"`
+	HeldMinor                            int64                 `json:"heldMinor"`
+	Stores                               []PartnerStoreFinance `json:"stores"`
+	PartnerActorID                       string                `json:"partnerActorId"`
+	Currency                             string                `json:"currency"`
+	EarnedMinor                          int64                 `json:"earnedMinor"`
+	CommissionMinor                      int64                 `json:"commissionMinor"`
+	OutstandingCommissionReceivableMinor int64                 `json:"outstandingCommissionReceivableMinor"`
+	OrderCount                           int64                 `json:"orderCount"`
+	SettlementPeriod                     string                `json:"settlementPeriod"`
+	ProfileState                         string                `json:"profileState"`
+	ProfileVersion                       int                   `json:"profileVersion"`
+	LastEarningAt                        *string               `json:"lastEarningAt"`
 }
 
 type PartnerCommissionReceivable struct {
@@ -501,6 +522,7 @@ type OfficialWalletDestination struct {
 }
 
 type PayoutRequest struct {
+	BeneficiaryActorID   string `json:"beneficiaryActorId"`
 	ID                   string `json:"id"`
 	ActorType            string `json:"actorType"`
 	ActorID              string `json:"actorId"`
@@ -1249,6 +1271,19 @@ func (c *Client) RecordPartnerCommissionRemittance(ctx context.Context, partnerA
 func (c *Client) ReadPartnerFinancialSummary(ctx context.Context, partnerActorID string) (PartnerFinancialSummary, error) {
 	var response partnerFinancialSummaryResponse
 	err := c.request(ctx, http.MethodGet, "/wlt/v1/partners/"+url.PathEscape(strings.TrimSpace(partnerActorID))+"/financial-summary", nil, "", "", 0, &response)
+	return response.Summary, err
+}
+
+func (c *Client) ReadPartnerFinancialSummaryForStores(ctx context.Context, partnerActorID string, storeIDs []string) (PartnerFinancialSummary, error) {
+	if len(storeIDs) == 0 {
+		return PartnerFinancialSummary{}, fmt.Errorf("explicit Store scope is required")
+	}
+	query := url.Values{}
+	for _, storeID := range storeIDs {
+		query.Add("storeId", storeID)
+	}
+	var response partnerFinancialSummaryResponse
+	err := c.request(ctx, http.MethodGet, "/wlt/v1/partners/"+url.PathEscape(partnerActorID)+"/financial-summary?"+query.Encode(), nil, "", "", 0, &response)
 	return response.Summary, err
 }
 

@@ -692,7 +692,11 @@ func (s *MarketingServer) ReconcileMediaStorage(ctx context.Context) error {
 }
 
 func toPromotionView(item postgres.PromotionRecord) contract.PromotionView {
-	return contract.PromotionView{ID: item.ID, Code: item.Code, NameAr: item.NameAr, DescriptionAr: item.DescriptionAr, Kind: contract.PromotionKind(item.Kind), ValueMinor: int(item.ValueMinor), MaxDiscountMinor: intValue(item.MaxDiscountMinor), FundingSource: contract.PromotionFundingSource(item.FundingSource), FundingSharePartnerPercent: intPointer(item.FundingSharePartnerPercent), StoreID: item.StoreID, ServiceCityID: item.ServiceCityID, State: contract.PromotionState(item.State), StartsAt: item.StartsAt, EndsAt: item.EndsAt, RedemptionLimit: intValue(item.RedemptionLimit), RedeemedCount: int(item.RedeemedCount), Version: item.Version, CreatedByActorID: item.CreatedByActorID, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	targets := make([]contract.PromotionTarget, 0, len(item.Targets))
+	for _, target := range item.Targets {
+		targets = append(targets, contract.PromotionTarget{TargetKind: target.Kind, TargetRef: target.Ref, TargetLabelAr: target.LabelAr})
+	}
+	return contract.PromotionView{ID: item.ID, Code: item.Code, NameAr: item.NameAr, DescriptionAr: item.DescriptionAr, Kind: contract.PromotionKind(item.Kind), ValueMinor: int(item.ValueMinor), MaxDiscountMinor: intValue(item.MaxDiscountMinor), FundingSource: contract.PromotionFundingSource(item.FundingSource), FundingSharePartnerPercent: intPointer(item.FundingSharePartnerPercent), RequiresPartnerOptIn: item.RequiresPartnerOptIn, MinOrderSubtotalMinor: intValue(item.MinOrderSubtotalMinor), Targets: targets, StoreID: item.StoreID, ServiceCityID: item.ServiceCityID, State: contract.PromotionState(item.State), StartsAt: item.StartsAt, EndsAt: item.EndsAt, RedemptionLimit: intValue(item.RedemptionLimit), RedeemedCount: int(item.RedeemedCount), Version: item.Version, CreatedByActorID: item.CreatedByActorID, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func toPublicPromotionView(item postgres.PromotionRecord) contract.PublicPromotionView {
@@ -736,8 +740,6 @@ func writeMarketingError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "marketing record was not found")
 	case errors.Is(err, postgres.ErrPromotionCodeConflict):
 		writeError(w, http.StatusConflict, "PROMOTION_CODE_EXISTS", "promotion code already exists")
-	case errors.Is(err, postgres.ErrPromotionFundingNotSettleable):
-		writeError(w, http.StatusConflict, "PROMOTION_FUNDING_NOT_SETTLEABLE", "only partner-funded promotions are settleable until the WLT funding split is live")
 	case errors.Is(err, postgres.ErrPromotionIdempotencyConflict), errors.Is(err, postgres.ErrDiscoveryContentIdempotency):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "marketing mutation idempotency key conflicts with a prior request")
 	case errors.Is(err, postgres.ErrPromotionVersionConflict), errors.Is(err, postgres.ErrDiscoveryContentVersion):

@@ -1,6 +1,6 @@
 "use client";
 
-import { isMediaProvenanceInputValid, type CommerceVertical, type CreatePromotionRequest, type DiscoveryContentAnalytics, type DiscoveryContentView, type MediaProvenanceInput, type OperatorDiscoveryContentRegistryResponse, type OperatorPromotionRegistryResponse, type PromotionView, type ServiceCity } from "@bthwani/dsh";
+import { formatMoney, isMediaProvenanceInputValid, type CommerceVertical, type CreatePromotionRequest, type DiscoveryContentAnalytics, type DiscoveryContentView, type MediaProvenanceInput, type OperatorDiscoveryContentRegistryResponse, type OperatorPromotionRegistryResponse, type PromotionView, type ServiceCity } from "@bthwani/dsh";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
@@ -16,6 +16,22 @@ function discoveryContentStateLabel(state: DiscoveryContentView["state"]): strin
   if (state === "DRAFT") return "مسودة";
   if (state === "PUBLISHED") return "منشور";
   return "موقوف";
+}
+
+function promotionStateLabel(state: PromotionView["state"]): string {
+  if (state === "DRAFT") return "مسودة";
+  if (state === "PUBLISHED") return "منشور";
+  if (state === "PAUSED") return "موقوف";
+  return "منتهٍ";
+}
+
+function promotionTargetSummary(item: PromotionView): string {
+  const targets = item.targets ?? [];
+  if (targets.length === 0) return "كل النطاق";
+  return targets.map((target) => {
+    const kind = target.targetKind === "PRODUCT" ? "منتج" : "فئة";
+    return `${kind}: ${target.targetLabelAr?.trim() || "هدف كتالوج"}`;
+  }).join("، ");
 }
 
 function apiMessage(value: unknown): string {
@@ -40,6 +56,46 @@ type PendingPromotionCreate = Readonly<{
   correlationId: string;
   body: string;
 }>;
+
+type PromotionTargetKind = "NONE" | "PRODUCT" | "CATEGORY";
+type MarketingTargetOption = Readonly<{ id: string; label: string; detail?: string }>;
+type PromotionFormState = Readonly<{
+  code: string;
+  nameAr: string;
+  descriptionAr: string;
+  kind: "PERCENTAGE" | "FIXED";
+  valueMinor: string;
+  maxDiscountMinor: string;
+  redemptionLimit: string;
+  minOrderSubtotalMinor: string;
+  fundingSource: CreatePromotionRequest["fundingSource"];
+  fundingSharePartnerPercent: string;
+  requiresPartnerOptIn: boolean;
+  storeId: string;
+  serviceCityId: string;
+  targetKind: PromotionTargetKind;
+  targetId: string;
+}>;
+
+function emptyPromotionForm(): PromotionFormState {
+  return {
+    code: "",
+    nameAr: "",
+    descriptionAr: "",
+    kind: "PERCENTAGE",
+    valueMinor: "10",
+    maxDiscountMinor: "",
+    redemptionLimit: "",
+    minOrderSubtotalMinor: "",
+    fundingSource: "BTHWANI",
+    fundingSharePartnerPercent: "50",
+    requiresPartnerOptIn: false,
+    storeId: "",
+    serviceCityId: "",
+    targetKind: "NONE",
+    targetId: "",
+  };
+}
 
 type PendingDiscoveryContentCreateInput = Readonly<{
   id: string;
@@ -72,7 +128,10 @@ function readPendingPromotionCreate(raw: string | null): PendingPromotionCreate 
     const value: unknown = JSON.parse(raw);
     if (!isRecord(value) || typeof value.id !== "string" || value.id.length < 8 || value.id.length > 128 || typeof value.idempotencyKey !== "string" || value.idempotencyKey.length < 8 || value.idempotencyKey.length > 128 || typeof value.correlationId !== "string" || value.correlationId.length < 8 || value.correlationId.length > 128 || typeof value.body !== "string" || value.body.length > 8192) return null;
     const body: unknown = JSON.parse(value.body);
-    if (!isRecord(body) || body.id !== value.id || typeof body.code !== "string" || typeof body.nameAr !== "string" || !["PERCENTAGE", "FIXED"].includes(String(body.kind)) || !Number.isSafeInteger(body.valueMinor) || body.fundingSource !== "PARTNER" || typeof body.startsAt !== "string") return null;
+    if (!isRecord(body) || body.id !== value.id || typeof body.code !== "string" || typeof body.nameAr !== "string" || !["PERCENTAGE", "FIXED"].includes(String(body.kind)) || !Number.isSafeInteger(body.valueMinor) || !["PARTNER", "BTHWANI", "SHARED"].includes(String(body.fundingSource)) || typeof body.startsAt !== "string") return null;
+    if (body.fundingSource === "SHARED" && (!Number.isSafeInteger(body.fundingSharePartnerPercent) || Number(body.fundingSharePartnerPercent) < 1 || Number(body.fundingSharePartnerPercent) > 99)) return null;
+    if (body.requiresPartnerOptIn !== undefined && typeof body.requiresPartnerOptIn !== "boolean") return null;
+    if (body.targets !== undefined && (!Array.isArray(body.targets) || body.targets.some((target) => !isRecord(target) || !["PRODUCT", "CATEGORY"].includes(String(target.targetKind)) || typeof target.targetRef !== "string" || !target.targetRef.trim()))) return null;
     return { id: value.id, idempotencyKey: value.idempotencyKey, correlationId: value.correlationId, body: value.body };
   } catch {
     return null;
@@ -231,6 +290,7 @@ export function MarketingPromotionsWorkspace() {
   const [cursorStack, setCursorStack] = useState<ReadonlyArray<string>>([]);
   const [loading, setLoading] = useState(false);
   const [startsAt, setStartsAt] = useState(futureDateInput);
+  const [endsAt, setEndsAt] = useState("");
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -238,7 +298,17 @@ export function MarketingPromotionsWorkspace() {
   const [loadedStorageKey, setLoadedStorageKey] = useState("");
   const [storageError, setStorageError] = useState("");
   const [attemptChecking, setAttemptChecking] = useState(false);
-  const [promotionForm, setPromotionForm] = useState({ code: "", nameAr: "", descriptionAr: "", kind: "PERCENTAGE" as "PERCENTAGE" | "FIXED", valueMinor: "10", maxDiscountMinor: "", redemptionLimit: "", storeId: "", serviceCityId: "" });
+  const [promotionForm, setPromotionForm] = useState<PromotionFormState>(emptyPromotionForm);
+  const [storeSearch, setStoreSearch] = useState("");
+  const [storeOptions, setStoreOptions] = useState<ReadonlyArray<MarketingTargetOption>>([]);
+  const [storeLookupLoading, setStoreLookupLoading] = useState(false);
+  const [storeLookupMessage, setStoreLookupMessage] = useState("");
+  const [targetSearch, setTargetSearch] = useState("");
+  const [targetOptions, setTargetOptions] = useState<ReadonlyArray<MarketingTargetOption>>([]);
+  const [targetLoading, setTargetLoading] = useState(false);
+  const [targetMessage, setTargetMessage] = useState("");
+  const [targetVerticals, setTargetVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
+  const [targetVerticalId, setTargetVerticalId] = useState("");
   const attemptReady = Boolean(pendingStorageKey) && loadedStorageKey === pendingStorageKey && !storageError;
 
   const load = useCallback(async (query: { search?: string; state?: string; sort?: "starts_desc" | "starts_asc"; cursor?: string } = {}) => {
@@ -258,7 +328,93 @@ export function MarketingPromotionsWorkspace() {
   }, [appliedSearch, cursor, sort, state]);
 
   useEffect(() => { void load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل العروض.")); }, [load]);
-  useEffect(() => { void readActiveServiceCities().then(setCities).catch(() => setMessage("تعذر قراءة مدن الخدمة؛ يمكنك إنشاء العرض دون تقييد مدينة.")); }, []);
+  useEffect(() => { void readActiveServiceCities().then(setCities).catch(() => setMessage("تعذر قراءة مدن الخدمة؛ يمكنك إنشاء حملة على كل المدن.")); }, []);
+
+  useEffect(() => {
+    if (promotionForm.targetKind !== "CATEGORY") {
+      setTargetVerticals([]);
+      setTargetVerticalId("");
+      return;
+    }
+    const controller = new AbortController();
+    void fetch("/api/catalog/verticals", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const body = await response.json().catch(() => null) as { verticals?: ReadonlyArray<CommerceVertical> } | null;
+        if (!response.ok) throw new Error("تعذر قراءة المجالات التجارية.");
+        if (!controller.signal.aborted) setTargetVerticals((body?.verticals ?? []).filter((item) => item.active));
+      })
+      .catch((error) => { if (!controller.signal.aborted) setTargetMessage(error instanceof Error ? error.message : "تعذر قراءة المجالات التجارية."); });
+    return () => controller.abort();
+  }, [promotionForm.targetKind]);
+
+  useEffect(() => {
+    if (!promotionForm.serviceCityId || storeSearch.trim().length < 2) {
+      setStoreOptions([]);
+      setStoreLookupLoading(false);
+      setStoreLookupMessage(storeSearch.trim() && !promotionForm.serviceCityId ? "اختر مدينة الخدمة أولًا للبحث عن متجر." : "");
+      return;
+    }
+    const controller = new AbortController();
+    const params = new URLSearchParams({ targetType: "STORE", serviceCityId: promotionForm.serviceCityId, query: storeSearch.trim() });
+    setStoreLookupLoading(true);
+    setStoreLookupMessage("");
+    void fetch(`/api/marketing/content/targets?${params.toString()}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const body = await response.json().catch(() => null) as { options?: ReadonlyArray<MarketingTargetOption>; error?: { message?: string } } | null;
+        if (!response.ok) throw new Error(body?.error?.message ?? "تعذر قراءة المتاجر.");
+        setStoreOptions(body?.options ?? []);
+        if (!(body?.options ?? []).length) setStoreLookupMessage("لا توجد متاجر مطابقة.");
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          setStoreOptions([]);
+          setStoreLookupMessage(error instanceof Error ? error.message : "تعذر قراءة المتاجر.");
+        }
+      })
+      .finally(() => { if (!controller.signal.aborted) setStoreLookupLoading(false); });
+    return () => controller.abort();
+  }, [promotionForm.serviceCityId, storeSearch]);
+
+  useEffect(() => {
+    if (promotionForm.targetKind === "NONE") {
+      setTargetOptions([]);
+      setTargetLoading(false);
+      setTargetMessage("");
+      return;
+    }
+    if (promotionForm.targetKind === "CATEGORY" && !targetVerticalId) {
+      setTargetOptions([]);
+      setTargetLoading(false);
+      setTargetMessage("اختر المجال التجاري أولًا.");
+      return;
+    }
+    if (targetSearch.trim().length < 2) {
+      setTargetOptions([]);
+      setTargetLoading(false);
+      setTargetMessage(targetSearch.trim() ? "اكتب حرفين على الأقل للبحث." : "");
+      return;
+    }
+    const controller = new AbortController();
+    const params = new URLSearchParams({ targetType: promotionForm.targetKind, query: targetSearch.trim() });
+    if (promotionForm.targetKind === "CATEGORY") params.set("verticalId", targetVerticalId);
+    setTargetLoading(true);
+    setTargetMessage("");
+    void fetch(`/api/marketing/content/targets?${params.toString()}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const body = await response.json().catch(() => null) as { options?: ReadonlyArray<MarketingTargetOption>; error?: { message?: string } } | null;
+        if (!response.ok) throw new Error(body?.error?.message ?? "تعذر قراءة أهداف العرض.");
+        setTargetOptions(body?.options ?? []);
+        if (!(body?.options ?? []).length) setTargetMessage("لا توجد نتائج مطابقة.");
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          setTargetOptions([]);
+          setTargetMessage(error instanceof Error ? error.message : "تعذر قراءة أهداف العرض.");
+        }
+      })
+      .finally(() => { if (!controller.signal.aborted) setTargetLoading(false); });
+    return () => controller.abort();
+  }, [promotionForm.targetKind, targetSearch, targetVerticalId]);
 
   useEffect(() => {
     let active = true;
@@ -286,6 +442,7 @@ export function MarketingPromotionsWorkspace() {
     }
     setPendingCreate(restored);
     const input = JSON.parse(restored.body) as CreatePromotionRequest;
+    const restoredTarget = input.targets?.[0];
     setPromotionForm({
       code: input.code,
       nameAr: input.nameAr,
@@ -294,10 +451,19 @@ export function MarketingPromotionsWorkspace() {
       valueMinor: String(input.valueMinor),
       maxDiscountMinor: input.maxDiscountMinor ? String(input.maxDiscountMinor) : "",
       redemptionLimit: input.redemptionLimit ? String(input.redemptionLimit) : "",
+      minOrderSubtotalMinor: input.minOrderSubtotalMinor ? String(input.minOrderSubtotalMinor) : "",
+      fundingSource: input.fundingSource,
+      fundingSharePartnerPercent: input.fundingSharePartnerPercent ? String(input.fundingSharePartnerPercent) : "50",
+      requiresPartnerOptIn: Boolean(input.requiresPartnerOptIn),
       storeId: input.storeId ?? "",
       serviceCityId: input.serviceCityId ?? "",
+      targetKind: restoredTarget?.targetKind ?? "NONE",
+      targetId: restoredTarget?.targetRef ?? "",
     });
+    if (input.storeId) setStoreOptions([{ id: input.storeId, label: "المتجر المحفوظ في المحاولة السابقة" }]);
+    if (restoredTarget) setTargetOptions([{ id: restoredTarget.targetRef, label: "الهدف المحفوظ في المحاولة السابقة" }]);
     setStartsAt(dateTimeLocalValue(input.startsAt));
+    setEndsAt(input.endsAt ? dateTimeLocalValue(input.endsAt) : "");
     setAttemptChecking(true);
     setMessage("استعدت محاولة إنشاء العرض؛ أتحقق من سجل DSH قبل إعادة الإرسال.");
     void readPromotionById(restored.id)
@@ -306,7 +472,10 @@ export function MarketingPromotionsWorkspace() {
         if (item) {
           clearPendingMarketingCreate(pendingStorageKey);
           setPendingCreate(null);
-          setPromotionForm({ code: "", nameAr: "", descriptionAr: "", kind: "PERCENTAGE", valueMinor: "10", maxDiscountMinor: "", redemptionLimit: "", storeId: "", serviceCityId: "" });
+          setPromotionForm(emptyPromotionForm());
+          setStartsAt(futureDateInput());
+          setEndsAt("");
+          setStoreSearch(""); setStoreOptions([]); setTargetSearch(""); setTargetOptions([]);
           setSearch(""); setAppliedSearch(""); setState("DRAFT"); setSort("starts_desc"); setCursor(""); setCursorStack([]);
           setMessage("تمت قراءة العرض المنشأ من سجل DSH؛ استعيدت نتيجته دون إنشاء نسخة أخرى.");
         } else {
@@ -337,7 +506,9 @@ export function MarketingPromotionsWorkspace() {
         if (existing) {
           clearPendingMarketingCreate(pendingStorageKey);
           setPendingCreate(null);
-          setPromotionForm({ code: "", nameAr: "", descriptionAr: "", kind: "PERCENTAGE", valueMinor: "10", maxDiscountMinor: "", redemptionLimit: "", storeId: "", serviceCityId: "" });
+          setPromotionForm(emptyPromotionForm());
+          setStartsAt(futureDateInput()); setEndsAt("");
+          setStoreSearch(""); setStoreOptions([]); setTargetSearch(""); setTargetOptions([]);
           setSearch(""); setAppliedSearch(""); setState("DRAFT"); setSort("starts_desc"); setCursor(""); setCursorStack([]);
           await load({ search: "", state: "DRAFT", sort: "starts_desc", cursor: "" });
           setMessage("تمت قراءة العرض المنشأ من سجل DSH؛ استعيدت نتيجته دون إنشاء نسخة أخرى.");
@@ -345,20 +516,32 @@ export function MarketingPromotionsWorkspace() {
         }
       } else {
         const starts = new Date(startsAt);
-        if (!promotionForm.code.trim() || !promotionForm.nameAr.trim() || !Number.isSafeInteger(Number(promotionForm.valueMinor)) || Number(promotionForm.valueMinor) <= 0 || Number.isNaN(starts.getTime())) throw new Error("أكمل بيانات العرض الأساسية.");
+        const ends = endsAt ? new Date(endsAt) : null;
+        const valueMinor = Number(promotionForm.valueMinor);
+        const fundingShare = Number(promotionForm.fundingSharePartnerPercent);
+        if (!promotionForm.code.trim() || !promotionForm.nameAr.trim() || !Number.isSafeInteger(valueMinor) || valueMinor <= 0 || (promotionForm.kind === "PERCENTAGE" && valueMinor > 100) || Number.isNaN(starts.getTime())) throw new Error("أكمل بيانات العرض الأساسية.");
+        if (ends && (Number.isNaN(ends.getTime()) || ends.getTime() <= starts.getTime())) throw new Error("نهاية العرض يجب أن تكون بعد بدايته.");
+        if (promotionForm.fundingSource === "SHARED" && (!Number.isSafeInteger(fundingShare) || fundingShare < 1 || fundingShare > 99)) throw new Error("حدد حصة الشريك من التمويل المشترك بين 1 و99.");
+        if (promotionForm.targetKind !== "NONE" && !promotionForm.targetId) throw new Error("اختر هدف العرض من السجل المعتمد.");
+        const targets: NonNullable<CreatePromotionRequest["targets"]> = promotionForm.targetKind === "NONE" ? [] : [{ targetKind: promotionForm.targetKind, targetRef: promotionForm.targetId }];
         const input: CreatePromotionRequest = {
           id: "promotion-" + crypto.randomUUID(),
           code: promotionForm.code,
           nameAr: promotionForm.nameAr,
           descriptionAr: promotionForm.descriptionAr,
           kind: promotionForm.kind,
-          valueMinor: Number(promotionForm.valueMinor),
-          fundingSource: "PARTNER",
+          valueMinor,
+          fundingSource: promotionForm.fundingSource,
           startsAt: starts.toISOString(),
+          requiresPartnerOptIn: !promotionForm.storeId && promotionForm.requiresPartnerOptIn,
+          ...(promotionForm.fundingSource === "SHARED" ? { fundingSharePartnerPercent: fundingShare } : {}),
           ...(promotionForm.maxDiscountMinor ? { maxDiscountMinor: Number(promotionForm.maxDiscountMinor) } : {}),
           ...(promotionForm.redemptionLimit ? { redemptionLimit: Number(promotionForm.redemptionLimit) } : {}),
-          ...(promotionForm.storeId.trim() ? { storeId: promotionForm.storeId.trim() } : {}),
+          ...(promotionForm.minOrderSubtotalMinor ? { minOrderSubtotalMinor: Number(promotionForm.minOrderSubtotalMinor) } : {}),
+          ...(targets.length ? { targets } : {}),
+          ...(promotionForm.storeId ? { storeId: promotionForm.storeId } : {}),
           ...(promotionForm.serviceCityId ? { serviceCityId: promotionForm.serviceCityId } : {}),
+          ...(ends ? { endsAt: ends.toISOString() } : {}),
         };
         attempt = { id: input.id, idempotencyKey: crypto.randomUUID(), correlationId: "marketing_promotion_create_" + crypto.randomUUID(), body: JSON.stringify(input) };
         if (!persistMarketingCreate(pendingStorageKey, attempt)) throw new Error("تعذر حفظ مفتاح المحاولة؛ لم يُرسل طلب الإنشاء. أعد المحاولة بعد تفعيل تخزين الجلسة.");
@@ -377,7 +560,9 @@ export function MarketingPromotionsWorkspace() {
       if (!created) throw new Error("تعذر تأكيد العرض من سجل DSH. بقيت المحاولة محفوظة لإعادة التحقق بالمفتاح نفسه.");
       clearPendingMarketingCreate(pendingStorageKey);
       setPendingCreate(null);
-      setPromotionForm({ code: "", nameAr: "", descriptionAr: "", kind: "PERCENTAGE", valueMinor: "10", maxDiscountMinor: "", redemptionLimit: "", storeId: "", serviceCityId: "" });
+      setPromotionForm(emptyPromotionForm());
+      setStartsAt(futureDateInput()); setEndsAt("");
+      setStoreSearch(""); setStoreOptions([]); setTargetSearch(""); setTargetOptions([]);
       setSearch(""); setAppliedSearch(""); setState("DRAFT"); setSort("starts_desc"); setCursor(""); setCursorStack([]);
       await load({ search: "", state: "DRAFT", sort: "starts_desc", cursor: "" });
       setMessage("تم إنشاء العرض وقراءته كمسودة من سجل DSH. انشره من السجل عندما يصبح جاهزًا.");
@@ -388,14 +573,19 @@ export function MarketingPromotionsWorkspace() {
     }
   }
 
-  async function publishPromotion(item: PromotionView, state: "PUBLISHED" | "PAUSED") {
+  async function publishPromotion(item: PromotionView, nextState: "PUBLISHED" | "PAUSED") {
     setBusy(true);
     setMessage("");
     try {
-      const response = await fetch(`/api/marketing/promotions/${encodeURIComponent(item.id)}/publication`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID(), "X-Expected-Version": String(item.version) }, body: JSON.stringify({ state }) });
+      const response = await fetch(`/api/marketing/promotions/${encodeURIComponent(item.id)}/publication`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID(), "X-Expected-Version": String(item.version) }, body: JSON.stringify({ state: nextState }) });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(apiMessage(body));
+      const canonical = await readPromotionById(item.id);
+      if (!canonical || canonical.state !== nextState) {
+        throw new Error("تم إرسال تغيير حالة العرض لكن لم تثبت القراءة الكانونية النتيجة المطلوبة. أعد قراءة السجل قبل أي إجراء آخر.");
+      }
       await load();
+      setMessage(nextState === "PUBLISHED" ? "نُشر العرض وأُكدت حالته من سجل DSH." : "أُوقف العرض وأُكدت حالته من سجل DSH.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "تعذر تحديث نشر العرض.");
     } finally {
@@ -403,37 +593,61 @@ export function MarketingPromotionsWorkspace() {
     }
   }
 
+  const formLocked = busy || Boolean(pendingCreate) || !attemptReady;
+  const selectedStoreLabel = promotionForm.storeId ? storeOptions.find((item) => item.id === promotionForm.storeId)?.label ?? "متجر معتمد" : "";
+  const selectedTargetLabel = promotionForm.targetId ? targetOptions.find((item) => item.id === promotionForm.targetId)?.label ?? "هدف معتمد" : "";
+
   return (
     <div className={styles.workspace} data-testid="marketing-promotions-workspace">
       {storageError ? <p className="managed-status managed-status-warning" role="alert">{storageError}</p> : null}
       {pendingCreate ? <p className="managed-status managed-status-warning" role="status">{attemptChecking ? "جارٍ التحقق من نتيجة المحاولة المحفوظة في DSH…" : "المحاولة لم تُحسم بعد. الحقول مقفلة وستعيد المحاولة بالبيانات والمفتاح نفسيهما."}</p> : null}
       <details className="access-card" open={Boolean(pendingCreate)}>
-        <summary className={styles.createSummary}>إنشاء عرض جديد</summary>
-        <div className="access-card-heading"><span className="step-chip">العروض</span><p className="eyebrow">تسويق مضبوط</p><h2>إنشاء عرض</h2><p className="muted">العرض يُنشأ كمسودة، ثم يُنشر بعد مراجعة النطاق والفترة.</p></div>
+        <summary className={styles.createSummary}>إنشاء عرض أو حملة</summary>
+        <div className="access-card-heading"><span className="step-chip">العروض</span><p className="eyebrow">تسويق مضبوط</p><h2>إنشاء عرض</h2><p className="muted">مصدر التمويل والنطاق والمشاركة حقائق صريحة؛ العرض يُنشأ كمسودة ثم يُنشر بعد المراجعة.</p></div>
         <div className="workspace-form-grid">
-          <input aria-label="رمز العرض" placeholder="WELCOME10" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={promotionForm.code} onChange={(event) => setPromotionForm((current) => ({ ...current, code: event.target.value }))} />
-          <input aria-label="اسم العرض" placeholder="خصم العملاء الجدد" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={promotionForm.nameAr} onChange={(event) => setPromotionForm((current) => ({ ...current, nameAr: event.target.value }))} />
-          <input aria-label="وصف العرض" placeholder="خصم على أول طلب" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={promotionForm.descriptionAr} onChange={(event) => setPromotionForm((current) => ({ ...current, descriptionAr: event.target.value }))} />
-          <select aria-label="نوع العرض" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={promotionForm.kind} onChange={(event) => setPromotionForm((current) => ({ ...current, kind: event.target.value as typeof current.kind }))}><option value="PERCENTAGE">نسبة مئوية</option><option value="FIXED">قيمة ثابتة</option></select>
-          <input aria-label="قيمة العرض" inputMode="numeric" type="number" min="1" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={promotionForm.valueMinor} onChange={(event) => setPromotionForm((current) => ({ ...current, valueMinor: event.target.value }))} />
-          {promotionForm.kind === "PERCENTAGE" ? <input aria-label="الحد الأعلى للخصم" inputMode="numeric" type="number" min="1" placeholder="اختياري" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={promotionForm.maxDiscountMinor} onChange={(event) => setPromotionForm((current) => ({ ...current, maxDiscountMinor: event.target.value }))} /> : null}
-          <input aria-label="حد الاستخدام" inputMode="numeric" type="number" min="1" placeholder="اختياري" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={promotionForm.redemptionLimit} onChange={(event) => setPromotionForm((current) => ({ ...current, redemptionLimit: event.target.value }))} />
-          <input aria-label="معرّف المتجر" placeholder="اختياري: تقييد العرض بمتجر" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={promotionForm.storeId} onChange={(event) => setPromotionForm((current) => ({ ...current, storeId: event.target.value }))} />
-          <label className="field-label" htmlFor="promotion-city">مدينة الخدمة<select id="promotion-city" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={promotionForm.serviceCityId} onChange={(event) => setPromotionForm((current) => ({ ...current, serviceCityId: event.target.value }))}><option value="">كل المدن</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
-          <input aria-label="بداية العرض" type="datetime-local" disabled={busy || Boolean(pendingCreate) || !attemptReady} value={startsAt} onChange={(event) => setStartsAt(event.target.value)} />
+          <input aria-label="رمز العرض" placeholder="WELCOME10" disabled={formLocked} value={promotionForm.code} onChange={(event) => setPromotionForm((current) => ({ ...current, code: event.target.value }))} />
+          <input aria-label="اسم العرض" placeholder="خصم العملاء الجدد" disabled={formLocked} value={promotionForm.nameAr} onChange={(event) => setPromotionForm((current) => ({ ...current, nameAr: event.target.value }))} />
+          <input aria-label="وصف العرض" placeholder="خصم على الطلب" disabled={formLocked} value={promotionForm.descriptionAr} onChange={(event) => setPromotionForm((current) => ({ ...current, descriptionAr: event.target.value }))} />
+          <select aria-label="نوع العرض" disabled={formLocked} value={promotionForm.kind} onChange={(event) => setPromotionForm((current) => ({ ...current, kind: event.target.value as PromotionFormState["kind"] }))}><option value="PERCENTAGE">نسبة مئوية</option><option value="FIXED">قيمة ثابتة</option></select>
+          <input aria-label={promotionForm.kind === "PERCENTAGE" ? "نسبة الخصم" : "قيمة الخصم بالريال اليمني"} inputMode="numeric" type="number" min="1" disabled={formLocked} value={promotionForm.valueMinor} onChange={(event) => setPromotionForm((current) => ({ ...current, valueMinor: event.target.value }))} />
+          {promotionForm.kind === "PERCENTAGE" ? <input aria-label="الحد الأعلى للخصم بالريال اليمني" inputMode="numeric" type="number" min="1" placeholder="اختياري بالريال اليمني" disabled={formLocked} value={promotionForm.maxDiscountMinor} onChange={(event) => setPromotionForm((current) => ({ ...current, maxDiscountMinor: event.target.value }))} /> : null}
+          <label className="field-label" htmlFor="promotion-funding-source">مصدر التمويل<select id="promotion-funding-source" disabled={formLocked} value={promotionForm.fundingSource} onChange={(event) => setPromotionForm((current) => ({ ...current, fundingSource: event.target.value as CreatePromotionRequest["fundingSource"] }))}><option value="BTHWANI">بثواني</option><option value="SHARED">مشترك</option><option value="PARTNER">الشريك</option></select></label>
+          {promotionForm.fundingSource === "SHARED" ? <input aria-label="حصة الشريك من التمويل" inputMode="numeric" type="number" min="1" max="99" disabled={formLocked} value={promotionForm.fundingSharePartnerPercent} onChange={(event) => setPromotionForm((current) => ({ ...current, fundingSharePartnerPercent: event.target.value }))} /> : null}
+          <input aria-label="حد الطلب الأدنى" inputMode="numeric" type="number" min="1" placeholder="اختياري بالريال اليمني" disabled={formLocked} value={promotionForm.minOrderSubtotalMinor} onChange={(event) => setPromotionForm((current) => ({ ...current, minOrderSubtotalMinor: event.target.value }))} />
+          <input aria-label="حد الاستخدام" inputMode="numeric" type="number" min="1" placeholder="اختياري" disabled={formLocked} value={promotionForm.redemptionLimit} onChange={(event) => setPromotionForm((current) => ({ ...current, redemptionLimit: event.target.value }))} />
+          <label className="field-label" htmlFor="promotion-city">مدينة الخدمة<select id="promotion-city" disabled={formLocked} value={promotionForm.serviceCityId} onChange={(event) => { setStoreSearch(""); setStoreOptions([]); setPromotionForm((current) => ({ ...current, serviceCityId: event.target.value, storeId: "" })); }}><option value="">كل المدن</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
+
+          <input aria-label="بحث متجر الحملة" maxLength={128} placeholder={promotionForm.serviceCityId ? "ابحث باسم المتجر لتقييد العرض (اختياري)" : "اختر مدينة للبحث عن متجر"} disabled={formLocked || !promotionForm.serviceCityId} value={storeSearch} onChange={(event) => { setStoreSearch(event.target.value); setPromotionForm((current) => ({ ...current, storeId: "", requiresPartnerOptIn: current.requiresPartnerOptIn })); }} />
+          <label className="field-label" htmlFor="promotion-store">نطاق المتجر<select id="promotion-store" disabled={formLocked || storeLookupLoading || storeOptions.length === 0} value={promotionForm.storeId} onChange={(event) => setPromotionForm((current) => ({ ...current, storeId: event.target.value, requiresPartnerOptIn: event.target.value ? false : current.requiresPartnerOptIn }))}><option value="">حملة منصة / كل المتاجر المؤهلة</option>{storeOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+          {storeLookupMessage ? <p className="muted" role="status">{storeLookupMessage}</p> : null}
+          {selectedStoreLabel ? <p className="muted">المتجر المختار: {selectedStoreLabel}</p> : null}
+
+          <label className="field-label" htmlFor="promotion-target-kind">استهداف العرض<select id="promotion-target-kind" disabled={formLocked} value={promotionForm.targetKind} onChange={(event) => { const targetKind = event.target.value as PromotionTargetKind; setTargetSearch(""); setTargetOptions([]); setTargetVerticalId(""); setPromotionForm((current) => ({ ...current, targetKind, targetId: "" })); }}><option value="NONE">كل النطاق</option><option value="PRODUCT">منتج</option><option value="CATEGORY">فئة</option></select></label>
+          {promotionForm.targetKind === "CATEGORY" ? <label className="field-label" htmlFor="promotion-target-vertical">المجال التجاري<select id="promotion-target-vertical" disabled={formLocked} value={targetVerticalId} onChange={(event) => { setTargetVerticalId(event.target.value); setTargetSearch(""); setTargetOptions([]); setPromotionForm((current) => ({ ...current, targetId: "" })); }}><option value="">اختر المجال</option>{targetVerticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}</option>)}</select></label> : null}
+          {promotionForm.targetKind !== "NONE" ? <>
+            <input aria-label="بحث هدف العرض" maxLength={128} placeholder={promotionForm.targetKind === "PRODUCT" ? "ابحث باسم المنتج" : "ابحث باسم الفئة"} disabled={formLocked || (promotionForm.targetKind === "CATEGORY" && !targetVerticalId)} value={targetSearch} onChange={(event) => { setTargetSearch(event.target.value); setPromotionForm((current) => ({ ...current, targetId: "" })); }} />
+            <label className="field-label" htmlFor="promotion-target">الهدف المعتمد<select id="promotion-target" disabled={formLocked || targetLoading || targetOptions.length === 0} value={promotionForm.targetId} onChange={(event) => setPromotionForm((current) => ({ ...current, targetId: event.target.value }))}><option value="">اختر من بيانات DSH</option>{targetOptions.map((option) => <option key={option.id} value={option.id}>{option.detail ? option.label + " · " + option.detail : option.label}</option>)}</select></label>
+            {targetMessage ? <p className="muted" role="status">{targetMessage}</p> : null}
+            {selectedTargetLabel ? <p className="muted">الهدف المختار: {selectedTargetLabel}</p> : null}
+          </> : null}
+
+          <label className="field-label"><input type="checkbox" disabled={formLocked || Boolean(promotionForm.storeId)} checked={!promotionForm.storeId && promotionForm.requiresPartnerOptIn} onChange={(event) => setPromotionForm((current) => ({ ...current, requiresPartnerOptIn: event.target.checked }))} /> تتطلب الحملة موافقة الشريك قبل المشاركة</label>
+          <input aria-label="بداية العرض" type="datetime-local" disabled={formLocked} value={startsAt} onChange={(event) => setStartsAt(event.target.value)} />
+          <input aria-label="نهاية العرض" type="datetime-local" disabled={formLocked} value={endsAt} onChange={(event) => setEndsAt(event.target.value)} />
           <button className="button" type="button" disabled={busy || attemptChecking || !attemptReady} onClick={() => void createPromotion()}>{pendingCreate ? "التحقق / إعادة محاولة الإنشاء" : "إنشاء مسودة العرض"}</button>
         </div>
       </details>
+
       <section className="access-card" aria-labelledby="marketing-promotions-title">
         <div className="access-card-heading"><h2 id="marketing-promotions-title">سجل العروض</h2>{message ? <p role="status" className="muted">{message}</p> : null}</div>
         <form className={styles.filters} onSubmit={(event) => { event.preventDefault(); setAppliedSearch(search.trim().slice(0, 128)); setCursor(""); setCursorStack([]); }}>
           <label className="field-label" htmlFor="promotion-search">رمز العرض أو الاسم<input id="promotion-search" type="search" maxLength={128} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
-          <label className="field-label" htmlFor="promotion-state">الحالة<select id="promotion-state" value={state} onChange={(event) => { setState(event.target.value); setCursor(""); setCursorStack([]); }}><option value="">كل الحالات</option><option value="DRAFT">مسودة</option><option value="PUBLISHED">منشور</option><option value="PAUSED">موقوف</option></select></label>
+          <label className="field-label" htmlFor="promotion-state">الحالة<select id="promotion-state" value={state} onChange={(event) => { setState(event.target.value); setCursor(""); setCursorStack([]); }}><option value="">كل الحالات</option><option value="DRAFT">مسودة</option><option value="PUBLISHED">منشور</option><option value="PAUSED">موقوف</option><option value="ENDED">منتهٍ</option></select></label>
           <label className="field-label" htmlFor="promotion-sort">ترتيب البداية<select id="promotion-sort" value={sort} onChange={(event) => { setSort(event.target.value as typeof sort); setCursor(""); setCursorStack([]); }}><option value="starts_desc">الأحدث بداية</option><option value="starts_asc">الأقدم بداية</option></select></label>
           <button className="button button-secondary" type="submit" disabled={loading}>بحث</button>
           <button className="button button-quiet" type="button" onClick={() => void load().catch((error) => setMessage(error instanceof Error ? error.message : "تعذر قراءة سجل العروض."))} disabled={loading}>{loading ? "جارٍ القراءة…" : "تحديث"}</button>
         </form>
-        {registry?.promotions.length ? <div className="finance-table-wrap"><table className="finance-table"><caption className="visually-hidden">سجل العروض</caption><thead><tr><th scope="col">العرض</th><th scope="col">الرمز</th><th scope="col">النوع والقيمة</th><th scope="col">الحالة</th><th scope="col">بداية العرض</th><th scope="col">الإجراء</th></tr></thead><tbody>{registry.promotions.map((item) => <tr key={item.id}><th scope="row">{item.nameAr}<br /><bdi dir="ltr">{item.id}</bdi></th><td><bdi dir="ltr">{item.code}</bdi></td><td>{item.kind === "PERCENTAGE" ? `${item.valueMinor}%` : item.valueMinor}</td><td>{item.state}</td><td><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td><button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishPromotion(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف العرض" : "نشر العرض"}</button></td></tr>)}</tbody></table></div> : null}
+        {registry?.promotions.length ? <div className="finance-table-wrap"><table className="finance-table"><caption className="visually-hidden">سجل العروض</caption><thead><tr><th scope="col">العرض</th><th scope="col">الرمز</th><th scope="col">القيمة</th><th scope="col">التمويل والنطاق</th><th scope="col">الحالة</th><th scope="col">البداية</th><th scope="col">الإجراء</th></tr></thead><tbody>{registry.promotions.map((item) => <tr key={item.id}><th scope="row">{item.nameAr}</th><td><bdi dir="ltr">{item.code}</bdi></td><td>{item.kind === "PERCENTAGE" ? item.valueMinor + "%" : formatMoney(item.valueMinor, "YER")}</td><td>{item.fundingSource === "SHARED" ? "مشترك · حصة الشريك " + (item.fundingSharePartnerPercent ?? 0) + "%" : item.fundingSource === "BTHWANI" ? "بثواني" : "الشريك"}<br />{item.storeId ? "متجر محدد" : item.serviceCityId ? "حملة مدينة" : "حملة منصة"}{item.requiresPartnerOptIn ? " · تتطلب موافقة" : ""}<br />{promotionTargetSummary(item)}{item.minOrderSubtotalMinor ? <><br />حد الطلب {formatMoney(item.minOrderSubtotalMinor, "YER")}</> : null}</td><td>{promotionStateLabel(item.state)}</td><td><time dateTime={item.startsAt}>{new Date(item.startsAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td>{item.state === "ENDED" ? <span className="muted">لا إجراء</span> : <button className="button button-quiet" type="button" disabled={busy} onClick={() => void publishPromotion(item, item.state === "PUBLISHED" ? "PAUSED" : "PUBLISHED")}>{item.state === "PUBLISHED" ? "إيقاف العرض" : "نشر العرض"}</button>}</td></tr>)}</tbody></table></div> : null}
         {!registry?.promotions.length && loading ? <p role="status" className="collection-state">جارٍ قراءة صفحة العروض…</p> : null}
         {!registry?.promotions.length && !loading ? <p className="collection-state">لا توجد عروض مطابقة.</p> : null}
         <nav className={styles.pagination} aria-label="صفحات سجل العروض"><button className="button button-quiet" type="button" disabled={loading || cursorStack.length === 0} onClick={() => { const next = [...cursorStack]; const previous = next.pop() ?? ""; setCursorStack(next); setCursor(previous); }}>السابق</button><span>صفحة {cursorStack.length + 1}</span><button className="button button-quiet" type="button" disabled={loading || !registry?.nextCursor} onClick={() => { setCursorStack((items) => [...items, cursor]); setCursor(registry?.nextCursor ?? ""); }}>التالي</button></nav>

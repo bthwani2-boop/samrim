@@ -1,10 +1,12 @@
 import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type JoiningCaseResponse, publicationStateLabel, type PublicationState, type StoreFulfillmentMode } from "@bthwani/dsh";
 import { type Href, Link } from "expo-router";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Text, View } from "react-native";
+import { STORE_SURFACE_PERMISSIONS } from "../../shell/partner-authority";
 import { StoreOfferManagement } from "../store-offer/store-offer";
 import { StorePromotionsCard } from "../store-offer/store-promotions";
+import { PartnerAccessInvitationsCard } from "./partner-access-invitations";
 import { PartnerStoreAccess } from "./partner-store-access";
 import { usePartnerStoreContext } from "./partner-store-context";
 import { type PartnerAccessibleStore, usePartnerStoreScope } from "./partner-store-scope-context";
@@ -25,6 +27,10 @@ function publicationLabel(state: string): string {
 
 function isStoreFulfillmentMode(value: string): value is StoreFulfillmentMode {
   return value === "BTHWANI_CAPTAIN" || value === "PARTNER_CAPTAIN" || value === "CUSTOMER_PICKUP";
+}
+
+function isStoreSurfaceEligible(store: PartnerAccessibleStore): boolean {
+  return store.owned || STORE_SURFACE_PERMISSIONS.some((permission) => store.permissions.includes(permission));
 }
 
 function StoreHeaderRow({ styles, store }: { styles: SurfaceStyles; store: PartnerAccessibleStore }) {
@@ -55,30 +61,40 @@ function StoreManagementSurfaces({ styles, store, canCatalog, canOperate, canPro
     {canOperate ? <StoreOperationalAvailabilityManagement storeID={store.id} fulfillmentModes={store.fulfillmentModes.filter(isStoreFulfillmentMode)} /> : null}
     {canCatalog && store.primaryVerticalId ? <StoreOfferManagement storeId={store.id} verticalId={store.primaryVerticalId} /> : null}
     {canCatalog && !store.primaryVerticalId ? <View style={styles.card}><Text style={styles.muted}>تعذر فتح إدارة المنتجات لأن تصنيف نشاط المتجر غير متاح في القراءة الحالية.</Text></View> : null}
-    {canPromote ? <StorePromotionsCard storeID={store.id} /> : null}
+    {canPromote ? <StorePromotionsCard storeID={store.id} verticalID={store.primaryVerticalId} /> : null}
     {isSameFirstJoiningStore && firstJoiningStore ? <FirstJoiningStoreFacts styles={styles} store={firstJoiningStore} /> : null}
     {store.owned ? <StoreCaptainMembershipManagement storeID={store.id} /> : null}
-    <PartnerStoreAccess storeID={store.owned ? store.id : undefined} />
+    {store.owned ? <PartnerStoreAccess storeID={store.id} /> : null}
+    <PartnerAccessInvitationsCard />
   </>;
 }
 
 export function PartnerStore() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
-  const { state: scopeState, selectedStore } = usePartnerStoreScope();
+  const { state: scopeState, selectedStore, stores, selectStore } = usePartnerStoreScope();
   const onboarding = usePartnerStoreContext();
   const firstStoreCase = onboarding.state.kind === "ready" ? onboarding.state.value : null;
   const canCatalog = Boolean(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("catalog")));
   const canOperate = Boolean(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("store_operations")));
   const canPromote = Boolean(selectedStore && (selectedStore.owned || selectedStore.permissions.includes("promotions")));
 
+  // Landing on المتجر must present a store this actor holds a material store
+  // function on; a selection carried over from another surface never leaves
+  // the Store surface on a functionless store.
+  useEffect(() => {
+    if (scopeState.kind !== "ready" || !selectedStore || isStoreSurfaceEligible(selectedStore)) return;
+    const firstEligible = stores.find(isStoreSurfaceEligible);
+    if (firstEligible) selectStore(firstEligible.id);
+  }, [scopeState.kind, selectedStore, stores, selectStore]);
+
   return <View style={styles.container}>
     <Text style={styles.sectionTitle}>المتجر</Text>
-    <PartnerStoreScopeSelector />
+    <PartnerStoreScopeSelector requiredPermissions={STORE_SURFACE_PERMISSIONS} />
 
     {scopeState.kind === "ready" && !selectedStore ? <View style={styles.card}>
       <Text style={styles.muted}>لا يوجد متجر مملوك أو مفوض لهذا الحساب حاليًا.</Text>
-      <PartnerStoreAccess />
+      <PartnerAccessInvitationsCard />
     </View> : null}
 
     {selectedStore ? <>

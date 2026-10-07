@@ -48,9 +48,11 @@ func (s *BeneficiaryFinanceServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/me/funding-intents/{fundingIntentId}", s.readOwnFundingIntent)
 	mux.HandleFunc("POST /dsh/me/funding-intents/{fundingIntentId}/simulate", s.simulateOwnFundingIntent)
 	mux.HandleFunc("GET /dsh/me/payout-state", s.readOwnPayoutState)
+	mux.HandleFunc("GET /dsh/partners/me/payout-summary", s.readPartnerPayoutSummary)
 	mux.HandleFunc("POST /dsh/me/payout-intents", s.createOwnPayoutIntent)
 	mux.HandleFunc("POST /dsh/partner/payout-requests", s.createPartnerPayoutRequest)
 	mux.HandleFunc("GET /dsh/partner/payout-requests/{partnerActorId}/{requestId}", s.readPartnerPayoutRequest)
+	mux.HandleFunc("GET /dsh/partner/payout-requests/{partnerActorId}", s.readPartnerPayoutRequest)
 	mux.HandleFunc("GET /dsh/operator/{actorType}/{actorId}/payout-state", s.readOperatorPayoutState)
 	mux.HandleFunc("GET /dsh/operator/{actorType}/{actorId}/official-wallet-destination", s.readOperatorDestination)
 	mux.HandleFunc("GET /dsh/operator/{actorType}/{actorId}/wallet-provider-intent", s.readOperatorWalletProviderIntent)
@@ -170,6 +172,11 @@ func (s *BeneficiaryFinanceServer) readOwnPayoutState(w http.ResponseWriter, r *
 	if !ok {
 		return
 	}
+	if identity.Role == "partner" {
+		writeError(w, 403, "PARTNER_STORE_SCOPE_REQUIRED", "Partner finance requires the Store-scoped finance and payout endpoints")
+		return
+	}
+
 	state, err := s.payment.ReadPayoutState(r.Context(), identity.Role, identity.Subject)
 	if err != nil {
 		writeWLTFinanceError(w, err)
@@ -183,6 +190,11 @@ func (s *BeneficiaryFinanceServer) createOwnPayoutIntent(w http.ResponseWriter, 
 	if !ok {
 		return
 	}
+	if identity.Role == "partner" {
+		writeError(w, 403, "PARTNER_STORE_SCOPE_REQUIRED", "Partner finance requires the Store-scoped finance and payout endpoints")
+		return
+	}
+
 	correlation, idempotency, ok := requiredBeneficiaryFinanceMutationHeaders(w, r)
 	if !ok {
 		return

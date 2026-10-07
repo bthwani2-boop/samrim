@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -13,7 +14,7 @@ import (
 var (
 	ErrPartnerPayoutInvalidInput   = errors.New("partner payout request input is invalid")
 	ErrPartnerPayoutStoreUnknown   = errors.New("requested Store is not known to WLT as owned by this Partner")
-	ErrPartnerPayoutAttributionGap = errors.New("store attribution cannot cover the requested payout; request explicit Store amounts or include the Stores holding the remainder")
+	ErrPartnerPayoutAttributionGap = errors.New("canonical wallet history has incomplete Store attribution; financial reconciliation is required before a new payout")
 	ErrPartnerPayoutAmountExceeded = errors.New("requested Store payout exceeds that Store's attributed available allocation")
 )
 
@@ -55,6 +56,7 @@ type PartnerPayoutStoreAllocationRecord struct {
 
 type PartnerPayoutRequestRecord struct {
 	ID               string
+	PartnerActorID   string
 	Status           string
 	ScopeMode        string
 	TotalAmountMinor int64
@@ -73,13 +75,11 @@ func HashPartnerPayoutRequest(input PartnerPayoutRequestInput) string {
 	}
 	requestedIDs := append([]string(nil), input.RequestedStoreIDs...)
 	sort.Strings(requestedIDs)
-	factsFingerprint := make([]string, 0, len(input.BeneficiaryFacts))
-	for actorID, facts := range input.BeneficiaryFacts {
-		factsFingerprint = append(factsFingerprint, actorID+"="+facts.fingerprint())
-	}
-	sort.Strings(factsFingerprint)
-	return hashFacts("partner-payout-request-v1", strings.TrimSpace(input.PartnerActorID), strings.TrimSpace(input.ScopeMode),
-		strings.Join(requestedIDs, ","), strings.Join(amountFacts, ","), strings.Join(factsFingerprint, ","))
+	facts := []string{"partner-payout-request-v2", strings.TrimSpace(input.PartnerActorID), strings.TrimSpace(input.ScopeMode), formatInt(len(requestedIDs))}
+	facts = append(facts, requestedIDs...)
+	facts = append(facts, formatInt(len(stores)))
+	facts = append(facts, amountFacts...)
+	return hashFacts(facts...)
 }
 
 // CreatePartitionedPartnerPayoutRequest resolves the effective recipient per
@@ -96,9 +96,6 @@ func CreatePartitionedPartnerPayoutRequest(ctx context.Context, db *sql.DB, ciph
 	if db == nil || cipher == nil || boundedText(input.PartnerActorID, 1, 128) == "" ||
 		(input.ScopeMode != PartnerPayoutScopeFullAvailable && input.ScopeMode != PartnerPayoutScopeSpecified) ||
 		len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
-		return PartnerPayoutRequestRecord{}, false, ErrPartnerPayoutInvalidInput
-	}
-	if len(input.RequestedStoreIDs) > 200 || len(input.StoreAmounts) > 200 {
 		return PartnerPayoutRequestRecord{}, false, ErrPartnerPayoutInvalidInput
 	}
 	if input.ScopeMode == PartnerPayoutScopeSpecified && len(input.StoreAmounts) == 0 {
@@ -120,6 +117,37 @@ func CreatePartitionedPartnerPayoutRequest(ctx context.Context, db *sql.DB, ciph
 		seenStores[store.StoreID] = struct{}{}
 		input.StoreAmounts[index] = store
 	}
+	if input.ScopeMode == PartnerPayoutScopeSpecified && len(input.RequestedStoreIDs) > 0 {
+		ids := map[string]bool{}
+		for _, id := range input.RequestedStoreIDs {
+			id = strings.TrimSpace(id)
+			if _, ok := seenStores[id]; !ok {
+				return PartnerPayoutRequestRecord{}, false, ErrPartnerPayoutInvalidInput
+			}
+			ids[id] = true
+		}
+		if len(ids) != len(seenStores) {
+			return PartnerPayoutRequestRecord{}, false, ErrPartnerPayoutInvalidInput
+		}
+	}
+	requestedSet := map[string]bool{}
+	for _, id := range input.RequestedStoreIDs {
+		id = strings.TrimSpace(id)
+		if boundedText(id, 1, 128) == "" {
+			return PartnerPayoutRequestRecord{}, false, ErrPartnerPayoutInvalidInput
+		}
+		requestedSet[id] = true
+	}
+	if input.ScopeMode == PartnerPayoutScopeSpecified {
+		for id := range seenStores {
+			requestedSet[id] = true
+		}
+	}
+	input.RequestedStoreIDs = make([]string, 0, len(requestedSet))
+	for id := range requestedSet {
+		input.RequestedStoreIDs = append(input.RequestedStoreIDs, id)
+	}
+	sort.Strings(input.RequestedStoreIDs)
 	requestHash := HashPartnerPayoutRequest(input)
 
 	tx, err := db.BeginTx(ctx, nil)
@@ -154,107 +182,35 @@ func CreatePartitionedPartnerPayoutRequest(ctx context.Context, db *sql.DB, ciph
 		return PartnerPayoutRequestRecord{}, false, err
 	}
 
-	// Fail closed on any Store whose recipient needs review, exactly like the
-	// constraint-trigger backstop: future readiness is blocked until the owner
-	// selects or reconfirms a legal recipient.
-	var reviewStores int
-	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM wlt.store_payout_recipient_assignments WHERE partner_actor_id=$1 AND state=$2", input.PartnerActorID, StorePayoutRecipientStateReviewRequired).Scan(&reviewStores); err != nil {
+	// The projection used by financial readback is the only Store amount source.
+	finance, err := readPartnerStoreFinance(ctx, tx, input.PartnerActorID, nil)
+	if err != nil {
 		return PartnerPayoutRequestRecord{}, false, err
 	}
-	if reviewStores > 0 {
-		return PartnerPayoutRequestRecord{}, false, fmt.Errorf("%w: %d store(s) require recipient review", ErrPayoutRecipientReviewRequired, reviewStores)
-	}
-
-	// Resolve the routing truth per Store. WLT-known ownership comes from
-	// attributed earnings or a recipient assignment; anything else fails closed.
 	type storeRouting struct {
 		storeID            string
 		beneficiaryActorID string
 		assignmentVersion  int64
 		availableMinor     int64
+		recipientState     string
 	}
 	routing := map[string]*storeRouting{}
-	earningsRows, err := tx.QueryContext(ctx, `SELECT store_id, COALESCE(SUM(partner_net_minor),0) FROM wlt.partner_order_earnings WHERE partner_actor_id=$1 GROUP BY store_id`, input.PartnerActorID)
-	if err != nil {
-		return PartnerPayoutRequestRecord{}, false, err
-	}
-	for earningsRows.Next() {
-		var storeID string
-		var attributed int64
-		if err := earningsRows.Scan(&storeID, &attributed); err != nil {
-			earningsRows.Close()
-			return PartnerPayoutRequestRecord{}, false, err
+	for _, store := range finance {
+		if !store.AttributionComplete {
+			return PartnerPayoutRequestRecord{}, false, ErrPartnerPayoutAttributionGap
 		}
-		routing[storeID] = &storeRouting{storeID: storeID, beneficiaryActorID: input.PartnerActorID, availableMinor: attributed}
-	}
-	earningsRowsErr := earningsRows.Err()
-	earningsRows.Close()
-	if earningsRowsErr != nil {
-		return PartnerPayoutRequestRecord{}, false, earningsRowsErr
-	}
-	assignmentRows, err := tx.QueryContext(ctx, `SELECT store_id,state,beneficiary_actor_id,version FROM wlt.store_payout_recipient_assignments WHERE partner_actor_id=$1 ORDER BY store_id`, input.PartnerActorID)
-	if err != nil {
-		return PartnerPayoutRequestRecord{}, false, err
-	}
-	for assignmentRows.Next() {
-		var storeID, state, beneficiaryActorID string
-		var version int64
-		if err := assignmentRows.Scan(&storeID, &state, &beneficiaryActorID, &version); err != nil {
-			assignmentRows.Close()
-			return PartnerPayoutRequestRecord{}, false, err
-		}
-		entry := routing[storeID]
-		if entry == nil {
-			entry = &storeRouting{storeID: storeID, availableMinor: 0}
-			routing[storeID] = entry
-		}
-		if state == StorePayoutRecipientStateSelectedStaff {
-			entry.beneficiaryActorID = beneficiaryActorID
-			entry.assignmentVersion = version
-		}
-	}
-	assignmentRowsErr := assignmentRows.Err()
-	assignmentRows.Close()
-	if assignmentRowsErr != nil {
-		return PartnerPayoutRequestRecord{}, false, assignmentRowsErr
-	}
-
-	// Subtract amounts already allocated by non-cancelled payouts (in-flight
-	// holds and committed settlements) from each Store's attributed earnings.
-	allocatedRows, err := tx.QueryContext(ctx, `SELECT a.store_id, COALESCE(SUM(a.amount_minor),0)
-		FROM wlt.payout_store_allocations a
-		JOIN wlt.payout_requests p ON p.id = a.payout_id
-		WHERE p.actor_id=$1 AND p.status <> 'CANCELLED'
-		GROUP BY a.store_id`, input.PartnerActorID)
-	if err != nil {
-		return PartnerPayoutRequestRecord{}, false, err
-	}
-	for allocatedRows.Next() {
-		var storeID string
-		var consumed int64
-		if err := allocatedRows.Scan(&storeID, &consumed); err != nil {
-			allocatedRows.Close()
-			return PartnerPayoutRequestRecord{}, false, err
-		}
-		if entry := routing[storeID]; entry != nil {
-			entry.availableMinor -= consumed
-		}
-	}
-	allocatedRowsErr := allocatedRows.Err()
-	allocatedRows.Close()
-	if allocatedRowsErr != nil {
-		return PartnerPayoutRequestRecord{}, false, allocatedRowsErr
+		routing[store.StoreID] = &storeRouting{storeID: store.StoreID, beneficiaryActorID: store.BeneficiaryActorID, assignmentVersion: store.RecipientAssignmentVersion, availableMinor: store.EligibleAvailableMinor, recipientState: store.RecipientState}
 	}
 
 	// Global wallet authority: every child amount together may never exceed the
 	// Partner wallet's currently available balance.
 	var grossAvailable, held int64
-	if err := tx.QueryRowContext(ctx, "SELECT COALESCE(SUM(CASE WHEN direction='CREDIT' THEN amount_minor ELSE -amount_minor END),0) FROM wlt.ledger_entries WHERE account_code='PARTNER_WALLET' AND actor_id=$1", input.PartnerActorID).Scan(&grossAvailable); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT
+		COALESCE((SELECT SUM(CASE WHEN direction='CREDIT' THEN amount_minor ELSE -amount_minor END) FROM wlt.ledger_entries WHERE account_code='PARTNER_WALLET' AND actor_id=$1),0),
+		COALESCE((SELECT SUM(amount_minor) FROM wlt.payout_holds WHERE actor_type='partner' AND actor_id=$1 AND status='ACTIVE'),0)`, input.PartnerActorID).Scan(&grossAvailable, &held); err != nil {
 		return PartnerPayoutRequestRecord{}, false, err
 	}
-	if err := tx.QueryRowContext(ctx, "SELECT COALESCE(SUM(amount_minor),0) FROM wlt.payout_holds WHERE actor_type='partner' AND actor_id=$1 AND status='ACTIVE'", input.PartnerActorID).Scan(&held); err != nil {
-		return PartnerPayoutRequestRecord{}, false, err
-	}
+
 	walletAvailable := grossAvailable - held
 
 	selected := make([]*storeRouting, 0, len(routing))
@@ -269,7 +225,11 @@ func CreatePartitionedPartnerPayoutRequest(ctx context.Context, db *sql.DB, ciph
 	} else {
 		requested := map[string]struct{}{}
 		for _, storeID := range input.RequestedStoreIDs {
-			requested[strings.TrimSpace(storeID)] = struct{}{}
+			storeID = strings.TrimSpace(storeID)
+			if routing[storeID] == nil {
+				return PartnerPayoutRequestRecord{}, false, ErrPartnerPayoutStoreUnknown
+			}
+			requested[storeID] = struct{}{}
 		}
 		for _, entry := range routing {
 			if len(requested) > 0 {
@@ -280,6 +240,12 @@ func CreatePartitionedPartnerPayoutRequest(ctx context.Context, db *sql.DB, ciph
 			selected = append(selected, entry)
 		}
 		sort.Slice(selected, func(left, right int) bool { return selected[left].storeID < selected[right].storeID })
+	}
+
+	for _, entry := range selected {
+		if entry.recipientState == StorePayoutRecipientStateReviewRequired {
+			return PartnerPayoutRequestRecord{}, false, ErrPayoutRecipientReviewRequired
+		}
 	}
 
 	// Resolve per-Store amounts. FULL_AVAILABLE pays each selected Store's
@@ -298,16 +264,20 @@ func CreatePartitionedPartnerPayoutRequest(ctx context.Context, db *sql.DB, ciph
 				return PartnerPayoutRequestRecord{}, false, fmt.Errorf("%w: %s", ErrPartnerPayoutAmountExceeded, store.StoreID)
 			}
 			allocations = append(allocations, storeAllocation{routing: entry, amount: store.AmountMinor})
+			if store.AmountMinor > math.MaxInt64-total {
+				return PartnerPayoutRequestRecord{}, false, ErrPartnerPayoutInvalidInput
+			}
 			total += store.AmountMinor
 		}
 	} else {
-		ordered := append([]*storeRouting(nil), selected...)
-		sort.SliceStable(ordered, func(left, right int) bool { return ordered[left].availableMinor > ordered[right].availableMinor })
-		for _, entry := range ordered {
+		for _, entry := range selected {
 			if entry.availableMinor <= 0 {
 				continue
 			}
 			allocations = append(allocations, storeAllocation{routing: entry, amount: entry.availableMinor})
+			if entry.availableMinor > math.MaxInt64-total {
+				return PartnerPayoutRequestRecord{}, false, ErrPartnerPayoutInvalidInput
+			}
 			total += entry.availableMinor
 		}
 	}
@@ -317,6 +287,13 @@ func CreatePartitionedPartnerPayoutRequest(ctx context.Context, db *sql.DB, ciph
 	if total > walletAvailable {
 		return PartnerPayoutRequestRecord{}, false, ErrPartnerPayoutAttributionGap
 	}
+
+	sort.Slice(allocations, func(i, j int) bool {
+		if allocations[i].routing.beneficiaryActorID == allocations[j].routing.beneficiaryActorID {
+			return allocations[i].routing.storeID < allocations[j].routing.storeID
+		}
+		return allocations[i].routing.beneficiaryActorID < allocations[j].routing.beneficiaryActorID
+	})
 
 	// Group by beneficiary and verified destination: one external transfer
 	// never pays two beneficiaries or two destinations.
@@ -380,10 +357,7 @@ func CreatePartitionedPartnerPayoutRequest(ctx context.Context, db *sql.DB, ciph
 		if err != nil {
 			return PartnerPayoutRequestRecord{}, false, err
 		}
-		childIdempotencyKey := input.IdempotencyKey + ":" + formatInt(groupIndex+1)
-		if len(childIdempotencyKey) > 128 {
-			return PartnerPayoutRequestRecord{}, false, ErrPartnerPayoutInvalidInput
-		}
+		childIdempotencyKey := hashFacts("partner-payout-child", input.IdempotencyKey, formatInt(groupIndex+1))
 		childHash := hashFacts("payout-intent-v2", "partner", input.PartnerActorID, "SPECIFIED", formatInt64(group.amount), input.BeneficiaryFacts[group.beneficiaryActorID].fingerprint())
 		policyVersion := "payout-eligibility-v1;destination-version=" + formatInt(group.destinationVersion) + ";partitioned=" + requestID
 		if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.payout_requests(id,actor_type,actor_id,amount_mode,requested_amount_minor,resolved_amount_minor,destination_id,destination_version,status,policy_version,idempotency_key,request_hash)
@@ -440,10 +414,10 @@ func ReadPartnerPayoutRequest(ctx context.Context, db *sql.DB, requestID string)
 func ReadPartnerPayoutRequestTx(ctx context.Context, tx *sql.Tx, requestID string) (PartnerPayoutRequestRecord, error) {
 	var record PartnerPayoutRequestRecord
 	var createdAt time.Time
-	err := tx.QueryRowContext(ctx, `SELECT id,status,scope_mode,total_amount_minor,currency,created_at FROM wlt.partner_payout_requests WHERE id=$1`, requestID).
-		Scan(&record.ID, &record.Status, &record.ScopeMode, &record.TotalAmountMinor, &record.Currency, &createdAt)
+	err := tx.QueryRowContext(ctx, `SELECT id,partner_actor_id,status,scope_mode,total_amount_minor,currency,created_at FROM wlt.partner_payout_requests WHERE id=$1`, requestID).
+		Scan(&record.ID, &record.PartnerActorID, &record.Status, &record.ScopeMode, &record.TotalAmountMinor, &record.Currency, &createdAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return PartnerPayoutRequestRecord{}, ErrPartnerPayoutInvalidInput
+		return PartnerPayoutRequestRecord{}, ErrPayoutNotFound
 	}
 	if err != nil {
 		return PartnerPayoutRequestRecord{}, err
@@ -493,4 +467,32 @@ func ReadPartnerPayoutRequestTx(ctx context.Context, tx *sql.Tx, requestID strin
 		record.Payouts = append(record.Payouts, child)
 	}
 	return record, nil
+}
+
+// ReadPartnerPayoutRequestByKey recovers an uncertain response without reinterpreting
+// a saved request against changed identity facts, grants or financial state.
+func ReadPartnerPayoutRequestByKey(ctx context.Context, db *sql.DB, owner, key string) (PartnerPayoutRequestRecord, error) {
+	owner, key = strings.TrimSpace(owner), strings.TrimSpace(key)
+	if db == nil || boundedText(owner, 1, 128) == "" || boundedText(key, 8, 128) == "" {
+		return PartnerPayoutRequestRecord{}, ErrPartnerPayoutInvalidInput
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return PartnerPayoutRequestRecord{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:partner-payout:"+owner); err != nil {
+		return PartnerPayoutRequestRecord{}, err
+	}
+	var id string
+	if err = tx.QueryRowContext(ctx, "SELECT id FROM wlt.partner_payout_requests WHERE partner_actor_id=$1 AND idempotency_key=$2", owner, key).Scan(&id); errors.Is(err, sql.ErrNoRows) {
+		return PartnerPayoutRequestRecord{}, ErrPayoutNotFound
+	} else if err != nil {
+		return PartnerPayoutRequestRecord{}, err
+	}
+	record, err := ReadPartnerPayoutRequestTx(ctx, tx, id)
+	if err != nil {
+		return PartnerPayoutRequestRecord{}, err
+	}
+	return record, tx.Commit()
 }

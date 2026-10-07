@@ -16,14 +16,14 @@ export function PartnerScrollScreen({ children }: PropsWithChildren) {
   return <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{children}</ScrollView>;
 }
 
-export function createPartnerTabOptions(theme: ReturnType<typeof resolveTheme>) {
+export function createPartnerTabOptions(theme: ReturnType<typeof resolveTheme>, canSearchOrders: boolean) {
   const styles = createStyles(theme);
   const icons = { store: "store", orders: "orders", wallet: "wallet", account: "account" } as const;
   return ({ route }: { route: { name: string } }) => ({
     headerShown: true,
     header: ({ route: headerRoute, navigation }: { route: { params?: unknown }; navigation: unknown }) => {
       const params = headerRoute.params as { focus?: string | string[]; q?: string | string[] } | undefined;
-      return <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><PartnerHeader focus={params?.focus} searchQuery={params?.q} navigation={navigation as PartnerSearchNavigation} styles={styles} /></SafeAreaView>;
+      return <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><PartnerHeader canSearchOrders={canSearchOrders} focus={params?.focus} searchQuery={params?.q} navigation={navigation as PartnerSearchNavigation} styles={styles} /></SafeAreaView>;
     },
     tabBarActiveBackgroundColor: theme.actionSoft,
     tabBarActiveTintColor: theme.interactiveText,
@@ -38,7 +38,7 @@ export function createPartnerTabOptions(theme: ReturnType<typeof resolveTheme>) 
   });
 }
 
-function PartnerHeader({ focus: rawFocus, searchQuery: rawQuery, navigation, styles }: { focus?: string | string[] | undefined; searchQuery?: string | string[] | undefined; navigation: PartnerSearchNavigation; styles: ReturnType<typeof createStyles> }) {
+function PartnerHeader({ canSearchOrders, focus: rawFocus, searchQuery: rawQuery, navigation, styles }: { canSearchOrders: boolean; focus?: string | string[] | undefined; searchQuery?: string | string[] | undefined; navigation: PartnerSearchNavigation; styles: ReturnType<typeof createStyles> }) {
   const router = useRouter();
   const focus = Array.isArray(rawFocus) ? rawFocus[0] : rawFocus;
   const searchQuery = Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "";
@@ -51,7 +51,7 @@ function PartnerHeader({ focus: rawFocus, searchQuery: rawQuery, navigation, sty
     return () => clearTimeout(timer);
   }, [isSearchOpen]);
 
-  return <View style={styles.header}>{isSearchOpen ? <View style={styles.headerSearchActions}><BthwaniSearchField accessibilityLabel="البحث في الطلبات" autoCapitalize="none" autoCorrect={false} containerStyle={styles.headerSearchField} inputRef={searchInputRef} onChangeText={(value) => navigation.setParams({ q: value })} onClear={() => navigation.setParams({ q: "" })} placeholder="ابحث برقم الطلب أو العنوان أو المنتج" returnKeyType="search" value={searchQuery} /><BthwaniIconButton icon="close" label="إغلاق البحث" onPress={() => navigation.setParams({ focus: "", q: "" })} size={sizing.controlMd} tone="soft" /></View> : <><View style={styles.headerIdentity}><Text style={styles.brand}>بثواني · الشريك</Text><Text style={styles.context}>تشغيل المتجر والطلبات</Text></View><View style={styles.headerActions}><BthwaniIconButton icon="search" label="البحث في الطلبات" onPress={() => navigation.navigate("orders", { focus: "search" })} size={sizing.controlMd} tone="soft" /><BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/notifications" as Href)} size={sizing.controlMd} tone="soft" /><BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlMd} tone="soft" /></View></>}</View>;
+  return <View style={styles.header}>{isSearchOpen ? <View style={styles.headerSearchActions}><BthwaniSearchField accessibilityLabel="البحث في الطلبات" autoCapitalize="none" autoCorrect={false} containerStyle={styles.headerSearchField} inputRef={searchInputRef} onChangeText={(value) => navigation.setParams({ q: value })} onClear={() => navigation.setParams({ q: "" })} placeholder="ابحث برقم الطلب أو العنوان أو المنتج" returnKeyType="search" value={searchQuery} /><BthwaniIconButton icon="close" label="إغلاق البحث" onPress={() => navigation.setParams({ focus: "", q: "" })} size={sizing.controlMd} tone="soft" /></View> : <><View style={styles.headerIdentity}><Text style={styles.brand}>بثواني · الشريك</Text><Text style={styles.context}>تشغيل المتجر والطلبات</Text></View><View style={styles.headerActions}>{canSearchOrders ? <BthwaniIconButton icon="search" label="البحث في الطلبات" onPress={() => navigation.navigate("orders", { focus: "search" })} size={sizing.controlMd} tone="soft" /> : null}<BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/notifications" as Href)} size={sizing.controlMd} tone="soft" /><BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlMd} tone="soft" /></View></>}</View>;
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {

@@ -10,18 +10,20 @@ import (
 )
 
 type StoreCaptainMembership struct {
-	ID             string
-	StoreID        string
-	StoreName      string
-	PartnerActorID string
-	CaptainActorID *string
-	State          string
-	Version        int
-	ExpiresAt      time.Time
-	AcceptedAt     *time.Time
-	RevokedAt      *time.Time
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID                 string
+	StoreID            string
+	StoreName          string
+	PartnerActorID     string
+	CaptainActorID     *string
+	CaptainNameAr      string
+	CaptainPhoneMasked string
+	State              string
+	Version            int
+	ExpiresAt          time.Time
+	AcceptedAt         *time.Time
+	RevokedAt          *time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 var (

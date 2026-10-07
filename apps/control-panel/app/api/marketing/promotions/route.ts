@@ -10,7 +10,7 @@ function errorResponse(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status, headers: { "Cache-Control": "no-store" } });
 }
 
-const states = ["DRAFT", "PUBLISHED", "PAUSED"] as const;
+const states = ["DRAFT", "PUBLISHED", "PAUSED", "ENDED"] as const;
 const sorts = ["starts_desc", "starts_asc"] as const;
 
 export async function GET(request: Request) {
@@ -46,20 +46,51 @@ export async function POST(request: Request) {
   if (permissionDenied) return permissionDenied;
   const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() ?? "";
   if (idempotencyKey.length < 8 || idempotencyKey.length > 128) return errorResponse("INVALID_INPUT", "Idempotency-Key is required", 400);
+
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-  if (!body || typeof body.id !== "string" || !body.id.trim() || typeof body.code !== "string" || !body.code.trim() || typeof body.nameAr !== "string" || !body.nameAr.trim() || !["PERCENTAGE", "FIXED"].includes(String(body.kind)) || !Number.isSafeInteger(body.valueMinor) || Number(body.valueMinor) <= 0 || typeof body.startsAt !== "string" || !body.startsAt.trim()) return errorResponse("INVALID_INPUT", "promotion id, code, name, kind, value and startsAt are required", 400);
+  if (!body || typeof body.id !== "string" || !body.id.trim() || typeof body.code !== "string" || !body.code.trim() || typeof body.nameAr !== "string" || !body.nameAr.trim() || !["PERCENTAGE", "FIXED"].includes(String(body.kind)) || !Number.isSafeInteger(body.valueMinor) || Number(body.valueMinor) <= 0 || typeof body.startsAt !== "string" || !body.startsAt.trim()) {
+    return errorResponse("INVALID_INPUT", "promotion id, code, name, kind, value and startsAt are required", 400);
+  }
+
+  const fundingSource = String(body.fundingSource ?? "");
+  if (!["PARTNER", "BTHWANI", "SHARED"].includes(fundingSource)) return errorResponse("INVALID_INPUT", "a valid funding source is required", 400);
+  const fundingShare = Number(body.fundingSharePartnerPercent);
+  if (fundingSource === "SHARED" && (!Number.isSafeInteger(fundingShare) || fundingShare < 1 || fundingShare > 99)) return errorResponse("INVALID_INPUT", "shared funding requires a Partner percentage between 1 and 99", 400);
+  if (fundingSource !== "SHARED" && body.fundingSharePartnerPercent !== undefined && body.fundingSharePartnerPercent !== null) return errorResponse("INVALID_INPUT", "funding share applies only to SHARED funding", 400);
+
+  const storeId = typeof body.storeId === "string" ? body.storeId.trim() : "";
+  const serviceCityId = typeof body.serviceCityId === "string" ? body.serviceCityId.trim() : "";
+  const requiresPartnerOptIn = body.requiresPartnerOptIn === true;
+  if (storeId && requiresPartnerOptIn) return errorResponse("INVALID_INPUT", "Partner opt-in applies only to platform campaigns", 400);
+
+  const rawTargets = Array.isArray(body.targets) ? body.targets : [];
+  if (rawTargets.length > 20) return errorResponse("INVALID_INPUT", "too many promotion targets", 400);
+  const targets: NonNullable<CreatePromotionRequest["targets"]>[number][] = [];
+  for (const value of rawTargets) {
+    if (!value || typeof value !== "object") return errorResponse("INVALID_INPUT", "promotion target is invalid", 400);
+    const target = value as Record<string, unknown>;
+    const targetKind = String(target.targetKind ?? "");
+    const targetRef = typeof target.targetRef === "string" ? target.targetRef.trim() : "";
+    if (!["PRODUCT", "CATEGORY"].includes(targetKind) || !targetRef || targetRef.length > 128) return errorResponse("INVALID_INPUT", "promotion target is invalid", 400);
+    targets.push({ targetKind: targetKind as "PRODUCT" | "CATEGORY", targetRef });
+  }
+
   const input: CreatePromotionRequest = {
     id: body.id.trim(),
     code: body.code.trim().toUpperCase(),
     nameAr: body.nameAr.trim(),
     kind: body.kind as CreatePromotionRequest["kind"],
     valueMinor: Number(body.valueMinor),
-    fundingSource: "PARTNER",
+    fundingSource: fundingSource as CreatePromotionRequest["fundingSource"],
     startsAt: body.startsAt.trim(),
+    requiresPartnerOptIn,
+    ...(fundingSource === "SHARED" ? { fundingSharePartnerPercent: fundingShare } : {}),
     ...(typeof body.descriptionAr === "string" && body.descriptionAr.trim() ? { descriptionAr: body.descriptionAr.trim() } : {}),
     ...(Number.isSafeInteger(body.maxDiscountMinor) && Number(body.maxDiscountMinor) > 0 ? { maxDiscountMinor: Number(body.maxDiscountMinor) } : {}),
-    ...(typeof body.storeId === "string" && body.storeId.trim() ? { storeId: body.storeId.trim() } : {}),
-    ...(typeof body.serviceCityId === "string" && body.serviceCityId.trim() ? { serviceCityId: body.serviceCityId.trim() } : {}),
+    ...(Number.isSafeInteger(body.minOrderSubtotalMinor) && Number(body.minOrderSubtotalMinor) > 0 ? { minOrderSubtotalMinor: Number(body.minOrderSubtotalMinor) } : {}),
+    ...(targets.length ? { targets } : {}),
+    ...(storeId ? { storeId } : {}),
+    ...(serviceCityId ? { serviceCityId } : {}),
     ...(typeof body.endsAt === "string" && body.endsAt.trim() ? { endsAt: body.endsAt.trim() } : {}),
     ...(Number.isSafeInteger(body.redemptionLimit) && Number(body.redemptionLimit) > 0 ? { redemptionLimit: Number(body.redemptionLimit) } : {}),
   };

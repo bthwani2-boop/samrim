@@ -114,7 +114,7 @@ paths:
       summary: Read the effective payout recipient per Store for the current Partner owner
       security: [{ userBearer: [] }]
       responses:
-        "200": { description: WLT-owned payout-recipient readback with Store names and masked beneficiary phones., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StorePayoutRecipientListResponse" } } } }
+        "200": { description: WLT-owned payout-recipient readback enriched with Store names and canonical masked beneficiary wallet profiles., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StorePayoutRecipientListResponse" } } } }
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
@@ -156,6 +156,27 @@ paths:
           in: path
           required: true
           schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200": { description: Canonical partitioned payout request readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerPayoutRequestResponse" } } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/partner/payout-requests/{partnerActorId}:
+    get:
+      operationId: readPartnerPayoutRequestByKey
+      summary: Recover a committed request by its saved idempotency key
+      security: [{ userBearer: [] }]
+      parameters:
+        - name: partnerActorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: idempotencyKey
+          in: query
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 128 }
       responses:
         "200": { description: Canonical partitioned payout request readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PartnerPayoutRequestResponse" } } } }
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }

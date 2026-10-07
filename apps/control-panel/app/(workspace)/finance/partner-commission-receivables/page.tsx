@@ -7,10 +7,7 @@ export default async function PartnerCommissionReceivablesPage({ searchParams }:
     const value = query[key];
     return Array.isArray(value) ? value[0] ?? "" : value ?? "";
   };
-  const rawSort = first("sort");
   const initialQuery: PartnerEarningsInitialQuery = {
-    search: first("search").trim().slice(0, 128),
-    sort: rawSort === "actor_desc" ? "actor_desc" : "actor_asc",
     cursor: first("cursor").slice(0, 1024),
     partnerActorId: first("partnerActorId").trim().slice(0, 128),
   };
