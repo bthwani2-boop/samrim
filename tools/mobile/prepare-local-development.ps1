@@ -100,8 +100,10 @@ else {
         $Build = $Builds | Sort-Object { [DateTimeOffset]::Parse([string]$_.createdAt) } -Descending | Select-Object -First 1
         Write-Host "EAS_COMPATIBLE_BUILD=PASS app=$App buildId=$($Build.id) fingerprint=$Hash"
         if ($Mode -eq "InstallMatchingBuilds") {
-            Import-Module -Name (Join-Path $PSScriptRoot "..\dev\device-policy.psm1") -Force -WarningAction SilentlyContinue
-            $AdbSerial = [string](Get-CanonicalAdbDevice).Serial
+            $AdbSerial = (& adb get-serialno | Out-String).Trim()
+            if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($AdbSerial) -or $AdbSerial -eq "unknown") {
+                Fail "Installation requires one connected ADB device; select a single phone before retrying."
+            }
             $DownloadRoot = Join-Path ([IO.Path]::GetTempPath()) ("bthwani-eas-" + [Guid]::NewGuid().ToString("N"))
             New-Item -ItemType Directory -Path $DownloadRoot -Force | Out-Null
             try {

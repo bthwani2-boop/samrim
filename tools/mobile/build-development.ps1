@@ -4,6 +4,7 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidatePattern("^app-(client|partner|captain|field)$")]
     [string] $App,
+    [switch] $Submit,
     [switch] $Wait
 )
 
@@ -75,6 +76,11 @@ if ($StatusBefore.Count -gt 0) { Fail "Candidate must be clean before remote bui
 $LocalSha = (& git -C $RepoRoot rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $LocalSha -notmatch '^[0-9a-f]{40}$') { Fail "Remote build requires a committed local source revision." }
 
+& pnpm --dir $RepoRoot install --lockfile-only --frozen-lockfile --offline --ignore-scripts
+if ($LASTEXITCODE -ne 0) { Fail "Dependency lock must match the committed manifests before EAS discovery or submission." }
+& node (Join-Path $PSScriptRoot "verify-mobile-config.mjs") --app $App
+if ($LASTEXITCODE -ne 0) { Fail "Mobile dependency/configuration preflight failed for $App." }
+
 foreach ($Required in @($CredentialVaultPath, $KeystoreVaultPath)) {
     if (-not (Test-Path -LiteralPath $Required -PathType Leaf)) { Fail "Missing target build input: $Required" }
 }
@@ -119,6 +125,10 @@ try {
     elseif ($null -ne $Pending) {
         $ActualSourceSha = Get-BuildSourceSha $Pending
         Write-Host "BUILD_DECISION=REUSED_PENDING app=$App currentCandidateSha=$LocalSha nativeFingerprint=$Hash reusedBuildId=$($Pending.id) reusedBuildActualSourceSha=$ActualSourceSha compatibilityReason=fingerprint"
+    }
+    elseif (-not $Submit) {
+        Write-Host "BUILD_DECISION=REQUIRED app=$App nativeFingerprint=$Hash submitted=false"
+        Write-Host "Run with -Submit only when a new remote build for this app is intended."
     }
     else {
         $BuildArgs = @("build", "--platform", "android", "--profile", "development", "--non-interactive", "--json")

@@ -117,6 +117,41 @@ try {
     Assert-Absent @($CredentialVaultPath.Replace("vault-credentials.json", "credentials.json"), $KeystoreVaultPath.Replace("vault-development.jks", "development.jks")) "repository materialization"
     Write-Host "EAS_VAULT_INPUTS=PASS external-inputs-unchanged=true"
     Write-Host "EAS_CREDENTIAL_ATOMICITY=PASS cases=9"
+
+    # Exercise the actual submission decision without contacting EAS or consuming a build.
+    $BuildTokens = $null
+    $BuildErrors = $null
+    $BuildAst = [Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot "build-development.ps1"), [ref]$BuildTokens, [ref]$BuildErrors)
+    Assert-True ($BuildErrors.Count -eq 0) "build script did not parse"
+    $DecisionNodes = @($BuildAst.FindAll({ param($Node) $Node -is [Management.Automation.Language.IfStatementAst] -and $Node.Extent.Text.StartsWith('if ($null -ne $Finished)') }, $true))
+    Assert-True ($DecisionNodes.Count -eq 1) "build decision must have one owner"
+    $Decision = [scriptblock]::Create($DecisionNodes[0].Extent.Text)
+    $SourceFunction = $BuildAst.Find({ param($Node) $Node -is [Management.Automation.Language.FunctionDefinitionAst] -and $Node.Name -eq "Get-BuildSourceSha" }, $true)
+    . ([scriptblock]::Create($SourceFunction.Extent.Text))
+    foreach ($Case in @(
+        @{ Name = "default-miss"; Submit = $false; Finished = $null; Pending = $null; Expected = 0 },
+        @{ Name = "explicit-submit"; Submit = $true; Finished = $null; Pending = $null; Expected = 1 },
+        @{ Name = "finished-reuse"; Submit = $true; Finished = [pscustomobject]@{ id = "finished"; gitCommitHash = "old-source" }; Pending = $null; Expected = 0 },
+        @{ Name = "pending-reuse"; Submit = $true; Finished = $null; Pending = [pscustomobject]@{ id = "pending"; gitCommitHash = "old-source" }; Expected = 0 }
+    )) {
+        $App = "app-client"
+        $LocalSha = "synthetic-current-source"
+        $Hash = "synthetic-native-fingerprint"
+        $Wait = $false
+        $Submit = $Case.Submit
+        $Finished = $Case.Finished
+        $Pending = $Case.Pending
+        $script:SubmissionCalls = 0
+        function Invoke-EasJson([string[]] $Arguments) {
+            Assert-True ($Arguments[0] -eq "build") "unexpected remote command in build decision"
+            $script:SubmissionCalls++
+            return [pscustomobject]@{ id = "synthetic-submitted-build" }
+        }
+        & $Decision
+        Assert-True ($script:SubmissionCalls -eq $Case.Expected) ("unexpected submission count: " + $Case.Name)
+        Write-Host ("EAS_BUILD_DECISION=PASS case=" + $Case.Name + " submissions=" + $script:SubmissionCalls)
+    }
+
 }
 finally {
     if (Test-Path -LiteralPath $TestRoot) { Remove-Item -LiteralPath $TestRoot -Recurse -Force }

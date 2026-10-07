@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
+import { spawnSync } from "node:child_process";
 
 import { createSamrimMetroConfig, getSamrimMetroCacheRoot } from "./create-samrim-metro-config.cjs";
 
@@ -9,6 +11,13 @@ const envExamplePath = path.join(repoRoot, "infra/local/.env.example");
 const rootPackagePath = path.join(repoRoot, "package.json");
 const localRuntimePath = path.join(repoRoot, "tools/dev/dev.ps1");
 const metroOwnerPath = path.join(repoRoot, "tools/mobile/create-samrim-metro-config.cjs");
+const launcherPath = path.join(repoRoot, "tools/dev/start-surface.mjs");
+const args = process.argv.slice(2);
+if (args.length !== 0 && (args.length !== 2 || args[0] !== "--app")) {
+  console.error("Usage: node tools/mobile/verify-mobile-config.mjs [--app app-name]");
+  process.exit(1);
+}
+const requestedApp = args[1];
 const requiredStringFields = [
   "name",
   "slug",
@@ -55,6 +64,10 @@ if (apps.length === 0) {
   console.error("No mobile hosts discovered from apps/*/mobile.config.json");
   process.exit(1);
 }
+if (requestedApp && !apps.includes(requestedApp)) {
+  console.error(`Unknown mobile app: ${requestedApp}`);
+  process.exit(1);
+}
 if (!fs.existsSync(localRuntimePath)) {
   console.error("Canonical local runtime owner is missing: tools/dev/dev.ps1");
   process.exit(1);
@@ -89,6 +102,84 @@ const servicePorts = new Set([
   requirePort(env, "SAMRIM_DSH_PORT"),
 ]);
 let failed = false;
+const workspaceConfig = fs.readFileSync(path.join(repoRoot, "pnpm-workspace.yaml"), "utf8");
+for (const setting of ["frozenLockfile", "saveExact"]) {
+  if (!new RegExp(`^${setting}: true$`, "m").test(workspaceConfig)) {
+    console.error(`pnpm-workspace.yaml must enable ${setting}`);
+    failed = true;
+  }
+}
+const launcherSource = fs.readFileSync(launcherPath, "utf8");
+for (const setting of ["EXPO_NO_METRO_WORKSPACE_ROOT", "EXPO_OFFLINE"]) {
+  if (launcherSource.includes(setting)) {
+    console.error(`The surface launcher must preserve Expo defaults instead of forcing ${setting}`);
+    failed = true;
+  }
+}
+
+const workspacePackages = new Map();
+for (const owner of ["apps", "services", "packages"]) {
+  for (const entry of fs.readdirSync(path.join(repoRoot, owner), { withFileTypes: true })) {
+    const packagePath = path.join(repoRoot, owner, entry.name, "package.json");
+    if (entry.isDirectory() && fs.existsSync(packagePath)) {
+      const pkg = JSON.parse(fs.readFileSync(packagePath, "utf8"));
+      workspacePackages.set(pkg.name, packagePath);
+    }
+  }
+}
+const checkedPackages = new Set();
+function checkDependencyPins(packagePath) {
+  if (checkedPackages.has(packagePath)) return;
+  checkedPackages.add(packagePath);
+  const pkg = JSON.parse(fs.readFileSync(packagePath, "utf8"));
+  for (const section of ["dependencies", "devDependencies", "optionalDependencies"]) {
+    for (const [name, specifier] of Object.entries(pkg[section] ?? {})) {
+      if (specifier.startsWith("workspace:")) {
+        const dependencyPath = workspacePackages.get(name);
+        if (!dependencyPath) throw new Error(`Missing workspace package ${name}`);
+        checkDependencyPins(dependencyPath);
+        continue;
+      }
+      const version = specifier.startsWith("npm:") ? specifier.slice(specifier.lastIndexOf("@") + 1) : specifier;
+      if (!/^\d+\.\d+\.\d+(?:-[\da-zA-Z.-]+)?(?:\+[\da-zA-Z.-]+)?$/.test(version)) {
+        console.error(`${path.relative(repoRoot, packagePath)}: ${section}.${name} must use an exact version; found ${specifier}`);
+        failed = true;
+      }
+    }
+  }
+}
+checkDependencyPins(rootPackagePath);
+
+function checkNativeDependencies(appRoot, pkg) {
+  const appRequire = createRequire(path.join(appRoot, "package.json"));
+  const expoRequire = createRequire(appRequire.resolve("expo/package.json"));
+  const cliRequire = createRequire(expoRequire.resolve("@expo/cli/package.json"));
+  if (cliRequire("@expo/config/paths").getMetroServerRoot(appRoot) !== repoRoot) {
+    throw new Error("Expo workspace resolution is disabled; remove EXPO_NO_METRO_WORKSPACE_ROOT");
+  }
+  const autolinkingPath = expoRequire.resolve("expo-modules-autolinking/package.json");
+  const autolinking = JSON.parse(fs.readFileSync(autolinkingPath, "utf8"));
+  const bin = path.resolve(path.dirname(autolinkingPath), autolinking.bin["expo-modules-autolinking"]);
+  const result = spawnSync(process.execPath, [bin, "verify", "--project-root", appRoot, "--platform", "android", "--json"], {
+    encoding: "utf8",
+    windowsHide: true,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`Expo Autolinking failed: ${result.stderr.trim()}`);
+  const native = JSON.parse(result.stdout);
+  const conflicts = native.duplicates.filter((entry) => entry.duplicates.some((duplicate) => duplicate.version !== entry.version));
+  if (conflicts.length) {
+    throw new Error(`Conflicting native versions: ${conflicts.map((entry) => `${entry.name} (${[entry.version, ...entry.duplicates.map((duplicate) => duplicate.version)].join(", ")})`).join("; ")}`);
+  }
+  for (const [name, dependency] of Object.entries(native.dependencies)) {
+    const expected = pkg.dependencies?.[name] ?? pkg.devDependencies?.[name];
+    if (expected && dependency.version !== expected) {
+      throw new Error(`Installed ${name}=${dependency.version} does not match app-owned ${expected}; run pnpm install`);
+    }
+  }
+  console.log(`MOBILE_NATIVE_DEPENDENCIES=PASS app=${path.basename(appRoot)} conflicts=0`);
+}
 
 for (const app of apps) {
   const appRoot = path.join(appsRoot, app);
@@ -173,6 +264,28 @@ for (const app of apps) {
   }
 
   const pkg = JSON.parse(fs.readFileSync(packagePath, "utf8"));
+  checkDependencyPins(packagePath);
+  if (!pkg.dependencies?.["@expo/ui"]) {
+    console.error(`${app}: the app must own its Expo UI native dependency`);
+    failed = true;
+  }
+  if (pkg.scripts?.["eas-build-post-install"] !== `node ../../tools/mobile/verify-mobile-config.mjs --app ${app}`) {
+    console.error(`${app}: EAS must run the shared dependency/configuration check after installation`);
+    failed = true;
+  }
+  const eas = JSON.parse(fs.readFileSync(path.join(appRoot, "eas.json"), "utf8"));
+  if (process.env.EAS_NO_FROZEN_LOCKFILE === "1" || Object.values(eas.build).some((profile) => profile.env?.EAS_NO_FROZEN_LOCKFILE === "1")) {
+    console.error(`${app}: EAS immutable lockfile installation must remain enabled`);
+    failed = true;
+  }
+  if (!requestedApp || requestedApp === app) {
+    try {
+      checkNativeDependencies(appRoot, pkg);
+    } catch (error) {
+      console.error(`${app}: ${error.message}`);
+      failed = true;
+    }
+  }
   if (pkg.scripts?.dev !== "node ../../tools/dev/start-surface.mjs") {
     console.error(`${app}: package.json scripts.dev must use the shared direct surface launcher`);
     failed = true;

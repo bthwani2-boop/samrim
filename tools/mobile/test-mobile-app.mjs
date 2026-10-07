@@ -34,7 +34,7 @@ const pkgPath = path.join(appDir, "package.json");
 assert.ok(fs.existsSync(pkgPath), `${app}: missing package.json`);
 const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
 const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
-assert.equal(allDeps["expo-localization"], "~57.0.2", `${app}: static RTL requires expo-localization`);
+assert.equal(allDeps["expo-localization"], "57.0.2", `${app}: static RTL requires expo-localization`);
 
   const identityPath = path.join(appDir, "src", "bootstrap", "identity.ts");
   assert.ok(fs.existsSync(identityPath), `${app}: missing src/bootstrap/identity.ts`);
@@ -272,7 +272,7 @@ assert.deepEqual(localizationPlugin, [
 const locationPlugin = expoConfig.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-location");
 const cameraPlugin = expoConfig.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-camera");
 if (expectsBarcodeCamera) {
-  assert.equal(allDeps["expo-camera"], "~57.0.6", `${app}: barcode scanning requires the Expo camera module`);
+  assert.equal(allDeps["expo-camera"], "57.0.6", `${app}: barcode scanning requires the Expo camera module`);
   assert.deepEqual(cameraPlugin, [
     "expo-camera",
     {
@@ -287,7 +287,7 @@ if (expectsBarcodeCamera) {
   assert.equal(cameraPlugin, undefined, `${app}: camera permission must not be inferred without an app-owned request`);
 }
 if (expectsForegroundLocation) {
-  const expectedLocationVersion = app === "app-field" ? "~57.0.20" : "~57.0.19";
+  const expectedLocationVersion = "57.0.20";
   assert.equal(allDeps["expo-location"], expectedLocationVersion, `${app}: foreground location requires the Expo location module`);
   assert.ok(locationPlugin, `${app}: foreground location must be owned by expo-location`);
   assert.deepEqual(locationPlugin, [
