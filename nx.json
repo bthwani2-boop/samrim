@@ -4,6 +4,7 @@
   "workspaceLayout": {"appsDir": "apps", "libsDir": "packages"},
   "plugins": [],
   "analytics": false,
+  "nxCloudId": "6aa9eedc45c07f39423ffa9f",
   "targetDefaults": {
     "typecheck": {"cache": true, "inputs": ["default", "^default", "nodeToolchain"]},
     "unit": {"cache": true},

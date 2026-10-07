@@ -55,6 +55,8 @@ Preserve required Product behavior, security, authorization, privacy, data integ
 
 ## 4. Local development state
 
+The current project phase is local development, before Stage/Production adoption. Entry into shared Stage/Production requires an explicit governed transition. Local phase alone does not make existing state disposable.
+
 Reuse valid warm local state. Do not restart services, Metro, Next.js, backends, containers, sessions or devices merely as ritual when the current state can prove the claim.
 
 Reuse established authentication sessions, actors and representative business state when valid. Do not require generic logout/login, re-enrollment or credential reset for unrelated proof.
@@ -62,6 +64,12 @@ Reuse established authentication sessions, actors and representative business st
 Never reset credentials, revoke unrelated sessions, grant permissions, mutate actor identity, fabricate business state, or destroy reusable persistent state merely to make a check pass.
 
 Do not use direct SQL, ad-hoc seed data or hidden state mutation to manufacture success. Test-fixture setup is acceptable only when the task explicitly owns it and the resulting proof remains representative of the real path.
+
+Keep synthetic setup limited to the current development/proof need, using existing service owners and isolated, task-owned fixtures. Do not create a persistent synthetic world, global fixture registry or automatic startup reseeding. Required system/reference records, role and permission definitions, and useful actors/business state are preserved according to their owning contracts; they are not disposable merely because they are used locally.
+
+An authorized local cleanup may delete or recreate proven synthetic, unshared data that is no longer needed or is reproducible. Before mutation, identify the exact local target, creating owner, dependent records and effect on active sessions/business state; preserve useful state and read back through the canonical owner. This applies equally to accounts, memberships, categories, products, media and transactions. A test/demo name is not proof of disposability. Real, shared, durable or unknown-origin state remains protected until its ownership and disposition are established.
+
+Do not assume source or fixture edits update existing database rows. When a task requires a persisted-data change, use the owning migration, authorized service operation or isolated fixture setup as appropriate. Preserve record identities and relationships when only display labels change; do not overwrite user-created local state as part of ordinary startup.
 
 Secrets stay outside the repository. Never print, commit or route them through evidence artifacts.
 

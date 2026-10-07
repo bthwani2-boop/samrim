@@ -18,4 +18,6 @@ Mobile apps are opened manually. Application-source edits reuse the running Metr
 
 `infra/local/.env.example` is the tracked local configuration template. The ignored local runtime projection is created beside it and preserved after creation.
 
+The daily lifecycle preserves PostgreSQL/media volumes and does not seed or reset accounts, categories or products. Persisted rows change only through an explicit owning migration or service operation, not merely because source or test fixtures changed. Local synthetic-data cleanup follows [the repository's local-state rules](../../../AGENTS.md#4-local-development-state).
+
 There is no Docker JavaScript runtime, persistent synthetic world, global fixture registry, parallel surface runtime owner or automatic mobile-app opener.
