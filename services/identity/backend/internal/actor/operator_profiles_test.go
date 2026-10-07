@@ -95,7 +95,7 @@ func TestListOperatorProfilesKeysetDatabase(t *testing.T) {
 		}
 	}
 
-	service := New(db)
+	service := New(db, "")
 	first, err := service.ListOperatorProfiles(ctx, "control-panel", adminID, "", "all", "created_asc", 1, "")
 	if err != nil || len(first.Items) != 1 || first.NextCursor == "" {
 		t.Fatalf("operator profile first page failed: %+v err=%v", first, err)

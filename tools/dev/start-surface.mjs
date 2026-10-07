@@ -66,6 +66,9 @@ if(/^app-(client|partner|captain|field)$/.test(surface)){
   console.log(`MOBILE_LIVE app=${surface} port=${port} fast_refresh=on open=manual cwd=${surfaceRoot}`);
 }else if(surface==="control-panel"){
   const port=need("SAMRIM_CONTROL_PORT");
+  process.env.NEXT_PUBLIC_CONTROL_PANEL_DEVELOPMENT_LOGIN = process.env.BTHWANI_ENV === "development" &&
+    process.env.BTHWANI_AUTH_JOURNEY_PROOF !== "1" &&
+    Boolean(process.env.CONTROL_PANEL_DEVELOPMENT_PASSWORD?.trim()) ? "1" : "0";
   process.env.NEXT_TELEMETRY_DISABLED="1";
   cli=path.join(surfaceRoot,"node_modules","next","dist","bin","next");
   args=[cli,"dev","-H","127.0.0.1","-p",port];

@@ -4,6 +4,8 @@ export async function responseMessage(response: Response, context: "general" | "
   const body = (await response.json().catch(() => null)) as { error?: { code?: unknown; message?: unknown } } | null;
   const code = typeof body?.error?.code === "string" ? body.error.code : "";
   switch (code) {
+    case "INVALID_DEVELOPMENT_PASSWORD": return "كلمة مرور التطوير غير صحيحة.";
+    case "DEVELOPMENT_OPERATOR_UNAVAILABLE": return "مشغّل التطوير المحلي غير موجود في قاعدة الهوية المحلية.";
     case "REENROLLMENT_UNSUPPORTED": return "إعادة تسجيل المشغل تتطلب تفويضاً محكوماً من مشغل مخول.";
     case "NOT_FOUND": return "لم يتم العثور على سجل الدور المطلوب.";
     case "DSH_UNAVAILABLE": return "خدمة إدارة الأدوار غير متاحة. تحقق من تشغيل الخدمات ثم أعد المحاولة.";

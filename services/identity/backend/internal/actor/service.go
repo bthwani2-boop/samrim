@@ -17,9 +17,14 @@ import (
 	"github.com/lib/pq"
 )
 
-type Service struct{ db *sql.DB }
+type Service struct {
+	db                         *sql.DB
+	developmentOperatorActorID string
+}
 
-func New(db *sql.DB) *Service { return &Service{db: db} }
+func New(db *sql.DB, developmentOperatorActorID string) *Service {
+	return &Service{db: db, developmentOperatorActorID: strings.TrimSpace(developmentOperatorActorID)}
+}
 
 func (s *Service) ProvisionTrustedWithContext(ctx context.Context, caller string, input domain.ProvisionActorRoleInput, actingActorID string) (domain.ActorRoleView, error) {
 	return s.provisionTrusted(ctx, caller, input, false, actingActorID)
@@ -596,7 +601,7 @@ func (s *Service) ReadOperatorPermission(ctx context.Context, caller, actorID, a
 		if actingActorID == "" {
 			return domain.OperatorPermissionAccess{}, domain.ErrInvalidInput
 		}
-		if err := requireOperatorPermissionAdministrator(ctx, s.db, actingActorID); err != nil {
+		if err := s.requireOperatorPermissionAdministrator(ctx, s.db, actingActorID); err != nil {
 			return domain.OperatorPermissionAccess{}, err
 		}
 	case "dsh":
@@ -626,7 +631,7 @@ func (s *Service) SetOperatorPermission(ctx context.Context, caller, actorID, ac
 		return domain.OperatorPermissionAccess{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := requireOperatorPermissionAdministrator(ctx, tx, actingActorID); err != nil {
+	if err := s.requireOperatorPermissionAdministrator(ctx, tx, actingActorID); err != nil {
 		return domain.OperatorPermissionAccess{}, err
 	}
 	var roleEnabled, currentEnabled bool
@@ -686,9 +691,20 @@ type financeAccessQueryer interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
 
-func requireOperatorPermissionAdministrator(ctx context.Context, source financeAccessQueryer, actorID string) error {
+func IsOperatorPermissionAdministrator(ctx context.Context, source financeAccessQueryer, actorID, developmentOperatorActorID string) (bool, error) {
+	if developmentOperatorActorID != "" && actorID == developmentOperatorActorID {
+		return true, nil
+	}
 	var authorized bool
 	if err := source.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM identity_bootstrap_state WHERE id=1 AND initial_operator_actor_id=$1)`, actorID).Scan(&authorized); err != nil {
+		return false, err
+	}
+	return authorized, nil
+}
+
+func (s *Service) requireOperatorPermissionAdministrator(ctx context.Context, source financeAccessQueryer, actorID string) error {
+	authorized, err := IsOperatorPermissionAdministrator(ctx, source, actorID, s.developmentOperatorActorID)
+	if err != nil {
 		return err
 	}
 	if !authorized {

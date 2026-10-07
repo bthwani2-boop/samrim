@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/actor"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/domain"
 	identitysecurity "github.com/bthwani2-boop/samrim/services/identity/backend/internal/security"
 )
@@ -67,7 +68,21 @@ func (s *Service) CreateDevelopment(ctx context.Context, role, clientInstanceId 
 	if err != nil {
 		return domain.TokenPair{}, err
 	}
-	if !roleSessionReady(role, readiness) {
+	ready := roleSessionReady(role, readiness)
+	if role == "operator" {
+		// Local password login activates only the configured, admitted operator.
+		// Normal operator login still requires a passkey.
+		ready = readiness.enabled && readiness.securityEnabled
+		if ready && !readiness.activated {
+			if _, err := tx.ExecContext(ctx, `UPDATE identity_actor_roles SET activated_at=clock_timestamp(),version=version+1 WHERE actor_id=$1 AND role='operator' AND activated_at IS NULL`, actorID); err != nil {
+				return domain.TokenPair{}, err
+			}
+			if err := auditTx(ctx, tx, "actor_role.development_activated", actorID, "development-local", "success", "", map[string]any{"role": role}); err != nil {
+				return domain.TokenPair{}, err
+			}
+		}
+	}
+	if !ready {
 		return domain.TokenPair{}, domain.ErrConflict
 	}
 	pair, err := s.createTx(ctx, tx, actorID, role, device)
@@ -446,9 +461,15 @@ func (s *Service) identityOf(ctx context.Context, source interface {
 	if err := rows.Err(); err != nil {
 		return domain.ActorIdentity{}, err
 	}
-	if err := source.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM identity_bootstrap_state WHERE id=1 AND initial_operator_actor_id=$1)`, actorID).Scan(&identity.CanManageOperatorPermissions); err != nil {
+	developmentOperatorActorID := ""
+	if s.development {
+		developmentOperatorActorID = s.developmentActorIDs["operator"]
+	}
+	canManagePermissions, err := actor.IsOperatorPermissionAdministrator(ctx, source, actorID, developmentOperatorActorID)
+	if err != nil {
 		return domain.ActorIdentity{}, err
 	}
+	identity.CanManageOperatorPermissions = canManagePermissions
 	return identity, nil
 }
 

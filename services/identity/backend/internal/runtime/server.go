@@ -96,7 +96,7 @@ func Run(_, _, defaultPort string) error {
 			return err
 		}
 	}
-	actors := actor.New(db)
+	actors := actor.New(db, cfg.developmentActorIDs["operator"])
 	sessions := session.New(db, cfg.challengeSecret, cfg.runtimeEnvironment == "development" || cfg.runtimeEnvironment == "test", cfg.developmentActorIDs)
 	challenges := challenge.New(db, actors, sessions, cfg.challengeSecret, cfg.delivery, cfg.providerBudget)
 	authenticationService := authentication.New(db, actors, sessions)
