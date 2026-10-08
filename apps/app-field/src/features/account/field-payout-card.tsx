@@ -45,8 +45,8 @@ export function FieldPayoutCard({ refreshVersion, onPayoutConfirmed }: Readonly<
       console.warn("DSH field payout state readback failed", cause);
       setError("تعذر قراءة حالة طلب التسوية.");
     } finally { setBusy(false); }
-  }, [authenticated, refreshVersion]);
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  }, [authenticated]);
+  useFocusEffect(useCallback(() => { void refreshVersion; void load(); }, [load, refreshVersion]));
   const request = async (mode: "FULL_AVAILABLE" | "SPECIFIED") => {
     if (pendingAttempt) mode = pendingAttempt.mode;
     const normalizedAmount = toAsciiDigits(amount.trim()).replace(/\D/g, "");

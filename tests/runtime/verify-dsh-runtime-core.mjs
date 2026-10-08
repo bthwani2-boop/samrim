@@ -138,7 +138,10 @@ async function admitReviewedRoleCandidate(role, phone, candidateName, reviewedNa
     fail(`${role} profile creation did not persist a reviewable candidate before Identity role access`, JSON.stringify({ created, replay }));
   }
   const admissionID = String(created.body.admission.id);
-  const updated = await request(dshBase, "PATCH", `${root}/${encodeURIComponent(admissionID)}/profile`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `${label}-profile-edit-${suffix}`, crypto.randomUUID(), Number(created.body.admission.version)), body: { fullNameAr: reviewedName } });
+  const profileBody = role === "field"
+    ? { fullNameAr: reviewedName, walletProviderKey: created.body.admission.walletProviderKey, allServiceCities: Boolean(created.body.admission.allServiceCities), serviceCityIds: created.body.admission.serviceCityIds ?? [] }
+    : { fullNameAr: reviewedName };
+  const updated = await request(dshBase, "PATCH", `${root}/${encodeURIComponent(admissionID)}/profile`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `${label}-profile-edit-${suffix}`, crypto.randomUUID(), Number(created.body.admission.version)), body: profileBody });
   if (updated.status !== 200 || updated.body?.admission?.state !== "pending_review" || updated.body?.admission?.fullNameAr !== reviewedName || updated.body?.admission?.actorId) {
     fail(`${role} candidate profile editing did not preserve the pre-access review state`, JSON.stringify(updated));
   }

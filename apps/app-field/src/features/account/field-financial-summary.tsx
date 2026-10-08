@@ -26,9 +26,9 @@ export function FieldFinancialSummaryCard({ refreshVersion }: Readonly<{ refresh
     } finally {
       setLoading(false);
     }
-  }, [refreshVersion]);
+  }, []);
 
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  useFocusEffect(useCallback(() => { void refreshVersion; void load(); }, [load, refreshVersion]));
 
   return <BthwaniSurface tone="base" style={styles.card}>
     <Text style={styles.title}>مكافآت المتاجر</Text>

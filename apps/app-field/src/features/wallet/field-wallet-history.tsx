@@ -75,9 +75,9 @@ export function FieldWalletHistory({ refreshVersion }: Readonly<{ refreshVersion
       setWalletLoading(false);
       setPayoutLoading(false);
     }
-  }, [refreshVersion]);
+  }, []);
 
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  useFocusEffect(useCallback(() => { void refreshVersion; void load(); }, [load, refreshVersion]));
 
   const loadMoreWallet = useCallback(async () => {
     const cursor = walletPage?.nextCursor;
@@ -126,9 +126,9 @@ export function FieldWalletHistory({ refreshVersion }: Readonly<{ refreshVersion
     {walletLoading && !walletPage ? <View style={styles.loading}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ تحميل الحركات…</Text></View> : null}
     {walletLoading && walletPage ? <Text style={styles.muted}>جارٍ تحديث الحركات…</Text> : null}
     {walletError ? <Text accessibilityRole="alert" style={styles.error}>{walletError}</Text> : null}
-    {walletPage?.entries.map((entry, index) => {
+    {walletPage?.entries.map((entry) => {
       const credit = entry.direction === "CREDIT";
-      return <View key={`${entry.createdAt}-${entry.type}-${index}`} style={styles.entry}>
+      return <View key={`${entry.createdAt}-${entry.type}-${entry.direction}-${entry.amountMinor}-${entry.balanceAfterMinor}`} style={styles.entry}>
         <View style={styles.entryMain}>
           <Text style={styles.value}>{credit ? "+" : "−"}{formatMoney(entry.amountMinor, entry.currency)}</Text>
           <Text style={styles.label}>{movementTypeLabel(entry.type)} · {credit ? "إضافة" : "خصم"}</Text>
@@ -148,7 +148,7 @@ export function FieldWalletHistory({ refreshVersion }: Readonly<{ refreshVersion
       {payoutLoading && !payoutPage ? <View style={styles.loading}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ تحميل الطلبات…</Text></View> : null}
       {payoutLoading && payoutPage ? <Text style={styles.muted}>جارٍ تحديث الطلبات…</Text> : null}
       {payoutError ? <Text accessibilityRole="alert" style={styles.error}>{payoutError}</Text> : null}
-      {payoutPage?.requests.map((request, index) => <View key={`${request.createdAt}-${index}`} style={styles.request}>
+      {payoutPage?.requests.map((request) => <View key={`${request.createdAt}-${request.amountMinor}-${request.status}`} style={styles.request}>
         <View style={styles.entryMain}>
           <Text style={styles.value}>{formatMoney(request.amountMinor, request.currency)}</Text>
           <Text style={styles.label}>{requestStatusLabel(request.status)}</Text>
