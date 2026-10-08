@@ -1348,7 +1348,7 @@ export async function admitField(input: FieldAdmissionRequest, context: JoiningC
   if (Array.from(input.fullNameAr.trim()).length < 2 || Array.from(input.fullNameAr.trim()).length > 120) throw new Error("DSH_FIELD_NAME_INVALID");
   const contactPhoneE164 = normalizeYemenPhoneE164(input.contactPhoneE164);
   if (!/^\+[1-9][0-9]{7,14}$/.test(contactPhoneE164)) throw new Error("DSH_FIELD_PHONE_INVALID");
-  const serviceCityIds = Array.from(new Set((input.serviceCityIds ?? []).map((value) => value.trim()).filter(Boolean))).sort();
+  const serviceCityIds = Array.from(new Set((input.serviceCityIds ?? []).map((value) => value.trim()).filter(Boolean))).sort((left, right) => left.localeCompare(right));
   if ((!input.allServiceCities && serviceCityIds.length === 0 && !input.serviceCityId?.trim()) || serviceCityIds.some((value) => value.length > 128)) throw new Error("DSH_FIELD_SERVICE_CITY_INVALID");
   const walletProviderKey = input.walletProviderKey.trim();
   if (Array.from(walletProviderKey).length < 1 || Array.from(walletProviderKey).length > 64 || /\p{Cc}/u.test(walletProviderKey)) throw new Error("DSH_FIELD_WALLET_PROVIDER_INVALID");
@@ -1374,7 +1374,7 @@ export async function provisionFieldAdmission(admissionId: string, context: Join
 
 export async function updateFieldAdmissionProfile(admissionId: string, profile: Pick<FieldAdmissionRequest, "fullNameAr" | "walletProviderKey" | "allServiceCities" | "serviceCityIds">, context: DshOperatorReadContext & Readonly<{ correlationId: string; idempotencyKey: string; expectedVersion: number }>): Promise<Readonly<{ status: number; payload: FieldAdmissionResponse }>> {
   const path = dshOperationPaths.updateFieldAdmissionProfile.path.replace("{admissionId}", encodeURIComponent(admissionId.trim()));
-  const serviceCityIds = Array.from(new Set(profile.serviceCityIds.map((value) => value.trim()).filter(Boolean))).sort();
+  const serviceCityIds = Array.from(new Set(profile.serviceCityIds.map((value) => value.trim()).filter(Boolean))).sort((left, right) => left.localeCompare(right));
   if (!profile.allServiceCities && !serviceCityIds.length) throw new Error("DSH_FIELD_SERVICE_CITY_INVALID");
   return requestDshJson<FieldAdmissionResponse>("PATCH", path, { ...profile, fullNameAr: profile.fullNameAr.trim(), walletProviderKey: profile.walletProviderKey.trim(), serviceCityIds }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
 }
