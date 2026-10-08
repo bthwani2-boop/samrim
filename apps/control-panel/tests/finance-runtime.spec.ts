@@ -15,7 +15,7 @@ test("@live operator reads the real bounded COD cash-custody journey", async ({ 
   await page.goto("/finance/cash-custody");
   await expect(page.getByRole("heading", { name: "حفظ النقد" })).toBeVisible();
   await expect(page.getByText("التزامات نقدية مفتوحة ضمن المرشحات الحالية")).toBeVisible();
-  await expect(page.getByText("تظل العهدة مفتوحة بعد إرسال الكابتن للمرجع. يرفق موظف المالية إيصال التوريد المحفوظ والمشفّر ويطابقه هنا؛ عندها فقط يقيد WLT الاستلام ويحرر الحجز.")).toBeVisible();
+  await expect(page.getByText("تظل العهدة مفتوحة بعد إرسال الكابتن للمرجع. يرفق موظف المالية إيصال التوريد المحفوظ والمشفّر ويطابقه هنا؛ عندها فقط يقيد السجل المالي الاستلام ويحرر الحجز.")).toBeVisible();
 
   const cashCustodyRead = await page.evaluate(async () => {
     const response = await fetch("/api/finance/cash-custody", { cache: "no-store" });
@@ -50,7 +50,7 @@ test("@live operator reads the WLT-managed unified beneficiary settlement worksp
   await page.goto("/finance/beneficiary-settlement/partners");
   const workspace = page.locator(".beneficiary-settlement-workspace");
   await expect(page.getByRole("heading", { name: "مستحقات وتسويات الشركاء والكباتن والميدان", level: 2 })).toBeVisible();
-  await expect(page.getByText("المبالغ والوجهات تأتي من WLT. التحويل الخارجي يدوي، وكل تحويل يحتاج إيصالاً مستقلاً.")).toBeVisible();
+  await expect(workspace.getByRole("navigation", { name: "مسارات مكتب التسويات" })).toBeVisible();
   await expect(workspace.getByRole("navigation", { name: "سجلات مستحقات المستفيدين" }).getByRole("link", { name: "الشركاء" })).toHaveAttribute("aria-current", "page");
   await expect(workspace.getByText(/سجلات الصفحة الحالية:/)).toBeVisible();
 
