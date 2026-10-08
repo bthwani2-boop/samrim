@@ -42,12 +42,12 @@ func TestNotificationPaginationIsolationAndFirstReadPersistence(t *testing.T) {
 		for index, phone := range []string{"+967700000281", "+967700000282", "+967700000283"} {
 			idempotencyKey := "idem-notification-draft-" + string(rune('a'+index))
 			result, err := postgres.CreateFieldJoiningCaseDraft(ctx, db, postgres.CreateJoiningCaseInput{
-				IdempotencyKey: idempotencyKey,
-				RequestHash:    "hash-notification-draft-" + string(rune('a'+index)),
-				ActingActorID:  actorID,
-				CorrelationID: "corr-notification-draft-" + string(rune('a'+index)),
+				IdempotencyKey:  idempotencyKey,
+				RequestHash:     "hash-notification-draft-" + string(rune('a'+index)),
+				ActingActorID:   actorID,
+				CorrelationID:   "corr-notification-draft-" + string(rune('a'+index)),
 				EvidenceKeyring: nil,
-				Request:       postgres.JoiningCaseRequest{Phone: phone},
+				Request:         postgres.JoiningCaseRequest{Phone: phone},
 			})
 			if err != nil {
 				t.Fatalf("create task-owned Field draft %d: %v", index+1, err)

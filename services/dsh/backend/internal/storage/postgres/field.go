@@ -112,10 +112,10 @@ func HashJoiningCaseFieldRequest(fieldActorID string, input JoiningCaseRequest) 
 
 type FieldAdmissionCandidateInput struct {
 	FullNameAr, Phone, WalletProviderKey string
-	AllServiceCities                                    bool
-	ServiceCityIDs                                      []string
-	IdempotencyKey, RequestHash                         string
-	ActingActorID, CorrelationID                        string
+	AllServiceCities                     bool
+	ServiceCityIDs                       []string
+	IdempotencyKey, RequestHash          string
+	ActingActorID, CorrelationID         string
 }
 
 func CreateFieldAdmissionCandidate(ctx context.Context, db *sql.DB, input FieldAdmissionCandidateInput) (FieldAdmission, string, bool, error) {
