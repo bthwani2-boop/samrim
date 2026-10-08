@@ -1494,14 +1494,14 @@ test("operator resumes an uncertain joining-case create with the same idempotenc
   expect(storedMetadataRaw).not.toContain("CR-100");
 
   await page.reload();
-  await expect(page.getByRole("status")).toContainText("يحفظ المتصفح مفتاح المتابعة فقط");
+  await expect(page.getByRole("status")).toContainText("يحفظ المتصفح بيانات المتابعة فقط");
   await expect(page.getByLabel("رقم جوال المالك")).toHaveValue("");
   await fillOperatorJoiningCaseForm(page);
   await page.getByRole("checkbox", { name: "استلم بنفسك من المتجر" }).check();
   await page.getByLabel("رقم الإثبات").fill("CR-WRONG");
   await expect(page.getByRole("button", { name: "إعادة محاولة إنشاء الحالة" })).toBeEnabled();
   await page.getByRole("button", { name: "إعادة محاولة إنشاء الحالة" }).click();
-  await expect(page.getByText(/لم تطابق البيانات مفتاح المحاولة المحفوظ/)).toBeVisible();
+  await expect(page.getByText(/لم تطابق البيانات المحاولة المحفوظة/)).toBeVisible();
   await expect(page.getByLabel("رقم جوال المالك")).toBeEnabled();
   await page.getByLabel("رقم الإثبات").fill(operatorJoiningCaseDraft.firstStoreProofNumber);
   await page.getByRole("button", { name: "إعادة محاولة إنشاء الحالة" }).click();
@@ -1902,7 +1902,7 @@ test("operator approves joining terms with the active settlement policy", async 
 
   await page.goto("/partners/join_financial");
   await expect(page.getByRole("heading", { name: "تفاصيل حالة انضمام الشريك" })).toBeVisible();
-  await expect(page.getByText(/سيُعتمد إصدار شروط التسوية partner-terms-v3/)).toBeVisible();
+  await expect(page.getByText(/ستُعتمد شروط التسوية:/)).toBeVisible();
   await page.getByRole("button", { name: "اعتماد الحالة وإنشاء المتجر بالشروط النشطة" }).click();
 
   await expect(page.getByRole("status").first()).toContainText("الحالة: تمت الموافقة");

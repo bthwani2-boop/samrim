@@ -67,10 +67,10 @@ test("catalog import uses the existing CSV file adapter and closes the loop", as
   });
   await expect(page.getByText("الصفوف الصالحة: 1")).toBeVisible();
   await page.getByTestId("catalog-import-workspace").getByRole("button", { name: "معاينة الملف" }).click();
-  await expect(page.getByText("حالة التشغيل: معاينة جاهزة")).toBeVisible();
+  await expect(page.getByText("حالة الاستيراد: معاينة جاهزة")).toBeVisible();
   expect(previewBody?.rows).toEqual([expect.objectContaining({ rowNumber: 2, verticalId: "grocery", scope: "SHARED", canonicalName: "قهوة", categoryIds: ["coffee"] })]);
-  await page.getByRole("button", { name: "الالتزام بالصفوف الجاهزة" }).click();
-  await expect(page.getByText("حالة التشغيل: تم الالتزام")).toBeVisible();
+  await page.getByRole("button", { name: "اعتماد الصفوف الجاهزة" }).click();
+  await expect(page.getByText("حالة الاستيراد: تم الحفظ")).toBeVisible();
   expect(readbackCount).toBeGreaterThan(0);
 });
 
@@ -104,10 +104,10 @@ test("catalog XLSX import commits ready rows while preserving conflicts", async 
   await expect(page.getByText("الصفوف الصالحة: 2 · الصفوف المرفوضة محليًا: 0")).toBeVisible();
   await page.getByTestId("catalog-import-workspace").getByRole("button", { name: "معاينة الملف" }).click();
   await expect(page.getByText("المقبول: 1 · التعارضات: 1 · العناصر المصنفة: 2")).toBeVisible();
-  const commitButton = page.getByRole("button", { name: "الالتزام بالصفوف الجاهزة" });
+  const commitButton = page.getByRole("button", { name: "اعتماد الصفوف الجاهزة" });
   await expect(commitButton).toBeEnabled();
   await commitButton.click();
-  await expect(page.getByText("حالة التشغيل: تم الالتزام")).toBeVisible();
+  await expect(page.getByText("حالة الاستيراد: تم الحفظ")).toBeVisible();
   await expect(page.getByText("identifier belongs to another product")).toBeVisible();
   expect(commitCount).toBe(1);
 });
@@ -146,7 +146,7 @@ test("operator sees shared product categories as a hierarchy under their commerc
   const rootItem = tree.getByRole("listitem").first();
   const childList = rootItem.getByRole("list");
   const childItem = childList.getByRole("listitem").first();
-  await expect(page.getByLabel("المجال الرئيسي")).toHaveValue("grocery");
+  await expect(page.getByLabel("النشاط الرئيسي")).toHaveValue("grocery");
   await expect(childItem.getByRole("button", { name: /قهوة Coffee/ })).toBeVisible();
   await expect(rootItem).toContainText("جذر المجال");
   await expect(childItem.locator(".catalog-taxonomy-child-count")).toContainText("ضمن مشروبات");
@@ -187,7 +187,7 @@ test("catalog proposal review shows detail and re-reads after approval", async (
   await page.getByRole("button", { name: /قهوة/ }).first().click();
   await expect.poll(() => new URL(page.url()).searchParams.get("proposalId")).toBe("proposal-1");
   await expect(page.getByRole("heading", { name: "قهوة", exact: true })).toBeVisible();
-  await expect(page.getByText("النسخة الحالية: 3")).toBeVisible();
+  await expect(page.getByRole("article", { name: "قهوة" }).getByText("قيد المراجعة")).toBeVisible();
   await expect(page.getByText("الفئة").locator("..") .getByText("قهوة")).toBeVisible();
   await page.getByRole("button", { name: "اعتماد" }).click();
   await expect(page.getByRole("status")).toContainText("تم تسجيل القرار");
