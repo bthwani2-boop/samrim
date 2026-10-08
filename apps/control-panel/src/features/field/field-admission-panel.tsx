@@ -24,7 +24,7 @@ function fieldProfile(admission: FieldAdmission): FieldProfileDraft {
 }
 
 function sameFieldProfile(a: FieldProfileDraft, b: FieldProfileDraft): boolean {
-  return a.fullNameAr.trim() === b.fullNameAr.trim() && a.walletProviderKey.trim() === b.walletProviderKey.trim() && a.allServiceCities === b.allServiceCities && [...a.serviceCityIds].sort().join("|") === [...b.serviceCityIds].sort().join("|");
+  return a.fullNameAr.trim() === b.fullNameAr.trim() && a.walletProviderKey.trim() === b.walletProviderKey.trim() && a.allServiceCities === b.allServiceCities && [...a.serviceCityIds].sort((left, right) => left.localeCompare(right)).join("|") === [...b.serviceCityIds].sort((left, right) => left.localeCompare(right)).join("|");
 }
 
 function fieldRequestError(cause: unknown, fallback: string): string {
