@@ -75,7 +75,7 @@ export function OperatorHome() {
       <div className="workspace-page-heading">
         <p className="eyebrow">مركز العمل الحالي</p>
         <h1 id="workspace-title">الرئيسية</h1>
-        <p className="lead">تجمع هذه الصفحة الأعمال التي تحتاج انتباه المشغل الآن من قراءات DSH الكانونية، دون مؤشرات تحليلية مخترعة.</p>
+        <p className="lead">تجمع هذه الصفحة الأعمال التي تحتاج انتباه المشغل الآن من قراءات النظام المعتمدة، دون مؤشرات تحليلية مخترعة.</p>
         <button type="button" className="button button-secondary" onClick={() => void loadQueues()} disabled={loading}>إعادة قراءة قوائم العمل</button>
       </div>
       {loading ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ تجهيز مركز العمل</strong></div> : null}
@@ -84,27 +84,27 @@ export function OperatorHome() {
           {canReadOperations ? <section className="home-work-area" aria-labelledby="home-operations-title">
             <div className="home-work-area-heading"><div><p className="eyebrow">التشغيل</p><h2 id="home-operations-title">طلبات تحتاج إجراءً</h2></div><Link href="/operations">فتح العمليات</Link></div>
             <QueueContent error={errors.operations} emptyMessage="لا توجد طلبات تحتاج إجراءً في القراءة الحالية." hasItems={operations.length > 0}>
-              <ul className="home-list">{operations.slice(0, 4).map((item) => <li key={item.orderId}><Link href={`/operations/${encodeURIComponent(item.orderId)}`}><span><strong>{item.storeName}</strong><small><bdi dir="ltr">{item.orderId}</bdi></small></span><strong>{orderStateLabel(item.state)}</strong></Link></li>)}</ul>
+              <ul className="home-list">{operations.slice(0, 4).map((item) => <li key={item.orderId}><Link href={`/operations/${encodeURIComponent(item.orderId)}`}><span><strong>{item.storeName}</strong></span><strong>{orderStateLabel(item.state)}</strong></Link></li>)}</ul>
             </QueueContent>
           </section> : null}
           {canReadPartners ? <>
             <section className="home-work-area" aria-labelledby="home-joining-admission-title">
               <div className="home-work-area-heading"><div><p className="eyebrow">الشركاء</p><h2 id="home-joining-admission-title">قبول إحالات الميدانيين</h2></div><Link href="/partners/joining?state=admission_requested">فتح الشركاء</Link></div>
               <QueueContent error={errors.joiningAdmissions} emptyMessage="لا توجد إحالات تنتظر قبول المشغّل." hasItems={joiningAdmissions.length > 0}>
-                <ul className="home-list">{joiningAdmissions.map((item) => <li key={item.id}><Link href={`/partners/${encodeURIComponent(item.id)}`}><span><strong>{item.businessName}</strong><small><bdi dir="ltr">{item.id}</bdi></small></span><strong>{joiningCaseStateLabel(item.state)}</strong></Link></li>)}</ul>
+                <ul className="home-list">{joiningAdmissions.map((item) => <li key={item.id}><Link href={`/partners/${encodeURIComponent(item.id)}`}><span><strong>{item.businessName}</strong></span><strong>{joiningCaseStateLabel(item.state)}</strong></Link></li>)}</ul>
               </QueueContent>
             </section>
             <section className="home-work-area" aria-labelledby="home-joining-title">
               <div className="home-work-area-heading"><div><p className="eyebrow">الشركاء</p><h2 id="home-joining-title">طلبات الانضمام المقدمة للمراجعة</h2></div><Link href="/partners/joining?state=submitted">فتح الشركاء</Link></div>
               <QueueContent error={errors.joiningCases} emptyMessage="لا توجد طلبات انضمام مقدمة تحتاج المراجعة." hasItems={joiningCases.length > 0}>
-                <ul className="home-list">{joiningCases.map((item) => <li key={item.id}><Link href={`/partners/${encodeURIComponent(item.id)}`}><span><strong>{item.businessName}</strong><small><bdi dir="ltr">{item.id}</bdi></small></span><strong>{joiningCaseStateLabel(item.state)}</strong></Link></li>)}</ul>
+                <ul className="home-list">{joiningCases.map((item) => <li key={item.id}><Link href={`/partners/${encodeURIComponent(item.id)}`}><span><strong>{item.businessName}</strong></span><strong>{joiningCaseStateLabel(item.state)}</strong></Link></li>)}</ul>
               </QueueContent>
             </section>
           </> : null}
           {canReadCatalog ? <section className="home-work-area" aria-labelledby="home-proposals-title">
             <div className="home-work-area-heading"><div><p className="eyebrow">الكتالوج</p><h2 id="home-proposals-title">مقترحات منتجات للمراجعة</h2></div><Link href="/catalog/proposals">فتح المقترحات</Link></div>
             <QueueContent error={errors.proposals} emptyMessage="لا توجد مقترحات مقدمة تنتظر المراجعة." hasItems={proposals.length > 0}>
-              <ul className="home-list">{proposals.slice(0, 4).map((item) => <li key={item.id}><Link href={`/catalog/proposals?proposalId=${encodeURIComponent(item.id)}`}><span><strong>{item.proposedName}</strong><small><bdi dir="ltr">{item.id}</bdi></small></span><strong>{catalogProductProposalStateLabel(item.state)}</strong></Link></li>)}</ul>
+              <ul className="home-list">{proposals.slice(0, 4).map((item) => <li key={item.id}><Link href={`/catalog/proposals?proposalId=${encodeURIComponent(item.id)}`}><span><strong>{item.proposedName}</strong></span><strong>{catalogProductProposalStateLabel(item.state)}</strong></Link></li>)}</ul>
             </QueueContent>
           </section> : null}
           <section className="home-work-area" aria-labelledby="home-notifications-title">

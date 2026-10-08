@@ -97,16 +97,16 @@ function normalizeRow(record: Record<string, unknown>, line: number): CatalogImp
   const categoryIds = [...new Set(sourceCategories.map((item) => String(item).trim()).filter(Boolean))];
 
   if (!canonicalName || [...canonicalName].length > 160) throw new Error(`السطر ${line}: الاسم القانوني مطلوب وبحد أقصى 160 حرفًا.`);
-  if (!/^[a-z0-9][a-z0-9_-]{1,127}$/.test(verticalId)) throw new Error(`السطر ${line}: verticalId يجب أن يكون معرّفًا قانونيًا.`);
+  if (!/^[a-z0-9][a-z0-9_-]{1,127}$/.test(verticalId)) throw new Error(`السطر ${line}: المجال التجاري غير صالح.`);
   if (scope !== "SHARED") throw new Error(`السطر ${line}: استيراد السجل المركزي يقبل المنتجات المشتركة فقط؛ منتجات المتجر تُنشأ من مسار كتالوج المتجر.`);
-  if (field(record, "storeId")) throw new Error(`السطر ${line}: storeId غير مسموح في استيراد السجل المركزي المشترك.`);
-  if (!(measurementKind === "DISCRETE" || measurementKind === "MEASURED" || measurementKind === "VARIABLE_MEASURE")) throw new Error(`السطر ${line}: measurementKind غير صالح.`);
+  if (field(record, "storeId")) throw new Error(`السطر ${line}: ملف السجل المركزي لا يقبل اسم متجر.`);
+  if (!(measurementKind === "DISCRETE" || measurementKind === "MEASURED" || measurementKind === "VARIABLE_MEASURE")) throw new Error(`السطر ${line}: طريقة القياس غير صالحة.`);
   if ((measurementKind === "DISCRETE" && baseUnit !== "COUNT") || (measurementKind !== "DISCRETE" && !(baseUnit === "GRAM" || baseUnit === "MILLILITER"))) throw new Error(`السطر ${line}: الوحدة لا تتوافق مع سياسة القياس.`);
   if (!variantTitle || [...variantTitle].length > 160) throw new Error(`السطر ${line}: اسم النسخة مطلوب وبحد أقصى 160 حرفًا.`);
   if (brand && [...brand].length > 160) throw new Error(`السطر ${line}: العلامة تتجاوز 160 حرفًا.`);
-  if (!categoryIds.length) throw new Error(`السطر ${line}: categoryIds مطلوب.`);
-  if (identifierValue && !["GTIN", "EAN", "UPC", "SKU"].includes(identifierType)) throw new Error(`السطر ${line}: identifierType مطلوب عند وجود معرّف.`);
-  if (identifierValue && !/^[A-Za-z0-9._-]{1,128}$/.test(identifierValue)) throw new Error(`السطر ${line}: قيمة المعرّف غير صالحة.`);
+  if (!categoryIds.length) throw new Error(`السطر ${line}: تصنيف المنتج مطلوب.`);
+  if (identifierValue && !["GTIN", "EAN", "UPC", "SKU"].includes(identifierType)) throw new Error(`السطر ${line}: اختر نوع الباركود أو رمز الصنف.`);
+  if (identifierValue && !/^[A-Za-z0-9._-]{1,128}$/.test(identifierValue)) throw new Error(`السطر ${line}: قيمة الباركود أو رمز الصنف غير صالحة.`);
   if (field(record, "imageUri") || field(record, "canonicalImageUrl")) throw new Error(`السطر ${line}: الصور لا تُستورد كرابط. أكمل استيراد المنتج ثم ارفع ملف الصورة إلى الوسائط المركزية.`);
 
   const stableKey = identifierValue
@@ -289,10 +289,10 @@ export function CatalogImportWorkspace() {
       const committed = await readJson<ImportResult>(response);
       setResult(committed);
       if (committed.run.state === "committed") setCommitAttempt(null);
-      setNotice("تم الالتزام الصريح، ثم ستُعاد قراءة النتيجة القانونية من المصدر.");
+      setNotice("تم اعتماد الملف، ثم ستُعاد قراءة النتيجة من السجل.");
       await readRun(committed.run.id);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "تعذر الالتزام بالاستيراد.");
+      setError(cause instanceof Error ? cause.message : "تعذر اعتماد الاستيراد.");
     } finally {
       setBusy("");
     }
@@ -303,24 +303,24 @@ export function CatalogImportWorkspace() {
       <div className="access-card-heading">
         <span className="step-chip">مصدر ملف</span>
         <p className="eyebrow">CSV أو XLSX أو JSONL</p>
-        <h2 id="catalog-import-title">استيراد آمن: معاينة ثم التزام</h2>
-        <p className="muted">استخدم نفس مصدر الملف المدعوم بأداة الاستيراد الحالية. لا تُقبل نصوص JSON ملصقة؛ تُقرأ الصفوف من ملف، وتُصنّف قبل أي كتابة.</p>
+        <h2 id="catalog-import-title">استيراد آمن: معاينة ثم اعتماد</h2>
+        <p className="muted">اختر ملف المنتجات، ثم راجع نتيجة المعاينة قبل حفظ الصفوف الجاهزة.</p>
       </div>
       <label className="field-label" htmlFor="catalog-import-file">ملف المنتجات<input id="catalog-import-file" type="file" accept=".csv,.xlsx,.jsonl,.ndjson,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/jsonl" disabled={Boolean(busy)} onChange={(event) => void selectFile(event.target.files?.[0])} /></label>
-      <p className="muted">CSV وXLSX يحتاجان عناوين الحقول القانونية، وJSONL يحتاج كائنًا واحدًا في كل سطر. الحد 5000 صف و20 ميغابايت؛ تبقى التعارضات في النتيجة وتُلتزم الصفوف الجاهزة فقط.</p>
-      {sourceFile ? <div className="managed-status managed-status-info"><strong>{sourceFile.name}</strong><p>الصفوف الصالحة: {rows.length} · الصفوف المرفوضة محليًا: {parseErrors.length}</p><code dir="ltr">SHA-256: {sourceHash}</code></div> : null}
+      <p className="muted">اتبع نموذج الملف المدعوم. الحد 5000 صف و20 ميغابايت. ستبقى الصفوف التي تحتاج مراجعة دون حفظ.</p>
+      {sourceFile ? <div className="managed-status managed-status-info"><strong>{sourceFile.name}</strong><p>الصفوف الصالحة: {rows.length} · الصفوف المرفوضة محليًا: {parseErrors.length}</p></div> : null}
       {parseErrors.length ? <div className="managed-status managed-status-warning" role="alert"><strong>صفوف تحتاج تصحيحًا قبل المعاينة</strong><ul>{parseErrors.map((message) => <li key={message}>{message}</li>)}</ul></div> : null}
       <button type="button" className="button button-primary" disabled={Boolean(busy) || !rows.length} onClick={() => void preview()}>{busy === "preview" ? "جارٍ إنشاء المعاينة…" : "معاينة الملف"}</button>
       {result ? (
         <div className="managed-status managed-status-info" role="status">
-          <strong>حالة التشغيل: {result.run.state === "previewed" ? "معاينة جاهزة" : result.run.state === "committed" ? "تم الالتزام" : "مرفوض"}</strong>
+          <strong>حالة الاستيراد: {result.run.state === "previewed" ? "معاينة جاهزة" : result.run.state === "committed" ? "تم الحفظ" : "مرفوض"}</strong>
           <p>المقبول: {result.run.acceptedCount} · التعارضات: {result.run.conflictCount} · العناصر المصنفة: {result.items.length}</p>
           <table>
             <caption>فئات صفوف الاستيراد</caption>
             <thead><tr><th scope="col">السطر</th><th scope="col">الفئة</th><th scope="col">الحالة</th></tr></thead>
-            <tbody>{result.items.map((item) => <tr key={`${item.rowNumber}-${item.stableKey}`}><td>{item.rowNumber}</td><td>{classificationLabel(item)}</td><td>{item.errorMessage || (item.committed ? "تمت الكتابة" : "بانتظار الالتزام")}</td></tr>)}</tbody>
+            <tbody>{result.items.map((item) => <tr key={`${item.rowNumber}-${item.stableKey}`}><td>{item.rowNumber}</td><td>{classificationLabel(item)}</td><td>{item.errorMessage || (item.committed ? "تم الحفظ" : "بانتظار الاعتماد")}</td></tr>)}</tbody>
           </table>
-          {result.run.state === "previewed" || result.run.state === "rejected" ? <button type="button" className="button button-secondary" disabled={Boolean(busy) || result.run.acceptedCount < 1} onClick={() => void commit()}>{busy === "commit" ? "جارٍ الالتزام…" : result.run.state === "rejected" ? "إعادة محاولة الصفوف المتعثرة" : "الالتزام بالصفوف الجاهزة"}</button> : null}
+          {result.run.state === "previewed" || result.run.state === "rejected" ? <button type="button" className="button button-secondary" disabled={Boolean(busy) || result.run.acceptedCount < 1} onClick={() => void commit()}>{busy === "commit" ? "جارٍ الاعتماد…" : result.run.state === "rejected" ? "إعادة محاولة الصفوف المتعثرة" : "اعتماد الصفوف الجاهزة"}</button> : null}
           {result.run.state === "committed" ? <button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={() => void readRun(result.run.id)}>{busy === "read" ? "جارٍ إعادة القراءة…" : "إعادة قراءة النتيجة"}</button> : null}
         </div>
       ) : null}

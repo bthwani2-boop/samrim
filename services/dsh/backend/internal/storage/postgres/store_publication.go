@@ -36,6 +36,18 @@ type StoreRecord struct {
 	UpdatedAt               time.Time
 	StoreProfileImage       *StoreProfileMediaRecord
 	FulfillmentModes        []string
+	PartnerName             string
+	ServiceCityName         string
+	PrimaryVerticalName     string
+}
+
+func ReadStoreDisplayNames(ctx context.Context, db *sql.DB, store *StoreRecord) error {
+	return db.QueryRowContext(ctx, `SELECT COALESCE(NULLIF(btrim(j.owner_full_name),''),NULLIF(btrim(j.business_name),''),''),COALESCE(c.display_name_ar,''),COALESCE(v.name_ar,'')
+		FROM dsh.stores s
+		LEFT JOIN dsh.joining_cases j ON j.partner_actor_id=s.partner_actor_id
+		LEFT JOIN dsh.service_cities c ON c.id=s.service_city_id
+		LEFT JOIN dsh.commerce_verticals v ON v.id=s.primary_vertical_id
+		WHERE s.id=$1`, store.ID).Scan(&store.PartnerName, &store.ServiceCityName, &store.PrimaryVerticalName)
 }
 
 type PartnerStorePage struct {
@@ -77,6 +89,9 @@ type OperatorStoreSummary struct {
 	FulfillmentModes      []string
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
+	PartnerName           string
+	ServiceCityName       string
+	PrimaryVerticalName   string
 }
 
 type OperatorStorePage struct {
@@ -279,10 +294,14 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, servic
 		prefixPattern = strings.ToLower(escapedQuery) + "%"
 		containsPattern = "%" + escapedQuery + "%"
 	}
-	rows, err := db.QueryContext(ctx, `SELECT s.id,s.partner_actor_id,s.name,s.service_city_id,s.primary_vertical_id,s.commercial_store_type_id,s.version,s.publication_state,s.fulfillment_modes,s.created_at,s.updated_at
+	rows, err := db.QueryContext(ctx, `SELECT s.id,s.partner_actor_id,s.name,s.service_city_id,s.primary_vertical_id,s.commercial_store_type_id,s.version,s.publication_state,s.fulfillment_modes,s.created_at,s.updated_at,
+		COALESCE(NULLIF(btrim(j.owner_full_name),''),NULLIF(btrim(j.business_name),''),''),COALESCE(c.display_name_ar,''),COALESCE(v.name_ar,'')
 		FROM dsh.stores s
+		LEFT JOIN dsh.joining_cases j ON j.partner_actor_id=s.partner_actor_id
+		LEFT JOIN dsh.service_cities c ON c.id=s.service_city_id
+		LEFT JOIN dsh.commerce_verticals v ON v.id=s.primary_vertical_id
 		WHERE ($1::text='' OR s.publication_state=$1)
-		  AND ($2::text='' OR (($4::text='name_prefix' AND lower(s.name) LIKE $5::text ESCAPE '!') OR ($4::text='contains' AND (s.id ILIKE $6::text ESCAPE '!' OR s.name ILIKE $6::text ESCAPE '!' OR s.partner_actor_id ILIKE $6::text ESCAPE '!'))))
+		  AND ($2::text='' OR (($4::text='name_prefix' AND lower(s.name) LIKE $5::text ESCAPE '!') OR ($4::text='contains' AND (s.id ILIKE $6::text ESCAPE '!' OR s.name ILIKE $6::text ESCAPE '!' OR s.partner_actor_id ILIKE $6::text ESCAPE '!' OR j.owner_full_name ILIKE $6::text ESCAPE '!'))))
 		  AND ($3::text='' OR s.service_city_id=$3)
 		  AND (NOT $7::boolean OR ($8::text='name_asc' AND (lower(s.name),s.id)>(lower($9::text),$10::text)) OR ($8::text='updated_asc' AND (s.updated_at,s.id)>($11::timestamptz,$10::text)) OR ($8::text='updated_desc' AND (s.updated_at,s.id)<($11::timestamptz,$10::text)))
 		ORDER BY
@@ -301,7 +320,7 @@ func ListStoresForOperator(ctx context.Context, db *sql.DB, state, query, servic
 	for rows.Next() {
 		var store OperatorStoreSummary
 		var cityID, verticalID, commercialTypeID sql.NullString
-		if err := rows.Scan(&store.ID, &store.PartnerActorID, &store.Name, &cityID, &verticalID, &commercialTypeID, &store.Version, &store.PublicationState, pq.Array(&store.FulfillmentModes), &store.CreatedAt, &store.UpdatedAt); err != nil {
+		if err := rows.Scan(&store.ID, &store.PartnerActorID, &store.Name, &cityID, &verticalID, &commercialTypeID, &store.Version, &store.PublicationState, pq.Array(&store.FulfillmentModes), &store.CreatedAt, &store.UpdatedAt, &store.PartnerName, &store.ServiceCityName, &store.PrimaryVerticalName); err != nil {
 			return OperatorStorePage{}, err
 		}
 		if len(page.Stores) == limit {

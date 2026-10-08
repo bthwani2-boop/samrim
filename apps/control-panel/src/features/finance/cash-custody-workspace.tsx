@@ -10,6 +10,7 @@ import "./cash-custody-workspace.module.css";
 type Sort = "collected_asc" | "collected_desc";
 export type CashCustodyInitialQuery = Readonly<{ search: string; sort: Sort; cursor: string }>;
 type Props = Readonly<{ initialQuery: CashCustodyInitialQuery }>;
+type CashCustodyDisplayRegistry = Omit<CashCustodyRegistryResponse, "items"> & Readonly<{ items: ReadonlyArray<CashCustodyRegistryResponse["items"][number] & { captainName?: string }> }>;
 type RemittanceAttempt = Readonly<{ evidenceKey: string; evidenceCorrelation: string; reconcileKey: string; reconcileCorrelation: string }>;
 
 const cashCustodyRecoveryKey = "bthwani.finance.cash-custody.recovery.v1";
@@ -60,7 +61,7 @@ export function CashCustodyWorkspace({ initialQuery }: Props) {
   const requestedCursor = useRef<string | null>(null);
   const [search, setSearch] = useState(initialQuery.search);
   const [sort, setSort] = useState<Sort>(initialQuery.sort);
-  const [registry, setRegistry] = useState<CashCustodyRegistryResponse | null>(null);
+  const [registry, setRegistry] = useState<CashCustodyDisplayRegistry | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -120,7 +121,7 @@ export function CashCustodyWorkspace({ initialQuery }: Props) {
     try {
       const response = await fetch(`/api/finance/cash-custody?${params}`, { cache: "no-store", signal: controller.signal });
       if (!response.ok) throw new Error(await responseMessage(response));
-      const body = await response.json() as CashCustodyRegistryResponse;
+      const body = await response.json() as CashCustodyDisplayRegistry;
       setRegistry(body);
     } catch (cause) {
       if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "تعذر قراءة سجل النقد المحصل.");
@@ -205,7 +206,7 @@ export function CashCustodyWorkspace({ initialQuery }: Props) {
         if (!upload.ok) throw new Error(await responseMessage(upload));
         const uploaded = await upload.json() as { document?: { id?: string } };
         evidenceDocumentId = uploaded.document?.id ?? "";
-        if (!evidenceDocumentId) throw new Error("لم يُرجع WLT معرّف إيصال محفوظًا.");
+        if (!evidenceDocumentId) throw new Error("تعذر حفظ الإيصال. أعد المحاولة.");
         setReceiptDocumentID(item.paymentIntentId, evidenceDocumentId);
       }
       const response = await fetch(`/api/finance/cash-remittances/${encodeURIComponent(item.remittanceId)}/reconcile`, {
@@ -223,7 +224,7 @@ export function CashCustodyWorkspace({ initialQuery }: Props) {
       receiptDocumentIdsRef.current = nextReceiptDocumentIds;
       setReceiptDocumentIds(nextReceiptDocumentIds);
       persistRemittanceRecovery();
-      setNotice("طابق WLT إيصال التوريد وأغلق العهدة في القيد المالي.");
+      setNotice("طابق السجل المالي إيصال التوريد وأغلق العهدة في القيد المالي.");
       await loadRegistry();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "تعذر مطابقة إيصال التوريد. أعد القراءة قبل إعادة المحاولة.");
@@ -258,7 +259,7 @@ export function CashCustodyWorkspace({ initialQuery }: Props) {
 
       <div className="finance-boundary-note" role="note">
         <strong>حدود هذه المساحة</strong>
-        <p>تظل العهدة مفتوحة بعد إرسال الكابتن للمرجع. يرفق موظف المالية إيصال التوريد المحفوظ والمشفّر ويطابقه هنا؛ عندها فقط يقيد WLT الاستلام ويحرر الحجز.</p>
+        <p>تظل العهدة مفتوحة بعد إرسال الكابتن للمرجع. يرفق موظف المالية إيصال التوريد المحفوظ والمشفّر ويطابقه هنا؛ عندها فقط يقيد السجل المالي الاستلام ويحرر الحجز.</p>
       </div>
 
       <div className="finance-toolbar">
@@ -267,14 +268,14 @@ export function CashCustodyWorkspace({ initialQuery }: Props) {
       </div>
 
       <form className="cash-custody-filters" onSubmit={applyFilters}>
-        <label className="field-label" htmlFor="cash-custody-search">مرجع التحصيل أو معرّف الكابتن<input id="cash-custody-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} maxLength={128} /></label>
+        <label className="field-label" htmlFor="cash-custody-search">مرجع التحصيل<input id="cash-custody-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} maxLength={128} /></label>
         <label className="field-label" htmlFor="cash-custody-sort">ترتيب وقت التحصيل<select id="cash-custody-sort" value={sort} onChange={(event) => setSort(event.target.value as Sort)}><option value="collected_asc">الأقدم أولًا</option><option value="collected_desc">الأحدث أولًا</option></select></label>
         <button className="button button-secondary" type="submit" disabled={loading}>تطبيق البحث</button>
       </form>
 
       {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر قراءة سجل حفظ النقد</strong><p>{error}</p><button type="button" className="button button-secondary" onClick={() => void loadRegistry()} disabled={loading}>إعادة المحاولة</button></div> : null}
       {notice ? <p className="managed-status managed-status-success" role="status">{notice}</p> : null}
-      {loading && !registry ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة سجل النقد</strong><p>نطلب صفحة محدودة من السجل المالي الكانوني.</p></div> : null}
+      {loading && !registry ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة سجل النقد</strong><p>نطلب صفحة محدودة من السجل المالي المعتمد.</p></div> : null}
 
       {registry ? <>
         <p className="muted" aria-live="polite">صفحة {registry.items.length.toLocaleString("ar-YE")} سجلًا من أصل {registry.totalItems.toLocaleString("ar-YE")}{loading ? " · جارٍ التحديث" : ""}</p>
@@ -282,7 +283,7 @@ export function CashCustodyWorkspace({ initialQuery }: Props) {
           <table className="finance-table">
             <caption className="visually-hidden">سجل النقد المفتوح في عهدة الكباتن</caption>
             <thead><tr><th scope="col">مرجع التحصيل</th><th scope="col">الكابتن</th><th scope="col">المبلغ</th><th scope="col">الحالة والمرجع</th><th scope="col">وقت التحصيل</th><th scope="col">إجراء المالية</th></tr></thead>
-            <tbody>{registry.items.map((item) => <tr key={item.paymentIntentId}><th scope="row"><bdi dir="ltr">{item.externalReference}</bdi></th><td><bdi dir="ltr">{item.captainActorId}</bdi></td><td dir="ltr"><bdi>{formatMoney(item.amountMinor, item.currency)}</bdi></td><td>{item.remittanceState === "SUBMITTED" ? <><strong>بانتظار مطابقة المالية</strong>{item.remittanceReference ? <small>مرجع الكابتن: <bdi dir="ltr">{item.remittanceReference}</bdi></small> : null}</> : "بانتظار إرسال الكابتن"}</td><td><time dateTime={item.collectedAt}>{new Date(item.collectedAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td>{item.remittanceState === "SUBMITTED" ? <div className="cash-reconciliation-action"><label className="field-label" htmlFor={`cash-receipt-${item.paymentIntentId}`}>إيصال التحويل أو الإيداع<input id={`cash-receipt-${item.paymentIntentId}`} type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => { const file = event.target.files?.[0] ?? null; if (file) { const fingerprint = `${file.name}:${file.size}:${file.lastModified}`; if (receiptFingerprints.current.get(item.paymentIntentId) !== fingerprint) resetRemittanceRecovery(item.paymentIntentId); receiptFingerprints.current.set(item.paymentIntentId, fingerprint); persistRemittanceRecovery(); } setReceiptFiles((current) => ({ ...current, [item.paymentIntentId]: file })); }} /></label>{receiptDocumentIds[item.paymentIntentId] ? <span className="muted">الإيصال محفوظ لهذه المحاولة</span> : null}<button className="button button-secondary" type="button" onClick={() => void reconcileCashRemittance(item)} disabled={loading || Boolean(busyRemittanceId) || (!receiptDocumentIds[item.paymentIntentId] && !receiptFiles[item.paymentIntentId])}>{busyRemittanceId === item.paymentIntentId ? "جارٍ رفع الإيصال والمطابقة…" : receiptDocumentIds[item.paymentIntentId] ? "مطابقة الإيصال المحفوظ" : "رفع الإيصال ومطابقة التوريد"}</button></div> : <span className="muted">بانتظار الكابتن</span>}</td></tr>)}</tbody>
+            <tbody>{registry.items.map((item) => <tr key={item.paymentIntentId}><th scope="row"><bdi dir="ltr">{item.externalReference}</bdi></th><td>{item.captainName || "اسم الكابتن غير متاح"}</td><td dir="ltr"><bdi>{formatMoney(item.amountMinor, item.currency)}</bdi></td><td>{item.remittanceState === "SUBMITTED" ? <><strong>بانتظار مطابقة المالية</strong>{item.remittanceReference ? <small>مرجع الكابتن: <bdi dir="ltr">{item.remittanceReference}</bdi></small> : null}</> : "بانتظار إرسال الكابتن"}</td><td><time dateTime={item.collectedAt}>{new Date(item.collectedAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}</time></td><td>{item.remittanceState === "SUBMITTED" ? <div className="cash-reconciliation-action"><label className="field-label" htmlFor={`cash-receipt-${item.paymentIntentId}`}>إيصال التحويل أو الإيداع<input id={`cash-receipt-${item.paymentIntentId}`} type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => { const file = event.target.files?.[0] ?? null; if (file) { const fingerprint = `${file.name}:${file.size}:${file.lastModified}`; if (receiptFingerprints.current.get(item.paymentIntentId) !== fingerprint) resetRemittanceRecovery(item.paymentIntentId); receiptFingerprints.current.set(item.paymentIntentId, fingerprint); persistRemittanceRecovery(); } setReceiptFiles((current) => ({ ...current, [item.paymentIntentId]: file })); }} /></label>{receiptDocumentIds[item.paymentIntentId] ? <span className="muted">الإيصال محفوظ لهذه المحاولة</span> : null}<button className="button button-secondary" type="button" onClick={() => void reconcileCashRemittance(item)} disabled={loading || Boolean(busyRemittanceId) || (!receiptDocumentIds[item.paymentIntentId] && !receiptFiles[item.paymentIntentId])}>{busyRemittanceId === item.paymentIntentId ? "جارٍ رفع الإيصال والمطابقة…" : receiptDocumentIds[item.paymentIntentId] ? "مطابقة الإيصال المحفوظ" : "رفع الإيصال ومطابقة التوريد"}</button></div> : <span className="muted">بانتظار الكابتن</span>}</td></tr>)}</tbody>
           </table>
           {registry.items.length === 0 ? <p className="collection-state"><strong>لا توجد نتائج مطابقة</strong><span>لا يوجد نقد مفتوح يطابق البحث الحالي.</span></p> : null}
         </div>

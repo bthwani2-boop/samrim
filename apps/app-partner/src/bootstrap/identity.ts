@@ -29,5 +29,7 @@ export const getUsableIdentityAccessToken = runtime.getUsableAccessToken;
 export const subscribeIdentitySession = runtime.subscribeIdentityState;
 export const logoutIdentity = runtime.logoutIdentity;
 export const requestManagedActivation = runtime.requestManagedActivation;
+export const requestManagedRecovery = runtime.requestManagedRecovery;
+export const recoverManagedIdentity = runtime.recoverManagedIdentity;
 export const activateManagedIdentity = runtime.activateManagedIdentity;
 export const loginManagedIdentity = runtime.loginManagedIdentity;

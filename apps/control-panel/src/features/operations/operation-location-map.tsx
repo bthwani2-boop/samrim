@@ -29,7 +29,7 @@ export function OperationLocationMap({ latitude, longitude, label }: OperationLo
           allowFullScreen
         />
       ) : (
-        <p role="status">مفتاح خرائط المتصفح غير مُعدّ في بيئة لوحة التحكم. استخدم رابط الموقع أعلاه.</p>
+        <p role="status">تعذر عرض الخريطة هنا. استخدم رابط الموقع أعلاه لفتحها في خرائط Google.</p>
       )}
     </div>
   );

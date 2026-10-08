@@ -44,9 +44,15 @@ function optionalPositiveInt(value: string): number | undefined {
 
 function parseDate(value: string, fallbackNow = false): Date | undefined {
   if (!value.trim()) return fallbackNow ? new Date() : undefined;
-  const parsed = new Date(value.trim());
-  if (Number.isNaN(parsed.getTime())) throw new Error("INVALID_FORM");
-  return parsed;
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/.exec(value.trim());
+  if (!match) throw new Error("INVALID_FORM");
+  const [day, month, year, hour, minute] = match.slice(1).map(Number);
+  if (day === undefined || month === undefined || year === undefined || hour === undefined || minute === undefined || month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) throw new Error("INVALID_FORM");
+  const localAsUtc = Date.UTC(year, month - 1, day, hour, minute);
+  const instant = new Date(localAsUtc - 3 * 60 * 60 * 1000);
+  const normalizedLocal = new Date(instant.getTime() + 3 * 60 * 60 * 1000);
+  if (normalizedLocal.getUTCFullYear() !== year || normalizedLocal.getUTCMonth() + 1 !== month || normalizedLocal.getUTCDate() !== day || normalizedLocal.getUTCHours() !== hour || normalizedLocal.getUTCMinutes() !== minute) throw new Error("INVALID_FORM");
+  return instant;
 }
 
 function requiresPartnerOptIn(promotion: PromotionView): boolean {
@@ -229,14 +235,14 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
 
   return <BthwaniSurface style={styles.card}>
     <View style={styles.header}><Text style={styles.title}>العروض والحملات</Text><BthwaniButton label={formOpen ? "إغلاق" : "عرض جديد"} onPress={() => { setFormOpen((open) => !open); setError(""); }} variant="secondary" /></View>
-    <Text style={styles.muted}>عروض المتجر يمولها الشريك. حملات المنصة تقرأ تمويلها وشروط المشاركة من DSH ولا يختار التطبيق مصدر التمويل.</Text>
+    <Text style={styles.muted}>عروض المتجر يمولها الشريك. تحدد المنصة تمويل حملاتها وشروط المشاركة.</Text>
     {notice ? <Text style={styles.notice}>{notice}</Text> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     {!state && !campaigns && !error ? <View style={styles.loading}><ActivityIndicator accessibilityLabel="جارٍ قراءة العروض والحملات" color={theme.interactiveText} /></View> : null}
 
     {state && formOpen ? <View style={styles.form}>
       <Text style={styles.formTitle}>عرض متجر جديد</Text>
-      <TextInput accessibilityLabel="رمز العرض" autoCapitalize="characters" placeholder="رمز العرض (إنجليزي)" placeholderTextColor={theme.colorMuted} style={styles.input} value={code} onChangeText={setCode} />
+      <TextInput accessibilityLabel="رمز العرض" autoCapitalize="characters" placeholder="رمز قصير بالإنجليزية" placeholderTextColor={theme.colorMuted} style={styles.input} value={code} onChangeText={setCode} />
       <TextInput accessibilityLabel="اسم العرض" placeholder="اسم العرض" placeholderTextColor={theme.colorMuted} style={styles.input} value={nameAr} onChangeText={setNameAr} />
       <TextInput accessibilityLabel="وصف العرض" multiline placeholder="وصف مختصر (اختياري)" placeholderTextColor={theme.colorMuted} style={styles.input} value={descriptionAr} onChangeText={setDescriptionAr} />
       <View style={styles.kindRow}><BthwaniChip label="نسبة %" onPress={() => setKind("PERCENTAGE")} selected={kind === "PERCENTAGE"} /><BthwaniChip label="مبلغ ثابت" onPress={() => setKind("FIXED")} selected={kind === "FIXED"} /></View>
@@ -244,8 +250,8 @@ export function StorePromotionsCard({ storeID, verticalID }: Readonly<{ storeID:
       {kind === "PERCENTAGE" ? <TextInput accessibilityLabel="أقصى خصم" keyboardType="number-pad" placeholder="أقصى خصم بالريال اليمني (اختياري)" placeholderTextColor={theme.colorMuted} style={styles.input} value={maxDiscount} onChangeText={setMaxDiscount} /> : null}
       <TextInput accessibilityLabel="حد الطلب الأدنى" keyboardType="number-pad" placeholder="حد الطلب الأدنى بالريال اليمني (اختياري)" placeholderTextColor={theme.colorMuted} style={styles.input} value={minOrderSubtotal} onChangeText={setMinOrderSubtotal} />
       <TextInput accessibilityLabel="حد الاستخدام" keyboardType="number-pad" placeholder="حد الاستخدام الكلي (اختياري)" placeholderTextColor={theme.colorMuted} style={styles.input} value={redemptionLimit} onChangeText={setRedemptionLimit} />
-      <TextInput accessibilityLabel="بداية العرض" autoCapitalize="none" placeholder="البداية ISO، فارغ = الآن" placeholderTextColor={theme.colorMuted} style={styles.input} value={startsAt} onChangeText={setStartsAt} />
-      <TextInput accessibilityLabel="نهاية العرض" autoCapitalize="none" placeholder="النهاية ISO (اختياري)" placeholderTextColor={theme.colorMuted} style={styles.input} value={endsAt} onChangeText={setEndsAt} />
+      <TextInput accessibilityLabel="بداية العرض بتوقيت اليمن" autoCapitalize="none" placeholder="يوم/شهر/سنة ساعة:دقيقة، فارغ = الآن" placeholderTextColor={theme.colorMuted} style={styles.input} value={startsAt} onChangeText={setStartsAt} />
+      <TextInput accessibilityLabel="نهاية العرض بتوقيت اليمن" autoCapitalize="none" placeholder="يوم/شهر/سنة ساعة:دقيقة (اختياري)" placeholderTextColor={theme.colorMuted} style={styles.input} value={endsAt} onChangeText={setEndsAt} />
       <Text style={styles.formTitle}>نطاق الخصم</Text>
       <View style={styles.kindRow}>
         <BthwaniChip label="كل المتجر" onPress={() => { setTargetKind("NONE"); setSelectedTarget(null); setTargetOptions([]); }} selected={targetKind === "NONE"} />

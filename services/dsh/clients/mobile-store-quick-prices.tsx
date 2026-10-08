@@ -44,8 +44,8 @@ function quickPricePublicationLabel(state: CatalogStoreOffer["publicationState"]
 
 function scopeIntroduction(scope: StoreQuickPricesScope): string {
   return scope.kind === "FIELD"
-    ? "عدّل عدة أسعار دفعة واحدة قبل إطلاق المتجر. يُحفظ الصف فقط عند تغيّر سعره، ويظهر تعارض الإصدار للمراجعة قبل إعادة المحاولة."
-    : "رشّح عروض المتجر وعدّل عدة أسعار دفعة واحدة. يُحفظ الصف فقط عند تغيّر سعره، ويظهر تعارض الإصدار للمراجعة قبل إعادة المحاولة.";
+    ? "عدّل عدة أسعار دفعة واحدة قبل إطلاق المتجر. تُحفظ الأسعار التي غيّرتها فقط، وتُراجع الأسعار الحالية قبل إعادة المحاولة عند حدوث تغيير."
+    : "رشّح عروض المتجر وعدّل عدة أسعار دفعة واحدة. تُحفظ الأسعار التي غيّرتها فقط، وتُراجع الأسعار الحالية قبل إعادة المحاولة عند حدوث تغيير.";
 }
 
 function changedQuickPriceRows(offers: ReadonlyArray<CatalogStoreOffer>, drafts: Readonly<Record<string, string>>): ReadonlyArray<QuickPriceChange> {
@@ -67,7 +67,7 @@ function quickPriceCommitNotice(result: CatalogQuickPriceCommitResponse): string
   const conflicts = result.items.filter((item) => item.outcome === "VERSION_CONFLICT");
   const saved = result.items.length - conflicts.length;
   return [
-    conflicts.length ? `${conflicts.length} صفًا تغيّر بإصدار أحدث؛ راجع السعر المحدّث ثم عدّله مرة أخرى إذا رغبت.` : "",
+    conflicts.length ? `${conflicts.length} سعرًا تغيّر أثناء التعديل؛ راجع السعر الحالي قبل المحاولة مجددًا.` : "",
     saved ? `تم حفظ ${saved} سعرًا مع إعادة القراءة من المصدر.` : "",
   ].filter(Boolean).join(" ");
 }
@@ -182,7 +182,7 @@ export function MobileStoreQuickPricesWorkspace({ client, scope, verticalId, get
   return <View accessibilityLabel="الأسعار السريعة" style={styles.card}>
     <Text style={styles.title}>الأسعار السريعة</Text>
     <Text style={styles.muted}>{scopeIntroduction(scope)}</Text>
-    <TextInput accessibilityLabel="بحث الأسعار السريعة" editable={!busy} onChangeText={setQueryDraft} onSubmitEditing={applyFilters} placeholder="ابحث باسم المنتج أو النسخة" returnKeyType="search" value={queryDraft} style={styles.input} />
+    <TextInput accessibilityLabel="بحث الأسعار السريعة" editable={!busy} onChangeText={setQueryDraft} onSubmitEditing={applyFilters} placeholder="ابحث باسم المنتج أو خياره" returnKeyType="search" value={queryDraft} style={styles.input} />
     <TextInput accessibilityLabel="بحث فئات الأسعار السريعة" editable={!busy} onChangeText={setCategoryQuery} placeholder="ابحث عن فئة لتصفية النتائج" value={categoryQuery} style={styles.input} />
     <View style={styles.filters}>
       <BthwaniChip disabled={busy} label="كل الفئات" onPress={() => setCategoryDraft("")} selected={!categoryDraft} />

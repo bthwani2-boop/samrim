@@ -126,7 +126,7 @@ export function JoiningCaseQueue() {
 
   function exportSelected() {
     if (!selectedCases.length) return;
-    downloadRegistryCsv("joining-case-selection.csv", ["معرّف الطلب", "الشريك", "الهاتف", "متجر الانضمام", "الحالة", "آخر تحديث"], selectedCases.map((item) => [item.id, item.businessName, item.contactPhoneE164, item.firstStoreName, joiningCaseStateLabel(item.state), item.updatedAt]));
+    downloadRegistryCsv("joining-case-selection.csv", ["الشريك", "الهاتف", "متجر الانضمام", "الحالة", "آخر تحديث"], selectedCases.map((item) => [item.businessName, item.contactPhoneE164, item.firstStoreName, joiningCaseStateLabel(item.state), item.updatedAt]));
   }
 
   return <section className="joining-case-queue" aria-label="طابور طلبات انضمام الشركاء">
@@ -138,15 +138,15 @@ export function JoiningCaseQueue() {
     </div>
 
     {state || appliedQuery ? <section className="partner-active-filters" aria-label="التصفية النشطة">{state ? <button type="button" className="filter-chip" onClick={() => navigate("", appliedQuery, sort)}>الحالة: {stateOptions.find((option) => option.value === state)?.label}<span aria-hidden="true"> ×</span><span className="visually-hidden">مسح تصفية الحالة</span></button> : null}{appliedQuery ? <button type="button" className="filter-chip" onClick={() => navigate(state, "", sort)}>البحث: {appliedQuery}<span aria-hidden="true"> ×</span><span className="visually-hidden">مسح البحث</span></button> : null}<button type="button" className="button button-secondary" onClick={() => navigate("", "", "created_asc")}>مسح الكل</button></section> : null}
-    {busy && cases.length === 0 ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ تحميل حالات DSH</strong></div> : null}
+    {busy && cases.length === 0 ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ تحميل حالات النظام</strong></div> : null}
     {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر قراءة طابور الانضمام</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={busy} onClick={() => void loadQueue()}>إعادة المحاولة</button></div> : null}
     {notice ? <p role="status">{notice}</p> : null}
     {!busy && !error && cases.length === 0 ? <div className="collection-state"><strong>لا توجد حالات مطابقة</strong><p>غيّر حالة الطلب أو امسح التصفية.</p></div> : null}
 
     {cases.length > 0 ? <>
-      <div className="partner-registry-summary"><span>الصفحة الحالية · {cases.length} طلبات</span><fieldset className="partner-registry-bulk-actions"><legend className="visually-hidden">إجراءات الطلبات المحددة</legend><span aria-live="polite">المحدد: {selectedCases.length}</span><button type="button" className="button button-secondary" onClick={exportSelected} disabled={selectedCases.length === 0}>تصدير المحدد CSV</button><button type="button" className="button button-secondary" onClick={() => setSelectedIds(new Set())} disabled={selectedCases.length === 0}>إلغاء التحديد</button></fieldset></div>
+      <div className="partner-registry-summary"><span>الصفحة الحالية · {cases.length} طلبات</span><fieldset className="partner-registry-bulk-actions"><legend className="visually-hidden">إجراءات الطلبات المحددة</legend><span aria-live="polite">المحدد: {selectedCases.length}</span><button type="button" className="button button-secondary" onClick={exportSelected} disabled={selectedCases.length === 0}>تصدير المحدد</button><button type="button" className="button button-secondary" onClick={() => setSelectedIds(new Set())} disabled={selectedCases.length === 0}>إلغاء التحديد</button></fieldset></div>
       <div className="joining-case-table-wrap" aria-busy={busy}><table className="operations-table partner-registry-table">
-        <caption className="visually-hidden">حالات انضمام الشركاء من DSH</caption>
+        <caption className="visually-hidden">حالات انضمام الشركاء </caption>
         <thead><tr><th scope="col"><span className="visually-hidden">تحديد</span><input type="checkbox" aria-label={allSelected ? "إلغاء تحديد كل الطلبات" : "تحديد كل الطلبات في الصفحة"} checked={allSelected} onChange={(event) => setSelectedIds(event.target.checked ? new Set(cases.map((item) => item.id)) : new Set())} /></th><th scope="col">الشريك</th><th scope="col">الهاتف</th><th scope="col">متجر الانضمام</th><th scope="col">الحالة</th><th scope="col">آخر تحديث</th><th scope="col">الإجراء</th></tr></thead>
         <tbody>{cases.map((item) => <tr key={item.id}><td><input type="checkbox" aria-label={`تحديد طلب ${item.businessName}`} checked={selectedIds.has(item.id)} onChange={() => toggleSelected(item.id)} /></td><th scope="row">{item.businessName}</th><td><bdi dir="ltr">{item.contactPhoneE164}</bdi></td><td>{item.firstStoreName}</td><td>{joiningCaseStateLabel(item.state)}</td><td><time dateTime={item.updatedAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.updatedAt))}</time></td><td><Link className="partner-row-action" href={`/partners/${encodeURIComponent(item.id)}`}>فتح الحالة <span aria-hidden="true">←</span></Link></td></tr>)}</tbody>
       </table></div>

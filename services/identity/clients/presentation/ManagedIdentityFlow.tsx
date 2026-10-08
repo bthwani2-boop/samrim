@@ -1,9 +1,9 @@
 import { radius, spacing, type ThemeColors, toAsciiDigits } from "@bthwani/design-system";
-import { useAppearanceTheme } from "@bthwani/design-system/native";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { BthwaniIconButton, useAppearanceTheme } from "@bthwani/design-system/native";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { identityErrorMessage, identitySessionSignOutMessage } from "../errors";
+import { identityErrorMessage, type IdentityErrorMessages } from "../errors";
 import type { IdentitySessionState } from "../index";
 import { limitPasswordInput, validatePasswordInputShape } from "../password";
 
@@ -16,14 +16,11 @@ export interface ManagedIdentityBinding {
   requestManagedActivation: (phone: string) => Promise<unknown>;
   activateManagedIdentity: (phone: string, verificationCode: string, password: string) => Promise<IdentitySessionState>;
   loginManagedIdentity: (phone: string, password: string) => Promise<IdentitySessionState>;
+  requestManagedRecovery: (phone: string) => Promise<unknown>;
+  recoverManagedIdentity: (phone: string, verificationCode: string, password: string) => Promise<unknown>;
 }
 
-/**
- * Session-only binding for an authenticated route tree.
- *
- * Routing belongs to the host app; identity only decides whether the route
- * tree may render and notifies the host when the session leaves the boundary.
- */
+/** Routing belongs to the host; Identity admits the authenticated route tree. */
 export interface MobileIdentitySessionBinding {
   restoreIdentitySession: () => Promise<IdentitySessionState>;
   currentIdentityState: () => IdentitySessionState;
@@ -39,15 +36,25 @@ export interface AuthenticatedMobileBoundaryProps {
 export interface ManagedIdentityFlowProps {
   managedRole: "partner" | "captain" | "field";
   surface: string;
-  roleLabel: string;
   binding: ManagedIdentityBinding;
   authenticatedContent?: ReactNode;
 }
 
-/**
- * Resolve a host-owned internal return path without allowing protocol or
- * protocol-relative navigation. Route admission stays with the host app.
- */
+const messages: IdentityErrorMessages = {
+  generic: "تعذر الإكمال. حاول مجددًا.",
+  network: "تعذر الاتصال. حاول مجددًا.",
+  rateLimited: "انتظر قليلًا ثم حاول مجددًا.",
+  refreshStale: "سجّل الدخول مجددًا.",
+  forbidden: "تعذر الدخول. راجع الإدارة.",
+  unauthenticated: {
+    general: "تعذر التحقق. حاول مجددًا.",
+    login: "تحقق من الرقم وكلمة المرور.",
+    recovery: "تحقق من الرمز وكلمة المرور.",
+  },
+  conflict: "حاول مجددًا.",
+  invalidLogin: "تحقق من الرقم وكلمة المرور.",
+};
+
 export function resolveInternalReturnPath(value: string | string[] | undefined, fallback: string, admitted: RegExp): string {
   const candidate = Array.isArray(value) ? value[0] : value;
   if (!candidate?.startsWith("/") || candidate.startsWith("//")) return fallback;
@@ -97,50 +104,31 @@ export function AuthenticatedMobileBoundary({ binding, onUnauthenticated, childr
 
   if (state.kind === "authenticated") return <>{children}</>;
 
-  const boundaryTitle = identityBoundaryTitle(state.kind);
-  const boundaryMessage = identityBoundaryMessage(state.kind);
-
   return (
     <View style={styles.boundaryContainer}>
       <BrandHeader styles={styles} />
       <View style={styles.stateCard}>
-        {state.kind === "restoring" ? <ActivityIndicator accessibilityLabel="جارٍ التحقق من الجلسة" color={theme.actionBackground} size="large" /> : null}
-        <Text style={styles.stateTitle}>
-          {boundaryTitle}
-        </Text>
-        <Text style={styles.muted}>
-          {boundaryMessage}
-        </Text>
         {state.kind === "degraded" ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="إعادة التحقق"
-            accessibilityState={{ busy, disabled: busy }}
-            disabled={busy}
-            onPress={() => void restoreSession()}
-            style={[styles.primaryButton, busy && styles.disabledButton]}
-          >
-            <Text style={[styles.primaryButtonText, busy && styles.disabledButtonText]}>{busy ? "جارٍ التحقق…" : "إعادة التحقق"}</Text>
-          </Pressable>
-        ) : null}
+          <>
+            <Text style={styles.stateTitle}>تعذر التحقق</Text>
+            <Pressable accessibilityRole="button" accessibilityState={{ busy, disabled: busy }} disabled={busy} onPress={() => void restoreSession()} style={styles.primaryButton}>
+              {busy ? <ActivityIndicator accessibilityLabel="جارٍ التحقق" color={theme.onAction} /> : <Text style={styles.primaryButtonText}>إعادة المحاولة</Text>}
+            </Pressable>
+          </>
+        ) : <ActivityIndicator accessibilityLabel="جارٍ التحقق" color={theme.actionBackground} size="large" />}
       </View>
     </View>
   );
 }
 
-export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, authenticatedContent }: ManagedIdentityFlowProps) {
-  if (binding.role && binding.role !== managedRole) {
-    throw new Error(`MANAGED_FLOW_ROLE_MISMATCH: binding role ${binding.role} !== prop role ${managedRole}`);
-  }
-  if (binding.surface && binding.surface !== surface) {
-    throw new Error(`MANAGED_FLOW_SURFACE_MISMATCH: binding surface ${binding.surface} !== prop surface ${surface}`);
-  }
+export function ManagedIdentityFlow({ managedRole, surface, binding, authenticatedContent }: ManagedIdentityFlowProps) {
+  if (binding.role && binding.role !== managedRole) throw new Error("MANAGED_FLOW_ROLE_MISMATCH");
+  if (binding.surface && binding.surface !== surface) throw new Error("MANAGED_FLOW_SURFACE_MISMATCH");
   const insets = useSafeAreaInsets();
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-
   const [state, setState] = useState<IdentitySessionState>({ kind: "restoring" });
-  const [step, setStep] = useState<"login" | "activation">("login");
+  const [step, setStep] = useState<"login" | "setup" | "recovery">("login");
   const [phone, setPhone] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
   const [password, setPassword] = useState("");
@@ -149,16 +137,15 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
   const [showPasswordConfirmation, setShowPasswordConfirmation] = useState(false);
   const [challengeRequested, setChallengeRequested] = useState(false);
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
   const restoreSession = useCallback(async () => {
     setBusy(true);
-    setError("");
     try {
       setState(await binding.restoreIdentitySession());
-    } catch (cause) {
-      setError(identityErrorMessage(cause));
+    } catch {
       setState({ kind: "degraded", reason: "unknown" });
     } finally {
       setBusy(false);
@@ -166,17 +153,13 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
   }, [binding]);
 
   useEffect(() => {
-    void restoreSession();
-  }, [restoreSession]);
-
-  useEffect(() => {
     const unsubscribe = binding.subscribe(setState);
-    setState(binding.currentIdentityState());
+    void restoreSession();
     return unsubscribe;
-  }, [binding]);
+  }, [binding, restoreSession]);
 
-  function resetToLogin() {
-    setStep("login");
+  function changeStep(next: typeof step) {
+    setStep(next);
     setVerificationCode("");
     setPassword("");
     setPasswordConfirmation("");
@@ -187,556 +170,155 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
     setNotice("");
   }
 
-  function startActivation() {
-    setStep("activation");
-    setVerificationCode("");
-    setPassword("");
-    setPasswordConfirmation("");
-    setShowPassword(false);
-    setShowPasswordConfirmation(false);
-    setChallengeRequested(false);
-    setError("");
-    setNotice("");
-  }
-
-  async function requestActivationVerification() {
+  async function requestCode() {
+    if (submitting.current) return;
+    submitting.current = true;
     setBusy(true);
     setError("");
     setNotice("");
     try {
-      await binding.requestManagedActivation(phone);
+      if (step === "setup") await binding.requestManagedActivation(phone);
+      else await binding.requestManagedRecovery(phone);
+      setVerificationCode("");
       setChallengeRequested(true);
-      setNotice("إذا كانت البيانات صالحة، سيصلك رمز تحقق الهاتف عبر القناة المهيأة.");
+      setNotice("تحقق من الرسائل.");
     } catch (cause) {
-      setError(identityErrorMessage(cause));
+      setError(identityErrorMessage(cause, "general", messages));
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }
 
-  async function loginDevice() {
+  async function submitCredentials() {
+    if (submitting.current) return;
+    submitting.current = true;
     setBusy(true);
     setError("");
+    setNotice("");
     try {
-      setState(await binding.loginManagedIdentity(phone, password));
+      if (step === "login") {
+        setState(await binding.loginManagedIdentity(phone, password));
+      } else if (step === "setup") {
+        setState(await binding.activateManagedIdentity(phone, verificationCode, password));
+      } else {
+        await binding.recoverManagedIdentity(phone, verificationCode, password);
+        changeStep("login");
+        setNotice("تم حفظ كلمة المرور.");
+      }
       setPassword("");
+      setPasswordConfirmation("");
       setShowPassword(false);
+      setShowPasswordConfirmation(false);
     } catch (cause) {
-      setError(identityErrorMessage(cause, "login"));
+      setError(identityErrorMessage(cause, step === "login" ? "login" : "recovery", messages));
     } finally {
-      setBusy(false);
-    }
-  }
-
-  async function activateDevice() {
-    setBusy(true);
-    setError("");
-    try {
-      setState(await binding.activateManagedIdentity(phone, verificationCode, password));
-    } catch (cause) {
-      setError(identityErrorMessage(cause));
-    } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }
 
   const shell = (content: ReactNode) => (
-    <ScrollView
-      contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + spacing[12], spacing[12]), paddingTop: Math.max(insets.top + spacing[4], spacing[8]) }]}
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator={false}
-    >
-      <BrandHeader styles={styles} />
-      <View style={styles.rolePill}>
-        <View style={styles.liveDot} />
-        <Text style={styles.rolePillText}>مساحة تشغيل {roleLabel}</Text>
-      </View>
-      {content}
-    </ScrollView>
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.shell}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + spacing[6], spacing[6]), paddingTop: Math.max(insets.top + spacing[4], spacing[8]) }]} keyboardShouldPersistTaps="handled">
+        <BrandHeader styles={styles} />
+        <View style={styles.formArea}>{content}</View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 
-  if (state.kind === "restoring") {
-    return shell(
-      <View style={styles.stateCard}>
-        <ActivityIndicator color={theme.actionBackground} size="large" />
-        <Text style={styles.stateTitle}>جارٍ تجهيز المساحة</Text>
-        <Text style={styles.muted}>نستعيد جلسة هذا الجهاز بأمان.</Text>
-      </View>
-    );
-  }
-
-  if (state.kind === "authenticated") {
-    return authenticatedContent ?? null;
-  }
-
-  if (state.kind === "degraded") {
-    const conflict = state.reason === "refresh_conflict";
-    return shell(
-      <View style={styles.card}>
-        <Text style={styles.title}>{conflict ? "تحديث الوصول" : "تعذر استعادة الوصول"}</Text>
-        <Text style={styles.description}>{conflict ? "تغيرت بيانات الوصول بالتزامن. حدّثها للمتابعة دون إعادة تسجيل الدخول." : "تعذر التحقق من الوصول الآن. حاول مرة أخرى لاستعادة الدخول."}</Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={conflict ? "تحديث الوصول" : "إعادة التحقق"}
-          accessibilityState={{ busy, disabled: busy }}
-          disabled={busy}
-          onPress={restoreSession}
-          style={({ pressed }: { pressed: boolean }) => [styles.primaryButton, pressed && styles.primaryButtonPressed, busy && styles.disabledButton]}
-        >
-          <Text style={[styles.primaryButtonText, busy && styles.disabledButtonText]}>{conflict ? "تحديث الوصول" : "إعادة التحقق"}</Text>
-        </Pressable>
-      </View>
-    );
-  }
+  if (state.kind === "restoring") return shell(<ActivityIndicator accessibilityLabel="جارٍ التحقق" color={theme.actionBackground} size="large" />);
+  if (state.kind === "authenticated") return authenticatedContent ?? null;
+  if (state.kind === "degraded") return shell(
+    <View style={styles.card}>
+      <Text style={styles.title}>تعذر التحقق</Text>
+      <Pressable accessibilityRole="button" accessibilityState={{ busy, disabled: busy }} disabled={busy} onPress={() => void restoreSession()} style={styles.primaryButton}>
+        {busy ? <ActivityIndicator accessibilityLabel="جارٍ التحقق" color={theme.onAction} /> : <Text style={styles.primaryButtonText}>إعادة المحاولة</Text>}
+      </Pressable>
+    </View>,
+  );
 
   const phoneReady = phone.trim().length > 0;
-  const verificationReady = verificationCode.trim().length === 6;
-  const passwordReady = validatePasswordInputShape(password, passwordConfirmation).valid;
+  const login = step === "login";
+  const passwordReady = login ? password.trim().length > 0 : validatePasswordInputShape(password, passwordConfirmation).valid;
+  const canSubmit = phoneReady && passwordReady && (login || (challengeRequested && verificationCode.length === 6));
 
-  const content =
-    step === "login" ? (
-      <>
-        <Text style={styles.eyebrow}>دخول موحّد</Text>
-        <Text style={styles.title}>تسجيل الدخول</Text>
-        <Text style={styles.description}>أدخل رقم الهاتف الدولي وكلمة المرور الخاصة بدور {roleLabel}.</Text>
-        {state.kind === "signed_out" ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.notice}>{identitySessionSignOutMessage(state.reason)}</Text> : null}
-        <Text style={styles.fieldLabel}>رقم الهاتف</Text>
-        <TextInput
-          accessibilityLabel="رقم الهاتف"
-          autoComplete="tel"
-          keyboardType="phone-pad"
-          onChangeText={(value: string) => {
-            setPhone(toAsciiDigits(value));
-            setError("");
-          }}
-          placeholder="+967 77 000 101"
-          placeholderTextColor={theme.colorMuted}
-          style={[styles.input, styles.numericInput]}
-          textAlign="center"
-          value={phone}
-        />
-        <Text style={styles.fieldLabel}>كلمة المرور</Text>
-        <TextInput
-          accessibilityLabel="كلمة المرور"
-          autoComplete="current-password"
-          maxLength={8}
-          onChangeText={(value: string) => {
-            setPassword(limitPasswordInput(value));
-            setError("");
-          }}
-          placeholder="8 أحرف بالضبط"
-          placeholderTextColor={theme.colorMuted}
-           secureTextEntry={!showPassword}
-           style={styles.input}
-           value={password}
-         />
-         <Pressable accessibilityRole="button" accessibilityLabel={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"} onPress={() => setShowPassword((value) => !value)} style={styles.revealButton}>
-           <Text style={styles.revealText}>{showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}</Text>
-         </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="تسجيل الدخول"
-          accessibilityState={{ busy, disabled: busy || !phoneReady || !validatePasswordInputShape(password).valid }}
-          disabled={busy || !phoneReady || !validatePasswordInputShape(password).valid}
-          onPress={loginDevice}
-          style={({ pressed }: { pressed: boolean }) => [styles.primaryButton, pressed && styles.primaryButtonPressed, (busy || !phoneReady || !validatePasswordInputShape(password).valid) && styles.disabledButton]}
-        >
-          <Text style={[styles.primaryButtonText, (busy || !phoneReady || !validatePasswordInputShape(password).valid) && styles.disabledButtonText]}>{busy ? "جارٍ تسجيل الدخول…" : "تسجيل الدخول"}</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="تفعيل الجهاز"
-          accessibilityState={{ busy, disabled: busy || !phoneReady }}
-          disabled={busy || !phoneReady}
-          onPress={startActivation}
-          style={({ pressed }: { pressed: boolean }) => [styles.secondaryButton, pressed && styles.secondaryButtonPressed, (busy || !phoneReady) && styles.disabledButton]}
-        >
-          <Text style={[styles.secondaryButtonText, (busy || !phoneReady) && styles.disabledButtonText]}>تفعيل الجهاز</Text>
-        </Pressable>
-        <Text style={styles.helper}>التفعيل متاح بعد اعتماد الملف ومنح دور التطبيق، أو بعد إجازة إعادة التسجيل. أدخل الرقم الدولي المسجل ثم أثبت الهاتف وأنشئ كلمة مرورك. بعد التفعيل، استخدم الهاتف وكلمة المرور للدخول.</Text>
-      </>
-    ) : (
-      <>
-        <Text style={styles.eyebrow}>تفعيل الجهاز</Text>
-        <Text style={styles.title}>تفعيل جهاز {roleLabel}</Text>
-        <Text style={styles.description}>بعد منح دور {roleLabel} أو إجازة إعادة التسجيل، أثبت الهاتف المسجل برمز التحقق ثم أنشئ كلمة المرور.</Text>
-        <Text style={styles.summaryPhone}>{phone}</Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={challengeRequested ? "إعادة إرسال رمز الهاتف" : "إرسال رمز تحقق الهاتف"}
-          accessibilityState={{ busy, disabled: busy || !phoneReady }}
-          disabled={busy || !phoneReady}
-          onPress={requestActivationVerification}
-           style={({ pressed }: { pressed: boolean }) => [styles.secondaryButton, pressed && styles.secondaryButtonPressed, (busy || !phoneReady) && styles.disabledButton]}
-         >
-           <Text style={[styles.secondaryButtonText, (busy || !phoneReady) && styles.disabledButtonText]}>{activationRequestLabel(busy, challengeRequested)}</Text>
-        </Pressable>
-        {challengeRequested ? (
-          <>
-            <Text style={styles.fieldLabel}>رمز تحقق الهاتف</Text>
-              <TextInput
-              accessibilityLabel="رمز تحقق الهاتف"
-              keyboardType="number-pad"
-              maxLength={6}
-              onChangeText={(value: string) => setVerificationCode(toAsciiDigits(value).replace(/\D/g, "").slice(0, 6))}
-              placeholder="رمز من 6 أرقام"
-              placeholderTextColor={theme.colorMuted}
-              style={[styles.input, styles.numericInput]}
-              textAlign="center"
-              value={verificationCode}
-            />
-            <Text style={styles.fieldLabel}>كلمة المرور</Text>
-              <TextInput
-              accessibilityLabel="كلمة المرور"
-              autoComplete="new-password"
-              maxLength={8}
-              onChangeText={(value: string) => setPassword(limitPasswordInput(value))}
-              placeholder="8 أحرف بالضبط"
-              placeholderTextColor={theme.colorMuted}
-              secureTextEntry={!showPassword}
-              style={styles.input}
-              value={password}
-            />
-            <Pressable accessibilityRole="button" accessibilityLabel={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"} onPress={() => setShowPassword((value) => !value)} style={styles.revealButton}>
-              <Text style={styles.revealText}>{showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}</Text>
-            </Pressable>
-            <Text style={styles.fieldLabel}>تأكيد كلمة المرور</Text>
-            <TextInput
-              accessibilityLabel="تأكيد كلمة المرور"
-              autoComplete="new-password"
-              maxLength={8}
-              onChangeText={(value: string) => setPasswordConfirmation(limitPasswordInput(value))}
-              placeholder="أعد إدخال كلمة المرور"
-              placeholderTextColor={theme.colorMuted}
-              secureTextEntry={!showPasswordConfirmation}
-              style={styles.input}
-              value={passwordConfirmation}
-            />
-            <Pressable accessibilityRole="button" accessibilityLabel={showPasswordConfirmation ? "إخفاء تأكيد كلمة المرور" : "إظهار تأكيد كلمة المرور"} onPress={() => setShowPasswordConfirmation((value) => !value)} style={styles.revealButton}>
-              <Text style={styles.revealText}>{showPasswordConfirmation ? "إخفاء تأكيد كلمة المرور" : "إظهار تأكيد كلمة المرور"}</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="حفظ كلمة المرور والدخول"
-              accessibilityState={{ busy, disabled: busy || !verificationReady || !passwordReady }}
-              disabled={busy || !verificationReady || !passwordReady}
-              onPress={activateDevice}
-              style={[styles.primaryButton, (busy || !verificationReady || !passwordReady) && styles.disabledButton]}
-            >
-              <Text style={[styles.primaryButtonText, (busy || !verificationReady || !passwordReady) && styles.disabledButtonText]}>{busy ? "جارٍ التفعيل…" : "حفظ كلمة المرور والدخول"}</Text>
-            </Pressable>
-          </>
-        ) : null}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="تغيير رقم الهاتف"
-          accessibilityState={{ busy, disabled: busy }}
-          disabled={busy}
-          onPress={resetToLogin}
-          style={styles.linkButton}
-        >
-          <Text style={[styles.mutedLink, busy && styles.disabledLinkText]}>تغيير رقم الهاتف</Text>
-        </Pressable>
-      </>
-    );
-
-  return (
-    shell(
-      <View style={styles.card}>
-        {content}
-        {notice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
-        {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+  function passwordField(label: string, value: string, onChange: (value: string) => void, visible: boolean, onToggle: () => void) {
+    return <>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <View style={styles.passwordRow}>
+        <TextInput accessibilityLabel={label} autoComplete={login ? "current-password" : "new-password"} autoCapitalize="none" autoCorrect={false} editable={!busy} onChangeText={(text) => { onChange(login ? text : limitPasswordInput(text)); setError(""); }} placeholder={login ? undefined : "8 أحرف"} placeholderTextColor={theme.colorMuted} secureTextEntry={!visible} style={styles.passwordInput} value={value} />
+        <BthwaniIconButton icon={visible ? "eye-off" : "eye"} label={visible ? "إخفاء " + label : "إظهار " + label} disabled={busy} onPress={onToggle} />
       </View>
-    )
+    </>;
+  }
+
+  return shell(
+    <View style={styles.card}>
+      <Text style={styles.title}>{login ? "تسجيل الدخول" : step === "setup" ? "تعيين كلمة المرور" : "استعادة كلمة المرور"}</Text>
+      <Text style={styles.fieldLabel}>رقم الجوال</Text>
+      <TextInput accessibilityLabel="رقم الجوال" autoComplete="tel" keyboardType="phone-pad" editable={!busy} onChangeText={(value) => {
+        setPhone(toAsciiDigits(value));
+        setVerificationCode("");
+        setChallengeRequested(false);
+        setError("");
+        setNotice("");
+      }} placeholder="777000101" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.numericInput]} value={phone} />
+      {!login ? <Pressable accessibilityRole="button" accessibilityState={{ busy, disabled: busy || !phoneReady }} disabled={busy || !phoneReady} onPress={() => void requestCode()} style={[styles.secondaryButton, (busy || !phoneReady) && styles.disabledButton]}>
+        <Text style={[styles.secondaryButtonText, (busy || !phoneReady) && styles.disabledButtonText]}>{challengeRequested ? "إعادة إرسال الرمز" : "إرسال الرمز"}</Text>
+      </Pressable> : null}
+      {!login && challengeRequested ? <>
+        <Text style={styles.fieldLabel}>رمز التحقق</Text>
+        <TextInput accessibilityLabel="رمز التحقق" autoComplete="one-time-code" keyboardType="number-pad" maxLength={6} editable={!busy} onChangeText={(value) => { setVerificationCode(toAsciiDigits(value).replace(/\D/g, "").slice(0, 6)); setError(""); setNotice(""); }} style={[styles.input, styles.numericInput]} value={verificationCode} />
+      </> : null}
+      {login || challengeRequested ? <>
+        {passwordField("كلمة المرور", password, setPassword, showPassword, () => setShowPassword((value) => !value))}
+        {!login ? passwordField("تأكيد كلمة المرور", passwordConfirmation, setPasswordConfirmation, showPasswordConfirmation, () => setShowPasswordConfirmation((value) => !value)) : null}
+        <Pressable accessibilityRole="button" accessibilityLabel={login ? "دخول" : "حفظ"} accessibilityState={{ busy, disabled: busy || !canSubmit }} disabled={busy || !canSubmit} onPress={() => void submitCredentials()} style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryButtonPressed, (busy || !canSubmit) && styles.disabledButton]}>
+          {busy ? <ActivityIndicator accessibilityLabel="جارٍ الإكمال" color={theme.disabledText} /> : <Text style={[styles.primaryButtonText, !canSubmit && styles.disabledButtonText]}>{login ? "دخول" : "حفظ"}</Text>}
+        </Pressable>
+      </> : null}
+      {login ? <View style={styles.links}>
+        <Pressable accessibilityRole="button" disabled={busy} onPress={() => changeStep("setup")} style={styles.linkButton}><Text style={[styles.linkText, busy && styles.disabledButtonText]}>أول دخول؟</Text></Pressable>
+        <Pressable accessibilityRole="button" disabled={busy} onPress={() => changeStep("recovery")} style={styles.linkButton}><Text style={[styles.linkText, busy && styles.disabledButtonText]}>نسيت كلمة المرور؟</Text></Pressable>
+      </View> : <Pressable accessibilityRole="button" disabled={busy} onPress={() => changeStep("login")} style={styles.linkButton}><Text style={[styles.linkText, busy && styles.disabledButtonText]}>رجوع</Text></Pressable>}
+      {notice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
+      {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+    </View>,
   );
-}
-
-function identityBoundaryTitle(kind: IdentitySessionState["kind"]): string {
-  if (kind === "degraded") return "تعذر التحقق من الجلسة";
-  if (kind === "signed_out") return "انتهت الجلسة";
-  return "جارٍ تجهيز المساحة";
-}
-
-function identityBoundaryMessage(kind: IdentitySessionState["kind"]): string {
-  if (kind === "degraded") return "تحقق من الاتصال ثم أعد المحاولة.";
-  if (kind === "signed_out") return "نعيدك إلى بوابة تسجيل الدخول.";
-  return "نتحقق من الوصول قبل عرض بيانات التشغيل.";
-}
-
-function activationRequestLabel(busy: boolean, challengeRequested: boolean): string {
-  if (busy) return "جارٍ إرسال رمز الهاتف…";
-  if (challengeRequested) return "إعادة إرسال رمز الهاتف";
-  return "إرسال رمز تحقق الهاتف";
 }
 
 function createStyles(theme: ThemeColors) {
   return StyleSheet.create({
-    boundaryContainer: {
-      alignItems: "stretch",
-      backgroundColor: theme.background,
-      flex: 1,
-      gap: spacing[4],
-      justifyContent: "center",
-      paddingHorizontal: spacing[4],
-    },
-    content: {
-      flexGrow: 1,
-      alignItems: "stretch",
-      backgroundColor: theme.background,
-      gap: spacing[4],
-      paddingHorizontal: spacing[4],
-      paddingBottom: spacing[12],
-    },
-    brandRow: {
-      alignItems: "center",
-      flexDirection: "row",
-      gap: spacing[2],
-      justifyContent: "center",
-    },
-    brandMark: {
-      alignItems: "flex-end",
-      flexDirection: "row",
-      gap: 3,
-      height: 22,
-    },
-    brandMarkNavy: {
-      backgroundColor: theme.structure,
-      borderRadius: radius.xs,
-      height: 22,
-      width: 8,
-    },
-    brandMarkOrange: {
-      backgroundColor: theme.brandAction,
-      borderRadius: radius.xs,
-      height: 12,
-      width: 8,
-    },
-    brandName: {
-      color: theme.color,
-      fontSize: 28,
-      fontWeight: "800",
-    },
-    rolePill: {
-      alignItems: "center",
-      alignSelf: "center",
-      backgroundColor: theme.structureSoft,
-      borderRadius: radius.round,
-      flexDirection: "row",
-      gap: spacing[2],
-      paddingHorizontal: spacing[3],
-      paddingVertical: spacing[2],
-    },
-    liveDot: {
-      backgroundColor: theme.brandAction,
-      borderRadius: radius.round,
-      height: 7,
-      width: 7,
-    },
-    rolePillText: {
-      color: theme.colorSecondary,
-      fontSize: 13,
-      fontWeight: "700",
-    },
-    stateCard: {
-      alignItems: "center",
-      backgroundColor: theme.surface,
-      borderColor: theme.borderColor,
-      borderRadius: radius.lg,
-      borderWidth: 1,
-      gap: spacing[3],
-      padding: spacing[6],
-    },
-    stateTitle: {
-      color: theme.color,
-      fontSize: 20,
-      fontWeight: "800",
-    },
-    card: {
-      backgroundColor: theme.surface,
-      borderColor: theme.borderColor,
-      borderRadius: radius.lg,
-      borderWidth: 1,
-      gap: spacing[2],
-      padding: spacing[5],
-    },
-    eyebrow: {
-      color: theme.interactiveText,
-      fontSize: 13,
-      fontWeight: "800",
-    },
-    title: {
-      color: theme.color,
-      fontSize: 23,
-      fontWeight: "800",
-    },
-    description: {
-      color: theme.colorSecondary,
-      fontSize: 14,
-      lineHeight: 23,
-    },
-    fieldLabel: {
-      color: theme.color,
-      fontSize: 14,
-      fontWeight: "700",
-      marginTop: spacing[2],
-    },
-    input: {
-      backgroundColor: theme.surface,
-      borderColor: theme.borderColor,
-      borderRadius: radius.md,
-      borderWidth: 1,
-      color: theme.color,
-      fontSize: 16,
-      minHeight: 52,
-      paddingHorizontal: spacing[3],
-      paddingVertical: spacing[2],
-    },
-    numericInput: {
-      textAlign: "left",
-      writingDirection: "ltr",
-    },
-    revealButton: { alignSelf: "flex-end", minHeight: 40, justifyContent: "center", paddingHorizontal: spacing[1] },
-    revealText: { color: theme.interactiveText, fontSize: 13, fontWeight: "700", textDecorationLine: "underline" },
-    summaryPhone: {
-      backgroundColor: theme.structureSoft,
-      borderRadius: radius.sm,
-      color: theme.color,
-      fontSize: 15,
-      marginTop: spacing[2],
-      padding: spacing[2],
-      textAlign: "center",
-      writingDirection: "ltr",
-    },
-    primaryButton: {
-      alignItems: "center",
-      backgroundColor: theme.actionBackground,
-      borderRadius: radius.md,
-      justifyContent: "center",
-      minHeight: 52,
-      marginTop: spacing[2],
-      paddingHorizontal: spacing[3],
-    },
-    primaryButtonText: {
-      color: theme.onAction,
-      fontSize: 15,
-      fontWeight: "800",
-    },
-    secondaryButton: {
-      alignItems: "center",
-      borderColor: theme.borderColorStrong,
-      borderRadius: radius.md,
-      borderWidth: 1,
-      justifyContent: "center",
-      minHeight: 52,
-      marginTop: spacing[2],
-      paddingHorizontal: spacing[3],
-    },
-    secondaryButtonText: {
-      color: theme.color,
-      fontSize: 14,
-      fontWeight: "800",
-      textAlign: "center",
-    },
+    boundaryContainer: { alignItems: "stretch", backgroundColor: theme.background, flex: 1, gap: spacing[4], justifyContent: "center", paddingHorizontal: spacing[4] },
+    shell: { backgroundColor: theme.background, flex: 1 },
+    content: { flexGrow: 1, backgroundColor: theme.background, gap: spacing[6], paddingHorizontal: spacing[4] },
+    formArea: { flexGrow: 1, justifyContent: "center", paddingVertical: spacing[4] },
+    brandRow: { alignItems: "center", flexDirection: "row", gap: spacing[2], justifyContent: "center" },
+    brandMark: { alignItems: "flex-end", flexDirection: "row", gap: 3, height: 22 },
+    brandMarkNavy: { backgroundColor: theme.structure, borderRadius: radius.xs, height: 22, width: 8 },
+    brandMarkOrange: { backgroundColor: theme.brandAction, borderRadius: radius.xs, height: 12, width: 8 },
+    brandName: { color: theme.color, fontSize: 28, fontWeight: "800" },
+    stateCard: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: 1, gap: spacing[3], padding: spacing[6] },
+    stateTitle: { color: theme.color, fontSize: 20, fontWeight: "800" },
+    card: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: 1, gap: spacing[2], padding: spacing[5] },
+    title: { color: theme.color, fontSize: 23, fontWeight: "800" },
+    fieldLabel: { color: theme.color, fontSize: 14, fontWeight: "700", marginTop: spacing[2] },
+    input: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: 1, color: theme.color, fontSize: 16, minHeight: 52, paddingHorizontal: spacing[3], paddingVertical: spacing[2] },
+    numericInput: { textAlign: "left", writingDirection: "ltr" },
+    passwordRow: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: 1, flexDirection: "row", paddingEnd: spacing[1] },
+    passwordInput: { color: theme.color, flex: 1, fontSize: 16, minHeight: 52, paddingHorizontal: spacing[3], paddingVertical: spacing[2] },
+    primaryButton: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.md, justifyContent: "center", minHeight: 52, marginTop: spacing[2], paddingHorizontal: spacing[3] },
+    primaryButtonText: { color: theme.onAction, fontSize: 15, fontWeight: "800" },
+    secondaryButton: { alignItems: "center", borderColor: theme.borderColorStrong, borderRadius: radius.md, borderWidth: 1, justifyContent: "center", minHeight: 52, marginTop: spacing[2], paddingHorizontal: spacing[3] },
+    secondaryButtonText: { color: theme.color, fontSize: 14, fontWeight: "800" },
     disabledButton: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground },
     disabledButtonText: { color: theme.disabledText },
-    disabledLinkText: { color: theme.disabledText },
     primaryButtonPressed: { backgroundColor: theme.actionPressed },
-    secondaryButtonPressed: { backgroundColor: theme.surfaceInset },
-    linkButton: {
-      alignItems: "center",
-      paddingVertical: spacing[2],
-    },
-    linkText: {
-      color: theme.interactiveText,
-      fontSize: 13,
-      fontWeight: "800",
-      textAlign: "center",
-      textDecorationLine: "underline",
-    },
-    mutedLink: {
-      color: theme.colorMuted,
-      fontSize: 13,
-      textAlign: "center",
-      textDecorationLine: "underline",
-    },
-    helper: {
-      color: theme.colorMuted,
-      fontSize: 12,
-    },
-    notice: {
-      backgroundColor: theme.structureSoft,
-      borderRadius: radius.sm,
-      color: theme.color,
-      fontSize: 13,
-      marginTop: spacing[2],
-      padding: spacing[2],
-    },
-    error: {
-      backgroundColor: theme.dangerSoft,
-      borderRadius: radius.sm,
-      color: theme.danger,
-      fontSize: 13,
-      marginTop: spacing[2],
-      padding: spacing[2],
-    },
-    muted: {
-      color: theme.colorMuted,
-      fontSize: 14,
-      textAlign: "center",
-    },
-    successBadge: {
-      alignItems: "center",
-      alignSelf: "flex-end",
-      backgroundColor: theme.structureSoft,
-      borderRadius: radius.round,
-      flexDirection: "row",
-      gap: spacing[2],
-      paddingHorizontal: spacing[3],
-      paddingVertical: spacing[2],
-    },
-    authenticatedToolbar: {
-      alignItems: "center",
-      flexDirection: "row",
-      gap: spacing[2],
-      justifyContent: "space-between",
-    },
-    accountButton: {
-      alignItems: "center",
-      borderColor: theme.borderColorStrong,
-      borderRadius: radius.round,
-      borderWidth: 1,
-      justifyContent: "center",
-      minHeight: 42,
-      paddingHorizontal: spacing[3],
-    },
-    accountButtonText: {
-      color: theme.interactiveText,
-      fontSize: 13,
-      fontWeight: "800",
-    },
-    accountHeading: {
-      alignItems: "center",
-      flexDirection: "row",
-      gap: spacing[2],
-      justifyContent: "space-between",
-    },
-    accountStatus: {
-      backgroundColor: theme.structureSoft,
-      borderRadius: radius.sm,
-      gap: spacing[2],
-      marginTop: spacing[2],
-      padding: spacing[3],
-    },
-    successDot: {
-      backgroundColor: theme.success,
-      borderRadius: radius.round,
-      height: 7,
-      width: 7,
-    },
-    successBadgeText: {
-      color: theme.color,
-      fontSize: 13,
-      fontWeight: "800",
-    },
+    links: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
+    linkButton: { justifyContent: "center", minHeight: 44, paddingVertical: spacing[2] },
+    linkText: { color: theme.interactiveText, fontSize: 13, fontWeight: "700" },
+    notice: { color: theme.colorSecondary, fontSize: 13, marginTop: spacing[2] },
+    error: { color: theme.danger, fontSize: 13, marginTop: spacing[2] },
   });
 }

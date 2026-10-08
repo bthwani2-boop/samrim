@@ -5,19 +5,19 @@ export async function partnerErrorMessage(response: Response): Promise<string> {
     case "PARTNER_NOT_ACTIVE": return "لا يمكن اعتماد الحالة قبل تفعيل دور الشريك.";
     case "JOINING_CASE_EXISTS": return "توجد حالة انضمام نشطة لهذا الرقم بالفعل.";
 	case "SERVICE_CITY_UNAVAILABLE": return "مدينة الخدمة لم تعد نشطة. أعد قراءة المدن، أو أعد الحالة للشريك ليختار مدينة متاحة.";
-	case "VERTICAL_UNAVAILABLE": return "الفئة الرئيسية لم تعد نشطة. أعد قراءة الأنشطة، أو أعد الحالة للشريك ليختار فئة متاحة.";
+	case "VERTICAL_UNAVAILABLE": return "النشاط الرئيسي لم تعد نشطة. أعد قراءة الأنشطة، أو أعد الحالة للشريك ليختار فئة متاحة.";
 	case "ACTOR_CONFLICT": return "هوية الشريك مرتبطة بحالة انضمام أخرى.";
 	case "ACTOR_REBIND_FORBIDDEN": return "لا يمكن تغيير هوية الشريك بعد ربطها بالحالة.";
     case "STATE_CONFLICT": return "لا تسمح حالة الانضمام الحالية بهذه العملية.";
     case "INVALID_INPUT": return "بيانات العملية غير صالحة.";
     case "STORE_EXISTS": return "لدى الشريك متجر قانوني بالفعل.";
-    case "IDEMPOTENCY_CONFLICT": return "مفتاح العملية مستخدم لطلب مختلف. أعد بدء الطلب بمفتاح جديد.";
+    case "IDEMPOTENCY_CONFLICT": return "تعذر تكرار العملية لأن الطلب المحفوظ يختلف عن البيانات الحالية. أعد بدء الطلب بالبيانات الصحيحة.";
     case "FORBIDDEN": return "هذا الإجراء متاح لموظف لوحة التحكم المصرح فقط.";
     case "READINESS_BLOCKED": return "لا يمكن نشر المتجر قبل اجتياز جاهزية النشر الحالية.";
     case "IDENTITY_UNAVAILABLE": return "تعذر التحقق من أهلية هوية الشريك حاليًا. أعد المحاولة بعد عودة خدمة الهوية.";
     case "VERSION_CONFLICT": return "تغيرت حالة النشر من عملية أخرى. أعد قراءة الحالة ثم حاول مرة أخرى.";
     case "STORE_NOT_FOUND":
-    case "NOT_FOUND": return "لم يعد المتجر موجودًا في الحالة الكانونية.";
+    case "NOT_FOUND": return "لم يعد المتجر موجودًا في الحالة المعتمدة.";
     case "DSH_UNAVAILABLE": return "خدمة البيانات غير متاحة. تحقق من تشغيل الخدمات ثم أعد المحاولة.";
     default: return "تعذر تنفيذ عملية انضمام الشريك. تحقق من الحالة ثم أعد المحاولة.";
   }

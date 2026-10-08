@@ -21,6 +21,43 @@ type FieldServer struct {
 	service *field.Service
 }
 
+type fieldJoiningCaseDraftRequest struct {
+	contract.CreateFieldJoiningCaseDraftRequest
+	FirstStoreProofNumber *string  `json:"firstStoreProofNumber"`
+	FirstStoreLatitude    *float64 `json:"firstStoreLatitude"`
+	FirstStoreLongitude   *float64 `json:"firstStoreLongitude"`
+}
+
+func (input *fieldJoiningCaseDraftRequest) applyDraftScalars() bool {
+	if input.FirstStoreProofNumber != nil {
+		input.CreateFieldJoiningCaseDraftRequest.FirstStoreProofNumber = *input.FirstStoreProofNumber
+	}
+	if (input.FirstStoreLatitude == nil) != (input.FirstStoreLongitude == nil) {
+		return false
+	}
+	if input.FirstStoreLatitude == nil {
+		input.CreateFieldJoiningCaseDraftRequest.FirstStoreLatitude = 0
+		input.CreateFieldJoiningCaseDraftRequest.FirstStoreLongitude = 0
+	} else {
+		input.CreateFieldJoiningCaseDraftRequest.FirstStoreLatitude = *input.FirstStoreLatitude
+		input.CreateFieldJoiningCaseDraftRequest.FirstStoreLongitude = *input.FirstStoreLongitude
+	}
+	return true
+}
+
+func (input fieldJoiningCaseDraftRequest) createRequest() contract.CreateJoiningCaseRequest {
+	draft := input.CreateFieldJoiningCaseDraftRequest
+	return contract.CreateJoiningCaseRequest{
+		ContactPhoneE164: draft.ContactPhoneE164, OwnerFullName: draft.OwnerFullName, BusinessName: draft.BusinessName,
+		FirstStoreName: draft.FirstStoreName, WalletProviderKey: draft.WalletProviderKey, FirstStoreAddress: draft.FirstStoreAddress,
+		ServiceCityID: draft.ServiceCityID, FirstStoreVerticalID: draft.FirstStoreVerticalID,
+		FirstStoreCommercialTypeID: draft.FirstStoreCommercialTypeID, FirstStoreLatitude: draft.FirstStoreLatitude,
+		FirstStoreLongitude: draft.FirstStoreLongitude, FirstStoreWorkingHours: contract.StoreWeeklyWorkingHours{Intervals: draft.FirstStoreWorkingHours.Intervals},
+		FirstStoreProofType: draft.FirstStoreProofType, FirstStoreProofNumber: draft.FirstStoreProofNumber,
+		FirstStoreNotes: draft.FirstStoreNotes, FirstStoreFulfillmentModes: draft.FirstStoreFulfillmentModes,
+	}
+}
+
 func NewField(identityClient *identityintegration.Client, accessToken string, db *sql.DB, evidenceKeys *postgres.JoiningCaseEvidenceKeyring) (*FieldServer, error) {
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
@@ -46,6 +83,7 @@ func (s *FieldServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/fields/{actorId}/identity-role", s.setRole)
 	mux.HandleFunc("POST /dsh/fields/{actorId}/reenrollment", s.authorizeReenrollment)
 	mux.HandleFunc("POST /dsh/field/joining-cases", s.createJoiningCase)
+	mux.HandleFunc("PATCH /dsh/field/joining-cases/{caseId}/draft", s.updateJoiningCaseDraft)
 	mux.HandleFunc("GET /dsh/field/joining-cases", s.listJoiningCases)
 	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}", s.readJoiningCase)
 	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/submit", s.submitJoiningCase)
@@ -65,7 +103,7 @@ func (s *FieldServer) admit(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	admission, replayed, err := s.service.Admit(r.Context(), input.FullNameAr, input.ContactPhoneE164, input.ServiceCityID, input.WalletProviderKey, idempotency, acting, correlation)
+	admission, replayed, err := s.service.Admit(r.Context(), input.FullNameAr, input.ContactPhoneE164, input.ServiceCityID, input.WalletProviderKey, input.AllServiceCities, input.ServiceCityIds, idempotency, acting, correlation)
 	if err != nil {
 		writeFieldError(w, err)
 		return
@@ -99,11 +137,12 @@ func (s *FieldServer) listAdmissions(w http.ResponseWriter, r *http.Request) {
 	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
 	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
 	state := strings.TrimSpace(r.URL.Query().Get("state"))
-	if len([]rune(query)) > 100 || len(cursor) > 1024 {
+	serviceCityID := strings.TrimSpace(r.URL.Query().Get("serviceCityId"))
+	if len([]rune(query)) > 100 || len(cursor) > 1024 || len(serviceCityID) > 128 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Field admission search or cursor is invalid")
 		return
 	}
-	page, err := s.service.ListAdmissionsForOperator(r.Context(), query, state, sort, limit, cursor, acting)
+	page, err := s.service.ListAdmissionsForOperator(r.Context(), query, state, sort, serviceCityID, limit, cursor, acting)
 	if err != nil {
 		writeFieldError(w, err)
 		return
@@ -128,7 +167,7 @@ func (s *FieldServer) updateAdmissionProfile(w http.ResponseWriter, r *http.Requ
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	admission, replayed, err := s.service.UpdateAdmissionProfile(r.Context(), r.PathValue("admissionId"), input.FullNameAr, expected, idempotency, acting, correlation)
+	admission, replayed, err := s.service.UpdateAdmissionProfile(r.Context(), r.PathValue("admissionId"), input.FullNameAr, input.WalletProviderKey, input.AllServiceCities, input.ServiceCityIds, expected, idempotency, acting, correlation)
 	if err != nil {
 		writeFieldError(w, err)
 		return
@@ -291,11 +330,48 @@ func (s *FieldServer) createJoiningCase(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	var input contract.CreateJoiningCaseRequest
+	var input fieldJoiningCaseDraftRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.CreateJoiningCase(r.Context(), bearerToken(r), idempotency, correlation, input)
+	if !input.applyDraftScalars() {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "both firstStoreLatitude and firstStoreLongitude must be provided together")
+		return
+	}
+	result, err := s.service.CreateJoiningCaseDraft(r.Context(), bearerToken(r), idempotency, correlation, input.createRequest())
+	if err != nil {
+		writeFieldError(w, err)
+		return
+	}
+	writeFieldCaseResult(w, responseStatus(result.Replayed), result)
+}
+
+func (s *FieldServer) updateJoiningCaseDraft(w http.ResponseWriter, r *http.Request) {
+	if !authorizedFieldSession(w, r) {
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" || r.Header.Get("If-Match") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "client actor authority headers are forbidden")
+		return
+	}
+	correlation, idempotency, ok := requiredFieldMutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	expectedVersion, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Version")))
+	if err != nil || expectedVersion < 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Expected-Version must be a positive integer")
+		return
+	}
+	var input fieldJoiningCaseDraftRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	if !input.applyDraftScalars() {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "both firstStoreLatitude and firstStoreLongitude must be provided together")
+		return
+	}
+	result, err := s.service.UpdateJoiningCaseDraft(r.Context(), bearerToken(r), r.PathValue("caseId"), expectedVersion, idempotency, correlation, input.createRequest(), input.FirstStoreProofNumber == nil)
 	if err != nil {
 		writeFieldError(w, err)
 		return
@@ -420,7 +496,7 @@ func requiredFieldMutationHeaders(w http.ResponseWriter, r *http.Request) (strin
 }
 
 func toFieldAdmission(value postgres.FieldAdmission) contract.FieldAdmission {
-	return contract.FieldAdmission{ID: value.ID, ActorID: value.ActorID, FullNameAr: value.FullNameAr, ContactPhoneE164: value.PhoneE164, ServiceCityID: value.ServiceCityID, WalletProviderKey: value.WalletProviderKey, State: value.State, RequiresProfileReview: value.RequiresProfileReview, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
+	return contract.FieldAdmission{ID: value.ID, ActorID: value.ActorID, FullNameAr: value.FullNameAr, ContactPhoneE164: value.PhoneE164, AllServiceCities: value.AllServiceCities, ServiceCityIds: value.ServiceCityIDs, WalletProviderKey: value.WalletProviderKey, State: value.State, RequiresProfileReview: value.RequiresProfileReview, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
 }
 
 func writeFieldError(w http.ResponseWriter, err error) {

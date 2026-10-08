@@ -77,7 +77,7 @@ function cartMutationErrorMessage(error: unknown): string {
   if (code === "STALE_CHECKOUT") return "تغيرت السلة أو بيانات المنتج. حدّثنا السلة؛ راجعها ثم أعد المحاولة.";
   if (code === "INVALID_INPUT") return "تعذر قبول الكمية أو الخيارات الحالية. حدّث السلة ثم أعد المحاولة.";
   if (code === "INVALID_PAYMENT_ALLOCATION") return "مبلغ الرصيد يجب ألا يتجاوز إجمالي الطلب.";
-  if (code === "INVALID_RECIPIENT") return "بيانات مستلم الطلب غير صالحة. راجع الاسم والرقم الدولي.";
+  if (code === "INVALID_RECIPIENT") return "بيانات مستلم الطلب غير صالحة. راجع الاسم والرقم اليمني المحلي أو الدولي.";
   if (code === "INSUFFICIENT_CUSTOMER_BALANCE") return "الرصيد المتاح أقل من المبلغ المحدد. خفّض المبلغ أو حدّث رصيدك.";
   if (code === "OFFER_UNAVAILABLE") return "لم يعد أحد المنتجات متاحًا. حدّث السلة لمراجعة المنتجات الحالية.";
   if (code === "CART_CLOSED") return "أُغلقت السلة. افتح كتالوج المتجر لبدء سلة جديدة.";
@@ -192,7 +192,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
               setError(cartMutationErrorMessage(cause));
             }
           } else if (isCurrent()) {
-            setError("تعذر تأكيد نتيجة الطلب. بقيت المحاولة محفوظة؛ تحقق منها لإعادة المحاولة بالمفتاح نفسه.");
+            setError("تعذر تأكيد نتيجة الطلب. بقيت المحاولة محفوظة؛ تحقق منها قبل إنشاء طلب آخر.");
           }
         } finally {
           if (isCurrent()) setBusy(false);
@@ -302,7 +302,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
       return;
     }
     if (!pickupMode && !deliveryRecipientIsValid(recipient)) {
-      setError("أدخل اسمًا ورقمًا دوليًا صحيحًا للمستلم قبل تأكيد الطلب.");
+      setError("أدخل اسمًا ورقمًا يمنيًا صحيحًا للمستلم، محليًا أو دوليًا، قبل تأكيد الطلب.");
       return;
     }
     setError("");
@@ -356,7 +356,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId, fulfill
   const balanceNeedsRead = selectedBalanceMinor !== null && selectedBalanceMinor > 0 && wallet.kind !== "ready";
   const balanceExceedsPayable = selectedBalanceMinor !== null && quote.kind === "ready" && selectedBalanceMinor > quote.quote.totalAmountMinor;
   const remainingCashMinor = selectedBalanceMinor !== null && quote.kind === "ready" && selectedBalanceMinor <= quote.quote.totalAmountMinor ? quote.quote.totalAmountMinor - selectedBalanceMinor : null;
-  if (pendingCheckout) return <View style={styles.container} accessibilityLabel="استعادة طلب السلة"><Text style={styles.title}>التحقق من نتيجة الطلب</Text><Text style={styles.warning}>المحاولة محفوظة لهذا الحساب والسلة. سنقرأ الطلب أولًا ثم نعيد نفس العملية بالمفتاح نفسه عند الحاجة.</Text><BthwaniButton busy={busy} disabled={busy} label="تحقق واستعد الطلب" onPress={() => void load()} />{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}</View>;
+  if (pendingCheckout) return <View style={styles.container} accessibilityLabel="استعادة طلب السلة"><Text style={styles.title}>التحقق من نتيجة الطلب</Text><Text style={styles.warning}>المحاولة محفوظة لهذا الحساب والسلة. سنتحقق من النتيجة أولًا لتجنب إنشاء طلب مكرر.</Text><BthwaniButton busy={busy} disabled={busy} label="تحقق واستعد الطلب" onPress={() => void load()} />{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}</View>;
   return (
     <View style={styles.container} accessibilityLabel="السلة وإتمام الطلب">
       <Text style={styles.title}>السلة وإتمام الطلب</Text>

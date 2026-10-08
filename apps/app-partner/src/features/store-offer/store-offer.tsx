@@ -105,13 +105,13 @@ function identifierResolutionNotice(match: CatalogIdentifierResolution): string 
     case "EXISTING_STORE_OFFER":
       return match.productName ? `هذا المنتج له عرض قائم في متجرك: ${match.productName}. عدّله من قائمة العروض أدناه.` : "هذا المنتج له عرض قائم في متجرك. عدّله من قائمة العروض أدناه.";
     case "UNKNOWN_IDENTIFIER":
-      return "لم يُعثر على المعرّف. أنشئ منتجًا خاصًا بهذا المتجر من قسم منتجات المتجر، أو أرسل مقترحًا للمراجعة.";
+      return "لم يُعثر على المنتج. أنشئ منتجًا خاصًا بهذا المتجر من قسم منتجات المتجر، أو أرسل مقترحًا للمراجعة.";
     case "VARIABLE_MEASURE_IDENTIFIER":
-      return "هذا معرّف لمنتج بكمية متغيرة، ولا يمكن إنشاء عرض قابل للطلب حتى يكتمل مسار الكمية الفعلية.";
+      return "هذا المنتج يباع بكمية متغيرة، ولا يمكن إنشاء عرض قابل للطلب حتى يكتمل مسار الكمية الفعلية.";
     case "UNAVAILABLE_IN_STORE":
-      return "هذا المعرّف مرتبط بمنتج خاص بمتجر آخر، ولا يمكن استخدامه في هذا المتجر.";
+      return "هذا المنتج مرتبط بمتجر آخر، ولا يمكن استخدامه في هذا المتجر.";
     default:
-      return "المعرّف يطابق أكثر من نتيجة. أوقف استخدامه واطلب مراجعة هوية المنتج.";
+      return "تطابق الرمز مع أكثر من منتج. أوقف استخدامه واطلب مراجعة اسم المنتج.";
   }
 }
 
@@ -671,7 +671,7 @@ const theme = useAppearanceTheme();
           return { uri: asset.uri, name: asset.name, ...(asset.mimeType ? { type: asset.mimeType } : {}) };
         }}
       /> : null}
-      {catalogReady ? <View style={styles.searchRow}><TextInput accessibilityLabel="الباركود أو SKU" autoCapitalize="characters" editable={!busy} onChangeText={(value) => { setIdentifier(value); setScanNotice(""); }} onSubmitEditing={() => void resolveIdentifier()} placeholder="امسح أو أدخل المعرّف" returnKeyType="search" value={identifier} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={busy || !identifier.trim()} label="حلّ المعرّف" onPress={() => void resolveIdentifier()} variant="secondary" /><BthwaniButton disabled={busy} label={cameraOpen ? "إغلاق الكاميرا" : "مسح بالكاميرا"} onPress={async () => { if (cameraOpen) { setCameraOpen(false); return; } if (!cameraPermission?.granted) { const permission = await requestCameraPermission(); if (!permission.granted) { setError("يلزم السماح للكاميرا لمسح الباركود."); return; } } setCameraOpen(true); }} variant="secondary" /></View> : null}
+      {catalogReady ? <View style={styles.searchRow}><TextInput accessibilityLabel="الباركود على العبوة أو رمز الصنف في هذا المتجر" autoCapitalize="characters" editable={!busy} onChangeText={(value) => { setIdentifier(value); setScanNotice(""); }} onSubmitEditing={() => void resolveIdentifier()} placeholder="امسح الباركود أو اكتب الرمز" returnKeyType="search" value={identifier} style={[styles.input, busy && styles.disabledInput]} /><BthwaniButton busy={busy} disabled={busy || !identifier.trim()} label="بحث عن المنتج" onPress={() => void resolveIdentifier()} variant="secondary" /><BthwaniButton disabled={busy} label={cameraOpen ? "إغلاق الكاميرا" : "مسح بالكاميرا"} onPress={async () => { if (cameraOpen) { setCameraOpen(false); return; } if (!cameraPermission?.granted) { const permission = await requestCameraPermission(); if (!permission.granted) { setError("يلزم السماح للكاميرا لمسح الباركود."); return; } } setCameraOpen(true); }} variant="secondary" /></View> : null}
       {cameraOpen ? <CameraView style={styles.camera} facing="back" barcodeScannerSettings={{ barcodeTypes: ["ean13", "ean8", "upc_a", "upc_e", "code128"] }} onBarcodeScanned={({ data }) => { setCameraOpen(false); void onBarcode(data); }} /> : null}
       {scanNotice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.muted}>{scanNotice}</Text> : null}
        {catalogReady ? <View style={styles.searchRow}><TextInput accessibilityLabel="البحث في الكتالوج" editable={!busy} onChangeText={setQuery} onSubmitEditing={() => void searchProducts()} placeholder="ابحث باسم المنتج" returnKeyType="search" value={query} style={[styles.input, busy && styles.disabledInput]} />{query ? <BthwaniButton accessibilityLabel="مسح البحث" disabled={busy} label="مسح" onPress={() => { ++searchSequence.current; setQuery(""); setProducts([]); setProductNextCursor(""); setSearchSubmitted(false); setError(""); }} style={styles.clearSearch} variant="quiet" /> : null}<BthwaniButton busy={busy} disabled={busy} label="بحث" onPress={() => void searchProducts()} variant="secondary" /></View> : null}

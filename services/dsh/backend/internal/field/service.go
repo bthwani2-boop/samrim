@@ -4,14 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"regexp"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/joiningcase"
+	phoneformat "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/phone"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
@@ -24,8 +23,6 @@ var (
 	ErrManagedRoleNotEligible     = errors.New("Field managed role is not currently eligible")
 	ErrManagedRoleVersionConflict = errors.New("Field managed role version is stale")
 )
-
-var phoneE164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
 
 type Service struct {
 	identity     *identityintegration.Client
@@ -40,22 +37,32 @@ func New(identity *identityintegration.Client, db *sql.DB, evidenceKeys *postgre
 	return &Service{identity: identity, db: db, evidenceKeys: evidenceKeys}, nil
 }
 
-func (s *Service) Admit(ctx context.Context, fullNameAr, phone, serviceCityID, walletProviderKey, idempotencyKey, actingActorID, correlationID string) (postgres.FieldAdmission, bool, error) {
+func (s *Service) Admit(ctx context.Context, fullNameAr, phone, serviceCityID, walletProviderKey string, allServiceCities bool, serviceCityIDs []string, idempotencyKey, actingActorID, correlationID string) (postgres.FieldAdmission, bool, error) {
 	fullNameAr = strings.TrimSpace(fullNameAr)
 	phone = normalizePhoneE164(phone)
 	serviceCityID = strings.TrimSpace(serviceCityID)
+	if !allServiceCities && len(serviceCityIDs) == 0 && serviceCityID != "" {
+		serviceCityIDs = []string{serviceCityID}
+	}
 	walletProviderKey, providerKeyValid := postgres.NormalizeWalletProviderKey(walletProviderKey)
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	actingActorID = strings.TrimSpace(actingActorID)
 	correlationID = strings.TrimSpace(correlationID)
-	if len([]rune(fullNameAr)) < 2 || len([]rune(fullNameAr)) > 120 || !phoneE164Pattern.MatchString(phone) || serviceCityID == "" || !providerKeyValid || !validMutation(idempotencyKey, correlationID, actingActorID) {
+	if len([]rune(fullNameAr)) < 2 || len([]rune(fullNameAr)) > 120 || !phoneformat.IsE164(phone) || (!allServiceCities && len(serviceCityIDs) == 0 && serviceCityID == "") || !providerKeyValid || !validMutation(idempotencyKey, correlationID, actingActorID) {
 		return postgres.FieldAdmission{}, false, ErrInvalidInput
 	}
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.FieldAdmission{}, false, err
 	}
-	hash := postgres.HashFieldAdmissionRequest(fullNameAr, phone, serviceCityID, walletProviderKey)
-	admission, _, replayed, err := postgres.CreateFieldAdmissionCandidate(ctx, s.db, postgres.FieldAdmissionCandidateInput{FullNameAr: fullNameAr, Phone: phone, ServiceCityID: serviceCityID, WalletProviderKey: walletProviderKey, IdempotencyKey: idempotencyKey, RequestHash: hash, ActingActorID: actingActorID, CorrelationID: correlationID})
+	activeProvider, providerErr := postgres.IsActiveWalletProvider(ctx, s.db, walletProviderKey)
+	if providerErr != nil {
+		return postgres.FieldAdmission{}, false, providerErr
+	}
+	if !activeProvider {
+		return postgres.FieldAdmission{}, false, ErrInvalidInput
+	}
+	hash := postgres.HashFieldAdmissionRequestScope(fullNameAr, phone, allServiceCities, serviceCityIDs, walletProviderKey)
+	admission, _, replayed, err := postgres.CreateFieldAdmissionCandidate(ctx, s.db, postgres.FieldAdmissionCandidateInput{FullNameAr: fullNameAr, Phone: phone, AllServiceCities: allServiceCities, ServiceCityIDs: serviceCityIDs, WalletProviderKey: walletProviderKey, IdempotencyKey: idempotencyKey, RequestHash: hash, ActingActorID: actingActorID, CorrelationID: correlationID})
 	if err != nil {
 		return postgres.FieldAdmission{}, false, err
 	}
@@ -63,20 +70,7 @@ func (s *Service) Admit(ctx context.Context, fullNameAr, phone, serviceCityID, w
 }
 
 func normalizePhoneE164(value string) string {
-	return strings.Map(func(r rune) rune {
-		switch {
-		case r >= '0' && r <= '9', r == '+':
-			return r
-		case r >= '\u0660' && r <= '\u0669':
-			return '0' + (r - '\u0660')
-		case r >= '\u06f0' && r <= '\u06f9':
-			return '0' + (r - '\u06f0')
-		case unicode.IsSpace(r), r == '-', r == '(', r == ')':
-			return -1
-		default:
-			return r
-		}
-	}, strings.TrimSpace(value))
+	return phoneformat.NormalizeYemenE164(value)
 }
 
 func (s *Service) Approve(ctx context.Context, admissionID string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.FieldAdmission, bool, error) {
@@ -149,21 +143,35 @@ func (s *Service) ReadForOperator(ctx context.Context, admissionID, actingActorI
 	return postgres.ReadFieldAdmission(ctx, s.db, admissionID)
 }
 
-func (s *Service) ListAdmissionsForOperator(ctx context.Context, query, state, sort string, limit int, cursor, actingActorID string) (postgres.FieldAdmissionPage, error) {
+func (s *Service) ListAdmissionsForOperator(ctx context.Context, query, state, sort, serviceCityID string, limit int, cursor, actingActorID string) (postgres.FieldAdmissionPage, error) {
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.FieldAdmissionPage{}, err
 	}
-	return postgres.ListFieldAdmissions(ctx, s.db, query, state, sort, limit, cursor)
+	return postgres.ListFieldAdmissionsByCity(ctx, s.db, query, state, sort, serviceCityID, limit, cursor)
 }
 
-func (s *Service) UpdateAdmissionProfile(ctx context.Context, admissionID, fullNameAr string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.FieldAdmission, bool, error) {
+func (s *Service) UpdateAdmissionProfile(ctx context.Context, admissionID, fullNameAr, walletProviderKey string, allServiceCities bool, serviceCityIDs []string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.FieldAdmission, bool, error) {
 	if expectedVersion < 1 || !validMutation(idempotencyKey, correlationID, actingActorID) {
 		return postgres.FieldAdmission{}, false, ErrInvalidInput
 	}
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.FieldAdmission{}, false, err
 	}
-	return postgres.UpdateFieldAdmissionProfile(ctx, s.db, admissionID, fullNameAr, expectedVersion, idempotencyKey, postgres.HashFieldAdmissionProfileRequest(admissionID, fullNameAr, expectedVersion), actingActorID, correlationID)
+	current, readErr := postgres.ReadFieldAdmission(ctx, s.db, admissionID)
+	if readErr != nil {
+		return postgres.FieldAdmission{}, false, readErr
+	}
+	if strings.TrimSpace(current.WalletProviderKey) != strings.TrimSpace(walletProviderKey) {
+		activeProvider, providerErr := postgres.IsActiveWalletProvider(ctx, s.db, walletProviderKey)
+		if providerErr != nil {
+			return postgres.FieldAdmission{}, false, providerErr
+		}
+		if !activeProvider {
+			return postgres.FieldAdmission{}, false, ErrInvalidInput
+		}
+	}
+	hash := postgres.HashFieldAdmissionProfileScopeRequest(admissionID, fullNameAr, walletProviderKey, allServiceCities, serviceCityIDs, expectedVersion)
+	return postgres.UpdateFieldAdmissionProfile(ctx, s.db, admissionID, fullNameAr, walletProviderKey, allServiceCities, serviceCityIDs, expectedVersion, idempotencyKey, hash, actingActorID, correlationID)
 }
 
 func (s *Service) ReviewAdmissionProfile(ctx context.Context, admissionID string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.FieldAdmission, bool, error) {

@@ -10,7 +10,7 @@ export default function PartnerJoiningPage() {
         <div className="workspace-page-heading">
           <p className="eyebrow">الشركاء / الانضمام</p>
           <h1 id="partner-joining-page-title">طلبات انضمام الشركاء</h1>
-          <p className="lead">راجع الحالات الواردة وافتح كل حالة لتنفيذ قرارها من سجل DSH الكانوني.</p>
+          <p className="lead">راجع الحالات الواردة وافتح كل حالة لتنفيذ قرارها من السجل المعتمد.</p>
         </div>
         <JoiningCaseQueue />
       </section>

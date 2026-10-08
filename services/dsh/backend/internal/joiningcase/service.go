@@ -7,7 +7,6 @@ import (
 	"errors"
 	"log"
 	"math"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -26,8 +25,6 @@ var (
 	ErrPartnerFinancialTermsPolicyStale = errors.New("partner financial terms policy changed after it was read")
 	ErrInvalidInput                     = errors.New("joining case input is invalid")
 )
-
-var phoneE164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
 
 type Service struct {
 	identity     *identityintegration.Client
@@ -51,6 +48,13 @@ func (s *Service) Create(ctx context.Context, input contract.CreateJoiningCaseRe
 	}
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.JoiningCaseResult{}, err
+	}
+	activeProvider, providerErr := postgres.IsActiveWalletProvider(ctx, s.db, request.WalletProviderKey)
+	if providerErr != nil {
+		return postgres.JoiningCaseResult{}, providerErr
+	}
+	if !activeProvider {
+		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
 	requestHash, err := HashCreateRequest(s.evidenceKeys, "control-panel-joining-case-create", actingActorID, request)
 	if err != nil {
@@ -295,7 +299,16 @@ func (s *Service) ListStoresForOperatorByPartnerActor(ctx context.Context, actor
 	if role.Role != "partner" {
 		return postgres.PartnerStorePage{}, ErrPartnerIdentityUnavailable
 	}
-	return postgres.ListStoresForPartnerActor(ctx, s.db, actorID, limit, cursor)
+	page, err := postgres.ListStoresForPartnerActor(ctx, s.db, actorID, limit, cursor)
+	if err != nil {
+		return postgres.PartnerStorePage{}, err
+	}
+	for index := range page.Stores {
+		if err := postgres.ReadStoreDisplayNames(ctx, s.db, &page.Stores[index]); err != nil {
+			return postgres.PartnerStorePage{}, err
+		}
+	}
+	return page, nil
 }
 
 func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken, caseID string, input contract.CorrectJoiningCaseRequest, expectedVersion int, idempotencyKey, correlationID string) (postgres.JoiningCaseResult, error) {

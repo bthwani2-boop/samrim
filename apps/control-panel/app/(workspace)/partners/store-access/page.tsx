@@ -9,7 +9,7 @@ export default function PartnerStoreAccessPage() {
       <div className="workspace-page-heading">
         <p className="eyebrow">الشركاء / الوصول للمتاجر</p>
         <h1 id="partner-store-access-title">اعتماد وصول الشريك إلى متجر</h1>
-        <p className="lead">تحقق من دعوة مالك المتجر واعتمد دور الشريك لحساب Identity الموجود فقط. قبول الدعوة يظل بيد المدعو.</p>
+        <p className="lead">تحقق من دعوة مالك المتجر واعتمد دور الشريك للحساب المسجل فقط. قبول الدعوة يظل بيد المدعو.</p>
       </div>
       <StoreAccessAdmissionQueue />
     </section>

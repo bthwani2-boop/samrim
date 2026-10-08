@@ -1,12 +1,13 @@
 "use client";
 
-import { toAsciiDigits } from "@bthwani/design-system";
+import { normalizeYemenPhoneE164, toAsciiDigits } from "@bthwani/design-system";
 import { isValidStoreWorkingHours, type CommerceVertical, type CommercialStoreType, type CreateJoiningCaseRequest, type JoiningCaseProofType, type JoiningCaseResponse, type ServiceCity, type StoreWorkingHoursInterval } from "@bthwani/dsh";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "../../session/session-provider";
 import { partnerErrorMessage } from "./partner-error-message";
+import type { WalletProviderOption } from "../wallet-provider/use-wallet-providers";
 
 const phoneE164Pattern = /^\+[1-9][0-9]{7,14}$/;
 type JoiningCaseCreateInput = CreateJoiningCaseRequest;
@@ -35,7 +36,7 @@ function clearPendingJoiningCaseMetadata(storageKey: string): void {
 }
 
 function commercialTypePrompt(verticalId: string, loading: boolean): string {
-  if (!verticalId) return "اختر الفئة الرئيسية أولاً";
+  if (!verticalId) return "اختر النشاط الرئيسي أولاً";
   if (loading) return "جارٍ تحميل الأنواع…";
   return "اختر نوع المتجر";
 }
@@ -85,6 +86,7 @@ export function JoiningCaseCreate() {
   const [workingDays, setWorkingDays] = useState<ReadonlyArray<number>>([]);
   const [workingHours, setWorkingHours] = useState<ReadonlyArray<StoreWorkingHoursInterval>>(emptyWorkingHours);
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
+  const [walletProviders, setWalletProviders] = useState<ReadonlyArray<WalletProviderOption>>([]);
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
   const [commercialTypes, setCommercialTypes] = useState<ReadonlyArray<CommercialStoreType>>([]);
   const [commercialTypesBusy, setCommercialTypesBusy] = useState(false);
@@ -110,7 +112,7 @@ export function JoiningCaseCreate() {
       if (raw) {
         const metadata = parsePendingJoiningCaseMetadata(raw);
         if (!metadata) {
-          setStorageError("تعذر التحقق من مفتاح محاولة سابقة. أوقفنا الإرسال لمنع إنشاء حالة مكررة؛ افتح طابور الانضمام وتحقق من الحالة قبل المتابعة.");
+          setStorageError("تعذر التحقق من محاولة سابقة. أوقفنا الإرسال لمنع إنشاء حالة مكررة؛ افتح طابور الانضمام وتحقق من الحالة قبل المتابعة.");
           return;
         }
         // Replace legacy entries without restoring their private request payload into form state.
@@ -120,7 +122,7 @@ export function JoiningCaseCreate() {
       }
       setHydratedPendingStorageKey(pendingStorageKey);
     } catch {
-      setStorageError("تعذر قراءة مفتاح متابعة الإنشاء أو حصره بالبيانات غير الحساسة. لم يُرسل أي طلب جديد.");
+      setStorageError("تعذر قراءة محاولة الإنشاء أو حصرها بالبيانات غير الحساسة. لم يُرسل أي طلب جديد.");
     }
   }, [pendingStorageKey]);
 
@@ -128,18 +130,20 @@ export function JoiningCaseCreate() {
     setOptionsBusy(true);
     setOptionsError("");
     try {
-      const [citiesResponse, verticalsResponse] = await Promise.all([
+      const [citiesResponse, verticalsResponse, providersResponse] = await Promise.all([
         fetch("/api/service-cities", { cache: "no-store" }),
         fetch("/api/catalog/verticals", { cache: "no-store" }),
+        fetch("/api/wallet-providers", { cache: "no-store" }),
       ]);
-      if (!citiesResponse.ok || !verticalsResponse.ok) {
-        setOptionsError("تعذر قراءة المدن أو الفئات الرئيسية.");
+      if (!citiesResponse.ok || !verticalsResponse.ok || !providersResponse.ok) {
+        setOptionsError("تعذر قراءة المدن أو الفئات الرئيسية أو المحافظ الرسمية.");
         return;
       }
       setCities((await citiesResponse.json() as { cities: ReadonlyArray<ServiceCity> }).cities);
       setVerticals((await verticalsResponse.json() as { verticals: ReadonlyArray<CommerceVertical> }).verticals);
+      setWalletProviders((await providersResponse.json() as { walletProviders: ReadonlyArray<WalletProviderOption> }).walletProviders);
     } catch {
-      setOptionsError("تعذر قراءة المدن أو الفئات الرئيسية.");
+      setOptionsError("تعذر قراءة المدن أو الفئات الرئيسية أو المحافظ الرسمية.");
     } finally {
       setOptionsBusy(false);
     }
@@ -170,7 +174,7 @@ export function JoiningCaseCreate() {
 
   async function createCase() {
     const currentInput: JoiningCaseCreateInput = {
-      contactPhoneE164: phone.replace(/\s+/g, ""),
+      contactPhoneE164: normalizeYemenPhoneE164(phone),
       ownerFullName: ownerFullName.trim(),
       walletProviderKey: walletProviderKey.trim(),
       businessName: businessName.trim(),
@@ -202,14 +206,14 @@ export function JoiningCaseCreate() {
     setError("");
     try {
       if (!pendingStorageKey) {
-        setError("تعذر تحديد هوية المشغّل لحفظ مفتاح متابعة الإنشاء. لم يُرسل أي طلب.");
+        setError("تعذر تحديد جلسة المشغّل لحفظ محاولة الإنشاء. لم يُرسل أي طلب.");
         return;
       }
       try {
         // Store only replay identifiers; proof numbers and the rest of the request stay out of browser storage.
         window.sessionStorage.setItem(pendingStorageKey, JSON.stringify({ idempotencyKey: attempt.idempotencyKey, correlationId: attempt.correlationId }));
       } catch {
-        setError("تعذر حفظ مفتاح متابعة الإنشاء في جلسة المتصفح. لم يُرسل أي طلب.");
+        setError("تعذر حفظ محاولة الإنشاء في جلسة المتصفح. لم يُرسل أي طلب.");
         return;
       }
       setPendingAttempt(attempt);
@@ -224,16 +228,16 @@ export function JoiningCaseCreate() {
         const message = await partnerErrorMessage(response);
         if (idempotencyConflict) {
           setPendingAttempt({ ...attempt, input: null });
-          setError("لم تطابق البيانات مفتاح المحاولة المحفوظ. أعد إدخال بيانات الطلب الأصلية كما أُرسلت أول مرة؛ سيبقى المفتاح نفسه لمنع إنشاء حالة مكررة.");
+          setError("لم تطابق البيانات المحاولة المحفوظة. أعد إدخال بيانات الطلب الأصلية كما أُرسلت أول مرة لمنع إنشاء حالة مكررة.");
         } else if (isResumedAttempt) {
           setPendingAttempt({ ...attempt, input: null });
-          setError(`${message} أعد إدخال بيانات المحاولة الأصلية ثم أعد المحاولة بالمفتاح المحفوظ؛ لا تبدأ طلباً جديداً قبل تأكيد النتيجة.`);
+          setError(`${message} أعد إدخال بيانات المحاولة الأصلية ثم أعد المحاولة؛ لا تبدأ طلباً جديداً قبل تأكيد النتيجة.`);
         } else if (response.status < 500 && response.status !== 408) {
           clearPendingJoiningCaseMetadata(pendingStorageKey);
           setPendingAttempt(null);
           setError(message);
         } else {
-          setError(`${message} أعد المحاولة بالبيانات نفسها للتحقق بالمفتاح المحفوظ. بعد إعادة التحميل أعد إدخالها؛ لا يحفظ المتصفح بيانات الإثبات.`);
+          setError(`${message} أعد المحاولة بالبيانات نفسها للتحقق. بعد إعادة التحميل أعد إدخالها؛ لا يحفظ المتصفح بيانات الإثبات.`);
         }
         return;
       }
@@ -245,7 +249,7 @@ export function JoiningCaseCreate() {
       router.push(`/partners/${encodeURIComponent(payload.case.id)}`);
     } catch {
       setPendingAttempt(isResumedAttempt ? { ...attempt, input: null } : attempt);
-      setError("تعذر تأكيد إنشاء حالة الانضمام. أعد المحاولة بالمفتاح المحفوظ؛ بعد إعادة التحميل أعد إدخال البيانات الأصلية، ولا يحفظ المتصفح بيانات الإثبات.");
+      setError("تعذر تأكيد إنشاء حالة الانضمام. أعد المحاولة بالبيانات الأصلية؛ بعد إعادة التحميل أعد إدخالها، ولا يحفظ المتصفح بيانات الإثبات.");
     } finally {
       setBusy(false);
     }
@@ -277,17 +281,17 @@ export function JoiningCaseCreate() {
       {storageError ? <p className="identity-error" role="alert">{storageError} <Link href="/partners">افتح طابور الانضمام</Link></p> : null}
       {optionsError ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر تحميل الخيارات</strong><p>{optionsError}</p><button type="button" className="button button-secondary" disabled={optionsBusy || busy} onClick={() => void loadOptions()}>إعادة قراءة الخيارات</button></div> : null}
       {!optionsBusy && !optionsError && (activeCities.length === 0 || activeVerticals.length === 0) ? <div className="managed-status managed-status-warning" role="alert"><strong>لا يمكن إنشاء الحالة بعد</strong><p>تحتاج الحالة إلى مدينة خدمة نشطة وفئة رئيسية نشطة.</p><Link className="button button-secondary" href="/policies/service-cities">فتح مدن الخدمة</Link></div> : null}
-      {pendingAttempt ? <p className="managed-status managed-status-warning" role="status">{pendingRequestLocked ? "المحاولة السابقة لم تصل إلى نتيجة مؤكدة. بياناتها مقفلة في هذه الصفحة وستُعاد كما هي بالمفتاح المحفوظ." : "وجدنا محاولة سابقة غير محسومة. أعد إدخال بياناتها الأصلية تماماً لإعادة المحاولة بالمفتاح نفسه؛ يحفظ المتصفح مفتاح المتابعة فقط ولا يحفظ بيانات المالك أو الإثبات."}</p> : null}
-      {createdCaseId ? <p className="managed-status managed-status-info" role="status">قُرئت الحالة الكانونية بعد الإنشاء. <Link href={`/partners/${encodeURIComponent(createdCaseId)}`}>افتح حالة الانضمام</Link></p> : null}
+      {pendingAttempt ? <p className="managed-status managed-status-warning" role="status">{pendingRequestLocked ? "المحاولة السابقة لم تصل إلى نتيجة مؤكدة. بياناتها مقفلة في هذه الصفحة وستُعاد كما هي." : "وجدنا محاولة سابقة غير محسومة. أعد إدخال بياناتها الأصلية تماماً لإعادة المحاولة دون تكرار العملية؛ يحفظ المتصفح بيانات المتابعة فقط ولا يحفظ بيانات المالك أو الإثبات."}</p> : null}
+      {createdCaseId ? <p className="managed-status managed-status-info" role="status">قُرئت الحالة المعتمدة بعد الإنشاء. <Link href={`/partners/${encodeURIComponent(createdCaseId)}`}>افتح حالة الانضمام</Link></p> : null}
       <div className="access-form">
         <label className="field-label" htmlFor="joining-owner">اسم المالك الكامل<input id="joining-owner" autoComplete="name" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={ownerFullName} onChange={(event) => setOwnerFullName(event.target.value)} /></label>
-        <label className="field-label" htmlFor="joining-phone">رقم جوال المالك (E.164)<input id="joining-phone" autoComplete="tel" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} placeholder="مثال: +96777000100" /></label>
-        <label className="field-label" htmlFor="joining-wallet-provider">مزوّد المحفظة الذي حدده المالك<input id="joining-wallet-provider" autoComplete="off" aria-required="true" maxLength={64} disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={walletProviderKey} onChange={(event) => setWalletProviderKey(event.target.value)} placeholder="مثال: الكريمي" /><small>سجّل اسم المزوّد فقط. لا تدخل رقم المحفظة أو الاسم القانوني هنا.</small></label>
+        <label className="field-label" htmlFor="joining-phone">رقم جوال المالك<input id="joining-phone" autoComplete="tel" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} placeholder="مثال: 777000100 أو +967777000100" /></label>
+        <label className="field-label" htmlFor="joining-wallet-provider">مزوّد المحفظة الذي حدده المالك<select id="joining-wallet-provider" aria-required="true" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={walletProviderKey} onChange={(event) => setWalletProviderKey(event.target.value)}><option value="">اختر محفظة رسمية</option>{walletProviderKey && !walletProviders.some((provider) => provider.key === walletProviderKey) ? <option value={walletProviderKey}>{walletProviderKey} · قيمة سابقة محفوظة</option> : null}{walletProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.displayNameAr}</option>)}</select><small>سجّل المزوّد فقط. لا تدخل رقم المحفظة أو الاسم القانوني هنا.</small></label>
         <label className="field-label" htmlFor="joining-business">الاسم القانوني للنشاط<input id="joining-business" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={businessName} onChange={(event) => setBusinessName(event.target.value)} /></label>
         <label className="field-label" htmlFor="joining-store">اسم المتجر الأول<input id="joining-store" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={storeName} onChange={(event) => setStoreName(event.target.value)} /></label>
         <label className="field-label" htmlFor="joining-address">عنوان المتجر<textarea id="joining-address" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady} value={storeAddress} onChange={(event) => setStoreAddress(event.target.value)} placeholder="الحي والشارع وأقرب معلم" rows={3} /></label>
         <label className="field-label" htmlFor="joining-city">مدينة المتجر الأول<select id="joining-city" disabled={busy || optionsBusy || Boolean(optionsError) || pendingRequestLocked || !attemptReady} value={serviceCityId} onChange={(event) => setServiceCityId(event.target.value)}><option value="">اختر مدينة نشطة</option>{activeCities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
-        <label className="field-label" htmlFor="joining-vertical">الفئة الرئيسية<select id="joining-vertical" disabled={busy || optionsBusy || Boolean(optionsError) || pendingRequestLocked || !attemptReady} value={verticalId} onChange={(event) => setVerticalId(event.target.value)}><option value="">اختر الفئة الرئيسية</option>{activeVerticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}</option>)}</select></label>
+        <label className="field-label" htmlFor="joining-vertical">النشاط الرئيسي<select id="joining-vertical" disabled={busy || optionsBusy || Boolean(optionsError) || pendingRequestLocked || !attemptReady} value={verticalId} onChange={(event) => setVerticalId(event.target.value)}><option value="">اختر النشاط الرئيسي</option>{activeVerticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}</option>)}</select></label>
          <label className="field-label" htmlFor="joining-commercial-type">نوع المتجر التجاري<select id="joining-commercial-type" disabled={busy || optionsBusy || commercialTypesBusy || !verticalId || Boolean(commercialTypesError) || pendingRequestLocked || !attemptReady} value={commercialTypeId} onChange={(event) => setCommercialTypeId(event.target.value)}><option value="">{commercialTypePlaceholder}</option>{activeCommercialTypes.map((item) => <option key={item.id} value={item.id}>{item.nameAr}</option>)}</select>{commercialTypesError ? <span className="identity-error" role="alert">{commercialTypesError}</span> : null}{hasNoActiveCommercialTypes ? <span className="muted">لا توجد أنواع نشطة لهذه الفئة. أضف النوع من سجل أنواع المتاجر قبل إنشاء الحالة.</span> : null}</label>
         <fieldset className="field-label" disabled={busy || optionsBusy || pendingRequestLocked || !attemptReady}>
           <legend>ساعات العمل الأسبوعية · توقيت المدينة</legend>

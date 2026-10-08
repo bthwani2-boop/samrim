@@ -24,12 +24,14 @@ export default async function FinanceBeneficiarySettlementRegistryPage({
     return Array.isArray(value) ? value[0] ?? "" : value ?? "";
   };
   const rawStatus = first("status");
+  const rawAdmissionState = first("admissionState");
   const rawSort = first("sort");
   const rawView = first("view");
   const batchStatuses = ["DRAFT", "PREPARED", "APPROVED", "FROZEN", "EXECUTION_IN_PROGRESS", "AWAITING_VERIFICATION", "AWAITING_RECONCILIATION", "COMPLETED", "CANCELLED", "EXCEPTION"];
   const initialQuery: BeneficiarySettlementInitialQuery = {
     status: ["", "NO_REQUEST", "HELD", "PREPARED", "APPROVED", "FROZEN", "EXECUTED", "COMPLETED", "EXCEPTION", "CANCELLED"].includes(rawStatus) ? rawStatus as BeneficiarySettlementInitialQuery["status"] : "",
     search: first("search").trim().slice(0, 128),
+    admissionState: ["all", "eligible", "suspended"].includes(rawAdmissionState) ? rawAdmissionState as BeneficiarySettlementInitialQuery["admissionState"] : "all",
     sort: ["available_asc", "available_desc", "held_asc", "held_desc", "payout_amount_asc", "payout_amount_desc"].includes(rawSort) ? rawSort as BeneficiarySettlementInitialQuery["sort"] : "available_desc",
     cursor: first("cursor").slice(0, 1024),
     view: ["beneficiaries", "batches", "reconciliation"].includes(rawView) ? rawView as BeneficiarySettlementInitialQuery["view"] : "beneficiaries",

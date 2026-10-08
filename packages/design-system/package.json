@@ -19,19 +19,25 @@
     "theme:check": "node --loader ./tools/ts-resolver.mjs tools/verify-theme-authority.mjs"
   },
   "dependencies": {
-    "@expo/material-symbols": "0.1.1",
-    "@expo/ui": "~57.0.19"
+    "@expo/material-symbols": "0.1.1"
   },
   "peerDependencies": {
     "react": "19.2.3",
     "react-native": "0.86.3",
-    "react-native-maps": "1.27.2"
+    "react-native-maps": "1.27.2",
+    "@expo/ui": "~57.0.22"
   },
   "devDependencies": {
     "@types/react": "19.2.17",
     "react": "19.2.3",
     "react-native": "0.86.3",
     "react-native-maps": "1.27.2",
-    "typescript": "6.0.2"
+    "typescript": "6.0.2",
+    "@expo/ui": "57.0.22"
+  },
+  "peerDependenciesMeta": {
+    "@expo/ui": {
+      "optional": true
+    }
   }
 }

@@ -1,0 +1,65 @@
+paths:
+  /dsh/public/wallet-providers:
+    get:
+      operationId: listActiveWalletProviders
+      summary: List active official wallet provider choices
+      responses:
+        "200": { description: Active wallet providers., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/WalletProviderListResponse" } } } }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+  /dsh/wallet-providers:
+    get:
+      operationId: listWalletProviders
+      summary: List wallet provider policies for an operator
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - name: includeInactive
+          in: query
+          required: false
+          schema: { type: boolean, default: false }
+      responses:
+        "200": { description: Wallet provider list., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/WalletProviderListResponse" } } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+    post:
+      operationId: createWalletProvider
+      summary: Add a wallet provider policy option
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateWalletProviderRequest" } } }
+      responses:
+        "201": { description: Provider created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/WalletProviderResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+  /dsh/wallet-providers/{providerKey}:
+    patch:
+      operationId: updateWalletProvider
+      summary: Rename or deactivate a wallet provider option
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+        - name: providerKey
+          in: path
+          required: true
+          schema: { type: string, pattern: '^wallet_provider_[a-z0-9_]{2,60}$' }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UpdateWalletProviderRequest" } } }
+      responses:
+        "200": { description: Provider updated., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/WalletProviderResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }

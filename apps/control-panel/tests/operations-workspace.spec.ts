@@ -159,7 +159,7 @@ test("operations lanes, order detail routes, and operator recovery follow URL st
   await page.goForward();
   await expect(page).toHaveURL(/lane=execution&sub=custody/);
 
-  await page.getByRole("link", { name: "order_ops_100" }).click();
+  await page.getByRole("link", { name: "فتح الطلب" }).click();
   await expect(page).toHaveURL(/\/operations\/order_ops_100\?.*tab=overview/);
   await expect(page.getByRole("navigation", { name: "مساحات تفاصيل الطلب" })).toBeVisible();
   await page.getByRole("navigation", { name: "مساحات تفاصيل الطلب" }).getByRole("link", { name: "العناصر" }).click();
@@ -173,7 +173,7 @@ test("operations lanes, order detail routes, and operator recovery follow URL st
   await page.goto("/operations?lane=exceptions");
   await expect(page.getByRole("heading", { name: "الاستثناءات والاستعادة" })).toBeVisible();
   await expect(page.getByRole("button", { name: "استعادة التسليم" })).toHaveCount(0);
-  await page.getByRole("link", { name: "order_ops_100" }).click();
+  await page.getByRole("link", { name: "فتح الطلب" }).click();
   const detailNavigation = page.getByRole("navigation", { name: "مساحات تفاصيل الطلب" });
   await expect(detailNavigation.getByRole("link", { name: "الاستعادة" })).toBeVisible();
   await page.getByRole("button", { name: "استعادة التسليم" }).click();

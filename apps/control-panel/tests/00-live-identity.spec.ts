@@ -164,7 +164,7 @@ test("@live operator passkey registration, authentication and governed recovery 
   await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
   const cookiesAfterExplicitLogout = await page.context().cookies();
   expect(cookiesAfterExplicitLogout.some((cookie) => cookie.name.endsWith("bt_identity_access") || cookie.name.endsWith("bt_identity_refresh"))).toBe(false);
-  expect(cookiesAfterExplicitLogout.find((cookie) => cookie.name.endsWith("bt_identity_device"))?.value).toBeTruthy();
+  expect(cookiesAfterExplicitLogout.some((cookie) => cookie.name.endsWith("bt_identity_device"))).toBe(false);
   const signedOutSession = await readBrowserSession(page);
   expect(signedOutSession.status, JSON.stringify(signedOutSession.body)).toBe(401);
   expect(signedOutSession.body.error.code).toBe("UNAUTHENTICATED");

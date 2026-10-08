@@ -10,7 +10,10 @@ const envPath = envArg ? path.resolve(root, envArg.slice("--env-file=".length)) 
 const canonicalProject = "samrim-local";
 const goImage = "golang:1.27.1-alpine";
 const migrationTestPath = path.join(root, "services/identity/backend/internal/storage/postgres/migrate_test.go");
-const canonicalMigrationTest = "TestMigrationV13ToV22Upgrade";
+const canonicalMigrationTests = [
+  "TestMigrationV13ToV26Upgrade",
+  "TestManagedRecoveryMigrationFreshBootstrapAndV25Upgrade",
+];
 
 function fail(message, error) {
   console.error(`IDENTITY_MIGRATION_PROOF=FAIL ${message}`);
@@ -42,8 +45,10 @@ const migrationTestSource = fs.readFileSync(migrationTestPath, "utf8");
 if (/127\.0\.0\.1|localhost|55432/.test(migrationTestSource)) {
   fail("migration proof must not contain a host PostgreSQL fallback");
 }
-if (!migrationTestSource.includes(`func ${canonicalMigrationTest}`)) {
-  fail(`canonical migration test missing: ${canonicalMigrationTest}`);
+for (const testName of canonicalMigrationTests) {
+  if (!migrationTestSource.includes(`func ${testName}`)) {
+    fail(`canonical migration test missing: ${testName}`);
+  }
 }
 
 console.log("==================================================");
@@ -107,7 +112,7 @@ try {
       "test",
       "-v",
       "-run",
-      `^${canonicalMigrationTest}$`,
+      `^(${canonicalMigrationTests.join("|")})$`,
       ".",
     ],
     { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
@@ -117,11 +122,11 @@ try {
 }
 
 console.log(output);
-if (output.includes("--- SKIP:") || !output.includes(`--- PASS: ${canonicalMigrationTest}`)) {
+if (output.includes("--- SKIP:") || canonicalMigrationTests.some((testName) => !output.includes(`--- PASS: ${testName}`))) {
   fail("canonical migration test was skipped or did not pass");
 }
 
-console.log(`IDENTITY_MIGRATION_TEST=${canonicalMigrationTest}`);
+for (const testName of canonicalMigrationTests) console.log(`IDENTITY_MIGRATION_TEST=${testName}`);
 console.log(`MIGRATION_TEST_NETWORK=${networks[0]}`);
 console.log("MIGRATION_TEST_HOST_PORTS=0");
 console.log("IDENTITY_MIGRATION_PROOF=PASS");

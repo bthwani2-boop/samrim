@@ -102,6 +102,17 @@ func TestDevelopmentSessionRouteIsRegisteredOnlyInDevelopment(t *testing.T) {
 	}
 }
 
+func TestManagedRecoveryRoutesAreRegistered(t *testing.T) {
+	for _, path := range []string{"/auth/managed/recovery/request", "/auth/managed/recover"} {
+		request := httptest.NewRequest(http.MethodPost, path, strings.NewReader("{"))
+		response := httptest.NewRecorder()
+		New(nil, nil, nil, nil, nil, Config{}).ServeHTTP(response, request)
+		if response.Code != http.StatusBadRequest {
+			t.Errorf("POST %s status = %d, want %d for malformed JSON on a registered route", path, response.Code, http.StatusBadRequest)
+		}
+	}
+}
+
 func TestProvisionExistingRoleRequiresCorrelationID(t *testing.T) {
 	handler := New(nil, nil, nil, nil, nil, Config{InternalServiceTokens: map[string]string{"dsh": "identity-service-token"}})
 	request := httptest.NewRequest(http.MethodPost, "/internal/actors/actor-1/roles/partner/provision", nil)

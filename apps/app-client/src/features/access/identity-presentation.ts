@@ -52,7 +52,7 @@ const identityCopy: IdentityCopy = {
   registerTitle: "إنشاء حساب",
   recoverTitle: "استعادة كلمة المرور",
   phoneLabel: "رقم الهاتف",
-  phonePlaceholder: "+967...",
+  phonePlaceholder: "777123456 أو +967777123456",
   passwordLabel: "كلمة المرور",
   newPasswordLabel: "كلمة المرور الجديدة",
   passwordConfirmationLabel: "تأكيد كلمة المرور",

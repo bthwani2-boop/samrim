@@ -150,7 +150,7 @@ async function createApprovedPartner(operatorID, phone, name, serviceCityId) {
       ownerFullName: `${name} owner`,
       businessName: `${name} business`,
       firstStoreName: `${name} store`,
-      walletProviderKey: "provider-yemen",
+      walletProviderKey: "wallet_provider_floosak",
       firstStoreAddress: `${name} street, building 1`,
       firstStoreWorkingHours: { intervals: [{ dayOfWeek: 1, opensAt: "08:00", closesAt: "16:00", closesNextDay: false }] },
       firstStoreProofType: "COMMERCIAL_REGISTRATION",

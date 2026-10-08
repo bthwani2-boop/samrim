@@ -290,7 +290,7 @@ export default function MultiStoreCheckoutScreen() {
     const requiresDeliveryAddress = selectedStoreCarts.some(({ fulfillmentMode }) => fulfillmentMode !== "CUSTOMER_PICKUP");
     if (requiresDeliveryAddress && !state.selectedAddressID) return;
     if (requiresDeliveryAddress && !deliveryRecipientIsValid(recipient)) {
-      setError("أدخل اسمًا ورقمًا دوليًا صحيحًا للمستلم قبل تأكيد الطلب.");
+      setError("أدخل اسمًا ورقمًا يمنيًا صحيحًا للمستلم، محليًا أو دوليًا، قبل تأكيد الطلب.");
       return;
     }
     setBusy(true);
@@ -365,7 +365,7 @@ export default function MultiStoreCheckoutScreen() {
 
   const checkout = state.checkout;
   const canCancel = canCancelMultiStoreCheckout(checkout);
-  if (pendingAttempt) return <View style={styles.container} accessibilityLabel="استعادة الطلب المتعدد"><BthwaniSurface tone="raised" style={styles.hero}><View style={styles.heroIcon}><BthwaniIcon name="cart" color={theme.onAction} size={sizing.iconXl} /></View><View style={styles.heroCopy}><Text style={styles.eyebrow}>استعادة الطلب</Text><Text style={styles.title}>نتحقق من النتيجة المحفوظة</Text><Text style={styles.muted}>لن نرسل طلبًا جديدًا. نقرأ النتيجة أولًا ثم نتابع الطلب نفسه بمفتاحه الثابت.</Text></View></BthwaniSurface>{checkout ? <CheckoutSummary checkout={checkout} styles={styles} theme={theme} /> : <BthwaniSurface tone="inset" style={styles.summary}><Text style={styles.cardTitle}>النتيجة لم تُحسم بعد</Text><Text style={styles.muted}>المحاولة محفوظة على هذا الجهاز لهذا الحساب. أعد التحقق عند عودة الاتصال.</Text></BthwaniSurface>}<BthwaniButton busy={busy} disabled={busy} label="تحقق وأكمل الاستعادة" onPress={() => void load()} />{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}</View>;
+  if (pendingAttempt) return <View style={styles.container} accessibilityLabel="استعادة الطلب المتعدد"><BthwaniSurface tone="raised" style={styles.hero}><View style={styles.heroIcon}><BthwaniIcon name="cart" color={theme.onAction} size={sizing.iconXl} /></View><View style={styles.heroCopy}><Text style={styles.eyebrow}>استعادة الطلب</Text><Text style={styles.title}>نتحقق من النتيجة المحفوظة</Text><Text style={styles.muted}>لن نرسل طلبًا جديدًا. نقرأ النتيجة أولًا ثم نتابع الطلب نفسه.</Text></View></BthwaniSurface>{checkout ? <CheckoutSummary checkout={checkout} styles={styles} theme={theme} /> : <BthwaniSurface tone="inset" style={styles.summary}><Text style={styles.cardTitle}>النتيجة لم تُحسم بعد</Text><Text style={styles.muted}>المحاولة محفوظة على هذا الجهاز لهذا الحساب. أعد التحقق عند عودة الاتصال.</Text></BthwaniSurface>}<BthwaniButton busy={busy} disabled={busy} label="تحقق وأكمل الاستعادة" onPress={() => void load()} />{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}</View>;
   if (checkout && state.storeCarts.length === 0) return <View style={styles.container} accessibilityLabel="نتيجة طلب المتاجر"><CheckoutSummary checkout={checkout} styles={styles} theme={theme} />{canCancel ? <BthwaniButton accessibilityLabel="إلغاء الطلب المتعدد" busy={busy} disabled={busy} label="إلغاء الطلبات التابعة" onPress={() => void cancel()} variant="secondary" /> : null}<BthwaniButton label="تحديث السلال" onPress={() => void load()} variant="secondary" /></View>;
   const selectedStoreCarts = state.storeCarts.filter(({ store }) => state.selectedStoreIDs.includes(store.storeId));
   const hasUnsupportedStore = selectedStoreCarts.some(({ store }) => store.publicationState !== "published" || availableCustomerFulfillmentModes(store.fulfillmentModes).length === 0);
@@ -429,7 +429,7 @@ export default function MultiStoreCheckoutScreen() {
 
         return <BthwaniSurface key={store.storeId} tone="inset" style={styles.storeCard}>
           <View style={styles.storeIcon}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>
-          <View style={styles.storeCopy}><Text style={styles.cardTitle}>{store.storeName}</Text><Text style={styles.muted}>{cart.lineCount} منتجات · السلة #{cart.version}</Text></View>
+          <View style={styles.storeCopy}><Text style={styles.cardTitle}>{store.storeName}</Text><Text style={styles.muted}>{cart.lineCount} منتجات في السلة</Text></View>
           <BthwaniChip disabled={busy || Boolean(checkout) || (!selected && (!eligible || state.selectedStoreIDs.length >= 10))} label={selected ? "ضمن الطلب" : "أضف للطلب"} onPress={() => setState((current) => {
             if (current.kind !== "ready" || current.checkout) return current;
             const isSelected = current.selectedStoreIDs.includes(store.storeId);
@@ -463,7 +463,7 @@ function selectedFulfillmentMode(store: ClientOpenCartSummary, selected: Readonl
 
 function modeDescription(mode: CustomerFulfillmentMode): string {
   if (mode === "BTHWANI_CAPTAIN") return "المنصة تتولى التوصيل.";
-  if (mode === "PARTNER_CAPTAIN") return "المتجر يختار أحد كباتنه، ولا توجد رسوم توصيل في الإصدار الأول.";
+  if (mode === "PARTNER_CAPTAIN") return "المتجر يختار أحد كباتنه، ولا تُضاف رسوم توصيل.";
   return "تذهب إلى المتجر لاستلام طلبك بنفسك.";
 }
 

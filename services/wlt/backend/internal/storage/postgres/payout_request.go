@@ -50,6 +50,8 @@ type PayoutStateRecord struct {
 	Currency               string
 	EligibleAvailableMinor int64
 	HeldMinor              int64
+	AcquiredStoreCount     *int64
+	EarnedMinor            *int64
 	Destination            *OfficialWalletDestinationRecord
 	LatestPayout           *PayoutRequestRecord
 }

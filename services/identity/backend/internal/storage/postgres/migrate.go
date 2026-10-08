@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const SchemaVersion = 24
+const SchemaVersion = 26
 
 type MigrationRecord struct {
 	Version int
@@ -25,7 +25,7 @@ type schemaRequirement struct {
 var identitySchemaRequirements = []schemaRequirement{
 	{table: "identity_schema_migrations", columns: []string{"version", "name", "sha256", "applied_at"}, indexes: []string{"identity_schema_migrations_pkey"}},
 	{table: "identity_actors", columns: []string{"id", "phone_e164", "security_enabled", "version", "created_at", "updated_at"}, indexes: []string{"identity_actors_pkey", "identity_actors_phone_uq"}},
-	{table: "identity_actor_roles", columns: []string{"actor_id", "role", "enabled", "activated_at", "version", "created_at", "updated_at"}, indexes: []string{"identity_actor_roles_pkey", "identity_actor_roles_role_idx"}},
+	{table: "identity_actor_roles", columns: []string{"actor_id", "role", "enabled", "activated_at", "last_app_opened_at", "version", "created_at", "updated_at"}, indexes: []string{"identity_actor_roles_pkey", "identity_actor_roles_role_idx"}},
 	{table: "identity_password_credentials", columns: []string{"actor_id", "role", "password_hash", "version", "created_at", "updated_at"}, indexes: []string{"identity_password_credentials_pkey"}},
 	{table: "identity_challenges", columns: []string{"id", "actor_id", "role", "purpose", "phone_e164", "code_hash", "request_ip_hash", "admissible", "credential_version", "status", "attempts", "expires_at", "consumed_at", "created_at", "updated_at"}, indexes: []string{"identity_challenges_pkey", "identity_challenges_one_pending_uq", "identity_challenges_lookup_idx", "identity_challenges_ip_idx", "identity_challenges_phone_purpose_idx"}},
 	{table: "identity_challenge_deliveries", columns: []string{"challenge_id", "provider", "status", "attempts", "started_at", "finished_at", "created_at", "updated_at"}, indexes: []string{"identity_challenge_deliveries_pkey", "identity_challenge_deliveries_pending_idx"}},

@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"net/url"
-	"regexp"
 	"strings"
 
+	phoneformat "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/phone"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
@@ -108,32 +108,9 @@ func (c *Client) ResolvePartnerInviteByPhone(ctx context.Context, rawPhone strin
 	return identityclient.ActorRoleView{}, ErrInviteActorMissing
 }
 
-var invitePhonePattern = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
-
 func normalizeInvitePhoneE164(raw string) (string, error) {
-	phone := strings.Map(func(r rune) rune {
-		switch {
-		case r >= '0' && r <= '9', r == '+':
-			return r
-		case r >= '\u0660' && r <= '\u0669':
-			return '0' + (r - '\u0660')
-		case r >= '\u06f0' && r <= '\u06f9':
-			return '0' + (r - '\u06f0')
-		case r == ' ' || r == '-' || r == '(' || r == ')':
-			return -1
-		default:
-			return r
-		}
-	}, strings.TrimSpace(raw))
-	switch {
-	case strings.HasPrefix(phone, "00"):
-		phone = "+" + strings.TrimPrefix(phone, "00")
-	case strings.HasPrefix(phone, "967"):
-		phone = "+" + phone
-	case strings.HasPrefix(phone, "7"):
-		phone = "+967" + phone
-	}
-	if !invitePhonePattern.MatchString(phone) {
+	phone := phoneformat.NormalizeYemenE164(raw)
+	if !phoneformat.IsE164(phone) {
 		return "", ErrInvitePhoneInvalid
 	}
 	return phone, nil

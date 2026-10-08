@@ -47,6 +47,9 @@ func NewFieldFinance(identity *identityintegration.Client, accessToken string, p
 func (s *FieldFinanceServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/fields/me/financial-summary", s.readOwnSummary)
 	mux.HandleFunc("GET /dsh/fields/me/acquisition-entitlements", s.listOwnAcquisitionEntitlements)
+	mux.HandleFunc("GET /dsh/fields/me/wallet-history", s.listOwnWalletHistory)
+	mux.HandleFunc("GET /dsh/fields/me/payout-requests", s.listOwnPayoutRequests)
+	mux.HandleFunc("GET /dsh/operator/fields/activity", s.listOperatorFieldActivity)
 	mux.HandleFunc("GET /dsh/operator/fields/{fieldActorId}/acquisition-cases", s.listOperatorAcquisitionCases)
 	mux.HandleFunc("GET /dsh/operator/fields/{fieldActorId}/financial-summary", s.readOperatorSummary)
 	mux.HandleFunc("POST /dsh/operator/field-acquisition-reward-policies", s.createPolicy)
@@ -130,6 +133,71 @@ func (s *FieldFinanceServer) listOwnAcquisitionEntitlements(w http.ResponseWrite
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, view)
+}
+
+func (s *FieldFinanceServer) listOwnWalletHistory(w http.ResponseWriter, r *http.Request) {
+	identity, ok := s.requireFieldSession(w, r)
+	if !ok {
+		return
+	}
+	limit, cursor, valid := fieldFinancePageQuery(w, r)
+	if !valid {
+		return
+	}
+	page, err := s.payment.ListFieldWalletHistory(r.Context(), identity.Subject, cursor, limit)
+	if err != nil {
+		writeWLTFinanceError(w, err)
+		return
+	}
+	entries := make([]contract.FieldWalletHistoryEntry, 0, len(page.Entries))
+	for _, item := range page.Entries {
+		entries = append(entries, contract.FieldWalletHistoryEntry{
+			Type: item.Type, Direction: item.Direction, AmountMinor: int(item.AmountMinor),
+			Currency: item.Currency, CreatedAt: item.CreatedAt, BalanceAfterMinor: int(item.BalanceAfterMinor),
+		})
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, contract.FieldWalletHistoryPage{Currency: page.Currency, Entries: entries, NextCursor: page.NextCursor, Limit: page.Limit})
+}
+
+func (s *FieldFinanceServer) listOwnPayoutRequests(w http.ResponseWriter, r *http.Request) {
+	identity, ok := s.requireFieldSession(w, r)
+	if !ok {
+		return
+	}
+	limit, cursor, valid := fieldFinancePageQuery(w, r)
+	if !valid {
+		return
+	}
+	page, err := s.payment.ListFieldPayoutRequests(r.Context(), identity.Subject, cursor, limit)
+	if err != nil {
+		writeWLTFinanceError(w, err)
+		return
+	}
+	requests := make([]contract.FieldPayoutRequestHistoryEntry, 0, len(page.Requests))
+	for _, item := range page.Requests {
+		requests = append(requests, contract.FieldPayoutRequestHistoryEntry{Status: item.Status, AmountMinor: int(item.AmountMinor), Currency: item.Currency, CreatedAt: item.CreatedAt})
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, contract.FieldPayoutRequestHistoryPage{Requests: requests, NextCursor: page.NextCursor, Limit: page.Limit})
+}
+
+func fieldFinancePageQuery(w http.ResponseWriter, r *http.Request) (int, string, bool) {
+	limit := 50
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 100 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "limit must be between 1 and 100")
+			return 0, "", false
+		}
+		limit = parsed
+	}
+	cursor := r.URL.Query().Get("cursor")
+	if len(cursor) > 512 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "wallet history cursor is invalid")
+		return 0, "", false
+	}
+	return limit, cursor, true
 }
 
 func (s *FieldFinanceServer) readOwnSummary(w http.ResponseWriter, r *http.Request) {

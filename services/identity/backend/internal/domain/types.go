@@ -34,6 +34,7 @@ type ActorRoleView struct {
 	Role              string     `json:"role"`
 	Enabled           bool       `json:"enabled"`
 	ActivatedAt       *time.Time `json:"activatedAt,omitempty"`
+	LastAppOpenedAt   *time.Time `json:"lastAppOpenedAt,omitempty"`
 	SecurityEnabled   bool       `json:"securityEnabled"`
 	ActorVersion      int        `json:"actorVersion"`
 	RoleVersion       int        `json:"roleVersion"`
@@ -182,6 +183,13 @@ type ClientRecoveryProofRequest struct {
 	Password string `json:"password"`
 }
 
+type ManagedRecoveryProofRequest struct {
+	Phone            string `json:"phone"`
+	Role             string `json:"role"`
+	VerificationCode string `json:"verificationCode"`
+	Password         string `json:"password"`
+}
+
 type PasswordLoginRequest struct {
 	Phone            string `json:"phone"`
 	Password         string `json:"password"`
@@ -324,6 +332,7 @@ const (
 	ChallengeClientRegister  = "client_register"
 	ChallengeClientRecover   = "client_recover"
 	ChallengeManagedActivate = "managed_activate"
+	ChallengeManagedRecover  = "managed_recover"
 	ChallengeOperatorEnroll  = "operator_enroll"
 	ChallengeOperatorRecover = "operator_recover"
 )

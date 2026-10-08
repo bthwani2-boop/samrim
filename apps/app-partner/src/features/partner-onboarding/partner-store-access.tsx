@@ -140,7 +140,7 @@ export function PartnerStoreAccess({ storeID }: { storeID: string }) {
       await reload();
     } catch {
       await reload();
-      setError("تعذر إنشاء الدعوة. تحقّق من رقم الهاتف وأن صاحبه فعّل حسابه في Identity، ثم أعد قراءة القائمة.");
+      setError("تعذر إنشاء الدعوة. تحقق من رقم الهاتف وأن صاحبه فعّل حسابه، ثم أعد قراءة القائمة.");
     } finally {
       setBusy(false);
     }
@@ -261,7 +261,7 @@ function StoreAccessGrantCard({ grant, busy, onTransition, onPermissions }: { gr
     <Text style={styles.muted}>{grantStateLabel(grant.state)} · الصلاحيات الحالية: {permissionNames(grant.permissions)}</Text>
     {grant.state === "active" || grant.state === "suspended" || grant.state === "pending_role_admission" || grant.state === "pending_partner_activation" || grant.state === "pending_acceptance" ? <>
       <Text style={styles.metaLabel}>الصلاحيات المفوضة</Text>
-      <Text style={styles.metaLabel}>يحفظ تغيير كل صلاحية مباشرة بعد تأكيد DSH.</Text>
+      <Text style={styles.metaLabel}>يُحفظ تغيير كل صلاحية بعد تأكيده.</Text>
       <Text style={styles.muted}>التوصيل يعتمد على الطلبات؛ إضافة التوصيل تضيف «الطلبات» تلقائيًا، وإزالة «الطلبات» تزيل التوصيل معها.</Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>{permissions.map((permission) => {
         const checked = selected.includes(permission.value);

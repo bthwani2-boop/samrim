@@ -15,18 +15,21 @@ import (
 var ErrSessionForbidden = errors.New("an active notification session is required")
 
 type View struct {
-	ID        string
-	Kind      string
-	Title     string
-	Body      string
-	OrderID   string
-	CreatedAt time.Time
-	ReadAt    *time.Time
+	ID            string
+	Kind          string
+	Title         string
+	Body          string
+	OrderID       string
+	JoiningCaseID string
+	StoreID       string
+	CreatedAt     time.Time
+	ReadAt        *time.Time
 }
 
 type ListResult struct {
 	Items       []View
 	UnreadCount int
+	NextCursor  string
 }
 
 type Service struct {
@@ -41,23 +44,23 @@ func New(identity *identityintegration.Client, db *sql.DB) (*Service, error) {
 	return &Service{identity: identity, db: db}, nil
 }
 
-func (s *Service) List(ctx context.Context, accessToken string, limit int) (ListResult, error) {
+func (s *Service) List(ctx context.Context, accessToken string, limit int, cursor string) (ListResult, error) {
 	identity, role, err := s.requireSession(ctx, accessToken)
 	if err != nil {
 		return ListResult{}, err
 	}
-	return s.listForSubject(ctx, identity.Subject, role, limit)
+	return s.listForSubject(ctx, identity.Subject, role, limit, cursor)
 }
 
-func (s *Service) ListForOperator(ctx context.Context, operatorActorID string, limit int) (ListResult, error) {
-	return s.listForSubject(ctx, strings.TrimSpace(operatorActorID), "operator", limit)
+func (s *Service) ListForOperator(ctx context.Context, operatorActorID string, limit int, cursor string) (ListResult, error) {
+	return s.listForSubject(ctx, strings.TrimSpace(operatorActorID), "operator", limit, cursor)
 }
 
-func (s *Service) listForSubject(ctx context.Context, subject, role string, limit int) (ListResult, error) {
+func (s *Service) listForSubject(ctx context.Context, subject, role string, limit int, cursor string) (ListResult, error) {
 	if strings.TrimSpace(subject) == "" {
 		return ListResult{}, ErrSessionForbidden
 	}
-	result, err := postgres.ListNotifications(ctx, s.db, subject, role, limit)
+	result, err := postgres.ListNotifications(ctx, s.db, subject, role, limit, cursor)
 	if err != nil {
 		return ListResult{}, err
 	}
@@ -69,7 +72,7 @@ func (s *Service) listForSubject(ctx context.Context, subject, role string, limi
 		}
 		items = append(items, view)
 	}
-	return ListResult{Items: items, UnreadCount: result.UnreadCount}, nil
+	return ListResult{Items: items, UnreadCount: result.UnreadCount, NextCursor: result.NextCursor}, nil
 }
 
 func (s *Service) MarkRead(ctx context.Context, accessToken, notificationID string) (time.Time, error) {
@@ -123,7 +126,7 @@ type stringIdentity struct{ Subject string }
 
 func present(event postgres.NotificationEvent, role string) View {
 	kind, title, body := message(event.EventType, role, event.OrderID)
-	return View{ID: event.ID, Kind: kind, Title: title, Body: body, OrderID: event.OrderID, CreatedAt: event.CreatedAt, ReadAt: event.ReadAt}
+	return View{ID: event.ID, Kind: kind, Title: title, Body: body, OrderID: event.OrderID, JoiningCaseID: event.JoiningCaseID, StoreID: event.StoreID, CreatedAt: event.CreatedAt, ReadAt: event.ReadAt}
 }
 
 func message(eventType, role, orderID string) (string, string, string) {

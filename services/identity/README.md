@@ -8,12 +8,13 @@ Authentication policy is intentionally actor-class specific:
 Customer
   registration: phone verification -> client password -> session
   normal re-authentication: phone + client password
-  recovery: phone verification -> replace client password -> fresh session
+  recovery: phone verification -> replace client password -> normal password login
 
 Partner / Captain / Field
-  governed DSH role provisioning -> phone verification + password enrollment -> initial activation -> device-bound session
-  normal use: restore/rotate the existing session
-  lost/revoked access: explicit DSH-authorized re-enrollment, never repeated activation as ordinary login
+  first password: governed DSH role provisioning -> phone verification + password enrollment -> session
+  normal/new-device access: phone + role-scoped password; restore/rotate a valid saved session
+  forgotten password: phone verification -> replace existing role credential + revoke that role's sessions -> normal password login
+  disabled/unadmitted role: no login, enrollment or recovery grant; admission remains DSH-owned
 
 Operator
   first-operator bootstrap or Control Panel provisioning -> one-time enrollment authorization + phone proof -> user-verified WebAuthn registration -> session
@@ -23,7 +24,9 @@ Operator
 
 Credentials are role-scoped. Customer and managed-role passwords cannot authenticate each other's roles even when they belong to the same `actor_id`; Operator has no password credential or normal SMS login path.
 
-For `BTHWANI_ENV=development` only, the HTTP composition registers a development-session convenience route. Each role resolves only to its server-configured local `actor_id`; the client never chooses an actor. Identity then verifies that the existing actor/role is enabled, security-enabled and authentication-ready before minting a normal role-scoped session. Missing configured actors fail with `404`, while configured but not-ready actors fail with `409`. The shortcut never creates actors, roles or credentials. Mobile and Control use it only when reusable local session state is missing or terminally invalid. Explicit logout or recovery remains signed out for that runtime instance, while a fresh runtime may resume development continuity. This keeps authentication ceremonies out of ordinary local product iteration without allowing the development shortcut to satisfy activation, enrollment, login, or recovery proof.
+Managed mobile apps open on a minimal login screen, with separate password setup and recovery links. Neither requires device activation or self-registration. Local Yemeni and international phone forms resolve through the same canonical phone normalization. Password recovery returns only `recovery_complete`, never a session or a role grant; existing admission, activation and actor security are checked again at the credential write boundary.
+
+For `BTHWANI_ENV=development` only, the HTTP composition registers a development-session convenience route. Each role resolves only to its server-configured local `actor_id`; the client never chooses an actor. Identity requires the existing actor/role to be enabled and actor security to remain enabled before minting a role-scoped development session. The Control Panel requires the local `CONTROL_PANEL_DEVELOPMENT_PASSWORD` before requesting it. For the configured Control Panel operator only, Identity records first local activation as `actor_role.development_activated` without enrolling a passkey, allowing canonical domain owners to recognize the admitted operator as active. That configured operator is also the local permission administrator; the same Identity authorization owner determines both the session claim and access to operator administration. Workspace scopes remain the persisted, versioned and audited Identity grants. The shortcut never creates actors, roles or credentials and does not prove production activation/enrollment, normal login, or recovery. Development actor pins are rejected outside development; the persisted first-bootstrap administrator and normal passkey login remain the production path. Mobile development-session readiness remains role-specific. Control Panel logout clears its session and requires the local password again.
 
 Mobile activation proof can set `EXPO_PUBLIC_BTHWANI_AUTH_JOURNEY_PROOF=1` before starting Metro. The mobile session owner then refuses development-session fallback for that run, so managed activation/login is exercised through the canonical product path. The flag does not register or broaden the development route and has no effect on production, where `__DEV__` is false.
 

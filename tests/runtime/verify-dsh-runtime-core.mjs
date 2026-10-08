@@ -130,7 +130,7 @@ async function admitReviewedRoleCandidate(role, phone, candidateName, reviewedNa
   if (role !== "field" && role !== "captain") fail("unsupported role candidate proof", role);
   const plural = role === "field" ? "fields" : "captains";
   const root = `/dsh/${plural}/admissions`;
-  const candidateBody = { fullNameAr: candidateName, contactPhoneE164: phone, walletProviderKey: "provider-yemen", ...(role === "field" ? { serviceCityId: cityA } : {}) };
+  const candidateBody = { fullNameAr: candidateName, contactPhoneE164: phone, walletProviderKey: "wallet_provider_floosak", ...(role === "field" ? { serviceCityId: cityA } : {}) };
   const createHeaders = serviceHeaders(actingOperatorID, `${label}-profile-${suffix}`);
   const created = await request(dshBase, "POST", root, { token: dshToken, headers: createHeaders, body: candidateBody });
   const replay = await request(dshBase, "POST", root, { token: dshToken, headers: createHeaders, body: candidateBody });
@@ -138,7 +138,10 @@ async function admitReviewedRoleCandidate(role, phone, candidateName, reviewedNa
     fail(`${role} profile creation did not persist a reviewable candidate before Identity role access`, JSON.stringify({ created, replay }));
   }
   const admissionID = String(created.body.admission.id);
-  const updated = await request(dshBase, "PATCH", `${root}/${encodeURIComponent(admissionID)}/profile`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `${label}-profile-edit-${suffix}`, crypto.randomUUID(), Number(created.body.admission.version)), body: { fullNameAr: reviewedName } });
+  const profileBody = role === "field"
+    ? { fullNameAr: reviewedName, walletProviderKey: created.body.admission.walletProviderKey, allServiceCities: Boolean(created.body.admission.allServiceCities), serviceCityIds: created.body.admission.serviceCityIds ?? [] }
+    : { fullNameAr: reviewedName };
+  const updated = await request(dshBase, "PATCH", `${root}/${encodeURIComponent(admissionID)}/profile`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `${label}-profile-edit-${suffix}`, crypto.randomUUID(), Number(created.body.admission.version)), body: profileBody });
   if (updated.status !== 200 || updated.body?.admission?.state !== "pending_review" || updated.body?.admission?.fullNameAr !== reviewedName || updated.body?.admission?.actorId) {
     fail(`${role} candidate profile editing did not preserve the pre-access review state`, JSON.stringify(updated));
   }
@@ -439,7 +442,7 @@ function joiningCaseDetails(businessName, firstStoreName, serviceCityId, vertica
     ownerFullName: `${firstStoreName} owner`,
     businessName,
     firstStoreName,
-    walletProviderKey: "provider-yemen",
+    walletProviderKey: "wallet_provider_floosak",
     firstStoreAddress: `${firstStoreName} street, building 1`,
     firstStoreWorkingHours: { intervals: [{ dayOfWeek: 1, opensAt: "08:00", closesAt: "16:00", closesNextDay: false }] },
     firstStoreProofType: "COMMERCIAL_REGISTRATION",
@@ -631,7 +634,7 @@ async function activateStoreCommercialAgreement(caseID, storeID, partnerActorID,
 async function createOfficialWalletDestination(actorType, actorID, expectedPhone, expectedName, label) {
   const root = `/dsh/operator/${actorType}/${encodeURIComponent(actorID)}`;
   const intentRead = await request(dshBase, "GET", `${root}/wallet-provider-intent`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
-  if (intentRead.status !== 200 || intentRead.body?.intent?.actorType !== actorType || intentRead.body?.intent?.actorId !== actorID || intentRead.body?.intent?.providerKey !== "provider-yemen" || !intentRead.body?.intent?.sourceId) {
+  if (intentRead.status !== 200 || intentRead.body?.intent?.actorType !== actorType || intentRead.body?.intent?.actorId !== actorID || intentRead.body?.intent?.providerKey !== "wallet_provider_floosak" || !intentRead.body?.intent?.sourceId) {
     fail(`${label} wallet provider intent did not read back from the approved joining record`, JSON.stringify(intentRead));
   }
   const created = await request(dshBase, "POST", `${root}/official-wallet-destination`, {

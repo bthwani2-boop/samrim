@@ -163,8 +163,8 @@ func (s fieldRewardOutboxScenario) approveJoiningCase(fieldOrigin bool, suffix s
 	}
 	if fieldOrigin {
 		admissionID := "catalog-auth-admission-" + suffix
-		if _, err := s.db.ExecContext(s.ctx, `INSERT INTO dsh.field_admissions(id,actor_id,full_name_ar,service_city_id,state,requires_profile_review,version)
-			VALUES($1,$2,$3,$4,'eligible',false,1)`, admissionID, fieldActorID, "مندوب اختبار الكتالوج", s.serviceCityID); err != nil {
+		if _, err := s.db.ExecContext(s.ctx, `INSERT INTO dsh.field_admissions(id,actor_id,full_name_ar,all_service_cities,state,requires_profile_review,version)
+			VALUES($1,$2,$3,true,'eligible',false,1)`, admissionID, fieldActorID, "مندوب اختبار الكتالوج"); err != nil {
 			s.t.Fatalf("create eligible Field admission for catalog authorization proof: %v", err)
 		}
 		scope, authErr := postgres.AuthorizeFieldCatalogCase(s.ctx, s.db, approved.Case.ID, fieldActorID)

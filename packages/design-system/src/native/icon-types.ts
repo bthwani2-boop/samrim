@@ -20,4 +20,6 @@ export type MobileIconName =
   | "success"
   | "search"
   | "notifications"
-  | "close";
+  | "close"
+  | "eye"
+  | "eye-off";

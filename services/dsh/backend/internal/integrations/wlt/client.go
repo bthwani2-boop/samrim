@@ -32,6 +32,8 @@ const (
 	settlementBatchesPath         = "/wlt/v1/operator/settlement-batches"
 )
 
+var ErrFieldPayoutBatchInvalidInput = errors.New("field payout state batch input is invalid")
+
 type Client struct {
 	baseURL      string
 	serviceToken string
@@ -404,6 +406,35 @@ type FieldAcquisitionEntitlementPage struct {
 	NextCursor   string                        `json:"nextCursor,omitempty"`
 }
 
+type FieldWalletHistoryEntry struct {
+	Type              string    `json:"type"`
+	Direction         string    `json:"direction"`
+	AmountMinor       int64     `json:"amountMinor"`
+	Currency          string    `json:"currency"`
+	CreatedAt         time.Time `json:"createdAt"`
+	BalanceAfterMinor int64     `json:"balanceAfterMinor"`
+}
+
+type FieldWalletHistoryPage struct {
+	Currency   string                    `json:"currency"`
+	Entries    []FieldWalletHistoryEntry `json:"entries"`
+	NextCursor string                    `json:"nextCursor,omitempty"`
+	Limit      int                       `json:"limit"`
+}
+
+type FieldPayoutRequest struct {
+	Status      string    `json:"status"`
+	AmountMinor int64     `json:"amountMinor"`
+	Currency    string    `json:"currency"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+type FieldPayoutRequestPage struct {
+	Requests   []FieldPayoutRequest `json:"requests"`
+	NextCursor string               `json:"nextCursor,omitempty"`
+	Limit      int                  `json:"limit"`
+}
+
 type FinancialStatementEntry struct {
 	TransactionID   string                   `json:"transactionId"`
 	TransactionType string                   `json:"transactionType"`
@@ -726,6 +757,8 @@ type PayoutState struct {
 	Currency               string                     `json:"currency"`
 	EligibleAvailableMinor int64                      `json:"eligibleAvailableMinor"`
 	HeldMinor              int64                      `json:"heldMinor"`
+	AcquiredStoreCount     *int64                     `json:"acquiredStoreCount,omitempty"`
+	EarnedMinor            *int64                     `json:"earnedMinor,omitempty"`
 	Destination            *OfficialWalletDestination `json:"destination"`
 	LatestPayout           *PayoutRequest             `json:"latestPayout"`
 }
@@ -734,6 +767,22 @@ type PayoutStateRegistry struct {
 	Beneficiaries []PayoutState `json:"beneficiaries"`
 	NextCursor    string        `json:"nextCursor,omitempty"`
 	Limit         int           `json:"limit"`
+}
+
+type FieldFinanceSummary struct {
+	Currency               string `json:"currency"`
+	FieldActorCount        int64  `json:"fieldActorCount"`
+	AcquiredStoreCount     int64  `json:"acquiredStoreCount"`
+	EarnedMinor            int64  `json:"earnedMinor"`
+	EligibleAvailableMinor int64  `json:"eligibleAvailableMinor"`
+	HeldMinor              int64  `json:"heldMinor"`
+	PayoutRequestCount     int64  `json:"payoutRequestCount"`
+	ActiveDestinationCount int64  `json:"activeDestinationCount"`
+}
+
+type FieldPayoutStatesBatch struct {
+	Beneficiaries       []PayoutState       `json:"beneficiaries"`
+	FieldFinanceSummary FieldFinanceSummary `json:"fieldFinanceSummary"`
 }
 
 type DeliveryFeePolicy struct {
@@ -1358,6 +1407,40 @@ func (c *Client) ListFieldAcquisitionEntitlements(ctx context.Context, fieldActo
 	return response, err
 }
 
+func (c *Client) ListFieldWalletHistory(ctx context.Context, fieldActorID, cursor string, limit int) (FieldWalletHistoryPage, error) {
+	query := url.Values{}
+	if strings.TrimSpace(cursor) != "" {
+		query.Set("cursor", strings.TrimSpace(cursor))
+	}
+	if limit > 0 {
+		query.Set("limit", strconv.Itoa(limit))
+	}
+	path := "/wlt/v1/fields/" + url.PathEscape(strings.TrimSpace(fieldActorID)) + "/wallet-history"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var response FieldWalletHistoryPage
+	err := c.request(ctx, http.MethodGet, path, nil, "", "", 0, &response)
+	return response, err
+}
+
+func (c *Client) ListFieldPayoutRequests(ctx context.Context, fieldActorID, cursor string, limit int) (FieldPayoutRequestPage, error) {
+	query := url.Values{}
+	if strings.TrimSpace(cursor) != "" {
+		query.Set("cursor", strings.TrimSpace(cursor))
+	}
+	if limit > 0 {
+		query.Set("limit", strconv.Itoa(limit))
+	}
+	path := "/wlt/v1/fields/" + url.PathEscape(strings.TrimSpace(fieldActorID)) + "/payout-requests"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var response FieldPayoutRequestPage
+	err := c.request(ctx, http.MethodGet, path, nil, "", "", 0, &response)
+	return response, err
+}
+
 func (c *Client) CreateOfficialWalletDestination(ctx context.Context, destination OfficialWalletDestination, identityFacts IdentityFacts, changeReason, verificationEvidenceReference, changeEvidenceReference, idempotencyKey, correlationID, actingActorID string) (OfficialWalletDestination, bool, error) {
 	body := map[string]any{
 		"actorType":                     strings.TrimSpace(destination.ActorType),
@@ -1538,6 +1621,26 @@ func (c *Client) ListBeneficiaryPayoutStates(ctx context.Context, actorType, sea
 	}
 	var response PayoutStateRegistry
 	err := c.requestWithActor(ctx, actorRequest{method: http.MethodGet, path: path, body: nil, idempotencyKey: "", correlationID: "", expectedVersion: 0, actingActorID: actingActorID, target: &response})
+	return response, err
+}
+
+func (c *Client) ReadFieldPayoutStatesBatch(ctx context.Context, actorIDs []string, actingActorID string) (FieldPayoutStatesBatch, error) {
+	if len(actorIDs) > 100 || strings.TrimSpace(actingActorID) == "" {
+		return FieldPayoutStatesBatch{}, ErrFieldPayoutBatchInvalidInput
+	}
+	for _, actorID := range actorIDs {
+		if strings.TrimSpace(actorID) == "" || len(strings.TrimSpace(actorID)) > 128 {
+			return FieldPayoutStatesBatch{}, ErrFieldPayoutBatchInvalidInput
+		}
+	}
+	var response FieldPayoutStatesBatch
+	err := c.requestWithActor(ctx, actorRequest{
+		method: http.MethodPost, path: "/wlt/v1/operator/field-payout-states:batch",
+		body: struct {
+			ActorIDs []string `json:"actorIds"`
+		}{ActorIDs: actorIDs},
+		actingActorID: actingActorID, target: &response,
+	})
 	return response, err
 }
 

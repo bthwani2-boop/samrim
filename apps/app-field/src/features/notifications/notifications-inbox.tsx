@@ -2,8 +2,8 @@ import { borders, elevation, radius, type resolveTheme, sizing, spacing, typogra
 import { BthwaniButton, BthwaniIcon, BthwaniIconButton, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { createDshMobileClient, type Notification } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { type Href, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type Href, useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
@@ -13,8 +13,6 @@ const copy = {
   description: "تابع أخبار الشركاء وتحديثاتهم في قائمة واضحة ومنظمة.",
   unauthenticatedTitle: "سجّل الدخول لقراءة إشعارات الميدان",
   unauthenticatedDescription: "ستظهر هنا تحديثات الشركاء بعد تسجيل الدخول.",
-  unreadDescription: "ابدأ بالأحدث لتبقى على اطلاع بحالة الشركاء.",
-  readDescription: "أنت على اطلاع بكل تحديثات الشركاء.",
 };
 
 function dshClient() {
@@ -29,32 +27,60 @@ export function NotificationsInbox() {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const authenticated = currentIdentityState().kind === "authenticated";
   const [items, setItems] = useState<ReadonlyArray<Notification>>([]);
+  const [nextCursor, setNextCursor] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(authenticated);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  const unreadItems = useMemo(() => items.filter((item) => !item.readAt), [items]);
-  const readItems = useMemo(() => items.filter((item) => Boolean(item.readAt)), [items]);
+  const requestID = useRef(0);
+  const focused = useRef(false);
 
-  const load = useCallback(async (preserveCurrent = false) => {
-    if (!authenticated) return;
-    if (preserveCurrent) setRefreshing(true); else setLoading(true);
+  const load = useCallback(async (preserveCurrent = false, cursor = "") => {
+    if (!authenticated || !focused.current) return;
+    const currentRequest = ++requestID.current;
+    if (cursor) setLoadingMore(true);
+    else {
+      setLoadingMore(false);
+      if (preserveCurrent) setRefreshing(true);
+      else { setRefreshing(false); setLoading(true); }
+    }
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const response = await dshClient().listNotifications(token, 50);
-      setItems(response.notifications);
-      setUnreadCount(response.unreadCount);
+      const response = await dshClient().listNotifications(token, 50, cursor);
+      if (currentRequest === requestID.current) {
+        setItems((current) => {
+          if (!cursor) return response.notifications;
+          const knownIDs = new Set(current.map((item) => item.id));
+          return [...current, ...response.notifications.filter((item) => !knownIDs.has(item.id))];
+        });
+        setNextCursor(response.nextCursor ?? "");
+        setUnreadCount(response.unreadCount);
+      }
     } catch (cause) {
       console.warn("DSH field notifications readback failed", cause);
-      setError("تعذر قراءة الإشعارات. أعد المحاولة.");
+      if (currentRequest === requestID.current) setError("تعذر قراءة الإشعارات. أعد المحاولة.");
     } finally {
-      if (preserveCurrent) setRefreshing(false); else setLoading(false);
+      if (currentRequest === requestID.current) {
+        if (cursor) setLoadingMore(false);
+        else if (preserveCurrent) setRefreshing(false);
+        else setLoading(false);
+      }
     }
   }, [authenticated]);
 
-  useEffect(() => { void load(); }, [load]);
+  const loadMore = useCallback(() => {
+    if (!nextCursor || loadingMore || refreshing || loading) return;
+    void load(true, nextCursor);
+  }, [load, loading, loadingMore, nextCursor, refreshing]);
+
+  useFocusEffect(useCallback(() => {
+    focused.current = true;
+    void load();
+    return () => { focused.current = false; requestID.current += 1; };
+  }, [load]));
 
   async function markRead(item: Notification) {
     if (item.readAt || busy) return;
@@ -63,37 +89,44 @@ export function NotificationsInbox() {
     try {
       const token = await getUsableIdentityAccessToken();
       await dshClient().markNotificationRead(token, item.id);
-      await load(true);
+      if (focused.current) await load(true);
     } catch (cause) {
       console.warn("DSH field notification read-state write failed", cause);
-      setError("تعذر تحديث حالة الإشعار.");
+      if (focused.current) setError("تعذر تحديث حالة الإشعار.");
     } finally {
       setBusy("");
     }
   }
 
   function renderItem(item: Notification) {
+    const destination = item.kind === "FIELD_REWARD_CONFIRMED"
+      ? { pathname: "/wallet" as const, label: "فتح المحفظة" }
+      : item.joiningCaseId
+        ? { pathname: "/cases" as const, params: { caseId: item.joiningCaseId }, label: "فتح ملف الشريك" }
+        : null;
     return (
-      <Pressable
-        key={item.id}
-        accessibilityRole="button"
-        accessibilityLabel={item.title}
-        accessibilityHint={item.readAt ? undefined : "اضغط لتمييز الإشعار كمقروء"}
-        accessibilityState={{ busy: busy === item.id, disabled: Boolean(busy) }}
-        disabled={Boolean(busy)}
-        onPress={() => void markRead(item)}
-        style={({ pressed }) => [styles.item, !item.readAt && styles.unread, pressed && styles.pressed]}
-      >
-        <View style={styles.itemHeader}>
-          <View style={styles.itemMain}>
-            <View style={styles.itemIcon}><BthwaniIcon name={notificationIcon(item.kind)} color={theme.interactiveText} size={sizing.iconMd} /></View>
-            <Text selectable style={styles.itemTitle}>{item.title}</Text>
+      <View key={item.id} style={[styles.item, !item.readAt && styles.unread]}>
+        <Pressable
+          accessibilityRole={item.readAt ? "text" : "button"}
+          accessibilityLabel={`${item.title}${item.readAt ? "، مقروء" : "، غير مقروء"}`}
+          accessibilityHint={item.readAt ? undefined : "اضغط لتمييز الإشعار كمقروء"}
+          accessibilityState={{ busy: busy === item.id, disabled: Boolean(busy) || Boolean(item.readAt) }}
+          disabled={Boolean(busy) || Boolean(item.readAt)}
+          onPress={() => void markRead(item)}
+          style={({ pressed }) => [pressed && styles.pressed]}
+        >
+          <View style={styles.itemHeader}>
+            <View style={styles.itemMain}>
+              <View style={styles.itemIcon}><BthwaniIcon name={notificationIcon(item.kind)} color={theme.interactiveText} size={sizing.iconMd} /></View>
+              <Text selectable style={styles.itemTitle}>{item.title}</Text>
+            </View>
+            {!item.readAt ? <BthwaniStatusBadge label="جديد" tone="info" /> : null}
           </View>
-          {!item.readAt ? <BthwaniStatusBadge label="جديد" tone="info" /> : null}
-        </View>
-        <Text selectable style={styles.body}>{item.body}</Text>
-        <Text selectable style={styles.date}>{formatNotificationDate(item.createdAt)}</Text>
-      </Pressable>
+          <Text selectable style={styles.body}>{item.body}</Text>
+          <Text selectable style={styles.date}>{formatNotificationDate(item.createdAt)}</Text>
+        </Pressable>
+        {destination ? <BthwaniButton label={destination.label} onPress={() => router.push({ pathname: destination.pathname, ...("params" in destination ? { params: destination.params } : {}) } as Href)} variant="secondary" /> : null}
+      </View>
     );
   }
 
@@ -105,7 +138,10 @@ export function NotificationsInbox() {
           <Text style={styles.title}>الإشعارات</Text>
           <Text style={styles.description}>{copy.description}</Text>
         </View>
-        <BthwaniIconButton icon="back" label="العودة" onPress={() => router.back()} size={sizing.controlSm} tone="soft" />
+        <View style={styles.screenActions}>
+          {authenticated ? <BthwaniIconButton disabled={Boolean(busy) || loading || loadingMore} icon="refresh" label="تحديث الإشعارات" onPress={() => void load(true)} size={sizing.controlSm} tone="soft" /> : null}
+          <BthwaniIconButton icon="back" label="العودة" onPress={() => router.back()} size={sizing.controlSm} tone="soft" />
+        </View>
       </View>
 
       {!authenticated ? (
@@ -116,11 +152,7 @@ export function NotificationsInbox() {
           <BthwaniButton label="تسجيل الدخول" onPress={() => router.replace("/?returnTo=/notifications" as Href)} />
         </BthwaniSurface>
       ) : loading ? (
-        <View style={styles.loadingState} accessibilityLabel="جارٍ تجهيز الإشعارات">
-          <BthwaniSkeleton width="100%" height={84} />
-          <BthwaniSkeleton width="100%" height={142} />
-          <BthwaniSkeleton width="100%" height={142} />
-        </View>
+        <View style={styles.loadingState} accessibilityLabel="جارٍ تجهيز الإشعارات"><BthwaniSkeleton width="100%" height={72} /></View>
       ) : !items.length && error ? (
         <BthwaniSurface tone="inset" style={styles.state}>
           <View style={styles.stateIcon}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /></View>
@@ -130,18 +162,11 @@ export function NotificationsInbox() {
         </BthwaniSurface>
       ) : (
         <>
-          <BthwaniSurface tone="raised" style={styles.summary}>
-            <View style={styles.summaryIcon}><BthwaniIcon name="notifications" color={theme.interactiveText} size={sizing.iconLg} /></View>
-            <View style={styles.summaryCopy}>
-              <Text style={styles.summaryTitle}>{unreadCount} إشعارات غير مقروءة</Text>
-              <Text style={styles.muted}>{unreadCount ? copy.unreadDescription : copy.readDescription}</Text>
-            </View>
-          </BthwaniSurface>
-          {unreadItems.length ? <View style={styles.group}><View style={styles.groupHeader}><Text style={styles.groupTitle}>الجديدة</Text><Text style={styles.groupCount}>{unreadItems.length}</Text></View><View style={styles.list}>{unreadItems.map(renderItem)}</View></View> : null}
-          {readItems.length ? <View style={styles.group}><View style={styles.groupHeader}><Text style={styles.groupTitle}>المقروءة</Text><Text style={styles.groupCount}>{readItems.length}</Text></View><View style={styles.list}>{readItems.map(renderItem)}</View></View> : null}
-          {!items.length ? <BthwaniSurface tone="inset" style={styles.state}><View style={styles.stateIcon}><BthwaniIcon name="notifications" color={theme.colorMuted} size={sizing.iconXl} /></View><Text style={styles.cardTitle}>لا توجد إشعارات حالياً</Text><Text style={styles.muted}>ستظهر تحديثات الشركاء هنا عند توفرها.</Text></BthwaniSurface> : null}
+          <BthwaniSurface tone="inset" style={styles.summary}><View style={styles.summaryIcon}><BthwaniIcon name="notifications" color={theme.interactiveText} size={sizing.iconMd} /></View><View style={styles.summaryCopy}><Text style={styles.summaryTitle}>{unreadCount.toLocaleString("ar-YE")} غير مقروءة</Text><Text style={styles.muted}>تُعرض الإشعارات الأحدث أولًا.</Text></View></BthwaniSurface>
+          {items.length ? <View style={styles.list}>{items.map(renderItem)}</View> : null}
+          {!items.length ? <BthwaniSurface tone="inset" style={styles.empty}><View style={styles.emptyIcon}><BthwaniIcon name="notifications" color={theme.interactiveText} size={sizing.iconXl} /></View><Text style={styles.cardTitle}>لا توجد إشعارات حاليًا</Text><Text style={styles.muted}>ستظهر هنا تحديثات الشركاء عند توفرها.</Text></BthwaniSurface> : null}
           {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
-          <BthwaniButton busy={refreshing} disabled={Boolean(busy)} label="تحديث الإشعارات" onPress={() => void load(true)} variant="secondary" />
+          {nextCursor ? <BthwaniButton busy={loadingMore} disabled={Boolean(busy) || refreshing || loading} label="تحميل إشعارات أقدم" onPress={loadMore} variant="secondary" /> : null}
         </>
       )}
     </View>
@@ -160,20 +185,17 @@ function formatNotificationDate(value: string) {
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) { return StyleSheet.create({
-  container: { backgroundColor: theme.background, direction: "rtl", flexGrow: 1, gap: spacing[4], paddingBottom: spacing[5], width: "100%" },
+  container: { backgroundColor: theme.background, direction: "rtl", flexGrow: 1, gap: spacing[3], paddingBottom: spacing[5], paddingTop: spacing[3], width: "100%" },
   screenHeader: { alignItems: "flex-start", flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
+  screenActions: { alignItems: "center", flexDirection: "row", gap: spacing[2] },
   headingCopy: { flex: 1, gap: spacing[1] },
   eyebrow: { ...typography.label, color: theme.interactiveText },
-  title: { ...typography.hero, color: theme.color },
+  title: { ...typography.titleLg, color: theme.color },
   description: { ...typography.body, color: theme.colorMuted },
-  summary: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.xl, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[3], padding: spacing[4], ...elevation.raised },
+  summary: { alignItems: "center", borderRadius: radius.lg, flexDirection: "row", gap: spacing[3], padding: spacing[3] },
   summaryIcon: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.round, height: sizing.avatarMd, justifyContent: "center", width: sizing.avatarMd },
   summaryCopy: { flex: 1, gap: spacing[1] },
   summaryTitle: { ...typography.titleSm, color: theme.color },
-  group: { gap: spacing[2] },
-  groupHeader: { alignItems: "center", flexDirection: "row", gap: spacing[2] },
-  groupTitle: { ...typography.titleSm, color: theme.color },
-  groupCount: { ...typography.label, color: theme.interactiveText },
   list: { gap: spacing[3] },
   item: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4], ...elevation.raised },
   unread: { backgroundColor: theme.actionSoft, borderColor: theme.borderColorStrong },
@@ -184,10 +206,12 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) { return StyleShee
   body: { ...typography.body, color: theme.color },
   date: { ...typography.caption, color: theme.colorMuted },
   muted: { ...typography.bodySm, color: theme.colorMuted },
-  state: { alignItems: "center", borderRadius: radius.xl, gap: spacing[3], padding: spacing[5] },
+  state: { alignItems: "center", borderRadius: radius.lg, gap: spacing[2], padding: spacing[3] },
   stateIcon: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.round, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
   cardTitle: { ...typography.titleSm, color: theme.color, textAlign: "center" },
-  loadingState: { gap: spacing[3] },
+  loadingState: { gap: spacing[2] },
+  empty: { alignItems: "center", borderRadius: radius.lg, gap: spacing[2], padding: spacing[4] },
+  emptyIcon: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.round, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
   error: { ...typography.bodySm, color: theme.warning },
   pressed: { opacity: 0.76 },
 }); }

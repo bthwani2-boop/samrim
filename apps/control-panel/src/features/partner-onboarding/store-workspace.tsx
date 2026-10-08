@@ -50,7 +50,7 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
       return next;
     } catch (cause) {
       if (sequence !== requestSequence.current) return null;
-      setError(cause instanceof Error ? cause.message : "تعذرت قراءة سجل المتجر من DSH.");
+      setError(cause instanceof Error ? cause.message : "تعذرت قراءة سجل المتجر .");
       return null;
     } finally {
       if (sequence === requestSequence.current && showLoading) setLoading(false);
@@ -92,7 +92,7 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
       const result = await response.json() as StorePublicationResponse;
       setPublication(result);
       setSelectedModes(result.store.fulfillmentModes);
-      setNotice("سُجل تغيير النشر في DSH وعادت الحالة الكانونية الجديدة.");
+      setNotice("سُجل تغيير النشر وعادت الحالة المعتمدة الجديدة.");
     } catch {
       await readStore(false);
       setError("تعذر تأكيد نتيجة تغيير النشر. تمت إعادة قراءة المتجر؛ راجع الحالة قبل إعادة المحاولة.");
@@ -123,7 +123,7 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
       const result = await response.json() as StoreFulfillmentModesResponse;
       await readStore(false);
       setSelectedModes(result.fulfillmentModes);
-      setNotice("حُفظت أوضاع الطلب ثم أُعيدت قراءة سجل المتجر من DSH.");
+      setNotice("حُفظت أوضاع الطلب ثم أُعيدت قراءة سجل المتجر .");
     } catch {
       await readStore(false);
       setError("تعذر تأكيد حفظ أوضاع الطلب. تمت إعادة قراءة المتجر؛ راجع الحالة قبل إعادة المحاولة.");
@@ -154,14 +154,14 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
       const result = await response.json() as SetStoreCommercialTypeResponse;
       const readback = await readStore(false);
       if (readback?.store.commercialStoreTypeId !== result.commercialStoreTypeId) {
-        setError("تم إرسال التغيير لكن قراءة DSH لم تطابق النوع التجاري؛ راجع الحالة قبل إعادة المحاولة.");
+        setError("تم إرسال التغيير لكن قراءة النظام لم تطابق النوع التجاري؛ راجع الحالة قبل إعادة المحاولة.");
         return;
       }
       setCommercialTypeReason("");
-      setNotice("حُفظ نوع المتجر التجاري وأُكدت مطابقته في قراءة DSH.");
+      setNotice("حُفظ نوع المتجر التجاري وأُكدت مطابقته في قراءة النظام.");
     } catch {
       await readStore(false);
-      setError("تعذر تأكيد تغيير نوع المتجر. أُعيدت قراءة DSH؛ راجع الحالة قبل إعادة المحاولة.");
+      setError("تعذر تأكيد تغيير نوع المتجر. أُعيدت قراءة النظام؛ راجع الحالة قبل إعادة المحاولة.");
     } finally {
       setBusy(false);
     }
@@ -171,26 +171,24 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
   return (
     <section className="workspace-page store-workspace" aria-labelledby="store-workspace-title">
       <div className="workspace-page-heading">
-        <p className="eyebrow">الشركاء · المتاجر · DSH</p>
+        <p className="eyebrow">الشركاء · المتاجر · النظام</p>
         <h1 id="store-workspace-title">{store?.name ?? "ملف المتجر"}</h1>
-        {store ? <p className="lead"><bdi dir="ltr">{store.id}</bdi></p> : null}
         <Link className="button button-secondary" href="/partners/stores">العودة إلى سجل المتاجر</Link>
       </div>
 
-      {loading ? <output className="collection-state"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة الملف الكانوني من DSH</strong></output> : null}
+      {loading ? <output className="collection-state"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة الملف المعتمد </strong></output> : null}
       {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر إكمال العملية</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={busy} onClick={() => void readStore()}>إعادة قراءة المتجر</button></div> : null}
       {notice ? <output className="managed-status managed-status-success">{notice}</output> : null}
 
       {store ? <>
         <section className="store-detail-section" aria-labelledby="store-detail-context-title">
-          <div className="store-detail-heading"><div><p className="eyebrow">ملكية DSH</p><h2 id="store-detail-context-title">معلومات المتجر والعلاقات</h2></div><button type="button" className="button button-secondary" disabled={loading || busy} onClick={() => void readStore()}>{loading ? "جارٍ القراءة…" : "إعادة القراءة"}</button></div>
+          <div className="store-detail-heading"><div><p className="eyebrow">ملكية النظام</p><h2 id="store-detail-context-title">معلومات المتجر والعلاقات</h2></div><button type="button" className="button button-secondary" disabled={loading || busy} onClick={() => void readStore()}>{loading ? "جارٍ القراءة…" : "إعادة القراءة"}</button></div>
           <div className="store-detail-overview">
             <dl className="store-detail-facts">
-              <div><dt>الشريك المالك</dt><dd><Link href={`/partners/actors/${encodeURIComponent(store.partnerActorId)}`}><bdi dir="ltr">{store.partnerActorId}</bdi></Link></dd></div>
-              <div><dt>مدينة الخدمة</dt><dd>{store.serviceCityId ? <bdi dir="ltr">{store.serviceCityId}</bdi> : "غير محددة"}</dd></div>
-              <div><dt>الفئة الرئيسية</dt><dd>{store.primaryVerticalId ? <bdi dir="ltr">{store.primaryVerticalId}</bdi> : "غير محددة"}</dd></div>
-              <div><dt>نوع المتجر التجاري</dt><dd>{commercialTypes.find((item) => item.id === store.commercialStoreTypeId)?.nameAr ?? store.commercialStoreTypeId ?? "غير محدد"}</dd></div>
-              <div><dt>نسخة المتجر</dt><dd>v{store.version}</dd></div>
+              <div><dt>الشريك المالك</dt><dd><Link href={`/partners/actors/${encodeURIComponent(store.partnerActorId)}`}>{store.partnerName || "ملف الشريك"}</Link></dd></div>
+              <div><dt>مدينة الخدمة</dt><dd>{store.serviceCityName || "غير محددة"}</dd></div>
+              <div><dt>النشاط الرئيسي</dt><dd>{store.primaryVerticalName || "غير محددة"}</dd></div>
+              <div><dt>نوع المتجر التجاري</dt><dd>{commercialTypes.find((item) => item.id === store.commercialStoreTypeId)?.nameAr || "غير محدد"}</dd></div>
               <div><dt>تاريخ الإنشاء</dt><dd><time dateTime={store.createdAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium", timeStyle: "short" }).format(new Date(store.createdAt))}</time></dd></div>
               <div><dt>آخر تحديث</dt><dd><time dateTime={store.updatedAt}>{new Intl.DateTimeFormat("ar", { dateStyle: "medium", timeStyle: "short" }).format(new Date(store.updatedAt))}</time></dd></div>
             </dl>
@@ -219,7 +217,7 @@ export function StoreWorkspace({ storeId }: Readonly<{ storeId: string }>) {
         <section className="store-detail-section" aria-labelledby="store-commercial-type-title">
           <div className="store-detail-heading"><div><p className="eyebrow">الهوية التجارية والسياسات</p><h2 id="store-commercial-type-title">نوع المتجر التجاري</h2></div></div>
           <p className="muted">هذا التصنيف التجاري يحدد سياسة عمولة المنصة لهذا المتجر. لا يغيّر فئة منتجات الكتالوج.</p>
-           {store.commercialStoreTypeId ? <output className="managed-status managed-status-info">{commercialTypes.find((item) => item.id === store.commercialStoreTypeId)?.nameAr ?? store.commercialStoreTypeId} · التعيين مثبت في DSH. تؤخذ العمولة من سياسة هذا النوع ووضع الطلب عند إنشاء المعاملة.</output> : <>
+           {store.commercialStoreTypeId ? <output className="managed-status managed-status-info">{commercialTypes.find((item) => item.id === store.commercialStoreTypeId)?.nameAr || "نوع المتجر محدد"} · تُحتسب العمولة وفق الاتفاقية المعتمدة للمتجر.</output> : <>
             <label className="field-label" htmlFor="store-commercial-type"><span>اختر نوعًا تجاريًا نشطًا</span>
               <select id="store-commercial-type" value={selectedCommercialTypeID} onChange={(event) => setSelectedCommercialTypeID(event.target.value)} disabled={busy || loading || !store.primaryVerticalId}>
                 <option value="">اختر نوع المتجر</option>

@@ -34,7 +34,7 @@ const pkgPath = path.join(appDir, "package.json");
 assert.ok(fs.existsSync(pkgPath), `${app}: missing package.json`);
 const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
 const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
-assert.equal(allDeps["expo-localization"], "~57.0.2", `${app}: static RTL requires expo-localization`);
+assert.equal(allDeps["expo-localization"], "57.0.2", `${app}: static RTL requires expo-localization`);
 
   const identityPath = path.join(appDir, "src", "bootstrap", "identity.ts");
   assert.ok(fs.existsSync(identityPath), `${app}: missing src/bootstrap/identity.ts`);
@@ -129,7 +129,39 @@ if (app === "app-partner") {
 
 import { register } from "node:module";
 import { pathToFileURL } from "node:url";
+
 register(pathToFileURL(path.join(root, "packages/design-system/tools/ts-resolver.mjs")).href, import.meta.url);
+if (app === "app-field") {
+  const admissionProviderOpen = layoutContent.indexOf("<FieldAdmissionProvider>");
+  const authenticatedBoundaryOpen = layoutContent.indexOf("<AuthenticatedMobileBoundary");
+  const authenticatedBoundaryClose = layoutContent.indexOf("</AuthenticatedMobileBoundary>");
+  assert.ok(
+    authenticatedBoundaryOpen >= 0 && admissionProviderOpen > authenticatedBoundaryOpen && admissionProviderOpen < authenticatedBoundaryClose,
+    "app-field: admission read state must remain inside the authenticated route boundary",
+  );
+  const { percentTextFromBps, parsePercentToBps, sameAgreementRates } = await import(
+    pathToFileURL(path.join(appDir, "src/features/field-operations/field-commercial-agreement-rate.ts")).href
+  );
+  for (const [bps, expected] of [[0, "0"], [1, "0.01"], [10, "0.1"], [100, "1"], [1201, "12.01"], [1225, "12.25"], [1250, "12.5"], [10000, "100"]]) {
+    assert.equal(percentTextFromBps(bps), expected, `Field rate display drift for ${bps} bps`);
+  }
+  for (let bps = 0; bps <= 10000; bps += 1) {
+    assert.equal(parsePercentToBps(percentTextFromBps(bps)), bps, `Field rate precision loss for ${bps} bps`);
+  }
+  for (const invalid of ["", "-1", "100.01", "12.", "12.345", "1e2", "101"]) {
+    assert.equal(parsePercentToBps(invalid), null, `Invalid Field agreement rate was accepted: ${invalid}`);
+  }
+  assert.equal(parsePercentToBps("١٢.٢٥"), 1225, "Arabic-Indic digits must be normalized");
+  assert.equal(parsePercentToBps("12,25"), 1225, "Decimal comma must be normalized");
+  const agreedRates = [
+    { fulfillmentMode: "BTHWANI_CAPTAIN", commissionRateBps: 1225 },
+    { fulfillmentMode: "CUSTOMER_PICKUP", commissionRateBps: 0 },
+  ];
+  assert.equal(sameAgreementRates(agreedRates, [...agreedRates].reverse()), true, "Rate comparison must be independent of mode order");
+  assert.equal(sameAgreementRates(agreedRates, [{ ...agreedRates[0], commissionRateBps: 1220 }, agreedRates[1]]), false, "Canonical readback must detect rate loss");
+  assert.equal(sameAgreementRates(agreedRates, [agreedRates[0]]), false, "Canonical readback must detect missing modes");
+  console.log("MOBILE_FIELD_AGREEMENT_RATE=PASS exact basis-point roundtrip 0..10000 and canonical rate comparison");
+}
 if (app === "app-client") {
   const { normalizeDiscoveryTaxonomy } = await import(pathToFileURL(path.join(appDir, "src/features/store-discovery/discovery-taxonomy.ts")).href);
   assert.deepEqual(normalizeDiscoveryTaxonomy(undefined, undefined), { verticals: [], categories: [] });
@@ -138,12 +170,9 @@ if (app === "app-client") {
 }
 if (app === "app-captain") {
   const {
-    isSameCaptainFundingIntent,
-    isSimulatableCaptainFundingIntent,
     matchesCaptainFundingAttempt,
     matchesCaptainFundingRequest,
     parseCaptainFundingAttempt,
-    selectCaptainSimulatorIntent,
   } = await import(pathToFileURL(path.join(appDir, "src/features/wallet/cash-in-recovery.ts")).href);
   const intent = {
     id: "funding-captain-1",
@@ -161,29 +190,18 @@ if (app === "app-captain") {
   };
   const legacyAttempt = parseCaptainFundingAttempt(JSON.stringify({ version: 1, actorID: "captain-1", amountMinor: 2500, idempotencyKey: "captain_cashin_key", correlationID: "captain_cashin_corr" }), "captain-1");
   assert.ok(legacyAttempt, "app-captain: legacy retries without an intent ID must remain recoverable");
-  assert.equal(parseCaptainFundingAttempt(null, "captain-1"), null, "app-captain: absent local retry state must not prevent canonical simulator recovery");
+  assert.equal(parseCaptainFundingAttempt(null, "captain-1"), null, "app-captain: absent local retry state must be handled safely");
   assert.equal(matchesCaptainFundingRequest(intent, "captain-1", 2500), true);
   assert.equal(matchesCaptainFundingRequest({ ...intent, actorType: "customer", fundingPurpose: "CUSTOMER_TOPUP" }, "captain-1", 2500), false);
-  assert.equal(isSimulatableCaptainFundingIntent(intent, "captain-1"), true, "app-captain: canonical WLT simulator intents remain actionable without a local retry record");
-  assert.equal(isSimulatableCaptainFundingIntent(intent, "captain-2"), false, "app-captain: another actor's intent must never be simulated");
-  assert.equal(isSimulatableCaptainFundingIntent({ ...intent, providerKey: "provider" }, "captain-1"), false);
-  assert.equal(isSimulatableCaptainFundingIntent({ ...intent, state: "SETTLED" }, "captain-1"), false);
   const exactAttempt = { ...legacyAttempt, fundingIntentID: intent.id };
   assert.equal(matchesCaptainFundingAttempt(intent, exactAttempt), true);
   assert.equal(matchesCaptainFundingAttempt({ ...intent, id: "another-intent" }, exactAttempt), false, "same actor and amount do not identify the same funding intent");
-  const unrelatedIntent = { ...intent, id: "funding-captain-2", amountMinor: 3500 };
-  assert.equal(selectCaptainSimulatorIntent([unrelatedIntent, intent], "captain-1", null), unrelatedIntent, "app-captain: without a local retry, the newest canonical simulator intent remains recoverable");
-  assert.equal(selectCaptainSimulatorIntent([unrelatedIntent, intent], "captain-1", exactAttempt), intent, "app-captain: a recorded funding intent ID selects only that exact request");
-  assert.equal(selectCaptainSimulatorIntent([unrelatedIntent, intent], "captain-1", legacyAttempt), undefined, "app-captain: a legacy retry without an intent ID cannot settle an unrelated intent");
-  assert.equal(selectCaptainSimulatorIntent([unrelatedIntent, intent], "captain-1", { ...exactAttempt, fundingIntentID: "missing-intent" }), undefined, "app-captain: a missing bound intent cannot fall back to another simulator intent");
-  assert.equal(isSameCaptainFundingIntent(intent, { ...intent, state: "SETTLED" }), true);
-  assert.equal(isSameCaptainFundingIntent(intent, { ...intent, amountMinor: 2501 }), false);
 
   const panel = fs.readFileSync(path.join(appDir, "src", "features", "wallet", "cash-in-panel.tsx"), "utf8");
   assert.ok(panel.indexOf("setWallet(walletResponse)") < panel.indexOf("readOwnFundingIntent(token, attempt.fundingIntentID)"), "app-captain: wallet state remains available when recovery of a stale saved intent fails");
   assert.ok(panel.includes("readOwnFundingIntent(token, attempt.fundingIntentID)"), "app-captain: stored retry intent must use canonical owner readback");
-  assert.ok(panel.includes("isSimulatableCaptainFundingIntent(intent, actorID)"), "app-captain: simulation controls must be gated by canonical intent identity and state");
-  assert.ok(panel.includes("matchesCaptainFundingAttempt(intent, storedAttempt)"), "app-captain: terminal simulation must clear only its exact local retry intent");
+  assert.ok(!panel.includes("simulateOwnFundingIntent"), "app-captain: development-only simulator controls must not be exposed by the current cash-in panel");
+  assert.ok(panel.includes("matchesCaptainFundingAttempt(intent, storedAttempt)"), "app-captain: terminal readback must clear only its exact local retry intent");
   console.log("MOBILE_CAPTAIN_CASH_IN_RECOVERY=PASS canonical intent, actor scope, retry identity, and terminal cleanup");
 }
 if (app === "app-partner") {
@@ -272,7 +290,7 @@ assert.deepEqual(localizationPlugin, [
 const locationPlugin = expoConfig.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-location");
 const cameraPlugin = expoConfig.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-camera");
 if (expectsBarcodeCamera) {
-  assert.equal(allDeps["expo-camera"], "~57.0.6", `${app}: barcode scanning requires the Expo camera module`);
+  assert.equal(allDeps["expo-camera"], "57.0.6", `${app}: barcode scanning requires the Expo camera module`);
   assert.deepEqual(cameraPlugin, [
     "expo-camera",
     {
@@ -287,7 +305,7 @@ if (expectsBarcodeCamera) {
   assert.equal(cameraPlugin, undefined, `${app}: camera permission must not be inferred without an app-owned request`);
 }
 if (expectsForegroundLocation) {
-  const expectedLocationVersion = app === "app-field" ? "~57.0.20" : "~57.0.19";
+  const expectedLocationVersion = "57.0.20";
   assert.equal(allDeps["expo-location"], expectedLocationVersion, `${app}: foreground location requires the Expo location module`);
   assert.ok(locationPlugin, `${app}: foreground location must be owned by expo-location`);
   assert.deepEqual(locationPlugin, [

@@ -113,7 +113,7 @@ export function PartnerDirectory() {
   function exportSelected() {
     const selected = items.filter((partner) => selectedIds.has(partner.actorId));
     if (!selected.length) return;
-    downloadRegistryCsv("partner-registry-selection.csv", ["رقم الهاتف", "حالة الهوية الأمنية", "حالة دور الشريك", "نسخة الدور", "معرّف الحساب"], selected.map((partner) => [
+    downloadRegistryCsv("partner-registry-selection.csv", ["رقم الهاتف", "حالة الهوية الأمنية", "حالة دور الشريك", "نسخة الدور"], selected.map((partner) => [
         partner.phoneE164,
         partner.securityEnabled ? "نشطة" : "موقوفة",
         !partner.enabled ? "موقوف" : !partner.activatedAt ? "بانتظار التفعيل" : "نشط",
@@ -147,17 +147,17 @@ export function PartnerDirectory() {
 
     {notice ? <p className="success-inline" role="status">{notice}</p> : null}
     {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذرت قراءة سجل الشركاء</strong><p>{error}</p><button type="button" className="button button-secondary" disabled={loading} onClick={() => void load()}>إعادة المحاولة</button></div> : null}
-    {loading && items.length === 0 ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة Identity وDSH</strong></div> : null}
+    {loading && items.length === 0 ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة الحسابات والنظام</strong></div> : null}
     {!loading && !error && items.length === 0 ? <div className="collection-state"><strong>لا توجد نتائج</strong><p>غيّر عوامل البحث أو امسحها لعرض بقية الشركاء.</p></div> : null}
 
     {items.length > 0 ? <>
       <div className="partner-registry-summary">
         <span>الصفحة الحالية · {items.length} سجلًا</span>
-        <fieldset className="partner-registry-bulk-actions"><legend className="visually-hidden">إجراءات السجلات المحددة</legend><span aria-live="polite">المحدد: {selectedOnPage}</span><button type="button" className="button button-secondary" onClick={exportSelected} disabled={selectedOnPage === 0}>تصدير المحدد CSV</button><button type="button" className="button button-secondary" onClick={() => setSelectedIds(new Set())} disabled={selectedOnPage === 0}>إلغاء التحديد</button></fieldset>
+        <fieldset className="partner-registry-bulk-actions"><legend className="visually-hidden">إجراءات السجلات المحددة</legend><span aria-live="polite">المحدد: {selectedOnPage}</span><button type="button" className="button button-secondary" onClick={exportSelected} disabled={selectedOnPage === 0}>تصدير المحدد</button><button type="button" className="button button-secondary" onClick={() => setSelectedIds(new Set())} disabled={selectedOnPage === 0}>إلغاء التحديد</button></fieldset>
       </div>
       <div className="partner-registry-table-wrap" aria-busy={loading}>
         <table className="operations-table partner-registry-table">
-          <caption className="visually-hidden">سجل حسابات الشركاء الحالي من Identity</caption>
+          <caption className="visually-hidden">سجل حسابات الشركاء الحالي من الحسابات</caption>
           <thead><tr><th scope="col"><span className="visually-hidden">تحديد</span><input aria-label={allSelected ? "إلغاء تحديد كل سجلات الصفحة" : "تحديد كل سجلات الصفحة"} type="checkbox" checked={allSelected} onChange={(event) => setSelectedIds(event.target.checked ? new Set(items.map((partner) => partner.actorId)) : new Set())} /></th><th scope="col">الشريك</th><th scope="col">الهوية الأمنية</th><th scope="col">الدور</th><th scope="col">التفعيل</th><th scope="col">التفاصيل</th></tr></thead>
           <tbody>{items.map((partner) => <tr key={partner.actorId}>
             <td><input type="checkbox" aria-label={`تحديد الشريك ${partner.phoneE164}`} checked={selectedIds.has(partner.actorId)} onChange={() => toggleSelected(partner.actorId)} /></td>

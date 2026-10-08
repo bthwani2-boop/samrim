@@ -53,10 +53,8 @@ let args;
 if(/^app-(client|partner|captain|field)$/.test(surface)){
   const token=surface.replace(/[^A-Za-z0-9]/g,"_").toUpperCase();
   const port=need(`SAMRIM_${token}_METRO_PORT`);
-  process.env.EXPO_OFFLINE="1";
   process.env.EXPO_NO_QR_CODE="1";
   process.env.EXPO_NO_TYPESCRIPT_SETUP="1";
-  process.env.EXPO_NO_METRO_WORKSPACE_ROOT="1";
   if(!process.env.NODE_OPTIONS?.includes("--dns-result-order=ipv4first")){
     process.env.NODE_OPTIONS=((process.env.NODE_OPTIONS??"")+" --dns-result-order=ipv4first").trim();
   }
@@ -66,6 +64,9 @@ if(/^app-(client|partner|captain|field)$/.test(surface)){
   console.log(`MOBILE_LIVE app=${surface} port=${port} fast_refresh=on open=manual cwd=${surfaceRoot}`);
 }else if(surface==="control-panel"){
   const port=need("SAMRIM_CONTROL_PORT");
+  process.env.NEXT_PUBLIC_CONTROL_PANEL_DEVELOPMENT_LOGIN = process.env.BTHWANI_ENV === "development" &&
+    process.env.BTHWANI_AUTH_JOURNEY_PROOF !== "1" &&
+    Boolean(process.env.CONTROL_PANEL_DEVELOPMENT_PASSWORD?.trim()) ? "1" : "0";
   process.env.NEXT_TELEMETRY_DISABLED="1";
   cli=path.join(surfaceRoot,"node_modules","next","dist","bin","next");
   args=[cli,"dev","-H","127.0.0.1","-p",port];
@@ -76,6 +77,17 @@ if(/^app-(client|partner|captain|field)$/.test(surface)){
 
 if(!fs.existsSync(cli)){
   fail(`LOCAL_DEPENDENCY_NOT_MATERIALIZED cli=${cli} run=pnpm_bootstrap`);
+}
+
+if(surface.startsWith("app-")){
+  const check=spawnSync(process.execPath,[path.join(repoRoot,"tools/mobile/verify-mobile-config.mjs"),"--app",surface],{
+    cwd:repoRoot,
+    env:process.env,
+    stdio:"inherit",
+    windowsHide:true,
+  });
+  if(check.error) throw check.error;
+  if(check.status!==0) process.exit(check.status??1);
 }
 
 const result=spawnSync(process.execPath,args,{

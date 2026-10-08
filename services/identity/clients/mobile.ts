@@ -101,7 +101,17 @@ export function createManagedMobileIdentityBinding(config: ManagedMobileIdentity
 
   return {
     ...runtime,
+    recordFieldAppOpened: async (): Promise<void> => {
+      const accessToken = await runtime.getUsableAccessToken();
+      await runtime.identityClient().recordFieldAppOpened(accessToken);
+    },
     requestManagedActivation: (phone: string) => runtime.identityClient().requestManagedActivation({ phone, role: config.role }),
+    requestManagedRecovery: (phone: string) => runtime.identityClient().requestManagedRecovery({ phone, role: config.role }),
+    recoverManagedIdentity: async (phone: string, verificationCode: string, password: string) => {
+      const result = await runtime.identityClient().recoverManaged({ phone, role: config.role, verificationCode, password });
+      await runtime.identitySession().clearLocalSession();
+      return result;
+    },
     activateManagedIdentity: async (phone: string, verificationCode: string, password: string): Promise<IdentitySessionState> => {
       const pair = await runtime.identityClient().activateManaged({
         phone,

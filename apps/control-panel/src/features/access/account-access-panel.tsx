@@ -190,7 +190,7 @@ export function AccountAccessPanel({ selectedPhone = "" }: Readonly<{ selectedPh
         <p className="muted">هذا المركز لإدارة موظفي لوحة التحكم وصلاحياتهم فقط. قبول الشركاء والكباتن والميدانيين وحالاتهم التشغيلية تُدار في مراكزهم المختصة.</p>
       </div>
       <div className="access-form">
-        <label className="field-label" htmlFor="account-phone">رقم هاتف المشغّل<input id="account-phone" autoComplete="tel" disabled={busy} inputMode="tel" placeholder="مثال: 967 77 000 100" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} /></label>
+        <label className="field-label" htmlFor="account-phone">رقم هاتف المشغّل<input id="account-phone" autoComplete="tel" disabled={busy} inputMode="tel" placeholder="مثال: 777 000 100 أو +967 777 000 100" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} /></label>
       </div>
       {status ? (
         <div className={`managed-status ${status.exists && status.enabled && status.securityEnabled ? "managed-status-info" : "managed-status-warning"}`} role="status">
@@ -199,7 +199,7 @@ export function AccountAccessPanel({ selectedPhone = "" }: Readonly<{ selectedPh
             <p>{status.activated ? "اكتمل تسجيل هذا المشغّل." : "لم يكتمل تفعيل هذا المشغّل بعد."} · الهوية {status.securityEnabled ? "مسموحة" : "موقوفة"}</p>
             {canManagePermissionTarget || canViewOwnPermissions ? <section className="managed-status managed-status-info" aria-label="صلاحيات مشغّل لوحة التحكم">
               <strong>الصلاحيات المفوضة</strong>
-              <p>{canManagePermissionTarget ? "الصفة كمشغّل لا تمنح صلاحيات النطاق تلقائيًا. الحالة والسبب المسجل ظاهران لكل صلاحية." : "هذه صلاحيات الجلسة الحالية الصادرة من Identity. يحدّث Identity الجلسة بعد تغيير الصلاحيات."}</p>
+              <p>{canManagePermissionTarget ? "الصفة كمشغّل لا تمنح صلاحيات النطاق تلقائيًا. الحالة والسبب المسجل ظاهران لكل صلاحية." : "هذه صلاحيات الجلسة الحالية الصادرة من الحسابات. يحدّث الحسابات الجلسة بعد تغيير الصلاحيات."}</p>
               <div className="access-form">
                 {operatorWorkspacePermissions.map(({ key, label }) => {
                   const reasonId = `operator-permission-reason-${key}`;

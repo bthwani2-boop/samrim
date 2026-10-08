@@ -49,6 +49,8 @@ func New(actors *actor.Service, authenticationService *authentication.Service, c
 	mux.HandleFunc("POST /auth/client/recover", s.recoverClient)
 	mux.HandleFunc("POST /auth/managed/activation/request", s.requestManagedActivation)
 	mux.HandleFunc("POST /auth/managed/activate", s.activateManaged)
+	mux.HandleFunc("POST /auth/managed/recovery/request", s.requestManagedRecovery)
+	mux.HandleFunc("POST /auth/managed/recover", s.recoverManaged)
 	mux.HandleFunc("POST /auth/managed/login", s.loginManaged)
 	mux.HandleFunc("GET /internal/operator-profiles", s.internal(s.listOperatorProfiles))
 	mux.HandleFunc("POST /internal/operator-profiles", s.internal(s.createOperatorProfile))
@@ -67,6 +69,7 @@ func New(actors *actor.Service, authenticationService *authentication.Service, c
 	mux.HandleFunc("POST /auth/refresh", s.refresh)
 	mux.HandleFunc("POST /auth/logout", s.logout)
 	mux.HandleFunc("GET /auth/session", s.currentSession)
+	mux.HandleFunc("POST /auth/session/app-opened", s.recordFieldAppOpened)
 	if config.Development {
 		mux.HandleFunc("POST /auth/development/session", s.developmentSession)
 	}
@@ -183,6 +186,30 @@ func (s *Server) activateManaged(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := s.challenges.ActivateManaged(r.Context(), input)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+func (s *Server) requestManagedRecovery(w http.ResponseWriter, r *http.Request) {
+	var input domain.ManagedChallengeRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.challenges.RequestManagedRecovery(r.Context(), input, s.ipHash(r))
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
+}
+func (s *Server) recoverManaged(w http.ResponseWriter, r *http.Request) {
+	var input domain.ManagedRecoveryProofRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.challenges.RecoverManaged(r.Context(), input)
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -349,6 +376,28 @@ func (s *Server) currentSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, identity)
+}
+
+func (s *Server) recordFieldAppOpened(w http.ResponseWriter, r *http.Request) {
+	token, ok := bearerToken(r)
+	if !ok {
+		writeDomainError(w, domain.ErrUnauthenticated)
+		return
+	}
+	identity, err := s.sessions.ResolveAccessToken(r.Context(), token)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	if identity.Role != "field" {
+		writeDomainError(w, domain.ErrForbidden)
+		return
+	}
+	if err := s.sessions.RecordFieldAppOpened(r.Context(), identity.Subject, identity.SessionID); err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type internalHandler func(http.ResponseWriter, *http.Request, string)

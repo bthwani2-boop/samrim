@@ -51,11 +51,11 @@ function FieldAcquisitionPolicySelection({
       <option value="">اختر نوع المتجر</option>
       {commercialTypes.map((item) => <option key={item.id} value={item.id}>{item.nameAr}</option>)}
     </select></label> : null}
-    {readState === "loading" ? <output>جارٍ قراءة سياسة نوع المتجر من WLT…</output> : null}
+    {readState === "loading" ? <output>جارٍ قراءة سياسة نوع المتجر من السجل المالي…</output> : null}
     {readState === "unselected" && verticalId && !commercialTypeId ? <p className="muted">اختر نوع متجر نشطًا لقراءة سياسته المركزية.</p> : null}
     {readState === "missing" ? <output className="managed-status managed-status-warning">لا توجد سياسة مفعّلة لنوع «{selectedCommercialType?.nameAr}». لن ينشأ استحقاق لهذه الرحلة حتى تُنشأ السياسة هنا.</output> : null}
     {readState === "error" ? <p className="validation-error" role="alert">{error || "تعذرت القراءة؛ الحفظ معطل حتى نجاحها."}</p> : null}
-    {policy ? <output className="managed-status">المبلغ الفعّال لنوع «{selectedCommercialType?.nameAr}»: <strong>{formatMoney(policy.rewardMinor, "YER")}</strong> · {financialPolicyStateLabel(policy.state)} · الإصدار {policy.version}</output> : null}
+    {policy ? <output className="managed-status">المبلغ الفعّال لنوع «{selectedCommercialType?.nameAr}»: <strong>{formatMoney(policy.rewardMinor, "YER")}</strong> · {financialPolicyStateLabel(policy.state)}</output> : null}
   </>;
 }
 
@@ -87,7 +87,7 @@ export function FieldAcquisitionPolicyWorkspace() {
     try {
       const response = await fetch("/api/catalog/verticals", { cache: "no-store", signal: controller.signal });
       const body = await response.json() as { verticals?: CommerceVertical[]; error?: { message?: string } };
-      if (!response.ok) throw new Error(body.error?.message || "تعذرت قراءة فئات المتاجر من DSH.");
+      if (!response.ok) throw new Error(body.error?.message || "تعذرت قراءة فئات المتاجر .");
       if (!controller.signal.aborted) setVerticals((body.verticals ?? []).filter((vertical) => vertical.active));
     } catch (error_) {
       if (!controller.signal.aborted) setVerticalsError(error_ instanceof Error ? error_.message : "تعذر تحميل فئات المتاجر.");
@@ -133,7 +133,7 @@ export function FieldAcquisitionPolicyWorkspace() {
         setReadState("missing");
         return false;
       }
-      if (!response.ok || !body.policy) throw new Error(body.error?.message || "تعذرت قراءة سياسة هذه الفئة من WLT.");
+      if (!response.ok || !body.policy) throw new Error(body.error?.message || "تعذرت قراءة سياسة هذه الفئة من السجل المالي.");
       setPolicy(body.policy);
       setRewardMinor(String(body.policy.rewardMinor));
       setReadState("ready");
@@ -180,8 +180,8 @@ export function FieldAcquisitionPolicyWorkspace() {
       });
       const body = await response.json() as { error?: { message?: string } };
       if (!response.ok) throw new Error(body.error?.message || "تعذر حفظ سياسة الفئة.");
-      if (!await read(commercialTypeId)) throw new Error("تم الحفظ لكن تعذرت مطابقة القراءة الكانونية من WLT؛ أعد القراءة قبل أي تغيير آخر.");
-      setMessage("تم حفظ السياسة ومطابقة مبلغها وإصدارها مع WLT.");
+      if (!await read(commercialTypeId)) throw new Error("تم الحفظ لكن تعذرت مطابقة القراءة المعتمدة من السجل المالي؛ أعد القراءة قبل أي تغيير آخر.");
+      setMessage("تم حفظ السياسة ومطابقة مبلغها وإصدارها مع السجل المالي.");
       setReason("");
     } catch (error_) {
       setError(error_ instanceof Error ? error_.message : "تعذر حفظ سياسة الفئة.");
@@ -196,7 +196,7 @@ export function FieldAcquisitionPolicyWorkspace() {
 
   return <section className="access-card" aria-labelledby="field-acquisition-policy-title">
     <div className="finance-toolbar">
-      <div><p className="eyebrow">مركز السياسات · WLT</p><h2 id="field-acquisition-policy-title">استحقاق ضم الشريك للميداني</h2></div>
+      <div><p className="eyebrow">مركز السياسات · السجل المالي</p><h2 id="field-acquisition-policy-title">استحقاق ضم الشريك للميداني</h2></div>
       <button className="button button-secondary" type="button" onClick={() => { if (commercialTypeId) void read(commercialTypeId); }} disabled={!commercialTypeId || busy || readState === "loading"}>إعادة القراءة</button>
     </div>
     <p className="muted">لكل نوع متجر تجاري سياسة مبلغ مستقلة من مركز السياسات. يتحقق الاستحقاق مرة واحدة لرحلة ضم الشريك عند ظهور أول متجر مؤهل في تطبيق العميل. لا ينتقل مبلغ نوع إلى نوع آخر، ولا توجد قيمة افتراضية أو قيمة خاصة بمتجر.</p>

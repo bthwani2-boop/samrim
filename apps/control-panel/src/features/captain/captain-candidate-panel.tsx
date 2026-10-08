@@ -1,14 +1,16 @@
 "use client";
 
-import { toAsciiDigits } from "@bthwani/design-system";
+import { normalizeYemenPhoneE164, toAsciiDigits } from "@bthwani/design-system";
 import { type CaptainAdmission, captainAdmissionStateLabel } from "@bthwani/dsh";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "../access/identity-error-message";
+import { useWalletProviders } from "../wallet-provider/use-wallet-providers";
 
 type CandidatePage = Readonly<{ items: ReadonlyArray<CaptainAdmission>; nextCursor?: string }>;
 
 export function CaptainCandidatePanel() {
+  const { walletProviders, walletProvidersLoading, walletProvidersError } = useWalletProviders();
   const [fullNameAr, setFullNameAr] = useState("");
   const [phone, setPhone] = useState("");
   const [walletProviderKey, setWalletProviderKey] = useState("");
@@ -50,10 +52,10 @@ export function CaptainCandidatePanel() {
 
   async function createProfile() {
     const name = fullNameAr.trim();
-    const contactPhoneE164 = toAsciiDigits(phone).replace(/\s+/g, "");
+    const contactPhoneE164 = normalizeYemenPhoneE164(phone);
     const providerKey = walletProviderKey.trim();
-    if (Array.from(name).length < 2 || Array.from(name).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(contactPhoneE164) || Array.from(providerKey).length < 1 || Array.from(providerKey).length > 64) {
-      setError("أدخل الاسم ورقم الهاتف الدولي ومزوّد المحفظة الذي حدده الكابتن.");
+    if (Array.from(name).length < 2 || Array.from(name).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(contactPhoneE164) || !walletProviders.some((provider) => provider.key === providerKey)) {
+      setError("أدخل الاسم ورقم الجوال ومزوّد المحفظة الذي حدده الكابتن.");
       return;
     }
     setBusy("create");
@@ -64,7 +66,7 @@ export function CaptainCandidatePanel() {
       if (!response.ok) { setError(await responseMessage(response)); await load(); return; }
       const created = (await response.json() as { admission?: CaptainAdmission }).admission;
       if (!created?.id || created.state !== "pending_review" || created.fullNameAr !== name || created.contactPhoneE164 !== contactPhoneE164 || created.walletProviderKey !== providerKey) {
-        setError("استجاب DSH لكن سجل المزوّد أو بيانات الملف المرجعة لا تطابق الطلب. أعد قراءة السجل قبل المتابعة."); await load(); return;
+        setError("استجاب النظام لكن سجل المزوّد أو بيانات الملف المرجعة لا تطابق الطلب. أعد قراءة السجل قبل المتابعة."); await load(); return;
       }
       setFullNameAr("");
       setPhone("");
@@ -127,13 +129,14 @@ export function CaptainCandidatePanel() {
       <div className="access-card-heading"><span className="step-chip">الخطوة الأولى · ملف بلا دور</span><h2 id="captain-candidate-create-title">ملف كابتن جديد</h2><p className="muted">سجّل اسم العرض بالعربية ورقم الاتصال؛ الاسم خاص بملف الكابتن وليس اسمًا قانونيًا موثّقًا. بعد المراجعة والاعتماد فقط يُمنح الدور في التطبيق. ارتباطه بمتجر شريك إجراء مستقل.</p></div>
       <div className="access-form">
         <label className="field-label" htmlFor="captain-candidate-name">اسم العرض الكامل بالعربية<input id="captain-candidate-name" autoComplete="name" maxLength={120} value={fullNameAr} onChange={(event) => setFullNameAr(event.target.value)} disabled={Boolean(busy)} placeholder="مثال: مروان أحمد صالح الحضرمي" /></label>
-        <label className="field-label" htmlFor="captain-candidate-phone">رقم الهاتف<input id="captain-candidate-phone" autoComplete="tel" inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} disabled={Boolean(busy)} placeholder="+96777000100" /></label>
-        <label className="field-label" htmlFor="captain-candidate-wallet-provider">مزوّد المحفظة الرسمية الذي حدده الكابتن<input id="captain-candidate-wallet-provider" autoComplete="off" maxLength={64} value={walletProviderKey} onChange={(event) => setWalletProviderKey(event.target.value)} disabled={Boolean(busy)} /><small>سجّل اسم المزوّد فقط. لا تدخل رقم المحفظة أو الاسم القانوني هنا.</small></label>
-        <button type="button" className="button button-primary" disabled={Boolean(busy) || !fullNameAr.trim() || !phone.trim() || !walletProviderKey.trim()} onClick={() => void createProfile()}>{busy === "create" ? "جارٍ حفظ الملف…" : "حفظ الملف للمراجعة"}</button>
+        <label className="field-label" htmlFor="captain-candidate-phone">رقم الهاتف<input id="captain-candidate-phone" autoComplete="tel" inputMode="tel" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} disabled={Boolean(busy)} placeholder="777000100 أو +967777000100" /></label>
+        <label className="field-label" htmlFor="captain-candidate-wallet-provider">مزوّد المحفظة الرسمية الذي حدده الكابتن<select id="captain-candidate-wallet-provider" value={walletProviderKey} onChange={(event) => setWalletProviderKey(event.target.value)} disabled={Boolean(busy) || walletProvidersLoading || Boolean(walletProvidersError)}><option value="">اختر محفظة رسمية</option>{walletProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.displayNameAr}</option>)}</select><small>سجّل المزوّد فقط. لا تدخل رقم المحفظة أو الاسم القانوني هنا.</small></label>
+        {walletProvidersError ? <p className="identity-error" role="alert">{walletProvidersError}</p> : null}
+        <button type="button" className="button button-primary" disabled={Boolean(busy) || walletProvidersLoading || Boolean(walletProvidersError) || !fullNameAr.trim() || !phone.trim() || !walletProviderKey} onClick={() => void createProfile()}>{busy === "create" ? "جارٍ حفظ الملف…" : "حفظ الملف للمراجعة"}</button>
       </div>
     </section>
     <section className="access-card" aria-labelledby="captain-candidate-registry-title">
-      <div className="access-card-heading"><span className="step-chip">سجل ملفات DSH</span><h2 id="captain-candidate-registry-title">ملفات الكباتن قبل منح الدور</h2><p className="muted">بحث وترتيب وصفحات خادمية؛ المراجعة تسبق إنشاء دور Identity، والتفعيل الذاتي يأتي بعد منح الدور.</p></div>
+      <div className="access-card-heading"><span className="step-chip">سجل ملفات النظام</span><h2 id="captain-candidate-registry-title">ملفات الكباتن قبل منح الدور</h2><p className="muted">بحث وترتيب وصفحات خادمية؛ المراجعة تسبق إنشاء دور الحسابات، والتفعيل الذاتي يأتي بعد منح الدور.</p></div>
       <div className="workspace-toolbar">
         <label className="field-label" htmlFor="captain-candidate-search">بحث بالاسم أو الهاتف<input id="captain-candidate-search" value={query} disabled={Boolean(busy)} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث في ملفات الكباتن" /></label>
         <label className="field-label" htmlFor="captain-candidate-state">مرحلة الملف<select id="captain-candidate-state" value={state} disabled={Boolean(busy)} onChange={(event) => setState(event.target.value)}><option value="review_required">يحتاج استكمالًا ومراجعة</option><option value="pending_review">ملف جديد بانتظار المراجعة</option><option value="pending_identity">معتمد وينتظر منح الدور</option><option value="eligible">مؤهل</option><option value="suspended">موقوف</option><option value="all">كل المراحل</option></select></label>
@@ -152,7 +155,7 @@ export function CaptainCandidatePanel() {
           const canEdit = profile.state === "pending_review" || canCompleteLegacy;
           return <tr key={profile.id}>
             <th scope="row"><div className="access-form"><label className="field-label" htmlFor={"captain-candidate-name-" + profile.id}>الاسم<input id={"captain-candidate-name-" + profile.id} value={name} maxLength={120} disabled={Boolean(busy) || !canEdit} onChange={(event) => setEdits((current) => ({ ...current, [profile.id]: event.target.value }))} /></label><bdi dir="ltr">{profile.contactPhoneE164 || "—"}</bdi></div></th>
-            <td>{profile.requiresProfileReview ? "موقوف حتى استكمال الملف ومراجعته" : captainAdmissionStateLabel(profile.state)} · الإصدار {profile.version}</td>
+            <td>{profile.requiresProfileReview ? "موقوف حتى استكمال الملف ومراجعته" : captainAdmissionStateLabel(profile.state)}</td>
             <td><div className="access-form">
               {canEdit ? <>
                 <button type="button" className="button button-secondary" disabled={Boolean(busy) || !changed} onClick={() => void mutate(profile, "update-profile")}>{busy === profile.id + ":update-profile" ? "جارٍ الحفظ…" : "حفظ الملف"}</button>
@@ -162,7 +165,7 @@ export function CaptainCandidatePanel() {
               {profile.state === "eligible" && profile.requiresProfileReview ? <span className="muted">أوقف الدور من قائمة الحسابات قبل استكمال الملف ومراجعته.</span> : null}
               {profile.state === "pending_identity" ? <button type="button" className="button button-primary" disabled={Boolean(busy)} onClick={() => void mutate(profile, "provision")}>{busy === profile.id + ":provision" ? "جارٍ منح الدور…" : "منح دور الكابتن"}</button> : null}
               {profile.state === "eligible" && !profile.requiresProfileReview ? <span className="muted">اكتمل منح الدور؛ ينتظر تفعيل الحساب من الكابتن.</span> : null}
-              {profile.state === "suspended" ? <span className="muted">الأهلية موقوفة في DSH.</span> : null}
+              {profile.state === "suspended" ? <span className="muted">الأهلية موقوفة.</span> : null}
             </div></td>
           </tr>;
         })}

@@ -41,7 +41,7 @@ func (s *Service) CreateOperatorProfile(ctx context.Context, caller, actingActor
 	if err != nil {
 		return domain.OperatorProfileResponse{}, domain.ErrInvalidInput
 	}
-	if err := requireOperatorPermissionAdministrator(ctx, s.db, actingActorID); err != nil {
+	if err := s.requireOperatorPermissionAdministrator(ctx, s.db, actingActorID); err != nil {
 		return domain.OperatorProfileResponse{}, err
 	}
 	hash := operatorProfileHash("create", input.FullNameAr, phone)
@@ -61,7 +61,7 @@ func (s *Service) CreateOperatorProfile(ctx context.Context, caller, actingActor
 		}
 		return domain.OperatorProfileResponse{Profile: profile, IdempotentReplay: true}, nil
 	}
-	if err := requireOperatorPermissionAdministrator(ctx, tx, actingActorID); err != nil {
+	if err := s.requireOperatorPermissionAdministrator(ctx, tx, actingActorID); err != nil {
 		return domain.OperatorProfileResponse{}, err
 	}
 	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "identity:phone:"+phone); err != nil {
@@ -109,7 +109,7 @@ func (s *Service) UpdateOperatorProfile(ctx context.Context, caller, actingActor
 	if err != nil {
 		return domain.OperatorProfileResponse{}, domain.ErrInvalidInput
 	}
-	if err := requireOperatorPermissionAdministrator(ctx, s.db, actingActorID); err != nil {
+	if err := s.requireOperatorPermissionAdministrator(ctx, s.db, actingActorID); err != nil {
 		return domain.OperatorProfileResponse{}, err
 	}
 	hash := operatorProfileHash("update", profileID, input.FullNameAr, phone, fmt.Sprint(input.ExpectedVersion))
@@ -129,7 +129,7 @@ func (s *Service) UpdateOperatorProfile(ctx context.Context, caller, actingActor
 		}
 		return domain.OperatorProfileResponse{Profile: profile, IdempotentReplay: true}, nil
 	}
-	if err := requireOperatorPermissionAdministrator(ctx, tx, actingActorID); err != nil {
+	if err := s.requireOperatorPermissionAdministrator(ctx, tx, actingActorID); err != nil {
 		return domain.OperatorProfileResponse{}, err
 	}
 	current, err := readOperatorProfile(ctx, tx, profileID+" FOR UPDATE")
@@ -183,7 +183,7 @@ func (s *Service) ListOperatorProfiles(ctx context.Context, caller, actingActorI
 	if sort != "created_asc" && sort != "created_desc" {
 		return domain.OperatorProfilePage{}, domain.ErrInvalidInput
 	}
-	if err := requireOperatorPermissionAdministrator(ctx, s.db, actingActorID); err != nil {
+	if err := s.requireOperatorPermissionAdministrator(ctx, s.db, actingActorID); err != nil {
 		return domain.OperatorProfilePage{}, err
 	}
 	state = strings.TrimSpace(state)
@@ -242,7 +242,7 @@ func (s *Service) ReadOperatorProfile(ctx context.Context, caller, actingActorID
 	if strings.ToLower(strings.TrimSpace(caller)) != "control-panel" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(profileID) == "" {
 		return domain.OperatorProfile{}, domain.ErrInvalidInput
 	}
-	if err := requireOperatorPermissionAdministrator(ctx, s.db, actingActorID); err != nil {
+	if err := s.requireOperatorPermissionAdministrator(ctx, s.db, actingActorID); err != nil {
 		return domain.OperatorProfile{}, err
 	}
 	return readOperatorProfile(ctx, s.db, strings.TrimSpace(profileID))
@@ -252,7 +252,7 @@ func (s *Service) ReadOperatorProfileRole(ctx context.Context, caller, actingAct
 	if strings.ToLower(strings.TrimSpace(caller)) != "control-panel" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(actorID) == "" {
 		return domain.ActorRoleView{}, domain.ErrInvalidInput
 	}
-	if err := requireOperatorPermissionAdministrator(ctx, s.db, actingActorID); err != nil {
+	if err := s.requireOperatorPermissionAdministrator(ctx, s.db, actingActorID); err != nil {
 		return domain.ActorRoleView{}, err
 	}
 	return readOperatorProfileRole(ctx, s.db, actorID)
@@ -263,7 +263,7 @@ func (s *Service) ApproveOperatorProfile(ctx context.Context, caller, actingActo
 	if caller != "control-panel" || actingActorID == "" || profileID == "" || expectedVersion < 1 || !operatorProfileMutationValid(correlationID, idempotencyKey) {
 		return domain.OperatorProfileResponse{}, domain.ErrInvalidInput
 	}
-	if err := requireOperatorPermissionAdministrator(ctx, s.db, actingActorID); err != nil {
+	if err := s.requireOperatorPermissionAdministrator(ctx, s.db, actingActorID); err != nil {
 		return domain.OperatorProfileResponse{}, err
 	}
 	hash := operatorProfileHash("approve", profileID, fmt.Sprint(expectedVersion))
@@ -283,7 +283,7 @@ func (s *Service) ApproveOperatorProfile(ctx context.Context, caller, actingActo
 		}
 		return domain.OperatorProfileResponse{Profile: profile, IdempotentReplay: true}, nil
 	}
-	if err := requireOperatorPermissionAdministrator(ctx, tx, actingActorID); err != nil {
+	if err := s.requireOperatorPermissionAdministrator(ctx, tx, actingActorID); err != nil {
 		return domain.OperatorProfileResponse{}, err
 	}
 	current, err := readOperatorProfile(ctx, tx, profileID+" FOR UPDATE")
@@ -314,7 +314,7 @@ func (s *Service) GrantOperatorProfile(ctx context.Context, caller, actingActorI
 	if caller != "control-panel" || actingActorID == "" || profileID == "" || expectedVersion < 1 || !operatorProfileMutationValid(correlationID, idempotencyKey) {
 		return domain.OperatorProfileGrantResponse{}, domain.ErrInvalidInput
 	}
-	if err := requireOperatorPermissionAdministrator(ctx, s.db, actingActorID); err != nil {
+	if err := s.requireOperatorPermissionAdministrator(ctx, s.db, actingActorID); err != nil {
 		return domain.OperatorProfileGrantResponse{}, err
 	}
 	hash := operatorProfileHash("grant", profileID, fmt.Sprint(expectedVersion))
@@ -338,7 +338,7 @@ func (s *Service) GrantOperatorProfile(ctx context.Context, caller, actingActorI
 		}
 		return domain.OperatorProfileGrantResponse{Profile: profile, Role: role, IdempotentReplay: true}, nil
 	}
-	if err := requireOperatorPermissionAdministrator(ctx, tx, actingActorID); err != nil {
+	if err := s.requireOperatorPermissionAdministrator(ctx, tx, actingActorID); err != nil {
 		return domain.OperatorProfileGrantResponse{}, err
 	}
 	profile, err := readOperatorProfile(ctx, tx, profileID+" FOR UPDATE")
@@ -499,7 +499,7 @@ func scanOperatorProfile(scan func(...any) error) (domain.OperatorProfile, error
 }
 
 func readOperatorProfileRole(ctx context.Context, q operatorProfileQueryer, actorID string) (domain.ActorRoleView, error) {
-	return scanRoleView(q.QueryRowContext(ctx, `SELECT a.id,a.phone_e164,r.role,r.enabled,r.activated_at,a.security_enabled,a.version,r.version,c.version
+	return scanRoleView(q.QueryRowContext(ctx, `SELECT a.id,a.phone_e164,r.role,r.enabled,r.activated_at,r.last_app_opened_at,a.security_enabled,a.version,r.version,c.version
 		FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id LEFT JOIN identity_password_credentials c ON c.actor_id=r.actor_id AND c.role=r.role
 		WHERE a.id=$1 AND r.role='operator'`, strings.TrimSpace(actorID)).Scan)
 }

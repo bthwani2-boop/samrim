@@ -85,7 +85,7 @@ test("store type commission defaults remain suggestions, read back, and reject s
   await expect(storeTypeSelect).toBeEnabled();
   await storeTypeSelect.selectOption(storeType.id);
   await page.getByRole("button", { name: "قراءة النسب المقترحة" }).click();
-  await expect(page.getByText("تمت قراءة النسب المقترحة من WLT.", { exact: false })).toBeVisible();
+  await expect(page.getByText("تمت قراءة النسب المقترحة من السجل المالي.", { exact: false })).toBeVisible();
   await expect(page.getByText("لا يوجد اقتراح محفوظ بعد").first()).toBeVisible();
 
   await page.locator("#commission-default-rate-BTHWANI_CAPTAIN").fill("8.50");
@@ -93,7 +93,7 @@ test("store type commission defaults remain suggestions, read back, and reject s
   await page.getByRole("button", { name: "حفظ اقتراح توصيل بثواني" }).click();
   await expect(page.getByText("تم حفظ النسبة المقترحة مع سجل التدقيق.", { exact: false })).toBeVisible();
   expect(writes[0]).toMatchObject({ commercialStoreTypeId: storeType.id, fulfillmentMode: "BTHWANI_CAPTAIN", suggestedCommissionRateBps: 850, expectedDefaultVersion: 0, reason: "اقتراح افتتاح المطعم" });
-  await expect(page.getByText("الإصدار 1")).toBeVisible();
+  await expect(page.getByText("اقتراح محفوظ", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("8.50%", { exact: true })).toBeVisible();
 
   await page.getByLabel("سبب التغيير (إلزامي، 8 إلى 500 حرف)").fill("محاولة مكررة");

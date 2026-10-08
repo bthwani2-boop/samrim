@@ -95,7 +95,7 @@ func UploadJoiningCaseProofImage(ctx context.Context, db *sql.DB, input JoiningC
 		}
 	}
 	resultVersion := input.ExpectedVersion + 1
-	updatedEvidence, err := tx.ExecContext(ctx, `UPDATE dsh.joining_case_private_evidence SET proof_image_key_id=$2,proof_image_ciphertext=$3,proof_image_content_type=$4,proof_image_ciphertext_sha256=$5,proof_image_byte_size=$6,proof_image_uploaded_at=clock_timestamp(),updated_at=clock_timestamp() WHERE joining_case_id=$1`, input.CaseID, input.KeyID, input.Ciphertext, input.ContentType, input.CiphertextSHA256, input.ByteSize)
+	updatedEvidence, err := tx.ExecContext(ctx, `INSERT INTO dsh.joining_case_private_evidence(joining_case_id,proof_image_key_id,proof_image_ciphertext,proof_image_content_type,proof_image_ciphertext_sha256,proof_image_byte_size,proof_image_uploaded_at) VALUES($1,$2,$3,$4,$5,$6,clock_timestamp()) ON CONFLICT(joining_case_id) DO UPDATE SET proof_image_key_id=EXCLUDED.proof_image_key_id,proof_image_ciphertext=EXCLUDED.proof_image_ciphertext,proof_image_content_type=EXCLUDED.proof_image_content_type,proof_image_ciphertext_sha256=EXCLUDED.proof_image_ciphertext_sha256,proof_image_byte_size=EXCLUDED.proof_image_byte_size,proof_image_uploaded_at=clock_timestamp(),updated_at=clock_timestamp()`, input.CaseID, input.KeyID, input.Ciphertext, input.ContentType, input.CiphertextSHA256, input.ByteSize)
 	if err != nil {
 		return JoiningCaseResult{}, fmt.Errorf("store encrypted joining-case proof image: %w", err)
 	}
@@ -131,12 +131,12 @@ func ReadJoiningCaseProofDetailsForOperator(ctx context.Context, db *sql.DB, cas
 		return JoiningCaseProofDetails{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var proofType, keyID string
+	var proofType, keyID sql.NullString
 	var ciphertext []byte
 	var imageUploaded bool
 	var imageType sql.NullString
 	var imageSize sql.NullInt64
-	err = tx.QueryRowContext(ctx, `SELECT c.first_store_proof_type,e.proof_number_key_id,e.proof_number_ciphertext,e.proof_image_ciphertext IS NOT NULL,e.proof_image_content_type,e.proof_image_byte_size FROM dsh.joining_cases c JOIN dsh.joining_case_private_evidence e ON e.joining_case_id=c.id WHERE c.id=$1`, caseID).Scan(&proofType, &keyID, &ciphertext, &imageUploaded, &imageType, &imageSize)
+	err = tx.QueryRowContext(ctx, `SELECT c.first_store_proof_type,e.proof_number_key_id,e.proof_number_ciphertext,e.proof_image_ciphertext IS NOT NULL,e.proof_image_content_type,e.proof_image_byte_size FROM dsh.joining_cases c LEFT JOIN dsh.joining_case_private_evidence e ON e.joining_case_id=c.id WHERE c.id=$1`, caseID).Scan(&proofType, &keyID, &ciphertext, &imageUploaded, &imageType, &imageSize)
 	if errors.Is(err, sql.ErrNoRows) {
 		return JoiningCaseProofDetails{}, ErrJoiningCaseEvidenceUnavailable
 	}
@@ -149,11 +149,15 @@ func ReadJoiningCaseProofDetailsForOperator(ctx context.Context, db *sql.DB, cas
 	if err := tx.Commit(); err != nil {
 		return JoiningCaseProofDetails{}, err
 	}
-	plaintext, err := keys.Decrypt(caseID, "proof-number", keyID, ciphertext)
-	if err != nil {
-		return JoiningCaseProofDetails{}, err
+	proofNumber := ""
+	if keyID.Valid && len(ciphertext) > 0 {
+		plaintext, err := keys.Decrypt(caseID, "proof-number", keyID.String, ciphertext)
+		if err != nil {
+			return JoiningCaseProofDetails{}, err
+		}
+		proofNumber = string(plaintext)
 	}
-	result := JoiningCaseProofDetails{CaseID: caseID, ProofType: proofType, ProofNumber: string(plaintext), ImageUploaded: imageUploaded}
+	result := JoiningCaseProofDetails{CaseID: caseID, ProofType: proofType.String, ProofNumber: proofNumber, ImageUploaded: imageUploaded}
 	if imageType.Valid {
 		result.ImageContentType = imageType.String
 	}

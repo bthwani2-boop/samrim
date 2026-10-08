@@ -6,7 +6,7 @@ export default function CaptainsPage() {
       <div className="workspace-page-heading">
         <p className="eyebrow">العمليات</p>
         <h1 id="captains-page-title">قبول الكباتن</h1>
-        <p className="lead">أنشئ أهلية كابتن من خلال DSH ثم اعرض نتيجة القبول المقروءة. التوزيع والاستعادة مكانهما في العمليات.</p>
+        <p className="lead">أنشئ أهلية كابتن ثم اعرض نتيجة القبول المقروءة. التوزيع والاستعادة مكانهما في العمليات.</p>
       </div>
       <CaptainAdmissionPanel />
     </section>

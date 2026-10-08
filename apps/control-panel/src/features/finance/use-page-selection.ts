@@ -17,5 +17,9 @@ export function usePageSelection<T extends Readonly<{ id: string }>>(items: read
     return next;
   }), [items, visibleIds]);
   const clear = useCallback(() => setSelectedIds(new Set()), []);
-  return { selectedIds, selected, allVisibleSelected, toggle, toggleAllVisible, clear } as const;
+  const retainValid = useCallback((validIds: ReadonlySet<string>) => setSelectedIds((current) => {
+    const next = new Set([...current].filter((id) => validIds.has(id)));
+    return next.size === current.size ? current : next;
+  }), []);
+  return { selectedIds, selected, allVisibleSelected, toggle, toggleAllVisible, clear, retainValid } as const;
 }

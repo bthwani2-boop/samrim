@@ -1,19 +1,21 @@
 import { BthwaniButton, BthwaniConfirmDialog, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
-import { isMediaProvenanceInputValid, resolveJoiningCaseImageContentType, type DshImageUploadInput, type JoiningCaseResponse, type JoiningCaseSummary, joiningCaseStateLabel, type MediaProvenanceInput } from "@bthwani/dsh";
+import { type DshImageUploadInput, isMediaProvenanceInputValid, type JoiningCaseResponse, type JoiningCaseSummary, joiningCaseStateLabel, type MediaProvenanceInput, resolveJoiningCaseImageContentType } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Image, Switch, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, FlatList, Image, Text, TextInput, View } from "react-native";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient, isMissingFieldAdmission } from "./field-client";
 import { FieldCommercialAgreement } from "./field-commercial-agreement";
+import { FieldMediaProvenanceEditor } from "./field-media-provenance-editor";
 import { createFieldOperationStyles } from "./field-operation-styles";
 
 const FIELD_CASE_PAGE_SIZE = 25;
 
 type StoreImageDraft = DshImageUploadInput & Readonly<{ provenance: MediaProvenanceInput }>;
+type WalletProvider = Awaited<ReturnType<ReturnType<typeof fieldClient>["listWalletProviders"]>>["walletProviders"][number];
 type PendingStoreImageAttempt = Readonly<{ caseID: string; expectedVersion: number; image: StoreImageDraft; idempotencyKey: string; correlationID: string }>;
 type PendingProofImageAttempt = Readonly<{ caseID: string; expectedVersion: number; image: DshImageUploadInput; idempotencyKey: string; correlationID: string }>;
 type FieldCasePagination = { sequence: number; query: string; cursor: string; loadingMore: boolean };
@@ -39,10 +41,12 @@ export function FieldCases() {
   const theme = useAppearanceTheme();
   const router = useRouter();
   const styles = useMemo(() => createFieldOperationStyles(theme), [theme]);
-  const { q: rawQuery } = useLocalSearchParams<{ q?: string | string[] }>();
+  const { q: rawQuery, caseId: rawCaseId } = useLocalSearchParams<{ q?: string | string[]; caseId?: string | string[] }>();
   const routeQuery = (Array.isArray(rawQuery) ? rawQuery[0] ?? "" : rawQuery ?? "").slice(0, 128);
+  const routeCaseId = (Array.isArray(rawCaseId) ? rawCaseId[0] ?? "" : rawCaseId ?? "").trim().slice(0, 128);
   const [appliedQuery, setAppliedQuery] = useState(routeQuery.trim());
   const [cases, setCases] = useState<ReadonlyArray<JoiningCaseSummary>>([]);
+  const [walletProviders, setWalletProviders] = useState<ReadonlyArray<WalletProvider>>([]);
   const [nextCursor, setNextCursor] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -51,6 +55,9 @@ export function FieldCases() {
   const [error, setError] = useState("");
   const [paginationError, setPaginationError] = useState("");
   const [notice, setNotice] = useState("");
+  const [selectedCase, setSelectedCase] = useState<JoiningCaseSummary | null>(null);
+  const [caseSelectionError, setCaseSelectionError] = useState("");
+  const [selectionRetry, setSelectionRetry] = useState(0);
   const [mediaCase, setMediaCase] = useState<JoiningCaseResponse | null>(null);
   const [storeImage, setStoreImage] = useState<StoreImageDraft | null>(null);
   const [pendingImageAttempt, setPendingImageAttempt] = useState<PendingStoreImageAttempt | null>(null);
@@ -58,6 +65,20 @@ export function FieldCases() {
   const [pendingProofImageAttempt, setPendingProofImageAttempt] = useState<PendingProofImageAttempt | null>(null);
   const [caseToSubmit, setCaseToSubmit] = useState<JoiningCaseSummary | null>(null);
   const pagination = useRef<FieldCasePagination>({ sequence: 0, query: routeQuery.trim(), cursor: "", loadingMore: false });
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const token = await getUsableIdentityAccessToken();
+        const response = await fieldClient().listWalletProviders(token);
+        if (active) setWalletProviders(response.walletProviders);
+      } catch (cause) {
+        console.warn("DSH Field wallet provider labels read failed", cause);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => setAppliedQuery(routeQuery.trim()), 250);
@@ -104,6 +125,51 @@ export function FieldCases() {
     setNextCursor("");
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!routeCaseId) {
+      setSelectedCase(null);
+      setCaseSelectionError("");
+      return;
+    }
+    let active = true;
+    setSelectedCase(null);
+    setCaseSelectionError("");
+    if (selectionRetry > 0) setNotice("");
+    void (async () => {
+      try {
+        const token = await getUsableIdentityAccessToken();
+        const response = await fieldClient().readOwnFieldJoiningCase(token, routeCaseId);
+        if (!active) return;
+        const item = response.case;
+        setSelectedCase({
+          id: item.id,
+          contactPhoneE164: item.contactPhoneE164,
+          businessName: item.businessName,
+          firstStoreName: item.firstStoreName,
+          walletProviderKey: item.walletProviderKey,
+          serviceCityId: item.serviceCityId,
+          firstStoreVerticalId: item.firstStoreVerticalId,
+          ...(item.firstStoreCommercialTypeId !== undefined ? { firstStoreCommercialTypeId: item.firstStoreCommercialTypeId } : {}),
+          firstStoreLatitude: item.firstStoreLatitude,
+          firstStoreLongitude: item.firstStoreLongitude,
+          origin: item.origin,
+          ...(item.partnerActorId !== undefined ? { partnerActorId: item.partnerActorId } : {}),
+          state: item.state,
+          ...(item.correctionReason !== undefined ? { correctionReason: item.correctionReason } : {}),
+          ...(item.reviewedBy !== undefined ? { reviewedBy: item.reviewedBy } : {}),
+          version: item.version,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+        });
+      } catch (cause) {
+        if (!active) return;
+        console.warn("DSH Field notification case readback failed", cause);
+        setCaseSelectionError("تعذر فتح الطلب المرتبط بالتنبيه. أعد المحاولة أو حدّث القائمة.");
+      }
+    })();
+    return () => { active = false; };
+  }, [routeCaseId, selectionRetry]);
 
   const loadMore = useCallback(async () => {
     const current = pagination.current;
@@ -192,11 +258,13 @@ export function FieldCases() {
     }
   }
 
-  async function pickStoreImage() {
+  async function pickStoreImage(source: "camera" | "library" = "library") {
     if (!mediaCase || busy || pendingImageAttempt) return;
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) { setError("يلزم السماح بالوصول إلى الصور لاختيار صورة المتجر."); return; }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
+    const permission = source === "camera" ? await ImagePicker.requestCameraPermissionsAsync() : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) { setError(source === "camera" ? "يلزم السماح باستخدام الكاميرا لالتقاط صورة المتجر." : "يلزم السماح بالوصول إلى الصور لاختيار صورة المتجر."); return; }
+    const result = source === "camera"
+      ? await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
     if (result.canceled || !result.assets[0]?.uri) return;
     const asset = result.assets[0];
     try {
@@ -309,6 +377,7 @@ export function FieldCases() {
   }
 
   const renderCase = ({ item }: { item: JoiningCaseSummary }) => {
+    const selectedByRoute = item.id === routeCaseId;
     let badgeIcon: "edit" | "warning" | "cases";
     let badgeTone: "info" | "warning" | "neutral";
     if (item.state === "draft") {
@@ -334,6 +403,7 @@ export function FieldCases() {
     } else {
       nextStepText = "اعتمد فريق التشغيل الطلب؛ يتابع المتجر التفعيل قبل ظهوره للعملاء.";
     }
+    const walletProviderName = walletProviders.find((provider) => provider.key === item.walletProviderKey)?.displayNameAr ?? item.walletProviderKey;
 
     let storeImageButtonLabel: string;
     if (storeImage) {
@@ -345,30 +415,32 @@ export function FieldCases() {
     }
 
     return (
-    <View style={styles.card}>
+    <View style={selectedByRoute ? styles.summaryCard : styles.card}>
+      {selectedByRoute ? <Text accessibilityLiveRegion="polite" style={styles.cardTitle}>الطلب المحدد من التنبيه</Text> : null}
       <View style={styles.orderHeader}><Text style={styles.cardTitle}>{item.businessName} · {item.firstStoreName}</Text><BthwaniStatusBadge icon={badgeIcon} label={joiningCaseStateLabel(item.state)} tone={badgeTone} /></View>
+      <Text style={styles.muted}>المحفظة الرسمية: {walletProviderName || "غير محددة"}</Text>
       {item.correctionReason ? <Text style={styles.error}>التصحيح المطلوب: {item.correctionReason}</Text> : null}
       <Text style={styles.muted}>{nextStepText}</Text>
       {item.state === "approved" ? <>
         <FieldCommercialAgreement caseID={item.id} />
         <BthwaniButton disabled={Boolean(busy)} label="إعداد كتالوج المتجر الأولي" onPress={() => router.push(`/(app)/catalog/${encodeURIComponent(item.id)}` as Href)} variant="secondary" />
       </> : null}
-      {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt)} label="استكمال صور المسودة" onPress={() => void openStoreImage(item)} variant="secondary" /> : null}
+      {item.state === "draft" ? <View style={styles.optionList}>
+        <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt)} label="تعديل بيانات المسودة" onPress={() => router.push({ pathname: "/new-case", params: { caseId: item.id } } as Href)} variant="secondary" />
+        <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(storeImage) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt)} label="استكمال صور المسودة" onPress={() => void openStoreImage(item)} variant="secondary" />
+      </View> : null}
       {item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || Boolean(pendingImageAttempt) || Boolean(pendingProofImageAttempt) || (Boolean(storeImage) && mediaCase?.case.id !== item.id)} label="إرسال للمراجعة" onPress={() => setCaseToSubmit(item)} /> : null}
       {mediaCase?.case.id === item.id ? <View style={styles.card}>
         <Text style={styles.cardTitle}>صورة واجهة المتجر</Text>
         {mediaCase.case.storeProfileImage ? <Image accessibilityLabel="صورة المتجر المحفوظة" source={{ uri: mediaCase.case.storeProfileImage.uri }} style={{ borderRadius: 12, height: 150, width: "100%" }} resizeMode="cover" /> : <Text style={styles.muted}>لا توجد صورة محفوظة للشريك بعد.</Text>}
         {storeImage ? <Image accessibilityLabel="معاينة صورة المتجر الجديدة" source={{ uri: storeImage.uri }} style={{ borderRadius: 12, height: 120, width: "100%" }} resizeMode="cover" /> : null}
         {storeImage ? <View style={styles.card}>
-          <Text style={styles.cardTitle}>مصدر الصورة وحق استخدامها</Text>
-          <TextInput accessibilityLabel="منشئ الصورة" editable={!busy && !pendingImageAttempt} placeholder="منشئ الصورة أو المصور" style={styles.input} value={storeImage.provenance.creator} onChangeText={(creator) => setStoreImage((current) => current ? { ...current, provenance: { ...current.provenance, creator } } : null)} />
-          <TextInput accessibilityLabel="مصدر الصورة" editable={!busy && !pendingImageAttempt} placeholder="كيف حصلت على الصورة؟" style={styles.input} value={storeImage.provenance.sourceDescription} onChangeText={(sourceDescription) => setStoreImage((current) => current ? { ...current, provenance: { ...current.provenance, sourceDescription } } : null)} />
-          <TextInput accessibilityLabel="رابط مصدر الصورة اختياري" editable={!busy && !pendingImageAttempt} autoCapitalize="none" keyboardType="url" placeholder="رابط المصدر، اختياري" style={styles.input} value={storeImage.provenance.sourceUri} onChangeText={(sourceUri) => setStoreImage((current) => current ? { ...current, provenance: { ...current.provenance, sourceUri } } : null)} />
-          <TextInput accessibilityLabel="بيان حق استخدام الصورة" editable={!busy && !pendingImageAttempt} multiline placeholder="بيان الحق أو الترخيص الذي يسمح بعرض الصورة" style={styles.input} value={storeImage.provenance.rightsStatement} onChangeText={(rightsStatement) => setStoreImage((current) => current ? { ...current, provenance: { ...current.provenance, rightsStatement } } : null)} />
-          <TextInput accessibilityLabel="رابط شروط الترخيص اختياري" editable={!busy && !pendingImageAttempt} autoCapitalize="none" keyboardType="url" placeholder="رابط شروط الترخيص، اختياري" style={styles.input} value={storeImage.provenance.rightsUri} onChangeText={(rightsUri) => setStoreImage((current) => current ? { ...current, provenance: { ...current.provenance, rightsUri } } : null)} />
-          <View style={styles.caseListFooter}><Switch disabled={Boolean(busy) || Boolean(pendingImageAttempt)} value={storeImage.provenance.rightsAttested} onValueChange={(rightsAttested) => setStoreImage((current) => current ? { ...current, provenance: { ...current.provenance, rightsAttested } } : null)} /><Text style={styles.muted}>أؤكد صحة بيانات المصدر وحق الاستخدام.</Text></View>
+          <FieldMediaProvenanceEditor disabled={Boolean(busy) || Boolean(pendingImageAttempt)} onChange={(provenance) => setStoreImage((current) => current ? { ...current, provenance } : null)} value={storeImage.provenance} />
         </View> : null}
-        <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label={storeImageButtonLabel} onPress={() => void pickStoreImage()} variant="secondary" />
+        <View style={styles.optionList}>
+          <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label={storeImageButtonLabel} onPress={() => void pickStoreImage("library")} variant="secondary" />
+          <BthwaniButton disabled={Boolean(busy) || Boolean(pendingImageAttempt)} label="التقاط صورة بالكاميرا" onPress={() => void pickStoreImage("camera")} variant="secondary" />
+        </View>
         {storeImage ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy) || (!pendingImageAttempt && !isMediaProvenanceInputValid(storeImage.provenance))} label={pendingImageAttempt ? "إعادة التحقق من رفع الصورة" : "حفظ صورة المتجر"} onPress={() => void uploadStoreImage()} /> : null}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>صورة الإثبات الخاصة</Text>
@@ -407,7 +479,7 @@ export function FieldCases() {
 
   return <><FlatList
     accessibilityLabel="الشركاء"
-    data={cases}
+    data={selectedCase ? [selectedCase, ...cases.filter((item) => item.id !== selectedCase.id)] : cases}
     keyExtractor={(item) => item.id}
     keyboardDismissMode="on-drag"
     keyboardShouldPersistTaps="handled"
@@ -417,10 +489,10 @@ export function FieldCases() {
     ListFooterComponent={paginationFooter}
     ListFooterComponentStyle={styles.caseListFooter}
     ListHeaderComponent={<View style={styles.container}>
-      <Text style={styles.title}>الشركاء</Text>
       <Text style={styles.muted}>تابع الشركاء الذين تعمل على ضمهم، وأرسل بياناتهم للمراجعة عند اكتمالها.</Text>
       {cases.length > 0 ? <Text style={styles.sectionTitle}>عدد الشركاء: {cases.length}{nextCursor ? " · توجد نتائج أخرى" : ""}</Text> : null}
       {error && cases.length > 0 ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+      {caseSelectionError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{caseSelectionError}</Text><BthwaniButton label="إعادة فتح الطلب" onPress={() => setSelectionRetry((value) => value + 1)} variant="secondary" /></View> : null}
       {notice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.muted}>{notice}</Text> : null}
       {cases.length > 0 ? <BthwaniButton disabled={Boolean(busy) || loading} label="تحديث القائمة" onPress={() => void load()} variant="secondary" /> : null}
     </View>}

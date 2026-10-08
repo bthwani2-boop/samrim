@@ -183,7 +183,7 @@ func (s *JoiningCaseServer) listPartnerStoresForOperator(w http.ResponseWriter, 
 	}
 	stores := make([]contract.PartnerManagedStore, 0, len(page.Stores))
 	for _, store := range page.Stores {
-		stores = append(stores, contract.PartnerManagedStore{ID: store.ID, Name: store.Name, ServiceCityID: nullableString(store.ServiceCityID), PrimaryVerticalID: nullableString(store.PrimaryVerticalID), FulfillmentModes: toFulfillmentModes(store.FulfillmentModes), Version: store.Version, PublicationState: contract.PublicationState(store.PublicationState), CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt})
+		stores = append(stores, contract.PartnerManagedStore{ID: store.ID, Name: store.Name, ServiceCityName: store.ServiceCityName, PrimaryVerticalName: store.PrimaryVerticalName, ServiceCityID: nullableString(store.ServiceCityID), PrimaryVerticalID: nullableString(store.PrimaryVerticalID), FulfillmentModes: toFulfillmentModes(store.FulfillmentModes), Version: store.Version, PublicationState: contract.PublicationState(store.PublicationState), CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt})
 	}
 	writeJSON(w, http.StatusOK, contract.PartnerStoreListResponse{Stores: stores, NextCursor: page.NextCursor})
 }

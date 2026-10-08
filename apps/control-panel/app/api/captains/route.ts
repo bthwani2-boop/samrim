@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { normalizeYemenPhoneE164 } from "@bthwani/design-system";
 import { NextResponse } from "next/server";
 
 import { admitCaptain, approveCaptainAdmission, authorizeDshCaptainReenrollment, dispatchCaptainOffer, dshErrorPayload, dshHttpStatus, isDshClientError, listCaptainAdmissions, provisionCaptainAdmission, readCaptainAdmissionByActor, reassignCaptainOffer, recoverCaptainDelivery, reviewCaptainAdmissionProfile, setDshCaptainAvailability, setDshCaptainRoleEnabled, updateCaptainAdmissionProfile } from "../../../src/server/dsh/dsh-bff";
@@ -90,8 +91,9 @@ export async function POST(request: Request) {
 		}
 		if (action === "admit") {
 			if (!body || Object.keys(body).some((key) => !["action", "fullNameAr", "contactPhoneE164", "walletProviderKey"].includes(key))) return jsonError("INVALID_INPUT", "Captain admission accepts only the name, verified contact phone, and owner-selected wallet provider", 400);
-			if (Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(contactPhoneE164) || Array.from(walletProviderKey).length < 1 || Array.from(walletProviderKey).length > 64 || /\p{Cc}/u.test(walletProviderKey)) return jsonError("INVALID_INPUT", "a full Arabic name, valid E.164 phone, and owner-selected wallet provider are required", 400);
-			const result = await admitCaptain({ fullNameAr, contactPhoneE164, walletProviderKey }, context);
+			const normalizedPhone = normalizeYemenPhoneE164(contactPhoneE164);
+			if (Array.from(fullNameAr).length < 2 || Array.from(fullNameAr).length > 120 || !/^\+[1-9][0-9]{7,14}$/.test(normalizedPhone) || Array.from(walletProviderKey).length < 1 || Array.from(walletProviderKey).length > 64 || /\p{Cc}/u.test(walletProviderKey)) return jsonError("INVALID_INPUT", "a full Arabic name, valid Yemeni local or international phone, and owner-selected wallet provider are required", 400);
+			const result = await admitCaptain({ fullNameAr, contactPhoneE164: normalizedPhone, walletProviderKey }, context);
 			return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
 		}
 		if (action === "dispatch") { const result = await dispatchCaptainOffer(orderId, context); return NextResponse.json(boundedResult(action, result.payload), { status: result.status, headers: { "Cache-Control": "no-store" } }); }

@@ -53,7 +53,12 @@ func (s *NotificationServer) list(w http.ResponseWriter, r *http.Request) {
 			}
 			limit = parsed
 		}
-		result, err := s.service.ListForOperator(r.Context(), actingActorID, limit)
+		cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+		if len(cursor) > 1024 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cursor is invalid")
+			return
+		}
+		result, err := s.service.ListForOperator(r.Context(), actingActorID, limit, cursor)
 		if err != nil {
 			writeNotificationError(w, err)
 			return
@@ -75,7 +80,12 @@ func (s *NotificationServer) list(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = parsed
 	}
-	result, err := s.service.List(r.Context(), token, limit)
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	if len(cursor) > 1024 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cursor is invalid")
+		return
+	}
+	result, err := s.service.List(r.Context(), token, limit, cursor)
 	if err != nil {
 		writeNotificationError(w, err)
 		return
@@ -119,9 +129,9 @@ func (s *NotificationServer) markRead(w http.ResponseWriter, r *http.Request) {
 func writeNotificationList(w http.ResponseWriter, result notificationdomain.ListResult) {
 	items := make([]contract.Notification, 0, len(result.Items))
 	for _, item := range result.Items {
-		items = append(items, contract.Notification{ID: item.ID, Kind: contract.NotificationKind(item.Kind), Title: item.Title, Body: item.Body, OrderID: item.OrderID, CreatedAt: item.CreatedAt, ReadAt: item.ReadAt})
+		items = append(items, contract.Notification{ID: item.ID, Kind: contract.NotificationKind(item.Kind), Title: item.Title, Body: item.Body, OrderID: item.OrderID, JoiningCaseID: item.JoiningCaseID, StoreID: item.StoreID, CreatedAt: item.CreatedAt, ReadAt: item.ReadAt})
 	}
-	writeJSON(w, http.StatusOK, contract.NotificationListResponse{Notifications: items, UnreadCount: result.UnreadCount})
+	writeJSON(w, http.StatusOK, contract.NotificationListResponse{Notifications: items, UnreadCount: result.UnreadCount, NextCursor: result.NextCursor})
 }
 
 func writeNotificationError(w http.ResponseWriter, err error) {
@@ -135,6 +145,8 @@ func writeNotificationError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active client, partner, captain, field, or control operator session is required")
 	case errors.Is(err, postgres.ErrNotificationNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "notification was not found")
+	case errors.Is(err, postgres.ErrNotificationInvalidCursor):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "notification cursor is invalid")
 	default:
 		writeError(w, http.StatusBadGateway, "DSH_STORAGE_UNAVAILABLE", "notification storage is unavailable")
 	}

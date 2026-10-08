@@ -29,6 +29,10 @@ paths:
     $ref: "./paths/managed-enrollment-auth.yaml#/paths/~1auth~1managed~1activate"
   /auth/managed/login:
     $ref: "./paths/managed-enrollment-auth.yaml#/paths/~1auth~1managed~1login"
+  /auth/managed/recovery/request:
+    $ref: "./paths/managed-enrollment-auth.yaml#/paths/~1auth~1managed~1recovery~1request"
+  /auth/managed/recover:
+    $ref: "./paths/managed-enrollment-auth.yaml#/paths/~1auth~1managed~1recover"
   /internal/operator-profiles:
     $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1operator-profiles"
   /internal/operator-profiles/{profileId}:
@@ -63,6 +67,8 @@ paths:
     $ref: "./paths/session.yaml#/paths/~1auth~1logout"
   /auth/session:
     $ref: "./paths/session.yaml#/paths/~1auth~1session"
+  /auth/session/app-opened:
+    $ref: "./paths/session.yaml#/paths/~1auth~1session~1app-opened"
   /auth/development/session:
     $ref: "./paths/session.yaml#/paths/~1auth~1development~1session"
   /internal/actor-roles/provision:
@@ -285,7 +291,8 @@ components:
           maxLength: 120
         phoneE164:
           type: string
-          pattern: '^\\+[1-9][0-9]{7,14}$'
+          description: Yemeni local number such as 777123456 or international number; normalized to E.164 before storage.
+          pattern: '^(?:[+][1-9][0-9]{7,14}|00[1-9][0-9]{7,14}|967[0-9]{5,12}|0[1-9][0-9]{8}|7[0-9]{8})$'
     OperatorProfileUpdateRequest:
       type: object
       additionalProperties: false
@@ -298,7 +305,8 @@ components:
           maxLength: 120
         phoneE164:
           type: string
-          pattern: '^\\+[1-9][0-9]{7,14}$'
+          description: Yemeni local number such as 777123456 or international number; normalized to E.164 before storage.
+          pattern: '^(?:[+][1-9][0-9]{7,14}|00[1-9][0-9]{7,14}|967[0-9]{5,12}|0[1-9][0-9]{8}|7[0-9]{8})$'
         expectedVersion:
           type: integer
           minimum: 1
@@ -430,6 +438,25 @@ components:
           type: string
           minLength: 8
           maxLength: 256
+
+    ManagedRecoveryProofRequest:
+      type: object
+      additionalProperties: false
+      required: [phone, role, verificationCode, password]
+      properties:
+        phone:
+          type: string
+        role:
+          $ref: "#/components/schemas/ManagedActivationRole"
+        verificationCode:
+          type: string
+          minLength: 6
+          maxLength: 6
+          pattern: "^[0-9]{6}$"
+        password:
+          type: string
+          minLength: 8
+          maxLength: 8
 
     OperatorPasskeyRegistrationOptionsRequest:
       type: object
@@ -707,6 +734,9 @@ components:
         enabled:
           type: boolean
         activatedAt:
+          type: string
+          format: date-time
+        lastAppOpenedAt:
           type: string
           format: date-time
         securityEnabled:

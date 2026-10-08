@@ -1,12 +1,13 @@
 import { toAsciiDigits } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniConfirmDialog, useAppearanceTheme } from "@bthwani/design-system/native";
+import type { StoreCommercialAgreement, StoreCommercialAgreementProposalRequest, StoreFulfillmentMode } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
-import type { StoreCommercialAgreement, StoreCommercialAgreementProposalRequest, StoreFulfillmentMode } from "@bthwani/dsh";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
+import { parsePercentToBps, percentTextFromBps, sameAgreementRates } from "./field-commercial-agreement-rate";
 
 type AgreementAttempt = Readonly<{ input: StoreCommercialAgreementProposalRequest; idempotencyKey: string; correlationID: string }>;
 type RateDraft = Partial<Record<StoreFulfillmentMode, string>>;
@@ -29,27 +30,6 @@ function isUncertain(cause: unknown): boolean {
   if (!cause || typeof cause !== "object") return false;
   const error = cause as { kind?: unknown; status?: unknown };
   return error.kind === "network" || (error.kind === "http" && typeof error.status === "number" && error.status >= 500);
-}
-
-function percentTextFromBps(commissionRateBps: number): string {
-  const value = commissionRateBps / 100;
-  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, "").replace(/.$/, "");
-}
-
-function parsePercentToBps(value: string): number | null {
-  const normalized = toAsciiDigits(value.trim()).replace(",", ".");
-  if (!/^(?:\d{1,2}(?:\.\d{1,2})?|100(?:\.0{1,2})?)$/.test(normalized)) return null;
-  const percent = Number(normalized);
-  if (!Number.isFinite(percent) || percent < 0 || percent > 100) return null;
-  return Math.round(percent * 100);
-}
-
-function sameAgreementRates(left: StoreCommercialAgreement["rates"], right: StoreCommercialAgreement["rates"]): boolean {
-  const normalize = (rates: StoreCommercialAgreement["rates"]) => [...rates]
-    .sort((a, b) => a.fulfillmentMode.localeCompare(b.fulfillmentMode))
-    .map((rate) => `${rate.fulfillmentMode}:${rate.commissionRateBps}`)
-    .join("|");
-  return normalize(left) === normalize(right);
 }
 
 export function FieldCommercialAgreement({ caseID }: { caseID: string }) {
@@ -147,7 +127,7 @@ export function FieldCommercialAgreement({ caseID }: { caseID: string }) {
       const response = await fieldClient().proposeFieldStoreCommercialAgreement(token, caseID, currentAttempt.input, currentAttempt.idempotencyKey, currentAttempt.correlationID);
       const readback = await fieldClient().readFieldStoreCommercialAgreements(token, caseID);
       const saved = readback.agreements.find((item) => item.agreementId === response.agreement.agreementId && item.status === "PROPOSED");
-      if (!saved || saved.agreementVersion !== response.agreement.agreementVersion || !sameAgreementRates(saved.rates, response.agreement.rates)) {
+      if (!saved || saved.agreementVersion !== response.agreement.agreementVersion || !sameAgreementRates(saved.rates, response.agreement.rates) || !sameAgreementRates(saved.rates, currentAttempt.input.rates)) {
         throw new Error("FIELD_STORE_AGREEMENT_READBACK_MISMATCH");
       }
       setAgreements(readback.agreements);

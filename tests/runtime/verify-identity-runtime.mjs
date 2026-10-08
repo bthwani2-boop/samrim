@@ -59,6 +59,21 @@ const issue = async (pathname, body, purpose, role = "client") => {
   assert(typeof mailpitPort === "string" && mailpitPort.trim(), "canonical Mailpit web port missing");
   return { ...challenge, code: await readMailpitCode({ port: mailpitPort, phone: body.phone, purpose, excludeMessageIds: previousMessageIds }), role };
 };
+const issueManagedRecovery = async (requestPhone, canonicalPhone, role) => {
+  const previousMessageIds = await captureMailpitMessageIds({ port: mailpitPort, phone: canonicalPhone, purpose: "managed_recover" });
+  const challenge = await expect("POST", "/auth/managed/recovery/request", 201, {
+    body: { phone: requestPhone, role },
+    headers: challengeSourceHeaders(canonicalPhone),
+  });
+  assert(typeof challenge.challengeId === "string", "managed recovery challenge id missing");
+  const readback = sql(`SELECT request_ip_hash FROM identity_challenges WHERE id='${sqlLiteral(challenge.challengeId)}'`);
+  assert(readback === challengeSourceHash(canonicalPhone, env.IDENTITY_ABUSE_HMAC_SECRET), "managed recovery source readback does not match the isolated proof actor");
+  assert(typeof mailpitPort === "string" && mailpitPort.trim(), "canonical Mailpit web port missing");
+  return {
+    ...challenge,
+    code: await readMailpitCode({ port: mailpitPort, phone: canonicalPhone, purpose: "managed_recover", excludeMessageIds: previousMessageIds }),
+  };
+};
 const session = (pair, role, surface, subject) => {
   assert(typeof pair?.accessToken === "string" && typeof pair?.refreshToken === "string", "token pair missing");
   assert(pair.identity?.role === role && pair.identity?.surface === surface && pair.identity?.subject === subject, "session identity mismatch");
@@ -67,7 +82,7 @@ const refreshRequestId = (refreshToken, clientInstanceId) => crypto.createHash("
 const randomRefreshRequestId = () => crypto.randomBytes(24).toString("base64url");
 
 for (const pathName of ["/identity/health", "/identity/readiness"]) await expect("GET", pathName, 200);
-for (const pathName of ["/auth/operator/login/start", "/auth/operator/login/complete", "/auth/managed/recovery/request", "/auth/managed/recover"]) await expect("POST", pathName, 404, { body: {} });
+for (const pathName of ["/auth/operator/login/start", "/auth/operator/login/complete"]) await expect("POST", pathName, 404, { body: {} });
 
 const bootstrapPhone = phone();
 const bootstrap = await request("POST", "/internal/bootstrap/operator", { token: bootstrapToken, body: { phoneE164: bootstrapPhone, role: "operator" } });
@@ -121,7 +136,7 @@ session(clientPair, "client", "app-client", clientPair.identity.subject);
 await expect("GET", "/auth/session", 200, { token: clientPair.accessToken });
 
 // DSH-owned eligibility is assumed here; this fixture proves Identity role separation.
-const sharedPartnerPassword = password("SharedPartner");
+let sharedPartnerPassword = password("SharedPartner");
 const sharedPartnerRole = await expect("POST", "/internal/actor-roles/provision", 201, {
   token: dshToken,
   headers: { "X-Acting-Actor-ID": operatorActorID },
@@ -151,6 +166,83 @@ const sharedPartnerLogin = await expect("POST", "/auth/managed/login", 200, {
   body: { phone: clientPhone, role: "partner", password: sharedPartnerPassword, clientInstanceId: "runtime-shared-partner-login-" + crypto.randomUUID() },
 });
 session(sharedPartnerLogin, "partner", "app-partner", clientPair.identity.subject);
+
+assert(sql("SELECT count(*) FROM identity_challenges WHERE actor_id='" + sqlLiteral(clientPair.identity.subject) + "' AND role='partner' AND purpose='managed_recover'") === "0", "managed recovery challenge existed before activation-purpose isolation proof");
+await expect("POST", "/auth/managed/recover", 401, {
+  body: { phone: clientPhone, role: "partner", verificationCode: sharedPartnerChallenge.code, password: password("ActivationCross") },
+});
+assert(sql("SELECT count(*) FROM identity_challenges WHERE actor_id='" + sqlLiteral(clientPair.identity.subject) + "' AND role='partner' AND purpose='managed_recover'") === "0", "activation proof created or crossed into managed recovery before a recovery challenge existed");
+
+const managedRecoveryShape = await issueManagedRecovery(clientPhone.replace(/^\+967/, "0"), clientPhone, "partner");
+const managedRecoveryRow = sql(`SELECT admissible::text || '|' || actor_id || '|' || role || '|' || purpose || '|' || status FROM identity_challenges WHERE id='${sqlLiteral(managedRecoveryShape.challengeId)}'`);
+assert(managedRecoveryRow === `true|${clientPair.identity.subject}|partner|managed_recover|pending`, "managed recovery challenge was not bound to the activated partner role");
+assert(sql("SELECT count(*) FROM identity_sessions WHERE actor_id='" + sqlLiteral(clientPair.identity.subject) + "' AND role='partner' AND revoked_at IS NULL") === "2", "managed recovery fixture did not have two active partner sessions");
+assert(sql("SELECT count(*) FROM identity_sessions WHERE actor_id='" + sqlLiteral(clientPair.identity.subject) + "' AND role='client' AND revoked_at IS NULL") === "1", "managed recovery fixture did not retain its active client session");
+
+const wrongManagedRecoveryCode = managedRecoveryShape.code === "000000" ? "000001" : "000000";
+await expect("POST", "/auth/managed/recover", 401, {
+  body: { phone: clientPhone, role: "partner", verificationCode: wrongManagedRecoveryCode, password: password("WrongProof") },
+});
+assert(sql("SELECT attempts::text || '|' || status FROM identity_challenges WHERE id='" + sqlLiteral(managedRecoveryShape.challengeId) + "'") === "1|pending", "invalid managed recovery proof did not consume exactly one attempt");
+await expect("POST", "/auth/managed/recover", 401, {
+  body: { phone: clientPhone, role: "captain", verificationCode: managedRecoveryShape.code, password: password("CrossRole") },
+});
+assert(sql("SELECT attempts::text || '|' || status FROM identity_challenges WHERE id='" + sqlLiteral(managedRecoveryShape.challengeId) + "'") === "1|pending", "cross-role recovery proof altered the partner challenge");
+
+const localPartnerPassword = password("LocalProof");
+const localManagedRecovery = await expect("POST", "/auth/managed/recover", 200, {
+  body: { phone: clientPhone, role: "partner", verificationCode: managedRecoveryShape.code, password: localPartnerPassword },
+});
+assert(localManagedRecovery?.status === "recovery_complete" && !localManagedRecovery.accessToken && !localManagedRecovery.refreshToken && !localManagedRecovery.identity, "managed recovery issued a session or returned an unexpected result");
+assert(sql("SELECT status FROM identity_challenges WHERE id='" + sqlLiteral(managedRecoveryShape.challengeId) + "'") === "consumed", "managed recovery challenge was not consumed");
+assert(sql("SELECT count(*) FROM identity_sessions WHERE actor_id='" + sqlLiteral(clientPair.identity.subject) + "' AND role='partner' AND revoked_at IS NULL") === "0", "managed recovery retained a partner session");
+assert(sql("SELECT count(*) FROM identity_sessions WHERE actor_id='" + sqlLiteral(clientPair.identity.subject) + "' AND role='client' AND revoked_at IS NULL") === "1", "managed recovery revoked a different role session");
+await expect("GET", "/auth/session", 401, { token: sharedPartnerPair.accessToken });
+await expect("GET", "/auth/session", 401, { token: sharedPartnerLogin.accessToken });
+await expect("GET", "/auth/session", 200, { token: clientPair.accessToken });
+await expect("POST", "/auth/managed/login", 401, {
+  body: { phone: clientPhone, role: "partner", password: sharedPartnerPassword, clientInstanceId: "runtime-managed-old-password-" + crypto.randomUUID() },
+});
+sharedPartnerPassword = localPartnerPassword;
+const localRecoveryLogin = await expect("POST", "/auth/managed/login", 200, {
+  body: { phone: clientPhone, role: "partner", password: sharedPartnerPassword, clientInstanceId: "runtime-managed-local-recovery-login-" + crypto.randomUUID() },
+});
+session(localRecoveryLogin, "partner", "app-partner", clientPair.identity.subject);
+
+const internationalPartnerPassword = password("IntlProof");
+const internationalManagedRecovery = await issueManagedRecovery(clientPhone, clientPhone, "partner");
+const internationalManagedRecoveryResult = await expect("POST", "/auth/managed/recover", 200, {
+  body: { phone: clientPhone.replace(/^\+967/, "0"), role: "partner", verificationCode: internationalManagedRecovery.code, password: internationalPartnerPassword },
+});
+assert(internationalManagedRecoveryResult?.status === "recovery_complete" && !internationalManagedRecoveryResult.accessToken && !internationalManagedRecoveryResult.refreshToken, "second managed recovery issued a session");
+assert(sql("SELECT status FROM identity_challenges WHERE id='" + sqlLiteral(internationalManagedRecovery.challengeId) + "'") === "consumed", "international managed recovery challenge was not consumed");
+await expect("POST", "/auth/managed/recover", 401, {
+  body: { phone: clientPhone, role: "partner", verificationCode: internationalManagedRecovery.code, password: password("Replay") },
+});
+await expect("GET", "/auth/session", 401, { token: localRecoveryLogin.accessToken });
+await expect("GET", "/auth/session", 200, { token: clientPair.accessToken });
+await expect("POST", "/auth/managed/login", 401, {
+  body: { phone: clientPhone, role: "partner", password: sharedPartnerPassword, clientInstanceId: "runtime-managed-prior-recovery-password-" + crypto.randomUUID() },
+});
+sharedPartnerPassword = internationalPartnerPassword;
+const internationalRecoveryLogin = await expect("POST", "/auth/managed/login", 200, {
+  body: { phone: clientPhone, role: "partner", password: sharedPartnerPassword, clientInstanceId: "runtime-managed-international-recovery-login-" + crypto.randomUUID() },
+});
+session(internationalRecoveryLogin, "partner", "app-partner", clientPair.identity.subject);
+
+const unactivatedManagedPhone = phone();
+await expect("POST", "/internal/actor-roles/provision", 201, {
+  token: dshToken,
+  headers: { "X-Acting-Actor-ID": operatorActorID },
+  body: { phoneE164: unactivatedManagedPhone, role: "field" },
+});
+const unactivatedRecovery = await expect("POST", "/auth/managed/recovery/request", 201, {
+  body: { phone: unactivatedManagedPhone, role: "field" },
+  headers: challengeSourceHeaders(unactivatedManagedPhone),
+});
+assert(Object.keys(unactivatedRecovery).sort().join(",") === Object.keys(managedRecoveryShape).filter((key) => key !== "code").sort().join(","), "managed recovery response disclosed eligibility through its shape");
+assert(sql("SELECT admissible::text || '|' || COALESCE(actor_id,'') || '|' || status FROM identity_challenges WHERE id='" + sqlLiteral(unactivatedRecovery.challengeId) + "'") === "false||pending", "unactivated managed role did not receive a generic suppressed challenge");
+assert(sql("SELECT status FROM identity_challenge_deliveries WHERE challenge_id='" + sqlLiteral(unactivatedRecovery.challengeId) + "'") === "suppressed", "ineligible managed recovery challenge was delivered");
 
 const sharedPartnerRoleReadback = await expect("GET", "/internal/actors/" + encodeURIComponent(clientPair.identity.subject) + "/roles/partner", 200, { token: controlToken });
 await expect("POST", "/internal/actors/" + encodeURIComponent(clientPair.identity.subject) + "/roles/partner/disable", 204, {
@@ -283,10 +375,10 @@ assert(recoveryWithoutCredential.body?.challengeId && sql("SELECT admissible::te
 
 assert(sql("SELECT count(*) FROM identity_password_credentials WHERE role='operator'") === "0", "operator password credential remains");
 assert(sql("SELECT count(*) FROM identity_password_attempts WHERE role='operator'") === "0", "operator password attempts remain");
-assert(sql("SELECT count(*) FROM identity_challenges WHERE purpose IN ('operator_mfa','managed_recover')") === "0", "retired proof purposes remain in current data");
+assert(sql("SELECT count(*) FROM identity_challenges WHERE purpose='operator_mfa'") === "0", "retired operator proof purpose remains in current data");
 const retiredInstanceColumn = ["device", "_fingerprint", "_hash"].join("");
 assert(sql("SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='identity_sessions' AND column_name='" + retiredInstanceColumn + "'") === "0", "retired session binding column remains");
-assert(sql("SELECT count(*) FROM identity_schema_migrations WHERE version=24") === "1", "identity schema is not at v24");
+assert(sql("SELECT count(*) FROM identity_schema_migrations WHERE version=25") === "1", "identity schema is not at v25");
 
 console.log("IDENTITY_RUNTIME_SEMANTICS=PASS");
 console.log("IDENTITY_SAME_PHONE_MULTI_ROLE_ONE_ACTOR=PASS");
@@ -297,6 +389,10 @@ console.log("IDENTITY_CUSTOMER_REGISTRATION_AFTER_PHONE_PROOF=PASS");
 console.log("IDENTITY_CUSTOMER_PASSWORD_LOGIN=PASS");
 console.log("IDENTITY_CUSTOMER_RECOVERY_NO_SESSION=PASS");
 console.log("IDENTITY_MANAGED_ACTIVATION_ONE_TIME=PASS");
+console.log("IDENTITY_MANAGED_RECOVERY_LOCAL_INTERNATIONAL_PHONE=PASS");
+console.log("IDENTITY_MANAGED_RECOVERY_PURPOSE_ROLE_REPLAY_FENCES=PASS");
+console.log("IDENTITY_MANAGED_RECOVERY_ROLE_SCOPED_REVOCATION=PASS");
+console.log("IDENTITY_MANAGED_RECOVERY_GENERIC_INELIGIBLE_RESPONSE=PASS");
 console.log("IDENTITY_REFRESH_ROTATION_REPLAY_FAMILY=PASS");
 console.log("IDENTITY_REFRESH_UNKNOWN_TOKEN_ISOLATION=PASS");
 console.log("IDENTITY_ROLE_SECURITY_DISABLE_REVOCATION=PASS");

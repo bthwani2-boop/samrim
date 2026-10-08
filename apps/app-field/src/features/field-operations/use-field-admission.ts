@@ -1,5 +1,5 @@
 import { type FieldAdmission } from "@bthwani/dsh";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, createElement, type PropsWithChildren, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient, isMissingFieldAdmission } from "./field-client";
@@ -10,7 +10,14 @@ export type OwnFieldAdmissionState =
   | Readonly<{ kind: "ready"; admission: FieldAdmission }>
   | Readonly<{ kind: "error" }>;
 
-export function useOwnFieldAdmission() {
+type OwnFieldAdmissionContextValue = Readonly<{
+  state: OwnFieldAdmissionState;
+  refresh: () => Promise<void>;
+}>;
+
+const OwnFieldAdmissionContext = createContext<OwnFieldAdmissionContextValue | null>(null);
+
+export function FieldAdmissionProvider({ children }: Readonly<PropsWithChildren>) {
   const [state, setState] = useState<OwnFieldAdmissionState>({ kind: "loading" });
   const requestSequence = useRef(0);
 
@@ -32,8 +39,16 @@ export function useOwnFieldAdmission() {
     }
   }, []);
 
-  useEffect(() => { void refresh(); }, [refresh]);
-  useEffect(() => () => { requestSequence.current += 1; }, []);
+  useEffect(() => {
+    void refresh();
+    return () => { requestSequence.current += 1; };
+  }, [refresh]);
 
-  return { state, refresh } as const;
+  return createElement(OwnFieldAdmissionContext.Provider, { value: { state, refresh } }, children);
+}
+
+export function useOwnFieldAdmission() {
+  const value = useContext(OwnFieldAdmissionContext);
+  if (!value) throw new Error("FIELD_ADMISSION_PROVIDER_REQUIRED");
+  return value;
 }

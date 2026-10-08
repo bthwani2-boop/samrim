@@ -354,7 +354,7 @@ func ReadFieldFinancialSummary(ctx context.Context, db *sql.DB, fieldActorID str
 	var result FieldFinancialSummaryRecord
 	result.FieldActorID = fieldActorID
 	result.Currency = "YER"
-	err := db.QueryRowContext(ctx, `SELECT COALESCE(SUM(e.amount_minor) FILTER (WHERE e.direction='CREDIT'),0),COALESCE(SUM(earning.reward_minor),0),COUNT(DISTINCT COALESCE(earning.joining_case_id,'legacy-store:'||earning.store_id)),MAX(earning.created_at) FROM wlt.field_acquisition_entitlements earning JOIN wlt.ledger_entries e ON e.transaction_id=earning.ledger_transaction_id AND e.account_code='FIELD_WALLET' AND e.actor_id=earning.field_actor_id WHERE earning.field_actor_id=$1`, fieldActorID).Scan(&result.EarnedMinor, &result.EntitlementMinor, &result.PartnerCount, &result.LastEarningAt)
+	err := db.QueryRowContext(ctx, `SELECT COALESCE(SUM(e.amount_minor),0),COALESCE(SUM(earning.reward_minor),0),COUNT(DISTINCT COALESCE(earning.joining_case_id,'legacy-store:'||earning.store_id)),MAX(earning.created_at) FROM wlt.field_acquisition_entitlements earning JOIN wlt.ledger_entries e ON e.transaction_id=earning.ledger_transaction_id AND e.account_code='FIELD_WALLET' AND e.actor_type='field' AND e.actor_id=earning.field_actor_id AND e.direction='CREDIT' AND e.currency='YER' WHERE earning.field_actor_id=$1`, fieldActorID).Scan(&result.EarnedMinor, &result.EntitlementMinor, &result.PartnerCount, &result.LastEarningAt)
 	return result, err
 }
 

@@ -10,7 +10,7 @@ import (
 )
 
 func TestReadCanonicalActorRequiresDSHAndValidActorID(t *testing.T) {
-	service := New(nil)
+	service := New(nil, "")
 	for _, test := range []struct {
 		name, caller, actorID string
 		want                  error

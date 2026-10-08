@@ -35,6 +35,8 @@ For `UPDATE_REQUIRED` or `DEFECT_FOUND`, repair the canonical governance owner f
 
 Do one bounded discovery sufficient to identify the affected cone, current truth, canonical owner, causal root, risk and required proof. Then execute. Widen only when new evidence can materially change the repair.
 
+The implementation and closure unit is a bounded cross-surface vertical slice, including every materially affected app, operator surface, service, contract, state owner and pinned Governance source. Search all its material connections across repositories, read deeply only inside the proven cone, and close required behavior plus obsolete/duplicate paths; do not split by screen or manufacture platform-wide audits. End-to-end Journeys remain integration proof scenarios, not a parallel execution queue.
+
 Use native/current evidence before adding diagnostic abstractions. Repair the highest proven causal root, not downstream symptoms.
 
 Prefer the simplest complete correct solution. A small change must remain small.
@@ -97,7 +99,7 @@ Default integration flow:
 
 Proof is claim-driven and static-first. Use runtime, browser or real-device proof only when the claim cannot be falsified adequately by static evidence.
 
-For a material cross-surface or cross-service journey, a passing screen, API, typecheck, unit test or isolated service proof is not journey closure. Prove every materially participating handoff through its canonical owners until the required canonical readback is reached.
+For a material cross-surface slice, a passing screen, API, typecheck, unit test or isolated service proof is not closure. Prove every materially participating handoff through its canonical owners until the required canonical readback is reached. Claim completion of a connected end-to-end scenario only after its constituent slices and material cross-slice handoffs are verified.
 
 Proof must exercise the material failure modes of the affected claim, not only its happy path. Add negative, authorization, isolation, validation, recovery, idempotency or concurrency proof only when that risk is materially present in the affected cone.
 
@@ -122,7 +124,7 @@ Model context is a scarce working set, not an archive. Reduce context without re
 - Local commits may be development checkpoints. Push, pull-request creation, remote CI and remote AI review are integration events, not routine iterative-development checkpoints; unless earlier remote integration is materially required, defer them until feature freeze.
 - Candidate-wide proof should normally run once after feature freeze. Rerun only proof invalidated by a later affected change.
 
-When the task is to plan or prepare implementation work rather than execute it, use the pinned Governance `docs/EXECUTION-CONTRACT.md`. Do not maintain or request a separate reusable trigger that duplicates the generated execution command. The planner emits only the current material phase command, then consumes the executor's compact checkpoint through delta review for the next phase.
+When the task is to plan or prepare implementation work rather than execute it, use the pinned Governance `docs/EXECUTION-CONTRACT.md`. Do not maintain or request a separate reusable trigger that duplicates the generated execution command. The planner emits only the current material slice command, then consumes the executor's compact checkpoint through delta review for the next slice.
 
 
 ## 6. Consequential action safety
@@ -167,6 +169,6 @@ Closure requires all of the following:
 
 Report the exact final HEAD and any material unproven claim. Do not claim closure when evidence is stale or incomplete.
 
-Fixed-point closure is bounded to the authorized objective and its proven affected cone. It does not authorize a platform-wide census of unrelated journeys, surfaces, history or debt.
+Fixed-point closure is bounded to the authorized objective and its proven affected cone. It does not authorize a platform-wide census of unrelated capabilities, surfaces, history or debt.
 
 When the assigned objective is complete, stop. Do not invent additional scope or ask for another task as a condition of closure.

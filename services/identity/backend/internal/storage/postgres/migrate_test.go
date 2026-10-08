@@ -1,25 +1,37 @@
 package postgres_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
+	identityactor "github.com/bthwani2-boop/samrim/services/identity/backend/internal/actor"
+	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/authentication"
+	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/challenge"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/domain"
+	challengedelivery "github.com/bthwani2-boop/samrim/services/identity/backend/internal/integrations/challenge"
 	identityruntime "github.com/bthwani2-boop/samrim/services/identity/backend/internal/runtime"
+	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/session"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/storage/postgres"
+	identityhttp "github.com/bthwani2-boop/samrim/services/identity/backend/internal/transport/http"
 	_ "github.com/lib/pq"
 )
 
-func TestMigrationV13ToV22Upgrade(t *testing.T) {
+func TestMigrationV13ToV26Upgrade(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
 	if databaseURL == "" {
 		t.Skip("IDENTITY_DATABASE_URL is required for the migration upgrade proof")
@@ -721,23 +733,535 @@ func TestMigrationV13ToV22Upgrade(t *testing.T) {
 		t.Fatalf("expected schema version 24, got %d (err: %v)", version, err)
 	}
 
-	// Verify full postgres.Ready passes on this upgraded database.
+	// Apply the current migration and verify full postgres.Ready on v26.
+	if err := identityruntime.RunMigrations(ctx, "development", testURL, migDir); err != nil {
+		t.Fatalf("canonical migration from v24 to current schema failed: %v", err)
+	}
 	if err := postgres.Ready(ctx, testDB); err != nil {
 		t.Fatalf("postgres.Ready failed on upgraded database: %v", err)
 	}
 
-	// Re-run the canonical runtime migrator and prove it is a no-op at v24.
+	// Re-run the canonical runtime migrator and prove it is a no-op at v26.
 	beforeSecondRun := readMigrationNoOpSnapshot(t, testDB)
 	if err := identityruntime.RunMigrations(ctx, "development", testURL, migDir); err != nil {
 		t.Fatalf("second canonical migration run failed: %v", err)
 	}
 	afterSecondRun := readMigrationNoOpSnapshot(t, testDB)
 	assertMigrationNoOpSnapshotUnchanged(t, beforeSecondRun, afterSecondRun)
-	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 24 {
+	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 26 {
 		t.Fatalf("schema version changed during second canonical migration run: version=%d err=%v", version, err)
 	}
 
-	t.Log("Migration v13 -> v24 upgrade, data preservation, passkey cutover, mobile lifetime, refresh reconciliation, Operator workspace permissions, verified legal-name schema cutover and Operator profile registry test PASSED successfully!")
+	t.Log("Migration v13 -> v26 upgrade, data preservation, passkey cutover, mobile lifetime, refresh reconciliation, Operator workspace permissions, verified legal-name schema cutover, Operator profile registry, managed recovery, and Field app foreground timestamp test PASSED successfully!")
+}
+
+func TestManagedRecoveryMigrationFreshBootstrapAndV25Upgrade(t *testing.T) {
+	databaseURL := strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
+	if databaseURL == "" {
+		t.Skip("IDENTITY_DATABASE_URL is required for isolated Identity migration proofs")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	rootDB, err := sql.Open("postgres", databaseURL)
+	if err != nil {
+		t.Fatalf("open postgres maintenance connection: %v", err)
+	}
+	t.Cleanup(func() { _ = rootDB.Close() })
+	if err := rootDB.PingContext(ctx); err != nil {
+		t.Fatalf("configured postgres is not reachable: %v", err)
+	}
+
+	migDir := ""
+	for _, candidate := range []string{"../../../../database/migrations", "../../database/migrations", "../database/migrations", "/app/migrations"} {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			migDir = filepath.Clean(candidate)
+			break
+		}
+	}
+	if migDir == "" {
+		t.Fatal("could not find identity migrations directory")
+	}
+	records := identityMigrationRecords(t, migDir)
+	if len(records) != 26 {
+		t.Fatalf("identity migration count = %d, want 26", len(records))
+	}
+	latestMigration := records[len(records)-1]
+	if latestMigration.Version != 26 || latestMigration.Name != "026_field_app_foreground_timestamp.sql" {
+		t.Fatalf("latest migration = %#v, want v26 Field app foreground timestamp", latestMigration)
+	}
+
+	freshDB, freshURL := createIsolatedMigrationDatabase(t, ctx, rootDB, databaseURL, "id_recovery_fresh")
+	if err := identityruntime.RunMigrations(ctx, "development", freshURL, migDir); err != nil {
+		t.Fatalf("fresh bootstrap through v26: %v", err)
+	}
+	if err := postgres.Ready(ctx, freshDB); err != nil {
+		t.Fatalf("fresh v26 database readiness: %v", err)
+	}
+	if err := postgres.VerifyExactConstraints(ctx, freshDB); err != nil {
+		t.Fatalf("fresh v26 exact constraints: %v", err)
+	}
+	if err := postgres.VerifyMigrationHistory(ctx, freshDB, records); err != nil {
+		t.Fatalf("fresh v26 migration history: %v", err)
+	}
+
+	upgradeDB, upgradeURL := createIsolatedMigrationDatabase(t, ctx, rootDB, databaseURL, "id_recovery_v25")
+	for _, record := range records[:25] {
+		migrationSQL, err := os.ReadFile(filepath.Join(migDir, record.Name))
+		if err != nil {
+			t.Fatalf("read migration %s: %v", record.Name, err)
+		}
+		if err := postgres.Migrate(ctx, upgradeDB, record.Version, record.Name, record.SHA256, string(migrationSQL)); err != nil {
+			t.Fatalf("establish prior-v25 baseline at migration %d: %v", record.Version, err)
+		}
+	}
+	if version, err := postgres.CurrentSchemaVersion(ctx, upgradeDB); err != nil || version != 25 {
+		t.Fatalf("prior baseline version = %d, want 25 (err: %v)", version, err)
+	}
+	if err := postgres.SynchronizeMigrationHistory(ctx, upgradeDB, records[:25]); err != nil {
+		t.Fatalf("verify prior-v25 migration history: %v", err)
+	}
+
+	const preservedActorID = "act_recovery_migration_preserved"
+	const preservedPhone = "+967770009821"
+	if _, err := upgradeDB.ExecContext(ctx, "INSERT INTO identity_actors(id,phone_e164,security_enabled,version) VALUES($1,$2,true,1)", preservedActorID, preservedPhone); err != nil {
+		t.Fatalf("insert prior-v25 actor fixture: %v", err)
+	}
+	if _, err := upgradeDB.ExecContext(ctx, "INSERT INTO identity_actor_roles(actor_id,role,enabled,activated_at,version) VALUES($1,'partner',true,clock_timestamp(),1)", preservedActorID); err != nil {
+		t.Fatalf("insert prior-v25 role fixture: %v", err)
+	}
+	if _, err := upgradeDB.ExecContext(ctx, "INSERT INTO identity_password_credentials(actor_id,role,password_hash,version) VALUES($1,'partner',$2,3)", preservedActorID, strings.Repeat("a", 64)); err != nil {
+		t.Fatalf("insert prior-v25 credential fixture: %v", err)
+	}
+	const preservedChallengeID = "challenge_recovery_migration_preserved"
+	if _, err := upgradeDB.ExecContext(ctx, `INSERT INTO identity_challenges(id,actor_id,role,purpose,phone_e164,code_hash,request_ip_hash,admissible,status,attempts,expires_at)
+VALUES($1,$2,'partner','managed_activate',$3,$4,$5,true,'pending',0,clock_timestamp()+interval '1 hour')`, preservedChallengeID, preservedActorID, preservedPhone, strings.Repeat("b", 64), strings.Repeat("c", 64)); err != nil {
+		t.Fatalf("insert prior-v25 challenge fixture: %v", err)
+	}
+
+	if err := identityruntime.RunMigrations(ctx, "development", upgradeURL, migDir); err != nil {
+		t.Fatalf("prior-v25 upgrade to v26: %v", err)
+	}
+	if err := postgres.Ready(ctx, upgradeDB); err != nil {
+		t.Fatalf("upgraded v26 database readiness: %v", err)
+	}
+	if err := postgres.VerifyExactConstraints(ctx, upgradeDB); err != nil {
+		t.Fatalf("upgraded v26 exact constraints: %v", err)
+	}
+	if err := postgres.VerifyMigrationHistory(ctx, upgradeDB, records); err != nil {
+		t.Fatalf("upgraded v26 migration history: %v", err)
+	}
+	var credentialVersion int
+	if err := upgradeDB.QueryRowContext(ctx, "SELECT version FROM identity_password_credentials WHERE actor_id=$1 AND role='partner'", preservedActorID).Scan(&credentialVersion); err != nil || credentialVersion != 3 {
+		t.Fatalf("prior credential after v26 = version %d (err: %v), want version 3", credentialVersion, err)
+	}
+	var challengePurpose, challengeRole, challengeStatus string
+	if err := upgradeDB.QueryRowContext(ctx, "SELECT purpose,role,status FROM identity_challenges WHERE id=$1", preservedChallengeID).Scan(&challengePurpose, &challengeRole, &challengeStatus); err != nil {
+		t.Fatalf("read preserved prior-v24 challenge: %v", err)
+	}
+	if challengePurpose != "managed_activate" || challengeRole != "partner" || challengeStatus != "pending" {
+		t.Fatalf("prior challenge changed during v26 upgrade: purpose=%s role=%s status=%s", challengePurpose, challengeRole, challengeStatus)
+	}
+
+	for _, role := range []string{"partner", "captain", "field"} {
+		id := "challenge_migrated_recovery_" + role
+		if _, err := upgradeDB.ExecContext(ctx, `INSERT INTO identity_challenges(id,actor_id,role,purpose,phone_e164,code_hash,request_ip_hash,admissible,status,attempts,expires_at)
+VALUES($1,$2,$3,'managed_recover',$4,$5,$6,true,'pending',0,clock_timestamp()+interval '1 hour')`, id, preservedActorID, role, preservedPhone, strings.Repeat("d", 64), strings.Repeat("e", 64)); err != nil {
+			t.Fatalf("managed_recover constraint rejected role %s: %v", role, err)
+		}
+	}
+	if _, err := upgradeDB.ExecContext(ctx, `INSERT INTO identity_challenges(id,actor_id,role,purpose,phone_e164,code_hash,request_ip_hash,admissible,status,attempts,expires_at)
+VALUES('challenge_migrated_recovery_operator',$1,'operator','managed_recover',$2,repeat('f',64),repeat('1',64),true,'pending',0,clock_timestamp()+interval '1 hour')`, preservedActorID, preservedPhone); err == nil {
+		t.Fatal("managed_recover purpose/role constraint accepted operator role")
+	}
+
+	const managedPhone = "+967770009822"
+	roles := []string{"partner", "captain", "field"}
+	actors := identityactor.New(upgradeDB, "")
+	actorID := ""
+	for _, role := range roles {
+		view, err := actors.ProvisionTrustedWithContext(ctx, "dsh", domain.ProvisionActorRoleInput{PhoneE164: managedPhone, Role: role}, "act_migration_recovery_dsh")
+		if err != nil {
+			t.Fatalf("provision isolated %s role through actor service: %v", role, err)
+		}
+		if actorID == "" {
+			actorID = view.ActorID
+		} else if view.ActorID != actorID {
+			t.Fatalf("provisioned role %s actor = %s, want shared actor %s", role, view.ActorID, actorID)
+		}
+	}
+
+	secret := []byte("isolated-managed-recovery-proof-secret")
+	delivery := &migrationChallengeSender{messages: make(chan challengedelivery.Message, 1)}
+	sessions := session.New(upgradeDB, secret, false, nil)
+	challengeService := challenge.New(upgradeDB, actors, sessions, secret, delivery)
+	api := identityhttp.New(actors, authentication.New(upgradeDB, actors, sessions), challengeService, sessions, nil, identityhttp.Config{AbuseIPSecret: secret})
+	call := func(method, path string, body any, bearer string) (int, []byte) {
+		t.Helper()
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			t.Fatalf("encode %s %s request: %v", method, path, err)
+		}
+		request := httptest.NewRequest(method, path, bytes.NewReader(encoded))
+		if bearer != "" {
+			request.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		response := httptest.NewRecorder()
+		api.ServeHTTP(response, request)
+		return response.Code, response.Body.Bytes()
+	}
+	expect := func(method, path string, body any, bearer string, status int) []byte {
+		t.Helper()
+		got, response := call(method, path, body, bearer)
+		if got != status {
+			t.Fatalf("%s %s status = %d, want %d; body=%s", method, path, got, status, response)
+		}
+		return response
+	}
+	issueChallenge := func(path, phone, role string) (domain.Challenge, []byte) {
+		t.Helper()
+		response := expect(http.MethodPost, path, domain.ManagedChallengeRequest{Phone: phone, Role: role}, "", http.StatusCreated)
+		var issued domain.Challenge
+		if err := json.Unmarshal(response, &issued); err != nil || issued.ChallengeID == "" {
+			t.Fatalf("decode %s challenge response %s: %v", path, response, err)
+		}
+		return issued, response
+	}
+	awaitDelivery := func(issued domain.Challenge, phone, role, purpose string) challengedelivery.Message {
+		t.Helper()
+		var message challengedelivery.Message
+		select {
+		case message = <-delivery.messages:
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for %s/%s delivery to %s", role, purpose, phone)
+		}
+		if message.Purpose != purpose || message.Role != role || message.Phone != phone {
+			t.Fatalf("challenge delivery = %#v, want role=%s purpose=%s phone=%s", message, role, purpose, phone)
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			var status string
+			if err := upgradeDB.QueryRowContext(ctx, "SELECT status FROM identity_challenge_deliveries WHERE challenge_id=$1", issued.ChallengeID).Scan(&status); err != nil {
+				t.Fatalf("read %s delivery status: %v", purpose, err)
+			}
+			if status == "sent" {
+				return message
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("%s delivery status = %s, want sent", purpose, status)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	challengeRow := func(challengeID string) (bool, sql.NullString, string, string, string) {
+		t.Helper()
+		var admissible bool
+		var resolvedActor sql.NullString
+		var role, purpose, status string
+		if err := upgradeDB.QueryRowContext(ctx, "SELECT admissible,actor_id,role,purpose,status FROM identity_challenges WHERE id=$1", challengeID).Scan(&admissible, &resolvedActor, &role, &purpose, &status); err != nil {
+			t.Fatalf("read isolated challenge %s: %v", challengeID, err)
+		}
+		return admissible, resolvedActor, role, purpose, status
+	}
+	activeSessionCount := func(role string) int {
+		t.Helper()
+		var count int
+		if err := upgradeDB.QueryRowContext(ctx, "SELECT count(*) FROM identity_sessions WHERE actor_id=$1 AND role=$2 AND revoked_at IS NULL", actorID, role).Scan(&count); err != nil {
+			t.Fatalf("read active %s session count: %v", role, err)
+		}
+		return count
+	}
+	assertSession := func(pair domain.TokenPair, status int) {
+		t.Helper()
+		response := expect(http.MethodGet, "/auth/session", nil, pair.AccessToken, status)
+		if status == http.StatusOK {
+			var identity domain.ActorIdentity
+			if err := json.Unmarshal(response, &identity); err != nil || identity.Subject != actorID || identity.Role != pair.Identity.Role {
+				t.Fatalf("session readback = %#v (err %v), want actor %s role %s", identity, err, actorID, pair.Identity.Role)
+			}
+		}
+	}
+
+	workerCtx, stopWorker := context.WithCancel(ctx)
+	workerResult := make(chan error, 1)
+	go func() { workerResult <- challengeService.RunDeliveryWorker(workerCtx) }()
+	defer func() {
+		stopWorker()
+		if err := <-workerResult; err != nil {
+			t.Errorf("stop isolated HTTP challenge delivery worker: %v", err)
+		}
+	}()
+
+	activationCodes := make(map[string]string, len(roles))
+	activationPairs := make(map[string]domain.TokenPair, len(roles))
+	loginPairs := make(map[string]domain.TokenPair, len(roles))
+	oldPasswords := make(map[string]string, len(roles))
+	newPasswords := make(map[string]string, len(roles))
+	for _, role := range roles {
+		issued, _ := issueChallenge("/auth/managed/activation/request", managedPhone, role)
+		activationMessage := awaitDelivery(issued, managedPhone, role, domain.ChallengeManagedActivate)
+		activationCodes[role] = activationMessage.Code
+		oldPassword := "River123"
+		activationResponse := expect(http.MethodPost, "/auth/managed/activate", domain.ManagedActivationRequest{
+			Phone: managedPhone, Role: role, VerificationCode: activationMessage.Code,
+			Password: oldPassword, ClientInstanceId: "migration-enroll-" + role,
+		}, "", http.StatusOK)
+		var activationPair domain.TokenPair
+		if err := json.Unmarshal(activationResponse, &activationPair); err != nil || activationPair.AccessToken == "" || activationPair.Identity.Subject != actorID || activationPair.Identity.Role != role {
+			t.Fatalf("decode %s first-enrollment result %#v (err %v)", role, activationPair, err)
+		}
+		activationPairs[role] = activationPair
+		oldPasswords[role] = oldPassword
+		newPasswords[role] = "Cedar456"
+	}
+	for _, role := range roles {
+		loginResponse := expect(http.MethodPost, "/auth/managed/login", domain.ManagedPasswordLoginRequest{
+			Phone: managedPhone, Role: role, Password: oldPasswords[role], ClientInstanceId: "migration-login-" + role,
+		}, "", http.StatusOK)
+		var loginPair domain.TokenPair
+		if err := json.Unmarshal(loginResponse, &loginPair); err != nil || loginPair.AccessToken == "" || loginPair.Identity.Subject != actorID || loginPair.Identity.Role != role {
+			t.Fatalf("decode %s second-device login result %#v (err %v)", role, loginPair, err)
+		}
+		loginPairs[role] = loginPair
+		if count := activeSessionCount(role); count != 2 {
+			t.Fatalf("%s active sessions after first enrollment and another-device login = %d, want 2", role, count)
+		}
+		assertSession(activationPairs[role], http.StatusOK)
+		assertSession(loginPair, http.StatusOK)
+	}
+
+	for roleIndex, role := range roles {
+		var pendingRecoveryCount int
+		if err := upgradeDB.QueryRowContext(ctx, "SELECT count(*) FROM identity_challenges WHERE actor_id=$1 AND role=$2 AND purpose=$3", actorID, role, domain.ChallengeManagedRecover).Scan(&pendingRecoveryCount); err != nil || pendingRecoveryCount != 0 {
+			t.Fatalf("managed recovery challenges for %s before purpose-isolation proof = %d (err %v), want 0", role, pendingRecoveryCount, err)
+		}
+		expect(http.MethodPost, "/auth/managed/recover", domain.ManagedRecoveryProofRequest{Phone: managedPhone, Role: role, VerificationCode: activationCodes[role], Password: newPasswords[role]}, "", http.StatusUnauthorized)
+		if err := upgradeDB.QueryRowContext(ctx, "SELECT count(*) FROM identity_challenges WHERE actor_id=$1 AND role=$2 AND purpose=$3", actorID, role, domain.ChallengeManagedRecover).Scan(&pendingRecoveryCount); err != nil || pendingRecoveryCount != 0 {
+			t.Fatalf("activation proof created/crossed into a %s recovery challenge: count=%d err=%v", role, pendingRecoveryCount, err)
+		}
+
+		otherSessionsBefore := make(map[string]int, len(roles)-1)
+		for _, otherRole := range roles {
+			if otherRole != role {
+				otherSessionsBefore[otherRole] = activeSessionCount(otherRole)
+			}
+		}
+		if count := activeSessionCount(role); count != 2 {
+			t.Fatalf("%s active sessions immediately before recovery = %d, want 2", role, count)
+		}
+		recoveryChallenge, _ := issueChallenge("/auth/managed/recovery/request", managedPhone, role)
+		recoveryMessage := awaitDelivery(recoveryChallenge, managedPhone, role, domain.ChallengeManagedRecover)
+		admissible, challengeActor, challengeRole, purpose, status := challengeRow(recoveryChallenge.ChallengeID)
+		if !admissible || !challengeActor.Valid || challengeActor.String != actorID || challengeRole != role || purpose != domain.ChallengeManagedRecover || status != "pending" {
+			t.Fatalf("%s recovery challenge = admissible %v actor %v role %s purpose %s status %s", role, admissible, challengeActor, challengeRole, purpose, status)
+		}
+		wrongCode := "000000"
+		if recoveryMessage.Code == wrongCode {
+			wrongCode = "000001"
+		}
+		expect(http.MethodPost, "/auth/managed/recover", domain.ManagedRecoveryProofRequest{Phone: managedPhone, Role: role, VerificationCode: wrongCode, Password: newPasswords[role]}, "", http.StatusUnauthorized)
+		var attempts int
+		if err := upgradeDB.QueryRowContext(ctx, "SELECT attempts FROM identity_challenges WHERE id=$1", recoveryChallenge.ChallengeID).Scan(&attempts); err != nil || attempts != 1 {
+			t.Fatalf("%s recovery attempts after one wrong OTP = %d (err %v), want 1", role, attempts, err)
+		}
+		crossRole := roles[(roleIndex+1)%len(roles)]
+		expect(http.MethodPost, "/auth/managed/recover", domain.ManagedRecoveryProofRequest{Phone: managedPhone, Role: crossRole, VerificationCode: recoveryMessage.Code, Password: newPasswords[role]}, "", http.StatusUnauthorized)
+		var statusAfterCrossRole string
+		if err := upgradeDB.QueryRowContext(ctx, "SELECT attempts,status FROM identity_challenges WHERE id=$1", recoveryChallenge.ChallengeID).Scan(&attempts, &statusAfterCrossRole); err != nil || attempts != 1 || statusAfterCrossRole != "pending" {
+			t.Fatalf("cross-role OTP changed %s challenge: attempts=%d status=%s err=%v", role, attempts, statusAfterCrossRole, err)
+		}
+
+		recoveryResponse := expect(http.MethodPost, "/auth/managed/recover", domain.ManagedRecoveryProofRequest{Phone: managedPhone, Role: role, VerificationCode: recoveryMessage.Code, Password: newPasswords[role]}, "", http.StatusOK)
+		var recoveryFields map[string]json.RawMessage
+		if err := json.Unmarshal(recoveryResponse, &recoveryFields); err != nil || len(recoveryFields) != 1 || string(recoveryFields["status"]) != `"recovery_complete"` {
+			t.Fatalf("%s recovery response = %s (err %v), want status only and no session tokens", role, recoveryResponse, err)
+		}
+		_, challengeActor, _, _, status = challengeRow(recoveryChallenge.ChallengeID)
+		if status != "consumed" || !challengeActor.Valid || challengeActor.String != actorID {
+			t.Fatalf("%s recovery challenge after success = status %s actor %v, want consumed for the same actor", role, status, challengeActor)
+		}
+		if count := activeSessionCount(role); count != 0 {
+			t.Fatalf("%s active sessions after recovery = %d, want 0", role, count)
+		}
+		assertSession(activationPairs[role], http.StatusUnauthorized)
+		assertSession(loginPairs[role], http.StatusUnauthorized)
+		for _, otherRole := range roles {
+			if otherRole == role {
+				continue
+			}
+			if count := activeSessionCount(otherRole); count != otherSessionsBefore[otherRole] {
+				t.Fatalf("recovering %s changed %s session count from %d to %d", role, otherRole, otherSessionsBefore[otherRole], count)
+			}
+			assertSession(loginPairs[otherRole], http.StatusOK)
+		}
+		expect(http.MethodPost, "/auth/managed/recover", domain.ManagedRecoveryProofRequest{Phone: managedPhone, Role: role, VerificationCode: recoveryMessage.Code, Password: oldPasswords[role]}, "", http.StatusUnauthorized)
+		expect(http.MethodPost, "/auth/managed/login", domain.ManagedPasswordLoginRequest{
+			Phone: managedPhone, Role: role, Password: oldPasswords[role], ClientInstanceId: "migration-old-password-" + role,
+		}, "", http.StatusUnauthorized)
+		newLoginResponse := expect(http.MethodPost, "/auth/managed/login", domain.ManagedPasswordLoginRequest{
+			Phone: managedPhone, Role: role, Password: newPasswords[role], ClientInstanceId: "migration-after-recovery-" + role,
+		}, "", http.StatusOK)
+		var newLoginPair domain.TokenPair
+		if err := json.Unmarshal(newLoginResponse, &newLoginPair); err != nil || newLoginPair.AccessToken == "" || newLoginPair.Identity.Subject != actorID || newLoginPair.Identity.Role != role {
+			t.Fatalf("decode %s new-password login result %#v (err %v)", role, newLoginPair, err)
+		}
+		loginPairs[role] = newLoginPair
+		assertSession(newLoginPair, http.StatusOK)
+		if count := activeSessionCount(role); count != 1 {
+			t.Fatalf("%s active sessions after new-password login = %d, want 1", role, count)
+		}
+	}
+
+	assertSuppressed := func(issued domain.Challenge, role string) {
+		t.Helper()
+		admissible, challengeActor, challengeRole, purpose, status := challengeRow(issued.ChallengeID)
+		var deliveryStatus string
+		if err := upgradeDB.QueryRowContext(ctx, "SELECT status FROM identity_challenge_deliveries WHERE challenge_id=$1", issued.ChallengeID).Scan(&deliveryStatus); err != nil {
+			t.Fatalf("read suppressed %s delivery: %v", role, err)
+		}
+		if admissible || challengeActor.Valid || challengeRole != role || purpose != domain.ChallengeManagedRecover || status != "pending" || deliveryStatus != "suppressed" {
+			t.Fatalf("ineligible %s recovery disclosed/issued challenge: admissible=%v actor=%v role=%s purpose=%s status=%s delivery=%s", role, admissible, challengeActor, challengeRole, purpose, status, deliveryStatus)
+		}
+	}
+	responseShape := func(response []byte) string {
+		t.Helper()
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(response, &fields); err != nil {
+			t.Fatalf("decode generic recovery response %s: %v", response, err)
+		}
+		keys := make([]string, 0, len(fields))
+		for key := range fields {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		return strings.Join(keys, ",")
+	}
+	const ineligiblePhone = "+967770009823"
+	ineligibleView, err := actors.ProvisionTrustedWithContext(ctx, "dsh", domain.ProvisionActorRoleInput{PhoneE164: ineligiblePhone, Role: "partner"}, "act_migration_recovery_dsh")
+	if err != nil {
+		t.Fatalf("provision ineligible isolated role: %v", err)
+	}
+	ineligibleChallenge, ineligibleResponse := issueChallenge("/auth/managed/recovery/request", ineligiblePhone, "partner")
+	assertSuppressed(ineligibleChallenge, "partner")
+	if got := responseShape(ineligibleResponse); got != "challengeId,expiresAt,maskedPhone" {
+		t.Fatalf("ineligible recovery response fields = %s, want generic challenge fields", got)
+	}
+	expect(http.MethodPost, "/auth/managed/recover", domain.ManagedRecoveryProofRequest{Phone: ineligiblePhone, Role: "partner", VerificationCode: "000000", Password: "Cedar456"}, "", http.StatusUnauthorized)
+	missingRoleChallenge, missingRoleResponse := issueChallenge("/auth/managed/recovery/request", ineligiblePhone, "captain")
+	assertSuppressed(missingRoleChallenge, "captain")
+	if got := responseShape(missingRoleResponse); got != "challengeId,expiresAt,maskedPhone" {
+		t.Fatalf("missing-role recovery response fields = %s, want generic challenge fields", got)
+	}
+	expect(http.MethodPost, "/auth/managed/recover", domain.ManagedRecoveryProofRequest{Phone: ineligiblePhone, Role: "captain", VerificationCode: "000000", Password: "Cedar456"}, "", http.StatusUnauthorized)
+	var ineligibleCredentialCount int
+	if err := upgradeDB.QueryRowContext(ctx, "SELECT count(*) FROM identity_password_credentials WHERE actor_id=$1", ineligibleView.ActorID).Scan(&ineligibleCredentialCount); err != nil || ineligibleCredentialCount != 0 {
+		t.Fatalf("ineligible recovery created credentials = %d (err %v), want 0", ineligibleCredentialCount, err)
+	}
+	expect(http.MethodPost, "/auth/managed/recover", domain.ManagedRecoveryProofRequest{Phone: managedPhone, Role: "operator", VerificationCode: "000000", Password: "Cedar456"}, "", http.StatusUnauthorized)
+
+	var disabledRoleVersion int
+	if err := upgradeDB.QueryRowContext(ctx, "SELECT version FROM identity_actor_roles WHERE actor_id=$1 AND role='field'", actorID).Scan(&disabledRoleVersion); err != nil {
+		t.Fatalf("read field role version before disabled-recovery proof: %v", err)
+	}
+	if err := actors.SetRoleEnabledWithContext(ctx, "dsh", actorID, "field", false, "migration-recovery-disabled", "isolated managed recovery suppression proof", disabledRoleVersion, "act_migration_recovery_dsh"); err != nil {
+		t.Fatalf("disable isolated field role through actor service: %v", err)
+	}
+	disabledChallenge, disabledResponse := issueChallenge("/auth/managed/recovery/request", managedPhone, "field")
+	assertSuppressed(disabledChallenge, "field")
+	if got := responseShape(disabledResponse); got != "challengeId,expiresAt,maskedPhone" {
+		t.Fatalf("disabled-role recovery response fields = %s, want generic challenge fields", got)
+	}
+	expect(http.MethodPost, "/auth/managed/recover", domain.ManagedRecoveryProofRequest{Phone: managedPhone, Role: "field", VerificationCode: "000000", Password: "Cedar456"}, "", http.StatusUnauthorized)
+
+	if _, err := upgradeDB.ExecContext(ctx, "DELETE FROM identity_password_credentials WHERE actor_id=$1 AND role='partner'", actorID); err != nil {
+		t.Fatalf("remove isolated missing-credential fixture: %v", err)
+	}
+	recoveryTx, err := upgradeDB.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin missing-credential recovery proof: %v", err)
+	}
+	recoveryErr := actors.ResetManagedPasswordTx(ctx, recoveryTx, actorID, "partner", "Saffron8")
+	_ = recoveryTx.Rollback()
+	if !errors.Is(recoveryErr, domain.ErrInvalidChallenge) {
+		t.Fatalf("managed password recovery without an existing credential error = %v, want invalid challenge", recoveryErr)
+	}
+	var setupCredentialCount int
+	if err := upgradeDB.QueryRowContext(ctx, "SELECT count(*) FROM identity_password_credentials WHERE actor_id=$1 AND role='partner'", actorID).Scan(&setupCredentialCount); err != nil || setupCredentialCount != 0 {
+		t.Fatalf("missing credential after rejected recovery = %d (err: %v), want 0", setupCredentialCount, err)
+	}
+}
+
+type migrationChallengeSender struct {
+	messages chan challengedelivery.Message
+}
+
+func (*migrationChallengeSender) Provider() string { return "managed-recovery-test" }
+
+func (s *migrationChallengeSender) Send(ctx context.Context, message challengedelivery.Message) error {
+	select {
+	case s.messages <- message:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func identityMigrationRecords(t *testing.T, directory string) []postgres.MigrationRecord {
+	t.Helper()
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatalf("read identity migration directory: %v", err)
+	}
+	records := make([]postgres.MigrationRecord, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+		var version int
+		if _, err := fmt.Sscanf(entry.Name(), "%03d_", &version); err != nil {
+			t.Fatalf("parse migration version from %s: %v", entry.Name(), err)
+		}
+		content, err := os.ReadFile(filepath.Join(directory, entry.Name()))
+		if err != nil {
+			t.Fatalf("read migration %s: %v", entry.Name(), err)
+		}
+		hash := sha256.Sum256(content)
+		records = append(records, postgres.MigrationRecord{Version: version, Name: entry.Name(), SHA256: hex.EncodeToString(hash[:])})
+	}
+	sort.Slice(records, func(i, j int) bool { return records[i].Version < records[j].Version })
+	for index, record := range records {
+		if record.Version != index+1 {
+			t.Fatalf("migration sequence at %d has version %d", index+1, record.Version)
+		}
+	}
+	return records
+}
+
+func createIsolatedMigrationDatabase(t *testing.T, ctx context.Context, rootDB *sql.DB, databaseURL, prefix string) (*sql.DB, string) {
+	t.Helper()
+	name := fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
+	if _, err := rootDB.ExecContext(ctx, "CREATE DATABASE "+name); err != nil {
+		t.Fatalf("create isolated migration database: %v", err)
+	}
+	t.Cleanup(func() {
+		if _, err := rootDB.Exec("DROP DATABASE IF EXISTS " + name + " WITH (FORCE)"); err != nil {
+			t.Errorf("drop isolated migration database %s: %v", name, err)
+		}
+	})
+	parsedURL, err := url.Parse(databaseURL)
+	if err != nil {
+		t.Fatalf("parse isolated database connection URL: %v", err)
+	}
+	parsedURL.Path = "/" + name
+	database, err := sql.Open("postgres", parsedURL.String())
+	if err != nil {
+		t.Fatalf("open isolated migration database: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := database.PingContext(ctx); err != nil {
+		t.Fatalf("ping isolated migration database: %v", err)
+	}
+	return database, parsedURL.String()
 }
 
 type migrationSessionSnapshot struct {

@@ -10,6 +10,7 @@ allowBuilds:
 
 autoInstallPeers: false
 engineStrict: true
+frozenLockfile: true
 nodeLinker: isolated
 saveExact: true
 sharedWorkspaceLockfile: true

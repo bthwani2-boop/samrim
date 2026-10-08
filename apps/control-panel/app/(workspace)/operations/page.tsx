@@ -14,7 +14,7 @@ export default function OperationsPage() {
       <div className="workspace-page-heading">
         <p className="eyebrow">مركز العمل الحالي</p>
         <h1 id="operations-page-title">العمليات</h1>
-        <p className="lead">تابع دورة الطلب من الجاهزية إلى التسليم، واتخذ الإجراء الذي تسمح به الحالة الكانونية فقط.</p>
+        <p className="lead">تابع دورة الطلب من الجاهزية إلى التسليم، واتخذ الإجراء الذي تسمح به الحالة المعتمدة فقط.</p>
       </div>
       <OperationsWorkspace />
     </section>
