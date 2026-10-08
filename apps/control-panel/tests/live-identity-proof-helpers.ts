@@ -1,5 +1,5 @@
-import { randomInt, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { randomInt, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page } from "@playwright/test";
@@ -209,17 +209,29 @@ async function assertNoExistingActorForPhone(identityBase: string, controlToken:
   }
 }
 
-async function findOperatorProfileByPhone(identityBase: string, controlToken: string, actingOperatorID: string, phone: string): Promise<Readonly<{ id: string; actorId?: string; state: string }> | null> {
+export async function findOperatorProfileByPhone(identityBase: string, controlToken: string, actingOperatorID: string, phone: string): Promise<Readonly<{ id: string; actorId?: string; phoneE164: string; fullNameAr: string; jobTitle: string; department: string; state: string; version: number; roleEnabled?: boolean; securityEnabled?: boolean; activatedAt?: string }> | null> {
   const params = new URLSearchParams({ q: phone, state: "all", sort: "created_desc", limit: "10" });
   const response = await fetch(identityBase + "/internal/operator-profiles?" + params, {
     headers: { Accept: "application/json", Authorization: "Bearer " + controlToken, "X-Acting-Actor-ID": actingOperatorID },
     signal: AbortSignal.timeout(5_000),
   });
   if (!response.ok) return null;
-  const body = await response.json() as { items?: Array<{ id?: string; actorId?: string; phoneE164?: string; state?: string }> };
+  const body = await response.json() as { items?: Array<{ id?: string; actorId?: string; phoneE164?: string; fullNameAr?: string; jobTitle?: string; department?: string; state?: string; version?: number; roleEnabled?: boolean; securityEnabled?: boolean; activatedAt?: string }> };
   const profile = body.items?.find((item) => item.phoneE164 === phone);
-  if (!profile?.id || !profile.state) return null;
-  return { id: profile.id, ...(profile.actorId ? { actorId: profile.actorId } : {}), state: profile.state };
+  if (!profile?.id || !profile.phoneE164 || !profile.fullNameAr || !profile.jobTitle || !profile.department || !profile.state || profile.version === undefined) return null;
+  return {
+    id: profile.id,
+    phoneE164: profile.phoneE164,
+    fullNameAr: profile.fullNameAr,
+    jobTitle: profile.jobTitle,
+    department: profile.department,
+    state: profile.state,
+    version: profile.version,
+    ...(profile.actorId ? { actorId: profile.actorId } : {}),
+    ...(profile.roleEnabled !== undefined ? { roleEnabled: profile.roleEnabled } : {}),
+    ...(profile.securityEnabled !== undefined ? { securityEnabled: profile.securityEnabled } : {}),
+    ...(profile.activatedAt ? { activatedAt: profile.activatedAt } : {}),
+  };
 }
 
 export async function waitForMailpitCode(mailpitBaseUrl: string, phone: string, purpose: string, sentAfter: number): Promise<string> {

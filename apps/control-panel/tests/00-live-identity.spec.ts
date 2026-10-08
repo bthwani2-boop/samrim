@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { randomInt, randomUUID } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page, request, test } from "@playwright/test";
-import { assertIdentityProofScope, enableVirtualAuthenticator, findInitialOperator, jsonRequest, type PreparedOperator, provisionIndependentOperator, readCanonicalRuntime, registerOperator, requiredEnv, waitForMailpitCode } from "./live-identity-proof-helpers";
+import { assertIdentityProofScope, enableVirtualAuthenticator, findInitialOperator, findOperatorProfileByPhone, jsonRequest, type PreparedOperator, provisionIndependentOperator, readCanonicalRuntime, registerOperator, requiredEnv, waitForMailpitCode } from "./live-identity-proof-helpers";
 
 test.beforeAll(() => {
   assertIdentityProofScope();
@@ -62,6 +63,34 @@ function restartIdentity(): void {
   );
 }
 
+function configureDisposableDevelopmentOperator(actorId: string): void {
+  assertIdentityProofScope();
+  const runtime = readCanonicalRuntime();
+  const disposableCi = process.env.CI === "true" && process.env.BTHWANI_IDENTITY_PROOF_SCOPE === "disposable-ci";
+  const defaultEnvFile = path.resolve(runtime.repoRoot, "infra/local/.env");
+  if (runtime.composeProject === "samrim-local" && !disposableCi) throw new Error("live Identity proof refuses to configure the persistent local Compose project");
+  if (!disposableCi && runtime.envFile === defaultEnvFile) throw new Error("live Identity proof requires a task-owned Compose environment file before configuring its development operator");
+  const lines = readFileSync(runtime.envFile, "utf8").split(/\r?\n/);
+  let found = false;
+  let changed = false;
+  const updated = lines.map((line) => {
+    if (!line.startsWith("IDENTITY_DEVELOPMENT_OPERATOR_ACTOR_ID=")) return line;
+    found = true;
+    const value = `IDENTITY_DEVELOPMENT_OPERATOR_ACTOR_ID=${actorId}`;
+    changed ||= line !== value;
+    return value;
+  });
+  if (!found) throw new Error("task-owned runtime environment must declare IDENTITY_DEVELOPMENT_OPERATOR_ACTOR_ID");
+  if (!changed) return;
+  const contents = updated.join("\n");
+  writeFileSync(runtime.envFile, contents.endsWith("\n") ? contents : `${contents}\n`);
+  execFileSync("docker", [
+    "compose", "--project-name", runtime.composeProject, "--env-file", runtime.envFile,
+    "-f", path.join(runtime.repoRoot, "infra/local/compose/compose.yaml"),
+    "up", "-d", "--force-recreate", "--no-deps", "--wait", "--wait-timeout", "300", "identity",
+  ], { cwd: runtime.repoRoot, encoding: "utf8", stdio: "ignore" });
+}
+
 async function readBrowserSession(page: Page): Promise<{ status: number; body: Record<string, any> }> {
   return page.evaluate(async () => {
     const response = await fetch("/api/auth/session", { cache: "no-store" });
@@ -86,6 +115,157 @@ async function prepareOperator(identityBase: string, controlToken: string, boots
   expect(operator.token).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
   return operator;
 }
+
+async function createOperatorThroughControlPanel(
+  page: Page,
+  baseUrl: string,
+  input: { fullNameAr: string; phone: string; jobTitle: string; department: string },
+): Promise<PreparedOperator> {
+  await page.goto(baseUrl + "/access?view=profiles");
+  await expect(page.getByRole("heading", { name: "ملفات المشغّلين" })).toBeVisible();
+  await page.getByText("مشغّل جديد", { exact: true }).click();
+  await page.locator("#operator-profile-name").fill(input.fullNameAr);
+  await page.locator("#operator-profile-phone").fill(input.phone);
+  await page.locator("#operator-profile-title").fill(input.jobTitle);
+  await page.locator("#operator-profile-department").fill(input.department);
+
+  const creationResponsePromise = page.waitForResponse((response) =>
+    response.url().endsWith("/api/access/operator-profiles") && response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "حفظ للمراجعة", exact: true }).click();
+  const creationResponse = await creationResponsePromise;
+  expect(creationResponse.status()).toBe(201);
+  const controlToken = requiredEnv("PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN");
+  const identityBase = requiredEnv("PLAYWRIGHT_IDENTITY_API_BASE_URL").replace(/\/+$/, "");
+  const profile = await findOperatorProfileByPhone(identityBase, controlToken, (await findInitialOperator(identityBase, controlToken))!.actorId, input.phone);
+  expect(profile).toMatchObject({ fullNameAr: input.fullNameAr, phoneE164: input.phone, jobTitle: input.jobTitle, department: input.department, state: "pending_review", version: 1 });
+  const profileId = String(profile?.id || "");
+  expect(profileId).toMatch(/^oprof_/);
+
+  const profileRow = page.getByRole("row").filter({ hasText: input.fullNameAr });
+  await expect(profileRow).toContainText(input.phone);
+  const approveResponsePromise = page.waitForResponse((response) =>
+    response.url().endsWith(`/api/access/operator-profiles/${encodeURIComponent(profileId)}`) && response.request().method() === "POST",
+  );
+  await profileRow.getByRole("button", { name: "اعتماد الملف", exact: true }).click();
+  const approveResponse = await approveResponsePromise;
+  expect(approveResponse.status()).toBe(200);
+  const approvedProfile = await findOperatorProfileByPhone(identityBase, controlToken, (await findInitialOperator(identityBase, controlToken))!.actorId, input.phone);
+  expect(approvedProfile).toMatchObject({ id: profileId, state: "approved", version: 2 });
+  await expect(profileRow.getByRole("button", { name: "منح دور المشغّل", exact: true })).toBeVisible();
+
+  const grantResponsePromise = page.waitForResponse((response) =>
+    response.url().endsWith(`/api/access/operator-profiles/${encodeURIComponent(profileId)}`) && response.request().method() === "POST",
+  );
+  await profileRow.getByRole("button", { name: "منح دور المشغّل", exact: true }).click();
+  const grantResponse = await grantResponsePromise;
+  expect(grantResponse.status()).toBe(201);
+  const grantedProfile = await findOperatorProfileByPhone(identityBase, controlToken, (await findInitialOperator(identityBase, controlToken))!.actorId, input.phone);
+  expect(grantedProfile).toMatchObject({ id: profileId, state: "admitted", version: 3, roleEnabled: true, securityEnabled: true });
+  const actorId = String(grantedProfile?.actorId || "");
+  expect(actorId).toMatch(/^act_/);
+
+  const invitationResponsePromise = page.waitForResponse((response) =>
+    response.url().endsWith(`/api/access/operator-profiles/${encodeURIComponent(profileId)}`) && response.request().method() === "POST",
+  );
+  await profileRow.getByRole("button", { name: "إصدار دعوة التفعيل", exact: true }).click();
+  const invitationResponse = await invitationResponsePromise;
+  expect(invitationResponse.status()).toBe(201);
+  const finalProfile = await findOperatorProfileByPhone(identityBase, controlToken, (await findInitialOperator(identityBase, controlToken))!.actorId, input.phone);
+  expect(finalProfile).toMatchObject({ id: profileId, actorId, state: "admitted", roleEnabled: true, securityEnabled: true });
+  const token = String(await page.locator(".code-output code").textContent() || "");
+  expect(token).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
+  return { actorId, phone: input.phone, token, profileId, actorCreatedByTest: true };
+}
+
+async function signOutOperator(page: Page): Promise<void> {
+  await page.locator('summary[aria-label="الحساب"]').click();
+  const logoutResponsePromise = page.waitForResponse((response) =>
+    response.url().endsWith("/api/auth/logout") && response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "تسجيل الخروج", exact: true }).click();
+  expect((await logoutResponsePromise).status()).toBe(204);
+  await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
+}
+
+test("@live Control Panel creates two operators in Identity and proves founder recovery plus both operator logins", async ({ browser, page }) => {
+  test.setTimeout(180_000);
+  const identityBase = requiredEnv("PLAYWRIGHT_IDENTITY_API_BASE_URL").replace(/\/+$/, "");
+  const mailpitBase = requiredEnv("PLAYWRIGHT_MAILPIT_BASE_URL").replace(/\/+$/, "");
+  const controlToken = requiredEnv("PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN");
+  const bootstrapToken = requiredEnv("PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN");
+  const baseUrl = requiredEnv("PLAYWRIGHT_BASE_URL").replace(/\/+$/, "");
+  const root = await findInitialOperator(identityBase, controlToken);
+  expect(root, "the isolated Identity database must contain its canonical founder").not.toBeNull();
+  configureDisposableDevelopmentOperator(root!.actorId);
+  const rootEnrollment = await jsonRequest(identityBase, "/internal/bootstrap/operator", bootstrapToken, { phoneE164: root!.phone, role: "operator" });
+  expect(rootEnrollment.response.status, "the isolated founder must be enrolled through the Identity bootstrap owner").toBe(200);
+  const founder: PreparedOperator = { ...root!, token: String(rootEnrollment.body?.enrollmentToken?.code || "") };
+  expect(founder.token).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
+
+  await enableVirtualAuthenticator(page);
+  const founderRecoveryCredential = await registerOperator(page, founder, baseUrl, mailpitBase);
+  const founderSession = await readBrowserSession(page);
+  expect(founderSession.status).toBe(200);
+  expect(founderSession.body.identity.subject).toBe(founder.actorId);
+
+  const operatorInputs = [
+    { fullNameAr: "مشغل اختبار مباشر أول", phone: "+9677" + String(randomInt(10_000_000, 99_999_999)), jobTitle: "مشرف العمليات", department: "العمليات" },
+    { fullNameAr: "مشغل اختبار مباشر ثان", phone: "+9677" + String(randomInt(10_000_000, 99_999_999)), jobTitle: "منسق الدعم", department: "الدعم" },
+  ];
+  const operators: PreparedOperator[] = [];
+  for (const input of operatorInputs) operators.push(await createOperatorThroughControlPanel(page, baseUrl, input));
+
+  // Revoke only the isolated founder session to prove lost-session recovery without touching persistent local Identity state.
+  mutateOperatorSessions(founder.actorId, "revoked_at=clock_timestamp()");
+  const lostFounderSession = await readBrowserSession(page);
+  expect(lostFounderSession.status).toBe(401);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
+  await page.getByRole("button", { name: "استرداد الوصول" }).click();
+  await page.getByLabel("رقم الهاتف").fill(founder.phone);
+  await page.getByLabel("اعتماد الاسترداد").fill(founderRecoveryCredential);
+  const recoveryChallengeSentAt = Date.now();
+  await page.getByRole("button", { name: "إرسال رمز إثبات الهاتف" }).click();
+  const recoveryCode = await waitForMailpitCode(mailpitBase, founder.phone, "operator_recover", recoveryChallengeSentAt);
+  await page.getByLabel("رمز إثبات الهاتف").fill(recoveryCode);
+  await page.getByRole("button", { name: "إثبات الهاتف وتسجيل مفتاح مرور بديل" }).click();
+  await expect(page.getByRole("heading", { name: "احفظ هذا الاعتماد الآن" })).toBeVisible();
+  const replacementRecoveryCredential = await page.locator(".code-output").textContent();
+  expect(replacementRecoveryCredential).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
+  expect(replacementRecoveryCredential).not.toBe(founderRecoveryCredential);
+  await page.getByRole("button", { name: "حفظت الاعتماد وفتح لوحة التحكم" }).click();
+  const recoveredFounderSession = await readBrowserSession(page);
+  expect(recoveredFounderSession.status).toBe(200);
+  expect(recoveredFounderSession.body.identity.subject).toBe(founder.actorId);
+
+  for (const operator of operators) {
+    const operatorContext = await browser.newContext({ baseURL: baseUrl });
+    try {
+      const operatorPage = await operatorContext.newPage();
+      await enableVirtualAuthenticator(operatorPage);
+      const recoveryCredential = await registerOperator(operatorPage, operator, baseUrl, mailpitBase);
+      expect(recoveryCredential).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
+      const enrolledSession = await readBrowserSession(operatorPage);
+      expect(enrolledSession.status).toBe(200);
+      expect(enrolledSession.body.identity.subject).toBe(operator.actorId);
+      await operatorPage.reload();
+      expect((await readBrowserSession(operatorPage)).body.identity.subject).toBe(operator.actorId);
+      await signOutOperator(operatorPage);
+      const authenticationResponsePromise = operatorPage.waitForResponse((response) =>
+        response.url().endsWith("/api/auth/passkey/finish") && response.request().method() === "POST",
+      );
+      await operatorPage.getByRole("button", { name: "الدخول بمفتاح المرور" }).click();
+      const authenticationResponse = await authenticationResponsePromise;
+      expect(authenticationResponse.status()).toBe(200);
+      await expect.poll(async () => (await readBrowserSession(operatorPage)).status, { timeout: 10_000 }).toBe(200);
+      const authenticatedSession = await readBrowserSession(operatorPage);
+      expect(authenticatedSession.body.identity.subject).toBe(operator.actorId);
+    } finally {
+      await operatorContext.close();
+    }
+  }
+});
 
 test("@live operator passkey registration, authentication and governed recovery survive browser readback", async ({ page }) => {
   test.setTimeout(90_000);
