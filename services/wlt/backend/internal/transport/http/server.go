@@ -112,6 +112,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/field-acquisition-entitlements/finalize", s.finalizeFieldAcquisitionEntitlement)
 	mux.HandleFunc("GET /wlt/v1/field-acquisition-entitlements/{joiningCaseId}", s.readFieldAcquisitionEntitlementByJoiningCase)
 	mux.HandleFunc("GET /wlt/v1/fields/{fieldActorId}/financial-summary", s.readFieldFinancialSummary)
+	mux.HandleFunc("GET /wlt/v1/fields/{fieldActorId}/wallet-history", s.readFieldWalletHistory)
 	mux.HandleFunc("GET /wlt/v1/fields/{fieldActorId}/acquisition-entitlements", s.listFieldAcquisitionEntitlements)
 	mux.HandleFunc("POST /wlt/v1/operator/official-wallet-destinations", s.createOfficialWalletDestination)
 	mux.HandleFunc("POST /wlt/v1/operator/official-wallet-destinations/{destinationId}/verify", s.verifyOfficialWalletDestination)

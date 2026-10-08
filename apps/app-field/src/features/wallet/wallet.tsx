@@ -9,5 +9,5 @@ import { createFieldOperationStyles } from "../field-operations/field-operation-
 export default function FieldWallet() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createFieldOperationStyles(theme), [theme]);
-  return <View style={[styles.container, { gap: spacing[4], paddingHorizontal: spacing[5] }]} accessibilityLabel="محفظة الميدان"><Text style={styles.muted}>تابع مستحقاتك وطلبات صرفها.</Text><FieldFinancialSummaryCard /><FieldPayoutCard /></View>;
+  return <View style={[styles.container, { gap: spacing[4] }]} accessibilityLabel="محفظة الميدان"><Text style={styles.muted}>مكافآت ضم الشركاء وتسويتها.</Text><FieldFinancialSummaryCard /><FieldPayoutCard /></View>;
 }

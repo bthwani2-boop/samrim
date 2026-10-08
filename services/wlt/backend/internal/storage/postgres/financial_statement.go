@@ -146,7 +146,7 @@ func ListFinancialStatementSummaries(ctx context.Context, db *sql.DB, actorType 
 
 func ReadFinancialStatement(ctx context.Context, db *sql.DB, actorType, actorID string, periodStart, periodEndExclusive time.Time, cursorAt *time.Time, cursorID string, limit int) (FinancialStatementRecord, error) {
 	actorType, actorID = strings.ToLower(strings.TrimSpace(actorType)), strings.TrimSpace(actorID)
-	if db == nil || (actorType != "customer" && actorType != "partner" && actorType != "captain" && actorType != "field") || boundedText(actorID, 1, 128) == "" || periodStart.IsZero() || periodEndExclusive.IsZero() || !periodEndExclusive.After(periodStart) {
+	if db == nil || (actorType != "customer" && actorType != "partner" && actorType != "captain" && actorType != "field") || boundedText(actorID, 1, 128) == "" || periodEndExclusive.IsZero() || !periodEndExclusive.After(periodStart) {
 		return FinancialStatementRecord{}, ErrFinancialStatementInput
 	}
 	if limit < 1 || limit > 200 {

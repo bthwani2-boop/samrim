@@ -91,25 +91,24 @@ export function FieldFinancialSummaryCard() {
   </View>);
 
   return <BthwaniSurface tone="base" style={styles.card}>
-    <Text style={styles.eyebrow}>المحفظة والاستحقاقات</Text>
-    <Text style={styles.title}>استحقاق ضم الشريك</Text>
+    <Text style={styles.eyebrow}>مكافآت الشركاء</Text>
+    <Text style={styles.title}>ملخص المكافآت</Text>
     {summary ? <View style={styles.metrics}>
-      <View style={styles.primaryMetric}><Text style={styles.label}>المودع في المحفظة</Text><Text style={styles.primaryValue}>{formatMoney(summary.earnedMinor, summary.currency)}</Text></View>
+      <View style={styles.primaryMetric}><Text style={styles.label}>إجمالي المكافآت المكتسبة</Text><Text style={styles.primaryValue}>{formatMoney(summary.earnedMinor, summary.currency)}</Text></View>
       <View style={styles.secondaryMetrics}>
-        <View style={styles.metric}><Text style={styles.label}>شركاء مستحقون</Text><Text style={styles.value}>{summary.partnerCount.toLocaleString("ar-YE")}</Text></View>
-        <View style={styles.metric}><Text style={styles.label}>قيمة الاستحقاقات</Text><Text style={styles.value}>{formatMoney(summary.entitlementMinor, summary.currency)}</Text></View>
+        <View style={styles.metric}><Text style={styles.label}>شركاء أكملوا شرط الاستحقاق</Text><Text style={styles.value}>{summary.partnerCount.toLocaleString("ar-YE")}</Text></View>
       </View>
     </View> : null}
     {summaryLoading && !summary ? <Text style={styles.muted}>جارٍ قراءة ملخص المستحقات…</Text> : null}
-    {summaryError ? <Text accessibilityRole="alert" style={styles.error}>{summaryError}</Text> : null}
-    <Text style={styles.muted}>يُثبت الاستحقاق بعد ظهور متجر الشريك للعميل؛ الرصيد المتاح والمحجوز يظهران في قسم التسوية.</Text>
-    <Text style={styles.sectionTitle}>حركات استحقاق ضم الشريك</Text>
+    {summaryError ? <Text accessibilityRole="alert" style={styles.error}>{summary ? "تعذر تحديث الملخص؛ المعروض هو آخر ما تم تحميله." : summaryError}</Text> : null}
+    <Text style={styles.muted}>هذا إجمالي المكافآت، وليس الرصيد المتاح للتسوية.</Text>
+    <Text style={styles.sectionTitle}>سجل مكافآت ضم الشركاء</Text>
     {ledgerLoading && !ledger ? <Text style={styles.muted}>جارٍ قراءة سجل المكافآت…</Text> : null}
-    {ledgerError ? <Text accessibilityRole="alert" style={styles.error}>{ledgerError}</Text> : null}
+    {ledgerError ? <Text accessibilityRole="alert" style={styles.error}>{ledger ? "تعذر تحديث السجل؛ المعروض هو آخر ما تم تحميله." : ledgerError}</Text> : null}
     {entitlementRows}
-    {ledger && ledger.entitlements.length === 0 ? <Text style={styles.muted}>لا توجد حركات استحقاق مسجلة حتى الآن.</Text> : null}
+    {ledger && ledger.entitlements.length === 0 ? <Text style={styles.muted}>لا توجد مكافآت مسجلة حتى الآن.</Text> : null}
     {ledger?.nextCursor ? <BthwaniButton busy={loadingMore} label="عرض الحركات الأقدم" onPress={() => void loadMore()} variant="secondary" /> : null}
-    <BthwaniButton busy={summaryLoading || ledgerLoading} label="تحديث السجل" onPress={() => void load()} variant="secondary" />
+    <BthwaniButton busy={summaryLoading || ledgerLoading} label="تحديث" onPress={() => void load()} variant="secondary" />
   </BthwaniSurface>;
 }
 
@@ -119,7 +118,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     eyebrow: { ...typography.caption, color: theme.interactiveText },
     title: { ...typography.titleMd, color: theme.color },
     sectionTitle: { ...typography.bodyStrong, color: theme.color, marginTop: spacing[2] },
-    metrics: { gap: spacing[3] },
+    metrics: { gap: spacing[2] },
     primaryMetric: { gap: spacing[1] },
     primaryValue: { ...typography.titleMd, color: theme.color },
     secondaryMetrics: { flexDirection: "row", gap: spacing[3] },

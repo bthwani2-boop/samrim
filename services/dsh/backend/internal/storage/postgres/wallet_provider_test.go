@@ -66,11 +66,11 @@ func TestWalletProviderRegistryMutationLifecycle(t *testing.T) {
 			t.Fatalf("deactivate wallet provider: result=%#v err=%v", deactivated, err)
 		}
 		replayedCreate, err := postgres.MutateWalletProvider(ctx, db, key, name, true, 0, createID, createHash, testOperatorActorID, "wallet-provider-create-after-update")
-		if err != nil || !replayedCreate.Replayed || replayedCreate.Provider.DisplayNameAr != name || !replayedCreate.Provider.Active || replayedCreate.Provider.Version != 1 {
+		if err != nil || !replayedCreate.Replayed || replayedCreate.Provider.DisplayNameAr != updatedName || replayedCreate.Provider.Active || replayedCreate.Provider.Version != 3 {
 			t.Fatalf("replay original wallet provider create after later updates: result=%#v err=%v", replayedCreate, err)
 		}
 		replayedUpdate, err := postgres.MutateWalletProvider(ctx, db, key, updatedName, true, 1, updateID, postgres.HashWalletProviderMutation(key, updatedName, true, 1), testOperatorActorID, "wallet-provider-update-after-deactivation")
-		if err != nil || !replayedUpdate.Replayed || replayedUpdate.Provider.DisplayNameAr != updatedName || !replayedUpdate.Provider.Active || replayedUpdate.Provider.Version != 2 {
+		if err != nil || !replayedUpdate.Replayed || replayedUpdate.Provider.DisplayNameAr != updatedName || replayedUpdate.Provider.Active || replayedUpdate.Provider.Version != 3 {
 			t.Fatalf("replay original wallet provider update after deactivation: result=%#v err=%v", replayedUpdate, err)
 		}
 		active, err := postgres.ListWalletProviders(ctx, db, true)
@@ -102,4 +102,16 @@ func TestWalletProviderRegistryMutationLifecycle(t *testing.T) {
 			t.Fatalf("wallet provider mutation records: audit=%d idempotency=%d; want 3 each", auditCount, idempotencyCount)
 		}
 	})
+}
+
+func TestWalletProviderMutationRejectsInvalidFacts(t *testing.T) {
+	for _, tc := range []struct{ key, name string }{
+		{key: "not-a-catalog-key", name: "محفظة صحيحة"},
+		{key: "wallet_provider_invalid", name: "English wallet"},
+	} {
+		_, err := postgres.MutateWalletProvider(context.Background(), nil, tc.key, tc.name, true, 0, "idempotency-key", "request-hash", "operator", "correlation-id")
+		if !errors.Is(err, postgres.ErrWalletProviderInvalid) {
+			t.Fatalf("invalid wallet provider facts returned %v", err)
+		}
+	}
 }
