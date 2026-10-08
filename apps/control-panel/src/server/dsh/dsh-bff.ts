@@ -612,7 +612,7 @@ export async function listOperatorFieldActivity(fieldActorIds: readonly string[]
   const actorIDs = fieldActorIds.map((actorID) => actorID.trim());
   if (!actorIDs.length || actorIDs.length > 50 || actorIDs.some((actorID) => !actorID || actorID.length > 128) || new Set(actorIDs).size !== actorIDs.length || !context.operatorActorId.trim()) throw new Error("DSH_FIELD_ACTIVITY_QUERY_INVALID");
   const query = new URLSearchParams();
-  actorIDs.forEach((actorID) => query.append("fieldActorId", actorID));
+  for (const actorID of actorIDs) query.append("fieldActorId", actorID);
   return (await requestDshJson<OperatorFieldActivityResponse>(dshOperationPaths.listOperatorFieldActivity.method, `${dshOperationPaths.listOperatorFieldActivity.path}?${query.toString()}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
