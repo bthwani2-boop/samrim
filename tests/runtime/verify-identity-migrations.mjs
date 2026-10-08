@@ -11,8 +11,8 @@ const canonicalProject = "samrim-local";
 const goImage = "golang:1.27.1-alpine";
 const migrationTestPath = path.join(root, "services/identity/backend/internal/storage/postgres/migrate_test.go");
 const canonicalMigrationTests = [
-  "TestMigrationV13ToV25Upgrade",
-  "TestManagedRecoveryMigrationFreshBootstrapAndV24Upgrade",
+  "TestMigrationV13ToV26Upgrade",
+  "TestManagedRecoveryMigrationFreshBootstrapAndV25Upgrade",
 ];
 
 function fail(message, error) {

@@ -42,30 +42,3 @@ export function matchesCaptainFundingRequest(intent: CashInFundingIntent, actorI
 export function matchesCaptainFundingAttempt(intent: CashInFundingIntent, attempt: CaptainFundingAttempt): boolean {
   return intent.id === attempt.fundingIntentID && matchesCaptainFundingRequest(intent, attempt.actorID, attempt.amountMinor);
 }
-
-export function isSimulatableCaptainFundingIntent(intent: CashInFundingIntent, actorID: string): boolean {
-  return matchesCaptainFundingRequest(intent, actorID, intent.amountMinor) &&
-    intent.providerKey === "DEVELOPMENT_SIMULATOR" &&
-    (intent.state === "PENDING_PROVIDER" || intent.state === "UNKNOWN");
-}
-
-export function selectCaptainSimulatorIntent(
-  intents: readonly CashInFundingIntent[],
-  actorID: string,
-  attempt: CaptainFundingAttempt | null,
-): CashInFundingIntent | undefined {
-  const eligible = intents.filter((intent) => isSimulatableCaptainFundingIntent(intent, actorID));
-  if (!attempt || attempt.actorID !== actorID) return eligible[0];
-  if (!attempt.fundingIntentID) return undefined;
-  return eligible.find((intent) => matchesCaptainFundingAttempt(intent, attempt));
-}
-
-export function isSameCaptainFundingIntent(before: CashInFundingIntent, after: CashInFundingIntent): boolean {
-  return before.id === after.id &&
-    before.actorType === after.actorType &&
-    before.actorId === after.actorId &&
-    before.fundingPurpose === after.fundingPurpose &&
-    before.providerKey === after.providerKey &&
-    before.amountMinor === after.amountMinor &&
-    before.currency === after.currency;
-}
