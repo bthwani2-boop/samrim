@@ -132,6 +132,13 @@ import { pathToFileURL } from "node:url";
 
 register(pathToFileURL(path.join(root, "packages/design-system/tools/ts-resolver.mjs")).href, import.meta.url);
 if (app === "app-field") {
+  const admissionProviderOpen = layoutContent.indexOf("<FieldAdmissionProvider>");
+  const authenticatedBoundaryOpen = layoutContent.indexOf("<AuthenticatedMobileBoundary");
+  const authenticatedBoundaryClose = layoutContent.indexOf("</AuthenticatedMobileBoundary>");
+  assert.ok(
+    authenticatedBoundaryOpen >= 0 && admissionProviderOpen > authenticatedBoundaryOpen && admissionProviderOpen < authenticatedBoundaryClose,
+    "app-field: admission read state must remain inside the authenticated route boundary",
+  );
   const { percentTextFromBps, parsePercentToBps, sameAgreementRates } = await import(
     pathToFileURL(path.join(appDir, "src/features/field-operations/field-commercial-agreement-rate.ts")).href
   );

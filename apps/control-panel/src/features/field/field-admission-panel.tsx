@@ -29,8 +29,21 @@ function sameFieldProfile(a: FieldProfileDraft, b: FieldProfileDraft): boolean {
 
 function fieldRequestError(cause: unknown, fallback: string): string {
   if (isRequestFailure(cause)) return cause.message;
+  if (cause instanceof TypeError) return "تعذر الوصول إلى خدمة الميدانيين الآن. أعد المحاولة لاحقًا.";
   if (cause instanceof Error) return cause.message;
   return fallback;
+}
+
+async function fieldResponseMessage(response: Response): Promise<string> {
+  const body = await response.clone().json().catch(() => null) as { error?: { code?: unknown } } | null;
+  const code = typeof body?.error?.code === "string" ? body.error.code : "";
+  if (response.status >= 500) {
+    if (code === "DSH_STORAGE_UNAVAILABLE") return "تعذر إكمال طلب الميدانيين من النظام الآن. أعد المحاولة لاحقًا.";
+    if (code === "IDENTITY_UNAVAILABLE") return "تعذر التحقق من الهوية الآن. أعد المحاولة لاحقًا.";
+    if (code === "DSH_UNAVAILABLE" || code === "DSH_CONFIG_ERROR") return responseMessage(response);
+    return "تعذر إكمال طلب الميدانيين الآن. أعد المحاولة لاحقًا.";
+  }
+  return responseMessage(response);
 }
 
 function fieldPhoneE164(value: string): string {
@@ -68,7 +81,7 @@ function readbackQuery(query: string, limit = 25): string {
 
 async function readWorkbench(currentQuery: string): Promise<FieldPage> {
   const response = await identityFetch(readbackQuery(currentQuery, 50), { cache: "no-store" });
-  if (!response.ok) throw new Error(await responseMessage(response));
+  if (!response.ok) throw new Error(await fieldResponseMessage(response));
   return await response.json() as FieldPage;
 }
 
@@ -478,7 +491,7 @@ export function FieldAdmissionPanel() {
   useEffect(() => {
     let current = true;
     void identityFetch("/api/service-cities", { cache: "no-store" }).then(async (response) => {
-      if (!response.ok) throw new Error(await responseMessage(response));
+      if (!response.ok) throw new Error(await fieldResponseMessage(response));
       const result = await response.json() as ServiceCityListResponse;
       if (current) setServiceCities(result.cities.filter((city) => city.active));
     }).catch((cause: unknown) => {
@@ -497,7 +510,7 @@ export function FieldAdmissionPanel() {
       if (cursor) params.set("cursor", cursor);
       const response = await identityFetch(`/api/fields?${params}`, { cache: "no-store" });
       if (!response.ok) {
-        const message = await responseMessage(response);
+        const message = await fieldResponseMessage(response);
         if (loadRequestID.current === requestID) {
           setError(message);
         }
@@ -521,7 +534,7 @@ export function FieldAdmissionPanel() {
       const params = new URLSearchParams({ limit: "25" });
       if (cursor) params.set("cursor", cursor);
       const response = await identityFetch(`/api/fields/${encodeURIComponent(fieldActorId)}/acquisition-cases?${params.toString()}`, { cache: "no-store" });
-      if (!response.ok) throw new Error(await responseMessage(response));
+      if (!response.ok) throw new Error(await fieldResponseMessage(response));
       const page = await response.json() as JoiningCaseListResponse;
       setAcquisitionCases((current) => ({
         ...current,
@@ -585,7 +598,7 @@ export function FieldAdmissionPanel() {
     setFeedbackActorId(""); setBusy("create"); setError(""); setNotice("");
     try {
       const response = await identityFetch("/api/fields", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "admit", fullNameAr: name, contactPhoneE164, walletProviderKey: providerKey, allServiceCities, serviceCityIds: selectedCities.map((city) => city.id) }) });
-      if (!response.ok) { const message = await responseMessage(response); await load(); setError(message); return; }
+      if (!response.ok) { const message = await fieldResponseMessage(response); await load(); setError(message); return; }
       const created = (await response.json() as AdmissionMutationResponse).admission;
       if (!created?.id || created.state !== "pending_review" || created.contactPhoneE164 !== contactPhoneE164 || created.fullNameAr !== name || created.allServiceCities !== allServiceCities || created.walletProviderKey !== providerKey || (!allServiceCities && selectedCities.some((city) => !created.serviceCityIds?.includes(city.id)))) {
         await load(); setError("استجاب النظام للحفظ لكن سجل العملية لا يطابق الملف المطلوب. أعد القراءة قبل أي إجراء آخر."); return;
@@ -613,7 +626,7 @@ export function FieldAdmissionPanel() {
       if (action === "update-profile") { Object.assign(body, draft); body.expectedVersion = admission.version; }
       if (action === "approve") body.expectedVersion = admission.version;
       const response = await identityFetch("/api/fields", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      if (!response.ok) { const message = await responseMessage(response); await load(); setError(response.status === 409 || response.status === 412 ? `تغيرت حالة الملف بالتزامن. ${message}` : message); return; }
+      if (!response.ok) { const message = await fieldResponseMessage(response); await load(); setError(response.status === 409 || response.status === 412 ? `تغيرت حالة الملف بالتزامن. ${message}` : message); return; }
       const result = (await response.json() as AdmissionMutationResponse).admission;
       const expectedState = expectedCandidateState(action, admission.state);
       const profileReadbackMismatch = action === "update-profile" && (
@@ -650,7 +663,7 @@ export function FieldAdmissionPanel() {
     try {
       const body = accountMutationBody(field, action, reason, profile);
       const response = await identityFetch("/api/fields", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      if (!response.ok) { const message = await responseMessage(response); await load(); setError(response.status === 409 || response.status === 412 ? `تغيرت حالة الحساب بالتزامن. أُعيد تحميل الحالة الحالية؛ راجعها قبل المحاولة مجددًا. ${message}` : message); return; }
+      if (!response.ok) { const message = await fieldResponseMessage(response); await load(); setError(response.status === 409 || response.status === 412 ? `تغيرت حالة الحساب بالتزامن. أُعيد تحميل الحالة الحالية؛ راجعها قبل المحاولة مجددًا. ${message}` : message); return; }
       const page = await readWorkbench(field.phoneE164);
       const canonical = page.items.find((item): item is Extract<FieldWorkbenchItem, { kind: "account" }> => item.kind === "account" && item.account.actorId === field.actorId)?.account;
       if (!canonical) { setError("نُفذ الإجراء لكن الحساب لم يظهر في إعادة القراءة الموحّدة."); await load(); return; }

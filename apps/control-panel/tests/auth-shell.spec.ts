@@ -967,6 +967,53 @@ test("Captain reenrollment reconciles a server error against the current Identit
   await expect(page.getByRole("button", { name: "إجازة إعادة التسجيل" })).toHaveCount(0);
 });
 
+test("Field roster distinguishes DSH failures and retry restores the same canonical actor", async ({ page }) => {
+  await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
+  let retryRosterRead = false;
+  await page.route("**/api/fields**", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    if (!retryRosterRead) {
+      await route.fulfill({
+        status: 502,
+        contentType: "application/json",
+        body: JSON.stringify({ error: { code: "DSH_STORAGE_UNAVAILABLE", message: "column all_service_cities does not exist" } }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [{ kind: "account", account: {
+        actorId: "act_field_roster_recovered",
+        phoneE164: "+96777000118",
+        role: "field",
+        enabled: true,
+        activatedAt: "2026-09-20T08:00:00.000Z",
+        securityEnabled: true,
+        actorVersion: 1,
+        roleVersion: 1,
+        admission: { id: "fld_adm_roster_recovered", actorId: "act_field_roster_recovered", fullNameAr: "سالم علي", state: "eligible", requiresProfileReview: false, version: 1, createdAt: "2026-09-20T08:00:00.000Z", updatedAt: "2026-09-20T08:00:00.000Z" },
+      } }] }),
+    });
+  });
+
+  await page.goto("/fields");
+  const error = page.locator(".field-workbench-pane > p.identity-error");
+  await expect(error).toContainText("تعذر إكمال طلب الميدانيين من النظام الآن");
+  await expect(error).not.toContainText("خدمة الهوية");
+  await expect(error).not.toContainText("column all_service_cities");
+
+  retryRosterRead = true;
+  await page.getByRole("button", { name: "تحديث السجل" }).click();
+  const actorRow = page.getByRole("row").filter({ hasText: "سالم علي" });
+  await expect(actorRow).toBeVisible();
+  await expect(actorRow).toContainText("+96777000118");
+  await expect(error).toHaveCount(0);
+});
+
 test("Field reenrollment conflicts reload the canonical DSH-owned roster before retry", async ({ page }) => {
   await stubAuthenticatedSession(page, authenticatedOperator.permissions, true);
   let conflictStateApplied = false;

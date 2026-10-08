@@ -4,11 +4,11 @@ import { type Href, Tabs, usePathname, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo } from "react";
 import { AppState } from "react-native";
 import { currentIdentityState, recordFieldAppOpened, restoreIdentitySession, subscribeIdentitySession } from "../../src/bootstrap/identity";
-import { useOwnFieldAdmission } from "../../src/features/field-operations/use-field-admission";
+import { FieldAdmissionProvider, useOwnFieldAdmission } from "../../src/features/field-operations/use-field-admission";
 import { createFieldTabOptions } from "../../src/shell/field-shell";
 
 const identity = { restoreIdentitySession, currentIdentityState, subscribe: subscribeIdentitySession };
-export default function FieldAppLayout() { const router = useRouter(); const pathname = usePathname(); const onUnauthenticated = useCallback(() => router.replace(pathname === "/" ? "/" : `/?returnTo=${encodeURIComponent(pathname)}` as Href), [pathname, router]); return <AuthenticatedMobileBoundary binding={identity} onUnauthenticated={onUnauthenticated}><FieldTabs /></AuthenticatedMobileBoundary>; }
+export default function FieldAppLayout() { const router = useRouter(); const pathname = usePathname(); const onUnauthenticated = useCallback(() => router.replace(pathname === "/" ? "/" : `/?returnTo=${encodeURIComponent(pathname)}` as Href), [pathname, router]); return <AuthenticatedMobileBoundary binding={identity} onUnauthenticated={onUnauthenticated}><FieldAdmissionProvider><FieldTabs /></FieldAdmissionProvider></AuthenticatedMobileBoundary>; }
 
 function FieldTabs() {
   const theme = useAppearanceTheme();

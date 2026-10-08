@@ -23,7 +23,7 @@ export function FieldReadiness() {
       {state.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View> : null}
       {state.kind === "ready" && state.admission.state !== "eligible" ? <Text style={styles.muted}>إضافة الشريك غير متاحة الآن؛ راجع أهلية الميدان من صفحة الحساب.</Text> : null}
       {state.kind === "missing" ? <Text style={styles.muted} accessibilityLiveRegion="polite">أكمل ملف الميدان من صفحة الحساب لإضافة شريك.</Text> : null}
-      {state.kind === "error" ? <View style={styles.card} accessibilityLiveRegion="polite"><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة حالة تفعيلك الآن. أعد المحاولة عند توفر الاتصال.</Text></View> : null}
+      {state.kind === "error" ? <View style={styles.card} accessibilityLiveRegion="polite"><Text accessibilityRole="alert" style={styles.error}>تعذر التحقق من أهلية حسابك الميداني الآن. أعد المحاولة لاحقًا.</Text></View> : null}
       {state.kind === "ready" && state.admission.state === "eligible" ? <Link href={"/new-case" as Href} asChild><BthwaniButton label="إضافة شريك" variant="primary" /></Link> : null}
     </View>
   );

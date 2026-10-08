@@ -185,7 +185,7 @@ services:
     ports:
       - "127.0.0.1:${SAMRIM_DSH_PORT:-18080}:8080"
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/dsh/health"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/dsh/readiness"]
       interval: 30s
       timeout: 5s
       retries: 3
